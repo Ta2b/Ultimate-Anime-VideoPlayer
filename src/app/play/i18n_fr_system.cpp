@@ -103,10 +103,11 @@ constexpr std::array kSystemPages{
     Entry{"Reopens the engines screen; playback resumes at the same spot.",
           "Rouvre l'écran des moteurs ; la lecture reprend ensuite au même endroit."},
     Entry{"SPAN Performance mode (FP8)", "Mode Performance de SPAN (FP8)"},
-    Entry{"Same engines and settings as playback, with no skipped frame. No HDR or grading: the "
-          "chain's picture as is.",
-          "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. Ni HDR, ni étalonnage : "
-          "l'image de la chaîne telle quelle."},
+    Entry{
+        "Same engines and settings as playback, with no skipped frame. The HDR grade comes along: HDR10, "
+        "or graded SDR in H.264; an HDR source stays as is.",
+        "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. L'étalonnage HDR suit : HDR10, ou SDR "
+        "étalonné en H.264 ; une source HDR reste telle quelle."},
     Entry{"Source · {}x{}", "Source · {}x{}"},
     Entry{"Suggested name", "Nom proposé"},
     Entry{"The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov.",

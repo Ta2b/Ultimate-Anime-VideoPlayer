@@ -12,6 +12,7 @@
 #include "app/play/gpu_telemetry.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
+#include "app/play/source_fit.h"
 #include "app/play/visible_error.h"
 #include "core/auto_rate.h"
 
@@ -192,6 +193,20 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
         "display."));
 }
 
+// La sortie de la chaîne sous le choix de la résolution de travail : doublée par SPAN, ou telle quelle, et la
+// réduction faite pour rester en 4K (chain_work_size).
+void output_notes(const PlaySettings& d, const SettingsChoices& choices, int work) {
+  const bool doubles = span_runs(d, choices.source_height);
+  note(doubles
+           ? i18n::tr_format("Output: {}, twice the working resolution (SPAN ×2).", resolution_text(work * 2))
+           : i18n::tr_format("Without upscaling, the output stays at the working resolution: {}.",
+                             resolution_text(work)));
+  const int asked =
+      d.work_height > 0 ? std::min(d.work_height, choices.source_height) : choices.source_height;
+  if (doubles && work < asked)
+    note(i18n::tr_format("Reduced to {} first, so the output stays within 4K.", resolution_text(work)));
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -237,14 +252,10 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(i18n::tr("The size the video is reduced to before SPAN, which doubles it: 720p gives 1440p."));
-  const bool reduces = d.work_height > 0 && d.work_height < choices.source_height;
-  if (choices.source_height > 0) {
-    const int work = reduces ? d.work_height : choices.source_height;
-    note(d.upscale ? i18n::tr_format("Output: {}, twice the working resolution (SPAN ×2).",
-                                     resolution_text(work * 2))
-                   : i18n::tr_format("Without upscaling, the output stays at the working resolution: {}.",
-                                     resolution_text(work)));
-  }
+  // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.
+  const int work = chain_work_size(d, choices.source_width, choices.source_height).height;
+  const bool reduces = choices.source_height > 0 && work < choices.source_height;
+  if (choices.source_height > 0) output_notes(d, choices, work);
   if (reduces && panel::advanced()) {
     if (ImGui::BeginCombo(i18n::tr("Downscaler"), std::string(label(d.downscale)).c_str())) {
       for (int i = 0; i < kDownscaleCount; ++i) {
@@ -450,6 +461,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
                       choices.source_height >= 1080;
   section(i18n::tr("Interpolation"));
+  // La chaîne ne l'allume qu'à une cadence d'anime (source_fit.h) : le choix reste, pour la vidéo suivante.
+  if (d.rife_factor >= 2 && !anime_rate(choices.source_fps))
+    note(i18n::tr_format(
+        "Off for this video: {:.2f} fps is not an anime frame rate (23.976, 24, 25, 29.97 or 30).",
+        choices.source_fps));
   ImGui::BeginDisabled(!choices.rife_available);
   // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×8 tiennent sur une ligne.
   // Jusqu'à ×8 : au-delà, le profil (core::limits::kInterpFactor) refuserait la règle, et le choix

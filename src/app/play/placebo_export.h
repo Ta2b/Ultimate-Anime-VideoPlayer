@@ -1,9 +1,10 @@
 // L'export vu par l'écran : chaque image du ring rendue par libplacebo à la taille de sortie, dans la
 // disposition de l'encodeur (YUV 4:2:0, 10 bits en P010 ou en plans séparés), avec ses meilleurs
 // filtres de mise à l'échelle, puis copiée sans attendre dans des tampons que l'encodeur lit tels
-// quels. Ni grade, ni HDR, ni sous-titres, ni interface : l'image du ring telle que la chaîne l'a
-// faite, au moins aussi fine qu'à l'écran. Seul Anime4K, que l'écran tient pour la chaîne ouverte
-// (PlaceboScreen::set_anime4k), y passe : il double l'image de travail du ring vers la taille encodée.
+// quels. Ni sous-titres, ni interface : l'image du ring telle que la chaîne l'a faite, au moins aussi
+// fine qu'à l'écran. Anime4K, que l'écran tient pour la chaîne ouverte (PlaceboScreen::set_anime4k), y
+// passe : il double l'image de travail du ring vers la taille encodée. Le grade HDR anime aussi, quand
+// l'export le demande (FrameExportSetup::grade) : un grade à lui, sur une cible HDR10 ou SDR BT.709.
 //
 // Trois chemins. Pour NVENC, des tampons d'appareil exportés vers CUDA : les plans y sont copiés
 // sur le GPU, puis d'une copie CUDA dans une image du pool de l'encodeur, et le tampon repart
@@ -40,6 +41,8 @@
 #include "core/types.h"
 #include "export/export_writer.h"
 #include "media/cuda_driver.h"
+#include "render/grade.h"
+#include "render/grade_params.h"
 
 struct AVBufferRef;
 struct AVFrame;
@@ -66,6 +69,13 @@ struct FrameExportSetup {
   // Tampons de conversion (images de l'encodeur Vulkan rendues et pas encore confiées, pour
   // vulkan_frames), de 1 à FrameExport::kMaxBuffers : 11 au profil « débit » (export_depth.h).
   std::size_t buffers = 7;
+  // Le grade HDR anime de l'export (export_job.h, export_grade) : ses paramètres pour la cible, PQ BT.2020
+  // au pic grade->peak (grade_pq) ou SDR BT.1886, et la pile de LUT de son look ; rien : l'image du ring
+  // telle quelle. color doit alors être l'étiquette de cette cible (export_color).
+  std::optional<render::GradeParams> grade;
+  bool grade_pq = false;
+  std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> looks{};
+  double video_fps = 24.0;  // la cadence exportée : les lissages du grade gardent leur durée en secondes
 };
 
 class FrameExport {
@@ -140,6 +150,8 @@ class FrameExport {
   // le flux de leurs copies vers les images de frames.
   // Refus : FeatureUnavailable (pas d'export de tampons), ceux du pilote CUDA, GpuMemoryExhausted.
   std::expected<void, Refusal> open_cuda(pl_gpu gpu, AVBufferRef* frames);
+  // Le grade de setup.grade et sa cible. Refus : les hooks du grade ou une LUT ne se lisent pas.
+  std::expected<void, Refusal> open_grade(pl_gpu gpu);
   void close_cuda(pl_gpu gpu);
   // Les tampons prêts copiés chacun dans une image du pool de l'encodeur, puis la plus ancienne
   // image copiée confiée.
@@ -162,6 +174,8 @@ class FrameExport {
   PlaceboScreen& screen_;
   FrameExportSetup setup_;
   pl_renderer renderer_ = nullptr;
+  std::optional<render::Grade> grade_;  // setup.grade posé : ses hooks après ceux d'Anime4K
+  pl_color_space graded_color_{};       // la cible du grade : HDR10 ou BT.709
   // Deux jeux de plans de sortie, l'un après l'autre : le rendu d'une image n'attend pas la relecture
   // de la précédente (file de transfert à part sur la plupart des GPU).
   static constexpr std::size_t kPlaneSets = 2;

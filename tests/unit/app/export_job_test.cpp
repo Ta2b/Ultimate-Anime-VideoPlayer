@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <optional>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -66,6 +67,38 @@ TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée p
   s.restore_lines = false;
   CHECK(chain_output(s, 1920, 1080) == ExportSize{.width = 1920, .height = 1080});
   CHECK(chain_output(s, 720, 480) == ExportSize{.width = 1440, .height = 960});  // SPAN tourne
+  // Jamais au-delà de la 4K : une 1440p sans réduction est ramenée à 1080p avant SPAN.
+  s.restore_lines = true;
+  s.work_height = 0;
+  CHECK(chain_output(s, 2560, 1440) == ExportSize{.width = 3840, .height = 2160});
+  CHECK(chain_output(s, 3840, 2160) == ExportSize{.width = 3840, .height = 2160});
+}
+
+TEST_CASE("Export : le grade HDR anime suit, en HDR10 ou en SDR selon le codec", "[app][export]") {
+  PlaySettings s;
+  s.grade = true;
+  CHECK(export_grade(s, false, exporter::Codec::Hevc) == ExportGrade::Hdr10);
+  CHECK(export_grade(s, false, exporter::Codec::Av1) == ExportGrade::Hdr10);
+  CHECK(export_grade(s, false, exporter::Codec::Lossless) == ExportGrade::Hdr10);
+  CHECK(export_grade(s, false, exporter::Codec::H264) == ExportGrade::Sdr);  // 8 bits : pas de PQ
+  CHECK(export_grade(s, true, exporter::Codec::Hevc) == ExportGrade::None);  // source déjà HDR : telle quelle
+  s.grade = false;
+  CHECK(export_grade(s, false, exporter::Codec::Hevc) == ExportGrade::None);
+
+  CHECK_FALSE(export_color(ExportGrade::None).has_value());  // l'étiquette de la source
+  const std::optional<ColorInfo> sdr = export_color(ExportGrade::Sdr);
+  REQUIRE(sdr.has_value());
+  CHECK(sdr->transfer == Transfer::Bt1886);
+  CHECK(sdr->primaries == Primaries::Bt709);
+  CHECK_FALSE(sdr->hdr.has_value());
+  const std::optional<ColorInfo> hdr = export_color(ExportGrade::Hdr10);
+  REQUIRE(hdr.has_value());
+  CHECK(hdr->transfer == Transfer::Pq);
+  CHECK(hdr->primaries == Primaries::Bt2020);
+  CHECK(hdr->matrix == ColorMatrix::Bt2020Ncl);
+  REQUIRE(hdr->hdr.has_value());
+  CHECK(hdr->hdr->max_luminance == static_cast<float>(kExportPeakNits));
+  CHECK(hdr->hdr->max_cll == static_cast<float>(kExportPeakNits));
 }
 
 TEST_CASE("Export : taille encodée de la chaîne, de la source ou d'une hauteur fixe, paire",

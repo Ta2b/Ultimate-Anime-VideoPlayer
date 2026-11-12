@@ -199,6 +199,26 @@ ouverture, `player_run.cpp` décide avec `system_hdr` (`src/app/play/host_facts.
 Pendant la lecture, l'état est relu toutes les 2 s : allumer ou couper le HDR du système bascule la sortie en
 direct, sans rouvrir la chaîne. Le pic visé (`hdr.peak`, avancé) reste un réglage.
 
+Une source déjà HDR (PQ ou HLG) n'est jamais gradée : `render::decide_grade` la laisse neutre, le menu le dit
+(« étalonnage sans effet : source HDR ») et la pré-analyse des plans, qui ne servirait qu'au grade, ne part pas
+(`wants_shots`, `chain_shots.cpp`).
+
+## Le grade à l'export (11/2026)
+
+Demande de Tatoub : l'export garde le grade de la lecture. `export_grade` (`src/app/play/export_job.h`) décide :
+
+| Export | Fichier |
+|---|---|
+| Grade coupé, ou source déjà HDR | l'image de la chaîne, à l'étiquette de la source (comme avant) |
+| HEVC, AV1 ou sans perte (10 bits) | HDR10 : PQ BT.2020, grade au pic de 1000 nits (`kExportPeakNits`), mastering et MaxCLL annoncés |
+| H.264 (8 bits, où le PQ ferait des paliers) | SDR BT.709 gradé, comme sur un écran SDR (exposant 2,4) |
+
+`FrameExport` (`placebo_export.h`) tient son propre grade : la pile de LUT du look, la dernière passe vers le
+pic du fichier au blanc de référence de 203 nits (le PQ passe tel quel, comme sous Windows), la cadence
+exportée pour les lissages. Ce qui dépend de l'écran ou de la pré-analyse ne suit pas : ni vrai noir OLED, ni
+limiteur de flashs, ni courbe par plan en SDR. Le puits CUDA (`export_sink.h`), qui écrit l'anneau tel quel
+dans NVENC sans libplacebo, se refuse quand le grade est posé : l'export gradé passe par libplacebo.
+
 ## Plans et flashs (pré-analyse)
 
 La pré-analyse (`media/shot_probe.h`) découpe la vidéo en plans devant la lecture ; le grade y lit la lumière de

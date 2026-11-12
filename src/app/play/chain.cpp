@@ -15,6 +15,7 @@
 #include "app/play/present_stats.h"
 #include "app/play/pumped_task.h"
 #include "app/play/resume.h"
+#include "app/play/source_fit.h"
 #include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "core/clock.h"
@@ -168,7 +169,14 @@ void apply_finish(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
 // C08-10 : l'interpolation demandée est refusée pour la séance et ce fichier (StageMemory) : la rallumer
 // rouvrirait la chaîne (écran « Chargement », seek) pour la voir refusée de nouveau ; un avis à la place.
 // « Réessayer » du panneau l'oublie.
+// La source hors des cadences d'anime (source_fit.h) : la réouverture la laisserait aussi sans interpolation.
 bool motion_held_off(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  if (!to.opened.rife_loaded && motion_off_for_rate(wanted, to.opened.source_fps)) {
+    to.ui.controls().notify(
+        i18n::ui_tr_format("Interpolation off: {:.2f} fps is not an anime frame rate", to.opened.source_fps),
+        now_us);
+    return true;
+  }
   if (wanted.rife_factor < 2 || to.opened.rife_loaded || to.stages == nullptr ||
       !to.stages->holds(ChainStage::Motion, to.file))
     return false;

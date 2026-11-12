@@ -17,6 +17,7 @@
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
 #include "app/play/rife_fused_choice.h"
+#include "app/play/source_fit.h"
 #include "core/auto_rate.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -260,12 +261,23 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   const int width = p.video.width;
   const int height = p.video.height;
   const StageRates rates{display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate)};  // C09-03
+  // L'interpolation à une cadence d'anime seulement (source_fit.h), pour la lecture comme pour l'export.
+  // settings reste le choix de l'utilisateur : la vidéo suivante, à 23,976, est de nouveau interpolée.
+  PlaySettings fitted = settings;
+  if (motion_off_for_rate(settings, rates.source_fps)) {
+    log->info("interpolation coupée : source à {:.3f} i/s, pas une cadence d'anime", rates.source_fps);
+    fitted.rife_factor = 0;
+    fitted.rife_auto = false;
+    if (p.notice.empty())
+      p.notice =
+          i18n::ui_tr_format("Interpolation off: {:.2f} fps is not an anime frame rate", rates.source_fps);
+  }
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
   constexpr int kAttempts = 5;
   std::optional<StageFailure> last;
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
     std::optional<StagePlan> plan =
-        plan_stages(settings, refused, width, height, library, p.options.file, memory != nullptr, rates);
+        plan_stages(fitted, refused, width, height, library, p.options.file, memory != nullptr, rates);
     if (!plan) break;  // un étage refusé que seule la lecture peut laisser de côté
     for (const StageNote& note : plan->notes)
       log->warn("{} : {} ({})", note.stage == ChainStage::Upscale ? "SPAN" : "interpolation",
