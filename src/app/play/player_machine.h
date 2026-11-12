@@ -26,8 +26,9 @@ struct PlayerPaths;
 
 // La machine vue de l'écran où est la fenêtre : à l'ouverture, et quand elle change d'écran (B29-01).
 // explored : l'exploration du banc quand elle vaut pour cette carte ; calibrated : la calibration de l'écran.
+// span_fp8 : span_fp8_default du poste.
 Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored,
-                   std::optional<CalibratedChain> calibrated);
+                   std::optional<CalibratedChain> calibrated, bool span_fp8);
 // A31-02 : la relance après une perte du GPU, sauf une seconde dans la minute.
 bool relaunch_allowed(bool lost_recently, std::int64_t launched_s);
 // B29-08 : weakly_canonical et file_size sur un partage lent, hors du thread de la fenêtre.

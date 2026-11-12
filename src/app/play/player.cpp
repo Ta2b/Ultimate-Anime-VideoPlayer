@@ -516,7 +516,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     const auto machine_now = [&] {
       return machine_of(
           (*screen)->window(), tier, explored,
-          file_options.bench_level ? std::nullopt : calibrated_chain(settings_path.parent_path(), host));
+          file_options.bench_level ? std::nullopt : calibrated_chain(settings_path.parent_path(), host),
+          span_fp8_default(here.name, host.tensorrt));
     };
     chosen = apply_preset(chosen, machine_now(), source);
     PlaySettings settings = settings_for(chosen, file_options);

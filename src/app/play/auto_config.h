@@ -58,7 +58,10 @@ inline constexpr std::string_view kQualitySpanModel =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
 inline constexpr std::string_view kQualityRifeModel = "rife_v4.26.onnx";
 inline constexpr std::string_view kLightRifeModel = "rife_v4.22_lite.onnx";
-std::string_view level_span_model(Tier level);  // vide : le modèle par défaut du lecteur
+// span_fp8 : les noyaux FP8 de SPAN sont présumés sur ce poste (Machine::span_fp8) ; le b8f64 y sert à tous
+// les niveaux, seul modèle dont le paquet FP8 passe la porte (le b5f48 y est refusé sur la RTX 4070 Ti).
+std::string_view level_span_model(Tier level,
+                                  bool span_fp8 = false);  // vide : le modèle par défaut du lecteur
 std::string_view level_rife_model(Tier level);
 
 // La machine : sa tranche détectée et l'écran. display_height et display_hz à 0 : inconnus (1080p, 60 Hz).
@@ -72,6 +75,9 @@ struct Machine {
   std::string explored_rife_model;
   std::optional<CalibratedChain> calibrated;  // Auto calibré : prime sur l'exploration et le niveau
   int display_width = 0;  // 0 : inconnue, l'image prend alors toute la hauteur de l'écran (A37-06)
+  // Les noyaux FP8 de SPAN présumés (span_fp8_default : Ada, TensorRT, paquet qui les porte) : le b8f64 en
+  // FP8 remplace le modèle par défaut (b5f48), dont le FP8 ne passe pas la porte de qualité.
+  bool span_fp8 = false;
 };
 
 // Le niveau de chaîne d'un préréglage : Auto prend la tranche de la machine ; Économe, Rapide, Normal,
