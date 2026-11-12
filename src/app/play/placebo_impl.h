@@ -144,10 +144,9 @@ struct PlaceboScreen::Impl {
   ~Impl();
   void open_shader_cache(const std::filesystem::path& file);
   void save_shader_cache();
-  std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
+  std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target);
   // Les hooks de l'image vidéo, dans leur ordre (Anime4K, netteté, grade) ; leur nombre.
-  std::size_t video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image,
-                          bool graded_now) const;
+  std::size_t video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image, bool graded_now);
   // Une passe rendue (rappel de libplacebo) : son temps GPU, compté à l'affichage, au grade ou à Anime4K.
   void note_pass(const pl_dispatch_info& pass) const;
   // Les temps de la dernière composition d'une image vidéo, gardés pour le profil de fin de séance.
