@@ -169,7 +169,13 @@ void PlaceboScreen::Impl::note_pass(const pl_dispatch_info& pass) const {
   display_frame_ns += pass.last;
   const char* what = pass.shader->description;
   if (what == nullptr) return;
-  if (std::string_view(what).find("AnimeJaNai") != std::string_view::npos) grade_frame_ns += pass.last;
+  if (std::string_view(what).find("AnimeJaNai") != std::string_view::npos) {
+    grade_frame_ns += pass.last;
+    auto kept = std::ranges::find(grade_passes, std::string_view(what), &PassTime::what);
+    if (kept == grade_passes.end()) kept = grade_passes.insert(kept, PassTime{.what = what});
+    kept->ns += pass.last;
+    ++kept->count;
+  }
   if (render::is_anime4k_pass(what)) anime4k_frame_ns += pass.last;
 }
 

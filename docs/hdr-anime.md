@@ -97,6 +97,29 @@ Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) res
 | A6 | aucun | Réseau des émetteurs : étiquettes (port numpy de A5), jeu de données, entraînement et export ONNX (`tools/grade/emitters/`) | scripts écrits, entraînement plus tard |
 | A5 | aucun | Mesures d'émetteurs v2, référence CPU (`render/emitters.h`) : pixel, bloc, couronne ; néon admis | codé, juge et étiquettes |
 
+## Les passes et leur coût (12/11)
+
+Le grade tourne sur OUTPUT, à la taille de la fenêtre, pour chaque image affichée : avec RIFE ×2, deux fois par
+source. Relevé sur la RTX 4070 Ti (fenêtre 1280×720, sortie HDR sous KWin, vrai noir, pile de quatre LUT) :
+médiane 1,61 ms, p95 3,96 ms par image affichée. Sur lavapipe en 4K, la passe anime et le look pèsent chacun
+environ 40 % du grade, la fin du grade 12 %, les cartes 1 %. Le journal de fin donne maintenant le temps de chaque
+passe (« profil GPU · grade HDR · <passe> »).
+
+Les passes, dans l'ordre : carte locale 1/8 et zone 1/32 (`anime-hdr-anime/1-local`, `2-area`), passe anime
+(`3-anime`), look (`anime-hdr-look.hook`, passe de calcul en tuiles de 16 × 16), max local 8 × 8, puis une seule
+passe finale pour le vrai noir, la compression vers l'écran et la sortie SDR (`anime-hdr-black.hook`). Ce qui a
+changé, sans rien changer à l'image en sortie HDR (au bit près, à un trentième de code 10 bits près avec le vrai
+noir) :
+
+- vrai noir, compression et sortie SDR : trois passes pleine taille fondues en une ;
+- sortie SDR : la mise en PQ de l'image SDR n'est plus une passe, `1-local` et `3-anime` la font à la lecture
+  (l'image SDR gagne en précision : le tampon FP16 intermédiaire disparaît, écart moyen de 0,3 code 10 bits,
+  plus proche de l'image exacte) ;
+- passe anime : les quatre voisins du trait encré ne sont lus que pour une étincelle possible, la montée des
+  émetteurs n'est calculée que sur un émetteur, la teinte de peau que là où une porte est ouverte ;
+- look : la luminance du voisinage (3 × 3 points tous les 6 pixels) est décodée une fois par tuile en mémoire
+  partagée, au lieu de neuf fois par pixel.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).
