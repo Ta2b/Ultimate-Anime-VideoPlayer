@@ -260,6 +260,100 @@ std::vector<std::byte> value_info(const SplitTensor& tensor) {
   return info;
 }
 
+// Le modèle où le champ graph est remplacé par new_graph, le reste recopié.
+std::expected<std::vector<std::byte>, Refusal> with_graph(Bytes model,
+                                                          const std::vector<std::byte>& new_graph) {
+  std::vector<std::byte> out;
+  out.reserve(model.size() + 128);
+  Fields model_fields(model);
+  RawField field;
+  while (model_fields.next(field)) {
+    if (field.number == kModelGraph && field.delimited) {
+      put_delimited(out, kModelGraph, new_graph);
+    } else {
+      out.insert(out.end(), field.raw.begin(), field.raw.end());
+    }
+  }
+  if (!model_fields.ok()) return malformed("ONNX : protobuf du modèle malformé");
+  return out;
+}
+
+// Ce que la permutation lit d'un TensorProto : dimensions, octets par valeur (FP16, FP32 ; 0 sinon), poids.
+struct DenseTensor {
+  std::vector<std::uint64_t> dims;
+  std::size_t size = 0;
+  std::optional<Bytes> raw;
+};
+
+std::expected<DenseTensor, Refusal> read_dense(Bytes message) {
+  DenseTensor out;
+  Fields fields(message);
+  RawField field;
+  while (fields.next(field)) {
+    if (field.number == kTensorType && !field.delimited) {
+      out.size = field.scalar == kFloat16 ? 2 : field.scalar == kFloat32 ? 4 : 0;
+    } else if (field.number == kTensorRaw && field.delimited) {
+      out.raw = field.payload;
+    } else if (field.number == kTensorDims && field.delimited) {  // dims empaquetées
+      if (!packed_varints(field.payload, out.dims, field.payload.size()))
+        return malformed("ONNX : dimensions du tenseur tronquées");
+    } else if (field.number == kTensorDims) {
+      out.dims.push_back(field.scalar);
+    }
+  }
+  if (!fields.ok()) return malformed("ONNX : tenseur malformé");
+  return out;
+}
+
+bool is_permutation(std::span<const int> source) {
+  std::vector<bool> taken(source.size(), false);
+  for (const int c : source) {
+    if (c < 0 || static_cast<std::size_t>(c) >= source.size() || taken[static_cast<std::size_t>(c)])
+      return false;
+    taken[static_cast<std::size_t>(c)] = true;
+  }
+  return true;
+}
+
+// Le TensorProto message, ses canaux d'entrée (axe 1) permutés (permute_input_channels).
+std::expected<std::vector<std::byte>, Refusal> permuted_tensor(Bytes message, std::span<const int> source) {
+  const auto unsupported = [](std::string detail) {
+    return std::unexpected(
+        Refusal{RefusalCode::FormatUnsupported, "ONNX : permutation : " + std::move(detail)});
+  };
+  auto tensor = read_dense(message);
+  if (!tensor) return std::unexpected(std::move(tensor.error()));
+  const std::vector<std::uint64_t>& dims = tensor->dims;
+  if (tensor->size == 0 || !tensor->raw || dims.size() < 2)
+    return unsupported("poids FP16 ou FP32 en raw_data, deux axes au moins");
+  std::uint64_t inner = 1;
+  for (std::size_t i = 2; i < dims.size(); ++i) inner = times_capped(inner, dims[i]);
+  const std::uint64_t total = times_capped(times_capped(dims[0], dims[1]), inner);
+  if (dims[1] != source.size() || total >= kElementCap || tensor->raw->size() != total * tensor->size)
+    return unsupported("taille des poids ou de la permutation");
+  if (!is_permutation(source)) return unsupported("pas une permutation des canaux");
+  const auto block = static_cast<std::size_t>(inner) * tensor->size;
+  const auto channels = source.size();
+  std::vector<std::byte> moved(tensor->raw->size());
+  for (std::size_t o = 0; o < static_cast<std::size_t>(dims[0]); ++o) {
+    for (std::size_t c = 0; c < channels; ++c) {
+      const std::size_t from = (o * channels + static_cast<std::size_t>(source[c])) * block;
+      std::memcpy(moved.data() + (o * channels + c) * block, tensor->raw->data() + from, block);
+    }
+  }
+  std::vector<std::byte> out;
+  Fields fields(message);
+  RawField field;
+  while (fields.next(field)) {
+    if (field.number == kTensorRaw && field.delimited) {
+      put_delimited(out, kTensorRaw, moved);
+    } else {
+      out.insert(out.end(), field.raw.begin(), field.raw.end());
+    }
+  }
+  return out;
+}
+
 }  // namespace
 
 const OnnxAttribute* OnnxFullNode::attribute(std::string_view attribute_name) const {
@@ -460,18 +554,37 @@ std::expected<std::vector<std::byte>, Refusal> extract_subgraph(std::span<const 
   for (const SplitTensor& tensor : inputs) put_delimited(new_graph, kGraphInput, value_info(tensor));
   for (const SplitTensor& tensor : outputs) put_delimited(new_graph, kGraphOutput, value_info(tensor));
 
-  std::vector<std::byte> out;
-  out.reserve(new_graph.size() + 128);
-  Fields model_fields(model);
-  while (model_fields.next(field)) {
-    if (field.number == kModelGraph && field.delimited) {
-      put_delimited(out, kModelGraph, new_graph);
-    } else {
-      out.insert(out.end(), field.raw.begin(), field.raw.end());
+  return with_graph(model, new_graph);
+}
+
+std::expected<std::vector<std::byte>, Refusal> permute_input_channels(std::span<const std::byte> model,
+                                                                      std::string_view name,
+                                                                      std::span<const int> source) {
+  auto graph = graph_of(model);
+  if (!graph) return std::unexpected(std::move(graph.error()));
+  std::vector<std::byte> new_graph;
+  bool found = false;
+  Fields fields(*graph);
+  RawField field;
+  while (fields.next(field)) {
+    if (field.number == kGraphInitializer && field.delimited) {
+      auto tensor = read_tensor(field.payload);
+      if (!tensor) return std::unexpected(std::move(tensor.error()));
+      if (tensor->name == name) {
+        auto moved = permuted_tensor(field.payload, source);
+        if (!moved) return std::unexpected(std::move(moved.error()));
+        put_delimited(new_graph, kGraphInitializer, *moved);
+        found = true;
+        continue;
+      }
     }
+    new_graph.insert(new_graph.end(), field.raw.begin(), field.raw.end());
   }
-  if (!model_fields.ok()) return malformed("ONNX : protobuf du modèle malformé");
-  return out;
+  if (!fields.ok()) return malformed("ONNX : protobuf du graphe malformé");
+  if (!found)
+    return std::unexpected(
+        Refusal{RefusalCode::FieldMissing, std::format("ONNX : initialiseur « {} » absent", name)});
+  return with_graph(model, new_graph);
 }
 
 }  // namespace ajp::prepare

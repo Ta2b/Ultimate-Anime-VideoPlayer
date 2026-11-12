@@ -196,6 +196,12 @@ TEST_CASE("RIFE fusionné : les noyaux de colle Vulkan suivent la référence CP
   SECTION("4.22 lite, 64x128") {
     compare_kernels(rig, v422, 64, 128, 4);
   }
+  SECTION("4.26 (premier bloc au 1/16), 128x192") {
+    compare_kernels(rig, kernels::RifeFusedPlan{.blocks = 5, .reduce = {16, 8, 4, 2, 1}}, 128, 192, 5);
+  }
+  SECTION("4.25 lite (premier bloc au 1/32), 128x256") {
+    compare_kernels(rig, kernels::RifeFusedPlan{.blocks = 5, .reduce = {32, 16, 8, 4, 1}}, 128, 256, 6);
+  }
 }
 
 TEST_CASE("RIFE fusionné : la clé d'artefact Vulkan se relit", "[vk_backend][rife_fused]") {

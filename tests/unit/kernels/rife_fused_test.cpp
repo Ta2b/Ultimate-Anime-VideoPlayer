@@ -24,8 +24,10 @@ TEST_CASE("Les découpages de RIFE 4.25 et 4.22 lite sont valides, d'autres non"
   CHECK_FALSE(rife_fused_plan_valid({.blocks = 3, .reduce = {8, 4, 2}}));  // le dernier doit valoir 1
   CHECK_FALSE(
       rife_fused_plan_valid({.blocks = 3, .reduce = {1, 2, 1}}));  // le premier : une moyenne 2 × 2 au moins
-  CHECK_FALSE(rife_fused_plan_valid({.blocks = 3, .reduce = {8, 3, 1}}));   // pas une puissance de deux
-  CHECK_FALSE(rife_fused_plan_valid({.blocks = 3, .reduce = {16, 4, 1}}));  // plus de 8
+  CHECK_FALSE(rife_fused_plan_valid({.blocks = 3, .reduce = {8, 3, 1}}));    // pas une puissance de deux
+  CHECK(rife_fused_plan_valid({.blocks = 5, .reduce = {16, 8, 4, 2, 1}}));   // RIFE 4.26
+  CHECK(rife_fused_plan_valid({.blocks = 5, .reduce = {32, 16, 8, 4, 1}}));  // RIFE 4.25 lite
+  CHECK_FALSE(rife_fused_plan_valid({.blocks = 3, .reduce = {64, 4, 1}}));   // plus de 32
   RifeFusedPlan six{.blocks = 6, .reduce = {8, 8, 4, 2, 1}};
   CHECK_FALSE(rife_fused_plan_valid(six));
 }
@@ -39,6 +41,11 @@ TEST_CASE("RIFE fusionné : une taille remplie est prise quand chaque sortie de 
   CHECK_FALSE(rife_fused_size_valid(kV425, 8, 16));  // Y0 = 8 / 16 : pas entier
   CHECK_FALSE(rife_fused_size_valid(kV425, 0, 64));
   CHECK_FALSE(rife_fused_size_valid({}, 64, 64));
+  // 4.25 lite : ses convolutions du premier bloc travaillent au 1/128, d'où son remplissage à 128.
+  constexpr RifeFusedPlan lite{.blocks = 5, .reduce = {32, 16, 8, 4, 1}};
+  CHECK(rife_fused_size_valid(lite, 256, 384));
+  CHECK_FALSE(rife_fused_size_valid(lite, 192, 384));
+  CHECK_FALSE(rife_fused_size_valid({.blocks = 2, .reduce = {8, 1}}, 48, 64));  // 48 / 32 : pas entier
   // Toute taille que RIFE remplit (multiples de 64) convient.
   for (const int size : {64, 128, 192, 576, 720 + 48, 1088}) {
     CHECK(rife_fused_size_valid(kV425, size, 64));

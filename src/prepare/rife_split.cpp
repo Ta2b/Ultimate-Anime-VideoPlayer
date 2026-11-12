@@ -37,6 +37,7 @@ class Index {
     for (const OnnxFullNode& node : graph.nodes) {
       by_name_.emplace(node.name, &node);
       for (const std::string& output : node.outputs) producer_.emplace(output, &node);
+      for (const std::string& input : node.inputs) ++readers_[input];
     }
   }
   // Le nœud de ce nom s'il fait cet opérateur.
@@ -47,6 +48,22 @@ class Index {
   const OnnxFullNode* producer(const std::string& tensor) const {
     const auto found = producer_.find(tensor);
     return found != producer_.end() ? found->second : nullptr;
+  }
+  // Le tenseur d'avant les Cast qui le produisent : tools/rife/convert_rife_fp16.py entoure Resize et
+  // GridSample de Cast FP16 ↔ FP32, que les noyaux n'ont pas à refaire.
+  const std::string& uncast(const std::string& tensor) const {
+    const std::string* at = &tensor;
+    for (const OnnxFullNode* node = producer(*at);
+         node != nullptr && node->op_type == "Cast" && !node->inputs.empty(); node = producer(*at))
+      at = &node->inputs[0];
+    return *at;
+  }
+  // Le producteur du tenseur, Cast passés.
+  const OnnxFullNode* source(const std::string& tensor) const { return producer(uncast(tensor)); }
+  // Nombre de nœuds qui lisent le tenseur.
+  int readers(const std::string& tensor) const {
+    const auto found = readers_.find(tensor);
+    return found != readers_.end() ? found->second : 0;
   }
   // Le tenseur et tout ce dont il dépend, de proche en proche jusqu'aux entrées du graphe.
   std::set<std::string, std::less<>> ancestors(const std::string& tensor) const {
@@ -75,6 +92,7 @@ class Index {
   const OnnxGraph& graph_;
   std::map<std::string, const OnnxFullNode*, std::less<>> by_name_;
   std::map<std::string, const OnnxFullNode*, std::less<>> producer_;
+  std::map<std::string, int, std::less<>> readers_;
 };
 
 bool text_is(const OnnxFullNode& node, std::string_view attribute, std::string_view value) {
@@ -101,9 +119,9 @@ double resize_scale(const Index& index, const OnnxFullNode& node) {
   return scales[2];
 }
 
-// 2, 4 ou 8 pour un facteur 1/d ou d ; 0 sinon.
+// 2, 4, 8, 16 ou 32 pour un facteur 1/d ou d ; 0 sinon.
 int power_of_two_factor(double value) {
-  for (const int d : {2, 4, 8}) {
+  for (const int d : {2, 4, 8, 16, 32}) {
     if (std::abs(value - d) < 1e-6 || std::abs(value * d - 1.0) < 1e-6) return d;
   }
   return 0;
@@ -164,12 +182,13 @@ std::string glue_problem(const Index& index, const OnnxGraph& graph, const RifeS
   for (int b = 1; b < blocks; ++b) {
     const OnnxFullNode& concat = *glue.concat[static_cast<std::size_t>(b)];
     const std::string& warped = warp[static_cast<std::size_t>(b - 1)]->outputs[0];
-    // Images et encodages warpés par le flot du bloc précédent.
-    for (const std::size_t i : {std::size_t{0}, std::size_t{1}}) {
+    // Images et encodages warpés par le flot du bloc précédent (un seul tenseur pour les deux dans 4.25
+    // lite).
+    for (std::size_t i = 0; i < (split.interleaved ? 1U : 2U); ++i) {
       if (!index.ancestors(concat.inputs[i]).contains(warped))
         return std::format("Concat du bloc {} : l'entrée {} n'est pas warpée par le bloc {}", b, i, b - 1);
     }
-    if (accumulated_flows(index, glue, concat.inputs[5]) != b)
+    if (accumulated_flows(index, glue, concat.inputs.back()) != b)
       return std::format("Concat du bloc {} : le flot n'est pas la somme des flots des blocs 0 à {}", b,
                          b - 1);
   }
@@ -214,6 +233,48 @@ std::expected<OperatorCounts, Refusal> count_operators(const Index& index, const
     }
   }
   return counts;
+}
+
+// La sortie d'un bloc coupée en flot (4), masque (1) et attributs (8) ; ou, hors du dernier bloc, en flot et
+// masque avec attributs (9) (4.25 lite).
+bool known_sizes(const Index& index, const OnnxFullNode* sizes, bool last_block) {
+  if (sizes == nullptr || sizes->inputs.size() != 2) return false;
+  const std::vector<double>& cut = index.constant(sizes->inputs[1]);
+  return (sizes->outputs.size() == 3 && same(cut, {4, 1, 8})) ||
+         (!last_block && sizes->outputs.size() == 2 && same(cut, {4, 9}));
+}
+
+enum class GlueKind : std::uint8_t { Unknown, Split, Interleaved };
+
+// Le Concat d'entrée du bloc b ≥ 1. Disposition des noyaux : images warpées, encodages warpés, instant,
+// masque, attributs, flot (6 entrées). 4.25 lite : un seul tenseur pour les deux images warpées et leurs
+// encodages (Reshape du GridSample), l'instant, masque et attributs ensemble, le flot (4 entrées).
+GlueKind glue_kind(const Index& index, const OnnxFullNode& concat, int b, const std::string& block_input) {
+  const OnnxFullNode* previous = index.named(block_name(b - 1, "Split"), "Split");
+  if (previous == nullptr) return GlueKind::Unknown;
+  const std::vector<std::string>& in = concat.inputs;
+  if (in.size() == 6 && previous->outputs.size() == 3 && in[2] == "/Split_output_1" &&
+      in[3] == block_name(b - 1, "Split_output_1") && in[4] == block_name(b - 1, "Split_output_2"))
+    return GlueKind::Split;
+  if (in.size() != 4 || previous->outputs.size() != 2 || in[1] != "/Split_output_1" ||
+      in[2] != block_name(b - 1, "Split_output_1"))
+    return GlueKind::Unknown;
+  const OnnxFullNode* warped = index.source(in[0]);
+  const OnnxFullNode* grid = warped != nullptr && warped->op_type == "Reshape" && !warped->inputs.empty()
+                                 ? index.source(warped->inputs[0])
+                                 : nullptr;
+  // X_k ne va qu'à la convolution dont les poids seront permutés.
+  return grid != nullptr && grid->op_type == "GridSample" && index.readers(block_input) == 1
+             ? GlueKind::Interleaved
+             : GlueKind::Unknown;
+}
+
+// Le flot accumulé arrive au bloc multiplié par 1/d, ou tel quel pour d = 1.
+bool known_flow(const Index& index, const OnnxFullNode* flow, int d) {
+  if (flow == nullptr) return false;
+  if (d == 1) return flow->op_type != "Mul";
+  return flow->op_type == "Mul" && flow->inputs.size() == 2 &&
+         same(index.constant(flow->inputs[1]), {1.0 / static_cast<double>(d)});
 }
 
 }  // namespace
@@ -275,23 +336,24 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
     const OnnxFullNode* shuffle =
         index.named(block_name(b, "lastconv/lastconv.1/DepthToSpace"), "DepthToSpace");
     const OnnxFullNode* sizes = index.named(block_name(b, "Split"), "Split");
-    if (last == nullptr || first == nullptr || shuffle == nullptr || sizes == nullptr ||
-        last->outputs.size() != 1 || first->inputs.empty() || shuffle->inputs.empty() ||
-        shuffle->inputs[0] != last->outputs[0] || shuffle->outputs.size() != 1 || sizes->inputs.size() != 2 ||
-        !same(index.constant(sizes->inputs[1]), {4, 1, 8}))
+    if (last == nullptr || first == nullptr || shuffle == nullptr ||
+        !known_sizes(index, sizes, b + 1 == blocks) || last->outputs.size() != 1 ||
+        first->inputs.size() < 2 || shuffle->inputs.empty() || shuffle->inputs[0] != last->outputs[0] ||
+        shuffle->outputs.size() != 1)
       return unknown(std::format("bloc {}", b));
     split.block_input[i] = first->inputs[0];
     split.block_output[i] = last->outputs[0];
+    split.block_weight[i] = first->inputs[1];
 
     // Réduction d'entrée : un Resize d'échelle 1/d juste avant la première convolution, ou rien (d = 1).
     int d = 1;
-    const OnnxFullNode* source = index.producer(first->inputs[0]);
+    const OnnxFullNode* source = index.source(first->inputs[0]);
     if (source == nullptr) return unknown(std::format("bloc {} : entrée sans producteur", b));
     if (source->op_type == "Resize") {
       d = power_of_two_factor(1.0 / resize_scale(index, *source));
       if (d == 0 || source->name != block_name(b, "Resize"))
         return unknown(std::format("bloc {} : Resize d'entrée", b));
-      source = index.producer(source->inputs[0]);
+      source = index.source(source->inputs[0]);
     }
     split.plan.reduce[i] = d;
 
@@ -299,12 +361,12 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
     const OnnxFullNode* grown = index.named(block_name(b, "Resize_1"), "Resize");
     glue.flow[i] = block_name(b, "Split_output_0");  // d = 1 : le flot sort tel quel du Split
     if (d == 1) {
-      if (grown != nullptr || sizes->inputs[0] != shuffle->outputs[0])
+      if (grown != nullptr || index.uncast(sizes->inputs[0]) != shuffle->outputs[0])
         return unknown(std::format("bloc {} : sortie", b));
     } else {
-      if (grown == nullptr || grown->inputs[0] != shuffle->outputs[0] || grown->outputs.size() != 1 ||
-          sizes->inputs[0] != grown->outputs[0] || power_of_two_factor(resize_scale(index, *grown)) != d ||
-          resize_scale(index, *grown) < 1.0)
+      if (grown == nullptr || index.uncast(grown->inputs[0]) != shuffle->outputs[0] ||
+          grown->outputs.size() != 1 || index.uncast(sizes->inputs[0]) != grown->outputs[0] ||
+          power_of_two_factor(resize_scale(index, *grown)) != d || resize_scale(index, *grown) < 1.0)
         return unknown(std::format("bloc {} : Resize de sortie", b));
       // Le flot du bloc est multiplié par d.
       const OnnxFullNode* scale = index.named(block_name(b, "Mul"), "Mul");
@@ -325,21 +387,13 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
           source->inputs[2] != "/Split_output_1")
         return unknown("Concat du bloc 0");
     } else {
-      const int previous = b - 1;
-      if (source->inputs.size() != 6 || source->inputs[2] != "/Split_output_1" ||
-          source->inputs[3] != block_name(previous, "Split_output_1") ||
-          source->inputs[4] != block_name(previous, "Split_output_2"))
+      const GlueKind kind = glue_kind(index, *source, b, first->inputs[0]);
+      const bool interleaved = kind == GlueKind::Interleaved;
+      if (kind == GlueKind::Unknown || (b > 1 && interleaved != split.interleaved))
         return unknown(std::format("Concat du bloc {}", b));
-      // Le flot accumulé arrive multiplié par 1/d (ou tel quel pour d = 1).
-      const OnnxFullNode* flow = index.producer(source->inputs[5]);
-      if (flow == nullptr) return unknown(std::format("bloc {} : flot", b));
-      if (d > 1) {
-        if (flow->op_type != "Mul" || flow->inputs.size() != 2 ||
-            !same(index.constant(flow->inputs[1]), {1.0 / static_cast<double>(d)}))
-          return unknown(std::format("bloc {} : Mul 1/d du flot", b));
-      } else if (flow->op_type == "Mul") {
-        return unknown(std::format("bloc {} : Mul du flot à d = 1", b));
-      }
+      split.interleaved = interleaved;
+      if (!known_flow(index, index.source(source->inputs.back()), d))
+        return unknown(std::format("bloc {} : flot multiplié par 1/d", b));
     }
   }
   if (!kernels::rife_fused_plan_valid(split.plan)) return unknown("plan des réductions");
@@ -387,6 +441,15 @@ std::expected<std::vector<RifePiece>, Refusal> split_rife(std::span<const std::b
     const SplitTensor out{.name = split.block_output[i], .elem_type = split.elem_type};
     auto cut = extract_subgraph(model, std::span(&in, 1), std::span(&out, 1), rife_piece_name(b + 1));
     if (!cut) return std::unexpected(std::move(cut.error()));
+    if (split.interleaved && b > 0) {
+      // Le morceau lit la disposition des noyaux : sa première convolution prend chaque canal où les noyaux
+      // l'écrivent.
+      std::array<int, kernels::kFusedNextChannels> source{};
+      for (int c = 0; c < kernels::kFusedNextChannels; ++c)
+        source[static_cast<std::size_t>(c)] = interleaved_channel(c);
+      cut = permute_input_channels(*cut, split.block_weight[i], source);
+      if (!cut) return std::unexpected(std::move(cut.error()));
+    }
     pieces.push_back({.name = rife_piece_name(b + 1), .model = std::move(*cut)});
   }
   return pieces;

@@ -69,4 +69,12 @@ std::expected<std::vector<std::byte>, Refusal> extract_subgraph(std::span<const 
                                                                 std::span<const SplitTensor> outputs,
                                                                 std::string_view graph_name);
 
+// Le modèle où l'initialiseur name (C_out × C_in × …, FP16 ou FP32 en raw_data) a ses canaux d'entrée
+// permutés : le canal c de la sortie reprend le canal source[c]. Le reste est recopié octet pour octet.
+// Refus : ModelUnreadable, FieldMissing (initialiseur absent), FormatUnsupported (autre type, autre
+// rangement, permutation qui ne couvre pas C_in).
+std::expected<std::vector<std::byte>, Refusal> permute_input_channels(std::span<const std::byte> model,
+                                                                      std::string_view name,
+                                                                      std::span<const int> source);
+
 }  // namespace ajp::prepare

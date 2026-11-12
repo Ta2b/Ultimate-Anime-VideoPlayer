@@ -95,6 +95,15 @@ Bytes tensor(std::string_view name, std::int32_t type, std::int64_t n, const Byt
   delimited(t, 9, raw);
   return t;
 }
+// TensorProto à plusieurs axes, FP32 en raw_data.
+Bytes tensor_dims(std::string_view name, const std::vector<std::int64_t>& dims, const Bytes& raw) {
+  Bytes t;
+  for (const std::int64_t d : dims) integer(t, 1, static_cast<std::uint64_t>(d));
+  integer(t, 2, 1);
+  delimited(t, 8, text(name));
+  delimited(t, 9, raw);
+  return t;
+}
 Bytes floats(std::initializer_list<float> values) {
   Bytes raw(values.size() * 4);
   std::size_t i = 0;
@@ -129,14 +138,16 @@ Bytes value_info(std::string_view name, std::int32_t type, std::vector<std::int6
   return info;
 }
 
-// Les puissances de deux de 1/8 à 8 en binary16, deux octets little-endian.
+// Les puissances de deux de 1/64 à 64 en binary16, deux octets little-endian.
 Bytes half(double v) {
   struct Entry {
     double value;
     std::uint16_t bits;
   };
-  static constexpr Entry table[]{{8.0, 0x4800}, {4.0, 0x4400},  {2.0, 0x4000},  {1.0, 0x3C00},
-                                 {0.5, 0x3800}, {0.25, 0x3400}, {0.125, 0x3000}};
+  static constexpr Entry table[]{{64.0, 0x5400},    {32.0, 0x5000},  {16.0, 0x4C00},   {8.0, 0x4800},
+                                 {4.0, 0x4400},     {2.0, 0x4000},   {1.0, 0x3C00},    {0.5, 0x3800},
+                                 {0.25, 0x3400},    {0.125, 0x3000}, {0.0625, 0x2C00}, {0.03125, 0x2800},
+                                 {0.015625, 0x2400}};
   for (const Entry& e : table) {
     if (e.value == v) return {static_cast<std::byte>(e.bits & 0xFFU), static_cast<std::byte>(e.bits >> 8U)};
   }
@@ -157,6 +168,8 @@ struct Fake {
   bool flow_not_accumulated = false;  // le flot d'un bloc ignore celui des blocs précédents
   bool blend_without_mask = false;    // la sortie ne passe pas par le masque
   bool grid_ignores_flow = false;     // la grille d'un GridSample ne dépend d'aucun flot
+  bool casts = false;                 // Cast FP16 ↔ FP32 autour des Resize (tools/rife/convert_rife_fp16.py)
+  bool interleaved = false;           // la colle de 4.25 lite : Split 4, 9 et Concat de 4 entrées
 };
 
 Bytes fake_rife(const Fake& f) {
@@ -188,6 +201,14 @@ Bytes fake_rife(const Fake& f) {
        int64s(f.wrong_split_sizes ? std::initializer_list<std::int64_t>{4, 2, 7}
                                   : std::initializer_list<std::int64_t>{4, 1, 8}),
        3);
+  init("onnx::Split_c", 7, int64s({4, 9}), 2);
+  inits.push_back(tensor_dims("w28", {1, 28, 1, 1}, Bytes(28 * 4)));
+  // Le tenseur passé par un Cast quand f.casts : son nom après le Cast.
+  const auto cast = [&](const std::string& in, std::string_view tail) {
+    if (!f.casts) return in;
+    add(node(in + "/" + std::string(tail), "Cast", {in}, {in + "/" + std::string(tail)}));
+    return in + "/" + std::string(tail);
+  };
   // Ce que les GridSample warpent : l'image et l'encodage, tous deux issus de l'entrée.
   add(node("/Concat_src", "Concat", {"/Split_output_0", "/Reshape_1_output_0"}, {"/src"}));
   std::string accumulated;  // le flot accumulé après le bloc précédent
@@ -209,15 +230,27 @@ Bytes fake_rife(const Fake& f) {
         add(node(std::format("/Mul_{}", b), "Mul", {accumulated, scale}, {flow}));
       }
       // Les images et les encodages warpés par le GridSample du bloc précédent.
-      const std::string warped = std::format("/GridSample_{}_output_0", b - 1);
-      add(node(std::format("/Reshape_a_{}", b), "Reshape", {warped, "w"},
-               {std::format("/Reshape_a_{}_output_0", b)}));
-      add(node(std::format("/Reshape_b_{}", b), "Reshape",
-               {f.unwarped_encodings ? "/Reshape_1_output_0" : warped, "w"},
-               {std::format("/Reshape_b_{}_output_0", b)}));
-      add(node(std::format("/Concat_{}", b + 1), "Concat",
-               {std::format("/Reshape_a_{}_output_0", b), std::format("/Reshape_b_{}_output_0", b),
-                "/Split_output_1", previous + "Split_output_1", previous + "Split_output_2", flow},
+      const std::string warped = cast(std::format("/GridSample_{}_output_0", b - 1), "cast16");
+      std::vector<std::string> concat;
+      if (f.interleaved) {  // 4.25 lite : un seul tenseur, image puis encodage de chaque image
+        add(node(std::format("/Reshape_w{}", b), "Reshape", {warped, "w"},
+                 {std::format("/Reshape_w{}_output_0", b)}));
+        concat = {std::format("/Reshape_w{}_output_0", b), "/Split_output_1", previous + "Split_output_1",
+                  flow};
+      } else {
+        add(node(std::format("/Reshape_a_{}", b), "Reshape", {warped, "w"},
+                 {std::format("/Reshape_a_{}_output_0", b)}));
+        add(node(std::format("/Reshape_b_{}", b), "Reshape",
+                 {f.unwarped_encodings ? "/Reshape_1_output_0" : warped, "w"},
+                 {std::format("/Reshape_b_{}_output_0", b)}));
+        concat = {std::format("/Reshape_a_{}_output_0", b),
+                  std::format("/Reshape_b_{}_output_0", b),
+                  "/Split_output_1",
+                  previous + "Split_output_1",
+                  previous + "Split_output_2",
+                  flow};
+      }
+      add(node(std::format("/Concat_{}", b + 1), "Concat", concat,
                {std::format("/Concat_{}_output_0", b + 1)}));
       entry = std::format("/Concat_{}_output_0", b + 1);
     }
@@ -227,11 +260,12 @@ Bytes fake_rife(const Fake& f) {
       if (b == 1 && f.resize_in_scale_override != 0.0) scale = f.resize_in_scale_override;
       constant(p + "Constant_output_0", 1,
                floats({1.0F, 1.0F, static_cast<float>(scale), static_cast<float>(scale)}), 4);
-      add(node(p + "Resize", "Resize", {entry, "", p + "Constant_output_0"}, {p + "Resize_output_0"},
-               linear));
-      conv_in = p + "Resize_output_0";
+      add(node(p + "Resize", "Resize", {cast(entry, "cast32"), "", p + "Constant_output_0"},
+               {p + "Resize_output_0"}, linear));
+      conv_in = cast(p + "Resize_output_0", "cast16");
     }
-    add(node(p + "conv0/conv0.0/conv0.0.0/Conv", "Conv", {conv_in, "w", "w"}, {p + "conv_out"}));
+    add(node(p + "conv0/conv0.0/conv0.0.0/Conv", "Conv", {conv_in, f.interleaved ? "w28" : "w", "w"},
+             {p + "conv_out"}));
     add(node(p + "lastconv/lastconv.0/ConvTranspose", "ConvTranspose", {p + "conv_out", "w"},
              {p + "lastconv/lastconv.0/ConvTranspose_output_0"}));
     add(node(p + "lastconv/lastconv.1/DepthToSpace", "DepthToSpace",
@@ -242,12 +276,17 @@ Bytes fake_rife(const Fake& f) {
     if (d > 1) {
       constant(p + "Constant_1_output_0", 1,
                floats({1.0F, 1.0F, static_cast<float>(d), static_cast<float>(d)}), 4);
-      add(node(p + "Resize_1", "Resize", {split_in, "", p + "Constant_1_output_0"}, {p + "Resize_1_output_0"},
-               linear));
-      split_in = p + "Resize_1_output_0";
+      add(node(p + "Resize_1", "Resize", {cast(split_in, "cast32"), "", p + "Constant_1_output_0"},
+               {p + "Resize_1_output_0"}, linear));
+      split_in = cast(p + "Resize_1_output_0", "cast16");
     }
-    add(node(p + "Split", "Split", {split_in, "onnx::Split_b"},
-             {p + "Split_output_0", p + "Split_output_1", p + "Split_output_2"}));
+    if (f.interleaved && b + 1 < blocks) {
+      add(node(p + "Split", "Split", {split_in, "onnx::Split_c"},
+               {p + "Split_output_0", p + "Split_output_1"}));
+    } else {
+      add(node(p + "Split", "Split", {split_in, "onnx::Split_b"},
+               {p + "Split_output_0", p + "Split_output_1", p + "Split_output_2"}));
+    }
     std::string delta = p + "Split_output_0";  // le flot que ce bloc ajoute (fd_b)
     if (d > 1) {
       constant(p + "Constant_2_output_0", 10, half(d), 1);
@@ -494,6 +533,37 @@ TEST_CASE("Les constantes d'un tenseur se lisent aussi dans int64_data, int32_da
   CHECK(refused.error().code == RefusalCode::ModelUnreadable);
 }
 
+// 4.26 (1/16) et 4.25 lite (1/32, colle entrelacée), convertis par tools/rife/convert_rife_fp16.py (Cast
+// autour des Resize).
+TEST_CASE("Les variantes de RIFE 4.26 et 4.25 lite se reconnaissent", "[prepare][onnx][rife_fused]") {
+  Fake v426;
+  v426.reduce = {16, 8, 4, 2, 1};
+  v426.casts = true;
+  const auto split = analyze_rife(fake_rife(v426));
+  REQUIRE(split);
+  CHECK(split->plan == kernels::RifeFusedPlan{.blocks = 5, .reduce = {16, 8, 4, 2, 1}});
+  CHECK_FALSE(split->interleaved);
+  CHECK(split->block_input[0] == "/block0/Resize_output_0/cast16");
+
+  Fake lite;
+  lite.reduce = {32, 16, 8, 4, 1};
+  lite.casts = true;
+  lite.interleaved = true;
+  const Bytes model = fake_rife(lite);
+  const auto cut = analyze_rife(model);
+  REQUIRE(cut);
+  CHECK(cut->plan == kernels::RifeFusedPlan{.blocks = 5, .reduce = {32, 16, 8, 4, 1}});
+  CHECK(cut->interleaved);
+  CHECK(cut->block_weight[1] == "w28");
+  CHECK(split_rife(model, *cut, 128, 256).has_value());
+  CHECK(split_rife(model, *cut, 64, 256).error().code == RefusalCode::ShapeInvalid);  // 1/128 : pas entier
+
+  // Au-delà du 1/32, les noyaux ne suivent plus.
+  Fake too_deep = lite;
+  too_deep.reduce = {64, 16, 8, 4, 1};
+  CHECK_FALSE(analyze_rife(fake_rife(too_deep)).has_value());
+}
+
 TEST_CASE("Le manifeste d'un RIFE fusionné s'écrit, se relit et refuse l'inattendu",
           "[prepare][rife_fused]") {
   RifeFusedManifest manifest{
@@ -631,7 +701,8 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
 }
 
 // Les vrais modèles du lecteur, quand ils sont sur la machine (AJP_RIFE_MODEL_DIR) : RIFE 4.25 coupé en 5
-// blocs réduits 8, 8, 4, 2, 1 et 4.22 lite en 4 blocs réduits 8, 4, 2, 1.
+// blocs réduits 8, 8, 4, 2, 1, 4.22 lite en 4 blocs réduits 8, 4, 2, 1 ; et les candidats s'ils y sont
+// (tools/rife/candidats.sh) : 4.26 réduit 16, 8, 4, 2, 1, 4.25 lite 32, 16, 8, 4, 1 à colle entrelacée.
 TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][rife_fused]") {
   const std::filesystem::path dir = AJP_RIFE_MODEL_DIR;
   struct Known {
@@ -639,7 +710,9 @@ TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][r
     std::vector<int> reduce;
   };
   const std::vector<Known> known{{"rife_v4.25.onnx", {8, 8, 4, 2, 1}},
-                                 {"rife_v4.22_lite.onnx", {8, 4, 2, 1}}};
+                                 {"rife_v4.22_lite.onnx", {8, 4, 2, 1}},
+                                 {"rife_v4.26.onnx", {16, 8, 4, 2, 1}},
+                                 {"rife_v4.25_lite.onnx", {32, 16, 8, 4, 1}}};
   bool any = false;
   for (const Known& each : known) {
     const std::filesystem::path path = dir / each.file;
@@ -652,7 +725,8 @@ TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][r
     REQUIRE(split);
     REQUIRE(split->plan.blocks == static_cast<int>(each.reduce.size()));
     for (std::size_t i = 0; i < each.reduce.size(); ++i) CHECK(split->plan.reduce[i] == each.reduce[i]);
-    const auto pieces = split_rife(*bytes, *split, 192, 320);
+    CHECK(split->interleaved == each.file.starts_with("rife_v4.25_lite"));
+    const auto pieces = split_rife(*bytes, *split, 256, 384);  // multiples de 128 : 4.25 lite
     REQUIRE(pieces);
     CHECK(pieces->size() == each.reduce.size() + 1);
     std::size_t nodes = 0;

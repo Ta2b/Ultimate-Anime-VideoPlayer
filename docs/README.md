@@ -20,6 +20,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
+| [`rife-candidats.md`](rife-candidats.md) | RIFE 4.25 lite et 4.26 face aux livrés : mesures sur processeur, protocole ABAB sur la RTX |
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |
 | [`anime4k.md`](anime4k.md) | Anime4K, l'agrandissement en shaders des petites cartes ; le banc des petites cartes |
 | [`banc-qualite.md`](banc-qualite.md) | Banc de qualité des réseaux contre leur référence FP32 et la vraie image, sans carte graphique |

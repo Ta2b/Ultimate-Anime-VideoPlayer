@@ -13,7 +13,8 @@ import time
 
 import numpy as np
 
-ALIGN = 64  # kRifeAlign ; 128 pour un export de DistilDRBA à l'échelle 0,5 (« _s05 »)
+ALIGN = 64  # kRifeAlign ; 128 pour un export de DistilDRBA à l'échelle 0,5 (« _s05 ») et pour RIFE 4.25 lite
+# (kRifeAlignLite, rife_padding_multiple : son premier bloc travaille au 1/32, ses convolutions au 1/128)
 
 
 def _session(model, provider):
@@ -77,7 +78,7 @@ class Network:
         else:
             raise SystemExit(f"{path} : ni SPAN (3 plans), ni RIFE (7 ou 11), ni DistilDRBA (deux entrées de 7)")
         self.planes = planes
-        self.align = 128 if "_s05" in self.name else ALIGN
+        self.align = 128 if "_s05" in self.name or self.name.startswith("rife_v4.25_lite") else ALIGN
         self.seconds, self.runs = 0.0, 0
 
     def _run(self, feeds):
