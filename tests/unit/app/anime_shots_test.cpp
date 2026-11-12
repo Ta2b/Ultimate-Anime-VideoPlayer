@@ -115,6 +115,43 @@ TEST_CASE("anime par plan : en HDR, la luminosité ne suit ni le plan ni la scè
   CHECK(bright.sdr_anime->tm_top < still.sdr_anime->tm_top);
 }
 
+// C41-10 : la sortie SDR de l'anime n'a pas la pile de LUT (étalonnée pour des codes PQ), la sortie PQ si ;
+// une source HDR n'est pas gradée.
+TEST_CASE("anime : la sortie SDR coupe la pile de LUT, la sortie PQ la garde", "[app][anime]") {
+  PlaySettings s;
+  s.hdr_native = true;
+  const render::GradeChoice choice = grade_of(s, 1000);
+  REQUIRE(choice.pq.has_value());
+  REQUIRE(choice.sdr_anime.has_value());
+  bool any_look = false;
+  for (const double mix : choice.pq->look_mixes) any_look = any_look || mix > 0.0;
+  CHECK(any_look);  // la pile par défaut
+  for (const double mix : choice.sdr_anime->look_mixes) CHECK(mix == 0.0);
+  CHECK(choice.sdr_anime->look_pq == 0.0);
+  CHECK(choice.sdr_anime->sdr_tm == 1.0);
+  CHECK(choice.pq->sdr_tm == 0.0);
+  const render::GradeChoice hdr_source = grade_of(s, 1000, {}, {}, true);
+  CHECK_FALSE(hdr_source.pq.has_value());
+  CHECK_FALSE(hdr_source.sdr_anime.has_value());
+}
+
+TEST_CASE("flashs dangereux : le grade PQ plafonné à 250 nits, l'annonce garde le pic", "[app][anime]") {
+  PlaySettings s;
+  s.hdr_native = true;
+  render::GradeChoice choice = grade_of(s, 1000);
+  REQUIRE(choice.pq.has_value());
+  const render::GradeParams sdr = *choice.sdr_anime;
+  cap_flash_peak(choice);
+  CHECK(choice.pq->peak == 250.0);
+  CHECK(choice.pq->uncapped_peak == 1000.0);
+  CHECK(*choice.sdr_anime == sdr);
+  render::GradeChoice low = grade_of(s, 200);
+  REQUIRE(low.pq.has_value());
+  cap_flash_peak(low);
+  CHECK(low.pq->peak == 200.0);
+  CHECK(low.pq->uncapped_peak == 0.0);
+}
+
 TEST_CASE("anime : le peps en % devient contraste, saturation et part des éclats du grade", "[app][anime]") {
   render::GradeSettings s;
   const auto plain = render::decide_grade(s, pq_context());

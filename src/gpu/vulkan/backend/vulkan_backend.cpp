@@ -309,7 +309,12 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   // Un artefact déjà construit et toujours valable pour cet appareil et ces shaders sert tel quel.
   // Rien ne s'abaisse ici : load le fait, une fois, pour ranger les poids.
   if (auto bytes = net::read_file(artifact.path)) {
-    if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) return artifact;
+    if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) {
+      artifact.reduced = data->notice;  // dit à chaque lancement, pas seulement à la construction (C45-01)
+      const std::scoped_lock lock(checked_mutex_);
+      checked_ = Checked{.path = artifact.path, .data = std::move(*data)};  // pour load() (C45-07)
+      return artifact;
+    }
   }
   const auto started = std::chrono::steady_clock::now();  // A45-12 : la durée se lit au journal
   std::optional<net::Autotuner> tuner;
@@ -322,10 +327,13 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (!data) return std::unexpected(data.error());
   if (tuner) {
     for (const std::string& line : tuner->decisions()) log(BackendLogLevel::Debug, model.id + " : " + line);
-    if (auto ok = gate(model, *data, tuner ? &*tuner : nullptr); !ok) return std::unexpected(ok.error());
+    if (auto ok = gate(model, *data, tuner ? &*tuner : nullptr, &progress); !ok)
+      return std::unexpected(ok.error());
   }
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
+  artifact.reduced = data->notice;
+  if (progress.report) progress.report(1.0F, "terminé");
   log(BackendLogLevel::Info,
       std::format("{} construit en {:.1f} s : {} nœuds, {} dispatchs{}", model.id,
                   std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
@@ -339,7 +347,8 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
 }
 
 std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data,
-                                                 const net::Autotuner* tuner) {
+                                                 const net::Autotuner* tuner, const Progress* progress) {
+  data.notice = {};
   // Les noyaux de référence partout, quand les choix de l'autotuner ne peuvent pas être vérifiés.
   const auto to_reference = [&](std::string_view why) -> std::expected<void, Refusal> {
     auto reference = net::reference_choices(data.graph, profile_.target);
@@ -352,7 +361,17 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
     data.shaders = net::shader_hashes(data.dispatches);
     return {};
   };
-  auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target);
+  const net::GateWatch watch{.stop = progress != nullptr ? progress->stop : std::stop_token{},
+                             .report = progress != nullptr ? progress->report : nullptr,
+                             .from = 0.95F,
+                             .to = 1.0F};
+  auto gated =
+      net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target, watch);
+  // Un arrêt traverse la porte (C45-02), de même qu'un réseau que ses valeurs non finies empêchent de juger
+  // (C45-04) : ni l'un ni l'autre ne se règle par les noyaux de référence.
+  if (!gated &&
+      (gated.error().code == RefusalCode::Cancelled || gated.error().code == RefusalCode::GraphInvalid))
+    return std::unexpected(gated.error());
   if (!gated) return to_reference(std::format("porte de bout en bout non jouée ({})", gated.error().detail));
   if (!gated->unjudged.empty()) {
     log(BackendLogLevel::Warn,
@@ -369,11 +388,12 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
                   model.id, gated->db, gated->floor_db)
             : std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
     // Une perte de qualité consentie à la vitesse se dit, chiffrée avec son gain (B45-01).
-    if (const std::string notice = net::reduced_precision_notice(
-            model.id, data.choices, *gated,
-            tuner ? std::span(tuner->reduced()) : std::span<const net::ReducedChoice>());
+    const auto measured = tuner ? std::span(tuner->reduced()) : std::span<const net::ReducedChoice>();
+    if (const std::string notice = net::reduced_precision_notice(model.id, data.choices, *gated, measured);
         !notice.empty())
       log(BackendLogLevel::Warn, notice);
+    // Et à l'écran : l'artefact le garde pour les lancements suivants (C45-01).
+    data.notice = net::precision_notice(data.choices, *gated, measured);
     return {};
   }
   auto program = net::lower(data.graph, gated->choices, profile_.target);
@@ -390,11 +410,24 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
   if (runtime_) return load_runtime(artifact);
   if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
-  auto bytes = net::read_file(artifact.path);
-  if (!bytes) return std::unexpected(bytes.error());
-  auto data = net::deserialize(*bytes);
-  if (!data) return std::unexpected(data.error());
-  if (auto ok = net::check_artifact(*data, profile_); !ok) return std::unexpected(ok.error());
+  // Celui que build() vient de vérifier, s'il est de ce chemin : ni relu, ni désérialisé, ni revérifié
+  // (C45-07).
+  std::optional<Checked> taken;
+  {
+    const std::scoped_lock lock(checked_mutex_);
+    if (checked_ && checked_->path == artifact.path) taken = std::move(checked_);
+    checked_.reset();
+  }
+  std::expected<net::ArtifactData, Refusal> data = std::unexpected(Refusal{RefusalCode::CacheIo, "artefact"});
+  if (taken) {
+    data = std::move(taken->data);
+  } else {
+    auto bytes = net::read_file(artifact.path);
+    if (!bytes) return std::unexpected(bytes.error());
+    data = net::deserialize(*bytes);
+    if (!data) return std::unexpected(data.error());
+    if (auto ok = net::check_artifact(*data, profile_); !ok) return std::unexpected(ok.error());
+  }
   auto program = net::lower(data->graph, data->choices, profile_.target);
   if (!program) return std::unexpected(program.error());
   // Mêmes graphe, choix, appareil et shaders, mais un abaissement qui a changé sans changer de

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "core/types.h"
+#include "gpu/backend.h"
 #include "gpu/ir/ir.h"
 #include "gpu/vulkan/backend/net_program.h"
 
@@ -23,8 +24,9 @@ namespace ajp::gpu::vk::net {
 // 2 : GridSampleAttrs::grid_nchw ; 3 : Dispatch::subgroup ; 4 : Epilogue::gate et space ;
 // 5 : ConvAttrs::in_quant et out_quant (FP8 E4M3) ; 6 : porte de bout en bout à 1 % (P2.45), les artefacts
 // passés à 10 % se reconstruisent ; 7 : porte à 0,5 dB (B45-01), les artefacts passés à 3 dB de perte se
-// reconstruisent
-inline constexpr std::uint32_t kArtifactVersion = 7;
+// reconstruisent ; 8 : l'avis de précision réduite (ArtifactData::notice, C45-01), les artefacts d'avant se
+// reconstruisent pour le recevoir
+inline constexpr std::uint32_t kArtifactVersion = 8;
 
 struct ShaderHash {
   std::string shader;
@@ -42,6 +44,7 @@ struct ArtifactData {
   std::vector<KernelChoice> choices;  // un par nœud
   std::vector<Dispatch> dispatches;   // le programme sans ses blobs
   std::vector<ShaderHash> shaders;
+  PrecisionNotice notice;  // la précision réduite gardée, montrée à l'écran à chaque lancement (C45-01)
 };
 
 std::uint64_t fnv1a(std::span<const std::byte> bytes, std::uint64_t hash = 0xCBF29CE484222325ULL);

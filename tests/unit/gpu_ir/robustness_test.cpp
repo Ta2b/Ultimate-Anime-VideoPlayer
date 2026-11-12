@@ -263,3 +263,70 @@ TEST_CASE("robustesse : lecture d'un modèle sur disque", "[gpu_ir][robust]") {
   CHECK(missing.error().code == RefusalCode::OnnxMalformed);
   CHECK_FALSE(load_onnx_file(dir).has_value());  // un dossier n'est pas un modèle
 }
+
+// C44-03 : un TensorProto.dims démesuré est refusé avant d'être lu en entier.
+TEST_CASE("onnx : dims de tenseur au-delà du plafond refusées d'emblée", "[gpu_ir][robust]") {
+  ProtoWriter t;
+  t.bytes(1, std::string((std::size_t{1} << 24U) + 1U, '\x01')).varint(2, onnx::kFloat).bytes(8, "w");
+  ModelBuilder m;
+  m.input("x", {1, 1}).initializer(t).node("Relu", {"x"}, {"y"}).output("y");
+  const ajp::Refusal r = refusal(m);
+  CHECK(r.code == RefusalCode::OnnxMalformed);
+  CHECK(r.detail.find("trop de valeurs dans dims") != std::string::npos);
+}
+
+TEST_CASE("onnx : dims de tenseur non empaquetées au-delà du rang maximal refusées", "[gpu_ir][robust]") {
+  ProtoWriter t;
+  for (std::size_t k = 0; k <= kMaxRank; ++k) t.varint(1, 1);
+  t.varint(2, onnx::kFloat).bytes(8, "w");
+  ModelBuilder m;
+  m.input("x", {1, 1}).initializer(t).node("Relu", {"x"}, {"y"}).output("y");
+  const ajp::Refusal r = refusal(m);
+  CHECK(r.code == RefusalCode::OnnxMalformed);
+  CHECK(r.detail.find("trop de valeurs dans dims") != std::string::npos);
+}
+
+// C44-04 : les tenseurs d'un attribut ne s'accumulent pas sans plafond.
+TEST_CASE("onnx : tenseurs d'attribut non lus, pas accumulés", "[gpu_ir][robust]") {
+  ProtoWriter empty;
+  empty.varint(1, 0).varint(2, onnx::kFloat);
+  ProtoWriter attr;
+  attr.bytes(1, "ts").varint(20, 9);
+  for (int k = 0; k < 1000; ++k) attr.message(10, empty);
+  ProtoWriter node;
+  node.bytes(1, "x").bytes(2, "y").bytes(4, "Relu").message(5, attr);
+  ModelBuilder m;
+  m.input("x", {1, 1});
+  m.graph().message(1, node);
+  m.output("y");
+  auto model = onnx::read_onnx(m.bytes());
+  REQUIRE(model);
+  CHECK(model->graph.nodes[0].attributes[0].tensors.empty());
+}
+
+// C44-05 : exclude_outside = 1 n'est pas ignoré en silence.
+TEST_CASE("robustesse : Resize avec exclude_outside refusé", "[gpu_ir][robust]") {
+  const auto resize = [](std::int64_t exclude) {
+    ModelBuilder m(18);
+    m.input("x", {1, 1, 4, 4})
+        .weight("scales", {4}, {1, 1, 2, 2})
+        .initializer(tensor_f32("roi", {0}, {}))
+        .node("Resize", {"x", "roi", "scales"}, {"y"},
+              {attr_string("mode", "linear"), attr_int("exclude_outside", exclude)})
+        .output("y");
+    return m;
+  };
+  CHECK(refusal(resize(1)).code == RefusalCode::OnnxUnsupported);
+  CHECK_NOTHROW(build(resize(0)));
+}
+
+// C44-06 : un OpKind hors de la table n'est pas pris pour un Identity.
+TEST_CASE("ops : un OpKind hors de la table est refusé", "[gpu_ir][robust]") {
+  Graph g = relu_graph();
+  g.nodes[0].op = static_cast<OpKind>(250);
+  const ajp::Refusal r = [&] {
+    auto ok = infer_shapes(g, {});
+    return ok ? ajp::Refusal{} : ok.error();
+  }();
+  CHECK(r.code == RefusalCode::GraphInvalid);
+}

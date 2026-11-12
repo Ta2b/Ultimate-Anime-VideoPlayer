@@ -25,6 +25,10 @@ inline constexpr std::int64_t kResumeTailUs = 150'000'000;
 // Pendant la lecture, la position est retenue à ce rythme (et à la fermeture).
 inline constexpr std::int64_t kResumeEveryUs = 15'000'000;
 
+// Deux chemins désignent-ils la même vidéo ? Chemins absolus sans . ni .., comparés comme les positions
+// retenues (casse ignorée sous Windows). Un chemin qui ne se résout pas ne vaut jamais le même.
+bool same_video_file(const std::filesystem::path& a, const std::filesystem::path& b);
+
 // La position à reprendre pour ce fichier, ou rien.
 std::optional<std::int64_t> resume_position(const std::filesystem::path& store,
                                             const std::filesystem::path& file);

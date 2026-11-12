@@ -304,7 +304,7 @@ TEST_CASE("chaîne HDR : sans pile, la dernière passe ne compresse plus l'image
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  REQUIRE(gpu.grade->set_looks({}));
+  REQUIRE(gpu.grade->set_looks(std::array<const CubeLut*, kLookSlots>{}));
   gpu.grade->set_kwin_match(Grade::KwinMatch{.reference = 203.0, .peak = 1000.0});
   GradeParams params = player_params(1000.0);
   params.look_mixes.fill(0.0);
@@ -321,7 +321,7 @@ TEST_CASE("sortie SDR de l'anime : le vrai noir OLED s'applique (A41-07)", "[ren
   Gpu gpu;
   require_device(gpu);
   REQUIRE(gpu.grade);
-  REQUIRE(gpu.grade->set_looks({}));
+  REQUIRE(gpu.grade->set_looks(std::array<const CubeLut*, kLookSlots>{}));
   GradeParams params = player_params(1000.0);
   sdr_tonemap(params);
   params.sdr_gamma = 2.2;
@@ -382,42 +382,51 @@ TEST_CASE("look : le shader parcourt la pile LUT par LUT, sans table composée (
   const Pile pile;
   REQUIRE(gpu.grade->set_looks(pile.luts));
   const CubeLut table = compose_luts(pile.luts, pile.mixes);  // ce que le hook lisait avant
-  // Sortie SDR neutre, pile lue comme une LUT SDR (look_pq à 0) : toutes les couleurs y passent.
-  GradeParams params = sdr_neutral();
+  // Le look seul sur une image PQ de couleurs SDR, pile lue comme une LUT SDR (look_pq à 0) : toutes les
+  // couleurs y passent.
+  GradeParams params = look_neutral();
   params.look_mixes = pile.mixes;
   for (const auto& [green, blue] : {std::pair{0.8, 0.6}, std::pair{0.35, 0.9}, std::pair{1.0, 1.0}}) {
-    const std::vector<std::uint16_t> source = sdr_ramp(1.0, green, blue);
-    const std::vector<Rgb> out = graded_codes(gpu, source, params);
+    const std::vector<std::uint16_t> source = pq_of_sdr_ramp(1.0, green, blue);
+    const std::vector<Rgb> out = graded_codes(gpu, source, params, true);
     const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
     double from_chain = 0.0;  // écart moyen du rendu à la pile parcourue, puis à l'ancienne table
     double from_table = 0.0;
     for (std::size_t x = 8; x < out.size(); ++x) {
-      // Le chemin d'une LUT SDR dans le hook : l'image en linéaire (blanc de la LUT à 1, ce qui dépasse mis
-      // de côté), encodée au gamma 2,4, passée par la pile, puis ramenée au code de la sortie.
-      std::array<double, 3> lin{};
-      for (std::size_t c = 0; c < 3; ++c)
-        lin[c] =
-            std::pow(source[(row + x) * 4 + c] / 65535.0, params.sdr_gamma) * params.peak / params.look_white;
+      // Le chemin d'une LUT SDR dans le hook : l'image en nits BT.709 linéaire (blanc de la LUT à 1, ce qui
+      // dépasse mis de côté), encodée au gamma 2,4, passée par la pile, puis ramenée en PQ BT.2020.
+      std::array<double, 3> n2020{};
+      for (std::size_t c = 0; c < 3; ++c) n2020[c] = pq_to_nits(source[(row + x) * 4 + c] / 65535.0);
+      const std::array<double, 3> lin{
+          ((1.6604910 * n2020[0]) - (0.5876411 * n2020[1]) - (0.0728499 * n2020[2])) / params.look_white,
+          ((-0.1245505 * n2020[0]) + (1.1328999 * n2020[1]) - (0.0083494 * n2020[2])) / params.look_white,
+          ((-0.0181508 * n2020[0]) - (0.1005789 * n2020[1]) + (1.1187297 * n2020[2])) / params.look_white};
       const double over = std::max({lin[0], lin[1], lin[2], 1.0});
       std::array<float, 3> in{};
-      for (std::size_t c = 0; c < 3; ++c) in[c] = static_cast<float>(std::pow(lin[c] / over, 1.0 / 2.4));
-      const auto code = [&](float looked) {
-        const double back =
-            std::pow(static_cast<double>(looked), 2.4) * over * params.look_white / params.peak;
-        return std::pow(std::clamp(back, 0.0, 1.0), 1.0 / params.sdr_gamma);
+      for (std::size_t c = 0; c < 3; ++c)
+        in[c] = static_cast<float>(std::pow(std::max(lin[c], 0.0) / over, 1.0 / 2.4));
+      const auto codes = [&](const std::array<float, 3>& looked) {
+        std::array<double, 3> n709{};
+        for (std::size_t c = 0; c < 3; ++c)
+          n709[c] = std::pow(std::max(static_cast<double>(looked[c]), 0.0), 2.4) * over * params.look_white;
+        return std::array<double, 3>{
+            nits_to_pq((0.6274040 * n709[0]) + (0.3292820 * n709[1]) + (0.0433136 * n709[2])),
+            nits_to_pq((0.0690970 * n709[0]) + (0.9195400 * n709[1]) + (0.0113612 * n709[2])),
+            nits_to_pq((0.0163916 * n709[0]) + (0.0880132 * n709[1]) + (0.8955950 * n709[2]))};
       };
-      const std::array<float, 3> exact = sample_chain(pile.chain(), in);
-      const std::array<float, 3> approx = sample_lut(table, in);
+      const std::array<double, 3> exact = codes(sample_chain(pile.chain(), in));
+      const std::array<double, 3> approx = codes(sample_lut(table, in));
       for (std::size_t c = 0; c < 3; ++c) {
-        from_chain += std::abs(out[x][c] - code(exact[c]));
-        from_table += std::abs(out[x][c] - code(approx[c]));
+        from_chain += std::abs(out[x][c] - exact[c]);
+        from_table += std::abs(out[x][c] - approx[c]);
       }
     }
     const double count = 3.0 * static_cast<double>(out.size() - 8);
     INFO("vert " << green << ", bleu " << blue << " : écart moyen à la pile " << from_chain / count
                  << ", à la table de 65 points " << from_table / count);
-    // Deux codes sur 1 023 : onze lectures trilinéaires du GPU, en demi-flottants.
-    CHECK(from_chain / count < 2e-3);
+    // Quatre codes sur 1 023 en moyenne : onze lectures trilinéaires du GPU, aux poids de 8 bits, sur une
+    // pile d'essai qui replie les clairs vers le noir (pente jusqu'à 10 en codes PQ, là où l'écart se fait).
+    CHECK(from_chain / count < 4e-3);
     CHECK(from_chain < from_table);
   }
   // Une intensité change sans relire le hook : le //!PARAM suit, l'image aussi.

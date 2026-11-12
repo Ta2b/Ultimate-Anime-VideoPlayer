@@ -36,6 +36,10 @@ inline constexpr int kLumaBins = 64;
 inline constexpr int kLinearBins = 128;
 inline constexpr int kZones = 4;
 inline constexpr std::size_t kZoneCells = static_cast<std::size_t>(kZones) * kZones;
+// Seuil des bandes noires, jugé image par image. Limite connue (C50-09), seuil non mesuré sur des plans de
+// nuit : un côté sombre sans être noir (luma sous ce seuil sur toute une colonne ou une ligne) est pris pour
+// une bande et sort de l'analyse. Le régler ou lire les bandes depuis la pré-analyse du plan demande la
+// mesure décrite dans la PR E07 (section des essais sur carte), pas un chiffre posé à l'aveugle.
 inline constexpr float kBarLuma = 0.03F;
 inline constexpr float kSdrWhiteNits = 203.0F;  // blanc papier SDR (BT.2408)
 inline constexpr float kHlgPeakNits = 1000.0F;

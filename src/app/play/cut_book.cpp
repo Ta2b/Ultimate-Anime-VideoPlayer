@@ -1,6 +1,8 @@
 #include "app/play/cut_book.h"
 
 #include <algorithm>
+#include <memory>
+#include <utility>
 
 namespace ajp::app::play {
 namespace {
@@ -29,18 +31,23 @@ std::optional<bool> known_cut(std::span<const media::Shot> shots, std::int64_t a
 }
 
 void CutBook::set_shots(std::span<const media::Shot> shots) {
+  set_shots(std::make_shared<const std::vector<media::Shot>>(shots.begin(), shots.end()));
+}
+
+void CutBook::set_shots(std::shared_ptr<const std::vector<media::Shot>> shots) {
   const std::scoped_lock lock(mutex_);
-  shots_.assign(shots.begin(), shots.end());
+  shots_ = std::move(shots);
 }
 
 std::optional<bool> CutBook::cut_between(std::int64_t a_us, std::int64_t b_us) const {
   const std::scoped_lock lock(mutex_);
-  return known_cut(shots_, a_us, b_us);
+  if (!shots_) return std::nullopt;
+  return known_cut(*shots_, a_us, b_us);
 }
 
 bool CutBook::active() const {
   const std::scoped_lock lock(mutex_);
-  return !shots_.empty();
+  return shots_ && !shots_->empty();
 }
 
 }  // namespace ajp::app::play

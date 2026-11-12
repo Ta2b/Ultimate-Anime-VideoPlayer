@@ -84,7 +84,14 @@ case "$tag" in
     fi
     clobber=() ;;
 esac
-gh release upload "$tag" -R "$repo" "${clobber[@]}" "$archive" "$out"
+if [ ${#clobber[@]} -eq 0 ]; then
+  # trt-* : l'archive d'abord, le lock en dernier. Le lock (absent, vérifié plus haut) est ce qui dit « publié » :
+  # un envoi interrompu laisse une archive orpheline, que la reprise remplace, jamais un lock sans archive (C51-11).
+  gh release upload "$tag" -R "$repo" --clobber "$archive"
+  gh release upload "$tag" -R "$repo" "$out"
+else
+  gh release upload "$tag" -R "$repo" "${clobber[@]}" "$archive" "$out"
+fi
 case "$tag" in
   trt-*) echo "Joint à $repo $tag : release fixe, lue par Release Linux pour toutes les étiquettes (pas d'étiquette à pousser)." ;;
   *)     echo "Joint à $repo $tag. Pousser maintenant l'étiquette (ou relancer Release si elle existe : le lecteur ne croit engines-nvidia.lock que signé) : git tag $tag && git push origin $tag" ;;
