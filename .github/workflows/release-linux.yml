@@ -9,8 +9,9 @@ name: Release Linux
 # Rien ne s'empaquette sans les règles (rules.yml) ni, pour une étiquette, sans la garde (release-guard.yml : commit
 # et version de l'étiquette, ci.yml vert). Le paquet TensorRT Linux vit dans la release « trt-<empreinte de ses
 # entrées> » : trt-package.yml le construit et le publie s'il manque, avant le paquet du lecteur (A28-01). Une
-# release finale sans TensorRT Linux échoue ; une préversion n'a qu'un avertissement. Les tests sans GPU tournent sur
-# le build même du paquet, et les tests de découpe sur les modèles qu'il livre (A28-07). Versions, paquets et dépôt
+# release finale sans TensorRT Linux échoue ; une préversion n'a qu'un avertissement. Les tests tournent sur le build
+# même du paquet, rendu compris (Vulkan logiciel sous Xvfb), et les tests de découpe sur les modèles qu'il livre
+# (A28-07). ci.yml n'a plus de tâche « version livrée » : c'était la même configuration, testée ici. Versions, paquets et dépôt
 # des releases : tools/release/versions.env.
 on:
   push:
@@ -93,7 +94,7 @@ jobs:
         run: |
           source tools/release/versions.env
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE $APT_TESTS
           pip install --user "meson==$MESON_VERSION"
           echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
       # L'index du paquet TensorRT, pris AVANT toute construction : le jeton n'est jamais dans l'environnement d'un
@@ -141,12 +142,16 @@ jobs:
       - name: Empreinte de l'archive
         id: sums
         run: echo "archive=$(sha256sum "$RUNNER_TEMP/package/ajp-linux-x64.tar.gz" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
-      # Les tests sans GPU du build même du paquet (préréglage de test linux-release) : un échec arrête tout
-      # avant l'artefact et la release, préversions comprises.
-      - name: Tests sans GPU
+      # Les tests du build même du paquet (préréglage de test linux-release), rendu compris sous Vulkan logiciel et
+      # Xvfb (B28-13 : contraction en FMA, assert à effet de bord, comportement indéfini révélé par LTO) : un échec
+      # arrête tout avant l'artefact et la release, préversions comprises. Couche de validation coupée ; un test sauté
+      # ne passe pas pour réussi (plafond « linux-release » de skip-ceiling.txt).
+      - name: Tests (Vulkan logiciel sous Xvfb)
         env:
           AJP_TEST_VULKAN_VALIDATION: "off"
-        run: ctest --preset linux-release
+        run: xvfb-run -a ctest --preset linux-release -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
+      - name: Tests sautés
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" linux-release
       # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.26, 4.25, 4.22 lite, 4.25 lite, DistilDRBA et
       # son demi-flot) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
       # (A28-07). Un saut compte comme un échec.
