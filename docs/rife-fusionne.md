@@ -1,6 +1,7 @@
 # RIFE fusionné (six moteurs TensorRT et noyaux CUDA)
 
-Sous TensorRT, RIFE 4.25 et 4.22 lite peuvent tourner coupés en six petits moteurs (l'encodeur et les blocs, des
+Sous TensorRT, RIFE 4.25 et 4.22 lite (et les candidats 4.26 et 4.25 lite, [`rife-candidats.md`](rife-candidats.md))
+peuvent tourner coupés en six petits moteurs (l'encodeur et les blocs, des
 convolutions à basse résolution) reliés par des noyaux CUDA maison pour tout ce qui travaille en pleine résolution
 (DepthToSpace, Resize, flot, grille, GridSample, Concat, mélange à masque). Par défaut quand la découpe est valide ;
 le RIFE entier reprend sinon. Réglage : Réglages avancés > Fluidité > « RIFE fusionné » (`interpolation.rife_fused`
@@ -13,7 +14,12 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
 
 - `prepare/rife_split.h` reconnaît la structure du graphe (noms des tenseurs aux frontières, opérateurs, échelles des
   Resize, constantes des Mul et des Split, attributs de Resize, GridSample, DepthToSpace) et refuse tout le reste.
-  Bloc k : entrée X_k réduite de d_k (8, 8, 4, 2, 1 pour 4.25 ; 8, 4, 2, 1 pour 4.22 lite), sortie Y_k à 52 canaux.
+  Bloc k : entrée X_k réduite de d_k (8, 8, 4, 2, 1 pour 4.25 ; 16, 8, 4, 2, 1 pour 4.26 ; 32, 16, 8, 4, 1 pour
+  4.25 lite ; 8, 4, 2, 1 pour 4.22 lite), sortie Y_k à 52 canaux. Les Cast que `tools/rife/convert_rife_fp16.py` pose
+  autour des Resize et des GridSample ne comptent pas (les noyaux refont ces opérations). 4.25 lite range autrement
+  les 14 premiers canaux de X_k (image puis encodage de chaque image, d'un seul GridSample) : la découpe permute
+  alors les poids de la première convolution de chaque morceau de bloc sur leur axe d'entrée, et les noyaux gardent
+  leur disposition. Taille prise : multiple de 4 d_k (les convolutions du bloc travaillent au 1/(4 d_k)).
 - `derive_rife_fused` écrit dans le dossier `modeles` du lecteur six ONNX à forme fixe (par taille remplie) et un
   manifeste `.rifefused`, sous des noms qui portent la version de la dérivation, la taille et l'empreinte du modèle.
 - Le backend construit les six moteurs (trtexec, cache et timing cache habituels) et charge un `RifeFusedEngine`

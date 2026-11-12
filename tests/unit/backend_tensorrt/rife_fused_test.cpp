@@ -451,6 +451,12 @@ TEST_CASE("RIFE fusionné : les noyaux CUDA suivent la référence CPU en double
   SECTION("4.22 lite, 64x128") {
     compare_kernels(v422, 64, 128, 4);
   }
+  SECTION("4.26 (premier bloc au 1/16), 128x192") {
+    compare_kernels(kernels::RifeFusedPlan{.blocks = 5, .reduce = {16, 8, 4, 2, 1}}, 128, 192, 5);
+  }
+  SECTION("4.25 lite (premier bloc au 1/32), 128x256") {
+    compare_kernels(kernels::RifeFusedPlan{.blocks = 5, .reduce = {32, 16, 8, 4, 1}}, 128, 256, 6);
+  }
 }
 
 }  // namespace ajp::test

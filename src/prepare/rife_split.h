@@ -4,7 +4,14 @@
 // noyaux CUDA. La découpe ne s'applique qu'à un graphe dont toute la structure est reconnue : noms des
 // tenseurs aux frontières, opérateurs, échelles des Resize, constantes des Mul et des Split, attributs de
 // Resize et de GridSample. Sinon un refus dit ce qui manque et la lecture garde le RIFE entier.
-// Aujourd'hui : RIFE 4.25 (5 blocs) et 4.22 lite (4 blocs), exports de vs-mlrt à 11 plans, FP16.
+// Aujourd'hui : RIFE 4.25, 4.26 et 4.25 lite (5 blocs) et 4.22 lite (4 blocs), exports de vs-mlrt à 11 plans,
+// FP16, convertis par animejanai-inference ou par tools/rife/convert_rife_fp16.py (dont les Cast autour des
+// Resize et des GridSample ne comptent pas : les noyaux refont ces opérations).
+//
+// 4.25 lite range autrement les 14 premiers canaux de X_k (k ≥ 1) : image puis encodage de A, image puis
+// encodage de B (le warp des deux images est fait d'un seul GridSample, sans Split derrière). Les noyaux
+// écrivent toujours la disposition de kernels/spec/rife_fused.h : le morceau du bloc reçoit donc les poids de
+// sa première convolution permutés sur leur axe d'entrée (interleaved, permute_input_channels).
 #pragma once
 
 #include <array>
@@ -28,8 +35,17 @@ struct RifeSplit {
   std::string encode_output;                                       // 2 × 4 × H × W : leurs encodages
   std::array<std::string, kernels::kFusedMaxBlocks> block_input;   // X_k
   std::array<std::string, kernels::kFusedMaxBlocks> block_output;  // Y_k
+  std::array<std::string, kernels::kFusedMaxBlocks> block_weight;  // poids de la première convolution
   std::int32_t elem_type = 10;                                     // type ONNX des frontières : FLOAT16
+  bool interleaved = false;  // X_k, k ≥ 1 : A image, A encodage, B image, B encodage (4.25 lite)
 };
+
+// Le canal de X_k (k ≥ 1) d'une disposition entrelacée qui porte le canal c de la disposition des noyaux.
+constexpr int interleaved_channel(int c) {
+  if (c >= 3 && c < 6) return c + 4;   // image de B
+  if (c >= 6 && c < 10) return c - 3;  // encodage de A
+  return c;
+}
 
 // Reconnaît le graphe. Refus : ModelUnreadable, InputMismatch (entrée qui n'est pas 1 × 11 × H × W en
 // FP16), FormatUnsupported (poids externes, graphes imbriqués), FieldMissing (structure inconnue).

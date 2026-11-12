@@ -4,12 +4,14 @@
 // donne la forme du découpage et la disposition des tenseurs intermédiaires ; les noyaux et leur référence
 // CPU (kernels/ref/rife_fused.h) la lisent.
 //
-// Le bloc k du réseau (RIFE 4.22 lite : 4 blocs, 4.25 : 5) reçoit l'entrée X_k à la résolution 1/d_k de
-// l'image remplie (Resize d'entrée d'échelle 1/d_k) et sort Y_k, 52 canaux à la moitié de cette résolution
-// (avant le DepthToSpace) ; la sortie du DepthToSpace, Z_k (13 canaux : flot 4, masque 1, attributs 8),
-// retrouve la pleine résolution par un Resize de facteur d_k (aucun pour le dernier bloc, d = 1).
-// Réduction d'entrée et agrandissement de sortie d'un bloc sont donc le même d_k (8, 8, 4, 2, 1 pour 4.25 ;
-// 8, 4, 2, 1 pour 4.22 lite).
+// Le bloc k du réseau (RIFE 4.22 lite : 4 blocs ; 4.25, 4.26 et 4.25 lite : 5) reçoit l'entrée X_k à la
+// résolution 1/d_k de l'image remplie (Resize d'entrée d'échelle 1/d_k) et sort Y_k, 52 canaux à la moitié de
+// cette résolution (avant le DepthToSpace) ; la sortie du DepthToSpace, Z_k (13 canaux : flot 4, masque 1,
+// attributs 8), retrouve la pleine résolution par un Resize de facteur d_k (aucun pour le dernier bloc, d =
+// 1). Réduction d'entrée et agrandissement de sortie d'un bloc sont donc le même d_k (8, 8, 4, 2, 1 pour 4.25
+// ; 16, 8, 4, 2, 1 pour 4.26 ; 32, 16, 8, 4, 1 pour 4.25 lite ; 8, 4, 2, 1 pour 4.22 lite). Entre les deux,
+// les convolutions du bloc travaillent au 1/(4 d_k) : deux convolutions de pas 2, puis une transposée qui
+// remonte au 1/(2 d_k).
 //
 // Disposition des 28 canaux de X_k, k ≥ 1 (celle du graphe ONNX) :
 //   0-2 image A warpée, 3-5 image B warpée, 6-9 encodage de A warpé, 10-13 encodage de B warpé, 14 instant,
@@ -41,23 +43,27 @@ struct RifeFusedPlan {
   friend bool operator==(const RifeFusedPlan&, const RifeFusedPlan&) = default;
 };
 
-// Un découpage que les noyaux savent faire : 2 à 5 blocs, réduction 8, 4, 2 ou 1 (puissances de deux), la
-// première au moins 2 (X_0 est une moyenne 2 × 2), la dernière 1 (Z en pleine résolution).
+// La plus forte réduction d'entrée d'un bloc : le premier bloc de RIFE 4.25 lite travaille au 1/32.
+inline constexpr int kFusedMaxReduce = 32;
+
+// Un découpage que les noyaux savent faire : 2 à 5 blocs, réduction 32, 16, 8, 4, 2 ou 1 (puissances de
+// deux), la première au moins 2 (X_0 est une moyenne 2 × 2), la dernière 1 (Z en pleine résolution).
 constexpr bool rife_fused_plan_valid(const RifeFusedPlan& plan) {
   if (plan.blocks < 2 || plan.blocks > kFusedMaxBlocks) return false;
   for (int k = 0; k < plan.blocks; ++k) {
     const int d = plan.reduce[static_cast<std::size_t>(k)];
-    if (d != 1 && d != 2 && d != 4 && d != 8) return false;
+    if (d < 1 || d > kFusedMaxReduce || (d & (d - 1)) != 0) return false;
   }
   return plan.reduce[0] >= 2 && plan.reduce[static_cast<std::size_t>(plan.blocks - 1)] == 1;
 }
 
-// Une taille remplie que le découpage prend : chaque Y_k est entier (hauteur et largeur multiples de 2 d_k),
-// et la plus petite entrée a au moins deux lignes et deux colonnes.
+// Une taille remplie que le découpage prend : les convolutions de chaque bloc tombent juste (hauteur et
+// largeur multiples de 4 d_k), donc chaque Y_k est entier. Avec le remplissage de RIFE (64, ou 128 pour
+// 4.25 lite), toute taille convient.
 constexpr bool rife_fused_size_valid(const RifeFusedPlan& plan, int height, int width) {
   if (!rife_fused_plan_valid(plan) || height <= 0 || width <= 0) return false;
   for (int k = 0; k < plan.blocks; ++k) {
-    const int d = 2 * plan.reduce[static_cast<std::size_t>(k)];
+    const int d = 4 * plan.reduce[static_cast<std::size_t>(k)];
     if (height % d != 0 || width % d != 0) return false;
   }
   return true;

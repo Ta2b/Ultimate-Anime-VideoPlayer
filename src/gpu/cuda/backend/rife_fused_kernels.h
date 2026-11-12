@@ -20,7 +20,7 @@ struct FusedFlowSource {
   const void* y = nullptr;  // FP16
   int height = 0;           // yh
   int width = 0;            // yw
-  int scale = 1;            // facteur du Resize de sortie du bloc (8, 4, 2 ou 1)
+  int scale = 1;            // facteur du Resize de sortie du bloc (32 à 1, puissance de deux)
 };
 
 // L'entrée X_0 (15 canaux) : moyenne 2 × 2 de l'image A, de l'image B, de leurs encodages et de l'instant.

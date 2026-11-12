@@ -2,7 +2,8 @@
 """Tests des outils de mesure et de modèles (audit D12), sans GPU ni modèle livré : python3 -I tools/common/test_outils.py
 
 Couvre les correctifs B46 : lecteur PPM et PQ communs, seuil sombre en nits du comptage de paliers, verdict de la
-porte de l'anneau, clé de cache d'abab_trt.sh, contrôles de quantize_span.py, bruit de banc_resume.py."""
+porte de l'anneau, clé de cache d'abab_trt.sh, contrôles de quantize_span.py, bruit de banc_resume.py ; et le
+résumé du profil GPU d'un banc A/B (banc_gpu_resume.py)."""
 import importlib.util
 import os
 import shutil
@@ -192,6 +193,24 @@ class BancResume(unittest.TestCase):
         self.assertEqual(resume.verdict(calme, [11.0, 15.0, 7.0, 13.0, 9.0]), "bruit")
         self.assertTrue(resume.verdict([10.0, 10.1, 10.0], [12.0, 12.1, 12.0]).startswith("à confirmer"))
         self.assertEqual(resume.verdict(calme, [12.0, 12.1, 12.0, 11.9, 12.0]), "gain acquis")
+
+
+class BancGpuResume(unittest.TestCase):
+    def test_etapes_rangees_par_famille_et_ecart_des_medianes(self):
+        resume = load("banc_gpu_resume", "bench/banc_gpu_resume.py")
+        header = "etape\tmesures\ttotal_ms\tmediane_ms\tp95_ms\n"
+        with tempfile.TemporaryDirectory() as d:
+            for name, rife, ms in [("extrait1-tour1-A-1.gpu.tsv", "rife_v4.22_lite", 1.0),
+                                   ("extrait1-tour1-B-2.gpu.tsv", "rife_v4.25_lite", 1.5),
+                                   ("extrait1-tour2-A-3.gpu.tsv", "rife_v4.22_lite", 1.2),
+                                   ("extrait1-tour2-B-4.gpu.tsv", "rife_v4.25_lite", 1.3),
+                                   ("prechauffage-1-A.gpu.tsv", "rife_v4.22_lite", 9.0)]:
+                Path(d, name).write_text(header + f"RIFE · {rife}\t10\t10\t{ms}\t2\n", encoding="utf-8")
+            text = resume.report(resume.collect(d))
+        self.assertIn("RIFE (RIFE · rife_v4.22_lite / RIFE · rife_v4.25_lite)", text)
+        self.assertIn("médiane 1.10 ms", text)  # A : 1,0 et 1,2 ; le préchauffage ne compte pas
+        self.assertIn("médiane 1.40 ms", text)
+        self.assertIn("+27.3 %", text)
 
 
 if __name__ == "__main__":
