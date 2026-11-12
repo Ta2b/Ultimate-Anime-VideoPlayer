@@ -97,6 +97,7 @@ bool HostUploads::reusable(const Source& source, const Layout& layout) const {
 }
 
 std::expected<HostUploads::Planes, Refusal> HostUploads::reuse(cudaStream_t consumer) {
+  if (!last_) return refuse(RefusalCode::VendorCallFailed, "envoi repris sans envoi précédent");
   Last& last = *last_;
   Slot& slot = *last.slot;
   // L'envoi d'abord ; puis, sur une autre file, la lecture précédente : l'événement de lecture que

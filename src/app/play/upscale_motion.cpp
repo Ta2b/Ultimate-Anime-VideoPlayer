@@ -163,7 +163,6 @@ std::expected<void, Refusal> UpscaleStage::interpolate_direct(float t, const gpu
   return blend(a, b, run->motion, 0.5F, out);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 // Le mouvement maximal du milieu relu par l'hôte (ticket 0 : mesuré sur-le-champ), son attente au profil de
 // fin (« attente du mouvement ») : la relecture suit RIFE et flow_max sur la voie d'interpolation, la plus
 // basse (diagnostic async, piste 5).
@@ -177,6 +176,7 @@ std::expected<float, Refusal> UpscaleStage::read_motion(std::uint64_t ticket, co
   return biggest;
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
                                                                  const gpu::Tensor& b, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
