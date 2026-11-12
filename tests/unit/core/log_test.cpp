@@ -176,6 +176,33 @@ TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-0
   fs::remove_all(dir.parent_path());
 }
 
+TEST_CASE("Journal : les séances d'avant tournent avec leurs parts (C18-10)", "[log]") {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "ajp-log-rotate-test";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const auto put = [&](const char* name, const char* text) { std::ofstream(dir / name) << text; };
+  const auto read = [&](const char* name) {
+    std::ifstream in(dir / name, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  };
+  put("ajp.log", "séance 3");
+  put("ajp.1.log", "séance 3, part 1");
+  put("ajp.log.1", "séance 2");
+  put("ajp.1.log.1", "séance 1, part 1");  // plus ancienne que ajp.log.1 : la séance 2 n'avait qu'une part
+  put("ajp.log.2", "séance 1");
+  put("ajp.log.3", "séance 0");
+  ajp::rotate_session_logs(dir / "ajp.log", 3, 2);
+  CHECK_FALSE(fs::exists(dir / "ajp.log"));
+  CHECK(read("ajp.log.1") == "séance 3");
+  CHECK(read("ajp.1.log.1") == "séance 3, part 1");
+  CHECK(read("ajp.log.2") == "séance 2");
+  CHECK(read("ajp.1.log.2") == "séance 1, part 1");
+  CHECK(read("ajp.log.3") == "séance 1");  // la séance 0, au-delà des trois gardées, est partie
+  CHECK_FALSE(fs::exists(dir / "ajp.log.4"));
+  fs::remove_all(dir);
+}
+
 TEST_CASE("Journal : une exception sortie du corps est journalisée et vaut 1", "[log]") {
   Capture capture;
   ajp::install_log_sinks({capture.sink()}, spdlog::level::info);

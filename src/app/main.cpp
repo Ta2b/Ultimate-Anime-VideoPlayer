@@ -13,10 +13,13 @@ extern "C" {
 #include <libavutil/log.h>
 }
 
+#include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <tuple>
 #ifdef _WIN32
+#include <io.h>
 #include <process.h>
 #else
 #include <spawn.h>
@@ -33,6 +36,7 @@ extern char** environ;  // NOLINT : posix_spawn le prend tel quel
 #include <format>
 #include <fstream>
 #include <memory>
+#include <span>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -46,6 +50,7 @@ extern char** environ;  // NOLINT : posix_spawn le prend tel quel
 #include "app/play/default_player.h"
 #include "app/play/i18n.h"
 #include "app/play/latest_writer.h"
+#include "app/play/launch_data.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
 #include "app/play/paths.h"
@@ -61,6 +66,7 @@ extern char** environ;  // NOLINT : posix_spawn le prend tel quel
 #include "core/log.h"
 #include "core/log_file.h"
 #include "core/log_redact.h"
+#include "core/thread.h"
 #include "core/thread_role.h"
 #include "core/utf8_path.h"
 #include "media/ffmpeg_log.h"
@@ -134,27 +140,6 @@ bool& log_open() {
   return open;
 }
 
-// Les trois journaux d'avant restent (ajp.log.1 le plus récent) : après un gel ou un arrêt brutal, la relance
-// n'efface plus celui qui en garde la trace. Les parts d'une séance trop longue (ajp.1.log, ajp.2.log)
-// tournent avec leur journal (A33-06) : ajp.1.log.1 est de la même séance que ajp.log.1.
-void rotate_logs(const std::filesystem::path& log_file) {
-  std::error_code kept;
-  for (const std::string_view part : {"", ".1", ".2"}) {
-    std::filesystem::path base = log_file;
-    if (!part.empty()) base.replace_filename(std::format("ajp{}.log", part));
-    for (int i = kKeptLogs - 1; i >= 0; --i) {
-      std::filesystem::path from = base;
-      if (i > 0) from += std::format(".{}", i);
-      std::filesystem::path to = base;
-      to += std::format(".{}", i + 1);
-      if (std::filesystem::exists(from, kept)) {
-        std::filesystem::rename(from, to, kept);
-      } else if (i == 0) {
-        std::filesystem::remove(to, kept);  // ajp.1.log.1 d'une séance plus ancienne que ajp.log.1
-      }
-    }
-  }
-}
 
 int fail(const ajp::Refusal& refusal) {
   if (log_open()) {
@@ -173,6 +158,26 @@ int fail_shown(const ajp::Refusal& refusal, const ajp::app::play::PlayOptions& o
   const int code = fail(refusal);
   if (!options.keys.empty() || options.snapshot || options.bench_out || options.hidden) return code;
   const std::string text = "ajp : " + refusal.detail;
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+  return code;
+}
+
+// C18-04 : une ligne de commande refusée (option inconnue ou retirée, raccourci ou fiche .desktop d'une version
+// d'avant) se dit aussi dans une boîte quand personne ne lit stderr : ni terminal, ni essai scripté.
+int fail_arguments(const ajp::Refusal& refusal, std::span<const std::string_view> args) {
+  const int code = fail(refusal);
+  const bool scripted = std::ranges::any_of(args, [](std::string_view arg) {
+    return arg.starts_with("--hidden") || arg.starts_with("--keys") || arg.starts_with("--snapshot") ||
+           arg.starts_with("--bench-out");
+  });
+#ifdef _WIN32
+  const bool terminal = _isatty(_fileno(stderr)) != 0;
+#else
+  const bool terminal = isatty(STDERR_FILENO) != 0;
+#endif
+  if (scripted || terminal) return code;
+  const std::string text =
+      ajp::app::play::i18n::tr_format("The player could not start with these options: {}", refusal.detail);
   SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
   return code;
 }
@@ -459,33 +464,6 @@ int run_registration(ajp::app::play::Registration registration, const ajp::app::
   return 0;
 }
 
-// Où vivent les données lourdes et les caches, une fois déplacés ceux d'une version d'avant.
-struct DataPlaces {
-  std::filesystem::path heavy;
-  std::filesystem::path cache;
-};
-
-DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::PlayerPlace& place,
-                       bool purge_updates) {
-  const auto said = [](const std::string& line) { ajp::log_channel("app")->info("données : {}", line); };
-  // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois. Sous
-  // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/ajp (A36-08).
-  DataPlaces places{.heavy = ajp::app::play::local_data(data)};
-  ajp::app::play::move_heavy_data(data, places.heavy, said);
-  places.cache = ajp::app::play::cache_data(place.home, places.heavy);
-  ajp::app::play::move_cache_data(places.heavy, places.cache, said);
-  ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
-  // La mise à jour n'est plus qu'une notification : les archives préparées et la copie de l'ancienne
-  // installation des versions qui s'appliquaient elles-mêmes se retirent (A26-06) ; le cache des moteurs
-  // TensorRT est borné (A33-04).
-  if (!purge_updates) return places;  // --data-dir, banc : ni le dossier de l'utilisateur ni son bureau
-  ajp::app::play::tidy_at_launch(data, places.cache / "engines",
-                                 [](const std::string& line) { ajp::log_channel("app")->info("{}", line); });
-  // Un lecteur inscrit dont le dossier a bougé suit sa nouvelle place (A19-06).
-  if (ajp::app::play::refresh_registration(place)) said("inscription refaite à la nouvelle place du lecteur");
-  return places;
-}
-
 // Le journal de la séance ; rend son fichier (vide : stderr seul). trial_dir : --data-dir, où vont alors
 // réglages et journal (les essais du benchmark).
 std::filesystem::path open_journal(const std::filesystem::path& home, const std::filesystem::path& data,
@@ -509,11 +487,11 @@ std::filesystem::path open_journal(const std::filesystem::path& home, const std:
   const std::filesystem::path log_file =
       diagnostics.empty() ? std::filesystem::path() : diagnostics / "ajp.log";
   if (!log_file.empty()) {
-    rotate_logs(log_file);
     // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
     // de lecture ne remplit plus le disque.
     constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
     constexpr std::size_t kLogParts = 2;
+    ajp::rotate_session_logs(log_file, kKeptLogs, kLogParts);
     // Ouvert par son chemin (UTF-16 sous Windows) : un dossier de données au nom japonais ne fait plus
     // partir le journal sans un mot (B33-06).
     if (spdlog::sink_ptr file_sink = ajp::log_file_sink(log_file, kLogBytes, kLogParts))
@@ -602,7 +580,7 @@ int run_player(int argc, char** argv) {
   const auto options = ajp::app::play::parse_play_options(args);
   if (!options) {
     std::fputs(ajp::app::play::play_usage().c_str(), stderr);
-    return fail(options.error());
+    return fail_arguments(options.error(), args);
   }
   if (options->help) {
     std::fputs(ajp::app::play::play_usage(options->debug).c_str(), stdout);
@@ -678,9 +656,14 @@ int run_player(int argc, char** argv) {
   // L'audio est facultatif : sans serveur ni carte son (machine virtuelle, session sans PipeWire), la vidéo
   // joue sur l'horloge hôte (le sink audio retente l'initialisation et dit son refus) au lieu de ne pas
   // démarrer.
+  // C18-05 : la connexion à PipeWire ou WASAPI se fait avant la fenêtre ; sa durée se dit quand elle se voit.
+  const auto audio_from = std::chrono::steady_clock::now();
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
-  const DataPlaces places = settle_data(data, place, !options->data_dir && !options->bench_out);
+  if (const auto took = std::chrono::steady_clock::now() - audio_from; took > std::chrono::milliseconds(100))
+    ajp::log_channel("app")->info("audio prêt en {} ms",
+                                  std::chrono::duration_cast<std::chrono::milliseconds>(took).count());
+  const ajp::app::play::DataPlaces places = ajp::app::play::settle_data(data, place, !options->data_dir && !options->bench_out);
   const std::filesystem::path& heavy = places.heavy;
   const std::filesystem::path& cache = places.cache;
   bool engines_updated = false;  // un moteur mis à jour ou le GPU perdu : le lecteur se relance (play())

@@ -11,7 +11,7 @@ ajp_add_module(app
     play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/latest_writer.cpp play/loop_wait.cpp
     play/anime_shots.cpp play/gpu_profile_out.cpp play/display_contract.cpp play/cut_book.cpp play/pair_marks.cpp play/user_keys.cpp play/resume.cpp
-    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/sleep_watch.cpp play/relaunch_target.cpp play/relaunch_args.cpp play/update_thread.cpp play/stage_fallback.cpp play/chain_choices.cpp play/session_subtitles.cpp play/session_osd.cpp play/session_display.cpp play/settings.cpp play/settings_toml.cpp play/settings_format.cpp play/settings_history.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp
+    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/sleep_watch.cpp play/relaunch_target.cpp play/relaunch_args.cpp play/launch_data.cpp play/update_thread.cpp play/stage_fallback.cpp play/chain_choices.cpp play/session_subtitles.cpp play/session_osd.cpp play/session_display.cpp play/settings.cpp play/settings_toml.cpp play/settings_format.cpp play/settings_history.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/settings_chain_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp
     play/upscale_ahead.cpp play/upscale_half.cpp play/upscale_drba.cpp play/upscale_late.cpp play/upscale_fate.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/vulkan_share.cpp play/wiring.cpp play/sleep_notice.cpp play/after_gap.cpp play/player_machine.cpp
   DEPS ajp::core ajp::core_log ajp::core_os ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::export
@@ -113,19 +113,22 @@ if(WIN32)
   endif()
 endif()
 target_link_libraries(ajp PRIVATE ajp::app ajp::dep::ffmpeg ajp::dep::sdl3 ajp::dep::spdlog)
-if(TARGET ajp_backend_tensorrt)
-  target_compile_definitions(ajp PRIVATE AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>")
-  add_dependencies(ajp ajp_backend_tensorrt)
+# C18-06 : les chemins des backends dans l'arbre de construction ne servent qu'aux postes de développement ; le
+# binaire livré (Release) ne les porte plus, ni ne les essaie en repli.
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  set(ajp_dev_backend_paths_default OFF)
+else()
+  set(ajp_dev_backend_paths_default ON)
 endif()
-foreach(runtime coreml)
+option(AJP_DEV_BACKEND_PATHS "Chercher aussi les backends dans l'arbre de construction"
+       ${ajp_dev_backend_paths_default})
+foreach(runtime tensorrt coreml vulkan)
   if(TARGET ajp_backend_${runtime})
     string(TOUPPER "${runtime}" upper)
-    target_compile_definitions(ajp PRIVATE AJP_BACKEND_${upper}="$<TARGET_FILE:ajp_backend_${runtime}>")
+    if(AJP_DEV_BACKEND_PATHS)
+      target_compile_definitions(ajp PRIVATE AJP_BACKEND_${upper}="$<TARGET_FILE:ajp_backend_${runtime}>")
+    endif()
     add_dependencies(ajp ajp_backend_${runtime})
   endif()
 endforeach()
-if(TARGET ajp_backend_vulkan)
-  target_compile_definitions(ajp PRIVATE AJP_BACKEND_VULKAN="$<TARGET_FILE:ajp_backend_vulkan>")
-  add_dependencies(ajp ajp_backend_vulkan)
-endif()
 ajp_set_warnings(ajp)

@@ -214,6 +214,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "default_player.cpp",
                                         "player.cpp",
                                         "player_probe.cpp",
+                                        "launch_data.cpp",
                                         "pumped_task.cpp",
                                         "maxine_install.cpp",
                                         "relaunch_target.cpp",

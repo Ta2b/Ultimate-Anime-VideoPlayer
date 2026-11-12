@@ -115,9 +115,17 @@ int move_entries(const std::filesystem::path& from, const std::filesystem::path&
     fs::rename(source, target, error);
     if (error) {
       // Un autre volume : copie complète à côté, puis un renommage sur le volume de la cible ; la source ne
-      // part qu'après. Une copie refusée est retirée, l'ancien dossier sert encore.
+      // part qu'après. Une copie refusée est retirée, l'ancien dossier sert encore. C36-06 : annoncée avant
+      // (plusieurs Go se copient avant la fenêtre), sa durée dite après.
+      constexpr std::string_view kCopying = "{} : renommage refusé ({}), copie vers {}";  // i18n-ok : journal
+      say(std::format(kCopying, core::to_utf8(source), error.message(), core::to_utf8(to)));
+      const auto copy_from = std::chrono::steady_clock::now();
       error.clear();
       fs::copy(source, staging, fs::copy_options::recursive, error);
+      constexpr std::string_view kCopied = "{} : copie en {} s";  // i18n-ok : journal
+      say(std::format(kCopied, core::to_utf8(source),
+                      std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - copy_from)
+                          .count()));
       if (!error) fs::rename(staging, target, error);
       if (error) {
         std::error_code ignored;
