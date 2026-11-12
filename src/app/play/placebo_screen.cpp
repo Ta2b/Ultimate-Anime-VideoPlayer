@@ -151,7 +151,7 @@ std::size_t PlaceboScreen::Impl::video_hooks(std::array<const pl_hook*, 16>& hoo
   if (anime4k && image != nullptr) add(anime4k->hooks());
   const bool sdr_source = image == nullptr || !pl_color_space_is_hdr(&image->color);
   if (sharpen && sharpen->hook(sdr_source) != nullptr) hooks[count++] = sharpen->hook(sdr_source);
-  if (graded_now) add(grade->hooks());
+  if (graded_now && grade) add(grade->hooks());
   return count;
 }
 
