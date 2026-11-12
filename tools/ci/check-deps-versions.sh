@@ -12,8 +12,8 @@ deps_of() { sed -n 's/^  "\([a-z0-9+-]* https[^"]*\)"$/\1/p' "$1"; }
 while read -r name url ref commit; do
   other="$(deps_of tools/deps/macos-from-source.sh | awk -v n="$name" '$1 == n {print $3, $4}')"
   [[ -z "$other" || "$other" == "$ref $commit" ]] && continue
-  echo "$name : $ref $commit sous Linux, $other sous macOS" >&2
-  bad=1
+  # macOS est délaissé (plus construit par la CI ni par les releases) : l'écart se signale sans bloquer (C28-16).
+  echo "::warning::$name : $ref $commit sous Linux, $other sous macOS (macOS délaissé : non bloquant)" >&2
 done < <(deps_of tools/deps/linux-from-source.sh)
 for port in libplacebo libass; do
   commit="$(deps_of tools/deps/linux-from-source.sh | awk -v n="$port" '$1 == n {print $4}')"
@@ -57,6 +57,29 @@ grep -q "\"version\": \"$version\"" ports/libplacebo/vcpkg.json || {
 }
 grep -q "libplacebo>=${version%.*}" cmake/Dependencies.cmake || {
   echo "libplacebo : cmake/Dependencies.cmake n'exige pas libplacebo>=${version%.*}" >&2
+  bad=1
+}
+# cmake/Dependencies.cmake : les minimums de find_package et la version d'ImGui qu'il attend suivent DEPS (C27-03).
+dep_version() { deps_of tools/deps/linux-from-source.sh | awk -v n="$1" '$1 == n {print $3}' | sed -E 's/^(release-|v|n)//'; }
+for pair in "tomlplusplus:tomlplusplus" "spdlog:spdlog" "SDL3:sdl3"; do
+  package="${pair%%:*}" dep="${pair##*:}"
+  have="$(dep_version "$dep")"
+  want="$(sed -n -E "s/^find_package\($package ([0-9.]+) .*/\1/p" cmake/Dependencies.cmake)"
+  # Le minimum est un préfixe de la version fixée (3.4 pour 3.4.0, 3.4.20 pour 3.4.20).
+  if [[ -z "$want" || "$have" != "$want"* ]]; then
+    echo "$package : cmake/Dependencies.cmake exige '$want', DEPS fixe '$have'" >&2
+    bad=1
+  fi
+done
+imgui="$(sed -n 's/^set(AJP_IMGUI_VERSION_WANTED "\([0-9.]*\)").*/\1/p' cmake/Dependencies.cmake)"
+[[ "$imgui" == "$(dep_version imgui)" ]] || {
+  echo "imgui : cmake/Dependencies.cmake attend '$imgui', DEPS fixe '$(dep_version imgui)'" >&2
+  bad=1
+}
+# meson : versions.env et les requirements à empreintes disent la même version (C28-14).
+meson="$(sed -n 's/^MESON_VERSION=//p' tools/release/versions.env)"
+grep -q "^meson==$meson " tools/ci/requirements/meson.txt || {
+  echo "meson : tools/ci/requirements/meson.txt n'est pas à la version $meson de versions.env" >&2
   bad=1
 }
 ((bad == 0)) && echo "dépendances : Linux, macOS et les ports du dépôt aux mêmes références"

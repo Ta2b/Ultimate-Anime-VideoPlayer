@@ -97,7 +97,8 @@ endif()
 target_compile_definitions(ajp_app PRIVATE AJP_VERSION="${PROJECT_VERSION}${AJP_VERSION_SUFFIX}"
                            AJP_RELEASE_REPO="${AJP_RELEASE_REPO}"
                            AJP_UPDATE_PUBKEY="${AJP_UPDATE_PUBKEY}"
-                           AJP_UPDATE_PUBKEY_BACKUP="${AJP_UPDATE_PUBKEY_BACKUP}")
+                           AJP_UPDATE_PUBKEY_BACKUP="${AJP_UPDATE_PUBKEY_BACKUP}"
+                           AJP_SYSTEM_LIBS="${AJP_SYSTEM_LIBS_TEXT}")
 
 # ajp : l'exécutable. Les backends TensorRT, Core ML et Vulkan se cherchent à côté de lui, puis dans
 # l'arbre de construction quand ils y sont construits (TensorRT : AJP_WITH_CUDA).

@@ -96,7 +96,14 @@ void note_report_fact(std::string_view name, std::string_view value) {
   s.facts.emplace_back(std::string(name), std::string(value));
 }
 
+void note_system_library_facts() {
+#ifdef AJP_SYSTEM_LIBS
+  if (const std::string_view libs = AJP_SYSTEM_LIBS; !libs.empty()) note_report_fact("Bibliothèques", libs);
+#endif
+}
+
 void note_engine_facts(std::string_view engine, std::string_view passed_over) {
+  note_system_library_facts();
   note_report_fact("Moteur", engine);
   if (!passed_over.empty()) note_report_fact("Moteurs refusés", passed_over);
 }

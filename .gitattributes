@@ -10,6 +10,15 @@ data/luts/*.cube -text
 # Les hooks mpv (src/render/shaders) : en LF partout ; grade.cpp cherche ses marques suivies de « \n ».
 *.hook text eol=lf
 
+# Les fichiers que bash et Python lisent ligne à ligne ou par « source » : en LF partout (C27-07). En CRLF, « source
+# versions.env » donne des valeurs terminées par « \r » (une empreinte jamais égale), et lsan.supp ne supprime plus rien.
+*.env text eol=lf
+*.py text eol=lf
+tools/ci/*.supp text eol=lf
+tools/ci/*.txt text eol=lf
+tools/ci/requirements/*.txt text eol=lf
+tools/release/*.txt text eol=lf
+
 # Les correctifs de ports/ (lus par git apply, côté vcpkg et côté linux-from-source.sh) et les scripts CMake : en LF
 # partout. Avec core.autocrlf=true (réglage par défaut de Git pour Windows), un correctif sortait en CRLF et ses lignes
 # ajoutaient un retour chariot aux sources de libass et de libplacebo (un fichier de symboles, un script meson).

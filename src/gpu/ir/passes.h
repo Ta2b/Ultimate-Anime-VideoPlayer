@@ -74,7 +74,7 @@ int fold_float_casts(Graph& graph);
 // La grille de chaque GridSample en float : sa somme base + flot × pas, les Cast qui arrondissent ses
 // termes et tout ce qui la porte jusqu'à GridSample (Cast, Transpose, Concat) quittent le float16. Une
 // coordonnée normalisée dans [-1, 1] n'y a que 11 bits : un pas de 0,31 pixel à 1280 de large, de 0,47 à
-// 1920, sur la moitié extérieure de l'image. Le graphe FP16 de DistilDRBA exporté avant novembre 2026
+// 1920, sur la moitié extérieure de l'image. Le graphe FP16 de DistilDRBA des premiers exports
 // garde cette somme en float16 (A03-18, A44-01) ; ceux de RIFE et le DistilDRBA réexporté l'ont déjà en
 // float (tools/rife/convert_rife_fp16.py), la passe n'y change rien. Le flot reste une donnée float16.
 // Après infer_shapes (les types des activations) et avant optimize : le pliage des constantes
