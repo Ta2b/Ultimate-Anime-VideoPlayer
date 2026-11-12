@@ -484,3 +484,27 @@ TEST_CASE("passes : une longue chaîne Conv + Relu fond sans rien perdre", "[gpu
   CHECK(std::ranges::count(graph.nodes, OpKind::Relu, &Node::op) == 1);
   CHECK(validate(graph));
 }
+
+// C44-01 : le graphe que fold_float_casts rend est celui des noyaux typés du moteur, pas un graphe pour
+// l'interpréteur : un Add aux opérandes float16 et float y est refusé (types égaux). Le graphe d'avant la
+// passe reste exécutable, et c'est lui qu'ajp_onnx_info --vulkan --run exécute.
+TEST_CASE("passes : le graphe replié par fold_float_casts n'est pas exécutable, celui d'avant l'est",
+          "[gpu_ir][passes]") {
+  ModelBuilder m;
+  m.input("x", {1, 4, 5, 5}, onnx::kFloat16)
+      .weight("w", {4, 1, 1}, {0.5F, 1.0F, -1.0F, 2.0F})
+      .node("Cast", {"x"}, {"xf"}, {attr_int("to", onnx::kFloat)})
+      .node("Add", {"xf", "w"}, {"s"})
+      .node("Cast", {"s"}, {"y"}, {attr_int("to", onnx::kFloat16)})
+      .output("y", onnx::kFloat16);
+  Graph graph = build(m);
+  REQUIRE(optimize(graph));
+  Graph folded = graph;
+  CHECK(fold_float_casts(folded) == 2);
+  Value x = random_floats({1, 4, 5, 5}, 3);
+  x.type = DataType::F16;
+  for (float& v : x.f) v = ajp::kernels::ref::round_to_half(v);
+  const std::vector<NamedValue> inputs{{.name = "x", .value = x}};
+  CHECK(run(graph, inputs));
+  CHECK_FALSE(run(folded, inputs));
+}

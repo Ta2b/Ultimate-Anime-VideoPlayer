@@ -87,7 +87,7 @@ float image_texel(bool from_a, uint index) {
   return from_a ? float(a.v[index]) : float(b.v[index]);
 }
 
-// Catmull-Rom (ref::catmull_rom_at) : position bornée à l'image, points répétés au bord, sortie dans [0, 1].
+// Catmull-Rom (ref::catmull_rom_at) : position bornée à l'image, points répétés au bord, sortie bornée aux quatre points centraux (C50-08).
 vec4 catmull_rom(float t) {
   float t2 = t * t;
   float t3 = t2 * t;
@@ -104,13 +104,22 @@ float image_cubic(bool from_a, uint c, float x, float y) {
   vec4 wy = catmull_rom(y - float(y0));
   uint base = c * pc.width * pc.height;
   precise float sum = 0.0;
+  float lo = 3.4e38;
+  float hi = -3.4e38;
   for (int j = 0; j < 4; ++j) {
     uint row_at = base + uint(clamp(y0 - 1 + j, 0, int(pc.height) - 1)) * pc.width;
     precise float row = 0.0;
-    for (int i = 0; i < 4; ++i) row += image_texel(from_a, row_at + uint(clamp(x0 - 1 + i, 0, int(pc.width) - 1))) * wx[i];
+    for (int i = 0; i < 4; ++i) {
+      float v = image_texel(from_a, row_at + uint(clamp(x0 - 1 + i, 0, int(pc.width) - 1)));
+      row += v * wx[i];
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+        lo = min(lo, v);
+        hi = max(hi, v);
+      }
+    }
     sum += row * wy[j];
   }
-  return clamp(sum, 0.0, 1.0);
+  return min(max(sum, lo), hi);
 }
 
 float image_at(bool from_a, uint c, float x, float y) {

@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -134,6 +135,32 @@ TEST_CASE("warp : Catmull-Rom passe par les points, rend une rampe, borne un bor
   CHECK(cut->planes[0].at(6, 0) == 0.0F);  // 6,5 : −1/16 sans la borne
   CHECK(cut->planes[0].at(8, 0) == 1.0F);  // 8,5 : 1 + 1/16 sans la borne
   CHECK_THAT(cut->planes[0].at(7, 0), WithinAbs(0.5, 1e-6));
+}
+
+TEST_CASE("warp : Catmull-Rom garde les sur-blancs et les négatifs de la source (C50-08)", "[warp]") {
+  // Un bord net de 0,2 à 1,3 (un rouge saturé ou un titre à sur-blancs) : la sortie reste entre le minimum et
+  // le maximum des quatre points centraux, donc elle dépasse 1 là où la source dépasse 1 ; le ringing hors du
+  // bord est coupé.
+  for (const auto& [low, high] : {std::pair{0.2F, 1.3F}, std::pair{-0.3F, 0.6F}}) {
+    RgbImage edge(16, 4, low);
+    for (auto& plane : edge.planes) {
+      for (int y = 0; y < 4; ++y) {
+        for (int x = 8; x < 16; ++x) plane.at(x, y) = high;
+      }
+    }
+    ref::Motion half = uniform_motion(16, 4, {0, 0, 16, 4}, 0.5F, 0.0F, 1.0F);
+    half.warp = RifeWarp::CatmullRom;
+    const auto out = ref::warp_blend(edge, edge, half);
+    REQUIRE(out);
+    CHECK(out->planes[0].at(6, 0) == low);   // 6,5 : sous le plancher des quatre points sans la borne locale
+    CHECK(out->planes[0].at(8, 0) == high);  // 8,5 : au-dessus du plafond de la source, rendu tel quel
+    // Les points entiers restent exacts, sur-blancs compris.
+    ref::Motion still = uniform_motion(16, 4, {0, 0, 16, 4}, 0.0F, 0.0F, 1.0F);
+    still.warp = RifeWarp::CatmullRom;
+    const auto same = ref::warp_blend(edge, edge, still);
+    REQUIRE(same);
+    CHECK(same->planes[0].at(12, 2) == high);
+  }
 }
 
 TEST_CASE("warp : mouvement estimé sur une fenêtre plus petite, mis à l'échelle", "[warp]") {

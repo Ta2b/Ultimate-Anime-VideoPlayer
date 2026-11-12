@@ -145,7 +145,8 @@ class NetEngine {
   std::vector<std::unique_ptr<QueryPool>> stamp_pools_;
   std::vector<ProfileRun> profile_runs_;
   std::vector<Cached> recordings_;
-  RetiredRecordings retired_;  // sortis du cache, libérés à leur arrêt (avant l'arène)
+  bool evicted_logged_ = false;  // l'éviction d'un jeu s'est dite au journal (C45-08)
+  RetiredRecordings retired_;    // sortis du cache, libérés à leur arrêt (avant l'arène)
   std::uint64_t uses_ = 0;
   std::uint64_t destroyed_mark_ = 0;  // DestroyedLog::mark à la dernière purge
   std::vector<std::uint64_t> gone_;
