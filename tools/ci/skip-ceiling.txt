@@ -7,12 +7,12 @@ tsan 10
 tsan-pr 0
 # Le rejeu du corpus de fuzz sous ASan, sur chaque pull request : aucun saut.
 asan-fuzz 0
-# Windows (MSVC) : le runner n'a ni GPU ni Vulkan logiciel (C14, compte du premier passage) : rendu (32, dont les curseurs de la pile, la pile fixe et l'écart des éclats, C06, et les éclats sous un blanc des surfaces abaissé, B41-01 ;
-# Anime4K sur l'image, 3),
+# Windows (MSVC) : le runner n'a ni GPU ni Vulkan logiciel (C14, compte du premier passage) : rendu (34, dont les curseurs de la pile, la pile fixe et l'écart des éclats, C06, et les éclats sous un blanc des surfaces abaissé, B41-01 ;
+# Anime4K sur l'image, 3 ; saturation en Oklab et peau des visages du grade, 2, joués sous lavapipe),
 # médias
 # (NVDEC 5, Vulkan Video et appareils Vulkan 4), polices de libass sans police système (3), découpe des modèles du
 # catalogue (2), veilleur d'écriture de l'anneau (1).
-windows 47
+windows 49
 # Tâches sans GPU ni Vulkan logiciel (cœur seul) : aucun test sauté (B28-12).
 core-gcc-13 0
 core-clang-20 0
