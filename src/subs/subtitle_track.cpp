@@ -10,6 +10,7 @@
 
 #include <ass/ass.h>
 
+#include "core/text.h"
 #include "core/utf8_path.h"
 #include "subs/log.h"
 #include "subs/srt.h"
@@ -19,20 +20,16 @@
 namespace ajp::subs {
 namespace {
 
-char lower(char c) {
-  return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
-}
-
 std::string lowercase_extension(const std::filesystem::path& path) {
   std::string extension = core::to_utf8(path.extension());
-  for (char& c : extension) c = lower(c);
+  for (char& c : extension) c = core::ascii_lower(c);
   return extension;
 }
 
 // libass lit les polices d'une section [Fonts], quelle que soit sa casse.
 bool has_fonts_section(std::string_view script) {
   constexpr std::string_view kSection = "[fonts]";
-  return !std::ranges::search(script, kSection, [](char a, char b) { return lower(a) == b; }).empty();
+  return !std::ranges::search(script, kSection, [](char a, char b) { return core::ascii_lower(a) == b; }).empty();
 }
 
 // Lit au plus la taille mesurée : un fichier qui grandit pendant la lecture

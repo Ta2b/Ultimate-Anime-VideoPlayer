@@ -106,6 +106,25 @@ TEST_CASE("srt_text_to_ass : styles, retours à la ligne et blocs ASS", "[srt]")
   CHECK(srt_text_to_ass("<i>pas fermée") == "{\\i1}pas fermée");
 }
 
+// C17-02 : un bloc {…} sans balise est un commentaire pour libass, donc le texte disparaîtrait.
+TEST_CASE("srt_text_to_ass : les accolades de texte sont échappées, celles des balises ASS passent", "[srt]") {
+  CHECK(srt_text_to_ass("{Soupir} Bonjour") == "\\{Soupir} Bonjour");
+  CHECK(srt_text_to_ass("{\\an8}en haut {musique}") == "{\\an8}en haut \\{musique}");
+  CHECK(srt_text_to_ass("fin {") == "fin \\{");
+}
+
+// C17-03 : un SRT dont les lignes ne finissent que par '\r' se lit comme les autres.
+TEST_CASE("parse_srt : fins de ligne '\\r' seules et mélangées", "[srt]") {
+  for (const char* text : {"1\r00:00:01,000 --> 00:00:03,000\rBonjour\rtoi\r\r2\r00:00:04,000 --> 00:00:05,000\rFin\r",
+                           "1\r\n00:00:01,000 --> 00:00:03,000\nBonjour\rtoi\r\n\n2\n00:00:04,000 --> 00:00:05,000\rFin"}) {
+    const auto cues = parse_srt(text);
+    REQUIRE(cues);
+    REQUIRE(cues->size() == 2);
+    CHECK((*cues)[0].text == "Bonjour\ntoi");
+    CHECK((*cues)[1].text == "Fin");
+  }
+}
+
 TEST_CASE("srt_text_to_ass : couleurs et polices, restaurées à la fermeture", "[srt]") {
   CHECK(srt_text_to_ass("<font color=\"#FF8000\">orange</font>") == "{\\c&H0080FF&}orange{\\c}");
   CHECK(srt_text_to_ass("<font color=red>rouge</font>") == "{\\c&H0000FF&}rouge{\\c}");
