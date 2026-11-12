@@ -95,12 +95,14 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) area_reduce(
     for (int i = static_cast<int>(floorf(x0)); i < last_x; ++i) {
       const float w = wy * (fminf(x1, static_cast<float>(i + 1)) - fmaxf(x0, static_cast<float>(i)));
       const std::size_t from = at(i, j, p.in_width);
-      for (int c = 0; c < 3; ++c) sum[c] += __half2float(in[static_cast<std::size_t>(c) * in_plane + from]) * w;
+      for (int c = 0; c < 3; ++c)
+        sum[c] += __half2float(in[static_cast<std::size_t>(c) * in_plane + from]) * w;
     }
   }
   const float norm = 1.0F / (sx * sy);
   const std::size_t to = at(x, y, p.out_width);
-  for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * out_plane + to] = __float2half_rn(sum[c] * norm);
+  for (int c = 0; c < 3; ++c)
+    out[static_cast<std::size_t>(c) * out_plane + to] = __float2half_rn(sum[c] * norm);
 }
 
 // Luma du pixel pointé dans le plan R de trois plans RGB consécutifs, aux coefficients de la source.
