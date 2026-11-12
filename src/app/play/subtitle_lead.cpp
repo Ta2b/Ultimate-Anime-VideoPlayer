@@ -21,6 +21,9 @@ namespace {
 
 // Boîte de subs pleine : on retente après ce temps, tant qu'aucun seek ne rend le paquet inutile.
 constexpr auto kRetry = std::chrono::milliseconds(5);
+// Les répliques d'un conteneur suivent leur grappe de quelques secondes au plus : la lecture ne s'arrête
+// dans la vidéo qu'à cette marge au-delà de ce qui est voulu.
+constexpr std::int64_t kGuardSlackUs = 2'000'000;
 
 }  // namespace
 
@@ -32,12 +35,20 @@ struct SubtitleLead::Core {
     std::uint64_t generation = 0;
   };
 
+  struct Range {
+    std::int64_t from = 0;
+    std::int64_t to = 0;
+  };
+
   explicit Core(SubtitleLeadConfig c) : config(std::move(c)) {}
 
   void run(const std::stop_token& stop);
-  bool wanted() const;  // sous mutex
+  bool wanted() const;                                        // sous mutex
+  bool is_covered(std::int64_t from, std::int64_t to) const;  // sous mutex
+  void note_covered(std::int64_t to);                         // sous mutex
   bool prepare(const Job& job, const std::stop_token& stop);
   void read_one(const Job& job, const std::stop_token& stop);
+  void note_video(std::int64_t pts_us, std::uint64_t at_generation);
   bool push(subs::TrackPacket packet, std::uint64_t generation, const std::stop_token& stop);
   void mark_stopped();
 
@@ -53,7 +64,10 @@ struct SubtitleLead::Core {
   std::int64_t want_us = kNothingRead;
   std::int64_t read_us = kNothingRead;  // pts du dernier paquet lu depuis le dernier placement
   std::int64_t delay_us = 0;
-  std::uint64_t generation = 0;  // change à chaque seek ou piste : un paquet d'avant est jeté
+  std::optional<Range> backfill;  // B17-07 : la plage plus ancienne, lue quand la première est finie
+  std::optional<Range> covered;   // la plage déjà lue pour la piste choisie
+  std::int64_t segment_from = 0;  // d'où la plage en cours a été placée
+  std::uint64_t generation = 0;   // change à chaque seek ou piste : un paquet d'avant est jeté
   std::uint64_t sent = 0;
   bool ended = false;  // fin du fichier ou lecture refusée : rien jusqu'au prochain seek
   bool busy = false;
@@ -106,6 +120,8 @@ void SubtitleLead::select(std::optional<int> track) {
     ++c.generation;
     // La piste nouvelle se lit au seek qui suit le choix (Pipeline::select_subtitles).
     c.place.reset();
+    c.backfill.reset();
+    c.covered.reset();  // une autre piste : rien n'en a été lu
     c.ended = true;
   }
   c.wake.notify_all();
@@ -120,6 +136,10 @@ void SubtitleLead::seek(std::int64_t target_us) {
     c.want_us = target_us + std::max<std::int64_t>(-c.delay_us, 0) + kSubtitleLeadUs;
     c.read_us = Core::kNothingRead;
     c.ended = false;
+    c.backfill.reset();
+    const std::int64_t from = std::max<std::int64_t>(target_us - kSubtitleBackfillUs, 0);
+    if (*c.place > from && !c.is_covered(from, *c.place))
+      c.backfill = Core::Range{.from = from, .to = *c.place};
   }
   c.wake.notify_all();
 }
@@ -156,7 +176,22 @@ bool SubtitleLead::idle() const {
 }
 
 bool SubtitleLead::Core::wanted() const {
-  return track.has_value() && (place.has_value() || (!ended && read_us < want_us));
+  return track.has_value() && (place.has_value() || (!ended && read_us < want_us) || backfill.has_value());
+}
+
+bool SubtitleLead::Core::is_covered(std::int64_t from, std::int64_t to) const {
+  return covered && covered->from <= from && covered->to >= to;
+}
+
+// La plage lue depuis segment_from jusqu'à `to` s'ajoute à celle déjà lue si elles se touchent, la remplace
+// sinon (une seule plage est retenue : deux plages éloignées se relisent).
+void SubtitleLead::Core::note_covered(std::int64_t to) {
+  if (to < segment_from) return;
+  if (covered && segment_from <= covered->to && to >= covered->from) {
+    covered = Range{.from = std::min(covered->from, segment_from), .to = std::max(covered->to, to)};
+  } else {
+    covered = Range{.from = segment_from, .to = to};
+  }
 }
 
 void SubtitleLead::Core::run(const std::stop_token& stop) {
@@ -167,6 +202,15 @@ void SubtitleLead::Core::run(const std::stop_token& stop) {
       busy = false;
       if (!wake.wait(lock, stop, [this] { return wanted(); }) || !track) return;
       busy = true;
+      // La première plage lue, la plus ancienne vient ensuite (seek), sans nouveau seek de la session.
+      if (!place && (ended || read_us >= want_us) && backfill) {
+        place = backfill->from;
+        want_us = backfill->to;
+        read_us = kNothingRead;
+        ended = false;
+        backfill.reset();
+      }
+      if (place) segment_from = *place;
       job = Job{.track = *track, .place = std::exchange(place, std::nullopt), .generation = generation};
     }
     if (!prepare(job, stop)) continue;
@@ -200,7 +244,10 @@ bool SubtitleLead::Core::prepare(const Job& job, const std::stop_token& stop) {
     if (stop.stop_requested()) demuxer->interrupt();  // arrêté entre l'ouverture et ce verrou
   }
   if (kept != job.track) {
-    const std::array<int, 1> keep{job.track};
+    // B17-07 : la piste vidéo de référence reste lue (ses paquets sont jetés ici) : ses horodatages disent
+    // où en est le fichier, et la lecture s'arrête dès qu'il a dépassé ce qui est voulu, au lieu de
+    // traverser en silence toute une plage sans réplique jusqu'au paquet de sous-titres suivant.
+    const std::array<int, 2> keep{job.track, config.reference};
     if (auto done = demuxer->keep_only(keep); !done) {
       log->debug("sous-titres en avance : piste {} : {}", job.track, done.error().detail);
       kept.reset();
@@ -222,17 +269,34 @@ void SubtitleLead::Core::read_one(const Job& job, const std::stop_token& stop) {
   if (!packet || !*packet) {
     if (!packet) log_channel("app")->debug("sous-titres en avance : {}", packet.error().detail);
     const std::scoped_lock lock(mutex);
-    if (generation == job.generation) ended = true;
+    if (generation == job.generation) {
+      ended = true;
+      note_covered(std::numeric_limits<std::int64_t>::max() / 2);  // jusqu'à la fin du fichier
+    }
     return;
   }
   const media::Packet& read = **packet;
+  if (read.track == config.reference && read.track != job.track) {
+    note_video(read.pts_us, job.generation);
+    return;
+  }
   if (read.track != job.track || read.pts_us == kNoPts) return;
   const bool pushed =
       push(subs_packet(read, std::ranges::contains(config.mov_text, read.track)), job.generation, stop);
   const std::scoped_lock lock(mutex);
   if (generation != job.generation) return;
   read_us = std::max(read_us, read.pts_us);
+  if (read_us >= want_us) note_covered(read_us);  // la plage n'est retenue qu'une fois lue en entier
   if (pushed) ++sent;
+}
+
+// Un paquet vidéo passé au-delà de ce qui est voulu (marge kGuardSlackUs) : plus aucune réplique d'avant
+// n'est à lire. Un délai négatif qui s'aggrave reprendra à la suite (follow).
+void SubtitleLead::Core::note_video(std::int64_t pts_us, std::uint64_t at_generation) {
+  const std::scoped_lock lock(mutex);
+  if (generation != at_generation || pts_us == kNoPts || pts_us < want_us + kGuardSlackUs) return;
+  read_us = std::max(read_us, want_us);
+  note_covered(read_us);
 }
 
 // Retente tant que la boîte de subs est pleine ; false si un seek, un changement de piste ou l'arrêt rend
