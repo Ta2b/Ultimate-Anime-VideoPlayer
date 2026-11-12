@@ -232,6 +232,8 @@ class VulkanKernelOps final : public KernelOps {
   // Retire les enregistrements dont la clé porte un tampon ou une image détruits depuis la
   // dernière recherche : leur poignée peut déjà désigner un autre objet (destroyed_log.h).
   void forget_destroyed();
+  // Détruit une vue après l'avoir notée au journal des destructions (C45-03).
+  void destroy_view(VkImageView view);
   std::expected<void, Refusal> submit(Recording& recording, std::span<const TimelinePoint> waits = {},
                                       std::span<const TimelinePoint> signals = {});
   void reclaim();
