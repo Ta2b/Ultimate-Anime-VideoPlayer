@@ -19,6 +19,7 @@ class FakeSink final : public AudioSink {
   explicit FakeSink(PcmFormat format, std::int64_t latency_frames = 0, bool keep_data = true)
       : format_(format), latency_(latency_frames), keep_data_(keep_data) {}
 
+  bool ready() const override { return !dormant_; }
   PcmFormat format() const override { return format_; }
   std::expected<void, Refusal> put(std::span<const float> samples) override {
     if (keep_data_) data_.insert(data_.end(), samples.begin(), samples.end());
@@ -50,10 +51,30 @@ class FakeSink final : public AudioSink {
       --failed_reopens_;
       return std::unexpected(Refusal{RefusalCode::AudioDeviceUnavailable, "aucune sortie par défaut"});
     }
+    dormant_ = false;
     consumed_ = pushed_;
     paused_ = true;
     return {};
   }
+  // L'appareil choisi, s'il est de retour (B31-16) ; sinon refus, sans rien changer.
+  std::expected<void, Refusal> reopen_chosen() override {
+    ++chosen_reopens_;
+    if (!chosen_available_) {
+      return std::unexpected(Refusal{RefusalCode::AudioDeviceUnavailable, "appareil choisi absent"});
+    }
+    consumed_ = pushed_;
+    paused_ = true;
+    return {};
+  }
+  void on_returned(std::function<void()> callback) override { returned_ = std::move(callback); }
+  // Aucune sortie ne s'est ouverte (B16-01) : la file est dormante jusqu'à une réouverture réussie.
+  void set_dormant(bool dormant) { dormant_ = dormant; }
+  void set_chosen_available(bool available) { chosen_available_ = available; }
+  // Le casque rebranché : SDL prévient depuis son thread.
+  void bring_back() const {
+    if (returned_) returned_();
+  }
+  int chosen_reopens() const { return chosen_reopens_; }
   // Les n réouvertures suivantes échouent : plus de sortie par défaut, puis le casque rebranché.
   void fail_reopens(int n) { failed_reopens_ = n; }
   // Le casque débranché : SDL prévient depuis son thread.
@@ -96,6 +117,10 @@ class FakeSink final : public AudioSink {
   int clears_ = 0;
   int reopens_ = 0;
   int failed_reopens_ = 0;
+  int chosen_reopens_ = 0;
+  bool dormant_ = false;
+  bool chosen_available_ = false;
+  std::function<void()> returned_;
   std::function<void(const DeviceReading&)> demand_;
   std::function<void()> removed_;
 };

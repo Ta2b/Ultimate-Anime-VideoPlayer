@@ -31,6 +31,9 @@ struct OutputRequest {
 class AudioSink {
  public:
   virtual ~AudioSink() = default;
+  // Faux quand aucune sortie n'a pu s'ouvrir (B16-01) : la file est dormante, répond Refus à tout et ne
+  // joue rien ; reopen_default() la réveille quand une sortie apparaît.
+  virtual bool ready() const { return true; }
   // Format d'entrée de la file : float32 entrelacé, canaux dans l'ordre de SDL3.
   virtual PcmFormat format() const = 0;
   virtual std::expected<void, Refusal> put(std::span<const float> samples) = 0;
@@ -54,14 +57,24 @@ class AudioSink {
   // Appelé, depuis un thread de SDL, quand le périphérique ouvert disparaît (casque débranché, P2.7). Ne
   // doit pas bloquer : le rappel ne fait que prévenir le thread audio.
   virtual void on_removed(std::function<void()> callback) { static_cast<void>(callback); }
+  // Appelé, depuis un thread de SDL, quand un appareil de lecture porte le nom de l'appareil choisi (casque
+  // rebranché, B31-16). Ne doit pas bloquer.
+  virtual void on_returned(std::function<void()> callback) { static_cast<void>(callback); }
   // Rouvre la file sur la sortie par défaut du système, file vide, en pause, gain et vitesse gardés ;
   // pushed_frames() continue. À appeler après clear() ou take_back.
   virtual std::expected<void, Refusal> reopen_default() {
     return std::unexpected(Refusal{RefusalCode::AudioDeviceUnavailable, "sortie sans réouverture"});
   }
+  // Rouvre la file sur l'appareil choisi (OutputRequest::device) s'il est de retour alors que le son passe
+  // sur la sortie par défaut (B31-16). Même contrat que reopen_default(). Refus : rien à rouvrir.
+  virtual std::expected<void, Refusal> reopen_chosen() {
+    return std::unexpected(Refusal{RefusalCode::AudioDeviceUnavailable, "pas d'appareil choisi à rouvrir"});
+  }
 };
 
-// Ouvre le périphérique de sortie par défaut avec SDL3 (sous-système audio compris).
+// Ouvre le périphérique de sortie choisi, ou par défaut, avec SDL3 (sous-système audio compris). Un format
+// invalide est refusé ; un appareil qui ne s'ouvre pas rend une file dormante (AudioSink::ready) que
+// reopen_default() réveillera (B16-01).
 std::expected<std::unique_ptr<AudioSink>, Refusal> open_sdl_sink(const OutputRequest& request);
 
 }  // namespace ajp::audio

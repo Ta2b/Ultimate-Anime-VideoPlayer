@@ -31,6 +31,8 @@ class AudioOutput {
   static std::expected<std::unique_ptr<AudioOutput>, Refusal> open_sdl(const OutputRequest& request = {});
 
   PcmFormat format() const { return format_; }
+  // Faux : aucune sortie ne s'est ouverte (B16-01), la file est dormante ; reopen_default() la réveille.
+  bool ready() const { return sink_->ready(); }
 
   // Pousse des trames entrelacées dont la première a le temps média pts_us.
   std::expected<void, Refusal> push(std::int64_t pts_us, std::span<const float> samples);
@@ -65,6 +67,10 @@ class AudioOutput {
   // Périphérique retiré (P2.7) : la file vidée rend ce qui n'était pas encore entendu, puis se rouvre sur la
   // sortie par défaut du système, en pause.
   std::expected<std::vector<PcmBlock>, Refusal> reopen_default();
+  // L'appareil choisi est de retour (B31-16) : même contrat, sur lui plutôt que sur la sortie par défaut.
+  // Refus : le son n'est pas sur la sortie par défaut, ou l'appareil n'est pas là ; rien n'a bougé.
+  std::expected<std::vector<PcmBlock>, Refusal> reopen_chosen();
+  void on_returned(std::function<void()> callback) { sink_->on_returned(std::move(callback)); }
 
  private:
   // Copie d'un bloc poussé, de l'indice start de la file.
@@ -73,6 +79,7 @@ class AudioOutput {
     PcmBlock block;
   };
   void forget_consumed(std::int64_t consumed);
+  std::expected<std::vector<PcmBlock>, Refusal> reopen(bool chosen);
 
   std::unique_ptr<AudioSink> sink_;
   PcmFormat format_;

@@ -2,6 +2,6 @@
 # FFmpeg, SDL3 et spdlog restent privés : les en-têtes publics n'en exposent rien.
 ajp_add_module(audio
   SOURCES audio_thread.cpp devices.cpp converter.cpp decoder.cpp drift.cpp output.cpp pcm.cpp player.cpp
-          sdl_sink.cpp timeline.cpp
+          sdl_sink.cpp shaper.cpp timeline.cpp
   DEPS ajp::core_types
   PRIVATE_DEPS ajp::av ajp::dep::ffmpeg ajp::dep::sdl3 ajp::core_log ajp::core_os)
