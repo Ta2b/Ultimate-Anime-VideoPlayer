@@ -21,83 +21,18 @@
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
 #include "prepare/sha256.h"
+#include "prepare/split_index.h"
 
 namespace ajp::prepare {
 namespace {
 
+using split::block_name;
+using split::Index;
+using split::text_is;
+
 std::unexpected<Refusal> unknown(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::FieldMissing,
                                  "RIFE : structure non reconnue pour la découpe : " + std::move(detail)});
-}
-
-// Le graphe indexé par nom de nœud et par tenseur produit.
-class Index {
- public:
-  explicit Index(const OnnxGraph& graph) : graph_(graph) {
-    for (const OnnxFullNode& node : graph.nodes) {
-      by_name_.emplace(node.name, &node);
-      for (const std::string& output : node.outputs) producer_.emplace(output, &node);
-      for (const std::string& input : node.inputs) ++readers_[input];
-    }
-  }
-  // Le nœud de ce nom s'il fait cet opérateur.
-  const OnnxFullNode* named(const std::string& name, std::string_view op) const {
-    const auto found = by_name_.find(name);
-    return found != by_name_.end() && found->second->op_type == op ? found->second : nullptr;
-  }
-  const OnnxFullNode* producer(const std::string& tensor) const {
-    const auto found = producer_.find(tensor);
-    return found != producer_.end() ? found->second : nullptr;
-  }
-  // Le tenseur d'avant les Cast qui le produisent : tools/rife/convert_rife_fp16.py entoure Resize et
-  // GridSample de Cast FP16 ↔ FP32, que les noyaux n'ont pas à refaire.
-  const std::string& uncast(const std::string& tensor) const {
-    const std::string* at = &tensor;
-    for (const OnnxFullNode* node = producer(*at);
-         node != nullptr && node->op_type == "Cast" && !node->inputs.empty(); node = producer(*at))
-      at = &node->inputs[0];
-    return *at;
-  }
-  // Le producteur du tenseur, Cast passés.
-  const OnnxFullNode* source(const std::string& tensor) const { return producer(uncast(tensor)); }
-  // Nombre de nœuds qui lisent le tenseur.
-  int readers(const std::string& tensor) const {
-    const auto found = readers_.find(tensor);
-    return found != readers_.end() ? found->second : 0;
-  }
-  // Le tenseur et tout ce dont il dépend, de proche en proche jusqu'aux entrées du graphe.
-  std::set<std::string, std::less<>> ancestors(const std::string& tensor) const {
-    std::set<std::string, std::less<>> seen;
-    std::vector<std::string> pending{tensor};
-    while (!pending.empty()) {
-      std::string current = std::move(pending.back());
-      pending.pop_back();
-      if (!seen.insert(current).second) continue;
-      const OnnxFullNode* node = producer(current);
-      if (node == nullptr) continue;
-      for (const std::string& input : node->inputs) {
-        if (!input.empty()) pending.push_back(input);
-      }
-    }
-    return seen;
-  }
-  // Les valeurs du tenseur constant, vides s'il n'en est pas un.
-  const std::vector<double>& constant(const std::string& tensor) const {
-    static const std::vector<double> none;
-    const auto found = graph_.constants.find(tensor);
-    return found != graph_.constants.end() ? found->second : none;
-  }
-
- private:
-  const OnnxGraph& graph_;
-  std::map<std::string, const OnnxFullNode*, std::less<>> by_name_;
-  std::map<std::string, const OnnxFullNode*, std::less<>> producer_;
-  std::map<std::string, int, std::less<>> readers_;
-};
-
-bool text_is(const OnnxFullNode& node, std::string_view attribute, std::string_view value) {
-  const OnnxAttribute* found = node.attribute(attribute);
-  return found != nullptr && found->text && *found->text == value;
 }
 
 bool same(const std::vector<double>& got, std::initializer_list<double> want) {
@@ -112,7 +47,8 @@ bool same(const std::vector<double>& got, std::initializer_list<double> want) {
 // Un Resize linéaire en demi-pixel d'échelle (1, 1, s, s) : s, ou 0 si ce n'est pas lui.
 double resize_scale(const Index& index, const OnnxFullNode& node) {
   if (node.op_type != "Resize" || node.inputs.size() != 3 || !node.inputs[1].empty() ||
-      !text_is(node, "mode", "linear") || !text_is(node, "coordinate_transformation_mode", "half_pixel"))
+      !text_is(node, "mode", "linear") || !text_is(node, "coordinate_transformation_mode", "half_pixel") ||
+      !node.resize_without_antialias())
     return 0.0;
   const std::vector<double>& scales = index.constant(node.inputs[2]);
   if (scales.size() != 4 || scales[0] != 1.0 || scales[1] != 1.0 || scales[2] != scales[3]) return 0.0;
@@ -125,10 +61,6 @@ int power_of_two_factor(double value) {
     if (std::abs(value - d) < 1e-6 || std::abs(value * d - 1.0) < 1e-6) return d;
   }
   return 0;
-}
-
-std::string block_name(int b, std::string_view tail) {
-  return std::format("/block{}/{}", b, tail);
 }
 
 // Ce que la boucle des blocs relève pour contrôler la colle : le Concat qui précède chaque bloc, le flot que
@@ -246,10 +178,27 @@ bool known_sizes(const Index& index, const OnnxFullNode* sizes, bool last_block)
 
 enum class GlueKind : std::uint8_t { Unknown, Split, Interleaved };
 
+// Ce que le GridSample de 4.25 lite warpe : Concat d'axe 1 de [Reshape de /Split_output_0 (les deux images en
+// lot de 2), encodage]. La permutation des poids de la première convolution se déduit de cet ordre (image A,
+// encodage A, image B, encodage B) : un autre ordre donnerait des images fausses sans message (C04-01).
+bool warps_interleaved_source(const Index& index, const OnnxFullNode& grid,
+                              const std::string& encode_output) {
+  if (grid.inputs.empty()) return false;
+  const OnnxFullNode* source = index.source(grid.inputs[0]);
+  if (source == nullptr || source->op_type != "Concat" || source->inputs.size() != 2) return false;
+  const OnnxAttribute* axis = source->attribute("axis");
+  if (axis == nullptr || !axis->integer || *axis->integer != 1) return false;
+  const OnnxFullNode* images = index.source(source->inputs[0]);
+  return images != nullptr && images->op_type == "Reshape" && !images->inputs.empty() &&
+         index.uncast(images->inputs[0]) == "/Split_output_0" &&
+         index.ancestors(source->inputs[1]).contains(encode_output);
+}
+
 // Le Concat d'entrée du bloc b ≥ 1. Disposition des noyaux : images warpées, encodages warpés, instant,
 // masque, attributs, flot (6 entrées). 4.25 lite : un seul tenseur pour les deux images warpées et leurs
 // encodages (Reshape du GridSample), l'instant, masque et attributs ensemble, le flot (4 entrées).
-GlueKind glue_kind(const Index& index, const OnnxFullNode& concat, int b, const std::string& block_input) {
+GlueKind glue_kind(const Index& index, const OnnxFullNode& concat, int b, const std::string& block_input,
+                   const std::string& encode_output) {
   const OnnxFullNode* previous = index.named(block_name(b - 1, "Split"), "Split");
   if (previous == nullptr) return GlueKind::Unknown;
   const std::vector<std::string>& in = concat.inputs;
@@ -264,9 +213,9 @@ GlueKind glue_kind(const Index& index, const OnnxFullNode& concat, int b, const 
                                  ? index.source(warped->inputs[0])
                                  : nullptr;
   // X_k ne va qu'à la convolution dont les poids seront permutés.
-  return grid != nullptr && grid->op_type == "GridSample" && index.readers(block_input) == 1
-             ? GlueKind::Interleaved
-             : GlueKind::Unknown;
+  if (grid == nullptr || grid->op_type != "GridSample" || index.readers(block_input) != 1)
+    return GlueKind::Unknown;
+  return warps_interleaved_source(index, *grid, encode_output) ? GlueKind::Interleaved : GlueKind::Unknown;
 }
 
 // Le flot accumulé arrive au bloc multiplié par 1/d, ou tel quel pour d = 1.
@@ -387,7 +336,7 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
           source->inputs[2] != "/Split_output_1")
         return unknown("Concat du bloc 0");
     } else {
-      const GlueKind kind = glue_kind(index, *source, b, first->inputs[0]);
+      const GlueKind kind = glue_kind(index, *source, b, first->inputs[0], split.encode_output);
       const bool interleaved = kind == GlueKind::Interleaved;
       if (kind == GlueKind::Unknown || (b > 1 && interleaved != split.interleaved))
         return unknown(std::format("Concat du bloc {}", b));
@@ -477,6 +426,7 @@ std::string format_manifest(const RifeFusedManifest& manifest) {
   text += '\n';
   for (const std::string& piece : manifest.pieces) text += std::format("piece {}\n", piece);
   text += format_sizes(manifest.sizes);
+  text += format_digests(manifest.digests);
   return text;
 }
 
@@ -500,6 +450,8 @@ std::optional<std::string> manifest_problem(const RifeFusedManifest& manifest, b
     return "nombre de morceaux différent de 1 + blocs";
   if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
     return "autant de tailles que de morceaux attendu";
+  if (!manifest.digests.empty() && manifest.digests.size() != manifest.pieces.size())
+    return "autant d'empreintes que de morceaux attendu";
   return std::nullopt;
 }
 
@@ -553,14 +505,17 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) 
         manifest.plan.reduce[static_cast<std::size_t>(manifest.plan.blocks++)] = *d;
       }
     } else if (key == "piece") {
-      // Un nom de fichier seul : jamais de dossier ni de « .. ».
-      if (rest.empty() || rest.find_first_of("/\\") != std::string_view::npos || rest == "." || rest == "..")
-        return bad("morceau « " + std::string(rest) + " »");
+      // Un nom de fichier seul : jamais de dossier, de « .. », de « : » ni de nom que Windows lit autrement.
+      if (rest == "." || !is_piece_file_name(rest)) return bad("morceau « " + std::string(rest) + " »");
       manifest.pieces.emplace_back(rest);
     } else if (key == "sizes") {
       auto sizes = parse_sizes(rest);
       if (!sizes) return bad("tailles illisibles");
       manifest.sizes = std::move(*sizes);
+    } else if (key == "digests") {
+      auto digests = parse_digests(rest);
+      if (!digests) return bad("empreintes illisibles");
+      manifest.digests = std::move(*digests);
     } else {
       return bad("champ « " + std::string(key) + " » inconnu");
     }
@@ -607,13 +562,16 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
   RifeFusedManifest manifest{.output = output, .height = height, .width = width, .plan = split->plan};
   for (const RifePiece& piece : *pieces) {
     const std::string file = std::format("{}-{}.onnx", stem, piece.name);
-    // Un morceau déjà là n'est gardé que s'il a la taille voulue : un morceau tronqué est réécrit (B04-02).
-    if (!file_has_size(dir / core::path_from_utf8(file), piece.model.size())) {
+    // Un morceau déjà là n'est gardé que s'il a la taille et l'empreinte voulues : un morceau tronqué ou
+    // abîmé est réécrit (B04-02, C04-06).
+    const std::string digest = sha256_hex(byte_text(piece.model));
+    if (!file_matches(dir / core::path_from_utf8(file), piece.model.size(), digest)) {
       if (auto written = write_atomic(dir / core::path_from_utf8(file), piece.model); !written)
         return std::unexpected(std::move(written.error()));
     }
     manifest.pieces.push_back(file);
     manifest.sizes.push_back(piece.model.size());
+    manifest.digests.push_back(digest);
   }
   const std::string text = format_manifest(manifest);
   const auto* raw = reinterpret_cast<const std::byte*>(text.data());

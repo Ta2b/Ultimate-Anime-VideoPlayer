@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 
+#include "prepare/onnx_split.h"
 #include "prepare/protobuf_fields.h"
 
 namespace ajp::prepare {
@@ -48,22 +49,10 @@ std::vector<std::byte> value_info(const OnnxOutput& output) {
   return info;
 }
 
-std::expected<Bytes, Refusal> graph_of(Bytes model) {
-  Fields fields(model);
-  RawField field;
-  std::optional<Bytes> graph;
-  while (fields.next(field)) {
-    if (field.number == kModelGraph && field.delimited) graph = field.payload;
-  }
-  if (!fields.ok()) return malformed("ONNX : protobuf du modèle malformé");
-  if (!graph) return malformed("ONNX : pas de graphe principal");
-  return *graph;
-}
-
 }  // namespace
 
 std::expected<std::vector<std::string>, Refusal> onnx_node_outputs(std::span<const std::byte> model) {
-  auto graph = graph_of(model);
+  auto graph = onnx_graph_field(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
   std::vector<std::string> names;
   Fields fields(*graph);
@@ -83,7 +72,7 @@ std::expected<std::vector<std::string>, Refusal> onnx_node_outputs(std::span<con
 }
 
 std::expected<std::vector<OnnxNode>, Refusal> onnx_nodes(std::span<const std::byte> model) {
-  auto graph = graph_of(model);
+  auto graph = onnx_graph_field(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
   std::vector<OnnxNode> nodes;
   Fields fields(*graph);
@@ -118,7 +107,7 @@ std::expected<std::vector<std::byte>, Refusal> with_outputs(std::span<const std:
       return std::unexpected(Refusal{RefusalCode::FieldMissing,
                                      std::format("ONNX : aucun nœud ne produit « {} »", output.name)});
   }
-  auto graph = graph_of(model);
+  auto graph = onnx_graph_field(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
 
   // Le graphe sans ses sorties, puis les nouvelles, à la fin (l'ordre des champs est libre).
