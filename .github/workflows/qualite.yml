@@ -31,6 +31,17 @@ jobs:
         run: python -I tools/bench/qualite/test_banc.py
       - name: Tests des outils (portes, seuils, modèles)
         run: python -I tools/common/test_outils.py
+      - name: Auto-tests des outils (bancs, grade, émetteurs, portes HDR)
+        # C46-16 : seul petits_gpu tournait (rules.yml) ; les autres auto-tests ne tournaient nulle part.
+        run: |
+          python -I tools/bench/banc_resume.py --selftest
+          python -I tools/bench/banc_leger_resume.py --selftest
+          python -I tools/bench/parite.py --selftest
+          python -I tools/grade/patterns.py --selftest
+          python -I tools/grade/check_hdr.py --self-test
+          python -I tools/grade/emitters/labels.py --self-test
+          python -I tools/grade/emitters/train.py --self-test
+          python -I tools/grade/emitters/dataset.py --self-test
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ajp-release-models

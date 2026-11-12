@@ -22,7 +22,7 @@ colle 1 (-> X1)                       0.0089
 colle 2 (-> X2)                       0.0212
 fin (sortie)                          0.0849   écrit 12,5 Mo et lit ~25 Mo : borne mémoire 0,075 ms
 somme noyaux                          0.152
-somme moteurs + noyaux isolés         0.842 ; chaîne en un graphe CUDA 0.918
+somme moteurs + noyaux isolés         0.842 (somme de médianes mesurées à part, pas des valeurs arrondies ci-dessus : 0,695 + 0,152 = 0,847) ; chaîne en un graphe CUDA 0.918
 
 ## Vérification noyau par noyau contre ORT CPU (entrées = tenseurs de référence du même passage)
 pre : exact (0 différence sur 1,5 M valeurs) ; post : 1 ulp (ORT ne calcule pas le Resize FP32 sur la valeur arrondie) ;

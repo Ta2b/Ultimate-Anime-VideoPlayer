@@ -27,6 +27,7 @@
 #include "app/play/system_language.h"
 #include "app/play/update_choice.h"
 #include "core/profile.h"
+#include "core/settings.h"
 #include "core/types.h"
 #include "media/selection.h"
 #include "render/grade_params.h"
@@ -380,6 +381,12 @@ inline bool span_runs(const PlaySettings& s, int source_height) {
 inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
   return chain_work_size(s.upscale, s.restore_lines, width, height, s.work_height);
 }
+// Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K) : chain_setup et la
+// note du panneau lisent la même (C23-04).
+inline constexpr int kRifeMotionHeight = 720;
+inline bool rife_motion_reduced(const WorkSize& work) {
+  return work.height > kRifeMotionHeight;
+}
 
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);
@@ -410,6 +417,10 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
 // qui relit un réglage sans reprendre les autres (B36-02, le fil des mises à jour). Une édition du fichier
 // faite pendant que le lecteur tourne reste ainsi protégée.
 std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& path);
+// settings.toml (les moteurs choisis et installés) lu comme play.toml : un verrou passager (antivirus sous
+// Windows) se réessaie avant de refuser, pour que l'assistant ne s'ouvre pas sur des défauts (C22-03).
+std::expected<core::Settings, Refusal> load_engine_settings(const std::filesystem::path& path,
+                                                            std::vector<std::string>* skipped = nullptr);
 // Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit. Un fichier
 // existant qui ne se lit pas n'est pas écrasé (FileUnreadable) ; un TOML invalide est gardé en copie d'abord.
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings);

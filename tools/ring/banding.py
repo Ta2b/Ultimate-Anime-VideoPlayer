@@ -44,7 +44,9 @@ def bands(image, run=16, dark=None):
     """Paliers par mégapixel ; dark : seuil en code PQ (0 à 1), DARK_NITS par défaut."""
     dark = dark_code() if dark is None else dark
     height, width, _ = image.shape
-    luma = (0.2627 * image[..., 0] + 0.6780 * image[..., 1] + 0.0593 * image[..., 2]) / 65535.0
+    # La luminance BT.2020 se pondère en lumière linéaire (nits), puis se recode en PQ pour se comparer au seuil :
+    # pondérer les codes PQ eux-mêmes écartait la sélection de la zone visée sur les pixels colorés (C46-10).
+    luma = hdr.linear_to_pq(hdr.pq_to_linear(image / 65535.0) @ hdr.LUMA_2020)
     count = 0
     for y in range(height):
         row = image[y]

@@ -27,12 +27,17 @@ from torch import nn
 def warp(image: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
     """Warp arrière bilinéaire, bords en clamp, centres des pixels aux entiers (comme le lecteur)."""
     _, _, h, w = image.shape
-    # Range sur des entiers, puis converti : le moteur Vulkan (gpu/ir) n'a pas de Range flottant.
-    ys = torch.arange(h, device=image.device).to(image.dtype).view(1, h, 1).expand(1, h, w)
-    xs = torch.arange(w, device=image.device).to(image.dtype).view(1, 1, w).expand(1, h, w)
-    x = (xs + flow[:, 0]) * (2.0 / max(w - 1, 1)) - 1.0
-    y = (ys + flow[:, 1]) * (2.0 / max(h - 1, 1)) - 1.0
+    # Range sur des entiers, puis converti : le moteur Vulkan (gpu/ir) n'a pas de Range flottant. La grille se
+    # calcule en FP32 : en FP16, le pas de coordonnée vaut 0,5 à 1 pixel à 960-1280 px de large (C46-13, le défaut
+    # que tools/rife/convert_rife_fp16.py corrige à l'export). Sous autocast, grid_sample lit de toute façon image
+    # et grille en FP32 ; hors autocast, une image FP16 reçoit la grille dans son type, comme avant.
+    ys = torch.arange(h, device=image.device).to(torch.float32).view(1, h, 1).expand(1, h, w)
+    xs = torch.arange(w, device=image.device).to(torch.float32).view(1, 1, w).expand(1, h, w)
+    x = (xs + flow[:, 0].to(torch.float32)) * (2.0 / max(w - 1, 1)) - 1.0
+    y = (ys + flow[:, 1].to(torch.float32)) * (2.0 / max(h - 1, 1)) - 1.0
     grid = torch.stack((x, y), dim=3)
+    if image.dtype != torch.float32 and not torch.is_autocast_enabled():
+        grid = grid.to(image.dtype)
     return F.grid_sample(image, grid, mode="bilinear", padding_mode="border", align_corners=True)
 
 
@@ -82,10 +87,14 @@ class FlowJaNai(nn.Module):
 
     @staticmethod
     def consistency(nvof: torch.Tensor) -> torch.Tensor:
-        """Écart avant-arrière de chaque flux, en pixels, compressé (log1p) pour le réseau."""
+        """Écart avant-arrière de chaque flux, en pixels, compressé (log1p) pour le réseau.
+
+        Les flux sont en pixels de l'image, mais portés par la grille 1/4 : le déplacement qui sert à les
+        échantillonner se compte en pixels de cette grille, d'où le ÷4 (C46-03, comme `local = flow / scale`
+        de Refine)."""
         f01, f10 = nvof[:, 0:2], nvof[:, 2:4]
-        e0 = (f01 + warp(f10, f01)).abs().sum(1, keepdim=True)
-        e1 = (f10 + warp(f01, f10)).abs().sum(1, keepdim=True)
+        e0 = (f01 + warp(f10, f01 / 4.0)).abs().sum(1, keepdim=True)
+        e1 = (f10 + warp(f01, f10 / 4.0)).abs().sum(1, keepdim=True)
         return torch.log1p(torch.cat((e0, e1), 1))
 
     def forward(self, img0, img1, t, nvof):

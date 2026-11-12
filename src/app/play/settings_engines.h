@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "app/play/input.h"
@@ -11,6 +12,10 @@
 #include "core/engines.h"
 
 namespace ajp::app::play {
+
+// Le chemin tel que l'Explorateur le donne (« Copier comme chemin » met des guillemets) : blancs et
+// guillemets doubles de part et d'autre retirés (C23-08).
+std::string clean_folder_text(std::string_view typed);
 
 // draft : le moteur coché et pas encore appliqué ; rien : celui en service. « Utiliser ce moteur »
 // pousse UseEngine dans actions, « Installer d'autres moteurs » OpenEngineScreen.

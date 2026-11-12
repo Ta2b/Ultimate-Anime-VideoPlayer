@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "bench_fichiers.h"
 #include "drba_fusion.cuh"
 
 #define VERIF(x)                                                                               \
@@ -47,24 +48,6 @@ class Journal : public nvinfer1::ILogger {
   }
 };
 
-std::vector<char> lire_fichier(const std::string& chemin) {
-  std::ifstream f(chemin, std::ios::binary | std::ios::ate);
-  if (!f) {
-    std::fprintf(stderr, "fichier illisible : %s\n", chemin.c_str());
-    std::exit(1);
-  }
-  const auto n = static_cast<std::size_t>(f.tellg());
-  std::vector<char> d(n);
-  f.seekg(0);
-  f.read(d.data(), static_cast<std::streamsize>(n));
-  return d;
-}
-
-void ecrire_fichier(const std::string& chemin, const void* data, std::size_t n) {
-  std::ofstream f(chemin, std::ios::binary);
-  f.write(static_cast<const char*>(data), static_cast<std::streamsize>(n));
-}
-
 struct Moteur {
   std::unique_ptr<nvinfer1::ICudaEngine> engine;
   std::unique_ptr<nvinfer1::IExecutionContext> ctx;
@@ -84,7 +67,7 @@ Moteur charger(nvinfer1::IRuntime& rt, const std::string& chemin) {
   for (int i = 0; i < m.engine->getNbIOTensors(); ++i) {
     const char* nom = m.engine->getIOTensorName(i);
     const auto dims = m.engine->getTensorShape(nom);
-    std::size_t n = 2;  // fp16
+    std::size_t n = 2;  // fp16 : tout autre type est refusé plus bas, il écrirait hors des tampons (C46-24)
     for (int d = 0; d < dims.nbDims; ++d) n *= static_cast<std::size_t>(dims.d[d]);
     if (m.engine->getTensorIOMode(nom) == nvinfer1::TensorIOMode::kINPUT) {
       m.entrees.push_back(nom);
@@ -94,8 +77,10 @@ Moteur charger(nvinfer1::IRuntime& rt, const std::string& chemin) {
       m.octets_sorties.push_back(n);
     }
     if (m.engine->getTensorDataType(nom) != nvinfer1::DataType::kHALF ||
-        m.engine->getTensorFormat(nom) != nvinfer1::TensorFormat::kLINEAR)
-      std::fprintf(stderr, "avertissement : %s n'est pas fp16 linéaire\n", nom);
+        m.engine->getTensorFormat(nom) != nvinfer1::TensorFormat::kLINEAR) {
+      std::fprintf(stderr, "%s n'est pas fp16 linéaire : moteur refusé\n", nom);
+      std::exit(1);
+    }
   }
   return m;
 }
@@ -105,11 +90,22 @@ void lier(Moteur& m, void* in, void* out) {
   m.ctx->setTensorAddress(m.sorties.at(0).c_str(), out);
 }
 
+std::vector<void*>& tampons_alloues() {
+  static std::vector<void*> v;
+  return v;
+}
+
+void liberer_tampons() {
+  for (void* p : tampons_alloues()) cudaFree(p);
+}
+
 template <typename T>
 T* alloue(std::size_t octets) {
   void* p = nullptr;
   VERIF(cudaMalloc(&p, octets));
   VERIF(cudaMemset(p, 0, octets));
+  if (tampons_alloues().empty()) std::atexit(liberer_tampons);
+  tampons_alloues().push_back(p);
   return static_cast<T*>(p);
 }
 
@@ -300,8 +296,8 @@ int verifier(const std::string& cas) {
   Tampons t = tampons();
   cudaStream_t s;
   VERIF(cudaStreamCreate(&s));
-  televerser(t.in01, lire_fichier(cas + "/in01.bin"));
-  televerser(t.in12, lire_fichier(cas + "/in12.bin"));
+  televerser(t.in01, lire_taille(cas + "/in01.bin", 7 * kPlan * 2));
+  televerser(t.in12, lire_taille(cas + "/in12.bin", 7 * kPlan * 2));
   const auto enc_in = lire_fichier(cas + "/enc_in.bin");
   const auto enc_out = lire_fichier(cas + "/enc_out.bin");
   const auto x0 = lire_fichier(cas + "/x0.bin"), x1 = lire_fichier(cas + "/x1.bin"),
@@ -365,8 +361,8 @@ int executer(const std::string& dossier, const std::string& in01, const std::str
   Chaine c = charger_chaine(*rt, dossier);
   cudaStream_t s;
   VERIF(cudaStreamCreate(&s));
-  televerser(c.t.in01, lire_fichier(in01));
-  televerser(c.t.in12, lire_fichier(in12));
+  televerser(c.t.in01, lire_taille(in01, 7 * kPlan * 2));
+  televerser(c.t.in12, lire_taille(in12, 7 * kPlan * 2));
   enfiler(c, s);
   VERIF(cudaStreamSynchronize(s));
   std::vector<__half> h(3 * kPlan);
@@ -408,8 +404,8 @@ int plein(const std::string& moteur, const std::string& in01, const std::string&
   cudaStream_t s;
   VERIF(cudaStreamCreate(&s));
   if (!in01.empty()) {
-    televerser(p.in01, lire_fichier(in01));
-    televerser(p.in12, lire_fichier(in12));
+    televerser(p.in01, lire_taille(in01, 7 * kPlan * 2));
+    televerser(p.in12, lire_taille(in12, 7 * kPlan * 2));
   }
   p.m.ctx->enqueueV3(s);
   VERIF(cudaStreamSynchronize(s));
@@ -434,8 +430,8 @@ int mesurer(const std::string& dossier, const std::string& in01, const std::stri
   cudaStream_t s;
   VERIF(cudaStreamCreate(&s));
   if (!in01.empty()) {
-    televerser(c.t.in01, lire_fichier(in01));  // vraies données (sinon zéros : warp trivial)
-    televerser(c.t.in12, lire_fichier(in12));
+    televerser(c.t.in01, lire_taille(in01, 7 * kPlan * 2));  // vraies données (sinon zéros : warp trivial)
+    televerser(c.t.in12, lire_taille(in12, 7 * kPlan * 2));
   }
   enfiler(c, s);
   VERIF(cudaStreamSynchronize(s));
