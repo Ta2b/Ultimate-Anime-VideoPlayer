@@ -290,7 +290,7 @@ static std::expected<void, Refusal> describe_streams(const AVFormatContext& form
 }
 
 std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path, OpenOptions options,
-                                             std::stop_token stop) {
+                                              std::stop_token stop) {
   auto state = std::make_unique<State>();
   // L'arrêt pose le drapeau que lit le rappel d'interruption de FFmpeg, pendant l'ouverture aussi ; déjà
   // demandé, il est posé tout de suite et l'ouverture refuse dès sa première lecture.
