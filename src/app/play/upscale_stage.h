@@ -186,6 +186,9 @@ class UpscaleStage final : public RingStage {
   // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
   // mouvement.
   void count_measured(const PairFacts& facts);
+  // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
+  // journal, seulement quand le menu Statistiques le demande.
+  void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);

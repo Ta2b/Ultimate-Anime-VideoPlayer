@@ -59,6 +59,31 @@ std::vector<std::string> Session::osd_lines() const {
   return lines;
 }
 
+// Débogage des paires : la teinte de l'image montrée si sa paire a été jugée tenue ou coupée.
+std::optional<PairTint> Session::pair_tint_now() const {
+  if (!show_stats_.pairs || config_.extra == nullptr || !current_ || current_->pts_us == kNoPts)
+    return std::nullopt;
+  const auto verdict = config_.extra->pair_verdict(current_->epoch, current_->pts_us);
+  if (!verdict) return std::nullopt;
+  return pair_tint(*verdict);
+}
+
+// La présentation de ce tour : l'image courante, ses sous-titres, l'OSD et l'interface.
+ShowRequest Session::show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const {
+  const bool shown = ui.draw != nullptr;
+  return ShowRequest{
+      .frame = current_ ? &*current_ : nullptr,
+      .subtitles = subtitles,
+      .osd = osd_,
+      .ui = ui.draw,
+      .ui_serial = shown ? ui.serial : 0,
+      .ui_bottom = shown ? ui.bottom : 0,
+      .ui_top = shown ? ui.top : 0,
+      .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 || shown || !osd_.empty(),
+      .target_us = fresh_ ? target_host_us_ : 0,
+      .tint = pair_tint_now()};
+}
+
 ControlsView Session::view() const {
   std::int64_t position = kNoPts;
   if (pending_seek_us_) {

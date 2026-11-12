@@ -61,7 +61,8 @@ struct Shown {
   std::optional<RingFrame> frame;
   std::optional<std::int64_t> subtitles_pts;
   std::vector<std::string> osd;
-  bool ui = false;  // une interface était à dessiner
+  bool ui = false;               // une interface était à dessiner
+  std::optional<PairTint> tint;  // débogage des paires (pair_marks.h)
 };
 
 // Écran sans fenêtre : chaque présentation avance d'une période fixe.

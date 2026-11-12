@@ -9,8 +9,11 @@
 // entrées, puis l'instant seul pour les autres instants.
 #include <utility>
 
+#include "app/play/pair_marks.h"
 #include "app/play/upscale_stage.h"
+#include "core/log.h"
 #include "core/trace.h"
+#include "kernels/spec/detect.h"
 
 namespace ajp::app::play {
 
@@ -182,6 +185,19 @@ void UpscaleStage::count_measured(const PairFacts& facts) {
     ++held_;
     if (setup_.live) setup_.live->count_held();
   }
+}
+
+void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) {
+  if (setup_.live == nullptr || !setup_.live->pair_marks_on() || !facts.scores || !previous_) return;
+  const bool cut = pair_cut(facts);
+  if (!cut && !kernels::is_held(facts.scores->worst_block)) return;  // une paire qui bouge : rien à montrer
+  if (previous_->pts_us == kNoPts || frame.pts_us == kNoPts) return;
+  const PairMark mark{.epoch = frame.epoch,
+                      .from_us = previous_->pts_us,
+                      .to_us = frame.pts_us,
+                      .verdict = cut ? PairVerdict::Cut : PairVerdict::Held};
+  setup_.live->pair_marks().add(mark);
+  log_channel("gpu")->info("{}", pair_mark_line(mark, *facts.scores, facts.known_cut, useful_area_));
 }
 
 }  // namespace ajp::app::play

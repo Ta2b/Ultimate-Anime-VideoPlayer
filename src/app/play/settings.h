@@ -129,6 +129,9 @@ struct StatsSettings {
   bool output = false;    // sortie HDR10 ou SDR
   bool position = false;  // position à la milliseconde
   bool memory = false;    // mémoire vidéo
+  // Débogage : chaque paire jugée tenue ou coupée teinte l'écran et va au journal (pair_marks.h). Le temps de
+  // la session seulement : ni play.toml ni any() ne le connaissent.
+  bool pairs = false;
   bool any() const { return all || chain || frames || rife || tracks || output || position || memory; }
   friend bool operator==(const StatsSettings&, const StatsSettings&) = default;
 };
