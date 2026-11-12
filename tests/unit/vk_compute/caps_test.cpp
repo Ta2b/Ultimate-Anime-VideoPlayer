@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -66,4 +67,23 @@ TEST_CASE("Capacités : l'adresse PCI se lit aussi sur une API 1.2", "[vk_comput
     REQUIRE(caps.pci.has_value());
     CHECK(caps.pci->bus == 0x2b);
   }
+}
+
+// C49-06 : la ligne des capacités dit ce que le VkDevice a activé, et signale une extension présente mais inactive.
+TEST_CASE("Capacités : describe distingue les matrices coopératives présentes, activées ou non",
+          "[vk_compute][caps]") {
+  DeviceCaps caps;
+  caps.device_name = "essai";
+  CHECK(describe(caps).find("matrices") == std::string::npos);
+  caps.cooperative_matrix = true;  // l'appareil les propose
+  const std::string present = describe(caps);
+  CHECK(present.find("NON activées") != std::string::npos);
+  caps.enabled.cooperative_matrix = true;
+  caps.enabled.vulkan_memory_model = true;
+  caps.enabled.float8_matrix = true;
+  const std::string active = describe(caps);
+  CHECK(active.find("NON activées") == std::string::npos);
+  CHECK(active.find("matrices coopératives activées") != std::string::npos);
+  CHECK(active.find("modèle mémoire") != std::string::npos);
+  CHECK(active.find("FP8") != std::string::npos);
 }

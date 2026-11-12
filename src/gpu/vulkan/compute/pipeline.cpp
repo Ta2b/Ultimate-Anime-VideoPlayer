@@ -13,6 +13,9 @@
 namespace ajp::gpu::vk {
 
 Pipeline::~Pipeline() {
+  // Un GPU tenu pour bloqué garde ses objets, comme les tampons, images et sémaphores : un enregistrement dont la
+  // fin de vie a attendu en vain peut encore s'en servir (C49-04).
+  if (context_.stalled()) return;
   const DeviceFunctions& fn = context_.fn();
   const VkDevice device = context_.device();
   if (pipeline_ != VK_NULL_HANDLE) fn.vkDestroyPipeline(device, pipeline_, nullptr);
@@ -91,6 +94,7 @@ std::vector<std::byte> PipelineCache::serialize() const {
 
 PipelineCache::~PipelineCache() {
   pipelines_.clear();
+  if (context_.stalled()) return;  // C49-04 : modules, échantillonneur et cache restent, comme les pipelines
   const DeviceFunctions& fn = context_.fn();
   for (const auto& [name, module] : modules_) fn.vkDestroyShaderModule(context_.device(), module, nullptr);
   if (sampler_ != VK_NULL_HANDLE) fn.vkDestroySampler(context_.device(), sampler_, nullptr);
