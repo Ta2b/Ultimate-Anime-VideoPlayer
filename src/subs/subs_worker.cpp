@@ -134,6 +134,12 @@ void SubsWorker::serve() {
         starved_ = true;  // la demande reste en tête jusqu'au prochain AtlasReturned
         return;
       } else {
+        // B17-02 : un rendu réduit (atlas trop petit pour l'image) rend le texte flou ; rien ne le disait.
+        if (renderer_.shrink() != shrink_logged_) {
+          log_->info("sous-titres à {} µs : rendu à 1/{} de la taille (il était à 1/{})", request.pts_us,
+                     renderer_.shrink(), shrink_logged_);
+          shrink_logged_ = renderer_.shrink();
+        }
         deliver(std::get<SubtitleFrame>(std::move(*outcome)));
       }
     }

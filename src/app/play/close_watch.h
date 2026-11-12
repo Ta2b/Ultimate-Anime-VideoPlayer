@@ -9,23 +9,26 @@
 #include <functional>
 #include <mutex>
 #include <stop_token>
-#include <system_error>
 #include <thread>
 #include <utility>
+
+#include "core/thread.h"
 
 namespace ajp::app::play {
 
 class CloseWatch {
  public:
   CloseWatch(std::chrono::milliseconds limit, std::function<void()> on_stuck) {
-    try {
-      thread_ = std::jthread([this, limit, action = std::move(on_stuck)](const std::stop_token& stop) {
-        std::unique_lock lock(mutex_);
-        // Faux : le délai est passé sans demande d'arrêt.
-        if (!wake_.wait_for(lock, stop, limit, [&] { return stop.stop_requested(); })) action();
-      });
-    } catch (const std::system_error&) {  // sans thread : pas de garde, la fermeture attend comme avant
-    }
+    // B30-04 : start_thread ne lève jamais (sans thread : pas de garde, la fermeture attend comme avant) et
+    // une exception de l'action (spdlog peut en lever) devient un refus perdu, pas un terminate.
+    auto started = start_thread(
+        "garde de fermeture", ThreadReport([](const Refusal&) {}),
+        [this, limit, action = std::move(on_stuck)](const std::stop_token& stop, const ThreadReport&) {
+          std::unique_lock lock(mutex_);
+          // Faux : le délai est passé sans demande d'arrêt.
+          if (!wake_.wait_for(lock, stop, limit, [&] { return stop.stop_requested(); })) action();
+        });
+    if (started) thread_ = std::move(*started);
   }
   ~CloseWatch() = default;  // std::jthread demande l'arrêt et attend le thread
   CloseWatch(const CloseWatch&) = delete;

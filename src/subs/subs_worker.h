@@ -67,6 +67,7 @@ class SubsWorker {
   std::deque<RenderRequest> pending_;  // au plus kMaxPendingRequests
   bool starved_ = false;               // la tête de pending_ attend un atlas libre
   std::uint32_t epoch_ = 0;
+  int shrink_logged_ = 1;  // le dernier facteur de réduction du rendu journalisé (B17-02)
 };
 
 }  // namespace ajp::subs

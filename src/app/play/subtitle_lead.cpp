@@ -12,6 +12,7 @@
 #include "app/play/bridges.h"
 #include "app/play/pumped_task.h"
 #include "core/log.h"
+#include "core/thread.h"
 #include "core/utf8_path.h"
 #include "media/demuxer.h"
 
@@ -75,11 +76,30 @@ struct SubtitleLead::Core {
   std::condition_variable stopped_cv;
 };
 
-SubtitleLead::SubtitleLead(SubtitleLeadConfig config)
-    : core_(std::make_shared<Core>(std::move(config))), thread_([core = core_](const std::stop_token& stop) {
-        core->run(stop);
-        core->mark_stopped();
-      }) {}
+SubtitleLead::SubtitleLead(SubtitleLeadConfig config) : core_(std::make_shared<Core>(std::move(config))) {
+  // B30-04 : un thread refusé par le système, ou une exception du corps (mémoire épuisée), ne doit ni arrêter
+  // le lecteur ni faire échouer l'ouverture : la lecture continue sans lecture en avance (la source livre
+  // encore les sous-titres, à partir du point clé d'un seek).
+  auto started = start_thread("sous-titres en avance", ThreadReport([](const Refusal& refusal) {
+                                log_channel("app")->warn("sous-titres en avance : {} ({})",
+                                                         name(refusal.code), refusal.detail);
+                              }),
+                              [core = core_](const std::stop_token& stop, const ThreadReport&) {
+                                // Rend la main au destructeur même si le corps lève.
+                                struct Stopped {
+                                  Core& core;
+                                  ~Stopped() { core.mark_stopped(); }
+                                } stopped{*core};
+                                core->run(stop);
+                              });
+  if (started) {
+    thread_ = std::move(*started);
+  } else {
+    log_channel("app")->warn("sous-titres en avance : pas de thread, lecture sans ({})",
+                             started.error().detail);
+    core_->mark_stopped();
+  }
+}
 
 SubtitleLead::~SubtitleLead() {
   thread_.request_stop();

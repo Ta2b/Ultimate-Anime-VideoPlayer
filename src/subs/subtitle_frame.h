@@ -1,6 +1,7 @@
 // Ce que subs remet à render : pour un pts de sortie, un atlas R8 de couverture
 // et la liste des rectangles à y prélever. render les dessine après le grade, à
-// la résolution de sortie, au blanc subtitle_white.
+// la résolution de sortie, en sRGB : le blanc cible est celui que libplacebo choisit pour l'écran (203 nits
+// en sortie HDR par défaut). Le produit ne fixe pas de niveau propre aux sous-titres (B17-10).
 //
 // Contrat de dessin, dans l'ordre de la liste (l'ordre de libass) :
 //   pour chaque pixel p de rect.src, couverture c = atlas[p] / 255,
