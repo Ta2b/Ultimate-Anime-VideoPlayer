@@ -3,7 +3,7 @@
 // SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   ajp_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16]
+//                    [--padded | --per-tap] [--fp16] [--acc16]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -11,7 +11,8 @@
 // ligne, sur la sortie standard (pour les comparer à ONNX Runtime). --padded, --per-tap : pour un modèle à 48
 // canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
 // le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
-// mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. À lancer sous le
+// mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
+// accumulateur f16, comme le drapeau du paquet. À lancer sous le
 // verrou GPU
 // (~/ajp-tools/bin/ajp-gpu).
 #include <algorithm>
@@ -61,6 +62,7 @@ struct Options {
   bool reference = false;
   ajp::gpu::cuda::SpanFp8Width width48 = ajp::gpu::cuda::SpanFp8Width::Native;
   bool fp16 = false;
+  bool acc16 = false;
 };
 
 // Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
@@ -73,6 +75,8 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.width48 = ajp::gpu::cuda::SpanFp8Width::Padded;
     } else if (option == "--fp16") {
       options.fp16 = true;
+    } else if (option == "--acc16") {
+      options.acc16 = true;
     } else if (option == "--per-tap") {
       options.width48 = ajp::gpu::cuda::SpanFp8Width::PerTap;
     } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
@@ -105,6 +109,7 @@ ajp::gpu::cuda::SpanFp8Weights weights_for(const ajp::gpu::span_fp8::Package& pa
   ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(package);
   weights.width48 = options.width48;
   weights.fp16 = options.fp16;
+  weights.acc16 = weights.acc16 || options.acc16;
   return weights;
 }
 
