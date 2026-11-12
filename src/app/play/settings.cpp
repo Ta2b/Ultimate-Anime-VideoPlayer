@@ -341,6 +341,7 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
     s.rife_auto = false;  // un multiplicateur donné à la main coupe le mode auto, comme dans le menu
   }
   if (options.was_given("--truehdr-peak")) s.true_hdr_peak = options.true_hdr_peak;
+  if (options.smooth_drawings) s.smooth_drawings = true;
   if (options.was_given("--anime-contrast")) s.grade_values.anime_contrast = options.anime_contrast;
   if (options.was_given("--anime-saturation")) s.grade_values.anime_saturation = options.anime_saturation;
   if (options.was_given("--anime-highlights")) s.grade_values.anime_highlights = options.anime_highlights;
@@ -365,6 +366,10 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
   keep("--rife", &PlaySettings::rife_factor_den);
   keep("--rife", &PlaySettings::rife_auto);  // l'option la coupe pour cette lecture seulement (A22-05)
   keep("--truehdr-peak", &PlaySettings::true_hdr_peak);
+  // --smooth-drawings est un drapeau (absent de `given`) : l'essai de la ligne de commande ne s'enregistre
+  // pas.
+  if (options.smooth_drawings && running.smooth_drawings == started.smooth_drawings)
+    out.smooth_drawings = from_file.smooth_drawings;
   // Les peps de l'anime vivent dans grade_values : une option donnée à la main n'est pas enregistrée.
   const auto keep_grade = [&](std::string_view option, int render::GradeSettings::* member) {
     if (options.was_given(option) && running.grade_values.*member == started.grade_values.*member)
@@ -425,6 +430,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.rife_fused =
         wanted.rife_fused;  // sans interpolation, rien à recharger : le réglage s'enregistre (A22-01)
     s.drba_fused = wanted.drba_fused;
+    s.smooth_drawings = wanted.smooth_drawings;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -490,6 +496,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::motion_precision);
   keep(&PlaySettings::rife_fused);
   keep(&PlaySettings::drba_fused);
+  keep(&PlaySettings::smooth_drawings);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -507,6 +514,16 @@ void add_shape_reasons(std::vector<std::string>& reopen, const PlaySettings& run
   if (shape.warp_after_span != opened->shape.warp_after_span && running.span_order == wanted.span_order)
     reopen.emplace_back(shape.warp_after_span ? i18n::tr("warp runs after SPAN")
                                               : i18n::tr("warp runs before SPAN"));
+}
+
+// « Lisser les dessins tenus » changé avec RIFE : l'étage lit cinq images en avance, ou plus.
+void add_smooth_reason(std::vector<std::string>& reopen, const PlaySettings& base,
+                       const PlaySettings& wanted) {
+  if (wanted.rife_factor < 2 || wanted.motion_engine != MotionEngine::Rife ||
+      base.smooth_drawings == wanted.smooth_drawings)
+    return;
+  reopen.emplace_back(wanted.smooth_drawings ? i18n::tr("held drawings are smoothed (frames read ahead)")
+                                             : i18n::tr("held drawings keep their rhythm"));
 }
 
 // Ce que recharge un agrandissement changé : SPAN, ou Anime4K, qui n'a rien à construire.
@@ -537,6 +554,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.span_order = opened->loaded->span_order;
   base.rife_fused = opened->loaded->rife_fused;
   base.drba_fused = opened->loaded->drba_fused;
+  base.smooth_drawings = opened->loaded->smooth_drawings;
   return base;
 }
 
@@ -562,6 +580,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(wanted.drba_fused
                             ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
                             : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
+  add_smooth_reason(reopen, base, wanted);
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       base.rife_model != wanted.rife_model)
     reopen.emplace_back(i18n::tr("the RIFE model loads (built the first time for this size)"));

@@ -49,8 +49,9 @@ class KeptRing final : public RingSink {
 // release(). outputs() note, par image, si la suivante était déjà là.
 class ProbeStage final : public RingStage {
  public:
-  ProbeStage(VideoStageInit init, std::uint32_t slots, std::uint32_t held, std::uint32_t outputs)
-      : RingStage(std::move(init), slots, 0), held_(held), outputs_(outputs) {
+  ProbeStage(VideoStageInit init, std::uint32_t slots, std::uint32_t held, std::uint32_t outputs,
+             std::size_t extra_frames = 0)
+      : RingStage(std::move(init), slots, 0, extra_frames), held_(held), outputs_(outputs) {
     REQUIRE(start("ring-sonde"));
   }
   ~ProbeStage() override {
@@ -68,7 +69,8 @@ class ProbeStage final : public RingStage {
     released_.notify_all();
   }
   bool holding() const { return holding_.load(); }
-  void wait_for_next(bool on) { waits_.store(on); }
+  void wait_for_next(bool on) { waits_.store(on ? 1 : 0); }
+  void wait_for_ahead(std::size_t frames) { waits_.store(frames); }
   void same_output(int output) { same_.store(output); }
   int skipped() const { return skipped_.load(); }
   void lose_device(bool on) { lost_.store(on); }
@@ -78,9 +80,14 @@ class ProbeStage final : public RingStage {
     const std::scoped_lock lock(mutex_);
     return saw_next_;
   }
+  // Pour chaque image passée par outputs() : combien de suivantes de son époque next(k) donnait.
+  std::vector<std::size_t> saw_ahead() const {
+    const std::scoped_lock lock(mutex_);
+    return saw_ahead_;
+  }
 
  private:
-  bool wants_next() const override { return waits_.load(); }
+  std::size_t frames_ahead() const override { return waits_.load(); }
   Fate fate(const DecodedFrame& /*frame*/, std::uint32_t output) override {
     return same_.load() == static_cast<int>(output) ? Fate::Same : Fate::Write;
   }
@@ -93,6 +100,9 @@ class ProbeStage final : public RingStage {
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) override {
     const std::scoped_lock lock(mutex_);
     saw_next_.push_back(next() != nullptr);
+    std::size_t ahead = 0;
+    while (next(ahead + 1) != nullptr) ++ahead;
+    saw_ahead_.push_back(ahead);
     return outputs_;
   }
   std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t /*output*/,
@@ -114,10 +124,11 @@ class ProbeStage final : public RingStage {
   std::atomic<bool> holding_{false};
   std::atomic<int> same_{-1};
   std::atomic<int> skipped_{0};
-  std::atomic<bool> waits_{false};
+  std::atomic<std::size_t> waits_{0};
   std::atomic<bool> lost_{false};
   std::atomic<int> health_checks_{0};
   std::vector<bool> saw_next_;
+  std::vector<std::size_t> saw_ahead_;
 };
 
 struct Bench {
@@ -140,9 +151,12 @@ struct Bench {
   }
 };
 
-DecodedFrame frame(std::uint32_t id) {
-  return DecodedFrame{
-      .id = SourceId{id}, .width = 64, .height = 48, .pts_us = static_cast<std::int64_t>(id) * 40'000};
+DecodedFrame frame(std::uint32_t id, std::uint32_t epoch = 0) {
+  return DecodedFrame{.id = SourceId{id},
+                      .width = 64,
+                      .height = 48,
+                      .pts_us = static_cast<std::int64_t>(id) * 40'000,
+                      .epoch = epoch};
 }
 
 template <class Done>
@@ -185,6 +199,43 @@ TEST_CASE("Ring : un étage qui attend la suivante produit la dernière image à
   REQUIRE(stage.post(StreamEnd{.epoch = 0}));
   REQUIRE(wait_for([&] { return bench.ring.size() == 2; }));
   CHECK(stage.saw_next() == std::vector<bool>{true, false});
+  CHECK(bench.reported().empty());
+}
+
+// Le Smooth cherche la fin d'un dessin tenu jusqu'à cinq images derrière la tête : l'étage en tient d'autant
+// plus en vol (extra_frames), et la tête attend qu'elles soient là, ou la fin du flux.
+TEST_CASE("Ring : un étage qui lit quatre images en avance les attend, puis vide le flux à sa fin",
+          "[app][ring]") {
+  Bench bench;
+  ProbeStage stage(bench.init(), 8, /*held=*/0, /*outputs=*/1, /*extra_frames=*/3);
+  stage.wait_for_ahead(4);
+  for (std::uint32_t id = 1; id <= 4; ++id) REQUIRE(stage.frames().try_push(frame(id)));
+  // Quatre images en vol, aucune produite : la 1 attend une quatrième derrière elle.
+  std::this_thread::sleep_for(20ms);
+  CHECK(bench.ring.size() == 0);
+  CHECK(stage.idle());
+  // Sept images en vol au plus (kMaxFrames + 3).
+  for (std::uint32_t id = 5; id <= 7; ++id) REQUIRE(stage.frames().try_push(frame(id)));
+  REQUIRE(wait_for([&] { return bench.ring.size() == 3; }));
+  // 1, 2 et 3 voient toutes celles qui attendent derrière elles ; la 4 attend.
+  CHECK(stage.saw_ahead() == std::vector<std::size_t>{6, 5, 4});
+  REQUIRE(stage.post(StreamEnd{.epoch = 0}));
+  REQUIRE(wait_for([&] { return bench.ring.size() == 7; }));
+  CHECK(stage.saw_ahead() == std::vector<std::size_t>{6, 5, 4, 3, 2, 1, 0});
+  CHECK(bench.reported().empty());
+}
+
+TEST_CASE("Ring : une image d'une autre époque derrière la tête arrête l'attente des suivantes",
+          "[app][ring]") {
+  Bench bench;
+  ProbeStage stage(bench.init(), 8, /*held=*/0, /*outputs=*/1, /*extra_frames=*/3);
+  stage.wait_for_ahead(4);
+  REQUIRE(stage.frames().try_push(frame(1)));
+  REQUIRE(stage.frames().try_push(frame(2)));
+  REQUIRE(stage.frames().try_push(frame(3, /*epoch=*/1)));
+  // 1 et 2 finissent leur époque : produites sans attendre ; 3 attend les siennes.
+  REQUIRE(wait_for([&] { return bench.ring.size() == 2; }));
+  CHECK(stage.saw_ahead() == std::vector<std::size_t>{1, 0});
   CHECK(bench.reported().empty());
 }
 

@@ -86,12 +86,39 @@ std::vector<Attribute> parse_attributes(std::string_view s) {
   }
 }
 
+// B17-04 : un nom de police qui sort du bloc de balises ASS (« } », « \ ») ou qui porte un caractère de
+// contrôle injecterait des balises de l'auteur du fichier : il est refusé en entier.
+bool safe_face(std::string_view face) {
+  return std::ranges::none_of(
+      face, [](char c) { return c == '{' || c == '}' || c == '\\' || static_cast<unsigned char>(c) < 0x20; });
+}
+
+// B17-03, B17-04 : la taille est un entier. De 1 à 7 sans unité, c'est l'échelle HTML (3 : la taille du
+// style, 16) ; au-delà, des points ASS, bornés à 200. Autre chose (« +1 », « big », vide, 0) : ignoré.
+std::optional<std::string> font_size(std::string_view value) {
+  constexpr std::array<int, 7> kHtmlSizes{10, 13, 16, 18,
+                                          24, 32, 48};  // 0,63 ; 0,82 ; 1 ; 1,12 ; 1,5 ; 2 ; 3
+  constexpr int kMaxSize = 200;
+  const bool unit =
+      value.ends_with("px") || value.ends_with("pt");  // une unité : des points ASS, pas l'échelle
+  if (unit) value.remove_suffix(2);
+  if (value.empty() || value.size() > 4 ||
+      !std::ranges::all_of(value, [](char c) { return c >= '0' && c <= '9'; }))
+    return std::nullopt;
+  int size = 0;
+  for (const char c : value) size = size * 10 + (c - '0');
+  if (size < 1) return std::nullopt;
+  if (size <= 7 && !unit) size = kHtmlSizes[static_cast<std::size_t>(size - 1)];
+  return std::to_string(std::min(size, kMaxSize));
+}
+
 FontTag parse_font(std::string_view attributes) {
   FontTag tag;
   for (const Attribute& attribute : parse_attributes(attributes)) {
     if (attribute.key == "color") tag.color = ass_color(attribute.value);
-    if (attribute.key == "face" && !attribute.value.empty()) tag.face = attribute.value;
-    if (attribute.key == "size" && !attribute.value.empty()) tag.size = attribute.value;
+    if (attribute.key == "face" && !attribute.value.empty() && safe_face(attribute.value))
+      tag.face = attribute.value;
+    if (attribute.key == "size") tag.size = font_size(attribute.value);
   }
   return tag;
 }

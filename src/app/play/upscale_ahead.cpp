@@ -24,8 +24,10 @@ std::expected<void, Refusal> UpscaleStage::allocate_ahead() {
     return {};
   };
   if (auto ok = alloc(ahead_.rgb, setup_.work_width, setup_.work_height); !ok) return ok;
-  if (small_[0]) return alloc(ahead_.small, setup_.rife_width, setup_.rife_height);
-  return {};
+  if (small_[0]) {
+    if (auto ok = alloc(ahead_.small, setup_.rife_width, setup_.rife_height); !ok) return ok;
+  }
+  return smooth_possible() ? allocate_smooth() : std::expected<void, Refusal>{};
 }
 
 bool UpscaleStage::take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec) {

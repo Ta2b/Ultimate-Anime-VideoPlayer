@@ -99,4 +99,20 @@ TEST_CASE("Sous-titres : les réponses identiques se fondent, le ring peut être
   CHECK(late.for_pts(41'000)->pts_us == 41'000);
 }
 
+// B17-01 : la même image rendue avec la montée des dialogues n'est pas jetée comme un doublon.
+TEST_CASE("Sous-titres : une réponse rendue avec la montée n'est pas jetée comme identique",
+          "[app][subtitles]") {
+  SubtitleQueue queue(kMaxKeptSubtitles);
+  auto first = response(0, 1);
+  first.line_lift = 0.0F;
+  auto lifted =
+      response(41'000, 1);  // même atlas, mêmes rectangles : un panneau \pos que libass ne monte pas
+  lifted.atlas = first.atlas;
+  lifted.line_lift = 0.12F;
+  queue.push(std::move(first), kNoPts);
+  queue.push(std::move(lifted), 0);
+  REQUIRE(queue.for_pts(41'000) != nullptr);
+  CHECK(queue.for_pts(41'000)->line_lift == 0.12F);
+}
+
 }  // namespace ajp::app::play

@@ -77,17 +77,21 @@ std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
 
 // Images décodées tenues au plus en même temps : par le thread source, par l'étage gpu
 // (RingStage::kMaxFrames en vol) et par le backend après ingest. Autant de surfaces NVDEC rendues
-// sans copie (DecoderOptions::direct_surfaces).
+// sans copie (DecoderOptions::direct_surfaces). Le Smooth en tient plus en vol (smooth_extra_frames).
 inline constexpr int kHeldDecodedFrames =
     media::kSourceHeldFrames + static_cast<int>(RingStage::kMaxFrames) + gpu::kMaxIngestHeldFrames;
-static_assert(kHeldDecodedFrames + 1 <= media::kMaxExtraHwFrames,
+constexpr int held_decoded_frames(bool smooth_drawings) {
+  return kHeldDecodedFrames + static_cast<int>(smooth_extra_frames(smooth_drawings));
+}
+static_assert(held_decoded_frames(true) + 1 <= media::kMaxExtraHwFrames,
               "NVDEC: 32 extra surfaces at most, the one frame the decoder still holds included (B15-03)");
 
 // Les options du décodeur pour ce backend et cet écran : les essais de decoder_attempts ; sous
 // TensorRT, qui lit les images NVDEC en place, les surfaces directes ; ailleurs, la copie en
 // mémoire hôte des images matérielles (DecoderOptions::download).
+// smooth_drawings : l'étage gpu tient les images du Smooth en plus (held_decoded_frames).
 media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
-                                      const media::HwDeviceSource* shared);
+                                      const media::HwDeviceSource* shared, bool smooth_drawings = false);
 
 // Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
 struct ChainEngines {

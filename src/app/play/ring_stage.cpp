@@ -14,10 +14,12 @@
 
 namespace ajp::app::play {
 
-RingStage::RingStage(VideoStageInit init, std::uint32_t slots, std::uint32_t generation)
+RingStage::RingStage(VideoStageInit init, std::uint32_t slots, std::uint32_t generation,
+                     std::size_t extra_frames)
     : init_(std::move(init)),
       generation_(generation),
-      inbox_(StageInbox::Bounds{kMaxFrames, slots, 16, 4, 4}),
+      max_frames_(kMaxFrames + extra_frames),
+      inbox_(StageInbox::Bounds{max_frames_, slots, 16, 4, 4}),
       released_(slots, 0),
       free_(slots, true) {}
 
@@ -42,7 +44,7 @@ std::expected<void, Refusal> RingStage::start(std::string_view name) {
 }
 
 bool RingStage::try_push(DecodedFrame&& frame) {
-  if (in_flight_.fetch_add(1) >= kMaxFrames || !inbox_.try_push(std::move(frame))) {
+  if (in_flight_.fetch_add(1) >= max_frames_ || !inbox_.try_push(std::move(frame))) {
     --in_flight_;
     return false;
   }
@@ -132,6 +134,17 @@ RingFrame RingStage::ring_frame(const Output& produced, std::uint32_t epoch, std
                    .submitted_us = submitted_us};
 }
 
+bool RingStage::waits_ahead() const {
+  const std::size_t wanted = frames_ahead();
+  if (wanted == 0) return false;
+  // Une image d'une autre époque derrière la tête : l'époque de la tête finit, rien de plus ne viendra.
+  for (std::size_t i = 1; i < pending_.size(); ++i) {
+    if (pending_[i].epoch != pending_[0].epoch) return false;
+  }
+  if (pending_.size() > wanted) return false;
+  return !(ended_.load() && in_flight_.load() <= pending_.size());  // fin du flux : toutes sont là
+}
+
 void RingStage::emit(const ThreadReport& report) {
   while (!pending_.empty()) {
     if (pending_.front().epoch < epoch_ || failed_) {  // d'avant le Flush, ou étage en échec : jetée
@@ -142,9 +155,7 @@ void RingStage::emit(const ThreadReport& report) {
       continue;
     }
     const DecodedFrame& frame = pending_.front();
-    if (front_outputs_ == 0 && wants_next() && pending_.size() < 2 &&
-        !(ended_.load() && in_flight_.load() <= pending_.size()))
-      return;  // attend la suivante
+    if (front_outputs_ == 0 && waits_ahead()) return;  // attend les suivantes
     if (front_outputs_ == 0 && pending_.size() > 1 && pending_[1].epoch == frame.epoch &&
         passed(frame, pending_[1])) {
       pending_.pop_front();

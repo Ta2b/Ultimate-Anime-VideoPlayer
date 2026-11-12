@@ -12,6 +12,7 @@
 // la plupart des paires sont tenues : RIFE n'y coûte rien.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -52,11 +53,19 @@ bool measured_cut(const PairFacts& facts);
 // Vrai si l'interpolation tourne sur la paire ; sinon b sort seul.
 bool rife_runs(const PairFacts& facts);
 
-// Smooth (--smooth-drawings, chantier 7.9) : un dessin tenu deux sources (a, a', puis b nouveau) se fond en
-// un seul mouvement de a vers b. L'instant t de la paire (a, a') donne u = t / 2 entre a et b ; celui de la
-// paire (a', b) donne u = 1/2 + t / 2. Linéaire sur toute la tenue.
-constexpr double smooth_hold_u(double t, bool second) {
-  return second ? 0.5 + t / 2.0 : t / 2.0;
+// Smooth (« Lisser les dessins tenus », --smooth-drawings, chantier 7.9) : un dessin tenu n sources (a, puis
+// n - 1 copies, puis b nouveau), de 2 à kSmoothMaxHold, se fond en un seul mouvement de a vers b. La paire de
+// rang k de la tenue (0 : (a, première copie) ; n - 1 : (dernière copie, b)) donne à son instant t la
+// position u = (k + t) / n entre a et b : linéaire sur toute la tenue, continue d'une paire à la suivante.
+// Une tenue plus longue garde le rythme des sources (une pose voulue, pas un dessin en deux ou en trois).
+inline constexpr std::uint32_t kSmoothMaxHold = 6;
+constexpr double smooth_hold_u(double t, std::uint32_t rank, std::uint32_t hold) {
+  return (static_cast<double>(rank) + t) / static_cast<double>(hold);
+}
+// Les images en vol que l'étage tient en plus pour le Smooth (RingStage, extra_frames) : la tête attend
+// kSmoothMaxHold - 1 suivantes, là où kMaxFrames en prévoit une.
+constexpr std::size_t smooth_extra_frames(bool smooth) {
+  return smooth ? std::size_t{kSmoothMaxHold} - 2 : 0;
 }
 
 // Dessin tenu avant la paire (la paire précédente n'a pas bougé) : RIFE avec poses n'a rien à calculer

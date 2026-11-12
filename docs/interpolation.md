@@ -28,6 +28,23 @@ Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « 
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.
 
+## Lisser les dessins tenus
+
+Case « Lisser les dessins tenus » (Vidéo, sous le multiplicateur ; `[interpolation] smooth_drawings` de
+`play.toml`, éteinte par défaut ; `--smooth-drawings --debug` pour une lecture). Un dessin tenu de 2 à 6 images
+de la source (animation en deux, en trois…), suivi d'un dessin nouveau, glisse vers lui au lieu de rester figé
+puis de sauter : la paire de rang k d'une tenue de n images prend l'instant t à la position (k + t) / n entre le
+dessin et le suivant (`smooth_hold_u`, `src/app/play/rife_plan.h`). Une tenue de plus de 6 images garde la
+copie (une pose), une coupe reste une coupe, et la tenue s'arrête si la lecture saute (seek, image en retard).
+
+- RIFE mouvement seulement ; l'option remplace « Garder les poses », qui fait l'inverse (`poses_kept`).
+- L'étage lit jusqu'à 5 images en avance pour trouver la fin de la tenue (`frames_ahead`, `ring_stage.h`) : 4
+  images décodées de plus en vol, 4 surfaces NVDEC de plus sous TensorRT (`held_decoded_frames`).
+- Chaque image de la tenue se compare à la première copie : un fondu lent, tenu paire par paire, n'est pas pris
+  pour un seul dessin.
+- L'idée vient du `--smooth_dedup` de TheAnimeScripter (AGPL) ; aucun code n'en est repris.
+- Le journal de fin compte les tenues fondues par longueur (« Smooth : … tenues fondues »).
+
 ## Warp du backend TensorRT : lecture filtrée
 
 Sous TensorRT, le warp et le mélange des images intermédiaires (`warp_blend_filtered`,

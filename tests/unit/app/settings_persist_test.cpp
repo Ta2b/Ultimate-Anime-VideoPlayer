@@ -84,6 +84,29 @@ TEST_CASE("play.toml : une valeur inconnue d'une version récente reste, et ses 
 }
 
 // B22-02 : un play.toml qui ne se lit pas n'est ni pris pour absent ni remplacé par les défauts de la séance.
+// Un play.toml d'avant « Lisser les dessins tenus » se lit, l'option éteinte ; allumée, elle se relit.
+TEST_CASE("play.toml : « Lisser les dessins tenus », absent d'un ancien fichier, s'enregistre",
+          "[app][settings][smooth]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-smooth.toml";
+  REQUIRE(save_settings(path, PlaySettings{}));
+  std::string text = read_text(path);
+  const std::size_t line = text.find("smooth_drawings = false\n");
+  REQUIRE(line != std::string::npos);
+  text.erase(line, std::string("smooth_drawings = false\n").size());
+  write_text(path, text);
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK_FALSE(old->smooth_drawings);
+  CHECK(old->keep_poses);
+  old->smooth_drawings = true;
+  REQUIRE(save_settings(path, *old));
+  CHECK(read_text(path).find("smooth_drawings = true") != std::string::npos);
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->smooth_drawings);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
   std::filesystem::remove_all(dir);
