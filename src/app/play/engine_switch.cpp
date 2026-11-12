@@ -6,6 +6,8 @@
 #include <string_view>
 #include <utility>
 
+#include "core/utf8_path.h"
+
 namespace ajp::app::play {
 namespace {
 
@@ -26,7 +28,7 @@ constexpr std::size_t usage(core::Usage u) {
 }  // namespace
 
 std::optional<core::EngineId> engine_of_library(const std::filesystem::path& library) {
-  const std::string file = library.filename().string();
+  const std::string file = core::to_utf8(library.filename());
   if (!file.contains("ajp_backend_")) return std::nullopt;
   for (const auto& [word, id] : kLibraries) {
     if (file.contains(word)) return id;
@@ -35,7 +37,7 @@ std::optional<core::EngineId> engine_of_library(const std::filesystem::path& lib
 }
 
 bool retired_library(const std::filesystem::path& library) {
-  const std::string file = library.filename().string();
+  const std::string file = core::to_utf8(library.filename());
   return file.contains("ajp_backend_") &&
          std::ranges::any_of(kRetiredLibraries, [&](std::string_view word) { return file.contains(word); });
 }

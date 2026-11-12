@@ -83,7 +83,12 @@ void wait_loop(std::int64_t wait_us, bool precise) {
   }
   tighten_timer_slack();
   const std::int64_t now = host_now_us();
-  const core::WaitPlan plan = core::wait_plan(now, now + std::max<std::int64_t>(wait_us, 0));
+#ifdef _WIN32
+  constexpr std::int64_t kMarginUs = core::kWaitMarginWindowsUs;
+#else
+  constexpr std::int64_t kMarginUs = core::kWaitMarginUs;
+#endif
+  const core::WaitPlan plan = core::wait_plan(now, now + std::max<std::int64_t>(wait_us, 0), kMarginUs);
   if (plan.coarse_ms > 0 && SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(plan.coarse_ms))) return;
   if (SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST)) return;
   sleep_until_precise(plan.precise_until_us);

@@ -122,6 +122,9 @@ struct Player {
   // B08-03 : l'instance de construction des moteurs d'une ouverture (EngineRequest::builder), posée par
   // prepare_chain et rendue à sa fin : elle ne garde pas un contexte CUDA pendant la lecture.
   std::shared_ptr<BackendLibrary::Instance> builder;
+  // C08-05 : le backend d'un tour de prepare_chain qui a échoué (un étage refusé), repris par le tour suivant
+  // au lieu d'un nouveau contexte CUDA et d'un nouveau runtime TensorRT ; rendu à la fin de prepare_chain.
+  BackendLibrary::Instance spare_backend;
   // B08-12 : les moteurs que prepare_engine a chargés pour la préparation en cours (ChainEngines les
   // reprend).
   std::vector<LoadedEngine> loaded_engines;
@@ -134,9 +137,6 @@ gpu::BackendLog backend_log();
 // fenêtre dit ce qu'elle attend au lieu de rester noire.
 void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label);
 
-// Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
-// l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont
-// posées, gpu/lanes.h) ; le backend revient ensuite sur Upscale.
 // P3.10 : la clé du refus d'une construction annulée par « Annuler et regarder » : la vidéo se rouvre sans
 // agrandissement ni interpolation.
 inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
@@ -144,6 +144,9 @@ inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
 inline constexpr std::string_view kDroppedVideoKey = "engine.dropped-video";
 Refusal dropped_video_refusal();
 
+// Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
+// l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont
+// posées, gpu/lanes.h) ; le backend revient ensuite sur Upscale.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);

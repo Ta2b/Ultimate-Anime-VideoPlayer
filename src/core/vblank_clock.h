@@ -10,8 +10,8 @@
 // rafraîchissement de la swapchain ou du compositeur), jamais le plus petit écart vu : un lecteur qui ne
 // présente qu'à l'image neuve (23,976 i/s sur 144 Hz, tous les 6 ou 7 vblanks) n'a aucun écart d'un seul
 // vblank, et la grille apprenait alors la cadence du contenu (A12-01). Une date qui ne tombe pas près d'un
-// multiple entier de la période est écartée. Sans période annoncée, l'ancienne estimation par le plus petit
-// écart reste, et repart de zéro quand un écart plus court la dément.
+// multiple entier de la période est écartée. Sans période annoncée (VRR, fréquence inconnue), aucune grille :
+// rien ne dirait si un écart vu compte un vblank ou plusieurs.
 #pragma once
 
 #include <cstddef>
@@ -53,8 +53,8 @@ class VblankClock {
   // visible_us : date où l'image est apparue ; target_us : date visée (0 : inconnue).
   void observe(std::int64_t visible_us, std::uint64_t id, std::int64_t target_us);
 
-  // La grille ajustée ; rien tant que kMinSamples dates n'ont pas été vues.
-  std::optional<VblankGrid> grid() const;
+  // La grille ajustée ; rien tant que kMinSamples dates n'ont pas été vues, ou sans période annoncée.
+  std::optional<VblankGrid> grid() const { return fit_; }
   // La fréquence mesurée, en Hz ; 0 sans grille.
   double hz() const;
   // Médiane de (affiché − visé) sur les images qui avaient une date visée ; 0 sans mesure.
@@ -69,10 +69,11 @@ class VblankClock {
   };
   void restart(std::int64_t visible_us);  // la grille repart de cette date
   void push(std::int64_t visible_us, std::int64_t steps);
+  void refit();  // la régression des dates gardées, dans fit_
   std::deque<Sample> times_;
   std::deque<std::int64_t> latencies_;
+  std::optional<VblankGrid> fit_;
   double nominal_us_ = 0.0;
-  double period_guess_us_ = 0.0;  // sans période annoncée : le plus petit écart vu, affiné par la régression
   std::int64_t last_k_ = 0;
   std::int64_t last_us_ = 0;
   int rejects_ = 0;

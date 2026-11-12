@@ -1,9 +1,9 @@
 # fichier	fonction	CCN	lignes : fonctions au-delà de CCN 25 ou 120 lignes, qui ne peuvent que baisser (check-complexity.py)
 src/app/main.cpp	run_player	45	204
 src/app/play/auto_bench_run.cpp	ajp::app::play::run_bench	34	104
-src/app/play/chain.cpp	ajp::app::play::apply	30	170
-src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
-src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	106	256
+src/app/play/chain.cpp	ajp::app::play::apply	29	170
+src/app/play/chain.cpp	ajp::app::play::apply_live	37	80
+src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	48	130
 src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
 src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	25	140
@@ -16,9 +16,9 @@ src/app/play/placebo_open.cpp	ajp::app::play::PlaceboScreen::open	49	222
 src/app/play/placebo_ring.cpp	ajp::app::play::PlaceboRing::create	28	112
 src/app/play/placebo_screen.cpp	ajp::app::play::PlaceboScreen::show	33	132
 src/app/play/player.cpp	ajp::app::play::play	122	455
-src/app/play/player_run.cpp	ajp::app::play::run_chain	189	633
+src/app/play/player_run.cpp	ajp::app::play::run_chain	159	623
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	30	100
-src/app/play/session.cpp	ajp::app::play::Session::tick	42	90
+src/app/play/session.cpp	ajp::app::play::Session::tick	35	81
 src/app/play/settings.cpp	ajp::app::play::change_between	33	44
 src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	82	193
 src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	146
@@ -30,7 +30,6 @@ src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::allocate	48	73
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	163	246
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::produce	37	91
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::start	39	62
-src/core/auto_rate.cpp	ajp::core::AutoRate::try_rise	26	41
 src/core/model_index.cpp	ajp::core::parse_vendor_file	27	59
 src/export/av_handles.cpp	ajp::exporter::color_of	34	105
 src/export/muxer.cpp	ajp::exporter::Muxer::begin	39	122

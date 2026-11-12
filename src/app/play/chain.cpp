@@ -163,19 +163,41 @@ void apply_finish(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   }
 }
 
+// C08-10 : l'interpolation demandée est refusée pour la séance et ce fichier (StageMemory) : la rallumer
+// rouvrirait la chaîne (écran « Chargement », seek) pour la voir refusée de nouveau ; un avis à la place.
+// « Réessayer » du panneau l'oublie.
+bool motion_held_off(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  if (wanted.rife_factor < 2 || to.opened.rife_loaded || to.stages == nullptr ||
+      !to.stages->holds(ChainStage::Motion, to.file))
+    return false;
+  to.ui.controls().notify(i18n::ui_tr("Smoothing unavailable: playing without it"), now_us);
+  return true;
+}
+
+// Le multiplicateur changé en direct. C08-10 : l'interpolation refusée à l'ouverture ne tourne pas ; un autre
+// facteur n'y change rien, le panneau garde « Réessayer ».
+void apply_factor(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  Controls& controls = to.ui.controls();
+  if (wanted.rife_factor >= 2 && !to.opened.rife_loaded) {
+    log_channel("app")->info("interpolation {} demandée, aucun moteur chargé",
+                             factor_text(factor_of(wanted)));
+    controls.notify(i18n::ui_tr("Smoothing unavailable: playing without it"), now_us);
+    return;
+  }
+  log_channel("app")->info("interpolation en direct : {}", factor_text(factor_of(wanted)));
+  to.live.set_rife_factor(factor_of(wanted));
+  controls.notify(wanted.rife_factor >= 2
+                      ? i18n::ui_tr_format("Interpolation {}", factor_text(factor_of(wanted)))
+                      : i18n::ui_tr(("Interpolation off")),
+                  now_us);
+}
+
 // Réglages en direct du menu des paramètres : RIFE, réduction, HDR, son, statistiques.
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
   Controls& controls = to.ui.controls();
   i18n::set_language(i18n::language_from_code(wanted.language));
-  if (factor_of(wanted) != factor_of(r)) {
-    log_channel("app")->info("interpolation en direct : {}", factor_text(factor_of(wanted)));
-    to.live.set_rife_factor(factor_of(wanted));
-    controls.notify(wanted.rife_factor >= 2
-                        ? i18n::ui_tr_format("Interpolation {}", factor_text(factor_of(wanted)))
-                        : i18n::ui_tr(("Interpolation off")),
-                    now_us);
-  }
+  if (factor_of(wanted) != factor_of(r)) apply_factor(to, wanted, now_us);
   if (wanted.rife_auto != r.rife_auto) {
     if (wanted.rife_auto) controls.notify(i18n::ui_tr("Interpolation: Auto"), now_us);
   }
@@ -372,7 +394,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               keep_for_file(to, false, true);
               std::tie(wanted.rife_factor, wanted.rife_factor_den) =
                   toggled_interpolation(wanted.rife_factor, wanted.rife_factor_den, to.kept.rife);
-              switch_chain(to, wanted, now_us);
+              if (!motion_held_off(to, wanted, now_us)) switch_chain(to, wanted, now_us);
               return;
             }
             if (std::holds_alternative<cmd::ProcessingOff>(command)) {  // B08-05 : SPAN et finition restent

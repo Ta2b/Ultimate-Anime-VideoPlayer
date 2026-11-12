@@ -158,9 +158,8 @@ struct ChainEngines {
   // ramenés à Équilibre (stage_fallback.h) ; stage_notes dit ce qui a changé.
   PlaySettings played;
   std::vector<StageNote> stage_notes;
-  bool fallback_fresh = false;
-  std::vector<LoadedEngine> loaded_engines;  // B08-12 : pour les badges de l'onglet Moteurs  // B08-02 : un
-                                             // repli interne refusé à cette ouverture, pas retenu d'avant
+  bool fallback_fresh = false;  // B08-02 : un repli interne refusé à cette ouverture, pas retenu d'avant
+  std::vector<LoadedEngine> loaded_engines;  // B08-12 : pour les badges de l'onglet Moteurs
 
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }
@@ -204,8 +203,16 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 
 // Échelle par paire (chain_half.cpp) : le second RIFE mouvement, à demi-taille, dans c.rife_motion_half quand
 // settings.pair_scale le demande et que c a un RIFE mouvement. Rien si l'utilisateur ferme la fenêtre ; un
-// refus laisse la lecture à pleine taille (journal).
+// refus laisse la lecture à pleine taille (journal), retenu pour la séance dans inner (C08-12).
 std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
-                                   const PlaySettings& settings, const std::filesystem::path& models_dir);
+                                   const PlaySettings& settings, InnerFallbacks& inner,
+                                   const std::string& library, const std::filesystem::path& models_dir);
+
+// RIFE (chain_rife.cpp) : c.rife_size, la géométrie, puis le fusionné, la variante mouvement ou RIFE image,
+// au cran de précision de settings. Faux : la fenêtre fermée pendant une construction ; un refus de l'étage
+// le rend.
+std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                            const PlaySettings& settings, InnerFallbacks& inner,
+                                            const std::string& library);
 
 }  // namespace ajp::app::play

@@ -418,7 +418,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (ImGui::BeginCombo(i18n::tr("Multiplier"), factor_shown.c_str())) {
     if (!exporting && ImGui::Selectable(i18n::tr("Auto"), d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
-      if (now.num <= now.den) d.rife_factor = 8;  // le plafond du mode auto
+      // Le plafond du mode auto : ×10, toute la grille (×10 pour 23,976 i/s sur un écran de 240 Hz). À ×8, le
+      // Stable s'arrêtait à ×5 à fréquence fixe et à ×8 en VRR.
+      if (now.num <= now.den) d.rife_factor = core::kAutoMaxStep;
       d.rife_factor_den = 1;
     }
     for (const Factor factor : kFactors) {
