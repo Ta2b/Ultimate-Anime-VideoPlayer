@@ -2,14 +2,9 @@ name: Diagnostic Core ML
 
 # Les modèles livrés, ouverts par ONNX Runtime et son fournisseur CoreML comme le lecteur les ouvre
 # (tools/ci/coreml_report.py) : les nœuds laissés au CPU, l'unité de chaque opération du plan de
-# Core ML, le temps d'une exécution. À la main, ou quand le script ou ce fichier changent.
+# Core ML, le temps d'une exécution. À la main.
 on:
   workflow_dispatch:
-  push:
-    branches: ["cloud/**"]
-    paths:
-      - tools/ci/coreml_report.py
-      - .github/workflows/diagnose-coreml.yml
 
 permissions:
   contents: read

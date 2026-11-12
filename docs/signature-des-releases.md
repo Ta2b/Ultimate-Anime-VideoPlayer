@@ -10,9 +10,13 @@ compilée dans `AJP_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
 
 ## Une release, de bout en bout
 
-Une seule action : pousser l'étiquette `v<VERSION>` (ou `v<VERSION>-rc.N` pour une préversion), où `<VERSION>` est
-celle de `project()` dans `CMakeLists.txt`. Aucune étiquette ne se pose sans la demande de Tatoub. Le workflow
-`release.yml` fait le reste :
+La CI ne tourne plus d'elle-même (en-tête de `.github/workflows/ci.yml`). Avant l'étiquette, la lancer à la main sur
+main, sur le commit à étiqueter : Actions > CI > Run workflow, branche `main`, « Étendue complète » cochée pour une
+release finale. Attendre qu'elle soit verte : sans elle, la garde refuse la release.
+
+Puis une seule action : pousser l'étiquette `v<VERSION>` (ou `v<VERSION>-rc.N` pour une préversion), où `<VERSION>`
+est celle de `project()` dans `CMakeLists.txt`, sur ce même commit. Aucune étiquette ne se pose sans la demande de
+Tatoub. Le workflow `release.yml` fait le reste :
 
 1. **Garde** (`release-guard.yml`) : le commit construit est celui de l'étiquette, l'étiquette dit la version de
    `CMakeLists.txt` (`tools/ci/check-version.sh <étiquette>`), et `ci.yml` est vert sur ce commit.
