@@ -42,7 +42,7 @@ std::expected<void, Refusal> UpscaleStage::enqueue_on(gpu::Engine& engine, const
     ++encodes_cold_;
   }
   const std::array inputs{input};
-  auto queued = setup_.backend->enqueue(engine, inputs, results);
+  auto queued = blame_stage(setup_.backend->enqueue(engine, inputs, results), kMotionRefusalKey);
   last = queued ? RifeEncoded{.engine = &engine, .buffer = rife_pair_, .images = images} : RifeEncoded{};
   return queued;
 }

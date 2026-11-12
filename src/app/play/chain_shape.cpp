@@ -19,8 +19,11 @@ int top_factor(const PlaySettings& settings, double display_hz, double source_fp
 }
 
 int order_factor(const PlaySettings& settings, double display_hz, double source_fps) {
-  if (settings.rife_auto && settings.rife_factor >= 2) return 0;
-  return top_factor(settings, display_hz, source_fps);
+  if (settings.rife_factor < 2 || !settings.rife_auto) return top_factor(settings, display_hz, source_fps);
+  // Le plafond choisi (auto_cap) ne décide pas : le changer en lecture ne rouvre pas la chaîne (B22-03).
+  const int ceiling = core::auto_ceiling(display_hz, source_fps);
+  if (settings.auto_free) return std::max(ceiling, 1);
+  return std::clamp(ceiling, 1, settings.rife_factor);
 }
 
 static_assert(kMaxRingSlots >= 8);

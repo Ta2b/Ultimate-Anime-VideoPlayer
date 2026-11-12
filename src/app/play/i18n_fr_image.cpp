@@ -29,16 +29,17 @@ constexpr std::array kImageTabs{
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un GPU rapide, sinon "
         "des images sont sautées."},
     Entry{
-        "After SPAN upscales each source frame once, then warps it: faster (about 8 ms saved per "
-        "frame from 1080p to 4K on an RTX 4070 Ti), but SPAN no longer cleans the warp defects of the "
-        "in-between frames; the image quality of the two orders is not compared. Before SPAN also "
-        "cleans each in-between frame. Auto picks After above 1080p, and from ×3 for a fixed "
-        "multiplier. Reloads playback.",
-        "Après SPAN agrandit chaque image source une fois, puis la déforme : plus rapide (environ 8 ms "
-        "gagnées par image de 1080p à 4K sur une RTX 4070 Ti), mais SPAN ne nettoie plus les défauts du warp "
-        "des images intermédiaires ; la qualité d'image des deux ordres n'est pas comparée. Avant SPAN "
-        "nettoie aussi chaque image intermédiaire. Auto choisit Après au-dessus de 1080p, et dès ×3 pour un "
-        "multiplicateur fixe. Recharge la lecture."},
+        "After SPAN upscales each source frame once, then warps it: faster (one SPAN pass per source "
+        "frame instead of one per shown frame, about 14.7 ms each from 1080p to 4K on an RTX 4070 Ti). "
+        "On the quality bench, as close to the true frame as Before (within 0.1 dB), about 1% softer. "
+        "Before SPAN also cleans each in-between frame. Auto picks After above 1080p, and from ×3 (the "
+        "highest multiplier Auto reaches on this display, or a fixed one). Reloads playback.",
+        "Après SPAN agrandit chaque image source une fois, puis la déforme : plus rapide (une passe de SPAN "
+        "par image source au lieu d'une par image montrée, environ 14,7 ms chacune de 1080p à 4K sur une "
+        "RTX 4070 Ti). Au banc de qualité, aussi proche de la vraie image qu'Avant (à 0,1 dB près), environ "
+        "1 % moins net. Avant SPAN nettoie aussi chaque image intermédiaire. Auto choisit Après au-dessus de "
+        "1080p, et dès ×3 (le plus haut multiplicateur qu'Auto atteint sur cet écran, ou un multiplicateur "
+        "fixe). Recharge la lecture."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "

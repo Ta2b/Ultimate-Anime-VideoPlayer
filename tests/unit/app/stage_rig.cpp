@@ -117,6 +117,10 @@ std::expected<void, Refusal> FakeBackend::enqueue(gpu::Engine& engine, std::span
   if (inputs.size() != engine.input_names().size() || outputs.size() != engine.output_names().size())
     return refuse(RefusalCode::InputMismatch, "backend factice : nombre de tenseurs du moteur");
   const std::string& name = static_cast<const FakeEngine&>(engine).name();
+  {
+    const std::scoped_lock lock(mutex_);
+    if (name == refused_engine_) return refuse(RefusalCode::VendorCallFailed, std::format("moteur {} refusé", name));
+  }
   if (name == "span") {  // la sortie de SPAN porte l'image de son entrée
     const std::scoped_lock lock(mutex_);
     const auto source = ingested_.find(inputs[0].handle);

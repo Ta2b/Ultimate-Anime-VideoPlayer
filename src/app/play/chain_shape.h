@@ -19,10 +19,13 @@ namespace ajp::app::play {
 // palier entier le plus haut que l'écran affiche (core/auto_ceiling), jusqu'à rife_factor ; 1 sans
 // interpolation ou écran inconnu en Auto. C'est le plafond que le menu affiche (« Auto va jusqu'à ×N »).
 int top_factor(const PlaySettings& settings, double display_hz, double source_fps);
-// Le facteur qui décide l'ordre du warp et de SPAN : celui choisi à la main, 0 (inconnu) en Auto. Le facteur
-// d'Auto varie avec la charge et avec l'écran (×5 à 120 Hz, ×10 à 240 Hz) : en faire la règle de « après SPAN
-// » donnait la voie rapide, aux défauts de warp agrandis, sur presque tout écran rapide, sans mesure de
-// qualité (B22-03). En Auto, seule la hauteur de sortie décide (kWarpAfterSpanAbove, mesurée en temps).
+// Le facteur qui décide l'ordre du warp et de SPAN : celui choisi à la main, ou en Auto le plus haut qu'il peut
+// prendre sur cet écran (top_factor, sans le plafond choisi, qui se change en lecture sans rouvrir la chaîne).
+// L'ordre ne bouge donc pas avec la charge. B22-03 gardait
+// 0 en Auto faute de mesure de qualité ; le banc la donne depuis (tools/bench/qualite/ordre.py,
+// docs/banc-qualite.md) : contre la vraie image, les deux ordres sont à 0,1 dB l'un de l'autre. Sans elle,
+// un écran 1080p à 144 ou 165 Hz passait chaque image créée par SPAN, six fois de plus par source (C32-01).
+// Écran ou cadence inconnus en Auto : 1, seule la hauteur décide.
 int order_factor(const PlaySettings& settings, double display_hz, double source_fps);
 // Emplacements du ring : 4 images, 6 de ×3 à ×4, 8 au-delà. En Rapide, le facteur suit l'écran : l'anneau
 // se taille sur top_factor de l'écran de l'ouverture (B08-08 : 4 sur 60 Hz au lieu de 8, la moitié de la

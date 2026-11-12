@@ -10,6 +10,7 @@
 //   - Screen : la fenêtre, la composition et la présentation (render et present).
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -44,6 +45,33 @@ struct StreamEnded {
 // La clé d'un refus qui arrête la lecture sans perdre son code (A31-01) : un étage gpu qui refuse une image
 // garde DeviceLost, GpuMemoryExhausted… au lieu de les réécrire en ThreadFailed, et le message les dit.
 inline constexpr std::string_view kFatalStageKey = "stage.fatal";
+// C09-01 : la clé d'un refus que rend un réseau de la chaîne (enqueue de SPAN, de RIFE ou de DistilDRBA), ou
+// l'anneau refusé à l'ouverture (mémoire vidéo) : le repli en lecture (stage_fallback.h, retreat_stage) ne retire
+// que l'étage nommé, et un refus qui n'en nomme aucun (ingestion, mesure) reste fatal sans rien retirer.
+inline constexpr std::string_view kSpanRefusalKey = "stage.span";
+inline constexpr std::string_view kMotionRefusalKey = "stage.motion";
+inline constexpr std::string_view kRingRefusalKey = "stage.ring";
+// La clé fatale d'un refus de l'étage gpu, qui garde l'étage nommé : « stage.fatal », « stage.fatal|stage.span ».
+inline std::string fatal_stage_key(std::string_view blamed) {
+  std::string key(kFatalStageKey);
+  if (blamed == kSpanRefusalKey || blamed == kMotionRefusalKey) (key += '|') += blamed;
+  return key;
+}
+inline bool is_fatal_stage_key(std::string_view key) {
+  return key == kFatalStageKey || (key.starts_with(kFatalStageKey) && key.size() > kFatalStageKey.size() &&
+                                   key[kFatalStageKey.size()] == '|');
+}
+// L'étage qu'une clé nomme (kSpanRefusalKey, kMotionRefusalKey ou kRingRefusalKey), fatale ou non ; vide : aucun.
+inline std::string_view blamed_stage_key(std::string_view key) {
+  if (is_fatal_stage_key(key)) key.remove_prefix(std::min(key.size(), kFatalStageKey.size() + 1));
+  if (key == kSpanRefusalKey || key == kMotionRefusalKey || key == kRingRefusalKey) return key;
+  return {};
+}
+// Le refus d'un réseau, avec l'étage qui l'a rendu (une clé déjà posée reste).
+inline std::expected<void, Refusal> blame_stage(std::expected<void, Refusal> ok, std::string_view key) {
+  if (!ok && ok.error().key.empty()) ok.error().key = key;
+  return ok;
+}
 
 struct StageRefusal {
   std::string stage;  // « source », « gpu », « audio », « subs »

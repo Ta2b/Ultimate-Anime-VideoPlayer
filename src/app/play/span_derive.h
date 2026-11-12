@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "app/play/backend_library.h"
+#include "app/play/i18n.h"
 #include "app/play/span_int8.h"
 #include "core/profile.h"
 #include "core/types.h"
@@ -59,7 +60,7 @@ class SpanDeriveProgress {
  private:
   mutable std::mutex mutex_;
   float fraction_ = 0.0F;
-  std::string stage_ = "démarrage";
+  std::string stage_ = std::string(i18n::tr("starting"));  // affiché tel quel par la barre (C07-09)
 };
 
 // Les images de la vidéo (media::extract_stills), ou ce qui en tient lieu dans les tests.

@@ -34,11 +34,19 @@ struct StageFailure {
 // « Annuler et regarder » : jamais un refus du moteur, aucun repli ne doit le prendre pour un échec.
 bool watch_now(const Refusal& refusal);
 
+// L'écran et la cadence de la source d'une ouverture : en Auto, ils fixent l'ordre du warp (order_factor,
+// chain_shape.h). 0 : inconnus.
+struct StageRates {
+  double display_hz = 0.0;
+  double source_fps = 0.0;
+};
+
 // Ce qui distingue un moteur d'un autre pour cet étage : un refus retenu sous cette signature vaut pour la
 // même vidéo rouverte comme pour la suivante de même taille. source : largeur et hauteur de la vidéo ;
-// library : le module du moteur (TensorRT, Vulkan).
+// library : le module du moteur (TensorRT, Vulkan) ; rates : ceux de l'ouverture, pour l'ordre du warp que la
+// chaîne prend (C09-03).
 std::string stage_signature(ChainStage stage, const PlaySettings& settings, int source_width,
-                            int source_height, std::string_view library);
+                            int source_height, std::string_view library, const StageRates& rates = {});
 
 // Ce que la préparation a retiré ou ramené pour jouer : montré une fois à l'écran et dans le panneau.
 // Fallback (B08-02) : un repli interne à l'étage (RIFE fusionné → entier, variante de SPAN → la suivante,
@@ -116,17 +124,21 @@ struct StagePlan {
 };
 std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemory& memory, int source_width,
                                      int source_height, std::string_view library,
-                                     const std::filesystem::path& file, bool allow_drop);
+                                     const std::filesystem::path& file, bool allow_drop,
+                                     const StageRates& rates = {});
 
-// B31-02 : un refus venu après la préparation (l'anneau à l'ouverture du pipeline, un refus de l'étage GPU
-// pendant la lecture) retire un étage comme un refus de la préparation : l'interpolation d'abord (l'anneau le
-// plus profond, le moteur le plus lourd), puis SPAN. played : les réglages que la chaîne jouait ; motion et
-// upscale : les étages chargés. Rend l'étage retenu dans memory, rien quand il n'y a rien à retirer ou que le
-// refus n'est pas celui d'un étage (appareil perdu, source qui change de taille, annulation).
+// B31-02 : un refus venu après la préparation retire un étage comme un refus de la préparation, s'il en nomme
+// un (C09-01, links.h) : l'anneau refusé à l'ouverture du pipeline (kRingRefusalKey : l'interpolation d'abord,
+// l'anneau le plus profond et le moteur le plus lourd, puis SPAN), ou le refus d'un réseau pendant la lecture
+// (kSpanRefusalKey, kMotionRefusalKey : cet étage seul). Un refus qui ne nomme aucun étage (ingestion d'un
+// format refusé, mesure) ne retire rien : il arrête la vidéo, et les suivantes jouent leur chaîne. played : les
+// réglages que la chaîne jouait ; motion et upscale : les étages chargés. Rend l'étage retenu dans memory, rien
+// quand il n'y a rien à retirer ou que le refus n'est pas celui d'un étage (appareil perdu, source qui change
+// de taille, annulation).
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
                                         const PlaySettings& played, bool motion, bool upscale,
                                         int source_width, int source_height, std::string_view library,
-                                        const std::filesystem::path& file);
+                                        const std::filesystem::path& file, const StageRates& rates = {});
 
 // L'avis à l'écran pour ces changements, vide s'il n'y en a pas : « Upscaling unavailable: playing without
 // it (Video > Post-processing: Retry) ».

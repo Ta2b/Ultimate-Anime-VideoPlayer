@@ -5,6 +5,8 @@
 #include <format>
 #include <utility>
 
+#include "app/play/chain_shape.h"
+#include "app/play/links.h"
 #include "app/play/options.h"
 #include "app/play/player_engines.h"
 #include "app/play/precision.h"
@@ -19,19 +21,19 @@ bool watch_now(const Refusal& refusal) {
 }
 
 std::string stage_signature(ChainStage stage, const PlaySettings& s, int source_width, int source_height,
-                            std::string_view library) {
+                            std::string_view library, const StageRates& rates) {
   // La taille de travail et la source fixent la forme des moteurs ; le modèle, le cran et le module, le
   // graphe et sa construction.
   const std::string common = std::format("{}|{}x{}|{}|{}|{}", library, source_width, source_height,
                                          s.work_height, name(s.downscale), s.restore_lines);
   if (stage == ChainStage::Upscale)
     return std::format("span|{}|{}|{}", common, s.model, name(s.span_precision));
-  // L'interpolation dépend aussi de SPAN : l'ordre du warp, que le facteur le plus haut et la sortie fixent.
-  // Pas le facteur brut, que l'Auto récrit selon l'écran : un refus retenu à ×5 vaut à ×4 (même ordre), et
-  // ×5 et ×2,5 ne se confondent plus (B09-05).
+  // L'interpolation dépend aussi de SPAN : l'ordre du warp, que le facteur le plus haut et la sortie fixent,
+  // calculé comme la chaîne le calcule (order_factor, C09-03). Pas le facteur brut, que l'Auto récrit selon
+  // l'écran : un refus retenu à ×5 vaut à ×4 (même ordre), et ×5 et ×2,5 ne se confondent plus (B09-05).
   const int output_height = chain_work_size(s, source_width, source_height).height * kSpanFactor;
-  const bool after =
-      warp_after_span(s.span_order, output_height, s.rife_factor / std::max(s.rife_factor_den, 1));
+  const bool after = s.upscale && warp_after_span(s.span_order, output_height,
+                                                  order_factor(s, rates.display_hz, rates.source_fps));
   return std::format("motion|{}|{}|{}|{}|{}|{}|{}|{}|{}", common, name(s.motion_engine), s.rife_model,
                      name(s.motion_precision), s.rife_fused, s.drba_fused, s.upscale, name(s.span_order),
                      after ? "warp-after" : "warp-before");
@@ -109,18 +111,28 @@ void InnerFallbacks::failed(ChainStage stage, std::string key, const Refusal& re
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
                                         const PlaySettings& played, bool motion, bool upscale,
                                         int source_width, int source_height, std::string_view library,
-                                        const std::filesystem::path& file) {
+                                        const std::filesystem::path& file, const StageRates& rates) {
   if (memory == nullptr || watch_now(refusal) || refusal.code == RefusalCode::DeviceLost ||
       refusal.code == RefusalCode::SourceResized || refusal.key == kDroppedVideoKey)
     return std::nullopt;
+  const bool motion_on = motion && played.rife_factor >= 2;
+  const bool upscale_on = upscale && played.upscale;
+  // Seul l'étage que le refus nomme part (C09-01) ; l'anneau, l'interpolation d'abord.
+  const std::string_view blamed = blamed_stage_key(refusal.key);
   std::optional<ChainStage> stage;
-  if (motion && played.rife_factor >= 2)
+  if (blamed == kMotionRefusalKey && motion_on) {
     stage = ChainStage::Motion;
-  else if (upscale && played.upscale)
+  } else if (blamed == kSpanRefusalKey && upscale_on) {
     stage = ChainStage::Upscale;
+  } else if (blamed == kRingRefusalKey) {
+    if (motion_on)
+      stage = ChainStage::Motion;
+    else if (upscale_on)
+      stage = ChainStage::Upscale;
+  }
   if (!stage) return std::nullopt;
   memory->remember({.stage = *stage,
-                    .signature = stage_signature(*stage, played, source_width, source_height, library),
+                    .signature = stage_signature(*stage, played, source_width, source_height, library, rates),
                     .refusal = refusal,
                     .file = file});
   log_channel("app")->warn("{} refusé après la préparation ({}) : la chaîne se rouvre sans lui",
@@ -154,7 +166,8 @@ void drop(ChainStage stage, PlaySettings& s) {
 
 std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemory& memory, int source_width,
                                      int source_height, std::string_view library,
-                                     const std::filesystem::path& file, bool allow_drop) {
+                                     const std::filesystem::path& file, bool allow_drop,
+                                     const StageRates& rates) {
   StagePlan plan{.settings = wanted, .notes = {}};
   // SPAN d'abord : le retirer change la taille de travail, donc la signature de l'interpolation.
   for (const ChainStage stage : {ChainStage::Upscale, ChainStage::Motion}) {
@@ -171,7 +184,7 @@ std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemo
     // Au plus deux tours par étage : le cran ramené à Équilibre, puis l'étage retiré.
     for (int turn = 0; turn < 2 && stage_on(stage, plan.settings); ++turn) {
       const StageMemory::Entry* refused = memory.find(
-          stage, stage_signature(stage, plan.settings, source_width, source_height, library), file);
+          stage, stage_signature(stage, plan.settings, source_width, source_height, library, rates), file);
       if (refused == nullptr) break;
       // SPAN essaie déjà ses variantes puis le FP16 livré (chain_setup.cpp) : son refus vaut pour tous les
       // crans. L'interpolation charge le graphe du cran tel quel : le FP16 reste à essayer.

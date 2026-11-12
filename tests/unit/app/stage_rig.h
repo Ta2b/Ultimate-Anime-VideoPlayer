@@ -87,6 +87,11 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   void offer_lanes(int lanes) { lanes_ = lanes; }
   // Cette image est refusée à l'ingestion (VendorCallFailed).
   void refuse_ingest(SourceId id) { refused_ = id; }
+  // Ce moteur (« span », « rife »…) refuse chaque lancement (VendorCallFailed).
+  void refuse_engine(std::string name) {
+    const std::scoped_lock lock(mutex_);
+    refused_engine_ = std::move(name);
+  }
   // rife_pair offert ; faux par défaut : refusé comme par un backend qui ne l'a pas.
   void offer_rife_pair(bool on) { rife_pair_ = on; }
   // BackendCaps::ring_targets : warp_blend_ring et les autres écrivent le slot (written()) au lieu
@@ -311,6 +316,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   bool yuv_targets_ = false;
   bool grade_ = false;
   std::optional<SourceId> refused_;
+  std::string refused_engine_;
 };
 
 // La boîte de main : les RingFrame dans l'ordre, et l'attente qu'il en arrive n.

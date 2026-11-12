@@ -720,7 +720,7 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   use_lane(gpu::Lane::Upscale);
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
-  auto ok = setup_.backend->enqueue(*setup_.engine, inputs, results);
+  auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
   use_lane(back);
   return ok;
 }
@@ -733,10 +733,12 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
   // Sans export YUV : SPAN et l'écriture de l'emplacement en un appel (étape 3.4b), que le backend sait
   // fondre (le SPAN FP8 écrit l'anneau depuis son épilogue) ; la sortie est écrite aussi (reuse_span_).
   if (!setup_.yuv_slots) {
-    return setup_.backend->enqueue_ring(*setup_.engine, inputs, outputs,
-                                        gpu::RingTarget{.slot = &setup_.slots[slot], .sync = sync});
+    return blame_stage(setup_.backend->enqueue_ring(*setup_.engine, inputs, outputs,
+                                                    gpu::RingTarget{.slot = &setup_.slots[slot], .sync = sync}),
+                       kSpanRefusalKey);
   }
-  if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok) return ok;
+  if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok)
+    return blame_stage(std::move(ok), kSpanRefusalKey);
   return write_slot(output_->tensor(), slot, sync);
 }
 

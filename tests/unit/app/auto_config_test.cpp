@@ -327,10 +327,68 @@ TEST_CASE("l'Auto calibré suit la priorité Fluidité d'un palier plus bas (B07
       .tier = Tier::Ultra, .display_height = 1440, .display_hz = 144.0, .calibrated = measured};
   CHECK(apply_preset(with(Preset::Auto, Priority::Balance), machine, k1080p24).work_height == 1080);
   CHECK(apply_preset(with(Preset::Auto, Priority::Image), machine, k1080p24).work_height == 1080);
-  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), machine, k1080p24).work_height == 900);
+  // Le palier mesuré sous 1080p : 720p, pas 900p, que la calibration n'essaie jamais (C07-01).
+  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), machine, k1080p24).work_height == 720);
   Machine lowest = machine;
   lowest.calibrated->height = 480;
-  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), lowest, k1080p24).work_height == 480);
+  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), lowest, k1080p24).work_height == 360);
+}
+
+TEST_CASE("C07-01 : la Fluidité ne monte jamais au-dessus de la mesure", "[auto_config]") {
+  const Machine small{.tier = Tier::Fast,
+                      .display_height = 1080,
+                      .display_hz = 60.0,
+                      .calibrated = CalibratedChain{.span = true, .rife = true, .height = 360}};
+  CHECK(apply_preset(with(Preset::Auto, Priority::Fluidity), small, k1080p24).work_height <= 360);
+  CHECK(apply_preset(with(Preset::Auto, Priority::Balance), small, k1080p24).work_height == 360);
+}
+
+TEST_CASE("C07-02 : une source à 60 i/s ne garde pas la hauteur mesurée à 24 i/s", "[auto_config]") {
+  const core::SourceInfo k1080p60{.width = 1920, .height = 1080, .fps = 59.94};
+  const Machine fast{.tier = Tier::Quality,
+                     .display_height = 1440,
+                     .display_hz = 144.0,
+                     .calibrated = CalibratedChain{.span = true,
+                                                   .rife = true,
+                                                   .height = 1080,
+                                                   .span_model = std::string(kQualitySpanModel),
+                                                   .rife_model = std::string(kQualityRifeModel)}};
+  const PlaySettings out = apply_preset(with(Preset::Auto), fast, k1080p60);
+  CHECK(out.upscale);
+  CHECK(out.work_height == 720);  // 1080² × 24 × 1,25 : 763 lignes au plus, le palier mesuré en dessous
+  // Même règle sans calibration : Qualité garde la source à 24 i/s, pas à 60.
+  const PlaySettings quality = apply_preset(with(Preset::Quality), Machine{Tier::Quality, 1440, 144.0}, k1080p60);
+  CHECK(quality.work_height == 720);
+  CHECK(apply_preset(with(Preset::Quality), Machine{Tier::Quality, 1440, 144.0}, k1080p24).work_height == 1080);
+  // 30 i/s (29,97) : 25 % de pixels par seconde en plus, la hauteur mesurée reste.
+  const core::SourceInfo k1080p30{.width = 1920, .height = 1080, .fps = 29.97};
+  CHECK(apply_preset(with(Preset::Auto), fast, k1080p30).work_height == 1080);
+  // Cadence inconnue : rien ne change.
+  const core::SourceInfo unknown{.width = 1920, .height = 1080, .fps = 0.0};
+  CHECK(apply_preset(with(Preset::Auto), fast, unknown).work_height == 1080);
+}
+
+TEST_CASE("C07-04 : sous l'Auto calibré, la priorité Image prend le plus haut SPAN seul", "[auto_config]") {
+  // SPAN seul tient 1080p, SPAN + RIFE seulement 480p : la recommandation met la fluidité d'abord.
+  const Machine machine{.tier = Tier::Normal,
+                        .display_height = 1080,
+                        .display_hz = 60.0,
+                        .calibrated = CalibratedChain{.span = true, .rife = true, .height = 480, .span_height = 1080}};
+  const PlaySettings balance = apply_preset(with(Preset::Auto, Priority::Balance), machine, k1080p24);
+  CHECK(balance.work_height == 480);
+  const PlaySettings image = apply_preset(with(Preset::Auto, Priority::Image), machine, k1080p24);
+  CHECK(image.upscale);
+  CHECK(image.work_height == 1080);
+  CHECK(image.auto_free);  // RIFE en mode Rapide, qui ne garde que les images que la carte a le temps de faire
+  CHECK(image.rife_auto);
+  // RIFE seul recommandé (SPAN + RIFE ne tient nulle part) : Image rend SPAN seul à son palier.
+  Machine rife_only = machine;
+  rife_only.calibrated = CalibratedChain{.span = false, .rife = true, .height = 0, .span_height = 720};
+  const PlaySettings no_span = apply_preset(with(Preset::Auto, Priority::Balance), rife_only, k1080p24);
+  CHECK_FALSE(no_span.upscale);
+  const PlaySettings span_back = apply_preset(with(Preset::Auto, Priority::Image), rife_only, k1080p24);
+  CHECK(span_back.upscale);
+  CHECK(span_back.work_height == 720);
 }
 
 TEST_CASE("un préréglage restaure les traits, comme la calibration les mesure (B07-08)", "[auto_config]") {

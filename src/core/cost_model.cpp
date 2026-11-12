@@ -22,7 +22,8 @@ void CostModel::add(int images, std::int64_t cost_us, std::int64_t now_us) {
     c.next = 0;
     w = 0.0;
   } else {
-    c.ewma_us += std::max(0.15, 1.0 / (w + 1.0)) * (value - c.ewma_us);
+    const double kept = std::min(value, kOutlierFactor * c.ewma_us);
+    c.ewma_us += std::max(0.15, 1.0 / (w + 1.0)) * (kept - c.ewma_us);
   }
   c.weight = std::min(w + 1.0, 24.0);
   c.at_us = now_us;

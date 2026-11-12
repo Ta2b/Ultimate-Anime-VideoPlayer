@@ -46,11 +46,12 @@ rules = [
   { vendor = "nvidia", contains = ["rtx 4080"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 5070"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4070"], tier = 3 },
-  # Qualité joue SPAN b8f64 à 1080p et RIFE 4.25, mesurés sur une RTX 4070 Ti seulement (14,25 ms de SPAN
-  # pour 41,7 ms par image). Turing et Ampere n'y restent que pour les cartes au débit FP16 matriciel voisin
-  # (3090, 3080 Ti, A6000, A5500 : environ 0,9 fois la 4070 Ti) ; une 3080, une 3070, une 2080 en ont
-  # 0,5 à 0,75 fois, et vont en Normal tant qu'aucune mesure ne les place plus haut (B07-04). La
-  # calibration, qui mesure, les remonte.
+  # Qualité joue SPAN b8f64 à 1080p et RIFE 4.26. Sa place a été mesurée sur une RTX 4070 Ti seulement, avec
+  # RIFE 4.25 (14,25 ms de SPAN pour 41,7 ms par image) : RIFE 4.26 n'y est pas encore mesuré (C07-07). Turing
+  # et Ampere n'y restent que pour les cartes au débit FP16 matriciel voisin (3090, 3080 Ti, A6000, A5500 :
+  # environ 0,9 fois la 4070 Ti) ; une 3080, une 3070, une 2080 en ont 0,5 à 0,75 fois, et vont en Normal tant
+  # qu'aucune mesure ne les place plus haut (B07-04). La calibration, qui mesure, les remonte : quand la
+  # chaîne de Normal tient à 1080p, elle essaie aussi les modèles de Qualité et les garde s'ils tiennent.
   { vendor = "nvidia", contains = ["rtx 3090"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 3080 ti"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 3080"], tier = 2 },

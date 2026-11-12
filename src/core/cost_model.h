@@ -22,6 +22,10 @@ class CostModel {
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;
   // Un coût au-delà de 5 s n'est pas une image mais une attente (pause, appareil suspendu) : ignoré.
   static constexpr std::int64_t kMaxCostUs = 5'000'000;
+  // Un accroc isolé (compositeur, changement de fenêtre, une passe lente) n'entre dans la moyenne qu'à ce
+  // multiple de la moyenne en cours au plus ; il compte en entier dans le p90 (spike), déjà borné (C07-08).
+  // Une vraie hausse de coût passe en quelques paires : chacune peut monter la moyenne d'un tiers.
+  static constexpr double kOutlierFactor = 3.0;
 
   // Une paire terminée : `images` créées (source comprise), `cost_us` de service.
   void add(int images, std::int64_t cost_us, std::int64_t now_us);

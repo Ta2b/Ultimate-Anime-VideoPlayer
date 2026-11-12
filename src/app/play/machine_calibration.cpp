@@ -50,6 +50,9 @@ std::optional<int> next_height(const std::vector<CandidateTrial>& tried, ChainCa
 
 constexpr ChainCandidate kRifeOnly{.span = false, .rife = true, .height = 0};
 
+// Les hauteurs mesurées valent à la cadence de la séquence (auto_config.cpp, height_for_rate).
+static_assert(media::BenchClipSpec{}.fps == kCalibrationFps);
+
 }  // namespace
 
 float creeping_fraction(float reported, double seconds_since_change) {
@@ -61,20 +64,24 @@ float creeping_fraction(float reported, double seconds_since_change) {
 
 int calibration_minutes(bool builds_engines, bool laptop) {
   const auto sizes = static_cast<double>(calibration_heights().size());
-  // Les essais : chaque palier de SPAN seul, deux ou trois de SPAN + RIFE, un rejeu sur deux ; chacun la
-  // durée de l'essai et une quinzaine de secondes d'ouverture.
-  const double trials = (sizes + 3.0) * 1.5;
+  // Les essais : chaque palier de SPAN seul, deux ou trois de SPAN + RIFE, celui des modèles de Qualité, un
+  // rejeu sur deux ; chacun la durée de l'essai et une quinzaine de secondes d'ouverture.
+  const double trials = (sizes + 4.0) * 1.5;
   double seconds = trials * (kBenchSeconds + 15.0);
-  // Une construction de TensorRT par taille, SPAN puis RIFE : 2,5 min sur une RTX 4070 Ti, le double sur un
-  // portable.
-  if (builds_engines) seconds += (sizes + 2.0) * (laptop ? 300.0 : 150.0);
+  // Une construction de TensorRT par taille, SPAN puis RIFE, et les deux des modèles de Qualité : 2,5 min sur
+  // une RTX 4070 Ti, le double sur un portable.
+  if (builds_engines) seconds += (sizes + 4.0) * (laptop ? 300.0 : 150.0);
   return std::max(1, static_cast<int>(std::ceil(seconds / 60.0)));
 }
 
 bool needs_second_run(const CandidateTrial& trial) {
   if (!trial.holds) return true;
-  // De justesse : plus de la moitié des pertes permises, ou une cadence moyenne sous 97 % de la visée.
-  const bool lossy = trial.lost_percent > 50.0 * kMaxLossRate;
+  // De justesse : plus de la moitié des pertes permises, ou une cadence moyenne sous 97 % de la visée. Les
+  // pertes se comptent à l'échelle du verdict, par image visée (C07-05) : par présentation, le seuil (1 %)
+  // dépassait celui du verdict (0,5 % des images, 0,2 % des présentations à 24 i/s sur 60 Hz) et le rejeu
+  // n'avait jamais lieu.
+  const bool lossy = trial.lost_per_image >= 0.0 ? trial.lost_per_image > 0.5 * kMaxLossPerImage
+                                                 : trial.lost_percent > 50.0 * kMaxLossRate;
   const bool slow = trial.target_fps > 0.0 && trial.fps > 0.0 && trial.fps < 0.97 * trial.target_fps;
   return lossy || slow;
 }
@@ -94,14 +101,23 @@ double trial_target_fps(const ChainCandidate& chain, std::int64_t period_us) {
   return display > source ? std::min(2.0 * source, display) : 2.0 * source;
 }
 
-bool trial_holds(const ChainCandidate& chain, const BenchReading& reading, double target_fps) {
-  if (!holds(reading.run)) return false;
-  // Les images visées pendant l'essai : sa durée (présentations × période de l'écran) à target_fps.
+namespace {
+
+// Les images perdues ou manquées par image visée pendant l'essai : sa durée (présentations × période de
+// l'écran) à target_fps.
+double loss_per_image(const BenchReading& reading, double target_fps) {
   const std::int64_t period = reading.run.period_us > 0 ? reading.run.period_us : 16'667;
   const double images = static_cast<double>(reading.run.presents) * static_cast<double>(period) * 1e-6 *
                         std::max(target_fps, 1.0);
   const auto lost = static_cast<double>(reading.run.dropped + reading.run.missing);
-  if (lost > kMaxLossPerImage * images) return false;
+  return images > 0.0 ? lost / images : 1.0;
+}
+
+}  // namespace
+
+bool trial_holds(const ChainCandidate& chain, const BenchReading& reading, double target_fps) {
+  if (!holds(reading.run)) return false;
+  if (loss_per_image(reading, target_fps) > kMaxLossPerImage) return false;
   return !chain.rife || credited_fps(reading) >= kMinRifeShare * target_fps;
 }
 
@@ -113,13 +129,18 @@ CalibrationModels calibration_models(Tier tier) {
   return {.span = std::string(level_span_model(tier)), .rife = std::string(level_rife_model(tier))};
 }
 
+CalibrationModels finer_models() {
+  return calibration_models(Tier::Quality);
+}
+
 int calibration_start_height(Tier tier) {
   // La hauteur que l'Auto estimé de ce niveau joue sur un écran 1080p ou plus (auto_config.cpp).
   constexpr std::array<int, kTierCount> kStart{360, 540, 720, 1080, 1080};
   return kStart[static_cast<std::size_t>(tier)];
 }
 
-std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int start_height) {
+std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int start_height,
+                                             bool try_finer) {
   const std::vector<int> heavy_first = calibration_heights();
   const std::vector<int> light_first(heavy_first.rbegin(), heavy_first.rend());
   // 1. SPAN seul, depuis le palier du niveau estimé (B07-14) : en montant tant qu'il tient, jusqu'au premier
@@ -159,7 +180,14 @@ std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& 
     bool held = false;
     if (const auto height = next_height(tried, ChainCandidate{.span = true, .rife = true}, below, held))
       return ChainCandidate{.span = true, .rife = true, .height = *height};
-    if (held) return std::nullopt;
+    if (held) {
+      // 3. La chaîne tient au plus haut palier : les modèles de Qualité y sont essayés une fois (C07-03).
+      const ChainCandidate finer{.span = true, .rife = true, .height = heavy_first.front(), .finer = true};
+      const CandidateTrial* top =
+          find(tried, ChainCandidate{.span = true, .rife = true, .height = heavy_first.front()});
+      if (try_finer && top != nullptr && top->holds && find(tried, finer) == nullptr) return finer;
+      return std::nullopt;
+    }
   }
   // SPAN + RIFE ne tient nulle part, ou SPAN nulle part : RIFE seul (SPAN coupé), le recours de la fluidité.
   if (find(tried, kRifeOnly) == nullptr) return kRifeOnly;
@@ -178,7 +206,8 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
   for (const CandidateTrial& trial : tried) {
     if (!trial.holds || !trial.chain.span) continue;
     if (!trial.chain.rife && rife_holds) continue;
-    const int rank = trial.chain.height + (trial.chain.rife ? 100'000 : 0);
+    // À palier égal, les modèles de Qualité passent devant ceux du niveau (C07-03).
+    const int rank = (trial.chain.height * 2) + (trial.chain.finer ? 1 : 0) + (trial.chain.rife ? 100'000 : 0);
     if (rank > best_rank) {
       best_rank = rank;
       best = &trial;
@@ -187,6 +216,14 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
   if (best != nullptr) return best->chain;
   if (rife_holds) return kRifeOnly;
   return ChainCandidate{.span = false, .rife = false, .height = 0};
+}
+
+int best_span_alone(const std::vector<CandidateTrial>& tried) {
+  int best = 0;
+  for (const CandidateTrial& trial : tried) {
+    if (trial.holds && trial.chain.span && !trial.chain.rife) best = std::max(best, trial.chain.height);
+  }
+  return best;
 }
 
 PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
@@ -213,6 +250,7 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
 std::string describe(const ChainCandidate& chain) {
   std::string out = chain.span ? std::format("{}p · SPAN", chain.height) : std::string(i18n::tr("SPAN off"));
   out += chain.rife ? i18n::tr(" · RIFE (auto Instant)") : i18n::tr(" · no interpolation");
+  if (chain.finer) out += i18n::tr(" · Quality models");
   return out;
 }
 
@@ -232,6 +270,7 @@ std::string format_calibration(const MachineCalibration& c) {
     t.insert("span", chain.span);
     t.insert("rife", chain.rife);
     t.insert("height", static_cast<std::int64_t>(chain.height));
+    if (chain.finer) t.insert("finer", true);
     return t;
   };
   root.insert("chosen", chain_table(c.chosen));
@@ -261,7 +300,8 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
     const auto height = t["height"].value_or(std::int64_t{0});
     return ChainCandidate{.span = t["span"].value_or(false),
                           .rife = t["rife"].value_or(false),
-                          .height = static_cast<int>(std::clamp<std::int64_t>(height, 0, 4320))};
+                          .height = static_cast<int>(std::clamp<std::int64_t>(height, 0, 4320)),
+                          .finer = t["finer"].value_or(false)};
   };
   MachineCalibration out;
   out.gpu = root["gpu"].value_or(std::string());
@@ -351,11 +391,16 @@ std::optional<CalibratedChain> followed_chain(const MachineCalibration& calibrat
                                               const CalibrationHost& host) {
   if (calibration_use(calibration, host) != CalibrationUse::Followed) return std::nullopt;
   const ChainCandidate& chosen = calibration.chosen;
-  return CalibratedChain{.span = chosen.span,
-                         .rife = chosen.rife,
-                         .height = chosen.height,
-                         .span_model = chosen.span ? calibration.models.span : std::string(),
-                         .rife_model = calibration.models.rife};
+  // La priorité Image prend le plus haut SPAN seul, joué avec les modèles du niveau ; il ne passe au-dessus de
+  // la chaîne recommandée que si elle n'est pas celle des modèles de Qualité (tenue au plus haut palier).
+  const int span_alone = chosen.finer ? 0 : best_span_alone(calibration.tried);
+  return CalibratedChain{
+      .span = chosen.span,
+      .rife = chosen.rife,
+      .height = chosen.height,
+      .span_model = chosen.span || span_alone > chosen.height ? calibration.models.span : std::string(),
+      .rife_model = calibration.models.rife,
+      .span_height = span_alone};
 }
 
 std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
@@ -366,15 +411,15 @@ std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
 std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
                                                                  const std::stop_token& stop,
                                                                  const std::function<void(float)>& fraction,
-                                                                 int start_height) {
+                                                                 int start_height, bool try_finer) {
   const auto log = log_channel("app");
   CalibrationTrials out;
-  // Au plus : les paliers des deux familles SPAN, puis RIFE seul.
-  const auto most = static_cast<float>(2 * calibration_heights().size() + 1);
+  // Au plus : les paliers des deux familles SPAN, les modèles de Qualité, puis RIFE seul.
+  const auto most = static_cast<float>(2 * calibration_heights().size() + 2);
   int index = 0;
   std::optional<ChainCandidate> retried;  // la chaîne déjà rejouée une fois
   std::optional<ChainCandidate> rebuilt;  // la chaîne rejouée avec le délai d'une construction
-  while (const auto chain = next_candidate(out.tried, start_height)) {
+  while (const auto chain = next_candidate(out.tried, start_height, try_finer)) {
     if (fraction) fraction(std::min(0.95F, 0.05F + 0.9F * static_cast<float>(index) / most));
     // Le premier essai gardé charge, et la première fois construit, les moteurs : il a tout son temps.
     auto reading = play(*chain, index, out.tried.empty() || rebuilt == *chain);
@@ -397,6 +442,7 @@ std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlay
       out.driver = reading->driver;
       out.engine = reading->engine;
       trial.holds = trial_holds(*chain, *reading, trial.target_fps);
+      trial.lost_per_image = loss_per_image(*reading, trial.target_fps);
       const auto presents = std::max<std::int64_t>(reading->run.presents, 1);
       trial.lost_percent = 100.0 * static_cast<double>(reading->run.dropped + reading->run.missing) /
                            static_cast<double>(presents);
@@ -462,18 +508,21 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
       log->warn("calibration de la machine : passée sur batterie, mesure sous-estimée");
     }
     const std::filesystem::path settings = plan.work_dir / std::format("chaine-{}.toml", index);
-    if (auto written = save_settings(settings, candidate_settings(chain, base, out.models)); !written)
+    const CalibrationModels models = chain.finer ? finer_models() : out.models;
+    if (auto written = save_settings(settings, candidate_settings(chain, base, models)); !written)
       return std::unexpected(std::move(written.error()));
     return play_variant(plan, Variant{.name = describe(chain), .settings = settings}, index, stop,
                         first ? plan.first_allowance : plan.build_allowance);
   };
-  auto trials = run_calibration_trials(play, stop, fraction, calibration_start_height(tier));
+  auto trials = run_calibration_trials(play, stop, fraction, calibration_start_height(tier),
+                                      out.models != finer_models());
   if (!trials) return std::unexpected(std::move(trials.error()));
   out.tried = std::move(trials->tried);
   out.gpu = std::move(trials->gpu);
   out.driver = std::move(trials->driver);
   out.engine = std::move(trials->engine);
   out.chosen = best_candidate(out.tried);
+  if (out.chosen.finer) out.models = finer_models();  // la carte tient les modèles de Qualité (C07-03)
   log->info("calibration de la machine : recommandé {} (moteur {})", describe(out.chosen), out.engine);
   if (!plan.data.empty()) {
     if (auto saved = save_calibration(calibration_file(plan.data, out.display_height), out); !saved)

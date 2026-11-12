@@ -256,7 +256,8 @@ std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& cal
   // D6 : les mêmes images, un autre instant : le moteur fusionné garde leurs réductions et leurs encodages.
   if (*times01 && *times12) setup_.distil_drba->next_times_only();
   const std::array inputs{drba_.pair01->tensor(), drba_.pair12->tensor()};
-  if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok) return ok;
+  if (auto ok = setup_.backend->enqueue(*setup_.distil_drba, inputs, results); !ok)
+    return blame_stage(std::move(ok), kMotionRefusalKey);
   ++drba_.runs;
   if (!whole) ++drba_.edges;
   return {};

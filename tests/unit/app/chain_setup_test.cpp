@@ -101,8 +101,8 @@ TEST_CASE("A08-03 : ×2 manuel ouvert, Auto Rapide à 165 Hz rouvre", "[app][cha
   PlaySettings fast = x2;
   fast.rife_auto = true;
   fast.auto_free = true;
-  // Le warp reste avant SPAN à 1080p de sortie : l'ordre ne suit plus la cadence de l'écran (B22-03).
-  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = false});
+  // Rapide à 165 Hz va jusqu'à ×6 : le warp passe après SPAN, comme ×3 à la main (C32-01), et l'anneau de 8.
+  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = true});
   CHECK(change_between(x2, fast, true, &opened).cost == ChangeCost::Reopen);
   const PlaySettings live = live_part(x2, fast, true, &opened);
   CHECK_FALSE(live.rife_auto);
@@ -137,26 +137,47 @@ TEST_CASE("A08-03 : ce qui tient dans la chaîne ouverte reste direct", "[app][c
   CHECK(change_between(manual(4), manual(2), true, &bare).cost == ChangeCost::Live);
 }
 
-TEST_CASE("B22-03 : en Auto, l'ordre du warp ne suit ni l'écran ni le plafond", "[app][chain]") {
-  // Auto Stable jusqu'à ×4 : le plafond (60 ou l'écran) change le palier le plus haut, pas l'ordre du warp,
-  // qui n'est après SPAN qu'au-dessus de 1080p (mesuré en temps) ; l'anneau est celui du facteur demandé.
+TEST_CASE("B22-03 : en Auto, l'ordre du warp ne suit ni la charge ni le plafond", "[app][chain]") {
+  // Auto Stable jusqu'à ×4 : le plafond (60 ou l'écran) change le palier le plus haut, pas l'ordre du warp ;
+  // l'anneau est celui du facteur demandé.
   PlaySettings capped = manual(4);
   capped.rife_auto = true;
   capped.auto_cap = 60;
   const OpenedChain opened = opened_for(capped);
-  CHECK(opened.shape == ChainShape{.ring = 6, .warp_after_span = false});
+  CHECK(opened.shape == ChainShape{.ring = 6, .warp_after_span = true});
   PlaySettings free = capped;
   free.auto_cap = 0;
   CHECK(chain_shape(free, opened) == opened.shape);
   CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Live);
-  // Rapide à 165 Hz (×6 possible) : toujours avant SPAN à 1080p, après SPAN à 4K.
-  PlaySettings fast = fast_settings();
-  CHECK(order_factor(fast, 165.0, 23.976) == 0);
-  CHECK_FALSE(chain_shape(fast, opened_for(fast, 1080)).warp_after_span);
-  CHECK(chain_shape(fast, opened_for(fast, 2160)).warp_after_span);
   // Un facteur choisi à la main garde la règle de ×3 (coût de SPAN par image créée).
   CHECK(order_factor(manual(4), 165.0, 23.976) == 4);
   CHECK(chain_shape(manual(4), opened_for(manual(4), 1080)).warp_after_span);
+}
+
+TEST_CASE("C32-01 : en Auto, l'ordre du warp suit le plus haut facteur de l'écran, comme à la main",
+          "[app][chain]") {
+  // Rapide à 165 Hz (×6 possible), sortie de 1080 lignes : après SPAN, comme ×3 choisi à la main ; avant, sept
+  // passes de SPAN par source au lieu d'une.
+  PlaySettings fast = fast_settings();
+  CHECK(order_factor(fast, 165.0, 23.976) == 6);
+  CHECK(chain_shape(fast, opened_for(fast, 1080)).warp_after_span);
+  CHECK(chain_shape(fast, opened_for(fast, 2160)).warp_after_span);
+  PlaySettings by_hand = manual(3);
+  CHECK(chain_shape(fast, opened_for(fast, 1080)).warp_after_span ==
+        chain_shape(by_hand, opened_for(by_hand, 1080)).warp_after_span);
+  // Écran à 60 Hz : ×2 au plus, avant SPAN sous 1080 lignes (deux passes de SPAN au plus par source).
+  OpenedChain sixty = opened_for(fast, 1080);
+  sixty.display_hz = 60.0;
+  CHECK(order_factor(fast, 60.0, 23.976) == 2);
+  CHECK_FALSE(chain_shape(fast, sixty).warp_after_span);
+  // Écran inconnu : seule la hauteur décide.
+  CHECK(order_factor(fast, 0.0, 23.976) == 1);
+  // Stable : le facteur demandé borne, comme l'anneau.
+  PlaySettings stable = fast;
+  stable.auto_free = false;
+  CHECK(order_factor(stable, 165.0, 23.976) == 2);
+  stable.rife_factor = 4;
+  CHECK(order_factor(stable, 165.0, 23.976) == 4);
 }
 
 TEST_CASE("B22-01 : interpolation coupée puis rallumée, le moteur chargé est comparé au choix",

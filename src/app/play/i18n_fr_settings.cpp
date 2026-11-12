@@ -9,6 +9,7 @@ namespace {
 constexpr std::array kSettingsPages{
     Entry{" · RIFE (auto Instant)", " · RIFE (auto Instantané)"},
     Entry{" · no interpolation", " · sans interpolation"},
+    Entry{" · Quality models", " · modèles de Qualité"},
     Entry{"Display peak", "Pic de l'écran"},
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
@@ -63,7 +64,7 @@ constexpr std::array kSettingsPages{
     Entry{"Application", "Application"},
     Entry{"Apply (reopens the video)", "Appliquer (rouvre la vidéo)"},
     Entry{"Audio language", "Langue audio"},
-    Entry{"Auto (after SPAN above 1080p)", "Auto (après SPAN au-dessus de 1080p)"},
+    Entry{"Auto (after SPAN above 1080p or from ×3)", "Auto (après SPAN au-dessus de 1080p ou dès ×3)"},
     Entry{"Auto (from the display)", "Auto (selon l'écran)"},
     Entry{"Auto peak ({} nits)", "Pic automatique ({} nits)"},
     Entry{"In content nits: KDE shows them brighter (× its SDR brightness / 203), so a 1000-nit screen reads "

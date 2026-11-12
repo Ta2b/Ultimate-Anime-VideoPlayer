@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/links.h"
 #include "app/play/player_engines.h"
 
 namespace ajp::app::play {
@@ -144,6 +145,7 @@ TEST_CASE("Étages : le refus de l'interpolation suit l'ordre du warp, pas le fa
           "[app][stages]") {
   PlaySettings five = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   five.rife_factor = 5;
+  five.rife_auto = false;  // un facteur choisi à la main : il fixe l'ordre du warp (order_factor)
   StageMemory memory;
   refuse(memory, ChainStage::Motion, five);
   // L'Auto récrit le facteur sur un autre écran (×5 → ×4) : même ordre du warp, même moteur, pas de
@@ -266,7 +268,9 @@ TEST_CASE("B31-02 : l'anneau refusé retire l'interpolation, puis SPAN, pour la 
           "[stage_fallback]") {
   StageMemory memory;
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
-  const Refusal ring{RefusalCode::GpuMemoryExhausted, "anneau 3840x2160 x 6"};
+  const Refusal ring{.code = RefusalCode::GpuMemoryExhausted,
+                     .detail = "anneau 3840x2160 x 6",
+                     .key = std::string(kRingRefusalKey)};
   // Un refus après la préparation : l'interpolation part la première.
   REQUIRE(retreat_stage(&memory, ring, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
           ChainStage::Motion);
@@ -292,9 +296,71 @@ TEST_CASE("B31-02 : un appareil perdu ou sans mémoire de séance ne retire rien
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   CHECK_FALSE(retreat_stage(&memory, Refusal{RefusalCode::DeviceLost, "perdu"}, wanted, true, true, kWidth,
                             kHeight, kLibrary, "ep01.mkv"));
-  CHECK_FALSE(retreat_stage(nullptr, Refusal{RefusalCode::GpuMemoryExhausted, "x"}, wanted, true, true,
-                            kWidth, kHeight, kLibrary, "ep01.mkv"));
+  CHECK_FALSE(retreat_stage(nullptr,
+                            Refusal{.code = RefusalCode::GpuMemoryExhausted,
+                                    .detail = "x",
+                                    .key = std::string(kRingRefusalKey)},
+                            wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv"));
   CHECK(memory.empty());
+}
+
+// C09-01 : un refus de l'étage GPU qui ne vient d'aucun moteur (ingestion d'un format que le backend ne lit
+// pas) ne retire rien : la vidéo s'arrête comme avant, et les suivantes jouent la chaîne demandée.
+TEST_CASE("C09-01 : un refus d'ingestion d'une vidéo ne retire rien aux vidéos suivantes", "[stage_fallback]") {
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  const Refusal ingest{.code = RefusalCode::FormatUnsupported,
+                       .detail = "ingestion : format ou matrice non pris en charge",
+                       .key = fatal_stage_key("")};
+  CHECK_FALSE(retreat_stage(&memory, ingest, wanted, true, true, kWidth, kHeight, kLibrary, "bizarre.mkv"));
+  CHECK(memory.empty());
+  const auto next = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep02.mkv", true);
+  REQUIRE(next);
+  CHECK(next->settings.rife_factor == wanted.rife_factor);
+  CHECK(next->settings.upscale);
+  CHECK(next->notes.empty());
+}
+
+TEST_CASE("C09-01 : un refus d'un réseau en lecture ne retire que son étage", "[stage_fallback]") {
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  // SPAN refusé : SPAN part, l'interpolation reste.
+  StageMemory memory;
+  const Refusal span{.code = RefusalCode::VendorCallFailed, .detail = "enqueue", .key = fatal_stage_key(kSpanRefusalKey)};
+  REQUIRE(retreat_stage(&memory, span, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
+          ChainStage::Upscale);
+  auto plan = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep01.mkv", true);
+  REQUIRE(plan);
+  CHECK_FALSE(plan->settings.upscale);
+  CHECK(plan->settings.rife_factor == 2);
+  // L'interpolation refusée : elle part seule.
+  StageMemory other;
+  const Refusal rife{.code = RefusalCode::VendorCallFailed, .detail = "enqueue", .key = fatal_stage_key(kMotionRefusalKey)};
+  REQUIRE(retreat_stage(&other, rife, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
+          ChainStage::Motion);
+  plan = plan_stages(wanted, other, kWidth, kHeight, kLibrary, "ep01.mkv", true);
+  REQUIRE(plan);
+  CHECK(plan->settings.upscale);
+  CHECK(plan->settings.rife_factor == 0);
+  // L'étage nommé n'est pas chargé : rien à retirer.
+  StageMemory none;
+  CHECK_FALSE(retreat_stage(&none, span, wanted, true, false, kWidth, kHeight, kLibrary, "ep01.mkv"));
+}
+
+// C09-03 : la signature d'un refus d'interpolation prend l'ordre du warp que la chaîne prend (order_factor).
+TEST_CASE("C09-03 : la signature de l'interpolation suit l'ordre réel du warp en Auto", "[stage_fallback]") {
+  PlaySettings s = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  s.rife_auto = true;
+  s.rife_factor = 3;
+  s.span_order = SpanOrder::Auto;
+  // Source 960 × 540, sortie de 1080 lignes, Auto Stable jusqu'à ×3 : sur 60 Hz, ×2 au plus, le warp avant SPAN.
+  const std::string at60 = stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 60.0, .source_fps = 23.976});
+  CHECK(at60.ends_with("warp-before"));
+  // Sur 144 Hz, ×3 : après SPAN, comme la chaîne.
+  const std::string at144 = stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976});
+  CHECK(at144.ends_with("warp-after"));
+  // Sans SPAN, l'ordre ne vaut rien : avant.
+  s.upscale = false;
+  CHECK(stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976}).ends_with("warp-before"));
 }
 
 }  // namespace ajp::app::play

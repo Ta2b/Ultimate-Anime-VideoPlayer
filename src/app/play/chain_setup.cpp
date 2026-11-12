@@ -243,12 +243,15 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   p.loaded_engines.clear();
   const int width = p.video.width;
   const int height = p.video.height;
+  // L'écran et la cadence de l'ouverture : en Auto, l'ordre du warp en dépend (C09-03).
+  const StageRates rates{.display_hz = display_refresh_hz(p.screen.window()),
+                         .source_fps = fps_of(p.video.frame_rate)};
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
   constexpr int kAttempts = 5;
   std::optional<StageFailure> last;
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
     std::optional<StagePlan> plan =
-        plan_stages(settings, refused, width, height, library, p.options.file, memory != nullptr);
+        plan_stages(settings, refused, width, height, library, p.options.file, memory != nullptr, rates);
     if (!plan) break;  // un étage refusé que seule la lecture peut laisser de côté
     for (const StageNote& note : plan->notes)
       log->warn("{} : {} ({})", note.stage == ChainStage::Upscale ? "SPAN" : "interpolation",
@@ -285,7 +288,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
     // un échec à signaler.
     if (!watch_now(failure.refusal)) note_build_failure(name(failure.refusal.code), failure.refusal.detail);
     refused.remember({.stage = stage,
-                      .signature = stage_signature(stage, plan->settings, width, height, library),
+                      .signature = stage_signature(stage, plan->settings, width, height, library, rates),
                       .refusal = failure.refusal,
                       .cancelled = watch_now(failure.refusal),
                       .file = p.options.file});

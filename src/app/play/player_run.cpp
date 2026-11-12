@@ -130,7 +130,8 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
 // banc, qui mesure la chaîne demandée ou rien.
 std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusal& refusal) {
   return retreat_stage(p.options.bench_out ? nullptr : p.stages, refusal, c.played, c.interpolates(),
-                       c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file);
+                       c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file,
+                       {.display_hz = c.opened.display_hz, .source_fps = c.opened.source_fps});
 }
 
 }  // namespace
@@ -230,8 +231,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) {
     // B31-02 : l'anneau refusé retire un étage, et la chaîne se rouvre au même endroit sans lui.
-    if (ring_refused && retreat(p, c, pipeline.error()))
-      return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
+    if (ring_refused) {
+      Refusal ring = pipeline.error();
+      ring.key = std::string(kRingRefusalKey);
+      if (retreat(p, c, ring)) return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
+    }
     return std::unexpected(std::move(pipeline.error()));
   }
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
@@ -714,7 +718,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
   // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
-  if (failure && failure->key == kFatalStageKey && failure->code != RefusalCode::DeviceLost &&
+  if (failure && is_fatal_stage_key(failure->key) && failure->code != RefusalCode::DeviceLost &&
       c.backend->kernels()->health() && retreat(p, c, *failure)) {
     failure.reset();
     chain.reopen = chain.running;

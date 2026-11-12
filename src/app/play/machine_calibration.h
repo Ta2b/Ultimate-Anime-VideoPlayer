@@ -10,7 +10,9 @@
 //      descendant jusqu'au premier qui tient (B07-14) ;
 //   2. SPAN + RIFE en mode auto Instantané, du plus haut palier que SPAN seul a tenu vers le bas, jusqu'au
 //      premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas ne se
-//      tient pas avec RIFE.
+//      tient pas avec RIFE ;
+//   3. si SPAN + RIFE tient au plus haut palier avec des modèles plus légers que ceux de Qualité, ce palier
+//      rejoué avec ceux de Qualité (C07-03) : une carte que la table sous-estime monte de modèle.
 // Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.26
 // en Qualité et Ultra, SPAN Performance Sharp et RIFE 4.22 lite en dessous), SPAN toujours en FP16 : le FP8
 // n'est plus essayé tant que sa porte n'est pas rejugée (A49-03, ADR 0007 suspendue). Sans palier SPAN qui
@@ -19,7 +21,6 @@
 // le .cpp.
 #pragma once
 
-#include <array>
 #include <expected>
 #include <filesystem>
 #include <functional>
@@ -35,10 +36,6 @@
 
 namespace ajp::app::play {
 
-// Les hauteurs de travail possibles, de la plus légère à la plus lourde, jusqu'à celle de la séquence
-// (media/bench_clip.h : 1080p). 900p n'y est pas : un essai et un moteur de plus pour une réduction de la
-// source 1080p qu'aucun écran n'appelle.
-inline constexpr std::array<int, 5> kCalibrationHeights{360, 480, 540, 720, 1080};
 // La version de calibration.toml. 2 : hauteurs jusqu'à 1080p sur tout écran, modèles du niveau en FP16. Un
 // fichier plus ancien (essais bornés à la moitié de l'écran, SPAN FP8, RIFE 4.22 lite) se relit pour le
 // tableau mais l'Auto ne le suit plus : il borne la chaîne plus bas que la carte ne tient.
@@ -64,11 +61,14 @@ struct CalibrationModels {
 };
 // Ceux du niveau estimé de la carte (level_span_model, level_rife_model).
 CalibrationModels calibration_models(Tier tier);
+// Ceux de Qualité, que l'essai de la famille 3 joue (ChainCandidate::finer).
+CalibrationModels finer_models();
 
 struct ChainCandidate {
   bool span = true;
   bool rife = true;
-  int height = 0;  // la hauteur de travail de SPAN ; sans SPAN, 0 (la source telle quelle)
+  int height = 0;      // la hauteur de travail de SPAN ; sans SPAN, 0 (la source telle quelle)
+  bool finer = false;  // joué avec finer_models() au lieu des modèles du niveau (famille 3, C07-03)
   bool operator==(const ChainCandidate&) const = default;
 };
 
@@ -79,6 +79,9 @@ struct CandidateTrial {
   double fps = 0.0;            // images neuves par seconde obtenues, en moyenne
   double low_fps = 0.0;        // le « 1 % low » : d'après les 1 % d'écarts les plus longs
   double target_fps = 0.0;     // celles visées : la séquence (24 i/s), doublée par RIFE
+  // Images perdues ou manquées par image visée, l'échelle du verdict (kMaxLossPerImage) ; < 0 : inconnu (un
+  // fichier plus ancien), needs_second_run reprend alors lost_percent.
+  double lost_per_image = -1.0;
 };
 
 // Les images neuves par seconde d'une lecture, créditées de ses instants sans image à dessein ; 0 :
@@ -98,13 +101,18 @@ std::vector<int> calibration_heights();
 // Le prochain essai après ceux déjà faits ; rien quand la recherche est finie.
 // La famille SPAN seul part de start_height (le palier au plus égal, le plus bas si 0), monte tant qu'elle
 // tient ou descend tant qu'elle ne tient pas : une carte rapide ne construit pas tous les paliers d'en bas.
-std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int start_height = 0);
+// try_finer : les modèles joués sont plus légers que finer_models(), la famille 3 peut les monter.
+std::optional<ChainCandidate> next_candidate(const std::vector<CandidateTrial>& tried, int start_height = 0,
+                                             bool try_finer = false);
 // Le palier où la calibration commence pour ce niveau estimé : celui que l'Auto estimé y joue.
 int calibration_start_height(Tier tier);
 // La chaîne recommandée, la fluidité d'abord (P3.11) : le plus haut palier où SPAN et RIFE tiennent
-// ensemble ; sinon le plus haut SPAN seul ; RIFE seul si SPAN ne tient nulle part ; ni SPAN ni RIFE si rien
-// ne tient. Les autres paliers restent au tableau, au choix de l'utilisateur.
+// ensemble, avec les modèles de Qualité s'ils y tiennent aussi ; sinon le plus haut SPAN seul ; RIFE seul si
+// SPAN ne tient nulle part ; ni SPAN ni RIFE si rien ne tient. Les autres paliers restent au tableau, au choix
+// de l'utilisateur.
 ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
+// Le plus haut palier où SPAN seul a tenu ; 0 : aucun (CalibratedChain::span_height).
+int best_span_alone(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
 // Personnalisé, et pour le reste ce que l'Auto calibré écrira (apply_preset, A07-01) : réduction Hermite,
 // SPAN et RIFE de models en FP16, RIFE en mode auto Instantané, ordre de SPAN en Auto, poses gardées,
@@ -121,7 +129,9 @@ struct MachineCalibration {
   std::string date;  // AAAA-MM-JJ
   int display_height = 0;
   int version = kCalibrationVersion;  // celle du fichier relu ; sous kCalibrationVersion : pas suivie
-  CalibrationModels models;           // les modèles joués par les essais
+  // Les modèles de la chaîne recommandée : ceux du niveau, ou finer_models() quand chosen.finer. Les essais de
+  // la famille 3 (finer) ont joué finer_models(), les autres ceux du niveau.
+  CalibrationModels models;
   std::string engine;       // le moteur qui a joué les essais (« tensorrt », « vulkan »…) ; vide : inconnu
   std::string driver;       // le pilote de la carte pendant la mesure ; vide : inconnu
   bool on_battery = false;  // mesurée sur batterie (P3.12) : gardée au tableau, pas suivie par l'Auto
@@ -135,7 +145,8 @@ float creeping_fraction(float reported, double seconds_since_change);
 // longues sur un portable.
 int calibration_minutes(bool builds_engines, bool laptop);
 
-// Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse.
+// Un essai se rejoue une fois (P3.12) : quand il ne tient pas, ou qu'il tient de justesse (plus de la
+// moitié des pertes permises par image visée, ou une cadence sous 97 % de la visée).
 bool needs_second_run(const CandidateTrial& trial);
 
 // Le fichier des résultats, à côté de play.toml, que calibrate_machine écrit quand plan.data est donné : un
@@ -192,7 +203,7 @@ struct CalibrationTrials {
 std::expected<CalibrationTrials, Refusal> run_calibration_trials(const TrialPlayer& play,
                                                                  const std::stop_token& stop,
                                                                  const std::function<void(float)>& fraction,
-                                                                 int start_height = 0);
+                                                                 int start_height = 0, bool try_finer = false);
 
 // Les essais, l'un après l'autre (au plus une dizaine) : base porte les réglages de l'utilisateur, tier le
 // niveau estimé de la carte (ses modèles : calibration_models), fraction reçoit l'avancement (0 à 1). La

@@ -108,10 +108,13 @@ std::string resolution_text(int height);
 // Avant : SPAN agrandit chaque sortie, intermédiaires compris (×3 : trois passes par image source),
 // et nettoie les défauts du warp. Après : SPAN agrandit chaque image source une fois, le warp
 // déforme les images agrandies à la taille de sortie. Auto : après dès que la sortie dépasse
-// kWarpAfterSpanAbove lignes, où SPAN coûte le plus (1080p → 4K : environ 8 ms par passe sur une
-// RTX 4070 Ti, contre 0,4 ms pour le warp), ou dès qu'un facteur choisi à la main atteint ×3 (D5 : deux
-// images créées par paire, deux passes de SPAN de plus contre deux warps). En Auto le facteur varie : seule
-// la hauteur décide (order_factor, chain_shape.h). La qualité des deux ordres n'est pas comparée (B22-03).
+// kWarpAfterSpanAbove lignes, où SPAN coûte le plus (1080p → 4K : 14,7 ms par passe en FP16 sur une
+// RTX 4070 Ti, docs/span-fp8-cutlass.md, contre 0,4 ms pour le warp), ou dès que le facteur atteint ×3 (D5 :
+// deux images créées par paire, deux passes de SPAN de plus contre deux warps) : choisi à la main, ou en Auto
+// le plus haut que l'écran lui laisse (order_factor, chain_shape.h). Qualité des deux ordres mesurée au banc
+// (tools/bench/qualite/ordre.py, docs/banc-qualite.md, C09-02) : aussi proches de la vraie image l'un que
+// l'autre (0,1 dB), l'image créée après SPAN 0,5 à 1,3 % moins nette et moins « SPAN » (2 à 3 dB d'écart de
+// plus à SPAN de la vraie image) ; gain : une passe de SPAN par source au lieu d'une par image montrée.
 enum class SpanOrder : std::uint8_t { Auto, Before, After };
 inline constexpr int kSpanOrderCount = 3;
 inline constexpr int kWarpAfterSpanAbove = 1080;
