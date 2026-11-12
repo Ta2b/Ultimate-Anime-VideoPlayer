@@ -72,6 +72,12 @@ UpscaleStage::~UpscaleStage() {
   }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
+  if (encodes_kept_ + encodes_followed_ + encodes_after_gap_ + encodes_cold_ > 0)
+    log_channel("gpu")->info(
+        "RIFE : encodage repris sur {} passes, B seule sur {}, A et B sur {} après une paire sans passe et "
+        "{} "
+        "à froid",
+        encodes_kept_, encodes_followed_, encodes_after_gap_, encodes_cold_);
   if (drba()) {
     log_channel("gpu")->info(
         "DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe) ; {} instants sans passe "
@@ -314,6 +320,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     debanded_ = *debanded;
   }
   analyze_source(frame);
+  source_serial_[current_] = ++serials_;  // rgb_[current_] et small_[current_] : une autre image
   if (small_[current_] && !ingested && !std::exchange(drba_.small_taken, false)) {  // réduite par Area
     if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, small_[current_]->tensor()); !ok)
       return std::unexpected(std::move(ok.error()));

@@ -24,8 +24,8 @@ namespace ajp::prepare {
 
 struct RifeSplit {
   kernels::RifeFusedPlan plan;
-  std::string encode_input;                                        // 2 × 3 × H × W : les images A et B
-  std::string encode_output;                                       // 2 × 4 × H × W : leurs encodages
+  std::string encode_input;   // 2 × 3 × H × W dans le graphe ; le morceau la prend image par image (1 × 3)
+  std::string encode_output;  // l'encodage, 4 plans par image
   std::array<std::string, kernels::kFusedMaxBlocks> block_input;   // X_k
   std::array<std::string, kernels::kFusedMaxBlocks> block_output;  // Y_k
   std::int32_t elem_type = 10;                                     // type ONNX des frontières : FLOAT16
@@ -74,8 +74,9 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text);
 bool is_rife_fused_manifest(const std::filesystem::path& path);
 
 // Version de la dérivation : elle entre dans le nom des fichiers, une règle de coupe changée en refait
-// d'autres.
-inline constexpr std::string_view kRifeFusedDerivation = "fusion1";
+// d'autres. fusion2 : l'encodeur en lot de 1 (une image), pour n'encoder que la nouvelle B quand la paire
+// suit la précédente (Engine::next_pair_follows).
+inline constexpr std::string_view kRifeFusedDerivation = "fusion2";
 
 // Les six morceaux de rife_onnx pour une taille remplie et leur manifeste, écrits dans dir (créé s'il manque)
 // sous des noms qui portent la version de la dérivation, la taille et l'empreinte du modèle ; ce qui s'y

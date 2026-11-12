@@ -131,6 +131,7 @@ struct ChainEngines {
   bool skip_held = false;               // --skip-held (UpscaleSetup::skip_held)
   bool one_lane = false;                // --one-lane (UpscaleSetup::one_lane)
   bool rife_warm = false;               // --rife-warm (UpscaleSetup::rife_warm)
+  bool rife_encode_all = false;         // --rife-encode-all (UpscaleSetup::rife_encode_all)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   std::unique_ptr<gpu::Engine> drba;

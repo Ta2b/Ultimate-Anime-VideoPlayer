@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "app/play/live_settings.h"
 #include "upscale_rig.h"
@@ -52,6 +53,39 @@ TEST_CASE(
   CHECK(rig.backend.count("warp_blend") == 4);
   // Avant : 8 (la passe du milieu, que rien ne lisait, puis celle de l'instant).
   CHECK(rig.backend.count("engine rife_motion") == 4);
+}
+
+// L'encodage gardé par le RIFE fusionné : l'étage annonce au moteur un autre instant des mêmes images
+// (next_times_only) et la paire qui suit (next_pair_follows), jamais à travers une coupe ou une paire
+// sautée.
+TEST_CASE("Étage gpu : RIFE ×3, l'encodage repris aux instants suivants et à la paire qui suit",
+          "[app][stage]") {
+  const int lanes = GENERATE(1, 3);  // un ou deux tampons d'entrée à tour de rôle
+  Rig rig;
+  rig.backend.offer_lanes(lanes);
+  rig.start(rig.setup(true, Factor{.num = 3, .den = 1}));
+  rig.feed(1, 4);  // trois paires, deux instants chacune
+  REQUIRE(rig.collect(10));
+  rig.stage.reset();
+  INFO(lanes << " voie(s)");
+  CHECK(rig.backend.count("engine rife") == 6);
+  CHECK(rig.rife.times_only() == 3);  // le second instant de chaque paire
+  CHECK(rig.rife.follows() == 2);     // le premier instant de (2,3) et de (3,4)
+}
+
+TEST_CASE("Étage gpu : RIFE ×2, l'encodage de B repris pour A, oublié à la coupe", "[app][stage]") {
+  Rig rig;
+  rig.backend.score(SourceId{3}, SourceId{4}, 0.5, 1000);  // coupe de scène : (3,4) sans passe
+  rig.start(rig.setup(true));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(10));
+  rig.stage.reset();
+  CHECK(shape_of(rig.sink.frames()) ==
+        std::vector<std::string>{"1", "1-2", "2", "2-3", "3", "4", "4-5", "5", "5-6", "6"});
+  CHECK(rig.backend.count("engine rife") == 4);
+  CHECK(rig.rife.times_only() == 0);  // un instant par paire
+  // (2,3) suit (1,2) et (5,6) suit (4,5) ; (4,5) ne suit rien, la passe d'avant était (2,3).
+  CHECK(rig.rife.follows() == 2);
 }
 
 // Rapide à pas constant N = 2 : (2, 3) est un dessin tenu, l'instant t = 1/2 de la paire (1, 2) doit écrire
