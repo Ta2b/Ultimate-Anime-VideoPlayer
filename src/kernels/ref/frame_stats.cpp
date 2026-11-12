@@ -34,6 +34,7 @@ bool is_skin(const Rgb& e) {
 struct Point {
   Rgb encoded;
   float luma = 0.0F;
+  Rgb nits;             // cd/m², calculés une fois (la seconde passe et les voisins les relisent)
   float maxrgb = 0.0F;  // cd/m²
 };
 
@@ -106,8 +107,8 @@ Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer) {
       Point& p = points[at(gx, gy)];
       p.encoded = {.r = clamp01(raw.r), .g = clamp01(raw.g), .b = clamp01(raw.b)};
       p.luma = 0.2126F * p.encoded.r + 0.7152F * p.encoded.g + 0.0722F * p.encoded.b;
-      const Rgb n = frame_nits(p.encoded, transfer);
-      p.maxrgb = std::max({n.r, n.g, n.b});
+      p.nits = frame_nits(p.encoded, transfer);
+      p.maxrgb = std::max({p.nits.r, p.nits.g, p.nits.b});
       auto& column = column_max[static_cast<std::size_t>(gx)];
       auto& row = row_max[static_cast<std::size_t>(gy)];
       column = std::max(column, p.luma);
@@ -131,7 +132,7 @@ Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer) {
     for (int gx = x0; gx < x1; ++gx) {
       const Point& p = points[at(gx, gy)];
       const Rgb& e = p.encoded;
-      const Rgb n = frame_nits(e, transfer);
+      const Rgb& n = p.nits;
       const Rgb n2020 = transfer == FrameTransfer::Sdr ? convert_primaries(n, kBt709ToBt2020) : n;
       ++c.luma_hist[static_cast<std::size_t>(bin_of(p.luma, fs::kLumaBins))];
       // Le code PQ de maxRGB : en PQ, le plus grand canal encodé lui-même (l'EOTF est croissante).

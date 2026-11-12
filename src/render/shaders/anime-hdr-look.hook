@@ -1,5 +1,5 @@
 // AnimeJaNai HDR - look (LUT 3D .cube) : la passe qui suit le grade et précède le vrai noir, propre à ce dépôt.
-// Posée sur OUTPUT, sur l'image déjà encodée (PQ BT.2020 ; ou BT.709 gamma sdr_gamma en sortie SDR).
+// Posée sur OUTPUT, sur l'image déjà encodée en PQ BT.2020 (une sortie SDR y passe aussi : sdr_tm).
 //
 // Une LUT .cube est faite pour une image d'écran SDR, BT.709, encodée en gamma (blanc = 1). L'image est donc
 // ramenée à ce domaine :
@@ -67,27 +67,6 @@
 //!MAXIMUM 3.0
 2.4
 
-//!PARAM sdr_out
-//!DESC 1 = sortie SDR BT.709 (gamma sdr_gamma, blanc à peak nits), 0 = PQ BT.2020
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM sdr_gamma
-//!DESC Sortie SDR : exposant du transfert de l'écran
-//!TYPE float
-//!MINIMUM 1.8
-//!MAXIMUM 2.8
-2.2
-
-//!PARAM peak
-//!DESC Sortie SDR : blanc de l'image (nits)
-//!TYPE float
-//!MINIMUM 100.0
-//!MAXIMUM 10000.0
-1000.0
-
 //!HOOK OUTPUT
 //!BIND HOOKED
 //@LOOK_BINDS@
@@ -103,22 +82,20 @@ const mat3 AJL_709_TO_2020 = mat3( 0.6274040,  0.0690970,  0.0163916,
                                    0.0433136,  0.0113612,  0.8955950);
 
 vec3 ajl_decode(vec3 e) {
-    if (sdr_out > 0.5) return pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)) * peak;
     vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
     return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
 }
 vec3 ajl_encode(vec3 n) {
-    if (sdr_out > 0.5) return pow(clamp(n / peak, 0.0, 1.0), vec3(1.0 / sdr_gamma));
     vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }
 
 //@LOOK_CHAIN@
 
-// Le look d'un pixel encodé (PQ BT.2020, ou SDR), lu par les passes de ce hook seulement ; grade.cpp n'y
+// Le look d'un pixel encodé en PQ BT.2020, lu par les passes de ce hook seulement ; grade.cpp n'y
 // insère que la pile (marque LOOK_CHAIN).
 vec3 ajl_look(vec3 e) {
-    if (look_pq > 0.5 && sdr_out < 0.5) {
+    if (look_pq > 0.5) {
         // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.
         vec3 graded = ajl_chain(e);
         if (look_toe <= 0.0) return graded;
@@ -138,14 +115,14 @@ vec3 ajl_look(vec3 e) {
         return ajl_encode(mix(lin * (toe / max(m, 1e-9)), ajl_decode(graded), pile));
     }
     vec3 nits = ajl_decode(e);
-    // Linéaire BT.709, blanc de référence = 1 (la sortie SDR est déjà en BT.709).
-    vec3 lin = (sdr_out > 0.5 ? nits : AJL_2020_TO_709 * nits) / look_white;
+    // Linéaire BT.709, blanc de référence = 1.
+    vec3 lin = AJL_2020_TO_709 * nits / look_white;
     lin = max(lin, 0.0);
     float over = max(max(lin.r, max(lin.g, lin.b)), 1.0);
     vec3 enc = pow(lin / over, vec3(1.0 / look_gamma));
     vec3 graded = pow(max(ajl_chain(enc), 0.0), vec3(look_gamma)) * over;
     vec3 out_lin = graded * look_white;
-    return ajl_encode(sdr_out > 0.5 ? out_lin : AJL_709_TO_2020 * out_lin);
+    return ajl_encode(AJL_709_TO_2020 * out_lin);
 }
 //@LOOK_END@
 
@@ -158,7 +135,7 @@ vec3 ajl_look(vec3 e) {
 // compte pas, elle n'est pas lue, B41-06) et sur les bords francs (w = 0) ; deux fois entre les deux
 // seulement. L'image est la même qu'avec deux traversées partout.
 float ajl_luma(vec3 n) {
-    return max(dot(n, sdr_out > 0.5 ? vec3(0.2126, 0.7152, 0.0722) : vec3(0.2627, 0.6780, 0.0593)), 1e-4);
+    return max(dot(n, vec3(0.2627, 0.6780, 0.0593)), 1e-4);
 }
 
 vec4 hook() {

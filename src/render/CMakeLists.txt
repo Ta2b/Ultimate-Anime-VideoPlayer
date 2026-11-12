@@ -4,8 +4,7 @@
 ajp_add_module(render
   SOURCES cube_lut.cpp display_model.cpp anime4k.cpp grade.cpp grade_params.cpp output_tune.cpp sharpen.cpp "${CMAKE_CURRENT_BINARY_DIR}/render_shaders.cpp"
           "${CMAKE_CURRENT_BINARY_DIR}/anime4k_shaders.cpp"
-  DEPS ajp::core ajp::dep::placebo
-  PRIVATE_DEPS ajp::kernels)
+  DEPS ajp::core ajp::dep::placebo)
 
 # Les hooks mpv du grade sont embarqués dans la bibliothèque, octet pour octet. Le grade : ses paramètres
 # (anime-hdr-params.hook), puis ses trois passes (anime-hdr-anime : carte locale, zone, passe anime), mises

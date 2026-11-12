@@ -126,6 +126,24 @@ TEST_CASE("Rapport : la fin d'un journal commence à une ligne entière", "[app]
   CHECK(read_tail(dir / "absent.log", 8).empty());
 }
 
+#ifndef _WIN32
+TEST_CASE("Rapport : la marque d'un autre lecteur vivant n'est ni un plantage ni retirée (C19-09)",
+          "[app][report]") {
+  const fs::path dir = fresh_dir("ajp-report-other");
+  write(dir / "session.open", "1\n");  // PID 1 : toujours vivant
+  CHECK_FALSE(begin_session(dir));
+  CHECK_FALSE(previous_session_crashed());
+  end_session();  // ce lancement n'a pas posé la marque : il ne la retire pas
+  CHECK(fs::exists(dir / "session.open"));
+  // La marque d'un lecteur qui n'existe plus (ou d'avant le PID) est bien un plantage.
+  write(dir / "session.open", "2147483646\n");
+  CHECK(begin_session(dir));
+  CHECK(previous_session_crashed());
+  end_session();
+  CHECK_FALSE(fs::exists(dir / "session.open"));
+}
+#endif
+
 TEST_CASE("Rapport : séance ouverte, retrouvée au lancement suivant seulement si elle ne s'est pas fermée",
           "[app][report]") {
   const fs::path dir = fresh_dir("ajp-report-session");

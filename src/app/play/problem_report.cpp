@@ -1,7 +1,9 @@
 #include "app/play/problem_report.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -16,7 +18,9 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <signal.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 #endif
 #ifdef __linux__
 #include <cstdint>
@@ -36,6 +40,7 @@ struct State {
   fs::path session_dir;
   fs::path log_file;
   bool previous_crashed = false;
+  bool owns_mark = false;           // session.open porte le PID de ce processus : seul lui la retire
   std::string previous_relaunched;  // la raison de la relance voulue qui a lancé cette séance ; vide : aucune
 };
 
@@ -274,6 +279,33 @@ std::string compose_report(const ReportParts& parts, std::size_t max_bytes) {
   return report;
 }
 
+namespace {
+
+std::uint64_t own_pid() {
+#ifdef _WIN32
+  return GetCurrentProcessId();
+#else
+  return static_cast<std::uint64_t>(getpid());
+#endif
+}
+
+// Le processus de ce PID tourne-t-il ? Une marque d'un lecteur encore là n'est pas celle d'un plantage.
+bool process_alive(std::uint64_t pid) {
+  if (pid == 0) return false;
+#ifdef _WIN32
+  const HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+  if (process == nullptr) return GetLastError() == ERROR_ACCESS_DENIED;
+  DWORD code = 0;
+  const bool alive = GetExitCodeProcess(process, &code) != 0 && code == STILL_ACTIVE;
+  CloseHandle(process);
+  return alive;
+#else
+  return kill(static_cast<pid_t>(pid), 0) == 0 || errno == EPERM;
+#endif
+}
+
+}  // namespace
+
 bool begin_session(const fs::path& dir) {
   State& s = state();
   const std::scoped_lock lock(s.mutex);
@@ -281,7 +313,21 @@ bool begin_session(const fs::path& dir) {
   std::error_code error;
   const fs::path mark = dir / "session.open";
   const bool existed = fs::exists(mark, error);
-  std::ofstream(mark, std::ios::binary).put('\n');
+  // Le PID du lecteur qui l'a posée (l'ancien format n'avait qu'un saut de ligne : inconnu). Un autre lecteur
+  // encore vivant sur ce dossier (un lancement qui ne passe pas par l'instance unique) n'a pas planté : sa
+  // marque reste la sienne, ce lancement n'y touche pas et ne la retirera pas à sa sortie.
+  std::uint64_t other = 0;
+  if (existed) {
+    std::ifstream in(mark, std::ios::binary);
+    in >> other;
+  }
+  if (existed && other != 0 && other != own_pid() && process_alive(other)) {
+    s.owns_mark = false;
+    s.previous_crashed = false;
+    return false;
+  }
+  std::ofstream(mark, std::ios::binary) << own_pid() << '\n';
+  s.owns_mark = true;
   s.previous_crashed = existed;
   return existed;
 }
@@ -291,7 +337,8 @@ void end_session() {
   const std::scoped_lock lock(s.mutex);
   if (s.session_dir.empty()) return;
   std::error_code error;
-  fs::remove(s.session_dir / "session.open", error);
+  if (s.owns_mark) fs::remove(s.session_dir / "session.open", error);
+  s.owns_mark = false;
   s.session_dir.clear();
 }
 

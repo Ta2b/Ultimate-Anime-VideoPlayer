@@ -144,10 +144,9 @@ struct PlaceboScreen::Impl {
   ~Impl();
   void open_shader_cache(const std::filesystem::path& file);
   void save_shader_cache();
-  std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target) const;
+  std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target);
   // Les hooks de l'image vidéo, dans leur ordre (Anime4K, netteté, grade) ; leur nombre.
-  std::size_t video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image,
-                          bool graded_now) const;
+  std::size_t video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image, bool graded_now);
   // Une passe rendue (rappel de libplacebo) : son temps GPU, compté à l'affichage, au grade ou à Anime4K.
   void note_pass(const pl_dispatch_info& pass) const;
   // Les temps de la dernière composition d'une image vidéo, gardés pour le profil de fin de séance.
@@ -237,6 +236,15 @@ struct PlaceboScreen::Impl {
   bool kde_sdr_auto = false;
   double hinted_max_nits = 0.0;
   double hinted_max_fall = 0.0;
+  // Le rendu de la dernière passe au pic non plafonné (MaxFALL sous le plafond des flashs), gardé tant que
+  // ses entrées ne changent pas (C41-04) : match_kwin tourne à chaque présentation.
+  struct UncappedTune {
+    render::GradeParams params;
+    double reference = 0.0;
+    double panel_peak = 0.0;
+    render::OutputTune tune;
+  };
+  std::optional<UncappedTune> uncapped_tune;
   // La compression de KWin dans le grade et les métadonnées de la sortie, selon la cible et le grade.
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
@@ -247,6 +255,9 @@ struct PlaceboScreen::Impl {
   bool start_frame(pl_swapchain_frame* frame);
   bool frame_pending = false;
   void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
+  // MaxFALL annoncé (P3.59, A41-02) : le plein écran du contrat d'écran, sinon le blanc des surfaces rendu
+  // par la dernière passe, en unités du contenu, borné au maximum annoncé.
+  double announced_fall(double max_nits, double reference, double announced_panel_peak);
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool frame_debanded = false;  // l'image montrée a été débandée avant SPAN (RingFrame::debanded, P3.56)
@@ -286,10 +297,12 @@ struct PlaceboScreen::Impl {
     std::vector<float> levels;
     bool hdr = false;
     std::vector<double> nits;
-    std::vector<render::CubeLut> looks;  // la pile de LUT mesurée avec la rampe (P3.61), size 0 : aucune
+    // La pile de LUT mesurée avec la rampe (P3.61), partagée avec l'écran et comparée par identité (C41-05).
+    std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> looks;
   };
   std::optional<RampMeasure> last_ramp;
-  std::vector<render::CubeLut> ramp_looks;  // la pile posée sur ramp_grade (size 0 : aucune)
+  // La pile posée sur ramp_grade : celle de l'écran, partagée (C41-05).
+  std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> ramp_looks;
   mutable std::uint64_t grade_frame_ns = 0;
   mutable std::uint64_t anime4k_frame_ns = 0;  // les passes d'Anime4K de la dernière composition
   mutable core::SampleReservoir<std::uint32_t> anime4k_gpu_us{std::size_t{1} << 20};

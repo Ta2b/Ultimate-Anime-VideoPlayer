@@ -3,6 +3,8 @@
 #include <string>
 #include <string_view>
 
+#include "app/play/auto_config.h"
+#include "app/play/problem_report.h"
 #include "app/play/settings.h"
 
 namespace ajp::app::play {
@@ -51,6 +53,11 @@ std::string settings_changes_text(const PlaySettings& settings) {
     out += line;
   });
   return out.empty() ? "(aucun)" : out;
+}
+
+void note_preset_facts(const PlaySettings& settings) {
+  note_report_fact("Préréglage", label(settings.preset));
+  note_report_fact("Réglages changés", "\n" + settings_changes_text(settings));
 }
 
 }  // namespace ajp::app::play

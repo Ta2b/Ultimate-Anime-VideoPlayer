@@ -132,12 +132,13 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   constexpr std::array<Mode, 2> kModes{
       {{UpdateMode::Notify, "Notify me",
         "A notification when a new version is out; you install it yourself."},
-       {UpdateMode::Never, "Never", "No checks."}}};
+       {UpdateMode::Never, "Never",
+        "No update notifications. Engine packages of this version are still looked up."}}};
   for (const Mode& mode : kModes) {
     if (ImGui::RadioButton(i18n::tr(mode.label), d.update_mode == mode.key)) d.update_mode = mode.key;
     panel::tip(i18n::tr(mode.detail));
   }
-  if (std::string_view(update_public_key()).empty())
+  if (update_public_keys({}).empty())
     note(i18n::tr("This package has no signing key: updates cannot be verified."));
 
   const char* frequency = d.update_frequency == UpdateFrequency::Launch   ? i18n::tr("At every launch")
@@ -183,8 +184,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   if (!state.latest_version.empty()) {
     ImGui::SameLine();
     if (ImGui::Button(i18n::tr("Download page"))) {
-      const std::string url =
-          state.notes_url.starts_with("https://") ? state.notes_url : releases_page(release_repo());
+      const std::string url = download_page_url(state.notes_url, release_repo());
       SDL_OpenURL(url.c_str());
     }
   }

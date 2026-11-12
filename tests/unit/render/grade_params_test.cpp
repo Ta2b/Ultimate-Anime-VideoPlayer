@@ -35,7 +35,6 @@ TEST_CASE("route native : blanc de la source à 203 nits, éclats depuis la moit
   const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 800.0));
   REQUIRE(decision);
   CHECK(decision->mode == GradeMode::Native);
-  CHECK(decision->source_white_nits == 203.0);
   const GradeParams& p = decision->params;
   CHECK(p.peak == 800.0);
   CHECK(p.paper == 400.0);  // la moitié du pic
@@ -44,49 +43,19 @@ TEST_CASE("route native : blanc de la source à 203 nits, éclats depuis la moit
   CHECK(p.shadows == Approx(resp(0.5, 0.8, 1.2)));
   // h = 1 : 1 + 1,2 + 1,6 × 0,75 = 3,4.
   CHECK(p.spec_gain == Approx(3.4));
-  CHECK(p.sdr_out == 0.0);
   CHECK(p.black_hi == 0.0);  // sans vrai noir
 }
 
-TEST_CASE("blanc papier (truehdr_look coupé) : éclats jusqu'au pic, plafonné à 0,75 × pic") {
+// C41-07 : la sortie SDR n'a plus de grade propre : elle prend le grade PQ ramené au SDR (sdr_tonemap).
+TEST_CASE("sortie SDR : pas de grade propre, la méthode anime y ramène le grade PQ") {
   GradeSettings settings;
-  settings.truehdr_look = false;
-  settings.paper_white = 400.0;
-  settings.highlights_rtx = 0.5;  // x 2 : le plein effet des éclats
-  const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native, 401.0));
-  REQUIRE(decision);
-  CHECK(decision->params.paper == 301.0);  // floor(300,75 + 0,5)
-  CHECK(decision->source_white_nits == 301.0);
-  CHECK(decision->params.adapt == 0.0);
-  CHECK(decision->params.spec_gain == Approx(401.0 / 301.0));  // borné par la marge pic / papier
-}
-
-TEST_CASE("sortie SDR : noirs et vrai noir au blanc de l'écran, sans marge d'éclats") {
-  GradeSettings settings;
-  settings.shadows = 0.4;
-  settings.true_black = true;
-  settings.black_lo = 0.1;
-  settings.black_hi = 0.5;
-  settings.chroma_base = 0.1;
   for (const core::HdrMode route : {core::HdrMode::Off, core::HdrMode::Native}) {
     auto context = pq_context(route);
     context.output_pq = false;
     const auto decision = decide_grade(settings, context);
     REQUIRE(decision);
-    CHECK(decision->mode == GradeMode::Sdr);
-    const GradeParams& p = decision->params;
-    CHECK(p.sdr_out == 1.0);
-    CHECK(p.peak == 203.0);
-    CHECK(p.spec_gain == 1.0);
-    CHECK(p.shadows == Approx(resp(0.4, 0.8, 1.2)));
-    CHECK(p.chroma == Approx(1.1));
-    CHECK(p.black_lo == 0.1);
-    CHECK(p.black_hi == 0.5);
+    CHECK(decision->mode == GradeMode::Neutral);
   }
-  auto context = pq_context(core::HdrMode::Off);
-  context.output_pq = false;
-  context.source_hdr = true;
-  CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
 }
 
 TEST_CASE("le mode SDR sur une sortie HDR10 est gradé au blanc papier") {
@@ -95,6 +64,11 @@ TEST_CASE("le mode SDR sur une sortie HDR10 est gradé au blanc papier") {
   REQUIRE(off);
   CHECK(off->mode == GradeMode::Native);
   CHECK(off->params.adapt == 0.0);
+  CHECK(off->params.paper == 203.0);  // le blanc papier fixe
+  // Sous un pic bas, le blanc papier reste à 75 % du pic : la marge des éclats.
+  const auto low = decide_grade(settings, pq_context(core::HdrMode::Off, 200.0));
+  REQUIRE(low);
+  CHECK(low->params.paper == 150.0);
   // Une source HDR en mode SDR reste neutre.
   auto hdr_source = pq_context(core::HdrMode::Off);
   hdr_source.source_hdr = true;
@@ -110,16 +84,11 @@ TEST_CASE("le grade reste neutre hors de ses conditions") {
   CHECK(decide_grade(settings, pq_context(core::HdrMode::Native))->mode == GradeMode::Neutral);
 }
 
-TEST_CASE("une source HDR n'est gradée que si grade_native_hdr le demande") {
+TEST_CASE("une source HDR n'est pas gradée") {
   GradeSettings settings;
   auto context = pq_context(core::HdrMode::Native);
   context.source_hdr = true;
   CHECK(decide_grade(settings, context)->mode == GradeMode::Neutral);
-  settings.grade_native_hdr = true;
-  const auto decision = decide_grade(settings, context);
-  REQUIRE(decision);
-  CHECK(decision->mode == GradeMode::NativeHdr);
-  CHECK(decision->params.adapt == 0.0);
 }
 
 TEST_CASE("le peps de la passe anime et la lumière de la scène") {
@@ -146,11 +115,11 @@ TEST_CASE("le peps de la passe anime et la lumière de la scène") {
 
 TEST_CASE("un réglage hors plage est refusé en nommant le champ") {
   GradeSettings settings;
-  settings.paper_white = 79.0;
+  settings.black_lo = 51.0;
   auto refused = decide_grade(settings, pq_context(core::HdrMode::Native));
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
-  CHECK(refused.error().detail.starts_with("grade.paper_white"));
+  CHECK(refused.error().detail.starts_with("grade.black_lo"));
   settings = GradeSettings{};
   settings.shadows = std::numeric_limits<double>::quiet_NaN();
   CHECK_FALSE(check_grade_settings(settings));
@@ -195,7 +164,6 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
   p.an_lift = 1.15;
   p.black_lo = 0.1;
   p.black_hi = 2.0;
-  p.sdr_out = 1.0;
   p.fs_apl = 10.0;        // scène sombre : toute la marge
   p.look_mixes[0] = 1.0;  // la pile d'HDR
   p.look_mixes[10] = 0.5;
@@ -205,7 +173,6 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
   CHECK(p.look_mixes[10] == 0.0);
   CHECK(p.look_pq == 0.0);
   CHECK(p.sdr_tm == 1.0);
-  CHECK(p.sdr_out == 0.0);
   // A41-07 : le vrai noir annoncé par le panneau s'applique aussi sur une sortie SDR.
   CHECK(p.black_lo == 0.1);
   CHECK(p.black_hi == 2.0);
@@ -217,6 +184,29 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
   p.peak = 200.0;  // jamais sous les surfaces
   sdr_tonemap(p);
   CHECK(p.tm_top == Approx(1.25 * p.tm_white));
+}
+
+// C41-01, décision en attente de Tatoub : en sortie SDR, l'exposition par plan (±0,25 diaphragme) devrait
+// bouger les surfaces, mais tm_white suit an_lift et l'annule sous le genou (une surface sort à
+// L × an_lift / tm_white du blanc SDR). Marqué comme connu ([!shouldfail]) : il passe tant que le défaut est
+// là, et échouera quand l'un des deux choix sera fait. Exposition par plan voulue : tm_white fixe, retirer la
+// marque. Surfaces stables : retirer l'exposition par plan et inverser ce test.
+TEST_CASE("sortie SDR de l'anime : l'exposition par plan bouge les surfaces (C41-01, connu)",
+          "[render][!shouldfail]") {
+  const auto sdr_anime = [](double e) {
+    GradeSettings s;
+    s.scene_light = SceneLight{.apl_nits = 40.0, .lit = 0.1};
+    s.anime_exposure = e;
+    const auto d = decide_grade(s, pq_context(core::HdrMode::Native));
+    REQUIRE(d);
+    GradeParams p = d->params;
+    sdr_tonemap(p);
+    return p;
+  };
+  const GradeParams dark = sdr_anime(-kAnimeExposureMaxE);
+  const GradeParams bright = sdr_anime(kAnimeExposureMaxE);
+  // +0,5 diaphragme : une surface 2^0,5 = 1,41 fois plus claire attendue.
+  CHECK(bright.an_lift / bright.tm_white > 1.3 * dark.an_lift / dark.tm_white);
 }
 
 }  // namespace ajp::render

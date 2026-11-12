@@ -5,8 +5,9 @@
 
 namespace ajp::media {
 
-void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats) {
-  const ShotFrame frame = shot_frame_of(pts_us, stats);
+void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats,
+                      kernels::FrameTransfer transfer) {
+  const ShotFrame frame = shot_frame_of(pts_us, stats, transfer);
   const std::scoped_lock lock(mutex_);
   const bool jump = previous_ && pts_us <= previous_->pts_us;
   if (!previous_ || jump || frame_distance(*previous_, frame) > kLiveCut) {

@@ -32,8 +32,7 @@ constexpr int kRifeMotionHeight = 720;
 // Ce que le rapport « Signaler un problème » dit de la carte et du préréglage joué (A39-02).
 void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const GpuDevice& device) {
   note_report_fact("GPU", gpu_line(gpu));
-  note_report_fact("Préréglage", label(settings.preset));
-  note_report_fact("Réglages changés", "\n" + settings_changes_text(settings));  // options à l'essai (C39-01)
+  note_preset_facts(settings);  // préréglage et réglages changés (C39-01)
   if (device.vendor() == GpuVendor::Nvidia) note_report_fact("Pilote NVIDIA", device.driver_version);
 }
 
@@ -272,6 +271,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       return std::move(*chain);
     }
     StageFailure& failure = chain.error();
+    if (failure.refusal.key == kWindowClosedKey) return std::nullopt;  // fenêtre fermée, comme « q »
     // Une vidéo glissée arrête toute la préparation : rien n'est retenu, la lecture passe à elle (A08-08).
     // Un appareil perdu n'est pas un refus de l'étage : la chaîne entière s'arrête, la relance suit (A31-02).
     if (!failure.stage || failure.refusal.key == kDroppedVideoKey ||
@@ -620,7 +620,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
   auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
-      "backend", [&p, &init] { return BackendLibrary::create(p.library, init); });
+      "backend", [library = p.library, init] { return BackendLibrary::create(library, init); });
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;

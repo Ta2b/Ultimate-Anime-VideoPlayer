@@ -397,6 +397,8 @@ std::string format_settings(const PlaySettings& settings);
 // Les réglages qui diffèrent du défaut, par section, une ligne « clé = valeur » chacun : ce que le rapport
 // « Signaler un problème » joint (une option à l'essai allumée s'y voit). « (aucun) » si tout est au défaut.
 std::string settings_changes_text(const PlaySettings& settings);
+// Pose pour le rapport les faits « Préréglage » et « Réglages changés ».
+void note_preset_facts(const PlaySettings& settings);
 
 // Fichier absent : les réglages par défaut. Un fichier qui existe sans se lire (verrou passager réessayé,
 // droits, dossier) est refusé (FileUnreadable), et ce processus ne le réécrit plus (B22-02). ignored reçoit

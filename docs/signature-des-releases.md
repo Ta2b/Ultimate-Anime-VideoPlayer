@@ -19,7 +19,9 @@ est celle de `project()` dans `CMakeLists.txt`, sur ce même commit. Aucune éti
 Tatoub. Le workflow `release.yml` fait le reste :
 
 1. **Garde** (`release-guard.yml`) : le commit construit est celui de l'étiquette, l'étiquette dit la version de
-   `CMakeLists.txt` (`tools/ci/check-version.sh <étiquette>`), et `ci.yml` est vert sur ce commit.
+   `CMakeLists.txt` (`tools/ci/check-version.sh <étiquette>`), et `ci.yml` est vert sur ce commit : pour une étiquette
+   finale, un lancement d'**étendue complète** (son titre porte « (complète) », `run-name` de `ci.yml`) ; une release
+   finale exige aussi une **clé de secours compilée** (`tools/ci/check-backup-key.sh`, voir « Clé de secours »).
 2. **Plateformes**, en parallèle (`release-linux.yml`, `release-windows.yml`, `release-macos.yml`) :
    - Linux et Windows construisent d'abord leur **paquet TensorRT** s'il manque pour l'empreinte de ses entrées
      (`tools/release/trt-fingerprint.sh`, `--windows`), et le publient dans la release fixe `trt-<empreinte>` ou
@@ -34,9 +36,13 @@ Tatoub. Le workflow `release.yml` fait le reste :
    - chacune joint ses archives à la release de l'étiquette, qui reste une **préversion** pendant ce temps
      (`tools/release/attach-assets.sh`), et sort le SHA-256 de son archive comme sortie de job.
 3. **Publier** (job final de `release.yml`, environnement `release`) :
-   - `tools/release/check-built-sums.sh` compare les archives téléchargées aux SHA-256 sortis des jobs de
-     construction : on ne signe que ce qui a été construit ;
-   - `tools/release/check-release.sh` vérifie que les archives de Linux et de Windows sont là (celle de macOS, hors
+   - `tools/release/check-built-sums.sh` compare les archives téléchargées (le zip, l'archive Linux, l'AppImage et
+     l'installeur Windows, ce que les utilisateurs prennent) aux SHA-256 sortis des jobs de construction : on ne
+     signe que ce qui a été construit. L'AppImage et l'installeur ont leur section au manifeste (`[linux-appimage]`,
+     `[windows-setup]`), que le lecteur ignore ;
+   - `tools/release/check-release.sh` lit l'`engines.lock` de Linux **dans l'archive vérifiée** (comme celui de
+     Windows) : le fichier joint à part à la release n'est lié à aucune construction, il est remplacé par celui de
+     l'archive, et une différence est une erreur ; il vérifie que les archives de Linux et de Windows sont là (celle de macOS, hors
      cible, est facultative : son échec ne bloque pas la publication), que les index de Linux et de Windows nomment
      TensorRT avec ses `[[vendor_file]]`, et que l'archive de chaque moteur existe avec la taille et le SHA-256 de
      l'index ;
@@ -60,7 +66,7 @@ il lui reste moins de 45 jours. Un échec de l'un ou l'autre ouvre une issue dan
 Ce qui suit se fait sur GitHub, sans le PC :
 
 1. **Environnement `release`** (Settings > Environments > New environment) : règle de déploiement « Selected branches
-   and tags », avec le motif d'étiquette `v*` et la branche `main` (pour la re-signature mensuelle).
+   and tags », avec le motif d'étiquette `v*` et la branche `main` (pour la re-signature hebdomadaire).
 2. **Secret `AJP_UPDATE_KEY`** dans cet environnement : la clé privée sur une seule ligne, ce qui ne s'abîme pas au
    collage. Dans Git Bash ou un terminal : `base64 -w0 update-ed25519.pem` (sous Windows, `| clip` la copie), puis
    coller tel quel. Le fichier PEM entier (`-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`) est accepté
@@ -69,13 +75,18 @@ Ce qui suit se fait sur GitHub, sans le PC :
    clé.
 3. **Secret `AJP_RELEASE_TOKEN`** (déjà en place) : un jeton qui peut écrire les releases du dépôt
    `AJP_RELEASE_REPO` de `tools/release/versions.env`.
+4. **Étiquettes protégées et relecteur requis** (Settings > Rules > Rulesets, puis Environments > `release` > Required
+   reviewers) : la création d'une étiquette `v*` est réservée au propriétaire, et le job « publier » (comme la
+   re-signature) attend son accord. Le workflow qui s'exécute est celui du commit de l'étiquette : sans cela, tout
+   collaborateur qui peut pousser une étiquette peut faire lire `AJP_UPDATE_KEY` à une étape modifiée. La garde de
+   release est un contrôle d'intégrité, pas une frontière de sécurité.
 
 Le dépôt des releases est écrit à un seul endroit, `tools/release/versions.env` (`AJP_RELEASE_REPO`) : les workflows,
 les scripts de paquet et CMake le lisent.
 
 **Expiration.** Le manifeste porte `expires`, 120 jours après sa signature : au-delà, le lecteur le refuse, pour
-qu'un ancien manifeste signé ne se rejoue pas. Le workflow `resign-manifest.yml` re-signe chaque mois celui de la
-« latest » quand il lui reste moins de 45 jours ; il se lance aussi à la main.
+qu'un ancien manifeste signé ne se rejoue pas. Le workflow `resign-manifest.yml` re-signe chaque semaine celui de la
+« latest » quand il lui reste moins de 90 jours (signé depuis plus de 30 jours : bien avant les 60 jours après lesquels GitHub arrête les planifications d'un dépôt sans activité) ; il vérifie d'abord les archives contre le manifeste actuel (`resign-manifest.sh`) et se lance aussi à la main. Chaque passage planifié réarme aussi la planification du workflow (`gh workflow enable`).
 
 ## Signer à la main (secours)
 
@@ -103,7 +114,8 @@ gh release upload v0.11.0 -R Ta2b/ajp-releases --clobber rel/manifest.toml rel/m
 Le lecteur croit deux clés : l'active (`AJP_UPDATE_PUBKEY`) et celle de secours (`AJP_UPDATE_PUBKEY_BACKUP`, vide
 tant qu'elle n'est pas créée). Créer la paire de secours comme ci-dessus, compiler sa clé publique dans
 `AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **hors ligne**, chez Tatoub, en sauvegarde chiffrée (décision du
-9 novembre 2026) : jamais dans la CI, pour qu'un vol du secret `AJP_UPDATE_KEY` reste révocable.
+9 novembre 2026) : jamais dans la CI, pour qu'un vol du secret `AJP_UPDATE_KEY` reste révocable. Une release finale ne part pas tant
+qu'elle est vide : la garde (`tools/ci/check-backup-key.sh`) refuse l'étiquette.
 
 Si l'active est perdue ou volée, depuis le poste qui garde la clé de secours :
 

@@ -24,10 +24,9 @@ namespace {
 using detail::add_view;
 using detail::tensor_view;
 
-// La chaîne ingère en plage limitée : le noir de studio y vaut 0 en RGB, les pas de luma 8 bits
-// entre noir et blanc sont 219 (comme tensorrt_rife.cpp).
+// Le bord de l'image remplie est le noir du RGB ingéré, 0. Les pas de luma 8 bits entre noir et blanc
+// viennent de la plage de la source (kernels::pair_levels), retenue à l'ingestion.
 constexpr float kStudioBlack = 0.0F;
-constexpr float kLumaLevels = 219.0F;
 
 std::unexpected<Refusal> refuse_slice(RefusalCode code, std::string text) {
   return std::unexpected(Refusal{.code = code, .detail = std::move(text)});
@@ -35,7 +34,8 @@ std::unexpected<Refusal> refuse_slice(RefusalCode code, std::string text) {
 
 // L'écart de chaque bloc comme rgb_pair_diff.comp le prend pour le pire (moyenne × pas × 256), puis la zone
 // qui bouge au seuil des dessins tenus (P6.6, P6.18).
-core::MovingArea moving_of(std::span<const float> sums, std::uint32_t width, std::uint32_t height) {
+core::MovingArea moving_of(std::span<const float> sums, std::uint32_t width, std::uint32_t height,
+                           float levels) {
   constexpr auto kBlock = static_cast<std::uint32_t>(kernels::kHeldBlock);
   const std::uint32_t bx = (width + kBlock - 1) / kBlock;
   if (bx == 0) return {};
@@ -45,7 +45,7 @@ core::MovingArea moving_of(std::span<const float> sums, std::uint32_t width, std
     const auto y = static_cast<std::uint32_t>(i / bx) * kBlock;
     const float pixels =
         static_cast<float>((std::min(x + kBlock, width) - x) * (std::min(y + kBlock, height) - y));
-    deviation[i] = static_cast<std::uint32_t>(sums[i] / pixels * kLumaLevels * 256.0F);
+    deviation[i] = static_cast<std::uint32_t>(sums[i] / pixels * levels * 256.0F);
   }
   return core::moving_area(deviation, bx, core::moving_limit(kernels::kHeldThreshold));
 }
@@ -181,8 +181,10 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   key.add(OpCode::ScoresStart);
   for (const TensorView* v : {&*va, &*vb}) add_view(key, *v);
   key.add(detail::handle_bits(sums.buffer)).add(detail::handle_bits(worst.buffer));
-  auto rec = recording(
-      key, [&](Recorder& r) { return runner_.rgb_pair_diff(r, *va, *vb, sums, worst, kLumaLevels); });
+  const float levels = pair_levels_;  // la plage de la dernière source ingérée, écrite dans l'enregistrement
+  key.add(std::bit_cast<std::uint32_t>(levels));
+  auto rec =
+      recording(key, [&](Recorder& r) { return runner_.rgb_pair_diff(r, *va, *vb, sums, worst, levels); });
   if (!rec) return std::unexpected(rec.error());
   if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
   // Le lot part aussitôt : la mesure tourne pendant que l'hôte prépare la suite, au lieu
@@ -194,6 +196,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   slot.ticket = ticket;
   slot.value = queue_.ticket();
   slot.blocks = blocks;
+  slot.levels = levels;
   slot.width = va->width;
   slot.height = va->height;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
@@ -215,12 +218,12 @@ std::expected<PairScores, Refusal> VulkanKernelOps::scores_take(std::uint64_t ti
   for (const float s : partials) total += s;
   std::uint32_t worst_block = 0;
   std::memcpy(&worst_block, slot.worst->mapped(), sizeof(worst_block));
-  // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête, sur l'aire remplie de RIFE.
-  const double scene = total * (kLumaLevels / 255.0) / slot.area;
+  // Σ |ΔY| × (pas 8 bits / 255) sur l'aire remplie de RIFE (kernels::pair_scene_score).
+  const double scene = kernels::pair_scene_score(total, slot.levels, slot.area);
   return PairScores{.scene_score = scene,
                     .worst_block = worst_block,
                     .identical = total == 0.0,
-                    .moving = moving_of(partials, slot.width, slot.height)};
+                    .moving = moving_of(partials, slot.width, slot.height, slot.levels)};
 }
 
 std::expected<float, Refusal> VulkanKernelOps::flow_max_now(const Motion& motion) {

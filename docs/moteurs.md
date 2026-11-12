@@ -45,8 +45,11 @@ moins justes. Trois règles tiennent la qualité (C05, A45-01, A45-02) :
   float16, est retirée ; `tools/vk/presets_from_cache.py` refuse déjà les relevés d'avant `c7` ;
 - la porte de bout en bout (`net_gate.h`) rejoue le réseau choisi contre son jumeau calculé tout en float, sur
   un dessin (aplats sombres, traits fins ; deux images décalées et leur grille pour un réseau d'interpolation).
-  Les choix passent s'ils perdent au plus 3 dB sous les noyaux de référence (`kGateLossDb`). Sinon les sommes
-  repassent en float, puis tout le réseau reprend les noyaux de référence. Le journal donne les deux PSNR.
+  Les choix passent s'ils perdent au plus 0,5 dB sous les noyaux de référence (`kGateLossDb`) ; sous des noyaux de
+  référence exacts (200 dB, graphe en float32), le plancher vaut 90 dB (`kGateExactFloorDb`) pour qu'une variante
+  juste à l'arrondi près ne soit pas rejetée. Sinon les sommes repassent en float, puis tout le réseau reprend les
+  noyaux de référence. Le journal donne les deux PSNR. Un réseau dont le calcul de référence sort une valeur non
+  finie est refusé (« Réessayer » dans le lecteur), pas gardé faute de juge.
 
 Avant, la porte comparait à un autre réseau en float16, sur du bruit, à 1 % d'écart quadratique (2 % en
 précision réduite, soit 39 dB). Sur du bruit un réseau d'interpolation diverge : RIFE 4.25 entier y montrait
@@ -68,6 +71,20 @@ est une vraie référence. SPAN repasse donc en sommes float quand tout son rés
 ses choix. `coopmat_acc16` ne se mesure que sur une carte à Tensor Cores (`docs/audits/A-CONFIRMER.md`).
 
 Quand le jumeau en float ne peut pas être joué (mémoire), la porte d'avant juge et le journal le dit.
+
+**Ce que l'utilisateur voit.** Une perte consentie à la vitesse se dit à l'écran, pas au journal seul : quand
+l'autotuner garde des couches à précision réduite, le lecteur affiche au lancement un avis (« Moteur SPAN :
+précision réduite sur N couche(s) pour gagner en vitesse (X dB contre le calcul en float, vitesse +Y %) »). La
+perte est celle de la porte, le gain celui que l'autotuner a mesuré ; l'un et l'autre disent « non mesuré » quand
+ils ne le sont pas (choix repris du cache, jumeau en float injouable). L'avis est rangé dans l'artefact
+(`ArtifactData::notice`) et revient à chaque lancement. Gain sur une carte réelle : non mesuré (RTX à mesurer).
+
+**Limite des sommes en float16.** Les trois chemins à sommes float16 (`coopmat_acc16`, `direct_f16p`,
+`winograd_f16p`) ne plafonnent qu'en fin de série de sommes (fin de K, paquet de 16 canaux). Une somme qui
+déborde 65 504 donne ±Inf, puis NaN dans le même accumulateur ; le plafond de ±60 000 ne rattrape pas un NaN déjà
+formé. Les activations de SPAN et de RIFE sont loin de cette borne (sous 100) ; la porte de fidélité ne juge
+qu'un dessin et ne verrait pas un débordement sur une image extrême. Limite acceptée et décrite ici (C49-02) ;
+la variante en sommes float reste proposée à côté de chacune.
 
 ## TensorRT : comment le module arrive
 

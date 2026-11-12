@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "kernels/ref/transfer.h"
+
 namespace ajp::media {
 namespace {
 
@@ -85,9 +87,11 @@ ShotStats stats_of(const std::array<float, kShotBins>& histogram, float mean, fl
                    .lit = share_beyond(histogram, kLitLuma, false)};
 }
 
-ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {
+ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats,
+                        kernels::FrameTransfer transfer) {
   ShotFrame out;
   out.pts_us = pts_us;
+  out.transfer = transfer;
   out.histogram = stats.luma_hist;
   out.grid = stats.zones;
   out.mean = stats.mean;
@@ -107,11 +111,29 @@ ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats) {
   return out;
 }
 
+namespace {
+
+// La lumière relative d'une luma encodée : seule la forme compte, zone_nits_of ramène la moyenne à l'APL
+// mesurée.
+float zone_light(float luma, kernels::FrameTransfer transfer) {
+  switch (transfer) {
+    case kernels::FrameTransfer::Pq:
+      return kernels::ref::pq_eotf(luma);
+    case kernels::FrameTransfer::Hlg:
+      return std::pow(kernels::ref::hlg_inverse_oetf(luma), 1.2F);  // OOTF à 1 000 cd/m², gamma 1,2
+    case kernels::FrameTransfer::Sdr:
+      break;
+  }
+  return std::pow(luma, 2.4F);
+}
+
+}  // namespace
+
 auto zone_nits_of(const ShotFrame& frame) -> decltype(frame.grid) {
   decltype(frame.grid) light{};
   float sum = 0.0F;
   for (std::size_t i = 0; i < light.size(); ++i) {
-    light.at(i) = std::pow(std::max(frame.grid.at(i), 0.0F), 2.4F);
+    light.at(i) = zone_light(std::max(frame.grid.at(i), 0.0F), frame.transfer);
     sum += light.at(i);
   }
   const float mean = sum / static_cast<float>(light.size());
