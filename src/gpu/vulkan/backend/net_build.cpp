@@ -149,7 +149,8 @@ std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, 
                     .dispatches = std::move(program->dispatches),
                     .shaders = {}};
   data.shaders = shader_hashes(data.dispatches);
-  progress(1.0F, "abaissé");
+  // Le dernier vingtième est à la porte de bout en bout, qui rejoue le réseau (vulkan_backend.cpp, C45-02).
+  progress(0.95F, "abaissé");
   return data;
 }
 

@@ -325,11 +325,13 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (!data) return std::unexpected(data.error());
   if (tuner) {
     for (const std::string& line : tuner->decisions()) log(BackendLogLevel::Debug, model.id + " : " + line);
-    if (auto ok = gate(model, *data, tuner ? &*tuner : nullptr); !ok) return std::unexpected(ok.error());
+    if (auto ok = gate(model, *data, tuner ? &*tuner : nullptr, &progress); !ok)
+      return std::unexpected(ok.error());
   }
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
   artifact.reduced = data->notice;
+  if (progress.report) progress.report(1.0F, "terminé");
   log(BackendLogLevel::Info,
       std::format("{} construit en {:.1f} s : {} nœuds, {} dispatchs{}", model.id,
                   std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
@@ -343,7 +345,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
 }
 
 std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data,
-                                                 const net::Autotuner* tuner) {
+                                                 const net::Autotuner* tuner, const Progress* progress) {
   data.notice = {};
   // Les noyaux de référence partout, quand les choix de l'autotuner ne peuvent pas être vérifiés.
   const auto to_reference = [&](std::string_view why) -> std::expected<void, Refusal> {
@@ -357,7 +359,16 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
     data.shaders = net::shader_hashes(data.dispatches);
     return {};
   };
-  auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target);
+  const net::GateWatch watch{.stop = progress != nullptr ? progress->stop : std::stop_token{},
+                             .report = progress != nullptr ? progress->report : nullptr,
+                             .from = 0.95F,
+                             .to = 1.0F};
+  auto gated =
+      net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target, watch);
+  // Un arrêt traverse la porte (C45-02), de même qu'un réseau que ses valeurs non finies empêchent de juger
+  // (C45-04) : ni l'un ni l'autre ne se règle par les noyaux de référence.
+  if (!gated && (gated.error().code == RefusalCode::Cancelled || gated.error().code == RefusalCode::GraphInvalid))
+    return std::unexpected(gated.error());
   if (!gated) return to_reference(std::format("porte de bout en bout non jouée ({})", gated.error().detail));
   if (!gated->unjudged.empty()) {
     log(BackendLogLevel::Warn,

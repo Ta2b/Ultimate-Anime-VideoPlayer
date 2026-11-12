@@ -14,8 +14,10 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -39,13 +41,21 @@ inline constexpr double kNetworkDriftLow = 0.02;
 // SPAN b5f48 sur une image réelle, 0,1 dB à RIFE 4.25 : SPAN garde donc ses sommes en float, RIFE peut
 // garder la précision réduite si la porte la laisse passer.
 inline constexpr double kGateLossDb = 0.5;
+// Des noyaux de référence qui reproduisent le jumeau à l'octet près (graphe en float32) donnent kGateExactDb
+// (200 dB) au plancher ; une variante qui ne l'est pas bit à bit (l'ordre des sommes change, découpe de K) tombe
+// vers 100 dB et serait rejetée pour un écart d'arrondi invisible (C45-04). Un plancher exact vaut donc
+// kGateExactFloorDb dans le verdict : très au-dessus de tout plancher d'un réseau float16 (75 à 82 dB), donc sans
+// effet sur eux.
+inline constexpr double kGateExactDb = 200.0;
+inline constexpr double kGateExactFloorDb = 90.0;
 
 // Ce que la porte fait des choix de l'autotuner, depuis les PSNR contre le jumeau en float : celui des noyaux
 // de référence (le plancher), celui des choix, et celui des mêmes choix sans précision réduite s'ils en ont.
 enum class GateVerdict : std::uint8_t { Keep, FullPrecision, Reference };
 constexpr GateVerdict gate_verdict(double floor_db, double db, std::optional<double> full_precision_db) {
-  if (db >= floor_db - kGateLossDb) return GateVerdict::Keep;
-  if (full_precision_db && *full_precision_db >= floor_db - kGateLossDb) return GateVerdict::FullPrecision;
+  const double floor = floor_db >= kGateExactDb ? kGateExactFloorDb : floor_db;
+  if (db >= floor - kGateLossDb) return GateVerdict::Keep;
+  if (full_precision_db && *full_precision_db >= floor - kGateLossDb) return GateVerdict::FullPrecision;
   return GateVerdict::Reference;
 }
 
@@ -70,6 +80,16 @@ std::expected<double, Refusal> network_drift(VkContext& context, MemoryAllocator
                                              std::span<const KernelChoice> tuned,
                                              std::span<const KernelChoice> reference, const Target& target);
 
+// Arrêt et progression de la porte (C45-02) : elle rejoue le réseau trois à quatre fois, ce qui dure quelques
+// secondes sur une RTX et bien plus sous lavapipe. L'arrêt se lit entre deux rejeux ; report reçoit une fraction
+// de [from, to] à chaque jeu de choix jugé.
+struct GateWatch {
+  std::stop_token stop;
+  std::function<void(float fraction, const std::string& stage)> report;
+  float from = 0.0F;
+  float to = 1.0F;
+};
+
 // Le PSNR, contre le jumeau en float et sur le dessin de la porte, des sorties du réseau à chacun des jeux de
 // choix donnés, dans leur ordre. Refus : ceux de l'abaissement, de l'allocation et de l'exécution.
 struct Fidelity {
@@ -78,7 +98,7 @@ struct Fidelity {
 std::expected<Fidelity, Refusal> network_fidelity(VkContext& context, MemoryAllocator& memory,
                                                   PipelineCache& pipelines, const ir::Graph& graph,
                                                   std::span<const std::vector<KernelChoice>> sets,
-                                                  const Target& target);
+                                                  const Target& target, const GateWatch& watch = {});
 
 struct Gated {
   std::vector<KernelChoice> choices;  // ceux qui passent la porte
@@ -102,6 +122,7 @@ PrecisionNotice precision_notice(std::span<const KernelChoice> choices, const Ga
 // Les choix de l'autotuner s'ils passent la porte ; sinon ceux qui la passent (voir plus haut).
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,
                                            PipelineCache& pipelines, const ir::Graph& graph,
-                                           std::vector<KernelChoice> tuned, const Target& target);
+                                           std::vector<KernelChoice> tuned, const Target& target,
+                                           const GateWatch& watch = {});
 
 }  // namespace ajp::gpu::vk::net
