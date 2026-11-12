@@ -425,9 +425,11 @@ std::expected<void, Refusal> swap_in_place(const core::EnginePackage& package,
   error.clear();
   error = core::rename_retrying(staging, target, kInstallRenamePatience);
   if (error) {
-    const std::string reason = error.message();
-    if (replaced)
-      (void)core::rename_retrying(aside, target, kInstallRenamePatience);  // l'ancien revient, au mieux
+    std::string reason = error.message();
+    if (replaced) {  // l'ancien revient, au mieux ; si c'est impossible, le message le dit
+      const std::error_code back = core::rename_retrying(aside, target, kInstallRenamePatience);
+      if (back) reason += std::format(" (l'ancien n'est pas revenu : {})", back.message());
+    }
     return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
   }
   core::sync_directory(target.parent_path());

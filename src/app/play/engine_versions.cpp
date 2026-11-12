@@ -140,9 +140,10 @@ bool finish_deferred_swap(const fs::path& target, const fs::path& staging, const
   }
   error = core::rename_retrying(staging, target, kInstallRenamePatience);
   if (error) {
-    (void)core::rename_retrying(aside, target, kInstallRenamePatience);  // l'ancien revient, au mieux
-    log_channel("app")->warn("moteurs : {} non mis en place : {}", core::to_utf8(staging.filename()),
-                             error.message());
+    const std::error_code back = core::rename_retrying(aside, target, kInstallRenamePatience);
+    log_channel("app")->warn("moteurs : {} non mis en place : {}{}", core::to_utf8(staging.filename()),
+                             error.message(),
+                             back ? " (l'ancien n'est pas revenu : " + back.message() + ")" : "");
     return false;
   }
   fs::remove_all(aside, error);
