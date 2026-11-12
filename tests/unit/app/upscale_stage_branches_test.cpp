@@ -1,5 +1,6 @@
 // Les branches de l'étage gpu que l'audit A09-16 a trouvées sans test : le RIFE des paires calmes, et
-// l'image que DistilDRBA saute puis reprend comme image d'avant (keep_skipped et son pont).
+// l'image que DistilDRBA saute puis reprend comme image d'avant (keep_skipped et son pont) ; le débogage des
+// paires (pair_marks.h).
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -11,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "app/play/pair_marks.h"
 #include "doubles.h"
 #include "upscale_rig.h"
 
@@ -123,6 +125,32 @@ TEST_CASE("Étage gpu : DistilDRBA, une image sautée pour retard devient l'imag
   CHECK(rig.live->skipped() == 1);
   CHECK(rig.credits.load() == 5);  // la 6 attend sa suivante
   CHECK(rig.reported().empty());
+}
+
+TEST_CASE("Étage gpu : débogage des paires, la coupe et le dessin tenu notés, rien quand il est éteint",
+          "[app][stage]") {
+  const bool on = GENERATE(true, false);
+  Rig rig;
+  rig.live->set_pair_marks(on);
+  rig.backend.score(SourceId{3}, SourceId{4}, 0.5, 1000);  // coupe de scène
+  rig.backend.score(SourceId{5}, SourceId{6}, 0.0, 10);    // dessin tenu
+  rig.start(rig.setup(true));
+  rig.feed(1, 6);
+  REQUIRE(rig.collect(9));
+  rig.stage.reset();
+  const PairMarks& marks = rig.live->pair_marks();
+  if (on) {
+    CHECK(marks.at(0, 160'000) == PairVerdict::Cut);   // (3, 4) : b à 160 ms
+    CHECK(marks.at(0, 140'000) == PairVerdict::Cut);   // dans l'intervalle, après a
+    CHECK(marks.at(0, 240'000) == PairVerdict::Held);  // (5, 6)
+  } else {
+    CHECK_FALSE(marks.at(0, 160'000));
+    CHECK_FALSE(marks.at(0, 240'000));
+  }
+  CHECK_FALSE(marks.at(0, 120'000));  // a de la coupe : la paire (2, 3) bouge
+  CHECK_FALSE(marks.at(0, 80'000));
+  CHECK_FALSE(marks.at(1, 160'000));    // une autre époque
+  CHECK(rig.live->counts().held == 1);  // les compteurs ne changent pas
 }
 
 }  // namespace ajp::app::play

@@ -45,6 +45,19 @@ double luma(const Rgb& px) {
   return 0.2627 * px[0] + 0.6780 * px[1] + 0.0593 * px[2];
 }
 
+// La teinte d'Oklab (en degrés) d'un pixel BT.2020 linéaire.
+double oklab_hue(const Rgb& px) {
+  constexpr std::array<std::array<double, 3>, 3> kLms{{{0.6166884418, 0.3601590705, 0.0230432935},
+                                                       {0.2651401962, 0.6358564847, 0.0990302336},
+                                                       {0.1001506451, 0.2040043234, 0.6963246774}}};
+  std::array<double, 3> q{};
+  for (std::size_t i = 0; i < 3; ++i)
+    q[i] = std::cbrt(kLms[i][0] * px[0] + kLms[i][1] * px[1] + kLms[i][2] * px[2]);
+  const double a = 1.9779984951 * q[0] - 2.4285922050 * q[1] + 0.4505937099 * q[2];
+  const double b = 0.0259040371 * q[0] + 0.7827717662 * q[1] - 0.8086757660 * q[2];
+  return std::atan2(b, a) * 180.0 / 3.14159265358979;
+}
+
 }  // namespace
 
 TEST_CASE("HDR anime : une surface garde son niveau et son grain", "[render][gpu]") {
@@ -239,6 +252,33 @@ TEST_CASE("HDR anime : le peps (contraste, saturation) se règle, identité à 1
   const auto mid = static_cast<std::size_t>(kSide / 2);
   CHECK(more[mid][0] - more[mid][2] > 1.2 * (base[mid][0] - base[mid][2]));
   CHECK(more[mid][2] >= 0.0);
+  // La luminance ne bouge pas : seule la couleur change.
+  CHECK(luma(more[mid]) == Catch::Approx(luma(base[mid])).epsilon(0.02));
+}
+
+TEST_CASE("HDR anime : la saturation garde la teinte d'un bleu (Oklab)", "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Un bleu d'anime (ciel, uniforme) : en RVB linéaire, l'écart à la luminance le tournait vers le violet.
+  std::vector<std::uint16_t> blue = columns([](int) { return 30.0; });
+  const auto code = [](double nits) {
+    return static_cast<std::uint16_t>(std::lround(nits_to_pq(nits) * 65535.0));
+  };
+  for (std::size_t i = 0; i < blue.size(); i += 4) {
+    blue[i] = code(20.0);
+    blue[i + 2] = code(120.0);
+  }
+  const auto mid = static_cast<std::size_t>(kSide / 2);
+  const double hue = oklab_hue(graded_rgb(gpu, blue, anime_params())[mid]);
+  for (const double k : {0.5, 1.5, 2.0}) {
+    GradeParams p = anime_params();
+    p.an_chroma = k;
+    const Rgb out = graded_rgb(gpu, blue, p)[mid];
+    INFO("saturation " << k);
+    CHECK(std::abs(oklab_hue(out) - hue) < 1.0);
+    CHECK(std::min({out[0], out[1], out[2]}) >= 0.0);
+  }
 }
 
 TEST_CASE("HDR anime : les noirs profonds suivent la série, pas le plan (P3.52)", "[render][gpu]") {

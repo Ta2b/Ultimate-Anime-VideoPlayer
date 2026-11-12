@@ -66,7 +66,8 @@ std::expected<ScreenTiming, Refusal> FakeScreen::show(const ShowRequest& request
       Shown{.frame = request.frame ? std::optional(*request.frame) : std::nullopt,
             .subtitles_pts = request.subtitles ? std::optional(request.subtitles->pts_us) : std::nullopt,
             .osd = {request.osd.begin(), request.osd.end()},
-            .ui = request.ui != nullptr});
+            .ui = request.ui != nullptr,
+            .tint = request.tint});
   return ScreenTiming{
       .acquire_us = acquire_us, .render_us = 1000, .present_us = now_us, .queue_wait_us = queue_wait_us};
 }

@@ -275,11 +275,11 @@ TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais a
   CHECK(next_work_height(100, 1080) == 480);
 }
 
-TEST_CASE("l'exploration propose RIFE 4.25 au-dessus du modèle léger, rien d'autre",
+TEST_CASE("l'exploration propose RIFE 4.26 au-dessus du modèle léger, rien d'autre",
           "[auto_bench][exploration]") {
   ajp::app::play::FrenchUi french;
-  CHECK(next_rife_model("rife_v4.22_lite.onnx") == "rife_v4.25.onnx");
-  CHECK_FALSE(next_rife_model("rife_v4.25.onnx").has_value());
+  CHECK(next_rife_model("rife_v4.22_lite.onnx") == "rife_v4.26.onnx");
+  CHECK_FALSE(next_rife_model("rife_v4.26.onnx").has_value());
   CHECK_FALSE(next_rife_model("").has_value());
 }
 

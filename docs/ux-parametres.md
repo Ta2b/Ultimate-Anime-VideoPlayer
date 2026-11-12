@@ -21,7 +21,7 @@ désormais celui-ci, trois catégories et dix pages :
 | Général | Application | langue, mises à jour, lecteur par défaut |
 | Général | Moteurs | le moteur d'inférence et l'état de ses modules |
 | Général | Export | export de la chaîne en cours |
-| Général | Statistiques | ce que Tab affiche |
+| Général | Statistiques | ce que Tab affiche. Débogage : montrer les paires tenues et coupées (teinte bleue ou rouge un instant, ligne dans `ajp.log` ; le temps de la session, `pair_marks.h`) |
 | Général | À propos | la machine, l'assistant à refaire, tout réinitialiser |
 
 Plus de profils, plus de méthode HDR à choisir. Le niveau de traitement applique `apply_preset`

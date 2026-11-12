@@ -11,7 +11,7 @@
 //   2. SPAN + RIFE en mode auto Instantané, du plus haut palier que SPAN seul a tenu vers le bas, jusqu'au
 //      premier qui tient : RIFE ne fait qu'ajouter du travail, un palier que SPAN seul ne tient pas ne se
 //      tient pas avec RIFE.
-// Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.25
+// Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.26
 // en Qualité et Ultra, SPAN Performance Sharp et RIFE 4.22 lite en dessous), SPAN toujours en FP16 : le FP8
 // n'est plus essayé tant que sa porte n'est pas rejugée (A49-03, ADR 0007 suspendue). Sans palier SPAN qui
 // tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas essayé (décision 8 des audits). Ici la

@@ -48,20 +48,24 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
                                                  const std::filesystem::path& home,
                                                  const PlaySettings& settings,
                                                  const std::filesystem::path& bundled = {});
-// Les deux versions de RIFE que le menu propose, de la plus fine à la plus légère : 4.25 (7,1 ms par passe à
-// 720p sur une 4070 Ti) et 4.22 lite, plus légère (retours sur la v0.5.1 : « catalogue réduit à 4.22 lite
-// et 4.25 »). Les exports ONNX de vs-mlrt à 11 plans d'entrée, en FP16 tels que convertis par
-// animejanai-inference (tools/release/fetch-models.sh), sous ces noms : la grille y est en FP32, une partie
-// des Resize lit du FP16. Perte mesurée (docs/banc-qualite.md, B09-06) : 0,9 dB contre la vraie image en
-// 720p, 1,2 dB en 1024 lignes, face au même graphe tout en FP32 ; ces Resize passés en FP32 (comme
-// tools/rife/convert_rife_fp16.py) n'en rendent rien (47,56 dB des deux côtés), la perte est ailleurs.
-// --rife-model lit encore tout autre fichier, pour les essais.
-inline constexpr std::array<std::string_view, 2> kRifeCatalogue{"rife_v4.25.onnx", "rife_v4.22_lite.onnx"};
+// Les versions de RIFE que le menu propose, de la plus fine à la plus légère : 4.26 (Équilibré), 4.25
+// (réglages avancés, l'ancien Équilibré : 7,1 ms par passe à 720p sur une 4070 Ti), 4.22 lite (Rapide)
+// et 4.25 lite (Très rapide, deux fois moins de calcul que 4.22 lite et 2,9 dB de moins au banc,
+// docs/rife-candidats.md). Les exports ONNX de vs-mlrt à 11 plans d'entrée, en FP16 : 4.26, 4.25 et 4.22 lite
+// tels que convertis par animejanai-inference (tools/release/fetch-models.sh), 4.25 lite par
+// tools/rife/convert_rife_fp16.py. Chez animejanai, la grille est en FP32 et une partie des Resize lit du
+// FP16. Perte mesurée (docs/banc-qualite.md, B09-06) : 0,9 dB contre la vraie image en 720p, 1,2 dB en 1024
+// lignes, face au même graphe tout en FP32 ; ces Resize passés en FP32 n'en rendent rien (47,56 dB des deux
+// côtés), la perte est ailleurs. --rife-model lit encore tout autre fichier, pour les essais.
+inline constexpr std::array<std::string_view, 4> kRifeCatalogue{
+    "rife_v4.26.onnx", "rife_v4.25.onnx", "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx"};
 
-// Le modèle par défaut, le premier présent dans cet ordre : 4.25 sur une RTX ; 4.22 lite, plus légère, sur
-// les autres cartes (AMD, Intel, GTX).
-inline constexpr std::array<std::string_view, 2> kRifeForRtx{"rife_v4.25.onnx", "rife_v4.22_lite.onnx"};
-inline constexpr std::array<std::string_view, 2> kRifeForOthers{"rife_v4.22_lite.onnx", "rife_v4.25.onnx"};
+// Le modèle par défaut, le premier présent dans cet ordre : 4.26 sur une RTX, 4.25 s'il manque ; 4.22 lite,
+// plus légère, sur les autres cartes (AMD, Intel, GTX), 4.25 lite si elle manque.
+inline constexpr std::array<std::string_view, 4> kRifeForRtx{"rife_v4.26.onnx", "rife_v4.25.onnx",
+                                                             "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx"};
+inline constexpr std::array<std::string_view, 4> kRifeForOthers{
+    "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx", "rife_v4.26.onnx", "rife_v4.25.onnx"};
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 
 // RIFE : --rife-model, sinon settings.rife_model s'il est au catalogue, sinon le premier de

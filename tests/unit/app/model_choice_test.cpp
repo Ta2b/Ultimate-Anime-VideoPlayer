@@ -30,7 +30,7 @@ struct FakeHome {
         rife(home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife") {
     std::filesystem::remove_all(home);
     std::filesystem::create_directories(rife);
-    for (const char* name : {"rife_v4.26.onnx", "rife_v4.26_heavy.onnx", "rife_v4.22_lite.onnx", "notes.txt"})
+    for (const char* name : {"rife_v4.18.onnx", "rife_v4.26_heavy.onnx", "rife_v4.22_lite.onnx", "notes.txt"})
       std::ofstream(rife / name) << "x";
   }
   FakeHome(const FakeHome&) = delete;
@@ -40,23 +40,25 @@ struct FakeHome {
 
 TEST_CASE("Modèle RIFE : le défaut, le choix du menu, la liste du dossier", "[app][model_choice]") {
   const FakeHome fake("rife");
-  std::ofstream(fake.rife / "rife_v4.25.onnx") << "x";
+  std::ofstream(fake.rife / "rife_v4.26.onnx") << "x";
   PlaySettings settings;
   auto plain = choose_rife_model(PlayOptions{}, fake.home, settings);
   REQUIRE(plain);
-  CHECK(plain->path == fake.rife / "rife_v4.25.onnx");
-  CHECK(plain->default_name == "rife_v4.25.onnx");
-  CHECK(plain->available == std::vector<std::string>{"rife_v4.22_lite.onnx", "rife_v4.25.onnx",
+  CHECK(plain->path == fake.rife / "rife_v4.26.onnx");
+  CHECK(plain->default_name == "rife_v4.26.onnx");
+  CHECK(plain->available == std::vector<std::string>{"rife_v4.18.onnx", "rife_v4.22_lite.onnx",
                                                      "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"});
   settings.rife_model = "rife_v4.22_lite.onnx";
   CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.22_lite.onnx");
   settings.rife_model =
       "rife_v4.26_heavy.onnx";  // présent mais hors du catalogue réduit (v0.5.1) : le défaut
-  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.25.onnx");
-  settings.rife_model = "rife_v4.13.onnx";  // hors catalogue, bien que présent : le défaut
-  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.25.onnx");
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.26.onnx");
+  settings.rife_model = "rife_v4.18.onnx";  // hors catalogue, bien que présent : le défaut
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.26.onnx");
+  settings.rife_model = "rife_v4.25.onnx";  // au catalogue mais absent : le défaut
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.26.onnx");
   settings.rife_model = "rife_v9.onnx";  // absent : le défaut
-  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.25.onnx");
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, settings)->path == fake.rife / "rife_v4.26.onnx");
 }
 
 TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[app][model_choice]") {
@@ -65,15 +67,15 @@ TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[ap
   const auto refused = choose_rife_model(PlayOptions{}, home, PlaySettings{});
   REQUIRE_FALSE(refused);
   CHECK(refused.error().code == RefusalCode::ModelUnreadable);
-  CHECK(refused.error().detail.find("rife_v4.25.onnx") != std::string::npos);
+  CHECK(refused.error().detail.find("rife_v4.26.onnx") != std::string::npos);
 }
 
-TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.22 lite ailleurs, sinon le suivant présent",
+TEST_CASE("Modèle RIFE par défaut : 4.26 sur une RTX, 4.22 lite ailleurs, sinon le suivant présent",
           "[app][model_choice]") {
   const FakeHome fake("preference");
   const GpuFacts rtx{.vendor = GpuVendor::Nvidia, .vram_bytes = 12ULL << 30U, .tensor_cores = true};
   const GpuFacts amd{.vendor = GpuVendor::Amd, .vram_bytes = 16ULL << 30U};
-  // Le dossier n'a pas 4.25 : la RTX prend la 4.22 lite, la suivante présente.
+  // Le dossier n'a ni 4.26 ni 4.25 : la RTX prend la 4.22 lite, la suivante présente.
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
         "rife_v4.22_lite.onnx");
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(amd))->default_name ==
@@ -81,11 +83,24 @@ TEST_CASE("Modèle RIFE par défaut : 4.25 sur une RTX, 4.22 lite ailleurs, sino
   std::ofstream(fake.rife / "rife_v4.25.onnx") << "x";
   CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
         "rife_v4.25.onnx");
+  std::ofstream(fake.rife / "rife_v4.26.onnx") << "x";
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(rtx))->default_name ==
+        "rife_v4.26.onnx");
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(amd))->default_name ==
+        "rife_v4.22_lite.onnx");
+  // Sans 4.22 lite, les autres cartes prennent la 4.25 lite, plus légère encore.
+  std::filesystem::remove(fake.rife / "rife_v4.22_lite.onnx");
+  std::ofstream(fake.rife / "rife_v4.25_lite.onnx") << "x";
+  CHECK(choose_rife_model(PlayOptions{}, fake.home, PlaySettings{}, rife_preference(amd))->default_name ==
+        "rife_v4.25_lite.onnx");
 }
 
-TEST_CASE("Menu RIFE : les deux modèles du catalogue, présents ou non", "[app][model_choice]") {
+TEST_CASE("Menu RIFE : les quatre modèles du catalogue, présents ou non", "[app][model_choice]") {
   const auto menu = rife_menu({"rife_v4.22_lite.onnx", "rife_v4.26.onnx", "rife_v4.26_heavy.onnx"});
-  CHECK(menu == std::vector<RifeEntry>{{"rife_v4.25.onnx", false}, {"rife_v4.22_lite.onnx", true}});
+  CHECK(menu == std::vector<RifeEntry>{{"rife_v4.26.onnx", true},
+                                       {"rife_v4.25.onnx", false},
+                                       {"rife_v4.22_lite.onnx", true},
+                                       {"rife_v4.25_lite.onnx", false}});
 }
 
 TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seule fois", "[app][model_choice]") {
@@ -97,14 +112,14 @@ TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seul
     out.insert(out.end(), model.begin(), model.end());
     return out;
   };
-  const std::filesystem::path source = fake.rife / "rife_v4.26.onnx";
+  const std::filesystem::path source = fake.rife / "rife_v4.18.onnx";
   // Un dérivé d'une version d'avant (sans version de transformation) : refait, puis retiré (A36-04).
   std::filesystem::create_directories(fake.home / "modeles");
-  std::ofstream(fake.home / "modeles" / "rife_v4.26-essai-0123456789abcdef.onnx") << "ancien";
+  std::ofstream(fake.home / "modeles" / "rife_v4.18-essai-0123456789abcdef.onnx") << "ancien";
   const auto made = derived_model(source, "essai", fake.home / "modeles", twice);
   REQUIRE(made);
-  CHECK(made->filename().string().starts_with(std::format("rife_v4.26-essai-t{}-", kDerivedModelVersion)));
-  CHECK_FALSE(std::filesystem::exists(fake.home / "modeles" / "rife_v4.26-essai-0123456789abcdef.onnx"));
+  CHECK(made->filename().string().starts_with(std::format("rife_v4.18-essai-t{}-", kDerivedModelVersion)));
+  CHECK_FALSE(std::filesystem::exists(fake.home / "modeles" / "rife_v4.18-essai-0123456789abcdef.onnx"));
   CHECK(std::filesystem::file_size(*made) == 2);
   CHECK(*derived_model(source, "essai", fake.home / "modeles", twice) == *made);
   CHECK(calls == 1);

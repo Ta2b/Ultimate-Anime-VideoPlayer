@@ -27,6 +27,7 @@
 #include "app/play/frame_stats.h"
 #include "app/play/links.h"
 #include "app/play/overlay_hold.h"
+#include "app/play/pair_marks.h"
 #include "app/play/settings.h"
 #include "app/play/subtitle_queue.h"
 #include "core/clock.h"
@@ -68,6 +69,11 @@ class StatsSource {
   virtual std::int64_t source_period_us() const { return 0; }
   // Images source que gpu a sautées avant leur calcul, déjà passées : la chaîne ne suit pas.
   virtual std::uint64_t skipped() const { return 0; }
+  // Débogage des paires : le verdict de la paire d'où vient l'image d'époque epoch à pts_us (pair_marks.h) ;
+  // rien hors d'une paire notée.
+  virtual std::optional<PairVerdict> pair_verdict(std::uint32_t /*epoch*/, std::int64_t /*pts_us*/) const {
+    return std::nullopt;
+  }
 };
 
 struct SessionConfig {
@@ -239,6 +245,7 @@ class Session {
   bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
   void check_end(std::int64_t host_now);
   ShowRequest show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const;
+  std::optional<PairTint> pair_tint_now() const;
   // Une présentation vient d'être rendue. Si c'est la première image d'une époque, l'horloge part de son pts
   // maintenant, et --seconds compte d'ici : partie au choix de l'image, elle courait pendant ce premier rendu
   // (la compilation des shaders, plus d'une seconde sous lavapipe sans cache) et la lecture sautait autant

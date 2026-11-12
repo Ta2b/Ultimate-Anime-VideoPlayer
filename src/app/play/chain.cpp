@@ -220,6 +220,10 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   if (wanted.video_latency_ms != r.video_latency_ms)
     to.session.set_video_latency(std::int64_t{wanted.video_latency_ms} * 1000);
   if (wanted.stats != r.stats) to.session.set_stats(wanted.stats);
+  if (wanted.stats.pairs != r.stats.pairs) {
+    log_channel("app")->info("débogage des paires : {}", wanted.stats.pairs ? "allumé" : "éteint");
+    to.live.set_pair_marks(wanted.stats.pairs);
+  }
   if (wanted.smooth_motion != r.smooth_motion) {
     controls.notify(wanted.smooth_motion ? i18n::ui_tr(("Smooth Motion: on at next launch"))
                                          : i18n::ui_tr(("Smooth Motion: off at next launch")),

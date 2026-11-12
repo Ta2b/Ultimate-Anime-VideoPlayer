@@ -75,12 +75,17 @@ std::string motion_description(const InterpChoice& choice) {
   switch (choice.level) {
     case InterpLevel::VeryFast:
       return i18n::tr(
-          "DistilDRBA: keeps characters animated on twos on their rhythm. One frame of delay. Its speed and "
-          "image quality against RIFE are not compared yet, so Auto does not use it.");
+          "RIFE 4.25 lite: half the work of 4.22 lite, softer in-between frames. For small graphics cards.");
     case InterpLevel::Fast:
       return i18n::tr("RIFE 4.22 lite: light and clean, for most graphics cards.");
     case InterpLevel::Balanced:
-      return i18n::tr("RIFE 4.25: cleaner in-between frames, for recent graphics cards.");
+      return i18n::tr("RIFE 4.26: cleaner in-between frames, for recent graphics cards.");
+    case InterpLevel::Rife425:
+      return i18n::tr("RIFE 4.25: the former Balanced level, as clean as 4.26 for a little more work.");
+    case InterpLevel::DistilDrba:
+      return i18n::tr(
+          "DistilDRBA: keeps characters animated on twos on their rhythm. One frame of delay. Not faster "
+          "nor cleaner than RIFE so far, so Auto does not use it.");
     case InterpLevel::System:
       return i18n::tr(
           "Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
@@ -247,37 +252,45 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
 
 namespace {
 
+// Le nom du niveau dans la liste : Très rapide, Rapide, Équilibré pour tous ; le nom du modèle pour les
+// entrées du mode avancé.
+std::string level_name(InterpLevel level) {
+  switch (level) {
+    case InterpLevel::VeryFast:
+      return i18n::tr("Very fast");
+    case InterpLevel::Fast:
+      return i18n::tr("Fast");
+    case InterpLevel::Balanced:
+      return i18n::tr("Balanced");
+    case InterpLevel::Rife425:
+      return std::string("RIFE 4.25");
+    case InterpLevel::DistilDrba:
+      return std::string("DistilDRBA");
+    case InterpLevel::System:
+      return i18n::tr("System (macOS)");
+  }
+  return {};
+}
+
 // Le niveau d'interpolation : liste déroulante et note.
 void level_combo(PlaySettings& d, const SettingsChoices& choices) {
-  // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière nommé en mode avancé.
+  // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière nommé en mode avancé,
+  // où s'ajoutent RIFE 4.25 et DistilDRBA (advanced).
   const std::string rife_now = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
   const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now);
-  const auto level_name = [](InterpLevel level) -> std::string {
-    switch (level) {
-      case InterpLevel::VeryFast:
-        return i18n::tr("DistilDRBA");
-      case InterpLevel::Fast:
-        return i18n::tr("Fast");
-      case InterpLevel::Balanced:
-        return i18n::tr("Balanced");
-      case InterpLevel::System:
-        return i18n::tr("System (macOS)");
-    }
-    return {};
-  };
   const auto model_name = [](const InterpChoice& choice) {
     return choice.engine == MotionEngine::Rife ? rife_label(std::string(choice.rife_model))
                                                : std::string(label(choice.engine));
   };
   const auto level_text = [&](const InterpChoice& choice) {
     std::string text = level_name(choice.level);
-    if (panel::advanced()) text += " · " + model_name(choice);
+    if (panel::advanced() && !choice.advanced) text += " · " + model_name(choice);
     if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
       text += i18n::tr(" (recommended)");
     return text;
   };
   const auto present = [&](const InterpChoice& choice) {
-    if (!offered(choice.engine)) return false;
+    if (!offered(choice.engine) || (choice.advanced && !panel::advanced())) return false;
     if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
     if (choice.engine == MotionEngine::Rife)
       return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
@@ -304,8 +317,8 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("Fast and Balanced are RIFE models; DistilDRBA keeps poses. Their speed and image quality "
-               "are not compared in this version. Applies after a short reload."));
+      i18n::tr("Very fast, Fast and Balanced are RIFE models. Advanced settings also offer RIFE 4.25 and "
+               "DistilDRBA. Applies after a short reload."));
 }
 
 // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait
