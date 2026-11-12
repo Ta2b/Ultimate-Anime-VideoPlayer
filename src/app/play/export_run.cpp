@@ -252,12 +252,12 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(factor);
   live->set_reduction(reduction_of(settings.downscale));
-  live->set_keep_poses(settings.keep_poses);
-  const PipelineConfig config{
-      .file = p.options.file,
-      .decoder = decoder_options(c.backend_name, p.screen.device(), p.screen.shared_devices()),
-      .audio = false,
-      .subtitles = false};
+  live->set_keep_poses(poses_kept(settings));
+  const PipelineConfig config{.file = p.options.file,
+                              .decoder = decoder_options(c.backend_name, p.screen.device(),
+                                                         p.screen.shared_devices(), c.smooth_drawings),
+                              .audio = false,
+                              .subtitles = false};
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;

@@ -465,9 +465,20 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         i18n::tr("4K output: RIFE estimates motion on a lighter 720p copy (less precise motion; the loss "
                  "is not measured)."));
   }
-  note(i18n::tr("Scene cuts and held drawings are not interpolated."));
-  if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
+  // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
+  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("A drawing held for 2 to 6 frames glides towards the next drawing instead of freezing, then "
+               "jumping. Longer holds keep the copy, scene cuts stay cuts. RIFE only; replaces Keep poses. "
+               "Reloads playback."));
+  const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
+  note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
+                : i18n::tr("Scene cuts and held drawings are not interpolated."));
+  if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife || smoothed);
   ImGui::Checkbox(i18n::tr("Keep poses (DRBA) with RIFE"), &d.keep_poses);
   ImGui::EndDisabled();
   panel::tip(

@@ -132,6 +132,15 @@ constexpr std::array kImageTabs{
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
+    Entry{"Smooth held drawings", "Lisser les dessins tenus"},
+    Entry{"A drawing held for 2 to 6 frames glides towards the next drawing instead of freezing, then "
+          "jumping. Longer holds keep the copy, scene cuts stay cuts. RIFE only; replaces Keep poses. "
+          "Reloads playback.",
+          "Un dessin tenu de 2 à 6 images glisse vers le dessin suivant au lieu de rester figé puis de "
+          "sauter. Une tenue plus longue garde la copie, une coupe reste une coupe. RIFE seulement ; "
+          "remplace « Garder les poses ». Recharge la lecture."},
+    Entry{"Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.",
+          "Les coupes de scène ne sont pas interpolées ; les dessins tenus de 2 à 6 images sont lissés."},
     Entry{"Scene cuts and held drawings are not interpolated.",
           "Les coupes de scène et les dessins tenus ne sont pas interpolés."},
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},

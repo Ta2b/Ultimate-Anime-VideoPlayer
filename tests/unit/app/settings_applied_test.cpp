@@ -85,6 +85,7 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"motion_engine", [](PlaySettings& s) { s.motion_engine = MotionEngine::DistilDrba; }},
       {"keep_poses", [](PlaySettings& s) { s.keep_poses = !s.keep_poses; }},
       {"rife_fused", [](PlaySettings& s) { s.rife_fused = !s.rife_fused; }},
+      {"smooth_drawings", [](PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; }},
       {"span_precision", [](PlaySettings& s) { s.span_precision = PrecisionTier::Quality; }},
       {"motion_precision", [](PlaySettings& s) { s.motion_precision = PrecisionTier::Quality; }},
       {"span_order", [](PlaySettings& s) { s.span_order = SpanOrder::After; }},
@@ -124,6 +125,46 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
   PlaySettings off_wanted = off;
   off_wanted.drba_fused = false;
   CHECK(live_part(off, off_wanted, false) != off);
+}
+
+// « Lisser les dessins tenus » : recharge la chaîne avec RIFE (l'étage lit cinq images en avance), passe en
+// direct sans interpolation, l'emporte sur les poses gardées, et --smooth-drawings ne s'enregistre pas.
+TEST_CASE("Réglages : « Lisser les dessins tenus » rouvre la lecture, l'option de séance ne s'écrit pas",
+          "[app][settings][smooth]") {
+  PlaySettings running;
+  running.rife_factor = 3;
+  PlaySettings smooth = running;
+  smooth.smooth_drawings = true;
+  const Change change = change_between(running, smooth, true);
+  CHECK(change.cost == ChangeCost::Reopen);
+  CHECK(change.reason.find("held drawings are smoothed") != std::string::npos);
+  // La chaîne ouverte a chargé le Smooth : la rouvrir pour le garder ne sert à rien.
+  OpenedChain opened;
+  opened.rife_loaded = true;
+  opened.loaded = loaded_by(smooth);
+  opened.shape = chain_shape(smooth, opened);
+  CHECK(change_between(smooth, smooth, true, &opened).cost != ChangeCost::Reopen);
+
+  PlaySettings off = running;
+  off.rife_factor = 0;
+  PlaySettings off_smooth = off;
+  off_smooth.smooth_drawings = true;
+  CHECK(live_part(off, off_smooth, true).smooth_drawings);
+
+  // Les poses gardées cèdent au Smooth, leur réglage reste tel quel.
+  CHECK(poses_kept(running));
+  CHECK_FALSE(poses_kept(smooth));
+  CHECK(smooth.keep_poses);
+
+  PlaySettings from_file;
+  PlayOptions options;
+  options.smooth_drawings = true;
+  const PlaySettings started = settings_for(from_file, options);
+  CHECK(started.smooth_drawings);
+  CHECK_FALSE(settings_to_save(started, from_file, started, options).smooth_drawings);
+  // Sans l'option, le choix du fichier reste.
+  from_file.smooth_drawings = true;
+  CHECK(settings_to_save(started, from_file, started, PlayOptions{}).smooth_drawings);
 }
 
 TEST_CASE("Écriture refusée : save_settings le dit au lieu de se taire", "[app][settings]") {

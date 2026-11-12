@@ -6,8 +6,9 @@
 // Il tient la place du thread du module gpu (Program, ordonnancements S0 à S3) le temps qu'il
 // arrive.
 //
-// Contrôle de flux : au plus kMaxFrames images en vol (dans la boîte ou en attente d'un slot) ;
-// try_push refuse au-delà, et chaque image sortie rend un Credit au thread source.
+// Contrôle de flux : au plus kMaxFrames images en vol (dans la boîte ou en attente d'un slot), plus celles
+// qu'une sous-classe lit en avance au-delà de la suivante (extra_frames) ; try_push refuse au-delà, et chaque
+// image sortie rend un Credit au thread source.
 #pragma once
 
 #include <atomic>
@@ -47,12 +48,15 @@ class RingStage : public VideoStage, public FrameSink {
   // Les RingFrame partent dans la boîte de main avant que l'image quitte in_flight_.
   bool idle() const override {
     const std::size_t frames = in_flight_.load();
-    return frames == 0 || (frames == 1 && wants_next() && !ended_.load());
+    return frames == 0 || (frames <= frames_ahead() && !ended_.load());
   }
+  // Les images en vol au plus : kMaxFrames, plus extra_frames.
+  std::size_t max_frames() const { return max_frames_; }
 
  protected:
-  // slots : nombre de slots du ring ; generation : celle du ring.
-  RingStage(VideoStageInit init, std::uint32_t slots, std::uint32_t generation);
+  // slots : nombre de slots du ring ; generation : celle du ring. extra_frames : images en vol en plus de
+  // kMaxFrames, pour une sous-classe qui lit plus d'une image en avance (frames_ahead).
+  RingStage(VideoStageInit init, std::uint32_t slots, std::uint32_t generation, std::size_t extra_frames = 0);
   // Lance le thread ; à appeler à la fin du constructeur de la sous-classe.
   std::expected<void, Refusal> start(std::string_view name);
   // Arrête le thread et l'attend : le destructeur de chaque sous-classe l'appelle d'abord,
@@ -70,18 +74,23 @@ class RingStage : public VideoStage, public FrameSink {
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
   // par défaut 1. Un refus arrête la vidéo comme un refus de produce, et plus de kMaxOutputs aussi.
   virtual std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& /*frame*/) { return 1U; }
-  // Vrai : l'image en tête attend la suivante avant outputs (DistilDRBA lit l'image d'après la
-  // paire), une image de retard. next() la donne pendant outputs et produce : la suivante de la
-  // même époque, ou nullptr (première image d'une époque qui finit, fin du flux pas encore vue).
-  // Sans suivante, la dernière image du flux est produite à StreamEnd, next() valant nullptr.
-  virtual bool wants_next() const { return false; }
+  // Les images que l'image en tête attend derrière elle avant outputs : 1 pour DistilDRBA, qui lit l'image
+  // d'après la paire (une image de retard), plus pour le Smooth, qui cherche la fin d'un dessin tenu ; 0 par
+  // défaut. next(k) les donne pendant outputs et produce : la k-ième après la tête, de la même époque, ou
+  // nullptr (époque qui finit avant elle, fin du flux). Sans elles, l'image en tête est produite quand une
+  // image d'une autre époque attend derrière, ou à StreamEnd.
+  virtual std::size_t frames_ahead() const { return 0; }
   // Vrai : frame, en tête et pas encore produite, est déjà passée (next, la suivante de la même
   // époque, est due) ; elle est sautée sans calcul, et la sous-classe oublie ce qui la supposait.
   // Une chaîne plus lente que la source montre ainsi moins d'images au lieu de retenir la source,
   // et avec elle le son et l'horloge. Par défaut : jamais (export).
   virtual bool passed(const DecodedFrame& /*frame*/, const DecodedFrame& /*next*/) { return false; }
-  const DecodedFrame* next() const {
-    return pending_.size() > 1 && pending_[1].epoch == pending_[0].epoch ? &pending_[1] : nullptr;
+  const DecodedFrame* next(std::size_t k = 1) const {
+    if (k == 0 || pending_.size() <= k) return nullptr;
+    for (std::size_t i = 1; i <= k; ++i) {
+      if (pending_[i].epoch != pending_[0].epoch) return nullptr;
+    }
+    return &pending_[k];
   }
   // Le destin d'une sortie : Write l'écrit dans un slot, Same la laisse telle que l'écran la montre déjà
   // (aucun slot, aucun RingFrame) ; la sortie suivante qui s'écrit porte alors uninterpolated, car l'écart
@@ -112,8 +121,12 @@ class RingStage : public VideoStage, public FrameSink {
   void emit(const ThreadReport& report);
   void fail(const ThreadReport& report, const Refusal& refusal);
 
+  // Vrai : l'image en tête attend encore des images derrière elle (frames_ahead).
+  bool waits_ahead() const;
+
   VideoStageInit init_;
   std::uint32_t generation_;
+  std::size_t max_frames_;
   StageInbox inbox_;
   std::atomic<std::size_t> in_flight_{0};
   std::atomic<bool> ended_{false};  // StreamEnd reçu pour l'époque courante : plus d'image à venir
