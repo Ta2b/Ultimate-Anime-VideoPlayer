@@ -34,8 +34,6 @@ namespace ajp::app::play {
 namespace {
 // Observations de la grille des vblanks avant de s'y fier pour la synchro (≈ 0,7 s à 165 Hz).
 constexpr std::size_t kGridSamples = 120;
-}  // namespace
-namespace {
 
 // Blanc de l'interface dans une sortie HDR : le blanc de référence (BT.2408), comme le SDR.
 constexpr float kUiWhiteNits = 203.0F;
@@ -149,10 +147,20 @@ std::size_t PlaceboScreen::Impl::video_hooks(std::array<const pl_hook*, 16>& hoo
       if (count < hooks.size()) hooks[count++] = hook;
     }
   };
-  if (anime4k && image != nullptr) add(anime4k->hooks());
   const bool sdr_source = image == nullptr || !pl_color_space_is_hdr(&image->color);
+  // Anime4K sur une source SDR seulement (C10-09) : ses réseaux ont appris sur du SDR gamma, et une source
+  // HDR leur arrivait encodée en PQ (halos, contraste faux, Clamp_Highlights à côté). Elle passe alors par
+  // l'agrandissement de l'affichage, et le menu le dit.
+  if (anime4k && image != nullptr) {
+    if (sdr_source) {
+      add(anime4k->hooks());
+    } else if (!anime4k_hdr_noted) {
+      anime4k_hdr_noted = true;
+      channel->warn("Anime4K : source HDR, agrandie par l'affichage (Anime4K ne vaut que pour le SDR)");
+    }
+  }
   if (const pl_hook* sharp = sharpen ? sharpen->hook_for(sdr_source) : nullptr; sharp != nullptr)
-    hooks[count++] = sharp;
+    add(std::array{sharp});
   if (graded_now && grade) add(grade->hooks());
   return count;
 }
@@ -212,7 +220,8 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   grade_frame_ns = 0;
   anime4k_frame_ns = 0;
   display_frame_ns = 0;
-  if (image == nullptr) pl_frame_clear(vk->gpu, &target, std::array<float, 3>{0.0F, 0.0F, 0.0F}.data());
+  // Sans image, pl_render_image efface seul la cible (border, noir) : l'effacement d'avant était une écriture
+  // plein écran de trop par présentation (C10-08).
   if (!pl_render_image(renderer, image, &target, &params)) {
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "pl_render_image a échoué"});
   }
@@ -405,11 +414,16 @@ std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present
 bool PlaceboScreen::Impl::start_frame(pl_swapchain_frame* frame) {
   if (frame_pending) {
     channel->warn(
-        "présentation : l'image acquise au tour précédent n'avait pas été soumise, elle part d'abord");
+        "présentation : l'image acquise au tour précédent n'avait pas été soumise, elle part d'abord, en "
+        "noir");
+    // Rien n'y a été rendu (show est sorti en erreur) : sans effacement, elle montrait une image ancienne.
+    if (pending_fbo != nullptr && pending_fbo->params.blit_dst)
+      pl_tex_clear(vk->gpu, pending_fbo, std::array<float, 4>{0.0F, 0.0F, 0.0F, 1.0F}.data());
     if (auto sent = submit(nullptr); !sent) channel->warn("présentation : {}", sent.error().detail);
     pl_swapchain_swap_buffers(swapchain);
   }
   frame_pending = pl_swapchain_start_frame(swapchain, frame);
+  pending_fbo = frame_pending ? frame->fbo : nullptr;
   return frame_pending;
 }
 
@@ -570,6 +584,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
                       .display_gpu_us = static_cast<std::int64_t>(s.display_frame_ns / 1000),
                       .presented = true};
   if (s.feedback) note_feedback(timing, *s.feedback);
+  s.keep_shader_cache(presented);
   return timing;
 }
 

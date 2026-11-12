@@ -93,6 +93,12 @@ def main() -> int:
     shapes = parse_shapes(args.shape)
     if not shapes:
         fail("au moins un --shape nom=dimensions")
+    # La base chronométrée est dite « fp16_ms » : un graphe dont une entrée est en FP32 ne l'est pas, et le gain
+    # compterait le passage FP32 → FP16 avec le FP8 (C46-21).
+    wide = [name for name in shapes if input_dtype(model, name) != np.float16]
+    if wide:
+        fail(f"entrée(s) {', '.join(wide)} en FP32 : la base « fp16_ms » doit être un graphe FP16 "
+             "(tools/rife/convert_rife_fp16.py)")
     args.out.mkdir(parents=True, exist_ok=True)
     base = args.out / (args.model.stem + "_fixed.onnx")
     onnx.save(model, str(base))
@@ -118,6 +124,15 @@ def main() -> int:
     import inspect
 
     accepted = inspect.signature(quantize).parameters
+    # C46-21 : une option que cette version de Model Optimizer ne connaît pas ne se perd plus en silence (un
+    # --exclude ignoré quantifie des Softmax censés rester en FP16 et fausse le gain). Les clés propres au
+    # lecteur de l'outil (sans effet sur le graphe quand elles sont vides) peuvent manquer.
+    needed = {"onnx_path", "quantize_mode", "calibration_data", "output_path", "calibration_eps"}
+    needed |= {"op_types_to_exclude"} if wanted["op_types_to_exclude"] else set()
+    missing = sorted(k for k in needed if k not in accepted)
+    if missing:
+        fail(f"cette version de Model Optimizer n'accepte pas {', '.join(missing)} : mettez-la à jour, "
+             "ou retirez l'option correspondante")
     quantize(**{k: v for k, v in wanted.items() if k in accepted})
     result = onnx.load(str(target))
     qdq = sum(1 for n in result.graph.node if n.op_type in ("QuantizeLinear", "DequantizeLinear"))

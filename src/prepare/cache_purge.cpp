@@ -79,16 +79,11 @@ bool remove_stale_stage(const fs::path& folder, const CachePurgeLimits& limits, 
   return true;
 }
 
-// Le verrou d'un moteur disparu, sans usage depuis limits.idle : pris sans attendre (jamais un verrou tenu),
-// puis retiré. Sous Windows, retirer un fichier ouvert échoue : il reste, sans dommage.
-void remove_orphan_lock(const fs::path& lock, const CachePurgeLimits& limits, fs::file_time_type now,
-                        CachePurgeResult& result) {
-  const std::string name = utf8_path(lock.filename());
-  if (!name.starts_with("aji-v3-") || !name.ends_with(".engine.key-lock")) return;
-  fs::path engine = lock;
-  engine.replace_extension();  // « .key-lock » retiré
+// Un verrou sans usage depuis limits.idle : pris sans attendre (jamais un verrou tenu), puis retiré. Sous
+// Windows, retirer un fichier ouvert échoue : il reste, sans dommage.
+void remove_idle_lock(const fs::path& lock, const CachePurgeLimits& limits, fs::file_time_type now,
+                      CachePurgeResult& result) {
   std::error_code error;
-  if (fs::exists(engine, error)) return;
   const auto written = fs::last_write_time(lock, error);
   if (error || now - written <= limits.idle) return;
   {
@@ -106,6 +101,28 @@ void remove_orphan_lock(const fs::path& lock, const CachePurgeLimits& limits, fs
 #endif
 }
 
+// Le verrou d'un moteur disparu.
+void remove_orphan_lock(const fs::path& lock, const CachePurgeLimits& limits, fs::file_time_type now,
+                        CachePurgeResult& result) {
+  const std::string name = utf8_path(lock.filename());
+  if (!name.starts_with("aji-v3-") || !name.ends_with(".engine.key-lock")) return;
+  fs::path engine = lock;
+  engine.replace_extension();  // « .key-lock » retiré
+  std::error_code error;
+  if (fs::exists(engine, error)) return;
+  remove_idle_lock(lock, limits, now, result);
+}
+
+// Le verrou du GPU (« aji-timing-<id>.cache.build-lock ») dont le timing cache n'existe plus (C05-11).
+void remove_orphan_device_lock(const fs::path& lock, const CachePurgeLimits& limits, fs::file_time_type now,
+                               CachePurgeResult& result) {
+  fs::path timing = lock;
+  timing.replace_extension();  // « .build-lock » retiré
+  std::error_code error;
+  if (fs::exists(timing, error)) return;
+  remove_idle_lock(lock, limits, now, result);
+}
+
 }  // namespace
 
 CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits& limits,
@@ -115,6 +132,8 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
   std::error_code error;
   fs::directory_iterator it(dir, error);
   std::vector<fs::path> locks;
+  std::vector<fs::path> device_locks;
+  std::vector<fs::path> timing_caches;
   for (; !error && it != fs::directory_iterator(); it.increment(error)) {
     std::error_code type_error;
     const fs::path& file = it->path();
@@ -127,10 +146,17 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
       locks.push_back(file);
       continue;
     }
-    if (name.starts_with("aji-timing-") && name.ends_with(".cache")) {
+    if (name.starts_with("aji-timing-")) {
       std::error_code time_error;
-      const auto written = fs::last_write_time(file, time_error);
-      if (!time_error && now - written > limits.idle) fs::remove(file, time_error);
+      if (name.ends_with(".cache")) {
+        timing_caches.push_back(file);
+      } else if (name.ends_with(".cache.build-lock")) {
+        device_locks.push_back(file);
+      } else if (name.ends_with(".cache.bad") || name.ends_with(".cache.suspect")) {
+        // Un cache écarté, ou le marqueur d'un plantage : sans usage depuis idle, ils partent (C05-11).
+        const auto written = fs::last_write_time(file, time_error);
+        if (!time_error && now - written > limits.idle) fs::remove(file, time_error);
+      }
       continue;
     }
     if (!name.starts_with("aji-v3-") || !name.ends_with(".engine")) continue;
@@ -153,8 +179,19 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
     ++result.kept;
     result.kept_bytes += entry.bytes;
   }
+  // Un timing cache ne bouge qu'après une construction réussie, pas quand les moteurs de son GPU servent :
+  // sa date seule le ferait partir au 46e jour d'un usage quotidien, et la prochaine taille remesurerait
+  // toutes les tactiques. Il reste donc tant qu'un moteur est gardé, c'est-à-dire servi depuis idle (C05-06).
+  if (result.kept == 0) {
+    for (const fs::path& timing : timing_caches) {
+      std::error_code time_error;
+      const auto written = fs::last_write_time(timing, time_error);
+      if (!time_error && now - written > limits.idle) fs::remove(timing, time_error);
+    }
+  }
   for (const fs::path& lock : locks)
     remove_orphan_lock(lock, limits, now, result);  // après les moteurs retirés
+  for (const fs::path& lock : device_locks) remove_orphan_device_lock(lock, limits, now, result);
   return result;
 }
 

@@ -18,11 +18,12 @@
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
 #include "app/play/stage_fallback.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
-                              const std::string& fp8_reason, int auto_peak) {
+                              int auto_peak) {
   const media::TrackInfo& video = p.video;
   const PlaceboScreen& out = p.screen;
   const bool rife_loaded = c.interpolates();
@@ -55,7 +56,7 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .opened = c.opened,
       .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
       .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
-      .rife_folder = c.model_places.front().string(),
+      .rife_folder = core::to_utf8(c.model_places.front()),
       .hdr_output = p.screen.hdr_output(),
       .auto_peak = auto_peak,
       .engines = engine_badges(p.paths.engines, c.loaded_engines),
@@ -67,7 +68,6 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .source_file = p.options.file,
       .display_height = display_height(out.window()),
       .span_prepare = span_prepare,
-      .fp8_reason = fp8_reason,
       .span_job = p.span_job.note,
       .stage_note = stage_panel_note(c.stage_notes)};
 }

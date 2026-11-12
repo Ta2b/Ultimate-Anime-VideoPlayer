@@ -69,6 +69,19 @@ void store_digest(const CacheEntry& entry, const std::string& digest) {
       core::write_text_atomically(entry.digest_file(), text + '\n');  // « \n » seul, sous Windows aussi
 }
 
+// Réécrit l'empreinte avec l'estampille actuelle du moteur dont le hachage vient de concorder. Hors du verrou
+// de la clé, il est pris sans attendre, puis l'empreinte rangée est relue : si elle a changé, un autre a
+// publié entre-temps et rien n'est écrit (A05-06).
+void refresh_stamp(const CacheEntry& entry, const std::string& digest, bool locked) {
+  if (locked) {
+    store_digest(entry, digest);
+    return;
+  }
+  auto lock = KeyLock::acquire(entry.lock_file(), {}, LockWait::TryOnly);
+  if (!lock) return;
+  if (stored_digest(entry).digest == digest) store_digest(entry, digest);
+}
+
 // L'entrée publiée a-t-elle encore les octets de sa publication (P2.31) ? Une entrée d'avant l'empreinte
 // la reçoit ici, sous le verrou de la clé seulement (locked) : sans lui, un processus qui lit l'ancienne
 // entrée pouvait écrire son empreinte après celle du remplaçant qu'un autre venait de publier (A05-06).
@@ -89,7 +102,12 @@ std::expected<bool, Refusal> intact(const CacheEntry& entry, bool locked) {
     store_digest(entry, *digest);
     return true;
   }
-  return stored.digest == *digest;
+  if (stored.digest != *digest) return false;
+  // Octets intacts, mais taille ou date bougées (copie du cache sans les dates, restauration) : l'empreinte
+  // reprend la nouvelle estampille, sinon chaque ouverture relirait le moteur en entier (C05-04). Sous le
+  // verrou de la clé, ou, faute de mieux, si on le prend sans attendre : un autre qui publie le tient.
+  refresh_stamp(entry, *digest, locked);
+  return true;
 }
 
 // L'entrée publiée se reprend si elle est intacte (son empreinte revérifiée, P2.31).
@@ -127,6 +145,22 @@ bool is_published(const fs::path& file) {
   return fs::is_regular_file(file, error) && fs::file_size(file, error) > 0 && !error;
 }
 
+std::expected<void, Refusal> set_aside_entry(const CacheEntry& entry, const std::stop_token& stop) {
+  if (!is_published(entry.destination)) return {};
+  auto lock = KeyLock::acquire(entry.lock_file(), stop, LockWait::Block, entry.max_wait);
+  if (!lock) return std::unexpected(lock.error());
+  fs::path bad = entry.destination;
+  bad += ".bad";
+  // L'empreinte part d'abord : un arrêt entre les deux laisse un moteur sans empreinte, relu et rehaché à la
+  // reprise suivante, jamais une empreinte qui se croit encore à jour.
+  std::error_code error;
+  fs::remove(entry.digest_file(), error);
+  if (const std::error_code moved = core::rename_retrying(entry.destination, bad)) {
+    return std::unexpected(io_refusal("mise de côté du moteur refusé", entry.destination, moved));
+  }
+  return {};
+}
+
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,
                                                 const std::stop_token& stop) {
   if (is_published(entry.destination)) {
@@ -140,7 +174,11 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
   fs::create_directories(parent, error);
   if (error) return std::unexpected(io_refusal("création du cache", parent, error));
 
-  auto lock = KeyLock::acquire(entry.lock_file(), stop, LockWait::Block, entry.max_wait);
+  auto lock = KeyLock::acquire(entry.lock_file(), stop, LockWait::TryOnly);
+  if (!lock && lock.error().code == RefusalCode::CacheBusy) {
+    if (entry.on_wait) entry.on_wait();
+    lock = KeyLock::acquire(entry.lock_file(), stop, LockWait::Block, entry.max_wait);
+  }
   if (!lock) return std::unexpected(lock.error());
   if (auto recovered = recover_owned_stages(parent, kStagePrefix, entry.owner()); !recovered) {
     return std::unexpected(recovered.error());

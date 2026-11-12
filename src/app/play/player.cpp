@@ -373,7 +373,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.
   const std::filesystem::path engines_path = paths::engine_settings(settings_path.parent_path());
   std::vector<std::string> engines_skipped;  // les valeurs écartées une à une (P2.21)
-  auto engines = core::load_settings(engines_path, &engines_skipped);
+  auto engines = load_engine_settings(engines_path, &engines_skipped);
   for (const std::string& skipped : engines_skipped) log->warn("settings.toml : {} écarté", skipped);
   if (!engines) {
     log->warn("{} ; écran de bienvenue", engines.error().detail);
@@ -405,13 +405,13 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   // Après l'assistant, qui choisit le mode des mises à jour (A18-03).
   if (!options.bench_out && !options.data_dir)
     update_check = start_update_check(settings_path, paths, playing, update_news);
-  // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
-  // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
+  // Un moteur d'une version précédente ne s'ouvrirait pas : il se met à jour d'abord (une relance au plus).
   const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
   std::error_code marker_error;
   const bool relaunched = std::filesystem::remove(relaunch_marker, marker_error);
   bool engines_updated = false;
-  auto updated = update_stale_engines(**screen, **ui, catalog, *engines, engines_updated);
+  auto updated = refresh_chosen_engines(**screen, **ui, catalog, *engines, engines_path,
+                                        !options.bench_out && !options.data_dir, engines_updated);
   // Le moteur vérifié ici : un autre choisi ensuite à l'accueil se vérifie à son ouverture.
   const std::optional<core::EngineId> checked_engine =
       engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];

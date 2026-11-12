@@ -66,6 +66,22 @@ TEST_CASE("Épisode voisin : un mot de bonus dans un titre d'épisode ne le sort
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("Épisode voisin : un bonus collé à son numéro n'est pas un épisode (C13-01)", "[app][episodes]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-episodes-c1301";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  for (const char* name : {"Show - 11.mkv", "Show - 12.mkv", "Show - CM01.mkv", "Show - PV01.mkv",
+                           "Show - Menu01.mkv", "Show - Trailer2.mkv", "Show - CMYK.mkv"})
+    std::ofstream(dir / name) << "x";
+  // Après le dernier épisode, l'enchaînement s'arrête au lieu d'ouvrir les publicités et les menus. Un mot
+  // qui commence comme un bonus sans en être un (« CMYK ») reste un titre.
+  CHECK(sibling_episode(dir / "Show - 12.mkv", 1) == dir / "Show - CMYK.mkv");
+  std::filesystem::remove(dir / "Show - CMYK.mkv");
+  CHECK_FALSE(sibling_episode(dir / "Show - 12.mkv", 1));
+  CHECK(sibling_episode(dir / "Show - CM01.mkv", 1) == dir / "Show - Menu01.mkv");  // de bonus en bonus
+  std::filesystem::remove_all(dir);
+}
+
 TEST_CASE("Ordre naturel : chiffres pleine chasse lus comme des nombres (A13-04)", "[app][episodes]") {
   CHECK(natural_compare("第２話", "第１０話") < 0);
   CHECK(natural_compare("第１０話", "第２話") > 0);

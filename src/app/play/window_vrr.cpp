@@ -78,8 +78,8 @@ std::string gdi_name(SDL_Window* window) {
 
 // Ce que NVAPI dit de l'écran de la fenêtre ; rien s'il ne le connaît pas.
 struct NvVrr {
-  bool enabled = false;  // G-SYNC permis sur cet écran : capable (B11-03)
-  bool armed = false;    // engagé en ce moment (nv_vrr_armed)
+  bool enabled = false;       // G-SYNC permis sur cet écran : capable (B11-03)
+  std::optional<bool> armed;  // engagé en ce moment (nv_vrr_armed) ; rien : inconnu
 };
 std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
   const Nvapi* api = nvapi();
@@ -105,6 +105,10 @@ std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
                .armed = nv_vrr_armed(info.flags, in_mode_seen.load(std::memory_order_relaxed))};
 }
 
+}  // namespace
+#endif
+
+#if defined(_WIN32)
 // Le chemin d'interface du moniteur qui porte la fenêtre (« \\?\DISPLAY#GSM5B08#…#{e6f07b5f-…} »), que
 // pick_display rapproche de l'identifiant d'instance de SetupAPI (B34-02) ; vide s'il ne se lit pas.
 std::string monitor_interface(SDL_Window* window) {
@@ -122,12 +126,19 @@ std::string monitor_interface(SDL_Window* window) {
   return {};
 }
 
-}  // namespace
+#else
+std::string monitor_interface(SDL_Window*) {
+  return {};
+}
 #endif
 
 std::optional<DisplayFacts> window_display(SDL_Window* window) {
+  return window_display(window, DisplaySdl{.name = display_name(window)});
+}
+
+std::optional<DisplayFacts> window_display(SDL_Window* window, const DisplaySdl& sdl) {
 #if defined(_WIN32)
-  std::optional<DisplayFacts> display = read_display(display_name(window), monitor_interface(window));
+  std::optional<DisplayFacts> display = read_display(sdl.name, monitor_interface(window));
   if (display) {
     if (const auto nv = nvapi_vrr(window)) {
       if (!display->vrr_armed) display->vrr_armed = nv->armed;
@@ -136,7 +147,8 @@ std::optional<DisplayFacts> window_display(SDL_Window* window) {
     }
   }
 #else
-  std::optional<DisplayFacts> display = read_display(display_name(window));
+  (void)window;
+  std::optional<DisplayFacts> display = read_display(sdl.name);
 #endif
   // Armé suppose capable, quelle que soit la source (B11-03).
   if (display && display->vrr_armed.value_or(false)) display->vrr = true;
@@ -154,7 +166,7 @@ std::optional<bool> window_vrr_armed([[maybe_unused]] SDL_Window* window, std::s
   if (const auto now = std::chrono::steady_clock::now(); now - read_at >= kReread) {
     read_at = now;
     const auto nv = nvapi_vrr(window);
-    last = nv ? std::optional<bool>(nv->armed) : std::nullopt;
+    last = nv ? nv->armed : std::nullopt;
   }
   (void)connector;
   return last;

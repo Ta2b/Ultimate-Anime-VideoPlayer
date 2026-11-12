@@ -6,6 +6,7 @@
 // fonctions pour écrire un chemin dans un message ou en lire un depuis l'ONNX.
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -33,6 +34,11 @@ std::string ansi_safe_path(const std::filesystem::path& path);
 // une valeur hors de Windows.
 std::optional<std::string> ansi_command_path(const std::filesystem::path& path);
 
+// Ce que la page ANSI du système dit d'un texte sans interroger Windows : vrai (représentable), faux (non),
+// ou nullopt quand seul WideCharToMultiByte sur cette page peut le dire. Page 65001 (« Utiliser Unicode UTF-8
+// ») : tout s'écrit. Page 0 (lecture de la page système échouée) : un texte entièrement ASCII passe, et rien
+// d'autre ne se prouve, donc le nom court (C04-07). Portable pour être testé hors de Windows.
+std::optional<bool> ansi_page_decides(std::uint32_t page, std::u16string_view text);
 // UTF-8 bien formé : ni octet isolé, ni forme trop longue, ni moitié de paire UTF-16.
 bool is_utf8(std::string_view text);
 

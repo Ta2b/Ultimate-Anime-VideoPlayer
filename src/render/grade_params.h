@@ -34,6 +34,9 @@ inline constexpr core::Range<double> kPeakNits{100.0, 10000.0};
 // Vrai noir OLED : fin du pied, en pas de code de la source au-dessus du noir.
 inline constexpr core::Range<double> kBlackSteps{0.5, 8.0};
 inline constexpr core::Range<double> kAreaRtx{0.0, 1.0};
+// Saturation, contraste et éclats de la méthode anime, en % : le menu, play.toml et le grade lisent la même
+// plage.
+inline constexpr core::Range<int> kAnimePercent{0, 200};
 // Pic du grade quand l'écran ne le dit pas.
 inline constexpr double kDefaultPeakNits = 1000.0;
 // Le blanc d'une source SDR sur la route native : 203 nits (BT.2408).

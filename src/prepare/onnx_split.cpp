@@ -225,18 +225,6 @@ std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
   return out;
 }
 
-std::expected<Bytes, Refusal> graph_of(Bytes model) {
-  Fields fields(model);
-  RawField field;
-  std::optional<Bytes> graph;
-  while (fields.next(field)) {
-    if (field.number == kModelGraph && field.delimited) graph = field.payload;
-  }
-  if (!fields.ok()) return malformed("ONNX : protobuf du modèle malformé");
-  if (!graph) return malformed("ONNX : pas de graphe principal");
-  return *graph;
-}
-
 // ValueInfoProto { name ; type { tensor_type { elem_type ; shape { dim { dim_value }… } } } }.
 std::vector<std::byte> value_info(const SplitTensor& tensor) {
   std::vector<std::byte> inner;
@@ -356,9 +344,26 @@ std::expected<std::vector<std::byte>, Refusal> permuted_tensor(Bytes message, st
 
 }  // namespace
 
+std::expected<std::span<const std::byte>, Refusal> onnx_graph_field(std::span<const std::byte> model) {
+  Fields fields(model);
+  RawField field;
+  std::optional<std::span<const std::byte>> graph;
+  while (fields.next(field)) {
+    if (field.number == kModelGraph && field.delimited) graph = field.payload;
+  }
+  if (!fields.ok()) return malformed("ONNX : protobuf du modèle malformé");
+  if (!graph) return malformed("ONNX : pas de graphe principal");
+  return *graph;
+}
+
 const OnnxAttribute* OnnxFullNode::attribute(std::string_view attribute_name) const {
   const auto found = std::ranges::find(attributes, attribute_name, &OnnxAttribute::name);
   return found == attributes.end() ? nullptr : &*found;
+}
+
+bool OnnxFullNode::resize_without_antialias() const {
+  const OnnxAttribute* antialias = attribute("antialias");
+  return antialias == nullptr || (antialias->integer && *antialias->integer == 0);
 }
 
 namespace {
@@ -421,7 +426,7 @@ std::expected<OnnxFullNode, Refusal> read_node(std::span<const std::byte> payloa
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> model) {
-  auto graph = graph_of(model);
+  auto graph = onnx_graph_field(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
   OnnxGraph out;
   Fields fields(*graph);
@@ -455,7 +460,7 @@ std::expected<std::vector<std::byte>, Refusal> extract_subgraph(std::span<const 
                                                                 std::span<const SplitTensor> inputs,
                                                                 std::span<const SplitTensor> outputs,
                                                                 std::string_view graph_name) {
-  auto graph = graph_of(model);
+  auto graph = onnx_graph_field(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
 
   struct Node {
@@ -560,7 +565,7 @@ std::expected<std::vector<std::byte>, Refusal> extract_subgraph(std::span<const 
 std::expected<std::vector<std::byte>, Refusal> permute_input_channels(std::span<const std::byte> model,
                                                                       std::string_view name,
                                                                       std::span<const int> source) {
-  auto graph = graph_of(model);
+  auto graph = onnx_graph_field(model);
   if (!graph) return std::unexpected(std::move(graph.error()));
   std::vector<std::byte> new_graph;
   bool found = false;

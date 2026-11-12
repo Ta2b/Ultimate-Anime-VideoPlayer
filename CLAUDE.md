@@ -7,7 +7,7 @@ documents décrivent le code actuel et lesquels sont historiques.
 
 `ajp`, un lecteur vidéo C++23 pour l'anime : agrandissement SPAN ×2 (AnimeJaNai), ou Anime4K en shaders pour
 les petites cartes ([`docs/anime4k.md`](docs/anime4k.md)), interpolation (RIFE 4.22 lite,
-DistilDRBA au choix) en mode Auto, grade HDR anime guidé par plan, export qui rejoue la même chaîne. Linux,
+DistilDRBA au choix) en mode Auto, grade HDR anime (lumière fixe d'un plan à l'autre en HDR, courbe par plan en SDR), export qui rejoue la même chaîne. Linux,
 Windows ; macOS est délaissé pour l'instant (plus construit par la CI ni par les releases, novembre 2026). Le propriétaire est Tatoub ; il écrit en français et décide des releases.
 
 Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur-simple.md)) :
@@ -58,12 +58,15 @@ Voir l'interface sans écran : `xvfb-run ajp --software-gpu --mute --no-upscale 
 
 - `clang-format-20` sur tous les `.cpp` et `.h` (`--dry-run --Werror`) ;
 - un fichier vise moins de 500 lignes, la CI échoue au-delà de 800 ;
-- aucun `getenv` : une option vient de `play.toml` ou de la ligne de commande (`options.cpp`) ;
+- aucun `getenv` : une option vient de `play.toml` ou de la ligne de commande (`options.cpp`). Deux exceptions écrites :
+  `APPIMAGE` (lanceur, `// env: lanceur`) et `CUDA_DEVICE_MAX_CONNECTIONS`, que `main.cpp` pose à 32 sans écraser une
+  valeur déjà exportée ;
 - les `path::string()` de `src/` ne peuvent que diminuer : un chemin passe par `core::to_utf8` (`src/core/utf8_path.h`) ;
 - les shaders se compilent ; la construction est en `-Werror`.
 
-La CI ne se lance qu'à la main (en-tête de `.github/workflows/ci.yml`) : rien sur les pull requests, les poussées
-ni la nuit. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml` (les scripts de `tools/ci/`) et les
+La CI ne se lance qu'à la main (en-tête de `.github/workflows/ci.yml`) : rien de ce workflow sur les pull requests, les poussées
+ni la nuit. Seules tournent seules les tâches de veille (`deps-watch.yml`, qui lance ci.yml sur sa branche de
+dépendances, `vendor-watch.yml`, `resign-manifest.yml`) et `release-linux.yml` sur la branche `release/linux`. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml` (les scripts de `tools/ci/`) et les
 tests des modules touchés ; une PR risquée (Windows, CUDA, CMake) se vérifie par un lancement de ci.yml sur sa
 branche. Après un lot de PR fusionnées, un lancement sur main ; avant chaque étiquette, un lancement vert sur son
 commit, que la garde de release exige (`docs/signature-des-releases.md`).

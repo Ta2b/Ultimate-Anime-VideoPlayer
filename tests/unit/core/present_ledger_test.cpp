@@ -33,6 +33,7 @@ TEST_CASE("retour de présentation : 600 images, chacune revient avec son vblank
   std::uniform_real_distribution<double> jitter(-300.0, 300.0);
   PresentLedger ledger;
   VblankClock clock;
+  clock.set_nominal_period(1e6 / 165.0);  // l'écran s'annonce à 165 Hz
   Driver driver;
   std::set<std::uint64_t> seen;
   for (int i = 0; i < 600; ++i) {

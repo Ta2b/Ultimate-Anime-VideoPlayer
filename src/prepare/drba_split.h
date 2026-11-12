@@ -92,6 +92,9 @@ struct DrbaFusedManifest {
   // La taille de chaque morceau à l'écriture (voir RifeFusedManifest::sizes) ; vide pour un manifeste
   // d'avant.
   std::vector<std::uint64_t> sizes;
+  // Le SHA-256 de chaque morceau à l'écriture, vérifié avant de le croire (C04-06) ; vide pour un manifeste
+  // d'avant, qui est alors refait.
+  std::vector<std::string> digests;
 };
 
 std::string format_drba_manifest(const DrbaFusedManifest& manifest);

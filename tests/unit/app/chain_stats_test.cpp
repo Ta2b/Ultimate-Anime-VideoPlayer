@@ -1,9 +1,14 @@
 // Le relevé de l'OSD (ChainStats) et la durée de vie du backend dont il lit les noyaux (A08-02).
 #include "app/play/chain_stats.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -116,6 +121,27 @@ TEST_CASE("ChainStats : Rapide à 165 Hz, la période de sortie est celle d'une 
   CHECK(gap == 6'061);
   CHECK(heavy_step > stats.output_period_us() + stats.output_period_us() / 4);
   stats.stop();
+}
+
+TEST_CASE("Onglet Moteurs : DistilDRBA n'est pas étiqueté SPAN (C08-09)", "[app][stats]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-engine-badges-c0809";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const auto write = [&](const char* log, const char* onnx) {
+    std::ofstream(dir / log)
+        << "&&&& RUNNING # trtexec --onnx=/m/" << onnx
+        << " --optShapes=input:1x3x1088x1920\n[I] Engine built in 42.0 sec.\n&&&& PASSED\n";
+  };
+  write("a.build.log", "distil_drba_v2_lite.onnx");
+  write("b.build.log", "2x_AnimeJaNai_V3_SharpBeta_Compact.onnx");
+  const std::vector<EngineBadge> badges = engine_badges(dir, {});
+  REQUIRE(badges.size() == 2);
+  const auto named = [&](std::string_view start) {
+    return std::ranges::count_if(badges, [&](const EngineBadge& b) { return b.name.starts_with(start); });
+  };
+  CHECK(named("DistilDRBA · distil_drba_v2_lite") == 1);
+  CHECK(named("SPAN") == 1);
+  std::filesystem::remove_all(dir);
 }
 
 }  // namespace

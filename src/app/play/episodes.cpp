@@ -61,15 +61,22 @@ bool episode_number(const std::vector<std::string>& words, std::size_t i) {
 // Un bonus et pas un épisode (P3.81) : générique sans texte (NCOP, NCED), bande-annonce, publicité, menu.
 // NCOP, NCED et CREDITLESS le disent partout. Les autres mots sont aussi des mots de titre (« Soma - 05 - The
 // Menu ») : ils ne comptent que si aucun numéro d'épisode ne les précède (A13-03).
+// Le mot de bonus, seul ou collé à son numéro (« CM01 », « PV2 », « Menu01 » : words_of garde ensemble
+// lettres et chiffres).
+bool extra_word(std::string_view w) {
+  for (const std::string_view tag : {"PV", "CM", "MENU", "TRAILER", "TEASER", "PREVIEW"}) {
+    if (w.starts_with(tag) && std::ranges::all_of(w.substr(tag.size()), digit)) return true;
+  }
+  return false;
+}
+
 bool extra(std::string_view stem) {
   const std::vector<std::string> words = words_of(stem);
   bool numbered = false;
   for (std::size_t i = 0; i < words.size(); ++i) {
     const std::string& w = words[i];
     if (w.starts_with("NCOP") || w.starts_with("NCED") || w == "CREDITLESS") return true;
-    if (!numbered &&
-        (w == "PV" || w == "CM" || w == "MENU" || w == "TRAILER" || w == "TEASER" || w == "PREVIEW"))
-      return true;
+    if (!numbered && extra_word(w)) return true;
     numbered = numbered || episode_number(words, i);
   }
   return false;
@@ -184,8 +191,16 @@ std::optional<std::filesystem::path> sibling_episode(const std::filesystem::path
     const int order = natural_compare(a.key, b.key);
     return order != 0 ? order < 0 : a.version > b.version;  // la plus haute version d'abord
   });
-  const auto here =
+  auto here =
       std::ranges::find_if(videos, [&](const Video& v) { return v.path.filename() == current.filename(); });
+  // Ouvert sous une autre casse (« show - 01.mkv » pour « Show - 01.mkv », que NTFS confond) : le même
+  // fichier.
+  if (here == videos.end()) {
+    here = std::ranges::find_if(videos, [&](const Video& v) {
+      std::error_code same;
+      return std::filesystem::equivalent(v.path, current, same);
+    });
+  }
   if (here == videos.end()) return std::nullopt;
   // Le voisin dont le nom diffère (une autre version du même épisode n'en est pas un) et qui se lit (P3.81).
   const auto readable = [](const Video& v) { return std::ifstream(v.path, std::ios::binary).good(); };

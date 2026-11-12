@@ -101,231 +101,6 @@ std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catal
   return out;
 }
 
-namespace {
-
-// Un mot entier : « a100 » n'est pas dans « rtx a1000 » (une RTX Ampere sm86, pas une A100 sm80 : B06-06).
-bool contains_word(std::string_view text, std::string_view word) {
-  for (std::size_t at = text.find(word); at != std::string_view::npos; at = text.find(word, at + 1)) {
-    const bool before = at == 0 || std::isalnum(static_cast<unsigned char>(text[at - 1])) == 0;
-    const std::size_t end = at + word.size();
-    const bool after = end >= text.size() || std::isalnum(static_cast<unsigned char>(text[end])) == 0;
-    if (before && after) return true;
-  }
-  return false;
-}
-
-}  // namespace
-
-std::string cuda_arch_from_name(std::string_view gpu_name) {
-  std::string name(gpu_name);
-  name = core::ascii_lower(name);
-  const auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
-  const auto has_word = [&](std::string_view word) { return contains_word(name, word); };
-  const auto series = [&](char digit) {  // « rtx 4050 » : la série à deux chiffres, ici 40
-    const std::size_t at = name.find("rtx ");
-    return at != std::string::npos && at + 5 < name.size() && name[at + 4] == digit && name[at + 5] >= '0' &&
-           name[at + 5] <= '9';
-  };
-  if (has("h100") || has("h200")) return "sm90";
-  // Deux exceptions à la règle par série (A37-03) : la RTX 2050 portable est une Ampere (GA107), la
-  // RTX 3050 A Laptop une Ada (AD106).
-  if (has("rtx 2050")) return "sm86";
-  if (has("3050 a ")) return "sm89";
-  if (has_word("a100")) return "sm80";
-  if (has("blackwell")) return "sm120";
-  // Les cartes pro : « RTX 5000 Ada Generation » est une Ada, « Quadro RTX 4000 » une Turing (P3.16).
-  if (has(" ada")) return "sm89";
-  if (has("quadro rtx")) return "sm75";
-  if (series('5')) return "sm120";
-  if (has("l40") || series('4')) return "sm89";
-  if (series('3') || has("rtx a")) return "sm86";
-  if (series('2') || has("gtx 16") || has("titan rtx")) return "sm75";
-  return {};
-}
-
-bool fp8_presumed(std::string_view gpu_name) {
-  // gpu::fp8_allowed : Ada et Hopper ; une RTX 50 (sm120) n'a pas de FP8 tant qu'aucune mesure ne le
-  // justifie.
-  const std::string arch = cuda_arch_from_name(gpu_name);
-  return arch == "sm89" || arch == "sm90";
-}
-
-bool span_fp8_presumed(std::string_view gpu_name) {
-  return cuda_arch_from_name(gpu_name) == "sm89";
-}
-
-std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_name) {
-  if (!detected.empty()) return std::string(detected);
-  if (std::string by_name = cuda_arch_from_name(gpu_name); !by_name.empty()) return by_name;
-  return "ptx";  // inconnue : jamais « toutes les architectures » (2 Go tirés, 3,3 Go écrits)
-}
-
-namespace {
-
-// Chaque carte : son nom et son architecture (« NVIDIA GeForce RTX 4070, 8.9 » : sm89).
-std::vector<std::pair<std::string, std::string>> run_nvidia_smi() {
-  std::vector<std::pair<std::string, std::string>> cards;
-  const auto smi = system_tool("nvidia-smi");
-  if (!smi) return cards;
-  auto done = run_tool(
-      {.program = *smi,
-       .args = {"--query-gpu=name,compute_cap", "--format=csv,noheader"},
-       .timeout = std::chrono::seconds(10)},
-      [&](std::string_view line) {
-        const std::size_t comma = line.rfind(',');
-        if (comma == std::string_view::npos) return;
-        std::string_view cap = line.substr(comma + 1);
-        while (!cap.empty() && (cap.front() == ' ' || cap.back() == ' ' || cap.back() == '\r'))
-          cap = cap.front() == ' ' ? cap.substr(1) : cap.substr(0, cap.size() - 1);
-        const std::size_t dot = cap.find('.');
-        if (dot == std::string_view::npos || dot == 0 || dot + 1 >= cap.size()) return;
-        const auto digit = [](char c) { return c >= '0' && c <= '9'; };
-        if (!digit(cap[dot - 1]) || !digit(cap[dot + 1])) return;
-        // sm100 et plus : « 10.0 » donne sm100 ; la majeure a deux chiffres.
-        std::string arch = std::format("sm{}{}", cap.substr(0, dot), cap[dot + 1]);
-        cards.emplace_back(std::string(line.substr(0, comma)), std::move(arch));
-      },
-      {}, "nvidia-smi");
-  if (!done) cards.clear();
-  return cards;
-}
-
-}  // namespace
-
-std::string detect_cuda_arch(std::string_view gpu_name) {
-  // Une fois par processus (P2.12) : la carte ne change pas, et nvidia-smi prend jusqu'à deux secondes. Un
-  // résultat vide (échec, délai de 10 s juste après l'ouverture de session, pilote pas encore prêt) n'est pas
-  // retenu pour toujours : il se retente, deux essais au plus (B06-07).
-  static std::mutex mutex;
-  static std::optional<std::vector<std::pair<std::string, std::string>>> known;
-  static int attempts = 0;
-  const std::scoped_lock lock(mutex);
-  if (!known || (known->empty() && attempts < 2)) {
-    known = run_nvidia_smi();
-    ++attempts;
-  }
-  // La carte de rendu (P3.16) : sur une machine à deux cartes NVIDIA, la première n'est pas forcément elle.
-  for (const auto& [name, arch] : *known)
-    if (!gpu_name.empty() && name == gpu_name) return arch;
-  // Un nom demandé que nvidia-smi n'a pas écrit pareil (espace, suffixe, carte pro) : avec plusieurs cartes,
-  // on ne devine pas, l'architecture se déduit du nom (effective_cuda_arch) ; avec une seule, c'est elle
-  // (B37-05).
-  if (!gpu_name.empty() && known->size() > 1) return {};
-  return known->empty() ? std::string() : known->front().second;
-}
-
-std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,
-                             std::string_view arch) {
-  std::uint64_t total = package.size;
-  for (const core::VendorFile& file :
-       core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch))
-    total += file.packed_size;
-  return total;
-}
-
-std::string format_size(std::uint64_t bytes) {
-  constexpr double kMiB = 1048576.0;
-  const double mib = static_cast<double>(bytes) / kMiB;
-  if (mib >= 1024.0) return std::format("{:.1f} Go", mib / 1024.0);
-  return std::format("{} Mo", static_cast<std::uint64_t>(std::lround(mib)));
-}
-
-std::string shown_size(std::uint64_t bytes) {
-  constexpr double kMiB = 1048576.0;
-  const double mib = static_cast<double>(bytes) / kMiB;
-  if (mib >= 1024.0) return i18n::tr_format("{:.1f} GB", mib / 1024.0);
-  return i18n::tr_format("{} MB", static_cast<std::uint64_t>(std::lround(mib)));
-}
-
-std::uint64_t free_bytes(const std::filesystem::path& where) {
-  std::error_code error;
-  std::filesystem::path probe = where;
-  while (!probe.empty() && !std::filesystem::exists(probe, error)) {
-    const std::filesystem::path parent = probe.parent_path();
-    if (parent == probe) break;
-    probe = parent;
-  }
-  const std::filesystem::space_info info = std::filesystem::space(probe, error);
-  return error ? std::numeric_limits<std::uint64_t>::max()
-               : static_cast<std::uint64_t>(info.available);  // inconnu : on essaie
-}
-
-std::uint64_t directory_bytes(const std::filesystem::path& dir) {
-  std::error_code error;
-  std::uint64_t total = 0;
-  for (const std::filesystem::directory_entry& entry : core::tree_entries(dir, error)) {
-    std::error_code each;
-    if (entry.is_regular_file(each)) total += static_cast<std::uint64_t>(entry.file_size(each));
-  }
-  return total;
-}
-
-namespace {
-
-// Un fichier tiers que reuse_vendor_file reprendra sans doute : même nom et même taille dans un dossier de
-// engines_root. Le SHA-256 n'est pas recalculé ici (1 Go à lire) : c'est une estimation de place, la
-// vérification se fait à l'installation. Un voisin altéré à taille égale rend le pic de place sous-estimé de
-// sa taille : l'écart reste sous la marge de check_space, et le cas est rare (B06-09).
-bool vendor_on_hand(const core::VendorFile& file, const std::filesystem::path& engines_root) {
-  if (engines_root.empty()) return false;
-  std::error_code error;
-  std::filesystem::directory_iterator it(engines_root, error);
-  for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
-    std::error_code checked;
-    const std::filesystem::path candidate = it->path() / file.name;
-    if (std::filesystem::is_regular_file(candidate, checked) &&
-        std::filesystem::file_size(candidate, checked) == file.size && !checked)
-      return true;
-  }
-  return false;
-}
-
-}  // namespace
-
-InstallSpace install_space(const EngineCatalog& catalog, const core::EnginePackage& package,
-                           std::string_view arch, std::uint64_t existing,
-                           const std::filesystem::path& engines_root) {
-  InstallSpace space;
-  space.download = package.size;
-  // L'archive du moteur, puis son extraction (module et outils ; l'estimation vaut 3 fois l'archive).
-  std::uint64_t staged = package.size * 3;
-  std::uint64_t highest = package.size + staged;
-  std::uint64_t linked = 0;
-  for (const core::VendorFile& file :
-       core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch)) {
-    // Repris de la version en place par un lien dur : ni téléchargé ni écrit une seconde fois (A06-06).
-    if (vendor_on_hand(file, engines_root)) {
-      linked += file.size;
-      continue;
-    }
-    space.download += file.packed_size;
-    // Chaque fichier tiers : son téléchargement et sa copie décompressée coexistent avec ce qui est déjà
-    // posé.
-    highest = std::max(highest, package.size + staged + file.packed_size + file.size);
-    staged += file.size;
-  }
-  space.installed = staged + linked;
-  const std::uint64_t peak = std::max(highest, package.size + staged) + existing;
-  space.peak = peak + peak / 20;  // 5 % de marge
-  return space;
-}
-
-InstallSpace install_space_in(const EngineCatalog& catalog, const core::EnginePackage& package,
-                              std::string_view arch, const std::filesystem::path& installed_dir) {
-  return install_space(catalog, package, arch, directory_bytes(installed_dir), installed_dir.parent_path());
-}
-
-std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_t available,
-                                         const std::filesystem::path& where) {
-  if (available >= space.peak) return {};
-  return refuse(
-      RefusalCode::InsufficientSpace,
-      i18n::tr_format(
-          "not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
-          format_size(space.peak), format_size(space.download), format_size(space.installed),
-          format_size(available), core::to_utf8(where)));
-}
-
 int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
   namespace fs = std::filesystem;
   std::vector<std::string> known{std::string(keep)};
@@ -386,11 +161,15 @@ std::expected<void, Refusal> sync_tree(const std::filesystem::path& root) {
 // Chaque fichier extrait sur le disque, puis la note du paquet en dernier, avec son dossier (A36-03).
 std::expected<void, Refusal> seal_staging(const std::filesystem::path& staging,
                                           const core::EnginePackage& package,
-                                          const std::vector<core::VendorFile>& vendor) {
+                                          const std::vector<core::VendorFile>& vendor,
+                                          std::string_view arch) {
   if (auto synced = sync_tree(staging); !synced) return synced;
   const std::filesystem::path path = staging / std::string(kPackageNote);
   std::ofstream note(path, std::ios::trunc);
   note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
+  // L'architecture pour laquelle les fichiers tiers ont été choisis : changer de carte (sm86 vers sm89) rend
+  // le paquet à compléter, pas « à jour » sans la ressource du nouveau GPU (C06-03).
+  if (!arch.empty()) note << "arch=" << arch << '\n';
   // Les fichiers tiers posés, avec leur taille : installed_state les revérifie (B06-11).
   for (const core::VendorFile& file : vendor) note << "fichier=" << file.size << ' ' << file.name << '\n';
   note.close();
@@ -403,14 +182,14 @@ std::expected<void, Refusal> seal_staging(const std::filesystem::path& staging,
 // Le dossier extrait et complet devient la version installée : ses fichiers sur le disque, la note, puis les
 // renommages (l'ancien dossier mis de côté, remis en place sur échec).
 std::expected<void, Refusal> swap_in_place(const core::EnginePackage& package,
-                                           const std::vector<core::VendorFile>& vendor,
+                                           const std::vector<core::VendorFile>& vendor, std::string_view arch,
                                            const std::filesystem::path& staging,
                                            const std::filesystem::path& target) {
   std::error_code error;
   // Chaque fichier sur le disque, puis la note en dernier (A36-03) : après une coupure, un dossier de version
   // (ou un « .partiel » qui a sa note, recover_interrupted_install) est entier, jamais fait de fichiers
   // vides.
-  if (const auto sealed = seal_staging(staging, package, vendor); !sealed) {
+  if (const auto sealed = seal_staging(staging, package, vendor, arch); !sealed) {
     std::filesystem::remove_all(staging, error);
     return std::unexpected(sealed.error());
   }
@@ -488,6 +267,23 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     return refuse(RefusalCode::FileUnwritable,
                   std::format("{} : {}", core::to_utf8(part.parent_path()), error.message()));
 
+  // Sous Windows, curl et tar relisent leur ligne de commande dans la page ANSI : un chemin qu'elle ne sait
+  // pas écrire et qui n'a pas de nom court (8.3) deviendrait « ???? », et l'échec ne dirait pas pourquoi. On
+  // le sait avant de tirer un octet (C06-07). Toujours vrai hors de Windows.
+  {
+    std::filesystem::path staging_dir = core::engine_dir(catalog.layout, package);
+    staging_dir += ".partiel";
+    for (const std::filesystem::path& each : {part, staging_dir, catalog.layout.downloads}) {
+      if (!prepare::ansi_command_path(each)) {
+        return refuse(
+            RefusalCode::FileUnwritable,
+            i18n::tr_format("this folder cannot be passed to curl and tar (name outside the Windows "
+                            "ANSI code page, no short 8.3 name): {}. Choose another engines folder "
+                            "or enable \"Use Unicode UTF-8\" in the Windows region settings",
+                            core::to_utf8(each)));
+      }
+    }
+  }
   // Le transfert reprend un .part laissé par un essai interrompu ; un .part déjà complet mais faux
   // repart de zéro.
   const auto resumed = core::verify_file(part, package.size, package.sha256, progress.stop);
@@ -501,7 +297,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
         {.program = *curl,
          .args =
              [&] {
-               std::vector<std::string> args = curl_download_args(progress.allow_local_files);
+               std::vector<std::string> args = curl_download_args(progress.allow_local_files, package.url);
                args.insert(args.end(), {"--continue-at", "-", "--progress-bar", "--output",
                                         ansi_safe_path(part), package.url});
                return args;
@@ -540,8 +336,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     std::filesystem::remove_all(staging, error);
     return std::unexpected(ok.error());
   }
-  // L'archive du moteur n'est plus utile une fois extraite : sa place revient avant les gros téléchargements.
-  std::filesystem::remove(part, error);
+  // L'archive reste jusqu'à l'échange réussi : si un fichier tiers échoue (disque plein, réseau), la reprise
+  // la retrouve vérifiée au lieu de retélécharger le moteur (C06-05). Son espace est déjà dans le pic estimé.
   const std::filesystem::path library = staging / core::backend_library(catalog.layout, package).filename();
   if (!std::filesystem::is_regular_file(library, error)) {
     std::filesystem::remove_all(staging, error);
@@ -579,8 +375,9 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     done_bytes += static_cast<double>(file.packed_size);
   }
   step = i18n::tr("replacing the installed version");
-  if (auto swapped = swap_in_place(package, vendor, staging, target); !swapped)
+  if (auto swapped = swap_in_place(package, vendor, progress.cuda_arch, staging, target); !swapped)
     return std::unexpected(swapped.error());
+  std::filesystem::remove(part, error);
   report(1.0F, i18n::tr_format("{} installed", name));
   return core::backend_library(catalog.layout, package);
 }

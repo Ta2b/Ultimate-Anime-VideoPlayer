@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <string_view>
 
 #include "app/play/engine_install.h"
 
@@ -29,7 +30,10 @@ struct InstalledState {
 };
 
 // Ce qui est installé pour ce paquet de l'index.
-InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package);
+// arch : l'architecture du GPU en service (« sm89 »), vide pour ne pas la comparer ; une note qui en garde
+// une autre rend Replaced (C06-03).
+InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package,
+                               std::string_view arch = {});
 
 // Une autre version installée de ce moteur (un dossier frère qui a le module ou la note) ; la plus récente
 // par date de modification s'il y en a plusieurs.

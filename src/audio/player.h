@@ -111,6 +111,7 @@ class AudioPlayer {
   void adopt_output(std::vector<PcmBlock>&& back);
   double with_dead_zone(double ratio);
   void decode_next();
+  void note_lost_packet(const Refusal& refusal);
   void open_decoder(const AudioTrack& track);
   void queue(std::vector<PcmBlock>&& blocks);
   void finish_stream();
@@ -145,7 +146,9 @@ class AudioPlayer {
   std::deque<PcmBlock> ready_;               // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;
   std::optional<std::int64_t> output_retry_us_;  // sans sortie : l'instant du prochain essai
-  std::optional<std::int64_t> pushed_end_us_;    // fin du dernier bloc poussé, en temps média (A16-10)
+  std::int64_t lost_packets_ = 0;  // paquets perdus depuis la dernière ligne de journal (C16-10)
+  std::optional<std::int64_t> last_loss_log_us_;  // hôte, de cette ligne
+  std::optional<std::int64_t> pushed_end_us_;     // fin du dernier bloc poussé, en temps média (A16-10)
   std::optional<std::int64_t> last_follow_us_;
   core::ClockPll pll_;                           // PlayerConfig::pll
   std::optional<std::int64_t> last_publish_us_;  // relevé précédent filtré par pll_

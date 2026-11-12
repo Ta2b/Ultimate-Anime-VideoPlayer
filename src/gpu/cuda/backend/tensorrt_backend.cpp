@@ -349,15 +349,10 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
   if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
   // DistilDRBA coupé en quatre morceaux : quatre constructions, un seul artefact.
   if (prepare::is_drba_fused_manifest(model.onnx_path)) return build_drba_fused(model, shapes, progress);
-  // Un moteur publié doit se désérialiser ici : sinon le constructeur le refait.
-  const prepare::EngineCheck check =
-      [this](const std::filesystem::path& engine) -> std::expected<void, Refusal> {
-    if (auto ok = bind(); !ok) return ok;
-    auto loaded = TrtEngine::load(*runtime_, engine);
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
-    return {};
-  };
-  return prepare::TrtexecBuilder(trtexec_config(), check).build(model, shapes, progress);
+  // Pas de vérification ici : désérialiser le plan sur le GPU juste après sa construction, pour le jeter et
+  // le charger de nouveau à l'ouverture, coûtait un chargement de trop (C05-03). Un plan refusé à ce
+  // chargement est mis de côté et reconstruit par le lecteur (player_engines.cpp, Artifact::reused, C05-01).
+  return prepare::TrtexecBuilder(trtexec_config()).build(model, shapes, progress);
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Artifact& artifact) {

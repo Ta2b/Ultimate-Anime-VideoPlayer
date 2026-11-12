@@ -20,11 +20,11 @@ namespace ajp::app::play {
 // longue (`saved_at` avance d'autant).
 inline bool settings_save_due(LatestWriter& writer, PlayerUi& ui, bool& dirty, std::int64_t& saved_at,
                               std::int64_t now_us) {
-  if (const auto failed = writer.take_failure()) {
-    if (!std::exchange(writer.failure_said, true))
-      ui.controls().warn(i18n::ui_tr_format("Settings cannot be saved: {}", visible_error(failed->refusal)),
+  for (const auto& failed : writer.take_failures()) {
+    if (writer.failures_said.insert(failed.key).second)
+      ui.controls().warn(i18n::ui_tr_format("Settings cannot be saved: {}", visible_error(failed.refusal)),
                          now_us);
-    if (failed->key == "play.toml") {
+    if (failed.key == "play.toml") {
       dirty = true;
       saved_at = now_us + kSettingsRetryUs - kSettingsSaveEveryUs;
     }
@@ -41,12 +41,14 @@ inline LatestWriter::Job save_job(const std::filesystem::path& path, PlaySetting
 }
 
 // Vide l'écrivain (attente bornée) puis, si play.toml a échoué, un dernier essai sur place : après la
-// fermeture de la chaîne, plus personne ne reprend ce réglage.
+// fermeture de la chaîne, plus personne ne reprend ce réglage. Tous les refus sont relevés : celui d'une
+// autre clé ne cache pas celui de play.toml (C22-02).
 inline void finish_settings_writes(LatestWriter& writer, const std::filesystem::path& path,
                                    const PlaySettings& saved) {
   writer.flush();
-  const auto failed = writer.take_failure();
-  if (!failed || failed->key != "play.toml") return;
+  bool failed = false;
+  for (const auto& one : writer.take_failures()) failed = failed || one.key == "play.toml";
+  if (!failed) return;
   if (auto again = save_settings(path, saved); !again) log_channel("app")->warn("{}", again.error().detail);
 }
 

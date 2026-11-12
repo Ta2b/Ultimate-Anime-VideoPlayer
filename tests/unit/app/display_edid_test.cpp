@@ -144,7 +144,7 @@ TEST_CASE("EDID : primaires des octets 0x19 à 0x22", "[app][display]") {
 TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][display]") {
   const DisplayFacts d = parse_edid(kQdOledEdid);
   // KDE assombri : référence 83, pas de pic réglé, marge SDL 4 → pic 332.
-  const auto dim = contract_of(d, KwinOutput{.reference = 83.0}, 4.0, std::nullopt);
+  const auto dim = contract_of(d, KwinOutput{.reference = 83.0}, 4.0);
   CHECK(dim.reference_nits == 83.0);
   CHECK(dim.from_compositor);
   CHECK_THAT(dim.panel_peak_nits, WithinAbs(332.0, 1e-9));
@@ -152,20 +152,16 @@ TEST_CASE("Contrat d'écran : KWin, puis la marge de SDL, puis l'EDID", "[app][d
   CHECK(dim.primaries == d.primaries);
   for (const double nits : dim.abl) CHECK(nits <= dim.panel_peak_nits);
   // Le pic réglé dans KDE l'emporte sur la marge.
-  CHECK(contract_of(d, KwinOutput{.peak_override = 900.0, .reference = 203.0}, 4.0, std::nullopt)
-            .panel_peak_nits == 900.0);
+  CHECK(contract_of(d, KwinOutput{.peak_override = 900.0, .reference = 203.0}, 4.0).panel_peak_nits == 900.0);
   // Sans KWin ni marge : l'EDID et 203.
-  const auto bare = contract_of(d, std::nullopt, 1.0, std::nullopt);
+  const auto bare = contract_of(d, std::nullopt, 1.0);
   CHECK(bare.reference_nits == 203.0);
   CHECK_FALSE(bare.from_compositor);
   CHECK(bare.panel_peak_nits == d.peak_nits.value_or(1000.0));
-  // La courbe mesurée remplace celle par défaut.
-  const MeasuredAbl measured{.nits = {990.0, 900.0, 600.0, 400.0, 250.0}};
-  CHECK(contract_of(d, std::nullopt, 1.0, measured).abl.back() == 250.0);
   CHECK(describe(dim).find("référence 83 nits (KDE") != std::string::npos);
   CHECK(describe(dim).find("pic 332 nits (marge de SDL") != std::string::npos);
   // A10-19 : rien de lu (lavapipe sous Xvfb, écran sans EDID HDR), le journal dit des valeurs par défaut.
-  const std::string defaults = describe(contract_of(DisplayFacts{}, std::nullopt, 1.0, std::nullopt));
+  const std::string defaults = describe(contract_of(DisplayFacts{}, std::nullopt, 1.0));
   CHECK(defaults.find("référence 203 nits (par défaut") != std::string::npos);
   CHECK(defaults.find("pic 1000 nits (par défaut") != std::string::npos);
   CHECK(describe(bare).find("nits (EDID") != std::string::npos);
@@ -356,14 +352,13 @@ TEST_CASE("Contrat d'écran : sous Windows le pic suit le blanc SDR du système,
   // (400 / 80). Avant : 2 × 203 = 406 nits, la moitié du pic de l'écran.
   const double white = sdr_white_nits_of(5.0F, true);
   CHECK(white == 400.0);
-  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt, white).panel_peak_nits == 800.0);
-  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt).panel_peak_nits == 406.0);
+  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, white).panel_peak_nits == 800.0);
+  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0).panel_peak_nits == 406.0);
   // Hors de Windows la propriété n'a pas ce sens : inconnue, la référence du contenu comme avant.
   CHECK(sdr_white_nits_of(5.0F, false) == 0.0);
   CHECK(sdr_white_nits_of(0.0F, true) == 0.0);
   // KDE garde la main : sa référence et son pic passent devant.
-  const auto kde =
-      contract_of(DisplayFacts{}, ajp::app::play::KwinOutput{.reference = 100.0}, 3.0, std::nullopt, 0.0);
+  const auto kde = contract_of(DisplayFacts{}, ajp::app::play::KwinOutput{.reference = 100.0}, 3.0, 0.0);
   CHECK(kde.panel_peak_nits == 300.0);
 }
 
@@ -389,6 +384,74 @@ TEST_CASE("Pic de contenu sans pic calibré : la règle de chaque système (A11-
         Catch::Approx(1000.0));
   CHECK(uncalibrated_peak_nits({.windows = true, .system_hdr_active = true}) == Catch::Approx(600.0));
   CHECK_FALSE(uncalibrated_peak_nits({.windows = true, .edid_peak = 1000.0}));
+}
+
+namespace {
+// Un EDID minimal : bloc de base vide, puis un bloc CTA avec le bloc de données HDR statique (codes CTA-861
+// du pic, de la moyenne d'image et du noir ; 0 : non indiqué).
+std::vector<std::uint8_t> edid_hdr_static(std::uint8_t max_cv, std::uint8_t fall_cv, std::uint8_t min_cv) {
+  std::vector<std::uint8_t> e(256, 0);
+  for (std::size_t i = 1; i < 7; ++i) e[i] = 0xFF;
+  e[0x12] = 1;
+  e[0x13] = 4;
+  e[128] = 0x02;
+  e[129] = 3;
+  constexpr std::size_t at = 132;
+  e[at] = (7U << 5U) | 6U;  // bloc étendu de 6 octets
+  e[at + 1] = 0x06;         // HDR statique
+  e[at + 2] = 0x04;         // PQ
+  e[at + 3] = 0x01;         // type 1
+  e[at + 4] = max_cv;
+  e[at + 5] = fall_cv;
+  e[at + 6] = min_cv;
+  e[130] = static_cast<std::uint8_t>(at + 7);
+  return e;
+}
+}  // namespace
+
+TEST_CASE("EDID à deux blocs : le noir vient du bloc qui donne le pic (C11-14)", "[app][display]") {
+  using ajp::app::play::parse_edid;
+  // CTA : pic 591 nits, noir code 2 ; DisplayID 2.0 : noir 0,0001 nit et plein champ 200 nits. Avant : pic de
+  // CTA et noir de DisplayID, deux écrans mêlés.
+  std::vector<std::uint8_t> edid = edid_hdr_static(114, 80, 2);
+  edid.resize(384, 0);
+  edid[256] = 0x70;  // DisplayID
+  edid[257] = 0x20;  // version 2.0
+  edid[258] = 3 + 29;
+  std::vector<std::uint8_t> block(3 + 29, 0);
+  block[0] = 0x21;
+  block[2] = 29;
+  block[0x18] = 0x40;  // plein champ 200 nits en demi-flottant (0x5A40)
+  block[0x19] = 0x5A;
+  block[0x1C] = 0x8E;  // noir 0,0001 nit en demi-flottant (0x068E)
+  block[0x1D] = 0x06;
+  for (std::size_t i = 0; i < block.size(); ++i) edid[261 + i] = block[i];
+  const auto d = parse_edid(edid);
+  REQUIRE(d.cta_min_nits);
+  REQUIRE(d.displayid_min_nits);
+  CHECK(d.peak_nits == d.cta_peak_nits);
+  CHECK(d.min_nits == d.cta_min_nits);
+  REQUIRE(d.full_frame_nits);
+  CHECK(*d.full_frame_nits == Approx(200.0));
+}
+
+TEST_CASE("Heuristique OLED : un noir code 0 sans MaxFALL ne fait pas un OLED (C11-03)", "[app][display]") {
+  using ajp::app::play::OledSource;
+  using ajp::app::play::parse_edid;
+  // LCD de 600 nits, ni MaxFALL ni noir (octets 0) : avant, « probablement OLED » et le vrai noir du grade.
+  const auto lcd = parse_edid(edid_hdr_static(114, 0, 0));
+  CHECK(lcd.pq);
+  CHECK_FALSE(lcd.oled);
+  CHECK(lcd.source == OledSource::Unknown);
+  // Pic absent, noir 0 : inconnu aussi.
+  CHECK_FALSE(parse_edid(edid_hdr_static(0, 0, 0)).oled);
+  // Les trois annoncés : l'heuristique juge. Moyenne de 400 pour 600 : LCD ; 283 pour 600 : OLED.
+  const auto bright = parse_edid(edid_hdr_static(114, 96, 0));
+  CHECK(bright.source == OledSource::Heuristic);
+  CHECK_FALSE(bright.oled);
+  const auto oled = parse_edid(edid_hdr_static(114, 80, 0));
+  CHECK(oled.source == OledSource::Heuristic);
+  CHECK(oled.oled);
 }
 
 TEST_CASE("EDID à deux sources : le journal montre le pic et le noir de chaque bloc (A11-11)",
@@ -507,10 +570,87 @@ TEST_CASE("Contrat d'écran sous Windows : le pic du grade (DXGI) passe devant m
   using Source = ajp::render::DisplayContract::PeakSource;
   // Étalonnage HDR de Windows à 950 nits, SDL dit marge 2 × blanc 400 = 800 : une seule source, celle du
   // grade.
-  const auto c = contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt, 400.0, 950.0);
+  using ajp::app::play::ContentPeak;
+  const auto c = contract_of(DisplayFacts{}, std::nullopt, 2.0, 400.0,
+                             ContentPeak{.nits = 950.0, .source = ContentPeak::Source::Compositor});
   CHECK(c.panel_peak_nits == 950.0);
   CHECK(c.peak_source == Source::Compositor);
-  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt, 400.0).panel_peak_nits == 800.0);
+  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, 400.0).panel_peak_nits == 800.0);
+  // C11-09 : une estimation (600 nits sans EDID ni marge) n'est pas dite « Windows » au journal.
+  const auto guessed = contract_of(DisplayFacts{}, std::nullopt, 1.0, 0.0,
+                                   ContentPeak{.nits = 600.0, .source = ContentPeak::Source::Default});
+  CHECK(guessed.panel_peak_nits == 600.0);
+  CHECK(guessed.peak_source == Source::Default);
+  CHECK(describe(guessed).find("pic 600 nits (par défaut") != std::string::npos);
+  const auto from_edid = contract_of(DisplayFacts{}, std::nullopt, 1.0, 0.0,
+                                     ContentPeak{.nits = 1037.0, .source = ContentPeak::Source::Edid});
+  CHECK(from_edid.peak_source == Source::Edid);
+}
+
+TEST_CASE("Pic sous Windows : l'Étalonnage HDR compte même quand SDL ne voit pas le HDR (C11-01)",
+          "[app][edid]") {
+  using ajp::app::play::ContentPeak;
+  using ajp::app::play::peak_of;
+  // HDR actif dans Windows, SDL rend une marge de 1,00 (Vulkan), pic calibré à 800, EDID à 1037. Avant :
+  // 1037.
+  const auto calibrated = peak_of({.windows = true,
+                                   .system_hdr_active = true,
+                                   .edid_peak = 1037.0,
+                                   .system_peak = 800.0,
+                                   .system_full_frame = 250.0});
+  REQUIRE(calibrated);
+  CHECK(calibrated->nits == 800.0);
+  CHECK(calibrated->source == ContentPeak::Source::Compositor);
+  CHECK(calibrated->full_frame_nits == 250.0);
+  // Sans pic calibré : l'EDID, puis 600 par défaut, chacun avec sa source (C11-09).
+  const auto edid = peak_of({.windows = true, .system_hdr_active = true, .edid_peak = 1037.0});
+  REQUIRE(edid);
+  CHECK(edid->nits == 1037.0);
+  CHECK(edid->source == ContentPeak::Source::Edid);
+  const auto guessed = peak_of({.windows = true, .system_hdr_active = true});
+  REQUIRE(guessed);
+  CHECK(guessed->nits == 600.0);
+  CHECK(guessed->source == ContentPeak::Source::Default);
+  // SDL voit le HDR : la marge × le blanc, ou l'EDID quand il l'emporte.
+  CHECK(peak_of({.windows = true, .sdl_hdr = true, .headroom = 2.0, .sdr_white_nits = 400.0})->source ==
+        ContentPeak::Source::Headroom);
+  // HDR coupé : rien, même avec un pic calibré dit.
+  CHECK_FALSE(peak_of({.windows = true, .system_peak = 800.0}));
+  // Linux : le pic de KDE avec le HDR de SDL, sinon la marge × 203.
+  CHECK(peak_of({.sdl_hdr = true, .headroom = 4.0, .system_peak = 700.0})->source ==
+        ContentPeak::Source::Compositor);
+  CHECK(peak_of({.sdl_hdr = true, .headroom = 4.0})->nits == Catch::Approx(812.0));
+  CHECK_FALSE(peak_of({.sdl_hdr = false, .system_peak = 700.0}));
+}
+
+TEST_CASE("Contrat d'écran : la courbe du limiteur suit le plein champ que l'écran dit (C11-04)",
+          "[app][edid]") {
+  using ajp::app::play::ContentPeak;
+  using ajp::app::play::contract_of;
+  using ajp::app::play::DisplayFacts;
+  using Abl = ajp::render::DisplayContract::AblSource;
+  // WOLED de 800 nits, plein champ 150 dit par DXGI : MaxFALL 150, pas 261 (la table QD-OLED étirée).
+  const DisplayFacts woled{
+      .peak_nits = 800.0, .frame_average_nits = 400.0, .full_frame_nits = 200.0, .oled = true};
+  const auto windows = contract_of(
+      woled, std::nullopt, 1.0, 0.0,
+      ContentPeak{.nits = 800.0, .source = ContentPeak::Source::Compositor, .full_frame_nits = 150.0});
+  CHECK(windows.abl.back() == Catch::Approx(150.0));
+  CHECK(windows.abl.front() == Catch::Approx(800.0));
+  CHECK(windows.abl_source == Abl::System);
+  for (std::size_t i = 1; i < windows.abl.size(); ++i) CHECK(windows.abl[i] <= windows.abl[i - 1]);
+  CHECK(describe(windows).find("plein champ de Windows") != std::string::npos);
+  // Puis DisplayID, puis le MaxFALL de l'EDID.
+  const auto displayid = contract_of(woled, std::nullopt, 1.0);
+  CHECK(displayid.abl.back() == Catch::Approx(200.0));
+  CHECK(displayid.abl_source == Abl::DisplayId);
+  const DisplayFacts cta{.peak_nits = 800.0, .frame_average_nits = 400.0, .oled = true};
+  CHECK(contract_of(cta, std::nullopt, 1.0).abl.back() == Catch::Approx(400.0));
+  CHECK(contract_of(cta, std::nullopt, 1.0).abl_source == Abl::Edid);
+  // Rien de dit : la table QD-OLED, et le journal le dit.
+  const DisplayFacts bare{.peak_nits = 800.0, .oled = true};
+  CHECK(contract_of(bare, std::nullopt, 1.0).abl_source == Abl::Default);
+  CHECK(describe(contract_of(bare, std::nullopt, 1.0)).find("table QD-OLED par défaut") != std::string::npos);
 }
 
 TEST_CASE("Pic automatique : un téléviseur de 3000 nits est exploité (B37-09)", "[app][edid]") {

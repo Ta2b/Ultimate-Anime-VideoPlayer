@@ -6,3 +6,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # Les requirements à empreintes (tools/ci/requirements) : une alerte quand une version vieillit ou a une faille.
+  - package-ecosystem: pip
+    directory: /tools/ci/requirements
+    schedule:
+      interval: monthly

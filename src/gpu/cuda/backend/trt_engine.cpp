@@ -91,6 +91,22 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   engine->engine_.reset(runtime.deserializeCudaEngine(plan->bytes.get(), plan->size));
   plan->bytes.reset();  // les poids sont sur le GPU : le plan hôte (des centaines de Mo) part tout de suite
   if (!engine->engine_) {
+    // Un manque de mémoire vidéo n'accuse pas le plan : le lecteur ne le met de côté que pour
+    // VendorCallFailed (C05-01). La mémoire libre se compare à la taille du plan (ses poids y vont) ;
+    // l'erreur CUDA en attente, elle, dit aussi un appareil perdu.
+    const cudaError_t pending = clear_error();
+    if (pending != cudaSuccess)
+      return std::unexpected(cuda_refusal(pending, "IRuntime::deserializeCudaEngine"));
+    std::size_t free_bytes = 0;
+    std::size_t total_bytes = 0;
+    if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess && free_bytes < plan->size) {
+      return refuse(
+          RefusalCode::GpuMemoryExhausted,
+          std::format("IRuntime::deserializeCudaEngine({}) : mémoire vidéo pleine ({} Mo libres pour "
+                      "un plan de {} Mo)",
+                      core::to_utf8(path.filename()), free_bytes >> 20U, plan->size >> 20U));
+    }
+    static_cast<void>(clear_error());
     return refuse(RefusalCode::VendorCallFailed, std::format("IRuntime::deserializeCudaEngine({}) a échoué",
                                                              core::to_utf8(path.filename())));
   }

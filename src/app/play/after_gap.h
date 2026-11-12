@@ -7,6 +7,8 @@
 // (B31-01). Un autre refus du GPU au réveil rouvre la chaîne aussi, au lieu d'arrêter la vidéo (B31-18).
 #pragma once
 
+#include <cstdint>
+#include <expected>
 #include <optional>
 
 #include "app/play/chain_setup.h"
@@ -25,5 +27,10 @@ struct AfterGap {
 // Le tour de boucle après un trou. announced : une veille annoncée avant le trou (remis à faux ici).
 AfterGap after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, SleepWatch& watch,
                    const WindowEvents& window, bool& announced);
+// Le même tour, le trou déjà mesuré (testé seul, C12-09) : gap_us, sa durée ; sleep_seen : SleepWatch y a vu
+// une veille ; health : l'état du GPU au réveil (rien : pas de backend) ; now_us, l'instant du message.
+AfterGap after_gap_seen(Session& session, Controls& controls, std::int64_t gap_us, bool sleep_seen,
+                        const std::optional<std::expected<void, Refusal>>& health, bool& announced,
+                        std::int64_t now_us);
 
 }  // namespace ajp::app::play

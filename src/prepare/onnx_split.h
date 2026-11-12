@@ -34,6 +34,9 @@ struct OnnxFullNode {
   std::vector<double> constant;
 
   const OnnxAttribute* attribute(std::string_view attribute_name) const;
+  // Vrai si ce Resize n'a pas de filtre avant l'échantillonnage : l'attribut « antialias » (opset 18) filtre
+  // une réduction, ce que les noyaux ne refont pas (C04-02). Absent ou à 0.
+  bool resize_without_antialias() const;
 };
 
 struct OnnxGraph {
@@ -48,6 +51,10 @@ struct OnnxGraph {
 };
 
 inline constexpr std::size_t kMaxConstantElements = 16;
+
+// Le champ « graph » du modèle, tel quel (octets du GraphProto). Refus : ModelUnreadable (protobuf malformé,
+// pas de graphe). Partagé avec onnx_outputs (C04-09).
+std::expected<std::span<const std::byte>, Refusal> onnx_graph_field(std::span<const std::byte> model);
 
 // Le graphe principal. Refus : ModelUnreadable (protobuf malformé, pas de graphe).
 std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> model);

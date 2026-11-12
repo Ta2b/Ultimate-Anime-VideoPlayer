@@ -61,10 +61,6 @@ class FrameQueue {
     return pick_by([&](const RingFrame& frame) { return frame.pts_us <= media_now_us + lead_us; }, late,
                    ready);
   }
-  std::optional<RingFrame> pick(std::int64_t media_now_us, std::int64_t lead_us,
-                                std::vector<RingFrame>& late) {
-    return pick(media_now_us, lead_us, late, [](const RingFrame&) { return true; });
-  }
   // Le même choix, l'échéance dite par due (6.6 : par numéro de vblank) au lieu du seuil de pts. Des modèles
   // et non des std::function : la lambda du choix par vblank en capture quatre, une allocation par tour.
   template <class Due, class Ready>

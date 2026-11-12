@@ -71,6 +71,17 @@ struct TrtexecPaths {
 // « <moteur>.layers.json » : le rapport des couches de la dernière construction, à côté du moteur.
 std::filesystem::path layer_info_for(const std::filesystem::path& engine);
 
+// Version de la ligne de commande de trtexec, hachée dans la clé du moteur (build_environment). Ni le
+// nettoyage de TensorRT 11 (sanitize_trt11) ni les arguments que trtexec_arguments ajoute n'entrent dans les
+// réglages hachés : qui change l'un d'eux, au point de changer les tactiques ou la précision d'un moteur,
+// monte cette constante, sinon les moteurs déjà en cache, construits autrement, seraient repris tels quels
+// (C05-09). Un test fige la ligne actuelle (trtexec_command_test.cpp) et rappelle de la monter. La version 1
+// est celle d'avant la constante : sa clé reste vide, les moteurs déjà construits restent valables.
+inline constexpr int kCommandLineVersion = 1;
+inline std::string command_line_version() {
+  return kCommandLineVersion == 1 ? std::string() : "trtexec-command-v" + std::to_string(kCommandLineVersion);
+}
+
 // Arguments de trtexec, sans argv[0] ni guillemets : aucun shell ne les relit. Avec un rapport des
 // couches (étude 4, 6.1), --profilingVerbosity=detailed et --exportLayerInfo, hors de la clé : ils
 // ne changent ni les tactiques ni la précision, et un moteur déjà construit reste valable.

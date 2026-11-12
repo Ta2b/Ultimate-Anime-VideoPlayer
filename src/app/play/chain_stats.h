@@ -46,7 +46,7 @@ std::string steady_status_text(const core::SteadyInfo& info);
 class ChainStats final : public StatsSource {
  public:
   ChainStats(const LiveSettings& live, gpu::KernelOps& kernels, bool interpolates, std::string engine,
-             double source_fps, GpuTelemetry* telemetry = nullptr)
+             double source_fps, const LateTelemetry* telemetry = nullptr)
       : live_(live),
         kernels_(kernels),
         interpolates_(interpolates),
@@ -81,7 +81,7 @@ class ChainStats final : public StatsSource {
   bool interpolates_;
   std::string engine_;
   double source_fps_;
-  GpuTelemetry* telemetry_;
+  const LateTelemetry* telemetry_;  // ouverte sur son fil (C11-13) ; nul : aucune
 
   std::optional<std::string> read_memory() const;
   // A32-10 : la mémoire vidéo pleine (moins de 256 Mio libres) se dit une fois au journal ; sous Windows, le

@@ -34,16 +34,15 @@ bool is_index(std::string_view line) {
   return true;
 }
 
-// Lignes sans leur fin ('\n' ou "\r\n").
+// Lignes sans leur fin : '\n', "\r\n" ou '\r' seul (vieux Mac, certains éditeurs ; C17-03).
 std::vector<std::string_view> split_lines(std::string_view text) {
   std::vector<std::string_view> lines;
   while (!text.empty()) {
-    const std::size_t end = text.find('\n');
-    std::string_view line = text.substr(0, end);
-    if (line.ends_with('\r')) line.remove_suffix(1);
-    lines.push_back(line);
+    const std::size_t end = text.find_first_of("\r\n");
+    lines.push_back(text.substr(0, end));
     if (end == std::string_view::npos) break;
-    text.remove_prefix(end + 1);
+    const bool crlf = text[end] == '\r' && end + 1 < text.size() && text[end + 1] == '\n';
+    text.remove_prefix(end + (crlf ? 2 : 1));
   }
   return lines;
 }

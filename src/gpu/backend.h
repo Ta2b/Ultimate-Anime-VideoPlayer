@@ -89,7 +89,8 @@ namespace ajp::gpu {
 // suivante).
 // 37 : Motion::warp (le warp final en Catmull-Rom, en option).
 // 38 : Artifact::reduced (l'avis de précision réduite du repli Vulkan, montré à l'écran : C45-01).
-inline constexpr int kBackendAbi = 38;
+// 39 : Artifact::reused (le moteur vient du cache : un refus au chargement le met de côté, C05-01).
+inline constexpr int kBackendAbi = 39;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -196,6 +197,9 @@ struct PrecisionNotice {
 struct Artifact {
   std::string cache_key;
   std::filesystem::path path;
+  // Vrai quand le moteur vient du cache, pas de cette construction : s'il est refusé au chargement, il peut
+  // être périmé (pilote changé) ou abîmé, et le reconstruire a un sens (C05-01).
+  bool reused = false;
   PrecisionNotice reduced;  // vide hors du repli Vulkan
 };
 

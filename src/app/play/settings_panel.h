@@ -74,8 +74,6 @@ struct SettingsChoices {
   std::string engine_note;                      // le moteur préféré a refusé ce GPU : pourquoi
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
   std::filesystem::path source_file;            // le fichier lu : l'export se propose à côté
-  std::int64_t position_us = 0;                 // où en est sa lecture (PlayerUi::frame)
-  bool paused = false;                          // sa lecture est en pause
   std::string black_status;                     // seuils du vrai noir en cours
   // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
@@ -105,13 +103,11 @@ struct SettingsChoices {
   std::string engines_dir_default;      // où s'installent les moteurs par défaut
   std::string engines_dir_free;         // la place libre à l'endroit choisi, « 2,1 Go »
   bool default_player_is_ajp = false;   // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
-  std::string bench_text;  // « Dernière évaluation : 2026-10-28, niveau Rapide » ; vide : jamais faite
-  PlayerPlace place;       // l'exécutable et le dossier de l'utilisateur (onglet Système)
+  PlayerPlace place;                    // l'exécutable et le dossier de l'utilisateur (onglet Système)
   // Le mode Performance de SPAN (span_derive.h) : ce que la vidéo ouverte permet, pourquoi il est impossible
   // ici (vide : possible) et la tâche que la boucle du lecteur partage avec le panneau (span_auto.h ; vide :
   // celle du panneau seul).
   SpanPrepare span_prepare;
-  std::string fp8_reason;
   std::shared_ptr<PrepareNote> span_job;
   // Les étages que la chaîne joue sans eux, ou à un autre cran, et pourquoi (stage_fallback.h) : la page
   // Post-traitement l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
@@ -201,11 +197,12 @@ class SettingsPanel {
   float wheel_ = 0.0F;       // la molette cumulée sur l'arbre (une page par geste, B23-10)
   float wheel_idle_s_ = 0.0F;
   bool wheel_locked_ = false;
+  bool span_job_pending_ = false;        // la préparation de la boucle tournait à la dernière image (C23-10)
   int page_ = 0;                         // la page de l'arbre affichée (settings_panel.cpp : kPages)
   std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
-  int shown_page_ = -1;         // la page de l'image précédente : sa catégorie s'ouvre quand elle change
-  bool advanced_ = false;       // la case « Réglages avancés » : montre les sections avancées des pages
-  bool pending_shown_ = false;  // le bandeau « Appliquer » était montré au tour précédent
+  int shown_page_ = -1;       // la page de l'image précédente : sa catégorie s'ouvre quand elle change
+  bool advanced_ = false;     // la case « Réglages avancés » : montre les sections avancées des pages
+  std::string pending_text_;  // le texte du bandeau « Appliquer » de l'image, vide s'il n'y en a pas (C23-02)
   FolderField engines_folder_;
   std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre

@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/settings.h"
+
 using namespace ajp::app::play;
 namespace fs = std::filesystem;
 
@@ -171,10 +173,12 @@ TEST_CASE("Rapport : le rapport complet joint la séance d'avant quand elle a pl
   end_session();
   begin_session(dir);  // pas de marque d'avant : propre
   CHECK(current_report("").find("segfault") == std::string::npos);
-  CHECK(current_report("").find("ajp-1.dmp") != std::string::npos);
+  CHECK(current_report("").find("ajp-1.dmp") ==
+        std::string::npos);  // séance propre : pas de minidump nommé (C39-07)
 
   CHECK(begin_session(dir));  // la marque est restée : plantage
   const std::string report = current_report("");
+  CHECK(report.find("ajp-1.dmp") != std::string::npos);
   CHECK(report.find("segfault dans nvinfer") != std::string::npos);
   CHECK(report.find("/run/media") == std::string::npos);
   CHECK(report.find("…/ep.mkv") != std::string::npos);
@@ -240,3 +244,44 @@ TEST_CASE("Rapport : le build-id de l'exécutable se lit, en hexadécimal", "[ap
   CHECK(std::ranges::all_of(id, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }));
 }
 #endif
+
+// C39-06 : un refus d'un moteur précédent ne reste pas dans le rapport quand le moteur suivant n'en a aucun.
+TEST_CASE("le fait « Moteurs refusés » disparaît quand le moteur suivant n'a rien refusé",
+          "[problem_report]") {
+  clear_report_facts();
+  note_engine_facts("a", "x : refusé");
+  const auto has_refused = [] {
+    const auto facts = report_facts();
+    return std::ranges::any_of(facts, [](const auto& fact) { return fact.first == "Moteurs refusés"; });
+  };
+  CHECK(has_refused());
+  note_engine_facts("b", "");
+  CHECK_FALSE(has_refused());
+  clear_report_facts();
+}
+
+// C39-07 : un vieux minidump sans lien avec la séance d'avant n'est pas nommé.
+TEST_CASE("le rapport nomme le minidump seulement après une séance plantée", "[problem_report]") {
+  const fs::path dir = fresh_dir("ajp-report-dump-test");
+  write(dir / "ajp.log", "ligne\n");
+  fs::create_directories(dir / "crashes");
+  write(dir / "crashes" / "ajp-20240101-000000-1.dmp", "x");
+  set_report_log_file(dir / "ajp.log");
+  begin_session(dir);
+  end_session();
+  CHECK_FALSE(begin_session(dir));  // la séance d'avant s'est fermée proprement
+  CHECK(current_report("").find("Minidump") == std::string::npos);
+  CHECK(begin_session(dir));  // la marque est restée : plantage
+  CHECK(current_report("").find("ajp-20240101-000000-1.dmp") != std::string::npos);
+  end_session();
+}
+
+// C39-01 : les options à l'essai allumées se lisent dans le rapport ; tout au défaut ne laisse rien.
+TEST_CASE("les réglages changés sont listés, les défauts non", "[problem_report]") {
+  CHECK(settings_changes_text(PlaySettings{}) == "(aucun)");
+  PlaySettings s;
+  s.cubic_warp = true;
+  const std::string text = settings_changes_text(s);
+  CHECK(text.find("cubic_warp") != std::string::npos);
+  CHECK(text.find("true") != std::string::npos);
+}

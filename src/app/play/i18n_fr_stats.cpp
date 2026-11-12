@@ -13,6 +13,8 @@ constexpr std::array kStatsTexts{
           " · pleine : le pilote peut déborder en mémoire système"},
     Entry{" · heavy scene", " · scène lourde"},
     Entry{" · locked to the display {:+.3f} %", " · calée sur l'écran {:+.3f} %"},
+    Entry{" · motion estimated at {}p (speed gain not measured)",
+          " · mouvement estimé en {}p (gain de vitesse non mesuré)"},
     Entry{" · predicted ×{}", " · prédit ×{}"},
     Entry{" · service gap ", " · écart service "},
     Entry{"AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in "
@@ -33,7 +35,6 @@ constexpr std::array kStatsTexts{
           "Arrêter l'export ? Le fichier en cours d'écriture sera effacé."},
     Entry{"Stop the export", "Arrêter l'export"},
     Entry{"Continue", "Continuer"},
-    Entry{"Last optimization: {}", "Dernière optimisation : {}"},
     Entry{"Open a video: the player prepares Performance mode on its frames.",
           "Ouvrez une vidéo : le lecteur prépare le mode Performance sur ses images."},
     Entry{"True black: 0 below {:.4f} nit, toe up to {:.4f} nit (source black was {:.4f} nit).",

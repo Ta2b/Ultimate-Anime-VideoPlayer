@@ -202,6 +202,7 @@ void WaylandPresentation::read(std::vector<WaylandDone>&) {}
 
 #endif
 
+WaylandPresentation::WaylandPresentation() = default;
 WaylandPresentation::WaylandPresentation(std::unique_ptr<State> state) : state_(std::move(state)) {}
 WaylandPresentation::~WaylandPresentation() = default;
 

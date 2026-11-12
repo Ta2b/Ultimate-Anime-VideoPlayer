@@ -392,7 +392,9 @@ std::expected<FramePtr, Refusal> to_chain_yuv(const AVFrame& frame, AVPixelForma
 
 std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64_t pts_us,
                                                       std::int64_t duration_us, ReadyEvent ready,
-                                                      bool full_host_formats, bool host_422) {
+                                                      bool full_host_formats, bool host_422,
+                                                      const ColorInfo* fallback_color,
+                                                      bool* color_fallback_used) {
   const std::optional<FrameMemory> memory = memory_of(*frame);
   if (!memory) return refuse(RefusalCode::FormatUnsupported, "image d'un type d'appareil inconnu");
   const auto native = map_pixel_format(static_cast<AVPixelFormat>(frame->format));
@@ -413,6 +415,10 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
     }
   }
   auto color = color_info(*frame, sw_format);
+  if (!color && fallback_color != nullptr && color.error().code == RefusalCode::FormatUnsupported) {
+    color = *fallback_color;
+    if (color_fallback_used != nullptr) *color_fallback_used = true;
+  }
   if (!color) return std::unexpected(color.error());
   if (*memory == FrameMemory::Vulkan) {
     auto own = vulkan_ready(*frame);

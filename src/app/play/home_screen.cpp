@@ -182,8 +182,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .display_text = display ? describe(*display) : std::string(i18n::tr("EDID unreadable: OLED unknown")),
       .source_file = {},
       .display_height = display_height(h.screen.window()),
-      .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},
-      .fp8_reason = span_fp8_unavailable_reason(fp8_facts)};
+      .span_prepare = {.note =
+                           i18n::tr("Open a video: the player prepares Performance mode on its frames.")}};
   // Vidéo > Post-traitement sans vidéo ouverte : la carte, sa tranche, les sorties son, comme en lecture.
   fill_host_choices(choices, h.screen, h.paths, h.catalog, h.settings_path.parent_path());
   return choices;
