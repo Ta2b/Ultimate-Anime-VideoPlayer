@@ -15,12 +15,18 @@ namespace ajp::gpu::vk {
 Pipeline::~Pipeline() {
   // Un GPU tenu pour bloqué garde ses objets, comme les tampons, images et sémaphores : un enregistrement
   // dont la fin de vie a attendu en vain peut encore s'en servir (C49-04).
-  if (context_.stalled()) return;
   const DeviceFunctions& fn = context_.fn();
   const VkDevice device = context_.device();
-  if (pipeline_ != VK_NULL_HANDLE) fn.vkDestroyPipeline(device, pipeline_, nullptr);
-  if (layout_ != VK_NULL_HANDLE) fn.vkDestroyPipelineLayout(device, layout_, nullptr);
-  if (set_layout_ != VK_NULL_HANDLE) fn.vkDestroyDescriptorSetLayout(device, set_layout_, nullptr);
+  const auto destroy = [&fn, device, pipeline = pipeline_, layout = layout_, set_layout = set_layout_] {
+    if (pipeline != VK_NULL_HANDLE) fn.vkDestroyPipeline(device, pipeline, nullptr);
+    if (layout != VK_NULL_HANDLE) fn.vkDestroyPipelineLayout(device, layout, nullptr);
+    if (set_layout != VK_NULL_HANDLE) fn.vkDestroyDescriptorSetLayout(device, set_layout, nullptr);
+  };
+  if (context_.stalled()) {
+    context_.retire(destroy);  // remise à la fin du contexte
+    return;
+  }
+  destroy();
 }
 
 namespace {
@@ -94,11 +100,18 @@ std::vector<std::byte> PipelineCache::serialize() const {
 
 PipelineCache::~PipelineCache() {
   pipelines_.clear();
-  if (context_.stalled()) return;  // C49-04 : modules, échantillonneur et cache restent, comme les pipelines
   const DeviceFunctions& fn = context_.fn();
-  for (const auto& [name, module] : modules_) fn.vkDestroyShaderModule(context_.device(), module, nullptr);
-  if (sampler_ != VK_NULL_HANDLE) fn.vkDestroySampler(context_.device(), sampler_, nullptr);
-  if (cache_ != VK_NULL_HANDLE) fn.vkDestroyPipelineCache(context_.device(), cache_, nullptr);
+  const VkDevice device = context_.device();
+  const auto destroy = [&fn, device, modules = modules_, sampler = sampler_, cache = cache_] {
+    for (const auto& [name, module] : modules) fn.vkDestroyShaderModule(device, module, nullptr);
+    if (sampler != VK_NULL_HANDLE) fn.vkDestroySampler(device, sampler, nullptr);
+    if (cache != VK_NULL_HANDLE) fn.vkDestroyPipelineCache(device, cache, nullptr);
+  };
+  if (context_.stalled()) {  // C49-04 : modules, échantillonneur et cache restent, comme les pipelines
+    context_.retire(destroy);
+    return;
+  }
+  destroy();
 }
 
 std::expected<VkSampler, Refusal> PipelineCache::sampler() {

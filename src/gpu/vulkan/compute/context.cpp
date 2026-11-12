@@ -126,6 +126,16 @@ Done VkContext::finish_setup() {
 
 // Une création interrompue laisse des poignées nulles ou des fonctions non chargées : chaque
 // destruction vérifie les deux.
+void VkContext::retire(std::function<void()> destroy) const {
+  const std::scoped_lock lock(retired_mutex_);
+  retired_.push_back(std::move(destroy));
+}
+
+std::size_t VkContext::retired() const {
+  const std::scoped_lock lock(retired_mutex_);
+  return retired_.size();
+}
+
 VkContext::~VkContext() {
   const DeviceFunctions& f = device_fn_;
   if (device_ != VK_NULL_HANDLE) {
@@ -142,6 +152,9 @@ VkContext::~VkContext() {
     if (owns_device_ && f.vkDestroyDevice != nullptr && !stalled_now) {
       // Fin de vie de l'appareil : tout travail encore soumis s'achève avant sa destruction.
       if (f.vkDeviceWaitIdle != nullptr) f.vkDeviceWaitIdle(device_);
+      // Les objets que le GPU bloqué avait gardés, maintenant qu'il a tout rendu : dans l'ordre inverse.
+      for (auto it = retired_.rbegin(); it != retired_.rend(); ++it) (*it)();
+      retired_.clear();
       f.vkDestroyDevice(device_, nullptr);
     }
   }
