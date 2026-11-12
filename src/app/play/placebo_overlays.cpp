@@ -109,8 +109,11 @@ std::expected<void, Refusal> Overlays::add_tint(const PairTint& tint, OutputSize
     params.host_writable = true;
     const std::uint8_t full = 255;
     params.initial_data = &full;
-    if (!pl_tex_recreate(gpu_, &tint_.tex, &params))
-      return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "teinte des paires : pl_tex_recreate"});
+    // pl_tex_create, pas pl_tex_recreate : libplacebo refuse initial_data à recreate, et ce refus arrêtait la
+    // lecture dès qu'on allumait le débogage des paires.
+    tint_.tex = pl_tex_create(gpu_, &params);
+    if (tint_.tex == nullptr)
+      return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "teinte des paires : pl_tex_create"});
   }
   const auto w = static_cast<float>(out.width);
   const auto h = static_cast<float>(out.height);

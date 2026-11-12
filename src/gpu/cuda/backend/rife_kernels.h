@@ -46,6 +46,20 @@ struct RifeCropParams {
 
 cudaError_t launch_rife_crop(const RifeCropParams& params, cudaStream_t stream);
 
+// Réduction Area de trois plans RGB FP16 (kernels/spec/resample.h) : chaque pixel de sortie moyenne
+// l'empreinte [x·sx, (x+1)·sx) × [y·sy, (y+1)·sy) de l'entrée, chaque pixel pondéré par son recouvrement.
+// L'échelle par paire (upscale_half.cpp) réduit ainsi a et b de moitié avant le second RIFE.
+struct AreaReduceParams {
+  const void* in = nullptr;  // 1 × 3 × in_height × in_width, FP16
+  int in_width = 0;
+  int in_height = 0;
+  void* out = nullptr;  // 1 × 3 × out_height × out_width, FP16, au plus la taille de l'entrée
+  int out_width = 0;
+  int out_height = 0;
+};
+
+cudaError_t launch_area_reduce(const AreaReduceParams& params, cudaStream_t stream);
+
 // Mesures d'une paire : total = Σ |Ya − Yb| (Y en [0, 1], BT.709 sur le RGB), worst = pire bloc
 // 16 × 16, moyenne des écarts × levels × 256 tronquée (1/256 de niveau 8 bits). Les deux sorties
 // sont remises à zéro par l'appelant avant le lancement.
