@@ -6,7 +6,10 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <utility>
 #include <vector>
@@ -18,6 +21,7 @@
 #include "media/face_skin.h"
 #include "media/flash_guard.h"
 #include "media/log.h"
+#include "media/shot_probe_steps.h"
 #include "media/video_decoder.h"
 #include "media/yuv_sample.h"
 
@@ -108,7 +112,7 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
                                               : kernels::FrameTransfer::Sdr;
   auto counts = kernels::ref::frame_counts(rgb, transfer);
   if (!counts) return refuse(RefusalCode::FormatUnsupported, counts.error().detail);
-  return shot_frame_of(frame.pts_us, kernels::ref::frame_stats_of(*counts));
+  return shot_frame_of(frame.pts_us, kernels::ref::frame_stats_of(*counts), transfer);
 }
 
 namespace {
@@ -177,20 +181,6 @@ std::expected<Opened, Refusal> open_video(const std::filesystem::path& file, con
   return Opened{.demuxer = std::move(*demuxer), .track = track, .decoder = std::move(*decoder)};
 }
 
-// Un saut de la lecture vers `to` : l'instant d'où l'analyse doit repartir, rien si elle continue où elle en
-// est. Déjà analysé assez loin : rien. B42-09 : connu jusqu'à la fin du fichier (les dernières secondes),
-// rien ; une cible connue devant l'analyse la fait partir du bout de la zone connue, sans redécoder la zone.
-std::optional<std::int64_t> restart_for_seek(const ShotTimeline& timeline, std::int64_t to,
-                                             std::int64_t frontier, std::int64_t file_end_us,
-                                             std::int64_t skip_known_us) {
-  constexpr std::int64_t kEndSlackUs = 500'000;
-  const std::int64_t known = timeline.analyzed_until(to);
-  if (file_end_us > 0 && known >= file_end_us - kEndSlackUs) return std::nullopt;
-  if (known - to < skip_known_us) return to;
-  if (to > frontier) return known;
-  return std::nullopt;
-}
-
 }  // namespace
 
 // L'état que l'analyse partage avec son thread : il survit à la ShotProbe quand le thread est abandonné
@@ -212,9 +202,11 @@ struct ShotProbe::State {
   std::condition_variable_any wake;
   mutable std::mutex failure_mutex;
   std::optional<Refusal> failure;
-  // Le thread a rendu la main (sous stop_mutex) : la destruction l'attend au plus stop_limit.
+  // Sous stop_mutex : l'analyse est finie (on_stop peut encore écrire le cache), puis le thread a rendu la
+  // main. La destruction attend la première au plus stop_limit (C42-06).
   std::mutex stop_mutex;
   std::condition_variable stop_cv;
+  bool analysis_done = false;
   bool stopped = false;
 
   std::int64_t frontier_us() const { return frontier.load(std::memory_order_relaxed); }
@@ -225,8 +217,9 @@ struct ShotProbe::State {
   void fail(Refusal refusal);
   bool preloaded();
   void run(const std::stop_token& stop, std::int64_t start_us);
+  void mark_analysis_done();
   void mark_stopped();
-  bool wait_stopped(std::chrono::milliseconds limit);
+  bool wait_analysis_done(std::chrono::milliseconds limit);
   bool is_stopped();
 };
 
@@ -247,17 +240,26 @@ bool ShotProbe::State::preloaded() {
   return true;
 }
 
+void ShotProbe::State::mark_analysis_done() {
+  {
+    const std::scoped_lock lock(stop_mutex);
+    analysis_done = true;
+  }
+  stop_cv.notify_all();
+}
+
 void ShotProbe::State::mark_stopped() {
   {
     const std::scoped_lock lock(stop_mutex);
+    analysis_done = true;
     stopped = true;
   }
   stop_cv.notify_all();
 }
 
-bool ShotProbe::State::wait_stopped(std::chrono::milliseconds limit) {
+bool ShotProbe::State::wait_analysis_done(std::chrono::milliseconds limit) {
   std::unique_lock lock(stop_mutex);
-  return stop_cv.wait_for(lock, limit, [this] { return stopped; });
+  return stop_cv.wait_for(lock, limit, [this] { return analysis_done; });
 }
 
 bool ShotProbe::State::is_stopped() {
@@ -294,7 +296,8 @@ std::unique_ptr<ShotProbe> ShotProbe::start(std::filesystem::path file,
                                if (state->preloaded()) return;
                                state->run(stop, start_us);
                                // La part faite, au cache (B42-05) : ici plutôt que sur le thread de la
-                               // fenêtre.
+                               // fenêtre, qui n'attend plus que la fin de l'analyse (C42-06).
+                               state->mark_analysis_done();
                                if (state->options.on_stop) {
                                  const ShotTimeline& done = *state->timeline;
                                  const bool whole = state->finished.load(std::memory_order_acquire) &&
@@ -318,9 +321,13 @@ ShotProbe::~ShotProbe() {
   state_->wake.notify_all();
   // B30-01 : une lecture suspendue dans le noyau (partage réseau muet) ne rend pas la main au drapeau
   // d'interruption ; passé stop_limit, le thread est confié à abandon au lieu de figer la fenêtre.
-  if (!state_->options.abandon || state_->wait_stopped(state_->options.stop_limit)) return;  // join : fini
-  make_logger()->warn("pré-analyse des plans : pas d'arrêt en {} ms, laissée à son sort",
-                      state_->options.stop_limit.count());
+  if (!state_->options.abandon) return;  // join
+  const bool done = state_->wait_analysis_done(state_->options.stop_limit);
+  if (state_->is_stopped()) return;  // join : fini
+  // C42-06 : l'analyse est finie, son thread écrit le cache (on_stop) ; la fenêtre ne l'attend pas.
+  if (!done)
+    make_logger()->warn("pré-analyse des plans : pas d'arrêt en {} ms, laissée à son sort",
+                        state_->options.stop_limit.count());
   state_->options.abandon(std::move(thread_), [state = state_] { return state->is_stopped(); });
 }
 
@@ -351,17 +358,45 @@ std::int64_t ShotProbe::frontier_us() const {
   return state_->frontier_us();
 }
 
+namespace {
+
+// Le fichier ouvert pour l'analyse, et l'interruption de ses lectures à l'arrêt (une lecture bloquée du
+// démuxeur, sur un partage lent). Détruite avant lui, l'interruption ne vise jamais un démuxeur fermé.
+struct OpenedFile {
+  explicit OpenedFile(Opened o) : opened(std::move(o)) {}
+  Opened opened;
+  std::optional<std::stop_callback<std::function<void()>>> interrupt;
+};
+
+std::expected<std::unique_ptr<OpenedFile>, Refusal> open_file(const std::filesystem::path& file,
+                                                              const std::stop_token& stop,
+                                                              const ShotProbeOptions& options) {
+  auto opened = open_video(file, stop, options);
+  if (!opened) return std::unexpected(std::move(opened.error()));
+  auto out = std::make_unique<OpenedFile>(std::move(*opened));
+  Demuxer* demuxer = &out->opened.demuxer;
+  out->interrupt.emplace(stop, std::function<void()>([demuxer] { demuxer->interrupt(); }));
+  return out;
+}
+
+std::int64_t steady_us() {
+  return std::chrono::duration_cast<std::chrono::microseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+}  // namespace
+
 // Le journal donne les threads du décodeur ouvert, pas ceux demandés : un seul sous NVDEC réduit (A42-06).
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
   auto log = make_logger();
-  auto opened = open_video(file, stop, options);
-  if (!opened) return fail(std::move(opened.error()));
-  Demuxer* demuxer = &opened->demuxer;
-  VideoDecoder* decoder = &opened->decoder;
-  const int track = opened->track;
-  // L'arrêt (fermeture du fichier) interrompt aussi une lecture bloquée du démuxeur, sur un partage lent.
-  const std::stop_callback interrupt(stop, [demuxer] { demuxer->interrupt(); });
+  auto first = open_file(file, stop, options);
+  if (!first) return fail(std::move(first.error()));
+  // C42-07 : fermé quand l'analyse a fini (le fichier, le démuxeur et les tampons du décodeur), rouvert au
+  // prochain saut qui demande une analyse.
+  std::unique_ptr<OpenedFile> open = std::move(*first);
+  const int track = open->opened.track;
 
   // Repart de at_us : le plan en cours est clos là, un nouveau découpage commence (son premier plan n'a pas
   // de vraie coupe devant lui).
@@ -371,17 +406,23 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
   // B42-04 : l'instant de la première image d'un découpage parti du début va à la chronologie.
   bool from_origin = start_us <= 0;
   // La fin du fichier (B42-09) : la durée du conteneur, puis la fin atteinte.
-  std::int64_t file_end_us = demuxer->duration_us();
+  std::int64_t file_end_us = open->opened.demuxer.duration_us();
+  // Le bout d'une zone connue où l'analyse a sauté : le saut retombe sur l'image clé d'avant, ce garde
+  // l'empêche de se répéter. C42-02 : remis à zéro par tout autre départ, sinon un second passage jusqu'à la
+  // même zone (le comblement d'un trou plus bas) la décodait en entier.
+  std::int64_t skipped_to = -1;
   const auto restart = [&](std::int64_t at_us) -> bool {
     analysis.finish(last_pts + last_duration);
+    Demuxer& demuxer = open->opened.demuxer;
     // La fin d'un plan (dernière image plus sa durée) peut dépasser d'une image la durée du conteneur, que le
     // démuxeur refuse : le saut se borne à cette durée.
-    const std::int64_t duration = demuxer->duration_us();
+    const std::int64_t duration = demuxer.duration_us();
     const std::int64_t target = duration > 0 ? std::min(at_us, duration) : at_us;
-    if (!demuxer->seek(std::max<std::int64_t>(target, 0), track, SeekTarget::PreviousKeyframe)) return false;
-    decoder->flush();
+    if (!demuxer.seek(std::max<std::int64_t>(target, 0), track, SeekTarget::PreviousKeyframe)) return false;
+    open->opened.decoder.flush();
     analysis.restart(at_us <= 0);
     from_origin = at_us <= 0;
+    skipped_to = -1;
     finished.store(false, std::memory_order_release);
     frontier.store(at_us, std::memory_order_relaxed);
     last_pts = at_us;
@@ -389,42 +430,63 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
   };
   if (start_us > 0 && !restart(start_us))
     return fail(Refusal{RefusalCode::SeekFailed, "saut de la pré-analyse"});
-  log->info("pré-analyse des plans : {} thread(s) de décodage, depuis {:.1f} s", decoder->threads(),
-            static_cast<double>(start_us) / 1e6);
+  log->info("pré-analyse des plans : {} thread(s) de décodage, depuis {:.1f} s",
+            open->opened.decoder.threads(), static_cast<double>(start_us) / 1e6);
 
   const auto started = std::chrono::steady_clock::now();
   std::int64_t frames = 0;
   FaceSearch faces(options.faces);
+  ProbePace pace(options.pace, options.pace_after_us);
   std::int64_t filled_from = -1;
-  std::int64_t skipped_to = -1;
   bool ended = false;
   while (!stop.stop_requested()) {
     if (const std::int64_t to = seek_to.exchange(-1, std::memory_order_relaxed); to >= 0) {
       if (const auto from =
               restart_for_seek(*timeline, to, frontier_us(), file_end_us, options.skip_known_us)) {
+        if (!open) {
+          auto reopened = open_file(file, stop, options);
+          if (!reopened) return fail(std::move(reopened.error()));
+          open = std::move(*reopened);
+        }
         if (!restart(*from)) return fail(Refusal{RefusalCode::SeekFailed, "saut de la pré-analyse"});
         ended = false;
       }
     }
-    // Fin atteinte, ou assez d'avance : attendre un saut, ou que la lecture approche.
     const auto ahead = [this] {
       return frontier_us() - playhead.load(std::memory_order_relaxed) > options.lead_us;
     };
-    if (ended || ahead()) {
+    // Fin atteinte : attendre un saut, sans tour de garde (seek pose seek_to sous wake_mutex).
+    if (ended) {
+      std::unique_lock lock(wake_mutex);
+      wake.wait(lock, stop, [&] { return seek_to.load(std::memory_order_relaxed) >= 0; });
+      continue;
+    }
+    // Assez d'avance : attendre un saut, ou que la lecture approche.
+    if (ahead()) {
       std::unique_lock lock(wake_mutex);
       wake.wait_for(lock, stop, std::chrono::milliseconds(500),
-                    [&] { return seek_to.load(std::memory_order_relaxed) >= 0 || (!ended && !ahead()); });
+                    [&] { return seek_to.load(std::memory_order_relaxed) >= 0 || !ahead(); });
+      continue;
+    }
+    // L'avance prise : au rythme de options.pace (C42-01).
+    if (const std::int64_t delay = pace.delay_us(
+            frontier_us(), frontier_us() - playhead.load(std::memory_order_relaxed), steady_us());
+        delay > 0) {
+      std::unique_lock lock(wake_mutex);
+      wake.wait_for(lock, stop, std::chrono::microseconds(std::min<std::int64_t>(delay, 500'000)),
+                    [&] { return seek_to.load(std::memory_order_relaxed) >= 0; });
       continue;
     }
     // Une zone déjà analysée devant (après un retour en arrière) : sautée.
     if (const std::int64_t known = timeline->analyzed_until(last_pts + 1);
         frames > 0 && known - last_pts > options.skip_known_us && known > skipped_to) {
-      // Le saut retombe sur l'image clé d'avant : sans ce garde, il se répéterait.
-      skipped_to = known;
       if (!restart(known)) return fail(Refusal{RefusalCode::SeekFailed, "saut de la pré-analyse"});
+      skipped_to = known;
       continue;
     }
-    auto received = decoder->receive();
+    Demuxer& demuxer = open->opened.demuxer;
+    VideoDecoder& decoder = open->opened.decoder;
+    auto received = decoder.receive();
     if (!received) return fail(std::move(received.error()));
     if (*received) {
       const DecodedFrame& frame = **received;
@@ -443,7 +505,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       analysis.push(*measured);
       continue;
     }
-    if (decoder->drained()) {
+    if (decoder.drained()) {
       analysis.finish(last_pts + last_duration);
       file_end_us = std::max(file_end_us, last_pts + last_duration);
       // Un départ en cours de vidéo (une reprise, un saut) : le début reste à analyser, pour que la vidéo
@@ -459,14 +521,15 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
                 timeline->size(), faces.summary(*timeline));
       finished.store(true, std::memory_order_release);
       ended = true;
+      open.reset();
       continue;
     }
-    auto packet = demuxer->read();
+    auto packet = demuxer.read();
     if (!packet) return fail(std::move(packet.error()));
     if (!*packet) {
-      if (auto ok = decoder->send_end(); !ok) return fail(std::move(ok.error()));
+      if (auto ok = decoder.send_end(); !ok) return fail(std::move(ok.error()));
     } else if ((*packet)->track == track) {
-      if (auto ok = decoder->send(**packet); !ok) return fail(std::move(ok.error()));
+      if (auto ok = decoder.send(**packet); !ok) return fail(std::move(ok.error()));
     }
   }
 }
