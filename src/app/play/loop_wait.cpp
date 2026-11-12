@@ -43,8 +43,19 @@ void tighten_timer_slack() {
 void sleep_until_precise(std::int64_t until_us) {
 #ifdef _WIN32
   constexpr std::int64_t kSpinUs = 200;
-  thread_local const HANDLE timer =
-      CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+  // Fermé à la fin du fil (C33-06).
+  struct Timer {
+    HANDLE handle =
+        CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    Timer() = default;
+    Timer(const Timer&) = delete;
+    Timer& operator=(const Timer&) = delete;
+    ~Timer() {
+      if (handle != nullptr) CloseHandle(handle);
+    }
+  };
+  thread_local const Timer owned;
+  const HANDLE timer = owned.handle;
   const std::int64_t room_us = until_us - host_now_us() - kSpinUs;
   if (room_us > 0 && timer != nullptr) {
     LARGE_INTEGER due{};

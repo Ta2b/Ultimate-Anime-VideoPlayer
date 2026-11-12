@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 # Les appels, pas les lignes (deux sur une ligne comptent deux), et generic_string() avec string() : sous Windows, les
 # deux passent par la page de code ANSI (C28-09). native() reste libre : il rend le wstring que prepare/utf8.cpp
 # convertit lui-même.
-readonly kMax=42
+readonly kMax=41
 readonly pattern='\.(generic_)?string\(\)'
 count="$({ git grep -h -o -E "$pattern" -- 'src/*.cpp' 'src/*.h' || true; } | wc -l)"
 if ((count > kMax)); then

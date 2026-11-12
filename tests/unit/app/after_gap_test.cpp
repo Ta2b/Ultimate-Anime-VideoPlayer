@@ -64,14 +64,14 @@ TEST_CASE("C12-09 : veille annoncée, pause et réouverture de la chaîne, sans 
   CHECK(rig.toast());
 }
 
-TEST_CASE("C12-09 : veille vue au réveil, pause et recalage exact", "[app][sleep]") {
+TEST_CASE("C31-08 : veille vue au réveil seulement, pause et réouverture de la chaîne", "[app][sleep]") {
   Rig rig;
   bool announced = false;
   const AfterGap out = after_gap_seen(rig.session, rig.controls, kGapUs, true,
                                       Health{std::expected<void, Refusal>{}}, announced, rig.screen.now_us);
-  CHECK_FALSE(out.reopen);
+  CHECK(out.reopen);
   CHECK(rig.session.paused());
-  CHECK(rig.sought_exact());
+  CHECK_FALSE(rig.sought_exact());  // la chaîne rouverte repart de la position
   CHECK(rig.toast());
 }
 

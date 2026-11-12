@@ -23,6 +23,7 @@ extern "C" {
 #include <libavutil/time.h>
 }
 
+#include "av/input_whitelist.h"
 #include "core/frame.h"
 #include "core/utf8_path.h"
 #include "media/av_util.h"
@@ -348,6 +349,10 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path,
   AVDictionary* av_options = nullptr;
   av_dict_set(&av_options, "rw_timeout", "30000000", 0);
   av_dict_set(&av_options, "protocol_whitelist", "file", 0);
+  // C35-01 : seuls les conteneurs et décodeurs d'épisodes (input_whitelist.h) ; un fichier .mkv qui est en
+  // réalité une liste ffconcat ou un format obscur est refusé comme un format inconnu.
+  av_dict_set(&av_options, "format_whitelist", av::kAllowedDemuxers, 0);
+  av_dict_set(&av_options, "codec_whitelist", av::kAllowedDecoders, 0);
   const int opened = avformat_open_input(&raw, where.c_str(), nullptr, &av_options);
   av_dict_free(&av_options);
   if (opened < 0) return refuse_av(RefusalCode::MediaUnreadable, shown, opened);

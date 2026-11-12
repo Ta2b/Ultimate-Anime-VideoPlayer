@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <format>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -106,6 +107,16 @@ bool is_separator(char c) {
   return c == '/' || c == '\\';
 }
 
+// Les caractères de contrôle d'une ligne du journal, la tabulation exceptée.
+bool is_control(char c) {
+  const auto byte = static_cast<unsigned char>(c);
+  return (byte < 0x20 && c != '\t') || byte == 0x7F;
+}
+
+bool is_digit(char c) {
+  return c >= '0' && c <= '9';
+}
+
 // Ce qui peut précéder un chemin : le début, un blanc, une ponctuation d'ouverture ou de liaison, ou un
 // caractère hors ASCII (flèche, espace insécable : ses octets valent 0x80 et plus). Liste large exprès : un
 // chemin non reconnu part en clair, avec le nom d'utilisateur, dans une issue publique (B19-05, B39-07).
@@ -157,7 +168,14 @@ std::size_t path_end(std::string_view text, std::size_t at) {
     if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
         rest.starts_with("; "))
       break;
-    if (opener == '(' && c == ')') break;
+    if ((opener == '(' && c == ')') || (opener == '\'' && c == '\'')) break;
+    // « ep.mkv (24000/1001 fps) » : la parenthèse ouverte après un blanc commente le chemin, sauf si elle
+    // ferme sur un séparateur (« Anime (2020)/ep.mkv », un nom de dossier) (C20-01).
+    if (rest.starts_with(" (")) {
+      const std::size_t close = rest.find(')');
+      if (close == std::string_view::npos || close + 1 >= rest.size() || !is_separator(rest[close + 1]))
+        break;
+    }
     if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
     ++end;
   }
@@ -190,6 +208,23 @@ class RedactingSink final : public spdlog::sinks::sink {
         reduce_log_paths(redact_log_text(std::string_view(msg.payload.data(), msg.payload.size())));
     spdlog::details::log_msg copy = msg;
     copy.payload = text;
+    // Un nom de fichier porte ce qu'il veut sous Linux : un « \n » y écrirait de fausses lignes au journal
+    // joint à un rapport public, une séquence ESC brouillerait le terminal (C35-05). Les contrôles sont
+    // écrits « \xNN » ; une ligne qui suit un « \n » est décalée, elle ne peut plus passer pour une ligne du
+    // journal (les rapports sur plusieurs lignes, voulus, restent lisibles).
+    std::string clean;
+    if (std::ranges::any_of(text, is_control)) {
+      clean.reserve(text.size() + 8);
+      for (const char c : text) {
+        if (c == '\n')
+          clean += "\n    ";
+        else if (is_control(c))
+          clean += std::format("\\x{:02X}", static_cast<unsigned char>(c));
+        else
+          clean += c;
+      }
+      copy.payload = clean;
+    }
     inner_->log(copy);
   }
   void flush() override { inner_->flush(); }
@@ -268,7 +303,9 @@ std::string reduce_log_paths(std::string_view text) {
     std::size_t last = std::string_view::npos;
     std::size_t separators = 0;
     for (std::size_t i = at; i < end; ++i) {
-      if (is_separator(text[i])) {
+      // « 3/4 », « 16/9 » : une fraction après le nom n'est pas son dossier (C20-01).
+      const bool fraction = i > at && i + 1 < end && is_digit(text[i - 1]) && is_digit(text[i + 1]);
+      if (is_separator(text[i]) && !fraction) {
         last = i;
         ++separators;
       }

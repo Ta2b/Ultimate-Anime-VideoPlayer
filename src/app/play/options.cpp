@@ -690,7 +690,7 @@ std::expected<std::filesystem::path, Refusal> find_file(const std::optional<std:
   std::string tried;
   for (const auto& path : candidates) {
     if (std::filesystem::is_regular_file(path, error)) return path;
-    tried += std::format("\n  {}", path.string());
+    tried += std::format("\n  {}", core::to_utf8(path));
   }
   return refuse(RefusalCode::ModelUnreadable, std::format("default {} not found:{}", what, tried));
 }

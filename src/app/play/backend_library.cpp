@@ -129,19 +129,23 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
   // C21-02 : comme open, un module d'une autre ABI l'emporte sur l'absence quand rien n'a abouti, pour que
   // l'écran propose de réinstaller le module périmé au lieu de dire qu'il manque.
   RefusalCode code = RefusalCode::LibraryUnavailable;
+  std::optional<RefusalCode> first_code;
   for (const auto& path : candidates) {
     auto library = open(std::span(&path, 1));
     if (!library) {
       tried += std::format("\n  {}", library.error().detail);
       if (library.error().code == RefusalCode::AbiMismatch) code = RefusalCode::AbiMismatch;
+      if (!first_code) first_code = library.error().code;
       continue;
     }
     if (auto probe = create(*library, init); !probe) {
       tried += std::format("\n  {} : {} ({})", core::to_utf8(path), probe.error().detail,
                            name(probe.error().code));
+      if (!first_code) first_code = probe.error().code;
       continue;
     }
     (*library)->passed_over_ = std::move(tried);
+    if (!(*library)->passed_over_.empty()) (*library)->passed_over_code_ = first_code;
     release_kept();
     return library;
   }

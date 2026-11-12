@@ -26,15 +26,19 @@ AfterGap after_gap_seen(Session& session, Controls& controls, std::int64_t gap_u
                         std::int64_t now_us) {
   const auto log = log_channel("app");
   const std::int64_t at = session.view().position_us;
-  AfterGap out{.reopen = std::exchange(announced, false)};
-  const bool sleep = out.reopen || sleep_seen;
+  const bool was_announced = std::exchange(announced, false);
+  const bool sleep = was_announced || sleep_seen;
+  // C31-08 : une veille vue au réveil seulement (verrou de logind refusé, signal manqué) rouvre la chaîne
+  // comme une veille annoncée : ses tampons perdus ne disent rien non plus.
+  AfterGap out{.reopen = sleep, .paused = sleep};
   log->warn("trou de {:.1f} s ({}) : recalage à {}", static_cast<double>(gap_us) / 1e6,
-            out.reopen ? "veille annoncée, pause"
-            : sleep    ? "veille, pause"
-                       : "gel de la boucle, sans pause",
+            was_announced ? "veille annoncée, pause"
+            : sleep       ? "veille, pause, chaîne rouverte"
+                          : "gel de la boucle, sans pause",
             format_position(at));
   if (health && !*health) {
-    if (health->error().code == RefusalCode::DeviceLost) return {.lost = health->error()};
+    // C31-01 : la relance garde la pause de la veille.
+    if (health->error().code == RefusalCode::DeviceLost) return {.lost = health->error(), .paused = sleep};
     log->warn("GPU au réveil : {} ; la chaîne se rouvre", health->error().detail);
     out.reopen = true;
   }

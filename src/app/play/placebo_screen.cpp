@@ -24,6 +24,7 @@
 #include "app/play/i18n.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
+#include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
 #include "core/trace.h"
@@ -446,8 +447,11 @@ std::expected<bool, Refusal> PlaceboScreen::acquire(OutputSize& out, pl_frame& t
     if (s.acquire_streak.failed(host_now_us())) {
       s.channel->error("présentation : aucune image acquise depuis {} s sur une fenêtre visible",
                        kLostSurfaceUs / 1'000'000);
-      return std::unexpected(Refusal{RefusalCode::DeviceLost,
-                                     "surface de la fenêtre perdue (écran débranché ou sortie détruite)"});
+      // La clé dit l'écran, pas la carte (C31-06) ; le chemin reste celui de la perte (relance qui recrée).
+      return std::unexpected(
+          Refusal{.code = RefusalCode::DeviceLost,
+                  .detail = "surface de la fenêtre perdue (écran débranché ou sortie détruite)",
+                  .key = std::string(kSurfaceLostKey)});
     }
     return false;
   };

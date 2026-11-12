@@ -250,9 +250,17 @@ TEST_CASE("Téléchargements : ce que l'index ne nomme plus est retiré, le rest
   std::ofstream(f.catalog.layout.downloads / (stale + ".part")) << "x";
   std::ofstream(f.catalog.layout.downloads / (stale + ".morceau")) << "x";
   std::ofstream(f.catalog.layout.downloads / "notes.txt") << "x";
+  // C35-04 : un fichier ou un dossier de l'utilisateur nommé par une empreinte n'est pas à nous.
+  std::ofstream(f.catalog.layout.downloads / (stale + ".iso")) << "x";
+  std::ofstream(f.catalog.layout.downloads / stale) << "x";
+  fs::create_directories(f.catalog.layout.downloads / (stale + ".part.d"));
+  fs::create_directories(f.catalog.layout.downloads / (std::string(64, 'c') + ".part"));
   CHECK(purge_stale_downloads(f.catalog) == 2);
   CHECK(fs::exists(f.catalog.layout.downloads / (kept + ".part")));
   CHECK(fs::exists(f.catalog.layout.downloads / "notes.txt"));
+  CHECK(fs::exists(f.catalog.layout.downloads / (stale + ".iso")));
+  CHECK(fs::exists(f.catalog.layout.downloads / stale));
+  CHECK(fs::exists(f.catalog.layout.downloads / (std::string(64, 'c') + ".part")));
   CHECK_FALSE(fs::exists(f.catalog.layout.downloads / (stale + ".part")));
 }
 

@@ -58,7 +58,10 @@ class StageMemory {
     std::string signature;
     Refusal refusal;
     bool cancelled = false;      // « Annuler et regarder » : pour cette vidéo seulement
-    std::filesystem::path file;  // la vidéo de l'annulation
+    std::filesystem::path file;  // la vidéo de l'annulation ou du refus passager
+    // C31-09 : une annulation, ou une mémoire vidéo pleine passagère (un jeu ouvert un moment), ne vaut que
+    // pour sa vidéo : la suivante essaie de nouveau l'étage, dont le moteur se charge en quelques secondes.
+    bool for_file_only() const { return cancelled || refusal.code == RefusalCode::GpuMemoryExhausted; }
   };
 
   // Le refus retenu pour cet étage et cette signature ; une annulation ne vaut que pour sa vidéo.
@@ -130,6 +133,10 @@ std::optional<StagePlan> plan_stages(const PlaySettings& wanted, const StageMemo
 // plus profond, le moteur le plus lourd), puis SPAN. played : les réglages que la chaîne jouait ; motion et
 // upscale : les étages chargés. Rend l'étage retenu dans memory, rien quand il n'y a rien à retirer ou que le
 // refus n'est pas celui d'un étage (appareil perdu, source qui change de taille, annulation).
+// C31-05 : un refus de l'affichage qui peut venir de la mémoire vidéo prise par les étages (allocation ou
+// appel refusé par libplacebo, Vulkan ou le pilote), sans clé d'étage : il retire un étage comme un refus
+// d'étage quand l'appareil reste sain.
+bool display_retreats(const Refusal& refusal);
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,
                                         const PlaySettings& played, bool motion, bool upscale,
                                         int source_width, int source_height, std::string_view library,

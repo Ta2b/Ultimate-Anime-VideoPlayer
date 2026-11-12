@@ -424,6 +424,11 @@ std::expected<core::Settings, Refusal> load_engine_settings(const std::filesyste
 // Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit. Un fichier
 // existant qui ne se lit pas n'est pas écrasé (FileUnreadable) ; un TOML invalide est gardé en copie d'abord.
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings);
+// Le numéro d'un instantané, pris quand l'écriture est décidée (au post d'une écriture différée) : une
+// écriture qui arrive après une plus récente du même fichier est sautée (C30-03).
+std::uint64_t settings_ticket();
+std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings,
+                                           std::uint64_t ticket);
 
 // L'avis des valeurs fautives que load_settings a écartées : les clés (« work_height, peak »), pour
 // l'accueil. Vide s'il n'y en a pas (B22-05).

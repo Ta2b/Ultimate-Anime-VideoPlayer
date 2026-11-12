@@ -2,6 +2,7 @@
 // Fermée à la destruction ; un symbole ne sert que tant qu'elle vit.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
@@ -11,14 +12,18 @@
 #include <utility>
 
 #include "core/types.h"
+#include "core/utf8_path.h"
 
 namespace ajp {
 
 // Chemin en texte UTF-8 pour les messages : path::string() lève sous Windows sur un caractère hors de la
 // page de code ANSI.
 inline std::string library_path_text(const std::filesystem::path& path) {
-  const std::u8string text = path.generic_u8string();
-  return {text.begin(), text.end()};
+  std::string text = core::to_utf8(path);  // jamais de levée, même sur un nom NTFS sans UTF-8 (C20-09)
+#ifdef _WIN32
+  std::ranges::replace(text, '\\', '/');
+#endif
+  return text;
 }
 
 enum class SymbolScope : std::uint8_t {

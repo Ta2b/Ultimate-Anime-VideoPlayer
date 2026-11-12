@@ -70,6 +70,8 @@ class DisplayProbe {
     bool display = false;
   };
   void run(const std::stop_token& stop);
+  void serve(const Request& request);
+  void serve_pending();  // sans fil : sur le thread qui demande
 
   SDL_Window* window_;
   DisplayReaders readers_;

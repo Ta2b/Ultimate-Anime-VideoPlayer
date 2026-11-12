@@ -7,6 +7,7 @@
 #include <spdlog/logger.h>
 
 #include "core/thread.h"
+#include "core/thread_role.h"
 #include "subs/log.h"
 #include "subs/subs_worker.h"
 
@@ -53,7 +54,10 @@ std::expected<std::unique_ptr<SubsThread>, Refusal> SubsThread::start(const Rend
   auto started = start_thread(
       "subs", ThreadReport([&sink](const Refusal& refusal) { sink.refused(refusal); }),
       [worker = std::move(*worker), inbox = std::move(inbox), log = make_logger()](
-          const std::stop_token& stop, const ThreadReport& /*report*/) { run(stop, *worker, *inbox, *log); });
+          const std::stop_token& stop, const ThreadReport& /*report*/) {
+        set_thread_role(ThreadRole::Playback);  // libass tient la cadence, devant la pré-analyse (C20-06)
+        run(stop, *worker, *inbox, *log);
+      });
   if (!started) return std::unexpected(std::move(started.error()));
   std::unique_ptr<SubsThread> thread(new SubsThread());
   thread->thread_ = std::move(*started);
