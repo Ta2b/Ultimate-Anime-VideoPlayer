@@ -126,14 +126,31 @@ std::string_view ChainEngines::motion_name() const {
   return use_drba() ? "DistilDRBA" : use_apple() ? "Apple" : "RIFE";
 }
 
+std::string ChainEngines::auto_memory_engine(std::string_view span_variant) const {
+  std::string out(motion_name());
+  if (!use_drba() && rife_model) out += " " + core::to_utf8(rife_model->stem());
+  if (rife_fused || drba_fused) out += " fusionné";
+  if (rife_motion || drba_motion) out += " mouvement";
+  if (model) out += " " + core::to_utf8(model->path.stem());
+  return std::format("{} {}", out, span_variant);
+}
+
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
+  // C08-03 : au-delà de 720 lignes de travail, le flot s'estime sur une copie réduite (kRifeMotionHeight)
+  // puis le warp l'applique à la taille de travail. Une perte de précision consentie pour la vitesse : elle
+  // se dit, et son gain n'est pas mesuré.
+  const int estimated = drba_motion ? drba_size.height : rife_motion ? rife_size.height : work.height;
+  const std::string reduced =
+      estimated < work.height
+          ? i18n::tr_format(" · motion estimated at {}p (speed gain not measured)", estimated)
+          : std::string();
   if (use_drba())
-    return std::format("DistilDRBA {}{} · ", factor_text(factor_of(settings)),
-                       drba_fused ? i18n::tr(" fused") : "");
+    return std::format("DistilDRBA {}{}{} · ", factor_text(factor_of(settings)),
+                       drba_fused ? i18n::tr(" fused") : "", reduced);
   if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
   if ((rife || rife_motion) && rife_model)
-    return std::format("RIFE {} · {}{} · ", factor_text(factor_of(settings)), rife_model->stem().string(),
-                       rife_fused ? i18n::tr(" fused") : "");
+    return std::format("RIFE {} · {}{}{} · ", factor_text(factor_of(settings)),
+                       core::to_utf8(rife_model->stem()), rife_fused ? i18n::tr(" fused") : "", reduced);
   return {};
 }
 
@@ -142,7 +159,7 @@ std::string ChainEngines::span_label() const {
     return std::format("Anime4K ×2 · {} · mode {} · libplacebo · {} → {}x{}", render::name(anime4k->size),
                        render::name(anime4k->mode), reduce, work.width * 2, work.height * 2);
   if (!model) return i18n::tr_format("no upscaling · {}", reduce);
-  return std::format("SPAN ×{} · {} {} · {} · {} → {}x{}", factor, model->path.stem().string(),
+  return std::format("SPAN ×{} · {} {} · {} · {} → {}x{}", factor, core::to_utf8(model->path.stem()),
                      span_int8 ? std::string(variant_text(span_int8->kind)) : std::string("FP16"),
                      backend_name, reduce, work.width * factor, work.height * factor);
 }
@@ -235,9 +252,11 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   p.builder = std::make_shared<BackendLibrary::Instance>();
   const struct BuilderRelease {
     Player& p;
-    ~BuilderRelease() { p.builder.reset(); }
+    ~BuilderRelease() {
+      p.builder.reset();
+      p.spare_backend.reset();
+    }
   } builder_release{p};
-  p.loaded_engines.clear();
   const int width = p.video.width;
   const int height = p.video.height;
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
@@ -253,6 +272,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
                 : note.change == StageChange::Dropped ? "refusé, lecture sans lui"
                                                       : "cran refusé, Équilibre (FP16) à la place",
                 note.refusal.detail);
+    p.loaded_engines.clear();  // C08-05 : les moteurs de ce tour seulement, sans doublons des tours d'avant
     auto chain = prepare_chain_once(p, plan->settings);
     if (chain) {
       if (*chain) {
@@ -319,42 +339,6 @@ gpu::BackendInit chain_backend_init(Player& p) {
           .cache_dir = p.paths.engines,
           .log = backend_log(),
           .profile_dispatches = p.options.profile_dispatches};
-}
-
-// P6.17, essai (--rife-calm-model) : la variante mouvement d'un RIFE plus léger, à la forme de rife_motion,
-// pour la passe du milieu des paires calmes. Facultative : un modèle aux autres plans ou à un autre
-// remplissage, une dérivation ou une construction refusée la laissent de côté, la raison au journal (essai :
-// un refus n'arrête pas la lecture).
-void load_calm_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
-                    const std::filesystem::path& models_dir) {
-  if (!c.rife_motion || !p.options.rife_calm_model) return;
-  const auto log = log_channel("app");
-  const std::filesystem::path& calm = *p.options.rife_calm_model;
-  auto planes = rife_input_planes(calm);
-  if (!planes || *planes != c.rife_planes || rife_padding_multiple(calm) != c.rife_align) {
-    log->warn("RIFE des paires calmes ignoré : {} n'a pas les plans ni le remplissage du RIFE principal",
-              core::to_utf8(calm.filename()));
-    return;
-  }
-  auto derived = motion_model(calm, models_dir);
-  if (!derived) {
-    log->warn("RIFE des paires calmes ignoré : {}", derived.error().detail);
-    return;
-  }
-  const kernels::RifeGeometry& g = c.geometry;
-  auto loaded = prepare_engine(p, init, *c.backend, *derived,
-                               gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},
-                               EngineLabel{.name = "RIFE calme",
-                                           .model = core::to_utf8(derived->stem()),
-                                           .width = g.padded_width,
-                                           .height = g.padded_height},
-                               gpu::Lane::Interpolate);
-  if (!loaded) {
-    log->warn("RIFE des paires calmes ignoré : {}", loaded.error().detail);
-  } else if (*loaded) {
-    c.rife_motion_calm = std::move(**loaded);
-    log->info("RIFE des paires calmes : {}", core::to_utf8(derived->stem()));
-  }
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
@@ -428,7 +412,7 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
         p, init, *c.backend, c.span_int8 ? c.span_int8->onnx : c.model->path,
         gpu::Shape{.dims = {1, 3, c.work.height, c.work.width}},
         EngineLabel{.name = c.span_int8 ? std::format("SPAN {}", variant_text(c.span_int8->kind)) : "SPAN",
-                    .model = c.model->path.stem().string(),
+                    .model = core::to_utf8(c.model->path.stem()),
                     .width = c.work.width,
                     .height = c.work.height},
         gpu::Lane::Upscale);
@@ -616,10 +600,25 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
-  auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
-      "backend", [library = p.library, init] { return BackendLibrary::create(library, init); });
-  if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
-  c.backend = std::move(*backend);
+  // C08-05 : un tour refusé rend son backend (SpareBackend), que celui-ci reprend. Les moteurs de c sont
+  // détruits avant lui : il leur survit dans p.spare_backend.
+  const struct SpareBackend {
+    Player& p;
+    ChainEngines& c;
+    ~SpareBackend() {
+      if (!c.backend) return;
+      c.backend->drain();  // comme ~ChainEngines, avant que ses moteurs partent
+      p.spare_backend = std::move(c.backend);
+    }
+  } spare{p, c};
+  if (p.spare_backend) {
+    c.backend = std::move(p.spare_backend);
+  } else {
+    auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
+        "backend", [library = p.library, init] { return BackendLibrary::create(library, init); });
+    if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
+    c.backend = std::move(*backend);
+  }
   c.backend_name = c.backend->capabilities().name;
   announce_backend(*log, *c.backend, c.backend_name, p.library->path());
   // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
@@ -653,7 +652,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       log->info("RIFE Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
     } else if (const std::filesystem::path variant = tier_variant(*c.rife_model, tier);
                variant != *c.rife_model) {
-      log->info("RIFE {} : {}", label(tier), variant.filename().string());
+      log->info("RIFE {} : {}", label(tier), core::to_utf8(variant.filename()));
       c.rife_model = variant;
     } else {
       log->info("RIFE {} : aucun graphe {}, Équilibre à la place", label(tier), precision_text(tier));
@@ -678,117 +677,9 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       c.rife_planes = kernels::kRifeV2InputChannels;
     }
   }
-  const bool use_rife = settings.rife_factor >= 2 && c.rife_model && !c.use_drba() && !c.use_apple();
-  c.rife_align = use_rife ? rife_padding_multiple(*c.rife_model) : kernels::kRifeAlign;
-  c.geometry = kernels::rife_geometry(c.rife_size.width, c.rife_size.height, c.rife_align);
-  c.image_geometry = kernels::rife_geometry(c.work.width, c.work.height, c.rife_align);
-  if (use_rife) {
-    auto planes = rife_input_planes(*c.rife_model);
-    if (!planes) return stage_refused(std::move(planes.error()), ChainStage::Motion);
-    c.rife_planes = *planes;
-  }
-  // RIFE fusionné (kernels/spec/rife_fused.h) à la place du moteur entier quand rife_fused_choice.h le veut
-  // et que le modèle se coupe ; tout échec garde le RIFE entier, tel qu'il est chargé plus bas.
-  const std::filesystem::path models_dir = paths::derived_models(p.paths);
-  const std::string fused_declined = use_rife
-                                         ? rife_fused_declined(settings, c.backend->capabilities().rife_fused,
-                                                               c.rife_planes, model_tier(c.rife_model))
-                                         : i18n::tr("no RIFE");
-  const bool fused_wanted = fused_declined.empty();
-  if (use_rife && settings.rife_fused && !fused_wanted)
-    log->info("RIFE fusionné non utilisé : {}", fused_declined);
-  // Rien (fenêtre fermée pendant la construction) : « arrêt » ; un refus : journal et RIFE entier ; une
-  // annulation (« Annuler et regarder ») : l'interpolation part sans autre construction (A08-01, A31-15).
-  enum class Fused : std::uint8_t { Loaded, Declined, Closed, Cancelled };
-  std::optional<Refusal> cancelled;
-  const auto try_fused = [&](const kernels::RifeGeometry& g, bool motion,
-                             std::unique_ptr<gpu::Engine>& into) {
-    if (!fused_wanted) return Fused::Declined;
-    const prepare::RifeFusedOutput output = rife_fused_output(motion, settings.cubic_warp);
-    const std::string key = inner_key(std::format("rife-fused {}", prepare::output_name(output)), library,
-                                      *c.rife_model, g.padded_width, g.padded_height);
-    if (const Refusal* before = inner.refused(ChainStage::Motion, key)) {
-      c.rife_fused_refused = before->code;  // le panneau dit encore pourquoi l'entier tourne
-      return Fused::Declined;
-    }
-    auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, output);
-    if (!fused && watch_now(fused.error())) {
-      cancelled = std::move(fused.error());
-      return Fused::Cancelled;
-    }
-    if (!fused) {
-      log->warn("RIFE fusionné indisponible ({}) : RIFE entier", fused.error().detail);
-      c.rife_fused_refused = fused.error().code;
-      inner.failed(ChainStage::Motion, key, fused.error());
-      return Fused::Declined;
-    }
-    if (!*fused) return Fused::Closed;
-    into = std::move(**fused);
-    c.rife_fused = true;
-    log->info("RIFE fusionné : six moteurs et noyaux de colle, {}", motion ? "flot et masque" : "image");
-    return Fused::Loaded;
-  };
-  // RIFE par son mouvement : une passe au milieu de la paire la sert toute quand le mouvement est
-  // faible ; sans variante dérivable, RIFE image comme avant.
-  if (use_rife && !p.options.rife_image) {
-    auto derived = motion_model(*c.rife_model, models_dir);
-    if (!derived) {
-      log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
-    } else if (const Fused tried = try_fused(c.geometry, true, c.rife_motion); tried == Fused::Closed) {
-      return std::nullopt;
-    } else if (tried == Fused::Cancelled) {
-      return stage_refused(std::move(*cancelled), ChainStage::Motion);
-    } else if (const std::string key = inner_key("rife-motion", library, *derived, c.geometry.padded_width,
-                                                 c.geometry.padded_height);
-               tried == Fused::Declined && inner.refused(ChainStage::Motion, key) != nullptr) {
-      log->info("RIFE mouvement refusé plus tôt dans la séance : RIFE image");
-    } else if (tried == Fused::Declined) {
-      const kernels::RifeGeometry& g = c.geometry;
-      auto loaded = prepare_engine(p, init, *c.backend, *derived,
-                                   gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},
-                                   EngineLabel{.name = "RIFE",
-                                               .model = derived->stem().string(),
-                                               .width = g.padded_width,
-                                               .height = g.padded_height},
-                                   gpu::Lane::Interpolate);
-      if (!loaded && watch_now(loaded.error()))
-        return stage_refused(std::move(loaded.error()), ChainStage::Motion);
-      if (!loaded) {
-        // La variante mouvement refusée (construction, mémoire) : RIFE image reste à essayer (A29-01).
-        log->warn("RIFE mouvement refusé ({}) : RIFE image", loaded.error().detail);
-        inner.failed(ChainStage::Motion, key, loaded.error());
-      } else if (!*loaded) {
-        return std::nullopt;
-      } else {
-        c.rife_motion = std::move(**loaded);
-      }
-    }
-  }
-  load_calm_rife(p, init, c, models_dir);
-  if (!load_half_rife(p, init, c, settings, models_dir)) return std::nullopt;
-  if (use_rife && !c.rife_motion) {
-    const kernels::RifeGeometry& g = c.image_geometry;
-    const Fused tried = try_fused(g, false, c.rife);
-    if (tried == Fused::Closed) return std::nullopt;
-    if (tried == Fused::Cancelled) return stage_refused(std::move(*cancelled), ChainStage::Motion);
-  }
-  if (use_rife && !c.rife_motion && !c.rife) {
-    const kernels::RifeGeometry& g = c.image_geometry;
-    auto loaded = prepare_engine(p, init, *c.backend, *c.rife_model,
-                                 gpu::Shape{.dims = {1, c.rife_planes, g.padded_height, g.padded_width}},
-                                 EngineLabel{.name = "RIFE",
-                                             .model = c.rife_model->stem().string(),
-                                             .width = g.padded_width,
-                                             .height = g.padded_height},
-                                 gpu::Lane::Interpolate);
-    if (!loaded) return stage_refused(std::move(loaded.error()), ChainStage::Motion);
-    if (!*loaded) return std::nullopt;
-    c.rife = std::move(**loaded);
-  }
-  if (c.rife_motion) {
-    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}", c.rife_size.width, c.rife_size.height,
-              c.work.width, c.work.height);
-  }
+  auto rife = load_rife(p, init, c, settings, inner, library);
+  if (!rife) return std::unexpected(std::move(rife.error()));
+  if (!*rife) return std::nullopt;
   return std::optional<ChainEngines>(std::move(c));
 }
 

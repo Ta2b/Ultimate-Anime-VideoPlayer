@@ -292,7 +292,7 @@ struct VideoDecoder::State {
     } else {
       last_color = decoded->color;
     }
-    return std::move(decoded);
+    return decoded;
   }
 
   // Les paquets à rejouer, puis la fin du flux ; arrêté par EAGAIN, repris au receive() suivant.

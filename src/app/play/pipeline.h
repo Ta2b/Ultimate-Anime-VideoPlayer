@@ -76,10 +76,20 @@ using VideoStageFactory = std::function<std::expected<std::unique_ptr<VideoStage
 
 class Pipeline {
  public:
-  // Ouvre le fichier, choisit les pistes, ouvre le décodeur et lance les threads. Le
+  // Ce qu'open lit du fichier avant d'ouvrir quoi que ce soit : le démuxeur (find_stream_info), le télécinéma
+  // mesuré, les sous-titres du dossier et le choix des pistes. Autonome (config copiée) : il se fait hors du
+  // thread de la fenêtre, borné, et un partage réseau muet ne la gèle pas (C08-07, C13-05).
+  struct SourceRead {
+    media::Demuxer demuxer;
+    std::vector<ExternalSubtitle> externals;
+    media::TrackChoice choice;
+  };
+  static std::expected<SourceRead, Refusal> read_source(PipelineConfig config);
+  // Ouvre le fichier (ou prend read, déjà lu), choisit les pistes, ouvre le décodeur et lance les threads. Le
   // thread source part en dernier : tout ce qu'il nourrit existe déjà.
-  static std::expected<std::unique_ptr<Pipeline>, Refusal> open(const PipelineConfig& config,
-                                                                const VideoStageFactory& make_video);
+  static std::expected<std::unique_ptr<Pipeline>, Refusal> open(
+      const PipelineConfig& config, const VideoStageFactory& make_video,
+      std::optional<SourceRead> read = std::nullopt);
 
   Pipeline(const Pipeline&) = delete;
   Pipeline& operator=(const Pipeline&) = delete;

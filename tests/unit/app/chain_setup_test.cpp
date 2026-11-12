@@ -1,5 +1,6 @@
 #include "app/play/chain_setup.h"
 
+#include <filesystem>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -263,6 +264,23 @@ TEST_CASE("B39-02 : les faits de la lecture vont en tête du rapport, vidéo, é
   CHECK(facts[3].second == "SPAN ×2 · RIFE ×2");
   // Cadence inconnue : dit, pas « 0 i/s ».
   CHECK(playback_facts({.file = "a.mkv"})[0].second.contains("cadence inconnue"));
+}
+
+TEST_CASE("C08-08 : la clé de la mémoire de l'Auto distingue les modèles RIFE et SPAN chargés",
+          "[app][chain]") {
+  ChainEngines light;
+  light.rife_model = std::filesystem::path("models/rife_v4.25_lite.onnx");
+  light.model = ModelChoice{.path = "models/2x_AnimeJaNai_V3_SuperUltraCompact.onnx"};
+  ChainEngines heavy;
+  heavy.rife_model = std::filesystem::path("models/rife_v4.26.onnx");
+  heavy.model = light.model;
+  CHECK(light.auto_memory_engine("FP16") != heavy.auto_memory_engine("FP16"));
+  CHECK(light.auto_memory_engine("FP16") != light.auto_memory_engine("INT8"));
+  ChainEngines other_span;
+  other_span.rife_model = light.rife_model;
+  other_span.model = ModelChoice{.path = "models/2x_AnimeJaNai_V3_UltraCompact.onnx"};
+  CHECK(light.auto_memory_engine("FP16") != other_span.auto_memory_engine("FP16"));
+  CHECK(light.auto_memory_engine("FP16").contains("rife_v4.25_lite"));
 }
 
 // C40-07 : le câblage des options à l'essai vers l'étage. « Éteint ne change rien », « allumé fait ce qu'il

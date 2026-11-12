@@ -9,6 +9,7 @@
 // A31-05, A31-15).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -63,6 +64,12 @@ class StageMemory {
   // Le refus retenu pour cet étage et cette signature ; une annulation ne vaut que pour sa vidéo.
   const Entry* find(ChainStage stage, std::string_view signature, const std::filesystem::path& file) const;
   void remember(Entry entry);
+  // C08-10 : un refus de cet étage retenu pour la séance, quelle que soit sa signature (une annulation, pour
+  // sa vidéo seulement).
+  bool holds(ChainStage stage, const std::filesystem::path& file) const {
+    return std::ranges::any_of(
+        entries_, [&](const Entry& e) { return e.stage == stage && (!e.cancelled || e.file == file); });
+  }
   // B08-02 : un repli interne retenu sous sa clé (inner_key) ; la réouverture suivante ne refait pas la
   // construction refusée, elle prend le repli tout de suite.
   struct Inner {
