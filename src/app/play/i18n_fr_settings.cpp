@@ -235,6 +235,13 @@ constexpr std::array kSettingsPages{
     Entry{"Unknown graphics card", "Carte graphique inconnue"},
     Entry{"Upscaling", "Agrandissement"},
     Entry{"Video memory", "Mémoire vidéo"},
+    Entry{"Debugging", "Débogage"},
+    Entry{"Show held and cut pairs", "Montrer les paires tenues et coupées"},
+    Entry{"While interpolation runs, each pair judged a held drawing (blue) or a scene cut (red) tints the "
+          "screen for a moment, and goes to ajp.log with its time and scores. This session only.",
+          "Pendant l'interpolation, chaque paire jugée dessin tenu (bleu) ou coupe de scène (rouge) teinte "
+          "l'écran un instant, et va dans ajp.log avec son minutage et ses scores. Pour cette session "
+          "seulement."},
     Entry{"fused DistilDRBA (four engines, built the first time for this size)",
           "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"},
     Entry{"fused RIFE (six engines, built the first time for this size)",
@@ -246,6 +253,9 @@ constexpr std::array kSettingsPages{
     Entry{"held drawings are smoothed (frames read ahead)",
           "les dessins tenus sont lissés (images lues en avance)"},
     Entry{"held drawings keep their rhythm", "les dessins tenus gardent leur rythme"},
+    Entry{"fast motion is estimated at half size (second engine)",
+          "les mouvements rapides sont estimés à demi-taille (second moteur)"},
+    Entry{"fast motion is estimated at full size", "les mouvements rapides sont estimés en pleine taille"},
     Entry{"the frame ring grows for this interpolation",
           "l'anneau d'images s'agrandit pour cette interpolation"},
     Entry{"the interpolation engine loads (built the first time for this size)",

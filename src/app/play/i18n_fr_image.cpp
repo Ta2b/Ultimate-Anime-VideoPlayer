@@ -60,23 +60,33 @@ constexpr std::array kImageTabs{
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
-    Entry{"DistilDRBA", "DistilDRBA"},
+    Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
+    Entry{
+        "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
+        "first time. Cheaper on fast pans; small objects may lose precision. RIFE only. Reloads playback.",
+        "Essai : les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, "
+        "par un second moteur construit la première fois. Moins cher sur les panoramiques rapides ; les "
+        "petits objets peuvent perdre en précision. RIFE seulement. Recharge la lecture."},
+    Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
-    Entry{"DistilDRBA: keeps characters animated on twos on their rhythm. One frame of delay. Its speed and "
-          "image quality against RIFE are not compared yet, so Auto does not use it.",
-          "DistilDRBA : les personnages animés à une image sur deux gardent leur rythme. Une image de "
-          "retard. Sa vitesse et sa qualité d'image face à RIFE ne sont pas encore comparées : Auto ne "
-          "l'utilise pas."},
+    Entry{"RIFE 4.25 lite: half the work of 4.22 lite, softer in-between frames. For small graphics cards.",
+          "RIFE 4.25 lite : deux fois moins de calcul que 4.22 lite, des images intermédiaires moins nettes. "
+          "Pour les petites cartes graphiques."},
     Entry{"RIFE 4.22 lite: light and clean, for most graphics cards.",
           "RIFE 4.22 lite : léger et propre, pour la plupart des cartes graphiques."},
-    Entry{"RIFE 4.25: cleaner in-between frames, for recent graphics cards.",
-          "RIFE 4.25 : des images intermédiaires plus propres, pour les cartes graphiques récentes."},
-    Entry{"Fast and Balanced are RIFE models; DistilDRBA keeps poses. Their speed and image quality are not "
-          "compared in this version. Applies after a short reload.",
-          "Rapide et Équilibré sont des modèles RIFE ; DistilDRBA garde les poses. Leur vitesse et leur "
-          "qualité d'image ne sont pas comparées dans cette version. S'applique après un court "
-          "rechargement."},
+    Entry{"RIFE 4.26: cleaner in-between frames, for recent graphics cards.",
+          "RIFE 4.26 : des images intermédiaires plus propres, pour les cartes graphiques récentes."},
+    Entry{"RIFE 4.25: the former Balanced level, as clean as 4.26 for a little more work.",
+          "RIFE 4.25 : l'ancien niveau Équilibré, aussi propre que 4.26 pour un peu plus de calcul."},
+    Entry{"DistilDRBA: keeps characters animated on twos on their rhythm. One frame of delay. Not faster "
+          "nor cleaner than RIFE so far, so Auto does not use it.",
+          "DistilDRBA : les personnages animés à une image sur deux gardent leur rythme. Une image de "
+          "retard. Ni plus rapide ni plus propre que RIFE pour l'instant : Auto ne l'utilise pas."},
+    Entry{"Very fast, Fast and Balanced are RIFE models. Advanced settings also offer RIFE 4.25 and "
+          "DistilDRBA. Applies after a short reload.",
+          "Très rapide, Rapide et Équilibré sont des modèles RIFE. Les réglages avancés proposent aussi "
+          "RIFE 4.25 et DistilDRBA. S'applique après un court rechargement."},
     Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",
           "Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s)."},
     Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",

@@ -502,7 +502,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
 
   auto overlays = s.overlays->build(request.subtitles, request.osd.empty() ? nullptr : &request.osd, *s.osd,
                                     out, request.ui != nullptr ? request.ui_bottom : 0,
-                                    request.ui != nullptr ? request.ui_top : 0);
+                                    request.ui != nullptr ? request.ui_top : 0, request.tint);
   if (!overlays) return std::unexpected(std::move(overlays.error()));
   target.overlays = overlays->all.data();
   target.num_overlays = static_cast<int>(overlays->all.size());

@@ -51,6 +51,8 @@ UpscaleStage::~UpscaleStage() {
   }
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
+  if (halves())
+    log_channel("gpu")->info("échelle par paire : {} passes à demi-taille sur {}", half_.runs, rife_runs_);
   // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
   // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste
   // hors défaut.
@@ -258,7 +260,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
       if (auto ok = alloc(mask_, planes(1, g.padded_width, g.padded_height)); !ok) return ok;
     }
   }
-  return {};
+  return allocate_half();
 }
 
 void UpscaleStage::analyze_source(const DecodedFrame& frame) {
@@ -313,6 +315,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   next_source();
   frame_id_ = frame.id;
   rife_in_pair_ = false;  // les images de rife_in() sont celles de la paire d'avant
+  half_.in_pair = false;
   gpu::IngestSpec spec;
   if (setup_.live) spec.reduce = setup_.live->reduction();
   const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
@@ -439,6 +442,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       }
     }
     count_measured(facts);
+    mark_pair(frame, facts);
   }
   // Smooth : une tenue de deux à six sources fondue en un mouvement (upscale_smooth.cpp).
   smooth_advance(frame, facts, on_grid);

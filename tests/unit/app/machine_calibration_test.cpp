@@ -34,7 +34,7 @@ TEST_CASE("les modèles de la calibration sont ceux du niveau, jamais en dessous
           "[calibration-machine]") {
   for (const Tier tier : {Tier::Fast, Tier::Ultra}) {
     CHECK(calibration_models(tier).span.find("Balanced_SPANF3_b8f64") != std::string::npos);
-    CHECK(calibration_models(tier).rife == "rife_v4.25.onnx");
+    CHECK(calibration_models(tier).rife == "rife_v4.26.onnx");
   }
   for (const Tier tier : {Tier::Economy, Tier::Light, Tier::Normal}) {
     CHECK(calibration_models(tier).span.empty());  // le SPAN par défaut, Performance Sharp
@@ -132,7 +132,7 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, modèles du niv
   const PlaySettings fine =
       candidate_settings({.span = true, .rife = true, .height = 1080}, base, calibration_models(Tier::Fast));
   CHECK(fine.model == kQualitySpanModel);
-  CHECK(fine.rife_model == "rife_v4.25.onnx");
+  CHECK(fine.rife_model == "rife_v4.26.onnx");
   CHECK(fine.span_precision == PrecisionTier::Balanced);
   CHECK(fine.work_height == 1080);
   const PlaySettings plain = candidate_settings({.span = false, .rife = false, .height = 0}, base);
@@ -229,7 +229,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   REQUIRE(followed);
   CHECK(followed->height == 540);
   CHECK(followed->span_model == kQualitySpanModel);
-  CHECK(followed->rife_model == "rife_v4.25.onnx");
+  CHECK(followed->rife_model == "rife_v4.26.onnx");
   CHECK_FALSE(calibrated_chain(dir, {.gpu = "RTX 4090", .display_height = 1440, .tensorrt = true}));
   CHECK(calibration_use(c, {.gpu = "RTX 4070 Ti", .display_height = 2160, .tensorrt = true}) ==
         CalibrationUse::OtherMachine);

@@ -23,6 +23,7 @@
 #include "app/play/links.h"
 #include "app/play/live_settings.h"
 #include "app/play/osd_text.h"
+#include "app/play/pair_marks.h"
 #include "app/play/placebo_feedback.h"
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
@@ -106,9 +107,10 @@ class Overlays {
   };
   // ui_bottom, ui_top : pixels pris en bas et en haut par l'interface ; les sous-titres du bas
   // montent au-dessus, l'OSD descend dessous.
+  // tint : le débogage des paires (pair_marks.h), un voile et un cadre posés avec l'OSD.
   std::expected<Built, Refusal> build(const subs::SubtitleFrame* subtitles,
                                       const std::span<const std::string>* osd, OsdText& text, OutputSize out,
-                                      int ui_bottom, int ui_top);
+                                      int ui_bottom, int ui_top, const std::optional<PairTint>& tint = {});
 
  private:
   struct Layer {
@@ -120,10 +122,13 @@ class Overlays {
   std::expected<bool, Refusal> add(Layer& layer, const subs::SubtitleFrame& frame, OutputSize out,
                                    int ui_bottom = 0);
 
+  std::expected<void, Refusal> add_tint(const PairTint& tint, OutputSize out);
+
   pl_gpu gpu_;
   Layer subtitles_;
   Layer osd_;
-  std::array<pl_overlay, 2> overlays_{};
+  Layer tint_;  // une texture 1 × 1 pleine, que chaque partie colore
+  std::array<pl_overlay, 3> overlays_{};
   int count_ = 0;
 };
 

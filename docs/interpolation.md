@@ -8,22 +8,27 @@ de calcul qui l'exécute (TensorRT, Vulkan, Core ML) est un autre choix : voir `
 
 | Moteur | Clé `play.toml` | Lecture | Export | Code |
 |---|---|---|---|---|
-| RIFE (4.22 lite, 4.25…) | `rife` | oui, par défaut | oui | `src/app/play/rife_*`, `kernels/spec/rife*` |
+| RIFE (4.25 lite, 4.22 lite, 4.26, 4.25) | `rife` | oui, par défaut | oui | `src/app/play/rife_*`, `kernels/spec/rife*` |
 | DistilDRBA | `distil_drba` | oui | oui | `kernels/spec/distil_drba.h` |
 | Apple (VideoToolbox) | `apple` | macOS seulement | non | `gpu/system_interpolator.h` |
 
 ## Ce que montre le menu
 
 Le menu ne nomme pas les modèles, il propose des niveaux (`kInterpLevels`, `settings.h`). Le nom du modèle ne
-s'affiche qu'en mode avancé, à côté du niveau.
+s'affiche qu'en mode avancé, à côté du niveau. Les niveaux suivent le choix de Tatoub de novembre 2026, sur les
+mesures de `docs/rife-candidats.md`.
 
 | Niveau | Moteur, modèle |
 |---|---|
-| Très rapide | DistilDRBA (garde lui-même les poses, une image de retard) |
+| Très rapide | RIFE 4.25 lite (deux fois moins de calcul que 4.22 lite, 2,9 dB de moins au banc ; repli hors RTX si 4.22 lite manque) |
 | Rapide | RIFE 4.22 lite (le défaut hors RTX) |
-| Équilibré | RIFE 4.25 (le défaut sur une RTX) |
+| Équilibré | RIFE 4.26 (le défaut sur une RTX, et l'Auto en Qualité et Ultra) |
+| RIFE 4.25, réglages avancés | l'ancien Équilibré : même qualité que 4.26, environ 9 % de calcul en plus |
+| DistilDRBA, réglages avancés | garde lui-même les poses, une image de retard ; ni plus rapide ni plus propre que RIFE à ce jour, hors de l'Auto (`kDistilDrbaInAuto`) |
 | Système (macOS) | interpolation d'Apple, sur un Mac seulement |
 
+En Personnalisé, un ancien `play.toml` qui nomme RIFE 4.25 ou DistilDRBA les garde : la liste montre alors leur
+nom, même hors du mode avancé. Une calibration faite avec RIFE 4.25 le garde aussi jusqu'à la suivante, qui joue 4.26.
 Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « Arrêt » et « Auto » en lecture.
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.
@@ -44,6 +49,51 @@ copie (une pose), une coupe reste une coupe, et la tenue s'arrête si la lecture
   pour un seul dessin.
 - L'idée vient du `--smooth_dedup` de TheAnimeScripter (AGPL) ; aucun code n'en est repris.
 - Le journal de fin compte les tenues fondues par longueur (« Smooth : … tenues fondues »).
+
+## Échelle par paire (essai)
+
+Case « RIFE allégé sur les mouvements rapides (demi-taille) » (Vidéo, sous le multiplicateur ; `[interpolation]
+pair_scale` de `play.toml`, éteinte par défaut). Une paire qui bouge fort, où RIFE mouvement passe à chaque
+instant au lieu d'une seule fois au milieu, estime ces passes sur a et b réduites de moitié (filtre Area,
+`pair_scale_side`, `src/app/play/upscale_stage.h`), par un second moteur RIFE à cette taille. Le warp met le
+mouvement à l'échelle des images, comme pour l'estimation en 720p d'une sortie 4K. Le sens est « moins cher »
+seulement : rien ne passe jamais à plus grand que la taille de RIFE.
+
+- Une paire est forte selon la mesure de la précédente (mouvement maximal au-dessus de `single_run_motion`),
+  ou selon celle de son propre milieu, comme avant (`upscale_motion.cpp`). Le milieu mesuré et les paires calmes
+  restent à pleine taille : la décision ne se prend que sur un mouvement estimé en entier.
+- Le mouvement maximal du premier instant d'une paire forte se mesure sur la demi-taille, ramené en pixels de
+  RIFE (×2) avant le seuil.
+- Le second moteur se prépare au chargement (`chain_half.cpp`) : le fusionné si le RIFE principal l'est, sinon
+  la variante mouvement entière. La première fois, il se construit pour cette taille. Un refus laisse la lecture
+  à pleine taille, avec la raison dans le journal.
+- RIFE mouvement seulement : ni RIFE image (`--rife-image`), ni DistilDRBA, ni le moteur système.
+- Le journal de fin compte les passes à demi-taille (« échelle par paire : … passes à demi-taille sur … »).
+- Le gain et la perte ne sont **pas mesurés** : l'option reste éteinte jusqu'à la mesure ci-dessous.
+
+### Mesure sur la RTX (165 Hz)
+
+Binaire `linux-release` ou `windows-release`, TensorRT, RIFE 4.26 (Équilibré) puis 4.22 lite (Rapide), ×2 et
+cadence auto vers 165 Hz, en 1080p puis en 4K (RIFE en 720p) :
+
+1. **Gain de temps** : 60 s d'un passage riche en panoramiques rapides et en combats, option éteinte puis
+   allumée, avec `--stats=`. Relever le temps moyen et le 99ᵉ centile par image de l'étage de mouvement, les
+   images en retard, et la part des passes à demi-taille du journal de fin.
+2. **Qualité** : un extrait de 24 images/s réduit à une image sur deux
+   (`ffmpeg -vf "select=not(mod(n\,2))",setpts=N/FRAME_RATE/TB -r 12`), exporté en RIFE ×2 sans agrandissement,
+   une fois par mode (deux `--data-dir`, `pair_scale` éteint puis allumé). Les images créées se comparent aux
+   images retirées (`ffmpeg -lavfi "[0][1]psnr;[0][1]ssim"`) sur les seules paires fortes : panoramiques rapides,
+   puis petits objets et traits fins en mouvement, le risque principal.
+3. **Faux déclenchements** : un flash et un fondu enchaîné ; la part des passes à demi-taille ne doit pas y
+   monter.
+4. **Scintillement** : un mouvement qui accélère puis ralentit, regardé à 165 Hz. Aucun saut de netteté ne doit
+   se voir quand l'échelle change d'une paire à l'autre.
+5. **Coût** : le temps de la première construction du second jeu de moteurs, et la VRAM en plus
+   (`nvidia-smi --query-gpu=memory.used`, option éteinte puis allumée, même passage).
+
+L'option devient le défaut si le gain dépasse 1 ms par image sur les paires fortes en 1080p, sans perte visible
+sur les traits fins ni scintillement, et pour moins de 300 Mo de VRAM en plus. Sinon elle reste un essai, ou se
+retire.
 
 ## Warp du backend TensorRT : lecture filtrée
 

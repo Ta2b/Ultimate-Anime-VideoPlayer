@@ -32,7 +32,8 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   SPAN (une 1080p sort en 4K) avec le modèle le plus fin (Balanced, b8f64). Aux niveaux Rapide et Normal, la
   source est d'abord réduite à la moitié de l'écran ou moins (de 480p à 720p selon le niveau et l'écran, voir le
   tableau des niveaux), puis SPAN la double ; libplacebo ajuste ensuite à la taille de l'écran.
-- **Interpolation** par RIFE 4.22 lite, ou 4.25 aux niveaux Qualité et Ultra (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
+- **Interpolation** par RIFE 4.22 lite, ou 4.26 aux niveaux Qualité et Ultra (4.25 lite pour les petites cartes ;
+  4.25 et DistilDRBA en réglages avancés). Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
 - **HDR anime** : l'anime SDR passe en HDR10 avec un grade à luminosité stable d'un plan à l'autre (sur un écran SDR, la

@@ -15,6 +15,7 @@
 // dès ×3 (settings.h, warp_after_span).
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <expected>
@@ -55,6 +56,12 @@ class YuvSlots {
   virtual std::span<std::byte> fence_block() const { return {}; }
 };
 
+// Échelle par paire (PlaySettings::pair_scale) : le côté où le second RIFE estime les paires à mouvement
+// fort, la moitié de celui de RIFE, pair (1080 → 540, 1280 → 640).
+constexpr int pair_scale_side(int rife_side) {
+  return std::max(2, rife_side / 4 * 2);
+}
+
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
@@ -67,6 +74,9 @@ struct UpscaleSetup {
   // P6.17, essai : un RIFE mouvement plus léger, aux mêmes formes, pour la passe du milieu quand la paire
   // précédente était calme ; nullptr : rife_motion partout.
   gpu::Engine* rife_motion_calm = nullptr;
+  // Échelle par paire (upscale_half.cpp) : rife_motion à pair_scale_side de rife_width × rife_height, pour
+  // les passes des paires à mouvement fort ; nullptr : rife_motion partout.
+  gpu::Engine* rife_motion_half = nullptr;
   int rife_planes = 11;  // plans d'entrée de rife et rife_motion : 11 (v1) ou 7 (v2)
   int rife_align = 64;   // multiple de remplissage du modèle RIFE : 64, ou 128 pour 4.25 lite
   // DistilDRBA à la place de RIFE, aux plans remplis de rife_geometry(travail).
@@ -155,6 +165,10 @@ class UpscaleStage final : public RingStage {
   // (les trois à une taille : celle de travail, ou de sortie après SPAN).
   std::expected<void, Refusal> interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
                                                      const gpu::Tensor& b, const Target& out);
+  // Une paire prise d'emblée à chaque instant (direct_run_) : RIFE à t, sa mesure du premier instant relue à
+  // la paire suivante, puis le warp.
+  std::expected<void, Refusal> interpolate_direct(float t, const gpu::Motion& other, const gpu::Tensor& a,
+                                                  const gpu::Tensor& b, const Target& out);
   // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring).
   std::expected<void, Refusal> blend(const gpu::Tensor& a, const gpu::Tensor& b, const gpu::Motion& motion,
                                      float t, const Target& out) const;
@@ -186,6 +200,9 @@ class UpscaleStage final : public RingStage {
   // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
   // mouvement.
   void count_measured(const PairFacts& facts);
+  // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
+  // journal, seulement quand le menu Statistiques le demande.
+  void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
@@ -273,6 +290,12 @@ class UpscaleStage final : public RingStage {
   // encodé (le RIFE fusionné le garde) : les mêmes images dans le même tampon, à un autre instant
   // (next_times_only), ou la paire qui suit, A étant la B de sa passe précédente (next_pair_follows).
   std::expected<void, Refusal> enqueue_rife(gpu::Engine& engine, std::span<gpu::Tensor> results);
+  struct RifeEncoded;
+  // enqueue_rife depuis input, dont le tampon rife_pair_ tient images ; last : la passe précédente de ce jeu
+  // d'entrées, mise à jour.
+  std::expected<void, Refusal> enqueue_on(gpu::Engine& engine, const gpu::Tensor& input,
+                                          const std::array<std::uint64_t, 2>& images, RifeEncoded& last,
+                                          std::span<gpu::Tensor> results);
   // Numéro de l'image ingérée dans rgb_[i] et small_[i], neuf à chaque ingestion.
   std::array<std::uint64_t, 2> source_serial_{};
   // L'autre tampon de rgb_ et small_ devient current_, pour une image neuve : son numéro aussi.
@@ -421,6 +444,38 @@ class UpscaleStage final : public RingStage {
   std::array<MotionBuffers, 2> mids_;
   std::uint32_t mid_ = 0;  // celui de la paire en cours
   gpu::Motion mid_motion(std::uint32_t index) const;
+  // Échelle par paire (upscale_half.cpp, PlaySettings::pair_scale) : les tampons du second RIFE, à
+  // pair_scale_side de la taille de RIFE. Les réduites de a et b suivent les tampons de rgb_ par leur numéro
+  // (source_serial_), l'entrée suit rife_pair_ comme rife_ins_.
+  struct HalfRife {
+    std::array<std::unique_ptr<gpu::TensorBuffer>, 2> sources;
+    std::array<std::uint64_t, 2> serials{};     // la source réduite dans chaque tampon ; 0 : aucune
+    std::unique_ptr<gpu::TensorBuffer> smooth;  // B lissée, réduite à chaque passe
+    std::array<std::unique_ptr<gpu::TensorBuffer>, 2> ins;
+    std::array<std::array<std::uint64_t, 2>, 2> in_images{};
+    std::unique_ptr<gpu::TensorBuffer> flow;
+    std::unique_ptr<gpu::TensorBuffer> mask;
+    bool in_pair = false;  // ins[rife_pair_] tient la paire en cours
+    float in_t = 0.0F;     // à cet instant
+    RifeEncoded encoded;   // la dernière passe du second RIFE menée au bout
+    std::uint64_t runs = 0;
+  };
+  HalfRife half_;
+  bool halves() const { return setup_.rife_motion_half != nullptr && by_motion(); }
+  std::expected<void, Refusal> allocate_half();
+  gpu::Motion half_motion() const;
+  // La source du tampon index de rgb_ (ou B lissée, smooth) réduite pour le second RIFE.
+  std::expected<const gpu::Tensor*, Refusal> half_source(std::uint32_t index, bool smooth);
+  // L'entrée du second RIFE à l'instant t pour la paire en cours, comme fill_rife_input.
+  std::expected<void, Refusal> fill_half_input(float t);
+  // Une passe de RIFE mouvement à l'instant t hors du milieu mesuré : sur le second RIFE quand half et
+  // halves(), sinon dans flow_ et mask_ (full). Le mouvement rendu, et le facteur qui met son mouvement
+  // maximal en pixels de RIFE (flow_max).
+  struct StrongRun {
+    gpu::Motion motion;
+    float scale = 1.0F;
+  };
+  std::expected<StrongRun, Refusal> run_strong(float t, const gpu::Motion& full, bool half);
   // Variante mouvement, mouvement fort : celui d'un autre instant que le milieu.
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;

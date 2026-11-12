@@ -243,6 +243,11 @@ void stats_tab(PlaySettings& d) {
   ImGui::Checkbox(i18n::tr("Exact position"), &d.stats.position);
   ImGui::Checkbox(i18n::tr("Video memory"), &d.stats.memory);
   ImGui::EndDisabled();
+  section(i18n::tr("Debugging"));
+  ImGui::Checkbox(i18n::tr("Show held and cut pairs"), &d.stats.pairs);
+  panel::tip(i18n::tr(
+      "While interpolation runs, each pair judged a held drawing (blue) or a scene cut (red) tints the "
+      "screen for a moment, and goes to ajp.log with its time and scores. This session only."));
 }
 
 // Vidéo > Post-traitement : le niveau, d'Économe à Ultra, refait la chaîne (réduction, SPAN, interpolation)

@@ -11,7 +11,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models"
 MODELS="$CACHE/modeles"
-if [ ! -f "$MODELS/rife/distil_drba_v2_lite.onnx" ] || [ ! -f "$MODELS/rife/rife_v4.25.onnx" ]; then
-  "$ROOT/tools/release/fetch-models.sh" "$MODELS" "$CACHE"
-fi
+for model in distil_drba_v2_lite rife_v4.26 rife_v4.25 rife_v4.22_lite rife_v4.25_lite; do
+  if [ ! -f "$MODELS/rife/$model.onnx" ]; then
+    "$ROOT/tools/release/fetch-models.sh" "$MODELS" "$CACHE"
+    break
+  fi
+done
 exec python3 -I "$ROOT/tools/bench/qualite/banc.py" --modeles "$MODELS" "$@"

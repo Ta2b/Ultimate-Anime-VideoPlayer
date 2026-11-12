@@ -1,4 +1,5 @@
-# Exporte les graphes ONNX de DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, et les range en artefact. Avec
+# Exporte les graphes ONNX de DistilDRBA (flot entier et demi-flot) avec les scripts du dépôt, convertit RIFE 4.25 lite en
+# FP16 (tools/rife/convert_rife_fp16.py, depuis l'export FP32 de vs-mlrt), et les range en artefact. Avec
 # « publier », les joint aussi à la release models-interp-1 du dépôt de releases, d'où
 # tools/release/fetch-models.sh les prend pour les paquets.
 #
@@ -28,6 +29,11 @@ permissions:
 env:
   DISTIL_DRBA_COMMIT: db51bdeb452685cba9aee227c6dba42e67753b55
   DISTIL_DRBA_WEIGHTS_SHA256: 9de2437c40928d13c48fff0d5e1021b78c8446d544143a964d56c8a2b387c3ed
+  # RIFE 4.25 lite : l'export ONNX officiel de vs-mlrt (release external-models, 11 plans, FP32), absent de l'archive
+  # d'animejanai-inference d'où viennent les autres RIFE (docs/rife-candidats.md).
+  RIFE_LITE_URL: https://github.com/AmusementClub/vs-mlrt/releases/download/external-models/rife_v4.25_lite.7z
+  RIFE_LITE_ARCHIVE_SHA256: 7d53e29fff5e67345b19f4ce97dfd1e34b490eedc752df2236904fda1a13842c
+  RIFE_LITE_FP32_SHA256: 026605086bd5782581cb3d846e16eec326d368af109f78cf8113883bff2e9e66
 
 jobs:
   export:
@@ -55,6 +61,13 @@ jobs:
           python -I tools/drba/export_distil_drba.py "$RUNNER_TEMP/DistilDRBA" \
             --weights "$RUNNER_TEMP/DistilDRBA/weights/v2_lite.pkl" --scale 0.5 \
             --out out/distil_drba_v2_lite_s05.onnx
+      - name: RIFE 4.25 lite en FP16
+        run: |
+          curl -fsSL --retry 5 --retry-delay 5 -o "$RUNNER_TEMP/rife_v4.25_lite.7z" "$RIFE_LITE_URL"
+          echo "$RIFE_LITE_ARCHIVE_SHA256  $RUNNER_TEMP/rife_v4.25_lite.7z" | sha256sum -c -
+          7z x -y -bso0 -o"$RUNNER_TEMP/vs-mlrt" "$RUNNER_TEMP/rife_v4.25_lite.7z" rife/rife_v4.25_lite.onnx
+          echo "$RIFE_LITE_FP32_SHA256  $RUNNER_TEMP/vs-mlrt/rife/rife_v4.25_lite.onnx" | sha256sum -c -
+          python -I tools/rife/convert_rife_fp16.py "$RUNNER_TEMP/vs-mlrt/rife" out rife_v4.25_lite.onnx
       - name: Empreintes
         env:
           NOUVELLE: ${{ inputs.nouvelle-empreinte }}
@@ -86,6 +99,6 @@ jobs:
         run: |
           gh release view models-interp-1 -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
             || gh release create models-interp-1 -R "$AJP_RELEASE_REPO" --latest=false \
-                 --title "Modèles d'interpolation (DistilDRBA)" \
-                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. DistilDRBA (routineLife1, MIT)."
+                 --title "Modèles d'interpolation (DistilDRBA, RIFE 4.25 lite)" \
+                 --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. DistilDRBA (routineLife1, MIT), RIFE 4.25 lite (hzwer, MIT ; export ONNX de vs-mlrt)."
           gh release upload models-interp-1 out/* -R "$AJP_RELEASE_REPO" --clobber

@@ -49,6 +49,7 @@ struct OpenedChain {
     bool rife_fused = true;
     bool drba_fused = true;
     bool smooth_drawings = false;
+    bool pair_scale = false;
     bool operator==(const Loaded&) const = default;
   };
 
