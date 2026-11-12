@@ -151,7 +151,11 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   }
   int count = 0;
   if (auto ok = cuda_check(cudaGetDeviceCount(&count), "cudaGetDeviceCount"); !ok) {
-    return refuse(RefusalCode::LibraryUnavailable, ok.error().detail);
+    // C31-04 : le pilote trop ancien et l'absence de carte gardent leur code ; le reste dit un composant absent.
+    const RefusalCode code = ok.error().code == RefusalCode::SdkRejected || ok.error().code == RefusalCode::DeviceUnavailable
+                                 ? ok.error().code
+                                 : RefusalCode::LibraryUnavailable;
+    return refuse(code, ok.error().detail);
   }
   // L'appareil du rendu, par UUID ; sans rendu (outils, tests), le premier.
   std::optional<int> chosen;

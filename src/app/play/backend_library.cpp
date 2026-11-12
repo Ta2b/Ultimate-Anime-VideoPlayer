@@ -118,18 +118,22 @@ void BackendLibrary::Destroy::operator()(gpu::Backend* backend) const {
 std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
     std::span<const std::filesystem::path> candidates, const gpu::BackendInit& init) {
   std::string tried;
+  std::optional<RefusalCode> first_code;
   for (const auto& path : candidates) {
     auto library = open(std::span(&path, 1));
     if (!library) {
       tried += std::format("\n  {}", library.error().detail);
+      if (!first_code) first_code = library.error().code;
       continue;
     }
     if (auto probe = create(*library, init); !probe) {
       tried += std::format("\n  {} : {} ({})", core::to_utf8(path), probe.error().detail,
                            name(probe.error().code));
+      if (!first_code) first_code = probe.error().code;
       continue;
     }
     (*library)->passed_over_ = std::move(tried);
+    if (!(*library)->passed_over_.empty()) (*library)->passed_over_code_ = first_code;
     release_kept();
     return library;
   }

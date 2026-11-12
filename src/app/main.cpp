@@ -19,8 +19,10 @@ extern "C" {
 #ifdef _WIN32
 #include <process.h>
 #else
-#include <fcntl.h>
+#include <spawn.h>
 #include <unistd.h>
+
+extern char** environ;  // NOLINT : posix_spawn le prend tel quel
 #endif
 #include <cerrno>
 #include <cstdio>
@@ -50,6 +52,7 @@ extern "C" {
 #include "app/play/player.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/relaunch_args.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
@@ -224,16 +227,6 @@ void append_to_log(const std::filesystem::path& log_file, std::string_view line)
   out << "[error] " << line << '\n';
 }
 
-// Les arguments du lancement, sans un --relaunched= d'une relance d'avant, puis celui de cette relance : le
-// lecteur relancé sait qu'il l'est et pourquoi (options.h).
-std::vector<std::string> relaunch_arguments(int argc, char** argv, ajp::app::play::RelaunchedFor reason) {
-  std::vector<std::string> arguments;
-  for (int i = 1; i < argc; ++i)
-    if (!std::string_view(argv[i]).starts_with("--relaunched=")) arguments.emplace_back(argv[i]);
-  arguments.push_back(std::format("--relaunched={}", ajp::app::play::relaunched_name(reason)));
-  return arguments;
-}
-
 // B18-01 : une relance ratée ne ferme plus la fenêtre sans un mot. Le journal est déjà fermé : la cause va
 // au bout d'ajp.log, sur stderr, et dans une boîte.
 int relaunch_failed(const std::filesystem::path& log_file, const std::string& cause) {
@@ -248,38 +241,22 @@ int relaunch_failed(const std::filesystem::path& log_file, const std::string& ca
 }
 
 // Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur ou la perte du GPU : il
-// remplace ce processus (POSIX) ou démarre à sa place (Windows).
+// remplace ce processus (POSIX) ou démarre à sa place (Windows). fresh (POSIX) : un processus neuf par
+// posix_spawn, l'appelant sortant ensuite ; une fermeture figée ne peut pas faire execv, qui attendrait la fin
+// d'un fil bloqué dans un ioctl du pilote (C31-03).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv,
-             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file) {
-  const std::vector<std::string> kept = relaunch_arguments(argc, argv, reason);
+             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file, bool fresh = false) {
+  const std::vector<std::string_view> launched(argv + 1, argv + argc);
+  const std::vector<std::string> kept = ajp::app::play::relaunch_arguments(launched, reason);
   ajp::log_channel("app")->info("relance ({})", ajp::app::play::relaunched_name(reason));
   ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
   ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
-  // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
-  // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
-  // est gardé dans une chaîne qui vit jusqu'au lancement (c_str() d'un temporaire pendrait).
-  const auto quoted = [](const std::string& argument) {
-    if (!argument.empty() && argument.find_first_of(" \t\"") == std::string::npos) return argument;
-    std::string out = "\"";
-    std::size_t backslashes = 0;
-    for (const char c : argument) {
-      if (c == '\\') {
-        ++backslashes;
-        out += c;
-        continue;
-      }
-      if (c == '"') out.append(backslashes + 1, '\\');
-      out += c;
-      backslashes = 0;
-    }
-    out.append(backslashes, '\\');  // avant le guillemet fermant
-    out += '"';
-    return out;
-  };
+  static_cast<void>(fresh);  // _spawnv lance toujours un processus neuf
+  // L'exécutable est gardé dans une chaîne qui vit jusqu'au lancement (c_str() d'un temporaire pendrait).
   const std::string program = executable.string();
-  std::vector<std::string> arguments{quoted(program)};
-  for (const std::string& argument : kept) arguments.push_back(quoted(argument));
+  std::vector<std::string> arguments{ajp::app::play::windows_quoted(program)};
+  for (const std::string& argument : kept) arguments.push_back(ajp::app::play::windows_quoted(argument));
   std::vector<const char*> pointers;
   for (const std::string& argument : arguments) pointers.push_back(argument.c_str());
   pointers.push_back(nullptr);
@@ -287,16 +264,16 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
   const int error = errno;
   return relaunch_failed(log_file, std::format("_spawnv : {} (errno {})", std::strerror(error), error));
 #else
-  // A18-12 : rien d'ouvert ne passe au lecteur relancé (pilote NVIDIA, socket, fichiers) : un contexte CUDA
-  // gardé par un descripteur hérité retiendrait sa mémoire vidéo.
-  const long open_max = sysconf(_SC_OPEN_MAX);
-  for (int fd = 3; fd < (open_max > 0 && open_max < 65536 ? open_max : 65536); ++fd) {
-    const int flags = fcntl(fd, F_GETFD);
-    if (flags >= 0) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
-  }
+  ajp::app::play::close_on_exec_all();
   std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
   for (const std::string& argument : kept) arguments.push_back(const_cast<char*>(argument.c_str()));
   arguments.push_back(nullptr);
+  if (fresh) {
+    pid_t child = 0;
+    const int spawned = posix_spawn(&child, executable.c_str(), nullptr, nullptr, arguments.data(), environ);
+    if (spawned == 0) return 0;
+    return relaunch_failed(log_file, std::format("posix_spawn : {} (errno {})", std::strerror(spawned), spawned));
+  }
   execv(executable.c_str(), arguments.data());
   const int error = errno;  // execv ne revient que sur un échec
   return relaunch_failed(log_file, std::format("execv : {} (errno {})", std::strerror(error), error));
@@ -320,7 +297,7 @@ void relaunch_when_stuck() {
   // Une fermeture bloquée vient d'un GPU qui ne répond plus : la relance se dit perte du GPU (B39-01).
   if (args.argv != nullptr)
     (void)relaunch(args.executable, args.argc, args.argv, ajp::app::play::RelaunchedFor::GpuLost,
-                   args.log_file);
+                   args.log_file, /*fresh=*/true);
 }
 // Le dossier des moteurs, et la relance armée avant la lecture.
 void before_play(const std::filesystem::path& engines, const std::filesystem::path& executable, int argc,
@@ -657,7 +634,9 @@ int run_player(int argc, char** argv) {
     std::error_code absolute;
     if (!options->file.empty())
       files.push_back(ajp::prepare::utf8_path(std::filesystem::absolute(options->file, absolute)));
-    auto claim = ajp::app::play::claim_instance(data, ajp::app::play::instance_key(data), files);
+    // C31-03 : un lecteur relancé prend la place de l'ancien, même s'il tient encore le canal.
+    auto claim = ajp::app::play::claim_instance(data, ajp::app::play::instance_key(data), files,
+                                                options->relaunched != ajp::app::play::RelaunchedFor::None);
     if (claim.forwarded) return 0;
     instance = std::move(claim.listener);
   }

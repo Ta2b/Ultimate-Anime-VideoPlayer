@@ -141,6 +141,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const auto log = log_channel("app");
   // B31-03 : une perte du GPU pendant la préparation relance au départ demandé, pas à 0:00.
   p.stopped_at_us = std::max<std::int64_t>(start_us, 0);
+  p.stopped_paused = start_paused;
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
@@ -524,6 +525,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   SleepWatch sleep_watch;
   SleepNotice sleep_notice(&LoopWake::push, &wake);  // B31-01 : la veille dite avant
   bool sleep_announced = false;
+  bool lost_paused = false;  // C31-01 : la veille a mis en pause avant la perte du GPU
   const WindowEvents window_events;  // B31-13 : la barre de titre tenue sous Windows n'est pas une veille
   ScreenSaverHold screen_saver;      // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
@@ -538,6 +540,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         after.lost || after.reopen) {
       if (after.lost) {
         failure = std::move(*after.lost);
+        lost_paused = after.paused;
         break;
       }
       chain.reopen = chain.running;
@@ -740,11 +743,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
   if (const std::int64_t at = session.view().position_us; at != kNoPts)
     p.stopped_at_us = std::max<std::int64_t>(at, 0);
+  p.stopped_paused = session.paused() || lost_paused;  // C31-01 : la relance reste en pause
   // B31-04, B30-07 : ce démontage attend le GPU sans délai (jointure des fils, cudaStreamSynchronize,
   // cudaFree) ; gardé comme celui de l'écran. Après une perte du GPU, la relance est demandée d'abord : un
   // démontage bloqué la fait au lieu de laisser une fenêtre figée.
   if (failure && failure->code == RefusalCode::DeviceLost && p.relaunch_on_loss)
-    (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, false, RelaunchReason::GpuLost);
+    (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, p.stopped_paused, RelaunchReason::GpuLost);
   const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
   session.end();
   out.flush();

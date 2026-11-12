@@ -269,22 +269,32 @@ bool send_files(const std::wstring& name, const std::string& message) {
 }  // namespace
 
 InstanceClaim claim_instance(const std::filesystem::path& /*channel_dir*/, std::string_view key,
-                             const std::vector<std::string>& files) {
+                             const std::vector<std::string>& files, bool take_over) {
   try {
     const std::wstring name = pipe_name(key);
-    HANDLE pipe =
-        CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
-                         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
-                         4096, 4096, 0, nullptr);
-    if (pipe != INVALID_HANDLE_VALUE) {
-      auto listener = std::make_shared<InstanceListener>(pipe, name);
-      listener->start();
-      return {.forwarded = false, .listener = std::move(listener)};
+    const auto until = std::chrono::steady_clock::now() + kTakeOverWait;
+    for (;;) {
+      HANDLE pipe =
+          CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                           PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
+                           4096, 4096, 0, nullptr);
+      if (pipe != INVALID_HANDLE_VALUE) {
+        auto listener = std::make_shared<InstanceListener>(pipe, name);
+        listener->start();
+        return {.forwarded = false, .listener = std::move(listener)};
+      }
+      // Un canal déjà tenu : ERROR_ACCESS_DENIED (FILE_FLAG_FIRST_PIPE_INSTANCE), ou ERROR_PIPE_BUSY quand sa
+      // seule instance est prise (nMaxInstances = 1).
+      if (const DWORD error = GetLastError(); error != ERROR_ACCESS_DENIED && error != ERROR_PIPE_BUSY)
+        return {};
+      if (!take_over) break;
+      // C31-03 : le lecteur figé qui vient de relancer celui-ci tient encore le canal ; il sort sous peu.
+      if (std::chrono::steady_clock::now() >= until) {
+        log_channel("app")->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+        return {};
+      }
+      std::this_thread::sleep_for(kSlice);
     }
-    // Un canal déjà tenu : ERROR_ACCESS_DENIED (FILE_FLAG_FIRST_PIPE_INSTANCE), ou ERROR_PIPE_BUSY quand sa
-    // seule instance est prise (nMaxInstances = 1).
-    if (const DWORD error = GetLastError(); error != ERROR_ACCESS_DENIED && error != ERROR_PIPE_BUSY)
-      return {};
     if (send_files(name, instance_message(files))) return {.forwarded = true, .listener = nullptr};
     const auto log = log_channel("app");
     log->warn("instance : le lecteur ouvert ne répond pas, ce lancement démarre seul");
@@ -445,7 +455,7 @@ bool send_files(int fd, const std::string& message) {
 }  // namespace
 
 InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::string_view /*key*/,
-                             const std::vector<std::string>& files) {
+                             const std::vector<std::string>& files, bool take_over) {
   try {
     const std::filesystem::path path = channel_dir / "instance.sock";
     const auto address = socket_address(path);
@@ -456,11 +466,22 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
     const Fd lock(::open((channel_dir / "instance.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600));
     if (lock) ::flock(lock.get(), LOCK_EX);
     // Deux tours : un socket resté d'un lecteur arrêté net se retire, et un lancement simultané qui vient
-    // de le prendre se trouve au second.
+    // de le prendre se trouve au second. take_over : un tour de plus tant que l'ancien écoute, pendant
+    // kTakeOverWait au plus (C31-03).
+    const auto until = std::chrono::steady_clock::now() + kTakeOverWait;
     for (int attempt = 0; attempt < 2; ++attempt) {
       Fd client = unix_socket();
       if (!client) return {};
       if (::connect(client.get(), as_sockaddr(*address), sizeof(sockaddr_un)) == 0) {
+        if (take_over) {
+          if (std::chrono::steady_clock::now() >= until) {
+            log_channel("app")->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+            return {};
+          }
+          std::this_thread::sleep_for(kSlice);
+          attempt = -1;  // l'ancien lecteur n'est pas encore sorti : un tour de plus
+          continue;
+        }
         if (send_files(client.get(), instance_message(files)))
           return {.forwarded = true, .listener = nullptr};
         const auto log = log_channel("app");

@@ -21,7 +21,9 @@ enum class RelaunchReason : std::uint8_t { GpuLost, EngineUpdated };
 
 struct RelaunchTarget {
   std::filesystem::path file;
-  std::int64_t start_us = 0;
+  // C18-02 : absent quand la vidéo n'avait pas encore d'instant imposé (relance à l'ouverture) : la reprise
+  // de lecture retenue s'applique alors comme à une ouverture ordinaire.
+  std::optional<std::int64_t> start_us;
   bool paused = false;
   RelaunchReason reason = RelaunchReason::EngineUpdated;
   std::int64_t written_s = 0;  // quand la relance a été demandée
@@ -44,8 +46,8 @@ std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& 
 // La relance demandée (*paths.relaunch) avec la vidéo à rouvrir : vrai si elle l'est. Sans file, la relance
 // rejoue les arguments du lancement comme avant.
 struct PlayerPaths;
-bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, std::int64_t start_us,
-                  bool paused, RelaunchReason reason);
+bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file,
+                  std::optional<std::int64_t> start_us, bool paused, RelaunchReason reason);
 
 // La vidéo du lecteur qui s'est relancé : options.file devient elle. Rien pour un essai ou un banc. Seul le
 // processus relancé (--relaunched=) prend le fichier : un lancement de l'utilisateur, même dans les deux

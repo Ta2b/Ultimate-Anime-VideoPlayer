@@ -75,6 +75,6 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
 // La ligne de l'onglet quand le moteur préféré a refusé ce GPU et qu'un autre le remplace ; vide sinon.
 // A37-08 : TensorRT refusé, le pilote relu dit pourquoi (trop ancien, ou NVK).
 std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library,
-                          const GpuFacts& gpu);
+                          const GpuFacts& gpu, std::optional<RefusalCode> refused = std::nullopt);
 
 }  // namespace ajp::app::play

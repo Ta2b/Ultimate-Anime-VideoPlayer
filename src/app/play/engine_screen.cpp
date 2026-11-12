@@ -533,7 +533,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
 }
 
 std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library,
-                          const GpuFacts& gpu) {
+                          const GpuFacts& gpu, std::optional<RefusalCode> refused) {
   const std::optional<core::EngineId> preferred = engines.preferred[usage(core::Usage::Upscale)];
   const std::optional<core::EngineId> in_use = engine_of_library(library);
   if (!preferred || !in_use || preferred == in_use) return {};
@@ -541,6 +541,10 @@ std::string fallback_note(const core::Settings& engines, const std::filesystem::
     if (const std::string problem = tensorrt_driver_problem(gpu); !problem.empty())
       return i18n::tr_format("{}: {} replaces it.", problem, engine_label(*in_use));
   }
+  // C31-04 : le pilote refusé par le runtime du moteur (cudaErrorInsufficientDriver) : le geste qui aide.
+  if (refused == RefusalCode::SdkRejected)
+    return i18n::tr_format("{} needs a newer graphics driver: update it. {} replaces it until then.",
+                           engine_label(*preferred), engine_label(*in_use));
   return i18n::tr_format("{} is chosen but does not open on this GPU (see log): {} replaces it.",
                          engine_label(*preferred), engine_label(*in_use));
 }

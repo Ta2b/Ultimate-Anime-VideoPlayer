@@ -61,7 +61,7 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .engines = engine_badges(p.paths.engines, c.loaded_engines),
       .chosen_engines = chosen_line(p.engines),
       .engine_in_use = engine_of_library(p.library->path()),
-      .engine_note = fallback_note(p.engines, p.library->path(), gpu_facts(p.screen)),
+      .engine_note = fallback_note(p.engines, p.library->path(), gpu_facts(p.screen), p.library->passed_over_code()),
       .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
       .source_file = p.options.file,
       .display_height = display_height(out.window()),

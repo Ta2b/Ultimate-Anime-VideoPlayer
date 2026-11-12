@@ -213,6 +213,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "vulkan_share.cpp",
                                         "default_player.cpp",
                                         "player.cpp",
+                                        "player_probe.cpp",
+                                        "pumped_task.cpp",
                                         "maxine_install.cpp",
                                         "relaunch_target.cpp",
                                         "sleep_watch.cpp",

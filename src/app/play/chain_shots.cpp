@@ -83,7 +83,9 @@ void start_probe(const ShotWork& work, ShotJob& job, std::int64_t from_us) {
   // visages décode plus grand.
   if (job.faces && !options.cuvid_resize.empty()) options.cuvid_resize = media::kProbeCuvidFacesSize;
   // B30-01 : une analyse bloquée sur un partage muet ne fige pas la fenêtre à la fermeture.
-  options.abandon = abandon_thread;
+  options.abandon = [](std::jthread thread, std::function<bool()> finished) {
+    abandon_thread(std::move(thread), std::move(finished));
+  };
   options.on_stop = [state = job.cache, dir = work.cache_dir, name = core::to_utf8(job.file.filename()),
                      variant = job.variant](const media::ShotTimeline& timeline, bool complete) {
     keep_on_stop(state, dir, name, variant, timeline, complete);

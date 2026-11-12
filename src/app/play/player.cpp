@@ -49,6 +49,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/player_machine.h"
+#include "app/play/player_probe.h"
 #include "app/play/player_run.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
@@ -68,8 +69,6 @@
 #include "core/settings.h"
 #include "core/thread.h"
 #include "core/utf8_path.h"
-#include "media/demuxer.h"
-#include "media/selection.h"
 #include "media/track.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
@@ -112,46 +111,6 @@ std::expected<PlaySettings, Refusal> load_with_notes(const std::filesystem::path
   auto loaded = load_settings(path, &ignored);
   if (std::string note = ignored_values_note(ignored); !note.empty()) notes.push_back(std::move(note));
   return loaded;
-}
-
-// La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
-std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path& file) {
-  auto demuxer = media::Demuxer::open(file, {.attachments = false});
-  if (!demuxer) return std::unexpected(std::move(demuxer.error()));
-  const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), {});
-  if (!choice.video) {
-    // P3.28 : un fichier audio seul est dit tel quel, pas comme un fichier abîmé.
-    Refusal refusal{RefusalCode::TrackUnavailable,
-                    std::format("{} : aucune piste vidéo", core::to_utf8(file))};
-    if (choice.audio) refusal.key = kAudioOnlyKey;
-    return std::unexpected(std::move(refusal));
-  }
-  const media::TrackInfo& video = *demuxer->track(*choice.video);
-  // P3.26 : le profil 5 n'a pas de couche de base HDR10 ou SDR (IPTPQc2) ; les profils 7 et 8 se lisent par
-  // leur couche de base, sans les métadonnées dynamiques.
-  if (video.dolby_vision_profile == 5) {
-    Refusal refusal{RefusalCode::FormatUnsupported,
-                    std::format("{} : Dolby Vision profil 5", core::to_utf8(file))};
-    refusal.key = kDolbyVision5Key;
-    return std::unexpected(std::move(refusal));
-  }
-  // A15-07 : un format ou une couleur que la chaîne refuserait se dit ici, avant de construire la chaîne.
-  if (std::optional<Refusal> unreadable = media::unreadable_video(video)) {
-    unreadable->detail = std::format("{} : {}", core::to_utf8(file.filename()), unreadable->detail);
-    return std::unexpected(std::move(*unreadable));
-  }
-  if (video.dolby_vision_profile > 0)
-    log_channel("app")->info("Dolby Vision profil {} : lu par sa couche de base, sans RPU",
-                             video.dolby_vision_profile);
-  return video;
-}
-
-// Hors du thread de la fenêtre, borné (P2.15) : une vidéo sur un partage réseau qui ne répond plus laisse la
-// fenêtre vivante et rend la main avec une raison.
-constexpr auto kProbeLimit = std::chrono::seconds(20);
-std::expected<media::TrackInfo, Refusal> probe_video(const std::filesystem::path& file, bool window_open) {
-  return run_pumped_for<media::TrackInfo>("probe", kProbeLimit, window_open,
-                                          [file] { return probe_once(file); });
 }
 
 // A25-01 : l'assistant relancé en lecture a écrit play.toml (langues, mises à jour, chaîne calibrée). La
@@ -252,8 +211,8 @@ struct LossRelaunch {
         launched_s(now_s) {}
 
   // Vrai si le lecteur se relance : play() rend alors sans erreur.
-  bool operator()(const Refusal& refused, const std::filesystem::path& file, std::int64_t start_us,
-                  bool paused) const {
+  bool operator()(const Refusal& refused, const std::filesystem::path& file,
+                  std::optional<std::int64_t> start_us, bool paused) const {
     if (scripted || refused.code != RefusalCode::DeviceLost) return false;
     if (!relaunch_allowed(lost_recently, launched_s)) return false;
     if (!ask_relaunch(paths, file, start_us, paused, RelaunchReason::GpuLost)) return false;
@@ -282,21 +241,18 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::optional<RelaunchTarget> reopened_after = take_relaunch(options, paths, launched_s);
   set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
-  // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
+  // Un essai scripté lit le fichier donné avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune,
+  // et le code de sortie le dit. Sinon la sonde tourne pendant l'ouverture de l'écran et s'attend la fenêtre
+  // ouverte (C18-01).
   std::optional<media::TrackInfo> given;
   std::optional<Refusal> unreadable_why;  // le fichier donné ne se lit pas : dit à l'accueil, à sa place
-  if (!options.file.empty()) {
+  std::optional<GivenProbe> given_probe;
+  if (!options.file.empty() && (options.hidden || options.bench_out || options.snapshot || !options.keys.empty())) {
     auto video = probe_video(options.file, false);
-    if (video) {
-      given = std::move(*video);
-    } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
-      return std::unexpected(std::move(video.error()));  // un essai scripté : le code de sortie le dit
-    } else {
-      // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
-      // ne dirait rien. L'accueil s'ouvre avec la raison.
-      log_channel("app")->warn("{}", video.error().detail);
-      unreadable_why = std::move(video.error());
-    }
+    if (!video) return std::unexpected(std::move(video.error()));
+    given = std::move(*video);
+  } else if (!options.file.empty()) {
+    given_probe = start_given_probe(options.file);
   }
   std::atomic<bool> playing{false};  // la vérification des mises à jour attend la fin de la vidéo
   std::jthread update_check;
@@ -310,7 +266,6 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     startup_notes.push_back(set_aside(settings_path, saved.error()));
     saved = PlaySettings{};
   }
-  const std::string unreadable = unreadable_text(options.file, unreadable_why);  // B18-03
   ReleaseRefresh release_index = start_release_refresh(options, paths, *saved);  // A18-02
   const std::jthread resource_log = start_resource_log();                        // A33-08
   load_user_keys(paths::user_keys(settings_path.parent_path()));                 // [keys] seul
@@ -339,6 +294,23 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   auto ui = PlayerUi::create((*screen)->window(), given ? core::to_utf8(options.file.filename()) : "", fonts);
   if (!ui) return std::unexpected(std::move(ui.error()));
   note_ignored_keys((*ui)->controls());
+  if (given_probe) {
+    show_loading(**screen, **ui, i18n::ui_tr("Loading"));
+    auto video = finish_given_probe(*given_probe);
+    given_probe.reset();
+    if (!video && video.error().code == RefusalCode::Cancelled) return {};  // fenêtre fermée pendant la sonde
+    if (video) {
+      given = std::move(*video);
+      SDL_SetWindowTitle((*screen)->window(), std::format("ajp — {}", core::to_utf8(options.file.filename())).c_str());
+      (*ui)->set_title(core::to_utf8(options.file.filename()));
+    } else {
+      // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux ne
+      // dirait rien. L'accueil s'ouvre avec la raison.
+      log->warn("{}", video.error().detail);
+      unreadable_why = std::move(video.error());
+    }
+  }
+  const std::string unreadable = unreadable_text(options.file, unreadable_why);  // B18-03
   // L'interface rend ses textures à l'écran avant qu'ils ne partent, quelle que soit la sortie.
   class Release {
    public:
@@ -382,7 +354,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const bool scripted = relaunch_after_loss.scripted;
   if (options.first_run || (!engines->first_run_done && !scripted)) {
     auto shown = run_engine_screen(engine_screen, *engines, false, next_key, snapshot);
-    if (!shown && relaunch_after_loss(shown.error(), options.file, 0, false)) return {};
+    if (!shown && relaunch_after_loss(shown.error(), options.file, std::nullopt, false)) return {};
     if (!shown) return std::unexpected(std::move(shown.error()));
     if (!*shown) return {};
     // L'assistant vient d'écrire play.toml (HDR, chaîne calibrée, auto Rapide) : l'accueil part de là, sans
@@ -443,8 +415,16 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   if (reopened_after && given) {
     forced_start = reopened_after->start_us;
     forced_paused = reopened_after->paused;
-    if (reopened_after->reason == RelaunchReason::GpuLost)
-      relaunch_note = i18n::ui_tr("The graphics card stopped responding: the player restarted");
+  }
+  // C31-07 : l'avis vient de --relaunched=, que le lecteur relancé reçoit toujours, même sans relaunch.txt
+  // (perte à l'accueil ou à l'écran des moteurs, disque plein) : sur la vidéo rouverte, sinon à l'accueil.
+  if (options.relaunched == RelaunchedFor::GpuLost ||
+      (reopened_after && reopened_after->reason == RelaunchReason::GpuLost)) {
+    relaunch_note = i18n::ui_tr("The graphics card stopped responding: the player restarted");
+    if (file.empty() || !given) {
+      problem += problem.empty() ? relaunch_note.str() : " · " + relaunch_note.str();
+      relaunch_note = {};
+    }
   }
   Announced announced;  // la mise à jour vue, la calibration d'une autre carte
   const HomeScreen home{.screen = **screen,
@@ -457,7 +437,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     if (file.empty()) {
       HomeState state{.saved = *saved, .engines = *engines, .next_key = next_key, .snapshot = snapshot};
       auto picked = run_home(home, state, problem);
-      if (!picked && relaunch_after_loss(picked.error(), {}, 0, false)) return {};
+      if (!picked && relaunch_after_loss(picked.error(), {}, std::nullopt, false)) return {};
       if (!picked) return std::unexpected(std::move(picked.error()));
       if (!*picked) return {};
       file = std::move(**picked);
@@ -531,7 +511,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     // recharge pas sous le même nom dans ce processus, le lecteur se relance sur cette vidéo.
     if (library && library->replaced_on_disk() && paths.relaunch != nullptr) {
       log->info("moteur mis à jour : le lecteur se relance");
-      ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
+      ask_relaunch(paths, file, forced_start, forced_paused, RelaunchReason::EngineUpdated);
       return {};
     }
     // Un autre moteur choisi depuis (accueil, Paramètres) : la bibliothèque se rouvre sur lui, sinon le choix
@@ -550,7 +530,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       }
       if (stale_updated && paths.relaunch != nullptr) {
         log->info("moteurs mis à jour : le lecteur se relance");
-        ask_relaunch(paths, file, forced_start.value_or(0), forced_paused, RelaunchReason::EngineUpdated);
+        ask_relaunch(paths, file, forced_start, forced_paused, RelaunchReason::EngineUpdated);
         return {};
       }
       show_loading(**screen, **ui, i18n::ui_tr("Loading"));
@@ -559,7 +539,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       auto opened = open_backend(catalog, paths, *engines, probe);
       if (!opened) {
         if (opened.error().code == RefusalCode::Cancelled) return {};  // fenêtre fermée (B30-06)
-        if (relaunch_after_loss(opened.error(), file, forced_start.value_or(0), forced_paused)) return {};
+        if (relaunch_after_loss(opened.error(), file, forced_start, forced_paused)) return {};
         if (scripted) return std::unexpected(std::move(opened.error()));
         // A18-13, B31-09 : la vidéo, choisie à l'accueil ou par double-clic, y ramène avec la raison.
         problem = i18n::tr_format("\"{}\" could not be opened: {}", core::to_utf8(file.filename()),
@@ -574,8 +554,11 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       if (const std::optional<core::EngineId> in_use = engine_of_library(library->path());
           wanted && in_use && wanted != in_use)
         engine_fallback =
-            i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > General > Engines)",
-                               engine_label(*wanted), engine_label(*in_use));
+            library->passed_over_code() == RefusalCode::SdkRejected  // C31-04 : le pilote, pas le moteur
+                ? i18n::ui_tr_format("{} needs a newer graphics driver: {} is used, slower", engine_label(*wanted),
+                                     engine_label(*in_use))
+                : i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > General > Engines)",
+                                     engine_label(*wanted), engine_label(*in_use));
     }
 
     Player player{.options = file_options,
@@ -697,7 +680,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // pilotés (essais, banc, captures) gardent le code de sortie.
       if (scripted || player.quit) return result;
       // Le GPU perdu : une relance sur cette vidéo, à cet instant (relaunch_after_loss).
-      if (relaunch_after_loss(result.error(), file, player.stopped_at_us, false)) return {};
+      if (relaunch_after_loss(result.error(), file, player.stopped_at_us, player.stopped_paused)) return {};
       log->error("{}", result.error().detail);
       failed = i18n::tr_format("\"{}\" stopped: {}", core::to_utf8(file.filename()),
                                visible_error(result.error()));

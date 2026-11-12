@@ -53,9 +53,10 @@ std::expected<void, Refusal> write_relaunch_target(const std::filesystem::path& 
   const std::string file = prepare::utf8_path(target.file);
   if (file.find_first_of("\n\r") != std::string::npos)
     return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "relance : chemin à saut de ligne"});
-  return core::write_text_atomically(
-      store, std::format("file={}\nstart_us={}\npaused={}\nreason={}\nwritten_s={}\n", file, target.start_us,
-                         target.paused ? 1 : 0, reason_name(target.reason), target.written_s));
+  const std::string start = target.start_us ? std::format("start_us={}\n", *target.start_us) : std::string();
+  return core::write_text_atomically(store, std::format("file={}\n{}paused={}\nreason={}\nwritten_s={}\n", file,
+                                                        start, target.paused ? 1 : 0, reason_name(target.reason),
+                                                        target.written_s));
 }
 
 std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& store, std::int64_t now_s) {
@@ -94,8 +95,8 @@ std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& 
   return target;
 }
 
-bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, std::int64_t start_us,
-                  bool paused, RelaunchReason reason) {
+bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file,
+                  std::optional<std::int64_t> start_us, bool paused, RelaunchReason reason) {
   if (paths.relaunch == nullptr) return false;
   if (!file.empty()) {
     std::error_code absolute_error;
@@ -130,7 +131,7 @@ std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPa
   std::optional<RelaunchTarget> target = take_relaunch_target(store, now_s);
   if (!target) return std::nullopt;
   log_channel("app")->info("relance : {} à {}", prepare::utf8_path(target->file.filename()),
-                           format_position(target->start_us));
+                           target->start_us ? format_position(*target->start_us) : std::string("sa reprise"));
   options.file = target->file;
   return target;
 }
