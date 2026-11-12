@@ -29,7 +29,7 @@ namespace {
 // Ce que le rapport « Signaler un problème » dit de la carte et du préréglage joué (A39-02).
 void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const GpuDevice& device) {
   note_report_fact("GPU", gpu_line(gpu));
-  note_report_fact("Préréglage", label(settings.preset));
+  note_preset_facts(settings);  // préréglage et réglages changés (C39-01)
   if (device.vendor() == GpuVendor::Nvidia) note_report_fact("Pilote NVIDIA", device.driver_version);
 }
 

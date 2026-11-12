@@ -115,7 +115,8 @@
       "inherits": "windows-release",
       "cacheVariables": {
         "AJP_WITH_CUDA": "ON",
-        "AJP_HARDWARE_TESTS": "ON"
+        "AJP_HARDWARE_TESTS": "ON",
+        "AJP_HARDWARE_TESTS_STRICT": "ON"
       }
     },
     {
@@ -413,7 +414,7 @@
     },
     {
       "name": "windows-rtx-hardware",
-      "displayName": "Windows RTX : les tests cachés sur la vraie carte et les modèles installés (ctest -L nvidia|gpu|models) ; échoue si aucun n'est enregistré",
+      "displayName": "Windows RTX : les tests cachés sur la vraie carte et les modèles installés (ctest -L nvidia|gpu|models)",
       "configurePreset": "windows-rtx",
       "output": {
         "outputOnFailure": true
@@ -422,9 +423,6 @@
         "include": {
           "label": "nvidia|gpu|models"
         }
-      },
-      "execution": {
-        "noTestsAction": "error"
       }
     },
     {

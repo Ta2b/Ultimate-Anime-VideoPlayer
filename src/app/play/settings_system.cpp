@@ -131,7 +131,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   };
   constexpr std::array<Mode, 2> kModes{
       {{UpdateMode::Notify, "Notify me",
-        "A notification with the link to the new version; you install it yourself."},
+        "A notification when a new version is out; you install it yourself."},
        {UpdateMode::Never, "Never",
         "No update notifications. Engine packages of this version are still looked up."}}};
   for (const Mode& mode : kModes) {

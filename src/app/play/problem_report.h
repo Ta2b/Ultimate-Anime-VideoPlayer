@@ -17,6 +17,8 @@ namespace ajp::app::play {
 // Retient un fait pour le rapport (« Carte », « Pilote »…). Un même nom remplace sa valeur, l'ordre
 // d'arrivée est gardé. Utilisable de tout thread.
 void note_report_fact(std::string_view name, std::string_view value);
+// Retire un fait devenu faux (rien si absent).
+void forget_report_fact(std::string_view name);
 // Les versions, à la construction, des bibliothèques d'image et de décodage que le dépôt ne fixe
 // pas (dav1d, shaderc, lcms2, FreeType, HarfBuzz, FriBidi : celles de la distribution sous Linux,
 // de vcpkg sous Windows). Un écart de rendu ou de vitesse entre deux systèmes se cherche d'abord

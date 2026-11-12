@@ -125,6 +125,22 @@ TEST_CASE("Journal nettoyé : un point final et les barres inverses doublées (B
   ajp::set_log_home("");
 }
 
+TEST_CASE("Journal nettoyé : préfixe NT et chemins sans lecteur (C39-11)", "[log]") {
+  CHECK(ajp::reduce_log_paths("path=\\??\\C:\\Users\\Jean\\a") == "path=…/a");
+  CHECK(ajp::reduce_log_paths("chemin \\Users\\Jean\\Videos\\a.mkv") == "chemin …/a.mkv");
+  CHECK(ajp::reduce_log_paths("chemin Users\\Jean\\Videos\\a.mkv") == "chemin …/a.mkv");
+}
+
+TEST_CASE("Journal nettoyé : les dossiers du système restent lisibles (C39-11)", "[log]") {
+  CHECK(ajp::reduce_log_paths("gpu /dev/dri/renderD128") == "gpu /dev/dri/renderD128");
+  CHECK(ajp::reduce_log_paths("lib /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1, ok") ==
+        "lib /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1, ok");
+  CHECK(ajp::reduce_log_paths("icd /usr/share/vulkan/icd.d/nvidia_icd.json") ==
+        "icd /usr/share/vulkan/icd.d/nvidia_icd.json");
+  CHECK(ajp::reduce_log_paths("dll C:\\Windows\\System32\\nvcuda.dll") ==
+        "dll C:\\Windows\\System32\\nvcuda.dll");
+}
+
 TEST_CASE("Journal nettoyé : les chemins sont réduits au nom de leur fichier (B39-05)", "[log]") {
   CHECK(ajp::reduce_log_paths("moteur span D:\\AnimeJaNai\\engines\\a.engine") == "moteur span …/a.engine");
   CHECK(ajp::reduce_log_paths("journal : ~/.local/share/ajp/ajp.log · ajp 1.0") ==
