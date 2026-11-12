@@ -78,6 +78,7 @@ struct RifeLoad {
   InnerFallbacks& inner;
   const std::string& library;
   std::filesystem::path models_dir;
+  std::filesystem::path rife_model;  // le RIFE de la chaîne : appelé seulement quand c.rife_model en a un
   bool fused_wanted = false;
   std::optional<Refusal> cancelled;
 
@@ -98,12 +99,12 @@ Fused RifeLoad::try_fused(const kernels::RifeGeometry& g, bool motion, std::uniq
   const auto log = log_channel("app");
   const prepare::RifeFusedOutput output = rife_fused_output(motion, settings.cubic_warp);
   const std::string key = inner_key(std::format("rife-fused {}", prepare::output_name(output)), library,
-                                    *c.rife_model, g.padded_width, g.padded_height);
+                                    rife_model, g.padded_width, g.padded_height);
   if (const Refusal* before = inner.refused(ChainStage::Motion, key)) {
     c.rife_fused_refused = before->code;  // le panneau dit encore pourquoi l'entier tourne
     return Fused::Declined;
   }
-  auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, output);
+  auto fused = prepare_rife_fused(p, init, *c.backend, rife_model, models_dir, g, output);
   if (!fused && watch_now(fused.error())) {
     cancelled = std::move(fused.error());
     return Fused::Cancelled;
@@ -134,7 +135,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> RifeLoad::en
 
 std::expected<bool, StageFailure> RifeLoad::motion_variant() {
   const auto log = log_channel("app");
-  auto derived = motion_model(*c.rife_model, models_dir);
+  auto derived = motion_model(rife_model, models_dir);
   if (!derived) {
     log->warn("RIFE mouvement indisponible ({}) : RIFE image", derived.error().detail);
     return true;
@@ -168,7 +169,7 @@ std::expected<bool, StageFailure> RifeLoad::image() {
   if (tried == Fused::Closed) return false;
   if (tried == Fused::Cancelled) return stage_refused(std::move(*cancelled), ChainStage::Motion);
   if (c.rife) return true;
-  auto loaded = engine(*c.rife_model, c.image_geometry);
+  auto loaded = engine(rife_model, c.image_geometry);
   if (!loaded) return stage_refused(std::move(loaded.error()), ChainStage::Motion);
   if (!*loaded) return false;
   c.rife = std::move(**loaded);
@@ -196,7 +197,8 @@ std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& i
                 .settings = settings,
                 .inner = inner,
                 .library = library,
-                .models_dir = paths::derived_models(p.paths)};
+                .models_dir = paths::derived_models(p.paths),
+                .rife_model = c.rife_model.value_or(std::filesystem::path())};
   // Le fusionné quand rife_fused_choice.h le veut et que le modèle se coupe ; tout échec garde le RIFE
   // entier.
   const std::string fused_declined = use_rife

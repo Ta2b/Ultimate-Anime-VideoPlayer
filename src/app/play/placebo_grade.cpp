@@ -275,6 +275,7 @@ void PlaceboScreen::Impl::match_kwin() {
 double PlaceboScreen::Impl::announced_fall(double max_nits, double reference, double announced_panel_peak) {
   const double contract_fall = contract ? render::contract_metadata(*contract).max_fall : 0.0;
   if (contract_fall > 0.0) return std::min(max_nits, contract_fall);
+  if (!grade) return 0.0;  // sans grade, le blanc rendu n'est pas connu : MaxFALL non annoncé
   const render::GradeParams& params = grade->params();
   // Sous le plafond des flashs, le blanc est celui du pic non plafonné : l'annonce ne bouge pas (B41-03).
   // Le rendu non plafonné est gardé d'une image à l'autre (C41-04).

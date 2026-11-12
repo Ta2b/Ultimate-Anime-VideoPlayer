@@ -57,8 +57,10 @@ bool message_complete(std::string_view message) {
 // lecture de l'événement, les textes restent donc ici (quelques chemins par session).
 namespace {
 
-std::mutex g_activation_mutex;
-std::string g_activation;  // le dernier jeton reçu, pris par la fenêtre (raise_for_forwarded)
+// Le dernier jeton d'activation reçu, pris par la fenêtre (raise_for_forwarded) : état du processus, sous
+// mutex.
+std::mutex g_activation_mutex;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+std::string g_activation;       // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 }  // namespace
 

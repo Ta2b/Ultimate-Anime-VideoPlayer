@@ -100,11 +100,12 @@ InstalledState installed_state(const EngineCatalog& catalog, const core::EngineP
     }
     // C37-02 : les fichiers tiers de l'architecture de la carte d'aujourd'hui, pas seulement ceux tirés pour
     // la carte de l'installation. Une note d'avant les fichiers (liste vide) n'est pas jugée.
-    if (here.state == PackageState::Current && !arch.empty() && !here.note->files.empty()) {
+    if (here.state == PackageState::Current && here.note && !arch.empty() && !here.note->files.empty()) {
+      const auto& noted_files = here.note->files;
       for (const core::VendorFile& wanted :
            core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch)) {
-        const bool noted = std::ranges::any_of(here.note->files,
-                                               [&](const auto& file) { return file.first == wanted.name; });
+        const bool noted =
+            std::ranges::any_of(noted_files, [&](const auto& file) { return file.first == wanted.name; });
         if (noted) continue;
         here.state = PackageState::Replaced;
         here.missing = wanted.name;

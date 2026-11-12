@@ -156,7 +156,7 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
   struct Candidate {
     std::filesystem::path path;
     std::uintmax_t size = 0;
-    std::filesystem::file_time_type time{};
+    std::filesystem::file_time_type time;
   };
   std::vector<Candidate> candidates;
   std::error_code error;
