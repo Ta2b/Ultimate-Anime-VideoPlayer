@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "core/types.h"
+#include "gpu/backend.h"
 #include "gpu/ir/ir.h"
 #include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_program.h"
@@ -93,6 +94,10 @@ struct Gated {
 // « non mesuré » pour une couche reprise du cache). Vide sans couche à précision réduite.
 std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
                                      const Gated& gated, std::span<const ReducedChoice> measured);
+
+// Le même avis, chiffré, pour l'interface (gpu::Artifact::reduced, C45-01) : le lecteur le met en phrase.
+PrecisionNotice precision_notice(std::span<const KernelChoice> choices, const Gated& gated,
+                                 std::span<const ReducedChoice> measured);
 
 // Les choix de l'autotuner s'ils passent la porte ; sinon ceux qui la passent (voir plus haut).
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,

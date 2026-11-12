@@ -9,6 +9,7 @@
 #include <optional>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "../gpu_ir/onnx_builder.h"
@@ -164,4 +165,27 @@ TEST_CASE("Porte de bout en bout : une précision réduite gardée s'annonce ave
   // Porte jugée sans le jumeau en float : la perte n'est pas chiffrée, elle est dite non mesurée.
   gated.against_float = false;
   CHECK(vk::net::reduced_precision_notice("span", choices, gated, measured).contains("perte non mesurée"));
+}
+
+TEST_CASE("Porte de bout en bout : l'avis chiffré pour l'écran suit le journal", "[vk_backend][net][gate]") {
+  using vk::net::KernelChoice;
+  using vk::net::ReducedChoice;
+  const std::vector<KernelChoice> choices{{.variant = "direct"}, {.variant = "coopmat_acc16"}};
+  vk::net::Gated gated{.choices = choices, .against_float = true, .db = 80.9, .floor_db = 81.6};
+  CHECK(vk::net::precision_notice(std::vector<KernelChoice>{{.variant = "direct"}}, gated, {}).layers == 0);
+  const std::vector<ReducedChoice> measured{
+      {.node = 1, .variant = "coopmat_acc16", .chosen_us = 100.0, .full_precision_us = 150.0}};
+  const PrecisionNotice notice = vk::net::precision_notice(choices, gated, measured);
+  CHECK(notice.layers == 1);
+  CHECK(notice.loss_measured);
+  CHECK(notice.loss_db == Catch::Approx(80.9F));
+  CHECK(notice.gain_measured);
+  CHECK(notice.gain_percent == Catch::Approx(50.0F));
+  // Choix repris du cache, et porte jugée sans le jumeau en float : ni gain ni perte chiffrés, et l'écran le dit.
+  gated.against_float = false;
+  const PrecisionNotice unmeasured =
+      vk::net::precision_notice(choices, gated, std::vector<ReducedChoice>{{.node = 1, .variant = "coopmat_acc16"}});
+  CHECK(unmeasured.layers == 1);
+  CHECK_FALSE(unmeasured.loss_measured);
+  CHECK_FALSE(unmeasured.gain_measured);
 }

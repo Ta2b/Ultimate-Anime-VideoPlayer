@@ -379,27 +379,58 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   return gated;
 }
 
-std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
-                                     const Gated& gated, std::span<const ReducedChoice> measured) {
-  const auto layers = static_cast<std::size_t>(std::ranges::count_if(choices, low_precision));
-  if (layers == 0) return {};
-  // Le gain n'est chiffré que pour les couches dont l'autotuner a mesuré les deux variantes ; un relevé dont
-  // le choix a été repris ensuite par la porte (autre variante au même nœud) ne compte pas.
+namespace {
+
+// Ce que les relevés de l'autotuner disent des couches gardées à précision réduite.
+struct ReducedSummary {
+  std::size_t layers = 0;
+  std::size_t timed = 0;  // celles dont les deux variantes ont été mesurées
   double chosen_us = 0.0;
   double full_us = 0.0;
-  std::size_t timed = 0;
+  bool gain_measured() const { return timed > 0 && chosen_us > 0.0; }
+  double gain_percent() const { return ((full_us / chosen_us) - 1.0) * 100.0; }
+};
+
+ReducedSummary summarize_reduced(std::span<const KernelChoice> choices,
+                                 std::span<const ReducedChoice> measured) {
+  ReducedSummary sum;
+  sum.layers = static_cast<std::size_t>(std::ranges::count_if(choices, low_precision));
+  if (sum.layers == 0) return sum;
+  // Le gain n'est chiffré que pour les couches dont l'autotuner a mesuré les deux variantes ; un relevé dont
+  // le choix a été repris ensuite par la porte (autre variante au même nœud) ne compte pas.
   for (const ReducedChoice& r : measured) {
     if (r.node >= choices.size() || choices[r.node].variant != r.variant || !r.full_precision_us) continue;
-    chosen_us += r.chosen_us;
-    full_us += *r.full_precision_us;
-    ++timed;
+    sum.chosen_us += r.chosen_us;
+    sum.full_us += *r.full_precision_us;
+    ++sum.timed;
   }
+  return sum;
+}
+
+}  // namespace
+
+PrecisionNotice precision_notice(std::span<const KernelChoice> choices, const Gated& gated,
+                                 std::span<const ReducedChoice> measured) {
+  const ReducedSummary sum = summarize_reduced(choices, measured);
+  PrecisionNotice notice{.layers = static_cast<std::uint32_t>(sum.layers)};
+  if (sum.layers == 0) return notice;
+  notice.gain_measured = sum.gain_measured();
+  if (notice.gain_measured) notice.gain_percent = static_cast<float>(sum.gain_percent());
+  notice.loss_measured = gated.against_float;
+  if (notice.loss_measured) notice.loss_db = static_cast<float>(gated.db);
+  return notice;
+}
+
+std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
+                                     const Gated& gated, std::span<const ReducedChoice> measured) {
+  const ReducedSummary sum = summarize_reduced(choices, measured);
+  if (sum.layers == 0) return {};
   std::string gain = "gain de vitesse non mesuré (choix repris du cache)";
-  if (timed > 0 && chosen_us > 0.0) {
+  if (sum.gain_measured()) {
     gain = std::format(
         "gain mesuré {:+.0f} % de vitesse sur {} couche(s) sur {} ({:.0f} µs contre {:.0f} µs en "
         "sommes float)",
-        ((full_us / chosen_us) - 1.0) * 100.0, timed, layers, chosen_us, full_us);
+        sum.gain_percent(), sum.timed, sum.layers, sum.chosen_us, sum.full_us);
   }
   const std::string loss =
       gated.against_float
@@ -408,7 +439,7 @@ std::string reduced_precision_notice(std::string_view model, std::span<const Ker
                 gated.db, gated.db - gated.floor_db, gated.floor_db)
           : std::string("perte non mesurée (le calcul en float n'a pas pu être joué)");
   return std::format("{} : précision réduite sur {} couche(s) pour gagner en vitesse : {} ; {}", model,
-                     layers, loss, gain);
+                     sum.layers, loss, gain);
 }
 
 }  // namespace ajp::gpu::vk::net

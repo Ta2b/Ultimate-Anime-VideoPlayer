@@ -309,7 +309,10 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   // Un artefact déjà construit et toujours valable pour cet appareil et ces shaders sert tel quel.
   // Rien ne s'abaisse ici : load le fait, une fois, pour ranger les poids.
   if (auto bytes = net::read_file(artifact.path)) {
-    if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) return artifact;
+    if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) {
+      artifact.reduced = data->notice;  // dit à chaque lancement, pas seulement à la construction (C45-01)
+      return artifact;
+    }
   }
   const auto started = std::chrono::steady_clock::now();  // A45-12 : la durée se lit au journal
   std::optional<net::Autotuner> tuner;
@@ -326,6 +329,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   }
   if (auto ok = net::write_file(artifact.path, net::serialize(*data)); !ok)
     return std::unexpected(ok.error());
+  artifact.reduced = data->notice;
   log(BackendLogLevel::Info,
       std::format("{} construit en {:.1f} s : {} nœuds, {} dispatchs{}", model.id,
                   std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count(),
@@ -340,6 +344,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
 
 std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::ArtifactData& data,
                                                  const net::Autotuner* tuner) {
+  data.notice = {};
   // Les noyaux de référence partout, quand les choix de l'autotuner ne peuvent pas être vérifiés.
   const auto to_reference = [&](std::string_view why) -> std::expected<void, Refusal> {
     auto reference = net::reference_choices(data.graph, profile_.target);
@@ -369,11 +374,12 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
                   model.id, gated->db, gated->floor_db)
             : std::format("{} : porte de bout en bout passée (écart {:.4f})", model.id, gated->drift));
     // Une perte de qualité consentie à la vitesse se dit, chiffrée avec son gain (B45-01).
-    if (const std::string notice = net::reduced_precision_notice(
-            model.id, data.choices, *gated,
-            tuner ? std::span(tuner->reduced()) : std::span<const net::ReducedChoice>());
+    const auto measured = tuner ? std::span(tuner->reduced()) : std::span<const net::ReducedChoice>();
+    if (const std::string notice = net::reduced_precision_notice(model.id, data.choices, *gated, measured);
         !notice.empty())
       log(BackendLogLevel::Warn, notice);
+    // Et à l'écran : l'artefact le garde pour les lancements suivants (C45-01).
+    data.notice = net::precision_notice(data.choices, *gated, measured);
     return {};
   }
   auto program = net::lower(data.graph, gated->choices, profile_.target);
