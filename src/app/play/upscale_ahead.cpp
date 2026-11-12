@@ -144,6 +144,9 @@ std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
     ok = ops.rife_input(a, b, t, rife_in());
     rife_mesh_[rife_pair_] = ok.has_value();
   }
+  // B lissée n'est pas la source current_ : son encodage ne servira pas de A à la paire suivante.
+  rife_in_images_[rife_pair_] = {ok ? source_serial_[current_ ^ 1U] : 0U,
+                                 ok && !smooth_first_ ? source_serial_[current_] : 0U};
   rife_in_pair_ = ok.has_value();
   rife_in_t_ = t;
   return ok;

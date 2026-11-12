@@ -426,7 +426,7 @@ std::expected<std::vector<RifePiece>, Refusal> split_rife(std::span<const std::b
   std::vector<RifePiece> pieces;
   {
     const SplitTensor in{
-        .name = split.encode_input, .elem_type = split.elem_type, .dims = {2, 3, height, width}};
+        .name = split.encode_input, .elem_type = split.elem_type, .dims = {1, 3, height, width}};
     const SplitTensor out{.name = split.encode_output, .elem_type = split.elem_type};
     auto cut = extract_subgraph(model, std::span(&in, 1), std::span(&out, 1), rife_piece_name(0));
     if (!cut) return std::unexpected(std::move(cut.error()));

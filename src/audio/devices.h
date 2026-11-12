@@ -1,6 +1,7 @@
 // Les appareils de sortie du système (SDL3) : la liste, leurs canaux, celui par défaut. Le lecteur ouvre
-// l'appareil choisi dans les réglages (OutputRequest::device) ou celui du système, et relit le format quand
-// le défaut change.
+// l'appareil choisi dans les réglages (OutputRequest::device) ou celui du système. Le format de la file ne
+// change pas quand le défaut change : SDL convertit, et le limiteur doux du rappel postmix couvre le mixage
+// vers un autre nombre de canaux (B16-07).
 #pragma once
 
 #include <cstdint>

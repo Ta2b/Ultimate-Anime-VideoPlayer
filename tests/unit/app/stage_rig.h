@@ -43,6 +43,11 @@ class FakeEngine final : public gpu::Engine {
     ++warm_asked_;
     return warm_;
   }
+  // Ce que l'étage annonce de l'encodage gardé (RIFE fusionné) : même paire, paire qui suit.
+  void next_times_only() override { ++times_only_; }
+  void next_pair_follows() override { ++follows_; }
+  int times_only() const { return times_only_; }
+  int follows() const { return follows_; }
   std::span<const std::string> input_names() const override { return inputs_; }
   std::span<const std::string> output_names() const override { return outputs_; }
 
@@ -52,6 +57,8 @@ class FakeEngine final : public gpu::Engine {
   std::vector<std::string> outputs_;
   bool warm_ = false;
   int warm_asked_ = 0;
+  int times_only_ = 0;
+  int follows_ = 0;
 };
 
 // Une écriture du ring, telle que le backend l'a reçue.

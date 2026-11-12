@@ -18,18 +18,42 @@
 
 namespace ajp::app::play {
 
+std::expected<void, Refusal> UpscaleStage::enqueue_rife(gpu::Engine& engine, std::span<gpu::Tensor> results) {
+  const std::array<std::uint64_t, 2> images = rife_in_images_[rife_pair_];
+  const RifeEncoded& last = rife_encoded_;
+  // Le numéro d'une image ne revient jamais : des numéros égaux sont les mêmes pixels, dans le même tampon
+  // d'entrée pour l'instant seul. Un autre moteur entre-temps (variante des paires calmes) a son propre
+  // encodage : rien n'est annoncé.
+  if (!setup_.rife_encode_all && images[0] != 0 && images[1] != 0 && last.engine == &engine) {
+    if (last.buffer == rife_pair_ && last.images == images) {
+      engine.next_times_only();
+      ++encodes_kept_;
+    } else if (last.images[1] == images[0]) {
+      engine.next_pair_follows();
+      ++encodes_followed_;
+    } else {
+      ++encodes_after_gap_;  // la paire d'avant n'a pas eu de passe (dessin tenu, instant sauté)
+    }
+  } else {
+    ++encodes_cold_;
+  }
+  const std::array inputs{rife_in()};
+  auto queued = setup_.backend->enqueue(engine, inputs, results);
+  rife_encoded_ =
+      queued ? RifeEncoded{.engine = &engine, .buffer = rife_pair_, .images = images} : RifeEncoded{};
+  return queued;
+}
+
 std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
   if (auto ok = fill_rife_input(t); !ok) return ok;
-  const std::array inputs{rife_in()};
   std::array results{rife_out_->tensor()};
-  if (auto ok = setup_.backend->enqueue(*setup_.rife, inputs, results); !ok) return ok;
+  if (auto ok = enqueue_rife(*setup_.rife, results); !ok) return ok;
   return setup_.backend->kernels()->rife_crop(rife_out_->tensor(), middle());
 }
 
 std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor& flow,
                                                       const gpu::Tensor& mask, bool calm) {
   if (auto ok = fill_rife_input(t); !ok) return ok;
-  const std::array inputs{rife_in()};
   std::array results{flow, mask};
   ++rife_runs_;
   const bool light = calm && setup_.rife_motion_calm != nullptr;
@@ -39,7 +63,7 @@ std::expected<void, Refusal> UpscaleStage::run_motion(float t, const gpu::Tensor
   const bool mid = t == 0.5F;
   if (setup_.rife_warm && mid && calm && warm_from_ == &engine && engine.next_warm()) ++warm_runs_;
   warm_from_ = mid ? &engine : nullptr;
-  return setup_.backend->enqueue(engine, inputs, results);
+  return enqueue_rife(engine, results);
 }
 
 gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
@@ -58,6 +82,7 @@ void UpscaleStage::forget_motion() {
   motion_measured_ = false;
   motion_.known = false;  // une mesure encore en vol ne vaut plus
   warm_from_ = nullptr;   // ni les blocs grossiers d'une autre scène (P6.15)
+  rife_encoded_ = {};     // ni l'encodage des images d'avant la coupe ou le saut
 }
 
 std::expected<void, Refusal> UpscaleStage::settle_motion() {

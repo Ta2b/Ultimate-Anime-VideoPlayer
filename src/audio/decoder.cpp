@@ -8,6 +8,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/dict.h>
 #include <libavutil/mem.h>
 }
 
@@ -91,7 +92,15 @@ std::expected<AudioDecoder, Refusal> AudioDecoder::open(const AudioCodecInfo& co
   if (auto described = describe_stream(*result.context_, codec); !described) {
     return std::unexpected(described.error());
   }
-  if (const int error = avcodec_open2(result.context_.get(), decoder, nullptr); error < 0) {
+  // B16-04 : la compression de dynamique codée dans un flux AC-3 ou E-AC-3 n'est pas appliquée (drc_scale
+  // à 0, comme mpv) : la dynamique voulue par le mixeur reste entière. Les autres codecs ignorent l'option.
+  AVDictionary* options = nullptr;
+  if (decoder->id == AV_CODEC_ID_AC3 || decoder->id == AV_CODEC_ID_EAC3) {
+    av_dict_set(&options, "drc_scale", "0", 0);
+  }
+  const int open_error = avcodec_open2(result.context_.get(), decoder, &options);
+  av_dict_free(&options);
+  if (const int error = open_error; error < 0) {
     return refuse(RefusalCode::AudioDecodeFailed,
                   std::format("avcodec_open2 « {} » : {}", codec.codec, av_error_text(error)));
   }

@@ -43,6 +43,10 @@ namespace ajp::audio {
 // Le périphérique ouvert a disparu (casque débranché, P2.7) : la sortie se rouvre sur le défaut du système.
 struct DeviceRemoved {};
 
+// L'appareil choisi est de retour (casque rebranché, ampli rallumé, B31-16) : si le son était passé sur la
+// sortie par défaut, il revient sur lui ; si la sortie manquait, elle est rouverte tout de suite.
+struct DeviceReturned {};
+
 // Choix du maître : sans horloge, l'audio est maître ; sinon il suit celle-ci.
 struct SyncTo {
   std::shared_ptr<const MasterClock> master;
@@ -89,6 +93,7 @@ class AudioPlayer {
   void handle(const DeviceReading& reading);
   void handle(const SyncTo& sync);
   void handle(const DeviceRemoved& removed);
+  void handle(const DeviceReturned& returned);
 
   // État, pour les tests et l'OSD.
   const AudioOutput& output() const { return *output_; }
@@ -102,6 +107,9 @@ class AudioPlayer {
   // de nouveau là, rouverte à son heure.
   void lose_output(const Refusal& why);
   bool output_back();
+  // Le son repart sur la sortie rouverte : ce qui n'était pas entendu revient en tête, au même temps média.
+  void adopt_output(std::vector<PcmBlock>&& back);
+  double with_dead_zone(double ratio);
   void decode_next();
   void open_decoder(const AudioTrack& track);
   void queue(std::vector<PcmBlock>&& blocks);
@@ -146,6 +154,9 @@ class AudioPlayer {
   bool aligning_ = false;     // le prochain bloc se cale sur l'horloge maître
   bool end_pending_ = false;  // EndOfStream reçu, paquets pas encore tous décodés
   bool ended_ = false;        // toutes les trames de la piste sont poussées
+  std::optional<std::int64_t>
+      chosen_delay_us_;      // le délai de l'appareil choisi, gardé pendant le repli (B31-16)
+  bool resampling_ = false;  // le rapport de fréquence est hors de la zone morte : SDL rééchantillonne
 };
 
 }  // namespace ajp::audio

@@ -1,5 +1,6 @@
 #include "audio/output.h"
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <vector>
@@ -123,8 +124,34 @@ std::vector<PcmBlock> AudioOutput::take_back() {
 }
 
 std::expected<std::vector<PcmBlock>, Refusal> AudioOutput::reopen_default() {
-  std::vector<PcmBlock> back = take_back();
-  if (auto reopened = sink_->reopen_default(); !reopened) return std::unexpected(reopened.error());
+  return reopen(false);
+}
+
+std::expected<std::vector<PcmBlock>, Refusal> AudioOutput::reopen_chosen() {
+  return reopen(true);
+}
+
+std::expected<std::vector<PcmBlock>, Refusal> AudioOutput::reopen(bool chosen) {
+  // Le refus avant tout vidage : un appareil choisi absent laisse le son en cours intact.
+  const std::int64_t consumed = sink_->reading().consumed_frames;
+  std::vector<PcmBlock> back;
+  // Copie de ce qui n'est pas encore entendu, sans rien jeter tant que la file neuve n'est pas là.
+  for (const Unplayed& unplayed : unplayed_) {
+    if (unplayed.start + unplayed.block.frames() <= consumed) continue;
+    PcmBlock block = unplayed.block;
+    block.drop_front(std::max<std::int64_t>(consumed - unplayed.start, 0), format_.sample_rate);
+    back.push_back(std::move(block));
+  }
+  if (auto reopened = chosen ? sink_->reopen_chosen() : sink_->reopen_default(); !reopened) {
+    if (!chosen) {  // le périphérique retiré ne joue plus : ce qu'il tenait est perdu, comme le temps écoulé
+      sink_->clear();
+      timeline_.clear();
+      unplayed_.clear();
+    }
+    return std::unexpected(reopened.error());
+  }
+  timeline_.clear();
+  unplayed_.clear();
   paused_ = true;  // la file neuve s'ouvre en pause
   return back;
 }

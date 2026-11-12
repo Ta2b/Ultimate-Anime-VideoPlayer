@@ -96,6 +96,10 @@ struct RingFrame {
   // La paire qui finit sur cette image est restée sans images intermédiaires, à dessein (coupe
   // de scène, dessin tenu) : l'écart de pts qui la précède n'est pas un manque.
   bool uninterpolated = false;
+  // Mode Rapide : l'écart de pts que le producteur a planifié depuis l'instant d'avant (sauté en retard
+  // compris) ; 0 : inconnu, l'écart attendu est alors la période de sortie. Un pas lourd, une paire affamée
+  // ou un vsync de plus voulus par la grille libre ne sont pas des images manquées.
+  std::int64_t planned_gap_us = 0;
   // Les sources de l'image ont été débandées avant SPAN (KernelOps::deband) : l'écran ne débande plus.
   bool debanded = false;
   std::uint32_t epoch = 0;        // d'une époque passée : main ne la présente pas, mais rend le slot

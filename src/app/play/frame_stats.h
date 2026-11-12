@@ -64,8 +64,11 @@ struct FrameStats {
   // Une image neuve de pts pts_us présentée lag_us après son instant d'horloge ; period_us : la
   // période attendue entre deux images (0 : inconnue, rien n'est compté manquant). on_purpose :
   // la paire qui finit sur elle est restée sans interpolation à dessein (RingFrame::uninterpolated),
-  // l'écart compte alors dans uninterpolated.
-  void paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us, bool on_purpose = false);
+  // l'écart compte alors dans uninterpolated. planned_gap_us (mode Rapide, RingFrame::planned_gap_us) :
+  // l'écart que le producteur a voulu depuis l'instant d'avant ; connu, il remplace la période, et seul un
+  // instant planifié qui n'a pas paru (jeté en retard, sauté avant calcul) compte comme manqué.
+  void paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us, bool on_purpose = false,
+             std::int64_t planned_gap_us = 0);
   // Le seek ou la reprise d'une nouvelle époque : l'écart de pts suivant n'est pas un manque.
   void restart_pacing();
 };

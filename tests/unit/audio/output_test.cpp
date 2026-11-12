@@ -150,6 +150,41 @@ TEST_CASE("AudioOutput SDL : ouverture du pilote dummy au format demandé ou pr�
   CHECK(refused.error().code == RefusalCode::FieldOutOfRange);
 }
 
+// B16-01 : aucun pilote audio ne démarre au lancement. La sortie s'ouvre quand même, dormante, au format
+// demandé ; quand un pilote devient disponible, reopen_default() la réveille sans rien relancer.
+TEST_CASE("AudioOutput SDL : sans pilote au lancement, la sortie dormante se réveille plus tard",
+          "[audio][output][sdl]") {
+  SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "pas-un-pilote");
+  auto opened = AudioOutput::open_sdl({.sample_rate = 48'000, .channels = 2});
+  REQUIRE(opened);
+  AudioOutput& output = **opened;
+  CHECK_FALSE(output.ready());
+  CHECK(output.format() == PcmFormat{.sample_rate = 48'000, .channels = 2});
+  CHECK(output.paused());
+  CHECK(output.queued_us() == 0);
+  CHECK(output.latency_us() == 0);
+  CHECK_FALSE(output.push(0, frames_of(480, 2)));  // une file dormante refuse, elle ne plante pas
+  CHECK(output.set_volume(0.5F));
+  CHECK(output.volume() == 0.5F);
+  CHECK(output.set_ratio(1.001));
+  output.pause();
+  output.resume();
+  output.clear();
+  CHECK(output.take_back().empty());
+  CHECK_FALSE(output.reopen_default());  // toujours aucun pilote
+
+  use_dummy_audio();  // le pilote arrive
+  const auto woken = output.reopen_default();
+  REQUIRE(woken);
+  CHECK(output.ready());
+  CHECK(output.volume() == 0.5F);  // les réglages posés pendant le sommeil sont repris
+  CHECK(output.ratio() == 1.001);
+  REQUIRE(output.push(1'000'000, frames_of(4'800, 2)));
+  output.resume();
+  std::this_thread::sleep_for(100ms);
+  CHECK(output.queued_us() < 100'000);  // la file neuve joue
+}
+
 TEST_CASE("AudioOutput SDL : la position suit le périphérique, la pause l'arrête", "[audio][output][sdl]") {
   const auto output = open_dummy();
   REQUIRE(output->push(1'000'000, frames_of(48'000, 2)));

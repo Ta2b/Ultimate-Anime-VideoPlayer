@@ -33,8 +33,9 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
 
   auto encode = TrtEngine::load(runtime, cache_dir / core::path_from_utf8(key.engines[0]), shared);
   if (!encode) return std::unexpected(std::move(encode.error()));
-  const bool encode_ok = (*encode)->input_shape(0) == Shape{.dims = {2, 3, h, w}} &&
-                         (*encode)->output_shape(0) == Shape{.dims = {2, 4, h, w}};
+  // Une image à la fois (fusion3) : un moteur d'encodage de l'ancienne découpe, en lot de 2, est refusé.
+  const bool encode_ok = (*encode)->input_shape(0) == Shape{.dims = {1, 3, h, w}} &&
+                         (*encode)->output_shape(0) == Shape{.dims = {1, 4, h, w}};
   if (!encode_ok)
     return refuse(RefusalCode::ShapeInvalid, "RIFE fusionné : moteur d'encodage de forme inattendue");
   activation = std::max(activation, (*encode)->activation_bytes());
@@ -104,9 +105,12 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   }
   // Une capture refusée pendant l'essai laisse la chaîne tourner sans graphe : ce n'est pas un refus. Les
   // graphes de l'essai, sur des adresses qui disparaissent, ne servent plus ; les séries d'échecs repartent
-  // de zéro, et sa notice part avec eux.
+  // de zéro, et sa notice part avec eux. L'encodage que l'essai a gardé venait de ses tampons, libérés au
+  // retour : une entrée de la chaîne allouée à la même adresse ne doit pas le reprendre.
   engine->graphs_.clear();
   static_cast<void>(engine->graphs_.take_notice());
+  engine->kept_.reset();
+  engine->hint_ = Hint::None;
   return engine;
 }
 
@@ -121,7 +125,8 @@ std::expected<void, Refusal> RifeFusedEngine::use_zone(const std::shared_ptr<Sha
 
 std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                                                   const std::shared_ptr<SharedActivations>& arena,
-                                                  const Tensor& input, std::span<const Tensor> outputs) {
+                                                  const Tensor& input, std::span<const Tensor> outputs,
+                                                  Encode encode) {
   const int h = height_;
   const int w = width_;
   auto* base = static_cast<std::byte*>(arena->data()) + scratch_offset_;
@@ -129,10 +134,30 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
   const void* const in = fused_address(input);
 
-  const Tensor images = fused_tensor(input.handle, input.offset, 3, h, w, 2);
-  const Tensor encoded = fused_tensor(at(layout_.encode), 0, 4, h, w, 2);
-  if (auto ok = encode_->enqueue_plain(stream, arena, std::span(&images, 1), std::span(&encoded, 1)); !ok)
-    return ok;
+  // L'encodage de A (4 plans) puis celui de B, une image par passe de l'encodeur ; l'image B est aux plans
+  // 3 à 5 de l'entrée. Second : l'encodage de B de l'appel précédent, intact, devient celui de A.
+  const std::size_t image_bytes =
+      std::size_t{3} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
+  const std::size_t encode_bytes =
+      std::size_t{4} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
+  const auto encode_image = [&](std::uint64_t image_offset,
+                                std::size_t encode_offset) -> std::expected<void, Refusal> {
+    const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
+    const Tensor encoded = fused_tensor(at(layout_.encode + encode_offset), 0, 4, h, w);
+    return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
+  };
+  if (encode == Encode::Both) {
+    if (auto ok = encode_image(0, 0); !ok) return ok;
+  } else if (encode == Encode::Second) {
+    if (auto ok = cuda_check(cudaMemcpyAsync(at_ptr(layout_.encode), at_ptr(layout_.encode + encode_bytes),
+                                             encode_bytes, cudaMemcpyDeviceToDevice, stream),
+                             "cudaMemcpyAsync (encodage de B vers A)");
+        !ok)
+      return ok;
+  }
+  if (encode != Encode::None) {
+    if (auto ok = encode_image(image_bytes, encode_bytes); !ok) return ok;
+  }
 
   const kernels::FusedDims x0 = kernels::rife_fused_x(plan_, 0, h, w);
   if (auto ok = cuda_check(launch_fused_entry({.height = h,
@@ -198,7 +223,8 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
                                                       const std::shared_ptr<SharedActivations>& arena,
                                                       std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
-  if (arena) arena->set_last_user(this);
+  const Hint hint = std::exchange(hint_, Hint::None);
+  if (!arena) return refuse(RefusalCode::GraphInvalid, "RIFE fusionné : zone d'activation absente");
   if (inputs.size() != 1 || outputs.size() != outputs_.size())
     return refuse(RefusalCode::ShapeInvalid,
                   "RIFE fusionné : nombre d'entrées ou de sorties différent du moteur");
@@ -219,16 +245,39 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
   // graphes jetés.
   const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
   if (arena != zone_ || arena->bytes() < needed || zone_generation_ != arena->generation()) {
-    if (auto ok = use_zone(arena); !ok) return ok;
+    if (auto ok = use_zone(arena); !ok) {
+      kept_.reset();
+      return ok;
+    }
   }
+  // L'encodage gardé sert si la zone, une fois prise, est celle du dernier appel mené au bout et que personne
+  // n'y a écrit depuis ; tout le reste (autre voie, zone agrandie, autre moteur, appel en échec) encode les
+  // deux images.
+  const std::uintptr_t input = inputs[0].handle + inputs[0].offset;
+  const bool intact = kept_ && arena->last_user() == this && kept_->zone == arena->data() &&
+                      kept_->generation == arena->generation();
+  Encode encode = Encode::Both;
+  if (intact && hint == Hint::TimesOnly && kept_->input == input) encode = Encode::None;
+  if (intact && hint == Hint::Follows) encode = Encode::Second;
+  kept_.reset();
+  auto queued = enqueue_chain(stream, arena, inputs, outputs, encode);
+  arena->set_last_user(this);  // après les morceaux, qui se sont nommés
+  if (queued) kept_ = Kept{.input = input, .zone = arena->data(), .generation = arena->generation()};
+  return queued;
+}
+
+std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
+                                                            const std::shared_ptr<SharedActivations>& arena,
+                                                            std::span<const Tensor> inputs,
+                                                            std::span<const Tensor> outputs, Encode encode) {
   const FusedGraphs::Key key{inputs[0].handle + inputs[0].offset,
                              outputs[0].handle + outputs[0].offset,
                              outputs.size() > 1 ? outputs[1].handle + outputs[1].offset : 0,
                              0,
                              reinterpret_cast<std::uintptr_t>(arena->data()),
                              static_cast<std::uintptr_t>(arena->generation()),
-                             0};
-  return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs[0], outputs); });
+                             static_cast<std::uintptr_t>(encode)};
+  return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs[0], outputs, encode); });
 }
 
 }  // namespace ajp::gpu::cuda

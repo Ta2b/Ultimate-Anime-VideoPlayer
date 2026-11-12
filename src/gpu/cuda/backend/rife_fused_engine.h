@@ -4,6 +4,9 @@
 // entier : une entrée 1 × 11 × H × W (rife_input) et une sortie 1 × 3 × H × W, ou, pour la variante
 // mouvement, le flot 1 × 4 × H × W et le masque 1 × 1 × H × W. Les tampons intermédiaires vivent à la suite
 // des activations des moteurs dans la zone partagée de la voie (SharedActivations) : rien d'alloué de plus.
+// L'encodeur prend une image à la fois : l'encodage d'une paire se garde d'un appel à l'autre, entier pour un
+// autre instant de la même paire (next_times_only), celui de B pour A à la paire suivante
+// (next_pair_follows), tant que la zone n'a servi à aucun autre moteur.
 #pragma once
 
 #include <array>
@@ -12,6 +15,7 @@
 #include <expected>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -52,14 +56,30 @@ class RifeFusedEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
+  // Le prochain enqueue reprend la même entrée, seul l'instant a changé : l'encodeur est sauté.
+  void next_times_only() override { hint_ = Hint::TimesOnly; }
+  // Le prochain enqueue prend pour A la B de l'appel précédent : son encodage passe à la place de A, seule la
+  // nouvelle B est encodée.
+  void next_pair_follows() override { hint_ = Hint::Follows; }
+  // L'annonce oubliée : le backend a refusé l'appel avant d'enfiler la chaîne.
+  void drop_hint() { hint_ = Hint::None; }
+
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
 
  private:
   RifeFusedEngine() = default;
+  // Ce que l'encodeur fait à cet appel : les deux images, B seule (l'encodage de B d'avant copié à la place
+  // de A), rien (l'encodage de l'appel précédent sert tel quel).
+  enum class Encode : std::uint8_t { Both, Second, None };
+  enum class Hint : std::uint8_t { None, TimesOnly, Follows };
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
-                                   const Tensor& input, std::span<const Tensor> outputs);
+                                   const Tensor& input, std::span<const Tensor> outputs, Encode encode);
+  std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
+                                             const std::shared_ptr<SharedActivations>& arena,
+                                             std::span<const Tensor> inputs, std::span<const Tensor> outputs,
+                                             Encode encode);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
 
   std::unique_ptr<TrtEngine> encode_;
@@ -77,9 +97,19 @@ class RifeFusedEngine final : public Engine {
 
   std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
 
-  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque) et de zone.
-  static constexpr std::size_t kMaxGraphs = 8;
+  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone et de travail de l'encodeur : trois
+  // par jeu d'adresses (Encode).
+  static constexpr std::size_t kMaxGraphs = 24;
   FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
+  // L'encodage que le dernier appel mené jusqu'au bout a laissé dans la zone, et l'entrée qu'il a lue.
+  // Repris seulement si la zone est la même et qu'aucun autre moteur n'y a écrit depuis.
+  struct Kept {
+    std::uintptr_t input = 0;
+    const void* zone = nullptr;
+    std::uint64_t generation = 0;
+  };
+  std::optional<Kept> kept_;
+  Hint hint_ = Hint::None;
 };
 
 }  // namespace ajp::gpu::cuda
