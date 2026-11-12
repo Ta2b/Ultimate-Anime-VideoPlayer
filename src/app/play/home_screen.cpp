@@ -280,16 +280,21 @@ DropKind drop_kind(const std::filesystem::path& path) {
 }
 
 // A24-15 : les trois gestes sont séparés et nommés (la fenêtre qui passe devant, la lecture du disque, le
-// tri par extension). Le disque reste lu une fois par fichier glissé : c'est ce qui écarte un dossier.
+// tri par extension). Le disque n'est lu que pour une vidéo.
 std::optional<Dropped> dropped(const SDL_Event& event) {
   if (event.type != SDL_EVENT_DROP_FILE || event.drop.data == nullptr) return std::nullopt;
   raise_for_forwarded(event);
   std::filesystem::path path = prepare::path_from_utf8(event.drop.data);
   // Un dossier ou un fichier qui n'est pas une vidéo (image, texte, PDF) ne ferme pas la lecture en cours :
   // il ne se lirait pas, et la vidéo serait perdue pour rien.
-  std::error_code error;
-  if (!std::filesystem::is_regular_file(path, error) || error) return std::nullopt;
+  // C24-11 : le tri se fait par l'extension, sans toucher le disque (un partage réseau ou un disque
+  // endormi bloquait la boucle d'événements) ; seul un « fichier vidéo » est vérifié, car il va être lu
+  // tout de suite et qu'un dossier nommé « x.mkv » ne doit pas fermer la lecture.
   const DropKind kind = drop_kind(path);
+  if (kind == DropKind::Video) {
+    std::error_code error;
+    if (!std::filesystem::is_regular_file(path, error) || error) return std::nullopt;
+  }
   return Dropped{.path = std::move(path), .kind = kind};
 }
 

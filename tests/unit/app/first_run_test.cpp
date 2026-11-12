@@ -352,3 +352,38 @@ TEST_CASE("Un moteur sous licence non acceptée ne compte pas comme installé (B
   trt.download = false;  // déjà installé : rien à accepter
   CHECK(engine_installs(trt));
 }
+
+TEST_CASE("« Passer » sur l'écran Moteur ne télécharge rien sous licence (C25-01)", "[app][first_run]") {
+  EnginesHere here{.os = core::Os::Linux};
+  here.downloads.push_back(EngineDownload{
+      .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
+  FirstRunView view = first_run_view(kRtx, here);
+  REQUIRE(chosen(settings_after(view, {}), core::EngineId::TensorRt));  // la présélection
+  decline_downloads(view);
+  const core::Settings after = settings_after(view, {});
+  CHECK_FALSE(chosen(after, core::EngineId::TensorRt));
+  CHECK_FALSE(std::ranges::contains(after.installed_engines, core::EngineId::TensorRt));
+  CHECK(chosen(after, core::EngineId::Vulkan));  // Vulkan, déjà là, reste
+  CHECK_FALSE(row_of(view, core::EngineId::TensorRt)->license_accepted);
+}
+
+TEST_CASE("Écran Moteur déjà passé : le choix écrit prime sur la présélection (C25-04)", "[app][first_run]") {
+  EnginesHere here{.os = core::Os::Linux};
+  here.downloads.push_back(EngineDownload{
+      .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
+  core::Settings saved;  // assistant pas fini, écran Moteur (rang 4) passé avec TensorRT décoché
+  saved.first_run_step = static_cast<int>(WizardStep::Engines);
+  saved.chosen_engines = {core::EngineId::Vulkan};
+  FirstRunView declined = first_run_view(kRtx, here, saved);
+  CHECK_FALSE(row_of(declined, core::EngineId::TensorRt)->chosen);
+  CHECK_FALSE(row_of(declined, core::EngineId::TensorRt)->license_accepted);
+  saved.chosen_engines = {core::EngineId::Vulkan, core::EngineId::TensorRt};  // ou coché
+  FirstRunView kept = first_run_view(kRtx, here, saved);
+  CHECK(row_of(kept, core::EngineId::TensorRt)->chosen);
+  CHECK(row_of(kept, core::EngineId::TensorRt)->license_accepted);
+  // L'écran pas encore vu (rang 3) : la présélection vaut toujours.
+  saved.first_run_step = static_cast<int>(WizardStep::Updates);
+  saved.chosen_engines = {core::EngineId::Vulkan};
+  const FirstRunView before_step = first_run_view(kRtx, here, saved);
+  CHECK(row_of(before_step, core::EngineId::TensorRt)->chosen);
+}
