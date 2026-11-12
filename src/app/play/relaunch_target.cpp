@@ -69,6 +69,8 @@ std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& 
     std::ifstream in(store, std::ios::binary);
     std::string line;
     while (std::getline(in, line)) {
+      // Un fichier aux fins de ligne Windows (écrit en mode texte, ou à la main) : le \r n'est pas la valeur.
+      if (line.ends_with('\r')) line.pop_back();
       const std::size_t equal = line.find('=');
       if (equal == std::string::npos) continue;
       const std::string_view key = std::string_view(line).substr(0, equal);
