@@ -71,7 +71,11 @@ noyaux de référence et 70,3 dB en sommes float16 (−4,8 dB, pire écart 1,0/2
 est une vraie référence. Avec la seule règle des 0,5 dB, SPAN repassait en sommes float : sur une GeForce Ada,
 ses Tensor Cores allaient alors deux fois moins vite, et comme SPAN tourne à chaque image affichée,
 l'interpolation sous Vulkan perdait près de la moitié de ses images par seconde face à la 0.10.3 (novembre
-2026). Ses 70 dB ne se voient pas : au-dessus de `kGateInvisibleDb`, SPAN et RIFE gardent leurs sommes float16. `coopmat_acc16` ne se mesure que sur une carte à Tensor Cores (`docs/audits/A-CONFIRMER.md`).
+2026). Ses 70 dB ne se voient pas : au-dessus de `kGateInvisibleDb`, SPAN et RIFE gardent leurs sommes float16.
+La case « Vitesse avant précision (Vulkan) » (Général > Moteurs, `engines.fast_precision` dans `play.toml`, cochée
+par défaut) le décide : décochée, seule la règle des 0,5 dB tient (`gpu::kStrictPrecision`, porté par
+`BackendInit::trials` sans monter `kBackendAbi`). Elle entre dans la clé des artefacts : chaque réglage a ses
+moteurs, construits au prochain lancement. `coopmat_acc16` ne se mesure que sur une carte à Tensor Cores (`docs/audits/A-CONFIRMER.md`).
 
 Quand le jumeau en float ne peut pas être joué (mémoire), la porte d'avant juge et le journal le dit.
 

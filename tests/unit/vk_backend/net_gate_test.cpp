@@ -92,6 +92,10 @@ TEST_CASE("Porte de bout en bout : le verdict suit la perte sous les noyaux de r
   CHECK(gate_verdict(58.0, 55.0, 57.8) == GateVerdict::FullPrecision);
   CHECK(gate_verdict(81.6, 50.0, 70.0) == GateVerdict::FullPrecision);
   CHECK(gate_verdict(81.6, 50.0, 52.0) == GateVerdict::Reference);
+  // « Vitesse avant précision » décochée : la seule règle des 0,5 dB, comme avant le seuil invisible.
+  CHECK(gate_verdict(81.6, 74.3, std::nullopt, true) == GateVerdict::Reference);
+  CHECK(gate_verdict(81.6, 74.3, 81.4, true) == GateVerdict::FullPrecision);
+  CHECK(gate_verdict(81.6, 81.2, std::nullopt, true) == GateVerdict::Keep);
   // RIFE 4.25 : 77,9 contre 77,8 dB, gardé.
   CHECK(gate_verdict(77.9, 77.8, 77.9) == GateVerdict::Keep);
   // Une valeur non finie dans la sortie : jamais gardée.

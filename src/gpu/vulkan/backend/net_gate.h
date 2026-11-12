@@ -58,12 +58,14 @@ inline constexpr double kGateInvisibleDb = 60.0;
 // Ce que la porte fait des choix de l'autotuner, depuis les PSNR contre le jumeau en float : celui des noyaux
 // de référence (le plancher), celui des choix, et celui des mêmes choix sans précision réduite s'ils en ont.
 enum class GateVerdict : std::uint8_t { Keep, FullPrecision, Reference };
-constexpr GateVerdict gate_verdict(double floor_db, double db, std::optional<double> full_precision_db) {
+// `strict` (« Vitesse avant précision » décochée) : la seule règle des kGateLossDb, sans kGateInvisibleDb.
+constexpr GateVerdict gate_verdict(double floor_db, double db, std::optional<double> full_precision_db,
+                                   bool strict = false) {
   // Un graphe en float32 (plancher exact) garde la règle stricte : la précision y est voulue.
   const bool exact = floor_db >= kGateExactDb;
   const double floor = exact ? kGateExactFloorDb : floor_db;
   const auto passes = [&](double got) {
-    return got >= floor - kGateLossDb || (!exact && got >= kGateInvisibleDb);
+    return got >= floor - kGateLossDb || (!exact && !strict && got >= kGateInvisibleDb);
   };
   if (passes(db)) return GateVerdict::Keep;
   if (full_precision_db && passes(*full_precision_db)) return GateVerdict::FullPrecision;
@@ -134,6 +136,6 @@ PrecisionNotice precision_notice(std::span<const KernelChoice> choices, const Ga
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,
                                            PipelineCache& pipelines, const ir::Graph& graph,
                                            std::vector<KernelChoice> tuned, const Target& target,
-                                           const GateWatch& watch = {});
+                                           const GateWatch& watch = {}, bool strict = false);
 
 }  // namespace ajp::gpu::vk::net

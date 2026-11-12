@@ -428,7 +428,8 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
       break;
     }
     case Page::Engines: {
-      engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_);
+      engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_,
+                  draft_.fast_precision);
       break;
     }
     case Page::Export: {

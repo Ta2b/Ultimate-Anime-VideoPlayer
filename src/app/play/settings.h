@@ -291,6 +291,11 @@ struct PlaySettings {
   // La carte graphique de la lecture (P3.16, portables à deux cartes) : son nom Vulkan ; vide, le choix de
   // libplacebo (la carte dédiée d'abord). Vaut au prochain lancement.
   std::string gpu;
+  // « Vitesse avant précision » (Général > Moteurs) : le moteur Vulkan garde ses sommes en float16 quand la
+  // perte ne se voit pas (au-dessus de 60 dB contre le calcul en float, gpu/vulkan/backend/net_gate.h), au
+  // lieu de la règle stricte des 0,5 dB qui rendait SPAN deux fois plus lent sur une GeForce Ada. Décochée :
+  // la règle stricte (gpu::kStrictPrecision). Vaut au prochain lancement ; les moteurs se reconstruisent.
+  bool fast_precision = true;
   bool autoplay_next = true;  // l'épisode suivant du dossier à la fin, comme le README le promet (P3.84)
   int audio_delay_ms = 0;
   // Décalage des sous-titres (P3.72), de séance : z et x, ou le menu ; jamais écrit dans play.toml.

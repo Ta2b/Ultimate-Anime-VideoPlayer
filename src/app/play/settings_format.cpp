@@ -79,10 +79,11 @@ std::string format_settings(const PlaySettings& s) {
                                      {"sharpness", s.sharpness}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
   root.insert("interface", toml::table{{"language", s.language}});
-  if (!s.engines_dir.empty() || !s.gpu.empty()) {
+  if (!s.engines_dir.empty() || !s.gpu.empty() || !s.fast_precision) {
     toml::table engines;
     if (!s.engines_dir.empty()) engines.insert("install_dir", s.engines_dir);
     if (!s.gpu.empty()) engines.insert("gpu", s.gpu);
+    if (!s.fast_precision) engines.insert("fast_precision", false);
     root.insert("engines", std::move(engines));
   }
   root.insert("updates", toml::table{{"mode", std::string(name(s.update_mode))},
