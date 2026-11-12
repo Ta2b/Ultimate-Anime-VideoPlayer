@@ -6,12 +6,15 @@
   delta_itp     ΔE_ITP (BT.2124) d'une image SDR affichée à 203 cd/m² (BT.2408) : moyen et 99,9e centile ;
                 1 est le seuil de l'écart tout juste visible.
 """
+import sys
+from pathlib import Path
+
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common"))
+from hdr import BT2020_TO_LMS, BT709_TO_2020, LMS_TO_ICTCP, nits_to_pq  # noqa: E402
+
 SDR_WHITE = 203.0  # cd/m², blanc de référence d'une image SDR (BT.2408)
-BT709_TO_2020 = np.array([[0.6274, 0.3293, 0.0433], [0.0691, 0.9195, 0.0114], [0.0164, 0.0880, 0.8956]])
-BT2020_TO_LMS = np.array([[1688, 2146, 262], [683, 2951, 462], [99, 309, 3688]]) / 4096.0
-LMS_TO_ICTCP = np.array([[2048, 2048, 0], [6610, -13613, 7003], [17933, -17390, -543]]) / 4096.0
 
 
 def psnr(ref, test):
@@ -25,6 +28,7 @@ def luma(x):
 
 
 def ssim(ref, test):
+    """SSIM par blocs 8×8 disjoints de la luminance BT.709. Quatre définitions coexistent (B46-09) : blocs 8×8 (mesures.py, interp_fp8.py), gaussien 11 σ 1,5 (quantize_span.py), 7×7 uniforme par canal (commun.py) ; chaque seuil a été fixé avec la sienne, ne pas les comparer d'un outil à l'autre."""
     a, b = luma(ref), luma(test)
     h, w = (a.shape[0] // 8) * 8, (a.shape[1] // 8) * 8
 
@@ -43,17 +47,11 @@ def ecarts(ref, test):
     return {"moyen": float(d.mean()), "p999": float(np.percentile(d, 99.9)), "pire": float(d.max())}
 
 
-def pq(nits):
-    """Inverse de l'EOTF PQ (ST 2084) : cd/m² vers signal [0, 1]."""
-    y = np.clip(nits / 10000.0, 0.0, 1.0) ** 0.1593017578125
-    return ((0.8359375 + 18.8515625 * y) / (1.0 + 18.6875 * y)) ** 78.84375
-
-
 def ictcp(rgb):
     """RGB BT.709 gamma 2,4 (3 × H × W) vers ICtCp, le blanc à SDR_WHITE."""
     linear = np.clip(rgb.astype(np.float64), 0.0, 1.0) ** 2.4 * SDR_WHITE
     lms = np.einsum("ij,jhw->ihw", BT2020_TO_LMS @ BT709_TO_2020, linear)
-    return np.einsum("ij,jhw->ihw", LMS_TO_ICTCP, pq(lms))
+    return np.einsum("ij,jhw->ihw", LMS_TO_ICTCP, nits_to_pq(lms))
 
 
 def delta_itp(ref, test):

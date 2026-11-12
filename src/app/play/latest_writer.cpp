@@ -1,6 +1,7 @@
 #include "app/play/latest_writer.h"
 
 #include <utility>
+#include <vector>
 
 #include "core/log.h"
 #include "core/thread.h"
@@ -8,8 +9,15 @@
 namespace ajp::app::play {
 namespace {
 
-void report(const std::expected<void, Refusal>& written) {
-  if (!written) log_channel("app")->warn("{}", written.error().detail);
+// Les états des writers détruits pendant qu'une écriture durait : wait_abandoned les attend à la sortie.
+struct Abandoned {
+  std::mutex mutex;
+  std::vector<std::weak_ptr<void>> states;
+};
+
+Abandoned& abandoned() {
+  static Abandoned instance;
+  return instance;
 }
 
 // Le job, dont une exception devient un refus : elle n'arrête ni le thread d'écriture ni l'affichage.
@@ -23,10 +31,20 @@ std::expected<void, Refusal> guarded(const LatestWriter::Job& job) noexcept {
 
 }  // namespace
 
-LatestWriter::LatestWriter() {
-  auto started =
-      start_thread("écriture", ThreadReport([](const Refusal& refusal) { report(std::unexpected(refusal)); }),
-                   [this](const std::stop_token& stop, const ThreadReport& /*report*/) { run(stop); });
+void LatestWriter::finish(State& state, const std::string& key, const std::expected<void, Refusal>& written) {
+  if (!written) log_channel("app")->warn("{} : {}", key, written.error().detail);
+  const std::scoped_lock lock(state.mutex);
+  if (written)
+    state.failed.erase(key);
+  else
+    state.failed.insert_or_assign(key, written.error());
+}
+
+LatestWriter::LatestWriter() : state_(std::make_shared<State>()) {
+  auto started = start_thread(
+      "écriture",
+      ThreadReport([](const Refusal& refusal) { log_channel("app")->warn("{}", refusal.detail); }),
+      [state = state_](const std::stop_token& /*stop*/, const ThreadReport& /*report*/) { run(state); });
   if (started) {
     thread_ = std::move(*started);
   } else {
@@ -35,43 +53,85 @@ LatestWriter::LatestWriter() {
 }
 
 LatestWriter::~LatestWriter() {
-  flush();
-  thread_.request_stop();
-  wake_.notify_all();
+  const bool finished = flush();
+  {
+    const std::scoped_lock lock(state_->mutex);
+    state_->stop = true;
+  }
+  state_->wake.notify_all();
+  if (!thread_.joinable()) return;
+  if (finished) return;  // le thread sort seul, jthread l'attend
+  // Une écriture dure encore : le thread la finit sans nous (il tient l'état), le processus l'attend à sa
+  // sortie.
+  log_channel("app")->warn("écritures encore en cours après {} ms : elles finissent en arrière-plan",
+                           kFlushLimit.count());
+  {
+    const std::scoped_lock lock(abandoned().mutex);
+    abandoned().states.emplace_back(state_);
+  }
+  thread_.detach();
 }
 
 void LatestWriter::post(const std::string& key, Job job) {
   if (!thread_.joinable()) {
-    report(guarded(job));
+    finish(*state_, key, guarded(job));
     return;
   }
   {
-    const std::scoped_lock lock(mutex_);
-    pending_.insert_or_assign(key, std::move(job));
+    const std::scoped_lock lock(state_->mutex);
+    state_->pending.insert_or_assign(key, std::move(job));
   }
-  wake_.notify_one();
+  state_->wake.notify_one();
 }
 
-void LatestWriter::flush() {
-  if (!thread_.joinable()) return;
-  std::unique_lock lock(mutex_);
-  done_.wait(lock, [this] { return pending_.empty() && running_ == 0; });
+bool LatestWriter::flush(std::chrono::milliseconds limit) {
+  if (!thread_.joinable()) return true;
+  std::unique_lock lock(state_->mutex);
+  return state_->done.wait_for(lock, limit, [this] { return state_->idle(); });
 }
 
-void LatestWriter::run(const std::stop_token& stop) {
-  std::unique_lock lock(mutex_);
+std::optional<LatestWriter::Failure> LatestWriter::take_failure() {
+  const std::scoped_lock lock(state_->mutex);
+  if (state_->failed.empty()) return std::nullopt;
+  const auto first = state_->failed.begin();
+  Failure out{.key = first->first, .refusal = first->second};
+  state_->failed.erase(first);
+  return out;
+}
+
+void LatestWriter::wait_abandoned(std::chrono::milliseconds limit) {
+  std::vector<std::weak_ptr<void>> states;
+  {
+    const std::scoped_lock lock(abandoned().mutex);
+    states = std::exchange(abandoned().states, {});
+  }
+  const auto until = std::chrono::steady_clock::now() + limit;
+  for (const std::weak_ptr<void>& weak : states) {
+    // Le thread tient l'état tant qu'il tourne : verrouillé ici, il est encore là ; sinon il a fini.
+    const std::shared_ptr<void> alive = weak.lock();
+    if (!alive) continue;
+    State& state = *static_cast<State*>(alive.get());
+    std::unique_lock lock(state.mutex);
+    state.done.wait_until(lock, until, [&state] { return state.idle(); });
+  }
+}
+
+void LatestWriter::run(const std::shared_ptr<State>& state) {
+  std::unique_lock lock(state->mutex);
   while (true) {
-    wake_.wait(lock, stop, [this] { return !pending_.empty(); });
-    if (pending_.empty()) return;  // arrêt demandé, plus rien à écrire
-    auto next = pending_.begin();
+    state->wake.wait(lock, [&state] { return state->stop || !state->pending.empty(); });
+    if (state->pending.empty()) return;  // arrêt demandé, plus rien à écrire
+    auto next = state->pending.begin();
+    std::string key = next->first;
     Job job = std::move(next->second);
-    pending_.erase(next);
-    ++running_;
+    state->pending.erase(next);
+    ++state->running;
     lock.unlock();
-    report(guarded(job));  // ne lève pas (P2.5) : l'écriture finit toujours, flush() ne l'attend pas en vain
+    const auto written = guarded(job);  // ne lève pas (P2.5) : l'écriture finit toujours
+    finish(*state, key, written);
     lock.lock();
-    --running_;
-    if (pending_.empty() && running_ == 0) done_.notify_all();
+    --state->running;
+    if (state->idle()) state->done.notify_all();
   }
 }
 

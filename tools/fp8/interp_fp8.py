@@ -291,6 +291,7 @@ def psnr(ref, test, peak=None):
 
 def ssim(a, b, peak=1.0):
     # SSIM globale par fenêtres 8x8 sans recouvrement, sur la luminance ; suffisant pour une garde.
+    # Quatre définitions coexistent (B46-09) : blocs 8×8 (mesures.py, interp_fp8.py), gaussien 11 σ 1,5 (quantize_span.py), 7×7 uniforme par canal (commun.py) ; chaque seuil a été fixé avec la sienne, ne pas les comparer d'un outil à l'autre.
     def lum(x):
         x = x.astype(np.float64)
         return x[0] * 0.2126 + x[1] * 0.7152 + x[2] * 0.0722 if x.shape[0] == 3 else x[0]

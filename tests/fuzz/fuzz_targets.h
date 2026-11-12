@@ -14,6 +14,10 @@ int edid(const std::uint8_t* data, std::size_t size);           // EDID de l'éc
 int build_log(const std::uint8_t* data, std::size_t size);      // *.build.log du cache
 int resume(const std::uint8_t* data, std::size_t size);         // resume.tsv
 int osd_script(const std::uint8_t* data, std::size_t size);     // texte de l'OSD en ASS
+// fuzz_ass_render.cpp, fuzz_formats.cpp
+int ass_render(const std::uint8_t* data, std::size_t size);    // script ASS lu puis rendu sur quatre fils
+int keys(const std::uint8_t* data, std::size_t size);          // [keys] de user.toml
+int span_package(const std::uint8_t* data, std::size_t size);  // paquet de poids .span8
 int mkv_chapters(const std::uint8_t* data, std::size_t size);   // chapitres d'un MKV (B35-03)
 // fuzz_parsers.cpp
 int onnx(const std::uint8_t* data, std::size_t size);          // modèle ONNX (protobuf)

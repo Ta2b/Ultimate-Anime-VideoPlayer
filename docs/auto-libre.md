@@ -1,15 +1,15 @@
-# Mode Rapide d'Auto (anciennement « Auto libre », expérimental)
+# Mode Instantané d'Auto (anciennement « Auto libre », expérimental)
 
-Noms affichés : « Rapide » (le mode par défaut depuis C6, anciennement « Auto libre » puis « Rapide (expérimental) ») et « Stable » (anciennement « Auto (recommandé) », gardé au choix ; Rapide s'y replie sans message quand l'écran ou le moteur ne le permettent pas). Seuls les noms ont changé : la clé play.toml `interpolation.auto_mode` garde ses valeurs `"recommande"` (Stable) et `"libre"` (Rapide).
+Noms affichés : « Instantané » (le mode par défaut depuis C6, anciennement « Auto libre » puis « Rapide » : le nom a changé pour ne plus se confondre avec le niveau de traitement Rapide) et « Stable » (anciennement « Auto (recommandé) », gardé au choix ; Instantané s'y replie sans message quand l'écran ou le moteur ne le permettent pas). Seuls les noms ont changé : la clé play.toml `interpolation.auto_mode` garde ses valeurs `"recommande"` (Stable) et `"libre"` (Instantané).
 
-Mode d'Auto « Rapide », `interpolation.auto_mode = "libre"` dans play.toml (c'est le défaut ; `"recommande"` donne Stable, la loi
+Mode d'Auto « Instantané », `interpolation.auto_mode = "libre"` dans play.toml (c'est le défaut ; `"recommande"` donne Stable, la loi
 de `core/auto_rate.*` ne change pas). Cahier des charges de Tatoub : « pas de cadence ou palier à proprement
 parler, juste un interpolateur qui envoie le plus d'images qu'il peut, et nous on ajuste la vitesse du flux
 pour que la vidéo garde une vitesse constante, exactement comme sur les jeux vidéo ».
 
-## 0. Rapide à pas constant (`--fast-steady`, chantier 7, essai)
+## 0. Instantané à pas constant (`--fast-steady`, chantier 7, essai)
 
-La grille libre ci-dessous reste le défaut. `--fast-steady` la remplace, dans le mode Rapide seulement, par
+La grille libre ci-dessous reste le défaut. `--fast-steady` la remplace, dans le mode Instantané seulement, par
 N images par source, N constant dans un plan (décision : [ADR 0010](adr/0010-rapide-a-pas-constant-par-plan.md)).
 
 | Pièce | Rôle |
@@ -17,7 +17,7 @@ N images par source, N constant dans un plan (décision : [ADR 0010](adr/0010-ra
 | `core/steady_rate.{h,cpp}` (`SteadyRate`) | Choisit N, le plus grand candidat tel que (a + b·N + d·N)·1,15 ≤ P. En VRR, des demi-pas sous la fréquence de l'écran ; à fréquence fixe, les facteurs qui calent l'écran. À chaque coupe : l'a priori × l'échelle mesurée. Un réajustement par plan. Urgence à 2 pertes en 1 s. Repli à N = 1 seulement. |
 | `core/steady_grid.{h,cpp}` (`SteadyGrid`) | Enveloppe `CadenceAccumulator`. Les instants g + j·(d − g)/N sont exacts ; quand N change, `retarget` garde la phase ; à N = 1, la source seule. |
 | `UpscaleStage` | Chaque paire est mesurée, à N = 1 aussi. Une coupe appelle `LiveSettings::free_cut`. `Fate::Late` laisse sans calcul un instant passé (`upscale_late.cpp`). |
-| `LiveSettings::set_steady` | Configure `SteadyRate` selon l'écran et le fps. Il reçoit les coûts de paire, les images produites, les pertes, les settle et les coupes, par les mêmes chemins que le Rapide libre. |
+| `LiveSettings::set_steady` | Configure `SteadyRate` selon l'écran et le fps. Il reçoit les coûts de paire, les images produites, les pertes, les settle et les coupes, par les mêmes chemins que le Instantané libre. |
 | `ChainStats` | `output_fps()` = fps × N. La ligne de stats montre N, l'échelle s, le budget et les pertes. |
 
 Bancs (tests `[steady]`) :
@@ -133,14 +133,14 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
 
 ## 2. Intégration
 
-- `interpolation.auto_mode` : `"libre"` (défaut, Rapide) ou `"recommande"` (Stable) ; toute autre valeur est refusée
+- `interpolation.auto_mode` : `"libre"` (défaut, Instantané) ou `"recommande"` (Stable) ; toute autre valeur est refusée
   (`FieldOutOfRange`). En direct (`live_part`).
-- Liste « Mode d'Auto » sous le Multiplicateur (visible en mode Auto) ; « Rapide (expérimental) » grisé
+- Liste « Mode d'Auto » sous le Multiplicateur (visible en mode Auto) ; « Instantané (expérimental) » grisé
   avec infobulle sans écran VRR armé.
 - Repli automatique sur Auto (`apply_auto`, `player_run.cpp`) : VRR absent ou coupé, moteur non RIFE,
   fréquence de l'écran inconnue ; ou trop d'images perdues. Les deux motifs écrivent une ligne de journal et un
   message.
-- Statistiques : « Rapide · 87 i/s · limite GPU 78 % · écart service 11,4 ms » (OSD et journal toutes les
+- Statistiques : « Instantané · 87 i/s · limite GPU 78 % · écart service 11,4 ms » (OSD et journal toutes les
   5 s).
 
 ## 3. Vérification réelle (historique, fin octobre 2026)
@@ -161,7 +161,7 @@ Re:Zero 4e saison ép. 18 à 960 s, 75 s, plein écran (QD-OLED 165 Hz VRR armé
 RTX HDR, hauteur de travail 720p, `[auto] preset = 'custom'`, données de test à part (`--data-dir`), sous
 verrou GPU. Banc : un script hors du dépôt, perdu. Auto = la loi de l'époque (#123).
 
-| | Stable | Rapide |
+| | Stable | Instantané |
 | --- | --- | --- |
 | cadence moyenne (images neuves) | 44,5 puis 42,2 i/s | **60,2 puis 61,0 i/s** |
 | cadence médiane | 46,7 / 43,6 | 65,5 / 65,8 |
@@ -172,7 +172,7 @@ verrou GPU. Banc : un script hors du dépôt, perdu. Auto = la loi de l'époque 
 | changements de palier | 6 / 8 | aucun (pas de palier) |
 | temps par image médian (présentation) | 20,7 / 21,9 ms | 15,6 / 15,2 ms |
 
-Statistiques en direct sur la scène lourde : « Rapide · 59 i/s · limite GPU 87 % · écart service 16,2 ms ».
+Statistiques en direct sur la scène lourde : « Instantané · 59 i/s · limite GPU 87 % · écart service 16,2 ms ».
 Les « manquées » du mode libre se comptent contre le pas courant (pas de cadence nominale) ; les « sautées » sont
 les mêmes dans les deux modes. Critère de livraison (pertes < 1 %) tenu. Une première version, qui ne clôturait
 pas la mesure de service (la dernière image d'une paire n'est plus forcément la source), restait à ×2 fixe
@@ -187,7 +187,7 @@ pas la mesure de service (la dernière image d'une paire n'est plus forcément l
 | DistilDRBA ×3 fusionné | 40,7 i/s / 0,76 % (22 manquées, 10 changements) | **67,5 i/s / 0,04 %** (2 sautées, 0 manquée) | 7,7 / 25,3 ms (Auto 8,7 / 42,2) |
 | GMFSS (retiré des sources depuis) | 24,0 i/s / 3,60 % (65 manquées, 18 changements) | 23,9 et 23,8 i/s / 0,99 % (15 sautées, 3 manquées) | 18,7 / 68 ms (Auto 9,7 / 58,9) |
 
-DRBA : « Rapide · 66 i/s · limite GPU 79 % · écart service 13,1 ms ». GMFSS : « 22 i/s · limite GPU 91 %
+DRBA : « Instantané · 66 i/s · limite GPU 79 % · écart service 13,1 ms ». GMFSS : « 22 i/s · limite GPU 91 %
 · écart service 56 ms ». Un bug trouvé avec DRBA : `FreeRate::settle` (seek) raccourcissait le silence de
 démarrage et le repli se déclenchait à 1,5 s ; `settle` ne fait désormais que l'allonger.
 
@@ -205,9 +205,9 @@ démarrage et le repli se déclenchait à 1,5 s ; `settle` ne fait désormais qu
 - Au plus 10 instants par paire (ring) : 120 i/s minimum de plafond pour une source de 12 i/s.
 - Les instants à moins d'un quart de pas d'une source tombent sur elle : jusqu'à ~4 ms de décalage.
 
-## 5. Sans VRR : le mode Rapide calé sur les vsyncs
+## 5. Sans VRR : le mode Instantané calé sur les vsyncs
 
-Les jeux en cadence libre ne sont pas réservés aux écrans VRR ; le mode Rapide non plus. Sans VRR (écran à
+Les jeux en cadence libre ne sont pas réservés aux écrans VRR ; le mode Instantané non plus. Sans VRR (écran à
 fréquence fixe, ou VRR coupé), le mode reste le même (aucun palier ni multiplicateur) mais les instants de la
 grille tombent **sur les vsyncs de l'écran** : une image n'est jamais calculée pour un instant entre deux
 vsyncs, donc rien ne vibre. C'est le comportement d'un jeu en vsync : un GPU plus lent laisse l'image
@@ -231,7 +231,7 @@ mais c'est utilisable partout. VRR armé : le comportement décrit plus haut ne 
   boucle (pas de bascule d'un vsync à l'autre à cause de la gigue).
 - **Statistiques / repli** : une image « manquée » se compte contre le pas arrondi au vsync au-dessus ; le
   repli sur Auto (≥ 5 % de pertes sur 5 s) est identique.
-- **Menu** : « Rapide » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
+- **Menu** : « Instantané » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
   le rafraîchissement de l'écran ». Option du banc `--no-vrr` : traite l'écran comme fixe même si le VRR est
   armé.
 
@@ -244,7 +244,7 @@ quand la paire est passée, suivi de phase avec gigue, et dix minutes simulées 
 
 ### Vérification réelle (75 s, `--no-vrr`, 165 Hz traité comme fixe, 720p, plein écran, même scène)
 
-| | Stable (`--no-vrr`, paliers entiers) | Rapide sur vsyncs |
+| | Stable (`--no-vrr`, paliers entiers) | Instantané sur vsyncs |
 | --- | --- | --- |
 | cadence moyenne | 38,0 i/s | **66,8 i/s** |
 | sautées / manquées | 4 / 40 | 5 / 0 |
@@ -270,7 +270,7 @@ fixe).
 
 Sans VRR, le Stable ne prend que les facteurs où chaque image tient un nombre entier k de rafraîchissements :
 `écran / (k × cadence source)` (`core::auto_limits`). Quand ce facteur n'est pas un demi-palier, il est donné
-en fraction exacte (`core::lock_factor`, comme le Rapide à pas constant) : 11011/3200 à 165 Hz pour 23,976 i/s,
+en fraction exacte (`core::lock_factor`, comme le Instantané à pas constant) : 11011/3200 à 165 Hz pour 23,976 i/s,
 soit 82,5 i/s, une image tous les deux rafraîchissements. Les facteurs sous ×1,5 sont laissés.
 
 | Écran | 23,976 i/s | 29,97 i/s |

@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <vector>
 
 #include "core/types.h"
@@ -49,7 +50,10 @@ struct OpenOptions {
 
 class Demuxer {
  public:
-  static std::expected<Demuxer, Refusal> open(const std::filesystem::path& path, OpenOptions options = {});
+  // stop : un arrêt demandé pendant l'ouverture (fermeture de la vidéo) l'interrompt comme interrupt()
+  // (B30-01 : l'ouverture d'un fichier sur un partage muet se faisait avant tout rappel d'arrêt).
+  static std::expected<Demuxer, Refusal> open(const std::filesystem::path& path, OpenOptions options = {},
+                                              std::stop_token stop = {});
 
   Demuxer(Demuxer&&) noexcept;
   Demuxer& operator=(Demuxer&&) noexcept;

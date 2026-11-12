@@ -2,14 +2,17 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <expected>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 #include "app/play/chain.h"
+#include "app/play/host_facts.h"
 #include "app/play/latest_writer.h"
 #include "app/play/options.h"
+#include "app/play/pumped_task.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
 #include "media/shot_cache.h"
@@ -31,16 +34,54 @@ void note_cache_failure(const std::filesystem::path& dir) {
 }
 
 // Le grade lit les plans (sauf celui, neutre, d'une source HDR sans grade natif) ; l'interpolation aussi,
-// sous --shot-cuts.
-bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr) {
-  const bool grade = settings.grade && (!source_hdr || settings.hdr_native);
+// sous --shot-cuts. B42-02 : en sortie HDR, le grade efface l'exposition par plan et la marge selon la scène
+// (render::steady_hdr) ; il n'y lit plus que les flashs dangereux. Sans le limiteur, la pré-analyse (un
+// second décodage logiciel de tout le fichier) ne part pas : la série des noirs profonds reste alors à sa clé
+// moyenne.
+bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr, bool hdr_output) {
+  const bool grade =
+      settings.grade && (!source_hdr || settings.hdr_native) && (!hdr_output || settings.flash_guard);
   return grade || (shot_cuts && settings.rife_factor != 0);
+}
+
+// La variante du cache (media/shot_cache.h) : le chemin de décodage, et le gain du limiteur de flashs avec
+// lequel les séquences de flashs ont été marquées (B42-07) ; un autre écran les juge à nouveau.
+std::uint32_t cache_variant(bool nvdec, double flash_gain) {
+  const auto gain = static_cast<std::uint32_t>(std::lround(std::clamp(flash_gain, 0.0, 100.0) * 100.0));
+  return (nvdec ? 1U : 0U) + (gain << 1U);
+}
+
+// Le thread de l'analyse garde au cache la part faite quand elle s'arrête (B42-05), sauf si la vidéo y est
+// déjà entière.
+void keep_on_stop(const std::shared_ptr<ShotJob::Cache>& state, const std::filesystem::path& dir,
+                  const std::string& name, std::uint32_t variant, const media::ShotTimeline& timeline,
+                  bool complete) {
+  if (dir.empty() || !state->read.load(std::memory_order_acquire)) return;
+  if (state->complete.load(std::memory_order_acquire) || state->kept.load(std::memory_order_acquire)) return;
+  if (timeline.size() == 0 || state->key.empty()) return;
+  try {
+    if (media::save_shot_cache(dir, state->key, timeline.shots(), complete, media::kShotCacheKeep,
+                               timeline.flashes(), variant)) {
+      log_channel("app")->info("plans de {} gardés{} : {} plans", name, complete ? "" : " en partie",
+                               timeline.size());
+    } else {
+      note_cache_failure(dir);
+    }
+  } catch (...) {  // NOLINT(bugprone-empty-catch) : le cache est un confort, pas une obligation
+  }
 }
 
 // L'analyse de la vidéo depuis from_us. Son thread lit d'abord le cache : la chronologie entière, sans
 // analyse, ou la part déjà faite, que l'analyse complète.
 void start_probe(const ShotWork& work, ShotJob& job, std::int64_t from_us) {
   media::ShotProbeOptions options = work.probe;
+  options.flash_gain = job.flash_gain;
+  // B30-01 : une analyse bloquée sur un partage muet ne fige pas la fenêtre à la fermeture.
+  options.abandon = abandon_thread;
+  options.on_stop = [state = job.cache, dir = work.cache_dir, name = core::to_utf8(job.file.filename()),
+                     variant = job.variant](const media::ShotTimeline& timeline, bool complete) {
+    keep_on_stop(state, dir, name, variant, timeline, complete);
+  };
   if (!work.cache_dir.empty() && !job.cache->read.load(std::memory_order_acquire)) {
     options.preload = [state = job.cache, dir = work.cache_dir, file = job.file,
                        variant = job.variant](media::ShotTimeline& timeline) {
@@ -59,16 +100,19 @@ void start_probe(const ShotWork& work, ShotJob& job, std::int64_t from_us) {
       return complete;
     };
   }
-  job.probe = media::ShotProbe::start(job.file, *job.timeline, from_us, std::move(options));
+  job.probe = media::ShotProbe::start(job.file, job.timeline, from_us, std::move(options));
 }
 
-ShotJob new_job(const ShotWork& work, const std::filesystem::path& file) {
+// B42-07 : les flashs se jugent à la lumière que l'écran montrera (son pic), et sans gain pour une source
+// déjà en PQ ou HLG, que le grade ne relève pas.
+ShotJob new_job(const ShotWork& work, const std::filesystem::path& file, const ShotOutput& output) {
   ShotJob job;
   job.cache_dir = work.cache_dir;
   job.file = file;
   job.cache = std::make_shared<ShotJob::Cache>();
-  job.variant = work.probe.cuvid_resize.empty() ? 0 : 1;
-  job.timeline = std::make_unique<media::ShotTimeline>();
+  job.flash_gain = output.source_hdr ? 1.0 : flash_gain_of(output.peak_nits);
+  job.variant = cache_variant(!work.probe.cuvid_resize.empty(), job.flash_gain);
+  job.timeline = std::make_shared<media::ShotTimeline>();
   return job;
 }
 
@@ -93,6 +137,7 @@ void keep_if_done(const ShotWork& work, ShotJob& job) {
       note_cache_failure(dir);
     return {};
   };
+  job.cache->kept.store(true, std::memory_order_release);  // l'arrêt de l'analyse n'écrit plus sa part
   if (work.writer != nullptr) {
     work.writer->post("shots:" + job.cache->key, save);
   } else {
@@ -111,6 +156,7 @@ ShotJob& ShotJob::operator=(ShotJob&& other) noexcept {
   timeline = std::move(other.timeline);
   probe = std::move(other.probe);
   variant = other.variant;
+  flash_gain = other.flash_gain;
   complete = other.complete;
   return *this;
 }
@@ -120,26 +166,14 @@ ShotJob::~ShotJob() {
 }
 
 void ShotJob::retire() noexcept {
-  probe.reset();  // le thread d'analyse s'arrête avant la lecture de la chronologie
-  if (!cache || !cache->read.load(std::memory_order_acquire)) return;
-  if (complete || cache->complete.load(std::memory_order_acquire)) return;
-  if (!timeline || timeline->size() == 0 || cache_dir.empty() || cache->key.empty()) return;
-  try {
-    if (media::save_shot_cache(cache_dir, cache->key, timeline->shots(), false, media::kShotCacheKeep,
-                               timeline->flashes(), variant)) {
-      const auto log = log_channel("app");
-      log->info("plans de {} gardés en partie : {} plans", core::to_utf8(file.filename()), timeline->size());
-    } else {
-      note_cache_failure(cache_dir);
-    }
-  } catch (...) {  // NOLINT(bugprone-empty-catch) : le cache est un confort, pas une obligation
-  }
-  timeline.reset();  // gardée une fois
+  // Le thread de l'analyse s'arrête (au plus deux secondes, puis laissé à son sort : B30-01) et garde au
+  // cache sa part faite, de son côté (B42-05).
+  probe.reset();
 }
 
 void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
-                std::int64_t start_us, bool source_hdr) {
-  if (file.empty() || !wants_shots(work.shot_cuts, settings, source_hdr)) {
+                std::int64_t start_us, const ShotOutput& output) {
+  if (file.empty() || !wants_shots(work.shot_cuts, settings, output.source_hdr, output.hdr_output)) {
     work.current.probe.reset();
     return;
   }
@@ -154,7 +188,7 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
     return;
   }
   work.current.retire();  // l'analyse de l'autre fichier s'arrête, sa part faite va au cache
-  work.current = new_job(work, file);
+  work.current = new_job(work, file, output);
   start_probe(work, work.current, from);
 }
 
@@ -162,9 +196,7 @@ ShotWork shot_work(std::filesystem::path cache_dir, const PlayOptions& options) 
   ShotWork work{.cache_dir = std::move(cache_dir)};
   if (options.probe_nvdec) work.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   work.shot_cuts = options.shot_cuts;
-  // La pré-analyse marque les flashs à l'échelle du grade sous son pic par défaut ; l'analyse à l'ingestion,
-  // qui suit le pic réel, reste le secours.
-  work.probe.flash_gain = flash_gain_of(render::grade_limits::kDefaultPeakNits);
+  // Le gain du limiteur de flashs de la pré-analyse suit le pic de l'écran de chaque vidéo (new_job, B42-07).
   return work;
 }
 
@@ -245,9 +277,11 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   // Le grade s'est rallumé après l'ouverture (le panneau) : l'analyse arrêtée à l'ouverture reprend ici,
   // sinon seul ce qu'elle avait vu en partant serait connu. Coupé au panneau sans que l'interpolation lise
   // les plans, elle ne repart pas (A42-09).
-  if (!job.probe && !job.complete && view.position_us != kNoPts &&
-      wants_shots(to.shot_cuts, to.running, to.source_hdr))
+  const bool wanted = wants_shots(to.shot_cuts, to.running, to.source_hdr, to.screen.hdr_output());
+  if (!job.probe && !job.complete && view.position_us != kNoPts && wanted)
     start_probe(*to.shots, job, std::max<std::int64_t>(view.position_us, 0));
+  // Plus rien ne lit les plans (sortie passée en HDR, limiteur décoché) : l'analyse s'arrête (B42-02).
+  if (job.probe && !wanted) job.probe.reset();
   media::ShotProbe* probe = job.probe.get();
   if (probe != nullptr && view.position_us != kNoPts) {
     probe->set_playhead(view.position_us);
@@ -273,7 +307,23 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   if (!shot) return live_scene(to, newest->pts_us + to.shots_step_us);
   ShotScene scene = scene_of(shot->stats, shot->serial, shot->fade);
   scene.planned = true;
+  scene.start_us = shot->start_us;
+  scene.end_us = shot->end_us;
+  scene.cut_before = shot->cut_before;
   return scene;
+}
+
+void open_shots_early(ShotWork& work, const std::filesystem::path& file, PlaySettings settings,
+                      std::int64_t start_us, const media::TrackInfo& video, std::optional<double> peak_seen,
+                      bool sdr) {
+  const std::optional<ColorInfo> color = media::track_color(video);
+  const bool source_hdr = color && (color->transfer == Transfer::Pq || color->transfer == Transfer::Hlg);
+  const int peak = settings.true_hdr_peak > 0 ? settings.true_hdr_peak : auto_peak_nits(peak_seen);
+  const bool hdr_output = !sdr && system_hdr(peak_seen);
+  settings.hdr_native = hdr_output;
+  open_shots(
+      work, file, settings, start_us,
+      ShotOutput{.source_hdr = source_hdr, .hdr_output = hdr_output, .peak_nits = static_cast<double>(peak)});
 }
 
 }  // namespace ajp::app::play

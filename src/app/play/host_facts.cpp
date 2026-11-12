@@ -126,16 +126,29 @@ std::int64_t display_period_us(SDL_Window* window) {
   return static_cast<std::int64_t>(1e6 / static_cast<double>(mode->refresh_rate));
 }
 
-double display_refresh_hz(SDL_Window* window) {
+DisplaySdl display_sdl(SDL_Window* window) {
+  DisplaySdl out;
+  const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+  if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(display); mode != nullptr) {
+    if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0)
+      out.hz = static_cast<double>(mode->refresh_rate_numerator) /
+               static_cast<double>(mode->refresh_rate_denominator);
+    else if (mode->refresh_rate > 0.0F)
+      out.hz = static_cast<double>(mode->refresh_rate);
+  }
+  if (const char* name = SDL_GetDisplayName(display); name != nullptr) out.name = name;
+  return out;
+}
+
+double display_refresh_hz([[maybe_unused]] SDL_Window* window, const DisplaySdl& sdl) {
 #if defined(_WIN32)
   if (const auto windows = windows_mode(window); windows && windows->hz > 1.0) return windows->hz;
 #endif
-  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
-  if (mode == nullptr) return 0.0;
-  if (mode->refresh_rate_numerator > 0 && mode->refresh_rate_denominator > 0)
-    return static_cast<double>(mode->refresh_rate_numerator) /
-           static_cast<double>(mode->refresh_rate_denominator);
-  return mode->refresh_rate > 0.0F ? static_cast<double>(mode->refresh_rate) : 0.0;
+  return sdl.hz;
+}
+
+double display_refresh_hz(SDL_Window* window) {
+  return display_refresh_hz(window, display_sdl(window));
 }
 
 namespace {
@@ -253,6 +266,10 @@ std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts) {
 // sinon ce que uncalibrated_peak_nits déduit de la marge HDR de SDL3 ; rien si l'écran n'est pas en HDR
 // (display.md).
 std::optional<double> content_peak_nits(SDL_Window* window) {
+  return content_peak_nits(window, display_sdl(window));
+}
+
+std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sdl) {
   const SDL_PropertiesID props = SDL_GetWindowProperties(window);
   const float headroom = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 0.0F);
   PeakFacts facts{
@@ -273,13 +290,17 @@ std::optional<double> content_peak_nits(SDL_Window* window) {
     facts.system_hdr_active = windows_hdr_active(device);
     if (!facts.system_hdr_active) return std::nullopt;
   }
-  if (const auto display = read_display(display_name(window))) facts.edid_peak = display->peak_nits;
+  if (const auto display = read_display(sdl.name)) facts.edid_peak = display->peak_nits;
 #else
   if (!facts.sdl_hdr) return std::nullopt;
   // La marge de SDL est relative au blanc de référence du compositeur (KDE : la « luminosité SDR »), pas à
   // 203 nits : le pic que le système a calibré se lit chez lui (system_peak.h).
-  if (const auto display = read_display(display_name(window)))
-    if (const auto calibrated = system_peak_nits(display->connector, headroom)) return calibrated;
+  if (const auto display = read_display(sdl.name)) {
+    // B11-04 : l'entrée KWin de cet écran, pas celle d'un ancien écran du même port.
+    const std::string edid = kwin_edid_key(display->manufacturer, display->product);
+    if (const auto calibrated = system_peak_nits(display->connector, headroom, nullptr, edid))
+      return calibrated;
+  }
 #endif
   return uncalibrated_peak_nits(facts);
 }
@@ -293,7 +314,7 @@ bool system_hdr(std::optional<double> peak_nits) {
 int auto_peak_nits(std::optional<double> detected) {
   constexpr double kUnknown = 1000.0;
   constexpr double kLow = 200.0;
-  constexpr double kHigh = 2000.0;
+  constexpr double kHigh = static_cast<double>(limits::kTrueHdrPeak.hi);  // B37-09 : 4000
   if (!detected || !std::isfinite(*detected) || *detected <= 0.0) return static_cast<int>(kUnknown);
   return static_cast<int>(std::lround(std::clamp(*detected, kLow, kHigh)));
 }

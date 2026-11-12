@@ -210,10 +210,13 @@ TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app]
   REQUIRE(tensorrt != nullptr);
   CHECK(tensorrt->usable);
   CHECK(tensorrt->download);
-  CHECK_FALSE(tensorrt->chosen);  // jamais coché d'office avec une licence
+  // Coché d'office sur une RTX, licence affichée et acceptée par « Suivant » (décision de Tatoub, B25-01).
+  CHECK(tensorrt->chosen);
+  CHECK(tensorrt->license_accepted);
   CHECK(tensorrt->status == "à télécharger (900 Mo)");
+  CHECK(chosen(settings_after(view, {}), core::EngineId::TensorRt));
 
-  tensorrt->chosen = true;
+  tensorrt->license_accepted = false;  // l'utilisateur décoche « J'accepte sa licence »
   const core::Settings refused = settings_after(view, {});
   CHECK_FALSE(chosen(refused, core::EngineId::TensorRt));
   CHECK_FALSE(std::ranges::contains(refused.installed_engines, core::EngineId::TensorRt));
@@ -252,10 +255,17 @@ TEST_CASE("Assistant fermé pendant le téléchargement : la case et la licence 
   CHECK(resumed.chosen);
   CHECK(resumed.license_accepted);
   CHECK(chosen(settings_after(first_run_view(kRtx, here, written), {}), core::EngineId::TensorRt));
-  // Sans ce choix écrit, la licence attend toujours l'accord.
+  // Sans ce choix écrit, premier passage : coché d'office, licence acceptée par le geste « Suivant ».
   const EngineRow fresh = tensorrt_of(first_run_view(kRtx, here));
-  CHECK_FALSE(fresh.chosen);
-  CHECK_FALSE(fresh.license_accepted);
+  CHECK(fresh.chosen);
+  CHECK(fresh.license_accepted);
+  // Assistant déjà fini avec TensorRT décoché : rouvrir l'écran ne le recoche pas.
+  core::Settings done = written;
+  done.first_run_done = true;
+  done.chosen_engines = {core::EngineId::Vulkan};
+  const EngineRow declined = tensorrt_of(first_run_view(kRtx, here, done));
+  CHECK_FALSE(declined.chosen);
+  CHECK_FALSE(declined.license_accepted);
 }
 
 TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est dite (P3.4)",
@@ -309,12 +319,16 @@ TEST_CASE("Pilote trop ancien ou NVK : TensorRT dit pourquoi (A37-08, A37-11)", 
   GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = ajp::GpuVendor::Nvidia};
   gpu.driver = std::to_string((575U << 22U) | (64U << 14U));
   CHECK(tensorrt_driver_problem(gpu).find("575.64") != std::string::npos);
-  gpu.driver = std::to_string((580U << 22U) | (82U << 14U));
+  gpu.driver = std::to_string((580U << 22U) | (95U << 14U));
   CHECK(tensorrt_driver_problem(gpu).empty());
 #ifdef __linux__
   // CUDA 13 demande 580.65 sous Linux : 580.40 ne suffit pas.
   gpu.driver = std::to_string((580U << 22U) | (40U << 14U));
   CHECK(tensorrt_driver_problem(gpu).find("580.65") != std::string::npos);
+#else
+  // Et 580.88 sous Windows (B34-07) : 580.82 ne suffit pas.
+  gpu.driver = std::to_string((580U << 22U) | (82U << 14U));
+  CHECK(tensorrt_driver_problem(gpu).find("580.88") != std::string::npos);
 #endif
   // NVK : la version est celle de Mesa, elle ne se lit pas comme celle de NVIDIA.
   gpu.mesa_nvk = true;
@@ -323,4 +337,18 @@ TEST_CASE("Pilote trop ancien ou NVK : TensorRT dit pourquoi (A37-08, A37-11)", 
   CHECK(tensorrt_driver_problem(gpu).find("nvidia-open") != std::string::npos);
   gpu.vendor = ajp::GpuVendor::Amd;
   CHECK(tensorrt_driver_problem(gpu).empty());
+}
+
+TEST_CASE("Un moteur sous licence non acceptée ne compte pas comme installé (B25-05)", "[app][first_run]") {
+  EngineRow trt{.offer = {.id = core::EngineId::TensorRt},
+                .usable = true,
+                .chosen = true,
+                .download = true,
+                .license = "https://exemple/licence"};
+  CHECK_FALSE(engine_installs(trt));
+  trt.license_accepted = true;
+  CHECK(engine_installs(trt));
+  trt.license_accepted = false;
+  trt.download = false;  // déjà installé : rien à accepter
+  CHECK(engine_installs(trt));
 }

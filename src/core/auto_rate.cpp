@@ -19,27 +19,18 @@ int auto_granularity(int wanted) {
 
 int auto_ceiling(double display_hz, double source_fps, int granularity) {
   granularity = auto_granularity(granularity);
-  // Hors de [5, 240] i/s : une cadence fausse (VFR, base de temps) ; l'interpolation reste à ×1.
-  if (!(display_hz > 0.0) || !(source_fps >= 5.0)  // NaN comme 0 : écran ou cadence inconnus
-      || source_fps < 5.0 || source_fps > 240.0)
-    return granularity;
+  // Hors de [5, 240] i/s : une cadence fausse (VFR, base de temps) ; l'interpolation reste à ×1. NaN
+  // échoue aux deux comparaisons comme 0 : écran ou cadence inconnus.
+  if (!(display_hz > 0.0) || !(source_fps >= 5.0) || source_fps > 240.0) return granularity;
+  // B12-01 : en paliers entiers, 1 % de marge (24,0 i/s ×6 sur un écran annoncé 143,99 Hz, que la vitesse de
+  // lecture rattrape). En demi-paliers et au pas fin, aucune : 145/24 de 23,976 i/s ferait 144,86 i/s sur
+  // 144 Hz, une image retenue ou sautée toutes les 1,2 s. Le Rapide borne de même sous la fréquence.
+  const double limit = display_hz * (granularity == 1 ? 1.01 : 1.0 + 1e-9);
   int best = granularity;
   for (int step = 2 * granularity; step <= kAutoMaxStep * granularity; ++step) {
-    if (source_fps * step / granularity <= display_hz * 1.01) best = step;
+    if (source_fps * step / granularity <= limit) best = step;
   }
   return best;
-}
-
-std::vector<int> locked_steps(double display_hz, double source_fps, int granularity) {
-  granularity = auto_granularity(granularity);
-  if (!(display_hz > 0.0) || !(source_fps >= 5.0) || source_fps > 240.0) return {};
-  std::vector<int> out{granularity};
-  for (int step = granularity + 1; step <= kAutoMaxStep * granularity; ++step) {
-    const double vsyncs = display_hz * granularity / (source_fps * step);
-    if (vsyncs < 0.99) break;
-    if (std::abs(vsyncs - std::round(vsyncs)) <= 0.01 * vsyncs) out.push_back(step);
-  }
-  return out;
 }
 
 namespace {
@@ -53,10 +44,11 @@ void lock_to_display(AutoLimits& out, double display_hz, double source_fps, doub
   out.exact.push_back(Ratio{1, 1});
   for (int vsyncs = pacing::kMaxVsyncsPerFrame; vsyncs >= 1; --vsyncs) {
     const double target = display_hz / (static_cast<double>(vsyncs) * source_fps);
-    if (target < kLowest || target > static_cast<double>(kAutoMaxStep)) continue;
+    // ×10,01 (240 Hz, 23,976 i/s) se cale à ×10, que la vitesse de lecture rattrape (B12-06).
+    if (target < kLowest || target > kAutoMaxStep * (1.0 + pacing::kMaxSpeedChange)) continue;
     if (cap_hz > 0.0 && target * source_fps > cap_hz * 1.01) continue;
     const std::optional<Ratio> factor = lock_factor(target);
-    if (!factor) continue;
+    if (!factor || factor->value() > static_cast<double>(kAutoMaxStep)) continue;
     const int step = static_cast<int>(std::lround(factor->value() * out.granularity));
     if (step <= out.granularity) continue;
     if (step == out.locked.back()) {  // deux facteurs pour un même arrondi : le plus fluide

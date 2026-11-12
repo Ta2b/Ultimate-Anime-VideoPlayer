@@ -21,13 +21,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np  # noqa: E402
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common"))
+import hdr  # noqa: E402
 import labels  # noqa: E402
 
 TILE = 256
 SDR_WHITE = 203.0
 # BT.709 → BT.2020, pour les sources SDR (le lecteur fait la même conversion avant le grade).
-BT709_TO_2020 = np.array([[0.6274, 0.3293, 0.0433], [0.0691, 0.9195, 0.0114], [0.0164, 0.0880, 0.8956]],
-                         dtype=np.float32)
+BT709_TO_2020 = hdr.BT709_TO_2020.astype(np.float32)
 
 
 def srgb_to_nits(code):

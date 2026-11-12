@@ -89,7 +89,7 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
     }
   }
   const auto expected =
-      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Bilinear);
+      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Spline36);
   REQUIRE(expected);
 
   Loaded loaded;
@@ -101,11 +101,11 @@ TEST_CASE("Backend TensorRT : ingestion NV12 BT.709 contre la référence", "[ba
       ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
   REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*rgb)->tensor()));
   const auto got = download((*rgb)->tensor());
-  // Bords exclus : la référence y prolonge la chroma en miroir, ce noyau provisoire la répète.
+  // Chroma en Spline36, bords en miroir, comme la référence (B03-02) : l'image entière, bords compris.
   double worst = 0.0;
   for (int c = 0; c < 3; ++c) {
-    for (int y = 2; y < h - 2; ++y) {
-      for (int x = 2; x < w - 2; ++x) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
         const float want = expected->planes[static_cast<std::size_t>(c)].at(x, y);
         const float have = got[static_cast<std::size_t>((c * h + y) * w + x)];
         worst = std::max(worst, static_cast<double>(std::fabs(want - have)));
@@ -252,7 +252,7 @@ TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme 
     }
   }
   const auto expected =
-      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Bilinear);
+      kernels::ref::yuv_to_rgb(image, {.matrix = kernels::Matrix::Bt709}, kernels::Filter::Spline36);
   REQUIRE(expected);
 
   Loaded loaded;
@@ -272,8 +272,8 @@ TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme 
   const auto got = download((*rgb)->tensor());
   double worst = 0.0;
   for (int c = 0; c < 3; ++c) {
-    for (int y = 2; y < h - 2; ++y) {
-      for (int x = 2; x < w - 2; ++x) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
         const float want = expected->planes[static_cast<std::size_t>(c)].at(x, y);
         const float have = got[static_cast<std::size_t>((c * h + y) * w + x)];
         worst = std::max(worst, static_cast<double>(std::fabs(want - have)));
@@ -282,7 +282,7 @@ TEST_CASE("Backend TensorRT : ingestion des images du décodage logiciel, comme 
   }
   CHECK(worst < 2e-3);
   // Un format que l'ingestion ne lit pas est refusé et nommé.
-  frame.format = PixelFormat::Yuv444p16;
+  frame.format = PixelFormat::Rgba16Unorm;
   CHECK(loaded.backend->kernels()->ingest(frame, {}, (*rgb)->tensor()).error().code ==
         RefusalCode::FormatUnsupported);
 }

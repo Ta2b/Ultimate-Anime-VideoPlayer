@@ -153,12 +153,13 @@ struct PlaceboScreen::Impl {
   std::uint64_t reuses = 0;
   // L'interface par-dessus la composition ; un refus est écrit au journal une fois, la lecture
   // continue sans elle.
-  void draw_ui(const ImDrawData* ui, const pl_frame& target);
+  void draw_ui(const ImDrawData* ui, const pl_frame& target, std::uint64_t serial = 0);
   std::expected<void, Refusal> save_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                                              const ImDrawData* ui, const std::filesystem::path& path);
   // L'instantané demandé (--snapshot), numéroté s'il y en a plusieurs ; un refus est écrit au journal.
   void take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                      const ImDrawData* drawn_ui);
+  std::string device_choice;  // la carte préférée à l'ouverture (B37-01), lue par libplacebo
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
   pl_log log = nullptr;
@@ -168,13 +169,15 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<VulkanShare> share;  // vk prêté à FFmpeg ; détruit avant lui
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
-  pl_cache shader_cache = nullptr;                  // ScreenOptions::shader_cache (placebo_open.cpp)
+  pl_cache shader_cache = nullptr;        // ScreenOptions::shader_cache (placebo_open.cpp)
+  std::uint64_t shader_cache_loaded = 0;  // pl_cache_signature du cache relu : inchangé, pas réécrit
   PresentLevel present_level = PresentLevel::Open;  // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
-  std::unique_ptr<PresentFeedback> feedback;
+  std::unique_ptr<PresentFeedback> feedback;        // niveaux Timing et Wait (placebo_feedback.h) ; nul sinon
   std::optional<render::DisplayContract> contract;  // 8.2 : le contrat d'écran relu
-  std::unique_ptr<RingWatcher> watcher;  // --ring-watcher (ring_watcher.h), le temps d'une chaîne  // niveaux
-                                         // Timing et Wait (placebo_feedback.h) ; nul sinon
+  // Le veilleur d'écriture (ring_watcher.h), le temps d'une chaîne ; arrêté en tête de ~Impl, avant
+  // l'appareil.
+  std::unique_ptr<RingWatcher> watcher;
   std::filesystem::path shader_cache_file;
   GpuDevice device;
   PlaceboRing ring;
@@ -185,8 +188,9 @@ struct PlaceboScreen::Impl {
   int ui_failures = 0;     // échecs de suite du dessin de l'interface
   bool ui_failed = false;  // abandonnée après kMaxUiFailures échecs de suite
   pl_color_space source{};
-  double sample_aspect = 1.0;  // SAR de la vidéo, pour la forme de l'image à l'écran
-  OutputSize swapchain_size;
+  double sample_aspect = 1.0;    // SAR de la vidéo, pour la forme de l'image à l'écran
+  OutputSize swapchain_size;     // la dernière taille demandée à pl_swapchain_resize
+  AcquireStreak acquire_streak;  // B31-15 : les échecs d'acquisition de suite (present_level.h)
   // Le rendu hors écran des essais du bench (ScreenOptions::offscreen) : deux images en file, la cadence de
   // l'écran simulée.
   bool offscreen = false;

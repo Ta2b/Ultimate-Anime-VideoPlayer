@@ -1,8 +1,9 @@
-// Le veilleur d'écriture de l'anneau (chantier 6.5, essai --ring-watcher) : un thread qui attend les
-// sémaphores timeline des slots écrits par gpu (vkWaitSemaphores, WAIT_ANY, 100 ms au plus, plus un
-// sémaphore de réveil à lui), date chaque écriture finie à la sortie de l'attente et réveille main. main ne
-// sonde plus « la tête est-elle écrite ? » chaque milliseconde : il dort jusqu'à son échéance ou jusqu'au
-// réveil, et la latence d'écriture se mesure à l'heure exacte.
+// Le veilleur d'écriture de l'anneau (chantier 6.5), actif par défaut à chaque lecture (--no-ring-watcher
+// rend le sondage d'avant) : un thread qui attend les sémaphores timeline des slots écrits par gpu
+// (vkWaitSemaphores, WAIT_ANY, 100 ms au plus, plus un sémaphore de réveil à lui), date chaque écriture finie
+// à la sortie de l'attente et réveille main. main ne sonde plus « la tête est-elle écrite ? » chaque
+// milliseconde : il dort jusqu'à son échéance ou jusqu'au réveil, et la latence d'écriture se mesure à
+// l'heure exacte.
 //
 // Un slot se surveille de sa réception par main (watch) à la lecture de sa date (take). forget_all, avant la
 // destruction des sémaphores de l'anneau, rend la main quand le thread n'en attend plus aucun.

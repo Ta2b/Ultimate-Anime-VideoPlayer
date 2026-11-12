@@ -12,7 +12,10 @@
 #include <imgui.h>
 
 #include "app/play/controls_icons.h"
+#include "app/play/french_text.h"
 #include "app/play/i18n.h"
+#include "app/play/user_keys.h"
+#include "core/keys.h"
 
 namespace ajp::app::play {
 namespace {
@@ -127,9 +130,22 @@ float preparing_text_limit(float x0, float x1, bool button, float scale) {
   return std::max(x0, x1 - taken);
 }
 
+// L'infobulle du bouton lecture/pause avec la touche réellement liée dans [keys] (B24-07) ; les autres
+// infobulles nomment des touches fixes (f, m, a, j, p, Page haut/bas).
+std::string pause_tooltip(bool paused) {
+  const std::optional<core::Chord>& chord = configured_keys().chord(core::Action::TogglePause);
+  if (!chord) return std::string(paused ? i18n::tr("Play") : i18n::tr("Pause"));
+  const std::string key = core::format_chord(*chord);
+  const std::string shown = key == "Space" ? std::string(i18n::tr("Space")) : key;
+  return paused ? i18n::tr_format("Play ({})", shown) : i18n::tr_format("Pause ({})", shown);
+}
+
 void draw_toast(const Controls& controls, float width, float scale, std::int64_t now_us) {
-  const auto text = controls.toast(now_us);
-  if (!text) return;
+  const auto toast = controls.toast(now_us);
+  if (!toast) return;
+  // Typographie française des messages brefs (B43-12) : « : », « % » ne passent pas seuls en début de ligne.
+  const std::string text =
+      i18n::language() == i18n::Language::French ? french_spaces(*toast) : std::string(*toast);
   const float opacity = controls.toast_opacity(now_us);
   ImDrawList* list = ImGui::GetForegroundDrawList();
   const ImVec2 pad{16.0F * scale, 8.0F * scale};
@@ -138,13 +154,12 @@ void draw_toast(const Controls& controls, float width, float scale, std::int64_t
   const float wrap = std::max(width * 0.6F - 2.0F * pad.x, 200.0F * scale);
   ImFont* font = ImGui::GetFont();
   const float font_size = ImGui::GetFontSize();
-  const ImVec2 size =
-      font->CalcTextSizeA(font_size, FLT_MAX, wrap, text->data(), text->data() + text->size());
+  const ImVec2 size = font->CalcTextSizeA(font_size, FLT_MAX, wrap, text.data(), text.data() + text.size());
   const ImVec2 p0{width - size.x - 2.0F * pad.x - kPad * scale, kPad * scale};  // en haut à droite
   list->AddRectFilled(p0, {p0.x + size.x + 2.0F * pad.x, p0.y + size.y + 2.0F * pad.y},
                       black(0.72F * opacity), (font_size + 2.0F * pad.y) * 0.5F);
-  list->AddText(font, font_size, {p0.x + pad.x, p0.y + pad.y}, white(opacity), text->data(),
-                text->data() + text->size(), wrap);
+  list->AddText(font, font_size, {p0.x + pad.x, p0.y + pad.y}, white(opacity), text.data(),
+                text.data() + text.size(), wrap);
 }
 
 }  // namespace
@@ -261,7 +276,7 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
       x += row;
     }
     if (round_button(pen, "##play", {x, cy}, row)) actions.emplace_back(Command{cmd::TogglePause{}});
-    tooltip(view.paused ? i18n::tr("Play (Space)") : i18n::tr("Pause (Space)"));
+    tooltip(pause_tooltip(view.paused));
     if (view.paused) {
       icon_play(pen, {x, cy}, icon);
     } else {
@@ -343,7 +358,7 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
       tooltip(i18n::tr("Subtitles (j)"));
       icon_subtitles(pen, {rx, cy}, icon, tracks.subtitle_selected.has_value());
       track_popup("##subtitles_menu", i18n::tr("Subtitles"), tracks.subtitles, tracks.subtitle_selected,
-                  i18n::tr("Off"), rx + row * 0.5F, height - panel - 4.0F * s, s, actions, true);
+                  i18n::tr("None"), rx + row * 0.5F, height - panel - 4.0F * s, s, actions, true);
     }
 
     held = look.keep_visible || ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||

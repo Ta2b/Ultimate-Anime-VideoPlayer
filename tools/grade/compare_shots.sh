@@ -8,7 +8,8 @@
 # SNAP_AT (seconde de la capture après le début, 6 : le grade adaptatif a une constante de temps), SHOTS
 # (défaut : le shots30.tsv à côté). Un plan dont l'extrait manque est sauté et dit.
 # Critères (docs/adr/0009-grade-dans-l-anneau.md) : par plan p95 ≤ MAX_P95 (1, 2,5 en 4K) et
-# p99,9 ≤ MAX_P999 (3) ; code retour 1 si un plan les dépasse.
+# p99,9 ≤ MAX_P999 (3) ; code retour 1 si un plan les dépasse, si une capture manque, si la mesure échoue ou
+# rend un verdict vide (B46-01). WAIT_MAX (secondes, défaut 600) borne l'attente d'une autre instance d'ajp.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 a_opts=${1?options A attendues (chaîne vide possible)}
@@ -23,6 +24,7 @@ SNAP_AT=${SNAP_AT:-6}
 SHOTS=${SHOTS:-$here/shots30.tsv}
 if [[ "$WINDOW" == 3840x2160 ]]; then MAX_P95=${MAX_P95:-2.5}; else MAX_P95=${MAX_P95:-1}; fi
 MAX_P999=${MAX_P999:-3}
+WAIT_MAX=${WAIT_MAX:-600}
 mkdir -p "$out/frames"
 summary="$out/resume.tsv"
 printf 'plan\tgenre\tmoyenne\tp95\tp99\tp99.9\tmax\tverdict\n' > "$summary"
@@ -31,7 +33,16 @@ capture() {  # capture NOM FICHIER DÉBUT OPTIONS SORTIE
   local d
   d=$(mktemp -d)
   [[ -n "$BASE" ]] && cp "$BASE"/*.toml "$d/" 2>/dev/null
-  while pgrep -x ajp > /dev/null; do sleep 10; done  # une instance à la fois
+  local waited=0
+  while pgrep -x ajp > /dev/null; do  # une instance à la fois
+    if ((waited >= WAIT_MAX)); then
+      rm -rf "$d"
+      echo "$1 : une autre instance d'ajp tourne encore après ${WAIT_MAX} s, capture abandonnée" >&2
+      return 1
+    fi
+    sleep 10
+    waited=$((waited + 10))
+  done
   # shellcheck disable=SC2086
   timeout 180 "$L" "$2" --start="$3" --no-resume --mute --window="$WINDOW" --data-dir="$d" \
     --snapshot="$5" --snapshot-at="$SNAP_AT" --snapshot-frames=1 --seconds=$((SNAP_AT + 3)) $4 \
@@ -63,14 +74,23 @@ while IFS=$'\t' read -r name source start kind; do
     failed=1
     continue
   fi
-  line=$(python3 "$here/de_itp.py" "$fa" "$fb" --heatmap "$out/frames/$name-carte.ppm" --json)
-  verdict=$(python3 - "$line" "$MAX_P95" "$MAX_P999" <<'PY'
+  verdict=
+  if line=$(python3 "$here/de_itp.py" "$fa" "$fb" --heatmap "$out/frames/$name-carte.ppm" --json); then
+    verdict=$(python3 - "$line" "$MAX_P95" "$MAX_P999" <<'PY'
 import json, sys
 s = json.loads(sys.argv[1])
 ok = s["p95"] <= float(sys.argv[2]) and s["p99.9"] <= float(sys.argv[3])
 print("\t".join(f"{s[k]:.3f}" for k in ("moyenne", "p95", "p99", "p99.9", "max")) + ("\tpasse" if ok else "\tÉCHEC"))
 PY
 )
+  fi
+  if [[ "$verdict" != *passe && "$verdict" != *ÉCHEC ]]; then
+    # La mesure n'a rien rendu (PPM tronqué, de_itp.py en erreur) : un plan sans verdict est un échec.
+    echo "$name : mesure en échec, pas de verdict"
+    printf '%s\t%s\t\t\t\t\t\tmesure en échec\n' "$name" "$kind" >> "$summary"
+    failed=1
+    continue
+  fi
   printf '%s\t%s\t%s\n' "$name" "$kind" "$verdict" >> "$summary"
   echo "$name ($kind) : $verdict"
   [[ "$verdict" == *ÉCHEC ]] && failed=1

@@ -28,14 +28,18 @@ struct ModelChoice {
 
 // Les modèles SPAN que le menu propose (v0.6 : plus de modèle « legacy » du dossier d'AnimeJaNai, comme le
 // Compact SD 1.x de l'ancien lecteur) : AnimeJaNai HD V3.1, Performance ou Balanced, avec ou sans Sharp1,
-// et ArtCNN C4F32 (P6.7), bien plus léger, pour les petites cartes. --model lit encore tout autre fichier,
-// pour les essais ; un réglage de play.toml qui nomme un autre modèle retombe sur le défaut.
+// et ArtCNN (P6.7), bien plus léger, pour les petites cartes : C4F32 (32 canaux) et C4F16 (16 canaux, environ
+// quatre fois moins de calcul, pour les iGPU les plus faibles). --model lit encore tout autre fichier, pour
+// les essais ; un réglage de play.toml qui nomme un autre modèle retombe sur le défaut.
 inline constexpr std::string_view kLightSpanModel = "2x_ArtCNN_C4F32_rgb_fp16.onnx";
-inline constexpr std::array<std::string_view, 5> kSpanCatalogue{
+inline constexpr std::string_view kLightestSpanModel = "2x_ArtCNN_C4F16_rgb_fp16.onnx";
+inline constexpr std::array<std::string_view, 6> kSpanCatalogue{
     "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
     "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
     "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx",
-    "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx", kLightSpanModel};
+    "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx",
+    kLightSpanModel,
+    kLightestSpanModel};
 
 // SPAN : --model, sinon settings.model s'il est au catalogue, sinon le modèle par défaut ; le menu propose le
 // catalogue présent dans le dossier. bundled : les modèles livrés avec le lecteur (default_model_candidates),
@@ -47,8 +51,10 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
 // Les deux versions de RIFE que le menu propose, de la plus fine à la plus légère : 4.25 (7,1 ms par passe à
 // 720p sur une 4070 Ti) et 4.22 lite, plus légère (retours sur la v0.5.1 : « catalogue réduit à 4.22 lite
 // et 4.25 »). Les exports ONNX de vs-mlrt à 11 plans d'entrée, en FP16 tels que convertis par
-// animejanai-inference (tools/release/fetch-models.sh), sous ces noms : la grille y est en FP32, mais une
-// partie des Resize lit du FP16, ce que tools/rife/convert_rife_fp16.py éviterait (A46-06, à mesurer).
+// animejanai-inference (tools/release/fetch-models.sh), sous ces noms : la grille y est en FP32, une partie
+// des Resize lit du FP16. Perte mesurée (docs/banc-qualite.md, B09-06) : 0,9 dB contre la vraie image en
+// 720p, 1,2 dB en 1024 lignes, face au même graphe tout en FP32 ; ces Resize passés en FP32 (comme
+// tools/rife/convert_rife_fp16.py) n'en rendent rien (47,56 dB des deux côtés), la perte est ailleurs.
 // --rife-model lit encore tout autre fichier, pour les essais.
 inline constexpr std::array<std::string_view, 2> kRifeCatalogue{"rife_v4.25.onnx", "rife_v4.22_lite.onnx"};
 

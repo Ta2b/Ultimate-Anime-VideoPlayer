@@ -20,7 +20,7 @@ namespace ajp::app::play {
 enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran, langue de l'interface
   Languages,    // audio et sous-titres préférés
-  Updates,      // intégration : mises à jour (Me prévenir / Automatique / Jamais), lecteur par défaut
+  Updates,      // intégration : mises à jour (Me prévenir / Jamais), lecteur par défaut
   Engines,      // moteurs à installer (TensorRT sur RTX, Core ML sur Mac)
   Summary,      // Prêt : ce qui a été choisi, la calibration proposée
 };
@@ -75,7 +75,7 @@ std::string progress_text(const Wizard& wizard);
 std::vector<std::string> wizard_summary(const Wizard& wizard);
 
 // Ce que « Terminer » écrit : les mises à jour, le dernier écran vu.
-core::Settings wizard_settings(const Wizard& wizard, core::Settings settings);
+core::Settings wizard_settings(core::Settings settings);
 // Les réglages de lecture : HDR, langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
 // de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);

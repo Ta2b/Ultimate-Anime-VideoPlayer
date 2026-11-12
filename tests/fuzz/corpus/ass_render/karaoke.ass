@@ -1,0 +1,17 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 640
+PlayResY: 360
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,sans-serif,36,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,10,10,20,1
+Style: Top,sans-serif,36,&H0000FFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,8,10,10,20,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.50,0:00:06.00,Default,,0,0,0,,{\k20}ka{\k30}ra{\kf40}o{\ko25}ke {\k50}はじ{\k50}まる
+Dialogue: 1,0:00:00.50,0:00:06.00,Top,,0,0,0,,{\an8\fad(300,300)\t(0,2000,\fscx150\fscy150\frz30)\blur2\be1}Typesetting
+Dialogue: 2,0:00:01.00,0:00:05.00,Default,,0,0,0,,{\pos(320,180)\org(100,100)\t(\frx40\fry40\fax0.3)\shad4\4c&H0000FF&}Rotation 3D

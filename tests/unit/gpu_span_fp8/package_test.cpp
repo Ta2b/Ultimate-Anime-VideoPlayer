@@ -103,6 +103,13 @@ TEST_CASE("un paquet v1 b8f64 se relit toujours, un v2 à 5 blocs aussi (3.2b)",
   std::vector<std::byte> v1_five = v1;
   v1_five[12] = std::byte{5};
   CHECK_FALSE(parse(v1_five));
+  // Ni une version 1 qui porte un drapeau : l'accumulateur f16 est de la version 2 (B02-07).
+  std::vector<std::byte> v1_acc16 = v1;
+  v1_acc16[36] = std::byte{0x01};
+  const auto acc16 = parse(v1_acc16);
+  REQUIRE_FALSE(acc16);
+  CHECK(acc16.error().code == RefusalCode::FormatUnsupported);
+  CHECK(parse(v1_five).error().detail.find("2 à 8 blocs") != std::string::npos);
 
   Package five = synthetic(0.01F, 5);
   five.real_channels = 48;
@@ -145,6 +152,11 @@ TEST_CASE("les tailles que les noyaux prennent", "[span_fp8]") {
   CHECK_FALSE(size_supported(-2, 1920));
   CHECK_FALSE(size_supported(1088, 40000));
   CHECK(size_refusal(541, 960).find("paires") != std::string::npos);
+  // Un seul plafond : 8K UHD en tout, au-delà les pas des noyaux débordent l'int (B02-04).
+  CHECK(size_supported(4320, 7680));
+  CHECK_FALSE(size_supported(4608, 8192));
+  CHECK_FALSE(size_supported(16384, 16384));
+  CHECK(size_refusal(4608, 8192).find("8K") != std::string::npos);
 }
 
 }  // namespace ajp::gpu::span_fp8

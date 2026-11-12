@@ -11,6 +11,7 @@
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
 #include "app/play/visible_error.h"
+#include "core/auto_rate.h"
 
 namespace ajp::app::play {
 
@@ -23,8 +24,9 @@ struct HeightChoice {
   int lines;
   const char* label;
 };
-constexpr std::array<HeightChoice, 5> kHeights{{
+constexpr std::array<HeightChoice, 6> kHeights{{
     {0, "Source (no downscale)"},  // clé i18n
+    {1080, "1080p"},               // les niveaux Qualité et Ultra, et la calibration, la posent (B23-03)
     {900, "900p"},
     {720, "720p"},
     {540, "540p"},
@@ -61,8 +63,8 @@ std::string motion_description(const InterpChoice& choice) {
   switch (choice.level) {
     case InterpLevel::VeryFast:
       return i18n::tr(
-          "DistilDRBA: the lightest up to ×5; it keeps characters animated on twos on their rhythm. One "
-          "frame of delay.");
+          "DistilDRBA: keeps characters animated on twos on their rhythm. One frame of delay. Its speed and "
+          "image quality against RIFE are not compared yet, so Auto does not use it.");
     case InterpLevel::Fast:
       return i18n::tr("RIFE 4.22 lite: light and clean, for most graphics cards.");
     case InterpLevel::Balanced:
@@ -139,11 +141,13 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      fp8_offered
-          ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. "
-                     "FP8: prepared once on this PC, then faster, at the cost of some precision.")
-          : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest."));
+  panel::tip(fp8_offered
+                 ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest "
+                            "(C4F16 more than C4F32). FP8: prepared once on this PC, then about 37 % faster "
+                            "per pass (14.7 to 9.2 ms at 1080p on an RTX 4070 Ti), at about 49 to 52 dB PSNR "
+                            "against FP16.")
+                 : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest "
+                            "(C4F16 more than C4F32)."));
 }
 
 }  // namespace
@@ -161,7 +165,9 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   model_combo(d, choices);
   if (choices.span_tiers.quality) {
     TierSupport tiers = choices.span_tiers;
-    tiers.performance = false;  // le FP8 se choisit dans la liste des modèles
+    // Le FP8 se choisit dans la liste des modèles ; une fois choisi il se lit ici aussi, au lieu d'un faux
+    // « Équilibre · FP16 » (B23-02).
+    tiers.performance = tiers.performance && d.span_precision == PrecisionTier::Performance;
     precision_combo(i18n::tr("SPAN precision"), d.span_precision, tiers);
     panel::tip(i18n::tr("Balanced is FP16; Quality is FP32. Reloads playback."));
   }
@@ -183,6 +189,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       if (ImGui::Selectable(label_of(choice).c_str(), choice.lines == d.work_height))
         d.work_height = choice.lines;
     }
+    // Une hauteur de play.toml hors de la liste reste visible et choisie, au lieu de disparaître (B23-03).
+    if (height == kHeights.end()) ImGui::Selectable(height_label.c_str(), true);
     ImGui::EndCombo();
   }
   panel::tip(i18n::tr("The size the video is reduced to before SPAN, which doubles it: 720p gives 1440p."));
@@ -202,14 +210,11 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
         if (const auto mark = badge_of(filter)) text += " · " + std::string(badge_text(*mark));
         if (ImGui::Selectable(text.c_str(), filter == d.downscale)) d.downscale = filter;
       }
-      ImGui::BeginDisabled();
-      ImGui::Selectable(i18n::tr("SSimDownscaler (coming soon)"), false);
-      ImGui::EndDisabled();
       ImGui::EndCombo();
     }
     panel::tip(
         i18n::tr("Spline36 is AnimeJaNai's sharp choice; Hermite is sharp without halos. Applies live."));
-  } else if (!reduces) {
+  } else if (!reduces && choices.source_height > 0) {
     note(i18n::tr("No downscale: the source goes into SPAN as is."));
   }
 }
@@ -224,7 +229,7 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   const auto level_name = [](InterpLevel level) -> std::string {
     switch (level) {
       case InterpLevel::VeryFast:
-        return i18n::tr("Very fast");
+        return i18n::tr("DistilDRBA");
       case InterpLevel::Fast:
         return i18n::tr("Fast");
       case InterpLevel::Balanced:
@@ -272,7 +277,57 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  panel::tip(i18n::tr("Very fast is the lightest, Balanced the cleanest. Applies after a short reload."));
+  panel::tip(
+      i18n::tr("Fast and Balanced are RIFE models; DistilDRBA keeps poses. Their speed and image quality "
+               "are not compared in this version. Applies after a short reload."));
+}
+
+// Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait
+// la demander qu'au pilote Linux (NVPRESENT_ENABLE_SMOOTH_MOTION) : sous Windows, elle se règle par profil
+// dans l'application NVIDIA, et la case n'y ferait rien (B34-06).
+void smooth_motion_section([[maybe_unused]] PlaySettings& d,
+                           [[maybe_unused]] const SettingsChoices& choices) {
+#if defined(__linux__)
+  section(i18n::tr("Smooth Motion (NVIDIA driver)"));
+  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
+  // Le choix reste tel quel, grisé : l'interpolation éteinte puis rallumée ne le perd plus, et le lancement
+  // ne le prend que si RIFE tourne (player.cpp). Sans modèle d'interpolation, la case est grisée aussi
+  // (B23-12).
+  const bool without_rife = d.rife_factor < 2 || !choices.rife_available;
+  ImGui::BeginDisabled(without_rife);
+  ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
+  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
+  ImGui::EndDisabled();
+  note(i18n::tr(
+      "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
+  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+#endif
+}
+
+// La liste du plafond de la cadence Auto et la phrase qui dit où il s'arrête.
+void auto_cap_row(PlaySettings& d, const SettingsChoices& choices) {
+  // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
+  // GPU.
+  const auto cap_label = [](int cap) {
+    return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : std::format("{} i/s", cap);
+  };
+  if (ImGui::BeginCombo(i18n::tr("Auto limit"), cap_label(d.auto_cap).c_str())) {
+    for (const int cap : {0, 120, 60}) {
+      if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
+    }
+    // Un plafond de play.toml hors de cette liste reste visible et choisi (B23-05).
+    if (d.auto_cap != 0 && d.auto_cap != 120 && d.auto_cap != 60)
+      ImGui::Selectable(cap_label(d.auto_cap).c_str(), true);
+    ImGui::EndCombo();
+  }
+  panel::tip(i18n::tr("The highest frame rate Auto aims for. It still drops by itself on heavy scenes."));
+  // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
+  if (choices.display_hz > 0.0 && choices.source_fps > 0.0) {
+    // Le plafond choisi (60 ou 120) abaisse celui de l'écran : c'est lui que la phrase cite (B23-05).
+    note(i18n::tr_format("Here Auto goes up to ×{} ({:.0f} fps limit).",
+                         top_factor(d, choices.display_hz, choices.source_fps),
+                         core::auto_limit_hz(choices.display_hz, d.auto_cap)));
+  }
 }
 
 }  // namespace
@@ -330,25 +385,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     ImGui::EndCombo();
   }
-  if (d.rife_auto && now.num > now.den && !exporting) {
-    // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
-    // GPU.
-    const auto cap_label = [](int cap) {
-      return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : std::format("{} i/s", cap);
-    };
-    if (ImGui::BeginCombo(i18n::tr("Auto limit"), cap_label(d.auto_cap).c_str())) {
-      for (const int cap : {0, 120, 60}) {
-        if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
-      }
-      ImGui::EndCombo();
-    }
-    panel::tip(i18n::tr("The highest frame rate Auto aims for. It still drops by itself on heavy scenes."));
-    // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
-    if (choices.display_hz > 0.0 && choices.source_fps > 0.0) {
-      note(i18n::tr_format("Here Auto goes up to ×{} ({:.0f} Hz display).",
-                           top_factor(d, choices.display_hz, choices.source_fps), choices.display_hz));
-    }
-  }
+  if (d.rife_auto && now.num > now.den && !exporting) auto_cap_row(d, choices);
   if (d.rife_auto && now.num > now.den && !exporting) {
     // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
     // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
@@ -379,7 +416,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
       panel::tip(i18n::tr("VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync)."));
     }
   }
-  if (choices.source_fps > 0.0 && choices.display_hz > 0.0) {
+  // En lecture, les facteurs fixes sont masqués : rien n'y est grisé. L'export les montre, grisés (B23-05).
+  if (exporting && choices.source_fps > 0.0 && choices.display_hz > 0.0) {
     note(i18n::tr_format("Greyed out: above the display ({:.0f} Hz for {:.3f} fps).", choices.display_hz,
                          choices.source_fps));
   }
@@ -408,7 +446,9 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     note(i18n::tr(
         "4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything."));
   } else if (four_k) {
-    note(i18n::tr("4K output: RIFE estimates motion on a lighter 720p copy."));
+    note(
+        i18n::tr("4K output: RIFE estimates motion on a lighter 720p copy (less precise motion; the loss "
+                 "is not measured)."));
   }
   note(i18n::tr("Scene cuts and held drawings are not interpolated."));
   if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
@@ -422,14 +462,16 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::Checkbox(i18n::tr("Fused RIFE"), &d.rife_fused);
   ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("Splits RIFE into small TensorRT engines: about three times faster. TensorRT only. Reloads "
-               "playback; built on first use for this size."));
+      i18n::tr("Splits RIFE into small TensorRT engines: 1.4 ms instead of 4.5 ms per pass on an RTX 4070 "
+               "Ti, the image within 53 dB of the whole network. TensorRT only. Reloads playback; built on "
+               "first use for this size."));
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::DistilDrba);
   ImGui::Checkbox(i18n::tr("Fused DistilDRBA"), &d.drba_fused);
   ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("Splits DistilDRBA into small TensorRT engines: more than twice as fast. TensorRT only, "
-               "Balanced precision. Reloads playback; built on first use for this size."));
+      i18n::tr("Splits DistilDRBA into small TensorRT engines: 0.92 ms instead of 2.10 ms per pass at "
+               "1088×1920 on an RTX 4070 Ti. TensorRT only, Balanced precision. Reloads playback; built on "
+               "first use for this size."));
   // Le cran de précision du mouvement (A23-06) : hors Équilibre, la chaîne fusionnée ne tourne pas.
   const TierSupport& motion_tiers =
       d.motion_engine == MotionEngine::DistilDrba ? choices.drba_tiers : choices.rife_tiers;
@@ -455,21 +497,12 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   }
   ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("After SPAN upscales each source frame once, then warps it: faster. Before SPAN also cleans "
-               "each in-between frame. Auto picks After from ×3 or above 1080p. Reloads playback."));
-  // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA.
-  if (exporting || !choices.nvidia) return;
-  section(i18n::tr("Smooth Motion (NVIDIA driver)"));
-  // Sans RIFE la lecture cale (16 images neuves en 8 s contre 192) : l'option reste éteinte.
-  const bool without_rife = d.rife_factor < 2;
-  if (without_rife) d.smooth_motion = false;
-  ImGui::BeginDisabled(without_rife);
-  ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
-  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
-  ImGui::EndDisabled();
-  note(i18n::tr(
-      "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
-  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+      i18n::tr("After SPAN upscales each source frame once, then warps it: faster (about 8 ms saved per "
+               "frame from 1080p to 4K on an RTX 4070 Ti), but SPAN no longer cleans the warp defects of the "
+               "in-between frames; the image quality of the two orders is not compared. Before SPAN also "
+               "cleans each in-between frame. Auto picks After above 1080p, and from ×3 for a fixed "
+               "multiplier. Reloads playback."));
+  if (!exporting && choices.nvidia) smooth_motion_section(d, choices);
 }
 
 }  // namespace ajp::app::play

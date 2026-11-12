@@ -157,7 +157,6 @@ def main():
         pts = np.vstack([pts, np.repeat(gray, 3, axis=1) + 0.02 * rng.standard_normal((100000, 3))])
         pts = np.clip(pts, 0.0, 1.0)
         want = apply_stack(layers, pts)
-        got = sample(np.clip(baked, 0.0, 1.0).reshape(n, n, n, 3)[::1], pts) if False else None
         lut_baked = baked.reshape(n, n, n, 3)
         got = sample(lut_baked, pts)
         err = np.abs(got - want).max(axis=1) * 1023.0

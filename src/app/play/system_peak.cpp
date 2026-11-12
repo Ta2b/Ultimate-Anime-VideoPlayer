@@ -143,8 +143,8 @@ namespace {
 }  // namespace
 
 std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
-                                       [[maybe_unused]] double headroom,
-                                       [[maybe_unused]] const void* monitor) {
+                                       [[maybe_unused]] double headroom, [[maybe_unused]] const void* monitor,
+                                       [[maybe_unused]] std::string_view edid) {
 #if defined(_WIN32)
   IDXGIFactory1* factory = nullptr;
   if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
@@ -181,8 +181,16 @@ std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connect
   if (port.starts_with("card")) {
     if (const std::size_t dash = port.find('-'); dash != std::string_view::npos) port.remove_prefix(dash + 1);
   }
-  const std::optional<KwinOutput> output = read_kwin_output(connector);
-  if (!output) return std::nullopt;
+  const std::optional<KwinOutput> output = read_kwin_output(connector, edid);
+  if (!output) {
+    // B37-10 : seul KDE garde un pic calibré lisible ; ailleurs, la marge de SDL suppose un blanc de 203
+    // nits.
+    tell_peak(
+        std::format("pic du système : aucune sortie {} dans ~/.config/kwinoutputconfig.json (KDE "
+                    "seulement) : pic = marge de SDL × 203 nits",
+                    port));
+    return std::nullopt;
+  }
   // H1 : KWin affiche le contenu × blanc de référence / 203 (render/display_model.h) ; le pic se vise en
   // unités du contenu.
   const double reference = output->reference.value_or(render::kContentReferenceNits);

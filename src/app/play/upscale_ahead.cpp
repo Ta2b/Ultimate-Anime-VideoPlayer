@@ -72,8 +72,21 @@ std::expected<gpu::PairScores, Refusal> UpscaleStage::pair_scores() {
   return ops.scores_now(rife_source(current_ ^ 1U), rife_source(current_));
 }
 
-std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
-                                                      const gpu::IngestSpec& spec) {
+bool UpscaleStage::next_pair_measured() const {
+  if (setup_.live == nullptr) return true;
+  if (setup_.live->hidden()) return false;
+  if (setup_.live->free_active()) return true;
+  const Factor factor = setup_.live->factor_now();
+  return factor.num > factor.den;
+}
+
+bool UpscaleStage::motion_direct(float t) const {
+  if (!by_motion() || !flow_max_async_ || (setup_.live && setup_.live->keep_poses())) return false;
+  return (strong_motion_ && intermediates_ > 1) || (intermediates_ == 1 && t != 0.5F);
+}
+
+std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec,
+                                                      bool always_scores) {
   const DecodedFrame* after = next();
   if (after == nullptr || after->width != setup_.source_width || after->height != setup_.source_height)
     return {};
@@ -90,7 +103,7 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   ahead_.epoch = after->epoch;
   ahead_.reduce = spec.reduce;
   ahead_.ticket = 0;
-  if (!ahead_scores_) return {};
+  if (!ahead_scores_ || !(always_scores || next_pair_measured())) return {};
   const gpu::Tensor& next_source = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
   auto ticket = ops.scores_start(rife_source(current_), next_source);
   if (!ticket) {
@@ -108,8 +121,7 @@ std::expected<void, Refusal> UpscaleStage::prepare_rife_input() {
   // Le premier instant que RIFE estimera : le milieu pour la variante mouvement, sauf si le
   // mouvement fort de la paire précédente le fait sauter (direct_run_, décidé au premier instant ;
   // rife_time corrige une prévision fausse).
-  const bool direct = by_motion() && strong_motion_ && intermediates_ > 1 && flow_max_async_ &&
-                      !(setup_.live && setup_.live->keep_poses());
+  const bool direct = motion_direct(instants_[0].t);
   const float t = by_motion() && !direct ? 0.5F : instants_[0].t;
   rife_pair_ = (rife_pair_ + 1) % copies_;
   return write_rife_pair(t);

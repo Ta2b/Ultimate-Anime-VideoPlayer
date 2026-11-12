@@ -88,14 +88,21 @@ void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& ma
     out.rife_model = machine.explored_rife_model;
 }
 
+// Les modèles légers des deux tranches du bas, une fois admis (kLightSpanInAuto) : le plus léger (C4F16, 16
+// canaux) pour la plus faible, C4F32 au-dessus. Le banc peut les échanger ou les égaler s'il mesure autre
+// chose.
+constexpr std::string_view kEconomySpanModel = kLightestSpanModel;
+constexpr std::string_view kLightTierSpanModel = kLightSpanModel;
+
 // SPAN de la tranche : rien en Économe (sauf le modèle léger s'il est admis, P6.7), le modèle du niveau
-// au-dessus (level_span_model) ; le modèle léger, s'il est admis, dans les deux tranches du bas.
+// au-dessus (level_span_model) ; les modèles légers, s'ils sont admis, dans les deux tranches du bas.
 void set_span(PlaySettings& out, Tier level, int work) {
   const bool economy = level == Tier::Economy;
   out.upscale = !economy || kLightSpanInAuto;
   out.work_height = economy && !kLightSpanInAuto ? 0 : work;
   out.model = std::string(level_span_model(level));
-  if (kLightSpanInAuto && (economy || level == Tier::Light)) out.model = std::string(kLightSpanModel);
+  if (kLightSpanInAuto && economy) out.model = std::string(kEconomySpanModel);
+  if (kLightSpanInAuto && level == Tier::Light) out.model = std::string(kLightTierSpanModel);
 }
 
 // La résolution de travail du niveau, avant l'exploration et la source. Qualité et Ultra : la source telle
@@ -118,6 +125,35 @@ int level_work_height(Tier level, Priority priority, int display_height) {
 // à 30 i/s vaut ×2, pas ×1.
 int wanted_factor(double display_hz, double fps) {
   return static_cast<int>(std::floor((display_hz / fps) + 0.01));
+}
+
+// Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle en FP16 ; RIFE en mode Instantané ou rien,
+// avec le modèle mesuré), adaptée à la source comme le reste d'Auto. Le FP8 n'y est plus posé (A49-03, ADR
+// 0007 suspendue).
+void follow_calibration(PlaySettings& out, Priority priority, const CalibratedChain& cal,
+                        const core::SourceInfo& source) {
+  out.upscale = cal.span;
+  // Sans SPAN, la calibration a mesuré la chaîne à la taille de la source (candidate_settings) : la hauteur
+  // du niveau réduirait la source sans la réagrandir, une perte d'image ni mesurée ni annoncée.
+  if (!cal.span) out.work_height = 0;
+  if (cal.span && cal.height > 0) {
+    // La priorité Fluidité descend d'un palier sous la mesure, pour la marge de l'interpolation ; Image
+    // garde la mesure, le plus haut palier qui tient.
+    int height = cal.height;
+    if (priority == Priority::Fluidity)
+      height = kWorkHeights[static_cast<std::size_t>(std::max(0, step_below(cal.height) - 1))];
+    out.work_height =
+        source.height > 0 ? std::min(height, std::max(source.height, kWorkHeights.front())) : height;
+  }
+  out.model = cal.span_model;
+  out.span_precision = PrecisionTier::Balanced;
+  out.motion_engine = MotionEngine::Rife;
+  out.rife_model = cal.rife_model.empty() ? std::string(kLightRifeModel) : cal.rife_model;
+  out.auto_free = cal.rife;
+  if (!cal.rife) {
+    out.rife_auto = false;
+    out.rife_factor = 0;
+  }
 }
 
 }  // namespace
@@ -194,6 +230,9 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   // Tranche Économe : on ne réduit ni n'agrandit, la chaîne est la source telle quelle (P3.20 : une 4K reste
   // en 4K, 0 ne réduit rien).
   set_span(out, *level, work);
+  // SPAN réduit puis réagrandit : la calibration mesure ainsi (candidate_settings), et sans ce réglage une
+  // source plus haute que le palier passerait telle quelle, sans SPAN, sous un préréglage qui l'annonce.
+  out.restore_lines = true;
   out.downscale = Downscale::Hermite;  // net sur les traits, sans rebond, quatre points comme Mitchell
   out.span_order = SpanOrder::Auto;
 
@@ -231,26 +270,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       }
       break;
   }
-  // Auto calibré : la chaîne mesurée (SPAN, sa hauteur, son modèle en FP16 ; RIFE en mode Rapide ou rien,
-  // avec le modèle mesuré), adaptée à la source et à la cadence de cette vidéo comme le reste d'Auto. Le FP8
-  // n'y est plus posé (A49-03, ADR 0007 suspendue).
-  if (settings.preset == Preset::Auto && machine.calibrated) {
-    const CalibratedChain& cal = *machine.calibrated;
-    out.upscale = cal.span;
-    if (cal.span && cal.height > 0)
-      out.work_height = source.height > 0
-                            ? std::min(cal.height, std::max(source.height, kWorkHeights.front()))
-                            : cal.height;
-    out.model = cal.span_model;
-    out.span_precision = PrecisionTier::Balanced;
-    out.motion_engine = MotionEngine::Rife;
-    out.rife_model = cal.rife_model.empty() ? std::string(kLightRifeModel) : cal.rife_model;
-    out.auto_free = cal.rife;
-    if (!cal.rife) {
-      out.rife_auto = false;
-      out.rife_factor = 0;
-    }
-  }
+  // Auto calibré : la chaîne mesurée, adaptée à la source et à la cadence de cette vidéo
+  // (follow_calibration).
+  if (settings.preset == Preset::Auto && machine.calibrated)
+    follow_calibration(out, settings.priority, *machine.calibrated, source);
   return out;
 }
 
@@ -261,7 +284,7 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
          a.keep_poses != b.keep_poses || a.span_precision != b.span_precision ||
          a.motion_precision != b.motion_precision || a.rife_model != b.rife_model ||
-         a.motion_engine != b.motion_engine;
+         a.motion_engine != b.motion_engine || a.restore_lines != b.restore_lines;
 }
 
 bool display_moves_chain(Preset preset, const DisplayMove& move) {

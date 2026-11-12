@@ -4,6 +4,7 @@
 #include <format>
 #include <fstream>
 #include <limits>
+#include <new>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -14,6 +15,7 @@
 #include "gpu/ir/import_attrs.h"
 #include "gpu/ir/onnx_fp8.h"
 #include "gpu/ir/ops.h"
+#include "gpu/ir/protobuf.h"
 
 namespace ajp::gpu::ir {
 namespace {
@@ -22,18 +24,13 @@ std::unexpected<Refusal> invalid(std::string detail) {
   return std::unexpected(Refusal{RefusalCode::GraphInvalid, std::move(detail)});
 }
 
-std::unexpected<Refusal> unsupported(std::string detail) {
-  return std::unexpected(Refusal{RefusalCode::OnnxUnsupported, std::move(detail)});
-}
-
-bool default_domain(std::string_view domain) {
-  return domain.empty() || domain == "ai.onnx";
-}
+using onnx::is_default_domain;
+using proto::unsupported;
 
 std::expected<std::int64_t, Refusal> default_opset(const onnx::Model& model) {
   std::optional<std::int64_t> version;
   for (const onnx::OpsetId& opset : model.opsets) {
-    if (default_domain(opset.domain)) version = opset.version;
+    if (is_default_domain(opset.domain)) version = opset.version;
   }
   if (!version) return unsupported("opset du domaine ONNX par défaut absent");
   if (*version < kMinOpset || *version > kMaxOpset) {
@@ -100,7 +97,7 @@ std::expected<void, Refusal> declare_input(Builder& b, const onnx::ValueInfo& in
 std::expected<Node, Refusal> import_node(Builder& b, const onnx::Node& source, std::size_t index,
                                          std::int64_t opset) {
   const std::string label = node_label(source, index);
-  if (!default_domain(source.domain)) {
+  if (!is_default_domain(source.domain)) {
     return std::unexpected(
         Refusal{RefusalCode::OperatorUnknown, std::format("{}:{}", source.domain, source.op_type)});
   }
@@ -223,7 +220,7 @@ std::expected<Graph, Refusal> import_model(const onnx::Model& model) {
   // Les sorties des nœuds d'abord, pour accepter un fichier dont l'ordre n'est pas topologique.
   for (std::size_t n = 0; n < source.nodes.size(); ++n) {
     const onnx::Node& node = source.nodes[n];
-    if (node.op_type == "Constant" && default_domain(node.domain)) {
+    if (node.op_type == "Constant" && is_default_domain(node.domain)) {
       if (node.outputs.size() != 1) return invalid(std::format("{} : une sortie", node_label(node, n)));
       if (auto ok = declare_constant(b, node.outputs[0], detail::constant_value(node)); !ok) {
         return std::unexpected(ok.error());
@@ -239,7 +236,7 @@ std::expected<Graph, Refusal> import_model(const onnx::Model& model) {
   std::vector<Node> nodes;
   for (std::size_t n = 0; n < source.nodes.size(); ++n) {
     const onnx::Node& node = source.nodes[n];
-    if (node.op_type == "Constant" && default_domain(node.domain)) continue;
+    if (node.op_type == "Constant" && is_default_domain(node.domain)) continue;
     auto imported = import_node(b, node, n, *opset);
     if (!imported) return std::unexpected(imported.error());
     nodes.push_back(std::move(*imported));
@@ -259,9 +256,16 @@ std::expected<Graph, Refusal> import_model(const onnx::Model& model) {
 }
 
 std::expected<Graph, Refusal> load_onnx(std::span<const std::byte> bytes) {
-  auto model = onnx::read_onnx(bytes);
-  if (!model) return std::unexpected(model.error());
-  return import_model(*model);
+  // Un fichier hostile qui passe les plafonds du décodeur sans les atteindre peut encore épuiser la mémoire :
+  // un refus typé (« étage refusé, la vidéo continue »), pas une exception qui traverse la construction
+  // (B44-01).
+  try {
+    auto model = onnx::read_onnx(bytes);
+    if (!model) return std::unexpected(model.error());
+    return import_model(*model);
+  } catch (const std::bad_alloc&) {
+    return unsupported("mémoire insuffisante pour lire le modèle");
+  }
 }
 
 std::expected<Graph, Refusal> load_onnx_file(const std::filesystem::path& path) {
@@ -274,7 +278,12 @@ std::expected<Graph, Refusal> load_onnx_file(const std::filesystem::path& path) 
   if (size < 0 || size > std::streamoff{0x7FFFFFFF}) {
     return unsupported(std::format("{} : taille hors de [0, 2 Gio]", core::to_utf8(path)));
   }
-  std::vector<std::byte> bytes(static_cast<std::size_t>(size));
+  std::vector<std::byte> bytes;
+  try {
+    bytes.resize(static_cast<std::size_t>(size));
+  } catch (const std::bad_alloc&) {
+    return unsupported(std::format("{} : mémoire insuffisante pour le lire", core::to_utf8(path)));
+  }
   file.seekg(0);
   file.read(reinterpret_cast<char*>(bytes.data()), size);
   if (!file)

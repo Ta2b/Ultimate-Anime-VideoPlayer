@@ -71,7 +71,7 @@ def main() -> int:
     args = parser.parse_args()
 
     net = FlowJaNai()
-    net.load_state_dict(torch.load(args.checkpoint, map_location="cpu")["net"])
+    net.load_state_dict(torch.load(args.checkpoint, map_location="cpu", weights_only=True)["net"])
     graph = Graph(net.eval())
     axes = {2: "h", 3: "w"}
     flow_axes = {2: "h4", 3: "w4"}

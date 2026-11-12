@@ -251,6 +251,8 @@ double mediane(cudaGraphExec_t g, cudaStream_t s, int chauffe, int n, double* mi
     VERIF(cudaEventElapsedTime(&ms, a, b));
     v.push_back(ms);
   }
+  VERIF(cudaEventDestroy(a));
+  VERIF(cudaEventDestroy(b));
   std::sort(v.begin(), v.end());
   if (minimum) *minimum = v.front();
   return v[v.size() / 2];
@@ -263,6 +265,11 @@ struct Ecart {
 
 // `gpu` (n éléments fp16 sur le GPU) contre la référence `ref` ; tranche [debut, debut + n) de la référence.
 Ecart comparer(const __half* gpu, const std::vector<char>& ref, std::size_t debut, std::size_t n) {
+  // B46-17 : une référence plus courte que la tranche lirait au-delà de son tampon.
+  if ((debut + n) * 2 > ref.size()) {
+    std::fprintf(stderr, "référence trop courte : %zu octets, %zu attendus\n", ref.size(), (debut + n) * 2);
+    std::exit(2);
+  }
   std::vector<__half> h(n);
   VERIF(cudaMemcpy(h.data(), gpu, n * 2, cudaMemcpyDeviceToHost));
   const auto* r = reinterpret_cast<const __half*>(ref.data()) + debut;

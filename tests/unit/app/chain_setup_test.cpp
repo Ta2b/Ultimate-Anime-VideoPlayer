@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/chain.h"
 #include "app/play/visible_error.h"
 
 namespace ajp::app::play {
@@ -22,11 +23,16 @@ PlaySettings fast_settings() {
 TEST_CASE("Rapide : le warp et l'anneau suivent l'écran, pas le facteur demandé", "[app][chain]") {
   PlaySettings s = fast_settings();
   CHECK(top_factor(s, 165.0, 23.976) == 6);
-  CHECK(ring_depth(s, factor_of(s)) == 8U);
+  CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 8U);
+  // B08-08 : sur 60 Hz, ×2 au plus : l'anneau de 4 suffit, pas 8 ; écran inconnu : 8.
+  CHECK(ring_depth(s, factor_of(s), 60.0, 23.976) == 4U);
+  CHECK(ring_depth(s, factor_of(s), 90.0, 23.976) == 6U);
+  CHECK(ring_depth(s, factor_of(s), 0.0, 23.976) == 8U);
+  CHECK(ring_depth(s, Factor{}, 165.0, 23.976) == 4U);  // sans interpolation chargée
 
   s.auto_free = false;  // Stable : le facteur demandé borne toujours
   CHECK(top_factor(s, 165.0, 23.976) == 2);
-  CHECK(ring_depth(s, factor_of(s)) == 4U);
+  CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 4U);
 }
 
 TEST_CASE("Rapide : jamais moins de 1, aucune interpolation sans facteur", "[app][chain]") {
@@ -95,7 +101,8 @@ TEST_CASE("A08-03 : ×2 manuel ouvert, Auto Rapide à 165 Hz rouvre", "[app][cha
   PlaySettings fast = x2;
   fast.rife_auto = true;
   fast.auto_free = true;
-  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = true});
+  // Le warp reste avant SPAN à 1080p de sortie : l'ordre ne suit plus la cadence de l'écran (B22-03).
+  CHECK(chain_shape(fast, opened) == ChainShape{.ring = 8, .warp_after_span = false});
   CHECK(change_between(x2, fast, true, &opened).cost == ChangeCost::Reopen);
   const PlaySettings live = live_part(x2, fast, true, &opened);
   CHECK_FALSE(live.rife_auto);
@@ -130,17 +137,63 @@ TEST_CASE("A08-03 : ce qui tient dans la chaîne ouverte reste direct", "[app][c
   CHECK(change_between(manual(4), manual(2), true, &bare).cost == ChangeCost::Live);
 }
 
-TEST_CASE("A22-04 : le plafond de l'Auto qui change le plus haut facteur rouvre", "[app][chain]") {
-  // Auto Stable jusqu'à ×4, plafonné à 60 i/s : ×2 au plus sur 23,976, warp avant SPAN, anneau de 4.
+TEST_CASE("B22-03 : en Auto, l'ordre du warp ne suit ni l'écran ni le plafond", "[app][chain]") {
+  // Auto Stable jusqu'à ×4 : le plafond (60 ou l'écran) change le palier le plus haut, pas l'ordre du warp,
+  // qui n'est après SPAN qu'au-dessus de 1080p (mesuré en temps) ; l'anneau est celui du facteur demandé.
   PlaySettings capped = manual(4);
   capped.rife_auto = true;
   capped.auto_cap = 60;
   const OpenedChain opened = opened_for(capped);
   CHECK(opened.shape == ChainShape{.ring = 6, .warp_after_span = false});
   PlaySettings free = capped;
-  free.auto_cap = 0;  // l'écran : ×4, warp après SPAN
-  CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Reopen);
-  CHECK(live_part(capped, free, true, &opened).auto_cap == 60);
+  free.auto_cap = 0;
+  CHECK(chain_shape(free, opened) == opened.shape);
+  CHECK(change_between(capped, free, true, &opened).cost == ChangeCost::Live);
+  // Rapide à 165 Hz (×6 possible) : toujours avant SPAN à 1080p, après SPAN à 4K.
+  PlaySettings fast = fast_settings();
+  CHECK(order_factor(fast, 165.0, 23.976) == 0);
+  CHECK_FALSE(chain_shape(fast, opened_for(fast, 1080)).warp_after_span);
+  CHECK(chain_shape(fast, opened_for(fast, 2160)).warp_after_span);
+  // Un facteur choisi à la main garde la règle de ×3 (coût de SPAN par image créée).
+  CHECK(order_factor(manual(4), 165.0, 23.976) == 4);
+  CHECK(chain_shape(manual(4), opened_for(manual(4), 1080)).warp_after_span);
+}
+
+TEST_CASE("B22-01 : interpolation coupée puis rallumée, le moteur chargé est comparé au choix",
+          "[app][settings]") {
+  PlaySettings run = manual(3);
+  OpenedChain opened = opened_for(run);
+  opened.loaded = loaded_by(run);
+  // Off, puis DistilDRBA, le cran Qualité et l'ordre Après : rien à recharger, le réglage passe et
+  // s'enregistre.
+  PlaySettings off = run;
+  off.rife_factor = 0;
+  off.motion_engine = MotionEngine::DistilDrba;
+  off.motion_precision = PrecisionTier::Quality;
+  off.span_order = SpanOrder::After;
+  const PlaySettings live = live_part(run, off, /*rife_loaded=*/true, &opened);
+  CHECK(live.motion_engine == MotionEngine::DistilDrba);
+  CHECK(change_between(run, off, true, &opened).cost == ChangeCost::Live);
+  // L'interpolation revient : RIFE FP16 est toujours celui qui tourne, la réouverture est annoncée.
+  PlaySettings on = off;
+  on.rife_factor = 3;
+  const Change back = change_between(live, on, true, &opened);
+  CHECK(back.cost == ChangeCost::Reopen);
+  CHECK(back.reason.find("interpolation engine") != std::string::npos);
+  // Le cran de précision seul (même moteur) et l'ordre du warp aussi.
+  PlaySettings quality = run;
+  quality.rife_factor = 0;
+  quality.motion_precision = PrecisionTier::Quality;
+  PlaySettings quality_on = quality;
+  quality_on.rife_factor = 3;
+  CHECK(change_between(quality, quality_on, true, &opened).reason.find("switches to") != std::string::npos);
+  // Le même moteur qu'à l'ouverture : en direct.
+  PlaySettings same = run;
+  same.rife_factor = 0;
+  PlaySettings same_on = run;
+  CHECK(change_between(same, same_on, true, &opened).cost == ChangeCost::Live);
+  // Sans chaîne à comparer, on compare au réglage en cours (comportement d'avant).
+  CHECK(change_between(live, on, true).cost == ChangeCost::Live);
 }
 
 TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien sinon", "[app][chain]") {
@@ -157,6 +210,43 @@ TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien
   CHECK(drba.contains("DistilDRBA"));
   CHECK(drba.contains(visible_error(Refusal{RefusalCode::CacheIo, ""})));
   CHECK_FALSE(visible_error(Refusal{RefusalCode::CacheIo, ""}).empty());
+}
+
+TEST_CASE("B08-01 : Ctrl+I rallume l'interpolation au facteur que la séance avait, pas à ×3",
+          "[app][chain]") {
+  using Pair = std::pair<int, int>;
+  // Allumée : Ctrl+I la coupe, le dénominateur reste.
+  CHECK(toggled_interpolation(5, 2, std::nullopt) == Pair{0, 2});
+  // Coupée par Ctrl+I ou Ctrl+0 : le facteur gardé pour la séance revient, ×5/2 compris.
+  CHECK(toggled_interpolation(0, 2, Pair{5, 2}) == Pair{5, 2});
+  CHECK(toggled_interpolation(0, 1, Pair{2, 1}) == Pair{2, 1});
+  // Rien de gardé (play.toml sans interpolation), ou un facteur gardé qui n'interpolait pas : le défaut.
+  CHECK(toggled_interpolation(0, 1, std::nullopt) == Pair{kDefaultRifeFactor, 1});
+  CHECK(toggled_interpolation(0, 1, Pair{0, 1}) == Pair{kDefaultRifeFactor, 1});
+}
+
+TEST_CASE("B39-02 : les faits de la lecture vont en tête du rapport, vidéo, écran, sortie, chaîne",
+          "[app][chain]") {
+  const auto facts = playback_facts({.file = "ep01.mkv",
+                                     .codec = "hevc",
+                                     .width = 1920,
+                                     .height = 1080,
+                                     .frame_rate = 23.976,
+                                     .transfer = "PQ",
+                                     .screen = "pic 1000 nits",
+                                     .hdr_output = true,
+                                     .chain = "SPAN ×2 · RIFE ×2"});
+  REQUIRE(facts.size() == 4);
+  CHECK(facts[0].first == "Vidéo");
+  CHECK(facts[0].second.contains("hevc"));
+  CHECK(facts[0].second.contains("1920x1080"));
+  CHECK(facts[0].second.contains("23.976"));
+  CHECK(facts[0].second.contains("source PQ"));
+  CHECK(facts[1].second == "pic 1000 nits");
+  CHECK(facts[2].second == "HDR10");
+  CHECK(facts[3].second == "SPAN ×2 · RIFE ×2");
+  // Cadence inconnue : dit, pas « 0 i/s ».
+  CHECK(playback_facts({.file = "a.mkv"})[0].second.contains("cadence inconnue"));
 }
 
 }  // namespace ajp::app::play

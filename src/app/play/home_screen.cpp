@@ -40,6 +40,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
+#include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/single_instance.h"
 #include "app/play/span_auto.h"
@@ -137,7 +138,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
   // Sans moteur chargé, le FP8 se présume d'après le nom de la carte, avec la règle du moteur : TensorRT le
-  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02). Le moteur le confirme à l'ouverture.
+  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02) ni 50 (B08-07). Le moteur le confirme à
+  // l'ouverture.
   const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                           gpu_facts(h.screen).tensor_cores && fp8_presumed(gpu_facts(h.screen).name);
   // Le mode Performance de SPAN (noyaux CUTLASS) : une RTX 40 (Ada, 8.9, portable compris : le nom de la
@@ -147,7 +149,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .backend_name = tensorrt_backend_present(h.catalog, h.paths) ? "tensorrt" : "vulkan",
       .gpu_name = gpu_facts(h.screen).name,
       .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
-      .capability = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
+      .capability = kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                     span_fp8_presumed(gpu_facts(h.screen).name) &&
                     tensorrt_backend_present(h.catalog, h.paths)};
   const std::int64_t period = display_period_us(h.screen.window());
@@ -174,10 +176,10 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
       .hdr_output = !h.options.sdr && system_hdr(content_peak_nits(h.screen.window())),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
-      .engines = engine_badges(h.paths.engines, {}, WorkSize{}, std::nullopt, kernels::RifeGeometry{}),
+      .engines = engine_badges(h.paths.engines, {}),
       .chosen_engines = chosen_line(st.engines),
       .engine_in_use = st.engines.preferred[usage(core::Usage::Upscale)],
-      .display_text = display ? describe(*display) : std::string("EDID illisible : OLED inconnu"),
+      .display_text = display ? describe(*display) : std::string(i18n::tr("EDID unreadable: OLED unknown")),
       .source_file = {},
       .display_height = display_height(h.screen.window()),
       .span_prepare = {.note = i18n::tr("Open a video: the player prepares Performance mode on its frames.")},
@@ -274,7 +276,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   PlaySettings from_file = st.saved;
   PlaySettings running = home_settings(h, st.saved);
   PlaySettings started = running;
-  const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running)); };
+  const auto refresh = [&] { h.ui.set_settings(running, home_choices(h, st, running), &h.catalog); };
   refresh();
   h.ui.open_settings();
   const auto pick = std::make_shared<FilePick>();
@@ -367,7 +369,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                  input);
     }
     actions.clear();
-    if (dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) save();
+    if (settings_save_due(writer, h.ui, dirty, saved_at, host_now_us())) save();  // B31-08, B36-01
     st.snapshot.maybe(h.screen, opened);
     view.dialog_open = pick->open();
     const ImDrawData* draw = h.ui.home(host_now_us(), view, actions);

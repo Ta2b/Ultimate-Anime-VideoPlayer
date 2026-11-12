@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <filesystem>
@@ -18,6 +19,7 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
 
+#include "app/play/after_gap.h"
 #include "app/play/auto_bench.h"
 #include "app/play/auto_config.h"
 #include "app/play/auto_watch.h"
@@ -28,9 +30,10 @@
 #include "app/play/chain_choices.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
+#include "app/play/close_watch.h"
 #include "app/play/default_player.h"
-#include "app/play/display_contract.h"
 #include "app/play/display_edid.h"
+#include "app/play/display_follow.h"
 #include "app/play/drba_model.h"
 #include "app/play/engine_build.h"
 #include "app/play/engine_install.h"
@@ -55,9 +58,13 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
+#include "app/play/pumped_task.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/resume.h"
+#include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/session.h"
+#include "app/play/sleep_notice.h"
 #include "app/play/sleep_watch.h"
 #include "app/play/span_auto.h"
 #include "app/play/span_derive.h"
@@ -66,7 +73,6 @@
 #include "app/play/upscale_stage.h"
 #include "app/play/user_keys.h"
 #include "app/play/visible_error.h"
-#include "app/play/vrr_watch.h"
 #include "audio/devices.h"
 #include "core/auto_memory.h"
 #include "core/auto_rate.h"
@@ -86,28 +92,20 @@ namespace {
 constexpr std::int64_t kBlackRefreshUs = 200'000;
 // En pause, l'attente d'un événement SDL au plus (P4.7 : 33 ms, l'interface à 30 i/s ; une image réveille).
 constexpr std::int32_t kPausedWaitMs = 33;
-// L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle) ; le
-// HDR et le pic du système toutes les 2 s, l'appel coûte plus et l'utilisateur ne bascule pas plus vite.
+// L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle), sur
+// le fil de DisplayProbe ; le HDR et le pic sur événement, sinon toutes les 10 s (display_follow.cpp).
 constexpr std::int64_t kDisplayPollUs = 500'000;
-// Le pic et le HDR du système se relisent sur événement (ContractWatch::take_peak_change) ; ce sondage n'est
-// que le filet, pour un système qui ne dit rien (A11-02 : sous Windows, chaque relevé énumère les écrans).
-constexpr std::int64_t kHdrPollUs = 10'000'000;
+// Les E/S du dossier de la vidéo (taille, fichier qui grandit, épisode suivant) : au-delà, laissées à leur
+// sort, la lecture continue comme si elles n'avaient rien trouvé.
+constexpr std::chrono::milliseconds kFolderIoLimit{5000};
 // Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
 constexpr std::int64_t kResizeWindowUs = 60'000'000;
 constexpr std::size_t kResizesRefused = 4;
+// Le démontage d'une chaîne saine (moteurs TensorRT compris) se compte en secondes (placebo_open.cpp).
+constexpr std::chrono::seconds kTeardownLimit{60};
 
 // La période d'une fréquence déjà relue (display_period_us referait le relevé du mode, deux
 // QueryDisplayConfig par tour sous Windows) ; une fréquence inutilisable laisse SDL répondre.
-std::int64_t period_of_hz(double hz, SDL_Window* window) {
-  return hz > 1.0 ? std::llround(1e6 / hz) : display_period_us(window);
-}
-
-// Le pic et le HDR du système sont à relire : un événement l'a dit, ou le filet de kHdrPollUs est échu.
-bool peak_due(ContractWatch& watch, std::int64_t polled_at) {
-  const bool changed = watch.take_peak_change();
-  return changed || host_now_us() - polled_at >= kHdrPollUs;
-}
-
 // Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
 // raccourcis de séance (A08-04).
 void save_reopened(Player& p) {
@@ -128,28 +126,11 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
-// A29-02, A33-03, décision 7 : un trou dans le temps (veille, gel du processus) met la lecture en pause à
-// l'image d'avant et recale les horloges par un seek exact ; l'appareil perdu pendant la veille arrête la
-// lecture sur DeviceLost (relance, A31-02).
-std::optional<Refusal> after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, std::int64_t gap_us) {
-  const std::int64_t at = session.view().position_us;
-  log_channel("app")->warn("trou de {:.1f} s (veille ou gel) : pause et recalage à {}",
-                           static_cast<double>(gap_us) / 1e6, format_position(at));
-  if (c.backend) {
-    if (auto healthy = c.backend->kernels()->health(); !healthy) return std::move(healthy.error());
-  }
-  session.command(cmd::Pause{});
-  if (at != kNoPts) session.command(cmd::Seek{.target_us = at, .exact = true});
-  ui.controls().notify(i18n::ui_tr("Paused after sleep"), host_now_us());
-  return std::nullopt;
-}
-
-// Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de suite,
-// en SDR aussi (A08-07).
-void adopt_display(Player& p, ContractWatch& watch, Chain& chain, const std::optional<DisplayFacts>& display,
-                   SDL_Window* window) {
-  watch.set_display(p.display = display);
-  follow_display(chain, content_peak_nits(window));
+// B31-02 : l'étage que ce refus retire pour la réouverture (stage_fallback.h, retreat_stage) ; rien pour le
+// banc, qui mesure la chaîne demandée ou rien.
+std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusal& refusal) {
+  return retreat_stage(p.options.bench_out ? nullptr : p.stages, refusal, c.played, c.interpolates(),
+                       c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file);
 }
 
 }  // namespace
@@ -158,16 +139,17 @@ void adopt_display(Player& p, ContractWatch& watch, Chain& chain, const std::opt
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
+  // B31-03 : une perte du GPU pendant la préparation relance au départ demandé, pas à 0:00.
+  p.stopped_at_us = std::max<std::int64_t>(start_us, 0);
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
   const PlayOptions options = options_for(p.options, settings);
   const media::TrackInfo& video = p.video;
   // La pré-analyse des plans part avant la préparation des moteurs : elle a de l'avance quand l'image vient.
-  const std::optional<ColorInfo> early_color = media::track_color(video);
-  const bool early_hdr =
-      early_color && (early_color->transfer == Transfer::Pq || early_color->transfer == Transfer::Hlg);
-  if (p.shots != nullptr) open_shots(*p.shots, p.options.file, settings, start_us, early_hdr);
+  if (p.shots != nullptr)
+    open_shots_early(*p.shots, p.options.file, settings, start_us, video,
+                     content_peak_nits(p.screen.window()), p.options.sdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
   const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
@@ -216,7 +198,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const std::string label_text = std::format("{}{}{}", c.motion_label(settings),
                                              // Le HDR, s'il tourne vraiment sur une sortie HDR10.
                                              settings.hdr_native ? "HDR · " : "", c.span_label());
-  log->info("{} : {}", prepare::utf8_path(options.file.filename()), label_text);
+  announce_playback(p, source, settings.hdr_native, label_text);
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(played) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
@@ -224,6 +206,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
+  bool ring_refused = false;                  // B31-02 : l'anneau ne tient pas en mémoire vidéo
   auto pipeline = Pipeline::open(
       config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
@@ -231,26 +214,32 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const WorkSize sized = chain_work_size(played, width, height);
         // Anneau RGBA16 ; RGB10A2 derrière --ring-rgb10a2 tant que la porte de banding n'est pas mesurée (ADR
         // 0008).
-        const RingFormat ring_format =
-            p.options.ring_rgb10a2 && c.backend && c.backend->capabilities().ring_rgb10a2
-                ? RingFormat::Rgb10a2Unorm
-                : RingFormat::Rgba16Unorm;
+        const RingFormat ring_format = p.options.ring_rgb10a2 && c.backend->capabilities().ring_rgb10a2
+                                           ? RingFormat::Rgb10a2Unorm
+                                           : RingFormat::Rgba16Unorm;
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, c.opened.shape.ring,
                                      c.backend_name == "tensorrt", ring_format);
-        if (!slots) return std::unexpected(std::move(slots.error()));
+        if (!slots) {
+          ring_refused = true;
+          return std::unexpected(std::move(slots.error()));
+        }
         const MasterClock* clock = stage.clock;
         return UpscaleStage::start(std::move(stage),
                                    c.upscale(played, live, clock, width, height, std::move(*slots)));
       });
-  if (!pipeline) return std::unexpected(std::move(pipeline.error()));
+  if (!pipeline) {
+    // B31-02 : l'anneau refusé retire un étage, et la chaîne se rouvre au même endroit sans lui.
+    if (ring_refused && retreat(p, c, pipeline.error()))
+      return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
+    return std::unexpected(std::move(pipeline.error()));
+  }
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
     p.notice = i18n::ui_tr("Chapters stored in other files are not played (linked opening or ending)");
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
   const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
-  const std::uint64_t energy_start_mj =
-      telemetry ? telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj : 0;
+  const std::uint64_t energy_start_mj = telemetry ? telemetry->energy_mj(host_now_us()) : 0;
   ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
                          fps_of(video.frame_rate), telemetry.get());
   SessionConfig session_config = (*pipeline)->session_config();
@@ -294,7 +283,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
                                .gpu_name = gpu_facts(p.screen).name,
                                .tensorrt_present = tensorrt_backend_present(p.catalog, p.paths),
-                               .capability = c.backend && c.backend->capabilities().span_fp8_cutlass};
+                               .capability = c.backend->capabilities().span_fp8_cutlass};
   const std::string fp8_reason = span_fp8_unavailable_reason(fp8_facts);
   log_channel("app")->info("SPAN Performance (FP8) : {} (moteur {}, capacite CUTLASS {})",
                            fp8_reason.empty() ? "disponible" : fp8_reason, c.backend_name,
@@ -311,12 +300,12 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                .kernels_version = c.backend ? c.backend->capabilities().span_fp8_kernels : 0,
                                .width = work.width,
                                .height = work.height},
-                settings.preset != Preset::Custom)
+                settings.preset != Preset::Custom, true)
           : SpanPrepare{};
   p.ui.set_tracks((*pipeline)->tracks());
   SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
-  p.ui.set_settings(settings, choices);
+  p.ui.set_settings(settings, choices, &p.catalog);
   Chain chain{.session = session,
               .screen = out,
               .ui = p.ui,
@@ -335,7 +324,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                   },
               .luts_dir = paths::luts(p.paths),
               .source_hdr = source_hdr,
-              .kernels = c.backend ? c.backend->kernels() : nullptr,
+              .kernels = c.backend->kernels(),
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
@@ -368,6 +357,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // play.toml, la position et la mémoire de l'Auto s'écrivent sur leur thread, sans attendre le disque.
   LatestWriter writer;
   if (p.shots != nullptr) p.shots->writer = &writer;  // le cache des plans aussi
+  std::optional<StatsSink> stats_sink;                // B32-04 : --stats s'écrit sur ce même fil
+  if (stats.is_open()) stats_sink.emplace(stats, writer);
   const std::unique_ptr<ShotWork, void (*)(ShotWork*)> shots_writer(
       p.shots, [](ShotWork* shot_work) { shot_work->writer = nullptr; });
   // Ce que play.toml garde.
@@ -394,29 +385,26 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{settings.audio_delay_ms} * 1000});
   std::int64_t saved_at = host_now_us();
   std::int64_t display_polled_at = saved_at;
-  std::int64_t hdr_polled_at = host_now_us();
   p.ui.controls().show_deferred(host_now_us());
   // Le mode auto : son plafond suit la fréquence de l'écran.
-  bool vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
-                   p.display->vrr_armed.value_or(false);
+  DisplayState screen_state{.known_hz = display_refresh_hz(out.window()),
+                            .known_period_us = display_period_us(out.window()),
+                            .vrr_armed = !p.options.no_vrr && p.display && p.display->vrr.value_or(false) &&
+                                         p.display->vrr_armed.value_or(false)};
+  const double& known_hz = screen_state.known_hz;
+  const std::int64_t& known_period_us = screen_state.known_period_us;
+  const bool& vrr_armed = screen_state.vrr_armed;
   std::string free_note;  // pourquoi le mode Rapide ne tourne pas alors qu'il est choisi (vide : il tourne ou
                           // n'est pas voulu)
-  // La fréquence de l'écran selon SDL, gardée quand SDL ne la donne plus : un écran rallumé passe un moment
-  // sans mode courant (0 Hz), et le plafond de l'auto retombait au rythme de la source.
-  double known_hz = display_refresh_hz(out.window());
-  std::int64_t known_period_us = display_period_us(out.window());
-  SDL_DisplayID known_display = SDL_GetDisplayForWindow(out.window());
-  const DisplayMove opened{display_height(out.window()), known_hz, fps_of(video.frame_rate)};
-  const GrowingFile opened_file =
-      GrowingFile::of(p.options.bench_out ? std::filesystem::path() : p.options.file);
-  double session_hz_seen = known_hz;
-  ContractWatch contract_watch(out.window(), p.display, log);  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
-  const auto read_display_facts = [&] {
-    if (const double hz = display_refresh_hz(out.window()); hz > 0.0) {
-      known_hz = hz;
-      known_period_us = period_of_hz(hz, out.window());  // un seul relevé du mode par tour (A11-02)
-    }
-  };
+  // B31-12 : la taille du fichier hors du thread de la fenêtre, bornée (un partage réseau muet).
+  const std::uintmax_t file_bytes =
+      p.options.file.empty()
+          ? 0
+          : run_pumped_for<GrowingFile>("file-size", kFolderIoLimit, true,
+                                        [file = p.options.file] { return GrowingFile::of(file); })
+                .value_or(GrowingFile{})
+                .size;
+  const GrowingFile opened_file{p.options.bench_out ? 0 : file_bytes};
   // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
   core::FreeFallback free_fallback;  // revient au Rapide après un calme (core/free_rate.h)
   bool free_chosen = chain.running.auto_free;
@@ -440,10 +428,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
       if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
-    chain.live.set_auto(on && !free, core::auto_limits(known_hz, fps_of(video.frame_rate), vrr_armed,
+    // B12-02, B12-07 : les paliers calés et la grille des vsyncs sur la fréquence mesurée, celle que la
+    // session suit, et non l'annoncée (164,78 Hz pour 165 : le facteur exact ne se calait plus).
+    const double lock_hz = session.display_hz() > 0.0 ? session.display_hz() : known_hz;
+    chain.live.set_auto(on && !free, core::auto_limits(lock_hz, fps_of(video.frame_rate), vrr_armed,
                                                        chain.running.rife_factor, cap_hz));
+    const std::int64_t refresh_us =
+        session.display_period_us() > 0 ? session.display_period_us() : known_period_us;
     // Écart minimal : la période de l'écran ou du plafond, à 1 % près ; à fréquence fixe, sur les vsyncs.
-    const std::int64_t refresh_us = known_period_us;
     const bool vsync = free && !vrr_armed;
     chain.live.set_free(free, limit_hz > 0.0 ? std::llround(1e6 / (vsync ? limit_hz : limit_hz * 0.99)) : 0,
                         host_now_us());
@@ -457,12 +449,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::filesystem::path auto_memory_path;
   std::string auto_memory_key;
   if (!p.settings_path.empty() && !p.options.file.empty()) {
-    std::error_code size_error;
-    const std::uintmax_t file_size = std::filesystem::file_size(p.options.file, size_error);
     auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
-        core::auto_memory_key(prepare::utf8_path(p.options.file), size_error ? 0 : file_size,
-                              std::string(c.motion_name()), settings.work_height, gpu_facts(p.screen).name);
+        // B32-06 : la variante de SPAN chargée (FP16, FP8, INT8) entre dans la clé : un palier appris sur
+        // l'une ne vaut pas pour l'autre.
+        core::auto_memory_key(prepare::utf8_path(p.options.file), file_bytes,
+                              std::format("{} {}", c.motion_name(), span_variant), settings.work_height,
+                              gpu_facts(p.screen).name);
     if (chain.live.auto_active()) {
       if (const auto remembered = core::load_auto_step(auto_memory_path, auto_memory_key)) {
         chain.live.auto_seed(*remembered, host_now_us());
@@ -470,14 +463,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
     }
   }
-  bool vrr_fullscreen = true;  // relu au premier tour : VRR, compositeur (P3.45)
-  VrrWatch vrr_watch(vrr_armed);
   // VRR armé : l'image tenue se représente à intervalles égaux au-dessus du plancher de l'écran (EDID 0xFD).
   const auto apply_floor = [&] {
     const int min_hz = p.display ? p.display->vrr_floor_hz() : 0;
     session.set_vrr_floor(vrr_armed ? core::vrr_floor_us(min_hz) : 0);
   };
   apply_floor();
+  DisplayFollow follow(p, chain, session, screen_state, fps_of(video.frame_rate),
+                       {.apply_auto = apply_auto, .apply_floor = apply_floor}, log, &LoopWake::push, &wake);
   if (p.display)
     log->info("VRR : {} · {}", p.display->vrr.value_or(false) ? "capable" : "non capable",
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
@@ -517,19 +510,36 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       p.ui.controls().notify(i18n::ui_tr_format("Auto ×{} ({:.0f} fps)", auto_factor_text(*todo.notify),
                                                 auto_source_fps * *todo.notify / 100.0),
                              at);
-    if (todo.store)
+    // B32-06 : la préparation du FP8 de SPAN charge le GPU pendant la lecture ; un palier tenu sous elle ne
+    // dit rien de la charge de la vidéo, il n'est pas retenu.
+    if (todo.store && p.span_job.note && p.span_job.note->pending)
+      log->info("auto : palier ×{} non retenu, préparation du mode Performance en cours",
+                auto_factor_text(*todo.store));
+    else if (todo.store)
       writer.post("auto_memory", [store = auto_memory_path, key = auto_memory_key, centi = *todo.store] {
         return core::store_auto_step(store, key, centi);
       });
   };
   SleepWatch sleep_watch;
-  ScreenSaverHold screen_saver;  // coupé seulement pendant qu'une vidéo avance (A33-02)
+  SleepNotice sleep_notice(&LoopWake::push, &wake);  // B31-01 : la veille dite avant
+  bool sleep_announced = false;
+  const WindowEvents window_events;  // B31-13 : la barre de titre tenue sous Windows n'est pas une veille
+  ScreenSaverHold screen_saver;      // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
-    if (const auto gap = sleep_watch.turn(host_now_us(), suspend_aware_now_us())) {
-      if (auto lost = after_gap(session, c, p.ui, *gap)) {
-        failure = std::move(*lost);
+    if (sleep_notice.take()) {
+      // Pause avant la veille : le son s'arrête, le GPU finit ce qu'il a en vol, puis la veille suit.
+      session.command(cmd::Pause{});
+      out.flush();
+      sleep_notice.ready();
+      sleep_announced = true;
+    }
+    if (AfterGap after = after_gap(session, c, p.ui, sleep_watch, window_events, sleep_announced);
+        after.lost || after.reopen) {
+      if (after.lost) {
+        failure = std::move(*after.lost);
         break;
       }
+      chain.reopen = chain.running;
     }
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
@@ -566,31 +576,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                            chain.running.preset != Preset::Custom);
         if (span.notify) p.ui.controls().notify(*span.notify, host_now_us());
       }
-      // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus.
-      read_display_facts();
-      if (const auto contract = contract_watch.tick()) out.set_contract(*contract);  // 8.2
-      // Le HDR et le pic suivent le système et l'écran (Windows, KDE) : relus sur événement, sinon à 10 s.
-      if (!p.options.sdr && peak_due(contract_watch, hdr_polled_at)) {
-        hdr_polled_at = host_now_us();
-        const std::optional<double> peak_now = content_peak_nits(out.window());
-        if (system_hdr(peak_now) != chain.running.hdr_native) {
-          PlaySettings switched = chain.running;
-          switched.hdr_native = !switched.hdr_native;
-          chain.auto_peak = auto_peak_nits(peak_now);
-          log->info("HDR du système {} : sortie {}", switched.hdr_native ? "allumé" : "coupé",
-                    switched.hdr_native ? "HDR10" : "SDR gradée");
-          apply(Input{ApplySettings{.settings = switched}}, chain, host_now_us());
-        } else {
-          follow_display(chain, peak_now);  // P3.58
-        }
-      }
-      const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
-      const bool display_changed =
-          display_id != known_display || (display_id != 0 && known_hz > 0.0 && known_hz != session_hz_seen);
-      known_display = display_id;
-      session_hz_seen = known_hz;
-      session.set_display(known_period_us, known_hz);
-      apply_auto();
+      // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence, son VRR et son état sont relus,
+      // hors du thread qui présente (display_follow.h).
+      follow.poll();
       // Le mode auto écoute les images manquées à l'écran (sans paire en retard, le GPU peut ne pas suivre)
       // et le chien de garde veille sur le moteur d'interpolation.
       const FrameStats& shown = session.stats();
@@ -617,45 +605,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
       show_auto();
-      // KDE arme et désarme le VRR selon la fenêtre active : relu à chaque tour (un seul ioctl).
-      if (p.display && !p.display->connector.empty()) {
-        if (const auto now =
-                vrr_watch.observe(out.vrr_armed(), window_vrr_armed(out.window(), p.display->connector))) {
-          const bool armed = !p.options.no_vrr && p.display->vrr.value_or(false) && *now;
-          log->info("VRR : {}", *now ? "armé" : "non armé");
-          p.ui.set_display_vrr(p.display->vrr.value_or(false), *now,
-                               (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0);
-          if (armed != vrr_armed) {
-            vrr_armed = armed;
-            apply_floor();
-            apply_auto();
-          }
-        }
-      }
-      // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
-      const bool fullscreen = (SDL_GetWindowFlags(out.window()) & SDL_WINDOW_FULLSCREEN) != 0;
-      if (fullscreen != vrr_fullscreen || display_changed) {
-        if (display_changed) log->info("écran : changement détecté ({} Hz), relecture du VRR", known_hz);
-        if (display_changed && !p.options.bench_out && !p.options.file.empty() &&
-            display_moves_chain(chain.running.preset, opened.now(display_height(out.window()), known_hz)))
-          chain.reopen = chain.running;  // A29-03 : la chaîne, pas le lecteur ; pistes et sous-titres gardés
-        vrr_fullscreen = fullscreen;
-        session.set_composited(!fullscreen);
-        if (const auto display = window_display(out.window())) {
-          if (display_changed) adopt_display(p, contract_watch, chain, display, out.window());
-          p.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
-          const bool armed =
-              !p.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
-          if (armed != vrr_armed) {
-            vrr_armed = armed;
-            apply_floor();
-            apply_auto();  // les demi-paliers suivent le VRR
-          }
-          log->info("VRR : {} · {}", display->vrr.value_or(false) ? "capable" : "non capable",
-                    display->vrr_armed.value_or(false) ? "armé" : "non armé");
-        }
-      }
     }
+    follow.take();  // le relevé de l'écran fini sur son fil, s'il y en a un
     grade_tick(chain, host_now_us());
     (*pipeline)->pump();
     while (auto message = try_take((*pipeline)->inbox())) session.handle(std::move(*message));
@@ -663,7 +614,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     UiFrame ui_frame = p.ui.frame(host_now_us(), session.view(), actions);
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
-    if (chain.dirty && host_now_us() - saved_at >= kSettingsSaveEveryUs) {
+    if (settings_save_due(writer, p.ui, chain.dirty, saved_at, host_now_us())) {  // B31-08, B36-01
       writer.post("play.toml",
                   [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
       chain.dirty = false;
@@ -682,7 +633,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // l'heure de la présentation, que la boucle a elle-même choisie (A12-03).
     if (*record && (*record)->fresh)
       chain.live.vsync_note((*record)->vsync_us, out.vblank_grid(), (*record)->display_gpu_us);
-    if (*record && stats.is_open()) write_record(stats, **record);
+    if (*record && stats_sink) stats_sink->add(**record, host_now_us());
     // Rien de présenté (rien n'a changé, ou fenêtre cachée) : la FIFO n'impose pas le rythme. En
     // lecture, la boucle dort jusqu'à l'échéance de l'image suivante (Session::idle_wait_us) ; en pause,
     // au plus kPausedWaitMs. Un message des autres threads (une image, un seek) la réveille.
@@ -698,12 +649,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
   }
   remember();
-  writer.flush();  // la vidéo suivante, ou le prochain lancement, relit ces fichiers
+  stats_sink.reset();
+  finish_settings_writes(writer, p.settings_path, saved_settings());  // attente bornée (B30-05)
   p.quit = session.quit_asked();
   log_summary(session);
   if (telemetry) {
-    // Énergie de la lecture : le compteur NVML relevé au début et à la fin (au plus 500 ms de retard).
-    const std::uint64_t energy_end_mj = telemetry->sample(host_now_us()).value_or(GpuSample{}).energy_mj;
+    // Énergie de la lecture : le compteur NVML relu au début et à la fin, à l'instant même (B11-14).
+    const std::uint64_t energy_end_mj = telemetry->energy_mj(host_now_us());
     if (const auto per_frame =
             millijoules_per_frame(energy_start_mj, energy_end_mj, session.stats().new_frames))
       log->info("énergie : {:.1f} J, {:.1f} mJ par image neuve",
@@ -738,18 +690,34 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.reopen = chain.running;
     }
   }
-  if (!chain.reopen && !failure && !session.quit_asked() && opened_file.grew(p.options.file)) {
+  // B13-10, B29-08, B31-12 : l'attente du fichier qui grandit et le parcours du dossier se font hors du
+  // thread de la fenêtre, pompée, et bornés (un NAS lent ou muet ne la gèle plus).
+  if (!chain.reopen && !failure && !session.quit_asked() &&
+      run_pumped_for<bool>("growing-file", kFolderIoLimit, true, [file = p.options.file, opened_file] {
+        return opened_file.grew(file);
+      }).value_or(false)) {
     log->info("le fichier grandit encore : relu au même endroit");
     chain.reopen = chain.running;  // A29-03 : comme une réouverture de la chaîne, pistes gardées
   }
   // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
   if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
       chain.running.autoplay_next && !p.options.file.empty()) {
-    if (const auto next = sibling_episode(p.options.file, 1)) {
+    if (const auto next = run_pumped_for<std::optional<std::filesystem::path>>(
+                              "next-episode", kFolderIoLimit, true,
+                              [file = p.options.file] { return sibling_episode(file, 1); })
+                              .value_or(std::nullopt)) {
       log->info("épisode suivant : {}", prepare::utf8_path(next->filename()));
       chain.next_file = *next;
       chain.reopen = chain.running;
     }
+  }
+  // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
+  // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
+  if (failure && failure->key == kFatalStageKey && failure->code != RefusalCode::DeviceLost &&
+      c.backend->kernels()->health() && retreat(p, c, *failure)) {
+    failure.reset();
+    chain.reopen = chain.running;
+    chain.next_file.reset();
   }
   std::optional<Reopen> reopen;
   if (chain.reopen && !failure) {
@@ -761,29 +729,36 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     .calibrate = chain.calibrate,
                     .next_file = chain.next_file,
                     .next_start_us = chain.next_start_us,
-                    .next_paused = chain.next_paused};
+                    .next_paused = chain.next_paused,
+                    .rederive = chain.rederive};
     reopen->settings.volume = p.ui.controls().volume();
     p.kept = chain.kept;  // la chaîne rouverte garde les raccourcis de séance (A08-04)
     p.audio_track = (*pipeline)->tracks().audio_selected;
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
   // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
-  p.stopped_at_us = std::max<std::int64_t>(session.view().position_us, 0);
+  if (const std::int64_t at = session.view().position_us; at != kNoPts)
+    p.stopped_at_us = std::max<std::int64_t>(at, 0);
+  // B31-04, B30-07 : ce démontage attend le GPU sans délai (jointure des fils, cudaStreamSynchronize,
+  // cudaFree) ; gardé comme celui de l'écran. Après une perte du GPU, la relance est demandée d'abord : un
+  // démontage bloqué la fait au lieu de laisser une fenêtre figée.
+  if (failure && failure->code == RefusalCode::DeviceLost && p.relaunch_on_loss)
+    (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, false, RelaunchReason::GpuLost);
+  const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
   session.end();
   out.flush();
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
   // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend
   // le dit, et la lecture se traite comme une perte du GPU (message, relance).
-  if (failure && failure->code != RefusalCode::DeviceLost && c.backend) {
+  if (failure && failure->code != RefusalCode::DeviceLost) {
     if (auto healthy = c.backend->kernels()->health();
         !healthy && healthy.error().code == RefusalCode::DeviceLost) {
       log->warn("{} : l'appareil est perdu ({})", failure->detail, healthy.error().detail);
       failure = std::move(healthy.error());
     }
   }
-  if (c.backend)
-    keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
+  keep_gpu_profile(c.backend->kernels()->gpu_profile(), options.stats, p.options.bench_out);  // 0.2
   prepared->reset();
   if (failure) return std::unexpected(std::move(*failure));
   return reopen;

@@ -4,7 +4,8 @@
 #   AJP_UPDATE_KEY=/chemin/ajp-update-key.pem tools/release/sign-manifest.sh \
 #       VERSION CANAL DOSSIER-DES-ARCHIVES URL-DE-BASE [NOTES-URL]
 #
-#   VERSION   0.5.0 (ou 0.5.0-preview.1)       CANAL   stable | preview
+#   VERSION   0.5.0 (ou 0.5.0-rc.1)             CANAL   stable (le canal Préversions est retiré : seule la valeur
+#                                               « stable » est écrite, le lecteur ne lit plus ce champ)
 #   DOSSIER   contient ajp-linux-x64.tar.gz, ajp-windows-x64.zip, ajp-macos-arm64.zip (ceux qui existent)
 #   URL-DE-BASE   https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0
 # Produit DOSSIER/manifest.toml et DOSSIER/manifest.toml.sig (Ed25519, hexadécimal), à joindre à la release.

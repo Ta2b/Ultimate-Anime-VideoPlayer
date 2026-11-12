@@ -29,6 +29,11 @@ class BuildProgress {
   // La fraction à afficher à cet instant, 0 à 1 ; 1 seulement une fois finie.
   float fraction(std::int64_t now_us) const;
   double elapsed_seconds(std::int64_t now_us) const;
+  // Plus d'une fois et demie la durée attendue (B24-08) : la barre à 99 % ne dirait plus rien, l'écran
+  // passe à la barre sans pourcentage, avec le temps écoulé dans le détail.
+  bool overdue(std::int64_t now_us) const {
+    return !finished_ && elapsed_seconds(now_us) > 1.5 * expected_s_;
+  }
   double expected_seconds() const { return expected_s_; }
 
  private:
@@ -50,6 +55,18 @@ struct PastBuild {
 std::optional<PastBuild> read_build_log(std::string_view text);
 // Les constructions lisibles du cache, dans l'ordre du dossier (128 au plus).
 std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir);
+
+// B08-12 : un moteur chargé par la chaîne, tel que prepare_engine l'a construit : le graphe vraiment donné à
+// la construction (la variante mouvement dérivée, le manifeste d'un fusionné, une variante de SPAN) et la
+// taille de son entrée.
+struct LoadedEngine {
+  std::filesystem::path onnx;
+  int width = 0;
+  int height = 0;
+};
+// La construction passée est-elle celle de ce moteur ? Le même fichier à la même taille ; pour un fusionné
+// (manifeste « .rifefused », « .drbafused »), un de ses morceaux, nommés d'après le manifeste.
+bool built_from(const LoadedEngine& engine, const PastBuild& past);
 
 // Durée attendue pour construire onnx à pixels (hauteur × largeur de l'entrée) : la construction
 // passée du même modèle la plus proche en pixels, allongée en pixels^0,8 pour une entrée plus grande

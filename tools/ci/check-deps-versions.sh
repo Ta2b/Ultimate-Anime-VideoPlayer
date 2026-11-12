@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Les versions des dépendances se suivent à la main entre trois listes : le préfixe Linux
 # (tools/deps/linux-from-source.sh), le préfixe macOS (tools/deps/macos-from-source.sh) et les ports vcpkg du
-# dépôt (ports/, Windows). Ce contrôle refuse qu'elles s'écartent pour ce que le dépôt fixe lui-même : une
+# dépôt (ports/ et vcpkg.json, Windows). Ce contrôle refuse qu'elles s'écartent pour ce que le dépôt fixe lui-même : une
 # dépendance commune aux deux scripts y a la même référence et le même commit, et libplacebo et libass ont
 # le commit de leur port. Ce que les trois plateformes prennent ailleurs (apt, Homebrew, baseline de vcpkg :
 # dav1d, lcms2, shaderc, FriBidi, FreeType, HarfBuzz) n'est pas vérifié ici : cmake/Dependencies.cmake le dit.
@@ -22,6 +22,32 @@ for port in libplacebo libass; do
     bad=1
   fi
 done
+# Windows : vcpkg.json fixe par « overrides » chaque dépendance que DEPS fixe, à la même version. Sans cela, un
+# « builtin-baseline » rafraîchi changerait FFmpeg, SDL3 ou les en-têtes Vulkan de Windows sans que la CI Linux le
+# voie (le HDR de Windows dépend de SDL, le décodage de FFmpeg).
+if ! python3 - "$(deps_of tools/deps/linux-from-source.sh)" <<'PY'
+import json, re, sys
+deps = {}
+for line in sys.argv[1].splitlines():
+    name, _url, ref, _commit = line.split()
+    deps[name] = re.sub(r"^(release-|v|n)", "", ref)
+overrides = {o["name"]: o["version"] for o in json.load(open("vcpkg.json")).get("overrides", [])}
+# Les dépendances de vcpkg.json que DEPS fixe aussi, avec le nom que vcpkg leur donne.
+wanted = {"ffmpeg": "ffmpeg", "sdl3": "sdl3", "spdlog": "spdlog", "tomlplusplus": "tomlplusplus",
+          "imgui": "imgui", "vulkan-headers": "vulkan-headers"}
+bad = False
+for vcpkg_name, deps_name in wanted.items():
+    expected = deps[deps_name]
+    got = overrides.get(vcpkg_name)
+    # vcpkg écrit les en-têtes Vulkan en quatre champs (1.4.363.0) là où l'étiquette en a trois.
+    if got is None or (got != expected and got != expected + ".0"):
+        print(f"{vcpkg_name} : vcpkg.json overrides = {got}, tools/deps/linux-from-source.sh = {expected}", file=sys.stderr)
+        bad = True
+sys.exit(1 if bad else 0)
+PY
+then
+  bad=1
+fi
 # libplacebo : la version du port et le minimum exigé à la configuration suivent l'étiquette.
 tag="$(deps_of tools/deps/linux-from-source.sh | awk '$1 == "libplacebo" {print $3}')"
 version="${tag#v}"

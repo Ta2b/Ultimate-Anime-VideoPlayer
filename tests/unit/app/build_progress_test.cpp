@@ -30,6 +30,16 @@ TEST_CASE("La barre avance au temps écoulé et n'atteint 100 % qu'à la fin", "
   CHECK(progress.fraction(131 * kS) == 1.0F);
 }
 
+TEST_CASE("Une construction bien plus longue que prévu passe en barre sans pourcentage (B24-08)",
+          "[app][build]") {
+  BuildProgress progress(60.0, 10 * kS);
+  CHECK_FALSE(progress.overdue(40 * kS));
+  CHECK_FALSE(progress.overdue(100 * kS));  // 90 s écoulées : exactement une fois et demie
+  CHECK(progress.overdue(101 * kS));
+  progress.finish();
+  CHECK_FALSE(progress.overdue(1000 * kS));
+}
+
 TEST_CASE("Seuls les repères sûrs de trtexec servent de plancher", "[app][build]") {
   BuildProgress progress(100.0, 0);
   progress.marker(0.10F);  // fin de la lecture du modèle
@@ -106,4 +116,33 @@ TEST_CASE("Un long journal se lit par ses deux bouts", "[app][build]") {
 }
 
 }  // namespace
+TEST_CASE("B08-12 : le moteur RIFE chargé se reconnaît à son graphe dérivé ou à ses morceaux fusionnés",
+          "[app][build]") {
+  const PastBuild motion{.onnx = "/cache/rife422_lite-mouvement-t2-0123456789abcdef.onnx",
+                         .width = 1920,
+                         .height = 1088,
+                         .pixels = 1920 * 1088,
+                         .seconds = 30.0};
+  // Le modèle tel que livré n'est pas ce qui a été construit : la variante mouvement l'est.
+  CHECK_FALSE(built_from({.onnx = "/models/rife422_lite.onnx", .width = 1920, .height = 1088}, motion));
+  CHECK(built_from(
+      {.onnx = "/derived/rife422_lite-mouvement-t2-0123456789abcdef.onnx", .width = 1920, .height = 1088},
+      motion));
+  CHECK_FALSE(built_from(
+      {.onnx = "/derived/rife422_lite-mouvement-t2-0123456789abcdef.onnx", .width = 1280, .height = 736},
+      motion));
+  // Le fusionné : le manifeste, et des morceaux nommés d'après lui.
+  const LoadedEngine fused{.onnx = "/derived/rife422_lite-fusion1-1088x1920-0123456789abcdef-image.rifefused",
+                           .width = 1920,
+                           .height = 1088};
+  CHECK(
+      built_from(fused, PastBuild{.onnx = "/cache/rife422_lite-fusion1-1088x1920-0123456789abcdef-head.onnx",
+                                  .width = 960,
+                                  .height = 544}));
+  CHECK_FALSE(
+      built_from(fused, PastBuild{.onnx = "/cache/rife422_lite-fusion1-736x1280-0123456789abcdef-head.onnx",
+                                  .width = 640,
+                                  .height = 368}));
+}
+
 }  // namespace ajp::app::play

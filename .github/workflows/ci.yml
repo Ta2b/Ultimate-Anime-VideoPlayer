@@ -3,8 +3,11 @@ name: CI
 # Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
 # construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
 # demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
-# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). Windows,
-# macOS (Core ML) et CUDA (TensorRT) tournent sur chaque pull request, la nuit et à la demande (P1.17).
+# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). Windows
+# et CUDA (TensorRT) tournent sur chaque pull request, la nuit et à la demande (P1.17). CUDA a deux tâches : Linux
+# (gcc, nvcc) à chaque pull request, Windows (MSVC, nvcc) à celles qui touchent ce que le module TensorRT compile
+# (src/core, gpu, kernels, prepare, CUTLASS, CMake, vcpkg) et chaque nuit. macOS n'a plus de tâche : son support est
+# délaissé pour l'instant (décision de Tatoub, novembre 2026) ; release-macos.yml reste lançable à la main.
 # Versions et paquets : tools/release/versions.env.
 on:
   push:
@@ -78,7 +81,10 @@ jobs:
       - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
-      - run: ctest --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }} --output-junit "$GITHUB_WORKSPACE/junit.xml"
+      # Un test sauté ne passe pas pour réussi, ici non plus (B28-12) : plafond « core-<tâche> » de skip-ceiling.txt.
+      - name: Tests sautés
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" core-${{ matrix.name }}
 
   # Le cœur avec le compilateur d'Arch (celui de CachyOS, le poste du propriétaire), en -Werror : un GCC plus
   # récent que celui de la CI apporte des avertissements que rien d'autre ne voit avant lui. Arch avance en
@@ -100,7 +106,39 @@ jobs:
       - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" /tmp/deps-src
       - run: cmake --preset linux-prefix-core
       - run: cmake --build --preset linux-prefix-core
-      - run: ctest --preset linux-prefix-core
+      - run: ctest --preset linux-prefix-core --output-junit "$GITHUB_WORKSPACE/junit.xml"
+      - name: Tests sautés
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" arch
+
+  # Le lecteur entier avec le compilateur d'Arch (B28-11) : le cœur seul ne voyait pas les avertissements que le
+  # GCC d'Arch ajoute dans src/app, src/render ou src/media, et le `cmake --build` de CachyOS échouait là où la CI
+  # restait verte. Vulkan logiciel sous Xvfb pour les tests. Comme la tâche du cœur : signale sans bloquer.
+  arch-player:
+    name: Lecteur (GCC d'Arch)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    container: archlinux:latest
+    env:
+      AJP_DEPS_PREFIX: /opt/ajp-deps
+      AJP_TEST_VULKAN_VALIDATION: "off"
+      CCACHE_DIR: /tmp/ccache
+    steps:
+      - run: >-
+          pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python meson nasm autoconf automake
+          libtool python-jinja vulkan-headers vulkan-icd-loader vulkan-swrast shaderc glslang spirv-tools freetype2
+          harfbuzz fribidi fontconfig lcms2 dav1d svt-av1 alsa-lib libpulse libx11 libxext libxrandr libxcursor libxi
+          libxss libxtst libxfixes libxinerama libxkbcommon libxkbcommon-x11 wayland wayland-protocols libdecor
+          libdrm libva mesa dbus xorg-server-xvfb xorg-xauth ttf-dejavu
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: gcc --version | head -n 1
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" /tmp/deps-src
+      - run: cmake --preset linux-prefix
+      - run: cmake --build --preset linux-prefix
+      - run: xvfb-run -a ctest --preset linux-prefix -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
+      - name: Tests sautés
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" arch-player
 
   # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
   # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
@@ -121,7 +159,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"}]' || github.event_name == 'pull_request' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"tsan-pr","preset":"linux-prefix-tsan-player","test_preset":"linux-prefix-tsan-pr","tidy":false,"tests":true,"validation":"require"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"}]' || github.event_name == 'pull_request' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"tsan-pr","preset":"linux-prefix-tsan-player","test_preset":"linux-prefix-tsan-pr","tidy":false,"tests":true,"validation":"require"},{"name":"asan-fuzz","preset":"linux-prefix-asan","test_preset":"linux-prefix-asan-fuzz","tidy":false,"tests":true,"validation":"off"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
     env:
       CC: gcc-13
       CXX: g++-13
@@ -130,8 +168,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          # clang-tidy ne regarde, sur une pull request, que les fichiers qu'elle change.
-          fetch-depth: ${{ matrix.tidy && 0 || 1 }}
+          # clang-tidy ne regarde, sur une pull request, que les fichiers qu'elle change. La profondeur est une chaîne :
+          # 0 est faux dans une expression GitHub, « tidy && 0 || 1 » valait toujours 1 et origin/main n'existait pas
+          # (B28-05).
+          fetch-depth: ${{ matrix.tidy && '0' || '1' }}
       # clang et clang-tidy (plusieurs centaines de Mo avec LLVM) ne servent qu'à la tâche
       # analysée ; clang-format reste à rules.yml. ccache : la construction repart du cache.
       - name: Paquets système
@@ -143,14 +183,19 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
-          restore-keys: deps-player-gcc-13-
+          # TSan : son propre préfixe, où libass est instrumenté (B35-02) ; les autres tâches gardent le leur.
+          key: deps-player-gcc-13-${{ startsWith(matrix.name, 'tsan') && 'tsan-' || '' }}${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
+          restore-keys: deps-player-gcc-13-${{ startsWith(matrix.name, 'tsan') && 'tsan-' || '' }}
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-${{ matrix.name }}-${{ github.sha }}
           restore-keys: ccache-player-${{ matrix.name }}-
+      # libass, qui rend les scripts ASS venus de l'extérieur sur quatre fils, n'est vu de TSan que construit avec
+      # lui : sans cela, la tâche « tsan » ne voyait aucune course dans son code multi-fils.
       - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+        env:
+          AJP_LIBASS_CFLAGS: ${{ startsWith(matrix.name, 'tsan') && '-fsanitize=thread -g -O1' || '-O2 -g' }}
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ccache -s
@@ -176,10 +221,19 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends p7zip-full
           tools/release/fetch-models.sh "$HOME/ajp/models"
           # Sans modèle, les tests se sauteraient en silence : leur présence se vérifie ici.
-          for model in rife_v4.22_lite.onnx rife_v4.25.onnx distil_drba_v2_lite.onnx; do
+          for model in rife_v4.22_lite.onnx rife_v4.25.onnx distil_drba_v2_lite.onnx distil_drba_v2_lite_s05.onnx; do
             test -f "$HOME/ajp/models/rife/$model" || { echo "modèle absent : $model" >&2; exit 1; }
           done
-          xvfb-run -a build/linux-prefix/tests/unit/vk_backend/ajp_vk_backend_tests "[.rife_fused],[.drba_fused]"
+          # Lancés hors de ctest, donc hors de check-skips.sh : leur rapport JUnit est lu ici. Un cas sauté (stockage
+          # 16 bits perdu par une mise à jour de Mesa, modèle introuvable) fait échouer la nuit au lieu de la laisser
+          # verte, quel que soit le code de sortie de cette version de Catch2 quand tout est sauté (B28-04).
+          fused="$RUNNER_TEMP/fused-junit.xml"
+          xvfb-run -a build/linux-prefix/tests/unit/vk_backend/ajp_vk_backend_tests "[.rife_fused],[.drba_fused]" \
+            -r junit -o "$fused"
+          ran="$(grep -c '<testcase' "$fused" || true)"
+          skipped="$(grep -c '<skipped' "$fused" || true)"
+          echo "moteurs fusionnés : $ran cas, $skipped sautés"
+          [ "$ran" -ge 2 ] && [ "$skipped" -eq 0 ] || { echo "::error::moteurs fusionnés sautés ou absents ($skipped sautés sur $ran)"; exit 1; }
       # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
       # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
       - name: clang-tidy sur src/
@@ -187,6 +241,45 @@ jobs:
         env:
           AJP_TIDY_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: tools/ci/clang-tidy-src.sh build/linux-prefix
+
+  # La configuration livrée (linux-release : Release, LTO, NDEBUG, asserts retirés) construite et testée chaque nuit
+  # et à la demande, pas seulement le jour de la release (B28-13) : un comportement qui dépend de l'optimisation
+  # (contraction en FMA, assert à effet de bord, comportement indéfini révélé par LTO) se voit le lendemain du
+  # commit qui l'introduit. Vulkan logiciel sous Xvfb, couche de validation coupée comme dans release-linux.yml.
+  linux-release:
+    name: Lecteur Linux (version livrée)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    env:
+      CC: gcc-13
+      CXX: g++-13
+      AJP_TEST_VULKAN_VALIDATION: "off"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Paquets système
+        run: |
+          source tools/release/versions.env
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS ccache
+          pip install --user "meson==$MESON_VERSION"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.AJP_DEPS_PREFIX }}
+          key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
+          restore-keys: deps-player-gcc-13-
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-player-linux-release-${{ github.sha }}
+          restore-keys: ccache-player-linux-release-
+      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: cmake --preset linux-release
+      - run: cmake --build --preset linux-release
+      - run: xvfb-run -a ctest --preset linux-release -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
+      - name: Tests sautés
+        run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" linux-release
 
   # MSVC et vcpkg, sans GPU : la construction avec /WX (une rupture de MSVC ou d'un port paraît ici
   # et non au moment de livrer), puis les tests des modules qui n'ouvrent pas d'appareil
@@ -277,6 +370,90 @@ jobs:
         shell: bash
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" windows | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # Le module TensorRT de Windows (MSVC + nvcc, AJP_WITH_CUDA=ON) construit sans carte, comme la tâche `cuda` le fait
+  # sous Linux (B28-01) : un intrinsèque ou une extension de GCC que MSVC refuse passait les deux autres tâches et ne
+  # cassait le paquet TensorRT de Windows, le seul moteur de la cible sous Windows 11, que le jour de la release. Sur
+  # une pull request, seulement quand elle touche ce que le module compile ; chaque nuit et à la demande, toujours.
+  # Une seule architecture (sm_89) : les erreurs d'hôte de MSVC et de nvcc n'en dépendent pas, celles du code
+  # d'appareil par architecture sont celles de la tâche Linux.
+  windows-cuda:
+    name: Windows (CUDA et TensorRT, MSVC)
+    if: github.event_name != 'push'
+    runs-on: windows-2025
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      AJP_VCPKG: C:\v
+      AJP_VCPKG_BUILDTREES: C:\vb
+      VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
+      AJP_VCPKG_TRIPLET: x64-windows-release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      - id: touched
+        shell: bash
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          if [ -z "$BASE" ]; then echo "run=true" >>"$GITHUB_OUTPUT"; exit 0; fi
+          # Les chemins de l'empreinte du paquet TensorRT (tools/release/trt-fingerprint.sh) et ce qui construit Windows.
+          if git diff --name-only "$BASE...HEAD" | grep -E '^(src/(core|gpu|kernels|prepare)/|third_party/cutlass/|cmake/|CMakeLists\.txt|CMakePresets\.json|vcpkg\.json|ports/|tools/deps/windows-tensorrt\.ps1|tools/release/versions\.env|\.github/workflows/ci\.yml)'; then
+            echo "run=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "Rien de ce que le module TensorRT compile n'a changé : tâche sautée." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >>"$GITHUB_OUTPUT"
+          fi
+      - id: runner-image
+        if: steps.touched.outputs.run == 'true'
+        shell: pwsh
+        run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
+      # Le cache des ports de la tâche `windows` (même clé) : les ports sont les mêmes, seule la configuration change.
+      - id: vcpkg-cache
+        if: steps.touched.outputs.run == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\vc
+          key: vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-${{ hashFiles('vcpkg.json', 'ports/**') }}
+          restore-keys: |
+            vcpkg-windows-x64-${{ steps.runner-image.outputs.image }}-
+      - name: vcpkg à la référence du manifeste
+        if: steps.touched.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
+          $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
+          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
+          git -C $env:AJP_VCPKG checkout -q $baseline
+          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+      - if: steps.touched.outputs.run == 'true'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - if: steps.touched.outputs.run == 'true'
+        uses: mozilla-actions/sccache-action@7d986dd989559c6ecdb630a3fd2557667be217ad # v0.0.9
+      # Le kit CUDA et TensorRT de NVIDIA (versions épinglées dans versions.env, empreintes vérifiées) : jetés avec la
+      # tâche, rien n'en entre dans un paquet. Les lancer ici, c'est accepter leurs licences, comme release-windows.yml.
+      - name: CUDA et TensorRT
+        if: steps.touched.outputs.run == 'true'
+        shell: pwsh
+        run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
+      - name: Configuration
+        if: steps.touched.outputs.run == 'true'
+        id: configure
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          cmake --preset windows-rtx "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" "-DAJP_CUDA_ARCHITECTURES=89-real" `
+            "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
+          if ($LASTEXITCODE -ne 0) { throw "configuration" }
+      - name: Construction
+        if: steps.touched.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          cmake --build --preset windows-rtx -- -k 0  # toutes les erreurs de MSVC et de nvcc en une passe
+          if ($LASTEXITCODE -ne 0) { throw "construction" }
+
   # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
   # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.
   # Construction seule (linux-prefix-cuda), pour toutes les architectures livrées et pas sm_89 seule : un
@@ -324,40 +501,3 @@ jobs:
         env:
           AJP_TIDY_ONLY: ^src/gpu/cuda/
         run: tools/ci/clang-tidy-src.sh build/linux-prefix-cuda
-
-  # Core ML et le reste du lecteur macOS sur chaque pull request (P1.17), avec le cache de dépendances de
-  # release-macos.yml : la construction et les tests sans GPU du préréglage macos-release.
-  macos:
-    name: macOS (Core ML)
-    if: github.event_name != 'push'
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      # Le lanceur ccache du workflow vaut ici aussi, dépendances comprises.
-      - run: brew install ccache
-      - id: deps-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
-          key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-${{ github.run_id }}
-          restore-keys: |
-            deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-
-            deps-macos-arm64-
-      - run: tools/deps/macos-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        if: always()
-        with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
-          key: ${{ steps.deps-cache.outputs.cache-primary-key }}
-      - run: cmake --preset macos-release
-      - run: cmake --build --preset macos-release
-      - run: ctest --preset macos-release
-      # P5.8 : ce que seul macOS compile (Core ML et ses pixels), avec le clang-tidy de Homebrew.
-      - name: clang-tidy sur Core ML
-        env:
-          AJP_TIDY_ONLY: ^src/gpu/coreml/
-        run: |
-          brew install llvm@20
-          tools/ci/clang-tidy-src.sh build/macos-release "$(brew --prefix llvm@20)/bin/clang-tidy"

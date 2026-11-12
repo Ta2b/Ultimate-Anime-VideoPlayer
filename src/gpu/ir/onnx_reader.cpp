@@ -4,347 +4,20 @@
 // messages sont relus en protobuf : les données brutes et les chaînes ne le sont
 // jamais. Approche voisine de animejanai-inference-rtx@118c272 src/onnx_shape.cpp,
 // réécrite pour décoder tout le graphe et refuser au lieu d'ignorer.
-#include <bit>
 #include <format>
 #include <limits>
 #include <optional>
 #include <utility>
 
-#include "gpu/ir/fp8.h"
+#include "gpu/ir/graph.h"
 #include "gpu/ir/onnx_model.h"
+#include "gpu/ir/onnx_reader_detail.h"
 #include "gpu/ir/protobuf.h"
-#include "kernels/ref/half.h"
 
 namespace ajp::gpu::ir::onnx {
 namespace {
 
-using proto::Bytes;
-using proto::Field;
-
-// Appelle fn sur chaque champ du message ; s'arrête au premier refus.
-template <class Fn>
-std::expected<void, Refusal> for_each_field(Bytes bytes, Fn&& fn) {
-  proto::Reader reader(bytes);
-  for (;;) {
-    auto field = reader.next();
-    if (!field) return std::unexpected(field.error());
-    if (!*field) return {};
-    if (auto ok = fn(**field); !ok) return ok;
-  }
-}
-
-std::unexpected<Refusal> unsupported(std::string detail) {
-  return std::unexpected(Refusal{RefusalCode::OnnxUnsupported, std::move(detail)});
-}
-
-// Lit un champ chaîne dans out.
-std::expected<void, Refusal> read_string(const Field& field, std::string& out) {
-  auto value = proto::as_string(field);
-  if (!value) return std::unexpected(value.error());
-  out = std::move(*value);
-  return {};
-}
-
-// A44-04 : un entier empaqueté sur un octet en coûte huit en mémoire, une chaîne vide de deux octets en coûte
-// trente-deux. Sans borne, un fichier hostile proche de 2 Gio demandait 16 à 32 Gio et finissait en bad_alloc
-// au lieu d'un refus. Aucun modèle réel n'approche ces bornes : au-delà, les valeurs sont en raw_data.
-constexpr std::size_t kMaxTypedInts = std::size_t{1} << 24U;
-constexpr std::size_t kMaxStrings = std::size_t{1} << 20U;
-
-std::expected<void, Refusal> push_string(const Field& field, std::vector<std::string>& out) {
-  if (out.size() >= kMaxStrings) return proto::malformed("trop de chaînes dans une liste");
-  auto value = proto::as_string(field);
-  if (!value) return std::unexpected(value.error());
-  out.push_back(std::move(*value));
-  return {};
-}
-
-// Un champ empaqueté tient au plus un entier par octet : la borne se vérifie avant de le lire.
-std::expected<void, Refusal> append_ints(const Field& field, std::vector<std::int64_t>& out) {
-  const std::size_t more = field.wire == proto::WireType::Length ? field.bytes.size() : 1;
-  if (out.size() + more > kMaxTypedInts) return proto::malformed("trop de valeurs entières typées");
-  return proto::append_int64s(field, out);
-}
-
-std::uint32_t le32(Bytes bytes, std::size_t at) {
-  std::uint32_t value = 0;
-  for (std::size_t i = 0; i < 4; ++i) {
-    value |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[at + i])) << (8U * i);
-  }
-  return value;
-}
-
-std::uint64_t le64(Bytes bytes, std::size_t at) {
-  return static_cast<std::uint64_t>(le32(bytes, at)) |
-         (static_cast<std::uint64_t>(le32(bytes, at + 4)) << 32U);
-}
-
-// Ce qu'un TensorProto contient avant validation.
-struct RawTensor {
-  Tensor tensor;
-  std::optional<Bytes> raw;
-  std::vector<std::int64_t> int32_data;
-  bool external = false;
-  bool segmented = false;
-};
-
-std::size_t element_size(std::int32_t data_type) {
-  switch (data_type) {
-    case kFloat:
-    case kInt32:
-      return 4;
-    case kInt64:
-      return 8;
-    case kFloat16:
-      return 2;
-    case kFloat8E4M3Fn:
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t count) {
-  const std::size_t size = element_size(tensor.data_type);
-  if (raw.size() / size != count || raw.size() % size != 0) {
-    return proto::malformed(
-        std::format("tenseur {} : {} octets bruts pour {} éléments", tensor.name, raw.size(), count));
-  }
-  if (tensor.data_type == kFloat || tensor.data_type == kFloat16 || tensor.data_type == kFloat8E4M3Fn) {
-    tensor.floats.reserve(count);
-  } else {
-    tensor.ints.reserve(count);
-  }
-  for (std::size_t i = 0; i < count; ++i) {
-    switch (tensor.data_type) {
-      case kFloat:
-        tensor.floats.push_back(std::bit_cast<float>(le32(raw, 4 * i)));
-        break;
-      case kFloat16: {
-        const auto lo = std::to_integer<std::uint16_t>(raw[2 * i]);
-        const auto hi = std::to_integer<std::uint16_t>(raw[(2 * i) + 1]);
-        tensor.floats.push_back(kernels::ref::half_to_float(static_cast<std::uint16_t>(lo | (hi << 8U))));
-        break;
-      }
-      case kFloat8E4M3Fn:
-        tensor.floats.push_back(e4m3_to_float(std::to_integer<std::uint8_t>(raw[i])));
-        break;
-      case kInt32:
-        tensor.ints.push_back(static_cast<std::int32_t>(le32(raw, 4 * i)));
-        break;
-      default:
-        tensor.ints.push_back(static_cast<std::int64_t>(le64(raw, 8 * i)));
-        break;
-    }
-  }
-  return {};
-}
-
-// FLOAT8E4M3FN en int32_data : un octet par élément, dans les 8 bits de poids faible.
-std::expected<void, Refusal> decode_e4m3_words(Tensor& tensor, const std::vector<std::int64_t>& words) {
-  for (const std::int64_t word : words) {
-    if (word < 0 || word > 0xFF) {
-      return proto::malformed(
-          std::format("tenseur {} : motif FLOAT8E4M3FN {} hors de 8 bits", tensor.name, word));
-    }
-    tensor.floats.push_back(e4m3_to_float(static_cast<std::uint8_t>(word)));
-  }
-  return {};
-}
-
-// INT32 en int32_data : des varints de 64 bits, à refuser hors de la plage plutôt qu'à tronquer plus loin
-// (A44-07).
-std::expected<void, Refusal> check_int32_words(const Tensor& tensor, const std::vector<std::int64_t>& words) {
-  for (const std::int64_t word : words) {
-    if (word < std::numeric_limits<std::int32_t>::min() || word > std::numeric_limits<std::int32_t>::max()) {
-      return proto::malformed(std::format("tenseur {} : valeur INT32 {} hors plage", tensor.name, word));
-    }
-  }
-  return {};
-}
-
-// FLOAT16 en int32_data : un motif binaire de 16 bits par élément.
-std::expected<void, Refusal> decode_half_words(Tensor& tensor, const std::vector<std::int64_t>& words) {
-  for (const std::int64_t word : words) {
-    if (word < 0 || word > 0xFFFF) {
-      return proto::malformed(
-          std::format("tenseur {} : motif FLOAT16 {} hors de 16 bits", tensor.name, word));
-    }
-    tensor.floats.push_back(kernels::ref::half_to_float(static_cast<std::uint16_t>(word)));
-  }
-  return {};
-}
-
-// int32_data selon le type du tenseur : motifs FLOAT16 ou FLOAT8E4M3FN, ou valeurs INT32.
-std::expected<void, Refusal> decode_int32_data(Tensor& tensor, std::vector<std::int64_t>& words) {
-  if (tensor.data_type == kFloat16) return decode_half_words(tensor, words);
-  if (tensor.data_type == kFloat8E4M3Fn) return decode_e4m3_words(tensor, words);
-  if (tensor.data_type != kInt32) return {};
-  if (auto ok = check_int32_words(tensor, words); !ok) return ok;
-  tensor.ints = std::move(words);
-  return {};
-}
-
-std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
-  Tensor& tensor = raw.tensor;
-  if (raw.external) {
-    return std::unexpected(Refusal{RefusalCode::OnnxExternalData,
-                                   std::format("tenseur {} : poids hors du fichier ONNX", tensor.name)});
-  }
-  if (raw.segmented) return unsupported(std::format("tenseur {} : segments", tensor.name));
-  if (element_size(tensor.data_type) == 0) {
-    return unsupported(std::format("tenseur {} : type ONNX {}", tensor.name, tensor.data_type));
-  }
-
-  // Nombre d'éléments, borné par la taille du tampon : jamais d'allocation sur une forme seule.
-  std::size_t count = 1;
-  for (const std::int64_t dim : tensor.dims) {
-    if (dim < 0) return proto::malformed(std::format("tenseur {} : dimension {}", tensor.name, dim));
-    const auto udim = static_cast<std::uint64_t>(dim);
-    if (udim != 0 && count > std::numeric_limits<std::uint32_t>::max() / udim) {
-      return proto::malformed(std::format("tenseur {} : trop d'éléments", tensor.name));
-    }
-    count *= static_cast<std::size_t>(udim);
-  }
-
-  const bool typed = !tensor.floats.empty() || !tensor.ints.empty() || !raw.int32_data.empty();
-  if (raw.raw && typed) {
-    return proto::malformed(std::format("tenseur {} : données brutes et typées à la fois", tensor.name));
-  }
-  if (raw.raw) {
-    if (auto ok = decode_raw(tensor, *raw.raw, count); !ok) return std::unexpected(ok.error());
-    return std::move(tensor);
-  }
-
-  // Chaque type a son champ typé : float_data, int32_data (INT32 et FLOAT16) ou int64_data.
-  const bool has_floats = !tensor.floats.empty();
-  const bool has_int32 = !raw.int32_data.empty();
-  const bool has_int64 = !tensor.ints.empty();
-  bool placed = false;
-  switch (tensor.data_type) {
-    case kFloat:
-      placed = !has_int32 && !has_int64;
-      break;
-    case kInt64:
-      placed = !has_floats && !has_int32;
-      break;
-    default:  // kFloat16, kFloat8E4M3Fn, kInt32
-      placed = !has_floats && !has_int64;
-      break;
-  }
-  if (!placed)
-    return proto::malformed(std::format("tenseur {} : valeurs dans le champ d'un autre type", tensor.name));
-
-  if (auto ok = decode_int32_data(tensor, raw.int32_data); !ok) return std::unexpected(ok.error());
-  const std::size_t present = tensor.floats.size() + tensor.ints.size();
-  if (present != count) {
-    return proto::malformed(
-        std::format("tenseur {} : {} valeurs typées pour {} éléments", tensor.name, present, count));
-  }
-  return std::move(tensor);
-}
-
-std::expected<Tensor, Refusal> read_tensor(Bytes bytes) {
-  RawTensor raw;
-  auto ok = for_each_field(bytes, [&](const Field& field) -> std::expected<void, Refusal> {
-    switch (field.number) {
-      case 1:
-        return proto::append_int64s(field, raw.tensor.dims);
-      case 2: {
-        auto type = proto::as_int32(field);
-        if (!type) return std::unexpected(type.error());
-        raw.tensor.data_type = *type;
-        return {};
-      }
-      case 3:
-        raw.segmented = true;
-        return {};
-      case 4:
-        return proto::append_floats(field, raw.tensor.floats);
-      case 5:
-        return append_ints(field, raw.int32_data);
-      case 7:
-        return append_ints(field, raw.tensor.ints);
-      case 8:
-        return read_string(field, raw.tensor.name);
-      case 9:
-        if (field.wire != proto::WireType::Length) return proto::malformed("raw_data n'est pas une chaîne");
-        raw.raw = field.bytes;
-        return {};
-      case 13:
-        raw.external = true;
-        return {};
-      case 14: {
-        auto location = proto::as_int64(field);
-        if (!location) return std::unexpected(location.error());
-        raw.external = raw.external || *location == 1;
-        return {};
-      }
-      default:
-        return {};
-    }
-  });
-  if (!ok) return std::unexpected(ok.error());
-  return finish_tensor(std::move(raw));
-}
-
-std::expected<void, Refusal> push_tensor(const Field& field, std::vector<Tensor>& out) {
-  if (field.wire != proto::WireType::Length) return proto::malformed("tenseur : message attendu");
-  auto tensor = read_tensor(field.bytes);
-  if (!tensor) return std::unexpected(tensor.error());
-  out.push_back(std::move(*tensor));
-  return {};
-}
-
-std::expected<void, Refusal> read_attribute_field(const Field& field, Attribute& attr) {
-  switch (field.number) {
-    case 1:
-      return read_string(field, attr.name);
-    case 2: {
-      auto value = proto::as_float(field);
-      if (!value) return std::unexpected(value.error());
-      attr.f = *value;
-      return {};
-    }
-    case 3: {
-      auto value = proto::as_int64(field);
-      if (!value) return std::unexpected(value.error());
-      attr.i = *value;
-      return {};
-    }
-    case 4:
-      return read_string(field, attr.s);
-    case 5:
-    case 10:
-      return push_tensor(field, attr.tensors);
-    case 7:
-      return proto::append_floats(field, attr.floats);
-    case 8:
-      return append_ints(field, attr.ints);
-    case 9:
-      return push_string(field, attr.strings);
-    case 20: {
-      auto type = proto::as_int64(field);
-      if (!type) return std::unexpected(type.error());
-      if (*type < 0 || *type > static_cast<std::int64_t>(AttributeType::TypeProtos)) {
-        return proto::malformed(std::format("attribut {} : type {}", attr.name, *type));
-      }
-      attr.type = static_cast<AttributeType>(*type);
-      return {};
-    }
-    case 21:
-      return unsupported("attribut renvoyant à une fonction (ref_attr_name)");
-    default:
-      return {};  // graphes, tenseurs creux, doc : sans usage ici
-  }
-}
-
-std::expected<Attribute, Refusal> read_attribute(Bytes bytes) {
-  Attribute attr;
-  auto ok = for_each_field(bytes, [&](const Field& field) { return read_attribute_field(field, attr); });
-  if (!ok) return std::unexpected(ok.error());
-  return attr;
-}
+using namespace detail;
 
 std::expected<Node, Refusal> read_node(Bytes bytes) {
   Node node;
@@ -360,6 +33,7 @@ std::expected<Node, Refusal> read_node(Bytes bytes) {
         return read_string(field, node.op_type);
       case 5: {
         if (field.wire != proto::WireType::Length) return proto::malformed("attribut : message attendu");
+        if (node.attributes.size() >= kMaxAttributes) return proto::malformed("trop d'attributs sur un nœud");
         auto attr = read_attribute(field.bytes);
         if (!attr) return std::unexpected(attr.error());
         node.attributes.push_back(std::move(*attr));
@@ -392,6 +66,10 @@ std::expected<void, Refusal> read_dimension(Bytes bytes, ValueInfo& info) {
     return {};
   });
   if (!ok) return ok;
+  // Un rang au-delà de kMaxRank est refusé à l'import : le décodeur le dit dès la dimension qui le dépasse,
+  // sans accumuler des millions de dimensions vides (B44-01).
+  if (info.dims.size() >= kMaxRank)
+    return proto::malformed(std::format("{} : rang au-delà de {}", info.name, kMaxRank));
   info.dims.push_back(value);
   info.symbols.push_back(value >= 0 ? std::string{} : (symbol.empty() ? std::string{"?"} : symbol));
   return {};
@@ -437,6 +115,7 @@ std::expected<ValueInfo, Refusal> read_value_info(Bytes bytes) {
 
 std::expected<void, Refusal> push_value_info(const Field& field, std::vector<ValueInfo>& out) {
   if (field.wire != proto::WireType::Length) return proto::malformed("ValueInfoProto : message attendu");
+  if (out.size() >= kMaxValueInfos) return proto::malformed("trop d'entrées ou de sorties");
   auto info = read_value_info(field.bytes);
   if (!info) return std::unexpected(info.error());
   out.push_back(std::move(*info));
@@ -449,6 +128,7 @@ std::expected<Graph, Refusal> read_graph(Bytes bytes) {
     switch (field.number) {
       case 1: {
         if (field.wire != proto::WireType::Length) return proto::malformed("nœud : message attendu");
+        if (graph.nodes.size() >= kMaxNodes) return proto::malformed("trop de nœuds");
         auto node = read_node(field.bytes);
         if (!node) return std::unexpected(node.error());
         graph.nodes.push_back(std::move(*node));
@@ -457,6 +137,7 @@ std::expected<Graph, Refusal> read_graph(Bytes bytes) {
       case 2:
         return read_string(field, graph.name);
       case 5:
+        if (graph.initializers.size() >= kMaxInitializers) return proto::malformed("trop d'initialiseurs");
         return push_tensor(field, graph.initializers);
       case 11:
         return push_value_info(field, graph.inputs);
@@ -514,6 +195,7 @@ std::expected<Model, Refusal> read_onnx(std::span<const std::byte> bytes) {
       }
       case 8: {
         if (field.wire != proto::WireType::Length) return proto::malformed("opset : message attendu");
+        if (model.opsets.size() >= kMaxOpsets) return proto::malformed("trop de domaines d'opérateurs");
         auto opset = read_opset(field.bytes);
         if (!opset) return std::unexpected(opset.error());
         model.opsets.push_back(std::move(*opset));

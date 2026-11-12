@@ -9,8 +9,10 @@
 // DistilDRBA (kernels/spec/distil_drba.h) aussi, à la taille de travail : une passe de son graphe
 // par image intermédiaire, sur trois images ; il lit l'image d'après la paire, une image de retard.
 //
-// Ordre de la chaîne : RIFE à la taille de travail (720p), avant SPAN. RIFE y traite quatre fois
-// moins de pixels qu'à 1440p, et SPAN nettoie ensuite ses petits défauts.
+// Ordre de la chaîne : RIFE estime le mouvement à la taille de travail. Le warp et le mélange se font avant
+// SPAN (SPAN nettoie ensuite leurs petits défauts), ou après lui (warp_after_span : un SPAN par source au
+// lieu d'un par image créée) ; l'ordre Auto met le warp après SPAN au-dessus d'une sortie de 1080 lignes ou
+// dès ×3 (settings.h, warp_after_span).
 #pragma once
 
 #include <array>
@@ -74,7 +76,8 @@ struct UpscaleSetup {
   // « mouvement », drba_model.h, ou le fusionné à deux sorties) : le warp et le mélange se font ici, après
   // SPAN quand warp_after_span (un SPAN par source au lieu d'un par image créée).
   bool drba_motion = false;
-  Factor rife_factor{.num = 1, .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×8)
+  Factor rife_factor{.num = 1,
+                     .den = 1};  // ×num/den quand l'interpolation tourne (au plus ×10, limits::kRifeFactor)
   // --one-lane : tout sur la voie Upscale, sans recouvrement. Plus lent, mais le temps GPU de
   // chaque moteur redevient son coût propre au lieu d'inclure celui des autres voies.
   bool one_lane = false;
@@ -239,8 +242,18 @@ class UpscaleStage final : public RingStage {
   bool take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec);
   // Les mesures de la paire (image précédente, image en cours) : lancées en avance si elles l'ont été.
   std::expected<gpu::PairScores, Refusal> pair_scores();
-  // La suivante de frame, si elle attend, ingérée et mesurée contre frame.
-  std::expected<void, Refusal> look_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec);
+  // La suivante de frame, si elle attend, ingérée et mesurée contre frame. La mesure de la paire n'est lancée
+  // que si elle peut servir (next_pair_measured, ou always_scores pour les dessins lissés) ; pair_scores la
+  // fait sinon à la demande.
+  std::expected<void, Refusal> look_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec,
+                                          bool always_scores = false);
+  // L'interpolation au repos (×1 sans Rapide, fenêtre cachée) ne lit pas la mesure de la paire suivante
+  // (B09-04).
+  bool next_pair_measured() const;
+  // RIFE mouvement va d'emblée à l'instant t, sans passe au milieu : sans « garder les poses », quand la
+  // paire précédente bougeait fort (plusieurs instants), ou quand la paire n'a qu'un instant, hors du milieu
+  // (B09-01). La même règle prépare l'entrée de RIFE (prepare_rife_input) et décide la paire.
+  bool motion_direct(float t) const;
   // rife_in() à l'instant t pour la paire en cours : ses images y sont écrites une fois par paire
   // (prepare_rife_input), l'instant seul ensuite (rife_time), quand le backend le sait ; rien si
   // l'instant y est déjà.
@@ -270,6 +283,9 @@ class UpscaleStage final : public RingStage {
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
   std::expected<void, Refusal> span_current();
+  // Le tampon de SPAN de l'image arrivée, dès les mesures de sa paire (reuse_span_ connu), et non à son
+  // premier SPAN : le warp de la paire prend spanned(current_) avant que span_current enfile SPAN.
+  void pick_span_buffer();
   const gpu::Tensor& spanned(std::uint32_t index) const { return spanned_[span_of_[index]]->tensor(); }
   bool spanned_now_ = false;
   std::array<std::uint32_t, 2> span_of_{0, 1};  // tampon de spanned_ de chaque image de rgb_

@@ -60,6 +60,9 @@ struct DecoderOptions {
   // logicielle 4:4:4 garde sa chroma entière jusqu'à l'agrandissement et une source 12 bits ses 12 bits,
   // au lieu du 4:2:0 10 bits (A15-07, A49-13). Faux : tout se ramène au 4:2:0 8 ou 10 bits.
   bool full_host_formats = false;
+  // Avec full_host_formats : la chaîne lit aussi le 4:2:2 16 bits (Yuv422p16), qui garde alors la chroma
+  // entière en hauteur au lieu d'être réduit en 4:2:0 (ingestion TensorRT seulement, B01-03).
+  bool host_422 = false;
   // Images décodées que l'aval tient à la fois (SourceLoop, l'étage gpu, le backend), [0, 32].
   // Non nul sous NVDEC : les surfaces sortent sans copie de sécurité
   // (AV_HWACCEL_FLAG_UNSAFE_OUTPUT) et extra_hw_frames monte à ce nombre au moins. Une image

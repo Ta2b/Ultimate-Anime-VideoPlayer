@@ -14,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/model_index.h"
+#include "core/update_manifest.h"
 
 using namespace ajp;
 using namespace ajp::app::play;
@@ -92,17 +93,26 @@ TEST_CASE("Moteurs de la release : hors de la release ou de pypi.nvidia.com, éc
 // L'index des trois plateformes signé par la clé de test kTestKey (signature kTestSignature, openssl
 // pkeyutl -sign -rawin) : l'archive vit dans la release fixe trt-abc du dépôt, comme en CI.
 std::string signed_index() {
-  std::string text = "version = 1\n";
+  std::string text = "version = 1\ntag = \"v1.2.3\"\n";
   for (const std::string_view platform : {"linux", "windows", "macos"})
     text +=
         engine(platform, "https://github.com/o/r/releases/download/trt-abc/m.tar.gz", std::string(64, 'a'));
   return text;
 }
-constexpr std::string_view kTestKey = "adf8860afcb60ac5a6de8c2d2ee667bd04e4e88f85570c5fe73b2c75f4c3358f";
+constexpr std::string_view kTestKey = "6e9a2010904180bcac497c94a59aa5ebf48a01578501b17a2493a8782ffb3a3f";
 constexpr std::string_view kTestSignature =
+    "57c0ffe2b77eb8d212e7e4c78339aed31b2c85e8a87181035432ec25098210ecf3188fdce24eada703e2f9074a94a948e3449739"
+    "e47e74046da339ff45105b0b";
+// Le même index avec « tag = "v9.9.9" », signé par la même clé : celui d'une autre release.
+constexpr std::string_view kOtherTagSignature =
+    "a97b27690df97e7d270f16041e1004072caf2cde98d54ba2631f1af4c70bd352a1cb48246b4b3ced7a571e4062adb06c000206c9"
+    "b11bfe8f4c1bf70a9a50ca02";
+// L'index d'avant l'étiquette (sans « tag »), signé par une ancienne clé de test : la signature est bonne,
+// mais l'index ne dit pas de quelle release il est.
+constexpr std::string_view kTaglessKey = "adf8860afcb60ac5a6de8c2d2ee667bd04e4e88f85570c5fe73b2c75f4c3358f";
+constexpr std::string_view kTaglessSignature =
     "b0c2c0c4053091bf05d9dabcb7c0797a85e5d7079e487d9f3f18c4ffaa4c2059dc668021a86a5200026fa6d73efd4f99b69a80ff"
-    "1158"
-    "4d6c3fca3a95a3528e0f";
+    "11584d6c3fca3a95a3528e0f";
 
 void write(const fs::path& file, std::string_view text) {
   std::ofstream(file, std::ios::binary) << text;
@@ -235,7 +245,7 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   CHECK_FALSE(release_index_due(cache));
   // La copie gardée et signée sert toujours.
   EngineCatalog catalog = empty_catalog();
-  merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)});
+  merge_release_copy(catalog, read_release_index(cache), "o/r", {std::string(kTestKey)}, "1.2.3");
   CHECK(catalog.packages.size() == 1);
   // Pas de nouvel essai tout de suite ; quelques heures après, si.
   refresh_release_index(cache, "o/r", "1.2.3", offline, std::stop_token{});
@@ -258,4 +268,64 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
   CHECK_FALSE(fs::exists(dir / "engines-nvidia.lock.tried"));
   CHECK(fs::exists(cache));
   fs::remove_all(dir);
+}
+
+TEST_CASE(
+    "Moteurs de la release : un index signé d'une autre release, ou sans étiquette, est écarté (B51-06)",
+    "[app][install]") {
+  const fs::path dir = fs::temp_directory_path() / "ajp-online-tag";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const fs::path cache = dir / "engines-nvidia.lock";
+  const std::vector<std::string> keys{std::string(kTestKey), std::string(kTaglessKey)};
+  CHECK(release_index_tag(signed_index()) == "v1.2.3");
+
+  // Le bon index, signé, sous la bonne étiquette : pris.
+  write(cache, signed_index());
+  write(dir / "engines-nvidia.lock.sig", std::string(kTestSignature) + "\n");
+  EngineCatalog catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
+  CHECK(catalog.packages.size() == 1);
+
+  // Le même index recopié dans la release d'une autre version : écarté, malgré sa signature valide.
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.4", keys, UpdateFetch());
+  CHECK(catalog.packages.empty());
+  CHECK(catalog.problem.contains("v1.2.4"));
+
+  // Un index qui dit une autre étiquette (signé lui aussi).
+  std::string other = signed_index();
+  other.replace(other.find("v1.2.3"), 6, "v9.9.9");
+  write(cache, other);
+  write(dir / "engines-nvidia.lock.sig", std::string(kOtherTagSignature) + "\n");
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
+  CHECK(catalog.packages.empty());
+
+  // Un index d'avant l'étiquette : sa signature est bonne, mais il ne dit pas de quelle release il est.
+  std::string tagless = signed_index();
+  tagless.erase(tagless.find("tag = "), std::string("tag = \"v1.2.3\"\n").size());
+  write(cache, tagless);
+  write(dir / "engines-nvidia.lock.sig", std::string(kTaglessSignature) + "\n");
+  catalog = empty_catalog();
+  add_release_engines(catalog, cache, "o/r", "1.2.3", keys, UpdateFetch());
+  CHECK(catalog.packages.empty());
+  CHECK_FALSE(catalog.problem.empty());
+  fs::remove_all(dir);
+}
+
+// La même clé signe le manifeste des mises à jour et l'index des moteurs, sans préfixe de domaine dans le
+// message signé (B26-12) : la séparation tient au format. Un fichier signé pour l'un ne se lit pas comme
+// l'autre.
+TEST_CASE("Moteurs de la release : un index ne se lit pas comme un manifeste, ni l'inverse (B26-12)",
+          "[app][install]") {
+  CHECK_FALSE(core::parse_update_manifest(signed_index()));
+  const std::string manifest =
+      "version = \"99.0.0\"\nexpires = \"2099-12-31\"\nnotes_url = \"https://example.invalid/n\"\n";
+  REQUIRE(core::parse_update_manifest(manifest));
+  const auto as_index = core::read_engine_index(manifest);
+  CHECK((!as_index || as_index->packages.empty()));
+  EngineCatalog catalog = empty_catalog();
+  CHECK(merge_release_index(catalog, manifest, kPrefix) == 0);
+  CHECK(catalog.packages.empty());
 }

@@ -418,3 +418,105 @@ TEST_CASE("EDID à deux sources : le journal montre le pic et le noir de chaque 
   CHECK(line.contains("DisplayID d'abord donnerait pic 950 et noir 0.00010"));
   CHECK(ajp::app::play::describe_for_log(both).ends_with(line));
 }
+
+TEST_CASE(
+    "Écran de la fenêtre : « DP-1 » ne se lit pas dans « eDP-1 », deux cartes départagées par le nom "
+    "(B11-08)",
+    "[app][edid]") {
+  using ajp::app::play::DisplayFacts;
+  using ajp::app::play::pick_display;
+  DisplayFacts external;
+  external.connector = "card1-DP-1";
+  external.name = "MAG 272U";
+  DisplayFacts laptop;
+  laptop.connector = "card1-eDP-1";
+  laptop.name = "Panel";
+  // Portable RTX : la fenêtre sur l'écran interne. Avant, « DP-1 » se trouvait dans « eDP-1 » et le premier
+  // de la liste, l'écran externe, était pris.
+  CHECK(pick_display({external, laptop}, "eDP-1")->connector == "card1-eDP-1");
+  CHECK(pick_display({external, laptop}, "DP-1")->connector == "card1-DP-1");
+  // Deux cartes, chacune son « DP-1 » : SDL ne dit pas la carte, le nom de l'EDID tranche entre elles.
+  DisplayFacts igpu;
+  igpu.connector = "card0-DP-1";
+  igpu.name = "LG TV";
+  DisplayFacts dgpu;
+  dgpu.connector = "card1-DP-1";
+  dgpu.name = "MAG 272U";
+  CHECK(pick_display({igpu, dgpu}, "MAG 272U (DP-1)")->connector == "card1-DP-1");
+  CHECK(pick_display({igpu, dgpu}, "LG TV (DP-1)")->connector == "card0-DP-1");
+}
+
+TEST_CASE("Écran de la fenêtre sous Windows : par son périphérique, pas par son nom (B34-02, B37-08)",
+          "[app][edid]") {
+  using ajp::app::play::DisplayFacts;
+  using ajp::app::play::monitor_instance_from_interface;
+  using ajp::app::play::pick_display;
+  // Le chemin d'interface d'EnumDisplayDevices et l'identifiant d'instance de SetupAPI : la même clé.
+  CHECK(monitor_instance_from_interface(
+            "\\\\?\\DISPLAY#GSM5B08#5&2a0b3e4c&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}") ==
+        "DISPLAY\\GSM5B08\\5&2A0B3E4C&0&UID4352");
+  CHECK(monitor_instance_from_interface("DISPLAY\\GSM5B08\\5&2A0B3E4C&0&UID4352") ==
+        "DISPLAY\\GSM5B08\\5&2A0B3E4C&0&UID4352");
+  // Deux écrans du même modèle, nom SDL générique : avant, le premier du registre, quel que soit l'écran de
+  // la fenêtre (OLED et VRR de l'autre).
+  DisplayFacts first;
+  first.connector = "DISPLAY\\GSM5B08\\5&2A0B3E4C&0&UID4352";
+  first.name = "LG ULTRAGEAR";
+  first.oled = false;
+  DisplayFacts second = first;
+  second.connector = "DISPLAY\\GSM5B08\\5&2A0B3E4C&0&UID4353";
+  second.oled = true;
+  const auto picked =
+      pick_display({first, second}, "Generic PnP Monitor",
+                   "\\\\?\\DISPLAY#GSM5B08#5&2a0b3e4c&0&UID4353#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}");
+  REQUIRE(picked);
+  CHECK(picked->oled);
+  CHECK(picked->connector == second.connector);
+  // Un chemin inconnu (écran virtuel) : la règle des noms d'avant.
+  CHECK(pick_display({first, second}, "LG ULTRAGEAR", "\\\\?\\DISPLAY#XXX0000#1#{x}")->connector.empty());
+}
+
+TEST_CASE("DisplayID 1.x : ses étiquettes ne se lisent pas comme celles de la 2.0 (B11-11)",
+          "[app][display]") {
+  using ajp::app::play::OledSource;
+  using ajp::app::play::parse_edid;
+  // Le même bloc 0x21 « AMOLED » que oled_edid(), dans une section qui se dit DisplayID 1.3.
+  std::vector<std::uint8_t> edid = oled_edid();
+  edid[129] = 0x13;
+  const auto d = parse_edid(edid);
+  CHECK_FALSE(d.displayid_oled);
+  CHECK(d.source != OledSource::DisplayId);
+  CHECK(parse_edid(oled_edid()).source == OledSource::DisplayId);  // 2.0 : lu comme avant
+}
+
+TEST_CASE("VRR armé lu dans DRM : propriété absente = inconnu, jamais « non armé » (B11-01)",
+          "[app][display]") {
+  using ajp::app::play::vrr_armed_from;
+  // Avant : VRR_ENABLED, propriété atomique, manquait à un descripteur sans DRM_CLIENT_CAP_ATOMIC, et se
+  // lisait 0, donc « non armé » en plein écran sous KDE avec le VRR engagé.
+  CHECK_FALSE(vrr_armed_from(42, std::nullopt).has_value());
+  CHECK(vrr_armed_from(42, 1) == true);
+  CHECK(vrr_armed_from(42, 0) == false);
+  CHECK(vrr_armed_from(0, std::nullopt) == false);  // sortie sans CRTC : rien n'est armé
+}
+
+TEST_CASE("Contrat d'écran sous Windows : le pic du grade (DXGI) passe devant marge × blanc (B11-10)",
+          "[app][edid]") {
+  using ajp::app::play::contract_of;
+  using ajp::app::play::DisplayFacts;
+  using Source = ajp::render::DisplayContract::PeakSource;
+  // Étalonnage HDR de Windows à 950 nits, SDL dit marge 2 × blanc 400 = 800 : une seule source, celle du
+  // grade.
+  const auto c = contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt, 400.0, 950.0);
+  CHECK(c.panel_peak_nits == 950.0);
+  CHECK(c.peak_source == Source::Compositor);
+  CHECK(contract_of(DisplayFacts{}, std::nullopt, 2.0, std::nullopt, 400.0).panel_peak_nits == 800.0);
+}
+
+TEST_CASE("Pic automatique : un téléviseur de 3000 nits est exploité (B37-09)", "[app][edid]") {
+  using ajp::app::play::auto_peak_nits;
+  CHECK(auto_peak_nits(3000.0) == 3000);
+  CHECK(auto_peak_nits(9000.0) == 4000);
+  CHECK(auto_peak_nits(150.0) == 200);
+  CHECK(auto_peak_nits(std::nullopt) == 1000);
+}

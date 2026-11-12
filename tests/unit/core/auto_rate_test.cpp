@@ -89,21 +89,19 @@ TEST_CASE("auto : le plafond suit l'écran", "[core][auto_rate]") {
 
 TEST_CASE("auto : les demi-paliers et le pas fin suivent l'écran", "[core][auto_rate]") {
   CHECK(auto_ceiling(165.0, 23.976, 2) == 13);                  // ×6,88 : tout l'écran, plus de plafond à ×6
-  CHECK(auto_ceiling(165.0, 23.976, kFineGranularity) == 166);  // 165 i/s au fps près
-  CHECK(auto_ceiling(240.0, 23.976, 1) == 8);                   // ×8 : la limite des facteurs du lecteur
+  CHECK(auto_ceiling(165.0, 23.976, kFineGranularity) == 165);  // 164,84 i/s : jamais au-dessus (B12-01)
+  CHECK(auto_ceiling(240.0, 23.976, 1) == 10);                  // ×10 : la limite des facteurs (B12-06)
   CHECK(auto_ceiling(120.0, 23.976, 2) == 10);                  // ×5 : 119,88 tient, ×5,5 non
   CHECK(auto_ceiling(100.0, 23.976, 2) == 8);                   // ×4,5 : 107,9 ne tient pas
   CHECK(auto_ceiling(110.0, 24.0, 2) == 9);
   CHECK(auto_ceiling(0.0, 24.0, 2) == 2);
-  CHECK(auto_ceiling(100.0, 24.0, kFineGranularity) == 101);  // ×4,2 : 100,8 i/s, à 1 % près
+  CHECK(auto_ceiling(100.0, 24.0, kFineGranularity) == 100);  // 100 i/s pile ; ×101/24 ferait 101
   CHECK(auto_ceiling(0.0, 24.0, kFineGranularity) == kFineGranularity);
   CHECK(ajp::core::auto_granularity(7) == kFineGranularity);
   CHECK(ajp::core::auto_granularity(0) == 1);
 }
 
 TEST_CASE("auto : les images manquées font descendre vite", "[core][auto_rate]") {
-  CHECK(ajp::core::auto_overloaded(707, 7900));
-  CHECK_FALSE(ajp::core::auto_overloaded(29, 5731));
   AutoRate rate(6);
   std::int64_t now = 10 * kSecond;
   rate.seed(400, now);  // ×4 mémorisé : départ ×3
@@ -493,14 +491,14 @@ TEST_CASE("auto : le moteur muet au plancher ne monte pas d'essai", "[core][auto
 }
 
 TEST_CASE("auto : à fréquence fixe, seuls les paliers calés sur l'écran (P3.33)", "[auto_rate]") {
-  using ajp::core::locked_steps;
+  using ajp::core::auto_limits;
   // 23,976 i/s : à 60 Hz, ×2,5 (une image par rafraîchissement) ; à 144 Hz, ×1,5, ×2, ×3 et ×6.
-  CHECK(locked_steps(60.0, 23.976, 2) == std::vector<int>{2, 5});
-  CHECK(locked_steps(144.0, 23.976, 2) == std::vector<int>{2, 3, 4, 6, 12});
-  CHECK(locked_steps(0.0, 23.976, 2).empty());
+  CHECK(auto_limits(60.0, 23.976, false, 0).locked == std::vector<int>{2, 5});
+  CHECK(auto_limits(144.0, 23.976, false, 0).locked == std::vector<int>{2, 3, 4, 6, 12});
+  CHECK(auto_limits(0.0, 23.976, false, 0).locked.empty());
   ajp::core::AutoRate rate(5, 2);
   CHECK(rate.step() == 4);  // ×2 au départ
-  rate.set_locked(locked_steps(60.0, 23.976, 2));
+  rate.set_locked(auto_limits(60.0, 23.976, false, 0).locked);
   CHECK(rate.step() == 2);  // ×2 ne cale pas à 60 Hz : ×1 en attendant de tenir ×2,5
 }
 

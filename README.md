@@ -30,12 +30,13 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
 - **Agrandissement ×2** par les modèles SPAN d'AnimeJaNai HD V3.1 : SPAN double la résolution de travail,
   traits nets et aplats propres. Aux niveaux Qualité et Ultra, une source jusqu'à 1080p entre entière dans
   SPAN (une 1080p sort en 4K) avec le modèle le plus fin (Balanced, b8f64). Aux niveaux Rapide et Normal, la
-  source est d'abord réduite à la moitié de l'écran ou moins (540p ou 720p), puis SPAN la double ; libplacebo
-  ajuste ensuite à la taille de l'écran.
+  source est d'abord réduite à la moitié de l'écran ou moins (de 480p à 720p selon le niveau et l'écran, voir le
+  tableau des niveaux), puis SPAN la double ; libplacebo ajuste ensuite à la taille de l'écran.
 - **Interpolation** par RIFE 4.22 lite, ou 4.25 aux niveaux Qualité et Ultra (DistilDRBA au choix). Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
-- **HDR anime** : l'anime SDR passe en HDR10 avec un grade guidé plan par plan. Le rendu est lumineux : une
+- **HDR anime** : l'anime SDR passe en HDR10 avec un grade à luminosité stable d'un plan à l'autre (sur un écran SDR, la
+  courbe est réglée plan par plan). Le rendu est lumineux : une
   surface blanche sort vers 70 % du pic de l'écran (690 nits sur un écran de 1 000 nits), et les éclats
   (lumières, effets) montent au-dessus, vers le pic. Le noir pur reste noir, les scènes de nuit gardent leurs
   détails. Sur un écran SDR, le même grade s'applique en SDR : les surfaces gardent leur niveau jusqu'à 90 % du
@@ -70,8 +71,9 @@ Un assistant de quelques écrans, tous sautables :
    lecteur.
 5. **Prêt** : « Calibrer maintenant » essaie plusieurs réglages sur une séquence exigeante et garde la
    meilleure combinaison que votre PC tient sans saccade ; « Régler moi-même » garde le niveau Auto estimé
-   pour la carte. La calibration prend de 5 à 30 minutes selon l'écran : l'assistant affiche l'estimation
-   pour votre machine, plus longue avec TensorRT, qui construit ses moteurs pendant l'essai.
+   pour la carte. La calibration prend environ 5 minutes en Vulkan, et environ 25 minutes avec TensorRT sur un
+   poste fixe (40 sur un portable), car TensorRT construit ses moteurs pendant l'essai. L'assistant affiche
+   l'estimation pour votre machine ; un essai limite est rejoué, ce qui peut l'allonger.
 
 Ensuite, `p` ouvre le menu des paramètres et `Tab` les statistiques à l'écran.
 
@@ -88,11 +90,13 @@ règle la chaîne selon l'écran et la vidéo ouverte. Changer un réglage à la
 | Qualité | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 2080, RTX 3070 à 3090, RTX 4070, RTX 5070, RX 6800 à 7800, RX 9060, Apple Pro et Max, RTX 4080 à 5090 portables |
 | Ultra | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 4080 à 5090, RX 7900, RX 9070, Apple Ultra |
 
-La priorité Fluidité descend d'un cran (720p au plus en Qualité et Ultra), la priorité Image monte d'un cran.
-La calibration, qui mesure votre carte, peut monter plus haut. En mode **Rapide** de l'interpolation (le
+La priorité Fluidité descend la résolution de travail d'un cran (720p au plus en Qualité et Ultra) et relève
+d'un cran le plafond du multiplicateur (jusqu'à ×6). La priorité Image abaisse ce plafond d'un cran (×2 au
+minimum) ; elle ne monte pas la résolution aux niveaux Qualité et Ultra, déjà au plafond de 1080p. La calibration, qui mesure votre carte, peut monter plus haut. En mode **Instantané** de l'interpolation (le
 défaut), le multiplicateur n'a pas de plafond : il suit la fréquence de l'écran (jusqu'à ×6 sur un écran
 144 Hz pour une source à 23,976 i/s), et seul le plafond de cadence choisi dans le menu le borne. Le
-multiplicateur du tableau ne vaut qu'en mode **Stable**. La table complète des cartes est
+multiplicateur du tableau ne vaut qu'en mode **Stable** (le niveau Rapide du tableau n'a rien à voir avec ce
+mode). La table complète des cartes est
 [`data/gpu_tiers.toml`](data/gpu_tiers.toml).
 
 ## Le menu
@@ -135,13 +139,15 @@ réglages avancés.
 | `.` / `,` | image par image |
 | `p` | paramètres |
 | Tab | statistiques |
-| Ctrl+0 | sans traitement |
+| Ctrl+0 | sans grade ni interpolation (l'agrandissement reste) |
 | Ctrl+G / Ctrl+I | grade / interpolation |
 | `q` | quitter |
 
 Neuf actions se changent dans `user.toml` (section `[keys]`, dossier des données du lecteur) : `pause`,
 `seek_backward`, `seek_forward`, `step_forward`, `step_backward`, `processing_off`, `toggle_grade`,
-`toggle_interpolation` et `toggle_osd`. Les autres touches du tableau sont fixes et passent avant `[keys]`.
+`toggle_interpolation` et `toggle_osd`. Les autres touches du tableau sont fixes et passent avant `[keys]` :
+`Ctrl` + `-` et `Ctrl` + `+` (délai du son) ne peuvent pas être données à une action, le lecteur le dit au
+chargement.
 `ajp --help` liste aussi les options de la ligne de commande.
 
 ## Moteurs et cartes graphiques
@@ -153,13 +159,15 @@ Neuf actions se changent dans `user.toml` (section `[keys]`, dossier des donnée
 | Apple Silicon | Core ML | livré avec le lecteur macOS |
 
 TensorRT construit ses moteurs pour votre carte : quelques minutes pour chaque taille d'image, puis de
-nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés d'une lecture à l'autre.
+nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés d'une lecture à l'autre, jusqu'à 45 jours sans usage et dans la limite de
+8 Gio (les moins récents partent d'abord).
 Détails : [`docs/moteurs.md`](docs/moteurs.md).
 
 ## Mises à jour
 
-Au démarrage, le lecteur regarde s'il existe une nouvelle version et vous prévient (ou l'installe au lancement
-suivant, ou ne fait rien : Général > Application). Les manifestes sont signés (Ed25519) ; vos réglages sont
+Le lecteur regarde une fois par jour (ou à chaque lancement, au choix) s'il existe une nouvelle version et vous
+prévient avec le lien de la version ; vous l'installez vous-même. « Jamais » ne vérifie rien : Général >
+Application. Les manifestes sont signés (Ed25519) ; vos réglages sont
 gardés.
 
 ## Construire depuis les sources
@@ -184,7 +192,8 @@ AJP_DEPS_PREFIX=~/ajp-deps tools/release/package-macos.sh
 ```
 
 Les paquets se font avec `tools/release/package-linux.sh` et `package-windows.ps1` ; le paquet TensorRT avec
-`tools/release/trt-package.sh` sur un poste NVIDIA. Aucun fichier de NVIDIA n'est dans nos archives.
+`tools/release/trt-package.sh` (Linux) ou `tools/release/attach-nvidia-windows.ps1` (Windows) sur un poste
+NVIDIA. Aucun fichier de NVIDIA n'est dans nos archives.
 
 Pour reprendre le code : [`CLAUDE.md`](CLAUDE.md) (guide de reprise), [`docs/README.md`](docs/README.md) (carte
 des documents), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) et [`docs/adr/`](docs/adr/README.md).

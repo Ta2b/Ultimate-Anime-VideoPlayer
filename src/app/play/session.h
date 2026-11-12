@@ -198,6 +198,10 @@ class Session {
   std::int64_t idle_wait_us(std::int64_t host_now);
   // La fenêtre a changé d'écran : nouvelle période et nouvelle fréquence, la synchro les suit.
   void set_display(std::int64_t period_us, double hz);
+  // La fréquence et la période adoptées : celles du retour de présentation quand la grille des vblanks est
+  // mesurée (164,78 Hz et non les 165 annoncés), sinon celles données à set_display ; 0 : inconnues.
+  double display_hz() const { return config_.display_hz; }
+  std::int64_t display_period_us() const { return config_.display_period_us; }
   bool resize_asked() const { return resized_; }  // la source a changé de taille : rouvrir la chaîne
   bool quit_asked() const { return quit_; }       // q ou fenêtre fermée, pas la fin du fichier
   bool paused() const { return paused_; }
@@ -233,8 +237,8 @@ class Session {
   void measure_latency(std::int64_t host_now);  // les images écrites depuis le tour d'avant
   void choose(std::int64_t host_now);
   bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
-  const subs::SubtitleFrame* subtitles_for(std::int64_t pts_us);
   void check_end(std::int64_t host_now);
+  ShowRequest show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const;
   // Une présentation vient d'être rendue. Si c'est la première image d'une époque, l'horloge part de son pts
   // maintenant, et --seconds compte d'ici : partie au choix de l'image, elle courait pendant ce premier rendu
   // (la compilation des shaders, plus d'une seconde sous lavapipe sans cache) et la lecture sautait autant
@@ -349,6 +353,16 @@ class Session {
     friend bool operator==(const SubtitleLook&, const SubtitleLook&) = default;
   };
   static SubtitleLook look_of(const subs::SubtitleFrame* frame);
+  static bool same_look(const SubtitleLook& shown, const subs::SubtitleFrame* frame);
+  // Les sous-titres de l'image montrée à ce tour : le défaut du clignotement (une image sans réponse alors
+  // que d'autres attendent, compté à la présentation, B13-04) et le changement d'aspect, comparé en place
+  // (B13-08).
+  struct SubtitleTick {
+    const subs::SubtitleFrame* frame = nullptr;
+    bool gap = false;
+    bool changed = false;
+  };
+  SubtitleTick subtitles_now();
   SubtitleLook shown_subtitles_;
   OutputSize shown_size_;         // taille de sortie de la dernière présentation
   std::int64_t shown_at_us_ = 0;  // instant hôte de la dernière présentation
@@ -381,9 +395,10 @@ class Session {
   void pace(const RingFrame& frame, std::int64_t visible_us);
   // Synchro sur l'écran : la vitesse qui cale la sortie, demandée quand elle change.
   void follow_display();
-  // Le remplissage de la file, lissé : une présentation qui a attendu plus d'un quart de période compte
-  // pleine.
-  void note_queue_wait(std::int64_t waited_us, std::int64_t period);
+  // Le remplissage de la file de l'écran, lissé : une acquisition qui a attendu une image libre (plus d'un
+  // quart de période, et au moins kAcquireBlockedUs) a trouvé la file FIFO pleine (B13-02 : c'est
+  // l'acquisition qui attend l'écran, pas swap_buffers).
+  void note_queue_wait(std::int64_t acquire_us, std::int64_t period);
   std::int64_t display_period() const;  // la période de l'écran, connue, mesurée ou supposée
   std::int64_t display_delay_us(std::int64_t period) const;
 
@@ -392,7 +407,10 @@ class Session {
   // mesurée des vblanks, seulement quand la vitesse est calée sur l'écran (speed_locked_).
   core::PhaseTrim phase_trim_;
   bool speed_locked_ = false;
-  double queue_fill_ = 0.0;         // part récente des présentations qui ont attendu une place en file
+  double queue_fill_ = 0.0;  // part récente des présentations qui ont attendu une place en file
+  // B13-03 : la file tenue pour pleine, avec hystérésis (entrée au-dessus de 0,6, sortie sous 0,4) : sans
+  // elle, un remplissage autour de 0,5 faisait changer le délai visible d'une période à chaque présentation.
+  bool queue_full_ = false;
   std::int64_t presented_seq_ = 0;  // présentations réussies (PresentRecord::seq)
 };
 

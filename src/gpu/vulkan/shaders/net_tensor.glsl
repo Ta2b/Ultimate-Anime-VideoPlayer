@@ -68,13 +68,16 @@ uint linear_invocation() {
 }
 
 #ifdef AJP_NET_F16
+// Conversion en float16 saturée (B49-02) : au-delà de ±65 504, float16_t(v) donne ±Inf, que les couches
+// suivantes propagent en NaN ; ici la valeur se plafonne au plus grand float16 fini. Un NaN reste un NaN.
+float16_t to_half(float v) { return float16_t(isnan(v) ? v : clamp(v, -65504.0, 65504.0)); }
 #define AJP_NET_BUFFER(b, name, access)                                       \
   layout(std430, binding = b) access buffer name##F { float v[]; } name##_f; \
   layout(std430, binding = b) access buffer name##H { float16_t v[]; } name##_h;
 #define AJP_LOAD(name, type, i) ((type) == 1u ? float(name##_h.v[i]) : name##_f.v[i])
 #define AJP_STORE(name, type, i, value) \
   if ((type) == 1u) {                   \
-    name##_h.v[i] = float16_t(value);   \
+    name##_h.v[i] = to_half(value);      \
   } else {                              \
     name##_f.v[i] = (value);            \
   }

@@ -28,6 +28,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\ajp.exe
+SetupIconFile=ajp.ico
 DisableProgramGroupPage=yes
 
 [Languages]

@@ -533,8 +533,8 @@ std::string play_usage(bool debug) {
       "Keys: space pause, ← → seek 5 s, ↑ ↓ volume, m mute, f full screen (Esc leaves it), q quit,\n"
       "  a next audio track, j next subtitles, n / Shift+n next / previous episode,\n"
       "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, z / x\n"
-      "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 no processing,\n"
-      "  Ctrl+G grade, Ctrl+I interpolation.\n",
+      "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 neither grade nor\n"
+      "  interpolation (the upscaling stays), Ctrl+G grade, Ctrl+I interpolation.\n",
       kDefaultModelFile, kDefaultRifeFile);
   if (!debug) return usage + "Trial options: ajp --debug --help\n";
   return usage +
@@ -557,14 +557,16 @@ std::string play_usage(bool debug) {
          "  --skip-held            playback: an instant identical to the shown frame is neither computed "
          "nor\n"
          "                         written (trial; off by default)\n"
-         "  --anime-shots          the anime HDR grade decided per shot (default): surfaces anchored at ±5%, "
-         "highlight\n"
-         "                         headroom of the shot, changed at the cut frame; --no-anime-shots: fixed "
-         "lift\n"
-         "  --fast-steady          trial: Fast mode at a constant step, N frames per held source in a shot\n"
+         "  --anime-shots          SDR output only: the grade decided per shot (default); on HDR output the "
+         "lift is\n"
+         "                         fixed whatever this says; --no-anime-shots: fixed lift on SDR too\n"
+         "  --fast-steady          trial: Instant mode at a constant step, N frames per held source in a "
+         "shot\n"
          "  --smooth-drawings      trial: a drawing held two frames blends into motion (motion RIFE)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
-         "  --rife-warm            trial: calm pairs reuse the coarse RIFE blocks of the previous pair\n"
+         "  --rife-warm            trial: calm pairs reuse the coarse RIFE blocks of the previous pair;\n"
+         "                         trades quality for speed, neither measured (ghosting if a calm shot\n"
+         "                         speeds up)\n"
          "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
          "                         --no-ring-watcher: the display polls)\n"
          "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"
@@ -575,7 +577,7 @@ std::string play_usage(bool debug) {
          "                         --no-vsync-index: the clock)\n"
          "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
          "                         --no-present: open, the former presentation\n"
-         "  --no-vrr               fixed refresh screen even if VRR is armed (Fast mode trial)\n";
+         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,

@@ -41,12 +41,14 @@ extern "C" {
 #include "app/play/crash_dump.h"
 #include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
+#include "app/play/latest_writer.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
 #include "app/play/paths.h"
 #include "app/play/player.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
 #include "app/play/updater.h"
@@ -76,6 +78,16 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;  // NOLINT
 #endif
 
 namespace {
+
+// Avant SDL_Init : les erreurs de FFmpeg vont au journal (ses avertissements de sonde sont du bruit), et SDL
+// reçoit le nom, la version et l'identifiant de l'application (B19-01). L'identifiant devient l'app_id
+// Wayland et le WM_CLASS X11 : le bureau rattache la fenêtre à la fiche .desktop (icône, épinglage).
+void prepare_libraries() {
+  ajp::media::route_ffmpeg_log_to_journal();
+  SDL_SetAppMetadata(std::string(ajp::app::play::kAppName).c_str(),
+                     std::string(ajp::app::play::installed_version()).c_str(),
+                     std::string(ajp::app::play::kAppId).c_str());
+}
 
 // SDL rend ses chemins en UTF-8, quel que soit le système.
 std::filesystem::path sdl_path(const char* path) {
@@ -179,6 +191,8 @@ void start_diagnostics(const std::filesystem::path& settings_dir, const std::fil
   play::set_report_log_file(log_file);
   play::note_report_fact("ajp", play::installed_version());
   play::note_report_fact("Système", play::os_description());
+  if (const std::string build = play::build_id_description(); !build.empty())
+    play::note_report_fact("Build", build);
   if (!settings_dir.empty() && play::begin_session(settings_dir))
     ajp::log_channel("app")->warn(
         "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
@@ -232,6 +246,30 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
   execv(executable.c_str(), arguments.data());
   return 1;  // execv ne revient que sur un échec
 #endif
+}
+
+// B31-04 : la relance qu'une fermeture bloquée sur le GPU fait elle-même (relaunch_target.h : exit_stuck),
+// avec les arguments du lancement. Posés une fois par run_player, lus par le garde sur son thread.
+struct StuckRelaunch {
+  std::filesystem::path executable;
+  int argc = 0;
+  char** argv = nullptr;
+};
+StuckRelaunch& stuck_relaunch_args() {
+  static StuckRelaunch args;
+  return args;
+}
+void relaunch_when_stuck() {
+  const StuckRelaunch& args = stuck_relaunch_args();
+  if (args.argv != nullptr) (void)relaunch(args.executable, args.argc, args.argv);
+}
+// Le dossier des moteurs, et la relance armée avant la lecture.
+void before_play(const std::filesystem::path& engines, const std::filesystem::path& executable, int argc,
+                 char** argv) {
+  std::error_code error;
+  std::filesystem::create_directories(engines, error);
+  stuck_relaunch_args() = StuckRelaunch{.executable = executable, .argc = argc, .argv = argv};
+  ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
 }
 
 // « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
@@ -411,6 +449,15 @@ DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::
   return places;
 }
 
+// Le lecteur, puis l'attente d'une écriture que la fin d'une vidéo n'a pas attendue (disque lent) : elle
+// finit avant que le processus ne parte.
+std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOptions& options,
+                                                   const ajp::app::play::PlayerPaths& paths) {
+  auto played = ajp::app::play::play(options, paths);
+  ajp::app::play::LatestWriter::wait_abandoned(std::chrono::seconds(5));
+  return played;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 int run_player(int argc, char** argv) {
   // Les trois voies CUDA, le flux de décodage, celui des copies et les flux auxiliaires de TensorRT se
@@ -538,8 +585,7 @@ int run_player(int argc, char** argv) {
     if (!baked) return fail(baked.error());
     return 0;
   }
-  ajp::media::route_ffmpeg_log_to_journal();  // les erreurs de FFmpeg vont au journal, ses avertissements de
-                                              // sonde sont du bruit
+  prepare_libraries();
   if (!SDL_Init(SDL_INIT_VIDEO))
     return fail_shown({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()},
                       *options);
@@ -593,9 +639,8 @@ int run_player(int argc, char** argv) {
 #ifdef AJP_BACKEND_VULKAN
   paths.backends.emplace_back(AJP_BACKEND_VULKAN);
 #endif
-  std::error_code error;
-  std::filesystem::create_directories(paths.engines, error);
-  const auto played = ajp::app::play::play(*options, paths);
+  before_play(paths.engines, place.executable, argc, argv);
+  const auto played = play_then_settle(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
   if (played && engines_updated) return relaunch(place.executable, argc, argv);

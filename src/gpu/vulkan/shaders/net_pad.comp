@@ -25,7 +25,12 @@ int pad_source(int c, int dim) {
   if (c >= 0 && c < dim) return c;
   if (MODE == 0u) return -1;
   if (MODE == 2u) return clamp(c, 0, dim - 1);
-  return c < 0 ? -c : 2 * (dim - 1) - c;
+  // Reflect sans répéter le bord, replié par période 2 (dim − 1) : valable aussi pour une marge plus grande que
+  // dim − 1 ; un axe de taille 1 n'a que lui-même à refléter (B49-04).
+  if (dim == 1) return 0;
+  int period = 2 * (dim - 1);
+  int m = ((c % period) + period) % period;
+  return m < dim ? m : period - m;
 }
 
 void main() {

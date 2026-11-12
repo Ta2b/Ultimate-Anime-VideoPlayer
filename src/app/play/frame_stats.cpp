@@ -4,6 +4,7 @@
 #include <cmath>
 #include <format>
 
+#include "app/play/i18n.h"
 #include "core/frame.h"
 
 namespace ajp::app::play {
@@ -90,13 +91,13 @@ void FrameStats::restart_pacing() {
 
 std::string format_ms(std::int64_t us) {
   std::string text = std::format("{:.1f} ms", static_cast<double>(us) / 1000.0);
-  std::ranges::replace(text, '.', ',');
+  std::ranges::replace(text, '.', i18n::decimal_point());
   return text;
 }
 
 std::string format_fps(double fps) {
   std::string text = std::format("{:.1f}", fps);
-  std::ranges::replace(text, '.', ',');
+  std::ranges::replace(text, '.', i18n::decimal_point());
   return text;
 }
 

@@ -30,7 +30,6 @@ cp -a "$STAGE"/. "$APPDIR/usr/lib/ajp/"
 cat > "$APPDIR/AppRun" <<'RUN'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-export AJP_PACKAGED=appimage
 exec "$HERE/usr/lib/ajp/ajp" "$@"
 RUN
 chmod +x "$APPDIR/AppRun"
@@ -50,12 +49,16 @@ DESK
 cp "$HERE/linux/ajp.png" "$APPDIR/ajp.png"
 
 TOOL="$WORK/appimagetool"
-curl -fsSL --proto =https -o "$TOOL" \
+curl -fsSL --proto =https --retry 5 --retry-delay 5 -o "$TOOL" \
   "https://github.com/AppImage/appimagetool/releases/download/$TOOL_VERSION/appimagetool-x86_64.AppImage"
 # Une étiquette de release se modifie : l'outil n'est lancé que s'il a l'empreinte épinglée (A28-16).
 echo "$TOOL_SHA256  $TOOL" | sha256sum -c --quiet - || { echo "appimagetool : SHA-256 inattendu" >&2; exit 1; }
 chmod +x "$TOOL"
+# Le runtime aussi est épinglé : sans --runtime-file, appimagetool le télécharge lui-même, sans le vérifier (B51-13).
+RUNTIME="$WORK/runtime-x86_64"
+curl -fsSL --proto =https --retry 5 --retry-delay 5 -o "$RUNTIME" "$APPIMAGE_RUNTIME_URL"
+echo "$APPIMAGE_RUNTIME_SHA256  $RUNTIME" | sha256sum -c --quiet - || { echo "runtime AppImage : SHA-256 inattendu" >&2; exit 1; }
 # Sans FUSE (poste de CI) : l'outil s'extrait lui-même avant de s'exécuter.
-ARCH=x86_64 "$TOOL" --appimage-extract-and-run --no-appstream "$APPDIR" "$OUT"
+ARCH=x86_64 "$TOOL" --appimage-extract-and-run --no-appstream --runtime-file "$RUNTIME" "$APPDIR" "$OUT"
 chmod +x "$OUT"
 echo "$OUT"

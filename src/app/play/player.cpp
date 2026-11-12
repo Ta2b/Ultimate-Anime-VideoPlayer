@@ -50,6 +50,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player_engines.h"
+#include "app/play/player_machine.h"
 #include "app/play/player_run.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
@@ -79,11 +80,17 @@ namespace {
 
 // Un fichier de configuration que le lecteur n'a pas compris sera réécrit au prochain changement
 // de réglage : il est mis de côté d'abord (« nom.invalide-AAAAMMJJ-HHMMSS »), pour qu'aucun profil
-// ni réglage valide qu'il contenait ne se perde sans copie. Rien si le fichier est illisible
-// (droits) : il n'est pas écrasé non plus. Rend le message à montrer à l'accueil.
+// ni réglage valide qu'il contenait ne se perde sans copie. Un fichier illisible (verrou, droits) n'est pas
+// déplacé : load_settings et save_settings le laissent intact, et la séance le dit (B22-02). Rend le message
+// à montrer à l'accueil.
 std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
   std::error_code error;
-  if (why.code == RefusalCode::FileUnreadable || !std::filesystem::exists(path, error)) return {};
+  if (why.code == RefusalCode::FileUnreadable)
+    return i18n::tr_format(
+        "{} cannot be read: this session starts from the default settings and does not "
+        "change the file",
+        core::to_utf8(path.filename()));
+  if (!std::filesystem::exists(path, error)) return {};
   const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
   std::filesystem::path aside = path;
   aside += std::format(".invalide-{:%Y%m%d-%H%M%S}", now);
@@ -97,6 +104,15 @@ std::string set_aside(const std::filesystem::path& path, const Refusal& why) {
                            core::to_utf8(aside.filename()));
   return i18n::tr_format("{} was invalid: copy kept as {}", core::to_utf8(path.filename()),
                          core::to_utf8(aside.filename()));
+}
+
+// play.toml, avec l'avis des valeurs fautives que le défaut a remplacées (B22-05) ajouté aux notes de départ.
+std::expected<PlaySettings, Refusal> load_with_notes(const std::filesystem::path& path,
+                                                     std::vector<std::string>& notes) {
+  std::vector<std::string> ignored;
+  auto loaded = load_settings(path, &ignored);
+  if (std::string note = ignored_values_note(ignored); !note.empty()) notes.push_back(std::move(note));
+  return loaded;
 }
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
@@ -297,7 +313,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::filesystem::path update_file = paths::update_state(paths.data);
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
-  auto saved = load_settings(settings_path);
+  auto saved = load_with_notes(settings_path, startup_notes);
   i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
@@ -506,18 +522,15 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     const GpuFacts here = gpu_facts(**screen);
     const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
                                                   library_wanted, *engines, catalog, paths);
-    const bool explored = measured_tier && !file_options.bench_level && measured_here(*measured_tier, here);
-    chosen = apply_preset(
-        chosen,
-        Machine{.tier = tier,
-                .display_height = display_height((*screen)->window()),
-                .display_hz = display_refresh_hz((*screen)->window()),
-                .explored_work_height = explored ? measured_tier->work_height : 0,
-                .explored_rife_model = explored ? measured_tier->rife_model : std::string(),
-                .calibrated = file_options.bench_level ? std::nullopt
-                                                       : calibrated_chain(settings_path.parent_path(), host),
-                .display_width = display_width((*screen)->window())},
-        source);
+    const BenchResult* explored =
+        measured_tier && !file_options.bench_level && measured_here(*measured_tier, here) ? &*measured_tier
+                                                                                          : nullptr;
+    const auto machine_now = [&] {
+      return machine_of(
+          (*screen)->window(), tier, explored,
+          file_options.bench_level ? std::nullopt : calibrated_chain(settings_path.parent_path(), host));
+    };
+    chosen = apply_preset(chosen, machine_now(), source);
     PlaySettings settings = settings_for(chosen, file_options);
     if (auto valid = validate(settings); !valid) return std::unexpected(std::move(valid.error()));
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
@@ -586,6 +599,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
                   .display = window_display((*screen)->window())};
     player.shots = options.bench_out ? nullptr : &shots;  // A42-05 (chain_shots.h, shot_work)
     player.stages = &stage_memory;
+    player.relaunch_on_loss = !scripted && relaunch_allowed(lost_recently, launched_s);
     announce_once(player, announced, update_file, saved->update_mode, here.name, host.display_height);
     announce_first(player.notice, relaunch_note);
     announce_first(player.notice, engine_fallback);
@@ -605,7 +619,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     if (file_options.resume && player.engines.resume_position) {
       player.resume_path = paths::resume(settings_path.parent_path());
       if (start_us == 0 && !forced) {
-        if (const auto at = resume_position(player.resume_path, file)) {
+        if (const auto at = resume_from(player.resume_path, file)) {
           start_us = *at;
           player.resumed = true;
           log->info("reprise à {}", format_position(start_us));
@@ -648,6 +662,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
         player.notice = exported.notice;
       }
       settings = (*outcome)->settings;
+      if ((*outcome)->rederive)
+        settings = rederived(settings, machine_now(), source, file_options, player.kept);
       // « Refaire le banc » (P3.12) : la chaîne est fermée, sa mémoire vidéo libérée ; la calibration
       // mesure la machine seule, puis la lecture reprend avec ce qu'elle a trouvé.
       if ((*outcome)->calibrate) {
@@ -685,8 +701,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // A31-02, décision 9 : le GPU perdu (TDR, Xid, veille) ne revient pas dans ce processus ; le lecteur se
       // relance une fois sur cette vidéo, à cet instant, et le dit. Une seconde perte dans la minute : le
       // message et l'accueil.
-      if (result.error().code == RefusalCode::DeviceLost &&
-          !(lost_recently && relaunch_now_s() - launched_s < kRelaunchAgainS) &&
+      if (result.error().code == RefusalCode::DeviceLost && relaunch_allowed(lost_recently, launched_s) &&
           ask_relaunch(paths, file, player.stopped_at_us, false, RelaunchReason::GpuLost)) {
         log->error("{} ; le lecteur se relance", result.error().detail);
         return {};

@@ -3,11 +3,13 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <thread>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/engine_install.h"
+#include "app/play/model_choice.h"
 #include "app/play/span_int8.h"
 #include "french_ui.h"
 
@@ -29,11 +31,21 @@ TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", 
       {.backend_name = "vulkan", .gpu_name = "RTX 4050", .tensorrt_present = true});
   CHECK(other.contains("installé"));
   CHECK(other.contains("choisissez TensorRT"));
-  // TensorRT en service, mais la carte n'est pas une Ada.
-  const std::string old = span_fp8_unavailable_reason(
-      {.backend_name = "tensorrt", .gpu_name = "NVIDIA GeForce RTX 3060", .tensorrt_present = true});
+  // TensorRT en service, mais la carte n'est pas une Ada (sur un système où le mode existe : sous Windows,
+  // system_pending vaut true par défaut).
+  const std::string old = span_fp8_unavailable_reason({.backend_name = "tensorrt",
+                                                       .gpu_name = "NVIDIA GeForce RTX 3060",
+                                                       .tensorrt_present = true,
+                                                       .system_pending = false});
   CHECK(old.contains("RTX 3060"));
   CHECK(old.contains("RTX 40"));
+  // Sous Windows, les noyaux ne sont pas encore construits : la phrase ne blâme pas la carte (B02-09).
+  const std::string windows = span_fp8_unavailable_reason({.backend_name = "tensorrt",
+                                                           .gpu_name = "NVIDIA GeForce RTX 4070 Ti",
+                                                           .tensorrt_present = true,
+                                                           .system_pending = true});
+  CHECK(windows.contains("Windows"));
+  CHECK_FALSE(windows.contains("RTX 40"));
 }
 
 TEST_CASE("rien n'exclut à tort une RTX 4050 de portable : Ada, calcul 8.9", "[span_auto]") {
@@ -63,6 +75,15 @@ TEST_CASE("le cran Performance de SPAN est offert dès que le moteur sait les no
   const fs::path small = dir / "2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
   std::ofstream(small) << "modele";
   CHECK(span_tiers(small, dir / "modeles", false, true).performance);
+  // ArtCNN n'est pas un SPAN : les noyaux CUTLASS ne le prennent pas, le cran n'est pas offert sans variante
+  // FP8 faite à la main (sa préparation serait refusée après coup).
+  for (const std::string_view name : {kLightSpanModel, kLightestSpanModel}) {
+    const fs::path artcnn = dir / std::string(name);
+    std::ofstream(artcnn) << "modele";
+    CHECK_FALSE(span_fp8_cutlass_model(artcnn));
+    CHECK_FALSE(span_tiers(artcnn, dir / "modeles", false, true).performance);
+  }
+  CHECK(span_fp8_cutlass_model(model));
   fs::remove_all(dir);
 }
 

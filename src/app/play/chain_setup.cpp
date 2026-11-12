@@ -15,6 +15,7 @@
 #include "app/play/motion_model.h"
 #include "app/play/paths.h"
 #include "app/play/problem_report.h"
+#include "app/play/pumped_task.h"
 #include "app/play/rife_fused_choice.h"
 #include "core/auto_rate.h"
 #include "core/clock.h"
@@ -42,6 +43,40 @@ void warn_span_fallback(spdlog::logger& log, PrecisionTier tier) {
 }
 
 }  // namespace
+
+std::vector<std::pair<std::string, std::string>> playback_facts(const PlaybackFacts& facts) {
+  std::string rate =
+      facts.frame_rate > 0.0 ? std::format("{:.3f} i/s", facts.frame_rate) : "cadence inconnue";
+  std::vector<std::pair<std::string, std::string>> out;
+  out.emplace_back("Vidéo", std::format("{} · {} · {}x{} · {} · source {}", facts.file, facts.codec,
+                                        facts.width, facts.height, rate, facts.transfer));
+  out.emplace_back("Écran", facts.screen);
+  out.emplace_back("Sortie", facts.hdr_output ? "HDR10" : "SDR (image gradée)");
+  out.emplace_back("Chaîne jouée", facts.chain);
+  return out;
+}
+
+void note_playback_facts(const media::TrackInfo& video, const ColorInfo& source, const std::string& screen,
+                         bool hdr_output, const std::string& chain, const std::filesystem::path& file) {
+  const PlaybackFacts facts{
+      .file = core::to_utf8(file.filename()),
+      .codec = video.codec,
+      .width = video.width,
+      .height = video.height,
+      .frame_rate = video.frame_rate.den > 0 ? static_cast<double>(video.frame_rate.num) /
+                                                   static_cast<double>(video.frame_rate.den)
+                                             : 0.0,
+      .transfer = source.transfer == Transfer::Pq ? "PQ" : (source.transfer == Transfer::Hlg ? "HLG" : "SDR"),
+      .screen = screen,
+      .hdr_output = hdr_output,
+      .chain = chain};
+  for (const auto& [name, value] : playback_facts(facts)) note_report_fact(name, value);
+}
+
+void announce_playback(const Player& p, const ColorInfo& source, bool hdr_output, const std::string& chain) {
+  log_channel("app")->info("{} : {}", prepare::utf8_path(p.options.file.filename()), chain);
+  note_playback_facts(p.video, source, describe_hdr(p.screen.window()), hdr_output, chain, p.options.file);
+}
 
 std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
                                                      const std::optional<ModelChoice>& rife) {
@@ -83,9 +118,10 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
           .render_luid = render.luid,
           .devices = shared,
           .download = !tensorrt,
-          // L'ingestion Vulkan lit Yuv444p16 et P016 en mémoire hôte ; celle de TensorRT ne lit pas le
-          // 4:4:4 et n'a pas été vue sur la carte avec du P016 hôte (A15-07, A-CONFIRMER).
-          .full_host_formats = !tensorrt,
+          // Les deux ingestions lisent Yuv444p16 et P016 en mémoire hôte ; celle de TensorRT lit aussi le
+          // 4:2:2 (Yuv422p16) : la chroma d'une source logicielle n'est jamais réduite (B01-03).
+          .full_host_formats = true,
+          .host_422 = tensorrt,
           .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
 }
 
@@ -142,7 +178,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife_height = rife_motion   ? rife_size.height
                      : drba_motion ? drba_size.height
                                    : 0,
-      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, top_factor),
+      .warp_after_span = warp_after_span(settings.span_order, sized.height * kSpanFactor, order_factor),
       // En lecture (horloge présente), un instant déjà passé n'est ni calculé ni écrit, en Rapide comme à pas
       // constant : l'image serait jetée par la présentation (audit F11).
       .late_fate = clock != nullptr,
@@ -157,7 +193,7 @@ using Prepared = std::expected<std::optional<ChainEngines>, StageFailure>;
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings);
 
 // La forme de l'ouverture (chain_shape.h) : l'anneau de ces réglages et l'ordre du warp que les moteurs
-// chargés ont pris (c.top_factor), avec l'écran et la source d'où ils viennent.
+// chargés ont pris (c.order_factor), avec l'écran et la source d'où ils viennent.
 void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings) {
   c.opened = {.display_hz = display_refresh_hz(p.screen.window()),
               .source_fps = fps_of(p.video.frame_rate),
@@ -170,13 +206,19 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
   c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
   c.opened.drba_fused_refused = c.opened.drba ? c.drba_fused_refused : std::nullopt;
   c.opened.rife_fused_refused = c.rife_fused ? std::nullopt : c.rife_fused_refused;
+  if (c.opened.rife_loaded) c.opened.loaded = loaded_by(settings);
   c.opened.shape = {
-      .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}),
+      .ring = ring_depth(settings, c.opened.rife_loaded ? factor_of(settings) : Factor{}, c.opened.display_hz,
+                         c.opened.source_fps),
       .warp_after_span =
-          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.top_factor)};
+          c.opened.span && warp_after_span(settings.span_order, c.opened.output_height, c.order_factor)};
 }
 
 }  // namespace
+
+std::string library_name(const Player& p) {
+  return p.library ? core::to_utf8(p.library->path().filename()) : std::string();
+}
 
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings,
                                                                   StageMemory* memory) {
@@ -184,7 +226,14 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
   // Sans mémoire de séance (export, banc), une mémoire de cet appel : les crans retombent, rien d'autre.
   StageMemory local;
   StageMemory& refused = memory != nullptr ? *memory : local;
-  const std::string library = p.library ? core::to_utf8(p.library->path().filename()) : std::string();
+  const std::string library = library_name(p);
+  // B08-03 : une instance de construction pour toute l'ouverture, rendue en sortant (pas pendant la lecture).
+  p.builder = std::make_shared<BackendLibrary::Instance>();
+  const struct BuilderRelease {
+    Player& p;
+    ~BuilderRelease() { p.builder.reset(); }
+  } builder_release{p};
+  p.loaded_engines.clear();
   const int width = p.video.width;
   const int height = p.video.height;
   // Chaque tour retient un refus de plus : au plus deux crans et deux étages, puis un dernier essai.
@@ -205,10 +254,12 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       if (*chain) {
         ChainEngines& c = **chain;
         note_opened(c, p, plan->settings);
-        // A03-21 : le repli du fusionné vers le réseau entier se dit à l'écran, pas au journal seulement.
-        if (p.notice.empty()) p.notice = fused_refusal_notice(c.opened);
+        // A03-21 : le repli du fusionné vers le réseau entier se dit à l'écran, pas au journal seulement ;
+        // une fois, à son refus, pas à chaque réouverture qui reprend le repli retenu (B08-02).
+        if (p.notice.empty() && c.fallback_fresh) p.notice = fused_refusal_notice(c.opened);
         c.played = std::move(plan->settings);
-        c.stage_notes = std::move(plan->notes);
+        c.stage_notes.insert(c.stage_notes.begin(), plan->notes.begin(), plan->notes.end());
+        c.loaded_engines = std::exchange(p.loaded_engines, {});
       }
       return std::move(*chain);
     }
@@ -385,10 +436,14 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
     auto ready = prepare_manual_fp8(p, init, c, settings, fp8_context);
     if (!ready || !*ready) return ready;
   }
+  InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);  // B08-02
   for (const SpanVariantKind kind : wanted) {
     std::optional<SpanInt8> found =
         usable_variant(kind, *c.model, variants, fp8_context, c.work, bench, strict);
     if (!found) continue;
+    const std::string key = inner_key(std::format("span-variant {}", variant_text(kind)), library_name(p),
+                                      c.model->path, c.work.width, c.work.height);
+    if (inner.refused(ChainStage::Upscale, key) != nullptr) continue;
     c.span_int8 = std::move(found);
     loaded = prepare_span();
     if (*loaded) break;
@@ -396,6 +451,7 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
     if (watch_now(loaded->error())) return stage_refused(std::move(loaded->error()), ChainStage::Upscale);
     log->warn("SPAN {} refusé ({}) : variante suivante ou SPAN FP16", variant_text(kind),
               loaded->error().detail);
+    inner.failed(ChainStage::Upscale, key, loaded->error());
     c.span_int8.reset();
     loaded.reset();
   }
@@ -405,6 +461,102 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   if (!**loaded) return false;
   c.engine = std::move(***loaded);
   return true;
+}
+
+// DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la place
+// du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ; tout
+// échec garde le moteur entier. Un refus retenu pour la séance (B08-02) le décline sans reconstruire.
+DrbaFusedUse drba_fused_use(const ChainEngines& c, const PlaySettings& settings, InnerFallbacks& inner,
+                            const std::string& fused_key) {
+  DrbaFusedUse fused;
+  fused.declined = drba_fused_declined(settings, c.backend->capabilities().drba_fused);
+  if (settings.drba_fused && !fused.declined.empty())
+    log_channel("app")->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
+  if (!fused.declined.empty()) return fused;
+  if (const Refusal* before = inner.refused(ChainStage::Motion, fused_key)) {
+    fused.declined = before->detail;
+    fused.refused = before->code;
+  }
+  return fused;
+}
+
+// Le moteur DistilDRBA, la variante mouvement d'abord quand le warp suit SPAN ; pose drba_motion et
+// drba_size.
+std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> build_drba(Player& p,
+                                                                               const gpu::BackendInit& init,
+                                                                               ChainEngines& c,
+                                                                               const PlaySettings& settings,
+                                                                               DrbaFusedUse* fused) {
+  // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
+  // créée.
+  bool motion =
+      settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.order_factor);
+  // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
+  // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
+  const bool smaller = motion && c.rife_size.height < c.work.height;
+  const WorkSize at = smaller ? c.rife_size : c.work;
+  auto loaded = prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
+                                    settings.motion_precision, fused, &motion, smaller);
+  // Sans variante mouvement, l'image se fait à la taille de travail : rien n'a été construit plus bas.
+  if (smaller &&
+      ((!loaded && loaded.error().key == kDrbaImageElsewhereKey) || (loaded && *loaded && !motion))) {
+    if (fused != nullptr) *fused = DrbaFusedUse{.declined = fused->declined};
+    loaded = prepare_distil_drba(p, init, *c.backend, c.model_places, c.work.width, c.work.height,
+                                 c.drba_align, settings.motion_precision, fused, &motion);
+  }
+  c.drba_motion = loaded && *loaded && motion;
+  c.drba_size = c.drba_motion ? at : c.work;
+  if (c.drba_motion && smaller)
+    log_channel("app")->info("DistilDRBA mouvement : estimé en {}x{}, warp en {}x{}", at.width, at.height,
+                             c.work.width, c.work.height);
+  return loaded;
+}
+
+// DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque. Un refus retenu
+// pour la séance (B08-02) passe à RIFE sans reconstruire. Faux : construction annulée ; vrai : chargé, ou
+// refusé avec RIFE (ou rien) à la place.
+std::expected<bool, StageFailure> load_drba(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                            const PlaySettings& settings, InnerFallbacks& inner,
+                                            const std::string& library) {
+  const auto log = log_channel("app");
+  const std::string drba_key = inner_key(std::format("drba {}", name(settings.motion_precision)), library, {},
+                                         c.work.width, c.work.height);
+  if (inner.refused(ChainStage::Motion, drba_key) != nullptr) {
+    log->info("DistilDRBA refusé plus tôt dans la séance : {}", c.rife_model ? "RIFE" : "sans interpolation");
+    return true;
+  }
+  const std::string fused_key = inner_key("drba-fused", library, {}, c.work.width, c.work.height);
+  DrbaFusedUse fused = drba_fused_use(c, settings, inner, fused_key);
+  const bool try_fused = fused.declined.empty();
+  auto loaded = build_drba(p, init, c, settings, try_fused ? &fused : nullptr);
+  if (loaded && *loaded) {
+    note_drba_fused(c, fused, try_fused);
+    if (try_fused && fused.refused)
+      inner.failed(ChainStage::Motion, fused_key, Refusal{*fused.refused, fused.declined});
+  }
+  // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
+  if (!loaded && watch_now(loaded.error()))
+    return stage_refused(std::move(loaded.error()), ChainStage::Motion);
+  if (!loaded) {
+    log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
+    inner.failed(ChainStage::Motion, drba_key, loaded.error());
+    p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
+                                      : i18n::ui_tr("DistilDRBA unavailable"),
+                         host_now_us());
+    return true;
+  }
+  if (!*loaded) return false;
+  c.drba = std::move(**loaded);
+  return true;
+}
+
+// Le moteur retenu : au journal et au rapport de problème (B39-02).
+void announce_backend(spdlog::logger& log, const gpu::Backend& backend, const std::string& name,
+                      const std::filesystem::path& library) {
+  const auto& caps = backend.capabilities();
+  log.info("backend {} ({}) depuis {}/{}", name, caps.device_name,
+           core::to_utf8(library.parent_path().filename()), core::to_utf8(library.filename()));
+  note_report_fact("Backend", std::format("{} sur {} · {}", name, caps.device_name, caps.driver_version));
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -423,7 +575,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.model = std::move(*chosen);
   }
   c.factor = c.model ? kSpanFactor : 1;
-  c.top_factor = top_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
+  c.order_factor = order_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
   c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
@@ -446,25 +598,24 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       log->warn("pilote NVIDIA {} : Smooth Motion demande 580.82.07 ou plus récent", driver);
   }
   const std::span<const std::string_view> rife_order = rife_preference(gpu);
-  if (auto found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models))
-    c.rife_choice = std::move(*found);
+  // B08-14 : un seul choix du modèle, son refus gardé pour le cas où l'interpolation n'a rien d'autre.
+  auto rife_found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models);
+  if (rife_found) c.rife_choice = std::move(*rife_found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
   c.model_places = motion_model_dirs(p.paths, c.rife_choice);
   c.drba_found = find_distil_drba(c.model_places).has_value();
   const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
   const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
   if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
-    return stage_refused(
-        choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models).error(),
-        ChainStage::Motion);
+    return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
-  auto backend = BackendLibrary::create(p.library, init);
+  auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
+      "backend", [&p, &init] { return BackendLibrary::create(p.library, init); });
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;
-  log->info("backend {} ({}) depuis {}", c.backend_name, c.backend->capabilities().device_name,
-            p.library->path().string());
+  announce_backend(*log, *c.backend, c.backend_name, p.library->path());
   // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
   if (const std::string rebar = rebar_text(gpu);
       c.backend_name != "tensorrt" && rebar.rfind("inactif", 0) == 0)
@@ -480,56 +631,12 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   c.rife_size = !p.options.rife_image && c.work.height > kRifeMotionHeight
                     ? work_size(video.width, video.height, kRifeMotionHeight)
                     : c.work;
-  // DistilDRBA à la place de RIFE, à la taille de travail ; RIFE reprend si son graphe manque.
+  InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
+  const std::string library = library_name(p);
   if (want_drba) {
-    // DistilDRBA fusionné (kernels/spec/drba_fused.h) : quatre petits moteurs et des noyaux de colle à la
-    // place du moteur entier, quand le backend le sait, que le réglage le veut et que le cran est Équilibre ;
-    // tout échec garde le moteur entier.
-    DrbaFusedUse fused;
-    fused.declined = drba_fused_declined(settings, c.backend->capabilities().drba_fused);
-    if (settings.drba_fused && !fused.declined.empty())
-      log->info("DistilDRBA fusionné non utilisé : {}", fused.declined);
-    const bool try_fused = fused.declined.empty();
-    // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
-    // créée.
-    bool motion =
-        settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.top_factor);
-    // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),
-    // comme RIFE ; sans variante mouvement, l'image se refait à la taille de travail.
-    const bool smaller = motion && c.rife_size.height < c.work.height;
-    const WorkSize at = smaller ? c.rife_size : c.work;
-    auto loaded =
-        prepare_distil_drba(p, init, *c.backend, c.model_places, at.width, at.height, c.drba_align,
-                            settings.motion_precision, try_fused ? &fused : nullptr, &motion, smaller);
-    // Sans variante mouvement, l'image se fait à la taille de travail : rien n'a été construit plus bas.
-    if (smaller &&
-        ((!loaded && loaded.error().key == kDrbaImageElsewhereKey) || (loaded && *loaded && !motion))) {
-      fused = DrbaFusedUse{.declined = fused.declined};
-      loaded =
-          prepare_distil_drba(p, init, *c.backend, c.model_places, c.work.width, c.work.height, c.drba_align,
-                              settings.motion_precision, try_fused ? &fused : nullptr, &motion);
-    }
-    c.drba_motion = loaded && *loaded && motion;
-    c.drba_size = c.drba_motion ? at : c.work;
-    if (c.drba_motion && smaller)
-      log->info("DistilDRBA mouvement : estimé en {}x{}, warp en {}x{}", at.width, at.height, c.work.width,
-                c.work.height);
-    if (loaded && *loaded) {
-      note_drba_fused(c, fused, try_fused);
-    }
-    // Annulée, la construction ne passe pas la main à RIFE : l'interpolation part, SPAN reste (A31-15).
-    if (!loaded && watch_now(loaded.error()))
-      return stage_refused(std::move(loaded.error()), ChainStage::Motion);
-    if (!loaded) {
-      log->warn("{} ; {}", loaded.error().detail, c.rife_model ? "RIFE à la place" : "sans interpolation");
-      p.ui.controls().warn(c.rife_model ? i18n::ui_tr("DistilDRBA unavailable: using RIFE")
-                                        : i18n::ui_tr("DistilDRBA unavailable"),
-                           host_now_us());
-    } else if (!*loaded) {
-      return std::nullopt;
-    } else {
-      c.drba = std::move(**loaded);
-    }
+    auto drba = load_drba(p, init, c, settings, inner, library);
+    if (!drba) return std::unexpected(std::move(drba.error()));
+    if (!*drba) return std::nullopt;
   }
   // RIFE au cran de précision demandé : le graphe « _fp8 » ou « _fp32 » à côté du modèle quand il y est (FP8
   // sur un moteur qui l'accélère seulement) ; le modèle tel que livré sinon.
@@ -591,6 +698,12 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto try_fused = [&](const kernels::RifeGeometry& g, bool motion,
                              std::unique_ptr<gpu::Engine>& into) {
     if (!fused_wanted) return Fused::Declined;
+    const std::string key = inner_key(motion ? "rife-fused motion" : "rife-fused", library, *c.rife_model,
+                                      g.padded_width, g.padded_height);
+    if (const Refusal* before = inner.refused(ChainStage::Motion, key)) {
+      c.rife_fused_refused = before->code;  // le panneau dit encore pourquoi l'entier tourne
+      return Fused::Declined;
+    }
     auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, motion);
     if (!fused && watch_now(fused.error())) {
       cancelled = std::move(fused.error());
@@ -599,6 +712,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     if (!fused) {
       log->warn("RIFE fusionné indisponible ({}) : RIFE entier", fused.error().detail);
       c.rife_fused_refused = fused.error().code;
+      inner.failed(ChainStage::Motion, key, fused.error());
       return Fused::Declined;
     }
     if (!*fused) return Fused::Closed;
@@ -617,6 +731,10 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       return std::nullopt;
     } else if (tried == Fused::Cancelled) {
       return stage_refused(std::move(*cancelled), ChainStage::Motion);
+    } else if (const std::string key = inner_key("rife-motion", library, *derived, c.geometry.padded_width,
+                                                 c.geometry.padded_height);
+               tried == Fused::Declined && inner.refused(ChainStage::Motion, key) != nullptr) {
+      log->info("RIFE mouvement refusé plus tôt dans la séance : RIFE image");
     } else if (tried == Fused::Declined) {
       const kernels::RifeGeometry& g = c.geometry;
       auto loaded = prepare_engine(p, init, *c.backend, *derived,
@@ -631,6 +749,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       if (!loaded) {
         // La variante mouvement refusée (construction, mémoire) : RIFE image reste à essayer (A29-01).
         log->warn("RIFE mouvement refusé ({}) : RIFE image", loaded.error().detail);
+        inner.failed(ChainStage::Motion, key, loaded.error());
       } else if (!*loaded) {
         return std::nullopt;
       } else {

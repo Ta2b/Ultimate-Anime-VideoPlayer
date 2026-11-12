@@ -32,6 +32,17 @@ int display_height(SDL_Window* window);
 int display_width(SDL_Window* window);
 // Crête vue par le contenu : la marge HDR de SDL3 × 203 nits ; rien si l'écran n'est pas en HDR.
 std::optional<double> content_peak_nits(SDL_Window* window);
+// Ce que seuls les appels vidéo de SDL disent (le thread main seul les fait) : le mode et le nom de l'écran
+// de la fenêtre. Les deux relevés qui suivent, avec lui, ne font plus d'appel vidéo de SDL (les propriétés
+// de la fenêtre se lisent de tout thread) : sous Windows, QueryDisplayConfig, DXGI, le registre, qui
+// coûtent des millisecondes, se font hors du thread qui présente (B11-05, B11-06, display_probe.h).
+struct DisplaySdl {
+  double hz = 0.0;   // le mode de SDL ; 0 : inconnu
+  std::string name;  // le nom de l'écran selon SDL, pour son EDID
+};
+DisplaySdl display_sdl(SDL_Window* window);
+double display_refresh_hz(SDL_Window* window, const DisplaySdl& sdl);
+std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sdl);
 // Ce que le système dit de l'écran quand il n'a pas de pic calibré (system_peak.h), et la crête qui s'en
 // déduit : la règle de content_peak_nits, sans fenêtre ni système, pour qu'un test la tienne (A11-12).
 struct PeakFacts {
@@ -43,8 +54,8 @@ struct PeakFacts {
   std::optional<double> edid_peak;  // la crête que l'EDID annonce
 };
 std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts);
-// La crête « automatique » du grade : celle de l'écran bornée à 200-2000 nits (un écran HDR de 310 nits ne
-// reçoit pas une cible de 400) ; 1000 si inconnue.
+// La crête « automatique » du grade : celle de l'écran bornée à 200-4000 nits (un écran HDR de 310 nits ne
+// reçoit pas une cible de 400 ; un téléviseur de 3000 nits est exploité, B37-09) ; 1000 si inconnue.
 int auto_peak_nits(std::optional<double> detected);
 // Le HDR suit le système, sans réglage : la sortie est en HDR10 quand l'écran en reçoit (Windows ou le
 // compositeur l'a activé) et que sa crête atteint kMinHdrPeakNits. En dessous, un écran qui se dit HDR mais

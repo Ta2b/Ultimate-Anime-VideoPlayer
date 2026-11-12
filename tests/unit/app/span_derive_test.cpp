@@ -20,122 +20,20 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "app/play/auto_bench.h"
+#include "app/play/model_choice.h"
 #include "app/play/settings_system.h"
 #include "app/play/span_int8.h"
 #include "french_ui.h"
 #include "gpu/span_fp8/package.h"
 #include "media/stills.h"
 #include "prepare/sha256.h"
+#include "span_derive_rig.h"
 
 namespace ajp::app::play {
-namespace {
 
+using namespace span_test;
 namespace fs = std::filesystem;
 using gpu::span_fp8::Package;
-
-// Un dossier « modeles » et un faux SPAN dedans (le reçu s'attache au SHA-256 du fichier).
-struct Folder {
-  // Un dossier par essai : ctest lance les cas en parallèle, un nom fixe ferait se marcher dessus.
-  Folder()
-      : root(fs::temp_directory_path() /
-             std::format("ajp-span-derive-test-{}",
-                         std::chrono::steady_clock::now().time_since_epoch().count())) {
-    fs::remove_all(root);
-    fs::create_directories(models());
-    model = root / "2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
-    std::ofstream(model, std::ios::binary) << "un SPAN pour les essais";
-  }
-  ~Folder() {
-    std::error_code ignored;
-    fs::remove_all(root, ignored);
-  }
-  Folder(const Folder&) = delete;
-  Folder& operator=(const Folder&) = delete;
-
-  fs::path models() const { return root / "modeles"; }
-  fs::path package() const {
-    return span_variant_path(SpanVariantKind::Fp8Cutlass, model, models(),
-                             prepare::sha256_file(model).value());
-  }
-  fs::path receipt() const {
-    fs::path path = package();
-    path.replace_extension(".toml");
-    return path;
-  }
-  SpanDerivePlan plan() const {
-    return {.model = model, .models_dir = models(), .load_weights = [] {
-              return std::expected<Package, Refusal>(gpu::span_fp8::synthetic());
-            }};
-  }
-  std::vector<std::string> files() const {
-    std::vector<std::string> names;
-    for (const auto& entry : fs::directory_iterator(models()))
-      names.push_back(entry.path().filename().string());
-    std::ranges::sort(names);
-    return names;
-  }
-
-  fs::path root;
-  fs::path model;
-};
-
-// Douze images 128×4 dont le premier octet dit leur rang.
-std::vector<media::Still> twelve() {
-  std::vector<media::Still> stills;
-  for (int i = 0; i < 12; ++i) {
-    media::Still still;
-    still.width = 128;
-    still.height = 4;
-    still.pts_us = 1'000'000 * i;
-    still.rgb.assign(std::size_t{3} * 128 * 4, static_cast<std::uint8_t>(i));
-    stills.push_back(std::move(still));
-  }
-  return stills;
-}
-
-SpanStillsSource source_of(std::vector<media::Still> stills) {
-  return [stills = std::move(stills)](const std::stop_token&, const std::function<void(float)>& progress) {
-    if (progress) progress(1.0F);
-    return std::expected<std::vector<media::Still>, Refusal>(stills);
-  };
-}
-
-// Un « backend » qui note ce qu'on lui demande et rend des mesures données.
-struct FakeBackend {
-  double psnr = 50.0;
-  double ssim = 0.995;
-  double psnr16 = 0.0;              // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
-  double error_p999 = 1.0 / 255.0;  // 99,9e centile de l'erreur de chaque image (3.7a)
-  double hard_psnr = 40.0;          // PSNR de chaque cas dur rendu (3.7a)
-  bool refuse = false;
-  mutable gpu::SpanFp8Request seen;
-  SpanDeriver deriver() const {
-    return [this](const gpu::SpanFp8Request& request, gpu::Progress& progress) {
-      seen = request;
-      if (progress.report) progress.report(0.5F, "calibration");
-      if (refuse)
-        return std::expected<gpu::SpanFp8Derivation, Refusal>(
-            std::unexpected(Refusal{RefusalCode::GpuMemoryExhausted, "plus de mémoire vidéo"}));
-      gpu::SpanFp8Derivation derivation;
-      derivation.scales.fill(0.05F);
-      derivation.peaks.fill(22.4F);
-      derivation.scores.assign(request.validation.size(),
-                               {.psnr_db = psnr, .ssim = ssim, .error_p999 = error_p999});
-      derivation.hard_scores.assign(3, {.psnr_db = hard_psnr, .ssim = ssim, .error_p999 = error_p999});
-      derivation.kernels_ms = 9.2;
-      if (psnr16 > 0.0) {
-        derivation.scores_acc16.assign(request.validation.size(), {.psnr_db = psnr16, .ssim = ssim});
-        derivation.kernels_ms_acc16 = 8.9;
-      }
-      derivation.reference = "cutlass-fp16";
-      derivation.gpu_arch = "sm_89";
-      derivation.kernels_version = 1;
-      return std::expected<gpu::SpanFp8Derivation, Refusal>(derivation);
-    };
-  }
-};
-
-}  // namespace
 
 TEST_CASE("la préparation réduit ses images comme le noyau d'ingestion (3.7a)", "[app][span_derive]") {
   const media::StillReduce hermite = span_still_reduce(1280, 720, core::DownscaleFilter::Hermite);
@@ -541,6 +439,13 @@ TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une
   CHECK(b5f48.offered);  // pris depuis l'étape 3.2c, rangé en 64 canaux
   CHECK(b5f48.note.find("48 canaux") == std::string::npos);
 
+  // ArtCNN : rien à préparer, la phrase le dit (le paquet CUTLASS ne sait que les SPAN).
+  const SpanPrepare artcnn = make_span_prepare(
+      nullptr, init, true, folder.root / std::string(kLightestSpanModel), folder.models(), video);
+  CHECK_FALSE(artcnn.offered);
+  CHECK_FALSE(artcnn.run);
+  CHECK(artcnn.note.find("ArtCNN reste en FP16") != std::string::npos);
+
   const SpanPrepare fresh = make_span_prepare(nullptr, init, true, folder.model, folder.models(), video);
   CHECK(fresh.offered);
   CHECK_FALSE(fresh.ready);
@@ -641,6 +546,30 @@ TEST_CASE("la préparation à la main ne part qu'une fois à la fois, et seuleme
   CHECK_FALSE(start_span_prepare(prepare, note));  // une seule à la fois
   CHECK(note.pending->get().value() == "fait");
   CHECK(started == 1);
+}
+
+TEST_CASE("le « .old » d'une opération coupée entre deux renommages revient à sa place (B07-12)",
+          "[app][span_derive]") {
+  ajp::app::play::FrenchUi french;
+  const Folder folder;
+  const std::vector<std::byte> bytes(64, std::byte{7});
+  REQUIRE(commit_derivation(folder.package(), folder.receipt(), bytes, "passed = true\n", true));
+  // La coupure : le paquet est passé à « .old », le nouveau n'a pas encore pris sa place.
+  fs::path old = folder.package();
+  old += ".old";
+  fs::rename(folder.package(), old);
+  // La dérivation suivante échoue (le reçu provisoire est un dossier non vide) : l'état d'avant revient.
+  fs::path blocked = folder.receipt();
+  blocked += ".part";
+  fs::create_directories(blocked / "occupé");
+  std::ofstream(blocked / "occupé" / "fichier") << "x";
+  const std::vector<std::byte> other(64, std::byte{9});
+  REQUIRE_FALSE(commit_derivation(folder.package(), folder.receipt(), other, "passed = false\n", true));
+  REQUIRE(fs::exists(folder.package()));
+  std::ifstream in(folder.package(), std::ios::binary);
+  const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content == std::string(64, '\7'));
+  CHECK_FALSE(fs::exists(old));
 }
 
 }  // namespace ajp::app::play

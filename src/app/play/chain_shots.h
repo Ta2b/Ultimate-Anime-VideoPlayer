@@ -14,6 +14,8 @@
 #include "app/play/settings.h"
 #include "media/shot_probe.h"
 #include "media/shot_timeline.h"
+#include "media/track.h"
+#include "render/grade_params.h"
 
 namespace ajp::app::play {
 
@@ -30,12 +32,17 @@ struct ShotJob {
     std::string key;
     std::atomic<bool> read{false};
     std::atomic<bool> complete{false};
+    // Gardée entière au cache par keep_if_done : l'arrêt de l'analyse n'y écrit plus sa part (B42-05).
+    std::atomic<bool> kept{false};
   };
   std::shared_ptr<Cache> cache;
-  std::unique_ptr<media::ShotTimeline> timeline;
+  // Partagée avec le thread de l'analyse, qui peut lui survivre (B30-01).
+  std::shared_ptr<media::ShotTimeline> timeline;
   std::unique_ptr<media::ShotProbe> probe;
-  std::uint32_t variant = 0;  // le chemin de décodage de l'analyse (media/shot_cache.h)
-  bool complete = false;      // connue entière : lue du cache, ou analysée jusqu'au bout et gardée
+  // Le chemin de décodage de l'analyse et le gain de son limiteur de flashs (media/shot_cache.h, B42-07).
+  std::uint32_t variant = 0;
+  double flash_gain = 1.0;  // le gain du limiteur de flashs de l'analyse (flash_gain_of)
+  bool complete = false;    // connue entière : lue du cache, ou analysée jusqu'au bout et gardée
 
   ShotJob() = default;
   ShotJob(const ShotJob&) = delete;
@@ -43,7 +50,8 @@ struct ShotJob {
   ShotJob(ShotJob&& other) noexcept = default;
   ShotJob& operator=(ShotJob&& other) noexcept;
   ~ShotJob();
-  // Arrête l'analyse et garde au cache ce qu'elle a fait, si la vidéo n'y est pas entière.
+  // Arrête l'analyse ; son thread garde au cache ce qu'elle a fait, si la vidéo n'y est pas entière
+  // (ShotProbeOptions::on_stop), sans retenir le thread de la fenêtre (B42-05).
   void retire() noexcept;
 };
 
@@ -66,11 +74,23 @@ struct PlayOptions;  // options.h
 // ne s'en sert pas (A42-05) : les rafales de décodage de la pré-analyse faussaient la mesure de la machine.
 ShotWork shot_work(std::filesystem::path cache_dir, const PlayOptions& options);
 
+// Ce que l'ouverture sait de la sortie : une source HDR (PQ, HLG), une sortie HDR, le pic du grade.
+struct ShotOutput {
+  bool source_hdr = false;
+  bool hdr_output = false;
+  double peak_nits = render::grade_limits::kDefaultPeakNits;
+};
 // À l'ouverture d'une chaîne : reprend la vidéo du cache, ou lance l'analyse (depuis la part gardée) ; la
 // garde pour le même fichier ; rien si ni le grade ni l'interpolation n'en lisent les plans (l'analyse en
-// cours s'arrête). Le grade d'une source HDR (PQ, HLG) sans grade natif HDR n'en lit pas.
+// cours s'arrête). Le grade d'une source HDR (PQ, HLG) sans grade natif HDR n'en lit pas ; en sortie HDR, le
+// grade n'en lit que les flashs dangereux (B42-02).
 void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
-                std::int64_t start_us, bool source_hdr = false);
+                std::int64_t start_us, const ShotOutput& output = {});
+// La même, avant la préparation des moteurs : à la sortie que la chaîne prendra (system_hdr, sauf sdr) et à
+// son pic (B42-02 : en sortie HDR, rien sans le limiteur de flashs ; B42-07 : les flashs jugés à ce pic).
+void open_shots_early(ShotWork& work, const std::filesystem::path& file, PlaySettings settings,
+                      std::int64_t start_us, const media::TrackInfo& video, std::optional<double> peak_seen,
+                      bool sdr);
 
 // Le cache : à appeler à chaque tour, ne fait rien la plupart du temps.
 void tend_shots(ShotWork& work);
@@ -96,16 +116,30 @@ struct ShotScene {
   render::SceneLight light;  // pour le grade en trois passes (render/grade_params.h)
   std::uint64_t serial = 0;
   bool fade = false;
+  // Un plan de la pré-analyse : ses bornes, et s'il commence à une vraie coupe. Faux au point de reprise
+  // d'une analyse (un saut, une reprise) : le plan d'avant est le même plan réel (B42-01).
+  std::int64_t start_us = 0;
+  std::int64_t end_us = 0;
+  bool cut_before = true;
   // Un plan de la pré-analyse, aux valeurs fixes ; faux pour une scène vue à l'ingestion, dont la moyenne
   // bouge à chaque image (A42-04).
   bool planned = false;
 };
+// B42-01 : shot suit sans vraie coupe le plan que le grade suivait, fini à previous_end_us (-1 : aucun), à
+// 0,1 s près : le même plan réel, coupé au point de reprise d'une analyse. La lumière glisse au lieu de
+// sauter.
+inline bool continues_shot(const ShotScene& shot, std::int64_t previous_end_us) {
+  constexpr std::int64_t kJoinUs = 100'000;
+  const std::int64_t gap = shot.start_us - previous_end_us;
+  return shot.planned && !shot.cut_before && previous_end_us >= 0 && gap <= kJoinUs && gap >= -kJoinUs;
+}
 // Ce que le grade HDR anime fait à la lumière d'une source SDR, pour le limiteur de flashs : le blanc de ses
 // surfaces (320 nits sous un pic de 400, 690 sous 1 000, 1 304 sous 2 000 : docs/hdr-anime.md) sur celui de
-// la source, 203 nits.
+// la source, 203 nits. Continue et croissante (B42-07 : 652 nits à 1 001 contre 690 à 1 000).
 inline constexpr double flash_gain_of(double peak_nits) {
-  const double white =
-      peak_nits <= 1000.0 ? 320.0 + (peak_nits - 400.0) * (690.0 - 320.0) / 600.0 : 0.652 * peak_nits;
+  const double white = peak_nits <= 1000.0   ? 320.0 + ((peak_nits - 400.0) * (690.0 - 320.0) / 600.0)
+                       : peak_nits <= 2000.0 ? 690.0 + ((peak_nits - 1000.0) * (1304.0 - 690.0) / 1000.0)
+                                             : 0.652 * peak_nits;
   return (white > 203.0 ? white : 203.0) / 203.0;
 }
 // Le numéro d'une scène vue à l'ingestion : jamais celui d'un plan.

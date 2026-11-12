@@ -19,7 +19,10 @@
 #include "app/play/home_screen.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/loop_wait.h"
 #include "app/play/paths.h"
+#include "app/play/problem_report.h"
+#include "app/play/pumped_task.h"
 #include "app/play/user_keys.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -104,7 +107,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       const auto seconds = [](double s) { return format_clock(static_cast<std::int64_t>(s * 1e6), 0); };
       const PrepareView view{
           .label = i18n::ui_tr_format("Preparing engine {}", engine.name),
-          .fraction = progress.fraction(now),
+          .fraction = progress.overdue(now) ? std::nullopt : std::optional(progress.fraction(now)),
           .details = {status.stage,
                       i18n::tr_format("elapsed {} · expected ~{}", seconds(progress.elapsed_seconds(now)),
                                       seconds(progress.expected_seconds())),
@@ -115,7 +118,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
       if (!shown) return std::unexpected(std::move(shown.error()));
     }
-    // Une image toutes les 100 ms, plus tôt si un événement arrive.
+    // Une image toutes les 100 ms, plus tôt si un événement arrive (le résultat du moteur en pousse un).
     (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
   }
 }
@@ -136,6 +139,8 @@ gpu::BackendLog backend_log() {
         break;
       case gpu::BackendLogLevel::Info:
         channel->info("{}", message);
+        // La version de TensorRT sur la carte, en tête du rapport (B39-02) : la fin du journal la perd.
+        if (message.starts_with("TensorRT ")) note_report_fact("TensorRT", message);
         break;
       case gpu::BackendLogLevel::Warn:
         channel->warn("{}", message);
@@ -156,13 +161,19 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label) {
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
-  auto sha256 = prepare::sha256_file_known(onnx);
+  // B29-09 : le hachage d'un ONNX (la première fois du lancement) et le chargement d'un moteur prennent des
+  // centaines de ms à plusieurs secondes ; la fenêtre est pompée pendant ce temps.
+  auto sha256 = run_pumped<std::string>("sha256", [&onnx] { return prepare::sha256_file_known(onnx); });
   if (!sha256) return std::unexpected(std::move(sha256.error()));
+  LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
   auto build = EngineBuild::start(
       EngineRequest{.library = p.library,
                     .init = init,
                     .model = {.id = onnx.stem().string(), .onnx_path = onnx, .sha256 = *sha256},
-                    .shapes = {.min = shape, .opt = shape, .max = shape}});
+                    .shapes = {.min = shape, .opt = shape, .max = shape},
+                    .builder = p.builder,
+                    .wake = &LoopWake::push,
+                    .wake_context = &ready});
   if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
@@ -172,9 +183,12 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   log_channel("app")->info("moteur {} {}", label.name, (*artifact)->path.string());
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
   backend.use_lane(lane);
-  auto loaded = backend.load(**artifact);
+  auto loaded = run_pumped<std::unique_ptr<gpu::Engine>>(
+      "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
   backend.use_lane(gpu::Lane::Upscale);
   if (!loaded) return std::unexpected(std::move(loaded.error()));
+  p.loaded_engines.push_back(
+      {.onnx = onnx, .width = static_cast<int>(shape.dims[3]), .height = static_cast<int>(shape.dims[2])});
   return std::optional(std::move(*loaded));
 }
 

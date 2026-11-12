@@ -53,6 +53,23 @@ int placeholders(std::string_view text) {
   return static_cast<int>(std::ranges::count(text, '{') - 2 * (text.find("{{") != std::string_view::npos));
 }
 
+// Les trous d'un format avec leur spécification, dans l'ordre : « {:.0f} » contre « {} » fait lever
+// std::vformat à l'exécution (B43-10).
+std::vector<std::string> format_specs(std::string_view text) {
+  std::vector<std::string> specs;
+  for (std::size_t i = 0; i < text.size(); ++i) {
+    if (text[i] == '{' && i + 1 < text.size() && text[i + 1] == '{') {
+      ++i;
+    } else if (text[i] == '{') {
+      const std::size_t close = text.find('}', i);
+      if (close == std::string_view::npos) break;
+      specs.emplace_back(text.substr(i, close - i + 1));
+      i = close;
+    }
+  }
+  return specs;
+}
+
 }  // namespace
 
 TEST_CASE("i18n: la table française n'a ni clé en double ni texte vide", "[i18n]") {
@@ -62,6 +79,7 @@ TEST_CASE("i18n: la table française n'a ni clé en double ni texte vide", "[i18
     CHECK_FALSE(entry.french.empty());
     CHECK(seen.insert(entry.english).second);
     CHECK(placeholders(entry.english) == placeholders(entry.french));
+    CHECK(format_specs(entry.english) == format_specs(entry.french));
   }
 }
 
@@ -81,7 +99,8 @@ TEST_CASE("i18n: l'anglais est la langue par défaut et le français vient de la
 TEST_CASE("i18n: chaque texte passé à tr() ou tr_format() a son français", "[i18n]") {
   std::set<std::string_view> known;
   for (const i18n::Entry& entry : i18n::french_entries()) known.insert(entry.english);
-  const std::regex call(R"re(tr(?:_format)?\(\s*((?:"(?:\\.|[^"\\])*"\s*)+))re");
+  // Les formes ui_tr(("…")) (double parenthèse) et tr_view("…") comptent aussi (B43-08).
+  const std::regex call(R"re((?:tr(?:_format)?|tr_view)\(\s*\(?\s*((?:"(?:\\.|[^"\\])*"\s*)+))re");
   const std::regex piece(R"re("((?:\\.|[^"\\])*)")re");
   std::set<std::string> missing;
   for (const auto& file : interface_sources()) {
@@ -133,6 +152,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
   // erreurs internes de chargement, fichier .desktop, journaux), jamais affichés tels quels dans l'interface
   // (voir visible_error.h).
   const std::set<std::string> developer{"settings_toml.cpp",
+                                        "settings_format.cpp",
                                         "settings.cpp",
                                         "auto_bench.cpp",
                                         "backend_library.cpp",
@@ -164,6 +184,11 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "placebo_wayland.cpp",
                                         "ring_watcher.cpp",
                                         "display_contract.cpp",
+                                        "display_follow.cpp",
+                                        "stage_fallback.cpp",
+                                        "sleep_notice.cpp",
+                                        "after_gap.cpp",
+                                        "player_machine.cpp",
                                         "gpu_profile_out.cpp",
                                         "placebo_open.cpp",
                                         "placebo_ring.cpp",
@@ -175,6 +200,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "ring_stage.cpp",
                                         "scripted_input.cpp",
                                         "session.cpp",
+                                        "span_commit.cpp",
                                         "span_derive.cpp",
                                         "span_derive.h",
                                         "ui.cpp",
@@ -187,7 +213,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "maxine_install.cpp",
                                         "relaunch_target.cpp",
                                         "sleep_watch.cpp",
-                                        "system_peak.cpp"};
+                                        "system_peak.cpp",
+                                        "window_vrr.cpp"};
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");
@@ -255,6 +282,16 @@ TEST_CASE("Les familles de refus ont chacune une phrase traduite (A20-09, A24-09
     CHECK_FALSE(text.contains("erreur "));
   }
   CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::HdrUnavailable, "x"}).contains("HDR"));
+}
+
+TEST_CASE("Moteur GPU refusé : le pilote trop ancien et le délai dépassé ont leur conseil (B24-13)",
+          "[i18n]") {
+  const ajp::app::play::FrenchUi french;
+  using ajp::RefusalCode;
+  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::SdkRejected, "x"}).contains("pilote"));
+  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::BuilderTimeout, "x"}).contains("réessayez"));
+  CHECK_FALSE(
+      ajp::app::play::visible_error(ajp::Refusal{RefusalCode::BuilderFailed, "x"}).contains("pilote"));
 }
 
 TEST_CASE("Erreurs visibles : chaque code de refus a une phrase, pas son seul nom anglais (A24-09)",

@@ -18,7 +18,7 @@ struct CostLine {
 
 class CostModel {
  public:
-  static constexpr int kMaxImages = 9;  // kAutoMaxStep + 1
+  static constexpr int kMaxImages = 11;  // kAutoMaxStep + 1
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;
   // Un coût au-delà de 5 s n'est pas une image mais une attente (pause, appareil suspendu) : ignoré.
   static constexpr std::int64_t kMaxCostUs = 5'000'000;
@@ -29,7 +29,8 @@ class CostModel {
   std::optional<CostLine> fit(std::int64_t now_us) const;
   // Rapport p90 / moyenne de la scène en cours, entre 1 et 1,5.
   double spike(std::int64_t now_us) const;
-  // Coupe de scène : les poids perdent la moitié de leur valeur.
+  // Coupe de scène : les poids perdent la moitié de leur valeur, les pointes de l'ancienne scène sont
+  // oubliées.
   void fade(std::int64_t now_us);
   void clear();
   // Mesures gardées pour ce nombre d'images (au plus 16).

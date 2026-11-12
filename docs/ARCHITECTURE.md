@@ -45,7 +45,7 @@ core ────── core_types · privé : toml++
 kernels ─── (feuille)
 subs ────── core_types · privé : libass, core_log
 audio ───── core_types · privé : av, FFmpeg, SDL3, core_log
-media ───── core_types, kernels · privé : av, FFmpeg, Vulkan, core_log
+media ───── core_types, kernels · privé : av, FFmpeg, Vulkan, core (écriture atomique), core_log
 gpu_ir ──── core_types · privé : kernels, core_log
 gpu_span_fp8 core_types
 gpu ─────── core, kernels
@@ -239,14 +239,15 @@ ainsi de prendre du retard sur des images que personne ne verra.
 HDR actif, VRR, crête, noir et blanc SDR en nits, espace de sortie (sRGB, PQ,
 scRGB), et la provenance de chaque champ (défaut, profil, système, `--display`).
 Sur un écran fixe, `lock_factor()` donne le facteur qui cale k vsyncs par image et
-`vsync_speed()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
+`vsync_lock()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
 choisit k.
 
 ### Retour de présentation (`--present`, docs/adr/0011-presentation-en-boucle-fermee.md)
 
 L'écran (`PlaceboScreen`) choisit un niveau (`present_level.h`) : Open, la présentation d'aujourd'hui ;
 Wayland (`wp_presentation`) ; Wait (`vkWaitForPresent2KHR` sondé) ; Timing et TimingAbsolute
-(`VK_EXT_present_timing`). Chaque présentation porte un identifiant (`core/present_ledger.h`) ; les dates
+(`VK_EXT_present_timing`). Au défaut `--present=wait`, le niveau qui date passe devant le sondage :
+Wayland sous CachyOS, Timing sous Windows et X11 quand le pilote l'offre, Wait sinon. Chaque présentation porte un identifiant (`core/present_ledger.h`) ; les dates
 relues sans attente, sur main, nourrissent `core::VblankClock`. `Screen::vblank_grid()` en rend la grille en
 fréquence fixe : `Session::set_display` y prend la fréquence réelle, `LiveSettings::vsync_grid` la phase des
 vblanks, et, à `--vsync-index`, `Session::pick` le numéro du vblank de chaque image (`core::VsyncPicker`).

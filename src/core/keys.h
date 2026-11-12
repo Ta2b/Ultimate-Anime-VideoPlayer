@@ -166,6 +166,8 @@ std::expected<KeyMap, Refusal> parse_keys(std::string_view profile_toml);
 // volume), lues avant [keys] quand ni Ctrl, ni Alt, ni Meta ne sont tenus : une action de [keys] posée dessus
 // ne répondrait jamais (A24-06). read_keys l'ignore et le dit.
 bool fixed_key(Key key);
+// Idem pour un raccourci entier : fixed_key sans modificateur, plus Ctrl+Moins et Ctrl+Plus (délai audio).
+bool fixed_chord(const Chord& chord);
 
 // La même lecture, tolérante (A24-07) : une entrée fautive (action ou touche inconnue, type, conflit) est
 // laissée de côté et nommée dans `ignored`, les autres redéfinitions tiennent. Une action dont la touche est

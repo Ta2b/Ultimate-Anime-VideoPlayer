@@ -116,6 +116,56 @@ TEST_CASE("Étages : « Annuler et regarder » ne coupe que l'étage annulé, et
                     ->refusal));
 }
 
+TEST_CASE("Étages : « Annuler et regarder » sur SPAN vaut pour toute la préparation de la vidéo (B29-02)",
+          "[app][stages]") {
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  StageMemory memory;
+  refuse(memory, ChainStage::Upscale, wanted, true);
+  const auto tried = plan(wanted, memory);
+  REQUIRE(tried);
+  CHECK_FALSE(tried->settings.upscale);
+  // L'interpolation, à une autre taille de travail, demanderait une seconde construction : elle part aussi.
+  CHECK(tried->settings.rife_factor == 0);
+  REQUIRE(tried->notes.size() == 2);
+  CHECK(tried->notes[1].stage == ChainStage::Motion);
+  CHECK(tried->notes[1].change == StageChange::Cancelled);
+  // La vidéo suivante essaie de nouveau les deux.
+  const auto next = plan(wanted, memory, true, "ep02.mkv");
+  REQUIRE(next);
+  CHECK(next->settings.upscale);
+  CHECK(next->settings.rife_factor == 2);
+  // Un refus (pas une annulation) de SPAN laisse l'interpolation, comme avant.
+  StageMemory refused;
+  refuse(refused, ChainStage::Upscale, wanted);
+  CHECK(plan(wanted, refused)->settings.rife_factor == 2);
+}
+
+TEST_CASE("Étages : le refus de l'interpolation suit l'ordre du warp, pas le facteur brut (B09-05)",
+          "[app][stages]") {
+  PlaySettings five = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  five.rife_factor = 5;
+  StageMemory memory;
+  refuse(memory, ChainStage::Motion, five);
+  // L'Auto récrit le facteur sur un autre écran (×5 → ×4) : même ordre du warp, même moteur, pas de
+  // nouvelle construction.
+  PlaySettings four = five;
+  four.rife_factor = 4;
+  CHECK(plan(four, memory)->settings.rife_factor == 0);
+  // ×5/2 (×2,5) n'est pas ×5 : le warp y passe avant SPAN en sortie 1080p.
+  PlaySettings half = five;
+  half.rife_factor_den = 2;
+  half.work_height = 540;
+  CHECK(stage_signature(ChainStage::Motion, half, kWidth, kHeight, kLibrary) != stage_signature(
+                                                                                    ChainStage::Motion,
+                                                                                    [&] {
+                                                                                      PlaySettings s = half;
+                                                                                      s.rife_factor_den = 1;
+                                                                                      return s;
+                                                                                    }(),
+                                                                                    kWidth, kHeight,
+                                                                                    kLibrary));
+}
+
 TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", "[app][stages]") {
   const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
   StageMemory memory;
@@ -130,4 +180,92 @@ TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", 
 }
 
 }  // namespace
+TEST_CASE("B08-02 : un repli interne refusé est retenu pour la séance, au panneau, et oublié par Réessayer",
+          "[stage_fallback]") {
+  StageMemory memory;
+  const std::string key = inner_key("rife-fused", kLibrary, "rife.onnx", 1920, 1088);
+  const Refusal why{RefusalCode::BuilderFailed, "trtexec : mémoire"};
+  {
+    // La première ouverture : le fusionné se construit, échoue, le refus est retenu et neuf.
+    std::vector<StageNote> notes;
+    bool fresh = false;
+    InnerFallbacks inner(&memory, notes, fresh);
+    CHECK(inner.refused(ChainStage::Motion, key) == nullptr);
+    inner.failed(ChainStage::Motion, key, why);
+    CHECK(fresh);
+    REQUIRE(notes.size() == 1);
+    CHECK(notes[0].change == StageChange::Fallback);
+    CHECK_FALSE(memory.empty());
+  }
+  {
+    // La réouverture suivante : la construction est sautée, le panneau le dit encore, l'avis à l'écran non.
+    std::vector<StageNote> notes;
+    bool fresh = false;
+    InnerFallbacks inner(&memory, notes, fresh);
+    const Refusal* before = inner.refused(ChainStage::Motion, key);
+    REQUIRE(before != nullptr);
+    CHECK(before->code == RefusalCode::BuilderFailed);
+    CHECK_FALSE(fresh);
+    REQUIRE(notes.size() == 1);
+    CHECK_FALSE(stage_panel_note(notes).empty());
+    CHECK(stage_notice(notes).empty());
+    // Une autre taille est un autre moteur : elle s'essaie.
+    CHECK(inner.refused(ChainStage::Motion, inner_key("rife-fused", kLibrary, "rife.onnx", 1280, 736)) ==
+          nullptr);
+  }
+  memory.forget();  // « Réessayer »
+  CHECK(memory.empty());
+  std::vector<StageNote> notes;
+  bool fresh = false;
+  InnerFallbacks inner(&memory, notes, fresh);
+  CHECK(inner.refused(ChainStage::Motion, key) == nullptr);
+}
+
+TEST_CASE("B08-02 : « Annuler et regarder » n'est pas retenu comme un repli", "[stage_fallback]") {
+  StageMemory memory;
+  std::vector<StageNote> notes;
+  bool fresh = false;
+  InnerFallbacks inner(&memory, notes, fresh);
+  inner.failed(ChainStage::Upscale, "k",
+               Refusal{.code = RefusalCode::Cancelled, .detail = "annulé", .key = std::string(kWatchNowKey)});
+  CHECK(memory.empty());
+  CHECK(notes.empty());
+  CHECK_FALSE(fresh);
+}
+
+TEST_CASE("B31-02 : l'anneau refusé retire l'interpolation, puis SPAN, pour la réouverture",
+          "[stage_fallback]") {
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  const Refusal ring{RefusalCode::GpuMemoryExhausted, "anneau 3840x2160 x 6"};
+  // Un refus après la préparation : l'interpolation part la première.
+  REQUIRE(retreat_stage(&memory, ring, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
+          ChainStage::Motion);
+  auto plan = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep01.mkv", true);
+  REQUIRE(plan);
+  CHECK(plan->settings.rife_factor == 0);
+  CHECK(plan->settings.upscale);
+  REQUIRE(plan->notes.size() == 1);
+  CHECK(plan->notes[0].change == StageChange::Dropped);
+  // La chaîne rouverte sans interpolation refuse encore : SPAN part à son tour.
+  REQUIRE(retreat_stage(&memory, ring, plan->settings, false, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
+          ChainStage::Upscale);
+  plan = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep01.mkv", true);
+  REQUIRE(plan);
+  CHECK_FALSE(plan->settings.upscale);
+  // Plus rien à retirer : le refus arrête la vidéo comme avant.
+  CHECK_FALSE(
+      retreat_stage(&memory, ring, plan->settings, false, false, kWidth, kHeight, kLibrary, "ep01.mkv"));
+}
+
+TEST_CASE("B31-02 : un appareil perdu ou sans mémoire de séance ne retire rien", "[stage_fallback]") {
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  CHECK_FALSE(retreat_stage(&memory, Refusal{RefusalCode::DeviceLost, "perdu"}, wanted, true, true, kWidth,
+                            kHeight, kLibrary, "ep01.mkv"));
+  CHECK_FALSE(retreat_stage(nullptr, Refusal{RefusalCode::GpuMemoryExhausted, "x"}, wanted, true, true,
+                            kWidth, kHeight, kLibrary, "ep01.mkv"));
+  CHECK(memory.empty());
+}
+
 }  // namespace ajp::app::play

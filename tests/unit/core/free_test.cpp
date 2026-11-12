@@ -350,7 +350,8 @@ TEST_CASE("free grid vsync : instants multiples de la période d'écran à la ph
       const std::int64_t pts = *at.pts_us;
       CHECK(pts > previous);
       CHECK(pts - previous >= kVsync - kVsync / 8);  // au moins un vsync entre deux images
-      CHECK(pts <= k * kSourcePeriod);
+      // Dans la paire ; la source droite, au vsync qui la suit de moins d'une demi-période (B12-04).
+      CHECK(pts <= k * kSourcePeriod + (at.is_source() ? kVsync / 2 : 0));
       if (!at.is_source()) CHECK(off_grid(pts, origin, kVsync) == 0);
       previous = pts;
     }
@@ -364,19 +365,22 @@ TEST_CASE("free grid vsync : un GPU plus lent laisse l'image tenue des vsyncs de
   // deux vsyncs.
   const FreeInputs inputs{
       .min_gap_us = kVsync, .step_us = 40'000, .vsync_period_us = kVsync, .vsync_origin_us = 0};
+  // Le pas borne les images calculées ; les sources montrées telles quelles (B12-04) ne passent pas par le
+  // réseau et ne comptent pas.
   std::int64_t count = 0;
   std::int64_t last = 0;
   for (std::uint32_t k = 1; k <= 240; ++k) {
     const CadenceStep step =
         grid.push(stamp(k + 1, k * kSourcePeriod), inputs);  // gcc-13 : pas de référence sur un temporaire
     for (const OutputInstant& at : step.instants()) {
-      if (!at.is_source()) CHECK(off_grid(*at.pts_us, 0, kVsync) == 0);
-      ++count;
       last = *at.pts_us;
+      if (at.is_source()) continue;
+      CHECK(off_grid(*at.pts_us, 0, kVsync) == 0);
+      ++count;
     }
   }
   const double fps = static_cast<double>(count) * 1e6 / static_cast<double>(last);
-  CHECK(fps > 22.0);
+  CHECK(fps > 20.0);
   CHECK(fps < 26.0);
   // Une paire déjà passée (horloge prédite) : la source seule, l'image précédente reste tenue.
   const CadenceStep late =

@@ -99,7 +99,7 @@ ajp_add_spirv(ajp_vk_backend
 
 # La bibliothèque chargée à l'exécution lie ces bibliothèques statiques : code indépendant de
 # la position.
-set_target_properties(ajp_vk_backend ajp_vk_compute ajp_gpu_ir ajp_kernels ajp_core_log ajp_core
+set_target_properties(ajp_vk_backend ajp_vk_compute ajp_gpu_ir ajp_kernels ajp_core_log ajp_core_os ajp_core
   PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # La bibliothèque chargée à l'exécution : ajp_backend_vulkan.so (ajp_backend_<nom>, sans

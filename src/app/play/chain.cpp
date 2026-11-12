@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <tuple>
 #include <utility>
 #include <variant>
 
@@ -12,6 +13,7 @@
 #include "app/play/i18n.h"
 #include "app/play/look_catalog.h"
 #include "app/play/present_stats.h"
+#include "app/play/visible_error.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -70,6 +72,17 @@ bool grade_changed(const PlaySettings& a, const PlaySettings& b) {
          a.look_highlight != b.look_highlight || a.surface_white != b.surface_white;
 }
 
+}  // namespace
+
+std::pair<int, int> toggled_interpolation(int factor, int den,
+                                          const std::optional<std::pair<int, int>>& kept) {
+  if (factor >= 2) return {0, den};
+  if (kept && kept->first >= 2) return *kept;
+  return {kDefaultRifeFactor, 1};
+}
+
+namespace {
+
 // Un raccourci change la chaîne pour la séance : play.toml garde ce qu'il avait avant.
 void keep_for_file(Chain& to, bool grade, bool rife) {
   if (grade && !to.kept.grade) to.kept.grade = to.running.grade;
@@ -117,6 +130,23 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
       now_us);
 }
 
+// B08-14 : la finition (filtre final, débandage, netteté) se pose une fois, même quand plusieurs changent.
+void apply_finish(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  const PlaySettings& r = to.running;
+  const bool sharpness = wanted.sharpness != r.sharpness;
+  const bool filter = wanted.final_scaler != r.final_scaler || wanted.deband != r.deband;
+  if (!sharpness && !filter) return;
+  to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
+  Controls& controls = to.ui.controls();
+  if (sharpness) controls.notify(i18n::ui_tr_format("Sharpness: {} %", wanted.sharpness), now_us);
+  if (filter) {
+    to.live.set_deband_source(wanted.deband);
+    controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
+                                       wanted.deband ? i18n::tr("on") : i18n::tr("off")),
+                    now_us);
+  }
+}
+
 // Réglages en direct du menu des paramètres : RIFE, réduction, HDR, son, statistiques.
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
@@ -134,7 +164,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     if (wanted.rife_auto) controls.notify(i18n::ui_tr("Interpolation: Auto"), now_us);
   }
   if (wanted.auto_free != r.auto_free) {
-    log_channel("app")->info("mode d'Auto en direct : {}", wanted.auto_free ? "rapide" : "stable");
+    log_channel("app")->info("mode d'Auto en direct : {}", wanted.auto_free ? "instantané" : "stable");
     controls.notify(wanted.auto_free ? i18n::ui_tr("Auto: Instant") : i18n::ui_tr("Auto: Stable"), now_us);
   }
   if (to.header_text && (factor_of(wanted) != factor_of(r) || wanted.downscale != r.downscale ||
@@ -164,17 +194,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     if (wanted.grade != r.grade)
       controls.notify(wanted.grade ? i18n::ui_tr("Grade on") : i18n::ui_tr("Grade off"), now_us);
   }
-  if (wanted.sharpness != r.sharpness) {
-    to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
-    controls.notify(i18n::ui_tr_format("Sharpness: {} %", wanted.sharpness), now_us);
-  }
-  if (wanted.final_scaler != r.final_scaler || wanted.deband != r.deband) {
-    to.screen.set_finish(wanted.final_scaler, wanted.deband, wanted.sharpness);
-    to.live.set_deband_source(wanted.deband);
-    controls.notify(i18n::ui_tr_format("Scaler: {}, deband {}", label(wanted.final_scaler),
-                                       wanted.deband ? i18n::tr("on") : i18n::tr("off")),
-                    now_us);
-  }
+  apply_finish(to, wanted, now_us);
   if (wanted.audio_delay_ms != r.audio_delay_ms) {
     to.session.command(cmd::SetAudioDelay{.delay_us = std::int64_t{wanted.audio_delay_ms} * 1000});
     controls.notify(i18n::ui_tr_format("Audio delay: {} ms", wanted.audio_delay_ms), now_us);
@@ -249,11 +269,18 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
     return;
   }
   if (drop.kind == DropKind::Subtitles) {
-    if (auto added = to.pipeline.add_subtitle_file(drop.path)) {
+    auto added = to.pipeline.add_subtitle_file(drop.path);
+    if (added) {
       if (to.dropped_subtitles != nullptr) to.dropped_subtitles->push_back(drop.path);
       switch_subtitles(to, *added, now_us);
       return;
     }
+    // B08-11 : des sous-titres illisibles ne sont pas « ni une vidéo ni des sous-titres » ; la raison va au
+    // journal.
+    log_channel("app")->warn("sous-titres glissés refusés : {} ({})", name, added.error().detail);
+    to.ui.controls().notify(
+        i18n::ui_tr_format("Subtitles refused ({}): {}", visible_error(added.error()), name), now_us);
+    return;
   }
   log_channel("app")->info("fichier glissé refusé : {}", name);
   to.ui.controls().notify(i18n::ui_tr_format("Not a video or subtitles: {}", name), now_us);
@@ -320,13 +347,13 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             }
             if (std::holds_alternative<cmd::ToggleInterpolation>(command)) {
               PlaySettings wanted = to.running;
-              wanted.rife_factor = wanted.rife_factor >= 2 ? 0 : kDefaultRifeFactor;
-              if (wanted.rife_factor == kDefaultRifeFactor) wanted.rife_factor_den = 1;
               keep_for_file(to, false, true);
+              std::tie(wanted.rife_factor, wanted.rife_factor_den) =
+                  toggled_interpolation(wanted.rife_factor, wanted.rife_factor_den, to.kept.rife);
               switch_chain(to, wanted, now_us);
               return;
             }
-            if (std::holds_alternative<cmd::ProcessingOff>(command)) {  // la source telle quelle
+            if (std::holds_alternative<cmd::ProcessingOff>(command)) {  // B08-05 : SPAN et finition restent
               PlaySettings wanted = to.running;
               wanted.grade = false;
               wanted.rife_factor = 0;
@@ -467,10 +494,6 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           [&](const StartCalibration&) { start_calibration(to); },
           [&](const RetryStages&) { retry_stages(to); }},
       input);
-}
-
-void write_record(std::ofstream& stats, const PresentRecord& record) {
-  stats << stats_line(record);
 }
 
 void log_summary(const Session& session) {
