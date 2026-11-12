@@ -479,10 +479,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!p.settings_path.empty() && !p.options.file.empty()) {
     auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
-        // B32-06 : la variante de SPAN chargée (FP16, FP8, INT8) entre dans la clé : un palier appris sur
-        // l'une ne vaut pas pour l'autre.
+        // B32-06, C08-08 : les modèles chargés et la variante de SPAN (FP16, FP8, INT8) entrent dans la clé.
         core::auto_memory_key(prepare::utf8_path(p.options.file), file_bytes,
-                              std::format("{} {}", c.motion_name(), span_variant), settings.work_height,
+                              c.auto_memory_engine(span_variant), settings.work_height,
                               gpu_facts(p.screen).name);
     if (chain.live.auto_active()) {
       if (const auto remembered = core::load_auto_step(auto_memory_path, auto_memory_key)) {

@@ -129,6 +129,15 @@ std::string_view ChainEngines::motion_name() const {
   return use_drba() ? "DistilDRBA" : use_apple() ? "Apple" : "RIFE";
 }
 
+std::string ChainEngines::auto_memory_engine(std::string_view span_variant) const {
+  std::string out(motion_name());
+  if (!use_drba() && rife_model) out += " " + core::to_utf8(rife_model->stem());
+  if (rife_fused || drba_fused) out += " fusionné";
+  if (rife_motion || drba_motion) out += " mouvement";
+  if (model) out += " " + core::to_utf8(model->path.stem());
+  return std::format("{} {}", out, span_variant);
+}
+
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
   // C08-03 : au-delà de 720 lignes de travail, le flot s'estime sur une copie réduite (kRifeMotionHeight)
   // puis le warp l'applique à la taille de travail. Une perte de précision consentie pour la vitesse : elle

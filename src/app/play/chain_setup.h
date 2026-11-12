@@ -166,6 +166,10 @@ struct ChainEngines {
   bool interpolates() const { return rife || rife_motion || use_drba(); }
   // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
+  // C08-08 : le moteur dans la clé de la mémoire de l'Auto (core/auto_memory.h) : l'interpolation, son
+  // modèle, fusionné ou entier, image ou mouvement, et le SPAN chargé (span_variant : FP16, FP8, INT8). Un
+  // palier appris sur RIFE 4.25 lite ne vaut pas pour RIFE 4.26.
+  std::string auto_memory_engine(std::string_view span_variant) const;
   // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
   std::string motion_label(const PlaySettings& settings) const;
   // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », « Anime4K ×2 · M · mode A · … », ou « sans
