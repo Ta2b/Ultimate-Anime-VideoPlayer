@@ -271,6 +271,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       return std::move(*chain);
     }
     StageFailure& failure = chain.error();
+    // La fenêtre fermée pendant un chargement : la lecture s'arrête, comme à « q » (run_chain), sans retenir
+    // l'étage comme annulé ni refaire un tour que la même fermeture interromprait.
+    if (failure.refusal.key == kWindowClosedKey) return std::nullopt;
     // Une vidéo glissée arrête toute la préparation : rien n'est retenu, la lecture passe à elle (A08-08).
     // Un appareil perdu n'est pas un refus de l'étage : la chaîne entière s'arrête, la relance suit (A31-02).
     if (!failure.stage || failure.refusal.key == kDroppedVideoKey ||
@@ -619,7 +622,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
   const gpu::BackendInit init = chain_backend_init(p);
   auto backend = run_pumped<BackendLibrary::Instance>(  // B29-09 : la fenêtre pompée
-      "backend", [&p, &init] { return BackendLibrary::create(p.library, init); });
+      "backend", [library = p.library, init] { return BackendLibrary::create(library, init); });
   if (!backend) return stage_refused(std::move(backend.error()), std::nullopt);
   c.backend = std::move(*backend);
   c.backend_name = c.backend->capabilities().name;

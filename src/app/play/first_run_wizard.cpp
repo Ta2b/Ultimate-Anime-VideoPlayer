@@ -149,7 +149,11 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (!is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Skip"), {0.0F, tall})) skip(wizard);
+      if (ImGui::Button(i18n::tr("Skip"), {0.0F, tall})) {
+        // « Passer » sur l'écran Moteur ne vaut pas accord : rien ne se télécharge sous licence.
+        if (current(wizard) == WizardStep::Engines && view.first_time) decline_downloads(view);
+        skip(wizard);
+      }
       ImGui::SameLine();
     }
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);

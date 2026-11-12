@@ -155,6 +155,7 @@ class PlayerUi {
   bool text_input_ = false;
   bool keyboard_nav_ = false;  // l'assistant : Tab, flèches, Entrée et Espace vont à ImGui (A25-14)
   bool home_ = false;          // l'écran d'accueil est à l'écran : le menu y prend la molette
+  bool wizard_ = false;        // l'assistant est à l'écran : ses listes et son cadre défilent à la molette
   std::int64_t last_frame_us_ = 0;
   const ImDrawData* draw_ = nullptr;  // dernière image recomposée, si quelque chose y est visible
   std::uint64_t serial_ = 0;          // compte les recompositions de frame() (UiFrame::serial)

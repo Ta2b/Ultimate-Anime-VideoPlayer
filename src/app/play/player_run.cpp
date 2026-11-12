@@ -542,6 +542,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       chain.reopen = chain.running;
     }
+    // La veille annoncée puis annulée (couvercle rouvert, un programme l'empêche) : le système le dit, et
+    // aucun trou de temps ne la confirme. Sans cela, l'indicateur levé ferait lire un gel de la boucle, dix
+    // minutes plus tard, comme une veille (chaîne rouverte pour rien).
+    if (sleep_notice.take_resumed()) sleep_announced = false;
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;

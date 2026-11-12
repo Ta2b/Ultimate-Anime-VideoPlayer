@@ -81,8 +81,9 @@ bool round_button(const Pen& pen, const char* id, ImVec2 center, float size) {
 }
 
 void tooltip(std::string_view text) {
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-    ImGui::SetTooltip("%.*s", static_cast<int>(text.size()), text.data());
+  if (!ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) return;
+  const std::string shown = french_spaces(text);  // « : », « % » ne passent pas seuls en début de ligne
+  ImGui::SetTooltip("%s", shown.c_str());
 }
 
 // Bulle de texte centrée sur x, posée au-dessus de bottom, gardée entre min_x et max_x. Au
@@ -131,7 +132,7 @@ float preparing_text_limit(float x0, float x1, bool button, float scale) {
 }
 
 // L'infobulle du bouton lecture/pause avec la touche réellement liée dans [keys] (B24-07) ; les autres
-// infobulles nomment des touches fixes (f, m, a, j, p, Page haut/bas).
+// infobulles nomment des touches fixes (f, m, a, j, p, Page précédente/suivante).
 std::string pause_tooltip(bool paused) {
   const std::optional<core::Chord>& chord = configured_keys().chord(core::Action::TogglePause);
   if (!chord) return std::string(paused ? i18n::tr("Play") : i18n::tr("Pause"));

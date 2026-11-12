@@ -696,6 +696,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // P3.10 : ouvert par double-clic, l'échec ne ferme plus la fenêtre sans un mot ; seuls les lancements
       // pilotés (essais, banc, captures) gardent le code de sortie.
       if (scripted || player.quit) return result;
+      if (result.error().key == kWindowClosedKey) return {};  // la croix pendant un chargement : on quitte
       // Le GPU perdu : une relance sur cette vidéo, à cet instant (relaunch_after_loss).
       if (relaunch_after_loss(result.error(), file, player.stopped_at_us, false)) return {};
       log->error("{}", result.error().detail);

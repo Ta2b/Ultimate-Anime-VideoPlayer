@@ -71,7 +71,7 @@ class KeyboardNav {
 // (--keys) qui tombent pendant l'écran y sont pressées, comptées depuis son ouverture.
 std::expected<std::optional<FirstRunView>, Refusal> welcome(
     PlaceboScreen& screen, PlayerUi& ui, FirstRunView view, const PlayOptions& options, std::size_t& next_key,
-    SnapshotPlan& snapshot, int& furthest, const std::function<void(const Wizard&)>& on_step) {
+    SnapshotPlan& snapshot, int& furthest, const std::function<void(const FirstRunView&)>& on_step) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   std::vector<Input> actions;
@@ -83,7 +83,7 @@ std::expected<std::optional<FirstRunView>, Refusal> welcome(
     // P3.3 : chaque « Suivant », « Passer » ou « Précédent » enregistre les choix faits jusque-là.
     if (view.wizard.at != at) {
       at = view.wizard.at;
-      if (on_step) on_step(view.wizard);
+      if (on_step) on_step(view);
     }
     for (; next_key < options.keys.size() && host_now_us() - started >= options.keys[next_key].first;
          ++next_key)
@@ -185,6 +185,7 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
     return base;
   }
   bool watch_now = false;
+  bool show_failed = false;  // l'échec de l'affichage est déjà journalisé
   std::vector<Input> ignored;
   DeferredDrops drops;  // la vidéo d'un second lancement attend la fin de la calibration (B29-04)
   while (true) {
@@ -219,8 +220,20 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                          .fraction = creeping_fraction(shared->fraction, waited),
                          .watch_now = &watch_now};
     }
-    if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown)
-      log->warn("calibration de la machine : {}", shown.error().detail);
+    if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(host_now_us(), view)}); !shown) {
+      // Le GPU perdu (TDR, veille) : inutile de calibrer plus longtemps, les essais en cours sont arrêtés et
+      // la lecture, qui voit la même perte, relance le lecteur. Toute autre erreur ne se journalise qu'une
+      // fois au lieu de dix par seconde.
+      if (shown.error().code == RefusalCode::DeviceLost) {
+        worker->request_stop();
+        log->warn("calibration de la machine : GPU perdu ({}) ; réglages inchangés", shown.error().detail);
+        return base;
+      }
+      if (!show_failed) log->warn("calibration de la machine : {}", shown.error().detail);
+      show_failed = true;
+    } else {
+      show_failed = false;
+    }
     (void)SDL_WaitEventTimeout(nullptr, 100);
   }
   const std::scoped_lock lock(shared->mutex);
@@ -234,6 +247,10 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
   PlaySettings calibrated =
       candidate_settings((*shared->result)->chosen, std::move(base), (*shared->result)->models);
   calibrated.preset = Preset::Auto;
+  // Le résultat se dit (chaîne retenue, cadence, ce qui a été abaissé) au lieu de rester au journal.
+  const std::string notice = calibration_notice(**shared->result);
+  log->info("calibration de la machine : {}", notice);
+  ui.controls().defer(i18n::Translated::data(notice));
   return calibrated;
 }
 
@@ -278,7 +295,7 @@ void integrate(const PlayerPaths& paths, const Wizard& wizard, core::Settings& e
   // Une fois, sans confirmation (elle ajoute une entrée, ne prend la place de personne).
   std::optional<std::string> just_registered;
   if (!engines.open_with_registered) {
-    if (auto registered = run_pumped<std::string>("open-with", [&place] { return register_player(place); })) {
+    if (auto registered = run_pumped<std::string>("open-with", [place] { return register_player(place); })) {
       engines.open_with_registered = true;
       log->info("Ouvrir avec : {}", *registered);
       just_registered = std::move(*registered);
@@ -289,7 +306,7 @@ void integrate(const PlayerPaths& paths, const Wizard& wizard, core::Settings& e
   // Lecteur par défaut demandé à l'écran Intégration (P3.18).
   if (!make_default_requested(wizard)) return;
   // Inscrit à l'instant : le lecteur par défaut ne le réinscrit pas (A25-07).
-  const auto make_default = [&place, &just_registered] {
+  const auto make_default = [place, just_registered] {
     return just_registered ? default_once_registered(*just_registered) : choose_as_default(place);
   };
   if (auto made = run_pumped<std::string>("default-player", make_default))
@@ -317,10 +334,19 @@ std::function<void(FirstRunView&)> retranslation(GpuFacts gpu, EnginesHere here,
 }
 
 // La fin de l'assistant : réglages, inscription et calibration. Faux si la fenêtre se ferme pendant la
-// calibration.
-bool finish_wizard(const EngineScreen& s, const Wizard& wizard, core::Settings& engines,
-                   const std::filesystem::path& play_path) {
+// calibration. Un moteur coché qui n'a pas pu s'installer (install_failed) : pas de calibration, qui
+// mesurerait Vulkan sur une carte faite pour TensorRT ; le préréglage Auto estimé reste, et l'avis dit où
+// réinstaller le moteur puis refaire la calibration.
+bool finish_wizard(const EngineScreen& s, Wizard wizard, core::Settings& engines,
+                   const std::filesystem::path& play_path, bool install_failed) {
   const auto log = log_channel("app");
+  if (install_failed && wizard.calibrate) {
+    wizard.calibrate = false;
+    log->warn("assistant : un moteur n'a pas pu s'installer, calibration non lancée");
+    s.ui.controls().defer(i18n::ui_tr(
+        "Calibration skipped: the engine did not install. Install it in Settings > General > Engines, then "
+        "calibrate again (Video > Post-processing)."));
+  }
   engines = wizard_settings(std::move(engines));
   auto play = load_settings(play_path);
   PlaySettings chosen_play;
@@ -375,14 +401,24 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
                       display_height(s.screen.window()), display_refresh_hz(s.screen.window()));
     start_from_saved(view.wizard, play_path);
   }
-  const auto on_step = [&](const Wizard& wizard) {
+  view.first_time = wizard_mode && !revisit && !engines.first_run_done;
+  const auto on_step = [&](const FirstRunView& shown) {
     if (!wizard_mode || revisit) return;
+    const Wizard& wizard = shown.wizard;
     PlaySettings saved;
     if (auto play = load_settings(play_path)) saved = std::move(*play);
     if (auto written = save_settings(play_path, wizard_play_settings(wizard, std::move(saved))); !written)
       log->warn("{}", written.error().detail);
     engines.first_run_step = std::max(engines.first_run_step, wizard.seen);
-    if (auto written = core::save_settings(s.engines_path, engines); !written)
+    // Les cases de l'écran Moteur, une fois passé, s'écrivent avec lui : fermer la fenêtre avant la fin
+    // reprend avec les mêmes cases au lieu de la présélection (first_run_view).
+    core::Settings picked = engines;
+    if (wizard.seen >= static_cast<int>(WizardStep::Engines)) {
+      picked = settings_after(shown, engines);
+      picked.first_run_done = engines.first_run_done;
+      picked.first_run_step = engines.first_run_step;
+    }
+    if (auto written = core::save_settings(s.engines_path, picked); !written)
       log->warn("{}", written.error().detail);
   };
   int furthest = engines.first_run_step;
@@ -403,9 +439,13 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     return true;
   }
   const core::Settings before = engines;
+  // Un assistant dont l'écran Moteur n'a jamais été passé par « Suivant » : la licence n'a pas été montrée.
+  if ((*chosen_view)->first_time && !engines_reviewed((*chosen_view)->wizard, before.first_run_step))
+    decline_downloads(**chosen_view);
   engines = settings_after(**chosen_view, engines);
   if (!revisit) save_choice_before_download(s.engines_path, engines, before.first_run_done);
-  auto downloaded = install_chosen(s.screen, s.ui, s.catalog, **chosen_view, engines);
+  std::vector<core::EngineId> failed;
+  auto downloaded = install_chosen(s.screen, s.ui, s.catalog, **chosen_view, engines, &failed);
   if (!downloaded) return std::unexpected(std::move(downloaded.error()));
   if (!*downloaded) return false;
   // Le moteur des réseaux choisi à l'onglet Moteurs reste, sauf si un moteur vient d'arriver : le
@@ -413,7 +453,8 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
-  if (wizard_mode && !finish_wizard(s, (*chosen_view)->wizard, engines, play_path)) return false;
+  if (wizard_mode && !finish_wizard(s, (*chosen_view)->wizard, engines, play_path, !failed.empty()))
+    return false;
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
   log->info("moteurs choisis : {}", chosen_line(engines));
@@ -445,8 +486,11 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> open_backend(const Engin
       preferred_first(backend_candidates(catalog, paths), engines);
   // Charger TensorRT et créer l'instance d'essai prend plusieurs secondes : sur un thread, la fenêtre
   // pompée (P2.12).
+  // Des copies : la croix laisse ce thread à son sort, l'appelant rend la main (pumped_task.h).
   auto library = run_pumped<std::shared_ptr<BackendLibrary>>(
-      "backend", [&] { return BackendLibrary::choose(backends_within(candidates, engines), probe); });
+      "backend", [within = backends_within(candidates, engines), probe] {
+        return BackendLibrary::choose(within, probe);
+      });
   // Un moteur préféré qui refuse l'appareil laisse sa place sans bruit : sa raison va au journal.
   // Le module avec le dossier de sa version (<moteurs>/<moteur>/<version>/<module>) : quel paquet est
   // installé (B39-02).

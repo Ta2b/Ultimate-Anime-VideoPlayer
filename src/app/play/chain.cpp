@@ -11,6 +11,7 @@
 #include "app/play/episodes.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/i18n.h"
+#include "app/play/resume.h"
 #include "app/play/look_catalog.h"
 #include "app/play/present_stats.h"
 #include "app/play/visible_error.h"
@@ -283,6 +284,11 @@ void ask_engines(Chain& to, EngineChange request) {
 
 void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
   const std::string name = prepare::utf8_path(drop.path.filename());
+  if (drop.kind == DropKind::Video && same_video_file(drop.path, to.file)) {
+    // La vidéo en cours, glissée ou transmise encore une fois : rouvrir la chaîne ne changerait rien.
+    log_channel("app")->info("fichier glissé déjà en lecture, ignoré : {}", name);
+    return;
+  }
   if (drop.kind == DropKind::Video) {  // une autre vidéo : la chaîne se ferme pour elle
     log_channel("app")->info("fichier glissé : {}", name);
     to.next_file = drop.path;

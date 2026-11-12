@@ -392,7 +392,7 @@ void PlayerUi::apply_scale() {
 }
 
 bool PlayerUi::over_ui() const {
-  return (controls_.drawn() || home_) && ImGui::GetIO().WantCaptureMouse;
+  return (controls_.drawn() || home_ || wizard_) && ImGui::GetIO().WantCaptureMouse;
 }
 
 void PlayerUi::begin_frame(std::int64_t now_us) {
@@ -493,7 +493,7 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
     case SDL_EVENT_MOUSE_WHEEL: {
       controls_.activity(now_us);
       input_pending_ = true;
-      if (over_ui() && (panel_.is_open() || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))) {
+      if (over_ui() && (panel_.is_open() || wizard_ || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))) {
         io.AddMouseWheelEvent(event.wheel.x, event.wheel.y);  // défilement d'un menu
         return false;
       }
@@ -556,6 +556,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
   home_ = false;
+  wizard_ = false;
 
   const ImGuiIO& io = ImGui::GetIO();
   begin_frame(now_us);
@@ -597,6 +598,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
 
 const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
   home_ = false;
+  wizard_ = false;
   begin_frame(now_us);
   clicks_.clear();
   draw_preparation(view, look_, now_us);
@@ -608,6 +610,7 @@ const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& 
 
 const ImDrawData* PlayerUi::welcome(std::int64_t now_us, FirstRunView& view) {
   home_ = false;
+  wizard_ = true;  // la molette défile la liste des langues ou le cadre de l'écran, pas le volume
   begin_frame(now_us);
   clicks_.clear();
   draw_first_run(view, look_.scale);
@@ -623,6 +626,7 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
     cursor_hidden_ = false;
   }
   home_ = true;
+  wizard_ = false;
   input_pending_ = false;
   begin_frame(now_us);
   clicks_.clear();
