@@ -241,8 +241,8 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
     x[static_cast<std::size_t>(c) * out_plane + o] = __float2half_rn(acc[c] * norm);
 }
 
-// Fin : flot du dernier bloc ajouté ; image (warp bilinéaire ou Catmull-Rom, masque sigmoïde, mélange) ou flot
-// et masque.
+// Fin : flot du dernier bloc ajouté ; image (warp bilinéaire ou Catmull-Rom, masque sigmoïde, mélange) ou
+// flot et masque.
 __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -275,7 +275,8 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
 #pragma unroll
     for (int ch = 0; ch < 3; ++ch) {
       const __half* source = input + static_cast<std::size_t>(3 * n + ch) * plane;
-      warped[n][ch] = rounded(p.cubic != 0 ? catmull_rom_sample(source, tap, p.width, p.height) : bilinear(source, tap, p.width));
+      warped[n][ch] = rounded(p.cubic != 0 ? catmull_rom_sample(source, tap, p.width, p.height)
+                                           : bilinear(source, tap, p.width));
     }
   }
   const float rest = rounded(1.0F - sig);
