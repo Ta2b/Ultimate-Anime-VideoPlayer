@@ -499,8 +499,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> build_drba(P
                                                                                ChainEngines& c,
                                                                                const PlaySettings& settings,
                                                                                DrbaFusedUse* fused) {
-  // Warp après SPAN (sortie haute) : la variante mouvement, un SPAN par source au lieu d'un par image
-  // créée.
+  // Warp après SPAN : la variante mouvement, un SPAN par source au lieu d'un par image créée.
   bool motion =
       settings.upscale && warp_after_span(settings.span_order, c.work.height * kSpanFactor, c.order_factor);
   // D4 : la variante mouvement estime à la taille de RIFE mouvement (720p pour un travail plus grand),

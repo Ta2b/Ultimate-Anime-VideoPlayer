@@ -127,6 +127,12 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
+// L'anneau refusé à l'ouverture du pipeline : la retraite le lit sous sa clé (C09-01, links.h).
+Refusal ring_refusal(Refusal refusal) {
+  refusal.key = std::string(kRingRefusalKey);
+  return refusal;
+}
+
 // B31-02 : l'étage que ce refus retire pour la réouverture (stage_fallback.h, retreat_stage) ; rien pour le
 // banc, qui mesure la chaîne demandée ou rien.
 std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusal& refusal) {
@@ -244,12 +250,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       });
   if (!pipeline) {
     // B31-02 : l'anneau refusé retire un étage, et la chaîne se rouvre au même endroit sans lui.
-    if (ring_refused) {
-      Refusal ring = pipeline.error();
-      ring.key = std::string(kRingRefusalKey);
-      if (retreat(p, c, ring))
-        return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
-    }
+    if (ring_refused && retreat(p, c, ring_refusal(pipeline.error())))
+      return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
     return std::unexpected(std::move(pipeline.error()));
   }
   if ((*pipeline)->chapters_flattened() && p.notice.empty())
