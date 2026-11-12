@@ -1,6 +1,7 @@
 #include "app/play/release_refresh.h"
 
 #include <chrono>
+#include <format>
 #include <utility>
 
 #include "app/play/paths.h"
@@ -17,9 +18,17 @@ ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPat
                                      const PlaySettings& saved) {
   ReleaseRefresh refresh{.cache = paths::data_root(paths) / "engines-nvidia.lock"};
   refresh.before = read_release_index(refresh.cache);
-  const bool online = saved.update_mode != UpdateMode::Never && !options.data_dir;
-  if (!online || release_repo().empty() || !release_index_due(refresh.cache, installed_version()))
+  // « Jamais » coupe les vérifications de version, pas le catalogue des moteurs : l'index apporte le paquet
+  // TensorRT de la version installée. Il se relit alors une fois par version (copie ou 404 sans limite
+  // d'âge), pas chaque jour (C26-02).
+  const bool online = !options.data_dir;
+  const bool never = saved.update_mode == UpdateMode::Never;
+  if (!online || release_repo().empty() || !release_index_due(refresh.cache, installed_version(), never))
     return refresh;
+  // Une copie gardée d'une autre version (le lecteur vient d'être remplacé) ne sert à rien : traitée comme
+  // absente, le lancement attend la neuve plutôt que de rester sans le paquet TensorRT de cette version
+  // (C26-01).
+  if (release_index_tag(refresh.before.text) != std::format("v{}", installed_version())) refresh.before = {};
   auto done = std::make_shared<std::atomic<bool>>(false);
   auto started = start_thread(
       "release-index", ThreadReport([done](const Refusal& refused) {
@@ -48,9 +57,11 @@ EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved
     // Sans copie gardée, l'écran des moteurs et l'assistant ne verraient pas TensorRT : la réponse s'attend
     // (16 s au plus, curl borné), la fenêtre pompée. Avec une copie, elle sert ce lancement-ci, et la neuve
     // le suivant.
+    // La fermeture de la fenêtre coupe l'attente (C26-08).
     if (copy.text.empty()) {
       const auto started = std::chrono::steady_clock::now();
-      while (!refresh.done->load()) {
+      while (!refresh.done->load() && !window_close_requested() &&
+             std::chrono::steady_clock::now() - started < std::chrono::seconds(20)) {
         pump_window_events();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
       }
@@ -60,6 +71,7 @@ EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved
               .count());
     }
     if (refresh.done->load()) copy = read_release_index(refresh.cache);
+    if (!refresh.done->load()) refresh.thread.request_stop();  // curl coupé, la copie neuve attendra
   }
   merge_release_copy(catalog, copy, release_repo(),
                      update_public_keys(load_update_state(paths::update_state(paths.data)).revoked_keys),

@@ -51,3 +51,24 @@ if AJP_UPDATE_KEY="$work/key.pem" "$here/sign-manifest.sh" --revoke abc 9.9.9 st
   fail "--revoke accepte une clé mal formée"
 fi
 echo "test-signing : révocation par la clé de secours vérifiée"
+
+# C51-02 : la re-signature ne signe que ce que l'ancien manifeste nomme, avec les mêmes octets.
+resign() {  # dossier
+  AJP_UPDATE_PUBKEYS="$active" AJP_UPDATE_KEY="$work/active.pem" "$here/resign-manifest.sh" 9.9.9 "$1" https://example.invalid/v9.9.9
+}
+mkdir -p "$work/r1"
+printf 'archive' > "$work/r1/ajp-linux-x64.tar.gz"
+AJP_UPDATE_KEY="$work/active.pem" "$here/sign-manifest.sh" --revoke "$(printf '1%.0s' {1..64})" 9.9.9 stable "$work/r1" \
+  https://example.invalid/v9.9.9 >/dev/null
+cp -r "$work/r1" "$work/r2" && cp -r "$work/r1" "$work/r3"
+printf 'macos' > "$work/r1/ajp-macos-arm64.zip"   # reste d'un essai, absent de l'ancien manifeste
+resign "$work/r1" >/dev/null || fail "la re-signature d'archives conformes échoue"
+grep -q 'macos' "$work/r1/manifest.toml" && fail "la re-signature a repris une archive que l'ancien manifeste ne nomme pas"
+grep -q "revoked_keys = \[\"$(printf '1%.0s' {1..64})\"\]" "$work/r1/manifest.toml" || fail "revoked_keys perdues à la re-signature"
+AJP_UPDATE_PUBKEY="$active" "$here/verify-download.sh" "$work/r1/manifest.toml" "$work/r1/manifest.toml.sig" \
+  "$work/r1/ajp-linux-x64.tar.gz" >/dev/null || fail "le manifeste re-signé ne se vérifie pas"
+printf 'remplacee' > "$work/r2/ajp-linux-x64.tar.gz"   # archive changée depuis la signature
+if resign "$work/r2" >/dev/null 2>&1; then fail "la re-signature blanchit une archive remplacée"; fi
+rm "$work/r3/ajp-linux-x64.tar.gz"
+if resign "$work/r3" >/dev/null 2>&1; then fail "la re-signature accepte qu'une archive du manifeste manque"; fi
+echo "test-signing : re-signature vérifiée"

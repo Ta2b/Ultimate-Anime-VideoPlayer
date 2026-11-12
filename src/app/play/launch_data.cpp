@@ -22,11 +22,11 @@ DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& pla
   move_heavy_data(data, places.heavy, said);
   places.cache = cache_data(place.home, places.heavy);
   move_cache_data(places.heavy, places.cache, said);
-  purge_misplaced(user_data(data), said);
   // La mise à jour n'est plus qu'une notification : les archives préparées et la copie de l'ancienne
   // installation des versions qui s'appliquaient elles-mêmes se retirent (A26-06) ; le cache des moteurs
   // TensorRT est borné (A33-04).
   if (!purge_updates) return places;  // --data-dir, banc : ni le dossier de l'utilisateur ni son bureau
+  purge_misplaced(user_data(data), said);
   // C18-05 : la purge précède toute construction de moteur, elle reste avant la fenêtre ; sa durée se dit
   // quand elle se voit, pour mesurer ce qu'elle coûte au lancement sur un disque lent.
   const auto tidy_from = std::chrono::steady_clock::now();

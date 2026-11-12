@@ -216,6 +216,17 @@ std::string pci_text(const PciAddress& pci) {
 
 std::string describe(const DeviceCaps& caps) {
   const Features& f = caps.enabled;
+  // C49-06 : ce que le VkDevice a activé, pas ce que l'appareil propose. Une extension présente dont la
+  // fonction n'est pas activée (libplacebo n'a pas demandé cooperativeMatrix) retire les variantes à matrices
+  // coopératives sans qu'une autre ligne le dise.
+  std::string matrices;
+  if (f.cooperative_matrix) {
+    matrices = ", matrices coopératives activées";
+  } else if (caps.cooperative_matrix) {
+    matrices = ", matrices coopératives présentes mais NON activées sur ce VkDevice";
+  }
+  if (f.vulkan_memory_model) matrices += ", modèle mémoire Vulkan";
+  if (f.float8_matrix) matrices += ", matrices FP8";
   const auto flag = [](bool on, const char* name) { return on ? std::format(", {}", name) : std::string{}; };
   return std::format(
       "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
@@ -227,7 +238,7 @@ std::string describe(const DeviceCaps& caps) {
       flag(f.subgroup_size_control, "contrôle des sous-groupes"),
       flag(f.compute_full_subgroups, "sous-groupes pleins"), flag(f.float_atomic_add, "atomiques float"),
       caps.subgroup_size, caps.max_push_constants, caps.max_workgroup_invocations, caps.max_shared_memory,
-      caps.max_storage_buffer_range, flag(caps.cooperative_matrix, "VK_KHR_cooperative_matrix présent"));
+      caps.max_storage_buffer_range, matrices);
 }
 
 }  // namespace ajp::gpu::vk

@@ -310,6 +310,24 @@ bool names_other_live_launcher(const std::string& current, const std::string& wa
 }
 #endif
 
+#if defined(_WIN32)
+// L'exécutable que nomme une commande du registre (« "C:\\x\\ajp.exe" "%1" » ou sans guillemets) existe-t-il
+// ?
+bool names_other_live_executable(const std::string& command) {
+  if (command.empty()) return false;
+  std::string executable;
+  if (command.front() == '"') {
+    const std::size_t end = command.find('"', 1);
+    executable = command.substr(1, end == std::string::npos ? std::string::npos : end - 1);
+  } else {
+    executable = command.substr(0, command.find(' '));
+  }
+  if (executable.empty()) return false;
+  std::error_code error;
+  return std::filesystem::is_regular_file(core::path_from_utf8(executable), error);
+}
+#endif
+
 std::filesystem::path user_data(std::filesystem::path pref) {
   if (pref.empty()) return {};
   if (!pref.has_filename()) pref = pref.parent_path();  // la barre finale de SDL
@@ -437,7 +455,13 @@ bool refresh_registration(const PlayerPlace& place) {
   if (RegGetValueW(HKEY_CURRENT_USER, key.c_str(), nullptr, RRF_RT_REG_SZ, nullptr, data.data(), &size) !=
       ERROR_SUCCESS)
     return false;
-  if (core::to_utf8(std::filesystem::path(std::wstring(data.data()))) == command->data) return false;
+  const std::string current = core::to_utf8(std::filesystem::path(std::wstring(data.data())));
+  if (current == command->data) return false;
+  // Une commande qui nomme encore un autre ajp.exe présent (une version publiée et un dossier de
+  // développement) n'est pas reprise : deux installations qui alternent la réécriraient, et l'Explorateur
+  // rechargerait ses icônes et ses associations (SHCNE_ASSOCCHANGED), à chaque lancement. Seule une commande
+  // dont l'exécutable a disparu suit celui-ci, comme la fiche de Linux.
+  if (names_other_live_executable(current)) return false;
   return write_registry(values).has_value();
 #elif defined(__APPLE__)
   static_cast<void>(place);
@@ -575,9 +599,12 @@ constexpr std::array<std::string_view, 2> kAskedMimes{"video/x-matroska", "video
 bool xdg_default_is_ajp(const char* tool, std::string_view mime) {
   const prepare::ProcessSpec spec{
       .program = tool, .args = {"query", "default", std::string(mime)}, .timeout = std::chrono::seconds(10)};
-  std::string out;
-  auto run = prepare::run_process(spec, [&](std::string_view line) { out = line; }, std::stop_token());
-  return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && default_handler_is_ajp(out);
+  // Toutes les lignes (stdout et stderr mêlés) : un avertissement de Qt ou de KDE écrit après l'identifiant
+  // ne doit pas faire comparer autre chose que la fiche .desktop.
+  bool found = false;
+  auto run = prepare::run_process(
+      spec, [&](std::string_view line) { found = found || default_handler_is_ajp(line); }, std::stop_token());
+  return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && found;
 }
 #endif
 

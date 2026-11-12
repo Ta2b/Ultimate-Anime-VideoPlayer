@@ -77,6 +77,10 @@ std::shared_ptr<std::future<std::expected<T, Refusal>>> start_abandonable_task(s
 // qui suit la lit aussi.
 bool window_close_requested();
 
+// La clé du refus rendu quand la fenêtre se ferme pendant l'attente : ce n'est ni un échec de l'étage ni
+// « Annuler et regarder », la lecture s'arrête (watch_now, prepare_chain, play).
+inline constexpr std::string_view kWindowClosedKey = "window.closed";
+
 // C30-01 : la fenêtre fermée pendant un travail sans délai (run_pumped). Ce travail lit des objets de son
 // appelant (backend TensorRT, artefact, chemins) : il n'est plus laissé à son sort. Les fenêtres se cachent
 // (la croix répond tout de suite), puis l'attente continue, pompée, jusqu'à ce que finished soit vrai. Un
@@ -158,7 +162,8 @@ class PumpedTask {
     if (thread_.joinable()) leave(Abandoned::Probe);
     if (closed) {
       std::string detail = std::format("{} : fenêtre fermée pendant l'attente", name_);  // i18n-ok : journal
-      return std::unexpected(Refusal{RefusalCode::Cancelled, std::move(detail)});
+      return std::unexpected(Refusal{
+          .code = RefusalCode::Cancelled, .detail = std::move(detail), .key = std::string(kWindowClosedKey)});
     }
     const auto seconds = limit->count() / 1000;
     std::string detail = std::format("{} : pas de réponse en {} s", name_, seconds);  // i18n-ok : journal
@@ -225,6 +230,14 @@ std::expected<T, Refusal> run_pumped_until(std::string_view name,
 template <class T, class Fn>
 std::expected<T, Refusal> run_pumped(std::string_view name, Fn fn) {
   return detail::run_pumped_until<T>(name, std::nullopt, true, true, std::move(fn));
+}
+
+// Un travail qui lit des objets de l'appelant (un backend, un artefact). Depuis C30-01, run_pumped attend
+// déjà tout travail sans délai après la croix (fenêtre cachée, au plus kCloseWaitLimit) : les deux se
+// confondent, le nom dit l'intention au site d'appel.
+template <class T, class Fn>
+std::expected<T, Refusal> run_pumped_borrowing(std::string_view name, Fn fn) {
+  return run_pumped<T>(name, std::move(fn));
 }
 
 // run_pumped borné à limit (P2.15) : un partage réseau muet bloque read() dans le noyau, hors de portée du

@@ -130,9 +130,9 @@ std::optional<std::vector<FlashSpan>> take_flashes(const std::string& in, std::s
   return flashes;
 }
 
-// C36-02 : un fichier par variante (« <clé>-<variante>.shots ») : le même épisode vu sur deux écrans de pics
-// différents, ou avec et sans la recherche des visages, garde ses deux analyses au lieu de refaire la
-// pré-analyse de tout le fichier à chaque changement. La variante 0 garde l'ancien nom.
+// Un fichier par variante (C42-05) : un portable qui passe d'un écran à l'autre garde les plans des deux, au
+// lieu de réanalyser la vidéo à chaque bascule et d'écraser l'autre variante. La variante 0 garde le nom
+// d'avant.
 std::filesystem::path file_of(const std::filesystem::path& dir, const std::string& key,
                               std::uint32_t variant) {
   if (variant == 0) return dir / (key + kExtension);

@@ -5,6 +5,7 @@
 // Provisoire : l'OSD du lecteur sera ImGui, dessiné par render (pl_dispatch_vertex).
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -44,7 +45,14 @@ class OsdText {
   std::vector<std::string> lines_;
   OutputSize size_;
   subs::SubtitleFrame frame_;
+  std::int64_t rendered_at_us_ = 0;  // quand les lignes affichées ont été rendues (horloge monotone)
 };
+
+// C24-08 : un texte qui change à chaque image (statistiques) ne se re-rend que toutes les 250 ms : les
+// chiffres ne se lisent pas plus vite, et chaque rendu coûte libass et un téléversement d'atlas. Un
+// premier texte, un texte qui disparaît ou une autre taille se rendent tout de suite.
+inline constexpr std::int64_t kOsdRefreshUs = 250'000;
+bool osd_refresh_due(bool had_text, bool has_text, bool size_changed, std::int64_t since_render_us);
 
 // Le script ASS de l'OSD : une ligne de dialogue de durée illimitée, en haut à gauche, les
 // caractères spéciaux d'ASS neutralisés.

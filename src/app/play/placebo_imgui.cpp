@@ -11,6 +11,8 @@
 #include <libplacebo/shaders/custom.h>
 #include <libplacebo/shaders/sampling.h>
 
+// C24-09 : les refus de la couche graphique portent FeatureUnavailable (famille « pilote »), pas les codes de
+// fichier ou de modèle (FormatUnsupported, InputMismatch) que visible_error dit à l'utilisateur comme tels.
 namespace ajp::app::play {
 namespace {
 
@@ -98,7 +100,7 @@ std::expected<void, Refusal> ImGuiLayer::update_texture(ImTextureData& texture) 
     params.host_writable = true;
     params.debug_tag = "ajp interface";
     if (params.format == nullptr)
-      return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rgba8 ou r8"});
+      return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "rgba8 ou r8"});
     tex = pl_tex_create(gpu_, &params);
     if (tex == nullptr) return std::unexpected(render_failed("pl_tex_create (texture de l'interface)"));
     texture.SetTexID(adopt(tex));
@@ -139,11 +141,11 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
   }
   const pl_tex target_tex = target.planes[0].texture;
   if (!has_caps(target_tex->params.format->caps, PL_FMT_CAP_BLENDABLE))
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "cible de l'interface non mélangeable"});
+    return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "cible de l'interface non mélangeable"});
   if (data.DisplayPos.x != 0.0F || data.DisplayPos.y != 0.0F || data.FramebufferScale.x != 1.0F ||
       data.FramebufferScale.y != 1.0F) {
     return std::unexpected(
-        Refusal{RefusalCode::InputMismatch, "interface : DisplayPos (0, 0) et échelle 1 attendus"});
+        Refusal{RefusalCode::FeatureUnavailable, "interface : DisplayPos (0, 0) et échelle 1 attendus"});
   }
   if (serial == 0) return draw_lists(data, target, target_tex, white_nits, nullptr);
   if (!cache_matches(serial, target, white_nits)) {
@@ -179,14 +181,14 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
       if (cache_ == nullptr) return draw_lists(data, target, target_tex, white_nits, nullptr);
     }
     pl_tex_clear(gpu_, cache_, std::array<float, 4>{0.0F, 0.0F, 0.0F, 0.0F}.data());
-    pl_rect2d bounds{};
+    std::vector<pl_rect2d> bounds;
     if (auto drawn = draw_lists(data, target, cache_, white_nits, &bounds); !drawn) return drawn;
     cache_serial_ = serial;
     cache_flipped_ = target.planes[0].flipped;
     cache_white_ = white_nits;
     cache_color_ = target.color;
     cache_repr_ = target.repr;
-    cache_bounds_ = bounds;
+    cache_bounds_ = std::move(bounds);
   }
   return blend_cache(target_tex);
 }
@@ -207,37 +209,80 @@ bool ImGuiLayer::cache_matches(std::uint64_t serial, const pl_frame& target, flo
 // La texture gardée, déjà prémultipliée par pl_alpha_overlay (couleur × alpha, alpha accumulé), se mélange
 // par « over » : cible × (1 − alpha) + couleur. Seul le rectangle couvert par l'interface est touché.
 std::expected<void, Refusal> ImGuiLayer::blend_cache(pl_tex target_tex) {
-  const pl_rect2d& b = cache_bounds_;
-  if (b.x1 <= b.x0 || b.y1 <= b.y0) return {};
-  pl_shader sh = pl_dispatch_begin(dispatch_);
-  pl_sample_src src{};
-  src.tex = cache_;
-  src.rect = {static_cast<float>(b.x0), static_cast<float>(b.y0), static_cast<float>(b.x1),
-              static_cast<float>(b.y1)};
-  if (!pl_shader_sample_direct(sh, &src)) {
-    pl_dispatch_abort(dispatch_, &sh);
-    return std::unexpected(render_failed("pl_shader_sample_direct (interface gardée)"));
+  // Un passage par bande (titre en haut, barre en bas) : leur union couvrirait toute la hauteur et
+  // relirait la texture gardée entière à chaque présentation (C24-01).
+  for (const pl_rect2d& b : cache_bounds_) {
+    if (b.x1 <= b.x0 || b.y1 <= b.y0) continue;
+    pl_shader sh = pl_dispatch_begin(dispatch_);
+    pl_sample_src src{};
+    src.tex = cache_;
+    src.rect = {static_cast<float>(b.x0), static_cast<float>(b.y0), static_cast<float>(b.x1),
+                static_cast<float>(b.y1)};
+    if (!pl_shader_sample_direct(sh, &src)) {
+      pl_dispatch_abort(dispatch_, &sh);
+      return std::unexpected(render_failed("pl_shader_sample_direct (interface gardée)"));
+    }
+    static constexpr pl_blend_params kPremultiplied{.src_rgb = PL_BLEND_ONE,
+                                                    .dst_rgb = PL_BLEND_ONE_MINUS_SRC_ALPHA,
+                                                    .src_alpha = PL_BLEND_ONE,
+                                                    .dst_alpha = PL_BLEND_ONE_MINUS_SRC_ALPHA};
+    pl_dispatch_params params{};
+    params.shader = &sh;
+    params.target = target_tex;
+    params.rect = b;
+    params.blend_params = &kPremultiplied;
+    if (!pl_dispatch_finish(dispatch_, &params))
+      return std::unexpected(render_failed("pl_dispatch_finish (interface gardée)"));
   }
-  static constexpr pl_blend_params kPremultiplied{.src_rgb = PL_BLEND_ONE,
-                                                  .dst_rgb = PL_BLEND_ONE_MINUS_SRC_ALPHA,
-                                                  .src_alpha = PL_BLEND_ONE,
-                                                  .dst_alpha = PL_BLEND_ONE_MINUS_SRC_ALPHA};
-  pl_dispatch_params params{};
-  params.shader = &sh;
-  params.target = target_tex;
-  params.rect = b;
-  params.blend_params = &kPremultiplied;
-  if (!pl_dispatch_finish(dispatch_, &params))
-    return std::unexpected(render_failed("pl_dispatch_finish (interface gardée)"));
   return {};
 }
 
+void add_dirty_rect(std::vector<pl_rect2d>& rects, pl_rect2d added) {
+  if (added.x1 <= added.x0 || added.y1 <= added.y0) return;
+  // Un rectangle qui touche ou recouvre un autre s'y fond ; la fusion peut en toucher d'autres.
+  for (bool merged = true; merged;) {
+    merged = false;
+    for (auto it = rects.begin(); it != rects.end(); ++it) {
+      if (added.x0 > it->x1 || it->x0 > added.x1 || added.y0 > it->y1 || it->y0 > added.y1) continue;
+      added = {std::min(added.x0, it->x0), std::min(added.y0, it->y0), std::max(added.x1, it->x1),
+               std::max(added.y1, it->y1)};
+      rects.erase(it);
+      merged = true;
+      break;
+    }
+  }
+  rects.push_back(added);
+  // Au-delà de la borne (interface très morcelée), on fond les deux plus proches : l'aire reste bornée.
+  while (rects.size() > kMaxDirtyRects) {
+    std::size_t best_a = 0;
+    std::size_t best_b = 1;
+    long long best_growth = -1;
+    for (std::size_t a = 0; a < rects.size(); ++a) {
+      for (std::size_t b = a + 1; b < rects.size(); ++b) {
+        const long long w = std::max(rects[a].x1, rects[b].x1) - std::min(rects[a].x0, rects[b].x0);
+        const long long h = std::max(rects[a].y1, rects[b].y1) - std::min(rects[a].y0, rects[b].y0);
+        const long long growth = w * h;
+        if (best_growth < 0 || growth < best_growth) {
+          best_growth = growth;
+          best_a = a;
+          best_b = b;
+        }
+      }
+    }
+    rects[best_a] = {
+        std::min(rects[best_a].x0, rects[best_b].x0), std::min(rects[best_a].y0, rects[best_b].y0),
+        std::max(rects[best_a].x1, rects[best_b].x1), std::max(rects[best_a].y1, rects[best_b].y1)};
+    rects.erase(rects.begin() + static_cast<std::ptrdiff_t>(best_b));
+  }
+}
+
 std::expected<void, Refusal> ImGuiLayer::draw_lists(const ImDrawData& data, const pl_frame& target,
-                                                    pl_tex into, float white_nits, pl_rect2d* bounds) {
+                                                    pl_tex into, float white_nits,
+                                                    std::vector<pl_rect2d>* bounds) {
   const pl_fmt float2 = pl_find_vertex_fmt(gpu_, PL_FMT_FLOAT, 2);
   const pl_fmt rgba8 = pl_find_named_fmt(gpu_, "rgba8");
   if (float2 == nullptr || rgba8 == nullptr || !has_caps(rgba8->caps, PL_FMT_CAP_VERTEX))
-    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "formats de sommet de l'interface"});
+    return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "formats de sommet de l'interface"});
   const std::array<pl_vertex_attrib, 3> attribs{{
       {.name = "ajp_pos", .fmt = float2, .offset = offsetof(ImDrawVert, pos)},
       {.name = "ajp_uv", .fmt = float2, .offset = offsetof(ImDrawVert, uv)},
@@ -305,11 +350,7 @@ std::expected<void, Refusal> ImGuiLayer::draw_lists(const ImDrawData& data, cons
                                .y0 = flipped ? height - scissors.y1 : scissors.y0,
                                .x1 = scissors.x1,
                                .y1 = flipped ? height - scissors.y0 : scissors.y1};
-        *bounds = bounds->x1 <= bounds->x0 ? in_tex
-                                           : pl_rect2d{.x0 = std::min(bounds->x0, in_tex.x0),
-                                                       .y0 = std::min(bounds->y0, in_tex.y0),
-                                                       .x1 = std::max(bounds->x1, in_tex.x1),
-                                                       .y1 = std::max(bounds->y1, in_tex.y1)};
+        add_dirty_rect(*bounds, in_tex);
       }
     }
   }

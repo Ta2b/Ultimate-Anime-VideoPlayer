@@ -392,4 +392,25 @@ TEST_CASE("Familles : pas de tuiles FP8 sur une RTX 50 sans mesure", "[vk_backen
   // Intention du produit : RTX 50, pas de FP8 tant qu'aucune mesure ne le justifie (B45-08).
   CHECK_FALSE(vk::matrix_f8_allowed(vk::GpuFamily::NvidiaBlackwell));
   CHECK(vk::matrix_f8_allowed(vk::GpuFamily::NvidiaAda));
+  // C45-05 : une famille inconnue (un RTX 50 à l'identifiant hors des tables) n'a pas de FP8 non plus.
+  CHECK_FALSE(vk::matrix_f8_allowed(vk::GpuFamily::Unknown));
+}
+
+// C45-06 : des estampilles égales (petit nœud, horloge grossière) n'accusent pas l'horloge ; à l'envers, oui.
+TEST_CASE("Autotuner : les estampilles égales allongent la passe, celles à l'envers accusent l'horloge",
+          "[vk_backend][autotune]") {
+  using vk::net::check_stamps;
+  using vk::net::StampCheck;
+  CHECK(check_stamps(std::vector<std::uint64_t>{10, 20, 35}) == StampCheck::Ok);
+  CHECK(check_stamps(std::vector<std::uint64_t>{10, 10, 35}) == StampCheck::Flat);
+  CHECK(check_stamps(std::vector<std::uint64_t>{10, 20, 20}) == StampCheck::Flat);
+  CHECK(check_stamps(std::vector<std::uint64_t>{10, 30, 20}) == StampCheck::Backwards);
+  CHECK(check_stamps(std::vector<std::uint64_t>{10, 10, 5}) == StampCheck::Backwards);
+  CHECK(check_stamps(std::vector<std::uint64_t>{}) == StampCheck::Ok);
+  // Les dispatchs par passe quadruplent jusqu'au plafond, jamais au-delà.
+  CHECK(vk::net::longer_repeats(3) == 12);
+  CHECK(vk::net::longer_repeats(12) == 48);
+  CHECK(vk::net::longer_repeats(48) == 192);
+  CHECK(vk::net::longer_repeats(192) == vk::net::kMaxStampRepeats);
+  CHECK(vk::net::longer_repeats(0) == 4);
 }

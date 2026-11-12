@@ -54,6 +54,11 @@ struct Wizard {
   int seen = 0;                    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
+// L'écran Moteur a-t-il été passé par « Suivant » (dans cette séance, ou dans une séance précédente dont
+// saved_step est le dernier écran vu) ? Sans lui, aucune licence n'a été montrée : rien ne se télécharge.
+// Vrai quand cette machine n'a pas d'écran Moteur.
+bool engines_reviewed(const Wizard& wizard, int saved_step);
+
 // Le lecteur par défaut est-il demandé ? Non si l'écran qui le propose a été passé (A25-04).
 bool make_default_requested(const Wizard& wizard);
 
@@ -76,7 +81,7 @@ std::vector<std::string> wizard_summary(const Wizard& wizard);
 
 // Ce que « Terminer » écrit : les mises à jour, le dernier écran vu.
 core::Settings wizard_settings(core::Settings settings);
-// Les réglages de lecture : HDR, langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
+// Les réglages de lecture : langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
 // de la machine sautée : le préréglage Auto.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
 // P3.3 : l'assistant repris en route retrouve les choix enregistrés à chaque écran (mises à jour, langues).

@@ -2,8 +2,8 @@
 // (media/shot_probe.h). Pur calcul, sans FFmpeg ni thread : les mesures entrent dans l'ordre de présentation,
 // les plans finis sortent avec leurs valeurs fixes.
 //
-// Mesures sur l'échelle de app::play::SceneStats (app/play/chain_shots.h) : luminance
-// BT.709 des canaux R, V, B encodés (0 à 1), hors bandes noires, histogramme de 64 cases.
+// Mesures sur l'échelle gamma de kernels/spec/frame_stats.h : luminance BT.709 des canaux R, V, B encodés
+// (0 à 1), hors bandes noires, histogramme de 64 cases.
 #pragma once
 
 #include <array>
@@ -45,6 +45,8 @@ struct ShotFrame {
   ShotLight light;
   // Les palettes des visages trouvés dans cette image (media/face_skin.h) ; vide sans recherche de visages.
   std::vector<SkinTone> faces;
+  // Le transfert de la source : la grille est la luma de son signal encodé (zone_nits_of, C42-04).
+  kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr;
 };
 
 // Les valeurs d'un plan, sur l'échelle de SceneStats.
@@ -100,10 +102,13 @@ struct Shot {
 };
 
 // Les mesures d'une image à pts_us, tirées de l'analyse (kernels/spec/frame_stats.h).
-ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats);
+ShotFrame shot_frame_of(std::int64_t pts_us, const kernels::FrameStats& stats,
+                        kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr);
 
 // Les seize zones d'une image en cd/m², pour le limiteur de flashs (media/flash_guard.h) : la luma moyenne de
-// chaque zone passée en lumière (gamma 2,4), le tout ramené à la luminance moyenne mesurée de l'image.
+// chaque zone passée en lumière par le transfert de la source (gamma 2,4 en SDR, ST 2084 en PQ, OETF inverse
+// et OOTF en HLG : C42-04, une source HDR voyait ses écarts entre zones écrasés), le tout ramené à la
+// luminance moyenne mesurée de l'image.
 std::array<float, kShotGrid * kShotGrid> zone_nits_of(const ShotFrame& frame);
 
 // Une séquence de flashs dangereux trouvée par la pré-analyse : le plafond tient de from_us à until_us.

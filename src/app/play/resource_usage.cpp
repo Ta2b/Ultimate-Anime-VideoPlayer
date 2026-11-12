@@ -12,6 +12,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "app/play/placebo_screen.h"
 #include "core/log.h"
 #include "core/thread.h"
 
@@ -150,6 +151,7 @@ std::string resource_drift(const ProcessResources& first, const ProcessResources
 }
 
 ResourcesAfterTeardown::~ResourcesAfterTeardown() {
+  screen_.release_ring();
   log_channel("app")->info("ressources après la fermeture de la chaîne : {}",  // i18n-ok : journal
                            describe(process_resources()));
 }

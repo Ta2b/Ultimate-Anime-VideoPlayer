@@ -48,18 +48,22 @@ bool version_name(std::string_view name) {
 }
 
 // Le dossier updates/ des versions qui s'appliquaient elles-mêmes : rien que des versions, extract et
-// previous. Un parcours qui échoue ne reconnaît rien : rien ne part.
-bool update_leftovers(const std::filesystem::path& updates) {
+// previous. Un parcours qui échoue ne reconnaît rien : rien ne part. signed_by_updater : dans un dossier
+// partagé avec d'autres programmes (~/.local/share, %APPDATA%), des noms de version seuls (« 2.1 ») ne
+// prouvent rien ; il faut « extract » ou « previous », que seul l'ancien lecteur y rangeait.
+bool update_leftovers(const std::filesystem::path& updates, bool signed_by_updater = false) {
   namespace fs = std::filesystem;
   std::error_code error;
   if (!fs::is_directory(updates, error)) return false;
   fs::directory_iterator it(updates, error);
+  bool signed_here = false;
   for (; !error && it != fs::directory_iterator(); it.increment(error)) {
     const std::string name = core::to_utf8(it->path().filename());
     if (!it->is_directory(error) || !(name == "extract" || name == "previous" || version_name(name)))
       return false;
+    signed_here = signed_here || name == "extract" || name == "previous";
   }
-  return !error;
+  return !error && (signed_here || !signed_by_updater);
 }
 
 }  // namespace
@@ -89,6 +93,17 @@ namespace {
 // Les entrées que l'on refait sans rien perdre : elles vont dans le dossier des caches.
 constexpr std::array<std::string_view, 4> kCaches{"engines", "modeles", "plans", "shaders.cache"};
 
+// Le renommage a échoué parce que la cible est sur un autre volume (EXDEV ; ERROR_NOT_SAME_DEVICE, 17, sous
+// Windows, au cas où la bibliothèque ne le traduise pas).
+bool cross_volume(const std::error_code& error) {
+  if (error == std::errc::cross_device_link) return true;
+#ifdef _WIN32
+  return error.category() == std::system_category() && error.value() == 17;
+#else
+  return false;
+#endif
+}
+
 int move_entries(const std::filesystem::path& from, const std::filesystem::path& to,
                  std::span<const std::string_view> names,
                  const std::function<void(const std::string&)>& said) {
@@ -114,6 +129,14 @@ int move_entries(const std::filesystem::path& from, const std::filesystem::path&
     fs::create_directories(to, error);
     fs::rename(source, target, error);
     if (error) {
+      // Seul un autre volume justifie la copie, qui peut peser plusieurs Go de moteurs TensorRT : un
+      // renommage refusé pour une autre raison (fichier ouvert sous Windows, droits) se dit et se retente au
+      // lancement suivant, au lieu de figer le démarrage sur une copie.
+      if (!cross_volume(error)) {
+        constexpr std::string_view kBlocked = "{} : non déplacé vers {} ({})";  // i18n-ok : journal
+        say(std::format(kBlocked, core::to_utf8(source), core::to_utf8(to), error.message()));
+        continue;
+      }
       // Un autre volume : copie complète à côté, puis un renommage sur le volume de la cible ; la source ne
       // part qu'après. Une copie refusée est retirée, l'ancien dossier sert encore. C36-06 : annoncée avant
       // (plusieurs Go se copient avant la fenêtre), sa durée dite après.
@@ -209,7 +232,7 @@ int purge_misplaced(const std::filesystem::path& shared,
     error.clear();
     if (fs::is_empty(plans, error) && !error) drop(plans);
   }
-  if (const fs::path updates = shared / "updates"; update_leftovers(updates)) drop(updates);
+  if (const fs::path updates = shared / "updates"; update_leftovers(updates, true)) drop(updates);
   return removed;
 }
 

@@ -183,11 +183,6 @@ std::expected<void, Refusal> change_update_state(const fs::path& file,
 
 namespace {
 
-std::int64_t unix_now() {
-  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
-      .count();
-}
-
 // L'état du fichier, lu sous le verrou ; le réseau, lui, ne le tient jamais (B26-09, B30-02) : « Check now »
 // pendant une vérification de fond, ou la fermeture du lecteur, n'attendent pas quarante secondes de curl.
 UpdateState load_locked(const fs::path& file) {

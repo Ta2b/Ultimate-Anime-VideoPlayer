@@ -8,6 +8,7 @@
 #include "app/play/options.h"
 #include "app/play/player_engines.h"
 #include "app/play/precision.h"
+#include "app/play/pumped_task.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
 #include "core/utf8_path.h"
@@ -15,7 +16,10 @@
 namespace ajp::app::play {
 
 bool watch_now(const Refusal& refusal) {
-  return refusal.key == kWatchNowKey || refusal.code == RefusalCode::Cancelled;
+  // La fenêtre fermée pendant l'attente (run_pumped) est aussi un Cancelled, mais pas ce choix de
+  // l'utilisateur.
+  return refusal.key == kWatchNowKey ||
+         (refusal.code == RefusalCode::Cancelled && refusal.key != kWindowClosedKey);
 }
 
 std::string stage_signature(ChainStage stage, const PlaySettings& s, int source_width, int source_height,

@@ -70,4 +70,16 @@ i18n::Translated fused_refusal_notice(const OpenedChain& opened) {
   return {};
 }
 
+i18n::Translated reduced_precision_notice(const std::string& engine, const gpu::PrecisionNotice& reduced) {
+  if (reduced.layers == 0) return {};
+  const i18n::Translated loss = reduced.loss_measured
+                                    ? i18n::ui_tr_format("{:.1f} dB against float", reduced.loss_db)
+                                    : i18n::ui_tr("loss not measured");
+  const i18n::Translated gain = reduced.gain_measured
+                                    ? i18n::ui_tr_format("speed {:+.0f} %", reduced.gain_percent)
+                                    : i18n::ui_tr("speed gain not measured");
+  return i18n::ui_tr_format("{} engine: reduced precision on {} layer(s) for speed ({}, {})", engine,
+                            reduced.layers, loss.str(), gain.str());
+}
+
 }  // namespace ajp::app::play

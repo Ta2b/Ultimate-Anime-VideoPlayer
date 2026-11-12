@@ -55,7 +55,13 @@ bool oled_panel(const PlaySettings& s, const std::optional<DisplayFacts>& displa
 }  // namespace
 
 // Le grade HDR de la chaîne : route native en HDR (le SDR converti en PQ par libplacebo, puis le grade
-// anime guidé), le grade SDR sinon. Pic : celui de l'écran (1000 nits s'il ne le dit pas).
+// anime guidé), le même rendu ramené au SDR sinon. Pic : celui de l'écran (1000 nits s'il ne le dit pas).
+void cap_flash_peak(render::GradeChoice& choice) {
+  if (!choice.pq || choice.pq->peak <= kFlashPeakNits) return;
+  choice.pq->uncapped_peak = choice.pq->peak;  // l'annonce HDR garde le pic (B41-03)
+  choice.pq->peak = kFlashPeakNits;
+}
+
 render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::optional<DisplayFacts>& display,
                              const std::optional<render::BlackThresholds>& black, bool source_hdr) {
   const int peak = s.true_hdr_peak > 0 ? s.true_hdr_peak : auto_peak > 0 ? auto_peak : 1000;
@@ -67,39 +73,32 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
   }
   const core::HdrMode route = s.hdr_native ? core::HdrMode::Native : core::HdrMode::Off;
   render::GradeChoice choice;
-  for (const bool pq : {true, false}) {
-    auto decision = render::decide_grade(g, render::GradeContext{.route = route,
-                                                                 .source_hdr = source_hdr,
-                                                                 .output_pq = pq,
-                                                                 .enabled = s.grade,
-                                                                 .peak_nits = static_cast<double>(peak)});
-    if (!decision) {
-      log_channel("app")->warn("grade : {}", decision.error().detail);
-      return {};
+  auto decision = render::decide_grade(g, render::GradeContext{.route = route,
+                                                               .source_hdr = source_hdr,
+                                                               .output_pq = true,
+                                                               .enabled = s.grade,
+                                                               .peak_nits = static_cast<double>(peak)});
+  if (!decision) {
+    log_channel("app")->warn("grade : {}", decision.error().detail);
+    return {};
+  }
+  if (decision->mode != render::GradeMode::Neutral) {
+    render::GradeParams params = decision->params;
+    // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
+    const std::vector<LookLayer> slots = look_slots(s);
+    bool any_pq = false;
+    for (std::size_t i = 0; i < slots.size(); ++i) {
+      params.look_mixes[i] = slots[i].key.empty() ? 0.0 : slots[i].mix;
+      any_pq = any_pq || (!slots[i].key.empty() && render::look_is_pq(slots[i].key, ""));
     }
-    if (decision->mode != render::GradeMode::Neutral) {
-      render::GradeParams params = decision->params;
-      // Une LUT sans nom est sautée (intensité 0) ; une seule LUT d'HDR met toute la chaîne en codes PQ.
-      const std::vector<LookLayer> slots = look_slots(s);
-      bool any_pq = false;
-      for (std::size_t i = 0; i < slots.size(); ++i) {
-        params.look_mixes[i] = slots[i].key.empty() ? 0.0 : slots[i].mix;
-        any_pq = any_pq || (!slots[i].key.empty() && render::look_is_pq(slots[i].key, ""));
-      }
-      // Une pile qui contient une LUT d'HDR est étalonnée pour des codes PQ : sur une sortie SDR elle
-      // donnerait des couleurs fausses, elle est coupée en entier.
-      if (!pq && any_pq) {
-        for (std::size_t i = 0; i < slots.size(); ++i) params.look_mixes[i] = 0.0;
-      }
-      params.look_pq = pq && any_pq ? 1.0 : 0.0;
-      params.look_clean = 1.0;  // audit F1 : grain et paliers non étirés par la pile
-      params.surface_white = std::clamp(s.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi) / 100.0;
-      (pq ? choice.pq : choice.sdr) = params;
-    }
+    params.look_pq = any_pq ? 1.0 : 0.0;
+    params.look_clean = 1.0;  // audit F1 : grain et paliers non étirés par la pile
+    params.surface_white = std::clamp(s.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi) / 100.0;
+    choice.pq = params;
   }
   // La méthode « HDR anime » vers un écran SDR : son rendu PQ sans la pile de LUT d'HDR (sdr_tonemap la
-  // coupe), ramené au SDR plan par plan ; l'écran ne la prend qu'avec ce corps de grade.
-  if (!source_hdr && choice.pq) {
+  // coupe : étalonnée pour des codes PQ, elle donnerait des couleurs fausses), ramené au SDR plan par plan.
+  if (choice.pq) {
     render::GradeParams anime = *choice.pq;
     render::sdr_tonemap(anime);
     choice.sdr_anime = anime;
@@ -117,14 +116,10 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
   LoadedLooks out;
   for (std::size_t i = 0; i < render::kLookSlots; ++i) {
     if (i >= keys.size() || keys[i].key.empty()) continue;
-    // La pile répète ses fichiers (le contraste y est sept fois) : chacun n'est lu qu'une fois.
-    const std::optional<render::CubeLut>* read = nullptr;
-    for (std::size_t j = 0; j < i && read == nullptr; ++j)
-      if (keys[j].key == keys[i].key && out.luts.at(j).has_value()) read = &out.luts.at(j);
-    if (read != nullptr) {
-      out.luts.at(i) = *read;
-      continue;
-    }
+    // La pile répète ses fichiers (le contraste y est sept fois) : chacun n'est lu qu'une fois, et partagé.
+    for (std::size_t j = 0; j < i && !out.luts.at(i); ++j)
+      if (keys[j].key == keys[i].key) out.luts.at(i) = out.luts.at(j);
+    if (out.luts.at(i)) continue;
     if (std::ranges::find(out.failed, keys[i].key) != out.failed.end()) continue;  // déjà refusé, déjà dit
     auto lut = load_look(keys[i].key, luts_dir);
     if (!lut) {
@@ -133,11 +128,11 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
       continue;
     }
     log_channel("app")->info("look : {} ({} points)", keys[i].key, lut->size);
-    out.luts.at(i).emplace(std::move(*lut));
+    out.luts.at(i) = std::make_shared<const render::CubeLut>(std::move(*lut));
   }
   // La pile est un tout : sans l'un de ses fichiers, les autres donneraient une autre image. Aucun look.
   if (!out.failed.empty()) {
-    for (std::optional<render::CubeLut>& lut : out.luts) lut.reset();
+    for (std::shared_ptr<const render::CubeLut>& lut : out.luts) lut.reset();
     log_channel("app")->warn("look : pile incomplète ({} fichier(s) manquant(s)), image sans look",
                              out.failed.size());
   }
@@ -146,8 +141,7 @@ LoadedLooks load_looks(const PlaySettings& s, const std::filesystem::path& luts_
 
 std::vector<std::string> show_looks(PlaceboScreen& screen, LoadedLooks& looks) {
   std::array<const render::CubeLut*, render::kLookSlots> luts{};
-  for (std::size_t i = 0; i < render::kLookSlots; ++i)
-    if (const std::optional<render::CubeLut>& lut = looks.luts.at(i); lut.has_value()) luts.at(i) = &*lut;
+  for (std::size_t i = 0; i < render::kLookSlots; ++i) luts.at(i) = looks.luts.at(i).get();
   std::vector<std::string> failed = std::move(looks.failed);
   if (auto set = screen.set_looks(luts); !set) {
     log_channel("app")->warn("look : {}", set.error().detail);
@@ -245,7 +239,7 @@ std::string output_text(const PlaceboScreen& screen, const PlaySettings& s, bool
   if (s.hdr_native && screen.hdr_output()) {
     text += i18n::tr(" · HDR");
   }
-  if (s.grade && source_hdr && !s.grade_values.grade_native_hdr)
+  if (s.grade && source_hdr)
     text += i18n::tr(" · grade off: HDR source");
   else if (s.grade)
     text += screen.has_grade() ? i18n::tr(" · grade") : i18n::tr(" · grade unavailable");  // A41-12
@@ -273,10 +267,7 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   // avant le plafond (sinon le plafond relâcherait le limiteur, qui le reposerait aussitôt). Une source déjà
   // en PQ ou HLG est mesurée en nits : aucun gain (B42-07).
   to.live.scenes().set_flash_gain(choice.pq && !to.source_hdr ? flash_gain_of(choice.pq->peak) : 1.0);
-  if (to.flash_limited && choice.pq && choice.pq->peak > kFlashPeakNits) {
-    choice.pq->uncapped_peak = choice.pq->peak;  // l'annonce HDR garde le pic (B41-03)
-    choice.pq->peak = kFlashPeakNits;
-  }
+  if (to.flash_limited) cap_flash_peak(choice);
   to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =

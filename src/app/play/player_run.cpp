@@ -28,6 +28,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_choices.h"
+#include "app/play/chain_retreat.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
 #include "app/play/close_watch.h"
@@ -71,6 +72,7 @@
 #include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
+#include "app/play/updater.h"
 #include "app/play/upscale_stage.h"
 #include "app/play/user_keys.h"
 #include "app/play/visible_error.h"
@@ -136,34 +138,24 @@ std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusa
 
 }  // namespace
 
+// Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
+// fenêtre visible et figée, Windows la marque « Ne répond pas » au bout de cinq secondes. La croix la cache
+// d'abord ; une réouverture montre « Chargement » au lieu d'une image qui ne répond plus.
+void mask_before_teardown(Player& p, bool closing, bool reopening) {
+  if (closing) {
+    SDL_HideWindow(p.screen.window());
+    SDL_SyncWindow(p.screen.window());
+  } else if (reopening) {
+    show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
+  }
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-namespace {
-
-// B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
-// rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
-// C31-05 : un refus de l'affichage (mémoire vidéo saturée, pl_render_image refusé) sur un appareil sain
-// retire aussi un étage, l'interpolation d'abord, au lieu d'arrêter la vidéo.
-bool retreats(const Refusal& failure, const ChainEngines& c) {
-  return (failure.key == kFatalStageKey || display_retreats(failure)) &&
-         failure.code != RefusalCode::DeviceLost && c.backend && c.backend->kernels()->health();
-}
-
-// C30-05 : la cause dite au journal, pas seulement le GPU.
-void teardown_stuck() {
-  exit_stuck(
-      "fermeture de la chaîne bloquée depuis 60 s (GPU muet, ou fichier sur un disque ou un partage "
-      "qui ne répond plus)");
-}
-
-}  // namespace
-
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
-  const ResourcesAfterTeardown after_teardown;  // C33-03 : détruit après l'anneau (ring_release)
   // B31-03 : une perte du GPU pendant la préparation relance au départ demandé, pas à 0:00.
-  p.stopped_at_us = std::max<std::int64_t>(start_us, 0);
-  p.stopped_paused = start_paused;
+  p.stop_at(start_us, start_paused);
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
@@ -175,7 +167,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                      content_peak_nits(p.screen.window()), p.options.sdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
-  const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
+  const ResourcesAfterTeardown ring_release(p.screen);  // après le backend (A33-01), puis le relevé (C33-03)
   auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
   if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
     // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
@@ -567,6 +559,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       chain.reopen = chain.running;
     }
+    // Veille annoncée puis annulée (couvercle rouvert) : sans cela, l'indicateur levé ferait lire un gel de
+    // la boucle, dix minutes plus tard, comme une veille.
+    if (sleep_notice.take_resumed()) sleep_announced = false;
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -627,6 +622,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (const auto notice = session.take_notice())
         p.ui.controls().warn(
             i18n::ui_tr_format("Playback goes on after an error: {}", visible_error(*notice)), host_now_us());
+      if (p.update_news && p.update_news->take_unseen())
+        p.ui.controls().warn(i18n::ui_tr_format("Update {} available (Settings > General > Application)",
+                                                load_update_state(p.update_news->file).latest_version),
+                             host_now_us());
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
@@ -735,7 +734,6 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       chain.reopen = chain.running;
     }
   }
-  // B31-02, C31-05 : un refus de l'étage GPU ou de l'affichage retire un étage (retreats).
   if (failure && retreats(*failure, c) && retreat(p, c, *failure)) {
     failure.reset();
     chain.reopen = chain.running;
@@ -759,17 +757,16 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
   // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
-  if (const std::int64_t at = session.view().position_us; at != kNoPts)
-    p.stopped_at_us = std::max<std::int64_t>(at, 0);
-  p.stopped_paused = session.paused() || lost_paused;  // C31-01 : la relance reste en pause
+  p.stop_at(session.view().position_us, session.paused() || lost_paused);  // C31-01 : la relance en pause
   // B31-04, B30-07 : ce démontage attend le GPU sans délai (jointure des fils, cudaStreamSynchronize,
   // cudaFree) ; gardé comme celui de l'écran. Après une perte du GPU, la relance est demandée d'abord : un
   // démontage bloqué la fait au lieu de laisser une fenêtre figée.
   if (failure && failure->code == RefusalCode::DeviceLost && p.relaunch_on_loss)
     (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, p.stopped_paused, RelaunchReason::GpuLost);
-  const CloseWatch teardown(kTeardownLimit, teardown_stuck);
+  const CloseWatch teardown(kTeardownLimit, exit_chain_stuck);
   session.end();
   out.flush();
+  mask_before_teardown(p, session.quit_asked() && !reopen, reopen.has_value());
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
   // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend

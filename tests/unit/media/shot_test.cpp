@@ -325,7 +325,8 @@ TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[medi
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
   const auto shared = std::make_shared<ShotTimeline>();
   ShotTimeline& timeline = *shared;
-  const auto probe = ShotProbe::start(clip, shared, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000});
+  const auto probe =
+      ShotProbe::start(clip, shared, 30'000'000, ShotProbeOptions{.lead_us = 120'000'000, .pace = 0.0});
   for (int i = 0; i < kProbeWait && !probe->finished(); ++i)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   REQUIRE(probe->finished());
@@ -371,9 +372,8 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   CHECK(loaded->shots.at(1).meta == shots.at(1).meta);
   CHECK(loaded->shots.at(1).end_us == 3'000'000);
   {
-    // Un fichier d'une autre version de l'analyse (ou du format d'avant, sans version) se refait. La variante
-    // 1 a son propre fichier (C36-02).
-    const std::filesystem::path file = dir / (key + "-00000001.shots");
+    // Un fichier d'une autre version de l'analyse (ou du format d'avant, sans version) se refait.
+    const std::filesystem::path file = dir / (key + "-00000001.shots");  // un fichier par variante (C42-05)
     std::string bytes;
     {
       std::ifstream in(file, std::ios::binary);

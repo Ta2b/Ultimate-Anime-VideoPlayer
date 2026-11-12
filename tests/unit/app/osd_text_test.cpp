@@ -44,3 +44,12 @@ TEST_CASE("OSD : script ASS", "[app][osd]") {
     CHECK(osd_script(std::vector<std::string>{"a"}, kSize).contains("WrapStyle: 0"));
   }
 }
+
+TEST_CASE("C24-08 : un texte qui change à chaque image ne se re-rend que toutes les 250 ms", "[app][osd]") {
+  CHECK(ajp::app::play::osd_refresh_due(false, true, false, 0));            // premier texte : tout de suite
+  CHECK(ajp::app::play::osd_refresh_due(true, false, false, 0));            // il disparaît : tout de suite
+  CHECK(ajp::app::play::osd_refresh_due(true, true, true, 0));              // autre taille : tout de suite
+  CHECK_FALSE(ajp::app::play::osd_refresh_due(true, true, false, 16'000));  // statistiques à chaque image
+  CHECK(
+      ajp::app::play::osd_refresh_due(true, true, false, ajp::app::play::kOsdRefreshUs));  // le rendu suivant
+}

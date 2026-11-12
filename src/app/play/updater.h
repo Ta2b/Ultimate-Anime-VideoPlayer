@@ -27,8 +27,11 @@ namespace ajp::app::play {
 // Le dépôt des releases et la clé publique (hexadécimale, 64 chiffres), posés à la compilation
 // (AJP_RELEASE_REPO, AJP_UPDATE_PUBKEY) ; la clé est vide tant que la clé de signature n'existe pas.
 std::string_view release_repo();
-std::string_view update_public_key();
 std::string_view installed_version();
+// Le fichier lu d'un coup (vide s'il manque), et l'heure Unix : partagés par updater.cpp et
+// updater_state.cpp.
+std::string read_all(const std::filesystem::path& file);
+std::int64_t unix_now();
 
 // Où chercher le manifeste : celui de la dernière release (« latest »), seul canal publié.
 std::string manifest_url(std::string_view repo);
@@ -113,9 +116,9 @@ std::optional<int> curl_status_line(std::string_view line);
 // Internet »… ; un fichier absent du serveur (HTTP 404) est refusé TrackUnavailable.
 Refusal curl_failure(int code, int http_status);
 
-// Télécharge et vérifie le manifeste. Refus : clé absente, réseau, manifeste absent (la dernière release n'en
-// a pas : jamais lu comme « à jour », SEC-05), signature fausse, manifeste illisible ou expiré.
-std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop);
+// Où mène « Download page » : la page de notes de la release si elle est sous https://github.com/<repo>/,
+// sinon la page des releases du dépôt (un manifeste, ou update.toml, ne mène pas l'utilisateur ailleurs).
+std::string download_page_url(std::string_view notes_url, std::string_view repo);
 
 // Le téléchargement du lecteur : curl du système, https seulement (un 404 est refusé TrackUnavailable).
 std::expected<void, Refusal> fetch_https(std::string_view url, const std::filesystem::path& file,
@@ -131,7 +134,6 @@ std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop
 
 // La vérification en arrière-plan : met à jour state (tentative, dernière réponse, version vue, clés
 // révoquées). Rend le message. À lancer hors de la lecture.
-std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop);
 std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop,
                                                      const UpdateFetch& fetch, std::int64_t now_unix);
 

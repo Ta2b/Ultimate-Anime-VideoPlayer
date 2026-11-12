@@ -7,6 +7,7 @@
 #include <deque>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -28,6 +29,7 @@
 #include "app/play/span_auto.h"
 #include "app/play/stage_fallback.h"
 #include "app/play/ui.h"
+#include "app/play/update_thread.h"
 #include "core/clock.h"
 #include "core/settings.h"
 #include "gpu/backend.h"
@@ -90,6 +92,7 @@ struct Player {
   std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune
   bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
   i18n::Translated notice;              // à annoncer à la prochaine ouverture (moteur changé)
+  UpdateNews* update_news = nullptr;    // l'avis de version, annoncé quand la vérification répond (C26-09)
   bool quit = false;                    // la dernière ouverture s'est fermée par q ou la fenêtre
   // Réglages d'une réouverture demandée : écrits dans play.toml une fois la chaîne ouverte, pas avant
   // (une chaîne qui ne s'ouvre pas ne doit pas devenir celle du prochain lancement).
@@ -117,6 +120,11 @@ struct Player {
   // GPU reprend là (A31-02).
   std::int64_t stopped_at_us = 0;
   bool stopped_paused = false;  // et si elle était en pause (C31-01)
+  // Un instant sans valeur (kNoPts, le plus petit int64) garde celui d'avant ; un instant négatif vaut 0.
+  void stop_at(std::int64_t at_us, bool paused) {
+    if (at_us != std::numeric_limits<std::int64_t>::min()) stopped_at_us = at_us < 0 ? 0 : at_us;
+    stopped_paused = paused;
+  }
   // B31-04 : une perte du GPU relancera le lecteur (pas une seconde perte dans la minute, pas un essai
   // scripté) ; la relance est alors demandée avant le démontage, que le garde de fermeture peut couper.
   bool relaunch_on_loss = false;

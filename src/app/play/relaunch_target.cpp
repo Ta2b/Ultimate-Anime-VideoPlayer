@@ -140,6 +140,12 @@ void set_stuck_relaunch(void (*relaunch)()) {
   stuck_relaunch().store(relaunch, std::memory_order_release);
 }
 
+void exit_chain_stuck() {
+  exit_stuck(
+      "fermeture de la chaîne bloquée depuis 60 s (GPU muet, ou fichier sur un disque ou un partage "
+      "qui ne répond plus)");
+}
+
 void exit_stuck(std::string_view why) {
   const auto log = log_channel("app");
   const bool relaunch = relaunch_asked().load(std::memory_order_acquire);

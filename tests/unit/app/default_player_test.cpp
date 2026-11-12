@@ -347,13 +347,25 @@ TEST_CASE("Une migration coupée ne passe jamais pour finie : la copie recommenc
   fs::remove_all(root);
 }
 
+TEST_CASE("Dans le dossier partagé, un updates/ d'un autre programme aux noms de version reste (C19-07)",
+          "[app]") {
+  namespace fs = std::filesystem;
+  const fs::path shared = fs::temp_directory_path() / "ajp-purge-foreign" / "AppData";
+  fs::remove_all(shared.parent_path());
+  fs::create_directories(shared / "updates" / "2.1");
+  std::ofstream(shared / "updates" / "2.1" / "installer.bin") << "x";
+  CHECK(ajp::app::play::purge_misplaced(shared) == 0);
+  CHECK(fs::exists(shared / "updates" / "2.1" / "installer.bin"));
+  fs::remove_all(shared.parent_path());
+}
+
 TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux des autres restent (P3.70)",
           "[app]") {
   namespace fs = std::filesystem;
   const fs::path shared = fs::temp_directory_path() / "ajp-purge" / "AppData";
   fs::remove_all(shared.parent_path());
   fs::create_directories(shared / "plans");
-  fs::create_directories(shared / "updates" / "1.2.0");
+  fs::create_directories(shared / "updates" / "previous");  // ce que l'ancien lecteur y rangeait
   std::ofstream(shared / "update.toml") << "last_check_unix = 12\n";
   std::ofstream(shared / "shaders.cache") << "pl_cache....";
   std::ofstream(shared / "plans" / "a.shots") << "x";

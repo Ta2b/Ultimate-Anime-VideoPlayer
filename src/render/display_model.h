@@ -18,19 +18,15 @@ namespace ajp::render {
 
 inline constexpr double kContentReferenceNits = 203.0;
 
+// Le limiteur par surface est dans le contrat d'écran (DisplayContract::abl, default_abl).
 struct DisplayModel {
   double panel_peak_nits = 1000.0;                // le pic du panneau, en cd/m² affichées
   double reference_nits = kContentReferenceNits;  // le blanc de référence du compositeur
-  bool oled = false;
 
   // Panneau = contenu × scale().
   double scale() const;
   // Le pic à viser dans le signal PQ.
   double content_peak_nits() const;
-  // L_max(surface), surface dans ]0, 1], en cd/m² affichées.
-  double max_nits(double area) const;
-  // La moyenne d'image (MaxFALL) que tient le panneau plein écran, en unités du contenu ; rien pour un LCD.
-  std::optional<double> frame_average_content_nits() const;
 };
 
 // --hdr-metadata : ce que la sortie annonce à KWin et ce que la passe « kwin » du grade vise.
@@ -81,8 +77,9 @@ struct ContractMetadata {
 inline constexpr Chromaticities kDisplayP3{0.680, 0.320, 0.265, 0.690, 0.150, 0.060, 0.3127, 0.3290};
 ContractMetadata contract_metadata(const DisplayContract& contract);
 
-// L_max par surface faute de mesure : la courbe QD-OLED relevée (cd/m², jamais au-dessus du pic, étirée si le
-// pic la dépasse) pour un OLED ; le pic partout pour un LCD.
+// L_max par surface faute de mesure : pour un OLED, la courbe QD-OLED relevée ramenée au pic du panneau (pic
+// × oled_abl_ratio, C41-06 : une dalle de 800 cd/m² ne tient pas en plein champ les 261 d'une QD-OLED de
+// 1016) ; le pic partout pour un LCD.
 std::array<double, 5> default_abl(double panel_peak_nits, bool oled);
 
 // La part de L_max(2 %) que la courbe QD-OLED garde à cette surface (1 à 2 % et moins, 0,257 à 100 %).

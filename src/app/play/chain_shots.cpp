@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cmath>
 #include <expected>
+#include <memory>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -113,13 +114,17 @@ void start_probe(const ShotWork& work, ShotJob& job, std::int64_t from_us) {
 
 // B42-07 : les flashs se jugent à la lumière que l'écran montrera (son pic), et sans gain pour une source
 // déjà en PQ ou HLG, que le grade ne relève pas.
+double flash_gain_for(const ShotOutput& output) {
+  return output.source_hdr ? 1.0 : flash_gain_of(output.peak_nits);
+}
+
 ShotJob new_job(const ShotWork& work, const std::filesystem::path& file, const ShotOutput& output,
                 bool faces) {
   ShotJob job;
   job.cache_dir = work.cache_dir;
   job.file = file;
   job.cache = std::make_shared<ShotJob::Cache>();
-  job.flash_gain = output.source_hdr ? 1.0 : flash_gain_of(output.peak_nits);
+  job.flash_gain = flash_gain_for(output);
   job.faces = faces;
   job.variant = cache_variant(!work.probe.cuvid_resize.empty(), job.flash_gain, faces);
   job.timeline = std::make_shared<media::ShotTimeline>();
@@ -189,8 +194,11 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
     return;
   }
   const std::int64_t from = std::max<std::int64_t>(start_us, 0);
-  // La recherche des visages allumée ou éteinte : l'analyse recommence, sous une autre variante du cache.
-  if (work.current.file == file && work.current.timeline && work.current.faces == settings.face_skin) {
+  // La recherche des visages allumée ou éteinte, ou un écran d'un autre pic (C42-05 : les flashs restaient
+  // jugés au pic du premier) : l'analyse recommence, sous une autre variante du cache, que le cache rend si
+  // cette vidéo y a déjà été vue ainsi.
+  if (work.current.file == file && work.current.timeline && work.current.faces == settings.face_skin &&
+      work.current.flash_gain == flash_gain_for(output)) {
     if (work.current.complete) return;
     if (!work.current.probe) {  // arrêtée quand plus rien ne lisait les plans : elle reprend
       start_probe(work, work.current, from);
@@ -229,18 +237,7 @@ render::SkinTones skin_tones_of(const media::PlanSkins& skins) {
 }
 
 ShotScene scene_of(const media::ShotStats& s, std::uint64_t serial, bool fade) {
-  return ShotScene{.stats = {.mean = s.mean,
-                             .p05 = s.p05,
-                             .p50 = s.p50,
-                             .p95 = s.p95,
-                             .p995 = s.p995,
-                             .dark = s.dark,
-                             .bright = s.bright,
-                             .blue = s.blue,
-                             .chroma = s.chroma},
-                   .light = {.apl_nits = s.apl_nits, .lit = s.lit},
-                   .serial = serial,
-                   .fade = fade};
+  return ShotScene{.light = {.apl_nits = s.apl_nits, .lit = s.lit}, .serial = serial, .fade = fade};
 }
 
 // Sans plan analysé : la scène que l'analyse à l'ingestion a vue pour cette image (media/live_scenes.h).
@@ -280,11 +277,14 @@ void feed_plan_shots(Chain& to) {
   if (to.shots == nullptr || !to.shots->current.timeline || to.shots->current.file != to.file) return;
   const media::ShotTimeline& timeline = *to.shots->current.timeline;
   // La version, pas le nombre (A42-11) : un plan entier qui en remplace un partiel ne change pas le compte.
-  if (timeline.version() == to.plan_shots_seen) return;
-  to.plan_shots_seen = timeline.version();
-  std::vector<media::Shot> shots = timeline.shots();
-  to.anime_series_apl = series_apl_of(shots);  // aussi pour les noirs profonds (P3.52)
-  if (to.shot_cuts) to.live.cuts().set_shots(shots);
+  // Celle des plans seuls (C42-09) : une séquence de flashs qui s'allonge ne recopie rien. Les plans sont
+  // partagés avec le livre des coupes, sans copie.
+  const std::uint64_t version = timeline.shots_version();
+  if (version == to.plan_shots_seen) return;
+  to.plan_shots_seen = version;
+  std::shared_ptr<const std::vector<media::Shot>> shots = timeline.shots_snapshot();
+  to.anime_series_apl = series_apl_of(*shots);  // aussi pour les noirs profonds (P3.52)
+  if (to.shot_cuts) to.live.cuts().set_shots(std::move(shots));
 }
 
 std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {

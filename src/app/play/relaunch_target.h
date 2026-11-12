@@ -63,6 +63,8 @@ std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPa
 // lire.
 void set_stuck_relaunch(void (*relaunch)());
 [[noreturn]] void exit_stuck(std::string_view why);
+// C30-05 : le démontage de la chaîne bloqué ; la cause dite au journal n'est pas seulement le GPU.
+[[noreturn]] void exit_chain_stuck();
 inline constexpr int kStuckExitCode = 75;
 
 }  // namespace ajp::app::play
