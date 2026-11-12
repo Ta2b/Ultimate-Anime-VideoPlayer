@@ -8,6 +8,7 @@
 #include <variant>
 
 #include "app/play/i18n.h"
+#include "app/play/visible_error.h"
 #include "core/frame.h"
 #include "core/pacing.h"
 #include "core/vrr_floor.h"
@@ -330,6 +331,15 @@ void Session::on_refusal(const StageRefusal& refusal) {
   if (refusal.fatal || resized_) finished_ = true;
   if (!refusal.fatal && refusal.refusal.recoverable && refusal.refusal.code != RefusalCode::FieldOutOfRange)
     notice_ = refusal.refusal;
+  // B31-14 : le fil des sous-titres est tombé (libass ou son atlas ont levé, mémoire pleine) : la vidéo
+  // continue sans eux et le dit, au lieu d'attendre à chaque seek des sous-titres qui ne viendront plus.
+  if (!refusal.fatal && refusal.stage == "subs" && refusal.refusal.code == RefusalCode::ThreadFailed) {
+    set_subtitles(false);
+    notice_ = Refusal{.code = RefusalCode::ThreadFailed,
+                      .detail = refusal.refusal.detail,
+                      .recoverable = true,
+                      .key = std::string(kSubtitlesLostKey)};
+  }
   // La source rend une fin de flux après ce refus (media/source.h) : retenu pour on_stream_ended.
   if (!refusal.fatal && refusal.refusal.recoverable && refusal.stage == "source" &&
       (refusal.refusal.code == RefusalCode::DecodeFailed || refusal.refusal.code == RefusalCode::IoFailed)) {

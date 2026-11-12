@@ -153,7 +153,7 @@ std::expected<void, Refusal> unpack_vendor_file(const core::VendorFile& file,
   };
   if (!in || !out) {
     close();
-    return refuse(RefusalCode::FileUnwritable, partial.string());
+    return refuse(RefusalCode::FileUnwritable, core::to_utf8(partial));
   }
   core::Sha256 hash;
   std::uint64_t produced = 0;
@@ -204,7 +204,7 @@ std::expected<void, Refusal> unpack_vendor_file(const core::VendorFile& file,
   }
   if (write_failed || !flushed) {
     discard();
-    return refuse(RefusalCode::FileUnwritable, partial.string());
+    return refuse(RefusalCode::FileUnwritable, core::to_utf8(partial));
   }
   if (overflow) {
     discard();
@@ -274,7 +274,7 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   if (error) {
     std::error_code ignored;
     std::filesystem::remove(partial, ignored);
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", dest.string(), error.message()));
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(dest), error.message()));
   }
   if (progress.report) progress.report(1.0F, file.name);
   return {};

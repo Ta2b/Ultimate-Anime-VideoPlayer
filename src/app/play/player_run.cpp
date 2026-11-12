@@ -328,7 +328,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
               .anime_shots = p.options.anime_shots};
-  carry_session(chain, p.stages, p.dropped_subtitles, p.subtitle_track);
+  carry_session(chain, p.stages, p.dropped_subtitles, p.subtitle_track, p.manual_tracks);
   apply_oled_care(chain, settings);
 
   std::ofstream stats;

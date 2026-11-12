@@ -14,6 +14,7 @@
 #include "core/file_sync.h"
 #include "core/log.h"
 #include "core/text.h"
+#include "core/update_manifest.h"
 
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
@@ -97,12 +98,23 @@ std::vector<std::string> salvage_revoked_keys(std::string_view text) {
 
 }  // namespace
 
+void forget_installed_announce(UpdateState& state, std::string_view installed) {
+  if (state.latest_version.empty()) return;
+  const auto order = core::compare_versions(state.latest_version, installed);
+  if (order && *order > 0) return;
+  state.latest_version.clear();
+  state.notes_url.clear();
+}
+
 UpdateState load_update_state(const fs::path& file) {
   std::error_code error;
   if (!fs::exists(file, error)) return {};
   const std::string text = read_all(file);
   auto state = parse_update_state(text);
-  if (state) return *state;
+  if (state) {
+    forget_installed_announce(*state, installed_version());
+    return *state;
+  }
   UpdateState salvaged;
   salvaged.revoked_keys = salvage_revoked_keys(text);
   return salvaged;

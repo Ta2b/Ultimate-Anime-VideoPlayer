@@ -135,7 +135,19 @@ int move_entries(const std::filesystem::path& from, const std::filesystem::path&
   return moved;
 }
 
+// B36-08 : le journal, ses parts et les séances gardées (main.cpp), les minidumps et la séquence du banc se
+// refont ou se jettent : ils ne voyagent plus avec le profil itinérant.
+constexpr std::array<std::string_view, 14> kDiagnostics{
+    "ajp.log",     "ajp.log.1",   "ajp.log.2",   "ajp.log.3",        "ajp.1.log",
+    "ajp.1.log.1", "ajp.1.log.2", "ajp.1.log.3", "ajp.2.log",        "ajp.2.log.1",
+    "ajp.2.log.2", "ajp.2.log.3", "crashes",     "bench-clip-v4.mkv"};
+
 }  // namespace
+
+int move_diagnostics(const std::filesystem::path& from, const std::filesystem::path& to,
+                     const std::function<void(const std::string&)>& said) {
+  return move_entries(from, to, kDiagnostics, said);
+}
 
 int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
                     const std::function<void(const std::string&)>& said) {

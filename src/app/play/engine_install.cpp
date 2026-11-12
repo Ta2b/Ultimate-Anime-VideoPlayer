@@ -44,13 +44,13 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   }
   std::ifstream in(index, std::ios::binary);
   if (!in) {
-    catalog.problem = i18n::tr_format("{} missing: only bundled engines are offered", index.string());
+    catalog.problem = i18n::tr_format("{} missing: only bundled engines are offered", core::to_utf8(index));
     return catalog;
   }
   const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
   auto parsed = core::read_engine_index(text);
   if (!parsed) {
-    catalog.problem = std::format("{} : {}", index.string(), parsed.error().detail);
+    catalog.problem = std::format("{} : {}", core::to_utf8(index), parsed.error().detail);
     return catalog;
   }
   for (core::EnginePackage& package : parsed->packages) {
@@ -59,7 +59,7 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
     // sa bibliothèque et se dirait à jour sans se charger (B06-02).
     if (core::vendor_file_skipped(*parsed, package.engine, catalog.layout.os)) {
       catalog.problem += std::format("{}{} : un fichier tiers de {} est écarté, paquet écarté",
-                                     catalog.problem.empty() ? "" : " ; ", index.string(),
+                                     catalog.problem.empty() ? "" : " ; ", core::to_utf8(index),
                                      core::engine_name(package.engine));
       continue;
     }
@@ -70,7 +70,8 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
   }
   // Une entrée écartée (un moteur d'une release plus récente) n'empêche pas les autres.
   const auto add_problem = [&](const std::string& what) {
-    catalog.problem += std::format("{}{} : {}", catalog.problem.empty() ? "" : " ; ", index.string(), what);
+    catalog.problem +=
+        std::format("{}{} : {}", catalog.problem.empty() ? "" : " ; ", core::to_utf8(index), what);
   };
   for (const Refusal& skipped : parsed->skipped)
     add_problem(i18n::tr_format("discarded, {}", skipped.detail));
@@ -322,7 +323,7 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
       i18n::tr_format(
           "not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
           format_size(space.peak), format_size(space.download), format_size(space.installed),
-          format_size(available), where.string()));
+          format_size(available), core::to_utf8(where)));
 }
 
 int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
@@ -430,7 +431,7 @@ std::expected<void, Refusal> swap_in_place(const core::EnginePackage& package,
       const std::error_code back = core::rename_retrying(aside, target, kInstallRenamePatience);
       if (back) reason += std::format(" (l'ancien n'est pas revenu : {})", back.message());
     }
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", target.string(), reason));
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(target), reason));
   }
   core::sync_directory(target.parent_path());
   if (replaced) std::filesystem::remove_all(aside, error);
@@ -472,14 +473,14 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
       name,  // i18n-ok : journal
       progress.cuda_arch.empty() ? i18n::tr("unknown (all files)") : progress.cuda_arch,
       format_size(space.download), format_size(space.installed), format_size(space.peak),
-      format_size(free_bytes(catalog.layout.engines)), catalog.layout.engines.string());
+      format_size(free_bytes(catalog.layout.engines)), core::to_utf8(catalog.layout.engines.filename()));
   if (const auto fits = check_space(space, free_bytes(catalog.layout.engines), catalog.layout.engines); !fits)
     return std::unexpected(fits.error());
   const std::filesystem::path part = core::download_path(catalog.layout, package.sha256);
   std::filesystem::create_directories(part.parent_path(), error);
   if (error)
     return refuse(RefusalCode::FileUnwritable,
-                  std::format("{} : {}", part.parent_path().string(), error.message()));
+                  std::format("{} : {}", core::to_utf8(part.parent_path()), error.message()));
 
   // Le transfert reprend un .part laissé par un essai interrompu ; un .part déjà complet mais faux
   // repart de zéro.
@@ -521,8 +522,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   staging += ".partiel";
   std::filesystem::remove_all(staging, error);
   std::filesystem::create_directories(staging, error);
-  if (error)
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", staging.string(), error.message()));
+  if (error) return refuse(RefusalCode::FileUnwritable, core::to_utf8(staging) + " : " + error.message());
   step = i18n::tr("extracting the archive");
   done_bytes = static_cast<double>(package.size);
   overall(0.0, i18n::tr_format("extracting {}", name));
@@ -540,7 +540,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   if (!std::filesystem::is_regular_file(library, error)) {
     std::filesystem::remove_all(staging, error);
     return refuse(RefusalCode::HashMismatch,
-                  i18n::tr_format("package {} without {}", name, library.filename().string()));
+                  i18n::tr_format("package {} without {}", name, core::to_utf8(library.filename())));
   }
   // Les fichiers que NVIDIA publie, tirés de ses archives et joints au module : ce qui est à nous
   // vient de notre release, le reste du lien direct (core::VendorFile).
@@ -599,7 +599,8 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
         std::filesystem::is_regular_file(leftover / std::string(kPackageNote), error))
       continue;
     if (std::filesystem::exists(leftover, error)) {
-      log->info("installation de {} : reste d'un essai précédent retiré ({})", name, leftover.string());
+      log->info("installation de {} : reste d'un essai précédent retiré ({})", name,
+                core::to_utf8(leftover.filename()));
       std::filesystem::remove_all(leftover, error);
     }
   }

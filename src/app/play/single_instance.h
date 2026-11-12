@@ -20,7 +20,8 @@ namespace ajp::app::play {
 inline constexpr std::string_view kForwardedDrop = "ajp-instance";
 
 // Un lancement simple, double-clic ou « Ouvrir avec » : au plus des fichiers, aucune option. Les essais du
-// banc, les captures et toute option gardent leur propre processus.
+// banc, les captures et toute option gardent leur propre processus. Un lecteur relancé (--relaunched=)
+// reprend la place de celui qu'il remplace.
 bool shares_instance(std::span<const std::string_view> args);
 
 // Le nom du canal pour ce dossier de réglages : stable d'une version à l'autre (FNV-1a de son chemin).

@@ -49,7 +49,8 @@ std::string latest_dump_name(const std::filesystem::path& dir);
 
 struct ReportParts {
   std::vector<std::pair<std::string, std::string>> facts;
-  std::string previous_log;  // la fin d'ajp.log.1, seulement si la séance d'avant s'est mal terminée
+  std::string previous_log;  // la fin d'ajp.log.1, si la séance d'avant s'est mal terminée ou s'est relancée
+  std::string previous_title;  // vide : « arrêtée brutalement » ; sinon le titre de la séance d'avant
   std::string current_log;
   std::string dump_name;  // le dernier minidump du dossier crashes ; vide : aucun
   std::string home;
@@ -67,6 +68,10 @@ bool begin_session(const std::filesystem::path& dir);
 void end_session();
 // Le résultat de begin_session, relu pendant la séance.
 bool previous_session_crashed();
+// Cette séance vient d'une relance voulue (why : « gpu-lost », « engine-updated ») : end_session a retiré la
+// marque, mais ajp.log.1 porte la cause (la perte du GPU) et se joint au rapport aussi (B39-01).
+void note_previous_session_relaunched(std::string_view why);
+std::string previous_session_relaunched();
 
 // Le fichier du journal de cette séance (ajp.log, sous --data-dir quand il est donné) : le bouton le lit
 // là, et son voisin « .1 » est la séance d'avant.

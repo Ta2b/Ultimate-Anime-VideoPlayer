@@ -26,9 +26,11 @@ namespace ajp::core {
 
 std::error_code sync_file(const std::filesystem::path& file) {
 #ifdef _WIN32
-  // FlushFileBuffers demande une poignée ouverte en écriture.
-  HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  // FlushFileBuffers demande une poignée ouverte en écriture. Tout partage, suppression comprise : un
+  // antivirus qui a ouvert le temporaire avec FILE_SHARE_DELETE ne fait pas refuser l'ouverture (B31-17).
+  HANDLE handle =
+      CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (handle == INVALID_HANDLE_VALUE) return {static_cast<int>(GetLastError()), std::system_category()};
   const bool flushed = FlushFileBuffers(handle) != 0;
   const std::error_code error{flushed ? 0 : static_cast<int>(GetLastError()), std::system_category()};
@@ -38,9 +40,12 @@ std::error_code sync_file(const std::filesystem::path& file) {
   const int fd = ::open(file.c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) return {errno, std::generic_category()};
   const bool flushed = ::fsync(fd) == 0;
-  const std::error_code error{flushed ? 0 : errno, std::generic_category()};
+  int code = flushed ? 0 : errno;
+  // Un système de fichiers qui ne sait pas vider (FUSE, fichier spécial) : les octets sont écrits, rien de
+  // plus à faire. Seuls le disque plein et une erreur d'écriture refusent (B20-01).
+  if (code == EINVAL || code == ENOTSUP || code == EROFS) code = 0;
   ::close(fd);
-  return error;
+  return {code, std::generic_category()};
 #endif
 }
 
@@ -55,10 +60,14 @@ void sync_directory([[maybe_unused]] const std::filesystem::path& folder) {
 
 namespace {
 
-// Sous Windows, le renommage échoue tant qu'un autre processus (antivirus, indexeur, sauvegarde) tient la
-// destination ou le temporaire ouvert sans partage de suppression : refus passagers, réessayés pendant un peu
-// plus d'une seconde (A20-01). Ailleurs, rename(2) remplace même un fichier ouvert : un refus est définitif.
-bool transient_rename_refusal([[maybe_unused]] const std::error_code& error) {
+// 10, 20, 40, 80, 160 puis 250 ms : environ 1,5 s en tout avant le refus.
+constexpr int kRenameAttempts = 10;
+
+// Sous Windows, le renommage, et l'ouverture du temporaire pour le vider, échouent tant qu'un autre processus
+// (antivirus, indexeur, sauvegarde) tient la destination ou le temporaire ouvert sans le partage voulu :
+// refus passagers, réessayés pendant un peu plus d'une seconde (A20-01, B20-01, B36-03). Ailleurs, rename(2)
+// remplace même un fichier ouvert : un refus est définitif.
+bool transient_refusal([[maybe_unused]] const std::error_code& error) {
 #ifdef _WIN32
   if (error.category() != std::system_category()) return false;
   const int code = error.value();
@@ -76,6 +85,21 @@ std::string temp_suffix() {
 
 }  // namespace
 
+namespace {
+
+// attempt tant qu'il rend un refus passager, au plus kRenameAttempts fois.
+std::error_code retrying(const std::function<std::error_code()>& attempt) {
+  auto pause = std::chrono::milliseconds(10);
+  for (int done = 0;; ++done) {
+    const std::error_code error = attempt();
+    if (!error || done == kRenameAttempts - 1 || !transient_refusal(error)) return error;
+    std::this_thread::sleep_for(pause);
+    pause = std::min(pause * 2, std::chrono::milliseconds(250));
+  }
+}
+
+}  // namespace
+
 std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to,
                                 std::chrono::milliseconds patience) {
   const auto deadline = std::chrono::steady_clock::now() + patience;
@@ -84,7 +108,7 @@ std::error_code rename_retrying(const std::filesystem::path& from, const std::fi
   for (;;) {
     error.clear();
     std::filesystem::rename(from, to, error);
-    if (!error || !transient_rename_refusal(error)) return error;
+    if (!error || !transient_refusal(error)) return error;
     const auto left =
         std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
     if (left <= std::chrono::milliseconds::zero()) return error;
@@ -169,7 +193,7 @@ std::expected<void, Refusal> write_atomic(const std::filesystem::path& given,
     }
   }
   // Sur le disque avant le renommage : une coupure juste après ne laisse pas un fichier vide.
-  if (const std::error_code synced = sync_file(temp)) {
+  if (const std::error_code synced = retrying([&] { return sync_file(temp); })) {
     std::filesystem::remove(temp, error);
     if (synced == std::errc::no_space_on_device)
       return std::unexpected(Refusal{RefusalCode::InsufficientSpace,

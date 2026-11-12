@@ -154,8 +154,24 @@ struct Flag {
   bool value;
 };
 
-// Les drapeaux d'essai sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 15> kFlags{{
+// Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
+constexpr std::array<Flag, 30> kFlags{{
+    {"--fullscreen", &PlayOptions::fullscreen, true},
+    {"--hidden", &PlayOptions::hidden, true},
+    {"--first-run", &PlayOptions::first_run, true},
+    {"--rife-image", &PlayOptions::rife_image, true},
+    {"--software-gpu", &PlayOptions::software_gpu, true},
+    {"--sdr", &PlayOptions::sdr, true},
+    {"--ring-rgb10a2", &PlayOptions::ring_rgb10a2, true},
+    {"--no-ring-rgb10a2", &PlayOptions::ring_rgb10a2, false},
+    {"--probe-nvdec", &PlayOptions::probe_nvdec, true},
+    {"--no-probe-nvdec", &PlayOptions::probe_nvdec, false},
+    {"--shot-cuts", &PlayOptions::shot_cuts, true},
+    {"--no-shot-cuts", &PlayOptions::shot_cuts,
+     false},  // les coupes de l'interpolation mesurées par RIFE seul
+    {"--anime-shots", &PlayOptions::anime_shots, true},
+    // Le relèvement fixe, la lumière de la scène mesurée en direct.
+    {"--no-anime-shots", &PlayOptions::anime_shots, false},
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
@@ -172,6 +188,14 @@ constexpr std::array<Flag, 15> kFlags{{
     {"--vsync-index", &PlayOptions::vsync_index, true},
     {"--no-vsync-index", &PlayOptions::vsync_index, false},
 }};
+
+// --relaunched=gpu-lost|engine-updated : posé par main.cpp sur le processus relancé (B39-01).
+std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
+  const std::string_view reason = arg.substr(std::string_view("--relaunched=").size());
+  for (const RelaunchedFor known : {RelaunchedFor::GpuLost, RelaunchedFor::EngineUpdated})
+    if (reason == relaunched_name(known)) return known;
+  return refuse(RefusalCode::FieldOutOfRange, std::format("{}: gpu-lost or engine-updated", arg));
+}
 
 bool set_flag(std::string_view arg, PlayOptions& options) {
   const auto flag = std::ranges::find(kFlags, arg, &Flag::name);
@@ -210,37 +234,9 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.given.emplace_back(arg);
     } else if (arg == "--no-restore-lines") {  // l'essai B de « Restaurer les traits » (ajp compare)
       options.given.emplace_back(arg);
-    } else if (arg == "--fullscreen") {
-      options.fullscreen = true;
-    } else if (arg == "--hidden") {
-      options.hidden = true;
     } else if (arg == "--mute") {
       options.mute = true;
       options.given.emplace_back(arg);
-    } else if (arg == "--first-run") {
-      options.first_run = true;
-    } else if (arg == "--rife-image") {
-      options.rife_image = true;
-    } else if (arg == "--software-gpu") {
-      options.software_gpu = true;
-    } else if (arg == "--sdr") {
-      options.sdr = true;
-    } else if (arg == "--ring-rgb10a2") {
-      options.ring_rgb10a2 = true;
-    } else if (arg == "--no-ring-rgb10a2") {
-      options.ring_rgb10a2 = false;
-    } else if (arg == "--probe-nvdec") {
-      options.probe_nvdec = true;
-    } else if (arg == "--no-probe-nvdec") {
-      options.probe_nvdec = false;
-    } else if (arg == "--shot-cuts") {
-      options.shot_cuts = true;
-    } else if (arg == "--no-shot-cuts") {
-      options.shot_cuts = false;  // les coupes de l'interpolation mesurées par RIFE seul
-    } else if (arg == "--anime-shots") {
-      options.anime_shots = true;
-    } else if (arg == "--no-anime-shots") {
-      options.anime_shots = false;  // le relèvement fixe, la lumière de la scène mesurée en direct
     } else if (arg == "--no-hdr-metadata" || arg == "--hdr-metadata=off") {
       options.kde_sdr_nits.reset();
       options.kde_sdr_auto = false;
@@ -266,6 +262,10 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       options.present = PresentWanted::Open;
     } else if (arg == "--no-resume") {
       options.resume = false;
+    } else if (arg.starts_with("--relaunched=")) {
+      auto reason = relaunched_reason(arg);
+      if (!reason) return std::unexpected(std::move(reason.error()));
+      options.relaunched = *reason;
     } else if (arg == "--register" || arg == "--unregister") {
       const Registration wanted = arg == "--register" ? Registration::Register : Registration::Unregister;
       if (options.registration != Registration::None && options.registration != wanted)
@@ -355,6 +355,18 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     return refuse(RefusalCode::OptionUnknown, "--register and --unregister take no video file");
   }
   return options;  // sans fichier : l'écran d'accueil (home_screen.h)
+}
+
+std::string_view relaunched_name(RelaunchedFor reason) {
+  switch (reason) {
+    case RelaunchedFor::GpuLost:
+      return "gpu-lost";
+    case RelaunchedFor::EngineUpdated:
+      return "engine-updated";
+    case RelaunchedFor::None:
+      break;
+  }
+  return {};
 }
 
 bool PlayOptions::was_given(std::string_view name) const {
@@ -523,19 +535,21 @@ std::string play_usage(bool debug) {
       "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
       "                         the current chain\n"
       "  --work-height=N        shrinks the source to N lines before SPAN (default: the preset's; 0 never)\n"
-      "  --rife=N               ×N interpolation (1.5, 2 to 10; default: the preset's; 0 none); order:\n"
-      "                         Warp and SPAN, Auto by default\n"
+      "  --rife=N               ×N interpolation (1.5, 2 to 10; default: the preset's; 0 none)\n"
       "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"
       "  --motion=rife|drba     interpolation engine, RIFE or DistilDRBA (default: the preset's)\n"
-      "  --truehdr-peak=NITS    peak aimed at by the HDR grade (default: the screen's, else 1000)\n"
+      "  --truehdr-peak=NITS    peak aimed at by the HDR grade, {} to {} (0 or default: the screen's,\n"
+      "                         else 1000)\n"
       "ajp --register           registers the player with the system (\"Open with\", default\n"
       "                         player); --unregister removes this registration\n"
       "Keys: space pause, ← → seek 5 s, ↑ ↓ volume, m mute, f full screen (Esc leaves it), q quit,\n"
       "  a next audio track, j next subtitles, n / Shift+n next / previous episode,\n"
       "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, z / x\n"
       "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 neither grade nor\n"
-      "  interpolation (the upscaling stays), Ctrl+G grade, Ctrl+I interpolation.\n",
-      kDefaultModelFile, kDefaultRifeFile);
+      "  interpolation (the upscaling stays), Ctrl+G grade, Ctrl+I interpolation.\n"
+      "Other commands: ajp bench (rates the machine), ajp compare (two chains side by side),\n"
+      "  ajp calibrate (the bench of the Results page); ajp bench --help, ajp compare --help\n",
+      kDefaultModelFile, kDefaultRifeFile, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
   if (!debug) return usage + "Trial options: ajp --debug --help\n";
   return usage +
          "Trial options, with --debug:\n"
@@ -544,7 +558,7 @@ std::string play_usage(bool debug) {
          "                         measured yet); default and --no-ring-rgb10a2: RGBA16\n"
          "  --hdr-metadata[=NITS]  HDR10 output with its metadata, KWin's compression done by the\n"
          "                         grade (NITS: KDE's SDR brightness, read from KDE without a value);\n"
-         "                         default under KDE and Windows; --no-hdr-metadata: compression\n"
+         "                         default on Linux and Windows; --no-hdr-metadata: compression\n"
          "                         left to KWin (Windows: clipping at the screen's peak)\n"
          "  --probe-nvdec          shot pre-analysis decoded by NVDEC at 256x144 (default;\n"
          "                         --no-probe-nvdec: software decoding)\n"
@@ -569,8 +583,8 @@ std::string play_usage(bool debug) {
          "                         speeds up)\n"
          "  --ring-watcher         a thread waits for ring writes and wakes the display (default;\n"
          "                         --no-ring-watcher: the display polls)\n"
-         "  --precise-wait         waits for the next frame to the microsecond (default; --no-precise-wait:\n"
-         "                         to the millisecond)\n"
+         "  --precise-wait         waits for the next frame to a few tens of µs on Linux, a high-resolution\n"
+         "                         timer on Windows (default; --no-precise-wait: to the millisecond)\n"
          "  --audio-pll            audio clock filtered by a phase-locked loop (default;\n"
          "                         --no-audio-pll: the raw clock)\n"
          "  --vsync-index          frame chosen by its measured vblank number, with hysteresis (default;\n"
@@ -582,14 +596,15 @@ std::string play_usage(bool debug) {
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,
                                                             const std::filesystem::path& bundled) {
-  std::vector<std::filesystem::path> candidates{
-      home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx" / kDefaultModelFile,
-      home /
-          "Documents/mpv-AnimeJaNai-HDR/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/"
-          "onnx" /
-          kDefaultModelFile,
-  };
+  // B18-06 : le modèle livré, vérifié avec le paquet, passe avant une installation d'AnimeJaNai faite à la
+  // main, dont le fichier de même nom peut être d'une autre version.
+  std::vector<std::filesystem::path> candidates;
   if (!bundled.empty()) candidates.push_back(bundled / "onnx" / kDefaultModelFile);
+  candidates.push_back(home / ".local/share/AnimeJaNai-HDR-linux/animejanai/onnx" / kDefaultModelFile);
+  candidates.push_back(
+      home /
+      "Documents/mpv-AnimeJaNai-HDR/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx" /
+      kDefaultModelFile);
   return candidates;
 }
 
@@ -633,9 +648,10 @@ std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem
 std::vector<std::filesystem::path> default_rife_candidates(const std::filesystem::path& home,
                                                            std::span<const std::string_view> files,
                                                            const std::filesystem::path& bundled) {
-  std::vector<std::filesystem::path> dirs{home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife",
-                                          home / ".local/share/AnimeJaNai/animejanai/rife"};
-  if (!bundled.empty()) dirs.push_back(bundled / "rife");
+  std::vector<std::filesystem::path> dirs;
+  if (!bundled.empty()) dirs.push_back(bundled / "rife");  // le paquet d'abord (B18-06)
+  dirs.push_back(home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife");
+  dirs.push_back(home / ".local/share/AnimeJaNai/animejanai/rife");
   std::vector<std::filesystem::path> candidates;
   for (const std::filesystem::path& dir : dirs) {
     for (const std::string_view file : files) candidates.push_back(dir / file);

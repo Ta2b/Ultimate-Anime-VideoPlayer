@@ -13,7 +13,7 @@
 #include "app/play/calibrated_chain.h"
 #include "app/play/gpu_tier.h"
 #include "app/play/settings.h"
-#include "core/display.h"
+#include "core/source_info.h"
 
 namespace ajp::app::play {
 

@@ -96,7 +96,7 @@ void hand_over(const std::vector<std::string>& files, const std::stop_token& sto
 
 bool shares_instance(std::span<const std::string_view> args) {
   for (const std::string_view arg : args)
-    if (arg.starts_with("--")) return false;
+    if (arg.starts_with("--") && !arg.starts_with("--relaunched=")) return false;  // une relance partage
   return true;
 }
 

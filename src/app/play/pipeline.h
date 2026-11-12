@@ -49,12 +49,17 @@ struct PipelineConfig {
   std::string audio_device;  // appareil de sortie choisi (audio/devices.h) ; vide : celui du système
   // Le délai mémorisé de la sortie du système, repris si l'appareil choisi disparaît (audio::PlayerConfig).
   std::optional<std::int64_t> audio_fallback_delay_us;
-  bool audio_pll = false;  // --audio-pll : l'horloge audio publiée filtrée par une PLL (audio::PlayerConfig)
-  bool subtitles = true;   // false : aucune piste de sous-titres
+  // L'horloge audio publiée filtrée par une PLL (audio::PlayerConfig), l'état livré ; faux seulement pour
+  // l'essai --no-audio-pll. Vrai par défaut, comme PlayOptions : un appelant direct joue le chemin livré
+  // (B16-10).
+  bool audio_pll = true;
+  bool subtitles = true;  // false : aucune piste de sous-titres
   // Pistes choisies avant une réouverture de la chaîne : elles remplacent le choix par langue si
   // elles existent. subtitle_track : rien = choix par langue ; nullopt dedans = aucune.
   std::optional<int> audio_track;
   std::optional<std::optional<int>> subtitle_track;
+  // Les choix à la main des vidéos d'avant (B29-11) : par langue, sous les pistes d'une réouverture.
+  ManualTracks manual;
   // libass rend sur 4 threads : les sous-titres animés (karaoké) suivent ×4 sans retard.
   subs::RendererOptions subs{.render_threads = 4};
 };
@@ -98,6 +103,9 @@ class Pipeline {
 
   // Pistes qu'on peut choisir pendant la lecture.
   const TrackMenu& tracks() const { return menu_; }
+  // Les pistes en cours (rien : aucune), avec leur langue : le choix à la main en retient la forme (B29-11).
+  const std::optional<media::TrackInfo>& audio_playing() const { return audio_track_; }
+  const std::optional<media::TrackInfo>& subtitles_playing() const { return subtitle_track_; }
   // Change la piste audio : ses paquets valent à partir de l'époque from_epoch, celle du seek que
   // seek() lance (à la position courante) ; audio ouvre ensuite son décodeur. Refus :
   // TrackUnavailable (piste inconnue, pas d'audio), PacketBacklog (boîte audio pleine).

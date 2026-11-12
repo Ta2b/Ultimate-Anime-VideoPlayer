@@ -18,7 +18,8 @@
 
 namespace ajp::core {
 
-// Le contenu du fichier sur le disque ; l'erreur de l'ouverture ou de l'écriture sinon.
+// Le contenu du fichier sur le disque ; l'erreur de l'ouverture ou de l'écriture sinon. Un système de
+// fichiers qui ne sait pas vider (fsync : EINVAL, ENOTSUP) n'est pas une erreur.
 std::error_code sync_file(const std::filesystem::path& file);
 // Les entrées du dossier (un renommage) sur le disque, au mieux : rien sous Windows.
 void sync_directory(const std::filesystem::path& folder);

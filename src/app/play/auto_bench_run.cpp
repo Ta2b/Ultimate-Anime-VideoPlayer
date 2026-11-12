@@ -7,6 +7,7 @@
 #include <system_error>
 
 #include "app/play/bench_events.h"
+#include "app/play/data_dirs.h"
 #include "app/play/i18n.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/paths.h"
@@ -379,7 +380,7 @@ std::expected<Evaluation, Refusal> evaluate_machine(const BenchPlan& plan,
   // (media/bench_clip.h).
   BenchPlan own = plan;
   if (own.video.empty()) {
-    own.video = data_dir / std::string(kBenchClipName);
+    own.video = local_data(data_dir) / "bench-clip-v4.mkv";  // B36-08 : hors du profil itinérant
     std::error_code error;
     if (!std::filesystem::is_regular_file(own.video, error)) {
       if (plan.shown != nullptr)

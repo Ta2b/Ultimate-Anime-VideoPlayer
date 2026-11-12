@@ -194,6 +194,25 @@ TEST_CASE("Rapport : la fin du journal de construction part avec le refus (B39-0
   fs::remove_all(dir);
 }
 
+TEST_CASE("Rapport : après une relance voulue, la séance qui a perdu le GPU est jointe (B39-01)",
+          "[app][report]") {
+  const fs::path dir = fresh_dir("ajp-report-relaunched");
+  write(dir / "ajp.log", "séance neuve\n");
+  write(dir / "ajp.log.1", "appareil Vulkan de l'écran perdu (TDR, pilote rechargé)\n");
+  set_report_log_file(dir / "ajp.log");
+  clear_report_facts();
+  begin_session(dir);
+  end_session();  // la relance voulue retire la marque (main.cpp)
+  CHECK_FALSE(begin_session(dir));
+  CHECK(current_report("").find("perdu") == std::string::npos);  // avant : rien de la cause
+  note_previous_session_relaunched("gpu-lost");
+  const std::string report = current_report("");
+  CHECK(report.find("appareil Vulkan de l'écran perdu") != std::string::npos);
+  CHECK(report.find("séance précédente (relancée : gpu-lost)") != std::string::npos);
+  note_previous_session_relaunched("");
+  end_session();
+}
+
 #ifdef __linux__
 // B39-04 : le build-id de l'exécutable accompagne le rapport, pour résoudre une pile brute avec les symboles
 // de la release (le binaire livré est dépouillé). CMakeLists.txt demande --build-id à l'éditeur de liens.

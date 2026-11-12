@@ -117,6 +117,7 @@ struct SettingsChoices {
   // Post-traitement l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
   std::string stage_note;
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
+  std::filesystem::path bench_clip;    // la séquence du banc (paths::bench_clip)
 };
 
 // Une page de l'arbre des réglages (settings_panel.cpp) : ce qu'elle dessine, sa catégorie, son nom, et si
