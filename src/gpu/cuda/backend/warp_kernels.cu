@@ -1,6 +1,7 @@
 // Noyaux du warp (warp_kernels.h), calqués sur kernels/ref/warp.cpp.
 #include <cstdint>
 #include <cuda_fp16.h>
+#include <type_traits>
 
 #include "gpu/cuda/backend/bilinear.cuh"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
@@ -74,21 +75,10 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
   return tp;
 }
 
-// Le mélange des deux images lues par Catmull-Rom (option cubic, éteinte par défaut), hors ligne : ses 16
-// lectures par canal ne doivent pas peser sur les registres du chemin bilinéaire, et, fondues dans
-// warp_pixel, elles faisaient déborder warp_blend en mémoire locale (ptxas --warn-on-spills).
-__device__ __noinline__ void cubic_blend(const Planes& a, const Planes& b, float pax, float pay, float pbx,
-                                         float pby, float weight, float* rgb) {
-  for (int c = 0; c < 3; ++c) {
-    const float va = CatmullRom::sample(a, c, pax, pay);
-    const float vb = CatmullRom::sample(b, c, pbx, pby);
-    rgb[c] = va * weight + vb * (1.0F - weight);
-  }
-}
-
 // Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre, puis les deux
-// images déformées et mélangées.
-template <typename S>
+// images déformées et mélangées. kCubic : les images lues par Catmull-Rom (option cubic, éteinte par
+// défaut), dans des noyaux à eux.
+template <typename S, bool kCubic>
 __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   const Planes flow = motion_planes(p, p.flow, p.textures.flow);
   const Planes mask = motion_planes(p, p.mask, p.textures.mask);
@@ -129,23 +119,28 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   const Planes b = image_planes(p, p.b, p.textures.b);
   const float fx = static_cast<float>(x);
   const float fy = static_cast<float>(y);
-  if (p.cubic) {
-    cubic_blend(a, b, fx + sx * ax, fy + sy * ay, fx + sx * bx, fy + sy * by, weight, rgb);
-    return;
-  }
+  using Image = std::conditional_t<kCubic, CatmullRom, S>;
   for (int c = 0; c < 3; ++c) {
-    const float va = S::sample(a, c, fx + sx * ax, fy + sy * ay);
-    const float vb = S::sample(b, c, fx + sx * bx, fy + sy * by);
+    const float va = Image::sample(a, c, fx + sx * ax, fy + sy * ay);
+    const float vb = Image::sample(b, c, fx + sx * bx, fy + sy * by);
     rgb[c] = va * weight + vb * (1.0F - weight);
   }
 }
 
-__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(WarpBlendParams p) {
+// Les noyaux de Catmull-Rom ont leur propre borne : ses 16 lectures par canal ne tiennent pas dans les
+// registres de la borne lourde (nvcc débordait de 8 octets en mémoire locale, --warn-on-spills), et le
+// chemin bilinéaire, celui par défaut, garde la sienne.
+inline constexpr int kCubicBlocksPerSm = 2;
+template <bool kCubic>
+inline constexpr int kWarpBlocksPerSm = kCubic ? kCubicBlocksPerSm : kHeavyBlocksPerSm;
+
+template <bool kCubic>
+__global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>) warp_blend(WarpBlendParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;
   float rgb[3];
-  warp_pixel<Exact>(p, x, y, rgb);
+  warp_pixel<Exact, kCubic>(p, x, y, rgb);
   if (p.surface.object != 0) {
     store_ring(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
     return;
@@ -158,7 +153,9 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend(W
 }
 
 // Deux pixels voisins par fil, lus par les objets texture : un bloc 16 × 16 couvre 32 × 16 pixels.
-__global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend_filtered(WarpBlendParams p) {
+template <bool kCubic>
+__global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
+    warp_blend_filtered(WarpBlendParams p) {
   const int x = 2 * static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;  // largeur paire : x + 1 est dans l'image
@@ -168,7 +165,7 @@ __global__ void __launch_bounds__(kPixelThreads, kHeavyBlocksPerSm) warp_blend_f
 #pragma unroll 1
   for (int k = 0; k < 2; ++k) {
     float rgb[3];
-    warp_pixel<Filtered>(p, x + k, y, rgb);
+    warp_pixel<Filtered, kCubic>(p, x + k, y, rgb);
     for (int c = 0; c < 3; ++c) {
       const __half v = __float2half_rn(rgb[c]);
       pair[c] = k == 0 ? __halves2half2(v, v) : __halves2half2(__low2half(pair[c]), v);
@@ -220,10 +217,17 @@ cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream
   const bool previous = params.keep_poses && params.previous_flow != nullptr;
   if (t.a != 0 && t.b != 0 && t.flow != 0 && t.mask != 0 && (!previous || t.previous_flow != 0) &&
       params.width % 2 == 0 && reinterpret_cast<std::uintptr_t>(params.out) % 4 == 0) {
-    warp_blend_filtered<<<grid_for(params.width / 2, params.height), dim3(kBlock, kBlock), 0, stream>>>(
-        params);
+    const dim3 grid = grid_for(params.width / 2, params.height);
+    if (params.cubic)
+      warp_blend_filtered<true><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
+    else
+      warp_blend_filtered<false><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
   } else {
-    warp_blend<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
+    const dim3 grid = grid_for(params.width, params.height);
+    if (params.cubic)
+      warp_blend<true><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
+    else
+      warp_blend<false><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
   }
   return cudaGetLastError();
 }
