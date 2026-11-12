@@ -107,17 +107,25 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::smooth_find_b(const DecodedF
     if (candidate == nullptr || candidate->width != setup_.source_width ||
         candidate->height != setup_.source_height)
       return 0U;
-    if (auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor()); !debanded)
-      return std::unexpected(std::move(debanded.error()));
+    // La mesure se fait à la taille de RIFE quand elle existe : la taille de travail n'est ingérée que pour
+    // le b trouvé, pas pour chaque copie encore tenue (une ingestion pleine taille de moins par candidat).
     if (smooth_far_small_) {
       if (auto ok = ops.ingest(*candidate, gpu::IngestSpec{}, smooth_far_small_->tensor()); !ok)
         return std::unexpected(std::move(ok.error()));
+    } else if (auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor()); !debanded) {
+      return std::unexpected(std::move(debanded.error()));
     }
     const gpu::Tensor& far = smooth_far_small_ ? smooth_far_small_->tensor() : smooth_far_rgb_->tensor();
     auto scores = ops.scores_now(rife_source(current_), far);
     if (!scores) return std::unexpected(std::move(scores.error()));
     if (cut_measured(*scores, frame.pts_us, candidate->pts_us)) return 0U;
-    if (!kernels::is_held(scores->worst_block)) return hold;  // b : le dessin nouveau
+    if (!kernels::is_held(scores->worst_block)) {  // b : le dessin nouveau
+      if (smooth_far_small_) {
+        if (auto debanded = ingest_source(*candidate, spec, smooth_far_rgb_->tensor()); !debanded)
+          return std::unexpected(std::move(debanded.error()));
+      }
+      return hold;
+    }
   }
   return 0U;  // tenue de plus de kSmoothMaxHold sources : une pose, le rythme source reste
 }

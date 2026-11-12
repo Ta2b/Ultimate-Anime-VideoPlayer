@@ -10,7 +10,9 @@
 
 namespace ajp::gpu::cuda {
 
-DrbaFusedEngine::~DrbaFusedEngine() = default;
+DrbaFusedEngine::~DrbaFusedEngine() {
+  if (zone_) zone_->drop_region(this);  // sa région ne repousse plus celles des autres moteurs fusionnés
+}
 
 std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
     nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const DrbaFusedKey& key,
@@ -118,9 +120,11 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   return engine;
 }
 
-std::size_t DrbaFusedEngine::scratch_offset_for(const SharedActivations& zone) const {
-  return kernels::drba_fused_align(
-      static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
+std::size_t DrbaFusedEngine::scratch_offset_for(SharedActivations& zone) {
+  // Sa propre région, au-dessus des activations et des régions des autres moteurs fusionnés de la zone :
+  // RIFE plein et RIFE demi-taille (échelle par paire) ne s'effacent plus l'un l'autre leur encodage gardé.
+  return static_cast<std::size_t>(
+      zone.region_offset(this, own_activation_, static_cast<std::int64_t>(layout_.bytes)));
 }
 
 std::expected<void, Refusal> DrbaFusedEngine::follow_zone(const std::shared_ptr<SharedActivations>& arena) {
@@ -136,6 +140,7 @@ std::expected<void, Refusal> DrbaFusedEngine::follow_zone(const std::shared_ptr<
 std::expected<void, Refusal> DrbaFusedEngine::use_zone(const std::shared_ptr<SharedActivations>& zone) {
   const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
   if (auto ok = zone->reserve(needed); !ok) return ok;
+  if (zone_ && zone_ != zone) zone_->drop_region(this);  // la région suit le moteur dans sa nouvelle zone
   zone_ = zone;
   zone_generation_ = zone->generation();
   graphs_.clear();  // les graphes capturés l'étaient sur une autre adresse
@@ -269,9 +274,11 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
   kept_.reset();
   auto queued = enqueue_chain(stream, arena, inputs, outputs, times_only);
   // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés).
-  arena->wrote(this, static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
+  arena->wrote(this, static_cast<std::int64_t>(scratch_offset_),
+               static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
   if (queued) {
-    arena->keep(this, static_cast<std::int64_t>(scratch_offset_));
+    arena->keep(this, static_cast<std::int64_t>(scratch_offset_),
+                static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
     kept_ = Kept{.pair01 = pair01,
                  .pair12 = pair12,
                  .zone = arena->data(),

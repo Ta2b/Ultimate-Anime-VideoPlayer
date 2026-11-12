@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <filesystem>
@@ -158,6 +159,10 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
   INFO("plan " << plan.reduce[0] << "…" << plan.blocks << " blocs, " << w << "x" << h);
 
   const kernels::FusedDims x0 = kernels::rife_fused_x(plan, 0, h, w);
+  // L'encodage de B suit celui de A dans le même tampon (la référence les range ainsi) ; le moteur, lui, fait
+  // alterner deux emplacements.
+  const void* encode_b = static_cast<const std::byte*>(encode.get()) +
+                         std::size_t{4} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
   REQUIRE(cudaGetLastError() == cudaSuccess);
   REQUIRE(gpu::cuda::launch_fused_entry({.height = h,
                                          .width = w,
@@ -166,6 +171,7 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                                          .out_width = x0.width,
                                          .input = input.get(),
                                          .encode = encode.get(),
+                                         .encode_b = encode_b,
                                          .x = x[0]->get()},
                                         nullptr) == cudaSuccess);
   double worst = 0.0;
@@ -190,6 +196,7 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                          .flows = b + 1,
                          .input = input.get(),
                          .encode = encode.get(),
+                         .encode_b = encode_b,
                          .x = x[i + 1]->get()};
     for (int k = 0; k <= b; ++k) {
       const auto j = static_cast<std::size_t>(k);

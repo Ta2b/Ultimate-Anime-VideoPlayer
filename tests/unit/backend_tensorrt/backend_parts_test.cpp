@@ -131,6 +131,37 @@ TEST_CASE(
   CHECK_FALSE(zone.kept_by(nullptr));
 }
 
+TEST_CASE("Activations partagées : deux moteurs fusionnés, deux régions, deux encodages gardés",
+          "[backend_tensorrt]") {
+  SharedActivations zone;
+  int full = 0, half = 0, span = 0;
+  zone.used(&span, 40 * kMiB);
+  // RIFE plein puis RIFE demi-taille (échelle par paire) : la seconde région au-dessus de la première.
+  const std::int64_t a = zone.region_offset(&full, 10 * kMiB, 100 * kMiB + 3);
+  const std::int64_t b = zone.region_offset(&half, 5 * kMiB, 25 * kMiB);
+  CHECK(a == 40 * kMiB);
+  CHECK(b == 140 * kMiB + 256);  // la fin de la première, alignée sur 256 octets
+  CHECK(zone.region_offset(&full, 10 * kMiB, 100 * kMiB + 3) == a);  // stable d'un appel à l'autre
+  zone.wrote(&full, a, a + 100 * kMiB + 3);
+  zone.keep(&full, a, a + 100 * kMiB + 3);
+  zone.wrote(&half, b, b + 25 * kMiB);
+  zone.keep(&half, b, b + 25 * kMiB);
+  CHECK(zone.kept_by(&full));  // le demi-taille n'a pas écrit sur l'encodage du plein
+  CHECK(zone.kept_by(&half));
+  zone.used(&span, 40 * kMiB);  // SPAN sous les deux régions
+  CHECK(zone.kept_by(&full));
+  CHECK(zone.kept_by(&half));
+  // Des activations plus hautes : les deux régions remontent, et l'écriture efface ce qu'elle recouvre.
+  zone.used(&span, 60 * kMiB);
+  CHECK_FALSE(zone.kept_by(&full));
+  CHECK(zone.kept_by(&half));
+  CHECK(zone.region_offset(&full, 10 * kMiB, 100 * kMiB + 3) == 60 * kMiB);
+  // Le plein parti, le demi-taille descend à sa place.
+  zone.drop_region(&full);
+  CHECK(zone.region_offset(&half, 5 * kMiB, 25 * kMiB) == 60 * kMiB);
+  CHECK_FALSE(zone.kept_by(&full));
+}
+
 TEST_CASE("Voies de calcul : deux voies à partir de 7,5 Gio de mémoire et 5 Gio libres (C01-09)",
           "[backend_tensorrt]") {
   constexpr std::size_t kGiB = std::size_t{1} << 30;

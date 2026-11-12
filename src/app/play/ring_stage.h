@@ -117,8 +117,18 @@ class RingStage : public VideoStage, public FrameSink {
   virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,
                                                  std::uint32_t slot, std::uint64_t wait_value,
                                                  std::uint64_t signal_value) = 0;
+  // Les attentes d'un slot libre avant une écriture (l'écran ne rendait pas assez vite) : nombre, total et
+  // plus longue, pour le journal de fin. Lues par le thread gpu seulement.
+  struct SlotWaits {
+    std::uint64_t count = 0;
+    std::int64_t total_us = 0;
+    std::int64_t longest_us = 0;
+  };
+  const SlotWaits& slot_waits() const { return slot_waits_; }
 
  private:
+  // Un slot s'est libéré pour l'image en tête : son attente, s'il y en a eu une, compte (slot_waits).
+  void slot_found();
   using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush, StreamEnd>;
   void run(const std::stop_token& stop, const ThreadReport& report);
   void emit(const ThreadReport& report);
@@ -146,6 +156,7 @@ class RingStage : public VideoStage, public FrameSink {
   std::uint32_t epoch_ = 0;
   bool failed_ = false;
   std::int64_t slot_wait_since_us_ = 0;  // l'image en tête attend un slot depuis cet instant ; 0 : non
+  SlotWaits slot_waits_;
   std::jthread thread_;
 };
 

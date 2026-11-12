@@ -169,12 +169,14 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
       static_cast<std::size_t>(py) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(px);
   const auto* input = static_cast<const __half*>(p.input);
   const auto* encode = static_cast<const __half*>(p.encode);
+  const auto* encode_b = static_cast<const __half*>(p.encode_b);
   auto* x = static_cast<__half*>(p.x);
 #pragma unroll
   for (int c = 0; c < 15; ++c) {
-    const __half* src = c < 6
-                            ? input + static_cast<std::size_t>(c) * plane
-                            : (c < 14 ? encode + static_cast<std::size_t>(c - 6) * plane : input + 6 * plane);
+    const __half* src = c < 6    ? input + static_cast<std::size_t>(c) * plane
+                        : c < 10 ? encode + static_cast<std::size_t>(c - 6) * plane
+                        : c < 14 ? encode_b + static_cast<std::size_t>(c - 10) * plane
+                                 : input + 6 * plane;
     const std::size_t w = static_cast<std::size_t>(p.width);
     if (c == 14) {  // l'instant : l'élément 0 du plan 6 seul est tenu (étape 5.2, rife_time)
       x[static_cast<std::size_t>(c) * out_plane +
@@ -208,6 +210,7 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
       static_cast<std::size_t>(p.out_height) * static_cast<std::size_t>(p.out_width);
   const auto* input = static_cast<const __half*>(p.input);
   const auto* encode = static_cast<const __half*>(p.encode);
+  const auto* encode_b = static_cast<const __half*>(p.encode_b);
   const int taps = p.reduce > 1 ? 2 : 1;
   const int base = p.reduce > 1 ? p.reduce / 2 - 1 : 0;
   const float flow_scale = 1.0F / static_cast<float>(p.reduce);
@@ -245,8 +248,9 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
         const Tap tap = pixel_tap(px, py, fl[2 * n], fl[2 * n + 1], p.width, p.height);
 #pragma unroll
         for (int ch = 0; ch < 7; ++ch) {
-          const __half* src = ch < 3 ? input + static_cast<std::size_t>(3 * n + ch) * plane
-                                     : encode + static_cast<std::size_t>(4 * n + ch - 3) * plane;
+          const __half* src = ch < 3
+                                  ? input + static_cast<std::size_t>(3 * n + ch) * plane
+                                  : (n == 0 ? encode : encode_b) + static_cast<std::size_t>(ch - 3) * plane;
           const int dst = ch < 3 ? 3 * n + ch : 6 + 4 * n + ch - 3;
           acc[dst] += rounded(bilinear(src, tap, p.width));
         }

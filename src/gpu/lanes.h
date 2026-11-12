@@ -26,6 +26,31 @@ constexpr std::size_t lane_index(Lane lane) {
   return static_cast<std::size_t>(lane);
 }
 
+// Le rang de priorité d'une voie, 0 la plus pressée. La mesure d'abord : ses noyaux font 0,02 à 0,3 ms et
+// l'hôte attend ses relectures pour décider de la paire ; à la plus basse priorité, elle attendait que SPAN
+// rende les SM (p95 de l'attente hôte : 14 ms, la durée d'un SPAN). Puis l'agrandissement, qui porte
+// l'échéance d'affichage, puis l'interpolation.
+constexpr int lane_rank(Lane lane) {
+  switch (lane) {
+    case Lane::Measure:
+      return 0;
+    case Lane::Upscale:
+      return 1;
+    case Lane::Interpolate:
+      return 2;
+  }
+  return 2;
+}
+
+// La priorité de file de la voie dans la plage d'un appareil, least (la plus basse) et greatest (la plus
+// haute), comme CUDA les donne : un nombre plus petit est plus prioritaire. Une plage trop courte serre
+// les rangs vers le bas.
+constexpr int lane_priority(Lane lane, int least, int greatest) {
+  const int step = greatest <= least ? 1 : -1;
+  const int priority = greatest + step * lane_rank(lane);
+  return greatest <= least ? std::min(priority, least) : std::max(priority, least);
+}
+
 // Les dépendances entre voies. Pour chaque ressource (une adresse : tenseur, zone d'activation,
 // contexte d'un moteur, sommes d'un noyau), la dernière écriture et les lectures faites depuis,
 // par voie, chacune datée par le rang de son opération sur sa voie. Une opération attend, sur

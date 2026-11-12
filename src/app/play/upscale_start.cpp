@@ -58,6 +58,12 @@ UpscaleStage::~UpscaleStage() {
   }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
+  // Le travail d'une image ne s'enfile qu'avec un slot libre : ces attentes sont du temps où l'étage ne
+  // nourrissait pas le GPU parce que l'écran n'avait pas encore rendu de slot.
+  if (const SlotWaits& waits = slot_waits(); waits.count > 0)
+    log_channel("gpu")->info(
+        "anneau : {} attentes d'un slot libre, {:.1f} ms en tout, la plus longue {:.1f} ms", waits.count,
+        static_cast<double>(waits.total_us) / 1000.0, static_cast<double>(waits.longest_us) / 1000.0);
   if (encodes_kept_ + encodes_followed_ + encodes_after_gap_ + encodes_cold_ > 0)
     log_channel("gpu")->info(
         "RIFE : encodage repris sur {} passes, B seule sur {}, A et B sur {} après une paire sans passe et "

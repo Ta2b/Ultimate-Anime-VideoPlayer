@@ -40,6 +40,11 @@ std::string hags_state() {
   const LSTATUS status =
       RegGetValueW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", L"HwSchMode",
                    RRF_RT_REG_DWORD, nullptr, &mode, &size);
+  // Sans valeur HwSchMode, Windows suit son choix par défaut (actif sur Windows 11 pour une carte qui le
+  // prend en charge) : personne n'a touché au réglage. Le lecteur force l'envoi à chaque étape dans tous les
+  // cas (push_launches) : l'état ne sert qu'au journal.
+  if (status == ERROR_FILE_NOT_FOUND)
+    return "ordonnancement GPU matériel (HAGS) : réglage par défaut du système (HwSchMode absent)";
   if (status != ERROR_SUCCESS) return "ordonnancement GPU matériel (HAGS) : état illisible";
   return mode == 2 ? "ordonnancement GPU matériel (HAGS) : actif"
                    : "ordonnancement GPU matériel (HAGS) : inactif, envoi WDDM forcé à chaque étape";

@@ -24,6 +24,20 @@ LaneHazards::Op op(LaneHazards& hazards, Lane lane, std::initializer_list<std::u
                         std::span(writes.begin(), writes.size()));
 }
 
+TEST_CASE("Voies : la mesure d'abord, puis l'agrandissement, puis l'interpolation", "[gpu][lanes]") {
+  // La plage d'Ada sous CUDA : 0 la plus basse, -5 la plus haute.
+  CHECK(lane_priority(Lane::Measure, 0, -5) == -5);
+  CHECK(lane_priority(Lane::Upscale, 0, -5) == -4);
+  CHECK(lane_priority(Lane::Interpolate, 0, -5) == -3);
+  // Une plage de deux niveaux : l'agrandissement et l'interpolation partagent le plus bas.
+  CHECK(lane_priority(Lane::Measure, 0, -1) == -1);
+  CHECK(lane_priority(Lane::Upscale, 0, -1) == 0);
+  CHECK(lane_priority(Lane::Interpolate, 0, -1) == 0);
+  // Sans plage : tout à la même priorité.
+  CHECK(lane_priority(Lane::Measure, 0, 0) == 0);
+  CHECK(lane_priority(Lane::Interpolate, 0, 0) == 0);
+}
+
 }  // namespace
 
 TEST_CASE("Voies : sur une même voie, l'ordre de la file suffit", "[gpu][lanes]") {

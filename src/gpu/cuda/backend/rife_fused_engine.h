@@ -85,19 +85,22 @@ class RifeFusedEngine final : public Engine {
 
  private:
   RifeFusedEngine() = default;
-  // Ce que l'encodeur fait à cet appel : les deux images, B seule (l'encodage de B d'avant copié à la place
-  // de A), rien (l'encodage de l'appel précédent sert tel quel).
+  // Ce que l'encodeur fait à cet appel : les deux images, B seule (l'encodage de B d'avant devient celui de A
+  // en changeant d'emplacement), rien (l'encodage de l'appel précédent sert tel quel).
   enum class Encode : std::uint8_t { Both, Second, None };
   enum class Hint : std::uint8_t { None, TimesOnly, Follows };
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
-                                   const Tensor& input, std::span<const Tensor> outputs, Encode encode);
+                                   const Tensor& input, std::span<const Tensor> outputs, Encode encode,
+                                   unsigned a_slot);
   std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
                                              const std::shared_ptr<SharedActivations>& arena,
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
-                                             Encode encode);
+                                             Encode encode, unsigned a_slot);
+  // Le travail de l'encodeur à cet appel, d'après l'encodage gardé (kept_) et l'indice de l'appelant.
+  Encode choose_encode(const SharedActivations& arena, Hint hint, std::uintptr_t input) const;
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
-  std::size_t scratch_offset_for(const SharedActivations& zone) const;
+  std::size_t scratch_offset_for(SharedActivations& zone);
 
   std::unique_ptr<TrtEngine> encode_;
   std::vector<std::unique_ptr<TrtEngine>> blocks_;
@@ -118,9 +121,9 @@ class RifeFusedEngine final : public Engine {
 
   std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
 
-  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone et de travail de l'encodeur : trois
-  // par jeu d'adresses (Encode).
-  static constexpr std::size_t kMaxGraphs = 24;
+  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone, de travail de l'encodeur et
+  // d'emplacement de A : jusqu'à cinq par jeu d'adresses (Both, puis Second et None sur chaque emplacement).
+  static constexpr std::size_t kMaxGraphs = 40;
   FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
   // L'encodage que le dernier appel mené jusqu'au bout a laissé dans la zone, et l'entrée qu'il a lue.
   // Repris seulement si la zone est la même et qu'aucun autre moteur n'y a écrit depuis.
@@ -132,6 +135,7 @@ class RifeFusedEngine final : public Engine {
   };
   std::optional<Kept> kept_;
   Hint hint_ = Hint::None;
+  unsigned a_slot_ = 0;                     // l'emplacement de l'encodage de A gardé (kept_)
   std::array<std::uint64_t, 3> encodes_{};  // appels par travail de l'encodeur (Encode), pour les tests
 };
 

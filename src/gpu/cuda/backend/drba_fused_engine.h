@@ -79,7 +79,7 @@ class DrbaFusedEngine final : public Engine {
   // Les tampons repris au-dessus des activations si arena n'est plus la zone posée, a grandi, a changé de
   // génération, ou si un moteur entier y monte plus haut qu'eux.
   std::expected<void, Refusal> follow_zone(const std::shared_ptr<SharedActivations>& arena);
-  std::size_t scratch_offset_for(const SharedActivations& zone) const;
+  std::size_t scratch_offset_for(SharedActivations& zone);
 
   std::unique_ptr<TrtEngine> encode_;
   std::array<std::unique_ptr<TrtEngine>, kernels::kDrbaFusedBlocks> blocks_;

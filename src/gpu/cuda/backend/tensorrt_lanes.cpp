@@ -60,8 +60,7 @@ std::expected<void, Refusal> TensorRtBackend::create_lanes() {
         std::format("une seule voie de calcul : {} Mio libres sur {} à l'ouverture, {} attendus pour trois",
                     free >> 20U, properties_.totalGlobalMem >> 20U, kLaneFreeMemory >> 20U));
   }
-  // La voie de l'agrandissement porte l'échéance d'affichage : quand les voies se disputent les SM,
-  // le GPU lui donne la main en premier.
+  // Priorités par voie (gpu::lane_priority) : mesure, puis agrandissement, puis interpolation.
   int least = 0;
   int greatest = 0;
   if (auto ok =
@@ -70,7 +69,7 @@ std::expected<void, Refusal> TensorRtBackend::create_lanes() {
     return ok;
   }
   for (std::size_t lane = 0; lane < kLanes; ++lane) {
-    const int priority = lane == lane_index(Lane::Upscale) ? greatest : least;
+    const int priority = lane_priority(static_cast<Lane>(lane), least, greatest);
     if (auto ok = cuda_check(cudaStreamCreateWithPriority(&streams_[lane], cudaStreamNonBlocking, priority),
                              "cudaStreamCreateWithPriority");
         !ok) {
