@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "app/play/free_engines.h"
 #include "app/play/links.h"
 #include "app/play/visible_error.h"
 #include "core/auto_rate.h"
@@ -83,6 +84,12 @@ i18n::Translated reduced_precision_notice(const std::string& engine, const gpu::
                                     : i18n::ui_tr("speed gain not measured");
   return i18n::ui_tr_format("{} engine: reduced precision on {} layer(s) for speed ({}, {})", engine,
                             reduced.layers, loss.str(), gain.str());
+}
+
+std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known) {
+  if (free_instants_limit(engine) == 0)
+    return i18n::tr_format("{} cannot compute at a free instant", label(engine));
+  return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
 }  // namespace ajp::app::play

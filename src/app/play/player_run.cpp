@@ -53,6 +53,7 @@
 #include "app/play/look_catalog.h"
 #include "app/play/loop_wait.h"
 #include "app/play/model_choice.h"
+#include "app/play/motion_cut.h"
 #include "app/play/paths.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -116,15 +117,6 @@ void save_reopened(Player& p) {
       !saved)
     log_channel("app")->warn("{}", saved.error().detail);
   p.unsaved.reset();
-}
-
-// Pourquoi le mode Rapide (core/free_grid.h) ne peut pas tourner : il lui faut un moteur qui calcule à un
-// instant libre et la fréquence de l'écran (ou un VRR armé). Vide : il le peut ; sinon l'Auto Stable le
-// remplace.
-std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known) {
-  if (free_instants_limit(engine) == 0)
-    return i18n::tr_format("{} cannot compute at a free instant", label(engine));
-  return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
 // L'anneau refusé à l'ouverture du pipeline : la retraite le lit sous sa clé (C09-01, links.h).
@@ -463,16 +455,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 .value_or(GrowingFile{})
                 .size;
   const GrowingFile opened_file{p.options.bench_out ? 0 : file_bytes};
-  // Repli du Rapide pour la séance seulement : play.toml garde le choix, qu'un choix explicite annule.
-  core::FreeFallback free_fallback;  // revient au Rapide après un calme (core/free_rate.h)
-  bool free_chosen = chain.running.auto_free;
+  // L'interpolation coupée faute de carte, pour cette chaîne seulement : play.toml garde le choix
+  // (motion_cut.h).
+  MotionGuard motion_guard;
   const auto apply_auto = [&] {
-    if (chain.running.auto_free != free_chosen) {
-      free_chosen = chain.running.auto_free;
-      free_fallback.clear();
-    }
-    const bool free_wanted = free_requested(chain.running, free_fallback.active(host_now_us()));
-    const bool on = chain.running.rife_auto && chain.opened.rife_loaded && chain.running.rife_factor >= 2;
+    const bool free_wanted = chain.running.auto_free;
+    const bool on = !motion_guard.held(chain) && chain.running.rife_auto && chain.opened.rife_loaded &&
+                    chain.running.rife_factor >= 2;
     // Le plafond choisi borne la cadence ; le calage se fait toujours sur l'écran (A12-04), et jamais sur
     // un plafond de batterie (décision 11, A31-10).
     const double cap_hz = static_cast<double>(chain.running.auto_cap);
@@ -651,15 +640,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         const std::int64_t lost =
             std::max(shown.missing - free_missing_seen, shown.dropped - free_dropped_seen);
         chain.live.free_missed(host_now_us(), lost);
-        if (chain.live.free_should_fall_back(host_now_us())) {
-          log->warn("Mode Rapide : trop d'images perdues ({}) : retour au mode Stable",
-                    free_status_text(chain.live.free_info(host_now_us())));
-          if (free_fallback.fell_back(host_now_us()))
-            p.ui.controls().warn(i18n::ui_tr("Instant mode: too many frames lost, back to Stable"),
-                                 host_now_us());
-          apply_auto();
-        }
       }
+      // RIFE qui ne tient plus une image interpolée par paire : coupé, la carte rendue à SPAN (motion_cut.h).
+      if (motion_guard.watch(chain, core::auto_limit_hz(known_hz, chain.running.auto_cap),
+                             fps_of(video.frame_rate), host_now_us()))
+        apply_auto();
       if (const auto notice = session.take_notice())
         p.ui.controls().warn(
             i18n::ui_tr_format("Playback goes on after an error: {}", visible_error(*notice)), host_now_us());

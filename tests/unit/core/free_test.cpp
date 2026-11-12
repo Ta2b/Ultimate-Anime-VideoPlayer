@@ -210,55 +210,6 @@ TEST_CASE("free rate : la contre-pression élargit tout de suite et ne se relâc
   CHECK(rate.pressure(t0 + 30'000) <= FreeRate::kPressureMax);
 }
 
-TEST_CASE("free rate : repli à 5 % d'images perdues sur 5 s, des pertes durables seulement", "[free]") {
-  FreeRate rate;
-  const std::int64_t t0 = 10'000'000;
-  for (int i = 0; i < 20; ++i) rate.produced(10, t0 + i * 250'000);  // 200 images en 5 s
-  rate.missed(t0 + 2'000'000, 4);
-  CHECK_FALSE(rate.should_fall_back(t0 + 4'750'000));  // trop peu de pertes
-  rate.missed(t0 + 2'100'000, 8);
-  CHECK_FALSE(rate.should_fall_back(t0 + 4'750'000));  // 12 / 200, mais un à-coup dans 250 ms
-  for (int i = 0; i < 4; ++i) rate.missed(t0 + 2'500'000 + i * 300'000, 1);
-  CHECK(rate.should_fall_back(t0 + 4'750'000));         // 16 / 200 sur plus d'une seconde
-  CHECK_FALSE(rate.should_fall_back(t0 + 15'000'000));  // les pertes sont sorties de la fenêtre
-  FreeRate fine;
-  for (int i = 0; i < 20; ++i) fine.produced(100, t0 + i * 250'000);
-  for (int i = 0; i < 6; ++i) fine.missed(t0 + 1'000'000 + i * 300'000, 2);
-  CHECK_FALSE(fine.should_fall_back(t0 + 4'750'000));  // 12 / 2000 : moins de 5 %
-}
-
-TEST_CASE("free rate : après un seek ou une reprise, les pertes du remplissage ne font pas replier",
-          "[free]") {
-  FreeRate rate;
-  const std::int64_t t0 = 20'000'000;
-  rate.settle(t0);
-  for (int i = 0; i < 20; ++i) rate.produced(10, t0 + i * 250'000);
-  // 3 s de remplissage lent après le seek : au-delà des 1,2 s du coût, en deçà des 5 s du repli.
-  for (int i = 0; i < 10; ++i) rate.missed(t0 + 1'500'000 + i * 150'000, 2);
-  CHECK_FALSE(rate.should_fall_back(t0 + 4'900'000));
-  CHECK(rate.info(t0 + 4'900'000).lost == 20);  // comptées quand même (pression, statistiques)
-  // Passé le calme, des pertes durables font replier.
-  for (int i = 0; i < 20; ++i) rate.produced(10, t0 + 5'000'000 + i * 250'000);
-  for (int i = 0; i < 8; ++i) rate.missed(t0 + 6'000'000 + i * 300'000, 2);
-  CHECK(rate.should_fall_back(t0 + 9'000'000));
-}
-
-TEST_CASE("free fallback : le Rapide revient après un calme, plus long à chaque repli", "[free]") {
-  FreeFallback fallback;
-  CHECK_FALSE(fallback.active(0));
-  CHECK(fallback.fell_back(10'000'000));  // le premier repli s'annonce, les suivants non (P3.38)
-  CHECK(fallback.active(10'000'000 + FreeFallback::kRetryUs - 1));
-  CHECK_FALSE(fallback.active(10'000'000 + FreeFallback::kRetryUs));  // on réessaie le Rapide
-  CHECK_FALSE(fallback.fell_back(100'000'000));
-  CHECK(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs - 1));  // 6 min la seconde fois
-  CHECK_FALSE(fallback.active(100'000'000 + 2 * FreeFallback::kRetryUs));
-  for (int i = 0; i < 10; ++i) fallback.fell_back(1'000'000'000);
-  CHECK_FALSE(fallback.active(1'000'000'000 + FreeFallback::kRetryMaxUs));  // au plus 30 min
-  fallback.fell_back(0);
-  fallback.clear();  // un choix explicite du mode
-  CHECK_FALSE(fallback.active(1));
-}
-
 TEST_CASE("free : dix minutes simulées, GPU de 67 à 55 puis 120 i/s, sans dérive ni retard", "[free]") {
   // Horloge maître synthétique à la vitesse 1. Le GPU sert les images une à une ; la paire est préparée
   // 120 ms avant son pts (file de décodage), le retard vidéo est le temps de service d'une image.

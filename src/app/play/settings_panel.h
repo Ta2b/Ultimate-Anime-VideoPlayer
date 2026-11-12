@@ -113,6 +113,9 @@ struct SettingsChoices {
   // Les étages que la chaîne joue sans eux, ou à un autre cran, et pourquoi (stage_fallback.h) : la page
   // Post-traitement l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
   std::string stage_note;
+  // L'interpolation coupée faute de carte pour cette vidéo (motion_cut.h), avec le même « Réessayer ». Vide :
+  // elle n'est pas coupée.
+  std::string motion_note;
   std::filesystem::path settings_dir;  // le dossier de play.toml, bench.toml, settings.toml
   std::filesystem::path bench_clip;    // la séquence du banc (paths::bench_clip)
 };

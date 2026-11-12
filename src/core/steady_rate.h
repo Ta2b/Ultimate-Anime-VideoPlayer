@@ -37,17 +37,10 @@ struct FreeParams {
   int half_steps = 20;  // en VRR : N de 1 à 10 par demi-pas (kMaxInstantsPerPair borne 10,5)
   int urgent_losses = 2;
   std::int64_t urgent_window_us = 1'000'000;
-  int fit_pairs = 24;   // paires mesurées d'un plan avant de le réajuster
-  int early_pairs = 4;  // premières paires d'un plan jugées contre le budget
-  int fallback_per_mille = 50;
-  std::int64_t fallback_window_us = 5'000'000;
-  int fallback_min_lost = 10;
+  int fit_pairs = 24;                  // paires mesurées d'un plan avant de le réajuster
+  int early_pairs = 4;                 // premières paires d'un plan jugées contre le budget
   double display_smoothing = 0.1;      // lissage de d
   std::int64_t settle_us = 1'200'000;  // après seek ou reprise : mesures ignorées
-  // Après la mise en route, un seek ou une reprise : les pertes ne comptent pas pour le repli (le démarrage
-  // perd toujours quelques images, comme FreeRate::kStartUs).
-  std::int64_t start_us = 5'000'000;
-  int fallback_min_buckets = 4;  // pertes réparties sur autant de tranches de 250 ms
 };
 
 struct FreeDisplay {
@@ -78,8 +71,6 @@ class SteadyRate {
   void scene_cut(std::int64_t now_us);
   // `count` images perdues à l'écran (sautées ou manquées).
   void lost(std::int64_t now_us, int count);
-  // `images` images produites par une paire (compte du repli).
-  void produced(int images, std::int64_t now_us);
   // Seek, reprise, (re)chargement : les mesures repartent, le facteur reste.
   void settle(std::int64_t now_us);
 
@@ -87,7 +78,6 @@ class SteadyRate {
   Ratio factor() const { return factor_; }
   // Vrai une fois après chaque changement de N.
   bool take_changed();
-  bool should_fall_back(std::int64_t now_us) const;
   SteadyInfo info() const;
 
   // Le plus grand candidat que la droite tient dans le budget (1 si aucun).
@@ -96,12 +86,6 @@ class SteadyRate {
   const std::vector<Ratio>& candidates() const { return candidates_; }
 
  private:
-  struct Bucket {
-    std::int64_t index = -1;
-    int produced = 0;
-    int lost = 0;
-  };
-  Bucket& bucket(std::int64_t now_us);
   void set_factor(Ratio factor);
   CostLine scaled_prior() const;
   void rechoose_from_plan(std::int64_t now_us);
@@ -127,12 +111,10 @@ class SteadyRate {
   double boot_per_image_sum_ = 0.0;  // sans a priori : coût par image des premières paires
   int boot_n_ = 0;
   std::int64_t settled_until_us_ = 0;
-  std::int64_t quiet_until_us_ = -1;  // pertes hors du compte du repli jusque-là ; −1 : à la première image
   std::array<std::int64_t, 8> recent_losses_{};  // instants des dernières pertes
   std::size_t next_loss_ = 0;
   std::uint32_t lost_total_ = 0;
   std::uint32_t urgencies_ = 0;
-  std::array<Bucket, 24> buckets_{};
 };
 
 }  // namespace ajp::core

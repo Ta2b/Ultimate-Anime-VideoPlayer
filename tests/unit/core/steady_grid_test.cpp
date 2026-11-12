@@ -196,7 +196,6 @@ TEST_CASE("steady : T9 relancé, dix minutes, GPU de 67 à 55 puis 120 i/s", "[f
       rate.lost(pts, l);
     }
     rate.pair_cost(images, static_cast<std::int64_t>(gpu), pts);
-    rate.produced(images, pts);
     per_phase[static_cast<std::size_t>(std::min<std::int64_t>(pts / 200'000'000, 2))] += images;
   }
   const double fps0 = static_cast<double>(per_phase[0]) / 200.0;

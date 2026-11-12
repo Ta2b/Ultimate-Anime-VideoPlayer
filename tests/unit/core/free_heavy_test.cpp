@@ -64,8 +64,7 @@ TEST_CASE("free 165 Hz : le pas lourd vaut deux vsyncs quand le pas calme en vau
   CHECK(against_calm * 2 > static_cast<std::int64_t>(pts.size()));
 }
 
-TEST_CASE("free 165 Hz : sans perte réelle, la scène lourde ne replie pas et la pression reste à 1",
-          "[free][vsync]") {
+TEST_CASE("free 165 Hz : sans perte réelle, la scène lourde garde la pression à 1", "[free][vsync]") {
   const std::int64_t t0 = 10'000'000;
   FreeRate rate = measured_rate(t0);
   const std::vector<std::int64_t> pts = heavy_scene(rate, t0, 24 * 10);  // dix secondes
@@ -75,36 +74,8 @@ TEST_CASE("free 165 Hz : sans perte réelle, la scène lourde ne replie pas et l
     const std::int64_t now = t0 + i * FreeRate::kBucketUs;
     rate.produced(per_bucket, now);
     rate.missed(now, 0);
-    CHECK_FALSE(rate.should_fall_back(now));
   }
   const std::int64_t end = t0 + 40 * FreeRate::kBucketUs;
   CHECK(rate.pressure(end) == 1.0);
   CHECK(rate.step_us(end, true) == 9'900);
-  // L'ancien compte (un manque par écart lourd) : le repli tombait en quelques secondes.
-  FreeRate old = measured_rate(t0);
-  bool fell = false;
-  for (int i = 0; i < 40 && !fell; ++i) {
-    const std::int64_t now = t0 + i * FreeRate::kBucketUs;
-    old.produced(per_bucket, now);
-    old.missed(now, per_bucket);
-    fell = old.should_fall_back(now);
-  }
-  CHECK(fell);
-}
-
-TEST_CASE("free 165 Hz : des pertes réelles et durables replient toujours", "[free][vsync]") {
-  const std::int64_t t0 = 10'000'000;
-  FreeRate rate = measured_rate(t0);
-  // 20 images par tranche de 250 ms (80 i/s), une jetée en retard toutes les deux tranches : 2,5 %.
-  for (int i = 0; i < 20; ++i) {
-    rate.produced(20, t0 + i * FreeRate::kBucketUs);
-    if (i % 2 == 0) rate.missed(t0 + i * FreeRate::kBucketUs, 1);
-  }
-  CHECK_FALSE(rate.should_fall_back(t0 + 19 * FreeRate::kBucketUs));
-  // Puis deux par tranche (10 %) : le repli.
-  for (int i = 20; i < 40; ++i) {
-    rate.produced(20, t0 + i * FreeRate::kBucketUs);
-    rate.missed(t0 + i * FreeRate::kBucketUs, 2);
-  }
-  CHECK(rate.should_fall_back(t0 + 39 * FreeRate::kBucketUs));
 }

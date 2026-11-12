@@ -114,8 +114,14 @@ s'arrêtait pour la séance (A12-12, `tests/unit/core/free_starved_test.cpp`). P
 3. **Les pertes à l'écran** : une image sautée (`dropped`, arrivée trop tard) ou manquée (un instant planifié
    qui n'a jamais paru : jeté en retard, sauté avant calcul) **élargit tout de suite le pas** (×1,12 par image perdue, au plus ×2) ; la pression
    ne se relâche qu'après 1 s sans perte, puis lentement (3 s de constante de temps).
-4. **Repli** : 5 % d'images perdues (et au moins 10) sur 5 s, après 5 s de démarrage → retour à Stable, message à l'écran et
-   ligne de journal.
+4. **Pas de repli sur Stable** (retiré en novembre 2026) : une paire que le pas réduit à sa source laisse l'image
+   d'origine à l'écran, et l'image interpolée revient dès que le GPU suit. Quand RIFE ne produit plus au moins une
+   image interpolée par paire de la source pendant une dizaine de secondes (seeks, pauses, coupes et dessins tenus
+   hors du compte), la lecture le coupe pour la vidéo en cours et rend la carte à SPAN, avec un message bref
+   (`MotionWatch`, `app/play/motion_cut.h`). L'option « Couper l'interpolation si la carte ne suit pas »
+   (`interpolation.auto_off`, cochée par défaut) le décide ; décochée, RIFE continue quoi qu'il arrive.
+   L'interpolation revient à la vidéo suivante, avec « Réessayer » (Vidéo > Post-traitement) ou dès qu'un
+   réglage de l'interpolation change.
 
 ### Ce qui reste fixe
 
@@ -137,9 +143,9 @@ changent pas. Seul Apple (flux optique du système, instants imposés) reste en 
   (`FieldOutOfRange`). En direct (`live_part`).
 - Liste « Mode d'Auto » sous le Multiplicateur (visible en mode Auto) ; « Instantané (expérimental) » grisé
   avec infobulle sans écran VRR armé.
-- Repli automatique sur Auto (`apply_auto`, `player_run.cpp`) : VRR absent ou coupé, moteur non RIFE,
-  fréquence de l'écran inconnue ; ou trop d'images perdues. Les deux motifs écrivent une ligne de journal et un
-  message.
+- Repli automatique sur Stable (`apply_auto`, `player_run.cpp`) quand Instantané ne peut pas tourner : moteur
+  qui ne calcule pas à un instant libre, fréquence de l'écran inconnue (`free_refusal`, `chain_shape.cpp`). Une
+  ligne de journal, pas de message. Les images perdues ne replient plus (voir la contre-pression, point 4).
 - Statistiques : « Instantané · 87 i/s · limite GPU 78 % · écart service 11,4 ms » (OSD et journal toutes les
   5 s).
 
@@ -233,8 +239,8 @@ mais c'est utilisable partout. VRR armé : le comportement décrit plus haut ne 
   (`RingFrame::planned_gap_us`), pas contre le pas d'une paire calme : à 165 Hz, une paire en mouvement fort
   planifie deux vsyncs par image quand une calme en planifie un, et chacune de ses images comptait une
   manquée ; la contre-pression montait au plafond et le repli tombait sans perte visible (novembre 2026).
-  Sans écart planifié (début d'époque), le pas arrondi au vsync au-dessus sert comme avant. Le repli sur
-  Stable (≥ 5 % de pertes sur 5 s) est identique.
+  Sans écart planifié (début d'époque), le pas arrondi au vsync au-dessus sert comme avant. (Le repli sur
+  Stable a depuis été retiré : voir la contre-pression, point 4.)
 - **Menu** : « Instantané » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
   le rafraîchissement de l'écran ». Option du banc `--no-vrr` : traite l'écran comme fixe même si le VRR est
   armé.
