@@ -93,8 +93,8 @@ TEST_CASE("trtexec_arguments : chemins sans guillemets, timing cache en dernier"
                            .timing_cache = "/cache/.aji-build-1/timing.cache"};
   CHECK(trtexec_arguments(paths, "--stronglyTyped  --skipInference ") ==
         std::vector<std::string>{"--onnx=/modèles/span.onnx", "--saveEngine=/cache/.aji-build-1/model.engine",
-                                 "--stronglyTyped", "--skipInference",
-                                 "--tilingOptimizationLevel=3", "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
+                                 "--stronglyTyped", "--skipInference", "--tilingOptimizationLevel=3",
+                                 "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
 }
 
 TEST_CASE("trtexec_arguments : rapport des couches détaillé, hors de la clé", "[prepare][trtexec]") {
@@ -103,10 +103,10 @@ TEST_CASE("trtexec_arguments : rapport des couches détaillé, hors de la clé",
                            .timing_cache = "/cache/.aji-build-1/timing.cache",
                            .layer_info = "/cache/.aji-build-1/layers.json"};
   CHECK(trtexec_arguments(paths, "--skipInference") ==
-        std::vector<std::string>{"--onnx=/m/span.onnx", "--saveEngine=/cache/.aji-build-1/model.engine",
-                                 "--skipInference", "--profilingVerbosity=detailed",
-                                 "--exportLayerInfo=/cache/.aji-build-1/layers.json",
-                                 "--tilingOptimizationLevel=3", "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
+        std::vector<std::string>{
+            "--onnx=/m/span.onnx", "--saveEngine=/cache/.aji-build-1/model.engine", "--skipInference",
+            "--profilingVerbosity=detailed", "--exportLayerInfo=/cache/.aji-build-1/layers.json",
+            "--tilingOptimizationLevel=3", "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
   CHECK(layer_info_for("/cache/aji-v3-x.engine") == "/cache/aji-v3-x.engine.layers.json");
 }
 
@@ -172,7 +172,8 @@ TEST_CASE("trtexec_arguments : l'ordinal CUDA de la carte du rendu (C37-01)", "[
       .onnx = "/m/span.onnx", .engine = "/c/model.engine", .timing_cache = "/c/timing.cache"};
   CHECK(trtexec_arguments(paths, "--skipInference", 1) ==
         std::vector<std::string>{"--onnx=/m/span.onnx", "--saveEngine=/c/model.engine", "--device=1",
-                                 "--skipInference", "--tilingOptimizationLevel=3", "--timingCacheFile=/c/timing.cache"});
+                                 "--skipInference", "--tilingOptimizationLevel=3",
+                                 "--timingCacheFile=/c/timing.cache"});
   CHECK(trtexec_selected_device("[11/12/2026-10:00:00] [I] Selected Device: NVIDIA GeForce RTX 3060\r") ==
         "NVIDIA GeForce RTX 3060");
   CHECK_FALSE(trtexec_selected_device("[I] Selected Device ID: 1"));

@@ -35,7 +35,8 @@ struct SpanFp8Weights {
   SpanFp8ConvView attention[kBlocks];
   SpanFp8ConvView concat;
   SpanFp8ConvView pixel;
-  bool acc16 = false;  // conv_cat, to_pixel (étape 3.5a) et les blocs FP8 (kKernelsVersion 3) accumulent en f16
+  bool acc16 =
+      false;  // conv_cat, to_pixel (étape 3.5a) et les blocs FP8 (kKernelsVersion 3) accumulent en f16
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.

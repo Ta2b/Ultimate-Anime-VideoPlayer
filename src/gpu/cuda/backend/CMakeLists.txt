@@ -19,7 +19,7 @@ set_target_properties(ajp_backend_tensorrt_kernels PROPERTIES POSITION_INDEPENDE
 # Le SPAN entier en FP8 par noyaux CUTLASS (docs/span-fp8-cutlass.md). CUTLASS est vendorisé (third_party/cutlass,
 # BSD-3-Clause, en-têtes seulement) ; les noyaux n'existent que pour sm 8.9, et sont éteints sans CUDA, sans les
 # en-têtes, ou par défaut hors Linux et Windows. Windows (12.4) : construits avec MSVC (/Zc:preprocessor
-# ci-dessous), allumés par défaut depuis le 12 novembre 2026 : le reçu v2 et sa porte, refaits sur la carte,
+# ci-dessous), allumés par défaut (deuxième passe TensorRT, N2) : le reçu v2 et sa porte, refaits sur la carte,
 # décident seuls si le paquet sert ; PSNR et gain restent à relever sur la RTX à ±3 % de Linux
 # (docs/span-fp8-cutlass.md). Éteints, une version vide (span_fp8_net_none.cpp) du même
 # contrat refuse toute demande et la chaîne reste sur TensorRT.

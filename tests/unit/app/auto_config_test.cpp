@@ -110,8 +110,7 @@ TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SP
   CHECK(applied(Preset::Auto, Tier::Fast, 1080, 60.0).model.empty());
 }
 
-TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré (A49-03, A38-02, A07-11)",
-          "[auto_config]") {
+TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré (A49-03, A38-02, A07-11)", "[auto_config]") {
   const CalibratedChain measured{.span = true,
                                  .rife = true,
                                  .height = 1080,
@@ -124,7 +123,7 @@ TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré (A49-03, A38-02,
   CHECK(s.work_height == 1080);  // calibrer ne fait plus baisser la hauteur sous l'Auto estimé
   CHECK(s.model == kQualitySpanModel);
   CHECK(s.span_precision == PrecisionTier::Performance);  // ADR 0007 reprise
-  CHECK(s.rife_model == "rife_v4.25.onnx");            // ni RIFE 4.22 lite imposé
+  CHECK(s.rife_model == "rife_v4.25.onnx");               // ni RIFE 4.22 lite imposé
   CHECK(s.auto_free);
   CHECK(s.rife_auto);
   CHECK(apply_preset(s, machine, k1080p24) == s);  // idempotente

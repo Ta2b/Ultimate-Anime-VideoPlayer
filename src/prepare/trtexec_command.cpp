@@ -146,9 +146,10 @@ std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::strin
     args.push_back("--exportLayerInfo=" + ansi_safe_path(paths.layer_info));
   }
   // Pavage L2 (TensorRT 10.8 et plus) : les suites de couches calculées tuile par tuile dans le cache L2, au
-  // niveau le plus fouillé ; la limite de L2 reste celle que TensorRT choisit (-1). Le SPAN FP16 en 1080p fait
-  // passer 66 Mo par activation pour 48 Mo de L2 sur une RTX 4070 Ti. Le constructeur garde la tactique la plus
-  // rapide qu'il mesure : sans gain, le moteur reste celui d'avant, la construction seule est plus longue.
+  // niveau le plus fouillé ; la limite de L2 reste celle que TensorRT choisit (-1). Le SPAN FP16 en 1080p
+  // fait passer 66 Mo par activation pour 48 Mo de L2 sur une RTX 4070 Ti. Le constructeur garde la tactique
+  // la plus rapide qu'il mesure : sans gain, le moteur reste celui d'avant, la construction seule est plus
+  // longue.
   args.emplace_back(kTilingOption);
   args.push_back("--timingCacheFile=" + ansi_safe_path(paths.timing_cache));
   return args;

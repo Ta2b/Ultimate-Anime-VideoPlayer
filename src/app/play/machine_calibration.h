@@ -15,10 +15,10 @@
 //      rejoué avec ceux de Qualité (C07-03) : une carte que la table sous-estime monte de modèle.
 // Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.26
 // en Qualité et Ultra, SPAN Performance Sharp et RIFE 4.22 lite en dessous), SPAN au cran Performance comme
-// l'Auto qui jouera (ADR 0007 reprise) : le FP8 si son reçu passe la porte, sinon le FP16. Sans palier SPAN qui
-// tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas essayé (décision 8 des audits). Ici la
-// recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants, auto_bench_run.h) dans
-// le .cpp.
+// l'Auto qui jouera (ADR 0007 reprise) : le FP8 si son reçu passe la porte, sinon le FP16. Sans palier SPAN
+// qui tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas essayé (décision 8 des audits). Ici
+// la recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants, auto_bench_run.h)
+// dans le .cpp.
 #pragma once
 
 #include <expected>
@@ -115,8 +115,9 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried);
 int best_span_alone(const std::vector<CandidateTrial>& tried);
 // Les réglages d'une chaîne, sur ceux de l'utilisateur (le HDR choisi, les langues… restent) : préréglage
 // Personnalisé, et pour le reste ce que l'Auto calibré écrira (apply_preset, A07-01) : réduction Hermite,
-// SPAN de models au cran Performance, RIFE en FP16, RIFE en mode auto Instantané, ordre de SPAN en Auto, poses gardées,
-// « Restaurer les traits » actif (sans lui un essai SPAN sous 1080p jouerait la source sans SPAN, A07-06).
+// SPAN de models au cran Performance, RIFE en FP16, RIFE en mode auto Instantané, ordre de SPAN en Auto,
+// poses gardées, « Restaurer les traits » actif (sans lui un essai SPAN sous 1080p jouerait la source sans
+// SPAN, A07-06).
 PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
                                 const CalibrationModels& models = {});
 // « 720p · SPAN · RIFE (auto Instant) » ; pour le tableau et le journal.

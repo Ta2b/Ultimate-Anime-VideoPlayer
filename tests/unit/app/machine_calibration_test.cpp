@@ -125,8 +125,8 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, modèles du niv
   CHECK(s.rife_auto);
   CHECK(s.auto_free);
   CHECK(s.rife_factor == 2);
-  CHECK(s.true_hdr_peak == 800);  // le reste des réglages de l'utilisateur
-  CHECK(s.model.empty());         // SPAN par défaut (Performance Sharp)
+  CHECK(s.true_hdr_peak == 800);                          // le reste des réglages de l'utilisateur
+  CHECK(s.model.empty());                                 // SPAN par défaut (Performance Sharp)
   CHECK(s.span_precision == PrecisionTier::Performance);  // ce que l'Auto joue (ADR 0007 reprise)
   // Niveau Qualité : le b8f64 et RIFE 4.26, au même cran que l'Auto.
   const PlaySettings fine = candidate_settings({.span = true, .rife = true, .height = 1080}, base,

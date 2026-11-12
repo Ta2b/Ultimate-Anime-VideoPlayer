@@ -36,16 +36,18 @@ using LPIX = sk::Launcher<C16, 2, false>;  // to_pixel, DepthToSpace fondu (éta
 using C16H = sk::Cfg<F16, 128, 32, 32, 4, F16>;
 using LCATH = sk::Launcher<C16H, 0, false>;
 using LPIXH = sk::Launcher<C16H, 2, false>;
-// Les blocs FP8 à accumulateur f16 (mma m16n8k32 .f16.e4m3.e4m3.f16) avec le même drapeau : sur les GeForce Ada,
-// l'accumulation f32 des mma FP8 tourne à la moitié du débit de l'accumulation f16 (piste N3 de la deuxième passe
-// TensorRT). Les poids y sont rangés kAcc16Headroom fois plus bas pour que les sommes tiennent en f16.
+// Les blocs FP8 à accumulateur f16 (mma m16n8k32 .f16.e4m3.e4m3.f16) avec le même drapeau : sur les GeForce
+// Ada, l'accumulation f32 des mma FP8 tourne à la moitié du débit de l'accumulation f16 (piste N3 de la
+// deuxième passe TensorRT). Les poids y sont rangés kAcc16Headroom fois plus bas pour que les sommes tiennent
+// en f16.
 using C8H = sk::Cfg<E4, 128, 64, 32, 3, F16>;
 using L8H = sk::Launcher<C8H, 0, true>;
 using LTH = sk::Launcher<C8H, 1, false>;
 // Un produit de deux E4M3 au maximum (448 × 448) dépasse le plus grand f16 (65504) : à accumulateur f16, le
 // maximum de chaque canal de poids est rangé à 448 / 16 = 28. E4M3 étant flottant, la précision relative ne
-// change pas ; seuls les poids sous 1/1792 du maximum de leur canal passent en dénormaux. La porte du reçu juge
-// la variante (keep_acc16) : des sommes qui débordent font échouer sa validation, et le paquet garde le f32.
+// change pas ; seuls les poids sous 1/1792 du maximum de leur canal passent en dénormaux. La porte du reçu
+// juge la variante (keep_acc16) : des sommes qui débordent font échouer sa validation, et le paquet garde le
+// f32.
 constexpr float kAcc16Headroom = 16.F;
 
 constexpr int kBlocks = SpanFp8Weights::kBlocks;
@@ -57,8 +59,8 @@ constexpr int kScaleCount = SpanFp8Weights::kScales;
 
 // Poids FP8 d'un bloc, rangés [sortie][ligne][colonne][entrée] : échelle par canal de sortie (étape 10.3,
 // gpu/span_fp8/quantize.h) « maximum du canal / 448 » (1 pour un canal nul), arrondi au plus proche, saturé.
-// headroom > 1 : l'échelle est multipliée d'autant (maximum du canal rangé à 448 / headroom), pour les blocs à
-// accumulateur f16.
+// headroom > 1 : l'échelle est multipliée d'autant (maximum du canal rangé à 448 / headroom), pour les blocs
+// à accumulateur f16.
 std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t count,
                                    std::vector<std::uint8_t>& out, float headroom = 1.F) {
   constexpr std::size_t kOut = 64;
