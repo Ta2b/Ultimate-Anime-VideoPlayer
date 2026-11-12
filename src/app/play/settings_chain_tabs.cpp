@@ -389,6 +389,29 @@ void auto_cap_row(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
+// L'Auto au-dessus de ×1 : ce que le VRR de l'écran lui permet, et comment l'armer.
+void vrr_notes(const SettingsChoices& choices) {
+  if (!choices.display_vrr) {
+    note(i18n::tr("Without VRR, motion may judder at a fixed refresh rate."));
+    panel::tip(i18n::tr("VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder."));
+  } else if (choices.window_fullscreen && !choices.display_vrr_armed) {
+    note(i18n::tr("VRR is turned off by the system: motion may judder."));
+#ifdef _WIN32
+    panel::tip(
+        i18n::tr("VRR is off in the system: turn on Variable refresh rate in Settings > System > "
+                 "Display > Graphics."));
+#else
+    panel::tip(i18n::tr("VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync)."));
+#endif
+  }
+#ifndef _WIN32
+  else if (!choices.window_fullscreen && !choices.display_vrr_armed) {
+    // Hors plein écran, KDE n'arme pas le VRR (C23-09).
+    note(i18n::tr("VRR only works in full screen here: motion may judder in a window."));
+  }
+#endif
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -466,27 +489,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps and falls back "
         "to Stable if too many frames are lost. Playback only."));
   }
-  if (d.rife_auto && now.num > now.den) {
-    if (!choices.display_vrr) {
-      note(i18n::tr("Without VRR, motion may judder at a fixed refresh rate."));
-      panel::tip(i18n::tr("VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder."));
-    } else if (choices.window_fullscreen && !choices.display_vrr_armed) {
-      note(i18n::tr("VRR is turned off by the system: motion may judder."));
-#ifdef _WIN32
-      panel::tip(
-          i18n::tr("VRR is off in the system: turn on Variable refresh rate in Settings > System > "
-                   "Display > Graphics."));
-#else
-      panel::tip(i18n::tr("VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync)."));
-#endif
-    }
-#ifndef _WIN32
-    else if (!choices.window_fullscreen && !choices.display_vrr_armed) {
-      // Hors plein écran, KDE n'arme pas le VRR (C23-09).
-      note(i18n::tr("VRR only works in full screen here: motion may judder in a window."));
-    }
-#endif
-  }
+  if (d.rife_auto && now.num > now.den) vrr_notes(choices);
   // En lecture, les facteurs fixes sont masqués : rien n'y est grisé. L'export les montre, grisés (B23-05).
   if (exporting && choices.source_fps > 0.0 && choices.display_hz > 0.0) {
     note(i18n::tr_format("Greyed out: above the display ({:.0f} Hz for {:.3f} fps).", choices.display_hz,

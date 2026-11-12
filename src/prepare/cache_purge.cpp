@@ -123,6 +123,22 @@ void remove_orphan_device_lock(const fs::path& lock, const CachePurgeLimits& lim
   remove_idle_lock(lock, limits, now, result);
 }
 
+// Un fichier « aji-timing-* » : un timing cache ou le verrou de son appareil, rangés pour plus tard ; un
+// cache écarté ou le marqueur d'un plantage, retiré sans usage depuis idle (C05-11).
+void sort_timing_file(const fs::path& file, const std::string& name, const CachePurgeLimits& limits,
+                      fs::file_time_type now, std::vector<fs::path>& timing_caches,
+                      std::vector<fs::path>& device_locks) {
+  if (name.ends_with(".cache")) {
+    timing_caches.push_back(file);
+  } else if (name.ends_with(".cache.build-lock")) {
+    device_locks.push_back(file);
+  } else if (name.ends_with(".cache.bad") || name.ends_with(".cache.suspect")) {
+    std::error_code time_error;
+    const auto written = fs::last_write_time(file, time_error);
+    if (!time_error && now - written > limits.idle) fs::remove(file, time_error);
+  }
+}
+
 }  // namespace
 
 CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits& limits,
@@ -147,16 +163,7 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
       continue;
     }
     if (name.starts_with("aji-timing-")) {
-      std::error_code time_error;
-      if (name.ends_with(".cache")) {
-        timing_caches.push_back(file);
-      } else if (name.ends_with(".cache.build-lock")) {
-        device_locks.push_back(file);
-      } else if (name.ends_with(".cache.bad") || name.ends_with(".cache.suspect")) {
-        // Un cache écarté, ou le marqueur d'un plantage : sans usage depuis idle, ils partent (C05-11).
-        const auto written = fs::last_write_time(file, time_error);
-        if (!time_error && now - written > limits.idle) fs::remove(file, time_error);
-      }
+      sort_timing_file(file, name, limits, now, timing_caches, device_locks);
       continue;
     }
     if (!name.starts_with("aji-v3-") || !name.ends_with(".engine")) continue;

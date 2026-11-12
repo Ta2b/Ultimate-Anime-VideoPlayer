@@ -7,6 +7,7 @@
 #include <fstream>
 #include <memory>
 #include <system_error>
+#include <vector>
 
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
@@ -61,6 +62,42 @@ std::expected<Plan, Refusal> read_plan(const std::filesystem::path& path) {
   return plan;
 }
 
+// IRuntime::deserializeCudaEngine a échoué. Un manque de mémoire vidéo n'accuse pas le plan : le lecteur ne
+// le met de côté que pour VendorCallFailed (C05-01). La mémoire libre se compare à la taille du plan (ses
+// poids y vont) ; l'erreur CUDA en attente, elle, dit aussi un appareil perdu.
+std::unexpected<Refusal> deserialize_failed(const std::filesystem::path& path, std::size_t plan_size) {
+  const cudaError_t pending = clear_error();
+  if (pending != cudaSuccess)
+    return std::unexpected(cuda_refusal(pending, "IRuntime::deserializeCudaEngine"));
+  std::size_t free_bytes = 0;
+  std::size_t total_bytes = 0;
+  if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess && free_bytes < plan_size) {
+    return refuse(RefusalCode::GpuMemoryExhausted,
+                  std::format("IRuntime::deserializeCudaEngine({}) : mémoire vidéo pleine ({} Mo libres pour "
+                              "un plan de {} Mo)",
+                              core::to_utf8(path.filename()), free_bytes >> 20U, plan_size >> 20U));
+  }
+  static_cast<void>(clear_error());
+  return refuse(RefusalCode::VendorCallFailed,
+                std::format("IRuntime::deserializeCudaEngine({}) a échoué", core::to_utf8(path.filename())));
+}
+
+// Les files auxiliaires que le moteur demande, rangées dans streams au fur et à mesure : le destructeur du
+// moteur les détruit, même après un refus.
+std::expected<void, Refusal> make_aux_streams(int count, std::vector<cudaStream_t>& streams) {
+  for (int i = 0; i < count; ++i) {
+    cudaStream_t aux = nullptr;
+    if (const cudaError_t made = cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking);
+        made != cudaSuccess) {
+      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+        return std::unexpected(lost_refusal(lost, "cudaStreamCreateWithFlags (file auxiliaire)"));
+      return refuse(RefusalCode::VendorCallFailed, "cudaStreamCreateWithFlags (file auxiliaire)");
+    }
+    streams.push_back(aux);
+  }
+  return {};
+}
+
 }  // namespace
 
 TrtEngine::~TrtEngine() {
@@ -90,42 +127,15 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   std::unique_ptr<TrtEngine> engine(new TrtEngine());
   engine->engine_.reset(runtime.deserializeCudaEngine(plan->bytes.get(), plan->size));
   plan->bytes.reset();  // les poids sont sur le GPU : le plan hôte (des centaines de Mo) part tout de suite
-  if (!engine->engine_) {
-    // Un manque de mémoire vidéo n'accuse pas le plan : le lecteur ne le met de côté que pour
-    // VendorCallFailed (C05-01). La mémoire libre se compare à la taille du plan (ses poids y vont) ;
-    // l'erreur CUDA en attente, elle, dit aussi un appareil perdu.
-    const cudaError_t pending = clear_error();
-    if (pending != cudaSuccess)
-      return std::unexpected(cuda_refusal(pending, "IRuntime::deserializeCudaEngine"));
-    std::size_t free_bytes = 0;
-    std::size_t total_bytes = 0;
-    if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess && free_bytes < plan->size) {
-      return refuse(
-          RefusalCode::GpuMemoryExhausted,
-          std::format("IRuntime::deserializeCudaEngine({}) : mémoire vidéo pleine ({} Mo libres pour "
-                      "un plan de {} Mo)",
-                      core::to_utf8(path.filename()), free_bytes >> 20U, plan->size >> 20U));
-    }
-    static_cast<void>(clear_error());
-    return refuse(RefusalCode::VendorCallFailed, std::format("IRuntime::deserializeCudaEngine({}) a échoué",
-                                                             core::to_utf8(path.filename())));
-  }
+  if (!engine->engine_) return deserialize_failed(path, plan->size);
   engine->context_.reset(shared ? engine->engine_->createExecutionContext(
                                       nvinfer1::ExecutionContextAllocationStrategy::kUSER_MANAGED)
                                 : engine->engine_->createExecutionContext());
   if (!engine->context_) {
     return refuse(RefusalCode::VendorCallFailed, "ICudaEngine::createExecutionContext a échoué");
   }
-  for (int i = 0; i < engine->engine_->getNbAuxStreams(); ++i) {
-    cudaStream_t aux = nullptr;
-    if (const cudaError_t made = cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking);
-        made != cudaSuccess) {
-      if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
-        return std::unexpected(lost_refusal(lost, "cudaStreamCreateWithFlags (file auxiliaire)"));
-      return refuse(RefusalCode::VendorCallFailed, "cudaStreamCreateWithFlags (file auxiliaire)");
-    }
-    engine->aux_streams_.push_back(aux);
-  }
+  if (auto made = make_aux_streams(engine->engine_->getNbAuxStreams(), engine->aux_streams_); !made)
+    return std::unexpected(std::move(made.error()));
   // Entrées d'abord : une forme libre prend celle du profil (OPT), que le contexte fixe ; les
   // sorties se lisent ensuite sur le contexte, formes résolues.
   for (const bool inputs : {true, false}) {

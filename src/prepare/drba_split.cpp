@@ -303,6 +303,35 @@ std::optional<std::string> encoder_weights_problem(std::span<const std::byte> mo
   return std::nullopt;
 }
 
+// Les attributs et le nombre des opérateurs que les noyaux refont : rien de plus que ce que le câblage a vu.
+// Rien quand ils sont conformes ; sinon ce qui ne l'est pas.
+std::optional<std::string> operator_problem(const OnnxGraph& graph) {
+  std::size_t resizes = 0;
+  std::size_t grids = 0;
+  std::size_t shuffles = 0;
+  for (const OnnxFullNode& node : graph.nodes) {
+    if (node.op_type == "Resize") {
+      ++resizes;
+      if (node.inputs.size() != 3 || !node.inputs[1].empty() || !text_is(node, "mode", "linear") ||
+          !text_is(node, "coordinate_transformation_mode", "half_pixel") || !node.resize_without_antialias())
+        return node.name + " : Resize non linéaire/demi-pixel à échelle constante";
+    } else if (node.op_type == "GridSample") {
+      ++grids;
+      const OnnxAttribute* align = node.attribute("align_corners");
+      if (align == nullptr || !align->integer || *align->integer != 1 ||
+          !text_is(node, "padding_mode", "border") || !text_is(node, "mode", "bilinear"))
+        return node.name + " : GridSample hors coins alignés, bords répétés, bilinéaire";
+    } else if (node.op_type == "DepthToSpace") {
+      ++shuffles;
+      const OnnxAttribute* size = node.attribute("blocksize");
+      if (size == nullptr || !size->integer || *size->integer != 2 || !text_is(node, "mode", "CRD"))
+        return node.name + " : DepthToSpace hors CRD de bloc 2";
+    }
+  }
+  if (resizes != 26 || grids != 10 || shuffles != 3) return "décompte des opérateurs";
+  return std::nullopt;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -359,31 +388,7 @@ std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model)
       return unknown(std::format("{} : constante d'entrée {} différente", want.node, want.input));
   }
 
-  // Les attributs et le nombre des opérateurs que les noyaux refont : rien de plus que ce que le câblage a
-  // vu.
-  std::size_t resizes = 0;
-  std::size_t grids = 0;
-  std::size_t shuffles = 0;
-  for (const OnnxFullNode& node : graph->nodes) {
-    if (node.op_type == "Resize") {
-      ++resizes;
-      if (node.inputs.size() != 3 || !node.inputs[1].empty() || !text_is(node, "mode", "linear") ||
-          !text_is(node, "coordinate_transformation_mode", "half_pixel") || !node.resize_without_antialias())
-        return unknown(node.name + " : Resize non linéaire/demi-pixel à échelle constante");
-    } else if (node.op_type == "GridSample") {
-      ++grids;
-      const OnnxAttribute* align = node.attribute("align_corners");
-      if (align == nullptr || !align->integer || *align->integer != 1 ||
-          !text_is(node, "padding_mode", "border") || !text_is(node, "mode", "bilinear"))
-        return unknown(node.name + " : GridSample hors coins alignés, bords répétés, bilinéaire");
-    } else if (node.op_type == "DepthToSpace") {
-      ++shuffles;
-      const OnnxAttribute* size = node.attribute("blocksize");
-      if (size == nullptr || !size->integer || *size->integer != 2 || !text_is(node, "mode", "CRD"))
-        return unknown(node.name + " : DepthToSpace hors CRD de bloc 2");
-    }
-  }
-  if (resizes != 26 || grids != 10 || shuffles != 3) return unknown("décompte des opérateurs");
+  if (const auto problem = operator_problem(*graph)) return unknown(*problem);
 
   // L'encodeur : l'image réduite en entrée de la première convolution, l'encodage en sortie du ConvTranspose.
   const OnnxFullNode* encoder_in = index.named("/encode/cnn0/Conv");
@@ -476,6 +481,17 @@ std::optional<std::string> manifest_problem(const DrbaFusedManifest& manifest, b
   return std::nullopt;
 }
 
+// Le nombre en tête de rest, retiré avec les espaces qui le suivent ; rien s'il ne se lit pas.
+std::optional<int> next_number(std::string_view& rest) {
+  int value = 0;
+  const char* first = rest.data();
+  const auto [stop, error] = std::from_chars(first, first + rest.size(), value);
+  if (error != std::errc{}) return std::nullopt;
+  rest.remove_prefix(static_cast<std::size_t>(stop - first));
+  while (!rest.empty() && rest.front() == ' ') rest.remove_prefix(1);
+  return value;
+}
+
 }  // namespace
 
 std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view text) {
@@ -495,15 +511,7 @@ std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view t
     const std::size_t space = line.find(' ');
     const std::string_view key = line.substr(0, space);
     std::string_view rest = space == std::string_view::npos ? std::string_view() : line.substr(space + 1);
-    const auto number = [&rest] -> std::optional<int> {
-      int value = 0;
-      const char* first = rest.data();
-      const auto [stop, error] = std::from_chars(first, first + rest.size(), value);
-      if (error != std::errc{}) return std::nullopt;
-      rest.remove_prefix(static_cast<std::size_t>(stop - first));
-      while (!rest.empty() && rest.front() == ' ') rest.remove_prefix(1);
-      return value;
-    };
+    const auto number = [&rest] { return next_number(rest); };
     if (key == "ajp-drba-fused") {
       if (rest != "1") return bad("version " + std::string(rest));
       header = true;
