@@ -166,13 +166,18 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
       CHECK(call(s.first, s.buffer, s.t, s.whole, s.say) == want[i]);
     }
   }
-  // L'autre moteur écrit dans la zone : l'encodage gardé ne vaut plus, l'annonce encode de nouveau.
+  // L'autre moteur fusionné de la zone a sa propre région (SharedActivations::region_offset) : il passe entre
+  // deux appels sans toucher à l'encodage gardé, que l'appel suivant reprend tel quel (encodeur sauté).
+  auto* engine = static_cast<gpu::cuda::RifeFusedEngine*>(fused.get());
   const std::array other_in{inputs[0]->tensor()};
   REQUIRE(backend.kernels()->rife_input(images[0]->tensor(), images[1]->tensor(), 0.5F, inputs[0]->tensor()));
-  REQUIRE(backend.enqueue(*other, other_in, other_tensors));
-  CHECK(call(1, 1, 0.5F, true, Say::Follows) == want[2]);
-  REQUIRE(backend.enqueue(*other, other_in, other_tensors));
-  CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
+  for (const float t : {0.5F, 0.25F}) {
+    REQUIRE(backend.enqueue(*other, other_in, other_tensors));
+    const auto before = engine->encode_counts();
+    INFO("après l'autre moteur, instant " << t);
+    CHECK(call(1, 1, t, false, Say::TimesOnly) == want[t == 0.5F ? 2 : 3]);
+    CHECK(engine->encode_counts().none == before.none + 1);
+  }
 }
 
 // C03-01 : sur une seule voie, SPAN et RIFE partagent la zone d'activation. Un SPAN passé entre deux appels
