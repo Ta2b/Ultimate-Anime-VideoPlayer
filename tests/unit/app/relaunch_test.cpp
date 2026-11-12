@@ -69,6 +69,18 @@ TEST_CASE("relaunch.txt : périmé, daté du futur, incomplet ou à clé inconnu
   CHECK_FALSE(write_relaunch_target(store, RelaunchTarget{.file = "/v/a\nb.mkv", .written_s = 1}));
 }
 
+TEST_CASE("relaunch.txt aux fins de ligne Windows (\\r\\n) : lu comme l'autre", "[app][relaunch]") {
+  const std::filesystem::path store = fresh_dir("ajp-relaunch-crlf") / "relaunch.txt";
+  std::ofstream(store, std::ios::binary) << "file=/v/a.mkv\r\nstart_us=12\r\npaused=1\r\nreason=gpu-lost\r\n"
+                                            "written_s=99\r\n";
+  const auto read = take_relaunch_target(store, 100);
+  REQUIRE(read);
+  CHECK(read->file == std::filesystem::path("/v/a.mkv"));
+  CHECK(read->start_us == 12);
+  CHECK(read->paused);
+  CHECK(read->reason == RelaunchReason::GpuLost);
+}
+
 TEST_CASE(
     "take_relaunch : seul le processus relancé prend la vidéo, un lancement ordinaire retire le fichier",
     "[app][relaunch]") {
