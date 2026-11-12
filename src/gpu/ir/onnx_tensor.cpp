@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "gpu/ir/fp8.h"
+#include "gpu/ir/graph.h"
 #include "gpu/ir/onnx_model.h"
 #include "gpu/ir/onnx_reader_detail.h"
 #include "gpu/ir/protobuf.h"
@@ -181,12 +182,25 @@ std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
   return std::move(tensor);
 }
 
+// C44-03 : les dimensions d'un tenseur ont le même plafond que celles d'une forme (kMaxRank). Un entier empaqueté
+// tient en dix octets au plus : un champ plus long en porte donc plus de kMaxRank, refusé avant d'être lu.
+std::expected<void, Refusal> read_dims(const Field& field, std::vector<std::int64_t>& dims) {
+  constexpr std::size_t kMaxPackedBytes = kMaxRank * 10;
+  const bool packed = field.wire == proto::WireType::Length;
+  if ((packed && field.bytes.size() > kMaxPackedBytes) || (!packed && dims.size() >= kMaxRank)) {
+    return proto::malformed("tenseur : trop de valeurs dans dims");
+  }
+  if (auto ok = proto::append_int64s(field, dims); !ok) return ok;
+  if (dims.size() > kMaxRank) return proto::malformed("tenseur : trop de valeurs dans dims");
+  return {};
+}
+
 std::expected<Tensor, Refusal> read_tensor(Bytes bytes) {
   RawTensor raw;
   auto ok = for_each_field(bytes, [&](const Field& field) -> std::expected<void, Refusal> {
     switch (field.number) {
       case 1:
-        return proto::append_int64s(field, raw.tensor.dims);
+        return read_dims(field, raw.tensor.dims);
       case 2: {
         auto type = proto::as_int32(field);
         if (!type) return std::unexpected(type.error());
@@ -255,9 +269,11 @@ std::expected<void, Refusal> read_attribute_field(const Field& field, Attribute&
     }
     case 4:
       return read_string(field, attr.s);
-    case 5:
-    case 10:
+    case 5:  // t : un seul tenseur, le dernier gagne (Constant ne lit que `tensors.size() == 1`)
+      attr.tensors.clear();
       return push_tensor(field, attr.tensors);
+    case 10:  // tensors : aucun opérateur de l'IR ne le lit, et chaque tenseur vide coûte une centaine d'octets (C44-04)
+      return {};
     case 7:
       return proto::append_floats(field, attr.floats);
     case 8:

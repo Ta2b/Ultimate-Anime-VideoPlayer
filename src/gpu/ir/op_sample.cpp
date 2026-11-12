@@ -187,7 +187,9 @@ Inferred infer_grid_sample(const Node& node, std::span<const Operand> in) {
   if (auto ok = expect_rank(node, x, 4, "l'entrée"); !ok) return std::unexpected(ok.error());
   if (auto ok = expect_rank(node, grid, 4, "la grille"); !ok) return std::unexpected(ok.error());
   if (auto ok = expect_float(node, in[0], "l'entrée"); !ok) return std::unexpected(ok.error());
-  if (in[1].type != in[0].type) return graph_error(node, "grille du type de l'entrée");
+  // ONNX donne à la grille son propre type (T2) : float ou float16 pour une image flottante. promote_grid_chains
+  // passe la grille en float et laisse l'image en float16 (C44-02).
+  if (auto ok = expect_float(node, in[1], "la grille"); !ok) return std::unexpected(ok.error());
   if (nchw && (grid[0] != x[0] || grid[1] != 2)) return shape_error(node, "grille [N, 2, H, W] attendue");
   if (!nchw && (grid[0] != x[0] || grid[3] != 2)) return shape_error(node, "grille [N, H, W, 2] attendue");
   if (x[2] < 1 || x[3] < 1) return shape_error(node, "image d'entrée vide");

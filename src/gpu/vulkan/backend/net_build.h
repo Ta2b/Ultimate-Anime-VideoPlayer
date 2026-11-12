@@ -43,9 +43,10 @@ std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, 
 // Les passes du moteur sur un graphe aux formes connues : grille des GridSample en float, passes de gpu_ir
 // (ConvTranspose réécrites pour les matrices coopératives), précision demandée, Cast entre flottants
 // retirés, réductions remontées. Ce que prepare_graph joue après l'inférence des formes ; ajp_onnx_info
-// --vulkan l'appelle aussi, pour décrire le graphe qui tourne (A44-10).
+// --vulkan l'appelle aussi, pour décrire le graphe qui tourne (A44-10). fold_casts = false garde les Cast entre
+// flottants : le graphe reste exécutable par l'interpréteur, qui exige des types égaux (C44-01).
 std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& model_id, bool fp16,
-                                           const Target& target);
+                                           const Target& target, bool fold_casts = true);
 
 // Le graphe d'un modèle importé, à cette forme, optimisé, dans la précision demandée.
 std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, const Target& target);

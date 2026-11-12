@@ -60,6 +60,17 @@ constexpr bool table_in_order() {
 }
 static_assert(table_in_order(), "kOps suit l'ordre de OpKind");
 
+// C44-06 : un OpKind hors de la table (énumération corrompue, passe future mal écrite) n'est plus pris pour un
+// Identity : sa ligne n'accepte aucune arité (min > max) et ses règles refusent le nœud.
+Inferred infer_unknown(const Node& node, std::span<const Operand> /*inputs*/) {
+  return graph_error(node, "opérateur hors de la table");
+}
+Evaluated eval_unknown(const Node& node, std::span<const Value* const> /*inputs*/,
+                       std::span<const OutputInfo> /*outputs*/) {
+  return graph_error(node, "opérateur hors de la table");
+}
+constexpr OpInfo kUnknownOp{OpKind::Identity, "inconnu", 1, 0, 0, 1, 0, infer_unknown, eval_unknown};
+
 std::expected<void, Refusal> check_arity(const Node& node, std::span<const Operand> in) {
   const OpInfo& info = op_info(node.op);
   if (in.size() < info.min_inputs || in.size() > info.max_inputs) {
@@ -93,7 +104,7 @@ std::expected<void, Refusal> check_output(const Node& node, const OutputInfo& ou
 
 const OpInfo& op_info(OpKind op) {
   const auto index = static_cast<std::size_t>(op);
-  return kOps[index < kOps.size() ? index : static_cast<std::size_t>(OpKind::Identity)];
+  return index < kOps.size() ? kOps[index] : kUnknownOp;
 }
 
 std::string_view name(OpKind op) {
