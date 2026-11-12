@@ -1,5 +1,5 @@
 # fichier	fonction	CCN	lignes : fonctions au-delà de CCN 25 ou 120 lignes, qui ne peuvent que baisser (check-complexity.py)
-src/app/main.cpp	run_player	44	191
+src/app/main.cpp	run_player	41	191
 src/app/play/auto_bench_run.cpp	ajp::app::play::run_bench	34	103
 src/app/play/chain.cpp	ajp::app::play::apply	26	158
 src/app/play/chain.cpp	ajp::app::play::apply_live	37	80
@@ -15,13 +15,13 @@ src/app/play/placebo_open.cpp	ajp::app::play::PlaceboScreen::open	48	216
 src/app/play/placebo_ring.cpp	ajp::app::play::PlaceboRing::create	28	112
 src/app/play/placebo_screen.cpp	ajp::app::play::PlaceboScreen::show	30	115
 src/app/play/player.cpp	ajp::app::play::play	120	453
-src/app/play/player_run.cpp	ajp::app::play::run_chain	159	624
+src/app/play/player_run.cpp	ajp::app::play::run_chain	158	617
 src/app/play/ring_stage.cpp	ajp::app::play::RingStage::emit	26	88
 src/app/play/session.cpp	ajp::app::play::Session::tick	35	81
 src/app/play/settings.cpp	ajp::app::play::change_between	28	41
-src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	77	183
+src/app/play/settings_chain_tabs.cpp	ajp::app::play::fluidity_tab	71	163
 src/app/play/settings_export.cpp	ajp::app::play::export_tab	36	146
-src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	42	162
+src/app/play/settings_toml.cpp	ajp::app::play::settings_from_table	39	155
 src/app/play/upscale_motion.cpp	ajp::app::play::UpscaleStage::interpolate_by_motion	34	91
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::outputs	151	245
 src/app/play/upscale_stage.cpp	ajp::app::play::UpscaleStage::produce	37	91
@@ -34,7 +34,6 @@ src/gpu/coreml/coreml_measure.cpp	ajp::gpu::coreml_rt::direct_error	29	113
 src/gpu/cuda/backend/ring_slot.cpp	ajp::gpu::cuda::ImportedSlot::import	27	115
 src/gpu/cuda/backend/span_fp8_kernels.cuh	ajp::gpu::cuda::span_fp8_kernels::net_kernel	40	151
 src/gpu/cuda/backend/span_fp8_run.cpp	main	34	107
-src/gpu/cuda/backend/stats_kernels.cu	ajp::gpu::cuda::frame_stats	38	113
 src/gpu/cuda/backend/tensorrt_kernels.cpp	ajp::gpu::cuda::TensorRtBackend::ingest	44	126
 src/gpu/cuda/backend/tensorrt_span_derive.cpp	ajp::gpu::cuda::TensorRtBackend::derive_span_fp8	67	227
 src/gpu/ir/import.cpp	ajp::gpu::ir::import_model	26	63

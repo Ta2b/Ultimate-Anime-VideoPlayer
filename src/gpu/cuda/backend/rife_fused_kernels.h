@@ -30,9 +30,10 @@ struct FusedEntryParams {
   int reduce = 8;  // d_0
   int out_height = 0;
   int out_width = 0;
-  const void* input = nullptr;   // 11 plans height × width, FP16
-  const void* encode = nullptr;  // 8 plans
-  void* x = nullptr;             // 15 × out_height × out_width
+  const void* input = nullptr;     // 11 plans height × width, FP16
+  const void* encode = nullptr;    // 4 plans : l'encodage de A
+  const void* encode_b = nullptr;  // 4 plans : celui de B (deux emplacements qui alternent, sans copie)
+  void* x = nullptr;               // 15 × out_height × out_width
 };
 
 // L'entrée X_k d'un bloc k ≥ 1 (28 canaux) : flot accumulé des blocs 0 à k-1, warp des images et de leurs
@@ -47,7 +48,8 @@ struct FusedGlueParams {
   FusedFlowSource
       source[4]{};  // NOLINT(modernize-avoid-c-arrays) : std::array n'est pas appelable depuis un noyau
   const void* input = nullptr;
-  const void* encode = nullptr;
+  const void* encode = nullptr;    // A
+  const void* encode_b = nullptr;  // B
   void* x = nullptr;
 };
 

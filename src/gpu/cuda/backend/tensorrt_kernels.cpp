@@ -220,7 +220,7 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
   if (host) {
     // Copie épinglée puis envoi sur la file de transfert, attendu par la voie courante.
     if (!uploads_) uploads_ = std::make_unique<HostUploads>();
-    auto planes = uploads_->upload(*frame.data, *layout, stream_, stage("envoi de l'image décodée"));
+    auto planes = uploads_->upload(frame, *layout, stream_, stage("envoi de l'image décodée"));
     if (!planes) return std::unexpected(std::move(planes.error()));
     params.luma = planes->luma;
     params.chroma = planes->chroma;

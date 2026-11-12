@@ -146,6 +146,16 @@ bool RingStage::waits_ahead() const {
   return !(ended_.load() && in_flight_.load() <= pending_.size());  // fin du flux : toutes sont là
 }
 
+void RingStage::slot_found() {
+  if (slot_wait_since_us_ != 0) {
+    const std::int64_t waited = host_now_us() - slot_wait_since_us_;
+    ++slot_waits_.count;
+    slot_waits_.total_us += waited;
+    slot_waits_.longest_us = std::max(slot_waits_.longest_us, waited);
+  }
+  slot_wait_since_us_ = 0;
+}
+
 void RingStage::emit(const ThreadReport& report) {
   while (!pending_.empty()) {
     if (pending_.front().epoch < epoch_ || failed_) {  // d'avant le Flush, ou étage en échec : jetée
@@ -205,7 +215,7 @@ void RingStage::emit(const ThreadReport& report) {
         if (slot_wait_since_us_ == 0) slot_wait_since_us_ = host_now_us();
         return;
       }
-      slot_wait_since_us_ = 0;
+      slot_found();
       const std::uint64_t ready = released_[slot] + 1;
       const std::int64_t submitted = host_now_us();
       auto produced = produce(frame, front_done_, slot, released_[slot], ready);

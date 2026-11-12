@@ -147,6 +147,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto filtered = parse({"épisode.mkv", "--filtered-warp"});
   REQUIRE(filtered);
   CHECK(filtered->filtered_warp);
+  // L'encodage gardé de RIFE en L2 : un essai, éteint par défaut.
+  CHECK_FALSE(options->l2_keep);
+  const auto kept = parse({"épisode.mkv", "--l2-keep"});
+  REQUIRE(kept);
+  CHECK(kept->l2_keep);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

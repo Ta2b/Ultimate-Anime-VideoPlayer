@@ -100,12 +100,7 @@ std::expected<void, Refusal> UpscaleStage::drba_arrive(const DecodedFrame& frame
 }
 
 void UpscaleStage::keep_scores_wait(std::int64_t waited_us) {
-  // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.
-  if (scores_wait_us_.size() < kScoresWaitKept) {
-    scores_wait_us_.push_back(waited_us);
-  } else {
-    scores_wait_us_[scores_wait_next_++ % kScoresWaitKept] = waited_us;
-  }
+  scores_waits_.keep(waited_us);
 }
 
 std::expected<void, Refusal> UpscaleStage::settle_after_scores(bool timed) {

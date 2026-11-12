@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <memory>
+#include <span>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -131,6 +133,37 @@ TEST_CASE(
   CHECK_FALSE(zone.kept_by(nullptr));
 }
 
+TEST_CASE("Activations partagées : deux moteurs fusionnés, deux régions, deux encodages gardés",
+          "[backend_tensorrt]") {
+  SharedActivations zone;
+  int full = 0, half = 0, span = 0;
+  zone.used(&span, 40 * kMiB);
+  // RIFE plein puis RIFE demi-taille (échelle par paire) : la seconde région au-dessus de la première.
+  const std::int64_t a = zone.region_offset(&full, 10 * kMiB, 100 * kMiB + 3);
+  const std::int64_t b = zone.region_offset(&half, 5 * kMiB, 25 * kMiB);
+  CHECK(a == 40 * kMiB);
+  CHECK(b == 140 * kMiB + 256);  // la fin de la première, alignée sur 256 octets
+  CHECK(zone.region_offset(&full, 10 * kMiB, 100 * kMiB + 3) == a);  // stable d'un appel à l'autre
+  zone.wrote(&full, a, a + 100 * kMiB + 3);
+  zone.keep(&full, a, a + 100 * kMiB + 3);
+  zone.wrote(&half, b, b + 25 * kMiB);
+  zone.keep(&half, b, b + 25 * kMiB);
+  CHECK(zone.kept_by(&full));  // le demi-taille n'a pas écrit sur l'encodage du plein
+  CHECK(zone.kept_by(&half));
+  zone.used(&span, 40 * kMiB);  // SPAN sous les deux régions
+  CHECK(zone.kept_by(&full));
+  CHECK(zone.kept_by(&half));
+  // Des activations plus hautes : les deux régions remontent, et l'écriture efface ce qu'elle recouvre.
+  zone.used(&span, 60 * kMiB);
+  CHECK_FALSE(zone.kept_by(&full));
+  CHECK(zone.kept_by(&half));
+  CHECK(zone.region_offset(&full, 10 * kMiB, 100 * kMiB + 3) == 60 * kMiB);
+  // Le plein parti, le demi-taille descend à sa place.
+  zone.drop_region(&full);
+  CHECK(zone.region_offset(&half, 5 * kMiB, 25 * kMiB) == 60 * kMiB);
+  CHECK_FALSE(zone.kept_by(&full));
+}
+
 TEST_CASE("Voies de calcul : deux voies à partir de 7,5 Gio de mémoire et 5 Gio libres (C01-09)",
           "[backend_tensorrt]") {
   constexpr std::size_t kGiB = std::size_t{1} << 30;
@@ -170,6 +203,84 @@ TEST_CASE("Envois depuis l'hôte : disposition des plans, tailles impaires compr
   CHECK_FALSE(HostUploads::layout(PixelFormat::Rgba16Unorm, w, h));
   CHECK_FALSE(HostUploads::layout(PixelFormat::Nv12, 0, h));
   CHECK_FALSE(HostUploads::layout(PixelFormat::Nv12, w, -1));
+}
+
+// Une image NV12 en mémoire hôte, d'un octet répété.
+class HostNv12 final : public FrameData {
+ public:
+  HostNv12(int w, int h, std::byte value)
+      : w_(static_cast<std::size_t>(w)),
+        luma_(w_ * static_cast<std::size_t>(h), value),
+        chroma_(w_ * static_cast<std::size_t>(h / 2), value) {}
+  FrameMemory memory() const override { return FrameMemory::Host; }
+  int plane_count() const override { return 2; }
+  std::span<const std::byte> host_plane(int plane) const override { return plane == 0 ? luma_ : chroma_; }
+  std::size_t host_stride(int /*plane*/) const override { return w_; }
+  std::uintptr_t native_plane(int /*plane*/) const override { return 0; }
+  std::size_t native_pitch(int /*plane*/) const override { return 0; }
+  std::uintptr_t ready_event() const override { return 0; }
+  std::uint64_t ready_value() const override { return 0; }
+
+ private:
+  std::size_t w_;
+  std::vector<std::byte> luma_;
+  std::vector<std::byte> chroma_;
+};
+
+TEST_CASE("Envois depuis l'hôte : la même source ingérée deux fois n'est envoyée qu'une fois (C32-03)",
+          "[backend_tensorrt][cuda]") {
+  if (!test::has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 64;
+  constexpr int h = 32;
+  cudaStream_t one = nullptr;
+  cudaStream_t other = nullptr;
+  REQUIRE(cudaStreamCreateWithFlags(&one, cudaStreamNonBlocking) == cudaSuccess);
+  REQUIRE(cudaStreamCreateWithFlags(&other, cudaStreamNonBlocking) == cudaSuccess);
+  {
+    const auto layout = HostUploads::layout(PixelFormat::Nv12, w, h);
+    REQUIRE(layout);
+    const auto frame = [&](std::uint32_t id, std::uint32_t epoch, std::shared_ptr<const FrameData> data) {
+      DecodedFrame f;
+      f.id = SourceId{id};
+      f.epoch = epoch;
+      f.width = w;
+      f.height = h;
+      f.data = std::move(data);
+      return f;
+    };
+    const DecodedFrame a = frame(1, 0, std::make_shared<HostNv12>(w, h, std::byte{7}));
+    const DecodedFrame b = frame(2, 0, std::make_shared<HostNv12>(w, h, std::byte{9}));
+    GpuTiming timing("envoi", {});
+    HostUploads uploads;
+    const auto read_luma = [](const HostUploads::Planes& planes) {
+      std::byte got{};
+      REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+      REQUIRE(cudaMemcpy(&got, planes.luma, 1, cudaMemcpyDeviceToHost) == cudaSuccess);
+      return got;
+    };
+    auto sent = uploads.upload(a, *layout, one, timing);
+    REQUIRE(sent);
+    REQUIRE(uploads.consumed(one));
+    // La même source sur une autre file : les mêmes plans, sans nouvel envoi.
+    auto again = uploads.upload(a, *layout, other, timing);
+    REQUIRE(again);
+    REQUIRE(uploads.consumed(other));
+    CHECK(again->luma == sent->luma);
+    CHECK(again->chroma == sent->chroma);
+    CHECK(read_luma(*again) == std::byte{7});
+    // Une autre source, puis la première revenue avec une autre époque (après un seek) : envoyées.
+    auto next = uploads.upload(b, *layout, one, timing);
+    REQUIRE(next);
+    REQUIRE(uploads.consumed(one));
+    CHECK(next->luma != sent->luma);
+    CHECK(read_luma(*next) == std::byte{9});
+    auto later = uploads.upload(frame(1, 1, a.data), *layout, one, timing);
+    REQUIRE(later);
+    REQUIRE(uploads.consumed(one));
+    CHECK(later->luma != next->luma);
+  }
+  REQUIRE(cudaStreamDestroy(one) == cudaSuccess);
+  REQUIRE(cudaStreamDestroy(other) == cudaSuccess);
 }
 
 TEST_CASE("Minutage GPU : une paire restée ouverte ou finie sur une autre file ne compte pas (B01-06)",

@@ -1,5 +1,6 @@
 // Portage CUDA de frame_stats.comp (stats_kernels.h) : mêmes points, mêmes cases, mêmes sommes ;
 // seules les sommes flottantes s'additionnent dans un autre ordre.
+#include <cstddef>
 #include <cstdint>
 #include <cuda_fp16.h>
 
@@ -130,88 +131,94 @@ __device__ bool is_skin(Rgb e) {
   return hue >= fs::kSkinHueLo && hue <= fs::kSkinHueHi && sat >= fs::kSkinSatLo && sat <= fs::kSkinSatHi;
 }
 
-// Les points clairs du cadre [x0, x1) × [y0, y1) dans tallies[1], et ceux qui le sont nettement plus que
-// leurs huit voisins (bornés au cadre) dans tallies[2] : les mêmes valeurs, dans le même ordre, que lorsque
-// chaque voisin se recalculait.
-__device__ void count_bright(const float* grid, unsigned x0, unsigned y0, unsigned x1, unsigned y1,
-                             unsigned tid, unsigned* tallies) {
-  const unsigned fw = x1 - x0;
-  const unsigned fh = y1 - y0;
-  for (unsigned q = tid; q < fw * fh; q += kThreads) {
-    const unsigned gx = x0 + q % fw;
-    const unsigned gy = y0 + q / fw;
-    const float maxrgb = grid[gy * kGw + gx];
-    if (!(maxrgb > fs::kBrightNits)) continue;
-    atomicAdd(&tallies[1], 1U);
-    float around = 0.0F;
-    for (int dy = -1; dy <= 1; ++dy) {
-      for (int dx = -1; dx <= 1; ++dx) {
-        if (dx == 0 && dy == 0) continue;
-        const int nx = min(max(static_cast<int>(gx) + dx, static_cast<int>(x0)), static_cast<int>(x1) - 1);
-        const int ny = min(max(static_cast<int>(gy) + dy, static_cast<int>(y0)), static_cast<int>(y1) - 1);
-        around += grid[static_cast<unsigned>(ny) * kGw + static_cast<unsigned>(nx)];
-      }
+// Le point (gx, gy) du cadre [x0, x1) × [y0, y1) : clair, compté dans tallies[1], et nettement plus clair
+// que ses huit voisins (bornés au cadre), dans tallies[2] ; les mêmes valeurs, dans le même ordre, que
+// lorsque chaque voisin se recalculait.
+__device__ void count_bright_at(const float* grid, unsigned gx, unsigned gy, unsigned x0, unsigned y0,
+                                unsigned x1, unsigned y1, unsigned* tallies) {
+  const float maxrgb = grid[gy * kGw + gx];
+  if (!(maxrgb > fs::kBrightNits)) return;
+  atomicAdd(&tallies[1], 1U);
+  float around = 0.0F;
+  for (int dy = -1; dy <= 1; ++dy) {
+    for (int dx = -1; dx <= 1; ++dx) {
+      if (dx == 0 && dy == 0) continue;
+      const int nx = min(max(static_cast<int>(gx) + dx, static_cast<int>(x0)), static_cast<int>(x1) - 1);
+      const int ny = min(max(static_cast<int>(gy) + dy, static_cast<int>(y0)), static_cast<int>(y1) - 1);
+      around += grid[static_cast<unsigned>(ny) * kGw + static_cast<unsigned>(nx)];
     }
-    if (maxrgb >= fs::kIsolatedRatio * (around / 8.0F)) atomicAdd(&tallies[2], 1U);
   }
+  if (maxrgb >= fs::kIsolatedRatio * (around / 8.0F)) atomicAdd(&tallies[2], 1U);
 }
 
-__global__ void __launch_bounds__(kThreads, 1) frame_stats(FrameStatsParams p) {
-  __shared__ unsigned column_max[kGw];
-  __shared__ unsigned row_max[kGh];
-  __shared__ unsigned frame[4];
-  __shared__ unsigned hist_luma[kLumaBins];
-  __shared__ unsigned hist_maxrgb[kLinearBins];
-  __shared__ unsigned hist_i[kLinearBins];
-  __shared__ unsigned zone_count[kZoneCount];
-  __shared__ unsigned tallies[4];
-  __shared__ float reduce[kThreads];
-  __shared__ float totals[kSums];
-  // Le maxRGB en cd/m² de chaque point du cadre, calculé une fois (C01-04) : la recherche des points clairs
-  // isolés y lit les huit voisins, comme la référence (kernels/ref/frame_stats.cpp), au lieu de refaire
-  // nits_of (trois ou six powf) pour chacun. 36 Ko, dans la limite de 48 Ko de la mémoire partagée statique.
-  __shared__ float maxrgb_grid[kGw * kGh];
-  const unsigned tid = threadIdx.x;
-  for (unsigned i = tid; i < kGw; i += kThreads) column_max[i] = 0U;
-  for (unsigned i = tid; i < kGh; i += kThreads) row_max[i] = 0U;
-  for (unsigned i = tid; i < kLumaBins; i += kThreads) hist_luma[i] = 0U;
-  for (unsigned i = tid; i < kLinearBins; i += kThreads) {
-    hist_maxrgb[i] = 0U;
-    hist_i[i] = 0U;
+// Le travail de la grille : un point par fil, sur kBlocks blocs, au lieu d'un seul bloc qui la parcourait
+// seul (un SM sur toute la carte, A32). Deux passes : la première trace le cadre (lumas maximales par
+// colonne et par ligne) et garde le maxRGB de chaque point ; la seconde compte et somme dans le cadre.
+constexpr unsigned kPoints = kGw * kGh;
+constexpr unsigned kBlocks = (kPoints + kThreads - 1U) / kThreads;
+
+// La mémoire de travail, après les comptes (FrameCounts) dans le même tampon d'appareil.
+struct Scratch {
+  unsigned column_max[kGw];
+  unsigned row_max[kGh];
+  float maxrgb_grid[kPoints];  // le maxRGB en cd/m² de chaque point (C01-04)
+};
+constexpr std::size_t kScratchAt = (sizeof(kernels::FrameCounts) + 255U) / 256U * 256U;
+
+__device__ Scratch& scratch_of(const FrameStatsParams& p) {
+  return *reinterpret_cast<Scratch*>(static_cast<std::byte*>(p.counts) + kScratchAt);
+}
+
+// Première passe : luma de chaque colonne et ligne (un float positif se compare comme ses bits), et le
+// maxRGB de chaque point, que la recherche des points clairs isolés relit avec ses huit voisins.
+__global__ void __launch_bounds__(kThreads) frame_stats_trace(FrameStatsParams p) {
+  const unsigned q = blockIdx.x * kThreads + threadIdx.x;
+  if (q >= kPoints) return;
+  Scratch& scratch = scratch_of(p);
+  const unsigned gx = q % kGw;
+  const unsigned gy = q / kGw;
+  const Rgb e = encoded(p, gx, gy);
+  const unsigned bits = __float_as_uint(luma_of(e));
+  atomicMax(&scratch.column_max[gx], bits);
+  atomicMax(&scratch.row_max[gy], bits);
+  scratch.maxrgb_grid[q] = maxrgb_of(nits_of(e, p.transfer));
+}
+
+// Le cadre sans les bandes noires, d'après les lumas maximales : chaque bloc le recalcule (deux cents
+// lectures), le premier l'écrit.
+__device__ void frame_bounds(const Scratch& scratch, unsigned* frame) {
+  unsigned x0 = 0U, x1 = kGw, y0 = 0U, y1 = kGh;
+  while (x0 < kGw && __uint_as_float(scratch.column_max[x0]) < fs::kBarLuma) ++x0;
+  while (x1 > x0 && __uint_as_float(scratch.column_max[x1 - 1U]) < fs::kBarLuma) --x1;
+  while (y0 < kGh && __uint_as_float(scratch.row_max[y0]) < fs::kBarLuma) ++y0;
+  while (y1 > y0 && __uint_as_float(scratch.row_max[y1 - 1U]) < fs::kBarLuma) --y1;
+  if (x1 - x0 < kGw / 4U || y1 - y0 < kGh / 4U) {
+    x0 = 0U, x1 = kGw, y0 = 0U, y1 = kGh;
   }
-  if (tid < kZoneCount) zone_count[tid] = 0U;
-  if (tid < 4U) tallies[tid] = 0U;
-  __syncthreads();
-  // Luma de chaque colonne et ligne : un float positif se compare comme ses bits.
-  for (unsigned q = tid; q < kGw * kGh; q += kThreads) {
-    const unsigned gx = q % kGw;
-    const unsigned gy = q / kGw;
-    const unsigned bits = __float_as_uint(luma_of(encoded(p, gx, gy)));
-    atomicMax(&column_max[gx], bits);
-    atomicMax(&row_max[gy], bits);
-  }
-  __syncthreads();
-  if (tid == 0U) {
-    unsigned x0 = 0U, x1 = kGw, y0 = 0U, y1 = kGh;
-    while (x0 < kGw && __uint_as_float(column_max[x0]) < fs::kBarLuma) ++x0;
-    while (x1 > x0 && __uint_as_float(column_max[x1 - 1U]) < fs::kBarLuma) --x1;
-    while (y0 < kGh && __uint_as_float(row_max[y0]) < fs::kBarLuma) ++y0;
-    while (y1 > y0 && __uint_as_float(row_max[y1 - 1U]) < fs::kBarLuma) --y1;
-    if (x1 - x0 < kGw / 4U || y1 - y0 < kGh / 4U) {
-      x0 = 0U, x1 = kGw, y0 = 0U, y1 = kGh;
-    }
-    frame[0] = x0, frame[1] = x1, frame[2] = y0, frame[3] = y1;
-  }
-  __syncthreads();
-  const unsigned x0 = frame[0], x1 = frame[1], y0 = frame[2], y1 = frame[3];
+  frame[0] = x0, frame[1] = x1, frame[2] = y0, frame[3] = y1;
+}
+
+// Seconde passe : le point de rang q du cadre pour chaque fil ; histogrammes et comptes du bloc en mémoire
+// partagée, puis ajoutés aux comptes de l'image (remis à zéro avant la première passe).
+// Les comptes d'un bloc, en mémoire partagée.
+struct BlockCounts {
+  unsigned frame[4];
+  unsigned hist_luma[kLumaBins];
+  unsigned hist_maxrgb[kLinearBins];
+  unsigned hist_i[kLinearBins];
+  unsigned zone_count[kZoneCount];
+  unsigned tallies[4];
+};
+
+// Le point de rang q du cadre : ses cases, ses comptes et ses sommes.
+__device__ void count_point(const FrameStatsParams& p, const float* grid, unsigned q, BlockCounts& c,
+                            float* sums) {
+  const unsigned x0 = c.frame[0], x1 = c.frame[1], y0 = c.frame[2], y1 = c.frame[3];
   const unsigned fw = x1 - x0, fh = y1 - y0;
   const bool sdr = p.transfer == 0;
   const float kr = sdr ? kKr709 : kKr2020;
   const float kb = sdr ? kKb709 : kKb2020;
-  float sums[kSums];
-#pragma unroll
-  for (unsigned s = 0U; s < kSums; ++s) sums[s] = 0.0F;
-  for (unsigned q = tid; q < fw * fh; q += kThreads) {
+  {
     const unsigned gx = x0 + q % fw;
     const unsigned gy = y0 + q / fw;
     const Rgb e = encoded(p, gx, gy);
@@ -221,29 +228,51 @@ __global__ void __launch_bounds__(kThreads, 1) frame_stats(FrameStatsParams p) {
     const Rgb n2020 = sdr ? Rgb{kM00 * n.r + kM01 * n.g + kM02 * n.b, kM10 * n.r + kM11 * n.g + kM12 * n.b,
                                 kM20 * n.r + kM21 * n.g + kM22 * n.b}
                           : n;
-    atomicAdd(&hist_luma[bin_of(luma, kLumaBins)], 1U);
+    atomicAdd(&c.hist_luma[bin_of(luma, kLumaBins)], 1U);
     const float code = p.transfer == 1 ? fmaxf(fmaxf(e.r, e.g), e.b) : pq_inverse_eotf(maxrgb);
-    atomicAdd(&hist_maxrgb[bin_of(code, kLinearBins)], 1U);
-    atomicAdd(&hist_i[bin_of(ictcp_i(n2020), kLinearBins)], 1U);
+    atomicAdd(&c.hist_maxrgb[bin_of(code, kLinearBins)], 1U);
+    atomicAdd(&c.hist_i[bin_of(ictcp_i(n2020), kLinearBins)], 1U);
     const unsigned zone = ((gy - y0) * kZoneSide / fh) * kZoneSide + (gx - x0) * kZoneSide / fw;
-    atomicAdd(&zone_count[zone], 1U);
+    atomicAdd(&c.zone_count[zone], 1U);
     // Indice variable : la somme de la zone passe par une boucle déroulée (registres, pas de pile).
 #pragma unroll
     for (unsigned z = 0U; z < kZoneCount; ++z) {
       if (z == zone) sums[5U + z] += luma;
     }
-    atomicAdd(&tallies[0], 1U);
-    maxrgb_grid[gy * kGw + gx] = maxrgb;
-    if (is_skin(e)) atomicAdd(&tallies[3], 1U);
+    atomicAdd(&c.tallies[0], 1U);
+    if (is_skin(e)) atomicAdd(&c.tallies[3], 1U);
     sums[0] += luma;
     sums[1] += fmaxf(0.0F, e.b - fmaxf(e.r, e.g));
     sums[2] += fmaxf(fmaxf(e.r, e.g), e.b) - fminf(fminf(e.r, e.g), e.b);
     sums[3] += kr * n.r + (1.0F - kr - kb) * n.g + kb * n.b;
     sums[4] += maxrgb;
+    count_bright_at(grid, gx, gy, x0, y0, x1, y1, c.tallies);
   }
+}
+
+__global__ void __launch_bounds__(kThreads) frame_stats_count(FrameStatsParams p) {
+  __shared__ BlockCounts c;
+  __shared__ float reduce[kThreads];
+  const Scratch& scratch = scratch_of(p);
+  const unsigned tid = threadIdx.x;
+  for (unsigned i = tid; i < kLumaBins; i += kThreads) c.hist_luma[i] = 0U;
+  for (unsigned i = tid; i < kLinearBins; i += kThreads) {
+    c.hist_maxrgb[i] = 0U;
+    c.hist_i[i] = 0U;
+  }
+  if (tid < kZoneCount) c.zone_count[tid] = 0U;
+  if (tid < 4U) c.tallies[tid] = 0U;
+  if (tid == 0U) frame_bounds(scratch, c.frame);
   __syncthreads();
-  count_bright(maxrgb_grid, x0, y0, x1, y1, tid, tallies);
-  // Somme de chaque compte sur le bloc, par arbre en mémoire partagée.
+  float sums[kSums];
+#pragma unroll
+  for (unsigned s = 0U; s < kSums; ++s) sums[s] = 0.0F;
+  const unsigned q = blockIdx.x * kThreads + tid;
+  if (q < (c.frame[1] - c.frame[0]) * (c.frame[3] - c.frame[2]))
+    count_point(p, scratch.maxrgb_grid, q, c, sums);
+  // Somme de chaque compte sur le bloc, par arbre en mémoire partagée, puis sur l'image.
+  auto* out = static_cast<unsigned*>(p.counts);
+  auto* out_sums = reinterpret_cast<float*>(out);
 #pragma unroll
   for (unsigned s = 0U; s < kSums; ++s) {
     reduce[tid] = sums[s];
@@ -252,28 +281,35 @@ __global__ void __launch_bounds__(kThreads, 1) frame_stats(FrameStatsParams p) {
       if (tid < step) reduce[tid] += reduce[tid + step];
       __syncthreads();
     }
-    if (tid == 0U) totals[s] = reduce[0];
+    if (tid == 0U && reduce[0] != 0.0F)
+      atomicAdd(&out_sums[s < 5U ? kAtSums + s : kAtZoneSum + (s - 5U)], reduce[0]);
     __syncthreads();
   }
-  auto* out = static_cast<unsigned*>(p.counts);
-  for (unsigned i = tid; i < kLumaBins; i += kThreads) out[kAtLuma + i] = hist_luma[i];
+  const auto add = [](unsigned* to, unsigned v) {
+    if (v != 0U) atomicAdd(to, v);
+  };
+  for (unsigned i = tid; i < kLumaBins; i += kThreads) add(&out[kAtLuma + i], c.hist_luma[i]);
   for (unsigned i = tid; i < kLinearBins; i += kThreads) {
-    out[kAtMaxrgb + i] = hist_maxrgb[i];
-    out[kAtI + i] = hist_i[i];
+    add(&out[kAtMaxrgb + i], c.hist_maxrgb[i]);
+    add(&out[kAtI + i], c.hist_i[i]);
   }
-  if (tid < kZoneCount) {
-    out[kAtZoneSum + tid] = __float_as_uint(totals[5U + tid]);
-    out[kAtZoneCount + tid] = zone_count[tid];
-  }
-  if (tid < 4U) out[kAtPoints + tid] = tallies[tid];
-  if (tid < 5U) out[kAtSums + tid] = __float_as_uint(totals[tid]);
-  if (tid < 4U) out[kAtFrame + tid] = frame[tid];
+  if (tid < kZoneCount) add(&out[kAtZoneCount + tid], c.zone_count[tid]);
+  if (tid < 4U) add(&out[kAtPoints + tid], c.tallies[tid]);
+  if (blockIdx.x == 0U && tid < 4U) out[kAtFrame + tid] = c.frame[tid];
 }
 
 }  // namespace
 
+std::size_t frame_stats_device_bytes() {
+  return kScratchAt + sizeof(Scratch);
+}
+
 cudaError_t launch_frame_stats(const FrameStatsParams& params, cudaStream_t stream) {
-  frame_stats<<<1, kThreads, 0, stream>>>(params);
+  // Comptes, sommes et lumas maximales repartent de zéro (la grille des maxRGB est réécrite en entier).
+  const std::size_t zeroed = kScratchAt + offsetof(Scratch, maxrgb_grid);
+  if (cudaError_t e = cudaMemsetAsync(params.counts, 0, zeroed, stream); e != cudaSuccess) return e;
+  frame_stats_trace<<<kBlocks, kThreads, 0, stream>>>(params);
+  frame_stats_count<<<kBlocks, kThreads, 0, stream>>>(params);
   return cudaGetLastError();
 }
 
