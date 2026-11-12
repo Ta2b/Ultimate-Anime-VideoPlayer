@@ -13,6 +13,8 @@ constexpr std::array kStatsTexts{
           " · pleine : le pilote peut déborder en mémoire système"},
     Entry{" · heavy scene", " · scène lourde"},
     Entry{" · locked to the display {:+.3f} %", " · calée sur l'écran {:+.3f} %"},
+    Entry{" · motion estimated at {}p (speed gain not measured)",
+          " · mouvement estimé en {}p (gain de vitesse non mesuré)"},
     Entry{" · predicted ×{}", " · prédit ×{}"},
     Entry{" · service gap ", " · écart service "},
     Entry{"AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in "

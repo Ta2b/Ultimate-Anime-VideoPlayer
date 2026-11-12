@@ -2,6 +2,7 @@
 // (check_backend_abi), et les instances qu'elle crée.
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -28,6 +29,9 @@ class BackendLibrary {
   const std::filesystem::path& path() const { return path_; }
   // Les candidats écartés avant celui-ci par choose, avec leur raison (une ligne chacun), vide sinon.
   const std::string& passed_over() const { return passed_over_; }
+  // Le code du premier refus de passed_over (le moteur préféré, essayé d'abord) : C31-04, la page Moteurs dit
+  // « mettre à jour le pilote » pour SdkRejected.
+  std::optional<RefusalCode> passed_over_code() const { return passed_over_code_; }
   // Le fichier a changé depuis l'ouverture (moteur réinstallé ou mis à jour) : il faut la rouvrir, une fois
   // celle-ci relâchée, pour charger le nouveau.
   bool replaced_on_disk() const;
@@ -59,7 +63,9 @@ class BackendLibrary {
   std::optional<DynamicLibrary> handle_;
   std::filesystem::path path_;
   std::string passed_over_;
+  std::optional<RefusalCode> passed_over_code_;
   std::filesystem::file_time_type stamp_{};
+  std::uintmax_t size_ = 0;  // la taille du fichier à l'ouverture, avec stamp_ (C21-03)
   gpu::BackendCreateFn create_ = nullptr;
   gpu::BackendDestroyFn destroy_ = nullptr;
 };

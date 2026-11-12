@@ -1,8 +1,9 @@
 // Lecture bilinéaire des tenseurs FP16 planaires des noyaux pixel (bilinear_at de ref/warp.cpp) :
 // coordonnées relatives au coin d'une fenêtre et bornées à elle. Deux lectures du même calcul :
-// Exact, quatre chargements et poids en float (le chemin de référence, et le repli quand le tenseur
+// Exact, quatre chargements et poids en float (le chemin par défaut, et le repli quand le tenseur
 // n'a pas d'objet texture), et Filtered, une prise de l'objet texture au filtre bilinéaire
-// matériel (étude 3) : la fraction y est sur 8 bits, l'erreur au plus le gradient local / 512.
+// matériel (étude 3) : la fraction y est sur 8 bits, l'erreur au plus le gradient local / 512. Filtered ne
+// sert qu'à l'essai --filtered-warp (BackendInit::filtered_warp), tant que son gain n'est pas mesuré.
 // Bornée à la fenêtre avant la prise, la texture ne lit jamais hors d'elle : au bord, la fraction
 // est nulle et le voisin hors fenêtre pèse 0.
 #pragma once

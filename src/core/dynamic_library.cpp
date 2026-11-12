@@ -3,6 +3,8 @@
 #ifdef _WIN32
 #include <mutex>
 #include <set>
+#include <string>
+#include <system_error>
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -25,12 +27,32 @@ void add_dll_directory_once(const std::filesystem::path& dir) {
   if (!added.insert(dir).second) return;
   if (AddDllDirectory(dir.c_str()) == nullptr) added.erase(dir);
 }
+
+// Le code seul ne dit rien à distance : 126 cache quelle dépendance manque, 193 une DLL x86 ou abîmée
+// (C20-04).
+std::string windows_error(DWORD code) {
+  std::string text = std::system_category().message(static_cast<int>(code));
+  while (!text.empty() && (text.back() == '\n' || text.back() == '\r' || text.back() == ' ')) text.pop_back();
+  std::string hint;
+  if (code == ERROR_BAD_EXE_FORMAT) hint = ", DLL 32 bits ou abîmée";
+  return std::format("erreur Windows {} ({}{})", code, text, hint);
+}
+
+// 126 : une dépendance manque ; elle se cherche dans ces dossiers.
+std::string not_found_note(DWORD code, const std::filesystem::path& path) {
+  if (code != ERROR_MOD_NOT_FOUND) return {};
+  return std::format(", une dépendance manque, cherchée dans {} puis les dossiers du système",
+                     library_path_text(path.parent_path()));
+}
 #endif
 
 }  // namespace
 
-std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesystem::path& path,
+std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesystem::path& given,
                                                             SymbolScope scope) {
+  // « C:\x\engines/trt/nvinfer_10.dll » : des séparateurs mêlés trompent le chargeur sur le dossier de la
+  // DLL, ses voisines ne se trouvent plus (C20-05).
+  const std::filesystem::path path = std::filesystem::path(given).lexically_normal().make_preferred();
   const std::string shown = utf8(path.filename());
   // Un nom seul ferait chercher le système (LD_LIBRARY_PATH, dossiers de Windows) : jamais.
   // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR exige d'ailleurs un chemin absolu.
@@ -49,8 +71,10 @@ std::expected<DynamicLibrary, Refusal> DynamicLibrary::open(const std::filesyste
   HMODULE module = LoadLibraryExW(path.c_str(), nullptr,
                                   LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if (module == nullptr) {
-    return refuse(RefusalCode::LibraryUnavailable,
-                  std::format("{} ne se charge pas (erreur Windows {})", shown, GetLastError()));
+    const DWORD code = GetLastError();
+    return refuse(
+        RefusalCode::LibraryUnavailable,
+        std::format("{} ne se charge pas : {}{}", shown, windows_error(code), not_found_note(code, path)));
   }
   return DynamicLibrary(static_cast<void*>(module), path);
 #else
@@ -73,7 +97,7 @@ std::expected<DynamicLibrary, Refusal> DynamicLibrary::open_system(const char* n
   HMODULE module = LoadLibraryExW(path.c_str(), nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
   if (module == nullptr) {
     return refuse(RefusalCode::LibraryUnavailable,
-                  std::format("{} ne se charge pas (erreur Windows {})", name, GetLastError()));
+                  std::format("{} ne se charge pas : {}", name, windows_error(GetLastError())));
   }
   return DynamicLibrary(static_cast<void*>(module), path);
 #else

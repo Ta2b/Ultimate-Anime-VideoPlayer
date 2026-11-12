@@ -231,3 +231,28 @@ TEST_CASE("plans : chaque plan garde la peau de ses visages, et seulement la sie
   CHECK(timeline.at(10 * kFrame)->skins == shots.at(0).meta.skins);
   CHECK(timeline.at(60 * kFrame)->skins.count == 0);
 }
+
+TEST_CASE("C36-02 : deux variantes du même épisode (deux écrans) gardent chacune leur analyse",
+          "[media][shots]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-variants";
+  std::filesystem::remove_all(dir);
+  const std::string key = "abababababababab";
+  std::vector<Shot> hdr(1);
+  hdr.at(0) = Shot{.start_us = 0, .end_us = 1'000'000};
+  std::vector<Shot> sdr(2);
+  sdr.at(0) = Shot{.start_us = 0, .end_us = 500'000};
+  sdr.at(1) = Shot{.start_us = 500'000, .end_us = 1'000'000};
+  constexpr std::uint32_t kHdrScreen = 0x2bc;  // gain des flashs d'un écran de 1000 nits
+  constexpr std::uint32_t kSdrScreen = 0x0c8;
+  REQUIRE(save_shot_cache(dir, key, hdr, true, kShotCacheKeep, {}, kHdrScreen));
+  REQUIRE(save_shot_cache(dir, key, sdr, true, kShotCacheKeep, {}, kSdrScreen));
+  // Avant : la seconde écrasait la première, et chaque changement d'écran refaisait la pré-analyse.
+  const auto on_hdr = load_shot_cache(dir, key, kHdrScreen);
+  const auto on_sdr = load_shot_cache(dir, key, kSdrScreen);
+  REQUIRE(on_hdr);
+  REQUIRE(on_sdr);
+  CHECK(on_hdr->shots.size() == 1);
+  CHECK(on_sdr->shots.size() == 2);
+  CHECK_FALSE(load_shot_cache(dir, key, 0x1234));
+  std::filesystem::remove_all(dir);
+}

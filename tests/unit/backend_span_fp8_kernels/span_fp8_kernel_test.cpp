@@ -1,6 +1,8 @@
 // Les noyaux du SPAN FP8 (gpu/cuda/backend/span_fp8_net.h) aux tailles dont la dernière tuile de 128 lignes
 // déborde de M (étape 3.1) : 1 Mio de canari 0xA5 après la zone de travail et après la sortie reste intact,
-// et la sortie est finie. Paquet synthétique (span_fp8::synthetic). Sans GPU sm 8.9 : SKIP.
+// et la sortie est finie. Paquet synthétique (tests/support/span_fp8_synthetic.h). Puis le réseau entier
+// contre la référence FP16 sur des poids aléatoires fixes (C02-10). Sans GPU sm 8.9 : SKIP.
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -8,14 +10,18 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "../../support/span_fp8_synthetic.h"
 #include "gpu/cuda/backend/slice_kernels.h"
 #include "gpu/cuda/backend/span_fp8_net.h"
+#include "gpu/cuda/backend/span_fp8_ref.h"
+#include "gpu/span_fp8/derive.h"
 #include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
@@ -122,7 +128,7 @@ TEST_CASE("SPAN FP8 : aucune ligne au-delà de M n'est lue ni écrite", "[cuda][
       GENERATE(std::pair{540, 960}, std::pair{480, 854}, std::pair{900, 1600}, std::pair{1088, 1920});
   INFO(width << "x" << height);
   REQUIRE(span_fp8::size_refusal(height, width).empty());
-  const span_fp8::Package package = span_fp8::synthetic();
+  const span_fp8::Package package = span_fp8::testing::synthetic();
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string error;
   const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(view(package), height, width, status, error);
@@ -163,7 +169,7 @@ TEST_CASE("l'épilogue de to_pixel écrit l'anneau au bit près de write_rgba16"
   // Surface entière, ou plus petite que la sortie (emplacement rogné : rien au-delà n'est écrit).
   const int trim = GENERATE(0, 6);
   INFO(width << "x" << height << ", rognage " << trim);
-  span_fp8::Package package = span_fp8::synthetic();
+  span_fp8::Package package = span_fp8::testing::synthetic();
   vary_pixel(package);
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string error;
@@ -223,7 +229,8 @@ TEST_CASE("la sortie FP16 de to_pixel suit DepthToSpace (CRD)", "[cuda][span_fp8
   // Une seule image, comparée à la référence FP16 non fondue : l'ordre des pixels de sortie est celui du
   // DepthToSpace du modèle (même si les valeurs diffèrent de l'arrondi FP8 des blocs).
   constexpr int kHeight = 64, kWidth = 96;
-  span_fp8::Package package = span_fp8::synthetic(0.0F);  // blocs nuls : la sortie ne dépend que du biais
+  span_fp8::Package package =
+      span_fp8::testing::synthetic(0.0F);  // blocs nuls : la sortie ne dépend que du biais
   vary_pixel(package);
   for (std::uint16_t& bits : package.pixel.weights) bits = 0;
   SpanFp8Status status = SpanFp8Status::Ok;
@@ -255,6 +262,90 @@ TEST_CASE("la sortie FP16 de to_pixel suit DepthToSpace (CRD)", "[cuda][span_fp8
         if (got != expected) ++wrong;
       }
   CHECK(wrong == 0);
+}
+
+// C02-10 : le réseau FP8 entier contre la référence FP16, sur des poids aléatoires fixes et des échelles
+// tirées des maxima de la référence, comme la dérivation les tire. Une échelle prise au mauvais indice (bind
+// contre s_act), une tranche de la concaténation dans le mauvais ordre ou un poids lu de travers
+// éloigneraient la sortie de la référence de l'ordre de sa propre variation ; l'arrondi FP8 seul reste bien
+// en dessous.
+TEST_CASE("SPAN FP8 : le réseau suit la référence FP16 sur des poids aléatoires (C02-10)",
+          "[cuda][span_fp8]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  constexpr int kHeight = 96, kWidth = 160;
+  span_fp8::Package package = span_fp8::testing::synthetic();
+  std::uint32_t state = 0x9E3779B9U;
+  const auto next = [&state] {
+    state = state * 1664525U + 1013904223U;
+    return static_cast<float>(state >> 8U) / static_cast<float>(1U << 24U) - 0.5F;  // [-0,5, 0,5)
+  };
+  // Poids uniformes à l'échelle de leur entrée (variance ~ 1/entrées), biais petits : les activations restent
+  // d'ordre 1 d'un bloc à l'autre.
+  const auto randomize = [&](span_fp8::Conv& conv, float spread) {
+    for (std::uint16_t& bits : conv.weights) {
+      const __half value = __float2half(next() * spread);
+      std::memcpy(&bits, &value, sizeof(bits));
+    }
+    for (float& bias : conv.bias) bias = next() * 0.05F;
+  };
+  randomize(package.first, 0.2F);
+  for (span_fp8::Block& block : package.blocks) {
+    for (span_fp8::Conv& conv : block.conv) randomize(conv, 0.14F);
+    randomize(block.attention, 0.4F);
+  }
+  randomize(package.concat, 0.2F);
+  randomize(package.pixel, 0.14F);
+
+  const std::size_t in_count = std::size_t{3} * kHeight * kWidth;
+  std::vector<__half> image(in_count);
+  for (std::size_t i = 0; i < in_count; ++i) image[i] = __float2half(next() + 0.5F);
+  DeviceBytes in(in_count * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), in_count * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  DeviceBytes out_ref(in_count * 4 * sizeof(__half));
+  DeviceBytes out_fp8(in_count * 4 * sizeof(__half));
+
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string error;
+  const std::unique_ptr<SpanFp8Reference> reference =
+      SpanFp8Reference::create(view(package), kHeight, kWidth, status, error);
+  REQUIRE(reference != nullptr);
+  REQUIRE(reference->run(nullptr, in.data, out_ref.data, true, error));
+  float peaks[SpanFp8Reference::kPeaks];
+  REQUIRE(reference->peaks(peaks, error));
+  const auto scales = span_fp8::scales_from_peaks(std::span<const float>(peaks), package.blocks.size());
+  REQUIRE(scales);
+  package.scales = *scales;
+  const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(view(package), kHeight, kWidth, status, error);
+  REQUIRE(net != nullptr);
+  DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+  net->bind(workspace.data);
+  REQUIRE(net->launch(nullptr, in.data, out_fp8.data, error));
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
+
+  const auto read = [&](const DeviceBytes& from) {
+    std::vector<__half> half(in_count * 4);
+    REQUIRE(cudaMemcpy(half.data(), from.data, half.size() * sizeof(__half), cudaMemcpyDeviceToHost) ==
+            cudaSuccess);
+    std::vector<double> out(half.size());
+    for (std::size_t i = 0; i < half.size(); ++i) out[i] = static_cast<double>(__half2float(half[i]));
+    return out;
+  };
+  const std::vector<double> expected = read(out_ref);
+  const std::vector<double> got = read(out_fp8);
+  double mean = 0.0;
+  for (const double v : expected) mean += v;
+  mean /= static_cast<double>(expected.size());
+  double signal = 0.0, noise = 0.0;
+  for (std::size_t i = 0; i < expected.size(); ++i) {
+    REQUIRE(std::isfinite(got[i]));
+    signal += (expected[i] - mean) * (expected[i] - mean);
+    noise += (got[i] - expected[i]) * (got[i] - expected[i]);
+  }
+  REQUIRE(signal > 0.0);  // la référence varie : le test a de quoi juger
+  const double snr_db = 10.0 * std::log10(signal / std::max(noise, 1e-30));
+  INFO("SNR du FP8 contre la référence : " << snr_db << " dB");
+  CHECK(snr_db >= 20.0);
 }
 
 }  // namespace ajp::gpu::cuda

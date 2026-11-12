@@ -9,11 +9,12 @@
 //   (b5f48) est rangé en 64 canaux remplis de zéros (étape 3.2b) : Relu(0) = 0 et (t + x)·tanh(0) = 0, les
 //   canaux ajoutés restent nuls d'un bout à l'autre. Poids en FP16 (ceux du modèle, sans perte), rangés
 //   [sortie][ligne][colonne][entrée] ; biais en f32. Les poids des convolutions de bloc sont ramenés en FP8
-//   au chargement, à l'échelle de leur tenseur (maximum / 448) : le paquet ne porte donc que des valeurs que
-//   le modèle d'origine contient.
+//   au chargement, à une échelle par canal de sortie (maximum de |poids| du canal / 448, quantize.h) : le
+//   paquet ne porte donc que des valeurs que le modèle d'origine contient.
 //
 // Échelles : [0] sortie de conv_1 ; pour le bloc b (0 à 7) : [1+3b] sortie du premier Relu, [2+3b] du second,
-// [3+3b] sortie du bloc. Une échelle est « maximum observé / 448 » sur le corpus de calibration.
+// [3+3b] sortie du bloc. Une échelle est « maximum observé × kScaleHeadroom (1,25) / 448 » sur le corpus de
+// calibration (derive.h, scales_from_peaks).
 #pragma once
 
 #include <array>
@@ -87,9 +88,6 @@ std::expected<Package, Refusal> parse(std::span<const std::byte> bytes);
 
 // Octets d'un paquet valide (pour les tests et l'outil de contrôle) ; l'inverse de parse.
 std::vector<std::byte> serialize(const Package& package);
-
-// Un paquet de la forme du vrai, rempli de valeurs régulières (tests sans modèle).
-Package synthetic(float fill = 0.01F, int blocks = kBlocks);
 
 // Échelles qui servent pour ce nombre de blocs.
 constexpr std::size_t scale_count(std::size_t blocks) {

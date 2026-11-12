@@ -43,8 +43,19 @@ void tighten_timer_slack() {
 void sleep_until_precise(std::int64_t until_us) {
 #ifdef _WIN32
   constexpr std::int64_t kSpinUs = 200;
-  thread_local const HANDLE timer =
-      CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+  // Fermé à la fin du fil (C33-06).
+  struct Timer {
+    HANDLE handle =
+        CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    Timer() = default;
+    Timer(const Timer&) = delete;
+    Timer& operator=(const Timer&) = delete;
+    ~Timer() {
+      if (handle != nullptr) CloseHandle(handle);
+    }
+  };
+  thread_local const Timer owned;
+  const HANDLE timer = owned.handle;
   const std::int64_t room_us = until_us - host_now_us() - kSpinUs;
   if (room_us > 0 && timer != nullptr) {
     LARGE_INTEGER due{};
@@ -83,7 +94,12 @@ void wait_loop(std::int64_t wait_us, bool precise) {
   }
   tighten_timer_slack();
   const std::int64_t now = host_now_us();
-  const core::WaitPlan plan = core::wait_plan(now, now + std::max<std::int64_t>(wait_us, 0));
+#ifdef _WIN32
+  constexpr std::int64_t kMarginUs = core::kWaitMarginWindowsUs;
+#else
+  constexpr std::int64_t kMarginUs = core::kWaitMarginUs;
+#endif
+  const core::WaitPlan plan = core::wait_plan(now, now + std::max<std::int64_t>(wait_us, 0), kMarginUs);
   if (plan.coarse_ms > 0 && SDL_WaitEventTimeout(nullptr, static_cast<Sint32>(plan.coarse_ms))) return;
   if (SDL_HasEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST)) return;
   sleep_until_precise(plan.precise_until_us);

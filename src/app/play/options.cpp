@@ -127,15 +127,15 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 30> kTrialOptions{
-    "--rife-image",         "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",
-    "--no-hdr-metadata",    "--probe-nvdec",    "--no-probe-nvdec",  "--shot-cuts",
-    "--no-shot-cuts",       "--one-lane",       "--skip-held",       "--anime-shots",
-    "--no-anime-shots",     "--fast-steady",    "--smooth-drawings", "--ring-watcher",
-    "--no-ring-watcher",    "--precise-wait",   "--no-precise-wait", "--audio-pll",
-    "--no-audio-pll",       "--vsync-index",    "--no-vsync-index",  "--present",
-    "--no-present",         "--no-vrr",         "--rife-calm-model", "--rife-warm",
-    "--profile-dispatches", "--rife-encode-all"};
+constexpr std::array<std::string_view, 31> kTrialOptions{
+    "--rife-image",         "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",
+    "--no-hdr-metadata",    "--probe-nvdec",     "--no-probe-nvdec",  "--shot-cuts",
+    "--no-shot-cuts",       "--one-lane",        "--skip-held",       "--anime-shots",
+    "--no-anime-shots",     "--fast-steady",     "--smooth-drawings", "--ring-watcher",
+    "--no-ring-watcher",    "--precise-wait",    "--no-precise-wait", "--audio-pll",
+    "--no-audio-pll",       "--vsync-index",     "--no-vsync-index",  "--present",
+    "--no-present",         "--no-vrr",          "--rife-calm-model", "--rife-warm",
+    "--profile-dispatches", "--rife-encode-all", "--filtered-warp"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -157,7 +157,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 31> kFlags{{
+constexpr std::array<Flag, 32> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -177,6 +177,7 @@ constexpr std::array<Flag, 31> kFlags{{
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
+    {"--filtered-warp", &PlayOptions::filtered_warp, true},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--skip-held", &PlayOptions::skip_held, true},
@@ -259,7 +260,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
         return refuse(RefusalCode::FieldOutOfRange,
-                      std::format("{}: auto, timing, wait, wayland or open", arg));
+                      std::format("{}: auto, timing, timing-absolute, wait, wayland or open", arg));
       options.present = *wanted;
     } else if (arg == "--no-present") {
       options.present = PresentWanted::Open;
@@ -595,8 +596,9 @@ std::string play_usage(bool debug) {
          "                         --no-audio-pll: the raw clock)\n"
          "  --vsync-index          frame chosen by its measured vblank number, with hysteresis (default;\n"
          "                         --no-vsync-index: the clock)\n"
-         "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
-         "                         --no-present: open, the former presentation\n"
+         "  --present=LEVEL        presentation feedback wait (default), auto, timing, timing-absolute\n"
+         "                         (timing with a target date), wayland or open; --no-present: open, the\n"
+         "                         former presentation\n"
          "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
 }
 
@@ -688,7 +690,7 @@ std::expected<std::filesystem::path, Refusal> find_file(const std::optional<std:
   std::string tried;
   for (const auto& path : candidates) {
     if (std::filesystem::is_regular_file(path, error)) return path;
-    tried += std::format("\n  {}", path.string());
+    tried += std::format("\n  {}", core::to_utf8(path));
   }
   return refuse(RefusalCode::ModelUnreadable, std::format("default {} not found:{}", what, tried));
 }

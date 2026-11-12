@@ -370,4 +370,43 @@ TEST_CASE("C09-03 : la signature de l'interpolation suit l'ordre réel du warp e
           .ends_with("warp-before"));
 }
 
+TEST_CASE("C31-09 : une mémoire vidéo pleine ne retire l'étage que pour sa vidéo", "[stage_fallback]") {
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  memory.remember({.stage = ChainStage::Upscale,
+                   .signature = stage_signature(ChainStage::Upscale, wanted, kWidth, kHeight, kLibrary),
+                   .refusal = Refusal{RefusalCode::GpuMemoryExhausted, "un jeu tient la mémoire"},
+                   .file = "ep01.mkv"});
+  // La même vidéo rouverte reste sans SPAN : pas de boucle sur le même refus.
+  auto same = plan(wanted, memory, true, "ep01.mkv");
+  REQUIRE(same);
+  CHECK_FALSE(same->settings.upscale);
+  // L'épisode suivant réessaie SPAN (avant : retiré pour toute la séance).
+  auto next = plan(wanted, memory, true, "ep02.mkv");
+  REQUIRE(next);
+  CHECK(next->settings.upscale);
+  CHECK(next->notes.empty());
+  // Un refus réel de la même signature vaut toujours pour toutes les vidéos.
+  refuse(memory, ChainStage::Upscale, wanted);
+  next = plan(wanted, memory, true, "ep02.mkv");
+  REQUIRE(next);
+  CHECK_FALSE(next->settings.upscale);
+}
+
+TEST_CASE("C31-05 : un refus de l'affichage sans clé retire un étage, pas une annulation ni un fichier",
+          "[stage_fallback]") {
+  CHECK(display_retreats(Refusal{RefusalCode::GpuMemoryExhausted, "pl_tex_recreate"}));
+  CHECK(display_retreats(Refusal{RefusalCode::VendorCallFailed, "pl_render_image"}));
+  CHECK(display_retreats(Refusal{RefusalCode::VulkanCallFailed, "vkAllocateMemory"}));
+  CHECK_FALSE(display_retreats(Refusal{RefusalCode::DeviceLost, "perdu"}));
+  CHECK_FALSE(display_retreats(Refusal{RefusalCode::DecodeFailed, "paquet abîmé"}));
+  CHECK_FALSE(
+      display_retreats(Refusal{.code = RefusalCode::VendorCallFailed, .detail = "x", .key = "autre"}));
+  // Le repli lui-même : l'interpolation d'abord, comme pour un refus d'étage.
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  CHECK(retreat_stage(&memory, Refusal{RefusalCode::VendorCallFailed, "pl_render_image"}, wanted, true, true,
+                      kWidth, kHeight, kLibrary, "ep01.mkv") == ChainStage::Motion);
+}
+
 }  // namespace ajp::app::play

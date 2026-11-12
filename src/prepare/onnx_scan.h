@@ -9,6 +9,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <vector>
@@ -46,8 +48,16 @@ std::expected<std::vector<std::string>, Refusal> onnx_external_locations(std::sp
 
 std::expected<OnnxSummary, Refusal> scan_onnx(std::span<const std::byte> model);
 
+// L'empreinte (SHA-256 du type, des dimensions et des octets) de chaque initialiseur de ce nom du graphe
+// principal. Un nom absent n'y figure pas. Sert à savoir si deux noms portent les mêmes poids (C04-05).
+std::expected<std::map<std::string, std::string, std::less<>>, Refusal> initializer_digests(
+    std::span<const std::byte> model, const std::set<std::string, std::less<>>& names);
+
 // Un emplacement de poids reste sous le dossier du modèle : relatif, sans « .. »,
 // sans « \ » ni « : » (repris de model_identity.cpp:52-60).
 bool is_safe_location(const std::string& location);
+// Un nom de morceau lu dans un manifeste : un nom de fichier seul qu'aucun système ne lit autrement (ni
+// dossier, ni « : » d'un lecteur ou d'un flux NTFS, ni nom réservé de Windows) (C04-08).
+bool is_piece_file_name(std::string_view name);
 
 }  // namespace ajp::prepare

@@ -91,3 +91,16 @@ TEST_CASE("is_safe_location : un poids reste sous le dossier du modèle", "[prep
   CHECK(is_safe_location("com10.bin"));
   CHECK(is_safe_location("com0.bin"));
 }
+
+TEST_CASE("C04-03 : un emplacement que Windows ne sait pas ouvrir est refusé partout", "[prepare][onnx]") {
+  for (const char* hostile :
+       {"poids?.bin", "a|b.bin", "a<b>.bin", "tab\t.bin", "a*.bin", "a\"b.bin", "CON .bin", "CONIN$",
+        "conout$.bin", "COM\xC2\xB9.bin", "lpt\xC2\xB3", "x/COM\xC2\xB2"}) {
+    CAPTURE(hostile);
+    CHECK_FALSE(is_safe_location(hostile));
+  }
+  CHECK(
+      is_safe_location("com\xC2\xB9"
+                       "0.bin"));  // COM¹0 n'est pas un périphérique
+  CHECK(is_safe_location("poids-1.bin"));
+}

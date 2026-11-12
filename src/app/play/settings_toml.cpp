@@ -2,6 +2,7 @@
 // (format_settings, save_settings). Les valeurs lues passent par validate() (settings.cpp).
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include "app/play/auto_config.h"
+#include "app/play/invalid_copies.h"
 #include "app/play/settings.h"
 #include "app/play/settings_refuse.h"
 #include "app/play/settings_toml_lenient.h"
@@ -506,9 +508,7 @@ std::expected<void, Refusal> keep_invalid_copy(const std::filesystem::path& path
                                                            core::to_utf8(path), error.message()));
   log_channel("app")->warn("{} invalide : copie gardée dans {}", core::to_utf8(path.filename()),
                            core::to_utf8(aside.filename()));
-  copies.push_back(aside);
-  std::ranges::sort(copies);
-  for (std::size_t i = 0; i + kKept < copies.size(); ++i) std::filesystem::remove(copies[i], error);
+  prune_invalid_copies(path, kKept);  // C36-10 : le plafond commun, ici celui de C22-06
   return {};
 }
 
@@ -522,7 +522,7 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
     set_unreadable(path, true);
     return std::unexpected(read_text.error());
   }
-  // Lu, ou absent : le verrou passager est tombé, les écritures reprennent (C22-01).
+  // Lu, ou absent : le verrou passager est tombé, les écritures reprennent (C22-01, C36-01).
   set_unreadable(path, false);
   if (!*read_text) return PlaySettings{};  // absent
   const std::string& text = **read_text;
@@ -561,14 +561,69 @@ std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& 
   return parse_settings_lenient(**text);
 }
 
+namespace {
+
+// L'ordre des écritures de play.toml (C30-03) : le fil « écriture » et le thread principal écrivent le même
+// fichier. Une écriture n'a lieu que sous ce verrou, et jamais par-dessus un instantané plus récent.
+struct SaveOrder {
+  std::mutex mutex;
+  std::atomic<std::uint64_t> next{1};
+  std::map<std::filesystem::path, std::uint64_t> written;
+};
+
+SaveOrder& save_order() {
+  static SaveOrder order;
+  return order;
+}
+
+std::expected<void, Refusal> save_settings_locked(const std::filesystem::path& path,
+                                                  const PlaySettings& settings);
+
+}  // namespace
+
+std::uint64_t settings_ticket() {
+  return save_order().next.fetch_add(1, std::memory_order_relaxed);
+}
+
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
+  return save_settings(path, settings, settings_ticket());
+}
+
+std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings,
+                                           std::uint64_t ticket) {
+  SaveOrder& order = save_order();
+  const std::scoped_lock lock(order.mutex);
+  if (const auto at = order.written.find(path); at != order.written.end() && at->second > ticket) {
+    log_channel("app")->debug("{} : écriture plus ancienne que la dernière, sautée",
+                              core::to_utf8(path.filename()));
+    return {};
+  }
+  auto written = save_settings_locked(path, settings);
+  if (written) order.written[path] = ticket;
+  return written;
+}
+
+namespace {
+
+std::expected<void, Refusal> save_settings_locked(const std::filesystem::path& path,
+                                                  const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
-  // Un fichier qui ne s'est jamais lu dans ce processus : la séance tourne sur les défauts, les écrire le
-  // remplacerait (B22-02). Un fichier lu au moins une fois (base gardée) qui n'a manqué qu'une relecture est
-  // retenté plus bas : s'il se lit, le verrou est tombé et le drapeau se baisse (C22-01).
-  if (is_unreadable(path) && !remembered(path))
-    return refuse(RefusalCode::FileUnwritable,
-                  std::format("{} : illisible au lancement, non réécrit", core::to_utf8(path)));
+  // Un fichier qui ne s'est pas lu au lancement : la séance tourne sur les défauts, les écrire le
+  // remplacerait (B22-02).
+  // C36-01 : relu à chaque essai ; un refus passager (antivirus, indexeur) ne bloque plus toute la séance.
+  if (is_unreadable(path)) {
+    if (auto again = read_file(path); !again)
+      return refuse(RefusalCode::FileUnwritable,
+                    std::format("{} : illisible au lancement, non réécrit", core::to_utf8(path)));
+    set_unreadable(path, false);
+    log_channel("app")->info("{} se lit de nouveau : les changements de la séance y sont écrits",
+                             core::to_utf8(path.filename()));
+    // La séance a démarré sur les défauts : ils sont la base de la fusion, et seules les valeurs changées
+    // depuis remplacent celles du fichier.
+    if (!remembered(path))
+      if (toml::parse_result base = toml::parse(format_settings(PlaySettings{})); base)
+        remember(path, std::move(base).table());
+  }
   std::string text = format_settings(settings);
   // Mis en forme et lu une seule fois : la fusion et la base de la suivante partent de la même table
   // (A22-16).
@@ -616,5 +671,7 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   if (fresh) remember(path, std::move(fresh).table());
   return written;
 }
+
+}  // namespace
 
 }  // namespace ajp::app::play

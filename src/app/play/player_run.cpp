@@ -5,7 +5,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <deque>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -28,6 +27,7 @@
 #include "app/play/build_progress.h"
 #include "app/play/chain.h"
 #include "app/play/chain_choices.h"
+#include "app/play/chain_retreat.h"
 #include "app/play/chain_setup.h"
 #include "app/play/chain_stats.h"
 #include "app/play/close_watch.h"
@@ -56,10 +56,12 @@
 #include "app/play/paths.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/player_after.h"
 #include "app/play/player_engines.h"
 #include "app/play/present_stats.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
+#include "app/play/resource_usage.h"
 #include "app/play/resume.h"
 #include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
@@ -96,17 +98,15 @@ constexpr std::int32_t kPausedWaitMs = 33;
 // L'écran de la fenêtre est relu deux fois par seconde (sa fréquence, son VRR : la cadence s'y règle), sur
 // le fil de DisplayProbe ; le HDR et le pic sur événement, sinon toutes les 10 s (display_follow.cpp).
 constexpr std::int64_t kDisplayPollUs = 500'000;
-// Les E/S du dossier de la vidéo (taille, fichier qui grandit, épisode suivant) : au-delà, laissées à leur
+// Les E/S du dossier de la vidéo (taille du fichier ; la suite : player_after.cpp) : au-delà, laissées à leur
 // sort, la lecture continue comme si elles n'avaient rien trouvé.
 constexpr std::chrono::milliseconds kFolderIoLimit{5000};
-// Une source qui change de taille 4 fois en une minute est refusée : la chaîne se rouvrirait sans fin.
-constexpr std::int64_t kResizeWindowUs = 60'000'000;
-constexpr std::size_t kResizesRefused = 4;
+// L'ouverture du fichier par le pipeline (démuxeur, télécinéma, sous-titres du dossier) : la borne de la
+// sonde.
+constexpr std::chrono::seconds kSourceOpenLimit{20};
 // Le démontage d'une chaîne saine (moteurs TensorRT compris) se compte en secondes (placebo_open.cpp).
 constexpr std::chrono::seconds kTeardownLimit{60};
 
-// La période d'une fréquence déjà relue (display_period_us referait le relevé du mode, deux
-// QueryDisplayConfig par tour sous Windows) ; une fréquence inutilisable laisse SDL répondre.
 // Les réglages d'une réouverture demandée, écrits une fois la chaîne rouverte (Player::unsaved), sans les
 // raccourcis de séance (A08-04).
 void save_reopened(Player& p) {
@@ -160,7 +160,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                                                         std::int64_t start_us, bool start_paused) {
   const auto log = log_channel("app");
   // B31-03 : une perte du GPU pendant la préparation relance au départ demandé, pas à 0:00.
-  p.stopped_at_us = std::max<std::int64_t>(start_us, 0);
+  p.stop_at(start_us, start_paused);
   std::vector<std::string> unavailable;
   settings = within_engines(settings, p.engines, unavailable);
   for (const std::string& line : unavailable) log->warn("{}", line);
@@ -172,7 +172,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                      content_peak_nits(p.screen.window()), p.options.sdr);
   // Un étage refusé ou annulé laisse la vidéo jouer sans lui (décisions 6 et 10) ; le banc mesure la chaîne
   // demandée ou rien.
-  const RingRelease ring_release(p.screen);  // détruit après prepared, donc après le backend (A33-01)
+  const ResourcesAfterTeardown ring_release(p.screen);  // après le backend (A33-01), puis le relevé (C33-03)
   auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
   if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
     // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
@@ -227,9 +227,33 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
-  bool ring_refused = false;                  // B31-02 : l'anneau ne tient pas en mémoire vidéo
+  // C08-07 : le démuxeur, la mesure du télécinéma et les sous-titres du dossier hors du thread de la fenêtre,
+  // bornés comme la sonde : un partage réseau endormi ne gèle plus la fenêtre.
+  auto read = run_pumped_for<Pipeline::SourceRead>("source-open", kSourceOpenLimit, true,
+                                                   [config] { return Pipeline::read_source(config); });
+  if (!read &&
+      read.error().code == RefusalCode::Cancelled) {  // la fenêtre fermée pendant la lecture du fichier
+    p.quit = true;
+    return std::nullopt;
+  }
+  if (!read) return std::unexpected(std::move(read.error()));
+  // C08-02 : la cadence de la séance est celle de la piste ouverte, après la mesure du télécinéma, et non
+  // celle de la sonde, qui suppose un télécinéma pour tout 29,97 entrelacé. L'anneau, l'ordre du warp, les
+  // paliers de l'Auto et ChainStats en dépendent : la chaîne se rouvre une fois sur la cadence mesurée.
+  if (const media::TrackInfo* track = read->demuxer.track(*read->choice.video); track != nullptr) {
+    if (const media::Rational measured = track->frame_rate;
+        measured.num > 0 && measured.den > 0 && measured != p.video.frame_rate) {
+      log->info("cadence de la source : {}/{} mesurée, {}/{} supposée par la sonde : la chaîne se rouvre",
+                measured.num, measured.den, p.video.frame_rate.num, p.video.frame_rate.den);
+      p.video.frame_rate = measured;
+      return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
+    }
+  }
+  // B31-02, C08-01 : l'anneau ou l'étage GPU (ses tenseurs) ne tient pas en mémoire vidéo.
+  bool stage_refused = false;
   auto pipeline = Pipeline::open(
-      config, [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
+      config,
+      [&](VideoStageInit stage) -> std::expected<std::unique_ptr<VideoStage>, Refusal> {
         const int width = stage.track->width;
         const int height = stage.track->height;
         const WorkSize sized = chain_work_size(played, width, height);
@@ -241,16 +265,22 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         auto slots = out.create_ring(sized.width * factor, sized.height * factor, c.opened.shape.ring,
                                      c.backend_name == "tensorrt", ring_format);
         if (!slots) {
-          ring_refused = true;
+          stage_refused = true;
           return std::unexpected(std::move(slots.error()));
         }
         const MasterClock* clock = stage.clock;
-        return UpscaleStage::start(std::move(stage),
-                                   c.upscale(played, live, clock, width, height, std::move(*slots)));
-      });
+        auto started = UpscaleStage::start(std::move(stage),
+                                           c.upscale(played, live, clock, width, height, std::move(*slots)));
+        // Un tenseur de l'étage refusé (cudaMallocAsync sous CachyOS, où la VRAM ne déborde pas) est un refus
+        // de l'étage comme l'anneau ; retreat_stage écarte l'appareil perdu.
+        stage_refused = !started;
+        return started;
+      },
+      std::move(*read));
   if (!pipeline) {
-    // B31-02 : l'anneau refusé retire un étage, et la chaîne se rouvre au même endroit sans lui.
-    if (ring_refused && retreat(p, c, ring_refusal(pipeline.error())))
+    // B31-02 : l'anneau ou l'étage refusé retire un étage, et la chaîne se rouvre au même endroit sans lui ;
+    // aucun des deux ne nomme son étage : l'interpolation d'abord (kRingRefusalKey, C09-01).
+    if (stage_refused && retreat(p, c, ring_refusal(pipeline.error())))
       return Reopen{.settings = settings, .position_us = start_us, .paused = start_paused};
     return std::unexpected(std::move(pipeline.error()));
   }
@@ -259,10 +289,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
-  const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
-  const std::uint64_t energy_start_mj = telemetry ? telemetry->energy_mj(host_now_us()) : 0;
+  const LateTelemetry telemetry(p.screen.device());  // ouverte sur son fil (C11-13)
   ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
-                         fps_of(video.frame_rate), telemetry.get());
+                         fps_of(video.frame_rate), &telemetry);
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   p.screen.set_sample_aspect(session_config.video_sar);
@@ -472,10 +501,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (!p.settings_path.empty() && !p.options.file.empty()) {
     auto_memory_path = paths::auto_memory(p.settings_path.parent_path());
     auto_memory_key =
-        // B32-06 : la variante de SPAN chargée (FP16, FP8, INT8) entre dans la clé : un palier appris sur
-        // l'une ne vaut pas pour l'autre.
+        // B32-06, C08-08 : les modèles chargés et la variante de SPAN (FP16, FP8, INT8) entrent dans la clé.
         core::auto_memory_key(prepare::utf8_path(p.options.file), file_bytes,
-                              std::format("{} {}", c.motion_name(), span_variant), settings.work_height,
+                              c.auto_memory_engine(span_variant), settings.work_height,
                               gpu_facts(p.screen).name);
     if (chain.live.auto_active()) {
       if (const auto remembered = core::load_auto_step(auto_memory_path, auto_memory_key)) {
@@ -544,6 +572,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   SleepWatch sleep_watch;
   SleepNotice sleep_notice(&LoopWake::push, &wake);  // B31-01 : la veille dite avant
   bool sleep_announced = false;
+  bool lost_paused = false;          // C31-01 : la veille a mis en pause avant la perte du GPU
   const WindowEvents window_events;  // B31-13 : la barre de titre tenue sous Windows n'est pas une veille
   ScreenSaverHold screen_saver;      // coupé seulement pendant qu'une vidéo avance (A33-02)
   while (!session.finished() && !chain.reopen) {
@@ -558,6 +587,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         after.lost || after.reopen) {
       if (after.lost) {
         failure = std::move(*after.lost);
+        lost_paused = after.paused;
         break;
       }
       chain.reopen = chain.running;
@@ -643,8 +673,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     ui_frame.changed |= snapshot_now;
     for (const Input& input : std::exchange(actions, {})) apply(input, chain, host_now_us());
     if (settings_save_due(writer, p.ui, chain.dirty, saved_at, host_now_us())) {  // B31-08, B36-01
-      writer.post("play.toml",
-                  [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
+      writer.post("play.toml", save_job(p.settings_path, saved_settings()));
       chain.dirty = false;
       saved_at = host_now_us();
     }
@@ -673,17 +702,17 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   screen_saver.want(false);
   if (chain.dirty) {
-    writer.post("play.toml",
-                [path = p.settings_path, saved = saved_settings()] { return save_settings(path, saved); });
+    writer.post("play.toml", save_job(p.settings_path, saved_settings()));
   }
   remember();
   stats_sink.reset();
   finish_settings_writes(writer, p.settings_path, saved_settings());  // attente bornée (B30-05)
   p.quit = session.quit_asked();
   log_summary(session);
-  if (telemetry) {
+  if (GpuTelemetry* const nvml = telemetry.get()) {
     // Énergie de la lecture : le compteur NVML relu au début et à la fin, à l'instant même (B11-14).
-    const std::uint64_t energy_end_mj = telemetry->energy_mj(host_now_us());
+    const std::uint64_t energy_start_mj = telemetry.energy_start_mj();
+    const std::uint64_t energy_end_mj = nvml->energy_mj(host_now_us());
     if (const auto per_frame =
             millijoules_per_frame(energy_start_mj, energy_end_mj, session.stats().new_frames))
       log->info("énergie : {:.1f} J, {:.1f} mJ par image neuve",
@@ -704,45 +733,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   if (failure && p.options.bench_out)
     tell_bench_parent(
         {.event = "refusal", .code = std::string(name(failure->code)), .detail = failure->detail});
-  // La source a changé de taille en cours de lecture : la chaîne se rouvre à la nouvelle taille, au même
-  // endroit ; au-delà de 4 réouvertures par minute, c'est un refus.
-  if (session.resize_asked() && !chain.reopen && !failure) {
-    std::deque<std::int64_t>& resizes = p.resizes;
-    const std::int64_t now = host_now_us();
-    while (!resizes.empty() && now - resizes.front() > kResizeWindowUs) resizes.pop_front();
-    if (resizes.size() >= kResizesRefused) {
-      failure = Refusal{RefusalCode::SourceResized, "la source change de taille trop souvent"};
-    } else {
-      resizes.push_back(now);
-      log->info("la source a changé de taille : réouverture de la chaîne");
-      chain.reopen = chain.running;
-    }
-  }
-  // B13-10, B29-08, B31-12 : l'attente du fichier qui grandit et le parcours du dossier se font hors du
-  // thread de la fenêtre, pompée, et bornés (un NAS lent ou muet ne la gèle plus).
-  if (!chain.reopen && !failure && !session.quit_asked() &&
-      run_pumped_for<bool>("growing-file", kFolderIoLimit, true, [file = p.options.file, opened_file] {
-        return opened_file.grew(file);
-      }).value_or(false)) {
-    log->info("le fichier grandit encore : relu au même endroit");
-    chain.reopen = chain.running;  // A29-03 : comme une réouverture de la chaîne, pistes gardées
-  }
-  // Fin de la vidéo, sans demande de quitter : l'épisode suivant du dossier, si le réglage le veut.
-  if (!chain.reopen && !failure && !session.quit_asked() && !p.options.bench_out &&
-      chain.running.autoplay_next && !p.options.file.empty()) {
-    if (const auto next = run_pumped_for<std::optional<std::filesystem::path>>(
-                              "next-episode", kFolderIoLimit, true,
-                              [file = p.options.file] { return sibling_episode(file, 1); })
-                              .value_or(std::nullopt)) {
-      log->info("épisode suivant : {}", prepare::utf8_path(next->filename()));
-      chain.next_file = *next;
-      chain.reopen = chain.running;
-    }
-  }
+  plan_follow_up(p, chain, session, opened_file, failure);
   // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
   // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
-  if (failure && is_fatal_stage_key(failure->key) && failure->code != RefusalCode::DeviceLost &&
-      c.backend->kernels()->health() && retreat(p, c, *failure)) {
+  if (failure && retreats(*failure, c) && retreat(p, c, *failure)) {
     failure.reset();
     chain.reopen = chain.running;
     chain.next_file.reset();
@@ -765,14 +759,13 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     p.subtitle_track = (*pipeline)->tracks().subtitle_selected;
   }
   // Ordre d'arrêt : slots, threads, moteur, backend (imports du ring), puis le ring (ring_release).
-  if (const std::int64_t at = session.view().position_us; at != kNoPts)
-    p.stopped_at_us = std::max<std::int64_t>(at, 0);
+  p.stop_at(session.view().position_us, session.paused() || lost_paused);  // C31-01 : la relance en pause
   // B31-04, B30-07 : ce démontage attend le GPU sans délai (jointure des fils, cudaStreamSynchronize,
   // cudaFree) ; gardé comme celui de l'écran. Après une perte du GPU, la relance est demandée d'abord : un
   // démontage bloqué la fait au lieu de laisser une fenêtre figée.
   if (failure && failure->code == RefusalCode::DeviceLost && p.relaunch_on_loss)
-    (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, false, RelaunchReason::GpuLost);
-  const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
+    (void)ask_relaunch(p.paths, p.options.file, p.stopped_at_us, p.stopped_paused, RelaunchReason::GpuLost);
+  const CloseWatch teardown(kTeardownLimit, exit_chain_stuck);
   session.end();
   out.flush();
   mask_before_teardown(p, session.quit_asked() && !reopen, reopen.has_value());

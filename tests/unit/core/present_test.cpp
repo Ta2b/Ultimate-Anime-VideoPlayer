@@ -19,6 +19,7 @@ TEST_CASE("vblank : 164,78 Hz retrouvés à 0,01 Hz sur 2 s à ±0,3 ms de gigue
   std::mt19937 rng(7);
   std::uniform_real_distribution<double> jitter(-300.0, 300.0);
   VblankClock clock;
+  clock.set_nominal_period(1e6 / 165.0);  // l'écran s'annonce à 165 Hz
   std::int64_t k = 0;
   for (int i = 0; i < 330; ++i) {  // 2 s ; une image sur trois seulement est présentée
     k += 1 + (i % 3 == 0 ? 1 : 0);
@@ -112,6 +113,9 @@ TEST_CASE("attente : grossière jusqu'à 1,5 ms avant l'échéance, puis précis
   CHECK(wait_plan(0, 10'000).precise_until_us == 10'000);
   CHECK(wait_plan(0, 1'000).coarse_ms == 0);
   CHECK(wait_plan(5'000, 1'000).coarse_ms == 0);
+  // Windows : 2,5 ms de marge, Sleep glissant de 1 à 2 ms (C12-07).
+  CHECK(wait_plan(0, 10'000, kWaitMarginWindowsUs).coarse_ms == 7);
+  CHECK(wait_plan(0, 3'600, kWaitMarginWindowsUs).coarse_ms == 1);
 }
 
 namespace {
@@ -144,21 +148,15 @@ TEST_CASE("A12-01 : présentations à l'image neuve, la grille garde la période
   }
 }
 
-TEST_CASE("A12-01 : sans période annoncée, un écart d'un vblank vu plus tard corrige la grille",
-          "[core][present]") {
+TEST_CASE("vblank : sans période annoncée, aucune grille", "[core][present]") {
+  // Rien ne dit si un écart vu compte un vblank ou plusieurs : la grille apprendrait la cadence du contenu.
   VblankClock clock;
-  feed_on_demand(clock, 144.0, 48, 0.0);
-  // Rien ne dit l'écran : la grille ne peut que suivre les écarts vus (la cadence du contenu).
-  CHECK(clock.hz() < 30.0);
-  // L'interface s'ouvre et présente à chaque vblank : la grille repart sur le vrai pas.
-  const double period = 1e6 / 144.0;
-  const std::int64_t base = 7'000'000 + 3'000'000;
-  for (int k = 0; k < 40; ++k)
-    clock.observe(base + static_cast<std::int64_t>(std::llround(period * k)),
-                  1000U + static_cast<unsigned>(k), 0);
-  CHECK(clock.hz() == Approx(144.0).margin(0.05));
-  // Et les présentations à la demande qui suivent ne la ramènent pas à la cadence du contenu.
-  feed_on_demand(clock, 144.0, 120, 0.0, 4'000'000);
+  feed_on_demand(clock, 144.0, 240, 0.0);
+  CHECK_FALSE(clock.grid().has_value());
+  CHECK(clock.hz() == 0.0);
+  // L'écran s'annonce ensuite : la grille se fait sur les dates qui suivent.
+  clock.set_nominal_period(1e6 / 144.0);
+  feed_on_demand(clock, 144.0, 120, 0.0, 11'000'000);
   CHECK(clock.hz() == Approx(144.0).margin(0.05));
 }
 

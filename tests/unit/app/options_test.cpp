@@ -10,7 +10,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
 #include "doubles.h"
 #include "french_ui.h"
@@ -142,6 +141,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto profiled = parse({"épisode.mkv", "--profile-dispatches"});
   REQUIRE(profiled);
   CHECK(profiled->profile_dispatches);
+  // C01-01 : la lecture filtrée du warp TensorRT n'est qu'un essai, éteint par défaut.
+  CHECK_FALSE(options->filtered_warp);
+  const auto filtered = parse({"épisode.mkv", "--filtered-warp"});
+  REQUIRE(filtered);
+  CHECK(filtered->filtered_warp);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {
@@ -283,47 +287,6 @@ TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", 
   CHECK(default_rife_candidates("/home/x", "/opt/ajp/models").front() ==
         std::filesystem::path("/opt/ajp/models/rife/rife_v4.22_lite.onnx"));
   std::filesystem::remove_all(dir);
-}
-
-TEST_CASE("File d'images : choix par l'horloge, retards, époques", "[app][frames]") {
-  FrameQueue queue;
-  for (std::uint32_t i = 0; i < 4; ++i) queue.push(test::ring_frame(i, i * 40'000));
-  std::vector<RingFrame> late;
-  CHECK_FALSE(queue.pick(-10'000, 0, late));  // la tête n'est pas atteinte
-  const auto picked = queue.pick(85'000, 0, late);
-  REQUIRE(picked);
-  CHECK(picked->pts_us == 80'000);
-  CHECK(late.size() == 2);
-  CHECK(queue.size() == 1);
-
-  queue.push(test::ring_frame(5, kNoPts, 1));
-  queue.push(test::ring_frame(6, 0, 1));
-  CHECK(queue.first_of(1)->slot == 5);
-  const auto stale = queue.take_stale(1);
-  REQUIRE(stale.size() == 1);
-  CHECK(stale[0].slot == 3);
-  late.clear();
-  // Une image sans pts passe dès qu'elle est en tête, et seule.
-  CHECK(queue.pick(-1'000'000, 0, late)->slot == 5);
-  CHECK(queue.take_all().size() == 1);
-}
-
-TEST_CASE("File d'images : l'image sans pts arrête le choix, bloc de deque après bloc", "[app][frames]") {
-  // Assez d'images pour que pop_front libère plusieurs blocs de la deque : le choix ne relit
-  // jamais l'image qu'il vient de retirer (ASan le verrait).
-  FrameQueue queue;
-  constexpr std::uint32_t kCount = 999;
-  for (std::uint32_t i = 0; i < kCount; ++i)
-    queue.push(test::ring_frame(i, i % 3 == 2 ? kNoPts : std::int64_t{i} * 1'000));
-  std::vector<RingFrame> late;
-  for (std::uint32_t i = 2; i < kCount; i += 3) {
-    late.clear();
-    const auto picked = queue.pick(std::int64_t{kCount} * 1'000, 0, late);
-    REQUIRE(picked);
-    CHECK(picked->slot == i);
-    CHECK(late.size() == 2);
-  }
-  CHECK(queue.empty());
 }
 
 TEST_CASE("Mesures : médiane, écart type, format", "[app][stats]") {

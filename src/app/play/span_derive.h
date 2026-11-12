@@ -80,11 +80,16 @@ struct SpanDerivePlan {
   // Les poids du modèle rangés pour le paquet ; vide : lus dans l'ONNX (gpu/span_fp8/onnx_weights.h). Les
   // essais y mettent des poids de leur façon.
   std::function<std::expected<gpu::span_fp8::Package, Refusal>()> load_weights;
-  // B02-01 : le temps d'une passe du SPAN FP16 de TensorRT à cette taille (time_span_fp16), le moteur que la
-  // lecture garde sans le paquet. Un paquet qui passe la porte de qualité n'est gardé que s'il va au moins
+  // B02-01, C02-01 : le moteur TensorRT du SPAN FP16 que la lecture garde sans le paquet, à width × height
+  // (build_span_fp16) ; le backend le chronomètre avec les noyaux FP8, de la même façon et sur le même flux
+  // (SpanFp8Request::fp16). Un paquet qui passe la porte de qualité n'est gardé que s'il va au moins
   // gpu::span_fp8::kMinSpeedup fois plus vite. Vide : rien n'est mesuré ni exigé (essais, outils) ; le
   // lecteur le donne toujours.
-  std::function<std::expected<double, Refusal>(int width, int height, gpu::Progress&)> time_fp16;
+  std::function<std::expected<gpu::Artifact, Refusal>(int width, int height, gpu::Progress&)> fp16_engine;
+  // C02-05 : la taille de travail de la lecture, où les temps se prennent et sous laquelle le reçu range la
+  // taille jugée (span_fp8::size_key) ; 0 : celle des images de validation.
+  int work_width = 0;
+  int work_height = 0;
   // B02-08 : la préparation tourne pendant la lecture (préréglage) : le reçu le dit, ses temps étant pris
   // sous la charge de la lecture.
   bool during_playback = false;
@@ -95,9 +100,10 @@ struct SpanDeriveReport {
   gpu::SpanFp8Derivation derivation;
   gpu::span_fp8::Verdict verdict;  // celui de la variante gardée
   bool acc16 = false;              // la variante à accumulateur f16 hors blocs est gardée (étape 3.5a)
+  double acc16_loss_db = 0.0;      // ce qu'elle coûte au PSNR moyen face à l'accumulateur f32 (C02-03)
   int calibration_images = 0;
   int validation_images = 0;
-  std::string size;               // « 1920x1080 »
+  std::string size;               // « 2560x1440 » : la taille de travail (size_key, C02-05)
   double trt_fp16_ms = 0.0;       // B02-01 : une passe du SPAN FP16 de TensorRT ; 0 : non mesuré
   double speedup = 0.0;           // trt_fp16_ms sur le temps des noyaux FP8 ; 0 : non mesuré
   bool too_slow = false;          // la qualité passait, le gain non : le paquet est refusé
@@ -107,7 +113,10 @@ struct SpanDeriveReport {
 };
 
 // Les images 0.. n-1 dans l'ordre du temps : une sur trois (la troisième, la sixième…) est mise de côté pour
-// la validation, le reste calibre. Douze images donnent huit et quatre.
+// la validation, le reste calibre. Douze images donnent huit et quatre. Deux images voisines de la liste sont
+// à au moins 3,5 % de la durée l'une de l'autre (24 instants répartis de 8 % à 92 %, media/stills.cpp), près
+// d'une minute sur un épisode : des plans différents. Le dépassement de l'échelle se juge en plus sur ces
+// images (C02-04).
 struct StillsSplit {
   std::vector<std::size_t> calibration;
   std::vector<std::size_t> validation;
@@ -177,21 +186,19 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
 inline constexpr double kAutoMinFreeRatio = 1.5;
 
 // B02-08 : la préparation lancée par un préréglage tourne pendant la lecture, sur le même GPU. Après chaque
-// image qu'elle passe (trois passes du SPAN), elle rend la carte à la lecture ce temps-là.
+// image qu'elle passe (trois passes du SPAN) et chaque lot de la mesure du temps (trois passes, C02-02), elle
+// rend la carte à la lecture ce temps-là.
 inline constexpr std::chrono::milliseconds kBackgroundPause{120};
 
-// Le temps d'une passe du SPAN FP16 de TensorRT à width × height sur backend (B02-01) : le moteur que la
-// chaîne construit pour cette taille (lu dans le cache, construit s'il manque), kSpanTimingWarmup passes de
-// chauffe, puis la médiane de kSpanTimingBatches lots de kSpanTimingBatchRuns passes enchaînées. Refus : ceux
-// de la construction, du chargement ou d'une passe ; Cancelled si progress.stop le demande.
-inline constexpr int kSpanTimingWarmup = 5;
-inline constexpr int kSpanTimingBatches = 5;
-inline constexpr int kSpanTimingBatchRuns = 5;
-// B02-08 : la pause de kBackgroundPause après une image de calibration ou de validation (stage, l'étape que
-// le backend nomme), pour une préparation qui tourne pendant la lecture.
+// B02-08 : la pause de kBackgroundPause après une image de calibration ou de validation, ou un lot de la
+// mesure du temps (stage, l'étape que le backend nomme), pour une préparation qui tourne pendant la lecture.
 void pause_for_playback(std::string_view stage, const std::stop_token& stop);
-std::expected<double, Refusal> time_span_fp16(gpu::Backend& backend, const std::filesystem::path& model,
-                                              int width, int height, gpu::Progress& progress);
+// Le moteur TensorRT du SPAN FP16 à width × height (B02-01, C02-01) : la demande même de la chaîne
+// (chain_setup.cpp, prepare_span), donc lu dans le cache, construit s'il manque. Refus : ceux de la
+// construction ; ShapeInvalid pour une taille nulle.
+std::expected<gpu::Artifact, Refusal> build_span_fp16(gpu::Backend& backend,
+                                                      const std::filesystem::path& model, int width,
+                                                      int height, gpu::Progress& progress);
 
 // La réduction des images de la préparation : la taille de travail et le filtre du menu « Réduction », comme
 // le noyau d'ingestion les applique (live_settings.h, reduction_of).

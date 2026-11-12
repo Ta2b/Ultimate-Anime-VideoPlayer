@@ -85,12 +85,22 @@ void MainMail::report(std::string stage, const Refusal& refusal, bool fatal) {
 
 bool ThreadStages::flush(std::uint32_t epoch) {
   flushed_epoch_ = epoch;
-  if (audio_lost_) {  // l'audio a une nouvelle chance à cette époque, sauf si l'écran mène
-    audio_lost_ = false;
-    if (!host_must_lead(speed_, false, audio_delay_us_) && links_.audio != nullptr &&
-        links_.lead != nullptr && links_.lead->host_leads() && links_.audio->post(audio::SyncTo{})) {
-      links_.host_clock->set_rate(1.0, host_now_us());
-      links_.lead->lead_with_host(false);
+  // L'audio a une nouvelle chance à cette époque, sauf si l'écran mène. C18-08 : rien n'est oublié avant que
+  // l'audio n'ait reçu son ordre ; un envoi refusé (boîte pleine) se refait au Flush suivant.
+  if (audio_lost_) {
+    const bool give_back = !host_must_lead(speed_, false, audio_delay_us_) && links_.audio != nullptr &&
+                           links_.lead != nullptr && links_.lead->host_leads();
+    if (give_back) {
+      if (links_.audio->post(audio::SyncTo{})) {
+        links_.host_clock->set_rate(1.0, host_now_us());
+        links_.lead->lead_with_host(false);
+        audio_lost_ = false;
+        master_pending_ = false;
+      }
+    } else if (!master_pending_ || links_.audio == nullptr ||
+               links_.audio->post(audio::SyncTo{.master = links_.host_clock})) {
+      audio_lost_ = false;  // l'écran mène : l'audio suit l'horloge hôte, qui le lui a dit
+      master_pending_ = false;
     }
   }
   bool sent = links_.source->try_push(Flush{.epoch = epoch});
@@ -149,8 +159,10 @@ bool ThreadStages::audio_lost(std::uint32_t epoch, std::int64_t media_us) {
   if (links_.audio == nullptr || links_.lead == nullptr || links_.lead->host_leads() || !playing_)
     return false;
   links_.host_clock->start(epoch, media_us, host_now_us());
-  // L'audio, s'il revient, se cale sur l'horloge hôte (silence ou rognage) au lieu de la mener.
-  links_.audio->post(audio::SyncTo{.master = links_.host_clock});
+  // L'audio, s'il revient, se cale sur l'horloge hôte (silence ou rognage) au lieu de la mener. L'image ne
+  // s'arrête pas avec l'audio : l'hôte mène tout de suite. C18-08 : un ordre refusé se refait au Flush
+  // suivant.
+  master_pending_ = !links_.audio->post(audio::SyncTo{.master = links_.host_clock});
   links_.lead->lead_with_host(true);
   audio_lost_ = true;
   return true;

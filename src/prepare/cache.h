@@ -32,6 +32,9 @@ struct CacheEntry {
   // Attente maximale du verrou de la clé : au moins tout ce que le détenteur peut y passer (attente du GPU
   // puis construction), sans quoi un second lecteur abandonne alors que rien n'est figé (A05-02).
   std::chrono::milliseconds max_wait = kMaxLockWait;
+  // Appelé une fois quand le verrou de la clé est tenu par un autre : l'attente qui suit peut durer toute la
+  // construction de l'autre (C05-05). Vide : on attend sans rien dire.
+  std::function<void()> on_wait;
 
   std::filesystem::path lock_file() const;  // « <destination>.key-lock », jamais supprimé
   // « <destination>.sha256 » : l'empreinte écrite à la publication, revérifiée à chaque reprise (P2.31).
@@ -51,6 +54,11 @@ using Producer = std::function<std::expected<void, Refusal>(const std::filesyste
 // une entrée refusée reste en place jusqu'à son remplacement réussi.
 std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const Producer& produce,
                                                 const std::stop_token& stop = {});
+
+// Met l'entrée publiée de côté (« <destination>.bad »), avec son empreinte retirée, sous le verrou de la
+// clé : le runtime l'a refusée au chargement, la reprise suivante la reconstruit au lieu de la rendre
+// telle quelle à chaque ouverture (C05-01). Une entrée absente n'est pas une erreur.
+std::expected<void, Refusal> set_aside_entry(const CacheEntry& entry, const std::stop_token& stop = {});
 
 // Fichier régulier non vide.
 bool is_published(const std::filesystem::path& file);

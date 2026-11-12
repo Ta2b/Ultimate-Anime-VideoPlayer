@@ -106,6 +106,10 @@ constexpr std::array kMessages{
           "La carte graphique ne répondait plus : le lecteur a redémarré"},
     Entry{"{} unavailable: {} is used, slower (Settings > General > Engines)",
           "{} indisponible : {} à sa place, plus lent (Paramètres > Général > Moteurs)"},
+    Entry{"The player could not start with these options: {}",
+          "Le lecteur n'a pas pu démarrer avec ces options : {}"},
+    Entry{"{} needs a newer graphics driver: {} is used, slower",
+          "{} demande un pilote graphique plus récent : {} à sa place, plus lent"},
     Entry{"Playback reopens at the same spot and prepares these engines again.",
           "La lecture se rouvre au même endroit et prépare de nouveau ces moteurs."},
     Entry{"curl not found: cannot check for updates",
@@ -134,6 +138,12 @@ constexpr std::array kMessages{
     Entry{"not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
           "espace disque insuffisant : l'installation demande {} (dont {} à télécharger, {} une fois "
           "installé), il reste {} sur {}"},
+    Entry{"this folder cannot be passed to curl and tar (name outside the Windows ANSI code page, no short "
+          "8.3 name): {}. Choose another engines folder or enable \"Use Unicode UTF-8\" in the Windows "
+          "region settings",
+          "curl et tar ne savent pas lire ce dossier (nom hors de la page ANSI de Windows, pas de nom court "
+          "8.3) : {}. Choisissez un autre dossier des moteurs, ou activez « Utiliser Unicode UTF-8 » dans "
+          "les paramètres régionaux de Windows"},
     Entry{"of preparation", "de préparation"},
     Entry{"of search ({})", "de recherche ({})"},
     Entry{"of the \"{}\" settings", "des réglages « {} »"},

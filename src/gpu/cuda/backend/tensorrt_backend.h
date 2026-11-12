@@ -6,17 +6,22 @@
 // Chargé à l'exécution (ajp_backend_tensorrt.so) : le lecteur démarre sans CUDA ni TensorRT.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <filesystem>
+#include <format>
 #include <initializer_list>
 #include <map>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "core/types.h"
@@ -36,6 +41,10 @@ namespace ajp::gpu::cuda {
 
 class TrtLog;
 class SharedActivations;
+
+// « 1×11×1088×1920 », ou « min …, opt …, max … » quand les trois diffèrent : la forme demandée, dans les
+// refus de construction (C03-08).
+std::string shape_text(const ShapeSet& shapes);
 class SpanFp8Engine;
 class RifeFusedEngine;
 class DrbaFusedEngine;
@@ -156,6 +165,14 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                      std::initializer_list<std::uintptr_t> writes);
   std::expected<void, Refusal> order(std::span<const std::uintptr_t> reads,
                                      std::span<const std::uintptr_t> writes);
+  // order pour un moteur (entier, fusionné, FP8) : il lit ses entrées, écrit ses sorties, la zone
+  // d'activation de la voie et son propre contexte. restores : il passera par restore_rife_times, qui écrit
+  // le plan de l'instant de ses entrées compactes (C01-02). Sans allocation par image : order_reads_ et
+  // order_writes_ gardent leur capacité (C01-06).
+  std::expected<void, Refusal> order_engine(const void* engine, std::span<const Tensor> inputs,
+                                            std::span<const Tensor> outputs, bool restores);
+  std::vector<std::uintptr_t> order_reads_;
+  std::vector<std::uintptr_t> order_writes_;
   // La voie courante suit tout le travail déjà enfilé sur les autres.
   std::expected<void, Refusal> join();
   std::expected<void, Refusal> apply(const LaneHazards::Op& op);
@@ -234,7 +251,6 @@ class TensorRtBackend final : public Backend, public KernelOps {
     const Tensor* out = nullptr;
     const RingTarget* ring = nullptr;
   };
-  void release_retired();
   void push_launches();  // WDDM : envoie le lot de lancements (Windows seulement)
   std::expected<void, Refusal> reserve_deband(std::size_t bytes);
   // warp_blend et warp_blend_poses : le même noyau, l'instant réglé ou non.
@@ -277,6 +293,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   int runtime_version_ = 0;
   int driver_version_ = 0;
   std::filesystem::path cache_dir_;
+  // BackendInit::filtered_warp (--filtered-warp, essai) : le warp lit par objets texture ; éteint, exact.
+  bool filtered_warp_ = false;
   std::filesystem::path trtexec_;
   std::string trtexec_sha256_;  // relevé à create (A05-05)
   BackendLog log_;
@@ -292,6 +310,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   void free_after_lanes(void* memory);
 
  private:
+  // Un événement par voie pour free_after_lanes, gardé d'une libération à l'autre (C01-06) : une attente
+  // posée garde l'état de l'événement au moment où elle l'est.
+  std::array<cudaEvent_t, kLanes> free_marks_{};
   std::shared_ptr<TensorReleaser> releaser_ = std::make_shared<TensorReleaser>(TensorReleaser{this});
   // Pool par défaut réglé une fois : rien n'est rendu au système entre deux images, et pas de
   // réutilisation par dépendances internes (le flux d'une voie ne dépend jamais d'une autre par le pool).
@@ -329,21 +350,38 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Les plans de l'instant que rife_time n'a écrits qu'à l'élément 0 (B03-04) : un moteur entier qui lit
   // ensuite la même entrée a besoin du plan entier, reposé juste avant lui (restore_rife_times). Oubliés
   // quand rife_input ou rife_pair réécrivent le plan, et quand le tampon est libéré.
+  static constexpr std::size_t kStaleTimes = 8;
   struct StaleTime {
-    std::uintptr_t key = 0;   // adresse du tenseur d'entrée
-    std::uint64_t plane = 0;  // son plan de l'instant (CUdeviceptr)
-    std::size_t count = 0;    // demi-flottants du plan
-    std::uint16_t half = 0;   // l'instant, en demi-flottant
+    std::uintptr_t key = 0;     // adresse du tenseur d'entrée
+    std::uintptr_t handle = 0;  // son tampon, pour order
+    std::uint64_t plane = 0;    // son plan de l'instant (CUdeviceptr)
+    std::size_t count = 0;      // demi-flottants du plan
+    std::uint16_t half = 0;     // l'instant, en demi-flottant
   };
   std::vector<StaleTime> stale_times_;
+  // La fenêtre de l'image dans chaque entrée de RIFE remplie par rife_input ou rife_pair (C03-03).
+  struct RifeWindow {
+    std::uintptr_t key = 0;
+    kernels::Window window;
+  };
+  std::vector<RifeWindow> rife_windows_;
   void forget_rife_input(std::uintptr_t key);
   std::expected<void, Refusal> restore_rife_times(std::span<const Tensor> inputs);
   GpuTiming& stage(std::string_view name);
+  // L'étape d'un nom mis en forme sur la pile (« moteur 3×1088×1920 ») : rien d'alloué une fois l'étape créée
+  // (C01-06, C02-07, C03-07).
+  template <typename... Args>
+  GpuTiming& stage_named(std::format_string<Args...> format, Args&&... args) {
+    std::array<char, 128> text{};
+    const auto written = std::format_to_n(text.data(), text.size(), format, std::forward<Args>(args)...);
+    const auto length = static_cast<std::size_t>(std::min<std::ptrdiff_t>(written.size, text.size()));
+    return stage(std::string_view(text.data(), length));
+  }
   std::unique_ptr<GpuSpan> chain_span_;               // de l'ingestion d'une source à la fin de son SPAN
   std::vector<std::unique_ptr<ImportedSlot>> slots_;  // génération courante, par indice
   std::uint32_t generation_ = 0;
-  // Imports d'une génération remplacée, relâchés quand retired_done_ est passé côté GPU.
-  std::vector<std::unique_ptr<ImportedSlot>> retired_;
+  // Posé à un changement de génération sur la voie qui écrit l'anneau : l'hôte l'attend avant de relâcher les
+  // imports de l'ancienne (C01-03).
   cudaEvent_t retired_done_ = nullptr;
   // Mesures relues par l'hôte (scores_start, flow_max_start) : côté GPU, puis copiées dans une
   // mémoire hôte épinglée ; kPendingReadbacks emplacements à tour de rôle, chacun avec l'événement

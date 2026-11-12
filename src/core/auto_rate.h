@@ -214,8 +214,12 @@ class AutoRate {
   int snap_up(int step) const;        // le palier permis le plus bas au-dessus de step ; 0 : aucun
   int drop_for(int predicted) const;  // de combien descendre
   bool fine() const { return granularity_ >= kFineGranularity; }
+  int dead_band() const { return std::max(1, static_cast<int>(step_ * kDeadBand)); }  // au pas fin
+  int step_of_centi(int centi) const;  // le palier d'un facteur retenu en centièmes
   void changed(AutoReason reason, std::int64_t now_us);
   void try_rise(std::int64_t now_us);
+  // Au pas fin, le cran de montée vers target (0 : rester), bande morte et cadence comprises.
+  int fine_gain(int target, std::int64_t now_us) const;
   double model_us(int step, std::int64_t now_us) const;  // < 0 : pas de modèle
   double penalty(int step, std::int64_t now_us) const;
   double cap_strength(std::int64_t now_us) const;

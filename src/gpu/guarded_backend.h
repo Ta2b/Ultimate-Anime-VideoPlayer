@@ -29,8 +29,17 @@ inline constexpr bool kIsExpected = false;
 template <class T, class E>
 inline constexpr bool kIsExpected<std::expected<T, E>> = true;
 
+// L'exception en cours, au journal « backend ». Appelé dans un catch.
+inline void log_exception(std::string_view where) noexcept {
+  try {
+    log_channel("backend")->error("{}", refusal_from_exception(RefusalCode::VendorCallFailed, where).detail);
+  } catch (...) {  // NOLINT(bugprone-empty-catch) : le journal lui-même a échoué, rien de plus à faire
+  }
+}
+
 // fn(), ou le refus de l'exception si fn lève ; un résultat qui n'est pas un std::expected rend alors
-// sa valeur par défaut (nullopt, false, vide).
+// sa valeur par défaut (nullopt, false, vide), et l'exception va au journal (C21-04) : des capacités vides
+// changent le palier de SPAN ou retirent le débandage fusionné, le rapport de problème doit pouvoir le dire.
 template <class Fn, class R = std::invoke_result_t<Fn>>
 R call(std::string_view where, Fn&& fn) noexcept {
   try {
@@ -39,6 +48,7 @@ R call(std::string_view where, Fn&& fn) noexcept {
     if constexpr (kIsExpected<R>) {
       return std::unexpected(refusal_from_exception(RefusalCode::VendorCallFailed, where));
     } else {
+      log_exception(where);
       return R{};
     }
   }
@@ -51,11 +61,7 @@ void call_void(std::string_view where, Fn&& fn) noexcept {
   try {
     std::forward<Fn>(fn)();
   } catch (...) {
-    try {
-      log_channel("backend")->error("{}",
-                                    refusal_from_exception(RefusalCode::VendorCallFailed, where).detail);
-    } catch (...) {  // NOLINT(bugprone-empty-catch) : le journal lui-même a échoué, rien de plus à faire
-    }
+    log_exception(where);
   }
 }
 
@@ -180,6 +186,7 @@ class GuardedBackend final : public Backend {
     try {
       return in_->match(render_device);
     } catch (...) {
+      guarded_detail::log_exception("match");
       return DeviceMatch::Unknown;
     }
   }

@@ -72,7 +72,7 @@ TEST_CASE("présentation : le défaut date aussi sans wp_presentation (B10-01)",
   // Sans present timing, le sondage d'avant ; muet, Timing retombe sur lui.
   const PresentCaps wait{.present_id2 = true, .present_wait2 = true};
   CHECK(choose_present_level(wait, PresentWanted::Wait) == PresentLevel::Wait);
-  CHECK(fallback_level(false) == PresentLevel::Wait);
+  CHECK(fallback_level(false, wait) == PresentLevel::Wait);
 }
 
 TEST_CASE("présentation : present timing muet retombe (A10-06)", "[app][present]") {
@@ -80,15 +80,52 @@ TEST_CASE("présentation : present timing muet retombe (A10-06)", "[app][present
   CHECK_FALSE(feedback_silent(kSilentPresents - 1, 0));
   CHECK(feedback_silent(kSilentPresents, 0));
   CHECK_FALSE(feedback_silent(10 * kSilentPresents, 1));  // un seul retour : le niveau répond
-  CHECK(fallback_level(true) == PresentLevel::Wayland);
-  CHECK(fallback_level(false) == PresentLevel::Wait);
+  const PresentCaps wait{.present_id2 = true, .present_wait2 = true};
+  CHECK(fallback_level(true, wait) == PresentLevel::Wayland);
+  CHECK(fallback_level(false, wait) == PresentLevel::Wait);
   CHECK(timing_level(PresentLevel::TimingAbsolute));
   CHECK_FALSE(timing_level(PresentLevel::Wayland));
+}
+
+TEST_CASE("présentation : timing ne vise pas de date, timing-absolute oui (C10-02)", "[app][present]") {
+  const PresentCaps absolute{
+      .present_id2 = true, .present_wait2 = true, .timing = true, .timing_absolute = true};
+  // Avant : --present=timing rendait timing-absolute dès que la surface offrait presentAtAbsoluteTime.
+  CHECK(choose_present_level(absolute, PresentWanted::Timing) == PresentLevel::Timing);
+  CHECK(choose_present_level(absolute, PresentWanted::TimingAbsolute) == PresentLevel::TimingAbsolute);
+  CHECK(choose_present_level(absolute, PresentWanted::Auto) == PresentLevel::TimingAbsolute);
+  // Sans date visée offerte, timing-absolute retombe sur timing, puis sur ce qui reste.
+  const PresentCaps timing{.present_id2 = true, .present_wait2 = true, .timing = true};
+  CHECK(choose_present_level(timing, PresentWanted::TimingAbsolute) == PresentLevel::Timing);
+  const PresentCaps wait{.present_id2 = true, .present_wait2 = true};
+  CHECK(choose_present_level(wait, PresentWanted::TimingAbsolute) == PresentLevel::Wait);
+}
+
+TEST_CASE("présentation : le repli de present timing muet est un niveau offert (C10-03)", "[app][present]") {
+  // Present timing sans present_wait2, ni wp_presentation : le repli disait « wait » sans rien sonder.
+  const PresentCaps timing_only{.present_id2 = true, .timing = true};
+  CHECK(fallback_level(false, timing_only) == PresentLevel::Open);
+  CHECK(available(fallback_level(false, timing_only), timing_only));
+  const PresentCaps with_wait{.present_id2 = true, .present_wait2 = true, .timing = true};
+  CHECK(fallback_level(false, with_wait) == PresentLevel::Wait);
+  CHECK(fallback_level(true, timing_only) == PresentLevel::Wayland);
+}
+
+TEST_CASE("présentation : l'état de la fréquence lu par wp_presentation (C10-01)", "[app][present]") {
+  // Une période et le drapeau vsync : fréquence fixe.
+  CHECK(wayland_refresh_state(6'944'444, kWaylandKindVsync) == RefreshState::Fixed);
+  CHECK(wayland_refresh_state(6'944'444, kWaylandKindVsync | 0x6) == RefreshState::Fixed);
+  // KWin en VRR (plein écran) : refresh = 0. Plus de grille.
+  CHECK(wayland_refresh_state(0, kWaylandKindVsync) == RefreshState::Unknown);
+  // Une image qui n'est pas partie au vblank (déchirement) : pas de grille non plus.
+  CHECK(wayland_refresh_state(6'944'444, 0x6) == RefreshState::Unknown);
+  CHECK(wayland_refresh_state(0, 0) == RefreshState::Unknown);
 }
 
 TEST_CASE("présentation : --present et la forme de la swapchain", "[app][present]") {
   CHECK(parse_present("auto") == PresentWanted::Auto);
   CHECK(parse_present("timing") == PresentWanted::Timing);
+  CHECK(parse_present("timing-absolute") == PresentWanted::TimingAbsolute);
   CHECK(parse_present("open") == PresentWanted::Open);
   CHECK_FALSE(parse_present("vite").has_value());
   CHECK(swapchain_shape(PresentLevel::Open).min_images == 0);

@@ -92,6 +92,35 @@ TEST_CASE("Graphes : clear remet à zéro les séries d'échecs et rouvre les gr
   CHECK(book.counters().capture_failures == 3);
 }
 
+TEST_CASE("Graphes : coupés, ils se réessaient après kRetryAfterDirect lancements directs (C21-07)",
+          "[gpu][graphs]") {
+  GraphBook<int> book(4, 3);
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    static_cast<void>(book.next(7));
+    if (attempt > 0) book.captured(false, "mémoire basse");
+  }
+  REQUIRE(book.off());
+  static_cast<void>(book.take_notice());
+  // Le moteur demande skip() avant chaque lancement ; next() compte aussi un lancement direct.
+  CHECK(book.next(7).step == GraphStep::Direct);
+  for (std::uint64_t i = 2; i < GraphBook<int>::kRetryAfterDirect; ++i) CHECK(book.skip());
+  CHECK_FALSE(book.skip());  // le 2000e : les graphes se rouvrent
+  CHECK_FALSE(book.off());
+  CHECK(book.take_notice().find("réessayés") != std::string::npos);
+  // L'entrée gardée en est à sa capture : elle se refait, et une réussite rend les rejeux.
+  CHECK(book.next(7).step == GraphStep::Capture);
+  book.captured(true);
+  CHECK(book.next(7).step == GraphStep::Replay);
+  // Trois nouveaux refus de suite les recoupent pour un autre tour.
+  CHECK(book.next(8).step == GraphStep::Warm);
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    CHECK(book.next(8).step == GraphStep::Capture);
+    book.captured(false, "mémoire basse");
+  }
+  CHECK(book.off());
+  CHECK(book.skip());
+}
+
 TEST_CASE("Graphes : registre plein, une entrée qui ne sert plus laisse sa place (A21-08)", "[gpu][graphs]") {
   GraphBook<int> book(2, 3);
   static_cast<void>(book.next(1));

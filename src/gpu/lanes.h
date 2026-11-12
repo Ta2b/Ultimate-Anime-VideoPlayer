@@ -11,9 +11,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <span>
 #include <unordered_map>
-#include <vector>
 
 namespace ajp::gpu {
 
@@ -39,9 +39,28 @@ class LaneHazards {
     std::uint64_t mark = 0;  // rang de l'opération attendue sur lane, 1 pour la première
     friend bool operator==(const Wait&, const Wait&) = default;
   };
+  // Au plus une attente par autre voie : kLanes - 1 places sans allocation (C21-06, un accès par opération
+  // de chaque image, sur le thread qui enfile le GPU). S'itère comme un vecteur.
+  class Waits {
+   public:
+    Waits() = default;
+    Waits(std::initializer_list<Wait> waits) {
+      for (const Wait& wait : waits) push_back(wait);
+    }
+    void push_back(const Wait& wait) { items_.at(count_++) = wait; }
+    const Wait* begin() const { return items_.data(); }
+    const Wait* end() const { return items_.data() + count_; }
+    bool empty() const { return count_ == 0; }
+    std::size_t size() const { return count_; }
+    friend bool operator==(const Waits& a, const Waits& b) { return std::ranges::equal(a, b); }
+
+   private:
+    std::array<Wait, kLanes - 1> items_{};
+    std::size_t count_ = 0;
+  };
   struct Op {
-    std::uint64_t mark = 0;   // rang de cette opération sur sa voie
-    std::vector<Wait> waits;  // au plus une par autre voie, la plus récente
+    std::uint64_t mark = 0;  // rang de cette opération sur sa voie
+    Waits waits;             // au plus une par autre voie, la plus récente
   };
 
   // L'opération suivante de lane, qui lit reads et écrit writes (une ressource lue et écrite va

@@ -73,6 +73,7 @@ constexpr std::array kVisibleTexts{
     Entry{"Preparing engine {}", "Préparation du moteur {}"},
     Entry{"Preparing", "Préparation"},
     Entry{"Waiting for another build on this GPU", "En attente d'une autre construction sur ce GPU"},
+    Entry{"Waiting for another build of this engine", "En attente d'une autre construction de ce moteur"},
     Entry{"Engine in cache", "Moteur en cache"},
     Entry{"Starting trtexec", "Démarrage de trtexec"},
     Entry{"Reading the model", "Lecture du modèle"},
@@ -144,6 +145,8 @@ constexpr std::array kVisibleTexts{
     Entry{"Dolby Vision profile 5 is not supported (no HDR10 or SDR picture in this file)",
           "Dolby Vision profil 5 non pris en charge (ce fichier n'a pas d'image HDR10 ou SDR)"},
     Entry{"this file has sound only, no picture to play", "ce fichier n'a que du son, aucune image à lire"},
+    Entry{"the display was turned off or disconnected: restart the player",
+          "l'écran a été éteint ou débranché : relancez le lecteur"},
     Entry{"the subtitles could not be drawn: playback continues without them",
           "les sous-titres n'ont pas pu être dessinés : la lecture continue sans eux"},
     Entry{"image subtitles (PGS, VobSub) are not supported: no subtitles",
@@ -156,10 +159,13 @@ constexpr std::array kVisibleTexts{
     Entry{"too few usable frames in the video", "trop peu d'images exploitables dans la vidéo"},
     Entry{"unnamed display", "écran sans nom"},
     Entry{"validation", "validation"},
+    Entry{"Vulkan instead", "Vulkan à la place"},
     Entry{"video", "vidéo"},
     Entry{"video frames", "images de la vidéo"},
     Entry{"writing", "écriture"},
     Entry{"{} not installed: {}", "{} non installé : {}"},
+    Entry{"{} not installed: Vulkan instead, the next launch will try again",
+          "{} non installé : Vulkan à la place, le prochain lancement réessaiera"},
     Entry{"{} not updated: Vulkan instead", "{} non mis à jour : Vulkan à la place"},
     Entry{"{} unreadable: {}", "{} illisible : {}"},
     Entry{"{} was invalid: copy kept as {}", "{} était invalide : copie gardée sous {}"},
@@ -176,8 +182,10 @@ constexpr std::array kVisibleTexts{
           "{} : pas plus rapide que TensorRT FP16 ({:.2f} fois plus vite, il faut {:.2f} ×)"},
     Entry{"{}: gain over FP16 not measured, prepare it again with the speed check",
           "{} : gain sur le FP16 non mesuré, à préparer de nouveau avec le contrôle de vitesse"},
-    Entry{"{}: prepared by an older player, gain over FP16 not measured: prepare it again",
-          "{} : préparé par un lecteur plus ancien, sans mesure du gain sur le FP16 : à préparer de nouveau"},
+    Entry{
+        "{}: prepared by an older player under an older quality and speed gate: prepare it again",
+        "{} : préparé par un lecteur plus ancien, sous une porte de qualité et de vitesse plus ancienne : à "
+        "préparer de nouveau"},
     Entry{
         "Performance mode rejected: FP8 kernels {} ms against {} ms for TensorRT FP16 ({}× as fast, at least "
         "{}× is required). Playback stays on TensorRT FP16.",
@@ -186,7 +194,16 @@ constexpr std::array kVisibleTexts{
     Entry{"TensorRT FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the quality given above.",
           "TensorRT FP16 prend ici {} ms : les noyaux FP8 vont {} fois plus vite, pour la qualité dite plus "
           "haut."},
-    Entry{"TensorRT FP16 timing", "mesure de TensorRT FP16"},
+    Entry{"TensorRT FP16 engine", "moteur TensorRT FP16"},
+    Entry{"The f16 accumulator variant is kept: it costs {} dB of mean PSNR and saves {} % of the time.",
+          "La variante à accumulateur f16 est gardée : elle coûte {} dB de PSNR moyen et fait gagner {} % du "
+          "temps."},
+    Entry{"Performance mode rejected: {} FP8 tensors would clip on the validation frames (peak at {}× their "
+          "range): the calibration frames do not cover this video. Playback stays on TensorRT FP16.",
+          "Mode Performance refusé : {} tenseurs FP8 seraient écrêtés sur les images de validation (maximum "
+          "à {} "
+          "fois leur plage) : les images de calibration ne couvrent pas cette vidéo. La lecture reste sur "
+          "TensorRT FP16."},
     Entry{"{}: kernels version {}, this engine has {}: prepare it again",
           "{} : noyaux en version {}, ce moteur a la {} : à préparer de nouveau"},
     Entry{"{}: the engine package of this version is out of date, Vulkan instead",

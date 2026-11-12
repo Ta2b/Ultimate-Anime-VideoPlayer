@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "core/log.h"
+#include "core/thread.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -138,7 +139,16 @@ struct SleepNotice::Listener {
       return;
     }
     if (!connect()) return;
-    thread = std::jthread([this](const std::stop_token& stop) { run(stop); });
+    // Par start_thread (C30-08) : sans fil, la veille se voit au réveil, comme sans bus.
+    auto started = start_thread("veille", ThreadReport([](const Refusal&) {}),
+                                [this](const std::stop_token& stop, const ThreadReport&) { run(stop); });
+    if (!started) {
+      disconnect();
+      log_channel("app")->info("veille : fil refusé ({}), la pause se fera au réveil",
+                               started.error().detail);
+      return;
+    }
+    thread = std::move(*started);
   }
 
   // Le bus système, le signal PrepareForSleep et le verrou « delay ». Faux (et rien d'ouvert) au premier

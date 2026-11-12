@@ -1,5 +1,6 @@
 #include "prepare/utf8.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -25,6 +26,15 @@ std::filesystem::path path_from_utf8(std::string_view text) {
   return core::path_from_utf8(text);
 }
 
+std::optional<bool> ansi_page_decides(std::uint32_t page, std::u16string_view text) {
+  if (text.empty() || page == 65001) return true;
+  if (page == 0) {
+    return std::ranges::all_of(text,
+                               [](char16_t c) { return c < 0x80; });  // illisible : seul l'ASCII est sûr
+  }
+  return std::nullopt;
+}
+
 #ifdef _WIN32
 namespace {
 
@@ -41,12 +51,9 @@ UINT system_ansi_code_page() {
 
 // Le texte s'écrit-il dans la page ANSI du système sans caractère de remplacement ?
 bool ansi_representable(const std::wstring& text) {
-  if (text.empty()) return true;
-  UINT page = system_ansi_code_page();
-  if (page == CP_UTF8)
-    return true;  // « Utiliser Unicode UTF-8 » : tout s'écrit, et les drapeaux ci-dessous sont interdits
-  if (page == 0) page = CP_ACP;  // illisible : la page du processus, comme avant
-  if (page == CP_UTF8) return true;
+  const UINT page = system_ansi_code_page();
+  const std::u16string wide(text.begin(), text.end());
+  if (const auto decided = ansi_page_decides(page, wide)) return *decided;
   BOOL replaced = FALSE;
   const int size = WideCharToMultiByte(page, WC_NO_BEST_FIT_CHARS, text.c_str(),
                                        static_cast<int>(text.size()), nullptr, 0, nullptr, &replaced);

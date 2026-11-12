@@ -140,6 +140,7 @@ class ThreadStages final : public Stages {
   bool playing_ = false;             // play depuis la dernière pause : l'horloge hôte reprise court
   double speed_ = 1.0;               // dernière vitesse acceptée par set_speed
   bool audio_lost_ = false;          // l'horloge hôte mène faute d'audio, jusqu'au prochain Flush
+  bool master_pending_ = false;      // l'audio n'a pas reçu SyncTo{host_clock} (boîte pleine) : à refaire
   std::int64_t audio_delay_us_ = 0;  // dernier délai audio demandé (host_must_lead)
 };
 

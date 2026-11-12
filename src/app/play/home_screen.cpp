@@ -319,8 +319,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   LatestWriter writer;
   const auto save = [&] {
     st.saved = settings_to_save(running, from_file, started, h.options);
-    writer.post("play.toml",
-                [path = h.settings_path, saved = st.saved] { return save_settings(path, saved); });
+    writer.post("play.toml", save_job(h.settings_path, st.saved));
     dirty = false;
     saved_at = host_now_us();
   };

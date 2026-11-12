@@ -48,6 +48,9 @@ class PresentFeedback {
   const pl_vulkan_present* prepare(pl_swapchain swapchain, std::int64_t now_us, std::int64_t target_us);
   // Le résultat de vkQueuePresentKHR (pl_vulkan_swapchain_submit).
   void submitted(VkResult result);
+  // Le niveau Wayland, sans swapchain (prepare l'appelle) : relit les retours du compositeur, puis demande
+  // celui de la présentation qui part. Ouvert aux tests, avec une source de retours simulée (C10-11).
+  void prepare_wayland(std::int64_t now_us);
 
   // Le niveau effectif : Timing retombe (Wayland s'il est ouvert, sinon Wait) sans domaine de temps lisible
   // ou quand rien ne revient (present_level.h : feedback_silent).
@@ -65,13 +68,13 @@ class PresentFeedback {
            level_ == PresentLevel::Wayland;
   }
   // Fréquence fixe dite par la swapchain (intervalle = durée) ou par le compositeur (rafraîchissement non
-  // nul) ; faux en VRR ou tant que rien n'est dit.
+  // nul et vblank) ; faux en VRR ou tant que rien n'est dit.
   bool fixed_refresh() const { return refresh_state() == RefreshState::Fixed; }
-  // L'état de la fréquence (6.10) : present timing seulement ; wp_presentation ne distingue pas un
-  // rafraîchissement inconnu d'un VRR, il dit seulement Fixed quand il en donne un.
+  // L'état de la fréquence (6.10) : present timing, ou le dernier retour de wp_presentation, qui ne distingue
+  // pas un rafraîchissement inconnu d'un VRR et ne dit Fixed que pour une image partie au vblank d'une
+  // période donnée (wayland_refresh_state, C10-01).
   RefreshState refresh_state() const {
-    if (level_ == PresentLevel::Wayland)
-      return refresh_duration_ != 0 ? RefreshState::Fixed : RefreshState::Unknown;
+    if (level_ == PresentLevel::Wayland) return wayland_state_;
     if (level_ != PresentLevel::Timing && level_ != PresentLevel::TimingAbsolute)
       return RefreshState::Unknown;
     return vrr_state(refresh_duration_, refresh_interval_);
@@ -123,6 +126,7 @@ class PresentFeedback {
   std::uint64_t refresh_duration_ = 0;
   std::uint64_t refresh_interval_ = 0;
   bool refresh_changed_ = false;
+  RefreshState wayland_state_ = RefreshState::Unknown;  // le dernier retour de wp_presentation
   std::uint64_t last_id_ = 0;
   std::uint64_t queue_full_ = 0;
   pl_vulkan_present present_{};

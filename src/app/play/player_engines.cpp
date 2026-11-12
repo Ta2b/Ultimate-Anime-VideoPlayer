@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <format>
 #include <string_view>
 #include <utility>
@@ -34,6 +35,7 @@
 #include "core/utf8_path.h"
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/rife.h"
+#include "prepare/cache.h"
 #include "prepare/drba_split.h"
 #include "prepare/identity.h"
 #include "prepare/rife_split.h"
@@ -49,9 +51,6 @@ constexpr std::int64_t kQuietBuildUs = 250'000;
 // sert à mesurer les tactiques.
 constexpr std::int32_t kBuildFrameMs = 100;
 
-// Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
-// superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
-// montre les détails (details, repris ensuite par les statistiques de la lecture).
 // Une vidéo glissée pendant une préparation : gardée pour la lecture, qui passe à elle (A08-08). Vrai si c'en
 // est une ; des sous-titres ou autre chose sont écartés au journal, la chaîne n'est pas encore ouverte.
 bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dropped_video,
@@ -76,6 +75,9 @@ bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dro
   return true;
 }
 
+// Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
+// superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
+// montre les détails (details, repris ensuite par les statistiques de la lecture).
 std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
     EngineBuild& build, PlaceboScreen& screen, PlayerUi& ui, const EngineLabel& engine, bool& details,
     SnapshotPlan& snapshot, std::optional<std::filesystem::path>& dropped_video,
@@ -86,6 +88,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
   const AwakeWhile awake;  // une construction dure des minutes sans touche
   std::vector<Input> actions;
   bool watch_now = false;
+  bool show_failed = false;  // une ligne de journal, pas une toutes les 100 ms
   while (true) {
     if (watch_now) {
       log_channel("app")->info("construction de {} annulée : la vidéo part sans ce moteur", engine.name);
@@ -132,8 +135,16 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
                                       engine.backend)},
           .show_details = details,
           .watch_now = &watch_now};
-      auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
-      if (!shown) return std::unexpected(std::move(shown.error()));
+      // C08-04 : une surface perdue pendant la construction (HDR du système basculé, écran débranché) n'est
+      // pas un refus du moteur : retenue sous la signature de l'étage, elle le couperait pour la séance. Le
+      // journal le dit et la construction continue ; seul un appareil perdu arrête tout.
+      if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)}); !shown) {
+        if (shown.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(shown.error()));
+        if (!show_failed)
+          log_channel("app")->warn("préparation de {} : image non présentée ({})", engine.name,
+                                   shown.error().detail);
+        show_failed = true;
+      }
     }
     // Une image toutes les 100 ms, plus tôt si un événement arrive (le résultat du moteur en pousse un).
     (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
@@ -196,42 +207,60 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   auto sha256 = run_pumped<std::string>(
       "sha256", [onnx = std::filesystem::path(onnx)] { return prepare::sha256_file_known(onnx); });
   if (!sha256) return std::unexpected(std::move(sha256.error()));
-  LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
-  auto build = EngineBuild::start(
-      EngineRequest{.library = p.library,
-                    .init = init,
-                    .model = {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256},
-                    .shapes = {.min = shape, .opt = shape, .max = shape},
-                    .builder = p.builder,
-                    .wake = &LoopWake::push,
-                    .wake_context = &ready});
-  if (!build) return std::unexpected(std::move(build.error()));
   label.backend = backend.capabilities().name;
   label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
-  note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
-  auto artifact =
-      wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video, p.options.file);
-  if (!artifact) return std::unexpected(std::move(artifact.error()));
-  if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
-  log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
-  // C45-01 : une perte de précision consentie à la vitesse (repli Vulkan) se dit à l'écran, pas au journal
-  // seul.
-  if (const i18n::Translated reduced = reduced_precision_notice(label.name, (*artifact)->reduced);
-      !reduced.empty()) {
-    p.notice = p.notice.empty() ? reduced : p.notice + i18n::Translated::data(" · ") + reduced;
+  // Un moteur repris du cache que le runtime refuse au chargement (pilote mis à jour ou changé, plan abîmé
+  // sans changer de taille) est mis de côté et reconstruit une fois : sans cela, « Réessayer » rendait le
+  // même fichier à chaque ouverture, jusqu'à un effacement du cache à la main (C05-01).
+  for (int attempt = 0;; ++attempt) {
+    LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
+    auto build = EngineBuild::start(
+        EngineRequest{.library = p.library,
+                      .init = init,
+                      .model = {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256},
+                      .shapes = {.min = shape, .opt = shape, .max = shape},
+                      .builder = p.builder,
+                      .wake = &LoopWake::push,
+                      .wake_context = &ready});
+    if (!build) return std::unexpected(std::move(build.error()));
+    note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
+    auto artifact =
+        wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video, p.options.file);
+    if (!artifact) return std::unexpected(std::move(artifact.error()));
+    if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
+    log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
+    // C45-01 : une perte de précision consentie à la vitesse (repli Vulkan) se dit à l'écran, pas au journal
+    // seul.
+    if (const i18n::Translated reduced = reduced_precision_notice(label.name, (*artifact)->reduced);
+        !reduced.empty()) {
+      p.notice = p.notice.empty() ? reduced : p.notice + i18n::Translated::data(" · ") + reduced;
+    }
+    show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
+    backend.use_lane(lane);
+    note_crash_stage(std::format("chargement du moteur {} ({})", label.name, label.backend));
+    // backend et artifact sont à l'appelant : la croix attend la fin du chargement (quelques secondes) au
+    // lieu de laisser le thread les lire détruits.
+    auto loaded = run_pumped_borrowing<std::unique_ptr<gpu::Engine>>(
+        "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
+    backend.use_lane(gpu::Lane::Upscale);
+    if (!loaded) {
+      // Seul un plan refusé par le runtime (VendorCallFailed) accuse le fichier : pas un manque de mémoire
+      // vidéo, pas un appareil perdu.
+      const bool plan_refused = loaded.error().code == RefusalCode::VendorCallFailed &&
+                                (*artifact)->cache_key.starts_with("aji-v3-");
+      if (plan_refused) {
+        const auto aside = prepare::set_aside_entry(
+            prepare::CacheEntry{.destination = (*artifact)->path, .max_wait = std::chrono::seconds(10)});
+        log_channel("app")->warn("moteur {} refusé au chargement ({}), mis de côté{}", label.name,
+                                 loaded.error().detail, aside ? "" : " : " + aside.error().detail);
+        if (aside && (*artifact)->reused && attempt == 0) continue;  // une reconstruction, une seule
+      }
+      return std::unexpected(std::move(loaded.error()));
+    }
+    p.loaded_engines.push_back(
+        {.onnx = onnx, .width = static_cast<int>(shape.dims[3]), .height = static_cast<int>(shape.dims[2])});
+    return std::optional(std::move(*loaded));
   }
-  show_loading(p.screen, p.ui, i18n::ui_tr("Loading the engines"));
-  backend.use_lane(lane);
-  note_crash_stage(std::format("chargement du moteur {} ({})", label.name, label.backend));
-  // backend et artifact sont à l'appelant : la croix attend la fin du chargement (quelques secondes) au lieu
-  // de laisser le thread les lire détruits.
-  auto loaded = run_pumped_borrowing<std::unique_ptr<gpu::Engine>>(
-      "engine-load", [&backend, &artifact] { return backend.load(**artifact); });
-  backend.use_lane(gpu::Lane::Upscale);
-  if (!loaded) return std::unexpected(std::move(loaded.error()));
-  p.loaded_engines.push_back(
-      {.onnx = onnx, .width = static_cast<int>(shape.dims[3]), .height = static_cast<int>(shape.dims[2])});
-  return std::optional(std::move(*loaded));
 }
 
 std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,

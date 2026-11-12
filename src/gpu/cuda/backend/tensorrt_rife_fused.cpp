@@ -2,6 +2,7 @@
 // .rifefused » lance trtexec sur chacun des six morceaux qu'il nomme ; « charger » les charge ensemble et
 // fait un essai de toute la chaîne. Tout refus ici fait reprendre la chaîne sur le moteur RIFE entier
 // (chain_setup.cpp) : l'ONNX d'origine n'est jamais touché.
+#include <algorithm>
 #include <format>
 #include <fstream>
 #include <iterator>
@@ -30,7 +31,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
   if (!(shapes.min == expected) || !(shapes.opt == expected) || !(shapes.max == expected)) {
     return refuse(
         RefusalCode::ShapeInvalid,
-        std::format("RIFE fusionné : forme fixe 1×11×{}×{} attendue, le manifeste dit {}×{}", h, w, h, w));
+        std::format("RIFE fusionné : forme fixe 1×11×{}×{} (celle du manifeste) attendue, demandée {}", h, w,
+                    shape_text(shapes)));
   }
   // Un moteur publié doit se désérialiser ici : sinon le constructeur le refait.
   const prepare::EngineCheck check =
@@ -100,17 +102,16 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_rife_fused(RifeFusedEngine
   }
   // La chaîne lit l'entrée, écrit les sorties, la zone d'activation et son propre contexte.
   const std::shared_ptr<SharedActivations>& zone = arena();
-  std::vector<std::uintptr_t> reads;
-  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(zone.get()),
-                                     reinterpret_cast<std::uintptr_t>(&engine)};
-  for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
-  for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
-  if (auto ok = order(reads, writes); !ok) {
+  if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) {
     engine.drop_hint();
     return ok;
   }
   const Shape shape = engine.input_shape();
-  GpuTiming& timing = stage(std::format("moteur RIFE fusionné {}×{}", shape.dims[3], shape.dims[2]));
+  // Le warp final ne sort pas de l'image (C03-03) : sa fenêtre, connue de rife_input ; sinon le tenseur.
+  const std::uintptr_t key = inputs.empty() ? 0 : inputs[0].handle + inputs[0].offset;
+  const auto known = std::ranges::find(rife_windows_, key, &RifeWindow::key);
+  engine.set_window(known != rife_windows_.end() ? known->window : kernels::Window{});
+  GpuTiming& timing = stage_named("moteur RIFE fusionné {}×{}", shape.dims[3], shape.dims[2]);
   role(Role::Interpolation).begin(stream_);
   timing.begin(stream_);
   auto queued = engine.enqueue(stream_, zone, inputs, outputs);

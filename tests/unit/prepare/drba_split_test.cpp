@@ -129,6 +129,10 @@ struct Edit {
   int tail = 4;
   std::int64_t align_corners = 1;
   bool extra_resize = false;
+  // Donne un poids aux couches de l'encodeur ; celui de /encode/cnn3_2/ConvTranspose est « w_alt » (autres
+  // octets) ou « w_twin » (mêmes octets sous un autre nom). Vide : pas de poids dans le graphe.
+  std::string encoder_weights;
+  bool antialias = false;  // les Resize filtrent avant d'échantillonner (opset 18, C04-02)
   bool pair_name_wrong = false;
   std::string rename_node;  // un nœud du câblage renommé (absent du graphe)
   std::string scale_node;   // un nœud dont la première constante est changée en 3,0
@@ -167,6 +171,7 @@ Bytes fake_drba(const Edit& e) {
     if (n.op == "Resize") {
       attrs = {{.name = "mode", .str = "linear", .is_text = true},
                {.name = "coordinate_transformation_mode", .str = "half_pixel", .is_text = true}};
+      if (e.antialias) attrs.push_back({.name = "antialias", .num = 1});
       inputs.resize(3);
       inputs[1].clear();
     } else if (n.op == "GridSample") {
@@ -179,6 +184,11 @@ Bytes fake_drba(const Edit& e) {
     }
     for (std::string& i : inputs) {
       if (i.empty() && n.op != "Resize") i = "w";
+    }
+    if (!e.encoder_weights.empty() && n.name.starts_with("/encode/") &&
+        (n.op == "Conv" || n.op == "ConvTranspose")) {
+      inputs.resize(2, "w");  // le poids de la couche (absent du graphe par défaut : l'empreinte reste)
+      if (n.name == "/encode/cnn3_2/ConvTranspose") inputs[1] = e.encoder_weights;
     }
     if (n.op == "GridSample" && !e.grid_op.empty() && inputs[1].ends_with("/cast32")) {
       // Le DistilDRBA republié (A03-18) : la grille sort d'un Cast vers FP32, sans « /cast32 ».
@@ -198,6 +208,10 @@ Bytes fake_drba(const Edit& e) {
   }
   delimited(graph, 2, text("fake"));
   delimited(graph, 5, tensor("w", 1, 1, floats({0.0})));
+  if (!e.encoder_weights.empty()) {
+    delimited(graph, 5, tensor("w_twin", 1, 1, floats({0.0})));  // mêmes octets sous un autre nom
+    delimited(graph, 5, tensor("w_alt", 1, 1, floats({0.5})));
+  }
   delimited(graph, 11, value_info(e.pair_name_wrong ? "autre" : "pair01", 10, {1, 7, -1, -1}));
   delimited(graph, 11, value_info("pair12", 10, {1, 7, -1, -1}));
   delimited(graph, 12, value_info("out", 10, {1, 3, -1, -1}));
@@ -507,6 +521,56 @@ TEST_CASE("Les morceaux DistilDRBA ne changent pas sans que leur version monte (
   CHECK(fingerprint == "431dd79645f898ebb89194c9d069bd11b9436241bd3382cd7f605594fa1c3a23");
   std::error_code ignored;
   fs::remove_all(dir, ignored);
+}
+
+TEST_CASE("C04-02 : un Resize avec antialias est refusé (DistilDRBA)", "[prepare][drba_fused]") {
+  REQUIRE(analyze_drba(fake_drba(Edit{})).has_value());
+  Edit filtered;
+  filtered.antialias = true;
+  CHECK_FALSE(analyze_drba(fake_drba(filtered)).has_value());
+}
+
+TEST_CASE("C04-05 : les trois encodeurs de DistilDRBA doivent partager leurs poids",
+          "[prepare][drba_fused]") {
+  Edit same;
+  same.encoder_weights = "w";
+  REQUIRE(analyze_drba(fake_drba(same)).has_value());
+  Edit twin;
+  twin.encoder_weights = "w_twin";  // un autre nom, les mêmes poids : reconnu
+  CHECK(analyze_drba(fake_drba(twin)).has_value());
+  Edit distinct;
+  distinct.encoder_weights = "w_alt";
+  CHECK(analyze_drba(fake_drba(distinct)).error().code == RefusalCode::FieldMissing);
+}
+
+TEST_CASE("C04-04 : le mode mouvement exige le câblage de DistilDRBA", "[prepare][drba_fused]") {
+  Edit renamed;
+  renamed.rename_node = "/Mul_59";
+  CHECK_FALSE(with_drba_motion_outputs(fake_drba(renamed)).has_value());
+}
+
+TEST_CASE("C04-08 : un nom de morceau avec « : » est refusé dans un manifeste", "[prepare][drba_fused]") {
+  DrbaFusedManifest manifest{.height = 64, .width = 64, .plan = {.tail = 4}};
+  manifest.pieces = {"a.onnx", "b.onnx", "c.onnx", "d.onnx"};
+  CHECK(parse_drba_manifest(format_drba_manifest(manifest)).has_value());
+  manifest.pieces[1] = "C:b.onnx";
+  CHECK_FALSE(parse_drba_manifest(format_drba_manifest(manifest)).has_value());
+  manifest.pieces[1] = "b.onnx:flux";
+  CHECK_FALSE(parse_drba_manifest(format_drba_manifest(manifest)).has_value());
+}
+
+TEST_CASE("C04-06 : les empreintes des morceaux se relisent dans le manifeste", "[prepare][drba_fused]") {
+  DrbaFusedManifest manifest{.height = 64, .width = 64, .plan = {.tail = 4}};
+  manifest.pieces = {"a.onnx", "b.onnx", "c.onnx", "d.onnx"};
+  manifest.sizes = {1, 2, 3, 4};
+  manifest.digests.assign(4, std::string(64, 'a'));
+  const auto parsed = parse_drba_manifest(format_drba_manifest(manifest));
+  REQUIRE(parsed);
+  CHECK(parsed->digests == manifest.digests);
+  manifest.digests.pop_back();
+  CHECK_FALSE(parse_drba_manifest(format_drba_manifest(manifest)).has_value());
+  manifest.digests.assign(4, "pas-un-sha");
+  CHECK_FALSE(parse_drba_manifest(format_drba_manifest(manifest)).has_value());
 }
 
 }  // namespace

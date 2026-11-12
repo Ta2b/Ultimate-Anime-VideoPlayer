@@ -12,6 +12,7 @@
 #include "gpu/cuda/backend/gpu_timing.h"
 #include "gpu/cuda/backend/host_upload.h"
 #include "gpu/cuda/backend/shared_activations.h"
+#include "gpu/cuda/backend/tensorrt_backend.h"
 
 namespace {
 
@@ -98,6 +99,49 @@ TEST_CASE("Activations partagées : sans mémoire du tout, refus et zone vide", 
   CHECK(refused.error().code == RefusalCode::GpuMemoryExhausted);
   CHECK(zone.data() == nullptr);
   CHECK(zone.bytes() == 0);
+}
+
+TEST_CASE(
+    "Activations partagées : l'encodage gardé tient tant qu'aucun moteur n'écrit au-dessus de lui (C03-01)",
+    "[backend_tensorrt]") {
+  SharedActivations zone;
+  int rife = 0, span = 0, drba = 0;  // des adresses qui nomment les moteurs
+  zone.used(&span, 40 * kMiB);       // SPAN sur la même zone : ses activations
+  CHECK(zone.activation_peak() == 40 * kMiB);
+  // RIFE fusionné pose ses tampons au-dessus du plus haut moteur entier, et les garde.
+  const std::int64_t from = zone.activation_peak();
+  zone.wrote(&rife, from + 8 * kMiB);
+  zone.keep(&rife, from);
+  CHECK(zone.kept_by(&rife));
+  CHECK_FALSE(zone.kept_by(&drba));
+  // SPAN repasse entre deux appels de RIFE (une seule voie) : il n'écrit que sous les tampons gardés.
+  zone.used(&span, 40 * kMiB);
+  CHECK(zone.kept_by(&rife));
+  // RIFE lui-même réécrit ses tampons : toujours à lui.
+  zone.wrote(&rife, from + 8 * kMiB);
+  CHECK(zone.kept_by(&rife));
+  // Un moteur entier plus gros écrit par-dessus : l'encodage est perdu, RIFE le refait.
+  zone.used(&span, 50 * kMiB);
+  CHECK_FALSE(zone.kept_by(&rife));
+  CHECK(zone.activation_peak() == 50 * kMiB);
+  // DistilDRBA fusionné qui écrit au-dessus de la limite fait de même.
+  zone.keep(&rife, 50 * kMiB);
+  zone.wrote(&drba, 50 * kMiB + 1);
+  CHECK_FALSE(zone.kept_by(&rife));
+  CHECK_FALSE(zone.kept_by(nullptr));
+}
+
+TEST_CASE("Voies de calcul : deux voies à partir de 7,5 Gio de mémoire et 5 Gio libres (C01-09)",
+          "[backend_tensorrt]") {
+  constexpr std::size_t kGiB = std::size_t{1} << 30;
+  constexpr int lanes = static_cast<int>(gpu::kLanes);
+  REQUIRE(lanes > 1);
+  CHECK(TensorRtBackend::lane_count(8 * kGiB, 7 * kGiB) == lanes);
+  CHECK(TensorRtBackend::lane_count(15 * kGiB / 2, 5 * kGiB) == lanes);  // les deux bornes comprises
+  CHECK(TensorRtBackend::lane_count(15 * kGiB / 2 - 1, 7 * kGiB) == 1);  // une 6 Go, ou une 8 Go qui ment
+  CHECK(TensorRtBackend::lane_count(6 * kGiB, 6 * kGiB) == 1);
+  CHECK(TensorRtBackend::lane_count(16 * kGiB, 5 * kGiB - 1) == 1);  // un jeu tient déjà la carte
+  CHECK(TensorRtBackend::lane_count(0, 0) == 1);
 }
 
 TEST_CASE("Envois depuis l'hôte : disposition des plans, tailles impaires comprises (B01-09)",

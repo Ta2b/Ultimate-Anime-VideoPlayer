@@ -158,15 +158,18 @@ struct ChainEngines {
   // ramenés à Équilibre (stage_fallback.h) ; stage_notes dit ce qui a changé.
   PlaySettings played;
   std::vector<StageNote> stage_notes;
-  bool fallback_fresh = false;
-  std::vector<LoadedEngine> loaded_engines;  // B08-12 : pour les badges de l'onglet Moteurs  // B08-02 : un
-                                             // repli interne refusé à cette ouverture, pas retenu d'avant
+  bool fallback_fresh = false;  // B08-02 : un repli interne refusé à cette ouverture, pas retenu d'avant
+  std::vector<LoadedEngine> loaded_engines;  // B08-12 : pour les badges de l'onglet Moteurs
 
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }
   bool interpolates() const { return rife || rife_motion || use_drba(); }
   // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
+  // C08-08 : le moteur dans la clé de la mémoire de l'Auto (core/auto_memory.h) : l'interpolation, son
+  // modèle, fusionné ou entier, image ou mouvement, et le SPAN chargé (span_variant : FP16, FP8, INT8). Un
+  // palier appris sur RIFE 4.25 lite ne vaut pas pour RIFE 4.26.
+  std::string auto_memory_engine(std::string_view span_variant) const;
   // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
   std::string motion_label(const PlaySettings& settings) const;
   // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », « Anime4K ×2 · M · mode A · … », ou « sans
@@ -204,8 +207,16 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 
 // Échelle par paire (chain_half.cpp) : le second RIFE mouvement, à demi-taille, dans c.rife_motion_half quand
 // settings.pair_scale le demande et que c a un RIFE mouvement. Rien si l'utilisateur ferme la fenêtre ; un
-// refus laisse la lecture à pleine taille (journal).
+// refus laisse la lecture à pleine taille (journal), retenu pour la séance dans inner (C08-12).
 std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
-                                   const PlaySettings& settings, const std::filesystem::path& models_dir);
+                                   const PlaySettings& settings, InnerFallbacks& inner,
+                                   const std::string& library, const std::filesystem::path& models_dir);
+
+// RIFE (chain_rife.cpp) : c.rife_size, la géométrie, puis le fusionné, la variante mouvement ou RIFE image,
+// au cran de précision de settings. Faux : la fenêtre fermée pendant une construction ; un refus de l'étage
+// le rend.
+std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                            const PlaySettings& settings, InnerFallbacks& inner,
+                                            const std::string& library);
 
 }  // namespace ajp::app::play

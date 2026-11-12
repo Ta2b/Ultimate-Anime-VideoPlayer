@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -104,4 +105,17 @@ TEST_CASE("ansi_safe_path : un chemin hors de la page ANSI prend son nom court (
 #endif
   CHECK(ajp::prepare::ansi_safe_path(fs::path("C:/ascii/fichier.onnx")) == "C:/ascii/fichier.onnx");
   fs::remove_all(dir);
+}
+
+TEST_CASE("C04-07 : la page système illisible ne rend pas un chemin ASCII non représentable",
+          "[prepare][utf8]") {
+  using ajp::prepare::ansi_page_decides;
+  // Page 0 : la lecture de la page système a échoué. L'ASCII passe, le reste n'est pas prouvé.
+  CHECK(ansi_page_decides(0, u"C:/models/rife.onnx") == std::optional<bool>(true));
+  CHECK(ansi_page_decides(0, u"C:/mod\u00e8les/rife.onnx") == std::optional<bool>(false));
+  CHECK(ansi_page_decides(0, u"") == std::optional<bool>(true));
+  // UTF-8 système : tout s'écrit.
+  CHECK(ansi_page_decides(65001, u"C:/\u65e5\u672c/rife.onnx") == std::optional<bool>(true));
+  // Une vraie page (1252) : seul Windows peut dire si le texte y tient.
+  CHECK_FALSE(ansi_page_decides(1252, u"C:/mod\u00e8les").has_value());
 }

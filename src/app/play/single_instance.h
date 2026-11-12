@@ -7,6 +7,7 @@
 // Protocole : une ligne UTF-8 par fichier, puis une ligne vide ; le premier répond « ok ».
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -39,8 +40,13 @@ struct InstanceClaim {
 
 // Prend le canal ou passe files au lecteur qui le tient. channel_dir porte le socket Unix (ignoré sous
 // Windows). Ne lève rien ; un échec du système laisse le lancement démarrer seul.
+// take_over : un lecteur relancé (--relaunched=) remplace celui qui tient encore le canal (C31-03, C18-03) :
+// une fermeture figée sur le GPU relance avant que l'ancien processus ne meure. Il ne lui passe jamais ses
+// fichiers (l'ancien va disparaître avec eux) ; il attend que le canal se libère, au plus kTakeOverWait, puis
+// démarre seul.
+inline constexpr auto kTakeOverWait = std::chrono::seconds(10);
 InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::string_view key,
-                             const std::vector<std::string>& files);
+                             const std::vector<std::string>& files, bool take_over = false);
 
 // Remet des fichiers dans la file de SDL, comme un glisser-déposer venu d'un autre lancement (la fenêtre
 // passe devant). Faux si SDL en refuse un. Sert aussi à rendre à la boucle suivante les vidéos reçues

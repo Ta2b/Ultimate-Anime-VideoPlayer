@@ -185,9 +185,10 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
                  : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest "
                             "(C4F16 more than C4F32)."));
   if (anime4k_size(current))
-    note(
-        i18n::tr("Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B "
-                 "or C follows the source and the downscale."));
+    note(i18n::tr(
+        "Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B "
+        "or C follows the source and the downscale. SDR sources only: an HDR source is upscaled by the "
+        "display."));
 }
 
 }  // namespace
@@ -418,7 +419,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   if (ImGui::BeginCombo(i18n::tr("Multiplier"), factor_shown.c_str())) {
     if (!exporting && ImGui::Selectable(i18n::tr("Auto"), d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
-      if (now.num <= now.den) d.rife_factor = 8;  // le plafond du mode auto
+      if (now.num <= now.den) d.rife_factor = core::kAutoMaxStep;  // ×10, le plafond de l'Auto (C12-06)
       d.rife_factor_den = 1;
     }
     for (const Factor factor : kFactors) {

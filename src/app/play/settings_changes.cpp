@@ -56,8 +56,8 @@ std::string settings_changes_text(const PlaySettings& settings) {
 }
 
 void note_preset_facts(const PlaySettings& settings) {
-  note_report_fact("Préréglage", label(settings.preset));
-  note_report_fact("Réglages changés", "\n" + settings_changes_text(settings));
+  note_report_fact("Préréglage", label(settings.preset));                        // i18n-ok : rapport
+  note_report_fact("Réglages changés", "\n" + settings_changes_text(settings));  // i18n-ok : rapport
 }
 
 }  // namespace ajp::app::play

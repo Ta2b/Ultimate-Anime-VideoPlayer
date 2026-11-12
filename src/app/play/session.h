@@ -408,6 +408,13 @@ class Session {
   void note_queue_wait(std::int64_t acquire_us, std::int64_t period);
   std::int64_t display_period() const;  // la période de l'écran, connue, mesurée ou supposée
   std::int64_t display_delay_us(std::int64_t period) const;
+  // L'avance du choix d'image par seuil de pts : le délai d'affichage et une demi-période d'arrondi.
+  std::int64_t pick_lead_us(std::int64_t period) const { return display_delay_us(period) + period / 2; }
+  // Du choix à l'apparition, sans l'attente moyenne du vsync (C13-04) : le vblank où paraît une image
+  // présentée maintenant est le premier après ce délai.
+  std::int64_t appear_delay_us(std::int64_t period) const;
+  std::int64_t source_period() const;            // la période de la source, ou 24 i/s faute de mieux
+  bool media_over(std::int64_t host_now) const;  // l'horloge a passé la fin du média (C13-03)
 
   double speed_ = 1.0;
   // Calage de phase de la vitesse calée (A12-06) : nourri par la position des images neuves sur la grille

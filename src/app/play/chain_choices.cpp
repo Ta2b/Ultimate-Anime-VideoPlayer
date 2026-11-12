@@ -18,6 +18,7 @@
 #include "app/play/settings.h"
 #include "app/play/span_int8.h"
 #include "app/play/stage_fallback.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 
@@ -55,13 +56,14 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .opened = c.opened,
       .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},
       .default_rife_model = c.rife_choice ? c.rife_choice->default_name : std::string(),
-      .rife_folder = c.model_places.front().string(),
+      .rife_folder = core::to_utf8(c.model_places.front()),
       .hdr_output = p.screen.hdr_output(),
       .auto_peak = auto_peak,
       .engines = engine_badges(p.paths.engines, c.loaded_engines),
       .chosen_engines = chosen_line(p.engines),
       .engine_in_use = engine_of_library(p.library->path()),
-      .engine_note = fallback_note(p.engines, p.library->path(), gpu_facts(p.screen)),
+      .engine_note =
+          fallback_note(p.engines, p.library->path(), gpu_facts(p.screen), p.library->passed_over_code()),
       .display_text = p.display ? describe(*p.display) : std::string("EDID illisible : OLED inconnu"),
       .source_file = p.options.file,
       .display_height = display_height(out.window()),

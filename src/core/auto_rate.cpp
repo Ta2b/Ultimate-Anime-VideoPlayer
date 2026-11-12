@@ -166,13 +166,22 @@ void AutoRate::set_ceiling(int ceiling, int granularity) {
   granularity = auto_granularity(granularity);
   if (granularity != granularity_) {
     // D'une unité à l'autre, l'arrondi est vers le bas : jamais un palier plus haut que celui qui tenait.
-    // Les coûts se comptent en images créées, ils passent tels quels.
+    // Le palier courant part de son facteur exact (×6,88 et non les 14 demi-paliers de son arrondi, qui
+    // feraient ×7 au pas fin, au-dessus d'un écran de 165 Hz). Les coûts se comptent en images créées, ils
+    // passent tels quels.
     const int from = granularity_;
     const auto convert = [&](int value) { return value > 0 ? std::max(value * granularity / from, 1) : 0; };
-    step_ = std::max(convert(step_), granularity);
+    const Ratio held = factor();
+    const auto exact_step = static_cast<int>(
+        std::floor(static_cast<double>(held.num) * granularity / static_cast<double>(held.den) + 1e-9));
+    step_ = std::max(exact_step, granularity);
     cap_ = convert(cap_);
     hint_ = convert(hint_);
     fails_.fill({});
+    // Les paliers calés se comptaient dans l'ancienne unité : snap_down ne doit plus les lire (le VRR qui
+    // s'arme faisait tomber ×6,88 au plancher, ×1). set_locked donne ensuite ceux de la nouvelle.
+    locked_.clear();
+    exact_.clear();
     granularity_ = granularity;
     clean_ = 0;
     probing_ = false;
@@ -192,8 +201,20 @@ void AutoRate::set_ceiling(int ceiling) {
   }
 }
 
+int AutoRate::step_of_centi(int centi) const {
+  // Un palier calé se retrouve par son facteur exact (344 : ×3,44, le palier 7 en demi-paliers), qu'une
+  // division entière ramenait au palier d'en dessous ; à 1 centième près, l'arrondi de centi().
+  if (exact_.size() == locked_.size() && !exact_.empty()) {
+    int best = granularity_;
+    for (std::size_t i = 0; i < locked_.size(); ++i)
+      if (std::lround(exact_[i].value() * 100.0) <= centi + 1) best = std::max(best, locked_[i]);
+    return best;
+  }
+  return static_cast<int>(std::lround(static_cast<double>(centi) * granularity_ / 100.0));
+}
+
 void AutoRate::seed(int remembered_centi, std::int64_t now_us) {
-  hint_ = std::clamp(remembered_centi * granularity_ / 100, granularity_, ceiling_);
+  hint_ = std::clamp(step_of_centi(remembered_centi), granularity_, ceiling_);
   step_ = snap_down(std::clamp(hint_ - (fine() ? std::max(2, hint_ * 8 / 100) : 1), granularity_, ceiling_));
   reason_ = AutoReason::Memory;
   last_change_us_ = now_us - kMinRiseGapUs;
@@ -297,6 +318,22 @@ void AutoRate::descend(AutoReason reason, std::int64_t now_us, int steps) {
   changed(reason, now_us);
 }
 
+int AutoRate::fine_gain(int target, std::int64_t now_us) const {
+  // Bande morte de 6 % ; en régime un changement toutes les 5 s au plus, de la moitié de l'écart (1 à 12 %
+  // du palier) ; loin sous le palier prédit (scène allégée) : les deux tiers de l'écart, jusqu'à 40 %, dès
+  // la seconde suivante. Le dernier cran vers le plafond de l'écran passe la bande morte : sans cela, la
+  // montée s'arrêtait 3 à 5 % sous la fréquence de l'écran (160 i/s à 165 Hz).
+  const int gain = target - step_;
+  const bool to_ceiling = target >= ceiling_ && gain >= 1;
+  if (gain < dead_band() && !to_ceiling) return 0;
+  const bool far = static_cast<double>(gain) >= kFarRatio * static_cast<double>(step_);
+  if (!far && now_us - last_change_us_ < kSteadyGapUs) return 0;
+  // Moins que la bande morte jusqu'au plafond : tout l'écart d'un coup.
+  if (to_ceiling && gain < dead_band()) return gain;
+  return far ? std::clamp(gain * 2 / 3, 1, std::max(1, step_ * 40 / 100))
+             : std::clamp((gain + 1) / 2, 1, std::max(1, step_ * 12 / 100));
+}
+
 void AutoRate::try_rise(std::int64_t now_us) {
   if (step_ >= ceiling_ || pairs_ < kMinPairs || clean_ < kRisePairs || now_us < hold_until_us_ ||
       now_us - last_change_us_ < kMinRiseGapUs || missed_in_window(now_us) > 0)
@@ -312,18 +349,13 @@ void AutoRate::try_rise(std::int64_t now_us) {
     }
   } else {  // aucune mesure de coût : comme avant, lentement, et plus lentement sous un plafond appris
     const std::uint32_t needed = cap_strength(now_us) >= 0.25 ? kBlindRisePairs * 4 : kBlindRisePairs;
-    if (clean_ >= needed) target = step_ + 1;
+    // Au pas fin, un cran de 1/24 resterait toujours sous la bande morte : l'Auto ne monterait jamais.
+    if (clean_ >= needed) target = step_ + (fine() ? dead_band() : 1);
   }
+  target = std::min(target, ceiling_);
   int gain = target - step_;
   if (fine()) {
-    // Bande morte de 6 % ; en régime un changement toutes les 5 s au plus, de la moitié de l'écart (1 à 12 %
-    // du palier) ; loin sous le palier prédit (scène allégée) : les deux tiers de l'écart, jusqu'à 40 %, dès
-    // la seconde suivante.
-    if (gain < std::max(1, static_cast<int>(step_ * kDeadBand))) return;
-    const bool far = static_cast<double>(gain) >= kFarRatio * static_cast<double>(step_);
-    if (!far && now_us - last_change_us_ < kSteadyGapUs) return;
-    gain = far ? std::clamp(gain * 2 / 3, 1, std::max(1, step_ * 40 / 100))
-               : std::clamp((gain + 1) / 2, 1, std::max(1, step_ * 12 / 100));
+    gain = fine_gain(target, now_us);
   } else if (!locked_.empty()) {
     // Le palier calé suivant, s'il tient sous la prédiction (ou à l'aveugle, après les paires propres).
     const int next = snap_up(step_ + 1);
