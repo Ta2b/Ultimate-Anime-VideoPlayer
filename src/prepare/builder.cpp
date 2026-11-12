@@ -306,6 +306,73 @@ std::optional<Refusal> wrong_device(const std::optional<std::string>& selected, 
       std::format("trtexec a construit sur {} au lieu de la carte du rendu, {}", *selected, wanted)};
 }
 
+// Ce qu'une ligne de trtexec met à jour pendant un essai de construction.
+struct TrtexecLineState {
+  std::ofstream& log_file;
+  TrtexecProgress& parsed;
+  std::optional<std::string>& selected;  // la carte où trtexec dit construire
+  bool& cache_complaint;                 // une ligne d'erreur qui parle du cache (B05-03)
+  std::string& reported_version;         // « v110300 » de la ligne RUNNING (C05-10)
+  gpu::Progress& progress;
+};
+
+void read_trtexec_line(std::string_view line, const TrtexecLineState& state) {
+  state.log_file << line << '\n';
+  if (!state.selected) state.selected = trtexec_selected_device(line);
+  if (line.find("[E]") != std::string_view::npos && mentions_cache(line)) state.cache_complaint = true;
+  if (auto step = state.parsed.feed(line)) report(state.progress, step->fraction, step->stage);
+  if (state.reported_version.empty()) state.reported_version = TrtexecProgress::reported_version(line);
+}
+
+// Un chemin que trtexec ne sait pas lire sous Windows (hors de la page ANSI, sans nom court) : le refus qui
+// le dit ; rien sinon.
+std::optional<Refusal> unreachable_refusal(const std::vector<fs::path>& paths) {
+  const std::string bad = unreachable_by_trtexec(paths);
+  if (bad.empty()) return std::nullopt;
+  return Refusal{RefusalCode::CacheIo,
+                 "trtexec ne sait pas lire ce chemin (nom hors de la page ANSI de Windows, pas de nom court "
+                 "8.3 sur ce "
+                 "volume) : " +
+                     bad +
+                     ". Placez les modèles et le dossier des moteurs dans un chemin en lettres latines, "
+                     "ou activez « Utiliser Unicode UTF-8 » dans les paramètres régionaux de Windows."};
+}
+
+// Le TensorRT que trtexec dit avoir chargé (« v110300 » de sa ligne RUNNING), s'il n'est pas celui du
+// lecteur.
+std::optional<Refusal> runtime_mismatch(const std::string& reported_version, const TrtRuntime& runtime,
+                                        const fs::path& log_file) {
+  if (reported_version.empty()) return std::nullopt;
+  int number = 0;
+  const auto digits = std::string_view(reported_version).substr(1);
+  if (std::from_chars(digits.data(), digits.data() + digits.size(), number).ec != std::errc{})
+    return std::nullopt;
+  const TrtRuntime seen = decode_infer_lib_version(number);
+  if (seen.major == runtime.major && seen.minor == runtime.minor && seen.patch == runtime.patch)
+    return std::nullopt;
+  return Refusal{RefusalCode::BuilderFailed,
+                 std::format("trtexec a chargé TensorRT {}.{}.{} au lieu de {}.{}.{} du lecteur : une autre "
+                             "bibliothèque passe devant celle du moteur installé (LD_LIBRARY_PATH, PATH) ; "
+                             "journal : {}",
+                             seen.major, seen.minor, seen.patch, runtime.major, runtime.minor, runtime.patch,
+                             utf8_path(log_file))};
+}
+
+// Après une construction réussie : le moteur est écrit, et le modèle n'a pas changé depuis son hachage.
+std::optional<Refusal> built_mismatch(const fs::path& output, const gpu::ModelSpec& model,
+                                      const ModelSource& source, const std::string& input_name,
+                                      const fs::path& log_file) {
+  if (!is_published(output))
+    return Refusal{RefusalCode::BuilderFailed,
+                   "trtexec a réussi sans écrire de moteur ; journal : " + utf8_path(log_file)};
+  auto after = read_model(model, input_name);
+  if (!after) return after.error();
+  if (after->content_key != source.content_key)
+    return Refusal{RefusalCode::ModelMismatch,
+                   utf8_path(model.onnx_path) + " a changé pendant la construction"};
+  return std::nullopt;
+}
+
 }  // namespace
 
 std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gpu::ModelSpec& model,
@@ -317,17 +384,8 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   if (auto replaced = trtexec_replaced(config_)) return std::unexpected(std::move(*replaced));
   const fs::path staged_cache = output.parent_path() / "timing.cache";
   const fs::path staged_layers = output.parent_path() / "layers.json";
-  if (const std::string bad = unreachable_by_trtexec({model.onnx_path, output, staged_layers, staged_cache});
-      !bad.empty()) {
-    return std::unexpected(
-        Refusal{RefusalCode::CacheIo,
-                "trtexec ne sait pas lire ce chemin (nom hors de la page ANSI de Windows, pas de nom court "
-                "8.3 sur ce "
-                "volume) : " +
-                    bad +
-                    ". Placez les modèles et le dossier des moteurs dans un chemin en lettres latines, "
-                    "ou activez « Utiliser Unicode UTF-8 » dans les paramètres régionaux de Windows."});
-  }
+  if (auto unreachable = unreachable_refusal({model.onnx_path, output, staged_layers, staged_cache}))
+    return std::unexpected(std::move(*unreachable));
   const bool cached = stage_timing_cache(timing_cache, staged_cache, *log_);
   // Un cache persistant qu'on n'a pas pu copier (fichier tenu par un antivirus) n'est pas remplacé par celui
   // de cette seule construction : il garde les mesures de tous les modèles et de toutes les tailles (C05-07).
@@ -357,11 +415,12 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
     auto exit = run_process(
         spec,
         [&](std::string_view line) {
-          log_file << line << '\n';
-          if (!selected) selected = trtexec_selected_device(line);
-          if (line.find("[E]") != std::string_view::npos && mentions_cache(line)) cache_complaint = true;
-          if (auto step = parsed.feed(line)) report(progress, step->fraction, step->stage);
-          if (reported_version.empty()) reported_version = TrtexecProgress::reported_version(line);
+          read_trtexec_line(line, {.log_file = log_file,
+                                   .parsed = parsed,
+                                   .selected = selected,
+                                   .cache_complaint = cache_complaint,
+                                   .reported_version = reported_version,
+                                   .progress = progress});
         },
         progress.stop);
     if (!exit) {
@@ -408,35 +467,10 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   if (cached && !cache_suspect && replace_cache) clear_strike(timing_cache);
   // trtexec peut charger un autre libnvinfer que le lecteur (LD_LIBRARY_PATH d'un autre outil CUDA, TensorRT
   // du système) : son plan serait refusé au chargement, à chaque ouverture, sans dire pourquoi (C05-10).
-  if (!reported_version.empty()) {
-    int number = 0;
-    const auto digits = std::string_view(reported_version).substr(1);  // « v110300 »
-    if (std::from_chars(digits.data(), digits.data() + digits.size(), number).ec == std::errc{}) {
-      const TrtRuntime seen = decode_infer_lib_version(number);
-      if (seen.major != config_.runtime.major || seen.minor != config_.runtime.minor ||
-          seen.patch != config_.runtime.patch) {
-        return std::unexpected(Refusal{
-            RefusalCode::BuilderFailed,
-            std::format("trtexec a chargé TensorRT {}.{}.{} au lieu de {}.{}.{} du lecteur : une autre "
-                        "bibliothèque passe devant celle du moteur installé (LD_LIBRARY_PATH, PATH) ; "
-                        "journal : {}",
-                        seen.major, seen.minor, seen.patch, config_.runtime.major, config_.runtime.minor,
-                        config_.runtime.patch, utf8_path(plan.log_file))});
-      }
-    }
-  }
-  if (!is_published(output)) {
-    return std::unexpected(
-        Refusal{RefusalCode::BuilderFailed,
-                "trtexec a réussi sans écrire de moteur ; journal : " + utf8_path(plan.log_file)});
-  }
-  // Le moteur doit correspondre au modèle haché avant la construction.
-  auto after = read_model(model, config_.input_name);
-  if (!after) return std::unexpected(after.error());
-  if (after->content_key != source.content_key) {
-    return std::unexpected(Refusal{RefusalCode::ModelMismatch,
-                                   utf8_path(model.onnx_path) + " a changé pendant la construction"});
-  }
+  if (auto other = runtime_mismatch(reported_version, config_.runtime, plan.log_file))
+    return std::unexpected(std::move(*other));
+  if (auto changed = built_mismatch(output, model, source, config_.input_name, plan.log_file))
+    return std::unexpected(std::move(*changed));
   if (check_) {
     if (auto usable = check_(output); !usable) return usable;
   }

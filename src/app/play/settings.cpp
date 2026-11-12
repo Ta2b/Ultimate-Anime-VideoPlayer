@@ -561,6 +561,20 @@ Change reopen_for(const std::vector<std::string>& reasons) {
                 .reason = reason + i18n::tr(" ; playback resumes at the same spot")};
 }
 
+// Le fusionné allumé ou éteint pour l'interpolation demandée : RIFE (six moteurs) ou DistilDRBA (quatre).
+void add_fused_reasons(std::vector<std::string>& reopen, const PlaySettings& base,
+                       const PlaySettings& wanted) {
+  if (wanted.rife_factor < 2) return;
+  if (wanted.motion_engine == MotionEngine::Rife && base.rife_fused != wanted.rife_fused)
+    reopen.emplace_back(wanted.rife_fused
+                            ? i18n::tr("fused RIFE (six engines, built the first time for this size)")
+                            : i18n::tr("whole RIFE instead of fused RIFE"));
+  if (wanted.motion_engine == MotionEngine::DistilDrba && base.drba_fused != wanted.drba_fused)
+    reopen.emplace_back(wanted.drba_fused
+                            ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
+                            : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
+}
+
 }  // namespace
 
 // Le moteur d'interpolation chargé : celui de l'ouverture, pas le réglage en cours. Interpolation coupée, un
@@ -599,16 +613,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
     reopen.emplace_back(i18n::tr("the interpolation engine loads (built the first time for this size)"));
   if (wanted.rife_factor >= 2 && base.motion_engine != wanted.motion_engine)
     reopen.emplace_back(i18n::tr("the interpolation engine changes"));
-  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
-      base.rife_fused != wanted.rife_fused)
-    reopen.emplace_back(wanted.rife_fused
-                            ? i18n::tr("fused RIFE (six engines, built the first time for this size)")
-                            : i18n::tr("whole RIFE instead of fused RIFE"));
-  if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::DistilDrba &&
-      base.drba_fused != wanted.drba_fused)
-    reopen.emplace_back(wanted.drba_fused
-                            ? i18n::tr("fused DistilDRBA (four engines, built the first time for this size)")
-                            : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
+  add_fused_reasons(reopen, base, wanted);
   add_rife_option_reasons(reopen, base, wanted);
   if (wanted.rife_factor >= 2 && wanted.motion_engine == MotionEngine::Rife &&
       base.rife_model != wanted.rife_model)

@@ -145,6 +145,37 @@ std::string variant_scores(const SpanInt8& variant) {
       std::format("{:.1f}", variant.psnr_worst_db), std::format("{:.4f}", variant.ssim_worst));
 }
 
+// Étape 3.7b : un paquet v2 ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé ;
+// rien quand il vaut pour fp8.
+std::optional<SpanInt8Lookup> size_judgement(const toml::table& receipt, const std::string& where,
+                                             const SpanFp8Context& fp8, bool old_gate,
+                                             const SpanInt8& variant) {
+  if (auto old = outdated(receipt, where, fp8, old_gate)) return *old;
+  const std::string size = gpu::span_fp8::size_key(fp8.width, fp8.height);
+  const auto listed = [&](std::string_view key) {
+    if (const toml::array* sizes = receipt[key].as_array())
+      for (const toml::node& entry : *sizes)
+        if (entry.value_or(std::string_view()) == size) return true;
+    return false;
+  };
+  if (listed("refused_sizes")) {
+    const std::string note = i18n::tr_format("{}: rejected at {}", where, size);
+    if (listed(gate_refusals_key())) {
+      SpanInt8Lookup out = refused(note);
+      out.unjudged = variant;
+      return out;
+    }
+    // Refusé par un lecteur plus ancien : la porte d'aujourd'hui rejuge cette taille.
+  }
+  if (!listed("validated_sizes") || listed("refused_sizes")) {
+    SpanInt8Lookup pending = refused(i18n::tr_format("{}: not validated at {} yet", where, size));
+    pending.unvalidated_size = size;
+    pending.unjudged = variant;
+    return pending;
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 bool span_fp8_cutlass_model(const std::filesystem::path& span) {
@@ -241,30 +272,7 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
           package_differs(variant.onnx, receipt["model_sha256"].value_or(std::string_view()), where))
     return *differs;
   if (v2 && fp8 != nullptr) {
-    // Étape 3.7b : le paquet ne vaut que pour l'appareil, les noyaux et les tailles où la porte l'a jugé.
-    if (auto old = outdated(receipt, where, *fp8, old_gate)) return *old;
-    const std::string size = gpu::span_fp8::size_key(fp8->width, fp8->height);
-    const auto listed = [&](std::string_view key) {
-      if (const toml::array* sizes = receipt[key].as_array())
-        for (const toml::node& entry : *sizes)
-          if (entry.value_or(std::string_view()) == size) return true;
-      return false;
-    };
-    if (listed("refused_sizes")) {
-      const std::string note = i18n::tr_format("{}: rejected at {}", where, size);
-      if (listed(gate_refusals_key())) {
-        SpanInt8Lookup out = refused(note);
-        out.unjudged = variant;
-        return out;
-      }
-      // Refusé par un lecteur plus ancien : la porte d'aujourd'hui rejuge cette taille.
-    }
-    if (!listed("validated_sizes") || listed("refused_sizes")) {
-      SpanInt8Lookup pending = refused(i18n::tr_format("{}: not validated at {} yet", where, size));
-      pending.unvalidated_size = size;
-      pending.unjudged = variant;
-      return pending;
-    }
+    if (auto judged = size_judgement(receipt, where, *fp8, old_gate, variant)) return *judged;
   }
   return SpanInt8Lookup{.variant = variant,
                         .note = std::format("{} ({})", prepare::utf8_path(onnx.filename()), scores)};

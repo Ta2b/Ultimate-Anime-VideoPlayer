@@ -224,6 +224,40 @@ std::expected<void, Refusal> swap_in_place(const core::EnginePackage& package,
   return {};
 }
 
+// Sous Windows, curl et tar relisent leur ligne de commande dans la page ANSI : un chemin qu'elle ne sait
+// pas écrire et qui n'a pas de nom court (8.3) deviendrait « ???? », et l'échec ne dirait pas pourquoi. On
+// le sait avant de tirer un octet (C06-07). Toujours vrai hors de Windows.
+std::expected<void, Refusal> ansi_paths(const EngineCatalog& catalog, const core::EnginePackage& package,
+                                        const std::filesystem::path& part) {
+  std::filesystem::path staging_dir = core::engine_dir(catalog.layout, package);
+  staging_dir += ".partiel";
+  for (const std::filesystem::path& each : {part, staging_dir, catalog.layout.downloads}) {
+    if (!prepare::ansi_command_path(each)) {
+      return refuse(RefusalCode::FileUnwritable,
+                    i18n::tr_format("this folder cannot be passed to curl and tar (name outside the Windows "
+                                    "ANSI code page, no short 8.3 name): {}. Choose another engines folder "
+                                    "or enable \"Use Unicode UTF-8\" in the Windows region settings",
+                                    core::to_utf8(each)));
+    }
+  }
+  return {};
+}
+
+// La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
+// installation recommencée. Le relevé va au journal.
+std::expected<void, Refusal> install_fits(const EngineCatalog& catalog, const core::EnginePackage& package,
+                                          const std::string& cuda_arch, const std::string& name) {
+  const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
+  const InstallSpace space = install_space_in(catalog, package, cuda_arch, target_dir);
+  log_channel("app")->info(
+      "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})",
+      name,  // i18n-ok : journal
+      cuda_arch.empty() ? i18n::tr("unknown (all files)") : cuda_arch, format_size(space.download),
+      format_size(space.installed), format_size(space.peak), format_size(free_bytes(catalog.layout.engines)),
+      core::to_utf8(catalog.layout.engines.filename()));
+  return check_space(space, free_bytes(catalog.layout.engines), catalog.layout.engines);
+}
+
 std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog& catalog,
                                                             const core::EnginePackage& package,
                                                             const InstallProgress& progress,
@@ -249,17 +283,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
   };
   std::error_code error;
   step = i18n::tr("checking free space");
-  // La place d'abord : un refus net, sans téléchargement, plutôt qu'un disque qui se remplit puis une
-  // installation recommencée.
-  const std::filesystem::path target_dir = core::engine_dir(catalog.layout, package);
-  const InstallSpace space = install_space_in(catalog, package, progress.cuda_arch, target_dir);
-  log_channel("app")->info(
-      "installation de {} : architecture {}, à tirer {}, installé {}, pic {}, libre {} ({})",
-      name,  // i18n-ok : journal
-      progress.cuda_arch.empty() ? i18n::tr("unknown (all files)") : progress.cuda_arch,
-      format_size(space.download), format_size(space.installed), format_size(space.peak),
-      format_size(free_bytes(catalog.layout.engines)), core::to_utf8(catalog.layout.engines.filename()));
-  if (const auto fits = check_space(space, free_bytes(catalog.layout.engines), catalog.layout.engines); !fits)
+  if (auto fits = install_fits(catalog, package, progress.cuda_arch, name); !fits)
     return std::unexpected(fits.error());
   const std::filesystem::path part = core::download_path(catalog.layout, package.sha256);
   std::filesystem::create_directories(part.parent_path(), error);
@@ -267,23 +291,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     return refuse(RefusalCode::FileUnwritable,
                   std::format("{} : {}", core::to_utf8(part.parent_path()), error.message()));
 
-  // Sous Windows, curl et tar relisent leur ligne de commande dans la page ANSI : un chemin qu'elle ne sait
-  // pas écrire et qui n'a pas de nom court (8.3) deviendrait « ???? », et l'échec ne dirait pas pourquoi. On
-  // le sait avant de tirer un octet (C06-07). Toujours vrai hors de Windows.
-  {
-    std::filesystem::path staging_dir = core::engine_dir(catalog.layout, package);
-    staging_dir += ".partiel";
-    for (const std::filesystem::path& each : {part, staging_dir, catalog.layout.downloads}) {
-      if (!prepare::ansi_command_path(each)) {
-        return refuse(
-            RefusalCode::FileUnwritable,
-            i18n::tr_format("this folder cannot be passed to curl and tar (name outside the Windows "
-                            "ANSI code page, no short 8.3 name): {}. Choose another engines folder "
-                            "or enable \"Use Unicode UTF-8\" in the Windows region settings",
-                            core::to_utf8(each)));
-      }
-    }
-  }
+  if (auto paths = ansi_paths(catalog, package, part); !paths) return std::unexpected(paths.error());
   // Le transfert reprend un .part laissé par un essai interrompu ; un .part déjà complet mais faux
   // repart de zéro.
   const auto resumed = core::verify_file(part, package.size, package.sha256, progress.stop);
