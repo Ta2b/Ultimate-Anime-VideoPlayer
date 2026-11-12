@@ -6,7 +6,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -37,10 +39,15 @@ void clear_report_facts();
 // Le système en une ligne : « Arch Linux · noyau 6.12 », « Windows 10.0.26100 », « macOS (Darwin 24.1) ».
 std::string os_description();
 
-// Le build-id GNU de l'exécutable en hexadécimal (Linux ; vide ailleurs, où le PDB de la release fait ce
-// rôle) : il rattache une pile brute du journal (« ajp(+0x1a2b3c) ») aux symboles de la release dont le
-// binaire livré est dépouillé (B39-04).
+// L'identité exacte de l'exécutable : sous Linux, son build-id GNU en hexadécimal, qui rattache une pile
+// brute du journal (« ajp(+0x1a2b3c) ») aux symboles de la release dont le binaire livré est dépouillé
+// (B39-04) ; sous Windows, la clé de son PDB (C34-06), qui dit quels symboles prendre pour lire un minidump,
+// même entre deux builds de même version. Vide ailleurs ou illisible.
 std::string build_id_description();
+// La clé d'un PDB dans un magasin de symboles, lue dans un enregistrement CodeView « RSDS » (IMAGE_DEBUG_
+// TYPE_CODEVIEW) : le GUID en capitales sans tirets (ses trois premiers champs en petit-boutiste), puis l'âge
+// en hexadécimal. Vide si record n'en est pas un. Pur.
+std::string codeview_key(std::span<const std::uint8_t> record);
 
 // text sans les dossiers : tout chemin absolu (Windows « D:\… », UNC, POSIX « /… », « ~/… ») est réduit à
 // « …/<nom du fichier> ». Le reste de la ligne après le nom est gardé. home sert aux chemins qui seraient
@@ -60,6 +67,8 @@ struct ReportParts {
   std::string previous_title;  // vide : « arrêtée brutalement » ; sinon le titre de la séance d'avant
   std::string current_log;
   std::string dump_name;  // le dernier minidump du dossier crashes ; vide : aucun
+  // Linux, séance d'avant plantée (C34-06) : son vidage est chez systemd-coredump, le rapport dit où.
+  bool system_core = false;
   std::string home;
 };
 

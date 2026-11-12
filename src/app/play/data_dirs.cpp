@@ -192,11 +192,15 @@ int move_cache_data(const std::filesystem::path& from, const std::filesystem::pa
 }
 
 std::filesystem::path cache_data([[maybe_unused]] const std::filesystem::path& home,
-                                 const std::filesystem::path& heavy) {
+                                 const std::filesystem::path& heavy,
+                                 [[maybe_unused]] const std::filesystem::path& xdg_cache) {
 #if defined(__linux__)
-  if (!home.empty()) return home / ".cache" / "ajp";
-#endif
+  if (home.empty()) return heavy;
+  if (xdg_cache.is_absolute()) return xdg_cache / "ajp";
+  return home / ".cache" / "ajp";
+#else
   return heavy;
+#endif
 }
 
 int purge_misplaced(const std::filesystem::path& shared,

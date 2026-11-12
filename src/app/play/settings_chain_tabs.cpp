@@ -9,6 +9,7 @@
 
 #include "app/play/anime4k_choice.h"
 #include "app/play/drba_model.h"
+#include "app/play/gpu_telemetry.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
 #include "app/play/visible_error.h"
@@ -344,13 +345,21 @@ void smooth_motion_section([[maybe_unused]] PlaySettings& d,
   // ne le prend que si RIFE tourne (player.cpp). Sans modèle d'interpolation, la case est grisée aussi
   // (B23-12).
   const bool without_rife = d.rife_factor < 2 || !choices.rife_available;
-  ImGui::BeginDisabled(without_rife);
+  // C37-03 : hors RTX 40 et 50, ou sous le pilote 580.82.07, le pilote n'ajoute rien ; la case le dit au
+  // lieu d'être cochée pour rien.
+  const SmoothMotionBlock block = smooth_motion_block(choices.gpu_name, choices.driver_version);
+  ImGui::BeginDisabled(without_rife || block != SmoothMotionBlock::None);
   ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
   panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
   note(i18n::tr(
       "The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch."));
-  if (without_rife) note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
+  if (block == SmoothMotionBlock::Gpu)
+    note(i18n::tr("Greyed out: this graphics card is not an RTX 40 or 50."));
+  else if (block == SmoothMotionBlock::Driver)
+    note(i18n::tr("Greyed out: the NVIDIA driver is older than 580.82.07, update it."));
+  else if (without_rife)
+    note(i18n::tr("Greyed out: turn on RIFE at ×2 or more, or playback stalls."));
 #endif
 }
 

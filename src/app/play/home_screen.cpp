@@ -46,6 +46,7 @@
 #include "app/play/span_auto.h"
 #include "app/play/span_int8.h"
 #include "app/play/user_keys.h"
+#include "app/play/wayland_activation.h"
 #include "audio/devices.h"
 #include "core/clock.h"
 #include "core/engines.h"
@@ -237,9 +238,11 @@ void raise_for_forwarded(const SDL_Event& event) {
   if (count > 0) {
     if ((SDL_GetWindowFlags(windows[0]) & SDL_WINDOW_MINIMIZED) != 0) SDL_RestoreWindow(windows[0]);
     SDL_RaiseWindow(windows[0]);
-    // Sous Wayland (KWin, Mutter), la fenêtre ne passe devant qu'avec un jeton d'activation que ce processus
-    // n'a pas : la barre des tâches la signale au moins jusqu'à ce qu'elle ait le focus (A19-08).
-    SDL_FlashWindow(windows[0], SDL_FLASH_UNTIL_FOCUSED);
+    // Sous Wayland (KWin, Mutter), la fenêtre ne passe devant qu'avec un jeton d'activation : celui que le
+    // lanceur a donné au lancement qui transmet (C34-15). Sans lui, la barre des tâches la signale au moins
+    // jusqu'à ce qu'elle ait le focus (A19-08).
+    if (!wayland_activate(windows[0], take_forwarded_activation()))
+      SDL_FlashWindow(windows[0], SDL_FLASH_UNTIL_FOCUSED);
   }
   SDL_free(static_cast<void*>(windows));
 }

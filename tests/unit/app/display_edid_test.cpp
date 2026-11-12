@@ -11,8 +11,10 @@
 #include <spdlog/spdlog.h>
 
 #include "app/play/display_contract.h"
+#include "app/play/display_gpu.h"
 #include "app/play/host_facts.h"
 #include "app/play/system_peak.h"
+#include "app/play/wayland_output.h"
 #include "french_ui.h"
 
 using namespace ajp::app::play;
@@ -659,4 +661,57 @@ TEST_CASE("Pic automatique : un téléviseur de 3000 nits est exploité (B37-09)
   CHECK(auto_peak_nits(9000.0) == 4000);
   CHECK(auto_peak_nits(150.0) == 200);
   CHECK(auto_peak_nits(std::nullopt) == 1000);
+}
+
+TEST_CASE(
+    "Écran de la fenêtre sous Wayland : le connecteur de wl_output départage deux écrans du même modèle "
+    "(C34-10)",
+    "[app][edid]") {
+  using ajp::app::play::DisplayFacts;
+  using ajp::app::play::output_at;
+  using ajp::app::play::pick_display;
+  using ajp::app::play::WaylandOutput;
+  using ajp::app::play::with_connector;
+  const std::vector<WaylandOutput> outputs{{.name = "DP-1", .x = 0, .y = 0},
+                                           {.name = "DP-2", .x = 2560, .y = 0}};
+  CHECK(output_at(outputs, 2560, 0) == "DP-2");
+  CHECK(output_at(outputs, 100, 0).empty());
+  // Deux sorties au même endroit (miroir) : aucune.
+  CHECK(output_at({{.name = "DP-1", .x = 0, .y = 0}, {.name = "HDMI-A-1", .x = 0, .y = 0}}, 0, 0).empty());
+  CHECK(with_connector("MAG 272U", "DP-2") == "MAG 272U (DP-2)");
+  CHECK(with_connector("MAG 272U", "") == "MAG 272U");
+
+  DisplayFacts left;
+  left.connector = "card1-DP-1";
+  left.name = "MAG 272U";
+  left.vrr_armed = true;
+  DisplayFacts right = left;
+  right.connector = "card1-DP-2";
+  right.vrr_armed = false;
+  // Le nom de SDL seul ne départage pas ; suivi du connecteur lu sur wl_output, la fenêtre sur le second
+  // écran a sa sortie et son état.
+  CHECK(pick_display({left, right}, "MAG 272U").value().connector.empty());
+  const auto second = pick_display({left, right}, with_connector("MAG 272U", output_at(outputs, 2560, 0)));
+  REQUIRE(second);
+  CHECK(second->connector == "card1-DP-2");
+  CHECK(second->vrr_armed == false);
+}
+
+TEST_CASE("Carte de l'écran : le connecteur DRM nomme sa carte, l'écart se dit (C37-07)", "[app][edid]") {
+  using ajp::app::play::drm_card_of;
+  using ajp::app::play::screen_card_line;
+  using ajp::app::play::screen_card_warns;
+  using ajp::app::play::ScreenCard;
+  CHECK(drm_card_of("card1-DP-2") == "card1");
+  CHECK(drm_card_of("card12-eDP-1") == "card12");
+  CHECK(drm_card_of("DP-2").empty());
+  CHECK(drm_card_of("card-DP-2").empty());
+  const ScreenCard igpu{.name = "PCI 8086:a7a0", .renders = false};
+  CHECK(screen_card_line(igpu, "NVIDIA GeForce RTX 4070 Laptop GPU").contains("PCI 8086:a7a0"));
+  CHECK(screen_card_line(igpu, "NVIDIA GeForce RTX 4070 Laptop GPU").contains("dGPU seul"));
+  // L'écart coûte en 4K ou à 144 Hz et plus ; une même carte ne dit rien.
+  CHECK(screen_card_warns(igpu, 2160, 60.0));
+  CHECK(screen_card_warns(igpu, 1440, 165.0));
+  CHECK_FALSE(screen_card_warns(igpu, 1080, 60.0));
+  CHECK_FALSE(screen_card_warns({.name = "RTX", .renders = true}, 2160, 240.0));
 }

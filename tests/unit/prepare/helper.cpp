@@ -46,6 +46,9 @@ int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
   say(mode == "old-tensorrt" ? "&&&& RUNNING TensorRT.trtexec [TensorRT v110100] [b99] # trtexec"
                              : "&&&& RUNNING TensorRT.trtexec [TensorRT v110300] [b99] # trtexec");
   for (const std::string& arg : args) say("[I] arg " + arg);
+  // Deux cartes : l'appareil 0 sans --device, comme trtexec (C37-01).
+  say(std::string("[I] Selected Device: ") +
+      (value_of(args, "--device=") == "1" ? "Autre RTX" : "RTX de test"));
   const fs::path engine = value_of(args, "--saveEngine=");
   const fs::path timing_cache = value_of(args, "--timingCacheFile=");
   append_line(value_of(args, "--onnx=") + ".calls", "appel");

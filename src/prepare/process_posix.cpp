@@ -30,6 +30,7 @@
 #endif
 #ifdef __linux__
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #endif
 
 namespace ajp::prepare {
@@ -198,6 +199,10 @@ bool drain(int fd, LineSplitter& lines) {
   if (::prctl(PR_SET_PDEATHSIG, SIGKILL) != 0) fail();
   if (::getppid() != parent) ::_exit(127);
   if (::setpgid(0, 0) != 0) fail();
+  // C34-01 : la hausse de priorité du thread qui lance (nice négatif, celle du thread principal) ne passe pas
+  // à trtexec ni à curl, qui travaillent pour le fond. Comme sous Windows, où un enfant part en priorité
+  // normale : jamais au-dessus du nice 0. getpriority ne peut échouer sur soi-même ; -1 est un nice valable.
+  if (::getpriority(PRIO_PROCESS, 0) < 0) ::setpriority(PRIO_PROCESS, 0, 0);
   struct sigaction fallback{};
   fallback.sa_handler = SIG_DFL;
   sigemptyset(&fallback.sa_mask);

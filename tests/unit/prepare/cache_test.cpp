@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -60,6 +61,34 @@ TEST_CASE("KeyLock : l'attente s'arrête au délai maximum (P2.31)", "[prepare][
   REQUIRE(first);
   CHECK(test::refusal(KeyLock::acquire(file, {}, LockWait::Block, 60ms)) == RefusalCode::CacheBusy);
 }
+
+#ifndef _WIN32
+// C34-08 : la purge retire un verrou orphelin pendant qu'elle le tient. Un lancement qui attendait sur
+// l'ancien fichier l'obtient ensuite ; il doit voir que ce n'est plus le verrou du chemin et prendre le
+// nouveau, sinon un troisième lancement prend le nouveau fichier et deux constructions se croient seules.
+TEST_CASE("KeyLock : un verrou retiré pendant l'attente est rouvert (C34-08)", "[prepare][cache]") {
+  const test::TempDir dir;
+  const auto file = dir / "aji-v3-x.engine.key-lock";
+  auto purge = KeyLock::acquire(file);
+  REQUIRE(purge);
+  std::atomic<bool> waiting_got{false};
+  std::optional<KeyLock> waiter;
+  std::thread second([&] {
+    auto got = KeyLock::acquire(file, {}, LockWait::Block, 5s);
+    if (got) waiter.emplace(std::move(*got));
+    waiting_got = true;
+  });
+  std::this_thread::sleep_for(100ms);  // le second attend, ouvert sur l'ancien fichier
+  test::fs::remove(file);              // ce que fait remove_orphan_lock, verrou tenu
+  purge = std::unexpected(ajp::Refusal{});
+  second.join();
+  REQUIRE(waiting_got);
+  REQUIRE(waiter);
+  CHECK(test::fs::exists(file));  // le chemin porte le verrou du second
+  // Un troisième lancement trouve le verrou tenu : avant, il en créait un nouveau et le prenait.
+  CHECK(test::refusal(KeyLock::acquire(file, {}, LockWait::TryOnly)) == RefusalCode::CacheBusy);
+}
+#endif
 
 TEST_CASE("KeyLock : tenu par un autre processus", "[prepare][cache]") {
   const test::TempDir dir;

@@ -119,8 +119,9 @@ std::optional<KwinOutput> parse_kwin_output(std::string_view json, std::string_v
     out.peak_override = number_after(object, "maxPeakBrightnessOverride");
     out.reference = number_after(object, "sdrBrightness");
     if (!out.reference) out.reference = number_after(object, "referenceLuminance");
+    out.hdr = hdr_on(object);
     if (same_screen(object, edid)) return out;
-    if (!hdr && hdr_on(object)) hdr = out;
+    if (!hdr && out.hdr) hdr = out;
     if (!first) first = out;
   }
   return hdr ? hdr : first;

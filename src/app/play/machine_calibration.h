@@ -141,6 +141,7 @@ struct MachineCalibration {
   std::string engine;       // le moteur qui a joué les essais (« tensorrt », « vulkan »…) ; vide : inconnu
   std::string driver;       // le pilote de la carte pendant la mesure ; vide : inconnu
   bool on_battery = false;  // mesurée sur batterie (P3.12) : gardée au tableau, pas suivie par l'Auto
+  double display_hz = 0.0;  // la fréquence de l'écran pendant la mesure (C37-08) ; 0 : inconnue
 };
 
 // La barre de la calibration (P3.13) : l'avancement dit par calibrate_machine, plus une avance lente pendant

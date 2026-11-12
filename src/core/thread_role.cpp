@@ -2,7 +2,10 @@
 
 #include <array>
 #include <atomic>
+#include <cerrno>
+#include <climits>
 #include <cstring>
+#include <optional>
 
 #include "core/thread.h"
 
@@ -35,6 +38,28 @@ std::atomic<RoleRefusalReporter> g_refusal_reporter{nullptr};
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::array<std::atomic<bool>, 3> g_refusal_told{};
 
+#if defined(__linux__)
+// Le nice du thread principal avant sa hausse (C34-01) : sous Linux, la priorité est propre à chaque thread
+// mais un thread ou un processus créé l'hérite de son créateur. Sans cette valeur rendue à chaque thread de
+// module, la hausse du principal (nice -10, par SDL ou rtkit) passait à tous les threads créés ensuite et à
+// leurs enfants (trtexec, curl) : la hiérarchie lecture > reste > fond n'existait que sous Windows, où
+// MMCSS ne s'hérite pas. INT_MIN : pas de hausse posée, rien à rendre.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+std::atomic<int> g_base_nice{INT_MIN};
+
+pid_t current_tid() noexcept {
+  return static_cast<pid_t>(syscall(SYS_gettid));
+}
+
+// Le nice du thread appelant ; rien si le système ne le dit pas (getpriority rend -1, une valeur valable).
+std::optional<int> own_nice() noexcept {
+  errno = 0;
+  const int nice = getpriority(PRIO_PROCESS, static_cast<id_t>(current_tid()));
+  if (nice == -1 && errno != 0) return std::nullopt;
+  return nice;
+}
+#endif
+
 [[maybe_unused]] bool raise_if_set() noexcept {  // seul Linux s'en sert
   const PriorityRaiser raiser = g_raiser.load(std::memory_order_acquire);
   return raiser != nullptr && raiser();
@@ -55,6 +80,14 @@ void set_role_refusal_reporter(RoleRefusalReporter reporter) noexcept {
 }
 
 bool set_thread_priority_raiser(PriorityRaiser raiser) noexcept {
+#if defined(__linux__)
+  // La base est lue avant la hausse, une fois : un second crochet ne prend pas le nice déjà relevé pour elle.
+  if (raiser == nullptr) {
+    g_base_nice.store(INT_MIN, std::memory_order_release);
+  } else if (g_base_nice.load(std::memory_order_acquire) == INT_MIN) {
+    if (const std::optional<int> nice = own_nice()) g_base_nice.store(*nice, std::memory_order_release);
+  }
+#endif
   g_raiser.store(raiser, std::memory_order_release);
 #if defined(__linux__)
   return raise_if_set();
@@ -107,9 +140,34 @@ bool set_thread_role(ThreadRole role) noexcept {
 #endif
 }
 
+void return_to_base_priority() noexcept {
+#if defined(__linux__)
+  const int base = g_base_nice.load(std::memory_order_acquire);
+  if (base == INT_MIN) return;
+  // Seulement une hausse héritée : un thread né d'un thread de fond (nice 10) le reste, comme FFmpeg.
+  if (const std::optional<int> nice = own_nice(); nice && *nice < base)
+    setpriority(PRIO_PROCESS, static_cast<id_t>(current_tid()), base);
+#endif
+}
+
+void reserve_crash_stack() noexcept {
+#if defined(_WIN32)
+  ULONG guarantee = kCrashStackReserve;
+  SetThreadStackGuarantee(&guarantee);
+#endif
+}
+
 namespace {
 
-void name_for_system([[maybe_unused]] const char* name) noexcept {
+// Le début de chaque thread de module (thread_start, core/thread.h) : nom, pile de secours, priorité de base.
+void start_for_system([[maybe_unused]] const char* name) noexcept {
+#if defined(_WIN32)
+  // C34-05 : la place qu'un débordement de pile laisse au filtre des exceptions (crash_dump.cpp) ; sans
+  // elle, il tourne sur la pile épuisée et le vidage n'est jamais écrit.
+  reserve_crash_stack();
+#endif
+  return_to_base_priority();
+  if (name == nullptr) return;
 #if defined(_WIN32)
   std::array<wchar_t, 64> wide{};
   const int written =
@@ -133,7 +191,7 @@ void name_for_system([[maybe_unused]] const char* name) noexcept {
 }  // namespace
 
 void install_system_thread_names() noexcept {
-  thread_namer().store(&name_for_system, std::memory_order_release);
+  thread_start().store(&start_for_system, std::memory_order_release);
 }
 
 }  // namespace ajp

@@ -1,7 +1,6 @@
 // Le VRR armé sur l'écran de la fenêtre (host_facts.h). Sous Windows, aucune API publique de DXGI ne dit si
 // G-SYNC ou FreeSync est engagé : NVAPI le dit sur une carte NVIDIA (nvapi64.dll, livrée avec le pilote,
 // chargée à l'exécution par nvapi_QueryInterface, sans en-tête ni fichier de NVIDIA dans nos sources).
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -14,6 +13,8 @@
 #include "core/log.h"
 
 #if defined(_WIN32)
+#include <map>
+#include <utility>
 #include <windows.h>
 #endif
 
@@ -95,14 +96,20 @@ std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
   if (api->vrr_info(id, &info) != 0) return std::nullopt;
   // B11-02 : la structure est écrite à la main ; les drapeaux bruts vont au journal à chaque changement, pour
   // vérifier sur l'écran réel que le bit 4 suit bien l'engagement de G-SYNC.
-  static std::atomic<bool> in_mode_seen{false};
-  static std::atomic<std::uint32_t> last_flags{UINT32_MAX};
-  if ((info.flags & kNvVrrInMode) != 0) in_mode_seen.store(true, std::memory_order_relaxed);
-  if (last_flags.exchange(info.flags, std::memory_order_relaxed) != info.flags)
-    log_channel("app")->info("NVAPI VRR : drapeaux {:#x}, réservés {:#x} {:#x} {:#x} {:#x}", info.flags,
-                             info.reserved[0], info.reserved[1], info.reserved[2], info.reserved[3]);
-  return NvVrr{.enabled = (info.flags & kNvVrrEnabled) != 0,
-               .armed = nv_vrr_armed(info.flags, in_mode_seen.load(std::memory_order_relaxed))};
+  // C37-06 : par écran (nom GDI), sous le verrou de NVAPI. Le bit 4 vu sur l'écran G-SYNC ne fait plus
+  // lire « non armé » l'écran fixe, ni l'inverse.
+  struct Seen {
+    bool in_mode = false;
+    std::uint32_t last_flags = UINT32_MAX;
+  };
+  static std::map<std::string, Seen> seen;
+  Seen& here = seen[name];
+  if ((info.flags & kNvVrrInMode) != 0) here.in_mode = true;
+  if (std::exchange(here.last_flags, info.flags) != info.flags)
+    log_channel("app")->info("NVAPI VRR {} : drapeaux {:#x}, réservés {:#x} {:#x} {:#x} {:#x}", name,
+                             info.flags, info.reserved[0], info.reserved[1], info.reserved[2],
+                             info.reserved[3]);
+  return NvVrr{.enabled = (info.flags & kNvVrrEnabled) != 0, .armed = nv_vrr_armed(info.flags, here.in_mode)};
 }
 
 }  // namespace
@@ -157,14 +164,18 @@ std::optional<DisplayFacts> window_display(SDL_Window* window, const DisplaySdl&
 
 std::optional<bool> window_vrr_armed([[maybe_unused]] SDL_Window* window, std::string_view connector) {
 #if defined(_WIN32)
-  // Un appel au pilote à chaque tour de boucle serait de trop : la lecture est gardée 250 ms.
+  // Un appel au pilote à chaque tour de boucle serait de trop : la lecture est gardée 250 ms, pour cet écran
+  // seulement (C37-06) : la fenêtre passée sur un autre écran le relit tout de suite.
   constexpr auto kReread = std::chrono::milliseconds(250);
   static std::mutex guard;
   static std::chrono::steady_clock::time_point read_at;
+  static std::string read_for;
   static std::optional<bool> last;
+  const std::string name = gdi_name(window);
   const std::scoped_lock lock(guard);
-  if (const auto now = std::chrono::steady_clock::now(); now - read_at >= kReread) {
+  if (const auto now = std::chrono::steady_clock::now(); now - read_at >= kReread || name != read_for) {
     read_at = now;
+    read_for = name;
     const auto nv = nvapi_vrr(window);
     last = nv ? nv->armed : std::nullopt;
   }

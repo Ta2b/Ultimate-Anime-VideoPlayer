@@ -255,6 +255,33 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   std::filesystem::remove_all(dir);
 }
 
+TEST_CASE("une calibration faite à une autre fréquence d'écran n'est plus suivie (C37-08)",
+          "[calibration-machine]") {
+  MachineCalibration c{.chosen = {.span = true, .rife = true, .height = 720},
+                       .tried = {{.chain = {.span = true, .rife = true, .height = 720}, .holds = true}},
+                       .gpu = "RTX 4070 Ti",
+                       .display_height = 1440,
+                       .engine = "tensorrt",
+                       .display_hz = 60.0};
+  const auto read = parse_calibration(format_calibration(c));
+  REQUIRE(read);
+  CHECK(read->display_hz == 60.0);
+  const CalibrationHost at60{
+      .gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true, .display_hz = 59.94};
+  CHECK(calibration_use(*read, at60) == CalibrationUse::Followed);
+  CalibrationHost at240 = at60;
+  at240.display_hz = 240.0;
+  CHECK(calibration_use(*read, at240) == CalibrationUse::OtherMachine);
+  // Un fichier d'avant C37-08, sans fréquence, et une fréquence inconnue : pas comparées.
+  c.display_hz = 0.0;
+  const auto old = parse_calibration(format_calibration(c));
+  REQUIRE(old);
+  CHECK(old->display_hz == 0.0);
+  CHECK(calibration_use(*old, at240) == CalibrationUse::Followed);
+  at240.display_hz = 0.0;
+  CHECK(calibration_use(*read, at240) == CalibrationUse::Followed);
+}
+
 TEST_CASE("une calibration par hauteur d'écran, l'ancien fichier unique relu (A37-10)",
           "[calibration-machine]") {
   const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-ecrans";

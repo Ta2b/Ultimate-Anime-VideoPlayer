@@ -117,6 +117,34 @@ TEST_CASE("Versions : un fichier tiers manquant ou tronqué rend le paquet à r�
   CHECK(installed_state(f.catalog, v11).state == PackageState::Current);
 }
 
+TEST_CASE("Versions : la ressource de construction de la carte d'aujourd'hui manque (C37-02)",
+          "[app][install]") {
+  Fixture f("architecture");
+  const core::EnginePackage v11 = f.package("11", 'a');
+  const auto vendor = [&](std::string name, std::string arch) {
+    return core::VendorFile{.engine = core::EngineId::TensorRt,
+                            .platform = f.catalog.layout.os,
+                            .name = std::move(name),
+                            .size = 4,
+                            .arch = std::move(arch)};
+  };
+  f.catalog.vendor_files = {vendor("libnvinfer.so", ""), vendor("builder_resource_sm86.so", "sm86"),
+                            vendor("builder_resource_sm89.so", "sm89")};
+  // Installé sur une RTX 3070 : la ressource sm86 seulement.
+  const fs::path dir = f.install(v11);
+  for (const char* name : {"libnvinfer.so", "builder_resource_sm86.so"}) {
+    std::ofstream(dir / name) << "1234";
+    std::ofstream(dir / std::string(kPackageNote), std::ios::app) << "fichier=4 " << name << '\n';
+  }
+  CHECK(installed_state(f.catalog, v11, "sm86").state == PackageState::Current);
+  // La carte est maintenant une RTX 4070 : avant, « à jour », et trtexec n'avait que la ressource générique.
+  const InstalledState moved = installed_state(f.catalog, v11, "sm89");
+  CHECK(moved.state == PackageState::Replaced);
+  CHECK(moved.missing == "builder_resource_sm89.so");
+  // Sans architecture connue, rien de plus n'est vérifié.
+  CHECK(installed_state(f.catalog, v11).state == PackageState::Current);
+}
+
 TEST_CASE("Versions : la version de l'index en place, les autres se retirent", "[app][install]") {
   Fixture f("retrait");
   const core::EnginePackage v10 = f.package("10", 'a');

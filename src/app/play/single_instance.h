@@ -51,10 +51,17 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
 // Remet des fichiers dans la file de SDL, comme un glisser-déposer venu d'un autre lancement (la fenêtre
 // passe devant). Faux si SDL en refuse un. Sert aussi à rendre à la boucle suivante les vidéos reçues
 // pendant une attente qui ne les ouvre pas (DeferredDrops, B29-04).
-bool push_forwarded_files(const std::vector<std::string>& files);
+// activation_token : le jeton d'activation Wayland du lancement qui transmet (C34-15), gardé pour
+// take_forwarded_activation.
+bool push_forwarded_files(const std::vector<std::string>& files, std::string_view activation_token = {});
 
-// Les fichiers d'un message (lignes jusqu'à la ligne vide) ; exposé pour les tests.
+// Le dernier jeton d'activation reçu, vidé ; vide s'il n'y en a pas.
+std::string take_forwarded_activation();
+
+// Les fichiers d'un message (lignes jusqu'à la ligne vide), puis son jeton d'activation éventuel
+// (« activation=<jeton> » après la ligne vide, C34-15) ; exposé pour les tests.
 std::vector<std::string> instance_message_files(std::string_view message);
-std::string instance_message(const std::vector<std::string>& files);
+std::string instance_message_token(std::string_view message);
+std::string instance_message(const std::vector<std::string>& files, std::string_view activation_token = {});
 
 }  // namespace ajp::app::play

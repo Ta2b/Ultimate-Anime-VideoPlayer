@@ -54,6 +54,8 @@ std::expected<void, Refusal> TensorRtBackend::create_lanes() {
   }
   lanes_ = lane_count(properties_.totalGlobalMem, free);
   if (lanes_ == 1 && properties_.totalGlobalMem >= kLaneMemory) {
+    // Le lecteur reconnaît le début de cette phrase (player_engines.cpp) : il la met au rapport et la dit à
+    // l'écran (C37-04).
     log(BackendLogLevel::Info,
         std::format("une seule voie de calcul : {} Mio libres sur {} à l'ouverture, {} attendus pour trois",
                     free >> 20U, properties_.totalGlobalMem >> 20U, kLaneFreeMemory >> 20U));

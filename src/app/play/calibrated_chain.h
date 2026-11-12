@@ -35,9 +35,10 @@ struct CalibratedChain {
 // A07-05) : la carte, l'écran, le moteur qui joue SPAN et RIFE et le pilote.
 struct CalibrationHost {
   std::string gpu;
-  int display_height = 0;  // 0 : inconnue, non comparée
-  bool tensorrt = false;   // SPAN et RIFE passent par TensorRT (sinon Vulkan, ou Core ML sur Mac)
-  std::string driver;      // vide : inconnu, non comparé
+  int display_height = 0;   // 0 : inconnue, non comparée
+  bool tensorrt = false;    // SPAN et RIFE passent par TensorRT (sinon Vulkan, ou Core ML sur Mac)
+  std::string driver;       // vide : inconnu, non comparé
+  double display_hz = 0.0;  // la fréquence de l'écran (C37-08) ; 0 : inconnue, non comparée
 };
 
 // Ce que l'Auto fait d'une calibration. Followed : ses bornes s'appliquent. Les autres : l'Auto garde son
@@ -46,7 +47,7 @@ enum class CalibrationUse : std::uint8_t {
   Followed,
   OldVersion,    // écrite par une version dont les essais ou le verdict n'étaient pas ceux d'aujourd'hui
   OnBattery,     // mesurée sur batterie : carte bridée
-  OtherMachine,  // une autre carte ou un autre écran
+  OtherMachine,  // une autre carte ou un autre écran (sa hauteur, sa fréquence)
   OtherEngine,   // mesurée sous Vulkan et jouée sous TensorRT, ou l'inverse : ses bornes ne valent pas
 };
 

@@ -15,6 +15,7 @@
 #include "app/play/i18n.h"
 #include "app/play/pumped_task.h"
 #include "app/play/system_peak.h"
+#include "app/play/wayland_output.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -136,7 +137,9 @@ DisplaySdl display_sdl(SDL_Window* window) {
     else if (mode->refresh_rate > 0.0F)
       out.hz = static_cast<double>(mode->refresh_rate);
   }
-  if (const char* name = SDL_GetDisplayName(display); name != nullptr) out.name = name;
+  // Sous Wayland, le connecteur suit le nom (C34-10) : deux écrans du même modèle se départagent.
+  if (const char* name = SDL_GetDisplayName(display); name != nullptr)
+    out.name = with_connector(name, wayland_connector(display));
   return out;
 }
 
@@ -252,11 +255,12 @@ bool windows_hdr_active(const wchar_t* device) {
 // Windows : la marge de SDL dépend du curseur « luminosité du contenu SDR » (écran à 800 nits, blanc SDR à
 // 400 : marge 2) ; la crête que l'EDID annonce la borne par le bas, sans quoi le gris moyen (plafonné à la
 // moitié de la crête) n'a plus d'effet. Quand SDL ne voit pas le HDR (activé=false ou marge de 1,00 avec
-// Vulkan) mais que Windows le dit actif : la crête de l'EDID, sinon 600 nits (un écran HDR10 courant,
-// prudent : trop haut éclaire trop). Ailleurs : la marge × 203 nits.
+// Vulkan) mais que le système le dit actif (Windows, ou KWin sous Linux, C34-09) : la crête de l'EDID, sinon
+// 600 nits (un écran HDR10 courant, prudent : trop haut éclaire trop). Ailleurs, avec le HDR de SDL : la
+// marge × 203 nits.
 std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts) {
   constexpr double kUnknownPeakNits = 600.0;
-  if (!facts.windows) return facts.sdl_hdr ? std::optional(facts.headroom * 203.0) : std::nullopt;
+  if (!facts.windows && facts.sdl_hdr) return facts.headroom * 203.0;
   if (facts.sdl_hdr) return std::max(facts.headroom * facts.sdr_white_nits, facts.edid_peak.value_or(0.0));
   if (!facts.system_hdr_active) return std::nullopt;
   return facts.edid_peak.value_or(kUnknownPeakNits);
@@ -264,7 +268,7 @@ std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts) {
 
 std::optional<ContentPeak> peak_of(const PeakFacts& facts) {
   using Source = ContentPeak::Source;
-  if (!facts.sdl_hdr && !(facts.windows && facts.system_hdr_active)) return std::nullopt;
+  if (!facts.sdl_hdr && !facts.system_hdr_active) return std::nullopt;
   if (facts.system_peak && *facts.system_peak > 0.0)
     return ContentPeak{
         .nits = *facts.system_peak, .source = Source::Compositor, .full_frame_nits = facts.system_full_frame};
@@ -315,14 +319,21 @@ std::optional<ContentPeak> content_peak(SDL_Window* window, const DisplaySdl& sd
       facts.edid_peak = display->peak_nits;
   }
 #else
-  if (!facts.sdl_hdr) return std::nullopt;
+  const std::optional<DisplayFacts> display = read_display(sdl.name);
+  // B11-04 : l'entrée KWin de cet écran, pas celle d'un ancien écran du même port.
+  const std::string edid = display ? kwin_edid_key(display->manufacturer, display->product) : std::string();
+  if (!facts.sdl_hdr) {
+    // C34-09 : SDL ne voit pas toujours le HDR que KWin envoie à la sortie (« highDynamicRange » de son
+    // fichier) ; comme sous Windows, le système a le dernier mot.
+    const std::optional<KwinOutput> kwin =
+        display ? read_kwin_output(display->connector, edid) : std::nullopt;
+    facts.system_hdr_active = kwin && kwin->hdr;
+    if (!facts.system_hdr_active) return std::nullopt;
+    facts.edid_peak = display->peak_nits;
+  }
   // La marge de SDL est relative au blanc de référence du compositeur (KDE : la « luminosité SDR »), pas à
   // 203 nits : le pic que le système a calibré se lit chez lui (system_peak.h).
-  if (const auto display = read_display(sdl.name)) {
-    // B11-04 : l'entrée KWin de cet écran, pas celle d'un ancien écran du même port.
-    const std::string edid = kwin_edid_key(display->manufacturer, display->product);
-    facts.system_peak = system_peak_nits(display->connector, headroom, nullptr, edid);
-  }
+  if (display) facts.system_peak = system_peak_nits(display->connector, headroom, nullptr, edid);
 #endif
   return peak_of(facts);
 }
@@ -400,8 +411,9 @@ EnginesHere engines_here(const PlayOptions& /*options*/, const PlayerPaths& path
 
 // Le nom de l'écran de la fenêtre selon SDL, pour choisir son EDID.
 std::string display_name(SDL_Window* window) {
-  const char* name = SDL_GetDisplayName(SDL_GetDisplayForWindow(window));
-  return name != nullptr ? std::string(name) : std::string();
+  const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+  const char* name = SDL_GetDisplayName(display);
+  return name != nullptr ? with_connector(name, wayland_connector(display)) : std::string();
 }
 
 GpuFacts gpu_facts(const PlaceboScreen& screen) {

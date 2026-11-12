@@ -8,7 +8,8 @@
 //     pour la pré-analyse (media/shot_probe.cpp) ;
 //   - Linux : nice 10 pour le fond (hérité par les threads qu'il crée ensuite, ceux de FFmpeg compris) ;
 //     la lecture est relevée par un crochet que l'application installe (SDL_SetCurrentThreadPriority, qui
-//     passe par rtkit quand le système l'a) ;
+//     passe par rtkit quand le système l'a). Cette hausse, elle, ne passe pas aux threads de module créés
+//     ensuite (return_to_base_priority, C34-01) ni aux processus qu'ils lancent ;
 //   - macOS : classes de qualité de service (interactive, utilitaire).
 // Jamais d'échec : un système qui refuse laisse le thread tel qu'il est, et le dit une fois par rôle au
 // crochet que l'application installe (set_role_refusal_reporter), qui le journalise (B20-06).
@@ -37,9 +38,22 @@ void set_role_refusal_reporter(RoleRefusalReporter reporter) noexcept;
 // Applique le rôle au thread appelant, pour toute sa vie ; rend faux si le système l'a refusé.
 bool set_thread_role(ThreadRole role) noexcept;
 
-// Pose thread_namer (core/thread.h) : chaque start_thread donne ensuite son nom au système
-// (pthread_setname_np, 15 octets sous Linux ; SetThreadDescription sous Windows), pour Nsight, gdb et les
-// vidages de plantage (A20-11). À appeler une fois au démarrage, avant le premier thread.
+// Pose thread_start (core/thread.h) : chaque start_thread et start_task passe ensuite par
+// return_to_base_priority et reserve_crash_stack, et donne son nom au système (pthread_setname_np, 15 octets
+// sous Linux ; SetThreadDescription sous Windows), pour Nsight, gdb et les vidages de plantage (A20-11). À
+// appeler une fois au démarrage, avant le premier thread.
 void install_system_thread_names() noexcept;
+
+// Linux (C34-01) : rend au thread appelant le nice qu'avait le thread principal avant sa hausse
+// (set_thread_priority_raiser), s'il est plus haut placé que lui : la hausse héritée de son créateur ne lui
+// revient pas. Un thread de fond (nice 10) reste où il est. Ailleurs, rien : MMCSS (Windows) et les classes
+// de qualité de service (macOS) ne passent pas aux threads créés.
+void return_to_base_priority() noexcept;
+
+// Windows (C34-05) : la pile que garde un thread pour son gestionnaire d'exception quand la sienne déborde,
+// sans quoi le filtre du vidage de plantage tourne sur une pile épuisée et ne laisse rien. Ailleurs, rien :
+// sigaltstack fait ce travail (crash_dump.cpp).
+inline constexpr unsigned long kCrashStackReserve = 64UL * 1024UL;
+void reserve_crash_stack() noexcept;
 
 }  // namespace ajp

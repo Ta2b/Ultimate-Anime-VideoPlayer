@@ -141,6 +141,19 @@ std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusa
                        {.display_hz = c.opened.display_hz, .source_fps = c.opened.source_fps});
 }
 
+// Les annonces de début de lecture : la reprise là où elle s'était arrêtée, et TensorRT ouvert avec une
+// seule voie de calcul faute de mémoire vidéo libre (C37-04).
+void announce_start(Player& p, std::int64_t start_us, std::int64_t duration_us) {
+  if (p.resumed) {
+    p.ui.controls().notify(i18n::ui_tr_format("Resumed at {}", format_clock(start_us, duration_us)),
+                           host_now_us());
+    p.resumed = false;
+  }
+  if (take_single_lane_notice())
+    p.ui.controls().notify(i18n::ui_tr("TensorRT: one compute lane, not enough free video memory"),
+                           host_now_us());
+}
+
 }  // namespace
 
 // Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
@@ -392,12 +405,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::vector<Input> actions;  // vidée à chaque tour en s'appliquant (la 0.10.0 la rejouait sans fin)
   session.begin(host_now_us());
   save_reopened(p);
-  if (p.resumed) {
-    p.ui.controls().notify(
-        i18n::ui_tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)),
-        host_now_us());
-    p.resumed = false;
-  }
+  announce_start(p, start_us, session.view().duration_us);
   if (const i18n::Translated dropped = stage_notice(c.stage_notes); !dropped.empty())
     p.notice = p.notice.empty() ? dropped : dropped + i18n::Translated::data(" · ") + p.notice;
   if (!p.notice.empty()) {

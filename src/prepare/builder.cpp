@@ -10,6 +10,8 @@
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -282,20 +284,37 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec
       .cache_key = plan->engine_file, .path = plan->engine, .reused = *produced == Production::Reused};
 }
 
+namespace {
+
+// trtexec changé depuis l'ouverture du moteur : son empreinte n'est plus celle qu'on a vérifiée.
+std::optional<Refusal> trtexec_replaced(const TrtexecConfig& config) {
+  if (config.trtexec_sha256.empty()) return std::nullopt;
+  const auto now = sha256_file_known(config.trtexec);
+  if (now && *now == config.trtexec_sha256) return std::nullopt;
+  return Refusal{
+      RefusalCode::FieldMissing,
+      "trtexec remplacé depuis l'ouverture du moteur : réinstallez le moteur TensorRT, puis rouvrez "
+      "la vidéo"};
+}
+
+// C37-01 : un moteur construit sur une autre carte que celle du rendu serait refusé au chargement, et son
+// cache de temps prendrait les tactiques de l'autre carte. trtexec nomme la sienne ; elle doit être la bonne.
+std::optional<Refusal> wrong_device(const std::optional<std::string>& selected, const std::string& wanted) {
+  if (!selected || wanted.empty() || *selected == wanted) return std::nullopt;
+  return Refusal{
+      RefusalCode::DeviceMismatch,
+      std::format("trtexec a construit sur {} au lieu de la carte du rendu, {}", *selected, wanted)};
+}
+
+}  // namespace
+
 std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gpu::ModelSpec& model,
                                                  const ModelSource& source, const fs::path& output,
                                                  gpu::Progress& progress) const {
   const fs::path timing_cache = device_timing_cache(config_);
   auto device = lock_device(timing_cache, progress);
   if (!device) return std::unexpected(std::move(device.error()));
-  if (!config_.trtexec_sha256.empty()) {
-    const auto now = sha256_file_known(config_.trtexec);
-    if (!now || *now != config_.trtexec_sha256) {
-      return std::unexpected(Refusal{RefusalCode::FieldMissing,
-                                     "trtexec remplacé depuis l'ouverture du moteur : réinstallez le moteur "
-                                     "TensorRT, puis rouvrez la vidéo"});
-    }
-  }
+  if (auto replaced = trtexec_replaced(config_)) return std::unexpected(std::move(*replaced));
   const fs::path staged_cache = output.parent_path() / "timing.cache";
   const fs::path staged_layers = output.parent_path() / "layers.json";
   if (const std::string bad = unreachable_by_trtexec({model.onnx_path, output, staged_layers, staged_cache});
@@ -322,7 +341,7 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
                                  .engine = output,
                                  .timing_cache = staged_cache,
                                  .layer_info = staged_layers},
-                                plan.command.kept),
+                                plan.command.kept, config_.cuda_device),
       .timeout = config_.timeout,
   };
   log_->info("{} {} : construction de {}", model.id, plan.label, plan.engine_file);
@@ -334,10 +353,12 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   const auto attempt = [&](std::ios::openmode mode) -> std::expected<void, Refusal> {
     std::ofstream log_file(plan.log_file, mode);
     TrtexecProgress parsed;
+    std::optional<std::string> selected;  // la carte où trtexec dit construire
     auto exit = run_process(
         spec,
         [&](std::string_view line) {
           log_file << line << '\n';
+          if (!selected) selected = trtexec_selected_device(line);
           if (line.find("[E]") != std::string_view::npos && mentions_cache(line)) cache_complaint = true;
           if (auto step = parsed.feed(line)) report(progress, step->fraction, step->stage);
           if (reported_version.empty()) reported_version = TrtexecProgress::reported_version(line);
@@ -352,6 +373,10 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
     if (!log_file)
       log_->warn("journal {} illisible ou incomplet (droits ou disque plein, voir la place libre)",
                  utf8_path(plan.log_file));
+    if (auto wrong = wrong_device(selected, config_.device.name)) {
+      log_file << "[ajp] " << wrong->detail << '\n';
+      return std::unexpected(std::move(*wrong));
+    }
     auto verdict = judge(*exit, parsed, plan, config_.timeout);
     if (!verdict) log_file << "[ajp] " << verdict.error().detail << '\n';
     return verdict;

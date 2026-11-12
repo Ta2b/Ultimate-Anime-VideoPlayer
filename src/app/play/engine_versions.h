@@ -30,8 +30,9 @@ struct InstalledState {
 };
 
 // Ce qui est installé pour ce paquet de l'index.
-// arch : l'architecture du GPU en service (« sm89 »), vide pour ne pas la comparer ; une note qui en garde
-// une autre rend Replaced (C06-03).
+// arch : l'architecture du GPU en service (« sm89 »), vide pour ne pas la comparer. Une note qui en garde une
+// autre rend Replaced (C06-03) ; un fichier tiers que cette architecture demande (la ressource de
+// construction nvinfer_builder_resource_sm89) et que la note ne garde pas aussi, missing = son nom (C37-02).
 InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package,
                                std::string_view arch = {});
 

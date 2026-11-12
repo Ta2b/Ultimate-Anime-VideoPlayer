@@ -56,6 +56,7 @@ struct BenchPlan {
   int display_width = 0;
   int display_height = 0;
   bool display_hdr = true;
+  double display_hz = 0.0;  // sa fréquence, gardée avec la calibration (C37-08) ; 0 : inconnue
 };
 
 // La ligne de commande de l'enfant d'un niveau (level absent : « auto », le niveau estimé de la machine).
