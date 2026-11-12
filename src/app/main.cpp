@@ -417,6 +417,15 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   bool silent = true;
   constexpr const char* kUsage = "ajp calibrate [--display-height=N] [--tier=N] [--visible]\n";
   for (const std::string_view arg : args) {
+    if (arg == "--help" || arg == "-h") {
+      std::fputs(kUsage, stdout);
+      std::fputs(
+          "  --display-height=N  hauteur de l'écran visé, de 360 à 4320 (défaut 2160)\n"
+          "  --tier=N            tranche de départ, de 0 (Économe) à 4 (Ultra) (défaut 3)\n"
+          "  --visible           montre la fenêtre pendant l'essai\n",
+          stdout);
+      return 0;
+    }
     if (arg.starts_with("--tier=")) {
       const std::string_view text = arg.substr(7);
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), tier);

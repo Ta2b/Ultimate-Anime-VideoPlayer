@@ -1,7 +1,8 @@
 name: CI
 
 # La CI ne se lance qu'à la main (décision de Tatoub, novembre 2026) : Actions > CI > Run workflow, sur main ou
-# sur une branche. Plus rien sur les pull requests, les poussées ni la nuit : une PR passait toute la matrice, puis
+# sur une branche. Plus rien de ce workflow sur les pull requests, les poussées ni la nuit (restent seules les
+# tâches de veille : deps-watch, vendor-watch, resign-manifest, et release-linux/macos sur leurs branches `release/*`) : une PR passait toute la matrice, puis
 # la repassait sur le commit fusionné, et chaque reprise de main dans la branche la relançait ; 37 min chaque fois.
 # On fusionne un lot de PR, puis on lance la CI une fois sur main pour l'ensemble. Avant chaque étiquette, un
 # lancement vert sur le commit à étiqueter est obligatoire : release-guard.yml exige ci.yml vert sur ce commit

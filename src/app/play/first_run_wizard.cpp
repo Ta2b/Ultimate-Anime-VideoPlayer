@@ -70,7 +70,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       section(i18n::tr("Updates"));
       bool pick = false;
       radio_note(i18n::tr("Notify me"),
-                 i18n::tr("A notification with the link to the new version; you install it yourself."),
+                 i18n::tr("A notification when a new version is out; you install it yourself."),
                  wizard.update_mode == UpdateMode::Notify, pick);
       if (pick) wizard.update_mode = UpdateMode::Notify;
       pick = false;

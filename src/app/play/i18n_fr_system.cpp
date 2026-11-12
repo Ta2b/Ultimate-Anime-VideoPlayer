@@ -7,8 +7,8 @@ namespace {
 
 // Export, moteurs, application : (clé anglaise, français).
 constexpr std::array kSystemPages{
-    Entry{"A notification with the link to the new version; you install it yourself.",
-          "Une notification avec le lien de la nouvelle version ; vous l'installez vous-même."},
+    Entry{"A notification when a new version is out; you install it yourself.",
+          "Une notification quand une nouvelle version existe ; vous l'installez vous-même."},
     Entry{"AJP is already the default video player.", "AJP est déjà le lecteur par défaut des vidéos."},
     Entry{"Download page", "Page de téléchargement"},
     Entry{"The last check failed: {}", "La dernière vérification a échoué : {}"},

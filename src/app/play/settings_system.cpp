@@ -131,7 +131,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
   };
   constexpr std::array<Mode, 2> kModes{
       {{UpdateMode::Notify, "Notify me",
-        "A notification with the link to the new version; you install it yourself."},
+        "A notification when a new version is out; you install it yourself."},
        {UpdateMode::Never, "Never", "No checks."}}};
   for (const Mode& mode : kModes) {
     if (ImGui::RadioButton(i18n::tr(mode.label), d.update_mode == mode.key)) d.update_mode = mode.key;

@@ -161,6 +161,12 @@ TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03
   CHECK(apply_preset(with(Preset::Normal), low, k1080p24).work_height == 720);
 }
 
+// Le README promet « jusqu'à ×5 » (C38-03) : le plafond de Fluidité part de ×4 (Qualité, Ultra) et monte d'un cran.
+TEST_CASE("Fluidité plafonne le multiplicateur à ×5, jamais ×6", "[auto_config]") {
+  for (const Tier tier : {Tier::Fast, Tier::Ultra})
+    CHECK(applied(Preset::Auto, tier, 2160, 144.0, k1080p24, Priority::Fluidity).rife_factor == 5);
+}
+
 TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).work_height == 540);
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Image).work_height == 900);

@@ -110,7 +110,7 @@ struct PlayOptions {
   // --motion=rife|drba (A18-09) : le moteur de l'interpolation pour cette lecture, comme le menu ; absent,
   // celui de play.toml ou du préréglage.
   std::optional<MotionChoice> motion;
-  int true_hdr_peak = 0;  // --truehdr-peak=350..2000 nits (limits::kTrueHdrPeak) ; 0 : la crête vue par le
+  int true_hdr_peak = 0;  // --truehdr-peak=350..4000 nits (limits::kTrueHdrPeak) ; 0 : la crête vue par le
                           // contenu sur l'écran
   bool help = false;      // --help
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
