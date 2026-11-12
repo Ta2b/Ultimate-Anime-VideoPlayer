@@ -1,18 +1,24 @@
 name: CI
 
-# Chaque poussée sur main, cloud/** et release/** passe les règles (rules.yml). Les matrices de
-# construction et de tests tournent sur main, sur chaque pull request, chaque nuit et à la
-# demande (workflow_dispatch sur n'importe quelle branche) : une branche de travail ne les lance
-# pas à chaque poussée (cloud.yml y construit le lecteur sous lavapipe quand le code change). Windows
-# et CUDA (TensorRT) tournent sur chaque pull request, la nuit et à la demande (P1.17). CUDA a deux tâches : Linux
-# (gcc, nvcc) à chaque pull request, Windows (MSVC, nvcc) à celles qui touchent ce que le module TensorRT compile
-# (src/core, gpu, kernels, prepare, CUTLASS, CMake, vcpkg) et chaque nuit. macOS n'a plus de tâche : son support est
-# délaissé pour l'instant (décision de Tatoub, novembre 2026) ; release-macos.yml reste lançable à la main.
+# Quand la CI tourne (décision de Tatoub, novembre 2026) : plus sur les pull requests. Une PR passait toute la
+# matrice, puis la repassait sur le commit fusionné dans main, et chaque reprise de main dans la branche la
+# relançait : la même chaîne deux ou trois fois pour un seul changement, 37 min chaque fois.
+# - Poussée dans main (la fusion d'une PR) : toute la matrice, une fois, sur ce commit. Une casse se voit là et se
+#   répare par une autre PR avant l'étiquette : release-guard.yml exige ci.yml vert sur le commit de l'étiquette.
+#   clang-tidy et la tâche Windows de CUDA n'analysent ou ne construisent que ce que la poussée change.
+# - Un commit qui ne touche que la documentation (docs/, *.md, tools/release/notes/) : les règles seules ; les
+#   autres tâches se sautent, et la CI reste verte pour l'étiquette d'un commit de notes.
+# - Chaque nuit, depuis main : tout, plus asan-ubsan et tsan complets, la version livrée, le lecteur avec le GCC
+#   d'Arch et les moteurs fusionnés sur les modèles livrés.
+# - À la demande (workflow_dispatch, sur n'importe quelle branche) : comme la nuit, pour vérifier une PR risquée
+#   avant de la fusionner. Sur une autre branche que main, clang-tidy n'analyse que ce qui diffère de main.
+# - Poussée sur cloud/** et release/** : les règles seules (cloud.yml construit le lecteur sous lavapipe sur
+#   cloud/** quand le code change).
+# macOS n'a plus de tâche : son support est délaissé pour l'instant ; release-macos.yml reste lançable à la main.
 # Versions et paquets : tools/release/versions.env.
 on:
   push:
     branches: [main, "cloud/**", "release/**"]
-  pull_request:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -21,7 +27,7 @@ on:
 permissions:
   contents: read
 
-# Une PR ne garde que sa dernière poussée ; sur main, chaque commit est testé jusqu'au bout (P1.35) :
+# Une branche ne garde que son dernier lancement ; sur main, chaque commit est testé jusqu'au bout (P1.35) :
 # la garde de release exige ci.yml vert sur le commit de l'étiquette.
 concurrency:
   group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}-${{ github.event_name }}
@@ -42,9 +48,37 @@ jobs:
   rules:
     uses: ./.github/workflows/rules.yml
 
+  # Ce que le lancement change. Une poussée se compare au commit d'avant (github.event.before) ; la nuit et un
+  # lancement à la demande construisent toujours. Sans commit d'avant (branche créée, historique réécrit), tout.
+  changes:
+    name: Fichiers changés
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.event_name == 'push'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || '' }}
+        run: |
+          if [ -z "$BEFORE" ] || ! files="$(git diff --name-only "$BEFORE...HEAD" 2>/dev/null)"; then
+            echo "code=true" >>"$GITHUB_OUTPUT"; exit 0
+          fi
+          if printf '%s\n' "$files" | grep -vqE '^docs/|\.md$|^tools/release/notes/'; then
+            echo "code=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "Documentation seule : construction et tests sautés." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "code=false" >>"$GITHUB_OUTPUT"
+          fi
+
   core:
     name: Cœur (${{ matrix.name }})
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -91,7 +125,8 @@ jobs:
   # continu : la tâche signale sans bloquer (continue-on-error), à lire quand elle passe au rouge.
   arch:
     name: Cœur (GCC d'Arch)
-    if: github.event_name != 'push'
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     continue-on-error: true
     container: archlinux:latest
@@ -112,10 +147,11 @@ jobs:
 
   # Le lecteur entier avec le compilateur d'Arch (B28-11) : le cœur seul ne voyait pas les avertissements que le
   # GCC d'Arch ajoute dans src/app, src/render ou src/media, et le `cmake --build` de CachyOS échouait là où la CI
-  # restait verte. Vulkan logiciel sous Xvfb pour les tests. Comme la tâche du cœur : signale sans bloquer.
+  # restait verte. Vulkan logiciel sous Xvfb pour les tests. Comme la tâche du cœur : signale sans bloquer. La nuit
+  # et à la demande seulement : sans cache de dépendances dans son conteneur, elle prenait 28 min, la plus longue.
   arch-player:
     name: Lecteur (GCC d'Arch)
-    if: github.event_name != 'push'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     continue-on-error: true
     container: archlinux:latest
@@ -147,19 +183,19 @@ jobs:
   # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
   # qui garde pilotes et couches chargés jusqu'à la sortie (tools/ci/lsan.supp dit pourquoi).
   # clang-tidy n'analyse que les fichiers que cette configuration compile (clang-tidy-src.sh) : sa
-  # tâche est à part pour ne pas allonger celle des tests (15 min sur tout src/). Elle tourne sur chaque
-  # pull request, comme les autres.
+  # tâche est à part pour ne pas allonger celle des tests (15 min sur tout src/). Elle ne construit que les fichiers
+  # générés que lit le compilateur (build-generated.sh), pas le lecteur.
   player:
     name: Lecteur Linux (${{ matrix.name }})
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
-    # Vitesse : une poussée dans main ne passe que lavapipe ; une pull request ajoute clang-tidy
-    # (sur ses fichiers) ; asan-ubsan et tsan, plus longs, tournent la nuit, à la demande et avant
-    # une vraie release (lancement à la main).
+    # Une poussée dans main passe lavapipe, clang-tidy (sur ce qu'elle change), tsan sur les tests choisis et asan
+    # sur les cibles de fuzz ; asan-ubsan et tsan complets, plus longs, tournent la nuit et à la demande.
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"}]' || github.event_name == 'pull_request' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"tsan-pr","preset":"linux-prefix-tsan-player","test_preset":"linux-prefix-tsan-pr","tidy":false,"tests":true,"validation":"require"},{"name":"asan-fuzz","preset":"linux-prefix-asan","test_preset":"linux-prefix-asan-fuzz","tidy":false,"tests":true,"validation":"off"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"tsan-pr","preset":"linux-prefix-tsan-player","test_preset":"linux-prefix-tsan-pr","tidy":false,"tests":true,"validation":"require"},{"name":"asan-fuzz","preset":"linux-prefix-asan","test_preset":"linux-prefix-asan-fuzz","tidy":false,"tests":true,"validation":"off"}]' || '[{"name":"lavapipe","preset":"linux-prefix","tidy":false,"tests":true,"validation":"require"},{"name":"clang-tidy","preset":"linux-prefix","tidy":true,"tests":false,"validation":"require"},{"name":"asan-ubsan","preset":"linux-prefix-asan","tidy":false,"tests":true,"validation":"off"},{"name":"tsan","preset":"linux-prefix-tsan-player","tidy":false,"tests":true,"validation":"require"}]') }}
     env:
       CC: gcc-13
       CXX: g++-13
@@ -168,7 +204,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          # clang-tidy ne regarde, sur une pull request, que les fichiers qu'elle change. La profondeur est une chaîne :
+          # clang-tidy ne regarde que les fichiers que la poussée change. La profondeur est une chaîne :
           # 0 est faux dans une expression GitHub, « tidy && 0 || 1 » valait toujours 1 et origin/main n'existait pas
           # (B28-05).
           fetch-depth: ${{ matrix.tidy && '0' || '1' }}
@@ -197,7 +233,11 @@ jobs:
         env:
           AJP_LIBASS_CFLAGS: ${{ startsWith(matrix.name, 'tsan') && '-fsanitize=thread -g -O1' || '-O2 -g' }}
       - run: cmake --preset ${{ matrix.preset }}
-      - run: cmake --build --preset ${{ matrix.preset }}
+      - if: ${{ !matrix.tidy }}
+        run: cmake --build --preset ${{ matrix.preset }}
+      # clang-tidy lit les sources et compile_commands.json : seuls les en-têtes et .inc générés doivent exister.
+      - if: matrix.tidy
+        run: tools/ci/build-generated.sh build/${{ matrix.preset }}
       - run: ccache -s
       - name: Tests (Vulkan logiciel sous Xvfb)
         if: matrix.tests
@@ -234,12 +274,12 @@ jobs:
           skipped="$(grep -c '<skipped' "$fused" || true)"
           echo "moteurs fusionnés : $ran cas, $skipped sautés"
           [ "$ran" -ge 2 ] && [ "$skipped" -eq 0 ] || { echo "::error::moteurs fusionnés sautés ou absents ($skipped sautés sur $ran)"; exit 1; }
-      # Une pull request n'analyse que les fichiers qu'elle change (tout src/ si un en-tête ou un
-      # CMakeLists.txt change) ; main, la nuit et les lancements à la demande analysent tout.
+      # Une poussée dans main n'analyse que les fichiers qu'elle change et ceux qui incluent un en-tête changé ; un
+      # lancement à la demande hors de main, ce qui diffère de main ; la nuit analyse tout src/.
       - name: clang-tidy sur src/
         if: matrix.tidy
         env:
-          AJP_TIDY_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          AJP_TIDY_BASE: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && 'origin/main' || '' }}
         run: tools/ci/clang-tidy-src.sh build/linux-prefix
 
   # La configuration livrée (linux-release : Release, LTO, NDEBUG, asserts retirés) construite et testée chaque nuit
@@ -288,10 +328,10 @@ jobs:
   # installation de vcpkg complète, pour garder les ports compilés même quand la construction échoue.
   windows:
     name: Windows (MSVC)
-    # Chaque pull request, la nuit et à la demande (P1.17) : une rupture de MSVC se voit avant la fusion.
-    # Aussi chaque poussée sur main : une PR ne lit que ses propres caches et ceux de main, et c'est ainsi
-    # que le cache vcpkg d'un manifeste ou de ports changés existe pour les PR suivantes sans attendre la nuit.
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    # Chaque poussée dans main, la nuit et à la demande (P1.17). La poussée dans main garde aussi à jour le cache
+    # vcpkg d'un manifeste ou de ports changés, que lisent ensuite les autres branches.
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     runs-on: windows-2025
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -373,12 +413,13 @@ jobs:
   # Le module TensorRT de Windows (MSVC + nvcc, AJP_WITH_CUDA=ON) construit sans carte, comme la tâche `cuda` le fait
   # sous Linux (B28-01) : un intrinsèque ou une extension de GCC que MSVC refuse passait les deux autres tâches et ne
   # cassait le paquet TensorRT de Windows, le seul moteur de la cible sous Windows 11, que le jour de la release. Sur
-  # une pull request, seulement quand elle touche ce que le module compile ; chaque nuit et à la demande, toujours.
+  # une poussée dans main, seulement quand elle touche ce que le module compile ; chaque nuit et à la demande, toujours.
   # Une seule architecture (sm_89) : les erreurs d'hôte de MSVC et de nvcc n'en dépendent pas, celles du code
   # d'appareil par architecture sont celles de la tâche Linux.
   windows-cuda:
     name: Windows (CUDA et TensorRT, MSVC)
-    if: github.event_name != 'push'
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     runs-on: windows-2025
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -390,13 +431,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          fetch-depth: ${{ github.event_name == 'push' && '0' || '1' }}
       - id: touched
         shell: bash
         env:
-          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          BASE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: |
-          if [ -z "$BASE" ]; then echo "run=true" >>"$GITHUB_OUTPUT"; exit 0; fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then echo "run=true" >>"$GITHUB_OUTPUT"; exit 0; fi
           # Les chemins de l'empreinte du paquet TensorRT (tools/release/trt-fingerprint.sh) et ce qui construit Windows.
           if git diff --name-only "$BASE...HEAD" | grep -E '^(src/(core|gpu|kernels|prepare)/|third_party/cutlass/|cmake/|CMakeLists\.txt|CMakePresets\.json|vcpkg\.json|ports/|tools/deps/windows-tensorrt\.ps1|tools/release/versions\.env|\.github/workflows/ci\.yml)'; then
             echo "run=true" >>"$GITHUB_OUTPUT"
@@ -454,14 +495,15 @@ jobs:
           cmake --build --preset windows-rtx -- -k 0  # toutes les erreurs de MSVC et de nvcc en une passe
           if ($LASTEXITCODE -ne 0) { throw "construction" }
 
-  # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque pull request (P1.17) : le kit
+  # Le backend TensorRT et ses noyaux CUDA, compilés sans carte sur chaque poussée dans main (P1.17) : le kit
   # CUDA et TensorRT viennent de NVIDIA (tools/deps/linux-tensorrt.sh) et ne sortent pas de la tâche.
   # Construction seule (linux-prefix-cuda), pour toutes les architectures livrées et pas sm_89 seule : un
   # noyau qui déborde sur sm_75 ou emploie un intrinsèque absent de Turing cassait le paquet TensorRT le jour
-  # de la release, sans que la pull request l'ait vu. Les tests TensorRT demandent un GPU NVIDIA.
+  # de la release. Les tests TensorRT demandent un GPU NVIDIA.
   cuda:
     name: Lecteur Linux (CUDA et TensorRT)
-    if: github.event_name != 'push'
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     env:
       CC: gcc-13
