@@ -110,15 +110,21 @@ int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
   std::error_code error;
   fs::directory_iterator it(catalog.layout.downloads, error);
   for (; !error && it != fs::directory_iterator(); it.increment(error)) {
-    // « <sha256>.<suite> » : un paquet, un .part ou un morceau ; le reste n'est pas à nous.
+    // « <sha256>.part » ou « <sha256>.morceau », des fichiers seulement : le reste n'est pas à nous. Le
+    // dossier choisi peut être celui de l'utilisateur (« D:\downloads », ses Téléchargements) : une image
+    // disque nommée par son empreinte, ou un dossier, n'y est jamais effacé (C35-04).
     const std::string name = core::to_utf8(it->path().filename());
-    const std::string sha = name.substr(0, name.find('.'));
-    if (sha.size() != 64 ||
+    const std::size_t dot = name.find('.');
+    const std::string sha = name.substr(0, dot);
+    const std::string_view suffix =
+        dot == std::string::npos ? std::string_view() : std::string_view(name).substr(dot);
+    std::error_code kind;
+    if ((suffix != ".part" && suffix != ".morceau") || !it->is_regular_file(kind) || sha.size() != 64 ||
         !std::ranges::all_of(sha, [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; }))
       continue;
     if (std::ranges::find(known, sha) != known.end()) continue;
     std::error_code gone;
-    if (fs::remove_all(it->path(), gone) > 0 && !gone) ++removed;
+    if (fs::remove(it->path(), gone) && !gone) ++removed;
   }
   return removed;
 }

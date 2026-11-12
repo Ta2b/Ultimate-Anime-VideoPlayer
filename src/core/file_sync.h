@@ -29,8 +29,15 @@ void sync_directory(const std::filesystem::path& folder);
 // essai : rename(2) remplace même un fichier ouvert (A20-01, A05-04). patience : le temps total des essais ;
 // un dossier de plusieurs Go que Defender analyse peut le tenir 5 à 10 s (B31-06).
 inline constexpr std::chrono::milliseconds kRenamePatience{1500};
+// C31-02 : un fichier de plusieurs centaines de Mo (moteur TensorRT tout juste construit, paquet installé)
+// que Defender analyse à sa fermeture : la patience d'une installation.
+inline constexpr std::chrono::milliseconds kLargeFilePatience{10000};
 std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to,
                                 std::chrono::milliseconds patience = kRenamePatience);
+// sync_file réessayé comme rename_retrying : sous Windows, l'ouverture en écriture du fichier pour le vider
+// est refusée tant qu'un antivirus le tient (ERROR_SHARING_VIOLATION).
+std::error_code sync_file_retrying(const std::filesystem::path& file,
+                                   std::chrono::milliseconds patience = kRenamePatience);
 
 // La seule écriture atomique du projet (P5.11) : un temporaire au nom unique dans le même dossier
 // (« .<nom>.<instant>-<fil>.tmp »), écrit sur le disque, puis renommé sur path, et le dossier écrit à son

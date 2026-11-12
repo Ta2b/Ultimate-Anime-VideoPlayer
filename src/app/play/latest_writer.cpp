@@ -3,6 +3,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/pumped_task.h"
 #include "core/log.h"
 #include "core/thread.h"
 
@@ -69,7 +70,14 @@ LatestWriter::~LatestWriter() {
     const std::scoped_lock lock(abandoned().mutex);
     abandoned().states.emplace_back(state_);
   }
-  thread_.detach();
+  // Gardé au registre des fils abandonnés plutôt que détaché : à la sortie, settle_abandoned_threads sait
+  // qu'il écrit encore et choisit quick_exit plutôt que les destructeurs statiques sous ses pieds (C30-04).
+  abandon_thread(std::move(thread_), [weak = std::weak_ptr<State>(state_)] {
+    const std::shared_ptr<State> state = weak.lock();
+    if (!state) return true;
+    const std::scoped_lock lock(state->mutex);
+    return state->idle();
+  });
 }
 
 void LatestWriter::post(const std::string& key, Job job) {

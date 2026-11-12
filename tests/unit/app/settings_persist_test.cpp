@@ -15,6 +15,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain.h"
+#include "app/play/invalid_copies.h"
 #include "app/play/settings.h"
 
 namespace ajp::app::play {
@@ -166,6 +167,49 @@ TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite 
   changed.volume = 0.5F;
   CHECK_FALSE(save_settings(path, changed));
   CHECK(std::filesystem::is_directory(path));  // rien n'a été remplacé
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("C36-01 : play.toml illisible au lancement puis libéré, les changements de la séance s'écrivent",
+          "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable-then-free";
+  std::filesystem::remove_all(dir);
+  const std::filesystem::path path = dir / "play.toml";
+  std::filesystem::create_directories(path);  // tenu par un antivirus au lancement
+  REQUIRE_FALSE(load_settings(path));
+  // Libéré une seconde plus tard : le fichier d'avant, avec ses choix à lui.
+  std::filesystem::remove_all(path);
+  PlaySettings before_launch;
+  before_launch.smooth_motion = !PlaySettings{}.smooth_motion;
+  REQUIRE(save_settings(dir / "autre.toml", before_launch));
+  std::filesystem::rename(dir / "autre.toml", path);
+  // La séance, partie des défauts, change le volume : écrit (avant : « illisible au lancement » sans fin).
+  PlaySettings session;
+  session.volume = 0.5F;
+  REQUIRE(save_settings(path, session));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->volume == 0.5F);
+  // Ce que la séance n'a pas changé reste celui du fichier.
+  CHECK(reread->smooth_motion == before_launch.smooth_motion);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("C30-03 : une écriture différée plus ancienne n'écrase pas l'écriture directe qui la suit",
+          "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-order";
+  std::filesystem::remove_all(dir);
+  const std::filesystem::path path = dir / "play.toml";
+  PlaySettings older;
+  older.volume = 0.25F;
+  const std::uint64_t posted = settings_ticket();  // l'écriture postée au fil, en retard
+  PlaySettings newer;
+  newer.volume = 0.75F;
+  REQUIRE(save_settings(path, newer));          // le thread principal écrit tout de suite
+  REQUIRE(save_settings(path, older, posted));  // puis le fil finit : sautée
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->volume == 0.75F);
   std::filesystem::remove_all(dir);
 }
 
@@ -369,3 +413,20 @@ TEST_CASE("play.toml : une édition à la main survit à la relecture du fil des
 
 }  // namespace
 }  // namespace ajp::app::play
+
+TEST_CASE("C36-10 : seules les trois dernières copies mises de côté restent", "[app][settings]") {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-invalid-copies";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  for (const char* stamp :
+       {"20260101-000000", "20260201-000000", "20260301-000000", "20260401-000000", "20260501-000000"})
+    std::ofstream(dir / (std::string("play.toml.invalide-") + stamp)) << "x";
+  std::ofstream(dir / "settings.toml.invalide-20250101-000000") << "x";  // un autre fichier : à lui
+  ajp::app::play::prune_invalid_copies(dir / "play.toml");
+  CHECK_FALSE(std::filesystem::exists(dir / "play.toml.invalide-20260101-000000"));
+  CHECK_FALSE(std::filesystem::exists(dir / "play.toml.invalide-20260201-000000"));
+  CHECK(std::filesystem::exists(dir / "play.toml.invalide-20260301-000000"));
+  CHECK(std::filesystem::exists(dir / "play.toml.invalide-20260501-000000"));
+  CHECK(std::filesystem::exists(dir / "settings.toml.invalide-20250101-000000"));
+  std::filesystem::remove_all(dir);
+}

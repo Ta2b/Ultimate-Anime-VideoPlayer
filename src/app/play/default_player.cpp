@@ -21,6 +21,7 @@
 #include "app/play/pumped_task.h"
 #include "core/file_sync.h"
 #include "core/text.h"
+#include "core/text_file.h"
 #include "core/thread.h"
 #include "core/utf8_path.h"
 #include "prepare/process.h"
@@ -220,6 +221,47 @@ std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& e
       "MimeType={}\n",
       kAppName, icon_installed ? kAppId : std::string_view("video-x-generic"), kAppId, desktop_string(path),
       exec_argument(path), mimes);
+}
+
+std::string without_desktop_id(std::string_view mimeapps, std::string_view id) {
+  std::string out;
+  out.reserve(mimeapps.size());
+  while (!mimeapps.empty()) {
+    const std::size_t end = mimeapps.find('\n');
+    std::string_view line = mimeapps.substr(0, end);
+    mimeapps.remove_prefix(end == std::string_view::npos ? mimeapps.size() : end + 1);
+    const std::size_t equal = line.find('=');
+    if (equal == std::string_view::npos || line.starts_with('[') || line.starts_with('#')) {
+      out.append(line);
+      if (end != std::string_view::npos) out += '\n';
+      continue;
+    }
+    // « video/x-matroska=ajp.desktop;vlc.desktop; » : la liste sans la fiche du lecteur.
+    std::string kept;
+    std::string_view values = line.substr(equal + 1);
+    bool removed = false;
+    while (!values.empty()) {
+      const std::size_t semi = values.find(';');
+      const std::string_view value = core::trim(values.substr(0, semi));
+      values.remove_prefix(semi == std::string_view::npos ? values.size() : semi + 1);
+      if (value == id) {
+        removed = true;
+      } else if (!value.empty()) {
+        kept.append(value);
+        kept += ';';
+      }
+    }
+    if (!removed) {
+      out.append(line);
+    } else if (!kept.empty()) {
+      out.append(line.substr(0, equal + 1));
+      out += kept;
+    } else {
+      continue;  // plus rien pour ce type : la ligne part
+    }
+    if (end != std::string_view::npos) out += '\n';
+  }
+  return out;
 }
 
 std::filesystem::path desktop_file(const PlayerPlace& place) {
@@ -462,6 +504,14 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
     return std::string(i18n::tr("AJP was not registered: nothing to remove."));
   }
   std::filesystem::remove(icon_file(place), error);  // l'icône copiée à l'inscription
+  // C36-09 : les lignes que xdg-mime default a écrites ne pointent plus vers rien ; retirées.
+  if (!place.home.empty()) {
+    const std::filesystem::path mimeapps = place.home / ".config" / "mimeapps.list";
+    if (auto text = core::read_text_file_if_present(mimeapps); text && *text) {
+      if (const std::string cleaned = without_desktop_id(**text, kDesktopId); cleaned != **text)
+        (void)core::write_text_atomically(mimeapps, cleaned);
+    }
+  }
   refresh_desktop_database(file.parent_path());
   return std::string(i18n::tr("AJP is no longer in \"Open with\"."));
 #endif

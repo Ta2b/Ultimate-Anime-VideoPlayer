@@ -67,3 +67,14 @@ TEST_CASE("mémoire auto : un palier au-dessus de ×6 se relit, jusqu'au plafond
   CHECK(read.find("max") == 1000);
   CHECK_FALSE(AutoMemory::parse("[\"trop\"]\nstep = 1001\n").find("trop"));
 }
+
+TEST_CASE("mémoire auto : un fichier présent qui ne se lit pas n'est pas réécrit (C36-04)",
+          "[core][auto_memory]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp_auto_memory_unreadable";
+  std::filesystem::remove_all(dir);
+  const auto store = dir / "auto_memory.toml";
+  std::filesystem::create_directories(store);  // tenu, comme par un indexeur : présent, illisible
+  CHECK_FALSE(store_auto_step(store, "clé", 250));
+  CHECK(std::filesystem::is_directory(store));
+  std::filesystem::remove_all(dir);
+}

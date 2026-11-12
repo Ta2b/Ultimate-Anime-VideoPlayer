@@ -35,4 +35,20 @@ std::string resource_drift(const ProcessResources& first, const ProcessResources
 // mémoire vidéo et un avertissement de dérive (B33-05 : un essai de 8 h se lit dans ajp.log seul).
 std::jthread start_resource_log();
 
+class PlaceboScreen;
+
+// release_ring à la sortie de la portée (RingRelease, A33-01), puis les ressources une fois la chaîne
+// démontée au journal (C33-03) : c'est ce relevé qui se compare d'une réouverture à l'autre, pas celui de la
+// chaîne encore vivante.
+class ResourcesAfterTeardown {
+ public:
+  explicit ResourcesAfterTeardown(PlaceboScreen& screen) : screen_(screen) {}
+  ResourcesAfterTeardown(const ResourcesAfterTeardown&) = delete;
+  ResourcesAfterTeardown& operator=(const ResourcesAfterTeardown&) = delete;
+  ~ResourcesAfterTeardown();
+
+ private:
+  PlaceboScreen& screen_;
+};
+
 }  // namespace ajp::app::play

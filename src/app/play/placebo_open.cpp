@@ -378,7 +378,8 @@ PlaceboScreen::Impl::~Impl() {
   // A10-04 : tout ce démontage attend le GPU sans délai. Sur un GPU bloqué, le lecteur sort au lieu de
   // rester sans fenêtre pour toujours ; le journal dit pourquoi.
   const CloseWatch stuck(kCloseLimit, [] {
-    exit_stuck(std::format("fermeture de l'écran bloquée depuis {} s", kCloseLimit.count()));
+    exit_stuck(
+        std::format("fermeture de l'écran bloquée depuis {} s, le GPU ne répond plus", kCloseLimit.count()));
   });
   // Le veilleur d'écriture attend sur un sémaphore de l'appareil : arrêté avant tout le reste, quel que soit
   // le chemin qui ferme l'écran (sortie anticipée, exception), jamais après pl_vulkan_destroy.

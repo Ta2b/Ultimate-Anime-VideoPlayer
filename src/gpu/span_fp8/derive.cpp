@@ -127,7 +127,7 @@ std::string receipt_text(const Receipt& r, std::string_view comment) {
 std::string sizes_line(std::string_view key, const std::vector<std::string>& sizes) {
   std::string out = std::format("{} = [", key);
   for (std::size_t i = 0; i < sizes.size(); ++i)
-    out += std::format("{}{}", i == 0 ? "" : ", ", quoted(sizes[i]));
+    out += std::format("{}{}", i == 0 ? "" : ", ", quoted(std::string_view(sizes[i])));
   return out + "]";
 }
 

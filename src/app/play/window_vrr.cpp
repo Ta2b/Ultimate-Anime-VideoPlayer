@@ -84,6 +84,10 @@ struct NvVrr {
 std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
   const Nvapi* api = nvapi();
   if (api == nullptr) return std::nullopt;
+  // Le relevé et le thread principal l'appellent tous deux : NVAPI ne promet rien entre deux threads
+  // (C30-07).
+  static std::mutex nvapi_guard;
+  const std::scoped_lock lock(nvapi_guard);
   const std::string name = gdi_name(window);
   std::uint32_t id = 0;
   if (name.empty() || api->display_id(name.c_str(), &id) != 0) return std::nullopt;

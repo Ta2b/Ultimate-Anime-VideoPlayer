@@ -18,4 +18,10 @@ spdlog::sink_ptr log_file_sink(const std::filesystem::path& file, std::size_t ma
 // Le nom de la part index de file : « ajp.log », « ajp.1.log », « ajp.2.log ».
 std::filesystem::path log_part(const std::filesystem::path& file, std::size_t index);
 
+// Au lancement : les journaux des kept séances d'avant restent (ajp.log.1 le plus récent) ; après un gel ou
+// un arrêt brutal, la relance n'efface plus celui qui en garde la trace. Les parts d'une séance trop longue
+// (ajp.1.log, ajp.2.log, jusqu'à parts) tournent avec leur journal (A33-06) : ajp.1.log.1 est de la même
+// séance que ajp.log.1.
+void rotate_session_logs(const std::filesystem::path& file, int kept, std::size_t parts);
+
 }  // namespace ajp

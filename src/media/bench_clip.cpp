@@ -8,6 +8,7 @@
 #include <system_error>
 #include <vector>
 
+#include "core/file_sync.h"
 #include "core/utf8_path.h"
 #include "media/av_util.h"
 
@@ -229,6 +230,12 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
   auto written = write_clip_to(partial, spec);
   if (written && std::filesystem::file_size(partial, error) == 0 && !error)
     written = refuse(RefusalCode::FileUnwritable, "clip de calibration vide");
+  // Sur le disque avant le renommage (C36-08) : une coupure juste après ne laisse pas un clip tronqué sous
+  // son nom définitif, suivi par toutes les calibrations.
+  if (written)
+    if (const std::error_code synced = core::sync_file_retrying(partial))
+      written = refuse(RefusalCode::FileUnwritable,
+                       std::format("{} : {}", core::to_utf8(partial), synced.message()));
   if (written) std::filesystem::rename(partial, file, error);
   if (written && error)
     written =

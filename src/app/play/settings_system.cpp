@@ -18,6 +18,7 @@
 #include "app/play/panel_style.h"
 #include "app/play/paths.h"
 #include "app/play/problem_report.h"
+#include "app/play/pumped_task.h"
 #include "app/play/span_auto.h"
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
@@ -47,7 +48,8 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
   }
   const bool busy = last.pending != nullptr;
   const auto start = [&](std::expected<std::string, Refusal> (*action)(const PlayerPlace&)) {
-    last.pending = start_task<std::string>("registration", [action, place] { return action(place); });
+    last.pending =
+        start_abandonable_task<std::string>("registration", [action, place] { return action(place); });
     last.text.clear();
     last.refused = false;
   };

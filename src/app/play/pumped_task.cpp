@@ -1,13 +1,19 @@
 #include "app/play/pumped_task.h"
 
 #include <algorithm>
+#include <format>
 #include <mutex>
 #include <string>
 #include <vector>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_video.h>
 
+#include "app/play/close_watch.h"
 #include "app/play/engine_install.h"
+#include "app/play/relaunch_target.h"
+#include "core/log.h"
 
 namespace ajp::app::play {
 
@@ -21,14 +27,15 @@ bool window_close_requested() {
 
 namespace {
 
-struct Abandoned {
+struct Left {
   std::jthread thread;
   std::function<bool()> finished;
+  Abandoned kind = Abandoned::Background;
 };
 
 struct AbandonedRegistry {
   std::mutex mutex;
-  std::vector<Abandoned> threads;
+  std::vector<Left> threads;
 };
 
 AbandonedRegistry& abandoned() {
@@ -37,8 +44,8 @@ AbandonedRegistry& abandoned() {
 }
 
 // Joint ceux qui ont fini ; rend le nombre de ceux qui restent. Sous le verrou du registre.
-std::size_t reap(std::vector<Abandoned>& threads) {
-  std::erase_if(threads, [](Abandoned& each) {
+std::size_t reap(std::vector<Left>& threads) {
+  std::erase_if(threads, [](Left& each) {
     if (!each.finished()) return false;
     if (each.thread.joinable()) each.thread.join();  // le corps a rendu son résultat : join immédiat
     return true;
@@ -48,17 +55,45 @@ std::size_t reap(std::vector<Abandoned>& threads) {
 
 }  // namespace
 
-void abandon_thread(std::jthread thread, std::function<bool()> finished) {
+void abandon_thread(std::jthread thread, std::function<bool()> finished, Abandoned kind) {
   AbandonedRegistry& registry = abandoned();
   const std::scoped_lock lock(registry.mutex);
   reap(registry.threads);
-  registry.threads.push_back(Abandoned{.thread = std::move(thread), .finished = std::move(finished)});
+  registry.threads.push_back(
+      Left{.thread = std::move(thread), .finished = std::move(finished), .kind = kind});
 }
 
 std::size_t abandoned_running() {
   AbandonedRegistry& registry = abandoned();
   const std::scoped_lock lock(registry.mutex);
   return reap(registry.threads);
+}
+
+std::size_t abandoned_running(Abandoned kind) {
+  AbandonedRegistry& registry = abandoned();
+  const std::scoped_lock lock(registry.mutex);
+  reap(registry.threads);
+  return static_cast<std::size_t>(
+      std::ranges::count_if(registry.threads, [kind](const Left& each) { return each.kind == kind; }));
+}
+
+void finish_after_close(std::string_view name, const std::function<bool()>& finished) {
+  // Les fenêtres se cachent : la croix a répondu. SDL_GetWindows rend une copie à libérer.
+  const bool video = SDL_WasInit(SDL_INIT_VIDEO) != 0;
+  int count = 0;
+  if (SDL_Window** windows = video ? SDL_GetWindows(&count) : nullptr) {
+    for (int i = 0; i < count; ++i) SDL_HideWindow(windows[i]);
+    SDL_free(static_cast<void*>(windows));
+  }
+  if (finished()) return;
+  log_channel("app")->info("{} : fenêtre fermée, fin du travail attendue", name);
+  const CloseWatch stuck(kCloseWaitLimit, [what = std::string(name)] {
+    exit_stuck(std::format("{} : fenêtre fermée, travail bloqué depuis {} s", what, kCloseWaitLimit.count()));
+  });
+  while (!finished()) {
+    if (video) pump_window_events();
+    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+  }
 }
 
 bool settle_abandoned_threads(std::chrono::milliseconds grace) {
@@ -71,7 +106,8 @@ bool settle_abandoned_threads(std::chrono::milliseconds grace) {
 }
 
 std::string pumped_cuda_arch(std::string_view gpu_name) {
-  return run_pumped<std::string>("nvidia-smi", [gpu_name] { return detect_cuda_arch(gpu_name); })
+  return run_pumped<std::string>("nvidia-smi",
+                                 [name = std::string(gpu_name)] { return detect_cuda_arch(name); })
       .value_or(std::string());
 }
 

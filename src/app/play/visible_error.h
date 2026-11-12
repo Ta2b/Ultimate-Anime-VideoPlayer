@@ -18,6 +18,7 @@ inline constexpr std::string_view kDolbyVision5Key = "dolby-vision-5";
 inline constexpr std::string_view kAudioOnlyKey = "audio-only";
 inline constexpr std::string_view kImageSubtitlesKey = "image-subtitles";  // A17-02
 inline constexpr std::string_view kSubtitlesLostKey = "subtitles-lost";    // B31-14
+inline constexpr std::string_view kSurfaceLostKey = "surface-lost";        // C31-06 : l'écran, pas la carte
 
 namespace detail {
 
@@ -128,6 +129,8 @@ inline std::string keyed_error(std::string_view key) {
     return i18n::tr("image subtitles (PGS, VobSub) are not supported: no subtitles");
   if (key == kSubtitlesLostKey)
     return i18n::tr("the subtitles could not be drawn: playback continues without them");
+  if (key == kSurfaceLostKey)
+    return i18n::tr("the display was turned off or disconnected: restart the player");
   return {};
 }
 }  // namespace detail

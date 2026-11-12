@@ -84,16 +84,18 @@ Refusal io_refusal(std::string_view operation, const fs::path& path, std::error_
 }
 
 std::expected<void, Refusal> sync_file(const fs::path& file) {
-  if (const std::error_code error = core::sync_file(file))
+  // C31-02 : Defender analyse le moteur de 100 à 300 Mo que trtexec vient de fermer ; l'ouvrir en écriture
+  // pour le vider est refusé pendant ce temps (ERROR_SHARING_VIOLATION) : réessayé, comme write_atomic.
+  if (const std::error_code error = core::sync_file_retrying(file, core::kLargeFilePatience))
     return std::unexpected(io_refusal("écriture sur disque", file, error));
   return {};
 }
 
 std::expected<void, Refusal> publish_file(const fs::path& staged, const fs::path& destination) {
   if (auto synced = sync_file(staged); !synced) return synced;
-  // Sous Windows, Defender ou l'indexeur ouvre le moteur juste écrit : le renommage se réessaie un
-  // instant au lieu de jeter la construction entière (A05-04).
-  if (const std::error_code error = core::rename_retrying(staged, destination))
+  // Sous Windows, Defender ou l'indexeur ouvre le moteur juste écrit : le renommage se réessaie, avec la
+  // patience d'une installation (C31-02), au lieu de jeter la construction entière (A05-04).
+  if (const std::error_code error = core::rename_retrying(staged, destination, core::kLargeFilePatience))
     return std::unexpected(io_refusal("publication", destination, error));
   sync_directory(destination.parent_path());
   return {};

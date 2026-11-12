@@ -68,22 +68,27 @@ void AutoMemory::put(std::string_view key, int centi) {
 
 namespace {
 
-AutoMemory load(const std::filesystem::path& store) {
-  std::ifstream in(store, std::ios::binary);
-  if (!in) return {};
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  return AutoMemory::parse(text);
+// Absent : la mémoire vide. Présent mais illisible (tenu par l'indexeur) : un refus, pas la mémoire vide que
+// store_auto_step réécrirait avec une seule entrée par-dessus les 199 autres (C36-04).
+std::expected<AutoMemory, Refusal> load(const std::filesystem::path& store) {
+  auto text = read_text_file_if_present(store);
+  if (!text) return std::unexpected(std::move(text.error()));
+  if (!*text) return AutoMemory{};
+  return AutoMemory::parse(**text);
 }
 
 }  // namespace
 
 std::optional<int> load_auto_step(const std::filesystem::path& store, std::string_view key) {
-  return load(store).find(key);
+  const auto memory = load(store);
+  return memory ? memory->find(key) : std::nullopt;
 }
 
 std::expected<void, Refusal> store_auto_step(const std::filesystem::path& store, std::string_view key,
                                              int centi) {
-  AutoMemory memory = load(store);
+  auto loaded = load(store);
+  if (!loaded) return std::unexpected(std::move(loaded.error()));
+  AutoMemory memory = std::move(*loaded);
   if (memory.find(key) == centi) return {};
   memory.put(key, centi);
   return write_text_atomically(store, memory.dump());

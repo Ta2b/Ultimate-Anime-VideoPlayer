@@ -7,6 +7,7 @@
 #include <deque>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -118,6 +119,12 @@ struct Player {
   // Où en était la dernière ouverture de la chaîne quand elle s'est fermée : la relance après une perte du
   // GPU reprend là (A31-02).
   std::int64_t stopped_at_us = 0;
+  bool stopped_paused = false;  // et si elle était en pause (C31-01)
+  // Un instant sans valeur (kNoPts, le plus petit int64) garde celui d'avant ; un instant négatif vaut 0.
+  void stop_at(std::int64_t at_us, bool paused) {
+    if (at_us != std::numeric_limits<std::int64_t>::min()) stopped_at_us = at_us < 0 ? 0 : at_us;
+    stopped_paused = paused;
+  }
   // B31-04 : une perte du GPU relancera le lecteur (pas une seconde perte dans la minute, pas un essai
   // scripté) ; la relance est alors demandée avant le démontage, que le garde de fermeture peut couper.
   bool relaunch_on_loss = false;
