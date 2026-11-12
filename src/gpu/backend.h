@@ -180,9 +180,9 @@ struct Progress {
 };
 
 // Une perte de précision consentie à la vitesse (repli Vulkan : sommes en float16 gardées par l'autotuner,
-// dans la limite de la porte de fidélité). Le lecteur la montre à l'écran ; le journal ne suffit pas (C45-01).
-// layers = 0 : rien à dire. Les valeurs non mesurées le sont dites : une perte non jugée contre le calcul en
-// float, un gain repris du cache de l'autotuner.
+// dans la limite de la porte de fidélité). Le lecteur la montre à l'écran ; le journal ne suffit pas
+// (C45-01). layers = 0 : rien à dire. Les valeurs non mesurées le sont dites : une perte non jugée contre le
+// calcul en float, un gain repris du cache de l'autotuner.
 struct PrecisionNotice {
   std::uint32_t layers = 0;
   bool loss_measured = false;

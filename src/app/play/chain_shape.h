@@ -11,8 +11,8 @@
 #include "app/play/i18n.h"
 #include "app/play/options.h"
 #include "app/play/settings.h"
-#include "gpu/backend.h"
 #include "core/types.h"
+#include "gpu/backend.h"
 
 namespace ajp::app::play {
 
@@ -80,8 +80,9 @@ OpenedChain::Loaded loaded_by(const PlaySettings& settings);
 // L'avis de l'ouverture quand un moteur fusionné a été refusé ; vide sinon.
 i18n::Translated fused_refusal_notice(const OpenedChain& opened);
 
-// L'avis d'une perte de précision consentie à la vitesse (repli Vulkan, C45-01) : le nombre de couches, la perte
-// contre le calcul en float et le gain de vitesse, chacun dit « non mesuré » quand il l'est. Vide sans couche.
+// L'avis d'une perte de précision consentie à la vitesse (repli Vulkan, C45-01) : le nombre de couches, la
+// perte contre le calcul en float et le gain de vitesse, chacun dit « non mesuré » quand il l'est. Vide sans
+// couche.
 i18n::Translated reduced_precision_notice(const std::string& engine, const gpu::PrecisionNotice& reduced);
 
 // La forme que ces réglages demandent pour l'écran et la source de at.

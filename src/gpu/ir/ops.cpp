@@ -60,8 +60,8 @@ constexpr bool table_in_order() {
 }
 static_assert(table_in_order(), "kOps suit l'ordre de OpKind");
 
-// C44-06 : un OpKind hors de la table (énumération corrompue, passe future mal écrite) n'est plus pris pour un
-// Identity : sa ligne n'accepte aucune arité (min > max) et ses règles refusent le nœud.
+// C44-06 : un OpKind hors de la table (énumération corrompue, passe future mal écrite) n'est plus pris pour
+// un Identity : sa ligne n'accepte aucune arité (min > max) et ses règles refusent le nœud.
 Inferred infer_unknown(const Node& node, std::span<const Operand> /*inputs*/) {
   return graph_error(node, "opérateur hors de la table");
 }

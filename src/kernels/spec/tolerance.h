@@ -43,7 +43,8 @@ inline constexpr double kSceneScoreRelative = 1e-4;
 // Warp et mélange d'un port contre la référence, à tenseurs fp16 identiques : contraction FMA
 // et sortie fp16, vérifiées à t = 1/2. Aux autres instants, la marge doit aussi absorber logf
 // et expf approchées. Vérifiée pour le port GLSL sur lavapipe aux instants 0,25, 0,3, 0,7 et 0,75, poses
-// gardées comprises (tests/unit/vk_compute/warp_test.cpp, C50-06) ; reste à confirmer par le golden du port CUDA.
+// gardées comprises (tests/unit/vk_compute/warp_test.cpp, C50-06) ; reste à confirmer par le golden du port
+// CUDA.
 inline constexpr float kWarp = 2.0F / 1024.0F;
 
 // Le même warp lu par le filtre bilinéaire matériel (objets texture CUDA, bilinear.cuh) : la

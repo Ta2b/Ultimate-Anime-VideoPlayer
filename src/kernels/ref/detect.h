@@ -31,8 +31,8 @@ struct PairMeasure {
   std::vector<double> block_sums;  // un par bloc, rangée après rangée
 };
 
-Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float levels, const RifeGeometry& geometry,
-                                float kr = coefficients(Matrix::Bt709).kr,
+Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float levels,
+                                const RifeGeometry& geometry, float kr = coefficients(Matrix::Bt709).kr,
                                 float kb = coefficients(Matrix::Bt709).kb);
 
 }  // namespace ajp::kernels::ref

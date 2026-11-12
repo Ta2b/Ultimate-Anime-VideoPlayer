@@ -3,8 +3,9 @@
 // animejanai-inference-rtx@118c272 src/aji_trt.cpp:1294-1385 et 3700-3860.
 // Tests : tests/unit/kernels/rife_test.cpp.
 //
-// Seuls rife_crop (RGB), rife_input et rife_constants décrivent ce que le lecteur fait. rife_pad, rife_prepare,
-// rife_finish et rife_crop (YUV) suivent le port d'origine (spec/rife.h) : tests seulement (C50-03).
+// Seuls rife_crop (RGB), rife_input et rife_constants décrivent ce que le lecteur fait. rife_pad,
+// rife_prepare, rife_finish et rife_crop (YUV) suivent le port d'origine (spec/rife.h) : tests seulement
+// (C50-03).
 #pragma once
 
 #include <array>

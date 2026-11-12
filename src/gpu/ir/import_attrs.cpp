@@ -208,7 +208,8 @@ std::expected<Attrs, Refusal> resize_attrs(const AttrReader& r) {
   if (!axes) return std::unexpected(axes.error());
   if (*policy != "stretch") return r.unsupported("keep_aspect_ratio_policy autre que stretch");
   if (*antialias != 0) return r.unsupported("antialias non pris en charge");
-  // C44-05 : exclude_outside = 1 pondère autrement les voisins hors cadre ; le calcul ne le fait pas, donc refus.
+  // C44-05 : exclude_outside = 1 pondère autrement les voisins hors cadre ; le calcul ne le fait pas, donc
+  // refus.
   if (*exclude_outside != 0) return r.unsupported("exclude_outside non pris en charge");
   return ResizeAttrs{.mode = *mode, .coord = *coord, .nearest = *nearest, .axes = std::move(*axes)};
 }

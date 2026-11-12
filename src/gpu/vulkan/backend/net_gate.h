@@ -42,10 +42,10 @@ inline constexpr double kNetworkDriftLow = 0.02;
 // garder la précision réduite si la porte la laisse passer.
 inline constexpr double kGateLossDb = 0.5;
 // Des noyaux de référence qui reproduisent le jumeau à l'octet près (graphe en float32) donnent kGateExactDb
-// (200 dB) au plancher ; une variante qui ne l'est pas bit à bit (l'ordre des sommes change, découpe de K) tombe
-// vers 100 dB et serait rejetée pour un écart d'arrondi invisible (C45-04). Un plancher exact vaut donc
-// kGateExactFloorDb dans le verdict : très au-dessus de tout plancher d'un réseau float16 (75 à 82 dB), donc sans
-// effet sur eux.
+// (200 dB) au plancher ; une variante qui ne l'est pas bit à bit (l'ordre des sommes change, découpe de K)
+// tombe vers 100 dB et serait rejetée pour un écart d'arrondi invisible (C45-04). Un plancher exact vaut donc
+// kGateExactFloorDb dans le verdict : très au-dessus de tout plancher d'un réseau float16 (75 à 82 dB), donc
+// sans effet sur eux.
 inline constexpr double kGateExactDb = 200.0;
 inline constexpr double kGateExactFloorDb = 90.0;
 
@@ -81,8 +81,8 @@ std::expected<double, Refusal> network_drift(VkContext& context, MemoryAllocator
                                              std::span<const KernelChoice> reference, const Target& target);
 
 // Arrêt et progression de la porte (C45-02) : elle rejoue le réseau trois à quatre fois, ce qui dure quelques
-// secondes sur une RTX et bien plus sous lavapipe. L'arrêt se lit entre deux rejeux ; report reçoit une fraction
-// de [from, to] à chaque jeu de choix jugé.
+// secondes sur une RTX et bien plus sous lavapipe. L'arrêt se lit entre deux rejeux ; report reçoit une
+// fraction de [from, to] à chaque jeu de choix jugé.
 struct GateWatch {
   std::stop_token stop;
   std::function<void(float fraction, const std::string& stage)> report;

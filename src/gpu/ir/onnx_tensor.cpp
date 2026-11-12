@@ -182,8 +182,9 @@ std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
   return std::move(tensor);
 }
 
-// C44-03 : les dimensions d'un tenseur ont le même plafond que celles d'une forme (kMaxRank). Un entier empaqueté
-// tient en dix octets au plus : un champ plus long en porte donc plus de kMaxRank, refusé avant d'être lu.
+// C44-03 : les dimensions d'un tenseur ont le même plafond que celles d'une forme (kMaxRank). Un entier
+// empaqueté tient en dix octets au plus : un champ plus long en porte donc plus de kMaxRank, refusé avant
+// d'être lu.
 std::expected<void, Refusal> read_dims(const Field& field, std::vector<std::int64_t>& dims) {
   constexpr std::size_t kMaxPackedBytes = kMaxRank * 10;
   const bool packed = field.wire == proto::WireType::Length;
@@ -272,7 +273,8 @@ std::expected<void, Refusal> read_attribute_field(const Field& field, Attribute&
     case 5:  // t : un seul tenseur, le dernier gagne (Constant ne lit que `tensors.size() == 1`)
       attr.tensors.clear();
       return push_tensor(field, attr.tensors);
-    case 10:  // tensors : aucun opérateur de l'IR ne le lit, et chaque tenseur vide coûte une centaine d'octets (C44-04)
+    case 10:  // tensors : aucun opérateur de l'IR ne le lit, et chaque tenseur vide coûte une centaine
+              // d'octets (C44-04)
       return {};
     case 7:
       return proto::append_floats(field, attr.floats);

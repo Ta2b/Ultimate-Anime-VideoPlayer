@@ -1,7 +1,6 @@
 #include "gpu/vulkan/backend/drba_fused_engine.h"
 
 #include <algorithm>
-
 #include <charconv>
 #include <format>
 #include <utility>

@@ -13,8 +13,8 @@
 namespace ajp::gpu::vk {
 
 Pipeline::~Pipeline() {
-  // Un GPU tenu pour bloqué garde ses objets, comme les tampons, images et sémaphores : un enregistrement dont la
-  // fin de vie a attendu en vain peut encore s'en servir (C49-04).
+  // Un GPU tenu pour bloqué garde ses objets, comme les tampons, images et sémaphores : un enregistrement
+  // dont la fin de vie a attendu en vain peut encore s'en servir (C49-04).
   if (context_.stalled()) return;
   const DeviceFunctions& fn = context_.fn();
   const VkDevice device = context_.device();

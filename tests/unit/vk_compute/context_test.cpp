@@ -298,9 +298,10 @@ TEST_CASE("contexte : GPU tenu pour bloqué, puis réarmé quand il a rattrapé 
   CHECK_FALSE(ctx->stalled());
 }
 
-// C49-04 : un GPU tenu pour bloqué garde aussi ses pipelines, modules et caches (un enregistrement dont la fin de
-// vie a attendu en vain peut encore s'en servir). Le test ne voit que l'absence de plantage et de refus de la
-// couche de validation ; la garde est celle des tampons (buffer.cpp), posée ici dans les deux destructeurs.
+// C49-04 : un GPU tenu pour bloqué garde aussi ses pipelines, modules et caches (un enregistrement dont la
+// fin de vie a attendu en vain peut encore s'en servir). Le test ne voit que l'absence de plantage et de
+// refus de la couche de validation ; la garde est celle des tampons (buffer.cpp), posée ici dans les deux
+// destructeurs.
 TEST_CASE("contexte : un GPU bloqué laisse les pipelines à leur place, la destruction ne touche à rien",
           "[vk_compute][context]") {
   auto ctx = require_value(VkContext::create({.settle_floor = std::chrono::milliseconds(50)}));

@@ -210,7 +210,8 @@ std::expected<double, Refusal> fidelity_db(const ir::Graph& graph, const Outputs
     total += count;
   }
   if (diff <= 0.0 || total == 0) return kGateExactDb;
-  // Une vérité toute nulle avec un écart : rien à comparer en dB, le pire score fini (la valeur reste jugeable).
+  // Une vérité toute nulle avec un écart : rien à comparer en dB, le pire score fini (la valeur reste
+  // jugeable).
   if (peak <= 0.0) return -kGateExactDb;
   return std::min(kGateExactDb, 10.0 * std::log10(peak * peak * static_cast<double>(total) / diff));
 }
@@ -314,9 +315,11 @@ std::expected<Fidelity, Refusal> network_fidelity(VkContext& context, MemoryAllo
                                                   PipelineCache& pipelines, const ir::Graph& graph,
                                                   std::span<const std::vector<KernelChoice>> sets,
                                                   const Target& target, const GateWatch& watch) {
-  // Un arrêt demandé se voit avant chaque rejeu (C45-02) : le jumeau en float, puis un jeu de choix après l'autre.
+  // Un arrêt demandé se voit avant chaque rejeu (C45-02) : le jumeau en float, puis un jeu de choix après
+  // l'autre.
   const auto cancelled = [&]() -> std::optional<Refusal> {
-    if (watch.stop.stop_requested()) return Refusal{RefusalCode::Cancelled, "construction arrêtée pendant la porte"};
+    if (watch.stop.stop_requested())
+      return Refusal{RefusalCode::Cancelled, "construction arrêtée pendant la porte"};
     return std::nullopt;
   };
   const auto report = [&](std::size_t done, const std::string& stage) {
@@ -368,7 +371,8 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   if (!fidelity && low) {
     sets.pop_back();
     fidelity = network_fidelity(context, memory, pipelines, graph, sets, target, watch);
-    if (!fidelity && fidelity.error().code == RefusalCode::Cancelled) return std::unexpected(fidelity.error());
+    if (!fidelity && fidelity.error().code == RefusalCode::Cancelled)
+      return std::unexpected(fidelity.error());
   }
   if (!fidelity) {
     gated.unjudged = fidelity.error().detail;
@@ -377,8 +381,9 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   }
   gated.against_float = true;
   gated.floor_db = fidelity->db[0];
-  // C45-04 : un jumeau ou des noyaux de référence qui sortent une valeur non finie (une constante qui déborde en
-  // float16, un réseau qui diverge) ne jugent rien : -∞ pour tous les jeux passait pour « aucune perte ». Refus.
+  // C45-04 : un jumeau ou des noyaux de référence qui sortent une valeur non finie (une constante qui déborde
+  // en float16, un réseau qui diverge) ne jugent rien : -∞ pour tous les jeux passait pour « aucune perte ».
+  // Refus.
   if (!std::isfinite(gated.floor_db)) {
     return refuse(RefusalCode::GraphInvalid,
                   "le calcul de référence sort une valeur non finie : le réseau ne peut pas être jugé");

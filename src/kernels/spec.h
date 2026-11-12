@@ -4,9 +4,9 @@
 // Le contrat tient en constantes constexpr, en formules écrites et en tolérances ; les ports
 // GLSL reçoivent les mêmes nombres par l'en-tête que génère glsl_spec_header() (kernels/glsl.h).
 //
-// kSpecVersion est un repère de lecture, pas une clé de cache : il entre dans l'en-tête GLSL généré (donc dans
-// chaque SPIR-V) et dans spec_check.comp, mais rien ne le lit pour décider d'un cache. Ce qui invalide un
-// cache est le contenu : le SPIR-V embarqué pour les pipelines Vulkan, l'empreinte de src/kernels pour le
+// kSpecVersion est un repère de lecture, pas une clé de cache : il entre dans l'en-tête GLSL généré (donc
+// dans chaque SPIR-V) et dans spec_check.comp, mais rien ne le lit pour décider d'un cache. Ce qui invalide
+// un cache est le contenu : le SPIR-V embarqué pour les pipelines Vulkan, l'empreinte de src/kernels pour le
 // module TensorRT (tools/release/trt-fingerprint.sh). On l'incrémente à une modification de formule ou de
 // constante qu'un lecteur du contrat doit remarquer (C50-04) ; la règle n'est pas vérifiée par la CI.
 //   1 : contrat d'origine.

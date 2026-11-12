@@ -37,8 +37,8 @@ float bilinear_at(const PlaneF& p, float x, float y) {
 }
 
 // Lecture de Catmull-Rom (spec/warp.h : RifeWarp) : position ramenée dans le plan, points répétés au bord,
-// sortie bornée au minimum et au maximum des quatre points centraux (anti-ringing local : le dépassement de la
-// cubique sur un trait net est coupé, mais les sur-blancs et les négatifs de la source passent, C50-08).
+// sortie bornée au minimum et au maximum des quatre points centraux (anti-ringing local : le dépassement de
+// la cubique sur un trait net est coupé, mais les sur-blancs et les négatifs de la source passent, C50-08).
 float catmull_rom_at(const PlaneF& p, float x, float y) {
   const int w = p.width;
   const int h = p.height;

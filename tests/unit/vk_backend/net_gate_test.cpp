@@ -183,16 +183,18 @@ TEST_CASE("Porte de bout en bout : l'avis chiffré pour l'écran suit le journal
   CHECK(notice.loss_db == Catch::Approx(80.9F));
   CHECK(notice.gain_measured);
   CHECK(notice.gain_percent == Catch::Approx(50.0F));
-  // Choix repris du cache, et porte jugée sans le jumeau en float : ni gain ni perte chiffrés, et l'écran le dit.
+  // Choix repris du cache, et porte jugée sans le jumeau en float : ni gain ni perte chiffrés, et l'écran le
+  // dit.
   gated.against_float = false;
-  const PrecisionNotice unmeasured =
-      vk::net::precision_notice(choices, gated, std::vector<ReducedChoice>{{.node = 1, .variant = "coopmat_acc16"}});
+  const PrecisionNotice unmeasured = vk::net::precision_notice(
+      choices, gated, std::vector<ReducedChoice>{{.node = 1, .variant = "coopmat_acc16"}});
   CHECK(unmeasured.layers == 1);
   CHECK_FALSE(unmeasured.loss_measured);
   CHECK_FALSE(unmeasured.gain_measured);
 }
 
-// C45-04 (b) : des noyaux de référence exacts (200 dB) ne rejettent pas une variante juste mais pas identique.
+// C45-04 (b) : des noyaux de référence exacts (200 dB) ne rejettent pas une variante juste mais pas
+// identique.
 TEST_CASE("Porte de bout en bout : un plancher exact ne rejette pas une variante à l'arrondi près",
           "[vk_backend][net][gate]") {
   using vk::net::gate_verdict;
@@ -210,7 +212,8 @@ TEST_CASE("Porte de bout en bout : un plancher exact ne rejette pas une variante
 
 namespace {
 
-// Un Conv 3×3 en float dont les poids débordent le float32 : sa sortie est infinie, jumeau et référence compris.
+// Un Conv 3×3 en float dont les poids débordent le float32 : sa sortie est infinie, jumeau et référence
+// compris.
 ir::Graph overflowing_graph() {
   using namespace ajp::gpu::ir::test;
   ModelBuilder m;
@@ -236,8 +239,9 @@ TEST_CASE("Porte de bout en bout : un calcul de référence non fini refuse la c
   const auto reference = require_value(vk::net::reference_choices(graph, rig.target));
   for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
     const auto options = require_value(vk::net::candidates(graph, k, rig.target));
-    const auto exact = std::ranges::find_if(options.rbegin(), options.rend(),
-                                            [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
+    const auto exact =
+        std::ranges::find_if(options.rbegin(), options.rend(),
+                             [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
     other.push_back(exact != options.rend() ? *exact : options.back());
     differs = differs || other.back() != reference[k];
   }
@@ -257,18 +261,21 @@ TEST_CASE("Porte de bout en bout : l'arrêt est lu entre deux rejeux, la progres
   std::vector<vk::net::KernelChoice> other;
   for (std::size_t k = 0; k < graph.nodes.size(); ++k) {
     const auto options = require_value(vk::net::candidates(graph, k, rig.target));
-    const auto exact = std::ranges::find_if(options.rbegin(), options.rend(),
-                                            [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
+    const auto exact =
+        std::ranges::find_if(options.rbegin(), options.rend(),
+                             [](const vk::net::KernelChoice& c) { return !vk::net::low_precision(c); });
     other.push_back(exact != options.rend() ? *exact : options.back());
   }
   const auto reference = require_value(vk::net::reference_choices(graph, rig.target));
   if (other == reference) SKIP("aucune variante autre que la référence");
 
   std::vector<float> fractions;
-  const vk::net::GateWatch watching{.report = [&](float fraction, const std::string&) { fractions.push_back(fraction); },
-                                    .from = 0.5F,
-                                    .to = 1.0F};
-  require_value(vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target, watching));
+  const vk::net::GateWatch watching{
+      .report = [&](float fraction, const std::string&) { fractions.push_back(fraction); },
+      .from = 0.5F,
+      .to = 1.0F};
+  require_value(
+      vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target, watching));
   REQUIRE_FALSE(fractions.empty());
   CHECK(std::ranges::is_sorted(fractions));
   CHECK(fractions.front() > 0.5F);

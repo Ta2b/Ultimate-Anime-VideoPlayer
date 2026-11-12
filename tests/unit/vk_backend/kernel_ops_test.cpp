@@ -290,10 +290,11 @@ TEST_CASE("KernelOps : écriture d'un slot du ring", "[vk_backend][kernels]") {
                   RefusalCode::FieldOutOfRange);
 }
 
-// C45-03 : les enregistrements d'un ring sont clés sur la poignée de sa vue. Une vue d'une génération révolue,
-// détruite, entre au journal des destructions : son enregistrement s'oublie, et ne se rejoue pas si le pilote
-// rend la même poignée à une vue suivante.
-TEST_CASE("KernelOps : les enregistrements d'un ring changé de génération s'oublient", "[vk_backend][kernels]") {
+// C45-03 : les enregistrements d'un ring sont clés sur la poignée de sa vue. Une vue d'une génération
+// révolue, détruite, entre au journal des destructions : son enregistrement s'oublie, et ne se rejoue pas si
+// le pilote rend la même poignée à une vue suivante.
+TEST_CASE("KernelOps : les enregistrements d'un ring changé de génération s'oublient",
+          "[vk_backend][kernels]") {
   TempDir dir("ring-generations");
   auto backend = make_backend(dir.path());
   auto& vulkan = dynamic_cast<vk::VulkanKernelOps&>(*backend->kernels());
@@ -320,8 +321,9 @@ TEST_CASE("KernelOps : les enregistrements d'un ring changé de génération s'o
     require_ok(vulkan.write_ring(t->tensor(), slot, {.wait_value = wait, .signal_value = wait + 1}));
     require_ok(backend->context().wait_on_host(semaphore.at(wait + 1)));
   }
-  // Les vues des générations révolues sont détruites : chacune est entrée au journal (sans quoi l'enregistrement
-  // clé sur sa poignée resterait, et se rejouerait si le pilote la redonne à une vue suivante).
+  // Les vues des générations révolues sont détruites : chacune est entrée au journal (sans quoi
+  // l'enregistrement clé sur sa poignée resterait, et se rejouerait si le pilote la redonne à une vue
+  // suivante).
   CHECK(backend->context().destroyed().mark() - destroyed_before >= kGenerations - 2);
   CHECK(vulkan.recordings() - before < kGenerations);
 }

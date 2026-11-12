@@ -216,9 +216,9 @@ std::string pci_text(const PciAddress& pci) {
 
 std::string describe(const DeviceCaps& caps) {
   const Features& f = caps.enabled;
-  // C49-06 : ce que le VkDevice a activé, pas ce que l'appareil propose. Une extension présente dont la fonction
-  // n'est pas activée (libplacebo n'a pas demandé cooperativeMatrix) retire les variantes à matrices coopératives
-  // sans qu'une autre ligne le dise.
+  // C49-06 : ce que le VkDevice a activé, pas ce que l'appareil propose. Une extension présente dont la
+  // fonction n'est pas activée (libplacebo n'a pas demandé cooperativeMatrix) retire les variantes à matrices
+  // coopératives sans qu'une autre ligne le dise.
   std::string matrices;
   if (f.cooperative_matrix) {
     matrices = ", matrices coopératives activées";

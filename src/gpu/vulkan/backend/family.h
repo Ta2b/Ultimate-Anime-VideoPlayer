@@ -55,8 +55,9 @@ std::optional<std::string_view> matrix_units_excluded(GpuFamily family, DriverKi
 bool matrix_units_allowed(GpuFamily family, DriverKind driver);
 
 // Les tuiles FP8 (coopmat_fp8) : jamais sur une RTX 50 (Blackwell) tant qu'aucune mesure ne les justifie
-// (intention du produit : pas de FP8 sans mesure) ; le pilote les annonce pourtant. Pas non plus sur une famille
-// inconnue, qui peut être une RTX 50 d'un identifiant hors des tables (C45-05). À rouvrir avec une mesure.
+// (intention du produit : pas de FP8 sans mesure) ; le pilote les annonce pourtant. Pas non plus sur une
+// famille inconnue, qui peut être une RTX 50 d'un identifiant hors des tables (C45-05). À rouvrir avec une
+// mesure.
 bool matrix_f8_allowed(GpuFamily family);
 
 // Permises sur une famille inconnue (puce hors des plages PCI) : proposées et vérifiées par l'autotuner,

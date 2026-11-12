@@ -12,8 +12,8 @@
 
 #include "app/play/apple_model.h"
 #include "app/play/build_progress.h"
-#include "app/play/chain_shape.h"
 #include "app/play/chain_setup.h"
+#include "app/play/chain_shape.h"
 #include "app/play/controls.h"
 #include "app/play/crash_dump.h"
 #include "app/play/derived_model.h"
@@ -185,7 +185,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   if (!artifact) return std::unexpected(std::move(artifact.error()));
   if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
   log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
-  // C45-01 : une perte de précision consentie à la vitesse (repli Vulkan) se dit à l'écran, pas au journal seul.
+  // C45-01 : une perte de précision consentie à la vitesse (repli Vulkan) se dit à l'écran, pas au journal
+  // seul.
   if (const i18n::Translated reduced = reduced_precision_notice(label.name, (*artifact)->reduced);
       !reduced.empty()) {
     p.notice = p.notice.empty() ? reduced : p.notice + i18n::Translated::data(" · ") + reduced;

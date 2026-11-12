@@ -24,8 +24,8 @@ namespace {
 using detail::add_view;
 using detail::tensor_view;
 
-// Le bord de l'image remplie est le noir du RGB ingéré, 0. Les pas de luma 8 bits entre noir et blanc viennent
-// de la plage de la source (kernels::pair_levels), retenue à l'ingestion.
+// Le bord de l'image remplie est le noir du RGB ingéré, 0. Les pas de luma 8 bits entre noir et blanc
+// viennent de la plage de la source (kernels::pair_levels), retenue à l'ingestion.
 constexpr float kStudioBlack = 0.0F;
 
 std::unexpected<Refusal> refuse_slice(RefusalCode code, std::string text) {
@@ -183,8 +183,8 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   key.add(detail::handle_bits(sums.buffer)).add(detail::handle_bits(worst.buffer));
   const float levels = pair_levels_;  // la plage de la dernière source ingérée, écrite dans l'enregistrement
   key.add(std::bit_cast<std::uint32_t>(levels));
-  auto rec = recording(
-      key, [&](Recorder& r) { return runner_.rgb_pair_diff(r, *va, *vb, sums, worst, levels); });
+  auto rec =
+      recording(key, [&](Recorder& r) { return runner_.rgb_pair_diff(r, *va, *vb, sums, worst, levels); });
   if (!rec) return std::unexpected(rec.error());
   if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
   // Le lot part aussitôt : la mesure tourne pendant que l'hôte prépare la suite, au lieu

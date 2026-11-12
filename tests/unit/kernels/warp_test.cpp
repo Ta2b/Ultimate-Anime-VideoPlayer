@@ -138,9 +138,9 @@ TEST_CASE("warp : Catmull-Rom passe par les points, rend une rampe, borne un bor
 }
 
 TEST_CASE("warp : Catmull-Rom garde les sur-blancs et les négatifs de la source (C50-08)", "[warp]") {
-  // Un bord net de 0,2 à 1,3 (un rouge saturé ou un titre à sur-blancs) : la sortie reste entre le minimum et le
-  // maximum des quatre points centraux, donc elle dépasse 1 là où la source dépasse 1 ; le ringing hors du bord
-  // est coupé.
+  // Un bord net de 0,2 à 1,3 (un rouge saturé ou un titre à sur-blancs) : la sortie reste entre le minimum et
+  // le maximum des quatre points centraux, donc elle dépasse 1 là où la source dépasse 1 ; le ringing hors du
+  // bord est coupé.
   for (const auto& [low, high] : {std::pair{0.2F, 1.3F}, std::pair{-0.3F, 0.6F}}) {
     RgbImage edge(16, 4, low);
     for (auto& plane : edge.planes) {

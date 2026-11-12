@@ -369,7 +369,8 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
       net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target, watch);
   // Un arrêt traverse la porte (C45-02), de même qu'un réseau que ses valeurs non finies empêchent de juger
   // (C45-04) : ni l'un ni l'autre ne se règle par les noyaux de référence.
-  if (!gated && (gated.error().code == RefusalCode::Cancelled || gated.error().code == RefusalCode::GraphInvalid))
+  if (!gated &&
+      (gated.error().code == RefusalCode::Cancelled || gated.error().code == RefusalCode::GraphInvalid))
     return std::unexpected(gated.error());
   if (!gated) return to_reference(std::format("porte de bout en bout non jouée ({})", gated.error().detail));
   if (!gated->unjudged.empty()) {
@@ -409,7 +410,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
   if (runtime_) return load_runtime(artifact);
   if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
-  // Celui que build() vient de vérifier, s'il est de ce chemin : ni relu, ni désérialisé, ni revérifié (C45-07).
+  // Celui que build() vient de vérifier, s'il est de ce chemin : ni relu, ni désérialisé, ni revérifié
+  // (C45-07).
   std::optional<Checked> taken;
   {
     const std::scoped_lock lock(checked_mutex_);

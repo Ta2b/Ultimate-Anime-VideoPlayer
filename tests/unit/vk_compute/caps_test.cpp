@@ -69,7 +69,8 @@ TEST_CASE("Capacités : l'adresse PCI se lit aussi sur une API 1.2", "[vk_comput
   }
 }
 
-// C49-06 : la ligne des capacités dit ce que le VkDevice a activé, et signale une extension présente mais inactive.
+// C49-06 : la ligne des capacités dit ce que le VkDevice a activé, et signale une extension présente mais
+// inactive.
 TEST_CASE("Capacités : describe distingue les matrices coopératives présentes, activées ou non",
           "[vk_compute][caps]") {
   DeviceCaps caps;

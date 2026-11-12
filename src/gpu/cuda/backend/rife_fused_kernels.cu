@@ -79,7 +79,8 @@ __device__ __forceinline__ Tap pixel_tap(int x, int y, float flow_x, float flow_
 }
 
 // Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp) sur 4 × 4 points en FP32 : la position du Tap (déjà
-// ramenée dans l'image), points répétés au bord, sortie bornée aux quatre points centraux (anti-ringing local, C50-08).
+// ramenée dans l'image), points répétés au bord, sortie bornée aux quatre points centraux (anti-ringing
+// local, C50-08).
 __device__ __forceinline__ void catmull_rom(float t, float (&w)[4]) {
   const float t2 = t * t;
   const float t3 = t2 * t;

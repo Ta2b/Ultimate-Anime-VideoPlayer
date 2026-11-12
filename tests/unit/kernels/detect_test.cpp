@@ -155,8 +155,9 @@ TEST_CASE("dessins tenus : un clignement lointain n'est pas un dessin tenu (P3.2
 }
 
 TEST_CASE("mesure de paire : la plage de la source fixe les niveaux (C50-01)", "[detect]") {
-  // Deux aplats gris qui sautent, comme une coupe : le contrat YUV (scene_score) et la mesure du lecteur sur le
-  // RGB ingéré doivent s'accorder dans les deux plages. Avec 219 en plage pleine, le score sortait 14,1 % trop bas.
+  // Deux aplats gris qui sautent, comme une coupe : le contrat YUV (scene_score) et la mesure du lecteur sur
+  // le RGB ingéré doivent s'accorder dans les deux plages. Avec 219 en plage pleine, le score sortait 14,1 %
+  // trop bas.
   const int w = 256;
   const int h = 128;
   const RifeGeometry g = rife_geometry(w, h);

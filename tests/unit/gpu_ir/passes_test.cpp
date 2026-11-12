@@ -486,8 +486,8 @@ TEST_CASE("passes : une longue chaîne Conv + Relu fond sans rien perdre", "[gpu
 }
 
 // C44-01 : le graphe que fold_float_casts rend est celui des noyaux typés du moteur, pas un graphe pour
-// l'interpréteur : un Add aux opérandes float16 et float y est refusé (types égaux). Le graphe d'avant la passe
-// reste exécutable, et c'est lui qu'ajp_onnx_info --vulkan --run exécute.
+// l'interpréteur : un Add aux opérandes float16 et float y est refusé (types égaux). Le graphe d'avant la
+// passe reste exécutable, et c'est lui qu'ajp_onnx_info --vulkan --run exécute.
 TEST_CASE("passes : le graphe replié par fold_float_casts n'est pas exécutable, celui d'avant l'est",
           "[gpu_ir][passes]") {
   ModelBuilder m;

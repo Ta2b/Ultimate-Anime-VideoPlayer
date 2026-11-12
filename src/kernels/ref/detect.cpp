@@ -81,9 +81,9 @@ Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float leve
                                 const RifeGeometry& geometry, float kr, float kb) {
   if (a.width() != b.width() || a.height() != b.height() || a.width() != geometry.width ||
       a.height() != geometry.height) {
-    return fail(ErrorCode::SizeMismatch, std::format("images {}x{} et {}x{} pour une géométrie RIFE {}x{}",
-                                                     a.width(), a.height(), b.width(), b.height(),
-                                                     geometry.width, geometry.height));
+    return fail(ErrorCode::SizeMismatch,
+                std::format("images {}x{} et {}x{} pour une géométrie RIFE {}x{}", a.width(), a.height(),
+                            b.width(), b.height(), geometry.width, geometry.height));
   }
   if (!rife_fits(geometry.width, geometry.height, geometry.padded_width, geometry.padded_height)) {
     return fail(ErrorCode::ParameterOutOfRange,

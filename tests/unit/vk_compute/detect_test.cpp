@@ -158,7 +158,8 @@ TEST_CASE("mesure de paire RGB : score, blocs et pire bloc contre pair_scores, a
     const k::RgbImage b = synthetic_rgb(w, h, 12, 0.0F, 1.0F);
     TensorBuffer ga = upload_rgb(rig, a, Precision::F32);
     TensorBuffer gb = upload_rgb(rig, b, Precision::F32);
-    const std::uint32_t count = KernelRunner::block_count(static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
+    const std::uint32_t count =
+        KernelRunner::block_count(static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h));
     Buffer sums = make_buffer(rig, VkDeviceSize{count} * sizeof(float), MemoryUse::Readback);
     Buffer worst = make_buffer(rig, sizeof(std::uint32_t), MemoryUse::Readback);
     record_and_run(rig, [&](Recorder& r) {

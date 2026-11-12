@@ -95,6 +95,10 @@ void* address(const Tensor& tensor) {
   return reinterpret_cast<void*>(tensor.handle + tensor.offset);  // NOLINT(performance-no-int-to-ptr)
 }
 
+kernels::Range range_of(ColorRange range) {
+  return range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited;
+}
+
 }  // namespace
 
 std::expected<void, Refusal> TensorRtBackend::hold(const DecodedFrame& frame) {
@@ -135,10 +139,8 @@ std::expected<void, Refusal> TensorRtBackend::ingest(const DecodedFrame& frame, 
         std::format("ingestion : tenseur FP16 1×3×h×w attendu, au plus {}×{} (Area ne fait que réduire)",
                     frame.height, frame.width));
   }
-  pair_levels_ = kernels::pair_levels(frame.color.range == ColorRange::Full ? kernels::Range::Full
-                                                                           : kernels::Range::Limited);
-  const kernels::YuvScale scale = kernels::yuv_scale(
-      format->scale, frame.color.range == ColorRange::Full ? kernels::Range::Full : kernels::Range::Limited);
+  pair_levels_ = kernels::pair_levels(range_of(frame.color.range));  // pas de luma de la source
+  const kernels::YuvScale scale = kernels::yuv_scale(format->scale, range_of(frame.color.range));
   const kernels::Coefficients k = kernels::coefficients(*matrix);
   pair_k_ = k;  // la luma des mesures de paire est celle de la source (B03-06)
   IngestParams params{

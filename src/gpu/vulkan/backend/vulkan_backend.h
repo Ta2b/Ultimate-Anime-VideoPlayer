@@ -121,10 +121,11 @@ class VulkanBackend final : public Backend {
   // partout (P2.45) ; refus s'ils ne s'abaissent pas non plus, rien d'invérifié n'est écrit.
   // tuner : ses relevés chiffrent le gain d'une précision réduite gardée ; rien (rechargement), gain non
   // mesuré. progress : l'arrêt est lu entre deux rejeux et la fin de la barre (95 à 100 %) avance avec eux
-  // (C45-02) ; rien (rechargement), pas d'arrêt ni de progression. Un arrêt et un réseau injugeable (valeur non
-  // finie du calcul de référence, C45-04) sont rendus tels quels, sans repli.
+  // (C45-02) ; rien (rechargement), pas d'arrêt ni de progression. Un arrêt et un réseau injugeable (valeur
+  // non finie du calcul de référence, C45-04) sont rendus tels quels, sans repli.
   std::expected<void, Refusal> gate(const ModelSpec& model, net::ArtifactData& data,
-                                    const net::Autotuner* tuner = nullptr, const Progress* progress = nullptr);
+                                    const net::Autotuner* tuner = nullptr,
+                                    const Progress* progress = nullptr);
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);
@@ -146,8 +147,8 @@ class VulkanBackend final : public Backend {
   // arrive, sans quoi la file attendrait sans fin.
   void finish_host_step(BackendQueue& queue, std::uint64_t signal, std::expected<void, Refusal> ran);
 
-  // L'artefact que build() vient de lire, vérifier et trouver valable : load() le reprend au lieu de le relire,
-  // de le désérialiser et de le revérifier (C45-07). Consommé par load(), jamais gardé au-delà.
+  // L'artefact que build() vient de lire, vérifier et trouver valable : load() le reprend au lieu de le
+  // relire, de le désérialiser et de le revérifier (C45-07). Consommé par load(), jamais gardé au-delà.
   struct Checked {
     std::filesystem::path path;
     net::ArtifactData data;

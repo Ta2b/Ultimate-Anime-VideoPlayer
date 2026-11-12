@@ -250,9 +250,9 @@ TEST_CASE("Moteur de réseau : l'éviction d'un jeu de tenseurs enregistré se d
   const std::vector<net::KernelChoice> choices = require_value(net::default_choices(graph, rig.target));
   net::Program program = require_value(net::lower(graph, choices, rig.target));
   std::vector<std::string> lines;
-  auto engine = require_value(net::NetEngine::create(*rig.context, *rig.memory, *rig.pipelines, graph,
-                                                     std::move(program),
-                                                     {.log = [&](std::string_view text) { lines.emplace_back(text); }}));
+  auto engine = require_value(
+      net::NetEngine::create(*rig.context, *rig.memory, *rig.pipelines, graph, std::move(program),
+                             {.log = [&](std::string_view text) { lines.emplace_back(text); }}));
   std::vector<Buffer> inputs;
   std::vector<Buffer> outputs;
   const std::size_t sets = net::NetEngine::kMaxRecordings + 3;
@@ -265,7 +265,8 @@ TEST_CASE("Moteur de réseau : l'éviction d'un jeu de tenseurs enregistré se d
     (void)require_value(engine->recording({&in_view, 1}, {&out_view, 1}));
   }
   CHECK(engine->recordings() == net::NetEngine::kMaxRecordings);
-  const auto said = std::ranges::count_if(lines, [](const std::string& l) { return l.contains("jeux de tenseurs"); });
+  const auto said =
+      std::ranges::count_if(lines, [](const std::string& l) { return l.contains("jeux de tenseurs"); });
   CHECK(said == 1);
 }
 

@@ -121,9 +121,9 @@ VulkanKernelOps::~VulkanKernelOps() {
   for (const RingView& v : ring_views_) destroy_view(v.view);
 }
 
-// C45-03 : une vue détruite entre au journal des destructions avant de partir, comme un tampon ou une image : le
-// pilote en rend volontiers la poignée à la vue suivante, et un enregistrement clé sur l'ancienne (ring, plans
-// d'une image décodée) serait rejoué vers un objet détruit.
+// C45-03 : une vue détruite entre au journal des destructions avant de partir, comme un tampon ou une image :
+// le pilote en rend volontiers la poignée à la vue suivante, et un enregistrement clé sur l'ancienne (ring,
+// plans d'une image décodée) serait rejoué vers un objet détruit.
 void VulkanKernelOps::destroy_view(VkImageView view) {
   context_.destroyed().note(handle_word(view));
   context_.fn().vkDestroyImageView(context_.device(), view, nullptr);
