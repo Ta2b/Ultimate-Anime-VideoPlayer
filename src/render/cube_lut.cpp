@@ -2,14 +2,15 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <format>
 #include <limits>
 
 #include "core/text.h"
-#include "kernels/ref/half.h"
 
 namespace ajp::render {
 namespace {
@@ -230,27 +231,29 @@ CubeLut identity_lut(int size) {
   return lut;
 }
 
+// C41-02 : en flottants 32 bits. En demi-flottants, chaque nœud d'une LUT de PQ s'arrondissait d'au plus
+// 0,25 code 10 bits, et les 19 emplacements de la pile livrée en cumulaient jusqu'à 2. Le texte double (8
+// chiffres par composante), la texture aussi (4 × 33³ × 16 octets par LUT distincte, 2,3 Mo pour la pile).
 std::string lut_texture_block(const CubeLut& lut, std::string_view name) {
   std::string out =
-      std::format("//!TEXTURE {}\n//!SIZE {} {} {}\n//!FORMAT rgba16hf\n//!FILTER LINEAR\n//!BORDER CLAMP\n",
+      std::format("//!TEXTURE {}\n//!SIZE {} {} {}\n//!FORMAT rgba32f\n//!FILTER LINEAR\n//!BORDER CLAMP\n",
                   name, lut.size, lut.size, lut.size);
   static constexpr char kHex[] = "0123456789abcdef";
   const std::size_t texels = lut.rgb.size() / 3;
-  out.reserve(out.size() + texels * 16 + texels / 4 + 8);
-  const std::uint16_t one = kernels::ref::float_to_half(1.0F);
-  const auto put = [&](std::uint16_t half) {  // petit-boutiste, comme la texture en mémoire
-    const unsigned char bytes[2] = {static_cast<unsigned char>(half & 0xffU),
-                                    static_cast<unsigned char>(half >> 8U)};
-    for (const unsigned char byte : bytes) {
+  out.reserve(out.size() + texels * 32 + texels / 4 + 8);
+  const auto put = [&](float value) {  // petit-boutiste, comme la texture en mémoire
+    const auto bits = std::bit_cast<std::uint32_t>(value);
+    for (unsigned shift = 0; shift < 32U; shift += 8U) {
+      const auto byte = static_cast<unsigned char>((bits >> shift) & 0xffU);
       out.push_back(kHex[byte >> 4U]);
       out.push_back(kHex[byte & 0xfU]);
     }
   };
   for (std::size_t i = 0; i < texels; ++i) {
-    put(kernels::ref::float_to_half(lut.rgb[3 * i]));
-    put(kernels::ref::float_to_half(lut.rgb[3 * i + 1]));
-    put(kernels::ref::float_to_half(lut.rgb[3 * i + 2]));
-    put(one);
+    put(lut.rgb[3 * i]);
+    put(lut.rgb[3 * i + 1]);
+    put(lut.rgb[3 * i + 2]);
+    put(1.0F);
     if (i % 4 == 3) out.push_back('\n');
   }
   out.push_back('\n');

@@ -2,6 +2,7 @@
 // durée attendue lue dans les journaux du cache.
 #include "app/play/build_progress.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -112,6 +113,26 @@ TEST_CASE("Un long journal se lit par ses deux bouts", "[app][build]") {
   CHECK(builds[0].onnx == std::filesystem::path("/m/rife.onnx"));
   CHECK(builds[0].pixels == std::int64_t{720} * 1280);
   CHECK_THAT(builds[0].seconds, WithinAbs(42.5, 1e-9));
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("C24-06 : le journal récent du modèle est lu même dans un cache de mille journaux",
+          "[app][build]") {
+  const auto dir = std::filesystem::temp_directory_path() / "ajp-build-progress-many";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const auto write = [&](const std::string& name, const char* model, const char* seconds) {
+    std::ofstream(dir / name) << "&&&& RUNNING # trtexec --onnx=/m/" << model
+                              << ".onnx --optShapes=input:1x3x720x1280 --skipInference\nEngine built in "
+                              << seconds << " sec.\n";
+    return dir / name;
+  };
+  const auto old = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24);
+  for (int i = 0; i < 1000; ++i) {
+    std::filesystem::last_write_time(write("old" + std::to_string(i) + ".build.log", "autre", "10"), old);
+  }
+  write("current.build.log", "span", "180");
+  CHECK_THAT(expected_build_seconds(dir, "/m/span.onnx", 720 * 1280), WithinAbs(180.0, 1e-9));
   std::filesystem::remove_all(dir);
 }
 

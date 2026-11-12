@@ -122,4 +122,35 @@ TEST_CASE("Touches : F11 et Alt + Entrée basculent le plein écran (B24-03)", "
   CHECK_FALSE(toggles(SDLK_F10, SDL_KMOD_NONE));
 }
 
+TEST_CASE("Touches : relâcher Maj en pleine rafale de seeks ne lance pas de seek exact (C24-05)",
+          "[app][input]") {
+  const core::KeyMap keys = core::KeyMap::defaults();
+  SDL_Event right{};
+  right.type = SDL_EVENT_KEY_DOWN;
+  right.key.key = SDLK_RIGHT;
+  right.key.scancode = SDL_SCANCODE_RIGHT;
+  right.key.repeat = true;
+  const auto burst = input_of(right, keys);
+  REQUIRE(burst);
+  REQUIRE(std::holds_alternative<Command>(*burst));
+  REQUIRE(std::holds_alternative<cmd::SeekRelative>(std::get<Command>(*burst)));
+
+  SDL_Event shift_up{};
+  shift_up.type = SDL_EVENT_KEY_UP;
+  shift_up.key.key = SDLK_LSHIFT;
+  shift_up.key.scancode = SDL_SCANCODE_LSHIFT;
+  CHECK_FALSE(input_of(shift_up, keys));  // avant : un seek exact « delta 0 » en pleine répétition
+
+  SDL_Event right_up = shift_up;
+  right_up.key.key = SDLK_RIGHT;
+  right_up.key.scancode = SDL_SCANCODE_RIGHT;
+  const auto done = input_of(right_up, keys);  // la touche du seek elle-même termine la rafale
+  REQUIRE(done);
+  const auto* seek = std::get_if<cmd::SeekRelative>(&std::get<Command>(*done));
+  REQUIRE(seek != nullptr);
+  CHECK(seek->exact);
+  CHECK(seek->delta_us == 0);
+  CHECK_FALSE(input_of(right_up, keys));
+}
+
 }  // namespace ajp::app::play

@@ -4,6 +4,8 @@ name: Garde de release
 # - le commit construit doit être celui de l'étiquette (pas une branche choisie à la main) ;
 # - l'étiquette doit dire la version de project() dans CMakeLists.txt : v<VERSION>, ou v<VERSION>-<suffixe> pour une
 #   préversion (A28-04) ; le suffixe est compilé dans le binaire (package-*.sh, AJP_VERSION_SUFFIX) ;
+# - une release finale a une clé de secours compilée (C51-04) ; une préversion se contente d'une CI verte
+#   quelconque (C51-07), une finale exige le témoin d'un lancement complet (ci-dessous) ;
 # - ci.yml doit être vert sur ce commit. Une étiquette poussée en même temps que son commit sur main attend la fin
 #   de ci.yml : relancer alors la release ;
 # - une étiquette finale (sans suffixe de préversion) exige de plus le témoin « ci-verdict » d'un lancement
@@ -48,6 +50,11 @@ jobs:
         run: |
           [ -s "tools/release/notes/$TAG.md" ] \
             || { echo "::error::tools/release/notes/$TAG.md manque ou est vide : une release finale a ses notes"; exit 1; }
+      - name: Clé de secours
+        if: inputs.tag != ''
+        env:
+          TAG: ${{ inputs.tag }}
+        run: tools/ci/check-backup-key.sh "$TAG"
       - name: Commit de l'étiquette, ci.yml vert
         if: inputs.tag != ''
         env:
@@ -60,6 +67,8 @@ jobs:
             echo "::error::le commit construit ($GITHUB_SHA) n'est pas celui de l'étiquette $TAG ($tagged)"
             exit 1
           fi
+          # Tout lancement vert suffit pour une préversion (C51-07) ; une étiquette finale exige en plus, ci-dessous, le
+          # témoin d'un lancement complet (une seule exigence : le titre « (complète) » de run-name n'est plus lu).
           green="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
             --json databaseId -q length)"
           if [ "${green:-0}" -eq 0 ]; then

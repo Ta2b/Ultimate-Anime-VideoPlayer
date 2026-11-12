@@ -30,6 +30,9 @@ on:
       archive-sha256:
         description: "SHA-256 de ajp-linux-x64.tar.gz tel que cette construction l'a produit (B51-07)"
         value: ${{ jobs.package.outputs.archive-sha256 }}
+      appimage-sha256:
+        description: "SHA-256 de ajp-linux-x86_64.AppImage tel que cette construction l'a produit (C51-08)"
+        value: ${{ jobs.package.outputs.appimage-sha256 }}
 
 # Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
 # qu'à lire, pour que vcpkg, Meson et les actions tierces n'en reçoivent pas un qui écrit (B51-12).
@@ -80,6 +83,7 @@ jobs:
     timeout-minutes: 120
     outputs:
       archive-sha256: ${{ steps.sums.outputs.archive }}
+      appimage-sha256: ${{ steps.appimage.outputs.sha }}
     steps:
       # Le jeton d'écriture manque : échouer ici, pas après quarante minutes de construction (B51-12).
       - name: Jeton de publication
@@ -173,9 +177,12 @@ jobs:
           [ "$ran" -ge 2 ] && [ "$skipped" -eq 0 ] || { echo "::error::tests de découpe sautés ($skipped sur $ran)"; exit 1; }
       # Le même lecteur en un seul fichier (tools/release/appimage.sh) : à rendre exécutable et à lancer.
       - name: AppImage
+        id: appimage
         run: |
           tools/release/appimage.sh "$RUNNER_TEMP/package/ajp-linux-x64.tar.gz" "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage"
           (cd "$RUNNER_TEMP/package" && sha256sum ajp-linux-x86_64.AppImage >> SHA256SUMS)
+          # Ce que « publier » retrouve dans la release avant de le signer au manifeste (C51-08).
+          echo "sha=$(sha256sum "$RUNNER_TEMP/package/ajp-linux-x86_64.AppImage" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
       # Le paquet lancé tel que l'utilisateur le recevra (B51-04) : extrait dans un dossier propre, ses bibliothèques
       # trouvées, le lecteur qui répond puis joue un clip en Vulkan logiciel jusqu'à un instantané, l'AppImage de même.
       # Un échec arrête tout avant la release.

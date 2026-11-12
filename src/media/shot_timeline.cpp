@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <memory>
+#include <utility>
 
 namespace ajp::media {
 namespace {
@@ -31,13 +33,26 @@ ShotStats blend(const ShotStats& a, const ShotStats& b, float t) {
 
 }  // namespace
 
+// Les plans qui peuvent toucher [from_us, to_us) : de celui qui finit après from_us (les plans sont triés et
+// ne se chevauchent pas, leurs fins aussi sont triées) à celui qui commence avant to_us. Une dichotomie au
+// lieu d'un parcours de toute la chronologie à chaque ajout (C42-09).
+std::pair<std::size_t, std::size_t> ShotTimeline::window(std::int64_t from_us, std::int64_t to_us) const {
+  const auto first =
+      std::ranges::partition_point(shots_, [from_us](const Shot& s) { return s.end_us <= from_us; });
+  const auto last = std::ranges::partition_point(first, shots_.end(),
+                                                 [to_us](const Shot& s) { return s.start_us < to_us; });
+  return {static_cast<std::size_t>(first - shots_.begin()), static_cast<std::size_t>(last - shots_.begin())};
+}
+
 void ShotTimeline::add(const Shot& found) {
   constexpr std::int64_t kEdgeUs = 250'000;
   const std::scoped_lock lock(mutex_);
+  const auto [from, to] = window(found.start_us, found.end_us);
   // Un plan qui déborde de quelques images sur un voisin déjà trouvé (l'analyse arrêtée à l'entrée d'une
   // zone connue) s'arrête à lui au lieu de le remplacer.
   Shot shot = found;
-  for (const Shot& s : shots_) {
+  for (std::size_t i = from; i < to; ++i) {
+    const Shot& s = shots_[i];
     if (!overlaps(s, shot) || (s.start_us >= shot.start_us && s.end_us <= shot.end_us)) continue;
     if (std::min(s.end_us, shot.end_us) - std::max(s.start_us, shot.start_us) >= kEdgeUs) continue;
     if (s.start_us > shot.start_us) {
@@ -52,7 +67,8 @@ void ShotTimeline::add(const Shot& found) {
   // à la frontière d'un saut). Un plan entier remplace ceux qu'il recouvre (la même zone, analysée à
   // nouveau après un saut).
   if (!shot.cut_before) {
-    for (const Shot& s : shots_) {
+    for (std::size_t i = from; i < to; ++i) {
+      const Shot& s = shots_[i];
       if (!overlaps(s, shot)) continue;
       if (s.start_us <= shot.start_us) {
         shot.start_us = s.end_us;
@@ -62,8 +78,27 @@ void ShotTimeline::add(const Shot& found) {
       if (shot.end_us <= shot.start_us) return;
     }
   }
-  for (std::size_t i = shots_.size(); i-- > 0;) {
-    if (overlaps(shots_.at(i), shot)) {
+  // Un voisin que le plan ne recouvre qu'en partie garde la part qu'il ne recouvre pas (C42-03 : effacé
+  // entier, il laissait un trou que l'analyse ne reprenait qu'une fois). Sa part d'après le plan ne commence
+  // plus à une coupe connue.
+  for (std::size_t i = to; i-- > from;) {
+    Shot& s = shots_[i];
+    if (!overlaps(s, shot)) continue;
+    const bool before = s.start_us < shot.start_us;
+    const bool after = s.end_us > shot.end_us;
+    if (before && after) {
+      Shot tail = s;
+      tail.start_us = shot.end_us;
+      tail.cut_before = false;
+      s.end_us = shot.start_us;
+      shots_.insert(shots_.begin() + static_cast<std::ptrdiff_t>(i) + 1, tail);
+      serials_.insert(serials_.begin() + static_cast<std::ptrdiff_t>(i) + 1, next_serial_++);
+    } else if (before) {
+      s.end_us = shot.start_us;
+    } else if (after) {
+      s.start_us = shot.end_us;
+      s.cut_before = false;
+    } else {
       shots_.erase(shots_.begin() + static_cast<std::ptrdiff_t>(i));
       serials_.erase(serials_.begin() + static_cast<std::ptrdiff_t>(i));
     }
@@ -73,6 +108,7 @@ void ShotTimeline::add(const Shot& found) {
   shots_.insert(at, shot);
   serials_.insert(serials_.begin() + index, next_serial_++);
   ++version_;
+  ++shots_version_;
 }
 
 void ShotTimeline::add_flash(FlashSpan span) {
@@ -104,6 +140,20 @@ std::vector<FlashSpan> ShotTimeline::flashes() const {
 std::uint64_t ShotTimeline::version() const {
   const std::scoped_lock lock(mutex_);
   return version_;
+}
+
+std::uint64_t ShotTimeline::shots_version() const {
+  const std::scoped_lock lock(mutex_);
+  return shots_version_;
+}
+
+std::shared_ptr<const std::vector<Shot>> ShotTimeline::shots_snapshot() const {
+  const std::scoped_lock lock(mutex_);
+  if (!snapshot_ || snapshot_version_ != shots_version_) {
+    snapshot_ = std::make_shared<const std::vector<Shot>>(shots_);
+    snapshot_version_ = shots_version_;
+  }
+  return snapshot_;
 }
 
 std::optional<ShotAt> ShotTimeline::at(std::int64_t pts_us) const {
@@ -187,6 +237,7 @@ void ShotTimeline::clear() {
   serials_.clear();
   flashes_.clear();
   ++version_;
+  ++shots_version_;
 }
 
 }  // namespace ajp::media

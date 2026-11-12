@@ -344,8 +344,14 @@ std::expected<RifeFusedEngine::Glue*, Refusal> RifeFusedEngine::glue_for(
   const auto same = [](const BufferView& a, const BufferView& b) {
     return a.buffer == b.buffer && a.offset == b.offset && a.size == b.size;
   };
-  for (const auto& glue : glues_) {
-    if (same(glue->io[0], io[0]) && same(glue->io[1], io[1]) && same(glue->io[2], io[2])) return glue.get();
+  for (auto found = glues_.begin(); found != glues_.end(); ++found) {
+    const auto& glue = *found;
+    if (same(glue->io[0], io[0]) && same(glue->io[1], io[1]) && same(glue->io[2], io[2])) {
+      // Le moins récemment utilisé part le premier, pas le plus ancien créé (C45-08) : un jeu encore en
+      // rotation passe en fin de liste à chaque emploi.
+      std::rotate(found, found + 1, glues_.end());
+      return glues_.back().get();
+    }
   }
   auto glue = std::make_unique<Glue>();
   glue->io = io;

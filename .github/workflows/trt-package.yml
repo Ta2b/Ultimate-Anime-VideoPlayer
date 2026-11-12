@@ -67,6 +67,12 @@ jobs:
             [ "$ONLY_IF_MISSING" = true ] && echo "SKIP=1" >>"$GITHUB_ENV"
           fi
           true
+      # Le jeton d'écriture manque : échouer ici, pas après une à deux heures de construction (C51-12).
+      - name: Jeton de publication
+        if: env.SKIP != '1' && inputs.publier && env.PUBLISHED != '1'
+        env:
+          RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication dans $AJP_RELEASE_REPO"; exit 1; }'
       - name: Place sur le disque
         if: env.SKIP != '1'
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL

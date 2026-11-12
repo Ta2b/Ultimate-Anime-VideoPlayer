@@ -186,8 +186,7 @@ std::expected<std::vector<Buffer>, Refusal> upload_inputs(VkContext& context, Me
 }
 
 // Le PSNR des sorties `got` (graphe `graph`) contre les sorties `truth` du jumeau en float, en dB, le pic
-// étant la plus grande valeur absolue de la vérité. −∞ pour une valeur non finie, kExactDb sans écart.
-constexpr double kExactDb = 200.0;
+// étant la plus grande valeur absolue de la vérité. −∞ pour une valeur non finie, kGateExactDb sans écart.
 std::expected<double, Refusal> fidelity_db(const ir::Graph& graph, const Outputs& got, const ir::Graph& twin,
                                            const Outputs& truth) {
   double diff = 0.0;
@@ -210,9 +209,11 @@ std::expected<double, Refusal> fidelity_db(const ir::Graph& graph, const Outputs
     }
     total += count;
   }
-  if (diff <= 0.0 || total == 0) return kExactDb;
-  if (peak <= 0.0) return -std::numeric_limits<double>::infinity();
-  return std::min(kExactDb, 10.0 * std::log10(peak * peak * static_cast<double>(total) / diff));
+  if (diff <= 0.0 || total == 0) return kGateExactDb;
+  // Une vérité toute nulle avec un écart : rien à comparer en dB, le pire score fini (la valeur reste
+  // jugeable).
+  if (peak <= 0.0) return -kGateExactDb;
+  return std::min(kGateExactDb, 10.0 * std::log10(peak * peak * static_cast<double>(total) / diff));
 }
 
 // La porte d'avant (écart quadratique aux noyaux de référence en float16, sur du bruit), quand le jumeau en
@@ -313,7 +314,20 @@ std::expected<double, Refusal> network_drift(VkContext& context, MemoryAllocator
 std::expected<Fidelity, Refusal> network_fidelity(VkContext& context, MemoryAllocator& memory,
                                                   PipelineCache& pipelines, const ir::Graph& graph,
                                                   std::span<const std::vector<KernelChoice>> sets,
-                                                  const Target& target) {
+                                                  const Target& target, const GateWatch& watch) {
+  // Un arrêt demandé se voit avant chaque rejeu (C45-02) : le jumeau en float, puis un jeu de choix après
+  // l'autre.
+  const auto cancelled = [&]() -> std::optional<Refusal> {
+    if (watch.stop.stop_requested())
+      return Refusal{RefusalCode::Cancelled, "construction arrêtée pendant la porte"};
+    return std::nullopt;
+  };
+  const auto report = [&](std::size_t done, const std::string& stage) {
+    if (!watch.report) return;
+    const float share = static_cast<float>(done) / static_cast<float>(sets.size() + 1);
+    watch.report(watch.from + ((watch.to - watch.from) * share), stage);
+  };
+  if (auto stop = cancelled()) return std::unexpected(*stop);
   const ir::Graph twin = float_twin(graph);
   auto twin_reference = reference_choices(twin, target);
   if (!twin_reference) return std::unexpected(twin_reference.error());
@@ -322,22 +336,26 @@ std::expected<Fidelity, Refusal> network_fidelity(VkContext& context, MemoryAllo
   auto truth = run_once(context, memory, pipelines, twin, *twin_reference, target, *twin_inputs);
   if (!truth) return std::unexpected(truth.error());
   twin_inputs->clear();
+  report(1, "porte : jumeau en float");
   auto inputs = upload_inputs(context, memory, graph, true);
   if (!inputs) return std::unexpected(inputs.error());
   Fidelity out;
   for (const std::vector<KernelChoice>& choices : sets) {
+    if (auto stop = cancelled()) return std::unexpected(*stop);
     auto got = run_once(context, memory, pipelines, graph, choices, target, *inputs);
     if (!got) return std::unexpected(got.error());
     auto db = fidelity_db(graph, *got, twin, *truth);
     if (!db) return std::unexpected(db.error());
     out.db.push_back(*db);
+    report(out.db.size() + 1, std::format("porte : {} / {}", out.db.size(), sets.size()));
   }
   return out;
 }
 
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,
                                            PipelineCache& pipelines, const ir::Graph& graph,
-                                           std::vector<KernelChoice> tuned, const Target& target) {
+                                           std::vector<KernelChoice> tuned, const Target& target,
+                                           const GateWatch& watch) {
   auto reference = reference_choices(graph, target);
   if (!reference) return std::unexpected(reference.error());
   Gated gated{.choices = std::move(tuned)};
@@ -345,12 +363,16 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   const bool low = std::ranges::any_of(gated.choices, low_precision);
   std::vector<std::vector<KernelChoice>> sets{*reference, gated.choices};
   if (low) sets.push_back(full_precision(gated.choices, *reference));
-  auto fidelity = network_fidelity(context, memory, pipelines, graph, sets, target);
+  auto fidelity = network_fidelity(context, memory, pipelines, graph, sets, target, watch);
+  // Un arrêt n'est pas un jumeau injouable : il traverse la porte (C45-02).
+  if (!fidelity && fidelity.error().code == RefusalCode::Cancelled) return std::unexpected(fidelity.error());
   // Le jumeau en float ne se joue pas (mémoire, opérateur sans noyau float) : la porte d'avant. Un réglage
   // que les sommes en float ne prennent pas est écarté de la liste et rejoué sans lui.
   if (!fidelity && low) {
     sets.pop_back();
-    fidelity = network_fidelity(context, memory, pipelines, graph, sets, target);
+    fidelity = network_fidelity(context, memory, pipelines, graph, sets, target, watch);
+    if (!fidelity && fidelity.error().code == RefusalCode::Cancelled)
+      return std::unexpected(fidelity.error());
   }
   if (!fidelity) {
     gated.unjudged = fidelity.error().detail;
@@ -359,6 +381,13 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   }
   gated.against_float = true;
   gated.floor_db = fidelity->db[0];
+  // C45-04 : un jumeau ou des noyaux de référence qui sortent une valeur non finie (une constante qui déborde
+  // en float16, un réseau qui diverge) ne jugent rien : -∞ pour tous les jeux passait pour « aucune perte ».
+  // Refus.
+  if (!std::isfinite(gated.floor_db)) {
+    return refuse(RefusalCode::GraphInvalid,
+                  "le calcul de référence sort une valeur non finie : le réseau ne peut pas être jugé");
+  }
   gated.db = fidelity->db[1];
   const std::optional<double> wider = sets.size() == 3 ? std::optional(fidelity->db[2]) : std::nullopt;
   const GateVerdict verdict = gate_verdict(gated.floor_db, gated.db, wider);
@@ -379,27 +408,58 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   return gated;
 }
 
-std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
-                                     const Gated& gated, std::span<const ReducedChoice> measured) {
-  const auto layers = static_cast<std::size_t>(std::ranges::count_if(choices, low_precision));
-  if (layers == 0) return {};
-  // Le gain n'est chiffré que pour les couches dont l'autotuner a mesuré les deux variantes ; un relevé dont
-  // le choix a été repris ensuite par la porte (autre variante au même nœud) ne compte pas.
+namespace {
+
+// Ce que les relevés de l'autotuner disent des couches gardées à précision réduite.
+struct ReducedSummary {
+  std::size_t layers = 0;
+  std::size_t timed = 0;  // celles dont les deux variantes ont été mesurées
   double chosen_us = 0.0;
   double full_us = 0.0;
-  std::size_t timed = 0;
+  bool gain_measured() const { return timed > 0 && chosen_us > 0.0; }
+  double gain_percent() const { return ((full_us / chosen_us) - 1.0) * 100.0; }
+};
+
+ReducedSummary summarize_reduced(std::span<const KernelChoice> choices,
+                                 std::span<const ReducedChoice> measured) {
+  ReducedSummary sum;
+  sum.layers = static_cast<std::size_t>(std::ranges::count_if(choices, low_precision));
+  if (sum.layers == 0) return sum;
+  // Le gain n'est chiffré que pour les couches dont l'autotuner a mesuré les deux variantes ; un relevé dont
+  // le choix a été repris ensuite par la porte (autre variante au même nœud) ne compte pas.
   for (const ReducedChoice& r : measured) {
     if (r.node >= choices.size() || choices[r.node].variant != r.variant || !r.full_precision_us) continue;
-    chosen_us += r.chosen_us;
-    full_us += *r.full_precision_us;
-    ++timed;
+    sum.chosen_us += r.chosen_us;
+    sum.full_us += *r.full_precision_us;
+    ++sum.timed;
   }
+  return sum;
+}
+
+}  // namespace
+
+PrecisionNotice precision_notice(std::span<const KernelChoice> choices, const Gated& gated,
+                                 std::span<const ReducedChoice> measured) {
+  const ReducedSummary sum = summarize_reduced(choices, measured);
+  PrecisionNotice notice{.layers = static_cast<std::uint32_t>(sum.layers)};
+  if (sum.layers == 0) return notice;
+  notice.gain_measured = sum.gain_measured();
+  if (notice.gain_measured) notice.gain_percent = static_cast<float>(sum.gain_percent());
+  notice.loss_measured = gated.against_float;
+  if (notice.loss_measured) notice.loss_db = static_cast<float>(gated.db);
+  return notice;
+}
+
+std::string reduced_precision_notice(std::string_view model, std::span<const KernelChoice> choices,
+                                     const Gated& gated, std::span<const ReducedChoice> measured) {
+  const ReducedSummary sum = summarize_reduced(choices, measured);
+  if (sum.layers == 0) return {};
   std::string gain = "gain de vitesse non mesuré (choix repris du cache)";
-  if (timed > 0 && chosen_us > 0.0) {
+  if (sum.gain_measured()) {
     gain = std::format(
         "gain mesuré {:+.0f} % de vitesse sur {} couche(s) sur {} ({:.0f} µs contre {:.0f} µs en "
         "sommes float)",
-        ((full_us / chosen_us) - 1.0) * 100.0, timed, layers, chosen_us, full_us);
+        sum.gain_percent(), sum.timed, sum.layers, sum.chosen_us, sum.full_us);
   }
   const std::string loss =
       gated.against_float
@@ -408,7 +468,7 @@ std::string reduced_precision_notice(std::string_view model, std::span<const Ker
                 gated.db, gated.db - gated.floor_db, gated.floor_db)
           : std::string("perte non mesurée (le calcul en float n'a pas pu être joué)");
   return std::format("{} : précision réduite sur {} couche(s) pour gagner en vitesse : {} ; {}", model,
-                     layers, loss, gain);
+                     sum.layers, loss, gain);
 }
 
 }  // namespace ajp::gpu::vk::net

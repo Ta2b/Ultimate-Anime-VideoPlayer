@@ -227,6 +227,43 @@ TEST_CASE("Backend : enqueue d'un graphe à onze sorties", "[vk_backend][backend
   }
 }
 
+// C45-01 : l'avis de précision réduite est dans l'artefact et revient à chaque lancement, construit ou déjà
+// là.
+TEST_CASE("Backend : l'avis de précision réduite suit l'artefact jusqu'au lecteur", "[vk_backend][backend]") {
+  TempDir dir("avis");
+  auto backend = make_backend(dir.path() / "cache", {.autotune = false});
+  const ModelSpec model = write_model(dir.path(), "span_fp32", span_model(false), TensorType::F32);
+  const Artifact first = build(*backend, model, shapes(12, 16));
+  CHECK(first.reduced.layers == 0);  // sans autotuner, aucune couche à précision réduite
+  vk::net::ArtifactData data =
+      require_value(vk::net::deserialize(require_value(vk::net::read_file(first.path))));
+  data.notice =
+      PrecisionNotice{.layers = 3, .loss_measured = true, .loss_db = 81.25F, .gain_measured = false};
+  require_ok(vk::net::write_file(first.path, vk::net::serialize(data)));
+  const Artifact again = build(*backend, model, shapes(12, 16));  // l'artefact est valable : relu tel quel
+  CHECK(again.reduced == data.notice);
+  const vk::net::ArtifactData back =
+      require_value(vk::net::deserialize(require_value(vk::net::read_file(again.path))));
+  CHECK(back.notice == data.notice);
+}
+
+// C45-07 : load() reprend l'artefact que build() vient de lire et vérifier au lancement à chaud, sans le
+// relire : le fichier ôté entre les deux ne l'empêche pas, alors qu'un load() seul le relit et le refuse.
+TEST_CASE("Backend : load reprend l'artefact vérifié par build au lancement à chaud",
+          "[vk_backend][backend]") {
+  TempDir dir("chaud");
+  auto backend = make_backend(dir.path() / "cache", {.autotune = false});
+  const ModelSpec model = write_model(dir.path(), "span_fp32", span_model(false), TensorType::F32);
+  const Artifact cold = build(*backend, model, shapes(12, 16));
+  const Artifact warm = build(*backend, model, shapes(12, 16));  // valable : lu et vérifié une fois
+  REQUIRE(warm.path == cold.path);
+  std::filesystem::remove(warm.path);
+  auto engine = backend->load(warm);
+  CHECK(engine.has_value());
+  // Consommé : un second load relit le fichier, absent maintenant.
+  CHECK_FALSE(backend->load(warm).has_value());
+}
+
 TEST_CASE("Backend : artefact, aller-retour et refus", "[vk_backend][backend]") {
   TempDir dir("artefact");
   auto backend = make_backend(dir.path() / "cache", {.autotune = false});

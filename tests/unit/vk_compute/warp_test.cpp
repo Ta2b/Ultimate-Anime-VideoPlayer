@@ -66,7 +66,59 @@ void check_warp(Rig& rig, const Pair& pair, float t, Precision p) {
   CHECK(max_abs_diff(download_rgb(rig, dst), as_stored(*want, p)) <= k::tolerance::kWarp);
 }
 
+// Garder les poses (warp_blend_poses) : l'instant de chaque pixel suit le mouvement de la paire précédente.
+// previous nul : la paire précédente était tenue (C50-06).
+void check_poses(Rig& rig, const Pair& pair, const k::ref::Motion* previous, float t, Precision p) {
+  INFO("poses, t = " << t << ", précédente " << (previous ? "présente" : "tenue") << ", précision "
+                     << static_cast<int>(p));
+  const auto want = k::ref::warp_blend_poses(pair.a, pair.b, pair.motion, previous, t);
+  REQUIRE(want);
+  TensorBuffer a = upload_rgb(rig, pair.a, p);
+  TensorBuffer b = upload_rgb(rig, pair.b, p);
+  TensorBuffer flow = upload_planes(rig, pair.motion.flow, p);
+  const std::array mask_plane{pair.motion.mask};
+  TensorBuffer mask = upload_planes(rig, mask_plane, p);
+  TensorBuffer before = previous ? upload_planes(rig, previous->flow, p) : tensor_target(rig, 1, 1, 4, p);
+  TensorBuffer dst = tensor_target(rig, a.view.width, a.view.height, 3, p);
+  const MotionView motion{
+      .flow = flow.view, .mask = mask.view, .area = pair.motion.area, .warp = pair.motion.warp};
+  const PoseView poses{.keep = true, .previous = previous ? &before.view : nullptr};
+  record_and_run(rig, [&](Recorder& r) {
+    return rig.kernels().warp_blend(r, a.view, b.view, motion, t, dst.view, poses);
+  });
+  const float diff = max_abs_diff(download_rgb(rig, dst), as_stored(*want, p));
+  CHECK(diff <= k::tolerance::kWarp);
+  // Les poses changent bien l'image par rapport au même instant sans elles : le test ne passe pas à vide.
+  const auto plain = k::ref::warp_blend_at(pair.a, pair.b, pair.motion, t);
+  REQUIRE(plain);
+  if (previous) CHECK(max_abs_diff(*want, *plain) > 1e-4F);
+}
+
 }  // namespace
+
+TEST_CASE("warp : garder les poses, avec et sans paire précédente, contre la référence",
+          "[vk_compute][warp][poses]") {
+  Rig rig = make_rig();
+  const Pair pair =
+      synthetic_pair(80, 60, 64, 64, {.x = 4, .y = 6, .width = 40, .height = 30}, Precision::F32);
+  const k::ref::Motion previous =
+      synthetic_motion(64, 64, {.x = 4, .y = 6, .width = 40, .height = 30}, 4.0F, Precision::F32);
+  for (const float t : {0.25F, 0.75F}) {
+    check_poses(rig, pair, &previous, t, Precision::F32);
+    check_poses(rig, pair, nullptr, t, Precision::F32);
+  }
+}
+
+TEST_CASE("warp : garder les poses en float16", "[vk_compute][warp][poses]") {
+  Rig rig = make_rig();
+  require_f16(rig);
+  const Pair pair =
+      synthetic_pair(80, 60, 64, 64, {.x = 4, .y = 6, .width = 40, .height = 30}, Precision::F16);
+  const k::ref::Motion previous =
+      synthetic_motion(64, 64, {.x = 4, .y = 6, .width = 40, .height = 30}, 4.0F, Precision::F16);
+  check_poses(rig, pair, &previous, 0.25F, Precision::F16);
+  check_poses(rig, pair, nullptr, 0.75F, Precision::F16);
+}
 
 TEST_CASE("warp : mouvement estimé à t = 1/2 et autres instants, en float", "[vk_compute][warp]") {
   Rig rig = make_rig();

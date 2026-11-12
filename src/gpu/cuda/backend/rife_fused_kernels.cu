@@ -79,7 +79,8 @@ __device__ __forceinline__ Tap pixel_tap(int x, int y, float flow_x, float flow_
 }
 
 // Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp) sur 4 × 4 points en FP32 : la position du Tap (déjà
-// ramenée dans l'image), points répétés au bord, sortie bornée à [0, 1].
+// ramenée dans l'image), points répétés au bord, sortie bornée aux quatre points centraux (anti-ringing
+// local, C50-08).
 __device__ __forceinline__ void catmull_rom(float t, float (&w)[4]) {
   const float t2 = t * t;
   const float t3 = t2 * t;
@@ -96,6 +97,8 @@ __device__ __forceinline__ float catmull_rom_sample(const __half* plane, const T
   catmull_rom(t.wy, wy);
   const std::size_t stride = static_cast<std::size_t>(w);
   float sum = 0.0F;
+  float lo = 3.0e38F;
+  float hi = -3.0e38F;
 #pragma unroll
   for (int j = 0; j < 4; ++j) {
     const auto yy = static_cast<std::size_t>(min(max(t.y0 - 1 + j, 0), h - 1));
@@ -103,11 +106,16 @@ __device__ __forceinline__ float catmull_rom_sample(const __half* plane, const T
 #pragma unroll
     for (int i = 0; i < 4; ++i) {
       const auto xx = static_cast<std::size_t>(min(max(t.x0 - 1 + i, 0), w - 1));
-      row += __half2float(plane[yy * stride + xx]) * wx[i];
+      const float v = __half2float(plane[yy * stride + xx]);
+      row += v * wx[i];
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+        lo = fminf(lo, v);
+        hi = fmaxf(hi, v);
+      }
     }
     sum += row * wy[j];
   }
-  return fminf(fmaxf(sum, 0.0F), 1.0F);
+  return fminf(fmaxf(sum, lo), hi);
 }
 
 __device__ __forceinline__ float bilinear(const __half* plane, const Tap& t, int w) {

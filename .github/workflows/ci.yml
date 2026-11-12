@@ -18,6 +18,9 @@ name: CI
 #   (linux-release) se construit et se teste dans release-linux.yml, sur le paquet même.
 # macOS n'a plus de tâche : son support est délaissé pour l'instant ; release-macos.yml reste lançable à la main.
 # Versions et paquets : tools/release/versions.env.
+# Le titre du lancement dit l'étendue : la garde de release (release-guard.yml) y cherche « (complète) » pour une
+# étiquette finale (C51-07).
+run-name: CI${{ inputs.complete && ' (complète)' || '' }}
 on:
   workflow_dispatch:
     inputs:
