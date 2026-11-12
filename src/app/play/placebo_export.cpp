@@ -200,6 +200,7 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
 // En PQ, la dernière passe compresse vers le pic du fichier comme la lecture vers celui de l'écran, au blanc
 // de référence du contenu (203 nits : le PQ passe tel quel, comme sous Windows).
 std::expected<void, Refusal> FrameExport::open_grade(pl_gpu gpu) {
+  if (!setup_.grade) return {};
   auto grade = render::Grade::create(gpu);
   if (!grade) return std::unexpected(std::move(grade.error()));
   if (auto set = grade->set_looks(setup_.looks); !set) return std::unexpected(std::move(set.error()));
