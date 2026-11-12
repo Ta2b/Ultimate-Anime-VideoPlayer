@@ -567,6 +567,33 @@ bool PlayerUi::handle(const SDL_Event& event, std::int64_t now_us, std::vector<I
   }
 }
 
+// Les clics que l'interface ne prend pas vont à l'image : simple clic pause (après l'intervalle de double
+// clic), double clic plein écran, clic droit pause.
+void PlayerUi::route_clicks(std::int64_t now_us, std::vector<Input>& actions) {
+  const bool captured = ImGui::GetIO().WantCaptureMouse;
+  for (const Click& click : clicks_) {
+    if (captured) continue;
+    if (click.button == ImGuiMouseButton_Right) {
+      // Le second clic droit d'un double clic n'est pas une seconde bascule.
+      if (click.at_us - last_right_click_us_ >= kDoubleClickUs)
+        actions.emplace_back(Command{cmd::TogglePause{}});
+      last_right_click_us_ = click.at_us;
+    } else if (const auto what = Controls::click(click.count)) {
+      if (*what == Controls::VideoClick::Fullscreen) {
+        pending_pause_us_ = 0;  // le premier clic n'a rien mis en pause
+        actions.emplace_back(ToggleFullscreen{});
+      } else {
+        pending_pause_us_ = click.at_us + kDoubleClickUs;
+      }
+    }
+  }
+  clicks_.clear();
+  if (pending_pause_us_ != 0 && now_us >= pending_pause_us_) {
+    pending_pause_us_ = 0;
+    actions.emplace_back(Command{cmd::TogglePause{}});
+  }
+}
+
 UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions) {
   const bool hide_cursor = controls_.cursor_hidden(now_us, view.paused);
   if (hide_cursor != cursor_hidden_) {
@@ -593,32 +620,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   home_ = false;
   wizard_ = false;
 
-  const ImGuiIO& io = ImGui::GetIO();
   begin_frame(now_us);
-  // Les clics que l'interface ne prend pas vont à l'image : simple clic pause, double plein écran,
-  // clic droit pause.
-  const bool captured = io.WantCaptureMouse;
-  for (const Click& click : clicks_) {
-    if (captured) continue;
-    if (click.button == ImGuiMouseButton_Right) {
-      // Le second clic droit d'un double clic n'est pas une seconde bascule.
-      if (click.at_us - last_right_click_us_ >= kDoubleClickUs)
-        actions.emplace_back(Command{cmd::TogglePause{}});
-      last_right_click_us_ = click.at_us;
-    } else if (const auto what = Controls::click(click.count)) {
-      if (*what == Controls::VideoClick::Fullscreen) {
-        pending_pause_us_ = 0;  // le premier clic n'a rien mis en pause
-        actions.emplace_back(ToggleFullscreen{});
-      } else {
-        pending_pause_us_ = click.at_us + kDoubleClickUs;
-      }
-    }
-  }
-  clicks_.clear();
-  if (pending_pause_us_ != 0 && now_us >= pending_pause_us_) {
-    pending_pause_us_ = 0;
-    actions.emplace_back(Command{cmd::TogglePause{}});
-  }
+  route_clicks(now_us, actions);
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
   choices_.position_us = view.position_us;
   choices_.paused = view.paused;

@@ -483,7 +483,7 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
       const int failure = errno;
       if (failure != EADDRINUSE) {
         log_channel("app")->warn("instance : socket {} impossible ({}), pas d'instance unique",
-                                 core::to_utf8(path), std::generic_category().message(failure));
+                                 core::to_utf8(path.filename()), std::generic_category().message(failure));
         return {};
       }
     }

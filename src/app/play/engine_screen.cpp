@@ -335,6 +335,28 @@ std::function<void(FirstRunView&)> retranslation(GpuFacts gpu, EnginesHere here,
   };
 }
 
+// P3.3 : ce que l'assistant a choisi jusque-là, écrit à chaque « Suivant », « Passer » ou « Précédent ».
+void save_wizard_progress(const std::filesystem::path& engines_path, const std::filesystem::path& play_path,
+                          const FirstRunView& shown, core::Settings& engines) {
+  const auto log = log_channel("app");
+  const Wizard& wizard = shown.wizard;
+  PlaySettings saved;
+  if (auto play = load_settings(play_path)) saved = std::move(*play);
+  if (auto written = save_settings(play_path, wizard_play_settings(wizard, std::move(saved))); !written)
+    log->warn("{}", written.error().detail);
+  engines.first_run_step = std::max(engines.first_run_step, wizard.seen);
+  // Les cases de l'écran Moteur, une fois passé, s'écrivent avec lui : fermer la fenêtre avant la fin
+  // reprend avec les mêmes cases au lieu de la présélection (first_run_view).
+  core::Settings picked = engines;
+  if (wizard.seen >= static_cast<int>(WizardStep::Engines)) {
+    picked = settings_after(shown, engines);
+    picked.first_run_done = engines.first_run_done;
+    picked.first_run_step = engines.first_run_step;
+  }
+  if (auto written = core::save_settings(engines_path, picked); !written)
+    log->warn("{}", written.error().detail);
+}
+
 // La fin de l'assistant : réglages, inscription et calibration. Faux si la fenêtre se ferme pendant la
 // calibration. Un moteur coché qui n'a pas pu s'installer (install_failed) : pas de calibration, qui
 // mesurerait Vulkan sur une carte faite pour TensorRT ; le préréglage Auto estimé reste, et l'avis dit où
@@ -405,23 +427,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   }
   view.first_time = wizard_mode && !revisit && !engines.first_run_done;
   const auto on_step = [&](const FirstRunView& shown) {
-    if (!wizard_mode || revisit) return;
-    const Wizard& wizard = shown.wizard;
-    PlaySettings saved;
-    if (auto play = load_settings(play_path)) saved = std::move(*play);
-    if (auto written = save_settings(play_path, wizard_play_settings(wizard, std::move(saved))); !written)
-      log->warn("{}", written.error().detail);
-    engines.first_run_step = std::max(engines.first_run_step, wizard.seen);
-    // Les cases de l'écran Moteur, une fois passé, s'écrivent avec lui : fermer la fenêtre avant la fin
-    // reprend avec les mêmes cases au lieu de la présélection (first_run_view).
-    core::Settings picked = engines;
-    if (wizard.seen >= static_cast<int>(WizardStep::Engines)) {
-      picked = settings_after(shown, engines);
-      picked.first_run_done = engines.first_run_done;
-      picked.first_run_step = engines.first_run_step;
-    }
-    if (auto written = core::save_settings(s.engines_path, picked); !written)
-      log->warn("{}", written.error().detail);
+    if (wizard_mode && !revisit) save_wizard_progress(s.engines_path, play_path, shown, engines);
   };
   int furthest = engines.first_run_step;
   auto chosen_view =

@@ -271,9 +271,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
       return std::move(*chain);
     }
     StageFailure& failure = chain.error();
-    // La fenêtre fermée pendant un chargement : la lecture s'arrête, comme à « q » (run_chain), sans retenir
-    // l'étage comme annulé ni refaire un tour que la même fermeture interromprait.
-    if (failure.refusal.key == kWindowClosedKey) return std::nullopt;
+    if (failure.refusal.key == kWindowClosedKey) return std::nullopt;  // fenêtre fermée, comme « q »
     // Une vidéo glissée arrête toute la préparation : rien n'est retenu, la lecture passe à elle (A08-08).
     // Un appareil perdu n'est pas un refus de l'étage : la chaîne entière s'arrête, la relance suit (A31-02).
     if (!failure.stage || failure.refusal.key == kDroppedVideoKey ||

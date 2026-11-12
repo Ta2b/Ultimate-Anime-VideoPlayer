@@ -118,6 +118,7 @@ class PlayerUi {
   void apply_scale();
   bool over_ui() const;
   void begin_frame(std::int64_t now_us);
+  void route_clicks(std::int64_t now_us, std::vector<Input>& actions);
   void follow_text_input();
 
   SDL_Window* window_;

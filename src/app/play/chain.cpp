@@ -283,6 +283,32 @@ void ask_engines(Chain& to, EngineChange request) {
 
 }  // namespace
 
+// L'épisode voisin dans le dossier. Hors du thread de la fenêtre, borné comme la fin d'épisode : un dossier
+// sur un NAS lent ou endormi ne fige plus l'image ni l'interface le temps du parcours.
+void step_episode(Chain& to, int direction, std::int64_t now_us) {
+  Controls& controls = to.ui.controls();
+  constexpr std::chrono::milliseconds kFolderLimit{5000};
+  auto searched = run_pumped_for<std::optional<std::filesystem::path>>(
+      "next-episode", kFolderLimit, true,
+      [file = to.file, direction] { return sibling_episode(file, direction); });
+  if (!searched) {
+    log_channel("app")->warn("épisode voisin : {}", searched.error().detail);
+    controls.notify(i18n::ui_tr("The folder does not answer"), now_us);
+    return;
+  }
+  const std::optional<std::filesystem::path> neighbour = std::move(*searched);
+  if (!neighbour) {
+    controls.notify(direction > 0 ? i18n::ui_tr("No next episode in this folder")
+                                  : i18n::ui_tr("No previous episode in this folder"),
+                    now_us);
+    return;
+  }
+  log_channel("app")->info("épisode {} : {}", direction > 0 ? "suivant" : "précédent",
+                           file_for_log(*neighbour));
+  to.next_file = *neighbour;
+  to.reopen = to.running;
+}
+
 void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
   const std::string name = prepare::utf8_path(drop.path.filename());
   if (drop.kind == DropKind::Video && same_video_file(drop.path, to.file)) {
@@ -446,30 +472,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             if (auto next = next_audio(to.pipeline.tracks())) switch_audio(to, *next, now_us);
           },
           [&](const CycleSubtitles&) { switch_subtitles(to, next_subtitle(to.pipeline.tracks()), now_us); },
-          [&](const StepEpisode& step) {
-            // Hors du thread de la fenêtre, borné comme la fin d'épisode : un dossier sur un NAS lent ou
-            // endormi ne fige plus l'image ni l'interface le temps du parcours.
-            constexpr std::chrono::milliseconds kFolderLimit{5000};
-            auto searched = run_pumped_for<std::optional<std::filesystem::path>>(
-                "next-episode", kFolderLimit, true,
-                [file = to.file, direction = step.direction] { return sibling_episode(file, direction); });
-            if (!searched) {
-              log_channel("app")->warn("épisode voisin : {}", searched.error().detail);
-              controls.notify(i18n::ui_tr("The folder does not answer"), now_us);
-              return;
-            }
-            const std::optional<std::filesystem::path> neighbour = std::move(*searched);
-            if (!neighbour) {
-              controls.notify(step.direction > 0 ? i18n::ui_tr("No next episode in this folder")
-                                                 : i18n::ui_tr("No previous episode in this folder"),
-                              now_us);
-              return;
-            }
-            log_channel("app")->info("épisode {} : {}", step.direction > 0 ? "suivant" : "précédent",
-                                     file_for_log(*neighbour));
-            to.next_file = *neighbour;
-            to.reopen = to.running;
-          },
+          [&](const StepEpisode& step) { step_episode(to, step.direction, now_us); },
           [&](const PlayFile& play) {
             log_channel("app")->info("lecture de {}", file_for_log(play.file));
             to.next_file = play.file;

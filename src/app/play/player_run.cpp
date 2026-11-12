@@ -135,6 +135,18 @@ std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusa
 
 }  // namespace
 
+// Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
+// fenêtre visible et figée, Windows la marque « Ne répond pas » au bout de cinq secondes. La croix la cache
+// d'abord ; une réouverture montre « Chargement » au lieu d'une image qui ne répond plus.
+void mask_before_teardown(Player& p, bool closing, bool reopening) {
+  if (closing) {
+    SDL_HideWindow(p.screen.window());
+    SDL_SyncWindow(p.screen.window());
+  } else if (reopening) {
+    show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
+  }
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
@@ -542,9 +554,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       chain.reopen = chain.running;
     }
-    // La veille annoncée puis annulée (couvercle rouvert, un programme l'empêche) : le système le dit, et
-    // aucun trou de temps ne la confirme. Sans cela, l'indicateur levé ferait lire un gel de la boucle, dix
-    // minutes plus tard, comme une veille (chaîne rouverte pour rien).
+    // Veille annoncée puis annulée (couvercle rouvert) : sans cela, l'indicateur levé ferait lire un gel de
+    // la boucle, dix minutes plus tard, comme une veille.
     if (sleep_notice.take_resumed()) sleep_announced = false;
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
@@ -752,16 +763,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
   session.end();
   out.flush();
-  // Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
-  // fenêtre visible et figée, Windows la marque « Ne répond pas » au bout de cinq secondes. La croix la cache
-  // d'abord (l'image figée ne reste pas) ; une réouverture montre « Chargement » au lieu d'une image qui ne
-  // répond plus.
-  if (session.quit_asked() && !reopen) {
-    SDL_HideWindow(out.window());
-    SDL_SyncWindow(out.window());
-  } else if (reopen) {
-    show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
-  }
+  mask_before_teardown(p, session.quit_asked() && !reopen, reopen.has_value());
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
   // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend

@@ -270,6 +270,50 @@ std::string unreadable_text(const std::filesystem::path& file, const std::option
                          visible_error(*why));
 }
 
+// Le marqueur est la seule garde contre une boucle de relances : sans lui (disque plein, dossier en
+// lecture seule), pas de relance, le lancement continue (Vulkan prend la suite si le module reste périmé).
+bool write_relaunch_marker(const std::filesystem::path& marker_path) {
+  std::ofstream marker(marker_path);
+  marker << "1\n";
+  marker.flush();
+  if (marker) return true;
+  log_channel("app")->warn("moteurs mis à jour : marqueur {} non écrit, pas de relance",
+                           core::to_utf8(marker_path.filename()));
+  return false;
+}
+
+// La position de reprise (resume_from) n'est lue que plus bas : la relance la calcule ici, sinon la vidéo
+// rouverte repartait de 0:00 (la cible de relance vaut toujours « forcée »).
+std::int64_t relaunch_position(const std::optional<std::int64_t>& forced_start,
+                               const PlayOptions& file_options, const core::Settings& engines,
+                               const std::filesystem::path& settings_path,
+                               const std::filesystem::path& file) {
+  if (forced_start) return *forced_start;
+  if (file_options.resume && engines.resume_position) {
+    if (const auto at = resume_from(paths::resume(settings_path.parent_path()), file)) return *at;
+  }
+  return file_options.start_us;
+}
+
+// Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
+std::expected<void, Refusal> probe_given_file(const PlayOptions& options,
+                                              std::optional<media::TrackInfo>& given,
+                                              std::optional<Refusal>& unreadable_why) {
+  if (options.file.empty()) return {};
+  auto video = probe_video(options.file, false);
+  if (video) {
+    given = std::move(*video);
+  } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
+    return std::unexpected(std::move(video.error()));  // un essai scripté : le code de sortie le dit
+  } else {
+    // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
+    // ne dirait rien. L'accueil s'ouvre avec la raison.
+    log_channel("app")->warn("{}", video.error().detail);
+    unreadable_why = std::move(video.error());
+  }
+  return {};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -282,22 +326,10 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::optional<RelaunchTarget> reopened_after = take_relaunch(options, paths, launched_s);
   set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
-  // Le fichier donné est lu avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune.
   std::optional<media::TrackInfo> given;
   std::optional<Refusal> unreadable_why;  // le fichier donné ne se lit pas : dit à l'accueil, à sa place
-  if (!options.file.empty()) {
-    auto video = probe_video(options.file, false);
-    if (video) {
-      given = std::move(*video);
-    } else if (options.hidden || options.bench_out || options.snapshot || !options.keys.empty()) {
-      return std::unexpected(std::move(video.error()));  // un essai scripté : le code de sortie le dit
-    } else {
-      // Lancé depuis le gestionnaire de fichiers (« Ouvrir avec »), sans terminal : un refus silencieux
-      // ne dirait rien. L'accueil s'ouvre avec la raison.
-      log_channel("app")->warn("{}", video.error().detail);
-      unreadable_why = std::move(video.error());
-    }
-  }
+  if (auto probed = probe_given_file(options, given, unreadable_why); !probed)
+    return std::unexpected(std::move(probed.error()));
   std::atomic<bool> playing{false};  // la vérification des mises à jour attend la fin de la vidéo
   std::jthread update_check;
   const std::filesystem::path update_file = paths::update_state(paths.data);
@@ -404,21 +436,12 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
   if (!updated) return std::unexpected(std::move(updated.error()));
   if (!*updated) return {};
-  if (engines_updated && !relaunched && paths.relaunch != nullptr) {
-    // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le
-    // moteur choisi s'ouvre au lancement suivant sans autre geste.
-    // Le marqueur est la seule garde contre une boucle de relances : sans lui (disque plein, dossier en
-    // lecture seule), pas de relance, le lancement continue (Vulkan prend la suite si le module reste
-    // périmé).
-    std::ofstream marker(relaunch_marker);
-    marker << "1\n";
-    marker.flush();
-    if (marker) {
-      log->info("moteurs mis à jour : le lecteur se relance");
-      *paths.relaunch = true;
-      return {};
-    }
-    log->warn("moteurs mis à jour : marqueur {} non écrit, pas de relance", core::to_utf8(relaunch_marker));
+  // Le module remplacé ne se charge pas sous le même nom dans ce processus : le lecteur repart, et le moteur
+  // choisi s'ouvre au lancement suivant sans autre geste.
+  if (engines_updated && !relaunched && paths.relaunch != nullptr && write_relaunch_marker(relaunch_marker)) {
+    log->info("moteurs mis à jour : le lecteur se relance");
+    *paths.relaunch = true;
+    return {};
   }
 
   // Lancé sans fichier, l'accueil choisit la vidéo, et il revient à la fin de chacune. Une vidéo
@@ -538,14 +561,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     static_cast<void>((*ui)->controls().set_volume(settings.volume));
     // Le module chargé a été remplacé sur le disque (moteur mis à jour depuis l'écran des moteurs) : il ne se
     // recharge pas sous le même nom dans ce processus, le lecteur se relance sur cette vidéo.
-    // La position de reprise (resume_from) n'est lue que plus bas : la relance la calcule ici, sinon la vidéo
-    // rouverte repartait de 0:00 (la cible de relance vaut toujours « forcée »).
     const auto relaunch_start_us = [&] {
-      if (forced_start) return *forced_start;
-      if (file_options.resume && engines->resume_position) {
-        if (const auto at = resume_from(paths::resume(settings_path.parent_path()), file)) return *at;
-      }
-      return file_options.start_us;
+      return relaunch_position(forced_start, file_options, *engines, settings_path, file);
     };
     if (library && library->replaced_on_disk() && paths.relaunch != nullptr) {
       log->info("moteur mis à jour : le lecteur se relance");
