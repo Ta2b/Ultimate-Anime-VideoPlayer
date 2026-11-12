@@ -147,6 +147,22 @@ fichiers de NVIDIA tirés pour de bon (~0,74 Go pour une carte sm89).
 | BIOS | Above 4G Decoding et Resizable BAR actifs |
 | Pendant la lecture | fermer le navigateur qui décode en NVDEC ; mesures reproductibles : voir tools/bench/banc.sh |
 
+## Horloges pendant la lecture
+
+À 24 i/s, le GPU dort entre deux paires et le pilote baisse ses horloges : 1790 MHz relevés en lecture contre
+2825 MHz au banc (`docs/span-fp8-cutlass.md`). Une paire à mouvement fort qui suit une scène calme démarre donc à
+bas régime, au moment où le budget est le plus serré (piste N1 de la deuxième passe TensorRT). Le lecteur ne peut
+pas verrouiller les horloges lui-même : NVML (`nvmlDeviceSetGpuLockedClocks`) et `nvidia-smi -lgc` demandent root,
+et PowerMizer ne se règle que sous X11. Pour une séance, ou pour essayer :
+
+```sh
+sudo nvidia-smi -lgc 2600,2600   # horloges SM fixées jusqu'au prochain reset ou redémarrage
+sudo nvidia-smi -rgc             # retour au réglage du pilote
+```
+
+La consommation monte d'environ 70 W pendant la lecture. La ligne « GPU … » de fin de lecture (télémétrie NVML)
+dit les extrêmes d'horloge relevés : on y voit si la lecture a tourné à bas régime.
+
 ## Mesures à faire (audit, §Mesures)
 
 E1 : état du BAR (le lecteur l'affiche maintenant). E2 : Vulkan contre TensorRT, bureau au repos
