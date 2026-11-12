@@ -114,6 +114,21 @@ std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std
   return {};
 }
 
+// interpolation.auto_mode (« libre » : Rapide, « recommande » : Stable ; toute autre valeur est refusée) et
+// auto_off, « Couper l'interpolation si la carte ne suit pas », cochée dans un fichier d'avant elle.
+void read_auto_mode(const toml::table& table, PlaySettings& s,
+                    std::vector<std::expected<void, Refusal>>& reads) {
+  reads.push_back(read(table, "interpolation", "auto_off", s.auto_off));
+  std::string auto_mode = s.auto_free ? "libre" : "recommande";
+  reads.push_back(read(table, "interpolation", "auto_mode", auto_mode));
+  if (auto_mode == "libre" || auto_mode == "recommande") {
+    s.auto_free = auto_mode == "libre";
+  } else {
+    reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interpolation.auto_mode",
+                                  std::format(" : « {} » (recommande ou libre)", auto_mode)));
+  }
+}
+
 // interpolation.rife : un entier (×3), ou un réel en moitié (×1.5).
 std::expected<void, Refusal> read_factor(const toml::table& table, PlaySettings& s) {
   const toml::node* node = table.get("rife");
@@ -258,14 +273,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
                                kPrecisionTierCount));
     reads.push_back(read(*interpolation, "interpolation", "auto", s.rife_auto));
     reads.push_back(read(*interpolation, "interpolation", "auto_cap", s.auto_cap));
-    std::string auto_mode = s.auto_free ? "libre" : "recommande";
-    reads.push_back(read(*interpolation, "interpolation", "auto_mode", auto_mode));
-    if (auto_mode == "libre" || auto_mode == "recommande") {
-      s.auto_free = auto_mode == "libre";
-    } else {
-      reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interpolation.auto_mode",
-                                    std::format(" : « {} » (recommande ou libre)", auto_mode)));
-    }
+    read_auto_mode(*interpolation, s, reads);
     // span_order ; les fichiers d'avant portent warp_after_span, qui ne compte que s'il est vrai (faux
     // était le défaut, écrit partout : il laisse Auto).
     bool legacy_after = false;

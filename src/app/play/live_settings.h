@@ -18,6 +18,7 @@
 
 #include "app/play/cut_book.h"
 #include "app/play/frame_latency.h"
+#include "app/play/motion_cut.h"
 #include "app/play/pair_marks.h"
 #include "app/play/settings.h"
 #include "core/auto_rate.h"
@@ -141,6 +142,7 @@ class LiveSettings {
     if (auto_on_) auto_.settle(now_us);
     if (free_on_) free_.settle(now_us);
     if (steady_on_) steady_.settle(now_us);
+    restarts_.fetch_add(1, std::memory_order_relaxed);  // motion_cut.h : ni retard ni rattrapage
   }
   // gpu : la paire de l'image `id` crée `images` images ; `lead_us` : l'attente de ses mesures avant
   // soumission. main la retrouve par auto_written pour en tirer le coût de service.
@@ -270,7 +272,6 @@ class LiveSettings {
   void free_produced(int images, std::int64_t now_us) {
     const std::scoped_lock lock(mutex_);
     if (free_on_) free_.produced(images, now_us);
-    if (free_on_ && steady_on_) steady_.produced(images, now_us);
   }
   // main : images sautées ou manquées à l'écran depuis le dernier appel.
   void free_missed(std::int64_t now_us, std::int64_t lost) {
@@ -334,11 +335,6 @@ class LiveSettings {
     return {.period_us = vsync_.period_us(),
             .anchor_host_us = vsync_.nearest(host_us) + vsync_delay_us_ + vsync_.period_us() / 2};
   }
-  bool free_should_fall_back(std::int64_t now_us) const {
-    const std::scoped_lock lock(mutex_);
-    if (free_on_ && steady_on_) return steady_.should_fall_back(now_us);
-    return free_on_ && free_.should_fall_back(now_us);
-  }
   core::FreeInfo free_info(std::int64_t now_us) const {
     const std::scoped_lock lock(mutex_);
     return free_.info(now_us);
@@ -375,6 +371,18 @@ class LiveSettings {
   void count_late() { late_.fetch_add(1, std::memory_order_relaxed); }
   // Images source sautées par gpu avant tout calcul, déjà passées à leur tour (RingStage::passed).
   void count_skipped() { skipped_.fetch_add(1, std::memory_order_relaxed); }
+  // « Couper l'interpolation si la carte ne suit pas » (motion_cut.h) : une paire du Rapide qui devait porter
+  // une image interpolée, avec les `made` qu'elle porte ; les seeks et sauts d'époque (auto_settle). Écrits
+  // par gpu.
+  void count_owed(std::uint32_t made) {
+    owed_.fetch_add(1, std::memory_order_relaxed);
+    made_.fetch_add(made, std::memory_order_relaxed);
+  }
+  MotionTally motion_tally() const {
+    return MotionTally{.owed = owed_.load(std::memory_order_relaxed),
+                       .made = made_.load(std::memory_order_relaxed),
+                       .restarts = restarts_.load(std::memory_order_relaxed)};
+  }
   std::uint64_t skipped() const { return skipped_.load(std::memory_order_relaxed); }
   // Coupes de scène vues par RIFE sur les images (tant qu'il interpole) : la pré-analyse des plans s'y
   // recale.
@@ -418,6 +426,9 @@ class LiveSettings {
   std::atomic<std::uint64_t> cuts_{0};
   std::atomic<std::uint64_t> held_{0};
   std::atomic<std::uint64_t> late_{0};
+  std::atomic<std::uint64_t> owed_{0};
+  std::atomic<std::uint64_t> made_{0};
+  std::atomic<std::uint64_t> restarts_{0};
   std::atomic<std::uint64_t> skipped_{0};
   FrameLatency latency_;
   bool auto_on_ = false;

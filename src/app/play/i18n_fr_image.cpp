@@ -195,10 +195,10 @@ constexpr std::array kImageTabs{
           "première utilisation pour cette taille."},
     Entry{"Stable", "Stable"},
     Entry{
-        "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps and falls back to "
-        "Stable if too many frames are lost. Playback only.",
-        "Stable suit ce que le GPU tient par paliers (×1 à ×8). Instantané n'a pas de palier et repasse sur "
-        "Stable si trop d'images sont perdues. Lecture seulement."},
+        "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps: a late frame "
+        "leaves the original image until RIFE catches up. Playback only.",
+        "Stable suit ce que le GPU tient par paliers (×1 à ×8). Instantané n'a pas de palier : une image en "
+        "retard laisse l'image d'origine jusqu'à ce que RIFE rattrape. Lecture seulement."},
     Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch.",
           "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre deux images affichées. Vaut au prochain "
           "lancement."},
@@ -219,6 +219,14 @@ constexpr std::array kImageTabs{
           "VRR coupé par le système : le mouvement peut vibrer."},
     Entry{"VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder.",
           "VRR indisponible : activez G-Sync / FreeSync / Adaptive Sync pour éviter les saccades."},
+    Entry{"Turn interpolation off if the graphics card can't keep up",
+          "Couper l'interpolation si la carte ne suit pas"},
+    Entry{"When interpolation has made less than one frame per source pair for about 10 s, it stops for "
+          "this video and the card goes back to upscaling. Unchecked, interpolation keeps going whatever "
+          "happens.",
+          "Quand l'interpolation fait moins d'une image par paire de la source pendant une dizaine de "
+          "secondes, elle s'arrête pour cette vidéo et la carte revient à l'agrandissement. Décochée, "
+          "l'interpolation continue quoi qu'il arrive."},
     Entry{"Warp and SPAN", "Warp et SPAN"},
     Entry{"Without VRR, frames follow the display refresh; a late frame repeats the previous one.",
           "Sans VRR, la cadence suit le rafraîchissement ; une image tardive répète la précédente."},

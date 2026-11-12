@@ -412,6 +412,36 @@ void vrr_notes(const SettingsChoices& choices) {
 #endif
 }
 
+// Lecture en Auto : le mode Stable ou Instantané, et en Instantané la coupure de l'interpolation quand la
+// carte ne suit pas (motion_cut.h).
+void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
+  // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
+  // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Une image en retard laisse la source.
+  const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
+  const char* const shown = d.auto_free ? i18n::tr("Instant") : i18n::tr("Stable");
+  if (ImGui::BeginCombo(i18n::tr("Auto mode"), shown)) {
+    if (ImGui::Selectable(i18n::tr("Stable"), !d.auto_free)) d.auto_free = false;
+    if (ImGui::Selectable(i18n::tr("Instant"), d.auto_free)) d.auto_free = true;
+    if (vrr_armed) {
+      panel::tip(i18n::tr("No steps: each frame is computed for the exact moment it is shown."));
+    } else {
+      panel::tip(
+          i18n::tr("Without VRR, frames follow the display refresh; a late frame repeats the previous one."));
+    }
+    ImGui::EndCombo();
+  }
+  panel::tip(i18n::tr(
+      "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps: a late frame leaves "
+      "the original image until RIFE catches up. Playback only."));
+  if (d.auto_free) {
+    ImGui::Checkbox(i18n::tr("Turn interpolation off if the graphics card can't keep up"), &d.auto_off);
+    panel::tip(i18n::tr(
+        "When interpolation has made less than one frame per source pair for about 10 s, it stops for this "
+        "video and the card goes back to upscaling. Unchecked, interpolation keeps going whatever "
+        "happens."));
+  }
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -468,27 +498,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     ImGui::EndCombo();
   }
   if (d.rife_auto && now.num > now.den && !exporting) auto_cap_row(d, choices);
-  if (d.rife_auto && now.num > now.den && !exporting) {
-    // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
-    // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Dans les deux cas la lecture repasse sur
-    // Stable si trop d'images sont perdues.
-    const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
-    const char* const shown = d.auto_free ? i18n::tr("Instant") : i18n::tr("Stable");
-    if (ImGui::BeginCombo(i18n::tr("Auto mode"), shown)) {
-      if (ImGui::Selectable(i18n::tr("Stable"), !d.auto_free)) d.auto_free = false;
-      if (ImGui::Selectable(i18n::tr("Instant"), d.auto_free)) d.auto_free = true;
-      if (vrr_armed) {
-        panel::tip(i18n::tr("No steps: each frame is computed for the exact moment it is shown."));
-      } else {
-        panel::tip(i18n::tr(
-            "Without VRR, frames follow the display refresh; a late frame repeats the previous one."));
-      }
-      ImGui::EndCombo();
-    }
-    panel::tip(i18n::tr(
-        "Stable follows what the GPU can hold in steps (×1 to ×8). Instant has no steps and falls back "
-        "to Stable if too many frames are lost. Playback only."));
-  }
+  if (d.rife_auto && now.num > now.den && !exporting) auto_mode_rows(d, choices);
   if (d.rife_auto && now.num > now.den) vrr_notes(choices);
   // En lecture, les facteurs fixes sont masqués : rien n'y est grisé. L'export les montre, grisés (B23-05).
   if (exporting && choices.source_fps > 0.0 && choices.display_hz > 0.0) {

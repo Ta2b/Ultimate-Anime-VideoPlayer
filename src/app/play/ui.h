@@ -98,6 +98,8 @@ class PlayerUi {
     choices_.display_vrr_armed = armed;
     choices_.window_fullscreen = fullscreen;
   }
+  // L'interpolation coupée faute de carte (motion_cut.h) : la page Post-traitement le dit ; vide : rendue.
+  void set_motion_note(std::string note) { choices_.motion_note = std::move(note); }
   void set_running(const PlaySettings& running);
   // B08-04 : la sortie HDR ou SDR et le pic de l'écran ont changé pendant la lecture (système, écran) ; la
   // page Sortie les suit, sans toucher au reste des choix.

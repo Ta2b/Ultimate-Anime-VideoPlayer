@@ -38,6 +38,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"auto", s.rife_auto},
                             {"auto_cap", s.auto_cap},
                             {"auto_mode", std::string(s.auto_free ? "libre" : "recommande")},
+                            {"auto_off", s.auto_off},
                             {"span_order", std::string(name(s.span_order))},
                             {"smooth_motion", s.smooth_motion}};
   if (s.rife_factor_den == 2) {

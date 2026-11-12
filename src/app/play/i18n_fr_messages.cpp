@@ -93,6 +93,12 @@ constexpr std::array kMessages{
           "Construction annulée : lecture sans fluidité"},
     Entry{"Upscaling unavailable: playing without it", "Agrandissement indisponible : lecture sans lui"},
     Entry{"Smoothing unavailable: playing without it", "Fluidité indisponible : lecture sans elle"},
+    Entry{"Interpolation off: the graphics card cannot keep up",
+          "Interpolation coupée : la carte ne suit pas"},
+    Entry{"Interpolation is off for this video: the graphics card could not keep up. It comes back with the "
+          "next video, with Retry, or when an interpolation setting changes.",
+          "L'interpolation est coupée pour cette vidéo : la carte ne suivait pas. Elle revient à la vidéo "
+          "suivante, avec Réessayer, ou quand un réglage de l'interpolation change."},
     Entry{"Upscaling precision unavailable: Balanced instead",
           "Précision de l'agrandissement indisponible : Équilibre à la place"},
     Entry{"Smoothing precision unavailable: Balanced instead",
