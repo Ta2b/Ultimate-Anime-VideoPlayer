@@ -60,6 +60,12 @@ constexpr std::array kImageTabs{
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
+    Entry{"Sharper interpolation warp (Catmull-Rom)", "Warp de l'interpolation plus net (Catmull-Rom)"},
+    Entry{"Trial: in-between frames read the source with a 4 × 4 Catmull-Rom filter instead of the network's "
+          "bilinear one, for finer lines. RIFE only. Reloads playback.",
+          "Essai : les images intermédiaires lisent la source par un filtre Catmull-Rom de 4 × 4 points au "
+          "lieu "
+          "du bilinéaire du réseau, pour des traits plus fins. RIFE seulement. Recharge la lecture."},
     Entry{"DistilDRBA", "DistilDRBA"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},

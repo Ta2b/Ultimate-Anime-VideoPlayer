@@ -455,9 +455,21 @@ std::expected<std::vector<RifePiece>, Refusal> split_rife(std::span<const std::b
   return pieces;
 }
 
+std::string_view output_name(RifeFusedOutput output) {
+  switch (output) {
+    case RifeFusedOutput::Image:
+      return "image";
+    case RifeFusedOutput::Motion:
+      return "motion";
+    case RifeFusedOutput::ImageCubic:
+      return "image-cubic";
+  }
+  return "image";
+}
+
 std::string format_manifest(const RifeFusedManifest& manifest) {
   std::string text = "ajp-rife-fused 1\n";
-  text += std::format("output {}\n", manifest.output == RifeFusedOutput::Image ? "image" : "motion");
+  text += std::format("output {}\n", output_name(manifest.output));
   text += std::format("size {} {}\n", manifest.height, manifest.width);
   text += "reduce";
   for (int b = 0; b < manifest.plan.blocks; ++b)
@@ -469,6 +481,14 @@ std::string format_manifest(const RifeFusedManifest& manifest) {
 }
 
 namespace {
+
+std::optional<RifeFusedOutput> output_from_name(std::string_view name) {
+  for (const RifeFusedOutput output :
+       {RifeFusedOutput::Image, RifeFusedOutput::Motion, RifeFusedOutput::ImageCubic}) {
+    if (output_name(output) == name) return output;
+  }
+  return std::nullopt;
+}
 
 // Ce qu'un manifeste lu doit encore vérifier : complet, accepté par les noyaux, ses morceaux et ses tailles
 // en nombre. Rien : il est bon.
@@ -515,12 +535,9 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) 
       if (rest != "1") return bad("version " + std::string(rest));
       header = true;
     } else if (key == "output") {
-      if (rest == "image")
-        manifest.output = RifeFusedOutput::Image;
-      else if (rest == "motion")
-        manifest.output = RifeFusedOutput::Motion;
-      else
-        return bad("sortie « " + std::string(rest) + " »");
+      const auto output = output_from_name(rest);
+      if (!output) return bad("sortie « " + std::string(rest) + " »");
+      manifest.output = *output;
       has_output = true;
     } else if (key == "size") {
       const auto h = number();
@@ -571,7 +588,7 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
                                        kRifeFusedDerivation, height, width, sha->substr(0, 16));
   std::filesystem::path manifest_path =
       dir / core::path_from_utf8(std::format(
-                "{}-{}{}", stem, output == RifeFusedOutput::Image ? "image" : "motion", kRifeFusedExtension));
+                "{}-{}{}", stem, output_name(output), kRifeFusedExtension));
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que les morceaux y sont.
   if (std::ifstream known(manifest_path); known) {
     const std::string text{std::istreambuf_iterator<char>(known), std::istreambuf_iterator<char>()};

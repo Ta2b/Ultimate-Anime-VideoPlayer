@@ -222,7 +222,7 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
     if (!v) return std::unexpected(v.error());
     before = *v;
   }
-  const MotionView mv{.flow = *flow, .mask = *mask, .area = motion.area};
+  const MotionView mv{.flow = *flow, .mask = *mask, .area = motion.area, .warp = motion.warp};
   const PoseView pv{.keep = poses.keep, .previous = before ? &*before : nullptr};
   OpKey key;
   key.add(OpCode::Warp);
@@ -230,6 +230,7 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
   key.add(static_cast<std::uint64_t>(motion.area.x)).add(static_cast<std::uint64_t>(motion.area.y));
   key.add(static_cast<std::uint64_t>(motion.area.width)).add(static_cast<std::uint64_t>(motion.area.height));
   key.add(poses.keep ? 1 : 0);
+  key.add(static_cast<std::uint64_t>(motion.warp));
   if (before) add_view(key, *before);
   const std::array time{std::bit_cast<std::uint32_t>(t)};
   auto rec =

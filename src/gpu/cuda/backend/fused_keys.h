@@ -12,13 +12,14 @@
 
 namespace ajp::gpu::cuda {
 
-// La clé d'un Artifact de ce moteur : « rife-fused:<h>x<w>:<image|motion>:<d0,d1…>:<moteur0>,<moteur1>… »,
+// La clé d'un Artifact de ce moteur : « rife-fused:<h>x<w>:<image|motion|image-cubic>:<d0,d1…>:<moteur0>,… »,
 // les moteurs étant les fichiers du cache, dans l'ordre encodeur, blocs 0 à N-1. Artifact ne porte que la clé
 // et un chemin : la clé dit tout ce que load() doit savoir.
 struct RifeFusedKey {
   int height = 0;
   int width = 0;
   bool motion = false;
+  kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;  // le warp de l'image (sortie « image-cubic »)
   kernels::RifeFusedPlan plan;
   std::vector<std::string> engines;
 };

@@ -33,12 +33,13 @@
 namespace ajp::gpu::vk {
 
 // La clé d'un Artifact de ce moteur : «
-// rife-fused-vk:<h>x<w>:<image|motion>:<d0,d1…>:<artefact0>|<artefact1>… », les artefacts des morceaux
+// rife-fused-vk:<h>x<w>:<image|motion|image-cubic>:<d0,d1…>:<artefact0>|<artefact1>… », les artefacts des morceaux
 // (chemins complets) dans l'ordre encodeur, blocs 0 à N-1.
 struct RifeFusedKey {
   int height = 0;
   int width = 0;
   bool motion = false;
+  kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;  // le warp de l'image (sortie « image-cubic »)
   kernels::RifeFusedPlan plan;
   std::vector<std::string> artifacts;
   friend bool operator==(const RifeFusedKey&, const RifeFusedKey&) = default;
@@ -56,10 +57,12 @@ Done record_rife_fused_entry(PipelineCache& pipelines, Recorder& recorder, const
 Done record_rife_fused_glue(PipelineCache& pipelines, Recorder& recorder, const kernels::RifeFusedPlan& plan,
                             int height, int width, int k, const BufferView& input, const BufferView& encode,
                             const BufferView& xk, std::span<const BufferView> y);
+// warp : celui de l'image (ignoré si motion).
 Done record_rife_fused_finish(PipelineCache& pipelines, Recorder& recorder,
                               const kernels::RifeFusedPlan& plan, int height, int width, bool motion,
                               const BufferView& input, const BufferView& x_last, const BufferView& y_last,
-                              const BufferView& first, const BufferView& mask);
+                              const BufferView& first, const BufferView& mask,
+                              kernels::RifeWarp warp = kernels::RifeWarp::Bilinear);
 
 class RifeFusedEngine final : public Engine {
  public:
@@ -115,6 +118,7 @@ class RifeFusedEngine final : public Engine {
   int height_ = 0;
   int width_ = 0;
   bool motion_ = false;
+  kernels::RifeWarp warp_ = kernels::RifeWarp::Bilinear;
   int warm_blocks_ = 0;      // blocs repris à chaud (next_warm)
   bool warm_ready_ = false;  // les Y de ces blocs sont ceux de l'appel précédent
   bool warm_next_ = false;

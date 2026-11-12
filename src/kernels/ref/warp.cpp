@@ -35,6 +35,32 @@ float bilinear_at(const PlaneF& p, float x, float y) {
   return bilinear_at(p, Window{.x = 0, .y = 0, .width = p.width, .height = p.height}, x, y);
 }
 
+// Lecture de Catmull-Rom (spec/warp.h : RifeWarp) : position ramenée dans le plan, points répétés au bord,
+// sortie bornée à [0, 1].
+float catmull_rom_at(const PlaneF& p, float x, float y) {
+  const int w = p.width;
+  const int h = p.height;
+  x = std::fmin(std::fmax(x, 0.0F), static_cast<float>(w - 1));
+  y = std::fmin(std::fmax(y, 0.0F), static_cast<float>(h - 1));
+  const int x0 = static_cast<int>(x);
+  const int y0 = static_cast<int>(y);
+  const std::array<float, 4> wx = catmull_rom_weights(x - static_cast<float>(x0));
+  const std::array<float, 4> wy = catmull_rom_weights(y - static_cast<float>(y0));
+  float sum = 0.0F;
+  for (int j = 0; j < 4; ++j) {
+    const int yy = std::clamp(y0 - 1 + j, 0, h - 1);
+    float row = 0.0F;
+    for (int i = 0; i < 4; ++i)
+      row += p.at(std::clamp(x0 - 1 + i, 0, w - 1), yy) * wx[static_cast<std::size_t>(i)];
+    sum += row * wy[static_cast<std::size_t>(j)];
+  }
+  return std::clamp(sum, 0.0F, 1.0F);
+}
+
+float image_at(const PlaneF& p, RifeWarp warp, float x, float y) {
+  return warp == RifeWarp::CatmullRom ? catmull_rom_at(p, x, y) : bilinear_at(p, x, y);
+}
+
 // Un plan conforme, et une fenêtre non vide incluse dans ce plan.
 Result<void> check_window(const PlaneF& p, const Window& a, std::string_view what) {
   if (auto ok = check_plane(p, what); !ok) return ok;
@@ -141,8 +167,8 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
       const float fy = static_cast<float>(y);
       const Displacement d = at(motion, previous, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
       for (std::size_t c = 0; c < out.planes.size(); ++c) {
-        const float va = bilinear_at(a.planes[c], fx + sx * d.ax, fy + sy * d.ay);
-        const float vb = bilinear_at(b.planes[c], fx + sx * d.bx, fy + sy * d.by);
+        const float va = image_at(a.planes[c], motion.warp, fx + sx * d.ax, fy + sy * d.ay);
+        const float vb = image_at(b.planes[c], motion.warp, fx + sx * d.bx, fy + sy * d.by);
         out.planes[c].at(x, y) = va * d.weight + vb * (1.0F - d.weight);
       }
     }

@@ -105,6 +105,37 @@ TEST_CASE("warp : déplacement arrière, bords en clamp", "[warp]") {
   CHECK(half->planes[2].at(6, 0) == 6.5F);
 }
 
+TEST_CASE("warp : Catmull-Rom passe par les points, rend une rampe, borne un bord net", "[warp]") {
+  // Une rampe douce dans [0, 1] : la cubique la rend exactement, au demi-pixel comme au point entier.
+  RgbImage soft(16, 4, 0.0F);
+  for (auto& plane : soft.planes) {
+    for (int y = 0; y < 4; ++y) {
+      for (int x = 0; x < 16; ++x) plane.at(x, y) = 0.05F * static_cast<float>(x);
+    }
+  }
+  for (const float shift : {0.0F, 0.5F, 0.25F}) {
+    ref::Motion motion = uniform_motion(16, 4, {0, 0, 16, 4}, shift, 0.0F, 1.0F);
+    motion.warp = RifeWarp::CatmullRom;
+    const auto out = ref::warp_blend(soft, soft, motion);
+    REQUIRE(out);
+    CHECK_THAT(out->planes[0].at(6, 1), WithinAbs(0.05 * (6.0 + shift), 1e-6));
+  }
+  // Un bord net de 0 à 1 : le dépassement de la cubique (−1/16 au demi-pixel) est coupé à [0, 1].
+  RgbImage edge(16, 4, 0.0F);
+  for (auto& plane : edge.planes) {
+    for (int y = 0; y < 4; ++y) {
+      for (int x = 8; x < 16; ++x) plane.at(x, y) = 1.0F;
+    }
+  }
+  ref::Motion half = uniform_motion(16, 4, {0, 0, 16, 4}, 0.5F, 0.0F, 1.0F);
+  half.warp = RifeWarp::CatmullRom;
+  const auto cut = ref::warp_blend(edge, edge, half);
+  REQUIRE(cut);
+  CHECK(cut->planes[0].at(6, 0) == 0.0F);  // 6,5 : −1/16 sans la borne
+  CHECK(cut->planes[0].at(8, 0) == 1.0F);  // 8,5 : 1 + 1/16 sans la borne
+  CHECK_THAT(cut->planes[0].at(7, 0), WithinAbs(0.5, 1e-6));
+}
+
 TEST_CASE("warp : mouvement estimé sur une fenêtre plus petite, mis à l'échelle", "[warp]") {
   // Image 16 × 8, mouvement 8 × 4 dans des plans 12 × 8 remplis : 1 px de fenêtre = 2 px d'image.
   const ref::Motion motion =

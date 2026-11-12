@@ -35,6 +35,12 @@ const void* address(const Tensor& tensor) {
 }
 
 // Flot 1 × 4 et masque 1 × 1 de même taille, fenêtre non vide incluse dans leurs plans.
+// Sans tenseur de sortie, le warp écrit dans le slot de l'anneau, de la taille des images.
+bool ring_fits(const RingTarget* ring, const Tensor& a) {
+  return ring != nullptr && ring->slot != nullptr && ring->slot->width == width_of(a) &&
+         ring->slot->height == height_of(a);
+}
+
 std::expected<void, Refusal> check_motion(const Motion& motion) {
   if (!fp16_planes(motion.flow, 4) || !fp16_planes(motion.mask, 1) ||
       motion.flow.shape.dims[2] != motion.mask.shape.dims[2] ||
@@ -100,9 +106,7 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
        (a.shape.dims != out->shape.dims || out->type != TensorType::F16 || out->handle == 0))) {
     return refuse(RefusalCode::ShapeInvalid, "warp_blend : trois images RGB FP16 de même taille attendues");
   }
-  if (out == nullptr &&
-      (target.ring == nullptr || target.ring->slot == nullptr || target.ring->slot->width != width_of(a) ||
-       target.ring->slot->height != height_of(a))) {
+  if (out == nullptr && !ring_fits(target.ring, a)) {
     return refuse(RefusalCode::ShapeInvalid,
                   std::format("warp_blend_ring : slot de la taille des images {}x{} attendu", width_of(a),
                               height_of(a)));
@@ -126,6 +130,7 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .window_width = motion.area.width,
       .window_height = motion.area.height,
       .time = t,
+      .cubic = motion.warp == kernels::RifeWarp::CatmullRom,
       .from_middle = poses.keep || t != 0.5F,
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
@@ -135,8 +140,8 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
                    .flow = texture(motion.flow),
                    .mask = texture(motion.mask),
                    .previous_flow = poses.previous != nullptr ? texture(poses.previous->flow) : 0}};
-  const std::uintptr_t previous = poses.previous != nullptr ? poses.previous->flow.handle : 0;
-  const std::array reads{a.handle, b.handle, motion.flow.handle, motion.mask.handle, previous};
+  const std::array reads{a.handle, b.handle, motion.flow.handle, motion.mask.handle,
+                         poses.previous != nullptr ? poses.previous->flow.handle : std::uintptr_t{0}};
   const std::array writes{out != nullptr ? out->handle : 0};
   if (auto ok = order(reads, std::span(writes).first(out != nullptr ? 1 : 0)); !ok) return ok;
   return launch_into(target, "warp et mélange", [&](RingSurface surface) {

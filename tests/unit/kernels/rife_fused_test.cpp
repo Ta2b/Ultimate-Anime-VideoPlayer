@@ -1,6 +1,7 @@
 // Découpage de RIFE fusionné (spec/rife_fused.h) et sa référence CPU (ref/rife_fused.h).
 #include "kernels/ref/rife_fused.h"
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -144,6 +145,24 @@ TEST_CASE("La référence : un flot nul laisse les images en place", "[kernels][
     CHECK(result.flow[i] == 0.0);
     CHECK(result.image[i] == Catch::Approx(0.5 * (state.input[i] + state.input[3 * area + i])).margin(1e-4));
   }
+  // Catmull-Rom passe par les points : sans flot, la même image.
+  const ref::RifeFusedResult cubic = ref::rife_fused_finish(state, RifeWarp::CatmullRom);
+  for (std::size_t i = 0; i < 3 * area; ++i) CHECK(cubic.image[i] == Catch::Approx(result.image[i]).margin(1e-9));
+}
+
+TEST_CASE("Catmull-Rom : poids de somme 1, passe par les points, rend une rampe exacte", "[kernels][rife_fused]") {
+  for (const double t : {0.0, 0.1, 0.25, 0.5, 0.75, 0.9}) {
+    const std::array<double, 4> w = catmull_rom_weights(t);
+    CHECK(w[0] + w[1] + w[2] + w[3] == Catch::Approx(1.0));
+    // Une rampe p(i) = i : la cubique la rend telle quelle (elle reproduit les polynômes de degré 1).
+    CHECK(-w[0] + w[2] + 2.0 * w[3] == Catch::Approx(t).margin(1e-12));
+  }
+  const std::array<double, 4> at0 = catmull_rom_weights(0.0);
+  CHECK(at0 == std::array<double, 4>{0.0, 1.0, 0.0, 0.0});
+  // Un demi-pixel entre deux points d'un bord net : le dépassement de la cubique, que la sortie borne.
+  const std::array<double, 4> half = catmull_rom_weights(0.5);
+  CHECK(half[0] == Catch::Approx(-0.0625));
+  CHECK(half[1] == Catch::Approx(0.5625));
 }
 
 }  // namespace

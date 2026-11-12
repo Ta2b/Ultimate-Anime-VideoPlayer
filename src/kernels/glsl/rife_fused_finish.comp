@@ -1,7 +1,7 @@
 #version 450
 // RIFE fusionné, la fin : flot du dernier bloc ajouté au flot accumulé ; puis l'image (warp des deux images,
-// masque sigmoïde, mélange), ou, variante mouvement (MOTION = 1), le flot final et le masque. Voir
-// rife_fused.glsl.
+// bilinéaire ou, CUBIC = 1, Catmull-Rom ; masque sigmoïde, mélange), ou, variante mouvement (MOTION = 1), le
+// flot final et le masque. Voir rife_fused.glsl.
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
 #include "rife_fused.glsl"
@@ -9,6 +9,7 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(constant_id = 0) const uint MOTION = 0;
+layout(constant_id = 1) const uint CUBIC = 0;
 
 layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;
 layout(std430, binding = 1) readonly buffer XLast { AJP_TENSOR v[]; } x_last;  // canaux 24-27 : flot accumulé
@@ -36,6 +37,32 @@ float plane_tap(uint p, FusedTap t) {
               float(input_planes.v[base + t.y1 * pc.width + t.x1]), t.wx, t.wy);
 }
 
+// Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp), comme le noyau CUDA : 4 × 4 points en FP32 autour de la
+// position du tap (déjà ramenée dans l'image), points répétés au bord, sortie bornée à [0, 1].
+vec4 catmull_rom(float t) {
+  float t2 = t * t;
+  float t3 = t2 * t;
+  return vec4(-0.5 * t3 + t2 - 0.5 * t, 1.5 * t3 - 2.5 * t2 + 1.0, -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+              0.5 * t3 - 0.5 * t2);
+}
+
+float plane_cubic(uint p, FusedTap t) {
+  uint base = p * pc.height * pc.width;
+  vec4 wx = catmull_rom(t.wx);
+  vec4 wy = catmull_rom(t.wy);
+  precise float sum = 0.0;
+  for (int j = 0; j < 4; ++j) {
+    uint yy = uint(clamp(int(t.y0) - 1 + j, 0, int(pc.height) - 1));
+    precise float row = 0.0;
+    for (int i = 0; i < 4; ++i) {
+      uint xx = uint(clamp(int(t.x0) - 1 + i, 0, int(pc.width) - 1));
+      row += float(input_planes.v[base + yy * pc.width + xx]) * wx[i];
+    }
+    sum += row * wy[j];
+  }
+  return clamp(sum, 0.0, 1.0);
+}
+
 void main() {
   uint x = gl_GlobalInvocationID.x;
   uint y = gl_GlobalInvocationID.y;
@@ -56,7 +83,8 @@ void main() {
   float warped[6];
   for (uint n = 0u; n < 2u; ++n) {
     FusedTap tap = pixel_tap(x, y, fl[2u * n], fl[2u * n + 1u], pc.width, pc.height);
-    for (uint ch = 0u; ch < 3u; ++ch) warped[3u * n + ch] = rounded(plane_tap(3u * n + ch, tap));
+    for (uint ch = 0u; ch < 3u; ++ch)
+      warped[3u * n + ch] = rounded(CUBIC == 1u ? plane_cubic(3u * n + ch, tap) : plane_tap(3u * n + ch, tap));
   }
   float rest = rounded(1.0 - sig);
   for (uint ch = 0u; ch < 3u; ++ch) {

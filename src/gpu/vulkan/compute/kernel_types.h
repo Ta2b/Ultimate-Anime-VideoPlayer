@@ -107,6 +107,7 @@ struct MotionView {
   TensorView flow;
   TensorView mask;
   kernels::Window area;
+  kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;  // le filtre qui lit les images (spec/warp.h)
 };
 
 // Garder les poses (kernels/spec/poses.h) : previous est le flot au milieu de la paire précédente,

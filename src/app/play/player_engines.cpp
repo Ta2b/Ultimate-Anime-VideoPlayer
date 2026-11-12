@@ -254,10 +254,10 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
 
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
-    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion) {
-  auto manifest =
-      prepare::derive_rife_fused(rife_onnx, models_dir, geometry.padded_height, geometry.padded_width,
-                                 motion ? prepare::RifeFusedOutput::Motion : prepare::RifeFusedOutput::Image);
+    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry,
+    prepare::RifeFusedOutput output) {
+  auto manifest = prepare::derive_rife_fused(rife_onnx, models_dir, geometry.padded_height,
+                                             geometry.padded_width, output);
   if (!manifest) return std::unexpected(std::move(manifest.error()));
   return prepare_engine(
       p, init, backend, *manifest,

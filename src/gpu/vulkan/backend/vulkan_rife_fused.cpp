@@ -37,6 +37,8 @@ std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec
   RifeFusedKey key{.height = h,
                    .width = w,
                    .motion = manifest->output == prepare::RifeFusedOutput::Motion,
+                   .warp = manifest->output == prepare::RifeFusedOutput::ImageCubic ? kernels::RifeWarp::CatmullRom
+                                                                                   : kernels::RifeWarp::Bilinear,
                    .plan = manifest->plan};
   for (std::size_t i = 0; i < count; ++i) {
     const std::filesystem::path onnx =
@@ -81,7 +83,9 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_rife_fused(c
   if (!engine) return std::unexpected(std::move(engine.error()));
   log(BackendLogLevel::Info,
       std::format("RIFE fusionné chargé : {}×{}, {} blocs, sortie {}", key->width, key->height,
-                  key->plan.blocks, key->motion ? "flot et masque" : "image"));
+                  key->plan.blocks,
+                  key->motion ? "flot et masque"
+                              : (key->warp == kernels::RifeWarp::CatmullRom ? "image (warp Catmull-Rom)" : "image")));
   return std::unique_ptr<Engine>(std::move(*engine));
 }
 

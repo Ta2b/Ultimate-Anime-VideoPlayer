@@ -24,6 +24,7 @@
 #include <cstdint>
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
+#include "kernels/spec/warp.h"
 
 namespace ajp::kernels {
 
@@ -42,6 +43,9 @@ struct RifeFusedPlan {
   std::array<int, kFusedMaxBlocks> reduce{};
   friend bool operator==(const RifeFusedPlan&, const RifeFusedPlan&) = default;
 };
+
+// Le warp final des deux images (la fin du réseau, image seulement) suit RifeWarp (spec/warp.h) ; la colle
+// entre blocs reste bilinéaire, comme le graphe.
 
 // La plus forte réduction d'entrée d'un bloc : le premier bloc de RIFE 4.25 lite travaille au 1/32.
 inline constexpr int kFusedMaxReduce = 32;

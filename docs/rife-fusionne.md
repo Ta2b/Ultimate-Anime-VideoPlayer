@@ -31,6 +31,8 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   (4.22 lite en 128×64 sur lavapipe : 74,6 dB).
   Les tampons intermédiaires (≈ 120 Mo à 768×1280) suivent les activations dans la zone partagée de la voie.
 - Deux sorties : l'image (RIFE image) ou le flot et le masque (variante mouvement, le chemin par défaut du lecteur).
+  L'image peut aussi sortir en `image-cubic` : le même noyau de fin, son warp en Catmull-Rom (option « Warp de
+  l'interpolation plus net », `docs/interpolation.md`), sous une clé de moteur distincte.
 - Grille des warps (A03-20) : la colle, CUDA comme Vulkan, ne lit plus le maillage FP16 des plans 7 à 10. Elle prend la
   position en pixels `x + flot` en FP32 (`pixel_tap`), ce que vaut la grille normalisée du graphe une fois ramenée en
   pixels, sans l'arrondi FP16 de la base (jusqu'à 0,234 pixel à 1920 de large). Mesuré sur le graphe 4.22 lite en ONNX

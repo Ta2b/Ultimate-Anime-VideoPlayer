@@ -85,7 +85,8 @@ namespace ajp::gpu {
 // KernelOps::SceneStats passe au lecteur (chain_shots.h).
 // 35 : huit RefusalCode jamais produits retirés (B20-04) : les codes suivants changent de numéro, un refus
 // d'un backend d'avant se lirait sous un autre nom.
-inline constexpr int kBackendAbi = 35;
+// 36 : Motion::warp (le warp final en Catmull-Rom, en option).
+inline constexpr int kBackendAbi = 36;
 
 using DeviceUuid = ajp::DeviceUuid;
 

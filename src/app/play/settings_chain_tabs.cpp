@@ -21,6 +21,16 @@ using panel::section;
 
 namespace {
 
+// Le warp de Catmull-Rom (PlaySettings::cubic_warp) : un essai, éteint par défaut.
+void cubic_warp_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Sharper interpolation warp (Catmull-Rom)"), &d.cubic_warp);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Trial: in-between frames read the source with a 4 × 4 Catmull-Rom filter instead of the "
+               "network's bilinear one, for finer lines. RIFE only. Reloads playback."));
+}
+
 struct HeightChoice {
   int lines;
   const char* label;
@@ -477,6 +487,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
   note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
                 : i18n::tr("Scene cuts and held drawings are not interpolated."));
+  cubic_warp_checkbox(d);
   if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife || smoothed);
   ImGui::Checkbox(i18n::tr("Keep poses (DRBA) with RIFE"), &d.keep_poses);

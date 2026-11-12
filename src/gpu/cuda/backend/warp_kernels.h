@@ -25,6 +25,7 @@ struct WarpBlendParams {
   int window_width = 0;
   int window_height = 0;
   float time = 0.5F;         // instant de la sortie
+  bool cubic = false;        // images lues en Catmull-Rom (kernels::RifeWarp), sinon en bilinéaire
   bool from_middle = false;  // mouvement estimé au milieu, sortie à time (loi de mélange ajustée)
   // Garder les poses (kernels/spec/poses.h, avec from_middle) : l'instant de chaque pixel réglé
   // d'après le mouvement de la paire précédente, mêmes plans et même fenêtre que flow ;

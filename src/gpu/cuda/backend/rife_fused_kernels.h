@@ -64,6 +64,7 @@ struct FusedFinishParams {
   void* image = nullptr;  // 3 plans, ou nul
   void* flow = nullptr;   // 4 plans (variante mouvement)
   void* mask = nullptr;   // 1 plan (variante mouvement)
+  int cubic = 0;          // 1 : warp de l'image en Catmull-Rom (kernels::RifeWarp), sinon bilinéaire
 };
 
 cudaError_t launch_fused_entry(const FusedEntryParams& params, cudaStream_t stream);

@@ -164,6 +164,15 @@ void compare_kernels(NetRig& rig, const kernels::RifeFusedPlan& plan, int h, int
   double score = psnr_of(download_half(rig, image, want.image.size()), want.image, worst);
   INFO("image : PSNR " << score << " dB, écart maximal " << worst);
   CHECK(score >= 55.0);
+  // Le warp de Catmull-Rom (RifeWarp, option) : même flot, même masque, l'image seule change.
+  const kernels::ref::RifeFusedResult cubic = kernels::ref::rife_fused_finish(state, kernels::RifeWarp::CatmullRom);
+  run(rig, [&](Recorder& r) {
+    return record_rife_fused_finish(*rig.pipelines, r, plan, h, w, false, input.view(), x[last].view(),
+                                    y[last].view(), image.view(), image.view(), kernels::RifeWarp::CatmullRom);
+  });
+  score = psnr_of(download_half(rig, image, cubic.image.size()), cubic.image, worst);
+  INFO("image, warp Catmull-Rom : PSNR " << score << " dB, écart maximal " << worst);
+  CHECK(score >= 55.0);
   run(rig, [&](Recorder& r) {
     return record_rife_fused_finish(*rig.pipelines, r, plan, h, w, true, input.view(), x[last].view(),
                                     y[last].view(), flow.view(), mask.view());
@@ -213,6 +222,11 @@ TEST_CASE("RIFE fusionné : la clé d'artefact Vulkan se relit", "[vk_backend][r
       .artifacts = {"C:/cache/vulkan/enc.ajpvk", "/c/b0.ajpvk", "/c/b1.ajpvk", "/c/b2.ajpvk", "/c/b3.ajpvk"}};
   const std::string text = rife_fused_artifact_key(key);
   CHECK(rife_fused_artifact_key_parse(text) == key);
+  RifeFusedKey cubic = key;
+  cubic.motion = false;
+  cubic.warp = kernels::RifeWarp::CatmullRom;
+  CHECK(rife_fused_artifact_key(cubic).find(":image-cubic:") != std::string::npos);
+  CHECK(rife_fused_artifact_key_parse(rife_fused_artifact_key(cubic)) == cubic);
   CHECK_FALSE(rife_fused_artifact_key_parse("0123456789abcdef"));
   CHECK_FALSE(rife_fused_artifact_key_parse("rife-fused-vk:1088x1920:image:8,4,2,1:/a|/b"));
   CHECK_FALSE(rife_fused_artifact_key_parse("rife-fused-vk:1000x1920:image:8,4,2,1:/a|/b|/c|/d|/e"));

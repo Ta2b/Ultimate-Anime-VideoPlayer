@@ -118,8 +118,10 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   const float fx = static_cast<float>(x);
   const float fy = static_cast<float>(y);
   for (int c = 0; c < 3; ++c) {
-    const float va = S::sample(a, c, fx + sx * ax, fy + sy * ay);
-    const float vb = S::sample(b, c, fx + sx * bx, fy + sy * by);
+    const float va = p.cubic ? CatmullRom::sample(a, c, fx + sx * ax, fy + sy * ay)
+                             : S::sample(a, c, fx + sx * ax, fy + sy * ay);
+    const float vb = p.cubic ? CatmullRom::sample(b, c, fx + sx * bx, fy + sy * by)
+                             : S::sample(b, c, fx + sx * bx, fy + sy * by);
     rgb[c] = va * weight + vb * (1.0F - weight);
   }
 }

@@ -106,23 +106,30 @@ void check_warp(const WarpCase& wc) {
   upload(tflow->tensor(), flow);
   upload(tmask->tensor(), mask);
   const gpu::Motion gm{.flow = tflow->tensor(), .mask = tmask->tensor(), .area = area};
-  for (const float t : {0.5F, 0.25F, 0.75F}) {
-    CAPTURE(t);
-    REQUIRE(loaded.backend->kernels()->warp_blend(ta->tensor(), tb->tensor(), gm, t, out->tensor()));
-    const auto got = download(out->tensor());
-    const auto want = kernels::ref::warp_blend_at(a, b, motion, t);
-    REQUIRE(want);
-    double worst = 0.0;
-    for (int c = 0; c < 3; ++c) {
-      for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-          worst = std::max(
-              worst, static_cast<double>(std::fabs(want->planes[static_cast<std::size_t>(c)].at(x, y) -
-                                                   got[static_cast<std::size_t>((c * h + y) * w + x)])));
+  // Les images lues en bilinéaire, puis en Catmull-Rom (Motion::warp), contre la même référence.
+  for (const kernels::RifeWarp warp : {kernels::RifeWarp::Bilinear, kernels::RifeWarp::CatmullRom}) {
+    for (const float t : {0.5F, 0.25F, 0.75F}) {
+      CAPTURE(t, static_cast<int>(warp));
+      gpu::Motion read = gm;
+      read.warp = warp;
+      kernels::ref::Motion reference = motion;
+      reference.warp = warp;
+      REQUIRE(loaded.backend->kernels()->warp_blend(ta->tensor(), tb->tensor(), read, t, out->tensor()));
+      const auto got = download(out->tensor());
+      const auto want = kernels::ref::warp_blend_at(a, b, reference, t);
+      REQUIRE(want);
+      double worst = 0.0;
+      for (int c = 0; c < 3; ++c) {
+        for (int y = 0; y < h; ++y) {
+          for (int x = 0; x < w; ++x) {
+            worst = std::max(
+                worst, static_cast<double>(std::fabs(want->planes[static_cast<std::size_t>(c)].at(x, y) -
+                                                     got[static_cast<std::size_t>((c * h + y) * w + x)])));
+          }
         }
       }
+      CHECK(worst < wc.tolerance);
     }
-    CHECK(worst < wc.tolerance);
   }
   // Garder les poses : la paire précédente bougeait à 30 % (valeurs FP16 exactes), puis était tenue.
   kernels::ref::Motion before = motion;

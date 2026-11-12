@@ -68,6 +68,7 @@ class RifeFusedEngine final : public Engine {
   int height_ = 0;
   int width_ = 0;
   bool motion_ = false;
+  kernels::RifeWarp warp_ = kernels::RifeWarp::Bilinear;
   kernels::RifeFusedLayout layout_;
   std::size_t scratch_offset_ =
       0;  // début des tampons intermédiaires dans la zone : après les activations des moteurs

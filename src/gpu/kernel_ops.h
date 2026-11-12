@@ -59,6 +59,8 @@ struct Motion {
   Tensor flow;           // 1 × 4 × fh × fw : f0x, f0y, f1x, f1y, en pixels de la fenêtre
   Tensor mask;           // 1 × 1 × fh × fw : poids de a, dans [0, 1]
   kernels::Window area;  // la fenêtre de l'image dans les plans remplis
+  // Le filtre qui lit a et b au warp (kernels/spec/warp.h) ; le flot et le masque restent bilinéaires.
+  kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
 };
 
 // Synchronisation d'une écriture dans le ring (protocole de core/ring.h).

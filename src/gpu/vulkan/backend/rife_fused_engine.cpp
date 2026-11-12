@@ -61,8 +61,9 @@ std::string rife_fused_artifact_key(const RifeFusedKey& key) {
     reduce += std::format("{}{}", k == 0 ? "" : ",", key.plan.reduce[static_cast<std::size_t>(k)]);
   std::string artifacts;
   for (std::size_t i = 0; i < key.artifacts.size(); ++i) artifacts += (i == 0 ? "" : "|") + key.artifacts[i];
-  return std::format("rife-fused-vk:{}x{}:{}:{}:{}", key.height, key.width, key.motion ? "motion" : "image",
-                     reduce, artifacts);
+  const std::string_view output =
+      key.motion ? "motion" : (key.warp == kernels::RifeWarp::CatmullRom ? "image-cubic" : "image");
+  return std::format("rife-fused-vk:{}x{}:{}:{}:{}", key.height, key.width, output, reduce, artifacts);
 }
 
 std::optional<RifeFusedKey> rife_fused_artifact_key_parse(std::string_view text) {
@@ -85,8 +86,9 @@ std::optional<RifeFusedKey> rife_fused_artifact_key_parse(std::string_view text)
   if (!h || !w) return std::nullopt;
   key.height = *h;
   key.width = *w;
-  if (head[1] != "image" && head[1] != "motion") return std::nullopt;
+  if (head[1] != "image" && head[1] != "motion" && head[1] != "image-cubic") return std::nullopt;
   key.motion = head[1] == "motion";
+  key.warp = head[1] == "image-cubic" ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear;
   const auto reduce = split(head[2], ',');
   if (reduce.size() > key.plan.reduce.size()) return std::nullopt;
   key.plan.blocks = static_cast<int>(reduce.size());
@@ -144,6 +146,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::create
   engine->height_ = h;
   engine->width_ = w;
   engine->motion_ = key.motion;
+  engine->warp_ = key.warp;
   while (engine->warm_blocks_ + 1 < key.plan.blocks &&
          key.plan.reduce[static_cast<std::size_t>(engine->warm_blocks_)] == key.plan.reduce[0]) {
     ++engine->warm_blocks_;
@@ -209,11 +212,11 @@ Done record_rife_fused_glue(PipelineCache& pipelines, Recorder& recorder, const 
 Done record_rife_fused_finish(PipelineCache& pipelines, Recorder& recorder,
                               const kernels::RifeFusedPlan& plan, int height, int width, bool motion,
                               const BufferView& input, const BufferView& x_last, const BufferView& y_last,
-                              const BufferView& first, const BufferView& mask) {
+                              const BufferView& first, const BufferView& mask, kernels::RifeWarp warp) {
   const kernels::FusedDims y = kernels::rife_fused_y(plan, plan.blocks - 1, height, width);
   const FinishPush push{u32(height), u32(width), u32(y.height), u32(y.width)};
   const std::array buffers{input, x_last, y_last, first, motion ? mask : first};
-  const std::array constants{motion ? 1U : 0U};
+  const std::array constants{motion ? 1U : 0U, !motion && warp == kernels::RifeWarp::CatmullRom ? 1U : 0U};
   return detail::run(pipelines, recorder, "rife_fused_finish", Precision::F16, constants, buffers, {},
                      detail::bytes_of(push),
                      {detail::groups_for(u32(width)), detail::groups_for(u32(height)), 1});
@@ -264,7 +267,7 @@ std::expected<std::unique_ptr<Recording>, Refusal> RifeFusedEngine::record_finis
           pipelines_, *recorder, plan_, height_, width_, motion_, input,
           scratch(layout_.x[i], kernels::rife_fused_x(plan_, last, height_, width_).elements()),
           scratch(layout_.y[i], kernels::rife_fused_y(plan_, last, height_, width_).elements()), outputs[0],
-          motion_ ? outputs[1] : outputs[0]);
+          motion_ ? outputs[1] : outputs[0], warp_);
       !ok) {
     return std::unexpected(ok.error());
   }
