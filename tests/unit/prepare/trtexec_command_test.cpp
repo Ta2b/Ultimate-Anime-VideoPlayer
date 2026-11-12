@@ -199,5 +199,5 @@ TEST_CASE("La ligne de commande de trtexec est figée par la version de la clé"
   INFO("kCommandLineVersion = " << kCommandLineVersion
                                 << " : la ligne a changé, monter la version puis ce condensé");
   CHECK(sha256_hex(all) == "5decb1ced627bd0ec7ec99f8b667b84e825ca36166e2793a1d6f802eca4dd981");
-  CHECK(kCommandLineVersion == 1);
+  CHECK(kCommandLineVersion == 2);
 }
