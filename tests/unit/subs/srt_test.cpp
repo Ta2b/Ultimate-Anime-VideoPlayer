@@ -110,6 +110,16 @@ TEST_CASE("srt_text_to_ass : couleurs et polices, restaurées à la fermeture", 
   CHECK(srt_text_to_ass("<font color=\"#FF8000\">orange</font>") == "{\\c&H0080FF&}orange{\\c}");
   CHECK(srt_text_to_ass("<font color=red>rouge</font>") == "{\\c&H0000FF&}rouge{\\c}");
   CHECK(srt_text_to_ass("<font face='Noto Sans' size=\"20\">x</font>") == "{\\fnNoto Sans\\fs20}x{\\fn\\fs}");
+  // B17-03 : l'échelle HTML 1 à 7 devient des tailles lisibles, au-delà des points bornés.
+  CHECK(srt_text_to_ass("<font size=\"3\">x</font>") == "{\\fs16}x{\\fs}");
+  CHECK(srt_text_to_ass("<font size=\"5\">x</font>") == "{\\fs24}x{\\fs}");
+  CHECK(srt_text_to_ass("<font size=\"20\">x</font>") == "{\\fs20}x{\\fs}");
+  CHECK(srt_text_to_ass("<font size=\"5px\">x</font>") == "{\\fs5}x{\\fs}");
+  CHECK(srt_text_to_ass("<font size=\"9999\">x</font>") == "{\\fs200}x{\\fs}");
+  CHECK(srt_text_to_ass("<font size=\"+1\">x</font>") == "x");
+  // B17-04 : rien de la valeur ne sort du bloc de balises.
+  CHECK(srt_text_to_ass("<font face=\"a}{\\p1\">x</font>") == "x");
+  CHECK(srt_text_to_ass("<font size=\"1}{\\p1\">x</font>") == "x");
   // Imbrication : la fermeture rend la couleur de la balise englobante.
   CHECK(srt_text_to_ass("<font color=\"#0000FF\">b<font color=\"#00FF00\">v</font>b</font>") ==
         "{\\c&HFF0000&}b{\\c&H00FF00&}v{\\c&HFF0000&}b{\\c}");

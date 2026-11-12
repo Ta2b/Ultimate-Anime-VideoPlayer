@@ -38,6 +38,10 @@ std::expected<std::filesystem::path, Refusal> reserve_stage(const std::filesyste
 // Le dossier porte-t-il exactement ce propriétaire ? Un lien symbolique n'est jamais à nous.
 bool owns_stage(const std::filesystem::path& folder, std::string_view owner);
 
+// Le dossier est-il un dossier de travail de ce module, de n'importe quel propriétaire (marqueur régulier,
+// jamais un lien symbolique) ? La purge s'en sert pour les restes d'une construction tuée (B05-01).
+bool is_stage_folder(const std::filesystem::path& folder);
+
 // Supprime les dossiers de ce propriétaire. L'appelant tient le verrou de la clé
 // et ne crée ses dossiers qu'après l'avoir pris : tout dossier trouvé est orphelin.
 std::expected<void, Refusal> recover_owned_stages(const std::filesystem::path& parent,

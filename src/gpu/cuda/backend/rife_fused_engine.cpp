@@ -33,7 +33,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
 
   auto encode = TrtEngine::load(runtime, cache_dir / core::path_from_utf8(key.engines[0]), shared);
   if (!encode) return std::unexpected(std::move(encode.error()));
-  // Une image à la fois (fusion2) : un moteur d'encodage de l'ancienne découpe, en lot de 2, est refusé.
+  // Une image à la fois (fusion3) : un moteur d'encodage de l'ancienne découpe, en lot de 2, est refusé.
   const bool encode_ok = (*encode)->input_shape(0) == Shape{.dims = {1, 3, h, w}} &&
                          (*encode)->output_shape(0) == Shape{.dims = {1, 4, h, w}};
   if (!encode_ok)

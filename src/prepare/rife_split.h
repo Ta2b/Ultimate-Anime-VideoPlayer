@@ -63,6 +63,9 @@ struct RifeFusedManifest {
   int width = 0;
   kernels::RifeFusedPlan plan;
   std::vector<std::string> pieces;  // 1 + blocs noms de fichier, sans dossier
+  // La taille de chaque morceau à l'écriture, dans le même ordre : un morceau tronqué depuis se voit et se
+  // réécrit (B04-02). Vide pour un manifeste d'avant ; sinon autant que de morceaux.
+  std::vector<std::uint64_t> sizes;
 };
 
 std::string format_manifest(const RifeFusedManifest& manifest);
@@ -74,9 +77,9 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text);
 bool is_rife_fused_manifest(const std::filesystem::path& path);
 
 // Version de la dérivation : elle entre dans le nom des fichiers, une règle de coupe changée en refait
-// d'autres. fusion2 : l'encodeur en lot de 1 (une image), pour n'encoder que la nouvelle B quand la paire
+// d'autres. fusion3 : l'encodeur en lot de 1 (une image), pour n'encoder que la nouvelle B quand la paire
 // suit la précédente (Engine::next_pair_follows).
-inline constexpr std::string_view kRifeFusedDerivation = "fusion2";
+inline constexpr std::string_view kRifeFusedDerivation = "fusion3";
 
 // Les six morceaux de rife_onnx pour une taille remplie et leur manifeste, écrits dans dir (créé s'il manque)
 // sous des noms qui portent la version de la dérivation, la taille et l'empreinte du modèle ; ce qui s'y

@@ -127,7 +127,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::create
     }
     return {};
   };
-  // Une image à la fois (fusion2) : un encodeur de l'ancienne découpe, en lot de 2, est refusé.
+  // Une image à la fois (fusion3) : un encodeur de l'ancienne découpe, en lot de 2, est refusé.
   if (auto ok = expect(*pieces[0], "encodeur", {1, 3, h, w}, {1, kFusedEncodePlanes / 2, h, w}); !ok)
     return std::unexpected(ok.error());
   for (int k = 0; k < key.plan.blocks; ++k) {

@@ -35,8 +35,8 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
   Quand le dernier moteur à lire l'entrée est la chaîne fusionnée, `rife_time` n'écrit plus qu'un demi-flottant au lieu
   d'un plan entier ; un moteur TensorRT entier ou DistilDRBA fusionné qui lit la même adresse ramène l'écriture du plan
   entier. Les plans 0 à 5 restent copiés (l'encodeur les veut remplis au multiple de 64). Le chemin Vulkan ne change pas.
-- Encodage gardé (fusion2, novembre 2026) : l'encodeur prend une image à la fois (morceau `encode` en
-  1 × 3 × H × W, dérivation `fusion2` : les morceaux `fusion1`, en lot de 2, sont refaits et l'ancien moteur
+- Encodage gardé (fusion3, novembre 2026) : l'encodeur prend une image à la fois (morceau `encode` en
+  1 × 3 × H × W, dérivation `fusion3` : les morceaux `fusion1` et `fusion2`, encodeur en lot de 2, sont refaits et l'ancien moteur
   d'encodage refusé au chargement). L'encodage de la paire (4 plans pour A, 4 pour B) reste dans les tampons du
   moteur d'un appel à l'autre. Le lecteur (`UpscaleStage::enqueue_rife`) dit au moteur ce que sa passe précédente a
   déjà encodé, d'après le numéro d'ingestion de chaque image : un autre instant des mêmes images dans le même tampon
@@ -94,7 +94,7 @@ Rien n'est encore mesuré sur carte : Vulkan logiciel ne dit rien du temps. Le g
 l'encodeur dans la passe : une image encodée au lieu de deux par paire en ×2, et au lieu de 2 × (facteur − 1) en ×3
 et plus. Binaire livré (`linux-release`, `windows-release`), même poste, même séance, rien d'autre d'ouvert.
 
-1. Première ouverture avec ce code : les six morceaux `fusion2` se dérivent et leurs moteurs se construisent (environ
+1. Première ouverture avec ce code : les six morceaux `fusion3` se dérivent et leurs moteurs se construisent (environ
    une minute). Faire une lecture de chauffe de 30 s qui ne compte pas.
 2. Conditions des mesures ci-dessus : Re:Zero 18 (`--start=960`, 30 s), 1080p, travail 540, variante mouvement,
    `--one-lane`, SPAN Performance, SDR. Trois facteurs : `--rife=2`, `--rife=3`, puis `--rife=5` (24 → 120 i/s, la

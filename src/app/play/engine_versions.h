@@ -15,8 +15,9 @@ std::optional<InstalledPackage> read_package_note(const std::filesystem::path& d
 
 enum class PackageState {
   Absent,      // ni cette version ni une autre
-  Current,     // cette version, le paquet de l'index (même SHA-256)
-  Replaced,    // cette version, un autre paquet (SHA-256 changé ou note absente) : à réinstaller (A26-01)
+  Current,     // cette version, le paquet de l'index (même SHA-256), tous ses fichiers là
+  Replaced,    // cette version, un autre paquet (SHA-256 changé, note absente) ou un fichier manquant : à
+               // réinstaller (A26-01, B06-11)
   NewVersion,  // seule une autre version est installée : l'index en demande une nouvelle (A06-01)
 };
 
@@ -24,6 +25,7 @@ struct InstalledState {
   PackageState state = PackageState::Absent;
   std::filesystem::path dir;             // le dossier installé (cette version ou l'autre)
   std::optional<InstalledPackage> note;  // sa note, si elle existe
+  std::string missing;  // un fichier tiers de la note absent ou de taille inattendue (Replaced)
 };
 
 // Ce qui est installé pour ce paquet de l'index.

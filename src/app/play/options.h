@@ -158,7 +158,7 @@ struct PlayOptions {
   // la paire précédente (RIFE fusionné sous Vulkan) ; UpscaleSetup::rife_warm.
   bool rife_warm = false;
   // --rife-encode-all (mesure, avec --debug) : RIFE fusionné encode les deux images à chaque passe, comme
-  // avant fusion2, au lieu de garder l'encodage de la paire et de la B précédente ; la sortie est la même
+  // avant fusion3, au lieu de garder l'encodage de la paire et de la B précédente ; la sortie est la même
   // (UpscaleSetup::rife_encode_all). Pour mesurer le gain en ABAB (docs/rife-fusionne.md).
   bool rife_encode_all = false;
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3

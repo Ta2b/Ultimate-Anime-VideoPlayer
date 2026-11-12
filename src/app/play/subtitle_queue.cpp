@@ -13,8 +13,11 @@ bool same_look(const subs::SubtitleFrame& a, const subs::SubtitleFrame& b) {
   const bool drawn_b = b.atlas && !b.rects.empty();
   if (drawn_a != drawn_b) return false;
   if (!drawn_a) return true;  // rien à dessiner, des deux côtés
+  // B17-01 : la montée des dialogues compte aussi. Une réponse redemandée avec la barre est la même image
+  // pour libass (panneau \pos), mais l'affichage décale celle rendue sans montée : la jeter servirait la
+  // mauvaise.
   return a.atlas->generation == b.atlas->generation && a.width == b.width && a.height == b.height &&
-         a.rects == b.rects;
+         a.line_lift == b.line_lift && a.rects == b.rects;
 }
 
 }  // namespace

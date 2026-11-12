@@ -278,6 +278,9 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
     const ChainStage stage = *failure.stage;
     log->warn("{} refusé : {}", stage == ChainStage::Upscale ? "SPAN" : "interpolation",
               failure.refusal.detail);
+    // La fin du journal de construction part avec « Signaler un problème » (B39-03). Une annulation n'est pas
+    // un échec à signaler.
+    if (!watch_now(failure.refusal)) note_build_failure(name(failure.refusal.code), failure.refusal.detail);
     refused.remember({.stage = stage,
                       .signature = stage_signature(stage, plan->settings, width, height, library),
                       .refusal = failure.refusal,

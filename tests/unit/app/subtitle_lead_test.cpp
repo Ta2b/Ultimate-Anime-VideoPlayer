@@ -41,9 +41,30 @@ std::filesystem::path clip() {
   return *path;
 }
 
+// 100 s à 25 im/s, un point clé toutes les 4 s. Un générique défile de 5 s à 95 s ; une réplique courte
+// vient à 20 s et 80 s, et rien entre 25 s et 75 s.
+std::filesystem::path long_clip() {
+  static const auto path = media::test::write_clip(media::test::ClipSpec{
+      .name = "app-subtitle-lead-long.mkv",
+      .codec = media::test::VideoCodec::Mpeg4,
+      .frames = 2500,
+      .gop = 100,
+      .subtitles = {{.language = "fre",
+                     .is_default = true,
+                     .events = {{.start_ms = 5000, .duration_ms = 90000, .text = "Generique"},
+                                {.start_ms = 20000, .duration_ms = 1000, .text = "Vingt"},
+                                {.start_ms = 80000, .duration_ms = 1000, .text = "Quatre-vingts"}}}},
+      .interleave_subtitles = true,
+  });
+  REQUIRE(path);
+  return *path;
+}
+
 struct Rig {
+  explicit Rig(std::filesystem::path file = clip())
+      : lead(SubtitleLeadConfig{.file = std::move(file), .reference = kVideo, .inbox = inbox}) {}
   std::shared_ptr<subs::SubsInbox> inbox = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
-  SubtitleLead lead{SubtitleLeadConfig{.file = clip(), .reference = kVideo, .inbox = inbox}};
+  SubtitleLead lead;
 
   // Le thread a tout lu : les débuts des paquets reçus par subs, dans l'ordre.
   std::vector<std::int64_t> starts() {
@@ -123,6 +144,50 @@ TEST_CASE("Sous-titres en avance : la piste choisie après un seek se relit au s
   rig.lead.select(kSubtitles);
   rig.lead.seek(6'000'000);
   CHECK(has(rig.starts(), 1'000'000));
+}
+
+// B17-07 (a) : un générique commencé 55 s avant la cible, au-delà de la préroulée de 10 s, est relu en
+// second.
+TEST_CASE("Sous-titres en avance : un seek relit aussi la réplique commencée bien avant la préroulée",
+          "[app][subs]") {
+  Rig rig(long_clip());
+  rig.lead.select(kSubtitles);
+  rig.lead.seek(60'000'000);
+  const std::vector<std::int64_t> starts = rig.starts();
+  CHECK(has(starts, 5'000'000));  // 55 s avant la cible, encore à l'écran
+  CHECK(has(starts, 20'000'000));
+}
+
+// Une plage déjà lue n'est pas relue : un second seek tout près ne renvoie rien de plus.
+TEST_CASE("Sous-titres en avance : une plage déjà relue n'est pas relue au seek voisin", "[app][subs]") {
+  Rig rig(long_clip());
+  rig.lead.select(kSubtitles);
+  rig.lead.seek(60'000'000);
+  REQUIRE_FALSE(rig.starts().empty());
+  const std::uint64_t first = rig.lead.sent();
+  rig.lead.seek(62'000'000);
+  const std::vector<std::int64_t> again = rig.starts();
+  CHECK(rig.lead.sent() - first == again.size());
+  CHECK_FALSE(has(again, 5'000'000));  // déjà envoyée
+}
+
+// B17-07 (b) : sans réplique avant la cible, la lecture s'arrête dans la vidéo au-delà de ce qui est voulu :
+// le démultiplexeur ne remonte plus tout le fichier jusqu'au paquet de sous-titres suivant.
+TEST_CASE("Sous-titres en avance : la lecture n'attend pas le paquet de sous-titres suivant", "[app][subs]") {
+  Rig rig(long_clip());
+  rig.lead.select(kSubtitles);
+  rig.lead.seek(40'000'000);  // la réplique suivante est à 80 s
+  const auto deadline = std::chrono::steady_clock::now() + 10s;
+  while (!rig.lead.idle() && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(1ms);
+  REQUIRE(rig.lead.idle());
+  std::vector<std::int64_t> starts;
+  while (auto message = rig.inbox->try_pop()) {
+    if (const auto* packet = std::get_if<subs::TrackPacket>(&*message))
+      starts.push_back(packet->packet.start_us);
+  }
+  CHECK(has(starts, 5'000'000));
+  CHECK(has(starts, 20'000'000));
+  CHECK_FALSE(has(starts, 80'000'000));  // lue avant : le fichier mélange les pistes par horodatage
 }
 
 }  // namespace ajp::app::play

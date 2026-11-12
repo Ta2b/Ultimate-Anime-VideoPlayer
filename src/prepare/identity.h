@@ -67,14 +67,15 @@ std::expected<std::string, Refusal> onnx_source_key(std::span<const std::byte> g
                                                     const std::filesystem::path& folder,
                                                     std::span<const std::string> locations);
 
-// Version de TensorRT et de CUDA du constructeur, jeton « 11.3.0-headers-build99-cuda13000-driver13000 ».
+// Version de TensorRT et de CUDA du constructeur, jeton « 11.3.0-headers-build99-cuda13000 » (le pilote n'y
+// est plus : B37-02).
 struct TrtRuntime {
   int major = 0;
   int minor = 0;
   int patch = 0;
   int headers_build = 0;  // NV_TENSORRT_BUILD des en-têtes
   int cuda_runtime = 0;   // cudaRuntimeGetVersion
-  int cuda_driver = 0;    // cudaDriverGetVersion
+  int cuda_driver = 0;    // cudaDriverGetVersion : relevé pour le journal, hors du jeton
   std::string token() const;
 };
 

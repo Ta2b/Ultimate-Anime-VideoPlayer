@@ -195,9 +195,17 @@ class Writer {
     if (const int err = avio_open(&out_.ctx->pb, file.c_str(), AVIO_FLAG_WRITE); err < 0)
       return fail("avio", err);
     if (const int err = avformat_write_header(out_.ctx, nullptr); err < 0) return fail("en-tête", err);
+    if (spec_.interleave_subtitles) {
+      // Aucune borne d'attente entre les pistes : le muxer garde tout et range par dts.
+      out_.ctx->max_interleave_delta = std::numeric_limits<std::int64_t>::max();
+      out_.packet = av_packet_alloc();
+      if (auto ok = write_subtitles(); !ok) return ok;
+    }
     if (auto ok = encode_video(); !ok) return ok;
     if (auto ok = write_audio(); !ok) return ok;
-    if (auto ok = write_subtitles(); !ok) return ok;
+    if (!spec_.interleave_subtitles) {
+      if (auto ok = write_subtitles(); !ok) return ok;
+    }
     if (const int err = av_write_trailer(out_.ctx); err < 0) return fail("fin", err);
     return {};
   }
@@ -293,7 +301,7 @@ class Writer {
 
   std::expected<void, std::string> encode_video() {
     out_.frame = av_frame_alloc();
-    out_.packet = av_packet_alloc();
+    if (out_.packet == nullptr) out_.packet = av_packet_alloc();
     out_.frame->format = spec_.pixel_format;
     out_.frame->width = spec_.width;
     out_.frame->height = spec_.height;

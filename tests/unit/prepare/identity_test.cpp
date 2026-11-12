@@ -18,7 +18,11 @@ using ajp::RefusalCode;
 
 namespace {
 
+// Le jeton du fork (avec son pilote) : les noms de moteur ci-dessous sont ceux qu'il calculait pour cette
+// chaîne.
 const std::string kRuntime = "11.3.0-headers-build99-cuda13000-driver13000";
+// Le jeton d'aujourd'hui, sans le pilote (B37-02).
+const std::string kRuntimeToken = "11.3.0-headers-build99-cuda13000";
 const std::string kDevice = "NVIDIA GeForce RTX 4070 Ti-sm8.9-00112233445566778899aabbccddeeff";
 
 }  // namespace
@@ -171,7 +175,15 @@ TEST_CASE("Jetons de version TensorRT et d'appareil CUDA (aji_trt.cpp:542-582)",
   runtime.headers_build = 99;
   runtime.cuda_runtime = 13000;
   runtime.cuda_driver = 13000;
-  CHECK(runtime.token() == kRuntime);
+  CHECK(runtime.token() == kRuntimeToken);
+  // Une mise à jour du pilote (autre version CUDA déclarée) ne change ni le jeton ni le nom des moteurs
+  // (B37-02).
+  TrtRuntime newer_driver = runtime;
+  newer_driver.cuda_driver = 13010;
+  CHECK(newer_driver.token() == runtime.token());
+  TrtRuntime other_runtime = runtime;
+  other_runtime.cuda_runtime = 13010;
+  CHECK(other_runtime.token() != runtime.token());
   const TrtRuntime legacy = decode_infer_lib_version(8601);
   CHECK((legacy.major == 8 && legacy.minor == 6 && legacy.patch == 1));
   const CudaDevice device{.name = "NVIDIA GeForce RTX 4070 Ti",

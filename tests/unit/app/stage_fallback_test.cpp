@@ -179,6 +179,35 @@ TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", 
   CHECK(plan(wanted, memory)->settings.upscale);
 }
 
+TEST_CASE("Étages : une annulation ne remplace ni un refus réel ni l'annulation d'une autre vidéo (B29-03)",
+          "[app][stages]") {
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  SECTION("deux vidéos annulées gardent chacune leur annulation") {
+    StageMemory memory;
+    refuse(memory, ChainStage::Motion, wanted, true, "ep01.mkv");
+    refuse(memory, ChainStage::Motion, wanted, true, "ep02.mkv");
+    CHECK(plan(wanted, memory, true, "ep01.mkv")->settings.rife_factor == 0);
+    CHECK(plan(wanted, memory, true, "ep02.mkv")->settings.rife_factor == 0);
+    CHECK(plan(wanted, memory, true, "ep03.mkv")->settings.rife_factor == 2);
+  }
+  SECTION("une annulation après un refus réel laisse le refus valoir pour toutes les vidéos") {
+    StageMemory memory;
+    refuse(memory, ChainStage::Motion, wanted);
+    refuse(memory, ChainStage::Motion, wanted, true, "ep01.mkv");
+    CHECK(plan(wanted, memory, true, "ep02.mkv")->settings.rife_factor == 0);
+  }
+  SECTION("un refus réel recouvre les annulations de sa signature") {
+    StageMemory memory;
+    refuse(memory, ChainStage::Motion, wanted, true, "ep01.mkv");
+    refuse(memory, ChainStage::Motion, wanted);
+    const auto next = plan(wanted, memory, true, "ep02.mkv");
+    REQUIRE(next);
+    CHECK(next->settings.rife_factor == 0);
+    REQUIRE(next->notes.size() == 1);
+    CHECK(next->notes[0].change == StageChange::Dropped);
+  }
+}
+
 }  // namespace
 TEST_CASE("B08-02 : un repli interne refusé est retenu pour la séance, au panneau, et oublié par Réessayer",
           "[stage_fallback]") {

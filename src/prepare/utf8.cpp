@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include "core/utf8_path.h"
 
@@ -27,11 +28,27 @@ std::filesystem::path path_from_utf8(std::string_view text) {
 #ifdef _WIN32
 namespace {
 
-// Le texte s'écrit-il dans la page ANSI sans caractère de remplacement ?
+// La page de code ANSI du SYSTÈME, celle que relisent les programmes sans manifeste UTF-8 (trtexec, curl,
+// tar). Les exécutables d'ajp portent activeCodePage=UTF-8 : pour eux CP_ACP vaut 65001, quelle que soit la
+// page du système (B34-01). 0 quand elle ne se lit pas.
+UINT system_ansi_code_page() {
+  DWORD page = 0;
+  const int written =
+      GetLocaleInfoEx(LOCALE_NAME_SYSTEM_DEFAULT, LOCALE_IDEFAULTANSICODEPAGE | LOCALE_RETURN_NUMBER,
+                      reinterpret_cast<LPWSTR>(&page), static_cast<int>(sizeof(page) / sizeof(wchar_t)));
+  return written > 0 ? static_cast<UINT>(page) : 0;
+}
+
+// Le texte s'écrit-il dans la page ANSI du système sans caractère de remplacement ?
 bool ansi_representable(const std::wstring& text) {
   if (text.empty()) return true;
+  UINT page = system_ansi_code_page();
+  if (page == CP_UTF8)
+    return true;  // « Utiliser Unicode UTF-8 » : tout s'écrit, et les drapeaux ci-dessous sont interdits
+  if (page == 0) page = CP_ACP;  // illisible : la page du processus, comme avant
+  if (page == CP_UTF8) return true;
   BOOL replaced = FALSE;
-  const int size = WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, text.c_str(),
+  const int size = WideCharToMultiByte(page, WC_NO_BEST_FIT_CHARS, text.c_str(),
                                        static_cast<int>(text.size()), nullptr, 0, nullptr, &replaced);
   return size > 0 && replaced == FALSE;
 }
@@ -48,7 +65,7 @@ std::wstring short_name(const std::wstring& existing) {
 }  // namespace
 #endif
 
-std::string ansi_safe_path(const std::filesystem::path& path) {
+std::optional<std::string> ansi_command_path(const std::filesystem::path& path) {
 #ifdef _WIN32
   if (ansi_representable(path.native())) return core::to_utf8(path);
   // La plus longue partie qui existe prend son nom court ; ce qui reste (le fichier à écrire) est ajouté.
@@ -61,13 +78,19 @@ std::string ansi_safe_path(const std::filesystem::path& path) {
     existing = existing.parent_path();
   }
   const std::wstring shortened = existing.empty() ? std::wstring() : short_name(existing.native());
-  if (shortened.empty()) return core::to_utf8(path);
+  if (shortened.empty()) return std::nullopt;
   const std::filesystem::path candidate =
       rest.empty() ? std::filesystem::path(shortened) : std::filesystem::path(shortened) / rest;
-  return ansi_representable(candidate.native()) ? core::to_utf8(candidate) : core::to_utf8(path);
+  if (!ansi_representable(candidate.native())) return std::nullopt;
+  return core::to_utf8(candidate);
 #else
   return core::to_utf8(path);
 #endif
+}
+
+std::string ansi_safe_path(const std::filesystem::path& path) {
+  if (auto safe = ansi_command_path(path)) return std::move(*safe);
+  return core::to_utf8(path);
 }
 
 bool is_utf8(std::string_view text) {

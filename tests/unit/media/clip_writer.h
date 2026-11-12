@@ -82,6 +82,9 @@ struct ClipSpec {
   std::vector<std::pair<int, int>> extra_videos;
   std::vector<AudioSpec> audio;  // PCM 16 bits stéréo 48 kHz, paquets de 20 ms
   std::vector<SubtitleSpec> subtitles;
+  // Vrai : les répliques sont mêlées aux images par horodatage, comme dans un vrai fichier ; faux : elles
+  // suivent toutes les images, à la fin du fichier.
+  bool interleave_subtitles = false;
   std::vector<AttachmentSpec> attachments;
   std::vector<ChapterSpec> chapters;
   // Encodeur FFmpeg nommé (h264_nvenc, hevc_nvenc, av1_nvenc…) à la place de

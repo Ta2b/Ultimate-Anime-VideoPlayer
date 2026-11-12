@@ -50,8 +50,15 @@ int purge_misplaced(const std::filesystem::path& shared,
 int purge_update_leftovers(const std::filesystem::path& data,
                            const std::function<void(const std::string&)>& said = {});
 
-// Au lancement, hors essai : purge_update_leftovers, puis le cache des moteurs TensorRT de engines borné
-// (A33-04, prepare/cache_purge.h) ; said reçoit ce qui part et la taille gardée.
+// Les restes du banc dans le dossier des données (B36-09) : les dossiers « calibration-essais-* » d'une
+// calibration tuée, de plus d'un jour (le nom est unique, rien ne les reprend), et les « bench-clip-v*.mkv »
+// des versions d'avant (celui d'aujourd'hui, machine_calibration.h, reste). Rend le nombre d'entrées
+// retirées.
+int purge_bench_leftovers(const std::filesystem::path& data,
+                          const std::function<void(const std::string&)>& said = {});
+
+// Au lancement, hors essai : purge_update_leftovers, purge_bench_leftovers, puis le cache des moteurs
+// TensorRT de engines borné (A33-04, prepare/cache_purge.h) ; said reçoit ce qui part et la taille gardée.
 void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::path& engines,
                     const std::function<void(const std::string&)>& said = {});
 

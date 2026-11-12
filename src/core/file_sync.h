@@ -4,6 +4,7 @@
 // journalise le renommage lui-même.
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -25,8 +26,11 @@ void sync_directory(const std::filesystem::path& folder);
 
 // rename(from, to), réessayé environ 1,5 s sous Windows tant que le refus est passager (antivirus,
 // indexeur qui tient l'un des deux fichiers ouvert sans partage de suppression) ; ailleurs, un seul
-// essai : rename(2) remplace même un fichier ouvert (A20-01, A05-04).
-std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to);
+// essai : rename(2) remplace même un fichier ouvert (A20-01, A05-04). patience : le temps total des essais ;
+// un dossier de plusieurs Go que Defender analyse peut le tenir 5 à 10 s (B31-06).
+inline constexpr std::chrono::milliseconds kRenamePatience{1500};
+std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to,
+                                std::chrono::milliseconds patience = kRenamePatience);
 
 // La seule écriture atomique du projet (P5.11) : un temporaire au nom unique dans le même dossier
 // (« .<nom>.<instant>-<fil>.tmp »), écrit sur le disque, puis renommé sur path, et le dossier écrit à son

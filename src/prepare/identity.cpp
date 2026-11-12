@@ -155,8 +155,12 @@ std::expected<std::string, Refusal> onnx_source_key(std::span<const std::byte> g
 }
 
 std::string TrtRuntime::token() const {
-  return std::format("{}.{}.{}-headers-build{}-cuda{}-driver{}", major, minor, patch, headers_build,
-                     cuda_runtime, cuda_driver);
+  // Sans la version CUDA du pilote (cudaDriverGetVersion) : un moteur dépend de TensorRT et de la puce, pas
+  // de la version CUDA que le pilote déclare. Un pilote qui passe de CUDA 13.0 à 13.1 invalidait tous les
+  // moteurs et coûtait plusieurs minutes de reconstruction à chaque mise à jour. Un plan réellement illisible
+  // par le nouveau pilote est refusé au chargement (TrtEngine::load), ce qui déclenche déjà la reconstruction
+  // (B37-02).
+  return std::format("{}.{}.{}-headers-build{}-cuda{}", major, minor, patch, headers_build, cuda_runtime);
 }
 
 TrtRuntime decode_infer_lib_version(std::int32_t version) {
