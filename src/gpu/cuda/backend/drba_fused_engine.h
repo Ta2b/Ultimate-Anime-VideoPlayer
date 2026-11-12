@@ -2,9 +2,9 @@
 // (l'encodeur en lot de trois images, et les blocs 0 à 2, des convolutions à basse résolution) reliés par les
 // noyaux CUDA de drba_fused_kernels.h, le tout enfilé sur le flux du backend et capturé dans un seul graphe
 // CUDA. L'interface est celle du moteur DistilDRBA entier : deux entrées « pair01 » et « pair12 » de
-// 1 × 7 × H × W (rife_input) et une sortie « out » de 1 × 3 × H × W. Les tampons intermédiaires vivent dans la
-// zone partagée de la voie (SharedActivations), au-dessus des activations de tous les moteurs entiers qui la
-// partagent (C03-01) : un SPAN qui passe entre deux appels sur la même voie n'écrit que sous eux.
+// 1 × 7 × H × W (rife_input) et une sortie « out » de 1 × 3 × H × W. Les tampons intermédiaires vivent dans
+// la zone partagée de la voie (SharedActivations), au-dessus des activations de tous les moteurs entiers qui
+// la partagent (C03-01) : un SPAN qui passe entre deux appels sur la même voie n'écrit que sous eux.
 #pragma once
 
 #include <array>

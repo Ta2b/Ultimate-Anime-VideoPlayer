@@ -302,14 +302,14 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
   // La fenêtre de l'image, paramètre du warp final : seize bits par champ (tailles bornées par
   // rife_fused_size_valid).
   const auto field = [](int v) { return static_cast<std::uintptr_t>(static_cast<std::uint16_t>(v)); };
-  const FusedGraphs::Key key{inputs[0].handle + inputs[0].offset,
-                             outputs[0].handle + outputs[0].offset,
-                             outputs.size() > 1 ? outputs[1].handle + outputs[1].offset : 0,
-                             field(window_.x) | field(window_.y) << 16U | field(window_.width) << 32U |
-                                 field(window_.height) << 48U,
-                             reinterpret_cast<std::uintptr_t>(arena->data()),
-                             static_cast<std::uintptr_t>(arena->generation()),
-                             static_cast<std::uintptr_t>(encode)};
+  const FusedGraphs::Key key{
+      inputs[0].handle + inputs[0].offset,
+      outputs[0].handle + outputs[0].offset,
+      outputs.size() > 1 ? outputs[1].handle + outputs[1].offset : 0,
+      field(window_.x) | field(window_.y) << 16U | field(window_.width) << 32U | field(window_.height) << 48U,
+      reinterpret_cast<std::uintptr_t>(arena->data()),
+      static_cast<std::uintptr_t>(arena->generation()),
+      static_cast<std::uintptr_t>(encode)};
   return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs[0], outputs, encode); });
 }
 

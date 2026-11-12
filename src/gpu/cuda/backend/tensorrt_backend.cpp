@@ -223,7 +223,6 @@ TensorRtBackend::~TensorRtBackend() {
   log_profile();
   stages_.clear();
   slots_.clear();
-  retired_.clear();
   for (auto& timing : role_timing_) timing.reset();
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
@@ -404,7 +403,8 @@ void TensorRtBackend::free_after_lanes(void* memory) {
     // Un événement par voie, créé une fois : l'attente posée garde l'état qu'il avait à cet instant, le
     // réenregistrer ensuite ne la change pas.
     cudaEvent_t& mark = free_marks_[lane];
-    if (mark == nullptr && cudaEventCreateWithFlags(&mark, cudaEventDisableTiming) != cudaSuccess) mark = nullptr;
+    if (mark == nullptr && cudaEventCreateWithFlags(&mark, cudaEventDisableTiming) != cudaSuccess)
+      mark = nullptr;
     ordered = mark != nullptr && cudaEventRecord(mark, other) == cudaSuccess &&
               cudaStreamWaitEvent(free_on, mark, 0) == cudaSuccess;
   }

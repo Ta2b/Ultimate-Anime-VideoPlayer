@@ -76,6 +76,9 @@ set(ajp_trtexec_path "")
 if(AJP_TRTEXEC AND EXISTS "${AJP_TRTEXEC}")
   set(ajp_trtexec_path "${AJP_TRTEXEC}")
   set(ajp_trtexec_packaged "${AJP_TRTEXEC}")
+  # Un trtexec remplacé sur place (TensorRT mis à jour dans le même dossier) refait la configuration : sinon le
+  # module garderait l'ancienne empreinte et refuserait le trtexec livré (C01-08).
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${AJP_TRTEXEC}")
   # Sous Linux, le paquet range trtexec sur $ORIGIN (ses bibliothèques de NVIDIA sont à côté de lui) : la copie
   # rangée est faite ici, une fois, et c'est son SHA-256 qui entre dans le module ; package-linux.sh livre cette
   # copie telle quelle (AJP_TRTEXEC_PACKAGED). Patcher après coup changeait l'empreinte (0.10.0).

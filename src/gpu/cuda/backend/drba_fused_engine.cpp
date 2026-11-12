@@ -98,7 +98,8 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
   const Tensor motion[]{fused_tensor(out, 0, 4, h, w), fused_tensor(out + 4U * plane_bytes, 0, 1, h, w)};
   // Les deux variantes, chacune exécutée, capturée et rejouée (C03-06) : l'appelant choisit la sienne à
   // chaque appel (le warp après SPAN prend le flot et le masque), un noyau qui ne tourne pas se voit ici.
-  for (const std::span<const Tensor> outputs : {std::span<const Tensor>(image), std::span<const Tensor>(motion)}) {
+  for (const std::span<const Tensor> outputs :
+       {std::span<const Tensor>(image), std::span<const Tensor>(motion)}) {
     for (int pass = 0; pass < 3; ++pass) {
       if (auto ok = engine->enqueue(scratch.stream, shared, inputs, outputs); !ok)
         return std::unexpected(std::move(ok.error()));
@@ -118,7 +119,8 @@ std::expected<std::unique_ptr<DrbaFusedEngine>, Refusal> DrbaFusedEngine::load(
 }
 
 std::size_t DrbaFusedEngine::scratch_offset_for(const SharedActivations& zone) const {
-  return kernels::drba_fused_align(static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
+  return kernels::drba_fused_align(
+      static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
 }
 
 std::expected<void, Refusal> DrbaFusedEngine::use_zone(const std::shared_ptr<SharedActivations>& zone) {

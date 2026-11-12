@@ -76,7 +76,9 @@ class RifeFusedEngine final : public Engine {
     std::uint64_t second = 0;
     std::uint64_t none = 0;
   };
-  EncodeCounts encode_counts() const { return {.both = encodes_[0], .second = encodes_[1], .none = encodes_[2]}; }
+  EncodeCounts encode_counts() const {
+    return {.both = encodes_[0], .second = encodes_[1], .none = encodes_[2]};
+  }
 
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }

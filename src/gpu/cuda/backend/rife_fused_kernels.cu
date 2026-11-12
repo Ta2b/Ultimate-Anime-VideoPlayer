@@ -111,7 +111,8 @@ __device__ __forceinline__ Tap window_tap(int x, int y, float flow_x, float flow
   return t;
 }
 
-__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w, const Bounds& b) {
+__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w,
+                                                    const Bounds& b) {
   float wx[4];
   float wy[4];
   catmull_rom(t.wx, wx);

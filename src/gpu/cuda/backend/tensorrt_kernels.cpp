@@ -283,10 +283,6 @@ std::optional<KernelOps::DeviceMemory> TensorRtBackend::device_memory() {
   return DeviceMemory{.used = used, .total = total};
 }
 
-void TensorRtBackend::release_retired() {
-  if (!retired_.empty() && cudaEventQuery(retired_done_) == cudaSuccess) retired_.clear();
-}
-
 std::expected<ImportedSlot*, Refusal> TensorRtBackend::slot(const RingSlotDesc& desc) {
   if (desc.index >= 64)
     return refuse(RefusalCode::FieldOutOfRange, std::format("slot {} : 64 au plus", desc.index));
@@ -295,18 +291,18 @@ std::expected<ImportedSlot*, Refusal> TensorRtBackend::slot(const RingSlotDesc& 
                                                           desc.index, desc.generation, generation_));
   }
   if (desc.generation > generation_) {
-    // Ring recréé (kernel_ops.h) : les imports de l'ancienne génération se relâchent quand leurs
-    // écritures déjà enfilées sont finies, constaté sans attente hôte aux appels suivants.
-    for (auto& old : slots_) {
-      if (old) retired_.push_back(std::move(old));
-    }
-    slots_.clear();
-    generation_ = desc.generation;
+    // Ring recréé (kernel_ops.h) : les imports de l'ancienne génération se relâchent dès que leurs
+    // écritures déjà enfilées sont finies. L'hôte les attend ici, une fois par génération (C01-03) : relâchés
+    // seulement à l'écriture suivante, ils tenaient la mémoire de l'ancien anneau (66 Mo par emplacement en
+    // 4K) pendant toute une pause.
     if (auto ok = cuda_check(cudaEventRecord(retired_done_, stream_), "cudaEventRecord"); !ok) {
       return std::unexpected(ok.error());
     }
+    if (auto ok = cuda_check(cudaEventSynchronize(retired_done_), "cudaEventSynchronize"); !ok)
+      return std::unexpected(ok.error());
+    slots_.clear();
+    generation_ = desc.generation;
   }
-  release_retired();
   if (slots_.size() <= desc.index) slots_.resize(desc.index + 1);
   std::unique_ptr<ImportedSlot>& imported = slots_[desc.index];
   if (!imported) {

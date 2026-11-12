@@ -37,10 +37,11 @@ class SharedActivations {
   std::uint64_t generation() const { return generation_; }
   // Ce qui s'écrit dans la zone (C03-01). Chaque moteur déclare à son enqueue les octets [0, end) qu'il y
   // écrit : used pour un moteur entier (TrtEngine, SPAN FP8), qui fait aussi monter activation_peak ; wrote
-  // pour les tampons d'un moteur fusionné. Un moteur fusionné qui garde ses tampons d'un appel au suivant (RIFE
-  // et DistilDRBA : l'encodage gardé, D6) les pose au-dessus de activation_peak et s'en déclare le gardien
-  // (keep) ; ils restent valables (kept_by) tant qu'aucun autre moteur n'a écrit au-delà de leur début. Un
-  // SPAN qui passe entre deux appels de RIFE sur la même zone (une seule voie) ne les efface donc plus.
+  // pour les tampons d'un moteur fusionné. Un moteur fusionné qui garde ses tampons d'un appel au suivant
+  // (RIFE et DistilDRBA : l'encodage gardé, D6) les pose au-dessus de activation_peak et s'en déclare le
+  // gardien (keep) ; ils restent valables (kept_by) tant qu'aucun autre moteur n'a écrit au-delà de leur
+  // début. Un SPAN qui passe entre deux appels de RIFE sur la même zone (une seule voie) ne les efface donc
+  // plus.
   void used(const void* user, std::int64_t end) {
     activation_peak_ = std::max(activation_peak_, end);
     wrote(user, end);
