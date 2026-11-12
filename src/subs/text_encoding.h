@@ -2,6 +2,7 @@
 // lisent pas d'autre.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -14,5 +15,11 @@ namespace ajp::subs {
 // un indice qui ne décode pas laisse la forme des octets décider. Le repli reste le Windows-1252 des SRT
 // d'Europe de l'Ouest.
 std::string to_utf8(std::string_view bytes, std::string_view hint = {});
+
+// Le caractère d'un octet d'une page à un octet (CP125x, 874), tel que le système l'a décodé (rien : refusé).
+// Une case sans caractère devient U+FFFD : refusée, rangée en zone privée (U+E000 à U+F8FF) ou rendue en
+// commande C1 (U+0080 à U+009F) pour un octet de 0x80 à 0xFF, comme Windows le fait de ses cases non
+// définies. Sous Linux, iconv les refuse et le décodage les remplace aussi par U+FFFD (C34-07). Pur.
+char32_t single_byte_char(unsigned char byte, std::optional<char32_t> decoded);
 
 }  // namespace ajp::subs

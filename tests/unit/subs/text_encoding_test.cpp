@@ -1,5 +1,6 @@
 #include "subs/text_encoding.h"
 
+#include <optional>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -187,4 +188,18 @@ TEST_CASE("to_utf8 : un UTF-8 à l'octet fautif reste de l'UTF-8, l'octet devien
   CHECK(repaired.find("\xC3\xA3") == std::string::npos);  // pas de « ã » : ce n'est pas du Windows-1252
   // Un fichier hérité sans aucune séquence UTF-8 valide garde la devinette.
   CHECK(to_utf8("caf\xE9 cr\xE8me") == "caf\xC3\xA9 cr\xC3\xA8me");
+}
+
+TEST_CASE("single_byte_char : une case sans caractère devient U+FFFD sous les deux systèmes (C34-07)",
+          "[encoding]") {
+  using ajp::subs::single_byte_char;
+  CHECK(single_byte_char(0xE3, U'γ') == U'γ');  // γ en CP1253
+  CHECK(single_byte_char(0x41, U'A') == U'A');
+  // Refusée (MB_ERR_INVALID_CHARS, iconv), en zone privée (Windows, CP1253 0xAA) ou en commande C1 (Windows,
+  // CP1251 0x98) : U+FFFD.
+  CHECK(single_byte_char(0xAA, std::nullopt) == U'�');
+  CHECK(single_byte_char(0xAA, U'') == U'�');
+  CHECK(single_byte_char(0x98, U'\u0098') == U'�');
+  // Un caractère défini au-delà de U+00FF reste lui-même (CP1252 0x80 : €).
+  CHECK(single_byte_char(0x80, U'€') == U'€');
 }
