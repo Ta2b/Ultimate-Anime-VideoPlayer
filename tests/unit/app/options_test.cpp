@@ -151,6 +151,13 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto kept = parse({"épisode.mkv", "--l2-keep"});
   REQUIRE(kept);
   CHECK(kept->l2_keep);
+  // Le mouvement du warp par tuile et le flot du warp en L2 : deux essais, éteints par défaut.
+  CHECK_FALSE(options->tiled_warp);
+  CHECK_FALSE(options->warp_l2);
+  const auto warp_trials = parse({"épisode.mkv", "--tiled-warp", "--warp-l2"});
+  REQUIRE(warp_trials);
+  CHECK(warp_trials->tiled_warp);
+  CHECK(warp_trials->warp_l2);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

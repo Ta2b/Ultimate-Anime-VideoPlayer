@@ -159,6 +159,11 @@ struct PlayOptions {
   // --l2-keep (essai) : l'encodage gardé de RIFE fusionné tenu en L2 (gpu::kTrialL2Keep), pour mesurer
   // son gain ; éteint par défaut.
   bool l2_keep = false;
+  // --tiled-warp (essai) : le warp TensorRT calcule le mouvement du milieu par point du flot de chaque tuile
+  // (gpu::kTrialTiledWarp) ; l'image change un peu, éteint par défaut derrière la porte qualité.
+  bool tiled_warp = false;
+  // --warp-l2 (essai) : le warp TensorRT tient le flot en L2 persistant (gpu::kTrialWarpL2) ; même image.
+  bool warp_l2 = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;

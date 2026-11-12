@@ -145,6 +145,8 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->cache_dir_ = init.cache_dir;
   backend->filtered_warp_ = init.filtered_warp;
   backend->l2_keep_ = (init.trials & kTrialL2Keep) != 0;
+  backend->tiled_warp_ = (init.trials & kTrialTiledWarp) != 0;
+  backend->warp_l2_ = (init.trials & kTrialWarpL2) != 0;
   backend->trtexec_ = std::move(trtexec);
   if (!backend->trtexec_.empty()) {
     // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).

@@ -75,6 +75,33 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
   return tp;
 }
 
+// Le déplacement d'un pixel de la sortie vers a et vers b, en pixels de la fenêtre du mouvement, et le poids
+// de a au mélange.
+struct Shift {
+  float ax = 0.0F;
+  float ay = 0.0F;
+  float bx = 0.0F;
+  float by = 0.0F;
+  float weight = 0.5F;
+};
+
+// Les deux images lues au déplacement du pixel (x, y), mises à l'échelle de la sortie, puis mélangées.
+template <typename S, bool kCubic>
+__device__ void blend_images(const WarpBlendParams& p, int x, int y, const Shift& m, float* rgb) {
+  const float sx = static_cast<float>(p.width) / static_cast<float>(p.window_width);
+  const float sy = static_cast<float>(p.height) / static_cast<float>(p.window_height);
+  const Planes a = image_planes(p, p.a, p.textures.a);
+  const Planes b = image_planes(p, p.b, p.textures.b);
+  const float fx = static_cast<float>(x);
+  const float fy = static_cast<float>(y);
+  using Image = std::conditional_t<kCubic, CatmullRom, S>;
+  for (int c = 0; c < 3; ++c) {
+    const float va = Image::sample(a, c, fx + sx * m.ax, fy + sy * m.ay);
+    const float vb = Image::sample(b, c, fx + sx * m.bx, fy + sy * m.by);
+    rgb[c] = va * m.weight + vb * (1.0F - m.weight);
+  }
+}
+
 // Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre, puis les deux
 // images déformées et mélangées. kCubic : les images lues par Catmull-Rom (option cubic, éteinte par
 // défaut), dans des noyaux à eux.
@@ -115,16 +142,7 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
     by = (1.0F - t) * ty;
     weight = 1.0F / (1.0F + expf(-z));
   }
-  const Planes a = image_planes(p, p.a, p.textures.a);
-  const Planes b = image_planes(p, p.b, p.textures.b);
-  const float fx = static_cast<float>(x);
-  const float fy = static_cast<float>(y);
-  using Image = std::conditional_t<kCubic, CatmullRom, S>;
-  for (int c = 0; c < 3; ++c) {
-    const float va = Image::sample(a, c, fx + sx * ax, fy + sy * ay);
-    const float vb = Image::sample(b, c, fx + sx * bx, fy + sy * by);
-    rgb[c] = va * weight + vb * (1.0F - weight);
-  }
+  blend_images<S, kCubic>(p, x, y, Shift{.ax = ax, .ay = ay, .bx = bx, .by = by, .weight = weight}, rgb);
 }
 
 // Les noyaux de Catmull-Rom ont leur propre borne : ses 16 lectures par canal ne tiennent pas dans les
@@ -183,6 +201,100 @@ __global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
   for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * plane + i] = pair[c];
 }
 
+// Mouvement par tuile (WarpBlendParams::tiled_motion, essai) : le mouvement estimé au milieu, mis à l'instant
+// de la sortie, se calcule une fois par point du flot que couvre le bloc, en mémoire partagée, au lieu d'une
+// fois par pixel de la sortie (neuf pixels par point en 4K pour un flot en 1280). Chaque pixel interpole
+// ensuite tx, ty et le poids entre les quatre points qui l'entourent : le calcul n'étant pas linéaire (second
+// prélèvement, sigmoïde), l'image change un peu. Sans les poses ; sortie au moins aussi grande que la
+// fenêtre.
+inline constexpr int kTilePoints = kBlock + 2;  // un bloc de 16 pixels couvre au plus 17 points du flot
+
+struct TilePoint {
+  float tx;
+  float ty;
+  float weight;
+};
+
+__device__ TilePoint middle_point(const WarpBlendParams& p, float u, float v) {
+  const Planes flow = motion_planes(p, p.flow, 0);
+  const Planes mask = motion_planes(p, p.mask, 0);
+  const float t = p.time;
+  const float u2 = u - ((1.0F - t) * Exact::sample(flow, 0, u, v) + t * Exact::sample(flow, 2, u, v));
+  const float v2 = v - ((1.0F - t) * Exact::sample(flow, 1, u, v) + t * Exact::sample(flow, 3, u, v));
+  const float tx = Exact::sample(flow, 2, u2, v2) - Exact::sample(flow, 0, u2, v2);
+  const float ty = Exact::sample(flow, 3, u2, v2) - Exact::sample(flow, 1, u2, v2);
+  const float mm =
+      fminf(fmaxf(Exact::sample(mask, 0, u2, v2), kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
+  const float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) + kernels::kBlendLawB * logf((1.0F - t) / t) +
+                  kernels::kBlendLawC;
+  return {.tx = tx, .ty = ty, .weight = 1.0F / (1.0F + expf(-z))};
+}
+
+// Le premier point du flot qu'un bord de bloc lit, comme Exact::sample (position bornée, partie entière).
+__device__ int first_point(int pixel, float scale, int size) {
+  const float u = (static_cast<float>(pixel) + 0.5F) / scale - 0.5F;
+  return static_cast<int>(fminf(fmaxf(u, 0.0F), static_cast<float>(size - 1)));
+}
+
+template <bool kCubic>
+__global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
+    warp_blend_tiled(WarpBlendParams p) {
+  __shared__ TilePoint tile[kTilePoints][kTilePoints];
+  const float sx = static_cast<float>(p.width) / static_cast<float>(p.window_width);
+  const float sy = static_cast<float>(p.height) / static_cast<float>(p.window_height);
+  const int x_first = static_cast<int>(blockIdx.x * blockDim.x);
+  const int y_first = static_cast<int>(blockIdx.y * blockDim.y);
+  const int gx = first_point(x_first, sx, p.window_width);
+  const int gy = first_point(y_first, sy, p.window_height);
+  const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+  for (int k = tid; k < kTilePoints * kTilePoints; k += kPixelThreads) {
+    const int i = k % kTilePoints;
+    const int j = k / kTilePoints;
+    const int px = min(gx + i, p.window_width - 1);
+    const int py = min(gy + j, p.window_height - 1);
+    tile[j][i] = middle_point(p, static_cast<float>(px), static_cast<float>(py));
+  }
+  __syncthreads();
+  const int x = x_first + static_cast<int>(threadIdx.x);
+  const int y = y_first + static_cast<int>(threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  const float u =
+      fminf(fmaxf((static_cast<float>(x) + 0.5F) / sx - 0.5F, 0.0F), static_cast<float>(p.window_width - 1));
+  const float v =
+      fminf(fmaxf((static_cast<float>(y) + 0.5F) / sy - 0.5F, 0.0F), static_cast<float>(p.window_height - 1));
+  const int x0 = static_cast<int>(u);
+  const int y0 = static_cast<int>(v);
+  const float fx = u - static_cast<float>(x0);
+  const float fy = v - static_cast<float>(y0);
+  const int i0 = min(x0 - gx, kTilePoints - 2);
+  const int j0 = min(y0 - gy, kTilePoints - 2);
+  const auto lerp = [&](float TilePoint::* field) {
+    const float top = tile[j0][i0].*field * (1.0F - fx) + tile[j0][i0 + 1].*field * fx;
+    const float bottom = tile[j0 + 1][i0].*field * (1.0F - fx) + tile[j0 + 1][i0 + 1].*field * fx;
+    return top * (1.0F - fy) + bottom * fy;
+  };
+  const float t = p.time;
+  const float tx = lerp(&TilePoint::tx);
+  const float ty = lerp(&TilePoint::ty);
+  float rgb[3];
+  blend_images<Exact, kCubic>(p, x, y,
+                              Shift{.ax = -t * tx,
+                                    .ay = -t * ty,
+                                    .bx = (1.0F - t) * tx,
+                                    .by = (1.0F - t) * ty,
+                                    .weight = lerp(&TilePoint::weight)},
+                              rgb);
+  if (p.surface.object != 0) {
+    store_ring(p.surface, x, y, __float2half_rn(rgb[0]), __float2half_rn(rgb[1]), __float2half_rn(rgb[2]));
+    return;
+  }
+  auto* out = static_cast<__half*>(p.out);
+  const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const std::size_t i =
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
+  for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * plane + i] = __float2half_rn(rgb[c]);
+}
+
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(FlowMaxParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -213,6 +325,15 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(Flo
 }  // namespace
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream) {
+  if (params.tiled_motion && params.from_middle && !params.keep_poses &&
+      params.width >= params.window_width && params.height >= params.window_height) {
+    const dim3 grid = grid_for(params.width, params.height);
+    if (params.cubic)
+      warp_blend_tiled<true><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
+    else
+      warp_blend_tiled<false><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
+    return cudaGetLastError();
+  }
   const WarpBlendParams::Textures& t = params.textures;
   const bool previous = params.keep_poses && params.previous_flow != nullptr;
   if (t.a != 0 && t.b != 0 && t.flow != 0 && t.mask != 0 && (!previous || t.previous_flow != 0) &&

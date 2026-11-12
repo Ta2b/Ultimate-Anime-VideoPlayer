@@ -343,7 +343,9 @@ gpu::BackendInit chain_backend_init(Player& p) {
           .log = backend_log(),
           .profile_dispatches = p.options.profile_dispatches,
           .filtered_warp = p.options.filtered_warp,
-          .trials = p.options.l2_keep ? gpu::kTrialL2Keep : 0U};
+          .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
+                    (p.options.tiled_warp ? gpu::kTrialTiledWarp : 0U) |
+                    (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U)};
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).

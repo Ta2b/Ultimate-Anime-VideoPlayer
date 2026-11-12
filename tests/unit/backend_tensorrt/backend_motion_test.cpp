@@ -44,7 +44,8 @@ struct WarpCase {
   int h = 0;
   kernels::Window area;
   double tolerance = 0.0;
-  bool filtered = false;  // l'essai --filtered-warp (BackendInit::filtered_warp)
+  bool filtered = false;     // l'essai --filtered-warp (BackendInit::filtered_warp)
+  std::uint32_t trials = 0;  // BackendInit::trials (--tiled-warp, --warp-l2)
 };
 
 void check_warp(const WarpCase& wc) {
@@ -91,7 +92,7 @@ void check_warp(const WarpCase& wc) {
       }
     }
   }
-  Loaded loaded(wc.filtered);
+  Loaded loaded(wc.filtered, wc.trials);
   REQUIRE(loaded.backend != nullptr);
   auto alloc = [&](std::int64_t c, std::int64_t hh, std::int64_t ww) {
     auto t = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, c, hh, ww}});
@@ -225,6 +226,33 @@ TEST_CASE("Backend TensorRT : warp par objets texture (--filtered-warp), deux pi
               .area = {.x = 0, .y = 8, .width = 64, .height = 32},
               .tolerance = kernels::tolerance::kWarpFiltered,
               .filtered = true});
+}
+
+TEST_CASE("Backend TensorRT : warp avec le flot en L2 persistant (--warp-l2), la même image",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  check_warp({.pw = 64,
+              .ph = 48,
+              .w = 96,
+              .h = 48,
+              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
+              .tolerance = 2e-3,
+              .trials = gpu::kTrialWarpL2});
+}
+
+TEST_CASE("Backend TensorRT : warp au mouvement par tuile (--tiled-warp), proche du warp exact",
+          "[backend_tensorrt][cuda]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  // Sortie trois fois plus large que la fenêtre, comme un flot en 1280 pour une sortie 4K : le mouvement du
+  // milieu calculé aux points du flot puis interpolé s'écarte un peu du calcul par pixel, sur un flot qui
+  // tourne vite (période de 30 points). Les instants à 1/2 et les poses restent exacts.
+  check_warp({.pw = 64,
+              .ph = 48,
+              .w = 192,
+              .h = 96,
+              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
+              .tolerance = 0.05,
+              .trials = gpu::kTrialTiledWarp});
 }
 
 TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",
