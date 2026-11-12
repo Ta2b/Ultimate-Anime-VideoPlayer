@@ -49,4 +49,7 @@ try {
 } finally {
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }
+# Le dernier cas attendu refusé laisse $LASTEXITCODE à 1 : sans « exit 0 », pwsh -command rendrait ce code
+# et l'étape échouerait alors que tous les cas sont passés.
 if ($fail) { exit 1 }
+exit 0
