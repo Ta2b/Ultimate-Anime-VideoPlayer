@@ -13,8 +13,10 @@ fréquent (le premier dans l'ordre, à égalité) ; elle est signalée.
 Sur un appareil de la famille, un choix de la table n'est pas remesuré : sa sortie est vérifiée une
 fois contre le noyau direct, comme un choix repris d'une autre version du pilote.
 
-Les caches relevés sont gardés dans tools/vk/presets, nommés « <Famille>-<carte>-<n>.tsv » : sans
---family, le script les relit tous, et une nouvelle famille s'ajoute sans faire perdre les autres.
+Les caches relevés se rangent dans tools/vk/presets (à créer : le dépôt n'en garde aucun pour l'instant, et la
+table livrée est vide), nommés « <Famille>-<carte>-<n>.tsv » : sans --family, le script les relit tous, et une
+nouvelle famille s'ajoute sans faire perdre les autres. Sans aucune source, il s'arrête en erreur plutôt que
+d'écrire une table vide par-dessus la table en place (C46-04) ; --allow-empty demande cette table vide.
 Un nom « <Famille>-<pilote>-<carte>-<n>.tsv » (pilote : radv, amd, nvidia) réserve la table à ce
 pilote : RADV et le pilote AMD classent différemment les variantes matricielles.
 
@@ -112,6 +114,7 @@ def main() -> int:
                         help="une famille de GpuFamily et le autotune.tsv d'un appareil de cette famille "
                              "(sans : tools/vk/presets/<Famille>-*.tsv)")
     parser.add_argument("--out", type=pathlib.Path, default=OUT)
+    parser.add_argument("--allow-empty", action="store_true", help="écrire une table vide quand il n'y a aucune source")
     args = parser.parse_args()
 
     wanted_set = candidate_set()
@@ -119,6 +122,9 @@ def main() -> int:
     merged: dict[str, dict[int, collections.Counter]] = {}
     sources: dict[str, set[str]] = collections.defaultdict(set)
     sources_given = args.family or [(p.name, str(p)) for p in sorted(KEPT.glob("*.tsv"))]
+    if not sources_given and not args.allow_empty:
+        sys.exit(f"aucune source : pas de {KEPT}/*.tsv et pas de --family ; la table en place n'est pas touchée "
+                 "(--allow-empty pour écrire une table vide)")
     for given, cache in sources_given:
         family, driver = split_name(given)
         if family not in known or family in ("Unknown", "Software"):

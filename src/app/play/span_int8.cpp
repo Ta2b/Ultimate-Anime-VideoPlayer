@@ -221,6 +221,19 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     const std::string note = refusal_note(receipt, where, limits, scores, scores_pass, v2);
     return old_gate ? stale(note) : refused(note);
   }
+  // C46-06, C46-17 : un reçu qui n'est pas v2 (INT8, FP8 par Q/DQ, FP8 CUTLASS de l'outil Python) n'a que son
+  // gain mesuré pour garantir qu'il vaut mieux que le FP16. Sans gain (--skip-speed-check, ou pas de trtexec
+  // : speedup = 0) ou sous le seuil, la variante est refusée. Le FP32 (cran Qualité) ne promet aucune
+  // vitesse.
+  if (!v2 && kind != SpanVariantKind::Fp32 && receipt["speedup"].value_or(0.0) < gpu::span_fp8::kMinSpeedup) {
+    const double speedup = receipt["speedup"].value_or(0.0);
+    if (speedup > 0.0)
+      return refused(
+          i18n::tr_format("{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)", where,
+                          speedup, gpu::span_fp8::kMinSpeedup));
+    return refused(
+        i18n::tr_format("{}: gain over FP16 not measured, prepare it again with the speed check", where));
+  }
   if (auto differs =
           package_differs(variant.onnx, receipt["model_sha256"].value_or(std::string_view()), where))
     return *differs;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Banc A/B du lecteur (chantier 0.8) : rejoue le même extrait en alternant deux variantes (A, B, A, B...) × tours,
+# Banc A/B du lecteur (chantier 0.8) : rejoue le même extrait en alternant deux variantes (A, B, A, B puis B, A, B, A...) × tours,
 # un processus neuf à chaque passage, et résume avec banc_resume.py.
 #
 #   flock ~/ajp-reports/gpu-bench.lock tools/bench/banc.sh \
@@ -56,7 +56,10 @@ while IFS=$'\t' read -r file start; do
     SECONDS_PLAYED=$SECONDS_PLAYED_SAVE
   done
   for round in $(seq 1 "$ROUNDS"); do
-    for label in A B A B; do  # (A, B, A, B) par tour
+    # (A, B, A, B) aux tours impairs, (B, A, B, A) aux pairs : aucune variante n'est toujours première, une dérive
+    # d'horloge ou thermique ne pèse pas toujours contre B (C46-05).
+    order=(A B A B); ((round % 2)) || order=(B A B A)
+    for label in "${order[@]}"; do
       options="$A"; [ "$label" = B ] && options="$B"
       play "$label" "$options" "$file" "$start" "extrait$n-tour$round-$label-$(date +%s)"
     done

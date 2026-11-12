@@ -48,13 +48,15 @@ struct Folder {
   fs::path dir() const { return root / "modeles"; }
   fs::path variant() const { return dir() / (stem + ".onnx"); }
   void receipt(double psnr_mean, double psnr_worst, double ssim, bool passed = true,
-               std::string source_sha = {}, std::string model_sha = {}) const {
+               std::string source_sha = {}, std::string model_sha = {}, double speedup = 1.30) const {
     if (source_sha.empty()) source_sha = sha;
     if (model_sha.empty()) model_sha = prepare::sha256_file(variant()).value();
-    write(dir() / (stem + ".toml"),
-          std::format("# reçu\nformat = \"ajp-span-int8-v1\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\n"
-                      "psnr_mean_db = {:.4f}\npsnr_worst_db = {:.4f}\nssim_worst = {:.4f}\npassed = {}\n",
-                      source_sha, model_sha, psnr_mean, psnr_worst, ssim, passed ? "true" : "false"));
+    write(
+        dir() / (stem + ".toml"),
+        std::format("# reçu\nformat = \"ajp-span-int8-v1\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\n"
+                    "speedup = {:.4f}\npsnr_mean_db = {:.4f}\npsnr_worst_db = {:.4f}\nssim_worst = "
+                    "{:.4f}\npassed = {}\n",
+                    source_sha, model_sha, speedup, psnr_mean, psnr_worst, ssim, passed ? "true" : "false"));
   }
 
   fs::path root;
@@ -130,16 +132,16 @@ TEST_CASE("SPAN INT8 : le nom d'origine se lit dans celui de la variante", "[app
 
 // Une variante d'un autre cran (FP8, FP32) : même dossier, même reçu, infixe et format à elle.
 void write_variant(const Folder& f, std::string_view infix, std::string_view format, double psnr_mean,
-                   double psnr_worst, double ssim) {
+                   double psnr_worst, double ssim, double speedup = 1.30) {
   const std::string stem =
       "2x_AnimeJaNai_HD_V3.1_Sharp1_Performance" + std::string(infix) + f.sha.substr(0, 16);
   Folder::write(f.dir() / (stem + ".onnx"), "graphe quantifié");
   Folder::write(
       f.dir() / (stem + ".toml"),
       std::format("format = \"{}\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\npsnr_mean_db = {:.4f}\n"
-                  "psnr_worst_db = {:.4f}\nssim_worst = {:.4f}\npassed = true\n",
+                  "psnr_worst_db = {:.4f}\nssim_worst = {:.4f}\nspeedup = {:.4f}\npassed = true\n",
                   format, f.sha, prepare::sha256_file(f.dir() / (stem + ".onnx")).value(), psnr_mean,
-                  psnr_worst, ssim));
+                  psnr_worst, ssim, speedup));
 }
 
 TEST_CASE("SPAN FP8 et FP32 : garde-fous propres à chaque cran", "[app][int8]") {
@@ -166,6 +168,27 @@ TEST_CASE("SPAN FP8 et FP32 : garde-fous propres à chaque cran", "[app][int8]")
   CHECK(span_tiers(f.span, f.dir(), true) == TierSupport{.performance = true, .quality = true});
   CHECK(span_tiers(f.span, f.dir(), false) == TierSupport{.performance = false, .quality = true});
   CHECK(variant_text(SpanVariantKind::Fp8) == "FP8");
+}
+
+TEST_CASE("SPAN INT8, FP8 : un reçu sans gain mesuré sur le FP16 est refusé (C46-06)", "[app][int8]") {
+  ajp::app::play::FrenchUi french;
+  const Folder f;
+  f.receipt(45.2, 41.0, 0.9931, true, {}, {}, 0.0);  // --skip-speed-check : speedup = 0
+  const SpanInt8Lookup unmeasured = find_span_int8(f.span, f.dir());
+  CHECK_FALSE(unmeasured.variant);
+  CHECK(unmeasured.note.find("gain sur le FP16 non mesuré") != std::string::npos);
+  CHECK_FALSE(unmeasured.stale);
+  f.receipt(45.2, 41.0, 0.9931, true, {}, {}, 1.02);  // mesuré, mais sous 1,05
+  const SpanInt8Lookup slow = find_span_int8(f.span, f.dir());
+  CHECK_FALSE(slow.variant);
+  CHECK(slow.note.find("pas plus rapide") != std::string::npos);
+  f.receipt(45.2, 41.0, 0.9931, true, {}, {}, 1.05);  // pile au seuil
+  CHECK(find_span_int8(f.span, f.dir()).variant);
+  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 33.0, 29.0, 0.96, 0.0);
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
+  // Le FP32 du cran Qualité ne promet pas de vitesse.
+  write_variant(f, "-fp32-", "ajp-span-fp32-v1", 60.0, 55.0, 0.9999, 0.0);
+  CHECK(find_span_variant(SpanVariantKind::Fp32, f.span, f.dir()).variant);
 }
 
 TEST_CASE("SPAN FP8 et FP32 : le nom d'origine se lit dans celui de la variante", "[app][int8]") {

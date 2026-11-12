@@ -21,7 +21,5 @@ core-tsan 0
 arch 0
 # Le lecteur entier sous le GCC d'Arch, lavapipe : comme la tâche lavapipe.
 arch-player 10
-# La version livrée (Release, LTO) sous lavapipe, chaque nuit : comme la tâche lavapipe.
+# La version livrée (Release, LTO) sous lavapipe, dans release-linux.yml : comme la tâche lavapipe.
 linux-release 10
-# cloud.yml : lavapipe, comme ci.yml.
-cloud 10

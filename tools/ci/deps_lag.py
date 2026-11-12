@@ -39,6 +39,17 @@ def port_version(commit, port):
     return None
 
 
+def shipped_version(manifest, port, commit):
+    """La version que Windows livre : l'« overrides » de vcpkg.json d'abord, puis le port à la baseline (C28-11).
+
+    La pull request hebdomadaire avance la baseline tandis que les overrides gardent la version fixée : lire la
+    baseline seule comparait le FFmpeg de master et non celui qui part chez l'utilisateur."""
+    for override in manifest.get("overrides", []):
+        if override["name"] == port:
+            return override["version"]
+    return port_version(commit, port)
+
+
 def version_key(text):
     return [int(n) for n in re.findall(r"\d+", text)]
 
@@ -63,7 +74,7 @@ def main():
     master = ls_remote(VCPKG, "refs/heads/master")[0][0]
     rows = []
     for port in PORTS:
-        have, latest = port_version(baseline, port), port_version(master, port)
+        have, latest = shipped_version(manifest, port, baseline), port_version(master, port)
         if have and latest and have != latest:
             rows.append(f"| {port} (vcpkg) | {have} | {latest} |")
     script = (ROOT / "tools/deps/linux-from-source.sh").read_text()

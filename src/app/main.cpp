@@ -221,7 +221,8 @@ bool& quiet_failures() {
 void append_to_log(const std::filesystem::path& log_file, std::string_view line) {
   if (log_file.empty()) return;
   std::ofstream out(log_file, std::ios::binary | std::ios::app);
-  out << "[error] " << line << '\n';
+  // Hors du puits : la cause peut citer un chemin avec le nom d'utilisateur.
+  out << "[error] " << ajp::reduce_log_paths(ajp::redact_log_text(line)) << '\n';
 }
 
 // Les arguments du lancement, sans un --relaunched= d'une relance d'avant, puis celui de cette relance : le
@@ -415,8 +416,12 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   int display_height = 2160;
   int tier = static_cast<int>(play::Tier::Quality);
   bool silent = true;
-  constexpr const char* kUsage = "ajp calibrate [--display-height=N] [--tier=N] [--visible]\n";
+  constexpr const char* kUsage = "ajp calibrate [--display-height=N 360..4320] [--tier=N 0..4] [--visible]\n";
   for (const std::string_view arg : args) {
+    if (arg == "--help" || arg == "-h") {
+      std::fputs(kUsage, stdout);
+      return 0;
+    }
     if (arg.starts_with("--tier=")) {
       const std::string_view text = arg.substr(7);
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), tier);

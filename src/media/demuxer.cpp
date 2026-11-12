@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <format>
 #include <limits>
 #include <set>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -14,6 +17,7 @@
 
 extern "C" {
 #include <libavcodec/packet.h>
+#include <libavformat/avio.h>
 #include <libavutil/dict.h>
 #include <libavutil/dovi_meta.h>
 #include <libavutil/time.h>
@@ -22,7 +26,10 @@ extern "C" {
 #include "core/frame.h"
 #include "core/utf8_path.h"
 #include "media/av_util.h"
+#include "media/frame_rate.h"
 #include "media/log.h"
+#include "media/mkv_chapters.h"
+#include "media/tag_text.h"
 
 namespace ajp::media {
 
@@ -72,30 +79,60 @@ constexpr int kMaxRetryWaitMs = 1000;
 // suivant, sans attente. Au-delà, le reste du fichier est tenu pour illisible.
 constexpr int kDataRetries = 64;
 
+// Le fichier lu par un AVIOContext ouvert à part : l'interruption de FFmpeg le coupe (C14-09).
+class AvioSource final : public ByteSource {
+ public:
+  AvioSource(const std::string& url, const AVIOInterruptCB& interrupt) {
+    AVDictionary* options = nullptr;
+    av_dict_set(&options, "protocol_whitelist", "file", 0);
+    if (avio_open2(&io_, url.c_str(), AVIO_FLAG_READ, &interrupt, &options) < 0) io_ = nullptr;
+    av_dict_free(&options);
+  }
+  ~AvioSource() override {
+    if (io_ != nullptr) avio_closep(&io_);
+  }
+  AvioSource(const AvioSource&) = delete;
+  AvioSource& operator=(const AvioSource&) = delete;
+
+  std::uint64_t size() override {
+    if (io_ == nullptr) return 0;
+    const std::int64_t bytes = avio_size(io_);
+    return bytes > 0 ? static_cast<std::uint64_t>(bytes) : 0;
+  }
+  bool read(std::uint64_t offset, std::span<std::uint8_t> out) override {
+    if (io_ == nullptr) return false;
+    if (avio_seek(io_, static_cast<std::int64_t>(offset), SEEK_SET) < 0) return false;
+    return avio_read(io_, out.data(), static_cast<int>(out.size())) == static_cast<int>(out.size());
+  }
+
+ private:
+  AVIOContext* io_ = nullptr;
+};
+
+// Une erreur de lecture qui peut guérir en attendant : une panne d'E/S ou de réseau (C14-02).
+bool io_error_may_heal(int err) {
+  for (const int code : {EIO, ETIMEDOUT, ECONNRESET, ECONNABORTED, ENETDOWN, ENETUNREACH, ENETRESET,
+                         EHOSTUNREACH, EAGAIN, ENODEV, ENXIO, EPIPE}) {
+    if (err == AVERROR(code)) return true;
+  }
+#ifdef ESTALE  // absent de la bibliothèque C de Windows
+  if (err == AVERROR(ESTALE)) return true;
+#endif
+  return false;
+}
+
 // FFmpeg attend un chemin UTF-8, Windows compris : path::string() y rendrait la
 // page de code ANSI, ou lèverait une exception devant un nom en japonais.
 std::string utf8_path(const std::filesystem::path& path) {
   return core::to_utf8(path);
 }
 
-// B35-05 : un titre de piste ou de chapitre vient du fichier. Coupé à kMaxTagBytes octets UTF-8 entiers, les
-// caractères de contrôle (saut de ligne, tabulation, NUL ne passe pas) deviennent des espaces.
-constexpr std::size_t kMaxTagBytes = 256;
-
+// B35-05 : un titre de piste ou de chapitre vient du fichier ; clean_tag_text le borne et le nettoie
+// (C14-08).
 std::string tag(const AVDictionary* metadata, const char* key) {
   const AVDictionaryEntry* entry = av_dict_get(metadata, key, nullptr, 0);
   if (entry == nullptr || entry->value == nullptr) return {};
-  std::string text(entry->value);
-  if (text.size() > kMaxTagBytes) {
-    std::size_t cut = kMaxTagBytes;
-    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0U) == 0x80U)
-      --cut;  // pas au milieu d'un caractère
-    text.resize(cut);
-  }
-  for (char& c : text) {
-    if (static_cast<unsigned char>(c) < 0x20U || c == 0x7F) c = ' ';
-  }
-  return text;
+  return clean_tag_text(entry->value);
 }
 
 // B14-01, B35-06 : FFmpeg lit tout préfixe « lettres: » d'au moins deux caractères comme un protocole
@@ -126,7 +163,7 @@ Rational frame_rate_of(const AVStream& stream) {
   AVRational rate = stream.avg_frame_rate;
   if (rate.num <= 0 || rate.den <= 0) rate = stream.r_frame_rate;
   if (rate.num <= 0 || rate.den <= 0) return {};
-  return {rate.num, rate.den};
+  return standard_frame_rate({rate.num, rate.den});
 }
 
 // Les bornes d'une vidéo lisible (A35-06) et le nombre de chapitres gardés (A35-02).
@@ -183,6 +220,7 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
     info.frame_rate = frame_rate_of(stream);
     // A15-02 : 29,97 i/s entrelacé, le télécinéma d'un anime 23,976 : la chaîne reçoit les images d'origine.
     const bool interlaced = par.field_order != AV_FIELD_UNKNOWN && par.field_order != AV_FIELD_PROGRESSIVE;
+    info.interlaced = interlaced;
     // Une hypothèse : Demuxer::set_inverse_telecine la corrige après mesure (B15-01).
     if (interlaced && std::int64_t{info.frame_rate.num} * 1001 == std::int64_t{info.frame_rate.den} * 30000) {
       info.inverse_telecine = true;
@@ -348,7 +386,10 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path,
                                       AVSEEK_FLAG_BACKWARD));
       break;
     }
-    state->chapter_layout = read_chapter_layout(path);
+    // C14-09 : par un AVIOContext à part, qui porte le rappel d'interruption de la fermeture, et non par un
+    // std::ifstream que rien ne coupe. La position de lecture du démultiplexeur n'est pas touchée.
+    AvioSource chapters_source(where, raw->interrupt_callback);
+    state->chapter_layout = read_chapter_layout(chapters_source);
     state->note_chapter_layout(shown);
   }
   state->scratch.reset(av_packet_alloc());
@@ -385,6 +426,11 @@ void Demuxer::set_inverse_telecine(int index, bool telecine) {
   if (it == state_->tracks.end() || it->inverse_telecine == telecine) return;
   it->inverse_telecine = telecine;
   it->frame_rate = telecine ? Rational{24000, 1001} : Rational{30000, 1001};
+}
+
+void Demuxer::set_field_match(int index, bool match) {
+  const auto it = std::ranges::find(state_->tracks, index, &TrackInfo::index);
+  if (it != state_->tracks.end()) it->field_match = match;
 }
 
 std::expected<void, Refusal> Demuxer::keep_only(std::span<const int> tracks) {
@@ -461,6 +507,13 @@ std::expected<bool, Refusal> Demuxer::State::on_read_error(int err, RetryState& 
   if (err == AVERROR_EXIT || interrupted.load())
     return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", err);
   const bool data = err == AVERROR_INVALIDDATA;
+  // C14-02 : seules les pannes d'E/S qui peuvent guérir (disque qui se réveille, Wi-Fi qui change de point
+  // d'accès) sont retentées. ENOMEM, EINVAL, AVERROR_BUG… ne guérissent pas : pas de gel de 20 s pour rien.
+  if (!data && !io_error_may_heal(err)) {
+    auto refused = refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet, erreur qui ne guérit pas", err);
+    refused.error().recoverable = true;
+    return refused;
+  }
   int& errors = data ? retry.data_errors : retry.io_errors;
   const int io_budget_ms = fault.io_budget_ms > 0 ? fault.io_budget_ms : kIoRetryBudgetMs;
   if (data ? errors >= kDataRetries : retry.io_waited_ms >= io_budget_ms) {

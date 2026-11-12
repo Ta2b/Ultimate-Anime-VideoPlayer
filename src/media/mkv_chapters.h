@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <span>
 #include <vector>
 
 namespace ajp::media {
@@ -27,6 +28,20 @@ struct ChapterLayout {
   std::vector<ChapterPart> parts;
   bool plain() const { return !ordered && !linked; }
 };
+
+// Les octets d'un fichier, lus à une position donnée. Le démultiplexeur y branche l'AVIOContext de FFmpeg
+// pour que l'interruption (fermeture de la vidéo) atteigne aussi cette lecture (C14-09).
+class ByteSource {
+ public:
+  virtual ~ByteSource() = default;
+  virtual std::uint64_t size() = 0;
+  // Remplit `out` depuis `offset` ; faux si l'une des lectures échoue ou dépasse la fin.
+  virtual bool read(std::uint64_t offset, std::span<std::uint8_t> out) = 0;
+};
+
+// Lit l'élément Chapters de la source (par le SeekHead, ou en parcourant le segment jusqu'au premier
+// Cluster).
+ChapterLayout read_chapter_layout(ByteSource& source);
 
 // Lit l'élément Chapters du fichier (par le SeekHead, ou en parcourant le segment jusqu'au premier Cluster).
 // Un fichier qui n'est pas du Matroska, illisible ou sans chapitres : une disposition simple.

@@ -3,9 +3,9 @@
 # packet, track, selection, hw_api) : seuls les en-têtes internes et les .cpp l'incluent.
 ajp_add_module(media
   SOURCES
-    av_util.cpp face_cascade.cpp face_skin.cpp faces.cpp "${CMAKE_CURRENT_BINARY_DIR}/face_cascade_data.cpp" ffmpeg_log.cpp bench_clip.cpp color.cpp live_scenes.cpp shot_cache.cpp shot_cutter.cpp shot_measure.cpp shot_probe.cpp shot_timeline.cpp stills.cpp cuda_driver.cpp demuxer.cpp frame_data.cpp hw_device.cpp
+    av_util.cpp face_cascade.cpp face_skin.cpp faces.cpp field_alignment.cpp "${CMAKE_CURRENT_BINARY_DIR}/face_cascade_data.cpp" ffmpeg_log.cpp bench_clip.cpp color.cpp live_scenes.cpp shot_cache.cpp shot_cutter.cpp shot_measure.cpp shot_probe.cpp shot_timeline.cpp stills.cpp cuda_driver.cpp demuxer.cpp frame_data.cpp hw_device.cpp
     language.cpp packet.cpp packet_reserve.cpp selection.cpp source.cpp source_loop.cpp
-    track.cpp track_language.cpp video_decoder.cpp deinterlace.cpp mkv_chapters.cpp telecine.cpp
+    tag_text.cpp track.cpp track_language.cpp video_decoder.cpp deinterlace.cpp mkv_chapters.cpp telecine.cpp
   DEPS ajp::core_types ajp::kernels
   PRIVATE_DEPS ajp::av ajp::dep::ffmpeg ajp::core ajp::core_log ajp::core_os ajp::dep::vulkan ${CMAKE_DL_LIBS})
 

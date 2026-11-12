@@ -61,6 +61,10 @@ struct TrackInfo {
   Rational frame_rate;  // fréquence moyenne, {0, 1} si inconnue ; celle d'après l'IVTC si inverse_telecine
   // A15-02 : entrelacé à 29,97 i/s, du télécinéma 3:2 qui sort à 23,976 (Deinterlacer, InverseTelecine).
   bool inverse_telecine = false;
+  // C15-01 : le conteneur étiquette la piste entrelacée, et la mesure (FieldAlignmentMeter) a vu que les deux
+  // champs de chaque image sont du même instant : fieldmatch les recoud avant bwdif (FieldMode::MatchFields).
+  bool interlaced = false;
+  bool field_match = false;
   Rational sample_aspect;  // forme du pixel (SAR) : celle du flux, sinon du conteneur ; {0, 1} si inconnue
   // Ce que le conteneur étiquette (codecpar) : rien si non renseigné, ou hors de ces trois valeurs.
   std::optional<ColorMatrix> color_matrix;

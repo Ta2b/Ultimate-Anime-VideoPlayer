@@ -112,3 +112,23 @@ TEST_CASE("PacketQueue : discard_before jette les époques passées", "[media][p
   CHECK(Packet{}.data().empty());
   CHECK(Packet{}.footprint() == kPacketOverhead);
 }
+
+// C14-01 : après un seek exact, l'audio qui finit bien avant la cible n'est pas livré.
+TEST_CASE("audio_before_preroll : seul l'audio qui finit plus d'une seconde avant la cible est écarté",
+          "[media][packet]") {
+  using ajp::media::audio_before_preroll;
+  using ajp::media::kAudioPrerollUs;
+  const auto packet = [](std::int64_t pts, std::int64_t duration) {
+    Packet p;
+    p.pts_us = pts;
+    p.duration_us = duration;
+    return p;
+  };
+  constexpr std::int64_t kTarget = 25'000'000;
+  CHECK_FALSE(audio_before_preroll(packet(0, 1000), std::nullopt));  // pas de seek exact
+  CHECK(audio_before_preroll(packet(0, 1000), kTarget));
+  CHECK(audio_before_preroll(packet(kTarget - kAudioPrerollUs - 20'000, 10'000), kTarget));
+  CHECK_FALSE(audio_before_preroll(packet(kTarget - kAudioPrerollUs, 10'000), kTarget));  // pré-roulement
+  CHECK_FALSE(audio_before_preroll(packet(kTarget - 500'000, 10'000), kTarget));
+  CHECK_FALSE(audio_before_preroll(packet(ajp::kNoPts, 10'000), kTarget));  // sans horodatage : livré
+}

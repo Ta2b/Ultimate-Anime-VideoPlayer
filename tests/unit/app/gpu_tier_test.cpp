@@ -81,6 +81,10 @@ TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bu
   CHECK(nvidia("NVIDIA GeForce RTX 3070") == Tier::Normal);
   CHECK(nvidia("NVIDIA GeForce RTX 3080 Ti") == Tier::Quality);
   CHECK(nvidia("NVIDIA GeForce RTX 3090") == Tier::Quality);
+  // Le README range ces cartes dans la même colonne (C38-01) : le tableau doit suivre ces classements.
+  CHECK(nvidia("NVIDIA GeForce RTX 3080") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 4070") == Tier::Quality);
+  CHECK(nvidia("NVIDIA GeForce RTX 5070") == Tier::Quality);
   // La Quadro RTX 6000 (Turing) n'est pas la RTX 6000 Ada ; la RTX A400 n'est pas une RTX A4000.
   CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Normal);
   CHECK(nvidia("NVIDIA RTX 6000 Ada Generation") == Tier::Ultra);

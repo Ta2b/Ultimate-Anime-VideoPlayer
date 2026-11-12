@@ -328,7 +328,10 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
          a.keep_poses != b.keep_poses || a.span_precision != b.span_precision ||
          a.motion_precision != b.motion_precision || a.rife_model != b.rife_model ||
-         a.motion_engine != b.motion_engine || a.restore_lines != b.restore_lines;
+         a.motion_engine != b.motion_engine || a.restore_lines != b.restore_lines ||
+         a.rife_fused != b.rife_fused || a.drba_fused != b.drba_fused ||
+         a.smooth_drawings != b.smooth_drawings || a.cubic_warp != b.cubic_warp ||
+         a.pair_scale != b.pair_scale || a.auto_cap != b.auto_cap;  // C23-06
 }
 
 bool display_moves_chain(Preset preset, const DisplayMove& move) {

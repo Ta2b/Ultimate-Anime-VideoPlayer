@@ -102,8 +102,8 @@ std::optional<int> next_work_height(int tenue, int source_height);
 std::optional<std::string> next_rife_model(const std::string& tenu);
 
 // La version de bench.toml : à relever quand les chaînes des niveaux changent (modèles, hauteurs), pour
-// qu'une mesure faite avec d'autres chaînes ne décide plus (B07-06). 2 : les chaînes de novembre 2026 ; 3 :
-// le verdict de la calibration et le moteur noté (C07-06).
+// qu'une mesure faite avec d'autres chaînes ne décide plus (B07-06). 2 : les chaînes actuelles des niveaux ;
+// 3 : le verdict de la calibration et le moteur noté (C07-06).
 inline constexpr std::int64_t kBenchVersion = 3;
 std::string format_bench(const BenchResult& result);
 std::expected<BenchResult, Refusal> parse_bench(std::string_view toml);

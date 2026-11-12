@@ -17,10 +17,6 @@ bool is_hex(char c) {
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
 }
 
-char upper(char c) {
-  return (c >= 'a' && c <= 'z') ? static_cast<char>(c - 'a' + 'A') : c;
-}
-
 struct NamedColor {
   std::string_view name;
   std::string_view rrggbb;
@@ -47,8 +43,8 @@ std::optional<std::string> ass_color(std::string_view value) {
   if (!std::ranges::all_of(hex, is_hex)) return std::nullopt;
   std::string out = "&H";
   for (const std::size_t pair : {4U, 2U, 0U}) {  // RRGGBB devient BBGGRR
-    out += upper(hex[pair]);
-    out += upper(hex[pair + 1]);
+    out += core::ascii_upper(hex[pair]);
+    out += core::ascii_upper(hex[pair + 1]);
   }
   out += '&';
   return out;
@@ -196,6 +192,12 @@ std::string srt_text_to_ass(std::string_view text) {
         i = close;
         continue;
       }
+    }
+    // Un bloc {…} sans « \ » est un commentaire pour libass : le texte disparaîtrait (C17-02). Seul un bloc
+    // de balises ASS (« {\an8} ») passe tel quel, le reste s'écrit avec une accolade échappée.
+    if (c == '{' && (i + 1 >= text.size() || text[i + 1] != '\\')) {
+      out += "\\{";
+      continue;
     }
     out += c;
   }

@@ -66,7 +66,10 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
                                            : (system_default != nullptr ? system_default->name.c_str()
                                                                         : i18n::tr("None")))) {
     for (const SettingsChoices::AudioOut& out : choices.audio_outputs) {
+      // Deux appareils de même nom ont le même libellé : l'identifiant ImGui vient de la place (C23-07).
+      ImGui::PushID(static_cast<int>(&out - choices.audio_outputs.data()));
       if (ImGui::Selectable(out.name.c_str(), chosen == &out)) d.audio_device = out.name;
+      ImGui::PopID();
     }
     ImGui::EndCombo();
   }

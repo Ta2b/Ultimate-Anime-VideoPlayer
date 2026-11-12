@@ -9,7 +9,7 @@ Le lecteur fait écrire à trtexec, à chaque construction, « <moteur>.layers.j
   - les couches dont une sortie est en FP32 : hors îlots déclarés, une précision perdue en vitesse.
     Les îlots sont les nœuds de l'ONNX dont une sortie est déclarée FP32 (--onnx, typage fort :
     tools/rife/convert_rife_fp16.py garde GridSample, Resize et le calcul de la grille) ; une
-    couche y appartient si son nom contient le nom d'un de ces nœuds. Sans --onnx, aucun îlot :
+    couche y appartient si son nom contient, en entier, le nom d'un de ces nœuds. Sans --onnx, aucun îlot :
     toute couche FP32 est signalée (SPAN, entièrement FP16).
 
 Code de sortie 1 si un reformatage pleine image ou une couche FP32 hors îlots est trouvé, 0 sinon.
@@ -72,6 +72,13 @@ def onnx_islands(path: Path) -> set[str]:
     return {name for name in islands if name}
 
 
+def in_island(layer_name: str, islands: set[str]) -> bool:
+    """Le nom de la couche cite-t-il l'un des nœuds îlots ? Le nom d'un nœud doit y figurer en entier, délimité
+    par un caractère qui n'en fait pas partie : l'îlot « /Cast_1 » exempte « PWN(/Cast_1 + /Add) » mais pas
+    « /Cast_10 » (C46-14). TensorRT assemble les noms fusionnés avec des « + », des parenthèses ou des accolades."""
+    return any(re.search(rf"(?<!\w){re.escape(name)}(?!\w)", layer_name) for name in islands)
+
+
 def check(report: Path, islands: set[str], full_image: float) -> int:
     data = json.loads(report.read_text(encoding="utf-8"))
     layers = data["Layers"] if isinstance(data, dict) else data
@@ -99,7 +106,7 @@ def check(report: Path, islands: set[str], full_image: float) -> int:
         for layer in layers
         if layer.get("LayerType") != "Reformat" and any(is_fp32(t) for t in tensors(layer, "Outputs"))
     ]
-    outside = [layer for layer in fp32 if not any(name in str(layer.get("Name", "")) for name in islands)]
+    outside = [layer for layer in fp32 if not in_island(str(layer.get("Name", "")), islands)]
     print(f"  {len(fp32)} couches FP32, dont {len(outside)} hors îlots déclarés")
     for layer in outside:
         failures += 1

@@ -3,9 +3,11 @@
 // parties qu'il rend se tiennent (début avant fin, jamais négatif).
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 
 #include "fuzz_check.h"
@@ -19,6 +21,12 @@ const std::filesystem::path& place() {
     const std::filesystem::path dir =
         std::filesystem::temp_directory_path() / ("ajp-fuzz-mkv-" + std::to_string(getpid()));
     std::filesystem::create_directories(dir);
+    // Le dossier ne reste pas : une campagne longue en laissait un par processus.
+    std::atexit(+[] {
+      std::error_code ignored;
+      std::filesystem::remove_all(
+          std::filesystem::temp_directory_path() / ("ajp-fuzz-mkv-" + std::to_string(getpid())), ignored);
+    });
     return dir / "entrée.mkv";
   }();
   return path;
