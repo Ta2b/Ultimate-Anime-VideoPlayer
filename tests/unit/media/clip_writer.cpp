@@ -187,6 +187,7 @@ class Writer {
       return fail("conteneur", err);
     }
     if (auto ok = add_video(); !ok) return ok;
+    for (const auto& [width, height] : spec_.extra_videos) add_extra_video(width, height);
     for (const AudioSpec& audio : spec_.audio) add_audio(audio);
     for (const SubtitleSpec& subs : spec_.subtitles) add_subtitles(subs);
     for (const AttachmentSpec& attachment : spec_.attachments) add_attachment(attachment);
@@ -214,6 +215,16 @@ class Writer {
     video_->disposition = AV_DISPOSITION_DEFAULT;
     if (spec_.color.hdr10) add_hdr10(*video_->codecpar);
     return {};
+  }
+
+  void add_extra_video(int width, int height) {
+    AVStream* st = avformat_new_stream(out_.ctx, nullptr);
+    st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    st->codecpar->codec_id = AV_CODEC_ID_MPEG4;
+    st->codecpar->format = AV_PIX_FMT_YUV420P;
+    st->codecpar->width = width;
+    st->codecpar->height = height;
+    st->time_base = {1, 1000};
   }
 
   void add_audio(const AudioSpec& audio) {
@@ -290,7 +301,10 @@ class Writer {
     for (int n = 0; n < spec_.frames; ++n) {
       av_frame_make_writable(out_.frame);
       fill_frame(*out_.frame, spec_, n);
-      out_.frame->pts = n + spec_.video_delay;
+      out_.frame->pts = (static_cast<std::size_t>(n) < spec_.frame_ticks.size()
+                             ? spec_.frame_ticks[static_cast<std::size_t>(n)]
+                             : n) +
+                        spec_.video_delay;
       out_.frame->quality = out_.encoder->global_quality;
       if (const int err = avcodec_send_frame(out_.encoder, out_.frame); err < 0) return fail("encodage", err);
       if (auto ok = drain_encoder(); !ok) return ok;

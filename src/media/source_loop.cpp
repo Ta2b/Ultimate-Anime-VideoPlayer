@@ -105,9 +105,15 @@ void SourceLoop::on_seek(const cmd::Seek& seek) {
     // toucher au fichier (cible hors bornes) : le Flush a déjà jeté l'image tenue et la réserve, la lecture
     // reprend donc elle aussi à la dernière image tenue, sans trou (A14-04). Sans Flush, ou sans image tenue
     // encore, le décodeur repart où il était.
+    // B14-06 : le Flush a vidé la réserve et l'image tenue ; sans image tenue encore, la lecture reprend au
+    // début plutôt que de laisser le décodeur sans recalage (des paquets audio du début seraient perdus).
+    if (flushed && !last_pts_us_) last_pts_us_ = 0;
     if (media_.demuxer.file_seeks() != file_seeks || (flushed && last_pts_us_)) recover_position();
     return;
   }
+  // B14-06 : la position sûre est dès maintenant la cible aboutie, pas l'image d'avant : un second seek
+  // refusé avant la première image tenue y revient, et non à l'ancienne position.
+  last_pts_us_ = seek.target_us;
   media_.decoder.flush();
   forget_position();
   drop_before_ = seek.exact ? std::optional(seek.target_us) : std::nullopt;

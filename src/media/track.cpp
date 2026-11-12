@@ -55,13 +55,18 @@ std::span<const std::byte> CodecParameters::extradata() const {
 
 // Comme attachment_is_font (sd_ass.c:166-186) : nom et données exigés, puis le
 // type MIME, puis l'extension pour les MKV mal étiquetés.
-bool is_font(const TrackInfo& track) {
-  if (track.kind != TrackKind::Attachment || track.filename.empty()) return false;
-  if (!track.parameters || track.parameters->extradata().empty()) return false;
-  const std::string mime = core::ascii_lower(track.mime_type);
+bool is_font_attachment(std::string_view filename, std::string_view mime_type) {
+  if (filename.empty()) return false;
+  const std::string mime = core::ascii_lower(mime_type);
   if (std::ranges::find(kFontMimeTypes, mime) != kFontMimeTypes.end()) return true;
-  const std::string name = core::ascii_lower(track.filename);
+  const std::string name = core::ascii_lower(filename);
   return std::ranges::any_of(kFontExtensions, [&](std::string_view ext) { return name.ends_with(ext); });
+}
+
+bool is_font(const TrackInfo& track) {
+  if (track.kind != TrackKind::Attachment) return false;
+  if (!track.parameters || track.parameters->extradata().empty()) return false;
+  return is_font_attachment(track.filename, track.mime_type);
 }
 
 }  // namespace ajp::media

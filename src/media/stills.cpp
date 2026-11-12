@@ -327,7 +327,7 @@ std::expected<VideoDecoder, Refusal> open_background_decoder(const TrackInfo& vi
 std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem::path& file,
                                                           const StillsSpec& spec, const std::stop_token& stop,
                                                           const std::function<void(float)>& progress) {
-  auto demuxer = Demuxer::open(file);
+  auto demuxer = Demuxer::open(file, {.attachments = false});
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   const TrackInfo* video = nullptr;
   for (const TrackInfo& track : demuxer->tracks())

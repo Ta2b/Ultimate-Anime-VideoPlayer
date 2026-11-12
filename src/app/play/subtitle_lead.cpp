@@ -187,7 +187,7 @@ bool SubtitleLead::Core::prepare(const Job& job, const std::stop_token& stop) {
   if (!demuxer) {
     // B30-01 : l'arrêt atteint aussi l'ouverture, qui se faisait avant que le destructeur puisse
     // l'interrompre.
-    auto opened = media::Demuxer::open(config.file, stop);
+    auto opened = media::Demuxer::open(config.file, {.attachments = false}, stop);
     if (!opened) {
       if (stop.stop_requested()) return false;
       log->warn("sous-titres en avance : {} ne s'ouvre pas une seconde fois ({})",

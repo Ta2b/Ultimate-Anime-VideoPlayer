@@ -158,7 +158,7 @@ struct Opened {
 std::expected<Opened, Refusal> open_video(const std::filesystem::path& file, const std::stop_token& stop,
                                           const ShotProbeOptions& options) {
   // B30-01 : l'arrêt atteint aussi l'ouverture du fichier, sur un partage lent.
-  auto demuxer = Demuxer::open(file, stop);
+  auto demuxer = Demuxer::open(file, {.attachments = false}, stop);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   const auto video = std::ranges::find_if(demuxer->tracks(), [](const TrackInfo& track) {
     return track.kind == TrackKind::Video && !track.attached_picture;

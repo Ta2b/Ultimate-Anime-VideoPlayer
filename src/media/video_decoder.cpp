@@ -45,11 +45,12 @@ int software_threads(int requested) {
 }  // namespace
 
 int background_decoder_threads() {
-#ifdef _WIN32
-  return 1;
-#else
+  // B15-07, B34-05 : la même règle partout. Une HEVC 4K 10 bits sur 1 thread décode à 20 i/s : la pré-analyse
+  // des plans n'était pas finie quand l'épisode l'était, et la frontière analysée avançait 2 à 4 fois moins
+  // vite sous Windows. Les threads de FFmpeg n'héritent pas de la priorité basse du créateur ; mais la
+  // lecture, elle, décode par NVDEC et ses threads critiques sont en MMCSS : des ouvriers de priorité normale
+  // ne les doublent pas.
   return std::clamp(static_cast<int>(std::thread::hardware_concurrency()) / 2, 2, 4);
-#endif
 }
 
 struct VideoDecoder::State {
@@ -87,6 +88,16 @@ struct VideoDecoder::State {
   // du dernier paquet s'il est une image clé, sinon de la suivante (wait_key).
   std::optional<Packet> last;
   bool wait_key = false;
+  // B15-04 : les paquets envoyés depuis la dernière image clé, une fois la première image rendue (décodage
+  // matériel seulement, borné). Une erreur du pilote rouvre alors en logiciel depuis cette image clé, sans
+  // figer l'image jusqu'à la suivante ; delivered_us écarte ce qui a déjà été montré (catching_up).
+  static constexpr std::size_t kMaxGopPackets = 2048;
+  static constexpr std::size_t kMaxGopBytes = std::size_t{48} << 20;
+  std::vector<Packet> gop;
+  std::size_t gop_bytes = 0;
+  bool gop_valid = false;
+  std::int64_t delivered_us = kNoPts;  // pts de la dernière image remise à l'aval
+  bool catching_up = false;
   Deinterlacer deinterlacer;  // P3.25 : les images logicielles entrelacées, par bwdif
   bool deinterlace_flushed = false;
   std::optional<std::int64_t> skip_before;  // VideoDecoder::skip_before
@@ -147,8 +158,27 @@ struct VideoDecoder::State {
     if (keep) sent.push_back(packet);
     const int err = avcodec_send_packet(codec.get(), packet.av.get());
     if (keep && err == AVERROR(EAGAIN)) sent.pop_back();
-    if (output && err != AVERROR(EAGAIN)) last = packet;
+    if (output && err != AVERROR(EAGAIN)) {
+      last = packet;
+      if (api != HwApi::Software) track_gop(packet);
+    }
     return err;
+  }
+
+  void track_gop(const Packet& packet) {
+    if ((packet.av->flags & AV_PKT_FLAG_KEY) != 0) {
+      gop.clear();
+      gop_bytes = 0;
+      gop_valid = true;
+    }
+    if (!gop_valid) return;
+    gop.push_back(packet);
+    gop_bytes += packet.footprint();
+    if (gop.size() > kMaxGopPackets || gop_bytes > kMaxGopBytes) {  // trop long : l'ancien repli reste
+      gop.clear();
+      gop_bytes = 0;
+      gop_valid = false;
+    }
   }
 
   // Vrai si le décodeur est rouvert, les paquets à rejouer dans replay. Sans décodeur logiciel
@@ -173,11 +203,23 @@ struct VideoDecoder::State {
     }
     direct = false;
     if (output) {
+      // L'image tenue vient du pilote qu'on quitte : sa copie asynchrone n'a plus d'événement à attendre.
+      // Elle est jetée, et se redécode en logiciel avec ce qui suit (B15-04).
+      held.reset();
       const bool key = last && (last->av->flags & AV_PKT_FLAG_KEY) != 0;
       replay.clear();
-      if (key) replay.push_back(*last);
-      wait_key = !key;
-      if (wait_key) pending.reset();
+      if (gop_valid && !gop.empty() && (gop.front().av->flags & AV_PKT_FLAG_KEY) != 0) {
+        replay.assign(gop.begin(), gop.end());
+        catching_up = delivered_us != kNoPts;
+        wait_key = false;
+      } else {
+        if (key) replay.push_back(*last);
+        wait_key = !key;
+        if (wait_key) pending.reset();
+      }
+      gop.clear();
+      gop_bytes = 0;
+      gop_valid = false;
     } else {
       replay.assign(sent.begin(), sent.end());
     }
@@ -196,6 +238,8 @@ struct VideoDecoder::State {
   // précédente plus sa durée. Sans image précédente (début, ou après un flush), il reste inconnu : kNoPts,
   // jamais un 0 inventé.
   bool skipped(FramePtr& frame);
+  void release_covering(const AVFrame& next);
+  bool already_shown(const AVFrame& frame);
   std::expected<std::optional<DecodedFrame>, Refusal> deliver(FramePtr frame);
   std::expected<std::optional<DecodedFrame>, Refusal> timed(FramePtr frame);
 
@@ -204,6 +248,7 @@ struct VideoDecoder::State {
         frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
     const std::int64_t duration = frame->duration > 0 ? frame->duration : nominal_duration_us;
     next_pts_us = end_of(pts, duration);
+    if (pts != kNoPts) delivered_us = pts;
     ReadyEvent ready;
     if (hw.stream && frame->hw_frames_ctx != nullptr) {
       auto recorded = hw.stream->record();
@@ -297,9 +342,9 @@ struct VideoDecoder::State {
       const std::int64_t pixels = std::int64_t{track.width} * track.height;
       direct = pixels <= kMaxDirectSurfacePixels;
       if (direct) {
-        // B15-03 : l'aval en tient direct_surfaces, et timed() une de plus (le « +1 » d'au-dessus) : sans
-        // elle, une surface de plus que le pool ne se mappait pas et l'image était perdue.
-        extra_hw_frames = std::max(extra_hw_frames, options.direct_surfaces + 1);
+        // B15-03 : l'aval en tient direct_surfaces et timed() une de plus (held) : sans ce +1, la surface de
+        // trop ne se mapperait pas et l'image serait perdue.
+        extra_hw_frames = std::max(extra_hw_frames, std::min(options.direct_surfaces + 1, kMaxExtraHwFrames));
       } else {
         log->info("NVDEC : copie de sécurité gardée, {}x{} au-delà de 1440p", track.width, track.height);
       }
@@ -535,7 +580,7 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::receive() {
   }
 
   if (s.skipped(frame)) return std::nullopt;
-  s.last_skipped.reset();
+  s.release_covering(*frame);
   return s.timed(std::move(frame));
 }
 
@@ -551,19 +596,41 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::timed(F
   return deliver(std::move(previous));
 }
 
-// Une image écartée par skip_before : son horodatage est fixé maintenant (le trou d'après se comble à partir
-// d'elle), et elle reste la dernière écartée.
+// Une image avant la cible de skip_before : son horodatage est fixé maintenant (le trou d'après se comble à
+// partir d'elle), et elle reste la dernière écartée, la précédente étant alors passée pour de bon. B15-02 :
+// la durée du paquet est la période moyenne du conteneur, fausse en cadence variable ; une image ne s'écarte
+// donc que lorsque la suivante, de pts avant la cible aussi, prouve qu'elle ne couvre pas la cible (voir
+// release_covering).
 bool VideoDecoder::State::skipped(FramePtr& frame) {
+  if (already_shown(*frame)) return true;
   if (!skip_before || deinterlacer.active() || (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0) return false;
   const std::int64_t pts =
       frame->best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : frame->best_effort_timestamp;
+  if (pts == kNoPts || pts >= *skip_before) return false;
   const std::int64_t duration = frame->duration > 0 ? frame->duration : nominal_duration_us;
-  const std::int64_t end = end_of(pts, std::max<std::int64_t>(duration, 1));
-  if (end == kNoPts || end > *skip_before) return false;
   frame->best_effort_timestamp = pts;
-  next_pts_us = end_of(pts, duration);
+  next_pts_us = end_of(pts, std::max<std::int64_t>(duration, 1));
   last_skipped = std::move(frame);
   return true;
+}
+
+// B15-04 : le rejeu depuis l'image clé repasse sur des images déjà montrées, qui ne ressortent pas.
+bool VideoDecoder::State::already_shown(const AVFrame& frame) {
+  if (!catching_up) return false;
+  const std::int64_t at = frame.best_effort_timestamp;
+  if (at != AV_NOPTS_VALUE && delivered_us != kNoPts && at <= delivered_us) return true;
+  catching_up = false;
+  return false;
+}
+
+// La première image à ou après la cible arrive. La dernière écartée la couvre quand celle-ci est strictement
+// après la cible : elle sort avant, avec pour durée l'écart de leurs pts (timed()). Sinon elle est jetée.
+void VideoDecoder::State::release_covering(const AVFrame& next) {
+  FramePtr previous = std::move(last_skipped);
+  if (!previous || held || !skip_before) return;
+  const std::int64_t pts =
+      next.best_effort_timestamp == AV_NOPTS_VALUE ? next_pts_us : next.best_effort_timestamp;
+  if (pts != kNoPts && pts > *skip_before) held = std::move(previous);
 }
 
 // La copie en mémoire hôte, le désentrelacement, puis l'horodatage.
@@ -615,6 +682,11 @@ void VideoDecoder::flush() {
   s.next_pts_us = kNoPts;
   s.deinterlacer.reset();
   s.deinterlace_flushed = false;
+  s.gop.clear();
+  s.gop_bytes = 0;
+  s.gop_valid = false;
+  s.catching_up = false;
+  s.delivered_us = kNoPts;
 }
 
 }  // namespace ajp::media

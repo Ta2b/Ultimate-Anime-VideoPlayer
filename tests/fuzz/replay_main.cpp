@@ -38,6 +38,7 @@ constexpr std::array kTargets{
     Named{"build_log", &ajp::fuzz::build_log},
     Named{"resume", &ajp::fuzz::resume},
     Named{"osd_script", &ajp::fuzz::osd_script},
+    Named{"mkv_chapters", &ajp::fuzz::mkv_chapters},
     Named{"ass_render", &ajp::fuzz::ass_render},
     Named{"keys", &ajp::fuzz::keys},
     Named{"span_package", &ajp::fuzz::span_package},

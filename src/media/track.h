@@ -10,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "core/frame.h"
 #include "core/types.h"
@@ -94,5 +95,7 @@ struct Chapter {
 // Pièce jointe que libass peut charger comme police : nom et données non vides,
 // type MIME de police, ou à défaut extension de police (MKV mal étiquetés).
 bool is_font(const TrackInfo& track);
+// Le nom et le type MIME d'une pièce jointe disent une police : décidé avant d'en copier les octets (B35-01).
+bool is_font_attachment(std::string_view filename, std::string_view mime_type);
 
 }  // namespace ajp::media
