@@ -120,6 +120,13 @@ class RifeFusedEngine final : public Engine {
   BufferView scratch(std::size_t offset, std::int64_t elements) const;
   // L'encodage de B copié à la place de celui de A, enregistré une fois.
   std::expected<Recording*, Refusal> shift_encoding();
+  enum class Hint : std::uint8_t { None, TimesOnly, Follows };
+  // L'encodage de la paire de input selon l'annonce et ce que le dernier appel mené au bout a encodé
+  // (encoded_from, son entrée) : rien, B seule, ou A et B.
+  Done encode_pair(BackendQueue& queue, const BufferView& input, Hint hint,
+                   const std::optional<BufferView>& encoded_from);
+  static Done submit_net(BackendQueue& queue, VulkanEngine& piece, const BufferView& in,
+                         const BufferView& out);
 
   VkContext& context_;
   MemoryAllocator& memory_;
@@ -132,7 +139,6 @@ class RifeFusedEngine final : public Engine {
   int warm_blocks_ = 0;      // blocs repris à chaud (next_warm)
   bool warm_ready_ = false;  // les Y de ces blocs sont ceux de l'appel précédent
   bool warm_next_ = false;
-  enum class Hint : std::uint8_t { None, TimesOnly, Follows };
   Hint hint_ = Hint::None;
   // L'entrée du dernier appel mené au bout, dont l'encodage est dans le tampon du moteur ; nul sinon.
   std::optional<BufferView> encoded_from_;

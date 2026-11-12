@@ -306,7 +306,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   gpu::KernelOps& ops = *setup_.backend->kernels();
   use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
-  current_ ^= 1U;
+  next_source();
   frame_id_ = frame.id;
   rife_in_pair_ = false;  // les images de rife_in() sont celles de la paire d'avant
   gpu::IngestSpec spec;
@@ -320,7 +320,6 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     debanded_ = *debanded;
   }
   analyze_source(frame);
-  source_serial_[current_] = ++serials_;  // rgb_[current_] et small_[current_] : une autre image
   if (small_[current_] && !ingested && !std::exchange(drba_.small_taken, false)) {  // réduite par Area
     if (auto ok = ops.ingest(frame, gpu::IngestSpec{}, small_[current_]->tensor()); !ok)
       return std::unexpected(std::move(ok.error()));

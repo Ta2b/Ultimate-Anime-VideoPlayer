@@ -273,6 +273,11 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> enqueue_rife(gpu::Engine& engine, std::span<gpu::Tensor> results);
   // Numéro de l'image ingérée dans rgb_[i] et small_[i], neuf à chaque ingestion.
   std::array<std::uint64_t, 2> source_serial_{};
+  // L'autre tampon de rgb_ et small_ devient current_, pour une image neuve : son numéro aussi.
+  void next_source() {
+    current_ ^= 1U;
+    source_serial_[current_] = ++serials_;
+  }
   std::uint64_t serials_ = 0;
   // Les images de chaque tampon de rife_ins_ par leur numéro, A puis B ; 0 pour une image qui n'est pas une
   // source telle qu'ingérée (B lissée) ou une écriture en échec.
