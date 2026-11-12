@@ -117,10 +117,10 @@ std::expected<HostUploads::Planes, Refusal> HostUploads::upload(const DecodedFra
                                                                 const Layout& layout, cudaStream_t consumer,
                                                                 GpuTiming& timing) {
   const FrameData& data = *frame.data;
-  const Source source{.id = frame.id, .epoch = frame.epoch, .data = frame.data.get()};
+  const Source identity{.id = frame.id, .epoch = frame.epoch, .data = frame.data.get()};
   // Seul l'envoi le plus récent se reprend : avec kDepth envois à tour de rôle, son tampon ne se réécrit
   // pas avant deux autres envois. Sa lecture précédente est déjà marquée (consumed suit chaque ingestion).
-  if (reusable(source, layout)) return reuse(consumer);
+  if (reusable(identity, layout)) return reuse(consumer);
   last_.reset();
   if (layout.planes < 2 || layout.planes > 3 || data.plane_count() < layout.planes) {
     return std::unexpected(Refusal{
@@ -191,7 +191,7 @@ std::expected<HostUploads::Planes, Refusal> HostUploads::upload(const DecodedFra
                       .chroma_v = layout.planes == 3 ? device + offset[2] : nullptr,
                       .luma_pitch = pitch[0],
                       .chroma_pitch = pitch[1]};
-  last_ = Last{.source = source, .layout = layout, .slot = &slot, .planes = planes, .reader = consumer};
+  last_ = Last{.source = identity, .layout = layout, .slot = &slot, .planes = planes, .reader = consumer};
   return planes;
 }
 

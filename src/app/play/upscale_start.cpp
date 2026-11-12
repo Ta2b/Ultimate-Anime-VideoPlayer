@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include "app/play/options.h"
@@ -12,6 +13,14 @@
 #include "kernels/spec/rife.h"
 
 namespace ajp::app::play {
+// « profil hôte · attente … : médiane, p95 (nombre) » au journal de fin, si l'attente a été chronométrée.
+void UpscaleStage::HostWaits::log(std::string_view what) {
+  if (us.empty()) return;
+  std::ranges::sort(us);
+  log_channel("gpu")->info("profil hôte · attente {} : médiane {:.2f} ms, p95 {:.2f} ms ({})", what,
+                           static_cast<double>(us[us.size() / 2]) / 1000.0,
+                           static_cast<double>(us[us.size() * 95 / 100]) / 1000.0, us.size());
+}
 namespace {
 
 gpu::Shape planes(int channels, int width, int height) {
@@ -105,14 +114,8 @@ UpscaleStage::~UpscaleStage() {
   if (setup_.live && setup_.live->cuts().active())
     log_channel("gpu")->info("coupes : {} désaccords entre RIFE et les plans de la pré-analyse",
                              cut_disagreements_);
-  if (!scores_wait_us_.empty()) {
-    std::ranges::sort(scores_wait_us_);
-    log_channel("gpu")->info(
-        "profil hôte · attente des mesures de la paire : médiane {:.2f} ms, p95 {:.2f} ms ({})",
-        static_cast<double>(scores_wait_us_[scores_wait_us_.size() / 2]) / 1000.0,
-        static_cast<double>(scores_wait_us_[scores_wait_us_.size() * 95 / 100]) / 1000.0,
-        scores_wait_us_.size());
-  }
+  scores_waits_.log("des mesures de la paire");
+  motion_waits_.log("du mouvement");
 }
 
 std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoStageInit init,

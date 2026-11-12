@@ -10,6 +10,7 @@
 // Seule la première paire d'un plan (ou après un saut) attend sa propre mesure.
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <utility>
 
 #include "app/play/upscale_stage.h"
@@ -163,6 +164,19 @@ std::expected<void, Refusal> UpscaleStage::interpolate_direct(float t, const gpu
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
+// Le mouvement maximal du milieu relu par l'hôte (ticket 0 : mesuré sur-le-champ), son attente au profil de
+// fin (« attente du mouvement ») : la relecture suit RIFE et flow_max sur la voie d'interpolation, la plus
+// basse (diagnostic async, piste 5).
+std::expected<float, Refusal> UpscaleStage::read_motion(std::uint64_t ticket, const gpu::Motion& middle) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const auto asked = std::chrono::steady_clock::now();
+  auto biggest = ticket != 0 ? ops.flow_max_take(ticket) : ops.flow_max_now(middle);
+  motion_waits_.keep(
+      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
+          .count());
+  return biggest;
+}
+
 std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
                                                                  const gpu::Tensor& b, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
@@ -213,10 +227,10 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
           if (warps_spanned()) {
             if (auto ok = span_current(); !ok) return ok;
           }
-          biggest = ops.flow_max_take(*ticket);
+          biggest = read_motion(*ticket, middle);
         } else {
           flow_max_async_ = false;
-          biggest = ops.flow_max_now(middle);
+          biggest = read_motion(0, middle);
         }
         if (!biggest) return std::unexpected(std::move(biggest.error()));
         motion_measured_ = flow_max_async_;
