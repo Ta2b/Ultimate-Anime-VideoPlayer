@@ -15,17 +15,8 @@ extern "C" {
 
 #include <charconv>
 #include <chrono>
-#include <tuple>
-#ifdef _WIN32
-#include <process.h>
-#else
-#include <fcntl.h>
-#include <unistd.h>
-#endif
-#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -36,6 +27,7 @@ extern "C" {
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <vector>
 
 #include "app/play/auto_bench_run.h"
@@ -50,6 +42,7 @@ extern "C" {
 #include "app/play/player.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/relaunch_process.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
@@ -248,59 +241,17 @@ int relaunch_failed(const std::filesystem::path& log_file, const std::string& ca
 }
 
 // Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur ou la perte du GPU : il
-// remplace ce processus (POSIX) ou démarre à sa place (Windows).
+// remplace ce processus (POSIX) ou démarre à sa place (Windows). replace faux (C34-04) : un nouveau
+// processus sous POSIX aussi, puis la main rendue pour sortir (exit_stuck).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv,
-             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file) {
+             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file,
+             bool replace = true) {
   const std::vector<std::string> kept = relaunch_arguments(argc, argv, reason);
   ajp::log_channel("app")->info("relance ({})", ajp::app::play::relaunched_name(reason));
   ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
   ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
-#ifdef _WIN32
-  // _spawnv ne met aucun argument entre guillemets : un chemin à espaces (« C:\Mes vidéos\a.mkv »)
-  // arriverait coupé en deux. Chaque argument est cité à la façon de CommandLineToArgvW, et l'exécutable
-  // est gardé dans une chaîne qui vit jusqu'au lancement (c_str() d'un temporaire pendrait).
-  const auto quoted = [](const std::string& argument) {
-    if (!argument.empty() && argument.find_first_of(" \t\"") == std::string::npos) return argument;
-    std::string out = "\"";
-    std::size_t backslashes = 0;
-    for (const char c : argument) {
-      if (c == '\\') {
-        ++backslashes;
-        out += c;
-        continue;
-      }
-      if (c == '"') out.append(backslashes + 1, '\\');
-      out += c;
-      backslashes = 0;
-    }
-    out.append(backslashes, '\\');  // avant le guillemet fermant
-    out += '"';
-    return out;
-  };
-  const std::string program = executable.string();
-  std::vector<std::string> arguments{quoted(program)};
-  for (const std::string& argument : kept) arguments.push_back(quoted(argument));
-  std::vector<const char*> pointers;
-  for (const std::string& argument : arguments) pointers.push_back(argument.c_str());
-  pointers.push_back(nullptr);
-  if (_spawnv(_P_NOWAIT, program.c_str(), pointers.data()) != -1) return 0;
-  const int error = errno;
-  return relaunch_failed(log_file, std::format("_spawnv : {} (errno {})", std::strerror(error), error));
-#else
-  // A18-12 : rien d'ouvert ne passe au lecteur relancé (pilote NVIDIA, socket, fichiers) : un contexte CUDA
-  // gardé par un descripteur hérité retiendrait sa mémoire vidéo.
-  const long open_max = sysconf(_SC_OPEN_MAX);
-  for (int fd = 3; fd < (open_max > 0 && open_max < 65536 ? open_max : 65536); ++fd) {
-    const int flags = fcntl(fd, F_GETFD);
-    if (flags >= 0) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
-  }
-  std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
-  for (const std::string& argument : kept) arguments.push_back(const_cast<char*>(argument.c_str()));
-  arguments.push_back(nullptr);
-  execv(executable.c_str(), arguments.data());
-  const int error = errno;  // execv ne revient que sur un échec
-  return relaunch_failed(log_file, std::format("execv : {} (errno {})", std::strerror(error), error));
-#endif
+  const std::string failed = ajp::app::play::start_relaunched(executable, kept, replace);
+  return failed.empty() ? 0 : relaunch_failed(log_file, failed);
 }
 
 // B31-04 : la relance qu'une fermeture bloquée sur le GPU fait elle-même (relaunch_target.h : exit_stuck),
@@ -320,7 +271,7 @@ void relaunch_when_stuck() {
   // Une fermeture bloquée vient d'un GPU qui ne répond plus : la relance se dit perte du GPU (B39-01).
   if (args.argv != nullptr)
     (void)relaunch(args.executable, args.argc, args.argv, ajp::app::play::RelaunchedFor::GpuLost,
-                   args.log_file);
+                   args.log_file, /*replace=*/false);
 }
 // Le dossier des moteurs, et la relance armée avant la lecture.
 void before_play(const std::filesystem::path& engines, const std::filesystem::path& executable, int argc,
@@ -495,8 +446,17 @@ DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::
   // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/ajp (A36-08).
   DataPlaces places{.heavy = ajp::app::play::local_data(data)};
   ajp::app::play::move_heavy_data(data, places.heavy, said);
-  places.cache = ajp::app::play::cache_data(place.home, places.heavy);
+  std::filesystem::path xdg_cache;
+#if defined(__linux__)
+  // C34-13 : le dossier des caches que la session a choisi, un fait du système et non une option.
+  if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg != nullptr)  // env: système
+    xdg_cache = ajp::core::path_from_utf8(xdg);
+#endif
+  places.cache = ajp::app::play::cache_data(place.home, places.heavy, xdg_cache);
   ajp::app::play::move_cache_data(places.heavy, places.cache, said);
+  // Les caches qu'une version d'avant a laissés dans ~/.cache/ajp suivent (sans quoi les moteurs se
+  // reconstruisaient).
+  if (!place.home.empty()) ajp::app::play::move_cache_data(place.home / ".cache" / "ajp", places.cache, said);
   ajp::app::play::purge_misplaced(ajp::app::play::user_data(data), said);
   // La mise à jour n'est plus qu'une notification : les archives préparées et la copie de l'ancienne
   // installation des versions qui s'appliquaient elles-mêmes se retirent (A26-06) ; le cache des moteurs

@@ -331,6 +331,7 @@ prepare::TrtexecConfig TensorRtBackend::trtexec_config() const {
                  .sm_major = properties_.major,
                  .sm_minor = properties_.minor,
                  .uuid = uuid_},
+      .cuda_device = device_,  // C37-01 : trtexec construit sur la carte du rendu, pas sur l'appareil 0
       .trtexec_sha256 = trtexec_sha256_,
   };
 }

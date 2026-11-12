@@ -227,6 +227,7 @@ std::string format_calibration(const MachineCalibration& c) {
   root.insert("engine", c.engine);
   root.insert("driver", c.driver);
   root.insert("on_battery", c.on_battery);
+  if (c.display_hz > 0.0) root.insert("display_hz", c.display_hz);
   const auto chain_table = [](const ChainCandidate& chain) {
     toml::table t;
     t.insert("span", chain.span);
@@ -275,6 +276,7 @@ std::expected<MachineCalibration, Refusal> parse_calibration(std::string_view te
   out.engine = root["engine"].value_or(std::string());
   out.driver = root["driver"].value_or(std::string());
   out.on_battery = root["on_battery"].value_or(false);
+  out.display_hz = std::max(0.0, root["display_hz"].value_or(0.0));  // absente avant C37-08
   if (const toml::table* chosen = root["chosen"].as_table()) out.chosen = chain_of(*chosen);
   if (const toml::array* trials = root["trials"].as_array()) {
     for (const toml::node& node : *trials) {
@@ -329,6 +331,11 @@ CalibrationUse calibration_use(const MachineCalibration& calibration, const Cali
   if (calibration.on_battery) return CalibrationUse::OnBattery;
   if (calibration.gpu != host.gpu ||
       (host.display_height > 0 && calibration.display_height != host.display_height))
+    return CalibrationUse::OtherMachine;
+  // Mesurée à 60 Hz, jouée à 240 : quatre fois plus d'images à interpoler par paire, les bornes ne valent
+  // plus (C37-08). 59,94 contre 60 reste le même écran.
+  if (calibration.display_hz > 0.0 && host.display_hz > 0.0 &&
+      std::abs(calibration.display_hz - host.display_hz) > 0.05 * host.display_hz)
     return CalibrationUse::OtherMachine;
   // Les bornes de Vulkan sous TensorRT brident la carte, celles de TensorRT sous Vulkan la débordent
   // (A25-02, A07-05).
@@ -429,6 +436,7 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   const auto log = log_channel("app");
   MachineCalibration out;
   out.display_height = display_height;
+  out.display_hz = plan.display_hz;
   out.models = calibration_models(tier);
   out.date = std::format("{:%F}", std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now()));
   std::error_code error;

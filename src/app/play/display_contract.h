@@ -17,6 +17,7 @@
 #include <spdlog/logger.h>
 
 #include "app/play/display_edid.h"
+#include "app/play/host_facts.h"
 #include "app/play/system_peak.h"
 #include "render/display_model.h"
 
@@ -32,12 +33,15 @@ struct MeasuredAbl {
 // sdr_white_nits (A11-06) : le blanc SDR que le système dit, quand il le dit (sous Windows, le curseur
 // « luminosité du contenu SDR »). La marge de SDL est relative à lui : le pic vaut marge × ce blanc. Avant,
 // toujours marge × 203, donc un pic faux dès que le curseur quittait sa valeur par défaut. 0 : inconnu.
-// system_peak (B11-10) : sous Windows, le pic que le grade vise (content_peak_nits, MaxLuminance de DXGI
-// réglé par l'application « Étalonnage HDR ») ; il passe devant marge × blanc, pour qu'une seule source dise
-// le pic de l'écran. Rien ailleurs.
+// system_peak (B11-10) : sous Windows, le pic que le système a calibré (MaxLuminance de DXGI réglé par
+// l'application « Étalonnage HDR ») ; il passe devant marge × blanc, pour qu'une seule source dise le pic de
+// l'écran, et lui seul se range en « pic du système » (C34-02). Rien ailleurs.
+// guessed_peak : sous Windows, la crête que le grade vise quand rien d'autre ne la dit (HDR que SDL ne voit
+// pas, sans EDID : 600 nits, uncalibrated_peak_nits) ; rangée en « par défaut », jamais en « Windows ».
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
                                     double headroom, const std::optional<MeasuredAbl>& abl,
-                                    double sdr_white_nits = 0.0, std::optional<double> system_peak = {});
+                                    double sdr_white_nits = 0.0, std::optional<double> system_peak = {},
+                                    std::optional<double> guessed_peak = {});
 // Le blanc SDR du système d'après la propriété de SDL (1,0 = 80 nits en scRGB, sous Windows seulement) ;
 // 0 ailleurs ou quand SDL ne dit rien. Pur.
 constexpr double sdr_white_nits_of(float sdl_white_level, bool windows) {
@@ -71,6 +75,14 @@ class ContractWatch {
     hdr_changed_.store(true, std::memory_order_relaxed);
     peak_changed_.store(true, std::memory_order_relaxed);
   }
+  // Le pic du système relu par le fil de l'écran (display_probe.h, C34-11) : sous Windows, le contrat ne
+  // l'énumère plus lui-même sur le thread qui présente (QueryDisplayConfig, DXGI, registre). Un pic changé
+  // fait relire le contrat au prochain tick.
+  void set_system_peak(const PeakReading& reading) {
+    if (reading.nits == system_peak_.nits && reading.calibrated == system_peak_.calibrated) return;
+    system_peak_ = reading;
+    hdr_changed_.store(true, std::memory_order_relaxed);
+  }
   // Vrai une fois après un événement qui peut changer le HDR ou le pic du système : HDR allumé ou coupé,
   // fenêtre passée sur un autre écran, réglages de KDE réécrits. Le relevé du pic (énumérations d'écrans
   // coûteuses sous Windows, A11-02) se fait alors tout de suite, au lieu d'un sondage toutes les 2 s.
@@ -85,8 +97,11 @@ class ContractWatch {
   std::shared_ptr<spdlog::logger> log_;
   std::optional<render::DisplayContract> contract_;
   std::optional<std::int64_t> kwin_stamp_;
-  std::atomic<bool> hdr_changed_{true};    // posé par le filtre d'événements SDL ; vrai : première lecture
-  std::atomic<bool> peak_changed_{false};  // les mêmes événements, pour take_peak_change
+  PeakReading system_peak_;              // set_system_peak ; vide jusqu'au premier relevé
+  std::atomic<bool> hdr_changed_{true};  // posé par le filtre d'événements SDL ; vrai : première lecture
+  // Les mêmes événements, pour take_peak_change ; vrai d'abord : le premier relevé du pic vient tout de
+  // suite.
+  std::atomic<bool> peak_changed_{true};
   Flags flags_{&hdr_changed_, &peak_changed_};
 };
 

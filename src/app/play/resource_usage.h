@@ -12,7 +12,9 @@
 namespace ajp::app::play {
 
 struct ProcessResources {
-  std::optional<std::uint64_t> resident_bytes;  // mémoire résidente (Linux, Windows : ensemble de travail)
+  // La mémoire du processus : résidente (VmRSS) sous Linux ; charge privée sous Windows (C34-14), que
+  // Windows ne rogne pas comme l'ensemble de travail.
+  std::optional<std::uint64_t> resident_bytes;
   std::optional<int> threads;
   std::optional<int> handles;  // descripteurs ouverts (Linux), poignées (Windows)
 };

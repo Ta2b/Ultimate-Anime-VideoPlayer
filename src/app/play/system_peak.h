@@ -17,6 +17,7 @@ namespace ajp::app::play {
 struct KwinOutput {
   std::optional<double> peak_override;
   std::optional<double> reference;
+  bool hdr = false;  // « highDynamicRange » : KWin envoie du HDR à cette sortie (C34-09)
 };
 // connector : « DP-1 » (le préfixe « card1- » de DRM est ôté). Rien si la sortie n'y est pas.
 // edid : le début de « edidIdentifier » de l'écran branché (kwin_edid_key), vide si inconnu. KWin garde une

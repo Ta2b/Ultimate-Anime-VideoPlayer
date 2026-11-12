@@ -17,6 +17,9 @@
 
 #if defined(__linux__)
 #include <pthread.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #endif
 
 using ajp::Refusal;
@@ -178,7 +181,7 @@ TEST_CASE("start_thread : le système voit le nom du thread, coupé à 15 octets
   };
   CHECK(seen("source") == "source");
   CHECK(seen("pre-analyse-des-plans") == "pre-analyse-des");
-  ajp::thread_namer().store(nullptr);
+  ajp::thread_start().store(nullptr);
 }
 
 TEST_CASE("Priorité : le crochet relève la lecture et l'audio, pas le fond", "[thread][core]") {
@@ -196,6 +199,52 @@ TEST_CASE("Priorité : le crochet relève la lecture et l'audio, pas le fond", "
   }).join();
   CHECK(raised.load() == base + 2);
   CHECK(ajp::set_thread_priority_raiser(nullptr) == false);
+}
+#endif
+
+#if defined(__linux__)
+namespace {
+int own_nice() {
+  return getpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)));
+}
+}  // namespace
+
+// C34-01. Un nice négatif demande des droits que les tâches de la CI n'ont pas : la base est donc posée plus
+// bas (nice 15, qu'un thread peut toujours prendre), et le thread du test, resté à son nice, joue le thread
+// relevé. Avant la correction, un thread créé par lui gardait son nice : la hausse passait à tous.
+TEST_CASE("Linux : la hausse du thread principal ne passe pas aux threads créés ensuite (C34-01)",
+          "[thread][core]") {
+  ajp::install_system_thread_names();
+  const int raised = own_nice();
+  std::thread([] {
+    REQUIRE(setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 15) == 0);
+    // Le crochet lit la base avant de relever ; celui-ci ne relève rien.
+    CHECK(ajp::set_thread_priority_raiser([]() noexcept { return true; }));
+  }).join();
+  REQUIRE(raised < 15);
+  std::promise<int> seen;
+  auto future = seen.get_future();
+  auto thread =
+      start_thread("essai", ThreadReport([](const Refusal&) {}),
+                   [&seen](const std::stop_token&, const ThreadReport&) { seen.set_value(own_nice()); });
+  REQUIRE(thread);
+  CHECK(future.get() == 15);
+  thread->join();
+  CHECK(ajp::start_task<int>("essai", [] { return own_nice(); })->get() == 15);
+  // Un thread de fond, plus bas que la base, le reste : la hausse seule est rendue.
+  std::thread([] {
+    REQUIRE(setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 19) == 0);
+    std::promise<int> below;
+    auto got = below.get_future();
+    auto inner =
+        start_thread("fond", ThreadReport([](const Refusal&) {}),
+                     [&below](const std::stop_token&, const ThreadReport&) { below.set_value(own_nice()); });
+    REQUIRE(inner);
+    CHECK(got.get() == 19);
+  }).join();
+  CHECK(ajp::set_thread_priority_raiser(nullptr) == false);
+  ajp::thread_start().store(nullptr);
+  CHECK(own_nice() == raised);  // le thread du test n'a pas bougé
 }
 #endif
 

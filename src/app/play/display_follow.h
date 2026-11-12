@@ -51,7 +51,10 @@ class DisplayFollow {
  private:
   void follow_peak(std::optional<double> peak_now);
   void follow_vrr(std::optional<bool> reading);
-  void follow_window(bool display_changed);
+  // La fenêtre a changé d'écran ou d'état : vrai si l'écran de la fenêtre doit être relu (par le fil).
+  bool follow_window(bool display_changed);
+  // L'écran de la fenêtre relu par le fil : son contrat s'il a changé, son VRR.
+  void follow_facts(std::optional<DisplayFacts> display);
 
   Player& p_;
   Chain& chain_;
@@ -65,6 +68,7 @@ class DisplayFollow {
   ContractWatch contract_watch_;
   VrrWatch vrr_watch_;
   bool vrr_fullscreen_ = true;  // relu au premier relevé : VRR, compositeur (P3.45)
+  bool facts_moved_ = false;    // un changement d'écran attend le relevé de son EDID (follow_facts)
   std::int64_t hdr_polled_at_ = 0;
   DisplayProbe probe_;  // en dernier : son fil s'arrête avant le reste
 };

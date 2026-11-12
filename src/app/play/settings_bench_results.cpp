@@ -44,7 +44,8 @@ void start_bench(const SettingsChoices& choices, const PlaySettings& base, Machi
       .data = data,
       .display_width = choices.display_width > 0 ? choices.display_width : choices.display_height * 16 / 9,
       .display_height = choices.display_height,
-      .display_hdr = choices.hdr_output};
+      .display_hdr = choices.hdr_output,
+      .display_hz = choices.display_hz};
   const int height = choices.display_height > 0 ? choices.display_height : 1080;
   const auto tier = static_cast<Tier>(std::clamp(choices.estimated_tier, 0, kTierCount - 1));
   bench.pending = start_task<MachineCalibration>(

@@ -187,6 +187,25 @@ bool nvidia_driver_older_than(std::string_view version, int major, int minor, in
   return parts < std::array<int, 3>{major, minor, patch};
 }
 
+SmoothMotionBlock smooth_motion_block(std::string_view gpu_name, std::string_view driver) {
+  std::string name;
+  for (const char c : gpu_name) name.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c);
+  const auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
+  // « rtx a4000 », « rtx a5000 » : Ampere ; « rtx 2000 ada », « rtx pro 6000 blackwell » restent permis.
+  const std::size_t rtx_a = name.find("rtx a");
+  const bool ampere_pro = rtx_a != std::string::npos && rtx_a + 5 < name.size() && name[rtx_a + 5] >= '0' &&
+                          name[rtx_a + 5] <= '9';
+  // « RTX 2000 Ada », « RTX PRO 4000 Blackwell » : Ada et Blackwell, quel que soit le numéro.
+  if (has("ada") || has("blackwell")) {
+    return nvidia_driver_older_than(driver, 580, 82, 7) ? SmoothMotionBlock::Driver : SmoothMotionBlock::None;
+  }
+  if (has("gtx") || has("rtx 20") || has("rtx 30") || ampere_pro || has("quadro") || has("titan") ||
+      has("tesla"))
+    return SmoothMotionBlock::Gpu;
+  if (nvidia_driver_older_than(driver, 580, 82, 7)) return SmoothMotionBlock::Driver;
+  return SmoothMotionBlock::None;
+}
+
 std::optional<double> millijoules_per_frame(std::uint64_t start_mj, std::uint64_t end_mj,
                                             std::int64_t frames) {
   if (start_mj == 0 || end_mj <= start_mj || frames <= 0) return std::nullopt;

@@ -24,6 +24,7 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 | Dear ImGui, spdlog, toml++ | MIT | via vcpkg |
 | NVIDIA CUTLASS | **BSD-3-Clause**, © 2017-2026 NVIDIA CORPORATION & AFFILIATES | 4.8.1, en-têtes seulement, copiés dans `third_party/cutlass/` avec leur `LICENSE.txt` (les 259 fichiers que les noyaux du SPAN FP8 incluent, `docs/span-fp8-cutlass.md`) ; compilés dans le backend TensorRT. https://github.com/NVIDIA/cutlass |
 | wayland-protocols, `presentation-time.xml` | MIT, © 2013-2014 Collabora, Ltd. | 1.38, copié dans `third_party/wayland-protocols/` (licence dans le fichier) ; code client produit par wayland-scanner à la compilation (`--present=wayland`). https://gitlab.freedesktop.org/wayland/wayland-protocols |
+| wayland-protocols, `xdg-activation-v1.xml` | MIT, © 2020 Aleix Pol Gonzalez, © 2020 Carlos Garnacho | 1.45, copié dans `third_party/wayland-protocols/` (licence dans le fichier) ; code client produit par wayland-scanner à la compilation (fenêtre passée devant pour un fichier reçu d'un autre lancement). https://gitlab.freedesktop.org/wayland/wayland-protocols |
 | wayland-client | MIT | bibliothèque du système, liée sous Linux quand elle est là |
 | FreeType (FTL), HarfBuzz, FriBidi (LGPL-2.1), Fontconfig, lcms2 | licences de leurs projets | via libplacebo et libass |
 | libunibreak | zlib | 7.0, via libass |

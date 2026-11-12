@@ -28,8 +28,13 @@ struct InstalledState {
   std::string missing;  // un fichier tiers de la note absent ou de taille inattendue (Replaced)
 };
 
-// Ce qui est installé pour ce paquet de l'index.
-InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package);
+// Ce qui est installé pour ce paquet de l'index. arch (C37-02) : l'architecture de la carte du rendu
+// (effective_cuda_arch, « sm89 ») ; un fichier tiers qu'elle demande (la ressource de construction
+// nvinfer_builder_resource_sm89) et que la note n'a pas fait rendre Replaced, missing = son nom : la carte a
+// changé depuis l'installation (autre carte, autre poste, autre carte NVIDIA choisie), et trtexec n'aurait
+// que la ressource générique. Vide : pas de vérification.
+InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package,
+                               std::string_view arch = {});
 
 // Une autre version installée de ce moteur (un dossier frère qui a le module ou la note) ; la plus récente
 // par date de modification s'il y en a plusieurs.

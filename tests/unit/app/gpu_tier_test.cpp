@@ -83,6 +83,11 @@ TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bu
   CHECK(nvidia("NVIDIA GeForce RTX 3090") == Tier::Fast);
   // La Quadro RTX 6000 (Turing) n'est pas la RTX 6000 Ada ; la RTX A400 n'est pas une RTX A4000.
   CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Normal);
+  // C37-09 : la RTX 3050 de bureau rejoint la portable ; les Quadro RTX 4000 et 5000 prennent leur règle.
+  CHECK(nvidia("NVIDIA GeForce RTX 3050") == Tier::Light);
+  CHECK(nvidia("NVIDIA GeForce RTX 3060") == Tier::Normal);
+  CHECK(nvidia("NVIDIA Quadro RTX 4000") == Tier::Normal);
+  CHECK(nvidia("NVIDIA Quadro RTX 5000") == Tier::Normal);
   CHECK(nvidia("NVIDIA RTX 6000 Ada Generation") == Tier::Ultra);
   CHECK(nvidia("NVIDIA RTX A400") == Tier::Economy);
   CHECK(nvidia("NVIDIA RTX A4000") == Tier::Normal);

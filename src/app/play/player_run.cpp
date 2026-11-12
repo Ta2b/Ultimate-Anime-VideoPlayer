@@ -349,6 +349,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         host_now_us());
     p.resumed = false;
   }
+  if (take_single_lane_notice())
+    p.ui.controls().notify(i18n::ui_tr("TensorRT: one compute lane, not enough free video memory"),
+                           host_now_us());
   if (const i18n::Translated dropped = stage_notice(c.stage_notes); !dropped.empty())
     p.notice = p.notice.empty() ? dropped : dropped + i18n::Translated::data(" · ") + p.notice;
   if (!p.notice.empty()) {

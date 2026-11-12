@@ -43,17 +43,35 @@ struct DisplaySdl {
 DisplaySdl display_sdl(SDL_Window* window);
 double display_refresh_hz(SDL_Window* window, const DisplaySdl& sdl);
 std::optional<double> content_peak_nits(SDL_Window* window, const DisplaySdl& sdl);
-// Ce que le système dit de l'écran quand il n'a pas de pic calibré (system_peak.h), et la crête qui s'en
-// déduit : la règle de content_peak_nits, sans fenêtre ni système, pour qu'un test la tienne (A11-12).
+// Ce que le système dit de l'écran, et la crête qui s'en déduit : la règle de content_peak_nits, sans
+// fenêtre ni système, pour qu'un test la tienne (A11-12).
 struct PeakFacts {
   bool windows = false;
-  bool sdl_hdr = false;             // SDL dit le HDR actif, avec une marge au-dessus de 1
-  double headroom = 1.0;            // la marge HDR de SDL
-  double sdr_white_nits = 203.0;    // Windows : le curseur « luminosité du contenu SDR »
-  bool system_hdr_active = false;   // Windows : « Utiliser le HDR », que SDL ne voit pas toujours
+  bool sdl_hdr = false;           // SDL dit le HDR actif, avec une marge au-dessus de 1
+  double headroom = 1.0;          // la marge HDR de SDL
+  double sdr_white_nits = 203.0;  // Windows : le curseur « luminosité du contenu SDR »
+  // Le système dit le HDR actif, ce que SDL ne voit pas toujours : « Utiliser le HDR » sous Windows
+  // (advancedColorEnabled), « highDynamicRange » de la sortie dans le fichier de KWin sous Linux (C34-09).
+  bool system_hdr_active = false;
   std::optional<double> edid_peak;  // la crête que l'EDID annonce
+  // Le pic que le système a calibré (system_peak.h : DXGI MaxLuminance, KWin), en unités du contenu ; lu
+  // dès que SDL ou le système dit le HDR actif (C34-02).
+  std::optional<double> system_peak;
 };
+// La crête quand le système n'a pas de pic calibré.
 std::optional<double> uncalibrated_peak_nits(const PeakFacts& facts);
+// La crête vue par le contenu : rien si ni SDL ni le système ne disent le HDR actif ; sinon le pic calibré
+// par le système, sinon uncalibrated_peak_nits. Pur.
+std::optional<double> detected_peak_nits(const PeakFacts& facts);
+// Ce que relit le fil de l'écran (display_probe.h) : la crête, et d'où elle vient. Le contrat d'écran ne
+// range en « pic du système » que la part calibrée (C34-02) ; le reste est une déduction.
+struct PeakReading {
+  std::optional<double> nits;        // detected_peak_nits
+  std::optional<double> calibrated;  // PeakFacts::system_peak, quand c'est lui qui donne nits
+};
+PeakReading peak_reading(const PeakFacts& facts);
+// Les faits de l'écran de la fenêtre (EDID, SDL, système), relus hors du thread qui présente.
+PeakFacts peak_facts(SDL_Window* window, const DisplaySdl& sdl);
 // La crête « automatique » du grade : celle de l'écran bornée à 200-4000 nits (un écran HDR de 310 nits ne
 // reçoit pas une cible de 400 ; un téléviseur de 3000 nits est exploité, B37-09) ; 1000 si inconnue.
 int auto_peak_nits(std::optional<double> detected);
@@ -75,6 +93,8 @@ std::string display_name(SDL_Window* window);
 // L'écran de la fenêtre selon son EDID, avec son VRR armé : DRM sous Linux, NVAPI sous Windows sur une carte
 // NVIDIA (window_vrr_armed). Rien si aucun EDID ne se lit.
 std::optional<DisplayFacts> window_display(SDL_Window* window);
+// La même, le nom de SDL déjà lu (display_sdl) : sans appel vidéo de SDL, de tout thread (display_probe.h).
+std::optional<DisplayFacts> window_display(SDL_Window* window, std::string_view sdl_name);
 // Le VRR armé à cet instant sur l'écran de la fenêtre : le CRTC DRM du connecteur sous Linux ; sous Windows,
 // NvAPI_Disp_GetVRRInfo (G-SYNC ou G-SYNC Compatible engagé sur cet écran), relu au plus 4 fois par seconde.
 // Rien : le système ne le dit pas (carte AMD ou Intel sous Windows, macOS), le retour de présentation reste.

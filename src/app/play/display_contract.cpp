@@ -39,7 +39,8 @@ bool on_event(void* context, SDL_Event* event) {
 
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
                                     double headroom, const std::optional<MeasuredAbl>& abl,
-                                    double sdr_white_nits, std::optional<double> system_peak) {
+                                    double sdr_white_nits, std::optional<double> system_peak,
+                                    std::optional<double> guessed_peak) {
   render::DisplayContract out;
   out.oled = facts.oled;
   out.reference_nits = kwin && kwin->reference ? *kwin->reference : render::kContentReferenceNits;
@@ -58,6 +59,8 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
   } else if (facts.peak_nits) {
     out.panel_peak_nits = *facts.peak_nits;
     out.peak_source = render::DisplayContract::PeakSource::Edid;
+  } else if (guessed_peak && *guessed_peak > 0.0) {
+    out.panel_peak_nits = *guessed_peak;  // la valeur du grade, sous son vrai nom : une supposition
   }
   out.abl = abl ? abl->nits : render::default_abl(out.panel_peak_nits, out.oled);
   for (double& nits : out.abl) nits = std::min(nits, out.panel_peak_nits);
@@ -107,11 +110,16 @@ render::DisplayContract ContractWatch::read() const {
     white = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F);
   }
   const std::string edid = kwin_edid_key(facts.manufacturer, facts.product);
-  // B11-10 : sous Windows, le pic du grade (DXGI) ; sous Linux, celui de KWin, lu juste au-dessus.
+  // B11-10 : sous Windows, le pic du système (DXGI), relevé par le fil de l'écran (C34-11) ; sous Linux,
+  // celui de KWin, lu juste au-dessus. Seule la part calibrée se range en « pic du système » (C34-02).
   std::optional<double> system_peak;
-  if (kWindows && window_ != nullptr) system_peak = content_peak_nits(window_);
+  std::optional<double> guessed;
+  if (kWindows) {
+    system_peak = system_peak_.calibrated;
+    if (!system_peak) guessed = system_peak_.nits;
+  }
   return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt,
-                     sdr_white_nits_of(white, kWindows), system_peak);
+                     sdr_white_nits_of(white, kWindows), system_peak, guessed);
 }
 
 std::optional<render::DisplayContract> ContractWatch::tick() {

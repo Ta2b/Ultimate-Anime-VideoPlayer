@@ -95,6 +95,7 @@ struct SettingsChoices {
   int explored_work_height = 0;
   std::string explored_rife_model;
   std::string gpu_name;           // la carte
+  std::string driver_version;     // le pilote, lisible (« 580.82.07 ») : Smooth Motion (C37-03)
   std::vector<std::string> gpus;  // toutes les cartes du système : le choix n'est montré qu'à partir de deux
   struct AudioOut {
     std::string name;

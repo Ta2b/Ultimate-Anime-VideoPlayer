@@ -127,7 +127,10 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
   for (const core::EnginePackage& package : catalog.packages) {
     if (!chosen(engines, package.engine)) continue;
     recover_interrupted_install(catalog, package);
-    const InstalledState found = installed_state(catalog, package);
+    // C37-02 : la carte du rendu d'aujourd'hui, pas celle de l'installation.
+    const std::string arch =
+        effective_cuda_arch(pumped_cuda_arch(screen.device_facts().name), screen.device_facts().name);
+    const InstalledState found = installed_state(catalog, package, arch);
     if (found.state == PackageState::Absent) continue;
     const std::string label(engine_label(package.engine));
     if (found.state == PackageState::Current) {
@@ -155,12 +158,8 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
       continue;
     }
     // Pas de place : rien n'est tenté (ni boucle à chaque lancement), l'utilisateur est prévenu.
-    if (const auto fits = check_space(
-            install_space_in(
-                catalog, package,
-                effective_cuda_arch(pumped_cuda_arch(screen.device_facts().name), screen.device_facts().name),
-                found.dir),
-            free_bytes(catalog.layout.engines), catalog.layout.engines);
+    if (const auto fits = check_space(install_space_in(catalog, package, arch, found.dir),
+                                      free_bytes(catalog.layout.engines), catalog.layout.engines);
         !fits) {
       log->warn("{} non mis à jour : {}", label, fits.error().detail);
       ui.controls().defer(i18n::ui_tr_format("{} not updated: {}", label, visible_error(fits.error())));
@@ -169,6 +168,9 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     if (found.state == PackageState::NewVersion)
       log->info("{} : version {} demandée, {} installée : réinstallation", label, package.version,
                 core::to_utf8(found.dir.filename()));
+    else if (!found.missing.empty())
+      log->info("{} : {} manque ou a changé (carte {}, {}) : réinstallation", label, found.missing,
+                screen.device_facts().name, arch);
     else
       log->info("{} : paquet remplacé dans la release (SHA-256 différent) : réinstallation", label);
     auto outcome =

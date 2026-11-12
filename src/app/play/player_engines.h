@@ -129,6 +129,8 @@ struct Player {
 
 // Les messages des backends, sur le canal « backend » du journal.
 gpu::BackendLog backend_log();
+// Vrai une fois après une ouverture de TensorRT réduite à une seule voie de calcul (C37-04).
+bool take_single_lane_notice();
 
 // Une image de la superposition avant une étape bloquante (chargement d'un moteur) : la
 // fenêtre dit ce qu'elle attend au lieu de rester noire.

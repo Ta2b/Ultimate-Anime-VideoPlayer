@@ -3,8 +3,11 @@
 # hors commentaires et chaînes : lire une variable (getenv et ses variantes POSIX, Windows et SDL, appelées,
 # prises par adresse ou importées par using) ou tout le bloc (environ, _wenviron,
 # GetEnvironmentStrings, _NSGetEnviron). Seule exception, la ligne marquée « env: hérité » : le bloc
-# transmis tel quel à un processus enfant, sans qu'aucune valeur n'en soit lue ; et la ligne marquée
-# « env: lanceur » : un fait posé par le lanceur d'un paquet (AppImage), pas une option de l'utilisateur.
+# transmis tel quel à un processus enfant, sans qu'aucune valeur n'en soit lue ; la ligne marquée
+# « env: lanceur » : un fait posé par le lanceur d'un paquet (AppImage) ; et la ligne marquée « env: système » :
+# une variable de la norme XDG que la session ou le lanceur pose (XDG_CACHE_HOME, C34-13 ;
+# XDG_ACTIVATION_TOKEN, C34-15). Ni l'un ni l'autre n'est une option
+# de l'utilisateur.
 set -euo pipefail
 names='secure_getenv|getenv|_wgetenv|getenv_s|_wgetenv_s|_dupenv_s|_wdupenv_s|SDL_getenv|SDL_getenv_unsafe'
 names+='|SDL_GetEnvironment\w*|GetEnvironmentVariable[AW]?|GetEnvironmentStrings[AW]?|ExpandEnvironmentStrings[AW]?|_NSGetEnviron'
@@ -14,7 +17,7 @@ hits=$(git ls-files -z -- 'src/*' | AJP_ENV_NAMES="$names" xargs -0 perl -ne '
   (my $code = $_) =~ s{\x27(?:\\.|[^\x27\\])\x27}{}g;
   $code =~ s{"(?:\\.|[^"\\])*"}{""}g;
   $code =~ s{//.*}{};
-  print "$ARGV:$.: $_" if $code =~ $re && !/env: (hérité|lanceur)/;
+  print "$ARGV:$.: $_" if $code =~ $re && !/env: (hérité|lanceur|système)/;
   close ARGV if eof;')
 if [[ -n "$hits" ]]; then
   printf '%s\n' "$hits"

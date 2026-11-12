@@ -180,7 +180,7 @@ void save_before_next(const Player& player, const Reopen& reopen, const PlaySett
 // La machine à laquelle une calibration se compare (A25-02, A07-05). Le moteur qui jouera SPAN et RIFE : la
 // bibliothèque déjà ouverte si le choix n'a pas bougé depuis (opened_for), sinon le préféré s'il est
 // installé.
-CalibrationHost calibration_host(const GpuFacts& here, int display_height, const BackendLibrary* library,
+CalibrationHost calibration_host(const GpuFacts& here, SDL_Window* window, const BackendLibrary* library,
                                  const std::optional<core::EngineId>& opened_for,
                                  const core::Settings& engines, const EngineCatalog& catalog,
                                  const PlayerPaths& paths) {
@@ -190,7 +190,11 @@ CalibrationHost calibration_host(const GpuFacts& here, int display_height, const
       library != nullptr && preferred == opened_for
           ? engine_of_library(library->path()) == core::EngineId::TensorRt
           : preferred == core::EngineId::TensorRt && tensorrt_backend_present(catalog, paths);
-  return {.gpu = here.name, .display_height = display_height, .tensorrt = tensorrt, .driver = here.driver};
+  return {.gpu = here.name,
+          .display_height = display_height(window),
+          .tensorrt = tensorrt,
+          .driver = here.driver,
+          .display_hz = display_refresh_hz(window)};  // C37-08
 }
 
 // A33-02 : SDL coupe l'économiseur dès son ouverture ; l'accueil et l'assistant le laissent agir, la
@@ -513,8 +517,8 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     // L'exploration du benchmark (bench.toml) ne vaut que pour cette carte et cette branche de pilote
     // (A37-09), et pas pour un essai.
     const GpuFacts here = gpu_facts(**screen);
-    const CalibrationHost host = calibration_host(here, display_height((*screen)->window()), library.get(),
-                                                  library_wanted, *engines, catalog, paths);
+    const CalibrationHost host =
+        calibration_host(here, (*screen)->window(), library.get(), library_wanted, *engines, catalog, paths);
     const BenchResult* explored =
         measured_tier && !file_options.bench_level && measured_here(*measured_tier, here) ? &*measured_tier
                                                                                           : nullptr;

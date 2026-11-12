@@ -93,7 +93,13 @@ constexpr std::array kPlayer{
     Entry{"Subtitles off", "Sous-titres désactivés"},
     Entry{"Subtitles refused ({}): {}", "Sous-titres refusés ({}) : {}"},
     Entry{"Subtitles: {}", "Sous-titres : {}"},
+    Entry{"TensorRT: one compute lane, not enough free video memory",
+          "TensorRT : une seule voie de calcul, mémoire vidéo libre insuffisante"},
     Entry{"Thai", "Thaï"},
+    Entry{"The display is on another graphics card than the one rendering: switch the laptop to dGPU only "
+          "mode for G-SYNC and lower latency",
+          "L'écran est branché sur une autre carte graphique que celle du rendu : passez le portable en mode "
+          "« dGPU seul » pour le G-SYNC et moins de latence"},
     Entry{"Track {}", "Piste {}"},
     Entry{"Turkish", "Turc"},
     Entry{"Ukrainian", "Ukrainien"},

@@ -161,7 +161,8 @@ std::optional<PlaySettings> calibrate_on_screen(PlaceboScreen& screen, PlayerUi&
                  .data = data_dir,
                  .display_width = display_width(screen.window()),
                  .display_height = display_height(screen.window()),
-                 .display_hdr = screen.hdr_output()};
+                 .display_hdr = screen.hdr_output(),
+                 .display_hz = display_refresh_hz(screen.window())};
   plan.shown = &shared->progress;  // vit autant que shared, que le thread garde
   shared->changed_us = host_now_us();
   const int height = plan.display_height;

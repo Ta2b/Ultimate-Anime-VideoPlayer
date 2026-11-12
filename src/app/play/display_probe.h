@@ -24,19 +24,23 @@
 namespace ajp::app::play {
 
 struct DisplayReading {
-  double hz = 0.0;                  // la fréquence de l'écran ; 0 : inconnue
-  bool peak_read = false;           // le pic a été demandé, et relu
-  std::optional<double> peak_nits;  // la crête vue par le contenu (content_peak_nits)
-  bool vrr_read = false;            // le VRR armé a été demandé, et relu
-  std::optional<bool> vrr_armed;    // window_vrr_armed
-  std::int64_t took_us = 0;         // le temps du relevé, pour le journal
+  double hz = 0.0;                        // la fréquence de l'écran ; 0 : inconnue
+  bool peak_read = false;                 // le pic a été demandé, et relu
+  std::optional<double> peak_nits;        // la crête vue par le contenu (content_peak_nits)
+  std::optional<double> calibrated_peak;  // sa part calibrée par le système (PeakReading), pour le contrat
+  bool facts_read = false;                // l'écran de la fenêtre a été demandé, et relu
+  std::optional<DisplayFacts> facts;      // window_display : EDID, VRR (C34-11)
+  bool vrr_read = false;                  // le VRR armé a été demandé, et relu
+  std::optional<bool> vrr_armed;          // window_vrr_armed
+  std::int64_t took_us = 0;               // le temps du relevé, pour le journal
 };
 
 // Ce que le fil relit : les fonctions de host_facts.h par défaut, des doublures dans les tests.
 struct DisplayReaders {
   std::function<double(SDL_Window*, const DisplaySdl&)> hz;
-  std::function<std::optional<double>(SDL_Window*, const DisplaySdl&)> peak;
+  std::function<PeakReading(SDL_Window*, const DisplaySdl&)> peak;
   std::function<std::optional<bool>(SDL_Window*, const std::string&)> vrr;
+  std::function<std::optional<DisplayFacts>(SDL_Window*, const DisplaySdl&)> facts;
 };
 DisplayReaders system_display_readers();
 
@@ -50,8 +54,9 @@ class DisplayProbe {
   DisplayProbe& operator=(const DisplayProbe&) = delete;
 
   // Un relevé : la fréquence toujours, le pic si `peak`, le VRR armé si `connector` n'est pas vide (Linux) ou
-  // si `vrr` (Windows, NVAPI). Thread main.
-  void ask(DisplaySdl sdl, bool peak, bool vrr, std::string connector);
+  // si `vrr` (Windows, NVAPI), l'écran de la fenêtre si `facts` (son EDID, au changement d'écran : SetupAPI
+  // et registre sous Windows, C34-11). Thread main.
+  void ask(DisplaySdl sdl, bool peak, bool vrr, std::string connector, bool facts = false);
   // Le dernier relevé fini, une fois ; rien sinon. Thread main.
   std::optional<DisplayReading> take();
   // Un relevé est demandé ou tourne.
@@ -63,6 +68,7 @@ class DisplayProbe {
     bool peak = false;
     bool vrr = false;
     std::string connector;
+    bool facts = false;
   };
   void run(const std::stop_token& stop);
 

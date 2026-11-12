@@ -10,6 +10,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <cerrno>
 #include <iconv.h>
 #endif
 
@@ -130,25 +131,29 @@ struct Legacy {
   unsigned code_page;              // Windows
   const char* name;                // iconv
   const char* fallback = nullptr;  // iconv, quand le premier nom manque ou refuse le texte
+  // Une page à un octet (C34-07) : une case non définie (CP1251 0x98) devient U+FFFD sous iconv, comme
+  // MultiByteToWideChar la rend en un caractère de contrôle sous Windows, au lieu de refuser tout le texte.
+  bool single_byte = false;
 };
 constexpr Legacy kShiftJis{932, "CP932"};
 constexpr Legacy kGbk{936, "GBK"};
 // CP950 d'abord : la table de Windows, avec les extensions ETEN, pour décoder comme lui (A34-11) ; BIG5 quand
 // l'iconv du système ne connaît pas CP950.
 constexpr Legacy kBig5{950, "CP950", "BIG5"};
-constexpr Legacy kCp1251{1251, "CP1251"};
+constexpr Legacy kCp1251{1251, "CP1251", nullptr, true};
 constexpr Legacy kEucKr{949, "CP949"};  // CP949 contient l'EUC-KR
 constexpr Legacy kEucJp{20932, "EUC-JP"};
 // B17-05 : les pages d'une seule langue, jamais devinées (sans indice le repli reste Windows-1252), prises
 // quand le nom du fichier nomme la langue : « ep01.pl.srt », « ep01.tr.srt ».
-constexpr Legacy kCp1250{1250, "CP1250"};  // europe centrale : polonais, tchèque, hongrois, roumain…
-constexpr Legacy kCp1253{1253, "CP1253"};  // grec
-constexpr Legacy kCp1254{1254, "CP1254"};  // turc
-constexpr Legacy kCp1255{1255, "CP1255"};  // hébreu
-constexpr Legacy kCp1256{1256, "CP1256"};  // arabe, persan
-constexpr Legacy kCp1257{1257, "CP1257"};  // baltes
-constexpr Legacy kCp1258{1258, "CP1258"};  // vietnamien
-constexpr Legacy kCp874{874, "CP874"};     // thaï
+constexpr Legacy kCp1250{1250, "CP1250", nullptr,
+                         true};  // europe centrale : polonais, tchèque, hongrois, roumain…
+constexpr Legacy kCp1253{1253, "CP1253", nullptr, true};  // grec
+constexpr Legacy kCp1254{1254, "CP1254", nullptr, true};  // turc
+constexpr Legacy kCp1255{1255, "CP1255", nullptr, true};  // hébreu
+constexpr Legacy kCp1256{1256, "CP1256", nullptr, true};  // arabe, persan
+constexpr Legacy kCp1257{1257, "CP1257", nullptr, true};  // baltes
+constexpr Legacy kCp1258{1258, "CP1258", nullptr, true};  // vietnamien
+constexpr Legacy kCp874{874, "CP874", nullptr, true};     // thaï
 
 bool same(Legacy a, Legacy b) {
   return a.code_page == b.code_page;
@@ -156,19 +161,34 @@ bool same(Legacy a, Legacy b) {
 
 #ifndef _WIN32
 // Le texte décodé par l'iconv du système depuis l'encodage name, ou rien : nom inconnu, octets refusés.
-std::optional<std::string> decode_iconv(std::string_view bytes, const char* name) {
+// single_byte : une page à un octet, dont un octet sans caractère devient U+FFFD (trois octets UTF-8, pas
+// plus qu'un caractère de la page) au lieu de faire refuser tout le texte (C34-07). Une page à deux octets
+// reste stricte : son refus sert à deviner l'encodage.
+std::optional<std::string> decode_iconv(std::string_view bytes, const char* name, bool single_byte) {
   iconv_t cd = iconv_open("UTF-8", name);
   // L'échec d'iconv_open : (iconv_t)-1.
   if (cd == reinterpret_cast<iconv_t>(-1)) return std::nullopt;  // NOLINT(performance-no-int-to-ptr)
+  constexpr std::string_view kReplacement = "\xEF\xBF\xBD";
   std::string in(bytes);
   std::string out(bytes.size() * 3 + 4, '\0');
   char* src = in.data();
   char* dst = out.data();
   std::size_t left = in.size();
   std::size_t room = out.size();
-  const std::size_t done = iconv(cd, &src, &left, &dst, &room);
+  bool refused = false;
+  while (left > 0) {
+    if (iconv(cd, &src, &left, &dst, &room) != static_cast<std::size_t>(-1)) break;
+    if (!single_byte || errno != EILSEQ || room < kReplacement.size()) {
+      refused = true;
+      break;
+    }
+    dst = std::copy(kReplacement.begin(), kReplacement.end(), dst);
+    room -= kReplacement.size();
+    ++src;
+    --left;
+  }
   iconv_close(cd);
-  if (done == static_cast<std::size_t>(-1) || left != 0) return std::nullopt;
+  if (refused || left != 0) return std::nullopt;
   out.resize(out.size() - room);
   return out;
 }
@@ -190,7 +210,7 @@ std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) 
 #else
   for (const char* name : {legacy.name, legacy.fallback}) {
     if (name == nullptr) continue;
-    if (auto text = decode_iconv(bytes, name)) return text;
+    if (auto text = decode_iconv(bytes, name, legacy.single_byte)) return text;
   }
   return std::nullopt;
 #endif

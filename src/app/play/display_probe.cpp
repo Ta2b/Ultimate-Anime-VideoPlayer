@@ -7,10 +7,12 @@
 namespace ajp::app::play {
 
 DisplayReaders system_display_readers() {
-  return {.hz = [](SDL_Window* window, const DisplaySdl& sdl) { return display_refresh_hz(window, sdl); },
-          .peak = [](SDL_Window* window, const DisplaySdl& sdl) { return content_peak_nits(window, sdl); },
-          .vrr = [](SDL_Window* window,
-                    const std::string& connector) { return window_vrr_armed(window, connector); }};
+  return {
+      .hz = [](SDL_Window* window, const DisplaySdl& sdl) { return display_refresh_hz(window, sdl); },
+      .peak = [](SDL_Window* window, const DisplaySdl& sdl) { return peak_reading(peak_facts(window, sdl)); },
+      .vrr = [](SDL_Window* window,
+                const std::string& connector) { return window_vrr_armed(window, connector); },
+      .facts = [](SDL_Window* window, const DisplaySdl& sdl) { return window_display(window, sdl.name); }};
 }
 
 DisplayProbe::DisplayProbe(SDL_Window* window, DisplayReaders readers, void (*wake)(void*), void* context)
@@ -23,16 +25,18 @@ DisplayProbe::~DisplayProbe() {
   changed_.notify_all();
 }
 
-void DisplayProbe::ask(DisplaySdl sdl, bool peak, bool vrr, std::string connector) {
+void DisplayProbe::ask(DisplaySdl sdl, bool peak, bool vrr, std::string connector, bool facts) {
   {
     const std::scoped_lock lock(mutex_);
     // Une demande encore en attente garde ce qu'elle voulait déjà relire.
     const bool had_peak = pending_ && pending_->peak;
     const bool had_vrr = pending_ && pending_->vrr;
+    const bool had_facts = pending_ && pending_->facts;
     pending_ = Request{.sdl = std::move(sdl),
                        .peak = peak || had_peak,
                        .vrr = vrr || had_vrr || !connector.empty(),
-                       .connector = std::move(connector)};
+                       .connector = std::move(connector),
+                       .facts = facts || had_facts};
   }
   changed_.notify_one();
 }
@@ -63,7 +67,13 @@ void DisplayProbe::run(const std::stop_token& stop) {
     if (readers_.hz) reading.hz = readers_.hz(window_, request.sdl);
     if (request.peak && readers_.peak) {
       reading.peak_read = true;
-      reading.peak_nits = readers_.peak(window_, request.sdl);
+      const PeakReading peak = readers_.peak(window_, request.sdl);
+      reading.peak_nits = peak.nits;
+      reading.calibrated_peak = peak.calibrated;
+    }
+    if (request.facts && readers_.facts) {
+      reading.facts_read = true;
+      reading.facts = readers_.facts(window_, request.sdl);
     }
     if (request.vrr && readers_.vrr) {
       reading.vrr_read = true;
@@ -77,6 +87,11 @@ void DisplayProbe::run(const std::stop_token& stop) {
         if (!reading.peak_read && done_->peak_read) {
           reading.peak_read = true;
           reading.peak_nits = done_->peak_nits;
+          reading.calibrated_peak = done_->calibrated_peak;
+        }
+        if (!reading.facts_read && done_->facts_read) {
+          reading.facts_read = true;
+          reading.facts = std::move(done_->facts);
         }
         if (!reading.vrr_read && done_->vrr_read) {
           reading.vrr_read = true;

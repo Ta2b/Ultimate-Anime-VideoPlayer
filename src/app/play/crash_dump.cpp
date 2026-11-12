@@ -8,14 +8,18 @@
 #include <system_error>
 #include <vector>
 
+#include "core/thread_role.h"
 #include "core/utf8_path.h"
 
 #ifdef _WIN32
 #include <windows.h>
 // dbghelp.h après windows.h, qui le précède forcément.
 #include <array>
+#include <atomic>
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cwchar>
 #include <dbghelp.h>
 #else
@@ -127,13 +131,34 @@ void dump_to_dir(EXCEPTION_POINTERS* info) {
   note_crash(code, name.data());
 }
 
+// Un seul vidage par plantage : un paramètre invalide suivi de son abort n'en écrit pas deux.
+std::atomic<bool> g_dumped{false};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+void dump_once(EXCEPTION_POINTERS* info) {
+  if (!g_dumped.exchange(true)) dump_to_dir(info);
+}
+
 LONG WINAPI on_unhandled(EXCEPTION_POINTERS* info) {
-  dump_to_dir(info);
+  dump_once(info);
   return EXCEPTION_CONTINUE_SEARCH;  // le rapport d'erreur de Windows suit
 }
 
 void on_abort(int /*signal*/) {
-  dump_to_dir(nullptr);
+  dump_once(nullptr);
+}
+
+// C34-05 : un paramètre invalide passé au CRT (printf, strcpy_s…) et un appel virtuel pur finissaient par
+// __fastfail, que le filtre des exceptions ne voit jamais : ni vidage ni ligne au journal. Ils en laissent
+// un, puis le processus s'arrête comme avant.
+void on_invalid_parameter(const wchar_t* /*expression*/, const wchar_t* /*function*/, const wchar_t* /*file*/,
+                          unsigned int /*line*/, std::uintptr_t /*reserved*/) {
+  dump_once(nullptr);
+  std::abort();
+}
+
+void on_pure_call() {
+  dump_once(nullptr);
+  std::abort();
 }
 #else
 // Un signal fatal : une ligne (et la pile, quand la libc en donne une) dans ajp.log, puis la fin normale du
@@ -261,6 +286,13 @@ void install_crash_dumps([[maybe_unused]] const fs::path& dir) {
   }
   SetUnhandledExceptionFilter(on_unhandled);
   std::signal(SIGABRT, on_abort);
+  _set_invalid_parameter_handler(on_invalid_parameter);
+  _set_purecall_handler(on_pure_call);
+  // Un débordement de pile du thread principal laisse la place au filtre ; les threads de module la
+  // réservent au démarrage (thread_start, core/thread_role.h). Un __fastfail (/GS, std::terminate de
+  // certaines bibliothèques) ne passe par aucun gestionnaire du processus : seul le rapport d'erreur de
+  // Windows le voit, et la séance restée ouverte le dit au lancement suivant (problem_report.h).
+  ajp::reserve_crash_stack();
 #else
   const std::string log = core::to_utf8(dir.parent_path() / "ajp.log");
   if (log.size() >= g_log_path.size()) return;

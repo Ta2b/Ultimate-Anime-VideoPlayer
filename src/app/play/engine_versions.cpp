@@ -1,5 +1,6 @@
 #include "app/play/engine_versions.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <format>
@@ -67,7 +68,8 @@ std::optional<InstalledPackage> read_package_note(const fs::path& dir) {
   return found;
 }
 
-InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package) {
+InstalledState installed_state(const EngineCatalog& catalog, const core::EnginePackage& package,
+                               std::string_view arch) {
   const fs::path current = core::engine_dir(catalog.layout, package);
   if (installed(catalog, package)) {
     InstalledState here{.state = PackageState::Replaced, .dir = current, .note = read_package_note(current)};
@@ -84,6 +86,19 @@ InstalledState installed_state(const EngineCatalog& catalog, const core::EngineP
           here.missing = name;
           break;
         }
+      }
+    }
+    // C37-02 : les fichiers tiers de l'architecture de la carte d'aujourd'hui, pas seulement ceux tirés pour
+    // la carte de l'installation. Une note d'avant les fichiers (liste vide) n'est pas jugée.
+    if (here.state == PackageState::Current && !arch.empty() && !here.note->files.empty()) {
+      for (const core::VendorFile& wanted :
+           core::vendor_files_for(catalog.vendor_files, package.engine, catalog.layout.os, arch)) {
+        const bool noted = std::ranges::any_of(here.note->files,
+                                               [&](const auto& file) { return file.first == wanted.name; });
+        if (noted) continue;
+        here.state = PackageState::Replaced;
+        here.missing = wanted.name;
+        break;
       }
     }
     return here;

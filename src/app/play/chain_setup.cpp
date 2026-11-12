@@ -6,10 +6,10 @@
 #include <utility>
 
 #include "app/play/auto_config.h"
+#include "app/play/display_gpu.h"
 #include "app/play/drba_fused_choice.h"
 #include "app/play/drba_model.h"
 #include "app/play/first_run.h"
-#include "app/play/gpu_telemetry.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/motion_model.h"
@@ -600,11 +600,10 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const GpuFacts gpu = gpu_facts(p.screen);
   log->info("GPU : {}", gpu_line(gpu));
   note_gpu_facts(gpu, settings, p.screen.device());
-  if (p.screen.device().vendor() == GpuVendor::Nvidia) {
-    const std::string& driver = p.screen.device().driver_version;
-    if (settings.smooth_motion && nvidia_driver_older_than(driver, 580, 82, 7))
-      log->warn("pilote NVIDIA {} : Smooth Motion demande 580.82.07 ou plus récent", driver);
-  }
+  if (auto told = note_render_device(p.screen.window(), p.display ? p.display->connector : std::string(),
+                                     p.screen.device(), settings.smooth_motion);
+      told && p.notice.empty())
+    p.notice = std::move(*told);
   const std::span<const std::string_view> rife_order = rife_preference(gpu);
   // B08-14 : un seul choix du modèle, son refus gardé pour le cas où l'interpolation n'a rien d'autre.
   auto rife_found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models);

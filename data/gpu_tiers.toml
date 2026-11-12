@@ -70,16 +70,22 @@ rules = [
   { vendor = "nvidia", contains = ["rtx a400"], tier = 0 },
   # La Quadro RTX 6000 (Turing) avant « rtx 6000 », qui est la RTX 6000 Ada.
   { vendor = "nvidia", contains = ["quadro rtx 6000"], tier = 2 },
+  # Les autres Quadro RTX (Turing) avant « rtx 40 » et « rtx 50 », que « Quadro RTX 4000 » et « 5000 »
+  # contiennent (C37-09).
+  { vendor = "nvidia", contains = ["quadro rtx"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 6000"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 5000 ada"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4500 ada"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4000 ada"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 2000 ada"], tier = 2 },
+  # La RTX 3050 de bureau a moins de SM que la 3060 et le débit de la 3050 portable, en tranche 1 : la
+  # règle « rtx 30 » la mettait en Normal (C37-09). La 2060, la 2070 et la 5050 restent à la règle de leur
+  # famille tant qu'aucune calibration ne les place.
+  { vendor = "nvidia", contains = ["rtx 3050"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 50"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 40"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 30"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 20"], tier = 2 },
-  { vendor = "nvidia", contains = ["quadro rtx"], tier = 2 },
   { vendor = "nvidia", contains = ["titan"], tier = 2 },
   { vendor = "nvidia", contains = ["gtx 1080"], tier = 2 },
   { vendor = "nvidia", contains = ["gtx 1070"], tier = 2 },

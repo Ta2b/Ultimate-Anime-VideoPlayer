@@ -19,6 +19,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -56,6 +57,11 @@ Attempt try_lock(std::intptr_t handle, std::error_code& error) {
 void close_lock(std::intptr_t handle) {
   CloseHandle(as_handle(handle));
 }
+
+// Le fichier ouvert sans FILE_SHARE_DELETE ne peut pas être retiré tant qu'on le tient : rien à revérifier.
+bool still_named(std::intptr_t /*handle*/, const std::filesystem::path& /*path*/) {
+  return true;
+}
 #else
 std::intptr_t open_lock(const std::filesystem::path& path, std::error_code& error) {
   const int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
@@ -72,6 +78,17 @@ Attempt try_lock(std::intptr_t handle, std::error_code& error) {
 
 void close_lock(std::intptr_t handle) {
   ::close(static_cast<int>(handle));
+}
+
+// Le verrou pris porte-t-il encore ce chemin ? Un autre lancement peut avoir retiré le fichier pendant
+// qu'on attendait (verrou orphelin de cache_purge.cpp) : le verrou tient alors un inode que plus personne ne
+// trouve, et un troisième en crée un nouveau. Les deux se croiraient seuls (C34-08).
+bool still_named(std::intptr_t handle, const std::filesystem::path& path) {
+  struct stat held{};
+  struct stat named{};
+  if (::fstat(static_cast<int>(handle), &held) != 0) return false;
+  if (::stat(path.c_str(), &named) != 0) return false;
+  return held.st_dev == named.st_dev && held.st_ino == named.st_ino;
 }
 #endif
 
@@ -91,7 +108,12 @@ std::expected<KeyLock, Refusal> KeyLock::acquire(const std::filesystem::path& lo
     }
     switch (try_lock(lock.handle_, error)) {
       case Attempt::Locked:
-        return lock;
+        if (still_named(lock.handle_, lock_file)) return lock;
+        // Retiré pendant l'attente : le verrou de ce chemin est un autre fichier, rouvert et repris.
+        lock = KeyLock(open_lock(lock_file, error));
+        if (lock.handle_ == kInvalid)
+          return std::unexpected(io_refusal("ouverture du verrou", lock_file, error));
+        continue;
       case Attempt::Failed:
         return std::unexpected(io_refusal("prise du verrou", lock_file, error));
       case Attempt::Busy:

@@ -2,10 +2,13 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -19,8 +22,6 @@
 #include <sys/utsname.h>
 #endif
 #ifdef __linux__
-#include <cstdint>
-#include <cstring>
 #include <elf.h>
 #include <link.h>
 #endif
@@ -132,11 +133,46 @@ void clear_report_facts() {
   s.facts.clear();
 }
 
+std::string codeview_key(std::span<const std::uint8_t> record) {
+  constexpr std::size_t kRsds = 4 + 16 + 4;  // signature, GUID, âge
+  if (record.size() < kRsds || std::memcmp(record.data(), "RSDS", 4) != 0) return {};
+  const auto little = [&](std::size_t at, std::size_t bytes) {
+    std::uint32_t value = 0;
+    for (std::size_t i = bytes; i-- > 0;) value = (value << 8U) | record[at + i];
+    return value;
+  };
+  std::string key = std::format("{:08X}{:04X}{:04X}", little(4, 4), little(8, 2), little(10, 2));
+  for (std::size_t i = 12; i < 20; ++i) key += std::format("{:02X}", record[i]);
+  key += std::format("{:X}", little(20, 4));
+  return key;
+}
+
 std::string build_id_description() {
 #ifdef __linux__
   std::string hex;
   dl_iterate_phdr(find_build_id, &hex);
   return hex;
+#elif defined(_WIN32)
+  // L'en-tête PE de l'exécutable chargé, puis son répertoire de débogage : l'entrée CodeView dit le PDB.
+  const auto* base =
+      reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));  // NOLINT(*-reinterpret-cast)
+  if (base == nullptr) return {};
+  IMAGE_DOS_HEADER dos{};
+  std::memcpy(&dos, base, sizeof dos);
+  if (dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew <= 0) return {};
+  IMAGE_NT_HEADERS nt{};
+  std::memcpy(&nt, base + dos.e_lfanew, sizeof nt);
+  if (nt.Signature != IMAGE_NT_SIGNATURE) return {};
+  const IMAGE_DATA_DIRECTORY& directory = nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG];
+  const std::size_t count = directory.Size / sizeof(IMAGE_DEBUG_DIRECTORY);
+  for (std::size_t i = 0; directory.VirtualAddress != 0 && i < count; ++i) {
+    IMAGE_DEBUG_DIRECTORY entry{};
+    std::memcpy(&entry, base + directory.VirtualAddress + i * sizeof entry, sizeof entry);
+    if (entry.Type != IMAGE_DEBUG_TYPE_CODEVIEW || entry.AddressOfRawData == 0) continue;
+    const std::string key = codeview_key(std::span(base + entry.AddressOfRawData, entry.SizeOfData));
+    if (!key.empty()) return "PDB " + key;
+  }
+  return {};
 #else
   return {};
 #endif
@@ -231,6 +267,10 @@ std::string compose_report(const ReportParts& parts, std::size_t max_bytes) {
     head.append("Minidump : ")
         .append(parts.dump_name)
         .append(" (à joindre en privé si on le demande, il peut contenir des chemins)\n");
+  if (parts.system_core)
+    head.append(
+        "Vidage du système : « coredumpctl info ajp » (systemd-coredump), à joindre en privé si on le "
+        "demande\n");
   head = sanitize_report_paths(head, parts.home);
   head += "\n";
   const std::string previous = sanitize_report_paths(parts.previous_log, parts.home);
@@ -332,6 +372,9 @@ std::string current_report(std::string_view home) {
       if (!previous_session_crashed()) parts.previous_title = "relancée : " + relaunched;
     }
     parts.dump_name = latest_dump_name(log.parent_path() / "crashes");
+#ifdef __linux__
+    parts.system_core = previous_session_crashed();
+#endif
   }
   if (parts.current_log.empty()) parts.current_log = "(journal introuvable)\n";
   return compose_report(parts, kBody);

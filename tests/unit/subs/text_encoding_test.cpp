@@ -162,3 +162,13 @@ TEST_CASE("to_utf8 : les pages d'une seule langue, prises sur l'indice du nom", 
         "\xC4\xB0\xC5\x9F\xC3\xBC\xC4\x9F\xC4\xB1\xC5\x9F");  // CP1254
   CHECK(to_utf8("\xE1\xE2", "el") == "\xCE\xB1\xCE\xB2");     // αβ, CP1253
 }
+
+TEST_CASE("to_utf8 : un octet sans caractère d'une page à un octet ne fait pas perdre le texte (C34-07)",
+          "[encoding]") {
+  // « Привет » en CP1251, puis 0x98, case non définie de CP1251 : avant, iconv refusait tout et le texte
+  // retombait en Windows-1252 (« Ïðèâåò˜ ») sous Linux seulement.
+  const std::string bytes = "\xCF\xF0\xE8\xE2\xE5\xF2\x98";
+  CHECK(ajp::subs::to_utf8(bytes, "ep01.ru.srt").starts_with("Привет"));
+  // Grec (CP1253, 0xAA non défini) : le reste du texte est gardé.
+  CHECK(ajp::subs::to_utf8("\xE3\xE5\xE9\xDC\xAA", "ep01.el.srt").starts_with("γειά"));
+}

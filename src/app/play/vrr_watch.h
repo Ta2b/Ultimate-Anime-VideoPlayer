@@ -9,13 +9,18 @@
 namespace ajp::app::play {
 
 // NvAPI_Disp_GetVRRInfo (Windows, B11-02) : bit 0 bIsVRREnabled (G-SYNC permis sur cet écran), bit 4
-// bIsDisplayInVRRMode (engagé en ce moment) dans les SDK récents. Un pilote qui ne pose jamais le bit 4
-// ferait lire « non armé » pour toujours : il n'est exigé qu'une fois vu posé dans ce processus. Pur.
+// bIsDisplayInVRRMode (engagé en ce moment) dans les SDK récents. Armé : le bit 4 posé. Un pilote qui ne
+// pose jamais le bit 4 ferait lire « non armé » pour toujours : tant qu'il n'a jamais été vu posé pour cet
+// écran (in_mode_seen), G-SYNC permis vaut armé, mais en plein écran seulement (C34-03). En fenêtre, le
+// réglage courant de G-SYNC (« plein écran seulement ») le laisse permis sans l'engager : le croire armé
+// faisait quitter la grille des vsyncs au mode Rapide et répéter des images au plancher VRR, saccades sur
+// un écran resté à fréquence fixe. Pur.
 inline constexpr std::uint32_t kNvVrrEnabled = 1U << 0U;
 inline constexpr std::uint32_t kNvVrrInMode = 1U << 4U;
-constexpr bool nv_vrr_armed(std::uint32_t flags, bool in_mode_seen) {
+constexpr bool nv_vrr_armed(std::uint32_t flags, bool in_mode_seen, bool fullscreen) {
   if ((flags & kNvVrrEnabled) == 0) return false;
-  return (flags & kNvVrrInMode) != 0 || !in_mode_seen;
+  if ((flags & kNvVrrInMode) != 0) return true;
+  return !in_mode_seen && fullscreen;
 }
 
 class VrrWatch {

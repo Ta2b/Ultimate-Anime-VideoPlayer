@@ -38,10 +38,12 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
                               .display_height = display_height(screen.window()),
                               .tensorrt = choices.engine_in_use == core::EngineId::TensorRt &&
                                           tensorrt_backend_present(catalog, paths),
-                              .driver = machine.driver};
+                              .driver = machine.driver,
+                              .display_hz = display_refresh_hz(screen.window())};
   choices.display_width = display_width(screen.window());  // un écran 21:9 se mesure à sa vraie taille
   choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;
+  choices.driver_version = screen.device().driver_version;
   choices.gpus = screen.device_names();
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;
   choices.luts_dir = paths::luts(paths);

@@ -1,9 +1,11 @@
 // Verrou exclusif par clé de cache, entre threads et entre processus.
 //
 // Repris de animejanai-inference-rtx@118c272 src/cache_key_lock.h:21-76.
-// Le fichier verrou n'est jamais supprimé : remplacer son inode laisserait un
-// troisième processus verrouiller un autre fichier pendant qu'un premier tient
-// l'ancien. Le noyau rend le verrou à la fermeture ou à la mort du processus.
+// Le fichier verrou n'est retiré que par la purge du cache, pour un moteur disparu
+// (cache_purge.cpp). Remplacer son inode pourrait laisser un troisième processus
+// verrouiller un autre fichier pendant qu'un premier tient l'ancien : sous POSIX,
+// acquire revérifie après la prise que le verrou porte encore son chemin, et sinon
+// le rouvre (C34-08). Le noyau rend le verrou à la fermeture ou à la mort du processus.
 #pragma once
 
 #include <chrono>

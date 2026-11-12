@@ -1,7 +1,6 @@
 // Le VRR armé sur l'écran de la fenêtre (host_facts.h). Sous Windows, aucune API publique de DXGI ne dit si
 // G-SYNC ou FreeSync est engagé : NVAPI le dit sur une carte NVIDIA (nvapi64.dll, livrée avec le pilote,
 // chargée à l'exécution par nvapi_QueryInterface, sans en-tête ni fichier de NVIDIA dans nos sources).
-#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <mutex>
@@ -14,6 +13,9 @@
 #include "core/log.h"
 
 #if defined(_WIN32)
+#include <functional>
+#include <map>
+#include <utility>
 #include <windows.h>
 #endif
 
@@ -81,24 +83,43 @@ struct NvVrr {
   bool enabled = false;  // G-SYNC permis sur cet écran : capable (B11-03)
   bool armed = false;    // engagé en ce moment (nv_vrr_armed)
 };
-std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
+// Ce que NVAPI a déjà dit de chaque écran, par nom GDI (C37-06) : le bit 4 vu posé, et les derniers drapeaux
+// (pour ne journaliser qu'un changement). Un écran G-SYNC n'impose plus sa règle à un écran fixe.
+struct NvSeen {
+  bool in_mode_seen = false;
+  std::uint32_t last_flags = UINT32_MAX;
+};
+
+std::optional<NvVrr> nvapi_vrr(SDL_Window* window, const std::string& name) {
   const Nvapi* api = nvapi();
   if (api == nullptr) return std::nullopt;
-  const std::string name = gdi_name(window);
   std::uint32_t id = 0;
   if (name.empty() || api->display_id(name.c_str(), &id) != 0) return std::nullopt;
   NvVrrInfo info;
   if (api->vrr_info(id, &info) != 0) return std::nullopt;
-  // B11-02 : la structure est écrite à la main ; les drapeaux bruts vont au journal à chaque changement, pour
-  // vérifier sur l'écran réel que le bit 4 suit bien l'engagement de G-SYNC.
-  static std::atomic<bool> in_mode_seen{false};
-  static std::atomic<std::uint32_t> last_flags{UINT32_MAX};
-  if ((info.flags & kNvVrrInMode) != 0) in_mode_seen.store(true, std::memory_order_relaxed);
-  if (last_flags.exchange(info.flags, std::memory_order_relaxed) != info.flags)
-    log_channel("app")->info("NVAPI VRR : drapeaux {:#x}, réservés {:#x} {:#x} {:#x} {:#x}", info.flags,
-                             info.reserved[0], info.reserved[1], info.reserved[2], info.reserved[3]);
+  static std::mutex guard;
+  static std::map<std::string, NvSeen, std::less<>> seen;
+  bool in_mode_seen = false;
+  {
+    const std::scoped_lock lock(guard);
+    NvSeen& here = seen[name];
+    if ((info.flags & kNvVrrInMode) != 0) here.in_mode_seen = true;
+    in_mode_seen = here.in_mode_seen;
+    // B11-02 : la structure est écrite à la main ; les drapeaux bruts vont au journal à chaque changement,
+    // pour vérifier sur l'écran réel que le bit 4 suit bien l'engagement de G-SYNC.
+    if (std::exchange(here.last_flags, info.flags) != info.flags)
+      log_channel("app")->info("NVAPI VRR ({}) : drapeaux {:#x}, réservés {:#x} {:#x} {:#x} {:#x}", name,
+                               info.flags, info.reserved[0], info.reserved[1], info.reserved[2],
+                               info.reserved[3]);
+  }
+  // C34-03 : G-SYNC permis ne vaut armé qu'en plein écran, tant que le bit 4 n'a jamais été vu.
+  const bool fullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
   return NvVrr{.enabled = (info.flags & kNvVrrEnabled) != 0,
-               .armed = nv_vrr_armed(info.flags, in_mode_seen.load(std::memory_order_relaxed))};
+               .armed = nv_vrr_armed(info.flags, in_mode_seen, fullscreen)};
+}
+
+std::optional<NvVrr> nvapi_vrr(SDL_Window* window) {
+  return nvapi_vrr(window, gdi_name(window));
 }
 
 // Le chemin d'interface du moniteur qui porte la fenêtre (« \\?\DISPLAY#GSM5B08#…#{e6f07b5f-…} »), que
@@ -122,8 +143,12 @@ std::string monitor_interface(SDL_Window* window) {
 #endif
 
 std::optional<DisplayFacts> window_display(SDL_Window* window) {
+  return window_display(window, display_name(window));
+}
+
+std::optional<DisplayFacts> window_display(SDL_Window* window, std::string_view sdl_name) {
 #if defined(_WIN32)
-  std::optional<DisplayFacts> display = read_display(display_name(window), monitor_interface(window));
+  std::optional<DisplayFacts> display = read_display(sdl_name, monitor_interface(window));
   if (display) {
     if (const auto nv = nvapi_vrr(window)) {
       if (!display->vrr_armed) display->vrr_armed = nv->armed;
@@ -132,7 +157,8 @@ std::optional<DisplayFacts> window_display(SDL_Window* window) {
     }
   }
 #else
-  std::optional<DisplayFacts> display = read_display(display_name(window));
+  static_cast<void>(window);
+  std::optional<DisplayFacts> display = read_display(sdl_name);
 #endif
   // Armé suppose capable, quelle que soit la source (B11-03).
   if (display && display->vrr_armed.value_or(false)) display->vrr = true;
@@ -141,15 +167,19 @@ std::optional<DisplayFacts> window_display(SDL_Window* window) {
 
 std::optional<bool> window_vrr_armed([[maybe_unused]] SDL_Window* window, std::string_view connector) {
 #if defined(_WIN32)
-  // Un appel au pilote à chaque tour de boucle serait de trop : la lecture est gardée 250 ms.
+  // Un appel au pilote à chaque tour de boucle serait de trop : la lecture est gardée 250 ms, pour cet écran
+  // seulement (C37-06) : la fenêtre passée sur un autre écran le relit tout de suite.
   constexpr auto kReread = std::chrono::milliseconds(250);
   static std::mutex guard;
   static std::chrono::steady_clock::time_point read_at;
+  static std::string read_for;
   static std::optional<bool> last;
+  const std::string name = gdi_name(window);
   const std::scoped_lock lock(guard);
-  if (const auto now = std::chrono::steady_clock::now(); now - read_at >= kReread) {
+  if (const auto now = std::chrono::steady_clock::now(); now - read_at >= kReread || name != read_for) {
     read_at = now;
-    const auto nv = nvapi_vrr(window);
+    read_for = name;
+    const auto nv = nvapi_vrr(window, name);
     last = nv ? std::optional<bool>(nv->armed) : std::nullopt;
   }
   (void)connector;

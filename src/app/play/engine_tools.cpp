@@ -3,9 +3,16 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
+
+#include <SDL3/SDL_filesystem.h>
 
 #include "core/charconv.h"
 
@@ -51,7 +58,49 @@ std::optional<std::string> proxy_from_setting(std::string_view setting) {
   return std::nullopt;
 }
 
+std::optional<std::string> kde_proxy(std::string_view kioslaverc) {
+  bool in_group = false;
+  bool manual = false;
+  std::string https;
+  std::string http;
+  while (!kioslaverc.empty()) {
+    const std::size_t end = kioslaverc.find('\n');
+    std::string_view line = kioslaverc.substr(0, end);
+    kioslaverc = end == std::string_view::npos ? std::string_view() : kioslaverc.substr(end + 1);
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.remove_suffix(1);
+    if (line.starts_with('[')) {
+      in_group = line == "[Proxy Settings]";
+      continue;
+    }
+    const std::size_t equal = line.find('=');
+    if (!in_group || equal == std::string_view::npos) continue;
+    const std::string_view key = line.substr(0, equal);
+    const std::string_view value = line.substr(equal + 1);
+    if (key == "ProxyType") manual = value == "1";
+    if (key == "httpsProxy") https = value;
+    if (key == "httpProxy") http = value;
+  }
+  std::string proxy = https.empty() ? http : https;
+  if (!manual || proxy.empty()) return std::nullopt;
+  // « http://hôte 3128 » : le port après une espace, comme KDE l'écrit ; « hôte:port » reste tel quel.
+  if (const std::size_t space = proxy.rfind(' '); space != std::string::npos) proxy[space] = ':';
+  return proxy;
+}
+
 namespace {
+
+#if defined(__linux__)
+// Le proxy manuel de KDE, lu dans ~/.config/kioslaverc (C34-12). Comme pour le fichier de KWin
+// (system_peak.cpp), XDG_CONFIG_HOME n'est pas lu.
+std::optional<std::string> linux_proxy() {
+  const char* home = SDL_GetUserFolder(SDL_FOLDER_HOME);
+  if (home == nullptr) return std::nullopt;
+  std::ifstream in(std::filesystem::path(home) / ".config" / "kioslaverc", std::ios::binary);
+  if (!in) return std::nullopt;
+  const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  return kde_proxy(text);
+}
+#endif
 
 #if defined(_WIN32)
 std::string utf8_of(const wchar_t* wide) {
@@ -118,7 +167,11 @@ std::vector<std::string> curl_system_args() {
 #ifdef _WIN32
   args.emplace_back("--ssl-revoke-best-effort");
 #endif
-  if (const auto proxy = windows_proxy()) {
+  std::optional<std::string> proxy = windows_proxy();
+#if defined(__linux__)
+  if (!proxy) proxy = linux_proxy();
+#endif
+  if (proxy) {
     args.emplace_back("--proxy");
     args.push_back(*proxy);
   }

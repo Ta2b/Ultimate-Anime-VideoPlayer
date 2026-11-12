@@ -386,6 +386,13 @@ TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp,
   CHECK(cache == heavy);
 #endif
   CHECK(ajp::app::play::cache_data({}, heavy) == heavy);
+  // C34-13 : $XDG_CACHE_HOME, s'il est absolu ; un chemin relatif est ignoré, comme le veut la norme.
+#ifdef __linux__
+  CHECK(ajp::app::play::cache_data(home, heavy, root / "rapide") == root / "rapide" / "ajp");
+  CHECK(ajp::app::play::cache_data(home, heavy, "relatif") == home / ".cache" / "ajp");
+#else
+  CHECK(ajp::app::play::cache_data(home, heavy, root / "rapide") == heavy);
+#endif
   for (const char* name : {"engines", "modeles", "plans", "backends", "models", "luts", "downloads"})
     fs::create_directories(heavy / name);
   {

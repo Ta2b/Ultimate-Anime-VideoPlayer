@@ -33,7 +33,7 @@ DisplayReaders slow_readers(Gate& gate) {
           .peak =
               [&gate](SDL_Window*, const DisplaySdl&) {
                 ++gate.peak_reads;
-                return std::optional<double>(1000.0);
+                return PeakReading{.nits = 1000.0};
               },
           .vrr =
               [&gate](SDL_Window*, const std::string& connector) {

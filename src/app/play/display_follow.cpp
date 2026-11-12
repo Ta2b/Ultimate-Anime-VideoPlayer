@@ -1,6 +1,7 @@
 #include "app/play/display_follow.h"
 
 #include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -47,13 +48,11 @@ DisplayFollow::DisplayFollow(Player& p, Chain& chain, Session& session, DisplayS
 void DisplayFollow::poll() {
   PlaceboScreen& out = p_.screen;
   if (const auto contract = contract_watch_.tick()) out.set_contract(*contract);  // 8.2
-  // Le HDR et le pic suivent le système et l'écran (Windows, KDE) : relus sur événement, sinon à 10 s.
+  // Le HDR et le pic suivent le système et l'écran (Windows, KDE) : relus sur événement, sinon à 10 s. En
+  // --sdr aussi : le contrat d'écran en a besoin (C34-11), seule la bascule HDR ne suit pas (take).
   const bool changed = contract_watch_.take_peak_change();
-  const bool peak = !p_.options.sdr && (changed || host_now_us() - hdr_polled_at_ >= kHdrPollUs);
+  const bool peak = changed || host_now_us() - hdr_polled_at_ >= kHdrPollUs;
   if (peak) hdr_polled_at_ = host_now_us();
-  // B11-15 : relu même sans connecteur (window_vrr_armed sait le lire autrement).
-  const bool vrr = p_.display.has_value();
-  probe_.ask(display_sdl(out.window()), peak, vrr, vrr ? p_.display->connector : std::string());
   // L'écran change (éteint, autre sortie, nouveau mode) : sa fréquence (le dernier relevé), son VRR et son
   // état sont relus.
   const SDL_DisplayID display_id = SDL_GetDisplayForWindow(out.window());
@@ -63,11 +62,16 @@ void DisplayFollow::poll() {
   session_hz_seen_ = state_.known_hz;
   session_.set_display(state_.known_period_us, state_.known_hz);
   hooks_.apply_auto();
-  follow_window(display_changed);
+  const bool facts = follow_window(display_changed);
+  // B11-15 : relu même sans connecteur (window_vrr_armed sait le lire autrement). Le nouvel écran : son pic
+  // et son EDID, relus par le fil, pas par le thread qui présente (C34-11).
+  const bool vrr = p_.display.has_value();
+  probe_.ask(display_sdl(out.window()), peak || display_changed, vrr,
+             vrr ? p_.display->connector : std::string(), facts);
 }
 
 void DisplayFollow::take() {
-  const std::optional<DisplayReading> reading = probe_.take();
+  std::optional<DisplayReading> reading = probe_.take();
   if (!reading) return;
   if (reading->took_us > kSlowReadingUs)
     log_->debug("relevé de l'écran : {:.1f} ms, hors du thread de présentation",
@@ -76,7 +80,14 @@ void DisplayFollow::take() {
     state_.known_hz = reading->hz;
     state_.known_period_us = std::llround(1e6 / reading->hz);
   }
-  if (reading->peak_read) follow_peak(reading->peak_nits);
+  if (reading->facts_read) follow_facts(std::move(reading->facts));
+  if (reading->peak_read) {
+    contract_watch_.set_system_peak({.nits = reading->peak_nits, .calibrated = reading->calibrated_peak});
+    if (!p_.options.sdr)
+      follow_peak(reading->peak_nits);
+    else
+      follow_display(chain_, reading->peak_nits);  // A08-07 : soins OLED et vrai noir en SDR aussi
+  }
   if (reading->vrr_read) follow_vrr(reading->vrr_armed);
 }
 
@@ -112,11 +123,11 @@ void DisplayFollow::follow_vrr(std::optional<bool> reading) {
   }
 }
 
-void DisplayFollow::follow_window(bool display_changed) {
+bool DisplayFollow::follow_window(bool display_changed) {
   // KDE arme le VRR en plein écran seulement : on le relit quand la fenêtre change d'état.
   const PlaceboScreen& out = p_.screen;
   const bool fullscreen = fullscreen_of(out.window());
-  if (fullscreen == vrr_fullscreen_ && !display_changed) return;
+  if (fullscreen == vrr_fullscreen_ && !display_changed) return false;
   if (display_changed) log_->info("écran : changement détecté ({} Hz), relecture du VRR", state_.known_hz);
   if (display_changed && !p_.options.bench_out && !p_.options.file.empty() &&
       display_moves_chain(chain_.running.preset,
@@ -136,14 +147,17 @@ void DisplayFollow::follow_window(bool display_changed) {
   }
   vrr_fullscreen_ = fullscreen;
   session_.set_composited(!fullscreen);
-  const std::optional<DisplayFacts> display = window_display(out.window());
+  facts_moved_ = facts_moved_ || display_changed;
+  return true;  // l'écran de la fenêtre se relit sur le fil (take, follow_facts)
+}
+
+void DisplayFollow::follow_facts(std::optional<DisplayFacts> display) {
+  const bool moved = std::exchange(facts_moved_, false);
   if (!display) return;
-  if (display_changed) {
-    // Le nouvel écran : son contrat (P3.40, A11-01), puis son pic, ses soins OLED et son vrai noir tout de
-    // suite, en SDR aussi (A08-07).
-    contract_watch_.set_display(p_.display = display);
-    follow_display(chain_, content_peak_nits(out.window()));
-  }
+  // Le nouvel écran : son contrat (P3.40, A11-01) ; son pic, ses soins OLED et son vrai noir suivent avec le
+  // relevé du pic, demandé en même temps (A08-07).
+  if (moved) contract_watch_.set_display(p_.display = display);
+  const bool fullscreen = fullscreen_of(p_.screen.window());
   p_.ui.set_display_vrr(display->vrr.value_or(false), display->vrr_armed.value_or(false), fullscreen);
   const bool armed = !p_.options.no_vrr && display->vrr.value_or(false) && display->vrr_armed.value_or(false);
   if (armed != state_.vrr_armed) {

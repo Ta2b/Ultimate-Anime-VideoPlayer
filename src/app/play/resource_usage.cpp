@@ -61,9 +61,12 @@ ProcessResources process_resources() {
     ++fds;
   if (!error) out.handles = fds;
 #elif defined(_WIN32)
-  PROCESS_MEMORY_COUNTERS counters{};
-  if (K32GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
-    out.resident_bytes = counters.WorkingSetSize;
+  // C34-14 : la charge privée, pas l'ensemble de travail, que Windows rogne (fenêtre réduite, pression
+  // mémoire) : une fuite lente s'y cachait entre deux relevés de la règle « en hausse de 50 % ».
+  PROCESS_MEMORY_COUNTERS_EX counters{};
+  auto* plain = reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters);  // NOLINT(*-reinterpret-cast)
+  if (K32GetProcessMemoryInfo(GetCurrentProcess(), plain, sizeof(counters)))
+    out.resident_bytes = counters.PrivateUsage;
   DWORD handles = 0;
   if (GetProcessHandleCount(GetCurrentProcess(), &handles)) out.handles = static_cast<int>(handles);
   const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
