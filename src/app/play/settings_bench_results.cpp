@@ -197,7 +197,8 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
         cell(rendered ? std::format("{:.1f} / {:.0f}", trial.fps, trial.target_fps) : std::string("-"));
         cell(rendered ? std::format("{:.1f}", trial.low_fps) : std::string("-"));
         if (ImGui::IsItemHovered() && rendered)
-          ImGui::SetTooltip("%s", i18n::tr_format("{:.1f} % lost", trial.lost_percent).c_str());
+          ImGui::SetTooltip("%s",
+                            french_spaces(i18n::tr_format("{:.1f} % lost", trial.lost_percent)).c_str());
         ImGui::TableNextColumn();
         if (ImGui::SmallButton(i18n::tr("Apply"))) {
           d = candidate_settings(trial.chain, std::move(d), r.models);

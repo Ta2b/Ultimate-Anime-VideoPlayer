@@ -545,3 +545,38 @@ TEST_CASE("calibration : le dossier des essais est propre au lancement, sous les
     CHECK_FALSE(std::filesystem::exists("ajp-calibration"));
   }
 }
+
+TEST_CASE("la fin de la calibration dit la chaîne retenue et ce qui a été abaissé (C25-02)",
+          "[calibration-machine]") {
+  const auto trial = [](ChainCandidate chain, bool holds, double lost, double fps, double target) {
+    return CandidateTrial{.chain = chain,
+                          .holds = holds,
+                          .lost_percent = lost,
+                          .fps = fps,
+                          .low_fps = fps,
+                          .target_fps = target};
+  };
+  const ChainCandidate full{.span = true, .rife = true, .height = 1080};
+  const ChainCandidate spans{.span = true, .rife = false, .height = 1080};
+  const ChainCandidate low{.span = true, .rife = false, .height = 720};
+  MachineCalibration c;
+  // La chaîne la plus lourde tient : rien d'abaissé, mais la mesure est dite.
+  c.chosen = full;
+  c.tried = {trial(full, true, 0.2, 47.5, 48.0)};
+  const std::string whole = calibration_notice(c);
+  CHECK(whole.contains("full quality kept"));
+  CHECK(whole.contains("47.5 of 48"));
+  // Une chaîne abaissée dit de quoi, et la perte d'images du réglage juste au-dessus qui ne tenait pas.
+  c.chosen = low;
+  c.tried = {trial(full, false, 12.5, 30.0, 48.0), trial(spans, false, 8.0, 20.0, 24.0),
+             trial(low, true, 0.0, 24.0, 24.0)};
+  const std::string lowered = calibration_notice(c);
+  CHECK(lowered.contains("working resolution 720p instead of 1080p"));
+  CHECK(lowered.contains("no interpolation"));
+  CHECK(lowered.contains("24.0 of 24"));
+  CHECK(lowered.contains("8.0 %"));  // le plus léger des essais plus lourds, pas le plus lourd
+  CHECK_FALSE(lowered.contains("12.5 %"));
+  // Rien n'a tenu : le plus léger est gardé, et c'est dit.
+  c.tried = {trial(full, false, 12.5, 30.0, 48.0)};
+  CHECK(calibration_notice(c).contains("no setting held the target"));
+}

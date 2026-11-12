@@ -70,6 +70,7 @@
 #include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "app/play/ui.h"
+#include "app/play/updater.h"
 #include "app/play/upscale_stage.h"
 #include "app/play/user_keys.h"
 #include "app/play/visible_error.h"
@@ -133,7 +134,32 @@ std::optional<ChainStage> retreat(Player& p, const ChainEngines& c, const Refusa
                        c.engine != nullptr, p.video.width, p.video.height, library_name(p), p.options.file);
 }
 
+// Les annonces de début de lecture : la reprise là où elle s'était arrêtée, et TensorRT ouvert avec une
+// seule voie de calcul faute de mémoire vidéo libre (C37-04).
+void announce_start(Player& p, std::int64_t start_us, std::int64_t duration_us) {
+  if (p.resumed) {
+    p.ui.controls().notify(i18n::ui_tr_format("Resumed at {}", format_clock(start_us, duration_us)),
+                           host_now_us());
+    p.resumed = false;
+  }
+  if (take_single_lane_notice())
+    p.ui.controls().notify(i18n::ui_tr("TensorRT: one compute lane, not enough free video memory"),
+                           host_now_us());
+}
+
 }  // namespace
+
+// Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
+// fenêtre visible et figée, Windows la marque « Ne répond pas » au bout de cinq secondes. La croix la cache
+// d'abord ; une réouverture montre « Chargement » au lieu d'une image qui ne répond plus.
+void mask_before_teardown(Player& p, bool closing, bool reopening) {
+  if (closing) {
+    SDL_HideWindow(p.screen.window());
+    SDL_SyncWindow(p.screen.window());
+  } else if (reopening) {
+    show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
+  }
+}
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
@@ -343,15 +369,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::vector<Input> actions;  // vidée à chaque tour en s'appliquant (la 0.10.0 la rejouait sans fin)
   session.begin(host_now_us());
   save_reopened(p);
-  if (p.resumed) {
-    p.ui.controls().notify(
-        i18n::ui_tr_format("Resumed at {}", format_clock(start_us, session.view().duration_us)),
-        host_now_us());
-    p.resumed = false;
-  }
-  if (take_single_lane_notice())
-    p.ui.controls().notify(i18n::ui_tr("TensorRT: one compute lane, not enough free video memory"),
-                           host_now_us());
+  announce_start(p, start_us, session.view().duration_us);
   if (const i18n::Translated dropped = stage_notice(c.stage_notes); !dropped.empty())
     p.notice = p.notice.empty() ? dropped : dropped + i18n::Translated::data(" · ") + p.notice;
   if (!p.notice.empty()) {
@@ -545,6 +563,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       }
       chain.reopen = chain.running;
     }
+    // Veille annoncée puis annulée (couvercle rouvert) : sans cela, l'indicateur levé ferait lire un gel de
+    // la boucle, dix minutes plus tard, comme une veille.
+    if (sleep_notice.take_resumed()) sleep_announced = false;
     screen_saver.want(must_stay_awake(true, session.view().paused, session.finished()));
     for (;
          p.next_key < p.options.keys.size() && host_now_us() - p.began_us >= p.options.keys[p.next_key].first;
@@ -605,6 +626,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       if (const auto notice = session.take_notice())
         p.ui.controls().warn(
             i18n::ui_tr_format("Playback goes on after an error: {}", visible_error(*notice)), host_now_us());
+      if (p.update_news && p.update_news->take_unseen())
+        p.ui.controls().warn(i18n::ui_tr_format("Update {} available (Settings > General > Application)",
+                                                load_update_state(p.update_news->file).latest_version),
+                             host_now_us());
       free_missing_seen = shown.missing;
       free_dropped_seen = shown.dropped;
       chain.live.auto_tick(host_now_us(), !session.view().paused);
@@ -751,6 +776,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const CloseWatch teardown(kTeardownLimit, [] { exit_stuck("fermeture de la chaîne bloquée depuis 60 s"); });
   session.end();
   out.flush();
+  mask_before_teardown(p, session.quit_asked() && !reopen, reopen.has_value());
   chain_stats.stop();  // son relevé lit les noyaux du backend, détruits par prepared->reset() (A08-02)
   pipeline->reset();
   // A31-16 : un refus fatal vu d'abord ailleurs (NVDEC au réveil, l'écran) sur un appareil mort : le backend

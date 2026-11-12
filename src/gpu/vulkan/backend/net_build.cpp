@@ -38,7 +38,7 @@ std::expected<void, Refusal> check_interface(const ir::Graph& graph) {
 }  // namespace
 
 std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& model_id, bool fp16,
-                                           const Target& target) {
+                                           const Target& target, bool fold_casts) {
   // La grille des GridSample en float (DistilDRBA exporté avant novembre 2026 : A44-01), avant que le
   // pliage des constantes n'arrondisse sa base à travers son Cast.
   (void)ir::promote_grid_chains(graph);
@@ -61,7 +61,7 @@ std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& 
   }
   // Les noyaux lisent et écrivent chaque tenseur dans son type : les Cast qu'ils feraient
   // d'eux-mêmes disparaissent, ceux qu'un modèle FP16 garde autour de Resize par exemple.
-  if (ir::fold_float_casts(graph) > 0) (void)ir::eliminate_dead_code(graph);
+  if (fold_casts && ir::fold_float_casts(graph) > 0) (void)ir::eliminate_dead_code(graph);
   // Les réductions remontées devant les Concat et les Split qui les précèdent (net_hoist.h).
   if (hoist_downscales(graph) > 0) (void)ir::eliminate_dead_code(graph);
   return check_interface(graph);
@@ -149,7 +149,8 @@ std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, 
                     .dispatches = std::move(program->dispatches),
                     .shaders = {}};
   data.shaders = shader_hashes(data.dispatches);
-  progress(1.0F, "abaissé");
+  // Le dernier vingtième est à la porte de bout en bout, qui rejoue le réseau (vulkan_backend.cpp, C45-02).
+  progress(0.95F, "abaissé");
   return data;
 }
 

@@ -1,5 +1,6 @@
 #include "gpu/vulkan/backend/drba_fused_engine.h"
 
+#include <algorithm>
 #include <charconv>
 #include <format>
 #include <utility>
@@ -162,10 +163,14 @@ std::expected<DrbaFusedEngine::Glue*, Refusal> DrbaFusedEngine::glue_for(std::sp
   const auto same = [](const BufferView& a, const BufferView& b) {
     return a.buffer == b.buffer && a.offset == b.offset && a.size == b.size;
   };
-  for (const auto& glue : glues_) {
+  for (auto found = glues_.begin(); found != glues_.end(); ++found) {
     bool all = true;
-    for (std::size_t i = 0; i < io.size(); ++i) all = all && same(glue->io[i], io[i]);
-    if (all) return glue.get();
+    for (std::size_t i = 0; i < io.size(); ++i) all = all && same((*found)->io[i], io[i]);
+    if (all) {
+      // Le moins récemment utilisé part le premier, pas le plus ancien créé (C45-08).
+      std::rotate(found, found + 1, glues_.end());
+      return glues_.back().get();
+    }
   }
   const int h = height_;
   const int w = width_;

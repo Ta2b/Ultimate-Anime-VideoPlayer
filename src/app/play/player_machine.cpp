@@ -4,7 +4,10 @@
 #include <string>
 #include <utility>
 
+#include "app/play/engine_install.h"
+#include "app/play/engine_switch.h"
 #include "app/play/host_facts.h"
+#include "app/play/player.h"
 #include "app/play/pumped_task.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/resume.h"
@@ -44,6 +47,26 @@ PlaySettings rederived(const PlaySettings& settings, const Machine& machine, con
   log_channel("app")->info("écran changé : chaîne refaite pour lui ({} p, ×{})", out.work_height,
                            out.rife_factor);
   return out;
+}
+
+// La machine à laquelle une calibration se compare (A25-02, A07-05). Le moteur qui jouera SPAN et RIFE : la
+// bibliothèque déjà ouverte si le choix n'a pas bougé depuis (opened_for), sinon le préféré s'il est
+// installé.
+CalibrationHost calibration_host(const GpuFacts& here, SDL_Window* window, const BackendLibrary* library,
+                                 const std::optional<core::EngineId>& opened_for,
+                                 const core::Settings& engines, const EngineCatalog& catalog,
+                                 const PlayerPaths& paths) {
+  const std::optional<core::EngineId> preferred =
+      engines.preferred[static_cast<std::size_t>(core::Usage::Upscale)];
+  const bool tensorrt =
+      library != nullptr && preferred == opened_for
+          ? engine_of_library(library->path()) == core::EngineId::TensorRt
+          : preferred == core::EngineId::TensorRt && tensorrt_backend_present(catalog, paths);
+  return {.gpu = here.name,
+          .display_height = display_height(window),
+          .tensorrt = tensorrt,
+          .driver = here.driver,
+          .display_hz = display_refresh_hz(window)};  // C37-08
 }
 
 }  // namespace ajp::app::play

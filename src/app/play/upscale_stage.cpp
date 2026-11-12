@@ -276,7 +276,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
     }
     if (!*taken) break;
     useful_area_ = ((*taken)->right - (*taken)->left) * ((*taken)->bottom - (*taken)->top);
-    setup_.live->scenes().push(stats_pending_.front().pts_us, **taken);
+    setup_.live->scenes().push(stats_pending_.front().pts_us, **taken, stats_pending_.front().transfer);
     stats_pending_.erase(stats_pending_.begin());
   }
   // Deux relectures attendent encore : la plus ancienne est abandonnée. Son image manque aux scènes ; le
@@ -299,7 +299,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
     stats_pending_.clear();
     return;
   }
-  stats_pending_.push_back({.ticket = *ticket, .pts_us = frame.pts_us});
+  stats_pending_.push_back({.ticket = *ticket, .pts_us = frame.pts_us, .transfer = transfer});
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)

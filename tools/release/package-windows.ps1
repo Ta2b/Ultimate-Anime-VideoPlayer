@@ -61,6 +61,17 @@ Copy-Item "$Root/LICENSE", "$Root/THIRD_PARTY_NOTICES.md" $Stage
 Copy-Item (Join-Path $PSScriptRoot "windows/LISEZMOI.txt") $Stage
 Copy-Item "$Build/src/gpu/vulkan/backend/ajp_backend_vulkan.dll" $Stage
 Copy-Item "$Build/src/gpu/vulkan/backend/*.dll" $Stage -Exclude "ajp_backend_*" -ErrorAction SilentlyContinue
+# Le runtime C++ de Visual Studio (CRT dynamique, triplet x64-windows-release), copié à côté de ajp.exe (déploiement
+# local, permis par Microsoft) : un Windows 11 neuf, sans jeu ni application qui ait posé le redistribuable, ne
+# démarrerait pas ajp.exe (VCRUNTIME140.dll introuvable, 0xc000007b). Ces DLL servent aussi aux modules des moteurs,
+# chargés dans le même processus (C51-05).
+if (-not $env:VCToolsRedistDir) { throw "VCToolsRedistDir absent : lancer depuis une invite x64 Native Tools (runtime C++ à livrer)" }
+$crt = Get-ChildItem (Join-Path $env:VCToolsRedistDir "x64") -Directory -Filter "Microsoft.VC*.CRT" | Select-Object -First 1
+if (-not $crt) { throw "runtime C++ introuvable dans $env:VCToolsRedistDir\x64" }
+Copy-Item "$($crt.FullName)/*.dll" $Stage
+foreach ($name in "vcruntime140.dll", "msvcp140.dll") {
+  if (-not (Test-Path (Join-Path $Stage $name))) { throw "$name absent du runtime C++ copié" }
+}
 # Le chargeur Vulkan vient du pilote (vulkan-1.dll dans System32) : jamais livré.
 Remove-Item "$Stage/vulkan-1.dll" -ErrorAction SilentlyContinue
 

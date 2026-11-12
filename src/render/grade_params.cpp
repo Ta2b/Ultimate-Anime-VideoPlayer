@@ -59,32 +59,14 @@ void apply_anime(const GradeSettings& s, GradeParams& p) {
   p.skin_s2 = t.sat[2];
 }
 
-// Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les
-// noirs, le vrai noir et le peps de la passe anime.
-GradeParams sdr_params(const GradeSettings& s) {
-  GradeParams p;
-  p.sdr_out = 1.0;
-  p.peak = grade_limits::kSdrWhiteNits;
-  p.paper = p.peak;
-  p.shadows = shadows_effect(s.shadows);
-  p.shadow_knee = shadow_knee_for(s.shadows, p.peak);
-  p.spec_gain = 1.0;
-  p.sdr_white = p.peak;
-  p.black_lo = s.true_black ? s.black_lo : 0.0;
-  p.black_hi = s.true_black ? s.black_hi : 0.0;
-  apply_anime(s, p);
-  apply_scene_light(s, p);
-  return p;
-}
-
 }  // namespace
 
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& s) {
   using namespace grade_limits;
   for (const auto& result :
-       {check("paper_white", s.paper_white, kPaperWhite), check("shadows", s.shadows, kShadows),
-        check("highlights_rtx", s.highlights_rtx, kHighlights), check("black_lo", s.black_lo, kBlackNits),
-        check("black_hi", s.black_hi, kBlackNits), check("area_rtx", s.area_rtx, kAreaRtx)}) {
+       {check("shadows", s.shadows, kShadows), check("highlights_rtx", s.highlights_rtx, kHighlights),
+        check("black_lo", s.black_lo, kBlackNits), check("black_hi", s.black_hi, kBlackNits),
+        check("area_rtx", s.area_rtx, kAreaRtx)}) {
     if (!result) return result;
   }
   return {};
@@ -96,29 +78,15 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
     return std::unexpected(ok.error());
 
   const double peak = context.peak_nits;
-  // Le blanc papier reste sous le pic, pour laisser de la marge aux éclats.
-  const double paper = std::floor(std::min(s.paper_white, 0.75 * peak) + 0.5);
-  const bool native_sdr = context.route == core::HdrMode::Native && !context.source_hdr;
-  // Le mode SDR sur une sortie HDR10 : l'image SDR est gradée dans le conteneur PQ comme la route native au
-  // blanc papier (éclats limités), au lieu de rester sans grade (retour d'essai).
-  const bool plain_sdr = context.route == core::HdrMode::Off && !context.source_hdr;
+  // Le blanc papier (203 nits) reste sous le pic, pour laisser de la marge aux éclats.
+  const double paper = std::floor(std::min(grade_limits::kSdrWhiteNits, 0.75 * peak) + 0.5);
+  // La route native (le défaut) ; ou le mode SDR sur une sortie HDR10 : l'image SDR est gradée dans le
+  // conteneur PQ au blanc papier (éclats limités), au lieu de rester sans grade (retour d'essai).
+  const bool native = context.route == core::HdrMode::Native;
   GradeDecision decision;
-  decision.source_white_nits = native_sdr && s.truehdr_look ? grade_limits::kSdrWhiteNits : paper;
-
-  if (!s.grade || !context.enabled) return decision;
-  if (!context.output_pq) {
-    if (context.source_hdr) return decision;
-    decision.mode = GradeMode::Sdr;
-    decision.params = sdr_params(s);
-    decision.source_white_nits = grade_limits::kSdrWhiteNits;
-    return decision;
-  }
-  if (context.source_hdr) {
-    decision.mode = s.grade_native_hdr ? GradeMode::NativeHdr : GradeMode::Neutral;
-  } else if (native_sdr || plain_sdr) {
-    decision.mode = GradeMode::Native;
-  }
-  if (decision.mode == GradeMode::Neutral) return decision;
+  // Une sortie SDR prend le grade PQ ramené au SDR (sdr_tonemap) ; une source HDR n'est pas gradée.
+  if (!s.grade || !context.enabled || !context.output_pq || context.source_hdr) return decision;
+  decision.mode = GradeMode::Native;
 
   GradeParams& p = decision.params;
   p.peak = peak;
@@ -126,12 +94,11 @@ std::expected<GradeDecision, Refusal> decide_grade(const GradeSettings& s, const
   p.shadows = shadows_effect(s.shadows);
   p.shadow_knee = shadow_knee_for(s.shadows, paper);
   p.sdr_white = grade_limits::kSdrWhiteNits;
-  // La route native (le défaut) place le blanc de la source à 203 nits et les aplats à la moitié du pic ; le
-  // mode SDR sur une sortie HDR10 et une source HDR gradée gardent le blanc papier.
-  const bool native = native_sdr && s.truehdr_look;
+  // La route native place le blanc de la source à 203 nits et les aplats à la moitié du pic ; le mode SDR
+  // sur une sortie HDR10 garde le blanc papier.
   double area = 1.0;
   if (native) p.adapt = 1.0;
-  if (decision.mode == GradeMode::Native && !native) {
+  if (!native) {
     // Le SDR s'arrête au blanc papier : un blanc isolé peut atteindre le pic, un grand aplat blanc
     // seulement +50 % à highlights = 1.
     const double room = peak / paper;
@@ -162,7 +129,6 @@ void sdr_tonemap(GradeParams& p) {
   p.look_mixes.fill(0.0);
   p.look_pq = 0.0;
   p.sdr_tm = 1.0;
-  p.sdr_out = 0.0;
   // Le vrai noir reste (A41-07) : ses seuils sont mesurés sur cette sortie, en nits de l'image PQ que la
   // dernière passe ramène au SDR (PlaceboScreen::grade_ramp).
   // Les mêmes bornes que 3-anime.hook : le blanc de la source, la clé de la scène, la marge des éclats.

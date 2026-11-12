@@ -232,6 +232,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scores_start(const Tensor
   pair_tickets_ = ticket;
   slot.ticket = ticket;
   slot.area = static_cast<double>(g.padded_width) * static_cast<double>(g.padded_height);
+  slot.levels = pair_levels_;
   return ticket;
 }
 
@@ -243,8 +244,9 @@ std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ti
   // Elle ne couvre que la mesure, pas ce que le flux a reçu depuis.
   if (auto ok = wait_event(slot.done); !ok) return std::unexpected(std::move(ok.error()));
   slot.ticket = 0;
-  // Σ |ΔY| × (pas 8 bits / 255) : l'écart en codes rapporté à la crête, sur l'aire remplie de RIFE.
-  const double scene = slot.host->total * (219.0 / 255.0) / slot.area;
+  // Σ |ΔY| × (pas 8 bits / 255) sur l'aire remplie de RIFE, avec le pas de la mesure comme pour le pire bloc
+  // (kernels::pair_scene_score, C50-01).
+  const double scene = kernels::pair_scene_score(slot.host->total, slot.levels, slot.area);
   return PairScores{
       .scene_score = scene, .worst_block = slot.host->worst, .identical = slot.host->total == 0.0};
 }

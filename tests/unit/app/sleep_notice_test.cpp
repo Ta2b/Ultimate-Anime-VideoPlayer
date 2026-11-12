@@ -42,4 +42,14 @@ TEST_CASE("B31-01 : une boucle qui ne répond pas ne retient pas la veille", "[s
   CHECK_FALSE(gate.take());  // l'annonce échue ne vaut plus au réveil
 }
 
+TEST_CASE("C29-06 : un réveil dit par le système se prend une fois et réveille la boucle", "[sleep]") {
+  std::atomic<int> wakes{0};
+  SleepGate gate(&count, &wakes);
+  CHECK_FALSE(gate.take_resumed());
+  gate.resumed();  // la veille annulée : couvercle rouvert, un programme l'a empêchée
+  CHECK(wakes.load() == 1);
+  CHECK(gate.take_resumed());
+  CHECK_FALSE(gate.take_resumed());
+}
+
 }  // namespace ajp::app::play

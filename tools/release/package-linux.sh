@@ -100,6 +100,37 @@ check_portable() {  # dossier des binaires vérifiés, [autres dossiers livrés 
   return "$bad"
 }
 
+# Lien direct (paquet TensorRT sans les bibliothèques de NVIDIA) : chaque NEEDED du module et de trtexec doit être
+# livré dans le dossier, tiré par un [[vendor_file]] du lock de NVIDIA, ou être un nom portable du système. Sans
+# ce contrôle, un paquet publié (release trt-* immuable) pouvait ne jamais se charger (C51-06).
+check_direct_needed() {  # dossier lock-vendor
+  local dir="$1" vendor="$2" bad=0 f soname
+  local names=" $(sed -n 's/^name = "\(.*\)"$/\1/p' "$vendor" | xargs -n1 basename | tr '\n' ' ')"
+  for f in "$dir/ajp_backend_tensorrt.so" "$dir/trtexec"; do
+    [ -e "$f" ] || continue
+    while read -r soname; do
+      [ -e "$dir/$soname" ] && continue
+      case "$names" in *" $soname "*) continue ;; esac
+      case "$PORTABLE_SONAMES" in *" $soname "*) continue ;; esac
+      echo "$(basename "$f") demande $soname : ni livré, ni tiré par un [[vendor_file]] de $(basename "$vendor"), ni portable : le moteur ne se chargerait pas chez l'utilisateur" >&2
+      bad=1
+    done < <(readelf -d "$f" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+  done
+  return "$bad"
+}
+
+# La plus récente version de la glibc que demandent les binaires des dossiers donnés (« 2.39 »), pour le dire dans
+# LISEZMOI.txt au lieu d'un chiffre écrit à la main (C51-14) : check_portable ne regarde que les noms de
+# bibliothèques, pas les versions de symboles.
+glibc_needed() {  # dossiers…
+  local top f
+  for top in "$@"; do
+    while read -r f; do
+      objdump -T "$f" 2>/dev/null | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//'
+    done < <(find "$top" -maxdepth 1 -type f -exec sh -c 'file -b "$1" | grep -q ELF' _ {} \; -print)
+  done | sort -Vu | tail -1
+}
+
 # Les dépendances hors système de chaque binaire donné, copiées dans $1 (sans écraser).
 copy_deps() {
   local dest="$1"; shift
@@ -152,7 +183,13 @@ check_portable "$STAGE" "$STAGE/lib"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$STAGE/"
 # De quel commit vient ce paquet : l'étiquette seule ne le garantit pas.
 printf 'version %s\ncommit %s\n' "$TAG" "$COMMIT" > "$STAGE/BUILD_INFO.txt"
-cp "$ROOT/tools/release/linux/LISEZMOI.txt" "$STAGE/"
+# Le LISEZMOI dit la glibc que les binaires demandent vraiment (mesurée) et l'état de l'étiquette (C51-14).
+GLIBC_NEEDED="$(glibc_needed "$STAGE" "$STAGE/lib")"
+[ -n "$GLIBC_NEEDED" ] || { echo "version de glibc des binaires illisible (objdump -T)" >&2; exit 1; }
+PREVIEW=""
+[[ "$TAG" == *-* ]] && PREVIEW=" (préversion)"
+sed -e "s/@GLIBC@/$GLIBC_NEEDED/" -e "s/@PREVIEW@/$PREVIEW/" \
+  "$ROOT/tools/release/linux/LISEZMOI.txt" > "$STAGE/LISEZMOI.txt"
 # L'icône, que le lecteur installe sous ~/.local/share/icons à son inscription (B19-01).
 cp "$ROOT/tools/release/linux/ajp.png" "$STAGE/"
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
@@ -214,6 +251,7 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
     # NVIDIA n'y entrent pas : le lecteur les tire des archives de NVIDIA elles-mêmes, après
     # l'acceptation de sa licence à l'écran (entrées [[vendor_file]], tools/release/vendor-index.py).
     rm -f "$dir"/libnvinfer* "$dir"/libnvonnxparser* "$dir"/libnvrtc* "$dir"/libcu*
+    check_direct_needed "$dir" "$VENDOR" || exit 1
     engine_package tensorrt "$TRT_VERSION" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
     { echo; cat "$VENDOR"; } >> "$LOCK"

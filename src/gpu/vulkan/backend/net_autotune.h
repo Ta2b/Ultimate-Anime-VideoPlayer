@@ -10,6 +10,7 @@
 // entre deux, et la médiane des passes comptées l'emporte.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -67,6 +68,19 @@ float tuning_input(ir::DataType type, std::uint64_t index);
 inline bool low_precision(const KernelChoice& c) {
   return c.variant == "coopmat_acc16" || c.variant == "direct_f16p" || c.variant == "winograd_f16p" ||
          c.variant == "coopmat_fp8";
+}
+
+// Ce que disent les estampilles d'une mesure (C45-06). À l'envers : l'horloge est fausse, la mesure se
+// reprend et, au troisième relevé, passe à l'hôte pour toutes les suivantes. Égales : la résolution de
+// l'horloge du pilote dépasse la durée de la passe (petit nœud), ce qui n'accuse pas l'horloge : on enchaîne
+// plus de dispatchs par passe, et, au plafond, ce choix seul se chronomètre sur l'hôte.
+enum class StampCheck : std::uint8_t { Ok, Backwards, Flat };
+StampCheck check_stamps(std::span<const std::uint64_t> ticks);
+inline constexpr std::uint32_t kMaxStampRepeats = 192;
+// Les dispatchs par passe à essayer quand les estampilles sont égales : le quadruple, au plafond.
+constexpr std::uint32_t longer_repeats(std::uint32_t repeats) {
+  const std::uint32_t grown = std::max<std::uint32_t>(1, repeats) * 4;
+  return grown > kMaxStampRepeats ? kMaxStampRepeats : grown;
 }
 
 struct TunerOptions {
@@ -132,6 +146,8 @@ class Autotuner {
  private:
   std::expected<Measured, Refusal> measure_with(const ir::Graph& graph, std::size_t node,
                                                 const KernelChoice& choice, const TunerOptions& options);
+  // Les options d'une reprise de la mesure si ses estampilles ne valent rien, sinon rien (C45-06).
+  std::optional<TunerOptions> stamp_retry(std::span<const std::uint64_t> ticks, const TunerOptions& options);
   // La sortie de choice concorde-t-elle avec celle d'un noyau direct des candidats ? Vrai pour un
   // noyau direct, faux sans noyau direct parmi eux.
   std::expected<bool, Refusal> agrees_with_direct(const ir::Graph& graph, std::size_t node,
@@ -151,6 +167,8 @@ class Autotuner {
   double period_ns_ = 0.0;  // 0 : pas de requêtes d'horodatage, mesure hôte
   // Relevés d'estampilles qui n'avancent pas : chacun se remesure ; au troisième, la mesure passe à l'hôte.
   std::uint32_t bad_stamps_ = 0;
+  bool host_once_ =
+      false;  // la prochaine mesure se chronomètre sur l'hôte, sans changer l'horloge des autres
   std::vector<std::string> decisions_;
   std::vector<ReducedChoice> reduced_;
   struct Remembered {

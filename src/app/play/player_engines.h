@@ -28,6 +28,7 @@
 #include "app/play/span_auto.h"
 #include "app/play/stage_fallback.h"
 #include "app/play/ui.h"
+#include "app/play/update_thread.h"
 #include "core/clock.h"
 #include "core/settings.h"
 #include "gpu/backend.h"
@@ -90,6 +91,7 @@ struct Player {
   std::filesystem::path resume_path;    // mémoire de lecture (resume.h) ; vide : aucune
   bool resumed = false;                 // la lecture reprend là où elle s'était arrêtée : à annoncer
   i18n::Translated notice;              // à annoncer à la prochaine ouverture (moteur changé)
+  UpdateNews* update_news = nullptr;    // l'avis de version, annoncé quand la vérification répond (C26-09)
   bool quit = false;                    // la dernière ouverture s'est fermée par q ou la fenêtre
   // Réglages d'une réouverture demandée : écrits dans play.toml une fois la chaîne ouverte, pas avant
   // (une chaîne qui ne s'ouvre pas ne doit pas devenir celle du prochain lancement).

@@ -7,8 +7,8 @@ namespace {
 
 // Audio : (clé anglaise, français).
 constexpr std::array kSoundPage{
-    Entry{"Audio delay (ms)", "Délai audio (ms)"},
-    Entry{"Audio delay: {} ms", "Délai audio : {} ms"},
+    Entry{"Audio delay (ms)", "Décalage audio (ms)"},
+    Entry{"Audio delay: {} ms", "Décalage audio : {} ms"},
     Entry{"{:.0f} fps: many TVs and phones refuse or stutter above 60.",
           "{:.0f} i/s : beaucoup de téléviseurs et de téléphones refusent ou saccadent au-delà de 60."},
     Entry{"Changing the device reopens the video at the same spot.",
@@ -26,7 +26,7 @@ constexpr std::array kSoundPage{
         "Positive delays the sound. Kept for this output device and every video, until you change it. "
         "Ctrl+click the slider to type a value (up to ±5,000 ms).",
         "Positif : le son est retardé. Gardé pour cet appareil de sortie et pour toutes les vidéos, jusqu'à "
-        "ce que vous le changiez. Ctrl+clic sur le curseur pour saisir une valeur (jusqu'à ±5 000 ms)."},
+        "ce que vous le changiez. Ctrl+clic sur le curseur pour saisir une valeur (jusqu'à ±5 000 ms)."},
     Entry{"{} (not connected)", "{} (non connecté)"},
     Entry{"Reset to 0", "Remettre à 0"},
     Entry{"Sync", "Synchronisation"},

@@ -31,10 +31,11 @@ inline constexpr std::int64_t kNoticeUs = 4'000'000;       // durée d'un avis �
 inline constexpr std::int64_t kNoticeCharUs = 70'000;      // un long avis dure davantage, 70 ms par caractère
 inline constexpr std::int64_t kNoticeMaxUs = 8'000'000;
 inline constexpr std::size_t kNoticesKept = 6;
-inline constexpr std::int64_t kDragSeekUs = 120'000;      // seeks au plus à ce rythme pendant le glissement
-inline constexpr std::int64_t kUiFrameUs = 16'000;        // interface recomposée au plus à ~60 Hz
-inline constexpr std::int64_t kPositionStepUs = 100'000;  // la position affichée avance par pas de 0,1 s
-inline constexpr float kMaxVolume = 1.5F;                 // 150 % ; cmd::SetVolume accepte jusqu'à 2
+inline constexpr std::int64_t kDragSeekUs = 120'000;  // seeks au plus à ce rythme pendant le glissement
+inline constexpr std::int64_t kUiFrameUs = 16'000;    // interface recomposée au plus à ~60 Hz
+inline constexpr std::int64_t kPositionStepUs =
+    1'000'000;                             // position affichée : par seconde, comme l'horloge
+inline constexpr float kMaxVolume = 1.5F;  // 150 % ; cmd::SetVolume accepte jusqu'à 2
 inline constexpr float kVolumeStep = 0.05F;
 
 // Ce que la session montre, lu par le dessin à chaque image de l'interface.
@@ -54,6 +55,11 @@ std::string format_clock(std::int64_t us, std::int64_t duration_us);
 // Décalage vers le haut des sous-titres du bas (bas du texte à text_bottom) pour qu'ils restent
 // au-dessus d'une barre de hauteur reserved, sur une sortie de hauteur height ; 0 s'ils y sont déjà.
 float subtitle_lift(float text_bottom, float height, float reserved);
+// C24-03 : parmi des rectangles de sous-titres (haut, bas), ceux du paquet collé au bas de l'image : en
+// partant du plus bas, on remonte tant que l'écart avec le rectangle suivant reste d'une ligne (5 % de la
+// hauteur). Un panneau typographié de la moitié basse, séparé du dialogue, n'en fait pas partie et ne monte
+// pas avec lui. Rend un drapeau par rectangle, dans l'ordre donné ; seuls ceux de la moitié basse comptent.
+std::vector<bool> bottom_cluster(std::span<const std::pair<float, float>> spans, float height);
 // La montée demandée à libass (subs::RenderTarget::line_lift) pour une barre de reserved pixels sur une
 // sortie de height pixels : la part de la hauteur que la barre prend, au plus la moitié ; 0 sans barre.
 float line_lift(int reserved, int height);
@@ -90,7 +96,7 @@ class Controls {
   // Clic sur l'image, hors de la barre (P3.77) : le simple clic met en pause (ou reprend) tout de suite ; le
   // second d'un double clic (au seuil du système, compté par SDL) bascule le plein écran et annule la pause
   // du premier. Au-delà, rien.
-  enum class VideoClick : std::uint8_t { TogglePause, FullscreenUndoPause };
+  enum class VideoClick : std::uint8_t { TogglePause, Fullscreen };
   static std::optional<VideoClick> click(int clicks);
 
   // Barre de progression. Clic : la tête suit la souris (press) ; glissement : seeks au point

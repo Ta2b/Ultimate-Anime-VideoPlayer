@@ -1,4 +1,4 @@
-Ultimate Anime VideoPlayer pour Linux x86-64 (préversion)
+Ultimate Anime VideoPlayer pour Linux x86-64@PREVIEW@
 =========================================================
 
 Contenu
@@ -6,12 +6,12 @@ Contenu
   ajp_backend_vulkan.so     le moteur Vulkan, pour tout GPU (AMD, Intel, NVIDIA)
   lib/                      FFmpeg, libplacebo, SDL3, libass et leurs dépendances
   engines.lock              l'index des moteurs facultatifs téléchargeables
-  models/onnx/              SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced)
-  models/rife/              RIFE 4.25 et 4.22 lite, DistilDRBA v2 lite (fp16)
-  models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE, DistilDRBA : MIT)
+  models/onnx/              SPAN AnimeJaNai HD V3.1 (Sharp1 et normal, Performance et Balanced), ArtCNN C4F32 et C4F16
+  models/rife/              RIFE 4.26, 4.25, 4.22 lite et 4.25 lite, DistilDRBA v2 lite et son demi-flot (fp16)
+  models/LICENCES.txt       licences des modèles (AnimeJaNai : CC BY-NC-SA 4.0 ; RIFE, DistilDRBA, ArtCNN : MIT)
 
 Paquets du système (non livrés)
-  Une distribution à glibc 2.38 ou plus : Ubuntu 24.04, Debian 13, Fedora 39, Arch et plus récentes.
+  Une distribution à glibc @GLIBC@ ou plus (Ubuntu 24.04, Debian 13, Fedora et Arch récentes).
   libstdc++, glib, fontconfig et freetype viennent du système, comme pour ses pilotes.
   Ubuntu, Debian : libvulkan1 mesa-vulkan-drivers libva2 libva-drm2 libva-x11-2
                    intel-media-va-driver

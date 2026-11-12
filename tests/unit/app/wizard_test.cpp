@@ -102,3 +102,22 @@ TEST_CASE("Bienvenue : au repos l'écran ne se redessine plus 60 fois par second
   // Un essai (--keys, --snapshot) garde sa précision.
   CHECK(welcome_wait_ms(5'000'000, true) == 16);
 }
+
+TEST_CASE("l'écran Moteur n'est vu que par « Suivant » (C25-01)", "[wizard]") {
+  const WizardFacts facts{.engine_choice = true};
+  Wizard wizard = begin_wizard(facts, 0);
+  CHECK_FALSE(engines_reviewed(wizard, 0));  // rien de vu : aucune licence montrée
+  skip(wizard);                              // Bienvenue passé, l'écran Moteur pas atteint
+  CHECK_FALSE(engines_reviewed(wizard, 0));
+  wizard = begin_wizard(facts, 3);
+  REQUIRE(current(wizard) == WizardStep::Engines);
+  skip(wizard);
+  CHECK_FALSE(engines_reviewed(wizard, 0));  // passé : ni accord ni téléchargement
+  previous(wizard);
+  next(wizard);  // revu, puis « Suivant »
+  CHECK(engines_reviewed(wizard, 0));
+  // Repris en route : l'écran vu dans la séance précédente compte.
+  CHECK(engines_reviewed(begin_wizard(facts, 4), static_cast<int>(WizardStep::Engines)));
+  // Sans écran Moteur, rien à relire.
+  CHECK(engines_reviewed(begin_wizard({.engine_choice = false}, 0), 0));
+}
