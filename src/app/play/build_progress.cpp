@@ -169,7 +169,7 @@ std::vector<PastBuild> past_builds(const std::filesystem::path& cache_dir) {
 bool built_from(const LoadedEngine& engine, const PastBuild& past) {
   const std::string ext = core::to_utf8(engine.onnx.extension());
   if (ext == ".rifefused" || ext == ".drbafused") {
-    // « rife-fusion1-1088x1920-<empreinte>-image.rifefused » : ses morceaux portent le même début.
+    // « rife-fusion3-1088x1920-<empreinte>-image.rifefused » : ses morceaux portent le même début.
     std::string stem = core::to_utf8(engine.onnx.stem());
     for (const std::string_view tail : {"-image", "-motion"}) {
       if (stem.ends_with(tail)) stem.resize(stem.size() - tail.size());

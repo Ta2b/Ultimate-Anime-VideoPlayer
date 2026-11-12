@@ -72,6 +72,12 @@ UpscaleStage::~UpscaleStage() {
   }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
+  if (encodes_kept_ + encodes_followed_ + encodes_after_gap_ + encodes_cold_ > 0)
+    log_channel("gpu")->info(
+        "RIFE : encodage repris sur {} passes, B seule sur {}, A et B sur {} après une paire sans passe et "
+        "{} "
+        "à froid",
+        encodes_kept_, encodes_followed_, encodes_after_gap_, encodes_cold_);
   if (drba()) {
     log_channel("gpu")->info(
         "DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe) ; {} instants sans passe "
@@ -304,7 +310,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   }
   gpu::KernelOps& ops = *setup_.backend->kernels();
   use_lane(gpu::Lane::Measure);  // ingestion, mesures de la paire, suivante en avance
-  current_ ^= 1U;
+  next_source();
   frame_id_ = frame.id;
   rife_in_pair_ = false;  // les images de rife_in() sont celles de la paire d'avant
   gpu::IngestSpec spec;

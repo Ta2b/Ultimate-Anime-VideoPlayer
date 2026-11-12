@@ -217,6 +217,7 @@ void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
   // dans before comme l'image d'avant la paire.
   std::swap(rgb_[current_], drba_.after);
   if (small_[current_]) std::swap(small_[current_], drba_.small_after);
+  source_serial_[current_] = ++serials_;
   drba_.bridge = true;
   drba_.bridge_left_pts_us = frame.pts_us;
 }

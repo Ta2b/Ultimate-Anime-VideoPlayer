@@ -404,7 +404,7 @@ TEST_CASE("Un graphe à la structure de RIFE se reconnaît et se coupe", "[prepa
   CHECK(summary->inputs[0].dims == std::vector<std::int64_t>{1, 28, 32, 64});
   const auto encode = scan_onnx((*pieces)[0].model);
   REQUIRE(encode);
-  CHECK(encode->inputs[0].dims == std::vector<std::int64_t>{2, 3, 128, 256});
+  CHECK(encode->inputs[0].dims == std::vector<std::int64_t>{1, 3, 128, 256});
   // Une taille que les noyaux ne prennent pas : refusée avant toute coupe.
   CHECK(split_rife(model, *split, 100, 256).error().code == RefusalCode::ShapeInvalid);
 }
@@ -626,7 +626,7 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
   const auto manifest = derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image);
   REQUIRE(manifest);
   CHECK(manifest->extension() == ".rifefused");
-  CHECK(manifest->filename().string().find("fusion2-128x256") != std::string::npos);
+  CHECK(manifest->filename().string().find("fusion3-128x256") != std::string::npos);
   // Lu puis refermé : sous Windows, un fichier resté ouvert ne se remplace pas (la dérivation réécrit le
   // manifeste).
   std::string content;
@@ -778,8 +778,8 @@ TEST_CASE("Les morceaux RIFE ne changent pas sans que leur version monte (A04-07
   }
   const std::string fingerprint = core::sha256_hex(hashes);
   INFO("empreinte des morceaux : " << fingerprint);
-  CHECK(std::string(kRifeFusedDerivation) == "fusion2");
-  CHECK(fingerprint == "365dad8330605751fc2366423b3b3f66b88bf2a5b6485ef5101ff107b3a8cef9");
+  CHECK(std::string(kRifeFusedDerivation) == "fusion3");
+  CHECK(fingerprint == "e48e872256365e95505145e9ab4bfffdff35d120054f1bcf31953c672ef2329e");
   std::error_code ignored;
   fs::remove_all(dir, ignored);
 }

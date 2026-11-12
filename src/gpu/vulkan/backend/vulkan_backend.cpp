@@ -446,7 +446,10 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
                                                     std::span<Tensor> outputs) {
   if (runtime_) return enqueue_runtime(engine, inputs, outputs);
   if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine)) {
-    if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+    if (!queue_) {
+      rife->drop_hint();
+      return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+    }
     return rife->enqueue(*queue_, inputs, outputs);
   }
   if (auto* drba = dynamic_cast<DrbaFusedEngine*>(&engine)) {
