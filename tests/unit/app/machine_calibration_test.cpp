@@ -32,11 +32,11 @@ TEST_CASE("les paliers montent jusqu'à la 1080p de la séquence, sur tout écra
 
 TEST_CASE("les modèles de la calibration sont ceux du niveau, jamais en dessous (A49-01, A38-02)",
           "[calibration-machine]") {
-  for (const Tier tier : {Tier::Fast, Tier::Ultra}) {
+  for (const Tier tier : {Tier::Quality, Tier::Ultra}) {
     CHECK(calibration_models(tier).span.find("Balanced_SPANF3_b8f64") != std::string::npos);
     CHECK(calibration_models(tier).rife == "rife_v4.26.onnx");
   }
-  for (const Tier tier : {Tier::Economy, Tier::Light, Tier::Normal}) {
+  for (const Tier tier : {Tier::Economy, Tier::Fast, Tier::Normal}) {
     CHECK(calibration_models(tier).span.empty());  // le SPAN par défaut, Performance Sharp
     CHECK(calibration_models(tier).rife == "rife_v4.22_lite.onnx");
   }
@@ -64,7 +64,7 @@ TEST_CASE("la calibration part du palier du niveau estimé, monte ou descend (B0
           "[calibration-machine]") {
   using C = ChainCandidate;
   CHECK(calibration_start_height(Tier::Ultra) == 1080);
-  CHECK(calibration_start_height(Tier::Fast) == 1080);
+  CHECK(calibration_start_height(Tier::Quality) == 1080);
   CHECK(calibration_start_height(Tier::Normal) == 720);
   // Une 4090 qui tient tout : SPAN seul 1080, puis SPAN + RIFE 1080 ; deux essais au lieu de six.
   auto tried = search([](const ChainCandidate&) { return true; }, 1080);
@@ -130,7 +130,7 @@ TEST_CASE("les réglages d'une chaîne : Personnalisé, Hermite, modèles du niv
   CHECK(s.span_precision == PrecisionTier::Balanced);
   // Niveau Qualité : le b8f64 et RIFE 4.25, toujours en FP16 (A49-03 : plus de FP8 posé par la calibration).
   const PlaySettings fine =
-      candidate_settings({.span = true, .rife = true, .height = 1080}, base, calibration_models(Tier::Fast));
+      candidate_settings({.span = true, .rife = true, .height = 1080}, base, calibration_models(Tier::Quality));
   CHECK(fine.model == kQualitySpanModel);
   CHECK(fine.rife_model == "rife_v4.26.onnx");
   CHECK(fine.span_precision == PrecisionTier::Balanced);
@@ -149,13 +149,13 @@ TEST_CASE("un essai joue la chaîne que l'Auto calibré écrira, pas les réglag
   base.motion_precision = PrecisionTier::Performance;
   base.restore_lines = false;  // A07-06 : sans lui un essai SPAN sous 1080p jouerait la source sans SPAN
   const ChainCandidate chain{.span = true, .rife = true, .height = 720};
-  const CalibrationModels models = calibration_models(Tier::Fast);
+  const CalibrationModels models = calibration_models(Tier::Quality);
   const PlaySettings trial = candidate_settings(chain, base, models);
   CHECK(span_runs(trial, 1080));
   PlaySettings automatic;
   automatic.preset = Preset::Auto;
   const PlaySettings played = apply_preset(automatic,
-                                           Machine{.tier = Tier::Fast,
+                                           Machine{.tier = Tier::Quality,
                                                    .display_height = 1440,
                                                    .display_hz = 60.0,
                                                    .calibrated = CalibratedChain{.span = true,
@@ -194,7 +194,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
                        .gpu = "RTX 4070 Ti",
                        .date = "2026-11-01",
                        .display_height = 1440,
-                       .models = calibration_models(Tier::Fast),
+                       .models = calibration_models(Tier::Quality),
                        .engine = "tensorrt",
                        .driver = "581"};
   const auto read = parse_calibration(format_calibration(c));
@@ -264,7 +264,7 @@ TEST_CASE("une calibration par hauteur d'écran, l'ancien fichier unique relu (A
                           .tried = {{.chain = {.span = true, .rife = true, .height = 720}, .holds = true}},
                           .gpu = "RTX 4070 Ti",
                           .display_height = 1440,
-                          .models = calibration_models(Tier::Fast),
+                          .models = calibration_models(Tier::Quality),
                           .engine = "tensorrt"};
   const CalibrationHost at_desk{.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true};
   const CalibrationHost at_tv{.gpu = "RTX 4070 Ti", .display_height = 2160, .tensorrt = true};

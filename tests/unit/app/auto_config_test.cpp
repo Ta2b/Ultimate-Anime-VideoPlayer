@@ -42,21 +42,21 @@ TEST_CASE("Auto suit la tranche de la machine", "[auto_config]") {
   CHECK(ultra.motion_engine == MotionEngine::Rife);  // DistilDRBA attend sa porte ; GMFSS Union est manuel
   CHECK(ultra.upscale);
   CHECK(ultra.rife_auto);
-  const PlaySettings fast = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
+  const PlaySettings fast = applied(Preset::Auto, Tier::Quality, 1440, 144.0);
   CHECK(fast.motion_engine == MotionEngine::Rife);
   CHECK(fast.rife_model == "rife_v4.26.onnx");  // Qualité et Ultra : RIFE 4.26
   CHECK(fast.work_height == 1080);              // et la source 1080p gardée (A49-02)
   const PlaySettings normal = applied(Preset::Auto, Tier::Normal, 1440, 144.0);
   CHECK(normal.motion_engine == MotionEngine::Rife);
   CHECK(normal.rife_model == "rife_v4.22_lite.onnx");
-  const PlaySettings light = applied(Preset::Auto, Tier::Light, 1080, 60.0);
+  const PlaySettings light = applied(Preset::Auto, Tier::Fast, 1080, 60.0);
   CHECK(light.rife_model == "rife_v4.22_lite.onnx");
 }
 
 TEST_CASE("la résolution de travail suit l'écran et la tranche", "[auto_config]") {
   CHECK(applied(Preset::Auto, Tier::Normal, 1080, 60.0).work_height == 540);  // 540p -> 1080p
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 60.0).work_height == 720);  // 720p -> 1440p
-  CHECK(applied(Preset::Auto, Tier::Light, 2160, 60.0).work_height == 540);   // la carte légère reste à 540p
+  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0).work_height == 540);   // la carte légère reste à 540p
   CHECK(applied(Preset::Auto, Tier::Normal, 0, 0.0).work_height == 540);      // écran inconnu : 1080p
   // Jamais plus que la source.
   const core::SourceInfo sd{.width = 640, .height = 480, .fps = 23.976};
@@ -84,7 +84,7 @@ TEST_CASE("la résolution de travail suit l'image dans l'écran, arrondie vers l
 
 TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SPAN b8f64 (A49-01, A49-02)",
           "[auto_config]") {
-  for (const Tier tier : {Tier::Fast, Tier::Ultra}) {
+  for (const Tier tier : {Tier::Quality, Tier::Ultra}) {
     for (const int display : {1080, 1440, 2160, 0}) {
       const PlaySettings s = applied(Preset::Auto, tier, display, 144.0);
       CHECK(s.work_height == 1080);
@@ -95,19 +95,19 @@ TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SP
     }
   }
   // Les préréglages nommés suivent la même chaîne que le niveau.
-  CHECK(applied(Preset::Quality, Tier::Light, 1080, 60.0).work_height == 1080);
-  CHECK(applied(Preset::Ultra, Tier::Light, 1080, 60.0).model == kQualitySpanModel);
+  CHECK(applied(Preset::Quality, Tier::Fast, 1080, 60.0).work_height == 1080);
+  CHECK(applied(Preset::Ultra, Tier::Fast, 1080, 60.0).model == kQualitySpanModel);
   // Une source 4K est ramenée à 1080p (SPAN rend la 4K) ; une 720p reste en 720p.
   const core::SourceInfo uhd{.width = 3840, .height = 2160, .fps = 23.976};
   CHECK(applied(Preset::Auto, Tier::Ultra, 2160, 60.0, uhd).work_height == 1080);
   const core::SourceInfo hd{.width = 1280, .height = 720, .fps = 23.976};
-  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 60.0, hd).work_height == 720);
+  CHECK(applied(Preset::Auto, Tier::Quality, 2160, 60.0, hd).work_height == 720);
   // La priorité Fluidité est le seul cas où Qualité réduit la source, et l'utilisateur l'a choisie.
-  CHECK(applied(Preset::Auto, Tier::Fast, 1440, 144.0, k1080p24, Priority::Fluidity).work_height == 720);
-  CHECK(applied(Preset::Auto, Tier::Fast, 1440, 144.0, k1080p24, Priority::Image).work_height == 1080);
+  CHECK(applied(Preset::Auto, Tier::Quality, 1440, 144.0, k1080p24, Priority::Fluidity).work_height == 720);
+  CHECK(applied(Preset::Auto, Tier::Quality, 1440, 144.0, k1080p24, Priority::Image).work_height == 1080);
   // Léger et Normal gardent le SPAN par défaut (b5f48) : la calibration, qui mesure, peut monter.
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).model.empty());
-  CHECK(applied(Preset::Auto, Tier::Light, 1080, 60.0).model.empty());
+  CHECK(applied(Preset::Auto, Tier::Fast, 1080, 60.0).model.empty());
 }
 
 TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03, A38-02, A07-11)",
@@ -173,16 +173,16 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
 }
 
 TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpolée", "[auto_config]") {
-  const PlaySettings s = applied(Preset::Auto, Tier::Fast, 2160, 165.0);  // 165 / 23,976 = 6, plafond 4
+  const PlaySettings s = applied(Preset::Auto, Tier::Quality, 2160, 165.0);  // 165 / 23,976 = 6, plafond 4
   CHECK(s.rife_auto);
   CHECK(s.rife_factor == 4);
   const core::SourceInfo fps60{.width = 1920, .height = 1080, .fps = 60.0};
-  const PlaySettings rate = applied(Preset::Auto, Tier::Fast, 2160, 60.0, fps60);
+  const PlaySettings rate = applied(Preset::Auto, Tier::Quality, 2160, 60.0, fps60);
   CHECK(rate.rife_factor == 0);
   CHECK_FALSE(rate.rife_auto);
   // P3.14 : 59,94 Hz sur une source à 30 i/s fait ×2 (59,94 / 30 = 1,998, arrondi avec tolérance).
   const core::SourceInfo fps30{.width = 1920, .height = 1080, .fps = 30.0};
-  CHECK(applied(Preset::Auto, Tier::Fast, 2160, 59.94, fps30).rife_factor == 2);
+  CHECK(applied(Preset::Auto, Tier::Quality, 2160, 59.94, fps30).rife_factor == 2);
 }
 
 TEST_CASE("Économe ne réduit ni n'agrandit ni n'interpole", "[auto_config]") {
@@ -195,8 +195,8 @@ TEST_CASE("Économe ne réduit ni n'agrandit ni n'interpole", "[auto_config]") {
 }
 
 TEST_CASE("un préréglage fixe la tranche quelle que soit la machine", "[auto_config]") {
-  CHECK(*chain_level(Preset::Fast, Tier::Ultra) == Tier::Light);
-  CHECK(*chain_level(Preset::Quality, Tier::Economy) == Tier::Fast);
+  CHECK(*chain_level(Preset::Fast, Tier::Ultra) == Tier::Fast);
+  CHECK(*chain_level(Preset::Quality, Tier::Economy) == Tier::Quality);
   CHECK(*chain_level(Preset::Auto, Tier::Normal) == Tier::Normal);
   CHECK_FALSE(chain_level(Preset::Custom, Tier::Normal));
 }
@@ -206,7 +206,7 @@ TEST_CASE("l'application est idempotente et ne touche pas au reste", "[auto_conf
   base.volume = 0.3F;
   base.true_hdr_peak = 800;
   base.language_presets = {{"jpn", "eng"}};
-  const Machine machine{Tier::Fast, 1440, 144.0};
+  const Machine machine{Tier::Quality, 1440, 144.0};
   const PlaySettings once = apply_preset(base, machine, k1080p24);
   CHECK(apply_preset(once, machine, k1080p24) == once);
   CHECK(once.volume == 0.3F);
@@ -242,7 +242,7 @@ TEST_CASE("play.toml garde le préréglage et la priorité", "[auto_config][sett
 
 TEST_CASE("l'interpolation est en Auto par défaut et après le benchmark", "[auto_config]") {
   CHECK(PlaySettings{}.rife_auto);
-  const PlaySettings measured = applied(Preset::Auto, Tier::Fast, 1440, 144.0);
+  const PlaySettings measured = applied(Preset::Auto, Tier::Quality, 1440, 144.0);
   CHECK(measured.rife_auto);
   CHECK_FALSE(applied(Preset::Auto, Tier::Economy, 1080, 60.0).rife_auto);  // Économe : rien à interpoler
 }
@@ -289,7 +289,7 @@ TEST_CASE("auto : ce que l'exploration a trouvé relève la chaîne du niveau, s
 
 TEST_CASE("DistilDRBA attend sa porte de qualité", "[auto_config]") {
   static_assert(!kDistilDrbaInAuto);
-  for (const Tier tier : {Tier::Light, Tier::Normal, Tier::Fast, Tier::Ultra})
+  for (const Tier tier : {Tier::Fast, Tier::Normal, Tier::Quality, Tier::Ultra})
     CHECK(applied(Preset::Auto, tier, 1440, 144.0).motion_engine == MotionEngine::Rife);
 }
 

@@ -74,7 +74,7 @@ constexpr std::array<int, kTierCount> kWorkOffset{0, -1, 0, 0, 0};
 // audits) : réduire une source 1080p à la moitié de l'écran jette plus de la moitié de ses pixels avant le
 // réseau, sans mesure qui le justifie. Sur un écran plus petit que la sortie de SPAN, libplacebo réduit.
 constexpr bool keeps_source(Tier level) {
-  return level == Tier::Fast || level == Tier::Ultra;
+  return level == Tier::Quality || level == Tier::Ultra;
 }
 // Le plus grand multiplicateur ×k du mode auto.
 constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
@@ -105,7 +105,7 @@ void set_span(PlaySettings& out, Tier level, int work) {
   out.work_height = economy && !economy_upscales ? 0 : work;
   out.model = std::string(level_span_model(level));
   if (kLightSpanInAuto && economy) out.model = std::string(kEconomySpanModel);
-  if (kLightSpanInAuto && level == Tier::Light) out.model = std::string(kLightTierSpanModel);
+  if (kLightSpanInAuto && level == Tier::Fast) out.model = std::string(kLightTierSpanModel);
   if (kAnime4kInAuto && economy) out.model = std::string(kAnime4kFast);
 }
 
@@ -201,11 +201,11 @@ std::optional<Tier> chain_level(Preset preset, Tier detected) {
     case Preset::Economy:
       return Tier::Economy;
     case Preset::Fast:
-      return Tier::Light;
+      return Tier::Fast;
     case Preset::Normal:
       return Tier::Normal;
     case Preset::Quality:
-      return Tier::Fast;
+      return Tier::Quality;
     case Preset::Ultra:
       return Tier::Ultra;
     case Preset::Custom:
@@ -219,7 +219,7 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   std::optional<Tier> level = chain_level(settings.preset, machine.tier);
   if (!level) return settings;
   // Une carte estimée Économe que la calibration a vue tenir SPAN suit la mesure, pas l'estimation.
-  if (settings.preset == Preset::Auto && machine.calibrated && *level == Tier::Economy) level = Tier::Light;
+  if (settings.preset == Preset::Auto && machine.calibrated && *level == Tier::Economy) level = Tier::Fast;
   const auto at = static_cast<std::size_t>(*level);
   PlaySettings out = settings;
   const double display_hz = machine.display_hz > 0.0 ? machine.display_hz : 60.0;
@@ -260,11 +260,11 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
       out.rife_factor = 0;
       out.rife_auto = false;
       break;
-    case Tier::Light:
+    case Tier::Fast:
     case Tier::Normal:
       use_rife(out, settings, machine, level_rife_model(*level));
       break;
-    case Tier::Fast:
+    case Tier::Quality:
     case Tier::Ultra:
       // DistilDRBA y rentre quand sa porte de qualité est passée (kDistilDrbaInAuto).
       if (kDistilDrbaInAuto) {
