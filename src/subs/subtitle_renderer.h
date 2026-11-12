@@ -97,6 +97,8 @@ class SubtitleRenderer {
 
   // Appels à libass depuis la création (P3.39 : un écran sans événement n'en coûte aucun).
   std::uint64_t libass_calls() const { return libass_calls_; }
+  // B17-02 : le facteur de réduction du rendu en cours (1 : pleine taille). Le worker le journalise.
+  int shrink() const { return shrink_; }
 
  private:
   struct Free {

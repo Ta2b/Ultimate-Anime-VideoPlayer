@@ -154,3 +154,11 @@ TEST_CASE("to_utf8 : une demi-paire UTF-16 donne U+FFFD (A17-04)", "[encoding]")
   const std::string cut("\xFF\xFE\x41\x00\x3D\xD8", 6);  // 'A', puis une tête de paire coupée
   CHECK(to_utf8(cut) == "A\xEF\xBF\xBD");
 }
+
+// B17-05 : le nom du fichier nomme une langue qui n'a pas son Windows-125x.
+TEST_CASE("to_utf8 : les pages d'une seule langue, prises sur l'indice du nom", "[encoding]") {
+  CHECK(to_utf8("za\xBF\xF3\xB3\xE6", "pl") == "za\xC5\xBC\xC3\xB3\xC5\x82\xC4\x87");  // zażółć, CP1250
+  CHECK(to_utf8("\xDD\xFE\xFC\xF0\xFD\xFE", "tr") ==
+        "\xC4\xB0\xC5\x9F\xC3\xBC\xC4\x9F\xC4\xB1\xC5\x9F");  // CP1254
+  CHECK(to_utf8("\xE1\xE2", "el") == "\xCE\xB1\xCE\xB2");     // αβ, CP1253
+}

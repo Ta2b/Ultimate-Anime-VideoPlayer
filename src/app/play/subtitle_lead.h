@@ -4,7 +4,10 @@
 // commencée avant lui n'arrivait jamais (jusqu'à 10 s perdues avec des points clés espacés), et un délai
 // négatif lisait des instants que la source n'avait pas encore atteints. SubtitleLead ouvre le fichier une
 // seconde fois, n'y garde que la piste choisie et l'envoie à subs :
-// - à chaque seek, de kSubtitlePrerollUs avant la cible jusqu'à kSubtitleLeadUs après elle (plus |délai|) ;
+// - à chaque seek, de kSubtitlePrerollUs avant la cible jusqu'à kSubtitleLeadUs après elle (plus |délai|),
+//   puis, en second, de kSubtitleBackfillUs avant la cible jusqu'au début de cette première plage : les
+//   répliques commencées bien avant la cible et encore à l'écran (générique défilant, pancarte d'une scène,
+//   B17-07). Une plage déjà lue n'est pas relue ;
 // - tant que le délai est négatif, jusqu'à |délai| + kSubtitleLeadUs après l'instant demandé.
 // Les paquets que la source livre aussi sont des doublons que la piste écarte (SubtitleTrack::add_packet).
 // Un fichier externe n'en a pas besoin : il est lu en entier.
@@ -22,8 +25,9 @@
 
 namespace ajp::app::play {
 
-inline constexpr std::int64_t kSubtitlePrerollUs = 10'000'000;  // relu avant la cible d'un seek
-inline constexpr std::int64_t kSubtitleLeadUs = 1'000'000;      // lu au-delà de l'instant voulu
+inline constexpr std::int64_t kSubtitlePrerollUs = 10'000'000;    // relu avant la cible d'un seek
+inline constexpr std::int64_t kSubtitleBackfillUs = 120'000'000;  // relu en second, avant la préroulée
+inline constexpr std::int64_t kSubtitleLeadUs = 1'000'000;        // lu au-delà de l'instant voulu
 inline constexpr std::chrono::milliseconds kSubtitleStopLimit{2000};
 
 struct SubtitleLeadConfig {

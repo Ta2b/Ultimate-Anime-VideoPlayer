@@ -139,6 +139,16 @@ constexpr Legacy kBig5{950, "CP950", "BIG5"};
 constexpr Legacy kCp1251{1251, "CP1251"};
 constexpr Legacy kEucKr{949, "CP949"};  // CP949 contient l'EUC-KR
 constexpr Legacy kEucJp{20932, "EUC-JP"};
+// B17-05 : les pages d'une seule langue, jamais devinées (sans indice le repli reste Windows-1252), prises
+// quand le nom du fichier nomme la langue : « ep01.pl.srt », « ep01.tr.srt ».
+constexpr Legacy kCp1250{1250, "CP1250"};  // europe centrale : polonais, tchèque, hongrois, roumain…
+constexpr Legacy kCp1253{1253, "CP1253"};  // grec
+constexpr Legacy kCp1254{1254, "CP1254"};  // turc
+constexpr Legacy kCp1255{1255, "CP1255"};  // hébreu
+constexpr Legacy kCp1256{1256, "CP1256"};  // arabe, persan
+constexpr Legacy kCp1257{1257, "CP1257"};  // baltes
+constexpr Legacy kCp1258{1258, "CP1258"};  // vietnamien
+constexpr Legacy kCp874{874, "CP874"};     // thaï
 
 bool same(Legacy a, Legacy b) {
   return a.code_page == b.code_page;
@@ -210,6 +220,16 @@ std::optional<Hint> hint_word(std::string_view word) {
   if (any({"ko", "kor", "kr", "euc-kr", "cp949", "uhc"})) return Hint{kEucKr, {}};
   if (any({"ru", "rus", "uk", "ukr", "bg", "bul", "sr", "be", "cp1251", "windows-1251"}))
     return Hint{kCp1251, {}};
+  if (any({"pl", "pol", "cs", "ces", "cze", "hu", "hun", "ro", "ron", "rum", "sk", "slk", "hr", "hrv", "sl",
+           "slv", "cp1250", "windows-1250"}))
+    return Hint{kCp1250, {}};
+  if (any({"el", "ell", "gre", "cp1253", "windows-1253"})) return Hint{kCp1253, {}};
+  if (any({"tr", "tur", "cp1254", "windows-1254"})) return Hint{kCp1254, {}};
+  if (any({"he", "heb", "iw", "cp1255", "windows-1255"})) return Hint{kCp1255, {}};
+  if (any({"ar", "ara", "fa", "fas", "per", "cp1256", "windows-1256"})) return Hint{kCp1256, {}};
+  if (any({"et", "est", "lv", "lav", "lt", "lit", "cp1257", "windows-1257"})) return Hint{kCp1257, {}};
+  if (any({"vi", "vie", "cp1258", "windows-1258"})) return Hint{kCp1258, {}};
+  if (any({"th", "tha", "cp874", "windows-874"})) return Hint{kCp874, {}};
   return std::nullopt;
 }
 
