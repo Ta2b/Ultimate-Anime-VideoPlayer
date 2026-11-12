@@ -29,9 +29,9 @@ TEST_CASE("Voies : la mesure d'abord, puis l'agrandissement, puis l'interpolatio
   CHECK(lane_priority(Lane::Measure, 0, -5) == -5);
   CHECK(lane_priority(Lane::Upscale, 0, -5) == -4);
   CHECK(lane_priority(Lane::Interpolate, 0, -5) == -3);
-  // Une plage de deux niveaux : l'agrandissement et l'interpolation partagent le plus bas.
+  // Une plage de deux niveaux : la mesure et l'agrandissement partagent le haut, l'interpolation en dessous.
   CHECK(lane_priority(Lane::Measure, 0, -1) == -1);
-  CHECK(lane_priority(Lane::Upscale, 0, -1) == 0);
+  CHECK(lane_priority(Lane::Upscale, 0, -1) == -1);
   CHECK(lane_priority(Lane::Interpolate, 0, -1) == 0);
   // Sans plage : tout à la même priorité.
   CHECK(lane_priority(Lane::Measure, 0, 0) == 0);

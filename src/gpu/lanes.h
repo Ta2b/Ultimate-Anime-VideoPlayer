@@ -43,11 +43,14 @@ constexpr int lane_rank(Lane lane) {
 }
 
 // La priorité de file de la voie dans la plage d'un appareil, least (la plus basse) et greatest (la plus
-// haute), comme CUDA les donne : un nombre plus petit est plus prioritaire. Une plage trop courte serre
-// les rangs vers le bas.
+// haute), comme CUDA les donne : un nombre plus petit est plus prioritaire. Sur deux niveaux seulement, la
+// mesure et l'agrandissement partagent le haut (l'agrandissement reste au-dessus de l'interpolation, comme
+// avant les priorités par voie) ; une plage plus courte encore serre les rangs vers le bas.
 constexpr int lane_priority(Lane lane, int least, int greatest) {
   const int step = greatest <= least ? 1 : -1;
-  const int priority = greatest + step * lane_rank(lane);
+  const int levels = (least - greatest) * step + 1;
+  const int rank = levels == 2 ? (lane == Lane::Interpolate ? 1 : 0) : lane_rank(lane);
+  const int priority = greatest + step * rank;
   return greatest <= least ? std::min(priority, least) : std::max(priority, least);
 }
 
