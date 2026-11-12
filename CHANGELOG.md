@@ -6,7 +6,7 @@ reprend telles quelles. La version vient de `project()` dans `CMakeLists.txt` ; 
 
 | Version | Notes |
 |---|---|
-| 0.11.0 | [v0.11.0-rc.8](tools/release/notes/v0.11.0-rc.8.md) : second audit, Anime4K et ArtCNN C4F16, RIFE fusionné plus rapide ; [v0.11.0-rc.7](tools/release/notes/v0.11.0-rc.7.md) : corrections de l'audit (qualité, interpolation, écran, TensorRT), préversion sans macOS |
+| 0.11.0 | [v0.11.0-rc.8](tools/release/notes/v0.11.0-rc.8.md) : second audit, Anime4K et ArtCNN C4F16, RIFE fusionné plus rapide, niveaux d'interpolation, options RIFE et peau des visages à l'essai ; [v0.11.0-rc.7](tools/release/notes/v0.11.0-rc.7.md) : corrections de l'audit (qualité, interpolation, écran, TensorRT), préversion sans macOS |
 | 0.10.3 | [v0.10.3](tools/release/notes/v0.10.3.md) : corrections Windows et Vulkan (ArtCNN, netteté) |
 | 0.10.2 | [v0.10.2](tools/release/notes/v0.10.2.md) : la 0.10.1 reconstruite (modèle ArtCNN livré, macOS) |
 | 0.10.1 | [v0.10.1](tools/release/notes/v0.10.1.md) : commandes rejouées en boucle, trtexec de Linux ; ne s'est pas construite |
