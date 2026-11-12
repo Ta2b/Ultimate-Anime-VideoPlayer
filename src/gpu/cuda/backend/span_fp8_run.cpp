@@ -3,11 +3,14 @@
 // SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
+//                    [--padded | --per-tap]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
 // dérivation native (span_fp8_ref.h) à la place des noyaux FP8, et les 25 maxima relevés sur l'image, un par
-// ligne, sur la sortie standard (pour les comparer à ONNX Runtime). À lancer sous le verrou GPU
+// ligne, sur la sortie standard (pour les comparer à ONNX Runtime). --padded, --per-tap : pour un modèle à 48
+// canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
+// le calcul natif du lecteur. À lancer sous le verrou GPU
 // (~/ajp-tools/bin/ajp-gpu).
 #include <algorithm>
 #include <charconv>
@@ -49,6 +52,31 @@ bool number(const char* text, int& value) {
   return std::from_chars(view.data(), view.data() + view.size(), value).ec == std::errc{};
 }
 
+struct Options {
+  int bench = 0;
+  bool reference = false;
+  ajp::gpu::cuda::SpanFp8Width width48 = ajp::gpu::cuda::SpanFp8Width::Native;
+};
+
+// Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
+std::string read_options(int argc, char* const* argv, Options& options) {
+  for (int i = 6; i < argc; ++i) {
+    const std::string_view option(argv[i]);
+    if (option == "--reference") {
+      options.reference = true;
+    } else if (option == "--padded") {
+      options.width48 = ajp::gpu::cuda::SpanFp8Width::Padded;
+    } else if (option == "--per-tap") {
+      options.width48 = ajp::gpu::cuda::SpanFp8Width::PerTap;
+    } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
+      ++i;
+    } else {
+      return std::string(option);
+    }
+  }
+  return {};
+}
+
 #define CU(call)                                                                                     \
   do {                                                                                               \
     const cudaError_t error_ = (call);                                                               \
@@ -61,19 +89,13 @@ bool number(const char* text, int& value) {
 int main(int argc, char* const* argv) {
   if (argc < 6)
     return fail("usage : ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N]");
-  int height = 0, width = 0, bench = 0;
-  bool reference_mode = false;
+  int height = 0, width = 0;
   if (!number(argv[2], height) || !number(argv[3], width)) return fail("hauteur ou largeur illisible");
-  for (int i = 6; i < argc; ++i) {
-    const std::string_view option(argv[i]);
-    if (option == "--reference") {
-      reference_mode = true;
-    } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], bench)) {
-      ++i;
-    } else {
-      return fail("option inconnue ou illisible : " + std::string(option));
-    }
-  }
+  Options options;
+  if (const std::string bad = read_options(argc, argv, options); !bad.empty())
+    return fail("option inconnue ou illisible : " + bad);
+  const int bench = options.bench;
+  const bool reference_mode = options.reference;
   if (const std::string why = ajp::gpu::span_fp8::size_refusal(height, width); !why.empty()) return fail(why);
 
   std::vector<std::byte> bytes;
@@ -86,7 +108,8 @@ int main(int argc, char* const* argv) {
   if (!SpanFp8Net::supported_device(props.major, props.minor))
     return fail("appareil sans noyaux FP8 CUTLASS");
 
-  const ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(*package);
+  ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(*package);
+  weights.width48 = options.width48;
   ajp::gpu::cuda::SpanFp8Status status = ajp::gpu::cuda::SpanFp8Status::Ok;
   std::string why;
   std::unique_ptr<ajp::gpu::cuda::SpanFp8Reference> reference;

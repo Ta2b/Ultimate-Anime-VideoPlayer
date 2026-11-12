@@ -24,6 +24,12 @@ struct SpanFp8ConvView {
   const float* bias = nullptr;
 };
 
+// Comment calculer un modèle à 48 canaux (kKernelsVersion 4, chantier SPAN 1). Native : noyaux de 48
+// colonnes, K des convolutions 3×3 mis à plat (9 × 48 = 432, en tuiles de 64 sans queue par position) ;
+// PerTap : 48 colonnes, K par position du filtre (le quart des tuiles K reste masqué) ; Padded : l'ancien
+// calcul en 64 canaux dont 16 nuls. Les deux derniers ne servent qu'à la mesure (ajp_span_fp8_run).
+enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
+
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
 struct SpanFp8Weights {
   static constexpr int kBlocks = 8;
@@ -37,6 +43,10 @@ struct SpanFp8Weights {
   SpanFp8ConvView pixel;
   bool acc16 =
       false;  // conv_cat, to_pixel (étape 3.5a) et les blocs FP8 (kKernelsVersion 3) accumulent en f16
+  // Canaux réels du modèle (span_fp8::Package::real_channels) : 64, ou 48 pour un b5f48, dont le paquet
+  // range les poids en 64 avec des zéros. Les poids ci-dessus sont toujours ceux du paquet, rangés en 64.
+  int channels = 64;
+  SpanFp8Width width48 = SpanFp8Width::Native;
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.
@@ -58,8 +68,9 @@ class SpanFp8Net {
   // La version des noyaux, écrite au reçu (étape 3.7b) : à augmenter à chaque changement de ce qu'ils
   // calculent (un paquet validé avec d'autres noyaux se revalide). 1 : état après les étapes 3.1 à 3.5 ;
   // 2 : poids FP8 des blocs à une échelle par canal de sortie (étape 10.3) ; 3 : la variante acc16 accumule
-  // aussi les blocs FP8 en f16, poids rangés 16 fois plus bas (deuxième passe TensorRT, N3).
-  static constexpr int kKernelsVersion = 3;
+  // aussi les blocs FP8 en f16, poids rangés 16 fois plus bas (deuxième passe TensorRT, N3) ; 4 : un modèle à
+  // 48 canaux se calcule en 48 (SpanFp8Width::Native) et non plus en 64 dont 16 nuls.
+  static constexpr int kKernelsVersion = 4;
 
   // Envoie les poids sur l'appareil courant (FP8 pour les blocs) et prépare les lancements. height et width
   // sont déjà jugés par span_fp8::size_refusal. Nul si l'envoi échoue ; status et error disent pourquoi.

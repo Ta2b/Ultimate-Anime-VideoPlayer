@@ -31,7 +31,7 @@ else()
 endif()
 option(AJP_WITH_SPAN_FP8 "Construire les noyaux CUTLASS du SPAN entier en FP8 (sm 8.9)" ${ajp_span_fp8_default})
 if(AJP_WITH_SPAN_FP8)
-  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_ref.cu)
+  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_fp8_ref.cu)
   target_include_directories(ajp_backend_span_fp8_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
   # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
   target_include_directories(ajp_backend_span_fp8_kernels SYSTEM PRIVATE "${AJP_CUTLASS_INCLUDE}")

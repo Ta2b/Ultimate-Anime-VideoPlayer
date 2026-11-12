@@ -32,8 +32,8 @@ src/export/av_handles.cpp	ajp::exporter::color_of	34	105
 src/export/muxer.cpp	ajp::exporter::Muxer::begin	39	122
 src/gpu/coreml/coreml_measure.cpp	ajp::gpu::coreml_rt::direct_error	29	113
 src/gpu/cuda/backend/ring_slot.cpp	ajp::gpu::cuda::ImportedSlot::import	27	115
-src/gpu/cuda/backend/span_fp8_kernels.cuh	ajp::gpu::cuda::span_fp8_kernels::net_kernel	40	151
-src/gpu/cuda/backend/span_fp8_run.cpp	main	34	107
+src/gpu/cuda/backend/span_fp8_kernels.cuh	ajp::gpu::cuda::span_fp8_kernels::net_kernel	40	149
+src/gpu/cuda/backend/span_fp8_run.cpp	main	30	102
 src/gpu/cuda/backend/stats_kernels.cu	ajp::gpu::cuda::frame_stats	38	113
 src/gpu/cuda/backend/tensorrt_kernels.cpp	ajp::gpu::cuda::TensorRtBackend::ingest	44	126
 src/gpu/cuda/backend/tensorrt_span_derive.cpp	ajp::gpu::cuda::TensorRtBackend::derive_span_fp8	67	227
