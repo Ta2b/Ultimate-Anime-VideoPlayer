@@ -48,13 +48,13 @@ struct Folder {
   fs::path dir() const { return root / "modeles"; }
   fs::path package() const { return dir() / (stem + ".span8"); }
   void receipt(double psnr_mean, double psnr_worst, double ssim, std::string_view format = "ajp-span-fp8c-v1",
-               bool passed = true) const {
+               bool passed = true, double speedup = 1.30) const {
     write(
         dir() / (stem + ".toml"),
         std::format("format = \"{}\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\npsnr_mean_db = {:.4f}\n"
-                    "psnr_worst_db = {:.4f}\nssim_worst = {:.4f}\npassed = {}\n",
+                    "psnr_worst_db = {:.4f}\nssim_worst = {:.4f}\nspeedup = {:.4f}\npassed = {}\n",
                     format, sha, prepare::sha256_file(package()).value(), psnr_mean, psnr_worst, ssim,
-                    passed ? "true" : "false"));
+                    speedup, passed ? "true" : "false"));
   }
 
   fs::path root;
@@ -89,6 +89,20 @@ TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 se lit encore, sans valoir reçu v2 (3
   REQUIRE(found.variant);
   CHECK_FALSE(found.variant->receipt_v2);  // l'Auto ne le prend pas
   CHECK(found.unvalidated_size.empty());
+}
+
+TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 sans gain mesuré est refusé, il échappait aux portes v2 (C46-17)",
+          "[app][int8][fp8c]") {
+  ajp::app::play::FrenchUi french;
+  const Folder f;
+  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1", true, 0.0);  // dérivé sans --trtexec : speedup = 0
+  const SpanInt8Lookup unmeasured = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
+  CHECK_FALSE(unmeasured.variant);
+  CHECK(unmeasured.note.find("gain sur le FP16 non mesuré") != std::string::npos);
+  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1", true, 1.01);
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
+  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1", true, 1.40);
+  CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
 }
 
 TEST_CASE("l'ordre des variantes de SPAN : la plus basse précision qui passe la porte (3.6)",

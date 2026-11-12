@@ -36,6 +36,25 @@ TEST_CASE("Annuler : un volume changé aux touches n'est ni compté ni rejoué (
   CHECK(again.volume == 1.2F);
 }
 
+// C23-05 : un réglage discret pris hors du niveau « Personnalisé » passe en Personnalisé avant l'historique :
+// une seule entrée, un seul « Annuler ».
+TEST_CASE("Annuler : un réglage et son passage en Personnalisé ne font qu'une entrée (C23-05)",
+          "[app][settings]") {
+  PlaySettings s;
+  s.preset = Preset::Auto;
+  SettingsHistory history;
+  history.reset(s);
+  s.restore_lines = !s.restore_lines;
+  s.preset = Preset::Custom;  // le panneau bascule dans la même image, avant settle
+  history.settle(s);
+  history.settle(s);  // l'image suivante : rien de nouveau
+  REQUIRE(history.can_undo());
+  const PlaySettings back = history.undo(s);
+  CHECK(back.preset == Preset::Auto);
+  CHECK(back.restore_lines == PlaySettings{}.restore_lines);
+  CHECK_FALSE(history.can_undo());
+}
+
 TEST_CASE("Annuler : un réglage que le panneau a lui-même fait reste annulable (B23-01)", "[app][settings]") {
   PlaySettings running;
   SettingsHistory history;

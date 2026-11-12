@@ -50,6 +50,14 @@ Machine : RTX 4070 Ti, TensorRT 11.3.0.99 (réseau fortement typé : la précisi
   rencontré** : une première série sur de simples couples consécutifs donnait 75 dB de moyenne pour RIFE FP8, fausse ; avec
   les couples qui bougent, le pire cas tombe à 31 dB. Entrées bien formées : RIFE 11 plans (images, instant, grille X/Y,
   pas X/Y), DistilDRBA `pair01`/`pair12` à 7 plans, GMFSS 6 plans.
+  **Protocole de l'audit 3 (C46-18, C46-19, C46-25)** : les mesures de ce document sont celles de la première
+  série, à 768×1280 et, pour DistilDRBA, au plan d'instant `u = 0,5` (qui est `tau = 1`, l'instant de l'image 1
+  elle-même, pas un instant interpolé). `build_interp_fp8.sh` calibre et garde maintenant à 1088×1920, la taille
+  jouée par le lecteur, avec `u = 0,25` et `u = 0,625` (les deux branches de `drba_call`, `distil_drba.h`), et
+  accepte un second titre (`GUARD_VIDEO`) pour les gardes. Les chiffres ci-dessous sont à refaire avec lui avant
+  d'être cités. Les échelles ne se stockent plus quand elles valent zéro en FP16 (le script s'arrête et nomme le
+  tenseur) ; `--weight-scales channel` essaie une échelle par canal de sortie pour les poids (non mesuré, et non
+  vérifié sur TensorRT).
 - **Calibration** sur 4 instants, **qualité sur 7 cas hors calibration** (autres images ou autres couples), image finale
   contre le FP16 (ONNX Runtime CPU, Q/DQ émulés exactement ; TensorRT diffère à l'ordre d'accumulation près). GMFSS : la
   chaîne complète paire → splats → fusion, comme le lecteur.

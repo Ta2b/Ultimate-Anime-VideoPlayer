@@ -11,6 +11,6 @@
 namespace ajp::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
-                              const std::string& fp8_reason, int auto_peak);
+                              int auto_peak);
 
 }  // namespace ajp::app::play

@@ -13,7 +13,8 @@ DOSSIER est celui de tools/release/fetch-models.sh (onnx/ et rife/). Pour chaque
 
 Les seuils de seuils.json s'appliquent à la configuration qu'ils nomment (taille, scènes, plans) : le banc sort
 en erreur si un réseau fait moins bien. --ecrire-seuils les refait depuis la mesure, avec une marge ; à ne faire
-que pour une amélioration voulue ou une baisse justifiée par sa mesure.
+que pour une amélioration voulue ou une baisse justifiée par sa mesure. Une autre configuration (--video, --taille…)
+est un échec, sauf avec --sans-seuils (rien n'est alors jugé).
 """
 import argparse
 import json
@@ -94,6 +95,8 @@ def parse(argv):
     p.add_argument("--provider", choices=("cpu", "cuda"), default="cpu")
     p.add_argument("--seuils", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "seuils.json"))
     p.add_argument("--ecrire-seuils", action="store_true")
+    p.add_argument("--sans-seuils", action="store_true",
+                   help="mesurer une autre configuration que celle de seuils.json sans échec (rien n'est jugé)")
     p.add_argument("--json")
     p.add_argument("--md")
     return p.parse_args(argv)
@@ -144,7 +147,7 @@ def main(argv=None):
         rapport.write_gates(a.seuils, report)
         print(f"seuils écrits : {a.seuils}")
         return 0
-    failures = rapport.check_gates(a.seuils, report)
+    failures = rapport.check_gates(a.seuils, report, a.sans_seuils)
     for line in failures:
         print(f"SEUIL : {line}")
     return 1 if failures else 0
