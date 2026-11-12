@@ -580,6 +580,11 @@ TEST_CASE("Le manifeste d'un RIFE fusionné s'écrit, se relit et refuse l'inatt
   CHECK(parsed->plan == manifest.plan);
   CHECK(parsed->pieces == manifest.pieces);
   CHECK(parsed->sizes.empty());  // un manifeste d'avant les tailles se lit encore
+  for (const RifeFusedOutput out : {RifeFusedOutput::Image, RifeFusedOutput::ImageCubic}) {
+    RifeFusedManifest other = manifest;
+    other.output = out;
+    CHECK(parse_manifest(format_manifest(other))->output == out);
+  }
   manifest.sizes = {10, 20, 30, 40, 50};
   const auto sized = parse_manifest(format_manifest(manifest));
   REQUIRE(sized);

@@ -104,16 +104,20 @@ std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu
                                                  const gpu::Motion& motion, float t,
                                                  const Target& out) const {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  return out.ring != nullptr ? ops.warp_blend_ring(a, b, motion, t, *out.ring)
-                             : ops.warp_blend(a, b, motion, t, *out.tensor);
+  gpu::Motion read = motion;
+  read.warp = setup_.warp;
+  return out.ring != nullptr ? ops.warp_blend_ring(a, b, read, t, *out.ring)
+                             : ops.warp_blend(a, b, read, t, *out.tensor);
 }
 
 std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
                                                        const gpu::Motion& motion, const gpu::Motion* previous,
                                                        float t, const Target& out) const {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  return out.ring != nullptr ? ops.warp_blend_poses_ring(a, b, motion, previous, t, *out.ring)
-                             : ops.warp_blend_poses(a, b, motion, previous, t, *out.tensor);
+  gpu::Motion read = motion;
+  read.warp = setup_.warp;
+  return out.ring != nullptr ? ops.warp_blend_poses_ring(a, b, read, previous, t, *out.ring)
+                             : ops.warp_blend_poses(a, b, read, previous, t, *out.tensor);
 }
 
 std::expected<void, Refusal> UpscaleStage::interpolate_direct(float t, const gpu::Motion& other,

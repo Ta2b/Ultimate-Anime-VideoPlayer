@@ -1,6 +1,7 @@
 #include "kernels/ref/rife_fused.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <utility>
@@ -26,6 +27,26 @@ double sample(const double* plane, int height, int width, double fy, double fx) 
   const double wx = fx - x0;
   return (plane[at(y0, x0, width)] * (1.0 - wx) + plane[at(y0, x1, width)] * wx) * (1.0 - wy) +
          (plane[at(y1, x0, width)] * (1.0 - wx) + plane[at(y1, x1, width)] * wx) * wy;
+}
+
+// Échantillon de Catmull-Rom (spec/rife_fused.h : RifeWarp) : position ramenée dans le plan, points répétés
+// au bord, sortie bornée à [0, 1].
+double sample_cubic(const double* plane, int height, int width, double fy, double fx) {
+  fy = std::clamp(fy, 0.0, static_cast<double>(height - 1));
+  fx = std::clamp(fx, 0.0, static_cast<double>(width - 1));
+  const int y0 = static_cast<int>(std::floor(fy));
+  const int x0 = static_cast<int>(std::floor(fx));
+  const std::array<double, 4> wy = catmull_rom_weights(fy - y0);
+  const std::array<double, 4> wx = catmull_rom_weights(fx - x0);
+  double sum = 0.0;
+  for (int j = 0; j < 4; ++j) {
+    const int yy = std::clamp(y0 - 1 + j, 0, height - 1);
+    double row = 0.0;
+    for (int i = 0; i < 4; ++i)
+      row += plane[at(yy, std::clamp(x0 - 1 + i, 0, width - 1), width)] * wx[static_cast<std::size_t>(i)];
+    sum += row * wy[static_cast<std::size_t>(j)];
+  }
+  return std::clamp(sum, 0.0, 1.0);
 }
 
 // Resize linéaire, coordonnées demi-pixel, d'un plan h × w vers oh × ow (ONNX Resize, mode linear).
@@ -83,13 +104,16 @@ std::vector<Plane> accumulated_flow(const RifeFusedState& s, int blocks) {
 // GridSample (coins alignés, bords répétés) d'un plan h × w par le flot (pixels). La grille normalisée du
 // graphe, maillage + flot × pas ramenée par (g + 1) / 2 × (n - 1), vaut exactement x + flot : elle se calcule
 // ainsi, sans lire les plans 7 à 10 de l'entrée, que le FP16 de l'entrée v1 arrondit (A03-20).
-Plane warp(const RifeFusedState& s, const double* plane, const Plane& flow_x, const Plane& flow_y) {
+Plane warp(const RifeFusedState& s, const double* plane, const Plane& flow_x, const Plane& flow_y,
+           RifeWarp kind = RifeWarp::Bilinear) {
   const std::size_t area = static_cast<std::size_t>(s.height) * static_cast<std::size_t>(s.width);
   Plane out(area);
   for (int y = 0; y < s.height; ++y) {
     for (int x = 0; x < s.width; ++x) {
       const std::size_t i = at(y, x, s.width);
-      out[i] = sample(plane, s.height, s.width, y + flow_y[i], x + flow_x[i]);
+      out[i] = kind == RifeWarp::CatmullRom
+                   ? sample_cubic(plane, s.height, s.width, y + flow_y[i], x + flow_x[i])
+                   : sample(plane, s.height, s.width, y + flow_y[i], x + flow_x[i]);
     }
   }
   return out;
@@ -142,7 +166,7 @@ std::vector<double> rife_fused_block_input(const RifeFusedState& s, int k) {
   return out;
 }
 
-RifeFusedResult rife_fused_finish(const RifeFusedState& s) {
+RifeFusedResult rife_fused_finish(const RifeFusedState& s, RifeWarp kind) {
   const std::size_t area = static_cast<std::size_t>(s.height) * static_cast<std::size_t>(s.width);
   const int last = s.plan.blocks - 1;
   std::vector<Plane> flow = accumulated_flow(s, last);
@@ -155,8 +179,8 @@ RifeFusedResult rife_fused_finish(const RifeFusedState& s) {
   for (std::size_t p = 0; p < area; ++p) result.mask[p] = 1.0 / (1.0 + std::exp(-z[4][p]));
   result.image.resize(3 * area);
   for (std::size_t c = 0; c < 3; ++c) {
-    const Plane a = warp(s, s.input.data() + c * area, flow[0], flow[1]);
-    const Plane b = warp(s, s.input.data() + (3 + c) * area, flow[2], flow[3]);
+    const Plane a = warp(s, s.input.data() + c * area, flow[0], flow[1], kind);
+    const Plane b = warp(s, s.input.data() + (3 + c) * area, flow[2], flow[3], kind);
     for (std::size_t p = 0; p < area; ++p)
       result.image[c * area + p] = a[p] * result.mask[p] + b[p] * (1.0 - result.mask[p]);
   }

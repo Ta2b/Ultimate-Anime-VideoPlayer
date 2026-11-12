@@ -188,6 +188,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       // constant : l'image serait jetée par la présentation (audit F11).
       .late_fate = clock != nullptr,
       .smooth_drawings = smooth_drawings,
+      .warp =
+          settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       .slots = std::move(slots)};
 }
 
@@ -704,13 +706,14 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto try_fused = [&](const kernels::RifeGeometry& g, bool motion,
                              std::unique_ptr<gpu::Engine>& into) {
     if (!fused_wanted) return Fused::Declined;
-    const std::string key = inner_key(motion ? "rife-fused motion" : "rife-fused", library, *c.rife_model,
-                                      g.padded_width, g.padded_height);
+    const prepare::RifeFusedOutput output = rife_fused_output(motion, settings.cubic_warp);
+    const std::string key = inner_key(std::format("rife-fused {}", prepare::output_name(output)), library,
+                                      *c.rife_model, g.padded_width, g.padded_height);
     if (const Refusal* before = inner.refused(ChainStage::Motion, key)) {
       c.rife_fused_refused = before->code;  // le panneau dit encore pourquoi l'entier tourne
       return Fused::Declined;
     }
-    auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, motion);
+    auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, output);
     if (!fused && watch_now(fused.error())) {
       cancelled = std::move(fused.error());
       return Fused::Cancelled;

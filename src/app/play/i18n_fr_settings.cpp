@@ -250,6 +250,8 @@ constexpr std::array kSettingsPages{
     Entry{"the RIFE model loads (built the first time for this size)",
           "le modèle RIFE est chargé (construit la première fois pour cette taille)"},
     Entry{"the interpolation engine changes", "le moteur d'interpolation change"},
+    Entry{"the interpolation warp turns Catmull-Rom", "le warp de l'interpolation passe en Catmull-Rom"},
+    Entry{"the interpolation warp turns bilinear", "le warp de l'interpolation repasse en bilinéaire"},
     Entry{"held drawings are smoothed (frames read ahead)",
           "les dessins tenus sont lissés (images lues en avance)"},
     Entry{"held drawings keep their rhythm", "les dessins tenus gardent leur rythme"},

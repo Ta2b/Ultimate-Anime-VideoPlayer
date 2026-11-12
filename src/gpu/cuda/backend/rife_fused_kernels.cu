@@ -4,6 +4,38 @@
 // kernels/spec/rife_fused.h) :
 //   0-2 image A warpée, 3-5 image B warpée, 6-9 encodage de A warpé, 10-13 encodage de B warpé, 14 instant,
 //   15 masque, 16-23 attributs, 24-27 flot accumulé × (1/d).
+// Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp) sur 4 × 4 points en FP32 : la position du Tap (déjà
+// ramenée dans l'image), points répétés au bord, sortie bornée à [0, 1].
+__device__ __forceinline__ void catmull_rom(float t, float (&w)[4]) {
+  const float t2 = t * t;
+  const float t3 = t2 * t;
+  w[0] = -0.5F * t3 + t2 - 0.5F * t;
+  w[1] = 1.5F * t3 - 2.5F * t2 + 1.0F;
+  w[2] = -1.5F * t3 + 2.0F * t2 + 0.5F * t;
+  w[3] = 0.5F * t3 - 0.5F * t2;
+}
+
+__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w, int h) {
+  float wx[4];
+  float wy[4];
+  catmull_rom(t.wx, wx);
+  catmull_rom(t.wy, wy);
+  const std::size_t stride = static_cast<std::size_t>(w);
+  float sum = 0.0F;
+#pragma unroll
+  for (int j = 0; j < 4; ++j) {
+    const auto yy = static_cast<std::size_t>(min(max(t.y0 - 1 + j, 0), h - 1));
+    float row = 0.0F;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const auto xx = static_cast<std::size_t>(min(max(t.x0 - 1 + i, 0), w - 1));
+      row += __half2float(plane[yy * stride + xx]) * wx[i];
+    }
+    sum += row * wy[j];
+  }
+  return fminf(fmaxf(sum, 0.0F), 1.0F);
+}
+
 // Bloc 0 : 15 canaux (images A, B, encodages de A et de B, instant), tous moyennés sans warp.
 #include <cstddef>
 #include <cuda_fp16.h>
@@ -209,7 +241,8 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
     x[static_cast<std::size_t>(c) * out_plane + o] = __float2half_rn(acc[c] * norm);
 }
 
-// Fin : flot du dernier bloc ajouté ; image (warp, masque sigmoïde, mélange) ou flot et masque.
+// Fin : flot du dernier bloc ajouté ; image (warp bilinéaire ou Catmull-Rom, masque sigmoïde, mélange) ou
+// flot et masque.
 __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -240,8 +273,11 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
   for (int n = 0; n < 2; ++n) {
     const Tap tap = pixel_tap(x, y, fl[2 * n], fl[2 * n + 1], p.width, p.height);
 #pragma unroll
-    for (int ch = 0; ch < 3; ++ch)
-      warped[n][ch] = rounded(bilinear(input + static_cast<std::size_t>(3 * n + ch) * plane, tap, p.width));
+    for (int ch = 0; ch < 3; ++ch) {
+      const __half* source = input + static_cast<std::size_t>(3 * n + ch) * plane;
+      warped[n][ch] = rounded(p.cubic != 0 ? catmull_rom_sample(source, tap, p.width, p.height)
+                                           : bilinear(source, tap, p.width));
+    }
   }
   const float rest = rounded(1.0F - sig);
   auto* image = static_cast<__half*>(p.image);

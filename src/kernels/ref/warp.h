@@ -17,6 +17,7 @@ struct Motion {
   std::array<PlaneF, 4> flow;
   PlaneF mask;
   Window area;
+  RifeWarp warp = RifeWarp::Bilinear;  // le filtre qui lit a et b (le flot et le masque restent bilinéaires)
 };
 
 // Échantillon bilinéaire borné au plan (sample_plane), ou à une fenêtre (sample_window).

@@ -127,6 +127,8 @@ struct UpscaleSetup {
   // gardées ; l'étage lit alors jusqu'à kSmoothMaxHold - 1 images en avance (frames_ahead). Une tenue plus
   // longue, ou coupée, garde le rythme des sources.
   bool smooth_drawings = false;
+  // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
+  kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
   // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.

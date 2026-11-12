@@ -50,6 +50,7 @@ OpenedChain::Loaded loaded_by(const PlaySettings& settings) {
           .rife_fused = settings.rife_fused,
           .drba_fused = settings.drba_fused,
           .smooth_drawings = settings.smooth_drawings,
+          .cubic_warp = settings.cubic_warp,
           .pair_scale = settings.pair_scale};
 }
 

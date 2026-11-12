@@ -87,7 +87,8 @@ namespace ajp::gpu {
 // d'un backend d'avant se lirait sous un autre nom.
 // 36 : Engine::next_pair_follows (RIFE fusionné : l'encodage de B repris comme celui de A à la paire
 // suivante).
-inline constexpr int kBackendAbi = 36;
+// 37 : Motion::warp (le warp final en Catmull-Rom, en option).
+inline constexpr int kBackendAbi = 37;
 
 using DeviceUuid = ajp::DeviceUuid;
 

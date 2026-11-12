@@ -24,6 +24,18 @@ bool is_bt1886(TransferOp op) {
   return op == TransferOp::Bt1886Eotf || op == TransferOp::Bt1886InverseEotf;
 }
 
+// La fenêtre du mouvement tient dans son plan ; en 64 bits, x + width ne déborde pas.
+Done check_window(const kernels::Window& area, const TensorView& flow) {
+  const std::int64_t right = std::int64_t{area.x} + area.width;
+  const std::int64_t bottom = std::int64_t{area.y} + area.height;
+  if (area.x >= 0 && area.y >= 0 && area.width >= 1 && area.height >= 1 && right <= flow.width &&
+      bottom <= flow.height)
+    return {};
+  return refuse(RefusalCode::InputMismatch,
+                std::format("warp : fenêtre {}x{} en ({}, {}) hors du mouvement {}x{}", area.width,
+                            area.height, area.x, area.y, flow.width, flow.height));
+}
+
 }  // namespace
 
 Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, float t) {
@@ -100,15 +112,7 @@ Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const Ten
     }
   }
   const kernels::Window& area = motion.area;
-  // En 64 bits : x + width ne déborde pas.
-  const std::int64_t right = std::int64_t{area.x} + area.width;
-  const std::int64_t bottom = std::int64_t{area.y} + area.height;
-  if (area.x < 0 || area.y < 0 || area.width < 1 || area.height < 1 || right > motion.flow.width ||
-      bottom > motion.flow.height) {
-    return refuse(RefusalCode::InputMismatch,
-                  std::format("warp : fenêtre {}x{} en ({}, {}) hors du mouvement {}x{}", area.width,
-                              area.height, area.x, area.y, motion.flow.width, motion.flow.height));
-  }
+  if (auto ok = check_window(area, motion.flow); !ok) return ok;
   const detail::WarpPush push{a.width,
                               a.height,
                               motion.flow.width,
@@ -124,7 +128,8 @@ Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const Ten
   if (!time) return std::unexpected(time.error());
   const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst.buffer,
                            previous, *time};
-  return detail::run(*pipelines_, recorder, "warp_blend", a.precision, {}, buffers, {}, bytes_of(push),
+  const std::array constants{motion.warp == kernels::RifeWarp::CatmullRom ? 1U : 0U};
+  return detail::run(*pipelines_, recorder, "warp_blend", a.precision, constants, buffers, {}, bytes_of(push),
                      {groups_for(a.width), groups_for(a.height), 1});
 }
 

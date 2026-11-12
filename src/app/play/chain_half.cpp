@@ -22,7 +22,8 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
   const kernels::RifeGeometry g = kernels::rife_geometry(half.width, half.height, c.rife_align);
   std::optional<std::unique_ptr<gpu::Engine>> engine;
   if (c.rife_fused) {
-    auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g, true);
+    auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g,
+                                    prepare::RifeFusedOutput::Motion);
     if (fused && !*fused) return std::nullopt;
     if (fused) engine = std::move(**fused);
     if (!fused)

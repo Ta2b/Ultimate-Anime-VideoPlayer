@@ -231,6 +231,11 @@ struct PlaySettings {
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le
   // RIFE entier reprenant sinon, ou si un des six moteurs échoue. Recharge la chaîne.
   bool rife_fused = true;
+  // Le warp final de l'interpolation en Catmull-Rom (kernels::RifeWarp : 4 × 4 points, a = −0,5) au lieu du
+  // bilinéaire du réseau : des traits fins plus nets dans les images intermédiaires, pour un peu plus de
+  // lectures. RIFE seulement (la fin de RIFE fusionné, et le warp de la variante mouvement). Essai, éteint
+  // par défaut ; recharge la chaîne.
+  bool cubic_warp = false;
   // DistilDRBA fusionné (kernels/spec/drba_fused.h) : le réseau coupé en quatre petits moteurs TensorRT
   // reliés par des noyaux CUDA, à la place du moteur DistilDRBA entier (0,92 ms au lieu de 2,10 ms par passe
   // à 1088×1920 sur une RTX 4070 Ti) ; seulement sous TensorRT, au cran Équilibre et pour un DistilDRBA v2

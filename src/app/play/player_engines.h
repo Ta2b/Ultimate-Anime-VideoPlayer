@@ -32,6 +32,7 @@
 #include "core/settings.h"
 #include "gpu/backend.h"
 #include "media/demuxer.h"
+#include "prepare/rife_split.h"
 
 namespace ajp::app::play {
 
@@ -159,13 +160,21 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
 
 // RIFE fusionné (kernels/spec/rife_fused.h) pour le modèle rife_onnx à la taille remplie de geometry : le
 // modèle coupé en six morceaux (dérivés dans models_dir, un manifeste « .rifefused » les nomme), leurs six
-// moteurs construits puis chargés en un seul, qui s'enfile comme le moteur RIFE entier. motion : la variante
-// mouvement (flot et masque en sorties) au lieu de l'image. Rien si l'utilisateur ferme la fenêtre. Refus :
+// moteurs construits puis chargés en un seul, qui s'enfile comme le moteur RIFE entier. output : l'image
+// (warp bilinéaire ou Catmull-Rom) ou la variante mouvement (flot et masque). Rien si l'utilisateur ferme la
+// fenêtre. Refus :
 // la découpe (structure non reconnue, taille que les noyaux ne prennent pas), la construction, le chargement
 // ou l'essai de la chaîne ; l'appelant garde alors le RIFE entier.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_rife_fused(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& rife_onnx,
-    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry, bool motion);
+    const std::filesystem::path& models_dir, const kernels::RifeGeometry& geometry,
+    prepare::RifeFusedOutput output);
+// La sortie du fusionné : le flot et le masque pour la variante mouvement (son warp est celui de l'étage),
+// sinon l'image, son warp en Catmull-Rom si cubic_warp (PlaySettings).
+constexpr prepare::RifeFusedOutput rife_fused_output(bool motion, bool cubic_warp) {
+  if (motion) return prepare::RifeFusedOutput::Motion;
+  return cubic_warp ? prepare::RifeFusedOutput::ImageCubic : prepare::RifeFusedOutput::Image;
+}
 
 // DistilDRBA fusionné (kernels/spec/drba_fused.h) : si fused n'est pas nul, prepare_distil_drba essaie
 // d'abord le graphe coupé en quatre petits moteurs (dérivés dans le dossier des modèles, un manifeste «

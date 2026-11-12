@@ -71,7 +71,12 @@ std::expected<std::vector<RifePiece>, Refusal> split_rife(std::span<const std::b
 // blocs 0 à N-1.
 inline constexpr std::string_view kRifeFusedExtension = ".rifefused";
 
-enum class RifeFusedOutput : std::uint8_t { Image, Motion };
+// Image : l'image interpolée, warp bilinéaire comme le graphe ; ImageCubic : la même, warp final en
+// Catmull-Rom (kernels::RifeWarp, en option) ; Motion : le flot et le masque. Les morceaux sont les mêmes
+// pour les trois, seul le manifeste diffère.
+enum class RifeFusedOutput : std::uint8_t { Image, Motion, ImageCubic };
+// « image », « motion », « image-cubic » : le champ du manifeste et la fin de son nom.
+std::string_view output_name(RifeFusedOutput output);
 
 struct RifeFusedManifest {
   RifeFusedOutput output = RifeFusedOutput::Image;

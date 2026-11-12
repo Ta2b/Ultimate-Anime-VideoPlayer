@@ -218,6 +218,15 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
   double score = psnr_of(download_half(image.get(), want.image.size()), want.image, worst);
   INFO("image : PSNR " << score << " dB, écart maximal " << worst);
   CHECK(score >= 55.0);
+  // Le warp de Catmull-Rom (kernels::RifeWarp) : l'image seule change.
+  const kernels::ref::RifeFusedResult cubic =
+      kernels::ref::rife_fused_finish(state, kernels::RifeWarp::CatmullRom);
+  finish.cubic = 1;
+  REQUIRE(gpu::cuda::launch_fused_finish(finish, nullptr) == cudaSuccess);
+  score = psnr_of(download_half(image.get(), cubic.image.size()), cubic.image, worst);
+  INFO("image, warp Catmull-Rom : PSNR " << score << " dB, écart maximal " << worst);
+  CHECK(score >= 55.0);
+  finish.cubic = 0;
   finish.image = nullptr;
   finish.flow = flow.get();
   finish.mask = mask.get();

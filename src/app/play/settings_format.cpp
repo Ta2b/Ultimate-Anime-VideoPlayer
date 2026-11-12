@@ -32,6 +32,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"smooth_drawings", s.smooth_drawings},
                             {"pair_scale", s.pair_scale},
                             {"rife_fused", s.rife_fused},
+                            {"cubic_warp", s.cubic_warp},
                             {"drba_fused", s.drba_fused},
                             {"motion_precision", std::string(name(s.motion_precision))},
                             {"auto", s.rife_auto},

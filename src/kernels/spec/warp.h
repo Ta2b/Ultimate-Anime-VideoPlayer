@@ -9,9 +9,28 @@
 // Tests : tests/unit/kernels/warp_test.cpp.
 #pragma once
 
+#include <array>
+#include <cstdint>
+
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
 namespace ajp::kernels {
+
+// Le filtre qui lit les images déformées (le warp final de RIFE : la fin de RIFE fusionné et le warp de la
+// variante mouvement ; le flot et le masque restent lus en bilinéaire) : bilinéaire comme le GridSample du
+// graphe, ou Catmull-Rom en option (Keys, a = −0,5 : 4 × 4 points en FP32, position ramenée dans l'image et
+// points répétés au bord comme le bilinéaire, sortie bornée à [0, 1], où vivent les images ; le dépassement
+// de la cubique sur un trait net est ainsi coupé).
+enum class RifeWarp : std::uint8_t { Bilinear, CatmullRom };
+
+// Les poids de Catmull-Rom des points −1, 0, 1, 2 pour une fraction t de [0, 1) ; leur somme vaut 1.
+template <typename T>
+constexpr std::array<T, 4> catmull_rom_weights(T t) {
+  const T t2 = t * t;
+  const T t3 = t2 * t;
+  return {T(-0.5) * t3 + t2 - T(0.5) * t, T(1.5) * t3 - T(2.5) * t2 + T(1),
+          T(-1.5) * t3 + T(2) * t2 + T(0.5) * t, T(0.5) * t3 - T(0.5) * t2};
+}
 
 // Rectangle de l'image dans un plan plus grand (la fenêtre des tenseurs remplis de RIFE).
 struct Window {

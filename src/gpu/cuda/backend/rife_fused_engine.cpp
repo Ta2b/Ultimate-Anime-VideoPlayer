@@ -25,6 +25,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   engine->height_ = key.height;
   engine->width_ = key.width;
   engine->motion_ = key.motion;
+  engine->warp_ = key.warp;
   engine->outputs_ =
       key.motion ? std::vector<std::string>{"flow", "mask"} : std::vector<std::string>{"output"};
   const int h = key.height;
@@ -215,6 +216,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
     finish.mask = fused_address(outputs[1]);
   } else {
     finish.image = fused_address(outputs[0]);
+    finish.cubic = warp_ == kernels::RifeWarp::CatmullRom ? 1 : 0;
   }
   return cuda_check(launch_fused_finish(finish, stream), "fused_finish<<<>>>");
 }

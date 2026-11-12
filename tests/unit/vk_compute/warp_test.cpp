@@ -59,7 +59,8 @@ void check_warp(Rig& rig, const Pair& pair, float t, Precision p) {
   const std::array mask_plane{pair.motion.mask};
   TensorBuffer mask = upload_planes(rig, mask_plane, p);
   TensorBuffer dst = tensor_target(rig, a.view.width, a.view.height, 3, p);
-  const MotionView motion{.flow = flow.view, .mask = mask.view, .area = pair.motion.area};
+  const MotionView motion{
+      .flow = flow.view, .mask = mask.view, .area = pair.motion.area, .warp = pair.motion.warp};
   record_and_run(
       rig, [&](Recorder& r) { return rig.kernels().warp_blend(r, a.view, b.view, motion, t, dst.view); });
   CHECK(max_abs_diff(download_rgb(rig, dst), as_stored(*want, p)) <= k::tolerance::kWarp);
@@ -78,6 +79,26 @@ TEST_CASE("warp : mouvement estimé à t = 1/2 et autres instants, en float", "[
       synthetic_pair(37, 21, 37, 21, {.x = 0, .y = 0, .width = 37, .height = 21}, Precision::F32);
   check_warp(rig, same, 0.5F, Precision::F32);
   check_warp(rig, same, 0.1F, Precision::F32);
+}
+
+TEST_CASE("warp : images lues en Catmull-Rom (warp_blend, CUBIC), en float et en float16",
+          "[vk_compute][warp]") {
+  Rig rig = make_rig();
+  Pair pair = synthetic_pair(80, 60, 64, 64, {.x = 4, .y = 6, .width = 40, .height = 30}, Precision::F32);
+  pair.motion.warp = k::RifeWarp::CatmullRom;
+  for (const float t : {0.5F, 0.3F}) check_warp(rig, pair, t, Precision::F32);
+  // Catmull-Rom diffère bien du bilinéaire sur ces images.
+  Pair bilinear = pair;
+  bilinear.motion.warp = k::RifeWarp::Bilinear;
+  const auto cubic = k::ref::warp_blend(pair.a, pair.b, pair.motion);
+  const auto plain = k::ref::warp_blend(bilinear.a, bilinear.b, bilinear.motion);
+  REQUIRE(cubic);
+  REQUIRE(plain);
+  CHECK(max_abs_diff(*cubic, *plain) > 1e-3F);
+  if (!rig.context->caps().enabled.storage_buffer_16bit) return;
+  Pair half = synthetic_pair(80, 60, 64, 64, {.x = 4, .y = 6, .width = 40, .height = 30}, Precision::F16);
+  half.motion.warp = k::RifeWarp::CatmullRom;
+  check_warp(rig, half, 0.5F, Precision::F16);
 }
 
 TEST_CASE("warp : tenseurs float16", "[vk_compute][warp]") {

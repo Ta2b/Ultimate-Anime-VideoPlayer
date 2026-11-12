@@ -15,6 +15,9 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
+// 1 : les images a et b lues en Catmull-Rom (spec/warp.h : RifeWarp), le flot et le masque restant bilinéaires.
+layout(constant_id = 0) const uint CUBIC = 0;
+
 layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
 layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
 layout(std430, binding = 2) readonly buffer Flow { AJP_TENSOR v[]; } flow;  // f0x, f0y, f1x, f1y
@@ -79,7 +82,39 @@ float motion_at(uint c, float u, float v) {
                   float(flow.v[base + t.i11]), t);
 }
 
+// Le point (x, y) du plan c de a ou de b, sans borne.
+float image_texel(bool from_a, uint index) {
+  return from_a ? float(a.v[index]) : float(b.v[index]);
+}
+
+// Catmull-Rom (ref::catmull_rom_at) : position bornée à l'image, points répétés au bord, sortie dans [0, 1].
+vec4 catmull_rom(float t) {
+  float t2 = t * t;
+  float t3 = t2 * t;
+  return vec4(-0.5 * t3 + t2 - 0.5 * t, 1.5 * t3 - 2.5 * t2 + 1.0, -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+              0.5 * t3 - 0.5 * t2);
+}
+
+float image_cubic(bool from_a, uint c, float x, float y) {
+  x = bounded(x, 0.0, float(pc.width - 1u));
+  y = bounded(y, 0.0, float(pc.height - 1u));
+  int x0 = int(x);
+  int y0 = int(y);
+  vec4 wx = catmull_rom(x - float(x0));
+  vec4 wy = catmull_rom(y - float(y0));
+  uint base = c * pc.width * pc.height;
+  precise float sum = 0.0;
+  for (int j = 0; j < 4; ++j) {
+    uint row_at = base + uint(clamp(y0 - 1 + j, 0, int(pc.height) - 1)) * pc.width;
+    precise float row = 0.0;
+    for (int i = 0; i < 4; ++i) row += image_texel(from_a, row_at + uint(clamp(x0 - 1 + i, 0, int(pc.width) - 1))) * wx[i];
+    sum += row * wy[j];
+  }
+  return clamp(sum, 0.0, 1.0);
+}
+
 float image_at(bool from_a, uint c, float x, float y) {
+  if (CUBIC == 1u) return image_cubic(from_a, c, x, y);
   Taps t = taps_in(pc.width, 0u, 0u, pc.width, pc.height, x, y);
   uint base = c * pc.width * pc.height;
   if (from_a) return bilinear(float(a.v[base + t.i00]), float(a.v[base + t.i10]), float(a.v[base + t.i01]),
