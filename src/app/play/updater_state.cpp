@@ -26,13 +26,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-std::string read_all(const fs::path& file) {
-  std::ifstream in(file, std::ios::binary);
-  std::ostringstream text;
-  text << in.rdbuf();
-  return text.str();
-}
-
 }  // namespace
 
 std::string format_update_state(const UpdateState& state) {
@@ -175,11 +168,6 @@ std::expected<void, Refusal> change_update_state(const fs::path& file,
 }
 
 namespace {
-
-std::int64_t unix_now() {
-  return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
-      .count();
-}
 
 // L'état du fichier, lu sous le verrou ; le réseau, lui, ne le tient jamais (B26-09, B30-02) : « Check now »
 // pendant une vérification de fond, ou la fermeture du lecteur, n'attendent pas quarante secondes de curl.

@@ -378,11 +378,12 @@ TEST_CASE(
       check_for_update(std::stop_token{}, release_of(kBRevokesAText, kBRevokesASig, calls), keys, "0.1.0");
   REQUIRE(checked);
   CHECK(checked->revoked_keys == std::vector<std::string>{std::string(kKeyA)});
-  // Une clé inconnue du lecteur se retient telle quelle, de A comme de B.
+  // Une clé que le lecteur ne connaît pas n'est pas retenue (C26-05) : elle ne signe rien ici, et la garder
+  // couperait les mises à jour d'une version future qui la compilerait.
   checked = check_for_update(std::stop_token{}, release_of(kARevokesOtherText, kARevokesOtherSig, calls),
                              keys, "0.1.0");
   REQUIRE(checked);
-  CHECK(checked->revoked_keys == std::vector<std::string>{std::string(64, '1')});
+  CHECK(checked->revoked_keys.empty());
   // Une clé qui se révoque elle-même n'est pas crue.
   const auto itself = check_for_update(std::stop_token{},
                                        release_of(kBRevokesSelfText, kBRevokesSelfSig, calls), keys, "0.1.0");
@@ -518,4 +519,17 @@ TEST_CASE("mises à jour : le verrou de l'état n'est pas tenu pendant le télé
   CHECK(kept.last_attempt_unix > 0);
   CHECK_FALSE(kept.last_error.empty());
   fs::remove_all(root);
+}
+
+// Le bouton « Download page » ne mène que sous le dépôt des releases (C26-04).
+TEST_CASE("mises à jour : la page de téléchargement reste dans le dépôt des releases (C26-04)", "[updater]") {
+  const std::string inside = "https://github.com/o/r/releases/tag/v1.0.0";
+  CHECK(download_page_url(inside, "o/r") == inside);
+  const std::string page = releases_page("o/r");
+  CHECK(download_page_url("https://example.org/install-me", "o/r") == page);
+  CHECK(download_page_url("https://github.com/autre/depot/releases", "o/r") == page);
+  CHECK(download_page_url("https://github.com/o/r/../../x/y", "o/r") == page);
+  CHECK(download_page_url("https://github.com/o/r/", "o/r") == page);
+  CHECK(download_page_url("http://github.com/o/r/releases", "o/r") == page);
+  CHECK(download_page_url("", "o/r") == page);
 }

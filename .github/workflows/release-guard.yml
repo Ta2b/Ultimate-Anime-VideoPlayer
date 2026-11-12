@@ -4,6 +4,8 @@ name: Garde de release
 # - le commit construit doit être celui de l'étiquette (pas une branche choisie à la main) ;
 # - l'étiquette doit dire la version de project() dans CMakeLists.txt : v<VERSION>, ou v<VERSION>-<suffixe> pour une
 #   préversion (A28-04) ; le suffixe est compilé dans le binaire (package-*.sh, AJP_VERSION_SUFFIX) ;
+# - une release finale a une clé de secours compilée (C51-04) et une CI verte d'étendue complète ; une préversion se
+#   contente d'une CI verte quelconque (C51-07);
 # - ci.yml doit être vert sur ce commit. Une étiquette poussée en même temps que son commit sur main attend la fin
 #   de ci.yml : relancer alors la release.
 # Sans étiquette (artefact seulement), rien n'est vérifié.
@@ -40,6 +42,11 @@ jobs:
         run: |
           [ -s "tools/release/notes/$TAG.md" ] \
             || { echo "::error::tools/release/notes/$TAG.md manque ou est vide : une release finale a ses notes"; exit 1; }
+      - name: Clé de secours
+        if: inputs.tag != ''
+        env:
+          TAG: ${{ inputs.tag }}
+        run: tools/ci/check-backup-key.sh "$TAG"
       - name: Commit de l'étiquette, ci.yml vert
         if: inputs.tag != ''
         env:
@@ -52,9 +59,14 @@ jobs:
             echo "::error::le commit construit ($GITHUB_SHA) n'est pas celui de l'étiquette $TAG ($tagged)"
             exit 1
           fi
+          # Une release finale exige l'étendue complète (le titre du lancement la dit : run-name de ci.yml), une
+          # préversion n'importe quel lancement vert (C51-07).
+          select='.'
+          [[ "$TAG" == *-* ]] || select='select(.displayTitle | contains("(complète)"))'
           green="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success \
-            --json databaseId -q length)"
+            --limit 100 --json displayTitle -q "[.[] | $select] | length")"
           if [ "${green:-0}" -eq 0 ]; then
-            echo "::error::ci.yml n'est pas vert sur $GITHUB_SHA : pas de release"
+            if [[ "$TAG" == *-* ]]; then echo "::error::ci.yml n'est pas vert sur $GITHUB_SHA : pas de release"
+            else echo "::error::ci.yml n'est pas vert, en étendue complète, sur $GITHUB_SHA : lancer la CI avec « Étendue complète » avant une release finale"; fi
             exit 1
           fi
