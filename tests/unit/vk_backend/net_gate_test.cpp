@@ -1,6 +1,6 @@
 // La porte de bout en bout de l'autotuner (V9, net_gate.h) : le réseau aux choix de l'autotuner rejoué
 // contre son jumeau en float. Des variantes justes passent la porte ; une perte de plus de kGateLossDb sous
-// les noyaux de référence ne passe pas.
+// les noyaux de référence ne passe pas, sauf au-dessus de kGateInvisibleDb, où elle ne se voit pas.
 #include "gpu/vulkan/backend/net_gate.h"
 
 #include <algorithm>
@@ -78,15 +78,20 @@ TEST_CASE("Porte de bout en bout : le verdict suit la perte sous les noyaux de r
   // SPAN b5f48 sur lavapipe (docs/moteurs.md) : 81,6 dB aux noyaux de référence, 74,3 dB en sommes float16.
   CHECK(gate_verdict(81.6, 81.6, std::nullopt) == GateVerdict::Keep);
   CHECK(gate_verdict(81.6, 81.2, std::nullopt) == GateVerdict::Keep);
-  // La qualité d'abord (B45-01) : 2,9 dB de perte, que l'ancienne porte à 3 dB gardait, ne passent plus ; la
-  // précision pleine reprend la place si elle tient, sinon les noyaux de référence.
-  CHECK(gate_verdict(81.6, 78.7, std::nullopt) == GateVerdict::Reference);
-  CHECK(gate_verdict(81.6, 78.7, 81.4) == GateVerdict::FullPrecision);
-  CHECK(gate_verdict(81.6, 80.9, 81.4) == GateVerdict::FullPrecision);
+  // Au-dessus de kGateInvisibleDb, la perte ne se voit pas : SPAN b5f48 en sommes float16 (74,3 dB ici, 70 dB
+  // sur une image réelle) garde ses choix, et sa vitesse sur une GeForce Ada (comme la 0.10.3).
+  CHECK(gate_verdict(81.6, 74.3, std::nullopt) == GateVerdict::Keep);
+  CHECK(gate_verdict(75.2, 70.3, 75.0) == GateVerdict::Keep);
+  CHECK(gate_verdict(81.6, 78.7, std::nullopt) == GateVerdict::Keep);
+  // Sous ce seuil, la qualité d'abord (B45-01) : plus de 0,5 dB sous le plancher ne passe pas ; la précision
+  // pleine reprend la place si elle tient, sinon les noyaux de référence.
   CHECK(vk::net::kGateLossDb <= 0.5);
-  CHECK(gate_verdict(81.6, 74.3, 81.2) == GateVerdict::FullPrecision);
-  CHECK(gate_verdict(81.6, 74.3, 70.0) == GateVerdict::Reference);
-  CHECK(gate_verdict(81.6, 74.3, std::nullopt) == GateVerdict::Reference);
+  CHECK(vk::net::kGateInvisibleDb >= 60.0);
+  CHECK(gate_verdict(58.0, 57.9, std::nullopt) == GateVerdict::Keep);
+  CHECK(gate_verdict(58.0, 55.0, std::nullopt) == GateVerdict::Reference);
+  CHECK(gate_verdict(58.0, 55.0, 57.8) == GateVerdict::FullPrecision);
+  CHECK(gate_verdict(81.6, 50.0, 70.0) == GateVerdict::FullPrecision);
+  CHECK(gate_verdict(81.6, 50.0, 52.0) == GateVerdict::Reference);
   // RIFE 4.25 : 77,9 contre 77,8 dB, gardé.
   CHECK(gate_verdict(77.9, 77.8, 77.9) == GateVerdict::Keep);
   // Une valeur non finie dans la sortie : jamais gardée.
@@ -137,7 +142,7 @@ TEST_CASE("Porte de bout en bout : le jumeau en float et la fidélité des noyau
     const std::vector<std::vector<vk::net::KernelChoice>> kept{gated.choices};
     const auto after = require_value(
         vk::net::network_fidelity(*rig.context, *rig.memory, *rig.pipelines, graph, kept, rig.target));
-    CHECK(after.db[0] >= fidelity.db[0] - vk::net::kGateLossDb);
+    CHECK((after.db[0] >= fidelity.db[0] - vk::net::kGateLossDb || after.db[0] >= vk::net::kGateInvisibleDb));
   }
 }
 
@@ -201,13 +206,14 @@ TEST_CASE("Porte de bout en bout : un plancher exact ne rejette pas une variante
   using vk::net::GateVerdict;
   CHECK(gate_verdict(vk::net::kGateExactDb, 100.0, std::nullopt) == GateVerdict::Keep);
   CHECK(gate_verdict(vk::net::kGateExactDb, 140.0, std::nullopt) == GateVerdict::Keep);
-  // Une vraie perte reste rejetée, même sous un plancher exact.
+  // Une vraie perte reste rejetée sous un plancher exact (graphe en float32), même au-dessus de
+  // kGateInvisibleDb : la précision y est voulue.
   CHECK(gate_verdict(vk::net::kGateExactDb, 70.0, std::nullopt) == GateVerdict::Reference);
   CHECK(gate_verdict(vk::net::kGateExactDb, 70.0, 100.0) == GateVerdict::FullPrecision);
   // Un plancher mesuré (float16) garde sa règle : le plafond ne l'atteint pas.
   CHECK(vk::net::kGateExactFloorDb > 82.0);
   CHECK(gate_verdict(81.6, 81.2, std::nullopt) == GateVerdict::Keep);
-  CHECK(gate_verdict(81.6, 80.0, std::nullopt) == GateVerdict::Reference);
+  CHECK(gate_verdict(58.0, 56.5, std::nullopt) == GateVerdict::Reference);
 }
 
 namespace {

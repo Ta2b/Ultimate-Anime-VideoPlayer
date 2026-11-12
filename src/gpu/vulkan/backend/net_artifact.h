@@ -25,8 +25,9 @@ namespace ajp::gpu::vk::net {
 // 5 : ConvAttrs::in_quant et out_quant (FP8 E4M3) ; 6 : porte de bout en bout à 1 % (P2.45), les artefacts
 // passés à 10 % se reconstruisent ; 7 : porte à 0,5 dB (B45-01), les artefacts passés à 3 dB de perte se
 // reconstruisent ; 8 : l'avis de précision réduite (ArtifactData::notice, C45-01), les artefacts d'avant se
-// reconstruisent pour le recevoir
-inline constexpr std::uint32_t kArtifactVersion = 8;
+// reconstruisent pour le recevoir ; 9 : une perte gardée au-dessus de 60 dB contre le float
+// (kGateInvisibleDb), les artefacts repassés en sommes float par la seule règle des 0,5 dB se reconstruisent
+inline constexpr std::uint32_t kArtifactVersion = 9;
 
 struct ShaderHash {
   std::string shader;
