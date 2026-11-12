@@ -102,7 +102,14 @@ void forget_report_fact(std::string_view name) {
   std::erase_if(s.facts, [&](const auto& fact) { return fact.first == name; });
 }
 
+void note_system_library_facts() {
+#ifdef AJP_SYSTEM_LIBS
+  if (const std::string_view libs = AJP_SYSTEM_LIBS; !libs.empty()) note_report_fact("Bibliothèques", libs);
+#endif
+}
+
 void note_engine_facts(std::string_view engine, std::string_view passed_over) {
+  note_system_library_facts();
   note_report_fact("Moteur", engine);
   // Un refus d'un moteur précédent ne reste pas affiché quand le moteur suivant a réussi sans refus (C39-06).
   if (!passed_over.empty())

@@ -51,6 +51,7 @@ jobs:
     needs: [linux, windows]
     if: ${{ !cancelled() && needs.linux.result == 'success' && needs.windows.result == 'success' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     # La clé de signature n'existe que dans cet environnement : ses règles disent quelles étiquettes y ont accès.
     environment: release
     env:

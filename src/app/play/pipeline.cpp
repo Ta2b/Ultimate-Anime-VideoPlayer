@@ -26,6 +26,9 @@
 namespace ajp::app::play {
 namespace {
 
+// Paquets audio en vol pour un fichier TrueHD, MLP ou DTS (C16-08) : environ 2 s de TrueHD, 15 s de DTS.
+constexpr std::size_t kHighRatePackets = 1536;
+
 std::string track_text(std::string_view kind, const media::TrackInfo& track) {
   std::string text = std::format("{} {}", i18n::tr(std::string(kind).c_str()), track.codec);
   if (!track.language.empty()) text += std::format(" {}", track.language);
@@ -103,7 +106,10 @@ static_assert(audio::limits::kMaxSpeedChangeCovered == core::pacing::kMaxSpeedCh
 // (libswresample mixe le surround). Sans format connu, celui de la piste, plafonné : au-delà de ce que SDL
 // ouvre, le périphérique choisit (0).
 audio::OutputRequest output_request(const media::TrackInfo& track, const std::string& name) {
-  const std::optional<audio::AudioDevice> device = audio::resolve_device(audio::playback_devices(), name);
+  std::optional<audio::AudioDevice> device = audio::resolve_device(audio::playback_devices(), name);
+  // La liste ne nomme pas le défaut du système (C16-09) : le format que SDL lui donne plutôt que celui de la
+  // piste.
+  if (!device) device = audio::system_default_device();
   const auto in_limits = [](int rate) {
     return rate >= audio::limits::kMinSampleRate && rate <= audio::limits::kMaxSampleRate;
   };
@@ -144,10 +150,15 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   }
   // B15-01 : le télécinéma supposé d'une piste entrelacée à 29,97 i/s se vérifie ; du vrai 30i n'a pas à
   // perdre une image sur cinq. Sans conclusion, le choix d'avant (télécinéma, le cas des animes) reste.
+  // C15-01 : la même lecture dit si les deux champs de chaque image sont du même instant (2:2 d'un DVD PAL,
+  // MBAFF progressif) : fieldmatch les recoud avant bwdif. Du vrai entrelacé garde bwdif seul.
   if (const media::TrackInfo* chosen = demuxer->track(*choice.video);
-      chosen != nullptr && chosen->inverse_telecine) {
-    if (const std::optional<bool> telecine = media::measure_telecine(*demuxer, *chosen))
-      demuxer->set_inverse_telecine(*choice.video, *telecine);
+      chosen != nullptr && chosen->interlaced) {
+    const media::InterlaceMeasure measured = media::measure_interlace(*demuxer, *chosen);
+    if (chosen->inverse_telecine && measured.telecine)
+      demuxer->set_inverse_telecine(*choice.video, *measured.telecine);
+    if (!demuxer->track(*choice.video)->inverse_telecine && measured.aligned.value_or(false))
+      demuxer->set_field_match(*choice.video, true);
   }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
@@ -273,7 +284,16 @@ void Pipeline::open_audio(const PipelineConfig& config, const media::Demuxer& de
     if (!output) {
       audio_failure = std::move(output.error());
     } else {
+      // C16-08 : la borne compte des paquets. TrueHD/MLP (environ 1,3 ms le paquet) et DTS (environ 10 ms) en
+      // alignent beaucoup plus par seconde que AAC ou FLAC : 256 paquets n'y couvrent que 0,3 à 2,7 s, et la
+      // source resterait bloquée sur l'entrelacement du fichier. La borne monte si le fichier en porte une.
+      const auto high_rate = [](const media::TrackInfo& t) {
+        return t.kind == media::TrackKind::Audio &&
+               (t.codec == "truehd" || t.codec == "mlp" || t.codec == "dts");
+      };
       audio::AudioThreadOptions options{
+          .max_packets =
+              std::ranges::any_of(demuxer.tracks(), high_rate) ? kHighRatePackets : std::size_t{256},
           .player = {.pll = config.audio_pll, .fallback_delay_us = config.audio_fallback_delay_us},
           .credit = [inbox = &source_inbox_](Credit credit) { std::ignore = inbox->try_push(credit); },
           .refused = [mail = &mail_](const Refusal& refusal) { mail->report("audio", refusal, false); }};

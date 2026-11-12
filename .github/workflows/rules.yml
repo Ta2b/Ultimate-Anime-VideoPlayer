@@ -10,6 +10,7 @@ jobs:
   rules:
     name: Format et règles
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -35,6 +36,12 @@ jobs:
         run: tools/ci/check-pubkey.sh
       - name: Scripts de publication
         run: tools/ci/check-release-scripts.sh
+      - name: Contrôles de tools/ci essayés
+        run: tools/ci/test-ci-scripts.sh
+      # La liste blanche des archives de moteur sous Windows, essayée comme celle de Linux (C28-12). pwsh est sur l'image.
+      - name: Scripts de publication de Windows
+        shell: pwsh
+        run: ./tools/release/test-windows-scripts.ps1
       - name: Aucun getenv
         run: tools/ci/check-no-getenv.sh
       - name: Aucun atoi ni sscanf
@@ -47,12 +54,14 @@ jobs:
         run: tools/deps/cutlass-copy.sh --check
       - name: Copie d'Anime4K intacte
         run: tools/deps/anime4k-copy.sh --check
+      - name: Cibles de la campagne de fuzz
+        run: tools/ci/check-fuzz-targets.sh
       - name: Banc des petites cartes
         run: python3 -I tools/bench/petits_gpu.py --selftest
       - name: Graphe des modules
         run: tools/ci/check-module-graph.py
       - name: Complexité des fonctions
-        run: pip install --user -q lizard==1.25.1 && tools/ci/check-complexity.py
+        run: pip install --user -q --require-hashes -r tools/ci/requirements/regles.txt && tools/ci/check-complexity.py
       - name: Shaders
         env:
           CXX: g++-13

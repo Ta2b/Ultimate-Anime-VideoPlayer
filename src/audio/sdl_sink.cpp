@@ -259,13 +259,31 @@ std::expected<void, Refusal> SdlSink::reopen(SDL_AudioDeviceID device_id) {
   SDL_AudioStream* old = stream_;
   const SDL_AudioDeviceID old_device = device_.load();
   device_.store(0);
-  if (old != nullptr) SDL_SetAudioStreamGetCallback(old, nullptr, nullptr);  // attend la fin d'un rappel
+  const bool had_postmix = postmix_;
+  const bool was_paused = paused_;
+  if (old != nullptr) {
+    SDL_SetAudioStreamGetCallback(old, nullptr, nullptr);  // attend la fin d'un rappel
+    // C16-05 : l'ancien flux ne touche plus au façonneur (l'attente ci-dessus et celle-ci couvrent un rappel
+    // en cours) et ne joue plus ce que le neuf va rejouer.
+    SDL_PauseAudioStreamDevice(old);
+    if (had_postmix) SDL_SetAudioPostmixCallback(old_device, nullptr, nullptr);
+  }
   if (auto opened = open_stream(device_id); !opened) {
     device_.store(old_device);
-    if (old != nullptr && demand_) SDL_SetAudioStreamGetCallback(old, &on_device_request, this);
+    if (old != nullptr) {
+      if (had_postmix) SDL_SetAudioPostmixCallback(old_device, &on_postmix, this);
+      if (!was_paused) {
+        fade_in_.store(true);
+        SDL_ResumeAudioStreamDevice(old);
+      }
+      if (demand_) SDL_SetAudioStreamGetCallback(old, &on_device_request, this);
+    }
     return opened;  // stream_ gardé
   }
-  if (old != nullptr) SDL_DestroyAudioStream(old);
+  if (old != nullptr) {
+    SDL_ClearAudioStream(old);
+    SDL_DestroyAudioStream(old);
+  }
   on_default_ = device_id == SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
   if (demand_) SDL_SetAudioStreamGetCallback(stream_, &on_device_request, this);
   return {};

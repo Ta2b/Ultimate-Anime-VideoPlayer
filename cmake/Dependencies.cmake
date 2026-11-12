@@ -20,7 +20,9 @@ endfunction()
 # en-têtes sont lus dans la copie corrigée de cmake/TomlFixes.cmake (<toml++-ajp/toml.hpp>), et
 # src/core/toml_config.h complète sa configuration.
 include("${CMAKE_CURRENT_LIST_DIR}/TomlFixes.cmake")
-find_package(tomlplusplus CONFIG REQUIRED)
+# Les minimums disent ce que le dépôt fixe (DEPS de tools/deps/linux-from-source.sh, overrides de vcpkg.json), pas
+# « n'importe quelle version » (C27-03). tools/ci/check-deps-versions.sh recoupe ces nombres avec DEPS.
+find_package(tomlplusplus 3.4 CONFIG REQUIRED)
 get_target_property(ajp_toml_include tomlplusplus::tomlplusplus INTERFACE_INCLUDE_DIRECTORIES)
 ajp_toml_fixed_include("${ajp_toml_include}" ajp_toml_fixed)
 add_library(ajp_toml_headers INTERFACE)
@@ -34,7 +36,7 @@ ajp_alias_dep(toml ajp_toml_headers)
 find_package(ZLIB REQUIRED)
 ajp_alias_dep(zlib ZLIB::ZLIB)
 
-find_package(spdlog CONFIG REQUIRED)
+find_package(spdlog 1.17 CONFIG REQUIRED)
 ajp_alias_dep(spdlog spdlog::spdlog)
 target_compile_definitions(ajp_dep_spdlog INTERFACE SPDLOG_USE_STD_FORMAT)
 
@@ -58,6 +60,20 @@ if(NOT AJP_BUILD_PLAYER)
 endif()
 
 find_package(PkgConfig REQUIRED)
+
+# Les bibliothèques d'image et de décodage que le dépôt ne fixe pas (dav1d, shaderc, lcms2, FreeType, HarfBuzz,
+# FriBidi : celles de la distribution sous Linux, de la baseline de vcpkg sous Windows) : leurs versions à la
+# construction entrent dans le rapport « Signaler un problème » (C27-04), pour qu'un écart de rendu ou de vitesse entre
+# Windows et CachyOS se lise sans enquête.
+set(ajp_lib_versions "")
+foreach(ajp_lib IN ITEMS dav1d shaderc lcms2 freetype2 harfbuzz fribidi)
+  pkg_check_modules(AJP_VERSION_${ajp_lib} QUIET ${ajp_lib})
+  if(AJP_VERSION_${ajp_lib}_FOUND)
+    list(APPEND ajp_lib_versions "${ajp_lib} ${AJP_VERSION_${ajp_lib}_VERSION}")
+  endif()
+endforeach()
+list(JOIN ajp_lib_versions ", " AJP_SYSTEM_LIBS_TEXT)
+message(STATUS "Bibliothèques du système : ${AJP_SYSTEM_LIBS_TEXT}")
 
 # FFmpeg 9.0.2 (libavformat 63.1), LGPL partagée.
 pkg_check_modules(AJP_FFMPEG REQUIRED IMPORTED_TARGET
@@ -117,8 +133,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   endif()
 endif()
 
-# SDL 3.4 : le HDR de Windows en dépend (host_facts.cpp) ; vcpkg.json et DEPS la fixent à 3.4.20.
-find_package(SDL3 3.4 CONFIG REQUIRED)
+# SDL 3.4.20 au moins : le HDR de Windows en dépend (host_facts.cpp) ; vcpkg.json et DEPS la fixent à 3.4.20.
+find_package(SDL3 3.4.20 CONFIG REQUIRED)
 message(STATUS "SDL3 ${SDL3_VERSION}, FFmpeg (libavformat ${AJP_FFMPEG_libavformat_VERSION}, libavcodec ${AJP_FFMPEG_libavcodec_VERSION})")
 
 ajp_alias_dep(sdl3 SDL3::SDL3)
@@ -136,9 +152,15 @@ endif()
 find_program(AJP_GLSLC NAMES glslc
   HINTS "$ENV{VULKAN_SDK}/bin" "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/shaderc" REQUIRED)
 
-# Dear ImGui : port vcpkg, ou sources installées par le script du préfixe.
-find_package(imgui CONFIG QUIET)
-if(TARGET imgui::imgui)
+# Dear ImGui : sources installées par le script du préfixe (share/imgui), ou port vcpkg. Le préfixe passe d'abord
+# (C27-03) : sans cela, un paquet imgui du système (CachyOS, Arch) qui installe un imguiConfig.cmake gagnait sur les
+# sources du préfixe, avec une autre version et d'autres options de compilation (FreeType, backends).
+set(AJP_IMGUI_VERSION_WANTED "1.93.0")  # DEPS de tools/deps/linux-from-source.sh et overrides de vcpkg.json
+find_path(AJP_IMGUI_DIR imgui.cpp PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES share/imgui NO_DEFAULT_PATH)
+if(NOT AJP_IMGUI_DIR)
+  find_package(imgui CONFIG QUIET)
+endif()
+if(NOT AJP_IMGUI_DIR AND TARGET imgui::imgui)
   ajp_alias_dep(imgui imgui::imgui)
   # Le port avec sa fonction « freetype » (vcpkg.json) : le même chargeur de polices que sous Linux, pour les
   # polices CFF2 et variables que stb_truetype refuse.
@@ -152,6 +174,11 @@ if(TARGET imgui::imgui)
   endif()
 else()
   find_path(AJP_IMGUI_DIR imgui.cpp PATH_SUFFIXES share/imgui REQUIRED)
+  file(STRINGS "${AJP_IMGUI_DIR}/imgui.h" AJP_IMGUI_VERSION_LINE REGEX "^#define IMGUI_VERSION +\"" LIMIT_COUNT 1)
+  if(NOT AJP_IMGUI_VERSION_LINE MATCHES "\"${AJP_IMGUI_VERSION_WANTED}\"")
+    message(WARNING "Dear ImGui : ${AJP_IMGUI_DIR} est en ${AJP_IMGUI_VERSION_LINE}, le dépôt fixe ${AJP_IMGUI_VERSION_WANTED}")
+  endif()
+  message(STATUS "Dear ImGui : sources de ${AJP_IMGUI_DIR}")
   add_library(ajp_imgui STATIC
     "${AJP_IMGUI_DIR}/imgui.cpp" "${AJP_IMGUI_DIR}/imgui_draw.cpp"
     "${AJP_IMGUI_DIR}/imgui_tables.cpp" "${AJP_IMGUI_DIR}/imgui_widgets.cpp")

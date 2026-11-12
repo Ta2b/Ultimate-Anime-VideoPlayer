@@ -50,6 +50,7 @@ jobs:
       archive-sha256: ${{ steps.sums.outputs.archive }}
     needs: [guard]
     runs-on: macos-15
+    timeout-minutes: 120
     steps:
       # Le jeton du dépôt ne reste pas dans .git/config, où tout code tiers construit ensuite le lirait (A28-08).
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

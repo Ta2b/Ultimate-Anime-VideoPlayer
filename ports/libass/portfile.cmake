@@ -20,10 +20,13 @@ vcpkg_from_git(
 if(VCPKG_TARGET_IS_WINDOWS)
   set(font_options -Dfontconfig=disabled -Ddirectwrite=enabled -Dcoretext=disabled)
   # Le rendu sur plusieurs fils utilise <stdatomic.h> : MSVC le refuse sous gnu99 (le défaut du meson.build) et le
-  # garde derrière /experimental:c11atomics. Il déclare aussi une variable par fil en __thread
-  # (GCC), que MSVC écrit __declspec(thread).
+  # garde derrière /experimental:c11atomics. Le correctif a un repli en Interlocked pour un MSVC sans <stdatomic.h>
+  # (ass_threading.h) : on veut le chemin de <stdatomic.h>, celui de GCC et de clang, que les tests de rendu sur
+  # plusieurs fils (tests/unit/subs/thread_test.cpp, préréglage windows-ci) jouent sous MSVC. Retirer le drapeau
+  # ferait passer sans bruit sur le repli, que personne ne teste. Les variables par fil (ASS_TLS) choisissent
+  # d'elles-mêmes __declspec(thread) sous MSVC : aucun __thread à redéfinir (C27-05).
   set(std_options -Dc_std=c11)
-  string(APPEND VCPKG_C_FLAGS " /experimental:c11atomics /D__thread=__declspec(thread)")
+  string(APPEND VCPKG_C_FLAGS " /experimental:c11atomics")
   string(APPEND VCPKG_CXX_FLAGS " ")  # vcpkg_cmake_configure veut les deux drapeaux, ou aucun
 elseif(VCPKG_TARGET_IS_OSX)
   set(font_options -Dfontconfig=disabled -Ddirectwrite=disabled -Dcoretext=enabled)

@@ -385,6 +385,9 @@
         "include": {
           "label": "nvidia|gpu|models"
         }
+      },
+      "execution": {
+        "noTestsAction": "error"
       }
     },
     {

@@ -16,14 +16,14 @@ body:
     id: version
     attributes:
       label: ajp version / Version
-      placeholder: "0.10.0 (menu General, Application page)"
+      placeholder: "0.11.0 (menu General, Application page)"
     validations:
       required: true
   - type: dropdown
     id: os
     attributes:
       label: System / Système
-      options: [Windows 11, Windows 10, Linux, macOS]
+      options: [Windows 11, Linux, macOS]
     validations:
       required: true
   - type: input

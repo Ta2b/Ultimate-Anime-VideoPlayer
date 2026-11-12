@@ -19,6 +19,11 @@ namespace ajp::app::play {
 void note_report_fact(std::string_view name, std::string_view value);
 // Retire un fait devenu faux (rien si absent).
 void forget_report_fact(std::string_view name);
+// Les versions, à la construction, des bibliothèques d'image et de décodage que le dépôt ne fixe
+// pas (dav1d, shaderc, lcms2, FreeType, HarfBuzz, FriBidi : celles de la distribution sous Linux,
+// de vcpkg sous Windows). Un écart de rendu ou de vitesse entre deux systèmes se cherche d'abord
+// dans ces versions (C27-04). Sans effet si la construction n'en a relevé aucune.
+void note_system_library_facts();  // appelée par note_engine_facts
 // Le moteur retenu et ceux qui ont refusé l'appareil avant lui, avec leurs raisons (vide : aucun refus).
 void note_engine_facts(std::string_view engine, std::string_view passed_over);
 // Le dernier refus d'une construction de moteur : sa cause en une ligne et la fin du journal de trtexec que

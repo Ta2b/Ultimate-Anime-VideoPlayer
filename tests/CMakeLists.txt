@@ -4,7 +4,7 @@ include(Catch)
 # Les tests cachés qui jugent sur la vraie carte ou sur un modèle installé (B40-02), un test CTest par groupe Catch
 # `[.groupe]`, étiqueté pour `ctest -L <label>` : nvidia (TensorRT, noyaux CUDA, NVDEC), gpu (repli Vulkan sur une carte
 # matérielle), models (SPAN installé sur le poste). Hors AJP_HARDWARE_TESTS ils ne sont pas enregistrés : la CI sous
-# lavapipe, la garde de release et le plafond de tests sautés ne les voient pas. Le préréglage linux-prefix-cuda l'allume.
+# lavapipe, la garde de release et le plafond de tests sautés ne les voient pas. Les préréglages linux-prefix-cuda et windows-rtx l'allument.
 option(AJP_HARDWARE_TESTS "Enregistrer les tests cachés qui demandent une vraie carte ou des modèles (ctest -L nvidia|gpu|models)" OFF)
 # Sur le PC de référence (windows-rtx), un test matériel qui se saute (pilote absent, modèle introuvable) est un
 # échec, pas un « Skipped » vert : sans cela, tout passe au vert avec les tests sautés (C40-04).
@@ -31,11 +31,17 @@ endfunction()
 if(WIN32)
   # Des « / » : le chemin entre dans des définitions de compilation (une chaîne C, où « \U » est une erreur).
   file(TO_CMAKE_PATH "$ENV{USERPROFILE}" AJP_TEST_HOME)
+  # Là où une installation d'AnimeJaNai pour Windows range ses SPAN, le second dossier que le lecteur essaie
+  # (default_model_candidates, options.cpp) : l'ancien défaut était un chemin Linux et le SPAN, le moteur principal de la
+  # cible, se sautait en silence sous Windows (C28-03).
+  set(AJP_ANIMEJANAI_ONNX_DEFAULT
+      "${AJP_TEST_HOME}/Documents/mpv-AnimeJaNai-HDR/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx")
 else()
   set(AJP_TEST_HOME "$ENV{HOME}")
+  set(AJP_ANIMEJANAI_ONNX_DEFAULT "${AJP_TEST_HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx")
 endif()
 set(AJP_MODELS_DIR "${AJP_TEST_HOME}/ajp/models/rife" CACHE PATH "Dossier des RIFE et DistilDRBA ONNX pour les tests de moteurs")
-set(AJP_ANIMEJANAI_ONNX_DIR "${AJP_TEST_HOME}/.local/share/AnimeJaNai-HDR-linux/animejanai/onnx"
+set(AJP_ANIMEJANAI_ONNX_DIR "${AJP_ANIMEJANAI_ONNX_DEFAULT}"
     CACHE PATH "Dossier des SPAN ONNX d'AnimeJaNai pour les tests de moteurs")
 
 # Support commun aux tests qui créent un appareil Vulkan (couche de validation, main).

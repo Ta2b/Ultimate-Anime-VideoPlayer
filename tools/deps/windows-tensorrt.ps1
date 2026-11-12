@@ -21,6 +21,18 @@ function Pinned([string]$Name) {
   if (-not $line) { throw "$Name absent de tools/release/versions.env" }
   return $line.Matches[0].Groups[1].Value
 }
+# Décompresse un .zip. « tar » du PATH n'est pas sûr : avec Git for Windows ou MSYS devant System32, c'est GNU tar, qui
+# ne lit pas les zip (« does not look like a tar archive »). Le bsdtar de Windows, par son chemin, les lit ; sans lui,
+# Expand-Archive (C27-06).
+function Expand-Zip([string]$Zip, [string]$Dest) {
+  $bsdtar = Join-Path $env:SystemRoot "System32/tar.exe"
+  if (Test-Path $bsdtar) {
+    & $bsdtar -xf $Zip -C $Dest
+    if ($LASTEXITCODE -ne 0) { throw "extraction de $Zip" }
+  } else {
+    Expand-Archive -LiteralPath $Zip -DestinationPath $Dest -Force
+  }
+}
 $Series = Pinned "CUDA_REDIST_SERIES"
 $CudaPinned = Pinned "CUDA_REDIST_VERSION"
 $ManifestExpected = Pinned "CUDA_REDIST_MANIFEST_SHA256"
@@ -64,8 +76,7 @@ foreach ($names in @("cuda_nvcc"), @("cuda_crt"), @("libnvvm"), @("cuda_cudart")
   $unpacked = Join-Path $Downloads $component
   Remove-Item -Recurse -Force $unpacked -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force -Path $unpacked | Out-Null
-  tar -xf $file -C $unpacked
-  if ($LASTEXITCODE -ne 0) { throw "extraction de $file" }
+  Expand-Zip $file $unpacked
   # Chaque archive a un dossier racine <composant>-windows-x86_64-<version>-archive.
   $top = Get-ChildItem $unpacked -Directory | Select-Object -First 1
   Copy-Item -Path (Join-Path $top.FullName "*") -Destination $CudaRoot -Recurse -Force
@@ -98,8 +109,7 @@ if ($TrtSha -ne $TrtExpected) { Remove-Item $TrtZip; throw "TensorRT : empreinte
 $TrtUnpacked = Join-Path $Dir "tensorrt"
 Remove-Item -Recurse -Force $TrtUnpacked -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $TrtUnpacked | Out-Null
-tar -xf $TrtZip -C $TrtUnpacked
-if ($LASTEXITCODE -ne 0) { throw "extraction de $TrtZip" }
+Expand-Zip $TrtZip $TrtUnpacked
 $TrtRoot = (Get-ChildItem $TrtUnpacked -Directory | Where-Object { Test-Path (Join-Path $_.FullName "include/NvInfer.h") } |
   Select-Object -First 1).FullName
 if (-not $TrtRoot) { throw "NvInfer.h absent du zip de TensorRT" }

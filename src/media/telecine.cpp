@@ -41,7 +41,7 @@ constexpr int kMaxPackets = 600;
 constexpr auto kBudget = std::chrono::seconds(4);
 
 // Les images que le décodeur rend, mesurées ; leur nombre.
-int drain(AVCodecContext& ctx, AVFrame& frame, TelecineMeter& meter) {
+int drain(AVCodecContext& ctx, AVFrame& frame, TelecineMeter& meter, FieldAlignmentMeter& alignment) {
   int measured = 0;
   while (avcodec_receive_frame(&ctx, &frame) >= 0) {
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(static_cast<AVPixelFormat>(frame.format));
@@ -51,6 +51,7 @@ int drain(AVCodecContext& ctx, AVFrame& frame, TelecineMeter& meter) {
         desc->comp[0].depth <= 16) {
       const int depth = desc->comp[0].depth;
       meter.push(frame.data[0], frame.linesize[0], frame.width, frame.height, depth > 8 ? 2 : 1, depth);
+      alignment.push(frame.data[0], frame.linesize[0], frame.width, frame.height, depth > 8 ? 2 : 1, depth);
       ++measured;
     }
     av_frame_unref(&frame);
@@ -110,23 +111,28 @@ TelecineMeter::Verdict TelecineMeter::verdict() const {
 }
 
 std::optional<bool> measure_telecine(Demuxer& demuxer, const TrackInfo& track) {
-  if (track.kind != TrackKind::Video || !track.parameters) return std::nullopt;
+  return measure_interlace(demuxer, track).telecine;
+}
+
+InterlaceMeasure measure_interlace(Demuxer& demuxer, const TrackInfo& track) {
+  if (track.kind != TrackKind::Video || !track.parameters) return {};
   const AVCodec* codec = avcodec_find_decoder(track.parameters->av().codec_id);
-  if (codec == nullptr) return std::nullopt;
+  if (codec == nullptr) return {};
   CodecContextPtr ctx(avcodec_alloc_context3(codec));
-  if (!ctx || avcodec_parameters_to_context(ctx.get(), &track.parameters->av()) < 0) return std::nullopt;
+  if (!ctx || avcodec_parameters_to_context(ctx.get(), &track.parameters->av()) < 0) return {};
   ctx->thread_count = background_decoder_threads();
-  if (avcodec_open2(ctx.get(), codec, nullptr) < 0) return std::nullopt;
+  if (avcodec_open2(ctx.get(), codec, nullptr) < 0) return {};
   FramePtr frame(av_frame_alloc());
-  if (!frame) return std::nullopt;
+  if (!frame) return {};
 
   const std::array<int, 1> keep{track.index};
-  if (!demuxer.keep_only(keep)) return std::nullopt;
+  if (!demuxer.keep_only(keep)) return {};
   // Vers le premier quart : un générique ou un logo fixe au début ne montre pas de mouvement.
   if (const std::int64_t duration = demuxer.duration_us(); duration > 0)
     std::ignore = demuxer.seek(duration / 4, track.index, SeekTarget::NearestKeyframe);
 
   TelecineMeter meter;
+  FieldAlignmentMeter alignment;
   const auto started = std::chrono::steady_clock::now();
   int frames = 0;
   bool ended = false;
@@ -140,17 +146,28 @@ std::optional<bool> measure_telecine(Demuxer& demuxer, const TrackInfo& track) {
     } else if ((*packet)->track != track.index || avcodec_send_packet(ctx.get(), (*packet)->av.get()) < 0) {
       continue;
     }
-    frames += drain(*ctx, *frame, meter);
+    frames += drain(*ctx, *frame, meter, alignment);
   }
   std::ignore = demuxer.seek_file(0, track.index);  // la lecture repart du début
   const auto verdict = meter.verdict();
-  make_logger()->info("piste {} : télécinéma mesuré sur {} images ({} en mouvement, {} champs répétés) : {}",
-                      track.index, meter.compared(), meter.moving(), meter.repeats(),
-                      verdict == TelecineMeter::Verdict::Telecine ? "oui"
-                      : verdict == TelecineMeter::Verdict::Native ? "non, vrai 30i"
-                                                                  : "non concluant");
-  if (verdict == TelecineMeter::Verdict::Unknown) return std::nullopt;
-  return verdict == TelecineMeter::Verdict::Telecine;
+  const auto fields = alignment.verdict();
+  make_logger()->info(
+      "piste {} : télécinéma mesuré sur {} images ({} en mouvement, {} champs répétés) : {} ; "
+      "champs du même instant : {} ({} images en mouvement, {} peignées)",
+      track.index, meter.compared(), meter.moving(), meter.repeats(),
+      verdict == TelecineMeter::Verdict::Telecine ? "oui"
+      : verdict == TelecineMeter::Verdict::Native ? "non, vrai 30i"
+                                                  : "non concluant",
+      fields == FieldAlignmentMeter::Verdict::Aligned  ? "oui"
+      : fields == FieldAlignmentMeter::Verdict::Combed ? "non, peignés"
+                                                       : "non concluant",
+      alignment.moving(), alignment.combed());
+  InterlaceMeasure result;
+  if (verdict != TelecineMeter::Verdict::Unknown)
+    result.telecine = verdict == TelecineMeter::Verdict::Telecine;
+  if (fields != FieldAlignmentMeter::Verdict::Unknown)
+    result.aligned = fields == FieldAlignmentMeter::Verdict::Aligned;
+  return result;
 }
 
 }  // namespace ajp::media

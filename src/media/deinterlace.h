@@ -20,6 +20,7 @@ namespace ajp::media {
 enum class FieldMode {
   Deinterlace,      // bwdif seul
   InverseTelecine,  // fieldmatch, bwdif sur les images peignées, decimate (A15-02)
+  MatchFields,  // fieldmatch, bwdif sur les images peignées, sans decimate : 2:2, MBAFF progressif (C15-01)
 };
 
 class Deinterlacer {

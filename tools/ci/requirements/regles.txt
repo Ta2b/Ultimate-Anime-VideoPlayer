@@ -1,0 +1,13 @@
+# Les dépendances de la règle de complexité (rules.yml), avec empreintes : pip install --require-hashes -r regles.txt
+# Régénérer : pip-compile --generate-hashes --output-file=regles.txt --strip-extras regles.in
+lizard==1.25.1 \
+    --hash=sha256:789e7103875cb15aac273e1701cd72d4b9d5fa521790e258fe071dbf79dbc4ee \
+    --hash=sha256:3513ce263d17ed580f8efa202658b02c684d5da2b39ef40c7663971be822a9d6
+pathspec==1.1.1 \
+    --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189 \
+    --hash=sha256:17db5ecd524104a120e173814c90367a96a98d07c45b2e10c2f3919fff91bf5a
+    # via lizard
+pygments==2.21.0 \
+    --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
+    --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c
+    # via lizard

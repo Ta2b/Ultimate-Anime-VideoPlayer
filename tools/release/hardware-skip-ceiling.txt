@@ -1,0 +1,6 @@
+# Plafond des tests cachés sautés par plateforme, lu par hardware_report.py check (C28-02). Un test sauté est un test
+# de la cible qui n'a pas jugé (SPAN FP8 sans paquet dérivé, modèle absent…). Valeurs provisoires, non relevées : aucune
+# carte NVIDIA ici. À fixer au premier rapport réel de chaque poste (`skipped` du rapport, avec ses noms) et à
+# serrer ensuite ; le relever demande une raison dans le commit.
+linux 20
+windows 20
