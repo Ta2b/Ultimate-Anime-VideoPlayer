@@ -20,6 +20,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../../support/span_fp8_synthetic.h"
 #include "backend_fixture.h"
 #include "gpu/span_fp8/package.h"
 #include "kernels/ref/half.h"
@@ -147,13 +148,13 @@ TEST_CASE("Backend TensorRT : un paquet SPAN FP8 inutilisable est refusé par so
   gpu::Progress progress;
 
   const fs::path good = scratch.root / "modele-fp8c-0123456789abcdef.span8";
-  write_bytes(good, gpu::span_fp8::serialize(gpu::span_fp8::synthetic()));
+  write_bytes(good, gpu::span_fp8::serialize(gpu::span_fp8::testing::synthetic()));
   const bool supported = loaded.backend->capabilities().span_fp8_cutlass;
 
   // Un fichier absent, tronqué ou abîmé : jamais une construction réussie.
   CHECK_FALSE(loaded.backend->build(spec_of(scratch.root / "absent-fp8c-0123456789abcdef.span8"),
                                     fixed(1088, 1920), progress));
-  std::vector<std::byte> bytes = gpu::span_fp8::serialize(gpu::span_fp8::synthetic());
+  std::vector<std::byte> bytes = gpu::span_fp8::serialize(gpu::span_fp8::testing::synthetic());
   bytes.resize(bytes.size() / 2);
   const fs::path truncated = scratch.root / "tronque-fp8c-0123456789abcdef.span8";
   write_bytes(truncated, bytes);
@@ -185,7 +186,7 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 rejoué par graphe rend la même image
   if (!loaded.backend->capabilities().span_fp8_cutlass) SKIP("appareil sans les noyaux FP8 CUTLASS (sm 8.9)");
   Scratch scratch;
   const fs::path package = scratch.root / "synthetique.span8";
-  write_bytes(package, gpu::span_fp8::serialize(gpu::span_fp8::synthetic()));
+  write_bytes(package, gpu::span_fp8::serialize(gpu::span_fp8::testing::synthetic()));
   constexpr int h = 96, w = 160;
   gpu::Progress progress;
   auto artifact = loaded.backend->build(spec_of(package), fixed(h, w), progress);

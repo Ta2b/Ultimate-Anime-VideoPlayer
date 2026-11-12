@@ -67,7 +67,7 @@ class FusedGraphs {
   // ne sont pas un refus : run() fait le travail en direct. Une erreur collante : contexte perdu.
   template <typename Run>
   std::expected<void, Refusal> launch(cudaStream_t stream, const Key& key, Run&& run) {
-    if (book_.off()) return run();
+    if (book_.skip()) return run();
     const GraphBook<Key>::Pick pick = book_.next(key);
     if (pick.step == GraphStep::Direct || pick.step == GraphStep::Overflow || pick.step == GraphStep::Warm)
       return run();  // Warm : le premier lancement fait ses allocations hors capture

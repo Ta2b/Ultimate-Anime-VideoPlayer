@@ -2,6 +2,7 @@
 // (check_backend_abi), et les instances qu'elle crée.
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
@@ -60,6 +61,7 @@ class BackendLibrary {
   std::filesystem::path path_;
   std::string passed_over_;
   std::filesystem::file_time_type stamp_{};
+  std::uintmax_t size_ = 0;  // la taille du fichier à l'ouverture, avec stamp_ (C21-03)
   gpu::BackendCreateFn create_ = nullptr;
   gpu::BackendDestroyFn destroy_ = nullptr;
 };

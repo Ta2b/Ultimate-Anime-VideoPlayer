@@ -34,6 +34,10 @@
 #include "app/play/precision.h"
 #include "core/types.h"
 
+namespace ajp::media {
+struct TrackInfo;
+}
+
 namespace ajp::app::play {
 
 inline constexpr double kInt8MinPsnrMeanDb = 42.0;
@@ -81,6 +85,11 @@ struct SpanVariantCaps {
 // aucune (le FP16 livré, A49-07) ; Qualité le FP32. strict (cran choisi par un préréglage, pas à la main) :
 // sans le FP8 par Q/DQ, dont les seuils sont lâches ; la chaîne y demande aussi un reçu v2 au FP8 CUTLASS.
 std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVariantCaps& caps, bool strict);
+
+// Une source HDR (PQ, HLG, BT.2020 : media::is_hdr) : le SPAN FP8 CUTLASS n'y est jamais pris. Sa porte ne
+// juge que des images SDR 8 bits (media/stills.h refuse les autres), et ses échelles n'ont jamais vu ces
+// valeurs (C02-04) : la chaîne garde le FP16, sans préparer.
+bool hdr_source(const media::TrackInfo& video);
 
 // Les listes de tailles d'un reçu v2 et son texte (validation seule, étape 3.7b). Refus FileUnreadable.
 struct ReceiptSizes {

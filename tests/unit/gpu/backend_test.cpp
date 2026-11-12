@@ -3,15 +3,20 @@
 // chargeur refuser une bibliothèque d'une autre forme avant de lui passer quoi que ce soit.
 #include "gpu/backend.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <spdlog/sinks/ringbuffer_sink.h>
 
+#include "core/log.h"
 #include "gpu/guarded_backend.h"
 #include "gpu/tensor.h"
 #include "media/hw_api.h"
@@ -20,7 +25,7 @@ using ajp::Refusal;
 using ajp::RefusalCode;
 using namespace ajp::gpu;
 
-static_assert(kBackendAbi == 39);
+static_assert(kBackendAbi == 40);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
 // fonction extern "C" est un comportement indéfini chez l'appelant.
 static_assert(std::is_nothrow_invocable_r_v<int, BackendAbiFn>);
@@ -255,7 +260,17 @@ TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backen
     void drain() override { throw std::runtime_error("drain"); }
   };
   GuardedBackend guarded(std::make_unique<Thrower>());
+  // C21-04 : la valeur prudente, mais l'exception au journal « backend ».
+  const auto lines = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(16);
+  ajp::install_log_sinks({lines}, spdlog::level::info);
   CHECK(guarded.capabilities().name.empty());
+  CHECK(guarded.match(DeviceUuid{}) == DeviceMatch::Unknown);
+  const std::vector<std::string> logged = lines->last_formatted();
+  const auto has = [&](std::string_view text) {
+    return std::ranges::any_of(logged, [&](const std::string& line) { return line.contains(text); });
+  };
+  CHECK(has("capabilities : caps"));
+  CHECK(has("match : match"));
   CHECK(guarded.match(DeviceUuid{}) == DeviceMatch::Unknown);
   CHECK(guarded.kernels() == nullptr);
   guarded.use_lane(Lane{});

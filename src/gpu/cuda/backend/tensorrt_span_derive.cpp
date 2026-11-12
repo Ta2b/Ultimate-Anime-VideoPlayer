@@ -7,10 +7,14 @@
 //      scales_from_peaks, marge de tête B02-02), comme l'outil Python.
 //   2. Le réseau FP8 (span_fp8_net.h), à ces échelles, passe les images de validation, mises de côté ; sa
 //      sortie est jugée contre celle de la même référence FP16 (PSNR, SSIM de gpu/span_fp8/metrics.h).
-//   3. Le temps du réseau FP8 sur cette taille est mesuré. Le lecteur le compare ensuite au SPAN FP16 de
-//      TensorRT sur la même carte (app/play/span_derive.h : time_span_fp16, B02-01).
+//      Les maxima des tenseurs se relèvent aussi sur elles : un tenseur au-delà de 448 × son échelle y serait
+//      écrêté, et la porte refuse (span_fp8::judge_peaks, C02-04).
+//   3. Le temps du réseau FP8, à la taille de travail de la lecture (C02-05), contre celui du SPAN FP16 de
+//      TensorRT que la requête apporte : mesurés ensemble, sur le même flux, par tours intercalés
+//      (span_timing.h, C02-01). Le lecteur exige le gain (B02-01).
 //   La variante à accumulateur f16 hors blocs (conv_cat et to_pixel, étape 3.5a) passe les mêmes images et la
-//   même mesure ; l'application la garde si sa porte passe et que le PSNR moyen perd ≤ 0,3 dB.
+//   même mesure ; l'application la garde si sa porte passe, que le PSNR moyen perd ≤ 0,3 dB et qu'elle va
+//   plus vite (C02-03).
 //
 // La référence est le SPAN en FP16 par les convolutions CUTLASS, pas le moteur TensorRT : construire un
 // moteur TensorRT pour la dériver coûterait une minute, et ses échelles seraient relevées sur un graphe fondu
@@ -28,7 +32,9 @@
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/cuda/backend/span_fp8_ref.h"
+#include "gpu/cuda/backend/span_timing.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
+#include "gpu/cuda/backend/trt_engine.h"
 #include "gpu/span_fp8/derive.h"
 #include "gpu/span_fp8/metrics.h"
 #include "gpu/span_fp8/package.h"
@@ -41,6 +47,7 @@ struct Scratch {
   void* input = nullptr;
   void* output_ref = nullptr;
   void* output_fp8 = nullptr;
+  void* output_trt = nullptr;  // la sortie du SPAN FP16 de TensorRT chronométré
   void* workspace = nullptr;
   cudaStream_t stream = nullptr;
   Scratch() = default;
@@ -48,8 +55,13 @@ struct Scratch {
   Scratch& operator=(const Scratch&) = delete;
   ~Scratch() {
     if (stream != nullptr) cudaStreamDestroy(stream);
-    for (void* p : {input, output_ref, output_fp8, workspace})
-      if (p != nullptr) cudaFree(p);
+    release();
+  }
+  void release() {
+    for (void** p : {&input, &output_ref, &output_fp8, &output_trt, &workspace}) {
+      if (*p != nullptr) cudaFree(*p);
+      *p = nullptr;
+    }
   }
 };
 
@@ -75,6 +87,62 @@ std::vector<float> to_unit(const std::vector<__half>& half) {
   return out;
 }
 
+// Les réseaux FP8 (et f16 si with_f16) refaits à la taille de la mesure, avec leurs tampons ; l'entrée
+// remplie d'une valeur quelconque mais finie (0,53 partout) : le temps des noyaux ne dépend pas des valeurs.
+std::expected<void, Refusal> resize_nets(SpanFp8Weights& weights, bool acc16, bool with_f16, int width,
+                                         int height, Scratch& scratch, std::unique_ptr<SpanFp8Net>& net,
+                                         std::unique_ptr<SpanFp8Net>& net16) {
+  net16.reset();
+  net.reset();
+  scratch.release();
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string why;
+  weights.acc16 = acc16;
+  net = SpanFp8Net::create(weights, height, width, status, why);
+  if (!net)
+    return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
+                                                       : RefusalCode::VendorCallFailed,
+                  "temps du SPAN FP8 : " + why);
+  weights.acc16 = true;
+  if (with_f16) net16 = SpanFp8Net::create(weights, height, width, status, why);
+  const std::size_t in_bytes =
+      3 * static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(__half);
+  for (void** buffer : {&scratch.input, &scratch.output_fp8})
+    if (auto e = cudaMalloc(buffer, buffer == &scratch.input ? in_bytes : in_bytes * 4); e != cudaSuccess)
+      return cuda_refusal(e, "cudaMalloc");
+  if (auto e = cudaMalloc(&scratch.workspace, static_cast<std::size_t>(net->workspace_bytes()));
+      e != cudaSuccess)
+    return cuda_refusal(e, "cudaMalloc");
+  net->bind(scratch.workspace);
+  if (net16) net16->bind(scratch.workspace);
+  if (auto e = cudaMemsetAsync(scratch.input, 0x38, in_bytes, scratch.stream); e != cudaSuccess)
+    return cuda_refusal(e, "cudaMemset");
+  return {};
+}
+
+// Le moteur SPAN FP16 de TensorRT lu, sa forme vérifiée (une entrée width × height, une sortie), et la sortie
+// ×2 allouée dans scratch.output_trt.
+std::expected<std::unique_ptr<TrtEngine>, Refusal> load_fp16(nvinfer1::IRuntime& runtime,
+                                                             const std::filesystem::path& path, int width,
+                                                             int height, Scratch& scratch) {
+  auto loaded = TrtEngine::load(runtime, path);
+  if (!loaded) return std::unexpected(std::move(loaded.error()));
+  std::unique_ptr<TrtEngine> trt = std::move(*loaded);
+  const Shape expected{.dims = {1, 3, height, width}};
+  if (trt->input_names().size() != 1 || trt->output_names().size() != 1 || !(trt->input_shape(0) == expected))
+    return refuse(
+        RefusalCode::ShapeInvalid,
+        std::format("temps du SPAN FP16 : moteur de forme {}, {}x{} attendu",
+                    shape_text(ShapeSet{
+                        .min = trt->input_shape(0), .opt = trt->input_shape(0), .max = trt->input_shape(0)}),
+                    width, height));
+  const std::size_t out_bytes =
+      12 * static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(__half);
+  if (auto e = cudaMalloc(&scratch.output_trt, out_bytes); e != cudaSuccess)
+    return cuda_refusal(e, "cudaMalloc");
+  return trt;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -93,6 +161,11 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   const int height = request.validation.front().height;
   if (const std::string why = span_fp8::size_refusal(height, width); !why.empty())
     return refuse(RefusalCode::FormatUnsupported, "dérivation du SPAN FP8 : " + why);
+  // C02-05 : les temps à la taille de travail de la lecture, la qualité sur la découpe des images.
+  const int timing_width = request.timing_width > 0 ? request.timing_width : width;
+  const int timing_height = request.timing_height > 0 ? request.timing_height : height;
+  if (const std::string why = span_fp8::size_refusal(timing_height, timing_width); !why.empty())
+    return refuse(RefusalCode::FormatUnsupported, "temps du SPAN FP8 : " + why);
   const std::size_t plane = static_cast<std::size_t>(height) * static_cast<std::size_t>(width);
   for (const auto* group : {&request.calibration, &request.validation, &request.hard})
     for (const SpanStill& still : *group)
@@ -106,7 +179,11 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
     // zone du réseau FP8 (768 o par pixel de caractéristiques) et de la référence FP16 (1 120 o), entrée et
     // deux sorties FP16, poids.
     const auto features = static_cast<double>(plane) / 4.0;
-    const double need = features * (768.0 + 1120.0) + static_cast<double>(plane) * 3.0 * 2.0 * 9.0 + 8.0e6;
+    double need = features * (768.0 + 1120.0) + static_cast<double>(plane) * 3.0 * 2.0 * 9.0 + 8.0e6;
+    // Puis, pour le temps à une taille plus grande (la référence rendue) : les deux réseaux FP8 et trois
+    // tampons, sans compter le moteur TensorRT, que la lecture tient déjà.
+    const double timed = static_cast<double>(timing_width) * static_cast<double>(timing_height);
+    need = std::max(need, timed / 4.0 * 768.0 + timed * 3.0 * 2.0 * 9.0 + 8.0e6);
     std::size_t free_bytes = 0, total_bytes = 0;
     if (const cudaError_t e = cudaMemGetInfo(&free_bytes, &total_bytes); e != cudaSuccess)
       return cuda_refusal(e, "cudaMemGetInfo");
@@ -127,8 +204,7 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string why;
   report(0.0F, "référence FP16");
-  const std::unique_ptr<SpanFp8Reference> reference =
-      SpanFp8Reference::create(weights, height, width, status, why);
+  std::unique_ptr<SpanFp8Reference> reference = SpanFp8Reference::create(weights, height, width, status, why);
   if (!reference)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
                                                        : RefusalCode::VendorCallFailed,
@@ -192,14 +268,14 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   // --- 2. le réseau FP8 à ces échelles
   weights.scales = result.scales.data();
   weights.acc16 = request.validate_only && parsed->acc16;  // validation seule : la variante du paquet
-  const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
+  std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
   if (!net)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
                                                        : RefusalCode::VendorCallFailed,
                   "dérivation du SPAN FP8 : envoi des poids : " + why);
   weights.acc16 = true;
   // Variante f16 : un refus ici ne fait pas échouer la dérivation, elle n'est simplement pas proposée.
-  const std::unique_ptr<SpanFp8Net> net16 =
+  std::unique_ptr<SpanFp8Net> net16 =
       request.validate_only ? nullptr : SpanFp8Net::create(weights, height, width, status, why);
   if (auto e = cudaMalloc(&scratch.workspace, static_cast<std::size_t>(net->workspace_bytes()));
       e != cudaSuccess)
@@ -210,12 +286,12 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   // --- 3. validation, sur des images que la calibration n'a pas vues, puis les cas durs (étape 3.7a)
   std::vector<__half> half(3 * plane * 4);
   const auto judge_all = [&](const std::vector<SpanStill>& stills, std::vector<SpanFp8ImageScore>& scores,
-                             std::vector<SpanFp8ImageScore>& scores16,
-                             const char* stage) -> std::expected<void, Refusal> {
+                             std::vector<SpanFp8ImageScore>& scores16, const char* stage,
+                             bool track) -> std::expected<void, Refusal> {
     for (const SpanStill& still : stills) {
       if (cancelled()) return stopped();
       if (auto ok = upload(still); !ok) return ok;
-      if (!reference->run(scratch.stream, scratch.input, scratch.output_ref, false, why))
+      if (!reference->run(scratch.stream, scratch.input, scratch.output_ref, track, why))
         return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
       if (!net->launch(scratch.stream, scratch.input, scratch.output_fp8, why))
         return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
@@ -250,59 +326,49 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
     }
     return {};
   };
-  if (auto ok = judge_all(request.validation, result.scores, result.scores_acc16, "validation"); !ok)
+  // Les maxima relevés aussi sur les images de validation (C02-04) ; pas sur les cas durs, synthétiques.
+  if (auto ok = judge_all(request.validation, result.scores, result.scores_acc16, "validation", true); !ok)
     return std::unexpected(std::move(ok.error()));
-  if (auto ok = judge_all(request.hard, result.hard_scores, result.hard_scores_acc16, "validation"); !ok)
+  if (auto ok = judge_all(request.hard, result.hard_scores, result.hard_scores_acc16, "validation", false);
+      !ok)
     return std::unexpected(std::move(ok.error()));
-
-  // --- 4. le temps du réseau FP8 (et de sa variante f16)
-  report(0.9F, "mesure du temps");
-  const auto time = [&](SpanFp8Net& timed_net) -> std::expected<double, Refusal> {
-    constexpr int kWarmup = 5;
-    constexpr int kRuns = 21;
-    std::vector<cudaEvent_t> events(kRuns + 1, nullptr);
-    for (cudaEvent_t& event : events) {
-      if (auto e = cudaEventCreate(&event); e != cudaSuccess) {
-        for (cudaEvent_t made : events)
-          if (made != nullptr) cudaEventDestroy(made);
-        return cuda_refusal(e, "cudaEventCreate");
-      }
-    }
-    std::expected<void, Refusal> timed;
-    for (int i = 0; i < kWarmup && timed; ++i)
-      if (!timed_net.launch(scratch.stream, scratch.input, scratch.output_fp8, why))
-        timed = refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-    for (int i = 0; i < kRuns && timed; ++i) {
-      cudaEventRecord(events[static_cast<std::size_t>(i)], scratch.stream);
-      if (!timed_net.launch(scratch.stream, scratch.input, scratch.output_fp8, why))
-        timed = refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
-    }
-    cudaEventRecord(events[kRuns], scratch.stream);
-    if (const cudaError_t e = cudaStreamSynchronize(scratch.stream); e != cudaSuccess && timed)
-      timed = cuda_refusal(e, "mesure");
-    double median = 0.0;
-    if (timed) {
-      std::vector<float> ms;
-      for (std::size_t i = 0; i < static_cast<std::size_t>(kRuns); ++i) {
-        float one = 0.0F;
-        cudaEventElapsedTime(&one, events[i], events[i + 1]);
-        ms.push_back(one);
-      }
-      std::ranges::sort(ms);
-      median = static_cast<double>(ms[ms.size() / 2]);
-    }
-    for (cudaEvent_t event : events) cudaEventDestroy(event);
-    if (!timed) return std::unexpected(std::move(timed.error()));
-    return median;
-  };
-  auto median = time(*net);
-  if (!median) return std::unexpected(std::move(median.error()));
-  result.kernels_ms = *median;
-  if (net16) {
-    auto median16 = time(*net16);
-    if (!median16) return std::unexpected(std::move(median16.error()));
-    result.kernels_ms_acc16 = *median16;
+  {
+    float peaks[SpanFp8Reference::kPeaks];
+    if (!reference->peaks(peaks, why))
+      return refuse(RefusalCode::VendorCallFailed, "dérivation du SPAN FP8 : " + why);
+    std::ranges::copy(peaks, result.validation_peaks.begin());
   }
+  reference.reset();  // la mémoire de la référence rendue avant la mesure
+
+  // --- 4. les temps, à la taille de travail (C02-05) : les réseaux refaits à cette taille si elle diffère
+  if (timing_width != width || timing_height != height) {
+    const bool acc16 = request.validate_only && parsed->acc16;
+    const bool with_f16 = !request.validate_only && !result.scores_acc16.empty();
+    if (auto ok = resize_nets(weights, acc16, with_f16, timing_width, timing_height, scratch, net, net16);
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+  }
+  // Le SPAN FP16 de TensorRT, avec sa mémoire propre (aucune zone de voie) : la sortie de la même taille.
+  std::unique_ptr<TrtEngine> trt;
+  if (request.fp16) {
+    auto loaded = load_fp16(*runtime_, request.fp16->path, timing_width, timing_height, scratch);
+    if (!loaded) return std::unexpected(std::move(loaded.error()));
+    trt = std::move(*loaded);
+  }
+  const SpanTimingSet set{.fp8 = net.get(),
+                          .fp8_acc16 = net16.get(),
+                          .trt = trt.get(),
+                          .width = timing_width,
+                          .height = timing_height,
+                          .input = scratch.input,
+                          .output_fp8 = scratch.output_fp8,
+                          .output_trt = scratch.output_trt};
+  auto times = time_span_set(set, scratch.stream, progress, 0.6F, 0.98F);
+  if (!times) return std::unexpected(std::move(times.error()));
+  result.kernels_ms = times->fp8_ms;
+  result.kernels_ms_acc16 = times->fp8_acc16_ms;
+  result.trt_fp16_ms = times->trt_ms;
+  result.timed_size = std::format("{}x{}", timing_width, timing_height);
   result.reference = "cutlass-fp16";
   report(1.0F, "terminé");
   return result;

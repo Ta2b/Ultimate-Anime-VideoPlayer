@@ -45,10 +45,11 @@ struct Loaded {
   Refusal refusal{};
   std::filesystem::path cache = std::filesystem::path(AJP_TEST_CACHE_DIR);
 
-  Loaded() {
+  // filtered_warp : l'essai --filtered-warp (warp par objets texture).
+  explicit Loaded(bool filtered_warp = false) {
     REQUIRE(library.handle != nullptr);
     std::filesystem::create_directories(cache);
-    const gpu::BackendInit init{.cache_dir = cache, .refusal = &refusal};
+    const gpu::BackendInit init{.cache_dir = cache, .filtered_warp = filtered_warp, .refusal = &refusal};
     backend = library.symbol<std::remove_pointer_t<gpu::BackendCreateFn>>("ajp_backend_create")(
         gpu::kBackendAbi, &init);
   }

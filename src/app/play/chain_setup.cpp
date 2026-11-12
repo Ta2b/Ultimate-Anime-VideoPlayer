@@ -333,12 +333,13 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.skip_held = o.skip_held;
 }
 
-// Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches).
+// Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
 gpu::BackendInit chain_backend_init(Player& p) {
   return {.render = &p.screen.device(),
           .cache_dir = p.paths.engines,
           .log = backend_log(),
-          .profile_dispatches = p.options.profile_dispatches};
+          .profile_dispatches = p.options.profile_dispatches,
+          .filtered_warp = p.options.filtered_warp};
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
@@ -369,11 +370,9 @@ std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& 
   return std::move(found.variant);
 }
 
-// Le SPAN FP8 choisi à la main dans la liste des modèles se prépare ici, sur l'écran de chargement, comme
-// un moteur qui se construit ; la tâche de fond (span_auto.h) ne le refait pas pour cette vidéo.
-// Le bench (--bench-out) ne valide jamais sur son clip : une mire synthétique aux bords nets jugerait le
-// FP8 bien plus durement qu'un épisode et écrirait ses refus dans le reçu de l'utilisateur. Faux : la fenêtre
-// fermée ; refus : une vidéo glissée pendant la préparation.
+// Le SPAN FP8 choisi à la main se prépare ici, sur l'écran de chargement ; la tâche de fond ne le refait pas.
+// Le bench (--bench-out) ne valide pas sur sa mire, trop dure pour le FP8, ni n'écrit ses refus au reçu.
+// Faux : la fenêtre fermée ; refus : une vidéo glissée pendant la préparation.
 std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                                      const PlaySettings& settings,
                                                      const SpanFp8Context& fp8_context) {
@@ -403,8 +402,9 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   // Un cran posé par un préréglage (Auto et les autres, auto_config.h) est strict : ni FP8 par Q/DQ, ni
   // reçu v1 du FP8 CUTLASS (étape 3.6).
   const bool strict = settings.preset != Preset::Custom;
+  const bool cutlass = caps.span_fp8_cutlass && !hdr_source(p.video);
   const std::vector<SpanVariantKind> wanted = span_variant_order(
-      tier, SpanVariantCaps{.cutlass = caps.span_fp8_cutlass, .fp8 = caps.fp8, .int8 = caps.int8}, strict);
+      tier, SpanVariantCaps{.cutlass = cutlass, .fp8 = caps.fp8, .int8 = caps.int8}, strict);
   if (tier == PrecisionTier::Performance && !caps.fp8)
     log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
   const auto prepare_span = [&] {
@@ -424,7 +424,7 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
                                    .width = c.work.width,
                                    .height = c.work.height};
   const bool bench = p.options.bench_out.has_value();
-  if (tier == PrecisionTier::Performance && !strict && caps.span_fp8_cutlass) {
+  if (tier == PrecisionTier::Performance && !strict && cutlass) {
     auto ready = prepare_manual_fp8(p, init, c, settings, fp8_context);
     if (!ready || !*ready) return ready;
   }

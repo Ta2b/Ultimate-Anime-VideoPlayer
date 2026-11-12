@@ -26,6 +26,27 @@ TEST_CASE("RIFE fusionné (TensorRT) : la clé d'artefact se relit", "[gpu][fuse
   CHECK(parsed->engines == key.engines);
 }
 
+TEST_CASE("RIFE fusionné (TensorRT) : la clé du warp Catmull-Rom se relit (C03-09)", "[gpu][fused_keys]") {
+  const RifeFusedKey key{.height = 576,
+                         .width = 960,
+                         .motion = false,
+                         .warp = kernels::RifeWarp::CatmullRom,
+                         .plan = {.blocks = 4, .reduce = {8, 4, 2, 1}},
+                         .engines = {"enc.engine", "b0.engine", "b1.engine", "b2.engine", "b3.engine"}};
+  const std::string text = rife_fused_artifact_key(key);
+  CHECK(text == "rife-fused:576x960:image-cubic:8,4,2,1:enc.engine,b0.engine,b1.engine,b2.engine,b3.engine");
+  const auto parsed = rife_fused_artifact_key_parse(text);
+  REQUIRE(parsed);
+  CHECK_FALSE(parsed->motion);
+  CHECK(parsed->warp == kernels::RifeWarp::CatmullRom);
+  // Le warp bilinéaire, par défaut, se relit aussi tel quel.
+  RifeFusedKey bilinear = key;
+  bilinear.warp = kernels::RifeWarp::Bilinear;
+  const auto plain = rife_fused_artifact_key_parse(rife_fused_artifact_key(bilinear));
+  REQUIRE(plain);
+  CHECK(plain->warp == kernels::RifeWarp::Bilinear);
+}
+
 TEST_CASE("RIFE fusionné (TensorRT) : une clé abîmée ou hors du cache est refusée", "[gpu][fused_keys]") {
   CHECK_FALSE(rife_fused_artifact_key_parse("0123456789abcdef"));  // un moteur ordinaire
   CHECK_FALSE(rife_fused_artifact_key_parse("drba-fused:1088x1920:4:a,b,c,d"));

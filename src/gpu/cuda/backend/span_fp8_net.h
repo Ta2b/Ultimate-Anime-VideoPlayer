@@ -50,8 +50,9 @@ enum class SpanFp8Status : std::uint8_t { Ok, OutOfMemory, Failed };
 
 class SpanFp8Net {
  public:
-  // Vrai pour sm 8.9 (Ada) seulement : les noyaux emploient les mma FP8 de cette architecture et ne sont
-  // compilés que pour elle.
+  // Vrai pour sm 8.9 (Ada) seulement : les noyaux emploient les mma FP8 de cette architecture. CMake les
+  // compile aussi pour sm 12.0 (CUDA_ARCHITECTURES « 89-real;120 »), mais ils n'y sont pas pris : le FP8
+  // reste éteint sur RTX 50 tant qu'aucune mesure ne l'y a jugé.
   static bool supported_device(int major, int minor);
   // La version des noyaux, écrite au reçu (étape 3.7b) : à augmenter à chaque changement de ce qu'ils
   // calculent (un paquet validé avec d'autres noyaux se revalide). 1 : état après les étapes 3.1 à 3.5 ;

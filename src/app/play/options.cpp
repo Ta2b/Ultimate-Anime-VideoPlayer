@@ -127,15 +127,15 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 30> kTrialOptions{
-    "--rife-image",         "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",
-    "--no-hdr-metadata",    "--probe-nvdec",    "--no-probe-nvdec",  "--shot-cuts",
-    "--no-shot-cuts",       "--one-lane",       "--skip-held",       "--anime-shots",
-    "--no-anime-shots",     "--fast-steady",    "--smooth-drawings", "--ring-watcher",
-    "--no-ring-watcher",    "--precise-wait",   "--no-precise-wait", "--audio-pll",
-    "--no-audio-pll",       "--vsync-index",    "--no-vsync-index",  "--present",
-    "--no-present",         "--no-vrr",         "--rife-calm-model", "--rife-warm",
-    "--profile-dispatches", "--rife-encode-all"};
+constexpr std::array<std::string_view, 31> kTrialOptions{
+    "--rife-image",         "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",
+    "--no-hdr-metadata",    "--probe-nvdec",     "--no-probe-nvdec",  "--shot-cuts",
+    "--no-shot-cuts",       "--one-lane",        "--skip-held",       "--anime-shots",
+    "--no-anime-shots",     "--fast-steady",     "--smooth-drawings", "--ring-watcher",
+    "--no-ring-watcher",    "--precise-wait",    "--no-precise-wait", "--audio-pll",
+    "--no-audio-pll",       "--vsync-index",     "--no-vsync-index",  "--present",
+    "--no-present",         "--no-vrr",          "--rife-calm-model", "--rife-warm",
+    "--profile-dispatches", "--rife-encode-all", "--filtered-warp"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -157,7 +157,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 31> kFlags{{
+constexpr std::array<Flag, 32> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -177,6 +177,7 @@ constexpr std::array<Flag, 31> kFlags{{
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
+    {"--filtered-warp", &PlayOptions::filtered_warp, true},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--skip-held", &PlayOptions::skip_held, true},
