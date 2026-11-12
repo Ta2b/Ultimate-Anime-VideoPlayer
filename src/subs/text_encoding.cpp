@@ -169,8 +169,8 @@ struct Legacy {
   unsigned code_page;              // Windows
   const char* name;                // iconv
   const char* fallback = nullptr;  // iconv, quand le premier nom manque ou refuse le texte
-  // Une page à un octet (C34-07) : une case non définie (CP1251 0x98) devient U+FFFD sous iconv, comme
-  // MultiByteToWideChar la rend en un caractère de contrôle sous Windows, au lieu de refuser tout le texte.
+  // Une page à un octet (C34-07) : une case non définie (CP1251 0x98, CP1253 0xAA) devient U+FFFD, sous iconv
+  // comme sous Windows (single_byte_char), au lieu de faire refuser tout le texte.
   bool single_byte = false;
 };
 constexpr Legacy kShiftJis{932, "CP932"};
@@ -232,9 +232,43 @@ std::optional<std::string> decode_iconv(std::string_view bytes, const char* name
 }
 #endif
 
+#ifdef _WIN32
+// Une page à un octet, octet par octet (C34-07) : avec MB_ERR_INVALID_CHARS, MultiByteToWideChar refuse tout
+// le texte pour une seule case non définie (CP1253 0xAA), et sans lui il la rend en zone privée ou en
+// commande C1 selon la page. La table des 256 octets, faite une fois par texte, donne U+FFFD à ces cases.
+std::string decode_single_byte(std::string_view bytes, unsigned code_page) {
+  std::array<char32_t, 256> table{};
+  for (std::size_t i = 0; i < table.size(); ++i) {
+    const char byte = static_cast<char>(i);
+    wchar_t wide = 0;
+    const bool ok = MultiByteToWideChar(code_page, MB_ERR_INVALID_CHARS, &byte, 1, &wide, 1) == 1;
+    table[i] = single_byte_char(static_cast<unsigned char>(i),
+                                ok ? std::optional<char32_t>(static_cast<char32_t>(wide)) : std::nullopt);
+  }
+  std::string out;
+  out.reserve(bytes.size() * 2);
+  for (const char byte : bytes) append(out, table[static_cast<unsigned char>(byte)]);
+  return out;
+}
+#endif
+
+}  // namespace
+
+char32_t single_byte_char(unsigned char byte, std::optional<char32_t> decoded) {
+  constexpr char32_t kReplacement = 0xFFFD;
+  if (!decoded) return kReplacement;
+  const char32_t c = *decoded;
+  if (c >= 0xE000 && c <= 0xF8FF) return kReplacement;
+  if (byte >= 0x80 && c >= 0x80 && c <= 0x9F) return kReplacement;
+  return c;
+}
+
+namespace {
+
 std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) {
   if (bytes.empty()) return std::string{};
 #ifdef _WIN32
+  if (legacy.single_byte) return decode_single_byte(bytes, legacy.code_page);
   const int size = static_cast<int>(bytes.size());
   const int wide =
       MultiByteToWideChar(legacy.code_page, MB_ERR_INVALID_CHARS, bytes.data(), size, nullptr, 0);
