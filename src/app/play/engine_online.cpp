@@ -83,6 +83,11 @@ int merge_release_index(EngineCatalog& catalog, std::string_view text, std::stri
       continue;
     }
     const core::EngineId engine = package.engine;
+    if (core::vendor_file_skipped(*parsed, engine, catalog.layout.os)) {
+      catalog.problem += std::format("{}engines-nvidia.lock : un fichier NVIDIA est écarté, paquet écarté",
+                                     catalog.problem.empty() ? "" : " ; ");
+      continue;
+    }
     const auto mine = [&](const core::VendorFile& file) { return file.engine == engine; };
     // Les fichiers NVIDIA du même moteur, tous de pypi.nvidia.com, ou aucun : un index à moitié cru
     // installerait un moteur sans ses bibliothèques.

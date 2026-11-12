@@ -14,6 +14,9 @@ struct CachePurgeLimits {
   std::chrono::hours idle{24 * 45};                  // sans usage depuis : retiré
   std::uint64_t max_bytes = std::uint64_t{8} << 30;  // au-delà : les moins récents d'abord
   std::chrono::hours protected_recent{24};           // jamais retiré pour la taille : servi aujourd'hui
+  // Un dossier de travail « .aji-build-* » plus vieux que cela est le reste d'une construction tuée (la plus
+  // longue dure moins de deux heures) : retiré, quelle que soit la clé qui l'a ouvert (B05-01, B33-02).
+  std::chrono::hours stale_build{24};
 };
 
 struct CachePurgeResult {
@@ -21,11 +24,15 @@ struct CachePurgeResult {
   std::uint64_t removed_bytes = 0;
   int kept = 0;
   std::uint64_t kept_bytes = 0;
+  int removed_stages = 0;  // dossiers de travail orphelins retirés
+  int removed_locks = 0;   // verrous « .key-lock » d'un moteur disparu retirés
 };
 
 // Ne touche que les fichiers du cache que prepare écrit dans dir : « aji-v3-*.engine » et leurs voisins
-// (.sha256, .build.log, .layers.json), et les caches de temps « aji-timing-*.cache ». Les verrous
-// (.key-lock) restent. Aucune exception : un fichier qui résiste reste.
+// (.sha256, .build.log, .layers.json), et les caches de temps « aji-timing-*.cache ». Ne retire
+// les verrous (.key-lock) que d'un moteur disparu et sans usage depuis limits.idle, et les dossiers de
+// travail « .aji-build-* » (marqueur du module) plus vieux que limits.stale_build. Aucune exception : un
+// fichier qui résiste reste.
 CachePurgeResult purge_engine_cache(
     const std::filesystem::path& dir, const CachePurgeLimits& limits = {},
     std::filesystem::file_time_type now = std::filesystem::file_time_type::clock::now());

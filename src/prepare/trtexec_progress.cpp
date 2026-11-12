@@ -13,16 +13,17 @@ struct Marker {
   std::string_view stage;
 };
 
-// Dans l'ordre d'apparition. Le choix des tactiques occupe l'essentiel du temps
-// (22 s pour RIFE 4.26, 53 à 64 s pour SPAN sur la 4070 Ti).
+// Les noms d'étape sont des clés anglaises : l'interface les traduit (app/play/build_progress.h,
+// build_stage_text). Dans l'ordre d'apparition. Le choix des tactiques occupe l'essentiel du temps (22 s pour
+// RIFE 4.26, 53 à 64 s pour SPAN sur la 4070 Ti).
 constexpr std::array kMarkers = {
-    Marker{"&&&& RUNNING", 0.02F, "Démarrage de trtexec"},
-    Marker{"Start parsing network model", 0.05F, "Lecture du modèle"},
-    Marker{"Finished parsing network model", 0.10F, "Choix des tactiques"},
-    Marker{"Total Activation Memory", 0.85F, "Plan mémoire"},
-    Marker{"Engine generation completed", 0.90F, "Sérialisation du moteur"},
-    Marker{"Engine built in", 0.95F, "Moteur construit"},
-    Marker{"&&&& PASSED", 1.0F, "Terminé"},
+    Marker{"&&&& RUNNING", 0.02F, "Starting trtexec"},
+    Marker{"Start parsing network model", 0.05F, "Reading the model"},
+    Marker{"Finished parsing network model", 0.10F, "Choosing tactics"},
+    Marker{"Total Activation Memory", 0.85F, "Planning memory"},
+    Marker{"Engine generation completed", 0.90F, "Serializing the engine"},
+    Marker{"Engine built in", 0.95F, "Engine built"},
+    Marker{"&&&& PASSED", 1.0F, "Done"},
 };
 
 }  // namespace

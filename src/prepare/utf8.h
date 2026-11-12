@@ -7,6 +7,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -22,9 +23,15 @@ std::filesystem::path path_from_utf8(std::string_view text);
 // Windows (trtexec, tar, curl : main(argc, argv) et non wmain). Un caractère que la page ne sait pas écrire
 // (cyrillique, japonais sous une locale française) y devient « ? » : le chemin prend alors son nom court
 // (8.3, GetShortPathNameW) sur la partie qui existe déjà, le nom de fichier à créer gardé tel quel. Sans nom
-// court (désactivé sur le volume), le chemin reste celui d'utf8_path (A05-11, A06-02, A20-02). Ailleurs :
-// utf8_path.
+// court (désactivé sur le volume), le chemin reste celui d'utf8_path (ansi_command_path dit alors qu'il ne
+// passera pas). La page testée est celle du SYSTÈME, pas CP_ACP du processus (UTF-8 par manifeste). Ailleurs
+// : utf8_path.
 std::string ansi_safe_path(const std::filesystem::path& path);
+
+// Comme ansi_safe_path, mais rend nullopt quand aucune forme sûre n'existe (nom hors page ANSI et pas de nom
+// court sur le volume) : l'appelant le sait avant de lancer le programme et peut le dire (B05-06). Toujours
+// une valeur hors de Windows.
+std::optional<std::string> ansi_command_path(const std::filesystem::path& path);
 
 // UTF-8 bien formé : ni octet isolé, ni forme trop longue, ni moitié de paire UTF-16.
 bool is_utf8(std::string_view text);

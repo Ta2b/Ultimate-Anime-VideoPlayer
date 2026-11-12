@@ -482,7 +482,12 @@ TEST_CASE("KernelOps : analyse d'une image pour le grade, contre kernels/ref", "
       const auto ticket = ops.frame_stats_start(t->tensor(), transfer);
       REQUIRE(ticket);
       std::optional<k::FrameStats> got;
-      for (int tries = 0; tries < 2000 && !got; ++tries) {
+      // Une échéance en temps, pas un nombre d'essais : 2000 essais d'une milliseconde valaient environ 2 s,
+      // que llvmpipe dépasse quand il compile le noyau à la première soumission, sur une machine chargée
+      // (trois tests de front sous Arch en CI). Un GPU réellement figé dépasse aussi la minute, et le test
+      // échoue alors.
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!got && std::chrono::steady_clock::now() < deadline) {
         auto taken = ops.frame_stats_take(*ticket);
         REQUIRE(taken);
         got = *taken;

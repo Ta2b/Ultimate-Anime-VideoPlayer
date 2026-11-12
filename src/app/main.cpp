@@ -447,7 +447,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
   SDL_free(pref);
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
-                             .video = data / "bench-clip-v4.mkv",
+                             .video = data / std::string(play::kBenchClipName),
                              .work_dir = play::calibration_work_dir(data),
                              .data = data,
                              .silent = silent,

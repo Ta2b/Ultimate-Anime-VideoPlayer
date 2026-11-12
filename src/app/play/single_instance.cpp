@@ -47,9 +47,11 @@ bool message_complete(std::string_view message) {
   return message == "\n" || message.ends_with("\n\n") || message.size() >= kMaxMessage;
 }
 
+}  // namespace
+
 // Les fichiers reçus vont dans la file de SDL comme un glisser-déposer ; SDL garde le pointeur jusqu'à la
 // lecture de l'événement, les textes restent donc ici (quelques chemins par session).
-bool push_files(const std::vector<std::string>& files) {
+bool push_forwarded_files(const std::vector<std::string>& files) {
   static std::mutex mutex;
   static std::deque<std::string> held;
   const std::scoped_lock lock(mutex);
@@ -70,6 +72,8 @@ bool push_files(const std::vector<std::string>& files) {
   return all;
 }
 
+namespace {
+
 // Remet les fichiers à SDL puis répond au lancement qui les envoie (A19-02) : « ok » seulement une fois
 // les fichiers dans la file, sinon il ouvre lui-même sa fenêtre. Un lecteur qui démarre encore (SDL pas
 // prêt avant la fin de l'attente de l'autre côté) répond tout de suite et remet les fichiers ensuite.
@@ -80,12 +84,12 @@ void hand_over(const std::vector<std::string>& files, const std::stop_token& sto
          std::chrono::steady_clock::now() < until)
     std::this_thread::sleep_for(kSlice);
   if (SDL_WasInit(SDL_INIT_EVENTS) != 0) {
-    if (push_files(files)) reply();
+    if (push_forwarded_files(files)) reply();
     return;
   }
   reply();
   while (!stop.stop_requested() && SDL_WasInit(SDL_INIT_EVENTS) == 0) std::this_thread::sleep_for(kSlice);
-  if (!stop.stop_requested()) push_files(files);
+  if (!stop.stop_requested()) push_forwarded_files(files);
 }
 
 }  // namespace

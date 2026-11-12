@@ -126,13 +126,13 @@ TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[pre
 
   REQUIRE_FALSE(steps.seen.empty());
   CHECK(std::ranges::is_sorted(steps.seen, {}, &std::pair<float, std::string>::first));
-  CHECK(steps.seen.back() == std::pair<float, std::string>{1.0F, "Terminé"});
+  CHECK(steps.seen.back() == std::pair<float, std::string>{1.0F, "Done"});
 
   Steps again;
   auto second = again.progress();
   CHECK(builder.build(bench.model, kHd, second).value().path == artifact->path);
   CHECK(bench.builder_calls() == 1);
-  CHECK(again.seen.back().second == "Moteur en cache");
+  CHECK(again.seen.back().second == "Engine in cache");
 }
 
 TEST_CASE("TrtexecBuilder : sans rapport des couches, le moteur est publié quand même",
@@ -187,12 +187,55 @@ TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'es
   }
 }
 
+TEST_CASE(
+    "TrtexecBuilder : un plantage avec le timing cache se refait sans lui, le cache accusé est mis de côté "
+    "(B05-02)",
+    "[prepare][builder]") {
+  Bench bench("crash-with-cache");
+  const auto cache = device_timing_cache(bench.config);
+  test::write_file(cache, "abîmé\n");
+  Steps steps;
+  auto progress = steps.progress();
+  const auto result = TrtexecBuilder(bench.config).build(bench.model, kHd, progress);
+  REQUIRE(result);
+  CHECK(bench.builder_calls() == 2);
+  CHECK(test::fs::exists(bench.plan(kHd).engine));
+  // Un cache neuf remplace le cache qui faisait planter ; l'ancien reste à côté, pour qui voudra le regarder.
+  CHECK(bench.timing_cache() == std::vector<std::string>{"passe"});
+  CHECK(test::read_lines(cache.string() + ".bad") == std::vector<std::string>{"abîmé"});
+}
+
+TEST_CASE("TrtexecBuilder : un échec passager avec le cache ne lui coûte pas ses mesures (B05-03)",
+          "[prepare][builder]") {
+  Bench bench("fail-with-cache");
+  const auto cache = device_timing_cache(bench.config);
+  test::write_file(cache, "mesures de tous les modèles\n");
+  Steps steps;
+  auto progress = steps.progress();
+  REQUIRE(TrtexecBuilder(bench.config).build(bench.model, kHd, progress));
+  CHECK(bench.builder_calls() == 2);
+  // Le second essai a réussi sans cache, mais l'échec ne venait pas de lui : l'ancien cache est gardé.
+  CHECK(bench.timing_cache() == std::vector<std::string>{"mesures de tous les modèles"});
+  CHECK_FALSE(test::fs::exists(cache.string() + ".bad"));
+}
+
+TEST_CASE("TrtexecBuilder : un échec qui nomme le timing cache le remplace", "[prepare][builder]") {
+  Bench bench("bad-cache");
+  const auto cache = device_timing_cache(bench.config);
+  test::write_file(cache, "abîmé\n");
+  Steps steps;
+  auto progress = steps.progress();
+  REQUIRE(TrtexecBuilder(bench.config).build(bench.model, kHd, progress));
+  CHECK(bench.timing_cache() == std::vector<std::string>{"passe"});
+  CHECK(test::fs::exists(cache.string() + ".bad"));
+}
+
 TEST_CASE("TrtexecBuilder : annulation pendant la construction", "[prepare][builder]") {
   Bench bench("hang");
   std::stop_source stop;
   ajp::gpu::Progress progress{.report =
                                   [&](float, const std::string& stage) {
-                                    if (stage == "Choix des tactiques") stop.request_stop();
+                                    if (stage == "Choosing tactics") stop.request_stop();
                                   },
                               .stop = stop.get_token()};
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
@@ -432,15 +475,14 @@ TEST_CASE("TrtexecBuilder : l'attente du GPU se dit et s'annule", "[prepare][bui
   ajp::gpu::Progress progress{.report =
                                   [&](float, const std::string& stage) {
                                     stages.push_back(stage);
-                                    if (stage == "En attente d'une autre construction sur ce GPU")
-                                      stop.request_stop();
+                                    if (stage == "Waiting for another build on this GPU") stop.request_stop();
                                   },
                               .stop = stop.get_token()};
   auto held = KeyLock::acquire(lock_file);
   REQUIRE(held);
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
         RefusalCode::Cancelled);
-  CHECK(std::ranges::find(stages, "En attente d'une autre construction sur ce GPU") != stages.end());
+  CHECK(std::ranges::find(stages, "Waiting for another build on this GPU") != stages.end());
   CHECK(bench.builder_calls() == 0);
   CHECK(test::stage_count(bench.cache()) == 0);
 }

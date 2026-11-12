@@ -1,10 +1,13 @@
 #include "app/play/problem_report.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <system_error>
 
 #include "core/log_redact.h"
@@ -91,6 +94,30 @@ void note_report_fact(std::string_view name, std::string_view value) {
 void note_engine_facts(std::string_view engine, std::string_view passed_over) {
   note_report_fact("Moteur", engine);
   if (!passed_over.empty()) note_report_fact("Moteurs refusés", passed_over);
+}
+
+void note_build_failure(std::string_view code, std::string_view detail) {
+  constexpr std::string_view kMarker = " ; journal : ";
+  constexpr std::size_t kLogBytes = std::size_t{6} * 1024;
+  constexpr std::size_t kLogLines = 40;
+  std::string text(code);
+  const std::size_t at = detail.rfind(kMarker);
+  // La cause d'abord, sans le chemin du journal (il sert à le lire, il ne dit rien de plus).
+  const std::string_view cause = at == std::string_view::npos ? detail : detail.substr(0, at);
+  if (!cause.empty()) text.append(" : ").append(cause);
+  if (at != std::string_view::npos) {
+    std::string log = read_tail(core::path_from_utf8(detail.substr(at + kMarker.size())), kLogBytes);
+    while (!log.empty() && (log.back() == '\n' || log.back() == '\r')) log.pop_back();
+    // Les dernières lignes seulement : la fin de trtexec dit l'erreur, le début la commande et les tactiques.
+    std::size_t lines = 0;
+    for (std::size_t i = log.size(); i-- > 0;) {
+      if (log[i] != '\n' || ++lines <= kLogLines) continue;
+      log.erase(0, i + 1);
+      break;
+    }
+    if (!log.empty()) text.append("\n").append(log);
+  }
+  note_report_fact("Construction", text);
 }
 
 std::vector<std::pair<std::string, std::string>> report_facts() {

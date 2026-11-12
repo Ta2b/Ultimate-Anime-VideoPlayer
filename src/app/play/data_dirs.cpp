@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <string_view>
 #include <system_error>
 
+#include "app/play/machine_calibration.h"
 #include "core/utf8_path.h"
 #include "prepare/cache_purge.h"
 
@@ -219,17 +221,52 @@ int purge_update_leftovers(const std::filesystem::path& data,
   return count > 0 ? 1 : 0;
 }
 
+int purge_bench_leftovers(const std::filesystem::path& data,
+                          const std::function<void(const std::string&)>& said) {
+  namespace fs = std::filesystem;
+  if (data.empty()) return 0;
+  constexpr std::string_view kTrials = "calibration-essais-";
+  constexpr std::string_view kClipPrefix = "bench-clip-v";
+  int removed = 0;
+  std::error_code error;
+  const auto now = fs::file_time_type::clock::now();
+  fs::directory_iterator it(data, error);
+  for (; !error && it != fs::directory_iterator(); it.increment(error)) {
+    const std::string name = core::to_utf8(it->path().filename());
+    std::error_code kind;
+    bool stale = false;
+    if (name.starts_with(kTrials) && it->is_directory(kind)) {
+      const fs::file_time_type written = it->last_write_time(kind);
+      stale = !kind && now - written > std::chrono::hours(24);
+    } else if (name.starts_with(kClipPrefix) && name.ends_with(".mkv") && it->is_regular_file(kind)) {
+      stale = name != kBenchClipName;
+    }
+    if (!stale) continue;
+    std::error_code gone;
+    if (fs::remove_all(it->path(), gone) > 0 && !gone) {
+      ++removed;
+      if (said)
+        said(std::format("{} retiré (reste du banc)", core::to_utf8(it->path())));  // i18n-ok : journal
+    }
+  }
+  return removed;
+}
+
 void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::path& engines,
                     const std::function<void(const std::string&)>& said) {
   purge_update_leftovers(data, said);
+  purge_bench_leftovers(data, said);
   if (engines.empty()) return;
   const prepare::CachePurgeResult purged = prepare::purge_engine_cache(engines);
   constexpr double kMib = 1024.0 * 1024.0;
-  if (said && (purged.removed > 0 || purged.kept > 0))
-    said(std::format(
-        "cache des moteurs : {} gardé(s), {:.0f} Mio ; {} retiré(s), {:.0f} Mio",  // i18n-ok : journal
-        purged.kept, static_cast<double>(purged.kept_bytes) / kMib, purged.removed,
-        static_cast<double>(purged.removed_bytes) / kMib));
+  constexpr std::string_view kKept = "cache des moteurs : {} gardé(s), {:.0f} Mio";  // i18n-ok : journal
+  constexpr std::string_view kGone =
+      " ; {} retiré(s), {:.0f} Mio ; {} travail, {} verrou";  // i18n-ok : journal
+  if (said &&
+      (purged.removed > 0 || purged.kept > 0 || purged.removed_stages > 0 || purged.removed_locks > 0))
+    said(std::format(kKept, purged.kept, static_cast<double>(purged.kept_bytes) / kMib) +
+         std::format(kGone, purged.removed, static_cast<double>(purged.removed_bytes) / kMib,
+                     purged.removed_stages, purged.removed_locks));
 }
 
 }  // namespace ajp::app::play

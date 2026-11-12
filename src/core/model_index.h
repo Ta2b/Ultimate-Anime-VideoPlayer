@@ -102,11 +102,20 @@ inline constexpr Range<std::int64_t> kDownloadSize{1, 64LL << 30};  // 64 Gio au
 // L'index tel que le lecteur le lit : une entrée refusée (un moteur qu'il ne connaît pas encore,
 // publié par une release plus récente) est écartée seule, et les autres restent téléchargeables.
 // Refus : TOML illisible, version d'index inconnue, [[engine]] qui n'est pas un tableau.
+struct SkippedVendorFile {
+  EngineId engine = EngineId::TensorRt;
+  std::optional<Os> platform;  // rien : la plateforme de l'entrée ne se lit pas, elle compte pour toutes
+};
 struct EngineIndex {
   std::vector<EnginePackage> packages;
   std::vector<VendorFile> vendor_files;  // [[vendor_file]], facultatif
   std::vector<Refusal> skipped;          // une par entrée écartée
+  // Les fichiers tiers écartés qui nomment un de nos moteurs : un paquet auquel il manque un fichier ne
+  // s'installe pas (B06-02).
+  std::vector<SkippedVendorFile> skipped_vendor;
 };
+// Vrai si un fichier tiers de ce moteur, pour cette plateforme, a été écarté de l'index.
+bool vendor_file_skipped(const EngineIndex& index, EngineId engine, Os platform);
 std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text);
 
 // Les fichiers d'un moteur pour une plateforme : ceux sans architecture, et ceux de `arch` (vide :

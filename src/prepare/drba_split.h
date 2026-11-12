@@ -89,6 +89,9 @@ struct DrbaFusedManifest {
   int width = 0;
   kernels::DrbaFusedPlan plan;
   std::vector<std::string> pieces;  // 4 noms de fichier, sans dossier
+  // La taille de chaque morceau à l'écriture (voir RifeFusedManifest::sizes) ; vide pour un manifeste
+  // d'avant.
+  std::vector<std::uint64_t> sizes;
 };
 
 std::string format_drba_manifest(const DrbaFusedManifest& manifest);
@@ -101,7 +104,7 @@ bool is_drba_fused_manifest(const std::filesystem::path& path);
 
 // Version de la dérivation : elle entre dans le nom des fichiers, une règle de coupe changée en refait
 // d'autres.
-inline constexpr std::string_view kDrbaFusedDerivation = "fusion1";
+inline constexpr std::string_view kDrbaFusedDerivation = "fusion2";
 
 // Les quatre morceaux de drba_onnx pour une taille remplie et leur manifeste, écrits dans dir (créé s'il
 // manque) sous des noms qui portent la version de la dérivation, la taille et l'empreinte du modèle ; ce qui

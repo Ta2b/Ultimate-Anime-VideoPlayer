@@ -80,4 +80,14 @@ TEST_CASE("is_safe_location : un poids reste sous le dossier du modèle", "[prep
   CHECK_FALSE(is_safe_location("C:poids.bin"));
   CHECK_FALSE(is_safe_location("poids\\a.bin"));
   CHECK_FALSE(is_safe_location("\xff.bin"));  // pas de l'UTF-8 : refusé, jamais une exception (A04-01)
+  // Noms que Windows lit autrement : refusés partout, le même modèle doit l'être sur tous les systèmes
+  // (B04-05).
+  for (const char* hostile : {"CON", "con", "NUL.bin", "poids/aux.txt", "COM1", "lpt9.dat", "poids./a.bin",
+                              "a.bin.", "a.bin ", "poids /a.bin"}) {
+    CAPTURE(hostile);
+    CHECK_FALSE(is_safe_location(hostile));
+  }
+  CHECK(is_safe_location("console.bin"));  // ni CON ni COM<chiffre> : le nom entier compte
+  CHECK(is_safe_location("com10.bin"));
+  CHECK(is_safe_location("com0.bin"));
 }

@@ -84,7 +84,8 @@ std::expected<Download, Refusal> parse_download(const toml::table& table, const 
 template <class Entry, class ParseOne>
 std::expected<std::vector<Entry>, Refusal> parse_entries(std::string_view text, std::string_view file,
                                                          std::string_view name, ParseOne parse_one,
-                                                         std::vector<Refusal>* skipped = nullptr) {
+                                                         std::vector<Refusal>* skipped = nullptr,
+                                                         std::vector<std::size_t>* skipped_at = nullptr) {
   auto root = fields::parse(text, RefusalCode::FileUnreadable, file);
   if (!root) return std::unexpected(root.error());
   if (auto version = fields::check_version(*root, kIndexVersion, file); !version) {
@@ -102,6 +103,7 @@ std::expected<std::vector<Entry>, Refusal> parse_entries(std::string_view text, 
       entries.push_back(std::move(*entry));
     } else if (skipped != nullptr) {
       skipped->push_back(std::move(entry.error()));
+      if (skipped_at != nullptr) skipped_at->push_back(i);
     } else {
       return std::unexpected(std::move(entry.error()));
     }
@@ -336,11 +338,31 @@ std::expected<EngineIndex, Refusal> read_engine_index(std::string_view toml_text
   // Une table absente : pas de fichier tiers. Une entrée refusée l'est comme un paquet, seule.
   auto root = fields::parse(toml_text, RefusalCode::FileUnreadable, "engines.lock");
   if (root && (*root)["vendor_file"].is_array_of_tables()) {
+    std::vector<std::size_t> skipped_at;
     auto files = parse_entries<VendorFile>(toml_text, "engines.lock", "vendor_file", parse_vendor_file,
-                                           &index.skipped);
+                                           &index.skipped, &skipped_at);
     if (files) index.vendor_files = std::move(*files);
+    // Un fichier tiers écarté d'un moteur qu'on connaît (un champ inconnu d'une release plus récente) : le
+    // paquet de ce moteur n'est pas installable entier (B06-02). Un id inconnu n'est pas un de nos moteurs.
+    const toml::array* tables = (*root)["vendor_file"].as_array();
+    for (const std::size_t at : skipped_at) {
+      const toml::table* table = tables != nullptr ? tables->get(at)->as_table() : nullptr;
+      if (table == nullptr) continue;
+      const auto id = (*table)["id"].value<std::string>();
+      const std::optional<EngineId> engine = id ? parse_engine(*id) : std::nullopt;
+      if (!engine) continue;
+      const auto platform = (*table)["platform"].value<std::string>();
+      index.skipped_vendor.push_back(
+          {.engine = *engine, .platform = platform ? parse_os(*platform) : std::nullopt});
+    }
   }
   return index;
+}
+
+bool vendor_file_skipped(const EngineIndex& index, EngineId engine, Os platform) {
+  return std::ranges::any_of(index.skipped_vendor, [&](const SkippedVendorFile& skipped) {
+    return skipped.engine == engine && (!skipped.platform || *skipped.platform == platform);
+  });
 }
 
 std::vector<VendorFile> vendor_files_for(std::span<const VendorFile> files, EngineId engine, Os platform,
