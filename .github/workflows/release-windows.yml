@@ -64,6 +64,7 @@ jobs:
     name: Paquet TensorRT Windows publié ?
     needs: [guard]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     outputs:
       fp: ${{ steps.fp.outputs.fp }}
       repo: ${{ steps.fp.outputs.repo }}
@@ -96,6 +97,7 @@ jobs:
     needs: [trt-check]
     if: needs.trt-check.outputs.build == 'true'
     runs-on: windows-2025
+    timeout-minutes: 120
     # Un seul paquet TensorRT Windows à la fois, quelle que soit l'étiquette : deux étiquettes de même empreinte ne le
     # construisent plus en même temps ; la seconde attend, puis voit le paquet de la première (B51-02).
     concurrency:
@@ -214,6 +216,7 @@ jobs:
     needs: [trt-check, tensorrt]
     if: ${{ !cancelled() && needs.trt-check.result == 'success' && (needs.tensorrt.result == 'success' || needs.tensorrt.result == 'skipped') }}
     runs-on: windows-2025
+    timeout-minutes: 150
     outputs:
       archive-sha256: ${{ steps.sums.outputs.archive }}
       setup-sha256: ${{ steps.setup.outputs.sha }}

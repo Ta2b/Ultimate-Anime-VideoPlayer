@@ -344,7 +344,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                 settings.preset != Preset::Custom, true)
           : SpanPrepare{};
   p.ui.set_tracks((*pipeline)->tracks());
-  SettingsChoices choices = chain_choices(p, c, span_prepare, fp8_reason, auto_peak);
+  SettingsChoices choices = chain_choices(p, c, span_prepare, auto_peak);
   fill_host_choices(choices, p.screen, p.paths, p.catalog, p.settings_path.parent_path());
   p.ui.set_settings(settings, choices, &p.catalog);
   Chain chain{.session = session,

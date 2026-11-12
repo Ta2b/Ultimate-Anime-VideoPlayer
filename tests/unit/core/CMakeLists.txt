@@ -19,3 +19,8 @@ add_executable(ajp_core_log_async_tests log_async_test.cpp)
 target_link_libraries(ajp_core_log_async_tests PRIVATE ajp::core_log Catch2::Catch2WithMain)
 ajp_set_warnings(ajp_core_log_async_tests)
 catch_discover_tests(ajp_core_log_async_tests TEST_PREFIX "core_log_async: " DISCOVERY_MODE PRE_TEST)
+
+# C27-02 : le configure refuse un toml++ dont les fichiers à corriger manquent.
+add_test(NAME "core: TomlFixes refuse un toml++ sans impl/parser.inl"
+         COMMAND ${CMAKE_COMMAND} -DSOURCE=${PROJECT_SOURCE_DIR} -DWORK=${CMAKE_CURRENT_BINARY_DIR}/toml_fixes
+                 -DTOML_INCLUDE=${ajp_toml_include} -P ${CMAKE_CURRENT_SOURCE_DIR}/toml_fixes_test.cmake)

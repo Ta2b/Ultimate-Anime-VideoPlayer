@@ -22,6 +22,17 @@ using panel::kWarn;
 using panel::note;
 using panel::section;
 
+std::string clean_folder_text(std::string_view typed) {
+  const auto blank = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+  while (!typed.empty() && blank(typed.front())) typed.remove_prefix(1);
+  while (!typed.empty() && blank(typed.back())) typed.remove_suffix(1);
+  if (typed.size() >= 2 && typed.front() == '"' && typed.back() == '"') {
+    typed.remove_prefix(1);
+    typed.remove_suffix(1);
+  }
+  return std::string(typed);
+}
+
 namespace {
 
 // Le dossier accepte-t-il l'écriture ? Un fichier d'essai l'établit ; un dossier qui n'existe pas encore se
@@ -59,7 +70,9 @@ void install_folder_section(const SettingsChoices& choices, std::string& engines
   // frappe, où play.toml se réécrivait avec un chemin à moitié tapé (A22-09).
   ImGui::InputTextWithHint("##moteurs", i18n::tr("Default folder"), folder.text.data(), folder.text.size());
   if (ImGui::IsItemDeactivatedAfterEdit()) {
-    const std::string typed = folder.text.data();
+    const std::string typed = clean_folder_text(folder.text.data());
+    std::snprintf(folder.text.data(), folder.text.size(), "%s",
+                  typed.c_str());  // le champ montre ce qui compte
     std::error_code error;
     const std::filesystem::path path = prepare::path_from_utf8(typed);
     // Un chemin relatif dépendrait du dossier de lancement ; le dossier doit exister (ou son parent, que la

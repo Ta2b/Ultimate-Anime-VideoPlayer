@@ -76,15 +76,20 @@ def write_gates(path, report):
         f.write("\n")
 
 
-def check_gates(path, report):
-    """Les seuils non tenus, en clair ; rien si la configuration n'est pas celle des seuils."""
+def check_gates(path, report, sans_seuils=False):
+    """Les seuils non tenus, en clair. Si la configuration n'est pas celle des seuils, c'est un échec (un banc lancé
+    avec --video ou une autre taille ne doit pas paraître vert sans avoir été jugé, C46-09), sauf avec sans_seuils
+    (--sans-seuils), qui demande de mesurer sans les appliquer."""
     if not os.path.exists(path):
         return []
     with open(path, encoding="utf-8") as f:
         gates = json.load(f)
     if gates["config"] != report["config"]:
-        print("seuils non appliqués : la configuration n'est pas celle de", path)
-        return []
+        if sans_seuils:
+            print("seuils non appliqués (--sans-seuils) : la configuration n'est pas celle de", path)
+            return []
+        return [f"seuils non appliqués : la configuration n'est pas celle de {path} ; --sans-seuils mesure sans "
+                "les appliquer, --ecrire-seuils les refait pour cette configuration"]
     out = []
     for r in report["reseaux"]:
         g = gates["reseaux"].get(r["modele"])

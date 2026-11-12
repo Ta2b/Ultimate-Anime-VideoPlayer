@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ABAB trtexec (graphe CUDA) entre deux graphes ONNX de même interface : A (référence FP16) contre B (FP8).
 #   flock ~/ajp-reports/gpu-bench.lock tools/fp8/abab_trt.sh A.onnx B.onnx "entree:1x11x768x1280[;autre:...]"|static [tours=3]
-# Construit chaque moteur une fois (niveau 5), puis alterne A B A B... : minimum / médiane GPU en ms.
+# Construit chaque moteur une fois (niveau 5), puis alterne A B puis B A... : minimum / médiane GPU en ms.
 # TensorRT 11 est fortement typé : pas de --fp16 / --fp8, la précision vient des types du graphe.
 set -euo pipefail
 A="$1"; B="$2"; SHAPES="$3"; ROUNDS="${4:-3}"
@@ -34,11 +34,18 @@ run() { # étiquette -> « min médiane »
   "$TRTEXEC" --loadEngine="${ENGINE[$1]}" "${opts[@]}" --useCudaGraph --noDataTransfers --warmUp=500 \
     --iterations=300 2>&1 | sed -n 's/.*GPU Compute Time: min = \([0-9.]*\) ms.*median = \([0-9.]*\) ms.*/\1 \2/p'
 }
+measure() { # étiquette -> « min médiane » ; une mesure vide (trtexec en échec, sortie illisible) arrête tout
+  local out
+  out="$(run "$1")" || { echo "mesure de $1 en échec (trtexec)" >&2; exit 1; }
+  [ -n "$out" ] || { echo "mesure de $1 illisible : trtexec n'a pas rendu de « GPU Compute Time »" >&2; exit 1; }
+  printf '%s' "$out"
+}
 build "$A" A
 build "$B" B
 echo "tour  A(min/méd)  B(min/méd)  écart médiane B contre A"
 for r in $(seq 1 "$ROUNDS"); do
-  a=$(run A); b=$(run B)
+  # L'ordre alterne (A B puis B A) : une dérive d'horloge ou thermique ne pèse pas toujours contre B (C46-05).
+  if ((r % 2)); then a=$(measure A); b=$(measure B); else b=$(measure B); a=$(measure A); fi
   awk -v r="$r" -v a="$a" -v b="$b" 'BEGIN{split(a,x," ");split(b,y," ");printf "%s  %s/%s  %s/%s  %+.1f%%\n", r,x[1],x[2],y[1],y[2],(y[2]/x[2]-1)*100}'
 done
 echo "moteurs : $CACHE"

@@ -7,6 +7,7 @@
 
 #include "app/play/chain.h"
 #include "app/play/visible_error.h"
+#include "stage_rig.h"
 
 namespace ajp::app::play {
 namespace {
@@ -280,6 +281,37 @@ TEST_CASE("C08-08 : la clé de la mémoire de l'Auto distingue les modèles RIFE
   other_span.model = ModelChoice{.path = "models/2x_AnimeJaNai_V3_UltraCompact.onnx"};
   CHECK(light.auto_memory_engine("FP16") != other_span.auto_memory_engine("FP16"));
   CHECK(light.auto_memory_engine("FP16").contains("rife_v4.25_lite"));
+}
+
+// C40-07 : le câblage des options à l'essai vers l'étage. « Éteint ne change rien », « allumé fait ce qu'il
+// dit ».
+TEST_CASE("ChainEngines::upscale câble le warp de Catmull-Rom et les options à l'essai", "[app][chain]") {
+  const auto motion = [] {
+    return std::make_unique<test::FakeEngine>("rife", std::vector<std::string>{"a"},
+                                              std::vector<std::string>{"b"});
+  };
+  PlaySettings s;
+  ChainEngines with_motion;
+  with_motion.rife_motion = motion();
+  with_motion.smooth_drawings = true;
+  with_motion.rife_encode_all = true;
+  ChainEngines without_motion;
+
+  s.cubic_warp = false;
+  CHECK(with_motion.upscale(s, nullptr, nullptr, 1920, 1080, {}).warp == kernels::RifeWarp::Bilinear);
+  s.cubic_warp = true;
+  CHECK(with_motion.upscale(s, nullptr, nullptr, 1920, 1080, {}).warp == kernels::RifeWarp::CatmullRom);
+  // Sans RIFE mouvement, l'option n'a rien à régler : le warp reste bilinéaire.
+  CHECK(without_motion.upscale(s, nullptr, nullptr, 1920, 1080, {}).warp == kernels::RifeWarp::Bilinear);
+
+  const UpscaleSetup setup = with_motion.upscale(s, nullptr, nullptr, 1920, 1080, {});
+  CHECK(setup.smooth_drawings);
+  CHECK(setup.rife_encode_all);
+  CHECK_FALSE(setup.late_fate);  // sans horloge de lecture
+  const UpscaleSetup plain = without_motion.upscale(s, nullptr, nullptr, 1920, 1080, {});
+  CHECK_FALSE(plain.smooth_drawings);
+  CHECK_FALSE(plain.rife_encode_all);
+  CHECK_FALSE(plain.skip_held);
 }
 
 }  // namespace ajp::app::play

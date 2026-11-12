@@ -17,11 +17,11 @@ constexpr std::array kImageTabs{
         "détail "
         "(grain, textures), sans SPAN."},
     Entry{" (recommended)", " (recommandé)"},
-    Entry{
-        "4K output: RIFE estimates motion on a 720p copy (less precise motion; time saved and loss not "
-        "measured).",
-        "Sortie 4K : RIFE estime le mouvement sur une copie 720p (mouvement moins précis ; gain de temps et "
-        "perte non mesurés)."},
+    Entry{"{} fps", "{} i/s"},
+    Entry{"Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less precise "
+          "motion; the speed gained and the quality lost are not measured).",
+          "Au-dessus de 720p de résolution de travail, RIFE estime le mouvement sur une copie 720p, plus "
+          "légère (mouvement moins précis ; le gain de vitesse et la perte de qualité ne sont pas mesurés)."},
     Entry{"4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything.",
           "Sortie 4K : ×3 et plus demandent un GPU haut de gamme. Une résolution de travail de 720p allège "
           "tout."},
@@ -204,6 +204,12 @@ constexpr std::array kImageTabs{
     Entry{"VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync).",
           "VRR coupé par le système : activez la synchronisation adaptative (KDE : Affichage > "
           "Synchronisation adaptative)."},
+    Entry{"VRR is off in the system: turn on Variable refresh rate in Settings > System > Display > "
+          "Graphics.",
+          "VRR coupé par le système : activez la fréquence d'actualisation variable dans Paramètres > "
+          "Système > Affichage > Graphiques."},
+    Entry{"VRR only works in full screen here: motion may judder in a window.",
+          "Ici, le VRR ne marche qu'en plein écran : le mouvement peut saccader en fenêtre."},
     Entry{"VRR is turned off by the system: motion may judder.",
           "VRR coupé par le système : le mouvement peut vibrer."},
     Entry{"VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder.",

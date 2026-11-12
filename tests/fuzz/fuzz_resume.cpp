@@ -3,10 +3,12 @@
 // réécriture ne plantent pas ; une position retenue se relit, quoi que le fichier contînt.
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unistd.h>
 
 #include "app/play/resume.h"
@@ -26,6 +28,12 @@ const Place& place() {
     Place made;
     made.dir = std::filesystem::temp_directory_path() / ("ajp-fuzz-resume-" + std::to_string(getpid()));
     std::filesystem::create_directories(made.dir);
+    // Le dossier ne reste pas : une campagne longue en laissait un par processus.
+    std::atexit(+[] {
+      std::error_code ignored;
+      std::filesystem::remove_all(
+          std::filesystem::temp_directory_path() / ("ajp-fuzz-resume-" + std::to_string(getpid())), ignored);
+    });
     made.store = made.dir / "resume.tsv";
     made.video = made.dir / "vidéo.mkv";
     std::ofstream(made.video, std::ios::binary) << "1234567";

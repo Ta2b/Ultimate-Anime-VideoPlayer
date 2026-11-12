@@ -538,7 +538,7 @@ std::string play_usage(bool debug) {
       "                         export or export=FILE.mkv (or .mp4, .mov) starts exporting\n"
       "                         the current chain (export-lossless=FILE.mkv: lossless FFV1)\n"
       "  --work-height=N        shrinks the source to N lines before SPAN (default: the preset's; 0 never)\n"
-      "  --rife=N               ×N interpolation (1.5, 2 to 10; default: the preset's; 0 none)\n"
+      "  --rife=N               ×N interpolation (0 none, 1, 1.5 to 9.5 by halves, 10; default: preset's)\n"
       "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"
       "  --motion=rife|drba     interpolation engine, RIFE or DistilDRBA (default: the preset's)\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade, {} to {} (0 or default: the screen's,\n"

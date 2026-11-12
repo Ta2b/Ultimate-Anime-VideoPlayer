@@ -357,6 +357,24 @@ TEST_CASE("AudioPlayer : casque débranché, le son reprend sur la sortie par d�
   CHECK(rig.clock().media_us == heard + frames_to_us(4'800, 48'000));
 }
 
+// C16-06 : la sortie perdue puis rouverte sans hôte qui mène repart net, sans silence qui comble l'écart avec
+// l'ancienne fin de lecture.
+TEST_CASE("AudioPlayer : la sortie qui revient ne comble pas l'écart avec l'ancienne lecture (C16-06)",
+          "[audio][player]") {
+  Rig rig(PlayerConfig{.reopen_retry_us = 0});
+  rig.feed(encode_sine({.seconds = 1.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  const std::int64_t t = rig.now_us() + 100'000;
+  rig.player->handle(rig.fake->play(4'800, t));
+  rig.fake->fail_reopens(1);
+  rig.player->handle(DeviceRemoved{});  // la sortie est perdue, le premier essai échoue
+  const std::int64_t pushed = rig.fake->pushed_frames();
+  // Le son reprend 5 s plus loin : le premier bloc ne se compare pas à l'ancienne fin.
+  for (AudioPacket packet : encode_sine({.seconds = 0.5, .start_us = 6'000'000}).packets)
+    rig.player->handle(std::move(packet));
+  CHECK(rig.fake->pushed_frames() - pushed < 30'000);  // moins que 0,6 s : aucun silence de 5 s
+}
+
 TEST_CASE("AudioPlayer : avec la PLL, un petit pas de délai ne fait pas reculer l'horloge (A16-09)",
           "[audio][player][clock]") {
   Rig rig(PlayerConfig{.pll = true});

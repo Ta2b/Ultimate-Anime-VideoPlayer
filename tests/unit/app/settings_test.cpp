@@ -502,6 +502,7 @@ TEST_CASE("mises à jour : mode et fréquence lus et écrits par leur nom (P5.29
 }
 
 }  // namespace
+
 }  // namespace ajp::app::play
 
 TEST_CASE("repères des listes et résolution en français courant", "[settings]") {

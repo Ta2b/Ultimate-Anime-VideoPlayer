@@ -6,6 +6,7 @@
 // que celui de la file, le limiteur doux de converter.h arrondit les crêtes au lieu de les écrêter.
 #pragma once
 
+#include <cstddef>
 #include <span>
 
 namespace ajp::audio {
@@ -23,12 +24,18 @@ class OutputShaper {
     bool force_limit = false;  // limiter même sous un gain de 1
   };
 
-  // Traite des trames entrelacées de float32, sur place.
+  // Traite des trames entrelacées de float32, sur place. Une rampe ou un fondu plus long que le tampon
+  // continue dans le suivant (C16-03) : la position dans la rampe est gardée, rien ne repart de la cible.
   void process(std::span<float> samples, const Pass& pass);
   float applied_gain() const { return applied_; }
 
  private:
-  float applied_ = 1.0F;  // dernier gain atteint
+  float applied_ = 1.0F;       // le gain de la dernière trame traitée
+  float target_ = 1.0F;        // la cible de la rampe en cours
+  float ramp_from_ = 1.0F;     // d'où elle est partie
+  std::size_t ramp_done_ = 0;  // trames déjà faites de la rampe de gain
+  std::size_t fade_done_ = 0;  // trames déjà faites du fondu d'entrée
+  bool fading_ = false;
 };
 
 }  // namespace ajp::audio

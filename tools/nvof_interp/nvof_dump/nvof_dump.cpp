@@ -1,4 +1,5 @@
-// nvof_dump : lit des tâches sur l'entrée standard, une par ligne,
+// nvof_dump : lit des tâches sur l'entrée standard, une par ligne, champs séparés par des TABULATIONS
+// (un chemin peut contenir des espaces, par exemple « C:\Users\Prénom Nom\AppData\Local\Temp », C46-11) :
 //   <largeur> <hauteur> <luma a> <luma b> <sortie>
 // (lumas 8 bits brutes, largeur × hauteur octets), et écrit dans <sortie> les deux flux NVOF de la
 // paire, avant (a → b) puis arrière (b → a) : chacun (largeur/4) × (hauteur/4) vecteurs int16
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cuda.h>
+#include <exception>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -173,10 +175,21 @@ int main() {
   std::unique_ptr<Session> session;
   std::string line;
   while (std::getline(std::cin, line)) {
-    std::istringstream fields(line);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    std::vector<std::string> fields;
+    {
+      std::istringstream split(line);
+      for (std::string field; std::getline(split, field, '\t');) fields.push_back(field);
+    }
+    if (fields.size() != 5) die("tâche illisible (5 champs séparés par des tabulations attendus) : " + line);
     std::uint32_t w = 0, h = 0;
-    std::string a, b, out;
-    if (!(fields >> w >> h >> a >> b >> out)) die("tâche illisible : " + line);
+    try {
+      w = static_cast<std::uint32_t>(std::stoul(fields[0]));
+      h = static_cast<std::uint32_t>(std::stoul(fields[1]));
+    } catch (const std::exception&) {
+      die("tâche illisible (largeur ou hauteur) : " + line);
+    }
+    const std::string &a = fields[2], &b = fields[3], &out = fields[4];
     if (!session || session->width != w || session->height != h) {
       session.reset();
       session = std::make_unique<Session>(api, context, w, h);

@@ -14,14 +14,26 @@ La CI ne tourne plus d'elle-même (en-tête de `.github/workflows/ci.yml`). Avan
 main, sur le commit à étiqueter : Actions > CI > Run workflow, branche `main`, « Étendue complète » cochée pour une
 release finale. Attendre qu'elle soit verte : sans elle, la garde refuse la release.
 
+Une release finale demande aussi les **tests matériels du poste de référence** (TensorRT, noyaux CUDA, NVDEC, FP8 :
+aucune tâche de la CI n'a de carte NVIDIA). Sur le commit à étiqueter, sur le PC Windows 11 et sur CachyOS :
+`ctest --preset windows-rtx --output-junit hw.xml` (Windows : tous les tests, rendu et Vulkan de repli sur la vraie
+carte compris, que le runner de la CI n'exécute pas ; `windows-rtx-hardware` n'en garde que les tests cachés) ou `ctest --preset linux-prefix-cuda-hardware
+--output-junit hw.xml` (Linux), puis `python3 tools/release/hardware_report.py write --platform windows|linux --junit
+hw.xml --out hardware-report-<plateforme>.json` et `gh release upload v<VERSION> hardware-report-linux.json
+hardware-report-windows.json` (la release de l'étiquette existe après `attach-nvidia-*`). La garde vérifie le commit,
+l'absence d'échec et le plafond de tests sautés (`tools/release/hardware-skip-ceiling.txt`). Une préversion n'en a pas
+besoin.
+
 Puis une seule action : pousser l'étiquette `v<VERSION>` (ou `v<VERSION>-rc.N` pour une préversion), où `<VERSION>`
 est celle de `project()` dans `CMakeLists.txt`, sur ce même commit. Aucune étiquette ne se pose sans la demande de
 Tatoub. Le workflow `release.yml` fait le reste :
 
 1. **Garde** (`release-guard.yml`) : le commit construit est celui de l'étiquette, l'étiquette dit la version de
-   `CMakeLists.txt` (`tools/ci/check-version.sh <étiquette>`), et `ci.yml` est vert sur ce commit : pour une étiquette
-   finale, un lancement d'**étendue complète** (son titre porte « (complète) », `run-name` de `ci.yml`) ; une release
-   finale exige aussi une **clé de secours compilée** (`tools/ci/check-backup-key.sh`, voir « Clé de secours »).
+   `CMakeLists.txt` (`tools/ci/check-version.sh <étiquette>`), et `ci.yml` est vert sur ce commit. Pour une étiquette
+   finale (sans suffixe), la garde exige de plus le témoin `ci-verdict` d'un lancement **complet** sur `main`, sans la
+   dérogation `allow_arch_red` (le titre « (complète) » du lancement, `run-name`, n'est qu'informatif), les rapports des
+   tests matériels ci-dessus, et une **clé de secours compilée** (`tools/ci/check-backup-key.sh`, voir « Clé de
+   secours »).
 2. **Plateformes**, en parallèle (`release-linux.yml`, `release-windows.yml`, `release-macos.yml`) :
    - Linux et Windows construisent d'abord leur **paquet TensorRT** s'il manque pour l'empreinte de ses entrées
      (`tools/release/trt-fingerprint.sh`, `--windows`), et le publient dans la release fixe `trt-<empreinte>` ou

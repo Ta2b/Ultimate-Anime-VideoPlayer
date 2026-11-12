@@ -161,6 +161,12 @@ TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03
   CHECK(apply_preset(with(Preset::Normal), low, k1080p24).work_height == 720);
 }
 
+// Le README promet « jusqu'à ×5 » (C38-03) : le plafond de Fluidité part de ×4 et monte d'un cran.
+TEST_CASE("Fluidité plafonne le multiplicateur à ×5, jamais ×6", "[auto_config]") {
+  for (const Tier tier : {Tier::Fast, Tier::Ultra})
+    CHECK(applied(Preset::Auto, tier, 2160, 144.0, k1080p24, Priority::Fluidity).rife_factor == 5);
+}
+
 TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).work_height == 540);
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Image).work_height == 900);
@@ -258,6 +264,18 @@ TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de le
   moved = base;
   moved.keep_poses = !base.keep_poses;
   CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  // Les réglages avancés de la chaîne comptent aussi : l'infobulle promet Personnalisé (C23-06).
+  for (const auto change :
+       {+[](ajp::app::play::PlaySettings& s) { s.rife_fused = !s.rife_fused; },
+        +[](ajp::app::play::PlaySettings& s) { s.drba_fused = !s.drba_fused; },
+        +[](ajp::app::play::PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; },
+        +[](ajp::app::play::PlaySettings& s) { s.cubic_warp = !s.cubic_warp; },
+        +[](ajp::app::play::PlaySettings& s) { s.pair_scale = !s.pair_scale; },
+        +[](ajp::app::play::PlaySettings& s) { s.auto_cap = s.auto_cap == 60 ? 120 : 60; }}) {
+    moved = base;
+    change(moved);
+    CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  }
   // Le mode auto Rapide n'appartient à la chaîne que sous l'Auto calibré, qui l'écrit (A07-06).
   moved = base;
   moved.auto_free = !base.auto_free;

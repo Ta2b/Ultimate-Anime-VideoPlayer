@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "media/demuxer.h"
+#include "media/field_alignment.h"
 #include "media/track.h"
 
 namespace ajp::media {
@@ -48,5 +49,14 @@ class TelecineMeter {
 // fichier. Le demuxer est ensuite remis au début. std::nullopt : pas concluant (fichier trop court, décodeur
 // qui échoue, image sans mouvement), la lecture garde alors son choix d'avant.
 std::optional<bool> measure_telecine(Demuxer& demuxer, const TrackInfo& track);
+
+// La même lecture, avec les deux verdicts d'une piste entrelacée : du télécinéma ou non (comme
+// measure_telecine), et des champs du même instant ou non (FieldAlignmentMeter, C15-01). std::nullopt : pas
+// concluant.
+struct InterlaceMeasure {
+  std::optional<bool> telecine;
+  std::optional<bool> aligned;
+};
+InterlaceMeasure measure_interlace(Demuxer& demuxer, const TrackInfo& track);
 
 }  // namespace ajp::media

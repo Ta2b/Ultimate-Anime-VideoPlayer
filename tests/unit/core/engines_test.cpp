@@ -73,3 +73,19 @@ TEST_CASE("Moteurs : sans GPU reconnu, Vulkan seul est recommandé", "[engines]"
   CHECK(std::ranges::none_of(offers,
                              [](const EngineOffer& o) { return o.id != EngineId::Vulkan && o.preselected; }));
 }
+
+// C40-09 : la règle « TensorRT seulement sur une RTX » a son cas négatif NVIDIA.
+TEST_CASE("Moteurs : une NVIDIA sans tensor cores (GTX) n'a ni TensorRT ni case Moteurs", "[engines]") {
+  const std::array systems{
+      SystemInfo{
+          .os = Os::Windows,
+          .gpus = {GpuInfo{.vendor = GpuVendor::Nvidia, .name = "GTX 1660 SUPER", .tensor_cores = false}}},
+      SystemInfo{.os = Os::Linux,
+                 .gpus = {GpuInfo{.vendor = GpuVendor::Nvidia, .name = "GTX 1080", .tensor_cores = false}}}};
+  for (const SystemInfo& system : systems) {
+    const auto offers = recommend_engines(system);
+    CHECK_FALSE(find(offers, EngineId::TensorRt));
+    CHECK(offers.size() == 1);
+    CHECK(has(*find(offers, EngineId::Vulkan), Badge::Recommended));
+  }
+}
