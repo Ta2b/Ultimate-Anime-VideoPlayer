@@ -1,18 +1,19 @@
 # Plancher du nombre de cas par rapport JUnit, par tâche (check-skips.sh, B40-09) : un rapport plus court est une
 # cible absente ou un filtre qui a tout retiré, pas un succès. Valeur provisoire volontairement basse, à serrer à
 # environ 90 % du compte réel relevé dans les journaux de la CI (le compte monte quand on ajoute des tests, jamais
-# l'inverse).
-lavapipe 50
+# l'inverse). Relevés du 11 novembre 2026 : lavapipe et lecteur sous Arch 1890 cas, cœur (gcc-13, Arch) 322. Les autres
+# tâches gardent une valeur basse tant que leur compte n'est pas relevé.
+lavapipe 1700
 asan-ubsan 50
 tsan 50
 tsan-pr 5
 asan-fuzz 5
 windows 50
-core-gcc-13 5
+core-gcc-13 290
 core-clang-20 5
 core-asan-ubsan 5
 core-tsan 5
-arch 5
-arch-player 50
+arch 290
+arch-player 1700
 linux-release 50
 cloud 50
