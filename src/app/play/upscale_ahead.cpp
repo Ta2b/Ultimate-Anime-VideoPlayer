@@ -126,6 +126,8 @@ std::expected<void, Refusal> UpscaleStage::prepare_rife_input() {
   const bool direct = motion_direct(instants_[0].t);
   const float t = by_motion() && !direct ? 0.5F : instants_[0].t;
   rife_pair_ = (rife_pair_ + 1) % copies_;
+  // Échelle par paire : une paire forte prise d'emblée à chaque instant passe au second RIFE (run_strong).
+  if (direct && strong_motion_ && halves()) return fill_half_input(t);
   return write_rife_pair(t);
 }
 

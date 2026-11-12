@@ -60,6 +60,13 @@ constexpr std::array kImageTabs{
           "L'export ne saute aucune image : chaque image créée coûte une passe."},
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
+    Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
+    Entry{
+        "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
+        "first time. Cheaper on fast pans; small objects may lose precision. RIFE only. Reloads playback.",
+        "Essai : les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, "
+        "par un second moteur construit la première fois. Moins cher sur les panoramiques rapides ; les "
+        "petits objets peuvent perdre en précision. RIFE seulement. Recharge la lecture."},
     Entry{"DistilDRBA", "DistilDRBA"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},

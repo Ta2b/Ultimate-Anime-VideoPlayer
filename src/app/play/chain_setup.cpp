@@ -161,6 +161,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
       .rife_motion_calm = rife_motion_calm.get(),
+      .rife_motion_half = rife_motion_half.get(),
       .rife_planes = rife_planes,
       .rife_align = rife_align,
       .distil_drba = drba.get(),
@@ -763,6 +764,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     }
   }
   load_calm_rife(p, init, c, models_dir);
+  if (!load_half_rife(p, init, c, settings, models_dir)) return std::nullopt;
   if (use_rife && !c.rife_motion) {
     const kernels::RifeGeometry& g = c.image_geometry;
     const Fused tried = try_fused(g, false, c.rife);
