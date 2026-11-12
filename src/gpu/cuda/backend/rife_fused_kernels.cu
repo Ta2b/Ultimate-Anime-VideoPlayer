@@ -4,38 +4,6 @@
 // kernels/spec/rife_fused.h) :
 //   0-2 image A warpée, 3-5 image B warpée, 6-9 encodage de A warpé, 10-13 encodage de B warpé, 14 instant,
 //   15 masque, 16-23 attributs, 24-27 flot accumulé × (1/d).
-// Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp) sur 4 × 4 points en FP32 : la position du Tap (déjà
-// ramenée dans l'image), points répétés au bord, sortie bornée à [0, 1].
-__device__ __forceinline__ void catmull_rom(float t, float (&w)[4]) {
-  const float t2 = t * t;
-  const float t3 = t2 * t;
-  w[0] = -0.5F * t3 + t2 - 0.5F * t;
-  w[1] = 1.5F * t3 - 2.5F * t2 + 1.0F;
-  w[2] = -1.5F * t3 + 2.0F * t2 + 0.5F * t;
-  w[3] = 0.5F * t3 - 0.5F * t2;
-}
-
-__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w, int h) {
-  float wx[4];
-  float wy[4];
-  catmull_rom(t.wx, wx);
-  catmull_rom(t.wy, wy);
-  const std::size_t stride = static_cast<std::size_t>(w);
-  float sum = 0.0F;
-#pragma unroll
-  for (int j = 0; j < 4; ++j) {
-    const auto yy = static_cast<std::size_t>(min(max(t.y0 - 1 + j, 0), h - 1));
-    float row = 0.0F;
-#pragma unroll
-    for (int i = 0; i < 4; ++i) {
-      const auto xx = static_cast<std::size_t>(min(max(t.x0 - 1 + i, 0), w - 1));
-      row += __half2float(plane[yy * stride + xx]) * wx[i];
-    }
-    sum += row * wy[j];
-  }
-  return fminf(fmaxf(sum, 0.0F), 1.0F);
-}
-
 // Bloc 0 : 15 canaux (images A, B, encodages de A et de B, instant), tous moyennés sans warp.
 #include <cstddef>
 #include <cuda_fp16.h>
@@ -108,6 +76,38 @@ __device__ __forceinline__ Tap pixel_tap(int x, int y, float flow_x, float flow_
   t.wx = ix - static_cast<float>(t.x0);
   t.wy = iy - static_cast<float>(t.y0);
   return t;
+}
+
+// Catmull-Rom (kernels/spec/rife_fused.h : RifeWarp) sur 4 × 4 points en FP32 : la position du Tap (déjà
+// ramenée dans l'image), points répétés au bord, sortie bornée à [0, 1].
+__device__ __forceinline__ void catmull_rom(float t, float (&w)[4]) {
+  const float t2 = t * t;
+  const float t3 = t2 * t;
+  w[0] = -0.5F * t3 + t2 - 0.5F * t;
+  w[1] = 1.5F * t3 - 2.5F * t2 + 1.0F;
+  w[2] = -1.5F * t3 + 2.0F * t2 + 0.5F * t;
+  w[3] = 0.5F * t3 - 0.5F * t2;
+}
+
+__device__ __forceinline__ float catmull_rom_sample(const __half* plane, const Tap& t, int w, int h) {
+  float wx[4];
+  float wy[4];
+  catmull_rom(t.wx, wx);
+  catmull_rom(t.wy, wy);
+  const std::size_t stride = static_cast<std::size_t>(w);
+  float sum = 0.0F;
+#pragma unroll
+  for (int j = 0; j < 4; ++j) {
+    const auto yy = static_cast<std::size_t>(min(max(t.y0 - 1 + j, 0), h - 1));
+    float row = 0.0F;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const auto xx = static_cast<std::size_t>(min(max(t.x0 - 1 + i, 0), w - 1));
+      row += __half2float(plane[yy * stride + xx]) * wx[i];
+    }
+    sum += row * wy[j];
+  }
+  return fminf(fmaxf(sum, 0.0F), 1.0F);
 }
 
 __device__ __forceinline__ float bilinear(const __half* plane, const Tap& t, int w) {
