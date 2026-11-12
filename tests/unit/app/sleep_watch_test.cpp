@@ -47,6 +47,22 @@ TEST_CASE("Veille ou gel : la barre de titre tenue sous Windows n'est pas une ve
   CHECK(watch.last_kind(0) == watch.last_kind(50'010'000));
 }
 
+TEST_CASE("Veille ou gel : un gel de 8 s sans événement de fenêtre n'est pas une veille (C11-11)",
+          "[app][sleep]") {
+  // Barre de titre tenue immobile, ou pilote bloqué : aucun événement de fenêtre. Les deux horloges (dont
+  // QueryUnbiasedInterruptTime sous Windows, qui s'arrête à la veille) avancent ensemble : un gel.
+  SleepWatch watch;
+  CHECK_FALSE(watch.turn(1'000'000, 50'000'000));
+  REQUIRE(watch.turn(9'000'000, 58'000'000));
+  CHECK(watch.last_kind(0) == GapKind::Freeze);
+  // Une vraie veille : l'horloge qui s'arrête n'a presque pas bougé.
+  REQUIRE(watch.turn(9'100'000, 1'258'000'000));
+  CHECK(watch.last_kind(0) == GapKind::Sleep);
+  // L'horloge qui s'arrête à la veille avance.
+  const std::int64_t before = sleep_unaware_now_us();
+  CHECK(sleep_unaware_now_us() >= before);
+}
+
 TEST_CASE("Économiseur : coupé seulement quand une vidéo avance", "[app][sleep]") {
   CHECK(must_stay_awake(true, false, false));
   CHECK_FALSE(must_stay_awake(true, true, false));    // en pause

@@ -193,6 +193,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "player_machine.cpp",
                                         "gpu_profile_out.cpp",
                                         "placebo_open.cpp",
+                                        "placebo_cache.cpp",
                                         "placebo_ring.cpp",
                                         "placebo_grade.cpp",
                                         "placebo_screen.cpp",

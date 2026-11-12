@@ -240,9 +240,14 @@ SlotFree PlaceboRing::retire(pl_gpu gpu, const RingFrame& frame) {
       take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value, family());
     // Cession refusée (mémoire de commandes, appareil en échec) : le sémaphore n'atteindra jamais la valeur
     // que l'écriture suivante attend. Le slot n'est pas rendu au producteur, et le journal le dit (A10-09).
+    // Un anneau qui a perdu kMaxRefusedSlots slots n'en a bientôt plus de libre et la vidéo se figerait sans
+    // message sous le son (C10-06) : il se dit perdu, et la lecture se relance avec un avis.
     if (!hand_to_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value + 1, family())) {
-      log_channel("app")->error("anneau : le slot {} n'a pas pu être rendu au moteur (pl_vulkan_hold_ex)",
-                                frame.slot);
+      constexpr std::uint32_t kMaxRefusedSlots = 2;
+      ++refused_;
+      if (refused_ >= kMaxRefusedSlots) lost_ = true;
+      log_channel("app")->error("anneau : le slot {} n'a pas pu être rendu au moteur (pl_vulkan_hold_ex){}",
+                                frame.slot, lost_ ? ", anneau perdu" : "");
       slot.placebo_value = 0;
       return SlotFree{.slot = frame.slot, .semaphore_value = 0, .generation = UINT32_MAX};
     }
@@ -267,6 +272,7 @@ void PlaceboRing::clear(pl_gpu gpu) {
     if (slot.semaphore_export) close_handle(*slot.semaphore_export);
   }
   slots_.clear();
+  refused_ = 0;
 }
 
 }  // namespace ajp::app::play

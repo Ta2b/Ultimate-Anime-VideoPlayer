@@ -208,9 +208,11 @@ constexpr std::array kImageTabs{
     Entry{"Anime4K ×2", "Anime4K ×2"},
     Entry{
         "Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B or C "
-        "follows the source and the downscale.",
+        "follows the source and the downscale. SDR sources only: an HDR source is upscaled by the display.",
         "Anime4K : des shaders dessinés par l'affichage, sans moteur à construire, pour les petites cartes. "
-        "Le mode A, B ou C suit la source et la réduction."},
+        "Le mode A, B ou C suit la source et la réduction. Sources SDR seulement : une source HDR est "
+        "agrandie "
+        "par l'affichage."},
     Entry{"the upscaler changes to Anime4K", "l'agrandissement passe à Anime4K"},
 };
 

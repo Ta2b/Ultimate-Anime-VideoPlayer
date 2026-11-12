@@ -239,10 +239,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   (*pipeline)->inbox().set_waker(&LoopWake::push, &wake);
   const WriteWatch watching(out, p.options.ring_watcher ? &LoopWake::push : nullptr, &wake);  // 6.5
 
-  const std::unique_ptr<GpuTelemetry> telemetry = GpuTelemetry::open(p.screen.device());
-  const std::uint64_t energy_start_mj = telemetry ? telemetry->energy_mj(host_now_us()) : 0;
+  const LateTelemetry telemetry(p.screen.device());  // ouverte sur son fil (C11-13)
   ChainStats chain_stats(*live, *c.backend->kernels(), rife_loaded, std::string(c.motion_name()),
-                         fps_of(video.frame_rate), telemetry.get());
+                         fps_of(video.frame_rate), &telemetry);
   SessionConfig session_config = (*pipeline)->session_config();
   session_config.start_us = start_us;
   p.screen.set_sample_aspect(session_config.video_sar);
@@ -654,9 +653,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   finish_settings_writes(writer, p.settings_path, saved_settings());  // attente bornée (B30-05)
   p.quit = session.quit_asked();
   log_summary(session);
-  if (telemetry) {
+  if (GpuTelemetry* const nvml = telemetry.get()) {
     // Énergie de la lecture : le compteur NVML relu au début et à la fin, à l'instant même (B11-14).
-    const std::uint64_t energy_end_mj = telemetry->energy_mj(host_now_us());
+    const std::uint64_t energy_start_mj = telemetry.energy_start_mj();
+    const std::uint64_t energy_end_mj = nvml->energy_mj(host_now_us());
     if (const auto per_frame =
             millijoules_per_frame(energy_start_mj, energy_end_mj, session.stats().new_frames))
       log->info("énergie : {:.1f} J, {:.1f} mJ par image neuve",

@@ -12,7 +12,7 @@ namespace ajp::app::play {
 
 AfterGap after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, SleepWatch& watch,
                    const WindowEvents& window, bool& announced) {
-  const std::optional<std::int64_t> gap_us = watch.turn(host_now_us(), suspend_aware_now_us());
+  const std::optional<std::int64_t> gap_us = watch.turn(sleep_unaware_now_us(), suspend_aware_now_us());
   if (!gap_us) return {};
   const auto log = log_channel("app");
   const std::int64_t at = session.view().position_us;

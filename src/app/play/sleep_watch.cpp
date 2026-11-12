@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <utility>
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_video.h>
 
+#include "core/clock.h"
 #include "core/log.h"
 
 #if defined(_WIN32)
@@ -38,6 +40,14 @@ std::int64_t suspend_aware_now_us() {
 #endif
 }
 
+std::int64_t sleep_unaware_now_us() {
+#if defined(_WIN32)
+  ULONGLONG ticks = 0;  // en 100 ns
+  if (QueryUnbiasedInterruptTime(&ticks) != FALSE) return static_cast<std::int64_t>(ticks / 10);
+#endif
+  return host_now_us();
+}
+
 std::optional<std::int64_t> SleepWatch::turn(std::int64_t steady_us, std::int64_t aware_us) {
   const std::optional<std::int64_t> before = steady_us_;
   const std::int64_t aware_before = aware_us_;
@@ -53,11 +63,7 @@ std::optional<std::int64_t> SleepWatch::turn(std::int64_t steady_us, std::int64_
 }
 
 GapKind SleepWatch::last_kind(std::int64_t window_event_aware_us) const {
-#if defined(_WIN32)
-  constexpr bool kClocksSplit = false;
-#else
-  constexpr bool kClocksSplit = true;
-#endif
+  constexpr bool kClocksSplit = true;  // sleep_unaware_now_us et suspend_aware_now_us
   const bool held = window_event_aware_us > gap_from_aware_ + kHeldAfterUs &&
                     window_event_aware_us <= gap_from_aware_ + gap_aware_us_;
   return gap_kind(gap_steady_us_, gap_aware_us_, held, kClocksSplit);
@@ -96,9 +102,14 @@ std::int64_t WindowEvents::last_aware_us() const {
 
 void ScreenSaverHold::want(bool awake) {
   if (awake_ == awake) return;
-  awake_ = awake;
-  const bool done = awake ? SDL_DisableScreenSaver() : SDL_EnableScreenSaver();
-  if (!done) log_channel("app")->warn("économiseur d'écran : {}", SDL_GetError());
+  // L'état n'est retenu qu'une fois tenu (C11-10) : un échec (bus D-Bus pas prêt juste après la connexion à
+  // KDE) se retente au tour suivant, au lieu de laisser l'écran se verrouiller en pleine vidéo. Dit une fois.
+  if (const bool done = awake ? SDL_DisableScreenSaver() : SDL_EnableScreenSaver(); done) {
+    awake_ = awake;
+    failed_ = false;
+  } else if (!std::exchange(failed_, true)) {
+    log_channel("app")->warn("économiseur d'écran : {} (nouvel essai à chaque tour)", SDL_GetError());
+  }
 }
 
 }  // namespace ajp::app::play

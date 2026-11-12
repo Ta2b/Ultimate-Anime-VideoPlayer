@@ -73,3 +73,18 @@ TEST_CASE("métadonnées du contrat v2 : C_pk annoncé, MaxFALL et noir en unit�
   c.primaries = ajp::render::Chromaticities{0.68, 0.30, 0.25, 0.71, 0.15, 0.06, 0.3135, 0.3291};
   CHECK(ajp::render::contract_metadata(c).primaries == *c.primaries);
 }
+
+TEST_CASE("limiteur : la courbe va du pic au plein champ que l'écran dit (C11-04)", "[render][display]") {
+  // WOLED de 800 nits, 150 plein champ : de 800 à 2 % à 150 à 100 %, toujours décroissante.
+  const auto woled = ajp::render::abl_to_full_frame(800.0, 150.0);
+  CHECK_THAT(woled.front(), WithinRel(800.0, 1e-9));
+  CHECK_THAT(woled.back(), WithinRel(150.0, 1e-9));
+  for (std::size_t i = 1; i < woled.size(); ++i) CHECK(woled[i] < woled[i - 1]);
+  // La courbe QD-OLED de référence se retrouve avec ses propres bouts.
+  const auto qd = ajp::render::abl_to_full_frame(1016.0, 261.0);
+  CHECK_THAT(qd[1], WithinRel(460.0, 1e-6));
+  CHECK_THAT(qd[3], WithinRel(310.0, 1e-6));
+  // Un plein champ au pic (LCD) ou inconnu : le pic partout.
+  for (const double nits : ajp::render::abl_to_full_frame(600.0, 600.0)) CHECK(nits == 600.0);
+  for (const double nits : ajp::render::abl_to_full_frame(600.0, 0.0)) CHECK(nits == 600.0);
+}

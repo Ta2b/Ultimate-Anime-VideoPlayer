@@ -51,7 +51,8 @@ class DisplayFollow {
  private:
   void follow_peak(std::optional<double> peak_now);
   void follow_vrr(std::optional<bool> reading);
-  void follow_window(bool display_changed);
+  void follow_window(const DisplaySdl& sdl, bool display_changed);
+  void follow_display_facts(const std::optional<DisplayFacts>& display);
 
   Player& p_;
   Chain& chain_;
@@ -66,7 +67,8 @@ class DisplayFollow {
   VrrWatch vrr_watch_;
   bool vrr_fullscreen_ = true;  // relu au premier relevé : VRR, compositeur (P3.45)
   std::int64_t hdr_polled_at_ = 0;
-  DisplayProbe probe_;  // en dernier : son fil s'arrête avant le reste
+  bool display_moved_ = false;  // la fenêtre a changé d'écran : le relevé de l'écran demandé le suit
+  DisplayProbe probe_;          // en dernier : son fil s'arrête avant le reste
 };
 
 }  // namespace ajp::app::play

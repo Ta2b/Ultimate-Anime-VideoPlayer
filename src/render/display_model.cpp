@@ -45,6 +45,18 @@ std::array<double, 5> default_abl(double panel_peak_nits, bool oled) {
   return out;
 }
 
+std::array<double, 5> abl_to_full_frame(double panel_peak_nits, double full_frame_nits) {
+  std::array<double, 5> out{};
+  out.fill(panel_peak_nits);
+  if (!(full_frame_nits > 0.0) || full_frame_nits >= panel_peak_nits) return out;
+  const double top = std::log(kQdOled.front().nits);
+  const double span = top - std::log(kQdOled.back().nits);
+  const double drop = std::log(panel_peak_nits / full_frame_nits);
+  for (std::size_t i = 0; i < out.size(); ++i)
+    out[i] = panel_peak_nits * std::exp(-drop * (top - std::log(kQdOled[i].nits)) / span);
+  return out;
+}
+
 ContractMetadata contract_metadata(const DisplayContract& contract) {
   const double k = contract.k();
   return ContractMetadata{.primaries = contract.primaries.value_or(kDisplayP3),

@@ -9,8 +9,6 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
-#include "app/play/host_facts.h"
-
 namespace ajp::app::play {
 namespace {
 
@@ -37,9 +35,48 @@ bool on_event(void* context, SDL_Event* event) {
 
 }  // namespace
 
+namespace {
+
+render::DisplayContract::PeakSource peak_source_of(ContentPeak::Source source) {
+  using Peak = render::DisplayContract::PeakSource;
+  switch (source) {
+    case ContentPeak::Source::Compositor:
+      return Peak::Compositor;
+    case ContentPeak::Source::Headroom:
+      return Peak::Headroom;
+    case ContentPeak::Source::Edid:
+      return Peak::Edid;
+    case ContentPeak::Source::Default:
+      break;
+  }
+  return Peak::Default;
+}
+
+// La courbe du limiteur (C11-04) : du pic au plein champ que l'écran dit, sinon la table QD-OLED.
+void fill_abl(render::DisplayContract& out, const DisplayFacts& facts,
+              const std::optional<ContentPeak>& system_peak) {
+  using Abl = render::DisplayContract::AblSource;
+  std::optional<double> full;
+  if (system_peak && system_peak->full_frame_nits) {
+    full = system_peak->full_frame_nits;
+    out.abl_source = Abl::System;
+  } else if (facts.full_frame_nits) {
+    full = facts.full_frame_nits;
+    out.abl_source = Abl::DisplayId;
+  } else if (facts.frame_average_nits) {
+    full = facts.frame_average_nits;
+    out.abl_source = Abl::Edid;
+  }
+  out.abl = full ? render::abl_to_full_frame(out.panel_peak_nits, *full)
+                 : render::default_abl(out.panel_peak_nits, out.oled);
+  for (double& nits : out.abl) nits = std::min(nits, out.panel_peak_nits);
+}
+
+}  // namespace
+
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
-                                    double headroom, const std::optional<MeasuredAbl>& abl,
-                                    double sdr_white_nits, std::optional<double> system_peak) {
+                                    double headroom, double sdr_white_nits,
+                                    const std::optional<ContentPeak>& system_peak) {
   render::DisplayContract out;
   out.oled = facts.oled;
   out.reference_nits = kwin && kwin->reference ? *kwin->reference : render::kContentReferenceNits;
@@ -49,9 +86,9 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
   if (kwin && kwin->peak_override) {
     out.panel_peak_nits = *kwin->peak_override;
     out.peak_source = render::DisplayContract::PeakSource::Compositor;
-  } else if (system_peak && *system_peak > 0.0) {
-    out.panel_peak_nits = *system_peak;
-    out.peak_source = render::DisplayContract::PeakSource::Compositor;
+  } else if (system_peak && system_peak->nits > 0.0) {
+    out.panel_peak_nits = system_peak->nits;
+    out.peak_source = peak_source_of(system_peak->source);
   } else if (headroom > 1.0) {
     out.panel_peak_nits = headroom * (sdr_white_nits > 0.0 ? sdr_white_nits : out.reference_nits);
     out.peak_source = render::DisplayContract::PeakSource::Headroom;
@@ -59,8 +96,7 @@ render::DisplayContract contract_of(const DisplayFacts& facts, const std::option
     out.panel_peak_nits = *facts.peak_nits;
     out.peak_source = render::DisplayContract::PeakSource::Edid;
   }
-  out.abl = abl ? abl->nits : render::default_abl(out.panel_peak_nits, out.oled);
-  for (double& nits : out.abl) nits = std::min(nits, out.panel_peak_nits);
+  fill_abl(out, facts, system_peak);
   out.primaries = facts.primaries;
   out.min_nits = facts.min_nits.value_or(0.0);
   return out;
@@ -73,11 +109,16 @@ std::string describe(const render::DisplayContract& c) {
                                 : c.peak_source == Source::Headroom ? "marge de SDL"
                                 : c.peak_source == Source::Edid     ? "EDID"
                                                                     : "par défaut";
+  using Abl = render::DisplayContract::AblSource;
+  const std::string_view abl = c.abl_source == Abl::System      ? "plein champ de Windows"
+                               : c.abl_source == Abl::DisplayId ? "plein champ de DisplayID"
+                               : c.abl_source == Abl::Edid      ? "MaxFALL de l'EDID"
+                                                                : "table QD-OLED par défaut";
   std::string text = std::format(
-      "référence {:.0f} nits ({}, k {:.3f}), pic {:.0f} nits ({}, {:.0f} du contenu), MaxFALL {:.0f} ({:.0f} "
-      "du contenu), noir {:.4f}{}",
+      "référence {:.0f} nits ({}, k {:.3f}), pic {:.0f} nits ({}, {:.0f} du contenu), MaxFALL {:.0f} ({}, "
+      "{:.0f} du contenu), noir {:.4f}{}",
       c.reference_nits, c.from_compositor ? "KDE" : "par défaut", c.k(), c.panel_peak_nits, peak,
-      c.content_peak_nits(), c.abl.back(), c.content_frame_average_nits(), c.min_nits,
+      c.content_peak_nits(), c.abl.back(), abl, c.content_frame_average_nits(), c.min_nits,
       c.oled ? ", OLED" : "");
   if (c.primaries) {
     const render::Chromaticities& p = *c.primaries;
@@ -107,11 +148,16 @@ render::DisplayContract ContractWatch::read() const {
     white = SDL_GetFloatProperty(props, SDL_PROP_WINDOW_SDR_WHITE_LEVEL_FLOAT, 0.0F);
   }
   const std::string edid = kwin_edid_key(facts.manufacturer, facts.product);
-  // B11-10 : sous Windows, le pic du grade (DXGI) ; sous Linux, celui de KWin, lu juste au-dessus.
-  std::optional<double> system_peak;
-  if (kWindows && window_ != nullptr) system_peak = content_peak_nits(window_);
-  return contract_of(facts, read_kwin_output(facts.connector, edid), headroom, std::nullopt,
-                     sdr_white_nits_of(white, kWindows), system_peak);
+  // B11-10 : sous Windows, le pic du grade (DXGI), relu par la sonde (C11-06) ; sous Linux, celui de KWin, lu
+  // juste au-dessus.
+  return contract_of(facts, read_kwin_output(facts.connector, edid), headroom,
+                     sdr_white_nits_of(white, kWindows), kWindows ? system_peak_ : std::nullopt);
+}
+
+void ContractWatch::set_system_peak(std::optional<ContentPeak> peak) {
+  if (!kWindows || peak == system_peak_) return;
+  system_peak_ = peak;
+  hdr_changed_.store(true, std::memory_order_relaxed);
 }
 
 std::optional<render::DisplayContract> ContractWatch::tick() {

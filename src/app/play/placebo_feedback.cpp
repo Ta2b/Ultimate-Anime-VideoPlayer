@@ -52,7 +52,9 @@ PresentFeedback::PresentFeedback(pl_vulkan vk, PresentLevel level, const Present
       wayland_(std::move(wayland)),
       timing_(std::make_unique<TimingStorage>()) {
 #ifdef AJP_PRESENT_FEEDBACK
+  // Sans appareil (tests, C10-11), aucune fonction : present timing retombe aussitôt.
   const auto load = [&](auto& into, const char* fn) {
+    if (vk_ == nullptr) return;
     into = reinterpret_cast<std::remove_reference_t<decltype(into)>>(vk_->get_proc_addr(vk_->instance, fn));
   };
   load(api_->queue_size, "vkSetSwapchainPresentTimingQueueSizeEXT");
@@ -93,11 +95,7 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
   }
   drop_if_silent();
   if (level_ == PresentLevel::Wayland) {
-    // wp_presentation : pas d'identifiant Vulkan (la swapchain n'en a pas), la demande part au compositeur.
-    read_wayland();
-    const core::PresentLedger::Issue issue = ledger_.issue(now_us, 0, wayland_ != nullptr);
-    last_id_ = issue.id;
-    if (wayland_ && issue.timing) wayland_->request(issue.id);
+    prepare_wayland(now_us);
     return nullptr;
   }
   const bool timing = level_ == PresentLevel::Timing || level_ == PresentLevel::TimingAbsolute;
@@ -144,7 +142,7 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
 
 // Present timing qui ne peut pas dater : wp_presentation s'il est ouvert (il date), sinon le sondage.
 void PresentFeedback::fall_back(std::string_view why) {
-  level_ = fallback_level(wayland_ != nullptr);
+  level_ = fallback_level(wayland_ != nullptr, caps_);
   ledger_.forget();
   channel_->warn("présentation : {}, niveau {}", why, name(level_));
 }
@@ -383,6 +381,14 @@ void PresentFeedback::record_stamps(const std::filesystem::path& file) {
   if (stamps_) stamps_ << screen_stamp_header();
 }
 
+// wp_presentation : pas d'identifiant Vulkan (la swapchain n'en a pas), la demande part au compositeur.
+void PresentFeedback::prepare_wayland(std::int64_t now_us) {
+  read_wayland();
+  const core::PresentLedger::Issue issue = ledger_.issue(now_us, 0, wayland_ != nullptr);
+  last_id_ = issue.id;
+  if (wayland_ && issue.timing) wayland_->request(issue.id);
+}
+
 void PresentFeedback::read_wayland() {
   if (!wayland_) return;
   wayland_done_.clear();
@@ -398,7 +404,16 @@ void PresentFeedback::read_wayland() {
       if (ledger_.report(done.id, 0)) ++discarded_;
       continue;
     }
-    if (done.refresh_ns != 0) refresh_duration_ = done.refresh_ns;
+    // Chaque retour dit l'état de la sortie, 0 compris (C10-01) : avant, une période non nulle restait après
+    // le passage en VRR (KWin plein écran), et la grille des vblanks d'une fréquence fixe périmée choisissait
+    // encore les images.
+    refresh_duration_ = done.refresh_ns;
+    if (const RefreshState state = wayland_refresh_state(done.refresh_ns, done.flags);
+        state != wayland_state_) {
+      wayland_state_ = state;
+      refresh_changed_ = true;
+      clock_.reset();
+    }
     accept(done.id, done.visible_us, true);
   }
 }

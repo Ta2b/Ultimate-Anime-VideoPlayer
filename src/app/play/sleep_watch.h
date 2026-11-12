@@ -30,8 +30,8 @@ enum class GapKind : std::uint8_t { Sleep, Freeze };
 // la boucle modale de Windows (déplacement, redimensionnement), la machine ne dormait pas.
 inline constexpr std::int64_t kHeldAfterUs = 250'000;
 // window_held : un tel événement ; clocks_split : steady s'arrête pendant la veille et l'horloge de veille
-// non (Linux, macOS), la veille se reconnaît alors à leur écart. Sous Windows, les deux comptent la veille :
-// sans fenêtre tenue, un trou reste une veille. Pur.
+// non, la veille se reconnaît alors à leur écart (partout depuis C11-11 : sleep_unaware_now_us). Sans cet
+// écart, un trou sans fenêtre tenue reste une veille. Pur.
 constexpr GapKind gap_kind(std::int64_t steady_gap_us, std::int64_t aware_gap_us, bool window_held,
                            bool clocks_split) {
   if (window_held) return GapKind::Freeze;
@@ -41,6 +41,11 @@ constexpr GapKind gap_kind(std::int64_t steady_gap_us, std::int64_t aware_gap_us
 
 // Microsecondes d'une horloge qui avance aussi pendant la veille du système.
 std::int64_t suspend_aware_now_us();
+// Microsecondes d'une horloge qui s'arrête pendant la veille : host_now_us sous Linux et macOS ; sous
+// Windows, où le compteur de performance compte la veille, QueryUnbiasedInterruptTime (C11-11 : sans elle, un
+// gel de plus de 5 s sans événement de fenêtre, barre de titre tenue immobile ou pilote bloqué, passait pour
+// une veille, avec pause et recalage).
+std::int64_t sleep_unaware_now_us();
 
 class SleepWatch {
  public:
@@ -86,7 +91,8 @@ class ScreenSaverHold {
   void want(bool awake);
 
  private:
-  std::optional<bool> awake_;
+  std::optional<bool> awake_;  // l'état tenu ; rien tant qu'aucun appel n'a réussi
+  bool failed_ = false;        // le dernier essai a échoué : dit au journal une fois
 };
 
 }  // namespace ajp::app::play

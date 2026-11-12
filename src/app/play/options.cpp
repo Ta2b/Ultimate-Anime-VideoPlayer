@@ -259,7 +259,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
       const auto wanted = parse_present(arg.substr(std::string_view("--present=").size()));
       if (!wanted)
         return refuse(RefusalCode::FieldOutOfRange,
-                      std::format("{}: auto, timing, wait, wayland or open", arg));
+                      std::format("{}: auto, timing, timing-absolute, wait, wayland or open", arg));
       options.present = *wanted;
     } else if (arg == "--no-present") {
       options.present = PresentWanted::Open;
@@ -595,8 +595,9 @@ std::string play_usage(bool debug) {
          "                         --no-audio-pll: the raw clock)\n"
          "  --vsync-index          frame chosen by its measured vblank number, with hysteresis (default;\n"
          "                         --no-vsync-index: the clock)\n"
-         "  --present=LEVEL        presentation feedback wait (default), auto, timing, wayland or open;\n"
-         "                         --no-present: open, the former presentation\n"
+         "  --present=LEVEL        presentation feedback wait (default), auto, timing, timing-absolute\n"
+         "                         (timing with a target date), wayland or open; --no-present: open, the\n"
+         "                         former presentation\n"
          "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
 }
 
