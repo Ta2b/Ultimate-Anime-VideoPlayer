@@ -133,9 +133,7 @@ std::vector<std::string> wanted_subtitles(const media::LanguagePriorities& langu
 
 }  // namespace
 
-std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
-                                                                 const VideoStageFactory& make_video) {
-  std::unique_ptr<Pipeline> p(new Pipeline());
+std::expected<Pipeline::SourceRead, Refusal> Pipeline::read_source(PipelineConfig config) {
   auto demuxer = media::Demuxer::open(config.file);
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   // P3.73 : les sous-titres à côté de la vidéo concourent avec ceux du conteneur, à leur langue lue dans le
@@ -160,6 +158,21 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
     if (!demuxer->track(*choice.video)->inverse_telecine && measured.aligned.value_or(false))
       demuxer->set_field_match(*choice.video, true);
   }
+  return SourceRead{.demuxer = std::move(*demuxer), .externals = std::move(externals), .choice = choice};
+}
+
+std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineConfig& config,
+                                                                 const VideoStageFactory& make_video,
+                                                                 std::optional<SourceRead> read) {
+  if (!read) {
+    auto fresh = read_source(config);
+    if (!fresh) return std::unexpected(std::move(fresh.error()));
+    read.emplace(std::move(*fresh));
+  }
+  std::unique_ptr<Pipeline> p(new Pipeline());
+  media::Demuxer* demuxer = &read->demuxer;
+  std::vector<ExternalSubtitle>& externals = read->externals;
+  const media::TrackChoice& choice = read->choice;
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();
   for (const media::Chapter& chapter : demuxer->chapters())
@@ -357,7 +370,15 @@ std::expected<void, Refusal> Pipeline::open_subtitles(
   // Le fil des sous-titres tourne même sans piste : un fichier glissé pendant la lecture s'y ajoute (P3.85).
   subs_inbox_ = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
   auto thread = subs::SubsThread::start(config.subs, mail_, subs_inbox_);
-  if (!thread) return std::unexpected(std::move(thread.error()));
+  if (!thread) {
+    // C13-06 : un étage qui manque laisse la vidéo continuer. Sans fil des sous-titres, la lecture se fait
+    // sans eux, avec un avis ; le menu n'en propose aucun, et un fichier glissé est refusé (subs_inbox_ nul).
+    mail_.report("subs", std::move(thread.error()), false);
+    subs_inbox_.reset();
+    menu_.subtitles.clear();
+    menu_.subtitle_selected.reset();
+    return {};
+  }
   subs_thread_ = std::move(*thread);
   send_fonts(std::move(fonts));
   std::optional<int> chosen;

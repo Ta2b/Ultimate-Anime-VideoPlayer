@@ -51,9 +51,6 @@ constexpr std::int64_t kQuietBuildUs = 250'000;
 // sert à mesurer les tactiques.
 constexpr std::int32_t kBuildFrameMs = 100;
 
-// Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
-// superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
-// montre les détails (details, repris ensuite par les statistiques de la lecture).
 // Une vidéo glissée pendant une préparation : gardée pour la lecture, qui passe à elle (A08-08). Vrai si c'en
 // est une ; des sous-titres ou autre chose sont écartés au journal, la chaîne n'est pas encore ouverte.
 bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dropped_video,
@@ -78,6 +75,9 @@ bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dro
   return true;
 }
 
+// Tours d'attente de main pendant la construction d'un moteur : la fenêtre reste vivante et la
+// superposition montre la préparation. Rien si l'utilisateur ferme la fenêtre ou quitte (q) ; Tab
+// montre les détails (details, repris ensuite par les statistiques de la lecture).
 std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
     EngineBuild& build, PlaceboScreen& screen, PlayerUi& ui, const EngineLabel& engine, bool& details,
     SnapshotPlan& snapshot, std::optional<std::filesystem::path>& dropped_video,
@@ -88,6 +88,7 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
   const AwakeWhile awake;  // une construction dure des minutes sans touche
   std::vector<Input> actions;
   bool watch_now = false;
+  bool show_failed = false;  // une ligne de journal, pas une toutes les 100 ms
   while (true) {
     if (watch_now) {
       log_channel("app")->info("construction de {} annulée : la vidéo part sans ce moteur", engine.name);
@@ -134,8 +135,16 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
                                       engine.backend)},
           .show_details = details,
           .watch_now = &watch_now};
-      auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)});
-      if (!shown) return std::unexpected(std::move(shown.error()));
+      // C08-04 : une surface perdue pendant la construction (HDR du système basculé, écran débranché) n'est
+      // pas un refus du moteur : retenue sous la signature de l'étage, elle le couperait pour la séance. Le
+      // journal le dit et la construction continue ; seul un appareil perdu arrête tout.
+      if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)}); !shown) {
+        if (shown.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(shown.error()));
+        if (!show_failed)
+          log_channel("app")->warn("préparation de {} : image non présentée ({})", engine.name,
+                                   shown.error().detail);
+        show_failed = true;
+      }
     }
     // Une image toutes les 100 ms, plus tôt si un événement arrive (le résultat du moteur en pousse un).
     (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);

@@ -320,11 +320,14 @@ class LiveSettings {
     const std::scoped_lock lock(mutex_);
     if (!free_on_ || vsync_.period_us() <= 0) return {};
     if (measured_ && measured_->period_us > 0.0) {
-      // Les dates de la grille sont celles de l'affichage : le délai de présentation y est déjà.
+      // Les dates de la grille sont celles de l'affichage : le délai de présentation y est déjà. La session
+      // choisit alors par numéro de vblank (VsyncPicker) : l'image d'un vblank est celle dont le pts tombe au
+      // plus près de sa date. L'ancre est donc le vblank lui-même, où l'arrondi tranche sans hésiter ; à
+      // mi-chemin de deux vblanks, chaque instant tombait dans la bande d'hystérésis, et une gigue de plus de
+      // 0,15 période faisait viser deux fois le même vblank (une image sautée).
       const double index = std::round(measured_->index_of(static_cast<double>(host_us)));
-      const auto period = std::llround(measured_->period_us);
-      return {.period_us = period,
-              .anchor_host_us = std::llround(measured_->at(static_cast<std::int64_t>(index))) + period / 2};
+      return {.period_us = std::llround(measured_->period_us),
+              .anchor_host_us = std::llround(measured_->at(static_cast<std::int64_t>(index)))};
     }
     if (!vsync_.fresh(host_us)) return {};
     // Choisie une demi-période après son pts, affichée au vsync d'après : pts = vsync + délai + période / 2.

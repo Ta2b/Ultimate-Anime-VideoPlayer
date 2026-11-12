@@ -1,5 +1,6 @@
 // L'échelle par paire (PlaySettings::pair_scale) : le second RIFE mouvement, à demi-taille, que l'étage gpu
 // prend pour les paires à mouvement fort (upscale_half.cpp).
+#include <string>
 #include <utility>
 
 #include "app/play/chain_setup.h"
@@ -14,12 +15,17 @@ namespace ajp::app::play {
 // pleine taille, la raison au journal. Le fusionné d'abord quand le RIFE principal l'est, sinon la variante
 // mouvement entière.
 std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
-                                   const PlaySettings& settings, const std::filesystem::path& models_dir) {
+                                   const PlaySettings& settings, InnerFallbacks& inner,
+                                   const std::string& library, const std::filesystem::path& models_dir) {
   if (!settings.pair_scale || !c.rife_motion || !c.rife_model) return true;
   const auto log = log_channel("app");
   const WorkSize half{.width = pair_scale_side(c.rife_size.width),
                       .height = pair_scale_side(c.rife_size.height)};
   const kernels::RifeGeometry g = kernels::rife_geometry(half.width, half.height, c.rife_align);
+  // C08-12 : refusé plus tôt dans la séance à cette taille, la construction (jusqu'à une minute) ne se refait
+  // pas à chaque réouverture.
+  const std::string key = inner_key("rife-half", library, *c.rife_model, g.padded_width, g.padded_height);
+  if (inner.refused(ChainStage::Motion, key) != nullptr) return true;
   std::optional<std::unique_ptr<gpu::Engine>> engine;
   if (c.rife_fused) {
     auto fused = prepare_rife_fused(p, init, *c.backend, *c.rife_model, models_dir, g,
@@ -46,6 +52,7 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
                                  gpu::Lane::Interpolate);
     if (!loaded) {
       log->warn("échelle par paire ignorée : {}", loaded.error().detail);
+      inner.failed(ChainStage::Motion, key, loaded.error());
       return true;
     }
     if (!*loaded) return std::nullopt;
