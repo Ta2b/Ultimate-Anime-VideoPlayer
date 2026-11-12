@@ -299,6 +299,10 @@ struct PlaySettings {
   // Limiteur de flashs (P3.51) : une suite de flashs rapides (UIT-R BT.1702) plafonne le grade HDR vers
   // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
   bool flash_guard = true;
+  // Peau des visages (docs/hdr-anime.md) : la pré-analyse cherche les visages (cascade lbpcascade_animeface)
+  // et le grade resserre sa plage de peau sur leurs teintes, pour rendre leur lumière aux lampes chaudes.
+  // Éteinte par défaut, à juger à l'œil ; prise à la vidéo suivante (l'analyse des plans recommence).
+  bool face_skin = false;
   // Vrai noir OLED (dernière passe du grade) : selon l'écran détecté (display_edid.h), forcé ou
   // coupé ; le pied finit `oled_black_steps` pas de code au-dessus du noir de la source.
   OledBlack oled_black = OledBlack::Auto;

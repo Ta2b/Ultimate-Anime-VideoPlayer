@@ -208,3 +208,26 @@ TEST_CASE("plans : la fermeture n'attend pas une analyse suspendue (B30-01)", "[
   abandoned.join();
   CHECK(abandoned_stopped());
 }
+
+TEST_CASE("plans : chaque plan garde la peau de ses visages, et seulement la sienne",
+          "[media][shots][faces]") {
+  // Un plan clair dont trois images de recherche voient le même visage, puis un plan sombre sans visage.
+  std::vector<ShotFrame> frames;
+  for (std::int64_t i = 0; i < 48; ++i) {
+    ShotFrame f = flat(i, 0.7F);
+    if (i % 10 == 0 && i < 30) f.faces = {{.hue = 22.0F + (0.5F * static_cast<float>(i % 3)), .sat = 0.3F}};
+    frames.push_back(f);
+  }
+  for (std::int64_t i = 48; i < 96; ++i) frames.push_back(flat(i, 0.15F));
+  const auto shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  REQUIRE(shots.at(0).meta.skins.count == 1);
+  CHECK(shots.at(0).meta.skins.tones.at(0).hue == Approx(22.0).margin(0.5));
+  CHECK(shots.at(0).meta.skins.tones.at(0).sat == Approx(0.3));
+  CHECK(shots.at(1).meta.skins.count == 0);
+  // La chronologie la rend avec le plan.
+  ShotTimeline timeline;
+  for (const Shot& s : shots) timeline.add(s);
+  CHECK(timeline.at(10 * kFrame)->skins == shots.at(0).meta.skins);
+  CHECK(timeline.at(60 * kFrame)->skins.count == 0);
+}

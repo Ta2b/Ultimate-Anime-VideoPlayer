@@ -58,6 +58,22 @@ double oklab_hue(const Rgb& px) {
   return std::atan2(b, a) * 180.0 / 3.14159265358979;
 }
 
+// Une bande de 48 colonnes de la couleur `rgb` (nits, BT.2020 linéaire) sur un fond sombre de 3 nits.
+std::vector<std::uint16_t> band(const std::array<double, 3>& rgb) {
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (std::size_t y = 0; y < static_cast<std::size_t>(kSide); ++y) {
+    for (std::size_t x = 0; x < static_cast<std::size_t>(kSide); ++x) {
+      std::uint16_t* px = &pixels[(y * static_cast<std::size_t>(kSide) + x) * 4];
+      for (std::size_t c = 0; c < 3; ++c) {
+        const double nits = x >= 104 && x < 152 ? rgb.at(c) : 3.0;
+        px[c] = static_cast<std::uint16_t>(std::lround(std::clamp(nits_to_pq(nits), 0.0, 1.0) * 65535.0));
+      }
+      px[3] = 65535;
+    }
+  }
+  return pixels;
+}
+
 }  // namespace
 
 TEST_CASE("HDR anime : une surface garde son niveau et son grain", "[render][gpu]") {
@@ -110,23 +126,35 @@ TEST_CASE("HDR anime : une peau claire près d'un fond sombre n'est pas une lumi
   // Une bande de peau claire (255/232/214 en sRGB, ramenée en BT.2020 linéaire à un blanc de 203 nits) de
   // 48 colonnes sur un fond sombre : la même forme que la lumière isolée ci-dessus.
   constexpr std::array<double, 3> kSkin{187.2, 166.2, 140.0};
-  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
-  for (std::size_t y = 0; y < static_cast<std::size_t>(kSide); ++y) {
-    for (std::size_t x = 0; x < static_cast<std::size_t>(kSide); ++x) {
-      std::uint16_t* px = &pixels[(y * static_cast<std::size_t>(kSide) + x) * 4];
-      for (std::size_t c = 0; c < 3; ++c) {
-        const double nits = x >= 104 && x < 152 ? kSkin[c] : 3.0;
-        px[c] = static_cast<std::uint16_t>(std::lround(std::clamp(nits_to_pq(nits), 0.0, 1.0) * 65535.0));
-      }
-      px[3] = 65535;
-    }
-  }
-  const auto line = graded_rgb(gpu, pixels, anime_params());
+  const auto line = graded_rgb(gpu, band(kSkin), anime_params());
   const double skin_in = 0.2627 * kSkin[0] + 0.6780 * kSkin[1] + 0.0593 * kSkin[2];
   for (const std::size_t x : {std::size_t{106}, std::size_t{128}, std::size_t{149}}) {
     INFO("colonne " << x << " : " << luma(line[x]) << " nits");
     CHECK(luma(line[x]) == Catch::Approx(1.15 * skin_in).epsilon(0.05));  // le relèvement des surfaces seul
   }
+}
+
+TEST_CASE("HDR anime : la peau des visages du plan libère une lampe chaude d'une autre teinte",
+          "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  // Une lampe chaude (teinte 33°, saturation 0,45) : dans la plage de peau large, elle ne monte pas.
+  constexpr std::array<double, 3> kLamp{200.0, 160.0, 110.0};
+  constexpr std::array<double, 3> kSkin{187.2, 166.2, 140.0};  // teinte 33°, saturation 0,25
+  const double lamp_in = 0.2627 * kLamp[0] + 0.6780 * kLamp[1] + 0.0593 * kLamp[2];
+  const double skin_in = 0.2627 * kSkin[0] + 0.6780 * kSkin[1] + 0.0593 * kSkin[2];
+  const auto centre = static_cast<std::size_t>(128);
+  CHECK(luma(graded_rgb(gpu, band(kLamp), anime_params())[centre]) ==
+        Catch::Approx(1.15 * lamp_in).epsilon(0.05));
+  // Le plan a un visage de la peau kSkin : la lampe, plus saturée, redevient une lumière ; la peau reste
+  // une surface.
+  GradeParams faces = anime_params();
+  faces.skin_n = 1.0;
+  faces.skin_h0 = 60.0 * (kSkin[1] - kSkin[2]) / (kSkin[0] - kSkin[2]);
+  faces.skin_s0 = (kSkin[0] - kSkin[2]) / kSkin[0];
+  CHECK(luma(graded_rgb(gpu, band(kLamp), faces)[centre]) > 1.5 * lamp_in);
+  CHECK(luma(graded_rgb(gpu, band(kSkin), faces)[centre]) == Catch::Approx(1.15 * skin_in).epsilon(0.05));
 }
 
 TEST_CASE("HDR anime : un trait blanc cerné de noir n'est pas une étincelle (P3.53)", "[render][gpu]") {

@@ -347,6 +347,9 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
   shots.at(1).meta.max_scl_nits = 812.5F;
   shots.at(1).meta.mean.skin = 0.25F;
   shots.at(1).meta.mean.maxrgb_nits.back() = 640.0F;
+  shots.at(1).meta.skins.tones.at(0) = {.hue = 22.0F, .sat = 0.3F};  // la peau de ses visages
+  shots.at(1).meta.skins.tones.at(1) = {.hue = 35.0F, .sat = 0.2F};
+  shots.at(1).meta.skins.count = 2;
   const std::vector<FlashSpan> flashes{{.from_us = 400'000, .until_us = 1'900'000}};
   REQUIRE(save_shot_cache(dir, key, shots, true, kShotCacheKeep, flashes, 1));
   // Un autre chemin de décodage (logiciel contre NVDEC réduit) ne mesure pas la même image : refait (A42-10).

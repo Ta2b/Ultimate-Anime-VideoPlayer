@@ -58,6 +58,19 @@ TEST_CASE("Pré-analyse : en sortie HDR, seulement avec le limiteur de flashs", 
   ShotWork sdr;
   open_shots(sdr, "inexistant.mkv", settings, 0, ShotOutput{.hdr_output = false});
   CHECK(sdr.current.probe != nullptr);
+  // La peau des visages se lit aussi en sortie HDR : l'analyse part sans le limiteur.
+  settings.face_skin = true;
+  ShotWork faces;
+  open_shots(faces, "inexistant.mkv", settings, 0, ShotOutput{.hdr_output = true});
+  CHECK(faces.current.probe != nullptr);
+  CHECK(faces.current.faces);
+  // Éteinte ensuite : l'analyse du même fichier recommence, sous une autre variante du cache.
+  const std::uint32_t with_faces = faces.current.variant;
+  settings.face_skin = false;
+  settings.flash_guard = true;
+  open_shots(faces, "inexistant.mkv", settings, 0, ShotOutput{.hdr_output = true});
+  CHECK_FALSE(faces.current.faces);
+  CHECK(faces.current.variant != with_faces);
 }
 
 TEST_CASE("Limiteur de flashs : l'échelle du grade suit son pic", "[app][shots]") {

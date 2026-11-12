@@ -28,6 +28,8 @@ constexpr float kHeldDrawing = 0.02F;  // sous cette distance, le même dessin t
 constexpr std::size_t kFlashFrames = 3;
 // Les bords d'un plan gardés pour juger un fondu : le sixième du plan, au plus deux secondes à 24 i/s.
 constexpr std::size_t kEdgeKept = 48;
+// Les palettes de visages gardées d'un plan : un long plan n'en garde pas des milliers.
+constexpr std::size_t kFacesKept = 256;
 // Un plan dont la luminance moyenne change de plus de 0,08 entre son début et sa fin (sur au moins une
 // seconde à 24 images par seconde) est suivi image par image.
 constexpr float kFadeDelta = 0.08F;
@@ -165,6 +167,8 @@ void ShotCutter::Totals::add(const ShotFrame& f) {
   highlights += l.highlights;
   skin += l.skin;
   for (std::size_t i = 0; i < lum_hist.size(); ++i) lum_hist.at(i) += l.lum_hist.at(i);
+  for (const SkinTone& tone : f.faces)
+    if (faces.size() < kFacesKept) faces.push_back(tone);
 }
 
 ShotStats ShotCutter::Totals::stats() const {
@@ -193,6 +197,7 @@ ShotMeta ShotCutter::Totals::meta() const {
   m.skin = static_cast<float>(skin / n);
   for (std::size_t i = 0; i < lum_hist.size(); ++i) m.lum_hist.at(i) = static_cast<float>(lum_hist.at(i) / n);
   out.apl_mean_nits = m.apl_nits;
+  out.skins = plan_skins(faces);
   return out;
 }
 

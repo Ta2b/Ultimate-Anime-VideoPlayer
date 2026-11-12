@@ -21,6 +21,7 @@ struct ShotAt {
   ShotStats stats;
   bool fade = false;
   bool cut_before = true;
+  PlanSkins skins;  // les teintes de peau de ses visages (media/faces.h)
 };
 
 class ShotTimeline {

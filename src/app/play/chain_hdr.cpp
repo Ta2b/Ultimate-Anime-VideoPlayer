@@ -263,6 +263,7 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   s.grade_values.scene_light = to.scene_light;
   s.grade_values.anime_exposure = to.anime_e;
   s.grade_values.series_apl_nits = to.anime_series_apl;
+  s.grade_values.skin_tones = wanted.face_skin ? to.skin_tones : render::SkinTones{};
   to.series_apl_sent = to.anime_series_apl;
   render::GradeChoice choice = grade_of(s, to.auto_peak, to.display, to.black, to.source_hdr);
   // Flashs dangereux (P3.51) : le grade HDR plafonne vers 250 nits, le plein champ d'un écran OLED.
@@ -297,6 +298,15 @@ bool light_moved(const render::SceneLight& now, const render::SceneLight& was) {
          std::abs(now.lit - was.lit) > 0.02;
 }
 
+// La peau des visages du plan (face_skin) : elle change à la coupe, sans glissé (une teinte ne se mélange
+// pas), en sortie HDR comme SDR. Vrai si elle a changé.
+bool take_skins(Chain& to, const ShotScene& scene, bool planned) {
+  const render::SkinTones skins = planned && to.running.face_skin ? scene.skins : render::SkinTones{};
+  if (skins == to.skin_tones) return false;
+  to.skin_tones = skins;
+  return true;
+}
+
 // La lumière de la scène pour le grade en trois passes : envoyée quand elle change vraiment (light_moved), au
 // plus tous les dixièmes de seconde, sauf à une coupe. Sous --anime-shots (méga plan A2), un plan de la
 // pré-analyse fixe aussi l'exposition de la méthode « HDR anime » ; l'une et l'autre changent à la coupe et
@@ -307,6 +317,7 @@ bool light_moved(const render::SceneLight& now, const render::SceneLight& was) {
 void light_tick(Chain& to, const std::optional<ShotScene>& scene, std::int64_t now_us, bool cut,
                 bool planned) {
   if (!scene || !to.running.grade) return;
+  if (take_skins(to, *scene, planned)) set_grade(to, to.running, true);
   if (to.screen.hdr_output()) {
     to.scene_light.reset();  // revenue en SDR, la sortie reçoit aussitôt la lumière de sa scène
     to.anime_e = 0.0;

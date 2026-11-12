@@ -120,6 +120,55 @@
 //!MAXIMUM 2.0
 1.0
 
+//!PARAM skin_n
+//!DESC HDR anime : nombre de teintes de peau des visages du plan (0 = la plage large)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 3.0
+0.0
+
+//!PARAM skin_h0
+//!DESC HDR anime : teinte (degres) de la peau 1 des visages du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 60.0
+0.0
+
+//!PARAM skin_s0
+//!DESC HDR anime : saturation de la peau 1 des visages du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM skin_h1
+//!DESC HDR anime : teinte (degres) de la peau 2 des visages du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 60.0
+0.0
+
+//!PARAM skin_s1
+//!DESC HDR anime : saturation de la peau 2 des visages du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM skin_h2
+//!DESC HDR anime : teinte (degres) de la peau 3 des visages du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 60.0
+0.0
+
+//!PARAM skin_s2
+//!DESC HDR anime : saturation de la peau 3 des visages du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!PARAM an_late
 //!DESC 1 = la montee des emetteurs part dans l'alpha, la derniere passe l'applique apres la pile de LUT
 //!TYPE float
