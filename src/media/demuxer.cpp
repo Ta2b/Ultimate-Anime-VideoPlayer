@@ -219,6 +219,7 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
     info.frame_rate = frame_rate_of(stream);
     // A15-02 : 29,97 i/s entrelacé, le télécinéma d'un anime 23,976 : la chaîne reçoit les images d'origine.
     const bool interlaced = par.field_order != AV_FIELD_UNKNOWN && par.field_order != AV_FIELD_PROGRESSIVE;
+    info.interlaced = interlaced;
     // Une hypothèse : Demuxer::set_inverse_telecine la corrige après mesure (B15-01).
     if (interlaced && std::int64_t{info.frame_rate.num} * 1001 == std::int64_t{info.frame_rate.den} * 30000) {
       info.inverse_telecine = true;
@@ -424,6 +425,11 @@ void Demuxer::set_inverse_telecine(int index, bool telecine) {
   if (it == state_->tracks.end() || it->inverse_telecine == telecine) return;
   it->inverse_telecine = telecine;
   it->frame_rate = telecine ? Rational{24000, 1001} : Rational{30000, 1001};
+}
+
+void Demuxer::set_field_match(int index, bool match) {
+  const auto it = std::ranges::find(state_->tracks, index, &TrackInfo::index);
+  if (it != state_->tracks.end()) it->field_match = match;
 }
 
 std::expected<void, Refusal> Demuxer::keep_only(std::span<const int> tracks) {

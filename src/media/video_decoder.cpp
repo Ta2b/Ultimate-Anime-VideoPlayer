@@ -1,10 +1,12 @@
 #include "media/video_decoder.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <format>
 #include <limits>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -68,6 +70,7 @@ struct VideoDecoder::State {
   bool host_422 = false;           // DecoderOptions::host_422
   int extra_hw_frames = 0;         // de l'essai en cours
   bool direct = false;             // NVDEC sans copie de sécurité (DecoderOptions::direct_surfaces)
+  int safe_extra_hw_frames = 0;    // les surfaces de plus de l'essai quand la copie de sécurité reste
   std::vector<Attempt> rejected;
   std::optional<Packet> pending;  // refusé par EAGAIN, renvoyé au prochain receive()
   bool drained = false;
@@ -107,11 +110,24 @@ struct VideoDecoder::State {
   // recours (dernière image, pts inconnu).
   FramePtr held;
   std::shared_ptr<spdlog::logger> log = make_logger();
+  std::optional<ColorInfo>
+      last_color;  // la dernière couleur valide, pour une image dont l'étiquette est refusée
+  bool color_fallback_logged = false;
+  std::chrono::steady_clock::time_point last_data_log{};
+  int data_errors_unlogged = 0;
 
-  // Données abîmées : l'image en cause est perdue, le décodage continue.
+  // Données abîmées : l'image en cause est perdue, le décodage continue. Une ligne par seconde au plus avec
+  // le compte : un flux abîmé à 24 i/s ne doit pas écrire 24 lignes par seconde sur le thread source
+  // (C15-04).
   void data_error(std::string_view where) {
     ++data_errors;
-    log->warn("données invalides ({}) : image perdue, le décodage continue", where);
+    ++data_errors_unlogged;
+    const auto now = std::chrono::steady_clock::now();
+    if (data_errors > 1 && now - last_data_log < std::chrono::seconds(1)) return;
+    log->warn("données invalides ({}) : {} image(s) perdue(s), le décodage continue", where,
+              data_errors_unlogged);
+    data_errors_unlogged = 0;
+    last_data_log = now;
   }
 
   void fall_back(std::string_view why) {
@@ -140,6 +156,16 @@ struct VideoDecoder::State {
     if (self.hw.device) {
       for (const AVPixelFormat* format = formats; *format != AV_PIX_FMT_NONE; ++format) {
         if (*format == self.hw.format) {
+          // C15-06 : la taille du flux a pu changer depuis l'ouverture (concaténation, TS réassemblé) : une
+          // taille au-delà du plafond reprend la copie de sécurité et ses surfaces, pas une cinquantaine de
+          // surfaces 4K gardées.
+          if (self.direct && std::int64_t{ctx->coded_width} * ctx->coded_height > kMaxDirectSurfacePixels) {
+            self.direct = false;
+            self.extra_hw_frames = self.safe_extra_hw_frames;
+            ctx->hwaccel_flags &= ~AV_HWACCEL_FLAG_UNSAFE_OUTPUT;
+            self.log->info("NVDEC : copie de sécurité reprise, {}x{} au-delà de 1440p", ctx->coded_width,
+                           ctx->coded_height);
+          }
           ctx->extra_hw_frames = self.extra_hw_frames;
           return *format;
         }
@@ -255,7 +281,18 @@ struct VideoDecoder::State {
       if (!recorded) return std::unexpected(recorded.error());
       ready = std::move(*recorded);
     }
-    return to_decoded_frame(std::move(frame), pts, duration, std::move(ready), full_host_formats, host_422);
+    bool fallback_used = false;
+    auto decoded = to_decoded_frame(std::move(frame), pts, duration, std::move(ready), full_host_formats,
+                                    host_422, last_color ? &*last_color : nullptr, &fallback_used);
+    if (!decoded) return std::unexpected(std::move(decoded.error()));
+    if (fallback_used) {
+      if (!color_fallback_logged)
+        log->warn("étiquette de couleur de l'image hors du vocabulaire : la couleur précédente reste");
+      color_fallback_logged = true;
+    } else {
+      last_color = decoded->color;
+    }
+    return std::move(decoded);
   }
 
   // Les paquets à rejouer, puis la fin du flux ; arrêté par EAGAIN, repris au receive() suivant.
@@ -310,6 +347,7 @@ struct VideoDecoder::State {
     direct = false;
     // Une surface de plus pour l'image que timed() retient jusqu'à la suivante (A15-09).
     extra_hw_frames = options.extra_hw_frames + 1;
+    safe_extra_hw_frames = extra_hw_frames;
     if (attempt == HwApi::Software) {
       const AVCodec* decoder = avcodec_find_decoder(id);
       if (decoder == nullptr) {
@@ -397,7 +435,11 @@ std::expected<VideoDecoder, Refusal> VideoDecoder::open(const TrackInfo& track,
   state->download = options.download;
   state->full_host_formats = options.full_host_formats;
   state->host_422 = options.host_422;
-  if (track.inverse_telecine) state->deinterlacer = Deinterlacer(FieldMode::InverseTelecine);
+  if (track.inverse_telecine) {
+    state->deinterlacer = Deinterlacer(FieldMode::InverseTelecine);
+  } else if (track.field_match) {
+    state->deinterlacer = Deinterlacer(FieldMode::MatchFields);
+  }
   if (track.frame_rate.num > 0 && track.frame_rate.den > 0) {
     state->nominal_duration_us = av_rescale(1'000'000, track.frame_rate.den, track.frame_rate.num);
   }
@@ -652,7 +694,8 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::deliver
     if (!s.deinterlacer.active())
       s.log->info("images entrelacées : {}", s.opened.inverse_telecine
                                                  ? "télécinéma inversé (fieldmatch, decimate)"
-                                                 : "désentrelacement bwdif");
+                                             : s.opened.field_match ? "champs du même instant (fieldmatch, bwdif)"
+                                                                    : "désentrelacement bwdif");
     if (auto pushed = s.deinterlacer.push(std::move(frame)); !pushed) return std::unexpected(pushed.error());
     auto out = s.deinterlacer.pull();
     if (!out) return std::unexpected(out.error());

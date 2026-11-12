@@ -316,3 +316,22 @@ TEST_CASE("frame_data : yuvj444p (plage pleine) sort en plage limitée", "[media
   CHECK(out->data[0][5 * out->linesize[0]] == 16);
   CHECK(out->data[0][5 * out->linesize[0] + 63] == 235);
 }
+
+// C15-05 : une étiquette de couleur hors vocabulaire sur une seule image reprend la dernière couleur valide au
+// lieu de refuser l'image, ce qui arrêterait la lecture.
+TEST_CASE("frame_data : une étiquette de transfert refusée reprend la dernière couleur valide (C15-05)",
+          "[media][frame_data]") {
+  auto good = to_decoded_frame(host_frame(AV_PIX_FMT_YUV420P, 8), 0, 40'000, {});
+  REQUIRE(good);
+  FramePtr odd = host_frame(AV_PIX_FMT_YUV420P, 8);
+  odd->color_trc = AVCOL_TRC_SMPTE428;  // courbe de cinéma numérique : hors vocabulaire
+  FramePtr again = host_frame(AV_PIX_FMT_YUV420P, 8);
+  again->color_trc = AVCOL_TRC_SMPTE428;
+  CHECK_FALSE(to_decoded_frame(std::move(odd), 0, 40'000, {}));
+  bool used = false;
+  auto kept = to_decoded_frame(std::move(again), 0, 40'000, {}, false, false, &good->color, &used);
+  REQUIRE(kept);
+  CHECK(used);
+  CHECK(kept->color.transfer == good->color.transfer);
+  CHECK(kept->color.matrix == good->color.matrix);
+}
