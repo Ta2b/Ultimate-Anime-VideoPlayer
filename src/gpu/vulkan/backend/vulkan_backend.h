@@ -146,6 +146,15 @@ class VulkanBackend final : public Backend {
   // arrive, sans quoi la file attendrait sans fin.
   void finish_host_step(BackendQueue& queue, std::uint64_t signal, std::expected<void, Refusal> ran);
 
+  // L'artefact que build() vient de lire, vérifier et trouver valable : load() le reprend au lieu de le relire,
+  // de le désérialiser et de le revérifier (C45-07). Consommé par load(), jamais gardé au-delà.
+  struct Checked {
+    std::filesystem::path path;
+    net::ArtifactData data;
+  };
+  std::mutex checked_mutex_;
+  std::optional<Checked> checked_;
+
   BackendLog log_;
   std::filesystem::path cache_dir_;
   std::filesystem::path pipeline_cache_file_;  // vide : sans dossier de cache

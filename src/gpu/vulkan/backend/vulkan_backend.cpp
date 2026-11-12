@@ -311,6 +311,8 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (auto bytes = net::read_file(artifact.path)) {
     if (auto data = net::deserialize(*bytes); data && net::check_artifact(*data, profile_)) {
       artifact.reduced = data->notice;  // dit à chaque lancement, pas seulement à la construction (C45-01)
+      const std::scoped_lock lock(checked_mutex_);
+      checked_ = Checked{.path = artifact.path, .data = std::move(*data)};  // pour load() (C45-07)
       return artifact;
     }
   }
@@ -407,11 +409,23 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load(const Artifa
   if (runtime_) return load_runtime(artifact);
   if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
-  auto bytes = net::read_file(artifact.path);
-  if (!bytes) return std::unexpected(bytes.error());
-  auto data = net::deserialize(*bytes);
-  if (!data) return std::unexpected(data.error());
-  if (auto ok = net::check_artifact(*data, profile_); !ok) return std::unexpected(ok.error());
+  // Celui que build() vient de vérifier, s'il est de ce chemin : ni relu, ni désérialisé, ni revérifié (C45-07).
+  std::optional<Checked> taken;
+  {
+    const std::scoped_lock lock(checked_mutex_);
+    if (checked_ && checked_->path == artifact.path) taken = std::move(checked_);
+    checked_.reset();
+  }
+  std::expected<net::ArtifactData, Refusal> data = std::unexpected(Refusal{RefusalCode::CacheIo, "artefact"});
+  if (taken) {
+    data = std::move(taken->data);
+  } else {
+    auto bytes = net::read_file(artifact.path);
+    if (!bytes) return std::unexpected(bytes.error());
+    data = net::deserialize(*bytes);
+    if (!data) return std::unexpected(data.error());
+    if (auto ok = net::check_artifact(*data, profile_); !ok) return std::unexpected(ok.error());
+  }
   auto program = net::lower(data->graph, data->choices, profile_.target);
   if (!program) return std::unexpected(program.error());
   // Mêmes graphe, choix, appareil et shaders, mais un abaissement qui a changé sans changer de

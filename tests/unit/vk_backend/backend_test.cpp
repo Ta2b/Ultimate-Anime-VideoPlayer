@@ -245,6 +245,22 @@ TEST_CASE("Backend : l'avis de précision réduite suit l'artefact jusqu'au lect
   CHECK(back.notice == data.notice);
 }
 
+// C45-07 : load() reprend l'artefact que build() vient de lire et vérifier au lancement à chaud, sans le relire :
+// le fichier ôté entre les deux ne l'empêche pas, alors qu'un load() seul le relit et le refuse.
+TEST_CASE("Backend : load reprend l'artefact vérifié par build au lancement à chaud", "[vk_backend][backend]") {
+  TempDir dir("chaud");
+  auto backend = make_backend(dir.path() / "cache", {.autotune = false});
+  const ModelSpec model = write_model(dir.path(), "span_fp32", span_model(false), TensorType::F32);
+  const Artifact cold = build(*backend, model, shapes(12, 16));
+  const Artifact warm = build(*backend, model, shapes(12, 16));  // valable : lu et vérifié une fois
+  REQUIRE(warm.path == cold.path);
+  std::filesystem::remove(warm.path);
+  auto engine = backend->load(warm);
+  CHECK(engine.has_value());
+  // Consommé : un second load relit le fichier, absent maintenant.
+  CHECK_FALSE(backend->load(warm).has_value());
+}
+
 TEST_CASE("Backend : artefact, aller-retour et refus", "[vk_backend][backend]") {
   TempDir dir("artefact");
   auto backend = make_backend(dir.path() / "cache", {.autotune = false});

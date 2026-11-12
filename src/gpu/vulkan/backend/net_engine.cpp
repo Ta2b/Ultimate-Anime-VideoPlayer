@@ -342,6 +342,13 @@ std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferVi
   if (!made) return std::unexpected(made.error());
   if (recordings_.size() >= kMaxRecordings) {
     const auto oldest = std::ranges::min_element(recordings_, {}, &Cached::used);
+    // C45-08 : au-delà de la borne, chaque image refait des enregistrements ; une fois, le journal le dit.
+    if (!evicted_logged_ && options_.log) {
+      evicted_logged_ = true;
+      options_.log(std::format("plus de {} jeux de tenseurs en rotation : les plus anciens sont réenregistrés "
+                               "(coût CPU par image)",
+                               kMaxRecordings));
+    }
     retired_.retire(std::move(oldest->recording));
     recordings_.erase(oldest);
   }

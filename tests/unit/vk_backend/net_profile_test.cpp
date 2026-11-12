@@ -239,4 +239,34 @@ TEST_CASE("Moteur de réseau : les poids d'origine ne restent pas deux fois en m
   }
 }
 
+// C45-08 : au-delà de la borne des jeux de tenseurs, l'éviction se dit une fois au journal.
+TEST_CASE("Moteur de réseau : l'éviction d'un jeu de tenseurs enregistré se dit une fois",
+          "[vk_backend][net_profile]") {
+  NetRig rig = make_net_rig();
+  require_f16(rig);
+  ir::Graph graph = require_value(ir::load_onnx(span_like(true).bytes()));
+  require_ok(ir::infer_shapes(graph));
+  (void)require_value(ir::optimize(graph));
+  const std::vector<net::KernelChoice> choices = require_value(net::default_choices(graph, rig.target));
+  net::Program program = require_value(net::lower(graph, choices, rig.target));
+  std::vector<std::string> lines;
+  auto engine = require_value(net::NetEngine::create(*rig.context, *rig.memory, *rig.pipelines, graph,
+                                                     std::move(program),
+                                                     {.log = [&](std::string_view text) { lines.emplace_back(text); }}));
+  std::vector<Buffer> inputs;
+  std::vector<Buffer> outputs;
+  const std::size_t sets = net::NetEngine::kMaxRecordings + 3;
+  for (std::size_t k = 0; k < sets; ++k) {
+    inputs.push_back(filled_input(rig, engine->input_bytes(0)));
+    outputs.push_back(
+        require_value(Buffer::create(*rig.context, *rig.memory, engine->output_bytes(0), MemoryUse::Device)));
+    const BufferView in_view = inputs.back().view();
+    const BufferView out_view = outputs.back().view();
+    (void)require_value(engine->recording({&in_view, 1}, {&out_view, 1}));
+  }
+  CHECK(engine->recordings() == net::NetEngine::kMaxRecordings);
+  const auto said = std::ranges::count_if(lines, [](const std::string& l) { return l.contains("jeux de tenseurs"); });
+  CHECK(said == 1);
+}
+
 }  // namespace ajp::gpu::vk::test
