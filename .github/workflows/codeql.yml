@@ -1,13 +1,9 @@
 # CodeQL (P1.36) : C++ sans construction (build-mode none, les dépendances du lecteur ne sont pas
-# installées ici) et les workflows eux-mêmes. Chaque commit de main, chaque semaine pour les nouvelles requêtes,
-# et à la demande ; plus sur les pull requests, comme ci.yml.
+# installées ici) et les workflows eux-mêmes. À la main seulement, comme ci.yml (son en-tête dit pourquoi) : avec
+# la CI d'un lot de PR fusionnées, et avant une release.
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "17 4 * * 1"
   workflow_dispatch:
 
 permissions:

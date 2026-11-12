@@ -1,12 +1,10 @@
-# Campagne de fuzz de la nuit (P1.29) : chaque cible de tests/fuzz liée à libFuzzer, avec ASan et
-# UBSan, et le code du lecteur instrumenté pour la couverture. 10 minutes par cible, quatre à la fois ;
-# une entrée qui casse une cible part en artefact (crash-*, à ajouter au corpus avec le correctif).
-# Le rejeu court du corpus, lui, tourne dans ctest à chaque PR.
+# Campagne de fuzz (P1.29) : chaque cible de tests/fuzz liée à libFuzzer, avec ASan et UBSan, et le code du
+# lecteur instrumenté pour la couverture. 10 minutes par cible, quatre à la fois ; une entrée qui casse une cible
+# part en artefact (crash-*, à ajouter au corpus avec le correctif). À la main seulement, comme ci.yml (son en-tête
+# dit pourquoi). Le rejeu court du corpus, lui, tourne dans ctest (tâche asan-fuzz de ci.yml).
 name: Fuzz
 
 on:
-  schedule:
-    - cron: "41 2 * * *"
   workflow_dispatch:
     inputs:
       seconds:

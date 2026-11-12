@@ -2,29 +2,10 @@ name: Qualité
 
 # Le banc de qualité des réseaux livrés (tools/bench/qualite, docs/banc-qualite.md), sans carte graphique : chaque
 # graphe FP16 contre sa référence FP32 et contre la vraie image, sous ONNX Runtime. Il échoue quand un réseau passe
-# sous un seuil de tools/bench/qualite/seuils.json. Il tourne quand le banc, un script de modèles ou la liste des
-# modèles livrés change dans main, et chaque nuit (un modèle publié sous le même nom se verrait). Plus sur les pull
-# requests, comme ci.yml : à la demande (workflow_dispatch) pour vérifier une branche.
+# sous un seuil de tools/bench/qualite/seuils.json. À la main seulement, comme ci.yml (son en-tête dit pourquoi) :
+# à lancer quand le banc, un script de modèles ou la liste des modèles livrés change, et avant une release (un
+# modèle publié sous le même nom se verrait).
 on:
-  push:
-    branches: [main]
-    paths:
-      - "tools/bench/qualite/**"
-      - "tools/bench/banc_resume.py"
-      - "tools/common/**"
-      - "tools/grade/**"
-      - "tools/ring/**"
-      - "tools/span/**"
-      - "tools/fp8/**"
-      - "tools/upscale/**"
-      - "tools/bench/qualite.sh"
-      - "tools/release/fetch-models.sh"
-      - "tools/rife/**"
-      - "tools/drba/**"
-      - "data/calibration/**"
-      - ".github/workflows/qualite.yml"
-  schedule:
-    - cron: "43 3 * * *"
   workflow_dispatch:
 
 permissions:

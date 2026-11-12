@@ -62,11 +62,11 @@ Voir l'interface sans écran : `xvfb-run ajp --software-gpu --mute --no-upscale 
 - les `path::string()` de `src/` ne peuvent que diminuer : un chemin passe par `core::to_utf8` (`src/core/utf8_path.h`) ;
 - les shaders se compilent ; la construction est en `-Werror`.
 
-La CI ne tourne plus sur les pull requests (en-tête de `.github/workflows/ci.yml`) : toute la matrice passe sur
-chaque commit de main, la nuit et à la demande. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml`
-(les scripts de `tools/ci/`) et les tests des modules touchés ; une PR risquée (Windows, CUDA, CMake) se vérifie
-par un lancement manuel de ci.yml sur sa branche. Fusionner une PR à la fois et attendre main vert avant la
-suivante : la garde de release exige ci.yml vert sur le commit de l'étiquette.
+La CI ne se lance qu'à la main (en-tête de `.github/workflows/ci.yml`) : rien sur les pull requests, les poussées
+ni la nuit. Avant d'ouvrir une PR, lancer en local les étapes de `rules.yml` (les scripts de `tools/ci/`) et les
+tests des modules touchés ; une PR risquée (Windows, CUDA, CMake) se vérifie par un lancement de ci.yml sur sa
+branche. Après un lot de PR fusionnées, un lancement sur main ; avant chaque étiquette, un lancement vert sur son
+commit, que la garde de release exige (`docs/signature-des-releases.md`).
 
 ## Conventions et pièges
 
