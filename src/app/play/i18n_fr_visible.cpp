@@ -172,6 +172,8 @@ constexpr std::array kVisibleTexts{
           "{} : dérivé sur {}, ce GPU est {} : à préparer de nouveau"},
     Entry{"{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)",
           "{} : pas plus rapide que TensorRT FP16 ({:.2f} fois plus vite, il faut {:.2f})"},
+    Entry{"{}: gain over FP16 not measured, prepare it again with the speed check",
+          "{} : gain sur le FP16 non mesuré, à préparer de nouveau avec le contrôle de vitesse"},
     Entry{"{}: prepared by an older player, gain over FP16 not measured: prepare it again",
           "{} : préparé par un lecteur plus ancien, sans mesure du gain sur le FP16 : à préparer de nouveau"},
     Entry{

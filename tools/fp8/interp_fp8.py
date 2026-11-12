@@ -5,13 +5,14 @@ Reproductible, sans PyTorch ni ModelOpt (ModelOpt exige torch ; ses réglages pa
 placement pour TensorRT : Q/DQ devant chaque convolution retenue, échelles statiques calibrées sur de vraies images).
 
   interp_fp8.py inputs  rife|drba MODELE.onnx IMAGES_DIR SORTIE_DIR [--size HxW]
-        fabrique les jeux d'entrées (.npz) bien formés depuis des PNG 1280x720 (couples d'images consécutives) :
-        RIFE : 11 plans (a, b, t, grille X/Y, pas X/Y) ; DRBA : pair01 / pair12 à 7 plans.
+        fabrique les jeux d'entrées (.npz) bien formés depuis des PNG 1920x1080 (couples d'images consécutives) :
+        RIFE : 11 plans (a, b, t, grille X/Y, pas X/Y) ; DRBA : pair01 / pair12 à 7 plans, une fois par instant u
+        de DRBA_U (C46-18). Taille par défaut 1088x1920, celle du lecteur (C46-19).
   interp_fp8.py capture MODELE.onnx PIECE.onnx... --inputs SORTIE_DIR/*.npz --out DIR
         exécute le MODELE entier (ONNX Runtime CPU) et enregistre pour chaque morceau d'un réseau fusionné les
         tenseurs qui entrent dans le morceau (mêmes noms de tenseurs que dans le graphe d'origine).
   interp_fp8.py quantize SRC.onnx DST.onnx --inputs a.npz b.npz ... [--min-channels 32] [--acts all|single]
-        [--calib max|p99.99] [--keep-first] [--keep-last]
+        [--calib max|p99.99] [--keep-first] [--keep-last] [--weight-scales tensor|channel]
         écrit le graphe FP8 : poids par tenseur en E4M3 + DQ, activations Q/DQ devant chaque convolution retenue
   interp_fp8.py quality rife|drba --ref FP16 --test FP8 --inputs *.npz
         PSNR / SSIM de l'image finale contre le FP16 sur chaque cas ; sortie 3 si les gardes (PSNR moyen >= 42 dB,
@@ -30,6 +31,14 @@ from onnx import TensorProto as T
 from onnx import helper, numpy_helper
 
 FP8 = ml_dtypes.float8_e4m3fn
+E4M3_MAX = 448.0
+# Taille jouée par le lecteur (rife_geometry : 1080 rempli au multiple de 64 → 1088) : les maxima d'activations
+# croissent avec la surface, on calibre et on garde à cette taille (C46-19).
+DEPLOYED_SIZE = "1088x1920"
+# Plan 6 de DistilDRBA = tau / 2 (src/kernels/spec/distil_drba.h, drba_call), jamais 0,5 qui est l'instant de img1
+# elle-même (C46-18). Les deux branches du lecteur : 0,25 (t = 0,5, centré sur b, le cas 24 → 48 i/s) et 0,625
+# (t = 0,25, centré sur a). Le suffixe est celui du nom du jeu d'entrées du second.
+DRBA_U = ((0.25, ""), (0.625, "_u625"))
 
 
 # ---------------------------------------------------------------- entrées bien formées
@@ -98,9 +107,9 @@ def cmd_inputs(args):
             d = {"input": rife_input(a, b, 0.5)}
         elif args.kind == "drba":
             # pair01 / pair12 : deux images + un plan d'instant et deux plans de flot nul (7 plans, 1 × 7 × H × W)
-            def pair(x, y):
+            def pair(x, y, u):
                 z = np.zeros((1, 7, h, w), np.float32)
-                z[0, 0:3], z[0, 3:6], z[0, 6] = x, y, 0.5
+                z[0, 0:3], z[0, 3:6], z[0, 6] = x, y, u
                 return z.astype(np.float16)
 
             import re
@@ -108,7 +117,12 @@ def cmd_inputs(args):
             third = re.sub(r"_(\d+)\.png$", lambda m_: f"_{int(m_.group(1)) + 1}.png", pb)
             if not os.path.exists(third):
                 continue
-            d = {"pair01": pair(a, b), "pair12": pair(b, load_png(third, h, w))}
+            c = load_png(third, h, w)
+            for u, suffix in DRBA_U:
+                d = {"pair01": pair(a, b, u), "pair12": pair(b, c, u)}
+                np.savez(os.path.join(args.out, f"{name}{suffix}.npz"), **d)
+                print("écrit", name + suffix, f"u = {u}", {k: v.shape for k, v in d.items()})
+            continue
         else:
             raise SystemExit(f"genre inconnu : {args.kind}")
         np.savez(os.path.join(args.out, f"{name}.npz"), **d)
@@ -156,8 +170,34 @@ def reduce_axes_to_input(g):
                     n.attribute.remove(a)
 
 
+def storable_scale(name, value, npdt):
+    """Une échelle dans le type du graphe (QuantizeLinear et DequantizeLinear veulent celui de leur entrée :
+    FP16 pour un modèle FP16). Refus net d'une échelle qui y vaut 0 ou n'est pas finie : QuantizeLinear
+    diviserait par zéro et les zéros exacts deviendraient NaN, qui se propagent jusqu'à une garde opaque (C46-22)."""
+    stored = np.asarray(value, npdt)
+    if not np.all(np.isfinite(stored)) or np.any(stored <= 0):
+        raise SystemExit(f"{name} : échelle {np.min(value):.3g} non représentable en {np.dtype(npdt).name} "
+                         "(maximum nul ou minuscule : corpus de calibration inutilisable pour ce tenseur)")
+    return stored
+
+
+def activation_scale(name, amax, npdt):
+    return storable_scale(name, np.float32(amax) / np.float32(E4M3_MAX), npdt)
+
+
+def weight_scale(w, name, npdt, per_channel=False):
+    """Échelle des poids d'une convolution (sortie, entrée, …) : une pour le tenseur, ou une par canal de sortie
+    (--weight-scales channel : les canaux de faible amplitude gardent leurs bits, C46-23)."""
+    if per_channel:
+        peak = np.abs(w).reshape(w.shape[0], -1).max(axis=1)
+        peak = np.maximum(peak, peak.max() * 1e-3)  # un canal mort garde une échelle représentable
+    else:
+        peak = np.float32(np.abs(w).max())
+    return storable_scale(name, np.maximum(peak, np.float32(1e-8)) / np.float32(E4M3_MAX), npdt)
+
+
 def quantize(src, dst, input_files, min_channels=32, acts="all", calib="max", keep_first=False, keep_last=False,
-             conv_range=None, skip=()):
+             conv_range=None, skip=(), weight_scales="tensor"):
     m = onnx.load(src)
     g = m.graph
     inits = {i.name: i for i in g.initializer}
@@ -215,8 +255,9 @@ def quantize(src, dst, input_files, min_channels=32, acts="all", calib="max", ke
     wdone = set()
     for n in chosen:
         w = numpy_helper.to_array(inits[n.input[1]]).astype(np.float32)
-        s = max(float(np.abs(w).max()), 1e-8) / 448.0
-        wq = np.clip(w / s, -448, 448).astype(FP8)
+        per_channel = weight_scales == "channel"
+        s = weight_scale(w, n.input[1], npdt, per_channel)
+        wq = np.clip(w / (s.reshape(-1, 1, 1, 1) if per_channel else s), -E4M3_MAX, E4M3_MAX).astype(FP8)
         wn = n.input[1]
         if wn not in wdone:  # un poids partagé par plusieurs convolutions n'est quantifié qu'une fois
             g.initializer.remove(inits[wn])
@@ -225,15 +266,16 @@ def quantize(src, dst, input_files, min_channels=32, acts="all", calib="max", ke
             t.dims.extend(wq.shape)
             t.raw_data = wq.view(np.uint8).tobytes()
             g.initializer.append(t)
-            const(wn + "_sc", np.array(s, npdt))
-            new.append(helper.make_node("DequantizeLinear", [wn + "_q8", wn + "_sc"], [wn + "_dq"]))
+            const(wn + "_sc", np.asarray(s, npdt))
+            new.append(helper.make_node("DequantizeLinear", [wn + "_q8", wn + "_sc"], [wn + "_dq"],
+                                        **({"axis": 0} if per_channel else {})))
             wdone.add(wn)
         n.input[1] = wn + "_dq"
         a = n.input[0]
         if acts == "single" and consumers.get(a, 0) > 1:
             continue
         if a not in done:
-            const(a + "_asc", np.array(max(amax[a], 1e-6) / 448.0, npdt))
+            const(a + "_asc", activation_scale(a, amax[a], npdt))
             z = onnx.TensorProto()
             z.name, z.data_type, z.raw_data = a + "_azp", T.FLOAT8E4M3FN, b"\x00"
             g.initializer.append(z)
@@ -275,7 +317,7 @@ def quantize(src, dst, input_files, min_channels=32, acts="all", calib="max", ke
 def cmd_quantize(args):
     nq, nc = quantize(args.src, args.dst, args.inputs, args.min_channels, args.acts, args.calib, args.keep_first, args.keep_last,
                        conv_range=[tuple(int(v) for v in r.split(":")) for r in args.conv_range.split(",")] if args.conv_range else None,
-                       skip=args.skip)
+                       skip=args.skip, weight_scales=args.weight_scales)
     print(f"écrit {args.dst} : {nq} convolutions quantifiées sur {nc}")
 
 
@@ -369,7 +411,7 @@ def main():
     p.add_argument("model")
     p.add_argument("images")
     p.add_argument("out")
-    p.add_argument("--size", default="768x1280")
+    p.add_argument("--size", default=DEPLOYED_SIZE, help="HxW des jeux d'entrées (1088x1920, celle du lecteur)")
     p.set_defaults(fn=cmd_inputs)
     p = sub.add_parser("capture")
     p.add_argument("model")
@@ -386,6 +428,9 @@ def main():
     p.add_argument("--calib", default="max")
     p.add_argument("--keep-first", action="store_true")
     p.add_argument("--keep-last", action="store_true")
+    p.add_argument("--weight-scales", choices=("tensor", "channel"), default="tensor",
+                   help="échelle des poids : une par tenseur (défaut, la seule que TensorRT accepte en FP8 "
+                        "à vérifier) ou une par canal de sortie (C46-23)")
     p.add_argument("--skip", action="append", default=[], help="préfixe du nom de nœud à laisser en FP16 (répétable)")
     p.add_argument("--conv-range", help="A:B[,C:D...] : seules les convolutions d'indice A à B-1 (ordre du graphe), pour écarter les couches sensibles")
     p.set_defaults(fn=cmd_quantize)
