@@ -116,6 +116,22 @@ void RingStage::fail(const ThreadReport& report, const Refusal& refusal) {
   report(fatal);
 }
 
+RingFrame RingStage::ring_frame(const Output& produced, std::uint32_t epoch, std::uint32_t slot,
+                                std::uint64_t ready, std::int64_t submitted_us) const {
+  return RingFrame{.slot = slot,
+                   .generation = generation_,
+                   .pts_us = produced.pts_us,
+                   .left = produced.left,
+                   .right = produced.right,
+                   .repeated = produced.repeated,
+                   .uninterpolated = produced.uninterpolated || gap_,
+                   .planned_gap_us = planned_gap_us(front_done_),
+                   .debanded = produced.debanded,
+                   .epoch = epoch,
+                   .ready_value = ready,
+                   .submitted_us = submitted_us};
+}
+
 void RingStage::emit(const ThreadReport& report) {
   while (!pending_.empty()) {
     if (pending_.front().epoch < epoch_ || failed_) {  // d'avant le Flush, ou étage en échec : jetée
@@ -185,18 +201,7 @@ void RingStage::emit(const ThreadReport& report) {
         fail(report, produced.error());
         break;
       }
-      const RingFrame ring{.slot = slot,
-                           .generation = generation_,
-                           .pts_us = produced->pts_us,
-                           .left = produced->left,
-                           .right = produced->right,
-                           .repeated = produced->repeated,
-                           .uninterpolated = produced->uninterpolated || gap_,
-                           .planned_gap_us = produced->planned_gap_us,
-                           .debanded = produced->debanded,
-                           .epoch = frame.epoch,
-                           .ready_value = ready,
-                           .submitted_us = submitted};
+      const RingFrame ring = ring_frame(*produced, frame.epoch, slot, ready, submitted);
       gap_ = false;
       free_[slot] = false;
       next_slot_ = (slot + 1) % count;

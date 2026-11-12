@@ -20,12 +20,6 @@
 namespace ajp::app::play {
 namespace {
 
-// L'écart de pts planifié entre deux instants qui se suivent ; 0 : inconnu (pas d'instant d'avant, pts absent
-// ou qui recule).
-std::int64_t planned_gap(std::int64_t before_us, std::int64_t pts_us) {
-  return before_us != kNoPts && pts_us != kNoPts && pts_us > before_us ? pts_us - before_us : 0;
-}
-
 constexpr std::uint64_t kDisagreementsLogged = 100;
 // Un facteur de l'Auto hors de la liste des facteurs réglables : palier / granularité (24 au plus,
 // core::kFineGranularity), ou sur écran fixe la fraction exacte d'un palier calé (11011/3200 à 165 Hz,
@@ -475,41 +469,28 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
   uninterpolated_ = on_grid && !runs && facts.factor > 1 && facts.scores &&
                     (pair_cut(facts) || kernels::is_held(facts.scores->worst_block));
-  if (on_grid && !runs && cadence_) cadence_->resync();
-  if (on_grid && !runs && free_mode) free_grid_.resync();
-  if (on_grid && !runs && steady) steady_grid_.resync();
-  // Rapide libre : l'écart planifié de chaque instant depuis le précédent, sauté en retard compris (main
-  // compte alors l'instant sauté comme manqué, pas l'écart voulu par la grille).
-  if (!free_mode || steady || !facts.same_epoch) planned_pts_ = kNoPts;
-  const bool plans_gaps = free_mode && !steady;
-  const auto plan_gap = [&](std::int64_t pts) {
-    const std::int64_t gap = plans_gaps ? planned_gap(planned_pts_, pts) : 0;
-    if (plans_gaps) planned_pts_ = pts;
-    return gap;
-  };
+  resync_grids(on_grid && !runs, free_mode, steady);
   if (runs && step) {
     outputs_ = 0;
     std::size_t skipped = 0;
     for (const core::OutputInstant& at : step->instants()) {
       // Smooth, première paire : la source tenue elle-même devient un instant du mouvement vers b.
       const bool source = at.is_source() && !smooth_first_;
-      const std::int64_t pts = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us);
       if (!source && skipped < late) {  // déjà en retard : sauté
         ++skipped;
-        plan_gap(pts);
         continue;
       }
       double t = static_cast<double>(at.t.num) / static_cast<double>(at.t.den);
       if (smooth_first_ || (smooth_second_ && !source)) t = smooth_hold_u(t, smooth_second_);
       instants_[outputs_++] =
-          Instant{.t = source ? 1.0F : static_cast<float>(t), .pts_us = pts, .gap_us = plan_gap(pts)};
+          Instant{.t = source ? 1.0F : static_cast<float>(t),
+                  .pts_us = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us)};
       if (!source) ++intermediates_;
     }
     ++interpolated_;
     if (setup_.live) setup_.live->count_interpolated();
-  } else {
-    instants_[0].gap_us = plan_gap(frame.pts_us);
   }
+  plan_gaps(frame, runs && step ? &*step : nullptr, late, free_mode && !steady && facts.same_epoch);
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
@@ -632,8 +613,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
                   .left = frame.id,
                   .right = frame.id,
                   .uninterpolated = uninterpolated_,
-                  .debanded = debanded_,
-                  .planned_gap_us = instant.gap_us};
+                  .debanded = debanded_};
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
@@ -641,8 +621,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   Output made{.pts_us = instant.pts_us,
               .left = previous_->id,
               .right = smooth_first_ ? smooth_b_id_ : frame.id,
-              .debanded = debanded_,
-              .planned_gap_us = instant.gap_us};
+              .debanded = debanded_};
   drba_held_ = false;
   shown_source_ = false;
   use_lane(gpu::Lane::Interpolate);

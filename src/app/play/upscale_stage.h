@@ -132,6 +132,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> health() override { return setup_.backend->kernels()->health(); }
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
+  std::int64_t planned_gap_us(std::uint32_t output) const override;
   void skip(const DecodedFrame& frame, std::uint32_t output) override;
   std::expected<void, Refusal> late(const DecodedFrame& frame, std::uint32_t output) override;
   Fate drba_fate(std::uint32_t output);
@@ -340,6 +341,12 @@ class UpscaleStage final : public RingStage {
   // Rapide libre : le pts du dernier instant planifié, écrit, sauté en retard ou tenu ; kNoPts hors du mode,
   // au début d'une époque.
   std::int64_t planned_pts_ = kNoPts;
+  // Une paire sans passe : les grilles repartent de sa source droite.
+  void resync_grids(bool unrun, bool free_mode, bool steady);
+  // L'écart planifié de chaque sortie de la paire (instants_), les instants sautés en retard compris ;
+  // `step` : la grille de la paire quand elle est interpolée, nullptr pour la source seule. `on` : Rapide
+  // libre dans la même époque, sinon rien n'est planifié.
+  void plan_gaps(const DecodedFrame& frame, const core::CadenceStep* step, std::size_t late, bool on);
   std::array<Instant, core::kMaxInstantsPerPair> instants_{};
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées

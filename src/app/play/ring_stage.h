@@ -63,10 +63,9 @@ class RingStage : public VideoStage, public FrameSink {
     std::int64_t pts_us = 0;
     SourceId left;
     SourceId right;
-    bool uninterpolated = false;      // RingFrame::uninterpolated
-    bool debanded = false;            // RingFrame::debanded
-    bool repeated = false;            // RingFrame::repeated : copie d'une image déjà calculée
-    std::int64_t planned_gap_us = 0;  // RingFrame::planned_gap_us
+    bool uninterpolated = false;  // RingFrame::uninterpolated
+    bool debanded = false;        // RingFrame::debanded
+    bool repeated = false;        // RingFrame::repeated : copie d'une image déjà calculée
   };
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
   // par défaut 1. Un refus arrête la vidéo comme un refus de produce, et plus de kMaxOutputs aussi.
@@ -101,6 +100,9 @@ class RingStage : public VideoStage, public FrameSink {
   // viendra pas. Par défaut : rien à vérifier.
   static constexpr std::int64_t kHealthAfterUs = 200'000;
   virtual std::expected<void, Refusal> health() { return {}; }
+  // Mode Rapide : l'écart de pts planifié de la sortie output depuis l'instant d'avant
+  // (RingFrame::planned_gap_us) ; 0 par défaut, inconnu.
+  virtual std::int64_t planned_gap_us(std::uint32_t /*output*/) const { return 0; }
   // Écrit la sortie output (0 ≤ output < outputs(frame)) dans le slot : attendre wait_value côté
   // GPU, signaler signal_value (impaire).
   virtual std::expected<Output, Refusal> produce(const DecodedFrame& frame, std::uint32_t output,
@@ -111,6 +113,8 @@ class RingStage : public VideoStage, public FrameSink {
   using StageInbox = Inbox<DecodedFrame, SlotFree, Command, Flush, StreamEnd>;
   void run(const std::stop_token& stop, const ThreadReport& report);
   void emit(const ThreadReport& report);
+  RingFrame ring_frame(const Output& produced, std::uint32_t epoch, std::uint32_t slot, std::uint64_t ready,
+                       std::int64_t submitted_us) const;
   void fail(const ThreadReport& report, const Refusal& refusal);
 
   VideoStageInit init_;
