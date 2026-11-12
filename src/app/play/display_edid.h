@@ -3,9 +3,10 @@
 // nom, bloc HDR statique de CTA-861 (PQ, luminances), et s'il est OLED, dans l'ordre du plan :
 //   1. DisplayID 2.0, bloc 0x21 (paramètres de l'écran), octet 0x1E, bits 6:4 = 010b : définitif ;
 //   2. table des modèles connus, par fabricant et product id EDID ou par nom ;
-//   3. heuristique EDID : noir ≤ 0,001 nit ou code ≤ 2, et plein écran ≤ 0,5 × pic (un mini-LED
-//      peut annoncer un noir quasi nul : le choix du profil tranche toujours) ;
+//   3. heuristique EDID : noir ≤ 0,001 nit ou code ≤ 2, et plein écran ≤ 0,5 × pic, les trois annoncés (un
+//      mini-LED peut annoncer un noir quasi nul ; le réglage « vrai noir » du menu reste maître) ;
 //   4. sinon, inconnu.
+// Le pic vient de CTA, sinon de DisplayID ; le noir, du même bloc que le pic quand il le donne.
 // Sans dépendance (libdisplay-info n'est pas dans le préfixe de la tranche verticale).
 #pragma once
 
@@ -31,7 +32,8 @@ struct DisplayFacts {
   bool pq = false;                           // EOTF ST 2084 annoncée
   std::optional<double> peak_nits;           // contenu max désiré (CTA) ou pic de DisplayID
   std::optional<double> frame_average_nits;  // moyenne d'image max (CTA)
-  std::optional<double> min_nits;            // noir annoncé
+  std::optional<double> min_nits;            // noir annoncé, du bloc qui donne le pic
+  std::optional<double> full_frame_nits;     // luminance tenue plein champ (DisplayID 2.0, bloc 0x21)
   std::optional<int> min_code;               // octet du noir dans le bloc CTA (0 : noir parfait)
   // Ce que chaque bloc annonce, avant le choix ci-dessus (A11-11) : le journal les montre côte à côte quand
   // les deux blocs parlent, pour décider d'une seule source par grandeur sur un écran réel.
@@ -76,8 +78,8 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid);
 // « MAG 272U E16 · HDR10, pic 1037 nits, moyenne 265, noir 0,00064 nit · OLED : non (EDID) »
 std::string describe(const DisplayFacts& display);
 // Pour le journal, à la suite de describe : vide tant qu'un seul bloc de l'EDID annonce le pic ou le noir ;
-// sinon ce que dit chacun, ce qui est retenu aujourd'hui (pic du CTA, noir de DisplayID s'il vient après), et
-// ce qu'une seule source par grandeur donnerait (DisplayID d'abord, comme pour l'OLED).
+// sinon ce que dit chacun, ce qui est retenu (pic du CTA et noir du même bloc), et ce que DisplayID d'abord
+// donnerait (comme pour l'OLED).
 std::string luminance_sources(const DisplayFacts& display);
 // La ligne du journal : describe, puis luminance_sources.
 std::string describe_for_log(const DisplayFacts& display);

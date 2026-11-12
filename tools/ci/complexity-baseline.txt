@@ -5,7 +5,6 @@ src/app/play/chain.cpp	ajp::app::play::apply	30	170
 src/app/play/chain.cpp	ajp::app::play::apply_live	39	92
 src/app/play/chain_setup.cpp	ajp::app::play::prepare_chain_once	106	256
 src/app/play/controls_draw.cpp	ajp::app::play::draw_controls	57	197
-src/app/play/display_edid.cpp	ajp::app::play::parse_edid	32	56
 src/app/play/engine_install.cpp	ajp::app::play::install_steps	25	140
 src/app/play/engine_screen.cpp	ajp::app::play::run_engine_screen	36	86
 src/app/play/export_run.cpp	ajp::app::play::run_export	77	303

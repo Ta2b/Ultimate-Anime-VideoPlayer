@@ -290,25 +290,6 @@ constexpr std::array<const char*, 15> kOptionalExtensions{
     VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,   VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
     VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME};
 
-// Le cache des shaders de libplacebo : au plus 64 Mo, relu d'un fichier à l'ouverture. Un fichier abîmé ou
-// d'une autre version de libplacebo est simplement ignoré (pl_cache_load le refuse) et sera réécrit.
-
-// Les « <cache>.<n>.part » d'une fermeture interrompue (save_shader_cache) : effacés passé une heure, le
-// temps qu'un autre lecteur finisse d'écrire le sien (A10-11).
-void purge_cache_parts(const std::filesystem::path& file) {
-  std::error_code error;
-  const std::u8string prefix = file.filename().u8string() + u8".";
-  const auto now = std::filesystem::file_time_type::clock::now();
-  for (std::filesystem::directory_iterator it(file.parent_path(), error), end; !error && it != end;
-       it.increment(error)) {
-    const std::u8string name = it->path().filename().u8string();
-    if (!name.starts_with(prefix) || !name.ends_with(u8".part")) continue;
-    std::error_code ignored;
-    const auto written = std::filesystem::last_write_time(it->path(), ignored);
-    if (!ignored && now - written > std::chrono::hours(1)) std::filesystem::remove(it->path(), ignored);
-  }
-}
-
 // B37-01 : sur un poste à deux cartes (portable RTX + iGPU : Optimus, PRIME), libplacebo prend la première
 // que le système lui donne, souvent l'iGPU, et TensorRT refuse alors la carte. Sans carte demandée, la carte
 // NVIDIA RTX discrète est préférée ; seulement quand une autre carte existe, un poste à une carte ne change
@@ -348,53 +329,6 @@ const char* pick_device(const ScreenOptions& options, ScreenImpl& impl) {
 
 }  // namespace
 
-void PlaceboScreen::Impl::open_shader_cache(const std::filesystem::path& file) {
-  Impl& impl = *this;
-  if (file.empty()) return;
-  pl_cache_params params = pl_cache_default_params;
-  params.log = impl.log;
-  params.max_total_size = 64u << 20u;
-  impl.shader_cache = pl_cache_create(&params);
-  if (impl.shader_cache == nullptr) return;
-  impl.shader_cache_file = file;
-  purge_cache_parts(file);
-  std::error_code error;
-  const std::uintmax_t on_disk = std::filesystem::file_size(file, error);
-  if (!error && on_disk > params.max_total_size) {
-    // Jamais écrit par nous à cette taille : abîmé ou d'ailleurs, il n'est pas lu en mémoire (A10-11).
-    impl.channel->warn("cache des shaders : {} Mo sur le disque, plus que le plafond, ignoré",
-                       on_disk >> 20u);
-  } else if (std::ifstream in(file, std::ios::binary); !error && in) {
-    // D'un seul bloc, à la taille du fichier : jusqu'à 64 Mo sur le chemin de l'ouverture de la fenêtre.
-    std::vector<char> bytes(static_cast<std::size_t>(on_disk));
-    in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    bytes.resize(static_cast<std::size_t>(in.gcount()));
-    const int loaded =
-        pl_cache_load(impl.shader_cache, reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
-    impl.channel->info("cache des shaders : {} objets relus ({} Ko)", std::max(loaded, 0),
-                       bytes.size() >> 10U);
-  }
-  impl.shader_cache_loaded = pl_cache_signature(impl.shader_cache);
-  pl_gpu_set_cache(impl.vk->gpu, impl.shader_cache);
-}
-
-// Gardé à la fermeture, par l'écriture atomique du projet (core::write_atomic : à côté, sur le disque, puis
-// renommé) : une fermeture brutale ne laisse jamais un fichier à moitié écrit. Un cache que la lecture n'a
-// pas changé n'est pas réécrit (B36-05 : jusqu'à 64 Mo à chaque fermeture).
-void PlaceboScreen::Impl::save_shader_cache() {
-  Impl& impl = *this;
-  if (impl.shader_cache == nullptr) return;
-  if (impl.vk != nullptr) pl_gpu_set_cache(impl.vk->gpu, nullptr);
-  const std::size_t size = pl_cache_save(impl.shader_cache, nullptr, 0);
-  if (size > 0 && pl_cache_signature(impl.shader_cache) != impl.shader_cache_loaded) {
-    std::vector<std::byte> bytes(size);
-    pl_cache_save(impl.shader_cache, reinterpret_cast<std::uint8_t*>(bytes.data()), bytes.size());
-    if (auto written = core::write_atomic(impl.shader_cache_file, bytes); !written)
-      impl.channel->warn("cache des shaders non écrit : {}", written.error().detail);
-  }
-  pl_cache_destroy(&impl.shader_cache);
-}
-
 namespace {
 // Smooth Motion : le chargeur Vulkan lit la variable à la création de l'instance ; le thread main est encore
 // seul à toucher l'environnement à ce moment. B34-06 : c'est la voie du pilote Linux ; sous Windows, Smooth
@@ -407,6 +341,23 @@ void request_smooth_motion(spdlog::logger& log) {
 #else
   log.info("Smooth Motion : réglé par l'application NVIDIA sous Windows, rien n'est demandé ici");
 #endif
+}
+
+// Le profil GPU d'une passe à la fermeture : médiane et p95 en temps linéaire (C10-07 : le tri complet de
+// réservoirs de 2^20 échantillons pesait sur le temps de fermeture, sous la garde des 60 s).
+void log_gpu_profile(spdlog::logger& channel, std::string_view what,
+                     core::SampleReservoir<std::uint32_t>& samples) {
+  if (samples.empty()) return;
+  std::vector<std::uint32_t>& kept = samples.kept();
+  const auto at = [&](double q) {
+    const auto nth = kept.begin() + static_cast<std::ptrdiff_t>(q * static_cast<double>(kept.size() - 1));
+    std::ranges::nth_element(kept, nth);
+    return *nth;
+  };
+  const std::uint32_t median = at(0.5);
+  const std::uint32_t p95 = at(0.95);
+  channel.info("profil GPU · {} : médiane {:.2f} ms, p95 {:.2f} ms ({} images, centiles sur {})", what,
+               median / 1000.0, p95 / 1000.0, samples.seen(), kept.size());
 }
 
 // Le démontage d'un pilote sain se compte en secondes (moteurs TensorRT compris) ; au-delà, il ne finira pas.
@@ -438,26 +389,10 @@ PlaceboScreen::Impl::~Impl() {
     if (tex != nullptr) pl_tex_destroy(vk->gpu, &tex);
   if (composed != nullptr) pl_tex_destroy(vk->gpu, &composed);
   share.reset();  // avant l'appareil qu'il prête
-  if (!grade_gpu_us.empty()) {
-    std::vector<std::uint32_t>& kept = grade_gpu_us.kept();
-    std::ranges::sort(kept);
-    const auto at = [&](double q) {
-      return kept[static_cast<std::size_t>(q * static_cast<double>(kept.size() - 1))];
-    };
-    channel->info("profil GPU · grade HDR : médiane {:.2f} ms, p95 {:.2f} ms ({} images, centiles sur {})",
-                  at(0.5) / 1000.0, at(0.95) / 1000.0, grade_gpu_us.seen(), kept.size());
-  }
-  if (!anime4k_gpu_us.empty()) {
-    std::vector<std::uint32_t>& kept = anime4k_gpu_us.kept();
-    std::ranges::sort(kept);
-    const auto at = [&](double q) {
-      return kept[static_cast<std::size_t>(q * static_cast<double>(kept.size() - 1))];
-    };
-    channel->info("profil GPU · Anime4K : médiane {:.2f} ms, p95 {:.2f} ms ({} images, centiles sur {})",
-                  at(0.5) / 1000.0, at(0.95) / 1000.0, anime4k_gpu_us.seen(), kept.size());
-  }
+  log_gpu_profile(*channel, "grade HDR", grade_gpu_us);
+  log_gpu_profile(*channel, "Anime4K", anime4k_gpu_us);
   if (recompositions + reuses > 0)
-    channel->info("composition gardee : {} recompositions, {} recopies sans recomposition", recompositions,
+    channel->info("composition gardée : {} recompositions, {} recopies sans recomposition", recompositions,
                   reuses);
   ui.reset();
   grade.reset();

@@ -186,10 +186,11 @@ struct PlayOptions {
   // L'image choisie par le numéro de son vblank, avec hystérésis (SessionConfig::vsync_index, 6.6), par
   // défaut ; --no-vsync-index : l'ancien choix par l'horloge.
   bool vsync_index = true;
-  // --present=auto|timing|wait|wayland|open : le retour de présentation (chantier 6.2, present_level.h).
-  // wait (le défaut) : wp_presentation quand le compositeur l'offre (il date l'affichage, d'où la grille des
-  // vblanks), sinon present_wait2, sinon open ; auto et timing ne rendent aucun retour sur NVIDIA 615 / KDE
-  // Wayland (mesuré : 0 revenue) et retombent alors seuls (present_level.h : feedback_silent) ;
+  // --present=auto|timing|timing-absolute|wait|wayland|open : le retour de présentation (chantier 6.2,
+  // present_level.h). wait (le défaut) : wp_presentation quand le compositeur l'offre (il date l'affichage,
+  // d'où la grille des vblanks), sinon present_wait2, sinon open ; auto et timing ne rendent aucun retour sur
+  // NVIDIA 615 / KDE Wayland (mesuré : 0 revenue) et retombent alors seuls (present_level.h :
+  // feedback_silent) ;
   // --no-present ou --present=open : la présentation d'avant.
   PresentWanted present = PresentWanted::Wait;
   // --anime-contrast=N, --anime-saturation=N, --anime-highlights=N (0 à 200 %, 100 : la méthode telle quelle)

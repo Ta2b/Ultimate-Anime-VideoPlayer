@@ -1,12 +1,10 @@
 // Le contrat d'écran lu et relu (chantier 8.2, render::DisplayContract) : le blanc de référence et la crête
-// de KWin, la marge HDR de SDL, l'EDID (primaires, noir, OLED) et, quand une séance de sonde l'a mesurée, la
-// courbe du limiteur. Relu quand SDL signale un changement d'état HDR (SDL_EVENT_WINDOW_HDR_STATE_CHANGED)
-// ou quand KDE réécrit kwinoutputconfig.json : KDE qui assombrit l'écran fait passer la référence à 83.
-// Le contrat se lit et se journalise ; le grade et l'indication à la swapchain ne s'en servent qu'au contrat
-// v2 (8.4, éteint).
+// de KWin, la marge HDR de SDL, l'EDID (primaires, noir, OLED, plein champ) et le pic de Windows. Relu quand
+// SDL signale un changement d'état HDR (SDL_EVENT_WINDOW_HDR_STATE_CHANGED) ou quand KDE réécrit
+// kwinoutputconfig.json : KDE qui assombrit l'écran fait passer la référence à 83. Le contrat se lit et se
+// journalise ; le grade et l'indication à la swapchain ne s'en servent qu'au contrat v2 (8.4, éteint).
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -24,20 +22,17 @@ struct SDL_Window;
 
 namespace ajp::app::play {
 
-// La courbe du limiteur relevée à la sonde (8.12), cd/m² aux surfaces render::kAblAreas.
-struct MeasuredAbl {
-  std::array<double, 5> nits{};
-};
-
 // sdr_white_nits (A11-06) : le blanc SDR que le système dit, quand il le dit (sous Windows, le curseur
 // « luminosité du contenu SDR »). La marge de SDL est relative à lui : le pic vaut marge × ce blanc. Avant,
 // toujours marge × 203, donc un pic faux dès que le curseur quittait sa valeur par défaut. 0 : inconnu.
-// system_peak (B11-10) : sous Windows, le pic que le grade vise (content_peak_nits, MaxLuminance de DXGI
-// réglé par l'application « Étalonnage HDR ») ; il passe devant marge × blanc, pour qu'une seule source dise
-// le pic de l'écran. Rien ailleurs.
+// system_peak (B11-10) : sous Windows, le pic que le grade vise (content_peak, MaxLuminance de DXGI réglé par
+// l'application « Étalonnage HDR », sinon son estimation), avec sa source (C11-09) ; il passe devant marge ×
+// blanc, pour qu'une seule source dise le pic de l'écran. Rien ailleurs.
+// La courbe du limiteur va du pic au plein champ que l'écran dit (C11-04), dans l'ordre : DXGI
+// (MaxFullFrameLuminance, avec le pic calibré), DisplayID, MaxFALL de l'EDID ; sinon la table QD-OLED.
 render::DisplayContract contract_of(const DisplayFacts& facts, const std::optional<KwinOutput>& kwin,
-                                    double headroom, const std::optional<MeasuredAbl>& abl,
-                                    double sdr_white_nits = 0.0, std::optional<double> system_peak = {});
+                                    double headroom, double sdr_white_nits = 0.0,
+                                    const std::optional<ContentPeak>& system_peak = {});
 // Le blanc SDR du système d'après la propriété de SDL (1,0 = 80 nits en scRGB, sous Windows seulement) ;
 // 0 ailleurs ou quand SDL ne dit rien. Pur.
 constexpr double sdr_white_nits_of(float sdl_white_level, bool windows) {
@@ -76,6 +71,9 @@ class ContractWatch {
   // coûteuses sous Windows, A11-02) se fait alors tout de suite, au lieu d'un sondage toutes les 2 s.
   bool take_peak_change() { return peak_changed_.exchange(false, std::memory_order_relaxed); }
   const std::optional<render::DisplayContract>& current() const { return contract_; }
+  // Sous Windows, le pic relu par la sonde de l'écran (display_probe.h) : le contrat ne fait plus lui-même
+  // l'énumération DXGI et la lecture du registre sur le thread qui présente (C11-06). Relu s'il change.
+  void set_system_peak(std::optional<ContentPeak> peak);
 
  private:
   render::DisplayContract read() const;
@@ -85,8 +83,9 @@ class ContractWatch {
   std::shared_ptr<spdlog::logger> log_;
   std::optional<render::DisplayContract> contract_;
   std::optional<std::int64_t> kwin_stamp_;
-  std::atomic<bool> hdr_changed_{true};    // posé par le filtre d'événements SDL ; vrai : première lecture
-  std::atomic<bool> peak_changed_{false};  // les mêmes événements, pour take_peak_change
+  std::optional<ContentPeak> system_peak_;  // set_system_peak
+  std::atomic<bool> hdr_changed_{true};     // posé par le filtre d'événements SDL ; vrai : première lecture
+  std::atomic<bool> peak_changed_{false};   // les mêmes événements, pour take_peak_change
   Flags flags_{&hdr_changed_, &peak_changed_};
 };
 
