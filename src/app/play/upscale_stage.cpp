@@ -478,9 +478,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Coupe ou dessin tenu : les instants de la paire manquent à dessein, pas faute de temps.
   uninterpolated_ = on_grid && !runs && facts.factor > 1 && facts.scores &&
                     (pair_cut(facts) || kernels::is_held(facts.scores->worst_block));
-  if (on_grid && !runs && cadence_) cadence_->resync();
-  if (on_grid && !runs && free_mode) free_grid_.resync();
-  if (on_grid && !runs && steady) steady_grid_.resync();
+  resync_grids(on_grid && !runs, free_mode, steady);
   if (runs && step) {
     outputs_ = 0;
     std::size_t skipped = 0;
@@ -501,6 +499,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     ++interpolated_;
     if (setup_.live) setup_.live->count_interpolated();
   }
+  plan_gaps(frame, runs && step ? &*step : nullptr, late, free_mode && !steady && facts.same_epoch);
   // Garder les poses : la paire précédente compte si elle précède vraiment celle-ci ; une paire
   // tenue (dessin identique) n'a pas bougé. Le mouvement de cette paire va dans l'autre tampon.
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;

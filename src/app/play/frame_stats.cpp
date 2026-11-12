@@ -73,9 +73,20 @@ void FrameStats::presented(std::int64_t render_us, std::int64_t present_us, bool
   last_new_present_us = present_us;
 }
 
-void FrameStats::paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us, bool on_purpose) {
+void FrameStats::paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t period_us, bool on_purpose,
+                       std::int64_t planned_gap_us) {
   if (pts_us == kNoPts) return;
-  if (last_new_pts_us != kNoPts && period_us > 0 && pts_us > last_new_pts_us) {
+  if (last_new_pts_us != kNoPts && planned_gap_us > 0 && pts_us > last_new_pts_us) {
+    // Mode Rapide : l'image d'avant planifiée est à pts − écart. Si la dernière montrée la précède, au moins
+    // un instant planifié n'a pas paru ; le reste du trou se compte en écarts de cette image. Un pas lourd,
+    // une paire affamée ou un vsync de plus voulus par la grille ne manquent pas (l'écran était à 165 Hz,
+    // chaque paire lourde comptait une image manquée et le Rapide se repliait sans perte visible).
+    const std::int64_t hole = pts_us - planned_gap_us - last_new_pts_us;
+    if (hole > planned_gap_us / 4) {
+      const std::int64_t count = std::max<std::int64_t>(1, (hole + planned_gap_us / 2) / planned_gap_us);
+      (on_purpose ? uninterpolated : missing) += count;
+    }
+  } else if (last_new_pts_us != kNoPts && period_us > 0 && pts_us > last_new_pts_us) {
     // n périodes entre les deux images : n − 1 manquées. Le quart de période de marge couvre
     // l'arrondi des pts et un écran à peine plus lent que la sortie.
     const std::int64_t periods = (pts_us - last_new_pts_us + period_us / 4) / period_us;

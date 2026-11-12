@@ -87,5 +87,36 @@ TEST_CASE("ChainStats : stop() sans relevé lancé ne démarre rien", "[app][sta
   CHECK(kernels.reads.load() == seen);  // aucun fil de relevé
 }
 
+// Une paire de 4 images, chacune `each_us` de calcul, vue écrite par main.
+void feed_pair(LiveSettings& live, std::uint32_t pair, std::int64_t each_us, bool heavy, std::int64_t& now) {
+  live.auto_expect(pair, 4, 0, heavy);
+  for (int image = 0; image < 4; ++image) {
+    const std::int64_t submitted = now;
+    now += each_us;
+    live.auto_written(image == 3 ? pair : pair - 1, pair, submitted, now);
+  }
+}
+
+// L'écart attendu du Rapide que lisent l'OSD et le compte des manques sans écart planifié : celui d'une paire
+// calme. Une paire lourde planifie le sien, plus long, et le porte sur ses images (RingFrame::planned_gap_us)
+// : sans cela, sur un écran de 165 Hz, chacune de ses images comptait une manquée et le Rapide se repliait.
+TEST_CASE("ChainStats : Rapide à 165 Hz, la période de sortie est celle d'une paire calme",
+          "[app][stats][free]") {
+  LiveSettings live;
+  live.set_free(true, 6'061, 0);
+  live.set_vsync(6'061, 3'000);
+  std::int64_t now = 20'000'000;
+  for (std::uint32_t pair = 1; pair <= 8; ++pair) feed_pair(live, pair, 4'000, false, now);
+  for (std::uint32_t pair = 9; pair <= 16; ++pair) feed_pair(live, pair, 9'000, true, now);
+  CountingKernels kernels;
+  ChainStats stats(live, kernels, true, "RIFE", 23.976);
+  CHECK(stats.output_period_us() == 6'061);  // 4,4 ms, arrondis au vsync au-dessus
+  const auto [heavy_step, gap] = live.free_step(now, true);
+  CHECK(heavy_step == 9'900);  // 9 ms × 1,10 : deux vsyncs sur la grille
+  CHECK(gap == 6'061);
+  CHECK(heavy_step > stats.output_period_us() + stats.output_period_us() / 4);
+  stats.stop();
+}
+
 }  // namespace
 }  // namespace ajp::app::play

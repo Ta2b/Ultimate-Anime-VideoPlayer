@@ -5,11 +5,61 @@
 #include <algorithm>
 #include <cstdint>
 #include <expected>
+#include <utility>
 
 #include "app/play/frame_latency.h"
 #include "app/play/upscale_stage.h"
 
 namespace ajp::app::play {
+namespace {
+
+// L'écart de pts planifié entre deux instants qui se suivent ; 0 : inconnu (pas d'instant d'avant, pts absent
+// ou qui recule).
+std::int64_t planned_gap(std::int64_t before_us, std::int64_t pts_us) {
+  return before_us != kNoPts && pts_us != kNoPts && pts_us > before_us ? pts_us - before_us : 0;
+}
+
+}  // namespace
+
+void UpscaleStage::resync_grids(bool unrun, bool free_mode, bool steady) {
+  if (!unrun) return;
+  if (cadence_) cadence_->resync();
+  if (free_mode) free_grid_.resync();
+  if (steady) steady_grid_.resync();
+}
+
+// Rapide libre : main compte un instant sauté ou jeté comme manqué, jamais l'écart voulu par la grille (un
+// pas lourd de deux vsyncs à 165 Hz, une paire affamée) : chaque sortie porte l'écart depuis l'instant
+// planifié d'avant, celui-là sauté en retard compris. Le même parcours que outputs() pour les instants
+// gardés.
+void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep* step, std::size_t late,
+                             bool on) {
+  if (!on) {
+    planned_pts_ = kNoPts;  // les instants de la paire, neufs, valent 0 : inconnu
+    return;
+  }
+  const auto next = [this](std::int64_t pts) { return planned_gap(std::exchange(planned_pts_, pts), pts); };
+  if (step == nullptr) {
+    instants_[0].gap_us = next(frame.pts_us);
+    return;
+  }
+  std::uint32_t kept = 0;
+  std::size_t skipped = 0;
+  for (const core::OutputInstant& at : step->instants()) {
+    const bool source = at.is_source() && !smooth_first_;
+    const std::int64_t pts = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us);
+    const std::int64_t gap = next(pts);
+    if (!source && skipped < late) {
+      ++skipped;
+      continue;
+    }
+    if (kept < outputs_) instants_[kept++].gap_us = gap;
+  }
+}
+
+std::int64_t UpscaleStage::planned_gap_us(std::uint32_t output) const {
+  return instants_[std::min<std::size_t>(output, instants_.size() - 1)].gap_us;
+}
 
 bool UpscaleStage::instant_late(const DecodedFrame& frame, std::uint32_t output) const {
   if (setup_.clock == nullptr) return false;
