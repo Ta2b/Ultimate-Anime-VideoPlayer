@@ -178,6 +178,14 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
     CHECK(call(1, 1, t, false, Say::TimesOnly) == want[t == 0.5F ? 2 : 3]);
     CHECK(engine->encode_counts().none == before.none + 1);
   }
+  // À chaud (P6.15) : la même paire au même instant reprend les Y des blocs grossiers de l'appel précédent,
+  // calculés sur les mêmes plans : les octets ne changent pas. Une annonce sans appel mené au bout (refus,
+  // autre moteur) n'est pas tenue.
+  INFO("à chaud");
+  if (!fused->next_warm()) return;  // aucun bloc à la réduction du premier avant le dernier
+  CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
+  REQUIRE(fused->next_warm());
+  CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
 }
 
 // C03-01 : sur une seule voie, SPAN et RIFE partagent la zone d'activation. Un SPAN passé entre deux appels

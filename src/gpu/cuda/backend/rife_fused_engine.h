@@ -64,8 +64,17 @@ class RifeFusedEngine final : public Engine {
   // Le prochain enqueue prend pour A la B de l'appel précédent : son encodage passe à la place de A, seule la
   // nouvelle B est encodée.
   void next_pair_follows() override { hint_ = Hint::Follows; }
+  // P6.15 : le prochain enqueue reprend les Y des blocs grossiers (ceux à la réduction du premier) de l'appel
+  // précédent, si cet appel est allé au bout et que ses tampons sont intacts (comme le backend Vulkan).
+  bool next_warm() override {
+    warm_next_ = warm_ready_ && warm_blocks_ > 0;
+    return warm_next_;
+  }
   // L'annonce oubliée : le backend a refusé l'appel avant d'enfiler la chaîne.
-  void drop_hint() { hint_ = Hint::None; }
+  void drop_hint() {
+    hint_ = Hint::None;
+    warm_next_ = false;
+  }
   // La fenêtre de l'image source dans le tenseur rempli (kernels::rife_window), que le backend connaît par
   // rife_input : le warp final de la variante image n'en sort pas (C03-03). Hors du tenseur : le tenseur.
   void set_window(const kernels::Window& window);
@@ -89,16 +98,27 @@ class RifeFusedEngine final : public Engine {
   // en changeant d'emplacement), rien (l'encodage de l'appel précédent sert tel quel).
   enum class Encode : std::uint8_t { Both, Second, None };
   enum class Hint : std::uint8_t { None, TimesOnly, Follows };
+  // Ce que la chaîne refait à cet appel : le travail de l'encodeur, l'emplacement de A, le premier bloc
+  // calculé (0, ou warm_blocks_ à chaud).
+  struct Pass {
+    Encode encode = Encode::Both;
+    unsigned a_slot = 0;
+    int first_block = 0;
+  };
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
-                                   const Tensor& input, std::span<const Tensor> outputs, Encode encode,
-                                   unsigned a_slot);
+                                   const Tensor& input, std::span<const Tensor> outputs, const Pass& pass);
+  std::expected<void, Refusal> launch_glue(cudaStream_t stream, const void* in, int block, std::byte* base,
+                                           std::size_t encode_a, std::size_t encode_b);
   std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
                                              const std::shared_ptr<SharedActivations>& arena,
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
-                                             Encode encode, unsigned a_slot);
+                                             const Pass& pass);
   // Le travail de l'encodeur à cet appel, d'après l'encodage gardé (kept_) et l'indice de l'appelant.
   Encode choose_encode(const SharedActivations& arena, Hint hint, std::uintptr_t input) const;
+  // L'encodage et les Y du dernier appel sont encore dans la zone : même zone, même place, aucun autre moteur
+  // n'y a écrit depuis.
+  bool kept_intact(const SharedActivations& arena) const;
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   std::size_t scratch_offset_for(SharedActivations& zone);
 
@@ -121,9 +141,10 @@ class RifeFusedEngine final : public Engine {
 
   std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
 
-  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone, de travail de l'encodeur et
-  // d'emplacement de A : jusqu'à cinq par jeu d'adresses (Both, puis Second et None sur chaque emplacement).
-  static constexpr std::size_t kMaxGraphs = 40;
+  // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone, de travail de l'encodeur,
+  // d'emplacement de A et de premier bloc : jusqu'à cinq par jeu d'adresses à froid (Both, puis Second et
+  // None sur chaque emplacement), autant à chaud.
+  static constexpr std::size_t kMaxGraphs = 64;
   FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
   // L'encodage que le dernier appel mené jusqu'au bout a laissé dans la zone, et l'entrée qu'il a lue.
   // Repris seulement si la zone est la même et qu'aucun autre moteur n'y a écrit depuis.
@@ -135,7 +156,10 @@ class RifeFusedEngine final : public Engine {
   };
   std::optional<Kept> kept_;
   Hint hint_ = Hint::None;
-  unsigned a_slot_ = 0;                     // l'emplacement de l'encodage de A gardé (kept_)
+  unsigned a_slot_ = 0;      // l'emplacement de l'encodage de A gardé (kept_)
+  int warm_blocks_ = 0;      // blocs repris à chaud (next_warm)
+  bool warm_ready_ = false;  // les Y de ces blocs sont ceux de l'appel précédent, mené au bout
+  bool warm_next_ = false;
   std::array<std::uint64_t, 3> encodes_{};  // appels par travail de l'encodeur (Encode), pour les tests
 };
 
