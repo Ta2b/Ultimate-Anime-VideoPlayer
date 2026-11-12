@@ -58,6 +58,9 @@ jobs:
       # Les SHA-256 des archives telles que les jobs de construction les ont produites (vide : non construite).
       BUILT_LINUX: ${{ needs.linux.outputs.archive-sha256 }}
       BUILT_WINDOWS: ${{ needs.windows.outputs.archive-sha256 }}
+      # L'AppImage et l'installeur, ce que les utilisateurs téléchargent en pratique : au manifeste signé (C51-08).
+      BUILT_APPIMAGE: ${{ needs.linux.outputs.appimage-sha256 }}
+      BUILT_SETUP: ${{ needs.windows.outputs.setup-sha256 }}
       # macOS n'est plus construit : vide, son archive reste hors du manifeste (B51-11).
       BUILT_MACOS: ""
     steps:
@@ -77,12 +80,14 @@ jobs:
           dir="$RUNNER_TEMP/release"
           mkdir -p "$dir"
           gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
-            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip -p engines.lock
+            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip -p engines.lock \
+            -p ajp-linux-x86_64.AppImage -p ajp-windows-x64-setup.exe
           # macOS non construite (échec, hors cible) : une archive restée d'un essai précédent ne se signe pas.
           [ -n "$BUILT_MACOS" ] || rm -f "$dir/ajp-macos-arm64.zip"
           # Ce qu'on signe est ce que la construction a produit, pas ce que la release contient maintenant (B51-07).
           tools/release/check-built-sums.sh "$dir" "ajp-linux-x64.tar.gz=$BUILT_LINUX" \
-            "ajp-windows-x64.zip=$BUILT_WINDOWS" "ajp-macos-arm64.zip=$BUILT_MACOS"
+            "ajp-windows-x64.zip=$BUILT_WINDOWS" "ajp-macos-arm64.zip=$BUILT_MACOS" \
+            "ajp-linux-x86_64.AppImage=$BUILT_APPIMAGE" "ajp-windows-x64-setup.exe=$BUILT_SETUP"
           tools/release/check-release.sh "$TAG" "$dir"
       - name: Index NVIDIA signé
         env:
@@ -119,7 +124,8 @@ jobs:
             "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
           # La signature se vérifie avec la clé publique compilée dans le lecteur, archive par archive.
           pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
-          for archive in ajp-linux-x64.tar.gz ajp-windows-x64.zip ajp-macos-arm64.zip; do
+          for archive in ajp-linux-x64.tar.gz ajp-windows-x64.zip ajp-macos-arm64.zip \
+            ajp-linux-x86_64.AppImage ajp-windows-x64-setup.exe; do
             [ -f "$dir/$archive" ] || continue
             AJP_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$dir/$archive"
           done

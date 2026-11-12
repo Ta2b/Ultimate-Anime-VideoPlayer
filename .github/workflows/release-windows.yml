@@ -35,6 +35,9 @@ on:
       archive-sha256:
         description: "SHA-256 de ajp-windows-x64.zip tel que cette construction l'a produit (B51-07)"
         value: ${{ jobs.package.outputs.archive-sha256 }}
+      setup-sha256:
+        description: "SHA-256 de ajp-windows-x64-setup.exe tel que cette construction l'a produit (C51-08)"
+        value: ${{ jobs.package.outputs.setup-sha256 }}
 
 # Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
 # qu'à lire, pour que vcpkg, MSVC et les actions tierces n'en reçoivent pas un qui écrit (B51-12).
@@ -124,6 +127,13 @@ jobs:
             echo "SKIP=1" >>"$GITHUB_ENV"
             echo "paquet TensorRT Windows trt-win-$FP déjà publié : rien à construire" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+      # Le jeton d'écriture manque : échouer ici, pas après une à deux heures de construction (C51-12).
+      - name: Jeton de publication
+        if: env.SKIP != '1' && env.AJP_TAG != ''
+        shell: bash
+        env:
+          RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication dans $AJP_RELEASE_REPO"; exit 1; }'
       - id: runner-image
         if: env.SKIP != '1'
         shell: pwsh
@@ -157,6 +167,14 @@ jobs:
         shell: pwsh
         env:
           IN_SPAN_FP8: ${{ inputs.span_fp8 }}
+          # Le module est chargé dans ajp.exe : signé comme lui (Add-Engine, sign.ps1) ; vide tant que le compte
+          # Trusted Signing n'existe pas (C51-10). sign.ps1 est dans l'empreinte du paquet.
+          AJP_TS_ENDPOINT: ${{ vars.AJP_TS_ENDPOINT }}
+          AJP_TS_ACCOUNT: ${{ vars.AJP_TS_ACCOUNT }}
+          AJP_TS_PROFILE: ${{ vars.AJP_TS_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AJP_AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AJP_AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
           $env:AJP_WITH_CUDA = "ON"
@@ -198,6 +216,7 @@ jobs:
     runs-on: windows-2025
     outputs:
       archive-sha256: ${{ steps.sums.outputs.archive }}
+      setup-sha256: ${{ steps.setup.outputs.sha }}
     env:
       # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
       AJP_VCPKG: C:\v
@@ -287,7 +306,13 @@ jobs:
         shell: pwsh
         run: '"archive=$((Get-FileHash "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT'
       # L'installeur (Inno Setup, installation pour l'utilisateur seul) à côté du zip portable.
+      # Inno Setup s'installe sans aucun secret : les scripts d'installation d'un paquet tiers ne lisent pas ceux de la
+      # signature (C51-09). Version épinglée : un Inno Setup remplacé s'exécuterait chez chaque utilisateur (B51-13).
+      - name: Inno Setup
+        shell: pwsh
+        run: choco install innosetup --version=6.7.1 -y --no-progress | Out-Null
       - name: Installeur
+        id: setup
         shell: pwsh
         env:
           # Signature Authenticode (P7.1) : vide tant que le compte Trusted Signing n'existe pas.
@@ -298,8 +323,6 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AJP_AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         run: |
-          # Version épinglée : un Inno Setup remplacé s'exécuterait chez chaque utilisateur (B51-13).
-          choco install innosetup --version=6.7.1 -y --no-progress | Out-Null
           $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)\r?$').Groups[1].Value
           if (-not $version) { throw "version introuvable dans CMakeLists.txt" }
           # Une préversion affiche sa version entière (0.11.0-rc.1), comme le binaire (A28-04).
@@ -311,6 +334,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "signature de l'installeur" }
           $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
+          # Ce que « publier » retrouve dans la release avant de le signer au manifeste (C51-08).
+          "sha=$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
       # Le zip et l'installeur lancés tels que l'utilisateur les recevra (B51-04) : le zip extrait, l'installeur installé
       # en silence, ajp.exe qui répond dans les deux, puis désinstallé. Un échec arrête tout avant la release.
       - name: Fumée du paquet

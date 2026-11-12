@@ -161,7 +161,7 @@ TEST_CASE("Volume : bornes, pas réguliers, muet", "[app][controls]") {
 TEST_CASE("Clic sur l'image : pause tout de suite, le double clic l'annule et passe en plein écran (P3.77)",
           "[app][controls]") {
   CHECK(Controls::click(1) == Controls::VideoClick::TogglePause);
-  CHECK(Controls::click(2) == Controls::VideoClick::FullscreenUndoPause);
+  CHECK(Controls::click(2) == Controls::VideoClick::Fullscreen);
   CHECK_FALSE(Controls::click(3));
 }
 
@@ -245,6 +245,23 @@ TEST_CASE("Un menu ouvert au clavier, barre effacée, redessine l'interface", "[
 }
 
 }  // namespace
+TEST_CASE("C24-03 : un panneau séparé du dialogue ne monte pas avec lui", "[app][controls]") {
+  constexpr float kHeight = 1000.0F;
+  const std::vector<std::pair<float, float>> spans{
+      {900.0F, 940.0F},  // dernière ligne du dialogue
+      {855.0F, 895.0F},  // première ligne, collée à la précédente
+      {600.0F, 700.0F},  // panneau typographié, bien plus haut
+      {100.0F, 140.0F},  // moitié haute : jamais montée
+  };
+  const std::vector<bool> lifted = bottom_cluster(spans, kHeight);
+  REQUIRE(lifted.size() == 4);
+  CHECK(lifted[0]);
+  CHECK(lifted[1]);
+  CHECK_FALSE(lifted[2]);
+  CHECK_FALSE(lifted[3]);
+  CHECK(bottom_cluster({}, kHeight).empty());
+}
+
 }  // namespace ajp::app::play
 
 TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement (P3.43)", "[app][controls]") {
@@ -254,6 +271,7 @@ TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement 
   down.type = SDL_EVENT_KEY_DOWN;
   down.key.key = SDLK_RIGHT;
   down.key.repeat = true;
+  down.key.scancode = SDL_SCANCODE_RIGHT;
   const auto held = input_of(down, keys);
   REQUIRE(held);
   const auto* command = std::get_if<ajp::Command>(&*held);
@@ -265,6 +283,7 @@ TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement 
   SDL_Event up{};
   up.type = SDL_EVENT_KEY_UP;
   up.key.key = SDLK_RIGHT;
+  up.key.scancode = SDL_SCANCODE_RIGHT;
   const auto released = input_of(up, keys);
   REQUIRE(released);
   const auto* last = std::get_if<ajp::cmd::SeekRelative>(&std::get<ajp::Command>(*released));

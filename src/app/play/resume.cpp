@@ -136,6 +136,16 @@ std::expected<void, Refusal> save(const std::filesystem::path& store, const std:
 
 }  // namespace
 
+bool same_video_file(const std::filesystem::path& a, const std::filesystem::path& b) {
+  if (a.empty() || b.empty()) return false;
+  std::error_code error;
+  const std::filesystem::path first = std::filesystem::weakly_canonical(a, error);
+  if (error) return false;
+  const std::filesystem::path second = std::filesystem::weakly_canonical(b, error);
+  if (error) return false;
+  return same_path(core::to_utf8(first), core::to_utf8(second));
+}
+
 std::optional<std::int64_t> resume_position(const std::filesystem::path& store,
                                             const std::filesystem::path& file) {
   const std::optional<Entry> wanted = identify(file);

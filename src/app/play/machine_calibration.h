@@ -122,6 +122,12 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
 // « 720p · SPAN · RIFE (auto Instant) » ; pour le tableau et le journal.
 std::string describe(const ChainCandidate& chain);
 
+struct MachineCalibration;
+// Ce que la calibration a retenu, dit à l'utilisateur à sa fin : la chaîne, la cadence mesurée, ce qui a été
+// abaissé contre la vitesse, et la perte d'images du réglage juste au-dessus qui ne tenait pas. Le gain est
+// celui de ce banc seulement : rien d'autre n'est annoncé.
+std::string calibration_notice(const MachineCalibration& calibration);
+
 struct MachineCalibration {
   ChainCandidate chosen;
   std::vector<CandidateTrial> tried;  // dans l'ordre joué

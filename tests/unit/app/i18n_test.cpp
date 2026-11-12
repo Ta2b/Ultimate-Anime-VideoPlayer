@@ -148,6 +148,8 @@ TEST_CASE("i18n: chaque entrée de la table sert encore", "[i18n]") {
 // Les fichiers dont les textes visibles sont tous passés par tr() : aucune phrase française en dur ne s'y
 // glisse (un littéral avec une lettre accentuée ou « « », hors journaux, commentaires et lignes « i18n-ok »).
 TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "[i18n]") {
+  // Les fichiers qui dessinent l'interface (ui.cpp, home_screen.cpp, placebo_imgui.cpp) ne sont pas exclus :
+  // leurs journaux et refus internes sont reconnus par l'appel qui les porte (voir `diagnostic` plus bas).
   // Les fichiers dont les littéraux français restent : textes de développeur (options de ligne de commande,
   // erreurs internes de chargement, fichier .desktop, journaux), jamais affichés tels quels dans l'interface
   // (voir visible_error.h).
@@ -173,7 +175,6 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "export_run.cpp",
                                         "export_sink.cpp",
                                         "gpu_tier.cpp",
-                                        "home_screen.cpp",
                                         "latest_writer.cpp",
                                         "main.cpp",
                                         "problem_report.cpp",
@@ -181,7 +182,6 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "motion_model.cpp",
                                         "placebo_export.cpp",
                                         "placebo_export_vulkan.cpp",
-                                        "placebo_imgui.cpp",
                                         "placebo_feedback.cpp",
                                         "placebo_wayland.cpp",
                                         "ring_watcher.cpp",
@@ -206,7 +206,6 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "span_commit.cpp",
                                         "span_derive.cpp",
                                         "span_derive.h",
-                                        "ui.cpp",
                                         "upscale_drba.cpp",
                                         "user_keys.cpp",
                                         "upscale_stage.cpp",
@@ -219,6 +218,10 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "sleep_watch.cpp",
                                         "system_peak.cpp",
                                         "window_vrr.cpp"};
+  // Un journal, un refus interne ou une étiquette de débogage : du texte de développeur, même dans un fichier
+  // qui dessine l'interface.
+  const std::regex diagnostic(
+      R"re(i18n-ok|log->|log_channel\(|channel->|->(?:warn|info|error|debug)\(|Refusal\{|render_failed\(|debug_tag)re");
   const std::string accents = "(?:à|â|ç|é|è|ê|ë|î|ï|ô|û|ù|ü|œ|À|É|È|Ê|«|»)";
   const std::string body = "(?:\\\\.|[^\"\\\\])*";
   const std::regex literal("\"" + body + accents + body + "\"");
@@ -229,10 +232,13 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
       continue;  // les tables françaises sont le français
     std::istringstream lines(read_file(file));
     std::string line;
+    std::string before;  // la ligne précédente : l'appel dont un littéral occupe la ligne suivante
     int number = 0;
     while (std::getline(lines, line)) {
       ++number;
-      if (line.contains("i18n-ok") || line.contains("log->")) continue;
+      const std::string window = before + "\n" + line;
+      before = line;
+      if (std::regex_search(window, diagnostic)) continue;
       const auto comment = line.find("//");
       const std::string code = comment == std::string::npos ? line : line.substr(0, comment);
       if (!std::regex_search(code, literal)) continue;

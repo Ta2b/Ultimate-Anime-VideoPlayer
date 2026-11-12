@@ -17,10 +17,11 @@ constexpr std::array kImageTabs{
         "détail "
         "(grain, textures), sans SPAN."},
     Entry{" (recommended)", " (recommandé)"},
-    Entry{"4K output: RIFE estimates motion on a lighter 720p copy (less precise motion; the loss is not "
-          "measured).",
-          "Sortie 4K : RIFE estime le mouvement sur une copie 720p, plus légère (mouvement moins précis ; la "
-          "perte n'est pas mesurée)."},
+    Entry{
+        "4K output: RIFE estimates motion on a 720p copy (less precise motion; time saved and loss not "
+        "measured).",
+        "Sortie 4K : RIFE estime le mouvement sur une copie 720p (mouvement moins précis ; gain de temps et "
+        "perte non mesurés)."},
     Entry{"4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything.",
           "Sortie 4K : ×3 et plus demandent un GPU haut de gamme. Une résolution de travail de 720p allège "
           "tout."},
@@ -70,10 +71,11 @@ constexpr std::array kImageTabs{
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{
         "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
-        "first time. Cheaper on fast pans; small objects may lose precision. RIFE only. Reloads playback.",
+        "first time. Time saved not measured; small objects may lose precision (loss not measured). RIFE "
+        "only. Reloads playback.",
         "Essai : les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, "
-        "par un second moteur construit la première fois. Moins cher sur les panoramiques rapides ; les "
-        "petits objets peuvent perdre en précision. RIFE seulement. Recharge la lecture."},
+        "par un second moteur construit la première fois. Gain de temps non mesuré ; les petits objets "
+        "peuvent perdre en précision (perte non mesurée). RIFE seulement. Recharge la lecture."},
     Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
@@ -138,6 +140,12 @@ constexpr std::array kImageTabs{
           "DistilDRBA fusionné indisponible ({}) : le réseau entier tourne, plus lent"},
     Entry{"Fused RIFE unavailable ({}): the whole network runs, slower",
           "RIFE fusionné indisponible ({}) : le réseau entier tourne, plus lent"},
+    Entry{"{} engine: reduced precision on {} layer(s) for speed ({}, {})",
+          "Moteur {} : précision réduite sur {} couche(s) pour gagner en vitesse ({}, {})"},
+    Entry{"{:.1f} dB against float", "{:.1f} dB contre le calcul en float"},
+    Entry{"loss not measured", "perte non mesurée"},
+    Entry{"speed {:+.0f} %", "vitesse {:+.0f} %"},
+    Entry{"speed gain not measured", "gain de vitesse non mesuré"},
     Entry{"Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter.",
           "Au-delà de ×5, DistilDRBA calcule plus que RIFE : Rapide (RIFE 4.22 lite) est plus léger."},
     Entry{"Here Auto goes up to ×{} ({:.0f} fps limit).",
@@ -150,12 +158,13 @@ constexpr std::array kImageTabs{
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
-    Entry{"A drawing held for 2 to 6 frames glides towards the next drawing instead of freezing, then "
-          "jumping. Longer holds keep the copy, scene cuts stay cuts. RIFE only; replaces Keep poses. "
-          "Reloads playback.",
-          "Un dessin tenu de 2 à 6 images glisse vers le dessin suivant au lieu de rester figé puis de "
-          "sauter. Une tenue plus longue garde la copie, une coupe reste une coupe. RIFE seulement ; "
-          "remplace « Garder les poses ». Recharge la lecture."},
+    Entry{
+        "Trial: a drawing held for 2 to 6 frames glides towards the next drawing instead of freezing, then "
+        "jumping. Longer holds keep the copy, scene cuts stay cuts. RIFE only; replaces Keep poses. "
+        "Reloads playback.",
+        "Essai : un dessin tenu de 2 à 6 images glisse vers le dessin suivant au lieu de rester figé puis de "
+        "sauter. Une tenue plus longue garde la copie, une coupe reste une coupe. RIFE seulement ; "
+        "remplace « Garder les poses ». Recharge la lecture."},
     Entry{"Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.",
           "Les coupes de scène ne sont pas interpolées ; les dessins tenus de 2 à 6 images sont lissés."},
     Entry{"Scene cuts and held drawings are not interpolated.",
@@ -173,10 +182,12 @@ constexpr std::array kImageTabs{
         "sur une RTX 4070 Ti. TensorRT seulement, précision Équilibre. Recharge la lecture ; construit à la "
         "première utilisation pour cette taille."},
     Entry{"Splits RIFE into small TensorRT engines: 1.4 ms instead of 4.5 ms per pass on an RTX 4070 Ti, "
-          "the image within 53 dB of the whole network. TensorRT only. Reloads playback; built on first use "
+          "the image at about 53 dB PSNR against the whole network. TensorRT only. Reloads playback; built "
+          "on first use "
           "for this size.",
           "Coupe RIFE en petits moteurs TensorRT : 1,4 ms au lieu de 4,5 ms par passe sur une RTX 4070 Ti, "
-          "l'image à 53 dB du réseau entier. TensorRT seulement. Recharge la lecture ; construit à la "
+          "l'image à environ 53 dB de PSNR face au réseau entier. TensorRT seulement. Recharge la lecture ; "
+          "construit à la "
           "première utilisation pour cette taille."},
     Entry{"Stable", "Stable"},
     Entry{

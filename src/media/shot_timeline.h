@@ -3,9 +3,12 @@
 // toutes les méthodes sont sûres entre threads.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "media/shot_cutter.h"
@@ -34,6 +37,11 @@ class ShotTimeline {
   std::vector<FlashSpan> flashes() const;
   // Change à chaque ajout qui modifie la chronologie : un plan remplacé à nombre égal se voit (A42-11).
   std::uint64_t version() const;
+  // Change seulement quand les plans changent, pas les flashs : une séquence de flashs dont la fin glisse à
+  // chaque image ne fait pas recopier la chronologie à ceux qui ne lisent que les plans (C42-09).
+  std::uint64_t shots_version() const;
+  // Les plans, partagés tant qu'ils ne changent pas : une copie par version, pas une par lecteur (C42-09).
+  std::shared_ptr<const std::vector<Shot>> shots_snapshot() const;
   // Le plan qui contient pts_us, s'il est déjà analysé.
   std::optional<ShotAt> at(std::int64_t pts_us) const;
   // Durée analysée, en microsecondes : la somme des plans.
@@ -55,6 +63,8 @@ class ShotTimeline {
   void clear();
 
  private:
+  std::pair<std::size_t, std::size_t> window(std::int64_t from_us, std::int64_t to_us) const;
+
   mutable std::mutex mutex_;
   std::vector<Shot> shots_;  // triés par début, sans chevauchement
   std::vector<std::uint64_t> serials_;
@@ -62,6 +72,9 @@ class ShotTimeline {
   std::int64_t origin_us_ = 0;
   std::uint64_t next_serial_ = 1;
   std::uint64_t version_ = 0;
+  std::uint64_t shots_version_ = 0;
+  mutable std::shared_ptr<const std::vector<Shot>> snapshot_;
+  mutable std::uint64_t snapshot_version_ = 0;
 };
 
 }  // namespace ajp::media

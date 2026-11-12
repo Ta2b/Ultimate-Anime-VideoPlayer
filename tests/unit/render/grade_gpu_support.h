@@ -182,10 +182,11 @@ inline std::vector<std::uint16_t> sdr_ramp(double top, double green, double blue
 
 using Rgb = std::array<double, 3>;
 
-// L'image entière passée par le grade : ses codes 16 bits RGBA.
+// L'image entière passée par le grade : ses codes 16 bits RGBA. look_only : le hook du look seul, sans la
+// passe du grade devant lui ni le vrai noir derrière (la pile de LUT jugée seule, sur une image PQ).
 inline std::vector<std::uint16_t> graded_image(Gpu& gpu, const std::vector<std::uint16_t>& source,
-                                               const GradeParams& params) {
-  const bool sdr = params.sdr_out > 0.5 || params.sdr_tm > 0.5;  // sdr_tm : cible SDR, grade en PQ
+                                               const GradeParams& params, bool look_only = false) {
+  const bool sdr = params.sdr_tm > 0.5;  // sdr_tm : cible SDR, grade en PQ
   const pl_gpu g = gpu.vk->gpu;
   pl_tex_params tex_params{};
   tex_params.w = kSide;
@@ -206,7 +207,8 @@ inline std::vector<std::uint16_t> graded_image(Gpu& gpu, const std::vector<std::
   gpu.grade->set_params(params);
   pl_render_params render = pl_render_default_params;
   render.dither_params = nullptr;
-  const std::span<const pl_hook* const> hooks = gpu.grade->hooks();
+  const std::span<const pl_hook* const> hooks =
+      look_only ? gpu.grade->hooks().subspan(1, 1) : gpu.grade->hooks();
   render.hooks = hooks.data();
   render.num_hooks = static_cast<int>(hooks.size());
   const pl_frame image = frame_of(in, sdr);
@@ -224,8 +226,8 @@ inline std::vector<std::uint16_t> graded_image(Gpu& gpu, const std::vector<std::
 
 // La rampe passée par le grade : les codes de R, G et B le long de la ligne du milieu.
 inline std::vector<Rgb> graded_codes(Gpu& gpu, const std::vector<std::uint16_t>& source,
-                                     const GradeParams& params) {
-  const std::vector<std::uint16_t> pixels = graded_image(gpu, source, params);
+                                     const GradeParams& params, bool look_only = false) {
+  const std::vector<std::uint16_t> pixels = graded_image(gpu, source, params, look_only);
   std::vector<Rgb> line(kSide);
   const std::size_t row = static_cast<std::size_t>(kSide / 2) * kSide;
   for (std::size_t x = 0; x < line.size(); ++x)
@@ -251,17 +253,35 @@ inline std::vector<double> graded(Gpu& gpu, const std::vector<std::uint16_t>& so
   return red;
 }
 
-// Une sortie SDR neutre : gains à 1, sans pied des noirs.
-inline GradeParams sdr_neutral() {
+// Le look seul sur une image PQ (graded_codes(..., true)), la pile lue comme des LUT SDR (look_pq à 0) au
+// blanc de 203 nits. Avant C41-07, ces tests passaient par une sortie SDR propre au grade, que le lecteur ne
+// jouait jamais.
+inline GradeParams look_neutral() {
   GradeParams p;
-  p.sdr_out = 1.0;
-  p.sdr_gamma = 2.2;
-  p.peak = 203.0;
-  p.paper = 203.0;
-  p.shadows = 0.0;
-  p.shadow_knee = 0.25 * 203.0;
-  p.spec_gain = 1.0;
+  p.look_white = 203.0;
+  p.look_pq = 0.0;
   return p;
+}
+
+// Une rampe PQ BT.2020 de couleurs SDR BT.709 : R de 0 à top (code SDR), G à green × R, B à blue × R, au
+// gamma 2,2 et au blanc de 203 nits, passées en BT.2020.
+inline std::vector<std::uint16_t> pq_of_sdr_ramp(double top, double green, double blue) {
+  std::vector<std::uint16_t> pixels(static_cast<std::size_t>(kSide) * kSide * 4);
+  for (int y = 0; y < kSide; ++y) {
+    for (int x = 0; x < kSide; ++x) {
+      const double r = top * (x + 1) / kSide;
+      const std::array<double, 3> lin{203.0 * std::pow(r, 2.2), 203.0 * std::pow(r * green, 2.2),
+                                      203.0 * std::pow(r * blue, 2.2)};
+      const std::array<double, 4> rgba{
+          nits_to_pq((0.6274040 * lin[0]) + (0.3292820 * lin[1]) + (0.0433136 * lin[2])),
+          nits_to_pq((0.0690970 * lin[0]) + (0.9195400 * lin[1]) + (0.0113612 * lin[2])),
+          nits_to_pq((0.0163916 * lin[0]) + (0.0880132 * lin[1]) + (0.8955950 * lin[2])), 1.0};
+      for (std::size_t c = 0; c < 4; ++c)
+        pixels[(static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) * 4 + c] =
+            static_cast<std::uint16_t>(std::lround(rgba[c] * 65535.0));
+    }
+  }
+  return pixels;
 }
 
 // Écart de saturation d'un pixel : (max − min) / max de ses codes.

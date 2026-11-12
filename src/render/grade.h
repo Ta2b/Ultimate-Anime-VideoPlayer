@@ -58,9 +58,14 @@ class Grade {
   // texture. Refait le hook du look, donc à n'appeler qu'au changement de LUT ; les intensités passent par
   // set_params, sans rien refaire. Refus si libplacebo ne lit pas une texture : l'ancien hook reste.
   std::expected<void, Refusal> set_looks(const std::array<const CubeLut*, kLookSlots>& luts);
+  // Les mêmes, partagées sans copie (la rampe du vrai noir reprend la pile de l'écran, C41-05).
+  std::expected<void, Refusal> set_looks(const std::array<std::shared_ptr<const CubeLut>, kLookSlots>& luts);
   // Les LUT posées, dans l'ordre des emplacements (nullptr : aucune) ; elles vivent jusqu'au prochain
   // set_looks.
   std::array<const CubeLut*, kLookSlots> looks() const;
+  // Les mêmes, partagées : un emplacement qui répète une LUT tient le même objet que le premier. Qui les
+  // garde les compare par identité, sans copie (C41-05).
+  std::array<std::shared_ptr<const CubeLut>, kLookSlots> shared_looks() const;
 
   // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;

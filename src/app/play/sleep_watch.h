@@ -80,6 +80,17 @@ constexpr bool must_stay_awake(bool playing, bool paused, bool finished) {
   return playing && !paused && !finished;
 }
 
+// L'écran reste éveillé le temps d'une attente sans touche ni image qui avance : construction d'un moteur,
+// téléchargement, calibration (jusqu'à vingt minutes). Sans lui l'écran s'éteignait, la session se
+// verrouillait, et Windows mettait le portable en veille pendant que le GPU travaillait.
+class AwakeWhile {
+ public:
+  AwakeWhile();
+  ~AwakeWhile();
+  AwakeWhile(const AwakeWhile&) = delete;
+  AwakeWhile& operator=(const AwakeWhile&) = delete;
+};
+
 // SDL_DisableScreenSaver ou SDL_EnableScreenSaver selon awake, seulement quand l'état change.
 class ScreenSaverHold {
  public:
