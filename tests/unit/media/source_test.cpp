@@ -418,8 +418,10 @@ TEST_CASE("SourceThread : une erreur de lecture qui dure se dit en IoFailed avan
   CHECK(failures.front().recoverable);
 }
 
-// C14-02 : une erreur qui ne guérit pas (mémoire, argument, bogue interne) n'attend pas les 20 s d'une panne d'E/S.
-TEST_CASE("SourceThread : une erreur de lecture qui ne guérit pas est refusée tout de suite", "[media][source]") {
+// C14-02 : une erreur qui ne guérit pas (mémoire, argument, bogue interne) n'attend pas les 20 s d'une panne
+// d'E/S.
+TEST_CASE("SourceThread : une erreur de lecture qui ne guérit pas est refusée tout de suite",
+          "[media][source]") {
   const auto started = std::chrono::steady_clock::now();
   Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
                  ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(ENOMEM)});

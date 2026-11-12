@@ -37,9 +37,9 @@ void append(std::string& out, char32_t code) {
   }
 }
 
-// Longueur de la séquence UTF-8 qui commence à text[i], 0 si elle est invalide. Conforme à la RFC 3629 (P3.74) :
-// ni forme trop longue, ni moitié de paire UTF-16, ni code au-delà de U+10FFFF. Le deuxième octet borne ces cas
-// selon l'octet de tête.
+// Longueur de la séquence UTF-8 qui commence à text[i], 0 si elle est invalide. Conforme à la RFC 3629
+// (P3.74) : ni forme trop longue, ni moitié de paire UTF-16, ni code au-delà de U+10FFFF. Le deuxième octet
+// borne ces cas selon l'octet de tête.
 std::size_t utf8_length_at(std::string_view text, std::size_t i) {
   const auto lead = static_cast<unsigned char>(text[i]);
   std::size_t extra = 0;
@@ -77,9 +77,9 @@ bool valid_utf8(std::string_view text) {
   return true;
 }
 
-// Un fichier UTF-8 qui porte quelques octets fautifs (coupure, collage de deux sources) reste de l'UTF-8 : chaque
-// séquence invalide devient U+FFFD (C17-01). Au-delà de 1 % d'octets hauts fautifs, ou sans aucune séquence
-// multi-octets valide, le fichier n'est pas de l'UTF-8 et la devinette d'encodage décide.
+// Un fichier UTF-8 qui porte quelques octets fautifs (coupure, collage de deux sources) reste de l'UTF-8 :
+// chaque séquence invalide devient U+FFFD (C17-01). Au-delà de 1 % d'octets hauts fautifs, ou sans aucune
+// séquence multi-octets valide, le fichier n'est pas de l'UTF-8 et la devinette d'encodage décide.
 std::optional<std::string> repaired_utf8(std::string_view bytes) {
   std::string out;
   out.reserve(bytes.size() + 8);
@@ -234,7 +234,8 @@ std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) 
 #endif
 }
 
-// Un encodage hérité et le texte qu'il a déjà donné : la devinette valide en décodant, le texte n'est pas refait.
+// Un encodage hérité et le texte qu'il a déjà donné : la devinette valide en décodant, le texte n'est pas
+// refait.
 struct Guess {
   Legacy legacy;
   std::string text;
@@ -374,7 +375,8 @@ std::optional<Guess> guessed(std::string_view bytes) {
 std::optional<std::string> decode_guessed(std::string_view bytes, std::string_view hint) {
   std::optional<Guess> guess = guessed(bytes);
   if (const std::optional<Hint> h = hinted(hint)) {
-    const bool agrees = guess && (same(guess->legacy, h->first) || (h->second && same(guess->legacy, *h->second)));
+    const bool agrees =
+        guess && (same(guess->legacy, h->first) || (h->second && same(guess->legacy, *h->second)));
     if (!agrees) {
       if (auto text = decode_legacy(bytes, h->first)) return text;
       if (h->second) {

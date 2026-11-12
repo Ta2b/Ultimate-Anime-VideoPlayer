@@ -169,7 +169,8 @@ class MemorySource final : public ajp::media::ByteSource {
 
 TEST_CASE("Chapitres Matroska : lus par une source d'octets (C14-09)", "[media][chapters]") {
   const Bytes segment = chapters(true, true);
-  MemorySource source(join({element({0x1A, 0x45, 0xDF, 0xA3}, {}), element({0x18, 0x53, 0x80, 0x67}, segment)}));
+  MemorySource source(
+      join({element({0x1A, 0x45, 0xDF, 0xA3}, {}), element({0x18, 0x53, 0x80, 0x67}, segment)}));
   const auto layout = read_chapter_layout(source);
   CHECK(layout.ordered);
   CHECK(layout.linked);

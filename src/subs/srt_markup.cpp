@@ -130,7 +130,7 @@ void emit_font(const FontTag& tag, std::string& out) {
 
 // Valeur active d'un attribut après fermeture : celle de la balise englobante la
 // plus proche, sinon vide, ce qui rend à libass la valeur du style.
-std::string enclosing(const std::vector<FontTag>& stack, std::optional<std::string> FontTag::* field) {
+std::string enclosing(const std::vector<FontTag>& stack, std::optional<std::string> FontTag::*field) {
   for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
     if (const std::optional<std::string>& value = (*it).*field) return *value;
   }
@@ -193,8 +193,8 @@ std::string srt_text_to_ass(std::string_view text) {
         continue;
       }
     }
-    // Un bloc {…} sans « \ » est un commentaire pour libass : le texte disparaîtrait (C17-02). Seul un bloc de
-    // balises ASS (« {\an8} ») passe tel quel, le reste s'écrit avec une accolade échappée.
+    // Un bloc {…} sans « \ » est un commentaire pour libass : le texte disparaîtrait (C17-02). Seul un bloc
+    // de balises ASS (« {\an8} ») passe tel quel, le reste s'écrit avec une accolade échappée.
     if (c == '{' && (i + 1 >= text.size() || text[i + 1] != '\\')) {
       out += "\\{";
       continue;

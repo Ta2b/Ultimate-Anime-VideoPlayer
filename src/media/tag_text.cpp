@@ -46,14 +46,16 @@ char32_t decode(std::string_view sequence) {
       return (char32_t{b0 & 0x0FU} << 12) | (char32_t{static_cast<unsigned char>(sequence[1]) & 0x3FU} << 6) |
              (static_cast<unsigned char>(sequence[2]) & 0x3FU);
     default:
-      return (char32_t{b0 & 0x07U} << 18) | (char32_t{static_cast<unsigned char>(sequence[1]) & 0x3FU} << 12) |
+      return (char32_t{b0 & 0x07U} << 18) |
+             (char32_t{static_cast<unsigned char>(sequence[1]) & 0x3FU} << 12) |
              (char32_t{static_cast<unsigned char>(sequence[2]) & 0x3FU} << 6) |
              (static_cast<unsigned char>(sequence[3]) & 0x3FU);
   }
 }
 
 bool is_bidi_control(char32_t c) {
-  return c == 0x200E || c == 0x200F || c == 0x061C || (c >= 0x202A && c <= 0x202E) || (c >= 0x2066 && c <= 0x2069);
+  return c == 0x200E || c == 0x200F || c == 0x061C || (c >= 0x202A && c <= 0x202E) ||
+         (c >= 0x2066 && c <= 0x2069);
 }
 
 }  // namespace

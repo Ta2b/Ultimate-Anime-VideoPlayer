@@ -21,7 +21,9 @@ std::optional<AudioDevice> system_default_device() {
   if (!SDL_WasInit(SDL_INIT_AUDIO)) return std::nullopt;
   SDL_AudioSpec spec{};
   if (!SDL_GetAudioDeviceFormat(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr)) return std::nullopt;
-  AudioDevice device{.id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, .channels = spec.channels, .sample_rate = spec.freq,
+  AudioDevice device{.id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                     .channels = spec.channels,
+                     .sample_rate = spec.freq,
                      .is_default = true};
   if (const char* name = SDL_GetAudioDeviceName(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK)) device.name = name;
   return device;

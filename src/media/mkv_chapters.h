@@ -29,8 +29,8 @@ struct ChapterLayout {
   bool plain() const { return !ordered && !linked; }
 };
 
-// Les octets d'un fichier, lus à une position donnée. Le démultiplexeur y branche l'AVIOContext de FFmpeg pour que
-// l'interruption (fermeture de la vidéo) atteigne aussi cette lecture (C14-09).
+// Les octets d'un fichier, lus à une position donnée. Le démultiplexeur y branche l'AVIOContext de FFmpeg
+// pour que l'interruption (fermeture de la vidéo) atteigne aussi cette lecture (C14-09).
 class ByteSource {
  public:
   virtual ~ByteSource() = default;
@@ -39,7 +39,8 @@ class ByteSource {
   virtual bool read(std::uint64_t offset, std::span<std::uint8_t> out) = 0;
 };
 
-// Lit l'élément Chapters de la source (par le SeekHead, ou en parcourant le segment jusqu'au premier Cluster).
+// Lit l'élément Chapters de la source (par le SeekHead, ou en parcourant le segment jusqu'au premier
+// Cluster).
 ChapterLayout read_chapter_layout(ByteSource& source);
 
 // Lit l'élément Chapters du fichier (par le SeekHead, ou en parcourant le segment jusqu'au premier Cluster).

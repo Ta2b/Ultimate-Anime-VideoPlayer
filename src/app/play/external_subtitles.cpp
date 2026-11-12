@@ -106,8 +106,9 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
   std::size_t scanned = 0;
   for (std::filesystem::directory_iterator it(dir, error), end; !error && it != end; it.increment(error)) {
     if (++scanned > kMaxScannedEntries) {
-      log_channel("subs")->warn("recherche des dossiers de sous-titres : {} entrées lues, la suite est ignorée",
-                                kMaxScannedEntries);
+      log_channel("subs")->warn(
+          "recherche des dossiers de sous-titres : {} entrées lues, la suite est ignorée",
+          kMaxScannedEntries);
       break;
     }
     if (it->is_directory(error) && is_subs_dir(core::ascii_lower(core::to_utf8(it->path().filename()))))

@@ -20,7 +20,8 @@ TEST_CASE("standard_frame_rate : les moyennes estimées retrouvent leur cadence"
   CHECK(standard_frame_rate({119880, 1000}) == Rational{120000, 1001});
 }
 
-TEST_CASE("standard_frame_rate : une cadence éloignée ou invalide reste telle quelle", "[media][frame_rate]") {
+TEST_CASE("standard_frame_rate : une cadence éloignée ou invalide reste telle quelle",
+          "[media][frame_rate]") {
   CHECK(standard_frame_rate({2350, 100}) == Rational{2350, 100});  // VFR à 23,5 i/s
   CHECK(standard_frame_rate({15, 1}) == Rational{15, 1});
   CHECK(standard_frame_rate({}) == Rational{});
@@ -30,11 +31,18 @@ TEST_CASE("standard_frame_rate : une cadence éloignée ou invalide reste telle 
 // C14-08 : un titre de piste vient du fichier.
 TEST_CASE("clean_tag_text : UTF-8 réparé, contrôles et marques bidirectionnelles retirés", "[media][tag]") {
   CHECK(clean_tag_text("Japonais 5.1") == "Japonais 5.1");
-  CHECK(clean_tag_text("Fran\xC3\xA7" "ais") == "Fran\xC3\xA7" "ais");
-  CHECK(clean_tag_text("Fran\xE7" "ais") == "Fran\xEF\xBF\xBD" "ais");  // Latin-1 mal étiqueté
+  CHECK(clean_tag_text("Fran\xC3\xA7"
+                       "ais") ==
+        "Fran\xC3\xA7"
+        "ais");
+  CHECK(clean_tag_text("Fran\xE7"
+                       "ais") ==
+        "Fran\xEF\xBF\xBD"
+        "ais");  // Latin-1 mal étiqueté
   CHECK(clean_tag_text("a\nb\tc") == "a b c");
-  CHECK(clean_tag_text("avant\xE2\x80\xAE" "apres") == "avantapres");    // U+202E
-  CHECK(clean_tag_text("x\xE2\x81\xA6y\xE2\x81\xA9") == "xy");           // U+2066, U+2069
+  CHECK(clean_tag_text("avant\xE2\x80\xAE"
+                       "apres") == "avantapres");               // U+202E
+  CHECK(clean_tag_text("x\xE2\x81\xA6y\xE2\x81\xA9") == "xy");  // U+2066, U+2069
   CHECK(clean_tag_text("\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E") == "\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E");
 }
 

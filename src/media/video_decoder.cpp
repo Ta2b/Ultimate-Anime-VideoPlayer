@@ -692,10 +692,10 @@ std::expected<std::optional<DecodedFrame>, Refusal> VideoDecoder::State::deliver
   if (frame->hw_frames_ctx == nullptr &&
       (s.deinterlacer.active() || (frame->flags & AV_FRAME_FLAG_INTERLACED) != 0)) {
     if (!s.deinterlacer.active())
-      s.log->info("images entrelacées : {}", s.opened.inverse_telecine
-                                                 ? "télécinéma inversé (fieldmatch, decimate)"
-                                             : s.opened.field_match ? "champs du même instant (fieldmatch, bwdif)"
-                                                                    : "désentrelacement bwdif");
+      s.log->info("images entrelacées : {}",
+                  s.opened.inverse_telecine ? "télécinéma inversé (fieldmatch, decimate)"
+                  : s.opened.field_match    ? "champs du même instant (fieldmatch, bwdif)"
+                                            : "désentrelacement bwdif");
     if (auto pushed = s.deinterlacer.push(std::move(frame)); !pushed) return std::unexpected(pushed.error());
     auto out = s.deinterlacer.pull();
     if (!out) return std::unexpected(out.error());

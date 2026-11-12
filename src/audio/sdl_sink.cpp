@@ -263,8 +263,8 @@ std::expected<void, Refusal> SdlSink::reopen(SDL_AudioDeviceID device_id) {
   const bool was_paused = paused_;
   if (old != nullptr) {
     SDL_SetAudioStreamGetCallback(old, nullptr, nullptr);  // attend la fin d'un rappel
-    // C16-05 : l'ancien flux ne touche plus au façonneur (l'attente ci-dessus et celle-ci couvrent un rappel en
-    // cours) et ne joue plus ce que le neuf va rejouer.
+    // C16-05 : l'ancien flux ne touche plus au façonneur (l'attente ci-dessus et celle-ci couvrent un rappel
+    // en cours) et ne joue plus ce que le neuf va rejouer.
     SDL_PauseAudioStreamDevice(old);
     if (had_postmix) SDL_SetAudioPostmixCallback(old_device, nullptr, nullptr);
   }

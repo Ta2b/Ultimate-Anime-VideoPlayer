@@ -111,7 +111,8 @@ class StreamSource final : public ByteSource {
   bool read(std::uint64_t offset, std::span<std::uint8_t> out) override {
     in_.clear();
     in_.seekg(static_cast<std::streamoff>(offset));
-    return static_cast<bool>(in_.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size())));
+    return static_cast<bool>(
+        in_.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size())));
   }
 
  private:

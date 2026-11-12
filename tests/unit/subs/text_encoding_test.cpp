@@ -166,7 +166,8 @@ TEST_CASE("to_utf8 : les pages d'une seule langue, prises sur l'indice du nom", 
 // C17-01 : un seul octet fautif ne fait pas d'un fichier UTF-8 un encodage hérité.
 TEST_CASE("to_utf8 : un UTF-8 à l'octet fautif reste de l'UTF-8, l'octet devient U+FFFD", "[encoding]") {
   std::string japanese;
-  for (int i = 0; i < 200; ++i) japanese += "\xE3\x81\x93\xE3\x82\x93\xE3\x81\xAB\xE3\x81\xA1\xE3\x81\xAF";  // こんにちは
+  for (int i = 0; i < 200; ++i)
+    japanese += "\xE3\x81\x93\xE3\x82\x93\xE3\x81\xAB\xE3\x81\xA1\xE3\x81\xAF";  // こんにちは
   std::string damaged = japanese;
   damaged[300] = '\xFF';
   const std::string repaired = to_utf8(damaged);

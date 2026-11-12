@@ -29,7 +29,9 @@ std::string lowercase_extension(const std::filesystem::path& path) {
 // libass lit les polices d'une section [Fonts], quelle que soit sa casse.
 bool has_fonts_section(std::string_view script) {
   constexpr std::string_view kSection = "[fonts]";
-  return !std::ranges::search(script, kSection, [](char a, char b) { return core::ascii_lower(a) == b; }).empty();
+  return !std::ranges::search(script, kSection, [](char a, char b) {
+            return core::ascii_lower(a) == b;
+          }).empty();
 }
 
 // Lit au plus la taille mesurée : un fichier qui grandit pendant la lecture

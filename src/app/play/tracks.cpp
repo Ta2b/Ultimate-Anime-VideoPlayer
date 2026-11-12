@@ -102,7 +102,8 @@ std::optional<int> next_audio(const TrackMenu& menu) {
 }
 
 std::optional<TrackLike> track_like(const media::TrackInfo& track) {
-  // La langue comme le choix automatique la lit : la balise, sinon le titre (« Français » sur une piste « und »).
+  // La langue comme le choix automatique la lit : la balise, sinon le titre (« Français » sur une piste « und
+  // »).
   std::string language = media::track_language(track);
   if (language_name(language).empty()) return std::nullopt;  // absente ou « und »
   return TrackLike{.language = std::move(language), .title = track.title};

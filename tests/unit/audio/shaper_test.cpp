@@ -96,7 +96,8 @@ TEST_CASE("OutputShaper : une demande vide ou incohérente ne touche à rien", "
   CHECK(samples == before);
 }
 
-// C16-03 : un tampon plus court que la rampe (5 ms à 48 kHz) ne la raccourcit pas, la rampe continue au suivant.
+// C16-03 : un tampon plus court que la rampe (5 ms à 48 kHz) ne la raccourcit pas, la rampe continue au
+// suivant.
 TEST_CASE("OutputShaper : la rampe de gain continue d'un tampon court au suivant", "[audio][shaper]") {
   OutputShaper shaper;
   constexpr std::size_t kFrames = 240;  // 5 ms

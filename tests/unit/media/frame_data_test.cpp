@@ -317,8 +317,8 @@ TEST_CASE("frame_data : yuvj444p (plage pleine) sort en plage limitée", "[media
   CHECK(out->data[0][5 * out->linesize[0] + 63] == 235);
 }
 
-// C15-05 : une étiquette de couleur hors vocabulaire sur une seule image reprend la dernière couleur valide au
-// lieu de refuser l'image, ce qui arrêterait la lecture.
+// C15-05 : une étiquette de couleur hors vocabulaire sur une seule image reprend la dernière couleur valide
+// au lieu de refuser l'image, ce qui arrêterait la lecture.
 TEST_CASE("frame_data : une étiquette de transfert refusée reprend la dernière couleur valide (C15-05)",
           "[media][frame_data]") {
   auto good = to_decoded_frame(host_frame(AV_PIX_FMT_YUV420P, 8), 0, 40'000, {});

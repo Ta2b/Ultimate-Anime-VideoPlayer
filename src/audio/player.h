@@ -142,13 +142,13 @@ class AudioPlayer {
   std::optional<AudioDecoder> decoder_;
   std::optional<AudioTrack> track_;          // la piste ouverte
   std::optional<AudioTrack> pending_track_;  // la piste d'une époque à venir (AudioTrack::from_epoch)
-  std::deque<AudioPacket> held_;             // reçus, pas encore décodés : la file du périphérique est pleine
-  std::deque<PcmBlock> ready_;               // décodés, pas encore poussés
+  std::deque<AudioPacket> held_;  // reçus, pas encore décodés : la file du périphérique est pleine
+  std::deque<PcmBlock> ready_;    // décodés, pas encore poussés
   std::optional<std::int64_t> trim_before_us_;
   std::optional<std::int64_t> output_retry_us_;  // sans sortie : l'instant du prochain essai
-  std::int64_t lost_packets_ = 0;                 // paquets perdus depuis la dernière ligne de journal (C16-10)
+  std::int64_t lost_packets_ = 0;  // paquets perdus depuis la dernière ligne de journal (C16-10)
   std::optional<std::int64_t> last_loss_log_us_;  // hôte, de cette ligne
-  std::optional<std::int64_t> pushed_end_us_;    // fin du dernier bloc poussé, en temps média (A16-10)
+  std::optional<std::int64_t> pushed_end_us_;     // fin du dernier bloc poussé, en temps média (A16-10)
   std::optional<std::int64_t> last_follow_us_;
   core::ClockPll pll_;                           // PlayerConfig::pll
   std::optional<std::int64_t> last_publish_us_;  // relevé précédent filtré par pll_

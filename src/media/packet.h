@@ -36,13 +36,13 @@ struct Packet {
   std::size_t footprint() const;
 };
 
-// Pré-roulement gardé avant un seek exact pour les codecs audio à état (TrueHD, DTS-HD, Opus, MP3) : ce qui finit
-// plus de kAudioPrerollUs avant la cible n'a plus rien à lui apporter.
+// Pré-roulement gardé avant un seek exact pour les codecs audio à état (TrueHD, DTS-HD, Opus, MP3) : ce qui
+// finit plus de kAudioPrerollUs avant la cible n'a plus rien à lui apporter.
 inline constexpr std::int64_t kAudioPrerollUs = 1'000'000;
 
-// Vrai pour un paquet audio que la source n'a pas à livrer : un seek exact reprend à `trim_before`, et ce paquet
-// finit au moins kAudioPrerollUs avant. Le livrer ferait décoder des secondes d'audio haut débit pour les jeter,
-// et remplirait la réserve jusqu'au refus PacketBacklog (C14-01). Sans horodatage, il est livré.
+// Vrai pour un paquet audio que la source n'a pas à livrer : un seek exact reprend à `trim_before`, et ce
+// paquet finit au moins kAudioPrerollUs avant. Le livrer ferait décoder des secondes d'audio haut débit pour
+// les jeter, et remplirait la réserve jusqu'au refus PacketBacklog (C14-01). Sans horodatage, il est livré.
 inline bool audio_before_preroll(const Packet& packet, std::optional<std::int64_t> trim_before) {
   if (!trim_before || packet.pts_us == kNoPts) return false;
   return packet.pts_us + packet.duration_us < *trim_before - kAudioPrerollUs;

@@ -27,9 +27,9 @@ extern "C" {
 #include "core/utf8_path.h"
 #include "media/av_util.h"
 #include "media/frame_rate.h"
+#include "media/log.h"
 #include "media/mkv_chapters.h"
 #include "media/tag_text.h"
-#include "media/log.h"
 
 namespace ajp::media {
 
@@ -111,8 +111,8 @@ class AvioSource final : public ByteSource {
 
 // Une erreur de lecture qui peut guérir en attendant : une panne d'E/S ou de réseau (C14-02).
 bool io_error_may_heal(int err) {
-  for (const int code : {EIO, ETIMEDOUT, ECONNRESET, ECONNABORTED, ENETDOWN, ENETUNREACH, ENETRESET, EHOSTUNREACH,
-                         EAGAIN, ENODEV, ENXIO, EPIPE}) {
+  for (const int code : {EIO, ETIMEDOUT, ECONNRESET, ECONNABORTED, ENETDOWN, ENETUNREACH, ENETRESET,
+                         EHOSTUNREACH, EAGAIN, ENODEV, ENXIO, EPIPE}) {
     if (err == AVERROR(code)) return true;
   }
 #ifdef ESTALE  // absent de la bibliothèque C de Windows
@@ -127,7 +127,8 @@ std::string utf8_path(const std::filesystem::path& path) {
   return core::to_utf8(path);
 }
 
-// B35-05 : un titre de piste ou de chapitre vient du fichier ; clean_tag_text le borne et le nettoie (C14-08).
+// B35-05 : un titre de piste ou de chapitre vient du fichier ; clean_tag_text le borne et le nettoie
+// (C14-08).
 std::string tag(const AVDictionary* metadata, const char* key) {
   const AVDictionaryEntry* entry = av_dict_get(metadata, key, nullptr, 0);
   if (entry == nullptr || entry->value == nullptr) return {};
@@ -506,8 +507,8 @@ std::expected<bool, Refusal> Demuxer::State::on_read_error(int err, RetryState& 
   if (err == AVERROR_EXIT || interrupted.load())
     return refuse_av(RefusalCode::Cancelled, "lecture d'un paquet interrompue", err);
   const bool data = err == AVERROR_INVALIDDATA;
-  // C14-02 : seules les pannes d'E/S qui peuvent guérir (disque qui se réveille, Wi-Fi qui change de point d'accès)
-  // sont retentées. ENOMEM, EINVAL, AVERROR_BUG… ne guérissent pas : pas de gel de 20 s pour rien.
+  // C14-02 : seules les pannes d'E/S qui peuvent guérir (disque qui se réveille, Wi-Fi qui change de point
+  // d'accès) sont retentées. ENOMEM, EINVAL, AVERROR_BUG… ne guérissent pas : pas de gel de 20 s pour rien.
   if (!data && !io_error_may_heal(err)) {
     auto refused = refuse_av(RefusalCode::DecodeFailed, "lecture d'un paquet, erreur qui ne guérit pas", err);
     refused.error().recoverable = true;

@@ -262,7 +262,8 @@ bool AudioPlayer::output_back() {
     return false;
   }
   output_retry_us_.reset();
-  pushed_end_us_.reset();  // comme adopt_output : le premier bloc repris ne se compare pas à l'ancienne fin (C16-06)
+  pushed_end_us_
+      .reset();  // comme adopt_output : le premier bloc repris ne se compare pas à l'ancienne fin (C16-06)
   resampling_ = false;
   aligning_ = master_ != nullptr;
   regulator_.restart();
@@ -309,8 +310,8 @@ void AudioPlayer::decode_next() {
   release(1);
 }
 
-// Un fichier abîmé perd des dizaines de paquets par seconde : une ligne par seconde au plus, avec le compte, au
-// lieu d'une écriture de fichier par paquet sur le thread audio (C16-10).
+// Un fichier abîmé perd des dizaines de paquets par seconde : une ligne par seconde au plus, avec le compte,
+// au lieu d'une écriture de fichier par paquet sur le thread audio (C16-10).
 void AudioPlayer::note_lost_packet(const Refusal& refusal) {
   ++lost_packets_;
   const std::int64_t now = host_now_us();

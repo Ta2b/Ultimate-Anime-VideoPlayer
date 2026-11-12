@@ -24,8 +24,8 @@ class OutputShaper {
     bool force_limit = false;  // limiter même sous un gain de 1
   };
 
-  // Traite des trames entrelacées de float32, sur place. Une rampe ou un fondu plus long que le tampon continue
-  // dans le suivant (C16-03) : la position dans la rampe est gardée, rien ne repart de la cible.
+  // Traite des trames entrelacées de float32, sur place. Une rampe ou un fondu plus long que le tampon
+  // continue dans le suivant (C16-03) : la position dans la rampe est gardée, rien ne repart de la cible.
   void process(std::span<float> samples, const Pass& pass);
   float applied_gain() const { return applied_; }
 
