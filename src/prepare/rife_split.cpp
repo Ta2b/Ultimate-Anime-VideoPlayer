@@ -587,8 +587,7 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
   const std::string stem = std::format("{}-{}-{}x{}-{}", core::to_utf8(rife_onnx.stem()),
                                        kRifeFusedDerivation, height, width, sha->substr(0, 16));
   std::filesystem::path manifest_path =
-      dir / core::path_from_utf8(std::format(
-                "{}-{}{}", stem, output_name(output), kRifeFusedExtension));
+      dir / core::path_from_utf8(std::format("{}-{}{}", stem, output_name(output), kRifeFusedExtension));
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que les morceaux y sont.
   if (std::ifstream known(manifest_path); known) {
     const std::string text{std::istreambuf_iterator<char>(known), std::istreambuf_iterator<char>()};

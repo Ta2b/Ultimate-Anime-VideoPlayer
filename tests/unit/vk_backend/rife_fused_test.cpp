@@ -165,10 +165,12 @@ void compare_kernels(NetRig& rig, const kernels::RifeFusedPlan& plan, int h, int
   INFO("image : PSNR " << score << " dB, écart maximal " << worst);
   CHECK(score >= 55.0);
   // Le warp de Catmull-Rom (RifeWarp, option) : même flot, même masque, l'image seule change.
-  const kernels::ref::RifeFusedResult cubic = kernels::ref::rife_fused_finish(state, kernels::RifeWarp::CatmullRom);
+  const kernels::ref::RifeFusedResult cubic =
+      kernels::ref::rife_fused_finish(state, kernels::RifeWarp::CatmullRom);
   run(rig, [&](Recorder& r) {
     return record_rife_fused_finish(*rig.pipelines, r, plan, h, w, false, input.view(), x[last].view(),
-                                    y[last].view(), image.view(), image.view(), kernels::RifeWarp::CatmullRom);
+                                    y[last].view(), image.view(), image.view(),
+                                    kernels::RifeWarp::CatmullRom);
   });
   score = psnr_of(download_half(rig, image, cubic.image.size()), cubic.image, worst);
   INFO("image, warp Catmull-Rom : PSNR " << score << " dB, écart maximal " << worst);

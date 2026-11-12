@@ -34,7 +34,8 @@ struct RifeFusedResult {
   std::vector<double> flow;   // 4 plans : flot final
   std::vector<double> mask;   // 1 plan : masque après sigmoïde
 };
-// warp : celui des deux images de la fin (RifeWarp, spec/rife_fused.h) ; le flot et le masque n'en dépendent pas.
+// warp : celui des deux images de la fin (RifeWarp, spec/rife_fused.h) ; le flot et le masque n'en dépendent
+// pas.
 RifeFusedResult rife_fused_finish(const RifeFusedState& state, RifeWarp warp = RifeWarp::Bilinear);
 
 }  // namespace ajp::kernels::ref

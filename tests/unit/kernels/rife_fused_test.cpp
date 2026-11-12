@@ -147,10 +147,12 @@ TEST_CASE("La référence : un flot nul laisse les images en place", "[kernels][
   }
   // Catmull-Rom passe par les points : sans flot, la même image.
   const ref::RifeFusedResult cubic = ref::rife_fused_finish(state, RifeWarp::CatmullRom);
-  for (std::size_t i = 0; i < 3 * area; ++i) CHECK(cubic.image[i] == Catch::Approx(result.image[i]).margin(1e-9));
+  for (std::size_t i = 0; i < 3 * area; ++i)
+    CHECK(cubic.image[i] == Catch::Approx(result.image[i]).margin(1e-9));
 }
 
-TEST_CASE("Catmull-Rom : poids de somme 1, passe par les points, rend une rampe exacte", "[kernels][rife_fused]") {
+TEST_CASE("Catmull-Rom : poids de somme 1, passe par les points, rend une rampe exacte",
+          "[kernels][rife_fused]") {
   for (const double t : {0.0, 0.1, 0.25, 0.5, 0.75, 0.9}) {
     const std::array<double, 4> w = catmull_rom_weights(t);
     CHECK(w[0] + w[1] + w[2] + w[3] == Catch::Approx(1.0));
