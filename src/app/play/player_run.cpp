@@ -717,8 +717,11 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   }
   // B31-02 : un refus de l'étage GPU pendant la lecture (enqueue, mémoire) retire un étage ; la chaîne se
   // rouvre au même endroit sans lui, avec l'avis et « Réessayer ». Un appareil perdu reste une perte.
-  if (failure && failure->key == kFatalStageKey && failure->code != RefusalCode::DeviceLost &&
-      c.backend->kernels()->health() && retreat(p, c, *failure)) {
+  // C31-05 : un refus de l'affichage (mémoire vidéo saturée, pl_render_image refusé) sur un appareil sain
+  // retire aussi un étage, l'interpolation d'abord, au lieu d'arrêter la vidéo.
+  if (failure && (failure->key == kFatalStageKey || display_retreats(*failure)) &&
+      failure->code != RefusalCode::DeviceLost && c.backend && c.backend->kernels()->health() &&
+      retreat(p, c, *failure)) {
     failure.reset();
     chain.reopen = chain.running;
     chain.next_file.reset();

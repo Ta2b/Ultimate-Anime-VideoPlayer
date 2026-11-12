@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
 #include "app/play/close_watch.h"
@@ -77,8 +78,9 @@ std::size_t abandoned_running(Abandoned kind) {
 
 void finish_after_close(std::string_view name, const std::function<bool()>& finished) {
   // Les fenêtres se cachent : la croix a répondu. SDL_GetWindows rend une copie à libérer.
+  const bool video = SDL_WasInit(SDL_INIT_VIDEO) != 0;
   int count = 0;
-  if (SDL_Window** windows = SDL_GetWindows(&count)) {
+  if (SDL_Window** windows = video ? SDL_GetWindows(&count) : nullptr) {
     for (int i = 0; i < count; ++i) SDL_HideWindow(windows[i]);
     SDL_free(static_cast<void*>(windows));
   }
@@ -88,7 +90,7 @@ void finish_after_close(std::string_view name, const std::function<bool()>& fini
     exit_stuck(std::format("{} : fenêtre fermée, travail bloqué depuis {} s", what, kCloseWaitLimit.count()));
   });
   while (!finished()) {
-    pump_window_events();
+    if (video) pump_window_events();
     std::this_thread::sleep_for(std::chrono::milliseconds(16));
   }
 }

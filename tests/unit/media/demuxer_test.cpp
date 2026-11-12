@@ -490,3 +490,15 @@ TEST_CASE("Demuxer : BT.2020 à luminance constante n'est pas lue comme NCL", "[
   REQUIRE(non_constant.tracks()[0].color_matrix.has_value());
   CHECK(*non_constant.tracks()[0].color_matrix == ajp::ColorMatrix::Bt2020Ncl);
 }
+
+// C35-01 : un fichier .mkv qui est une liste ffconcat n'est pas un conteneur vidéo accepté (il ouvrirait
+// d'autres fichiers du dossier) ; un vrai Matroska du même dossier s'ouvre toujours.
+TEST_CASE("Demuxer : seuls les conteneurs vidéo attendus s'ouvrent (ffconcat refusé)", "[media][demuxer]") {
+  const std::filesystem::path clip = test::require_clip(test::seek_clip());
+  const std::filesystem::path dir = clip.parent_path() / "concat";
+  std::filesystem::create_directories(dir);
+  std::filesystem::copy_file(clip, dir / "seg.mkv", std::filesystem::copy_options::overwrite_existing);
+  std::ofstream(dir / "Episode 01.mkv", std::ios::binary) << "ffconcat version 1.0\nfile seg.mkv\n";
+  CHECK_FALSE(Demuxer::open(dir / "Episode 01.mkv").has_value());
+  CHECK(Demuxer::open(dir / "seg.mkv").has_value());
+}

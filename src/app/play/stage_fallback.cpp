@@ -40,22 +40,24 @@ std::string stage_signature(ChainStage stage, const PlaySettings& s, int source_
 const StageMemory::Entry* StageMemory::find(ChainStage stage, std::string_view signature,
                                             const std::filesystem::path& file) const {
   const auto found = std::ranges::find_if(entries_, [&](const Entry& e) {
-    return e.stage == stage && e.signature == signature && (!e.cancelled || e.file == file);
+    return e.stage == stage && e.signature == signature && (!e.for_file_only() || e.file == file);
   });
   return found == entries_.end() ? nullptr : &*found;
 }
 
 void StageMemory::remember(Entry entry) {
   const auto same = [&](const Entry& e) { return e.stage == entry.stage && e.signature == entry.signature; };
-  if (entry.cancelled) {
-    // Une annulation ne vaut que pour sa vidéo : elle ne remplace ni le refus réel de la même signature, qui
-    // vaut pour toutes les vidéos, ni l'annulation d'une autre vidéo (B29-03).
-    if (std::ranges::any_of(entries_, [&](const Entry& e) { return same(e) && !e.cancelled; })) return;
+  if (entry.for_file_only()) {
+    // Une annulation (ou une mémoire pleine passagère, C31-09) ne vaut que pour sa vidéo : elle ne remplace ni
+    // le refus réel de la même signature, qui vaut pour toutes les vidéos, ni l'entrée d'une autre vidéo
+    // (B29-03).
+    if (std::ranges::any_of(entries_, [&](const Entry& e) { return same(e) && !e.for_file_only(); })) return;
     std::erase_if(entries_, [&](const Entry& e) { return same(e) && e.file == entry.file; });
-    // Les annulations ne s'accumulent pas sans fin sur une longue séance : les plus anciennes partent.
+    // Elles ne s'accumulent pas sans fin sur une longue séance : les plus anciennes partent.
     constexpr std::ptrdiff_t kMaxCancelled = 32;
-    while (std::ranges::count_if(entries_, [](const Entry& e) { return e.cancelled; }) >= kMaxCancelled)
-      entries_.erase(std::ranges::find_if(entries_, [](const Entry& e) { return e.cancelled; }));
+    const auto per_file = [](const Entry& e) { return e.for_file_only(); };
+    while (std::ranges::count_if(entries_, per_file) >= kMaxCancelled)
+      entries_.erase(std::ranges::find_if(entries_, per_file));
   } else {
     // Un refus réel recouvre toute annulation de la même signature.
     std::erase_if(entries_, same);
@@ -104,6 +106,12 @@ void InnerFallbacks::failed(ChainStage stage, std::string key, const Refusal& re
   note(stage, refusal);
   if (memory_ != nullptr)
     memory_->remember_inner({.stage = stage, .key = std::move(key), .refusal = refusal});
+}
+
+bool display_retreats(const Refusal& refusal) {
+  return refusal.key.empty() && (refusal.code == RefusalCode::GpuMemoryExhausted ||
+                                 refusal.code == RefusalCode::VendorCallFailed ||
+                                 refusal.code == RefusalCode::VulkanCallFailed);
 }
 
 std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refusal,

@@ -190,6 +190,10 @@ class InstanceListener {
       last_error_ = 0;
       if (stop.stop_requested()) break;
       const std::string message = read_message(stop);
+      if (message.empty()) {  // C31-03 : un lecteur relancé qui regarde si le canal est libre, sans message
+        DisconnectNamedPipe(pipe_);
+        continue;
+      }
       const auto files = instance_message_files(message);
       const auto log = log_channel("app");
       log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
@@ -290,7 +294,8 @@ InstanceClaim claim_instance(const std::filesystem::path& /*channel_dir*/, std::
       if (!take_over) break;
       // C31-03 : le lecteur figé qui vient de relancer celui-ci tient encore le canal ; il sort sous peu.
       if (std::chrono::steady_clock::now() >= until) {
-        log_channel("app")->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+        const auto log = log_channel("app");
+        log->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
         return {};
       }
       std::this_thread::sleep_for(kSlice);
@@ -421,6 +426,7 @@ class InstanceListener {
         if (got <= 0) break;
         message.append(chunk.data(), static_cast<std::size_t>(got));
       }
+      if (message.empty()) continue;  // C31-03 : un lecteur relancé qui regarde si le canal est libre
       const auto files = instance_message_files(message);
       const auto log = log_channel("app");
       log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
@@ -475,7 +481,8 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
       if (::connect(client.get(), as_sockaddr(*address), sizeof(sockaddr_un)) == 0) {
         if (take_over) {
           if (std::chrono::steady_clock::now() >= until) {
-            log_channel("app")->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+            const auto log = log_channel("app");
+        log->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
             return {};
           }
           std::this_thread::sleep_for(kSlice);

@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include "av/av_error.h"
+#include "av/input_whitelist.h"
 #include "core/types.h"
 
 namespace ajp::audio {
@@ -95,6 +96,7 @@ std::expected<AudioDecoder, Refusal> AudioDecoder::open(const AudioCodecInfo& co
   // B16-04 : la compression de dynamique codée dans un flux AC-3 ou E-AC-3 n'est pas appliquée (drc_scale
   // à 0, comme mpv) : la dynamique voulue par le mixeur reste entière. Les autres codecs ignorent l'option.
   AVDictionary* options = nullptr;
+  av_dict_set(&options, "codec_whitelist", av::kAllowedDecoders, 0);  // C35-01
   if (decoder->id == AV_CODEC_ID_AC3 || decoder->id == AV_CODEC_ID_EAC3) {
     av_dict_set(&options, "drc_scale", "0", 0);
   }

@@ -17,6 +17,7 @@ extern "C" {
 #include <libavutil/mathematics.h>
 }
 
+#include "av/input_whitelist.h"
 #include "media/av_util.h"
 #include "media/deinterlace.h"
 #include "media/frame_data.h"
@@ -293,6 +294,7 @@ struct VideoDecoder::State {
     if (hw.device) ctx->hw_device_ctx = av_buffer_ref(hw.device.get());
     if (direct) ctx->hwaccel_flags |= AV_HWACCEL_FLAG_UNSAFE_OUTPUT;
     AVDictionary* settings = nullptr;
+    (void)av_dict_set(&settings, "codec_whitelist", av::kAllowedDecoders, 0);  // C35-01
     if (!resize.empty()) (void)av_dict_set(&settings, "resize", resize.c_str(), 0);
     const int err = avcodec_open2(ctx.get(), &decoder, &settings);
     av_dict_free(&settings);
