@@ -85,8 +85,10 @@ namespace ajp::gpu {
 // KernelOps::SceneStats passe au lecteur (chain_shots.h).
 // 35 : huit RefusalCode jamais produits retirés (B20-04) : les codes suivants changent de numéro, un refus
 // d'un backend d'avant se lirait sous un autre nom.
-// 36 : Motion::warp (le warp final en Catmull-Rom, en option).
-inline constexpr int kBackendAbi = 36;
+// 36 : Engine::next_pair_follows (RIFE fusionné : l'encodage de B repris comme celui de A à la paire
+// suivante).
+// 37 : Motion::warp (le warp final en Catmull-Rom, en option).
+inline constexpr int kBackendAbi = 37;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -241,6 +243,10 @@ class Engine {
   // changé (rife_time) : un moteur qui garde le travail des images de l'appel précédent le saute (D6, une
   // fenêtre préparée une fois, un appel par instant). Sans effet sur les autres.
   virtual void next_times_only() {}
+  // L'appel suivant prend pour images A celles qui étaient les images B de l'appel précédent sur ce moteur,
+  // inchangées (la paire suivante d'un même plan) : un moteur qui garde l'encodage de B le reprend pour A et
+  // n'encode que la nouvelle B. Sans effet sur les autres.
+  virtual void next_pair_follows() {}
   // P6.15 : l'appel suivant peut reprendre les blocs grossiers de RIFE de l'appel précédent (même moteur,
   // paire voisine, même instant) au lieu de les recalculer. Vrai si le moteur le fera ; faux : calcul entier.
   virtual bool next_warm() { return false; }

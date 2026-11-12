@@ -47,7 +47,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec
     if (!sha) return std::unexpected(std::move(sha.error()));
     const ModelSpec piece{
         .id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha, .precision = TensorType::F16};
-    Shape input{.dims = {2, 3, h, w}};
+    Shape input{.dims = {1, 3, h, w}};  // l'encodeur, une image à la fois (fusion3)
     if (i > 0) {
       const kernels::FusedDims x = kernels::rife_fused_x(manifest->plan, static_cast<int>(i) - 1, h, w);
       input = {.dims = {1, x.channels, x.height, x.width}};

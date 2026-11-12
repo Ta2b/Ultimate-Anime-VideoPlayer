@@ -111,8 +111,8 @@ s'arrêtait pour la séance (A12-12, `tests/unit/core/free_starved_test.cpp`). P
 1. **Le ring** : plein, `RingStage` n'accepte plus de sortie ; le GPU ne tourne pas plus vite que l'écran.
 2. **L'horloge** : `ready` repousse `t_0` quand la chaîne a du retard ; les sources déjà passées sont sautées
    par `passed()` comme avant. Le débit baisse de lui-même, sans consigne.
-3. **Les pertes à l'écran** : une image sautée (`dropped`, arrivée trop tard) ou manquée (trou dans les pts
-   plus grand que le pas) **élargit tout de suite le pas** (×1,12 par image perdue, au plus ×2) ; la pression
+3. **Les pertes à l'écran** : une image sautée (`dropped`, arrivée trop tard) ou manquée (un instant planifié
+   qui n'a jamais paru : jeté en retard, sauté avant calcul) **élargit tout de suite le pas** (×1,12 par image perdue, au plus ×2) ; la pression
    ne se relâche qu'après 1 s sans perte, puis lentement (3 s de constante de temps).
 4. **Repli** : 5 % d'images perdues (et au moins 10) sur 5 s, après 5 s de démarrage → retour à Stable, message à l'écran et
    ligne de journal.
@@ -229,8 +229,12 @@ mais c'est utilisable partout. VRR armé : le comportement décrit plus haut ne 
   plus le délai d'affichage de la sélection (`Session::visible_delay_us`) plus une demi-période : l'image
   choisie une demi-période avant son pts s'affiche alors pile au vsync suivant, au milieu de la marge de la
   boucle (pas de bascule d'un vsync à l'autre à cause de la gigue).
-- **Statistiques / repli** : une image « manquée » se compte contre le pas arrondi au vsync au-dessus ; le
-  repli sur Auto (≥ 5 % de pertes sur 5 s) est identique.
+- **Statistiques / repli** : une image « manquée » se compte contre l'écart que la grille a planifié pour elle
+  (`RingFrame::planned_gap_us`), pas contre le pas d'une paire calme : à 165 Hz, une paire en mouvement fort
+  planifie deux vsyncs par image quand une calme en planifie un, et chacune de ses images comptait une
+  manquée ; la contre-pression montait au plafond et le repli tombait sans perte visible (novembre 2026).
+  Sans écart planifié (début d'époque), le pas arrondi au vsync au-dessus sert comme avant. Le repli sur
+  Stable (≥ 5 % de pertes sur 5 s) est identique.
 - **Menu** : « Instantané » n'est plus grisé sans VRR ; l'infobulle dit « sans VRR, la cadence est calée sur
   le rafraîchissement de l'écran ». Option du banc `--no-vrr` : traite l'écran comme fixe même si le VRR est
   armé.

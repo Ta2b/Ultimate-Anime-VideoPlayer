@@ -217,11 +217,18 @@ TEST_CASE("Ring : un étage qui lit quatre images en avance les attend, puis vid
   // Sept images en vol au plus (kMaxFrames + 3).
   for (std::uint32_t id = 5; id <= 7; ++id) REQUIRE(stage.frames().try_push(frame(id)));
   REQUIRE(wait_for([&] { return bench.ring.size() == 3; }));
-  // 1, 2 et 3 voient toutes celles qui attendent derrière elles ; la 4 attend.
-  CHECK(stage.saw_ahead() == std::vector<std::size_t>{6, 5, 4});
+  // 1, 2 et 3 voient chacune au moins les quatre qu'elles attendent (5, 6 et 7 arrivent une à une : la 1 peut
+  // partir dès la 5, sous TSan surtout) ; la 4 attend.
+  const std::vector<std::size_t> before_end = stage.saw_ahead();
+  REQUIRE(before_end.size() == 3);
+  for (const std::size_t ahead : before_end) CHECK(ahead >= 4);
+  CHECK(before_end.back() == 4);
   REQUIRE(stage.post(StreamEnd{.epoch = 0}));
   REQUIRE(wait_for([&] { return bench.ring.size() == 7; }));
-  CHECK(stage.saw_ahead() == std::vector<std::size_t>{6, 5, 4, 3, 2, 1, 0});
+  // À la fin du flux, la file se vide sans attendre : 3, 2, 1 puis 0 derrière la tête.
+  const std::vector<std::size_t> all = stage.saw_ahead();
+  REQUIRE(all.size() == 7);
+  CHECK(std::vector<std::size_t>(all.begin() + 3, all.end()) == std::vector<std::size_t>{3, 2, 1, 0});
   CHECK(bench.reported().empty());
 }
 

@@ -85,6 +85,18 @@ TEST_CASE("AudioDecoder : AAC stéréo vers 5.1, les canaux avant portent le sig
   CHECK(peak(channel(all, 6, 3)) < 1e-6);                            // LFE vide
 }
 
+// B16-04 : AC-3 et E-AC-3 s'ouvrent avec drc_scale à 0 (la dynamique du mixeur reste entière) ; l'ouverture
+// avec cette option réussit et le flux se décode, comme avant.
+TEST_CASE("AudioDecoder : AC-3 s'ouvre avec la compression de dynamique éteinte et se décode",
+          "[audio][decoder]") {
+  const auto clip = encode_sine({.encoder = "ac3", .sample_rate = 48'000, .channels = 2, .seconds = 0.5});
+  auto decoder = AudioDecoder::open(clip.codec, {.sample_rate = 48'000, .channels = 2});
+  REQUIRE(decoder);
+  const std::vector<float> all = concat(decode_all(*decoder, clip.packets));
+  REQUIRE(all.size() % 2 == 0);
+  CHECK(tone_amplitude(channel(all, 2, 0), 48'000, 1'000.0) > 0.4);
+}
+
 TEST_CASE("AudioDecoder : codec inconnu ou non audio refusé", "[audio][decoder]") {
   const auto unknown = AudioDecoder::open({.codec = "inexistant"}, {});
   REQUIRE_FALSE(unknown);

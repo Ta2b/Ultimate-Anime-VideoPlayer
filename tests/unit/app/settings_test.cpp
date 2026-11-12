@@ -79,10 +79,15 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK_FALSE(offered(MotionEngine::Apple));
 #endif
   CHECK(offered(MotionEngine::Rife));
-  // Les niveaux du menu : Très rapide, Rapide, Équilibré, puis Apple.
-  CHECK(interp_level(MotionEngine::DistilDrba, "") == InterpLevel::VeryFast);
+  // Les niveaux du menu : Très rapide, Rapide, Équilibré ; RIFE 4.25 et DistilDRBA en mode avancé ; Apple.
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.25_lite.onnx") == InterpLevel::VeryFast);
   CHECK(interp_level(MotionEngine::Rife, "rife_v4.22_lite.onnx") == InterpLevel::Fast);
-  CHECK(interp_level(MotionEngine::Rife, "rife_v4.25.onnx") == InterpLevel::Balanced);
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.26.onnx") == InterpLevel::Balanced);
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.25.onnx") == InterpLevel::Rife425);
+  CHECK(interp_level(MotionEngine::DistilDrba, "") == InterpLevel::DistilDrba);
+  for (const InterpChoice& choice : kInterpLevels)
+    CHECK(choice.advanced ==
+          (choice.level == InterpLevel::Rife425 || choice.level == InterpLevel::DistilDrba));
   CHECK(interp_level(MotionEngine::Apple, "") == InterpLevel::System);
   CHECK_FALSE(interp_level(MotionEngine::Rife, "rife_v4.6.onnx"));
 }

@@ -18,6 +18,7 @@
 
 #include "app/play/cut_book.h"
 #include "app/play/frame_latency.h"
+#include "app/play/pair_marks.h"
 #include "app/play/settings.h"
 #include "core/auto_rate.h"
 #include "core/free_rate.h"
@@ -340,6 +341,16 @@ class LiveSettings {
     return free_.info(now_us);
   }
 
+  // Débogage des paires (pair_marks.h), posé par main depuis le menu Statistiques : gpu note alors chaque
+  // paire tenue ou coupée. Éteint, les notes passées s'effacent.
+  void set_pair_marks(bool on) {
+    if (!on) pair_marks_.clear();
+    pair_marks_on_.store(on, std::memory_order_relaxed);
+  }
+  bool pair_marks_on() const { return pair_marks_on_.load(std::memory_order_relaxed); }
+  PairMarks& pair_marks() { return pair_marks_; }
+  const PairMarks& pair_marks() const { return pair_marks_; }
+
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
   void set_keep_poses(bool keep) { keep_poses_.store(keep); }
   bool keep_poses() const { return keep_poses_.load(); }
@@ -393,6 +404,8 @@ class LiveSettings {
   media::LiveScenes scenes_;
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};
+  std::atomic<bool> pair_marks_on_{false};
+  PairMarks pair_marks_;
   std::atomic<bool> deband_source_{false};
   std::atomic<bool> hidden_{false};
   mutable std::mutex mutex_;

@@ -67,18 +67,29 @@ std::string_view name(MotionEngine engine);   // « rife », la clé de play.tom
 std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
 // Les niveaux de l'interpolation que montre le menu (docs/interpolation.md) : un nom que tout le monde
-// comprend, le moteur et le modèle derrière, nommés seulement en mode avancé. System : l'interpolation
-// d'Apple, sur un Mac seulement.
-enum class InterpLevel : std::uint8_t { VeryFast, Fast, Balanced, System };
+// comprend, le moteur et le modèle derrière, nommés seulement en mode avancé. Très rapide, Rapide et
+// Équilibré sont RIFE 4.25 lite, 4.22 lite et 4.26 (docs/rife-candidats.md) ;
+// RIFE 4.25 et DistilDRBA ne se choisissent qu'en mode avancé (advanced). System : l'interpolation d'Apple,
+// sur un Mac seulement.
+enum class InterpLevel : std::uint8_t { VeryFast, Fast, Balanced, Rife425, DistilDrba, System };
 struct InterpChoice {
   InterpLevel level;
   MotionEngine engine;
   std::string_view rife_model;  // vide hors RIFE
+  bool advanced = false;        // proposé en mode avancé seulement
 };
-inline constexpr std::array<InterpChoice, 4> kInterpLevels{{
-    {.level = InterpLevel::VeryFast, .engine = MotionEngine::DistilDrba, .rife_model = {}},
+inline constexpr std::array<InterpChoice, 6> kInterpLevels{{
+    {.level = InterpLevel::VeryFast, .engine = MotionEngine::Rife, .rife_model = "rife_v4.25_lite.onnx"},
     {.level = InterpLevel::Fast, .engine = MotionEngine::Rife, .rife_model = "rife_v4.22_lite.onnx"},
-    {.level = InterpLevel::Balanced, .engine = MotionEngine::Rife, .rife_model = "rife_v4.25.onnx"},
+    {.level = InterpLevel::Balanced, .engine = MotionEngine::Rife, .rife_model = "rife_v4.26.onnx"},
+    {.level = InterpLevel::Rife425,
+     .engine = MotionEngine::Rife,
+     .rife_model = "rife_v4.25.onnx",
+     .advanced = true},
+    {.level = InterpLevel::DistilDrba,
+     .engine = MotionEngine::DistilDrba,
+     .rife_model = {},
+     .advanced = true},
     {.level = InterpLevel::System, .engine = MotionEngine::Apple, .rife_model = {}},
 }};
 // Le niveau d'un moteur et du modèle RIFE qu'il charge (le nom vide de play.toml déjà résolu) ; nullopt
@@ -129,6 +140,9 @@ struct StatsSettings {
   bool output = false;    // sortie HDR10 ou SDR
   bool position = false;  // position à la milliseconde
   bool memory = false;    // mémoire vidéo
+  // Débogage : chaque paire jugée tenue ou coupée teinte l'écran et va au journal (pair_marks.h). Le temps de
+  // la session seulement : ni play.toml ni any() ne le connaissent.
+  bool pairs = false;
   bool any() const { return all || chain || frames || rife || tracks || output || position || memory; }
   friend bool operator==(const StatsSettings&, const StatsSettings&) = default;
 };

@@ -36,6 +36,11 @@
    "fidelite_ecart_pire_max": 1.13,
    "verite_psnr_min": 44.67
   },
+  "rife_v4.26.onnx": {
+   "fidelite_psnr_pire_min": 49.22,
+   "fidelite_ecart_pire_max": 33.89,
+   "verite_psnr_min": 47.15
+  },
   "rife_v4.25.onnx": {
    "fidelite_psnr_pire_min": 49.28,
    "fidelite_ecart_pire_max": 52.29,
@@ -45,6 +50,11 @@
    "fidelite_psnr_pire_min": 49.55,
    "fidelite_ecart_pire_max": 32.08,
    "verite_psnr_min": 47.26
+  },
+  "rife_v4.25_lite.onnx": {
+   "fidelite_psnr_pire_min": 49.02,
+   "fidelite_ecart_pire_max": 38.78,
+   "verite_psnr_min": 44.93
   },
   "distil_drba_v2_lite.onnx": {
    "fidelite_psnr_pire_min": 72.96,

@@ -59,6 +59,46 @@ float skin_like(vec3 c) {
            smoothstep(0.08, 0.12, sat) * (1.0 - smoothstep(0.60, 0.70, sat));
 }
 
+// Saturation en Oklab : l'ecart en RVB lineaire a la luminance tournait les bleus vers le violet quand on
+// poussait (le bleu BT.2020 n'est pas a teinte constante sur cette droite). Ici, la chroma (a, b) d'Oklab est
+// multipliee par k, L garde : la teinte (l'angle de a, b) ne bouge pas. Comme la premiere colonne de
+// l'inverse de M2 vaut (1, 1, 1), multiplier a et b par k revient a ecarter les racines cubiques des cones
+// (l', m', s') de L, sans passer par Lab. La luminance BT.2020 est ensuite remise a yc par un facteur commun
+// (il garde la teinte et la chroma d'Oklab relatives) : le curseur ne change que la couleur, comme avant.
+// Hors gamut (un canal negatif), k recule vers 1 par dichotomie : jamais de canal negatif.
+const mat3 TO_LMS = mat3(0.6166884418, 0.3601590705, 0.0230432935,
+                         0.2651401962, 0.6358564847, 0.0990302336,
+                         0.1001506451, 0.2040043234, 0.6963246774);
+const mat3 FROM_LMS = mat3(2.1401404110, -1.2463559505, 0.1064317259,
+                           -0.8848324528, 2.1631727207, -0.2783615921,
+                           -0.0485790580, -0.4544909080, 1.5023562946);
+const vec3 OK_L = vec3(0.2104542553, 0.7936177850, -0.0040720468);
+
+vec3 oklab_scaled(vec3 q, float L, float k) {
+    vec3 r = vec3(L) + (q - vec3(L)) * k;
+    return (r * r * r) * FROM_LMS;
+}
+vec3 oklab_chroma(vec3 c, float yc, float k) {
+    // Racines cubiques des cones (l', m', s'), directement en nits : multiplier c par t multiplie l', m', s'
+    // et L par la racine cubique de t, et la sortie par t. Le resultat ne depend pas de l'echelle.
+    vec3 q = pow(max(c * TO_LMS, vec3(0.0)), vec3(1.0 / 3.0));
+    float L = dot(OK_L, q);
+    vec3 out_c = oklab_scaled(q, L, k);
+    if (min(min(out_c.r, out_c.g), out_c.b) < 0.0) {
+        float lo = 1.0;  // toujours dans le gamut (la couleur d'origine)
+        float hi = k;
+        for (int i = 0; i < 8; i++) {
+            float mid = 0.5 * (lo + hi);
+            vec3 t = oklab_scaled(q, L, mid);
+            if (min(min(t.r, t.g), t.b) < 0.0) hi = mid; else lo = mid;
+        }
+        out_c = oklab_scaled(q, L, lo);
+    }
+    out_c = max(out_c, vec3(0.0));
+    float yo = dot(out_c, LUMA);
+    return yo > 1e-9 ? out_c * (yc / yo) : c;
+}
+
 // Carte locale guidee : la carte 1/8 relevee par un sur-echantillonnage
 // bilateral joint, guide par le pixel. Un pixel sombre au bord d'une lumiere lit les blocs sombres, un pixel
 // clair les blocs clairs : le halo ne deborde plus d'un demi-bloc sur la surface voisine.
@@ -147,7 +187,8 @@ vec4 hook() {
     float deep = shadows * smoothstep(0.03, 0.40, series);
     c *= shadow_ratio(max(max(c.r, c.g), c.b), deep);
     // Peps (--anime-contrast, --anime-saturation) : contraste en puissance de la luminance autour du gris des
-    // surfaces, puis saturation (ecart a la luminance, attenuee vers le pic, jamais de canal negatif).
+    // surfaces, puis saturation (chroma d'Oklab, luminance et teinte gardees, attenuee vers le pic, jamais de
+    // canal negatif).
     // Identite exacte a an_punch = 0 et an_chroma = 1. Eclats en dernier (B41-02) : un emetteur est ici a son
     // niveau de surface ; la courbe et l'attenuation se calculent au niveau ou il montera (rise), comme
     // quand la montee s'appliquait ici, pour que le peps le traite en lumiere et non en surface.
@@ -163,11 +204,7 @@ vec4 hook() {
     }
     if (yc > 1e-4 && an_chroma != 1.0) {
         float k = 1.0 + (an_chroma - 1.0) * (1.0 - 0.6 * smoothstep(0.35 * peak, peak, yc * rise));
-        vec3 d = c - vec3(yc);
-        float room = 1e6;
-        for (int i = 0; i < 3; i++)
-            if (d[i] < 0.0) room = min(room, yc / -d[i]);
-        c = vec3(yc) + d * clamp(k, 0.0, room);
+        c = oklab_chroma(c, yc, k);
     }
     // Garde-fou : jamais au-dessus du pic, teinte gardee.
     float m = max(max(c.r, c.g), c.b);

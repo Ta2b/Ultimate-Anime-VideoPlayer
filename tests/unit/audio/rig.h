@@ -19,9 +19,11 @@ inline constexpr std::int64_t kLatency = 480;  // tampon du faux périphérique 
 
 class Rig {
  public:
-  explicit Rig(const PlayerConfig& config = {}, PcmFormat format = {}, std::int64_t latency = kLatency) {
+  explicit Rig(const PlayerConfig& config = {}, PcmFormat format = {}, std::int64_t latency = kLatency,
+               bool dormant = false) {
     auto sink = std::make_unique<FakeSink>(format, latency);
     fake = sink.get();
+    fake->set_dormant(dormant);
     player = std::make_unique<AudioPlayer>(
         std::make_unique<AudioOutput>(std::move(sink)), config,
         PlayerEvents{.packet_released = [this] { ++released; },

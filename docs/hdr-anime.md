@@ -128,9 +128,18 @@ Aucun modèle n'entre dans une release sans ton accord.
 Retour de Tatoub : `--hdr-anime`, `--anime-shots` et `--anime-guided` sont plus propres que le grade actuel mais
 manquent de contraste, de saturation et de peps. Trois réglages en ligne de commande, en %, 100 = la méthode telle
 quelle : `--anime-contrast=N` (puissance de la luminance autour de 0,4 × le blanc, `an_punch` = (N − 100)/100),
-`--anime-saturation=N` (écart à la luminance × N/100, atténué vers le pic, sans canal négatif, `an_chroma`) et
+`--anime-saturation=N` (chroma d'Oklab × N/100 à luminance gardée, atténuée vers le pic, sans canal négatif,
+`an_chroma`) et
 `--anime-highlights=N` (part de la montée des éclats, `an_spec`). Jamais écrits dans play.toml : les valeurs
 retenues à l'œil deviendront le défaut de la méthode.
+
+## Saturation en Oklab (12/11)
+
+Le curseur Saturation écartait les canaux de la luminance en RVB linéaire : poussé, un bleu tournait vers le
+violet (6 à 13° de teinte d'Oklab à 150 et 200 %), un orange vers le rouge. Il multiplie désormais la chroma
+(a, b) d'Oklab par le facteur, puis remet la luminance BT.2020 d'origine par un facteur commun : la teinte
+d'Oklab ne bouge plus (écart < 0,01° sur une simulation en Python de la passe), la luminance non plus. Un canal qui passerait sous zéro fait
+reculer le facteur par dichotomie. À 100 %, la branche ne s'exécute pas : l'image est identique bit à bit.
 
 ## Noirs profonds selon l'épisode (04/11, texte corrigé le 09/11 : A38-16)
 

@@ -174,16 +174,20 @@ TEST_CASE("AudioPlayer : retour à l'audio maître, le rapport revient à 1 sans
   const std::int64_t t0 = rig.now_us();
   master->set({.media_us = 0, .host_us = t0, .rate = 1.001, .valid = true});
   rig.player->handle(SyncTo{master});
-  rig.feed(encode_sine({.seconds = 2.0}));
+  rig.feed(encode_sine({.seconds = 12.0}));
   rig.player->handle(Command{cmd::Play{}});
+  // B16-02 : l'écart de 1 ms par seconde reste d'abord dans la zone morte (rapport exactement 1, SDL ne
+  // rééchantillonne pas), puis le régulateur en sort et apprend le 1,001.
   for (std::int64_t k = 1; k <= 20; ++k) rig.player->handle(rig.fake->play(1'024, t0 + k * 21'333));
+  CHECK(rig.fake->ratio() == 1.0);
+  for (std::int64_t k = 21; k <= 400; ++k) rig.player->handle(rig.fake->play(1'024, t0 + k * 21'333));
   CHECK(rig.fake->ratio() > 1.0);
   const int clears = rig.fake->clears();
 
   rig.player->handle(SyncTo{});  // écran VRR : l'audio redevient maître
   CHECK(rig.fake->ratio() == 1.0);
   CHECK(rig.fake->clears() == clears);
-  const DeviceReading reading = rig.fake->play(1'024, t0 + 21 * 21'333);
+  const DeviceReading reading = rig.fake->play(1'024, t0 + 401 * 21'333);
   rig.player->handle(reading);
   CHECK(std::abs(rig.clock().rate - 1.0) <= ajp::core::ClockPll::kMaxSpeed + 1e-9);  // PLL du produit
   CHECK(rig.clock().host_us == reading.host_us);

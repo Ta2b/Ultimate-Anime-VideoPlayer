@@ -9,8 +9,11 @@
 // entrées, puis l'instant seul pour les autres instants.
 #include <utility>
 
+#include "app/play/pair_marks.h"
 #include "app/play/upscale_stage.h"
+#include "core/log.h"
 #include "core/trace.h"
+#include "kernels/spec/detect.h"
 
 namespace ajp::app::play {
 
@@ -144,6 +147,9 @@ std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
     ok = ops.rife_input(a, b, t, rife_in());
     rife_mesh_[rife_pair_] = ok.has_value();
   }
+  // B lissée n'est pas la source current_ : son encodage ne servira pas de A à la paire suivante.
+  rife_in_images_[rife_pair_] = {ok ? source_serial_[current_ ^ 1U] : 0U,
+                                 ok && !smooth_first_ ? source_serial_[current_] : 0U};
   rife_in_pair_ = ok.has_value();
   rife_in_t_ = t;
   return ok;
@@ -179,6 +185,19 @@ void UpscaleStage::count_measured(const PairFacts& facts) {
     ++held_;
     if (setup_.live) setup_.live->count_held();
   }
+}
+
+void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) {
+  if (setup_.live == nullptr || !setup_.live->pair_marks_on() || !facts.scores || !previous_) return;
+  const bool cut = pair_cut(facts);
+  if (!cut && !kernels::is_held(facts.scores->worst_block)) return;  // une paire qui bouge : rien à montrer
+  if (previous_->pts_us == kNoPts || frame.pts_us == kNoPts) return;
+  const PairMark mark{.epoch = frame.epoch,
+                      .from_us = previous_->pts_us,
+                      .to_us = frame.pts_us,
+                      .verdict = cut ? PairVerdict::Cut : PairVerdict::Held};
+  setup_.live->pair_marks().add(mark);
+  log_channel("gpu")->info("{}", pair_mark_line(mark, *facts.scores, facts.known_cut, useful_area_));
 }
 
 }  // namespace ajp::app::play

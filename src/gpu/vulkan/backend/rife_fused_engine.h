@@ -5,7 +5,9 @@
 // variante mouvement, le flot 1 × 4 × H × W et le masque 1 × 1 × H × W. Les tampons intermédiaires (encodage,
 // X_k et Y_k) vivent dans un tampon du moteur, rangé par rife_fused_layout. Ce qui travaille en pleine
 // résolution ne passe plus par les opérateurs du graphe un à un (Resize, Split, Mul, Add, GridSample,
-// Concat…) : trois noyaux par paire au lieu d'une vingtaine de dispatchs.
+// Concat…) : trois noyaux par paire au lieu d'une vingtaine de dispatchs. L'encodeur prend une image à la
+// fois : l'encodage de la paire, gardé dans le tampon du moteur, sert encore à un autre instant de la même
+// paire (next_times_only), et celui de B devient celui de A à la paire suivante (next_pair_follows).
 #pragma once
 
 #include <array>
@@ -86,8 +88,18 @@ class RifeFusedEngine final : public Engine {
     warm_next_ = warm_ready_ && warm_blocks_ > 0;
     return warm_next_;
   }
+  // Le prochain enqueue reprend la même entrée, seul l'instant a changé : l'encodeur est sauté.
+  void next_times_only() override { hint_ = Hint::TimesOnly; }
+  // Le prochain enqueue prend pour A la B de l'appel précédent : son encodage est copié à la place de A,
+  // seule la nouvelle B passe dans l'encodeur.
+  void next_pair_follows() override { hint_ = Hint::Follows; }
+  // L'annonce oubliée : le backend a refusé l'appel avant d'enfiler la chaîne.
+  void drop_hint() { hint_ = Hint::None; }
   int height() const { return height_; }
   int width() const { return width_; }
+  // Les passes de l'encodeur depuis la création, une image chacune (tests : deux par paire à froid, une quand
+  // la paire suit, aucune pour un autre instant).
+  std::uint64_t encodes() const { return encodes_; }
 
   // Soumet la chaîne sur queue, dans l'ordre : encodeur, entrée du bloc 0, bloc 0, colle, bloc 1… puis la
   // fin. Les enregistrements de la colle sont faits au premier passage de ces tenseurs, puis rejoués.
@@ -109,6 +121,15 @@ class RifeFusedEngine final : public Engine {
   std::expected<std::unique_ptr<Recording>, Refusal> record_finish(const BufferView& input,
                                                                    std::span<const BufferView> outputs);
   BufferView scratch(std::size_t offset, std::int64_t elements) const;
+  // L'encodage de B copié à la place de celui de A, enregistré une fois.
+  std::expected<Recording*, Refusal> shift_encoding();
+  enum class Hint : std::uint8_t { None, TimesOnly, Follows };
+  // L'encodage de la paire de input selon l'annonce et ce que le dernier appel mené au bout a encodé
+  // (encoded_from, son entrée) : rien, B seule, ou A et B.
+  Done encode_pair(BackendQueue& queue, const BufferView& input, Hint hint,
+                   const std::optional<BufferView>& encoded_from);
+  static Done submit_net(BackendQueue& queue, VulkanEngine& piece, const BufferView& in,
+                         const BufferView& out);
 
   VkContext& context_;
   MemoryAllocator& memory_;
@@ -122,6 +143,10 @@ class RifeFusedEngine final : public Engine {
   int warm_blocks_ = 0;      // blocs repris à chaud (next_warm)
   bool warm_ready_ = false;  // les Y de ces blocs sont ceux de l'appel précédent
   bool warm_next_ = false;
+  Hint hint_ = Hint::None;
+  // L'entrée du dernier appel mené au bout, dont l'encodage est dans le tampon du moteur ; nul sinon.
+  std::optional<BufferView> encoded_from_;
+  std::uint64_t encodes_ = 0;  // passes de l'encodeur, une image chacune
   kernels::RifeFusedLayout layout_;
   std::optional<Buffer> scratch_;
   std::vector<std::string> inputs_{"input"};
@@ -129,6 +154,7 @@ class RifeFusedEngine final : public Engine {
   static constexpr std::size_t kMaxGlues = 16;
   std::vector<std::unique_ptr<Glue>> glues_;
   RetiredRecordings retired_;
+  std::unique_ptr<Recording> shift_;  // détruit le premier : il attend sa fin avant que le tampon parte
 };
 
 }  // namespace ajp::gpu::vk

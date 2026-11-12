@@ -56,7 +56,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
     if (!sha) return std::unexpected(std::move(sha.error()));
     const ModelSpec piece{
         .id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha, .precision = TensorType::F16};
-    Shape input{.dims = {2, 3, h, w}};
+    Shape input{.dims = {1, 3, h, w}};  // l'encodeur, une image à la fois (fusion3)
     if (i > 0) {
       const kernels::FusedDims x = kernels::rife_fused_x(manifest->plan, static_cast<int>(i) - 1, h, w);
       input = {.dims = {1, x.channels, x.height, x.width}};
@@ -92,7 +92,11 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
 std::expected<void, Refusal> TensorRtBackend::enqueue_rife_fused(RifeFusedEngine& engine,
                                                                  std::span<const Tensor> inputs,
                                                                  std::span<Tensor> outputs) {
-  if (auto ok = bind(); !ok) return ok;
+  // Un refus avant la chaîne ne laisse pas l'annonce de cet appel au suivant.
+  if (auto ok = bind(); !ok) {
+    engine.drop_hint();
+    return ok;
+  }
   // La chaîne lit l'entrée, écrit les sorties, la zone d'activation et son propre contexte.
   const std::shared_ptr<SharedActivations>& zone = arena();
   std::vector<std::uintptr_t> reads;
@@ -100,7 +104,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_rife_fused(RifeFusedEngine
                                      reinterpret_cast<std::uintptr_t>(&engine)};
   for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
   for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
-  if (auto ok = order(reads, writes); !ok) return ok;
+  if (auto ok = order(reads, writes); !ok) {
+    engine.drop_hint();
+    return ok;
+  }
   const Shape shape = engine.input_shape();
   GpuTiming& timing = stage(std::format("moteur RIFE fusionné {}×{}", shape.dims[3], shape.dims[2]));
   role(Role::Interpolation).begin(stream_);

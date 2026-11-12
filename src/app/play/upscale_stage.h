@@ -84,6 +84,9 @@ struct UpscaleSetup {
   // P6.15, essai : la passe du milieu d'une paire calme reprend les blocs grossiers de la passe du milieu de
   // la paire précédente, sur le même moteur (gpu::Engine::next_warm).
   bool rife_warm = false;
+  // --rife-encode-all, mesure : aucune annonce au moteur de ce que sa passe précédente a encodé
+  // (enqueue_rife) ; le RIFE fusionné encode alors les deux images à chaque passe.
+  bool rife_encode_all = false;
   // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -136,6 +139,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> health() override { return setup_.backend->kernels()->health(); }
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
   Fate fate(const DecodedFrame& frame, std::uint32_t output) override;
+  std::int64_t planned_gap_us(std::uint32_t output) const override;
   void skip(const DecodedFrame& frame, std::uint32_t output) override;
   std::expected<void, Refusal> late(const DecodedFrame& frame, std::uint32_t output) override;
   Fate drba_fate(std::uint32_t output);
@@ -184,6 +188,9 @@ class UpscaleStage final : public RingStage {
   // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
   // mouvement.
   void count_measured(const PairFacts& facts);
+  // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
+  // journal, seulement quand le menu Statistiques le demande.
+  void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
@@ -267,11 +274,36 @@ class UpscaleStage final : public RingStage {
   // Les images de la paire en cours et l'instant t dans rife_in() : sans réécrire le maillage s'il
   // y est déjà (rife_pair), sinon tout (rife_input).
   std::expected<void, Refusal> write_rife_pair(float t);
-  bool rife_in_pair_ = false;        // rife_in() tient les images de la paire en cours
-  float rife_in_t_ = 0.0F;           // et cet instant
-  bool rife_time_ = true;            // faux si le backend n'a pas rife_time
-  bool rife_pair_op_ = true;         // faux si le backend n'a pas rife_pair
-  std::array<bool, 2> rife_mesh_{};  // rife_ins_[i] tient le maillage, écrit par un rife_input
+  // La passe de RIFE sur engine depuis rife_in(), après avoir dit au moteur ce que sa passe précédente a déjà
+  // encodé (le RIFE fusionné le garde) : les mêmes images dans le même tampon, à un autre instant
+  // (next_times_only), ou la paire qui suit, A étant la B de sa passe précédente (next_pair_follows).
+  std::expected<void, Refusal> enqueue_rife(gpu::Engine& engine, std::span<gpu::Tensor> results);
+  // Numéro de l'image ingérée dans rgb_[i] et small_[i], neuf à chaque ingestion.
+  std::array<std::uint64_t, 2> source_serial_{};
+  // L'autre tampon de rgb_ et small_ devient current_, pour une image neuve : son numéro aussi.
+  void next_source() {
+    current_ ^= 1U;
+    source_serial_[current_] = ++serials_;
+  }
+  std::uint64_t serials_ = 0;
+  // Les images de chaque tampon de rife_ins_ par leur numéro, A puis B ; 0 pour une image qui n'est pas une
+  // source telle qu'ingérée (B lissée) ou une écriture en échec.
+  std::array<std::array<std::uint64_t, 2>, 2> rife_in_images_{};
+  struct RifeEncoded {
+    const gpu::Engine* engine = nullptr;  // nul : rien de sûr (début, coupe, saut, passe en échec)
+    std::uint32_t buffer = 0;
+    std::array<std::uint64_t, 2> images{};
+  };
+  RifeEncoded rife_encoded_;             // la dernière passe de RIFE menée au bout
+  std::uint64_t encodes_kept_ = 0;       // passes annoncées sans encodeur (même paire)
+  std::uint64_t encodes_followed_ = 0;   // passes annoncées avec la seule B à encoder
+  std::uint64_t encodes_after_gap_ = 0;  // A et B encodées : la paire d'avant n'a pas eu de passe
+  std::uint64_t encodes_cold_ = 0;       // A et B encodées : début, coupe, saut, autre moteur, B lissée
+  bool rife_in_pair_ = false;            // rife_in() tient les images de la paire en cours
+  float rife_in_t_ = 0.0F;               // et cet instant
+  bool rife_time_ = true;                // faux si le backend n'a pas rife_time
+  bool rife_pair_op_ = true;             // faux si le backend n'a pas rife_pair
+  std::array<bool, 2> rife_mesh_{};      // rife_ins_[i] tient le maillage, écrit par un rife_input
   // Le mouvement est estimé à la taille de RIFE puis déformé au warp (variante mouvement), plutôt
   // que l'image de RIFE elle-même.
   bool by_motion() const { return setup_.rife_motion != nullptr; }
@@ -340,7 +372,17 @@ class UpscaleStage final : public RingStage {
   struct Instant {
     float t = 1.0F;
     std::int64_t pts_us = 0;
+    std::int64_t gap_us = 0;  // Rapide libre : l'écart planifié depuis l'instant d'avant (RingFrame)
   };
+  // Rapide libre : le pts du dernier instant planifié, écrit, sauté en retard ou tenu ; kNoPts hors du mode,
+  // au début d'une époque.
+  std::int64_t planned_pts_ = kNoPts;
+  // Une paire sans passe : les grilles repartent de sa source droite.
+  void resync_grids(bool unrun, bool free_mode, bool steady);
+  // L'écart planifié de chaque sortie de la paire (instants_), les instants sautés en retard compris ;
+  // `step` : la grille de la paire quand elle est interpolée, nullptr pour la source seule. `on` : Rapide
+  // libre dans la même époque, sinon rien n'est planifié.
+  void plan_gaps(const DecodedFrame& frame, const core::CadenceStep* step, std::size_t late, bool on);
   std::array<Instant, core::kMaxInstantsPerPair> instants_{};
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées

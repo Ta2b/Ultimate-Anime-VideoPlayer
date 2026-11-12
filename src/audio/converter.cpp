@@ -45,6 +45,8 @@ std::string describe(const AVFrame& frame) {
   return std::format("{} {} Hz {}", format != nullptr ? format : "?", frame.sample_rate, text.data());
 }
 
+}  // namespace
+
 // Sous le coude, l'échantillon passe tel quel ; au-delà, il tend vers 1 sans jamais l'atteindre, avec une
 // pente continue au coude : les crêtes d'un mixage 5.1 vers stéréo s'arrondissent au lieu d'être écrêtées.
 float soft_limit(float sample) {
@@ -54,8 +56,6 @@ float soft_limit(float sample) {
   const float limited = kKnee + ((1.0F - kKnee) * std::tanh((size - kKnee) / (1.0F - kKnee)));
   return std::copysign(limited, sample);
 }
-
-}  // namespace
 
 // 5.1 se range en FL FR FC LFE SL SR : SDL3 accepte SL SR comme BL BR, et la
 // plupart des sources 5.1 sont « 5.1(side) », qui passent ainsi sans remixage.

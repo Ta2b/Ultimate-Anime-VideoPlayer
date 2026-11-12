@@ -235,6 +235,13 @@ constexpr std::array kSettingsPages{
     Entry{"Unknown graphics card", "Carte graphique inconnue"},
     Entry{"Upscaling", "Agrandissement"},
     Entry{"Video memory", "Mémoire vidéo"},
+    Entry{"Debugging", "Débogage"},
+    Entry{"Show held and cut pairs", "Montrer les paires tenues et coupées"},
+    Entry{"While interpolation runs, each pair judged a held drawing (blue) or a scene cut (red) tints the "
+          "screen for a moment, and goes to ajp.log with its time and scores. This session only.",
+          "Pendant l'interpolation, chaque paire jugée dessin tenu (bleu) ou coupe de scène (rouge) teinte "
+          "l'écran un instant, et va dans ajp.log avec son minutage et ses scores. Pour cette session "
+          "seulement."},
     Entry{"fused DistilDRBA (four engines, built the first time for this size)",
           "DistilDRBA fusionné (quatre moteurs, construits la première fois pour cette taille)"},
     Entry{"fused RIFE (six engines, built the first time for this size)",

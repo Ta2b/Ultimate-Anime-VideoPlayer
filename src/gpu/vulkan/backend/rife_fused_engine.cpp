@@ -129,7 +129,8 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::create
     }
     return {};
   };
-  if (auto ok = expect(*pieces[0], "encodeur", {2, 3, h, w}, {2, kFusedEncodePlanes / 2, h, w}); !ok)
+  // Une image à la fois (fusion3) : un encodeur de l'ancienne découpe, en lot de 2, est refusé.
+  if (auto ok = expect(*pieces[0], "encodeur", {1, 3, h, w}, {1, kFusedEncodePlanes / 2, h, w}); !ok)
     return std::unexpected(ok.error());
   for (int k = 0; k < key.plan.blocks; ++k) {
     const kernels::FusedDims x = kernels::rife_fused_x(key.plan, k, h, w);
@@ -222,6 +223,68 @@ Done record_rife_fused_finish(PipelineCache& pipelines, Recorder& recorder,
                      {detail::groups_for(u32(width)), detail::groups_for(u32(height)), 1});
 }
 
+std::expected<Recording*, Refusal> RifeFusedEngine::shift_encoding() {
+  if (shift_) return shift_.get();
+  auto recorder = Recorder::begin(context_, memory_);
+  if (!recorder) return std::unexpected(std::move(recorder.error()));
+  const std::int64_t half_planes = std::int64_t{kFusedEncodePlanes / 2} * height_ * width_;
+  const BufferView first = scratch(layout_.encode, half_planes);
+  const BufferView second = scratch(layout_.encode + static_cast<std::size_t>(first.size), half_planes);
+  const VkBuffer buffer = first.buffer;
+  const DeviceFunctions& fn = context_.fn();
+  const auto copy = [&fn, buffer, &first, &second](VkCommandBuffer cb) {
+    const VkBufferCopy region{.srcOffset = second.offset, .dstOffset = first.offset, .size = first.size};
+    fn.vkCmdCopyBuffer(cb, buffer, buffer, 1, &region);
+  };
+  if (auto ok = recorder->commands(copy, std::span(&first, 1), false); !ok)
+    return std::unexpected(ok.error());
+  auto recording = recorder->finish();
+  if (!recording) return std::unexpected(std::move(recording.error()));
+  shift_ = std::move(*recording);
+  return shift_.get();
+}
+
+Done RifeFusedEngine::submit_net(BackendQueue& queue, VulkanEngine& piece, const BufferView& in,
+                                 const BufferView& out) {
+  const std::array ins{in};
+  const std::array outs{out};
+  auto recording = piece.net().recording(ins, outs);
+  if (!recording) return std::unexpected(recording.error());
+  return queue.submit(**recording);
+}
+
+Done RifeFusedEngine::encode_pair(BackendQueue& queue, const BufferView& input, Hint hint,
+                                  const std::optional<BufferView>& encoded_from) {
+  const auto same = [](const BufferView& a, const BufferView& b) {
+    return a.buffer == b.buffer && a.offset == b.offset && a.size == b.size;
+  };
+  // L'encodage du dernier appel mené au bout sert tel quel au même instant près (même entrée), ou pour A
+  // quand la paire suit ; sans appel précédent réussi, les deux images passent dans l'encodeur.
+  if (hint == Hint::TimesOnly && encoded_from && same(*encoded_from, input)) return {};
+  const std::int64_t plane = std::int64_t{height_} * width_;
+  // L'encodeur lit une image (A aux plans 0 à 2 de l'entrée, B aux plans 3 à 5) et écrit ses 4 plans
+  // d'encodage, A puis B.
+  const auto image = [&](int first_plane) {
+    return BufferView{.buffer = input.buffer,
+                      .offset = input.offset + static_cast<VkDeviceSize>(first_plane * plane) * kHalf,
+                      .size = static_cast<VkDeviceSize>(3 * plane) * kHalf};
+  };
+  const BufferView encode_a = scratch(layout_.encode, (kFusedEncodePlanes / 2) * plane);
+  const BufferView encode_b =
+      scratch(layout_.encode + static_cast<std::size_t>(encode_a.size), (kFusedEncodePlanes / 2) * plane);
+  if (hint == Hint::Follows && encoded_from) {
+    auto shift = shift_encoding();
+    if (!shift) return std::unexpected(shift.error());
+    if (auto ok = queue.submit(**shift); !ok) return ok;
+  } else {
+    if (auto ok = submit_net(queue, *pieces_[0], image(0), encode_a); !ok) return ok;
+    ++encodes_;
+  }
+  if (auto ok = submit_net(queue, *pieces_[0], image(3), encode_b); !ok) return ok;
+  ++encodes_;
+  return {};
+}
+
 std::expected<std::unique_ptr<Recording>, Refusal> RifeFusedEngine::record_entry(const BufferView& input) {
   auto recorder = Recorder::begin(context_, memory_);
   if (!recorder) return std::unexpected(std::move(recorder.error()));
@@ -307,6 +370,7 @@ std::expected<RifeFusedEngine::Glue*, Refusal> RifeFusedEngine::glue_for(
 
 std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::span<const Tensor> inputs,
                                                       std::span<const Tensor> outputs) {
+  const Hint hint = std::exchange(hint_, Hint::None);  // pour cet appel seulement, même refusé
   if (inputs.size() != 1 || outputs.size() != outputs_.size())
     return refuse(RefusalCode::InputMismatch,
                   std::format("RIFE fusionné : 1 entrée et {} sorties attendues", outputs_.size()));
@@ -332,21 +396,14 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::
     if (!mask) return std::unexpected(mask.error());
     outs[1] = *mask;
   }
+  const std::optional<BufferView> encoded_from =
+      std::exchange(encoded_from_, std::nullopt);  // repris au bout
   auto glue = glue_for(*input, std::span<const BufferView>(outs).first(outputs_.size()));
   if (!glue) return std::unexpected(glue.error());
-
-  // L'encodeur lit les plans 0 à 5 de l'entrée (les images A et B, 2 × 3 × H × W) et écrit l'encodage.
-  const BufferView images{
-      .buffer = input->buffer, .offset = input->offset, .size = static_cast<VkDeviceSize>(6 * plane) * kHalf};
-  const BufferView encode = scratch(layout_.encode, kFusedEncodePlanes * plane);
+  if (auto ok = encode_pair(queue, *input, hint, encoded_from); !ok) return ok;
   const auto run_net = [&](VulkanEngine& piece, const BufferView& in, const BufferView& out) -> Done {
-    const std::array ins{in};
-    const std::array outs_net{out};
-    auto recording = piece.net().recording(ins, outs_net);
-    if (!recording) return std::unexpected(recording.error());
-    return queue.submit(**recording);
+    return submit_net(queue, piece, in, out);
   };
-  if (auto ok = run_net(*pieces_[0], images, encode); !ok) return ok;
   const int first_block = std::exchange(warm_next_, false) ? warm_blocks_ : 0;
   warm_ready_ = false;  // repris si la chaîne va au bout
   for (int k = first_block; k < plan_.blocks; ++k) {
@@ -362,6 +419,7 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::
   }
   auto done = queue.submit(*(*glue)->steps.back());
   warm_ready_ = done.has_value();
+  if (done) encoded_from_ = *input;
   return done;
 }
 
