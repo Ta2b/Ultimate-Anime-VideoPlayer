@@ -44,7 +44,7 @@ struct State {
 int find_build_id(dl_phdr_info* info, std::size_t /*size*/, void* data) {
   std::string& hex = *static_cast<std::string*>(data);
   for (int i = 0; i < info->dlpi_phnum; ++i) {
-    const ElfW(Phdr) & header = info->dlpi_phdr[i];
+    const ElfW(Phdr)& header = info->dlpi_phdr[i];
     if (header.p_type != PT_NOTE) continue;
     // L'adresse du segment est un entier (base de chargement + décalage) : le cast est voulu.
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
@@ -91,9 +91,19 @@ void note_report_fact(std::string_view name, std::string_view value) {
   s.facts.emplace_back(std::string(name), std::string(value));
 }
 
+void forget_report_fact(std::string_view name) {
+  State& s = state();
+  const std::scoped_lock lock(s.mutex);
+  std::erase_if(s.facts, [&](const auto& fact) { return fact.first == name; });
+}
+
 void note_engine_facts(std::string_view engine, std::string_view passed_over) {
   note_report_fact("Moteur", engine);
-  if (!passed_over.empty()) note_report_fact("Moteurs refusés", passed_over);
+  // Un refus d'un moteur précédent ne reste pas affiché quand le moteur suivant a réussi sans refus (C39-06).
+  if (!passed_over.empty())
+    note_report_fact("Moteurs refusés", passed_over);
+  else
+    forget_report_fact("Moteurs refusés");
 }
 
 void note_build_failure(std::string_view code, std::string_view detail) {
@@ -331,7 +341,9 @@ std::string current_report(std::string_view home) {
       parts.previous_log = read_tail(previous, kTail);
       if (!previous_session_crashed()) parts.previous_title = "relancée : " + relaunched;
     }
-    parts.dump_name = latest_dump_name(log.parent_path() / "crashes");
+    // Le minidump n'est nommé que si la séance d'avant a planté : un vieux .dmp sans lien ferait demander un
+    // fichier pour rien (C39-07).
+    if (previous_session_crashed()) parts.dump_name = latest_dump_name(log.parent_path() / "crashes");
   }
   if (parts.current_log.empty()) parts.current_log = "(journal introuvable)\n";
   return compose_report(parts, kBody);

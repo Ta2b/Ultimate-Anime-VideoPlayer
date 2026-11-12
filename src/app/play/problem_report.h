@@ -17,6 +17,8 @@ namespace ajp::app::play {
 // Retient un fait pour le rapport (« Carte », « Pilote »…). Un même nom remplace sa valeur, l'ordre
 // d'arrivée est gardé. Utilisable de tout thread.
 void note_report_fact(std::string_view name, std::string_view value);
+// Retire un fait devenu faux (rien si absent).
+void forget_report_fact(std::string_view name);
 // Le moteur retenu et ceux qui ont refusé l'appareil avant lui, avec leurs raisons (vide : aucun refus).
 void note_engine_facts(std::string_view engine, std::string_view passed_over);
 // Le dernier refus d'une construction de moteur : sa cause en une ligne et la fin du journal de trtexec que

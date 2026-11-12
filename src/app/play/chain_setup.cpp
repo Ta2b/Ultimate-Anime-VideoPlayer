@@ -33,6 +33,7 @@ constexpr int kRifeMotionHeight = 720;
 void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const GpuDevice& device) {
   note_report_fact("GPU", gpu_line(gpu));
   note_report_fact("Préréglage", label(settings.preset));
+  note_report_fact("Réglages changés", "\n" + settings_changes_text(settings));  // options à l'essai (C39-01)
   if (device.vendor() == GpuVendor::Nvidia) note_report_fact("Pilote NVIDIA", device.driver_version);
 }
 
