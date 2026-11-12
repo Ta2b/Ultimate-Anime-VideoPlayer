@@ -130,7 +130,7 @@ void emit_font(const FontTag& tag, std::string& out) {
 
 // Valeur active d'un attribut après fermeture : celle de la balise englobante la
 // plus proche, sinon vide, ce qui rend à libass la valeur du style.
-std::string enclosing(const std::vector<FontTag>& stack, std::optional<std::string> FontTag::*field) {
+std::string enclosing(const std::vector<FontTag>& stack, std::optional<std::string> FontTag::* field) {
   for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
     if (const std::optional<std::string>& value = (*it).*field) return *value;
   }
