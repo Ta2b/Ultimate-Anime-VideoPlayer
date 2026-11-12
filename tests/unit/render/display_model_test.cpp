@@ -18,20 +18,26 @@ TEST_CASE("Modèle d'écran : le pic de KWin en unités du contenu", "[render][d
 }
 
 TEST_CASE("Modèle d'écran : limiteur d'une dalle OLED, pic tenu par un LCD", "[render][display]") {
-  const DisplayModel oled{.panel_peak_nits = 1016.0, .oled = true};
-  CHECK_THAT(oled.max_nits(0.02), WithinRel(1016.0, 1e-9));
-  CHECK_THAT(oled.max_nits(0.10), WithinRel(460.0, 1e-9));
-  CHECK_THAT(oled.max_nits(1.0), WithinRel(261.0, 1e-9));
-  CHECK(oled.max_nits(0.01) == oled.max_nits(0.02));
+  const auto qd = ajp::render::default_abl(1016.0, true);
+  CHECK_THAT(qd.at(0), WithinRel(1016.0, 1e-9));
+  CHECK_THAT(qd.at(1), WithinRel(460.0, 1e-9));
+  CHECK_THAT(qd.at(4), WithinRel(261.0, 1e-9));
+  CHECK(ajp::render::oled_abl_ratio(0.01) == ajp::render::oled_abl_ratio(0.02));
   // Décroissante entre deux relevés.
-  CHECK(oled.max_nits(0.05) < 1016.0);
-  CHECK(oled.max_nits(0.05) > 460.0);
-  CHECK(oled.max_nits(0.3) < oled.max_nits(0.25));
-  REQUIRE(oled.frame_average_content_nits());
-  CHECK_THAT(*oled.frame_average_content_nits(), WithinRel(261.0, 1e-9));
-  const DisplayModel lcd{.panel_peak_nits = 1000.0};
-  CHECK(lcd.max_nits(1.0) == 1000.0);
-  CHECK_FALSE(lcd.frame_average_content_nits());
+  CHECK(ajp::render::oled_abl_ratio(0.05) < 1.0);
+  CHECK(ajp::render::oled_abl_ratio(0.05) > 460.0 / 1016.0);
+  CHECK(ajp::render::oled_abl_ratio(0.3) < ajp::render::oled_abl_ratio(0.25));
+  for (const double nits : ajp::render::default_abl(1000.0, false)) CHECK(nits == 1000.0);
+}
+
+// C41-06 : la courbe est ramenée au pic de la dalle, comme l'annonce l'en-tête. Avant, une OLED de 800 cd/m²
+// recevait en plein champ les 261 d'une QD-OLED de 1016, et un MaxFALL trop haut.
+TEST_CASE("Modèle d'écran : le limiteur d'une OLED suit son pic (C41-06)", "[render][display]") {
+  const auto woled = ajp::render::default_abl(800.0, true);
+  CHECK(woled.at(0) == 800.0);
+  CHECK_THAT(woled.at(4), WithinRel(800.0 * 261.0 / 1016.0, 1e-9));
+  const auto bright = ajp::render::default_abl(1500.0, true);
+  CHECK_THAT(bright.at(4), WithinRel(1500.0 * 261.0 / 1016.0, 1e-9));
 }
 
 TEST_CASE("Option --hdr-metadata : le maximum annoncé est le pic du contenu", "[render][display]") {
@@ -43,16 +49,16 @@ TEST_CASE("Option --hdr-metadata : le maximum annoncé est le pic du contenu", "
   CHECK(identity.max_content_nits == 1000.0);
 }
 
-TEST_CASE("contrat : k = 1,305, C_pk = 766, MaxFALL = 200 en contenu", "[render][display]") {
-  // KDE à 265 nits de référence sur un QD-OLED de 1000 : le plein écran du limiteur (261) vaut 200 du
-  // contenu.
+TEST_CASE("contrat : k = 1,305, C_pk = 766, MaxFALL = 197 en contenu", "[render][display]") {
+  // KDE à 265 nits de référence sur un OLED de 1000 : le plein écran du limiteur (1000 × 261 / 1016 = 257)
+  // vaut 197 du contenu.
   ajp::render::DisplayContract c{.reference_nits = 265.0, .panel_peak_nits = 1000.0};
   c.oled = true;
   c.abl = ajp::render::default_abl(c.panel_peak_nits, c.oled);
   CHECK_THAT(c.k(), WithinRel(265.0 / 203.0, 1e-9));
   CHECK_THAT(c.content_peak_nits(), WithinRel(766.0, 1e-3));
-  CHECK_THAT(c.abl.back(), WithinRel(261.0, 0.01));
-  CHECK_THAT(c.content_frame_average_nits(), WithinRel(200.0, 0.01));
+  CHECK_THAT(c.abl.back(), WithinRel(1000.0 * 261.0 / 1016.0, 1e-9));
+  CHECK_THAT(c.content_frame_average_nits(), WithinRel(196.8, 0.01));
   CHECK(c.abl.front() == 1000.0);
   // Une dalle LCD tient son pic sur toute surface.
   for (const double nits : ajp::render::default_abl(600.0, false)) CHECK(nits == 600.0);
@@ -67,7 +73,7 @@ TEST_CASE("métadonnées du contrat v2 : C_pk annoncé, MaxFALL et noir en unit�
   const ajp::render::ContractMetadata meta = ajp::render::contract_metadata(c);
   CHECK_THAT(meta.max_luma, WithinRel(766.0, 1e-3));
   CHECK(meta.max_cll == meta.max_luma);
-  CHECK_THAT(meta.max_fall, WithinRel(200.0, 0.01));
+  CHECK_THAT(meta.max_fall, WithinRel(196.8, 0.01));
   CHECK_THAT(meta.min_luma, WithinRel(0.0005, 1e-9));
   CHECK(meta.primaries == ajp::render::kDisplayP3);  // sans primaires de l'EDID
   c.primaries = ajp::render::Chromaticities{0.68, 0.30, 0.25, 0.71, 0.15, 0.06, 0.3135, 0.3291};

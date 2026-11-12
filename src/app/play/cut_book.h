@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -24,12 +25,14 @@ std::optional<bool> known_cut(std::span<const media::Shot> shots, std::int64_t a
 class CutBook {
  public:
   void set_shots(std::span<const media::Shot> shots);
+  // Les plans partagés avec la chronologie (ShotTimeline::shots_snapshot), sans copie (C42-09).
+  void set_shots(std::shared_ptr<const std::vector<media::Shot>> shots);
   std::optional<bool> cut_between(std::int64_t a_us, std::int64_t b_us) const;
   bool active() const;
 
  private:
   mutable std::mutex mutex_;
-  std::vector<media::Shot> shots_;
+  std::shared_ptr<const std::vector<media::Shot>> shots_;
 };
 
 }  // namespace ajp::app::play

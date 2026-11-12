@@ -142,8 +142,10 @@ struct PlayOptions {
   // Les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus que signaler les
   // désaccords) ; --no-shot-cuts les coupe.
   bool shot_cuts = true;  // par défaut (désaccords jugés à l'image)
-  // --anime-shots : essai (méga plan A2), la méthode « HDR anime » décide par plan : exposition des surfaces
-  // et marge des éclats fixées par la pré-analyse, glissant aux coupes (anime_shots.h).
+  // --anime-shots (méga plan A2, actif par défaut) : en sortie SDR, la méthode « HDR anime » décide par plan
+  // : exposition des surfaces et marge des éclats fixées par la pré-analyse, glissant hors des coupes
+  // (anime_shots.h) ; --no-anime-shots garde le relèvement fixe. Sans effet en sortie HDR
+  // (render::steady_hdr).
   bool anime_shots = true;  // par défaut (jugé à l'image)
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.

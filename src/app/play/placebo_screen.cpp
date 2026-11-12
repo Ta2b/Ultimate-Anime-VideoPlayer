@@ -139,7 +139,7 @@ void PlaceboScreen::Impl::draw_ui(const ImDrawData* data, const pl_frame& target
 // passes du grade sur OUTPUT. Une source SDR arrive à la netteté en lumière linéaire, une source HDR encodée
 // (A41-06).
 std::size_t PlaceboScreen::Impl::video_hooks(std::array<const pl_hook*, 16>& hooks, const pl_frame* image,
-                                             bool graded_now) const {
+                                             bool graded_now) {
   std::size_t count = 0;
   const auto add = [&](std::span<const pl_hook* const> some) {
     for (const pl_hook* hook : some) {
@@ -158,7 +158,8 @@ std::size_t PlaceboScreen::Impl::video_hooks(std::array<const pl_hook*, 16>& hoo
       channel->warn("Anime4K : source HDR, agrandie par l'affichage (Anime4K ne vaut que pour le SDR)");
     }
   }
-  if (sharpen && sharpen->hook(sdr_source) != nullptr) add(std::array{sharpen->hook(sdr_source)});
+  if (const pl_hook* sharp = sharpen ? sharpen->hook_for(sdr_source) : nullptr; sharp != nullptr)
+    add(std::array{sharp});
   if (graded_now && grade) add(grade->hooks());
   return count;
 }
@@ -177,8 +178,7 @@ void PlaceboScreen::Impl::keep_pass_times(bool graded_now) const {
     anime4k_gpu_us.add(static_cast<std::uint32_t>(anime4k_frame_ns / 1000));
 }
 
-std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
-                                                          const pl_frame& target) const {
+std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image, const pl_frame& target) {
   AJP_TRACE("composition");
   pl_render_params params = pl_render_default_params;
   switch (final_scaler) {

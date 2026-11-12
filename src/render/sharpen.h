@@ -24,12 +24,14 @@ class Sharpen {
   // La force, de 0 à 1 (bornée) ; prise en compte au prochain rendu.
   void set_strength(double strength);
   double strength() const { return strength_; }
-  // Le hook à poser, nullptr à force 0 : l'image n'est alors pas touchée.
-  // sdr_source : la source est SDR, libplacebo la linéarise pour son filtre et le hook la reçoit en lumière
-  // linéaire ; une source HDR reste encodée (A41-06).
-  const pl_hook* hook(bool sdr_source = true) const {
+  // Le hook à poser, nullptr à force 0 : l'image n'est alors pas touchée. Sans effet de bord (C41-09).
+  const pl_hook* hook() const { return strength_ > 0.0 ? hook_ : nullptr; }
+  // Le même, réglé pour la source du rendu qui vient : SDR, libplacebo la linéarise pour son filtre et le
+  // hook la reçoit en lumière linéaire ; une source HDR reste encodée (A41-06). Écrit le //!PARAM
+  // sharpen_linear, que le hook partage : non const, appelé une fois par composition.
+  const pl_hook* hook_for(bool sdr_source) {
     if (linear_ != nullptr) linear_->f = sdr_source ? 1.0F : 0.0F;
-    return strength_ > 0.0 ? hook_ : nullptr;
+    return hook();
   }
 
  private:

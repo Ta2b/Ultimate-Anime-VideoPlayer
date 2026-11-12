@@ -31,6 +31,9 @@ double oled_abl_ratio(double area) {
     if (a > kQdOled[i].area) continue;
     const AblPoint& p = kQdOled[i - 1];
     const AblPoint& q = kQdOled[i];
+    // Sur un relevé, sa valeur exacte, sans détour par les log.
+    if (a == p.area) return p.nits / kQdOled.front().nits;
+    if (a == q.area) return q.nits / kQdOled.front().nits;
     const double t = std::log(a / p.area) / std::log(q.area / p.area);
     return std::exp(std::log(p.nits) + (t * std::log(q.nits / p.nits))) / kQdOled.front().nits;
   }
@@ -39,9 +42,8 @@ double oled_abl_ratio(double area) {
 
 std::array<double, 5> default_abl(double panel_peak_nits, bool oled) {
   std::array<double, 5> out{};
-  const double stretch = std::max(1.0, panel_peak_nits / kQdOled.front().nits);
   for (std::size_t i = 0; i < out.size(); ++i)
-    out[i] = oled ? std::min(panel_peak_nits, kQdOled[i].nits * stretch) : panel_peak_nits;
+    out[i] = oled ? panel_peak_nits * oled_abl_ratio(kAblAreas[i]) : panel_peak_nits;
   return out;
 }
 
@@ -72,15 +74,6 @@ double DisplayModel::scale() const {
 
 double DisplayModel::content_peak_nits() const {
   return panel_peak_nits / scale();
-}
-
-double DisplayModel::max_nits(double area) const {
-  return oled ? panel_peak_nits * oled_abl_ratio(area) : panel_peak_nits;
-}
-
-std::optional<double> DisplayModel::frame_average_content_nits() const {
-  if (!oled) return std::nullopt;
-  return max_nits(1.0) / scale();
 }
 
 }  // namespace ajp::render

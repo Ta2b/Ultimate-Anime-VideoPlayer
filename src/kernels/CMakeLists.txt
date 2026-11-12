@@ -1,7 +1,11 @@
 # kernels : spécification des noyaux (spec.h) et référence CPU FP32 (ref/), vérité des ports
-# CUDA, GLSL et Metal. La référence sert aux tests et aux goldens ; seuls le demi-flottant de ref/half.h (gpu_ir,
-# qui l'utilise pour arrondir comme les noyaux) et l'analyse d'image de ref/frame_stats.h (la pré-analyse des
-# plans, et les mesures tirées des comptes du noyau) sont liés à un binaire livré.
+# CUDA, GLSL et Metal. La référence sert aux tests et aux goldens, mais une partie de ref/ est du code produit,
+# lié aux binaires livrés (C50-05) : le demi-flottant de ref/half.h (gpu_ir, Vulkan, TensorRT : arrondir comme
+# les noyaux), l'analyse d'image de ref/frame_stats.h (la pré-analyse des plans, shot_probe.cpp, et les mesures
+# tirées des comptes du noyau) et, de ref/resample.h, compute_weights et Weights (les tables de chroma de
+# l'ingestion TensorRT, gpu/cuda/backend/ingest_chroma.cpp, de l'export et de l'ingestion Vulkan). frame_stats
+# appelle ref/transfer.cpp. Modifier ces fonctions modifie le lecteur ; le reste de ref/ (color, detect, rife,
+# rife_fused, warp) n'est lu que par les tests, mais fixe le contrat que les ports doivent suivre.
 # Feuille du graphe : ne dépend de rien.
 ajp_add_module(kernels
   SOURCES

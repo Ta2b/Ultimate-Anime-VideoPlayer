@@ -100,6 +100,14 @@ std::int64_t WindowEvents::last_aware_us() const {
   return aware_us_.load(std::memory_order_relaxed);
 }
 
+AwakeWhile::AwakeWhile() {
+  if (!SDL_DisableScreenSaver()) log_channel("app")->warn("économiseur d'écran : {}", SDL_GetError());
+}
+
+AwakeWhile::~AwakeWhile() {
+  if (!SDL_EnableScreenSaver()) log_channel("app")->warn("économiseur d'écran : {}", SDL_GetError());
+}
+
 void ScreenSaverHold::want(bool awake) {
   if (awake_ == awake) return;
   // L'état n'est retenu qu'une fois tenu (C11-10) : un échec (bus D-Bus pas prêt juste après la connexion à
