@@ -8,6 +8,7 @@
 // lui, n'écrit que sous les tampons gardés (C03-01) : ils servent encore.
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <filesystem>
@@ -166,9 +167,20 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
       CHECK(call(s.first, s.buffer, s.t, s.whole, s.say) == want[i]);
     }
   }
+  // --l2-keep : la fenêtre persistante ne change que ce que le L2 garde, pas les octets (direct, capture,
+  // rejeu, les graphes d'avant jetés).
+  auto* engine = static_cast<gpu::cuda::RifeFusedEngine*>(fused.get());
+  engine->keep_in_l2(std::size_t{4} << 20U, std::size_t{4} << 20U);
+  for (int round = 0; round < 3; ++round) {
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      const Step& s = steps[i];
+      INFO("L2 gardé, tour " << round << ", appel " << i);
+      CHECK(call(s.first, s.buffer, s.t, s.whole, s.say) == want[i]);
+    }
+  }
+  engine->keep_in_l2(0, 0);
   // L'autre moteur fusionné de la zone a sa propre région (SharedActivations::region_offset) : il passe entre
   // deux appels sans toucher à l'encodage gardé, que l'appel suivant reprend tel quel (encodeur sauté).
-  auto* engine = static_cast<gpu::cuda::RifeFusedEngine*>(fused.get());
   const std::array other_in{inputs[0]->tensor()};
   REQUIRE(backend.kernels()->rife_input(images[0]->tensor(), images[1]->tensor(), 0.5F, inputs[0]->tensor()));
   for (const float t : {0.5F, 0.25F}) {

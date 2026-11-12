@@ -201,6 +201,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);
+  // La réserve persistante de L2 pour --l2-keep, posée au premier RIFE fusionné ; 0 si refusée ou absente.
+  std::size_t persisting_l2();
   std::expected<void, Refusal> enqueue_rife_fused(RifeFusedEngine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
   // DistilDRBA fusionné (tensorrt_drba_fused.cpp) : un manifeste « .drbafused » à la place de l'ONNX, quatre
@@ -297,6 +299,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::filesystem::path cache_dir_;
   // BackendInit::filtered_warp (--filtered-warp, essai) : le warp lit par objets texture ; éteint, exact.
   bool filtered_warp_ = false;
+  // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
+  bool l2_keep_ = false;
+  std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
   std::filesystem::path trtexec_;
   std::string trtexec_sha256_;  // relevé à create (A05-05)
   BackendLog log_;

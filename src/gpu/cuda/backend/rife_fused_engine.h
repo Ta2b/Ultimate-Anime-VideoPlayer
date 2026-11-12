@@ -89,6 +89,15 @@ class RifeFusedEngine final : public Engine {
     return {.both = encodes_[0], .second = encodes_[1], .none = encodes_[2]};
   }
 
+  // --l2-keep (essai, éteint par défaut) : les deux emplacements de l'encodage gardé sont tenus en L2 le
+  // temps de la chaîne (fenêtre d'accès persistante sur le flux, capturée dans les graphes avec les noyaux) ;
+  // persisting : la part de L2 réservée (cudaLimitPersistingL2CacheSize), max_window : la fenêtre la plus
+  // grande que l'appareil accepte. 0 : rien n'est posé. Les graphes la portent dans leur clé.
+  void keep_in_l2(std::size_t persisting, std::size_t max_window) {
+    l2_persisting_ = persisting;
+    l2_max_window_ = max_window;
+  }
+
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
 
@@ -142,8 +151,8 @@ class RifeFusedEngine final : public Engine {
   std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
 
   // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone, de travail de l'encodeur,
-  // d'emplacement de A et de premier bloc : jusqu'à cinq par jeu d'adresses à froid (Both, puis Second et
-  // None sur chaque emplacement), autant à chaud.
+  // d'emplacement de A, de premier bloc et de fenêtre L2 : jusqu'à cinq par jeu d'adresses à froid (Both,
+  // puis Second et None sur chaque emplacement), autant à chaud.
   static constexpr std::size_t kMaxGraphs = 64;
   FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
   // L'encodage que le dernier appel mené jusqu'au bout a laissé dans la zone, et l'entrée qu'il a lue.
@@ -160,6 +169,8 @@ class RifeFusedEngine final : public Engine {
   int warm_blocks_ = 0;      // blocs repris à chaud (next_warm)
   bool warm_ready_ = false;  // les Y de ces blocs sont ceux de l'appel précédent, mené au bout
   bool warm_next_ = false;
+  std::size_t l2_persisting_ = 0;  // keep_in_l2
+  std::size_t l2_max_window_ = 0;
   std::array<std::uint64_t, 3> encodes_{};  // appels par travail de l'encodeur (Encode), pour les tests
 };
 

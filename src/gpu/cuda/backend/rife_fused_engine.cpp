@@ -9,6 +9,22 @@
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 
 namespace ajp::gpu::cuda {
+namespace {
+
+// Pose la fenêtre d'accès persistante du flux (bytes 0 : la retire) ; les noyaux enfilés ou capturés ensuite
+// la portent. hitRatio : la part de la fenêtre qui tient dans la réserve persistante.
+cudaError_t set_l2_window(cudaStream_t stream, void* base, std::size_t bytes, std::size_t persisting) {
+  cudaStreamAttrValue value{};
+  value.accessPolicyWindow.base_ptr = base;
+  value.accessPolicyWindow.num_bytes = bytes;
+  value.accessPolicyWindow.hitRatio =
+      bytes == 0 ? 0.0F : std::min(1.0F, static_cast<float>(persisting) / static_cast<float>(bytes));
+  value.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
+  value.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
+  return cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &value);
+}
+
+}  // namespace
 
 RifeFusedEngine::~RifeFusedEngine() {
   if (zone_) zone_->drop_region(this);  // sa région ne repousse plus celles des autres moteurs fusionnés
@@ -361,8 +377,22 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
       reinterpret_cast<std::uintptr_t>(arena->data()),
       static_cast<std::uintptr_t>(arena->generation()),
       static_cast<std::uintptr_t>(pass.encode) | static_cast<std::uintptr_t>(pass.a_slot) << 8U |
-          static_cast<std::uintptr_t>(pass.first_block) << 16U};
-  return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs[0], outputs, pass); });
+          static_cast<std::uintptr_t>(pass.first_block) << 16U |
+          static_cast<std::uintptr_t>(l2_persisting_ != 0 && l2_max_window_ != 0) << 24U};
+  const auto chain = [&] { return run(stream, arena, inputs[0], outputs, pass); };
+  if (l2_persisting_ == 0 || l2_max_window_ == 0) return graphs_.launch(stream, key, chain);
+  // Les deux emplacements de l'encodage (4 plans FP16 chacun), relus par la colle de chaque bloc.
+  auto* encode = static_cast<std::byte*>(arena->data()) + scratch_offset_ + layout_.encode;
+  const std::size_t bytes = std::min(
+      std::size_t{16} * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_), l2_max_window_);
+  if (auto ok = cuda_check(set_l2_window(stream, encode, bytes, l2_persisting_), "cudaStreamSetAttribute");
+      !ok)
+    return ok;
+  auto launched = graphs_.launch(stream, key, chain);
+  // Retirée aussitôt : les autres moteurs de la voie (SPAN, moteurs entiers) n'en héritent pas.
+  const cudaError_t reset = set_l2_window(stream, nullptr, 0, 0);
+  if (!launched) return launched;
+  return cuda_check(reset, "cudaStreamSetAttribute");
 }
 
 }  // namespace ajp::gpu::cuda

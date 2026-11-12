@@ -178,6 +178,7 @@ constexpr std::array<Flag, 32> kFlags{{
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
     {"--filtered-warp", &PlayOptions::filtered_warp, true},
+    {"--l2-keep", &PlayOptions::l2_keep, true},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--skip-held", &PlayOptions::skip_held, true},

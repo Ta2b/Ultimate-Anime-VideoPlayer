@@ -156,6 +156,9 @@ struct PlayOptions {
   // --filtered-warp (essai) : le warp TensorRT lit par texture (BackendInit::filtered_warp), pour mesurer son
   // gain ; éteint, la lecture exacte.
   bool filtered_warp = false;
+  // --l2-keep (essai) : l'encodage gardé de RIFE fusionné tenu en L2 (gpu::kTrialL2Keep), pour mesurer
+  // son gain ; éteint par défaut.
+  bool l2_keep = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
