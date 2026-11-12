@@ -29,6 +29,7 @@ std::string format_settings(const PlaySettings& s) {
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
+                            {"smooth_drawings", s.smooth_drawings},
                             {"rife_fused", s.rife_fused},
                             {"drba_fused", s.drba_fused},
                             {"motion_precision", std::string(name(s.motion_precision))},

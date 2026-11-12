@@ -38,7 +38,7 @@ gpu::Shape planes(int channels, int width, int height) {
 
 UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
     : RingStage(std::move(init), static_cast<std::uint32_t>(setup.slots.size()),
-                setup.slots.front().generation),
+                setup.slots.front().generation, smooth_extra_frames(setup.smooth_drawings)),
       setup_(std::move(setup)) {}
 
 UpscaleStage::~UpscaleStage() {
@@ -78,8 +78,12 @@ UpscaleStage::~UpscaleStage() {
         "(côté tenu)",
         drba_.runs, drba_.edges, drba_.held);
   }
-  if (setup_.smooth_drawings)
-    log_channel("gpu")->info("Smooth : {} tenues de deux sources fondues en un mouvement", smoothed_holds_);
+  if (setup_.smooth_drawings) {
+    const auto& h = smoothed_holds_;
+    log_channel("gpu")->info(
+        "Smooth : {} tenues fondues en un mouvement (sur 2 sources : {}, 3 : {}, 4 : {}, 5 : {}, 6 : {})",
+        h[2] + h[3] + h[4] + h[5] + h[6], h[2], h[3], h[4], h[5], h[6]);
+  }
   if (setup_.late_fate) {
     log_channel("gpu")->info(
         "Rapide : {} instants laissés en retard sans calcul, {} calculés après leur instant", late_dropped_,
@@ -430,9 +434,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     }
     count_measured(facts);
   }
-  // Smooth : une tenue de deux sources fondue en un mouvement (upscale_smooth.cpp).
-  smooth_second_ = std::exchange(smooth_first_, false) && facts.same_epoch;
-  smooth_spanned_ = false;
+  // Smooth : une tenue de deux à six sources fondue en un mouvement (upscale_smooth.cpp).
+  smooth_advance(frame, facts, on_grid);
   if (auto ok = smooth_decide(frame, spec, facts, on_grid); !ok)
     return std::unexpected(std::move(ok.error()));
   // L'image seule si l'interpolation ne tourne pas ; la grille repart alors d'elle.
@@ -483,7 +486,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
         continue;
       }
       double t = static_cast<double>(at.t.num) / static_cast<double>(at.t.den);
-      if (smooth_first_ || (smooth_second_ && !source)) t = smooth_hold_u(t, smooth_second_);
+      if (smooth_first_ || (smooth_second_ && !source)) t = smooth_hold_u(t, smooth_rank_, smooth_hold_);
       instants_[outputs_++] =
           Instant{.t = source ? 1.0F : static_cast<float>(t),
                   .pts_us = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us)};
@@ -500,8 +503,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   // Dessin tenu : l'image agrandie de la précédente sert à celle-ci, sans passe de SPAN. Pas plus
   // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire
   // par paire, ne fige pas l'image.
-  reuse_span_ = setup_.engine != nullptr && held && spans_reused_in_row_ < kMaxSpanReuse &&
-                (warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_));
+  reuse_span_ = reuses_span(held);
   spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
   pick_span_buffer();
   // Après un dessin tenu, b paraît à 1/2 sans passe ni warp (poses_copy) : une seule image écrite.
@@ -675,6 +677,15 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
   made.repeated = drba_held_;
   return held_b(made, frame, output);
+}
+
+bool UpscaleStage::reuses_span(bool held) const {
+  if (setup_.engine == nullptr) return false;
+  // Smooth, warp après SPAN : chaque copie de la tenue reprend le SPAN de a, quelle que soit sa longueur ;
+  // aucune n'est montrée telle quelle, et l'autre tampon tient celui de b (span_smooth_b).
+  if (smooth_first_ && warps_spanned()) return true;
+  return held && spans_reused_in_row_ < kMaxSpanReuse &&
+         (warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_));
 }
 
 void UpscaleStage::pick_span_buffer() {

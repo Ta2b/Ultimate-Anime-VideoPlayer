@@ -397,7 +397,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
 PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
                                const std::string& backend_name) {
   return {.file = file,
-          .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices()),
+          .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices(),
+                                     settings.smooth_drawings),
           .languages = {.presets = settings.language_presets},
           .audio_device = settings.audio_device,
           .audio_fallback_delay_us = audio_fallback_delay_us(settings),

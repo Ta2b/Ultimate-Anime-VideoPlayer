@@ -188,7 +188,8 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     to.session.set_header({to.header_text(wanted)});
   }
   if (wanted.keep_poses != r.keep_poses) {
-    to.live.set_keep_poses(wanted.keep_poses);
+    // « Lisser les dessins tenus » l'emporte sur les poses ; il recharge la chaîne, qui les reprend alors.
+    to.live.set_keep_poses(wanted.keep_poses && !r.smooth_drawings);
     controls.notify(wanted.keep_poses ? i18n::ui_tr(("Keep poses: on")) : i18n::ui_tr(("Keep poses: off")),
                     now_us);
   }

@@ -111,7 +111,7 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
 }
 
 media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
-                                      const media::HwDeviceSource* shared) {
+                                      const media::HwDeviceSource* shared, bool smooth_drawings) {
   const bool tensorrt = backend == "tensorrt";
   return {.attempts = decoder_attempts(backend, shared != nullptr, render.vendor() == GpuVendor::Nvidia),
           .render_device = render.uuid,
@@ -122,7 +122,7 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
           // 4:2:2 (Yuv422p16) : la chroma d'une source logicielle n'est jamais réduite (B01-03).
           .full_host_formats = true,
           .host_422 = tensorrt,
-          .direct_surfaces = tensorrt ? kHeldDecodedFrames : 0};
+          .direct_surfaces = tensorrt ? held_decoded_frames(smooth_drawings) : 0};
 }
 
 std::string_view ChainEngines::motion_name() const {
@@ -308,7 +308,6 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.one_lane = o.one_lane;
   c.rife_warm = o.rife_warm;
   c.skip_held = o.skip_held;
-  c.smooth_drawings = o.smooth_drawings;
 }
 
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches).
@@ -571,6 +570,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   take_trials(c, p.options);
+  c.smooth_drawings = settings.smooth_drawings;  // --smooth-drawings compris (settings_for)
   c.work = chain_work_size(settings, video.width, video.height);
   const bool span = take_upscaler(p, c, settings);
   if (span) {

@@ -201,6 +201,12 @@ struct PlaySettings {
   // Garder les poses (DRBA, kernels/spec/poses.h) : un personnage animé en deux garde son rythme
   // pendant que le fond s'interpole ; en direct.
   bool keep_poses = true;
+  // « Lisser les dessins tenus » (upscale_smooth.cpp) : un dessin tenu de deux à six images, suivi d'un
+  // dessin nouveau, se fond en un seul mouvement au lieu de rester figé puis de sauter ; une tenue plus
+  // longue garde la copie, une coupe reste une coupe. RIFE seulement ; prend le pas sur keep_poses
+  // (poses_kept), dont il est l'inverse. Essai, éteint par défaut ; recharge la chaîne (l'étage lit cinq
+  // images en avance).
+  bool smooth_drawings = false;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le
@@ -303,6 +309,11 @@ struct PlaySettings {
   StatsSettings stats;
   friend bool operator==(const PlaySettings&, const PlaySettings&) = default;
 };
+
+// Les poses gardées en effet : « Lisser les dessins tenus » fait l'inverse, et l'emporte.
+inline bool poses_kept(const PlaySettings& s) {
+  return s.keep_poses && !s.smooth_drawings;
+}
 
 // Le curseur « Blanc des surfaces », en % (PlaySettings::surface_white).
 inline constexpr core::Range<int> kSurfaceWhite{50, 100};
