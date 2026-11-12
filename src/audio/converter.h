@@ -22,6 +22,9 @@ namespace ajp::audio {
 // Masque AV_CH_* dont l'ordre natif est celui que SDL3 attend pour ce nombre de canaux.
 std::uint64_t sdl_channel_mask(int channels);
 
+// Limiteur doux : sous le coude (0,8) l'échantillon passe tel quel, au-delà il tend vers ±1 sans l'atteindre.
+float soft_limit(float sample);
+
 class PcmConverter {
  public:
   explicit PcmConverter(PcmFormat output);

@@ -62,7 +62,13 @@ AudioPlayer::AudioPlayer(std::unique_ptr<AudioOutput> output, const PlayerConfig
       events_(std::move(events)),
       log_(make_logger()),
       clock_(std::make_shared<AudioClock>()),
-      regulator_(config.drift) {}
+      regulator_(config.drift) {
+  // B16-01 : aucune sortie ne s'est ouverte au lancement. Même état que pour un appareil retiré : la lecture
+  // continue sans son, sur l'horloge hôte, et la sortie est rouverte à son heure.
+  if (!output_->ready()) {
+    lose_output(Refusal{RefusalCode::AudioDeviceUnavailable, "aucune sortie audio ouverte au lancement"});
+  }
+}
 
 AudioPlayer::~AudioPlayer() = default;
 
@@ -148,6 +154,17 @@ void AudioPlayer::handle(const DeviceReading& reading) {
   pump();
 }
 
+void AudioPlayer::adopt_output(std::vector<PcmBlock>&& back) {
+  pushed_end_us_.reset();
+  ready_.insert(ready_.begin(), std::make_move_iterator(back.begin()), std::make_move_iterator(back.end()));
+  aligning_ = master_ != nullptr;
+  regulator_.restart();
+  last_follow_us_.reset();
+  resampling_ = false;
+  restart_pll();
+  if (!paused_) output_->resume();
+}
+
 // L'audio pas encore entendu revient en tête et repart sur la sortie par défaut, au même temps média : rien
 // n'est perdu ni sauté. Dit à l'OSD, puisque le son change d'appareil.
 void AudioPlayer::handle(const DeviceRemoved& /*removed*/) {
@@ -156,25 +173,41 @@ void AudioPlayer::handle(const DeviceRemoved& /*removed*/) {
     lose_output(back.error());
     return;
   }
-  pushed_end_us_.reset();
-  ready_.insert(ready_.begin(), std::make_move_iterator(back->begin()), std::make_move_iterator(back->end()));
-  aligning_ = master_ != nullptr;
-  regulator_.restart();
-  last_follow_us_.reset();
-  restart_pll();
-  if (!paused_) output_->resume();
+  adopt_output(std::move(*back));
   log_->warn("sortie audio retirée : le son passe sur la sortie par défaut du système");
   if (config_.fallback_delay_us && *config_.fallback_delay_us != output_->delay_us()) {
     log_->info("délai audio de la sortie du système : {} ms", *config_.fallback_delay_us / 1000);
+    chosen_delay_us_ = output_->delay_us();
     set_delay(*config_.fallback_delay_us);
   }
   report(Refusal{RefusalCode::AudioDeviceUnavailable, "sortie audio retirée, son sur la sortie par défaut"});
   pump();
 }
 
+// B31-16. Sans sortie, l'essai attendu est avancé à maintenant ; sur la sortie par défaut de repli, le son
+// revient sur l'appareil choisi, avec son délai ; ailleurs, l'événement ne concerne pas ce lecteur.
+void AudioPlayer::handle(const DeviceReturned& /*returned*/) {
+  if (output_retry_us_) {
+    output_retry_us_ = 0;
+    pump();
+    return;
+  }
+  auto back = output_->reopen_chosen();
+  if (!back) return;  // le son n'est pas sur la sortie de repli, ou l'appareil n'est pas là : rien ne bouge
+  adopt_output(std::move(*back));
+  log_->info("appareil audio choisi de retour : le son revient dessus");
+  if (chosen_delay_us_ && *chosen_delay_us_ != output_->delay_us()) {
+    log_->info("délai audio de l'appareil choisi : {} ms", *chosen_delay_us_ / 1000);
+    set_delay(*chosen_delay_us_);
+  }
+  chosen_delay_us_.reset();
+  pump();
+}
+
 void AudioPlayer::handle(const SyncTo& sync) {
   master_ = sync.master;
   regulator_.reset();
+  resampling_ = false;
   apply_ratio(1.0);
   if (master_) {
     realign();
@@ -229,6 +262,7 @@ bool AudioPlayer::output_back() {
     return false;
   }
   output_retry_us_.reset();
+  resampling_ = false;
   aligning_ = master_ != nullptr;
   regulator_.restart();
   last_follow_us_.reset();
@@ -390,7 +424,27 @@ void AudioPlayer::follow(std::int64_t heard_us, const DeviceReading& reading) {
   }
   const std::int64_t elapsed_us = last_follow_us_ ? reading.host_us - *last_follow_us_ : 0;
   last_follow_us_ = reading.host_us;
-  apply_ratio(regulator_.update(error_us, elapsed_us));
+  apply_ratio(with_dead_zone(regulator_.update(error_us, elapsed_us)));
+}
+
+// B16-02 : tout rapport différent de 1 fait rééchantillonner tout le signal par SDL (filtre court, aigus
+// atténués, repliement). Un écart d'horloge de quelques dizaines de ppm, le cas courant, se garde donc à 1 :
+// l'écart grandit de 0,3 ms par seconde à 300 ppm, et le régulateur ne sort de la zone que s'il dépasse
+// quelques millisecondes. Un vrai rapport (1,001 d'un calage sur l'écran) passe, et se journalise.
+double AudioPlayer::with_dead_zone(double ratio) {
+  constexpr double kEnter = 0.0003;  // 300 ppm
+  constexpr double kLeave = 0.0001;  // 100 ppm : l'hystérésis évite de basculer à chaque mesure
+  const double deviation = std::abs(ratio - 1.0);
+  const bool wanted = resampling_ ? deviation >= kLeave : deviation > kEnter;
+  if (wanted != resampling_) {
+    resampling_ = wanted;
+    if (wanted) {
+      log_->info("rapport de fréquence {:.5f} : SDL rééchantillonne la file", ratio);
+    } else {
+      log_->info("rapport de fréquence revenu à 1 : plus de rééchantillonnage");
+    }
+  }
+  return resampling_ ? ratio : 1.0;
 }
 
 // L'audio pas encore consommé revient en tête, pour se caler avec le reste.

@@ -442,3 +442,87 @@ TEST_CASE("AudioPlayer : casque retiré, la sortie du système reprend son propr
   kept.player->handle(DeviceRemoved{});
   CHECK(kept.player->output().delay_us() == 200'000);
 }
+
+// B16-01 : la sortie ne s'est pas ouverte au lancement (casque Bluetooth pas encore connecté, PipeWire pas
+// prêt). Le lecteur démarre quand même : un refus dit une fois, la lecture continue sans son sur l'horloge
+// hôte, et le son vient tout seul quand la sortie s'ouvre, sans rouvrir le fichier.
+TEST_CASE("AudioPlayer : sortie absente au lancement, un refus, puis le son vient sans relance",
+          "[audio][player][startup]") {
+  Rig rig(PlayerConfig{.reopen_retry_us = 0}, {}, kLatency, /*dormant=*/true);
+  REQUIRE(rig.refusals.size() == 1);
+  CHECK(rig.refusals[0].code == RefusalCode::AudioDeviceUnavailable);
+  CHECK_FALSE(rig.clock().valid);  // l'horloge hôte mène
+
+  rig.fake->fail_reopens(1'000'000);  // la sortie ne vient pas, pour l'instant
+  rig.feed(encode_sine({.seconds = 1.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  CHECK(rig.fake->pushed_frames() == 0);  // rien n'est poussé vers une file qui n'existe pas
+  CHECK(rig.fake->reopens() >= 1);
+  CHECK(rig.refusals.size() == 1);  // pas un refus par paquet
+
+  // La sortie s'ouvre : les paquets suivants jouent, la position repart d'un temps média.
+  rig.fake->fail_reopens(0);
+  rig.feed(encode_sine({.seconds = 1.0}));
+  rig.player->handle(rig.fake->play(4'800, rig.now_us() + 100'000));
+  CHECK(rig.fake->pushed_frames() > 0);
+  CHECK(rig.clock().valid);
+  CHECK(rig.refusals.size() == 1);
+}
+
+TEST_CASE("AudioPlayer : l'appareil choisi revient, le son reprend sur lui avec son délai (B31-16)",
+          "[audio][player]") {
+  Rig rig(PlayerConfig{.fallback_delay_us = 0});
+  rig.player->handle(Command{cmd::SetAudioDelay{.delay_us = -200'000}});  // casque Bluetooth
+  rig.feed(encode_sine({.seconds = 2.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  const std::int64_t t = rig.now_us() + 100'000;
+  rig.player->handle(rig.fake->play(4'800, t));
+
+  // Le casque disparaît : repli sur le système, délai du système.
+  rig.player->handle(DeviceRemoved{});
+  CHECK(rig.player->output().delay_us() == 0);
+
+  // Un autre appareil arrive, pas le choisi : rien ne bouge.
+  rig.fake->set_chosen_available(false);
+  rig.player->handle(DeviceReturned{});
+  CHECK(rig.fake->chosen_reopens() == 1);
+  CHECK(rig.fake->reopens() == 1);
+
+  // Le casque revient : file rouverte sur lui, délai repris, audio non entendu repoussé.
+  rig.fake->set_chosen_available(true);
+  rig.player->handle(DeviceReturned{});
+  CHECK(rig.fake->chosen_reopens() == 2);
+  CHECK(rig.player->output().delay_us() == -200'000);
+  CHECK_FALSE(rig.fake->paused());  // la lecture continue
+  const std::int64_t pushed = rig.fake->pushed_frames();
+  rig.player->handle(rig.fake->play(4'800, t + 100'000));
+  CHECK(rig.fake->pushed_frames() >= pushed);
+  CHECK(rig.clock().valid);
+}
+
+TEST_CASE("AudioPlayer : le retour de l'appareil rouvre tout de suite une sortie perdue", "[audio][player]") {
+  Rig rig(PlayerConfig{.reopen_retry_us = 3'600'000'000});  // l'essai attendu est dans une heure
+  rig.feed(encode_sine({.seconds = 0.5}));
+  rig.player->handle(Command{cmd::Play{}});
+  rig.fake->fail_reopens(1);
+  rig.player->handle(DeviceRemoved{});  // aucune sortie par défaut
+  const int reopens = rig.fake->reopens();
+  rig.player->handle(DeviceReturned{});  // le casque revient
+  CHECK(rig.fake->reopens() == reopens + 1);
+  CHECK(rig.fake->chosen_reopens() == 0);  // la sortie manquait : c'est la réouverture ordinaire
+}
+
+// B16-02 : un petit écart d'horloge ne fait pas rééchantillonner SDL.
+TEST_CASE("AudioPlayer : écran maître à la même vitesse, le rapport reste exactement 1", "[audio][sync]") {
+  Rig rig;
+  auto master = std::make_shared<ajp::audio::test::FakeMaster>();
+  const std::int64_t t0 = rig.now_us();
+  master->set({.media_us = 0, .host_us = t0, .rate = 1.0, .valid = true});
+  rig.player->handle(SyncTo{master});
+  rig.feed(encode_sine({.seconds = 6.0}));
+  rig.player->handle(Command{cmd::Play{}});
+  for (std::int64_t k = 1; k <= 200; ++k) {
+    rig.player->handle(rig.fake->play(1'024, t0 + k * 21'333));
+    REQUIRE(rig.fake->ratio() == 1.0);
+  }
+}
