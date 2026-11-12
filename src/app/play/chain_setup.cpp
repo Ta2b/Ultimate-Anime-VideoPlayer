@@ -26,9 +26,6 @@
 namespace ajp::app::play {
 namespace {
 
-// Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K).
-constexpr int kRifeMotionHeight = 720;
-
 // Ce que le rapport « Signaler un problème » dit de la carte et du préréglage joué (A39-02).
 void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const GpuDevice& device) {
   note_report_fact("GPU", gpu_line(gpu));
@@ -637,7 +634,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   }
   // Au-delà de 720 lignes de travail (la 4K sans réduction), RIFE estime le mouvement sur une copie
   // réduite à 720p et le warp déforme les images de travail : la variante mouvement seulement.
-  c.rife_size = !p.options.rife_image && c.work.height > kRifeMotionHeight
+  c.rife_size = !p.options.rife_image && rife_motion_reduced(c.work)
                     ? work_size(video.width, video.height, kRifeMotionHeight)
                     : c.work;
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);

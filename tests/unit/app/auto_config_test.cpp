@@ -258,6 +258,18 @@ TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de le
   moved = base;
   moved.keep_poses = !base.keep_poses;
   CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  // Les réglages avancés de la chaîne comptent aussi : l'infobulle promet Personnalisé (C23-06).
+  for (const auto change :
+       {+[](ajp::app::play::PlaySettings& s) { s.rife_fused = !s.rife_fused; },
+        +[](ajp::app::play::PlaySettings& s) { s.drba_fused = !s.drba_fused; },
+        +[](ajp::app::play::PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; },
+        +[](ajp::app::play::PlaySettings& s) { s.cubic_warp = !s.cubic_warp; },
+        +[](ajp::app::play::PlaySettings& s) { s.pair_scale = !s.pair_scale; },
+        +[](ajp::app::play::PlaySettings& s) { s.auto_cap = s.auto_cap == 60 ? 120 : 60; }}) {
+    moved = base;
+    change(moved);
+    CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  }
   // Le mode auto Rapide n'appartient à la chaîne que sous l'Auto calibré, qui l'écrit (A07-06).
   moved = base;
   moved.auto_free = !base.auto_free;

@@ -75,6 +75,10 @@ void keep_unknown_keys(toml::table& fresh, const toml::table& existing, const Ta
   std::vector<std::vector<std::string>> paths;
   std::vector<std::string> at;
   leaves(existing, paths, at);
+  // Chaque feuille coûte deux copies de la table : au-delà, ce n'est pas un fichier de réglages, ses clés
+  // inconnues ne sont pas gardées (C22-07).
+  constexpr std::size_t kMaxLeaves = 2000;
+  if (paths.size() > kMaxLeaves) return;
   for (const std::vector<std::string>& path : paths) {
     const toml::table* fresh_parent = table_at(fresh, path, false);
     if (fresh_parent != nullptr && fresh_parent->contains(path.back())) continue;
