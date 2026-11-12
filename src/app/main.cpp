@@ -36,8 +36,8 @@ extern char** environ;  // NOLINT : posix_spawn le prend tel quel
 #include <format>
 #include <fstream>
 #include <memory>
-#include <span>
 #include <optional>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -140,7 +140,6 @@ bool& log_open() {
   return open;
 }
 
-
 int fail(const ajp::Refusal& refusal) {
   if (log_open()) {
     ajp::log_channel("app")->error("{} {}", ajp::name(refusal.code), refusal.detail);  // stderr compris
@@ -162,8 +161,8 @@ int fail_shown(const ajp::Refusal& refusal, const ajp::app::play::PlayOptions& o
   return code;
 }
 
-// C18-04 : une ligne de commande refusée (option inconnue ou retirée, raccourci ou fiche .desktop d'une version
-// d'avant) se dit aussi dans une boîte quand personne ne lit stderr : ni terminal, ni essai scripté.
+// C18-04 : une ligne de commande refusée (option inconnue ou retirée, raccourci ou fiche .desktop d'une
+// version d'avant) se dit aussi dans une boîte quand personne ne lit stderr : ni terminal, ni essai scripté.
 int fail_arguments(const ajp::Refusal& refusal, std::span<const std::string_view> args) {
   const int code = fail(refusal);
   const bool scripted = std::ranges::any_of(args, [](std::string_view arg) {
@@ -247,10 +246,11 @@ int relaunch_failed(const std::filesystem::path& log_file, const std::string& ca
 
 // Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur ou la perte du GPU : il
 // remplace ce processus (POSIX) ou démarre à sa place (Windows). fresh (POSIX) : un processus neuf par
-// posix_spawn, l'appelant sortant ensuite ; une fermeture figée ne peut pas faire execv, qui attendrait la fin
-// d'un fil bloqué dans un ioctl du pilote (C31-03).
+// posix_spawn, l'appelant sortant ensuite ; une fermeture figée ne peut pas faire execv, qui attendrait la
+// fin d'un fil bloqué dans un ioctl du pilote (C31-03).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv,
-             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file, bool fresh = false) {
+             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file,
+             bool fresh = false) {
   const std::vector<std::string_view> launched(argv + 1, argv + argc);
   const std::vector<std::string> kept = ajp::app::play::relaunch_arguments(launched, reason);
   ajp::log_channel("app")->info("relance ({})", ajp::app::play::relaunched_name(reason));
@@ -277,7 +277,8 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
     pid_t child = 0;
     const int spawned = posix_spawn(&child, executable.c_str(), nullptr, nullptr, arguments.data(), environ);
     if (spawned == 0) return 0;
-    return relaunch_failed(log_file, std::format("posix_spawn : {} (errno {})", std::strerror(spawned), spawned));
+    return relaunch_failed(log_file,
+                           std::format("posix_spawn : {} (errno {})", std::strerror(spawned), spawned));
   }
   execv(executable.c_str(), arguments.data());
   const int error = errno;  // execv ne revient que sur un échec
@@ -663,7 +664,8 @@ int run_player(int argc, char** argv) {
   if (const auto took = std::chrono::steady_clock::now() - audio_from; took > std::chrono::milliseconds(100))
     ajp::log_channel("app")->info("audio prêt en {} ms",
                                   std::chrono::duration_cast<std::chrono::milliseconds>(took).count());
-  const ajp::app::play::DataPlaces places = ajp::app::play::settle_data(data, place, !options->data_dir && !options->bench_out);
+  const ajp::app::play::DataPlaces places =
+      ajp::app::play::settle_data(data, place, !options->data_dir && !options->bench_out);
   const std::filesystem::path& heavy = places.heavy;
   const std::filesystem::path& cache = places.cache;
   bool engines_updated = false;  // un moteur mis à jour ou le GPU perdu : le lecteur se relance (play())
@@ -706,12 +708,18 @@ int run_player(int argc, char** argv) {
   SDL_Quit();
   if (played && engines_updated) return relaunch(place.executable, argc, argv, relaunch_reason, log_file);
   if (played) return 0;
+  // C18-09 : la fenêtre fermée pendant une attente (moteur, sonde) est une sortie voulue : ni erreur ni
+  // code 1.
+  if (played.error().code == ajp::RefusalCode::Cancelled) {
+    ajp::log_channel("app")->info("fermé pendant l'attente : {}", played.error().detail);
+    return 0;
+  }
   // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.
   ajp::log_channel("app")->error("{} {}", ajp::name(played.error().code), played.error().detail);
   // Lancé par un double-clic, personne ne lit stderr : la fenêtre ne se ferme pas sans un mot. Pas
   // de boîte pendant un essai scripté (--keys, --snapshot, banc), qui doit finir seul, ni pour une
   // annulation voulue.
-  if (!quiet_failures() && played.error().code != ajp::RefusalCode::Cancelled) {
+  if (!quiet_failures()) {
     namespace i18n = ajp::app::play::i18n;
     std::string text =
         i18n::tr_format("Playback stopped: {}.", ajp::app::play::visible_error(played.error()));
