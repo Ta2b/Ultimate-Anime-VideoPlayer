@@ -148,6 +148,14 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
   const auto named = scripted_export("export=/tmp/sortie.mkv", running, video, source);
   REQUIRE(named);
   CHECK(named->output == std::filesystem::path("/tmp/sortie.mkv"));
+  CHECK(named->codec == exporter::Codec::Hevc);
+  // Sans perte, pour les bancs de qualité (tools/bench/petits_gpu.py).
+  const auto lossless = scripted_export("export-lossless=/tmp/sortie.mkv", running, video, source);
+  REQUIRE(lossless);
+  CHECK(lossless->codec == exporter::Codec::Lossless);
+  CHECK(lossless->output == std::filesystem::path("/tmp/sortie.mkv"));
+  CHECK(scripted_export("export-lossless", running, video, source)->codec == exporter::Codec::Lossless);
+  CHECK_FALSE(scripted_export("export-losslessly", running, video, source));
 }
 
 TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {

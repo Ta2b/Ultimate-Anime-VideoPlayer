@@ -18,6 +18,7 @@ int osd_script(const std::uint8_t* data, std::size_t size);     // texte de l'OS
 int ass_render(const std::uint8_t* data, std::size_t size);    // script ASS lu puis rendu sur quatre fils
 int keys(const std::uint8_t* data, std::size_t size);          // [keys] de user.toml
 int span_package(const std::uint8_t* data, std::size_t size);  // paquet de poids .span8
+int mkv_chapters(const std::uint8_t* data, std::size_t size);  // chapitres d'un MKV (B35-03)
 // fuzz_parsers.cpp
 int onnx(const std::uint8_t* data, std::size_t size);          // modèle ONNX (protobuf)
 int srt(const std::uint8_t* data, std::size_t size);           // SRT, encodage compris

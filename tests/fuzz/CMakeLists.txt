@@ -1,6 +1,6 @@
 # Fuzz des entrées venues de l'extérieur : settings.toml et play.toml, l'EDID de l'écran, les
 # journaux de construction du cache, la mémoire de reprise, le texte de l'OSD échappé en ASS, les scripts ASS rendus
-# par libass, [keys] de user.toml, le paquet .span8.
+# par libass, [keys] de user.toml, le paquet .span8, les chapitres d'un fichier Matroska.
 # Chaque cible (fuzz_<cible>.cpp, fuzz_targets.h) lit des octets quelconques et vérifie aussi ses
 # propriétés (fuzz_check.h : relecture à l'identique, plages, rien ne sort d'une ligne ASS).
 #
@@ -14,7 +14,7 @@
 # POSIX seulement (le pilote nomme l'entrée fautive depuis un gestionnaire de signal).
 option(AJP_FUZZ_LIBFUZZER "Cibles libFuzzer en plus du rejeu (Clang : -fsanitize=fuzzer)" OFF)
 
-set(ajp_fuzz_targets settings play_settings edid build_log resume osd_script ass_render)
+set(ajp_fuzz_targets settings play_settings edid build_log resume osd_script ass_render mkv_chapters)
 # Les lecteurs de fichiers et de flux (P1.29) : une source pour toutes, fuzz_parsers.cpp (keys et span_package :
 # fuzz_formats.cpp).
 set(ajp_fuzz_parser_targets onnx srt cube inflate manifest options engine_index update_state prepare_onnx keys
@@ -25,7 +25,7 @@ foreach(name IN LISTS ajp_fuzz_targets)
 endforeach()
 
 add_executable(ajp_fuzz_replay replay_main.cpp ${ajp_fuzz_sources} fuzz_parsers.cpp fuzz_formats.cpp)
-target_link_libraries(ajp_fuzz_replay PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::gpu_span_fp8 ajp::prepare ajp::render
+target_link_libraries(ajp_fuzz_replay PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::gpu_span_fp8 ajp::media ajp::prepare ajp::render
                                               ajp::subs)
 ajp_set_warnings(ajp_fuzz_replay)
 # La reprise écrit et relit un fichier par entrée : moins de mutations, pour quelques secondes.
@@ -46,7 +46,7 @@ if(AJP_FUZZ_LIBFUZZER)
     else()
       add_executable(ajp_fuzz_${name} libfuzzer_entry.cpp fuzz_${name}.cpp)
     endif()
-    target_link_libraries(ajp_fuzz_${name} PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::gpu_span_fp8 ajp::prepare
+    target_link_libraries(ajp_fuzz_${name} PRIVATE ajp::app ajp::core ajp::gpu_ir ajp::gpu_span_fp8 ajp::media ajp::prepare
                                                    ajp::render ajp::subs)
     target_compile_definitions(ajp_fuzz_${name} PRIVATE AJP_FUZZ_TARGET=${name})
     target_compile_options(ajp_fuzz_${name} PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)

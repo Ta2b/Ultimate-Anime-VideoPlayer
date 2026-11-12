@@ -301,6 +301,9 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
   // à une image que SPAN a déjà nettoyée. Tramage vers la profondeur de la sortie.
   pl_render_params params = pl_render_high_quality_params;
   params.deband_params = nullptr;
+  const std::span<const pl_hook* const> hooks = screen_.anime4k_hooks();  // Anime4K de la chaîne, ou rien
+  params.hooks = hooks.data();
+  params.num_hooks = static_cast<int>(hooks.size());
   const bool rendered = pl_render_image(renderer_, &image, &target, &params);
   Converted out = given_back(std::nullopt);  // la copie lit les textures de sortie, plus le slot
   if (!rendered) out.failure = Refusal{RefusalCode::VendorCallFailed, "export : pl_render_image"};

@@ -11,6 +11,7 @@
 
 #include <imgui.h>
 
+#include "app/play/anime4k_choice.h"
 #include "app/play/auto_config.h"
 #include "app/play/engine_install.h"
 #include "app/play/engine_switch.h"
@@ -319,8 +320,10 @@ PlaySettings within_engines(PlaySettings settings, const core::Settings& engines
   const bool inference =
       std::ranges::any_of(std::array{core::EngineId::TensorRt, core::EngineId::Vulkan, core::EngineId::Metal},
                           [&](core::EngineId id) { return chosen(engines, id); });
-  if (!inference && (settings.upscale || settings.rife_factor >= 2)) {
-    settings.upscale = false;
+  // Anime4K ne demande aucun moteur de réseau (anime4k_choice.h) : son agrandissement reste.
+  const bool shaders = anime4k_size(settings.model).has_value();
+  if (!inference && ((settings.upscale && !shaders) || settings.rife_factor >= 2)) {
+    settings.upscale = settings.upscale && shaders;
     settings.rife_factor = 0;
     settings.rife_factor_den = 1;
     notes.emplace_back(i18n::tr("neither TensorRT nor Vulkan chosen: no SPAN or RIFE"));

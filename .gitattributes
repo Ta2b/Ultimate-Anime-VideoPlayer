@@ -15,3 +15,6 @@ data/luts/*.cube -text
 # ajoutaient un retour chariot aux sources de libass et de libplacebo (un fichier de symboles, un script meson).
 *.patch text eol=lf
 *.cmake text eol=lf
+
+# La copie d'Anime4K (third_party/anime4k) : des octets exacts, que FILES.sha256 vérifie.
+third_party/anime4k/** -text

@@ -403,7 +403,7 @@ TEST_CASE("SourceThread : une erreur de lecture passagère est retentée, rien n
 TEST_CASE("SourceThread : une erreur de lecture qui dure se dit en IoFailed avant la fin du flux",
           "[media][source]") {
   Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
-                 ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(EIO)});
+                 ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(EIO), .io_budget_ms = 200});
   const std::vector<std::int64_t> pts = play_to_end(source);
   CHECK(source.listener.wait_end(0));
   // Les images déjà lues sortent du décodeur avant la fin du flux.
@@ -430,7 +430,11 @@ TEST_CASE("SourceThread : une fin de fichier sur erreur d'E/S collée est retent
 
 TEST_CASE("SourceThread : une fin de fichier sur erreur d'E/S qui dure se dit", "[media][source]") {
   Running source(require_clip(long_clip()), 4, 0, {}, 0, kDefaultReserveBytes,
-                 ReadFault{.after_packets = 60, .count = 1000, .error = AVERROR(EIO), .sticky_eof = true});
+                 ReadFault{.after_packets = 60,
+                           .count = 1000,
+                           .error = AVERROR(EIO),
+                           .sticky_eof = true,
+                           .io_budget_ms = 200});
   const std::vector<std::int64_t> pts = play_to_end(source);
   CHECK(source.listener.wait_end(0));
   CHECK(pts.size() < 100);
@@ -568,4 +572,32 @@ TEST_CASE("SourceThread : l'audio d'après un seek est rogné là où la lecture
   REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 5 * kFrameUs, .exact = false}}));
   std::ignore = source.pop_epoch(3);
   for (const auto& trim : trims_of(3)) CHECK_FALSE(trim.has_value());  // seek rapide : rien à rogner
+}
+
+// B15-02 : en cadence variable, la durée du paquet (ici 1 ms) n'est pas celle de l'image. L'image à 1000 ms
+// dure jusqu'à 1083 ms : un seek exact à 1060 ms l'affiche, et non l'image d'après.
+TEST_CASE("SourceThread : seek exact en cadence variable, l'image qui couvre la cible est livrée",
+          "[media][source][seek]") {
+  ClipSpec spec{.name = "cadence-variable.mkv", .frames = 6, .frame_rate = {1000, 1}, .gop = 1};
+  spec.frame_ticks = {0, 40, 80, 1000, 1083, 1125};
+  Running source(spec, 4);
+  REQUIRE(source.sink.pop(source.inbox).has_value());
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 1}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 1'060'000, .exact = true}}));
+  const DecodedFrame frame = source.pop_epoch(1);
+  CHECK(frame.pts_us == 1'000'000);
+  CHECK(frame.duration_us == 83'000);
+}
+
+// B14-06 : un second seek refusé avant la première image du premier revient à la cible du premier, pas à
+// la position d'avant.
+TEST_CASE("SourceThread : un seek refusé revient à la cible du seek précédent", "[media][source][seek]") {
+  Running source(require_clip(long_clip()), 2);
+  CHECK(source.pop().pts_us == 0);
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 1}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 2'000'000, .exact = true}}));
+  REQUIRE(source.inbox.try_push(Flush{.epoch = 2}));
+  REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = 3'600'000'000, .exact = true}}));
+  const DecodedFrame frame = source.pop_epoch(2);
+  CHECK(frame.pts_us >= 2'000'000);
 }

@@ -20,6 +20,7 @@
 #include "core/ring.h"
 #include "core/types.h"
 #include "media/hw_api.h"
+#include "render/anime4k.h"
 #include "render/cube_lut.h"
 #include "render/display_model.h"
 #include "render/grade_params.h"
@@ -137,6 +138,11 @@ class PlaceboScreen final : public Screen {
   // Composition finale : filtre qui étire vers la fenêtre, débandage, netteté (0 à 100 %, render/sharpen.h) ;
   // sans effet sur l'export.
   void set_finish(FinalScaler scaler, bool deband, int sharpness);
+  // Anime4K (render/anime4k.h) posé sur MAIN devant la netteté et le grade, pour la chaîne qui s'ouvre ; rien
+  // : retiré. Ses shaders se lisent ici : un refus (VendorCallFailed) laisse l'image sans lui.
+  std::expected<void, Refusal> set_anime4k(const std::optional<render::Anime4kChoice>& choice);
+  // Les hooks d'Anime4K posés, pour l'export qui rend le ring lui-même (vide sans Anime4K).
+  std::span<const pl_hook* const> anime4k_hooks() const;
   bool hdr_output() const;  // la dernière présentation était en PQ
   // Sortie SDR même sur un écran HDR (HDR du système absent ou trop sombre, system_hdr) : la swapchain change
   // d'espace de couleur à la présentation suivante, sans réouverture. Faux : HDR10 si l'écran en reçoit et

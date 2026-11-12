@@ -19,6 +19,7 @@
 #include "kernels/spec/color.h"
 #include "media/demuxer.h"
 #include "media/selection.h"
+#include "media/telecine.h"
 #include "media/video_decoder.h"
 #include "prepare/utf8.h"
 
@@ -140,6 +141,13 @@ std::expected<std::unique_ptr<Pipeline>, Refusal> Pipeline::open(const PipelineC
   if (!choice.video) {
     return std::unexpected(Refusal{RefusalCode::TrackUnavailable,
                                    std::format("{}: no video track", prepare::utf8_path(config.file))});
+  }
+  // B15-01 : le télécinéma supposé d'une piste entrelacée à 29,97 i/s se vérifie ; du vrai 30i n'a pas à
+  // perdre une image sur cinq. Sans conclusion, le choix d'avant (télécinéma, le cas des animes) reste.
+  if (const media::TrackInfo* chosen = demuxer->track(*choice.video);
+      chosen != nullptr && chosen->inverse_telecine) {
+    if (const std::optional<bool> telecine = media::measure_telecine(*demuxer, *chosen))
+      demuxer->set_inverse_telecine(*choice.video, *telecine);
   }
   p->video_track_ = *demuxer->track(*choice.video);
   p->duration_us_ = demuxer->duration_us();

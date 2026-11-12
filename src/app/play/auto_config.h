@@ -31,6 +31,13 @@ inline constexpr bool kDistilDrbaInAuto = false;
 // auto_config.cpp). Le choix manuel dans la liste des modèles reste ouvert.
 inline constexpr bool kLightSpanInAuto = false;
 
+// Anime4K Fast (anime4k_choice.h) dans la tranche Économe, préréglage et Auto : faux tant que le banc des
+// petites cartes (tools/bench/petits-gpu.sh, docs/anime4k.md) n'a pas montré, sur un iGPU, une image
+// meilleure qu'Économe sans agrandissement, tenue sans image perdue. Vrai, Économe agrandit avec lui depuis
+// la moitié de l'écran ; il y prime sur ArtCNN (aucun moteur de réseau à construire). Le choix manuel dans la
+// liste des modèles reste ouvert.
+inline constexpr bool kAnime4kInAuto = false;
+
 std::string_view key(
     Preset preset);  // « auto », « economy », « fast », « normal », « quality », « ultra », « custom »
 std::string_view label(Preset preset);  // « Auto », « Économe », « Rapide », « Normal », « Qualité », « Ultra

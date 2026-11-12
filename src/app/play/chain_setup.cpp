@@ -141,6 +141,9 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
 }
 
 std::string ChainEngines::span_label() const {
+  if (anime4k)
+    return std::format("Anime4K ×2 · {} · mode {} · libplacebo · {} → {}x{}", render::name(anime4k->size),
+                       render::name(anime4k->mode), reduce, work.width * 2, work.height * 2);
   if (!model) return i18n::tr_format("no upscaling · {}", reduce);
   return std::format("SPAN ×{} · {} {} · {} · {} → {}x{}", factor, model->path.stem().string(),
                      span_int8 ? std::string(variant_text(span_int8->kind)) : std::string("FP16"),
@@ -568,10 +571,8 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const media::TrackInfo& video = p.video;
   ChainEngines c;
   take_trials(c, p.options);
-  const bool span = span_runs(settings, video.height);
-  if (settings.upscale && !span)
-    log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
-                             video.height);
+  c.work = chain_work_size(settings, video.width, video.height);
+  const bool span = take_upscaler(p, c, settings);
   if (span) {
     auto chosen = choose_model(p.options, p.paths.home, settings, p.paths.models);
     if (!chosen) return stage_refused(std::move(chosen.error()), ChainStage::Upscale);
@@ -579,7 +580,6 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   }
   c.factor = c.model ? kSpanFactor : 1;
   c.order_factor = order_factor(settings, display_refresh_hz(p.screen.window()), fps_of(p.video.frame_rate));
-  c.work = chain_work_size(settings, video.width, video.height);
   const bool reduced = c.work != WorkSize{video.width, video.height};
   c.reduce = reduced ? std::format("{}x{} → {} {}x{}", video.width, video.height, label(settings.downscale),
                                    c.work.width, c.work.height)

@@ -2,7 +2,8 @@
 // disposition de l'encodeur (YUV 4:2:0, 10 bits en P010 ou en plans séparés), avec ses meilleurs
 // filtres de mise à l'échelle, puis copiée sans attendre dans des tampons que l'encodeur lit tels
 // quels. Ni grade, ni HDR, ni sous-titres, ni interface : l'image du ring telle que la chaîne l'a
-// faite, au moins aussi fine qu'à l'écran.
+// faite, au moins aussi fine qu'à l'écran. Seul Anime4K, que l'écran tient pour la chaîne ouverte
+// (PlaceboScreen::set_anime4k), y passe : il double l'image de travail du ring vers la taille encodée.
 //
 // Trois chemins. Pour NVENC, des tampons d'appareil exportés vers CUDA : les plans y sont copiés
 // sur le GPU, puis d'une copie CUDA dans une image du pool de l'encodeur, et le tampon repart

@@ -144,6 +144,14 @@ std::optional<Refusal> destination_problem(const std::filesystem::path& output,
   return std::nullopt;
 }
 
+// La sortie de la chaîne avant la taille encodée : l'anneau (l'image de travail, doublée par SPAN), ou son
+// double quand Anime4K l'agrandit au rendu (FrameExport). L'anneau garde alors l'image de travail : le puits
+// CUDA, qui écrit l'anneau tel quel dans l'encodeur, se refuse de lui-même (taille autre, sink_blocker).
+ExportSize shaded_output(const ChainEngines& c) {
+  const int factor = c.anime4k ? 2 : c.factor;
+  return {.width = c.work.width * factor, .height = c.work.height * factor};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -175,7 +183,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   ChainEngines& c = **prepared;
   const media::TrackInfo& video = p.video;
   const ExportSize chain_size{.width = c.work.width * c.factor, .height = c.work.height * c.factor};
-  const ExportSize size = export_size(chain_size, {.width = video.width, .height = video.height}, job.height);
+  const ExportSize size = export_size(shaded_output(c), ExportSize{video.width, video.height}, job.height);
   const Factor factor = c.interpolates() ? factor_of(settings) : Factor{};
   media::Rational rate = export_rate(video.frame_rate, factor);
   if (rate.num <= 0) rate = export_rate({.num = 24'000, .den = 1'001}, factor);  // fréquence inconnue

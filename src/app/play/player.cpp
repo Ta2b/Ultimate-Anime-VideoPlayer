@@ -116,7 +116,7 @@ std::expected<PlaySettings, Refusal> load_with_notes(const std::filesystem::path
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
 std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path& file) {
-  auto demuxer = media::Demuxer::open(file);
+  auto demuxer = media::Demuxer::open(file, {.attachments = false});
   if (!demuxer) return std::unexpected(std::move(demuxer.error()));
   const media::TrackChoice choice = media::choose_tracks(demuxer->tracks(), {});
   if (!choice.video) {

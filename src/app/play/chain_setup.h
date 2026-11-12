@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/anime4k_choice.h"
 #include "app/play/backend_library.h"
 #include "app/play/chain_shape.h"
 #include "app/play/live_settings.h"
@@ -79,8 +80,8 @@ std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
 // sans copie (DecoderOptions::direct_surfaces).
 inline constexpr int kHeldDecodedFrames =
     media::kSourceHeldFrames + static_cast<int>(RingStage::kMaxFrames) + gpu::kMaxIngestHeldFrames;
-// B15-03 : plus celle que timed() retient jusqu'à l'image suivante.
-static_assert(kHeldDecodedFrames + 1 <= media::kMaxExtraHwFrames, "NVDEC : 32 surfaces en plus au plus");
+static_assert(kHeldDecodedFrames + 1 <= media::kMaxExtraHwFrames,
+              "NVDEC: 32 extra surfaces at most, the one frame the decoder still holds included (B15-03)");
 
 // Les options du décodeur pour ce backend et cet écran : les essais de decoder_attempts ; sous
 // TensorRT, qui lit les images NVDEC en place, les surfaces directes ; ailleurs, la copie en
@@ -102,8 +103,12 @@ struct ChainEngines {
   }
 
   BackendLibrary::Instance backend;
-  std::string backend_name;           // « tensorrt », « vulkan »
-  std::optional<ModelChoice> model;   // SPAN ; rien : sans agrandissement
+  std::string backend_name;          // « tensorrt », « vulkan »
+  std::optional<ModelChoice> model;  // SPAN ; rien : sans agrandissement, ou Anime4K
+  // Anime4K à la place de SPAN (anime4k_choice.h) : la chaîne rend l'image de travail telle quelle (factor
+  // 1), l'écran et l'export y posent les shaders. span_list : la liste du menu, que model ne porte pas alors.
+  std::optional<render::Anime4kChoice> anime4k;
+  std::optional<ModelChoice> span_list;
   std::optional<SpanInt8> span_int8;  // sa variante INT8, construite à sa place (span_int8.h)
   int factor = 1;                     // kSpanFactor avec SPAN
   int order_factor = 0;  // le facteur qui décide l'ordre du warp et de SPAN (0 : inconnu, en Auto)
@@ -155,7 +160,8 @@ struct ChainEngines {
   std::string_view motion_name() const;
   // « RIFE ×2 · rife_v4.25 · », ou rien sans interpolation.
   std::string motion_label(const PlaySettings& settings) const;
-  // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », ou « sans agrandissement · … ».
+  // « SPAN ×2 · modèle · vulkan · 1920x1080 → 3840x2160 », « Anime4K ×2 · M · mode A · … », ou « sans
+  // agrandissement · … ».
   std::string span_label() const;
 
   // L'étage gpu pour des images source width × height écrites dans slots. clock nullptr : aucune
@@ -172,6 +178,12 @@ constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
 
 // Le module du moteur (TensorRT, Vulkan) : il entre dans les signatures des refus retenus.
 std::string library_name(const Player& p);
+
+// SPAN ou Anime4K, quand l'agrandissement tourne (span_runs ; c.work déjà posé) : Anime4K choisi, la liste du
+// menu et ses shaders lus sur l'écran, pour la lecture comme pour l'export ; refusés, la chaîne reste sans
+// agrandissement (l'image de travail, agrandie par le filtre de la fenêtre). Vrai : SPAN est à charger
+// (chain_upscaler.cpp).
+bool take_upscaler(Player& p, ChainEngines& c, const PlaySettings& settings);
 
 // Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
 // fermée pendant une préparation. Un étage refusé ou annulé (SPAN, interpolation) est retenu dans memory et

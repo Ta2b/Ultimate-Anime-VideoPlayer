@@ -23,7 +23,7 @@ std::optional<std::pair<float, float>> mouse_point(std::string_view text);
 void press(const std::string& name, SDL_Window* window);
 // « export » ou « export=FICHIER.mkv » : l'export de la chaîne en cours (running), en HEVC très
 // haute qualité à la taille de la sortie, vers FICHIER ou le nom proposé à côté de la source
-// (default_export_path) ; rien pour une touche.
+// (default_export_path) ; rien pour une touche. « export-lossless[=FICHIER] » : de même, en FFV1 sans perte.
 std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettings& running,
                                          const media::TrackInfo& video, const std::filesystem::path& source);
 

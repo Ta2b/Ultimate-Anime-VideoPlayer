@@ -143,6 +143,11 @@ TEST_CASE("color : étiquettes reconnues", "[media][color]") {
   CHECK(hlg.siting == ChromaSiting::Center);
   f->color_trc = AVCOL_TRC_GAMMA28;  // BT.470 BG, courant sur les DVD PAL
   CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->transfer == Transfer::Bt1886);
+  f->color_trc =
+      AVCOL_TRC_GAMMA22;  // B15-05 : rip d'un master sRGB, plus près de la courbe sRGB que de BT.1886
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->transfer == Transfer::Srgb);
+  f->color_trc = AVCOL_TRC_BT2020_10;
+  CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->transfer == Transfer::Bt1886);
   f->color_trc = AVCOL_TRC_LINEAR;
   CHECK(color_info(*f, AV_PIX_FMT_YUV420P10LE)->transfer == Transfer::Linear);
   f->color_primaries = AVCOL_PRI_SMPTE431;
