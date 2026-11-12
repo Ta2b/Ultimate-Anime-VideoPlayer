@@ -25,6 +25,7 @@
 #include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/settings.h"
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
@@ -154,8 +155,15 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
 
 std::expected<bool, Refusal> retry_postponed_installs(PlaceboScreen& screen, PlayerUi& ui,
                                                       const EngineCatalog& catalog, core::Settings& engines,
-                                                      bool& changed) {
+                                                      const std::filesystem::path& engines_path) {
   const auto log = log_channel("app");
+  bool changed = false;
+  // Écrit le choix quel que soit le chemin de sortie (fenêtre fermée comprise).
+  const auto save = [&] {
+    if (!changed) return;
+    if (auto written = core::save_settings(engines_path, engines); !written)
+      log->warn("{}", written.error().detail);
+  };
   for (const core::EnginePackage& package : catalog.packages) {
     if (!is_postponed(engines, package.engine)) continue;
     recover_interrupted_install(catalog, package);
@@ -187,7 +195,10 @@ std::expected<bool, Refusal> retry_postponed_installs(PlaceboScreen& screen, Pla
                       if (!library) return std::unexpected(library.error());
                       return {};
                     });
-    if (!outcome) return false;
+    if (!outcome) {
+      save();
+      return false;
+    }
     if (*outcome) {
       log->info("{} installé", label);
       engines = installed_engine(std::move(engines), package.engine);
@@ -204,6 +215,7 @@ std::expected<bool, Refusal> retry_postponed_installs(PlaceboScreen& screen, Pla
     engines = without_engine(std::move(engines), package.engine);
     changed = true;
   }
+  save();
   return true;
 }
 
@@ -280,6 +292,17 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     }
   }
   return true;
+}
+
+std::expected<bool, Refusal> refresh_chosen_engines(PlaceboScreen& screen, PlayerUi& ui,
+                                                    const EngineCatalog& catalog, core::Settings& engines,
+                                                    const std::filesystem::path& engines_path, bool retry,
+                                                    bool& updated) {
+  if (retry) {
+    auto retried = retry_postponed_installs(screen, ui, catalog, engines, engines_path);
+    if (!retried || !*retried) return retried;
+  }
+  return update_stale_engines(screen, ui, catalog, engines, updated);
 }
 
 }  // namespace ajp::app::play

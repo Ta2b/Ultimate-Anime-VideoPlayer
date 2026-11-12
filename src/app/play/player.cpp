@@ -424,24 +424,13 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   // Après l'assistant, qui choisit le mode des mises à jour (A18-03).
   if (!options.bench_out && !options.data_dir)
     update_check = start_update_check(settings_path, paths, playing, update_news);
-  // Un moteur d'une version précédente du lecteur ne s'ouvrirait pas : il se met à jour d'abord.
-  // Une seule relance par mise à jour : si le module reste périmé après elle, on ne boucle pas.
+  // Un moteur d'une version précédente ne s'ouvrirait pas : il se met à jour d'abord (une relance au plus).
   const std::filesystem::path relaunch_marker = paths.data / "engines-relaunched";
   std::error_code marker_error;
   const bool relaunched = std::filesystem::remove(relaunch_marker, marker_error);
   bool engines_updated = false;
-  // Un moteur choisi dont le téléchargement a échoué sur une panne passagère se réessaie d'abord (C06-02).
-  if (!options.bench_out && !options.data_dir) {
-    bool retried_changes = false;
-    auto retried = retry_postponed_installs(**screen, **ui, catalog, *engines, retried_changes);
-    if (!retried) return std::unexpected(std::move(retried.error()));
-    if (!*retried) return {};
-    if (retried_changes) {
-      if (auto written = core::save_settings(engines_path, *engines); !written)
-        log->warn("{}", written.error().detail);
-    }
-  }
-  auto updated = update_stale_engines(**screen, **ui, catalog, *engines, engines_updated);
+  auto updated = refresh_chosen_engines(**screen, **ui, catalog, *engines, engines_path,
+                                        !options.bench_out && !options.data_dir, engines_updated);
   // Le moteur vérifié ici : un autre choisi ensuite à l'accueil se vérifie à son ouverture.
   const std::optional<core::EngineId> checked_engine =
       engines->preferred[static_cast<std::size_t>(core::Usage::Upscale)];
