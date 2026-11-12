@@ -432,6 +432,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.drba_fused = wanted.drba_fused;
     s.smooth_drawings = wanted.smooth_drawings;
     s.cubic_warp = wanted.cubic_warp;
+    s.pair_scale = wanted.pair_scale;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -499,6 +500,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::drba_fused);
   keep(&PlaySettings::smooth_drawings);
   keep(&PlaySettings::cubic_warp);
+  keep(&PlaySettings::pair_scale);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -519,7 +521,7 @@ void add_shape_reasons(std::vector<std::string>& reopen, const PlaySettings& run
 }
 
 // Les options de l'étage RIFE changées avec RIFE : « Lisser les dessins tenus » (l'étage lit cinq images en
-// avance, ou plus) et le warp de Catmull-Rom.
+// avance, ou plus), le warp de Catmull-Rom et l'échelle par paire (un second moteur).
 void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySettings& base,
                              const PlaySettings& wanted) {
   if (wanted.rife_factor < 2 || wanted.motion_engine != MotionEngine::Rife) return;
@@ -530,6 +532,10 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
   if (base.cubic_warp != wanted.cubic_warp) {
     reopen.emplace_back(wanted.cubic_warp ? i18n::tr("the interpolation warp turns Catmull-Rom")
                                           : i18n::tr("the interpolation warp turns bilinear"));
+  }
+  if (base.pair_scale != wanted.pair_scale) {
+    reopen.emplace_back(wanted.pair_scale ? i18n::tr("fast motion is estimated at half size (second engine)")
+                                          : i18n::tr("fast motion is estimated at full size"));
   }
 }
 
@@ -563,6 +569,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.drba_fused = opened->loaded->drba_fused;
   base.smooth_drawings = opened->loaded->smooth_drawings;
   base.cubic_warp = opened->loaded->cubic_warp;
+  base.pair_scale = opened->loaded->pair_scale;
   return base;
 }
 

@@ -142,6 +142,10 @@ struct ChainEngines {
   std::unique_ptr<gpu::Engine> rife;  // RIFE image, ou l'interpolation d'Apple (apple)
   std::unique_ptr<gpu::Engine> rife_motion;
   std::unique_ptr<gpu::Engine> rife_motion_calm;  // --rife-calm-model (P6.17), à la forme de rife_motion
+  // Échelle par paire (PlaySettings::pair_scale) : rife_motion à rife_half_size, pour les paires à mouvement
+  // fort ; nul sans l'option ou si sa préparation est refusée.
+  std::unique_ptr<gpu::Engine> rife_motion_half;
+  WorkSize rife_half_size;
   bool rife_fused = false;  // rife ou rife_motion est RIFE fusionné (six moteurs et noyaux de colle)
   bool drba_fused = false;  // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
   // Le fusionné essayé puis refusé, le réseau entier à sa place (A03-21) : voir OpenedChain.
@@ -197,5 +201,11 @@ bool take_upscaler(Player& p, ChainEngines& c, const PlaySettings& settings);
 // reste un refus. Refus : backend refusé, ou étage refusé sans mémoire.
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings,
                                                                   StageMemory* memory);
+
+// Échelle par paire (chain_half.cpp) : le second RIFE mouvement, à demi-taille, dans c.rife_motion_half quand
+// settings.pair_scale le demande et que c a un RIFE mouvement. Rien si l'utilisateur ferme la fenêtre ; un
+// refus laisse la lecture à pleine taille (journal).
+std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                   const PlaySettings& settings, const std::filesystem::path& models_dir);
 
 }  // namespace ajp::app::play

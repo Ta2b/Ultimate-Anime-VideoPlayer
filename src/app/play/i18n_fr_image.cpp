@@ -66,6 +66,13 @@ constexpr std::array kImageTabs{
           "Essai : les images intermédiaires lisent la source par un filtre Catmull-Rom de 4 × 4 points au "
           "lieu "
           "du bilinéaire du réseau, pour des traits plus fins. RIFE seulement. Recharge la lecture."},
+    Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
+    Entry{
+        "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
+        "first time. Cheaper on fast pans; small objects may lose precision. RIFE only. Reloads playback.",
+        "Essai : les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, "
+        "par un second moteur construit la première fois. Moins cher sur les panoramiques rapides ; les "
+        "petits objets peuvent perdre en précision. RIFE seulement. Recharge la lecture."},
     Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},

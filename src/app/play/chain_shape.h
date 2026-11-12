@@ -50,6 +50,7 @@ struct OpenedChain {
     bool drba_fused = true;
     bool smooth_drawings = false;
     bool cubic_warp = false;
+    bool pair_scale = false;
     bool operator==(const Loaded&) const = default;
   };
 

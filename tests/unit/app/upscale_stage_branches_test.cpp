@@ -44,6 +44,42 @@ TEST_CASE("Étage gpu : RIFE des paires calmes, la passe du milieu change de mot
   CHECK(rig.reported().empty());
 }
 
+// Échelle par paire (upscale_half.cpp) : une paire qui bouge fort passe ses instants au second RIFE, sur a
+// et b réduites ; le milieu mesuré et les paires calmes restent au RIFE entier, et le nombre de passes ne
+// change pas.
+TEST_CASE("Étage gpu : échelle par paire, les instants des paires fortes passent au RIFE à demi-taille",
+          "[app][stage][pair_scale]") {
+  const bool poses = GENERATE(false, true);
+  INFO((poses ? "poses gardées" : "sans poses"));
+  const auto run = [poses](bool halves) {
+    Rig rig;
+    test::FakeEngine half{"rife_half", {"input"}, {"flow", "mask"}};
+    rig.live->set_keep_poses(poses);
+    UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+    s.rife = nullptr;
+    s.rife_motion = &rig.motion;
+    s.rife_motion_half = halves ? &half : nullptr;
+    rig.start(std::move(s));
+    rig.feed(1, 4);
+    REQUIRE(rig.collect(10));
+    // Mouvement faible : rien ne passe au second RIFE.
+    CHECK(rig.backend.count("engine rife_half") == 0);
+    CHECK(rig.backend.count("resample") == 0);
+    rig.backend.motion_max(40.0F);
+    rig.feed(5, 7);
+    REQUIRE(rig.collect(19));
+    rig.stage.reset();
+    CHECK(rig.reported().empty());
+    return std::pair{rig.backend.count("engine rife_motion"), rig.backend.count("engine rife_half")};
+  };
+  const auto [whole, none] = run(false);
+  const auto [kept, halved] = run(true);
+  CHECK(none == 0);
+  CHECK(halved > 0);
+  CHECK(kept < whole);
+  CHECK(kept + halved == whole);
+}
+
 // Une horloge que le test change pendant que l'étage la lit.
 struct SwitchedClock final : MasterClock {
   ClockSnapshot snapshot() const override {
