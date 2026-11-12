@@ -10,9 +10,15 @@ namespace {
 
 // Période d'écran supposée tant qu'aucune présentation rapprochée ne la borne : 60 Hz.
 constexpr std::int64_t kAssumedPeriodUs = 16'667;
-// Une présentation qui attend plus d'un quart de période a trouvé la file de l'écran pleine ; la part de ces
-// attentes se lisse sur une dizaine de présentations, et au-delà de la moitié la file est tenue pour pleine.
+// Une acquisition qui attend plus d'un quart de période a trouvé la file de l'écran pleine ; la part de ces
+// attentes se lisse sur une dizaine de présentations. La file est tenue pour pleine au-dessus de 0,6 et
+// redevient libre sous 0,4.
 constexpr double kQueueFillSmoothing = 0.1;
+constexpr double kQueueFullAbove = 0.6;
+constexpr double kQueueFreeBelow = 0.4;
+// B13-09 : une période mesurée ne descend pas sous celle d'un écran de 500 Hz ; une présentation rapprochée
+// (interface, présentation refaite) la faisait tomber à quelques centaines de µs pour 240 présentations.
+constexpr std::int64_t kShortestPeriodUs = 2'000;
 
 }  // namespace
 
@@ -23,7 +29,7 @@ constexpr double kQueueFillSmoothing = 0.1;
 std::int64_t Session::display_period() const {
   if (config_.display_period_us > 0) return config_.display_period_us;
   const std::int64_t shortest = stats_.present_interval.percentile(0);
-  return shortest > 0 ? std::min(shortest, kAssumedPeriodUs) : kAssumedPeriodUs;
+  return shortest > 0 ? std::clamp(shortest, kShortestPeriodUs, kAssumedPeriodUs) : kAssumedPeriodUs;
 }
 
 // Imposé par le réglage, ou estimé : la file de l'écran a de la place, l'image part après son
@@ -33,15 +39,17 @@ std::int64_t Session::display_delay_us(std::int64_t period) const {
   if (config_.video_latency_us > 0) return config_.video_latency_us;
   // P3.45 : en fenêtré, le compositeur garde l'image une trame de plus avant l'écran.
   const std::int64_t compositor = composited_ ? period : 0;
-  if (queue_fill_ > 0.5)
+  if (queue_full_)
     return std::int64_t{std::max(config_.swapchain_depth - 1, 0)} * period + period / 2 + compositor;
   return stats_.render.median() + period / 2 + compositor;
 }
 
-void Session::note_queue_wait(std::int64_t waited_us, std::int64_t period) {
+void Session::note_queue_wait(std::int64_t acquire_us, std::int64_t period) {
   if (period <= 0) return;
-  const double waited = waited_us > period / 4 ? 1.0 : 0.0;
+  const double waited = acquire_us > std::max(period / 4, kAcquireBlockedUs) ? 1.0 : 0.0;
   queue_fill_ += kQueueFillSmoothing * (waited - queue_fill_);
+  if (queue_fill_ > kQueueFullAbove) queue_full_ = true;
+  if (queue_fill_ < kQueueFreeBelow) queue_full_ = false;
 }
 
 void Session::set_display(std::int64_t period_us, double hz) {

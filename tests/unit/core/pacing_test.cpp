@@ -19,16 +19,16 @@ constexpr double kNtsc = 24000.0 / 1001.0;  // 23,976 im/s
 
 }  // namespace
 
-TEST_CASE("pacing : vitesse de calage sur l'écran, 1 sans calage", "[pacing]") {
-  CHECK(vsync_speed(60.0, kNtsc * 2.5) == Approx(1.001).epsilon(1e-12));   // ×5/2 : 1 vsync
-  CHECK(vsync_speed(144.0, kNtsc * 2.0) == Approx(1.001).epsilon(1e-12));  // ×2 : 3 vsyncs
-  CHECK(vsync_speed(59.94, kNtsc * 2.5) == Approx(1.0).epsilon(1e-5));
-  CHECK(vsync_speed(60.0, 24.0) == 1.0);          // 2,5 vsyncs : aucun entier
-  CHECK(vsync_speed(60.0, kNtsc * 3.0) == 1.0);   // plus rapide que l'écran
-  CHECK(vsync_speed(160.0, kNtsc * 2.0) == 1.0);  // 3,34 vsyncs : trop loin
-  CHECK(vsync_speed(0.0, kNtsc) == 1.0);          // écran inconnu
-  CHECK(vsync_speed(60.0, 0.0) == 1.0);           // sortie inconnue
-  CHECK(vsync_speed(1000.0, 23.976) == 1.0);      // au-delà de 16 vsyncs par image
+TEST_CASE("pacing : vitesse de calage sur l'écran, rien sans calage", "[pacing]") {
+  CHECK(vsync_lock(60.0, kNtsc * 2.5).value_or(0.0) == Approx(1.001).epsilon(1e-12));   // ×5/2 : 1 vsync
+  CHECK(vsync_lock(144.0, kNtsc * 2.0).value_or(0.0) == Approx(1.001).epsilon(1e-12));  // ×2 : 3 vsyncs
+  CHECK(vsync_lock(59.94, kNtsc * 2.5).value_or(0.0) == Approx(1.0).epsilon(1e-5));
+  CHECK_FALSE(vsync_lock(60.0, 24.0));          // 2,5 vsyncs : aucun entier
+  CHECK_FALSE(vsync_lock(60.0, kNtsc * 3.0));   // plus rapide que l'écran
+  CHECK_FALSE(vsync_lock(160.0, kNtsc * 2.0));  // 3,34 vsyncs : trop loin
+  CHECK_FALSE(vsync_lock(0.0, kNtsc));          // écran inconnu
+  CHECK_FALSE(vsync_lock(60.0, 0.0));           // sortie inconnue
+  CHECK_FALSE(vsync_lock(1000.0, 23.976));      // au-delà de 16 vsyncs par image
 }
 
 TEST_CASE("pacing : petite fraction d'abord, sinon la fraction exacte, rien sous 1", "[pacing]") {

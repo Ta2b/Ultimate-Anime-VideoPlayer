@@ -545,8 +545,8 @@ std::string play_usage(bool debug) {
       "Keys: space pause, ← → seek 5 s, ↑ ↓ volume, m mute, f full screen (Esc leaves it), q quit,\n"
       "  a next audio track, j next subtitles, n / Shift+n next / previous episode,\n"
       "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, z / x\n"
-      "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 no processing,\n"
-      "  Ctrl+G grade, Ctrl+I interpolation.\n"
+      "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 neither grade nor\n"
+      "  interpolation (the upscaling stays), Ctrl+G grade, Ctrl+I interpolation.\n"
       "Other commands: ajp bench (rates the machine), ajp compare (two chains side by side),\n"
       "  ajp calibrate (the bench of the Results page); ajp bench --help, ajp compare --help\n",
       kDefaultModelFile, kDefaultRifeFile, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);

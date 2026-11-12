@@ -84,8 +84,9 @@ std::string describe_for_log(const DisplayFacts& display);
 // L'écran branché (Linux : /sys/class/drm/*-*/status = connected ; Windows : présent) ; s'il y en a
 // plusieurs, celui dont le nom se retrouve dans wanted (nom de l'écran selon SDL). Rien si aucun
 // EDID ne se lit, et toujours rien sur macOS.
-// Le VRR armé à cet instant pour ce connecteur (« card1-DP-1 »), par un seul ioctl, sans relire l'EDID. Rien
-// hors Linux ou si le système ne le dit pas.
+// Le VRR armé à cet instant pour ce connecteur (« card1-DP-1 »), sans relire l'EDID : connector_id dans
+// sysfs, puis /dev/dri/cardN, GETCONNECTOR, GETENCODER et la propriété VRR_ENABLED du CRTC
+// (B34-14). Rien hors Linux ou si le système ne le dit pas.
 std::optional<bool> vrr_armed_now(std::string_view connector);
 
 // L'état armé lu dans DRM (B11-01), pur. Sans CRTC (sortie éteinte), rien n'est armé ; VRR_ENABLED absente

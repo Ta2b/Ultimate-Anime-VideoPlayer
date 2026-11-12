@@ -50,6 +50,7 @@ extern "C" {
 #include "app/play/player.h"
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/settings.h"
 #include "app/play/single_instance.h"
 #include "app/play/updater.h"
@@ -300,6 +301,35 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
   const int error = errno;  // execv ne revient que sur un échec
   return relaunch_failed(log_file, std::format("execv : {} (errno {})", std::strerror(error), error));
 #endif
+}
+
+// B31-04 : la relance qu'une fermeture bloquée sur le GPU fait elle-même (relaunch_target.h : exit_stuck),
+// avec les arguments du lancement. Posés une fois par run_player, lus par le garde sur son thread.
+struct StuckRelaunch {
+  std::filesystem::path executable;
+  int argc = 0;
+  char** argv = nullptr;
+  std::filesystem::path log_file;
+};
+StuckRelaunch& stuck_relaunch_args() {
+  static StuckRelaunch args;
+  return args;
+}
+void relaunch_when_stuck() {
+  const StuckRelaunch& args = stuck_relaunch_args();
+  // Une fermeture bloquée vient d'un GPU qui ne répond plus : la relance se dit perte du GPU (B39-01).
+  if (args.argv != nullptr)
+    (void)relaunch(args.executable, args.argc, args.argv, ajp::app::play::RelaunchedFor::GpuLost,
+                   args.log_file);
+}
+// Le dossier des moteurs, et la relance armée avant la lecture.
+void before_play(const std::filesystem::path& engines, const std::filesystem::path& executable, int argc,
+                 char** argv, const std::filesystem::path& log_file) {
+  std::error_code error;
+  std::filesystem::create_directories(engines, error);
+  stuck_relaunch_args() =
+      StuckRelaunch{.executable = executable, .argc = argc, .argv = argv, .log_file = log_file};
+  ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
 }
 
 // « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
@@ -708,8 +738,7 @@ int run_player(int argc, char** argv) {
 #ifdef AJP_BACKEND_VULKAN
   paths.backends.emplace_back(AJP_BACKEND_VULKAN);
 #endif
-  std::error_code error;
-  std::filesystem::create_directories(paths.engines, error);
+  before_play(paths.engines, place.executable, argc, argv, log_file);
   const auto played = play_then_settle(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();

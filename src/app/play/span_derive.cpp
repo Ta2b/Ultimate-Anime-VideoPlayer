@@ -380,6 +380,11 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     prepare.note = i18n::tr("No SPAN model in use: nothing to prepare.");
     return prepare;
   }
+  if (!span_fp8_cutlass_model(model)) {
+    prepare.note =
+        i18n::tr("Performance mode (FP8) is for the AnimeJaNai SPAN models: ArtCNN stays in FP16.");
+    return prepare;
+  }
   const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, model, models_dir,
                                                  context.width > 0 ? &context : nullptr);
   const bool validate = !found.unvalidated_size.empty();

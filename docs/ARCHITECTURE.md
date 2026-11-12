@@ -237,7 +237,7 @@ ainsi de prendre du retard sur des images que personne ne verra.
 
 L'écran se lit dans `app/play/host_facts.h` (sortie HDR ou SDR, `system_hdr`) et `display_edid.h` (OLED, pic).
 Sur un écran fixe, `lock_factor()` donne le facteur qui cale k vsyncs par image et
-`vsync_speed()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
+`vsync_lock()` la vitesse de lecture qui rattrape l'écart ; `core/steady_rate.h`
 choisit k.
 
 ### Retour de présentation (`--present`, docs/adr/0011-presentation-en-boucle-fermee.md)

@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/chain.h"
 #include "app/play/visible_error.h"
 
 namespace ajp::app::play {
@@ -22,11 +23,16 @@ PlaySettings fast_settings() {
 TEST_CASE("Rapide : le warp et l'anneau suivent l'écran, pas le facteur demandé", "[app][chain]") {
   PlaySettings s = fast_settings();
   CHECK(top_factor(s, 165.0, 23.976) == 6);
-  CHECK(ring_depth(s, factor_of(s)) == 8U);
+  CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 8U);
+  // B08-08 : sur 60 Hz, ×2 au plus : l'anneau de 4 suffit, pas 8 ; écran inconnu : 8.
+  CHECK(ring_depth(s, factor_of(s), 60.0, 23.976) == 4U);
+  CHECK(ring_depth(s, factor_of(s), 90.0, 23.976) == 6U);
+  CHECK(ring_depth(s, factor_of(s), 0.0, 23.976) == 8U);
+  CHECK(ring_depth(s, Factor{}, 165.0, 23.976) == 4U);  // sans interpolation chargée
 
   s.auto_free = false;  // Stable : le facteur demandé borne toujours
   CHECK(top_factor(s, 165.0, 23.976) == 2);
-  CHECK(ring_depth(s, factor_of(s)) == 4U);
+  CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 4U);
 }
 
 TEST_CASE("Rapide : jamais moins de 1, aucune interpolation sans facteur", "[app][chain]") {
@@ -204,6 +210,19 @@ TEST_CASE("A03-21 : un fusionné refusé se dit à l'écran avec son motif, rien
   CHECK(drba.contains("DistilDRBA"));
   CHECK(drba.contains(visible_error(Refusal{RefusalCode::CacheIo, ""})));
   CHECK_FALSE(visible_error(Refusal{RefusalCode::CacheIo, ""}).empty());
+}
+
+TEST_CASE("B08-01 : Ctrl+I rallume l'interpolation au facteur que la séance avait, pas à ×3",
+          "[app][chain]") {
+  using Pair = std::pair<int, int>;
+  // Allumée : Ctrl+I la coupe, le dénominateur reste.
+  CHECK(toggled_interpolation(5, 2, std::nullopt) == Pair{0, 2});
+  // Coupée par Ctrl+I ou Ctrl+0 : le facteur gardé pour la séance revient, ×5/2 compris.
+  CHECK(toggled_interpolation(0, 2, Pair{5, 2}) == Pair{5, 2});
+  CHECK(toggled_interpolation(0, 1, Pair{2, 1}) == Pair{2, 1});
+  // Rien de gardé (play.toml sans interpolation), ou un facteur gardé qui n'interpolait pas : le défaut.
+  CHECK(toggled_interpolation(0, 1, std::nullopt) == Pair{kDefaultRifeFactor, 1});
+  CHECK(toggled_interpolation(0, 1, Pair{0, 1}) == Pair{kDefaultRifeFactor, 1});
 }
 
 TEST_CASE("B39-02 : les faits de la lecture vont en tête du rapport, vidéo, écran, sortie, chaîne",

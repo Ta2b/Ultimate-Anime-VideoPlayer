@@ -18,7 +18,7 @@ struct CostLine {
 
 class CostModel {
  public:
-  static constexpr int kMaxImages = 9;  // kAutoMaxStep + 1
+  static constexpr int kMaxImages = 11;  // kAutoMaxStep + 1
   static constexpr std::int64_t kHalfLifeUs = 6'000'000;
   // Un coût au-delà de 5 s n'est pas une image mais une attente (pause, appareil suspendu) : ignoré.
   static constexpr std::int64_t kMaxCostUs = 5'000'000;

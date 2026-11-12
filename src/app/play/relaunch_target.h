@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "core/types.h"
 
@@ -52,5 +53,14 @@ bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, s
 struct PlayOptions;
 std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPaths& paths,
                                             std::int64_t now_s);
+
+// B31-04 : le GPU ne répond plus pendant une fermeture (démontage de la chaîne ou de l'écran) que rien ne
+// borne. Le garde (close_watch.h) sort alors du processus ; une relance demandée par ask_relaunch (perte du
+// GPU) n'est pas perdue : la fonction posée par main relance le lecteur avant la sortie. Sans elle, la
+// sortie seule (75, EX_TEMPFAIL : la machine, pas la vidéo), et relaunch.txt expirait sans personne pour le
+// lire.
+void set_stuck_relaunch(void (*relaunch)());
+[[noreturn]] void exit_stuck(std::string_view why);
+inline constexpr int kStuckExitCode = 75;
 
 }  // namespace ajp::app::play

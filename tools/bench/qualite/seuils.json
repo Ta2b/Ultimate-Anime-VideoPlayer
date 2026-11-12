@@ -26,6 +26,16 @@
    "fidelite_ecart_pire_max": 1.01,
    "verite_psnr_min": 41.37
   },
+  "2x_ArtCNN_C4F32_rgb_fp16.onnx": {
+   "fidelite_psnr_pire_min": 74.4,
+   "fidelite_ecart_pire_max": 1.05,
+   "verite_psnr_min": 44.84
+  },
+  "2x_ArtCNN_C4F16_rgb_fp16.onnx": {
+   "fidelite_psnr_pire_min": 74.38,
+   "fidelite_ecart_pire_max": 1.13,
+   "verite_psnr_min": 44.67
+  },
   "rife_v4.25.onnx": {
    "fidelite_psnr_pire_min": 49.28,
    "fidelite_ecart_pire_max": 52.29,

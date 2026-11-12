@@ -1,6 +1,6 @@
 # Banc de qualité des réseaux
 
-Ce banc donne un chiffre à toute affirmation sur la qualité de SPAN, RIFE 4.25, RIFE 4.22 lite et DistilDRBA :
+Ce banc donne un chiffre à toute affirmation sur la qualité de SPAN, ArtCNN, RIFE 4.25, RIFE 4.22 lite et DistilDRBA :
 chaque réseau livré est comparé à sa référence FP32 et à la vraie image. Il tourne sans carte graphique (ONNX
 Runtime sur processeur), ici comme en CI (`.github/workflows/qualite.yml`).
 
@@ -85,6 +85,28 @@ Ce que ces chiffres disent :
 - **SPAN ne bat pas le bicubique en PSNR sur ce banc** : il renforce les traits au lieu de rendre l'original,
   et la réduction par moyenne n'est pas la dégradation qu'il a apprise. La colonne sert à comparer deux états
   de SPAN (FP16, FP8, hauteur de travail), pas SPAN au bicubique.
+
+### ArtCNN C4F32 et C4F16 (P6.7)
+
+Les deux modèles légers des petites cartes, mesurés le 11 novembre 2026 dans la même configuration (ONNX Runtime
+1.29, processeur à 4 cœurs ; le temps n'y sert qu'à comparer les réseaux entre eux) :
+
+| Réseau | Fidélité (dB) | Pire cas (dB) | Pire écart | Vérité FP16 (dB) | SSIM | ms par plan 960 × 540 |
+|---|---:|---:|---:|---:|---:|---:|
+| SPAN V3.1 Sharp1 Performance (b5f48) | 79,72 | 75,40 | 0,30 | 41,24 | 0,9873 | 706 |
+| ArtCNN C4F32 | 79,82 | 75,40 | 0,44 | 45,14 | 0,9936 | 326 |
+| ArtCNN C4F16 | 79,79 | 75,38 | 0,50 | 44,97 | 0,9934 | 86 |
+| Bicubique ×2 | | | | 42,13 | 0,9892 | |
+
+- **Les deux sont transparents en FP16** : l'enveloppe RGB (`tools/upscale/wrap_luma_rgb.py`) calcule en FP32,
+  seules l'entrée et la sortie sont en FP16.
+- **C4F16 rend presque l'image de C4F32** (0,17 dB de moins contre la vraie image) pour un quart du calcul
+  (16 canaux au lieu de 32 : 86 ms contre 326 sur processeur). Sur carte graphique le rapport sera moindre
+  (les petites couches remplissent mal le GPU) : c'est au banc des petites cartes de le dire
+  (`tools/bench/banc_leger.sh`).
+- **ArtCNN dépasse SPAN et le bicubique sur cette colonne**, ce qui ne dit pas qu'il est plus beau : il est
+  entraîné à rendre l'original depuis une réduction, ce que mesure ce banc, et SPAN d'AnimeJaNai à renforcer
+  les traits (voir plus haut). À l'œil, sur un épisode, la comparaison reste à faire.
 
 ### DistilDRBA, grille en FP32 (C05, A03-18)
 

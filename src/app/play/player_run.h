@@ -31,6 +31,9 @@ struct Reopen {
   bool next_paused = false;                        // l'ouvrir en pause (PlayFile)
   // L'assistant a écrit play.toml : rien à y réécrire, la vidéo rouverte le relit (A25-01).
   bool settings_written = false;
+  // B29-01 : la fenêtre a changé d'écran ; le préréglage refait la chaîne pour lui (hauteur de travail,
+  // multiplicateur) avant de rouvrir.
+  bool rederive = false;
 };
 
 // Une ouverture de la chaîne : moteurs, HDR, threads, session et boucle de main, jusqu'à la

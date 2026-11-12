@@ -79,7 +79,8 @@ std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
 // sans copie (DecoderOptions::direct_surfaces).
 inline constexpr int kHeldDecodedFrames =
     media::kSourceHeldFrames + static_cast<int>(RingStage::kMaxFrames) + gpu::kMaxIngestHeldFrames;
-static_assert(kHeldDecodedFrames <= media::kMaxExtraHwFrames, "NVDEC : 32 surfaces en plus au plus");
+// B15-03 : plus celle que timed() retient jusqu'à l'image suivante.
+static_assert(kHeldDecodedFrames + 1 <= media::kMaxExtraHwFrames, "NVDEC : 32 surfaces en plus au plus");
 
 // Les options du décodeur pour ce backend et cet écran : les essais de decoder_attempts ; sous
 // TensorRT, qui lit les images NVDEC en place, les surfaces directes ; ailleurs, la copie en
@@ -143,6 +144,9 @@ struct ChainEngines {
   // ramenés à Équilibre (stage_fallback.h) ; stage_notes dit ce qui a changé.
   PlaySettings played;
   std::vector<StageNote> stage_notes;
+  bool fallback_fresh = false;
+  std::vector<LoadedEngine> loaded_engines;  // B08-12 : pour les badges de l'onglet Moteurs  // B08-02 : un
+                                             // repli interne refusé à cette ouverture, pas retenu d'avant
 
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }
@@ -165,6 +169,9 @@ struct ChainEngines {
 constexpr bool free_requested(const PlaySettings& settings, bool fallback) {
   return settings.auto_free && !fallback;
 }
+
+// Le module du moteur (TensorRT, Vulkan) : il entre dans les signatures des refus retenus.
+std::string library_name(const Player& p);
 
 // Le backend de p.library, puis les moteurs que settings demandent pour p.video. Rien : la fenêtre
 // fermée pendant une préparation. Un étage refusé ou annulé (SPAN, interpolation) est retenu dans memory et

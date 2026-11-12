@@ -93,11 +93,6 @@ std::optional<int> container_track(std::optional<int> track) {
   return track;
 }
 
-}  // namespace
-
-// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-namespace {
-
 // A16-05 : la correction de dérive de l'audio couvre tout calage de vitesse, avec de la marge.
 static_assert(audio::limits::kMaxSpeedChangeCovered == core::pacing::kMaxSpeedChange);
 

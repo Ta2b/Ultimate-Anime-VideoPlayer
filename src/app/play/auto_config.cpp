@@ -88,14 +88,21 @@ void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& ma
     out.rife_model = machine.explored_rife_model;
 }
 
+// Les modèles légers des deux tranches du bas, une fois admis (kLightSpanInAuto) : le plus léger (C4F16, 16
+// canaux) pour la plus faible, C4F32 au-dessus. Le banc peut les échanger ou les égaler s'il mesure autre
+// chose.
+constexpr std::string_view kEconomySpanModel = kLightestSpanModel;
+constexpr std::string_view kLightTierSpanModel = kLightSpanModel;
+
 // SPAN de la tranche : rien en Économe (sauf le modèle léger s'il est admis, P6.7), le modèle du niveau
-// au-dessus (level_span_model) ; le modèle léger, s'il est admis, dans les deux tranches du bas.
+// au-dessus (level_span_model) ; les modèles légers, s'ils sont admis, dans les deux tranches du bas.
 void set_span(PlaySettings& out, Tier level, int work) {
   const bool economy = level == Tier::Economy;
   out.upscale = !economy || kLightSpanInAuto;
   out.work_height = economy && !kLightSpanInAuto ? 0 : work;
   out.model = std::string(level_span_model(level));
-  if (kLightSpanInAuto && (economy || level == Tier::Light)) out.model = std::string(kLightSpanModel);
+  if (kLightSpanInAuto && economy) out.model = std::string(kEconomySpanModel);
+  if (kLightSpanInAuto && level == Tier::Light) out.model = std::string(kLightTierSpanModel);
 }
 
 // La résolution de travail du niveau, avant l'exploration et la source. Qualité et Ultra : la source telle
