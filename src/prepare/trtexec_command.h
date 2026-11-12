@@ -76,8 +76,9 @@ std::filesystem::path layer_info_for(const std::filesystem::path& engine);
 // réglages hachés : qui change l'un d'eux, au point de changer les tactiques ou la précision d'un moteur,
 // monte cette constante, sinon les moteurs déjà en cache, construits autrement, seraient repris tels quels
 // (C05-09). Un test fige la ligne actuelle (trtexec_command_test.cpp) et rappelle de la monter. La version 1
-// est celle d'avant la constante : sa clé reste vide, les moteurs déjà construits restent valables.
-inline constexpr int kCommandLineVersion = 1;
+// est celle d'avant la constante : sa clé reste vide. La version 2 ajoute le pavage L2 (kTilingOption) : les
+// moteurs se reconstruisent une fois.
+inline constexpr int kCommandLineVersion = 2;
 inline std::string command_line_version() {
   return kCommandLineVersion == 1 ? std::string() : "trtexec-command-v" + std::to_string(kCommandLineVersion);
 }
@@ -92,6 +93,9 @@ inline std::string command_line_version() {
 // nommé pour la carte du rendu, était refusé au chargement et le cache de temps rempli des tactiques de
 // l'autre. trtexec hérite de l'environnement du lecteur (CUDA_VISIBLE_DEVICES, CUDA_DEVICE_ORDER) : il
 // numérote les cartes comme lui. Négatif : aucun appareil demandé (outils, tests).
+// Le pavage L2 que trtexec_arguments demande à chaque construction (version 2 de la ligne).
+inline constexpr std::string_view kTilingOption = "--tilingOptimizationLevel=3";
+
 std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings,
                                            int cuda_device = -1);
 

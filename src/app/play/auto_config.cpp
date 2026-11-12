@@ -188,7 +188,7 @@ void follow_calibration(PlaySettings& out, Priority priority, const CalibratedCh
         source.height > 0 ? std::min(height, std::max(source.height, kWorkHeights.front())) : height;
   }
   out.model = cal.span_model;
-  out.span_precision = PrecisionTier::Balanced;
+  out.span_precision = PrecisionTier::Performance;  // le FP8 quand son paquet passe la porte (ADR 0007)
   out.motion_engine = MotionEngine::Rife;
   out.rife_model = cal.rife_model.empty() ? std::string(kLightRifeModel) : cal.rife_model;
   out.auto_free = cal.rife;
@@ -290,9 +290,10 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   out.rife_factor = factor >= 2 ? factor : 0;
   out.rife_factor_den = 1;
   out.keep_poses = true;  // mesuré A/B (4070 Ti, ×3) : tient mieux, qualité équivalente
-  // SPAN en FP16 : le FP8 se choisit à la main dans la liste des modèles (« … · FP8 ») tant que sa qualité et
-  // son gain sur le FP16 ne sont pas jugés à l'œil et mesurés ; les préréglages ne le posent plus.
-  out.span_precision = PrecisionTier::Balanced;
+  // SPAN au cran Performance (ADR 0007, reprise du 12 novembre 2026) : le paquet FP8 CUTLASS quand son reçu v2
+  // passe la porte sur cette carte, sinon l'INT8 qui la passe, sinon le FP16 tel que livré (span_variant_order).
+  // 9,2 ms contre 14,7 ms par source 1080p au banc de la RTX 4070 Ti.
+  out.span_precision = PrecisionTier::Performance;
   out.motion_precision = PrecisionTier::Balanced;
   out.rife_model.clear();
   switch (*level) {

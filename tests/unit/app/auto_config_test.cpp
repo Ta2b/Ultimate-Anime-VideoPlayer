@@ -91,7 +91,7 @@ TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SP
       CHECK(chain_work_size(s, 1920, 1080) == WorkSize{1920, 1080});  // rien n'est réduit avant SPAN
       CHECK(s.model == kQualitySpanModel);
       CHECK(s.model.find("b8f64") != std::string::npos);
-      CHECK(s.span_precision == PrecisionTier::Balanced);  // en FP16
+      CHECK(s.span_precision == PrecisionTier::Performance);  // le FP8 si son reçu passe
     }
   }
   // Les préréglages nommés suivent la même chaîne que le niveau.
@@ -110,7 +110,7 @@ TEST_CASE("Qualité et Ultra gardent la source 1080p sur tout écran, avec le SP
   CHECK(applied(Preset::Auto, Tier::Fast, 1080, 60.0).model.empty());
 }
 
-TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03, A38-02, A07-11)",
+TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré (A49-03, A38-02, A07-11)",
           "[auto_config]") {
   const CalibratedChain measured{.span = true,
                                  .rife = true,
@@ -123,7 +123,7 @@ TEST_CASE("l'Auto calibré joue ce que la calibration a mesuré, en FP16 (A49-03
   CHECK(s.upscale);
   CHECK(s.work_height == 1080);  // calibrer ne fait plus baisser la hauteur sous l'Auto estimé
   CHECK(s.model == kQualitySpanModel);
-  CHECK(s.span_precision == PrecisionTier::Balanced);  // jamais le FP8 (ADR 0007 suspendue)
+  CHECK(s.span_precision == PrecisionTier::Performance);  // ADR 0007 reprise
   CHECK(s.rife_model == "rife_v4.25.onnx");            // ni RIFE 4.22 lite imposé
   CHECK(s.auto_free);
   CHECK(s.rife_auto);
@@ -173,9 +173,9 @@ TEST_CASE("la priorité décale d'un cran", "[auto_config]") {
   const int balance = applied(Preset::Auto, Tier::Normal, 1440, 144.0).rife_factor;
   CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0, k1080p24, Priority::Fluidity).rife_factor >=
         balance);
-  // SPAN reste à Équilibre : son FP8 se choisit à la main (liste des modèles).
-  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
-  CHECK(applied(Preset::Fast, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Balanced);
+  // SPAN au cran Performance : le FP8 quand son reçu passe la porte, sinon le FP16 (ADR 0007 reprise).
+  CHECK(applied(Preset::Auto, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Performance);
+  CHECK(applied(Preset::Fast, Tier::Normal, 1440, 144.0).span_precision == PrecisionTier::Performance);
 }
 
 TEST_CASE("le multiplicateur suit l'écran, une source rapide n'est pas interpolée", "[auto_config]") {

@@ -35,6 +35,10 @@ silence, sans rouvrir la chaîne, sur un flux CUDA à la priorité la plus basse
   Équilibre par `auto_config.cpp` et cette page est remplacée.
 
 ## Statut (novembre 2026)
+**Reprise le 12 novembre 2026, à la demande de Tatoub** (deuxième passe des pertes TensorRT, piste N2) : l'Auto et la calibration posent de nouveau SPAN au cran Performance, et les releases Windows construisent les noyaux CUTLASS. La porte du reçu v2 décide seule si le paquet sert ; le ΔE_ITP après le grade et l'écart Windows contre Linux restent à mesurer sur la RTX. Si l'un manque, revenir à l'Équilibre dans `auto_config.cpp` et `machine_calibration.cpp`.
+
+Ce qui suit est le statut d'avant la reprise.
+
 **Suspendue.** L'Auto pose aujourd'hui SPAN en FP16 (Équilibre, `auto_config.cpp`) : le FP8 se choisit à la
 main dans la liste des modèles (« … · FP8 ») tant que la porte ci-dessus n'est pas mesurée sur la RTX. L'audit
 de novembre (constat F6) relevait l'écart entre cette page et le défaut. Pour reprendre la décision : calibrer
