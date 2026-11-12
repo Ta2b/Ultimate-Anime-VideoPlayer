@@ -67,12 +67,40 @@ __device__ __forceinline__ void mma_f16(float (&d)[4], const uint32_t (&a)[4], u
 }
 
 // Écrit une paire de canaux (2t, 2t+1 de la tuile n) d'une ligne, dans les sorties demandées. ld8 : pas de
-// ligne de out8, la largeur du bloc (64 ou 48).
+// ligne de out8, la largeur du bloc (64 ou 48). Act16 : out8 porte des activations FP16 (SPAN FP16 en noyaux
+// CUTLASS, sans quantification ni inv_s8) au lieu d'E4M3.
+template <bool Act16>
 __device__ __forceinline__ void store_pair(const KP& p, int ld8, long row, int col, float x0, float x1) {
-  if (p.out8)
+  if constexpr (Act16) {
+    if (p.out8)
+      *reinterpret_cast<__half2*>(reinterpret_cast<__half*>(p.out8) + row * ld8 + col) =
+          __floats2half2_rn(x0, x1);
+  } else if (p.out8) {
     *reinterpret_cast<uint16_t*>(p.out8 + row * ld8 + col) =
         __nv_cvt_float2_to_fp8x2(make_float2(x0 * p.inv_s8, x1 * p.inv_s8), __NV_SATFINITE, __NV_E4M3);
+  }
   if (p.out16) *reinterpret_cast<__half2*>(p.out16 + row * p.ld16 + col) = __floats2half2_rn(x0, x1);
+}
+
+// La paire de canaux (col, col + 1) du saut x à la ligne row (pas ld), en bits : E4M3 ×2 ou FP16 ×2.
+template <bool Act16>
+__device__ __forceinline__ uint32_t load_skip(const uint8_t* skip, long row, int ld, int col) {
+  if constexpr (Act16)
+    return *reinterpret_cast<const uint32_t*>(reinterpret_cast<const __half*>(skip) + row * ld + col);
+  return *reinterpret_cast<const uint16_t*>(skip + row * ld + col);
+}
+
+template <bool Act16>
+__device__ __forceinline__ float2 skip_value(uint32_t bits, float scale) {
+  if constexpr (Act16) {
+    __half2 h;
+    *reinterpret_cast<uint32_t*>(&h) = bits;
+    return __half22float2(h);
+  }
+  __nv_fp8x2_e4m3 q;
+  q.__x = static_cast<__nv_fp8x2_storage_t>(bits);
+  const float2 f = q.operator float2();  // pas float2(q) : en C++20 c'est une initialisation d'agrégat
+  return make_float2(f.x * scale, f.y * scale);
 }
 
 // Copie W1 (kN × kN demi-flottants) en smem, au pas kLd.
@@ -86,7 +114,7 @@ __device__ __forceinline__ void load_w1(__half* w1s, const __half* w1) {
 
 // Un bloc par SM au moins : sans ce second argument, ptxas plafonnait deux noyaux à 48 colonnes à 128
 // registres et débordait de 16 octets (nvcc 13.4, sm 89).
-template <class Base, int Mode, bool Relu>
+template <class Base, int Mode, bool Relu, bool Act16>
 __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Base::Params params, KP tp) {
   using Mma = typename Base::Mma;
   constexpr int kWarpM = Mma::Policy::Operator::Shape::kM;
@@ -160,8 +188,8 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
           v[n][2] = fmaxf(v[n][2], 0.f);
           v[n][3] = fmaxf(v[n][3], 0.f);
         }
-        if (in0) store_pair(tp, kN, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
-        if (in1) store_pair(tp, kN, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
+        if (in0) store_pair<Act16>(tp, kN, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
+        if (in1) store_pair<Act16>(tp, kN, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
       }
     } else if constexpr (Mode == 2) {
       static_assert(kNT >= 6, "to_pixel a 48 colonnes");
@@ -198,11 +226,11 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
         }
       }
     } else {
-      uint16_t sk[kNT][2];
+      uint32_t sk[kNT][2];
 #pragma unroll
       for (int n = 0; n < kNT; ++n) {
-        sk[n][0] = in0 ? *reinterpret_cast<const uint16_t*>(tp.skip + r0 * kN + n * 8 + 2 * t) : uint16_t{0};
-        sk[n][1] = in1 ? *reinterpret_cast<const uint16_t*>(tp.skip + r1 * kN + n * 8 + 2 * t) : uint16_t{0};
+        sk[n][0] = in0 ? load_skip<Act16>(tp.skip, r0, kN, n * 8 + 2 * t) : 0U;
+        sk[n][1] = in1 ? load_skip<Act16>(tp.skip, r1, kN, n * 8 + 2 * t) : 0U;
       }
       uint32_t A[kKS][4];
 #pragma unroll
@@ -224,13 +252,11 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
         float2 bb1 = __ldg(reinterpret_cast<const float2*>(tp.b1 + nt * 8 + 2 * t));
 #pragma unroll
         for (int h = 0; h < 2; ++h) {
-          __nv_fp8x2_e4m3 q;
-          q.__x = sk[nt][h];
-          float2 skf = q.operator float2();  // pas float2(q) : en C++20 c'est une initialisation d'agrégat
-          float s0 = v[nt][2 * h] + skf.x * tp.skip_scale, s1 = v[nt][2 * h + 1] + skf.y * tp.skip_scale;
+          const float2 skf = skip_value<Act16>(sk[nt][h], tp.skip_scale);
+          float s0 = v[nt][2 * h] + skf.x, s1 = v[nt][2 * h + 1] + skf.y;
           float o0 = s0 * tanh_approx(d[2 * h] + bb1.x);
           float o1 = s1 * tanh_approx(d[2 * h + 1] + bb1.y);
-          if (h ? in1 : in0) store_pair(tp, kN, h ? r1 : r0, nt * 8 + 2 * t, o0, o1);
+          if (h ? in1 : in0) store_pair<Act16>(tp, kN, h ? r1 : r0, nt * 8 + 2 * t, o0, o1);
         }
       }
     }
@@ -259,7 +285,8 @@ struct Cfg {
 };
 
 // Un lancement : paramètres CUTLASS construits une fois, lancement compatible avec la capture de graphe.
-template <class C, int Mode, bool Relu>
+// Act16 : les activations out8 et skip sont en FP16 (SPAN FP16), sinon en E4M3.
+template <class C, int Mode, bool Relu, bool Act16 = false>
 struct Launcher {
   using Base = typename C::Base;
   using E = typename C::E;
@@ -293,16 +320,16 @@ struct Launcher {
     block = dim3(Base::kThreadCount);
     smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + C::kN * (C::kN + 8) * 2;
     if (smem > 48 * 1024)
-      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
+      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu, Act16>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
   }
   void launch(cudaStream_t s) const {
     if (smem > 48 * 1024 && !armed) {
-      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
+      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu, Act16>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
       armed = true;
     }
-    net_kernel<Base, Mode, Relu><<<grid, block, smem, s>>>(params, kp);
+    net_kernel<Base, Mode, Relu, Act16><<<grid, block, smem, s>>>(params, kp);
   }
 };
 

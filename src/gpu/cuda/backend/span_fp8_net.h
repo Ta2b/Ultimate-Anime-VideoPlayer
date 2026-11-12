@@ -47,6 +47,9 @@ struct SpanFp8Weights {
   // range les poids en 64 avec des zéros. Les poids ci-dessus sont toujours ceux du paquet, rangés en 64.
   int channels = 64;
   SpanFp8Width width48 = SpanFp8Width::Native;
+  // Les blocs en FP16, sans quantification : le SPAN FP16 en noyaux CUTLASS (lot 2 du fil SPAN), à juger
+  // contre TensorRT FP16. Les échelles sont alors ignorées ; acc16 garde son sens (accumulateur f16).
+  bool fp16 = false;
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.

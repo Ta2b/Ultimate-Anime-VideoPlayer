@@ -54,7 +54,7 @@ struct Narrowed {
 }  // namespace
 
 std::unique_ptr<SpanFp8Body> make_span_fp8_body64(int height, int width) {
-  return std::make_unique<Body<64, Alg::kOptimized>>(height, width);
+  return std::make_unique<Body<64, Alg::kOptimized, false>>(height, width);
 }
 
 struct SpanFp8Net::Impl {
@@ -94,12 +94,17 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
   }
   auto impl = std::make_unique<Impl>();
   bool sent = false;
-  if (weights.channels == 48 && weights.width48 != SpanFp8Width::Padded) {
+  const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
+  if (weights.fp16)
+    impl->body = make_span_fp8_body16(height, width, narrow48 ? 48 : kStored);
+  else if (narrow48)
     impl->body = make_span_fp8_body48(height, width, weights.width48 == SpanFp8Width::Native);
+  else
+    impl->body = make_span_fp8_body64(height, width);
+  if (narrow48) {
     const Narrowed narrowed(weights, 48);
     sent = impl->body->upload(narrowed.weights, status, error);
   } else {
-    impl->body = make_span_fp8_body64(height, width);
     sent = impl->body->upload(weights, status, error);
   }
   if (!sent) return nullptr;

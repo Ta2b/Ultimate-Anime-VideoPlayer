@@ -34,5 +34,7 @@ std::unique_ptr<SpanFp8Body> make_span_fp8_body64(int height, int width);
 // flat : K mis à plat (kFewChannels, sans queue masquée par position du filtre) ; sinon K par position
 // (kOptimized : seules les colonnes de sortie sont réduites à 48). La mesure sur la carte tranche.
 std::unique_ptr<SpanFp8Body> make_span_fp8_body48(int height, int width, bool flat);
+// Les blocs en FP16 sans quantification (span_fp8_net16.cu) : 64 canaux, ou 48 avec K à plat.
+std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels);
 
 }  // namespace ajp::gpu::cuda

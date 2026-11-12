@@ -2,15 +2,17 @@
 // les noyaux mêmes du lecteur. C'est l'outil de tools/span/derive_span_fp8.py pour juger la qualité (PSNR et
 // SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
-//   ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap]
+//   ajp_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
+//                    [--padded | --per-tap] [--fp16]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
 // dérivation native (span_fp8_ref.h) à la place des noyaux FP8, et les 25 maxima relevés sur l'image, un par
 // ligne, sur la sortie standard (pour les comparer à ONNX Runtime). --padded, --per-tap : pour un modèle à 48
 // canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
-// le calcul natif du lecteur. À lancer sous le verrou GPU
+// le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
+// mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. À lancer sous le
+// verrou GPU
 // (~/ajp-tools/bin/ajp-gpu).
 #include <algorithm>
 #include <charconv>
@@ -19,6 +21,7 @@
 #include <cstring>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
+#include <expected>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -27,6 +30,7 @@
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/cuda/backend/span_fp8_ref.h"
 #include "gpu/cuda/backend/span_fp8_view.h"
+#include "gpu/span_fp8/onnx_weights.h"
 #include "gpu/span_fp8/package.h"
 
 namespace {
@@ -56,6 +60,7 @@ struct Options {
   int bench = 0;
   bool reference = false;
   ajp::gpu::cuda::SpanFp8Width width48 = ajp::gpu::cuda::SpanFp8Width::Native;
+  bool fp16 = false;
 };
 
 // Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
@@ -66,6 +71,8 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.reference = true;
     } else if (option == "--padded") {
       options.width48 = ajp::gpu::cuda::SpanFp8Width::Padded;
+    } else if (option == "--fp16") {
+      options.fp16 = true;
     } else if (option == "--per-tap") {
       options.width48 = ajp::gpu::cuda::SpanFp8Width::PerTap;
     } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
@@ -75,6 +82,30 @@ std::string read_options(int argc, char* const* argv, Options& options) {
     }
   }
   return {};
+}
+
+// Un paquet « .span8 », ou avec --fp16 l'ONNX du SPAN lui-même (ses échelles, qui valent 1, ne servent pas
+// au FP16 ; il n'y a rien à dériver pour mesurer le FP16 d'un modèle).
+std::expected<ajp::gpu::span_fp8::Package, ajp::Refusal> load_package(const char* path, bool fp16) {
+  if (std::string_view(path).ends_with(".onnx")) {
+    if (!fp16)
+      return std::unexpected(
+          ajp::Refusal{ajp::RefusalCode::FormatUnsupported, "un ONNX ne sert qu'avec --fp16"});
+    return ajp::gpu::span_fp8::package_from_onnx_file(path);
+  }
+  std::vector<std::byte> bytes;
+  if (!read_all(path, bytes))
+    return std::unexpected(ajp::Refusal{ajp::RefusalCode::FileUnreadable, "paquet illisible"});
+  return ajp::gpu::span_fp8::parse(bytes);
+}
+
+// Les pointeurs du paquet, avec la forme de calcul demandée.
+ajp::gpu::cuda::SpanFp8Weights weights_for(const ajp::gpu::span_fp8::Package& package,
+                                           const Options& options) {
+  ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(package);
+  weights.width48 = options.width48;
+  weights.fp16 = options.fp16;
+  return weights;
 }
 
 #define CU(call)                                                                                     \
@@ -98,9 +129,7 @@ int main(int argc, char* const* argv) {
   const bool reference_mode = options.reference;
   if (const std::string why = ajp::gpu::span_fp8::size_refusal(height, width); !why.empty()) return fail(why);
 
-  std::vector<std::byte> bytes;
-  if (!read_all(argv[1], bytes)) return fail("paquet illisible");
-  const auto package = ajp::gpu::span_fp8::parse(bytes);
+  const auto package = load_package(argv[1], options.fp16);
   if (!package) return fail(package.error().detail);
 
   cudaDeviceProp props{};
@@ -108,8 +137,7 @@ int main(int argc, char* const* argv) {
   if (!SpanFp8Net::supported_device(props.major, props.minor))
     return fail("appareil sans noyaux FP8 CUTLASS");
 
-  ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(*package);
-  weights.width48 = options.width48;
+  const ajp::gpu::cuda::SpanFp8Weights weights = weights_for(*package, options);
   ajp::gpu::cuda::SpanFp8Status status = ajp::gpu::cuda::SpanFp8Status::Ok;
   std::string why;
   std::unique_ptr<ajp::gpu::cuda::SpanFp8Reference> reference;

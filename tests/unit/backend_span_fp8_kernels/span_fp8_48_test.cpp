@@ -74,22 +74,26 @@ void randomize(span_fp8::Conv& conv, std::size_t outs, std::size_t real_outs, st
     conv.bias[o] = o < real_outs ? random.next() * 0.05F : 0.0F;
 }
 
-span_fp8::Package b5f48(Random& random) {
-  span_fp8::Package package = span_fp8::testing::synthetic(0.01F, 5);
-  package.real_channels = kReal;
-  randomize(package.first, kStored, kReal, span_fp8::kUnshuffledPadded, 12, 0.2F, random);
+// real : 48 (un b5f48, rangé en 64 avec des zéros) ou 64.
+span_fp8::Package random_package(Random& random, int real = kReal, int blocks = 5) {
+  span_fp8::Package package = span_fp8::testing::synthetic(0.01F, blocks);
+  package.real_channels = real;
+  const auto live = static_cast<std::size_t>(real);
+  randomize(package.first, kStored, live, span_fp8::kUnshuffledPadded, 12, 0.2F, random);
   for (span_fp8::Block& block : package.blocks) {
-    for (span_fp8::Conv& conv : block.conv) randomize(conv, kStored, kReal, kStored, kReal, 0.16F, random);
-    randomize(block.attention, kStored, kReal, kStored, kReal, 0.45F, random);
+    for (span_fp8::Conv& conv : block.conv) randomize(conv, kStored, live, kStored, live, 0.16F, random);
+    randomize(block.attention, kStored, live, kStored, live, 0.45F, random);
   }
-  randomize(package.concat, kStored, kReal, kStored, kReal, 0.2F, random);
-  randomize(package.pixel, span_fp8::kPixelChannels, span_fp8::kPixelChannels, kStored, kReal, 0.16F, random);
+  randomize(package.concat, kStored, live, kStored, live, 0.2F, random);
+  randomize(package.pixel, span_fp8::kPixelChannels, span_fp8::kPixelChannels, kStored, live, 0.16F, random);
   return package;
 }
 
-std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, const DeviceBytes& in) {
+std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, const DeviceBytes& in,
+                        bool fp16 = false) {
   SpanFp8Weights weights = span_fp8_view(package);
   weights.width48 = width;
+  weights.fp16 = fp16;
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string error;
   const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
@@ -130,7 +134,7 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   const bool acc16 = GENERATE(false, true);
   INFO("acc16 " << acc16);
   Random random;
-  span_fp8::Package package = b5f48(random);
+  span_fp8::Package package = random_package(random);
   package.acc16 = acc16;
   std::vector<__half> image(kInCount);
   for (__half& value : image) value = __float2half(random.next() + 0.5F);
@@ -165,7 +169,7 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
 TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_fp8]") {
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   Random random;
-  const span_fp8::Package package = b5f48(random);
+  const span_fp8::Package package = random_package(random);
   SpanFp8Status status = SpanFp8Status::Ok;
   std::string error;
   SpanFp8Weights weights = span_fp8_view(package);
@@ -176,6 +180,45 @@ TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_
   REQUIRE(padded != nullptr);
   // 576 octets par pixel de caractéristiques contre 768.
   CHECK(native->workspace_bytes() * 4 < padded->workspace_bytes() * 3 + 4096);
+}
+
+}  // namespace ajp::gpu::cuda
+
+namespace ajp::gpu::cuda {
+
+// Lot 2 du fil SPAN : les blocs en FP16 sans quantification suivent la référence FP16 (span_fp8_ref.h), qui
+// calcule le même réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps réduit à 48 ; à 64, le
+// corps à 64. Il ne reste que l'ordre des sommes (et l'accumulateur f16 en acc16).
+TEST_CASE("SPAN FP16 en noyaux CUTLASS : suit la référence FP16", "[cuda][span_fp8]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  const int real = GENERATE(48, 64);
+  const bool acc16 = GENERATE(false, true);
+  INFO(real << " canaux, acc16 " << acc16);
+  Random random;
+  span_fp8::Package package = random_package(random, real, real == 48 ? 5 : 8);
+  package.acc16 = acc16;
+  std::vector<__half> image(kInCount);
+  for (__half& value : image) value = __float2half(random.next() + 0.5F);
+  DeviceBytes in(kInCount * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), kInCount * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string error;
+  const std::unique_ptr<SpanFp8Reference> reference =
+      SpanFp8Reference::create(span_fp8_view(package), kHeight, kWidth, status, error);
+  REQUIRE(reference != nullptr);
+  DeviceBytes expected(kInCount * 4 * sizeof(__half));
+  REQUIRE(reference->run(nullptr, in.data, expected.data, false, error));
+  std::vector<__half> half(kInCount * 4);
+  REQUIRE(cudaMemcpy(half.data(), expected.data, half.size() * sizeof(__half), cudaMemcpyDeviceToHost) ==
+          cudaSuccess);
+  std::vector<double> want(half.size());
+  for (std::size_t i = 0; i < half.size(); ++i) want[i] = static_cast<double>(__half2float(half[i]));
+
+  const double snr = snr_db(want, run(package, SpanFp8Width::Native, in, true));
+  INFO("SNR du FP16 en noyaux contre la référence : " << snr << " dB");
+  CHECK(snr >= (acc16 ? 30.0 : 40.0));
 }
 
 }  // namespace ajp::gpu::cuda

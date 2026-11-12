@@ -6,8 +6,8 @@
 namespace ajp::gpu::cuda {
 
 std::unique_ptr<SpanFp8Body> make_span_fp8_body48(int height, int width, bool flat) {
-  if (flat) return std::make_unique<Body<48, Alg::kFewChannels>>(height, width);
-  return std::make_unique<Body<48, Alg::kOptimized>>(height, width);
+  if (flat) return std::make_unique<Body<48, Alg::kFewChannels, false>>(height, width);
+  return std::make_unique<Body<48, Alg::kOptimized, false>>(height, width);
 }
 
 }  // namespace ajp::gpu::cuda
