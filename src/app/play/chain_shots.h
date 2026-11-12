@@ -42,6 +42,7 @@ struct ShotJob {
   // Le chemin de décodage de l'analyse et le gain de son limiteur de flashs (media/shot_cache.h, B42-07).
   std::uint32_t variant = 0;
   double flash_gain = 1.0;  // le gain du limiteur de flashs de l'analyse (flash_gain_of)
+  bool faces = false;       // la peau des visages cherchée (face_skin)
   bool complete = false;    // connue entière : lue du cache, ou analysée jusqu'au bout et gardée
 
   ShotJob() = default;
@@ -124,6 +125,8 @@ struct ShotScene {
   // Un plan de la pré-analyse, aux valeurs fixes ; faux pour une scène vue à l'ingestion, dont la moyenne
   // bouge à chaque image (A42-04).
   bool planned = false;
+  // La peau des visages du plan (face_skin) ; aucune teinte hors de la pré-analyse.
+  render::SkinTones skins;
 };
 // B42-01 : shot suit sans vraie coupe le plan que le grade suivait, fini à previous_end_us (-1 : aucun), à
 // 0,1 s près : le même plan réel, coupé au point de reprise d'une analyse. La lumière glisse au lieu de

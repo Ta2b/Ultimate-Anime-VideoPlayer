@@ -49,6 +49,14 @@ void apply_anime(const GradeSettings& s, GradeParams& p) {
   p.an_punch = std::clamp((s.anime_contrast - 100) / 100.0, -1.0, 2.0);
   p.an_chroma = std::clamp(s.anime_saturation / 100.0, 0.0, 2.0);
   p.an_spec = std::clamp(s.anime_highlights / 100.0, 0.0, 2.0);
+  const SkinTones& t = s.skin_tones;
+  p.skin_n = std::clamp(t.count, 0, 3);
+  p.skin_h0 = t.hue[0];
+  p.skin_h1 = t.hue[1];
+  p.skin_h2 = t.hue[2];
+  p.skin_s0 = t.sat[0];
+  p.skin_s1 = t.sat[1];
+  p.skin_s2 = t.sat[2];
 }
 
 // Sortie SDR : le blanc de la source est celui de l'écran, aucune marge pour des éclats. Restent les

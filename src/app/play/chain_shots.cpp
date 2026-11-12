@@ -35,20 +35,22 @@ void note_cache_failure(const std::filesystem::path& dir) {
 
 // Le grade lit les plans (sauf celui, neutre, d'une source HDR sans grade natif) ; l'interpolation aussi,
 // sous --shot-cuts. B42-02 : en sortie HDR, le grade efface l'exposition par plan et la marge selon la scène
-// (render::steady_hdr) ; il n'y lit plus que les flashs dangereux. Sans le limiteur, la pré-analyse (un
-// second décodage logiciel de tout le fichier) ne part pas : la série des noirs profonds reste alors à sa clé
-// moyenne.
+// (render::steady_hdr) ; il n'y lit plus que les flashs dangereux et la peau des visages (face_skin). Sans
+// l'un ni l'autre, la pré-analyse (un second décodage logiciel de tout le fichier) ne part pas : la série des
+// noirs profonds reste alors à sa clé moyenne.
 bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr, bool hdr_output) {
-  const bool grade =
-      settings.grade && (!source_hdr || settings.hdr_native) && (!hdr_output || settings.flash_guard);
+  const bool grade = settings.grade && (!source_hdr || settings.hdr_native) &&
+                     (!hdr_output || settings.flash_guard || settings.face_skin);
   return grade || (shot_cuts && settings.rife_factor != 0);
 }
 
 // La variante du cache (media/shot_cache.h) : le chemin de décodage, et le gain du limiteur de flashs avec
 // lequel les séquences de flashs ont été marquées (B42-07) ; un autre écran les juge à nouveau.
-std::uint32_t cache_variant(bool nvdec, double flash_gain) {
+// La recherche des visages (face_skin) en fait une autre : un cache sans visages se refait quand elle
+// s'allume.
+std::uint32_t cache_variant(bool nvdec, double flash_gain, bool faces) {
   const auto gain = static_cast<std::uint32_t>(std::lround(std::clamp(flash_gain, 0.0, 100.0) * 100.0));
-  return (nvdec ? 1U : 0U) + (gain << 1U);
+  return (nvdec ? 1U : 0U) + (gain << 1U) + (faces ? 1U << 30U : 0U);
 }
 
 // Le thread de l'analyse garde au cache la part faite quand elle s'arrête (B42-05), sauf si la vidéo y est
@@ -76,6 +78,10 @@ void keep_on_stop(const std::shared_ptr<ShotJob::Cache>& state, const std::files
 void start_probe(const ShotWork& work, ShotJob& job, std::int64_t from_us) {
   media::ShotProbeOptions options = work.probe;
   options.flash_gain = job.flash_gain;
+  options.faces = job.faces;
+  // NVDEC réduit : à 256 × 144, un visage de 24 lignes ferait le sixième de l'image ; la recherche des
+  // visages décode plus grand.
+  if (job.faces && !options.cuvid_resize.empty()) options.cuvid_resize = media::kProbeCuvidFacesSize;
   // B30-01 : une analyse bloquée sur un partage muet ne fige pas la fenêtre à la fermeture.
   options.abandon = abandon_thread;
   options.on_stop = [state = job.cache, dir = work.cache_dir, name = core::to_utf8(job.file.filename()),
@@ -105,13 +111,15 @@ void start_probe(const ShotWork& work, ShotJob& job, std::int64_t from_us) {
 
 // B42-07 : les flashs se jugent à la lumière que l'écran montrera (son pic), et sans gain pour une source
 // déjà en PQ ou HLG, que le grade ne relève pas.
-ShotJob new_job(const ShotWork& work, const std::filesystem::path& file, const ShotOutput& output) {
+ShotJob new_job(const ShotWork& work, const std::filesystem::path& file, const ShotOutput& output,
+                bool faces) {
   ShotJob job;
   job.cache_dir = work.cache_dir;
   job.file = file;
   job.cache = std::make_shared<ShotJob::Cache>();
   job.flash_gain = output.source_hdr ? 1.0 : flash_gain_of(output.peak_nits);
-  job.variant = cache_variant(!work.probe.cuvid_resize.empty(), job.flash_gain);
+  job.faces = faces;
+  job.variant = cache_variant(!work.probe.cuvid_resize.empty(), job.flash_gain, faces);
   job.timeline = std::make_shared<media::ShotTimeline>();
   return job;
 }
@@ -157,6 +165,7 @@ ShotJob& ShotJob::operator=(ShotJob&& other) noexcept {
   probe = std::move(other.probe);
   variant = other.variant;
   flash_gain = other.flash_gain;
+  faces = other.faces;
   complete = other.complete;
   return *this;
 }
@@ -178,7 +187,8 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
     return;
   }
   const std::int64_t from = std::max<std::int64_t>(start_us, 0);
-  if (work.current.file == file && work.current.timeline) {
+  // La recherche des visages allumée ou éteinte : l'analyse recommence, sous une autre variante du cache.
+  if (work.current.file == file && work.current.timeline && work.current.faces == settings.face_skin) {
     if (work.current.complete) return;
     if (!work.current.probe) {  // arrêtée quand plus rien ne lisait les plans : elle reprend
       start_probe(work, work.current, from);
@@ -188,7 +198,7 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
     return;
   }
   work.current.retire();  // l'analyse de l'autre fichier s'arrête, sa part faite va au cache
-  work.current = new_job(work, file, output);
+  work.current = new_job(work, file, output, settings.face_skin);
   start_probe(work, work.current, from);
 }
 
@@ -205,6 +215,16 @@ void tend_shots(ShotWork& work) {
 }
 
 namespace {
+
+render::SkinTones skin_tones_of(const media::PlanSkins& skins) {
+  render::SkinTones out;
+  for (const media::SkinTone& t : skins.view()) {
+    out.hue.at(static_cast<std::size_t>(out.count)) = t.hue;
+    out.sat.at(static_cast<std::size_t>(out.count)) = t.sat;
+    ++out.count;
+  }
+  return out;
+}
 
 ShotScene scene_of(const media::ShotStats& s, std::uint64_t serial, bool fade) {
   return ShotScene{.stats = {.mean = s.mean,
@@ -310,6 +330,7 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   scene.start_us = shot->start_us;
   scene.end_us = shot->end_us;
   scene.cut_before = shot->cut_before;
+  scene.skins = skin_tones_of(shot->skins);
   return scene;
 }
 

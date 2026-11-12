@@ -50,6 +50,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.oled_care = false;
   s.steady_cadence = true;
   s.flash_guard = false;
+  s.face_skin = true;
   s.surface_white = 80;
   s.smooth_motion = true;
   s.motion_engine = MotionEngine::DistilDrba;
@@ -659,6 +660,17 @@ TEST_CASE("play.toml : le limiteur de flashs, activé par défaut et dans un fic
   const auto off = ajp::app::play::parse_settings("[grade]\nflash_guard = false\n");
   REQUIRE(off.has_value());
   CHECK_FALSE(off->flash_guard);
+}
+
+TEST_CASE("play.toml : la peau des visages, éteinte par défaut et dans un fichier d'avant, s'allume",
+          "[app][settings]") {
+  CHECK_FALSE(ajp::app::play::PlaySettings{}.face_skin);
+  const auto old = ajp::app::play::parse_settings("[grade]\nflash_guard = true\n");
+  REQUIRE(old.has_value());
+  CHECK_FALSE(old->face_skin);
+  const auto on = ajp::app::play::parse_settings("[grade]\nface_skin = true\n");
+  REQUIRE(on.has_value());
+  CHECK(on->face_skin);
 }
 
 TEST_CASE("play.toml : le blanc des surfaces, 100 % par défaut et dans un fichier d'avant, borné",

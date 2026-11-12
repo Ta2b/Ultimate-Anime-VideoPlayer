@@ -138,6 +138,8 @@ struct Chain {
   // La lumière de la scène que le grade en trois passes reçoit (render::SceneLight) ; gardée telle quelle
   // tant qu'aucune analyse ne dit mieux (un saut ne la perd pas). scene_light_at_us : son dernier envoi.
   std::optional<render::SceneLight> scene_light;
+  // La peau des visages du plan montré (face_skin), envoyée au grade à la coupe, en sortie HDR comme SDR.
+  render::SkinTones skin_tones;
   std::int64_t scene_light_at_us = 0;
   std::int64_t shots_seek_us = 0;
   std::int64_t shots_newest_pts = kNoPts;

@@ -36,6 +36,8 @@ struct ShotProbeOptions {
   // --probe-nvdec (8.8) : les images décodées par NVDEC à cette taille (DecoderOptions::cuvid_resize) ;
   // vide : le décodeur logiciel en pleine taille.
   std::string cuvid_resize;
+  // La peau des visages (media/face_skin.h, option face_skin) : chaque plan garde la palette de ses visages.
+  bool faces = false;
   // Ce que le grade fait à la lumière de la source, pour les séquences de flashs que l'analyse marque dans la
   // chronologie (media/flash_guard.h).
   double flash_gain = 1.0;
@@ -55,6 +57,7 @@ struct ShotProbeOptions {
   std::chrono::milliseconds stop_limit{2000};
 };
 inline constexpr const char* kProbeCuvidSize = "256x144";
+inline constexpr const char* kProbeCuvidFacesSize = "512x288";  // la recherche des visages (face_skin)
 
 class ShotProbe {
  public:

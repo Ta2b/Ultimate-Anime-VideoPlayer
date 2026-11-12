@@ -182,6 +182,14 @@ constexpr std::array kSettingsPages{
           "SPAN passe en {} (construit la première fois pour cette taille)"},
     Entry{"Highlights", "Éclats"},
     Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
+    Entry{"Skin from faces (test)", "Peau des visages (essai)"},
+    Entry{
+        "Faces are found ahead of playback and the grade only treats their skin tones as skin: warm lamps of "
+        "another tone light up again. A shot without a found face keeps the wide range. Takes effect with "
+        "the next video.",
+        "Les visages sont cherchés en avance sur la lecture, et le grade ne traite plus comme peau que leurs "
+        "teintes : les lampes chaudes d'une autre teinte se rallument. Un plan sans visage trouvé garde la "
+        "plage large. Prise en compte à la vidéo suivante."},
     Entry{"Surface white", "Blanc des surfaces"},
     Entry{"HDR: the white of walls and skin, in % of where the LUTs put it (about 70 % of the screen "
           "peak). Lower leaves more room to the lights, which still reach the peak.",

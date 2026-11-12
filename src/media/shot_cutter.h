@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "kernels/spec/frame_stats.h"
+#include "media/faces.h"
 
 namespace ajp::media {
 
@@ -42,6 +43,8 @@ struct ShotFrame {
   float blue = 0.0F;    // moyenne de max(0, B - max(R, V))
   float chroma = 0.0F;  // moyenne de max(R, V, B) - min(R, V, B)
   ShotLight light;
+  // Les palettes des visages trouvés dans cette image (media/face_skin.h) ; vide sans recherche de visages.
+  std::vector<SkinTone> faces;
 };
 
 // Les valeurs d'un plan, sur l'échelle de SceneStats.
@@ -70,6 +73,9 @@ struct ShotMeta {
   float apl_max_nits = 0.0F;
   float max_scl_nits = 0.0F;
   ShotLight mean;
+  // Les teintes de peau des visages du plan (media/faces.h, plan_skins) ; aucune : le grade garde sa plage
+  // de peau large.
+  PlanSkins skins;
   friend bool operator==(const ShotMeta&, const ShotMeta&) = default;
 };
 
@@ -133,6 +139,7 @@ class ShotCutter {
     double apl = 0.0, maxrgb_mean = 0.0, bright = 0.0, highlights = 0.0, skin = 0.0;
     std::array<double, kShotLumBins> lum_hist{};
     float apl_min = 0.0F, apl_max = 0.0F, max_scl = 0.0F;
+    std::vector<SkinTone> faces;  // au plus kFacesKept
     void add(const ShotFrame& frame);
     ShotStats stats() const;
     ShotMeta meta() const;

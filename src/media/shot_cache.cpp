@@ -20,18 +20,20 @@ namespace ajp::media {
 namespace {
 
 // 2 : la lumière du plan (ShotMeta) ; 3 : son histogramme de I (lum_hist, 8.6) ; 4 : la version de l'analyse,
-// le chemin de décodage et les séquences de flashs ; 5 : la part d'un fondu où la lumière change (B42-03).
+// le chemin de décodage et les séquences de flashs ; 5 : la part d'un fondu où la lumière change (B42-03) ;
+// 6 : les teintes de peau des visages du plan (media/faces.h).
 // Un cache d'avant se refait.
-constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '5'};
+constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '6'};
 constexpr std::uint32_t kMaxFlashes = 100'000;
 constexpr std::size_t kHeadBytes = 1 << 20;
 constexpr std::uint32_t kMaxShots = 200'000;
 constexpr const char* kExtension = ".shots";
-// Les octets d'un plan dans le fichier : quatre instants, deux ShotStats, un ShotMeta et les drapeaux. Un
+// Les octets d'un plan dans le fichier, au moins : quatre instants, deux ShotStats, un ShotMeta, les drapeaux
+// et le compte de ses teintes de peau. Un
 // compte de plans que le reste du fichier ne peut pas tenir est refusé avant d'allouer (B42-06).
 constexpr std::size_t kShotBytes =
     (4 * sizeof(std::int64_t)) +
-    (sizeof(float) * (22 + 4 + kernels::frame_stats::kPercentiles.size() + 5 + kShotLumBins)) + 1;
+    (sizeof(float) * (22 + 4 + kernels::frame_stats::kPercentiles.size() + 5 + kShotLumBins)) + 2;
 // Les restes d'une écriture coupée (B33-07, B36-04) : l'ancien « <clé>.shots.part » et les temporaires de
 // core::write_atomic. Retirés passé ce délai, qu'aucune écriture en cours n'atteint.
 constexpr auto kOrphanAge = std::chrono::hours(1);
@@ -79,6 +81,11 @@ void put_meta(std::string& out, const ShotMeta& m) {
        {m.mean.apl_nits, m.mean.maxrgb_mean_nits, m.mean.bright, m.mean.highlights, m.mean.skin})
     put(out, v);
   for (const float v : m.mean.lum_hist) put(out, v);
+  put(out, static_cast<std::uint8_t>(m.skins.count));
+  for (const SkinTone& t : m.skins.view()) {
+    put(out, t.hue);
+    put(out, t.sat);
+  }
 }
 
 bool take_meta(const std::string& in, std::size_t& at, ShotMeta& m) {
@@ -88,6 +95,12 @@ bool take_meta(const std::string& in, std::size_t& at, ShotMeta& m) {
   ok = ok && take(in, at, m.mean.apl_nits) && take(in, at, m.mean.maxrgb_mean_nits) &&
        take(in, at, m.mean.bright) && take(in, at, m.mean.highlights) && take(in, at, m.mean.skin);
   for (float& v : m.mean.lum_hist) ok = ok && take(in, at, v);
+  std::uint8_t skins = 0;
+  ok = ok && take(in, at, skins) && skins <= kMaxPlanSkins;
+  if (!ok) return false;
+  m.skins.count = skins;
+  for (SkinTone& t : std::span(m.skins.tones).first(skins))
+    ok = ok && take(in, at, t.hue) && take(in, at, t.sat);
   return ok;
 }
 

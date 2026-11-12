@@ -106,6 +106,11 @@ void grade_tab(PlaySettings& d) {
                  "peak). Lower leaves more room to the lights, which still reach the peak."));
     grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
     panel::tip(i18n::tr("The maximum, reached in a very bright episode; it fades out in a very dark one."));
+    ImGui::Checkbox(i18n::tr("Skin from faces (test)"), &d.face_skin);
+    panel::tip(
+        i18n::tr("Faces are found ahead of playback and the grade only treats their skin tones as skin: warm "
+                 "lamps of another tone light up again. A shot without a found face keeps the wide range. "
+                 "Takes effect with the next video."));
   }
   ImGui::Checkbox(i18n::tr("Limit rapid flashes"), &d.flash_guard);
   panel::tip(
@@ -119,6 +124,7 @@ void grade_tab(PlaySettings& d) {
     d.look_contrast = defaults.look_contrast;
     d.look_highlight = defaults.look_highlight;
     d.flash_guard = defaults.flash_guard;
+    d.face_skin = defaults.face_skin;
     d.surface_white = defaults.surface_white;
     g.shadows = defaults.grade_values.shadows;
   }

@@ -49,14 +49,28 @@ float shadow_ratio(float m, float depth) {
 // Teinte de peau (audit F2) : R >= G >= B, teinte de 15 a 45 degres, saturation moderee (0,12 a 0,60 en
 // BT.2020 lineaire). Un blanc (saturation < 0,1) et un feu, un neon, un coucher de soleil (> 0,7) n'en sont
 // pas. Douce aux bords : 0 hors de la plage, 1 au milieu.
+// Peau des visages (option face_skin, media/faces.h) : quand la pre-analyse a trouve des visages dans le plan
+// (skin_n > 0), la plage se resserre autour de leurs teintes : 6 degres et 19 % de saturation pleins, rien
+// au-dela de 12 degres et 37 %. Une lampe chaude, une bougie, d'une autre teinte que ces visages, redevient
+// une lumiere. Sans visage trouve, la plage large reste.
+float skin_near(float hue, float sat, float h, float s) {
+    float dh = abs(hue - h);
+    float ds = abs(log2(max(sat, 1e-4) / max(s, 1e-4)));
+    return (1.0 - smoothstep(6.0, 12.0, dh)) * (1.0 - smoothstep(0.25, 0.45, ds));
+}
 float skin_like(vec3 c) {
     float mx = max(max(c.r, c.g), c.b);
     float mn = min(min(c.r, c.g), c.b);
     if (mx <= 1e-4 || c.r < c.g || c.g < c.b) return 0.0;
     float sat = (mx - mn) / mx;
     float hue = 60.0 * (c.g - c.b) / max(c.r - c.b, 1e-6);
-    return smoothstep(10.0, 16.0, hue) * (1.0 - smoothstep(44.0, 52.0, hue)) *
-           smoothstep(0.08, 0.12, sat) * (1.0 - smoothstep(0.60, 0.70, sat));
+    float wide = smoothstep(10.0, 16.0, hue) * (1.0 - smoothstep(44.0, 52.0, hue)) *
+                 smoothstep(0.08, 0.12, sat) * (1.0 - smoothstep(0.60, 0.70, sat));
+    if (skin_n < 0.5) return wide;
+    float near = skin_near(hue, sat, skin_h0, skin_s0);
+    if (skin_n > 1.5) near = max(near, skin_near(hue, sat, skin_h1, skin_s1));
+    if (skin_n > 2.5) near = max(near, skin_near(hue, sat, skin_h2, skin_s2));
+    return wide * near;
 }
 
 // Saturation en Oklab : l'ecart en RVB lineaire a la luminance tournait les bleus vers le violet quand on

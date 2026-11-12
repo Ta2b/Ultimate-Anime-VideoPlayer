@@ -15,6 +15,7 @@
 #include "core/thread_role.h"
 #include "kernels/ref/frame_stats.h"
 #include "media/demuxer.h"
+#include "media/face_skin.h"
 #include "media/flash_guard.h"
 #include "media/log.h"
 #include "media/video_decoder.h"
@@ -393,6 +394,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
 
   const auto started = std::chrono::steady_clock::now();
   std::int64_t frames = 0;
+  FaceSearch faces(options.faces);
   std::int64_t filled_from = -1;
   std::int64_t skipped_to = -1;
   bool ended = false;
@@ -436,6 +438,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       last_pts = frame.pts_us;
       last_duration = frame.duration_us;
       frontier.store(frame.pts_us, std::memory_order_relaxed);
+      faces.look(frame, *measured);
       ++frames;
       analysis.push(*measured);
       continue;
@@ -452,8 +455,8 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       }
       const double seconds =
           std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
-      log->info("pré-analyse des plans finie : {} images en {:.1f} s, {} plans", frames, seconds,
-                timeline->size());
+      log->info("pré-analyse des plans finie : {} images en {:.1f} s, {} plans{}", frames, seconds,
+                timeline->size(), faces.summary(*timeline));
       finished.store(true, std::memory_order_release);
       ended = true;
       continue;

@@ -118,7 +118,8 @@ std::optional<ShotAt> ShotTimeline::at(std::int64_t pts_us) const {
                .serial = serials_.at(index),
                .stats = shot.first,
                .fade = shot.fade,
-               .cut_before = shot.cut_before};
+               .cut_before = shot.cut_before,
+               .skins = shot.meta.skins};
   if (shot.fade) {
     // La part où la lumière change (B42-03) ; tout le plan si elle n'est pas connue.
     const bool ramp = shot.ramp_to_us > shot.ramp_from_us;

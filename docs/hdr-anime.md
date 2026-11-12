@@ -88,7 +88,7 @@ Ce que le cloud ne peut pas mesurer (la dalle, son limiteur, le compositeur) res
 | A1 | `--hdr-anime` | La carte des émetteurs, portes tirées des gains réels de `decide_grade` | fait |
 | A2 | `--anime-shots` | Exposition des surfaces et marge des éclats fixées par plan (pré-analyse), posées à l'image de coupe, sans glissé (un changement à la coupe ne se voit pas ; `app/play/anime_shots.h`) | codé, à mesurer |
 | A3 | `--anime-guided` | Carte locale lue par un sur-échantillonnage bilatéral joint guidé par le pixel : le halo ne déborde plus | codé, à mesurer |
-| A4 | aucun | Visages : décodage d'un détecteur, doublons, suivi, palette de peau, exclusion des émetteurs (`render/faces.h`) | partie sans réseau codée |
+| A4 | aucun | Visages : cascade LBP (lbpcascade_animeface), doublons, palette de peau par plan (`media/faces.h`, `media/face_cascade.h`) | branché derrière `face_skin`, éteint par défaut (« Peau des visages ») |
 | A6 | aucun | Réseau des émetteurs : étiquettes (port numpy de A5), jeu de données, entraînement et export ONNX (`tools/grade/emitters/`) | scripts écrits, entraînement plus tard |
 | A5 | aucun | Mesures d'émetteurs v2, référence CPU (`render/emitters.h`) : pixel, bloc, couronne ; néon admis | codé, juge et étiquettes |
 
@@ -138,8 +138,35 @@ retenues à l'œil deviendront le défaut de la méthode.
 Le curseur Saturation écartait les canaux de la luminance en RVB linéaire : poussé, un bleu tournait vers le
 violet (6 à 13° de teinte d'Oklab à 150 et 200 %), un orange vers le rouge. Il multiplie désormais la chroma
 (a, b) d'Oklab par le facteur, puis remet la luminance BT.2020 d'origine par un facteur commun : la teinte
-d'Oklab ne bouge plus (écart < 0,01° sur une simulation en Python de la passe), la luminance non plus. Un canal qui passerait sous zéro fait
-reculer le facteur par dichotomie. À 100 %, la branche ne s'exécute pas : l'image est identique bit à bit.
+d'Oklab ne bouge plus (écart < 0,01° sur une simulation en Python de la passe), la luminance non plus. Un canal
+qui passerait sous zéro fait reculer le facteur par dichotomie. À 100 %, la branche ne s'exécute pas : l'image
+est identique bit à bit.
+
+## Peau des visages (12/11, essai, éteint par défaut)
+
+La carte des émetteurs exclut la peau (`skin_like`, audit F2) par sa couleur : teinte orangée de 10 à 52°,
+saturation de 0,08 à 0,70. Une lampe à incandescence, une bougie ou un coucher de soleil tombent dans la même
+plage et restaient éteints. L'option « Peau des visages (essai) » (Vidéo, réglages avancés du grade ; clé
+`face_skin` de `[grade]` dans play.toml) resserre cette plage sur la peau des personnages du plan :
+
+- la pré-analyse des plans (`media/shot_probe.h`) passe une image sur dix par la cascade de visages
+  lbpcascade_animeface (`third_party/lbpcascade_animeface`, MIT), évaluée par `media/face_cascade.cpp` sans
+  OpenCV, sur la luma réduite à 288 lignes et égalisée (fenêtre de 24 × 24, échelles de 1,1, cinq voisines) ;
+  sur 75 images d'un clip, elle trouve les mêmes 18 visages qu'OpenCV ;
+- la palette d'un visage est la médiane de 48 points sous ses yeux (30 à 70 % de la largeur du cadre, 55 à 85
+  % de sa hauteur), mesurés comme le grade les voit (lumière BT.2020) ; le quart au moins doit avoir l'ordre
+  R ≥ V ≥ B. Sur le même clip, les palettes d'un visage suivi sur neuf images restent entre 22 et 34° de
+  teinte et 0,25 à 0,34 de saturation, et le plan garde 29,6° et 0,31 ;
+- un plan garde jusqu'à trois teintes, chacune vue au moins deux fois (`media/faces.h`, `plan_skins`) et dans la
+  plage large : la palette resserre la plage, elle ne l'élargit jamais. Le cache des plans les garde (version 6
+  du fichier ; une autre variante quand l'option est allumée) ;
+- le grade reçoit les teintes à la coupe, en sortie HDR comme SDR, et `skin_like` ne garde que 6° et 19 % de
+  saturation autour d'elles (rien au-delà de 12° et 37 %).
+
+Garde-fou : un plan sans visage trouvé garde la plage large. Risque à juger sur de vrais épisodes : un
+personnage que la cascade ne voit pas (de profil, de dos, plus petit que 8 % de la hauteur) et dont la peau a
+une autre teinte que celle des visages trouvés n'est plus protégé ; si sa peau est claire et isolée, elle peut
+monter comme une lumière. Sous NVDEC réduit, la recherche décode à 512 × 288 au lieu de 256 × 144.
 
 ## Noirs profonds selon l'épisode (04/11, texte corrigé le 09/11 : A38-16)
 

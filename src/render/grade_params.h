@@ -52,6 +52,15 @@ struct SceneLight {
   friend bool operator==(const SceneLight&, const SceneLight&) = default;
 };
 
+// Les teintes de peau des visages du plan (media/faces.h, option face_skin) : teinte en degrés, saturation de
+// 0 à 1, au plus trois. Aucune : la plage de peau large du grade (skin_like, 3-anime.hook).
+struct SkinTones {
+  std::array<double, 3> hue{};
+  std::array<double, 3> sat{};
+  int count = 0;
+  friend bool operator==(const SkinTones&, const SkinTones&) = default;
+};
+
 struct GradeSettings {
   bool grade = true;              // grade activé
   bool grade_native_hdr = false;  // grade aussi une source déjà HDR
@@ -72,6 +81,8 @@ struct GradeSettings {
   // La médiane des luminances moyennes des plans connus (nits au blanc de 203 ; 0 : inconnue), pour les noirs
   // profonds (P3.52). Jamais écrite dans play.toml.
   double series_apl_nits = 0.0;
+  // La peau des visages du plan (face_skin) ; jamais écrite dans play.toml.
+  SkinTones skin_tones;
   // Le peps de la méthode « HDR anime » (--anime-contrast, --anime-saturation, --anime-highlights), en % ;
   // 100 : la méthode telle quelle. Écrit dans play.toml par le menu (settings_toml.cpp) ; une option donnée à
   // la main ne l'est pas (settings_to_save).
@@ -150,6 +161,10 @@ struct GradeParams {
   double an_punch = 0.0;   // --anime-contrast : contraste en plus (0 : aucun)
   double an_chroma = 1.0;  // --anime-saturation : facteur de saturation (1 : identité)
   double an_spec = 1.0;    // --anime-highlights : part de la montée des éclats (1 : celle du grade)
+  // La peau des visages du plan (SkinTones) : skin_n teintes, 0 pour la plage large.
+  double skin_n = 0.0;
+  double skin_h0 = 0.0, skin_h1 = 0.0, skin_h2 = 0.0;
+  double skin_s0 = 0.0, skin_s1 = 0.0, skin_s2 = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

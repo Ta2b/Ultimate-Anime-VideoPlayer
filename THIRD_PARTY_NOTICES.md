@@ -76,6 +76,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## lbpcascade_animeface (cascade de visages embarquée)
+lbpcascade_animeface, © 2011 nagadomi, licence MIT (texte dans l'en-tête du fichier). Le fichier
+`lbpcascade_animeface.xml` (commit `4433ab1`, `third_party/lbpcascade_animeface/`) est embarqué tel quel ; le
+lecteur l'évalue avec son propre code (`src/media/face_cascade.cpp`), sans OpenCV, pour trouver la peau des
+visages (option `face_skin`, éteinte par défaut). https://github.com/nagadomi/lbpcascade_animeface
+
+```
+The MIT License (MIT)
+
+Copyright (C) 2011 by nagadomi@nurs.or.jp
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
 ## Moteurs facultatifs téléchargés depuis l'écran de bienvenue
 MoltenVK (Apache-2.0) sur Mac. TensorRT, CUDA et cuDNN sont sous les licences propriétaires de NVIDIA, que l'utilisateur accepte à l'écran avant le téléchargement.
 
