@@ -335,7 +335,11 @@ class UpscaleStage final : public RingStage {
   struct Instant {
     float t = 1.0F;
     std::int64_t pts_us = 0;
+    std::int64_t gap_us = 0;  // Rapide libre : l'écart planifié depuis l'instant d'avant (RingFrame)
   };
+  // Rapide libre : le pts du dernier instant planifié, écrit, sauté en retard ou tenu ; kNoPts hors du mode,
+  // au début d'une époque.
+  std::int64_t planned_pts_ = kNoPts;
   std::array<Instant, core::kMaxInstantsPerPair> instants_{};
   std::uint32_t outputs_ = 1;
   std::uint32_t intermediates_ = 0;  // celles qui sont interpolées

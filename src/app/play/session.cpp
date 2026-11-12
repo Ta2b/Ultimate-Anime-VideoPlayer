@@ -749,7 +749,7 @@ void Session::pace(const RingFrame& frame, std::int64_t visible_us) {
   const ClockSnapshot now = clock_.snapshot();
   const bool running = !paused_ && now.valid && now.epoch == epoch_ && frame.pts_us != kNoPts;
   stats_.paced(frame.pts_us, running ? now.media_at(visible_us) - frame.pts_us : 0, pacing_period_us(),
-               frame.uninterpolated);
+               frame.uninterpolated, frame.planned_gap_us);
 }
 
 void Session::check_end(std::int64_t host_now) {
