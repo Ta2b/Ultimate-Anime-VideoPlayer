@@ -58,9 +58,11 @@ struct ExportSinkSetup {
 
 // Ce qui empêche le puits pour cet export, ou rien : backend sans write_yuv, encodeur qui ne lit
 // pas la mémoire CUDA, disposition autre que P010 ou NV12, flux étiqueté RGB, ou taille encodée
-// autre que la sortie de la chaîne (l'ancien chemin la met à l'échelle).
+// autre que la sortie de la chaîne (l'ancien chemin la met à l'échelle), ou un grade HDR à poser au rendu
+// (graded : le puits écrit l'anneau tel quel, sans libplacebo).
 std::optional<std::string> sink_blocker(bool yuv_targets, bool cuda_frames, exporter::Layout layout,
-                                        ColorMatrix matrix, ExportSize size, ExportSize chain);
+                                        ColorMatrix matrix, ExportSize size, ExportSize chain,
+                                        bool graded = false);
 
 // Le réglage du puits pour un flux étiqueté color, à la disposition layout (P010 ou NV12).
 ExportSinkSetup sink_setup(FrameSource frames, ExportSize size, exporter::Layout layout,

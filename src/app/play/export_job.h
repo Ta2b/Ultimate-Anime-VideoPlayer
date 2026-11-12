@@ -3,11 +3,14 @@
 // fréquence de sortie, nom du fichier) vivent ici, testés sans GPU ; export_run.h le réalise.
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "app/play/options.h"
 #include "app/play/settings.h"
+#include "core/frame.h"
 #include "export/container.h"
 #include "export/encoder_choice.h"
 #include "media/track.h"
@@ -31,8 +34,20 @@ struct ExportJob {
 
 // La chaîne d'un export : celle des réglages sans HDR ni grade, sans Smooth Motion
 // (une couche de l'écran) : l'image de la chaîne telle quelle, comme la lecture la donne en SDR. L'Auto
-// devient ×2, qui ne dépend pas de l'écran (P3.87).
+// devient ×2, qui ne dépend pas de l'écran (P3.87). Le grade se pose au rendu de l'export (export_grade).
 PlaySettings export_chain(const PlaySettings& s);
+
+// Le grade HDR anime à l'export, comme à la lecture : rien quand il est coupé ou que la source est déjà HDR
+// (elle passe telle quelle) ; sinon un fichier HDR10 (PQ BT.2020) dans un codec 10 bits, ou, en H.264 (8
+// bits, où le PQ ferait des paliers), le même grade ramené au SDR BT.709, comme sur un écran SDR.
+enum class ExportGrade : std::uint8_t { None, Hdr10, Sdr };
+ExportGrade export_grade(const PlaySettings& chain, bool source_hdr, exporter::Codec codec);
+// Le pic d'un export HDR10 : l'écran n'est pas connu, le grade vise celui que la lecture prend quand l'écran
+// ne dit pas le sien, et le fichier l'annonce (mastering et MaxCLL).
+inline constexpr int kExportPeakNits = 1000;
+// L'étiquette du flux d'un export gradé : HDR10 au pic kExportPeakNits, ou SDR BT.709 ; rien sans grade
+// (celle de la source, ExportWriter).
+std::optional<ColorInfo> export_color(ExportGrade grade);
 
 struct ExportSize {
   int width = 0;

@@ -388,9 +388,24 @@ WorkSize work_size(int width, int height, int work_height) {
   return {std::max(2, scaled + (scaled % 2)), work_height};
 }
 
+int span_height_cap(int width, int height) {
+  constexpr int kHalfWidth = kMaxOutputWidth / 2;
+  constexpr int kHalfHeight = kMaxOutputHeight / 2;
+  if (width <= 0 || height <= 0) return kHalfHeight;
+  int lines = std::min(kHalfHeight, static_cast<int>(static_cast<long long>(kHalfWidth) * height / width));
+  lines -= lines % 2;
+  // work_size arrondit la largeur puis la rend paire : une ligne de moins tant qu'elle dépasse.
+  while (lines > 2 && work_size(width, height, lines).width > kHalfWidth) lines -= 2;
+  return std::max(2, lines);
+}
+
 WorkSize chain_work_size(bool upscale, bool restore_lines, int width, int height, int work_height) {
-  const bool kept = upscale && !span_runs(upscale, restore_lines, height, work_height);
-  return work_size(width, height, kept ? 0 : work_height);
+  const bool runs = span_runs(upscale, restore_lines, height, work_height);
+  if (upscale && !runs) return work_size(width, height, 0);
+  if (!runs) return work_size(width, height, work_height);
+  const int cap = span_height_cap(width, height);
+  const int lines = work_height > 0 ? std::min(work_height, cap) : cap;
+  return work_size(width, height, lines);
 }
 
 std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args) {

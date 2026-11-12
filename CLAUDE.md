@@ -14,6 +14,10 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 
 - **un seul HDR** : le grade HDR anime. La sortie HDR ou SDR suit le système, sans bouton (`system_hdr`,
   `src/app/play/host_facts.h`) ;
+- **la chaîne suit la source** (novembre 2026) : pas de grade sur une source déjà HDR, pas d'interpolation hors
+  des cadences d'anime (23,976 à 30 i/s, `src/app/play/source_fit.h`), jamais plus que la 4K en sortie (une
+  source plus grande que 1080p est réduite avant SPAN, `chain_work_size`) ; l'export garde le grade
+  (`export_grade`, `docs/hdr-anime.md`) ;
 - **pas de profils** : `play.toml` garde la dernière chaîne, `user.toml` ne garde que `[keys]` ;
 - **menu en trois catégories** : Vidéo, Audio et lecture, Général (`kPages`, `src/app/play/settings_panel.cpp`) ;
 - **moteurs** : Vulkan pour tout GPU (le seul pour AMD et Intel), TensorRT sur NVIDIA RTX, Core ML sur Mac.

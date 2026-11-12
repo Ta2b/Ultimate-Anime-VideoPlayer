@@ -147,9 +147,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     ImGui::PopID();
   }
   if (ImGui::Button(i18n::tr("Use the playback settings"))) job.chain = running;
-  note(
-      i18n::tr("Same engines and settings as playback, with no skipped frame. No HDR or grading: the "
-               "chain's picture as is."));
+  note(i18n::tr(
+      "Same engines and settings as playback, with no skipped frame. The HDR grade comes along: HDR10, "
+      "or graded SDR in H.264; an HDR source stays as is."));
 
   section(i18n::tr("Encoding"));
   if (ImGui::BeginCombo(i18n::tr("Codec"), std::string(exporter::label(job.codec)).c_str())) {

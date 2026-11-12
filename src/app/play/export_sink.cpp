@@ -57,7 +57,8 @@ FrameSource pool_frames(AVBufferRef* frames) {
 }
 
 std::optional<std::string> sink_blocker(bool yuv_targets, bool cuda_frames, exporter::Layout layout,
-                                        ColorMatrix matrix, ExportSize size, ExportSize chain) {
+                                        ColorMatrix matrix, ExportSize size, ExportSize chain, bool graded) {
+  if (graded) return "grade HDR anime posé au rendu";
   if (!yuv_targets) return "le backend n'écrit pas en YUV";
   if (!cuda_frames) return "l'encodeur ne lit pas la mémoire CUDA";
   if (layout != exporter::Layout::P010 && layout != exporter::Layout::Nv12)
