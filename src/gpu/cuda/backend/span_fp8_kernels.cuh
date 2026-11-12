@@ -84,8 +84,10 @@ __device__ __forceinline__ void load_w1(__half* w1s, const __half* w1) {
         *reinterpret_cast<const uint4*>(w1 + (i / kNT) * kN + (i % kNT) * 8);
 }
 
+// Un bloc par SM au moins : sans ce second argument, ptxas plafonnait deux noyaux à 48 colonnes à 128
+// registres et débordait de 16 octets (nvcc 13.4, sm 89).
 template <class Base, int Mode, bool Relu>
-__global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::Params params, KP tp) {
+__global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Base::Params params, KP tp) {
   using Mma = typename Base::Mma;
   constexpr int kWarpM = Mma::Policy::Operator::Shape::kM;
   constexpr int kMI = kWarpM / 16;
