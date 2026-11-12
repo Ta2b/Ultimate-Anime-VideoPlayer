@@ -53,22 +53,59 @@ std::optional<std::string> proxy_from_setting(std::string_view setting) {
 
 namespace {
 
+#if defined(_WIN32)
+std::string utf8_of(const wchar_t* wide) {
+  std::string text;
+  if (wide == nullptr) return text;
+  const int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, nullptr, 0, nullptr, nullptr);
+  if (bytes > 1) {
+    text.resize(static_cast<std::size_t>(bytes - 1));
+    WideCharToMultiByte(CP_UTF8, 0, wide, -1, text.data(), bytes, nullptr, nullptr);
+  }
+  return text;
+}
+
+// Le proxy qu'un script PAC ou la détection automatique donne pour l'hôte des releases : le réglage
+// « Détecter automatiquement » ou « Utiliser un script » de Windows, que le proxy manuel seul ne couvre pas
+// (B06-08, B34-10). Tout proxy d'entreprise sur PAC faisait échouer le téléchargement sans un mot.
+std::optional<std::string> auto_proxy(const WINHTTP_CURRENT_USER_IE_PROXY_CONFIG& config) {
+  if (config.fAutoDetect == FALSE && config.lpszAutoConfigUrl == nullptr) return std::nullopt;
+  HINTERNET session =
+      WinHttpOpen(L"ajp", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  if (session == nullptr) return std::nullopt;
+  WINHTTP_AUTOPROXY_OPTIONS options{};
+  if (config.lpszAutoConfigUrl != nullptr) {
+    options.dwFlags = WINHTTP_AUTOPROXY_CONFIG_URL;
+    options.lpszAutoConfigUrl = config.lpszAutoConfigUrl;
+  } else {
+    options.dwFlags = WINHTTP_AUTOPROXY_AUTO_DETECT;
+    options.dwAutoDetectFlags = WINHTTP_AUTO_DETECT_TYPE_DHCP | WINHTTP_AUTO_DETECT_TYPE_DNS_A;
+  }
+  options.fAutoLogonIfChallenged = TRUE;
+  WINHTTP_PROXY_INFO info{};
+  std::optional<std::string> found;
+  if (WinHttpGetProxyForUrl(session, L"https://github.com/", &options, &info) != FALSE) {
+    if (info.dwAccessType == WINHTTP_ACCESS_TYPE_NAMED_PROXY)
+      found = proxy_from_setting(utf8_of(info.lpszProxy));
+    for (LPWSTR owned : {info.lpszProxy, info.lpszProxyBypass}) {
+      if (owned != nullptr) GlobalFree(owned);
+    }
+  }
+  WinHttpCloseHandle(session);
+  return found;
+}
+#endif
+
 std::optional<std::string> windows_proxy() {
 #if defined(_WIN32)
   WINHTTP_CURRENT_USER_IE_PROXY_CONFIG config{};
   if (WinHttpGetIEProxyConfigForCurrentUser(&config) == FALSE) return std::nullopt;
-  std::string text;
-  if (config.lpszProxy != nullptr) {
-    const int bytes = WideCharToMultiByte(CP_UTF8, 0, config.lpszProxy, -1, nullptr, 0, nullptr, nullptr);
-    if (bytes > 1) {
-      text.resize(static_cast<std::size_t>(bytes - 1));
-      WideCharToMultiByte(CP_UTF8, 0, config.lpszProxy, -1, text.data(), bytes, nullptr, nullptr);
-    }
-  }
+  std::optional<std::string> found = proxy_from_setting(utf8_of(config.lpszProxy));
+  if (!found) found = auto_proxy(config);
   for (LPWSTR owned : {config.lpszProxy, config.lpszProxyBypass, config.lpszAutoConfigUrl}) {
     if (owned != nullptr) GlobalFree(owned);
   }
-  return proxy_from_setting(text);
+  return found;
 #else
   return std::nullopt;
 #endif
@@ -88,10 +125,10 @@ std::vector<std::string> curl_system_args() {
   return args;
 }
 
-std::vector<std::string> curl_download_args() {
+std::vector<std::string> curl_download_args(bool allow_local_files) {
   std::vector<std::string> args{"-q",
                                 "--proto",
-                                "=https,file",
+                                allow_local_files ? "=https,file" : "=https",
                                 "--proto-redir",
                                 "=https",
                                 "--fail",

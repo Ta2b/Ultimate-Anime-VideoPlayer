@@ -12,11 +12,28 @@
 #include <system_error>
 #include <utility>
 
+#include "app/play/i18n.h"
 #include "core/charconv.h"
 #include "core/dir_entries.h"
 #include "core/utf8_path.h"
 
 namespace ajp::app::play {
+
+std::string build_stage_text(std::string_view stage) {
+  // Un littéral par étape : le test des traductions les voit (tr de variable, il ne verrait rien).
+  if (stage == "Preparing") return i18n::tr("Preparing");
+  if (stage == "Waiting for another build on this GPU")
+    return i18n::tr("Waiting for another build on this GPU");
+  if (stage == "Engine in cache") return i18n::tr("Engine in cache");
+  if (stage == "Starting trtexec") return i18n::tr("Starting trtexec");
+  if (stage == "Reading the model") return i18n::tr("Reading the model");
+  if (stage == "Choosing tactics") return i18n::tr("Choosing tactics");
+  if (stage == "Planning memory") return i18n::tr("Planning memory");
+  if (stage == "Serializing the engine") return i18n::tr("Serializing the engine");
+  if (stage == "Engine built") return i18n::tr("Engine built");
+  if (stage == "Done") return i18n::tr("Done");
+  return std::string(stage);
+}
 namespace {
 
 constexpr double kPixelExponent = 0.8;

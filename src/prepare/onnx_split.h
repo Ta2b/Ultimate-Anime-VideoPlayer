@@ -41,8 +41,8 @@ struct OnnxGraph {
   // Valeurs flottantes des tenseurs constants du graphe (nœuds Constant et initialiseurs de moins de
   // kMaxConstantElements valeurs), par nom de tenseur.
   std::map<std::string, std::vector<double>, std::less<>> constants;
-  std::vector<std::string> initializers;  // noms de tous les initialiseurs
-  bool has_external_data = false;         // un initialiseur garde ses poids dans un autre fichier
+  std::vector<std::string> outputs;  // noms des sorties du graphe principal, dans l'ordre
+  bool has_external_data = false;    // un initialiseur garde ses poids dans un autre fichier
   bool has_sparse_initializers = false;
   bool has_subgraphs = false;  // un attribut de nœud porte un graphe (If, Loop…)
 };

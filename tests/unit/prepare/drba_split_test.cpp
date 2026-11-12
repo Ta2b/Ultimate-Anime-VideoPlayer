@@ -320,6 +320,14 @@ TEST_CASE("Le manifeste d'un DistilDRBA fusionné s'écrit, se relit et refuse l
   CHECK(parsed->width == 320);
   CHECK(parsed->plan == manifest.plan);
   CHECK(parsed->pieces == manifest.pieces);
+  CHECK(parsed->sizes.empty());  // un manifeste d'avant les tailles se lit encore
+  manifest.sizes = {10, 20, 30, 40};
+  const auto sized = parse_drba_manifest(format_drba_manifest(manifest));
+  REQUIRE(sized);
+  CHECK(sized->sizes == manifest.sizes);
+  manifest.sizes.pop_back();  // autant de tailles que de morceaux, ou aucune
+  CHECK_FALSE(parse_drba_manifest(format_drba_manifest(manifest)));
+  manifest.sizes.clear();
   CHECK(is_drba_fused_manifest("x/y.drbafused"));
   CHECK_FALSE(is_drba_fused_manifest("x/y.rifefused"));
   CHECK_FALSE(is_drba_fused_manifest("x/y.onnx"));
@@ -367,7 +375,7 @@ TEST_CASE("La dérivation écrit quatre morceaux et leur manifeste une fois, pui
   const auto manifest = derive_drba_fused(source, folder, 128, 192);
   REQUIRE(manifest);
   CHECK(manifest->extension() == ".drbafused");
-  CHECK(manifest->filename().string().find("fusion1-128x192") != std::string::npos);
+  CHECK(manifest->filename().string().find("fusion2-128x192") != std::string::npos);
   // Lu puis refermé : sous Windows, un fichier resté ouvert ne se remplace pas (la dérivation réécrit le
   // manifeste).
   std::string content;
@@ -390,6 +398,13 @@ TEST_CASE("La dérivation écrit quatre morceaux et leur manifeste une fois, pui
   fs::remove(folder / parsed->pieces[2]);
   REQUIRE(derive_drba_fused(source, folder, 128, 192));
   CHECK(fs::file_size(folder / parsed->pieces[2]) > 0);
+  // Un morceau tronqué depuis (disque, antivirus) est réécrit à la dérivation suivante (B04-02).
+  REQUIRE(parsed->sizes.size() == parsed->pieces.size());
+  const auto whole = fs::file_size(folder / parsed->pieces[1]);
+  CHECK(whole == parsed->sizes[1]);
+  fs::resize_file(folder / parsed->pieces[1], whole / 2);
+  REQUIRE(derive_drba_fused(source, folder, 128, 192));
+  CHECK(fs::file_size(folder / parsed->pieces[1]) == whole);
   // Une taille que les noyaux ne prennent pas : refusée, rien d'écrit pour elle.
   const auto odd = derive_drba_fused(source, folder, 100, 192);
   REQUIRE_FALSE(odd);
@@ -488,7 +503,7 @@ TEST_CASE("Les morceaux DistilDRBA ne changent pas sans que leur version monte (
   }
   const std::string fingerprint = core::sha256_hex(hashes);
   INFO("empreinte des morceaux : " << fingerprint);
-  CHECK(std::string(kDrbaFusedDerivation) == "fusion1");
+  CHECK(std::string(kDrbaFusedDerivation) == "fusion2");
   CHECK(fingerprint == "431dd79645f898ebb89194c9d069bd11b9436241bd3382cd7f605594fa1c3a23");
   std::error_code ignored;
   fs::remove_all(dir, ignored);

@@ -165,6 +165,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "drba_fused_choice.cpp",
                                         "rife_fused_choice.cpp",
                                         "engine_install.cpp",
+                                        "engine_vendor.cpp",
                                         "engine_versions.cpp",
                                         "engine_online.cpp",
                                         "engine_tools.cpp",

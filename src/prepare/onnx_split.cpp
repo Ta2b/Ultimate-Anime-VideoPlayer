@@ -1,9 +1,10 @@
 // Numéros de champ d'onnx.proto (ONNX 1.19.1) : ModelProto.graph = 7 ; GraphProto.node = 1, .name = 2,
 // .initializer = 5, .input = 11, .output = 12, .sparse_initializer = 15 ; NodeProto.input = 1, .output = 2,
 // .name = 3, .op_type = 4, .attribute = 5 ; AttributeProto.name = 1, .i = 3, .s = 4, .t = 5, .g = 6, .graphs
-// = 11 ; TensorProto.dims = 1, .data_type = 2, .float_data = 4, .name = 8, .raw_data = 9, .external_data =
-// 13, .data_location = 14 ; ValueInfoProto.name = 1, .type = 2 ; TypeProto.tensor_type = 1 ;
-// TypeProto.Tensor.elem_type = 1, .shape = 2 ; TensorShapeProto.dim = 1 ; Dimension.dim_value = 1.
+// = 11 ; TensorProto.dims = 1, .data_type = 2, .float_data = 4, .int32_data = 5, .int64_data = 7, .name = 8,
+// .raw_data = 9, .external_data = 13, .data_location = 14 ; ValueInfoProto.name = 1, .type = 2 ;
+// TypeProto.tensor_type = 1 ; TypeProto.Tensor.elem_type = 1, .shape = 2 ; TensorShapeProto.dim = 1 ;
+// Dimension.dim_value = 1.
 #include "prepare/onnx_split.h"
 
 #include <algorithm>
@@ -48,13 +49,16 @@ constexpr std::uint32_t kAttrGraphs = 11;
 constexpr std::uint32_t kTensorDims = 1;
 constexpr std::uint32_t kTensorType = 2;
 constexpr std::uint32_t kTensorFloats = 4;
+constexpr std::uint32_t kTensorInt32 = 5;
+constexpr std::uint32_t kTensorInt64 = 7;
 constexpr std::uint32_t kTensorName = 8;
 constexpr std::uint32_t kTensorRaw = 9;
 constexpr std::uint32_t kTensorExternal = 13;
 constexpr std::uint32_t kTensorLocation = 14;
 constexpr std::int32_t kFloat32 = 1;
 constexpr std::int32_t kFloat16 = 10;
-constexpr std::int32_t kInt64 = 7;
+constexpr std::int32_t kInt64 =
+    7;  // DataType INT64 (à ne pas confondre avec le champ int64_data, kTensorInt64)
 constexpr std::uint64_t kElementCap = 1099511627776;  // 2^40 : le produit des dimensions ne déborde pas
 
 // elements × dim, saturé à kElementCap avant de multiplier : le produit ne déborde jamais (A04-02, un
@@ -86,43 +90,92 @@ double half_to_double(std::uint16_t bits) {
   return sign * std::ldexp(1.0 + mantissa / 1024.0, exponent - 15);
 }
 
-// Les dimensions d'un champ dims, empaqueté ou non.
-void append_dims(const RawField& field, std::vector<std::uint64_t>& dims) {
-  if (!field.delimited) {
-    dims.push_back(field.scalar);
-    return;
-  }
-  // Un varint par dimension : relu à la main, Fields ne lit que des champs étiquetés.
-  std::size_t pos = 0;
-  while (pos < field.payload.size()) {
-    std::uint64_t value = 0;
-    unsigned shift = 0;
-    while (pos < field.payload.size() && shift < 64) {
-      const auto byte = std::to_integer<std::uint64_t>(field.payload[pos++]);
-      value |= (byte & 0x7fU) << shift;
-      shift += 7;
-      if ((byte & 0x80U) == 0) break;
-    }
-    dims.push_back(value);
-  }
-}
-
 // Les valeurs d'un TensorProto flottant (32 ou 16 bits) ou entier 64 bits de moins de kMaxConstantElements
 // éléments.
 struct TensorValues {
   std::string name;
   std::vector<double> values;
   bool external = false;
-  bool floating = false;
+  bool numeric = false;  // flottant 32 ou 16 bits, ou entier 64 bits : les types dont on lit les valeurs
 };
+
+// Les varints d'un champ empaqueté, au plus `cap` (le reste est compté sans être gardé). Faux si le dernier
+// est tronqué (octet de suite sans fin) : un champ empaqueté tronqué est refusé, non lu à moitié (B04-03).
+bool packed_varints(Bytes payload, std::vector<std::uint64_t>& out, std::size_t cap) {
+  std::size_t pos = 0;
+  while (pos < payload.size()) {
+    std::uint64_t value = 0;
+    unsigned shift = 0;
+    bool ended = false;
+    while (pos < payload.size() && shift < 64) {
+      const auto byte = std::to_integer<std::uint64_t>(payload[pos++]);
+      value |= (byte & 0x7fU) << shift;
+      shift += 7;
+      if ((byte & 0x80U) == 0) {
+        ended = true;
+        break;
+      }
+    }
+    if (!ended) return false;
+    if (out.size() < cap) out.push_back(value);
+  }
+  return true;
+}
+
+// Les valeurs de out.values d'après ce que le tenseur porte : raw_data, ou le champ typé (float_data,
+// int32_data pour les bits d'un FP16, int64_data), empaqueté ou non. Vide si rien ne correspond.
+struct TensorPayload {
+  Bytes raw;
+  Bytes floats;                           // float_data empaqueté
+  std::vector<std::uint32_t> float_bits;  // float_data non empaqueté, un fixed32 par champ
+  std::vector<std::uint64_t> int32s;      // int32_data (bits d'un FP16 dans les 16 bas)
+  std::vector<std::uint64_t> int64s;      // int64_data
+};
+
+void fill_values(std::int32_t type, std::size_t count, const TensorPayload& data,
+                 std::vector<double>& values) {
+  const auto bits32 = [](const std::byte* at) {
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, at, 4);
+    return bits;
+  };
+  if (type == kFloat32 && data.raw.size() == count * 4) {
+    for (std::size_t i = 0; i < count; ++i)
+      values.push_back(static_cast<double>(std::bit_cast<float>(bits32(data.raw.data() + i * 4))));
+  } else if (type == kFloat32 && data.floats.size() == count * 4) {
+    for (std::size_t i = 0; i < count; ++i)
+      values.push_back(static_cast<double>(std::bit_cast<float>(bits32(data.floats.data() + i * 4))));
+  } else if (type == kFloat32 && data.float_bits.size() == count) {
+    for (const std::uint32_t bits : data.float_bits)
+      values.push_back(static_cast<double>(std::bit_cast<float>(bits)));
+  } else if (type == kInt64 && data.raw.size() == count * 8) {
+    for (std::size_t i = 0; i < count; ++i) {
+      std::int64_t value = 0;
+      std::memcpy(&value, data.raw.data() + i * 8, 8);
+      values.push_back(static_cast<double>(value));
+    }
+  } else if (type == kInt64 && data.int64s.size() == count) {
+    for (const std::uint64_t value : data.int64s)
+      values.push_back(static_cast<double>(static_cast<std::int64_t>(value)));
+  } else if (type == kFloat16 && data.raw.size() == count * 2) {
+    for (std::size_t i = 0; i < count; ++i) {
+      std::uint16_t bits = 0;
+      std::memcpy(&bits, data.raw.data() + i * 2, 2);
+      values.push_back(half_to_double(bits));
+    }
+  } else if (type == kFloat16 && data.int32s.size() == count) {
+    for (const std::uint64_t value : data.int32s)
+      values.push_back(half_to_double(static_cast<std::uint16_t>(value)));
+  }
+}
 
 std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
   TensorValues out;
   std::int32_t type = 0;
   std::uint64_t elements = 1;
   bool has_dims = false;
-  Bytes raw;
-  Bytes floats;
+  TensorPayload data;
+  constexpr auto kCap = static_cast<std::size_t>(kMaxConstantElements) + 1;  // un de plus : trop long se voit
   Fields fields(message);
   RawField field;
   while (fields.next(field)) {
@@ -131,49 +184,44 @@ std::expected<TensorValues, Refusal> read_tensor(Bytes message) {
     } else if (field.number == kTensorType && !field.delimited) {
       type = static_cast<std::int32_t>(field.scalar);
     } else if (field.number == kTensorRaw && field.delimited) {
-      raw = field.payload;
-    } else if (field.number == kTensorFloats && field.delimited) {
-      floats = field.payload;
+      data.raw = field.payload;
+    } else if (field.number == kTensorFloats) {
+      if (field.delimited) {
+        data.floats = field.payload;
+      } else if (field.raw.size() == 5 && (std::to_integer<unsigned>(field.raw[0]) & 7U) == 5U &&
+                 data.float_bits.size() < kCap) {  // fixed32 (étiquette d'un octet, puis 4 octets)
+        std::uint32_t bits = 0;
+        std::memcpy(&bits, field.raw.data() + field.raw.size() - 4, 4);
+        data.float_bits.push_back(bits);
+      }
+    } else if (field.number == kTensorInt32 || field.number == kTensorInt64) {
+      std::vector<std::uint64_t>& target = field.number == kTensorInt32 ? data.int32s : data.int64s;
+      if (field.delimited) {
+        if (!packed_varints(field.payload, target, kCap))
+          return malformed("ONNX : tenseur empaqueté tronqué");
+      } else if (target.size() < kCap) {
+        target.push_back(field.scalar);
+      }
     } else if (field.number == kTensorExternal || (field.number == kTensorLocation && field.scalar == 1)) {
       out.external = true;
     } else if (field.number == kTensorDims) {
       has_dims = true;
-      std::vector<std::uint64_t> dims;
-      append_dims(field, dims);
-      for (const std::uint64_t dim : dims) elements = times_capped(elements, dim);
+      if (field.delimited) {  // dims empaquetées
+        std::vector<std::uint64_t> dims;
+        if (!packed_varints(field.payload, dims, field.payload.size()))
+          return malformed("ONNX : dimensions du tenseur tronquées");
+        for (const std::uint64_t value : dims) elements = times_capped(elements, value);
+      } else {
+        elements = times_capped(elements, field.scalar);
+      }
     }
   }
   if (!fields.ok()) return malformed("ONNX : tenseur malformé");
   if (!has_dims) elements = 1;  // scalaire
-  out.floating = type == kFloat32 || type == kFloat16 || type == kInt64;
-  if (!out.floating || elements == 0 || elements > static_cast<std::uint64_t>(kMaxConstantElements))
+  out.numeric = type == kFloat32 || type == kFloat16 || type == kInt64;
+  if (!out.numeric || elements == 0 || elements > static_cast<std::uint64_t>(kMaxConstantElements))
     return out;
-  const auto count = static_cast<std::size_t>(elements);
-  if (type == kFloat32 && raw.size() == count * 4) {
-    for (std::size_t i = 0; i < count; ++i) {
-      std::uint32_t bits = 0;
-      std::memcpy(&bits, raw.data() + i * 4, 4);
-      out.values.push_back(static_cast<double>(std::bit_cast<float>(bits)));
-    }
-  } else if (type == kInt64 && raw.size() == count * 8) {
-    for (std::size_t i = 0; i < count; ++i) {
-      std::int64_t value = 0;
-      std::memcpy(&value, raw.data() + i * 8, 8);
-      out.values.push_back(static_cast<double>(value));
-    }
-  } else if (type == kFloat16 && raw.size() == count * 2) {
-    for (std::size_t i = 0; i < count; ++i) {
-      std::uint16_t bits = 0;
-      std::memcpy(&bits, raw.data() + i * 2, 2);
-      out.values.push_back(half_to_double(bits));
-    }
-  } else if (type == kFloat32 && floats.size() == count * 4) {
-    for (std::size_t i = 0; i < count; ++i) {
-      std::uint32_t bits = 0;
-      std::memcpy(&bits, floats.data() + i * 4, 4);
-      out.values.push_back(static_cast<double>(std::bit_cast<float>(bits)));
-    }
-  }
+  fill_values(type, static_cast<std::size_t>(elements), data, out.values);
   return out;
 }
 
@@ -246,8 +294,11 @@ std::expected<DenseTensor, Refusal> read_dense(Bytes message) {
       out.size = field.scalar == kFloat16 ? 2 : field.scalar == kFloat32 ? 4 : 0;
     } else if (field.number == kTensorRaw && field.delimited) {
       out.raw = field.payload;
+    } else if (field.number == kTensorDims && field.delimited) {  // dims empaquetées
+      if (!packed_varints(field.payload, out.dims, field.payload.size()))
+        return malformed("ONNX : dimensions du tenseur tronquées");
     } else if (field.number == kTensorDims) {
-      append_dims(field, out.dims);
+      out.dims.push_back(field.scalar);
     }
   }
   if (!fields.ok()) return malformed("ONNX : tenseur malformé");
@@ -310,6 +361,64 @@ const OnnxAttribute* OnnxFullNode::attribute(std::string_view attribute_name) co
   return found == attributes.end() ? nullptr : &*found;
 }
 
+namespace {
+
+// Le nom d'une sortie du graphe (ValueInfoProto.name = 1) ; vide s'il manque.
+std::string value_info_name(std::span<const std::byte> info) {
+  Fields fields(info);
+  RawField item;
+  while (fields.next(item)) {
+    if (item.number == 1 && item.delimited) return text_of(item.payload);
+  }
+  return {};
+}
+
+// Un NodeProto : ses entrées, sorties, nom, opérateur et attributs, avec la constante d'un attribut tenseur ;
+// `out` apprend les données externes et les sous-graphes qu'il rencontre.
+std::expected<OnnxFullNode, Refusal> read_node(std::span<const std::byte> payload, OnnxGraph& out) {
+  OnnxFullNode node;
+  Fields parts(payload);
+  RawField part;
+  while (parts.next(part)) {
+    if (!part.delimited) continue;
+    if (part.number == kNodeInput) {
+      node.inputs.push_back(text_of(part.payload));
+    } else if (part.number == kNodeOutput) {
+      node.outputs.push_back(text_of(part.payload));
+    } else if (part.number == kNodeName) {
+      node.name = text_of(part.payload);
+    } else if (part.number == kNodeOpType) {
+      node.op_type = text_of(part.payload);
+    } else if (part.number == kNodeAttribute) {
+      OnnxAttribute attribute;
+      Fields inner(part.payload);
+      RawField item;
+      while (inner.next(item)) {
+        if (item.number == kAttrName && item.delimited) {
+          attribute.name = text_of(item.payload);
+        } else if (item.number == kAttrInteger && !item.delimited) {
+          attribute.integer = static_cast<std::int64_t>(item.scalar);
+        } else if (item.number == kAttrText && item.delimited) {
+          attribute.text = text_of(item.payload);
+        } else if (item.number == kAttrTensor && item.delimited) {
+          auto tensor = read_tensor(item.payload);
+          if (!tensor) return std::unexpected(std::move(tensor.error()));
+          node.constant = std::move(tensor->values);
+          out.has_external_data = out.has_external_data || tensor->external;
+        } else if (item.number == kAttrGraph || item.number == kAttrGraphs) {
+          out.has_subgraphs = true;
+        }
+      }
+      if (!inner.ok()) return malformed("ONNX : attribut malformé");
+      node.attributes.push_back(std::move(attribute));
+    }
+  }
+  if (!parts.ok()) return malformed("ONNX : nœud malformé");
+  return node;
+}
+
+}  // namespace
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> model) {
   auto graph = graph_of(model);
@@ -321,53 +430,20 @@ std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> mod
     if (!field.delimited) continue;
     if (field.number == kGraphSparse) {
       out.has_sparse_initializers = true;
+    } else if (field.number == kGraphOutput) {
+      if (std::string name = value_info_name(field.payload); !name.empty())
+        out.outputs.push_back(std::move(name));
     } else if (field.number == kGraphInitializer) {
       auto tensor = read_tensor(field.payload);
       if (!tensor) return std::unexpected(std::move(tensor.error()));
-      out.initializers.push_back(tensor->name);
       out.has_external_data = out.has_external_data || tensor->external;
       if (!tensor->values.empty()) out.constants[tensor->name] = std::move(tensor->values);
     } else if (field.number == kGraphNode) {
-      OnnxFullNode& node = out.nodes.emplace_back();
-      Fields parts(field.payload);
-      RawField part;
-      while (parts.next(part)) {
-        if (!part.delimited) continue;
-        if (part.number == kNodeInput) {
-          node.inputs.push_back(text_of(part.payload));
-        } else if (part.number == kNodeOutput) {
-          node.outputs.push_back(text_of(part.payload));
-        } else if (part.number == kNodeName) {
-          node.name = text_of(part.payload);
-        } else if (part.number == kNodeOpType) {
-          node.op_type = text_of(part.payload);
-        } else if (part.number == kNodeAttribute) {
-          OnnxAttribute attribute;
-          Fields inner(part.payload);
-          RawField item;
-          while (inner.next(item)) {
-            if (item.number == kAttrName && item.delimited) {
-              attribute.name = text_of(item.payload);
-            } else if (item.number == kAttrInteger && !item.delimited) {
-              attribute.integer = static_cast<std::int64_t>(item.scalar);
-            } else if (item.number == kAttrText && item.delimited) {
-              attribute.text = text_of(item.payload);
-            } else if (item.number == kAttrTensor && item.delimited) {
-              auto tensor = read_tensor(item.payload);
-              if (!tensor) return std::unexpected(std::move(tensor.error()));
-              node.constant = std::move(tensor->values);
-              out.has_external_data = out.has_external_data || tensor->external;
-            } else if (item.number == kAttrGraph || item.number == kAttrGraphs) {
-              out.has_subgraphs = true;
-            }
-          }
-          if (!inner.ok()) return malformed("ONNX : attribut malformé");
-          node.attributes.push_back(std::move(attribute));
-        }
-      }
-      if (!parts.ok()) return malformed("ONNX : nœud malformé");
-      if (node.op_type == "Constant" && node.outputs.size() == 1 && !node.constant.empty())
-        out.constants[node.outputs[0]] = node.constant;
+      auto node = read_node(field.payload, out);
+      if (!node) return std::unexpected(std::move(node.error()));
+      if (node->op_type == "Constant" && node->outputs.size() == 1 && !node->constant.empty())
+        out.constants[node->outputs[0]] = node->constant;
+      out.nodes.push_back(std::move(*node));
     }
   }
   if (!fields.ok()) return malformed("ONNX : protobuf du graphe malformé");

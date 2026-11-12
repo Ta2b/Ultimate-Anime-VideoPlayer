@@ -244,6 +244,32 @@ void raise_for_forwarded(const SDL_Event& event) {
   SDL_free(static_cast<void*>(windows));
 }
 
+bool DeferredDrops::keep(const SDL_Event& event) {
+  if (event.type != SDL_EVENT_DROP_FILE) return false;
+  // dropped() fait passer la fenêtre devant, même pour un dépôt vide (l'icône relancée).
+  const std::optional<Dropped> drop = dropped(event);
+  if (!drop) return true;
+  if (drop->kind != DropKind::Video) {
+    log_channel("app")->info("fichier glissé pendant une attente, écarté : {}",
+                             prepare::utf8_path(drop->path.filename()));
+    return true;
+  }
+  log_channel("app")->info("vidéo reçue pendant une attente, gardée pour la suite : {}",
+                           prepare::utf8_path(drop->path.filename()));
+  files_.push_back(prepare::utf8_path(drop->path));
+  return true;
+}
+
+void DeferredDrops::release() {
+  if (files_.empty()) return;
+  push_forwarded_files(files_);
+  files_.clear();
+}
+
+DeferredDrops::~DeferredDrops() {
+  release();
+}
+
 DropKind drop_kind(const std::filesystem::path& path) {
   std::string extension = prepare::utf8_path(path.extension());
   std::ranges::transform(extension, extension.begin(),

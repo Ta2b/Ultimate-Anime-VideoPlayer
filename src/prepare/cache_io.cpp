@@ -128,6 +128,13 @@ bool owns_stage(const fs::path& folder, std::string_view owner) {
          stored == owner && !std::getline(file, extra) && file.eof() && !file.bad();
 }
 
+bool is_stage_folder(const fs::path& folder) {
+  std::error_code error;
+  if (fs::is_symlink(folder, error) || !fs::is_directory(folder, error)) return false;
+  const fs::path marker = folder / kOwnerFile;
+  return !fs::is_symlink(marker, error) && fs::is_regular_file(marker, error);
+}
+
 std::expected<void, Refusal> recover_owned_stages(const fs::path& parent, std::string_view prefix,
                                                   std::string_view owner) {
   // Liste d'abord, supprime ensuite : on ne modifie pas un dossier en le parcourant.

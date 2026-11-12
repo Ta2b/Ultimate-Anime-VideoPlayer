@@ -5,7 +5,6 @@
 #include "prepare/rife_split.h"
 
 #include <algorithm>
-#include <array>
 #include <bit>
 #include <cstddef>
 #include <cstdint>
@@ -163,8 +162,14 @@ struct Fake {
   double flow_scale_override = 0.0;       // remplace le 1/d du flot devant le bloc 1
   std::int64_t align_corners = 1;
   bool wrong_split_sizes = false;
-  bool casts = false;        // Cast FP16 ↔ FP32 autour des Resize (tools/rife/convert_rife_fp16.py)
-  bool interleaved = false;  // la colle de 4.25 lite : Split 4, 9 et Concat de 4 entrées
+  // Colles que les noyaux refont et que l'analyse doit contrôler (B04-01) : chacune casse un maillon.
+  bool unwarped_encodings =
+      false;  // le Concat d'un bloc lit l'encodage tel quel, au lieu de l'encodage warpé
+  bool flow_not_accumulated = false;  // le flot d'un bloc ignore celui des blocs précédents
+  bool blend_without_mask = false;    // la sortie ne passe pas par le masque
+  bool grid_ignores_flow = false;     // la grille d'un GridSample ne dépend d'aucun flot
+  bool casts = false;                 // Cast FP16 ↔ FP32 autour des Resize (tools/rife/convert_rife_fp16.py)
+  bool interleaved = false;           // la colle de 4.25 lite : Split 4, 9 et Concat de 4 entrées
 };
 
 Bytes fake_rife(const Fake& f) {
@@ -204,6 +209,9 @@ Bytes fake_rife(const Fake& f) {
     add(node(in + "/" + std::string(tail), "Cast", {in}, {in + "/" + std::string(tail)}));
     return in + "/" + std::string(tail);
   };
+  // Ce que les GridSample warpent : l'image et l'encodage, tous deux issus de l'entrée.
+  add(node("/Concat_src", "Concat", {"/Split_output_0", "/Reshape_1_output_0"}, {"/src"}));
+  std::string accumulated;  // le flot accumulé après le bloc précédent
   for (int b = 0; b < blocks; ++b) {
     const int d = f.reduce[static_cast<std::size_t>(b)];
     const std::string p = std::format("/block{}/", b);
@@ -212,29 +220,38 @@ Bytes fake_rife(const Fake& f) {
       entry = "/Concat_1_output_0";
     } else {
       const std::string previous = std::format("/block{}/", b - 1);
-      std::string flow = std::format("/Add_{}_output_0", b);
+      // Le flot accumulé arrive multiplié par 1/d (ou tel quel pour d = 1).
+      std::string flow = accumulated;
       if (d > 1) {
         const std::string scale = std::format("/Constant_flow{}_output_0", b);
         constant(scale, 10, half(b == 1 && f.flow_scale_override != 0.0 ? f.flow_scale_override : 1.0 / d),
                  1);
         flow = std::format("/Mul_{}_output_0", b);
-        add(node(std::format("/Mul_{}", b), "Mul", {previous + "Mul_output_0", scale}, {flow}));
-      } else {
-        add(node(std::format("/Add_{}", b), "Add", {previous + "Mul_output_0", "w"}, {flow}));
+        add(node(std::format("/Mul_{}", b), "Mul", {accumulated, scale}, {flow}));
       }
-      if (f.interleaved) {
-        const std::string warped = std::format("/Reshape_w{}_output_0", b);
-        add(node(std::format("/Reshape_w{}", b), "Reshape",
-                 {cast(std::format("/GridSample_{}_output_0", b - 1), "cast16"), "w"}, {warped}));
-        add(node(std::format("/Concat_{}", b + 1), "Concat",
-                 {warped, "/Split_output_1", previous + "Split_output_1", flow},
-                 {std::format("/Concat_{}_output_0", b + 1)}));
+      // Les images et les encodages warpés par le GridSample du bloc précédent.
+      const std::string warped = cast(std::format("/GridSample_{}_output_0", b - 1), "cast16");
+      std::vector<std::string> concat;
+      if (f.interleaved) {  // 4.25 lite : un seul tenseur, image puis encodage de chaque image
+        add(node(std::format("/Reshape_w{}", b), "Reshape", {warped, "w"},
+                 {std::format("/Reshape_w{}_output_0", b)}));
+        concat = {std::format("/Reshape_w{}_output_0", b), "/Split_output_1", previous + "Split_output_1",
+                  flow};
       } else {
-        add(node(std::format("/Concat_{}", b + 1), "Concat",
-                 {"/Reshape_a", "/Reshape_b", "/Split_output_1", previous + "Split_output_1",
-                  previous + "Split_output_2", flow},
-                 {std::format("/Concat_{}_output_0", b + 1)}));
+        add(node(std::format("/Reshape_a_{}", b), "Reshape", {warped, "w"},
+                 {std::format("/Reshape_a_{}_output_0", b)}));
+        add(node(std::format("/Reshape_b_{}", b), "Reshape",
+                 {f.unwarped_encodings ? "/Reshape_1_output_0" : warped, "w"},
+                 {std::format("/Reshape_b_{}_output_0", b)}));
+        concat = {std::format("/Reshape_a_{}_output_0", b),
+                  std::format("/Reshape_b_{}_output_0", b),
+                  "/Split_output_1",
+                  previous + "Split_output_1",
+                  previous + "Split_output_2",
+                  flow};
       }
+      add(node(std::format("/Concat_{}", b + 1), "Concat", concat,
+               {std::format("/Concat_{}_output_0", b + 1)}));
       entry = std::format("/Concat_{}_output_0", b + 1);
     }
     std::string conv_in = entry;
@@ -270,11 +287,23 @@ Bytes fake_rife(const Fake& f) {
       add(node(p + "Split", "Split", {split_in, "onnx::Split_b"},
                {p + "Split_output_0", p + "Split_output_1", p + "Split_output_2"}));
     }
+    std::string delta = p + "Split_output_0";  // le flot que ce bloc ajoute (fd_b)
     if (d > 1) {
       constant(p + "Constant_2_output_0", 10, half(d), 1);
       add(node(p + "Mul", "Mul", {p + "Split_output_0", p + "Constant_2_output_0"}, {p + "Mul_output_0"}));
+      delta = p + "Mul_output_0";
     }
-    add(node(std::format("/GridSample_{}", b), "GridSample", {"x", "g"},
+    // Le flot accumulé jusqu'à ce bloc, et la grille que le GridSample en tire.
+    if (b == 0 || f.flow_not_accumulated) {
+      accumulated = delta;
+    } else {
+      const std::string sum = std::format("/Acc_{}_output_0", b);
+      add(node(std::format("/Acc_{}", b), "Add", {accumulated, delta}, {sum}));
+      accumulated = sum;
+    }
+    const std::string grid = std::format("/Grid_{}_output_0", b);
+    add(node(std::format("/Grid_{}", b), "Transpose", {f.grid_ignores_flow ? "w" : accumulated}, {grid}));
+    add(node(std::format("/GridSample_{}", b), "GridSample", {"/src", grid},
              {std::format("/GridSample_{}_output_0", b)},
              {{.name = "align_corners", .num = f.align_corners},
               {.name = "mode", .str = "bilinear", .is_text = true},
@@ -282,6 +311,11 @@ Bytes fake_rife(const Fake& f) {
   }
   add(node("/Sigmoid", "Sigmoid", {std::format("/block{}/Split_output_1", blocks - 1)},
            {"/Sigmoid_output_0"}));
+  // Le mélange final : l'image warpée par le flot final, pondérée par le masque.
+  const std::string last_warp = std::format("/GridSample_{}_output_0", blocks - 1);
+  add(node("/Blend", "Mul", {last_warp, f.blend_without_mask ? "w" : "/Sigmoid_output_0"},
+           {"/Blend_output_0"}));
+  add(node("/Final", "Add", {"/Blend_output_0", "w"}, {"output"}));
   delimited(graph, 2, text("fake"));
   for (const Bytes& t : inits) delimited(graph, 5, t);
   delimited(graph, 11, value_info("input", 10, {1, 11, -1, -1}));
@@ -322,7 +356,9 @@ TEST_CASE("Un morceau de graphe est extrait avec ses constantes et ses poids",
   REQUIRE(parsed->nodes.size() == 2);  // n2 et n3 : tout ce qui précède l'entrée b est coupé
   CHECK(parsed->nodes[0].name == "n2");
   CHECK(parsed->nodes[1].name == "n3");
-  CHECK(parsed->initializers == std::vector<std::string>{"w2"});
+  CHECK(parsed->constants.contains(
+      "w2"));  // l'initialiseur qui sert est repris, celui qui ne sert pas est coupé
+  CHECK_FALSE(parsed->constants.contains("w_unused"));
   const auto summary = scan_onnx(*cut);
   REQUIRE(summary);
   REQUIRE(summary->inputs.size() == 1);
@@ -394,6 +430,109 @@ TEST_CASE("Un graphe qui s'écarte de RIFE n'est pas coupé", "[prepare][onnx][r
   CHECK_FALSE(analyze_rife(broken).has_value());
 }
 
+TEST_CASE("Un graphe aux noms de RIFE mais d'une autre colle n'est pas coupé (B04-01)",
+          "[prepare][onnx][rife_fused]") {
+  // Les noms de modules et les constantes sont ceux de RIFE ; ce sont les maillons que les noyaux refont qui
+  // changent. Chacun doit être vu : sinon la découpe donnerait, sans erreur, des images intermédiaires
+  // fausses.
+  Fake fake;
+  std::string_view which;
+  bool by_glue_check = true;  // ces défauts sont refusés plus tôt, par la reconnaissance du masque ou du flot
+  SECTION("encodage non warpé") {
+    fake.unwarped_encodings = true;
+    which = "warpée";
+  }
+  SECTION("flot non accumulé") {
+    fake.flow_not_accumulated = true;
+    which = "flot";
+    by_glue_check = false;  // le Mul 1/d du flot est déjà refusé avant la colle
+  }
+  SECTION("mélange sans masque") {
+    fake.blend_without_mask = true;
+    which = "masque";
+    by_glue_check = false;
+  }
+  SECTION("grille indépendante du flot") {
+    fake.grid_ignores_flow = true;
+    which = "grille";
+  }
+  const auto split = analyze_rife(fake_rife(fake));
+  REQUIRE_FALSE(split.has_value());
+  CHECK(split.error().code == RefusalCode::FieldMissing);
+  if (by_glue_check) CHECK(split.error().detail.find("colle des noyaux") != std::string::npos);
+  CHECK(split.error().detail.find(which) != std::string::npos);
+  // Le même graphe, sans défaut, se reconnaît (le contrôle ne refuse pas tout).
+  CHECK(analyze_rife(fake_rife(Fake{})).has_value());
+}
+
+TEST_CASE("Les constantes d'un tenseur se lisent aussi dans int64_data, int32_data et float_data (B04-03)",
+          "[prepare][onnx]") {
+  // Un outil qui ré-enregistre un ONNX range parfois ses constantes ailleurs que dans raw_data.
+  const auto model_with = [](const Bytes& init) {
+    Bytes graph;
+    delimited(graph, 1, node("n", "Mul", {"x", "c"}, {"y"}));
+    delimited(graph, 5, init);
+    Bytes out;
+    integer(out, 1, 8);
+    delimited(out, 7, graph);
+    return out;
+  };
+  const auto constant_of = [&](const Bytes& init, const char* name) -> std::vector<double> {
+    const auto graph = read_onnx_graph(model_with(init));
+    REQUIRE(graph);
+    const auto found = graph->constants.find(name);
+    return found == graph->constants.end() ? std::vector<double>{} : found->second;
+  };
+  // int64_data empaqueté : dims {4}, type INT64, valeurs 6 1 2 2.
+  Bytes packed64;
+  integer(packed64, 1, 4);
+  integer(packed64, 2, 7);
+  Bytes values;
+  for (const std::uint64_t v : {6U, 1U, 2U, 2U}) varint(values, v);
+  delimited(packed64, 7, values);
+  delimited(packed64, 8, text("c"));
+  CHECK(constant_of(packed64, "c") == std::vector<double>{6, 1, 2, 2});
+  // int64_data non empaqueté : un champ par valeur.
+  Bytes loose64;
+  integer(loose64, 1, 2);
+  integer(loose64, 2, 7);
+  integer(loose64, 7, 4);
+  integer(loose64, 7, 1);
+  delimited(loose64, 8, text("c"));
+  CHECK(constant_of(loose64, "c") == std::vector<double>{4, 1});
+  // int32_data : les bits d'un FP16 (0x3C00 = 1,0 ; 0x4000 = 2,0).
+  Bytes halves;
+  integer(halves, 1, 2);
+  integer(halves, 2, 10);
+  Bytes bits;
+  varint(bits, 0x3C00);
+  varint(bits, 0x4000);
+  delimited(halves, 5, bits);
+  delimited(halves, 8, text("c"));
+  CHECK(constant_of(halves, "c") == std::vector<double>{1.0, 2.0});
+  // float_data non empaqueté : un fixed32 par valeur (étiquette 0x25, puis 4 octets).
+  Bytes loose_floats;
+  integer(loose_floats, 1, 2);
+  integer(loose_floats, 2, 1);
+  for (const float v : {0.5F, 3.0F}) {
+    loose_floats.push_back(static_cast<std::byte>(0x25));
+    const auto raw = std::bit_cast<std::uint32_t>(v);
+    for (unsigned i = 0; i < 4; ++i) loose_floats.push_back(static_cast<std::byte>((raw >> (8 * i)) & 0xFFU));
+  }
+  delimited(loose_floats, 8, text("c"));
+  CHECK(constant_of(loose_floats, "c") == std::vector<double>{0.5, 3.0});
+  // Une dimension empaquetée tronquée (dernier octet avec bit de suite) est refusée, pas lue à moitié.
+  Bytes truncated;
+  Bytes dims;
+  dims.push_back(static_cast<std::byte>(0x84));  // « 4 » avec bit de suite, sans la suite
+  delimited(truncated, 1, dims);
+  integer(truncated, 2, 7);
+  delimited(truncated, 8, text("c"));
+  const auto refused = read_onnx_graph(model_with(truncated));
+  REQUIRE_FALSE(refused.has_value());
+  CHECK(refused.error().code == RefusalCode::ModelUnreadable);
+}
+
 // 4.26 (1/16) et 4.25 lite (1/32, colle entrelacée), convertis par tools/rife/convert_rife_fp16.py (Cast
 // autour des Resize).
 TEST_CASE("Les variantes de RIFE 4.26 et 4.25 lite se reconnaissent", "[prepare][onnx][rife_fused]") {
@@ -425,27 +564,6 @@ TEST_CASE("Les variantes de RIFE 4.26 et 4.25 lite se reconnaissent", "[prepare]
   CHECK_FALSE(analyze_rife(fake_rife(too_deep)).has_value());
 }
 
-TEST_CASE("Les poids d'une convolution se permutent sur leur axe d'entrée", "[prepare][onnx][rife_fused]") {
-  Bytes graph;
-  delimited(graph, 1, node("c", "Conv", {"x", "k"}, {"y"}));
-  delimited(graph, 5, tensor_dims("k", {2, 3, 1, 1}, floats({0, 1, 2, 10, 11, 12})));
-  Bytes model;
-  integer(model, 1, 8);
-  delimited(model, 7, graph);
-  const std::array<int, 3> source{2, 0, 1};
-  const auto moved = permute_input_channels(model, "k", source);
-  REQUIRE(moved);
-  const auto parsed = read_onnx_graph(*moved);
-  REQUIRE(parsed);
-  CHECK(parsed->constants.at("k") == std::vector<double>{2, 0, 1, 12, 10, 11});
-  CHECK(parsed->nodes.size() == 1);
-  CHECK(permute_input_channels(model, "absent", source).error().code == RefusalCode::FieldMissing);
-  const std::array<int, 3> twice{0, 0, 1};
-  CHECK(permute_input_channels(model, "k", twice).error().code == RefusalCode::FormatUnsupported);
-  const std::array<int, 2> short_one{1, 0};
-  CHECK(permute_input_channels(model, "k", short_one).error().code == RefusalCode::FormatUnsupported);
-}
-
 TEST_CASE("Le manifeste d'un RIFE fusionné s'écrit, se relit et refuse l'inattendu",
           "[prepare][rife_fused]") {
   RifeFusedManifest manifest{
@@ -461,6 +579,15 @@ TEST_CASE("Le manifeste d'un RIFE fusionné s'écrit, se relit et refuse l'inatt
   CHECK(parsed->width == 320);
   CHECK(parsed->plan == manifest.plan);
   CHECK(parsed->pieces == manifest.pieces);
+  CHECK(parsed->sizes.empty());  // un manifeste d'avant les tailles se lit encore
+  manifest.sizes = {10, 20, 30, 40, 50};
+  const auto sized = parse_manifest(format_manifest(manifest));
+  REQUIRE(sized);
+  CHECK(sized->sizes == manifest.sizes);
+  RifeFusedManifest uneven = manifest;
+  uneven.sizes.pop_back();  // autant de tailles que de morceaux, ou aucune
+  CHECK_FALSE(parse_manifest(format_manifest(uneven)));
+  manifest.sizes.clear();
   CHECK(is_rife_fused_manifest("x/y-image.rifefused"));
   CHECK_FALSE(is_rife_fused_manifest("x/y.onnx"));
 
@@ -499,7 +626,7 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
   const auto manifest = derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image);
   REQUIRE(manifest);
   CHECK(manifest->extension() == ".rifefused");
-  CHECK(manifest->filename().string().find("fusion1-128x256") != std::string::npos);
+  CHECK(manifest->filename().string().find("fusion2-128x256") != std::string::npos);
   // Lu puis refermé : sous Windows, un fichier resté ouvert ne se remplace pas (la dérivation réécrit le
   // manifeste).
   std::string content;
@@ -525,6 +652,33 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
   fs::remove(folder / parsed->pieces[2]);
   REQUIRE(derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image));
   CHECK(fs::file_size(folder / parsed->pieces[2]) > 0);
+  // Le manifeste porte la taille de chaque morceau ; un morceau tronqué depuis (disque, antivirus) est
+  // réécrit à la dérivation suivante, au lieu d'être gardé « parce qu'il existe » (B04-02).
+  REQUIRE(parsed->sizes.size() == parsed->pieces.size());
+  const auto whole = fs::file_size(folder / parsed->pieces[3]);
+  CHECK(whole == parsed->sizes[3]);
+  fs::resize_file(folder / parsed->pieces[3], whole / 2);
+  REQUIRE(derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image));
+  CHECK(fs::file_size(folder / parsed->pieces[3]) == whole);
+  // Un manifeste d'avant les tailles ne se croit pas : les morceaux sont refaits et le manifeste réécrit
+  // avec.
+  {
+    std::ofstream old(*manifest, std::ios::trunc);
+    old << format_manifest(RifeFusedManifest{.output = RifeFusedOutput::Image,
+                                             .height = 128,
+                                             .width = 256,
+                                             .plan = parsed->plan,
+                                             .pieces = parsed->pieces});
+  }
+  fs::resize_file(folder / parsed->pieces[1], 5);
+  REQUIRE(derive_rife_fused(source, folder, 128, 256, RifeFusedOutput::Image));
+  std::string rewritten;
+  {
+    std::ifstream text(*manifest);
+    rewritten.assign(std::istreambuf_iterator<char>(text), std::istreambuf_iterator<char>());
+  }
+  CHECK(parse_manifest(rewritten)->sizes.size() == 5);
+  CHECK(fs::file_size(folder / parsed->pieces[1]) == parsed->sizes[1]);
   // Une taille que les noyaux ne prennent pas : refusée, rien d'écrit pour elle.
   const auto odd = derive_rife_fused(source, folder, 100, 256, RifeFusedOutput::Image);
   REQUIRE_FALSE(odd);
@@ -624,7 +778,7 @@ TEST_CASE("Les morceaux RIFE ne changent pas sans que leur version monte (A04-07
   }
   const std::string fingerprint = core::sha256_hex(hashes);
   INFO("empreinte des morceaux : " << fingerprint);
-  CHECK(std::string(kRifeFusedDerivation) == "fusion1");
+  CHECK(std::string(kRifeFusedDerivation) == "fusion2");
   CHECK(fingerprint == "365dad8330605751fc2366423b3b3f66b88bf2a5b6485ef5101ff107b3a8cef9");
   std::error_code ignored;
   fs::remove_all(dir, ignored);

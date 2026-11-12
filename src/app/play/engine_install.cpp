@@ -54,7 +54,16 @@ EngineCatalog load_catalog(const std::filesystem::path& index, const std::filesy
     return catalog;
   }
   for (core::EnginePackage& package : parsed->packages) {
-    if (package.platform == catalog.layout.os) catalog.packages.push_back(std::move(package));
+    if (package.platform != catalog.layout.os) continue;
+    // Un fichier NVIDIA écarté (un champ inconnu d'une release plus récente) : le paquet s'installerait sans
+    // sa bibliothèque et se dirait à jour sans se charger (B06-02).
+    if (core::vendor_file_skipped(*parsed, package.engine, catalog.layout.os)) {
+      catalog.problem += std::format("{}{} : un fichier tiers de {} est écarté, paquet écarté",
+                                     catalog.problem.empty() ? "" : " ; ", core::to_utf8(index),
+                                     core::engine_name(package.engine));
+      continue;
+    }
+    catalog.packages.push_back(std::move(package));
   }
   for (core::VendorFile& file : parsed->vendor_files) {
     if (file.platform == catalog.layout.os) catalog.vendor_files.push_back(std::move(file));
@@ -92,10 +101,26 @@ std::vector<std::filesystem::path> installed_backends(const EngineCatalog& catal
   return out;
 }
 
+namespace {
+
+// Un mot entier : « a100 » n'est pas dans « rtx a1000 » (une RTX Ampere sm86, pas une A100 sm80 : B06-06).
+bool contains_word(std::string_view text, std::string_view word) {
+  for (std::size_t at = text.find(word); at != std::string_view::npos; at = text.find(word, at + 1)) {
+    const bool before = at == 0 || std::isalnum(static_cast<unsigned char>(text[at - 1])) == 0;
+    const std::size_t end = at + word.size();
+    const bool after = end >= text.size() || std::isalnum(static_cast<unsigned char>(text[end])) == 0;
+    if (before && after) return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 std::string cuda_arch_from_name(std::string_view gpu_name) {
   std::string name(gpu_name);
   name = core::ascii_lower(name);
   const auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
+  const auto has_word = [&](std::string_view word) { return contains_word(name, word); };
   const auto series = [&](char digit) {  // « rtx 4050 » : la série à deux chiffres, ici 40
     const std::size_t at = name.find("rtx ");
     return at != std::string::npos && at + 5 < name.size() && name[at + 4] == digit && name[at + 5] >= '0' &&
@@ -106,7 +131,7 @@ std::string cuda_arch_from_name(std::string_view gpu_name) {
   // RTX 3050 A Laptop une Ada (AD106).
   if (has("rtx 2050")) return "sm86";
   if (has("3050 a ")) return "sm89";
-  if (has("a100")) return "sm80";
+  if (has_word("a100")) return "sm80";
   if (has("blackwell")) return "sm120";
   // Les cartes pro : « RTX 5000 Ada Generation » est une Ada, « Quadro RTX 4000 » une Turing (P3.16).
   if (has(" ada")) return "sm89";
@@ -168,14 +193,24 @@ std::vector<std::pair<std::string, std::string>> run_nvidia_smi() {
 }  // namespace
 
 std::string detect_cuda_arch(std::string_view gpu_name) {
-  // Une fois par processus (P2.12) : la carte ne change pas, et nvidia-smi prend jusqu'à deux secondes.
+  // Une fois par processus (P2.12) : la carte ne change pas, et nvidia-smi prend jusqu'à deux secondes. Un
+  // résultat vide (échec, délai de 10 s juste après l'ouverture de session, pilote pas encore prêt) n'est pas
+  // retenu pour toujours : il se retente, deux essais au plus (B06-07).
   static std::mutex mutex;
   static std::optional<std::vector<std::pair<std::string, std::string>>> known;
+  static int attempts = 0;
   const std::scoped_lock lock(mutex);
-  if (!known) known = run_nvidia_smi();
+  if (!known || (known->empty() && attempts < 2)) {
+    known = run_nvidia_smi();
+    ++attempts;
+  }
   // La carte de rendu (P3.16) : sur une machine à deux cartes NVIDIA, la première n'est pas forcément elle.
   for (const auto& [name, arch] : *known)
     if (!gpu_name.empty() && name == gpu_name) return arch;
+  // Un nom demandé que nvidia-smi n'a pas écrit pareil (espace, suffixe, carte pro) : avec plusieurs cartes,
+  // on ne devine pas, l'architecture se déduit du nom (effective_cuda_arch) ; avec une seule, c'est elle
+  // (B37-05).
+  if (!gpu_name.empty() && known->size() > 1) return {};
   return known->empty() ? std::string() : known->front().second;
 }
 
@@ -229,7 +264,8 @@ namespace {
 
 // Un fichier tiers que reuse_vendor_file reprendra sans doute : même nom et même taille dans un dossier de
 // engines_root. Le SHA-256 n'est pas recalculé ici (1 Go à lire) : c'est une estimation de place, la
-// vérification se fait à l'installation.
+// vérification se fait à l'installation. Un voisin altéré à taille égale rend le pic de place sous-estimé de
+// sa taille : l'écart reste sous la marge de check_space, et le cas est rare (B06-09).
 bool vendor_on_hand(const core::VendorFile& file, const std::filesystem::path& engines_root) {
   if (engines_root.empty()) return false;
   std::error_code error;
@@ -290,34 +326,6 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
           format_size(available), core::to_utf8(where)));
 }
 
-bool reuse_vendor_file(const core::VendorFile& file, const std::filesystem::path& dest,
-                       const std::filesystem::path& engines_root, const std::stop_token& stop) {
-  std::error_code error;
-  // Parcours sans exception (A06-10) : un dossier voisin illisible arrête la recherche, il ne fait pas
-  // échouer l'installation.
-  std::filesystem::directory_iterator it(engines_root, error);
-  for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
-    const std::filesystem::path candidate = it->path() / file.name;
-    if (candidate.parent_path() == dest.parent_path()) continue;
-    std::error_code checked;
-    if (!std::filesystem::is_regular_file(candidate, checked) ||
-        std::filesystem::file_size(candidate, checked) != file.size || checked)
-      continue;
-    if (!core::verify_file(candidate, file.size, file.sha256, stop)) continue;
-    std::error_code placed;
-    std::filesystem::create_directories(dest.parent_path(), placed);
-    std::filesystem::remove(dest, placed);
-    placed.clear();
-    std::filesystem::create_hard_link(candidate, dest, placed);
-    if (placed) {
-      placed.clear();
-      std::filesystem::copy_file(candidate, dest, std::filesystem::copy_options::overwrite_existing, placed);
-    }
-    if (!placed) return true;
-  }
-  return false;
-}
-
 int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
   namespace fs = std::filesystem;
   std::vector<std::string> known{std::string(keep)};
@@ -338,188 +346,6 @@ int purge_stale_downloads(const EngineCatalog& catalog, std::string_view keep) {
     if (fs::remove_all(it->path(), gone) > 0 && !gone) ++removed;
   }
   return removed;
-}
-
-// La taille d'un fichier, 0 s'il n'existe pas ; `error` dit s'il ne se lit pas.
-std::uint64_t size_or_zero(const std::filesystem::path& path, std::error_code& error) {
-  return std::filesystem::exists(path, error) ? std::filesystem::file_size(path, error) : 0;
-}
-
-// Ajoute au .part le morceau reçu, même coupé. Faux si le morceau dépasse la plage demandée (`limit`
-// octets) : un serveur qui l'ignore rend la roue entière (200), le morceau est alors jeté (A06-07).
-bool append_chunk(const std::filesystem::path& chunk, const std::filesystem::path& packed,
-                  std::uint64_t limit) {
-  std::error_code error;
-  const std::uintmax_t size =
-      std::filesystem::exists(chunk, error) ? std::filesystem::file_size(chunk, error) : 0;
-  if (error) return true;  // rien de lisible : la reprise suivante le dira
-  if (size > limit) return false;
-  std::ifstream piece(chunk, std::ios::binary);
-  std::ofstream whole(packed, std::ios::binary | std::ios::app);
-  if (piece && whole) whole << piece.rdbuf();
-  return true;
-}
-
-// Tire les octets compressés de `file` dans `packed`, par plages, en reprenant un .part laissé (P3.7).
-std::expected<void, Refusal> pull_packed(const core::VendorFile& file, const std::filesystem::path& curl,
-                                         const std::filesystem::path& packed,
-                                         const std::filesystem::path& chunk,
-                                         const InstallProgress& progress) {
-  std::error_code error;
-  // P3.7 : un .part laissé par un essai coupé se reprend par plage ; trop long, il repart de zéro.
-  std::uint64_t have = size_or_zero(packed, error);
-  if (error || have > file.packed_size) {
-    std::filesystem::remove(packed, error);
-    have = 0;
-  }
-  const std::uint64_t last = file.data_offset + file.packed_size - 1;
-  // Trois reprises au plus après une coupure, chacune depuis ce qui est déjà là (curl réessaie aussi
-  // lui-même).
-  std::optional<Refusal> failure;
-  for (int attempt = 0; attempt < 4 && have < file.packed_size; ++attempt) {
-    std::filesystem::remove(chunk, error);
-    std::vector<std::string> args = curl_download_args();
-    // --max-filesize : un serveur ou un proxy qui ignore la plage et rend la roue entière (200) est arrêté
-    // tout de suite (A06-07).
-    args.insert(args.end(), {"--progress-bar", "--max-filesize", std::to_string(file.packed_size - have),
-                             "--range", std::format("{}-{}", file.data_offset + have, last), "--output",
-                             ansi_safe_path(chunk), file.url});
-    const double done = static_cast<double>(have) / static_cast<double>(file.packed_size);
-    auto fetched = run_tool(
-        {.program = curl, .args = std::move(args), .timeout = std::chrono::hours(2)},
-        [&](std::string_view line) {
-          if (const auto f = curl_percent(line); f && progress.report)
-            progress.report(static_cast<float>(done + ((1.0 - done) * *f)) * 0.85F, file.name);
-        },
-        progress.stop, i18n::tr_format("downloading {}", file.name));
-    // Ce qui est arrivé, même coupé, s'ajoute au .part ; un morceau plus long que la plage demandée n'est pas
-    // la plage (réponse 200 entière) : jeté (A06-07).
-    if (!append_chunk(chunk, packed, file.packed_size - have))
-      fetched = refuse(RefusalCode::HashMismatch,
-                       i18n::tr_format("{}: the server ignored the byte range", file.name));
-    std::filesystem::remove(chunk, error);
-    have = size_or_zero(packed, error);
-    if (fetched) break;
-    failure = fetched.error();
-    if (failure->code == RefusalCode::Cancelled) return std::unexpected(*failure);
-  }
-  if (have < file.packed_size && failure) return std::unexpected(*failure);
-  return {};
-}
-
-std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
-                                               const std::filesystem::path& dest,
-                                               const std::filesystem::path& scratch,
-                                               const InstallProgress& progress) {
-  const auto curl = system_tool("curl");
-  if (!curl) return refuse(RefusalCode::LibraryUnavailable, i18n::tr("curl not found on this system"));
-  std::error_code error;
-  std::filesystem::create_directories(scratch, error);
-  // Nommés par l'empreinte du fichier (A06-04) : un .part d'une autre version au même nom ne se reprend pas.
-  const std::filesystem::path packed = scratch / (file.sha256 + ".part");
-  const std::filesystem::path chunk = scratch / (file.sha256 + ".morceau");
-  const auto cleanup = [&] {
-    std::error_code ignored;
-    std::filesystem::remove(packed, ignored);
-    std::filesystem::remove(chunk, ignored);
-  };
-  if (file.packed_size == 0) return refuse(RefusalCode::FieldOutOfRange, file.name + i18n::tr(": zero size"));
-  if (auto pulled = pull_packed(file, *curl, packed, chunk, progress); !pulled) return pulled;
-  const std::uintmax_t got = std::filesystem::file_size(packed, error);
-  if (error || got != file.packed_size) {
-    cleanup();
-    return refuse(RefusalCode::HashMismatch, i18n::tr_format("{}: {} bytes received, {} expected", file.name,
-                                                             error ? 0 : got, file.packed_size));
-  }
-  if (progress.report) progress.report(0.9F, file.name);  // tiré : la décompression commence
-  std::filesystem::path partial = dest;
-  partial += ".partiel";
-  std::ifstream in(packed, std::ios::binary);
-  std::ofstream out(partial, std::ios::binary | std::ios::trunc);
-  const auto close = [&] {
-    in.close();
-    out.close();
-  };
-  if (!in || !out) {
-    close();
-    cleanup();
-    return refuse(RefusalCode::FileUnwritable, core::to_utf8(partial));
-  }
-  core::Sha256 hash;
-  std::uint64_t produced = 0;
-  bool write_failed = false;
-  bool overflow = false;
-  const auto sink = [&](std::span<const std::uint8_t> bytes) {
-    if (progress.stop.stop_requested()) return false;
-    // Jamais plus que la taille de l'index : un flux deflate forgé peut produire mille fois sa taille
-    // (A06-05).
-    if (produced + bytes.size() > file.size) {
-      overflow = true;
-      return false;
-    }
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    if (!out) {
-      write_failed = true;
-      return false;
-    }
-    hash.update(std::as_bytes(bytes));
-    produced += bytes.size();
-    return true;
-  };
-  std::expected<void, Refusal> result;
-  if (file.deflated) {
-    auto inflated = core::inflate_raw(
-        [&](std::span<std::uint8_t> buffer) {
-          in.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
-          return static_cast<std::size_t>(in.gcount());
-        },
-        sink);
-    if (!inflated) result = std::unexpected(inflated.error());
-  } else {
-    std::array<std::uint8_t, 1U << 16> buffer{};
-    while (in.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size())) ||
-           in.gcount() > 0) {
-      if (!sink(std::span<const std::uint8_t>(buffer).first(static_cast<std::size_t>(in.gcount())))) break;
-    }
-  }
-  const bool flushed = static_cast<bool>(out.flush());
-  close();
-  cleanup();
-  const auto discard = [&] {
-    std::error_code ignored;
-    std::filesystem::remove(partial, ignored);
-  };
-  if (progress.stop.stop_requested()) {
-    discard();
-    return refuse(RefusalCode::Cancelled, file.name);
-  }
-  if (write_failed || !flushed) {
-    discard();
-    return refuse(RefusalCode::FileUnwritable, core::to_utf8(partial));
-  }
-  if (overflow) {
-    discard();
-    return refuse(RefusalCode::HashMismatch,
-                  std::format("{} : plus de {} octets décompressés, refusé", file.name, file.size));
-  }
-  if (!result) {
-    discard();
-    return std::unexpected(result.error());
-  }
-  const std::string sha = core::to_hex(hash.finish());
-  if (produced != file.size || sha != file.sha256) {
-    discard();
-    return refuse(RefusalCode::HashMismatch,
-                  std::format("{} : {} octets, SHA-256 {} ; {} octets et {} attendus", file.name, produced,
-                              sha, file.size, file.sha256));
-  }
-  std::filesystem::rename(partial, dest, error);
-  if (error) {
-    discard();
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(dest), error.message()));
-  }
-  if (progress.report) progress.report(1.0F, file.name);
-  return {};
 }
 
 namespace {
@@ -553,15 +379,63 @@ std::expected<void, Refusal> sync_tree(const std::filesystem::path& root) {
 
 // Chaque fichier extrait sur le disque, puis la note du paquet en dernier, avec son dossier (A36-03).
 std::expected<void, Refusal> seal_staging(const std::filesystem::path& staging,
-                                          const core::EnginePackage& package) {
+                                          const core::EnginePackage& package,
+                                          const std::vector<core::VendorFile>& vendor) {
   if (auto synced = sync_tree(staging); !synced) return synced;
   const std::filesystem::path path = staging / std::string(kPackageNote);
   std::ofstream note(path, std::ios::trunc);
   note << "sha256=" << package.sha256 << "\nlicence=" << package.license << '\n';
+  // Les fichiers tiers posés, avec leur taille : installed_state les revérifie (B06-11).
+  for (const core::VendorFile& file : vendor) note << "fichier=" << file.size << ' ' << file.name << '\n';
   note.close();
   if (!note || core::sync_file(path))
     return refuse(RefusalCode::FileUnwritable, i18n::tr_format("{}: package note", core::to_utf8(staging)));
   core::sync_directory(staging);
+  return {};
+}
+
+// Le dossier extrait et complet devient la version installée : ses fichiers sur le disque, la note, puis les
+// renommages (l'ancien dossier mis de côté, remis en place sur échec).
+std::expected<void, Refusal> swap_in_place(const core::EnginePackage& package,
+                                           const std::vector<core::VendorFile>& vendor,
+                                           const std::filesystem::path& staging,
+                                           const std::filesystem::path& target) {
+  std::error_code error;
+  // Chaque fichier sur le disque, puis la note en dernier (A36-03) : après une coupure, un dossier de version
+  // (ou un « .partiel » qui a sa note, recover_interrupted_install) est entier, jamais fait de fichiers
+  // vides.
+  if (const auto sealed = seal_staging(staging, package, vendor); !sealed) {
+    std::filesystem::remove_all(staging, error);
+    return std::unexpected(sealed.error());
+  }
+  // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
+  // encore ouvert (Windows), il ne reste pas à moitié supprimé, et il est remis en place sur échec.
+  std::filesystem::path aside = target;
+  aside += ".ancien";
+  std::filesystem::remove_all(aside, error);
+  const bool replaced = std::filesystem::exists(target, error);
+  if (replaced) {
+    error.clear();
+    // Defender ou l'indexeur tiennent un fichier quelques secondes après l'extraction : on réessaie
+    // avant de renvoyer au prochain lancement (B31-06).
+    error = core::rename_retrying(target, aside, kInstallRenamePatience);
+    // Windows : une DLL de la version en place est encore chargée. La nouvelle, entière et notée, attend
+    // dans « .partiel » : recover_interrupted_install l'échange au lancement suivant (A06-09).
+    if (error) return deferred_swap(target, error);
+  }
+  error.clear();
+  error = core::rename_retrying(staging, target, kInstallRenamePatience);
+  if (error) {
+    std::string reason = error.message();
+    if (replaced) {  // l'ancien revient, au mieux ; si c'est impossible, le message le dit
+      const std::error_code back = core::rename_retrying(aside, target, kInstallRenamePatience);
+      if (back) reason += std::format(" (l'ancien n'est pas revenu : {})", back.message());
+    }
+    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(target), reason));
+  }
+  core::sync_directory(target.parent_path());
+  if (replaced) std::filesystem::remove_all(aside, error);
+  error.clear();
   return {};
 }
 
@@ -621,7 +495,7 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
         {.program = *curl,
          .args =
              [&] {
-               std::vector<std::string> args = curl_download_args();
+               std::vector<std::string> args = curl_download_args(progress.allow_local_files);
                args.insert(args.end(), {"--continue-at", "-", "--progress-bar", "--output",
                                         ansi_safe_path(part), package.url});
                return args;
@@ -699,37 +573,8 @@ std::expected<std::filesystem::path, Refusal> install_steps(const EngineCatalog&
     done_bytes += static_cast<double>(file.packed_size);
   }
   step = i18n::tr("replacing the installed version");
-  // Chaque fichier sur le disque, puis la note en dernier (A36-03) : après une coupure, un dossier de version
-  // (ou un « .partiel » qui a sa note, recover_interrupted_install) est entier, jamais fait de fichiers
-  // vides.
-  if (const auto sealed = seal_staging(staging, package); !sealed) {
-    std::filesystem::remove_all(staging, error);
-    return std::unexpected(sealed.error());
-  }
-  // L'ancien dossier est mis de côté avant d'être remplacé, puis effacé : si l'un de ses fichiers est
-  // encore ouvert (Windows), il ne reste pas à moitié supprimé, et il est remis en place sur échec.
-  std::filesystem::path aside = target;
-  aside += ".ancien";
-  std::filesystem::remove_all(aside, error);
-  const bool replaced = std::filesystem::exists(target, error);
-  if (replaced) {
-    error.clear();
-    std::filesystem::rename(target, aside, error);
-    // Windows : une DLL de la version en place est encore chargée. La nouvelle, entière et notée, attend
-    // dans « .partiel » : recover_interrupted_install l'échange au lancement suivant (A06-09).
-    if (error) return deferred_swap(target, error);
-  }
-  error.clear();
-  std::filesystem::rename(staging, target, error);
-  if (error) {
-    const std::string reason = error.message();
-    std::error_code restore;
-    if (replaced) std::filesystem::rename(aside, target, restore);
-    return refuse(RefusalCode::FileUnwritable, std::format("{} : {}", core::to_utf8(target), reason));
-  }
-  core::sync_directory(target.parent_path());
-  if (replaced) std::filesystem::remove_all(aside, error);
-  error.clear();
+  if (auto swapped = swap_in_place(package, vendor, staging, target); !swapped)
+    return std::unexpected(swapped.error());
   report(1.0F, i18n::tr_format("{} installed", name));
   return core::backend_library(catalog.layout, package);
 }
@@ -748,6 +593,11 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
   for (const char* suffix : {".partiel", ".ancien"}) {
     std::filesystem::path leftover = core::engine_dir(catalog.layout, package);
     leftover += suffix;
+    // Un « .partiel » entier, noté, que recover_interrupted_install n'a pas pu échanger (DLL encore tenue)
+    // est la version à venir : il reste tant que le nouvel essai n'a pas extrait la sienne (B06-03).
+    if (std::string_view(suffix) == ".partiel" &&
+        std::filesystem::is_regular_file(leftover / std::string(kPackageNote), error))
+      continue;
     if (std::filesystem::exists(leftover, error)) {
       log->info("installation de {} : reste d'un essai précédent retiré ({})", name,
                 core::to_utf8(leftover.filename()));

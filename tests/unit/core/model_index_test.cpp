@@ -245,6 +245,28 @@ TEST_CASE("Fichiers tiers d'un moteur : lus avec leur architecture, choisis pour
   CHECK(read_engine_index(head)->vendor_files.empty());
 }
 
+TEST_CASE("Index des moteurs : un fichier tiers écarté se sait, pour son moteur et sa plateforme (B06-02)",
+          "[model_index]") {
+  const auto file = [&](const std::string& id, const std::string& platform, const std::string& method) {
+    return "[[vendor_file]]\nid = \"" + id + "\"\nplatform = \"" + platform +
+           "\"\nurl = \"https://pypi.example/x.whl\"\nname = \"lib" + id + platform +
+           ".so\"\ndata_offset = 1000\npacked_size = 40\nsize = 100\nmethod = \"" + method +
+           "\"\nsha256 = \"" + kSha + "\"\n";
+  };
+  // Une méthode inconnue d'une release plus récente sur un fichier de TensorRT pour Linux ; un moteur inconnu
+  // n'est pas un des nôtres.
+  const std::string lock = "version = 1\n" + file("tensorrt", "linux", "zstd") +
+                           file("moteur_futur", "linux", "zstd") + file("tensorrt", "windows", "deflate");
+  auto index = read_engine_index(lock);
+  REQUIRE(index);
+  CHECK(index->skipped.size() == 2);
+  REQUIRE(index->skipped_vendor.size() == 1);
+  CHECK(vendor_file_skipped(*index, EngineId::TensorRt, Os::Linux));
+  CHECK_FALSE(vendor_file_skipped(*index, EngineId::TensorRt, Os::Windows));
+  CHECK_FALSE(vendor_file_skipped(*index, EngineId::Vulkan, Os::Linux));
+  CHECK_FALSE(vendor_file_skipped(*read_engine_index("version = 1\n"), EngineId::TensorRt, Os::Linux));
+}
+
 TEST_CASE("Index des moteurs : un nom de périphérique de Windows est écarté (A35-04)", "[model_index]") {
   const auto engine = [](const std::string& version) {
     return "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\nurl = "

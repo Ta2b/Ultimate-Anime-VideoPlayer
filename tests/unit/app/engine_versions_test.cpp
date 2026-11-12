@@ -87,6 +87,36 @@ TEST_CASE("Versions : un module sans note est un paquet remplacé", "[app][insta
   CHECK_FALSE(found.note);
 }
 
+TEST_CASE("Versions : un fichier tiers manquant ou tronqué rend le paquet à réinstaller (B06-11)",
+          "[app][install]") {
+  Fixture f("fichiers-tiers");
+  const core::EnginePackage v11 = f.package("11", 'a');
+  const fs::path dir = f.install(v11);
+  std::ofstream(dir / "tiers.bin") << "12345";
+  std::ofstream(dir / std::string(kPackageNote), std::ios::app) << "fichier=5 tiers.bin\n";
+
+  const InstalledState whole = installed_state(f.catalog, v11);
+  CHECK(whole.state == PackageState::Current);
+  REQUIRE(whole.note);
+  REQUIRE(whole.note->files.size() == 1);
+  CHECK(whole.note->files.front().first == "tiers.bin");
+  CHECK(whole.note->files.front().second == 5);
+
+  // Un antivirus l'a mis en quarantaine : le dossier a son module et sa note, mais ne se chargerait pas.
+  fs::remove(dir / "tiers.bin");
+  const InstalledState missing = installed_state(f.catalog, v11);
+  CHECK(missing.state == PackageState::Replaced);
+  CHECK(missing.missing == "tiers.bin");
+
+  // Tronqué : même verdict.
+  std::ofstream(dir / "tiers.bin") << "123";
+  CHECK(installed_state(f.catalog, v11).state == PackageState::Replaced);
+
+  // Une note d'avant (sans ligne « fichier ») n'a rien à vérifier.
+  std::ofstream(dir / std::string(kPackageNote)) << "sha256=" << v11.sha256 << "\nlicence=L\n";
+  CHECK(installed_state(f.catalog, v11).state == PackageState::Current);
+}
+
 TEST_CASE("Versions : la version de l'index en place, les autres se retirent", "[app][install]") {
   Fixture f("retrait");
   const core::EnginePackage v10 = f.package("10", 'a');

@@ -8,12 +8,15 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "core/file_sync.h"
 #include "core/utf8_path.h"
+#include "prepare/derived_files.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
@@ -61,6 +64,22 @@ class Index {
   int readers(const std::string& tensor) const {
     const auto found = readers_.find(tensor);
     return found != readers_.end() ? found->second : 0;
+  }
+  // Le tenseur et tout ce dont il dépend, de proche en proche jusqu'aux entrées du graphe.
+  std::set<std::string, std::less<>> ancestors(const std::string& tensor) const {
+    std::set<std::string, std::less<>> seen;
+    std::vector<std::string> pending{tensor};
+    while (!pending.empty()) {
+      std::string current = std::move(pending.back());
+      pending.pop_back();
+      if (!seen.insert(current).second) continue;
+      const OnnxFullNode* node = producer(current);
+      if (node == nullptr) continue;
+      for (const std::string& input : node->inputs) {
+        if (!input.empty()) pending.push_back(input);
+      }
+    }
+    return seen;
   }
   // Les valeurs du tenseur constant, vides s'il n'en est pas un.
   const std::vector<double>& constant(const std::string& tensor) const {
@@ -112,6 +131,110 @@ std::string block_name(int b, std::string_view tail) {
   return std::format("/block{}/{}", b, tail);
 }
 
+// Ce que la boucle des blocs relève pour contrôler la colle : le Concat qui précède chaque bloc, le flot que
+// chaque bloc ajoute (fd_k : sa sortie « flot », multipliée par d si le bloc réduit) et les GridSample.
+struct Glue {
+  std::vector<const OnnxFullNode*> concat;  // le Concat d'entrée de chaque bloc
+  std::vector<std::string> flow;            // fd_k
+  std::vector<const OnnxFullNode*> grids;   // les GridSample du graphe
+};
+
+// Longueur du préfixe fd_0 … fd_{n-1} dont tensor dépend, ou -1 si les flots atteints ne forment pas un
+// préfixe (un flot sauté : l'accumulation n'est pas celle des noyaux).
+int accumulated_flows(const Index& index, const Glue& glue, const std::string& tensor) {
+  const auto seen = index.ancestors(tensor);
+  int count = 0;
+  while (count < static_cast<int>(glue.flow.size()) &&
+         seen.contains(glue.flow[static_cast<std::size_t>(count)]))
+    ++count;
+  for (std::size_t k = static_cast<std::size_t>(count); k < glue.flow.size(); ++k) {
+    if (seen.contains(glue.flow[k])) return -1;
+  }
+  return count;
+}
+
+// La colle que les noyaux refont, vérifiée sur le flux de données (B04-01). Les noms ne suffisent pas : un
+// autre RIFE de vs-mlrt garde les mêmes noms de modules avec une autre colle (encodages non warpés, flot non
+// accumulé, autre mélange), et la découpe donnerait sans erreur des images fausses. Vide quand tout est en
+// ordre ; sinon ce qui manque.
+std::string glue_problem(const Index& index, const OnnxGraph& graph, const RifeSplit& split, const Glue& glue,
+                         const OnnxFullNode& mask) {
+  const int blocks = split.plan.blocks;
+  // Un GridSample par bloc k : il lit l'entrée du réseau, et sa grille dépend du flot accumulé fd_0 … fd_k.
+  std::vector<const OnnxFullNode*> warp(static_cast<std::size_t>(blocks), nullptr);
+  for (const OnnxFullNode* grid : glue.grids) {
+    if (grid->inputs.size() != 2 || grid->outputs.size() != 1)
+      return grid->name + " : GridSample à deux entrées";
+    if (!index.ancestors(grid->inputs[0]).contains("input"))
+      return grid->name + " : GridSample qui ne lit pas l'image d'entrée";
+    const int reached = accumulated_flows(index, glue, grid->inputs[1]);
+    if (reached < 1 || warp[static_cast<std::size_t>(reached - 1)] != nullptr)
+      return grid->name + " : grille qui n'accumule pas le flot des blocs 0 à k";
+    warp[static_cast<std::size_t>(reached - 1)] = grid;
+  }
+  for (int b = 0; b < blocks; ++b) {
+    if (warp[static_cast<std::size_t>(b)] == nullptr)
+      return std::format("pas de GridSample pour le bloc {}", b);
+  }
+  const OnnxFullNode& first = *glue.concat[0];
+  if (!index.ancestors(first.inputs[1]).contains(split.encode_output))
+    return "Concat du bloc 0 : l'entrée 1 ne vient pas de l'encodeur";
+  for (int b = 1; b < blocks; ++b) {
+    const OnnxFullNode& concat = *glue.concat[static_cast<std::size_t>(b)];
+    const std::string& warped = warp[static_cast<std::size_t>(b - 1)]->outputs[0];
+    // Images et encodages warpés par le flot du bloc précédent (un seul tenseur pour les deux dans 4.25
+    // lite).
+    for (std::size_t i = 0; i < (split.interleaved ? 1U : 2U); ++i) {
+      if (!index.ancestors(concat.inputs[i]).contains(warped))
+        return std::format("Concat du bloc {} : l'entrée {} n'est pas warpée par le bloc {}", b, i, b - 1);
+    }
+    if (accumulated_flows(index, glue, concat.inputs.back()) != b)
+      return std::format("Concat du bloc {} : le flot n'est pas la somme des flots des blocs 0 à {}", b,
+                         b - 1);
+  }
+  // Sortie : l'image mélangée par le masque, avec les images warpées par le flot final.
+  if (graph.outputs.size() != 1 || index.producer(graph.outputs[0]) == nullptr)
+    return "une seule sortie produite par un nœud attendue";
+  const auto seen = index.ancestors(graph.outputs[0]);
+  if (!seen.contains(mask.outputs[0]) ||
+      !seen.contains(warp[static_cast<std::size_t>(blocks - 1)]->outputs[0]) || !seen.contains("input"))
+    return "la sortie ne mélange pas, par le masque, les images warpées par le flot final";
+  return {};
+}
+
+// Les Resize, GridSample et DepthToSpace du graphe : leurs attributs sont ceux que les noyaux refont, leur
+// nombre est contrôlé plus loin. Les GridSample sont rangés dans `glue`.
+struct OperatorCounts {
+  std::size_t resizes = 0;
+  std::size_t grids = 0;
+  std::size_t shuffles = 0;
+};
+
+std::expected<OperatorCounts, Refusal> count_operators(const Index& index, const OnnxGraph& graph,
+                                                       Glue& glue) {
+  OperatorCounts counts;
+  for (const OnnxFullNode& node : graph.nodes) {
+    if (node.op_type == "Resize") {
+      ++counts.resizes;
+      if (resize_scale(index, node) == 0.0)
+        return unknown(node.name + " : Resize non linéaire/demi-pixel à échelle constante");
+    } else if (node.op_type == "GridSample") {
+      ++counts.grids;
+      glue.grids.push_back(&node);
+      const OnnxAttribute* align = node.attribute("align_corners");
+      if (align == nullptr || !align->integer || *align->integer != 1 ||
+          !text_is(node, "padding_mode", "border") || !text_is(node, "mode", "bilinear"))
+        return unknown(node.name + " : GridSample hors coins alignés, bords répétés, bilinéaire");
+    } else if (node.op_type == "DepthToSpace") {
+      ++counts.shuffles;
+      const OnnxAttribute* size = node.attribute("blocksize");
+      if (size == nullptr || !size->integer || *size->integer != 2 || !text_is(node, "mode", "CRD"))
+        return unknown(node.name + " : DepthToSpace hors CRD de bloc 2");
+    }
+  }
+  return counts;
+}
+
 // La sortie d'un bloc coupée en flot (4), masque (1) et attributs (8) ; ou, hors du dernier bloc, en flot et
 // masque avec attributs (9) (4.25 lite).
 bool known_sizes(const Index& index, const OnnxFullNode* sizes, bool last_block) {
@@ -121,29 +244,29 @@ bool known_sizes(const Index& index, const OnnxFullNode* sizes, bool last_block)
          (!last_block && sizes->outputs.size() == 2 && same(cut, {4, 9}));
 }
 
-enum class Glue : std::uint8_t { Unknown, Split, Interleaved };
+enum class GlueKind : std::uint8_t { Unknown, Split, Interleaved };
 
 // Le Concat d'entrée du bloc b ≥ 1. Disposition des noyaux : images warpées, encodages warpés, instant,
 // masque, attributs, flot (6 entrées). 4.25 lite : un seul tenseur pour les deux images warpées et leurs
 // encodages (Reshape du GridSample), l'instant, masque et attributs ensemble, le flot (4 entrées).
-Glue glue_of(const Index& index, const OnnxFullNode& concat, int b, const std::string& block_input) {
+GlueKind glue_kind(const Index& index, const OnnxFullNode& concat, int b, const std::string& block_input) {
   const OnnxFullNode* previous = index.named(block_name(b - 1, "Split"), "Split");
-  if (previous == nullptr) return Glue::Unknown;
+  if (previous == nullptr) return GlueKind::Unknown;
   const std::vector<std::string>& in = concat.inputs;
   if (in.size() == 6 && previous->outputs.size() == 3 && in[2] == "/Split_output_1" &&
       in[3] == block_name(b - 1, "Split_output_1") && in[4] == block_name(b - 1, "Split_output_2"))
-    return Glue::Split;
+    return GlueKind::Split;
   if (in.size() != 4 || previous->outputs.size() != 2 || in[1] != "/Split_output_1" ||
       in[2] != block_name(b - 1, "Split_output_1"))
-    return Glue::Unknown;
+    return GlueKind::Unknown;
   const OnnxFullNode* warped = index.source(in[0]);
   const OnnxFullNode* grid = warped != nullptr && warped->op_type == "Reshape" && !warped->inputs.empty()
                                  ? index.source(warped->inputs[0])
                                  : nullptr;
   // X_k ne va qu'à la convolution dont les poids seront permutés.
   return grid != nullptr && grid->op_type == "GridSample" && index.readers(block_input) == 1
-             ? Glue::Interleaved
-             : Glue::Unknown;
+             ? GlueKind::Interleaved
+             : GlueKind::Unknown;
 }
 
 // Le flot accumulé arrive au bloc multiplié par 1/d, ou tel quel pour d = 1.
@@ -177,27 +300,10 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
   split.elem_type = summary->inputs[0].elem_type;
 
   // Les attributs de tous les Resize et GridSample : ce que les noyaux refont.
-  std::size_t resizes = 0;
-  std::size_t grids = 0;
-  std::size_t shuffles = 0;
-  for (const OnnxFullNode& node : graph->nodes) {
-    if (node.op_type == "Resize") {
-      ++resizes;
-      if (resize_scale(index, node) == 0.0)
-        return unknown(node.name + " : Resize non linéaire/demi-pixel à échelle constante");
-    } else if (node.op_type == "GridSample") {
-      ++grids;
-      const OnnxAttribute* align = node.attribute("align_corners");
-      if (align == nullptr || !align->integer || *align->integer != 1 ||
-          !text_is(node, "padding_mode", "border") || !text_is(node, "mode", "bilinear"))
-        return unknown(node.name + " : GridSample hors coins alignés, bords répétés, bilinéaire");
-    } else if (node.op_type == "DepthToSpace") {
-      ++shuffles;
-      const OnnxAttribute* size = node.attribute("blocksize");
-      if (size == nullptr || !size->integer || *size->integer != 2 || !text_is(node, "mode", "CRD"))
-        return unknown(node.name + " : DepthToSpace hors CRD de bloc 2");
-    }
-  }
+  Glue glue;
+  const auto counts = count_operators(index, *graph, glue);
+  if (!counts) return std::unexpected(counts.error());
+  const auto [resizes, grids, shuffles] = *counts;
 
   // L'encodeur.
   const OnnxFullNode* head_split = index.named("/Split", "Split");
@@ -220,6 +326,8 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
     ++blocks;
   if (blocks < 2 || blocks > kernels::kFusedMaxBlocks) return unknown(std::format("{} blocs", blocks));
   split.plan.blocks = blocks;
+  glue.concat.assign(static_cast<std::size_t>(blocks), nullptr);
+  glue.flow.resize(static_cast<std::size_t>(blocks));
   for (int b = 0; b < blocks; ++b) {
     const auto i = static_cast<std::size_t>(b);
     const OnnxFullNode* last =
@@ -251,6 +359,7 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
 
     // Agrandissement de sortie : un Resize d'échelle d entre le DepthToSpace et le Split, ou rien (d = 1).
     const OnnxFullNode* grown = index.named(block_name(b, "Resize_1"), "Resize");
+    glue.flow[i] = block_name(b, "Split_output_0");  // d = 1 : le flot sort tel quel du Split
     if (d == 1) {
       if (grown != nullptr || index.uncast(sizes->inputs[0]) != shuffle->outputs[0])
         return unknown(std::format("bloc {} : sortie", b));
@@ -265,19 +374,22 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
           scale->inputs[0] != block_name(b, "Split_output_0") ||
           !same(index.constant(scale->inputs[1]), {static_cast<double>(d)}))
         return unknown(std::format("bloc {} : Mul du flot", b));
+      if (scale->outputs.size() != 1) return unknown(std::format("bloc {} : Mul du flot", b));
+      glue.flow[i] = scale->outputs[0];  // d > 1 : le flot multiplié par d
     }
 
     // Ce qui précède l'entrée : le Concat de la colle, dont l'ordre des canaux fixe la disposition de X_k.
     if (source == nullptr || source->op_type != "Concat")
       return unknown(std::format("bloc {} : Concat d'entrée", b));
+    glue.concat[i] = source;
     if (b == 0) {
       if (source->inputs.size() != 3 || source->inputs[0] != "/Split_output_0" ||
           source->inputs[2] != "/Split_output_1")
         return unknown("Concat du bloc 0");
     } else {
-      const Glue glue = glue_of(index, *source, b, first->inputs[0]);
-      const bool interleaved = glue == Glue::Interleaved;
-      if (glue == Glue::Unknown || (b > 1 && interleaved != split.interleaved))
+      const GlueKind kind = glue_kind(index, *source, b, first->inputs[0]);
+      const bool interleaved = kind == GlueKind::Interleaved;
+      if (kind == GlueKind::Unknown || (b > 1 && interleaved != split.interleaved))
         return unknown(std::format("Concat du bloc {}", b));
       split.interleaved = interleaved;
       if (!known_flow(index, index.source(source->inputs.back()), d))
@@ -292,9 +404,11 @@ std::expected<RifeSplit, Refusal> analyze_rife(std::span<const std::byte> model)
   for (int b = 0; b < blocks; ++b) expected += split.plan.reduce[static_cast<std::size_t>(b)] > 1 ? 2U : 0U;
   if (grids != n || shuffles != n || resizes != expected) return unknown("décompte des opérateurs");
   const OnnxFullNode* mask = index.named("/Sigmoid", "Sigmoid");
-  if (mask == nullptr || mask->inputs.size() != 1 ||
+  if (mask == nullptr || mask->inputs.size() != 1 || mask->outputs.size() != 1 ||
       mask->inputs[0] != block_name(blocks - 1, "Split_output_1"))
     return unknown("masque sigmoïde du dernier bloc");
+  if (const std::string problem = glue_problem(index, *graph, split, glue, *mask); !problem.empty())
+    return unknown("colle des noyaux : " + problem);
   return split;
 }
 
@@ -350,8 +464,26 @@ std::string format_manifest(const RifeFusedManifest& manifest) {
     text += std::format(" {}", manifest.plan.reduce[static_cast<std::size_t>(b)]);
   text += '\n';
   for (const std::string& piece : manifest.pieces) text += std::format("piece {}\n", piece);
+  text += format_sizes(manifest.sizes);
   return text;
 }
+
+namespace {
+
+// Ce qu'un manifeste lu doit encore vérifier : complet, accepté par les noyaux, ses morceaux et ses tailles
+// en nombre. Rien : il est bon.
+std::optional<std::string> manifest_problem(const RifeFusedManifest& manifest, bool complete) {
+  if (!complete) return "en-tête, sortie ou taille absents";
+  if (!kernels::rife_fused_size_valid(manifest.plan, manifest.height, manifest.width))
+    return "découpage ou taille que les noyaux ne prennent pas";
+  if (manifest.pieces.size() != static_cast<std::size_t>(manifest.plan.blocks) + 1)
+    return "nombre de morceaux différent de 1 + blocs";
+  if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
+    return "autant de tailles que de morceaux attendu";
+  return std::nullopt;
+}
+
+}  // namespace
 
 std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) {
   const auto bad = [](std::string detail) {
@@ -408,15 +540,15 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) 
       if (rest.empty() || rest.find_first_of("/\\") != std::string_view::npos || rest == "." || rest == "..")
         return bad("morceau « " + std::string(rest) + " »");
       manifest.pieces.emplace_back(rest);
+    } else if (key == "sizes") {
+      auto sizes = parse_sizes(rest);
+      if (!sizes) return bad("tailles illisibles");
+      manifest.sizes = std::move(*sizes);
     } else {
       return bad("champ « " + std::string(key) + " » inconnu");
     }
   }
-  if (!header || !has_output || !has_size) return bad("en-tête, sortie ou taille absents");
-  if (!kernels::rife_fused_size_valid(manifest.plan, manifest.height, manifest.width))
-    return bad("découpage ou taille que les noyaux ne prennent pas");
-  if (manifest.pieces.size() != static_cast<std::size_t>(manifest.plan.blocks) + 1)
-    return bad("nombre de morceaux différent de 1 + blocs");
+  if (const auto problem = manifest_problem(manifest, header && has_output && has_size)) return bad(*problem);
   return manifest;
 }
 
@@ -427,12 +559,6 @@ bool is_rife_fused_manifest(const std::filesystem::path& path) {
 namespace {
 
 using core::write_atomic;  // P5.11 : l'écriture atomique du projet, avec fsync
-
-bool exists_nonempty(const std::filesystem::path& file) {
-  std::error_code error;
-  const auto size = std::filesystem::file_size(file, error);
-  return !error && size > 0;
-}
 
 }  // namespace
 
@@ -449,11 +575,9 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que les morceaux y sont.
   if (std::ifstream known(manifest_path); known) {
     const std::string text{std::istreambuf_iterator<char>(known), std::istreambuf_iterator<char>()};
-    if (const auto parsed = parse_manifest(text);
-        parsed && parsed->height == height && parsed->width == width &&
-        std::ranges::all_of(parsed->pieces, [&](const std::string& piece) {
-          return exists_nonempty(dir / core::path_from_utf8(piece));
-        }))
+    if (const auto parsed = parse_manifest(text); parsed && parsed->height == height &&
+                                                  parsed->width == width && !parsed->sizes.empty() &&
+                                                  pieces_intact(dir, *parsed))
       return manifest_path;
   }
   auto bytes = read_onnx_bytes(rife_onnx);
@@ -467,11 +591,13 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
   RifeFusedManifest manifest{.output = output, .height = height, .width = width, .plan = split->plan};
   for (const RifePiece& piece : *pieces) {
     const std::string file = std::format("{}-{}.onnx", stem, piece.name);
-    if (!exists_nonempty(dir / core::path_from_utf8(file))) {
+    // Un morceau déjà là n'est gardé que s'il a la taille voulue : un morceau tronqué est réécrit (B04-02).
+    if (!file_has_size(dir / core::path_from_utf8(file), piece.model.size())) {
       if (auto written = write_atomic(dir / core::path_from_utf8(file), piece.model); !written)
         return std::unexpected(std::move(written.error()));
     }
     manifest.pieces.push_back(file);
+    manifest.sizes.push_back(piece.model.size());
   }
   const std::string text = format_manifest(manifest);
   const auto* raw = reinterpret_cast<const std::byte*>(text.data());

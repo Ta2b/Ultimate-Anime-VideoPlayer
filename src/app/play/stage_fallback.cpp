@@ -1,6 +1,7 @@
 #include "app/play/stage_fallback.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <format>
 #include <utility>
 
@@ -45,8 +46,20 @@ const StageMemory::Entry* StageMemory::find(ChainStage stage, std::string_view s
 }
 
 void StageMemory::remember(Entry entry) {
-  std::erase_if(entries_,
-                [&](const Entry& e) { return e.stage == entry.stage && e.signature == entry.signature; });
+  const auto same = [&](const Entry& e) { return e.stage == entry.stage && e.signature == entry.signature; };
+  if (entry.cancelled) {
+    // Une annulation ne vaut que pour sa vidéo : elle ne remplace ni le refus réel de la même signature, qui
+    // vaut pour toutes les vidéos, ni l'annulation d'une autre vidéo (B29-03).
+    if (std::ranges::any_of(entries_, [&](const Entry& e) { return same(e) && !e.cancelled; })) return;
+    std::erase_if(entries_, [&](const Entry& e) { return same(e) && e.file == entry.file; });
+    // Les annulations ne s'accumulent pas sans fin sur une longue séance : les plus anciennes partent.
+    constexpr std::ptrdiff_t kMaxCancelled = 32;
+    while (std::ranges::count_if(entries_, [](const Entry& e) { return e.cancelled; }) >= kMaxCancelled)
+      entries_.erase(std::ranges::find_if(entries_, [](const Entry& e) { return e.cancelled; }));
+  } else {
+    // Un refus réel recouvre toute annulation de la même signature.
+    std::erase_if(entries_, same);
+  }
   entries_.push_back(std::move(entry));
 }
 

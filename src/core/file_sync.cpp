@@ -100,12 +100,21 @@ std::error_code retrying(const std::function<std::error_code()>& attempt) {
 
 }  // namespace
 
-std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to) {
-  return retrying([&] {
-    std::error_code error;
+std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to,
+                                std::chrono::milliseconds patience) {
+  const auto deadline = std::chrono::steady_clock::now() + patience;
+  std::error_code error;
+  auto pause = std::chrono::milliseconds(10);  // 10, 20, 40, 80, 160 puis 250 ms
+  for (;;) {
+    error.clear();
     std::filesystem::rename(from, to, error);
-    return error;
-  });
+    if (!error || !transient_refusal(error)) return error;
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    if (left <= std::chrono::milliseconds::zero()) return error;
+    std::this_thread::sleep_for(std::min(pause, left));
+    pause = std::min(pause * 2, std::chrono::milliseconds(250));
+  }
 }
 
 namespace {
