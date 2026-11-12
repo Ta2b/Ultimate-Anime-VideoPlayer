@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/player_machine.h"
 #include "app/play/relaunch_target.h"
 
 namespace ajp::app::play {
@@ -93,6 +94,15 @@ TEST_CASE("Relance : la vidéo et l'instant relus une fois, pas un fichier d'une
   CHECK_FALSE(take_relaunch_target(store, 1'000 + kRelaunchFreshS + 1));  // trop vieux : ignoré
   CHECK_FALSE(std::filesystem::exists(store, error));
   std::filesystem::remove_all(dir, error);
+}
+
+// C40-06 : perte du GPU, une relance, sans boucler dans la minute.
+TEST_CASE("Relance : une perte du GPU juste après une relance ne boucle pas", "[app][relaunch]") {
+  const std::int64_t now = relaunch_now_s();
+  CHECK(relaunch_allowed(false, now));                             // première perte de la séance
+  CHECK_FALSE(relaunch_allowed(true, now));                        // lancé à l'instant par une perte : stop
+  CHECK_FALSE(relaunch_allowed(true, now - kRelaunchAgainS + 5));  // encore dans la minute
+  CHECK(relaunch_allowed(true, now - kRelaunchAgainS - 1));        // assez tard : permis
 }
 
 }  // namespace

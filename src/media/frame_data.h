@@ -27,9 +27,14 @@ struct ReadyEvent {
 // plusieurs VkImage (une attente par image, hors du contrat de FrameData).
 // full_host_formats (DecoderOptions) : une image hôte 4:4:4 sort en Yuv444p16 et une 4:2:0 de plus de 10 bits
 // en P016, au lieu du 4:2:0 8 ou 10 bits ; avec host_422 aussi, une 4:2:2 sort en Yuv422p16 (B01-03).
+// fallback_color : la dernière couleur valide du flux. Une étiquette de couleur que cette image seule porte
+// hors du vocabulaire (VUI par séquence, que le conteneur ne disait pas) la prend au lieu de refuser l'image
+// et d'arrêter la lecture (C15-05) ; `color_fallback_used` dit alors qu'elle a servi.
 std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64_t pts_us,
                                                       std::int64_t duration_us, ReadyEvent ready = {},
-                                                      bool full_host_formats = false, bool host_422 = false);
+                                                      bool full_host_formats = false, bool host_422 = false,
+                                                      const ColorInfo* fallback_color = nullptr,
+                                                      bool* color_fallback_used = nullptr);
 
 // AVFrame tenu par une image de ce module, nullptr pour un autre FrameData.
 // Tests seulement : le chemin de lecture s'en tient à FrameData.

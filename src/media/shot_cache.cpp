@@ -15,6 +15,7 @@
 
 #include "core/dir_entries.h"
 #include "core/file_sync.h"
+#include "core/utf8_path.h"
 
 namespace ajp::media {
 namespace {
@@ -142,7 +143,7 @@ std::filesystem::path file_of(const std::filesystem::path& dir, const std::strin
 // Un reste d'écriture du cache : « <clé>.shots.part » (avant B36-04), ou « .<clé>.shots.<…>.tmp »
 // (core::write_atomic).
 bool is_orphan(const std::filesystem::path& path) {
-  const std::string name = path.filename().generic_string();
+  const std::string name = core::to_utf8(path.filename());
   const std::string shots(kExtension);
   if (name.ends_with(shots + ".part")) return true;
   return name.starts_with('.') && name.ends_with(".tmp") && name.find(shots + ".") != std::string::npos;

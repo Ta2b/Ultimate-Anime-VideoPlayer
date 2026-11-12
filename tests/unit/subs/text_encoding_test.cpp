@@ -162,3 +162,19 @@ TEST_CASE("to_utf8 : les pages d'une seule langue, prises sur l'indice du nom", 
         "\xC4\xB0\xC5\x9F\xC3\xBC\xC4\x9F\xC4\xB1\xC5\x9F");  // CP1254
   CHECK(to_utf8("\xE1\xE2", "el") == "\xCE\xB1\xCE\xB2");     // αβ, CP1253
 }
+
+// C17-01 : un seul octet fautif ne fait pas d'un fichier UTF-8 un encodage hérité.
+TEST_CASE("to_utf8 : un UTF-8 à l'octet fautif reste de l'UTF-8, l'octet devient U+FFFD", "[encoding]") {
+  std::string japanese;
+  for (int i = 0; i < 200; ++i)
+    japanese += "\xE3\x81\x93\xE3\x82\x93\xE3\x81\xAB\xE3\x81\xA1\xE3\x81\xAF";  // こんにちは
+  std::string damaged = japanese;
+  damaged[300] = '\xFF';
+  const std::string repaired = to_utf8(damaged);
+  CHECK(repaired.starts_with(japanese.substr(0, 300 - 3)));
+  CHECK(repaired.ends_with(japanese.substr(japanese.size() - 300)));
+  CHECK(repaired.find("\xEF\xBF\xBD") != std::string::npos);
+  CHECK(repaired.find("\xC3\xA3") == std::string::npos);  // pas de « ã » : ce n'est pas du Windows-1252
+  // Un fichier hérité sans aucune séquence UTF-8 valide garde la devinette.
+  CHECK(to_utf8("caf\xE9 cr\xE8me") == "caf\xC3\xA9 cr\xC3\xA8me");
+}

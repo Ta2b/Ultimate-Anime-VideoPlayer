@@ -96,9 +96,26 @@ void note_report_fact(std::string_view name, std::string_view value) {
   s.facts.emplace_back(std::string(name), std::string(value));
 }
 
+void forget_report_fact(std::string_view name) {
+  State& s = state();
+  const std::scoped_lock lock(s.mutex);
+  std::erase_if(s.facts, [&](const auto& fact) { return fact.first == name; });
+}
+
+void note_system_library_facts() {
+#ifdef AJP_SYSTEM_LIBS
+  if (const std::string_view libs = AJP_SYSTEM_LIBS; !libs.empty()) note_report_fact("Bibliothèques", libs);
+#endif
+}
+
 void note_engine_facts(std::string_view engine, std::string_view passed_over) {
+  note_system_library_facts();
   note_report_fact("Moteur", engine);
-  if (!passed_over.empty()) note_report_fact("Moteurs refusés", passed_over);
+  // Un refus d'un moteur précédent ne reste pas affiché quand le moteur suivant a réussi sans refus (C39-06).
+  if (!passed_over.empty())
+    note_report_fact("Moteurs refusés", passed_over);
+  else
+    forget_report_fact("Moteurs refusés");
 }
 
 void note_build_failure(std::string_view code, std::string_view detail) {
@@ -378,7 +395,9 @@ std::string current_report(std::string_view home) {
       parts.previous_log = read_tail(previous, kTail);
       if (!previous_session_crashed()) parts.previous_title = "relancée : " + relaunched;
     }
-    parts.dump_name = latest_dump_name(log.parent_path() / "crashes");
+    // Le minidump n'est nommé que si la séance d'avant a planté : un vieux .dmp sans lien ferait demander un
+    // fichier pour rien (C39-07).
+    if (previous_session_crashed()) parts.dump_name = latest_dump_name(log.parent_path() / "crashes");
   }
   if (parts.current_log.empty()) parts.current_log = "(journal introuvable)\n";
   return compose_report(parts, kBody);

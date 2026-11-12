@@ -129,13 +129,16 @@ bool is_home_folder(std::string_view path) {
   return false;
 }
 
-// Le début d'un chemin absolu en text[at] : « X:\ », « X:/ », « \\ » (réseau), « / » suivi d'un nom, « ~/ ».
+// Le début d'un chemin absolu en text[at] : « X:\ », « X:/ », « \\ » (réseau), « \??\ » (préfixe NT),
+// « \Users\ » ou « Users\ » (sans lecteur), « / » suivi d'un nom, « ~/ ».
 bool path_starts(std::string_view text, std::size_t at) {
   const char c = text[at];
   const char next = at + 1 < text.size() ? text[at + 1] : '\0';
+  const std::string_view rest = text.substr(at);
   if (c == '/') return next != '\0' && next != ' ' && next != '/' && next != '\n';
-  if (c == '\\') return next == '\\';
+  if (c == '\\') return next == '\\' || rest.starts_with("\\??\\") || rest.starts_with("\\Users\\");
   if (c == '~') return is_separator(next);
+  if (c == 'U' && rest.starts_with("Users\\")) return true;
   if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
     return next == ':' && at + 2 < text.size() && is_separator(text[at + 2]);
   return false;
@@ -159,6 +162,21 @@ std::size_t path_end(std::string_view text, std::size_t at) {
     ++end;
   }
   return end;
+}
+
+// Les dossiers du système, qui ne portent aucune donnée de l'utilisateur (son dossier personnel est déjà
+// remplacé avant) : le support veut les voir en entier (quel ICD Vulkan, quelle libcuda, Flatpak ou système).
+bool is_system_path(std::string_view path) {
+  for (const std::string_view prefix :
+       {"/usr/", "/lib/", "/lib64/", "/opt/", "/etc/", "/dev/", "/sys/", "/proc/"})
+    if (path.starts_with(prefix)) return true;
+  if (path.size() > 3 && path[1] == ':' && is_separator(path[2])) {
+    std::string lower(path.substr(3, 20));
+    for (char& c : lower) c = static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+    for (const std::string_view prefix : {"windows\\", "windows/", "program files"})
+      if (lower.starts_with(prefix)) return true;
+  }
+  return false;
 }
 
 class RedactingSink final : public spdlog::sinks::sink {
@@ -242,6 +260,11 @@ std::string reduce_log_paths(std::string_view text) {
       continue;
     }
     const std::size_t end = path_end(text, at);
+    if (is_system_path(text.substr(at, end - at))) {
+      out.append(text.substr(at, end - at));
+      at = end;
+      continue;
+    }
     std::size_t last = std::string_view::npos;
     std::size_t separators = 0;
     for (std::size_t i = at; i < end; ++i) {

@@ -95,3 +95,38 @@ TEST_CASE("OutputShaper : une demande vide ou incohérente ne touche à rien", "
   shaper.process(samples, {.sample_rate = 0});
   CHECK(samples == before);
 }
+
+// C16-03 : un tampon plus court que la rampe (5 ms à 48 kHz) ne la raccourcit pas, la rampe continue au
+// suivant.
+TEST_CASE("OutputShaper : la rampe de gain continue d'un tampon court au suivant", "[audio][shaper]") {
+  OutputShaper shaper;
+  constexpr std::size_t kFrames = 240;  // 5 ms
+  float previous = 1.0F;
+  float worst = 0.0F;
+  for (int buffer = 0; buffer < 4; ++buffer) {
+    std::vector<float> samples(kFrames, 1.0F);
+    shaper.process(samples, {.channels = 1, .gain = 0.5F});
+    for (const float value : samples) {
+      worst = std::max(worst, std::abs(value - previous));
+      previous = value;
+    }
+  }
+  CHECK(worst < 0.005F);
+  CHECK(previous == 0.5F);
+  CHECK(shaper.applied_gain() == 0.5F);
+}
+
+TEST_CASE("OutputShaper : le fondu d'entrée continue d'un tampon court au suivant", "[audio][shaper]") {
+  OutputShaper shaper;
+  std::vector<float> first(240, 1.0F);
+  std::vector<float> second(240, 1.0F);
+  std::vector<float> third(240, 1.0F);
+  shaper.process(first, {.channels = 1, .fade_in = true});
+  shaper.process(second, {.channels = 1});
+  shaper.process(third, {.channels = 1});
+  CHECK(first.back() < 0.51F);
+  CHECK(second.front() > first.back());  // pas de marche vers 1,0
+  CHECK(second.front() - first.back() < 0.005F);
+  CHECK(second.back() == 1.0F);
+  CHECK(third.front() == 1.0F);
+}

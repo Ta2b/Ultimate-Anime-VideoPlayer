@@ -14,3 +14,6 @@ compile_commands.json
 # Python : caches de bytecode des scripts de tools/
 __pycache__/
 *.pyc
+
+# Les préréglages locaux d'une machine (chemins, SDK) ne se commitent pas.
+CMakeUserPresets.json

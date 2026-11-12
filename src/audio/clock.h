@@ -1,5 +1,7 @@
-// Horloge audio : publiée par le thread audio à chaque mesure du périphérique,
-// lue sans attente par present et gpu quand l'audio est maître (VRR).
+// Horloge audio : publiée par le thread audio à chaque mesure du périphérique, lue par present et gpu quand
+// l'audio est maître (VRR). Un std::mutex gardant trois copies de mots : la section est brève, mais un
+// lecteur préempté dedans ferait attendre le thread audio jusqu'à sa reprise, sans héritage de priorité
+// (C16-07). Un seqlock lèverait cette attente ; tant qu'aucune mesure n'en montre le besoin, le verrou reste.
 #pragma once
 
 #include <mutex>

@@ -1,6 +1,7 @@
 #include "app/play/player_engines.h"
 
 #include <algorithm>
+#include <charconv>
 #include <format>
 #include <string_view>
 #include <utility>
@@ -34,6 +35,7 @@
 #include "kernels/spec/distil_drba.h"
 #include "kernels/spec/rife.h"
 #include "prepare/drba_split.h"
+#include "prepare/identity.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
@@ -138,6 +140,19 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
   }
 }
 
+// « TensorRT 101300 sur … » (l'entier brut de getInferLibVersion) devient « TensorRT 10.13.0 sur … »
+// (C39-05).
+std::string readable_trt_version(std::string_view message) {
+  constexpr std::string_view kPrefix = "TensorRT ";
+  const std::string_view rest = message.substr(kPrefix.size());
+  std::int32_t raw = 0;
+  const auto [end, error] = std::from_chars(rest.data(), rest.data() + rest.size(), raw);
+  if (error != std::errc{} || raw <= 0) return std::string(message);
+  const prepare::TrtRuntime runtime = prepare::decode_infer_lib_version(raw);
+  return std::format("{}{}.{}.{}{}", kPrefix, runtime.major, runtime.minor, runtime.patch,
+                     std::string_view(end, rest.data() + rest.size()));
+}
+
 }  // namespace
 
 Refusal dropped_video_refusal() {
@@ -155,7 +170,7 @@ gpu::BackendLog backend_log() {
       case gpu::BackendLogLevel::Info:
         channel->info("{}", message);
         // La version de TensorRT sur la carte, en tête du rapport (B39-02) : la fin du journal la perd.
-        if (message.starts_with("TensorRT ")) note_report_fact("TensorRT", message);
+        if (message.starts_with("TensorRT ")) note_report_fact("TensorRT", readable_trt_version(message));
         break;
       case gpu::BackendLogLevel::Warn:
         channel->warn("{}", message);
