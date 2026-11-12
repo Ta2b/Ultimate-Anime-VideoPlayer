@@ -2,9 +2,9 @@
 // (l'encodeur en lot de trois images, et les blocs 0 à 2, des convolutions à basse résolution) reliés par les
 // noyaux CUDA de drba_fused_kernels.h, le tout enfilé sur le flux du backend et capturé dans un seul graphe
 // CUDA. L'interface est celle du moteur DistilDRBA entier : deux entrées « pair01 » et « pair12 » de
-// 1 × 7 × H × W (rife_input) et une sortie « out » de 1 × 3 × H × W. Les tampons intermédiaires vivent à la
-// suite des activations des moteurs dans la zone partagée de la voie (SharedActivations) : rien d'alloué de
-// plus.
+// 1 × 7 × H × W (rife_input) et une sortie « out » de 1 × 3 × H × W. Les tampons intermédiaires vivent dans
+// la zone partagée de la voie (SharedActivations), au-dessus des activations de tous les moteurs entiers qui
+// la partagent (C03-01) : un SPAN qui passe entre deux appels sur la même voie n'écrit que sous eux.
 #pragma once
 
 #include <array>
@@ -57,6 +57,8 @@ class DrbaFusedEngine final : public Engine {
 
   // D6 : le prochain enqueue reprend les mêmes paires, seul le temps a changé.
   void next_times_only() override { times_only_next_ = true; }
+  // L'annonce oubliée : le backend a refusé l'appel avant d'enfiler la chaîne (C03-05).
+  void drop_hint() { times_only_next_ = false; }
 
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
@@ -74,6 +76,10 @@ class DrbaFusedEngine final : public Engine {
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
                                              bool times_only);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
+  // Les tampons repris au-dessus des activations si arena n'est plus la zone posée, a grandi, a changé de
+  // génération, ou si un moteur entier y monte plus haut qu'eux.
+  std::expected<void, Refusal> follow_zone(const std::shared_ptr<SharedActivations>& arena);
+  std::size_t scratch_offset_for(const SharedActivations& zone) const;
 
   std::unique_ptr<TrtEngine> encode_;
   std::array<std::unique_ptr<TrtEngine>, kernels::kDrbaFusedBlocks> blocks_;
@@ -81,8 +87,10 @@ class DrbaFusedEngine final : public Engine {
   int height_ = 0;
   int width_ = 0;
   kernels::DrbaFusedLayout layout_;
-  std::size_t scratch_offset_ =
-      0;  // début des tampons intermédiaires dans la zone : après les activations des moteurs
+  // Début des tampons intermédiaires dans la zone : au-dessus des activations de ses morceaux et de celles
+  // des moteurs entiers de la même zone (SharedActivations::activation_peak, C03-01).
+  std::size_t scratch_offset_ = 0;
+  std::int64_t own_activation_ = 0;  // les plus grandes activations de ses morceaux
   std::vector<std::string> inputs_{"pair01", "pair12"};
   std::vector<std::string> outputs_{"out"};
   std::shared_ptr<SharedActivations> zone_;
@@ -94,12 +102,13 @@ class DrbaFusedEngine final : public Engine {
   static constexpr std::size_t kMaxGraphs = 16;
   FusedGraphs graphs_{kMaxGraphs, "DistilDRBA fusionné"};
   // Ce que le dernier appel mené jusqu'au bout a laissé dans la zone : images réduites et encodages de ces
-  // paires (D6). Repris seulement si la zone est la même et qu'aucun autre moteur n'y a écrit depuis.
+  // paires (D6). Repris seulement si la zone est la même et qu'aucun autre moteur n'a écrit sur ces tampons.
   struct Kept {
     std::uintptr_t pair01 = 0;
     std::uintptr_t pair12 = 0;
     const void* zone = nullptr;
     std::uint64_t generation = 0;
+    std::size_t offset = 0;  // scratch_offset_ de l'appel
   };
   std::optional<Kept> kept_;
   bool times_only_next_ = false;

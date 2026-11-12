@@ -191,8 +191,9 @@ P2.45) sont ignorés par le script : il faut une lecture neuve.
   reçoit un `rife_input` complet à sa première paire, puis `rife_pair` (les images et l'instant,
   4 plans de 11 en moins). Capture ×3 RIFE 4.25 égale à 015aab1 après plusieurs paires ; avec
   4.22 lite (7 plans) rien ne change. Un backend d'avant (ABI 6) est refusé au chargement.
-- **Warp et composition par objets texture** (étude 3, 4.2) : quand les largeurs des tenseurs
-  sont des multiples de 16 pixels (pas de 32 octets de `texturePitchAlignment`) et les adresses
+- **Warp et composition par objets texture** (étude 3, 4.2) : à l'essai seulement depuis le chantier E01
+  (`--filtered-warp`, éteint : la lecture exacte est le défaut, docs/interpolation.md). Avec l'option, quand
+  les largeurs des tenseurs sont des multiples de 16 pixels (pas de 32 octets de `texturePitchAlignment`) et les adresses
   alignées, `warp_blend`, `warp_blend_poses` et `gmfss_compose` lisent par le filtre bilinéaire
   matériel (objets gardés par le backend, un par adresse et forme) et écrivent deux pixels par
   fil en `half2` ; sinon la lecture exacte d'avant. Tests `[backend_tensorrt][cuda]` « warp par

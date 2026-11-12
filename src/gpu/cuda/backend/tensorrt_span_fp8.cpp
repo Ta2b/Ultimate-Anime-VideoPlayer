@@ -70,14 +70,9 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   if (auto ok = bind_joined(ring); !ok) return ok;
   // Les noyaux lisent l'entrée, écrivent la sortie et leur zone d'activation.
   const std::shared_ptr<SharedActivations>& zone = arena();
-  std::vector<std::uintptr_t> reads;
-  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(zone.get()),
-                                     reinterpret_cast<std::uintptr_t>(&engine)};
-  for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
-  for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
-  if (auto ok = order(reads, writes); !ok) return ok;
+  if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) return ok;
   const Shape shape = engine.input_shape();
-  GpuTiming& timing = stage(std::format("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
+  GpuTiming& timing = stage_named("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]);
   role(Role::Upscale).begin(stream_);
   timing.begin(stream_);
   ImportedSlot* imported = nullptr;

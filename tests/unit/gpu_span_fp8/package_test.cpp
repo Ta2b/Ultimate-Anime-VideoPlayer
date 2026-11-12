@@ -6,8 +6,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "../../support/span_fp8_synthetic.h"
+
 namespace ajp::gpu::span_fp8 {
 namespace {
+
+using testing::synthetic;
 
 std::vector<std::byte> valid_bytes() {
   return serialize(synthetic());
