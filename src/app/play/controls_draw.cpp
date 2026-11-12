@@ -141,7 +141,10 @@ std::string pause_tooltip(bool paused) {
   return paused ? i18n::tr_format("Play ({})", shown) : i18n::tr_format("Pause ({})", shown);
 }
 
-void draw_toast(const Controls& controls, float width, float scale, std::int64_t now_us) {
+// C24-07 : en bas, centré, au-dessus de la barre quand elle est là : le haut porte le titre et les lignes de
+// l'OSD (statistiques), qu'un message en haut à droite masquait.
+void draw_toast(const Controls& controls, float width, float height, float bottom, float scale,
+                std::int64_t now_us) {
   const auto toast = controls.toast(now_us);
   if (!toast) return;
   // Typographie française des messages brefs (B43-12) : « : », « % » ne passent pas seuls en début de ligne.
@@ -156,7 +159,8 @@ void draw_toast(const Controls& controls, float width, float scale, std::int64_t
   ImFont* font = ImGui::GetFont();
   const float font_size = ImGui::GetFontSize();
   const ImVec2 size = font->CalcTextSizeA(font_size, FLT_MAX, wrap, text.data(), text.data() + text.size());
-  const ImVec2 p0{width - size.x - 2.0F * pad.x - kPad * scale, kPad * scale};  // en haut à droite
+  const ImVec2 p0{(width - size.x - 2.0F * pad.x) * 0.5F,
+                  height - bottom - size.y - 2.0F * pad.y - kPad * scale};
   list->AddRectFilled(p0, {p0.x + size.x + 2.0F * pad.x, p0.y + size.y + 2.0F * pad.y},
                       black(0.72F * opacity), (font_size + 2.0F * pad.y) * 0.5F);
   list->AddText(font, font_size, {p0.x + pad.x, p0.y + pad.y}, white(opacity), text.data(),
@@ -368,7 +372,7 @@ bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& l
     ImGui::PopStyleVar();
   }
   controls.set_held(held);
-  draw_toast(controls, width, s, now_us);
+  draw_toast(controls, width, height, opacity > 0.0F ? controls_height(s) : 0.0F, s, now_us);
   return opacity > 0.0F || controls.toast_opacity(now_us) > 0.0F;
 }
 

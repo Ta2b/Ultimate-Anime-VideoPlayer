@@ -149,6 +149,11 @@ class PlayerUi {
     int count = 1;
     std::int64_t at_us = 0;
   };
+  // C24-04 : le clic gauche simple attend l'intervalle de double clic avant de mettre en pause, pour
+  // qu'un double clic (plein écran) n'arrête pas la lecture entre ses deux clics ; 0 : rien en attente.
+  static constexpr std::int64_t kDoubleClickUs = 300'000;
+  std::int64_t pending_pause_us_ = 0;
+  std::int64_t last_right_click_us_ = -kDoubleClickUs;
   std::vector<Click> clicks_;  // en attente de l'image ImGui qui dira s'ils touchent l'interface
   float wheel_ = 0.0F;         // crans de molette pas encore rendus en pas de volume
   bool cursor_hidden_ = false;

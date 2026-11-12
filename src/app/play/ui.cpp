@@ -51,8 +51,10 @@ constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
 // Le fichier de police que fontconfig choisit pour pattern (« sans-serif », « sans-serif:lang=ja ») ;
 // seulement TrueType ou OpenType, ce que lit ImGui. need_cjk : la police doit avoir de quoi écrire le
 // japonais (あ et 日) ; fontconfig rend sinon la plus proche, parfois une police latine sans aucun
-// idéogramme.
-std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) {
+// idéogramme. need_hangul_hanzi : elle doit aussi avoir un hangul (한) et un caractère simplifié (汉), ce
+// que les polices japonaises seules (IPAexGothic, TakaoGothic) n'ont pas (C24-10).
+std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false,
+                                    bool need_hangul_hanzi = false) {
 #if AJP_WITH_FONTCONFIG
   if (FcInit() == FcFalse) return std::nullopt;
   FcPattern* wanted = FcNameParse(reinterpret_cast<const FcChar8*>(pattern));
@@ -69,7 +71,9 @@ std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) 
     FcCharSet* charset = nullptr;
     const bool covers = !need_cjk || (FcPatternGetCharSet(match, FC_CHARSET, 0, &charset) == FcResultMatch &&
                                       FcCharSetHasChar(charset, 0x3042) != FcFalse &&
-                                      FcCharSetHasChar(charset, 0x65E5) != FcFalse);
+                                      FcCharSetHasChar(charset, 0x65E5) != FcFalse &&
+                                      (!need_hangul_hanzi || (FcCharSetHasChar(charset, 0xD55C) != FcFalse &&
+                                                              FcCharSetHasChar(charset, 0x6C49) != FcFalse)));
     std::string path(reinterpret_cast<const char*>(file));
     std::string ext = std::filesystem::path(path).extension().string();
     ext = core::ascii_lower(ext);
@@ -82,6 +86,7 @@ std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false) 
 #else
   static_cast<void>(pattern);
   static_cast<void>(need_cjk);
+  static_cast<void>(need_hangul_hanzi);
   return std::nullopt;
 #endif
 }
@@ -132,6 +137,33 @@ std::vector<FontFile> search_fonts() {
   return fonts;
 }
 #else
+// Une police japonaise seule n'a ni hangul ni caractères simplifiés : si celle qu'on vient de choisir
+// (trouvée par `found_with`, nullptr : la police du bureau) n'a pas les deux, on ajoute une seconde police
+// de repli qui les a, pour les pistes coréennes et chinoises (C24-10).
+void add_hangul_hanzi_fallback(std::vector<FontFile>& fonts, const char* found_with) {
+  if (found_with != nullptr) {
+    const auto again = system_font(found_with, true, true);
+    if (again && again->path == fonts.back().path) return;
+  } else if (const auto desktop = system_font("sans-serif", true, true);
+             desktop && desktop->path == fonts.front().path) {
+    return;
+  }
+  for (const char* pattern : {"sans-serif:lang=ko", "sans-serif:lang=zh-cn", "Noto Sans CJK KR",
+                              "Noto Sans CJK SC", "WenQuanYi Zen Hei", "Droid Sans Fallback"}) {
+    std::optional<FontFile> extra = system_font(pattern, true, true);
+    if (!extra) continue;
+    const bool known = std::ranges::any_of(fonts, [&](const FontFile& f) { return f.path == extra->path; });
+    if (known || !read_font(std::filesystem::path(extra->path), *extra)) continue;
+    log_channel("app")->info(
+        "interface : seconde police CJK pour le hangul et les caractères simplifiés {} ({})", extra->path,
+        pattern);
+    fonts.push_back(std::move(*extra));
+    return;
+  }
+  log_channel("app")->warn(
+      "interface : aucune police avec hangul et caractères simplifiés, pistes en carrés possibles");
+}
+
 // Police du bureau (sans-serif), complétée par une police japonaise pour les titres de pistes.
 std::vector<FontFile> search_fonts() {
   std::vector<FontFile> fonts;
@@ -156,10 +188,12 @@ std::vector<FontFile> search_fonts() {
     if (!read_font(std::filesystem::path(cjk->path), *cjk)) continue;
     log_channel("app")->info("interface : police CJK {} ({})", cjk->path, pattern);
     fonts.push_back(std::move(*cjk));
+    add_hangul_hanzi_fallback(fonts, pattern);
     return fonts;
   }
   if (main_covers) {
     log_channel("app")->info("interface : la police du bureau couvre le japonais, pas de police de repli");
+    add_hangul_hanzi_fallback(fonts, nullptr);
     return fonts;
   }
   log_channel("app")->warn(
@@ -551,7 +585,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   }
   if (input_pending_) last_input_us_ = now_us;
   const bool tooltip_due = hover_waiting_ && now_us - last_input_us_ < kTooltipWindowUs;
-  if (!controls_.needs_frame(now_us, view, input_pending_ || settle_ > 0 || tooltip_due))
+  if (!controls_.needs_frame(now_us, view,
+                             input_pending_ || settle_ > 0 || tooltip_due || pending_pause_us_ != 0))
     return UiFrame{.draw = draw_, .changed = false, .serial = serial_, .bottom = bottom_, .top = top_};
   settle_ = input_pending_ ? kSettleFrames : std::max(settle_ - 1, 0);
   input_pending_ = false;
@@ -566,13 +601,24 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   for (const Click& click : clicks_) {
     if (captured) continue;
     if (click.button == ImGuiMouseButton_Right) {
-      actions.emplace_back(Command{cmd::TogglePause{}});
+      // Le second clic droit d'un double clic n'est pas une seconde bascule.
+      if (click.at_us - last_right_click_us_ >= kDoubleClickUs)
+        actions.emplace_back(Command{cmd::TogglePause{}});
+      last_right_click_us_ = click.at_us;
     } else if (const auto what = Controls::click(click.count)) {
-      actions.emplace_back(Command{cmd::TogglePause{}});  // le double clic rend l'état d'avant le premier
-      if (*what == Controls::VideoClick::FullscreenUndoPause) actions.emplace_back(ToggleFullscreen{});
+      if (*what == Controls::VideoClick::Fullscreen) {
+        pending_pause_us_ = 0;  // le premier clic n'a rien mis en pause
+        actions.emplace_back(ToggleFullscreen{});
+      } else {
+        pending_pause_us_ = click.at_us + kDoubleClickUs;
+      }
     }
   }
   clicks_.clear();
+  if (pending_pause_us_ != 0 && now_us >= pending_pause_us_) {
+    pending_pause_us_ = 0;
+    actions.emplace_back(Command{cmd::TogglePause{}});
+  }
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
   choices_.position_us = view.position_us;
   choices_.paused = view.paused;
@@ -627,6 +673,7 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   }
   home_ = true;
   wizard_ = false;
+  pending_pause_us_ = 0;
   input_pending_ = false;
   begin_frame(now_us);
   clicks_.clear();
