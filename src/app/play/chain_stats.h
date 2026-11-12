@@ -71,6 +71,9 @@ class ChainStats final : public StatsSource {
   void stop();
   std::int64_t source_period_us() const override;
   std::uint64_t skipped() const override { return live_.skipped(); }
+  std::optional<PairVerdict> pair_verdict(std::uint32_t epoch, std::int64_t pts_us) const override {
+    return live_.pair_marks().at(epoch, pts_us);
+  }
 
  private:
   const LiveSettings& live_;

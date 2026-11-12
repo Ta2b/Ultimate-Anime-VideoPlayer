@@ -177,6 +177,7 @@ void Session::set_subtitle_scale(float scale) {
 }
 
 void Session::set_stats(const StatsSettings& stats) {
+  if (stats.pairs != show_stats_.pairs) present_requested_ = true;  // la teinte paraît ou part, même en pause
   show_stats_ = stats;
   osd_at_us_.reset();
 }
@@ -591,21 +592,6 @@ bool Session::refresh_osd(std::int64_t host_now) {
   osd_ = std::move(lines);
   osd_at_us_ = host_now;
   return changed;
-}
-
-// La présentation de ce tour : l'image courante, ses sous-titres, l'OSD et l'interface.
-ShowRequest Session::show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const {
-  const bool shown = ui.draw != nullptr;
-  return ShowRequest{
-      .frame = current_ ? &*current_ : nullptr,
-      .subtitles = subtitles,
-      .osd = osd_,
-      .ui = ui.draw,
-      .ui_serial = shown ? ui.serial : 0,
-      .ui_bottom = shown ? ui.bottom : 0,
-      .ui_top = shown ? ui.top : 0,
-      .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 || shown || !osd_.empty(),
-      .target_us = fresh_ ? target_host_us_ : 0};
 }
 
 std::expected<std::optional<PresentRecord>, Refusal> Session::tick(std::int64_t host_now, const UiFrame& ui) {
