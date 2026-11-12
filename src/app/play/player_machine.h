@@ -10,13 +10,19 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/auto_config.h"
+#include "app/play/backend_library.h"
 #include "app/play/calibrated_chain.h"
 #include "app/play/chain.h"
 #include "app/play/gpu_tier.h"
 #include "app/play/options.h"
 #include "app/play/settings.h"
+#include "core/engines.h"
+#include "core/settings.h"
 
 namespace ajp::app::play {
+
+struct EngineCatalog;
+struct PlayerPaths;
 
 // La machine vue de l'écran où est la fenêtre : à l'ouverture, et quand elle change d'écran (B29-01).
 // explored : l'exploration du banc quand elle vaut pour cette carte ; calibrated : la calibration de l'écran.
@@ -29,6 +35,12 @@ std::optional<std::int64_t> resume_from(const std::filesystem::path& store,
                                         const std::filesystem::path& file);
 // B29-01 : la chaîne du préréglage pour le nouvel écran ; Personnalisé reste tel quel (apply_preset). Un
 // raccourci de séance (Ctrl+I) garde son interpolation.
+// La machine à laquelle une calibration se compare (A25-02, A07-05), écran compris (hauteur et fréquence,
+// C37-08).
+CalibrationHost calibration_host(const GpuFacts& here, SDL_Window* window, const BackendLibrary* library,
+                                 const std::optional<core::EngineId>& opened_for,
+                                 const core::Settings& engines, const EngineCatalog& catalog,
+                                 const PlayerPaths& paths);
 PlaySettings rederived(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source,
                        const PlayOptions& file_options, const KeptChoices& kept);
 

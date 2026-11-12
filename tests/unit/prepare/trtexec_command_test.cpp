@@ -167,6 +167,18 @@ TEST_CASE("trtexec : celui du paquet seulement s'il a l'empreinte relevée à la
   CHECK(pick_trtexec(dir.path() / "absent", good, {}).empty());
 }
 
+TEST_CASE("trtexec_arguments : l'ordinal CUDA de la carte du rendu (C37-01)", "[prepare][trtexec]") {
+  const TrtexecPaths paths{
+      .onnx = "/m/span.onnx", .engine = "/c/model.engine", .timing_cache = "/c/timing.cache"};
+  CHECK(trtexec_arguments(paths, "--skipInference", 1) ==
+        std::vector<std::string>{"--onnx=/m/span.onnx", "--saveEngine=/c/model.engine", "--device=1",
+                                 "--skipInference", "--timingCacheFile=/c/timing.cache"});
+  CHECK(trtexec_selected_device("[11/12/2026-10:00:00] [I] Selected Device: NVIDIA GeForce RTX 3060\r") ==
+        "NVIDIA GeForce RTX 3060");
+  CHECK_FALSE(trtexec_selected_device("[I] Selected Device ID: 1"));
+  CHECK_FALSE(trtexec_selected_device("[I] Device 0: \"NVIDIA GeForce RTX 4070\""));
+}
+
 // C05-09 : ni le nettoyage de TensorRT 11 ni les arguments ajoutés par trtexec_arguments n'entrent dans la
 // clé du moteur. Cette ligne est donc figée ici : qui la change doit monter kCommandLineVersion
 // (trtexec_command.h), sinon les moteurs déjà en cache, construits avec l'ancienne ligne, seraient repris

@@ -79,6 +79,12 @@ unsigned parse_pcie_generation(std::string_view text);
 // lit pas (pilote Mesa, texte libre) : on ne s'alarme pas sans la connaître.
 bool nvidia_driver_older_than(std::string_view version, int major, int minor = 0, int patch = 0);
 
+// Smooth Motion du pilote NVIDIA sous Linux (C37-03) : RTX 40 et 50 (Ada, Blackwell), pilote 580.82.07 ou
+// plus récent. Gpu : une carte d'une génération plus ancienne, reconnue à son nom (GTX, RTX 20 et 30, RTX A
+// d'Ampere, Quadro, Titan) ; un nom inconnu ne grise rien. Driver : un pilote lu et trop ancien. Pur.
+enum class SmoothMotionBlock { None, Gpu, Driver };
+SmoothMotionBlock smooth_motion_block(std::string_view gpu_name, std::string_view driver);
+
 class GpuTelemetry {
  public:
   // Rien si la carte n'est ni NVIDIA (NVML présent, UUID connu) ni AMD sous Linux (sysfs amdgpu).

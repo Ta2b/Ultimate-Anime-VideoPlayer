@@ -32,6 +32,8 @@ struct TrtexecConfig {
   std::filesystem::path cache_dir;  // dossier des moteurs
   TrtRuntime runtime;               // 11.3 au moins
   CudaDevice device;
+  // L'ordinal CUDA de device dans ce processus, passé à trtexec (--device, C37-01) ; négatif : aucun.
+  int cuda_device = -1;
   std::chrono::milliseconds timeout = std::chrono::minutes(20);
   std::string input_name = "input";  // nom de l'entrée des modèles livrés
   // SHA-256 de trtexec relevé à l'ouverture du moteur : revérifié juste avant chaque lancement, pour

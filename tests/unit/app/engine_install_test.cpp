@@ -13,6 +13,7 @@
 #include <iterator>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -644,6 +645,21 @@ TEST_CASE("Proxy manuel de Windows : celui de https, ou celui de tous (P3.7)", "
   CHECK(ajp::app::play::proxy_from_setting("http=a:80;https=b:443") == "b:443");
   CHECK_FALSE(ajp::app::play::proxy_from_setting("http=a:80"));
   CHECK_FALSE(ajp::app::play::proxy_from_setting(""));
+}
+
+TEST_CASE("Proxy manuel de KDE : lu dans kioslaverc comme sous Windows (C34-12)", "[app][install]") {
+  using ajp::app::play::kde_proxy;
+  constexpr std::string_view kManual =
+      "[General]\nhttpsProxy=autre\n\n[Proxy Settings]\nProxyType=1\nhttpProxy=http://a 80\n"
+      "httpsProxy=http://proxy.corp 3128\r\nNoProxyFor=localhost\n";
+  CHECK(kde_proxy(kManual) == "http://proxy.corp:3128");
+  // Le même proxy pour tous : seul httpProxy est écrit.
+  CHECK(kde_proxy("[Proxy Settings]\nProxyType=1\nhttpProxy=http://p.lan:8080\n") == "http://p.lan:8080");
+  // Aucun, script PAC, détection, environnement : rien.
+  for (const char* type : {"0", "2", "3", "4"})
+    CHECK_FALSE(kde_proxy(std::string("[Proxy Settings]\nProxyType=") + type + "\nhttpsProxy=http://p 1\n"));
+  CHECK_FALSE(kde_proxy("[Proxy Settings]\nProxyType=1\n"));
+  CHECK_FALSE(kde_proxy(""));
 }
 
 TEST_CASE("Fichier tiers repris d'une version installée à SHA égal (P3.8)", "[app][install]") {

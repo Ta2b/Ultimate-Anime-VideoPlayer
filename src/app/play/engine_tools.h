@@ -22,7 +22,7 @@ std::optional<float> curl_percent(std::string_view line);
 
 // P3.7 : les options de curl d'un gros téléchargement : cinq essais sur toute erreur, abandon d'une connexion
 // sous 1 Ko/s pendant une minute (elle se reprend à l'essai suivant), et le proxy du système sous Windows
-// (curl.exe ne lit pas les réglages de WinINET ; ailleurs, curl lit https_proxy).
+// (curl.exe ne lit pas les réglages de WinINET) et sous KDE (kde_proxy) ; ailleurs, curl lit https_proxy.
 // -q en tête (aucun .curlrc), https seulement, redirections comprises (A35-05). file:// n'est permis que
 // pour les tests (`allow_local_files`) : l'index exige déjà https, et un lien file:// qui s'y glisserait
 // ne doit pas lire un fichier de la machine (B06-10, B35-09). Puis curl_system_args().
@@ -30,7 +30,8 @@ std::vector<std::string> curl_download_args(bool allow_local_files = false, std:
 // Ce que curl demande pour passer comme le système sous Windows : le proxy manuel ou celui d'un script PAC
 // (détection automatique comprise, B06-08), et la révocation du
 // certificat vérifiée au mieux (--ssl-revoke-best-effort) : Schannel refuse sinon toute connexion dont la
-// révocation ne se vérifie pas (antivirus qui inspecte le HTTPS, OCSP bloqué ; A06-13). Rien ailleurs.
+// révocation ne se vérifie pas (antivirus qui inspecte le HTTPS, OCSP bloqué ; A06-13). Sous Linux, le proxy
+// manuel de KDE (kde_proxy).
 std::vector<std::string> curl_system_args(std::string_view url = {});
 // L'hôte d'une URL (« github.com » pour « https://github.com/x »), vide sans « :// » : le proxy se demande
 // pour lui.
@@ -38,6 +39,12 @@ std::string url_host(std::string_view url);
 // Le proxy manuel de Windows (« hôte:port », ou la valeur https= d'une liste par protocole) ; rien sans proxy
 // manuel ou hors Windows. Exposé pour les tests.
 std::optional<std::string> proxy_from_setting(std::string_view setting);
+// Le proxy manuel réglé dans KDE (C34-12), lu dans le texte de ~/.config/kioslaverc : groupe
+// [Proxy Settings], ProxyType=1, httpsProxy (sinon httpProxy), que KDE écrit « http://hôte 3128 ». Rien pour
+// un autre type (aucun, script PAC, détection, variables d'environnement, que curl lit déjà). Une session KDE
+// n'exporte pas ce réglage aux applications lancées du menu : sans lui, les téléchargements échouaient
+// derrière un proxy d'entreprise sous CachyOS et passaient sous Windows. Pur.
+std::optional<std::string> kde_proxy(std::string_view kioslaverc);
 
 // Lance spec et attend sa fin ; refus Cancelled, DecodeFailed (code non nul : what, la fin et
 // la dernière ligne), ceux du lanceur.

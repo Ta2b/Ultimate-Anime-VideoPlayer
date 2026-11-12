@@ -51,10 +51,12 @@ std::optional<ContentPeak> content_peak(SDL_Window* window, const DisplaySdl& sd
 // système, pour qu'un test la tienne (A11-12).
 struct PeakFacts {
   bool windows = false;
-  bool sdl_hdr = false;                     // SDL dit le HDR actif, avec une marge au-dessus de 1
-  double headroom = 1.0;                    // la marge HDR de SDL
-  double sdr_white_nits = 203.0;            // Windows : le curseur « luminosité du contenu SDR »
-  bool system_hdr_active = false;           // Windows : « Utiliser le HDR », que SDL ne voit pas toujours
+  bool sdl_hdr = false;           // SDL dit le HDR actif, avec une marge au-dessus de 1
+  double headroom = 1.0;          // la marge HDR de SDL
+  double sdr_white_nits = 203.0;  // Windows : le curseur « luminosité du contenu SDR »
+  // Le système dit le HDR actif, ce que SDL ne voit pas toujours : « Utiliser le HDR » sous Windows,
+  // « highDynamicRange » de la sortie dans le fichier de KWin sous Linux (C34-09).
+  bool system_hdr_active = false;
   std::optional<double> edid_peak;          // la crête que l'EDID annonce
   std::optional<double> system_peak;        // le pic calibré du système (system_peak_nits)
   std::optional<double> system_full_frame;  // Windows : son plein champ (DXGI)

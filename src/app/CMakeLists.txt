@@ -6,11 +6,11 @@
 # threads source, gpu, audio et subs, horloge audio maîtresse).
 ajp_add_module(app
   SOURCES
-    play/apple_model.cpp play/auto_bench.cpp play/auto_bench_run.cpp play/machine_calibration.cpp play/settings_bench_results.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/auto_watch.cpp play/backend_library.cpp play/bench_events.cpp play/pumped_task.cpp play/single_instance.cpp play/bridges.cpp play/subtitle_lead.cpp play/edition_plan.cpp play/build_progress.cpp play/chain.cpp play/chain_hdr.cpp play/chain_shots.cpp play/chain_setup.cpp play/chain_half.cpp play/chain_rife.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/anime4k_choice.cpp play/chain_upscaler.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/crash_dump.cpp play/problem_report.cpp play/settings_changes.cpp play/chain_shape.cpp play/default_player.cpp play/data_dirs.cpp play/derived_model.cpp play/span_derive.cpp play/span_commit.cpp play/span_fp16_engine.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_cuda_arch.cpp play/engine_space.cpp play/engine_retry.cpp play/engine_vendor.cpp play/engine_versions.cpp play/engine_online.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/updater_state.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/first_run_wizard.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/host_choices.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/host_facts.cpp play/window_vrr.cpp play/system_peak.cpp play/system_language.cpp play/release_refresh.cpp play/resource_usage.cpp play/display_probe.cpp play/display_follow.cpp play/player_probe.cpp play/invalid_copies.cpp play/chain_retreat.cpp play/player_notices.cpp
+    play/apple_model.cpp play/auto_bench.cpp play/auto_bench_run.cpp play/machine_calibration.cpp play/settings_bench_results.cpp play/bench_steps.cpp play/span_auto.cpp play/auto_config.cpp play/auto_watch.cpp play/backend_library.cpp play/bench_events.cpp play/pumped_task.cpp play/single_instance.cpp play/bridges.cpp play/subtitle_lead.cpp play/edition_plan.cpp play/build_progress.cpp play/chain.cpp play/chain_hdr.cpp play/chain_shots.cpp play/chain_setup.cpp play/chain_half.cpp play/chain_rife.cpp play/chain_stats.cpp play/look_catalog.cpp play/model_choice.cpp play/anime4k_choice.cpp play/chain_upscaler.cpp play/chapters.cpp play/controls.cpp play/controls_draw.cpp play/controls_icons.cpp play/crash_dump.cpp play/problem_report.cpp play/settings_changes.cpp play/chain_shape.cpp play/default_player.cpp play/data_dirs.cpp play/derived_model.cpp play/span_derive.cpp play/span_commit.cpp play/span_fp16_engine.cpp play/span_int8.cpp play/display_edid.cpp play/drba_model.cpp play/engine_build.cpp play/episodes.cpp play/engine_downloads.cpp play/engine_install.cpp play/engine_cuda_arch.cpp play/engine_space.cpp play/engine_retry.cpp play/engine_vendor.cpp play/engine_versions.cpp play/engine_online.cpp play/engine_screen.cpp play/engine_switch.cpp play/ed25519.cpp play/engine_tools.cpp play/updater.cpp play/updater_state.cpp play/export_job.cpp play/export_run.cpp play/export_sink.cpp play/first_run.cpp play/first_run_wizard.cpp play/wizard.cpp play/gpu_tier.cpp "${CMAKE_CURRENT_BINARY_DIR}/gpu_tiers_data.cpp" play/home_screen.cpp play/host_choices.cpp play/i18n.cpp play/i18n_fr.cpp play/i18n_fr_settings.cpp play/i18n_fr_image.cpp play/i18n_fr_sound.cpp play/i18n_fr_system.cpp play/i18n_fr_wizard.cpp play/i18n_fr_messages.cpp play/i18n_fr_stats.cpp play/i18n_fr_visible.cpp play/home_view.cpp play/host_facts.cpp play/window_vrr.cpp play/system_peak.cpp play/system_language.cpp play/release_refresh.cpp play/resource_usage.cpp play/display_probe.cpp play/display_follow.cpp play/display_gpu.cpp play/player_probe.cpp play/invalid_copies.cpp play/chain_retreat.cpp play/player_notices.cpp
 
 
     play/external_subtitles.cpp play/frame_queue.cpp play/frame_stats.cpp play/gpu_telemetry.cpp play/input.cpp play/motion_model.cpp play/options.cpp play/osd_text.cpp play/pipeline.cpp
-    play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_cache.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
+    play/placebo_export.cpp play/placebo_export_vulkan.cpp play/placebo_grade.cpp play/placebo_imgui.cpp play/placebo_open.cpp play/placebo_cache.cpp play/placebo_present.cpp play/placebo_feedback.cpp play/placebo_wayland.cpp play/wayland_activation.cpp play/wayland_output.cpp play/ring_watcher.cpp play/placebo_overlays.cpp play/placebo_ring.cpp play/placebo_offscreen.cpp play/placebo_screen.cpp
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/player_after.cpp play/latest_writer.cpp play/loop_wait.cpp
 
     play/anime_shots.cpp play/gpu_profile_out.cpp play/display_contract.cpp play/cut_book.cpp play/pair_marks.cpp play/user_keys.cpp play/resume.cpp
@@ -35,24 +35,30 @@ add_custom_command(
 if(WIN32)
   target_link_libraries(ajp_app PRIVATE setupapi dxgi advapi32 shell32 shlwapi winmm user32 dbghelp winhttp ole32)
 endif()
-# wp_presentation (placebo_wayland.cpp) : le code client du protocole, produit par wayland-scanner depuis
-# third_party/wayland-protocols/presentation-time.xml.
+# wp_presentation (placebo_wayland.cpp) et xdg_activation_v1 (wayland_activation.cpp, C34-15) : le code
+# client des protocoles, produit par wayland-scanner depuis third_party/wayland-protocols/.
 if(TARGET ajp::dep::wayland)
-  set(ajp_wl_xml "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/presentation-time.xml")
   set(ajp_wl_dir "${CMAKE_CURRENT_BINARY_DIR}/wayland")
-  add_custom_command(
-    OUTPUT "${ajp_wl_dir}/presentation-time-client.h" "${ajp_wl_dir}/presentation-time-protocol.c"
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${ajp_wl_dir}"
-    COMMAND "${AJP_WAYLAND_SCANNER}" client-header "${ajp_wl_xml}" "${ajp_wl_dir}/presentation-time-client.h"
-    COMMAND "${AJP_WAYLAND_SCANNER}" private-code "${ajp_wl_xml}" "${ajp_wl_dir}/presentation-time-protocol.c"
-    DEPENDS "${ajp_wl_xml}"
-    COMMENT "wayland-scanner : presentation-time"
-    VERBATIM)
-  add_library(ajp_wayland_presentation STATIC "${ajp_wl_dir}/presentation-time-protocol.c")
+  set(ajp_wl_code "")
+  set(ajp_wl_headers "")
+  foreach(ajp_wl_name IN ITEMS presentation-time xdg-activation-v1)
+    set(ajp_wl_xml "${PROJECT_SOURCE_DIR}/third_party/wayland-protocols/${ajp_wl_name}.xml")
+    add_custom_command(
+      OUTPUT "${ajp_wl_dir}/${ajp_wl_name}-client.h" "${ajp_wl_dir}/${ajp_wl_name}-protocol.c"
+      COMMAND "${CMAKE_COMMAND}" -E make_directory "${ajp_wl_dir}"
+      COMMAND "${AJP_WAYLAND_SCANNER}" client-header "${ajp_wl_xml}" "${ajp_wl_dir}/${ajp_wl_name}-client.h"
+      COMMAND "${AJP_WAYLAND_SCANNER}" private-code "${ajp_wl_xml}" "${ajp_wl_dir}/${ajp_wl_name}-protocol.c"
+      DEPENDS "${ajp_wl_xml}"
+      COMMENT "wayland-scanner : ${ajp_wl_name}"
+      VERBATIM)
+    list(APPEND ajp_wl_code "${ajp_wl_dir}/${ajp_wl_name}-protocol.c")
+    list(APPEND ajp_wl_headers "${ajp_wl_dir}/${ajp_wl_name}-client.h")
+  endforeach()
+  add_library(ajp_wayland_presentation STATIC ${ajp_wl_code})
   set_target_properties(ajp_wayland_presentation PROPERTIES LINKER_LANGUAGE C POSITION_INDEPENDENT_CODE ON)
   target_include_directories(ajp_wayland_presentation SYSTEM PUBLIC "${ajp_wl_dir}")
   target_link_libraries(ajp_wayland_presentation PUBLIC ajp::dep::wayland)
-  target_sources(ajp_app PRIVATE "${ajp_wl_dir}/presentation-time-client.h")
+  target_sources(ajp_app PRIVATE ${ajp_wl_headers})
   target_link_libraries(ajp_app PRIVATE ajp_wayland_presentation)
   target_compile_definitions(ajp_app PRIVATE AJP_WITH_WAYLAND_PRESENTATION=1)
 endif()

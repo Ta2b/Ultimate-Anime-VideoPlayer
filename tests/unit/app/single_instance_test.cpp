@@ -51,6 +51,29 @@ TEST_CASE("Instance unique : un second lancement passe sa vidéo au premier, qui
   CHECK_FALSE(shares_instance(scripted));
 }
 
+TEST_CASE(
+    "Instance unique : le jeton d'activation suit les fichiers, lisible par un lecteur plus ancien (C34-15)",
+    "[app][instance]") {
+  const std::string message = instance_message({"/a.mkv", "/b.mkv"}, "jeton-42");
+  CHECK(instance_message_files(message) == std::vector<std::string>{"/a.mkv", "/b.mkv"});
+  CHECK(instance_message_token(message) == "jeton-42");
+  CHECK(message.ends_with("\n\n"));  // un lecteur plus ancien le tient pour complet
+  // Sans fichier (l'icône relancée), le jeton passe aussi.
+  const std::string alone = instance_message({}, "jeton-7");
+  CHECK(instance_message_files(alone).empty());
+  CHECK(instance_message_token(alone) == "jeton-7");
+  // Sans jeton, le message d'avant, à l'octet près.
+  CHECK(instance_message({"/a.mkv"}) == "/a.mkv\n\n");
+  CHECK(instance_message_token("/a.mkv\n\n").empty());
+  CHECK(instance_message_token("/a.mkv\n\nactivation=coupé").empty());
+  // Reçu par push_forwarded_files, le jeton est pris une fois par la fenêtre.
+  REQUIRE(SDL_Init(SDL_INIT_EVENTS));
+  CHECK(push_forwarded_files({"/a.mkv"}, "jeton-9"));
+  CHECK(take_forwarded_activation() == "jeton-9");
+  CHECK(take_forwarded_activation().empty());
+  SDL_Quit();
+}
+
 TEST_CASE("Instance unique : deux lancements simultanés, un seul prend la place (A19-13)",
           "[app][instance]") {
   REQUIRE(SDL_Init(SDL_INIT_EVENTS));

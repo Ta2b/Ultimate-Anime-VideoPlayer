@@ -133,9 +133,11 @@ std::filesystem::path layer_info_for(const std::filesystem::path& engine) {
   return info;
 }
 
-std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings) {
+std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings,
+                                           int cuda_device) {
   std::vector<std::string> args{"--onnx=" + ansi_safe_path(paths.onnx),
                                 "--saveEngine=" + ansi_safe_path(paths.engine)};
+  if (cuda_device >= 0) args.push_back(std::format("--device={}", cuda_device));
   for (auto&& word : std::views::split(command_settings, ' ')) {
     if (!word.empty()) args.emplace_back(word.begin(), word.end());
   }
@@ -145,6 +147,18 @@ std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::strin
   }
   args.push_back("--timingCacheFile=" + ansi_safe_path(paths.timing_cache));
   return args;
+}
+
+std::optional<std::string> trtexec_selected_device(std::string_view line) {
+  constexpr std::string_view kKey = "Selected Device:";
+  const std::size_t at = line.find(kKey);
+  if (at == std::string_view::npos) return std::nullopt;
+  std::string_view name = line.substr(at + kKey.size());
+  while (!name.empty() && (name.front() == ' ' || name.front() == '\t')) name.remove_prefix(1);
+  while (!name.empty() && (name.back() == ' ' || name.back() == '\r' || name.back() == '\t'))
+    name.remove_suffix(1);
+  if (name.empty()) return std::nullopt;
+  return std::string(name);
 }
 
 LayerCounts layer_counts(std::string_view json) {

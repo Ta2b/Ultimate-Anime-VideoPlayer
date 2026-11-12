@@ -17,6 +17,7 @@ namespace ajp::app::play {
 struct KwinOutput {
   std::optional<double> peak_override;
   std::optional<double> reference;
+  bool hdr = false;  // « highDynamicRange » : KWin envoie du HDR à cette sortie (C34-09)
 };
 // Le pic vu par le contenu sur l'écran de la fenêtre (content_peak, host_facts.h) et d'où il vient (C11-09) :
 // Compositor seulement pour le pic que le système a calibré (DXGI, KDE), Headroom pour la marge de SDL

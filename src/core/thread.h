@@ -67,13 +67,15 @@ class ThreadReport {
   std::function<void(const Refusal&)> sink_;
 };
 
-// Le nom d'un thread donné au système (Nsight, gdb, vidages de plantage) : core_os installe celui de la
+// Ce que le système fait au début de chaque thread de module, avant son corps : core_os installe celui de la
 // plateforme (install_system_thread_names, thread_role.h), le cœur ne dépend d'aucun en-tête du système
-// (A20-11). Nul : les threads restent anonymes.
-using ThreadNamer = void (*)(const char* name) noexcept;
-inline std::atomic<ThreadNamer>& thread_namer() noexcept {
-  static std::atomic<ThreadNamer> namer{nullptr};
-  return namer;
+// (A20-11). Il donne le nom du thread au système (Nsight, gdb, vidages de plantage ; name nul : pas de nom),
+// rend sous Linux la priorité d'avant la hausse du thread principal, qui sinon passe à tout thread créé
+// ensuite (C34-01), et réserve sous Windows la pile du gestionnaire de plantage (C34-05). Nul : rien.
+using ThreadStart = void (*)(const char* name) noexcept;
+inline std::atomic<ThreadStart>& thread_start() noexcept {
+  static std::atomic<ThreadStart> start{nullptr};
+  return start;
 }
 
 // Le corps d'un thread : il tourne jusqu'à la demande d'arrêt ou sa propre fin.
@@ -81,8 +83,8 @@ template <class Body>
 concept ThreadBody =
     std::move_constructible<Body> && std::invocable<Body&, const std::stop_token&, const ThreadReport&>;
 
-// Lance body(stop, report) sur un std::jthread nommé name (« source », « audio »…), nom donné au système
-// quand thread_namer est posé.
+// Lance body(stop, report) sur un std::jthread nommé name (« source », « audio »…), préparé par thread_start
+// quand il est posé (nom, priorité de base).
 // Refus : rapporteur absent (FieldMissing), thread refusé par le système (ThreadUnavailable).
 // Un refus de démarrage détruit body sans l'avoir appelé.
 template <ThreadBody Body>
@@ -96,7 +98,7 @@ std::expected<std::jthread, Refusal> start_thread(std::string_view name, ThreadR
     return std::jthread([label = std::string(name), where = std::format("thread {}", name),
                          report = std::move(report),
                          body = std::move(body)](const std::stop_token& stop) mutable noexcept {
-      if (const ThreadNamer namer = thread_namer().load(std::memory_order_acquire)) namer(label.c_str());
+      if (const ThreadStart start = thread_start().load(std::memory_order_acquire)) start(label.c_str());
       try {
         body(stop, std::as_const(report));
       } catch (...) {
@@ -119,13 +121,23 @@ std::expected<std::jthread, Refusal> start_thread(std::string_view name, ThreadR
 // Deux choses à savoir (A20-05) : la destruction du dernier futur ATTEND la fin de la tâche (règle de
 // std::async), donc une tâche longue reçoit un arrêt avant que son propriétaire ne la lâche ; et sous MSVC la
 // tâche tourne sur le pool de Windows, sur un thread réutilisé : elle ne pose ni rôle (set_thread_role) ni
-// thread_local qui lui survivrait. Pour un travail long ou de fond, start_thread.
+// thread_local qui lui survivrait. Pour un travail long ou de fond, start_thread. Comme start_thread, la
+// tâche passe d'abord par thread_start (priorité de base, C34-01), sans nom sur le pool de Windows.
 template <class T, class Fn>
 std::shared_ptr<std::future<std::expected<T, Refusal>>> start_task(std::string_view name, Fn fn) noexcept {
   using Result = std::expected<T, Refusal>;
   try {
-    return std::make_shared<std::future<Result>>(
-        std::async(std::launch::async, [where = std::format("tâche {}", name), fn = std::move(fn)]() mutable {
+    return std::make_shared<std::future<Result>>(std::async(
+        std::launch::async,
+        [label = std::string(name), where = std::format("tâche {}", name), fn = std::move(fn)]() mutable {
+          if (const ThreadStart start = thread_start().load(std::memory_order_acquire)) {
+#if defined(_MSC_VER)
+            static_cast<void>(label);
+            start(nullptr);  // un thread du pool, réutilisé : il ne garde pas le nom d'une tâche
+#else
+            start(label.c_str());
+#endif
+          }
           try {
             return Result(fn());
           } catch (...) {

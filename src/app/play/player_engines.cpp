@@ -1,6 +1,7 @@
 #include "app/play/player_engines.h"
 
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <format>
@@ -172,6 +173,18 @@ Refusal dropped_video_refusal() {
                  .key = std::string(kDroppedVideoKey)};
 }
 
+namespace {
+
+// TensorRT ouvert avec une seule voie de calcul, faute de mémoire vidéo libre (C37-04) : dit à l'écran une
+// fois, au début de la lecture suivante.
+std::atomic<bool> g_single_lane{false};
+
+}  // namespace
+
+bool take_single_lane_notice() {
+  return g_single_lane.exchange(false);
+}
+
 gpu::BackendLog backend_log() {
   return [channel = log_channel("backend")](gpu::BackendLogLevel level, std::string_view message) {
     switch (level) {
@@ -182,6 +195,11 @@ gpu::BackendLog backend_log() {
         channel->info("{}", message);
         // La version de TensorRT sur la carte, en tête du rapport (B39-02) : la fin du journal la perd.
         if (message.starts_with("TensorRT ")) note_report_fact("TensorRT", readable_trt_version(message));
+        // Le début de la phrase de tensorrt_lanes.cpp (create_lanes) : au rapport et à l'écran (C37-04).
+        if (message.starts_with("une seule voie de calcul")) {
+          note_report_fact("Voies TensorRT", message);
+          g_single_lane = true;
+        }
         break;
       case gpu::BackendLogLevel::Warn:
         channel->warn("{}", message);

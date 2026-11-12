@@ -87,7 +87,17 @@ inline std::string command_line_version() {
 // ne changent ni les tactiques ni la précision, et un moteur déjà construit reste valable.
 // --avgTiming n'y est pas : trtexec 11 en fait déjà 8 mesures par tactique (sampleOptions.h,
 // defaultAvgTiming), ce que l'étude croyait à 1.
-std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings);
+// cuda_device (C37-01) : l'ordinal CUDA de la carte du rendu, que le backend a choisie par UUID ; trtexec
+// construit sinon sur l'appareil 0, qui n'est pas forcément elle (deux cartes NVIDIA, eGPU) : le moteur,
+// nommé pour la carte du rendu, était refusé au chargement et le cache de temps rempli des tactiques de
+// l'autre. trtexec hérite de l'environnement du lecteur (CUDA_VISIBLE_DEVICES, CUDA_DEVICE_ORDER) : il
+// numérote les cartes comme lui. Négatif : aucun appareil demandé (outils, tests).
+std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::string_view command_settings,
+                                           int cuda_device = -1);
+
+// La carte sur laquelle trtexec dit construire (« [I] Selected Device: NVIDIA GeForce RTX 4070 ») ; rien si
+// la ligne n'est pas celle-là. Le constructeur la compare à la carte du rendu (C37-01).
+std::optional<std::string> trtexec_selected_device(std::string_view line);
 
 // Le trtexec que le moteur lance (P1.21) : celui posé à côté du module, pris seulement si son SHA-256
 // est celui relevé à la construction du module ; sinon `fallback`, le trtexec du poste de

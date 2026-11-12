@@ -98,6 +98,23 @@ TEST_CASE("TrtexecBuilder : RIFE garde ses îlots FP32, drapeaux TRT 11 retirés
   CHECK(bench.plan(shapes).command.removed.size() == 3);
 }
 
+TEST_CASE("TrtexecBuilder : trtexec construit sur la carte du rendu, pas sur l'appareil 0 (C37-01)",
+          "[prepare][builder]") {
+  Bench bench("ok");
+  bench.config.device.name = "Autre RTX";  // la carte du rendu est l'appareil CUDA 1
+  Steps steps;
+  auto progress = steps.progress();
+  // Sans ordinal, trtexec prend l'appareil 0 : le moteur serait celui d'une autre carte, il n'est pas publié.
+  CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
+        RefusalCode::DeviceMismatch);
+  CHECK_FALSE(test::fs::exists(bench.plan(kHd).engine));
+  bench.config.cuda_device = 1;
+  auto again = steps.progress();
+  REQUIRE(TrtexecBuilder(bench.config).build(bench.model, kHd, again));
+  const std::vector<std::string> args = bench.logged_args(kHd);
+  CHECK(std::ranges::find(args, "--device=1") != args.end());
+}
+
 TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'est publié",
           "[prepare][builder]") {
   const auto [mode, code, timeout] =

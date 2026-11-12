@@ -119,3 +119,19 @@ TEST_CASE("Énergie : millijoules par image neuve, compteur absent ou qui recule
   CHECK_FALSE(millijoules_per_frame(1000, 1000, 100));
   CHECK_FALSE(millijoules_per_frame(1000, 3400, 0));
 }
+
+TEST_CASE("Smooth Motion : grisé hors RTX 40 et 50 et sous le pilote 580.82.07 (C37-03)", "[app][gpu]") {
+  using ajp::app::play::smooth_motion_block;
+  using ajp::app::play::SmoothMotionBlock;
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 4070 Ti", "580.82.07") == SmoothMotionBlock::None);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 5090", "590.44.01") == SmoothMotionBlock::None);
+  CHECK(smooth_motion_block("NVIDIA RTX 2000 Ada Generation", "580.95.05") == SmoothMotionBlock::None);
+  CHECK(smooth_motion_block("NVIDIA RTX PRO 6000 Blackwell", "580.95.05") == SmoothMotionBlock::None);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 3060", "580.95.05") == SmoothMotionBlock::Gpu);
+  CHECK(smooth_motion_block("NVIDIA GeForce GTX 1660 SUPER", "580.95.05") == SmoothMotionBlock::Gpu);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 2080", "580.95.05") == SmoothMotionBlock::Gpu);
+  CHECK(smooth_motion_block("NVIDIA RTX A4000", "580.95.05") == SmoothMotionBlock::Gpu);
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 4080", "575.64.05") == SmoothMotionBlock::Driver);
+  // Pilote inconnu : rien n'est grisé pour lui.
+  CHECK(smooth_motion_block("NVIDIA GeForce RTX 4080", "") == SmoothMotionBlock::None);
+}

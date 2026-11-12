@@ -18,6 +18,7 @@
 #include <windows.h>
 #else
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
@@ -44,6 +45,8 @@ constexpr std::string_view kAck = "ok\n";
 constexpr auto kAckWait = std::chrono::seconds(3);
 constexpr auto kSlice = std::chrono::milliseconds(100);
 
+constexpr std::string_view kActivationPrefix = "activation=";
+
 bool message_complete(std::string_view message) {
   return message == "\n" || message.ends_with("\n\n") || message.size() >= kMaxMessage;
 }
@@ -52,7 +55,23 @@ bool message_complete(std::string_view message) {
 
 // Les fichiers reçus vont dans la file de SDL comme un glisser-déposer ; SDL garde le pointeur jusqu'à la
 // lecture de l'événement, les textes restent donc ici (quelques chemins par session).
-bool push_forwarded_files(const std::vector<std::string>& files) {
+namespace {
+
+std::mutex g_activation_mutex;
+std::string g_activation;  // le dernier jeton reçu, pris par la fenêtre (raise_for_forwarded)
+
+}  // namespace
+
+std::string take_forwarded_activation() {
+  const std::scoped_lock lock(g_activation_mutex);
+  return std::exchange(g_activation, {});
+}
+
+bool push_forwarded_files(const std::vector<std::string>& files, std::string_view activation_token) {
+  if (!activation_token.empty()) {
+    const std::scoped_lock lock(g_activation_mutex);
+    g_activation = activation_token;
+  }
   static std::mutex mutex;
   static std::deque<std::string> held;
   const std::scoped_lock lock(mutex);
@@ -83,18 +102,23 @@ namespace {
 // les fichiers dans la file, sinon il ouvre lui-même sa fenêtre. Un lecteur qui démarre encore (SDL pas
 // prêt avant la fin de l'attente de l'autre côté) répond tout de suite et remet les fichiers ensuite.
 template <class Reply>
-void hand_over(const std::vector<std::string>& files, const std::stop_token& stop, Reply reply) {
+void hand_over(std::string_view message, const std::stop_token& stop, Reply reply) {
+  const std::vector<std::string> files = instance_message_files(message);
+  const std::string token = instance_message_token(message);
+  const auto log = log_channel("app");
+  log->info("instance : {} fichier(s) reçu(s) d'un autre lancement{}", files.size(),
+            token.empty() ? "" : ", avec un jeton d'activation");
   const auto until = std::chrono::steady_clock::now() + kAckWait / 2;
   while (!stop.stop_requested() && SDL_WasInit(SDL_INIT_EVENTS) == 0 &&
          std::chrono::steady_clock::now() < until)
     std::this_thread::sleep_for(kSlice);
   if (SDL_WasInit(SDL_INIT_EVENTS) != 0) {
-    if (push_forwarded_files(files)) reply();
+    if (push_forwarded_files(files, token)) reply();
     return;
   }
   reply();
   while (!stop.stop_requested() && SDL_WasInit(SDL_INIT_EVENTS) == 0) std::this_thread::sleep_for(kSlice);
-  if (!stop.stop_requested()) push_forwarded_files(files);
+  if (!stop.stop_requested()) push_forwarded_files(files, token);
 }
 
 }  // namespace
@@ -114,7 +138,7 @@ std::string instance_key(const std::filesystem::path& settings_dir) {
   return std::format("ajp-{:016x}", hash);
 }
 
-std::string instance_message(const std::vector<std::string>& files) {
+std::string instance_message(const std::vector<std::string>& files, std::string_view activation_token) {
   std::string message;
   for (const std::string& file : files) {
     if (file.empty() || file.find('\n') != std::string::npos) continue;
@@ -122,7 +146,29 @@ std::string instance_message(const std::vector<std::string>& files) {
     message += '\n';
   }
   message += '\n';
+  // Le jeton après la ligne vide (C34-15) : un lecteur plus ancien lit les fichiers jusqu'à elle et ignore
+  // la suite, qui finit elle aussi par une ligne vide.
+  if (!activation_token.empty() && activation_token.find('\n') == std::string_view::npos) {
+    message += kActivationPrefix;
+    message += activation_token;
+    message += "\n\n";
+  }
   return message;
+}
+
+std::string instance_message_token(std::string_view message) {
+  // Passer les lignes de fichiers et la ligne vide qui les termine.
+  while (!message.empty()) {
+    const std::size_t end = message.find('\n');
+    if (end == std::string_view::npos) return {};
+    message.remove_prefix(end + 1);
+    if (end == 0) break;
+  }
+  if (!message.starts_with(kActivationPrefix)) return {};
+  message.remove_prefix(kActivationPrefix.size());
+  const std::size_t end = message.find('\n');
+  if (end == std::string_view::npos) return {};  // jeton coupé : ignoré
+  return std::string(message.substr(0, end));
 }
 
 std::vector<std::string> instance_message_files(std::string_view message) {
@@ -211,11 +257,8 @@ class InstanceListener {
         DisconnectNamedPipe(pipe_);
         continue;
       }
-      const auto files = instance_message_files(message);
-      const auto log = log_channel("app");
-      log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
       bool replied = false;
-      hand_over(files, stop, [&] {
+      hand_over(message, stop, [&] {
         DWORD written = 0;
         WriteFile(pipe_, kAck.data(), static_cast<DWORD>(kAck.size()), &written, nullptr);
         FlushFileBuffers(pipe_);
@@ -445,10 +488,7 @@ class InstanceListener {
         message.append(chunk.data(), static_cast<std::size_t>(got));
       }
       if (message.empty()) continue;  // C31-03 : un lecteur relancé qui regarde si le canal est libre
-      const auto files = instance_message_files(message);
-      const auto log = log_channel("app");
-      log->info("instance : {} fichier(s) reçu(s) d'un autre lancement", files.size());
-      hand_over(files, stop, [&] { write_all(client.get(), kAck); });
+      hand_over(message, stop, [&] { write_all(client.get(), kAck); });
     }
   }
 
@@ -458,6 +498,13 @@ class InstanceListener {
 };
 
 namespace {
+
+// Le jeton d'activation que le lanceur (gestionnaire de fichiers, menu) donne à ce lancement (C34-15) : une
+// fenêtre de ce processus n'en aura pas, c'est le lecteur ouvert qui s'en sert.
+std::string launcher_activation_token() {
+  const char* token = std::getenv("XDG_ACTIVATION_TOKEN");  // env: système
+  return token != nullptr ? std::string(token) : std::string();
+}
 
 // Vrai si le lecteur qui tient le socket a accusé réception.
 bool send_files(int fd, const std::string& message) {
@@ -507,7 +554,7 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
           attempt = -1;  // l'ancien lecteur n'est pas encore sorti : un tour de plus
           continue;
         }
-        if (send_files(client.get(), instance_message(files)))
+        if (send_files(client.get(), instance_message(files, launcher_activation_token())))
           return {.forwarded = true, .listener = nullptr};
         const auto log = log_channel("app");
         log->warn("instance : le lecteur ouvert ne répond pas, ce lancement démarre seul");

@@ -27,10 +27,12 @@ int move_diagnostics(const std::filesystem::path& from, const std::filesystem::p
                      const std::function<void(const std::string&)>& said = {});
 
 // Le dossier des caches qui se refont seuls (moteurs construits, modèles dérivés, plans, cache des shaders).
-// Sous Linux, <home>/.cache/ajp : les outils de sauvegarde l'excluent, pas ~/.local/share (A36-08) ;
-// $XDG_CACHE_HOME n'est pas lu (aucune variable d'environnement). Ailleurs, et sans dossier personnel :
-// heavy.
-std::filesystem::path cache_data(const std::filesystem::path& home, const std::filesystem::path& heavy);
+// Sous Linux, <xdg_cache>/ajp, sinon <home>/.cache/ajp : les outils de sauvegarde l'excluent, pas
+// ~/.local/share (A36-08). xdg_cache : $XDG_CACHE_HOME (C34-13), que main lit comme un fait du système (les
+// moteurs TensorRT, plusieurs Gio, suivent le disque que l'utilisateur a choisi pour ses caches) ; un chemin
+// relatif est ignoré, comme la norme XDG le demande. Ailleurs, et sans dossier personnel : heavy.
+std::filesystem::path cache_data(const std::filesystem::path& home, const std::filesystem::path& heavy,
+                                 const std::filesystem::path& xdg_cache = {});
 // Comme move_heavy_data, pour les seules entrées de cache : de heavy vers le dossier de cache_data.
 int move_cache_data(const std::filesystem::path& from, const std::filesystem::path& to,
                     const std::function<void(const std::string&)>& said = {});
