@@ -13,6 +13,8 @@
 
 #include "app/play/i18n.h"
 #include "gpu/span_fp8/derive.h"
+#include "media/track.h"
+#include "media/yuv_sample.h"
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
@@ -118,12 +120,13 @@ std::string refusal_note(const toml::table& receipt, const std::string& where, c
 
 // Étape 3.7b : un paquet admis ne vaut que pour la porte, l'appareil et les noyaux qui l'ont jugé ; sinon il
 // se refait. Une porte plus ancienne n'avait ni mesuré son gain sur le FP16 ni gardé de marge à ses échelles
-// (B02-01, B02-02).
+// (B02-01, B02-02), ou mesurait les deux temps de deux façons, gardait la variante f16 sans gain et ne voyait
+// pas l'écrêtage (porte 4, chantier E01).
 std::optional<SpanInt8Lookup> outdated(const toml::table& receipt, const std::string& where,
                                        const SpanFp8Context& fp8, bool old_gate) {
   if (old_gate)
     return stale(i18n::tr_format(
-        "{}: prepared by an older player, gain over FP16 not measured: prepare it again", where));
+        "{}: prepared by an older player under an older quality and speed gate: prepare it again", where));
   const std::string_view arch = receipt["gpu_arch"].value_or(std::string_view());
   if (arch != fp8.gpu_arch)
     return stale(
@@ -215,6 +218,19 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
     const std::string note = refusal_note(receipt, where, limits, scores, scores_pass, v2);
     return old_gate ? stale(note) : refused(note);
   }
+  // C46-06, C46-17 : un reçu qui n'est pas v2 (INT8, FP8 par Q/DQ, FP8 CUTLASS de l'outil Python) n'a que son
+  // gain mesuré pour garantir qu'il vaut mieux que le FP16. Sans gain (--skip-speed-check, ou pas de trtexec
+  // : speedup = 0) ou sous le seuil, la variante est refusée. Le FP32 (cran Qualité) ne promet aucune
+  // vitesse.
+  if (!v2 && kind != SpanVariantKind::Fp32 && receipt["speedup"].value_or(0.0) < gpu::span_fp8::kMinSpeedup) {
+    const double speedup = receipt["speedup"].value_or(0.0);
+    if (speedup > 0.0)
+      return refused(
+          i18n::tr_format("{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)", where,
+                          speedup, gpu::span_fp8::kMinSpeedup));
+    return refused(
+        i18n::tr_format("{}: gain over FP16 not measured, prepare it again with the speed check", where));
+  }
   if (auto differs =
           package_differs(variant.onnx, receipt["model_sha256"].value_or(std::string_view()), where))
     return *differs;
@@ -246,6 +262,11 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   }
   return SpanInt8Lookup{.variant = variant,
                         .note = std::format("{} ({})", prepare::utf8_path(onnx.filename()), scores)};
+}
+
+bool hdr_source(const media::TrackInfo& video) {
+  const std::optional<ColorInfo> color = media::track_color(video);
+  return color && media::yuv::is_hdr(*color);
 }
 
 std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVariantCaps& caps,

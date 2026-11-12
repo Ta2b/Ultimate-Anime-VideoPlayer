@@ -15,6 +15,7 @@
 
 #include "app/play/backend_library.h"
 #include "app/play/controls_draw.h"
+#include "app/play/engine_retry.h"
 #include "app/play/engine_versions.h"
 #include "app/play/home_screen.h"
 #include "app/play/i18n.h"
@@ -24,6 +25,7 @@
 #include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
+#include "core/settings.h"
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
@@ -134,12 +136,86 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
       continue;
     }
     log->warn("{} not installed: {}", engine_label(row.offer.id), outcome->error().detail);
+    if (install_failure_is_transient(outcome->error().code)) {
+      // Coupure du réseau, 5xx, portail captif : le choix reste, Vulkan prend le relais, le lancement suivant
+      // réessaie (C06-02).
+      ui.controls().defer(i18n::ui_tr_format(
+          "{} not installed: Vulkan instead, the next launch will try again", engine_label(row.offer.id)));
+      engines = postponed_engine(std::move(engines), row.offer.id);
+      continue;
+    }
     ui.controls().defer(
         i18n::ui_tr_format("{} not installed: {}", engine_label(row.offer.id),
                            i18n::tr("Vulkan for now; install it in Settings > General > Engines")));
     engines = without_engine(std::move(engines), row.offer.id);
     if (failed != nullptr) failed->push_back(row.offer.id);
   }
+  return true;
+}
+
+std::expected<bool, Refusal> retry_postponed_installs(PlaceboScreen& screen, PlayerUi& ui,
+                                                      const EngineCatalog& catalog, core::Settings& engines,
+                                                      const std::filesystem::path& engines_path) {
+  const auto log = log_channel("app");
+  bool changed = false;
+  // Écrit le choix quel que soit le chemin de sortie (fenêtre fermée comprise).
+  const auto save = [&] {
+    if (!changed) return;
+    if (auto written = core::save_settings(engines_path, engines); !written)
+      log->warn("{}", written.error().detail);
+  };
+  for (const core::EnginePackage& package : catalog.packages) {
+    if (!is_postponed(engines, package.engine)) continue;
+    recover_interrupted_install(catalog, package);
+    const std::string label(engine_label(package.engine));
+    // Un module déjà là (installé sans que le choix l'ait noté) : rien à télécharger ; son état de version
+    // est celui que update_stale_engines traite ensuite.
+    if (installed_state(catalog, package).state != PackageState::Absent) {
+      engines = installed_engine(std::move(engines), package.engine);
+      changed = true;
+      continue;
+    }
+    const std::filesystem::path marker = retry_marker(catalog.layout.engines, package.engine);
+    if (!retry_install_due(marker)) continue;
+    const std::string arch =
+        effective_cuda_arch(pumped_cuda_arch(screen.device_facts().name), screen.device_facts().name);
+    if (const auto fits = check_space(install_space_in(catalog, package, arch, {}),
+                                      free_bytes(catalog.layout.engines), catalog.layout.engines);
+        !fits) {
+      log->warn("{} non installé : {}", label, fits.error().detail);
+      ui.controls().defer(i18n::ui_tr_format("{} not installed: {}", label, visible_error(fits.error())));
+      continue;
+    }
+    note_install_attempt(marker);
+    log->info("{} : installation reprise (échec passager au lancement précédent)", label);
+    auto outcome =
+        run_install(screen, ui, i18n::ui_tr_format("Installing {}", label),
+                    [&catalog, package](const InstallProgress& progress) -> std::expected<void, Refusal> {
+                      auto library = install_package(catalog, package, progress);
+                      if (!library) return std::unexpected(library.error());
+                      return {};
+                    });
+    if (!outcome) {
+      save();
+      return false;
+    }
+    if (*outcome) {
+      log->info("{} installé", label);
+      engines = installed_engine(std::move(engines), package.engine);
+      changed = true;
+      continue;
+    }
+    log->warn("{} not installed: {}", label, outcome->error().detail);
+    if (install_failure_is_transient(outcome->error().code)) {
+      ui.controls().defer(
+          i18n::ui_tr_format("{} not installed: Vulkan instead, the next launch will try again", label));
+      continue;
+    }
+    ui.controls().defer(i18n::ui_tr_format("{} not installed: {}", label, i18n::tr("Vulkan instead")));
+    engines = without_engine(std::move(engines), package.engine);
+    changed = true;
+  }
+  save();
   return true;
 }
 
@@ -220,6 +296,17 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     }
   }
   return true;
+}
+
+std::expected<bool, Refusal> refresh_chosen_engines(PlaceboScreen& screen, PlayerUi& ui,
+                                                    const EngineCatalog& catalog, core::Settings& engines,
+                                                    const std::filesystem::path& engines_path, bool retry,
+                                                    bool& updated) {
+  if (retry) {
+    auto retried = retry_postponed_installs(screen, ui, catalog, engines, engines_path);
+    if (!retried || !*retried) return retried;
+  }
+  return update_stale_engines(screen, ui, catalog, engines, updated);
 }
 
 }  // namespace ajp::app::play

@@ -44,6 +44,10 @@ std::int64_t Session::display_delay_us(std::int64_t period) const {
   return stats_.render.median() + period / 2 + compositor;
 }
 
+std::int64_t Session::appear_delay_us(std::int64_t period) const {
+  return std::max<std::int64_t>(display_delay_us(period) - period / 2, 0);
+}
+
 void Session::note_queue_wait(std::int64_t acquire_us, std::int64_t period) {
   if (period <= 0) return;
   const double waited = acquire_us > std::max(period / 4, kAcquireBlockedUs) ? 1.0 : 0.0;

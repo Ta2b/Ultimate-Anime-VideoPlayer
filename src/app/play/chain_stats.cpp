@@ -59,14 +59,17 @@ std::vector<EngineBadge> engine_badges(const std::filesystem::path& cache_dir,
     std::string lower_file = file;
     lower_file = core::ascii_lower(lower_file);
     const bool is_rife = lower_file.find("rife") != std::string::npos;
+    // C08-09 : DistilDRBA (entier, mouvement ou fusionné) n'est pas un SPAN.
+    const bool is_drba = lower_file.find("distil_drba") != std::string::npos;
     SpanVariantKind variant_kind = SpanVariantKind::Int8;
     const std::optional<std::string> int8 = span_int8_source(file, &variant_kind);
     const bool loaded =
         std::ranges::any_of(loaded_engines, [&](const LoadedEngine& e) { return built_from(e, past); });
     badges.push_back(EngineBadge{
-        .name = is_rife ? std::format("RIFE · {}", core::to_utf8(past.onnx.stem()))
-                : int8  ? std::format("SPAN · {} · {}", model_label(*int8), variant_text(variant_kind))
-                        : std::format("SPAN · {}", model_label(file)),
+        .name = is_rife   ? std::format("RIFE · {}", core::to_utf8(past.onnx.stem()))
+                : is_drba ? std::format("DistilDRBA · {}", core::to_utf8(past.onnx.stem()))
+                : int8    ? std::format("SPAN · {} · {}", model_label(*int8), variant_text(variant_kind))
+                          : std::format("SPAN · {}", model_label(file)),
         .detail = i18n::tr_format("input {}x{} · built in {:.0f} s", past.width, past.height, past.seconds),
         .loaded = loaded});
   }
@@ -178,8 +181,9 @@ void log_gpu_warning(const std::string& warning, const std::string& line) {
 }  // namespace
 
 std::optional<std::string> ChainStats::read_gpu() const {
-  if (telemetry_ == nullptr) return std::nullopt;
-  const std::optional<GpuSample> sample = telemetry_->sample(host_now_us());
+  GpuTelemetry* const telemetry = telemetry_ != nullptr ? telemetry_->get() : nullptr;
+  if (telemetry == nullptr) return std::nullopt;
+  const std::optional<GpuSample> sample = telemetry->sample(host_now_us());
   if (!sample) return std::nullopt;
   std::string line = telemetry_line(*sample);
   const std::string warning = telemetry_warning(*sample);

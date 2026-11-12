@@ -20,7 +20,9 @@ inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7
 // synthétiques ne décident plus (séance de mesure).
 // 3 : centiles réglés sur la RTX 4070 Ti. 4 : gain sur le SPAN FP16 de TensorRT mesuré et exigé, échelles
 // avec marge de tête (B02-01, B02-02) ; un paquet d'une porte plus ancienne, même passé, se refait.
-inline constexpr int kGateVersion = 4;
+// 5 : temps du FP8 et du FP16 de TensorRT pris de la même façon et à la taille de travail, variante f16
+// gardée seulement si elle gagne, écrêtage des images de validation refusé (chantier E01).
+inline constexpr int kGateVersion = 5;
 // Le reçu de tools/span/derive_span_fp8.py, encore lu (app/play/span_int8.cpp).
 inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
@@ -44,6 +46,13 @@ inline constexpr double kMinSpeedup = 1.05;
 inline constexpr float kScaleHeadroom = 1.25F;
 // Étape 3.5a : l'accumulateur f16 hors blocs ne coûte pas plus que ceci au PSNR moyen.
 inline constexpr double kMaxAcc16PsnrLossDb = 0.3;
+// C02-03 : et il n'est gardé que s'il va au moins ce rapport plus vite que l'accumulateur f32, mesuré sur
+// cette carte et à cette taille ; sinon sa perte ne s'achète par rien.
+inline constexpr double kMinAcc16Gain = 0.02;
+// C02-11 : la découpe des images de la dérivation, au centre : au plus ceci (media::StillsSpec la reprend,
+// app/play/span_derive.cpp). La qualité se juge sur elle ; le temps, à la taille de travail entière (C02-05).
+inline constexpr int kCropMaxWidth = 1920;
+inline constexpr int kCropMaxHeight = 1088;
 
 // Les échelles des 1 + 3·blocks tenseurs quantifiés d'après les maxima observés : maximum × kScaleHeadroom /
 // 448 (peaks garde
@@ -71,6 +80,9 @@ struct Verdict {
   double hard_psnr_worst_db = 0.0;
   double hard_error_p999_worst = 0.0;  // les cas durs : relevés, sans décider
   int hard_images = 0;
+  // C02-04 (judge_peaks) : tenseurs écrêtés sur les images de validation, pire maximum / (448 × échelle).
+  int clipped_tensors = 0;
+  double peak_ratio = 0.0;
 };
 
 // Moyenne et pires valeurs, et leur comparaison aux seuils. Sans image, rien ne passe.
@@ -82,9 +94,17 @@ Verdict judge(std::span<const ImageScore> scores, double min_psnr_mean = kMinPsn
 // décider : leurs seuils n'ont jamais été réglés sur une carte (séance de mesure).
 Verdict judge_hardened(std::span<const ImageScore> scores, std::span<const ImageScore> hard);
 
-// Garder l'accumulateur f16 hors blocs (étape 3.5a) : sa variante passe la porte, la variante f32 aussi, et
-// le PSNR moyen perd au plus kMaxAcc16PsnrLossDb.
-bool keep_acc16(const Verdict& f32, const Verdict& f16);
+// C02-04 : les maxima relevés sur les images de validation (peaks, après la calibration : ils la comprennent)
+// contre 448 × les échelles jugées. Un tenseur au-delà y serait écrêté en silence par les noyaux
+// (__NV_SATFINITE) : le verdict refuse, la calibration n'a pas vu ce que la vidéo montre. Les 1 + 3·blocks
+// premiers comptent.
+void judge_peaks(Verdict& verdict, std::span<const float> peaks, std::span<const float> scales,
+                 std::size_t blocks = kBlocks);
+
+// Garder l'accumulateur f16 hors blocs (étape 3.5a) : sa variante passe la porte, la variante f32 aussi, le
+// PSNR moyen perd au plus kMaxAcc16PsnrLossDb, et elle va au moins kMinAcc16Gain plus vite (C02-03 : temps
+// d'une passe de chacune, mesurés ensemble ; un temps nul ou absent ne garde rien).
+bool keep_acc16(const Verdict& f32, const Verdict& f16, double ms_f32, double ms_f16);
 
 // Le reçu « .toml » : mêmes clés, même ordre et même mise en forme que write_receipt de quantize_span.py
 // (flottants à quatre décimales). Les champs de l'outil Python qu'une dérivation native ne mesure pas
@@ -116,6 +136,11 @@ struct Receipt {
   std::vector<std::string> validated_sizes;  // « 1280x720 » : tailles où la porte a passé
   std::vector<std::string> refused_sizes;    // et où elle a échoué (rien n'est refait à cette taille)
   bool timed_during_playback = false;        // B02-08 : les temps pris pendant la lecture, sous sa charge
+  // Chantier E01 : la taille où les temps ont été pris (la taille de travail), et ce que la variante f16 a
+  // coûté et rapporté quand elle est gardée (0 sinon).
+  std::string timed_size;
+  double acc16_psnr_loss_db = 0.0;
+  double kernels_ms_f32 = 0.0;
 };
 
 std::string receipt_text(const Receipt& receipt, std::string_view comment);
@@ -125,7 +150,9 @@ std::string sizes_line(std::string_view key, const std::vector<std::string>& siz
 // Le texte d'un reçu v2 dont les lignes validated_sizes et refused_sizes sont remplacées (validation seule).
 std::string with_sizes(std::string_view receipt, const std::vector<std::string>& validated,
                        const std::vector<std::string>& refused);
-// « 1280x720 » : la taille de la découpe que la préparation ferait à width × height (kernel_crop).
+// « 2560x1440 » : la taille de travail, ramenée à des nombres pairs (ce que les noyaux prennent). C02-05 :
+// une taille au-delà de la découpe a sa propre clé ; elle se juge sur la découpe, mais se chronomètre
+// entière.
 std::string size_key(int width, int height);
 
 // Les tailles d'image que la dérivation prend : au plus width × height, ramenées à ce que les noyaux
@@ -134,6 +161,6 @@ struct Crop {
   int width = 0;
   int height = 0;
 };
-Crop kernel_crop(int width, int height, int max_width = 1920, int max_height = 1088);
+Crop kernel_crop(int width, int height, int max_width = kCropMaxWidth, int max_height = kCropMaxHeight);
 
 }  // namespace ajp::gpu::span_fp8

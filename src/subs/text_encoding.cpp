@@ -6,6 +6,9 @@
 #include <cstdint>
 #include <initializer_list>
 #include <optional>
+#include <string>
+
+#include "core/text.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -35,38 +38,73 @@ void append(std::string& out, char32_t code) {
   }
 }
 
-// UTF-8 conforme à la RFC 3629 (P3.74) : ni forme trop longue, ni moitié de paire UTF-16, ni code au-delà
-// de U+10FFFF. Le deuxième octet borne ces cas selon l'octet de tête.
+// Longueur de la séquence UTF-8 qui commence à text[i], 0 si elle est invalide. Conforme à la RFC 3629
+// (P3.74) : ni forme trop longue, ni moitié de paire UTF-16, ni code au-delà de U+10FFFF. Le deuxième octet
+// borne ces cas selon l'octet de tête.
+std::size_t utf8_length_at(std::string_view text, std::size_t i) {
+  const auto lead = static_cast<unsigned char>(text[i]);
+  std::size_t extra = 0;
+  unsigned char lo = 0x80;
+  unsigned char hi = 0xBF;
+  if (lead < 0x80) {
+    extra = 0;
+  } else if (lead >= 0xC2 && lead <= 0xDF) {
+    extra = 1;
+  } else if (lead >= 0xE0 && lead <= 0xEF) {
+    extra = 2;
+    if (lead == 0xE0) lo = 0xA0;
+    if (lead == 0xED) hi = 0x9F;
+  } else if (lead >= 0xF0 && lead <= 0xF4) {
+    extra = 3;
+    if (lead == 0xF0) lo = 0x90;
+    if (lead == 0xF4) hi = 0x8F;
+  } else {
+    return 0;
+  }
+  for (std::size_t k = 1; k <= extra; ++k) {
+    if (i + k >= text.size()) return 0;
+    const auto next = static_cast<unsigned char>(text[i + k]);
+    if (k == 1 ? next < lo || next > hi : (next & 0xC0) != 0x80) return 0;
+  }
+  return extra + 1;
+}
+
 bool valid_utf8(std::string_view text) {
-  std::size_t i = 0;
-  while (i < text.size()) {
-    const auto lead = static_cast<unsigned char>(text[i]);
-    std::size_t extra = 0;
-    unsigned char lo = 0x80;
-    unsigned char hi = 0xBF;
-    if (lead < 0x80) {
-      extra = 0;
-    } else if (lead >= 0xC2 && lead <= 0xDF) {
-      extra = 1;
-    } else if (lead >= 0xE0 && lead <= 0xEF) {
-      extra = 2;
-      if (lead == 0xE0) lo = 0xA0;
-      if (lead == 0xED) hi = 0x9F;
-    } else if (lead >= 0xF0 && lead <= 0xF4) {
-      extra = 3;
-      if (lead == 0xF0) lo = 0x90;
-      if (lead == 0xF4) hi = 0x8F;
-    } else {
-      return false;
-    }
-    for (std::size_t k = 1; k <= extra; ++k) {
-      if (i + k >= text.size()) return false;
-      const auto next = static_cast<unsigned char>(text[i + k]);
-      if (k == 1 ? next < lo || next > hi : (next & 0xC0) != 0x80) return false;
-    }
-    i += extra + 1;
+  for (std::size_t i = 0; i < text.size();) {
+    const std::size_t length = utf8_length_at(text, i);
+    if (length == 0) return false;
+    i += length;
   }
   return true;
+}
+
+// Un fichier UTF-8 qui porte quelques octets fautifs (coupure, collage de deux sources) reste de l'UTF-8 :
+// chaque séquence invalide devient U+FFFD (C17-01). Au-delà de 1 % d'octets hauts fautifs, ou sans aucune
+// séquence multi-octets valide, le fichier n'est pas de l'UTF-8 et la devinette d'encodage décide.
+std::optional<std::string> repaired_utf8(std::string_view bytes) {
+  std::string out;
+  out.reserve(bytes.size() + 8);
+  std::size_t high = 0;
+  std::size_t bad = 0;
+  std::size_t good_multibyte = 0;
+  for (std::size_t i = 0; i < bytes.size();) {
+    const std::size_t length = utf8_length_at(bytes, i);
+    if (length == 0) {
+      ++high;
+      ++bad;
+      out += "\xEF\xBF\xBD";
+      ++i;
+      continue;
+    }
+    if (length > 1) {
+      high += length;
+      ++good_multibyte;
+    }
+    out.append(bytes.substr(i, length));
+    i += length;
+  }
+  if (good_multibyte == 0 || bad * 100 > high) return std::nullopt;
+  return out;
 }
 
 // Windows-1252 de 0x80 à 0x9F ; le reste est Latin-1. Les cinq cases non définies donnent U+FFFD.
@@ -216,6 +254,18 @@ std::optional<std::string> decode_legacy(std::string_view bytes, Legacy legacy) 
 #endif
 }
 
+// Un encodage hérité et le texte qu'il a déjà donné : la devinette valide en décodant, le texte n'est pas
+// refait.
+struct Guess {
+  Legacy legacy;
+  std::string text;
+};
+
+std::optional<Guess> try_decode(std::string_view bytes, Legacy legacy) {
+  if (auto text = decode_legacy(bytes, legacy)) return Guess{legacy, *std::move(text)};
+  return std::nullopt;
+}
+
 // Ce que dit un mot du nom de fichier : « ja », « chs », « zh-tw », « cp1251 ». Une langue donne son
 // encodage habituel et, s'il y en a un autre courant, celui-là ; un nom d'encodage n'en donne qu'un.
 struct Hint {
@@ -225,8 +275,7 @@ struct Hint {
 
 std::optional<Hint> hint_word(std::string_view word) {
   std::string h;
-  for (const char c : word)
-    h.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c + 32) : c == '_' ? '-' : c);
+  for (const char c : word) h.push_back(c == '_' ? '-' : core::ascii_lower(c));
   const auto any = [&h](std::initializer_list<std::string_view> names) {
     return std::ranges::find(names, std::string_view(h)) != names.end();
   };
@@ -271,7 +320,7 @@ std::optional<Hint> hinted(std::string_view hint) {
 // Les encodages EUC (A17-03), en paires d'octets de 0xA1 à 0xFE : l'EUC-JP à ses kana (lignes 0xA4 et
 // 0xA5, nombreuses en japonais, absentes du chinois), l'EUC-KR à ses syllabes (têtes de 0xB0 à 0xC8
 // seulement) séparées par des espaces, que le chinois n'a pas.
-std::optional<Legacy> guessed_euc(std::string_view bytes) {
+std::optional<Guess> guessed_euc(std::string_view bytes) {
   std::size_t pairs = 0, kana = 0, hangul = 0, spaced = 0;
   for (std::size_t i = 0; i < bytes.size(); ++i) {
     const auto b = static_cast<unsigned char>(bytes[i]);
@@ -287,9 +336,8 @@ std::optional<Legacy> guessed_euc(std::string_view bytes) {
     if (b >= 0xB0 && b <= 0xC8) ++hangul;
   }
   if (pairs < 4) return std::nullopt;
-  if (kana * 10 >= pairs * 3 && decode_legacy(bytes, kEucJp)) return kEucJp;
-  if (pairs >= 8 && hangul * 20 >= pairs * 19 && spaced * 10 >= pairs && decode_legacy(bytes, kEucKr))
-    return kEucKr;
+  if (kana * 10 >= pairs * 3) return try_decode(bytes, kEucJp);
+  if (pairs >= 8 && hangul * 20 >= pairs * 19 && spaced * 10 >= pairs) return try_decode(bytes, kEucKr);
   return std::nullopt;
 }
 
@@ -325,24 +373,30 @@ HighBytes count_high(std::string_view bytes) {
   return n;
 }
 
-std::optional<Legacy> guessed(std::string_view bytes) {
+std::optional<Guess> guessed(std::string_view bytes) {
   const HighBytes n = count_high(bytes);
   if (n.high < 4 || n.paired * 2 < n.high) return std::nullopt;  // lettres isolées : Europe de l'Ouest
-  if (n.kana * 10 >= n.high && decode_legacy(bytes, kShiftJis)) return kShiftJis;
+  if (n.kana * 10 >= n.high) {
+    if (auto guess = try_decode(bytes, kShiftJis)) return guess;
+  }
   if (auto euc = guessed_euc(bytes)) return euc;
-  if (n.lower_cyr * 10 >= n.high * 6 && decode_legacy(bytes, kCp1251)) return kCp1251;
-  if (n.big5_trail > 0 && decode_legacy(bytes, kBig5)) return kBig5;
-  if (decode_legacy(bytes, kGbk)) return kGbk;
-  if (decode_legacy(bytes, kBig5)) return kBig5;
-  return std::nullopt;
+  if (n.lower_cyr * 10 >= n.high * 6) {
+    if (auto guess = try_decode(bytes, kCp1251)) return guess;
+  }
+  if (n.big5_trail > 0) {
+    if (auto guess = try_decode(bytes, kBig5)) return guess;
+  }
+  if (auto guess = try_decode(bytes, kGbk)) return guess;
+  return try_decode(bytes, kBig5);
 }
 
 // L'indice choisit entre ses encodages celui que la forme des octets suggère ; un indice qui ne décode pas
 // laisse la forme des octets décider (A17-03), pas le Windows-1252.
 std::optional<std::string> decode_guessed(std::string_view bytes, std::string_view hint) {
-  const std::optional<Legacy> guess = guessed(bytes);
+  std::optional<Guess> guess = guessed(bytes);
   if (const std::optional<Hint> h = hinted(hint)) {
-    const bool agrees = guess && (same(*guess, h->first) || (h->second && same(*guess, *h->second)));
+    const bool agrees =
+        guess && (same(guess->legacy, h->first) || (h->second && same(guess->legacy, *h->second)));
     if (!agrees) {
       if (auto text = decode_legacy(bytes, h->first)) return text;
       if (h->second) {
@@ -350,7 +404,7 @@ std::optional<std::string> decode_guessed(std::string_view bytes, std::string_vi
       }
     }
   }
-  if (guess) return decode_legacy(bytes, *guess);
+  if (guess) return std::move(guess->text);
   return std::nullopt;
 }
 
@@ -368,6 +422,7 @@ std::string to_utf8(std::string_view bytes, std::string_view hint) {
   if (const std::optional<bool> big_endian = utf16_without_bom(bytes)) return from_utf16(bytes, *big_endian);
   if (bytes.size() >= 3 && bytes.substr(0, 3) == "\xEF\xBB\xBF") bytes.remove_prefix(3);
   if (valid_utf8(bytes)) return std::string(bytes);
+  if (auto repaired = repaired_utf8(bytes)) return *std::move(repaired);
   if (auto text = decode_guessed(bytes, hint)) return *std::move(text);
   return from_cp1252(bytes);
 }

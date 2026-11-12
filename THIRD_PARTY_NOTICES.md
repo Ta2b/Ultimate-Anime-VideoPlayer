@@ -8,7 +8,7 @@ Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).
 | Modèle | Auteur | Licence | Remarque |
 |---|---|---|---|
 | AnimeJaNai HD V3.1 (SPAN), dossier `onnx/` | the-database | **CC BY-NC-SA 4.0** | Attribution, usage non commercial, partage à l'identique des dérivés (dont les poids quantifiés par `tools/span/quantize_span.py`). https://github.com/the-database/mpv-upscale-2x_animejanai |
-| RIFE 4.25 et 4.22 lite, dossier `rife/` | hzwer (Practical-RIFE) | MIT, © 2021 hzwer | Conversions ONNX fp16 de vs-mlrt, reprises de la release `models-rife-fp16-1` de `the-database/animejanai-inference`. |
+| RIFE 4.25, 4.26, 4.22 lite et 4.25 lite, dossier `rife/` | hzwer (Practical-RIFE) | MIT, © 2021 hzwer | Conversions ONNX fp16 de vs-mlrt (4.25, 4.26, 4.22 lite), reprises de la release `models-rife-fp16-1` de `the-database/animejanai-inference`. 4.25 lite (niveau « Très rapide ») est converti par `tools/rife/convert_rife_fp16.py` de ce dépôt. |
 | DistilDRBA v2 lite, dossier `rife/` | neko (routineLife1) | MIT, © 2025 neko | Converti en ONNX fp16 par `tools/drba/export_distil_drba.py`. Le dépôt DRBA d'origine est aussi sous MIT. |
 
 À noter : l'outil de conversion vs-mlrt (AmusementClub) est sous GPL-3.0 pour son code ; il n'est pas livré, et seuls les fichiers de poids convertis le sont. Le dépôt `animejanai-inference`, d'où vient l'archive RIFE, ne publie aucun fichier de licence : la licence de RIFE reste celle de ses auteurs (MIT).

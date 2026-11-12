@@ -237,6 +237,11 @@ SourceLoop::Progress SourceLoop::route(Packet packet) {
   const auto it = std::ranges::find(links_.packets, packet.track, &PacketRoute::track);
   if (it == links_.packets.end()) return Progress::Moved;  // keep_only l'exclut déjà
   const auto index = static_cast<std::size_t>(it - links_.packets.begin());
+  // C14-01 : l'audio qui finit bien avant la cible d'un seek exact ne sert à rien ; les sous-titres restent
+  // livrés, le rendu a besoin des événements encore en cours.
+  const TrackInfo* info = media_.demuxer.track(packet.track);
+  if (info != nullptr && info->kind == TrackKind::Audio && audio_before_preroll(packet, trim_before_))
+    return Progress::Moved;
   packet.discard_before_us = trim_before_;
   if (auto kept = reserve_.route(index, std::move(packet), epoch_); !kept) {
     fail(kept.error());

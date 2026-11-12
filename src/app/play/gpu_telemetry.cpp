@@ -14,6 +14,7 @@
 
 #include "app/play/i18n.h"
 #include "core/charconv.h"
+#include "core/clock.h"
 #include "core/dir_entries.h"
 #include "core/dynamic_library.h"
 
@@ -102,7 +103,9 @@ std::string take_gpu_range_text() {
 }
 
 std::string telemetry_line(const GpuSample& s) {
-  std::string line = std::format("GPU {} / {} MHz", s.sm_mhz, s.sm_max_mhz);
+  // L'horloge maximale inconnue (appel NVML en échec, C11-12) n'est pas un « / 0 ».
+  std::string line = s.sm_max_mhz > 0 ? std::format("GPU {} / {} MHz", s.sm_mhz, s.sm_max_mhz)
+                                      : std::format("GPU {} MHz", s.sm_mhz);
   if (s.pstate >= 0) line += std::format(" · P{}", s.pstate);
   if (s.power_limit_mw > 0)
     line += std::format(" · {} / {} W", s.power_mw / 1000, s.power_limit_mw / 1000);
@@ -404,34 +407,40 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t host_us, bool fresh) 
     return s;
   }
 #endif
-  i.clock(i.device, kClockSm, &s.sm_mhz);
-  if (i.clock != nullptr) i.clock(i.device, kClockMem, &s.mem_mhz);
-  if (i.max_clock != nullptr) i.max_clock(i.device, kClockSm, &s.sm_max_mhz);
-  if (i.pstate != nullptr) i.pstate(i.device, &s.pstate);
-  if (i.power != nullptr) i.power(i.device, &s.power_mw);
-  if (i.power_limit != nullptr) i.power_limit(i.device, &s.power_limit_mw);
-  if (i.temperature != nullptr) i.temperature(i.device, 0, &s.temperature_c);
-  if (i.utilization != nullptr) {
-    Utilization usage{};
-    if (i.utilization(i.device, &usage) == 0) s.gpu_percent = usage.gpu;
+  // Un champ n'est écrit que si son appel réussit (NVML_SUCCESS, C11-12). L'horloge du cœur en échec (GPU
+  // perdu, pilote en réinitialisation) : aucun relevé, l'OSD se tait au lieu d'afficher des zéros.
+  if (i.clock(i.device, kClockSm, &s.sm_mhz) != 0) {
+    i.last.reset();
+    return std::nullopt;
   }
-  if (i.pcie_generation != nullptr) i.pcie_generation(i.device, &s.pcie_generation);
-  if (i.pcie_width != nullptr) i.pcie_width(i.device, &s.pcie_width);
-  if (i.memory != nullptr) {
-    NvmlMemory memory{};
-    if (i.memory(i.device, &memory) == 0) {
-      s.vram_total_mib = static_cast<unsigned>(memory.total / kMiB);
-      s.vram_used_mib = static_cast<unsigned>(memory.used / kMiB);
-    }
-  }
-  if (i.throttle != nullptr) {
-    unsigned long long mask = 0;
-    if (i.throttle(i.device, &mask) == 0) s.throttle = mask;
-  }
-  if (i.energy != nullptr) {
-    unsigned long long total = 0;
-    if (i.energy(i.device, &total) == 0) s.energy_mj = total;
-  }
+  const auto read = [&](auto fn, auto& into, auto... args) {
+    std::remove_reference_t<decltype(into)> value{};
+    if (fn != nullptr && fn(i.device, args..., &value) == 0) into = value;
+  };
+  read(i.clock, s.mem_mhz, kClockMem);
+  read(i.max_clock, s.sm_max_mhz, kClockSm);
+  int pstate = -1;
+  read(i.pstate, pstate);
+  // P0 à P15 ; NVML_PSTATE_UNKNOWN (32) reste inconnu, et non « P32 ».
+  if (pstate >= 0 && pstate <= 15) s.pstate = pstate;
+  read(i.power, s.power_mw);
+  read(i.power_limit, s.power_limit_mw);
+  read(i.temperature, s.temperature_c, 0);
+  Utilization usage{};
+  read(i.utilization, usage);
+  s.gpu_percent = usage.gpu;
+  read(i.pcie_generation, s.pcie_generation);
+  if (s.pcie_generation > 0) read(i.pcie_width, s.pcie_width);
+  NvmlMemory memory{};
+  read(i.memory, memory);
+  s.vram_total_mib = static_cast<unsigned>(memory.total / kMiB);
+  s.vram_used_mib = static_cast<unsigned>(memory.used / kMiB);
+  unsigned long long mask = 0;
+  read(i.throttle, mask);
+  s.throttle = mask;
+  unsigned long long total = 0;
+  read(i.energy, total);
+  s.energy_mj = total;
   i.last = s;
   i.last_us = host_us;
   return s;
@@ -450,5 +459,16 @@ std::optional<GpuSample> GpuTelemetry::sample(std::int64_t /*host_us*/, bool /*f
 }
 
 #endif
+
+LateTelemetry::LateTelemetry(GpuDevice device)
+    : thread_([this, device = std::move(device)] {
+        telemetry_ = GpuTelemetry::open(device);
+        if (telemetry_) energy_start_mj_ = telemetry_->energy_mj(host_now_us());
+        ready_.store(true, std::memory_order_release);
+      }) {}
+
+LateTelemetry::~LateTelemetry() {
+  if (thread_.joinable()) thread_.join();
+}
 
 }  // namespace ajp::app::play

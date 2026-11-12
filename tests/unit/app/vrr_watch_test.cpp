@@ -33,23 +33,22 @@ TEST_CASE("VRR relu : present timing prime sur l'ioctl et bascule tout de suite"
   CHECK(watch.observe(std::nullopt, std::optional<bool>(true)) == std::optional<bool>(true));
 }
 
-TEST_CASE("NVAPI : le bit « engagé » n'est exigé qu'une fois vu posé (B11-02)", "[app][display]") {
-  // Bit 0 seul, en plein écran : G-SYNC permis. Un pilote qui ne pose jamais le bit 4 laissait « non armé »
-  // pour toujours.
-  CHECK(nv_vrr_armed(kNvVrrEnabled, false, true));
-  CHECK_FALSE(nv_vrr_armed(0, false, true));
-  CHECK_FALSE(nv_vrr_armed(kNvVrrInMode, true, true));  // engagé sans être permis : incohérent, non
-  // Le bit 4 déjà vu posé : il dit l'engagement.
-  CHECK(nv_vrr_armed(kNvVrrEnabled | kNvVrrInMode, true, true));
-  CHECK_FALSE(nv_vrr_armed(kNvVrrEnabled, true, true));
-}
-
-TEST_CASE("NVAPI : en fenêtre, G-SYNC permis n'est pas armé sans le bit 4 (C34-03)", "[app][display]") {
-  // G-SYNC réglé « plein écran seulement », lecture en fenêtre : permis, pas engagé. Avant, armé.
-  CHECK_FALSE(nv_vrr_armed(kNvVrrEnabled, false, false));
-  // Le bit 4 dit l'engagement, en fenêtre aussi (réglage « fenêtré et plein écran »).
-  CHECK(nv_vrr_armed(kNvVrrEnabled | kNvVrrInMode, false, false));
-  CHECK(nv_vrr_armed(kNvVrrEnabled | kNvVrrInMode, true, false));
+TEST_CASE("NVAPI : permis n'est pas engagé tant que le bit « engagé » n'est pas vu (C11-08)",
+          "[app][display]") {
+  // Bit 0 seul : G-SYNC permis, peut-être « plein écran seulement » sur une fenêtre. Avant, « armé » : le
+  // plancher et l'Auto se réglaient pour un VRR qui n'était pas là. Inconnu : la présentation datée le dit.
+  CHECK_FALSE(nv_vrr_armed(kNvVrrEnabled, false).has_value());
+  CHECK(nv_vrr_armed(0, false) == std::optional<bool>(false));
+  CHECK(nv_vrr_armed(kNvVrrInMode, true) == std::optional<bool>(false));  // engagé sans être permis : non
+  // Le bit 4 posé dit l'engagement ; déjà vu dans ce processus, son absence dit « non engagé ».
+  CHECK(nv_vrr_armed(kNvVrrEnabled | kNvVrrInMode, false) == std::optional<bool>(true));
+  CHECK(nv_vrr_armed(kNvVrrEnabled | kNvVrrInMode, true) == std::optional<bool>(true));
+  CHECK(nv_vrr_armed(kNvVrrEnabled, true) == std::optional<bool>(false));
+  // Une lecture inconnue ne change rien à l'état suivi.
+  VrrWatch watch(false);
+  CHECK_FALSE(watch.observe(nv_vrr_armed(kNvVrrEnabled, false)).has_value());
+  CHECK_FALSE(watch.observe(nv_vrr_armed(kNvVrrEnabled, false)).has_value());
+  CHECK_FALSE(watch.armed());
 }
 
 }  // namespace ajp::app::play

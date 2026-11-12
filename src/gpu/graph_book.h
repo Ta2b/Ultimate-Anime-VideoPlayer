@@ -45,8 +45,13 @@ class GraphBook {
   GraphBook(std::size_t capacity, int capture_attempts)
       : capacity_(std::max<std::size_t>(capacity, 1)), attempts_(capture_attempts) {}
 
+  // Graphes coupés pour ce lancement : l'appelant lance en direct sans tirer de next(). Après
+  // kRetryAfterDirect lancements directs, les graphes se réessaient (C21-07) : une cause passagère (mémoire
+  // basse au début de la lecture) ne les coupe plus pour toute la séance.
+  bool skip() { return still_off(); }
+
   Pick next(const Key& key) {
-    if (off_) return {};
+    if (still_off()) return {};
     ++tick_;
     auto found = std::ranges::find(entries_, key, &Entry::key);
     if (found == entries_.end()) {
@@ -120,6 +125,7 @@ class GraphBook {
   static constexpr int kMaxLaunchFailures = 3;
   static constexpr std::uint64_t kHealAfterReplays = 1000;  // une quarantaine de secondes à 24 i/s
   static constexpr std::uint64_t kStaleAfter = 64;          // tirages par place du registre
+  static constexpr std::uint64_t kRetryAfterDirect = 2000;  // près d'une minute et demie à 24 i/s
   void launch_failed(std::size_t index) {
     ++counters_.launch_failures;
     healthy_ = 0;
@@ -144,9 +150,22 @@ class GraphBook {
     launch_streak_ = 0;
     healthy_ = 0;
     off_ = false;
+    direct_ = 0;
   }
 
  private:
+  bool still_off() {
+    if (!off_) return false;
+    if (++direct_ < kRetryAfterDirect) return true;
+    off_ = false;
+    direct_ = 0;
+    capture_streak_ = 0;
+    launch_streak_ = 0;
+    healthy_ = 0;
+    notice_ = std::format("graphes CUDA réessayés après {} lancements directs", kRetryAfterDirect);
+    return false;
+  }
+
   struct Entry {
     Key key;
     bool warmed = false;
@@ -164,6 +183,7 @@ class GraphBook {
   std::uint64_t healthy_ = 0;  // rejeux de suite sans refus
   int capture_streak_ = 0;     // refus de capture de suite
   int launch_streak_ = 0;      // refus de rejeu depuis la dernière remise à zéro
+  std::uint64_t direct_ = 0;   // lancements directs depuis que les graphes sont coupés
   std::string notice_;
 };
 

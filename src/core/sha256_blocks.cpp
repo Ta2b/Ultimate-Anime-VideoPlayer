@@ -111,6 +111,11 @@ void blocks_sha_ni(std::array<std::uint32_t, 8>& state, const std::uint8_t* data
 
 }  // namespace
 
+void sha256_blocks_portable(std::array<std::uint32_t, 8>& state, const std::uint8_t* data,
+                            std::size_t count) {
+  for (; count > 0; --count, data += 64) block_portable(state, data);
+}
+
 void sha256_blocks(std::array<std::uint32_t, 8>& state, const std::uint8_t* data, std::size_t count) {
 #ifdef AJP_SHA_NI
   static const bool sha_ni = cpu_has_sha();

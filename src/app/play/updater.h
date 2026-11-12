@@ -64,6 +64,9 @@ void forget_installed_announce(UpdateState& state, std::string_view installed);
 // save_update_state garde alors une copie du fichier dans <fichier>.bak. L'annonce d'une version
 // qui n'est plus nouvelle est oubliée.
 UpdateState load_update_state(const std::filesystem::path& file);
+// Comme load_update_state, mais un fichier présent qui ne se lit pas (tenu, droits) est un refus, pas l'état
+// vide (C36-03).
+std::expected<UpdateState, Refusal> read_update_state(const std::filesystem::path& file);
 // Réécrit le fichier : les champs de state, plus les clés inconnues d'une version plus récente (A36-05).
 std::expected<void, Refusal> save_update_state(const std::filesystem::path& file, const UpdateState& state);
 // Le texte à écrire : state, puis les clés de previous que cette version ne connaît pas (hors les champs des

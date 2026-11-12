@@ -383,7 +383,11 @@ TEST_CASE("auto : après une scène lourde, la cadence revient vite près de ce 
   // La scène s'allège à 50 s : en 6 s le palier doit avoir regagné au moins les deux tiers de l'écart.
   const Trace back = run(rate, now, 6, gpu);
   const int target = 6 * kFineGranularity;  // facile : le maximum de l'écran
-  CHECK(rate.step() - low >= (target - low) * 2 / 3);
+  // À la bande morte du pas fin près (6 % du palier, sous laquelle la régulation ne bouge pas) : depuis que
+  // la montée atteint le plafond de l'écran (C12-03), la scène lourde part de ×6 et non de ×5,7, et le palier
+  // bas comme les sauts de remontée en dépendent.
+  const int dead_band = static_cast<int>(rate.step() * AutoRate::kDeadBand);
+  CHECK(rate.step() - low + dead_band >= (target - low) * 2 / 3);
   // Les sauts de remontée sont rapides mais bornés (≤ 40 %), au plus un par seconde.
   for (std::size_t i = 1; i < back.changes.size(); ++i) {
     CHECK(back.changes[i].first - back.changes[i - 1].first >= AutoRate::kMinRiseGapUs);

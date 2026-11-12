@@ -39,6 +39,11 @@ bool take_upscaler(Player& p, ChainEngines& c, const PlaySettings& settings) {
   if (auto shaders = p.screen.set_anime4k(c.anime4k); !shaders) {
     log_channel("app")->warn("Anime4K refusé ({}) : image de travail sans agrandissement",
                              shaders.error().detail);
+    // C08-11 : comme un SPAN refusé, un avis à l'écran et « Réessayer » dans le panneau, pas une ligne de
+    // journal seule (l'image reste à la taille de travail).
+    c.stage_notes.push_back({.stage = ChainStage::Upscale,
+                             .change = StageChange::Dropped,
+                             .refusal = std::move(shaders.error())});
     c.anime4k.reset();
   }
   return upscales && !anime4k_size(settings.model);

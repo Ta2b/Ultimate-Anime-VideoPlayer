@@ -17,6 +17,10 @@ TEST_CASE("B33-05 : la dérive de la mémoire ou des descripteurs se signale au-
       resource_drift(first, {.resident_bytes = 400ULL << 20U, .threads = 40, .handles = 151});
   CHECK(handles.find("151") != std::string::npos);
   CHECK(resource_drift(ProcessResources{}, first).empty());  // rien de connu au premier relevé
+  // C33-02 : les fils comptent aussi, le signal d'un fil abandonné.
+  const std::string threads =
+      resource_drift(first, {.resident_bytes = 400ULL << 20U, .threads = 61, .handles = 100});
+  CHECK(threads.find("61 threads") != std::string::npos);
 }
 
 }  // namespace ajp::app::play

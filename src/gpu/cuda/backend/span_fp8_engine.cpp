@@ -191,7 +191,7 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
         RefusalCode::VendorCallFailed,
         std::format("SPAN FP8 : essai au chargement (cudaDeviceSynchronize) : {}", cudaGetErrorString(e)));
   }
-  shared->set_last_user(engine.get());
+  shared->used(engine.get(), engine->net_->workspace_bytes());
   if (auto ok = smoke_test(*engine->net_, height, width); !ok) return std::unexpected(std::move(ok.error()));
   return engine;
 }
@@ -221,7 +221,6 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue_body(cudaStream_t stream,
                                                          const std::shared_ptr<SharedActivations>& arena,
                                                          std::span<const Tensor> inputs,
                                                          std::span<const Tensor> outputs) {
-  if (arena) arena->set_last_user(this);
   if (inputs.size() != 1 || outputs.size() != 1)
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une entrée et une sortie attendues");
   const Tensor& in = inputs[0];
@@ -232,6 +231,7 @@ std::expected<void, Refusal> SpanFp8Engine::enqueue_body(cudaStream_t stream,
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : sortie de forme ou de type différents du moteur");
   if (!arena) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : zone d'activation absente");
   if (auto ok = use_zone(arena); !ok) return ok;
+  arena->used(this, net_->workspace_bytes());  // le bas de la zone, comme un moteur entier (C03-01)
   // NOLINTBEGIN(performance-no-int-to-ptr) : un tenseur porte son adresse CUDA en entier
   const void* source = reinterpret_cast<const void*>(in.handle + in.offset);
   // NOLINTEND(performance-no-int-to-ptr)

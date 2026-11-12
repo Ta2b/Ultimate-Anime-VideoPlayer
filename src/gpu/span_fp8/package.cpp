@@ -79,14 +79,6 @@ void put_conv(std::vector<std::byte>& out, const Conv& conv) {
   out.insert(out.end(), b, b + conv.bias.size() * sizeof(float));
 }
 
-Conv filled(std::size_t weights, std::size_t bias, float fill) {
-  Conv conv;
-  // 0x211E : 0,01 en demi-précision ; la valeur exacte n'importe pas aux tests, seulement qu'elle soit finie.
-  conv.weights.assign(weights, fill > 0.0F ? std::uint16_t{0x211E} : std::uint16_t{0});
-  conv.bias.assign(bias, fill);
-  return conv;
-}
-
 // La version 1 n'a aucun drapeau ; l'accumulateur f16 n'existe qu'à partir de la 2 (B02-07).
 std::optional<std::string> flags_refusal(std::uint32_t version, std::uint32_t flags) {
   const std::uint32_t known = version == 1 ? 0U : kFlagAcc16;
@@ -207,20 +199,6 @@ std::vector<std::byte> serialize(const Package& package) {
   put_u32(out, package.acc16 ? kFlagAcc16 : 0U);
   out.insert(out.end(), body.begin(), body.end());
   return out;
-}
-
-Package synthetic(float fill, int blocks) {
-  Package package;
-  package.blocks.resize(static_cast<std::size_t>(blocks));
-  package.scales.fill(0.05F);
-  package.first = filled(kFirstWeights, kChannels, fill);
-  for (Block& block : package.blocks) {
-    for (Conv& conv : block.conv) conv = filled(kBlockWeights, kChannels, fill);
-    block.attention = filled(kAttentionWeights, kChannels, fill);
-  }
-  package.concat = filled(kConcatWeights, kChannels, fill);
-  package.pixel = filled(kPixelWeights, kPixelChannels, fill);
-  return package;
 }
 
 }  // namespace ajp::gpu::span_fp8

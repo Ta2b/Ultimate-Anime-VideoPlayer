@@ -9,7 +9,7 @@ namespace ajp::core {
 void VblankClock::reset() {
   times_.clear();
   latencies_.clear();
-  period_guess_us_ = 0.0;
+  fit_.reset();
   rejects_ = 0;
   have_last_ = false;
 }
@@ -19,6 +19,7 @@ void VblankClock::set_nominal_period(double period_us) {
   const bool moved = nominal_us_ > 0.0 ? std::abs(period_us / nominal_us_ - 1.0) > 0.005 : period_us > 0.0;
   nominal_us_ = period_us;
   if (moved && have_last_) reset();
+  refit();  // la tolérance à la période annoncée a pu changer
 }
 
 void VblankClock::restart(std::int64_t visible_us) {
@@ -28,6 +29,7 @@ void VblankClock::restart(std::int64_t visible_us) {
   last_k_ = 0;
   have_last_ = true;
   times_.push_back({visible_us, 0});
+  refit();
 }
 
 void VblankClock::push(std::int64_t visible_us, std::int64_t steps) {
@@ -36,6 +38,7 @@ void VblankClock::push(std::int64_t visible_us, std::int64_t steps) {
   last_us_ = visible_us;
   times_.push_back({visible_us, last_k_});
   if (times_.size() > kWindow) times_.pop_front();
+  refit();
 }
 
 void VblankClock::observe(std::int64_t visible_us, std::uint64_t /*id*/, std::int64_t target_us) {
@@ -43,6 +46,8 @@ void VblankClock::observe(std::int64_t visible_us, std::uint64_t /*id*/, std::in
     latencies_.push_back(visible_us - target_us);
     if (latencies_.size() > kWindow) latencies_.pop_front();
   }
+  // Sans période annoncée, aucun pas sûr pour numéroter les vblanks : pas de grille (C12-08).
+  if (!(nominal_us_ > 0.0)) return;
   if (!have_last_) {
     restart(visible_us);
     return;
@@ -52,39 +57,23 @@ void VblankClock::observe(std::int64_t visible_us, std::uint64_t /*id*/, std::in
     restart(visible_us);
     return;
   }
-  const double gap = static_cast<double>(visible_us - last_us_);
-  if (nominal_us_ > 0.0) {
-    // Le pas : la période annoncée, affinée par la régression tant qu'elle en reste proche (164,78 Hz
-    // pour 165 annoncés ; jamais la cadence du contenu, à des multiples de là).
-    double period = nominal_us_;
-    if (const auto fitted = grid()) period = fitted->period_us;
-    const double ratio = gap / period;
-    const std::int64_t steps = std::max<std::int64_t>(1, std::llround(ratio));
-    if (std::abs(ratio - static_cast<double>(steps)) > kOffGrid) {
-      if (++rejects_ >= kMaxRejects) restart(visible_us);
-      return;
-    }
-    push(visible_us, steps);
+  // Le pas : la période annoncée, affinée par la régression tant qu'elle en reste proche (164,78 Hz pour 165
+  // annoncés ; jamais la cadence du contenu, à des multiples de là).
+  const double period = fit_ ? fit_->period_us : nominal_us_;
+  const double ratio = static_cast<double>(visible_us - last_us_) / period;
+  const std::int64_t steps = std::max<std::int64_t>(1, std::llround(ratio));
+  if (std::abs(ratio - static_cast<double>(steps)) > kOffGrid) {
+    if (++rejects_ >= kMaxRejects) restart(visible_us);
     return;
   }
-  // Sans période annoncée : le plus petit écart vu (un vblank), que la régression affine sans jamais le
-  // remplacer par plus long. Un écart nettement plus court dément les numéros déjà donnés : on repart.
-  if (period_guess_us_ == 0.0) period_guess_us_ = gap;
-  if (gap < period_guess_us_ * 0.75) {
-    period_guess_us_ = gap;
-    const std::int64_t previous = last_us_;
-    restart(previous);
-    push(visible_us, 1);
-    return;
-  }
-  const std::int64_t steps = std::max<std::int64_t>(1, std::llround(gap / period_guess_us_));
   push(visible_us, steps);
-  if (const auto fitted = grid(); fitted && std::abs(fitted->period_us / period_guess_us_ - 1.0) < 0.1)
-    period_guess_us_ = fitted->period_us;
 }
 
-std::optional<VblankGrid> VblankClock::grid() const {
-  if (times_.size() < kMinSamples) return std::nullopt;
+// La régression sur les dates gardées, refaite à chaque date retenue et non à chaque lecture de grid() (trois
+// ou quatre fois par tour de main).
+void VblankClock::refit() {
+  fit_.reset();
+  if (times_.size() < kMinSamples || !(nominal_us_ > 0.0)) return;
   const double n = static_cast<double>(times_.size());
   const std::int64_t k0 = times_.front().k;
   const std::int64_t t0 = times_.front().visible_us;
@@ -101,19 +90,18 @@ std::optional<VblankGrid> VblankClock::grid() const {
     skt += k * t;
   }
   const double denom = n * skk - sk * sk;
-  if (denom <= 0.0) return std::nullopt;
+  if (denom <= 0.0) return;
   const double period = (n * skt - sk * st) / denom;
-  if (period <= 0.0) return std::nullopt;
+  if (period <= 0.0) return;
   // Loin de la période annoncée : des numéros faux (dates hors grille), pas une grille.
-  if (nominal_us_ > 0.0 && std::abs(period / nominal_us_ - 1.0) > kNominalTolerance) return std::nullopt;
+  if (std::abs(period / nominal_us_ - 1.0) > kNominalTolerance) return;
   const double phase = (st - period * sk) / n;
-  return VblankGrid{.phase_us = static_cast<double>(t0) + phase - period * static_cast<double>(k0),
+  fit_ = VblankGrid{.phase_us = static_cast<double>(t0) + phase - period * static_cast<double>(k0),
                     .period_us = period};
 }
 
 double VblankClock::hz() const {
-  const auto fitted = grid();
-  return fitted ? 1e6 / fitted->period_us : 0.0;
+  return fit_ ? 1e6 / fit_->period_us : 0.0;
 }
 
 std::int64_t VblankClock::output_latency_us() const {

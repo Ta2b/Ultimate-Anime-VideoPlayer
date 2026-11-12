@@ -53,7 +53,9 @@ TEST_CASE("Mode Rapide : la grille des vblanks mesurée prime sur la phase estim
   live.vsync_note(1'006'061, measured);
   const LiveSettings::VsyncGrid grid = live.vsync_grid(2'000'000 + 10 * 6069 + 1'000);
   CHECK(grid.period_us == 6069);
-  CHECK(grid.anchor_host_us == std::llround(measured.at(10)) + 6069 / 2);
+  // C12-02 : l'ancre est le vblank même, là où le choix par numéro de vblank (VsyncPicker) tranche net ; à
+  // mi-chemin (+ période / 2), chaque instant tombait dans sa bande d'hystérésis.
+  CHECK(grid.anchor_host_us == std::llround(measured.at(10)));
   // Sans grille mesurée (niveau Open), la phase estimée revient.
   live.vsync_note(1'012'122);
   CHECK(live.vsync_grid(1'000'500).period_us == 6061);

@@ -42,7 +42,9 @@ std::string value_of(const std::vector<std::string>& args, std::string_view flag
 }
 
 int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
-  say("&&&& RUNNING TensorRT.trtexec [TensorRT v110300] [b99] # trtexec");
+  // « old-tensorrt » : trtexec a chargé un autre libnvinfer que celui du lecteur (C05-10).
+  say(mode == "old-tensorrt" ? "&&&& RUNNING TensorRT.trtexec [TensorRT v110100] [b99] # trtexec"
+                             : "&&&& RUNNING TensorRT.trtexec [TensorRT v110300] [b99] # trtexec");
   for (const std::string& arg : args) say("[I] arg " + arg);
   // Deux cartes : l'appareil 0 sans --device, comme trtexec (C37-01).
   say(std::string("[I] Selected Device: ") +

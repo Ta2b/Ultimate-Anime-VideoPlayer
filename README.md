@@ -2,7 +2,7 @@
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
 ![Version 0.11.0](https://img.shields.io/badge/version-0.11.0-informational.svg)
-![Linux · Windows · macOS](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows%20%C2%B7%20macOS-lightgrey.svg)
+![Linux · Windows](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows-lightgrey.svg)
 
 Un lecteur vidéo fait pour l'anime. Il agrandit l'image avec les modèles **AnimeJaNai**, ajoute des images
 intermédiaires pour une animation fluide et convertit l'anime SDR en **HDR**, en temps réel, sur la carte
@@ -32,8 +32,9 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   SPAN (une 1080p sort en 4K) avec le modèle le plus fin (Balanced, b8f64). Aux niveaux Rapide et Normal, la
   source est d'abord réduite à la moitié de l'écran ou moins (de 480p à 720p selon le niveau et l'écran, voir le
   tableau des niveaux), puis SPAN la double ; libplacebo ajuste ensuite à la taille de l'écran.
-- **Interpolation** par RIFE 4.22 lite, ou 4.26 aux niveaux Qualité et Ultra (4.25 lite pour les petites cartes ;
-  4.25 et DistilDRBA en réglages avancés). Le mode Auto vise la fréquence de votre écran et
+- **Interpolation** par RIFE 4.22 lite, ou 4.26 aux niveaux Qualité et Ultra. Pour les petites cartes, 4.25 lite
+  (niveau « Très rapide ») et Anime4K (Vidéo > Modèle) se choisissent à la main ; 4.25 et DistilDRBA se règlent
+  en avancé. Le mode Auto vise la fréquence de votre écran et
   redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
   interpolés.
 - **HDR anime** : l'anime SDR passe en HDR10 avec un grade à luminosité stable d'un plan à l'autre (sur un écran SDR, la
@@ -55,7 +56,7 @@ Téléchargez la dernière version sur la page des [releases](https://github.com
 |---|---|---|
 | Windows 10 et 11 (x64) | `ajp-windows-x64-setup.exe` | installeur ; ou `ajp-windows-x64.zip` à décompresser, puis lancer `ajp.exe` |
 | Linux (x64) | `ajp-linux-x86_64.AppImage` | rendre exécutable et lancer ; ou `ajp-linux-x64.tar.gz` à décompresser, puis lancer `ajp`. Vulkan et un pilote récent requis |
-| macOS 14+ (Apple Silicon) | `ajp-macos-arm64.dmg` | glisser `AJP.app` dans Applications ; ou `ajp-macos-arm64.zip` |
+| macOS 14+ (Apple Silicon) | aucun pour l'instant | délaissé, non publié (décision de novembre 2026) ; se construit depuis les sources |
 
 Mettez à jour le pilote de votre carte graphique avant le premier lancement. Le lecteur s'installe léger : il
 embarque son moteur Vulkan, et le moteur NVIDIA (TensorRT) se télécharge à part si vous le choisissez.
@@ -72,7 +73,7 @@ Un assistant de quelques écrans, tous sautables :
    lecteur.
 5. **Prêt** : « Calibrer maintenant » essaie plusieurs réglages sur une séquence exigeante et garde la
    meilleure combinaison que votre PC tient sans saccade ; « Régler moi-même » garde le niveau Auto estimé
-   pour la carte. La calibration prend environ 5 minutes en Vulkan, et environ 25 minutes avec TensorRT sur un
+   pour la carte. La calibration prend environ 5 minutes en Vulkan, et environ 23 minutes avec TensorRT sur un
    poste fixe (40 sur un portable), car TensorRT construit ses moteurs pendant l'essai. L'assistant affiche
    l'estimation pour votre machine ; un essai limite est rejoué, ce qui peut l'allonger.
 
@@ -87,12 +88,12 @@ règle la chaîne selon l'écran et la vidéo ouverte. Changer un réglage à la
 |---|---|---|---|
 | Économe | aucun, la vidéo telle quelle | aucune | graphiques intégrés d'entrée de gamme, GT, MX, RTX A400 |
 | Rapide | SPAN depuis 480p (écran 1080p) ou 540p (écran 1440p et plus) | jusqu'à ×2 | GTX 9, 10 (sauf 1070 et 1080) et 16, RX 400 et 500, RX 5000 (sauf 5700), RX 6400 et 6500, Arc A3, Iris Xe, RTX portables d'entrée de gamme |
-| Normal | SPAN depuis 540p (écran 1080p) ou 720p (écran 1440p et plus) | jusqu'à ×3 | GTX 1070 et 1080, RTX 20 à 50 d'entrée de gamme, RX 5700, RX 6600 à 7600, Arc A5/A7/B5, Apple M, RTX 2080, 3070, 3080, 4070 et 5070 portables |
-| Qualité | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 2080, RTX 3070 à 3090, RTX 4070, RTX 5070, RX 6800 à 7800, RX 9060, Apple Pro et Max, RTX 4080 à 5090 portables |
+| Normal | SPAN depuis 540p (écran 1080p) ou 720p (écran 1440p et plus) | jusqu'à ×3 | GTX 1070 et 1080, RTX 20 à 50 d'entrée de gamme, RX 5700, RX 6600 à 7600, Arc A5/A7/B5, Apple M, RTX 2080, 3070 et 3080 (bureau), RTX 4070 et 5070 portables |
+| Qualité | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 3080 Ti et 3090, RTX 4070, RTX 5070 (bureau), RX 6800 à 7800, RX 9060, Apple Pro et Max, RTX 4080 à 5090 portables |
 | Ultra | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 4080 à 5090, RX 7900, RX 9070, Apple Ultra |
 
 La priorité Fluidité descend la résolution de travail d'un cran (720p au plus en Qualité et Ultra) et relève
-d'un cran le plafond du multiplicateur (jusqu'à ×6). La priorité Image abaisse ce plafond d'un cran (×2 au
+d'un cran le plafond du multiplicateur (jusqu'à ×5). La priorité Image abaisse ce plafond d'un cran (×2 au
 minimum) ; elle ne monte pas la résolution aux niveaux Qualité et Ultra, déjà au plafond de 1080p. La calibration, qui mesure votre carte, peut monter plus haut. En mode **Instantané** de l'interpolation (le
 défaut), le multiplicateur n'a pas de plafond : il suit la fréquence de l'écran (jusqu'à ×6 sur un écran
 144 Hz pour une source à 23,976 i/s), et seul le plafond de cadence choisi dans le menu le borne. Le
@@ -157,17 +158,19 @@ chargement.
 |---|---|---|
 | NVIDIA RTX | TensorRT (CUDA) | téléchargé au premier lancement : notre module, puis les bibliothèques de NVIDIA |
 | AMD, Intel, NVIDIA sans TensorRT | Vulkan | livré avec le lecteur |
-| Apple Silicon | Core ML | livré avec le lecteur macOS |
+| Apple Silicon | Core ML | se construit depuis les sources (macOS n'est plus publié) |
 
 TensorRT construit ses moteurs pour votre carte : quelques minutes pour chaque taille d'image, puis de
-nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés d'une lecture à l'autre, jusqu'à 45 jours sans usage et dans la limite de
-8 Gio (les moins récents partent d'abord).
+nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés d'une lecture à l'autre, jusqu'à 45 jours sans usage et dans la limite d'environ
+8 Gio, mesurée au lancement (les moins récents partent d'abord ; un moteur servi dans les dernières 24 h n'est jamais retiré).
 Détails : [`docs/moteurs.md`](docs/moteurs.md).
 
 ## Mises à jour
 
-Le lecteur regarde une fois par jour (ou à chaque lancement, au choix) s'il existe une nouvelle version et vous
-prévient avec le lien de la version ; vous l'installez vous-même. « Jamais » ne vérifie rien : Général >
+Le lecteur regarde une fois par jour, par semaine ou à chaque lancement (au choix) s'il existe une nouvelle version
+et vous prévient ; la page Général > Application ouvre la page de la version, et vous l'installez vous-même. Au
+premier lancement, il lit la liste des moteurs téléchargeables (pour proposer TensorRT) avant que l'assistant vous
+demande si vous voulez des vérifications. « Jamais » ne vérifie rien : Général >
 Application. Les manifestes sont signés (Ed25519) ; vos réglages sont
 gardés.
 

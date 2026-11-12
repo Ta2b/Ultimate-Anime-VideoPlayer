@@ -125,6 +125,8 @@ constexpr std::array kWizardTexts{
     Entry{"to download ({})", "à télécharger ({})"},
     Entry{"{} is chosen but does not open on this GPU (see log): {} replaces it.",
           "{} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace."},
+    Entry{"{} needs a newer graphics driver: update it. {} replaces it until then.",
+          "{} demande un pilote graphique plus récent : mettez-le à jour. {} le remplace d'ici là."},
 };
 
 }  // namespace

@@ -3,12 +3,14 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <expected>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <span>
+#include <thread>
 #include <vector>
 
 #include <libplacebo/cache.h>
@@ -87,7 +89,10 @@ class PlaceboRing {
   VkDevice device_ = VK_NULL_HANDLE;
   PFN_vkGetSemaphoreCounterValue counter_ = nullptr;
   RingWatcher* watcher_ = nullptr;
-  mutable bool lost_ = false;  // vkGetSemaphoreCounterValue a rendu VK_ERROR_DEVICE_LOST
+  // vkGetSemaphoreCounterValue a rendu VK_ERROR_DEVICE_LOST, ou l'anneau a perdu kMaxRefusedSlots slots
+  // (retire) : la lecture se relance comme sur une perte du GPU.
+  mutable bool lost_ = false;
+  std::uint32_t refused_ = 0;  // slots de cet anneau perdus sur une cession refusée
 };
 
 // Sous-titres et OSD en calques monochromes, au-dessus de l'image, en pixels de la sortie.
@@ -143,6 +148,7 @@ inline constexpr pl_handle_type kRingHandle = PL_HANDLE_FD;
 struct PlaceboScreen::Impl {
   ~Impl();
   void open_shader_cache(const std::filesystem::path& file);
+  void keep_shader_cache(std::int64_t now_us);  // en cours de séance, sur un thread à part (C10-05)
   void save_shader_cache();
   std::expected<void, Refusal> compose(const pl_frame* image, const pl_frame& target);
   // Les hooks de l'image vidéo, dans leur ordre (Anime4K, netteté, grade) ; leur nombre.
@@ -181,8 +187,11 @@ struct PlaceboScreen::Impl {
   std::unique_ptr<VulkanShare> share;  // vk prêté à FFmpeg ; détruit avant lui
   pl_swapchain swapchain = nullptr;
   pl_renderer renderer = nullptr;
-  pl_cache shader_cache = nullptr;        // ScreenOptions::shader_cache (placebo_open.cpp)
-  std::uint64_t shader_cache_loaded = 0;  // pl_cache_signature du cache relu : inchangé, pas réécrit
+  pl_cache shader_cache = nullptr;       // ScreenOptions::shader_cache (placebo_cache.cpp)
+  std::uint64_t shader_cache_saved = 0;  // pl_cache_signature du cache sur le disque : inchangé, pas réécrit
+  std::int64_t shader_cache_checked_us = 0;  // dernier relevé de keep_shader_cache
+  std::thread shader_cache_writer;           // l'écriture en cours de séance, rejointe par save_shader_cache
+  std::atomic<bool> shader_cache_writing{false};
   PresentLevel present_level = PresentLevel::Open;  // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
   std::unique_ptr<PresentFeedback> feedback;        // niveaux Timing et Wait (placebo_feedback.h) ; nul sinon
@@ -251,10 +260,12 @@ struct PlaceboScreen::Impl {
   std::expected<void, Refusal> submit(const pl_vulkan_present* present);  // placebo_screen.cpp
   // A10-08 : l'image de la swapchain acquise par start_frame et pas encore soumise. Une sortie de show sur
   // une erreur (texture, overlays, rendu) la laissait acquise pour toujours ; au tour suivant elle est
-  // soumise telle quelle avant d'en acquérir une autre, sans quoi la swapchain finit sans image libre.
+  // soumise avant d'en acquérir une autre, sans quoi la swapchain finit sans image libre ; effacée en noir
+  // d'abord (C10-04), son contenu étant celui d'une présentation ancienne, ou indéfini.
   bool start_frame(pl_swapchain_frame* frame);
   bool frame_pending = false;
-  void match_kwin();  // la cadence des images vidéo distinctes, pour les lissages du grade
+  pl_tex pending_fbo = nullptr;  // l'image acquise, tant que frame_pending
+  void match_kwin();             // la cadence des images vidéo distinctes, pour les lissages du grade
   // MaxFALL annoncé (P3.59, A41-02) : le plein écran du contrat d'écran, sinon le blanc des surfaces rendu
   // par la dernière passe, en unités du contenu, borné au maximum annoncé.
   double announced_fall(double max_nits, double reference, double announced_panel_peak);
@@ -265,6 +276,7 @@ struct PlaceboScreen::Impl {
   std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
   // Anime4K de la chaîne ouverte (set_anime4k) : ses shaders passent devant la netteté et le grade.
   std::optional<render::Anime4k> anime4k;
+  mutable bool anime4k_hdr_noted = false;  // une source HDR laisse Anime4K de côté, dit une fois (C10-09)
   // La clé de composition d'Anime4K : 0 sans lui, sinon 1 + son choix.
   int anime4k_key() const {
     if (!anime4k) return 0;

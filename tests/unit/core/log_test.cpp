@@ -125,12 +125,35 @@ TEST_CASE("Journal nettoyé : un point final et les barres inverses doublées (B
   ajp::set_log_home("");
 }
 
+TEST_CASE("Journal nettoyé : préfixe NT et chemins sans lecteur (C39-11)", "[log]") {
+  CHECK(ajp::reduce_log_paths("path=\\??\\C:\\Users\\Jean\\a") == "path=…/a");
+  CHECK(ajp::reduce_log_paths("chemin \\Users\\Jean\\Videos\\a.mkv") == "chemin …/a.mkv");
+  CHECK(ajp::reduce_log_paths("chemin Users\\Jean\\Videos\\a.mkv") == "chemin …/a.mkv");
+}
+
+TEST_CASE("Journal nettoyé : les dossiers du système restent lisibles (C39-11)", "[log]") {
+  CHECK(ajp::reduce_log_paths("gpu /dev/dri/renderD128") == "gpu /dev/dri/renderD128");
+  CHECK(ajp::reduce_log_paths("lib /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1, ok") ==
+        "lib /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1, ok");
+  CHECK(ajp::reduce_log_paths("icd /usr/share/vulkan/icd.d/nvidia_icd.json") ==
+        "icd /usr/share/vulkan/icd.d/nvidia_icd.json");
+  CHECK(ajp::reduce_log_paths("dll C:\\Windows\\System32\\nvcuda.dll") ==
+        "dll C:\\Windows\\System32\\nvcuda.dll");
+}
+
 TEST_CASE("Journal nettoyé : les chemins sont réduits au nom de leur fichier (B39-05)", "[log]") {
   CHECK(ajp::reduce_log_paths("moteur span D:\\AnimeJaNai\\engines\\a.engine") == "moteur span …/a.engine");
   CHECK(ajp::reduce_log_paths("journal : ~/.local/share/ajp/ajp.log · ajp 1.0") ==
         "journal : …/ajp.log · ajp 1.0");
   CHECK(ajp::reduce_log_paths("vidéo /run/media/x/Données SSD/a.mkv, 24 i/s") == "vidéo …/a.mkv, 24 i/s");
   CHECK(ajp::reduce_log_paths("1/2 et /s") == "1/2 et /s");  // pas des dossiers
+  // C20-01 : une fraction ou une parenthèse après le nom ne le mange plus.
+  CHECK(ajp::reduce_log_paths("ouvre /home/jean/Videos/ep01.mkv (24000/1001 fps, 1920x1080)") ==
+        "ouvre …/ep01.mkv (24000/1001 fps, 1920x1080)");
+  CHECK(ajp::reduce_log_paths("modèle /srv/ajp/models/span.onnx chargé en 0.8 s (cache 3/4)") ==
+        "modèle …/span.onnx chargé en 0.8 s (cache 3/4)");
+  CHECK(ajp::reduce_log_paths("échec '/home/jean/Videos/ep.mkv' (lu 1/2)") == "échec '…/ep.mkv' (lu 1/2)");
+  CHECK(ajp::reduce_log_paths("vidéo /home/jean/Anime (2020)/ep.mkv") == "vidéo …/ep.mkv");
   // Le puits : le dossier personnel, puis les chemins.
   std::vector<std::string> seen;
   ajp::set_log_home("/home/jean");
@@ -142,6 +165,11 @@ TEST_CASE("Journal nettoyé : les chemins sont réduits au nom de leur fichier (
   ajp::set_log_home("");
   REQUIRE(seen.size() == 1);
   CHECK(seen.front() == "cache …/x.bin");
+  // C35-05 : un nom de fichier qui porte un saut de ligne ou une séquence ESC n'écrit pas de fausse ligne.
+  sink->log(
+      spdlog::details::log_msg("app", spdlog::level::info, "ouvre Ep 01\n[app] [info] faux\x1b[31m.mkv"));
+  REQUIRE(seen.size() == 2);
+  CHECK(seen.back() == "ouvre Ep 01\n    [app] [info] faux\\x1B[31m.mkv");
 }
 
 TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-06)", "[log]") {
@@ -174,6 +202,33 @@ TEST_CASE("Journal : le fichier s'ouvre par son chemin et tourne en parts (B33-0
   CHECK(ajp::log_file_sink(dir / "absent" / "ajp.log", 64, 2) == nullptr);
   sink.reset();  // ajp.log refermé : Windows refuse de retirer un fichier ouvert
   fs::remove_all(dir.parent_path());
+}
+
+TEST_CASE("Journal : les séances d'avant tournent avec leurs parts (C18-10)", "[log]") {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "ajp-log-rotate-test";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const auto put = [&](const char* name, const char* text) { std::ofstream(dir / name) << text; };
+  const auto read = [&](const char* name) {
+    std::ifstream in(dir / name, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  };
+  put("ajp.log", "séance 3");
+  put("ajp.1.log", "séance 3, part 1");
+  put("ajp.log.1", "séance 2");
+  put("ajp.1.log.1", "séance 1, part 1");  // plus ancienne que ajp.log.1 : la séance 2 n'avait qu'une part
+  put("ajp.log.2", "séance 1");
+  put("ajp.log.3", "séance 0");
+  ajp::rotate_session_logs(dir / "ajp.log", 3, 2);
+  CHECK_FALSE(fs::exists(dir / "ajp.log"));
+  CHECK(read("ajp.log.1") == "séance 3");
+  CHECK(read("ajp.1.log.1") == "séance 3, part 1");
+  CHECK(read("ajp.log.2") == "séance 2");
+  CHECK(read("ajp.1.log.2") == "séance 1, part 1");
+  CHECK(read("ajp.log.3") == "séance 1");  // la séance 0, au-delà des trois gardées, est partie
+  CHECK_FALSE(fs::exists(dir / "ajp.log.4"));
+  fs::remove_all(dir);
 }
 
 TEST_CASE("Journal : une exception sortie du corps est journalisée et vaut 1", "[log]") {

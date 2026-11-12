@@ -4,7 +4,8 @@
 // d'entrée, deux instants par paire ; le parcours trois fois de suite (exécution directe, capture du graphe
 // CUDA, rejeu). Un autre moteur fusionné passé entre deux appels, dans la même zone d'activation, efface
 // l'encodage gardé : l'annonce qui suit encode de nouveau, la sortie reste exacte. Test caché, sur la carte
-// NVIDIA et les modèles du lecteur : ajp_backend_tensorrt_tests "[.rife_fused]".
+// NVIDIA et les modèles du lecteur : ajp_backend_tensorrt_tests "[.rife_fused]". Un SPAN sur la même voie,
+// lui, n'écrit que sous les tampons gardés (C03-01) : ils servent encore.
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -17,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "backend_fixture.h"
+#include "gpu/cuda/backend/rife_fused_engine.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
@@ -173,7 +175,87 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
   CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
 }
 
+// C03-01 : sur une seule voie, SPAN et RIFE partagent la zone d'activation. Un SPAN passé entre deux appels
+// n'écrit que sous les tampons de RIFE : l'encodage gardé sert encore (compté par le moteur), et les octets
+// restent ceux de la chaîne qui encode tout.
+void kept_encoding_survives_span(const std::string& file) {
+  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
+  const fs::path span_model(AJP_SPAN_MODEL);
+  if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
+  if (!fs::is_regular_file(span_model)) SKIP("SPAN absent : " << span_model.string());
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  REQUIRE(loaded.backend->capabilities().rife_fused);
+  gpu::Backend& backend = *loaded.backend;
+  backend.use_lane(gpu::Lane::Upscale);  // tout sur la voie Upscale : une seule zone, comme --one-lane
+  constexpr int h = 384;
+  constexpr int w = 640;
+  const fs::path scratch = fs::temp_directory_path() / "ajp-rife-fused-encode-test";
+  fs::create_directories(scratch);
+  const std::unique_ptr<gpu::Engine> fused = fused_engine(backend, onnx, scratch, h, w, false);
+  const auto span_sha = prepare::sha256_file(span_model);
+  REQUIRE(span_sha);
+  const gpu::Shape span_in{.dims = {1, 3, h / 2, w / 2}};
+  gpu::Progress progress;
+  auto span_artifact = backend.build(
+      gpu::ModelSpec{.id = span_model.stem().string(), .onnx_path = span_model, .sha256 = *span_sha},
+      gpu::ShapeSet{.min = span_in, .opt = span_in, .max = span_in}, progress);
+  REQUIRE(span_artifact);
+  auto span = backend.load(*span_artifact);
+  REQUIRE(span);
+  auto span_input = backend.alloc_tensor(gpu::TensorType::F16, span_in);
+  auto span_output = backend.alloc_tensor(gpu::TensorType::F16, gpu::Shape{.dims = {1, 3, h, w}});
+  REQUIRE(span_input);
+  REQUIRE(span_output);
+  const std::array span_ins{(*span_input)->tensor()};
+  std::array span_outs{(*span_output)->tensor()};
+  const auto run_span = [&] { REQUIRE(backend.enqueue(**span, span_ins, span_outs)); };
+
+  const gpu::Shape rgb{.dims = {1, 3, h, w}};
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 3> images;
+  for (std::size_t i = 0; i < images.size(); ++i) {
+    auto made = backend.alloc_tensor(gpu::TensorType::F16, rgb);
+    REQUIRE(made);
+    images[i] = std::move(*made);
+    upload(images[i]->tensor(), drawing(h, w, 6 * static_cast<int>(i)));
+  }
+  auto input = backend.alloc_tensor(gpu::TensorType::F16, gpu::Shape{.dims = {1, 11, h, w}});
+  auto output = backend.alloc_tensor(gpu::TensorType::F16, rgb);
+  REQUIRE(input);
+  REQUIRE(output);
+  const std::array ins{(*input)->tensor()};
+  std::array outs{(*output)->tensor()};
+  const auto call = [&](float t, bool times_only) {
+    if (times_only) {
+      REQUIRE(backend.kernels()->rife_time((*input)->tensor(), t));
+      fused->next_times_only();
+    } else {
+      REQUIRE(backend.kernels()->rife_input(images[0]->tensor(), images[1]->tensor(), t, (*input)->tensor()));
+    }
+    REQUIRE(backend.enqueue(*fused, ins, outs));
+    return bytes_of((*output)->tensor());
+  };
+  // Le SPAN d'abord : ses activations déclarées, les tampons de RIFE montent au-dessus.
+  run_span();
+  const auto want = call(0.75F, false);
+  auto* engine = static_cast<gpu::cuda::RifeFusedEngine*>(fused.get());
+  for (int round = 0; round < 3; ++round) {  // direct, capture, rejeu
+    INFO("tour " << round);
+    static_cast<void>(call(0.25F, false));
+    run_span();  // l'image source agrandie, entre deux instants de la même paire
+    const auto before = engine->encode_counts();
+    CHECK(call(0.75F, true) == want);
+    CHECK(engine->encode_counts().none == before.none + 1);  // l'encodeur sauté malgré le SPAN
+  }
+}
+
 }  // namespace
+
+TEST_CASE("RIFE fusionné : un SPAN sur la même voie n'efface pas l'encodage gardé (C03-01)",
+          "[.rife_fused][backend_tensorrt][cuda]") {
+  kept_encoding_survives_span("rife_v4.22_lite.onnx");
+}
 
 TEST_CASE("RIFE fusionné : l'encodage repris d'un appel à l'autre rend les mêmes octets sur TensorRT",
           "[.rife_fused][backend_tensorrt][cuda]") {
@@ -185,6 +267,13 @@ TEST_CASE("RIFE fusionné : l'encodage repris d'un appel à l'autre rend les mê
   }
   SECTION("4.25, image") {
     kept_encoding_is_exact("rife_v4.25.onnx", false);
+  }
+  // C03-09 : les autres modèles des niveaux d'interpolation (4.25 lite : réduction 32, remplissage 128).
+  SECTION("4.25 lite, image") {
+    kept_encoding_is_exact("rife_v4.25_lite.onnx", false);
+  }
+  SECTION("4.26, image") {
+    kept_encoding_is_exact("rife_v4.26.onnx", false);
   }
 }
 

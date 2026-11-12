@@ -189,13 +189,16 @@ class Seuils(unittest.TestCase):
             self.assertEqual(len(rapport.check_gates(path, self.report(codes=6.0))), 1)
             self.assertEqual(len(rapport.check_gates(path, self.report(truth=39.5))), 1)
 
-    def test_autre_configuration_sans_seuil(self):
+    def test_autre_configuration_est_un_echec_sauf_demande(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "seuils.json")
             rapport.write_gates(path, self.report())
             other = self.report(psnr=10.0)
             other["config"]["taille"] = "640x360"
-            self.assertEqual(rapport.check_gates(path, other), [])
+            failures = rapport.check_gates(path, other)  # C46-09 : se taire rendait le banc vert sans jugement
+            self.assertEqual(len(failures), 1)
+            self.assertIn("seuils non appliqués", failures[0])
+            self.assertEqual(rapport.check_gates(path, other, sans_seuils=True), [])
 
 
 class Travail(unittest.TestCase):

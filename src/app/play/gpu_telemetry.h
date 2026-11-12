@@ -8,11 +8,13 @@
 // en P-state, ou plafonne-t-elle en puissance, pendant une lecture chargée ?
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include "core/gpu_device.h"
 
@@ -103,6 +105,27 @@ class GpuTelemetry {
   struct Impl;
   explicit GpuTelemetry(std::unique_ptr<Impl> impl);
   std::unique_ptr<Impl> impl_;
+};
+
+// La télémétrie ouverte sur un fil à part (C11-13) : le chargement de NVML, nvmlInit_v2, ses symboles et le
+// premier relevé d'énergie se faisaient sur le thread main, entre l'ouverture de la chaîne et la première
+// image. get() rend nullptr tant qu'elle n'est pas prête, ou sans télémétrie.
+class LateTelemetry {
+ public:
+  explicit LateTelemetry(GpuDevice device);
+  ~LateTelemetry();  // attend l'ouverture
+  LateTelemetry(const LateTelemetry&) = delete;
+  LateTelemetry& operator=(const LateTelemetry&) = delete;
+
+  GpuTelemetry* get() const { return ready_.load(std::memory_order_acquire) ? telemetry_.get() : nullptr; }
+  // Le compteur d'énergie relu juste après l'ouverture, sur le même fil ; 0 tant qu'inconnu.
+  std::uint64_t energy_start_mj() const { return get() != nullptr ? energy_start_mj_ : 0; }
+
+ private:
+  std::unique_ptr<GpuTelemetry> telemetry_;
+  std::uint64_t energy_start_mj_ = 0;
+  std::atomic<bool> ready_{false};
+  std::thread thread_;  // en dernier : lancé une fois le reste construit
 };
 
 }  // namespace ajp::app::play

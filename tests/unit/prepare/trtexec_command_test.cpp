@@ -178,3 +178,25 @@ TEST_CASE("trtexec_arguments : l'ordinal CUDA de la carte du rendu (C37-01)", "[
   CHECK_FALSE(trtexec_selected_device("[I] Selected Device ID: 1"));
   CHECK_FALSE(trtexec_selected_device("[I] Device 0: \"NVIDIA GeForce RTX 4070\""));
 }
+
+// C05-09 : ni le nettoyage de TensorRT 11 ni les arguments ajoutés par trtexec_arguments n'entrent dans la
+// clé du moteur. Cette ligne est donc figée ici : qui la change doit monter kCommandLineVersion
+// (trtexec_command.h), sinon les moteurs déjà en cache, construits avec l'ancienne ligne, seraient repris
+// tels quels.
+TEST_CASE("La ligne de commande de trtexec est figée par la version de la clé", "[prepare][trtexec]") {
+  const ajp::gpu::Shape shape{{1, 3, 1080, 1920}};
+  const ajp::gpu::ShapeSet shapes{.min = shape, .opt = shape, .max = shape};
+  std::string all;
+  for (const Recipe recipe : {Recipe::Upscaler, Recipe::Fp32Islands, Recipe::Fp32IslandsTuned}) {
+    const auto settings = sanitize_trt11(engine_settings(recipe, "input", shapes));
+    for (const std::string& arg : trtexec_arguments(
+             {.onnx = "m.onnx", .engine = "e.engine", .timing_cache = "t.cache", .layer_info = "l.json"},
+             settings.kept))
+      all += arg + '\n';
+    all += "--\n";
+  }
+  INFO("kCommandLineVersion = " << kCommandLineVersion
+                                << " : la ligne a changé, monter la version puis ce condensé");
+  CHECK(sha256_hex(all) == "52eca3ea047b07c60b794ea4d1703fea4353ad69b4e5dc5c4dd5c2c5c30e5e68");
+  CHECK(kCommandLineVersion == 1);
+}

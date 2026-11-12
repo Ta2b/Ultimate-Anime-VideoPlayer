@@ -41,8 +41,9 @@ class Inbox {
     {
       std::scoped_lock lock(mutex_);
       if (counts_[kind] >= bounds_[kind] + (reserved ? 1U : 0U)) return false;
-      ++counts_[kind];
+      // Compté après la construction : un message qui lève (mémoire épuisée) ne garde pas sa place (C20-07).
       queue_.emplace_back(std::in_place_index<kind>, std::forward<M>(message));
+      ++counts_[kind];
       waker = waker_;
       context = waker_context_;
     }

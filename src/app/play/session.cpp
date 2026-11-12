@@ -16,18 +16,12 @@
 namespace ajp::app::play {
 namespace {
 
-// Fin de flux : plus rien n'arrive depuis ce délai, la lecture est finie.
-constexpr std::int64_t kEndGraceUs = 1'000'000;
 // Un seek dont une boîte a refusé un message est rejoué après ce délai.
 constexpr std::int64_t kSeekRetryUs = 50'000;
 // Un seek que la source a refusé sans retrouver de position (partage muet, MED-06) : rejoué après ce délai,
 // doublé à chaque échec jusqu'à kSeekLostMaxUs, tant que l'époque n'a pas d'image (A13-08).
 constexpr std::int64_t kSeekLostRetryUs = 2'000'000;
 constexpr std::int64_t kSeekLostMaxUs = 16'000'000;
-// Des images attendent l'horloge audio depuis 1,5 s (Session::audio_stall_grace_us_) : l'horloge
-// hôte prend la main. Après une première perte, le délai est plus court : la piste est
-// probablement illisible.
-constexpr std::int64_t kAudioStallRepeatUs = 400'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
 constexpr std::int64_t kOsdPeriodUs = 250'000;
@@ -35,7 +29,6 @@ constexpr std::int64_t kOsdPeriodUs = 250'000;
 constexpr std::int64_t kCadenceSlackUs = 500;
 // À l'amorce, la première image attend ses sous-titres au plus ce temps.
 constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
-constexpr std::int64_t kAssumedFramePeriodUs = 41'667;  // une image de la source à 24 i/s, faute de mieux
 
 template <class... F>
 struct Overloaded : F... {
@@ -117,49 +110,6 @@ void Session::command(const Command& command) {
                  },
                  [](const auto&) {}},  // le reste ne concerne pas la tranche verticale
       command);
-}
-
-void Session::resume() {
-  if (!paused_) return;
-  paused_ = false;
-  // A13-07 : des pas pris dans la file n'ont pas déplacé l'audio, resté à la pause. La lecture repart par un
-  // seek exact sur l'image montrée, comme après un pas en arrière.
-  if (std::exchange(stepped_in_queue_, false) && !prerolling_ && current_ && current_->pts_us != kNoPts) {
-    seek_to(current_->pts_us, true);
-    return;
-  }
-  if (!prerolling_ && !start_pts_ && current_) send_play(epoch_, current_->pts_us);
-}
-
-// Image par image : en pause, un seek exact d'une image de la source. Le seek part de la position visée, donc
-// des pressions rapprochées avancent d'autant. P3.42 : vers l'avant, l'image suivante déjà dans la file, sans
-// seek.
-void Session::step_frame(int direction) {
-  if (!paused_) command(cmd::Pause{});
-  if (direction > 0 && step_from_queue()) return;
-  std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-  if (period <= 0) period = kAssumedFramePeriodUs;
-  // P3.78 : la cible est le milieu de l'image voisine, pas son début : des pts arrondis à la microseconde
-  // (23,976 i/s) ne font plus tomber le seek exact deux images plus loin. Une cible en attente est déjà un
-  // milieu.
-  std::int64_t base = 0;
-  if (pending_seek_us_) {
-    base = *pending_seek_us_ - period / 2;
-  } else if (current_ && current_->pts_us != kNoPts) {
-    // B13-01 : d'une image interpolée, le pas part de sa source de gauche : sans cela, la cible tombait une
-    // source plus loin (t = 1/2 + une période et demie : la source d'après la suivante).
-    base = current_->pts_us;
-    if (current_->t_num > 0 && current_->t_den > 0) base -= period * current_->t_num / current_->t_den;
-    // A13-05 : le pas d'avant est retombé dans l'image montrée (elle dure plus que la période moyenne, en
-    // VFR) ; le suivant part de sa cible, sans quoi rien ne bougerait jamais.
-    if (direction > 0 && last_step_ && last_step_->from_pts_us == base)
-      base = std::max(base, last_step_->target_us - period / 2);
-  }
-  const std::int64_t target = std::max<std::int64_t>(base + direction * period + period / 2, 0);
-  const std::optional<std::int64_t> from =
-      current_ ? std::optional(current_->pts_us) : std::optional<std::int64_t>();
-  seek_to(target, true);
-  if (direction > 0 && from) last_step_ = StepMark{*from, target};
 }
 
 void Session::set_subtitle_delay(std::int64_t delay_us) {
@@ -265,30 +215,6 @@ void Session::seek_to(std::int64_t target_us, bool exact) {
   preroll_since_us_.reset();
   stream_ended_ = false;
   pending_seek_us_ = target_us;
-}
-
-bool Session::step_from_queue() {
-  if (pending_seek_us_ || prerolling_ || !current_ || current_->pts_us == kNoPts) return false;
-  std::int64_t period = config_.extra != nullptr ? config_.extra->source_period_us() : 0;
-  if (period <= 0) period = kAssumedFramePeriodUs;
-  const RingFrame shown = *current_;
-  // B13-01 : la source suivante (t = 0), au plus une période et un quart plus loin ; les images interpolées
-  // d'entre deux sont passées. Elle et celles d'avant doivent être écrites, sinon le seek exact la donne.
-  const auto ready = [this](const RingFrame& f) { return screen_.ready(f); };
-  const RingFrame* source =
-      queue_.written_source_after(epoch_, shown.pts_us, shown.pts_us + period + period / 4, ready);
-  if (source == nullptr) return false;
-  late_.clear();
-  const std::optional<RingFrame> next = queue_.pick(source->pts_us, 0, late_, ready);
-  for (const RingFrame& frame : late_) retire(frame);
-  late_.clear();
-  if (!next) return false;
-  retire(shown);
-  current_ = next;
-  target_host_us_ = 0;       // B13-05 : la date visée de l'image d'avant ne vaut pas pour celle-ci
-  stepped_ = true;           // montrée au prochain tour
-  stepped_in_queue_ = true;  // l'audio est resté à la pause : la reprise le recale (A13-07)
-  return true;
 }
 
 void Session::on_frame(const RingFrame& frame) {
@@ -465,7 +391,7 @@ void Session::choose(std::int64_t host_now) {
   // L'image choisie maintenant paraît après display_delay_us ; elle doit être celle dont le pts
   // est le plus proche de cet instant, à une demi-période près.
   const std::int64_t period = display_period();
-  const std::int64_t lead_us = display_delay_us(period) + period / 2;
+  const std::int64_t lead_us = pick_lead_us(period);
   late_.clear();
   // Seules les images déjà écrites : l'écran garde la sienne tant que la suivante se calcule, au
   // lieu d'attendre le GPU des moteurs à chaque présentation.
@@ -493,10 +419,12 @@ std::optional<RingFrame> Session::pick(const ClockSnapshot& now, std::int64_t ho
   std::optional<RingFrame> picked;
   const std::optional<core::VblankGrid> grid = config_.vsync_index ? screen_.vblank_grid() : std::nullopt;
   if (grid && grid->period_us > 0.0 && now.rate > 0.0) {
-    // Le vblank où paraîtra l'image présentée maintenant ; l'image retenue est la dernière dont le vblank
-    // (arrondi avec hystérésis près du milieu) n'est pas après lui.
+    // Le vblank où paraîtra l'image présentée maintenant : le premier après son rendu (et le compositeur ou
+    // la file), sans l'attente moyenne du vsync, que l'arrondi supérieur compte déjà (C13-04 : l'image
+    // paraissait un vblank trop tôt sur le son). L'image retenue est la dernière dont le vblank (arrondi avec
+    // hystérésis près du milieu) n'est pas après lui.
     const double next =
-        std::ceil(grid->index_of(static_cast<double>(host_now + display_delay_us(display_period()))));
+        std::ceil(grid->index_of(static_cast<double>(host_now + appear_delay_us(display_period()))));
     picked = queue_.pick_by(
         [&](const RingFrame& frame) {
           return static_cast<double>(
@@ -513,31 +441,6 @@ std::optional<RingFrame> Session::pick(const ClockSnapshot& now, std::int64_t ho
   target_host_us_ =
       config_.vsync_index && picked && picked->pts_us != kNoPts && now.rate > 0.0 ? host_of(*picked) : 0;
   return picked;
-}
-
-// Des images attendent une horloge qui ne court pas : l'audio maître n'en fournit plus (piste
-// illisible, trou, début tardif, fin avant la vidéo). Passé le délai, l'horloge hôte mène et la
-// vidéo repart ; sans cela elle resterait figée, la source bloquée sur l'image tenue.
-void Session::watch_clock(const ClockSnapshot& now, std::int64_t host_now) {
-  const bool running = now.valid && now.epoch == epoch_ && now.rate != 0.0;
-  if (running || paused_ || current_ == std::nullopt || queue_.first_of(epoch_) == nullptr) {
-    clock_stalled_since_us_.reset();
-    return;
-  }
-  if (!clock_stalled_since_us_) {
-    clock_stalled_since_us_ = host_now;
-    return;
-  }
-  // P3.75 : passé la fin connue de la piste audio, l'horloge hôte mène tout de suite et sans message : ce
-  // n'est pas une panne, la vidéo continue seule.
-  const bool audio_over = config_.audio_end_us > 0 && current_->pts_us >= config_.audio_end_us - 200'000;
-  if (host_now - *clock_stalled_since_us_ < (audio_over ? 0 : audio_stall_grace_us_)) return;
-  clock_stalled_since_us_.reset();
-  if (!stages_.audio_lost(epoch_, current_->pts_us) || audio_over) return;
-  audio_stall_grace_us_ = kAudioStallRepeatUs;  // l'audio a déjà manqué : la prochaine fois, plus vite
-  on_refusal({.stage = "main",
-              .refusal = {RefusalCode::DeviceUnavailable, i18n::tr("audio missing: the display clock leads")},
-              .fatal = false});
 }
 
 Session::SubtitleLook Session::look_of(const subs::SubtitleFrame* frame) {
@@ -685,7 +588,7 @@ std::int64_t Session::floor_step_us_now(std::int64_t host_now) const {
   std::int64_t hold = host_now - shown_at_us_ + config_.vrr_floor_us;
   if (const RingFrame* head = queue_.first_of(epoch_); head != nullptr && head->pts_us != kNoPts) {
     const std::int64_t period = display_period();
-    const std::int64_t lead_us = display_delay_us(period) + period / 2;
+    const std::int64_t lead_us = pick_lead_us(period);
     const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
     hold = host_now - shown_at_us_ + std::max<std::int64_t>(std::llround(media_wait / now.rate), 0);
   }
@@ -703,7 +606,7 @@ std::int64_t Session::idle_wait_us(std::int64_t host_now) {
   const ClockSnapshot now = clock_.snapshot();
   if (!now.valid || now.epoch != epoch_ || now.rate <= 0.0 || head->pts_us == kNoPts) return kPollUs;
   const std::int64_t period = display_period();
-  const std::int64_t lead_us = display_delay_us(period) + period / 2;
+  const std::int64_t lead_us = pick_lead_us(period);
   const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
   std::int64_t wait = std::llround(media_wait / now.rate) - kCadenceSlackUs;
   // B13-07 : par numéro de vblank, l'échéance est celle de pick() : l'image devient due quand le vblank où
@@ -714,7 +617,7 @@ std::int64_t Session::idle_wait_us(std::int64_t host_now) {
     const double head_host =
         static_cast<double>(host_now) + static_cast<double>(head->pts_us - now.media_at(host_now)) / now.rate;
     const std::int64_t k = vsync_picker_.peek(grid->index_of(head_host));
-    wait = std::llround(grid->at(k - 1) - static_cast<double>(host_now + display_delay_us(period))) + 1;
+    wait = std::llround(grid->at(k - 1) - static_cast<double>(host_now + appear_delay_us(period))) + 1;
   }
   // Cadence fixe : l'image se représente à chaque période de l'écran.
   if (config_.steady_cadence && config_.display_period_us > 0 && shown_once_)
@@ -736,32 +639,6 @@ void Session::pace(const RingFrame& frame, std::int64_t visible_us) {
   const bool running = !paused_ && now.valid && now.epoch == epoch_ && frame.pts_us != kNoPts;
   stats_.paced(frame.pts_us, running ? now.media_at(visible_us) - frame.pts_us : 0, pacing_period_us(),
                frame.uninterpolated, frame.planned_gap_us);
-}
-
-void Session::check_end(std::int64_t host_now) {
-  if (playing_since_us_) {
-    const std::int64_t played = host_now - *playing_since_us_;
-    // --seconds atteint : un arrêt demandé, sans épisode suivant (A13-14).
-    if (config_.stop_after_us > 0 && played >= config_.stop_after_us) finished_ = quit_ = true;
-    if (config_.fullscreen_after_us > 0 && !fullscreen_done_ && played >= config_.fullscreen_after_us) {
-      screen_.set_fullscreen(true);
-      fullscreen_done_ = true;
-    }
-  }
-  if (plan_.active() && current_ && current_->epoch == epoch_ && current_->pts_us != kNoPts) {
-    const EditionPlan::Step step = plan_.shown(current_->pts_us, pacing_period_us());
-    if (const auto* jump = std::get_if<EditionPlan::Jump>(&step)) {
-      plan_jump_ = true;
-      seek_to(jump->to_us, true);
-      plan_jump_ = false;
-    } else if (std::holds_alternative<EditionPlan::End>(step)) {
-      finished_ = true;
-    }
-  }
-  if (stream_ended_ && !paused_ && queue_.empty() && stages_.idle() &&
-      host_now - last_fresh_host_us_ > kEndGraceUs) {
-    finished_ = true;
-  }
 }
 
 void Session::end() {

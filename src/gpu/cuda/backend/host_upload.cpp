@@ -51,6 +51,7 @@ HostUploads::~HostUploads() {
     if (slot.device != nullptr) cudaFree(slot.device);
     if (slot.host != nullptr) cudaFreeHost(slot.host);
   }
+  for (std::byte* host : outgrown_) cudaFreeHost(host);
   if (transfer_ != nullptr) cudaStreamDestroy(transfer_);
 }
 
@@ -65,12 +66,18 @@ std::expected<void, Refusal> HostUploads::reserve(Slot& slot, std::size_t bytes)
       return ok;
   }
   if (bytes <= slot.bytes) return {};
-  if (slot.used) {
-    // Image plus grande : l'ancien tampon d'appareil peut encore être lu.
-    if (auto ok = cuda_check(cudaEventSynchronize(slot.read), "cudaEventSynchronize"); !ok) return ok;
+  // Image plus grande (C01-05) : cudaFree et cudaFreeHost synchroniseraient tout l'appareil en pleine
+  // lecture. L'ancien tampon d'appareil retourne au pool derrière la lecture qui peut encore le lire, sur la
+  // file d'envoi ; l'ancien tampon épinglé (l'envoi qui le lisait est fini, upload l'a attendu) reste jusqu'à
+  // la destruction : il n'y en a qu'un par agrandissement, rare (changement de taille de la source).
+  if (slot.device != nullptr) {
+    if (slot.used) {
+      if (auto ok = cuda_check(cudaStreamWaitEvent(transfer_, slot.read, 0), "cudaStreamWaitEvent"); !ok)
+        return ok;
+    }
+    if (auto ok = cuda_check(cudaFreeAsync(slot.device, transfer_), "cudaFreeAsync"); !ok) return ok;
   }
-  if (slot.device != nullptr) cudaFree(slot.device);
-  if (slot.host != nullptr) cudaFreeHost(slot.host);
+  if (slot.host != nullptr) outgrown_.push_back(slot.host);
   slot.device = nullptr;
   slot.host = nullptr;
   slot.bytes = 0;
@@ -78,7 +85,8 @@ std::expected<void, Refusal> HostUploads::reserve(Slot& slot, std::size_t bytes)
   if (auto ok = cuda_check(cudaHostAlloc(&host, bytes, cudaHostAllocWriteCombined), "cudaHostAlloc"); !ok)
     return ok;
   slot.host = static_cast<std::byte*>(host);
-  if (auto ok = cuda_check(cudaMalloc(&slot.device, bytes), "cudaMalloc"); !ok) return ok;
+  if (auto ok = cuda_check(cudaMallocAsync(&slot.device, bytes, transfer_), "cudaMallocAsync"); !ok)
+    return ok;
   slot.bytes = bytes;
   return {};
 }

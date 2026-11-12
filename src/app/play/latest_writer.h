@@ -1,7 +1,7 @@
 // Écritures de fichiers hors du thread d'affichage (play.toml, position de reprise, mémoire du mode Auto) :
 // un thread d'écriture qui ne garde, par fichier, que la dernière version demandée. Une écriture lente
 // (disque qui dort, fsync, partage réseau) ne retient plus la présentation des images : l'attente de fin
-// est bornée (flush), et un refus se rapporte à l'affichage (take_failure).
+// est bornée (flush), et un refus se rapporte à l'affichage (take_failures).
 #pragma once
 
 #include <chrono>
@@ -12,9 +12,11 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "core/types.h"
 
@@ -36,20 +38,22 @@ class LatestWriter {
   LatestWriter& operator=(const LatestWriter&) = delete;
 
   // L'écriture de key (un nom de fichier) : elle remplace celle de même clé pas encore faite. Un refus va au
-  // journal et se reprend par take_failure.
+  // journal et se reprend par take_failures.
   void post(const std::string& key, Job job);
   // Attend que toutes les écritures demandées soient faites, au plus limit ; faux si elles ne le sont pas.
   bool flush(std::chrono::milliseconds limit = kFlushLimit);
 
-  // Une écriture refusée que l'affichage n'a pas encore vue : sa clé et son refus, une seule fois. Une
+  // Les écritures refusées que l'affichage n'a pas encore vues : leur clé et leur refus, une seule fois. Une
   // écriture de la même clé qui réussit ensuite efface le refus.
   struct Failure {
     std::string key;
     Refusal refusal;
   };
-  std::optional<Failure> take_failure();
-  // Dit par l'affichage : l'avis d'un refus ne paraît qu'une fois par écrivain.
-  bool failure_said = false;
+  // Dans l'ordre des clés : un refus de auto_memory ne cache plus celui de
+  // play.toml (C22-02).
+  std::vector<Failure> take_failures();
+  // Dit par l'affichage : l'avis d'un refus ne paraît qu'une fois par clé et par écrivain (C22-02).
+  std::set<std::string> failures_said;
 
   // À la sortie du processus : attend, au plus limit, les écritures que des writers détruits ont laissées
   // en cours.

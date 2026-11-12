@@ -102,8 +102,9 @@ bool dump(const wchar_t* file, EXCEPTION_POINTERS* info) {
   // Sans MiniDumpWithIndirectlyReferencedMemory : cette option emporte la mémoire pointée par les piles
   // (chemins complets, texte des sous-titres, nom d'utilisateur), et le vidage se joint à une issue publique
   // (A39-04).
-  const auto type =
-      static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
+  // MiniDumpFilterModulePaths retire le nom d'utilisateur des chemins de modules (C39-13).
+  const auto type = static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo |
+                                               MiniDumpWithUnloadedModules | MiniDumpFilterModulePaths);
   const BOOL written = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), out, type,
                                          info != nullptr ? &exception : nullptr, nullptr, nullptr);
   CloseHandle(out);

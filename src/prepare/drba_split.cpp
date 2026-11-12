@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -21,9 +22,14 @@
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
 #include "prepare/sha256.h"
+#include "prepare/split_index.h"
 
 namespace ajp::prepare {
 namespace {
+
+using split::block_name;
+using split::Index;
+using split::text_is;
 
 std::unexpected<Refusal> unknown(std::string detail) {
   return std::unexpected(
@@ -50,50 +56,12 @@ std::string cast32(std::string_view tensor) {
   return std::format("{}/cast32", tensor);
 }
 
-// Le graphe indexé par nom de nœud et par tenseur produit.
-class Index {
- public:
-  explicit Index(const OnnxGraph& graph) : graph_(graph) {
-    for (const OnnxFullNode& node : graph.nodes) {
-      by_name_.emplace(node.name, &node);
-      for (const std::string& output : node.outputs) producer_.emplace(output, &node);
-    }
-  }
-  const OnnxFullNode* named(const std::string& name) const {
-    const auto found = by_name_.find(name);
-    return found != by_name_.end() ? found->second : nullptr;
-  }
-  const OnnxFullNode* producer(const std::string& tensor) const {
-    const auto found = producer_.find(tensor);
-    return found != producer_.end() ? found->second : nullptr;
-  }
-  const std::vector<double>& constant(const std::string& tensor) const {
-    static const std::vector<double> none;
-    const auto found = graph_.constants.find(tensor);
-    return found != graph_.constants.end() ? found->second : none;
-  }
-
- private:
-  const OnnxGraph& graph_;
-  std::map<std::string, const OnnxFullNode*, std::less<>> by_name_;
-  std::map<std::string, const OnnxFullNode*, std::less<>> producer_;
-};
-
-bool text_is(const OnnxFullNode& node, std::string_view attribute, std::string_view value) {
-  const OnnxAttribute* found = node.attribute(attribute);
-  return found != nullptr && found->text && *found->text == value;
-}
-
 bool same(const std::vector<double>& got, const std::vector<double>& want) {
   if (got.size() != want.size()) return false;
   for (std::size_t i = 0; i < got.size(); ++i) {
     if (std::abs(got[i] - want[i]) > 1e-6 * std::max(1.0, std::abs(want[i]))) return false;
   }
   return true;
-}
-
-std::string block_name(int b, std::string_view tail) {
-  return std::format("/block{}/{}", b, tail);
 }
 
 }  // namespace
@@ -258,6 +226,9 @@ DrbaExpectedWiring drba_expected_wiring(int tail) {
 }
 
 std::expected<std::vector<std::byte>, Refusal> with_drba_motion_outputs(std::span<const std::byte> model) {
+  // Les deux tenseurs sont pris par leur nom : le câblage de la fin du graphe doit être celui que le chemin
+  // fusionné exige, sinon le « flot » n'en serait pas un (C04-04).
+  if (auto wired = analyze_drba(model); !wired) return std::unexpected(std::move(wired.error()));
   auto summary = scan_onnx(model);
   if (!summary) return std::unexpected(std::move(summary.error()));
   // Les sorties ont le type des calculs du graphe, celui de ses entrées : FP16 pour l'export converti.
@@ -284,6 +255,52 @@ bool input_matches(const Index& index, const OnnxFullNode& node, std::size_t i, 
   if (producer == nullptr || producer->op_type != "Cast") return false;
   const OnnxAttribute* to = producer->attribute("to");
   return to != nullptr && to->integer == static_cast<std::int64_t>(OnnxType::Float);
+}
+
+constexpr std::string_view kPrefix = "/encode/cnn";
+
+// Les trois chaînes de l'encodeur (« /encode/cnn<k>/… », « /encode/cnn<k>_1/… », « /encode/cnn<k>_2/… ») sont
+// coupées sur la première et construites en lot de 3 : leurs poids doivent être les mêmes, nom ou contenu
+// (C04-05). Le nœud de la première copie sert de référence à chaque nœud de même rang des deux autres.
+std::optional<std::string> encoder_weights_problem(std::span<const std::byte> model, const OnnxGraph& graph) {
+  // Le nom sans le « _1 » ou « _2 » qui suit le chiffre de la couche : « /encode/cnn0_1/Conv » → «
+  // /encode/cnn0/Conv ».
+  const auto base_name = [](const std::string& name) -> std::string {
+    const std::size_t digit = kPrefix.size() + 1;
+    if (name.size() > digit + 1 && (name.compare(digit, 2, "_1") == 0 || name.compare(digit, 2, "_2") == 0))
+      return name.substr(0, digit) + name.substr(digit + 2);
+    return name;
+  };
+  std::map<std::string, const OnnxFullNode*, std::less<>> first;
+  std::set<std::string, std::less<>> weights;
+  for (const OnnxFullNode& node : graph.nodes) {
+    if (!node.name.starts_with(kPrefix) || (node.op_type != "Conv" && node.op_type != "ConvTranspose"))
+      continue;
+    if (base_name(node.name) == node.name) first.emplace(node.name, &node);
+    for (std::size_t i = 1; i < node.inputs.size(); ++i) weights.insert(node.inputs[i]);
+  }
+  auto digests = initializer_digests(model, weights);
+  if (!digests) return "poids de l'encodeur illisibles";
+  const auto same_weight = [&](const std::string& a, const std::string& b) {
+    if (a == b) return true;
+    const auto da = digests->find(a);
+    const auto db = digests->find(b);
+    return da != digests->end() && db != digests->end() && da->second == db->second;
+  };
+  for (const OnnxFullNode& node : graph.nodes) {
+    if (!node.name.starts_with(kPrefix) || (node.op_type != "Conv" && node.op_type != "ConvTranspose"))
+      continue;
+    const std::string base = base_name(node.name);
+    if (base == node.name) continue;
+    const auto reference = first.find(base);
+    if (reference == first.end() || reference->second->inputs.size() != node.inputs.size())
+      return node.name + " : pas de nœud de même rang dans la première chaîne";
+    for (std::size_t i = 1; i < node.inputs.size(); ++i) {
+      if (!same_weight(reference->second->inputs[i], node.inputs[i]))
+        return node.name + " : poids différents de ceux de " + base;
+    }
+  }
+  return std::nullopt;
 }
 
 }  // namespace
@@ -334,6 +351,7 @@ std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model)
         return unknown(std::format("{} : entrée {} différente", want.name, i));
     }
   }
+  if (const auto problem = encoder_weights_problem(model, *graph)) return unknown(*problem);
   for (const DrbaExpectedConstant& want : wiring.constants) {
     const OnnxFullNode* got = index.named(want.node);
     if (got == nullptr || want.input >= got->inputs.size() ||
@@ -350,7 +368,7 @@ std::expected<DrbaSplit, Refusal> analyze_drba(std::span<const std::byte> model)
     if (node.op_type == "Resize") {
       ++resizes;
       if (node.inputs.size() != 3 || !node.inputs[1].empty() || !text_is(node, "mode", "linear") ||
-          !text_is(node, "coordinate_transformation_mode", "half_pixel"))
+          !text_is(node, "coordinate_transformation_mode", "half_pixel") || !node.resize_without_antialias())
         return unknown(node.name + " : Resize non linéaire/demi-pixel à échelle constante");
     } else if (node.op_type == "GridSample") {
       ++grids;
@@ -437,6 +455,7 @@ std::string format_drba_manifest(const DrbaFusedManifest& manifest) {
   text += std::format("tail {}\n", manifest.plan.tail);
   for (const std::string& piece : manifest.pieces) text += std::format("piece {}\n", piece);
   text += format_sizes(manifest.sizes);
+  text += format_digests(manifest.digests);
   return text;
 }
 
@@ -452,6 +471,8 @@ std::optional<std::string> manifest_problem(const DrbaFusedManifest& manifest, b
     return "nombre de morceaux différent de 4";
   if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
     return "autant de tailles que de morceaux attendu";
+  if (!manifest.digests.empty() && manifest.digests.size() != manifest.pieces.size())
+    return "autant d'empreintes que de morceaux attendu";
   return std::nullopt;
 }
 
@@ -499,14 +520,17 @@ std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view t
       manifest.plan.tail = *t;
       has_tail = true;
     } else if (key == "piece") {
-      // Un nom de fichier seul : jamais de dossier ni de « .. ».
-      if (rest.empty() || rest.find_first_of("/\\") != std::string_view::npos || rest == "." || rest == "..")
-        return bad("morceau « " + std::string(rest) + " »");
+      // Un nom de fichier seul : jamais de dossier, de « .. », de « : » ni de nom que Windows lit autrement.
+      if (rest == "." || !is_piece_file_name(rest)) return bad("morceau « " + std::string(rest) + " »");
       manifest.pieces.emplace_back(rest);
     } else if (key == "sizes") {
       auto sizes = parse_sizes(rest);
       if (!sizes) return bad("tailles illisibles");
       manifest.sizes = std::move(*sizes);
+    } else if (key == "digests") {
+      auto digests = parse_digests(rest);
+      if (!digests) return bad("empreintes illisibles");
+      manifest.digests = std::move(*digests);
     } else {
       return bad("champ « " + std::string(key) + " » inconnu");
     }
@@ -553,13 +577,16 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
   DrbaFusedManifest manifest{.height = height, .width = width, .plan = split->plan};
   for (const DrbaPiece& piece : *pieces) {
     const std::string file = std::format("{}-{}.onnx", stem, piece.name);
-    // Un morceau déjà là n'est gardé que s'il a la taille voulue : un morceau tronqué est réécrit (B04-02).
-    if (!file_has_size(dir / core::path_from_utf8(file), piece.model.size())) {
+    // Un morceau déjà là n'est gardé que s'il a la taille et l'empreinte voulues : un morceau tronqué ou
+    // abîmé est réécrit (B04-02, C04-06).
+    const std::string digest = sha256_hex(byte_text(piece.model));
+    if (!file_matches(dir / core::path_from_utf8(file), piece.model.size(), digest)) {
       if (auto written = write_atomic(dir / core::path_from_utf8(file), piece.model); !written)
         return std::unexpected(std::move(written.error()));
     }
     manifest.pieces.push_back(file);
     manifest.sizes.push_back(piece.model.size());
+    manifest.digests.push_back(digest);
   }
   const std::string text = format_drba_manifest(manifest);
   const auto* raw = reinterpret_cast<const std::byte*>(text.data());

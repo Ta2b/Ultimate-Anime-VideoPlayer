@@ -3,6 +3,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/pumped_task.h"
 #include "core/log.h"
 #include "core/thread.h"
 
@@ -69,7 +70,14 @@ LatestWriter::~LatestWriter() {
     const std::scoped_lock lock(abandoned().mutex);
     abandoned().states.emplace_back(state_);
   }
-  thread_.detach();
+  // Gardé au registre des fils abandonnés plutôt que détaché : à la sortie, settle_abandoned_threads sait
+  // qu'il écrit encore et choisit quick_exit plutôt que les destructeurs statiques sous ses pieds (C30-04).
+  abandon_thread(std::move(thread_), [weak = std::weak_ptr<State>(state_)] {
+    const std::shared_ptr<State> state = weak.lock();
+    if (!state) return true;
+    const std::scoped_lock lock(state->mutex);
+    return state->idle();
+  });
 }
 
 void LatestWriter::post(const std::string& key, Job job) {
@@ -90,12 +98,13 @@ bool LatestWriter::flush(std::chrono::milliseconds limit) {
   return state_->done.wait_for(lock, limit, [this] { return state_->idle(); });
 }
 
-std::optional<LatestWriter::Failure> LatestWriter::take_failure() {
+std::vector<LatestWriter::Failure> LatestWriter::take_failures() {
   const std::scoped_lock lock(state_->mutex);
-  if (state_->failed.empty()) return std::nullopt;
-  const auto first = state_->failed.begin();
-  Failure out{.key = first->first, .refusal = first->second};
-  state_->failed.erase(first);
+  std::vector<Failure> out;
+  out.reserve(state_->failed.size());
+  for (auto& [key, refusal] : state_->failed)
+    out.push_back(Failure{.key = key, .refusal = std::move(refusal)});
+  state_->failed.clear();
   return out;
 }
 

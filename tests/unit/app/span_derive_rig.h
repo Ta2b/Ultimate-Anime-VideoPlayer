@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../support/span_fp8_synthetic.h"
 #include "app/play/span_derive.h"
 #include "app/play/span_int8.h"
 #include "gpu/span_fp8/package.h"
@@ -58,7 +59,7 @@ struct Folder {
   }
   SpanDerivePlan plan() const {
     return {.model = model, .models_dir = models(), .load_weights = [] {
-              return std::expected<Package, Refusal>(gpu::span_fp8::synthetic());
+              return std::expected<Package, Refusal>(gpu::span_fp8::testing::synthetic());
             }};
   }
   std::vector<std::string> files() const {
@@ -99,9 +100,12 @@ struct FakeBackend {
   double psnr = 50.0;
   double ssim = 0.995;
   double psnr16 = 0.0;              // non nul : la variante à accumulateur f16 est mesurée à ce PSNR (3.5a)
+  double ms16 = 8.9;                // et à ce temps (contre 9,2 ms pour l'accumulateur f32)
   double error_p999 = 1.0 / 255.0;  // 99,9e centile de l'erreur de chaque image (3.7a)
   double hard_psnr = 40.0;          // PSNR de chaque cas dur rendu (3.7a)
   bool refuse = false;
+  double trt_ms = 0.0;           // le SPAN FP16 de TensorRT chronométré, quand la requête l'apporte (C02-01)
+  float validation_peak = 0.0F;  // maximum relevé sur la validation, pour chaque tenseur (C02-04)
   mutable gpu::SpanFp8Request seen;
   SpanDeriver deriver() const {
     return [this](const gpu::SpanFp8Request& request, gpu::Progress& progress) {
@@ -119,8 +123,11 @@ struct FakeBackend {
       derivation.kernels_ms = 9.2;
       if (psnr16 > 0.0) {
         derivation.scores_acc16.assign(request.validation.size(), {.psnr_db = psnr16, .ssim = ssim});
-        derivation.kernels_ms_acc16 = 8.9;
+        derivation.kernels_ms_acc16 = ms16;
       }
+      derivation.validation_peaks.fill(validation_peak);
+      if (request.fp16) derivation.trt_fp16_ms = trt_ms;
+      derivation.timed_size = std::format("{}x{}", request.timing_width, request.timing_height);
       derivation.reference = "cutlass-fp16";
       derivation.gpu_arch = "sm_89";
       derivation.kernels_version = 1;

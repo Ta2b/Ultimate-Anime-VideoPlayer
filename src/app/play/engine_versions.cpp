@@ -53,6 +53,7 @@ std::optional<InstalledPackage> read_package_note(const fs::path& dir) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.starts_with("sha256=")) found.sha256 = line.substr(7);
     if (line.starts_with("licence=")) found.license = line.substr(8);
+    if (line.starts_with("arch=")) found.arch = line.substr(5);
     if (line.starts_with("fichier=")) {  // « fichier=<taille> <nom> »
       const std::string_view rest = std::string_view(line).substr(8);
       const std::size_t space = rest.find(' ');
@@ -75,6 +76,15 @@ InstalledState installed_state(const EngineCatalog& catalog, const core::EngineP
     InstalledState here{.state = PackageState::Replaced, .dir = current, .note = read_package_note(current)};
     if (here.note && here.note->sha256 == package.sha256) {
       here.state = PackageState::Current;
+      // Le GPU a changé depuis l'installation (autre carte, dossier de données déplacé) : la ressource du
+      // constructeur de sa génération manque, TensorRT retombe sur le PTX, des constructions plus lentes. Les
+      // fichiers déjà là se reprennent par lien dur, seuls ceux qui manquent sont tirés (C06-03). Une note
+      // d'avant, sans architecture, ne déclenche rien.
+      if (!arch.empty() && !here.note->arch.empty() && here.note->arch != arch) {
+        here.state = PackageState::Replaced;
+        here.missing = std::format("arch {} -> {}", here.note->arch, arch);
+        return here;
+      }
       // « Installé » ne veut pas dire « le module existe » : un fichier tiers mis en quarantaine par un
       // antivirus laisse un dossier « à jour » qui ne se charge pas (B06-11). La note en garde les noms et
       // les tailles.

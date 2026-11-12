@@ -20,6 +20,12 @@
 #include "prepare/utf8.h"
 
 namespace ajp::app::play {
+
+// C02-11 : la découpe des images de la dérivation n'a qu'une valeur, celle de gpu/span_fp8/derive.h ;
+// make_span_prepare la passe à media::StillsSpec, dont les valeurs par défaut doivent rester les mêmes.
+static_assert(media::StillsSpec{}.max_width == gpu::span_fp8::kCropMaxWidth &&
+              media::StillsSpec{}.max_height == gpu::span_fp8::kCropMaxHeight);
+
 namespace {
 
 // « 52,0 dB » : une décimale, virgule française.
@@ -85,22 +91,41 @@ std::vector<gpu::span_fp8::ImageScore> scores_of(const std::vector<gpu::SpanFp8I
   return out;
 }
 
-// B02-01 : le temps du SPAN FP16 de TensorRT à la taille jugée, et le gain des noyaux FP8 sur lui. Rien quand
-// la qualité refuse déjà, ou sans mesure possible (plan.time_fp16 vide). Un gain sous kMinSpeedup refuse le
-// paquet : sa perte de qualité ne s'achèterait par rien.
-std::expected<void, Refusal> judge_speed(const SpanDerivePlan& plan, double kernels_ms, int width, int height,
-                                         SpanDeriveProgress& progress, const std::stop_token& stop,
-                                         SpanDeriveReport& report) {
-  if (!report.verdict.passed || !plan.time_fp16) return {};
-  progress.set(0.95F, i18n::tr("TensorRT FP16 timing"));
-  gpu::Progress timing{.report = {}, .stop = stop};
-  auto trt = plan.time_fp16(width, height, timing);
-  if (!trt) return std::unexpected(std::move(trt.error()));
-  report.trt_fp16_ms = *trt;
-  report.speedup = kernels_ms > 0.0 ? *trt / kernels_ms : 0.0;
+// B02-01 : le gain des noyaux FP8 sur le SPAN FP16 de TensorRT, que le backend a chronométré avec eux
+// (C02-01). Rien quand la qualité refuse déjà, ou sans mesure (pas de moteur FP16 dans la requête). Un gain
+// sous kMinSpeedup refuse le paquet : sa perte de qualité ne s'achèterait par rien.
+void judge_speed(const gpu::SpanFp8Derivation& derived, double kernels_ms, SpanDeriveReport& report) {
+  if (!report.verdict.passed || derived.trt_fp16_ms <= 0.0) return;
+  report.trt_fp16_ms = derived.trt_fp16_ms;
+  report.speedup = kernels_ms > 0.0 ? derived.trt_fp16_ms / kernels_ms : 0.0;
   report.too_slow = report.speedup < gpu::span_fp8::kMinSpeedup;
   if (report.too_slow) report.verdict.passed = false;
+}
+
+// La requête : le moteur FP16 à chronométrer et la taille où le faire (C02-01, C02-05).
+std::expected<void, Refusal> ask_timing(const SpanDerivePlan& plan, SpanDeriveProgress& progress,
+                                        const std::stop_token& stop, gpu::SpanFp8Request& request) {
+  const gpu::SpanStill& still = request.validation.front();
+  request.timing_width = (plan.work_width > 0 ? plan.work_width : still.width) / 2 * 2;
+  request.timing_height = (plan.work_height > 0 ? plan.work_height : still.height) / 2 * 2;
+  if (!plan.fp16_engine) return {};
+  progress.set(0.3F, i18n::tr("TensorRT FP16 engine"));
+  gpu::Progress building{.report = {}, .stop = stop};
+  auto engine = plan.fp16_engine(request.timing_width, request.timing_height, building);
+  if (!engine) return std::unexpected(std::move(engine.error()));
+  request.fp16 = std::move(*engine);
   return {};
+}
+
+// Ce que la variante à accumulateur f16 a coûté et rapporté, quand elle est gardée (C02-03).
+std::string acc16_text(const SpanDeriveReport& report) {
+  if (!report.acc16) return {};
+  const gpu::SpanFp8Derivation& d = report.derivation;
+  const double gain = d.kernels_ms > 0.0 ? 100.0 * (1.0 - d.kernels_ms_acc16 / d.kernels_ms) : 0.0;
+  return " " +
+         i18n::tr_format(
+             "The f16 accumulator variant is kept: it costs {} dB of mean PSNR and saves {} % of the time.",
+             db(report.acc16_loss_db), db(gain));
 }
 
 // Ce que le gain mesuré dit à l'utilisateur : rien sans mesure ; le refus quand il manque.
@@ -117,20 +142,40 @@ std::string speed_text(const SpanDeriveReport& report, double kernels_ms) {
                    db(report.trt_fp16_ms), times(report.speedup));
 }
 
-// Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte et perd au plus 0,3 dB de
-// PSNR moyen ; c'est alors elle que le paquet, le reçu et le temps décrivent. Rend le temps de la variante
-// gardée.
-double keep_variant(const gpu::SpanFp8Derivation& derived, SpanDeriveReport& report) {
-  report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived.scores), scores_of(derived.hard_scores));
+// La porte d'une variante : images de validation, cas durs, puis l'écrêtage relevé sur la validation
+// (C02-04 ; les deux variantes ont les mêmes échelles).
+gpu::span_fp8::Verdict judge_variant(const std::vector<gpu::SpanFp8ImageScore>& scores,
+                                     const std::vector<gpu::SpanFp8ImageScore>& hard,
+                                     const gpu::SpanFp8Derivation& derived, std::size_t blocks) {
+  gpu::span_fp8::Verdict verdict = gpu::span_fp8::judge_hardened(scores_of(scores), scores_of(hard));
+  gpu::span_fp8::judge_peaks(verdict, derived.validation_peaks, derived.scales, blocks);
+  return verdict;
+}
+
+// Étape 3.5a : la variante à accumulateur f16 hors blocs, si elle passe la porte, perd au plus 0,3 dB de PSNR
+// moyen et va plus vite (C02-03) ; c'est alors elle que le paquet, le reçu et le temps décrivent. Rend le
+// temps de la variante gardée.
+double keep_variant(const gpu::SpanFp8Derivation& derived, std::size_t blocks, SpanDeriveReport& report) {
+  report.verdict = judge_variant(derived.scores, derived.hard_scores, derived, blocks);
   report.passed = report.verdict.passed;
   report.acc16 = false;
   if (derived.scores_acc16.empty()) return derived.kernels_ms;
   const gpu::span_fp8::Verdict verdict16 =
-      gpu::span_fp8::judge_hardened(scores_of(derived.scores_acc16), scores_of(derived.hard_scores_acc16));
-  if (!gpu::span_fp8::keep_acc16(report.verdict, verdict16)) return derived.kernels_ms;
+      judge_variant(derived.scores_acc16, derived.hard_scores_acc16, derived, blocks);
+  if (!gpu::span_fp8::keep_acc16(report.verdict, verdict16, derived.kernels_ms, derived.kernels_ms_acc16))
+    return derived.kernels_ms;
   report.acc16 = true;
+  report.acc16_loss_db = report.verdict.psnr_mean_db - verdict16.psnr_mean_db;
   report.verdict = verdict16;
   return derived.kernels_ms_acc16;
+}
+
+// Le refus pour écrêtage (C02-04) : les images de la vidéo sortent de ce que la calibration a vu.
+std::string clipped_text(const gpu::span_fp8::Verdict& verdict) {
+  return i18n::tr_format(
+      "Performance mode rejected: {} FP8 tensors would clip on the validation frames (peak at {}× their "
+      "range): the calibration frames do not cover this video. Playback stays on TensorRT FP16.",
+      verdict.clipped_tensors, times(verdict.peak_ratio));
 }
 
 // Ce que la dérivation dit à l'utilisateur : prêt avec ses mesures et son gain, ou pourquoi elle refuse.
@@ -143,7 +188,8 @@ std::string derived_text(const SpanDeriveReport& report, double kernels_ms) {
                "ms). It is used the next time a video opens.",
                scores_text, report.calibration_images, report.validation_images, report.size,
                db(kernels_ms)) +
-           speed_text(report, kernels_ms);
+           acc16_text(report) + speed_text(report, kernels_ms);
+  if (report.verdict.clipped_tensors > 0) return clipped_text(report.verdict);
   return i18n::tr_format(
       "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on TensorRT "
       "FP16.",
@@ -194,6 +240,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   for (const std::size_t i : split.validation) request.validation.push_back(still_of((*taken)[i]));
   taken->clear();
   add_hard_cases(request);  // étape 3.7a : les cas durs, à la taille des images de validation
+  if (auto ok = ask_timing(plan, progress, stop, request); !ok) return std::unexpected(std::move(ok.error()));
 
   progress.set(0.3F, i18n::tr("calibration"));
   gpu::Progress backend_progress{.report =
@@ -209,12 +256,10 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   report.calibration_images = static_cast<int>(request.calibration.size());
   report.validation_images = static_cast<int>(request.validation.size());
   const int width = request.validation.front().width;
-  const int height = request.validation.front().height;
-  report.size = std::format("{}x{}", width, height);
-  const double kernels_ms = keep_variant(*derived, report);
+  report.size = gpu::span_fp8::size_key(request.timing_width, request.timing_height);
+  const double kernels_ms = keep_variant(*derived, weights->blocks.size(), report);
   const bool acc16 = report.acc16;
-  if (auto ok = judge_speed(plan, kernels_ms, width, height, progress, stop, report); !ok)
-    return std::unexpected(std::move(ok.error()));
+  judge_speed(*derived, kernels_ms, report);
   report.passed = report.verdict.passed;
 
   // Le paquet jugé est celui dont les échelles viennent de cette calibration, et pas un autre.
@@ -242,7 +287,12 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   receipt.calibration_crop = width;
   receipt.corpus_sha256 = corpus.hex();
   receipt.validation_images = report.validation_images;
-  receipt.validation_size = report.size;
+  receipt.validation_size = std::format("{}x{}", width, request.validation.front().height);
+  receipt.timed_size = derived->timed_size;
+  if (acc16) {
+    receipt.acc16_psnr_loss_db = report.acc16_loss_db;
+    receipt.kernels_ms_f32 = derived->kernels_ms;
+  }
   receipt.verdict = report.verdict;
   receipt.reference = derived->reference;
   receipt.derived_by = "ajp (natif)";
@@ -308,6 +358,7 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   }
   taken->clear();
   add_hard_cases(request);
+  if (auto ok = ask_timing(plan, progress, stop, request); !ok) return std::unexpected(std::move(ok.error()));
 
   progress.set(0.3F, i18n::tr("validation"));
   gpu::Progress backend_progress{.report =
@@ -319,12 +370,11 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   if (!derived) return std::unexpected(std::move(derived.error()));
   report.derivation = *derived;
   report.validation_images = static_cast<int>(request.validation.size());
-  report.size = std::format("{}x{}", request.validation.front().width, request.validation.front().height);
-  report.verdict = gpu::span_fp8::judge_hardened(scores_of(derived->scores), scores_of(derived->hard_scores));
-  if (auto ok = judge_speed(plan, derived->kernels_ms, request.validation.front().width,
-                            request.validation.front().height, progress, stop, report);
-      !ok)
-    return std::unexpected(std::move(ok.error()));
+  report.size = gpu::span_fp8::size_key(request.timing_width, request.timing_height);
+  auto parsed = gpu::span_fp8::parse(bytes);
+  if (!parsed) return std::unexpected(std::move(parsed.error()));
+  report.verdict = judge_variant(derived->scores, derived->hard_scores, *derived, parsed->blocks.size());
+  judge_speed(*derived, derived->kernels_ms, report);
   report.passed = report.verdict.passed;
   const auto drop = [&](std::vector<std::string>& from) { std::erase(from, report.size); };
   drop(sizes->validated);
@@ -340,6 +390,8 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   const std::string scores_text = verdict_text(report.verdict);
   if (report.too_slow)
     report.text = speed_text(report, derived->kernels_ms);
+  else if (report.verdict.clipped_tensors > 0)
+    report.text = clipped_text(report.verdict);
   else
     report.text = report.passed
                       ? i18n::tr_format("Performance mode validated at {}: {}.", report.size, scores_text) +
@@ -354,9 +406,10 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
 }
 
 void pause_for_playback(std::string_view stage, const std::stop_token& stop) {
-  // Le backend rend compte après chaque image de calibration ou de validation : la lecture reprend la carte
-  // le temps d'une pause, interrompue au plus tard 10 ms après une demande d'arrêt.
-  if (stage != "calibration" && stage != "validation") return;
+  // Le backend rend compte après chaque image de calibration ou de validation, et après chaque lot de la
+  // mesure du temps (C02-02) : la lecture reprend la carte le temps d'une pause, interrompue au plus tard 10
+  // ms après une demande d'arrêt.
+  if (stage != "calibration" && stage != "validation" && stage != "mesure du temps") return;
   const auto until = std::chrono::steady_clock::now() + kBackgroundPause;
   while (!stop.stop_requested() && std::chrono::steady_clock::now() < until)
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -405,20 +458,26 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     return prepare;
   }
   prepare.offered = true;
-  prepare.run = [library, init, model, models_dir, video, reduce, validate, automatic, during_playback](
-                    SpanDeriveProgress& progress,
-                    const std::stop_token& stop) -> std::expected<std::string, Refusal> {
+  prepare.run = [library, init, model, models_dir, video, reduce, validate, automatic, during_playback,
+                 work = context](SpanDeriveProgress& progress,
+                                 const std::stop_token& stop) -> std::expected<std::string, Refusal> {
     SpanDerivePlan plan{.model = model, .models_dir = models_dir};
     if (automatic) plan.min_free_ratio = kAutoMinFreeRatio;
     plan.during_playback = during_playback;
-    plan.time_fp16 = [&](int width, int height, gpu::Progress& timing) -> std::expected<double, Refusal> {
+    plan.work_width = work.width;
+    plan.work_height = work.height;
+    plan.fp16_engine = [&](int width, int height,
+                           gpu::Progress& building) -> std::expected<gpu::Artifact, Refusal> {
       auto backend = BackendLibrary::create(library, init);
       if (!backend) return std::unexpected(std::move(backend.error()));
-      return time_span_fp16(**backend, model, width, height, timing);
+      return build_span_fp16(**backend, model, width, height, building);
     };
     const SpanStillsSource stills = [&](const std::stop_token& token,
                                         const std::function<void(float)>& report) {
-      return media::extract_stills(video, media::StillsSpec{.reduce = reduce}, token, report);
+      const media::StillsSpec spec{.max_width = gpu::span_fp8::kCropMaxWidth,
+                                   .max_height = gpu::span_fp8::kCropMaxHeight,
+                                   .reduce = reduce};
+      return media::extract_stills(video, spec, token, report);
     };
     const SpanDeriver deriver = [&](const gpu::SpanFp8Request& request, gpu::Progress& backend_progress) {
       auto backend = BackendLibrary::create(library, init);

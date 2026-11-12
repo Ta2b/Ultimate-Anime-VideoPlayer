@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "bench.h"
 #include "prepare/key_lock.h"
 #include "prepare/sha256.h"
 #include "support.h"
@@ -21,71 +22,7 @@ using ajp::gpu::ShapeSet;
 using ajp::gpu::TensorType;
 using namespace std::chrono_literals;
 
-namespace {
-
-ShapeSet fixed(std::int64_t channels, std::int64_t h, std::int64_t w) {
-  const ajp::gpu::Shape shape{{1, channels, h, w}};
-  return {.min = shape, .opt = shape, .max = shape};
-}
-
-struct Steps {
-  std::vector<std::pair<float, std::string>> seen;
-  ajp::gpu::Progress progress() {
-    return {.report = [this](float f, const std::string& stage) { seen.emplace_back(f, stage); }, .stop = {}};
-  }
-};
-
-class Bench {
- public:
-  explicit Bench(std::string_view mode, const test::FakeModel& graph = {},
-                 TensorType precision = TensorType::F16) {
-    const auto fake =
-        dir_ / "bin" / ("trtexec-" + std::string(mode) + test::helper_path().extension().string());
-    test::fs::create_directories(fake.parent_path());
-    test::fs::copy_file(test::helper_path(), fake);
-    test::fs::permissions(fake, test::fs::perms::owner_all, test::fs::perm_options::add);
-    const std::string onnx = test::onnx(graph);
-    test::write_file(dir_ / "modeles/modele.onnx", onnx);
-    model = {.id = "modele",
-             .onnx_path = dir_ / "modeles/modele.onnx",
-             .sha256 = sha256_hex(onnx),
-             .precision = precision};
-    config = {.trtexec = fake,
-              .cache_dir = dir_ / "moteurs",
-              .runtime = {.major = 11,
-                          .minor = 3,
-                          .patch = 0,
-                          .headers_build = 99,
-                          .cuda_runtime = 13000,
-                          .cuda_driver = 13000},
-              .device = {.name = "RTX de test", .sm_major = 8, .sm_minor = 9, .uuid = {}},
-              .timeout = 10s};
-  }
-
-  // Ce que la construction de shapes produirait, calculé sans la lancer.
-  BuildPlan plan(const ShapeSet& shapes) const {
-    return plan_build(config, model, read_model(model, "input").value(), shapes).value();
-  }
-  // Lancements de trtexec, comptés par le faux trtexec à côté du modèle.
-  std::size_t builder_calls() const { return test::read_lines(model.onnx_path.string() + ".calls").size(); }
-  std::vector<std::string> timing_cache() const { return test::read_lines(device_timing_cache(config)); }
-  std::vector<std::string> logged_args(const ShapeSet& shapes) const {
-    std::vector<std::string> args;
-    for (const std::string& line : test::read_lines(plan(shapes).log_file)) {
-      if (line.starts_with("[I] arg ")) args.push_back(line.substr(8));
-    }
-    return args;
-  }
-  const test::fs::path& cache() const { return config.cache_dir; }
-
-  test::TempDir dir_;
-  ajp::gpu::ModelSpec model;
-  TrtexecConfig config;
-};
-
-const ShapeSet kHd = fixed(3, 1080, 1920);
-
-}  // namespace
+using namespace ajp::prepare::test_bench;
 
 TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[prepare][builder]") {
   Bench bench("ok");
@@ -205,19 +142,23 @@ TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'es
 }
 
 TEST_CASE(
-    "TrtexecBuilder : un plantage avec le timing cache se refait sans lui, le cache accusé est mis de côté "
-    "(B05-02)",
+    "TrtexecBuilder : un plantage avec le timing cache se refait sans lui, le cache n'est accusé qu'au "
+    "deuxième plantage de suite (B05-02, C05-07)",
     "[prepare][builder]") {
   Bench bench("crash-with-cache");
   const auto cache = device_timing_cache(bench.config);
   test::write_file(cache, "abîmé\n");
   Steps steps;
   auto progress = steps.progress();
-  const auto result = TrtexecBuilder(bench.config).build(bench.model, kHd, progress);
-  REQUIRE(result);
+  REQUIRE(TrtexecBuilder(bench.config).build(bench.model, kHd, progress));
   CHECK(bench.builder_calls() == 2);
   CHECK(test::fs::exists(bench.plan(kHd).engine));
-  // Un cache neuf remplace le cache qui faisait planter ; l'ancien reste à côté, pour qui voudra le regarder.
+  // Un plantage peut venir du pilote, d'un TDR ou de la mémoire : le premier ne coûte pas ses mesures au
+  // cache.
+  CHECK(bench.timing_cache() == std::vector<std::string>{"abîmé"});
+  CHECK_FALSE(test::fs::exists(cache.string() + ".bad"));
+  // Le même plantage à la construction suivante : le cache est alors accusé, mis de côté et remplacé.
+  REQUIRE(TrtexecBuilder(bench.config).build(bench.model, fixed(3, 720, 1280), progress));
   CHECK(bench.timing_cache() == std::vector<std::string>{"passe"});
   CHECK(test::read_lines(cache.string() + ".bad") == std::vector<std::string>{"abîmé"});
 }

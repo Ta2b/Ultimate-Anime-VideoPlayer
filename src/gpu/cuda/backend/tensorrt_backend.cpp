@@ -138,6 +138,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   std::unique_ptr<TensorRtBackend> backend(new TensorRtBackend());
   backend->log_ = init.log;
   backend->cache_dir_ = init.cache_dir;
+  backend->filtered_warp_ = init.filtered_warp;
   backend->trtexec_ = std::move(trtexec);
   if (!backend->trtexec_.empty()) {
     // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).
@@ -151,7 +152,13 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   }
   int count = 0;
   if (auto ok = cuda_check(cudaGetDeviceCount(&count), "cudaGetDeviceCount"); !ok) {
-    return refuse(RefusalCode::LibraryUnavailable, ok.error().detail);
+    // C31-04 : le pilote trop ancien et l'absence de carte gardent leur code ; le reste dit un composant
+    // absent.
+    const RefusalCode code =
+        ok.error().code == RefusalCode::SdkRejected || ok.error().code == RefusalCode::DeviceUnavailable
+            ? ok.error().code
+            : RefusalCode::LibraryUnavailable;
+    return refuse(code, ok.error().detail);
   }
   // L'appareil du rendu, par UUID ; sans rendu (outils, tests), le premier.
   std::optional<int> chosen;
@@ -222,7 +229,6 @@ TensorRtBackend::~TensorRtBackend() {
   log_profile();
   stages_.clear();
   slots_.clear();
-  retired_.clear();
   for (auto& timing : role_timing_) timing.reset();
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
@@ -344,15 +350,10 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
   if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
   // DistilDRBA coupé en quatre morceaux : quatre constructions, un seul artefact.
   if (prepare::is_drba_fused_manifest(model.onnx_path)) return build_drba_fused(model, shapes, progress);
-  // Un moteur publié doit se désérialiser ici : sinon le constructeur le refait.
-  const prepare::EngineCheck check =
-      [this](const std::filesystem::path& engine) -> std::expected<void, Refusal> {
-    if (auto ok = bind(); !ok) return ok;
-    auto loaded = TrtEngine::load(*runtime_, engine);
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
-    return {};
-  };
-  return prepare::TrtexecBuilder(trtexec_config(), check).build(model, shapes, progress);
+  // Pas de vérification ici : désérialiser le plan sur le GPU juste après sa construction, pour le jeter et
+  // le charger de nouveau à l'ouverture, coûtait un chargement de trop (C05-03). Un plan refusé à ce
+  // chargement est mis de côté et reconstruit par le lecteur (player_engines.cpp, Artifact::reused, C05-01).
+  return prepare::TrtexecBuilder(trtexec_config()).build(model, shapes, progress);
 }
 
 std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Artifact& artifact) {
@@ -398,14 +399,16 @@ void TensorRtBackend::free_after_lanes(void* memory) {
   forget_rife_input(reinterpret_cast<std::uintptr_t>(memory));
   cudaStream_t free_on = stream_;
   bool ordered = free_on != nullptr;
-  for (cudaStream_t lane : streams_) {
-    if (!ordered) break;
-    if (lane == nullptr || lane == free_on) continue;
-    cudaEvent_t mark = nullptr;
-    ordered = cudaEventCreateWithFlags(&mark, cudaEventDisableTiming) == cudaSuccess &&
-              cudaEventRecord(mark, lane) == cudaSuccess &&
+  for (std::size_t lane = 0; lane < kLanes && ordered; ++lane) {
+    const cudaStream_t other = streams_[lane];
+    if (other == nullptr || other == free_on) continue;
+    // Un événement par voie, créé une fois : l'attente posée garde l'état qu'il avait à cet instant, le
+    // réenregistrer ensuite ne la change pas.
+    cudaEvent_t& mark = free_marks_[lane];
+    if (mark == nullptr && cudaEventCreateWithFlags(&mark, cudaEventDisableTiming) != cudaSuccess)
+      mark = nullptr;
+    ordered = mark != nullptr && cudaEventRecord(mark, other) == cudaSuccess &&
               cudaStreamWaitEvent(free_on, mark, 0) == cudaSuccess;
-    if (mark != nullptr) cudaEventDestroy(mark);  // détruit une fois atteint, l'attente reste posée
   }
   if (ordered && cudaFreeAsync(memory, free_on) == cudaSuccess) return;
   static_cast<void>(clear_error());
@@ -423,6 +426,32 @@ void TensorRtBackend::tune_pool() const {
   if (cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold, &keep) != cudaSuccess ||
       cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowInternalDependencies, &internal) != cudaSuccess)
     static_cast<void>(clear_error());
+}
+
+std::string shape_text(const ShapeSet& shapes) {
+  const auto one = [](const Shape& shape) {
+    return std::format("{}×{}×{}×{}", shape.dims[0], shape.dims[1], shape.dims[2], shape.dims[3]);
+  };
+  if (shapes.min == shapes.opt && shapes.opt == shapes.max) return one(shapes.opt);
+  return std::format("min {}, opt {}, max {}", one(shapes.min), one(shapes.opt), one(shapes.max));
+}
+
+std::expected<void, Refusal> TensorRtBackend::order_engine(const void* engine, std::span<const Tensor> inputs,
+                                                           std::span<const Tensor> outputs, bool restores) {
+  order_reads_.clear();
+  order_writes_.clear();
+  order_writes_.push_back(reinterpret_cast<std::uintptr_t>(arena().get()));
+  order_writes_.push_back(reinterpret_cast<std::uintptr_t>(engine));
+  for (const Tensor& tensor : inputs) {
+    order_reads_.push_back(tensor.handle);
+    // restore_rife_times réécrira le plan de l'instant de cette entrée sur la voie courante : une écriture,
+    // que les lectures encore en vol sur une autre voie précèdent, et que les suivantes attendront (C01-02).
+    const std::uintptr_t key = tensor.handle + tensor.offset;
+    if (restores && std::ranges::find(stale_times_, key, &StaleTime::key) != stale_times_.end())
+      order_writes_.push_back(tensor.handle);
+  }
+  for (const Tensor& tensor : outputs) order_writes_.push_back(tensor.handle);
+  return order(order_reads_, order_writes_);
 }
 
 GpuTiming& TensorRtBackend::stage(std::string_view name) {
@@ -450,18 +479,12 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
     return enqueue_span_fp8(*fused, inputs, outputs);
   }
   if (auto ok = bind(); !ok) return ok;
-  // Le moteur lit ses entrées, écrit ses sorties, sa zone d'activation et son contexte.
   const std::shared_ptr<SharedActivations>& zone = arena();
-  std::vector<std::uintptr_t> reads;
-  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(zone.get()),
-                                     reinterpret_cast<std::uintptr_t>(trt)};
-  for (const Tensor& tensor : inputs) reads.push_back(tensor.handle);
-  for (const Tensor& tensor : outputs) writes.push_back(tensor.handle);
-  if (auto ok = order(reads, writes); !ok) return ok;
+  if (auto ok = order_engine(trt, inputs, outputs, true); !ok) return ok;
   // Un moteur entier lit le plan de l'instant en entier : reposé s'il n'a été écrit qu'à l'élément 0.
   if (auto ok = restore_rife_times(inputs); !ok) return ok;
   const Shape shape = trt->input_shape(0);
-  GpuTiming& timing = stage(std::format("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]));
+  GpuTiming& timing = stage_named("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]);
   // Un moteur qui agrandit (sortie plus haute que l'entrée) est le SPAN de sa source ; les autres
   // interpolent.
   const bool upscales =

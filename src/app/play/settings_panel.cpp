@@ -18,6 +18,7 @@
 #include "app/play/panel_style.h"
 #include "app/play/settings_bench_results.h"
 #include "app/play/settings_chain_tabs.h"
+#include "app/play/settings_color_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
 #include "app/play/settings_sound.h"
@@ -32,103 +33,6 @@ namespace {
 using panel::kWarn;
 using panel::note;
 using panel::section;
-
-void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
-  // Pas de choix : le HDR suit le système (host_facts.h, system_hdr). La page dit ce qui tourne ; le pic de
-  // l'écran, en avancé, est grisé tant que l'écran ne reçoit pas de HDR.
-  section(i18n::tr("Output"));
-  note(choices.hdr_output
-           ? i18n::tr("HDR: on. The player follows your system's HDR setting.")
-           : i18n::tr("SDR: HDR is off in your system, or the display is too dim for it. The Color page's "
-                      "grade still applies."));
-  // Tri de l'ADR 0012 : la méthode HDR anime règle seule la luminosité ; reste le pic de l'écran, en avancé.
-  if (panel::advanced()) {
-    panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
-    ImGui::BeginDisabled(!choices.hdr_output);
-    section(i18n::tr("Display peak"));
-    bool automatic = d.true_hdr_peak == 0;
-    if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
-      d.true_hdr_peak =
-          automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
-    ImGui::BeginDisabled(automatic);
-    int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
-    if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi,
-                         "%d", ImGuiSliderFlags_AlwaysClamp) &&
-        !automatic)
-      d.true_hdr_peak = peak;
-    ImGui::EndDisabled();
-#if defined(__linux__)
-    // Sous KDE, le pic est en nits du contenu : KWin les affiche × luminosité SDR / 203 (system_peak.cpp).
-    // Windows affiche le PQ d'une application tel quel : contenu = écran, rien à dire.
-    note(
-        i18n::tr("In content nits: KDE shows them brighter (× its SDR brightness / 203), so a 1000-nit "
-                 "screen reads lower here."));
-#endif
-    panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
-    ImGui::EndDisabled();
-  }
-}
-
-// Un curseur sur un réglage du grade (double) ; true s'il a bougé. La valeur revient arrondie au
-// centième et bornée : le float du curseur à 0,8 vaut 0,800000012 en double, au-dessus de la borne
-// de check_grade_settings, et une valeur saisie au clavier (Ctrl + clic) peut sortir de la plage ;
-// l'une comme l'autre faisait refuser tout le grade.
-bool grade_slider(const char* label, double& value, core::Range<double> range) {
-  auto shown = static_cast<float>(value);
-  if (!ImGui::SliderFloat(label, &shown, static_cast<float>(range.lo), static_cast<float>(range.hi), "%.2f",
-                          ImGuiSliderFlags_AlwaysClamp))
-    return false;
-  value = std::clamp(std::round(static_cast<double>(shown) * 100.0) / 100.0, range.lo, range.hi);
-  return true;
-}
-
-void grade_tab(PlaySettings& d) {
-  // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds,
-  // qui suivent l'épisode (le curseur est leur maximum, dans un épisode très clair : A38-16), et le look : la
-  // LUT de base et « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de
-  // référence).
-  section(i18n::tr("Color grading"));
-  render::GradeSettings& g = d.grade_values;
-  ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, 0, 200, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Contrast"), &g.anime_contrast, 0, 200, "%d %%", ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Highlights"), &g.anime_highlights, 0, 200, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
-  if (panel::advanced()) {
-    ImGui::SliderInt(i18n::tr("LUT contrast intensity"), &d.look_contrast, -100, 100, "%d",
-                     ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d",
-                     ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SliderInt(i18n::tr("Surface white"), &d.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi, "%d %%",
-                     ImGuiSliderFlags_AlwaysClamp);
-    panel::tip(
-        i18n::tr("HDR: the white of walls and skin, in % of where the LUTs put it (about 70 % of the screen "
-                 "peak). Lower leaves more room to the lights, which still reach the peak."));
-    grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
-    panel::tip(i18n::tr("The maximum, reached in a very bright episode; it fades out in a very dark one."));
-    ImGui::Checkbox(i18n::tr("Skin from faces (test)"), &d.face_skin);
-    panel::tip(
-        i18n::tr("Faces are found ahead of playback and the grade only treats their skin tones as skin: warm "
-                 "lamps of another tone light up again. A shot without a found face keeps the wide range. "
-                 "Takes effect with the next video."));
-  }
-  ImGui::Checkbox(i18n::tr("Limit rapid flashes"), &d.flash_guard);
-  panel::tip(
-      i18n::tr("HDR only: a burst of rapid flashes (more than three a second) is dimmed for a second, for "
-               "photosensitive viewers. Off: flashes keep their full light."));
-  if (ImGui::Button(i18n::tr("Defaults"))) {
-    const PlaySettings defaults;
-    g.anime_saturation = defaults.grade_values.anime_saturation;
-    g.anime_contrast = defaults.grade_values.anime_contrast;
-    g.anime_highlights = defaults.grade_values.anime_highlights;
-    d.look_contrast = defaults.look_contrast;
-    d.look_highlight = defaults.look_highlight;
-    d.flash_guard = defaults.flash_guard;
-    d.face_skin = defaults.face_skin;
-    d.surface_white = defaults.surface_white;
-    g.shadows = defaults.grade_values.shadows;
-  }
-}
 
 // Vidéo > Affichage : la composition finale, le filtre vers la fenêtre et le débandage.
 void composition_section(PlaySettings& d) {
@@ -388,7 +292,7 @@ void language_choice(const char* label, const char* none_label, std::string& tag
 
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
 bool SettingsPanel::busy() const {
-  return open_ && (prepare_.pending != nullptr || (machine_ && machine_->running()));
+  return open_ && (prepare_.pending != nullptr || span_job_pending_ || (machine_ && machine_->running()));
 }
 
 SettingsPanel::~SettingsPanel() {
@@ -545,6 +449,11 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
 void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoices& choices,
                                 const PlaySettings& before, bool delay_held, bool sub_delay_held,
                                 Result& result) {
+  // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent). Avant
+  // l'historique : un réglage et son passage en Personnalisé ne font qu'une entrée d'annulation (C23-05).
+  if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
+      preset_chain_differs(before, draft_, choices.calibrated.has_value()))
+    draft_.preset = Preset::Custom;
   ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
   // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
   // compte pour un seul changement).
@@ -557,10 +466,6 @@ void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoic
   ImGui::BeginDisabled(!history_.can_redo());
   if (ImGui::Button(i18n::tr("Redo"))) draft_ = history_.redo(draft_);
   ImGui::EndDisabled();
-  // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent).
-  if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
-      preset_chain_differs(before, draft_, choices.calibrated.has_value()))
-    draft_.preset = Preset::Custom;
   ImGui::PopItemWidth();
 
   // La part directe s'applique tout de suite ; le reste attend « Appliquer ».
@@ -570,14 +475,12 @@ void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoic
   if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
   if (sub_delay_held) live.subtitle_delay_ms = running.subtitle_delay_ms;
   if (live != running) result.live = live;
-  const Change pending = change_between(live, draft_, choices.rife_loaded, choices.chain());
-  pending_shown_ = pending.cost == ChangeCost::Reopen;
-  if (pending.cost == ChangeCost::Reopen) {
+  // Le bandeau est celui dont la hauteur a été réservée au début de l'image (pending_text_, C23-02).
+  if (!pending_text_.empty()) {
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    panel::wrapped(
-        i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason).c_str());
+    panel::wrapped(pending_text_);
     ImGui::PopStyleColor();
     if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
     ImGui::SameLine();
@@ -596,6 +499,9 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     history_.adopt(external, running);  // le volume des touches ne se rejoue pas avec « Annuler » (B23-01)
     seen_ = running;
   }
+  // La préparation lancée par la boucle du lecteur, pas par ce panneau : sa barre avance aussi en pause
+  // (C23-10).
+  span_job_pending_ = choices.span_job && choices.span_job->pending != nullptr;
   const ImGuiIO& io = ImGui::GetIO();
   const float pad = 18.0F * scale;
   const float width = std::min(760.0F * scale, io.DisplaySize.x - 2.0F * pad);
@@ -622,9 +528,24 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       recalibrated->calibrated = *machine_->fresh;
     }
     const SettingsChoices& shown = recalibrated ? *recalibrated : choices;
+    // Le bandeau « Appliquer » de cette image, mesuré avant de tracer les colonnes : sa hauteur suit son
+    // texte, quelle que soit la langue ou le nombre de raisons (C23-02).
+    const ImGuiStyle& style = ImGui::GetStyle();
+    pending_text_.clear();
+    float banner = 0.0F;
+    if (const Change pending = change_between(live_part(running, draft_, shown.rife_loaded, shown.chain()),
+                                              draft_, shown.rife_loaded, shown.chain());
+        pending.cost == ChangeCost::Reopen) {
+      pending_text_ =
+          i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason);
+      const std::string measured = french_spaces(pending_text_);
+      const float text_height =
+          ImGui::CalcTextSize(measured.c_str(), nullptr, false, ImGui::GetContentRegionAvail().x).y;
+      // Espace, filet, texte, rangée de boutons : l'espacement entre chacun.
+      banner = text_height + ImGui::GetFrameHeight() + 4.0F * style.ItemSpacing.y + 2.0F * scale;
+    }
     // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
-    const float footer = (pending_shown_ ? 84.0F * scale : 0.0F) + ImGui::GetFrameHeightWithSpacing() +
-                         2.0F * ImGui::GetStyle().ItemSpacing.y;
+    const float footer = banner + ImGui::GetFrameHeightWithSpacing() + 2.0F * style.ItemSpacing.y;
     const float tree_width = std::min(200.0F * scale, width * 0.3F);
     // Barre de défilement fine, collée au bord extérieur des deux zones.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);

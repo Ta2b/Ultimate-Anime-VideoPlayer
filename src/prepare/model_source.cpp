@@ -7,6 +7,9 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <optional>
 #include <system_error>
 #include <utility>
 
@@ -45,6 +48,49 @@ bool escapes_folder(const std::filesystem::path& model_folder, const std::string
   return std::ranges::mismatch(root, file).in1 != root.end();
 }
 
+// Taille et date d'un fichier, ce qui suffit à reconnaître celui qu'on a déjà haché (comme
+// sha256_file_known).
+struct Stamp {
+  std::uintmax_t size = 0;
+  std::filesystem::file_time_type modified;
+  bool ok = false;
+  bool operator==(const Stamp&) const = default;
+};
+
+Stamp stamp_of(const std::filesystem::path& file) {
+  std::error_code size_error;
+  std::error_code time_error;
+  Stamp stamp{.size = std::filesystem::file_size(file, size_error),
+              .modified = std::filesystem::last_write_time(file, time_error)};
+  stamp.ok = !size_error && !time_error;
+  return stamp;
+}
+
+// La clé de contenu d'un ONNX déjà calculée dans ce processus : son SHA-256 fixe le graphe, la taille et la
+// date de chaque poids externe fixent le reste. Sans elle, chaque ouverture relisait et rehachait les poids
+// externes en entier, pour chaque morceau d'un RIFE coupé (C05-02).
+struct KnownContent {
+  std::vector<std::pair<std::filesystem::path, Stamp>> weights;
+  std::string key;
+};
+
+std::mutex g_known_mutex;
+std::map<std::string, KnownContent> g_known;  // par SHA-256 de l'ONNX
+
+std::vector<std::pair<std::filesystem::path, Stamp>> weight_stamps(
+    const std::filesystem::path& folder, const std::vector<std::string>& locations) {
+  std::vector<std::pair<std::filesystem::path, Stamp>> stamps;
+  for (const std::string& location : locations) {
+    const std::filesystem::path file = folder / path_from_utf8(location);
+    stamps.emplace_back(file, stamp_of(file));
+  }
+  return stamps;
+}
+
+bool stamps_usable(const std::vector<std::pair<std::filesystem::path, Stamp>>& stamps) {
+  return std::ranges::all_of(stamps, [](const auto& each) { return each.second.ok; });
+}
+
 }  // namespace
 
 // La taille vient du système de fichiers, jamais de tellg() : sur un dossier,
@@ -75,14 +121,24 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
   if (!is_sha256_hex(model.sha256)) {
     return refuse(RefusalCode::FieldOutOfRange, "ModelSpec.sha256 de " + model.id + " n'est pas un SHA-256");
   }
+  const Stamp before = stamp_of(model.onnx_path);
   auto graph = read_onnx_bytes(model.onnx_path);
   if (!graph) return std::unexpected(graph.error());
-  Sha256 file_hash;
-  file_hash.update(*graph);
-  if (file_hash.hex() != model.sha256) {
-    return refuse(RefusalCode::ModelMismatch,
-                  std::format("{} : SHA-256 {} au lieu de {}", utf8_path(model.onnx_path), file_hash.hex(),
-                              model.sha256));
+  // L'appelant vient de hacher ce fichier (sha256_file_known) : tant que sa taille et sa date n'ont pas
+  // bougé pendant la lecture, ce hachage vaut pour les octets lus et ils ne sont pas hachés une deuxième
+  // fois.
+  std::string digest;
+  if (before.ok && stamp_of(model.onnx_path) == before) {
+    if (auto known = sha256_file_known(model.onnx_path)) digest = std::move(*known);
+  }
+  if (digest.empty()) {
+    Sha256 file_hash;
+    file_hash.update(*graph);
+    digest = file_hash.hex();
+  }
+  if (digest != model.sha256) {
+    return refuse(RefusalCode::ModelMismatch, std::format("{} : SHA-256 {} au lieu de {}",
+                                                          utf8_path(model.onnx_path), digest, model.sha256));
   }
   auto summary = scan_onnx(*graph);
   if (!summary) return std::unexpected(summary.error());
@@ -91,8 +147,25 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
       return refuse(RefusalCode::ModelMismatch, "poids externe hors du dossier du modèle : " + location);
     }
   }
-  auto content = onnx_source_key(*graph, model.onnx_path.parent_path(), summary->external_locations);
-  if (!content) return std::unexpected(content.error());
+  const auto stamps = weight_stamps(model.onnx_path.parent_path(), summary->external_locations);
+  std::optional<std::string> content_key;
+  {
+    const std::scoped_lock lock(g_known_mutex);
+    if (const auto found = g_known.find(model.sha256);
+        found != g_known.end() && stamps_usable(stamps) && found->second.weights == stamps)
+      content_key = found->second.key;
+  }
+  if (!content_key) {
+    auto content = onnx_source_key(*graph, model.onnx_path.parent_path(), summary->external_locations);
+    if (!content) return std::unexpected(content.error());
+    content_key = std::move(*content);
+    // Les poids relus peuvent avoir changé pendant ce hachage : l'état d'après doit être celui d'avant.
+    if (stamps_usable(stamps) &&
+        weight_stamps(model.onnx_path.parent_path(), summary->external_locations) == stamps) {
+      const std::scoped_lock lock(g_known_mutex);
+      g_known.insert_or_assign(model.sha256, KnownContent{.weights = stamps, .key = *content_key});
+    }
+  }
   auto input = std::ranges::find(summary->inputs, input_name, &OnnxInput::name);
   // Un graphe aux entrées toutes statiques (DistilDRBA, ses tailles fixées par onnx_dims) n'a pas de
   // profil : son entrée se lit sous un autre nom, la première.
@@ -110,7 +183,7 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
   return ModelSource{.graph = std::move(*graph),
                      .summary = std::move(*summary),
                      .input = std::move(named),
-                     .content_key = std::move(*content)};
+                     .content_key = std::move(*content_key)};
 }
 
 std::expected<void, Refusal> check_precision(const gpu::ModelSpec& model, const OnnxInput& input) {

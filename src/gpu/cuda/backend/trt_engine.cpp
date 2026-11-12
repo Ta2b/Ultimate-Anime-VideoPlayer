@@ -91,6 +91,22 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
   engine->engine_.reset(runtime.deserializeCudaEngine(plan->bytes.get(), plan->size));
   plan->bytes.reset();  // les poids sont sur le GPU : le plan hôte (des centaines de Mo) part tout de suite
   if (!engine->engine_) {
+    // Un manque de mémoire vidéo n'accuse pas le plan : le lecteur ne le met de côté que pour
+    // VendorCallFailed (C05-01). La mémoire libre se compare à la taille du plan (ses poids y vont) ;
+    // l'erreur CUDA en attente, elle, dit aussi un appareil perdu.
+    const cudaError_t pending = clear_error();
+    if (pending != cudaSuccess)
+      return std::unexpected(cuda_refusal(pending, "IRuntime::deserializeCudaEngine"));
+    std::size_t free_bytes = 0;
+    std::size_t total_bytes = 0;
+    if (cudaMemGetInfo(&free_bytes, &total_bytes) == cudaSuccess && free_bytes < plan->size) {
+      return refuse(
+          RefusalCode::GpuMemoryExhausted,
+          std::format("IRuntime::deserializeCudaEngine({}) : mémoire vidéo pleine ({} Mo libres pour "
+                      "un plan de {} Mo)",
+                      core::to_utf8(path.filename()), free_bytes >> 20U, plan->size >> 20U));
+    }
+    static_cast<void>(clear_error());
     return refuse(RefusalCode::VendorCallFailed, std::format("IRuntime::deserializeCudaEngine({}) a échoué",
                                                              core::to_utf8(path.filename())));
   }
@@ -154,7 +170,6 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
 std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActivations>& arena,
                                               std::span<const Tensor> inputs,
                                               std::span<const Tensor> outputs) {
-  if (arena) arena->set_last_user(this);
   if (inputs.size() != inputs_.size() || outputs.size() != outputs_.size()) {
     return refuse(RefusalCode::ShapeInvalid, "nombre d'entrées ou de sorties différent du moteur");
   }
@@ -177,6 +192,9 @@ std::expected<void, Refusal> TrtEngine::place(const std::shared_ptr<SharedActiva
     drop_graphs();
     shared_generation_ = shared_->generation();
   }
+  // Ses activations écrivent le bas de la zone : un moteur fusionné qui y gardait des tampons plus bas que
+  // leur fin les refait (C03-01). Un moteur à mémoire propre n'écrit pas la zone.
+  if (shared_) shared_->used(this, activation_bytes());
   const auto bind = [this](const std::string& name, const Tensor& tensor, const Shape& expected) -> bool {
     if (tensor.type != TensorType::F16 || !(tensor.shape == expected)) return false;
     // NOLINTNEXTLINE(performance-no-int-to-ptr) : un tenseur porte son adresse CUDA en entier
@@ -243,7 +261,7 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
                                                 std::span<const Tensor> outputs) {
   if (auto ok = match_aux_priority(stream); !ok) return ok;
   if (auto ok = place(arena, inputs, outputs); !ok) return ok;
-  if (book_.off()) return launch(stream, {});
+  if (book_.skip()) return launch(stream, {});
   std::vector<std::uintptr_t> addresses;
   addresses.reserve(inputs.size() + outputs.size());
   for (const Tensor& t : inputs) addresses.push_back(t.handle + t.offset);

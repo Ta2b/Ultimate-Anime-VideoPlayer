@@ -26,13 +26,16 @@ std::optional<float> curl_percent(std::string_view line);
 // -q en tête (aucun .curlrc), https seulement, redirections comprises (A35-05). file:// n'est permis que
 // pour les tests (`allow_local_files`) : l'index exige déjà https, et un lien file:// qui s'y glisserait
 // ne doit pas lire un fichier de la machine (B06-10, B35-09). Puis curl_system_args().
-std::vector<std::string> curl_download_args(bool allow_local_files = false);
+std::vector<std::string> curl_download_args(bool allow_local_files = false, std::string_view url = {});
 // Ce que curl demande pour passer comme le système sous Windows : le proxy manuel ou celui d'un script PAC
 // (détection automatique comprise, B06-08), et la révocation du
 // certificat vérifiée au mieux (--ssl-revoke-best-effort) : Schannel refuse sinon toute connexion dont la
 // révocation ne se vérifie pas (antivirus qui inspecte le HTTPS, OCSP bloqué ; A06-13). Sous Linux, le proxy
 // manuel de KDE (kde_proxy).
-std::vector<std::string> curl_system_args();
+std::vector<std::string> curl_system_args(std::string_view url = {});
+// L'hôte d'une URL (« github.com » pour « https://github.com/x »), vide sans « :// » : le proxy se demande
+// pour lui.
+std::string url_host(std::string_view url);
 // Le proxy manuel de Windows (« hôte:port », ou la valeur https= d'une liste par protocole) ; rien sans proxy
 // manuel ou hors Windows. Exposé pour les tests.
 std::optional<std::string> proxy_from_setting(std::string_view setting);

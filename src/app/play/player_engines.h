@@ -7,6 +7,7 @@
 #include <deque>
 #include <expected>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -118,12 +119,21 @@ struct Player {
   // Où en était la dernière ouverture de la chaîne quand elle s'est fermée : la relance après une perte du
   // GPU reprend là (A31-02).
   std::int64_t stopped_at_us = 0;
+  bool stopped_paused = false;  // et si elle était en pause (C31-01)
+  // Un instant sans valeur (kNoPts, le plus petit int64) garde celui d'avant ; un instant négatif vaut 0.
+  void stop_at(std::int64_t at_us, bool paused) {
+    if (at_us != std::numeric_limits<std::int64_t>::min()) stopped_at_us = at_us < 0 ? 0 : at_us;
+    stopped_paused = paused;
+  }
   // B31-04 : une perte du GPU relancera le lecteur (pas une seconde perte dans la minute, pas un essai
   // scripté) ; la relance est alors demandée avant le démontage, que le garde de fermeture peut couper.
   bool relaunch_on_loss = false;
   // B08-03 : l'instance de construction des moteurs d'une ouverture (EngineRequest::builder), posée par
   // prepare_chain et rendue à sa fin : elle ne garde pas un contexte CUDA pendant la lecture.
   std::shared_ptr<BackendLibrary::Instance> builder;
+  // C08-05 : le backend d'un tour de prepare_chain qui a échoué (un étage refusé), repris par le tour suivant
+  // au lieu d'un nouveau contexte CUDA et d'un nouveau runtime TensorRT ; rendu à la fin de prepare_chain.
+  BackendLibrary::Instance spare_backend;
   // B08-12 : les moteurs que prepare_engine a chargés pour la préparation en cours (ChainEngines les
   // reprend).
   std::vector<LoadedEngine> loaded_engines;
@@ -138,9 +148,6 @@ bool take_single_lane_notice();
 // fenêtre dit ce qu'elle attend au lieu de rester noire.
 void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label);
 
-// Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
-// l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont
-// posées, gpu/lanes.h) ; le backend revient ensuite sur Upscale.
 // P3.10 : la clé du refus d'une construction annulée par « Annuler et regarder » : la vidéo se rouvre sans
 // agrandissement ni interpolation.
 inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
@@ -148,6 +155,9 @@ inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
 inline constexpr std::string_view kDroppedVideoKey = "engine.dropped-video";
 Refusal dropped_video_refusal();
 
+// Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
+// l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont
+// posées, gpu/lanes.h) ; le backend revient ensuite sur Upscale.
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane);

@@ -141,42 +141,55 @@ namespace {
   log->info("{}", line);
 }
 
-}  // namespace
-
-std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
-                                       [[maybe_unused]] double headroom, [[maybe_unused]] const void* monitor,
-                                       [[maybe_unused]] std::string_view edid) {
 #if defined(_WIN32)
+// MaxLuminance (et le plein champ) de la sortie DXGI de cet écran, ou de la plus lumineuse en HDR sans lui.
+std::optional<double> dxgi_peak(HMONITOR monitor, double* full_frame_nits) {
   IDXGIFactory1* factory = nullptr;
   if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory))))
     return std::nullopt;
   std::optional<double> best;
   double full_frame = 0.0;
+  // Toute erreur arrête l'énumération (C11-02) : seul S_OK rend un objet. Pendant une réinitialisation du
+  // pilote, DXGI_ERROR_NOT_CURRENTLY_AVAILABLE ou E_FAIL laissaient entrer dans la boucle avec un pointeur
+  // nul (ou celui, déjà libéré, du tour d'avant), et le relevé plantait le lecteur.
   IDXGIAdapter1* adapter = nullptr;
-  for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+  for (UINT a = 0; SUCCEEDED(factory->EnumAdapters1(a, &adapter)) && adapter != nullptr; ++a) {
     IDXGIOutput* output = nullptr;
-    for (UINT o = 0; adapter->EnumOutputs(o, &output) != DXGI_ERROR_NOT_FOUND; ++o) {
+    for (UINT o = 0; SUCCEEDED(adapter->EnumOutputs(o, &output)) && output != nullptr; ++o) {
       IDXGIOutput6* output6 = nullptr;
       if (SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6)))) {
         DXGI_OUTPUT_DESC1 desc{};
         if (SUCCEEDED(output6->GetDesc1(&desc)) &&
             desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 && desc.MaxLuminance > 0.0F &&
-            (monitor == nullptr || desc.Monitor == static_cast<HMONITOR>(const_cast<void*>(monitor))) &&
-            (!best || desc.MaxLuminance > *best)) {
+            (monitor == nullptr || desc.Monitor == monitor) && (!best || desc.MaxLuminance > *best)) {
           best = static_cast<double>(desc.MaxLuminance);
           full_frame = static_cast<double>(desc.MaxFullFrameLuminance);
         }
         output6->Release();
       }
       output->Release();
+      output = nullptr;
     }
     adapter->Release();
+    adapter = nullptr;
   }
   factory->Release();
+  if (best && full_frame_nits != nullptr && full_frame > 0.0) *full_frame_nits = full_frame;
   if (best)
     tell_peak(std::format("pic du système (DXGI MaxLuminance) : {:.0f} nits, plein champ {:.0f} nits", *best,
                           full_frame));
   return best;
+}
+#endif
+
+}  // namespace
+
+std::optional<double> system_peak_nits([[maybe_unused]] std::string_view connector,
+                                       [[maybe_unused]] double headroom, [[maybe_unused]] const void* monitor,
+                                       [[maybe_unused]] std::string_view edid,
+                                       [[maybe_unused]] double* full_frame_nits) {
+#if defined(_WIN32)
+  return dxgi_peak(static_cast<HMONITOR>(const_cast<void*>(monitor)), full_frame_nits);
 #elif defined(__linux__)
   std::string_view port = connector;
   if (port.starts_with("card")) {

@@ -78,7 +78,11 @@ bool push_forwarded_files(const std::vector<std::string>& files, std::string_vie
   // Sans fichier (l'icône relancée), un dépôt vide : la fenêtre passe devant, rien ne s'ouvre.
   const std::vector<std::string> dropped = files.empty() ? std::vector<std::string>{std::string()} : files;
   bool all = true;
+  // Les 64 derniers seulement (C33-06) : SDL a lu les plus anciens depuis longtemps. deque ne déplace pas les
+  // autres éléments en retirant le premier, leurs pointeurs restent bons.
+  constexpr std::size_t kHeldFiles = 64;
   for (const std::string& file : dropped) {
+    while (held.size() >= kHeldFiles) held.pop_front();
     held.push_back(file);
     SDL_Event drop{};
     drop.type = SDL_EVENT_DROP_FILE;
@@ -200,10 +204,19 @@ class InstanceListener {
   ~InstanceListener() {
     if (thread_.joinable()) {
       thread_.request_stop();
-      // ConnectNamedPipe attend un client : ce lancement s'y connecte lui-même pour la libérer.
-      HANDLE self =
-          CreateFileW(name_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-      if (self != INVALID_HANDLE_VALUE) CloseHandle(self);
+      // ConnectNamedPipe attend un client : ce lancement s'y connecte lui-même pour la libérer. Le thread
+      // peut être entre DisconnectNamedPipe et ConnectNamedPipe (ERROR_PIPE_BUSY ici, puis attente sans fin
+      // là) : réessayé jusqu'à sa sortie, avec CancelSynchronousIo qui rompt l'appel bloqué (C30-09).
+      constexpr int kReleaseAttempts = 300;  // 3 s
+      for (int attempt = 0; attempt < kReleaseAttempts && !served_.load(std::memory_order_acquire);
+           ++attempt) {
+        CancelSynchronousIo(static_cast<HANDLE>(thread_.native_handle()));
+        HANDLE self =
+            CreateFileW(name_.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (self != INVALID_HANDLE_VALUE) CloseHandle(self);
+        if (!served_.load(std::memory_order_acquire))
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
       thread_.join();
     }
     CloseHandle(pipe_);
@@ -214,7 +227,10 @@ class InstanceListener {
                                   const auto log = log_channel("app");
                                   log->warn("instance : {}", refusal.detail);
                                 }),
-                                [this](const std::stop_token& stop, const ThreadReport&) { serve(stop); });
+                                [this](const std::stop_token& stop, const ThreadReport&) {
+                                  serve(stop);
+                                  served_.store(true, std::memory_order_release);
+                                });
     if (started) thread_ = std::move(*started);
   }
 
@@ -237,6 +253,10 @@ class InstanceListener {
       last_error_ = 0;
       if (stop.stop_requested()) break;
       const std::string message = read_message(stop);
+      if (message.empty()) {  // C31-03 : un lecteur relancé qui regarde si le canal est libre, sans message
+        DisconnectNamedPipe(pipe_);
+        continue;
+      }
       bool replied = false;
       hand_over(message, stop, [&] {
         DWORD written = 0;
@@ -274,6 +294,7 @@ class InstanceListener {
   HANDLE pipe_;
   DWORD last_error_ = 0;  // la dernière erreur de ConnectNamedPipe journalisée
   std::wstring name_;
+  std::atomic<bool> served_{false};  // serve a rendu la main
   std::jthread thread_;
 };
 
@@ -313,22 +334,33 @@ bool send_files(const std::wstring& name, const std::string& message) {
 }  // namespace
 
 InstanceClaim claim_instance(const std::filesystem::path& /*channel_dir*/, std::string_view key,
-                             const std::vector<std::string>& files) {
+                             const std::vector<std::string>& files, bool take_over) {
   try {
     const std::wstring name = pipe_name(key);
-    HANDLE pipe =
-        CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
-                         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
-                         4096, 4096, 0, nullptr);
-    if (pipe != INVALID_HANDLE_VALUE) {
-      auto listener = std::make_shared<InstanceListener>(pipe, name);
-      listener->start();
-      return {.forwarded = false, .listener = std::move(listener)};
+    const auto until = std::chrono::steady_clock::now() + kTakeOverWait;
+    for (;;) {
+      HANDLE pipe =
+          CreateNamedPipeW(name.c_str(), PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
+                           PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS, 1,
+                           4096, 4096, 0, nullptr);
+      if (pipe != INVALID_HANDLE_VALUE) {
+        auto listener = std::make_shared<InstanceListener>(pipe, name);
+        listener->start();
+        return {.forwarded = false, .listener = std::move(listener)};
+      }
+      // Un canal déjà tenu : ERROR_ACCESS_DENIED (FILE_FLAG_FIRST_PIPE_INSTANCE), ou ERROR_PIPE_BUSY quand sa
+      // seule instance est prise (nMaxInstances = 1).
+      if (const DWORD error = GetLastError(); error != ERROR_ACCESS_DENIED && error != ERROR_PIPE_BUSY)
+        return {};
+      if (!take_over) break;
+      // C31-03 : le lecteur figé qui vient de relancer celui-ci tient encore le canal ; il sort sous peu.
+      if (std::chrono::steady_clock::now() >= until) {
+        const auto log = log_channel("app");
+        log->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+        return {};
+      }
+      std::this_thread::sleep_for(kSlice);
     }
-    // Un canal déjà tenu : ERROR_ACCESS_DENIED (FILE_FLAG_FIRST_PIPE_INSTANCE), ou ERROR_PIPE_BUSY quand sa
-    // seule instance est prise (nMaxInstances = 1).
-    if (const DWORD error = GetLastError(); error != ERROR_ACCESS_DENIED && error != ERROR_PIPE_BUSY)
-      return {};
     if (send_files(name, instance_message(files))) return {.forwarded = true, .listener = nullptr};
     const auto log = log_channel("app");
     log->warn("instance : le lecteur ouvert ne répond pas, ce lancement démarre seul");
@@ -455,6 +487,7 @@ class InstanceListener {
         if (got <= 0) break;
         message.append(chunk.data(), static_cast<std::size_t>(got));
       }
+      if (message.empty()) continue;  // C31-03 : un lecteur relancé qui regarde si le canal est libre
       hand_over(message, stop, [&] { write_all(client.get(), kAck); });
     }
   }
@@ -493,7 +526,7 @@ bool send_files(int fd, const std::string& message) {
 }  // namespace
 
 InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::string_view /*key*/,
-                             const std::vector<std::string>& files) {
+                             const std::vector<std::string>& files, bool take_over) {
   try {
     const std::filesystem::path path = channel_dir / "instance.sock";
     const auto address = socket_address(path);
@@ -504,11 +537,23 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
     const Fd lock(::open((channel_dir / "instance.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600));
     if (lock) ::flock(lock.get(), LOCK_EX);
     // Deux tours : un socket resté d'un lecteur arrêté net se retire, et un lancement simultané qui vient
-    // de le prendre se trouve au second.
+    // de le prendre se trouve au second. take_over : un tour de plus tant que l'ancien écoute, pendant
+    // kTakeOverWait au plus (C31-03).
+    const auto until = std::chrono::steady_clock::now() + kTakeOverWait;
     for (int attempt = 0; attempt < 2; ++attempt) {
       Fd client = unix_socket();
       if (!client) return {};
       if (::connect(client.get(), as_sockaddr(*address), sizeof(sockaddr_un)) == 0) {
+        if (take_over) {
+          if (std::chrono::steady_clock::now() >= until) {
+            const auto log = log_channel("app");
+            log->warn("instance : canal toujours tenu après la relance, ce lancement démarre seul");
+            return {};
+          }
+          std::this_thread::sleep_for(kSlice);
+          attempt = -1;  // l'ancien lecteur n'est pas encore sorti : un tour de plus
+          continue;
+        }
         if (send_files(client.get(), instance_message(files, launcher_activation_token())))
           return {.forwarded = true, .listener = nullptr};
         const auto log = log_channel("app");

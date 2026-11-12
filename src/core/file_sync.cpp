@@ -60,9 +60,6 @@ void sync_directory([[maybe_unused]] const std::filesystem::path& folder) {
 
 namespace {
 
-// 10, 20, 40, 80, 160 puis 250 ms : environ 1,5 s en tout avant le refus.
-constexpr int kRenameAttempts = 10;
-
 // Sous Windows, le renommage, et l'ouverture du temporaire pour le vider, échouent tant qu'un autre processus
 // (antivirus, indexeur, sauvegarde) tient la destination ou le temporaire ouvert sans le partage voulu :
 // refus passagers, réessayés pendant un peu plus d'une seconde (A20-01, B20-01, B36-03). Ailleurs, rename(2)
@@ -87,13 +84,19 @@ std::string temp_suffix() {
 
 namespace {
 
-// attempt tant qu'il rend un refus passager, au plus kRenameAttempts fois.
-std::error_code retrying(const std::function<std::error_code()>& attempt) {
+// attempt tant qu'il rend un refus passager, pendant patience au plus : 10, 20, 40, 80, 160 puis 250 ms
+// entre deux essais.
+std::error_code retrying(const std::function<std::error_code()>& attempt,
+                         std::chrono::milliseconds patience = kRenamePatience) {
+  const auto deadline = std::chrono::steady_clock::now() + patience;
   auto pause = std::chrono::milliseconds(10);
-  for (int done = 0;; ++done) {
+  for (;;) {
     const std::error_code error = attempt();
-    if (!error || done == kRenameAttempts - 1 || !transient_refusal(error)) return error;
-    std::this_thread::sleep_for(pause);
+    if (!error || !transient_refusal(error)) return error;
+    const auto left =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+    if (left <= std::chrono::milliseconds::zero()) return error;
+    std::this_thread::sleep_for(std::min(pause, left));
     pause = std::min(pause * 2, std::chrono::milliseconds(250));
   }
 }
@@ -102,19 +105,17 @@ std::error_code retrying(const std::function<std::error_code()>& attempt) {
 
 std::error_code rename_retrying(const std::filesystem::path& from, const std::filesystem::path& to,
                                 std::chrono::milliseconds patience) {
-  const auto deadline = std::chrono::steady_clock::now() + patience;
-  std::error_code error;
-  auto pause = std::chrono::milliseconds(10);  // 10, 20, 40, 80, 160 puis 250 ms
-  for (;;) {
-    error.clear();
-    std::filesystem::rename(from, to, error);
-    if (!error || !transient_refusal(error)) return error;
-    const auto left =
-        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-    if (left <= std::chrono::milliseconds::zero()) return error;
-    std::this_thread::sleep_for(std::min(pause, left));
-    pause = std::min(pause * 2, std::chrono::milliseconds(250));
-  }
+  return retrying(
+      [&] {
+        std::error_code error;
+        std::filesystem::rename(from, to, error);
+        return error;
+      },
+      patience);
+}
+
+std::error_code sync_file_retrying(const std::filesystem::path& file, std::chrono::milliseconds patience) {
+  return retrying([&] { return sync_file(file); }, patience);
 }
 
 namespace {
@@ -201,6 +202,9 @@ std::expected<void, Refusal> write_atomic(const std::filesystem::path& given,
     return std::unexpected(
         Refusal{RefusalCode::FileUnwritable, std::format("{} : {}", to_utf8(temp), synced.message())});
   }
+  // Les droits de l'ancien fichier (un play.toml mis en 0600) restent les siens (C20-08).
+  if (const auto kept = std::filesystem::status(path, error); !error && std::filesystem::exists(kept))
+    std::filesystem::permissions(temp, kept.permissions(), error);
   if (const std::error_code renamed = rename_retrying(temp, path)) {
     std::filesystem::remove(temp, error);
     return std::unexpected(

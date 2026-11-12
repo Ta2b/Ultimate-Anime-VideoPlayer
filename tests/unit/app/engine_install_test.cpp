@@ -20,6 +20,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/engine_tools.h"
+#include "app/play/engine_versions.h"
 #include "core/model_index.h"
 #include "french_ui.h"
 
@@ -250,9 +251,17 @@ TEST_CASE("Téléchargements : ce que l'index ne nomme plus est retiré, le rest
   std::ofstream(f.catalog.layout.downloads / (stale + ".part")) << "x";
   std::ofstream(f.catalog.layout.downloads / (stale + ".morceau")) << "x";
   std::ofstream(f.catalog.layout.downloads / "notes.txt") << "x";
+  // C35-04 : un fichier ou un dossier de l'utilisateur nommé par une empreinte n'est pas à nous.
+  std::ofstream(f.catalog.layout.downloads / (stale + ".iso")) << "x";
+  std::ofstream(f.catalog.layout.downloads / stale) << "x";
+  fs::create_directories(f.catalog.layout.downloads / (stale + ".part.d"));
+  fs::create_directories(f.catalog.layout.downloads / (std::string(64, 'c') + ".part"));
   CHECK(purge_stale_downloads(f.catalog) == 2);
   CHECK(fs::exists(f.catalog.layout.downloads / (kept + ".part")));
   CHECK(fs::exists(f.catalog.layout.downloads / "notes.txt"));
+  CHECK(fs::exists(f.catalog.layout.downloads / (stale + ".iso")));
+  CHECK(fs::exists(f.catalog.layout.downloads / stale));
+  CHECK(fs::exists(f.catalog.layout.downloads / (std::string(64, 'c') + ".part")));
   CHECK_FALSE(fs::exists(f.catalog.layout.downloads / (stale + ".part")));
 }
 
@@ -677,4 +686,75 @@ TEST_CASE("curl du lecteur : https seulement, file:// réservé aux tests (B06-1
   const auto redir = std::ranges::find(args, "--proto-redir");
   REQUIRE(redir != args.end());
   CHECK(*std::next(redir) == "=https");
+}
+
+// C06-05 : l'archive du moteur reste tant que l'échange n'a pas réussi ; un fichier tiers refusé ne la
+// retélécharge pas à l'essai suivant.
+TEST_CASE("Installation : l'archive reste si un fichier tiers échoue (C06-05)", "[app][install]") {
+  ajp::app::play::FrenchUi french;
+  Fixture f("archive-gardee");
+  const core::EnginePackage package = f.engine_package();
+  Wheel bad(f, kPlain, false);
+  bad.file.name = "faux.so";
+  bad.file.size = kPlain.size();
+  bad.file.sha256 = core::sha256_hex("autre");
+  f.catalog.vendor_files = {bad.file};
+  require_refused(install_package(f.catalog, package, f.progress()), RefusalCode::HashMismatch);
+  CHECK(fs::exists(
+      core::download_path(f.catalog.layout, package.sha256)));  // gardée, vérifiée au prochain essai
+  CHECK_FALSE(installed(f.catalog, package));
+  // Le fichier tiers corrigé : l'installation réussit depuis l'archive, qui part avec l'échange.
+  f.catalog.vendor_files.clear();
+  require_installed(install_package(f.catalog, package, f.progress()));
+  CHECK_FALSE(fs::exists(core::download_path(f.catalog.layout, package.sha256)));
+}
+
+// C06-03 : la note garde l'architecture ; un GPU d'une autre architecture rend le paquet à compléter.
+TEST_CASE("Installation : changer d'architecture de GPU rend le paquet à compléter (C06-03)",
+          "[app][install]") {
+  ajp::app::play::FrenchUi french;
+  Fixture f("architecture-note");
+  const core::EnginePackage package = f.engine_package();
+  InstallProgress progress = f.progress();
+  progress.cuda_arch = "sm86";
+  require_installed(install_package(f.catalog, package, progress));
+  CHECK(installed_package(f.catalog, package)->arch == "sm86");
+  CHECK(installed_state(f.catalog, package, "sm86").state == PackageState::Current);
+  CHECK(installed_state(f.catalog, package).state ==
+        PackageState::Current);  // sans architecture : pas comparée
+  const InstalledState moved = installed_state(f.catalog, package, "sm89");
+  CHECK(moved.state == PackageState::Replaced);
+  CHECK(moved.missing.find("sm86") != std::string::npos);
+}
+
+// C06-09 : un .part déjà sur le disque a déjà réduit la place libre ; il ne compte plus dans le pic.
+TEST_CASE("Espace : un .part déjà tiré ne compte plus (C06-09)", "[app][install][space]") {
+  const fs::path root = fs::temp_directory_path() / "ajp-space-part";
+  fs::remove_all(root);
+  EngineCatalog catalog;
+  catalog.layout = core::install_layout(host_os(), root);
+  constexpr std::uint64_t kMo = 1U << 20;
+  core::EnginePackage package;
+  package.engine = core::EngineId::TensorRt;
+  package.size = 900 * kMo;
+  package.sha256 = std::string(64, 'a');
+  const InstallSpace fresh = install_space(catalog, package, "sm89");
+  fs::create_directories(catalog.layout.downloads);
+  {
+    std::ofstream(core::download_path(catalog.layout, package.sha256)) << "";
+  }
+  fs::resize_file(core::download_path(catalog.layout, package.sha256), 800 * kMo);  // creux
+  const InstallSpace resumed = install_space(catalog, package, "sm89");
+  CHECK(resumed.download == 100 * kMo);
+  CHECK(resumed.peak < fresh.peak);
+  CHECK(fresh.peak - resumed.peak >= 800 * kMo);
+  fs::remove_all(root);
+}
+
+TEST_CASE("curl : le proxy se demande pour l'hôte réellement tiré (C06-08)", "[app][install]") {
+  CHECK(url_host("https://github.com/o/r/releases/download/v1/x.tar.gz") == "github.com");
+  CHECK(url_host("https://pypi.nvidia.com/tensorrt/x.whl") == "pypi.nvidia.com");
+  CHECK(url_host("https://user@objects.example.net:8443/a?b#c") == "objects.example.net");
+  CHECK(url_host("file:///tmp/x").empty());
+  CHECK(url_host("sans-schema").empty());
 }

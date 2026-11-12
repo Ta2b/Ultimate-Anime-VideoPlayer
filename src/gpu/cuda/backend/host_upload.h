@@ -14,6 +14,7 @@
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <optional>
+#include <vector>
 
 #include "core/frame.h"
 #include "core/types.h"
@@ -75,6 +76,9 @@ class HostUploads {
   std::array<Slot, kDepth> slots_{};
   std::size_t next_ = 0;
   Slot* pending_ = nullptr;  // l'envoi dont la lecture reste à marquer
+  // Les tampons épinglés remplacés par un plus grand, rendus à la destruction (cudaFreeHost synchronise
+  // l'appareil, C01-05).
+  std::vector<std::byte*> outgrown_;
 };
 
 }  // namespace ajp::gpu::cuda

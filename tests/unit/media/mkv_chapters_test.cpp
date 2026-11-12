@@ -2,11 +2,15 @@
 // muxeur de FFmpeg ne sait pas écrire EditionFlagOrdered ni ChapterSegmentUID.
 #include "media/mkv_chapters.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -142,4 +146,34 @@ TEST_CASE("Chapitres Matroska : les parties de l'édition ordonnée jouée, dans
   const auto plain = read_chapter_layout(write("ajp-chap-first.mkv", first_plain));
   CHECK(plain.ordered);
   CHECK(plain.parts.empty());
+}
+
+namespace {
+
+// Un fichier en mémoire : c'est ce que le démultiplexeur branche sur son AVIOContext (C14-09).
+class MemorySource final : public ajp::media::ByteSource {
+ public:
+  explicit MemorySource(Bytes bytes) : bytes_(std::move(bytes)) {}
+  std::uint64_t size() override { return bytes_.size(); }
+  bool read(std::uint64_t offset, std::span<std::uint8_t> out) override {
+    if (offset > bytes_.size() || out.size() > bytes_.size() - offset) return false;
+    std::copy_n(bytes_.begin() + static_cast<std::ptrdiff_t>(offset), out.size(), out.begin());
+    return true;
+  }
+
+ private:
+  Bytes bytes_;
+};
+
+}  // namespace
+
+TEST_CASE("Chapitres Matroska : lus par une source d'octets (C14-09)", "[media][chapters]") {
+  const Bytes segment = chapters(true, true);
+  MemorySource source(
+      join({element({0x1A, 0x45, 0xDF, 0xA3}, {}), element({0x18, 0x53, 0x80, 0x67}, segment)}));
+  const auto layout = read_chapter_layout(source);
+  CHECK(layout.ordered);
+  CHECK(layout.linked);
+  MemorySource empty(Bytes{});
+  CHECK(read_chapter_layout(empty).plain());
 }

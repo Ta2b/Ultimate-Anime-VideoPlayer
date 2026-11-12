@@ -87,8 +87,11 @@ class TrtEngine final : public Engine {
   // Une capture refusée est réessayée au lancement suivant : un appel CUDA d'un autre fil au
   // mauvais moment peut l'invalider (les noyaux NVENC sur le flux par défaut le faisaient avant
   // aux_streams_) ; graphs_off_ après kCaptureAttempts refus, et les lancements restent directs.
-  static constexpr std::size_t kMaxGraphs =
-      8;  // 16 faisait échouer le chargement du backend et baissait le PSNR du RIFE fusionné (mesuré, PR 322)
+  // 8 jeux d'adresses gardés. La PR 322 notait qu'à 16 le chargement du backend échouait et que le PSNR du
+  // RIFE fusionné baissait ; aucune cause n'en est connue (C01-07) : les sous-moteurs du RIFE fusionné
+  // passent par enqueue_plain, sans ces graphes, et la clé couvre adresses, zone et files auxiliaires. La
+  // limite n'est donc pas une garantie d'exactitude ; à remesurer (docs/tests-pc.md) avant d'y toucher.
+  static constexpr std::size_t kMaxGraphs = 8;
   static constexpr int kCaptureAttempts = 3;
   GraphBook<std::vector<std::uintptr_t>> book_{kMaxGraphs, kCaptureAttempts};
   std::vector<cudaGraphExec_t> execs_;  // les graphes, rangés par l'indice du registre

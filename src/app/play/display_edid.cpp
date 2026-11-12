@@ -127,8 +127,7 @@ void read_cta(std::span<const std::uint8_t> block, DisplayFacts& out, VrrSources
       if (hdr.size() >= 4 && hdr[3] != 0) out.frame_average_nits = 50.0 * std::exp2(hdr[3] / 32.0);
       if (hdr.size() >= 5) {
         out.min_code = hdr[4];
-        if (out.cta_peak_nits)
-          out.min_nits = out.cta_min_nits = *out.cta_peak_nits * std::pow(hdr[4] / 255.0, 2.0) / 100.0;
+        if (out.cta_peak_nits) out.cta_min_nits = *out.cta_peak_nits * std::pow(hdr[4] / 255.0, 2.0) / 100.0;
       }
     }
     at += 1 + length;
@@ -163,8 +162,9 @@ void read_displayid(std::span<const std::uint8_t> block, DisplayFacts& out, VrrS
         out.displayid_peak_nits = peak;
         if (!out.peak_nits) out.peak_nits = peak;
       }
-      if (const double black = nits(0x1C); plausible_nits(black))
-        out.min_nits = out.displayid_min_nits = black;
+      if (const double black = nits(0x1C); plausible_nits(black)) out.displayid_min_nits = black;
+      // La luminance tenue plein champ (C11-04) : le bout de la courbe du limiteur du contrat d'écran.
+      if (const double full = nits(0x18); plausible_nits(full)) out.full_frame_nits = full;
     }
     at += 3 + length;
   }
@@ -232,6 +232,30 @@ std::optional<render::Chromaticities> edid_primaries(std::span<const std::uint8_
 
 }  // namespace
 
+namespace {
+
+// Le noir vient du bloc qui donne le pic (C11-14) : celui de CTA se calcule sur son pic, et retenir le noir
+// de DisplayID sous le pic de CTA mêlait deux écrans. L'autre bloc seulement si celui-là n'en dit rien.
+std::optional<double> black_of(const DisplayFacts& d) {
+  const bool cta_peak = d.cta_peak_nits.has_value() && d.peak_nits == d.cta_peak_nits;
+  const std::optional<double>& first = cta_peak ? d.cta_min_nits : d.displayid_min_nits;
+  const std::optional<double>& second = cta_peak ? d.displayid_min_nits : d.cta_min_nits;
+  return first ? first : second;
+}
+
+// L'heuristique ne juge que sur un noir, un pic et une moyenne d'image annoncés (C11-03) : un octet 0 veut
+// dire « non indiqué » dans CTA-861, et un LCD qui annonce un noir 0 sans MaxFALL passait pour un OLED (vrai
+// noir du grade allumé, ombres écrasées). Il manque une valeur : inconnu.
+void judge_oled(DisplayFacts& d) {
+  if ((!d.min_code && !d.min_nits) || !d.peak_nits || !d.frame_average_nits) return;
+  const bool black =
+      (d.min_code && *d.min_code <= kOledBlackCode) || (d.min_nits && *d.min_nits <= kOledBlackNits);
+  d.oled = black && *d.frame_average_nits <= kOledFullScreenRatio * *d.peak_nits;
+  d.source = OledSource::Heuristic;
+}
+
+}  // namespace
+
 DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
   DisplayFacts out;
   if (edid.size() < kBlock) return out;
@@ -261,6 +285,7 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
     if (block[0] == kCtaTag) read_cta(block, out, vrr);
     if (block[0] == kDisplayIdTag) read_displayid(block, out, vrr);
   }
+  out.min_nits = black_of(out);
   out.vrr_range = vrr.displayid  ? vrr.displayid
                   : vrr.freesync ? vrr.freesync
                   : vrr.hdmi     ? vrr.hdmi
@@ -278,14 +303,7 @@ DisplayFacts parse_edid(std::span<const std::uint8_t> edid) {
       return out;
     }
   }
-  const bool black =
-      (out.min_code && *out.min_code <= kOledBlackCode) || (out.min_nits && *out.min_nits <= kOledBlackNits);
-  const bool limiter = !out.peak_nits || !out.frame_average_nits ||
-                       *out.frame_average_nits <= kOledFullScreenRatio * *out.peak_nits;
-  if (out.min_code || out.min_nits) {
-    out.oled = black && limiter;
-    out.source = OledSource::Heuristic;
-  }
+  judge_oled(out);
   return out;
 }
 

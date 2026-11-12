@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/player_machine.h"
 #include "app/play/relaunch_target.h"
 
 namespace ajp::app::play {
@@ -47,6 +48,22 @@ TEST_CASE("Veille ou gel : la barre de titre tenue sous Windows n'est pas une ve
   CHECK(watch.last_kind(0) == watch.last_kind(50'010'000));
 }
 
+TEST_CASE("Veille ou gel : un gel de 8 s sans événement de fenêtre n'est pas une veille (C11-11)",
+          "[app][sleep]") {
+  // Barre de titre tenue immobile, ou pilote bloqué : aucun événement de fenêtre. Les deux horloges (dont
+  // QueryUnbiasedInterruptTime sous Windows, qui s'arrête à la veille) avancent ensemble : un gel.
+  SleepWatch watch;
+  CHECK_FALSE(watch.turn(1'000'000, 50'000'000));
+  REQUIRE(watch.turn(9'000'000, 58'000'000));
+  CHECK(watch.last_kind(0) == GapKind::Freeze);
+  // Une vraie veille : l'horloge qui s'arrête n'a presque pas bougé.
+  REQUIRE(watch.turn(9'100'000, 1'258'000'000));
+  CHECK(watch.last_kind(0) == GapKind::Sleep);
+  // L'horloge qui s'arrête à la veille avance.
+  const std::int64_t before = sleep_unaware_now_us();
+  CHECK(sleep_unaware_now_us() >= before);
+}
+
 TEST_CASE("Économiseur : coupé seulement quand une vidéo avance", "[app][sleep]") {
   CHECK(must_stay_awake(true, false, false));
   CHECK_FALSE(must_stay_awake(true, true, false));    // en pause
@@ -77,6 +94,15 @@ TEST_CASE("Relance : la vidéo et l'instant relus une fois, pas un fichier d'une
   CHECK_FALSE(take_relaunch_target(store, 1'000 + kRelaunchFreshS + 1));  // trop vieux : ignoré
   CHECK_FALSE(std::filesystem::exists(store, error));
   std::filesystem::remove_all(dir, error);
+}
+
+// C40-06 : perte du GPU, une relance, sans boucler dans la minute.
+TEST_CASE("Relance : une perte du GPU juste après une relance ne boucle pas", "[app][relaunch]") {
+  const std::int64_t now = relaunch_now_s();
+  CHECK(relaunch_allowed(false, now));                             // première perte de la séance
+  CHECK_FALSE(relaunch_allowed(true, now));                        // lancé à l'instant par une perte : stop
+  CHECK_FALSE(relaunch_allowed(true, now - kRelaunchAgainS + 5));  // encore dans la minute
+  CHECK(relaunch_allowed(true, now - kRelaunchAgainS - 1));        // assez tard : permis
 }
 
 }  // namespace

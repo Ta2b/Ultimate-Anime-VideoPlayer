@@ -33,7 +33,9 @@ struct FreeInputs {
   // Écran à fréquence fixe (sans VRR) : les instants tombent sur la grille des vsyncs, vsync_origin_us + k ×
   // vsync_period_us (temps de contenu, le pts où une image doit être pour paraître à un vsync). Une image ne
   // paraît ainsi jamais entre deux vsyncs : l'écart minimal devient la période, et un GPU trop lent laisse
-  // l'image tenue un vsync de plus. 0 : VRR, aucune grille.
+  // l'image tenue un vsync de plus. 0 : VRR, aucune grille. L'origine suit la règle de choix de la session :
+  // avec la grille des vblanks mesurée, le pts d'un instant tombe sur la date d'un vblank (VsyncPicker
+  // arrondit au plus proche) ; sans elle, une demi-période après (choix par seuil de pts).
   std::int64_t vsync_period_us = 0;
   std::int64_t vsync_origin_us = 0;
 };

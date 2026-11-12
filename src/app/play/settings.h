@@ -27,6 +27,7 @@
 #include "app/play/system_language.h"
 #include "app/play/update_choice.h"
 #include "core/profile.h"
+#include "core/settings.h"
 #include "core/types.h"
 #include "media/selection.h"
 #include "render/grade_params.h"
@@ -380,6 +381,12 @@ inline bool span_runs(const PlaySettings& s, int source_height) {
 inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
   return chain_work_size(s.upscale, s.restore_lines, width, height, s.work_height);
 }
+// Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K) : chain_setup et la
+// note du panneau lisent la même (C23-04).
+inline constexpr int kRifeMotionHeight = 720;
+inline bool rife_motion_reduced(const WorkSize& work) {
+  return work.height > kRifeMotionHeight;
+}
 
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.
 std::expected<PlaySettings, Refusal> validate(const PlaySettings& settings);
@@ -394,6 +401,11 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text);
 std::expected<PlaySettings, Refusal> parse_settings_lenient(std::string_view toml_text,
                                                             std::vector<std::string>* dropped = nullptr);
 std::string format_settings(const PlaySettings& settings);
+// Les réglages qui diffèrent du défaut, par section, une ligne « clé = valeur » chacun : ce que le rapport
+// « Signaler un problème » joint (une option à l'essai allumée s'y voit). « (aucun) » si tout est au défaut.
+std::string settings_changes_text(const PlaySettings& settings);
+// Pose pour le rapport les faits « Préréglage » et « Réglages changés ».
+void note_preset_facts(const PlaySettings& settings);
 
 // Fichier absent : les réglages par défaut. Un fichier qui existe sans se lire (verrou passager réessayé,
 // droits, dossier) est refusé (FileUnreadable), et ce processus ne le réécrit plus (B22-02). ignored reçoit
@@ -405,9 +417,18 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
 // qui relit un réglage sans reprendre les autres (B36-02, le fil des mises à jour). Une édition du fichier
 // faite pendant que le lecteur tourne reste ainsi protégée.
 std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& path);
+// settings.toml (les moteurs choisis et installés) lu comme play.toml : un verrou passager (antivirus sous
+// Windows) se réessaie avant de refuser, pour que l'assistant ne s'ouvre pas sur des défauts (C22-03).
+std::expected<core::Settings, Refusal> load_engine_settings(const std::filesystem::path& path,
+                                                            std::vector<std::string>* skipped = nullptr);
 // Écrit à côté puis remplace (FileUnwritable si impossible) : jamais un fichier à moitié écrit. Un fichier
 // existant qui ne se lit pas n'est pas écrasé (FileUnreadable) ; un TOML invalide est gardé en copie d'abord.
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings);
+// Le numéro d'un instantané, pris quand l'écriture est décidée (au post d'une écriture différée) : une
+// écriture qui arrive après une plus récente du même fichier est sautée (C30-03).
+std::uint64_t settings_ticket();
+std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings,
+                                           std::uint64_t ticket);
 
 // L'avis des valeurs fautives que load_settings a écartées : les clés (« work_height, peak »), pour
 // l'accueil. Vide s'il n'y en a pas (B22-05).

@@ -48,16 +48,20 @@ class WaylandPresentation {
   // Rien hors Wayland, sans wp_presentation, ou à une autre horloge que CLOCK_MONOTONIC.
   static std::unique_ptr<WaylandPresentation> open(SDL_Window* window,
                                                    const std::shared_ptr<spdlog::logger>& channel);
-  ~WaylandPresentation();
+  virtual ~WaylandPresentation();
   WaylandPresentation(const WaylandPresentation&) = delete;
   WaylandPresentation& operator=(const WaylandPresentation&) = delete;
 
   // Juste avant la présentation `id` : la demande de retour, emportée par le commit qui suit.
-  void request(std::uint64_t id);
+  virtual void request(std::uint64_t id);
   // Sans attendre : les retours arrivés depuis la dernière relecture.
-  void read(std::vector<WaylandDone>& out);
+  virtual void read(std::vector<WaylandDone>& out);
 
   struct State;
+
+ protected:
+  // Une source de retours simulée (tests de PresentFeedback, C10-11) : aucune connexion Wayland.
+  WaylandPresentation();
 
  private:
   explicit WaylandPresentation(std::unique_ptr<State> state);

@@ -70,6 +70,8 @@ class Demuxer {
   // B15-01 : la mesure du télécinéma (media/telecine.h) tranche ce que la cadence seule avait supposé. Faux :
   // la piste est du vrai 30i, désentrelacé sans jeter d'image et à sa cadence d'origine (29,97 i/s).
   void set_inverse_telecine(int index, bool telecine);
+  // C15-01 : les champs de la piste sont du même instant (mesuré) : fieldmatch avant bwdif.
+  void set_field_match(int index, bool match);
 
   // Ne lit plus que ces pistes ; le conteneur saute les autres.
   std::expected<void, Refusal> keep_only(std::span<const int> tracks);

@@ -10,14 +10,15 @@ sont pris.
 
   1. Lecture et contrôle du graphe : noms et formes des poids, dégroupage 2x2.
   2. Calibration : le maximum de |valeur| des 1 + 3·blocs tenseurs que les noyaux quantifient en E4M3 (sortie de
-     conv_1 ; relu1, relu2 et sortie de chaque bloc) sur des découpes d'images d'anime, avec ONNX Runtime CPU en
-     FP32. Échelle = maximum × 1,25 / 448 (le plus grand E4M3 fini) : la marge de tête du lecteur
+     conv_1 ; relu1, relu2 et sortie de chaque bloc) sur des découpes d'images d'anime puis sur quelques images pleines à la taille jouée (les maxima croissent
+     avec la surface, C46-20), avec ONNX Runtime CPU en FP32. Échelle = maximum × 1,25 / 448 (le plus grand E4M3 fini) : la marge de tête du lecteur
      (gpu/span_fp8/derive.h, kScaleHeadroom, B02-02).
   3. Écriture du paquet « .span8 » (src/gpu/span_fp8/package.h) : poids FP16 du modèle, biais f32, échelles.
   4. Qualité : pour des images de validation, la sortie du lecteur (ajp_span_fp8_run, les noyaux eux-mêmes, sous
      le verrou GPU) contre le SPAN d'origine en FP32 : PSNR moyen et pire, pire SSIM, aux seuils du reçu INT8
      (42 dB, 38 dB, 0,985).
-  5. Vitesse (si --trtexec est donné) : le temps des noyaux contre TensorRT FP16 ; le paquet exige --min-speedup.
+  5. Vitesse (--trtexec est obligatoire, C46-17) : le temps des noyaux contre TensorRT FP16 ; le paquet exige
+     --min-speedup. Le lecteur refuse de toute façon un reçu de ce format sans gain mesuré (span_int8.cpp).
 
 Le corpus est celui de quantize_span.py : des images SDR 8 bits d'anime, tirées de vos vidéos, sans sortie de
 RTX HDR, TrueHDR ou RTX Video (licence NVIDIA) ; un cinquième des images (choisies par leur SHA-256) sert à la
@@ -27,7 +28,7 @@ Le paquet est dérivé des poids d'AnimeJaNai (CC BY-NC-SA 4.0) : il se construi
 
     ~/.animejanai-tools/venv-gpu/bin/python3 -I tools/span/derive_span_fp8.py MODELE.onnx --corpus images/ \\
         --out "$XDG_DATA_HOME/ajp/ajp/modeles" --runner build/linux-prefix-cuda/src/gpu/cuda/backend/ajp_span_fp8_run \\
-        --gpu-prefix ~/ajp-tools/bin/ajp-gpu
+        --gpu-prefix ~/ajp-tools/bin/ajp-gpu --trtexec ~/ajp-sdk/tensorrt/bin/trtexec
 
 Écrit dans --out « <nom>-fp8c-<16 premiers chiffres du SHA-256 du modèle>.span8 » et son reçu « .toml » ; si les
 garde-fous échouent, seul le reçu est écrit (passed = false).
@@ -182,9 +183,9 @@ def run_candidate(runner: str, gpu_prefix: list[str], package: Path, image: np.n
     return np.clip(out.astype(np.float64), 0.0, 1.0), done.stdout
 
 
-def trtexec_ms(gpu_prefix: list[str], trtexec: str, model: Path, height: int, width: int) -> float:
+def trtexec_ms(gpu_prefix: list[str], trtexec: str, model: Path, input_name: str, height: int, width: int) -> float:
     """Médiane du temps GPU de TensorRT sur le SPAN d'origine (FP16), sous le verrou GPU."""
-    shape = f"input:1x3x{height}x{width}"
+    shape = f"{input_name}:1x3x{height}x{width}"  # le nom d'entrée du modèle, pas « input » en dur (C46-25)
     command = gpu_prefix + [trtexec, f"--onnx={model}", f"--minShapes={shape}", f"--optShapes={shape}",
                             f"--maxShapes={shape}", "--warmUp=500", "--iterations=200", "--useCudaGraph", "--noDataTransfers"]
     done = subprocess.run(command, capture_output=True, text=True, timeout=1800)
@@ -201,11 +202,13 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True, help="le dossier « modeles » des données du lecteur")
     parser.add_argument("--runner", required=True, help="ajp_span_fp8_run (cible CMake du backend CUDA)")
     parser.add_argument("--gpu-prefix", default="", help="préfixe des commandes GPU (verrou), par exemple ajp-gpu")
-    parser.add_argument("--trtexec", default="", help="trtexec (TensorRT 11) pour exiger un gain sur le FP16")
+    parser.add_argument("--trtexec", required=True, help="trtexec (TensorRT 11) : exige un gain mesuré sur le FP16")
     parser.add_argument("--speed-shape", default="1088x1920", help="hauteur x largeur de la mesure de vitesse")
     parser.add_argument("--min-speedup", type=float, default=1.05, help="gain exigé sur TensorRT FP16 (1,05)")
     parser.add_argument("--calib-size", type=int, default=576, help="côté des découpes de calibration (576)")
     parser.add_argument("--calib-crops", type=int, default=32, help="nombre de découpes de calibration (32)")
+    parser.add_argument("--calib-full", type=int, default=4,
+                        help="images pleines (à --valid-size) ajoutées à la calibration (4, C46-20)")
     parser.add_argument("--valid-size", default="1920x1088", help="taille maximale des images de validation")
     parser.add_argument("--max-valid", type=int, default=q.MIN_VALIDATION, help="images de validation au plus (8)")
     parser.add_argument("--min-psnr", type=float, default=MIN_PSNR_MEAN_DB)
@@ -256,6 +259,20 @@ def main() -> int:
                 fail(f"dégroupage : écart {gap} avec le modèle, ce SPAN n'a pas l'ordre des canaux supposé")
         for j, a in enumerate(res[:-1]):
             peaks[j] = max(peaks[j], float(np.abs(a).max()))
+    # C46-20 : les maxima d'activations croissent avec la surface ; la marge de 1,25 n'est fondée que si elle est
+    # mesurée à la taille jouée. Quelques images pleines (réparties sur le corpus, pas les images de validation)
+    # complètent les découpes, et l'écart est dit.
+    crop_peaks = peaks.copy()
+    if args.calib_full > 0:
+        step = max(1, len(calibration) // args.calib_full)
+        for path in calibration[::step][: args.calib_full]:
+            image = fit(q.load_rgb(path), width, height)
+            res = sess_calib.run(names, {input_name: image[None].astype(np.float32)})
+            for j, a in enumerate(res):
+                peaks[j] = max(peaks[j], float(np.abs(a).max()))
+        grown = float(np.max(peaks / np.maximum(crop_peaks, 1e-12)))
+        print(f"calibration : {args.calib_full} images pleines ; plus grand écart aux découpes ×{grown:.2f} "
+              f"(marge ×{SCALE_HEADROOM:.2f})")
     if not np.all(peaks > 0):
         fail("un tenseur calibré est nul partout : corpus ou découpes inutilisables")
     scales = (peaks * SCALE_HEADROOM / E4M3_MAX).astype(np.float32)
@@ -282,14 +299,14 @@ def main() -> int:
 
         # --- vitesse : les noyaux contre TensorRT FP16, à la taille demandée
         speedup, fp8_ms, fp16_ms = 0.0, 0.0, 0.0
-        if passed and args.trtexec:
+        if passed:
             sh, sw = (int(v) for v in args.speed_shape.lower().split("x"))
             _, text = run_candidate(args.runner, gpu_prefix, candidate_path, np.zeros((3, sh, sw), np.float32), work, 200)
             m = re.search(r"médiane ([0-9.]+) ms", text)
             if not m:
                 fail(f"temps des noyaux illisible : {text}")
             fp8_ms = float(m.group(1))
-            fp16_ms = trtexec_ms(gpu_prefix, args.trtexec, source, sh, sw)
+            fp16_ms = trtexec_ms(gpu_prefix, args.trtexec, source, input_name, sh, sw)
             speedup = fp16_ms / fp8_ms
             print(f"  {sh}x{sw} : TensorRT FP16 {fp16_ms:.2f} ms, noyaux FP8 {fp8_ms:.2f} ms (x{speedup:.2f})")
             if speedup < args.min_speedup:
@@ -316,6 +333,7 @@ def main() -> int:
             "calibration_images": len(calibration),
             "calibration_crops": args.calib_crops,
             "calibration_crop": args.calib_size,
+            "calibration_full": args.calib_full,
             "corpus_sha256": manifest,
             "validation_images": len(validation),
             "validation_size": f"{width}x{height}",

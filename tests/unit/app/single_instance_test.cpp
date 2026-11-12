@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include <SDL3/SDL_events.h>
@@ -119,3 +120,27 @@ TEST_CASE("Instance unique : un socket resté d'un lecteur arrêté net est repr
   std::filesystem::remove_all(dir);
 }
 #endif
+
+TEST_CASE("C31-03 : un lecteur relancé ne passe pas sa vidéo à l'ancien qui tient encore le canal",
+          "[app][instance]") {
+  REQUIRE(SDL_Init(SDL_INIT_EVENTS));
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-takeover";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::string key = instance_key(dir);
+  auto old = claim_instance(dir, key, {});
+  REQUIRE(old.listener != nullptr);
+  // L'ancien lecteur, figé sur le GPU, sort un peu après avoir relancé celui-ci.
+  auto leaving = std::async(std::launch::async, [&old] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    old.listener.reset();
+  });
+  const auto start = std::chrono::steady_clock::now();
+  auto relaunched = claim_instance(dir, key, {"/vidéos/épisode 1.mkv"}, /*take_over=*/true);
+  leaving.get();
+  CHECK_FALSE(relaunched.forwarded);  // avant : la vidéo partait vers l'ancien, qui mourait avec elle
+  CHECK(relaunched.listener != nullptr);
+  CHECK(std::chrono::steady_clock::now() - start < kTakeOverWait);
+  relaunched.listener.reset();
+  SDL_Quit();
+}

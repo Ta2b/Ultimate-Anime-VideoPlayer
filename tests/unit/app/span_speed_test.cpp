@@ -1,6 +1,8 @@
-// Le mode Performance de SPAN ne perd en qualité que contre un gain mesuré (B02-01) : la préparation compare
-// ses noyaux FP8 au SPAN FP16 de TensorRT, le dit, et refuse sous kMinSpeedup. Un paquet d'une porte plus
-// ancienne, qui ne l'avait pas mesuré, se refait. Doublures : rien ici ne touche au GPU.
+// Le mode Performance de SPAN ne perd en qualité que contre un gain mesuré (B02-01) : la préparation fait
+// chronométrer au backend ses noyaux FP8 avec le SPAN FP16 de TensorRT (C02-01), à la taille de travail
+// (C02-05), le dit, et refuse sous kMinSpeedup ; la variante f16 ne se garde que si elle gagne (C02-03), un
+// écrêtage sur la validation refuse (C02-04). Un paquet d'une porte plus ancienne se refait. Doublures : rien
+// ici ne touche au GPU.
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -31,18 +33,18 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// Un temps du SPAN FP16 donné, et la taille à laquelle on l'a demandé.
-struct Fp16Clock {
-  double ms = 0.0;
+// Le moteur du SPAN FP16 à chronométrer, et la taille à laquelle on l'a demandé.
+struct Fp16Engine {
   int calls = 0;
   int width = 0;
   int height = 0;
   SpanDerivePlan with(SpanDerivePlan plan) {
-    plan.time_fp16 = [this](int w, int h, gpu::Progress&) {
+    plan.fp16_engine = [this](int w, int h, gpu::Progress&) {
       ++calls;
       width = w;
       height = h;
-      return std::expected<double, Refusal>(ms);
+      return std::expected<gpu::Artifact, Refusal>(
+          gpu::Artifact{.cache_key = "span-fp16", .path = "span.engine"});
     };
     return plan;
   }
@@ -109,16 +111,20 @@ TEST_CASE("la préparation mesure le SPAN FP16 de TensorRT et annonce son gain (
           "[app][span_derive][b02]") {
   FrenchUi french;
   const Folder folder;
-  const FakeBackend backend;  // noyaux FP8 à 9,2 ms
-  Fp16Clock clock{.ms = 11.5};
+  FakeBackend backend;  // noyaux FP8 à 9,2 ms
+  backend.trt_ms = 11.5;
+  Fp16Engine engine;
   SpanDeriveProgress progress;
-  const auto report = derive_span_fp8(clock.with(folder.plan()), source_of(twelve()), backend.deriver(),
+  const auto report = derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), backend.deriver(),
                                       progress, std::stop_token{});
   REQUIRE(report);
   CHECK(report->passed);
-  CHECK(clock.calls == 1);
-  CHECK(clock.width == 128);  // à la taille jugée
-  CHECK(clock.height == 4);
+  CHECK(engine.calls == 1);
+  CHECK(engine.width == 128);  // sans taille de travail : celle des images
+  CHECK(engine.height == 4);
+  REQUIRE(backend.seen.fp16);  // le backend le chronomètre avec les noyaux FP8 (C02-01)
+  CHECK(backend.seen.fp16->cache_key == "span-fp16");
+  CHECK(backend.seen.timing_width == 128);
   CHECK(report->speedup == Catch::Approx(11.5 / 9.2));
   INFO(report->text);
   CHECK(report->text.find("TensorRT FP16 prend ici 11,5 ms") != std::string::npos);
@@ -135,10 +141,11 @@ TEST_CASE("un FP8 qui ne va pas plus vite que le FP16 est refusé, pour de bon (
           "[app][span_derive][b02]") {
   FrenchUi french;
   const Folder folder;
-  const FakeBackend backend;
-  Fp16Clock clock{.ms = 9.3};  // 1,01 fois : la perte de qualité ne s'achète par rien
+  FakeBackend backend;
+  backend.trt_ms = 9.3;  // 1,01 fois : la perte de qualité ne s'achète par rien
+  Fp16Engine engine;
   SpanDeriveProgress progress;
-  const auto report = derive_span_fp8(clock.with(folder.plan()), source_of(twelve()), backend.deriver(),
+  const auto report = derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), backend.deriver(),
                                       progress, std::stop_token{});
   REQUIRE(report);
   CHECK_FALSE(report->passed);
@@ -155,35 +162,40 @@ TEST_CASE("un FP8 qui ne va pas plus vite que le FP16 est refusé, pour de bon (
   CHECK(found.note.find("pas plus rapide que TensorRT FP16") != std::string::npos);
 }
 
-TEST_CASE("une qualité refusée ne mesure pas le FP16 ; une taille nouvelle le mesure (B02-01)",
+TEST_CASE("une qualité refusée n'exige pas de gain ; une taille nouvelle le mesure (B02-01)",
           "[app][span_derive][b02]") {
   FrenchUi french;
   const Folder folder;
   FakeBackend bad;
   bad.psnr = 36.0;
-  Fp16Clock clock{.ms = 20.0};
+  bad.trt_ms = 20.0;
+  Fp16Engine engine;
   SpanDeriveProgress progress;
-  REQUIRE(derive_span_fp8(clock.with(folder.plan()), source_of(twelve()), bad.deriver(), progress,
-                          std::stop_token{}));
-  CHECK(clock.calls == 0);
+  const auto refused = derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), bad.deriver(),
+                                       progress, std::stop_token{});
+  REQUIRE(refused);
+  CHECK_FALSE(refused->passed);
+  CHECK_FALSE(refused->too_slow);  // refusé pour sa qualité, pas pour sa vitesse
+  CHECK(refused->speedup == 0.0);
 
   // Un paquet admis, puis une taille nouvelle trop lente : refusée à cette taille seulement.
-  const FakeBackend good;
-  REQUIRE(derive_span_fp8(clock.with(folder.plan()), source_of(twelve()), good.deriver(), progress,
+  FakeBackend good;
+  good.trt_ms = 20.0;
+  REQUIRE(derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), good.deriver(), progress,
                           std::stop_token{}));
-  CHECK(clock.calls == 1);
+  CHECK(engine.calls == 2);
   std::vector<media::Still> bigger = twelve();
   for (media::Still& still : bigger) {
     still.width = 256;
     still.height = 8;
     still.rgb.assign(std::size_t{3} * 256 * 8, still.rgb.front());
   }
-  clock.ms = 9.0;
+  good.trt_ms = 9.0;
   const auto validated =
-      validate_span_size(clock.with(folder.plan()), source_of(bigger), good.deriver(), progress, {});
+      validate_span_size(engine.with(folder.plan()), source_of(bigger), good.deriver(), progress, {});
   REQUIRE(validated);
-  CHECK(clock.calls == 2);
-  CHECK(clock.width == 256);
+  CHECK(engine.calls == 3);
+  CHECK(engine.width == 256);
   CHECK_FALSE(validated->passed);
   CHECK(validated->too_slow);
   CHECK(receipt_of(folder).find("refused_sizes = [\"256x8\"]") != std::string::npos);
@@ -208,31 +220,113 @@ TEST_CASE("un paquet admis par une porte plus ancienne se refait (B02-01, B02-02
       find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
   CHECK_FALSE(old.variant);
   CHECK(old.stale);
-  CHECK(old.note.find("sans mesure du gain") != std::string::npos);
+  CHECK(old.note.find("porte de qualité et de vitesse plus ancienne") != std::string::npos);
   // Sans contexte (outil, test), le reçu se lit comme avant.
   CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models()).variant);
 }
 
-TEST_CASE("le temps du SPAN FP16 : le moteur de la lecture à cette taille, des passes enchaînées (B02-01)",
+TEST_CASE("le moteur du SPAN FP16 chronométré est celui de la lecture à cette taille (B02-01)",
           "[app][span_derive][b02]") {
   const Folder folder;
   TimedBackend backend;
   gpu::Progress progress;
-  const auto ms = time_span_fp16(backend, folder.model, 1280, 720, progress);
-  REQUIRE(ms);
-  CHECK(*ms >= 0.0);
+  const auto engine = build_span_fp16(backend, folder.model, 1280, 720, progress);
+  REQUIRE(engine);
   const gpu::Shape wanted{.dims = {1, 3, 720, 1280}};
   CHECK(backend.built.min == wanted);  // la forme que chain_setup.cpp construit : le moteur est en cache
   CHECK(backend.built.opt == wanted);
   CHECK(backend.built.max == wanted);
-  CHECK(backend.runs == kSpanTimingWarmup + kSpanTimingBatches * kSpanTimingBatchRuns);
-  CHECK(backend.drains == 1 + kSpanTimingBatches);
-  std::stop_source stop;
-  stop.request_stop();
-  gpu::Progress stopped{.report = {}, .stop = stop.get_token()};
-  const auto cancelled = time_span_fp16(backend, folder.model, 1280, 720, stopped);
-  REQUIRE_FALSE(cancelled);
-  CHECK(cancelled.error().code == RefusalCode::Cancelled);
+  const auto none = build_span_fp16(backend, folder.model, 0, 720, progress);
+  REQUIRE_FALSE(none);
+  CHECK(none.error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("les temps se prennent à la taille de travail, que le reçu range (C02-05)",
+          "[app][span_derive][c02]") {
+  FrenchUi french;
+  const Folder folder;
+  FakeBackend backend;
+  backend.trt_ms = 11.5;
+  Fp16Engine engine;
+  SpanDerivePlan plan = engine.with(folder.plan());
+  plan.work_width = 2561;  // impaire : ramenée à 2560, ce que les noyaux prennent
+  plan.work_height = 1440;
+  SpanDeriveProgress progress;
+  const auto report =
+      derive_span_fp8(plan, source_of(twelve()), backend.deriver(), progress, std::stop_token{});
+  REQUIRE(report);
+  CHECK(report->passed);
+  CHECK(engine.width == 2560);  // le moteur FP16 de la lecture, pas celui de la découpe
+  CHECK(engine.height == 1440);
+  CHECK(backend.seen.timing_width == 2560);
+  CHECK(backend.seen.timing_height == 1440);
+  CHECK(backend.seen.validation.front().width == 128);  // la qualité, sur la découpe
+  CHECK(report->size == "2560x1440");
+  const std::string receipt = receipt_of(folder);
+  CHECK(receipt.find("validation_size = \"128x4\"") != std::string::npos);
+  CHECK(receipt.find("timed_size = \"2560x1440\"") != std::string::npos);
+  CHECK(receipt.find("validated_sizes = [\"2560x1440\"]") != std::string::npos);
+  const SpanFp8Context here{.gpu_arch = "sm_89", .kernels_version = 1, .width = 2560, .height = 1440};
+  CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here).variant);
+  // Une autre taille au-delà de la découpe n'est pas jugée par celle-ci.
+  const SpanFp8Context other{.gpu_arch = "sm_89", .kernels_version = 1, .width = 3840, .height = 2160};
+  const SpanInt8Lookup found =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &other);
+  CHECK_FALSE(found.variant);
+  CHECK(found.unvalidated_size == "3840x2160");
+}
+
+TEST_CASE("la variante f16 n'est gardée que si elle va plus vite (C02-03)", "[app][span_derive][c02]") {
+  FrenchUi french;
+  const Folder folder;
+  FakeBackend backend;
+  backend.trt_ms = 11.5;
+  backend.psnr16 = 49.8;  // −0,2 dB : dans la tolérance de 0,3 dB
+  backend.ms16 = 9.6;     // plus lente que les 9,2 ms de la variante f32
+  Fp16Engine engine;
+  SpanDeriveProgress progress;
+  const auto slower = derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), backend.deriver(),
+                                      progress, std::stop_token{});
+  REQUIRE(slower);
+  CHECK(slower->passed);
+  CHECK_FALSE(slower->acc16);
+  CHECK(receipt_of(folder).find("accumulator = \"f32\"") != std::string::npos);
+
+  backend.ms16 = 8.28;  // 10 % plus rapide : gardée, et annoncée avec sa perte
+  const auto faster = derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), backend.deriver(),
+                                      progress, std::stop_token{});
+  REQUIRE(faster);
+  CHECK(faster->acc16);
+  CHECK(faster->acc16_loss_db == Catch::Approx(0.2));
+  INFO(faster->text);
+  CHECK(faster->text.find("elle coûte 0,2 dB de PSNR moyen et fait gagner 10,0 % du temps") !=
+        std::string::npos);
+  const std::string receipt = receipt_of(folder);
+  CHECK(receipt.find("accumulator = \"f16\"") != std::string::npos);
+  CHECK(receipt.find("acc16_psnr_loss_db = 0.2000") != std::string::npos);
+  CHECK(receipt.find("kernels_ms_f32 = 9.2000") != std::string::npos);
+}
+
+TEST_CASE("un tenseur écrêté sur les images de validation refuse le paquet (C02-04)",
+          "[app][span_derive][c02]") {
+  FrenchUi french;
+  const Folder folder;
+  FakeBackend backend;  // échelles à 0,05 : 22,4 de plage
+  backend.trt_ms = 11.5;
+  backend.validation_peak = 30.0F;
+  Fp16Engine engine;
+  SpanDeriveProgress progress;
+  const auto report = derive_span_fp8(engine.with(folder.plan()), source_of(twelve()), backend.deriver(),
+                                      progress, std::stop_token{});
+  REQUIRE(report);
+  CHECK_FALSE(report->passed);
+  CHECK(report->package.empty());
+  CHECK(report->verdict.clipped_tensors == 25);
+  INFO(report->text);
+  CHECK(report->text.find("25 tenseurs FP8 seraient écrêtés") != std::string::npos);
+  const std::string receipt = receipt_of(folder);
+  CHECK(receipt.find("passed = false") != std::string::npos);
+  CHECK(receipt.find("clipped_tensors = 25") != std::string::npos);
 }
 
 TEST_CASE("pendant la lecture, la préparation laisse la carte entre deux images (B02-08)",
@@ -244,7 +338,8 @@ TEST_CASE("pendant la lecture, la préparation laisse la carte entre deux images
   };
   CHECK(spent("calibration", {}) >= kBackgroundPause);
   CHECK(spent("validation", {}) >= kBackgroundPause);
-  CHECK(spent("mesure du temps", {}) < kBackgroundPause);  // la mesure enchaîne ses passes
+  CHECK(spent("mesure du temps", {}) >= kBackgroundPause);  // entre deux lots de la mesure aussi (C02-02)
+  CHECK(spent("référence FP16", {}) < kBackgroundPause);
   std::stop_source stop;
   stop.request_stop();
   CHECK(spent("calibration", stop.get_token()) < kBackgroundPause);  // un arrêt n'attend pas la pause

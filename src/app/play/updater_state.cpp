@@ -14,6 +14,7 @@
 #include "core/file_sync.h"
 #include "core/log.h"
 #include "core/text.h"
+#include "core/text_file.h"
 #include "core/update_manifest.h"
 
 #ifndef TOML_EXCEPTIONS
@@ -99,10 +100,13 @@ void forget_installed_announce(UpdateState& state, std::string_view installed) {
   state.notes_url.clear();
 }
 
-UpdateState load_update_state(const fs::path& file) {
-  std::error_code error;
-  if (!fs::exists(file, error)) return {};
-  const std::string text = read_all(file);
+std::expected<UpdateState, Refusal> read_update_state(const fs::path& file) {
+  // Absent n'est pas illisible (C36-03) : un fichier tenu par un antivirus ne passe plus pour un état neuf,
+  // dont la sauvegarde effacerait les clés révoquées.
+  auto read = core::read_text_file_if_present(file);
+  if (!read) return std::unexpected(std::move(read.error()));
+  if (!*read) return UpdateState{};
+  const std::string& text = **read;
   auto state = parse_update_state(text);
   if (state) {
     forget_installed_announce(*state, installed_version());
@@ -111,6 +115,13 @@ UpdateState load_update_state(const fs::path& file) {
   UpdateState salvaged;
   salvaged.revoked_keys = salvage_revoked_keys(text);
   return salvaged;
+}
+
+UpdateState load_update_state(const fs::path& file) {
+  auto state = read_update_state(file);
+  if (state) return std::move(*state);
+  log_channel("app")->warn("update.toml ne se lit pas : {}", state.error().detail);  // i18n-ok : journal
+  return {};
 }
 
 namespace {
@@ -145,8 +156,9 @@ std::string merge_update_state(std::string_view previous, const UpdateState& sta
 }
 
 std::expected<void, Refusal> save_update_state(const fs::path& file, const UpdateState& state) {
-  std::error_code error;
-  const std::string previous = fs::exists(file, error) ? read_all(file) : std::string();
+  auto read = core::read_text_file_if_present(file);
+  if (!read) return std::unexpected(std::move(read.error()));  // C36-03 : jamais écrit par-dessus l'inconnu
+  const std::string previous = read->value_or(std::string());
   if (!previous.empty() && !toml::parse(previous)) {
     // Un fichier illisible va être remplacé : sa copie reste à côté, pour qui voudrait y regarder (B26-10).
     fs::path backup = file;
@@ -160,7 +172,9 @@ std::expected<void, Refusal> save_update_state(const fs::path& file, const Updat
 std::expected<void, Refusal> change_update_state(const fs::path& file,
                                                  const std::function<void(UpdateState&)>& change) {
   const std::scoped_lock lock(update_state_mutex());
-  UpdateState state = load_update_state(file);
+  auto read = read_update_state(file);
+  if (!read) return std::unexpected(std::move(read.error()));  // C36-03 : rien n'est réécrit
+  UpdateState state = std::move(*read);
   const UpdateState before = state;
   change(state);
   if (state == before) return {};
@@ -205,7 +219,19 @@ void check_updates_if_due(const fs::path& file, UpdateMode mode, UpdateFrequency
 void check_updates_if_due(const fs::path& file, UpdateMode mode, UpdateFrequency frequency, bool may_check,
                           std::int64_t now_unix, const std::stop_token& stop, const UpdateFetch& get) {
   if (!may_check) return;
-  const UpdateState before = load_locked(file);
+  // C36-03 : un update.toml qui ne se lit pas cette fois (antivirus) fait sauter la vérification, plutôt
+  // qu'elle ne tourne sans les clés révoquées.
+  std::expected<UpdateState, Refusal> read;
+  {
+    const std::scoped_lock lock(update_state_mutex());
+    read = read_update_state(file);
+  }
+  if (!read) {
+    log_channel("app")->warn("update.toml ne se lit pas, vérification remise : {}",  // i18n-ok : journal
+                             read.error().detail);
+    return;
+  }
+  const UpdateState before = std::move(*read);
   if (!update_due(before, mode, frequency, now_unix)) return;
   UpdateState after = before;
   const auto message = run_update_check(after, stop, get, now_unix);

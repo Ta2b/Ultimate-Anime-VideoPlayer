@@ -623,8 +623,6 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   begin_frame(now_us);
   route_clicks(now_us, actions);
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
-  choices_.position_us = view.position_us;
-  choices_.paused = view.paused;
   if (panel_.wants_draw()) {
     refresh_choices(now_us);
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);

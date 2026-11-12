@@ -1,6 +1,7 @@
 #include "app/play/bridges.h"
 
 #include <algorithm>
+#include <cstring>
 #include <format>
 #include <string>
 #include <utility>
@@ -37,7 +38,7 @@ std::expected<audio::AudioCodecInfo, Refusal> audio_codec_info(const media::Trac
       .bit_rate = par.bit_rate};
   const auto extra = track.parameters->extradata();
   info.extradata.resize(extra.size());
-  for (std::size_t i = 0; i < extra.size(); ++i) info.extradata[i] = static_cast<std::uint8_t>(extra[i]);
+  if (!extra.empty()) std::memcpy(info.extradata.data(), extra.data(), extra.size());  // C18-11
   return info;
 }
 
@@ -68,7 +69,7 @@ bool AudioBridge::try_push(media::Packet&& packet) {
   const auto bytes = packet.data();
   audio::AudioPacket out{.pts_us = known_pts(packet.pts_us), .epoch = packet.epoch};
   out.data.resize(bytes.size());
-  for (std::size_t i = 0; i < bytes.size(); ++i) out.data[i] = static_cast<std::uint8_t>(bytes[i]);
+  if (!bytes.empty()) std::memcpy(out.data.data(), bytes.data(), bytes.size());  // C18-11 : un bloc
   if (packet.av) {
     for (int i = 0; i < packet.av->side_data_elems; ++i) {
       const AVPacketSideData& side = packet.av->side_data[i];
@@ -93,7 +94,7 @@ std::expected<subs::SelectTrack, Refusal> subtitle_track(const media::TrackInfo&
   if (track.codec == "ass" || track.codec == "ssa") {
     const auto extra = track.parameters->extradata();
     std::string header(extra.size(), '\0');
-    for (std::size_t i = 0; i < extra.size(); ++i) header[i] = static_cast<char>(extra[i]);
+    if (!extra.empty()) std::memcpy(header.data(), extra.data(), extra.size());
     return subs::SelectTrack{.id = id, .source = subs::AssStream{.header = std::move(header)}};
   }
   // mov_text (MP4) : le texte derrière sa longueur, relu par SubsBridge ; WebVTT : le texte de la réplique
