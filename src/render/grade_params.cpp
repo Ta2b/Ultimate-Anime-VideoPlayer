@@ -39,7 +39,6 @@ void apply_scene_light(const GradeSettings& s, GradeParams& p) {
   if (s.series_apl_nits > 0.0) p.fs_series = s.series_apl_nits * p.sdr_white / grade_limits::kSdrWhiteNits;
   if (!s.scene_light) return;
   p.fs_apl = std::max(s.scene_light->apl_nits, 0.0) * p.sdr_white / grade_limits::kSdrWhiteNits;
-  p.an_lift = kAnimeLift * std::exp2(std::clamp(s.anime_exposure, -kAnimeExposureMaxE, kAnimeExposureMaxE));
 }
 
 // La saturation du préréglage, le pivot et le peps de la passe anime (100 % : la méthode telle quelle).
@@ -140,7 +139,6 @@ void sdr_tonemap(GradeParams& p) {
 }
 
 void steady_hdr(GradeParams& p) {
-  p.an_lift = kAnimeLift;
   p.fs_apl = -1.0;
 }
 

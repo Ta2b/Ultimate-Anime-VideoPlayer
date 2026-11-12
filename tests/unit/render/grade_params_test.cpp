@@ -97,7 +97,6 @@ TEST_CASE("le peps de la passe anime et la lumière de la scène") {
   settings.anime_saturation = 80;
   settings.anime_highlights = 200;
   settings.scene_light = SceneLight{.apl_nits = 40.0, .lit = 0.1};
-  settings.anime_exposure = 0.25;
   const auto decision = decide_grade(settings, pq_context(core::HdrMode::Native));
   REQUIRE(decision);
   const GradeParams& p = decision->params;
@@ -105,7 +104,7 @@ TEST_CASE("le peps de la passe anime et la lumière de la scène") {
   CHECK(p.an_chroma == Approx(0.8));
   CHECK(p.an_spec == Approx(2.0));
   CHECK(p.fs_apl == Approx(40.0));
-  CHECK(p.an_lift == Approx(kAnimeLift * std::exp2(0.25)));
+  CHECK(p.an_lift == kAnimeLift);
   // Sans lumière connue : la luminance moyenne reste inconnue, le relèvement fixe.
   const auto plain = decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native));
   REQUIRE(plain);
@@ -186,27 +185,25 @@ TEST_CASE("sortie SDR de l'anime : surfaces au blanc SDR, marge des éclats du p
   CHECK(p.tm_top == Approx(1.25 * p.tm_white));
 }
 
-// C41-01, décision en attente de Tatoub : en sortie SDR, l'exposition par plan (±0,25 diaphragme) devrait
-// bouger les surfaces, mais tm_white suit an_lift et l'annule sous le genou (une surface sort à
-// L × an_lift / tm_white du blanc SDR). Marqué comme connu ([!shouldfail]) : il passe tant que le défaut est
-// là, et échouera quand l'un des deux choix sera fait. Exposition par plan voulue : tm_white fixe, retirer la
-// marque. Surfaces stables : retirer l'exposition par plan et inverser ce test.
-TEST_CASE("sortie SDR de l'anime : l'exposition par plan bouge les surfaces (C41-01, connu)",
-          "[render][!shouldfail]") {
-  const auto sdr_anime = [](double e) {
+// C41-01 : en sortie SDR, l'exposition par plan était annulée par tm_white, qui suivait an_lift. Choix de
+// Tatoub : les surfaces stables, l'exposition par plan retirée. Une surface sort au même niveau du blanc SDR
+// dans un plan sombre ou clair ; seule la marge des éclats (tm_top) suit le plan.
+TEST_CASE("sortie SDR de l'anime : les surfaces ne bougent pas d'un plan à l'autre (C41-01)", "[render]") {
+  const auto sdr_anime = [](double apl) {
     GradeSettings s;
-    s.scene_light = SceneLight{.apl_nits = 40.0, .lit = 0.1};
-    s.anime_exposure = e;
+    s.scene_light = SceneLight{.apl_nits = apl, .lit = 0.1};
     const auto d = decide_grade(s, pq_context(core::HdrMode::Native));
     REQUIRE(d);
     GradeParams p = d->params;
     sdr_tonemap(p);
     return p;
   };
-  const GradeParams dark = sdr_anime(-kAnimeExposureMaxE);
-  const GradeParams bright = sdr_anime(kAnimeExposureMaxE);
-  // +0,5 diaphragme : une surface 2^0,5 = 1,41 fois plus claire attendue.
-  CHECK(bright.an_lift / bright.tm_white > 1.3 * dark.an_lift / dark.tm_white);
+  const GradeParams dark = sdr_anime(5.0);
+  const GradeParams bright = sdr_anime(150.0);
+  CHECK(dark.an_lift == kAnimeLift);
+  CHECK(bright.an_lift == kAnimeLift);
+  CHECK(dark.tm_white == bright.tm_white);
+  CHECK(dark.tm_top > bright.tm_top);
 }
 
 }  // namespace ajp::render

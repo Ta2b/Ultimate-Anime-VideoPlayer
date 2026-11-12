@@ -20,11 +20,6 @@
 
 namespace ajp::render {
 
-// L'exposition par plan de la méthode anime : 0,25 diaphragme par diaphragme d'APL du plan rapportée à la
-// médiane de la série, bornée à ±0,25 diaphragme (reprise de l'ancienne courbe par plan, étape 8.5).
-inline constexpr double kAnimeExposureSlope = 0.25;
-inline constexpr double kAnimeExposureMaxE = 0.25;
-
 // Plages des réglages, incluses ; une valeur hors plage est refusée, jamais corrigée.
 namespace grade_limits {
 inline constexpr core::Range<double> kShadows{0.0, 0.8};
@@ -46,7 +41,11 @@ inline constexpr double kSdrWhiteNits = 203.0;
 // La lumière de la scène que le lecteur connaît (analyse à l'ingestion, pré-analyse des plans) : sa
 // luminance moyenne au blanc SDR de 203 cd/m² et sa part de grands aplats clairs. Le grade en trois passes
 // en tire son limiteur OLED et le haut de sa courbe (GradeParams::fs_apl, fs_bright).
-inline constexpr double kAnimeLift = 1.15;  // GradeParams::an_lift, sans décision par plan
+// Le relèvement des surfaces (GradeParams::an_lift), le même pour tous les plans : l'exposition par plan est
+// retirée (C41-01). En HDR elle faisait sauter un même décor d'un plan à l'autre ; en SDR, tm_white la
+// suivait et l'annulait. Les surfaces restent stables ; seule la marge des éclats suit le plan (fs_apl,
+// tm_top).
+inline constexpr double kAnimeLift = 1.15;
 
 struct SceneLight {
   double apl_nits = 0.0;
@@ -75,9 +74,6 @@ struct GradeSettings {
   double area_rtx = 0.0;
   // La lumière de la scène de l'image qui vient ; vide, inconnue. Jamais écrite dans play.toml.
   std::optional<SceneLight> scene_light;
-  // La méthode « HDR anime » décidée par plan (méga plan A2, --anime-shots) : l'exposition des surfaces du
-  // plan, en diaphragmes (|E| ≤ kAnimeExposureMaxE) ; 0 : le relèvement fixe. Jamais écrite dans play.toml.
-  double anime_exposure = 0.0;
   // La médiane des luminances moyennes des plans connus (nits au blanc de 203 ; 0 : inconnue), pour les noirs
   // profonds (P3.52). Jamais écrite dans play.toml.
   double series_apl_nits = 0.0;
@@ -153,7 +149,7 @@ struct GradeParams {
   // La luminance moyenne de la série (la médiane des plans connus, nits ; < 0 : inconnue) : les noirs
   // profonds.
   double fs_series = -1.0;
-  // Relèvement des surfaces (kAnimeLift, ajusté par plan : GradeSettings::anime_exposure).
+  // Relèvement des surfaces (kAnimeLift, le même pour tous les plans).
   double an_lift = kAnimeLift;
   double an_punch = 0.0;   // --anime-contrast : contraste en plus (0 : aucun)
   double an_chroma = 1.0;  // --anime-saturation : facteur de saturation (1 : identité)
@@ -184,8 +180,8 @@ struct GradeDecision {
 // reste : ses seuils sont mesurés sur la sortie jouée.
 void sdr_tonemap(GradeParams& p);
 
-// La sortie HDR d'une luminosité stable d'un plan à l'autre : le relèvement fixe des surfaces (sans
-// exposition par plan) et la marge des éclats au pic, quelle que soit la clé de la scène (fs_apl inconnue) ;
+// La sortie HDR d'une luminosité stable d'un plan à l'autre : la marge des éclats au pic, quelle que soit la
+// clé de la scène (fs_apl inconnue) ;
 // la dalle limite elle-même les scènes claires. La série (fs_series) reste : elle ne bouge pas aux coupes.
 void steady_hdr(GradeParams& p);
 

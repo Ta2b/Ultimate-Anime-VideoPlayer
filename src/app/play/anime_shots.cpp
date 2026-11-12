@@ -8,12 +8,6 @@
 
 namespace ajp::app::play {
 
-double anime_exposure(double shot_apl_nits, double series_apl_nits) {
-  if (!(shot_apl_nits > 0.0) || !(series_apl_nits > 0.0)) return 0.0;
-  const double e = -render::kAnimeExposureSlope * std::log2(shot_apl_nits / series_apl_nits);
-  return std::clamp(e, -kAnimeSurfaceMaxE, kAnimeSurfaceMaxE);
-}
-
 double series_apl_of(const std::vector<media::Shot>& shots) {
   std::vector<double> apl;
   apl.reserve(shots.size());
@@ -47,8 +41,7 @@ AnimeShotLook AnimeGlide::at(std::int64_t now_us) const {
   const double x =
       std::clamp(static_cast<double>(now_us - start_us_) / static_cast<double>(kAnimeGlideUs), 0.0, 1.0);
   const double t = x * x * (3.0 - 2.0 * x);
-  return AnimeShotLook{.e = std::lerp(from_.e, to_.e, t),
-                       .light = {.apl_nits = std::lerp(from_.light.apl_nits, to_.light.apl_nits, t),
+  return AnimeShotLook{.light = {.apl_nits = std::lerp(from_.light.apl_nits, to_.light.apl_nits, t),
                                  .lit = std::lerp(from_.light.lit, to_.light.lit, t)}};
 }
 
