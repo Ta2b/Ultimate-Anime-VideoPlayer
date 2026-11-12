@@ -39,6 +39,8 @@ struct PlayerPaths {
   // Écrit par play() : vrai quand un moteur vient d'être mis à jour et que le lecteur doit se relancer
   // (play() rend alors sans erreur, fenêtre fermée). nullptr : la relance n'est pas demandée.
   bool* relaunch = nullptr;
+  // Écrit avec relaunch : pourquoi (main.cpp le passe au lecteur relancé, --relaunched=). nullptr : non dit.
+  RelaunchedFor* relaunch_reason = nullptr;
 };
 
 // Où vit le lecteur, pour l'inscription et la page des mises à jour.

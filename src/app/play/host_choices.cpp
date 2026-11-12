@@ -49,6 +49,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.engines_dir_default = prepare::utf8_path(paths::backends_install(paths));
   choices.place = place_of(paths);
   choices.settings_dir = settings_dir;
+  choices.bench_clip = paths::bench_clip(paths);
   refresh_host_choices(choices, catalog);
 }
 

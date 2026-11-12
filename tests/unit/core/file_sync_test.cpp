@@ -62,6 +62,14 @@ TEST_CASE("Écriture atomique : un refus est rendu et le temporaire retiré", "[
   fs::remove_all(dir);
 }
 
+#ifdef __linux__
+TEST_CASE("Écriture atomique : un fichier qu'on ne sait pas vider n'est pas une erreur (B20-01)", "[core]") {
+  // fsync sur un fichier spécial rend EINVAL, comme sur certains systèmes de fichiers FUSE.
+  CHECK_FALSE(ajp::core::sync_file("/dev/null"));
+  CHECK(ajp::core::sync_file("/chemin/absent") == std::errc::no_such_file_or_directory);
+}
+#endif
+
 #ifdef _WIN32
 TEST_CASE(
     "Écriture atomique : une destination tenue sans partage de suppression est remplacée après sa "

@@ -6,7 +6,6 @@
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_messagebox.h>
-#include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -23,8 +22,10 @@ extern "C" {
 #include <fcntl.h>
 #include <unistd.h>
 #endif
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -41,6 +42,7 @@ extern "C" {
 #include "app/play/crash_dump.h"
 #include "app/play/data_dirs.h"
 #include "app/play/default_player.h"
+#include "app/play/i18n.h"
 #include "app/play/latest_writer.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
@@ -54,8 +56,10 @@ extern "C" {
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
+#include "core/log_file.h"
 #include "core/log_redact.h"
 #include "core/thread_role.h"
+#include "core/utf8_path.h"
 #include "media/ffmpeg_log.h"
 #include "prepare/utf8.h"
 
@@ -185,9 +189,12 @@ int write_report(const std::optional<std::filesystem::path>& file, const std::st
 // rapport de « Signaler un problème » garde en tête la version, le système et le journal à lire. La marque
 // de séance, restée ouverte, dit que la séance d'avant s'est arrêtée brutalement : son journal est alors
 // ajp.log.1 (A39-01).
-void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file) {
+// B39-01 : après une relance voulue (perte du GPU, moteur mis à jour), la séance d'avant n'a pas planté mais
+// son journal, ajp.log.1, porte la cause : le rapport le joint aussi.
+void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file,
+                       ajp::app::play::RelaunchedFor relaunched) {
   namespace play = ajp::app::play;
-  if (!settings_dir.empty()) play::install_crash_dumps(settings_dir / "crashes");
+  if (!log_file.empty()) play::install_crash_dumps(log_file.parent_path() / "crashes");  // B36-08
   play::set_report_log_file(log_file);
   play::note_report_fact("ajp", play::installed_version());
   play::note_report_fact("Système", play::os_description());
@@ -196,11 +203,56 @@ void start_diagnostics(const std::filesystem::path& settings_dir, const std::fil
   if (!settings_dir.empty() && play::begin_session(settings_dir))
     ajp::log_channel("app")->warn(
         "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
+  if (relaunched != play::RelaunchedFor::None) {
+    play::note_previous_session_relaunched(play::relaunched_name(relaunched));
+    ajp::log_channel("app")->info("lecteur relancé ({}) : la séance d'avant est dans ajp.log.1",
+                                  play::relaunched_name(relaunched));
+  }
 }
 
-// Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur : il remplace ce processus
-// (POSIX) ou démarre à sa place (Windows).
-int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
+// Les échecs se disent dans une boîte, sauf pendant un essai scripté (--keys, --snapshot, banc, fenêtre
+// cachée), qui doit finir seul. Posé dès que les options sont lues.
+bool& quiet_failures() {
+  static bool quiet = false;
+  return quiet;
+}
+
+// Une ligne ajoutée à ajp.log quand le journal est déjà fermé (la relance l'a vidé avant execv).
+void append_to_log(const std::filesystem::path& log_file, std::string_view line) {
+  if (log_file.empty()) return;
+  std::ofstream out(log_file, std::ios::binary | std::ios::app);
+  out << "[error] " << line << '\n';
+}
+
+// Les arguments du lancement, sans un --relaunched= d'une relance d'avant, puis celui de cette relance : le
+// lecteur relancé sait qu'il l'est et pourquoi (options.h).
+std::vector<std::string> relaunch_arguments(int argc, char** argv, ajp::app::play::RelaunchedFor reason) {
+  std::vector<std::string> arguments;
+  for (int i = 1; i < argc; ++i)
+    if (!std::string_view(argv[i]).starts_with("--relaunched=")) arguments.emplace_back(argv[i]);
+  arguments.push_back(std::format("--relaunched={}", ajp::app::play::relaunched_name(reason)));
+  return arguments;
+}
+
+// B18-01 : une relance ratée ne ferme plus la fenêtre sans un mot. Le journal est déjà fermé : la cause va
+// au bout d'ajp.log, sur stderr, et dans une boîte.
+int relaunch_failed(const std::filesystem::path& log_file, const std::string& cause) {
+  const std::string line = "relance impossible : " + cause;  // i18n-ok : journal
+  append_to_log(log_file, line);
+  std::fprintf(stderr, "ajp : %s\n", line.c_str());
+  if (!quiet_failures()) {
+    const std::string text = ajp::app::play::i18n::tr("The player could not restart: open it again.");
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+  }
+  return 1;
+}
+
+// Relance le lecteur avec les mêmes arguments, après la mise à jour d'un moteur ou la perte du GPU : il
+// remplace ce processus (POSIX) ou démarre à sa place (Windows).
+int relaunch(const std::filesystem::path& executable, int argc, char** argv,
+             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file) {
+  const std::vector<std::string> kept = relaunch_arguments(argc, argv, reason);
+  ajp::log_channel("app")->info("relance ({})", ajp::app::play::relaunched_name(reason));
   ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
   ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
@@ -227,11 +279,13 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
   };
   const std::string program = executable.string();
   std::vector<std::string> arguments{quoted(program)};
-  for (int i = 1; i < argc; ++i) arguments.push_back(quoted(argv[i]));
+  for (const std::string& argument : kept) arguments.push_back(quoted(argument));
   std::vector<const char*> pointers;
   for (const std::string& argument : arguments) pointers.push_back(argument.c_str());
   pointers.push_back(nullptr);
-  return _spawnv(_P_NOWAIT, program.c_str(), pointers.data()) == -1 ? 1 : 0;
+  if (_spawnv(_P_NOWAIT, program.c_str(), pointers.data()) != -1) return 0;
+  const int error = errno;
+  return relaunch_failed(log_file, std::format("_spawnv : {} (errno {})", std::strerror(error), error));
 #else
   // A18-12 : rien d'ouvert ne passe au lecteur relancé (pilote NVIDIA, socket, fichiers) : un contexte CUDA
   // gardé par un descripteur hérité retiendrait sa mémoire vidéo.
@@ -241,10 +295,11 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv) {
     if (flags >= 0) fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
   }
   std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
-  for (int i = 1; i < argc; ++i) arguments.push_back(argv[i]);
+  for (const std::string& argument : kept) arguments.push_back(const_cast<char*>(argument.c_str()));
   arguments.push_back(nullptr);
   execv(executable.c_str(), arguments.data());
-  return 1;  // execv ne revient que sur un échec
+  const int error = errno;  // execv ne revient que sur un échec
+  return relaunch_failed(log_file, std::format("execv : {} (errno {})", std::strerror(error), error));
 #endif
 }
 
@@ -254,6 +309,7 @@ struct StuckRelaunch {
   std::filesystem::path executable;
   int argc = 0;
   char** argv = nullptr;
+  std::filesystem::path log_file;
 };
 StuckRelaunch& stuck_relaunch_args() {
   static StuckRelaunch args;
@@ -261,14 +317,18 @@ StuckRelaunch& stuck_relaunch_args() {
 }
 void relaunch_when_stuck() {
   const StuckRelaunch& args = stuck_relaunch_args();
-  if (args.argv != nullptr) (void)relaunch(args.executable, args.argc, args.argv);
+  // Une fermeture bloquée vient d'un GPU qui ne répond plus : la relance se dit perte du GPU (B39-01).
+  if (args.argv != nullptr)
+    (void)relaunch(args.executable, args.argc, args.argv, ajp::app::play::RelaunchedFor::GpuLost,
+                   args.log_file);
 }
 // Le dossier des moteurs, et la relance armée avant la lecture.
 void before_play(const std::filesystem::path& engines, const std::filesystem::path& executable, int argc,
-                 char** argv) {
+                 char** argv, const std::filesystem::path& log_file) {
   std::error_code error;
   std::filesystem::create_directories(engines, error);
-  stuck_relaunch_args() = StuckRelaunch{.executable = executable, .argc = argc, .argv = argv};
+  stuck_relaunch_args() =
+      StuckRelaunch{.executable = executable, .argc = argc, .argv = argv, .log_file = log_file};
   ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
 }
 
@@ -348,8 +408,8 @@ int run_bench_command(const std::vector<std::string_view>& args) {
 // « ajp calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench »,
 // en ligne de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de
 // l'utilisateur. --tier : le niveau de la carte (0 Économe à 4 Ultra), qui donne les modèles joués
-// (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Qualité),
-// le niveau de la RTX 4070 Ti du poste de mesure.
+// (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Rapide,
+// Tier::Fast), le niveau de la RTX 4070 Ti du poste de mesure.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
   namespace play = ajp::app::play;
   int display_height = 2160;
@@ -449,6 +509,69 @@ DataPlaces settle_data(const std::filesystem::path& data, const ajp::app::play::
   return places;
 }
 
+// Le journal de la séance ; rend son fichier (vide : stderr seul). trial_dir : --data-dir, où vont alors
+// réglages et journal (les essais du benchmark).
+std::filesystem::path open_journal(const std::filesystem::path& home, const std::filesystem::path& data,
+                                   const std::filesystem::path& trial_dir) {
+  // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
+  // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
+  // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
+  // Chaque ligne y entre nettoyée (P1.32) : le dossier personnel devient « ~ ».
+  ajp::set_log_home(ajp::prepare::utf8_path(home));
+  std::vector<spdlog::sink_ptr> sinks{
+      ajp::redacting_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>())};
+  // B36-08 : journal et minidumps dans le dossier local (pas dans le profil itinérant de Windows) ; ceux
+  // d'une version d'avant y passent, ce qui est dit une fois le journal ouvert.
+  std::vector<std::string> moved;
+  std::filesystem::path diagnostics = trial_dir.empty() ? data : trial_dir;
+  if (trial_dir.empty() && !data.empty()) {
+    diagnostics = ajp::app::play::local_data(data);
+    ajp::app::play::move_diagnostics(data, diagnostics,
+                                     [&](const std::string& line) { moved.push_back(line); });
+  }
+  const std::filesystem::path log_file =
+      diagnostics.empty() ? std::filesystem::path() : diagnostics / "ajp.log";
+  if (!log_file.empty()) {
+    rotate_logs(log_file);
+    // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
+    // de lecture ne remplit plus le disque.
+    constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
+    constexpr std::size_t kLogParts = 2;
+    // Ouvert par son chemin (UTF-16 sous Windows) : un dossier de données au nom japonais ne fait plus
+    // partir le journal sans un mot (B33-06).
+    if (spdlog::sink_ptr file_sink = ajp::log_file_sink(log_file, kLogBytes, kLogParts))
+      sinks.push_back(ajp::redacting_sink(std::move(file_sink)));
+  }
+  const bool logs_to_file = sinks.size() > 1;
+  ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
+  log_open() = true;
+  if (logs_to_file) {
+    spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
+    ajp::log_channel("app")->info("journal : {} · ajp {}", ajp::core::to_utf8(log_file.filename()),
+                                  ajp::app::play::installed_version());
+  } else if (!log_file.empty()) {
+    ajp::log_channel("app")->warn("journal : {} ne s'ouvre pas, stderr seulement",
+                                  ajp::core::to_utf8(log_file.filename()));
+  }
+  for (const std::string& line : moved) ajp::log_channel("app")->info("données : {}", line);
+  return log_file;
+}
+
+// B20-06 : un rôle refusé par le système (MMCSS, rtkit) se dit une fois au journal ; sans cela, une cadence
+// qui dérive sous charge ne se distinguait pas d'un défaut du lecteur.
+void report_role_refusals() {
+  ajp::set_role_refusal_reporter([](ajp::ThreadRole role, const char* what) noexcept {
+    try {
+      ajp::log_channel("app")->warn("rôle {} du thread : {}",
+                                    role == ajp::ThreadRole::Background ? "de fond"
+                                    : role == ajp::ThreadRole::Audio    ? "audio"
+                                                                        : "de lecture",
+                                    what);
+    } catch (...) {  // NOLINT(bugprone-empty-catch) : le journal a échoué, le rôle reste tel quel
+    }
+  });
+}
+
 // Le lecteur, puis l'attente d'une écriture que la fin d'une vidéo n'a pas attendue (disque lent) : elle
 // finit avant que le processus ne parte.
 std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOptions& options,
@@ -466,8 +589,6 @@ int run_player(int argc, char** argv) {
   // que lit nvcuda.dll). Lue au premier appel CUDA : posée ici, avant toute bibliothèque ; une valeur de
   // l'utilisateur prime.
   SDL_setenv_unsafe("CUDA_DEVICE_MAX_CONNECTIONS", "32", 0);
-  // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
-  ajp::set_thread_role(ajp::ThreadRole::Playback);
 #ifdef _WIN32
   // Les DLL qu'une bibliothèque chargée demande par son seul nom (TensorRT, ses ressources, NVRTC) ne se
   // cherchent plus dans le PATH ni le dossier courant (A20-07) : dossier du lecteur, System32, et les
@@ -510,6 +631,7 @@ int run_player(int argc, char** argv) {
     std::fputs(ajp::app::play::play_usage(options->debug).c_str(), stdout);
     return 0;
   }
+  quiet_failures() = !options->keys.empty() || options->snapshot || options->bench_out || options->hidden;
   const auto base = sdl_path(SDL_GetBasePath());
   char* pref = SDL_GetPrefPath("ajp", "ajp");  // avant SDL_Init comme permis : l'inscription s'en sert
   const auto data = sdl_path(pref);
@@ -539,13 +661,6 @@ int run_player(int argc, char** argv) {
     if (claim.forwarded) return 0;
     instance = std::move(claim.listener);
   }
-  // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
-  // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
-  // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
-  // Chaque ligne y entre nettoyée (P1.32) : le dossier personnel devient « ~ ».
-  ajp::set_log_home(ajp::prepare::utf8_path(place.home));
-  std::vector<spdlog::sink_ptr> sinks{
-      ajp::redacting_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>())};
   // --data-dir : réglages, profils et journal ailleurs (les essais du benchmark) ; moteurs et modèles
   // restent.
   std::filesystem::path settings_dir = data;
@@ -555,29 +670,11 @@ int run_player(int argc, char** argv) {
     std::filesystem::create_directories(settings_dir, made);
   }
   const std::filesystem::path log_file =
-      settings_dir.empty() ? std::filesystem::path() : settings_dir / "ajp.log";
-  if (!log_file.empty()) {
-    rotate_logs(log_file);
-    // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
-    // de lecture ne remplit plus le disque.
-    constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
-    constexpr std::size_t kLogParts = 2;
-    try {
-      sinks.push_back(ajp::redacting_sink(
-          std::make_shared<spdlog::sinks::rotating_file_sink_mt>(log_file.string(), kLogBytes, kLogParts)));
-    } catch (const std::exception&) {
-      sinks.resize(1);
-    }
-  }
-  const bool logs_to_file = sinks.size() > 1;
-  ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
-  log_open() = true;
-  if (logs_to_file) {
-    spdlog::flush_every(std::chrono::seconds(1));  // un arrêt brutal perd au plus une seconde
-    ajp::log_channel("app")->info("journal : {} · ajp {}", log_file.string(),
-                                  ajp::app::play::installed_version());
-  }
-  start_diagnostics(settings_dir, log_file);
+      open_journal(place.home, data, options->data_dir ? settings_dir : std::filesystem::path());
+  start_diagnostics(settings_dir, log_file, options->relaunched);
+  report_role_refusals();
+  // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
+  ajp::set_thread_role(ajp::ThreadRole::Playback);
   if (options->bake_looks) {
     const auto baked = ajp::app::play::bake_looks(ajp::app::play::paths::play_settings(settings_dir),
                                                   ajp::app::play::local_data(data) / "luts",  // A18-06
@@ -607,7 +704,8 @@ int run_player(int argc, char** argv) {
   const DataPlaces places = settle_data(data, place, !options->data_dir && !options->bench_out);
   const std::filesystem::path& heavy = places.heavy;
   const std::filesystem::path& cache = places.cache;
-  bool engines_updated = false;  // un moteur vient d'être mis à jour : le lecteur se relance (play())
+  bool engines_updated = false;  // un moteur mis à jour ou le GPU perdu : le lecteur se relance (play())
+  auto relaunch_reason = ajp::app::play::RelaunchedFor::EngineUpdated;
   ajp::app::play::PlayerPaths paths{
       .home = place.home,
       .data = data,  // le dossier des données du lecteur
@@ -619,6 +717,7 @@ int run_player(int argc, char** argv) {
       .engine_index = base / "engines.lock",
       .models = base / "models",
       .relaunch = &engines_updated,
+      .relaunch_reason = &relaunch_reason,
   };
   // TensorRT d'abord (cartes NVIDIA) et Core ML (Apple), qui refusent les autres fabricants, puis Vulkan (le
   // recours partout) ; chacun à côté de l'exécutable, puis dans l'arbre de construction.
@@ -639,19 +738,18 @@ int run_player(int argc, char** argv) {
 #ifdef AJP_BACKEND_VULKAN
   paths.backends.emplace_back(AJP_BACKEND_VULKAN);
 #endif
-  before_play(paths.engines, place.executable, argc, argv);
+  before_play(paths.engines, place.executable, argc, argv, log_file);
   const auto played = play_then_settle(*options, paths);
   instance.reset();  // avant SDL_Quit : le fil du canal pousse dans la file de SDL
   SDL_Quit();
-  if (played && engines_updated) return relaunch(place.executable, argc, argv);
+  if (played && engines_updated) return relaunch(place.executable, argc, argv, relaunch_reason, log_file);
   if (played) return 0;
   // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.
   ajp::log_channel("app")->error("{} {}", ajp::name(played.error().code), played.error().detail);
   // Lancé par un double-clic, personne ne lit stderr : la fenêtre ne se ferme pas sans un mot. Pas
   // de boîte pendant un essai scripté (--keys, --snapshot, banc), qui doit finir seul, ni pour une
   // annulation voulue.
-  if (options->keys.empty() && !options->snapshot && !options->bench_out &&
-      played.error().code != ajp::RefusalCode::Cancelled) {
+  if (!quiet_failures() && played.error().code != ajp::RefusalCode::Cancelled) {
     namespace i18n = ajp::app::play::i18n;
     std::string text =
         i18n::tr_format("Playback stopped: {}.", ajp::app::play::visible_error(played.error()));
@@ -669,8 +767,22 @@ int run_player(int argc, char** argv) {
 int main(int argc, char** argv) {
   ajp::install_terminate_flush();
   ajp::install_system_thread_names();  // Nsight, gdb et les vidages nomment chaque thread (A20-11)
-  const int code = ajp::run_logged([&] { return run_player(argc, argv); });
-  ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
+  bool threw = true;                   // remis à faux par run_player qui rend
+  const int code = ajp::run_logged([&] {
+    const int returned = run_player(argc, argv);
+    threw = false;
+    return returned;
+  });
+  if (threw) {
+    // B31-10 : une exception (mémoire pleine) ne ferme plus la fenêtre sans un mot, et la séance reste
+    // marquée ouverte : le lancement suivant joint ce journal au rapport.
+    if (!quiet_failures()) {
+      const std::string text = ajp::app::play::i18n::tr("The player stopped on an internal error.");
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+    }
+  } else {
+    ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
+  }
   // Une sonde de fichier bloquée sur un partage muet (run_pumped_for) : un instant pour finir, sinon le
   // processus se termine sans elle, avant qu'elle ne journalise après close_log (A30-05).
   if (!ajp::app::play::settle_abandoned_threads(std::chrono::seconds(2))) {

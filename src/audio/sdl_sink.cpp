@@ -158,10 +158,7 @@ std::expected<void, Refusal> SdlSink::reopen_default() {
   const double kept_ratio = old != nullptr ? ratio() : 1.0;
   device_.store(0);
   if (old != nullptr) SDL_SetAudioStreamGetCallback(old, nullptr, nullptr);  // attend la fin d'un rappel
-  if (auto opened = open_stream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK); !opened) {
-    stream_ = old;
-    return opened;
-  }
+  if (auto opened = open_stream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK); !opened) return opened;  // stream_ gardé
   if (old != nullptr) SDL_DestroyAudioStream(old);
   set_gain(kept_gain);
   set_ratio(kept_ratio);

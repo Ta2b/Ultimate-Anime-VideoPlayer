@@ -52,9 +52,9 @@ struct PlayerConfig {
   std::int64_t queue_target_us = 200'000;  // audio gardé d'avance dans la file du périphérique
   std::int64_t resync_us = 50'000;         // écart à l'écran au-delà duquel on recale franchement
   DriftGains drift;
-  // L'horloge publiée filtrée par une PLL du second ordre (core/clock_pll.h, étape 6.9, essai --audio-pll) :
-  // la gigue des relevés du périphérique ne passe plus dans l'horloge maîtresse. Active par défaut, comme
-  // dans le produit (options.h, audio_pll) : les tests passent par le chemin livré (A16-13).
+  // L'horloge publiée filtrée par une PLL du second ordre (core/clock_pll.h) : la gigue des relevés du
+  // périphérique ne passe plus dans l'horloge maîtresse. C'est l'état livré ; --no-audio-pll (essai, avec
+  // --debug) ne sert qu'à comparer avec l'horloge brute. Les tests passent par le chemin livré (A16-13).
   bool pll = true;
   // Le délai mémorisé de la sortie du système, repris quand l'appareil choisi disparaît et que le son y passe
   // (A16-02) : un casque Bluetooth éteint ne laisse pas son retard aux haut-parleurs. Absent : délai gardé.

@@ -101,6 +101,10 @@ void switch_audio(Chain& to, int track, std::int64_t now_us) {
     to.ui.controls().notify(i18n::ui_tr("Audio track refused"), now_us);
     return;
   }
+  if (to.manual_tracks != nullptr) {
+    const auto& playing = to.pipeline.audio_playing();
+    to.manual_tracks->audio = playing ? track_like(*playing) : std::nullopt;
+  }
   to.ui.set_tracks(to.pipeline.tracks());
   to.session.set_tracks(to.pipeline.describe());
   to.ui.controls().notify(i18n::ui_tr_format("Audio: {}", label_of(to.pipeline.tracks().audio, track)),
@@ -118,6 +122,18 @@ void switch_subtitles(Chain& to, std::optional<int> track, std::int64_t now_us) 
     return;
   }
   to.session.set_subtitles(track.has_value());
+  // Coupés : la règle vaut partout ; une piste sans langue ne se reconnaît pas ailleurs, les préréglages
+  // reprennent la main à la vidéo suivante.
+  if (to.manual_tracks != nullptr) {
+    const auto& playing = to.pipeline.subtitles_playing();
+    if (!track) {
+      to.manual_tracks->subtitles = std::optional<TrackLike>{};
+    } else if (auto like = playing ? track_like(*playing) : std::nullopt) {
+      to.manual_tracks->subtitles = std::move(like);
+    } else {
+      to.manual_tracks->subtitles.reset();
+    }
+  }
   if (track && *track < kExternalSubtitleBase) {
     const std::int64_t position = std::max<std::int64_t>(to.session.view().position_us, 0);
     to.session.command(cmd::Seek{.target_us = position, .exact = true});
@@ -287,8 +303,9 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us) {
 }
 
 void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
-                   std::optional<std::optional<int>> wanted) {
+                   std::optional<std::optional<int>> wanted, ManualTracks* manual) {
   to.stages = stages;
+  to.manual_tracks = manual;
   to.dropped_subtitles = &dropped;
   std::erase_if(*to.dropped_subtitles, [&](const std::filesystem::path& file) {
     auto added = to.pipeline.add_subtitle_file(file);

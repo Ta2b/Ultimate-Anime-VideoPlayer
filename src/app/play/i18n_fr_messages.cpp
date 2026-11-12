@@ -10,6 +10,8 @@ constexpr std::array kMessages{
     Entry{"\"{}\" stopped: {}", "« {} » s'est arrêtée : {}"},
     Entry{"Playback stopped: {}.", "La lecture s'est arrêtée : {}."},
     Entry{"Details in {}", "Détails dans {}"},
+    Entry{"The player could not restart: open it again.", "Le lecteur n'a pas pu se relancer : rouvrez-le."},
+    Entry{"The player stopped on an internal error.", "Le lecteur s'est arrêté sur une erreur interne."},
     Entry{"  {:<24} {:>5.1f} % lost, p95 delay {:>6.1f} ms, frame {:>6.1f} ms (p95 {:>6.1f}), compositing "
           "{:>5.1f} ms: {}\n",
           "  {:<24} {:>5.1f} % perdues, retard p95 {:>6.1f} ms, image {:>6.1f} ms (p95 {:>6.1f}), "

@@ -29,6 +29,8 @@ jobs:
         run: tools/ci/check-comments.sh
       - name: Actions épinglées
         run: tools/ci/check-pinned-actions.sh
+      - name: Révocation de la clé des mises à jour
+        run: tools/release/test-signing.sh
       - name: Clé publique des mises à jour, trois copies
         run: tools/ci/check-pubkey.sh
       - name: Scripts de publication

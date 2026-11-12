@@ -21,25 +21,17 @@ struct SourceId {
 // Les codes de refus, une ligne chacun : l'énumération et son nom (name) en viennent (P5.18).
 #define AJP_REFUSAL_CODES(X)                                                                                 \
   X(ProfileUnreadable) /* fichier absent ou TOML invalide */                                                 \
-  X(ProfileVersion)    /* version différente de 5 */                                                         \
   X(FieldMissing)      /* clé obligatoire absente */                                                         \
   X(FieldType)         /* clé du mauvais type */                                                             \
   X(FieldOutOfRange)   /* valeur hors de sa plage constexpr */                                               \
-  X(TooManySteps)      /* plus de 16 étapes dans une règle */                                                \
-  X(FactorProductTooLarge)                                                                                   \
-  X(StepOrder)        /* ordre d'étapes sans ordonnancement connu */                                         \
-  X(PacingForbidden)  /* Quality impose le rythme Source */                                                  \
-  X(ModelUnavailable) /* modèle absent des capacités */                                                      \
-  X(HdrUnavailable)   /* route HDR impossible sur ce système ou cet écran */                                 \
-  X(SourceUnknown)    /* source jamais reçue, ou sortie de la fenêtre gardée */                              \
-  X(LookaheadMissing) /* les sources suivantes nécessaires ne sont pas encore classées */                    \
+  X(ModelUnavailable)  /* modèle absent des capacités */                                                     \
+  X(HdrUnavailable)    /* route HDR impossible sur ce système ou cet écran */                                \
   X(SequenceOrder)  /* hors séquence : source avant le début, après la fin ou reprise, époque qui recule */  \
   X(FileUnreadable) /* fichier hors profil absent, illisible ou TOML invalide */                             \
   X(FileUnwritable) /* écriture ou renommage impossible */                                                   \
   X(InsufficientSpace) /* pas assez de place libre pour installer un moteur (dit combien il faut et combien  \
                           il reste) */                                                                       \
   X(FormatVersion)     /* version inconnue de settings.toml, d'un index ou d'un INI */                       \
-  X(ImportUnsupported) /* réglage INI sans équivalent en v5 */                                               \
   X(KeyUnknown)        /* nom de touche ou d'action inconnu */                                               \
   X(KeyConflict)       /* deux actions sur le même raccourci */                                              \
   X(OptionUnknown)     /* option de ligne de commande inconnue */                                            \
@@ -71,7 +63,7 @@ struct SourceId {
   X(ModelMismatch)          /* hachage, précision ou forme différents de ModelSpec */                        \
   X(ReceiptInvalid)         /* reçu de qualification illisible, incomplet ou au hachage faux */              \
   /* Bibliothèques externes : chargement dynamique, appels, contrat d'entrée */                              \
-  X(SdkRejected)        /* SDK importé refusé : fichier absent ou vide, architecture, version, ABI */        \
+  X(SdkRejected) /* SDK refusé : fichier absent ou vide, architecture, version, ABI, pilote trop ancien */   \
   X(LibraryUnavailable) /* bibliothèque ou symbole introuvable au chargement */                              \
   X(VendorCallFailed)   /* un appel d'un SDK constructeur a renvoyé une erreur */                            \
   X(InputMismatch)      /* image ou tampon hors du contrat d'entrée (taille, format, tramage) */             \
@@ -109,7 +101,7 @@ enum class RefusalCode : std::uint8_t {
 
 struct Refusal {
   RefusalCode code;
-  std::string detail;  // où et pourquoi, par exemple « profiles.3.rules[1].steps[2].factor »
+  std::string detail;  // où et pourquoi, par exemple « audio.delay_ms : 9000 hors de -2000 à 2000 »
   // Vrai quand l'étage qui refuse continue : la lecture n'a pas à s'arrêter. Faux par défaut, un
   // refus arrête l'étage qui le signale.
   bool recoverable = false;

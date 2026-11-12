@@ -517,6 +517,13 @@ std::expected<PlaySettings, Refusal> load_settings(const std::filesystem::path& 
   return settings;
 }
 
+std::expected<PlaySettings, Refusal> peek_settings(const std::filesystem::path& path) {
+  auto text = core::read_text_file_if_present(path);
+  if (!text) return std::unexpected(text.error());
+  if (!*text) return PlaySettings{};
+  return parse_settings_lenient(**text);
+}
+
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const PlaySettings& settings) {
   if (auto valid = validate(settings); !valid) return std::unexpected(valid.error());
   // Un fichier qui ne s'est pas lu au lancement : la séance tourne sur les défauts, les écrire le

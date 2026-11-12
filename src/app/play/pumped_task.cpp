@@ -15,6 +15,10 @@ void pump_window_events() {
   SDL_PumpEvents();
 }
 
+bool window_close_requested() {
+  return SDL_HasEvent(SDL_EVENT_QUIT) || SDL_HasEvent(SDL_EVENT_WINDOW_CLOSE_REQUESTED);
+}
+
 namespace {
 
 struct Abandoned {

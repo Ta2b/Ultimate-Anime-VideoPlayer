@@ -9,6 +9,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "app/play/frame_stats.h"
 #include "app/play/player.h"
 #include "core/file_sync.h"
 #include "core/log.h"
@@ -106,11 +107,32 @@ bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, s
                                                             .reason = reason,
                                                             .written_s = relaunch_now_s()});
         !written)
-      log_channel("app")->warn("relance : {} ; le lancement est rejoué tel quel", written.error().detail);
+      log_channel("app")->warn("relance : {} ; le lancement est rejoué tel quel, la position est perdue",
+                               written.error().detail);
   }
   *paths.relaunch = true;
+  if (paths.relaunch_reason != nullptr)
+    *paths.relaunch_reason =
+        reason == RelaunchReason::GpuLost ? RelaunchedFor::GpuLost : RelaunchedFor::EngineUpdated;
   relaunch_asked().store(true, std::memory_order_release);
   return true;
+}
+
+std::optional<RelaunchTarget> take_relaunch(PlayOptions& options, const PlayerPaths& paths,
+                                            std::int64_t now_s) {
+  if (options.bench_out || options.data_dir) return std::nullopt;
+  const std::filesystem::path store = relaunch_target_file(paths.data);
+  if (options.relaunched == RelaunchedFor::None) {
+    std::error_code error;
+    if (std::filesystem::remove(store, error)) log_channel("app")->info("relance : fichier resté retiré");
+    return std::nullopt;
+  }
+  std::optional<RelaunchTarget> target = take_relaunch_target(store, now_s);
+  if (!target) return std::nullopt;
+  log_channel("app")->info("relance : {} à {}", prepare::utf8_path(target->file.filename()),
+                           format_position(target->start_us));
+  options.file = target->file;
+  return target;
 }
 
 void set_stuck_relaunch(void (*relaunch)()) {

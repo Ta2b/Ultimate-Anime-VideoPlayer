@@ -54,8 +54,12 @@ using UpdateFetch = std::function<std::expected<void, Refusal>(
 
 std::string format_update_state(const UpdateState& state);
 std::expected<UpdateState, Refusal> parse_update_state(std::string_view toml_text);
+// Oublie l'annonce d'une version déjà installée (ou plus ancienne, ou illisible) : après l'installation,
+// la notice ne revient pas jusqu'à la vérification suivante, qui peut tarder d'une semaine (B26-01).
+void forget_installed_announce(UpdateState& state, std::string_view installed);
 // Absent : l'état vide. Illisible : l'état vide, mais avec les clés révoquées qu'on y lit encore (B26-10) ;
-// save_update_state garde alors une copie du fichier dans <fichier>.bak.
+// save_update_state garde alors une copie du fichier dans <fichier>.bak. L'annonce d'une version
+// qui n'est plus nouvelle est oubliée.
 UpdateState load_update_state(const std::filesystem::path& file);
 // Réécrit le fichier : les champs de state, plus les clés inconnues d'une version plus récente (A36-05).
 std::expected<void, Refusal> save_update_state(const std::filesystem::path& file, const UpdateState& state);

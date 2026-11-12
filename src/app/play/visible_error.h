@@ -17,6 +17,7 @@ namespace ajp::app::play {
 inline constexpr std::string_view kDolbyVision5Key = "dolby-vision-5";
 inline constexpr std::string_view kAudioOnlyKey = "audio-only";
 inline constexpr std::string_view kImageSubtitlesKey = "image-subtitles";  // A17-02
+inline constexpr std::string_view kSubtitlesLostKey = "subtitles-lost";    // B31-14
 
 namespace detail {
 
@@ -64,7 +65,6 @@ inline constexpr std::array kErrorFamilies{
     std::pair{RefusalCode::DeviceLost, ErrorFamily::DeviceLost},
     std::pair{RefusalCode::Cancelled, ErrorFamily::Cancelled},
     std::pair{RefusalCode::ProfileUnreadable, ErrorFamily::Setting},
-    std::pair{RefusalCode::ProfileVersion, ErrorFamily::Setting},
     std::pair{RefusalCode::FieldMissing, ErrorFamily::Setting},
     std::pair{RefusalCode::FieldType, ErrorFamily::Setting},
     std::pair{RefusalCode::FieldOutOfRange, ErrorFamily::Setting},
@@ -72,13 +72,6 @@ inline constexpr std::array kErrorFamilies{
     std::pair{RefusalCode::KeyUnknown, ErrorFamily::Setting},
     std::pair{RefusalCode::KeyConflict, ErrorFamily::Setting},
     std::pair{RefusalCode::OptionUnknown, ErrorFamily::Setting},
-    std::pair{RefusalCode::TooManySteps, ErrorFamily::Setting},
-    std::pair{RefusalCode::FactorProductTooLarge, ErrorFamily::Setting},
-    std::pair{RefusalCode::StepOrder, ErrorFamily::Setting},
-    std::pair{RefusalCode::PacingForbidden, ErrorFamily::Setting},
-    std::pair{RefusalCode::ImportUnsupported, ErrorFamily::Setting},
-    std::pair{RefusalCode::SourceUnknown, ErrorFamily::Setting},
-    std::pair{RefusalCode::LookaheadMissing, ErrorFamily::Setting},
     std::pair{RefusalCode::SequenceOrder, ErrorFamily::Setting},
     std::pair{RefusalCode::HashMismatch, ErrorFamily::Damaged},
     std::pair{RefusalCode::ModelUnavailable, ErrorFamily::Model},
@@ -126,6 +119,17 @@ inline ErrorFamily error_family(RefusalCode code) {
   return ErrorFamily::Other;
 }
 
+// Les refus que leur clé nomme, avant leur famille ; vide pour les autres.
+inline std::string keyed_error(std::string_view key) {
+  if (key == kDolbyVision5Key)
+    return i18n::tr("Dolby Vision profile 5 is not supported (no HDR10 or SDR picture in this file)");
+  if (key == kAudioOnlyKey) return i18n::tr("this file has sound only, no picture to play");
+  if (key == kImageSubtitlesKey)
+    return i18n::tr("image subtitles (PGS, VobSub) are not supported: no subtitles");
+  if (key == kSubtitlesLostKey)
+    return i18n::tr("the subtitles could not be drawn: playback continues without them");
+  return {};
+}
 }  // namespace detail
 
 // Le moteur GPU : le pilote refusé et le délai dépassé disent ce qui aide, le reste reste général (B43).
@@ -138,11 +142,7 @@ inline std::string builder_error(RefusalCode code) {
 }
 
 inline std::string visible_error(const Refusal& refusal) {
-  if (refusal.key == kDolbyVision5Key)
-    return i18n::tr("Dolby Vision profile 5 is not supported (no HDR10 or SDR picture in this file)");
-  if (refusal.key == kAudioOnlyKey) return i18n::tr("this file has sound only, no picture to play");
-  if (refusal.key == kImageSubtitlesKey)
-    return i18n::tr("image subtitles (PGS, VobSub) are not supported: no subtitles");
+  if (std::string keyed = detail::keyed_error(refusal.key); !keyed.empty()) return keyed;
   switch (detail::error_family(refusal.code)) {
     case detail::ErrorFamily::Unreadable:
       return i18n::tr("the file cannot be read (unknown format, damaged or missing)");

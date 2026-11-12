@@ -100,4 +100,26 @@ std::optional<int> next_audio(const TrackMenu& menu) {
   return std::next(here)->index;
 }
 
+std::optional<TrackLike> track_like(const media::TrackInfo& track) {
+  if (language_name(track.language).empty()) return std::nullopt;  // absente ou « und »
+  return TrackLike{.language = track.language, .title = track.title};
+}
+
+std::optional<int> matching_track(std::span<const media::TrackInfo> tracks, media::TrackKind kind,
+                                  const TrackLike& wanted, std::optional<int> fallback) {
+  const auto alike = [&](const media::TrackInfo& track) {
+    return track.kind == kind && same_language(track.language, wanted.language);
+  };
+  const auto same_title = std::ranges::find_if(
+      tracks, [&](const media::TrackInfo& track) { return alike(track) && track.title == wanted.title; });
+  if (same_title != tracks.end()) return same_title->index;
+  if (fallback) {
+    const auto chosen = std::ranges::find(tracks, *fallback, &media::TrackInfo::index);
+    if (chosen != tracks.end() && alike(*chosen)) return chosen->index;
+  }
+  const auto first = std::ranges::find_if(tracks, alike);
+  if (first != tracks.end()) return first->index;
+  return std::nullopt;
+}
+
 }  // namespace ajp::app::play

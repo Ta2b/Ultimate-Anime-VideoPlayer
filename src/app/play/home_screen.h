@@ -20,8 +20,8 @@
 #include "app/play/player_engines.h"
 #include "app/play/settings.h"
 #include "app/play/ui.h"
-#include "core/display.h"
 #include "core/settings.h"
+#include "core/source_info.h"
 #include "core/types.h"
 
 union SDL_Event;

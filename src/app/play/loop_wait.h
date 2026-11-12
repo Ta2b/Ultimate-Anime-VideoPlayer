@@ -1,8 +1,9 @@
 // L'attente de la boucle d'affichage jusqu'à l'image suivante (étape 6.7, essai --precise-wait) : une attente
 // d'événement SDL jusqu'à 1,5 ms avant l'échéance (une image reçue, une touche, la réveillent), puis une
-// attente absolue sur l'horloge monotone (std::this_thread::sleep_until, clock_nanosleep en TIMER_ABSTIME
-// sous Linux), le relâchement des minuteurs du thread ramené à 1 ns. Sans l'essai : l'attente d'aujourd'hui,
-// à la milliseconde, arrondie par défaut.
+// attente absolue sur l'horloge monotone : clock_nanosleep en TIMER_ABSTIME sous Linux, le relâchement des
+// minuteurs du thread ramené à 1 ns (quelques dizaines de µs) ; sous Windows, un minuteur à haute résolution
+// (CREATE_WAITABLE_TIMER_HIGH_RESOLUTION), sinon sleep_until à la milliseconde du minuteur système. Sans
+// l'essai : l'attente d'aujourd'hui, à la milliseconde, arrondie par défaut.
 #pragma once
 
 #include <atomic>

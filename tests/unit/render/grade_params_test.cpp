@@ -160,16 +160,6 @@ TEST_CASE("un réglage hors plage est refusé en nommant le champ") {
   CHECK_FALSE(decide_grade(GradeSettings{}, pq_context(core::HdrMode::Native, 99.0)));
 }
 
-TEST_CASE("pic du grade : celui de l'écran s'il est connu, 1000 nits sinon") {
-  core::DisplayInfo display;
-  CHECK(*grade_peak(display) == 1000.0);
-  display.peak_nits = 1500.0;
-  display.provenance.peak = core::Provenance::Profile;
-  CHECK(*grade_peak(display) == 1500.0);
-  display.peak_nits = 50.0;
-  CHECK_FALSE(grade_peak(display));
-}
-
 TEST_CASE("un curseur float poussé à sa borne garde le grade") {
   // 0,8f relu en double vaut 0,800000012 : au bout du curseur Noirs profonds, le grade entier était refusé.
   GradeSettings settings;

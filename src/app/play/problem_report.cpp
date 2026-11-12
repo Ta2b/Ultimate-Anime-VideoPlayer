@@ -1,11 +1,13 @@
 #include "app/play/problem_report.h"
 
 #include <algorithm>
+#include <format>
 #include <fstream>
 #include <iterator>
 #include <mutex>
 #include <system_error>
 
+#include "core/log_redact.h"
 #include "core/utf8_path.h"
 
 #ifdef _WIN32
@@ -31,6 +33,7 @@ struct State {
   fs::path session_dir;
   fs::path log_file;
   bool previous_crashed = false;
+  std::string previous_relaunched;  // la raison de la relance voulue qui a lancé cette séance ; vide : aucune
 };
 
 #ifdef __linux__
@@ -69,86 +72,6 @@ int find_build_id(dl_phdr_info* info, std::size_t /*size*/, void* data) {
 State& state() {
   static State s;
   return s;
-}
-
-bool is_separator(char c) {
-  return c == '/' || c == '\\';
-}
-
-// Ce qui peut précéder un chemin : le début, un blanc, une ponctuation d'ouverture ou de liaison, ou un
-// caractère hors ASCII (flèche, espace insécable : ses octets valent 0x80 et plus). Liste large exprès : un
-// chemin non reconnu part en clair, avec le nom d'utilisateur, dans une issue publique (B19-05, B39-07).
-bool opens_path(char before) {
-  if (static_cast<unsigned char>(before) >= 0x80) return true;
-  switch (before) {
-    case ' ':
-    case '\t':
-    case '\n':
-    case '"':
-    case '\'':
-    case '(':
-    case '[':
-    case '{':
-    case '=':
-    case ':':
-    case ',':
-    case ';':
-    case '<':
-    case '>':
-    case '|':
-    case '@':
-    case '`':
-    case '*':
-      return true;
-    default:
-      return false;
-  }
-}
-
-// Le dossier personnel nu (« /home/nom », « C:\\Users\\nom », sans fichier après) : réduit à « …/nom » il
-// laisserait le nom d'utilisateur ; il devient « ~ ».
-bool is_home_folder(std::string_view path) {
-  std::string_view rest = path;
-  if (rest.size() > 2 && rest[1] == ':') rest.remove_prefix(2);
-  for (const std::string_view prefix : {"/home/", "/Users/", "/users/", "\\Users\\"}) {
-    if (rest.starts_with(prefix)) {
-      const std::string_view name = rest.substr(prefix.size());
-      return !name.empty() && name.find_first_of("/\\") == std::string_view::npos;
-    }
-  }
-  return false;
-}
-
-// Le début d'un chemin absolu en text[at] : « X:\ », « X:/ », « \\ » (réseau), « / » suivi d'un nom, « ~/ ».
-bool path_starts(std::string_view text, std::size_t at) {
-  const char c = text[at];
-  const char next = at + 1 < text.size() ? text[at + 1] : '\0';
-  if (c == '/') return next != '\0' && next != ' ' && next != '/' && next != '\n';
-  if (c == '\\') return next == '\\';
-  if (c == '~') return is_separator(next);
-  if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
-    return next == ':' && at + 2 < text.size() && is_separator(text[at + 2]);
-  return false;
-}
-
-// L'étendue d'un chemin qui commence en text[at] : un nom de dossier peut porter des espaces (« Données SSD
-// »), elle court donc jusqu'à une fin de ligne, un guillemet, un séparateur du journal (« , », « : », « · »,
-// « ; »), la parenthèse qui ferme celle d'où le chemin sort, ou un autre chemin.
-std::size_t path_end(std::string_view text, std::size_t at) {
-  const char opener = at == 0 ? '\0' : text[at - 1];
-  std::size_t end = at;
-  while (end < text.size()) {
-    const char c = text[end];
-    if (c == '\n' || c == '"') break;
-    const std::string_view rest = text.substr(end);
-    if (rest.starts_with(", ") || rest.starts_with(" : ") || rest.starts_with(" · ") ||
-        rest.starts_with("; "))
-      break;
-    if (opener == '(' && c == ')') break;
-    if (c == ' ' && end + 1 < text.size() && path_starts(text, end + 1)) break;
-    ++end;
-  }
-  return end;
 }
 
 }  // namespace
@@ -227,40 +150,7 @@ std::string os_description() {
 }
 
 std::string sanitize_report_paths(std::string_view text, std::string_view home) {
-  std::string out;
-  out.reserve(text.size());
-  std::size_t at = 0;
-  while (at < text.size()) {
-    const bool line_start = at == 0 || text[at - 1] == '\n';
-    // « file:///home/nom/a.mkv » : le chemin commence après « file:// ».
-    const bool after_scheme = at >= 7 && text.substr(at - 7, 7) == "file://";
-    if (!(line_start || after_scheme || opens_path(text[at - 1])) || !path_starts(text, at)) {
-      out.push_back(text[at++]);
-      continue;
-    }
-    const std::size_t end = path_end(text, at);
-    std::size_t last = std::string_view::npos;
-    std::size_t separators = 0;
-    for (std::size_t i = at; i < end; ++i) {
-      if (is_separator(text[i])) {
-        last = i;
-        ++separators;
-      }
-    }
-    // « /s », « /x » : un seul séparateur, pas un dossier.
-    if (text[at] == '/' && separators < 2) {
-      out.push_back(text[at++]);
-      continue;
-    }
-    if (is_home_folder(text.substr(at, end - at))) {
-      out += '~';
-      at = end;
-      continue;
-    }
-    out += "…/";
-    out.append(text.substr(last + 1, end - last - 1));
-    at = end;
-  }
+  std::string out = reduce_log_paths(text);
   if (!home.empty()) {
     // Le dossier personnel qui aurait échappé au journal (autre casse, autre séparateur).
     for (std::size_t from = out.find(home); from != std::string::npos; from = out.find(home, from)) {
@@ -318,7 +208,9 @@ std::string compose_report(const ReportParts& parts, std::size_t max_bytes) {
   head += "\n";
   const std::string previous = sanitize_report_paths(parts.previous_log, parts.home);
   const std::string current = sanitize_report_paths(parts.current_log, parts.home);
-  constexpr std::string_view kPrevious = "--- séance précédente (arrêtée brutalement) ---\n";
+  const std::string kPrevious = parts.previous_title.empty()
+                                    ? std::string("--- séance précédente (arrêtée brutalement) ---\n")
+                                    : std::format("--- séance précédente ({}) ---\n", parts.previous_title);
   constexpr std::string_view kCurrent = "--- séance en cours ---\n";
   const bool both = !previous.empty();
   std::size_t room = max_bytes > head.size() ? max_bytes - head.size() : 0;
@@ -366,6 +258,18 @@ void end_session() {
   s.session_dir.clear();
 }
 
+void note_previous_session_relaunched(std::string_view why) {
+  State& s = state();
+  const std::scoped_lock lock(s.mutex);
+  s.previous_relaunched = std::string(why);
+}
+
+std::string previous_session_relaunched() {
+  State& s = state();
+  const std::scoped_lock lock(s.mutex);
+  return s.previous_relaunched;
+}
+
 bool previous_session_crashed() {
   State& s = state();
   const std::scoped_lock lock(s.mutex);
@@ -393,10 +297,12 @@ std::string current_report(std::string_view home) {
   parts.home = std::string(home);
   if (!log.empty()) {
     parts.current_log = read_tail(log, kTail);
-    if (previous_session_crashed()) {
+    const std::string relaunched = previous_session_relaunched();
+    if (previous_session_crashed() || !relaunched.empty()) {
       fs::path previous = log;
       previous += ".1";
       parts.previous_log = read_tail(previous, kTail);
+      if (!previous_session_crashed()) parts.previous_title = "relancée : " + relaunched;
     }
     parts.dump_name = latest_dump_name(log.parent_path() / "crashes");
   }

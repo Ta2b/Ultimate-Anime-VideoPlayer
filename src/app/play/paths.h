@@ -38,6 +38,11 @@ inline std::filesystem::path shader_cache(const PlayerPaths& p) {
 inline std::filesystem::path shot_cache(const PlayerPaths& p) {
   return cache_root(p) / "plans";
 }
+// La séquence du banc (media/bench_clip.h), écrite au premier banc : dans le dossier local, elle ne voyage
+// pas avec le profil itinérant (B36-08).
+inline std::filesystem::path bench_clip(const PlayerPaths& p) {
+  return data_root(p) / "bench-clip-v4.mkv";
+}
 // Le dossier des réglages : paths.settings, ou le dossier des données sans --data-dir.
 inline std::filesystem::path settings_dir(const PlayerPaths& p) {
   return p.settings.empty() ? data_root(p) : p.settings;

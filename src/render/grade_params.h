@@ -14,7 +14,6 @@
 #include <span>
 #include <string_view>
 
-#include "core/display.h"
 #include "core/profile.h"
 #include "core/types.h"
 #include "render/cube_lut.h"
@@ -36,7 +35,7 @@ inline constexpr core::Range<double> kPeakNits{100.0, 10000.0};
 // Vrai noir OLED : fin du pied, en pas de code de la source au-dessus du noir.
 inline constexpr core::Range<double> kBlackSteps{0.5, 8.0};
 inline constexpr core::Range<double> kAreaRtx{0.0, 1.0};
-// Pic du grade quand l'écran ne le dit pas (DisplayInfo par défaut).
+// Pic du grade quand l'écran ne le dit pas.
 inline constexpr double kDefaultPeakNits = 1000.0;
 // Le blanc d'une source SDR sur la route native : 203 nits (BT.2408).
 inline constexpr double kSdrWhiteNits = 203.0;
@@ -170,10 +169,6 @@ struct GradeDecision {
   // 203 nits sur la route native (truehdr_look), le blanc papier sinon.
   double source_white_nits = grade_limits::kSdrWhiteNits;
 };
-
-// Le pic du grade : celui de l'écran s'il est connu (profil, système, --display), 1000 sinon.
-// FieldOutOfRange hors de 100 à 10000 nits.
-std::expected<double, Refusal> grade_peak(const core::DisplayInfo& display);
 
 // Le grade PQ d'une source SDR, tourné vers une sortie SDR (méthode « HDR anime ») : sdr_tm, les bornes de la
 // courbe du plan (tm_white : les surfaces relevées ; tm_top : la marge des éclats que la méthode donne au
