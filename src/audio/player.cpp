@@ -262,8 +262,8 @@ bool AudioPlayer::output_back() {
     return false;
   }
   output_retry_us_.reset();
-  pushed_end_us_
-      .reset();  // comme adopt_output : le premier bloc repris ne se compare pas à l'ancienne fin (C16-06)
+  // Comme adopt_output : le premier bloc repris ne se compare pas à l'ancienne fin de lecture (C16-06).
+  pushed_end_us_.reset();
   resampling_ = false;
   aligning_ = master_ != nullptr;
   regulator_.restart();
