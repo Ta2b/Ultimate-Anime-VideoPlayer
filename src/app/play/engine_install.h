@@ -86,6 +86,7 @@ inline constexpr std::chrono::seconds kInstallRenamePatience{10};
 struct InstalledPackage {
   std::string sha256;
   std::string license;
+  std::string arch;  // « sm89 » : l'architecture des fichiers tiers choisis ; vide pour une note d'avant
   // Les fichiers tiers posés avec le module (nom, taille), une ligne « fichier=<taille> <nom> » de la note :
   // un antivirus qui met l'un d'eux en quarantaine se voit au lancement et le paquet est réinstallé (B06-11).
   // Vide pour une note d'avant : rien à vérifier.

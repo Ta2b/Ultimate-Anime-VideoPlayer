@@ -3,7 +3,10 @@
 #include <array>
 #include <cctype>
 #include <charconv>
+#include <chrono>
 #include <format>
+#include <map>
+#include <mutex>
 #include <string>
 #include <system_error>
 
@@ -33,6 +36,16 @@ std::optional<std::filesystem::path> system_tool(std::string_view name) {
     if (std::filesystem::is_regular_file(dir / file, error)) return dir / file;
   }
   return std::nullopt;
+}
+
+std::string url_host(std::string_view url) {
+  const std::size_t scheme = url.find("://");
+  if (scheme == std::string_view::npos) return {};
+  std::string_view rest = url.substr(scheme + 3);
+  rest = rest.substr(0, rest.find_first_of("/?#"));
+  if (const std::size_t at = rest.rfind('@'); at != std::string_view::npos) rest = rest.substr(at + 1);
+  if (const std::size_t colon = rest.find(':'); colon != std::string_view::npos) rest = rest.substr(0, colon);
+  return std::string(rest);
 }
 
 std::optional<std::string> proxy_from_setting(std::string_view setting) {
@@ -68,7 +81,8 @@ std::string utf8_of(const wchar_t* wide) {
 // Le proxy qu'un script PAC ou la détection automatique donne pour l'hôte des releases : le réglage
 // « Détecter automatiquement » ou « Utiliser un script » de Windows, que le proxy manuel seul ne couvre pas
 // (B06-08, B34-10). Tout proxy d'entreprise sur PAC faisait échouer le téléchargement sans un mot.
-std::optional<std::string> auto_proxy(const WINHTTP_CURRENT_USER_IE_PROXY_CONFIG& config) {
+std::optional<std::string> auto_proxy(const WINHTTP_CURRENT_USER_IE_PROXY_CONFIG& config,
+                                      const std::wstring& target) {
   if (config.fAutoDetect == FALSE && config.lpszAutoConfigUrl == nullptr) return std::nullopt;
   HINTERNET session =
       WinHttpOpen(L"ajp", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
@@ -84,7 +98,7 @@ std::optional<std::string> auto_proxy(const WINHTTP_CURRENT_USER_IE_PROXY_CONFIG
   options.fAutoLogonIfChallenged = TRUE;
   WINHTTP_PROXY_INFO info{};
   std::optional<std::string> found;
-  if (WinHttpGetProxyForUrl(session, L"https://github.com/", &options, &info) != FALSE) {
+  if (WinHttpGetProxyForUrl(session, target.c_str(), &options, &info) != FALSE) {
     if (info.dwAccessType == WINHTTP_ACCESS_TYPE_NAMED_PROXY)
       found = proxy_from_setting(utf8_of(info.lpszProxy));
     for (LPWSTR owned : {info.lpszProxy, info.lpszProxyBypass}) {
@@ -96,36 +110,55 @@ std::optional<std::string> auto_proxy(const WINHTTP_CURRENT_USER_IE_PROXY_CONFIG
 }
 #endif
 
-std::optional<std::string> windows_proxy() {
+// Le proxy de l'hôte de cette URL. Avec « Détecter automatiquement » (le réglage par défaut de Windows),
+// chaque question relance une détection WPAD/DHCP/DNS : la réponse se retient quelques minutes par hôte, au
+// lieu de l'être à chaque tentative d'une plage (jusqu'à 4 par fichier tiers, 10 fichiers). Elle est demandée
+// pour l'hôte réellement tiré (GitHub, son CDN, pypi.nvidia.com), qu'un script PAC peut router vers des
+// proxys différents (C06-08).
+std::optional<std::string> windows_proxy(std::string_view url) {
 #if defined(_WIN32)
+  using Clock = std::chrono::steady_clock;
+  constexpr auto kKnownFor = std::chrono::minutes(5);
+  static std::mutex mutex;
+  static std::map<std::string, std::pair<Clock::time_point, std::optional<std::string>>> known;
+  std::string host = url_host(url);
+  if (host.empty()) host = "github.com";
+  {
+    const std::scoped_lock lock(mutex);
+    const auto found = known.find(host);
+    if (found != known.end() && Clock::now() - found->second.first < kKnownFor) return found->second.second;
+  }
   WINHTTP_CURRENT_USER_IE_PROXY_CONFIG config{};
   if (WinHttpGetIEProxyConfigForCurrentUser(&config) == FALSE) return std::nullopt;
-  std::optional<std::string> found = proxy_from_setting(utf8_of(config.lpszProxy));
-  if (!found) found = auto_proxy(config);
+  std::optional<std::string> proxy = proxy_from_setting(utf8_of(config.lpszProxy));
+  if (!proxy) proxy = auto_proxy(config, L"https://" + std::wstring(host.begin(), host.end()) + L"/");
   for (LPWSTR owned : {config.lpszProxy, config.lpszProxyBypass, config.lpszAutoConfigUrl}) {
     if (owned != nullptr) GlobalFree(owned);
   }
-  return found;
+  const std::scoped_lock lock(mutex);
+  known.insert_or_assign(host, std::pair{Clock::now(), proxy});
+  return proxy;
 #else
+  static_cast<void>(url);
   return std::nullopt;
 #endif
 }
 
 }  // namespace
 
-std::vector<std::string> curl_system_args() {
+std::vector<std::string> curl_system_args(std::string_view url) {
   std::vector<std::string> args;
 #ifdef _WIN32
   args.emplace_back("--ssl-revoke-best-effort");
 #endif
-  if (const auto proxy = windows_proxy()) {
+  if (const auto proxy = windows_proxy(url)) {
     args.emplace_back("--proxy");
     args.push_back(*proxy);
   }
   return args;
 }
 
-std::vector<std::string> curl_download_args(bool allow_local_files) {
+std::vector<std::string> curl_download_args(bool allow_local_files, std::string_view url) {
   std::vector<std::string> args{"-q",
                                 "--proto",
                                 allow_local_files ? "=https,file" : "=https",
@@ -144,7 +177,7 @@ std::vector<std::string> curl_download_args(bool allow_local_files) {
                                 "60",
                                 "--connect-timeout",
                                 "30"};
-  for (std::string& arg : curl_system_args()) args.push_back(std::move(arg));
+  for (std::string& arg : curl_system_args(url)) args.push_back(std::move(arg));
   return args;
 }
 

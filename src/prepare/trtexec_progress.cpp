@@ -28,6 +28,18 @@ constexpr std::array kMarkers = {
 
 }  // namespace
 
+std::string TrtexecProgress::reported_version(std::string_view line) {
+  if (line.find("&&&& RUNNING") == std::string_view::npos) return {};
+  constexpr std::string_view kTag = "[TensorRT v";
+  const std::size_t at = line.find(kTag);
+  if (at == std::string_view::npos) return {};
+  const std::size_t start = at + kTag.size();
+  std::size_t end = start;
+  while (end < line.size() && line[end] >= '0' && line[end] <= '9') ++end;
+  if (end == start || end >= line.size() || line[end] != ']') return {};
+  return "v" + std::string(line.substr(start, end - start));
+}
+
 std::optional<BuildStage> TrtexecProgress::feed(std::string_view line) {
   if (line.find("&&&& FAILED") != std::string_view::npos) failed_ = true;
   if (line.find("&&&& PASSED") != std::string_view::npos) passed_ = true;

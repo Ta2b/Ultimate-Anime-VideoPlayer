@@ -24,6 +24,8 @@ std::string build_stage_text(std::string_view stage) {
   if (stage == "Preparing") return i18n::tr("Preparing");
   if (stage == "Waiting for another build on this GPU")
     return i18n::tr("Waiting for another build on this GPU");
+  if (stage == "Waiting for another build of this engine")
+    return i18n::tr("Waiting for another build of this engine");
   if (stage == "Engine in cache") return i18n::tr("Engine in cache");
   if (stage == "Starting trtexec") return i18n::tr("Starting trtexec");
   if (stage == "Reading the model") return i18n::tr("Reading the model");

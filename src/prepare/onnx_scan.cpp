@@ -15,6 +15,7 @@
 
 #include "core/text.h"
 #include "prepare/protobuf_fields.h"
+#include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
 namespace ajp::prepare {
@@ -233,24 +234,77 @@ std::expected<OnnxSummary, Refusal> scan_onnx(Bytes model) {
   return summary;
 }
 
+std::expected<std::map<std::string, std::string, std::less<>>, Refusal> initializer_digests(
+    Bytes model, const std::set<std::string, std::less<>>& names) {
+  std::map<std::string, std::string, std::less<>> digests;
+  Reader top(model);
+  Field field;
+  while (top.next(field)) {
+    if (!field.delimited || field.number != 7) continue;
+    Reader graph(field.payload);
+    Field item;
+    while (graph.next(item)) {
+      if (!item.delimited || item.number != 5) continue;
+      // TensorProto : tout sauf le nom (champ 8), mis bout à bout avec le numéro de chaque champ.
+      std::string name;
+      std::string content;
+      Reader tensor(item.payload);
+      Field part;
+      while (tensor.next(part)) {
+        if (part.delimited && part.number == 8) {
+          name = as_text(part.payload);
+          continue;
+        }
+        content += std::to_string(part.number) + (part.delimited ? ":" : "=");
+        if (part.delimited) {
+          content += std::to_string(part.payload.size()) + ":";
+          content.append(reinterpret_cast<const char*>(part.payload.data()), part.payload.size());
+        } else {
+          content += std::to_string(part.scalar);
+        }
+        content += ';';
+      }
+      if (!tensor.ok()) return malformed("initialiseur ONNX malformé");
+      if (names.contains(name)) digests.insert_or_assign(std::move(name), sha256_hex(content));
+    }
+    if (!graph.ok()) return malformed("graphe ONNX malformé");
+  }
+  if (!top.ok()) return malformed("ONNX malformé");
+  return digests;
+}
+
 namespace {
 
-// Un nom que Windows réserve à un périphérique (CON, NUL, COM1…), avec ou sans extension, quelle que soit la
-// casse.
+// Un nom que Windows réserve à un périphérique (CON, NUL, COM1, COM¹, CONIN$…), avec ou sans extension,
+// quelle que soit la casse. Les espaces qui suivent la base s'en vont (« CON .bin » ouvre CON).
 bool reserved_device_name(std::string_view component) {
   const std::size_t dot = component.find('.');
   std::string base(component.substr(0, dot));
+  while (!base.empty() && base.back() == ' ') base.pop_back();
   for (char& c : base) c = core::ascii_upper(c);
-  if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL") return true;
-  return base.size() == 4 && (base.starts_with("COM") || base.starts_with("LPT")) && base[3] >= '1' &&
-         base[3] <= '9';
+  if (base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || base == "CONIN$" ||
+      base == "CONOUT$") {
+    return true;
+  }
+  if (!base.starts_with("COM") && !base.starts_with("LPT")) return false;
+  const std::string_view digit = std::string_view(base).substr(3);
+  // Un chiffre de 1 à 9, ou l'exposant ¹ ² ³ (U+00B9, U+00B2, U+00B3), que Windows traite de même.
+  if (digit.size() == 1) return digit[0] >= '1' && digit[0] <= '9';
+  return digit == "\xC2\xB9" || digit == "\xC2\xB2" || digit == "\xC2\xB3";
 }
 
-// Un composant que Windows lirait autrement qu'écrit (un point ou une espace finale s'en va) ou réserve à un
-// périphérique. Refusé sur tous les systèmes : le même modèle doit être refusé partout (B04-05).
+// Un caractère que Windows refuse dans un nom de fichier.
+bool windows_forbidden_char(char c) {
+  return static_cast<unsigned char>(c) < 0x20 || std::string_view("<>:\"|?*").contains(c);
+}
+
+// Un composant que Windows lirait autrement qu'écrit (un point ou une espace finale s'en va), qui contient un
+// caractère interdit ou que Windows réserve à un périphérique. Refusé sur tous les systèmes : le même modèle
+// doit être refusé partout (B04-05, C04-03).
 bool windows_hostile_component(std::string_view component) {
   if (component.empty() || component == "." || component == "..") return false;
-  return component.back() == '.' || component.back() == ' ' || reserved_device_name(component);
+  return component.back() == '.' || component.back() == ' ' ||
+         std::ranges::any_of(component, windows_forbidden_char) || reserved_device_name(component);
 }
 
 }  // namespace
@@ -273,6 +327,10 @@ bool is_safe_location(const std::string& location) {
     start = end + 1;
   }
   return true;
+}
+
+bool is_piece_file_name(std::string_view name) {
+  return !name.empty() && name.find('/') == std::string_view::npos && is_safe_location(std::string(name));
 }
 
 }  // namespace ajp::prepare

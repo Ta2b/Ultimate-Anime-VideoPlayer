@@ -134,6 +134,12 @@ constexpr std::array kMessages{
     Entry{"not enough disk space: the install needs {} ({} to download, {} once installed), {} left on {}",
           "espace disque insuffisant : l'installation demande {} (dont {} à télécharger, {} une fois "
           "installé), il reste {} sur {}"},
+    Entry{"this folder cannot be passed to curl and tar (name outside the Windows ANSI code page, no short "
+          "8.3 name): {}. Choose another engines folder or enable \"Use Unicode UTF-8\" in the Windows "
+          "region settings",
+          "curl et tar ne savent pas lire ce dossier (nom hors de la page ANSI de Windows, pas de nom court "
+          "8.3) : {}. Choisissez un autre dossier des moteurs, ou activez « Utiliser Unicode UTF-8 » dans "
+          "les paramètres régionaux de Windows"},
     Entry{"of preparation", "de préparation"},
     Entry{"of search ({})", "de recherche ({})"},
     Entry{"of the \"{}\" settings", "des réglages « {} »"},

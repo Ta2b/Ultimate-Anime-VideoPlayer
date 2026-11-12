@@ -87,6 +87,9 @@ struct RifeFusedManifest {
   // La taille de chaque morceau à l'écriture, dans le même ordre : un morceau tronqué depuis se voit et se
   // réécrit (B04-02). Vide pour un manifeste d'avant ; sinon autant que de morceaux.
   std::vector<std::uint64_t> sizes;
+  // Le SHA-256 de chaque morceau à l'écriture, vérifié avant de le croire (C04-06) ; vide pour un manifeste
+  // d'avant, qui est alors refait.
+  std::vector<std::string> digests;
 };
 
 std::string format_manifest(const RifeFusedManifest& manifest);
