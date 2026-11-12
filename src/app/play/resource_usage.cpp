@@ -90,6 +90,49 @@ std::string describe(const ProcessResources& resources) {
   return out.empty() ? std::string("inconnues") : out;                             // i18n-ok : journal
 }
 
+namespace {
+
+std::mutex& reader_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+DeviceMemoryReader& reader_slot() {
+  static DeviceMemoryReader reader;
+  return reader;
+}
+
+std::string device_memory_text() {
+  const std::scoped_lock lock(reader_mutex());  // la chaîne ne se ferme pas pendant la lecture
+  if (!reader_slot()) return {};
+  const auto memory = reader_slot()();
+  if (!memory) return {};
+  constexpr double kMib = 1024.0 * 1024.0;
+  return std::format(", mémoire vidéo {:.0f} / {:.0f} Mio",  // i18n-ok : journal
+                     static_cast<double>(memory->first) / kMib, static_cast<double>(memory->second) / kMib);
+}
+
+}  // namespace
+
+void set_device_memory_reader(DeviceMemoryReader reader) {
+  const std::scoped_lock lock(reader_mutex());
+  reader_slot() = std::move(reader);
+}
+
+std::string resource_drift(const ProcessResources& first, const ProcessResources& now) {
+  constexpr double kDrift = 1.5;
+  std::string out;
+  if (first.resident_bytes && now.resident_bytes && *first.resident_bytes > 0 &&
+      static_cast<double>(*now.resident_bytes) > kDrift * static_cast<double>(*first.resident_bytes))
+    out += std::format("mémoire résidente {} Mio contre {} au premier relevé",  // i18n-ok : journal
+                       *now.resident_bytes >> 20U, *first.resident_bytes >> 20U);
+  if (first.handles && now.handles && *first.handles > 0 &&
+      static_cast<double>(*now.handles) > kDrift * static_cast<double>(*first.handles))
+    out += std::format("{}{} descripteurs contre {} au premier relevé",  // i18n-ok : journal
+                       out.empty() ? "" : ", ", *now.handles, *first.handles);
+  return out;
+}
+
 std::jthread start_resource_log() {
   auto started = start_thread(
       "resources", ThreadReport([](const Refusal& refused) {
@@ -98,12 +141,17 @@ std::jthread start_resource_log() {
       [](const std::stop_token& stop, const ThreadReport&) {
         std::mutex mutex;
         std::condition_variable_any wake;
+        std::optional<ProcessResources> first;
         while (true) {
           std::unique_lock lock(mutex);
           if (wake.wait_for(lock, stop, std::chrono::minutes(5), [] { return false; }) ||
               stop.stop_requested())
             return;
-          log_channel("app")->info("ressources : {}", describe(process_resources()));  // i18n-ok : journal
+          const ProcessResources now = process_resources();
+          if (!first) first = now;
+          log_channel("app")->info("ressources : {}{}", describe(now), device_memory_text());  // i18n-ok
+          if (const std::string drift = resource_drift(*first, now); !drift.empty())
+            log_channel("app")->warn("ressources en hausse : {}", drift);  // i18n-ok : journal
         }
       });
   if (started) return std::move(*started);

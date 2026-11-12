@@ -1,4 +1,4 @@
-// Interpolation en mode auto : le multiplicateur ×k (de ×1 à ×6, par demi-paliers sur un écran VRR armé)
+// Interpolation en mode auto : le multiplicateur ×k (de ×1 à ×10, au fps près sur un écran VRR armé)
 // pousse la fluidité au maximum que l'écran permet et que le GPU tient, et ne descend que le temps
 // d'une scène difficile. Pur : le lecteur donne des instants (µs, horloge hôte) et des mesures, jamais
 // d'horloge à lire ici, donc tout se teste sans GPU.
@@ -31,8 +31,9 @@
 
 namespace ajp::core {
 
-inline constexpr int kAutoMaxStep =
-    8;  // ×8 : de quoi suivre un écran de 165 Hz jusqu'au bout (×6,88 pour 23,976)
+// ×10, la borne de la grille et des étages (kMaxInstantsPerPair) : de quoi suivre un écran de 240 Hz jusqu'au
+// bout (×10,01 pour 23,976 i/s à fréquence fixe, B12-06) ; à ×8, le Stable s'y arrêtait à ×5 ou ×8.
+inline constexpr int kAutoMaxStep = 10;
 // Granularité « au fps près » d'un écran VRR armé : un palier = 1/24 de multiplicateur (~1 i/s pour une
 // source de 24 i/s). Le facteur passe par Factor{palier, 24} ; l'écran ne vibre pas, la cadence n'étant
 // plus liée au rafraîchissement.
@@ -40,19 +41,15 @@ inline constexpr int kFineGranularity = 24;
 // 1, 2 ou kFineGranularity : toute autre valeur y est ramenée.
 int auto_granularity(int wanted);
 
-// Le plus grand palier dont la cadence tient sous la fréquence de l'écran (à 1 % près) pour une source
+// Le plus grand palier dont la cadence tient sous la fréquence de l'écran pour une source
 // de `source_fps` i/s ; 1 si l'écran est inconnu. Sans VRR, les paliers qui ne tiennent pas un nombre
 // entier de rafraîchissements font du judder : le menu l'avertit, il ne les interdit pas.
 // `granularity` : kFineGranularity, un palier par 1/24 de multiplicateur (VRR armé) ; 1, des paliers entiers
 // ; 2, des demi-paliers (×1,5, ×2,5…), que seul un écran VRR armé affiche sans vibrer (la cadence n'est plus
 // liée au rafraîchissement). Les paliers se comptent alors en moitiés : 5 est ×2,5 ; le facteur est palier /
-// granularity.
+// granularity. En paliers entiers, la cadence peut dépasser l'écran de 1 % (la vitesse de lecture rattrape) ;
+// en demi-paliers et au pas fin, jamais (B12-01).
 int auto_ceiling(double display_hz, double source_fps, int granularity = 1);
-
-// P3.33 : à fréquence fixe, les paliers (en 1 / granularity) dont chaque image tient un nombre entier de
-// rafraîchissements, à 1 % près (×2,5 de 23,976 à 60 Hz compris en demi-paliers) ; ×1 toujours. Vide si
-// l'écran ou la cadence sont inconnus.
-std::vector<int> locked_steps(double display_hz, double source_fps, int granularity);
 
 // Les bornes du mode Stable pour un écran : au fps près en VRR armé (kFineGranularity) ; à fréquence fixe,
 // seulement les paliers calés (P3.33). Plafond : l'écran, et le niveau (P3.36, ×2, ×3, ×4 : level_factor ; en
@@ -80,14 +77,6 @@ AutoLimits auto_limits(double display_hz, double source_fps, bool vrr, int level
 inline double auto_limit_hz(double display_hz, int cap) {
   if (display_hz <= 0.0 || cap <= 0) return display_hz;
   return std::min(display_hz, static_cast<double>(cap));
-}
-
-// Images manquées à l'écran sur une fenêtre (missing) pour shown images neuves : le GPU ne suit pas
-// même quand aucune paire n'est « en retard » (mesuré sur 4070 Ti : DistilDRBA ×6 a 707 manquées pour
-// 1 retard, le coût par image créée vient de SPAN). Au moins 6 manquées et plus de 1,2 %
-// des images attendues. Garde-fou lent ; la descente rapide passe par AutoRate::missed.
-inline bool auto_overloaded(std::int64_t missing, std::int64_t shown) {
-  return missing >= 6 && missing * 1000 > (missing + shown) * 12;
 }
 
 // Le coût de SERVICE d'une paire : de l'instant où le GPU a pu la commencer (le plus tardif de sa première
@@ -182,7 +171,7 @@ class AutoRate {
   // Plafond et granularité changés ensemble (le VRR s'arme ou se coupe) : le palier courant, le plafond
   // appris et les pénalités passent dans la nouvelle unité, sans dépasser le plafond.
   void set_ceiling(int ceiling, int granularity);
-  // P3.33 : les seuls paliers permis (locked_steps, ou auto_limits avec leur facteur exact) ; vide, tous.
+  // P3.33 : les seuls paliers permis (auto_limits, avec leur facteur exact) ; vide, tous.
   // `exact` : rien, ou un facteur par palier, dans le même ordre.
   void set_locked(std::vector<int> steps, std::vector<Ratio> exact = {});
   // Le facteur d'interpolation du palier courant : sa fraction exacte s'il en a une, sinon palier /

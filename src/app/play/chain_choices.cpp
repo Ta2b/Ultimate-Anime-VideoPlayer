@@ -25,7 +25,6 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
                               const std::string& fp8_reason, int auto_peak) {
   const media::TrackInfo& video = p.video;
   const PlaceboScreen& out = p.screen;
-  const WorkSize work = c.work;
   const bool rife_loaded = c.interpolates();
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
@@ -55,12 +54,7 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .rife_folder = c.model_places.front().string(),
       .hdr_output = p.screen.hdr_output(),
       .auto_peak = auto_peak,
-      .engines = engine_badges(p.paths.engines,
-                               c.span_int8 ? c.span_int8->onnx
-                               : c.model   ? c.model->path
-                                           : std::filesystem::path(),
-                               work, c.rife || c.rife_motion ? c.rife_model : std::nullopt,
-                               c.rife_motion ? c.geometry : c.image_geometry),
+      .engines = engine_badges(p.paths.engines, c.loaded_engines),
       .chosen_engines = chosen_line(p.engines),
       .engine_in_use = engine_of_library(p.library->path()),
       .engine_note = fallback_note(p.engines, p.library->path(), gpu_facts(p.screen)),

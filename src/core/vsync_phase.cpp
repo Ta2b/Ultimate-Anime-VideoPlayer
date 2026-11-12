@@ -23,6 +23,7 @@ void VsyncPhase::note(std::int64_t host_us) {
   sin_ += kSmoothing * (std::sin(angle) - sin_);
   weight_ += kSmoothing * (1.0 - weight_);  // la moyenne part de zéro : son poids la ramène à l'échelle
   notes_ = std::min(notes_ + 1, kMinNotes);
+  last_note_us_ = host_us;
 }
 
 bool VsyncPhase::known() const {

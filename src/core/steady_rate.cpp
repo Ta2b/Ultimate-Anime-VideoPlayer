@@ -21,12 +21,15 @@ void SteadyRate::configure(const FreeParams& params, const FreeDisplay& display,
   display_ = display;
   fps_ = source_fps > 0.0 ? source_fps : 24.0;
   candidates_.assign(1, Ratio{1, 1});
-  const double top = 1.0 + 0.5 * static_cast<double>(std::max(params_.half_steps - 1, 0));
+  // B12-03 : jamais au-delà de ce que la grille et les étages acceptent (kMaxInstantsPerPair) : 21/2 y était
+  // ramené à N = 1, plus aucune interpolation, et le coût mesuré d'une paire à une image confirmait 10,5.
+  const double top = std::min(1.0 + 0.5 * static_cast<double>(std::max(params_.half_steps - 1, 0)),
+                              static_cast<double>(kMaxInstantsPerPair));
   const double cap = display_.hz > 0.0 ? display_.hz / fps_ : top;
   if (display_.vrr) {
     for (int k = 1; k < params_.half_steps; ++k) {
       const Ratio n = reduced(Ratio{2 + k, 2});
-      if (n.value() <= cap * (1.0 + 1e-9)) candidates_.push_back(n);
+      if (n.value() <= std::min(cap, top) * (1.0 + 1e-9)) candidates_.push_back(n);
     }
   } else {
     // À fréquence fixe, les facteurs qui calent l'écran : hz / (k·fps) pour k vsyncs par image source.

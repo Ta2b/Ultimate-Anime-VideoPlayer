@@ -34,7 +34,7 @@ namespace ajp::core {
 
 struct FreeParams {
   double margin = 0.15;
-  int half_steps = 20;  // en VRR : N de 1 à 10,5 par demi-pas
+  int half_steps = 20;  // en VRR : N de 1 à 10 par demi-pas (kMaxInstantsPerPair borne 10,5)
   int urgent_losses = 2;
   std::int64_t urgent_window_us = 1'000'000;
   int fit_pairs = 24;   // paires mesurées d'un plan avant de le réajuster

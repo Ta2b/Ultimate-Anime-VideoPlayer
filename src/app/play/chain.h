@@ -76,6 +76,11 @@ struct KeptChoices {
   std::optional<std::pair<int, int>> rife;  // facteur, dénominateur
 };
 
+// Le facteur (et son dénominateur) après Ctrl+I : coupé s'il tournait ; sinon celui que la séance avait gardé
+// (B08-01 : ×2 ou ×5/2 et non ×3), à défaut kDefaultRifeFactor.
+std::pair<int, int> toggled_interpolation(int factor, int den,
+                                          const std::optional<std::pair<int, int>>& kept);
+
 // Ce qui vit le temps d'une ouverture de la chaîne, et ce que les actions y changent.
 struct Chain {
   Session& session;
@@ -101,6 +106,7 @@ struct Chain {
   std::optional<std::filesystem::path> next_file;  // glissé sur la fenêtre, ou l'épisode voisin
   std::optional<std::int64_t> next_start_us;  // PlayFile : l'instant du fichier suivant (sinon la reprise)
   bool next_paused = false;                   // PlayFile : le fichier suivant s'ouvre en pause
+  bool rederive = false;                      // B29-01 : autre écran, le préréglage refait la chaîne
   std::filesystem::path file;                 // la vidéo en cours
   const std::optional<DisplayFacts>& display;
   // Vrai noir OLED : les seuils en cours, et le recalage demandé (au plus 5 fois par seconde).
@@ -186,8 +192,7 @@ void take_drop(Chain& to, const Dropped& drop, std::int64_t now_us);
 // Une action de l'utilisateur (touche, barre, menu) sur la chaîne.
 void apply(const Input& input, Chain& to, std::int64_t now_us);
 
-// --stats : une ligne par présentation ; le bilan de fin dans le journal.
-void write_record(std::ofstream& stats, const PresentRecord& record);
+// --stats : le bilan de fin dans le journal (les lignes : StatsSink, present_stats.h).
 void log_summary(const Session& session);
 
 // Ce que la séance garde d'une chaîne à l'autre : les étages refusés (stages) et les sous-titres glissés

@@ -57,6 +57,9 @@ TEST_CASE("Mode Rapide : la grille des vblanks mesurée prime sur la phase estim
   // Sans grille mesurée (niveau Open), la phase estimée revient.
   live.vsync_note(1'012'122);
   CHECK(live.vsync_grid(1'000'500).period_us == 6061);
+  // B12-07 : plus aucun vsync vu depuis kStaleUs, la phase a pu glisser : tenue pour inconnue.
+  CHECK(live.vsync_grid(1'012'122 + core::VsyncPhase::kStaleUs).period_us == 6061);
+  CHECK(live.vsync_grid(1'012'122 + core::VsyncPhase::kStaleUs + 1).period_us == 0);
   // VRR : aucune grille, mesurée ou non.
   live.set_vsync(0, 0);
   live.vsync_note(1'018'183, measured);

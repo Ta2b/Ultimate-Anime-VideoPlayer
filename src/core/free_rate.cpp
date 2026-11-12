@@ -105,7 +105,9 @@ FreeInfo FreeRate::info(std::int64_t now_us) const {
   FreeInfo out;
   int produced = 0;
   int lost = 0;
-  sum(now_us, kInfoWindowUs, produced, lost);
+  // B12-05 : les tranches finies seules. La tranche en cours, à peine entamée, faisait sous-compter la
+  // cadence et la charge de 0 à 12,5 % en dents de scie toutes les 250 ms.
+  sum(now_us - kBucketUs, kInfoWindowUs, produced, lost);
   out.fps = static_cast<double>(produced) * 1e6 / static_cast<double>(kInfoWindowUs);
   out.service_us = static_cast<std::int64_t>(std::llround(service_us_));
   out.heavy_service_us = static_cast<std::int64_t>(std::llround(heavy_us_));
