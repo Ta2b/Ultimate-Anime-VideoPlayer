@@ -6,6 +6,9 @@ include(Catch)
 # matérielle), models (SPAN installé sur le poste). Hors AJP_HARDWARE_TESTS ils ne sont pas enregistrés : la CI sous
 # lavapipe, la garde de release et le plafond de tests sautés ne les voient pas. Le préréglage linux-prefix-cuda l'allume.
 option(AJP_HARDWARE_TESTS "Enregistrer les tests cachés qui demandent une vraie carte ou des modèles (ctest -L nvidia|gpu|models)" OFF)
+# Sur le PC de référence (windows-rtx), un test matériel qui se saute (pilote absent, modèle introuvable) est un
+# échec, pas un « Skipped » vert : sans cela, tout passe au vert avec les tests sautés (C40-04).
+option(AJP_HARDWARE_TESTS_STRICT "Un test matériel sauté échoue (le PC de référence)" OFF)
 function(ajp_add_hardware_tests target label timeout)
   if(NOT AJP_HARDWARE_TESTS)
     return()
@@ -13,7 +16,10 @@ function(ajp_add_hardware_tests target label timeout)
   foreach(group IN LISTS ARGN)
     set(name "${label}: ${target} ${group}")
     add_test(NAME "${name}" COMMAND ${target} "[.${group}]")
-    set_tests_properties("${name}" PROPERTIES LABELS ${label} TIMEOUT ${timeout} RUN_SERIAL TRUE SKIP_RETURN_CODE 4)
+    set_tests_properties("${name}" PROPERTIES LABELS ${label} TIMEOUT ${timeout} RUN_SERIAL TRUE)
+    if(NOT AJP_HARDWARE_TESTS_STRICT)
+      set_tests_properties("${name}" PROPERTIES SKIP_RETURN_CODE 4)
+    endif()
   endforeach()
 endfunction()
 

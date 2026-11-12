@@ -114,7 +114,9 @@
       "displayName": "Windows, backend TensorRT (PC de référence) : windows-release plus CUDA, rien d'autre",
       "inherits": "windows-release",
       "cacheVariables": {
-        "AJP_WITH_CUDA": "ON"
+        "AJP_WITH_CUDA": "ON",
+        "AJP_HARDWARE_TESTS": "ON",
+        "AJP_HARDWARE_TESTS_STRICT": "ON"
       }
     },
     {
@@ -405,6 +407,19 @@
       "configurePreset": "windows-rtx",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-rtx-hardware",
+      "displayName": "Windows RTX : les tests cachés sur la vraie carte et les modèles installés (ctest -L nvidia|gpu|models)",
+      "configurePreset": "windows-rtx",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "label": "nvidia|gpu|models"
+        }
       }
     },
     {
