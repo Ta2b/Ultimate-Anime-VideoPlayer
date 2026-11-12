@@ -151,13 +151,13 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      fp8_offered
-          ? i18n::tr(
-                "Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest. "
-                "FP8: prepared once on this PC, then about 37 % faster per pass (14.7 to 9.2 ms at 1080p on "
-                "an RTX 4070 Ti), at about 49 to 52 dB PSNR against FP16.")
-          : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest."));
+  panel::tip(fp8_offered
+                 ? i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest "
+                            "(C4F16 more than C4F32). FP8: prepared once on this PC, then about 37 % faster "
+                            "per pass (14.7 to 9.2 ms at 1080p on an RTX 4070 Ti), at about 49 to 52 dB PSNR "
+                            "against FP16.")
+                 : i18n::tr("Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest "
+                            "(C4F16 more than C4F32)."));
   if (anime4k_size(current))
     note(
         i18n::tr("Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B "

@@ -180,4 +180,92 @@ TEST_CASE("Étages : un refus vaut pour la séance, « Réessayer » l'oublie", 
 }
 
 }  // namespace
+TEST_CASE("B08-02 : un repli interne refusé est retenu pour la séance, au panneau, et oublié par Réessayer",
+          "[stage_fallback]") {
+  StageMemory memory;
+  const std::string key = inner_key("rife-fused", kLibrary, "rife.onnx", 1920, 1088);
+  const Refusal why{RefusalCode::BuilderFailed, "trtexec : mémoire"};
+  {
+    // La première ouverture : le fusionné se construit, échoue, le refus est retenu et neuf.
+    std::vector<StageNote> notes;
+    bool fresh = false;
+    InnerFallbacks inner(&memory, notes, fresh);
+    CHECK(inner.refused(ChainStage::Motion, key) == nullptr);
+    inner.failed(ChainStage::Motion, key, why);
+    CHECK(fresh);
+    REQUIRE(notes.size() == 1);
+    CHECK(notes[0].change == StageChange::Fallback);
+    CHECK_FALSE(memory.empty());
+  }
+  {
+    // La réouverture suivante : la construction est sautée, le panneau le dit encore, l'avis à l'écran non.
+    std::vector<StageNote> notes;
+    bool fresh = false;
+    InnerFallbacks inner(&memory, notes, fresh);
+    const Refusal* before = inner.refused(ChainStage::Motion, key);
+    REQUIRE(before != nullptr);
+    CHECK(before->code == RefusalCode::BuilderFailed);
+    CHECK_FALSE(fresh);
+    REQUIRE(notes.size() == 1);
+    CHECK_FALSE(stage_panel_note(notes).empty());
+    CHECK(stage_notice(notes).empty());
+    // Une autre taille est un autre moteur : elle s'essaie.
+    CHECK(inner.refused(ChainStage::Motion, inner_key("rife-fused", kLibrary, "rife.onnx", 1280, 736)) ==
+          nullptr);
+  }
+  memory.forget();  // « Réessayer »
+  CHECK(memory.empty());
+  std::vector<StageNote> notes;
+  bool fresh = false;
+  InnerFallbacks inner(&memory, notes, fresh);
+  CHECK(inner.refused(ChainStage::Motion, key) == nullptr);
+}
+
+TEST_CASE("B08-02 : « Annuler et regarder » n'est pas retenu comme un repli", "[stage_fallback]") {
+  StageMemory memory;
+  std::vector<StageNote> notes;
+  bool fresh = false;
+  InnerFallbacks inner(&memory, notes, fresh);
+  inner.failed(ChainStage::Upscale, "k",
+               Refusal{.code = RefusalCode::Cancelled, .detail = "annulé", .key = std::string(kWatchNowKey)});
+  CHECK(memory.empty());
+  CHECK(notes.empty());
+  CHECK_FALSE(fresh);
+}
+
+TEST_CASE("B31-02 : l'anneau refusé retire l'interpolation, puis SPAN, pour la réouverture",
+          "[stage_fallback]") {
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  const Refusal ring{RefusalCode::GpuMemoryExhausted, "anneau 3840x2160 x 6"};
+  // Un refus après la préparation : l'interpolation part la première.
+  REQUIRE(retreat_stage(&memory, ring, wanted, true, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
+          ChainStage::Motion);
+  auto plan = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep01.mkv", true);
+  REQUIRE(plan);
+  CHECK(plan->settings.rife_factor == 0);
+  CHECK(plan->settings.upscale);
+  REQUIRE(plan->notes.size() == 1);
+  CHECK(plan->notes[0].change == StageChange::Dropped);
+  // La chaîne rouverte sans interpolation refuse encore : SPAN part à son tour.
+  REQUIRE(retreat_stage(&memory, ring, plan->settings, false, true, kWidth, kHeight, kLibrary, "ep01.mkv") ==
+          ChainStage::Upscale);
+  plan = plan_stages(wanted, memory, kWidth, kHeight, kLibrary, "ep01.mkv", true);
+  REQUIRE(plan);
+  CHECK_FALSE(plan->settings.upscale);
+  // Plus rien à retirer : le refus arrête la vidéo comme avant.
+  CHECK_FALSE(
+      retreat_stage(&memory, ring, plan->settings, false, false, kWidth, kHeight, kLibrary, "ep01.mkv"));
+}
+
+TEST_CASE("B31-02 : un appareil perdu ou sans mémoire de séance ne retire rien", "[stage_fallback]") {
+  StageMemory memory;
+  const PlaySettings wanted = chain(PrecisionTier::Balanced, PrecisionTier::Balanced);
+  CHECK_FALSE(retreat_stage(&memory, Refusal{RefusalCode::DeviceLost, "perdu"}, wanted, true, true, kWidth,
+                            kHeight, kLibrary, "ep01.mkv"));
+  CHECK_FALSE(retreat_stage(nullptr, Refusal{RefusalCode::GpuMemoryExhausted, "x"}, wanted, true, true,
+                            kWidth, kHeight, kLibrary, "ep01.mkv"));
+  CHECK(memory.empty());
+}
+
 }  // namespace ajp::app::play

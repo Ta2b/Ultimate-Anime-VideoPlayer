@@ -1,7 +1,9 @@
 #include "app/play/relaunch_target.h"
 
+#include <atomic>
 #include <charconv>
 #include <chrono>
+#include <cstdlib>
 #include <format>
 #include <fstream>
 #include <string_view>
@@ -14,6 +16,16 @@
 
 namespace ajp::app::play {
 namespace {
+
+// Lus par le garde d'une fermeture bloquée, sur son propre thread (exit_stuck).
+std::atomic<bool>& relaunch_asked() {
+  static std::atomic<bool> asked{false};
+  return asked;
+}
+std::atomic<void (*)()>& stuck_relaunch() {
+  static std::atomic<void (*)()> relaunch{nullptr};
+  return relaunch;
+}
 
 bool parse_int(std::string_view text, std::int64_t& value) {
   const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -97,7 +109,23 @@ bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file, s
       log_channel("app")->warn("relance : {} ; le lancement est rejoué tel quel", written.error().detail);
   }
   *paths.relaunch = true;
+  relaunch_asked().store(true, std::memory_order_release);
   return true;
+}
+
+void set_stuck_relaunch(void (*relaunch)()) {
+  stuck_relaunch().store(relaunch, std::memory_order_release);
+}
+
+void exit_stuck(std::string_view why) {
+  const auto log = log_channel("app");
+  const bool relaunch = relaunch_asked().load(std::memory_order_acquire);
+  log->error("{} : le GPU ne répond plus, le lecteur sort sans l'attendre{}", why,
+             relaunch ? " et se relance" : "");
+  log->flush();
+  if (void (*const again)() = stuck_relaunch().load(std::memory_order_acquire); relaunch && again != nullptr)
+    again();  // POSIX : execv remplace le processus ; Windows : le nouveau lecteur part, celui-ci sort
+  std::_Exit(kStuckExitCode);
 }
 
 }  // namespace ajp::app::play

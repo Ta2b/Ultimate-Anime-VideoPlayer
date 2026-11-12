@@ -197,6 +197,11 @@ TEST_CASE(
   REQUIRE(plain);
   CHECK(plain->available.size() == kSpanCatalogue.size());
   CHECK(model_label(std::string(kLightSpanModel)) == "ArtCNN C4F32");
+  CHECK(model_label(std::string(kLightestSpanModel)) == "ArtCNN C4F16");
+  CHECK(std::ranges::contains(plain->available, std::string(kLightestSpanModel)));
+  settings.model = std::string(kLightestSpanModel);  // choisi au menu : relu de play.toml
+  CHECK(choose_model(PlayOptions{}, fake.home, settings)->path.filename().string() == kLightestSpanModel);
+  settings.model.clear();
   CHECK(std::ranges::find(plain->available, legacy) == plain->available.end());
   settings.model = legacy;  // un ancien play.toml : le défaut, sans refus
   const auto fallback = choose_model(PlayOptions{}, fake.home, settings);

@@ -3,8 +3,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "core/frame.h"
-
 namespace ajp::app::play {
 
 std::vector<RingFrame> FrameQueue::take_stale(std::uint32_t epoch) {
@@ -27,32 +25,10 @@ const RingFrame* FrameQueue::first_of(std::uint32_t epoch) const {
   return it == frames_.end() ? nullptr : &*it;
 }
 
-std::optional<RingFrame> FrameQueue::pick(std::int64_t media_now_us, std::int64_t lead_us,
-                                          std::vector<RingFrame>& late,
-                                          const std::function<bool(const RingFrame&)>& ready) {
-  return pick_by([&](const RingFrame& frame) { return frame.pts_us <= media_now_us + lead_us; }, late, ready);
-}
-
-std::optional<RingFrame> FrameQueue::pick_by(const std::function<bool(const RingFrame&)>& due,
-                                             std::vector<RingFrame>& late,
-                                             const std::function<bool(const RingFrame&)>& ready) {
-  std::optional<RingFrame> chosen;
-  while (!frames_.empty()) {
-    // Lu avant pop_front, qui détruit l'élément (et parfois le bloc de la deque qui le porte).
-    const bool untimed = frames_.front().pts_us == kNoPts;
-    if (!(untimed || due(frames_.front())) || (ready && !ready(frames_.front()))) break;
-    if (chosen) late.push_back(*chosen);
-    chosen = frames_.front();
-    frames_.pop_front();
-    if (untimed) break;  // sans horodatage : montrée seule, à son tour
-  }
-  return chosen;
-}
-
 std::optional<RingFrame> FrameQueue::pop_front() {
   if (frames_.empty()) return std::nullopt;
   RingFrame front = frames_.front();
-  frames_.pop_front();
+  frames_.erase(frames_.begin());
   return front;
 }
 

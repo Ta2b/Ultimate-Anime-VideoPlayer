@@ -45,8 +45,8 @@ FFmpeg, libplacebo et FriBidi sont des bibliothèques partagées (`lib/`) : vous
 
 `calibration.mkv` : dix-huit plans fixes de 6 s (H.264 1920×1080, 108 s, extraits de Blu-ray et de WEB-DL), tirés d'Akudama Drive (saison 1, épisode 1), des Enfants du Temps (film), de Violet Evergarden (saison 1, épisode 1), de Frieren (saison 1, épisode 1), de Your Name (film), de Re:Zero kara Hajimeru Isekai Seikatsu (saison 4, épisode 18, © Tappei Nagatsuki, KADOKAWA / Re:Zero 4 Partners), de Tensei Shitara Slime Datta Ken (saison 4, épisode 24, © Fuse, Micro Magazine / Tensura Project) et de Black Clover (saison 2, épisode 5). Ajoutés à la demande du propriétaire du dépôt, qui répond de leur redistribution, pour les seuls tests et comparaisons du grade (test de bout en bout, banc de qualité, `tools/ring/banding.py`, `tools/grade/compare_shots.sh`). Le lecteur n'embarque pas cette vidéo et ne s'en sert plus pour calibrer : la calibration du grade adaptatif est retirée. Les images restent la propriété de leurs ayants droit ; liste et instants dans `data/calibration/SOURCES.md`.
 
-## ArtCNN C4F32 (modèle livré depuis la 0.10.2)
-ArtCNN, © 2024 João Chrisóstomo, licence MIT (texte dans `tools/upscale/models/ArtCNN-LICENSE.txt`, à joindre à toute redistribution du modèle `2x_ArtCNN_C4F32_rgb_fp16.onnx`).
+## ArtCNN C4F32 (modèle livré depuis la 0.10.2) et C4F16
+ArtCNN, © 2024 João Chrisóstomo, licence MIT (texte dans `tools/upscale/models/ArtCNN-LICENSE.txt`, à joindre à toute redistribution des modèles `2x_ArtCNN_C4F32_rgb_fp16.onnx` et `2x_ArtCNN_C4F16_rgb_fp16.onnx`).
 
 ## Anime4K (shaders embarqués)
 Anime4K, © 2019-2021 bloc97, licence MIT. Neuf shaders GLSL de mpv (commit `7684e95`, `third_party/anime4k/`),

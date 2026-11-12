@@ -20,6 +20,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "app/play/auto_bench.h"
+#include "app/play/model_choice.h"
 #include "app/play/settings_system.h"
 #include "app/play/span_int8.h"
 #include "french_ui.h"
@@ -437,6 +438,13 @@ TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une
       folder.models(), video);
   CHECK(b5f48.offered);  // pris depuis l'étape 3.2c, rangé en 64 canaux
   CHECK(b5f48.note.find("48 canaux") == std::string::npos);
+
+  // ArtCNN : rien à préparer, la phrase le dit (le paquet CUTLASS ne sait que les SPAN).
+  const SpanPrepare artcnn = make_span_prepare(
+      nullptr, init, true, folder.root / std::string(kLightestSpanModel), folder.models(), video);
+  CHECK_FALSE(artcnn.offered);
+  CHECK_FALSE(artcnn.run);
+  CHECK(artcnn.note.find("ArtCNN reste en FP16") != std::string::npos);
 
   const SpanPrepare fresh = make_span_prepare(nullptr, init, true, folder.model, folder.models(), video);
   CHECK(fresh.offered);

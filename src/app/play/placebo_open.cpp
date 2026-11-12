@@ -35,6 +35,7 @@
 #include "app/play/placebo_present.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/queue_lanes.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/window_size.h"
 #include "core/clock.h"
 #include "core/file_sync.h"
@@ -410,7 +411,6 @@ void request_smooth_motion(spdlog::logger& log) {
 
 // Le démontage d'un pilote sain se compte en secondes (moteurs TensorRT compris) ; au-delà, il ne finira pas.
 constexpr std::chrono::seconds kCloseLimit{60};
-constexpr int kStuckExitCode = 75;  // EX_TEMPFAIL : la machine, pas la vidéo
 }  // namespace
 
 PlaceboScreen::Impl::~Impl() {
@@ -426,13 +426,8 @@ PlaceboScreen::Impl::~Impl() {
   }
   // A10-04 : tout ce démontage attend le GPU sans délai. Sur un GPU bloqué, le lecteur sort au lieu de
   // rester sans fenêtre pour toujours ; le journal dit pourquoi.
-  const CloseWatch stuck(kCloseLimit, [log = channel] {
-    if (log) {
-      log->error("fermeture : le GPU ne répond pas depuis {} s, le lecteur sort sans l'attendre",
-                 kCloseLimit.count());
-      log->flush();
-    }
-    std::_Exit(kStuckExitCode);
+  const CloseWatch stuck(kCloseLimit, [] {
+    exit_stuck(std::format("fermeture de l'écran bloquée depuis {} s", kCloseLimit.count()));
   });
   // Le veilleur d'écriture attend sur un sémaphore de l'appareil : arrêté avant tout le reste, quel que soit
   // le chemin qui ferme l'écran (sortie anticipée, exception), jamais après pl_vulkan_destroy.

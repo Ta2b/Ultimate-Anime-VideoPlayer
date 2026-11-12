@@ -61,9 +61,9 @@ TEST_CASE("mémoire auto : un palier au-dessus de ×6 se relit, jusqu'au plafond
   // A07-07 : écran de 165 Hz en VRR, 23,976 i/s, palier tenu ×6,88 ; la relecture le jetait.
   AutoMemory memory;
   memory.put("vrr", 688);
-  memory.put("max", 800);
+  memory.put("max", 1000);
   const AutoMemory read = AutoMemory::parse(memory.dump());
   CHECK(read.find("vrr") == 688);
-  CHECK(read.find("max") == 800);
-  CHECK_FALSE(AutoMemory::parse("[\"trop\"]\nstep = 801\n").find("trop"));
+  CHECK(read.find("max") == 1000);
+  CHECK_FALSE(AutoMemory::parse("[\"trop\"]\nstep = 1001\n").find("trop"));
 }
