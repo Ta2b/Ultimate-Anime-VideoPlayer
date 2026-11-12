@@ -453,20 +453,8 @@ void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
-}  // namespace
-
-// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
-  // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
-  const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
-                      choices.source_height >= 1080;
-  section(i18n::tr("Interpolation"));
-  // La chaîne ne l'allume qu'à une cadence d'anime (source_fit.h) : le choix reste, pour la vidéo suivante.
-  if (d.rife_factor >= 2 && !anime_rate(choices.source_fps))
-    note(i18n::tr_format(
-        "Off for this video: {:.2f} fps is not an anime frame rate (23.976, 24, 25, 29.97 or 30).",
-        choices.source_fps));
-  ImGui::BeginDisabled(!choices.rife_available);
+// Le multiplicateur : Auto ou rien en lecture, les facteurs fixes à l'export.
+void multiplier_combo(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×8 tiennent sur une ligne.
   // Jusqu'à ×8 : au-delà, le profil (core::limits::kInterpFactor) refuserait la règle, et le choix
   // ne survivrait pas au fichier suivant.
@@ -513,6 +501,24 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     }
     ImGui::EndCombo();
   }
+}
+
+}  // namespace
+
+// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
+  // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
+  const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
+                      choices.source_height >= 1080;
+  section(i18n::tr("Interpolation"));
+  // La chaîne ne l'allume qu'à une cadence d'anime (source_fit.h) : le choix reste, pour la vidéo suivante.
+  if (d.rife_factor >= 2 && !anime_rate(choices.source_fps))
+    note(i18n::tr_format(
+        "Off for this video: {:.2f} fps is not an anime frame rate (23.976, 24, 25, 29.97 or 30).",
+        choices.source_fps));
+  ImGui::BeginDisabled(!choices.rife_available);
+  multiplier_combo(d, choices, exporting);
+  const Factor now = factor_of(d);
   if (d.rife_auto && now.num > now.den && !exporting) auto_cap_row(d, choices);
   if (d.rife_auto && now.num > now.den && !exporting) auto_mode_rows(d, choices);
   if (d.rife_auto && now.num > now.den) vrr_notes(choices);
