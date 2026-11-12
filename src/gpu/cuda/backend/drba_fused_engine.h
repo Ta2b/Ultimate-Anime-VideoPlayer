@@ -76,6 +76,9 @@ class DrbaFusedEngine final : public Engine {
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
                                              bool times_only);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
+  // Les tampons repris au-dessus des activations si arena n'est plus la zone posée, a grandi, a changé de
+  // génération, ou si un moteur entier y monte plus haut qu'eux.
+  std::expected<void, Refusal> follow_zone(const std::shared_ptr<SharedActivations>& arena);
   std::size_t scratch_offset_for(const SharedActivations& zone) const;
 
   std::unique_ptr<TrtEngine> encode_;

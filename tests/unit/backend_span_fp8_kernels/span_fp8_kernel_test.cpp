@@ -1,7 +1,7 @@
 // Les noyaux du SPAN FP8 (gpu/cuda/backend/span_fp8_net.h) aux tailles dont la dernière tuile de 128 lignes
 // déborde de M (étape 3.1) : 1 Mio de canari 0xA5 après la zone de travail et après la sortie reste intact,
-// et la sortie est finie. Paquet synthétique (tests/support/span_fp8_synthetic.h). Puis le réseau entier contre
-// la référence FP16 sur des poids aléatoires fixes (C02-10). Sans GPU sm 8.9 : SKIP.
+// et la sortie est finie. Paquet synthétique (tests/support/span_fp8_synthetic.h). Puis le réseau entier
+// contre la référence FP16 sur des poids aléatoires fixes (C02-10). Sans GPU sm 8.9 : SKIP.
 #include <algorithm>
 #include <cmath>
 #include <cstddef>

@@ -123,6 +123,16 @@ std::size_t DrbaFusedEngine::scratch_offset_for(const SharedActivations& zone) c
       static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
 }
 
+std::expected<void, Refusal> DrbaFusedEngine::follow_zone(const std::shared_ptr<SharedActivations>& arena) {
+  const std::size_t offset = scratch_offset_for(*arena);
+  const auto needed = static_cast<std::int64_t>(offset + layout_.bytes);
+  if (arena == zone_ && offset == scratch_offset_ && arena->bytes() >= needed &&
+      zone_generation_ == arena->generation())
+    return {};
+  scratch_offset_ = offset;
+  return use_zone(arena);
+}
+
 std::expected<void, Refusal> DrbaFusedEngine::use_zone(const std::shared_ptr<SharedActivations>& zone) {
   const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
   if (auto ok = zone->reserve(needed); !ok) return ok;
@@ -245,15 +255,9 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(cudaStream_t stream,
                   "DistilDRBA fusionné : flot 1×4 et masque 1×1 à la taille du moteur attendus");
   // Lancé sur une autre voie que celle du chargement, la zone a grandi, ou un moteur entier de la zone a des
   // activations plus hautes que les tampons (un SPAN chargé après) : tampons repris au-dessus, graphes jetés.
-  const std::size_t offset = scratch_offset_for(*arena);
-  const auto needed = static_cast<std::int64_t>(offset + layout_.bytes);
-  if (arena != zone_ || offset != scratch_offset_ || arena->bytes() < needed ||
-      zone_generation_ != arena->generation()) {
-    scratch_offset_ = offset;
-    if (auto ok = use_zone(arena); !ok) {
-      kept_.reset();
-      return ok;
-    }
+  if (auto ok = follow_zone(arena); !ok) {
+    kept_.reset();
+    return ok;
   }
   // D6 : les mêmes paires, la même zone, les tampons à la même place, que personne n'a touchés depuis l'appel
   // précédent mené au bout (un moteur entier de la zone n'écrit que sous eux, C03-01).

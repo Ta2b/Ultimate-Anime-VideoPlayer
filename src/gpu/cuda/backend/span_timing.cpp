@@ -62,66 +62,91 @@ void capture_body(SpanFp8Net& net, const void* input, cudaStream_t stream, Graph
   }
 }
 
-}  // namespace
+// Les passes et les lots d'un jeu de variantes, sur un flux.
+class Timer {
+ public:
+  Timer(const SpanTimingSet& set, cudaStream_t stream)
+      : set_(set),
+        stream_(stream),
+        trt_in_{Tensor{.type = TensorType::F16,
+                       .shape = Shape{.dims = {1, 3, set.height, set.width}},
+                       .handle = reinterpret_cast<std::uintptr_t>(set.input)}},
+        trt_out_{
+            Tensor{.type = TensorType::F16,
+                   .shape = Shape{.dims = {1, 3, std::int64_t{set.height} * 2, std::int64_t{set.width} * 2}},
+                   .handle = reinterpret_cast<std::uintptr_t>(set.output_trt)}} {
+    capture_body(*set.fp8, set.input, stream, graphs_[0]);
+    if (set.fp8_acc16 != nullptr) capture_body(*set.fp8_acc16, set.input, stream, graphs_[1]);
+  }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
-std::expected<SpanTimes, Refusal> time_span_set(const SpanTimingSet& set, cudaStream_t stream,
-                                                Progress& progress, float from, float to) {
-  if (set.fp8 == nullptr || set.input == nullptr || set.output_fp8 == nullptr)
-    return refuse(RefusalCode::ShapeInvalid, "mesure du temps du SPAN : réseau FP8 absent");
-  std::array<Graph, 2> graphs;
-  capture_body(*set.fp8, set.input, stream, graphs[0]);
-  if (set.fp8_acc16 != nullptr) capture_body(*set.fp8_acc16, set.input, stream, graphs[1]);
-
-  const Shape in_shape{.dims = {1, 3, set.height, set.width}};
-  const Shape out_shape{.dims = {1, 3, std::int64_t{set.height} * 2, std::int64_t{set.width} * 2}};
-  const std::array trt_in{Tensor{
-      .type = TensorType::F16, .shape = in_shape, .handle = reinterpret_cast<std::uintptr_t>(set.input)}};
-  const std::array trt_out{Tensor{.type = TensorType::F16,
-                                  .shape = out_shape,
-                                  .handle = reinterpret_cast<std::uintptr_t>(set.output_trt)}};
-
-  // Une passe de la variante : 0 FP8, 1 FP8 f16, 2 TensorRT FP16.
-  std::string why;
-  const auto pass = [&](int variant) -> std::expected<void, Refusal> {
-    if (variant == 2) return set.trt->enqueue(stream, nullptr, trt_in, trt_out);
-    SpanFp8Net& net = variant == 0 ? *set.fp8 : *set.fp8_acc16;
-    const Graph& graph = graphs[static_cast<std::size_t>(variant)];
-    if (graph.exec != nullptr) {
-      if (const cudaError_t e = cudaGraphLaunch(graph.exec, stream); e != cudaSuccess)
-        return failed(e, "cudaGraphLaunch");
-    } else if (!net.launch_body(stream, set.input, why)) {
-      return refuse(RefusalCode::VendorCallFailed, "mesure du temps du SPAN FP8 : " + why);
-    }
-    if (!net.launch_tail(stream, set.output_fp8, SpanFp8Ring{}, why))
-      return refuse(RefusalCode::VendorCallFailed, "mesure du temps du SPAN FP8 : " + why);
+  std::expected<void, Refusal> create_events() {
+    for (Event* event : {&start_, &stop_})
+      if (const cudaError_t e = cudaEventCreate(&event->event); e != cudaSuccess)
+        return failed(e, "cudaEventCreate");
     return {};
-  };
+  }
 
-  Event start;
-  Event stop;
-  for (Event* event : {&start, &stop})
-    if (const cudaError_t e = cudaEventCreate(&event->event); e != cudaSuccess)
-      return failed(e, "cudaEventCreate");
   // Un lot : chauffe, puis kTimingRuns passes entre deux événements ; le temps d'une passe.
-  const auto batch = [&](int variant) -> std::expected<double, Refusal> {
+  std::expected<double, Refusal> batch(int variant) {
     for (int i = 0; i < kTimingWarmup; ++i)
       if (auto ok = pass(variant); !ok) return std::unexpected(std::move(ok.error()));
-    if (const cudaError_t e = cudaEventRecord(start.event, stream); e != cudaSuccess)
+    if (const cudaError_t e = cudaEventRecord(start_.event, stream_); e != cudaSuccess)
       return failed(e, "cudaEventRecord");
     for (int i = 0; i < kTimingRuns; ++i)
       if (auto ok = pass(variant); !ok) return std::unexpected(std::move(ok.error()));
-    if (const cudaError_t e = cudaEventRecord(stop.event, stream); e != cudaSuccess)
+    if (const cudaError_t e = cudaEventRecord(stop_.event, stream_); e != cudaSuccess)
       return failed(e, "cudaEventRecord");
-    if (const cudaError_t e = cudaEventSynchronize(stop.event); e != cudaSuccess)
+    if (const cudaError_t e = cudaEventSynchronize(stop_.event); e != cudaSuccess)
       return failed(e, "cudaEventSynchronize");
     float ms = 0.0F;
-    if (const cudaError_t e = cudaEventElapsedTime(&ms, start.event, stop.event); e != cudaSuccess)
+    if (const cudaError_t e = cudaEventElapsedTime(&ms, start_.event, stop_.event); e != cudaSuccess)
       return failed(e, "cudaEventElapsedTime");
     if (!(ms > 0.0F))
       return refuse(RefusalCode::VendorCallFailed, "mesure du temps du SPAN : lot mesuré à 0 ms");
     return static_cast<double>(ms) / kTimingRuns;
-  };
+  }
+
+ private:
+  // Une passe de la variante : 0 FP8, 1 FP8 f16, 2 TensorRT FP16.
+  std::expected<void, Refusal> pass(int variant) {
+    if (variant == 2) return set_.trt->enqueue(stream_, nullptr, trt_in_, trt_out_);
+    SpanFp8Net& net = variant == 0 ? *set_.fp8 : *set_.fp8_acc16;
+    const Graph& graph = graphs_[static_cast<std::size_t>(variant)];
+    if (graph.exec != nullptr) {
+      if (const cudaError_t e = cudaGraphLaunch(graph.exec, stream_); e != cudaSuccess)
+        return failed(e, "cudaGraphLaunch");
+    } else if (!net.launch_body(stream_, set_.input, why_)) {
+      return refuse(RefusalCode::VendorCallFailed, "mesure du temps du SPAN FP8 : " + why_);
+    }
+    if (!net.launch_tail(stream_, set_.output_fp8, SpanFp8Ring{}, why_))
+      return refuse(RefusalCode::VendorCallFailed, "mesure du temps du SPAN FP8 : " + why_);
+    return {};
+  }
+
+  const SpanTimingSet& set_;
+  cudaStream_t stream_;
+  std::array<Tensor, 1> trt_in_;
+  std::array<Tensor, 1> trt_out_;
+  std::array<Graph, 2> graphs_;
+  Event start_;
+  Event stop_;
+  std::string why_;
+};
+
+double median(std::vector<double>& of) {
+  if (of.empty()) return 0.0;
+  std::ranges::sort(of);
+  return of[of.size() / 2];
+}
+
+}  // namespace
+
+std::expected<SpanTimes, Refusal> time_span_set(const SpanTimingSet& set, cudaStream_t stream,
+                                                Progress& progress, float from, float to) {
+  if (set.fp8 == nullptr || set.input == nullptr || set.output_fp8 == nullptr)
+    return refuse(RefusalCode::ShapeInvalid, "mesure du temps du SPAN : réseau FP8 absent");
+  Timer timer(set, stream);
+  if (auto ok = timer.create_events(); !ok) return std::unexpected(std::move(ok.error()));
 
   std::vector<int> variants{0};
   if (set.fp8_acc16 != nullptr) variants.push_back(1);
@@ -135,18 +160,13 @@ std::expected<SpanTimes, Refusal> time_span_set(const SpanTimingSet& set, cudaSt
     for (const int variant : variants) {
       if (progress.stop.stop_requested())
         return refuse(RefusalCode::Cancelled, "dérivation du SPAN FP8 interrompue");
-      auto ms = batch(variant);
+      auto ms = timer.batch(variant);
       if (!ms) return std::unexpected(std::move(ms.error()));
       times[static_cast<std::size_t>(variant)].push_back(*ms);
       done += 1.0F;
       if (progress.report) progress.report(from + (to - from) * done / batches, "mesure du temps");
     }
   }
-  const auto median = [](std::vector<double>& of) {
-    if (of.empty()) return 0.0;
-    std::ranges::sort(of);
-    return of[of.size() / 2];
-  };
   return SpanTimes{.fp8_ms = median(times[0]), .fp8_acc16_ms = median(times[1]), .trt_ms = median(times[2])};
 }
 

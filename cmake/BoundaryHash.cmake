@@ -21,8 +21,10 @@ function(ajp_boundary_hash out)
   set(all "")
   foreach(file IN LISTS ARGN)
     file(READ "${file}" text)
-    string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" " " text "${text}")
-    string(REGEX REPLACE "//[^\n]*" " " text "${text}")
+    # Les deux sortes de commentaires en une seule passe, le plus à gauche l'emporte (C21-01) : retirer les blocs
+    # d'abord prenait le « /* » d'un « // voir src/*.h » pour un début de bloc, et le code jusqu'au « */ » suivant
+    # sortait de l'empreinte.
+    string(REGEX REPLACE "(/\\*([^*]|\\*+[^*/])*\\*+/|//[^\n]*)" " " text "${text}")
     string(REGEX REPLACE "[ \t\r\n]+" " " text "${text}")
     # Sans blanc de tête ni de queue : un commentaire en première ou en dernière position ne change rien non
     # plus (B27-12).

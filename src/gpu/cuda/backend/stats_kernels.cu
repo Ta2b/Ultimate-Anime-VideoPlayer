@@ -130,6 +130,32 @@ __device__ bool is_skin(Rgb e) {
   return hue >= fs::kSkinHueLo && hue <= fs::kSkinHueHi && sat >= fs::kSkinSatLo && sat <= fs::kSkinSatHi;
 }
 
+// Les points clairs du cadre [x0, x1) × [y0, y1) dans tallies[1], et ceux qui le sont nettement plus que
+// leurs huit voisins (bornés au cadre) dans tallies[2] : les mêmes valeurs, dans le même ordre, que lorsque
+// chaque voisin se recalculait.
+__device__ void count_bright(const float* grid, unsigned x0, unsigned y0, unsigned x1, unsigned y1,
+                             unsigned tid, unsigned* tallies) {
+  const unsigned fw = x1 - x0;
+  const unsigned fh = y1 - y0;
+  for (unsigned q = tid; q < fw * fh; q += kThreads) {
+    const unsigned gx = x0 + q % fw;
+    const unsigned gy = y0 + q / fw;
+    const float maxrgb = grid[gy * kGw + gx];
+    if (!(maxrgb > fs::kBrightNits)) continue;
+    atomicAdd(&tallies[1], 1U);
+    float around = 0.0F;
+    for (int dy = -1; dy <= 1; ++dy) {
+      for (int dx = -1; dx <= 1; ++dx) {
+        if (dx == 0 && dy == 0) continue;
+        const int nx = min(max(static_cast<int>(gx) + dx, static_cast<int>(x0)), static_cast<int>(x1) - 1);
+        const int ny = min(max(static_cast<int>(gy) + dy, static_cast<int>(y0)), static_cast<int>(y1) - 1);
+        around += grid[static_cast<unsigned>(ny) * kGw + static_cast<unsigned>(nx)];
+      }
+    }
+    if (maxrgb >= fs::kIsolatedRatio * (around / 8.0F)) atomicAdd(&tallies[2], 1U);
+  }
+}
+
 __global__ void __launch_bounds__(kThreads, 1) frame_stats(FrameStatsParams p) {
   __shared__ unsigned column_max[kGw];
   __shared__ unsigned row_max[kGh];
@@ -216,25 +242,7 @@ __global__ void __launch_bounds__(kThreads, 1) frame_stats(FrameStatsParams p) {
     sums[4] += maxrgb;
   }
   __syncthreads();
-  // Les points clairs, et ceux qui le sont nettement plus que leurs huit voisins (bornés au cadre) : les
-  // mêmes valeurs, dans le même ordre, que lorsque chaque voisin se recalculait.
-  for (unsigned q = tid; q < fw * fh; q += kThreads) {
-    const unsigned gx = x0 + q % fw;
-    const unsigned gy = y0 + q / fw;
-    const float maxrgb = maxrgb_grid[gy * kGw + gx];
-    if (!(maxrgb > fs::kBrightNits)) continue;
-    atomicAdd(&tallies[1], 1U);
-    float around = 0.0F;
-    for (int dy = -1; dy <= 1; ++dy) {
-      for (int dx = -1; dx <= 1; ++dx) {
-        if (dx == 0 && dy == 0) continue;
-        const int nx = min(max(static_cast<int>(gx) + dx, static_cast<int>(x0)), static_cast<int>(x1) - 1);
-        const int ny = min(max(static_cast<int>(gy) + dy, static_cast<int>(y0)), static_cast<int>(y1) - 1);
-        around += maxrgb_grid[static_cast<unsigned>(ny) * kGw + static_cast<unsigned>(nx)];
-      }
-    }
-    if (maxrgb >= fs::kIsolatedRatio * (around / 8.0F)) atomicAdd(&tallies[2], 1U);
-  }
+  count_bright(maxrgb_grid, x0, y0, x1, y1, tid, tallies);
   // Somme de chaque compte sur le bloc, par arbre en mémoire partagée.
 #pragma unroll
   for (unsigned s = 0U; s < kSums; ++s) {

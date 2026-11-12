@@ -332,7 +332,8 @@ TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc"
   auto ingested = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
   REQUIRE(ingested);
   DecodedFrame frame = frame_of(std::make_shared<CudaNv12>(image), w, h);
-  frame.color = ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Full, .siting = ChromaSiting::Left};
+  frame.color =
+      ColorInfo{.matrix = ColorMatrix::Bt709, .range = ColorRange::Full, .siting = ChromaSiting::Left};
   REQUIRE(loaded.backend->kernels()->ingest(frame, {}, (*ingested)->tensor()));
   auto full = loaded.backend->kernels()->scores_now((*a)->tensor(), (*b)->tensor());
   REQUIRE(full);

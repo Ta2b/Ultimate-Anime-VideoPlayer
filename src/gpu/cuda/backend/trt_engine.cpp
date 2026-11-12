@@ -245,7 +245,7 @@ std::expected<void, Refusal> TrtEngine::enqueue(cudaStream_t stream,
                                                 std::span<const Tensor> outputs) {
   if (auto ok = match_aux_priority(stream); !ok) return ok;
   if (auto ok = place(arena, inputs, outputs); !ok) return ok;
-  if (book_.off()) return launch(stream, {});
+  if (book_.skip()) return launch(stream, {});
   std::vector<std::uintptr_t> addresses;
   addresses.reserve(inputs.size() + outputs.size());
   for (const Tensor& t : inputs) addresses.push_back(t.handle + t.offset);

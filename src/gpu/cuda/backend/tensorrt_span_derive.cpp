@@ -87,6 +87,62 @@ std::vector<float> to_unit(const std::vector<__half>& half) {
   return out;
 }
 
+// Les réseaux FP8 (et f16 si with_f16) refaits à la taille de la mesure, avec leurs tampons ; l'entrée
+// remplie d'une valeur quelconque mais finie (0,53 partout) : le temps des noyaux ne dépend pas des valeurs.
+std::expected<void, Refusal> resize_nets(SpanFp8Weights& weights, bool acc16, bool with_f16, int width,
+                                         int height, Scratch& scratch, std::unique_ptr<SpanFp8Net>& net,
+                                         std::unique_ptr<SpanFp8Net>& net16) {
+  net16.reset();
+  net.reset();
+  scratch.release();
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string why;
+  weights.acc16 = acc16;
+  net = SpanFp8Net::create(weights, height, width, status, why);
+  if (!net)
+    return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
+                                                       : RefusalCode::VendorCallFailed,
+                  "temps du SPAN FP8 : " + why);
+  weights.acc16 = true;
+  if (with_f16) net16 = SpanFp8Net::create(weights, height, width, status, why);
+  const std::size_t in_bytes =
+      3 * static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(__half);
+  for (void** buffer : {&scratch.input, &scratch.output_fp8})
+    if (auto e = cudaMalloc(buffer, buffer == &scratch.input ? in_bytes : in_bytes * 4); e != cudaSuccess)
+      return cuda_refusal(e, "cudaMalloc");
+  if (auto e = cudaMalloc(&scratch.workspace, static_cast<std::size_t>(net->workspace_bytes()));
+      e != cudaSuccess)
+    return cuda_refusal(e, "cudaMalloc");
+  net->bind(scratch.workspace);
+  if (net16) net16->bind(scratch.workspace);
+  if (auto e = cudaMemsetAsync(scratch.input, 0x38, in_bytes, scratch.stream); e != cudaSuccess)
+    return cuda_refusal(e, "cudaMemset");
+  return {};
+}
+
+// Le moteur SPAN FP16 de TensorRT lu, sa forme vérifiée (une entrée width × height, une sortie), et la sortie
+// ×2 allouée dans scratch.output_trt.
+std::expected<std::unique_ptr<TrtEngine>, Refusal> load_fp16(nvinfer1::IRuntime& runtime,
+                                                             const std::filesystem::path& path, int width,
+                                                             int height, Scratch& scratch) {
+  auto loaded = TrtEngine::load(runtime, path);
+  if (!loaded) return std::unexpected(std::move(loaded.error()));
+  std::unique_ptr<TrtEngine> trt = std::move(*loaded);
+  const Shape expected{.dims = {1, 3, height, width}};
+  if (trt->input_names().size() != 1 || trt->output_names().size() != 1 || !(trt->input_shape(0) == expected))
+    return refuse(
+        RefusalCode::ShapeInvalid,
+        std::format("temps du SPAN FP16 : moteur de forme {}, {}x{} attendu",
+                    shape_text(ShapeSet{
+                        .min = trt->input_shape(0), .opt = trt->input_shape(0), .max = trt->input_shape(0)}),
+                    width, height));
+  const std::size_t out_bytes =
+      12 * static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(__half);
+  if (auto e = cudaMalloc(&scratch.output_trt, out_bytes); e != cudaSuccess)
+    return cuda_refusal(e, "cudaMalloc");
+  return trt;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -286,51 +342,18 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
 
   // --- 4. les temps, à la taille de travail (C02-05) : les réseaux refaits à cette taille si elle diffère
   if (timing_width != width || timing_height != height) {
-    net16.reset();
-    net.reset();
-    scratch.release();
-    weights.acc16 = request.validate_only && parsed->acc16;
-    net = SpanFp8Net::create(weights, timing_height, timing_width, status, why);
-    if (!net)
-      return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
-                                                         : RefusalCode::VendorCallFailed,
-                    "temps du SPAN FP8 : " + why);
-    weights.acc16 = true;
-    if (!request.validate_only && !result.scores_acc16.empty())
-      net16 = SpanFp8Net::create(weights, timing_height, timing_width, status, why);
-    const std::size_t timed_in =
-        3 * static_cast<std::size_t>(timing_width) * static_cast<std::size_t>(timing_height) * sizeof(__half);
-    for (void** buffer : {&scratch.input, &scratch.output_fp8})
-      if (auto e = cudaMalloc(buffer, buffer == &scratch.input ? timed_in : timed_in * 4); e != cudaSuccess)
-        return cuda_refusal(e, "cudaMalloc");
-    if (auto e = cudaMalloc(&scratch.workspace, static_cast<std::size_t>(net->workspace_bytes()));
-        e != cudaSuccess)
-      return cuda_refusal(e, "cudaMalloc");
-    net->bind(scratch.workspace);
-    if (net16) net16->bind(scratch.workspace);
-    // Une entrée quelconque mais finie (0,53 partout) : le temps des noyaux ne dépend pas des valeurs.
-    if (auto e = cudaMemsetAsync(scratch.input, 0x38, timed_in, scratch.stream); e != cudaSuccess)
-      return cuda_refusal(e, "cudaMemset");
+    const bool acc16 = request.validate_only && parsed->acc16;
+    const bool with_f16 = !request.validate_only && !result.scores_acc16.empty();
+    if (auto ok = resize_nets(weights, acc16, with_f16, timing_width, timing_height, scratch, net, net16);
+        !ok)
+      return std::unexpected(std::move(ok.error()));
   }
   // Le SPAN FP16 de TensorRT, avec sa mémoire propre (aucune zone de voie) : la sortie de la même taille.
   std::unique_ptr<TrtEngine> trt;
   if (request.fp16) {
-    auto loaded = TrtEngine::load(*runtime_, request.fp16->path);
+    auto loaded = load_fp16(*runtime_, request.fp16->path, timing_width, timing_height, scratch);
     if (!loaded) return std::unexpected(std::move(loaded.error()));
     trt = std::move(*loaded);
-    const Shape expected{.dims = {1, 3, timing_height, timing_width}};
-    if (trt->input_names().size() != 1 || trt->output_names().size() != 1 ||
-        !(trt->input_shape(0) == expected))
-      return refuse(RefusalCode::ShapeInvalid,
-                    std::format("temps du SPAN FP16 : moteur de forme {}, {}x{} attendu",
-                                shape_text(ShapeSet{.min = trt->input_shape(0),
-                                                    .opt = trt->input_shape(0),
-                                                    .max = trt->input_shape(0)}),
-                                timing_width, timing_height));
-    const std::size_t timed_out = 12 * static_cast<std::size_t>(timing_width) *
-                                  static_cast<std::size_t>(timing_height) * sizeof(__half);
-    if (auto e = cudaMalloc(&scratch.output_trt, timed_out); e != cudaSuccess)
-      return cuda_refusal(e, "cudaMalloc");
   }
   const SpanTimingSet set{.fp8 = net.get(),
                           .fp8_acc16 = net16.get(),

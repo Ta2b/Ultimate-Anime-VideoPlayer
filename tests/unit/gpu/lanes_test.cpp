@@ -11,7 +11,7 @@
 namespace ajp::gpu {
 namespace {
 
-using Waits = std::vector<LaneHazards::Wait>;
+using Waits = LaneHazards::Waits;
 
 constexpr std::uintptr_t kFrame = 0x1000;  // image ingérée
 constexpr std::uintptr_t kSpan = 0x2000;   // sortie de SPAN
