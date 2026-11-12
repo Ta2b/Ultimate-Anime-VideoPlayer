@@ -2,6 +2,8 @@
 // son parent et par la taille du fichier ; un octet faux rend une disposition simple, jamais un refus.
 #include "media/mkv_chapters.h"
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <fstream>
 #include <optional>
@@ -61,20 +63,19 @@ std::optional<std::uint64_t> vint(Read& read, bool keep_marker, int& length) {
 
 class File {
  public:
-  explicit File(const std::filesystem::path& path) : in_(path, std::ios::binary) {
-    in_.seekg(0, std::ios::end);
-    size_ = in_ ? static_cast<std::uint64_t>(in_.tellg()) : 0;
-    in_.seekg(0);
-  }
+  explicit File(ByteSource& source) : source_(source), size_(source.size()) {}
   std::uint64_t size() const { return size_; }
 
   std::optional<Element> element(std::uint64_t at) {
-    in_.clear();
-    in_.seekg(static_cast<std::streamoff>(at));
-    const auto read = [this]() -> std::optional<std::uint8_t> {
-      char c = 0;
-      if (!in_.get(c)) return std::nullopt;
-      return static_cast<std::uint8_t>(c);
+    // Un en-tête tient en 12 octets au plus (identifiant de 4, taille de 8) : une seule lecture.
+    std::array<std::uint8_t, 12> head{};
+    if (at >= size_) return std::nullopt;
+    const std::size_t count = static_cast<std::size_t>(std::min<std::uint64_t>(head.size(), size_ - at));
+    if (!source_.read(at, std::span(head).first(count))) return std::nullopt;
+    std::size_t used = 0;
+    const auto read = [&]() -> std::optional<std::uint8_t> {
+      if (used >= count) return std::nullopt;
+      return head[used++];
     };
     int id_length = 0;
     int size_length = 0;
@@ -90,11 +91,27 @@ class File {
   std::optional<std::vector<std::uint8_t>> bytes(const Element& e) {
     if (e.size == kUnknownSize || e.size > kMaxChaptersBytes) return std::nullopt;
     std::vector<std::uint8_t> out(e.size);
-    in_.clear();
-    in_.seekg(static_cast<std::streamoff>(e.data));
-    if (!in_.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size())))
-      return std::nullopt;
+    if (!source_.read(e.data, out)) return std::nullopt;
     return out;
+  }
+
+ private:
+  ByteSource& source_;
+  std::uint64_t size_ = 0;
+};
+
+// Un fichier lu par std::ifstream : pour les tests et les outils, sans interruption possible.
+class StreamSource final : public ByteSource {
+ public:
+  explicit StreamSource(const std::filesystem::path& path) : in_(path, std::ios::binary) {
+    in_.seekg(0, std::ios::end);
+    size_ = in_ ? static_cast<std::uint64_t>(in_.tellg()) : 0;
+  }
+  std::uint64_t size() override { return size_; }
+  bool read(std::uint64_t offset, std::span<std::uint8_t> out) override {
+    in_.clear();
+    in_.seekg(static_cast<std::streamoff>(offset));
+    return static_cast<bool>(in_.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(out.size())));
   }
 
  private:
@@ -213,7 +230,12 @@ std::optional<std::uint64_t> chapters_in_seek_head(const std::vector<std::uint8_
 }  // namespace
 
 ChapterLayout read_chapter_layout(const std::filesystem::path& path) {
-  File file(path);
+  StreamSource source(path);
+  return read_chapter_layout(source);
+}
+
+ChapterLayout read_chapter_layout(ByteSource& source) {
+  File file(source);
   const auto header = file.element(0);
   if (!header || header->id != kEbml || header->size == kUnknownSize) return {};
   const auto segment = file.element(header->data + header->size);

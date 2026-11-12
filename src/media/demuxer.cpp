@@ -4,10 +4,12 @@
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <format>
 #include <limits>
 #include <set>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -15,6 +17,7 @@
 
 extern "C" {
 #include <libavcodec/packet.h>
+#include <libavformat/avio.h>
 #include <libavutil/dict.h>
 #include <libavutil/dovi_meta.h>
 #include <libavutil/time.h>
@@ -24,6 +27,7 @@ extern "C" {
 #include "core/utf8_path.h"
 #include "media/av_util.h"
 #include "media/frame_rate.h"
+#include "media/mkv_chapters.h"
 #include "media/tag_text.h"
 #include "media/log.h"
 
@@ -74,6 +78,36 @@ constexpr int kMaxRetryWaitMs = 1000;
 // Des données abîmées : le conteneur avance à chaque essai et se recale en général sur le bloc
 // suivant, sans attente. Au-delà, le reste du fichier est tenu pour illisible.
 constexpr int kDataRetries = 64;
+
+// Le fichier lu par un AVIOContext ouvert à part : l'interruption de FFmpeg le coupe (C14-09).
+class AvioSource final : public ByteSource {
+ public:
+  AvioSource(const std::string& url, const AVIOInterruptCB& interrupt) {
+    AVDictionary* options = nullptr;
+    av_dict_set(&options, "protocol_whitelist", "file", 0);
+    if (avio_open2(&io_, url.c_str(), AVIO_FLAG_READ, &interrupt, &options) < 0) io_ = nullptr;
+    av_dict_free(&options);
+  }
+  ~AvioSource() override {
+    if (io_ != nullptr) avio_closep(&io_);
+  }
+  AvioSource(const AvioSource&) = delete;
+  AvioSource& operator=(const AvioSource&) = delete;
+
+  std::uint64_t size() override {
+    if (io_ == nullptr) return 0;
+    const std::int64_t bytes = avio_size(io_);
+    return bytes > 0 ? static_cast<std::uint64_t>(bytes) : 0;
+  }
+  bool read(std::uint64_t offset, std::span<std::uint8_t> out) override {
+    if (io_ == nullptr) return false;
+    if (avio_seek(io_, static_cast<std::int64_t>(offset), SEEK_SET) < 0) return false;
+    return avio_read(io_, out.data(), static_cast<int>(out.size())) == static_cast<int>(out.size());
+  }
+
+ private:
+  AVIOContext* io_ = nullptr;
+};
 
 // Une erreur de lecture qui peut guérir en attendant : une panne d'E/S ou de réseau (C14-02).
 bool io_error_may_heal(int err) {
@@ -350,7 +384,10 @@ std::expected<Demuxer, Refusal> Demuxer::open(const std::filesystem::path& path,
                                       AVSEEK_FLAG_BACKWARD));
       break;
     }
-    state->chapter_layout = read_chapter_layout(path);
+    // C14-09 : par un AVIOContext à part, qui porte le rappel d'interruption de la fermeture, et non par un
+    // std::ifstream que rien ne coupe. La position de lecture du démultiplexeur n'est pas touchée.
+    AvioSource chapters_source(where, raw->interrupt_callback);
+    state->chapter_layout = read_chapter_layout(chapters_source);
     state->note_chapter_layout(shown);
   }
   state->scratch.reset(av_packet_alloc());
