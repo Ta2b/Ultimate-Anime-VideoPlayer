@@ -169,6 +169,9 @@ struct PlayOptions {
   // avant fusion3, au lieu de garder l'encodage de la paire et de la B précédente ; la sortie est la même
   // (UpscaleSetup::rife_encode_all). Pour mesurer le gain en ABAB (docs/rife-fusionne.md).
   bool rife_encode_all = false;
+  // --rife-at-slot (mesure) : chaque passe RIFE d'une paire forte attend le slot de son image, au lieu d'être
+  // enfilée à l'arrivée de la paire ; la sortie est la même (UpscaleSetup::rife_at_slot). Pour l'ABAB.
+  bool rife_at_slot = false;
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;

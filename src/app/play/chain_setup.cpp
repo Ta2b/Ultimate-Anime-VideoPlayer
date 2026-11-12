@@ -185,6 +185,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .one_lane = one_lane,
       .rife_warm = rife_warm,
       .rife_encode_all = rife_encode_all,
+      .rife_at_slot = rife_at_slot,
       .live = std::move(live),
       .clock = clock,
       .source_width = width,
@@ -331,6 +332,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.one_lane = o.one_lane;
   c.rife_warm = o.rife_warm;
   c.rife_encode_all = o.rife_encode_all;
+  c.rife_at_slot = o.rife_at_slot;
   c.skip_held = o.skip_held;
 }
 
