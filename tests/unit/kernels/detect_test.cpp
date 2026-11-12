@@ -1,10 +1,12 @@
 #include "kernels/ref/detect.h"
 
+#include <cmath>
 #include <cstdint>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "kernels/ref/color.h"
 #include "kernels/spec.h"
 
 using namespace ajp::kernels;
@@ -150,4 +152,57 @@ TEST_CASE("dessins tenus : un clignement lointain n'est pas un dessin tenu (P3.2
   const auto worst = ref::block_diff_max(a, b, Format::Nv12);
   REQUIRE(worst);
   CHECK_FALSE(is_held(*worst));
+}
+
+TEST_CASE("mesure de paire : la plage de la source fixe les niveaux (C50-01)", "[detect]") {
+  // Deux aplats gris qui sautent, comme une coupe : le contrat YUV (scene_score) et la mesure du lecteur sur
+  // le RGB ingéré doivent s'accorder dans les deux plages. Avec 219 en plage pleine, le score sortait 14,1 %
+  // trop bas.
+  const int w = 256;
+  const int h = 128;
+  const RifeGeometry g = rife_geometry(w, h);
+  const YuvImage a(Format::Nv12, w, h, 60, 128, 128);
+  const YuvImage b(Format::Nv12, w, h, 110, 128, 128);
+  const auto contract = ref::scene_score(a.y, b.y, Format::Nv12, g);
+  REQUIRE(contract);
+  for (const Range range : {Range::Limited, Range::Full}) {
+    INFO("plage " << (range == Range::Full ? "pleine" : "limitée"));
+    const ref::ColorSpec color{.matrix = Matrix::Bt709, .range = range, .siting = Siting::Left};
+    const auto ra = ref::yuv_to_rgb(a, color);
+    const auto rb = ref::yuv_to_rgb(b, color);
+    REQUIRE(ra);
+    REQUIRE(rb);
+    // Le RGB ingéré garde l'échelle de la plage : en limitée, 1,0 = 219 pas ; en pleine, 255.
+    const auto measure = ref::pair_scores(*ra, *rb, pair_levels(range), g);
+    REQUIRE(measure);
+    CHECK_THAT(measure->scene_score, WithinRel(*contract, tolerance::kSceneScoreRelative));
+    CHECK(is_scene_cut(measure->scene_score) == is_scene_cut(*contract));
+  }
+  // L'ancienne mesure (219 partout) s'écartait en plage pleine : le test ci-dessus le verrait.
+  const ref::ColorSpec full{.matrix = Matrix::Bt709, .range = Range::Full, .siting = Siting::Left};
+  const auto fa = ref::yuv_to_rgb(a, full);
+  const auto fb = ref::yuv_to_rgb(b, full);
+  REQUIRE(fa);
+  REQUIRE(fb);
+  const auto wrong = ref::pair_scores(*fa, *fb, 219.0F, g);
+  REQUIRE(wrong);
+  CHECK(std::fabs(wrong->scene_score - *contract) > 0.1 * *contract);
+}
+
+TEST_CASE("mesure de paire : blocs, pire bloc et refus", "[detect]") {
+  const int w = 100;
+  const int h = 70;
+  const RifeGeometry g = rife_geometry(w, h);
+  RgbImage a(w, h, 0.25F);
+  RgbImage b = a;
+  for (int y = 64; y < h; ++y) b.planes[1].at(w - 1, y) += 0.5F;  // un bloc du bord, tronqué à 4 × 6
+  const auto m = ref::pair_scores(a, b, 255.0F, g);
+  REQUIRE(m);
+  REQUIRE(m->block_sums.size() == 7U * 5U);
+  CHECK(m->block_sums.back() > 0.0);
+  const float want_mean = 0.7152F * 0.5F * 6.0F / 24.0F;  // 6 pixels sur les 24 du bloc tronqué
+  CHECK(m->worst_block == static_cast<std::uint32_t>(want_mean * 255.0F * 256.0F));
+  CHECK(ref::pair_scores(a, a, 255.0F, g)->total == 0.0);
+  CHECK(ref::pair_scores(a, RgbImage(w - 2, h, 0.0F), 255.0F, g).error().code == ErrorCode::SizeMismatch);
+  CHECK(ref::pair_scores(a, b, 0.0F, g).error().code == ErrorCode::ParameterOutOfRange);
 }

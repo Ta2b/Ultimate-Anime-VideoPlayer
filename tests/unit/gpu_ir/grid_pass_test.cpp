@@ -9,7 +9,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/ir/interpreter.h"
 #include "gpu/ir/passes.h"
+#include "gpu/ir/shape.h"
+#include "kernels/ref/half.h"
 #include "test_util.h"
 
 using namespace ajp::gpu::ir;
@@ -148,4 +151,29 @@ TEST_CASE("passes : la grille n'entraîne ni le flot ni l'image en float", "[gpu
   CHECK(type_of(graph, "moved") == DataType::F32);
   CHECK(type_of(graph, "scaled") == DataType::F16);
   CHECK(type_of(graph, "image") == DataType::F16);
+}
+
+// C44-02 : la grille passée en float ne rend pas le graphe inexécutable (ONNX : image et grille ont chacune
+// leur type). Le graphe promu passe l'inférence de formes et l'interpréteur.
+TEST_CASE("passes : promote_grid_chains laisse un graphe exécutable", "[gpu_ir][passes][grid]") {
+  ModelBuilder m;
+  m.input("x", {1, 3, 6, 8}, onnx::kFloat16).input("flow", {1, 2, 6, 8}, onnx::kFloat16);
+  m.weight("base32", {1, 2, 6, 8}, sequence(96, -1.0F, 1.0F, 1))
+      .initializer(tensor_f16("step", {1, 2, 1, 1}, std::vector<float>{0.25F, 0.3333F}))
+      .node("Cast", {"base32"}, {"base16"}, {attr_int("to", onnx::kFloat16)})
+      .node("Mul", {"flow", "step"}, {"term"})
+      .node("Add", {"base16", "term"}, {"sum"})
+      .node("Transpose", {"sum"}, {"grid"}, {attr_ints("perm", {0, 2, 3, 1})})
+      .node("GridSample", {"x", "grid"}, {"y"}, {attr_string("padding_mode", "border")})
+      .output("y", onnx::kFloat16);
+  Graph graph = build(m);
+  REQUIRE(promote_grid_chains(graph) > 0);
+  REQUIRE(optimize(graph));
+  REQUIRE(infer_shapes(graph));  // un nouvel appel ne refuse plus la grille float sous une image float16
+  Value x = random_floats({1, 3, 6, 8}, 1);
+  Value f = random_floats({1, 2, 6, 8}, 2);
+  x.type = f.type = DataType::F16;
+  for (float& v : x.f) v = ajp::kernels::ref::round_to_half(v);
+  for (float& v : f.f) v = ajp::kernels::ref::round_to_half(v);
+  CHECK(run(graph, std::vector<NamedValue>{{.name = "x", .value = x}, {.name = "flow", .value = f}}));
 }

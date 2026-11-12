@@ -27,7 +27,6 @@ inline constexpr double kAnimeExposureMaxE = 0.25;
 
 // Plages des réglages, incluses ; une valeur hors plage est refusée, jamais corrigée.
 namespace grade_limits {
-inline constexpr core::Range<double> kPaperWhite{80.0, 400.0};
 inline constexpr core::Range<double> kShadows{0.0, 0.8};
 inline constexpr core::Range<double> kHighlights{0.0, 1.0};
 inline constexpr core::Range<double> kBlackNits{0.0, 50.0};
@@ -61,14 +60,12 @@ struct SkinTones {
   friend bool operator==(const SkinTones&, const SkinTones&) = default;
 };
 
+// C41-07 : le grade d'une source déjà HDR (grade_native_hdr), la route native au blanc papier (truehdr_look
+// faux) et le blanc papier réglable (paper_white) n'avaient ni option ni clé de play.toml : retirés. Une
+// source HDR n'est pas gradée ; la route native place le blanc de la source à 203 nits ; le mode SDR sur une
+// sortie HDR10 le place au blanc papier fixe de 203 nits (borné à 75 % du pic).
 struct GradeSettings {
-  bool grade = true;              // grade activé
-  bool grade_native_hdr = false;  // grade aussi une source déjà HDR
-  // Route native (le défaut) : le blanc de la source entre dans le grade à 203 nits ; à l'écran, la pile de
-  // LUT et la dernière passe le portent vers 70 % du pic, les éclats au-dessus (render/output_tune.h).
-  // Faux : le blanc au blanc papier (paper_white). La clé de play.toml garde son nom d'avant (truehdr_look).
-  bool truehdr_look = true;
-  double paper_white = 203.0;  // nits, blanc papier
+  bool grade = true;  // grade activé
   double shadows = 0.15;
   // Éclats et grands aplats clairs : la montée au-dessus du blanc (spec_gain).
   double highlights_rtx = 0.25;
@@ -96,15 +93,14 @@ struct GradeSettings {
   friend bool operator==(const GradeSettings&, const GradeSettings&) = default;
 };
 
-// FieldOutOfRange en nommant le champ (« grade.paper_white »).
+// FieldOutOfRange en nommant le champ (« grade.shadows »).
 std::expected<void, Refusal> check_grade_settings(const GradeSettings& settings);
 
-// Ce qui est gradé, et comment.
+// Ce qui est gradé, et comment. Une sortie SDR prend le grade PQ ramené au SDR (sdr_tonemap) : l'ancien
+// grade SDR propre, jamais joué, est retiré (C41-07).
 enum class GradeMode : std::uint8_t {
-  Neutral,    // pas de grade : sortie non PQ, grade coupé, route Off ou source HDR non gradée
-  Native,     // SDR converti par libplacebo en PQ (route native, ou mode SDR sur une sortie HDR10)
-  NativeHdr,  // source déjà HDR, gradée parce que grade_native_hdr le demande
-  Sdr,        // sortie SDR : couleurs, noirs, contraste et saturation, sans marge au-dessus du blanc
+  Neutral,  // pas de grade : sortie non PQ, grade coupé, ou source HDR
+  Native,   // SDR converti par libplacebo en PQ (route native, ou mode SDR sur une sortie HDR10)
 };
 
 struct GradeContext {
@@ -127,9 +123,7 @@ struct GradeParams {
   double sdr_white = 203.0;
   double black_lo = 0.0;
   double black_hi = 0.0;
-  // Sortie SDR : 1, l'image de la cible est en BT.709 au gamma sdr_gamma, son blanc à `peak` nits.
-  double sdr_out = 0.0;
-  double sdr_gamma = 2.2;
+  double sdr_gamma = 2.2;  // l'exposant de la cible SDR BT.709 (sdr_tm)
   // Sortie SDR de la méthode « HDR anime » (sdr_tonemap) : 1, l'image SDR passe en PQ avant le grade, le
   // grade et la pile de LUT d'HDR travaillent comme sur un écran HDR de `peak` nits, puis une courbe par plan
   // ramène tm_white (les surfaces) au blanc SDR et tm_top (la marge des éclats du plan) juste sous lui.
@@ -171,7 +165,6 @@ struct GradeParams {
 // Le grade de la chaîne pour chaque sortie ; l'écran prend celui de sa cible (PQ ou SDR).
 struct GradeChoice {
   std::optional<GradeParams> pq;
-  std::optional<GradeParams> sdr;
   // Sortie SDR de la méthode « HDR anime » : le grade PQ, ramené au SDR plan par plan (sdr_tonemap).
   std::optional<GradeParams> sdr_anime;
   friend bool operator==(const GradeChoice&, const GradeChoice&) = default;
@@ -180,9 +173,6 @@ struct GradeChoice {
 struct GradeDecision {
   GradeMode mode = GradeMode::Neutral;
   GradeParams params;  // significatifs hors Neutral
-  // Où se place le blanc d'une source SDR dans une sortie PQ (hdr-reference-white de mpv) :
-  // 203 nits sur la route native (truehdr_look), le blanc papier sinon.
-  double source_white_nits = grade_limits::kSdrWhiteNits;
 };
 
 // Le grade PQ d'une source SDR, tourné vers une sortie SDR (méthode « HDR anime ») : sdr_tm, les bornes de la

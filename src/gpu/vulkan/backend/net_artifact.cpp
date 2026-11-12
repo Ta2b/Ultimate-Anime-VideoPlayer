@@ -293,6 +293,17 @@ void fields(Ar& ar, S& h)
 }
 
 template <class Ar, class S>
+void fields(Ar& ar, S& n)
+  requires std::is_same_v<std::remove_const_t<S>, PrecisionNotice>
+{
+  ar(n.layers);
+  ar(n.loss_measured);
+  ar(n.loss_db);
+  ar(n.gain_measured);
+  ar(n.gain_percent);
+}
+
+template <class Ar, class S>
 void fields(Ar& ar, S& a)
   requires std::is_same_v<std::remove_const_t<S>, ArtifactData>
 {
@@ -305,6 +316,7 @@ void fields(Ar& ar, S& a)
   ar(a.choices);
   ar(a.dispatches);
   ar(a.shaders);
+  ar(a.notice);
 }
 
 // Les énumérations relues restent dans leurs bornes (la dernière valeur de chacune).

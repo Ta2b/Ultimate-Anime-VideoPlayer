@@ -1,7 +1,6 @@
 #include "app/play/wizard.h"
 
 #include <algorithm>
-#include <format>
 
 #include "app/play/auto_config.h"
 
@@ -104,6 +103,13 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
           i18n::tr("Default video player: asked at the end of the assistant (General > Application)"));
   }
   return out;
+}
+
+bool engines_reviewed(const Wizard& wizard, int saved_step) {
+  if (std::ranges::find(wizard.steps, WizardStep::Engines) == wizard.steps.end()) return true;
+  if (std::ranges::find(wizard.skipped, WizardStep::Engines) != wizard.skipped.end()) return false;
+  const int engines = static_cast<int>(WizardStep::Engines);
+  return wizard.seen >= engines || saved_step >= engines;
 }
 
 bool make_default_requested(const Wizard& wizard) {

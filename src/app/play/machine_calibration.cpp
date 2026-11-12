@@ -189,6 +189,51 @@ ChainCandidate best_candidate(const std::vector<CandidateTrial>& tried) {
   return ChainCandidate{.span = false, .rife = false, .height = 0};
 }
 
+namespace {
+
+// Le poids d'une chaîne, dans l'ordre où best_candidate la préfère : le palier, RIFE comptant plus que tout.
+int weight(const ChainCandidate& chain) {
+  return (chain.span ? chain.height : 0) + (chain.rife ? 100'000 : 0);
+}
+
+}  // namespace
+
+std::string calibration_notice(const MachineCalibration& calibration) {
+  const ChainCandidate& chain = calibration.chosen;
+  const CandidateTrial* kept = nullptr;
+  const CandidateTrial* heavier = nullptr;  // le plus léger des essais plus lourds qui ne tenaient pas
+  for (const CandidateTrial& trial : calibration.tried) {
+    if (trial.chain == chain && trial.holds) kept = &trial;
+    if (!trial.holds && trial.lost_percent >= 0.0 && weight(trial.chain) > weight(chain) &&
+        (heavier == nullptr || weight(trial.chain) < weight(heavier->chain)))
+      heavier = &trial;
+  }
+  if (kept == nullptr)
+    return i18n::tr_format("Calibration done: no setting held the target, the lightest is kept ({}).",
+                           describe(chain));
+  const int top = calibration_heights().front();
+  std::vector<std::string> lowered;
+  if (!chain.span)
+    lowered.emplace_back(i18n::tr("SPAN off"));
+  else if (chain.height < top)
+    lowered.push_back(i18n::tr_format("working resolution {}p instead of {}p", chain.height, top));
+  if (!chain.rife) lowered.emplace_back(i18n::tr("no interpolation"));
+  std::string out;
+  if (lowered.empty()) {
+    out = i18n::tr_format("Calibration done: full quality kept, {:.1f} of {:.0f} frames per second measured.",
+                          kept->fps, kept->target_fps);
+  } else {
+    std::string what;
+    for (const std::string& part : lowered) what += (what.empty() ? "" : ", ") + part;
+    out = i18n::tr_format("Calibration done: {} to hold {:.1f} of {:.0f} frames per second.", what, kept->fps,
+                          kept->target_fps);
+  }
+  if (heavier != nullptr)
+    out += " " + i18n::tr_format("The next heavier setting lost {:.1f} % of its frames in this test.",
+                                 heavier->lost_percent);
+  return out;
+}
+
 PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
                                 const CalibrationModels& models) {
   base.preset = Preset::Custom;

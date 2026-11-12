@@ -102,7 +102,7 @@ std::expected<YuvPlanes, Refusal> VulkanKernelOps::plane_views_for(VkImage image
     if (auto ok = check(context_.fn().vkCreateImageView(context_.device(), &info, nullptr, &made.views[p]),
                         "vkCreateImageView(plan d'une image décodée)");
         !ok) {
-      if (p == 1) context_.fn().vkDestroyImageView(context_.device(), made.views[0], nullptr);
+      if (p == 1) destroy_view(made.views[0]);
       return std::unexpected(ok.error());
     }
   }
@@ -119,7 +119,7 @@ void VulkanKernelOps::release_plane_views() {
     return;
   }
   for (const PlaneViews& v : plane_views_) {
-    for (const VkImageView view : v.views) context_.fn().vkDestroyImageView(context_.device(), view, nullptr);
+    for (const VkImageView view : v.views) destroy_view(view);
   }
   plane_views_.clear();
 }

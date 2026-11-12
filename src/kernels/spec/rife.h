@@ -1,6 +1,19 @@
 // Contrat d'entrée de RIFE : remplissage mod-64 centré, valeurs du bord, couches constantes,
 // et recadrage inverse de la sortie.
 //
+// CE QUE FAIT LE LECTEUR (C50-03). RIFE reçoit le RGB déjà ingéré par la chaîne (la conversion de la source,
+// sa matrice, sa plage et sa chroma sont celles de l'ingestion, pas de RIFE) : rife_frames.comp et rife_input
+// (CUDA) posent a et b dans la fenêtre de rife_geometry, et le bord vaut 0 en RGB (le noir de la chaîne,
+// kStudioBlack de gpu/vulkan/backend/kernel_slice.cpp), quelle que soit la plage de la source. La sortie
+// n'est pas reconvertie en YUV : rife_crop sur le RGB. Les constantes de grille (plans 7 à 10) et l'instant
+// (plan 6) sont ci-dessous.
+//
+// CE QUI N'EST PLUS QUE DE LA RÉFÉRENCE. La conversion YUV propre à RIFE (rife_pad_luma, rife_pad_chroma,
+// kRifeMatrix, kRifeChromaFilter, kRifeSiting : bords en noir studio YUV, BT.709 forcé, chroma bilinéaire)
+// décrit le port d'origine, animejanai-inference-rtx. Le lecteur ne la suit plus ; elle ne sert qu'aux
+// tests de ref/rife.h, d'où des goldens qui peuvent rester verts sans rien dire du lecteur : ne pas s'en
+// servir pour juger le comportement réel.
+//
 // Repris de animejanai-inference-rtx@118c272 :
 //   src/aji_trt.cpp:1294-1385 (setup_rife : taille remplie, bords centrés pairs, 11 couches),
 //   src/aji_trt.cpp:3700-3830 (bords noir studio, BT.709, chroma bilinéaire, siting gauche),
@@ -55,8 +68,9 @@ constexpr bool rife_fits(int width, int height, int padded_width, int padded_hei
          padded_width % kRifeAlign == 0 && padded_height % kRifeAlign == 0;
 }
 
-// Les bords sont noir studio en YUV, quelle que soit la plage : Y = 16 et Cb = Cr = 128
-// niveaux 8 bits (std.AddBorders). En plage pleine, ce noir vaut donc 16/255 après la matrice.
+// Port d'origine, tests seulement : les bords sont noir studio en YUV, quelle que soit la plage : Y = 16 et
+// Cb = Cr = 128 niveaux 8 bits (std.AddBorders). En plage pleine, ce noir vaut donc 16/255 après la matrice.
+// Le lecteur remplit le RGB ingéré avec 0.
 constexpr std::uint16_t rife_pad_luma(Format f) {
   return static_cast<std::uint16_t>(16U * level_unit(f));
 }
@@ -65,8 +79,8 @@ constexpr std::uint16_t rife_pad_chroma(Format f) {
   return static_cast<std::uint16_t>(128U * level_unit(f));
 }
 
-// Conversion propre à RIFE, celle de rife_cuda.py : matrice BT.709 quelle que soit la source,
-// chroma 4:2:0 bilinéaire en siting gauche, à l'entrée comme à la sortie.
+// Port d'origine, tests seulement : conversion propre à RIFE, celle de rife_cuda.py : matrice BT.709 quelle
+// que soit la source, chroma 4:2:0 bilinéaire en siting gauche, à l'entrée comme à la sortie.
 inline constexpr Matrix kRifeMatrix = Matrix::Bt709;
 inline constexpr Filter kRifeChromaFilter = Filter::Bilinear;
 inline constexpr Siting kRifeSiting = Siting::Left;

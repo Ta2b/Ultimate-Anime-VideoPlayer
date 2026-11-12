@@ -7,6 +7,7 @@
 // white_nits. Le mélange se fait dans l'encodage de la cible, comme le fait ImGui partout.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <vector>
@@ -22,6 +23,10 @@ struct ImGuiPlatformIO;
 struct ImTextureData;
 
 namespace ajp::app::play {
+
+// Rectangles salis de l'interface gardée : au plus kMaxDirtyRects bandes, celles qui se touchent fondues.
+inline constexpr std::size_t kMaxDirtyRects = 8;
+void add_dirty_rect(std::vector<pl_rect2d>& rects, pl_rect2d added);
 
 class ImGuiLayer {
  public:
@@ -59,9 +64,9 @@ class ImGuiLayer {
   void destroy(ImTextureData& texture);
 
   // Dessine les listes de data dans `into` (la cible, ou la texture gardée, de même taille) ; bounds reçoit
-  // l'union des rectangles de découpe, en coordonnées de la texture.
+  // les rectangles de découpe disjoints, en coordonnées de la texture.
   std::expected<void, Refusal> draw_lists(const ImDrawData& data, const pl_frame& target, pl_tex into,
-                                          float white_nits, pl_rect2d* bounds);
+                                          float white_nits, std::vector<pl_rect2d>* bounds);
   std::expected<void, Refusal> blend_cache(pl_tex target_tex);
   bool cache_matches(std::uint64_t serial, const pl_frame& target, float white_nits) const;
 
@@ -75,7 +80,7 @@ class ImGuiLayer {
   float cache_white_ = 0.0F;
   pl_color_space cache_color_{};
   pl_color_repr cache_repr_{};
-  pl_rect2d cache_bounds_{};
+  std::vector<pl_rect2d> cache_bounds_;  // les bandes couvertes, une par rectangle disjoint
 };
 
 }  // namespace ajp::app::play
