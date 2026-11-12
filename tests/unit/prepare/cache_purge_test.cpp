@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "prepare/cache.h"
+#include "prepare/cache_io.h"
 #include "support.h"
 
 using namespace ajp::prepare;
@@ -103,4 +104,49 @@ TEST_CASE("Cache des moteurs : un dossier absent ne lève rien", "[prepare][cach
       purge_engine_cache(std::filesystem::temp_directory_path() / "ajp-absent-xyz");
   CHECK(result.removed == 0);
   CHECK(result.kept == 0);
+}
+
+TEST_CASE("Cache des moteurs : le dossier de travail d'une construction tuée est retiré (B05-01, B33-02)",
+          "[prepare][cache]") {
+  const test::TempDir dir;
+  // Orphelin d'une clé qui ne reviendra jamais (le pilote a changé) : daté de 400 jours.
+  auto old = reserve_stage(dir.path(), kStagePrefix, "engine:aji-v3-disparu.engine");
+  REQUIRE(old);
+  test::write_file(*old / "model.engine", std::string(1000, 'm'));
+  fs::last_write_time(*old, fs::file_time_type::clock::now() - 24h * 400);
+  // Une construction en cours : récente, jamais touchée.
+  auto live = reserve_stage(dir.path(), kStagePrefix, "engine:aji-v3-vivant.engine");
+  REQUIRE(live);
+  // Un dossier du même nom sans marqueur n'est pas le nôtre.
+  const fs::path foreign = dir / ".aji-build-etranger";
+  fs::create_directories(foreign);
+  fs::last_write_time(foreign, fs::file_time_type::clock::now() - 24h * 400);
+
+  const CachePurgeResult result = purge_engine_cache(dir.path());
+  CHECK(result.removed_stages == 1);
+  CHECK(result.removed_bytes >= 1000);
+  CHECK_FALSE(fs::exists(*old));
+  CHECK(fs::exists(*live));
+  CHECK(fs::exists(foreign));
+}
+
+TEST_CASE("Cache des moteurs : le verrou d'un moteur disparu part, pas celui d'un moteur gardé",
+          "[prepare][cache]") {
+  const test::TempDir dir;
+  const fs::path kept = engine(dir, "kept", 100, 1h);
+  const fs::path lock_kept = dir / "aji-v3-kept.engine.key-lock";
+  fs::last_write_time(lock_kept, fs::file_time_type::clock::now() - 24h * 90);
+  // Un verrou sans moteur : ancien, il part ; récent (première construction en cours), il reste.
+  const fs::path stale = dir / "aji-v3-vieux.engine.key-lock";
+  const fs::path young = dir / "aji-v3-jeune.engine.key-lock";
+  test::write_file(stale, "x");
+  test::write_file(young, "x");
+  fs::last_write_time(stale, fs::file_time_type::clock::now() - 24h * 90);
+
+  const CachePurgeResult result = purge_engine_cache(dir.path());
+  CHECK(result.removed_locks == 1);
+  CHECK_FALSE(fs::exists(stale));
+  CHECK(fs::exists(young));
+  CHECK(fs::exists(lock_kept));
+  CHECK(fs::exists(kept));
 }

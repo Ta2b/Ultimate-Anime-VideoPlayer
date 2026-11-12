@@ -2,6 +2,8 @@
 // src/model_identity.cpp:157-197.
 #include "prepare/cache.h"
 
+#include <cstdint>
+#include <format>
 #include <fstream>
 #include <string>
 #include <system_error>
@@ -29,34 +31,65 @@ struct StageGuard {
   ~StageGuard() { std::ignore = cleanup_stage(folder); }
 };
 
-// L'empreinte rangée à côté de l'entrée : vide si elle manque ou ne se lit pas.
-std::string stored_digest(const CacheEntry& entry) {
+// Ce que « .sha256 » garde : l'empreinte, puis la taille et la date du fichier au moment où elle a été écrite
+// (« <sha256> <taille> <date> »). Tant que le moteur garde la même taille et la même date, il n'est pas relu
+// ni rehaché à chaque ouverture de vidéo (B36-06) : des centaines de Mo lus du disque, cher à froid ou sur un
+// disque lent. Un ancien fichier (l'empreinte seule) se lit encore, et force le hachage.
+struct StoredDigest {
+  std::string digest;  // vide : absente ou illisible
+  bool stamped = false;
+  std::uintmax_t size = 0;
+  std::int64_t modified = 0;
+};
+
+// Taille et date du fichier, comme elles se rangent ; false s'il ne se lit pas.
+bool stamp_of(const fs::path& file, std::uintmax_t& size, std::int64_t& modified) {
+  std::error_code size_error;
+  std::error_code time_error;
+  size = fs::file_size(file, size_error);
+  modified = static_cast<std::int64_t>(fs::last_write_time(file, time_error).time_since_epoch().count());
+  return !size_error && !time_error;
+}
+
+StoredDigest stored_digest(const CacheEntry& entry) {
   std::ifstream in(entry.digest_file());
-  std::string digest;
-  if (!(in >> digest) || !is_sha256_hex(digest)) return {};
-  return digest;
+  StoredDigest stored;
+  if (!(in >> stored.digest) || !is_sha256_hex(stored.digest)) return {};
+  if (in >> stored.size >> stored.modified) stored.stamped = true;
+  return stored;
 }
 
 // Écrit l'empreinte par un temporaire renommé ; un échec la laisse absente, la reprise suivante la refait.
 void store_digest(const CacheEntry& entry, const std::string& digest) {
+  std::uintmax_t size = 0;
+  std::int64_t modified = 0;
+  std::string text = digest;
+  if (stamp_of(entry.destination, size, modified)) text += std::format(" {} {}", size, modified);
   std::ignore =
-      core::write_text_atomically(entry.digest_file(), digest + '\n');  // « \n » seul, sous Windows aussi
+      core::write_text_atomically(entry.digest_file(), text + '\n');  // « \n » seul, sous Windows aussi
 }
 
 // L'entrée publiée a-t-elle encore les octets de sa publication (P2.31) ? Une entrée d'avant l'empreinte
 // la reçoit ici, sous le verrou de la clé seulement (locked) : sans lui, un processus qui lit l'ancienne
 // entrée pouvait écrire son empreinte après celle du remplaçant qu'un autre venait de publier (A05-06).
 // Sans verrou, une empreinte manquante rend false : l'appelant passe par le chemin verrouillé.
+// Une empreinte qui porte la taille et la date du fichier et les retrouve intactes se croit sans relecture.
 std::expected<bool, Refusal> intact(const CacheEntry& entry, bool locked) {
-  const std::string stored = stored_digest(entry);
-  if (stored.empty() && !locked) return false;
+  const StoredDigest stored = stored_digest(entry);
+  if (stored.digest.empty() && !locked) return false;
+  if (stored.stamped) {
+    std::uintmax_t size = 0;
+    std::int64_t modified = 0;
+    if (stamp_of(entry.destination, size, modified) && size == stored.size && modified == stored.modified)
+      return true;
+  }
   auto digest = sha256_file_known(entry.destination);
   if (!digest) return std::unexpected(digest.error());
-  if (stored.empty()) {
+  if (stored.digest.empty()) {
     store_digest(entry, *digest);
     return true;
   }
-  return stored == *digest;
+  return stored.digest == *digest;
 }
 
 // L'entrée publiée se reprend si elle est intacte (son empreinte revérifiée, P2.31).
@@ -125,8 +158,9 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
   const StageGuard stage(std::move(*folder));
   const fs::path output = stage.folder / "model.engine";
   if (auto made = produce(output); !made) return std::unexpected(made.error());
-  if (stop.stop_requested())
-    return std::unexpected(Refusal{RefusalCode::Cancelled, "annulé avant publication"});
+  // Un arrêt demandé après la fin de la production n'est pas honoré ici : le moteur est complet et vérifié,
+  // sa publication est atomique et rapide, et le jeter perdrait des minutes de construction (B05-04). Un
+  // arrêt demandé PENDANT la production, lui, a fait rendre Cancelled à produce plus haut.
   if (!is_published(output)) {
     return std::unexpected(
         Refusal{RefusalCode::BuilderFailed, "sortie vide ou absente : " + utf8_path(output)});

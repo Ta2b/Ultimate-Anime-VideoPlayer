@@ -3,6 +3,7 @@
 // de sortie et place libre dans le refus, aucun moteur incomplet publié.
 #include "prepare/builder.h"
 
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <format>
@@ -11,9 +12,12 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include <spdlog/logger.h>
 
+#include "core/file_sync.h"
+#include "core/text.h"
 #include "prepare/cache.h"
 #include "prepare/cache_io.h"
 #include "prepare/key_lock.h"
@@ -85,6 +89,17 @@ std::expected<void, Refusal> judge(const ProcessExit& exit, const TrtexecProgres
   return {};
 }
 
+// Sous Windows, trtexec relit sa ligne de commande dans la page ANSI du système : un chemin qu'elle ne sait
+// pas écrire et qui n'a pas de nom court 8.3 (volume sans 8.3) y deviendrait « ? ». On le sait avant de
+// lancer : le refus dit quoi déplacer au lieu d'envoyer vers la place libre (B05-06). Toujours vide hors de
+// Windows.
+std::string unreachable_by_trtexec(const std::vector<fs::path>& paths) {
+  for (const fs::path& path : paths) {
+    if (!ansi_command_path(path)) return utf8_path(path);
+  }
+  return {};
+}
+
 // Le verrou du GPU (device_timing_cache), sans attendre s'il est libre ; sinon l'OSD dit
 // pourquoi la construction ne démarre pas, et l'attente reste annulable.
 std::expected<KeyLock, Refusal> lock_device(const fs::path& timing_cache, gpu::Progress& progress) {
@@ -92,8 +107,31 @@ std::expected<KeyLock, Refusal> lock_device(const fs::path& timing_cache, gpu::P
   lock_file += ".build-lock";
   auto held = KeyLock::acquire(lock_file, progress.stop, LockWait::TryOnly);
   if (held || held.error().code != RefusalCode::CacheBusy) return held;
-  report(progress, 0.0F, "En attente d'une autre construction sur ce GPU");
+  report(progress, 0.0F, "Waiting for another build on this GPU");
   return KeyLock::acquire(lock_file, progress.stop);
+}
+
+// Cette ligne d'erreur de trtexec parle-t-elle du timing cache ?
+bool mentions_cache(std::string_view line) {
+  const std::string lower = core::ascii_lower(line);
+  return lower.find("timing cache") != std::string::npos || lower.find("timingcache") != std::string::npos ||
+         lower.find("timing-cache") != std::string::npos;
+}
+
+// Un échec ou un plantage avec le cache se refait sans lui ; pas un délai (le refaire doublerait l'attente),
+// pas un disque plein, pas une annulation.
+bool retries_without_cache(RefusalCode code) {
+  return code == RefusalCode::BuilderFailed || code == RefusalCode::BuilderCrashed;
+}
+
+// Le cache accusé est mis de côté (« .bad ») : il ne gêne plus, et reste pour qui voudra le regarder.
+void set_aside_bad_cache(const fs::path& persistent, spdlog::logger& log) {
+  fs::path bad = persistent;
+  bad += ".bad";
+  if (const std::error_code error = core::rename_retrying(persistent, bad)) {
+    log.warn("timing cache fautif {} non mis de côté : {}", utf8_path(persistent.filename()),
+             error.message());
+  }
 }
 
 // trtexec réécrit son timing cache sur place, sans temporaire : tué pendant
@@ -193,12 +231,13 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec
     log_->info("{} : « {} » retiré de la ligne de commande (TensorRT 11)", model.id, flag);
   }
 
-  report(progress, 0.0F, "Préparation");
-  // Le détenteur de la clé attend le GPU (kMaxLockWait au plus) puis lance trtexec (config_.timeout) :
-  // une minute de plus pour la vérification et la publication (A05-02).
+  report(progress, 0.0F, "Preparing");
+  // Le détenteur de la clé attend le GPU (kMaxLockWait au plus) puis lance trtexec, deux fois au pire (le
+  // nouvel essai sans timing cache) ; une minute de plus pour la vérification et la publication (A05-02,
+  // B05-07).
   const CacheEntry entry{.destination = plan->engine,
                          .max_wait = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             kMaxLockWait + config_.timeout + std::chrono::minutes(1))};
+                             kMaxLockWait + 2 * config_.timeout + std::chrono::minutes(1))};
   auto produced = produce_once(
       entry, [&](const fs::path& output) { return run(*plan, model, *source, output, progress); },
       progress.stop);
@@ -209,7 +248,7 @@ std::expected<gpu::Artifact, Refusal> TrtexecBuilder::build(const gpu::ModelSpec
   }
   if (*produced == Production::Reused) {
     log_->info("{} {} : moteur en cache {}", model.id, plan->label, plan->engine_file);
-    report(progress, 1.0F, "Moteur en cache");
+    report(progress, 1.0F, "Engine in cache");
   }
   return gpu::Artifact{.cache_key = plan->engine_file, .path = plan->engine};
 }
@@ -230,6 +269,17 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   }
   const fs::path staged_cache = output.parent_path() / "timing.cache";
   const fs::path staged_layers = output.parent_path() / "layers.json";
+  if (const std::string bad = unreachable_by_trtexec({model.onnx_path, output, staged_layers, staged_cache});
+      !bad.empty()) {
+    return std::unexpected(
+        Refusal{RefusalCode::CacheIo,
+                "trtexec ne sait pas lire ce chemin (nom hors de la page ANSI de Windows, pas de nom court "
+                "8.3 sur ce "
+                "volume) : " +
+                    bad +
+                    ". Placez les modèles et le dossier des moteurs dans un chemin en lettres latines, "
+                    "ou activez « Utiliser Unicode UTF-8 » dans les paramètres régionaux de Windows."});
+  }
   const bool cached = stage_timing_cache(timing_cache, staged_cache, *log_);
   const ProcessSpec spec{
       .program = config_.trtexec,
@@ -241,6 +291,8 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
       .timeout = config_.timeout,
   };
   log_->info("{} {} : construction de {}", model.id, plan.label, plan.engine_file);
+  // Une ligne d'erreur de trtexec qui parle du cache : le cache est alors le coupable probable (B05-03).
+  bool cache_complaint = false;
   // Un essai de trtexec, son journal ajouté à celui du moteur (vidé au premier).
   const auto attempt = [&](std::ios::openmode mode) -> std::expected<void, Refusal> {
     std::ofstream log_file(plan.log_file, mode);
@@ -249,6 +301,7 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
         spec,
         [&](std::string_view line) {
           log_file << line << '\n';
+          if (line.find("[E]") != std::string_view::npos && mentions_cache(line)) cache_complaint = true;
           if (auto step = parsed.feed(line)) report(progress, step->fraction, step->stage);
         },
         progress.stop);
@@ -266,16 +319,25 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
     return verdict;
   };
   auto built = attempt(std::ios::trunc);
-  // Le timing cache persistant n'est remplacé qu'après une réussite : s'il fait échouer trtexec (abîmé,
-  // écrit par un autre build), chaque construction sur ce GPU échouerait. Un échec avec lui se refait
-  // une fois sans lui, et la réussite le remplace (A05-03).
-  if (!built && cached && built.error().code == RefusalCode::BuilderFailed) {
-    log_->warn("{} {} : trtexec a échoué avec le timing cache {}, nouvel essai sans lui", model.id,
-               plan.label, utf8_path(timing_cache.filename()));
+  // Le timing cache persistant n'est remplacé qu'après une réussite : s'il fait échouer ou planter trtexec
+  // (abîmé, écrit par un autre build), chaque construction sur ce GPU échouerait. Un échec ou un plantage
+  // avec lui se refait une fois sans lui, sur les deux systèmes (sous Windows un abort() sort en code 3, sous
+  // Linux c'est un signal : B05-02). Le cache neuf ne remplace l'ancien que si l'on a de quoi croire l'ancien
+  // fautif (B05-03).
+  bool replace_cache = true;
+  bool cache_suspect = false;
+  if (!built && cached && retries_without_cache(built.error().code)) {
+    const RefusalCode first = built.error().code;
+    cache_suspect = first == RefusalCode::BuilderCrashed || cache_complaint;
+    log_->warn("{} {} : trtexec a échoué avec le timing cache {} ({}), nouvel essai sans lui", model.id,
+               plan.label, utf8_path(timing_cache.filename()), name(first));
     std::error_code removed;
     fs::remove(staged_cache, removed);
-    report(progress, 0.0F, "Préparation");
+    report(progress, 0.0F, "Preparing");
     built = attempt(std::ios::app);
+    // Réussite sans le cache : un plantage ou une plainte sur le cache l'accuse ; un échec d'une autre sorte
+    // (mémoire du GPU, pilote) est passager, et l'ancien cache, riche de toutes les mesures, reste.
+    replace_cache = cache_suspect;
   }
   if (!built) return built;
   if (!is_published(output)) {
@@ -293,7 +355,14 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   if (check_) {
     if (auto usable = check_(output); !usable) return usable;
   }
-  keep_timing_cache(staged_cache, timing_cache, *log_);
+  if (replace_cache) {
+    if (cache_suspect) set_aside_bad_cache(timing_cache, *log_);
+    keep_timing_cache(staged_cache, timing_cache, *log_);
+  } else {
+    log_->info(
+        "{} {} : l'échec avec le timing cache venait d'ailleurs (aucune mention du cache) : cache gardé",
+        model.id, plan.label);
+  }
   keep_layer_info(staged_layers, plan, model.id, *log_);
   return {};
 }

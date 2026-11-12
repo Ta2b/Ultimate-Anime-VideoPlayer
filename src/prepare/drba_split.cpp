@@ -15,6 +15,7 @@
 
 #include "core/file_sync.h"
 #include "core/utf8_path.h"
+#include "prepare/derived_files.h"
 #include "prepare/model_source.h"
 #include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
@@ -435,8 +436,26 @@ std::string format_drba_manifest(const DrbaFusedManifest& manifest) {
   text += std::format("size {} {}\n", manifest.height, manifest.width);
   text += std::format("tail {}\n", manifest.plan.tail);
   for (const std::string& piece : manifest.pieces) text += std::format("piece {}\n", piece);
+  text += format_sizes(manifest.sizes);
   return text;
 }
+
+namespace {
+
+// Ce qu'un manifeste lu doit encore vérifier : complet, accepté par les noyaux, ses morceaux et ses tailles
+// en nombre. Rien : il est bon.
+std::optional<std::string> manifest_problem(const DrbaFusedManifest& manifest, bool complete) {
+  if (!complete) return "en-tête, taille ou réduction absents";
+  if (!kernels::drba_fused_size_valid(manifest.plan, manifest.height, manifest.width))
+    return "découpage ou taille que les noyaux ne prennent pas";
+  if (manifest.pieces.size() != static_cast<std::size_t>(kernels::kDrbaFusedBlocks) + 1)
+    return "nombre de morceaux différent de 4";
+  if (!manifest.sizes.empty() && manifest.sizes.size() != manifest.pieces.size())
+    return "autant de tailles que de morceaux attendu";
+  return std::nullopt;
+}
+
+}  // namespace
 
 std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view text) {
   const auto bad = [](std::string detail) {
@@ -484,15 +503,15 @@ std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view t
       if (rest.empty() || rest.find_first_of("/\\") != std::string_view::npos || rest == "." || rest == "..")
         return bad("morceau « " + std::string(rest) + " »");
       manifest.pieces.emplace_back(rest);
+    } else if (key == "sizes") {
+      auto sizes = parse_sizes(rest);
+      if (!sizes) return bad("tailles illisibles");
+      manifest.sizes = std::move(*sizes);
     } else {
       return bad("champ « " + std::string(key) + " » inconnu");
     }
   }
-  if (!header || !has_size || !has_tail) return bad("en-tête, taille ou réduction absents");
-  if (!kernels::drba_fused_size_valid(manifest.plan, manifest.height, manifest.width))
-    return bad("découpage ou taille que les noyaux ne prennent pas");
-  if (manifest.pieces.size() != static_cast<std::size_t>(kernels::kDrbaFusedBlocks) + 1)
-    return bad("nombre de morceaux différent de 4");
+  if (const auto problem = manifest_problem(manifest, header && has_size && has_tail)) return bad(*problem);
   return manifest;
 }
 
@@ -503,12 +522,6 @@ bool is_drba_fused_manifest(const std::filesystem::path& path) {
 namespace {
 
 using core::write_atomic;  // P5.11 : l'écriture atomique du projet, avec fsync
-
-bool exists_nonempty(const std::filesystem::path& file) {
-  std::error_code error;
-  const auto size = std::filesystem::file_size(file, error);
-  return !error && size > 0;
-}
 
 }  // namespace
 
@@ -524,11 +537,9 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
   // Déjà dérivé : le manifeste est écrit en dernier, sa présence dit que les morceaux y sont.
   if (std::ifstream known(manifest_path); known) {
     const std::string text{std::istreambuf_iterator<char>(known), std::istreambuf_iterator<char>()};
-    if (const auto parsed = parse_drba_manifest(text);
-        parsed && parsed->height == height && parsed->width == width &&
-        std::ranges::all_of(parsed->pieces, [&](const std::string& piece) {
-          return exists_nonempty(dir / core::path_from_utf8(piece));
-        }))
+    if (const auto parsed = parse_drba_manifest(text); parsed && parsed->height == height &&
+                                                       parsed->width == width && !parsed->sizes.empty() &&
+                                                       pieces_intact(dir, *parsed))
       return manifest_path;
   }
   auto bytes = read_onnx_bytes(drba_onnx);
@@ -542,11 +553,13 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
   DrbaFusedManifest manifest{.height = height, .width = width, .plan = split->plan};
   for (const DrbaPiece& piece : *pieces) {
     const std::string file = std::format("{}-{}.onnx", stem, piece.name);
-    if (!exists_nonempty(dir / core::path_from_utf8(file))) {
+    // Un morceau déjà là n'est gardé que s'il a la taille voulue : un morceau tronqué est réécrit (B04-02).
+    if (!file_has_size(dir / core::path_from_utf8(file), piece.model.size())) {
       if (auto written = write_atomic(dir / core::path_from_utf8(file), piece.model); !written)
         return std::unexpected(std::move(written.error()));
     }
     manifest.pieces.push_back(file);
+    manifest.sizes.push_back(piece.model.size());
   }
   const std::string text = format_drba_manifest(manifest);
   const auto* raw = reinterpret_cast<const std::byte*>(text.data());

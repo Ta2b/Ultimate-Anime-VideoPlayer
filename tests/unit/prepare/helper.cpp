@@ -54,6 +54,21 @@ int fake_trtexec(std::string_view mode, const std::vector<std::string>& args) {
     return 1;
   }
   say("[10/18/2026-15:29:26] [I] Finished parsing network model. Parse time: 0.01");
+  // Modes qui n'échouent que si le timing cache reçu n'est pas vide : le cache persistant accuse ou non.
+  std::error_code cache_error;
+  const bool has_cache =
+      fs::exists(timing_cache, cache_error) && fs::file_size(timing_cache, cache_error) > 0;
+  if (mode == "crash-with-cache" && has_cache) std::abort();
+  if (mode == "fail-with-cache" && has_cache) {  // panne passagère : ne parle pas du cache
+    say("[10/18/2026-15:29:26] [E] Error[2]: out of memory");
+    say("&&&& FAILED TensorRT.trtexec [TensorRT v110300] [b99]");
+    return 1;
+  }
+  if (mode == "bad-cache" && has_cache) {  // le cache est nommé dans l'erreur
+    say("[10/18/2026-15:29:26] [E] Error[6]: Could not deserialize timing cache");
+    say("&&&& FAILED TensorRT.trtexec [TensorRT v110300] [b99]");
+    return 1;
+  }
   if (mode == "crash") {
     append_line(timing_cache, "à moitié");  // comme trtexec tué pendant qu'il écrit son cache
     std::abort();

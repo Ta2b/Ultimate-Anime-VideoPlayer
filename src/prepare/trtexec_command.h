@@ -29,7 +29,9 @@ enum class Recipe : std::uint8_t {
   Upscaler,
   // RIFE : graphe FP16 dont les GridSample et le calcul de leur grille restent
   // en îlots FP32 (tools/convert_rife_fp16.py du fork). --stronglyTyped fait
-  // suivre ces types au constructeur au lieu de tout passer en FP16.
+  // suivre ces types au constructeur au lieu de tout passer en FP16. Gardé pour un RIFE ou un modèle à
+  // GridSample de plus de kTunedMaxNodes nœuds donné par --rife-model ou --model : aucun modèle livré n'y va
+  // depuis le retrait de GMFSS, mais la branche n'est pas morte pour un fichier de l'utilisateur (B05-09).
   Fp32Islands,
   // Le même, petit graphe : niveau d'optimisation 5 en plus (model_source.h, kTunedMaxNodes).
   Fp32IslandsTuned,

@@ -1,8 +1,15 @@
 // Le rythme de l'accueil au repos (app/play/home_idle.h, A24-17).
 #include "app/play/home_idle.h"
 
+#include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <string>
 
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_init.h>
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/home_screen.h"
@@ -61,6 +68,47 @@ TEST_CASE("Accueil : un fichier glissé se trie par son extension, sans lire le 
   other.type = SDL_EVENT_KEY_DOWN;
   CHECK_FALSE(dropped(other));
   raise_for_forwarded(other);
+}
+
+TEST_CASE(
+    "Attente : une vidéo reçue pendant l'assistant, l'installation ou la calibration n'est pas perdue "
+    "(B29-04)",
+    "[app][home]") {
+  REQUIRE(SDL_Init(SDL_INIT_EVENTS));
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-deferred-drops";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::string video = (dir / "ep02.mkv").string();
+  const std::string text = (dir / "notes.txt").string();
+  std::ofstream(video) << "v";
+  std::ofstream(text) << "t";
+  const auto drop = [](const std::string& path) {
+    SDL_Event event{};
+    event.type = SDL_EVENT_DROP_FILE;
+    event.drop.data = path.c_str();
+    return event;
+  };
+  SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+  {
+    DeferredDrops drops;
+    SDL_Event key{};
+    key.type = SDL_EVENT_KEY_DOWN;
+    CHECK_FALSE(drops.keep(key));   // un autre événement suit son chemin
+    CHECK(drops.keep(drop(text)));  // un dépôt qui n'est pas une vidéo est écarté, sans rien garder
+    CHECK(drops.files().empty());
+    CHECK(drops.keep(drop(video)));
+    REQUIRE(drops.files().size() == 1);
+  }  // la fin de l'attente rend la vidéo à la file
+  std::optional<std::string> back;
+  const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!back && std::chrono::steady_clock::now() < until) {
+    SDL_Event event;
+    if (SDL_WaitEventTimeout(&event, 50) && event.type == SDL_EVENT_DROP_FILE && event.drop.data != nullptr)
+      back = event.drop.data;
+  }
+  CHECK(back == video);
+  SDL_Quit();
+  std::filesystem::remove_all(dir);
 }
 
 }  // namespace ajp::app::play

@@ -140,7 +140,7 @@ TEST_CASE("TrtexecProgress : repères dans l'ordre, jamais de recul", "[prepare]
   const auto parsing =
       progress.feed("[10/18/2026-15:29:26] [I] Finished parsing network model. Parse time: 0.02");
   REQUIRE(parsing);
-  CHECK(parsing->stage == "Choix des tactiques");
+  CHECK(parsing->stage == "Choosing tactics");
   CHECK_FALSE(progress.feed("[I] Start parsing network model."));  // repère antérieur : ignoré
   CHECK_FALSE(progress.passed());
   CHECK(progress.feed("&&&& PASSED TensorRT.trtexec")->fraction == 1.0F);

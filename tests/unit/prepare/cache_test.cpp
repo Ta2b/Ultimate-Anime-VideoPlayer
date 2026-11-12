@@ -109,6 +109,24 @@ TEST_CASE("produce_once : une production, puis réutilisation sans verrou", "[pr
   CHECK(test::stage_count(entry.destination.parent_path()) == 0);
 }
 
+TEST_CASE("produce_once : un arrêt demandé après la production n'en jette pas le moteur (B05-04)",
+          "[prepare][cache]") {
+  const test::TempDir dir;
+  const CacheEntry entry{.destination = dir / "moteur.engine"};
+  std::stop_source stop;
+  auto produced = produce_once(
+      entry,
+      [&](const test::fs::path& output) {
+        auto written = write_output(output, "moteur complet");
+        stop.request_stop();  // « Annuler et regarder » pendant la vérification qui suit trtexec
+        return written;
+      },
+      stop.get_token());
+  REQUIRE(produced);
+  CHECK(*produced == Production::Produced);
+  CHECK(is_published(entry.destination));
+}
+
 TEST_CASE("produce_once : un échec ne publie rien et ne laisse rien", "[prepare][cache]") {
   const test::TempDir dir;
   const CacheEntry entry{.destination = dir / "a.engine"};
@@ -238,13 +256,26 @@ TEST_CASE("produce_once : une entrée abîmée depuis sa publication est refaite
     return write_output(output, "moteur");
   };
   REQUIRE(produce_once(entry, produce) == Production::Produced);
-  CHECK(test::read_file(entry.digest_file()) == sha256_hex("moteur") + "\n");
+  // L'empreinte porte aussi la taille et la date du moteur : pas de relecture tant qu'elles ne bougent pas
+  // (B36-06).
+  CHECK(test::read_file(entry.digest_file()).starts_with(sha256_hex("moteur") + " 6 "));
   REQUIRE(produce_once(entry, produce) == Production::Reused);
+  // Mêmes taille et date : crue sans relire (la limite voulue de la mémoire).
+  const auto stamp = test::fs::last_write_time(entry.destination);
   test::write_file(entry.destination, "moteuR");  // même taille, autres octets
+  test::fs::last_write_time(entry.destination, stamp);
+  CHECK(produce_once(entry, produce) == Production::Reused);
+  // Une autre date : relu, haché, refait. (Les horloges de fichiers sont grossières : la date est forcée.)
+  test::fs::last_write_time(entry.destination, stamp + std::chrono::seconds(5));
   CHECK(produce_once(entry, produce) == Production::Produced);
   CHECK(made == 2);
   CHECK(test::read_file(entry.destination) == "moteur");
-  // Une entrée d'avant l'empreinte se reprend et la reçoit.
+  // Une entrée d'avant l'empreinte se reprend et la reçoit ; une empreinte seule, sans taille ni date (ancien
+  // format), se lit toujours et force le hachage.
+  test::write_file(entry.digest_file(), sha256_hex("moteur") + "\n");
+  CHECK(produce_once(entry, produce) == Production::Reused);
+  test::write_file(entry.digest_file(), sha256_hex("autre") + "\n");
+  CHECK(produce_once(entry, produce) == Production::Produced);
   test::fs::remove(entry.digest_file());
   CHECK(produce_once(entry, produce) == Production::Reused);
   CHECK(test::fs::exists(entry.digest_file()));
