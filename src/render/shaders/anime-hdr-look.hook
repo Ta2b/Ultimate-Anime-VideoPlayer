@@ -12,7 +12,8 @@
 //     mélangée à son entrée par sa propre intensité (look_mix, look_mix2 ... look_mix20 ; 0 : la LUT est sautée) ;
 //     toutes à 0 : passe sautée (look_on), image identique octet pour octet. Une seule LUT d'HDR (look_pq) met
 //     toute la chaîne en codes PQ. La pile n'est pas réduite à une table : entre deux points, une table
-//     interpole la pile entière au lieu de la parcourir (audit A41-01).
+//     interpole la pile entière au lieu de la parcourir (audit A41-01). Le réglage look_table (éteint par
+//     défaut) le fait pourtant, à 129 points, pour le temps : render/look_table.h reprend ce texte.
 // Les intensités, les textures et la chaîne sont écrites à l'exécution aux marques LOOK (render/grade.cpp) ; les
 // blocs de texture AJG_LUT suivent ce texte, un par LUT distincte.
 

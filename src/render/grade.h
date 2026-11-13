@@ -67,6 +67,12 @@ class Grade {
   // garde les compare par identité, sans copie (C41-05).
   std::array<std::shared_ptr<const CubeLut>, kLookSlots> shared_looks() const;
 
+  // Le look en une table (GradeParams::look_table, render/look_table.h) : vrai quand hooks() la pose à la
+  // place du hook exact ; faux sans demande, ou si le GPU l'a refusée (le hook exact reste alors).
+  bool look_table_active() const;
+  // Les constructions de la table depuis sa création (tests).
+  std::uint64_t look_table_builds() const;
+
   // Dans l'ordre d'exécution : la passe du grade (ses trois passes dans un hook), le look, puis le vrai noir.
   std::span<const pl_hook* const> hooks() const;
   // La valeur posée d'un //!PARAM de la passe du grade (après set_params, set_video_fps, set_kwin_match),

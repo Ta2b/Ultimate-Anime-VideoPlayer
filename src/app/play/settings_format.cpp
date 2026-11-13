@@ -100,6 +100,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"look_contrast", s.look_contrast},
                                    {"look_highlight", s.look_highlight},
                                    {"flash_guard", s.flash_guard},
+                                   {"look_table", s.look_table},
                                    {"face_skin", s.face_skin},
                                    {"surface_white", s.surface_white},
                                    {"anime_contrast", g.anime_contrast},

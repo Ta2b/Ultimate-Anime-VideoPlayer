@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "render/look_table.h"
 #include "render/output_tune.h"
 #include "render/shaders.h"
 
@@ -91,21 +92,31 @@ std::string lut_input(const CubeLut& lut) {
                      hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
 }
 
-// Le texte du hook du look pour les LUT posées. Les marques //@LOOK_...@ du fichier reçoivent les intensités
-// (un //!PARAM par emplacement, réglable sans relire le hook), les textures et la chaîne : chaque emplacement
-// occupé lit sa LUT et s'y mélange, dans l'ordre. Deux emplacements de même contenu partagent une texture
-// (la pile par défaut : 11 emplacements, 4 textures). Les blocs //!TEXTURE vont derrière le texte : le
-// corps d'une texture court jusqu'à la prochaine directive.
-std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
+// Les LUT distinctes des emplacements, dans l'ordre de leurs textures (AJG_LUT, AJG_LUT2…), et la texture
+// que lit chaque emplacement. Deux emplacements de même contenu partagent une texture (la pile par défaut :
+// 19 emplacements, 4 textures).
+struct LookTextures {
   std::vector<const CubeLut*> distinct;
   std::array<std::size_t, kLookSlots> texture{};
+};
+
+LookTextures look_textures(const std::array<const CubeLut*, kLookSlots>& luts) {
+  LookTextures out;
   for (std::size_t i = 0; i < kLookSlots; ++i) {
     if (luts[i] == nullptr) continue;
     const auto same = std::ranges::find_if(
-        distinct, [&](const CubeLut* seen) { return seen == luts[i] || *seen == *luts[i]; });
-    texture[i] = static_cast<std::size_t>(same - distinct.begin());
-    if (same == distinct.end()) distinct.push_back(luts[i]);
+        out.distinct, [&](const CubeLut* seen) { return seen == luts[i] || *seen == *luts[i]; });
+    out.texture[i] = static_cast<std::size_t>(same - out.distinct.begin());
+    if (same == out.distinct.end()) out.distinct.push_back(luts[i]);
   }
+  return out;
+}
+
+// Le texte du hook du look pour les LUT posées, sans les blocs de texture. Les marques //@LOOK_...@ du
+// fichier reçoivent les intensités (un //!PARAM par emplacement, réglable sans relire le hook), les textures
+// et la chaîne : chaque emplacement occupé lit sa LUT et s'y mélange, dans l'ordre. Le look en une table
+// (render/look_table.h) en reprend le GLSL.
+std::string look_glsl(const std::array<const CubeLut*, kLookSlots>& luts, const LookTextures& textures) {
   std::string params;
   std::string chain = "vec3 ajl_chain(vec3 c) {\n";
   for (std::size_t i = 0; i < kLookSlots; ++i) {
@@ -120,11 +131,12 @@ std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
     chain += std::format(
         "    if ({0} > 0.0) {{\n        vec3 pos = (clamp({4}, 0.0, 1.0) * {1}.0 + 0.5) / {2}.0;\n"
         "        c = mix(c, clamp({3}_tex(pos).rgb, 0.0, 1.0), {0});\n    }}\n",
-        mix, luts[i]->size - 1, luts[i]->size, slot_name("AJG_LUT", texture[i]), lut_input(*luts[i]));
+        mix, luts[i]->size - 1, luts[i]->size, slot_name("AJG_LUT", textures.texture[i]),
+        lut_input(*luts[i]));
   }
   chain += "    return c;\n}\n";
   std::string binds;
-  for (std::size_t t = 0; t < distinct.size(); ++t)
+  for (std::size_t t = 0; t < textures.distinct.size(); ++t)
     binds += std::format("//!BIND {}\n", slot_name("AJG_LUT", t));
   std::string text(shaders::anime_hdr_look);
   const auto replace = [&text](std::string_view mark, const std::string& with) {
@@ -134,9 +146,17 @@ std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
   replace("//@LOOK_PARAMS@", params);
   replace("//@LOOK_BINDS@\n", binds);  // sans LUT, la ligne disparaît : une ligne vide couperait l'en-tête
   replace("//@LOOK_CHAIN@", chain);
+  return text;
+}
+
+// Le hook entier : le texte, puis ses blocs //!TEXTURE (le corps d'une texture court jusqu'à la prochaine
+// directive).
+std::string look_text(const std::array<const CubeLut*, kLookSlots>& luts) {
+  const LookTextures textures = look_textures(luts);
+  std::string text = look_glsl(luts, textures);
   text += '\n';
-  for (std::size_t t = 0; t < distinct.size(); ++t)
-    text += lut_texture_block(*distinct[t], slot_name("AJG_LUT", t));
+  for (std::size_t t = 0; t < textures.distinct.size(); ++t)
+    text += lut_texture_block(*textures.distinct[t], slot_name("AJG_LUT", t));
   return text;
 }
 
@@ -220,6 +240,12 @@ struct Grade::Impl {
     return out;
   }
   void write_params();
+  // Le look en une table (GradeParams::look_table) : créée au premier besoin (34 Mo), ses LUT refaites
+  // après set_looks ; refusée, le hook exact reste.
+  std::unique_ptr<LookTable> table;
+  bool table_refused = false;
+  bool table_stale = true;  // les LUT de la table ne sont plus celles posées
+  void put_table();
 
   Impl() = default;
   Impl(const Impl&) = delete;
@@ -271,6 +297,7 @@ std::expected<void, Refusal> Grade::set_looks(const std::array<const CubeLut*, k
     if (!sources[i]) sources[i] = std::make_shared<const CubeLut>(*luts[i]);
   }
   impl_->sources = std::move(sources);
+  impl_->table_stale = true;
   impl_->write_params();  // les paramètres repartent dans le nouveau hook
   return {};
 }
@@ -285,6 +312,7 @@ std::expected<void, Refusal> Grade::set_looks(
   impl_->look = std::move(*look);
   impl_->hooks[1] = impl_->look.hook;
   impl_->sources = luts;
+  impl_->table_stale = true;
   impl_->write_params();
   return {};
 }
@@ -338,6 +366,48 @@ void Grade::Impl::write_params() {
     put("an_spark_hi", white);
   }
   put_output();
+  put_table();
+}
+
+// La table lit les mêmes //!PARAM que le hook exact : l'un et l'autre rendent la même pile.
+void Grade::Impl::put_table() {
+  const bool wanted = params.look_table > 0.5;
+  if (wanted && !table && !table_refused) {
+    auto made = LookTable::create(gpu);
+    if (made) {
+      table = std::move(*made);
+      table_stale = true;
+    } else {
+      table_refused = true;
+    }
+  }
+  if (table && table_stale) {
+    const std::array<const CubeLut*, kLookSlots> luts = looks();
+    const LookTextures textures = look_textures(luts);
+    if (table->set_looks(look_glsl(luts, textures), textures.distinct)) {
+      table_stale = false;
+    } else {
+      table.reset();
+      table_refused = true;
+    }
+  }
+  if (table) {
+    const pl_hook& hook = *look.hook;
+    const auto value = [&hook](std::string_view name, float fallback) {
+      const pl_var_data* data = find_param(hook, name);
+      return data != nullptr ? data->f : fallback;
+    };
+    LookTable::Inputs in;
+    for (std::size_t i = 0; i < kLookSlots; ++i) in.mixes[i] = value(slot_name("look_mix", i), 0.0F);
+    in.white = value("look_white", 203.0F);
+    in.pq = value("look_pq", 0.0F);
+    in.toe = value("look_toe", 0.0F);
+    in.gamma = value("look_gamma", 2.4F);
+    in.clean = value("look_clean", 0.0F);
+    in.on = value("look_on", 0.0F) > 0.5F;
+    table->set_inputs(in);
+  }
+  hooks[1] = wanted && table ? table->hook() : look.hook;
 }
 
 void Grade::Impl::put_output() {
@@ -395,6 +465,14 @@ std::optional<OutputTune> Grade::output() const {
 
 const GradeParams& Grade::params() const {
   return impl_->params;
+}
+
+bool Grade::look_table_active() const {
+  return impl_->hooks[1] != impl_->look.hook;
+}
+
+std::uint64_t Grade::look_table_builds() const {
+  return impl_->table ? impl_->table->builds() : 0;
 }
 
 std::span<const pl_hook* const> Grade::hooks() const {
