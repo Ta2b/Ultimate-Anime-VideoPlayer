@@ -24,6 +24,15 @@ constexpr std::array kSystemPages{
     Entry{"Add to \"Open with\"", "Ajouter à « Ouvrir avec »"},
     Entry{"An engine is built once per model and size, then read from the cache.",
           "Un moteur est construit une fois par modèle et par taille, puis relu du cache."},
+    Entry{"Speed before precision (Vulkan)", "Vitesse avant précision (Vulkan)"},
+    Entry{
+        "Vulkan engines keep half-precision sums when the difference stays invisible (above 60 dB against "
+        "full precision): upscaling runs about twice as fast on recent GeForce cards. Unchecked, a loss of "
+        "more than 0.5 dB is refused. Applies at next launch; engines are built again.",
+        "Les moteurs Vulkan gardent leurs sommes en demi-précision quand l'écart reste invisible (au-dessus "
+        "de 60 dB face à la pleine précision) : l'agrandissement va environ deux fois plus vite sur les "
+        "GeForce récentes. Décochée, une perte de plus de 0,5 dB est refusée. Vaut au prochain lancement ; "
+        "les moteurs se reconstruisent."},
     Entry{"At every launch", "À chaque lancement"},
     Entry{"At scene cuts and held drawings the previous frame repeats, so the file keeps a constant frame "
           "rate any editor reads.",

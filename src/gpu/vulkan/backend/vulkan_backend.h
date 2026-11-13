@@ -43,6 +43,8 @@ struct BackendOptions {
   // Profil des dispatchs des réseaux (net_profile.h) : aussi par BackendInit::profile_dispatches. Un tableau
   // par shader au journal quand le réseau se décharge.
   bool profile_dispatches = false;
+  // La porte stricte (kStrictPrecision) : aussi par BackendInit::trials. Entre dans la clé des artefacts.
+  bool strict_precision = false;
   net::TunerOptions tuner;
   // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil : ajp_backend_coreml.
   net::RuntimeFactory runtime;
