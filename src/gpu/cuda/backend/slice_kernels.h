@@ -102,4 +102,15 @@ struct WriteParams {
 
 cudaError_t launch_write_rgba16(const WriteParams& params, cudaStream_t stream);
 
+// L'inverse : un emplacement RGBA16 relu dans un tenseur RGB FP16 (le grade avant le warp,
+// KernelOps::read_ring). Chaque code c rend c / 65535, arrondi en FP16 ; alpha ignoré.
+struct ReadParams {
+  void* rgb = nullptr;  // 1 × 3 × height × width, FP16
+  int width = 0;
+  int height = 0;
+  cudaSurfaceObject_t surface = 0;
+};
+
+cudaError_t launch_read_rgba16(const ReadParams& params, cudaStream_t stream);
+
 }  // namespace ajp::gpu::cuda

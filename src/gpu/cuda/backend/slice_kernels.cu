@@ -376,6 +376,22 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) write_rgba16
   store_ring(p.surface, x, y, in[i], in[plane + i], in[2 * plane + i]);
 }
 
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) read_rgba16(ReadParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const std::size_t i =
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
+  ushort4 pixel{};
+  surf2Dread(&pixel, p.surface, x * static_cast<int>(sizeof(ushort4)), y);
+  auto* out = static_cast<__half*>(p.rgb);
+  constexpr float kScale = 1.0F / 65535.0F;
+  out[i] = __float2half_rn(__fmul_rn(static_cast<float>(pixel.x), kScale));
+  out[plane + i] = __float2half_rn(__fmul_rn(static_cast<float>(pixel.y), kScale));
+  out[2 * plane + i] = __float2half_rn(__fmul_rn(static_cast<float>(pixel.z), kScale));
+}
+
 dim3 grid_for(int width, int height) {
   return dim3(static_cast<unsigned>((width + kBlock - 1) / kBlock),
               static_cast<unsigned>((height + kBlock - 1) / kBlock));
@@ -457,6 +473,11 @@ cudaError_t launch_ingest(const IngestParams& params, cudaStream_t stream) {
 
 cudaError_t launch_write_rgba16(const WriteParams& params, cudaStream_t stream) {
   write_rgba16<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_read_rgba16(const ReadParams& params, cudaStream_t stream) {
+  read_rgba16<<<grid_for(params.width, params.height), dim3(kBlock, kBlock), 0, stream>>>(params);
   return cudaGetLastError();
 }
 
