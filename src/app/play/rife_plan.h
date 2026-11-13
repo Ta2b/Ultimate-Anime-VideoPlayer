@@ -35,6 +35,34 @@ struct PairFacts {
   // P3.32 : la part de l'image hors bandes noires (analyse du grade) ; le score de RIFE, mesuré sur toute
   // l'image, y est rapporté. 1 : pas de bandes connues.
   double useful_area = 1.0;
+  // Une coupe mesurée par RIFE moins de kCutBurstUs avant la paire (CutBurst).
+  bool cut_burst = false;
+};
+
+// Coupes de RIFE en rafale. Une vraie coupe que la pré-analyse manque est une paire isolée ; un mouvement
+// rapide ou un effet (fumée, éclairs, panoramique) fait passer le seuil à RIFE sur presque chaque paire
+// qui bouge, pendant des secondes, dans un plan que la pré-analyse dit continu. Chaque fausse coupe laisse
+// b seul et fait repartir N de l'a priori : la cadence tombe vers celle de la source. Quand les plans disent
+// « même plan », seule la première coupe mesurée d'une rafale compte (la garde des coupes manquées) ; les
+// suivantes, à moins de kCutBurstUs de la précédente, sont du mouvement. Les dessins tenus entre deux
+// paires qui bougent ne rompent pas la rafale : seule l'heure de la dernière coupe mesurée compte.
+inline constexpr std::int64_t kCutBurstUs = 500'000;
+
+class CutBurst {
+ public:
+  // Vrai si une coupe mesurée a commencé avant left_us, à kCutBurstUs au plus. Strictement avant : relire
+  // la même paire (ou une paire mesurée en avance) ne la compte pas contre elle-même, et un retour en arrière
+  // (seek, rechargement) oublie la rafale ; un saut en avant de moins de kCutBurstUs la garde, sans mal.
+  bool after_cut(std::int64_t left_us) const {
+    return last_us_ && *last_us_ < left_us && left_us - *last_us_ <= kCutBurstUs;
+  }
+  // La paire qui commence à left_us, coupée ou non selon la seule mesure (measured_cut).
+  void note(std::int64_t left_us, bool measured) {
+    if (measured) last_us_ = left_us;
+  }
+
+ private:
+  std::optional<std::int64_t> last_us_;
 };
 
 // Une coupe des plans n'est gardée que si la mesure de RIFE, rapportée à la zone hors bandes noires, dépasse
@@ -44,7 +72,7 @@ struct PairFacts {
 inline constexpr double kPlanCutFloor = 0.09;
 
 // Vrai si la paire enjambe une coupe : une coupe des plans au-dessus du plancher, ou la mesure de RIFE (l'une
-// ou l'autre, P3.31).
+// ou l'autre, P3.31), sauf la mesure en rafale dans un plan que les plans disent continu (CutBurst).
 bool pair_cut(const PairFacts& facts);
 // La coupe selon la seule mesure, le score rapporté à la zone hors bandes noires : ce que le journal des
 // désaccords compare aux plans (sur le score brut, toute vidéo à bandes comptait de faux désaccords, A09-01).

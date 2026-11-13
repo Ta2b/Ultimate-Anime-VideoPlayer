@@ -20,7 +20,6 @@
 namespace ajp::app::play {
 namespace {
 
-constexpr std::uint64_t kDisagreementsLogged = 100;
 // Un facteur de l'Auto hors de la liste des facteurs réglables : palier / granularité (24 au plus,
 // core::kFineGranularity), ou sur écran fixe la fraction exacte d'un palier calé (11011/3200 à 165 Hz,
 // core::AutoLimits::exact), dont les termes tiennent dans ceux de l'accumulateur de cadence.
@@ -198,18 +197,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     lead_us = waited;
     if (!scores) return std::unexpected(std::move(scores.error()));
     facts.scores = *scores;
-    // 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler.
-    if (setup_.live && previous_ && previous_->pts_us != kNoPts && frame.pts_us != kNoPts) {
-      facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);
-      if (facts.known_cut && *facts.known_cut != measured_cut(facts)) {
-        // Les premiers au journal : de quoi juger à l'image qui a raison.
-        if (++cut_disagreements_ <= kDisagreementsLogged)
-          log_channel("gpu")->info(
-              "coupes : désaccord {:.3f} s → {:.3f} s, plans : {}, RIFE : {} (score {:.3f})",
-              static_cast<double>(previous_->pts_us) / 1e6, static_cast<double>(frame.pts_us) / 1e6,
-              *facts.known_cut ? "coupe" : "plan", *facts.known_cut ? "plan" : "coupe", scores->scene_score);
-      }
-    }
+    judge_cuts(frame, facts);
     count_measured(facts);
     mark_pair(frame, facts);
   }

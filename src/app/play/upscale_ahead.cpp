@@ -170,6 +170,30 @@ std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
   return write_rife_pair(t);
 }
 
+namespace {
+constexpr std::uint64_t kDisagreementsLogged = 100;  // désaccords écrits au journal, les premiers
+}  // namespace
+
+// 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler, et ne
+// l'emporte sur « même plan » que par une coupe isolée (CutBurst, rife_plan.h).
+void UpscaleStage::judge_cuts(const DecodedFrame& frame, PairFacts& facts) {
+  if (!setup_.live || !previous_ || !facts.scores || previous_->pts_us == kNoPts || frame.pts_us == kNoPts)
+    return;
+  facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);
+  facts.cut_burst = cut_burst_.after_cut(previous_->pts_us);
+  const bool measured = measured_cut(facts);
+  cut_burst_.note(previous_->pts_us, measured);
+  if (!facts.known_cut || *facts.known_cut == measured) return;
+  if (!*facts.known_cut && facts.cut_burst)
+    ++burst_cuts_;  // « même plan » contre une coupe en rafale : écartée
+  // Les premiers au journal : de quoi juger à l'image qui a raison.
+  if (++cut_disagreements_ <= kDisagreementsLogged)
+    log_channel("gpu")->info("coupes : désaccord {:.3f} s → {:.3f} s, plans : {}, RIFE : {} (score {:.3f})",
+                             static_cast<double>(previous_->pts_us) / 1e6,
+                             static_cast<double>(frame.pts_us) / 1e6, *facts.known_cut ? "coupe" : "plan",
+                             *facts.known_cut ? "plan" : "coupe", facts.scores->scene_score);
+}
+
 void UpscaleStage::count_measured(const PairFacts& facts) {
   if (facts.factor > 1) {  // les compteurs ne bougent que pour une paire qui interpole
     ++pairs_;
