@@ -304,7 +304,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(factor);
   live->set_reduction(reduction_of(settings.downscale));
-  live->set_keep_poses(poses_kept(settings));
+  set_live_motion(*live, settings);
   const PipelineConfig config{.file = p.options.file,
                               .decoder = decoder_options(c.backend_name, p.screen.device(),
                                                          p.screen.shared_devices(), c.smooth_drawings),

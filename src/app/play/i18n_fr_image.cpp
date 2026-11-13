@@ -69,6 +69,14 @@ constexpr std::array kImageTabs{
           "lieu "
           "du bilinéaire du réseau, pour des traits plus fins. RIFE seulement. Recharge la lecture."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
+    Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
+    Entry{
+        "Trial: when a pair moves a lot, the in-between frames close to the middle are derived from the "
+        "middle pass, as on calm pairs, and RIFE only runs again for the frames further away. Fewer passes "
+        "on long pans. RIFE with Keep poses only. Applies live.",
+        "Essai : quand une paire bouge beaucoup, les images intermédiaires proches du milieu se déduisent de "
+        "la passe du milieu, comme sur une paire calme, et RIFE ne repasse que pour les images plus "
+        "éloignées. Moins de passes sur les longs panoramiques. RIFE avec les poses seulement. En direct."},
     Entry{
         "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
         "first time. Four times fewer pixels for those passes, but in-between frames look worse in playback. "

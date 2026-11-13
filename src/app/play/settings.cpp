@@ -476,6 +476,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
   s.keep_poses = wanted.keep_poses;
+  s.strong_middle = wanted.strong_middle;
   s.smooth_motion = wanted.smooth_motion;  // gardé pour le prochain lancement
   s.oled_care = wanted.oled_care;
   s.steady_cadence = wanted.steady_cadence;

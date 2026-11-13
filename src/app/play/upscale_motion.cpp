@@ -83,6 +83,7 @@ gpu::Motion UpscaleStage::mid_motion(std::uint32_t index) const {
 
 void UpscaleStage::forget_motion() {
   strong_motion_ = false;
+  pair_motion_ = 0.0F;
   motion_measured_ = false;
   motion_.known = false;  // une mesure encore en vol ne vaut plus
   warm_from_ = nullptr;   // ni les blocs grossiers d'une autre scène (P6.15)
@@ -96,8 +97,10 @@ std::expected<void, Refusal> UpscaleStage::settle_motion() {
   auto biggest = setup_.backend->kernels()->flow_max_take(ticket);
   if (!biggest) return std::unexpected(std::move(biggest.error()));
   motion_measured_ = motion_.known;
-  if (motion_.known)
-    strong_motion_ = *biggest * motion_.scale >= kernels::single_run_motion(setup_.rife_height);
+  if (motion_.known) {
+    pair_motion_ = *biggest * motion_.scale;
+    strong_motion_ = pair_motion_ >= kernels::single_run_motion(setup_.rife_height);
+  }
   return {};
 }
 
@@ -114,7 +117,8 @@ std::expected<void, Refusal> UpscaleStage::measure_first_pair(const gpu::Motion&
   }
   auto biggest = ops.flow_max_take(*ticket);
   if (!biggest) return std::unexpected(std::move(biggest.error()));
-  strong_motion_ = *biggest >= kernels::single_run_motion(setup_.rife_height);
+  pair_motion_ = *biggest;
+  strong_motion_ = pair_motion_ >= kernels::single_run_motion(setup_.rife_height);
   return {};
 }
 
@@ -230,6 +234,7 @@ std::expected<void, Refusal> UpscaleStage::begin_motion_pair(float t) {
     }
     if (!biggest) return std::unexpected(std::move(biggest.error()));
     motion_measured_ = flow_max_async_;
+    pair_motion_ = *biggest;
     single_run_ = *biggest < kernels::single_run_motion(setup_.rife_height);
     strong_motion_ = !single_run_;
     if (single_run_) {
@@ -245,6 +250,11 @@ std::expected<void, Refusal> UpscaleStage::begin_motion_pair(float t) {
 std::optional<bool> UpscaleStage::strong_half(float t) const {
   // Échelle par paire : seule une paire forte passe au second RIFE, pas l'instant unique hors du milieu.
   if (direct_run_) return strong_motion_;
+  // Moins de passes sur les paires fortes (essai) : l'instant proche du milieu s'en déduit, comme sur une
+  // paire calme ; seuls les instants que le milieu prolongé ne sert plus repassent par RIFE.
+  if (strong_motion_ && t != 0.5F && setup_.live && setup_.live->strong_middle() &&
+      middle_reaches(pair_motion_, t, kernels::single_run_motion(setup_.rife_height)))
+    return std::nullopt;
   // Garder les poses, mouvement fort : RIFE à l'instant exact (l'atout de RIFE), les poses ne valent que pour
   // les paires calmes, où le milieu extrapolé ne laisse pas de double contour.
   if (poses_ && strong_motion_ && t != 0.5F) return true;
@@ -275,6 +285,7 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     if (!run) return std::unexpected(std::move(run.error()));
     return blend(a, b, run->motion, 0.5F, out);
   }
+  if (strong_motion_ && t != 0.5F) ++strong_derived_;
   if (poses_ && before_ != PairMotion::Unknown) {
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
     return blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);

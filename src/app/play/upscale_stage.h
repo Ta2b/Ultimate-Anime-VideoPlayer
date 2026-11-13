@@ -592,6 +592,9 @@ class UpscaleStage final : public RingStage {
   // RIFE à chaque instant sans passe au milieu (direct_run_), et la mesure de son premier instant,
   // lancée sans attente, décide de la suivante. Oublié à une coupe ou à un saut (forget_motion).
   bool strong_motion_ = false;
+  // Le mouvement maximal (pixels de RIFE) qui a décidé strong_motion_ : middle_reaches (rife_plan.h) en
+  // déduit les instants d'une paire forte que le milieu sert encore (PlaySettings::strong_middle).
+  float pair_motion_ = 0.0F;
   // Mode Rapide : la paire préparée est annoncée en mouvement fort (strong_motion_ relu avant sa grille), son
   // écart se planifie sur le temps de service lourd (core/free_rate.h).
   bool heavy_pair_ = false;
@@ -616,7 +619,8 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> measure_first_pair(const gpu::Motion& middle, float t);
   std::uint64_t single_pairs_ = 0;
   std::uint64_t multi_pairs_ = 0;
-  std::uint64_t direct_pairs_ = 0;  // dont sans passe au milieu
+  std::uint64_t direct_pairs_ = 0;    // dont sans passe au milieu
+  std::uint64_t strong_derived_ = 0;  // instants de paires fortes déduits du milieu (strong_middle)
   std::uint64_t rife_runs_ = 0;
   std::uint64_t calm_runs_ = 0;  // passes faites par rife_motion_calm (P6.17)
   std::uint64_t warm_runs_ = 0;  // passes du milieu reprises à chaud (P6.15)

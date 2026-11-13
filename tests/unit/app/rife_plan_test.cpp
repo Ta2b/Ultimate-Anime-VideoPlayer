@@ -166,3 +166,22 @@ TEST_CASE("RIFE : CutBurst, strictement avant et au plus kCutBurstUs", "[app][ri
 }
 
 }  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("RIFE : sur une paire forte, le milieu sert les instants qu'il prolonge de moins que le seuil",
+          "[app][rife][strong_middle]") {
+  constexpr float kSingle = 15.0F;
+  // 30 px : à t = 1/3 le milieu prolongé déplace de 10 px, servi ; à t = 1/6, de 20 px, RIFE repasse.
+  CHECK(middle_reaches(30.0F, 1.0F / 3.0F, kSingle));
+  CHECK(middle_reaches(30.0F, 2.0F / 3.0F, kSingle));
+  CHECK_FALSE(middle_reaches(30.0F, 1.0F / 6.0F, kSingle));
+  CHECK_FALSE(middle_reaches(30.0F, 5.0F / 6.0F, kSingle));
+  // 60 px : même t = 1/3 repasse (20 px) ; le milieu lui-même est toujours servi.
+  CHECK_FALSE(middle_reaches(60.0F, 1.0F / 3.0F, kSingle));
+  CHECK(middle_reaches(60.0F, 0.5F, kSingle));
+  // Sous le seuil (paire calme), tout instant l'est : la règle ne prend rien de plus qu'une paire calme.
+  CHECK(middle_reaches(14.9F, 0.0F, kSingle));
+}
+
+}  // namespace ajp::app::play

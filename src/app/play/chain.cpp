@@ -202,6 +202,28 @@ void apply_factor(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                   now_us);
 }
 
+namespace {
+
+// Les choix de l'interpolation qui passent en direct : poses gardées, moins de passes sur les paires fortes.
+void apply_live_motion(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
+  const PlaySettings& r = to.running;
+  Controls& controls = to.ui.controls();
+  if (wanted.keep_poses != r.keep_poses) {
+    // « Lisser les dessins tenus » l'emporte sur les poses ; il recharge la chaîne, qui les reprend alors.
+    to.live.set_keep_poses(wanted.keep_poses && !r.smooth_drawings);
+    controls.notify(wanted.keep_poses ? i18n::ui_tr(("Keep poses: on")) : i18n::ui_tr(("Keep poses: off")),
+                    now_us);
+  }
+  if (wanted.strong_middle != r.strong_middle) {
+    to.live.set_strong_middle(wanted.strong_middle);
+    controls.notify(wanted.strong_middle ? i18n::ui_tr("Fewer RIFE passes on fast motion: on")
+                                         : i18n::ui_tr("Fewer RIFE passes on fast motion: off"),
+                    now_us);
+  }
+}
+
+}  // namespace
+
 // Réglages en direct du menu des paramètres : RIFE, réduction, HDR, son, statistiques.
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
@@ -219,12 +241,7 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
                          wanted.hdr_native != r.hdr_native)) {
     to.session.set_header({to.header_text(wanted)});
   }
-  if (wanted.keep_poses != r.keep_poses) {
-    // « Lisser les dessins tenus » l'emporte sur les poses ; il recharge la chaîne, qui les reprend alors.
-    to.live.set_keep_poses(wanted.keep_poses && !r.smooth_drawings);
-    controls.notify(wanted.keep_poses ? i18n::ui_tr(("Keep poses: on")) : i18n::ui_tr(("Keep poses: off")),
-                    now_us);
-  }
+  apply_live_motion(to, wanted, now_us);
   if (wanted.downscale != r.downscale) {
     log_channel("app")->info("réduction en direct : {}", label(wanted.downscale));
     to.live.set_reduction(reduction_of(wanted.downscale));

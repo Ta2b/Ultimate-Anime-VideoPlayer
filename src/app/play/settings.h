@@ -235,6 +235,11 @@ struct PlaySettings {
   // : la mesure image par image ne voit pas de perte, mais elle se voit en lecture (docs/interpolation.md) ;
   // recharge la chaîne (le second moteur se construit la première fois pour cette taille).
   bool pair_scale = false;
+  // Moins de passes RIFE sur les paires qui bougent fort (rife_plan.h, middle_reaches) : les instants proches
+  // du milieu s'en déduisent comme sur une paire calme, RIFE ne repasse qu'aux instants que le milieu
+  // prolongé ne sert plus. Avec les poses (le défaut) ; en direct. Essai, éteint par défaut : à juger à l'œil
+  // (docs/interpolation.md, Instants déduits sur les paires fortes).
+  bool strong_middle = false;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le

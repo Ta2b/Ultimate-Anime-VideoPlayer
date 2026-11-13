@@ -270,6 +270,7 @@ TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de le
         +[](ajp::app::play::PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; },
         +[](ajp::app::play::PlaySettings& s) { s.cubic_warp = !s.cubic_warp; },
         +[](ajp::app::play::PlaySettings& s) { s.pair_scale = !s.pair_scale; },
+        +[](ajp::app::play::PlaySettings& s) { s.strong_middle = !s.strong_middle; },
         +[](ajp::app::play::PlaySettings& s) { s.auto_cap = s.auto_cap == 60 ? 120 : 60; }}) {
     moved = base;
     change(moved);

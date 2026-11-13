@@ -129,6 +129,13 @@ void read_auto_mode(const toml::table& table, PlaySettings& s,
   }
 }
 
+// Les essais de l'interpolation qui allègent RIFE sur les mouvements rapides : pair_scale, strong_middle.
+void read_motion_trials(const toml::table& table, PlaySettings& s,
+                        std::vector<std::expected<void, Refusal>>& reads) {
+  reads.push_back(read(table, "interpolation", "pair_scale", s.pair_scale));
+  reads.push_back(read(table, "interpolation", "strong_middle", s.strong_middle));
+}
+
 // interpolation.rife : un entier (×3), ou un réel en moitié (×1.5).
 std::expected<void, Refusal> read_factor(const toml::table& table, PlaySettings& s) {
   const toml::node* node = table.get("rife");
@@ -274,7 +281,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "model", s.rife_model));
     reads.push_back(read(*interpolation, "interpolation", "keep_poses", s.keep_poses));
     reads.push_back(read(*interpolation, "interpolation", "smooth_drawings", s.smooth_drawings));
-    reads.push_back(read(*interpolation, "interpolation", "pair_scale", s.pair_scale));
+    read_motion_trials(*interpolation, s, reads);
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "cubic_warp", s.cubic_warp));
     reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));

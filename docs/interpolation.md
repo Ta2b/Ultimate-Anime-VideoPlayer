@@ -120,6 +120,63 @@ seuil (bras qui tourne, caméra qui freine) suit une droite, et les occlusions g
   pire bloc), une fois avec le seuil à 15 px et une fois à 0 (RIFE à chaque instant) ; relever le temps par image
   de l'étage avec `--stats=`. Le seuil se règle ou s'annonce d'après ces chiffres.
 
+## Instants déduits sur les paires fortes (essai)
+
+Case « Moins de passes RIFE sur les mouvements rapides » (Vidéo, sous le multiplicateur ; `[interpolation]
+strong_middle` de `play.toml`, **éteinte par défaut**, en direct). Une paire forte (mouvement maximal au-dessus de
+`single_run_motion`) fait aujourd'hui passer RIFE à chaque instant : en 24 i/s vers 144 Hz, 5 passes au lieu
+d'une. Un long panoramique n'a que des paires fortes, et RIFE y coûte environ 5 fois plus pendant tout le plan
+(retour de Tatoub sur une ville médiévale en 3D : les détails n'y sont pour rien, un réseau fait le même calcul
+quel que soit le contenu).
+
+Avec l'option, l'instant t d'une paire forte se déduit du milieu (`warp_blend_at`, comme sur une paire calme)
+tant que le milieu prolongé jusqu'à t déplace les points de moins que `single_run_motion` :
+2·|t − ½| × mouvement < 15 px à 720p (`middle_reaches`, `src/app/play/rife_plan.h`). C'est la même tolérance
+qu'une paire calme, qui prolonge déjà son milieu jusqu'à 15 px vers ses bords. Au-delà, RIFE repasse à
+l'instant exact. En 24 vers 144 Hz : sous 45 px, les instants ⅓ et ⅔ (2/6, 4/6) se déduisent et seuls 1/6 et
+5/6 repassent (3 passes au lieu de 5) ; sous 22,5 px, une seule passe.
+
+- Avec les poses gardées (le défaut) ; sans elles, une paire forte prend le mode direct (pas de passe au
+  milieu), que l'option ne change pas.
+- Le journal de fin compte les instants déduits (« paires fortes : … instants déduits du milieu »), et les
+  passes RIFE (« RIFE mouvement : … passes »).
+
+### Mesure sur processeur (13 novembre 2026)
+
+`tools/bench/qualite/rife_instants.py` : 40 suites de quatre images toutes différentes de Re:Zero (1080p,
+animées en uns), paire (k, k + 3), vérités k + 1 et k + 2 à t = ⅓ et ⅔ ; mouvement estimé à 720p comme le
+lecteur, warp en 1080p. « Déduit − RIFE » : PSNR contre la vraie image de l'instant déduit du milieu moins celui
+de RIFE à l'instant.
+
+**RIFE 4.22 lite** (le défaut)
+
+| Mouvement (720p) | prolongé à t = ⅓ | Instants | RIFE (dB) | Déduit − RIFE : moyenne | pire | Pire bloc, écart moyen |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 à 15 px | 0 à 5 px | 32 | 34,38 | -0,26 | -8,04 | -0,64 |
+| 15 à 30 px | 5 à 10 px | 24 | 25,26 | -0,03 | -1,37 | -0,01 |
+| 30 à 45 px | 10 à 15 px | 8 | 25,16 | -0,21 | -0,58 | -0,33 |
+| 45 à 60 px | 15 à 20 px | 6 | 20,59 | +0,46 | -0,01 | +0,04 |
+| 60 à 90 px | 20 à 30 px | 6 | 20,54 | +0,40 | -0,29 | +0,37 |
+| 90 px et plus | 30 px et plus | 4 | 19,40 | -0,27 | -0,66 | -0,15 |
+
+**RIFE 4.26**
+
+| Mouvement (720p) | prolongé à t = ⅓ | Instants | RIFE (dB) | Déduit − RIFE : moyenne | pire | Pire bloc, écart moyen |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 à 15 px | 0 à 5 px | 36 | 33,19 | -0,06 | -1,83 | +0,07 |
+| 15 à 30 px | 5 à 10 px | 22 | 24,16 | +0,01 | -0,42 | +0,11 |
+| 30 à 45 px | 10 à 15 px | 12 | 23,84 | -0,09 | -0,53 | -0,01 |
+| 45 à 60 px | 15 à 20 px | 6 | 21,86 | +0,01 | -0,35 | +0,16 |
+| 60 à 90 px | 20 à 30 px | 4 | 19,64 | +0,21 | -0,22 | +0,20 |
+
+Lecture : déduire du milieu coûte peu (de −0,26 à +0,46 dB en moyenne selon la tranche), et pas plus sur les
+paires fortes (15 à 45 px, celles que l'option déduit à ⅓ et ⅔) que sur les paires calmes, où le lecteur le
+fait déjà par défaut (pire instant : −8,0 dB calme contre −1,4 dB fort en 4.22 lite). Au-delà de 45 px, RIFE à
+l'instant n'est pas meilleur que le milieu prolongé : les deux sont loin de la vraie image (vers 20 dB). Peu de
+paires très fortes dans cet extrait : la mesure oriente, l'œil de Tatoub juge (la même scène de panoramique,
+ABAB avec et sans l'option, et le nombre de passes du journal). L'option ne devient le défaut que sans perte
+visible.
+
 ## Échelle par paire (essai)
 
 Case « RIFE allégé sur les mouvements rapides (demi-taille) » (Vidéo, sous le multiplicateur ; `[interpolation]
