@@ -28,7 +28,9 @@ bool pair_cut(const PairFacts& facts) {
     // (A09-22).
     return measured || useful_score(*facts.scores, facts.useful_area) >= kPlanCutFloor;
   }
-  // P3.31 : « même plan » selon la pré-analyse ne l'emporte plus sur une coupe franche mesurée par RIFE.
+  // P3.31 : « même plan » selon la pré-analyse ne l'emporte pas sur une coupe isolée mesurée par RIFE ; il
+  // l'emporte sur une rafale (CutBurst).
+  if (facts.known_cut.has_value() && facts.cut_burst) return false;
   return measured;
 }
 

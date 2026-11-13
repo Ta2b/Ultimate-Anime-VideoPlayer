@@ -110,4 +110,59 @@ TEST_CASE("RIFE : le plancher des plans se compare au score rapporté et ne déf
   CHECK(pair_cut(window));
 }
 
+TEST_CASE(
+    "RIFE : dans un plan continu selon les plans, une rafale de coupes mesurées n'en garde que la première",
+    "[app][rife]") {
+  // Le journal d'une séance : « plans : plan, RIFE : coupe » de 0,12 à 0,23 sur presque chaque paire.
+  CutBurst burst;
+  std::int64_t at_us = 1'000'000;
+  constexpr std::int64_t kPair = 41'708;
+  const auto pair_at = [&](double score) {
+    PairFacts facts = moving(4);
+    facts.known_cut = false;
+    facts.scores->scene_score = score;
+    facts.cut_burst = burst.after_cut(at_us);
+    burst.note(at_us, measured_cut(facts));
+    at_us += kPair;
+    return pair_cut(facts);
+  };
+  CHECK(pair_at(0.18));         // la première : peut-être une coupe que la pré-analyse a manquée
+  CHECK_FALSE(pair_at(0.15));   // les suivantes : du mouvement
+  CHECK_FALSE(pair_at(0.005));  // un dessin tenu entre deux ne rompt pas la rafale
+  CHECK_FALSE(pair_at(0.21));
+  CHECK_FALSE(pair_at(0.02));
+  // Une coupe isolée, bien après la rafale, compte de nouveau.
+  at_us += kCutBurstUs;
+  CHECK(pair_at(0.16));
+}
+
+TEST_CASE("RIFE : la rafale ne touche ni les coupes des plans ni les paires sans plans", "[app][rife]") {
+  PairFacts known = moving(4);
+  known.known_cut = true;
+  known.scores->scene_score = 0.15;
+  known.cut_burst = true;
+  CHECK(pair_cut(known));  // une coupe des plans reste une coupe
+  PairFacts unknown = moving(4);
+  unknown.scores->scene_score = 0.15;
+  unknown.cut_burst = true;
+  CHECK(pair_cut(unknown));  // hors de la chronologie, la mesure décide seule
+  PairFacts calm = moving(4);
+  calm.known_cut = false;
+  calm.cut_burst = true;
+  CHECK_FALSE(pair_cut(calm));
+  CHECK(rife_runs(calm));
+}
+
+TEST_CASE("RIFE : CutBurst, strictement avant et au plus kCutBurstUs", "[app][rife]") {
+  CutBurst burst;
+  CHECK_FALSE(burst.after_cut(0));
+  burst.note(1'000, false);
+  CHECK_FALSE(burst.after_cut(2'000));  // une paire sans coupe ne compte pas
+  burst.note(1'000, true);
+  CHECK_FALSE(burst.after_cut(1'000));  // la même paire relue
+  CHECK_FALSE(burst.after_cut(500));    // avant elle (retour en arrière)
+  CHECK(burst.after_cut(1'000 + kCutBurstUs));
+  CHECK_FALSE(burst.after_cut(1'001 + kCutBurstUs));
+}
+
 }  // namespace ajp::app::play

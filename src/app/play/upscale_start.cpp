@@ -115,8 +115,10 @@ UpscaleStage::~UpscaleStage() {
                              pairs_, interpolated_, cuts_, held_);
   }
   if (setup_.live && setup_.live->cuts().active())
-    log_channel("gpu")->info("coupes : {} désaccords entre RIFE et les plans de la pré-analyse",
-                             cut_disagreements_);
+    log_channel("gpu")->info(
+        "coupes : {} désaccords entre RIFE et les plans de la pré-analyse, {} coupes de RIFE en rafale "
+        "écartées",
+        cut_disagreements_, burst_cuts_);
   scores_waits_.log("des mesures de la paire");
   motion_waits_.log("du mouvement");
 }

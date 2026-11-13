@@ -127,8 +127,10 @@ std::expected<void, Refusal> UpscaleStage::settle_after_scores(bool timed) {
 bool UpscaleStage::cut_measured(const gpu::PairScores& scores, std::int64_t left_pts_us,
                                 std::int64_t right_pts_us) const {
   PairFacts facts{.scores = scores, .useful_area = useful_area_};
-  if (setup_.live && left_pts_us != kNoPts && right_pts_us != kNoPts)
+  if (setup_.live && left_pts_us != kNoPts && right_pts_us != kNoPts) {
     facts.known_cut = setup_.live->cuts().cut_between(left_pts_us, right_pts_us);
+    facts.cut_burst = cut_burst_.after_cut(left_pts_us);
+  }
   return pair_cut(facts);
 }
 

@@ -207,6 +207,8 @@ class UpscaleStage final : public RingStage {
   void keep_skipped(const DecodedFrame& frame);
   // La paire mesurée entre dans les compteurs (paires, coupes, dessins tenus) ; une coupe oublie le
   // mouvement.
+  // Les plans de la pré-analyse et la rafale de coupes de la paire (previous_, frame), mesurée.
+  void judge_cuts(const DecodedFrame& frame, PairFacts& facts);
   void count_measured(const PairFacts& facts);
   // Une paire du Rapide de `written` images : la cadence de FreeRate, et le compte de « Couper
   // l'interpolation si la carte ne suit pas » (motion_cut.h). `source_only` : le Rapide l'a réduite à sa
@@ -695,6 +697,8 @@ class UpscaleStage final : public RingStage {
   std::uint64_t interpolated_ = 0;
   std::uint64_t cuts_ = 0;
   std::uint64_t cut_disagreements_ = 0;
+  std::uint64_t burst_cuts_ = 0;  // coupes de RIFE en rafale écartées, les plans disant « même plan »
+  CutBurst cut_burst_;            // la dernière coupe mesurée de l'époque (rife_plan.h)
   std::uint64_t held_ = 0;
   bool drba_held_ =
       false;  // l'instant en cours de production est une copie d'un côté tenu (Output::repeated)
