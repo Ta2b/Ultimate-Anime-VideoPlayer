@@ -333,6 +333,10 @@ struct PlaySettings {
   // Limiteur de flashs (P3.51) : une suite de flashs rapides (UIT-R BT.1702) plafonne le grade HDR vers
   // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
   bool flash_guard = true;
+  // Le look en une table (render/look_table.h) : la pile de LUT évaluée sur le GPU dans une table de 129³
+  // points, lue d'une seule lecture par pixel au lieu de vingt. Plus rapide, mais pas au bit près (quelques
+  // codes PQ au pire) : éteint par défaut, à juger à l'œil ; en direct, l'export la suit.
+  bool look_table = false;
   // Peau des visages (docs/hdr-anime.md) : la pré-analyse cherche les visages (cascade lbpcascade_animeface)
   // et le grade resserre sa plage de peau sur leurs teintes, pour rendre leur lumière aux lampes chaudes.
   // Éteinte par défaut, à juger à l'œil ; prise à la vidéo suivante (l'analyse des plans recommence).

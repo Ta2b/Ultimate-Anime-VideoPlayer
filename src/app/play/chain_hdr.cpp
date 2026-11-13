@@ -93,6 +93,7 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
     }
     params.look_pq = any_pq ? 1.0 : 0.0;
     params.look_clean = 1.0;  // audit F1 : grain et paliers non étirés par la pile
+    params.look_table = s.look_table ? 1.0 : 0.0;
     params.surface_white = std::clamp(s.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi) / 100.0;
     choice.pq = params;
   }
