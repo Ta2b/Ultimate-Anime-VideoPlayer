@@ -68,26 +68,10 @@ constexpr std::array kLookParams = {
     ParamBinding{"look_clean", &GradeParams::look_clean},
 };
 
-// Sortie SDR de la méthode anime (GradeParams::sdr_tm) : la première passe met l'image SDR de la cible en PQ
-// BT.2020 (son blanc à sdr_white), toutes les passes suivantes travaillent comme vers un écran HDR ; la
-// dernière (anime-hdr-black.hook) la ramène au SDR.
-constexpr std::string_view kSdrToPq = R"(
-//!HOOK OUTPUT
-//!BIND HOOKED
-//!WHEN sdr_tm
-//!DESC AnimeJaNai HDR anime - image SDR en PQ (sortie SDR)
-
-vec4 hook() {
-    vec4 px = HOOKED_tex(HOOKED_pos);
-    const mat3 to2020 = mat3(0.6274040, 0.0690970, 0.0163916,
-                             0.3292820, 0.9195400, 0.0880132,
-                             0.0433136, 0.0113612, 0.8955950);
-    vec3 n = to2020 * (pow(clamp(px.rgb, 0.0, 1.0), vec3(sdr_gamma)) * sdr_white);
-    vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
-    px.rgb = pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
-    return px;
-}
-)";
+// Sortie SDR de la méthode anime (GradeParams::sdr_tm) : les passes 1-local et 3-anime lisent l'image SDR de
+// la cible et la mettent d'elles-mêmes en PQ BT.2020 (son blanc à sdr_white) ; toutes les passes suivantes
+// travaillent comme vers un écran HDR, et la dernière (anime-hdr-black.hook) la ramène au SDR. Une passe
+// pleine taille de moins que l'ancienne mise en PQ séparée.
 
 // Le nom du paramètre ou de la texture du `slot`-ième emplacement (0 : le premier, sans numéro).
 std::string slot_name(std::string_view base, std::size_t slot) {
@@ -252,9 +236,8 @@ struct Grade::Impl {
 std::expected<Grade, Refusal> Grade::create(pl_gpu gpu) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
-  // Les paramètres, la mise en PQ d'une sortie SDR, puis les trois passes (carte locale, zone, passe anime).
+  // Les paramètres, puis les trois passes (carte locale, zone, passe anime).
   std::string text(shaders::anime_hdr_params);
-  text += kSdrToPq;
   text += shaders::anime_hdr_anime;
   auto grade = parse(gpu, text, "anime-hdr-anime", kGradeParams);
   if (!grade) return std::unexpected(grade.error());
