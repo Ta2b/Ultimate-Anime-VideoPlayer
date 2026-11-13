@@ -290,6 +290,27 @@ référence FP16 des noyaux colle au FP32 à 78,8 dB et le FP8 se tient vers 50 
 bien plus bas. Le calcul du processeur rend ce que l'interpréteur de l'IR rend du vrai b5f48 à 4·10⁻⁶ près
 (test caché `[.span_b5f48]`), et l'agrandissement au plus proche d'un paquet construit pour (test ordinaire).
 
+### Mesure sur la RTX 4070 Ti : le FP16 natif ne gagne pas
+
+Banc direct (`ajp_span_fp8_run`, graphe CUDA, trois tours ABAB, une image 1080p) contre le moteur TensorRT
+FP16 du lecteur :
+
+| Réseau | Noyaux FP16 natifs | TensorRT FP16 |
+|---|---:|---:|
+| b5f48, 48 canaux à plat | 13,4 ms (12,0 en acc16) | 11,2 à 11,45 ms |
+| b5f48, rangé en 64 (`--padded`) | 12,35 ms | |
+| b8f64 | 18,75 ms | 15,56 ms |
+
+Le natif est de 5 à 20 % plus lent que TensorRT : il ne sert pas de marge. En plus, le corps à 48 canaux à plat
+(`kFewChannels`, blocs en FP16) rend 100 % de NaN, en acc16 comme en `--per-tap` ; l'essai au chargement
+l'a bien refusé en lecture (« nan dB »), et la lecture est restée sur TensorRT FP16. Le corps à 64 canaux est
+juste sur R et V (83 dB contre ONNX Runtime). Le bleu à 21 dB de cette construction locale (nvcc 13.4.92),
+aussi en FP8, reste à confirmer par `ajp_span_fp8_kernel_tests` sur la construction de la CI : la rc.13 de la
+CI mesurait son FP8 b8f64 à 49,9 dB en moyenne, ce qu'un bleu faux ne donnerait pas.
+
+Conséquence : `--span-native` reste éteint, les NaN de `kFewChannels` en FP16 ne valent pas d'être corrigés
+tant que rien ne laisse espérer un gain, et la variante Turing (RTX 20) n'est pas écrite.
+
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour
