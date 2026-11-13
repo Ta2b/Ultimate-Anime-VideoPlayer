@@ -1,7 +1,9 @@
 // Warp et mélange par le mouvement de RIFE (warp_kernels.h) dans le backend TensorRT : warp_blend
 // du contrat de KernelOps, warp_blend_poses (garder les poses) et flow_max_now, extensions de la
 // tranche verticale ; leurs variantes _ring écrivent l'image directement dans le slot.
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <format>
 #include <span>
@@ -17,6 +19,19 @@ namespace ajp::gpu::cuda {
 namespace {
 
 constexpr std::size_t kHistogramBytes = kernels::kFlowBins * sizeof(unsigned int);
+
+// --warp-l2 : la fenêtre d'accès persistante du flux sur le flot (bytes 0 : la retire), comme celle de
+// --l2-keep pour RIFE fusionné.
+cudaError_t set_l2_window(cudaStream_t stream, const void* base, std::size_t bytes, std::size_t persisting) {
+  cudaStreamAttrValue value{};
+  value.accessPolicyWindow.base_ptr = const_cast<void*>(base);  // NOLINT : seulement un repère d'adresses
+  value.accessPolicyWindow.num_bytes = bytes;
+  value.accessPolicyWindow.hitRatio =
+      bytes == 0 ? 0.0F : std::min(1.0F, static_cast<float>(persisting) / static_cast<float>(bytes));
+  value.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
+  value.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
+  return cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &value);
+}
 
 bool fp16_planes(const Tensor& tensor, std::int64_t channels) {
   return tensor.type == TensorType::F16 && tensor.handle != 0 && tensor.shape.dims[0] == 1 &&
@@ -68,6 +83,22 @@ std::expected<void, Refusal> check_previous(const Motion& motion, const Motion* 
     return refuse(RefusalCode::ShapeInvalid, "warp_blend_poses : mouvements de deux paires différents");
   }
   return {};
+}
+
+// launch dans la fenêtre persistante [base, base + bytes) du flux quand on, retirée aussitôt après pour que
+// les moteurs suivants de la voie n'en héritent pas ; sans réserve (reserve() rend 0) ni fenêtre, launch
+// seul.
+template <typename Reserve, typename Launch>
+std::expected<void, Refusal> within_l2(bool on, cudaStream_t stream, const void* base, std::size_t bytes,
+                                       Reserve&& reserve, Launch&& launch) {
+  const std::size_t persisting = on ? reserve() : 0;
+  if (persisting == 0 || bytes == 0) return launch();
+  if (auto ok = cuda_check(set_l2_window(stream, base, bytes, persisting), "cudaStreamSetAttribute"); !ok)
+    return ok;
+  auto launched = launch();
+  const cudaError_t reset = set_l2_window(stream, nullptr, 0, 0);
+  if (!launched) return launched;
+  return cuda_check(reset, "cudaStreamSetAttribute");
 }
 
 }  // namespace
@@ -137,6 +168,7 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .time = t,
       .cubic = motion.warp == kernels::RifeWarp::CatmullRom,
       .from_middle = poses.keep || t != 0.5F,
+      .tiled_motion = tiled_warp_,
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
       .out = out != nullptr ? const_cast<void*>(address(*out)) : nullptr,  // NOLINT : écrit
@@ -149,10 +181,19 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
                          poses.previous != nullptr ? poses.previous->flow.handle : std::uintptr_t{0}};
   const std::array writes{out != nullptr ? out->handle : 0};
   if (auto ok = order(reads, std::span(writes).first(out != nullptr ? 1 : 0)); !ok) return ok;
-  return launch_into(target, "warp et mélange", [&](RingSurface surface) {
-    WarpBlendParams into = params;
-    into.surface = surface;
-    return cuda_check(launch_warp_blend(into, stream_), "warp_blend<<<>>>");
+  // --warp-l2 : le flot (le plus gros des tenseurs du mouvement) en L2 persistant le temps du warp. Le
+  // mouvement du milieu sert à tous les instants d'une paire calme.
+  const std::size_t window =
+      std::min(static_cast<std::size_t>(width_of(motion.flow)) *
+                   static_cast<std::size_t>(height_of(motion.flow)) * 4 * sizeof(std::uint16_t),
+               static_cast<std::size_t>(properties_.accessPolicyMaxWindowSize));
+  const auto reserve = [this] { return persisting_l2(); };
+  return within_l2(warp_l2_, stream_, address(motion.flow), window, reserve, [&] {
+    return launch_into(target, "warp et mélange", [&](RingSurface surface) {
+      WarpBlendParams into = params;
+      into.surface = surface;
+      return cuda_check(launch_warp_blend(into, stream_), "warp_blend<<<>>>");
+    });
   });
 }
 

@@ -319,6 +319,7 @@ TEST_CASE("ChainEngines::upscale câble le warp de Catmull-Rom et les options à
   with_motion.rife_motion = motion();
   with_motion.smooth_drawings = true;
   with_motion.rife_encode_all = true;
+  with_motion.rife_at_slot = true;
   ChainEngines without_motion;
 
   s.cubic_warp = false;
@@ -331,10 +332,12 @@ TEST_CASE("ChainEngines::upscale câble le warp de Catmull-Rom et les options à
   const UpscaleSetup setup = with_motion.upscale(s, nullptr, nullptr, 1920, 1080, {});
   CHECK(setup.smooth_drawings);
   CHECK(setup.rife_encode_all);
+  CHECK(setup.rife_at_slot);
   CHECK_FALSE(setup.late_fate);  // sans horloge de lecture
   const UpscaleSetup plain = without_motion.upscale(s, nullptr, nullptr, 1920, 1080, {});
   CHECK_FALSE(plain.smooth_drawings);
   CHECK_FALSE(plain.rife_encode_all);
+  CHECK_FALSE(plain.rife_at_slot);
   CHECK_FALSE(plain.skip_held);
 }
 

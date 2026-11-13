@@ -73,6 +73,9 @@ UpscaleStage::~UpscaleStage() {
     log_channel("gpu")->info(
         "anneau : {} attentes d'un slot libre, {:.1f} ms en tout, la plus longue {:.1f} ms", waits.count,
         static_cast<double>(waits.total_us) / 1000.0, static_cast<double>(waits.longest_us) / 1000.0);
+  if (early_.passes > 0)
+    log_channel("gpu")->info("RIFE : {} passes enfilées à l'arrivée de {} paires, sans attendre leur slot",
+                             early_.passes, early_.pairs);
   if (encodes_kept_ + encodes_followed_ + encodes_after_gap_ + encodes_cold_ > 0)
     log_channel("gpu")->info(
         "RIFE : encodage repris sur {} passes, B seule sur {}, A et B sur {} après une paire sans passe et "
