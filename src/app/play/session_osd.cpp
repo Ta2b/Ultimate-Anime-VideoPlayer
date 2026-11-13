@@ -68,20 +68,37 @@ std::optional<PairTint> Session::pair_tint_now() const {
   return pair_tint(*verdict);
 }
 
+// La cadence fixe ou le plancher du VRR représentent l'image telle quelle : l'écran garde alors sa
+// composition pour n'en refaire qu'une copie. Quand les images neuves viennent au rythme de l'écran
+// (interpolation à sa fréquence), aucune ne se représente et garder la composition coûtait une copie plein
+// écran par image, pour rien. Elle reste gardée si la cadence de sortie est inconnue ou plus lente, et
+// pendant une seconde après toute représentation (image manquée, interface) : une représentation sans elle
+// referait tout le grade.
+bool Session::repeats_expected() const {
+  if (!config_.steady_cadence && config_.vrr_floor_us <= 0) return false;
+  constexpr std::int64_t kRepeatMemoryUs = 1'000'000;
+  if (last_repeat_host_us_ > 0 && last_tick_us_ - last_repeat_host_us_ < kRepeatMemoryUs) return true;
+  const std::int64_t output = config_.extra != nullptr ? config_.extra->output_period_us() : 0;
+  if (output <= 0) return true;
+  const std::int64_t tolerance = display_period() / 50;
+  const bool slower = config_.steady_cadence && output > display_period() + tolerance;
+  const bool under_floor = config_.vrr_floor_us > 0 && output > config_.vrr_floor_us - kCadenceSlackUs;
+  return slower || under_floor;
+}
+
 // La présentation de ce tour : l'image courante, ses sous-titres, l'OSD et l'interface.
 ShowRequest Session::show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const {
   const bool shown = ui.draw != nullptr;
-  return ShowRequest{
-      .frame = current_ ? &*current_ : nullptr,
-      .subtitles = subtitles,
-      .osd = osd_,
-      .ui = ui.draw,
-      .ui_serial = shown ? ui.serial : 0,
-      .ui_bottom = shown ? ui.bottom : 0,
-      .ui_top = shown ? ui.top : 0,
-      .redraws_expected = config_.steady_cadence || config_.vrr_floor_us > 0 || shown || !osd_.empty(),
-      .target_us = fresh_ ? target_host_us_ : 0,
-      .tint = pair_tint_now()};
+  return ShowRequest{.frame = current_ ? &*current_ : nullptr,
+                     .subtitles = subtitles,
+                     .osd = osd_,
+                     .ui = ui.draw,
+                     .ui_serial = shown ? ui.serial : 0,
+                     .ui_bottom = shown ? ui.bottom : 0,
+                     .ui_top = shown ? ui.top : 0,
+                     .redraws_expected = repeats_expected() || shown || !osd_.empty(),
+                     .target_us = fresh_ ? target_host_us_ : 0,
+                     .tint = pair_tint_now()};
 }
 
 ControlsView Session::view() const {

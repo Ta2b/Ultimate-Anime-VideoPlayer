@@ -1,6 +1,8 @@
 // Période de l'écran mesurée (SDL ne la donne pas) : la présentation est à la demande, les
 // intervalles mesurés suivent donc la cadence des images et non celle de l'écran.
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -63,4 +65,61 @@ TEST_CASE("Période mesurée : une image à 25 i/s sur 200 Hz part à son heure,
 }
 
 }  // namespace
+struct OutputRate final : StatsSource {
+  std::int64_t period_us = 0;
+  std::optional<std::string> rife() const override { return std::nullopt; }
+  std::optional<std::string> memory() override { return std::nullopt; }
+  std::int64_t output_period_us() const override { return period_us; }
+};
+
+TEST_CASE("Cadence fixe : la composition n'est gardée que si l'image peut se représenter", "[app][session]") {
+  const auto redraws = [](std::int64_t output_us, bool steady, std::int64_t floor_us) {
+    test::FakeStages stages;
+    test::FakeScreen screen;
+    test::FakeClock clock;
+    screen.period_us = 6'000;
+    OutputRate rate;
+    rate.period_us = output_us;
+    Session session(SessionConfig{.display_period_us = 6'000, .extra = &rate}, stages, screen, clock);
+    session.set_steady_cadence(steady);
+    session.set_vrr_floor(floor_us);
+    session.handle(ring_frame(0, 0));
+    REQUIRE(session.tick(screen.now_us));
+    REQUIRE(!screen.shown.empty());
+    return screen.shown.back().redraws;
+  };
+  CHECK_FALSE(redraws(6'000, false, 0));       // ni cadence fixe ni plancher : jamais représentée
+  CHECK_FALSE(redraws(6'000, true, 0));        // interpolation au rythme de l'écran : chaque image est neuve
+  CHECK(redraws(41'708, true, 0));             // 24 i/s sur 165 Hz : représentée à chaque période
+  CHECK(redraws(0, true, 0));                  // cadence inconnue : gardée
+  CHECK_FALSE(redraws(6'000, false, 20'833));  // VRR, sortie au-dessus du plancher de 48 Hz
+  CHECK(redraws(41'708, false, 20'833));       // VRR, 24 i/s sous le plancher
+}
+
+TEST_CASE("Cadence fixe : une image représentée garde la composition une seconde", "[app][session]") {
+  test::FakeStages stages;
+  test::FakeScreen screen;
+  test::FakeClock clock;
+  screen.period_us = 6'000;
+  OutputRate rate;
+  rate.period_us = 6'000;
+  Session session(SessionConfig{.display_period_us = 6'000, .extra = &rate}, stages, screen, clock);
+  session.set_steady_cadence(true);
+  session.handle(ring_frame(0, 0));
+  REQUIRE(session.tick(screen.now_us));
+  CHECK_FALSE(screen.shown.back().redraws);
+  screen.now_us += 6'000;
+  REQUIRE(session.tick(screen.now_us));  // rien de neuf, la période passée : représentée
+  REQUIRE(screen.shown.size() == 2);
+  screen.now_us += 6'000;
+  REQUIRE(session.tick(screen.now_us));
+  CHECK(screen.shown.back().redraws);  // une image manquée : la suivante garde sa composition
+  screen.now_us += 1'100'000;
+  REQUIRE(session.tick(screen.now_us));
+  CHECK_FALSE(screen.shown.back().redraws);  // plus d'une seconde sans représentation : oubliée
+  screen.now_us += 6'000;
+  REQUIRE(session.tick(screen.now_us));
+  CHECK(screen.shown.back().redraws);  // la représentation d'avant la fait garder de nouveau
+}
+
 }  // namespace ajp::app::play

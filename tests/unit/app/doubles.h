@@ -63,6 +63,7 @@ struct Shown {
   std::vector<std::string> osd;
   bool ui = false;               // une interface était à dessiner
   std::optional<PairTint> tint;  // débogage des paires (pair_marks.h)
+  bool redraws = false;          // ShowRequest::redraws_expected : la composition gardée
 };
 
 // Écran sans fenêtre : chaque présentation avance d'une période fixe.

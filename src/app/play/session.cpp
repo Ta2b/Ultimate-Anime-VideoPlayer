@@ -25,8 +25,6 @@ constexpr std::int64_t kSeekLostMaxUs = 16'000'000;
 constexpr std::size_t kMaxRefusals = 3;
 // L'OSD se recompose quatre fois par seconde, pas à chaque vsync.
 constexpr std::int64_t kOsdPeriodUs = 250'000;
-// Cadence fixe : marge sous la période de l'écran, pour présenter avant le vsync visé.
-constexpr std::int64_t kCadenceSlackUs = 500;
 // À l'amorce, la première image attend ses sous-titres au plus ce temps.
 constexpr std::int64_t kPrerollSubtitleWaitUs = 100'000;
 
