@@ -13,6 +13,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/shared_activations.h"
+#include "gpu/cuda/backend/span_fp8_check.h"
 #include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
@@ -71,6 +72,15 @@ std::expected<void, Refusal> smoke_test(SpanFp8Net& net, int height, int width) 
     if ((bits & 0x7C00U) == 0x7C00U)
       return refuse(RefusalCode::VendorCallFailed, "SPAN FP8 : essai au chargement : sortie non finie");
   return {};
+}
+
+// L'essai de zéros, puis, pour le SPAN FP16 natif, le jugement contre le calcul du processeur
+// (span_fp8_check.h) : ses noyaux tournent aussi sur des architectures où personne ne les a vus.
+std::expected<std::optional<double>, Refusal> try_kernels(SpanFp8Net& net, const span_fp8::Package& package,
+                                                          int height, int width) {
+  if (auto ok = smoke_test(net, height, width); !ok) return std::unexpected(std::move(ok.error()));
+  if (!package.fp16) return std::nullopt;
+  return check_native(net, package, height, width);
 }
 
 }  // namespace
@@ -174,9 +184,10 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
           std::format("SPAN FP8 : zone d'essai de {} Mo : {}", need >> 20, cudaGetErrorString(e)));
     }
     engine->net_->bind(own);
-    auto tried = smoke_test(*engine->net_, height, width);
+    auto tried = try_kernels(*engine->net_, *parsed, height, width);
     cuda_warn(cudaFree(own), "cudaFree");  // attend la fin de l'essai
     if (!tried) return std::unexpected(std::move(tried.error()));
+    engine->native_check_db_ = *tried;
     if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
     return engine;
   }
@@ -192,7 +203,9 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
         std::format("SPAN FP8 : essai au chargement (cudaDeviceSynchronize) : {}", cudaGetErrorString(e)));
   }
   shared->used(engine.get(), engine->net_->workspace_bytes());
-  if (auto ok = smoke_test(*engine->net_, height, width); !ok) return std::unexpected(std::move(ok.error()));
+  auto tried = try_kernels(*engine->net_, *parsed, height, width);
+  if (!tried) return std::unexpected(std::move(tried.error()));
+  engine->native_check_db_ = *tried;
   return engine;
 }
 

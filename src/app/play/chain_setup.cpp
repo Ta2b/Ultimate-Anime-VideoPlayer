@@ -428,7 +428,7 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   const bool strict = settings.preset != Preset::Custom;
   const bool cutlass = caps.span_fp8_cutlass && !hdr_source(p.video);
   // Le FP16 natif ne quantifie rien : une source HDR ne l'exclut pas.
-  const bool native16 = p.options.span_native && caps.span_fp8_cutlass;
+  const bool native16 = p.options.span_native && caps.span_fp16_cutlass;
   const std::vector<SpanVariantKind> wanted = span_variant_order(
       tier, SpanVariantCaps{.cutlass = cutlass, .native16 = native16, .fp8 = caps.fp8, .int8 = caps.int8},
       strict);

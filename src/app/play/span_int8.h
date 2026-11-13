@@ -79,7 +79,7 @@ struct SpanInt8Lookup {
 // Ce que le moteur sait calculer, pour l'ordre des variantes (BackendCaps).
 struct SpanVariantCaps {
   bool cutlass = false;   // span_fp8_cutlass
-  bool native16 = false;  // span_fp8_cutlass, demandé par --span-native : Équilibre en FP16 CUTLASS
+  bool native16 = false;  // span_fp16_cutlass, demandé par --span-native : Équilibre en FP16 CUTLASS
   bool fp8 = false;       // graphes Q/DQ FP8
   bool int8 = false;
 };
