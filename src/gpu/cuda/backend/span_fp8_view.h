@@ -25,6 +25,7 @@ inline SpanFp8Weights span_fp8_view(const span_fp8::Package& package) {
   weights.concat = view(package.concat);
   weights.pixel = view(package.pixel);
   weights.acc16 = package.acc16;
+  weights.fp16 = package.fp16;
   weights.channels = package.real_channels;
   return weights;
 }

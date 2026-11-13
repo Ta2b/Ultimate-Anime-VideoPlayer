@@ -4,7 +4,8 @@
 //   en-tête de 40 octets : « AJPSPAN8 », version (u32 = 2 ; 1 reste lue), blocs (u32, 2 à 8 ; 8 en
 //   version 1), canaux rangés (u32 = 64), canaux réels du modèle (u32 : 48 ou 64 ; 0 en version 1, lu 64),
 //   taille de la charge (u64), CRC-32 de la charge (u32), drapeaux (u32 : bit 0 = accumulateur f16 hors
-//   blocs, étape 3.5 ; 0 en version 1, les autres bits refusés) ; charge : les 1 + 3·blocs échelles E4M3 des
+//   blocs, étape 3.5 ; bit 1 = blocs en FP16 sans quantification, le SPAN FP16 natif ; 0 en version 1, les
+//   autres bits refusés) ; charge : les 1 + 3·blocs échelles E4M3 des
 //   activations (f32, voir ci-dessous), puis conv_1, les blocs, conv_cat et to_pixel. Un modèle à 48 canaux
 //   (b5f48) est rangé en 64 canaux remplis de zéros (étape 3.2b) : Relu(0) = 0 et (t + x)·tanh(0) = 0, les
 //   canaux ajoutés restent nuls d'un bout à l'autre. Poids en FP16 (ceux du modèle, sans perte), rangés
@@ -65,9 +66,13 @@ struct Package {
   // conv_cat et to_pixel accumulent en f16 (étape 3.5a, mesuré −2,7 % au banc) ; posé par la dérivation
   // seulement si la porte passe et que le PSNR moyen perd au plus kMaxAcc16PsnrLossDb (derive.h).
   bool acc16 = false;
+  // Les blocs en FP16, sans quantification (SpanFp8Weights::fp16) : le SPAN FP16 natif, tiré de l'ONNX sans
+  // calibration ni porte ; les échelles valent alors 1 et ne servent pas.
+  bool fp16 = false;
 };
 
 inline constexpr std::uint32_t kFlagAcc16 = 1U;
+inline constexpr std::uint32_t kFlagFp16 = 2U;
 
 // Le dégroupage prend des blocs 2×2 : hauteur et largeur paires. La dernière tuile de 128 lignes des noyaux
 // garde ses lignes au-delà de M (étape 3.1) : plus de multiple de 128. Plafonds (B02-04) : kMaxSide par côté,

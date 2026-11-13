@@ -249,6 +249,25 @@ PSNR moyen 51,5 dB, pire 50,7 dB, SSIM 0,9969, réseau FP8 9,23 ms. Test `[.span
 SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Lecture `ajp play --stats`, 24 i/s, ABAB 3 tours, médiane
 « moteur » : 14,60 / 14,54 / 14,58 ms avec le paquet natif contre 15,55 / 15,55 / 15,52 ms en FP16 (−6 %, même effet d'horloges que ci-dessus).
 
+## SPAN FP16 natif dans le lecteur (essai, `--span-native`)
+
+Les noyaux FP16 de la #792 (`SpanFp8Weights::fp16`, blocs sans quantification, b5f48 en 48 canaux natifs) ne
+servaient qu'à `ajp_span_fp8_run --fp16`. `--span-native` les met dans la lecture, au cran Équilibre :
+
+- le paquet `<modèle>-fp16c-<16 chiffres du SHA-256>.span8` se tire de l'ONNX au chargement
+  (`native16_variant`, `span_int8.cpp`) : les poids tels quels, drapeau `fp16` du paquet (bit 1), échelles à 1.
+  Rien n'est quantifié : ni calibration, ni porte, ni reçu ;
+- le backend le charge comme le FP8 (`build_span_fp8`, `SpanFp8Engine`), qui passe `fp16` aux noyaux
+  (`span_fp8_view`) ; tout refus (carte autre qu'Ada, taille, CUDA) laisse SPAN sur TensorRT FP16 ;
+- le journal nomme la variante « SPAN FP16 CUTLASS » ; une source HDR ne l'exclut pas.
+
+Éteint par défaut. Mesure à faire sur la RTX 4070 Ti (binaire `linux-release`, une voie puis trois) : la
+lecture de référence 1080p vers 4K avec le b5f48 au cran Équilibre, ABAB sans option et avec `--span-native`,
+puis la même avec le b8f64 au cran Performance (FP8, le défaut d'Ada sous Linux) ; relever « profil GPU ·
+moteur » de SPAN, le temps par image et les images en retard, et une capture `--snapshot` au même instant
+(attendu : identique à TensorRT FP16 au FP16 près). Si le b5f48 natif bat TensorRT FP16 et le b8f64 FP8, il
+devient le défaut au cran Équilibre, sous Linux et sous Windows (#802 y construit les noyaux).
+
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour

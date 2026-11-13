@@ -48,7 +48,10 @@ inline constexpr double kFp8MinPsnrMeanDb = 30.0;
 inline constexpr double kFp8MinPsnrWorstDb = 26.0;
 inline constexpr double kFp8MinSsimWorst = 0.93;
 
-enum class SpanVariantKind : std::uint8_t { Int8, Fp8, Fp32, Fp8Cutlass };
+// Fp16Cutlass (essai, --span-native) : le SPAN entier en FP16 par les mêmes noyaux CUTLASS, paquet
+// « -fp16c- » en « .span8 » tiré de l'ONNX (drapeau fp16 du paquet), sans calibration, ni porte, ni reçu : il
+// ne quantifie rien.
+enum class SpanVariantKind : std::uint8_t { Int8, Fp8, Fp32, Fp8Cutlass, Fp16Cutlass };
 
 struct SpanInt8 {  // une variante quantifiée ou recalculée du SPAN, quel que soit son kind
   SpanVariantKind kind = SpanVariantKind::Int8;
@@ -75,15 +78,17 @@ struct SpanInt8Lookup {
 
 // Ce que le moteur sait calculer, pour l'ordre des variantes (BackendCaps).
 struct SpanVariantCaps {
-  bool cutlass = false;  // span_fp8_cutlass
-  bool fp8 = false;      // graphes Q/DQ FP8
+  bool cutlass = false;   // span_fp8_cutlass
+  bool native16 = false;  // span_fp8_cutlass, demandé par --span-native : Équilibre en FP16 CUTLASS
+  bool fp8 = false;       // graphes Q/DQ FP8
   bool int8 = false;
 };
 
 // Les variantes de SPAN à essayer, dans l'ordre, pour un cran (étape 3.6 ; « la plus basse précision qui
 // passe la porte ») : Performance prend le SPAN FP8 CUTLASS, puis le FP8 par Q/DQ, puis l'INT8 ; Équilibre
-// aucune (le FP16 livré, A49-07) ; Qualité le FP32. strict (cran choisi par un préréglage, pas à la main) :
-// sans le FP8 par Q/DQ, dont les seuils sont lâches ; la chaîne y demande aussi un reçu v2 au FP8 CUTLASS.
+// aucune (le FP16 livré, A49-07), ou le FP16 CUTLASS si native16 ; Qualité le FP32. strict (cran choisi par
+// un préréglage, pas à la main) : sans le FP8 par Q/DQ, dont les seuils sont lâches ; la chaîne y demande
+// aussi un reçu v2 au FP8 CUTLASS.
 std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVariantCaps& caps, bool strict);
 
 // Une source HDR (PQ, HLG, BT.2020 : media::is_hdr) : le SPAN FP8 CUTLASS n'y est jamais pris. Sa porte ne
@@ -112,6 +117,11 @@ struct SpanFp8Context {
   int width = 0;
   int height = 0;
 };
+
+// Le paquet FP16 CUTLASS de span dans dir, écrit depuis l'ONNX s'il manque ou ne se lit plus (écriture
+// atomique). Refus : modèle qui n'est pas un SPAN d'AnimeJaNai, ONNX illisible, disque.
+std::expected<SpanInt8, Refusal> native16_variant(const std::filesystem::path& span,
+                                                  const std::filesystem::path& dir);
 
 // La variante de span dans dir, si son reçu la laisse passer.
 SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::path& span,
