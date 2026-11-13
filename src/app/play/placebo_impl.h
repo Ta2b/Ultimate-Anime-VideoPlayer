@@ -32,6 +32,7 @@
 #include "app/play/placebo_screen.h"
 #include "app/play/present_level.h"
 #include "app/play/ring_watcher.h"
+#include "app/play/source_grade.h"
 #include "app/play/video_rate.h"
 #include "app/play/vulkan_share.h"
 #include "core/gpu_device.h"
@@ -273,7 +274,21 @@ struct PlaceboScreen::Impl {
   FinalScaler final_scaler = FinalScaler::Default;  // posés par set_finish
   bool deband = false;
   bool frame_debanded = false;  // l'image montrée a été débandée avant SPAN (RingFrame::debanded, P3.56)
-  int sharpness = 0;            // posé par set_finish, 0 à 100 %
+  bool frame_graded = false;    // l'image montrée a été gradée avant le warp (RingFrame::graded)
+  // Le grade que l'écran applique, publié à chaque présentation pour le grade avant le warp (source_grade.h).
+  std::shared_ptr<SourceGradeShare> source_grade_share = std::make_shared<SourceGradeShare>();
+  void publish_source_grade(const pl_color_space& target);
+  // Avant chaque présentation, sur target_color : le grade en attente, le choix PQ ou SDR, KWin, puis la
+  // publication au grade avant le warp.
+  void ready_grade(const RingFrame* frame);
+  void take_frame_marks(const RingFrame* frame) {
+    frame_debanded = frame != nullptr && frame->debanded;
+    frame_graded = frame != nullptr && frame->graded;
+  }
+  // Gradée avant le warp, l'image est déjà dans l'espace de la sortie : ni conversion ni compression.
+  pl_color_space frame_color() const { return frame_graded ? target_color : source; }
+  bool grade_before_warp = false;          // set_grade_before_warp
+  int sharpness = 0;                       // posé par set_finish, 0 à 100 %
   std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
   // Anime4K de la chaîne ouverte (set_anime4k) : ses shaders passent devant la netteté et le grade.
   std::optional<render::Anime4k> anime4k;

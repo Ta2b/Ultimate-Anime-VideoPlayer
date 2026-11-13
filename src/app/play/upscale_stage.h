@@ -32,6 +32,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/rife_plan.h"
 #include "app/play/ring_stage.h"
+#include "app/play/source_grade.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
 #include "core/moving_area.h"
@@ -135,6 +136,10 @@ struct UpscaleSetup {
   // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
+  // Le grade avant le warp (PlaySettings::grade_before_warp, source_grade.h) : chaque source gradée à sa
+  // sortie de SPAN, quand le warp se fait après lui (warp_after_span) et que l'écran lit le ring ; nullptr :
+  // l'écran grade chaque image affichée.
+  std::shared_ptr<SourceGrader> grader;
   // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
   // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
@@ -660,6 +665,16 @@ class UpscaleStage final : public RingStage {
   void smooth_stop();
   // Warp après SPAN : SPAN de b (l'image en avance) dans le tampon libre, une fois par tenue fondue.
   std::expected<void, Refusal> span_smooth_b();
+  // Le grade avant le warp du tampon buf de spanned_, juste après son SPAN : span_graded_ le retient. Un
+  // refus du grade l'arrête pour la lecture (l'écran reprend), sans arrêter la vidéo.
+  std::expected<void, Refusal> grade_spanned(std::uint32_t buf);
+  std::array<bool, 2> span_graded_{};
+  // La source montrée gradée (warp après SPAN seulement) ; l'image intermédiaire si ses deux sources le sont,
+  // une paire à cheval sur un changement du grade restant à l'écran.
+  bool source_graded() const;
+  bool pair_graded() const;
+  // La sortie d'une image source montrée telle quelle.
+  Output source_output(std::int64_t pts_us, SourceId id) const;
   const gpu::Tensor& smooth_b_rgb() const {
     return smooth_far_ ? smooth_far_rgb_->tensor() : ahead_.rgb->tensor();
   }

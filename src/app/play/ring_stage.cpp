@@ -130,6 +130,7 @@ RingFrame RingStage::ring_frame(const Output& produced, std::uint32_t epoch, std
                    .uninterpolated = produced.uninterpolated || gap_,
                    .planned_gap_us = planned_gap_us(front_done_),
                    .debanded = produced.debanded,
+                   .graded = produced.graded,
                    .epoch = epoch,
                    .ready_value = ready,
                    .submitted_us = submitted_us};

@@ -220,6 +220,7 @@ void read_grade(const toml::table& grade, PlaySettings& s, std::vector<std::expe
   reads.push_back(read(grade, "grade", "look_highlight", s.look_highlight));
   reads.push_back(read(grade, "grade", "flash_guard", s.flash_guard));
   reads.push_back(read(grade, "grade", "look_table", s.look_table));
+  reads.push_back(read(grade, "grade", "grade_before_warp", s.grade_before_warp));
   reads.push_back(read(grade, "grade", "face_skin", s.face_skin));
   reads.push_back(read(grade, "grade", "surface_white", s.surface_white));
   reads.push_back(read(grade, "grade", "anime_contrast", v.anime_contrast));

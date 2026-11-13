@@ -1,6 +1,6 @@
 # Le grade HDR : décisions de grade_params (sans GPU) et hooks rendus par libplacebo ([gpu], sautés
 # sans appareil Vulkan, sous la couche de validation de tests/support).
-ajp_add_unit_tests(render SOURCES cube_lut_test.cpp shaders_test.cpp display_model_test.cpp grade_params_test.cpp grade_gpu_test.cpp grade_gpu_anime_test.cpp grade_chain_gpu_test.cpp look_table_gpu_test.cpp output_tune_test.cpp emitters_test.cpp sharpen_gpu_test.cpp anime4k_test.cpp anime4k_gpu_test.cpp
+ajp_add_unit_tests(render SOURCES cube_lut_test.cpp shaders_test.cpp display_model_test.cpp grade_params_test.cpp grade_gpu_test.cpp grade_gpu_anime_test.cpp grade_chain_gpu_test.cpp look_table_gpu_test.cpp grade_before_warp_test.cpp output_tune_test.cpp emitters_test.cpp sharpen_gpu_test.cpp anime4k_test.cpp anime4k_gpu_test.cpp
   DEPS ajp::dep::placebo ajp::dep::vulkan ajp::kernels ajp::core_os
   MAIN ajp_test_vulkan)
 # Les LUT livrées (data/luts), lues par les tests de la chaîne complète du grade.

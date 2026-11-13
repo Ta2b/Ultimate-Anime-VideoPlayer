@@ -116,4 +116,57 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
   return {};
 }
 
+std::expected<void, Refusal> VulkanKernelOps::read_ring(const RingSlotDesc& slot, const RingWrite& sync,
+                                                        const Tensor& rgb) {
+  auto dst = detail::tensor_view(rgb, 3, "ring : tenseur RGB relu");
+  if (!dst) return std::unexpected(dst.error());
+  if (slot.format != RingFormat::Rgba16Unorm)
+    return refuse_ring(RefusalCode::FormatUnsupported, "ring : seul un slot Rgba16Unorm se relit");
+  if (std::cmp_not_equal(slot.width, dst->width) || std::cmp_not_equal(slot.height, dst->height)) {
+    return refuse_ring(RefusalCode::ShapeInvalid,
+                       std::format("ring : slot {}x{} relu dans un tenseur {}x{}", slot.width, slot.height,
+                                   dst->width, dst->height));
+  }
+  if (slot.image == 0 || slot.semaphore == 0)
+    return refuse_ring(RefusalCode::FeatureUnavailable, "ring : slot relu sans VkImage ni sémaphore");
+  if (sync.wait_value % 2 != 1 || sync.signal_value != sync.wait_value + 1) {
+    return refuse_ring(
+        RefusalCode::FieldOutOfRange,
+        std::format("ring : relecture qui attend {} et signale {}, impaire puis suivante attendue",
+                    sync.wait_value, sync.signal_value));
+  }
+  auto view = ring_view(slot);
+  if (!view) return std::unexpected(view.error());
+  const std::string_view shader = dst->precision == Precision::F16 ? "ring_load_f16" : "ring_load";
+  const std::array<std::uint32_t, 1> constants{dst->precision == Precision::F16 ? 1U : 0U};
+  auto pipeline = pipelines_.get({.shader = shader,
+                                  .constants = constants,
+                                  .buffers = 1,
+                                  .images = 1,
+                                  .push_bytes = 8,
+                                  .spirv = net::spirv::words(shader)});
+  if (!pipeline) return std::unexpected(pipeline.error());
+  OpKey key;
+  key.add(OpCode::ReadRing);
+  detail::add_view(key, *dst);
+  key.add(detail::to_bits(*view));
+  auto rec = recording(key, [&](Recorder& r) -> Done {
+    const std::array buffers{dst->buffer};
+    const std::array images{*view};
+    const std::array<std::uint32_t, 2> push{dst->width, dst->height};
+    return r.dispatch(**pipeline, buffers, images, std::as_bytes(std::span(push)),
+                      {(dst->width + 15) / 16, (dst->height + 15) / 16, 1});
+  });
+  if (!rec) return std::unexpected(rec.error());
+  const VkSemaphore semaphore = detail::to_semaphore(static_cast<std::uintptr_t>(slot.semaphore));
+  const std::array<TimelinePoint, 1> wait{TimelinePoint{.semaphore = semaphore, .value = sync.wait_value}};
+  const std::array<TimelinePoint, 1> signal{
+      TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
+  if (auto ok = submit(**rec, wait, signal); !ok) return ok;
+  for (RingView& v : ring_views_) {
+    if (v.view == *view) v.last_write = queue_.ticket();
+  }
+  return {};
+}
+
 }  // namespace ajp::gpu::vk

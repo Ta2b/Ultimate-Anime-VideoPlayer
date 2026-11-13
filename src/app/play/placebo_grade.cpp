@@ -294,6 +294,29 @@ double PlaceboScreen::Impl::announced_fall(double max_nits, double reference, do
   return std::min(max_nits, tune ? tune->white * render::kContentReferenceNits / reference : max_nits);
 }
 
+void PlaceboScreen::Impl::ready_grade(const RingFrame* frame) {
+  take_next_grade(frame);
+  select_grade(target_color);
+  match_kwin();
+  publish_source_grade(target_color);
+}
+
+// Le grade avant le warp suit l'écran : sur une sortie HDR10 gradée, sans netteté ni Anime4K (qui passent
+// avant le grade, sur l'image agrandie par l'affichage).
+void PlaceboScreen::Impl::publish_source_grade(const pl_color_space& target) {
+  SourceGradeState state;
+  const bool pq = target.transfer == PL_COLOR_TRC_PQ;
+  if (grade_before_warp && grade && pq && graded(target) && sharpness == 0 && !anime4k) {
+    state.params = grade->params();
+    state.looks = grade->shared_looks();
+    state.kwin = kwin_applied;
+  }
+  state.source = source;
+  state.target = target;
+  state.deband = deband;
+  source_grade_share->put(std::move(state));
+}
+
 bool PlaceboScreen::Impl::graded(const pl_color_space& target) const {
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
   return grade && grade_loaded_pq == pq && (pq || sdr_gamma(target).has_value());

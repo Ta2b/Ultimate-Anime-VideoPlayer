@@ -102,6 +102,9 @@ struct RingFrame {
   std::int64_t planned_gap_us = 0;
   // Les sources de l'image ont été débandées avant SPAN (KernelOps::deband) : l'écran ne débande plus.
   bool debanded = false;
+  // Les sources de l'image ont été gradées à leur sortie de SPAN (app/play/source_grade.h) : l'écran la
+  // montre telle quelle, dans l'espace de couleur de sa sortie, sans repasser par le grade.
+  bool graded = false;
   std::uint32_t epoch = 0;        // d'une époque passée : main ne la présente pas, mais rend le slot
   std::uint64_t ready_value = 0;  // valeur du sémaphore du slot à attendre avant lecture
   // Instant hôte (host_now_us) où gpu a soumis l'écriture du slot ; 0 : inconnu. main en tire le

@@ -69,6 +69,7 @@ class RingStage : public VideoStage, public FrameSink {
     SourceId right;
     bool uninterpolated = false;  // RingFrame::uninterpolated
     bool debanded = false;        // RingFrame::debanded
+    bool graded = false;          // RingFrame::graded
     bool repeated = false;        // RingFrame::repeated : copie d'une image déjà calculée
   };
   // Nombre de sorties de frame (1 à kMaxOutputs), décidé une fois quand elle arrive en tête ;
