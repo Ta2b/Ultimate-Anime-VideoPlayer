@@ -138,6 +138,10 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto one = parse({"épisode.mkv", "--one-lane"});
   REQUIRE(one);
   CHECK(one->one_lane);
+  CHECK_FALSE(options->lanes);
+  const auto lanes = parse({"épisode.mkv", "--lanes"});
+  REQUIRE(lanes);
+  CHECK(lanes->lanes);
   CHECK_FALSE(options->profile_dispatches);
   const auto profiled = parse({"épisode.mkv", "--profile-dispatches"});
   REQUIRE(profiled);
