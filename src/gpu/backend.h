@@ -121,6 +121,10 @@ inline constexpr std::uint32_t kTrialTiledWarp = 1U << 2U;
 // --warp-l2 : le warp TensorRT tient le flot du mouvement en L2 persistant (réserve de --l2-keep). Même
 // image. Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialWarpL2 = 1U << 3U;
+// --rife-hwc8 : les blocs du RIFE fusionné construits en E/S HWC8 (--inputIOFormats=hwc8), leurs noyaux de
+// colle écrivant et lisant ce format : plus de copies de reformatage (41 % du dernier bloc). Même calcul, au
+// rangement près. Lu par le backend TensorRT ; sans effet ailleurs.
+inline constexpr std::uint32_t kTrialRifeHwc8 = 1U << 4U;
 
 // Ce que le lecteur passe à ajp_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à ajp_backend_destroy. refusal ne vaut que le

@@ -6,6 +6,7 @@
 //   15 masque, 16-23 attributs, 24-27 flot accumulé × (1/d).
 // Bloc 0 : 15 canaux (images A, B, encodages de A et de B, instant), tous moyennés sans warp.
 #include <cstddef>
+#include <cstdint>
 #include <cuda_fp16.h>
 
 #include "gpu/cuda/backend/rife_fused_kernels.h"
@@ -17,12 +18,43 @@ __device__ __forceinline__ float rounded(float v) {
   return __half2float(__float2half_rn(v));
 }
 
+// L'élément (c, pixel) d'un tenseur de plane pixels : en plans (pitch 0) ou par pixel (pitch canaux).
+__device__ __forceinline__ std::size_t element(int pitch, std::size_t plane, int c, std::size_t pixel) {
+  return pitch == 0 ? static_cast<std::size_t>(c) * plane + pixel
+                    : pixel * static_cast<std::size_t>(pitch) + static_cast<std::size_t>(c);
+}
+
 // DepthToSpace (CRD, 2) lu à la volée : Z[c][Y][X] = Y[4c + 2 (Y & 1) + (X & 1)][Y >> 1][X >> 1].
-__device__ __forceinline__ float read_z(const __half* y, int yh, int yw, int c, int zy, int zx) {
-  const auto channel = static_cast<std::size_t>(4 * c + 2 * (zy & 1) + (zx & 1));
-  return __half2float(y[(channel * static_cast<std::size_t>(yh) + static_cast<std::size_t>(zy >> 1)) *
-                            static_cast<std::size_t>(yw) +
-                        static_cast<std::size_t>(zx >> 1)]);
+__device__ __forceinline__ float read_z(const __half* y, int yh, int yw, int pitch, int c, int zy, int zx) {
+  const int channel = 4 * c + 2 * (zy & 1) + (zx & 1);
+  const std::size_t pixel =
+      static_cast<std::size_t>(zy >> 1) * static_cast<std::size_t>(yw) + static_cast<std::size_t>(zx >> 1);
+  return __half2float(
+      y[element(pitch, static_cast<std::size_t>(yh) * static_cast<std::size_t>(yw), channel, pixel)]);
+}
+
+// Les C valeurs d'un pixel de X, arrondies en FP16, en plans ou par pixel (pitch 0 ou P). Par pixel, les
+// canaux C à P - 1 sont écrits à zéro (les poids que TensorRT y applique sont nuls, mais un NaN resté en
+// mémoire passerait) et le pixel part en P / 8 écritures de 16 octets.
+template <int C, int P>
+__device__ __forceinline__ void store_x(__half* x, int pitch, std::size_t plane, std::size_t pixel,
+                                        const float (&v)[C]) {
+  if (pitch == 0) {
+#pragma unroll
+    for (int c = 0; c < C; ++c) x[static_cast<std::size_t>(c) * plane + pixel] = __float2half_rn(v[c]);
+    return;
+  }
+  static_assert(P % 8 == 0 && P >= C, "P : multiple de 8, au moins C");
+  std::uint32_t word[P / 2];
+#pragma unroll
+  for (int i = 0; i < P / 2; ++i) {
+    const __half2 pair = __floats2half2_rn(2 * i < C ? v[2 * i] : 0.0F, 2 * i + 1 < C ? v[2 * i + 1] : 0.0F);
+    word[i] = *reinterpret_cast<const std::uint32_t*>(&pair);
+  }
+  auto* out = reinterpret_cast<uint4*>(x + pixel * P);
+#pragma unroll
+  for (int j = 0; j < P / 8; ++j)
+    out[j] = make_uint4(word[4 * j], word[4 * j + 1], word[4 * j + 2], word[4 * j + 3]);
 }
 
 // Resize bilinéaire demi-pixel de facteur s de Z (canaux c0 .. c0 + N - 1) au pixel pleine résolution
@@ -45,10 +77,10 @@ __device__ __forceinline__ void enlarge(const FusedFlowSource& f, int c0, int px
   const float wx = sx - static_cast<float>(x0);
 #pragma unroll
   for (int i = 0; i < N; ++i) {
-    const float a = read_z(y, f.height, f.width, c0 + i, y0, x0);
-    const float b = read_z(y, f.height, f.width, c0 + i, y0, x1);
-    const float c = read_z(y, f.height, f.width, c0 + i, y1, x0);
-    const float e = read_z(y, f.height, f.width, c0 + i, y1, x1);
+    const float a = read_z(y, f.height, f.width, f.pitch, c0 + i, y0, x0);
+    const float b = read_z(y, f.height, f.width, f.pitch, c0 + i, y0, x1);
+    const float c = read_z(y, f.height, f.width, f.pitch, c0 + i, y1, x0);
+    const float e = read_z(y, f.height, f.width, f.pitch, c0 + i, y1, x1);
     r[i] = rounded((a * (1.0F - wx) + b * wx) * (1.0F - wy) + (c * (1.0F - wx) + e * wx) * wy);
   }
 }
@@ -170,27 +202,25 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
   const auto* input = static_cast<const __half*>(p.input);
   const auto* encode = static_cast<const __half*>(p.encode);
   const auto* encode_b = static_cast<const __half*>(p.encode_b);
-  auto* x = static_cast<__half*>(p.x);
+  const std::size_t w = static_cast<std::size_t>(p.width);
+  float v[15];
 #pragma unroll
   for (int c = 0; c < 15; ++c) {
     const __half* src = c < 6    ? input + static_cast<std::size_t>(c) * plane
                         : c < 10 ? encode + static_cast<std::size_t>(c - 6) * plane
                         : c < 14 ? encode_b + static_cast<std::size_t>(c - 10) * plane
                                  : input + 6 * plane;
-    const std::size_t w = static_cast<std::size_t>(p.width);
     if (c == 14) {  // l'instant : l'élément 0 du plan 6 seul est tenu (étape 5.2, rife_time)
-      x[static_cast<std::size_t>(c) * out_plane +
-        static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(ox)] =
-          src[0];
+      v[c] = __half2float(src[0]);
       continue;
     }
-    const float v = (__half2float(src[i00]) + __half2float(src[i00 + 1]) + __half2float(src[i00 + w]) +
-                     __half2float(src[i00 + w + 1])) *
-                    0.25F;
-    x[static_cast<std::size_t>(c) * out_plane +
-      static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(ox)] =
-        __float2half_rn(v);
+    v[c] = (__half2float(src[i00]) + __half2float(src[i00 + 1]) + __half2float(src[i00 + w]) +
+            __half2float(src[i00 + w + 1])) *
+           0.25F;
   }
+  store_x<15, 16>(
+      static_cast<__half*>(p.x), p.x_pitch, out_plane,
+      static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(ox), v);
 }
 
 // Colle d'un bloc : l'entrée (28 canaux) du bloc suivant.
@@ -270,10 +300,9 @@ __global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlue
   const float norm = 1.0F / static_cast<float>(taps * taps);
   const std::size_t o =
       static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(ox);
-  auto* x = static_cast<__half*>(p.x);
 #pragma unroll
-  for (int c = 0; c < 28; ++c)
-    x[static_cast<std::size_t>(c) * out_plane + o] = __float2half_rn(acc[c] * norm);
+  for (int c = 0; c < 28; ++c) acc[c] *= norm;
+  store_x<28, 32>(static_cast<__half*>(p.x), p.x_pitch, out_plane, o, acc);
 }
 
 // Fin : flot du dernier bloc ajouté ; image (warp bilinéaire ou Catmull-Rom, masque sigmoïde, mélange) ou
@@ -291,9 +320,9 @@ __global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
   float fl[4];
 #pragma unroll
   for (int k = 0; k < 4; ++k)
-    fl[k] = rounded(__half2float(last_x[static_cast<std::size_t>(24 + k) * plane + i]) +
-                    read_z(last_y, p.y_height, p.y_width, k, y, x));
-  const float mask = read_z(last_y, p.y_height, p.y_width, 4, y, x);
+    fl[k] = rounded(__half2float(last_x[element(p.x_pitch, plane, 24 + k, i)]) +
+                    read_z(last_y, p.y_height, p.y_width, p.y_pitch, k, y, x));
+  const float mask = read_z(last_y, p.y_height, p.y_width, p.y_pitch, 4, y, x);
   const float sig = rounded(1.0F / (1.0F + __expf(-mask)));
   if (p.image == nullptr) {  // variante mouvement : le flot final et le masque
     auto* flow = static_cast<__half*>(p.flow);

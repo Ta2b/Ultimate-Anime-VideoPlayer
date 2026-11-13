@@ -164,6 +164,9 @@ struct PlayOptions {
   bool tiled_warp = false;
   // --warp-l2 (essai) : le warp TensorRT tient le flot en L2 persistant (gpu::kTrialWarpL2) ; même image.
   bool warp_l2 = false;
+  // --rife-hwc8 (essai) : les blocs du RIFE fusionné en E/S HWC8 sous TensorRT (gpu::kTrialRifeHwc8) ; même
+  // image, éteint par défaut jusqu'à la mesure sur la carte.
+  bool rife_hwc8 = false;
   // --span-native (essai) : au cran Équilibre, SPAN en FP16 par les noyaux CUTLASS du backend (canaux natifs,
   // b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par défaut jusqu'à la
   // mesure sur la carte (docs/span-fp8-cutlass.md, « SPAN FP16 natif dans le lecteur »).

@@ -341,7 +341,10 @@ void note_drba_fused(ChainEngines& c, const DrbaFusedUse& fused, bool tried) {
 
 // Les options d'essai que la chaîne porte telles quelles.
 void take_trials(ChainEngines& c, const PlayOptions& o) {
-  c.one_lane = o.one_lane;
+  // Une seule voie par défaut : sur une 4070 Ti (SPAN ×2 vers la 4K, RIFE ×8, look en table), Vulkan fait
+  // 40,6 images neuves par seconde au lieu de 37, TensorRT 142,8 i/s au lieu de 140,4 ; les trois voies se
+  // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
+  c.one_lane = o.one_lane || !o.lanes;
   c.rife_warm = o.rife_warm;
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
@@ -358,6 +361,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
           .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
                     (p.options.tiled_warp ? gpu::kTrialTiledWarp : 0U) |
                     (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
+                    (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 
@@ -647,10 +651,6 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.backend = std::move(*backend);
   }
   c.backend_name = c.backend->capabilities().name;
-  // Une seule voie par défaut : sur une 4070 Ti (SPAN ×2 vers la 4K, RIFE ×8, look en table), Vulkan fait
-  // 40,6 images neuves par seconde au lieu de 37, TensorRT 142,8 i/s au lieu de 140,4 ; les trois voies se
-  // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
-  if (!p.options.lanes) c.one_lane = true;
   announce_backend(*log, *c.backend, c.backend_name, p.library->path());
   // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
   if (const std::string rebar = rebar_text(gpu);

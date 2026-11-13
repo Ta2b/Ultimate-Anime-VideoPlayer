@@ -60,26 +60,15 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
     return refuse(RefusalCode::ShapeInvalid, "RIFE fusionné : moteur d'encodage de forme inattendue");
   activation = std::max(activation, (*encode)->activation_bytes());
   engine->encode_ = std::move(*encode);
-  for (int b = 0; b < key.plan.blocks; ++b) {
-    auto block = TrtEngine::load(
-        runtime, cache_dir / core::path_from_utf8(key.engines[static_cast<std::size_t>(b) + 1]), shared);
-    if (!block) return std::unexpected(std::move(block.error()));
-    const kernels::FusedDims x = kernels::rife_fused_x(key.plan, b, h, w);
-    const kernels::FusedDims y = kernels::rife_fused_y(key.plan, b, h, w);
-    const bool ok = (*block)->input_shape(0) == Shape{.dims = {1, x.channels, x.height, x.width}} &&
-                    (*block)->output_shape(0) == Shape{.dims = {1, y.channels, y.height, y.width}};
-    if (!ok)
-      return refuse(RefusalCode::ShapeInvalid,
-                    std::format("RIFE fusionné : moteur du bloc {} de forme inattendue", b));
-    activation = std::max(activation, (*block)->activation_bytes());
-    engine->blocks_.push_back(std::move(*block));
-  }
+  auto blocks = engine->load_blocks(runtime, cache_dir, key, shared);
+  if (!blocks) return std::unexpected(std::move(blocks.error()));
+  activation = std::max(activation, *blocks);
   // Les blocs grossiers, repris à chaud (next_warm) : ceux à la réduction du premier, sauf le dernier.
   while (engine->warm_blocks_ + 1 < key.plan.blocks &&
          key.plan.reduce[static_cast<std::size_t>(engine->warm_blocks_)] == key.plan.reduce[0]) {
     ++engine->warm_blocks_;
   }
-  engine->layout_ = kernels::rife_fused_layout(key.plan, h, w);
+  engine->layout_ = kernels::rife_fused_layout(key.plan, h, w, engine->hwc8_);
   engine->own_activation_ = activation;
   engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
@@ -141,6 +130,38 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   return engine;
 }
 
+// Les moteurs des blocs, de formes vérifiées, tous en plans ou tous en HWC8 (hwc8_) ; rend leurs plus
+// grandes activations.
+std::expected<std::int64_t, Refusal> RifeFusedEngine::load_blocks(
+    nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const RifeFusedKey& key,
+    const std::shared_ptr<SharedActivations>& shared) {
+  std::int64_t activation = 0;
+  for (int b = 0; b < key.plan.blocks; ++b) {
+    auto block = TrtEngine::load(
+        runtime, cache_dir / core::path_from_utf8(key.engines[static_cast<std::size_t>(b) + 1]), shared);
+    if (!block) return std::unexpected(std::move(block.error()));
+    const kernels::FusedDims x = kernels::rife_fused_x(key.plan, b, key.height, key.width);
+    const kernels::FusedDims y = kernels::rife_fused_y(key.plan, b, key.height, key.width);
+    const bool ok = (*block)->input_shape(0) == Shape{.dims = {1, x.channels, x.height, x.width}} &&
+                    (*block)->output_shape(0) == Shape{.dims = {1, y.channels, y.height, y.width}};
+    if (!ok)
+      return refuse(RefusalCode::ShapeInvalid,
+                    std::format("RIFE fusionné : moteur du bloc {} de forme inattendue", b));
+    // Tous les blocs en plans, ou tous en HWC8 (construits ensemble, --inputIOFormats=hwc8) : les noyaux
+    // écrivent X et lisent Y comme les moteurs les rangent.
+    const bool hwc8 = (*block)->input_pitch(0) == kernels::rife_fused_hwc8_pitch(x.channels) &&
+                      (*block)->output_pitch(0) == kernels::rife_fused_hwc8_pitch(y.channels);
+    const bool planes = (*block)->input_pitch(0) == 0 && (*block)->output_pitch(0) == 0;
+    if (!(hwc8 || planes) || (b > 0 && hwc8 != hwc8_))
+      return refuse(RefusalCode::FormatUnsupported,
+                    std::format("RIFE fusionné : bloc {} rangé autrement que les autres", b));
+    hwc8_ = hwc8;
+    activation = std::max(activation, (*block)->activation_bytes());
+    blocks_.push_back(std::move(*block));
+  }
+  return activation;
+}
+
 void RifeFusedEngine::set_window(const kernels::Window& window) {
   const bool inside = window.x >= 0 && window.y >= 0 && window.width >= 1 && window.height >= 1 &&
                       window.x + window.width <= width_ && window.y + window.height <= height_;
@@ -182,12 +203,16 @@ std::expected<void, Refusal> RifeFusedEngine::launch_glue(cudaStream_t stream, c
                        .input = in,
                        .encode = at_ptr(encode_a),
                        .encode_b = at_ptr(encode_b),
-                       .x = at_ptr(layout_.x[i])};
+                       .x = at_ptr(layout_.x[i]),
+                       .x_pitch = pitch(next.channels)};
   for (int k = 0; k < block; ++k) {
     const auto j = static_cast<std::size_t>(k);
     const kernels::FusedDims yk = kernels::rife_fused_y(plan_, k, h, w);
-    glue.source[j] = {
-        .y = at_ptr(layout_.y[j]), .height = yk.height, .width = yk.width, .scale = plan_.reduce[j]};
+    glue.source[j] = {.y = at_ptr(layout_.y[j]),
+                      .height = yk.height,
+                      .width = yk.width,
+                      .scale = plan_.reduce[j],
+                      .pitch = pitch(yk.channels)};
   }
   return cuda_check(launch_fused_glue(glue, stream), "fused_glue<<<>>>");
 }
@@ -242,7 +267,8 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                                                  .input = in,
                                                  .encode = at_ptr(encode_a),
                                                  .encode_b = at_ptr(encode_b),
-                                                 .x = at_ptr(layout_.x[0])},
+                                                 .x = at_ptr(layout_.x[0]),
+                                                 .x_pitch = pitch(x0.channels)},
                                                 stream),
                              "fused_entry<<<>>>");
         !ok)
@@ -269,7 +295,9 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                            .x_last = at_ptr(layout_.x[last]),
                            .y_last = at_ptr(layout_.y[last]),
                            .y_height = y_last.height,
-                           .y_width = y_last.width};
+                           .y_width = y_last.width,
+                           .x_pitch = pitch(kernels::rife_fused_x(plan_, plan_.blocks - 1, h, w).channels),
+                           .y_pitch = pitch(y_last.channels)};
   if (motion_) {
     finish.flow = fused_address(outputs[0]);
     finish.mask = fused_address(outputs[1]);

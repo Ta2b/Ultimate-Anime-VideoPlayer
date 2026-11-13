@@ -139,10 +139,43 @@ kernels::ref::RifeFusedState random_state(const kernels::RifeFusedPlan& plan, in
   return state;
 }
 
-// Les noyaux sur l'état, comparés à la référence bloc par bloc (les Y sont les mêmes des deux côtés).
-void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint32_t seed) {
+// Un tenseur en plans rangé par pixel au pas pitch (HWC8), les canaux ajoutés à 1 (les noyaux doivent les
+// écrire à zéro ou ne pas les lire) ; et l'inverse, spill le plus grand |canal ajouté|.
+std::vector<double> to_pixels(const std::vector<double>& planes, int channels, int pitch) {
+  const std::size_t area = planes.size() / static_cast<std::size_t>(channels);
+  std::vector<double> pixels(area * static_cast<std::size_t>(pitch), 1.0);
+  for (std::size_t c = 0; c < static_cast<std::size_t>(channels); ++c)
+    for (std::size_t i = 0; i < area; ++i)
+      pixels[i * static_cast<std::size_t>(pitch) + c] = planes[c * area + i];
+  return pixels;
+}
+
+std::vector<double> to_planes(const std::vector<double>& pixels, int channels, int pitch, double& spill) {
+  const std::size_t area = pixels.size() / static_cast<std::size_t>(pitch);
+  std::vector<double> planes(area * static_cast<std::size_t>(channels));
+  for (std::size_t i = 0; i < area; ++i)
+    for (std::size_t c = 0; c < static_cast<std::size_t>(pitch); ++c) {
+      const double v = pixels[i * static_cast<std::size_t>(pitch) + c];
+      if (c < static_cast<std::size_t>(channels))
+        planes[c * area + i] = v;
+      else
+        spill = std::max(spill, std::abs(v));
+    }
+  return planes;
+}
+
+// Les noyaux sur l'état, comparés à la référence bloc par bloc (les Y sont les mêmes des deux côtés). hwc8 :
+// X et Y rangés par pixel, comme les blocs construits en E/S HWC8 (--rife-hwc8).
+void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint32_t seed,
+                     bool hwc8 = false) {
   const kernels::ref::RifeFusedState state = random_state(plan, h, w, seed);
-  const kernels::RifeFusedLayout layout = kernels::rife_fused_layout(plan, h, w);
+  const kernels::RifeFusedLayout layout = kernels::rife_fused_layout(plan, h, w, hwc8);
+  const auto pitch = [hwc8](int channels) { return hwc8 ? kernels::rife_fused_hwc8_pitch(channels) : 0; };
+  // Éléments rangés d'un tenseur : canaux arrondis en HWC8.
+  const auto stored = [hwc8](kernels::FusedDims d) {
+    if (hwc8) d.channels = kernels::rife_fused_hwc8_pitch(d.channels);
+    return static_cast<std::size_t>(d.elements());
+  };
   Device input(state.input.size() * 2);
   Device encode(state.encode.size() * 2);
   upload_half(input.get(), state.input);
@@ -151,12 +184,13 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
   std::vector<std::unique_ptr<Device>> x;
   for (int k = 0; k < plan.blocks; ++k) {
     const auto i = static_cast<std::size_t>(k);
-    y.push_back(std::make_unique<Device>(state.y[i].size() * 2));
-    upload_half(y[i]->get(), state.y[i]);
-    x.push_back(std::make_unique<Device>(
-        static_cast<std::size_t>(kernels::rife_fused_x(plan, k, h, w).elements()) * 2));
+    const kernels::FusedDims yk = kernels::rife_fused_y(plan, k, h, w);
+    y.push_back(std::make_unique<Device>(stored(yk) * 2));
+    upload_half(y[i]->get(), hwc8 ? to_pixels(state.y[i], yk.channels, pitch(yk.channels)) : state.y[i]);
+    x.push_back(std::make_unique<Device>(stored(kernels::rife_fused_x(plan, k, h, w)) * 2));
   }
-  INFO("plan " << plan.reduce[0] << "…" << plan.blocks << " blocs, " << w << "x" << h);
+  INFO("plan " << plan.reduce[0] << "…" << plan.blocks << " blocs, " << w << "x" << h
+               << (hwc8 ? ", HWC8" : ""));
 
   const kernels::FusedDims x0 = kernels::rife_fused_x(plan, 0, h, w);
   // L'encodage de B suit celui de A dans le même tampon (la référence les range ainsi) ; le moteur, lui, fait
@@ -172,13 +206,16 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                                          .input = input.get(),
                                          .encode = encode.get(),
                                          .encode_b = encode_b,
-                                         .x = x[0]->get()},
+                                         .x = x[0]->get(),
+                                         .x_pitch = pitch(x0.channels)},
                                         nullptr) == cudaSuccess);
   double worst = 0.0;
   const auto check_block = [&](int k) {
     const kernels::FusedDims dims = kernels::rife_fused_x(plan, k, h, w);
-    const std::vector<double> got =
-        download_half(x[static_cast<std::size_t>(k)]->get(), static_cast<std::size_t>(dims.elements()));
+    std::vector<double> got = download_half(x[static_cast<std::size_t>(k)]->get(), stored(dims));
+    double spill = 0.0;
+    if (hwc8) got = to_planes(got, dims.channels, pitch(dims.channels), spill);
+    CHECK(spill == 0.0);
     const std::vector<double> want = kernels::ref::rife_fused_block_input(state, k);
     const double score = psnr_of(got, want, worst);
     INFO("X" << k << " : PSNR " << score << " dB, écart maximal " << worst);
@@ -197,11 +234,16 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                          .input = input.get(),
                          .encode = encode.get(),
                          .encode_b = encode_b,
-                         .x = x[i + 1]->get()};
+                         .x = x[i + 1]->get(),
+                         .x_pitch = pitch(next.channels)};
     for (int k = 0; k <= b; ++k) {
       const auto j = static_cast<std::size_t>(k);
       const kernels::FusedDims yk = kernels::rife_fused_y(plan, k, h, w);
-      glue.source[j] = {.y = y[j]->get(), .height = yk.height, .width = yk.width, .scale = plan.reduce[j]};
+      glue.source[j] = {.y = y[j]->get(),
+                        .height = yk.height,
+                        .width = yk.width,
+                        .scale = plan.reduce[j],
+                        .pitch = pitch(yk.channels)};
     }
     REQUIRE(gpu::cuda::launch_fused_glue(glue, nullptr) == cudaSuccess);
     check_block(b + 1);
@@ -219,7 +261,9 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                            .x_last = x[last]->get(),
                            .y_last = y[last]->get(),
                            .y_height = y_last.height,
-                           .y_width = y_last.width};
+                           .y_width = y_last.width,
+                           .x_pitch = pitch(kernels::rife_fused_x(plan, plan.blocks - 1, h, w).channels),
+                           .y_pitch = pitch(y_last.channels)};
   finish.image = image.get();
   REQUIRE(gpu::cuda::launch_fused_finish(finish, nullptr) == cudaSuccess);
   double score = psnr_of(download_half(image.get(), want.image.size()), want.image, worst);
@@ -472,6 +516,10 @@ TEST_CASE("RIFE fusionné : les noyaux CUDA suivent la référence CPU en double
   }
   SECTION("4.25 lite (premier bloc au 1/32), 128x256") {
     compare_kernels(kernels::RifeFusedPlan{.blocks = 5, .reduce = {32, 16, 8, 4, 1}}, 128, 256, 6);
+  }
+  SECTION("4.26 et 4.22 lite, X et Y rangés en HWC8 (--rife-hwc8)") {
+    compare_kernels(kernels::RifeFusedPlan{.blocks = 5, .reduce = {16, 8, 4, 2, 1}}, 128, 192, 7, true);
+    compare_kernels(v422, 96, 160, 8, true);
   }
 }
 

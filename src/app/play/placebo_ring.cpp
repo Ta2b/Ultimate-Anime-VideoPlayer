@@ -2,6 +2,7 @@
 // des slots en disposition GENERAL par VK_QUEUE_FAMILY_EXTERNAL (core/ring.h : kRingLayout).
 #include <algorithm>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include "app/play/placebo_impl.h"
@@ -74,6 +75,26 @@ void take_from_cuda(pl_gpu gpu, pl_tex tex, VkSemaphore sem, std::uint64_t value
   pl_vulkan_release_ex(gpu, &release);
 }
 
+// Le format des emplacements : RGB10A2 (étape 5.5a) s'il est inscriptible et échantillonnable, sinon
+// RGBA16 ; le format Vulkan est contrôlé sur le premier emplacement (l'ordre des bits doit être celui de
+// store_ring). Une cible de rendu (renderable) demande aussi PL_FMT_CAP_RENDERABLE.
+std::expected<pl_fmt, Refusal> ring_format(pl_gpu gpu, RingFormat wanted, bool renderable) {
+  const auto ring_caps = static_cast<pl_fmt_caps>(PL_FMT_CAP_STORABLE | PL_FMT_CAP_SAMPLEABLE |
+                                                  (renderable ? PL_FMT_CAP_RENDERABLE : 0));
+  if (wanted == RingFormat::Rgb10a2Unorm) {
+    const pl_fmt ten = pl_find_named_fmt(gpu, "rgb10a2");
+    if (ten == nullptr || (ten->caps & ring_caps) != ring_caps) wanted = RingFormat::Rgba16Unorm;
+  }
+  const pl_fmt format = pl_find_named_fmt(gpu, wanted == RingFormat::Rgb10a2Unorm ? "rgb10a2" : "rgba16");
+  if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
+    return refuse(RefusalCode::FormatUnsupported, "rgba16 n'est pas inscriptible sur cet appareil");
+  }
+  if (renderable && (format->caps & PL_FMT_CAP_RENDERABLE) == 0) {
+    return refuse(RefusalCode::FormatUnsupported, "rgba16 ne se rend pas sur cet appareil");
+  }
+  return format;
+}
+
 }  // namespace
 
 std::uint32_t PlaceboRing::family() const {
@@ -86,23 +107,10 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   clear(gpu);
   external_ = external;
   ++generation_;
-  // RGB10A2 (étape 5.5a) : inscriptible et échantillonnable, sinon RGBA16 ; le format Vulkan est contrôlé
-  // sur le premier emplacement (l'ordre des bits doit être celui de store_ring).
-  // Une cible de rendu (renderable) demande aussi PL_FMT_CAP_RENDERABLE.
-  const auto ring_caps = static_cast<pl_fmt_caps>(PL_FMT_CAP_STORABLE | PL_FMT_CAP_SAMPLEABLE |
-                                                  (renderable ? PL_FMT_CAP_RENDERABLE : 0));
-  if (wanted == RingFormat::Rgb10a2Unorm) {
-    const pl_fmt ten = pl_find_named_fmt(gpu, "rgb10a2");
-    if (ten == nullptr || (ten->caps & ring_caps) != ring_caps) wanted = RingFormat::Rgba16Unorm;
-  }
-  const bool ten_bits = wanted == RingFormat::Rgb10a2Unorm;
-  const pl_fmt format = pl_find_named_fmt(gpu, ten_bits ? "rgb10a2" : "rgba16");
-  if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
-    return refuse(RefusalCode::FormatUnsupported, "rgba16 n'est pas inscriptible sur cet appareil");
-  }
-  if (renderable && (format->caps & PL_FMT_CAP_RENDERABLE) == 0) {
-    return refuse(RefusalCode::FormatUnsupported, "rgba16 ne se rend pas sur cet appareil");
-  }
+  auto chosen = ring_format(gpu, wanted, renderable);
+  if (!chosen) return std::unexpected(std::move(chosen.error()));
+  const pl_fmt format = *chosen;
+  const bool ten_bits = std::string_view(format->name) == "rgb10a2";
   // Lecture des sémaphores sans attente (ready) : Vulkan 1.2, ou VK_KHR_timeline_semaphore.
   const pl_vulkan vk = pl_vulkan_get(gpu);
   device_ = VK_NULL_HANDLE;
