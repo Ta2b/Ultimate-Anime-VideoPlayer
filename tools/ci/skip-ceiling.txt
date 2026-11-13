@@ -11,8 +11,9 @@ asan-fuzz 0
 # Anime4K sur l'image, 3 ; saturation en Oklab et peau des visages du grade, 2, joués sous lavapipe),
 # médias
 # (NVDEC 5, Vulkan Video et appareils Vulkan 4), polices de libass sans police système (3), découpe des modèles du
-# catalogue (2), veilleur d'écriture de l'anneau (1).
-windows 49
+# catalogue (2), veilleur d'écriture de l'anneau (1). Novembre 2026 : look en table (3, #803) et grade avant le warp
+# (1, #804), rendus GPU joués sous lavapipe ; plafond au compte du passage sur b5ac0da0 (50).
+windows 50
 # Tâches sans GPU ni Vulkan logiciel (cœur seul) : aucun test sauté (B28-12).
 core-gcc-13 0
 core-clang-20 0
