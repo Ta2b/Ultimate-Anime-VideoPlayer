@@ -99,6 +99,9 @@ struct UpscaleSetup {
   // --rife-encode-all, mesure : aucune annonce au moteur de ce que sa passe précédente a encodé
   // (enqueue_rife) ; le RIFE fusionné encode alors les deux images à chaque passe.
   bool rife_encode_all = false;
+  // --rife-at-slot, mesure : les passes RIFE d'une paire forte attendent chacune le slot de leur image, comme
+  // avant les passes à l'arrivée (upscale_early.cpp). Pour mesurer le gain en ABAB.
+  bool rife_at_slot = false;
   // Réglages changés en cours de lecture (facteur RIFE, réduction, débandage) et compteurs de RIFE ;
   // nullptr : rife_factor et Area pour toute la lecture.
   std::shared_ptr<LiveSettings> live;
@@ -171,8 +174,9 @@ class UpscaleStage final : public RingStage {
                                                      const gpu::Tensor& b, const Target& out);
   // Une paire prise d'emblée à chaque instant (direct_run_) : RIFE à t, sa mesure du premier instant relue à
   // la paire suivante, puis le warp.
-  std::expected<void, Refusal> interpolate_direct(float t, const gpu::Motion& other, const gpu::Tensor& a,
-                                                  const gpu::Tensor& b, const Target& out);
+  std::expected<void, Refusal> interpolate_direct(std::uint32_t output, float t, const gpu::Motion& other,
+                                                  const gpu::Tensor& a, const gpu::Tensor& b,
+                                                  const Target& out);
   // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring).
   std::expected<void, Refusal> blend(const gpu::Tensor& a, const gpu::Tensor& b, const gpu::Motion& motion,
                                      float t, const Target& out) const;
@@ -484,10 +488,37 @@ class UpscaleStage final : public RingStage {
     gpu::Motion motion;
     float scale = 1.0F;
   };
-  std::expected<StrongRun, Refusal> run_strong(float t, const gpu::Motion& full, bool half);
+  // half_into : les tampons où le second RIFE écrit (half_.flow et half_.mask si nul).
+  std::expected<StrongRun, Refusal> run_strong(float t, const gpu::Motion& full, bool half,
+                                               const gpu::Motion* half_into = nullptr);
   // Variante mouvement, mouvement fort : celui d'un autre instant que le milieu.
   std::unique_ptr<gpu::TensorBuffer> flow_;
   std::unique_ptr<gpu::TensorBuffer> mask_;
+  // Passes à l'arrivée (upscale_early.cpp) : les passes RIFE de la paire, enfilées dès outputs() dans un
+  // tampon par sortie, et non une à chaque slot rendu par l'écran ; seuls les warps attendent un slot.
+  struct EarlyRuns {
+    std::array<MotionBuffers, core::kMaxInstantsPerPair> full;  // alloués à la première paire qui les veut
+    std::array<MotionBuffers, core::kMaxInstantsPerPair> half;
+    std::array<std::optional<StrongRun>, core::kMaxInstantsPerPair> runs;  // par sortie de la paire
+    bool ready = false;    // la paire est décidée (begin_motion_pair) à son arrivée
+    bool refused = false;  // une allocation refusée : les passes reviennent au slot
+    std::uint64_t pairs = 0;
+    std::uint64_t passes = 0;
+  };
+  EarlyRuns early_;
+  // À la fin de outputs() : la paire décidée et ses passes enfilées, quand elle le permet.
+  std::expected<void, Refusal> run_early();
+  // Les tampons de la passe de la sortie output (second RIFE si half) ; nullopt : allocation refusée.
+  std::optional<gpu::Motion> early_motion(std::uint32_t output, bool half);
+  // Ce que la paire décide (direct_run_, single_run_, poses_, mouvement fort, et la passe du milieu) : à sa
+  // première image intermédiaire, ou à son arrivée.
+  std::expected<void, Refusal> begin_motion_pair(float t);
+  // La passe RIFE propre à l'instant t, une fois la paire décidée : nullopt sans passe (milieu, poses), sinon
+  // si elle va au second RIFE (échelle par paire).
+  std::optional<bool> strong_half(float t) const;
+  // La passe de la sortie output : celle enfilée à l'arrivée, ou run_strong maintenant.
+  std::expected<StrongRun, Refusal> strong_for(std::uint32_t output, float t, const gpu::Motion& full,
+                                               bool half);
   // DistilDRBA : l'image d'avant la paire et celle d'après, à la taille de travail, chacune
   // valable si rien ne la sépare de la paire (même époque, pas de coupe) ; les deux entrées du
   // graphe ; les mesures de (b, suivante), gardées pour la paire suivante.

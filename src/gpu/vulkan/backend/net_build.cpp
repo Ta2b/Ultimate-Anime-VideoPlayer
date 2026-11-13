@@ -197,9 +197,9 @@ std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const 
 }
 
 std::uint64_t artifact_key(const BuildRequest& request, const DeviceProfile& profile) {
-  const std::string text = std::format("{}|{}|{}|{}|{}|{}|{}", request.model_id, request.model_sha256,
+  const std::string text = std::format("{}|{}|{}|{}|{}|{}|{}{}", request.model_id, request.model_sha256,
                                        ir::format_dims(request.input_shape), request.fp16, profile.key,
-                                       kLoweringVersion, kArtifactVersion);
+                                       kLoweringVersion, kArtifactVersion, request.strict ? "|strict" : "");
   return fnv1a(std::as_bytes(std::span(text)));
 }
 

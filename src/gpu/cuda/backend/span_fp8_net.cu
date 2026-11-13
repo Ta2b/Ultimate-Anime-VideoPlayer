@@ -2,252 +2,63 @@
 // banc tools/bench/fp8/cutlass/span_net.cu, repris tel que mesuré (9,3 ms contre 14,3 ms pour TensorRT FP16
 // en 1088×1920 sur RTX 4070 Ti) : seuls changent la source des poids (le paquet), la taille (à l'exécution)
 // et la zone de travail (fournie par l'appelant, avec recouvrement des tampons qui ne vivent pas en même
-// temps).
-#include <algorithm>
-#include <array>
-#include <cmath>
+// temps). Ce fichier choisit la largeur (span_fp8_body.h), réduit les poids d'un modèle à 48 canaux rangé en
+// 64 et instancie le corps à 64 canaux ; span_fp8_net48.cu instancie ceux à 48.
 #include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "gpu/cuda/backend/span_fp8_kernels.cuh"
-#include "gpu/cuda/backend/span_fp8_layout.cuh"
+#include "gpu/cuda/backend/span_fp8_body.cuh"
 #include "gpu/cuda/backend/span_fp8_net.h"
-#include "gpu/span_fp8/quantize.h"
 
 namespace ajp::gpu::cuda {
 namespace {
 
-namespace sk = span_fp8_kernels;
-using E4 = cutlass::float_e4m3_t;
-using F16 = cutlass::half_t;
+constexpr int kStored = 64;  // canaux du paquet (gpu/span_fp8/package.h)
 
-// Blocs : entrée FP8, 64 canaux. Hors blocs : entrée FP16, accumulateur f32.
-using C8 = sk::Cfg<E4, 128, 64, 32, 3>;
-using L8 = sk::Launcher<C8, 0, true>;
-using LT = sk::Launcher<C8, 1, false>;
-using C16A = sk::Cfg<F16, 128, 32, 32, 4, float, cutlass::conv::IteratorAlgorithm::kAnalytic>;
-using C16 = sk::Cfg<F16, 128, 32, 32, 4, float>;
-using LC1 = sk::Launcher<C16A, 0, false>;
-using LCAT = sk::Launcher<C16, 0, false>;
-using LPIX = sk::Launcher<C16, 2, false>;  // to_pixel, DepthToSpace fondu (étape 3.4a)
-// Étape 3.5a : les mêmes, accumulateur f16 (mma m16n8k16 .f16.f16.f16.f16), choisis par le paquet.
-using C16H = sk::Cfg<F16, 128, 32, 32, 4, F16>;
-using LCATH = sk::Launcher<C16H, 0, false>;
-using LPIXH = sk::Launcher<C16H, 2, false>;
-// Les blocs FP8 à accumulateur f16 (mma m16n8k32 .f16.e4m3.e4m3.f16) avec le même drapeau : sur les GeForce
-// Ada, l'accumulation f32 des mma FP8 tourne à la moitié du débit de l'accumulation f16 (piste N3 de la
-// deuxième passe TensorRT). Les poids y sont rangés kAcc16Headroom fois plus bas pour que les sommes tiennent
-// en f16.
-using C8H = sk::Cfg<E4, 128, 64, 32, 3, F16>;
-using L8H = sk::Launcher<C8H, 0, true>;
-using LTH = sk::Launcher<C8H, 1, false>;
-// Un produit de deux E4M3 au maximum (448 × 448) dépasse le plus grand f16 (65504) : à accumulateur f16, le
-// maximum de chaque canal de poids est rangé à 448 / 16 = 28. E4M3 étant flottant, la précision relative ne
-// change pas ; seuls les poids sous 1/1792 du maximum de leur canal passent en dénormaux. La porte du reçu
-// juge la variante (keep_acc16) : des sommes qui débordent font échouer sa validation, et le paquet garde le
-// f32.
-constexpr float kAcc16Headroom = 16.F;
-
-constexpr int kBlocks = SpanFp8Weights::kBlocks;
-constexpr int kChannels = 64;
-constexpr int kPadded = 16;  // conv_1 lit 16 canaux (12 + 4 nuls)
-constexpr int kConcat = 4 * kChannels;
-constexpr int kPixel = 48;
-constexpr int kScaleCount = SpanFp8Weights::kScales;
-
-// Poids FP8 d'un bloc, rangés [sortie][ligne][colonne][entrée] : échelle par canal de sortie (étape 10.3,
-// gpu/span_fp8/quantize.h) « maximum du canal / 448 » (1 pour un canal nul), arrondi au plus proche, saturé.
-// headroom > 1 : l'échelle est multipliée d'autant (maximum du canal rangé à 448 / headroom), pour les blocs
-// à accumulateur f16.
-std::array<float, 64> quantize_fp8(const std::uint16_t* half_bits, std::size_t count,
-                                   std::vector<std::uint8_t>& out, float headroom = 1.F) {
-  constexpr std::size_t kOut = 64;
-  const std::size_t per = count / kOut;
-  std::vector<float> values(count);
-  for (std::size_t i = 0; i < count; ++i) {
-    __half_raw raw;
-    raw.x = half_bits[i];
-    values[i] = __half2float(__half(raw));
-  }
-  // Les échelles de la référence hôte testée (quantize.h), pas une copie (A02-09).
-  const std::vector<float> channel = span_fp8::channel_scales(values, kOut);
-  std::array<float, kOut> scales{};
-  std::copy(channel.begin(), channel.end(), scales.begin());
-  for (float& scale : scales) scale *= headroom;
-  out.resize(values.size());
-  for (std::size_t c = 0; c < kOut; ++c) {
-    for (std::size_t i = c * per; i < (c + 1) * per; ++i)
-      out[i] =
-          static_cast<std::uint8_t>(__nv_cvt_float_to_fp8(values[i] / scales[c], __NV_SATFINITE, __NV_E4M3));
-  }
-  return scales;
+// Poids rangés [outs][taps][groups × kStored] (le paquet) -> [outs][taps][groups × ch] : les ch premières
+// entrées de chaque groupe. Les sorties gardées sont les outs premières, qui se suivent déjà.
+std::vector<std::uint16_t> narrow(const std::uint16_t* from, std::size_t outs, std::size_t taps,
+                                  std::size_t groups, std::size_t ch) {
+  std::vector<std::uint16_t> out(outs * taps * groups * ch);
+  std::size_t at = 0;
+  for (std::size_t o = 0; o < outs; ++o)
+    for (std::size_t t = 0; t < taps; ++t)
+      for (std::size_t g = 0; g < groups; ++g)
+        for (std::size_t c = 0; c < ch; ++c) out[at++] = from[((o * taps + t) * groups + g) * kStored + c];
+  return out;
 }
 
-constexpr std::int64_t kAlign = 256;
-constexpr std::int64_t align_up(std::int64_t bytes) {
-  return (bytes + kAlign - 1) / kAlign * kAlign;
-}
+// Les poids d'un modèle à ch canaux réels rangé en 64 avec des zéros, réduits à ch. Les biais et conv_1 (16
+// entrées) se lisent déjà au début de leurs tableaux : leurs vues restent celles du paquet.
+struct Narrowed {
+  std::vector<std::vector<std::uint16_t>> store;
+  SpanFp8Weights weights;
+
+  Narrowed(const SpanFp8Weights& from, std::size_t ch) : weights(from) {
+    const auto keep = [&](SpanFp8ConvView& view, std::size_t outs, std::size_t taps, std::size_t groups) {
+      store.push_back(narrow(view.weights, outs, taps, groups, ch));
+      view.weights = store.back().data();
+    };
+    store.reserve(4 * SpanFp8Weights::kBlocks + 2);
+    for (int b = 0; b < from.blocks; ++b) {
+      for (auto& conv : weights.conv[b]) keep(conv, ch, 9, 1);
+      keep(weights.attention[b], ch, 1, 1);
+    }
+    keep(weights.concat, ch, 1, 4);
+    keep(weights.pixel, 48, 9, 1);
+  }
+};
 
 }  // namespace
 
+std::unique_ptr<SpanFp8Body> make_span_fp8_body64(int height, int width) {
+  return std::make_unique<Body<64, Alg::kOptimized, false>>(height, width);
+}
+
 struct SpanFp8Net::Impl {
-  int height = 0, width = 0;  // image d'entrée
-  int h = 0, w = 0;           // caractéristiques (demi-résolution)
-  std::int64_t npix = 0;
-
-  // Poids sur l'appareil.
-  Device c1_w, c1_b, cat_w, cat_b, pix_w, pix_b;
-  struct BlockWeights {
-    std::array<Device, 3> w, b;
-    Device att_w, att_b;
-    std::array<std::array<float, 64>, 3> w_scale{};  // par canal de sortie (étape 10.3)
-    std::array<Device, 3> alpha;  // 64 flottants chacun : échelle de l'activation × échelle du canal
-  };
-  std::array<BlockWeights, kBlocks> blocks;
-  int used = kBlocks;  // blocs du modèle (étape 3.2c)
-  std::array<float, kScaleCount> scales{};
-
-  // Lancements : leurs paramètres portent les adresses de la zone de travail (bind).
-  LC1 c1;
-  std::array<L8, kBlocks> la, lb;
-  std::array<LT, kBlocks> lc;
-  LCAT cat;
-  LPIX pix;
-  LCATH cat16;
-  LPIXH pix16;
-  std::array<L8H, kBlocks> la16, lb16;  // blocs à accumulateur f16 (acc16)
-  std::array<LTH, kBlocks> lc16;
-  bool acc16 = false;
-  void* workspace = nullptr;
-  cudaError_t attribute = cudaSuccess;
-
-  // Les tampons à un multiple de 128 lignes (la tuile M) : la dernière tuile reste dans son tampon même si
-  // une garde manquait (étape 3.1).
-  std::int64_t tiled() const { return (npix + 127) / 128 * 128; }
-
-  std::int64_t workspace_bytes() const {
-    // concaténation FP16 de 256 canaux + quatre tampons FP8 de 64 canaux ; dégroupage et sortie de conv_cat
-    // recouvrent des tampons FP8 alors inactifs. to_pixel écrit droit dans la sortie (étape 3.4a).
-    const std::int64_t rows = tiled();
-    return 2 * kAlign + align_up(rows * 512) + align_up(rows * 256);
-  }
-
-  void bind(void* base) {
-    workspace = base;
-    auto* bytes = static_cast<std::uint8_t*>(base);
-    const std::int64_t rows = tiled();
-    const std::int64_t cat_bytes = align_up(rows * 512);
-    __half* cat_in = reinterpret_cast<__half*>(bytes);
-    std::uint8_t* region = bytes + cat_bytes;
-    std::uint8_t* x[2] = {region, region + rows * 64};
-    std::uint8_t* r1 = region + rows * 128;
-    std::uint8_t* r2 = region + rows * 192;
-    __half* unshuffled = reinterpret_cast<__half*>(r1);
-    __half* cat_out = reinterpret_cast<__half*>(r1);
-    unshuffled_ptr = unshuffled;
-
-    {  // conv_1 : sorties FP8 (entrée du bloc 1) et FP16 (tranche 0 de la concaténation)
-      sk::KP k;
-      k.bias = c1_b.as<float>();
-      k.out8 = x[0];
-      k.inv_s8 = 1.F / scales[0];
-      k.out16 = cat_in;
-      k.ld16 = kConcat;
-      c1.init(h, w, 3, 1, kPadded, kChannels, reinterpret_cast<const F16*>(unshuffled), c1_w.as<F16>(), k);
-    }
-    for (int b = 0; b < used; ++b) {
-      const auto bi = static_cast<std::size_t>(b);
-      const float s_in = b == 0 ? scales[0] : scales[static_cast<std::size_t>(1 + 3 * (b - 1) + 2)];
-      const float s_r1 = scales[static_cast<std::size_t>(1 + 3 * b)];
-      const float s_r2 = scales[static_cast<std::size_t>(2 + 3 * b)];
-      const float s_out = scales[static_cast<std::size_t>(3 + 3 * b)];
-      const std::uint8_t* xin = x[b % 2];
-      std::uint8_t* xout = x[(b + 1) % 2];
-      BlockWeights& bw = blocks[bi];
-      {  // c1 + Relu -> FP8 ; pour le dernier bloc, aussi FP16 dans la tranche 3 (son relu1)
-        sk::KP k;
-        k.alpha_col = bw.alpha[0].as<float>();
-        k.bias = bw.b[0].as<float>();
-        k.out8 = r1;
-        k.inv_s8 = 1.F / s_r1;
-        if (b == used - 1) {
-          k.out16 = cat_in + 3 * kChannels;
-          k.ld16 = kConcat;
-        }
-        const auto* in8 = reinterpret_cast<const E4*>(xin);
-        if (acc16)
-          la16[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[0].as<E4>(), k);
-        else
-          la[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[0].as<E4>(), k);
-      }
-      {
-        sk::KP k;
-        k.alpha_col = bw.alpha[1].as<float>();
-        k.bias = bw.b[1].as<float>();
-        k.out8 = r2;
-        k.inv_s8 = 1.F / s_r2;
-        const auto* in8 = reinterpret_cast<const E4*>(r1);
-        if (acc16)
-          lb16[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[1].as<E4>(), k);
-        else
-          lb[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[1].as<E4>(), k);
-      }
-      {  // fin de bloc : c3, attention 1x1, tanh, saut, produit
-        sk::KP k;
-        k.skip = xin;
-        k.skip_scale = s_in;
-        k.alpha_col = bw.alpha[2].as<float>();
-        k.bias = bw.b[2].as<float>();
-        k.w1 = bw.att_w.as<__half>();
-        k.b1 = bw.att_b.as<float>();
-        if (b < used - 1) {
-          k.out8 = xout;
-          k.inv_s8 = 1.F / s_out;
-        }
-        if (b == 0) {  // sortie du bloc 1 : tranche 2
-          k.out16 = cat_in + 2 * kChannels;
-          k.ld16 = kConcat;
-        }
-        if (b == used - 1) {  // sortie du dernier bloc : tranche 1
-          k.out16 = cat_in + kChannels;
-          k.ld16 = kConcat;
-        }
-        const auto* in8 = reinterpret_cast<const E4*>(r2);
-        if (acc16)
-          lc16[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[2].as<E4>(), k);
-        else
-          lc[bi].init(h, w, 3, 1, kChannels, kChannels, in8, bw.w[2].as<E4>(), k);
-      }
-    }
-    {
-      sk::KP k;
-      k.bias = cat_b.as<float>();
-      k.out16 = cat_out;
-      k.ld16 = kChannels;
-      sk::KP p;  // sortie et surface posées à chaque lancement (launch_tail)
-      p.bias = pix_b.as<float>();
-      const auto* cat_src = reinterpret_cast<const F16*>(cat_in);
-      const auto* pix_src = reinterpret_cast<const F16*>(cat_out);
-      if (acc16) {
-        cat16.init(h, w, 1, 0, kConcat, kChannels, cat_src, cat_w.as<F16>(), k);
-        pix16.init(h, w, 3, 1, kChannels, kPixel, pix_src, pix_w.as<F16>(), p);
-      } else {
-        cat.init(h, w, 1, 0, kConcat, kChannels, cat_src, cat_w.as<F16>(), k);
-        pix.init(h, w, 3, 1, kChannels, kPixel, pix_src, pix_w.as<F16>(), p);
-      }
-    }
-    attribute = c1.attribute;
-    for (std::size_t b = 0; b < static_cast<std::size_t>(used); ++b)
-      for (const cudaError_t e : {la[b].attribute, lb[b].attribute, lc[b].attribute, la16[b].attribute,
-                                  lb16[b].attribute, lc16[b].attribute})
-        if (attribute == cudaSuccess) attribute = e;
-    for (const cudaError_t e : {cat.attribute, pix.attribute, cat16.attribute, pix16.attribute})
-      if (attribute == cudaSuccess) attribute = e;
-  }
-
-  __half* unshuffled_ptr = nullptr;  // recouvre r1 (posé par bind)
+  std::unique_ptr<SpanFp8Body> body;
 };
 
 SpanFp8Net::SpanFp8Net(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
@@ -261,77 +72,42 @@ bool SpanFp8Net::supported_device(int major, int minor) {
 }
 
 std::int64_t SpanFp8Net::workspace_bytes() const {
-  return impl_->workspace_bytes();
+  return impl_->body->workspace_bytes();
 }
 
 void SpanFp8Net::bind(void* workspace) {
-  impl_->bind(workspace);
+  impl_->body->bind(workspace);
 }
 
 std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, int height, int width,
                                                SpanFp8Status& status, std::string& error) {
-  auto impl = std::make_unique<Impl>();
-  impl->height = height;
-  impl->width = width;
-  impl->h = height / 2;
-  impl->w = width / 2;
-  impl->npix = static_cast<std::int64_t>(impl->h) * impl->w;
   // Deux blocs au moins : le premier et le dernier écrivent chacun leur tranche de la concaténation.
-  if (weights.blocks < 2 || weights.blocks > kBlocks) {
+  if (weights.blocks < 2 || weights.blocks > SpanFp8Weights::kBlocks) {
     status = SpanFp8Status::Failed;
     error = "nombre de blocs hors de 2 à 8";
     return nullptr;
   }
-  impl->used = weights.blocks;
-  impl->acc16 = weights.acc16;
-  impl->scales.fill(1.F);
-  for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * weights.blocks); ++i)
-    impl->scales[i] = weights.scales[i];
-
-  // false : l'envoi a échoué, status et error le disent.
-  const auto sent = [&](cudaError_t result, const char* what) {
-    if (result == cudaSuccess) return true;
-    static_cast<void>(cudaGetLastError());
-    status = result == cudaErrorMemoryAllocation ? SpanFp8Status::OutOfMemory : SpanFp8Status::Failed;
-    error = std::string(what) + " : " + cudaGetErrorString(result);
-    return false;
-  };
-  const auto put_half = [&](Device& to, const SpanFp8ConvView& conv, std::size_t count) {
-    return sent(to.upload(conv.weights, count * sizeof(std::uint16_t)), "poids");
-  };
-  const auto put_bias = [&](Device& to, const SpanFp8ConvView& conv, std::size_t count) {
-    return sent(to.upload(conv.bias, count * sizeof(float)), "biais");
-  };
-  constexpr std::size_t kBlockWeights = std::size_t{kChannels} * 9 * kChannels;
-  constexpr std::size_t kAttentionWeights = std::size_t{kChannels} * kChannels;
-  if (!put_half(impl->c1_w, weights.first, std::size_t{kChannels} * 9 * kPadded) ||
-      !put_bias(impl->c1_b, weights.first, kChannels) ||
-      !put_half(impl->cat_w, weights.concat, std::size_t{kChannels} * kConcat) ||
-      !put_bias(impl->cat_b, weights.concat, kChannels) ||
-      !put_half(impl->pix_w, weights.pixel, std::size_t{kPixel} * 9 * kChannels) ||
-      !put_bias(impl->pix_b, weights.pixel, kPixel))
+  if (weights.channels != 48 && weights.channels != kStored) {
+    status = SpanFp8Status::Failed;
+    error = "canaux réels hors de 48 et 64";
     return nullptr;
-  for (std::size_t b = 0; b < static_cast<std::size_t>(impl->used); ++b) {
-    Impl::BlockWeights& bw = impl->blocks[b];
-    for (std::size_t i = 0; i < 3; ++i) {
-      std::vector<std::uint8_t> q;
-      bw.w_scale[i] =
-          quantize_fp8(weights.conv[b][i].weights, kBlockWeights, q, impl->acc16 ? kAcc16Headroom : 1.F);
-      // L'activation qui entre dans la convolution i du bloc b : celle de bind (s_in, s_r1, s_r2).
-      const float s_act =
-          i == 0 ? (b == 0 ? impl->scales[0] : impl->scales[1 + 3 * (b - 1) + 2]) : impl->scales[i + 3 * b];
-      std::array<float, 64> alpha{};
-      for (std::size_t c = 0; c < alpha.size(); ++c) alpha[c] = s_act * bw.w_scale[i][c];
-      if (!sent(bw.w[i].upload(q.data(), q.size()), "poids FP8") ||
-          !sent(bw.alpha[i].upload(alpha.data(), sizeof(alpha)), "échelles des poids FP8") ||
-          !put_bias(bw.b[i], weights.conv[b][i], kChannels))
-        return nullptr;
-    }
-    if (!put_half(bw.att_w, weights.attention[b], kAttentionWeights) ||
-        !put_bias(bw.att_b, weights.attention[b], kChannels))
-      return nullptr;
   }
-  status = SpanFp8Status::Ok;
+  auto impl = std::make_unique<Impl>();
+  bool sent = false;
+  const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
+  if (weights.fp16)
+    impl->body = make_span_fp8_body16(height, width, narrow48 ? 48 : kStored);
+  else if (narrow48)
+    impl->body = make_span_fp8_body48(height, width, weights.width48 == SpanFp8Width::Native);
+  else
+    impl->body = make_span_fp8_body64(height, width);
+  if (narrow48) {
+    const Narrowed narrowed(weights, 48);
+    sent = impl->body->upload(narrowed.weights, status, error);
+  } else {
+    sent = impl->body->upload(weights, status, error);
+  }
+  if (!sent) return nullptr;
   return std::unique_ptr<SpanFp8Net>(new SpanFp8Net(std::move(impl)));
 }
 
@@ -340,70 +116,11 @@ bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, st
 }
 
 bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string& error) {
-  Impl& n = *impl_;
-  if (n.workspace == nullptr) {
-    error = "zone de travail absente";
-    return false;
-  }
-  if (n.attribute != cudaSuccess) {
-    error = std::string("mémoire partagée des noyaux refusée : ") + cudaGetErrorString(n.attribute);
-    return false;
-  }
-  static_cast<void>(cudaGetLastError());  // une erreur d'un appel d'avant n'est pas celle de ces lancements
-  const int blocks = static_cast<int>((n.npix + 255) / 256);
-  unshuffle_kernel<<<blocks, 256, 0, stream>>>(static_cast<const __half*>(input), n.unshuffled_ptr, n.height,
-                                               n.width);
-  n.c1.launch(stream);
-  for (std::size_t b = 0; b < static_cast<std::size_t>(n.used); ++b) {
-    if (n.acc16) {
-      n.la16[b].launch(stream);
-      n.lb16[b].launch(stream);
-      n.lc16[b].launch(stream);
-    } else {
-      n.la[b].launch(stream);
-      n.lb[b].launch(stream);
-      n.lc[b].launch(stream);
-    }
-  }
-  if (n.acc16)
-    n.cat16.launch(stream);
-  else
-    n.cat.launch(stream);
-  const cudaError_t result = cudaGetLastError();
-  if (result != cudaSuccess) {
-    error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);
-    return false;
-  }
-  return true;
+  return impl_->body->launch_body(stream, input, error);
 }
 
 bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error) {
-  Impl& n = *impl_;
-  if (n.workspace == nullptr) {
-    error = "zone de travail absente";
-    return false;
-  }
-  if (output == nullptr && ring.surface.object == 0) {
-    error = "ni sortie ni surface";
-    return false;
-  }
-  const auto tail = [&](auto& pix) {
-    pix.kp.out16 = static_cast<__half*>(output);
-    pix.kp.surface = ring.surface;
-    pix.kp.surf_w = ring.width;
-    pix.kp.surf_h = ring.height;
-    pix.launch(stream);
-  };
-  if (n.acc16)
-    tail(n.pix16);
-  else
-    tail(n.pix);
-  const cudaError_t result = cudaGetLastError();
-  if (result != cudaSuccess) {
-    error = std::string("lancement des noyaux : ") + cudaGetErrorString(result);
-    return false;
-  }
-  return true;
+  return impl_->body->launch_tail(stream, output, ring, error);
 }
 
 }  // namespace ajp::gpu::cuda

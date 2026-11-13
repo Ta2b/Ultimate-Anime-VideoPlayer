@@ -104,6 +104,19 @@ f32 des mma FP8 tourne à la moitié du débit. Pour que les sommes tiennent en 
 avec un maximum de 448 / 16 par canal (`kAcc16Headroom`), l'échelle reprise par `alpha_col`. À mesurer sur la
 RTX : `kernels_ms_acc16` du reçu contre `kernels_ms`, et la perte de PSNR qu'il note.
 
+### SPAN FP16 en noyaux CUTLASS (lot 2 du fil SPAN, à mesurer)
+
+`SpanFp8Weights::fp16` calcule le même graphe avec les blocs en FP16 : aucune quantification, les poids du
+paquet tels quels (ou ceux de l'ONNX), les échelles ignorées, donc aucune porte de qualité à passer. C'est le
+même gabarit (`span_fp8_body.cuh`, paramètre `Fp16`), instancié dans `span_fp8_net16.cu` : 64 canaux pour le
+b8f64, 48 natifs (K à plat) pour le b5f48. L'épilogue écrit et lit alors des activations FP16
+(`Launcher<…, Act16>`). Zone de travail : 1 Ko par pixel de caractéristiques en 64 canaux, 768 o en 48.
+Visé : battre TensorRT FP16 là où le FP8 n'est pas pris (b5f48 refusé par sa porte, puis Windows et les
+RTX 20 et 30, qui demanderont d'autres architectures de compilation). Rien ne le choisit encore dans le
+lecteur ; il se mesure par `ajp_span_fp8_run MODELE.onnx H L entree.f32 sortie.f32 --fp16 --bench 200` face
+à `trtexec --loadEngine` du moteur FP16 du lecteur, et le test `span_fp8_48_test.cpp` le compare à la
+référence FP16.
+
 ### Zone de travail
 
 768 octets par pixel de caractéristiques (400 Mo à 1080p) : la concaténation FP16 de 256 canaux (512 o) et quatre

@@ -96,6 +96,7 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"sharpness", [](PlaySettings& s) { s.sharpness = 40; }},
       {"engines_dir", [](PlaySettings& s) { s.engines_dir = "/srv/moteurs"; }},
       {"gpu", [](PlaySettings& s) { s.gpu = "Une carte"; }},
+      {"fast_precision", [](PlaySettings& s) { s.fast_precision = !s.fast_precision; }},
       {"language", [](PlaySettings& s) { s.language = "fr"; }},
       {"audio_delay_ms", [](PlaySettings& s) { s.audio_delay_ms = 80; }},
       {"audio_device", [](PlaySettings& s) { s.audio_device = "casque"; }},
@@ -189,6 +190,22 @@ TEST_CASE("Un dossier d'installation absurde est refusé à l'écriture (A22-09)
   CHECK_FALSE(validate(s));
   s.engines_dir = "/srv/moteurs";
   CHECK(validate(s));
+}
+
+// « Vitesse avant précision » : cochée par défaut et dans un fichier d'avant elle ; décochée, elle s'écrit.
+TEST_CASE("play.toml : « Vitesse avant précision », absente d'un ancien fichier", "[app][settings]") {
+  CHECK(PlaySettings{}.fast_precision);
+  const auto old = parse_settings("version = 1\n[engines]\ngpu = \"Une carte\"\n");
+  REQUIRE(old);
+  CHECK(old->fast_precision);
+  PlaySettings strict;
+  strict.fast_precision = false;
+  const std::string text = format_settings(strict);
+  CHECK(text.find("fast_precision = false") != std::string::npos);
+  const auto reread = parse_settings(text);
+  REQUIRE(reread);
+  CHECK_FALSE(reread->fast_precision);
+  CHECK(format_settings(PlaySettings{}).find("fast_precision") == std::string::npos);
 }
 
 }  // namespace

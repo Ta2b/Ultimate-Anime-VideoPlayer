@@ -449,6 +449,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.sharpness = wanted.sharpness;
   s.autoplay_next = wanted.autoplay_next;
   s.engines_dir = wanted.engines_dir;
+  s.fast_precision = wanted.fast_precision;  // vaut au prochain lancement, comme gpu
   s.gpu =
       wanted.gpu;  // vaut au prochain lancement (le panneau le dit) : il s'enregistre tout de suite (A22-01)
   s.update_mode = wanted.update_mode;

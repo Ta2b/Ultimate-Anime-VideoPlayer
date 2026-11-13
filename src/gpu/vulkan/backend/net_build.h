@@ -29,6 +29,7 @@ struct BuildRequest {
   std::string model_sha256;
   ir::Dims input_shape;  // NCHW de l'entrée d'un modèle à une entrée ; ceux à plusieurs sont figés
   bool fp16 = true;      // false : tous les tenseurs en float
+  bool strict = false;   // la porte stricte (BackendOptions::strict_precision) : un autre artefact
 };
 
 using BuildReport = std::function<void(float fraction, const std::string& stage)>;

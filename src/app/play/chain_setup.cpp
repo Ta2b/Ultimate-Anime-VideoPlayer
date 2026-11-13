@@ -186,6 +186,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .one_lane = one_lane,
       .rife_warm = rife_warm,
       .rife_encode_all = rife_encode_all,
+      .rife_at_slot = rife_at_slot,
       .live = std::move(live),
       .clock = clock,
       .source_width = width,
@@ -343,17 +344,21 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.one_lane = o.one_lane;
   c.rife_warm = o.rife_warm;
   c.rife_encode_all = o.rife_encode_all;
+  c.rife_at_slot = o.rife_at_slot;
   c.skip_held = o.skip_held;
 }
 
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
-gpu::BackendInit chain_backend_init(Player& p) {
+gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
   return {.render = &p.screen.device(),
           .cache_dir = p.paths.engines,
           .log = backend_log(),
           .profile_dispatches = p.options.profile_dispatches,
           .filtered_warp = p.options.filtered_warp,
-          .trials = p.options.l2_keep ? gpu::kTrialL2Keep : 0U};
+          .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
+                    (p.options.tiled_warp ? gpu::kTrialTiledWarp : 0U) |
+                    (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
+                    (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 
 // Un refus de l'étage qui le rend : la chaîne peut se préparer sans lui (stage_fallback.h).
@@ -611,7 +616,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
     return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
   show_loading(p.screen, p.ui, i18n::ui_tr("Loading"));
-  const gpu::BackendInit init = chain_backend_init(p);
+  const gpu::BackendInit init = chain_backend_init(p, settings);
   // C08-05 : un tour refusé rend son backend (SpareBackend), que celui-ci reprend. Les moteurs de c sont
   // détruits avant lui : il leur survit dans p.spare_backend.
   const struct SpareBackend {

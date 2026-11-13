@@ -7,8 +7,8 @@
 //   Mode 1 : fin de bloc SPAN (saut x + Tanh(conv 1x1 de c3) + produit), mêmes sorties
 //   Mode 2 : to_pixel (étape 3.4a) : biais puis DepthToSpace(4, CRD) fondu, écriture NCHW FP16 de la sortie
 //            et/ou sur la surface d'un emplacement de l'anneau (store_ring)
-// Le warp porte les colonnes de sortie complètes (jusqu'à 64) : l'accumulateur m16n8 de deux tuiles voisines
-// est l'opérande A d'un mma m16n8k16 f16 pour la conv 1x1.
+// Le warp porte les colonnes de sortie complètes (64, ou 48 pour un modèle à 48 canaux natifs) :
+// l'accumulateur m16n8 de deux tuiles voisines est l'opérande A d'un mma m16n8k16 f16 pour la conv 1x1.
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -25,16 +25,16 @@
 namespace ajp::gpu::cuda::span_fp8_kernels {
 
 struct KP {
-  const uint8_t* skip = nullptr;  // saut x, NHWC E4M3 (mode 1)
+  const uint8_t* skip = nullptr;  // saut x, NHWC E4M3 de la largeur du bloc (mode 1)
   float skip_scale = 0.f;
   float alpha = 1.f;  // accumulateur -> unités réelles
   // Étape 10.3 : non nul, une échelle par colonne de sortie (activation × canal des poids FP8), à la place
   // de alpha ; lu par paires (float2), comme le biais.
   const float* alpha_col = nullptr;
   const float* bias = nullptr;  // biais de la conv 3x3 (unités réelles)
-  const __half* w1 = nullptr;   // poids 1x1 [sortie][entrée], FP16, 64x64 (mode 1)
+  const __half* w1 = nullptr;   // poids 1x1 [sortie][entrée], FP16, N×N (mode 1)
   const float* b1 = nullptr;    // biais de la 1x1 (mode 1)
-  uint8_t* out8 = nullptr;      // sortie E4M3 NHWC (64 canaux) ou nullptr
+  uint8_t* out8 = nullptr;      // sortie E4M3 NHWC (N canaux, la largeur du bloc) ou nullptr
   float inv_s8 = 1.f;           // 1 / échelle de la sortie E4M3
   __half* out16 = nullptr;      // sortie FP16 (déjà décalée à la tranche de canaux) ou nullptr
   int ld16 = 0;                 // pas de ligne de out16, en éléments
@@ -66,23 +66,66 @@ __device__ __forceinline__ void mma_f16(float (&d)[4], const uint32_t (&a)[4], u
       : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
 }
 
-// Écrit une paire de canaux (2t, 2t+1 de la tuile n) d'une ligne, dans les sorties demandées.
-__device__ __forceinline__ void store_pair(const KP& p, long row, int col, float x0, float x1) {
-  if (p.out8)
-    *reinterpret_cast<uint16_t*>(p.out8 + row * 64 + col) =
+// Écrit une paire de canaux (2t, 2t+1 de la tuile n) d'une ligne, dans les sorties demandées. ld8 : pas de
+// ligne de out8, la largeur du bloc (64 ou 48). Act16 : out8 porte des activations FP16 (SPAN FP16 en noyaux
+// CUTLASS, sans quantification ni inv_s8) au lieu d'E4M3.
+template <bool Act16>
+__device__ __forceinline__ void store_pair(const KP& p, int ld8, long row, int col, float x0, float x1) {
+  if constexpr (Act16) {
+    if (p.out8)
+      *reinterpret_cast<__half2*>(reinterpret_cast<__half*>(p.out8) + row * ld8 + col) =
+          __floats2half2_rn(x0, x1);
+  } else if (p.out8) {
+    *reinterpret_cast<uint16_t*>(p.out8 + row * ld8 + col) =
         __nv_cvt_float2_to_fp8x2(make_float2(x0 * p.inv_s8, x1 * p.inv_s8), __NV_SATFINITE, __NV_E4M3);
+  }
   if (p.out16) *reinterpret_cast<__half2*>(p.out16 + row * p.ld16 + col) = __floats2half2_rn(x0, x1);
 }
 
-template <class Base, int Mode, bool Relu>
-__global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::Params params, KP tp) {
+// La paire de canaux (col, col + 1) du saut x à la ligne row (pas ld), en bits : E4M3 ×2 ou FP16 ×2.
+template <bool Act16>
+__device__ __forceinline__ uint32_t load_skip(const uint8_t* skip, long row, int ld, int col) {
+  if constexpr (Act16)
+    return *reinterpret_cast<const uint32_t*>(reinterpret_cast<const __half*>(skip) + row * ld + col);
+  return *reinterpret_cast<const uint16_t*>(skip + row * ld + col);
+}
+
+template <bool Act16>
+__device__ __forceinline__ float2 skip_value(uint32_t bits, float scale) {
+  if constexpr (Act16) {
+    __half2 h;
+    *reinterpret_cast<uint32_t*>(&h) = bits;
+    return __half22float2(h);
+  }
+  __nv_fp8x2_e4m3 q;
+  q.__x = static_cast<__nv_fp8x2_storage_t>(bits);
+  const float2 f = q.operator float2();  // pas float2(q) : en C++20 c'est une initialisation d'agrégat
+  return make_float2(f.x * scale, f.y * scale);
+}
+
+// Copie W1 (kN × kN demi-flottants) en smem, au pas kLd.
+template <int kN, int kLd, int kThreads>
+__device__ __forceinline__ void load_w1(__half* w1s, const __half* w1) {
+  constexpr int kNT = kN / 8;
+  for (int i = threadIdx.x; i < kN * kNT; i += kThreads)
+    *reinterpret_cast<uint4*>(w1s + (i / kNT) * kLd + (i % kNT) * 8) =
+        *reinterpret_cast<const uint4*>(w1 + (i / kNT) * kN + (i % kNT) * 8);
+}
+
+// Un bloc par SM au moins : sans ce second argument, ptxas plafonnait deux noyaux à 48 colonnes à 128
+// registres et débordait de 16 octets (nvcc 13.4, sm 89).
+template <class Base, int Mode, bool Relu, bool Act16>
+__global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Base::Params params, KP tp) {
   using Mma = typename Base::Mma;
   constexpr int kWarpM = Mma::Policy::Operator::Shape::kM;
   constexpr int kMI = kWarpM / 16;
   static_assert(Mma::WarpCount::kN == 1 && Mma::WarpCount::kK == 1,
                 "un warp doit porter toutes les colonnes");
-  static_assert(Mma::Shape::kN == 64, "le bloc doit couvrir 64 colonnes");
-  constexpr int kLd = 72;  // pas de ligne de W1 en smem (demi-flottants) : sans conflit de banques
+  constexpr int kN = Mma::Shape::kN;  // 64, ou 48 pour un modèle à 48 canaux natifs (kKernelsVersion 4)
+  static_assert(kN == 64 || kN == 48, "le bloc doit couvrir 64 ou 48 colonnes");
+  constexpr int kNT = kN / 8;   // tuiles n8 de l'accumulateur
+  constexpr int kKS = kN / 16;  // pas k16 de la conv 1x1 du mode 1
+  constexpr int kLd = kN + 8;   // pas de W1 en smem (36 ou 28 mots) : sans conflit de banques
 
   extern __shared__ __align__(16) unsigned char smem[];
   auto& ss = *reinterpret_cast<typename Mma::SharedStorage*>(smem);
@@ -93,13 +136,7 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
   if (params.grid_tiled_shape.m() <= tile.m() || params.grid_tiled_shape.n() <= tile.n()) return;
 
   int thread_idx = threadIdx.x;
-  if constexpr (Mode == 1) {
-    for (int i = thread_idx; i < 64 * 8; i += Base::kThreadCount) {
-      int r = i >> 3, c8 = i & 7;
-      *reinterpret_cast<uint4*>(w1s + r * kLd + c8 * 8) =
-          *reinterpret_cast<const uint4*>(tp.w1 + r * 64 + c8 * 8);
-    }
-  }
+  if constexpr (Mode == 1) load_w1<kN, kLd, Base::kThreadCount>(w1s, tp.w1);
   __syncthreads();
 
   typename Mma::IteratorA iterator_A(
@@ -128,9 +165,9 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
     // Étape 3.1 : une ligne au-delà de M n'est ni lue (saut) ni écrite. Les mma_f16 du mode 1 tournent quand
     // même : ils sont collectifs au warp.
     const bool in0 = r0 < tp.rows, in1 = r1 < tp.rows;
-    float v[8][4];
+    float v[kNT][4];
 #pragma unroll
-    for (int n = 0; n < 8; ++n) {
+    for (int n = 0; n < kNT; ++n) {
       float2 bb = n < nt_used ? __ldg(reinterpret_cast<const float2*>(tp.bias + n * 8 + 2 * t))
                               : make_float2(0.f, 0.f);
       const float2 aa = tp.alpha_col != nullptr && n < nt_used
@@ -143,7 +180,7 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
     }
     if constexpr (Mode == 0) {
 #pragma unroll
-      for (int n = 0; n < 8; ++n) {
+      for (int n = 0; n < kNT; ++n) {
         if (n >= nt_used) continue;
         if constexpr (Relu) {
           v[n][0] = fmaxf(v[n][0], 0.f);
@@ -151,10 +188,11 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
           v[n][2] = fmaxf(v[n][2], 0.f);
           v[n][3] = fmaxf(v[n][3], 0.f);
         }
-        if (in0) store_pair(tp, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
-        if (in1) store_pair(tp, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
+        if (in0) store_pair<Act16>(tp, kN, r0, n * 8 + 2 * t, v[n][0], v[n][1]);
+        if (in1) store_pair<Act16>(tp, kN, r1, n * 8 + 2 * t, v[n][2], v[n][3]);
       }
     } else if constexpr (Mode == 2) {
+      static_assert(kNT >= 6, "to_pixel a 48 colonnes");
       // Canal = 16c + 4bh + bw. Le fil tient les colonnes 8n + 2t et 8n + 2t + 1 (n < 6) : pour j = n % 2, la
       // ligne de sortie bh = 2j + t/2 et les pixels bw = 2(t%2) et 2(t%2) + 1 des trois plans c = n / 2, soit
       // R, G et B complets de 4 pixels de sortie par ligne de convolution. Arrondi à half avant unorm16 : le
@@ -188,25 +226,25 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
         }
       }
     } else {
-      uint16_t sk[8][2];
+      uint32_t sk[kNT][2];
 #pragma unroll
-      for (int n = 0; n < 8; ++n) {
-        sk[n][0] = in0 ? *reinterpret_cast<const uint16_t*>(tp.skip + r0 * 64 + n * 8 + 2 * t) : uint16_t{0};
-        sk[n][1] = in1 ? *reinterpret_cast<const uint16_t*>(tp.skip + r1 * 64 + n * 8 + 2 * t) : uint16_t{0};
+      for (int n = 0; n < kNT; ++n) {
+        sk[n][0] = in0 ? load_skip<Act16>(tp.skip, r0, kN, n * 8 + 2 * t) : 0U;
+        sk[n][1] = in1 ? load_skip<Act16>(tp.skip, r1, kN, n * 8 + 2 * t) : 0U;
       }
-      uint32_t A[4][4];
+      uint32_t A[kKS][4];
 #pragma unroll
-      for (int ks = 0; ks < 4; ++ks) {
+      for (int ks = 0; ks < kKS; ++ks) {
         A[ks][0] = pack_half2(v[2 * ks][0], v[2 * ks][1]);
         A[ks][1] = pack_half2(v[2 * ks][2], v[2 * ks][3]);
         A[ks][2] = pack_half2(v[2 * ks + 1][0], v[2 * ks + 1][1]);
         A[ks][3] = pack_half2(v[2 * ks + 1][2], v[2 * ks + 1][3]);
       }
 #pragma unroll
-      for (int nt = 0; nt < 8; ++nt) {
+      for (int nt = 0; nt < kNT; ++nt) {
         float d[4] = {0.f, 0.f, 0.f, 0.f};
 #pragma unroll
-        for (int ks = 0; ks < 4; ++ks) {
+        for (int ks = 0; ks < kKS; ++ks) {
           const __half* wp = w1s + (nt * 8 + g) * kLd + ks * 16 + 2 * t;
           mma_f16(d, A[ks], *reinterpret_cast<const uint32_t*>(wp),
                   *reinterpret_cast<const uint32_t*>(wp + 8));
@@ -214,38 +252,41 @@ __global__ void __launch_bounds__(Base::kThreadCount) net_kernel(typename Base::
         float2 bb1 = __ldg(reinterpret_cast<const float2*>(tp.b1 + nt * 8 + 2 * t));
 #pragma unroll
         for (int h = 0; h < 2; ++h) {
-          __nv_fp8x2_e4m3 q;
-          q.__x = sk[nt][h];
-          float2 skf = q.operator float2();  // pas float2(q) : en C++20 c'est une initialisation d'agrégat
-          float s0 = v[nt][2 * h] + skf.x * tp.skip_scale, s1 = v[nt][2 * h + 1] + skf.y * tp.skip_scale;
+          const float2 skf = skip_value<Act16>(sk[nt][h], tp.skip_scale);
+          float s0 = v[nt][2 * h] + skf.x, s1 = v[nt][2 * h + 1] + skf.y;
           float o0 = s0 * tanh_approx(d[2 * h] + bb1.x);
           float o1 = s1 * tanh_approx(d[2 * h + 1] + bb1.y);
-          if (h ? in1 : in0) store_pair(tp, h ? r1 : r0, nt * 8 + 2 * t, o0, o1);
+          if (h ? in1 : in0) store_pair<Act16>(tp, kN, h ? r1 : r0, nt * 8 + 2 * t, o0, o1);
         }
       }
     }
   }
 }
 
-// EIn : float_e4m3_t ou half_t. Acc : float ou half_t (accumulateur du mma).
+// EIn : float_e4m3_t ou half_t. Acc : float ou half_t (accumulateur du mma). TN : colonnes du bloc, 64 ou 48
+// (canaux de sortie natifs d'un modèle à 48 canaux). Alg kFewChannels : la dimension K est (ligne, colonne,
+// canal) mise à plat, découpée en tuiles de TK sans retour à chaque position du filtre ; c'est ce qui évite,
+// pour 48 canaux d'entrée et des tuiles K de 32 ou 64, la queue masquée de chaque position (chantier SPAN 1).
 template <class EIn, int TM, int TK, int WM, int Stages, class Acc = float,
-          cutlass::conv::IteratorAlgorithm Alg = cutlass::conv::IteratorAlgorithm::kOptimized>
+          cutlass::conv::IteratorAlgorithm Alg = cutlass::conv::IteratorAlgorithm::kOptimized, int TN = 64>
 struct Cfg {
   using E = EIn;
+  static constexpr int kN = TN;
   static constexpr bool kFp8 = cutlass::sizeof_bits<EIn>::value == 8;
   using Inst = typename std::conditional<kFp8, cutlass::gemm::GemmShape<16, 8, 32>,
                                          cutlass::gemm::GemmShape<16, 8, 16>>::type;
   using Dummy = cutlass::epilogue::thread::LinearCombination<EIn, 8, Acc, float>;  // jamais exécuté
   using Base = typename cutlass::conv::kernel::DefaultConv2dFprop<
       EIn, cutlass::layout::TensorNHWC, EIn, cutlass::layout::TensorNHWC, EIn, cutlass::layout::TensorNHWC,
-      Acc, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89, cutlass::gemm::GemmShape<TM, 64, TK>,
-      cutlass::gemm::GemmShape<WM, 64, TK>, Inst, Dummy,
+      Acc, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89, cutlass::gemm::GemmShape<TM, TN, TK>,
+      cutlass::gemm::GemmShape<WM, TN, TK>, Inst, Dummy,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, Stages, cutlass::arch::OpMultiplyAdd,
       Alg>::Kernel;
 };
 
 // Un lancement : paramètres CUTLASS construits une fois, lancement compatible avec la capture de graphe.
-template <class C, int Mode, bool Relu>
+// Act16 : les activations out8 et skip sont en FP16 (SPAN FP16), sinon en E4M3.
+template <class C, int Mode, bool Relu, bool Act16 = false>
 struct Launcher {
   using Base = typename C::Base;
   using E = typename C::E;
@@ -277,18 +318,18 @@ struct Launcher {
     kp.fw = W;
     grid = typename Base::ThreadblockSwizzle().get_grid_shape(params.grid_tiled_shape);
     block = dim3(Base::kThreadCount);
-    smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + 64 * 72 * 2;
+    smem = ((sizeof(typename Base::Mma::SharedStorage) + 15) / 16) * 16 + C::kN * (C::kN + 8) * 2;
     if (smem > 48 * 1024)
-      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
+      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu, Act16>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
   }
   void launch(cudaStream_t s) const {
     if (smem > 48 * 1024 && !armed) {
-      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu>,
+      attribute = cudaFuncSetAttribute(net_kernel<Base, Mode, Relu, Act16>,
                                        cudaFuncAttributeMaxDynamicSharedMemorySize, int(smem));
       armed = true;
     }
-    net_kernel<Base, Mode, Relu><<<grid, block, smem, s>>>(params, kp);
+    net_kernel<Base, Mode, Relu, Act16><<<grid, block, smem, s>>>(params, kp);
   }
 };
 
