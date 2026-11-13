@@ -100,6 +100,10 @@ void grade_tab(PlaySettings& d) {
   panel::tip(
       i18n::tr("HDR only: a burst of rapid flashes (more than three a second) is dimmed for a second, for "
                "photosensitive viewers. Off: flashes keep their full light."));
+  ImGui::Checkbox(i18n::tr("LUTs in one table (faster, test)"), &d.look_table);
+  panel::tip(
+      i18n::tr("The LUT stack is computed once into one table on the GPU, then read once per pixel instead "
+               "of LUT by LUT. Faster, but not exact: a few PQ codes off at worst on saturated colors."));
   if (ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
     g.anime_saturation = defaults.grade_values.anime_saturation;
@@ -108,6 +112,7 @@ void grade_tab(PlaySettings& d) {
     d.look_contrast = defaults.look_contrast;
     d.look_highlight = defaults.look_highlight;
     d.flash_guard = defaults.flash_guard;
+    d.look_table = defaults.look_table;
     d.face_skin = defaults.face_skin;
     d.surface_white = defaults.surface_white;
     g.shadows = defaults.grade_values.shadows;

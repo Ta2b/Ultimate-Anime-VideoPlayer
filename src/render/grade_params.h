@@ -138,6 +138,9 @@ struct GradeParams {
   double look_white = 203.0;
   double look_pq = 0.0;
   double look_clean = 0.0;  // 1 : la pile sur la couleur du voisinage, grain et paliers non étirés
+  // 1 : la pile lue dans une table de 129³ points construite sur le GPU (render/look_table.h), une lecture
+  // par pixel au lieu de vingt ; une approximation (quelques codes PQ au pire), éteinte par défaut.
+  double look_table = 0.0;
   // Le blanc des surfaces en part de celui que la pile porte sous la courbe (1 : la pile seule ; 0,5 à 1),
   // réglé par la dernière passe (output_tune).
   double surface_white = 1.0;

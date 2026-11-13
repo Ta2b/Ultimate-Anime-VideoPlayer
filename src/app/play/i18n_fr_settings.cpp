@@ -198,6 +198,12 @@ constexpr std::array kSettingsPages{
           "SPAN passe en {} (construit la première fois pour cette taille)"},
     Entry{"Highlights", "Éclats"},
     Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
+    Entry{"LUTs in one table (faster, test)", "LUT en une seule table (plus rapide, essai)"},
+    Entry{"The LUT stack is computed once into one table on the GPU, then read once per pixel instead of "
+          "LUT by LUT. Faster, but not exact: a few PQ codes off at worst on saturated colors.",
+          "La pile de LUT est calculée une fois dans une seule table sur le GPU, puis lue une fois par pixel "
+          "au lieu de LUT par LUT. Plus rapide, mais pas exact : quelques codes PQ d'écart au pire sur les "
+          "couleurs saturées."},
     Entry{"Skin from faces (test)", "Peau des visages (essai)"},
     Entry{
         "Faces are found ahead of playback and the grade only treats their skin tones as skin: warm lamps of "

@@ -120,6 +120,45 @@ noir) :
 - look : la luminance du voisinage (3 × 3 points tous les 6 pixels) est décodée une fois par tuile en mémoire
   partagée, au lieu de neuf fois par pixel.
 
+## Le look en une table (13/11, essai, éteint par défaut)
+
+Réglage « LUT en une seule table » (Vidéo, grade ; `look_table` dans `[grade]` de `play.toml`). La pile entière
+(ses 19 emplacements, le pied adouci et les domaines compris) est évaluée sur le GPU, par une passe de calcul,
+aux 129³ nœuds d'une table rgba32f (34 Mo) ; le look la lit ensuite d'une seule lecture trilinéaire par pixel
+au lieu de traverser la pile (`render/look_table.h`). La table est refaite au rendu qui suit un changement
+d'intensité ou de LUT, sans relire de hook ; le voisinage de `--clean-looks` et les tuiles restent ceux du
+hook. Éteint, le hook exact rend l'image au bit près ; il reste la référence des tests et des calculs en
+double (`output_tune`, `sample_chain`). L'export suit le réglage (ses paramètres viennent de `grade_of`).
+`--bake-looks` n'en dépend pas : il écrit toujours une LUT de 65 points composée sur le CPU, pour un autre
+lecteur.
+
+Écart à la pile LUT par LUT, sur le jeu de couleurs de A41-01 (48³ couleurs SDR relevées à 233 nits, en PQ),
+mesuré sur lavapipe (`tests/unit/render/look_table_gpu_test.cpp`) : **7,5 codes PQ 10 bits au pire**, 99,9 %
+sous 4, 99 % sous 2, **0,35 en moyenne** ; 4 % des couleurs à plus d'un code. Toute la chaîne (voisinage
+compris) : 8,0 au pire, 0,34 en moyenne. Les plus grands écarts sont dans les bleus saturés, sur les
+pliures que les bornes [0, 1] de chaque LUT font dans la pile. L'objectif d'un code au pire n'est pas tenu.
+Ce qui a été essayé en simulation (numpy, même jeu) :
+
+| Table | Au pire | 99,9 % | Moyen |
+| --- | --- | --- | --- |
+| 65 points, trilinéaire | 12,9 | 8,8 | 1,0 |
+| 65 points, tétraédrique | 17,6 | 14,6 | 1,2 |
+| 129 points, trilinéaire (retenue) | 7,5 | 4,1 | 0,31 |
+| 129 points, tétraédrique | 6,0 | 4,7 | 0,37 |
+| 129 points, courbe d'entrée log (k = 1) | 10,2 | 7,9 | 0,44 |
+| 129 points, courbe d'entrée log (k = 4) | 24,8 | 17,0 | 0,65 |
+| 161 / 193 points, trilinéaire | 6,0 / 4,7 | 2,5 / 2,5 | 0,16 / 0,13 |
+
+Une courbe d'entrée qui resserre les sombres y gagne (sous le code 256 : 2,2 au pire à 129 points, 1,9 avec
+k = 4), mais elle déplace les nœuds hors de la grille des LUT de 33 points : toute la pile y perd (24,8 au pire).
+À 129 points, la grille de la première LUT tombe sur des nœuds, où elle est exacte. Le tétraédrique gagne un
+peu sur le pire et perd sur le reste, en quatre lectures au lieu d'une lecture filtrée : la table reste
+trilinéaire.
+
+Temps sur lavapipe en 4K (l'ordre relatif seulement) : la passe du look passe de 503 à 240 ms avec le voisinage
+(le défaut), de 262 à 76 ms sans. La construction de la table vaut 129³ ≈ 2,1 millions de traversées de la
+pile, un quart d'image 4K, une seule fois.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).
