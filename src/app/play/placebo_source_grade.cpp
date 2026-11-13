@@ -13,6 +13,11 @@ namespace {
 
 constexpr std::uint32_t kIn = 0;
 constexpr std::uint32_t kOut = 1;
+// Le numéro de slot que le backend voit pour ces deux images. Elles portent la génération du ring de
+// l'écran, et le backend TensorRT reconnaît un slot importé à son seul numéro dans la génération
+// (TensorRtBackend::slot) : avec 0 et 1, il écrivait dans les slots 0 et 1 de l'écran et attendait leurs
+// sémaphores, et la lecture se figeait. Les deux derniers numéros (64 au plus) restent hors du ring.
+constexpr std::uint32_t kBackendIndex = 62;
 
 pl_frame frame_of(pl_tex tex, const pl_color_space& color) {
   pl_frame frame{};
@@ -95,12 +100,16 @@ class PlaceboSourceGrader final : public SourceGrader {
   // Les deux images à la taille des slots du ring de l'écran ; refaites si elle change.
   std::expected<void, Refusal> open(int width, int height) {
     if (!slots_.empty() && slots_[kIn].width == width && slots_[kIn].height == height) return {};
-    auto slots = ring_.create(gpu_, width, height, 2, external_);
+    // La sortie est la cible de pl_render_image : sans renderable, libplacebo la refuse (rc.13, TensorRT).
+    auto slots = ring_.create(gpu_, width, height, 2, external_, RingFormat::Rgba16Unorm, true);
     if (!slots) return std::unexpected(std::move(slots.error()));
     ring_generation_ = slots->front().generation;
     // Le backend n'a qu'une génération de ring à la fois (la plus récente retire les vues des autres) : ces
     // deux images portent celle du ring de l'écran.
-    for (RingSlotDesc& slot : *slots) slot.generation = generation_;
+    for (RingSlotDesc& slot : *slots) {
+      slot.generation = generation_;
+      slot.index += kBackendIndex;
+    }
     slots_ = std::move(*slots);
     in_ready_ = 0;
     out_free_ = 0;

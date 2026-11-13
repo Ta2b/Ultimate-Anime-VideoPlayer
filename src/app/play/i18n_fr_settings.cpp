@@ -198,7 +198,7 @@ constexpr std::array kSettingsPages{
           "SPAN passe en {} (construit la première fois pour cette taille)"},
     Entry{"Highlights", "Éclats"},
     Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
-    Entry{"LUTs in one table (faster, test)", "LUT en une seule table (plus rapide, essai)"},
+    Entry{"LUTs in one table (faster)", "LUT en une seule table (plus rapide)"},
     Entry{"Grade before interpolation (faster, test)", "Grade avant l'interpolation (plus rapide, essai)"},
     Entry{"HDR, with interpolation after SPAN: each source frame is graded once, and the in-between frames "
           "are made from graded frames, instead of grading every displayed frame. Much faster at high "

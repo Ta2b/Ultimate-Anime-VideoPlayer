@@ -335,9 +335,12 @@ struct PlaySettings {
   // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
   bool flash_guard = true;
   // Le look en une table (render/look_table.h) : la pile de LUT évaluée sur le GPU dans une table de 129³
-  // points, lue d'une seule lecture par pixel au lieu de vingt. Plus rapide, mais pas au bit près (quelques
-  // codes PQ au pire) : éteint par défaut, à juger à l'œil ; en direct, l'export la suit.
-  bool look_table = false;
+  // points, lue d'une seule lecture par pixel au lieu de vingt. Pas au bit près (quelques codes PQ au pire),
+  // mais rien de visible : 52 à 53 dB face à la pile LUT par LUT, et le grade passe de 8,5 à 1,9 ms par image
+  // en 4K sur une 4070 Ti. Allumé par défaut ; en direct, l'export la suit. Clé look_one_table
+  // de play.toml : l'ancienne clé look_table (essai éteint, écrit tel quel par la rc.12 et la rc.13) est
+  // ignorée.
+  bool look_table = true;
   // Le grade avant le warp (app/play/source_grade.h) : avec l'interpolation après SPAN, chaque image source
   // est gradée une fois, et le warp en tire les images intermédiaires déjà gradées, au lieu d'un grade par
   // image affichée (huit fois moins à RIFE ×8). Pas au bit près (le grade d'un mélange devient le mélange des
