@@ -38,7 +38,7 @@ if(AJP_WITH_SPAN_FP8)
   else()
     set(ajp_span_fp8_ref span_fp8_ref.cu)
   endif()
-  # Les options de nvcc des deux bibliothèques de noyaux CUTLASS ci-dessous.
+  # Les options de nvcc de la bibliothèque des noyaux CUTLASS ci-dessous.
   function(ajp_span_cutlass_target target architectures)
     target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src")
     # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
@@ -54,17 +54,17 @@ if(AJP_WITH_SPAN_FP8)
       # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
       $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
   endfunction()
-  # Le SPAN FP16 natif (span_fp8_net16.cu) : mma FP16 m16n8k16 et copie asynchrone, rien qui demande plus
-  # qu'Ampere. sm 86 (RTX 30), 89 (RTX 40), 120 (RTX 50, code réel et PTX) ; supported_fp16_device dit les
-  # mêmes, et le chargement juge la sortie sur la carte (span_fp8_check.h).
-  add_library(ajp_backend_span_fp16_kernels STATIC span_fp8_net16.cu)
-  ajp_span_cutlass_target(ajp_backend_span_fp16_kernels "86-real;89-real;120")
-  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu ${ajp_span_fp8_ref})
-  # sm 89 (Ada) et sm 120 (Blackwell grand public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89,
-  # et la liste AJP_CUDA_ARCHITECTURES n'y change rien. Le PTX de 120 (code réel et virtuel) garde le module
-  # chargeable sur une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
+  # Une seule bibliothèque pour les noyaux FP8 et FP16 : net_kernel<…> de conv_cat et de to_pixel est le même
+  # type dans span_fp8_net.cu et span_fp8_net16.cu. Séparés dans deux bibliothèques aux architectures
+  # différentes (span_fp8_net16.cu aussi pour sm 86), ils rendaient par to_pixel un troisième plan faux, le
+  # bleu à 21 dB, FP8 compris : le bisect sur RTX 4070 Ti désigne cette séparation, sans doute des souches
+  # d'hôte de mêmes noms pliées en une seule. sm 89 (Ada) et sm 120 (Blackwell grand
+  # public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89, et la liste AJP_CUDA_ARCHITECTURES n'y
+  # change rien. Le PTX de 120 (code réel et virtuel) garde le module chargeable sur une carte plus récente, où
+  # supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
+  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_fp8_net16.cu
+    ${ajp_span_fp8_ref})
   ajp_span_cutlass_target(ajp_backend_span_fp8_kernels "89-real;120")
-  target_link_libraries(ajp_backend_span_fp8_kernels PRIVATE ajp_backend_span_fp16_kernels)
   set(ajp_span_fp8_net ajp_backend_span_fp8_kernels)
 else()
   add_library(ajp_backend_span_fp8_none STATIC span_fp8_net_none.cpp span_fp8_ref_none.cpp)

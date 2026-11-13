@@ -72,7 +72,7 @@ bool SpanFp8Net::supported_device(int major, int minor) {
 }
 
 bool SpanFp8Net::supported_fp16_device(int major, int minor) {
-  return (major == 8 && (minor == 6 || minor == 9)) || (major == 12 && minor == 0);
+  return (major == 8 && minor == 9) || (major == 12 && minor == 0);
 }
 
 std::int64_t SpanFp8Net::workspace_bytes() const {

@@ -1,5 +1,5 @@
 // Le SPAN FP16 natif jugé sur la carte au chargement (docs/span-fp8-cutlass.md, SPAN FP16 natif) : les noyaux
-// CUTLASS sont compilés pour les RTX 30 et 50 sans y avoir jamais tourné devant nous. Une image d'essai passe
+// CUTLASS sont aussi compilés pour les RTX 50 sans y avoir jamais tourné devant nous. Une image d'essai passe
 // par le réseau chargé ; le coin haut-gauche de sa sortie se compare au SPAN f32 du processeur
 // (span_fp8::forward), un calcul écrit à part, sur la même découpe. Sous kNativeCheckDb, le chargement est
 // refusé et la chaîne reprend TensorRT FP16.

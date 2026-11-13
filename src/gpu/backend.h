@@ -93,7 +93,7 @@ namespace ajp::gpu {
 // 40 : BackendInit::filtered_warp (le warp par texture, à l'essai) ; SpanFp8Request::fp16, timing_width et
 // timing_height ; SpanFp8Derivation::trt_fp16_ms, timed_size et validation_peaks (E01).
 // 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
-// 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, aussi sur RTX 30 et RTX 50).
+// 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, RTX 40 et RTX 50).
 inline constexpr int kBackendAbi = 42;
 
 using DeviceUuid = ajp::DeviceUuid;

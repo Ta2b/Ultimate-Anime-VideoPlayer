@@ -269,17 +269,19 @@ moteur » de SPAN, le temps par image et les images en retard, et une capture `-
 (attendu : identique à TensorRT FP16 au FP16 près). Si le b5f48 natif bat TensorRT FP16 et le b8f64 FP8, il
 devient le défaut au cran Équilibre, sous Linux et sous Windows (#802 y construit les noyaux).
 
-### RTX 30 et RTX 50, et l'essai au chargement
+### RTX 50, et l'essai au chargement
 
-Les noyaux du FP16 natif n'emploient que le `mma` FP16 m16n8k16 et la copie asynchrone (`cp.async`) : rien
-qu'Ampere n'ait. Ils sont compilés à part (`span_fp8_net16.cu`, bibliothèque `ajp_backend_span_fp16_kernels`)
-pour `86-real;89-real;120`, et `SpanFp8Net::supported_fp16_device` prend sm 8.6 (RTX 30), 8.9 (RTX 40) et
-12.0 (RTX 50) ; le backend l'annonce par `BackendCaps::span_fp16_cutlass` (interface 42), que
-`--span-native` demande. Le FP8 reste à Ada seule (`supported_device`). Les A100 (sm 8.0) et les RTX 20
-(sm 7.5, sans `cp.async` ni m16n8k16) ne sont pas pris : Turing demanderait une boucle CUTLASS à deux
-étages et le `mma` m16n8k8.
+Les noyaux du FP16 natif sont dans la même bibliothèque que le FP8 (`ajp_backend_span_fp8_kernels`,
+`89-real;120`) : `SpanFp8Net::supported_fp16_device` prend sm 8.9 (RTX 40) et 12.0 (RTX 50), et le backend
+l'annonce par `BackendCaps::span_fp16_cutlass` (interface 42), que `--span-native` demande. La #811 les avait
+mis dans une bibliothèque à part, compilée aussi pour sm 8.6 (RTX 30) : `net_kernel<…>` de conv_cat et de
+to_pixel est le même type dans les deux fichiers, et la séparation a cassé to_pixel pour tout le monde (le
+troisième plan à 21 dB, FP8 compris ; le FP8 b8f64 était refusé au chargement et la lecture retombait en
+TensorRT FP16). Le bisect sur la RTX 4070 Ti l'a désignée ; la bibliothèque unique d'avant est revenue, et
+les RTX 30 avec elle sont abandonnées : le natif ne gagne de toute façon pas (mesure ci-dessous). Les A100
+(sm 8.0) et les RTX 20 (sm 7.5) ne sont pas prises non plus.
 
-Ces noyaux n'ont tourné devant personne hors d'Ada. Le chargement d'un paquet FP16 les juge donc sur la
+Ces noyaux n'ont tourné devant personne sur une RTX 50. Le chargement d'un paquet FP16 les juge donc sur la
 carte (`span_fp8_check.{h,cpp}`) : une image d'essai (rampes, ondes, marches) passe par le réseau à la taille
 de la vidéo, et le coin haut-gauche de la sortie se compare au SPAN calculé en f32 sur le processeur
 (`gpu/span_fp8/forward.{h,cpp}`, une boucle simple écrite à part des noyaux) sur la découpe 64 × 64 du même

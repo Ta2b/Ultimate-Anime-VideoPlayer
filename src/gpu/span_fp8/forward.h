@@ -1,7 +1,7 @@
 // Le SPAN d'un paquet « .span8 » calculé en f32 sur le processeur, sans quantification ni CUTLASS : un calcul
 // écrit à part des noyaux, contre lequel le backend juge, au chargement, ce que les noyaux CUTLASS rendent
 // sur la carte (SpanFp8Engine, essai au chargement). Il sert surtout aux architectures où les noyaux n'ont
-// jamais tourné devant nous (RTX 30, RTX 50 : docs/span-fp8-cutlass.md, SPAN FP16 natif).
+// jamais tourné devant nous (RTX 50 : docs/span-fp8-cutlass.md, SPAN FP16 natif).
 //
 // Le graphe est celui du SPAN « unshuffle » d'AnimeJaNai (onnx_weights.h) : dégroupage 2×2 (canal
 // c·4 + dy·2 + dx), conv_1 (3×3), blocs (c1, Relu, c2, Relu, c3 ; sortie (x + c3)·tanh(att(c3))),
