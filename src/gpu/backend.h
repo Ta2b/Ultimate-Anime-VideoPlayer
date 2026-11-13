@@ -92,7 +92,8 @@ namespace ajp::gpu {
 // 39 : Artifact::reused (le moteur vient du cache : un refus au chargement le met de côté, C05-01).
 // 40 : BackendInit::filtered_warp (le warp par texture, à l'essai) ; SpanFp8Request::fp16, timing_width et
 // timing_height ; SpanFp8Derivation::trt_fp16_ms, timed_size et validation_peaks (E01).
-inline constexpr int kBackendAbi = 40;
+// 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
+inline constexpr int kBackendAbi = 41;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -102,6 +103,16 @@ enum class DeviceMatch : std::uint8_t { Same, Different, Unknown };
 // (core/log.h) ; ses canaux y vont par install_module_log_sinks. Le rappel ne lève jamais.
 enum class BackendLogLevel : std::uint8_t { Debug, Info, Warn, Error };
 using BackendLog = std::function<void(BackendLogLevel level, std::string_view message)>;
+
+// Les bits de BackendInit::trials. Un bit retiré n'est pas repris par un autre essai.
+// --l2-keep : l'encodage gardé de RIFE fusionné tenu en L2 (fenêtre d'accès persistante, au plus 16 Mo
+// réservés). Gain à mesurer face au L2 qu'il prend à SPAN. Lu par le backend TensorRT ; sans effet ailleurs.
+inline constexpr std::uint32_t kTrialL2Keep = 1U << 0U;
+// « Vitesse avant précision » décochée (Général > Moteurs, PlaySettings::fast_precision) : la porte du
+// moteur Vulkan ne garde une précision réduite qu'à 0,5 dB des noyaux de référence, même quand la perte ne se
+// voit pas (net_gate.h). Un réglage plutôt qu'un essai, porté par ces bits pour ne pas monter kBackendAbi (un
+// paquet TensorRT déjà installé reste valable). Lu par le backend Vulkan ; sans effet ailleurs.
+inline constexpr std::uint32_t kStrictPrecision = 1U << 1U;
 
 // Ce que le lecteur passe à ajp_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à ajp_backend_destroy. refusal ne vaut que le
@@ -118,6 +129,9 @@ struct BackendInit {
   // local / 512). Perte de qualité dont le gain n'est pas mesuré : elle ne sert qu'à la mesure de
   // docs/interpolation.md. Lu par le backend TensorRT ; sans effet ailleurs.
   bool filtered_warp = false;
+  // Les options d'essai des chantiers, éteintes par défaut, pour la mesure : un bit par essai (kTrial…). Un
+  // essai de plus prend un bit, sans monter kBackendAbi.
+  std::uint32_t trials = 0;
   // Rempli quand ajp_backend_create rend nullptr : AbiMismatch, DeviceMismatch,
   // LibraryUnavailable… ; nullptr si l'appelant n'en veut pas.
   Refusal* refusal = nullptr;

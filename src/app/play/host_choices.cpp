@@ -6,6 +6,7 @@
 
 #include "app/play/auto_bench.h"
 #include "app/play/default_player.h"
+#include "app/play/engine_install.h"
 #include "app/play/engine_screen.h"
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
@@ -43,6 +44,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.display_width = display_width(screen.window());  // un écran 21:9 se mesure à sa vraie taille
   choices.calibrated = calibrated_chain(settings_dir, choices.calibration_host);
   choices.gpu_name = machine.name;
+  choices.span_fp8 = span_fp8_default(machine.name, tensorrt);
   choices.driver_version = screen.device().driver_version;
   choices.gpus = screen.device_names();
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;

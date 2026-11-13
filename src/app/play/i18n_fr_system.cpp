@@ -24,6 +24,15 @@ constexpr std::array kSystemPages{
     Entry{"Add to \"Open with\"", "Ajouter à « Ouvrir avec »"},
     Entry{"An engine is built once per model and size, then read from the cache.",
           "Un moteur est construit une fois par modèle et par taille, puis relu du cache."},
+    Entry{"Speed before precision (Vulkan)", "Vitesse avant précision (Vulkan)"},
+    Entry{
+        "Vulkan engines keep half-precision sums when the difference stays invisible (above 60 dB against "
+        "full precision): upscaling runs about twice as fast on recent GeForce cards. Unchecked, a loss of "
+        "more than 0.5 dB is refused. Applies at next launch; engines are built again.",
+        "Les moteurs Vulkan gardent leurs sommes en demi-précision quand l'écart reste invisible (au-dessus "
+        "de 60 dB face à la pleine précision) : l'agrandissement va environ deux fois plus vite sur les "
+        "GeForce récentes. Décochée, une perte de plus de 0,5 dB est refusée. Vaut au prochain lancement ; "
+        "les moteurs se reconstruisent."},
     Entry{"At every launch", "À chaque lancement"},
     Entry{"At scene cuts and held drawings the previous frame repeats, so the file keeps a constant frame "
           "rate any editor reads.",
@@ -103,10 +112,11 @@ constexpr std::array kSystemPages{
     Entry{"Reopens the engines screen; playback resumes at the same spot.",
           "Rouvre l'écran des moteurs ; la lecture reprend ensuite au même endroit."},
     Entry{"SPAN Performance mode (FP8)", "Mode Performance de SPAN (FP8)"},
-    Entry{"Same engines and settings as playback, with no skipped frame. No HDR or grading: the "
-          "chain's picture as is.",
-          "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. Ni HDR, ni étalonnage : "
-          "l'image de la chaîne telle quelle."},
+    Entry{
+        "Same engines and settings as playback, with no skipped frame. The HDR grade comes along: HDR10, "
+        "or graded SDR in H.264; an HDR source stays as is.",
+        "Mêmes moteurs et réglages qu'à la lecture, sans image sautée. L'étalonnage HDR suit : HDR10, ou SDR "
+        "étalonné en H.264 ; une source HDR reste telle quelle."},
     Entry{"Source · {}x{}", "Source · {}x{}"},
     Entry{"Suggested name", "Nom proposé"},
     Entry{"The output is an MKV, MP4 or MOV: its name ends in .mkv, .mp4 or .mov.",

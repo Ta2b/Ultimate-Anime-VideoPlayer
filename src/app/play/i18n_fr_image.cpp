@@ -114,6 +114,11 @@ constexpr std::array kImageTabs{
           "Aucun modèle d'interpolation trouvé : placez un modèle RIFE dans le dossier des modèles."},
     Entry{"No steps: each frame is computed for the exact moment it is shown.",
           "Aucun palier : chaque image est calculée pour l'instant exact où elle sera vue."},
+    Entry{"Reduced to {} first, so the output stays within 4K.",
+          "Réduite d'abord à {}, pour que la sortie reste en 4K."},
+    Entry{
+        "Off for this video: {:.2f} fps is not an anime frame rate (23.976, 24, 25, 29.97 or 30).",
+        "Coupée pour cette vidéo : {:.2f} i/s n'est pas une cadence d'anime (23,976, 24, 25, 29,97 ou 30)."},
     Entry{"Output: {}, twice the working resolution (SPAN ×2).",
           "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
     Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more "

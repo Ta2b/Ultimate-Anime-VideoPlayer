@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include "app/play/options.h"
@@ -12,6 +13,14 @@
 #include "kernels/spec/rife.h"
 
 namespace ajp::app::play {
+// « profil hôte · attente … : médiane, p95 (nombre) » au journal de fin, si l'attente a été chronométrée.
+void UpscaleStage::HostWaits::log(std::string_view what) {
+  if (us.empty()) return;
+  std::ranges::sort(us);
+  log_channel("gpu")->info("profil hôte · attente {} : médiane {:.2f} ms, p95 {:.2f} ms ({})", what,
+                           static_cast<double>(us[us.size() / 2]) / 1000.0,
+                           static_cast<double>(us[us.size() * 95 / 100]) / 1000.0, us.size());
+}
 namespace {
 
 gpu::Shape planes(int channels, int width, int height) {
@@ -58,6 +67,12 @@ UpscaleStage::~UpscaleStage() {
   }
   if (spans_reused_ > 0)
     log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
+  // Le travail d'une image ne s'enfile qu'avec un slot libre : ces attentes sont du temps où l'étage ne
+  // nourrissait pas le GPU parce que l'écran n'avait pas encore rendu de slot.
+  if (const SlotWaits& waits = slot_waits(); waits.count > 0)
+    log_channel("gpu")->info(
+        "anneau : {} attentes d'un slot libre, {:.1f} ms en tout, la plus longue {:.1f} ms", waits.count,
+        static_cast<double>(waits.total_us) / 1000.0, static_cast<double>(waits.longest_us) / 1000.0);
   if (encodes_kept_ + encodes_followed_ + encodes_after_gap_ + encodes_cold_ > 0)
     log_channel("gpu")->info(
         "RIFE : encodage repris sur {} passes, B seule sur {}, A et B sur {} après une paire sans passe et "
@@ -99,14 +114,8 @@ UpscaleStage::~UpscaleStage() {
   if (setup_.live && setup_.live->cuts().active())
     log_channel("gpu")->info("coupes : {} désaccords entre RIFE et les plans de la pré-analyse",
                              cut_disagreements_);
-  if (!scores_wait_us_.empty()) {
-    std::ranges::sort(scores_wait_us_);
-    log_channel("gpu")->info(
-        "profil hôte · attente des mesures de la paire : médiane {:.2f} ms, p95 {:.2f} ms ({})",
-        static_cast<double>(scores_wait_us_[scores_wait_us_.size() / 2]) / 1000.0,
-        static_cast<double>(scores_wait_us_[scores_wait_us_.size() * 95 / 100]) / 1000.0,
-        scores_wait_us_.size());
-  }
+  scores_waits_.log("des mesures de la paire");
+  motion_waits_.log("du mouvement");
 }
 
 std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoStageInit init,

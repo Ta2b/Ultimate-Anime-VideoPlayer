@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <variant>
@@ -27,6 +28,7 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
+#include "app/play/chain.h"
 #include "app/play/chain_setup.h"
 #include "app/play/controls.h"
 #include "app/play/export_depth.h"
@@ -34,6 +36,7 @@ extern "C" {
 #include "app/play/export_sink.h"
 #include "app/play/first_run.h"
 #include "app/play/live_settings.h"
+#include "app/play/paths.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_export.h"
 #include "app/play/placebo_screen.h"
@@ -41,7 +44,9 @@ extern "C" {
 #include "core/clock.h"
 #include "core/log.h"
 #include "export/export_writer.h"
+#include "media/track.h"
 #include "prepare/utf8.h"
+#include "render/grade_params.h"
 
 namespace ajp::app::play {
 namespace {
@@ -152,6 +157,55 @@ ExportSize shaded_output(const ChainEngines& c) {
   return {.width = c.work.width * factor, .height = c.work.height * factor};
 }
 
+// Le grade HDR anime de l'export (export_grade) : ses paramètres pour la cible, et la pile de LUT du look en
+// HDR10. Au pic kExportPeakNits, sans vrai noir (l'écran du fichier n'est pas connu) ; en SDR, l'exposant de
+// BT.1886, comme sur un écran SDR.
+struct ExportGraded {
+  ExportGrade look = ExportGrade::None;
+  std::optional<render::GradeParams> params;
+  std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> looks{};
+  std::string_view label() const { return look == ExportGrade::Hdr10 ? "HDR · " : ""; }
+};
+
+ExportGraded graded_export(const Player& p, const ExportJob& job) {
+  const ColorInfo source = media::track_color(p.video).value_or(ColorInfo{});
+  const bool source_hdr = source.transfer == Transfer::Pq || source.transfer == Transfer::Hlg;
+  ExportGraded out{.look = export_grade(job.chain, source_hdr, job.codec)};
+  if (out.look == ExportGrade::None) return out;
+  PlaySettings s = job.chain;
+  s.hdr_native = out.look == ExportGrade::Hdr10;
+  s.true_hdr_peak = 0;
+  const render::GradeChoice choice = grade_of(s, kExportPeakNits, std::nullopt, std::nullopt, source_hdr);
+  if (out.look == ExportGrade::Hdr10) {
+    out.params = choice.pq;
+  } else if (choice.sdr_anime) {
+    out.params = *choice.sdr_anime;
+    out.params->sdr_gamma = 2.4;
+  }
+  if (!out.params) {
+    log_channel("app")->warn("export : grade refusé, image de la chaîne telle quelle");
+    return ExportGraded{};
+  }
+  if (out.look == ExportGrade::Hdr10)
+    out.looks = load_looks(s, paths::luts(p.paths)).luts;  // le SDR la coupe
+  return out;
+}
+
+// La conversion par libplacebo vers l'encodeur ouvert, avec le grade de l'export.
+FrameExportSetup frame_setup(exporter::ExportWriter& writer, ExportSize size, const ExportDepth& depth,
+                             const ExportGraded& graded, media::Rational rate) {
+  return FrameExportSetup{.width = size.width,
+                          .height = size.height,
+                          .layout = writer.layout(),
+                          .color = writer.color(),
+                          .cuda_frames = writer.cuda_frames(),
+                          .buffers = depth.buffers,
+                          .grade = graded.params,
+                          .grade_pq = graded.look == ExportGrade::Hdr10,
+                          .looks = graded.looks,
+                          .video_fps = static_cast<double>(rate.num) / static_cast<double>(rate.den)};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -197,7 +251,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     out_path = default_export_path(p.options.file, size, rate);
     log->info("export : renommé {} (ce que les moteurs font)", prepare::utf8_path(out_path.filename()));
   }
-  p.screen.set_source_color(ColorInfo{});  // les images du ring, comme à la lecture
+  p.screen.set_source_color(ColorInfo{});             // les images du ring, comme à la lecture
+  const ExportGraded graded = graded_export(p, job);  // HDR10, SDR gradé en H.264, ou rien (export_grade)
   // Le ring, la conversion et la file d'écriture : deux paires en vol si les voies le permettent.
   const ExportDepth depth = export_depth(c.one_lane ? 1 : c.backend->capabilities().lanes);
   show_loading(p.screen, p.ui, i18n::ui_tr("Opening the export"));
@@ -214,6 +269,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
                              .height = size.height,
                              .fps_num = rate.num,
                              .fps_den = rate.den,
+                             .color = export_color(graded.look),
                              .codec = job.codec,
                              .quality = job.quality,
                              .vendor = exporter::vendor_of(p.screen.device_facts().pci_vendor),
@@ -227,8 +283,9 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   // lui-même (export_sink.h) ; sinon le ring, rendu par libplacebo (placebo_export.h).
   std::shared_ptr<ExportSink> sink;
   const bool yuv_targets = c.backend->capabilities().yuv_targets;
-  if (const auto blocker = sink_blocker(yuv_targets, (*writer)->cuda_frames() != nullptr, (*writer)->layout(),
-                                        (*writer)->color().matrix, size, chain_size)) {
+  if (const auto blocker =
+          sink_blocker(yuv_targets, (*writer)->cuda_frames() != nullptr, (*writer)->layout(),
+                       (*writer)->color().matrix, size, chain_size, graded.params.has_value())) {
     if (yuv_targets) log->info("export : rendu par libplacebo, {}", *blocker);
   } else if (auto made =
                  ExportSink::open(sink_setup(pool_frames((*writer)->cuda_frames()), size, (*writer)->layout(),
@@ -239,12 +296,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
     log->warn("export : puits CUDA refusé ({}), rendu par libplacebo", made.error().detail);
   }
   if (!sink) {
-    auto opened = FrameExport::open(p.screen, FrameExportSetup{.width = size.width,
-                                                               .height = size.height,
-                                                               .layout = (*writer)->layout(),
-                                                               .color = (*writer)->color(),
-                                                               .cuda_frames = (*writer)->cuda_frames(),
-                                                               .buffers = depth.buffers});
+    auto opened = FrameExport::open(p.screen, frame_setup(**writer, size, depth, graded, rate));
     if (!opened) return stopped(opened.error());
     frames = std::move(*opened);
   }
@@ -286,7 +338,8 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   if (!pipeline) return stopped(pipeline.error());
 
   const std::int64_t duration_us = (*pipeline)->session_config().duration_us;
-  const std::string chain_text = std::format("{}{}", c.motion_label(settings), c.span_label());
+  const std::string chain_text =
+      std::format("{}{}{}", c.motion_label(settings), graded.label(), c.span_label());
   log->info("export : {} → {} ; {}x{} à {} i/s · {} ; {}", prepare::utf8_path(p.options.file.filename()),
             prepare::utf8_path(out_path.filename()), size.width, size.height, rate_text(rate),
             (*writer)->encoder(), chain_text);

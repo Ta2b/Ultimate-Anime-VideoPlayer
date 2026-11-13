@@ -355,7 +355,7 @@ std::expected<Fidelity, Refusal> network_fidelity(VkContext& context, MemoryAllo
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,
                                            PipelineCache& pipelines, const ir::Graph& graph,
                                            std::vector<KernelChoice> tuned, const Target& target,
-                                           const GateWatch& watch) {
+                                           const GateWatch& watch, bool strict) {
   auto reference = reference_choices(graph, target);
   if (!reference) return std::unexpected(reference.error());
   Gated gated{.choices = std::move(tuned)};
@@ -390,7 +390,7 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
   }
   gated.db = fidelity->db[1];
   const std::optional<double> wider = sets.size() == 3 ? std::optional(fidelity->db[2]) : std::nullopt;
-  const GateVerdict verdict = gate_verdict(gated.floor_db, gated.db, wider);
+  const GateVerdict verdict = gate_verdict(gated.floor_db, gated.db, wider, strict);
   if (verdict == GateVerdict::Keep) return gated;
   if (verdict == GateVerdict::FullPrecision) {
     gated.choices = std::move(sets[2]);

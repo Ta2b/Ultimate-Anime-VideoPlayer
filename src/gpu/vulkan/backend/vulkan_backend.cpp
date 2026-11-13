@@ -101,7 +101,8 @@ class VulkanTensorBuffer final : public TensorBuffer {
   Tensor tensor_;
 };
 
-std::expected<net::BuildRequest, Refusal> request_of(const ModelSpec& model, const ShapeSet& shapes) {
+std::expected<net::BuildRequest, Refusal> request_of(const ModelSpec& model, const ShapeSet& shapes,
+                                                     bool strict) {
   if (model.precision != TensorType::F16 && model.precision != TensorType::F32) {
     return refuse_backend(RefusalCode::FormatUnsupported,
                           std::format("{} : précision entière non prise en charge", model.id));
@@ -110,7 +111,8 @@ std::expected<net::BuildRequest, Refusal> request_of(const ModelSpec& model, con
                            .model_id = model.id,
                            .model_sha256 = model.sha256,
                            .input_shape = {shapes.opt.dims.begin(), shapes.opt.dims.end()},
-                           .fp16 = model.precision == TensorType::F16};
+                           .fp16 = model.precision == TensorType::F16,
+                           .strict = strict};
 }
 
 }  // namespace
@@ -149,6 +151,7 @@ VulkanBackend::VulkanBackend(const BackendInit& init, BackendOptions options)
     : log_(init.log), cache_dir_(init.cache_dir), options_(std::move(options)) {
   // Le lecteur le demande par BackendInit (--profile-dispatches), les tests par BackendOptions (A45-08).
   options_.profile_dispatches = options_.profile_dispatches || init.profile_dispatches;
+  options_.strict_precision = options_.strict_precision || (init.trials & kStrictPrecision) != 0;
   // Les temporaires d'une écriture coupée (lecteur tué pendant une construction) ne s'accumulent pas.
   if (cache_dir_.empty()) return;
   if (const int purged = net::purge_stale_temporaries(cache_dir_ / "vulkan"); purged > 0)
@@ -289,7 +292,7 @@ DeviceMatch VulkanBackend::match(const DeviceUuid& render_device) const {
 }
 
 std::filesystem::path VulkanBackend::artifact_path(const ModelSpec& model, const ShapeSet& shapes) const {
-  auto request = request_of(model, shapes);
+  auto request = request_of(model, shapes, options_.strict_precision);
   const std::uint64_t key = request ? net::artifact_key(*request, profile_) : 0;
   return cache_dir_ / "vulkan" / std::format("{}-{:016x}.ajpvk", file_stem(model.id), key);
 }
@@ -302,7 +305,7 @@ std::expected<Artifact, Refusal> VulkanBackend::build(const ModelSpec& model, co
   if (runtime_) return build_runtime(model, shapes, progress);
   if (prepare::is_rife_fused_manifest(model.onnx_path)) return build_rife_fused(model, shapes, progress);
   if (prepare::is_drba_fused_manifest(model.onnx_path)) return build_drba_fused(model, shapes, progress);
-  auto request = request_of(model, shapes);
+  auto request = request_of(model, shapes, options_.strict_precision);
   if (!request) return std::unexpected(request.error());
   const std::uint64_t key = net::artifact_key(*request, profile_);
   Artifact artifact{.cache_key = std::format("{:016x}", key), .path = artifact_path(model, shapes)};
@@ -365,8 +368,8 @@ std::expected<void, Refusal> VulkanBackend::gate(const ModelSpec& model, net::Ar
                              .report = progress != nullptr ? progress->report : nullptr,
                              .from = 0.95F,
                              .to = 1.0F};
-  auto gated =
-      net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target, watch);
+  auto gated = net::gate_network(*context_, *memory_, *pipelines_, data.graph, data.choices, profile_.target,
+                                 watch, options_.strict_precision);
   // Un arrêt traverse la porte (C45-02), de même qu'un réseau que ses valeurs non finies empêchent de juger
   // (C45-04) : ni l'un ni l'autre ne se règle par les noyaux de référence.
   if (!gated &&

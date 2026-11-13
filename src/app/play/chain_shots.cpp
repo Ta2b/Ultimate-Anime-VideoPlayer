@@ -34,14 +34,15 @@ void note_cache_failure(const std::filesystem::path& dir) {
                            core::to_utf8(dir.filename()));
 }
 
-// Le grade lit les plans (sauf celui, neutre, d'une source HDR sans grade natif) ; l'interpolation aussi,
+// Le grade lit les plans, sauf sur une source déjà HDR, qu'il laisse telle quelle (render::decide_grade) : la
+// pré-analyse y décodait tout le fichier une seconde fois pour rien. L'interpolation les lit aussi,
 // sous --shot-cuts. B42-02 : en sortie HDR, le grade efface l'exposition par plan et la marge selon la scène
 // (render::steady_hdr) ; il n'y lit plus que les flashs dangereux et la peau des visages (face_skin). Sans
 // l'un ni l'autre, la pré-analyse (un second décodage logiciel de tout le fichier) ne part pas : la série des
 // noirs profonds reste alors à sa clé moyenne.
 bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr, bool hdr_output) {
-  const bool grade = settings.grade && (!source_hdr || settings.hdr_native) &&
-                     (!hdr_output || settings.flash_guard || settings.face_skin);
+  const bool grade =
+      settings.grade && !source_hdr && (!hdr_output || settings.flash_guard || settings.face_skin);
   return grade || (shot_cuts && settings.rife_factor != 0);
 }
 

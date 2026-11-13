@@ -84,12 +84,38 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
   if (!key) return refuse(RefusalCode::GraphInvalid, "RIFE fusionné : clé d'artefact illisible");
   auto engine = RifeFusedEngine::load(*runtime_, cache_dir_, *key, arena());
   if (!engine) return std::unexpected(std::move(engine.error()));
+  if (l2_keep_)
+    (*engine)->keep_in_l2(persisting_l2(), static_cast<std::size_t>(properties_.accessPolicyMaxWindowSize));
   log(BackendLogLevel::Info,
       std::format(
           "RIFE fusionné chargé : {}×{}, {} blocs, sortie {}", key->width, key->height, key->plan.blocks,
           key->motion ? "flot et masque"
                       : (key->warp == kernels::RifeWarp::CatmullRom ? "image (warp Catmull-Rom)" : "image")));
   return std::unique_ptr<Engine>(std::move(*engine));
+}
+
+std::size_t TensorRtBackend::persisting_l2() {
+  if (l2_persisting_) return *l2_persisting_;
+  // Au plus 16 Mo : de quoi tenir les deux encodages d'une paire en 720p sans prendre le L2 de SPAN.
+  constexpr std::size_t kCeiling = std::size_t{16} << 20U;
+  const std::size_t bytes =
+      std::min(static_cast<std::size_t>(properties_.persistingL2CacheMaxSize), kCeiling);
+  l2_persisting_ = 0;
+  if (bytes == 0) {
+    log(BackendLogLevel::Warn, "--l2-keep : la carte n'a pas de réserve persistante de L2, rien n'est posé");
+    return 0;
+  }
+  if (const cudaError_t error = cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, bytes);
+      error != cudaSuccess) {
+    log(BackendLogLevel::Warn,
+        std::format("--l2-keep : réserve de L2 refusée ({}), rien n'est posé", cudaGetErrorName(error)));
+    return 0;
+  }
+  l2_persisting_ = bytes;
+  log(BackendLogLevel::Info,
+      std::format("--l2-keep : {} Mo de L2 persistant pour l'encodage gardé de RIFE (fenêtre au plus {} Mo)",
+                  bytes >> 20U, properties_.accessPolicyMaxWindowSize >> 20));
+  return bytes;
 }
 
 std::expected<void, Refusal> TensorRtBackend::enqueue_rife_fused(RifeFusedEngine& engine,

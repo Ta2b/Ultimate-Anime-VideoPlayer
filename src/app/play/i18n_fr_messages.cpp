@@ -93,6 +93,8 @@ constexpr std::array kMessages{
           "Construction annulée : lecture sans fluidité"},
     Entry{"Upscaling unavailable: playing without it", "Agrandissement indisponible : lecture sans lui"},
     Entry{"Smoothing unavailable: playing without it", "Fluidité indisponible : lecture sans elle"},
+    Entry{"Interpolation off: {:.2f} fps is not an anime frame rate",
+          "Interpolation coupée : {:.2f} i/s n'est pas une cadence d'anime"},
     Entry{"Interpolation off: the graphics card cannot keep up",
           "Interpolation coupée : la carte ne suit pas"},
     Entry{"Interpolation is off for this video: the graphics card could not keep up. It comes back with the "

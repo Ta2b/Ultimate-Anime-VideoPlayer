@@ -547,6 +547,22 @@
       "execution": {"noTestsAction": "error"}
     },
     {
+      "name": "windows-release-nogpu",
+      "displayName": "Windows, tests de la release sur un runner sans GPU ni Vulkan : la liste de windows-ci",
+      "configurePreset": "windows-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^(core|core_log|media|prepare|subs|app|audio|render|export|kernels|gpu|gpu_ir): "
+        }
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
       "name": "windows-release",
       "configurePreset": "windows-release",
       "output": {

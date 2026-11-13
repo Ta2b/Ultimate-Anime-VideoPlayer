@@ -23,6 +23,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -567,6 +568,7 @@ class UpscaleStage final : public RingStage {
   // La paire en cours se décide sur la mesure de la précédente (NL3 : aucune attente de l'hôte) ; faux au
   // début d'un plan, après une coupe ou un saut : la mesure du milieu est alors attendue, comme avant.
   bool motion_measured_ = false;
+  std::expected<float, Refusal> read_motion(std::uint64_t ticket, const gpu::Motion& middle);
   void forget_motion();
   // La mesure en vol relue (sans attente : une paire est passée), strong_motion_ et motion_measured_ mis à
   // jour.
@@ -665,9 +667,22 @@ class UpscaleStage final : public RingStage {
   std::uint64_t held_ = 0;
   bool drba_held_ =
       false;  // l'instant en cours de production est une copie d'un côté tenu (Output::repeated)
-  static constexpr std::size_t kScoresWaitKept = 4096;
-  std::vector<std::int64_t> scores_wait_us_;  // les dernières attentes hôte de scores_now, pour le profil
-  std::size_t scores_wait_next_ = 0;          // case réécrite quand le tampon est plein
+  // Les dernières attentes hôte d'une relecture, pour le profil de fin : la mémoire reste bornée.
+  struct HostWaits {
+    static constexpr std::size_t kKept = 4096;
+    std::vector<std::int64_t> us;
+    std::size_t next = 0;  // case réécrite quand le tampon est plein
+    void keep(std::int64_t waited_us) {
+      if (us.size() < kKept) {
+        us.push_back(waited_us);
+      } else {
+        us[next++ % kKept] = waited_us;
+      }
+    }
+    void log(std::string_view what);  // au journal de fin (upscale_start.cpp)
+  };
+  HostWaits scores_waits_;  // relecture des mesures de la paire (scores_now, scores_take)
+  HostWaits motion_waits_;  // relecture du mouvement maximal du milieu (flow_max_take, flow_max_now)
 };
 
 }  // namespace ajp::app::play

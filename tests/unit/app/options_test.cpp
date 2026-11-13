@@ -6,6 +6,7 @@
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -146,6 +147,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto filtered = parse({"épisode.mkv", "--filtered-warp"});
   REQUIRE(filtered);
   CHECK(filtered->filtered_warp);
+  // L'encodage gardé de RIFE en L2 : un essai, éteint par défaut.
+  CHECK_FALSE(options->l2_keep);
+  const auto kept = parse({"épisode.mkv", "--l2-keep"});
+  REQUIRE(kept);
+  CHECK(kept->l2_keep);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {
@@ -197,6 +203,39 @@ TEST_CASE("la taille de travail de la chaîne se calcule une seule fois (A08-15)
   s.restore_lines = true;
   CHECK(span_runs(s, 1080));
   CHECK(chain_work_size(s, 1920, 1080) == WorkSize{1280, 720});
+}
+
+TEST_CASE("SPAN ne double jamais au-delà de la 4K : la source est réduite avant", "[app][options]") {
+  // Une 1440p sans réduction demandée : réduite à 1080p, doublée en 2160p (et pas 2880p).
+  CHECK(chain_work_size(true, true, 2560, 1440, 0) == WorkSize{1920, 1080});
+  CHECK(chain_work_size(true, false, 2560, 1440, 0) == WorkSize{1920, 1080});
+  // Une 4K : réduite à 1080p, que SPAN rend en 4K.
+  CHECK(chain_work_size(true, true, 3840, 2160, 0) == WorkSize{1920, 1080});
+  // Une hauteur de travail choisie plus basse reste la sienne ; plus haute que 1080, elle est ramenée.
+  CHECK(chain_work_size(true, true, 2560, 1440, 720) == WorkSize{1280, 720});
+  CHECK(chain_work_size(true, true, 2560, 1440, 1440) == WorkSize{1920, 1080});
+  // Rien ne change à 1080p et en dessous, ni sans SPAN (pas de doublement, pas de plafond).
+  CHECK(chain_work_size(true, true, 1920, 1080, 0) == WorkSize{1920, 1080});
+  CHECK(chain_work_size(true, true, 1440, 1080, 0) == WorkSize{1440, 1080});  // 4:3 : 2880x2160
+  CHECK(chain_work_size(false, true, 2560, 1440, 0) == WorkSize{2560, 1440});
+  // « Restaurer les traits » coupé et la source au-dessus de la hauteur de travail : SPAN ne tourne pas.
+  CHECK(chain_work_size(true, false, 2560, 1440, 720) == WorkSize{2560, 1440});
+  // Ultra-large : la largeur aussi tient dans la 4K (3840 au plus après SPAN).
+  CHECK(chain_work_size(true, true, 2560, 1080, 0) == WorkSize{1920, 810});
+  CHECK(chain_work_size(true, true, 3840, 1600, 0) == WorkSize{1920, 800});
+  for (const auto& [w, h] : {std::pair{2560, 1440},
+                             {3840, 2160},
+                             {3440, 1440},
+                             {4096, 2160},
+                             {2048, 1080},
+                             {1998, 1080},
+                             {7680, 4320},
+                             {2880, 2160}}) {
+    const WorkSize work = chain_work_size(true, true, w, h, 0);
+    CHECK(work.width * 2 <= kMaxOutputWidth);
+    CHECK(work.height * 2 <= kMaxOutputHeight);
+    CHECK(work.width % 2 == 0);
+  }
 }
 
 TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][options]") {

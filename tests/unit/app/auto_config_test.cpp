@@ -422,3 +422,26 @@ TEST_CASE("un préréglage restaure les traits, comme la calibration les mesure 
   moved.restore_lines = false;
   CHECK(preset_chain_differs(out, moved));
 }
+
+TEST_CASE("Ada aux noyaux FP8 : le b8f64 remplace le modèle par défaut, calibré ou non", "[auto_config]") {
+  // Le FP8 du b5f48 est refusé par la porte de qualité sur la RTX 4070 Ti ; le b8f64 y passe.
+  for (const Tier tier : {Tier::Fast, Tier::Normal}) {
+    const Machine ada{.tier = tier, .display_height = 1080, .display_hz = 60.0, .span_fp8 = true};
+    const PlaySettings s = apply_preset(with(Preset::Auto), ada, k1080p24);
+    CHECK(s.model == kQualitySpanModel);
+    CHECK(s.span_precision == PrecisionTier::Performance);
+    CHECK(applied(Preset::Auto, tier, 1080, 60.0).model.empty());  // ailleurs, le modèle par défaut
+  }
+  CHECK(level_span_model(Tier::Normal, true) == kQualitySpanModel);
+  CHECK(level_span_model(Tier::Normal).empty());
+  // Une calibration faite avec le modèle par défaut (vide) prend aussi le b8f64 ; un modèle nommé reste.
+  CalibratedChain measured{.span = true, .rife = false, .height = 720};
+  Machine ada{.tier = Tier::Normal, .display_height = 1080, .display_hz = 60.0, .calibrated = measured};
+  ada.span_fp8 = true;
+  CHECK(apply_preset(with(Preset::Auto), ada, k1080p24).model == kQualitySpanModel);
+  ada.span_fp8 = false;
+  CHECK(apply_preset(with(Preset::Auto), ada, k1080p24).model.empty());
+  ada.span_fp8 = true;
+  ada.calibrated->span_model = "autre.onnx";
+  CHECK(apply_preset(with(Preset::Auto), ada, k1080p24).model == "autre.onnx");
+}

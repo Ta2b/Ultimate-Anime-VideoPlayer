@@ -220,7 +220,8 @@ void start_diagnostics(const std::filesystem::path& settings_dir, const std::fil
 }
 
 // Les échecs se disent dans une boîte, sauf pendant un essai scripté (--keys, --snapshot, banc, fenêtre
-// cachée), qui doit finir seul. Posé dès que les options sont lues.
+// cachée, --seconds), qui doit finir seul : une boîte zenity attendrait un clic sans fin. Posé dès que les
+// options sont lues.
 bool& quiet_failures() {
   static bool quiet = false;
   return quiet;
@@ -550,6 +551,13 @@ std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOpt
 
 // C36-07 : un lancement qui ne tient pas l'instance du lecteur (--data-dir, banc, --keys, --snapshot) : il
 // partage le dossier des réglages sans être le lecteur de l'utilisateur.
+// Un essai scripté (--keys, --snapshot, banc, fenêtre cachée, --seconds) : ses échecs ne se disent pas
+// dans une boîte (quiet_failures).
+bool scripted_trial(const ajp::app::play::PlayOptions& options) {
+  return !options.keys.empty() || options.snapshot || options.bench_out || options.hidden ||
+         options.stop_after_us > 0;
+}
+
 bool scripted_launch(const ajp::app::play::PlayOptions& options, std::span<const std::string_view> args) {
   return options.data_dir || options.bench_out || !ajp::app::play::shares_instance(args);
 }
@@ -604,7 +612,7 @@ int run_player(int argc, char** argv) {
     std::fputs(ajp::app::play::play_usage(options->debug).c_str(), stdout);
     return 0;
   }
-  quiet_failures() = !options->keys.empty() || options->snapshot || options->bench_out || options->hidden;
+  quiet_failures() = scripted_trial(*options);
   const auto base = sdl_path(SDL_GetBasePath());
   char* pref = SDL_GetPrefPath("ajp", "ajp");  // avant SDL_Init comme permis : l'inscription s'en sert
   const auto data = sdl_path(pref);

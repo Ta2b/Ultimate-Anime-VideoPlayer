@@ -45,7 +45,8 @@ moins justes. Trois règles tiennent la qualité (C05, A45-01, A45-02) :
   float16, est retirée ; `tools/vk/presets_from_cache.py` refuse déjà les relevés d'avant `c7` ;
 - la porte de bout en bout (`net_gate.h`) rejoue le réseau choisi contre son jumeau calculé tout en float, sur
   un dessin (aplats sombres, traits fins ; deux images décalées et leur grille pour un réseau d'interpolation).
-  Les choix passent s'ils perdent au plus 0,5 dB sous les noyaux de référence (`kGateLossDb`) ; sous des noyaux de
+  Les choix passent s'ils perdent au plus 0,5 dB sous les noyaux de référence (`kGateLossDb`), ou s'ils restent
+  au-dessus de 60 dB contre le calcul en float (`kGateInvisibleDb`, un écart sous le quart d'un niveau sur 255) ; sous des noyaux de
   référence exacts (200 dB, graphe en float32), le plancher vaut 90 dB (`kGateExactFloorDb`) pour qu'une variante
   juste à l'arrondi près ne soit pas rejetée. Sinon les sommes repassent en float, puis tout le réseau reprend les
   noyaux de référence. Le journal donne les deux PSNR. Un réseau dont le calcul de référence sort une valeur non
@@ -67,8 +68,14 @@ Mesure (`ajp_vk_backend_tests "[.sommes]"`, lavapipe, PSNR contre le calcul en f
 Sur une vraie image (plan de `calibration.mkv`, sorties comparées à ONNX Runtime en FP32) : SPAN 75,2 dB aux
 noyaux de référence et 70,3 dB en sommes float16 (−4,8 dB, pire écart 1,0/255 contre 0,4/255) ; RIFE 4.25
 72,6 et 72,5 dB. Le moteur Vulkan en float rend ONNX Runtime FP32 à 107 dB (RIFE) et 133 dB (SPAN) : le jumeau
-est une vraie référence. SPAN repasse donc en sommes float quand tout son réseau était en float16 ; RIFE garde
-ses choix. `coopmat_acc16` ne se mesure que sur une carte à Tensor Cores (`docs/audits/A-CONFIRMER.md`).
+est une vraie référence. Avec la seule règle des 0,5 dB, SPAN repassait en sommes float : sur une GeForce Ada,
+ses Tensor Cores allaient alors deux fois moins vite, et comme SPAN tourne à chaque image affichée,
+l'interpolation sous Vulkan perdait près de la moitié de ses images par seconde face à la 0.10.3 (novembre
+2026). Ses 70 dB ne se voient pas : au-dessus de `kGateInvisibleDb`, SPAN et RIFE gardent leurs sommes float16.
+La case « Vitesse avant précision (Vulkan) » (Général > Moteurs, `engines.fast_precision` dans `play.toml`, cochée
+par défaut) le décide : décochée, seule la règle des 0,5 dB tient (`gpu::kStrictPrecision`, porté par
+`BackendInit::trials` sans monter `kBackendAbi`). Elle entre dans la clé des artefacts : chaque réglage a ses
+moteurs, construits au prochain lancement. `coopmat_acc16` ne se mesure que sur une carte à Tensor Cores (`docs/audits/A-CONFIRMER.md`).
 
 Quand le jumeau en float ne peut pas être joué (mémoire), la porte d'avant juge et le journal le dit.
 

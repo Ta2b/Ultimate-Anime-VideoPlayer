@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain.h"
+#include "app/play/source_fit.h"
 #include "app/play/visible_error.h"
 #include "stage_rig.h"
 
@@ -35,6 +36,18 @@ TEST_CASE("Rapide : le warp et l'anneau suivent l'écran, pas le facteur demand�
   s.auto_free = false;  // Stable : le facteur demandé borne toujours
   CHECK(top_factor(s, 165.0, 23.976) == 2);
   CHECK(ring_depth(s, factor_of(s), 165.0, 23.976) == 4U);
+}
+
+TEST_CASE("Interpolation : seulement aux cadences d'un anime", "[app][chain]") {
+  for (const double fps : {23.976, 24.0, 25.0, 29.97, 30.0, 23.975, 29.971}) CHECK(anime_rate(fps));
+  for (const double fps : {12.0, 15.0, 47.952, 48.0, 50.0, 59.94, 60.0, 120.0, 24.5})
+    CHECK_FALSE(anime_rate(fps));
+  CHECK(anime_rate(0.0));  // cadence inconnue : rien ne change
+  PlaySettings s = fast_settings();
+  CHECK(motion_off_for_rate(s, 59.94));
+  CHECK_FALSE(motion_off_for_rate(s, 23.976));
+  s.rife_factor = 0;
+  CHECK_FALSE(motion_off_for_rate(s, 59.94));  // rien de demandé, rien de coupé
 }
 
 TEST_CASE("Rapide : jamais moins de 1, aucune interpolation sans facteur", "[app][chain]") {

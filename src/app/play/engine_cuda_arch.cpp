@@ -70,6 +70,16 @@ bool span_fp8_presumed(std::string_view gpu_name) {
   return cuda_arch_from_name(gpu_name) == "sm89";
 }
 
+bool span_fp8_default(std::string_view gpu_name, bool tensorrt) {
+#if defined(__linux__)
+  return tensorrt && span_fp8_presumed(gpu_name);
+#else
+  static_cast<void>(gpu_name);
+  static_cast<void>(tensorrt);
+  return false;
+#endif
+}
+
 std::string effective_cuda_arch(std::string_view detected, std::string_view gpu_name) {
   if (!detected.empty()) return std::string(detected);
   if (std::string by_name = cuda_arch_from_name(gpu_name); !by_name.empty()) return by_name;

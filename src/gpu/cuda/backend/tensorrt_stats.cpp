@@ -29,7 +29,8 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::frame_stats_start(const T
   const std::uint64_t ticket = stats_tickets_ + 1;
   StatsRead& slot = stats_reads_[ticket % stats_reads_.size()];
   std::expected<void, Refusal> ready = bind();
-  if (ready) ready = reserve_readback(slot, kCountsBytes);
+  // Le tampon d'appareil garde aussi la mémoire de travail du noyau ; seuls les comptes reviennent.
+  if (ready) ready = reserve_readback(slot, frame_stats_device_bytes());
   if (ready) ready = order({rgb.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready) {
     const FrameStatsParams params{

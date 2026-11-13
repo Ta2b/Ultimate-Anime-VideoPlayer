@@ -156,6 +156,9 @@ struct PlayOptions {
   // --filtered-warp (essai) : le warp TensorRT lit par texture (BackendInit::filtered_warp), pour mesurer son
   // gain ; éteint, la lecture exacte.
   bool filtered_warp = false;
+  // --l2-keep (essai) : l'encodage gardé de RIFE fusionné tenu en L2 (gpu::kTrialL2Keep), pour mesurer
+  // son gain ; éteint par défaut.
+  bool l2_keep = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
@@ -245,9 +248,17 @@ struct WorkSize {
 WorkSize work_size(int width, int height, int work_height);
 // SPAN tourne-t-il sur cette source (P3.19) ? Pas sans « Restaurer les traits » quand il faudrait la réduire.
 bool span_runs(bool upscale, bool restore_lines, int source_height, int work_height);
+// La sortie la plus grande que l'agrandissement ×2 rend : la 4K UHD. Une image de travail plus grande que la
+// moitié (1920x1080) est réduite avant SPAN ou Anime4K, jamais doublée au-delà.
+inline constexpr int kMaxOutputWidth = 3840;
+inline constexpr int kMaxOutputHeight = 2160;
+// La hauteur de travail qui garde le double d'une source width x height dans la 4K (largeur paire comprise).
+int span_height_cap(int width, int height);
 // La taille de travail que la chaîne joue, la seule à lire (A08-15) : les moteurs, l'anneau, l'étage et
 // l'export la prennent ici. C'est work_size, sauf quand SPAN est demandé mais ne tourne pas faute de
-// « Restaurer les traits » : la source est alors gardée telle quelle, jamais réduite pour rien.
+// « Restaurer les traits » : la source est alors gardée telle quelle, jamais réduite pour rien. Quand SPAN
+// tourne, l'image de travail tient dans la moitié de la 4K (span_height_cap) : une source 1440p avec «
+// Source, sans réduction » est réduite à 1080p puis doublée en 2160p, pas en 2880p.
 WorkSize chain_work_size(bool upscale, bool restore_lines, int width, int height, int work_height);
 
 // Arguments qui suivent « play ». Une option inconnue (OptionUnknown), ou une valeur

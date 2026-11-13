@@ -8,6 +8,7 @@
 // lui, n'écrit que sous les tampons gardés (C03-01) : ils servent encore.
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <filesystem>
@@ -166,12 +167,36 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
       CHECK(call(s.first, s.buffer, s.t, s.whole, s.say) == want[i]);
     }
   }
-  // L'autre moteur écrit dans la zone : l'encodage gardé ne vaut plus, l'annonce encode de nouveau.
+  // --l2-keep : la fenêtre persistante ne change que ce que le L2 garde, pas les octets (direct, capture,
+  // rejeu, les graphes d'avant jetés).
+  auto* engine = static_cast<gpu::cuda::RifeFusedEngine*>(fused.get());
+  engine->keep_in_l2(std::size_t{4} << 20U, std::size_t{4} << 20U);
+  for (int round = 0; round < 3; ++round) {
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      const Step& s = steps[i];
+      INFO("L2 gardé, tour " << round << ", appel " << i);
+      CHECK(call(s.first, s.buffer, s.t, s.whole, s.say) == want[i]);
+    }
+  }
+  engine->keep_in_l2(0, 0);
+  // L'autre moteur fusionné de la zone a sa propre région (SharedActivations::region_offset) : il passe entre
+  // deux appels sans toucher à l'encodage gardé, que l'appel suivant reprend tel quel (encodeur sauté).
   const std::array other_in{inputs[0]->tensor()};
   REQUIRE(backend.kernels()->rife_input(images[0]->tensor(), images[1]->tensor(), 0.5F, inputs[0]->tensor()));
-  REQUIRE(backend.enqueue(*other, other_in, other_tensors));
-  CHECK(call(1, 1, 0.5F, true, Say::Follows) == want[2]);
-  REQUIRE(backend.enqueue(*other, other_in, other_tensors));
+  for (const float t : {0.5F, 0.25F}) {
+    REQUIRE(backend.enqueue(*other, other_in, other_tensors));
+    const auto before = engine->encode_counts();
+    INFO("après l'autre moteur, instant " << t);
+    CHECK(call(1, 1, t, false, Say::TimesOnly) == want[t == 0.5F ? 2 : 3]);
+    CHECK(engine->encode_counts().none == before.none + 1);
+  }
+  // À chaud (P6.15) : la même paire au même instant reprend les Y des blocs grossiers de l'appel précédent,
+  // calculés sur les mêmes plans : les octets ne changent pas. Une annonce sans appel mené au bout (refus,
+  // autre moteur) n'est pas tenue.
+  INFO("à chaud");
+  if (!fused->next_warm()) return;  // aucun bloc à la réduction du premier avant le dernier
+  CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
+  REQUIRE(fused->next_warm());
   CHECK(call(1, 1, 0.25F, false, Say::TimesOnly) == want[3]);
 }
 

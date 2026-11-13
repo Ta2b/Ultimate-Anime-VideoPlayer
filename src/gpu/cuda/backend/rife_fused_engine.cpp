@@ -9,8 +9,26 @@
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 
 namespace ajp::gpu::cuda {
+namespace {
 
-RifeFusedEngine::~RifeFusedEngine() = default;
+// Pose la fenêtre d'accès persistante du flux (bytes 0 : la retire) ; les noyaux enfilés ou capturés ensuite
+// la portent. hitRatio : la part de la fenêtre qui tient dans la réserve persistante.
+cudaError_t set_l2_window(cudaStream_t stream, void* base, std::size_t bytes, std::size_t persisting) {
+  cudaStreamAttrValue value{};
+  value.accessPolicyWindow.base_ptr = base;
+  value.accessPolicyWindow.num_bytes = bytes;
+  value.accessPolicyWindow.hitRatio =
+      bytes == 0 ? 0.0F : std::min(1.0F, static_cast<float>(persisting) / static_cast<float>(bytes));
+  value.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
+  value.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
+  return cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &value);
+}
+
+}  // namespace
+
+RifeFusedEngine::~RifeFusedEngine() {
+  if (zone_) zone_->drop_region(this);  // sa région ne repousse plus celles des autres moteurs fusionnés
+}
 
 std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
     nvinfer1::IRuntime& runtime, const std::filesystem::path& cache_dir, const RifeFusedKey& key,
@@ -55,6 +73,11 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
                     std::format("RIFE fusionné : moteur du bloc {} de forme inattendue", b));
     activation = std::max(activation, (*block)->activation_bytes());
     engine->blocks_.push_back(std::move(*block));
+  }
+  // Les blocs grossiers, repris à chaud (next_warm) : ceux à la réduction du premier, sauf le dernier.
+  while (engine->warm_blocks_ + 1 < key.plan.blocks &&
+         key.plan.reduce[static_cast<std::size_t>(engine->warm_blocks_)] == key.plan.reduce[0]) {
+    ++engine->warm_blocks_;
   }
   engine->layout_ = kernels::rife_fused_layout(key.plan, h, w);
   engine->own_activation_ = activation;
@@ -114,6 +137,7 @@ std::expected<std::unique_ptr<RifeFusedEngine>, Refusal> RifeFusedEngine::load(
   static_cast<void>(engine->graphs_.take_notice());
   engine->kept_.reset();
   engine->hint_ = Hint::None;
+  engine->warm_ready_ = false;
   return engine;
 }
 
@@ -123,23 +147,57 @@ void RifeFusedEngine::set_window(const kernels::Window& window) {
   window_ = inside ? window : kernels::Window{.x = 0, .y = 0, .width = width_, .height = height_};
 }
 
-std::size_t RifeFusedEngine::scratch_offset_for(const SharedActivations& zone) const {
-  return kernels::fused_align(static_cast<std::size_t>(std::max(own_activation_, zone.activation_peak())));
+std::size_t RifeFusedEngine::scratch_offset_for(SharedActivations& zone) {
+  // Sa propre région, au-dessus des activations et des régions des autres moteurs fusionnés de la zone :
+  // RIFE plein et RIFE demi-taille (échelle par paire) ne s'effacent plus l'un l'autre leur encodage gardé.
+  return static_cast<std::size_t>(
+      zone.region_offset(this, own_activation_, static_cast<std::int64_t>(layout_.bytes)));
 }
 
 std::expected<void, Refusal> RifeFusedEngine::use_zone(const std::shared_ptr<SharedActivations>& zone) {
   const auto needed = static_cast<std::int64_t>(scratch_offset_ + layout_.bytes);
   if (auto ok = zone->reserve(needed); !ok) return ok;
+  if (zone_ && zone_ != zone) zone_->drop_region(this);  // la région suit le moteur dans sa nouvelle zone
   zone_ = zone;
   zone_generation_ = zone->generation();
   graphs_.clear();  // les graphes capturés l'étaient sur une autre adresse
   return {};
 }
 
+// L'entrée du bloc block (1 et après) : les flots des blocs d'avant, l'entrée et les deux encodages.
+std::expected<void, Refusal> RifeFusedEngine::launch_glue(cudaStream_t stream, const void* in, int block,
+                                                          std::byte* base, std::size_t encode_a,
+                                                          std::size_t encode_b) {
+  const int h = height_;
+  const int w = width_;
+  const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
+  const auto i = static_cast<std::size_t>(block);
+  const kernels::FusedDims next = kernels::rife_fused_x(plan_, block, h, w);
+  FusedGlueParams glue{.height = h,
+                       .width = w,
+                       .reduce = plan_.reduce[i],
+                       .out_height = next.height,
+                       .out_width = next.width,
+                       .flows = block,
+                       .input = in,
+                       .encode = at_ptr(encode_a),
+                       .encode_b = at_ptr(encode_b),
+                       .x = at_ptr(layout_.x[i])};
+  for (int k = 0; k < block; ++k) {
+    const auto j = static_cast<std::size_t>(k);
+    const kernels::FusedDims yk = kernels::rife_fused_y(plan_, k, h, w);
+    glue.source[j] = {
+        .y = at_ptr(layout_.y[j]), .height = yk.height, .width = yk.width, .scale = plan_.reduce[j]};
+  }
+  return cuda_check(launch_fused_glue(glue, stream), "fused_glue<<<>>>");
+}
+
 std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
                                                   const std::shared_ptr<SharedActivations>& arena,
                                                   const Tensor& input, std::span<const Tensor> outputs,
-                                                  Encode encode) {
+                                                  const Pass& pass) {
+  const Encode encode = pass.encode;
+  const unsigned a_slot = pass.a_slot;
   const int h = height_;
   const int w = width_;
   auto* base = static_cast<std::byte*>(arena->data()) + scratch_offset_;
@@ -147,8 +205,9 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
   const void* const in = fused_address(input);
 
-  // L'encodage de A (4 plans) puis celui de B, une image par passe de l'encodeur ; l'image B est aux plans
-  // 3 à 5 de l'entrée. Second : l'encodage de B de l'appel précédent, intact, devient celui de A.
+  // Deux emplacements d'encodage (4 plans chacun) : A dans a_slot, B dans l'autre, une image par passe de
+  // l'encodeur ; l'image B est aux plans 3 à 5 de l'entrée. Second : l'encodage de B de l'appel précédent,
+  // intact, devient celui de A sans copie (a_slot a basculé), et B s'encode à la place de l'ancien A.
   const std::size_t image_bytes =
       std::size_t{3} * static_cast<std::size_t>(h) * static_cast<std::size_t>(w) * 2U;
   const std::size_t encode_bytes =
@@ -156,36 +215,40 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   const auto encode_image = [&](std::uint64_t image_offset,
                                 std::size_t encode_offset) -> std::expected<void, Refusal> {
     const Tensor image = fused_tensor(input.handle, input.offset + image_offset, 3, h, w);
-    const Tensor encoded = fused_tensor(at(layout_.encode + encode_offset), 0, 4, h, w);
+    const Tensor encoded = fused_tensor(at(encode_offset), 0, 4, h, w);
     return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
   };
+  const std::size_t encode_a = layout_.encode + a_slot * encode_bytes;
+  const std::size_t encode_b = layout_.encode + (a_slot ^ 1U) * encode_bytes;
   if (encode == Encode::Both) {
-    if (auto ok = encode_image(0, 0); !ok) return ok;
-  } else if (encode == Encode::Second) {
-    if (auto ok = cuda_check(cudaMemcpyAsync(at_ptr(layout_.encode), at_ptr(layout_.encode + encode_bytes),
-                                             encode_bytes, cudaMemcpyDeviceToDevice, stream),
-                             "cudaMemcpyAsync (encodage de B vers A)");
+    if (auto ok = encode_image(0, encode_a); !ok) return ok;
+  }
+  if (encode != Encode::None) {
+    if (auto ok = encode_image(image_bytes, encode_b); !ok) return ok;
+  }
+
+  // À chaud (P6.15), les Y des blocs grossiers restent ceux de l'appel précédent : la chaîne reprend à
+  // l'entrée du premier bloc fin, que la colle bâtit sur eux.
+  const int first = pass.first_block;
+  if (first > 0) {
+    if (auto ok = launch_glue(stream, in, first, base, encode_a, encode_b); !ok) return ok;
+  } else {
+    const kernels::FusedDims x0 = kernels::rife_fused_x(plan_, 0, h, w);
+    if (auto ok = cuda_check(launch_fused_entry({.height = h,
+                                                 .width = w,
+                                                 .reduce = plan_.reduce[0],
+                                                 .out_height = x0.height,
+                                                 .out_width = x0.width,
+                                                 .input = in,
+                                                 .encode = at_ptr(encode_a),
+                                                 .encode_b = at_ptr(encode_b),
+                                                 .x = at_ptr(layout_.x[0])},
+                                                stream),
+                             "fused_entry<<<>>>");
         !ok)
       return ok;
   }
-  if (encode != Encode::None) {
-    if (auto ok = encode_image(image_bytes, encode_bytes); !ok) return ok;
-  }
-
-  const kernels::FusedDims x0 = kernels::rife_fused_x(plan_, 0, h, w);
-  if (auto ok = cuda_check(launch_fused_entry({.height = h,
-                                               .width = w,
-                                               .reduce = plan_.reduce[0],
-                                               .out_height = x0.height,
-                                               .out_width = x0.width,
-                                               .input = in,
-                                               .encode = at_ptr(layout_.encode),
-                                               .x = at_ptr(layout_.x[0])},
-                                              stream),
-                           "fused_entry<<<>>>");
-      !ok)
-    return ok;
-  for (int b = 0; b < plan_.blocks; ++b) {
+  for (int b = first; b < plan_.blocks; ++b) {
     const auto i = static_cast<std::size_t>(b);
     const kernels::FusedDims x = kernels::rife_fused_x(plan_, b, h, w);
     const kernels::FusedDims y = kernels::rife_fused_y(plan_, b, h, w);
@@ -195,23 +258,7 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
         !ok)
       return ok;
     if (b + 1 < plan_.blocks) {
-      const kernels::FusedDims next = kernels::rife_fused_x(plan_, b + 1, h, w);
-      FusedGlueParams glue{.height = h,
-                           .width = w,
-                           .reduce = plan_.reduce[i + 1],
-                           .out_height = next.height,
-                           .out_width = next.width,
-                           .flows = b + 1,
-                           .input = in,
-                           .encode = at_ptr(layout_.encode),
-                           .x = at_ptr(layout_.x[i + 1])};
-      for (int k = 0; k <= b; ++k) {
-        const auto j = static_cast<std::size_t>(k);
-        const kernels::FusedDims yk = kernels::rife_fused_y(plan_, k, h, w);
-        glue.source[j] = {
-            .y = at_ptr(layout_.y[j]), .height = yk.height, .width = yk.width, .scale = plan_.reduce[j]};
-      }
-      if (auto ok = cuda_check(launch_fused_glue(glue, stream), "fused_glue<<<>>>"); !ok) return ok;
+      if (auto ok = launch_glue(stream, in, b + 1, base, encode_a, encode_b); !ok) return ok;
     }
   }
   const auto last = static_cast<std::size_t>(plan_.blocks - 1);
@@ -271,34 +318,54 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(cudaStream_t stream,
       return ok;
     }
   }
+  const std::uintptr_t input = inputs[0].handle + inputs[0].offset;
+  Pass pass{.encode = choose_encode(*arena, hint, input)};
+  // L'emplacement de A : remis à zéro pour deux images neuves, basculé quand B devient A, gardé sinon.
+  pass.a_slot = pass.encode == Encode::Both ? 0U : pass.encode == Encode::Second ? a_slot_ ^ 1U : a_slot_;
+  // À chaud : les Y gardés servent aux mêmes conditions que l'encodage gardé.
+  pass.first_block =
+      std::exchange(warm_next_, false) && warm_ready_ && kept_intact(*arena) ? warm_blocks_ : 0;
+  warm_ready_ = false;  // repris si la chaîne est enfilée jusqu'au bout
+  kept_.reset();
+  ++encodes_[static_cast<std::size_t>(pass.encode)];
+  auto queued = enqueue_chain(stream, arena, inputs, outputs, pass);
+  // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés) : le gardien d'avant, s'il
+  // était un autre moteur fusionné, les refera.
+  arena->wrote(this, static_cast<std::int64_t>(scratch_offset_),
+               static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
+  if (queued) {
+    arena->keep(this, static_cast<std::int64_t>(scratch_offset_),
+                static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
+    kept_ = Kept{
+        .input = input, .zone = arena->data(), .generation = arena->generation(), .offset = scratch_offset_};
+    a_slot_ = pass.a_slot;
+    warm_ready_ = true;
+  }
+  return queued;
+}
+
+bool RifeFusedEngine::kept_intact(const SharedActivations& arena) const {
+  return kept_ && arena.kept_by(this) && kept_->zone == arena.data() &&
+         kept_->generation == arena.generation() && kept_->offset == scratch_offset_;
+}
+
+RifeFusedEngine::Encode RifeFusedEngine::choose_encode(const SharedActivations& arena, Hint hint,
+                                                       std::uintptr_t input) const {
   // L'encodage gardé sert si la zone, une fois prise, est celle du dernier appel mené au bout, les tampons à
   // la même place, et qu'aucun autre moteur n'a écrit sur eux depuis (C03-01 : un SPAN qui passe entre deux
   // appels n'écrit que sous eux) ; tout le reste (autre voie, zone agrandie, autre moteur fusionné, appel en
   // échec) encode les deux images.
-  const std::uintptr_t input = inputs[0].handle + inputs[0].offset;
-  const bool intact = kept_ && arena->kept_by(this) && kept_->zone == arena->data() &&
-                      kept_->generation == arena->generation() && kept_->offset == scratch_offset_;
-  Encode encode = Encode::Both;
-  if (intact && hint == Hint::TimesOnly && kept_->input == input) encode = Encode::None;
-  if (intact && hint == Hint::Follows) encode = Encode::Second;
-  kept_.reset();
-  ++encodes_[static_cast<std::size_t>(encode)];
-  auto queued = enqueue_chain(stream, arena, inputs, outputs, encode);
-  // Ses tampons, au-dessus des activations de ses morceaux (qui se sont déclarés) : le gardien d'avant, s'il
-  // était un autre moteur fusionné, les refera.
-  arena->wrote(this, static_cast<std::int64_t>(scratch_offset_ + layout_.bytes));
-  if (queued) {
-    arena->keep(this, static_cast<std::int64_t>(scratch_offset_));
-    kept_ = Kept{
-        .input = input, .zone = arena->data(), .generation = arena->generation(), .offset = scratch_offset_};
-  }
-  return queued;
+  const bool intact = kept_intact(arena);
+  if (intact && kept_ && hint == Hint::TimesOnly && kept_->input == input) return Encode::None;
+  if (intact && hint == Hint::Follows) return Encode::Second;
+  return Encode::Both;
 }
 
 std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
                                                             const std::shared_ptr<SharedActivations>& arena,
                                                             std::span<const Tensor> inputs,
-                                                            std::span<const Tensor> outputs, Encode encode) {
+                                                            std::span<const Tensor> outputs,
+                                                            const Pass& pass) {
   // La fenêtre de l'image, paramètre du warp final : seize bits par champ (tailles bornées par
   // rife_fused_size_valid).
   const auto field = [](int v) { return static_cast<std::uintptr_t>(static_cast<std::uint16_t>(v)); };
@@ -309,8 +376,23 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
       field(window_.x) | field(window_.y) << 16U | field(window_.width) << 32U | field(window_.height) << 48U,
       reinterpret_cast<std::uintptr_t>(arena->data()),
       static_cast<std::uintptr_t>(arena->generation()),
-      static_cast<std::uintptr_t>(encode)};
-  return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs[0], outputs, encode); });
+      static_cast<std::uintptr_t>(pass.encode) | static_cast<std::uintptr_t>(pass.a_slot) << 8U |
+          static_cast<std::uintptr_t>(pass.first_block) << 16U |
+          static_cast<std::uintptr_t>(l2_persisting_ != 0 && l2_max_window_ != 0) << 24U};
+  const auto chain = [&] { return run(stream, arena, inputs[0], outputs, pass); };
+  if (l2_persisting_ == 0 || l2_max_window_ == 0) return graphs_.launch(stream, key, chain);
+  // Les deux emplacements de l'encodage (4 plans FP16 chacun), relus par la colle de chaque bloc.
+  auto* encode = static_cast<std::byte*>(arena->data()) + scratch_offset_ + layout_.encode;
+  const std::size_t bytes = std::min(
+      std::size_t{16} * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_), l2_max_window_);
+  if (auto ok = cuda_check(set_l2_window(stream, encode, bytes, l2_persisting_), "cudaStreamSetAttribute");
+      !ok)
+    return ok;
+  auto launched = graphs_.launch(stream, key, chain);
+  // Retirée aussitôt : les autres moteurs de la voie (SPAN, moteurs entiers) n'en héritent pas.
+  const cudaError_t reset = set_l2_window(stream, nullptr, 0, 0);
+  if (!launched) return launched;
+  return cuda_check(reset, "cudaStreamSetAttribute");
 }
 
 }  // namespace ajp::gpu::cuda

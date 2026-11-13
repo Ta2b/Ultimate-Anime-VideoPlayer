@@ -177,6 +177,14 @@ std::expected<PlaySettings, Refusal> parse_settings(std::string_view toml_text) 
 
 namespace {
 
+// [engines] ; fast_precision, absente d'un fichier d'avant elle, reste cochée.
+void read_engines(const toml::table& engines, PlaySettings& s,
+                  std::vector<std::expected<void, Refusal>>& reads) {
+  reads.push_back(read(engines, "engines", "install_dir", s.engines_dir));
+  reads.push_back(read(engines, "engines", "gpu", s.gpu));
+  reads.push_back(read(engines, "engines", "fast_precision", s.fast_precision));
+}
+
 // [updates], lu par son nom (P5.29) ; un nom inconnu refuse la clé.
 void read_updates(const toml::table& updates, PlaySettings& s,
                   std::vector<std::expected<void, Refusal>>& reads) {
@@ -334,10 +342,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
       reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interface.language",
                                     std::format(" : « {} »", s.language)));
   }
-  if (const toml::table* engines = section(root, "engines")) {
-    reads.push_back(read(*engines, "engines", "install_dir", s.engines_dir));
-    reads.push_back(read(*engines, "engines", "gpu", s.gpu));
-  }
+  if (const toml::table* engines = section(root, "engines")) read_engines(*engines, s, reads);
   if (const toml::table* updates = section(root, "updates")) read_updates(*updates, s, reads);
   // [span_prepare] background et [default_player] dismissed, d'avant 0.10, ne servaient à rien : ignorés.
   if (const toml::table* playlist = section(root, "playlist"))

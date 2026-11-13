@@ -56,6 +56,35 @@ PlaySettings export_chain(const PlaySettings& s) {
   return out;
 }
 
+ExportGrade export_grade(const PlaySettings& chain, bool source_hdr, exporter::Codec codec) {
+  if (!chain.grade || source_hdr) return ExportGrade::None;
+  return codec == exporter::Codec::H264 ? ExportGrade::Sdr : ExportGrade::Hdr10;
+}
+
+std::optional<ColorInfo> export_color(ExportGrade grade) {
+  switch (grade) {
+    case ExportGrade::None:
+      return std::nullopt;
+    case ExportGrade::Sdr:
+      return ColorInfo{};  // BT.709, niveaux limités, BT.1886
+    case ExportGrade::Hdr10:
+      break;
+  }
+  // Les primaires de BT.2020 et le blanc D65 pour l'écran de mastering : le grade travaille dans ce gamut.
+  HdrMetadata hdr{.primaries_xy = {0.708F, 0.292F, 0.170F, 0.797F, 0.131F, 0.046F},
+                  .white_xy = {0.3127F, 0.3290F},
+                  .max_luminance = static_cast<float>(kExportPeakNits),
+                  .min_luminance = 0.0001F,
+                  .max_cll = static_cast<float>(kExportPeakNits),
+                  .max_fall = 0.0F};  // inconnu : non annoncé
+  return ColorInfo{.matrix = ColorMatrix::Bt2020Ncl,
+                   .range = ColorRange::Limited,
+                   .transfer = Transfer::Pq,
+                   .primaries = Primaries::Bt2020,
+                   .siting = ChromaSiting::Left,
+                   .hdr = hdr};
+}
+
 ExportSize chain_output(const PlaySettings& chain, int source_width, int source_height) {
   const WorkSize work = chain_work_size(chain, source_width, source_height);
   const int factor = span_runs(chain, source_height) ? kSpanFactor : 1;
