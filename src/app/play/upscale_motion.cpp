@@ -142,7 +142,8 @@ std::expected<void, Refusal> UpscaleStage::interpolate_direct(std::uint32_t outp
                                                               const gpu::Motion& other, const gpu::Tensor& a,
                                                               const gpu::Tensor& b, const Target& out) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  auto run = strong_for(output, t, other, *strong_half(t));
+  // En mode direct, strong_half rend toujours strong_motion_ (la paire forte passe au second RIFE).
+  auto run = strong_for(output, t, other, strong_motion_);
   if (!run) return std::unexpected(std::move(run.error()));
   // Passe enfilée à l'arrivée de la paire : la mesure du premier instant y est déjà lancée (run_early).
   if (first_middle() && !(early_.ready && early_.runs[output])) {
