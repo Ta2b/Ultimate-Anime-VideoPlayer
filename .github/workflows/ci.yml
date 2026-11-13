@@ -430,7 +430,10 @@ jobs:
         shell: pwsh
         run: |
           $env:VCPKG_ROOT = $env:AJP_VCPKG
+          # Les noyaux CUTLASS du SPAN aussi (éteints par défaut sous Windows, sans la référence de la dérivation) :
+          # leur construction sous MSVC reste vérifiée avant qu'une release les allume.
           cmake --preset windows-rtx "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" "-DAJP_CUDA_ARCHITECTURES=89-real" `
+            -DAJP_WITH_SPAN_FP8=ON `
             "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
