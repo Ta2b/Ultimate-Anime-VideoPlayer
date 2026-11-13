@@ -188,6 +188,10 @@ vec4 ajb_pass(vec4 px, float local_pq) {
 // surfaces ne dépend donc ni des curseurs de la pile ni de la courbe, qui le divisaient par deux (A41-02).
 // L'image est en PQ BT.2020 ; le compositeur pose le blanc PQ (203 nits) à kwin_ref : k = kwin_ref / 203.
 const mat3 AJK_TO_LMS = mat3(1688.0, 683.0, 99.0, 2146.0, 2951.0, 309.0, 262.0, 462.0, 3688.0) / 4096.0;
+// Son inverse, calculee une fois ici (en double, arrondie au float) : inverse() se refaisait a chaque pixel.
+const mat3 AJK_FROM_LMS = mat3( 3.436606694, -0.791329556, -0.025949900,
+                               -2.506452119,  1.983600452, -0.098913715,
+                                0.069845424, -0.192270896,  1.124863614);
 
 vec3 ajk_pq_to_lin(vec3 e) {
     vec3 p = pow(clamp(e, 0.0, 1.0), vec3(1.0 / 78.84375));
@@ -196,6 +200,15 @@ vec3 ajk_pq_to_lin(vec3 e) {
 vec3 ajk_lin_to_pq(vec3 l) {
     vec3 q = pow(clamp(l, 0.0, 1.0), vec3(0.1593017578125));
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
+}
+// Les memes sur un seul canal : la version vec3 calculait trois canaux pour n'en garder qu'un.
+float ajk_pq_to_lin1(float e) {
+    float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
+    return pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
+}
+float ajk_lin_to_pq1(float l) {
+    float q = pow(clamp(l, 0.0, 1.0), 0.1593017578125);
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
 }
 
 // La compression d'un pixel encodé vers le sommet `curve` : ses nits affichés (blanc de référence à
@@ -206,16 +219,16 @@ vec3 ajk_compress(vec3 e, float curve) {
     vec3 lms = AJK_TO_LMS * (ajk_pq_to_lin(e) * k);
     vec3 lms_pq = ajk_lin_to_pq(lms);
     float intensity = 0.5 * (lms_pq.x + lms_pq.y);
-    float luminance = ajk_pq_to_lin(vec3(intensity)).x * 10000.0;
+    float luminance = ajk_pq_to_lin1(intensity) * 10000.0;
     float rel = max(luminance / kwin_ref, 0.0);
     float in_range = 10000.0 * k / kwin_ref;
     float out_range = curve / kwin_ref;
     float v = (out_range * (1.0 + in_range) - in_range) / (in_range * in_range);
     rel = rel * (1.0 + rel * v) / (1.0 + rel);
-    float mapped = ajk_lin_to_pq(vec3(rel * kwin_ref / 10000.0)).x;
+    float mapped = ajk_lin_to_pq1(rel * kwin_ref / 10000.0);
     // ICtCp : Ct et Cp gardés, l'intensité changée ; L', M' et S' bougent ensemble de cet écart.
     vec3 out_lms = ajk_pq_to_lin(lms_pq + (mapped - intensity)) * 10000.0;
-    return max(inverse(AJK_TO_LMS) * out_lms, 0.0);
+    return max(AJK_FROM_LMS * out_lms, 0.0);
 }
 
 // Le niveau d'un émetteur : `m` (le maximum RVB de la surface, nits affichés) monté de `gain`. Au-dessus
