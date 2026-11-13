@@ -28,8 +28,10 @@ int pad_source(int c, int dim) {
   // Reflect sans répéter le bord, replié par période 2 (dim − 1) : valable aussi pour une marge plus grande que
   // dim − 1 ; un axe de taille 1 n'a que lui-même à refléter (B49-04).
   if (dim == 1) return 0;
+  // Le reflet est pair (c et −c donnent la même source) : % ne voit qu'un entier positif. En GLSL, le reste
+  // d'un opérande négatif est indéfini ; le pilote NVIDIA ne suit pas la règle du C (bords faux).
   int period = 2 * (dim - 1);
-  int m = ((c % period) + period) % period;
+  int m = abs(c) % period;
   return m < dim ? m : period - m;
 }
 
