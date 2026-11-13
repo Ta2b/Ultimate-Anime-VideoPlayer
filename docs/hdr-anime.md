@@ -120,9 +120,14 @@ noir) :
 - look : la luminance du voisinage (3 × 3 points tous les 6 pixels) est décodée une fois par tuile en mémoire
   partagée, au lieu de neuf fois par pixel.
 
-## Le look en une table (13/11, essai, éteint par défaut)
+## Le look en une table (13/11, allumé par défaut)
 
-Réglage « LUT en une seule table » (Vidéo, grade ; `look_table` dans `[grade]` de `play.toml`). La pile entière
+Réglage « LUT en une seule table » (Vidéo, grade ; `look_one_table` dans `[grade]` de `play.toml` ; l'ancienne clé
+`look_table`, que la rc.12 et la rc.13 écrivaient éteinte, est ignorée pour que le nouveau défaut s'applique).
+Mesuré sur une RTX 4070 Ti (13/11, rc.13, TensorRT, 4K HDR10 à 165 Hz, SPAN ×2 et RIFE ×8, pile de Tatoub) :
+le grade passe de 8,5 à 1,9 ms par image (la passe du look de 7,6 à 1,55 ms), la lecture de 85 à 141 i/s ;
+l'image, sans interpolation, reste à 52-53 dB de la pile LUT par LUT (0,14 code 10 bits en moyenne, 0,01 %
+des pixels à plus de 4 codes). La pile entière
 (ses 19 emplacements, le pied adouci et les domaines compris) est évaluée sur le GPU, par une passe de calcul,
 aux 129³ nœuds d'une table rgba32f (34 Mo) ; le look la lit ensuite d'une seule lecture trilinéaire par pixel
 au lieu de traverser la pile (`render/look_table.h`). La table est refaite au rendu qui suit un changement

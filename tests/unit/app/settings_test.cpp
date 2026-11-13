@@ -663,6 +663,20 @@ TEST_CASE("play.toml : le limiteur de flashs, activé par défaut et dans un fic
   CHECK_FALSE(off->flash_guard);
 }
 
+TEST_CASE("play.toml : le look en une table, allumé par défaut, l'ancienne clé d'essai ignorée",
+          "[app][settings]") {
+  CHECK(ajp::app::play::PlaySettings{}.look_table);
+  // La rc.12 et la rc.13 écrivaient look_table = false (l'essai éteint) : ignoré, le défaut l'emporte.
+  const auto old = ajp::app::play::parse_settings("[grade]\nlook_table = false\n");
+  REQUIRE(old.has_value());
+  CHECK(old->look_table);
+  const auto off = ajp::app::play::parse_settings("[grade]\nlook_one_table = false\n");
+  REQUIRE(off.has_value());
+  CHECK_FALSE(off->look_table);
+  const std::string written = ajp::app::play::format_settings(ajp::app::play::PlaySettings{});
+  CHECK(written.find("look_one_table = true") != std::string::npos);
+}
+
 TEST_CASE("play.toml : la peau des visages, éteinte par défaut et dans un fichier d'avant, s'allume",
           "[app][settings]") {
   CHECK_FALSE(ajp::app::play::PlaySettings{}.face_skin);

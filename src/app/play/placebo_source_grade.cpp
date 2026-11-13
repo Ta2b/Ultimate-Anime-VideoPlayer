@@ -95,7 +95,8 @@ class PlaceboSourceGrader final : public SourceGrader {
   // Les deux images à la taille des slots du ring de l'écran ; refaites si elle change.
   std::expected<void, Refusal> open(int width, int height) {
     if (!slots_.empty() && slots_[kIn].width == width && slots_[kIn].height == height) return {};
-    auto slots = ring_.create(gpu_, width, height, 2, external_);
+    // La sortie est la cible de pl_render_image : sans renderable, libplacebo la refuse (rc.13, TensorRT).
+    auto slots = ring_.create(gpu_, width, height, 2, external_, RingFormat::Rgba16Unorm, true);
     if (!slots) return std::unexpected(std::move(slots.error()));
     ring_generation_ = slots->front().generation;
     // Le backend n'a qu'une génération de ring à la fois (la plus récente retire les vues des autres) : ces
