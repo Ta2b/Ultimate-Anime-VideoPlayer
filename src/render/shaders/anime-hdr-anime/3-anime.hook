@@ -31,6 +31,16 @@ vec3 nits_to_pq(vec3 n) {
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
 }
 float pq_of(float nits) { return nits_to_pq(vec3(nits)).x; }
+// Les nits BT.2020 d'un pixel lu. Sortie SDR (sdr_tm) : l'image est encore en BT.709 au gamma sdr_gamma, et sa
+// mise en PQ (le blanc a sdr_white), une passe pleine taille autrefois, se fait a la lecture : les nits en
+// sortent directement, sans l'aller-retour par le PQ.
+vec3 an_nits(vec3 e) {
+    if (sdr_tm < 0.5) return pq_to_nits(e);
+    const mat3 to2020 = mat3(0.6274040, 0.0690970, 0.0163916,
+                             0.3292820, 0.9195400, 0.0880132,
+                             0.0433136, 0.0113612, 0.8955950);
+    return clamp(to2020 * (pow(clamp(e, 0.0, 1.0), vec3(sdr_gamma)) * sdr_white), 0.0, 10000.0);
+}
 
 // Epaule douce vers `top` : pente 1 au genou, jamais au-dessus du sommet.
 float shoulder(float v, float knee, float top) {
@@ -140,7 +150,7 @@ vec4 hook() {
     // Le niveau du blanc de la source : le blanc SDR (203) pour la route native (adapt), sinon le blanc papier
     // (decide_grade pose paper = 0,5 x pic sur la route native : ce n'est alors pas le blanc de la source).
     float white = adapt > 0.5 ? sdr_white : paper;
-    vec3 lin = pq_to_nits(px.rgb);
+    vec3 lin = an_nits(px.rgb);
     float y = max(dot(lin, LUMA), 1e-4);
     float y_pq = pq_of(y);
 
@@ -148,7 +158,6 @@ vec4 hook() {
     float local_bilin = AJG_LOCAL_tex(AJG_LOCAL_pos).x;  // en PQ, comme toute la carte
     float local_pq = an_local(y_pq, local_bilin);
     float area_pq = AJG_AREAT_tex(AJG_AREAT_pos).x;
-    float base = max(pq_to_nits(vec3(local_pq)).x, 1e-3);
 
     // Carte des emetteurs : plus clair que le voisinage, et proche du blanc SDR (porte sur le niveau du bloc :
     // un aplat sombre plus clair que son entourage n'est pas une lumiere).
@@ -158,37 +167,47 @@ vec4 hook() {
     // Audit F2 : une peau n'est jamais une lumiere. Une peau claire pres d'un fond sombre gardait la porte
     // ouverte et s'eclairait comme une lampe au bord des visages. La teinte et la saturation ne dependent pas
     // de la luminance : le grain d'une peau ne fait pas osciller la porte (pas de damier).
-    gate *= 1.0 - skin_like(lin);
     // Etincelle de 1 a 4 px : le pixel domine nettement son bloc (bien au-dela du grain), et il est proche du
     // blanc. La porte compare des codes PQ (y_pq) : y, en nits, la laissait ouverte des 1 nit.
     float spark = smoothstep(0.08, 0.20, y_pq - local_bilin) * smoothstep(an_spark_lo, an_spark_hi, y_pq);
+    // La peau ne compte que la ou une porte est ouverte (elle ne fait que les fermer).
+    float skin = gate > 0.0 || spark > 0.0 ? skin_like(lin) : 0.0;
+    gate *= 1.0 - skin;
     // P3.53 : la peau n'est pas plus une etincelle qu'une lumiere, et un blanc serre entre deux traits noirs
     // (texte cerne, trait fin) non plus. Le noir d'un trait (sous 1 % du blanc) a 2 px de part et d'autre
-    // ferme la porte ; le ciel d'une nuit, plus clair, la laisse ouverte aux etoiles.
-    vec2 d2 = 2.0 * HOOKED_pt;
-    float lx = min(dot(pq_to_nits(HOOKED_tex(HOOKED_pos - vec2(d2.x, 0.0)).rgb), LUMA),
-                   dot(pq_to_nits(HOOKED_tex(HOOKED_pos + vec2(d2.x, 0.0)).rgb), LUMA));
-    float ly = min(dot(pq_to_nits(HOOKED_tex(HOOKED_pos - vec2(0.0, d2.y)).rgb), LUMA),
-                   dot(pq_to_nits(HOOKED_tex(HOOKED_pos + vec2(0.0, d2.y)).rgb), LUMA));
-    float inked = 1.0 - smoothstep(0.004 * white, 0.015 * white, min(lx, ly));
-    spark *= (1.0 - skin_like(lin)) * (1.0 - inked);
+    // ferme la porte ; le ciel d'une nuit, plus clair, la laisse ouverte aux etoiles. Les quatre voisins ne sont
+    // lus que pour une etincelle possible : ailleurs, spark vaut deja 0 (la plupart des pixels).
+    if (spark > 0.0) {
+        vec2 d2 = 2.0 * HOOKED_pt;
+        float lx = min(dot(an_nits(HOOKED_tex(HOOKED_pos - vec2(d2.x, 0.0)).rgb), LUMA),
+                       dot(an_nits(HOOKED_tex(HOOKED_pos + vec2(d2.x, 0.0)).rgb), LUMA));
+        float ly = min(dot(an_nits(HOOKED_tex(HOOKED_pos - vec2(0.0, d2.y)).rgb), LUMA),
+                       dot(an_nits(HOOKED_tex(HOOKED_pos + vec2(0.0, d2.y)).rgb), LUMA));
+        float inked = 1.0 - smoothstep(0.004 * white, 0.015 * white, min(lx, ly));
+        spark *= (1.0 - skin) * (1.0 - inked);
+    }
     float emitter = max(iso * gate, spark);
-
-    // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).
-    float key = clamp((fs_apl >= 0.0 ? fs_apl : 0.15 * white) / sdr_white, 0.0, 1.0);
-    float p_hl = peak * mix(1.0, 0.5, smoothstep(0.30, 0.70, key));
-    float lvl = max(base, y * spark);
-    // Le curseur Eclats (an_spec, 1 : la methode telle quelle) agit meme quand l'ancien curseur des eclats
-    // (spec_gain) est a 0 : au-dessus de 100 %, les lumieres montent jusqu'a 2,5 fois de plus a 200 % ; en
-    // dessous, elles redescendent jusqu'a 25 % sous les surfaces a 0 %.
-    float boost = (spec_gain - 1.0) * an_spec +
-                  (an_spec >= 1.0 ? 1.5 * (an_spec - 1.0) : -0.25 * (1.0 - an_spec));
-    float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * boost);
     bool late = an_late > 0.5;
-    // Eclats en dernier : ni epaule ni limiteur ici, la derniere passe les pose sur le niveau de l'ecran.
-    if (!late) emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
-    float floor_gain = an_lift * (an_spec >= 1.0 ? 1.0 : mix(0.75, 1.0, an_spec));
-    float gain = mix(an_lift, max(emit_out / lvl, floor_gain), emitter);
+    // Hors emetteur (emitter = 0, la plupart des pixels), le gain vaut an_lift : mix(an_lift, x, 0) le rendait
+    // deja exactement, le calcul de la montee est saute.
+    float gain = an_lift;
+    if (emitter > 0.0) {
+        float base = max(pq_to_nits(vec3(local_pq)).x, 1e-3);
+        // Marge des eclats : le pic en scene sombre, la moitie en scene tres claire (limiteur de l'OLED).
+        float key = clamp((fs_apl >= 0.0 ? fs_apl : 0.15 * white) / sdr_white, 0.0, 1.0);
+        float p_hl = peak * mix(1.0, 0.5, smoothstep(0.30, 0.70, key));
+        float lvl = max(base, y * spark);
+        // Le curseur Eclats (an_spec, 1 : la methode telle quelle) agit meme quand l'ancien curseur des eclats
+        // (spec_gain) est a 0 : au-dessus de 100 %, les lumieres montent jusqu'a 2,5 fois de plus a 200 % ; en
+        // dessous, elles redescendent jusqu'a 25 % sous les surfaces a 0 %.
+        float boost = (spec_gain - 1.0) * an_spec +
+                      (an_spec >= 1.0 ? 1.5 * (an_spec - 1.0) : -0.25 * (1.0 - an_spec));
+        float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * boost);
+        // Eclats en dernier : ni epaule ni limiteur ici, la derniere passe les pose sur le niveau de l'ecran.
+        if (!late) emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
+        float floor_gain = an_lift * (an_spec >= 1.0 ? 1.0 : mix(0.75, 1.0, an_spec));
+        gain = mix(an_lift, max(emit_out / lvl, floor_gain), emitter);
+    }
     // La montee de l'emetteur au-dessus des surfaces, en diaphragmes (de -2 a +6), dans l'alpha : 0,75 moins
     // un huitieme par diaphragme. Un alpha de 1 ne se produit jamais : la derniere passe le lit comme « rien ».
     px.a = late ? clamp(0.75 - log2(gain / an_lift) / 8.0, 0.0, 0.98) : 1.0;

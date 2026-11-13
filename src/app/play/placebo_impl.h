@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -316,6 +317,14 @@ struct PlaceboScreen::Impl {
   // La pile posée sur ramp_grade : celle de l'écran, partagée (C41-05).
   std::array<std::shared_ptr<const render::CubeLut>, render::kLookSlots> ramp_looks;
   mutable std::uint64_t grade_frame_ns = 0;
+  // Le temps de chaque passe du grade (par sa description) sur toute la lecture : la ligne « grade HDR » dit
+  // la somme, celle-ci dit quelle passe la fait.
+  struct PassTime {
+    std::string what;
+    std::uint64_t ns = 0;
+    std::uint64_t count = 0;
+  };
+  mutable std::vector<PassTime> grade_passes;
   mutable std::uint64_t anime4k_frame_ns = 0;  // les passes d'Anime4K de la dernière composition
   mutable core::SampleReservoir<std::uint32_t> anime4k_gpu_us{std::size_t{1} << 20};
   mutable std::uint64_t display_frame_ns = 0;  // toutes les passes de l'affichage, de la dernière composition

@@ -72,6 +72,7 @@
 //@LOOK_BINDS@
 //!WHEN look_on
 //!COMPONENTS 4
+//!COMPUTE 16 16
 //!DESC AnimeJaNai HDR - look (LUT 3D)
 
 const mat3 AJL_2020_TO_709 = mat3( 1.6604910, -0.1245505, -0.0181508,
@@ -131,25 +132,42 @@ vec3 ajl_look(vec3 e) {
 // son voisinage (3 × 3 points tous les 6 pixels, moyenne linéaire), passe par la pile, puis retrouve son écart
 // relatif tel quel : la pile donne la couleur et le niveau du voisinage, le grain et les paliers gardent leur
 // contraste d'origine. Les bords francs (écart > 20 %) gardent la pile entière ; transition douce entre les
-// deux. Coût : neuf lectures, et la pile une fois par pixel dans les aplats (w = 1 : la pile du pixel n'y
-// compte pas, elle n'est pas lue, B41-06) et sur les bords francs (w = 0) ; deux fois entre les deux
-// seulement. L'image est la même qu'avec deux traversées partout.
+// deux. Coût : la pile une fois par pixel dans les aplats (w = 1 : la pile du pixel n'y compte pas, elle n'est
+// pas lue, B41-06) et sur les bords francs (w = 0) ; deux fois entre les deux seulement. L'image est la même
+// qu'avec deux traversées partout.
+// Passe de calcul en tuiles de 16 × 16 : la luminance de chaque pixel de la tuile et de sa marge de 6 pixels
+// est décodée une fois, en mémoire partagée (28 × 28 = 784 décodages pour 256 pixels), au lieu de neuf
+// décodages par pixel. Les points lus sont les mêmes (bord de l'image : le texel du bord, comme la lecture
+// bornée de la texture) : l'image ne change pas.
 float ajl_luma(vec3 n) {
     return max(dot(n, vec3(0.2627, 0.6780, 0.0593)), 1e-4);
 }
 
-vec4 hook() {
-    vec4 px = HOOKED_tex(HOOKED_pos);
+shared float ajl_y[28][28];
+
+void hook() {
+    ivec2 origin = ivec2(gl_WorkGroupID.xy) * 16;
+    if (look_clean > 0.5) {
+        for (uint i = gl_LocalInvocationIndex; i < 784u; i += 256u) {
+            vec2 q = vec2(origin + ivec2(int(i % 28u), int(i / 28u)) - 6);
+            ajl_y[i / 28u][i % 28u] = ajl_luma(ajl_decode(HOOKED_tex((q + 0.5) * HOOKED_pt).rgb));
+        }
+        barrier();
+    }
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= imageSize(out_image).x || p.y >= imageSize(out_image).y) return;
+    vec4 px = HOOKED_tex((vec2(p) + 0.5) * HOOKED_pt);
     float w = 0.0;  // la part de la pile du voisinage
     vec3 lin = vec3(0.0);
     float r = 1.0;
     if (look_clean > 0.5) {
         lin = ajl_decode(px.rgb);
-        float y = ajl_luma(lin);
+        uvec2 l = gl_LocalInvocationID.xy + 6u;
+        float y = ajl_y[l.y][l.x];
         float yb = 0.0;
         for (int j = -1; j <= 1; j++)
             for (int i = -1; i <= 1; i++)
-                yb += ajl_luma(ajl_decode(HOOKED_tex(HOOKED_pos + vec2(float(i), float(j)) * 6.0 * HOOKED_pt).rgb));
+                yb += ajl_y[int(l.y) + 6 * j][int(l.x) + 6 * i];
         r = y / max(yb / 9.0, 1e-4);
         w = 1.0 - smoothstep(0.06, 0.20, abs(log(r)));
     }
@@ -160,5 +178,5 @@ vec4 hook() {
         vec3 graded = ajl_look(px.rgb);
         px.rgb = w > 0.0 ? mix(graded, clean, w) : graded;
     }
-    return px;
+    imageStore(out_image, p, px);
 }

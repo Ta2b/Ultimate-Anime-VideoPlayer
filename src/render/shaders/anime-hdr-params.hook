@@ -5,7 +5,8 @@
 // anime lit encore.
 //
 // L'image arrive sur OUTPUT déjà encodée en PQ BT.2020 pour l'écran. Sur une sortie SDR, elle est en BT.709 au
-// gamma sdr_gamma : sdr_tm = 1 la passe d'abord en PQ (anime-hdr-black la ramène au SDR).
+// gamma sdr_gamma : sdr_tm = 1, les passes 1-local et 3-anime la lisent en PQ (anime-hdr-black la ramène au
+// SDR).
 
 //!PARAM peak
 //!DESC Pic de sortie (nits)

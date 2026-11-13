@@ -14,12 +14,38 @@ float ajg_pq_y(vec3 e) {
     float q = pow(dot(n, vec3(0.2627, 0.6780, 0.0593)), 0.1593017578125);
     return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), 78.84375);
 }
+// Sortie SDR (sdr_tm) : l'image arrive en BT.709 au gamma sdr_gamma, et sa mise en PQ BT.2020 (le blanc a
+// sdr_white) se fait ici, a la lecture, au lieu d'une passe pleine taille. La lecture bilineaire est refaite a
+// la main sur les quatre texels mis en PQ : la carte est celle que lisait l'ancienne passe, sans son tampon
+// FP16.
+vec3 ajg_sdr_pq(vec3 c) {
+    const mat3 to2020 = mat3(0.6274040, 0.0690970, 0.0163916,
+                             0.3292820, 0.9195400, 0.0880132,
+                             0.0433136, 0.0113612, 0.8955950);
+    vec3 n = to2020 * (pow(clamp(c, 0.0, 1.0), vec3(sdr_gamma)) * sdr_white);
+    vec3 q = pow(clamp(n / 10000.0, 0.0, 1.0), vec3(0.1593017578125));
+    return pow((0.8359375 + 18.8515625 * q) / (1.0 + 18.6875 * q), vec3(78.84375));
+}
+vec3 ajg_sdr_bilinear(vec2 pos) {
+    vec2 t = pos * HOOKED_size - 0.5;
+    vec2 b = floor(t);
+    vec2 f = t - b;
+    ivec2 last = ivec2(HOOKED_size) - 1;
+    ivec2 p0 = clamp(ivec2(b), ivec2(0), last);
+    ivec2 p1 = clamp(ivec2(b) + 1, ivec2(0), last);
+    vec3 e00 = ajg_sdr_pq(texelFetch(HOOKED_raw, p0, 0).rgb);
+    vec3 e10 = ajg_sdr_pq(texelFetch(HOOKED_raw, ivec2(p1.x, p0.y), 0).rgb);
+    vec3 e01 = ajg_sdr_pq(texelFetch(HOOKED_raw, ivec2(p0.x, p1.y), 0).rgb);
+    vec3 e11 = ajg_sdr_pq(texelFetch(HOOKED_raw, p1, 0).rgb);
+    return mix(mix(e00, e10, f.x), mix(e01, e11, f.x), f.y);
+}
 vec4 hook() {
     float acc = 0.0;
     for (int j = 0; j < 4; j++)
     for (int i = 0; i < 4; i++) {
         vec2 o = vec2(float(i) * 2.0 - 3.0, float(j) * 2.0 - 3.0) * HOOKED_pt;
-        acc += ajg_pq_y(HOOKED_tex(HOOKED_pos + o).rgb);
+        vec3 e = sdr_tm > 0.5 ? ajg_sdr_bilinear(HOOKED_pos + o) : HOOKED_tex(HOOKED_pos + o).rgb;
+        acc += ajg_pq_y(e);
     }
     return vec4(acc / 16.0, 0.0, 0.0, 1.0);
 }

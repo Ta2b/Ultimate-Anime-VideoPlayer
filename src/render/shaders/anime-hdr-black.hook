@@ -1,20 +1,22 @@
 // AnimeJaNai HDR - les dernières passes du grade, propres à ce dépôt, posées sur OUTPUT après le grade
 // (anime-hdr-anime/) et le look (anime-hdr-look.hook), sur l'image encodée en PQ BT.2020.
 //
-// 1. Vrai noir OLED (deux passes, quand black_hi > black_lo) :
+// Deux passes : le max local 8x8 (1/64 de l'image), puis une passe finale qui enchaîne trois étapes point à
+// point. Elles sautent toutes deux quand aucune étape n'est posée.
+//
+// 1. Vrai noir OLED (quand black_hi > black_lo) :
 //   m = max(maxRGB du pixel, AJG_LOCALMAX), en nits ; AJG_LOCALMAX est le max 8x8 de maxRGB,
 //       échantillonné en bilinéaire : un pixel de bruit isolé ne clignote pas d'une image à
 //       l'autre, et les bords de blocs ne marquent pas ;
 //   gain = smoothstep(black_lo, black_hi, m) : 0 sous black_lo (le pixel vaut 0), puis un pied
 //       C1 qui rejoint l'identité à black_hi (sortie = m × gain : pente 0 au noir, 1 à black_hi) ;
 //   R, G et B reçoivent le même gain : la teinte ne bouge pas. Le tramage de libplacebo suit.
-//   Les deux passes sautent quand black_hi <= black_lo, donc aussi quand black_hi vaut 0 (le
-//   défaut) : l'image reste alors identique, octet pour octet.
+//   L'étape saute quand black_hi <= black_lo, donc aussi quand black_hi vaut 0 (le défaut).
 // 2. Sortie HDR (kwin_on) : la compression vers le pic de l'écran, puis les éclats, appliqués en dernier.
 // 3. Sortie SDR de la méthode anime (sdr_tm) : le PQ ramené au SDR par la courbe du plan.
 //
-// Toutes les passes sur HOOKED gardent quatre composantes (COMPONENTS 4) : l'alpha porte la montée des
-// émetteurs de la passe anime jusqu'à la sortie HDR (3-anime.hook, an_late).
+// La passe finale garde quatre composantes (COMPONENTS 4) : l'alpha porte la montée des émetteurs de la
+// passe anime jusqu'à la sortie HDR (3-anime.hook, an_late).
 
 //!PARAM black_lo
 //!DESC Seuil du vrai noir (nits) : en dessous, le pixel vaut 0
@@ -86,17 +88,42 @@
 //!MAXIMUM 10000.0
 1000.0
 
+
+//!PARAM sdr_tm
+//!DESC 1 = sortie SDR de la methode anime : la derniere passe ramene le PQ au SDR, courbe du plan
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
+//!PARAM tm_white
+//!DESC Sortie SDR de la methode anime : les nits des surfaces, poses au blanc SDR
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 2000.0
+233.0
+
+//!PARAM tm_top
+//!DESC Sortie SDR de la methode anime : la marge des eclats du plan (nits), posee juste sous le blanc
+//!TYPE float
+//!MINIMUM 50.0
+//!MAXIMUM 10000.0
+1000.0
+
+
 //!HOOK OUTPUT
 //!BIND HOOKED
 //!SAVE AJG_LOCALMAX
 //!WIDTH HOOKED.w 8 /
 //!HEIGHT HOOKED.h 8 /
 //!COMPONENTS 1
-//!WHEN black_hi black_lo >
+//!WHEN black_hi black_lo > kwin_on + sdr_tm +
 //!DESC AnimeJaNai HDR - vrai noir, max local 8x8
 
 // Max de maxRGB sur le bloc 8x8 du texel, en code PQ (croissant avec les nits).
 vec4 hook() {
+    // Sans vrai noir, la passe finale ne lit pas cette carte : elle n'est que déclarée, sans aucune lecture.
+    if (black_hi <= black_lo) return vec4(0.0, 0.0, 0.0, 1.0);
     ivec2 size = ivec2(HOOKED_size);
     ivec2 base = ivec2(HOOKED_pos * HOOKED_size) - ivec2(4);
     float m = 0.0;
@@ -113,9 +140,14 @@ vec4 hook() {
 //!BIND HOOKED
 //!BIND AJG_LOCALMAX
 //!COMPONENTS 4
-//!WHEN black_hi black_lo >
-//!DESC AnimeJaNai HDR - vrai noir OLED
+//!WHEN black_hi black_lo > kwin_on + sdr_tm +
+//!DESC AnimeJaNai HDR - fin du grade : vrai noir OLED, compression vers l'écran, sortie SDR
 
+// Les trois dernières étapes, chacune point à point : une seule passe au lieu de trois (chacune relisait et
+// réécrivait l'image entière, 66 Mo en 4K RGBA16F). Chaque étape ne s'applique que si son interrupteur est
+// posé ; l'ordre est celui des anciennes passes, et l'image ne passe plus par un tampon FP16 entre elles.
+
+// --- 1. Vrai noir OLED ---
 float ajb_pq_to_nits(float e) {
     float p = pow(clamp(e, 0.0, 1.0), 1.0 / 78.84375);
     return 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), 6.27739463);
@@ -139,18 +171,12 @@ vec3 ajb_black(vec3 e, float local_pq) {
     return ajb_nits_to_pq3(ajb_pq_to_nits3(e) * gain);
 }
 
-vec4 hook() {
-    vec4 px = HOOKED_tex(HOOKED_pos);
-    px.rgb = ajb_black(px.rgb, AJG_LOCALMAX_tex(AJG_LOCALMAX_pos).x);
+vec4 ajb_pass(vec4 px, float local_pq) {
+    px.rgb = ajb_black(px.rgb, local_pq);
     return px;
 }
 
-//!HOOK OUTPUT
-//!BIND HOOKED
-//!COMPONENTS 4
-//!WHEN kwin_on
-//!DESC AnimeJaNai HDR - compression vers l'écran, puis les éclats
-
+// --- 2. Sortie HDR : compression vers l'écran, puis les éclats ---
 // La sortie HDR annonce son vrai maximum (--hdr-metadata) : le compositeur n'a plus rien à compresser, et
 // cette passe ramène la pile de LUT à l'écran. La pile a été réglée à l'œil sous la compression que KWin
 // faisait sans métadonnées (Reinhard modifié sur l'intensité ICtCp, de 10 000 nits vers le pic,
@@ -220,8 +246,7 @@ float ajk_emit_over(vec3 e, float m, float gain) {
     return ajk_emit(base, gain, em_top);
 }
 
-vec4 hook() {
-    vec4 px = HOOKED_tex(HOOKED_pos);
+vec4 ajk_pass(vec4 px) {
     vec3 n = ajk_compress(px.rgb, kwin_curve) * kwin_gain;
     // L'alpha de la passe anime : 0,75 moins un huitième par diaphragme de montée ; 1 : rien à appliquer.
     if (px.a < 0.99) {
@@ -234,33 +259,7 @@ vec4 hook() {
     return px;
 }
 
-//!PARAM sdr_tm
-//!DESC 1 = sortie SDR de la methode anime : la derniere passe ramene le PQ au SDR, courbe du plan
-//!TYPE float
-//!MINIMUM 0.0
-//!MAXIMUM 1.0
-0.0
-
-//!PARAM tm_white
-//!DESC Sortie SDR de la methode anime : les nits des surfaces, poses au blanc SDR
-//!TYPE float
-//!MINIMUM 50.0
-//!MAXIMUM 2000.0
-233.0
-
-//!PARAM tm_top
-//!DESC Sortie SDR de la methode anime : la marge des eclats du plan (nits), posee juste sous le blanc
-//!TYPE float
-//!MINIMUM 50.0
-//!MAXIMUM 10000.0
-1000.0
-
-//!HOOK OUTPUT
-//!BIND HOOKED
-//!COMPONENTS 4
-//!WHEN sdr_tm
-//!DESC AnimeJaNai HDR anime - PQ vers SDR, courbe du plan
-
+// --- 3. Sortie SDR de la méthode anime : PQ vers SDR, courbe du plan ---
 // Le rendu HDR (grade anime et pile de LUT) ramene au SDR sans toucher aux couleurs : sur le maximum RGB
 // (la teinte reste), identite jusqu'a 90 % du blanc des surfaces (tm_white), puis un Reinhard etendu qui pose
 // la marge des eclats du plan (tm_top) au blanc SDR. P3.60 : le genou etait a 70 %, un blanc de surface
@@ -279,8 +278,7 @@ float ajt_curve(float x, float top) {
     return k + (1.0 - k) * min(v, 1.0);
 }
 
-vec4 hook() {
-    vec4 px = HOOKED_tex(HOOKED_pos);
+vec4 ajt_pass(vec4 px) {
     vec3 p = pow(clamp(px.rgb, 0.0, 1.0), vec3(1.0 / 78.84375));
     vec3 n = 10000.0 * pow(max(p - 0.8359375, 0.0) / max(18.8515625 - 18.6875 * p, 1e-6), vec3(6.27739463));
     vec3 c = AJT_2020_TO_709 * n / tm_white;
@@ -291,5 +289,13 @@ vec4 hook() {
     if (m > 1e-6) c *= ajt_curve(m, tm_top / tm_white) / m;
     px.rgb = pow(clamp(c, 0.0, 1.0), vec3(1.0 / sdr_gamma));
     px.a = 1.0;
+    return px;
+}
+
+vec4 hook() {
+    vec4 px = HOOKED_tex(HOOKED_pos);
+    if (black_hi > black_lo) px = ajb_pass(px, AJG_LOCALMAX_tex(AJG_LOCALMAX_pos).x);
+    if (kwin_on > 0.5) px = ajk_pass(px);
+    if (sdr_tm > 0.5) px = ajt_pass(px);
     return px;
 }
