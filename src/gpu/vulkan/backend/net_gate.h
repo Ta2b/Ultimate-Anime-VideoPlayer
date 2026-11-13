@@ -48,14 +48,27 @@ inline constexpr double kGateLossDb = 0.5;
 // sans effet sur eux.
 inline constexpr double kGateExactDb = 200.0;
 inline constexpr double kGateExactFloorDb = 90.0;
+// Au-dessus de ce PSNR contre le calcul en float, une perte ne se voit pas, quel que soit le plancher :
+// l'écart quadratique moyen reste sous le quart d'un niveau sur 255. La règle des 0,5 dB seule renvoyait SPAN
+// b5f48 en sommes float (70 dB contre 75) : sur une GeForce Ada, les Tensor Cores en sommes float vont deux
+// fois moins vite, SPAN tourne à chaque image affichée, et l'interpolation sous Vulkan perdait près de la
+// moitié de ses images par seconde face à la 0.10.3 pour une différence invisible.
+inline constexpr double kGateInvisibleDb = 60.0;
 
 // Ce que la porte fait des choix de l'autotuner, depuis les PSNR contre le jumeau en float : celui des noyaux
 // de référence (le plancher), celui des choix, et celui des mêmes choix sans précision réduite s'ils en ont.
 enum class GateVerdict : std::uint8_t { Keep, FullPrecision, Reference };
-constexpr GateVerdict gate_verdict(double floor_db, double db, std::optional<double> full_precision_db) {
-  const double floor = floor_db >= kGateExactDb ? kGateExactFloorDb : floor_db;
-  if (db >= floor - kGateLossDb) return GateVerdict::Keep;
-  if (full_precision_db && *full_precision_db >= floor - kGateLossDb) return GateVerdict::FullPrecision;
+// `strict` (« Vitesse avant précision » décochée) : la seule règle des kGateLossDb, sans kGateInvisibleDb.
+constexpr GateVerdict gate_verdict(double floor_db, double db, std::optional<double> full_precision_db,
+                                   bool strict = false) {
+  // Un graphe en float32 (plancher exact) garde la règle stricte : la précision y est voulue.
+  const bool exact = floor_db >= kGateExactDb;
+  const double floor = exact ? kGateExactFloorDb : floor_db;
+  const auto passes = [&](double got) {
+    return got >= floor - kGateLossDb || (!exact && !strict && got >= kGateInvisibleDb);
+  };
+  if (passes(db)) return GateVerdict::Keep;
+  if (full_precision_db && passes(*full_precision_db)) return GateVerdict::FullPrecision;
   return GateVerdict::Reference;
 }
 
@@ -123,6 +136,6 @@ PrecisionNotice precision_notice(std::span<const KernelChoice> choices, const Ga
 std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& memory,
                                            PipelineCache& pipelines, const ir::Graph& graph,
                                            std::vector<KernelChoice> tuned, const Target& target,
-                                           const GateWatch& watch = {});
+                                           const GateWatch& watch = {}, bool strict = false);
 
 }  // namespace ajp::gpu::vk::net

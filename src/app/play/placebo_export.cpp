@@ -1,6 +1,7 @@
 #include "app/play/placebo_export.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <format>
 #include <new>
@@ -18,6 +19,7 @@ extern "C" {
 
 #include "app/play/placebo_impl.h"
 #include "core/log.h"
+#include "render/display_model.h"
 
 namespace ajp::app::play {
 namespace {
@@ -127,6 +129,9 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
   const pl_gpu gpu = s.vk->gpu;
   out->renderer_ = pl_renderer_create(s.log, gpu);
   if (out->renderer_ == nullptr) return refuse(RefusalCode::VendorCallFailed, "export : pl_renderer_create");
+  if (setup.grade) {
+    if (auto opened = out->open_grade(gpu); !opened) return std::unexpected(std::move(opened.error()));
+  }
   const std::vector<PlaneFormat> planes = planes_of(setup.layout);
   out->plane_count_ = static_cast<int>(planes.size());
   const std::size_t pitch_align = std::max(kPitchAlign, gpu->limits.align_tex_xfer_pitch);
@@ -189,6 +194,32 @@ std::expected<std::unique_ptr<FrameExport>, Refusal> FrameExport::open(PlaceboSc
       return refuse(RefusalCode::GpuMemoryExhausted, "export : mémoire hôte des tampons");
   }
   return out;
+}
+
+// Le grade de l'export, à lui (l'écran garde le sien) : ses paramètres, sa pile de LUT, la cadence exportée.
+// En PQ, la dernière passe compresse vers le pic du fichier comme la lecture vers celui de l'écran, au blanc
+// de référence du contenu (203 nits : le PQ passe tel quel, comme sous Windows).
+std::expected<void, Refusal> FrameExport::open_grade(pl_gpu gpu) {
+  if (!setup_.grade) return {};
+  auto grade = render::Grade::create(gpu);
+  if (!grade) return std::unexpected(std::move(grade.error()));
+  if (auto set = grade->set_looks(setup_.looks); !set) return std::unexpected(std::move(set.error()));
+  const render::GradeParams& params = *setup_.grade;
+  grade->set_params(params);
+  grade->set_video_fps(setup_.video_fps);
+  if (setup_.grade_pq) {
+    grade->set_kwin_match(
+        render::Grade::KwinMatch{.reference = render::kContentReferenceNits, .peak = params.peak});
+    graded_color_ = pl_color_space_hdr10;
+    graded_color_.hdr.max_luma = static_cast<float>(params.peak);
+    graded_color_.hdr.max_cll = static_cast<float>(params.peak);
+  } else {
+    graded_color_ = pl_color_space_bt709;  // BT.1886 : le grade SDR y prend l'exposant 2,4
+  }
+  grade_.emplace(std::move(*grade));
+  log_channel("export")->info("export : grade HDR anime, sortie {} (pic {:.0f} nits)",
+                              setup_.grade_pq ? "HDR10" : "SDR BT.709", params.peak);
+  return {};
 }
 
 std::expected<void, Refusal> FrameExport::open_cuda(pl_gpu gpu, AVBufferRef* frames) {
@@ -293,7 +324,8 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
       plane.component_mapping[c] = planes[p].mapping[static_cast<std::size_t>(c)];
   }
   target.repr = repr_of(setup_.layout, setup_.color, packed);
-  target.color = s.source;  // la couleur du ring, sans conversion : ni HDR ni grade à l'export
+  // Sans grade, la couleur du ring sans conversion ; avec, la cible du grade (HDR10 ou BT.709).
+  target.color = grade_ ? graded_color_ : s.source;
   target.crop = {0, 0, static_cast<float>(setup_.width), static_cast<float>(setup_.height)};
   pl_frame_set_chroma_location(&target, chroma_of(setup_.color.siting));
 
@@ -301,9 +333,18 @@ FrameExport::Converted FrameExport::render(const RingFrame& frame, std::span<con
   // à une image que SPAN a déjà nettoyée. Tramage vers la profondeur de la sortie.
   pl_render_params params = pl_render_high_quality_params;
   params.deband_params = nullptr;
-  const std::span<const pl_hook* const> hooks = screen_.anime4k_hooks();  // Anime4K de la chaîne, ou rien
+  // Anime4K de la chaîne sur MAIN, puis le grade sur OUTPUT, dans l'ordre de l'écran.
+  std::array<const pl_hook*, 16> hooks{};
+  std::size_t count = 0;
+  const auto add = [&](std::span<const pl_hook* const> some) {
+    for (const pl_hook* hook : some) {
+      if (count < hooks.size()) hooks[count++] = hook;
+    }
+  };
+  add(screen_.anime4k_hooks());
+  if (grade_) add(grade_->hooks());
   params.hooks = hooks.data();
-  params.num_hooks = static_cast<int>(hooks.size());
+  params.num_hooks = static_cast<int>(count);
   const bool rendered = pl_render_image(renderer_, &image, &target, &params);
   Converted out = given_back(std::nullopt);  // la copie lit les textures de sortie, plus le slot
   if (!rendered) out.failure = Refusal{RefusalCode::VendorCallFailed, "export : pl_render_image"};

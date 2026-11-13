@@ -45,7 +45,7 @@ graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur
   blanc, le blanc sort à 95 % et les éclats prennent les derniers 5 %.
 - **Netteté** réglable après l'agrandissement, à halo limité.
 - **Export** : l'agrandissement et l'interpolation rejoués image par image vers un fichier MKV, MP4 ou MOV
-  (sans le grade HDR, l'export reste en SDR).
+  (avec le grade HDR anime : un fichier HDR10 en HEVC, AV1 ou sans perte, du SDR gradé en H.264).
 - Sous-titres (libass), choix des pistes par langue préférée, épisode suivant automatique, passage du générique.
 
 ## Installation

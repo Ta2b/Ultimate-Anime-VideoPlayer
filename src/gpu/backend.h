@@ -108,13 +108,18 @@ using BackendLog = std::function<void(BackendLogLevel level, std::string_view me
 // --l2-keep : l'encodage gardé de RIFE fusionné tenu en L2 (fenêtre d'accès persistante, au plus 16 Mo
 // réservés). Gain à mesurer face au L2 qu'il prend à SPAN. Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialL2Keep = 1U << 0U;
+// « Vitesse avant précision » décochée (Général > Moteurs, PlaySettings::fast_precision) : la porte du
+// moteur Vulkan ne garde une précision réduite qu'à 0,5 dB des noyaux de référence, même quand la perte ne se
+// voit pas (net_gate.h). Un réglage plutôt qu'un essai, porté par ces bits pour ne pas monter kBackendAbi (un
+// paquet TensorRT déjà installé reste valable). Lu par le backend Vulkan ; sans effet ailleurs.
+inline constexpr std::uint32_t kStrictPrecision = 1U << 1U;
 // --tiled-warp : le warp TensorRT d'un mouvement estimé au milieu le calcule par point du flot de chaque
 // tuile puis l'interpole à chaque pixel, au lieu de chaque pixel de la sortie. L'image change un peu : porte
 // qualité. Lu par le backend TensorRT ; sans effet ailleurs.
-inline constexpr std::uint32_t kTrialTiledWarp = 1U << 1U;
+inline constexpr std::uint32_t kTrialTiledWarp = 1U << 2U;
 // --warp-l2 : le warp TensorRT tient le flot du mouvement en L2 persistant (réserve de --l2-keep). Même
 // image. Lu par le backend TensorRT ; sans effet ailleurs.
-inline constexpr std::uint32_t kTrialWarpL2 = 1U << 2U;
+inline constexpr std::uint32_t kTrialWarpL2 = 1U << 3U;
 
 // Ce que le lecteur passe à ajp_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à ajp_backend_destroy. refusal ne vaut que le

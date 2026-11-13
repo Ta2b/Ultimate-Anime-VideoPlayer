@@ -279,7 +279,7 @@ PlaySettings candidate_settings(const ChainCandidate& chain, PlaySettings base,
   base.upscale = chain.span;
   base.restore_lines = true;
   base.model = models.span;
-  base.span_precision = PrecisionTier::Balanced;
+  base.span_precision = PrecisionTier::Performance;  // ce que l'Auto jouera (auto_config.cpp)
   base.span_order = SpanOrder::Auto;
   base.work_height = chain.span ? chain.height : 0;
   base.downscale = Downscale::Hermite;

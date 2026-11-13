@@ -113,7 +113,8 @@ void install_folder_section(const SettingsChoices& choices, std::string& engines
 }  // namespace
 
 void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
-                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder) {
+                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder,
+                 bool& fast_precision) {
   section(i18n::tr("Active engine"));
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
   if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
@@ -161,6 +162,15 @@ void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& 
     ImGui::Spacing();
   }
   note(i18n::tr("An engine is built once per model and size, then read from the cache."));
+
+  // La porte du moteur Vulkan (gpu::kStrictPrecision, net_gate.h) : float16 gardé quand la perte ne se voit
+  // pas. Sans effet sous TensorRT.
+  ImGui::Checkbox(i18n::tr("Speed before precision (Vulkan)"), &fast_precision);
+  panel::tip(
+      i18n::tr("Vulkan engines keep half-precision sums when the difference stays invisible (above 60 dB "
+               "against full precision): upscaling runs about twice as fast on recent GeForce cards. "
+               "Unchecked, a loss of more than 0.5 dB is refused. Applies at next launch; engines are "
+               "built again."));
 
   install_folder_section(choices, engines_dir, folder);
 }

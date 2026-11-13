@@ -356,7 +356,7 @@ RifeFusedEngine::Encode RifeFusedEngine::choose_encode(const SharedActivations& 
   // appels n'écrit que sous eux) ; tout le reste (autre voie, zone agrandie, autre moteur fusionné, appel en
   // échec) encode les deux images.
   const bool intact = kept_intact(arena);
-  if (intact && hint == Hint::TimesOnly && kept_->input == input) return Encode::None;
+  if (intact && kept_ && hint == Hint::TimesOnly && kept_->input == input) return Encode::None;
   if (intact && hint == Hint::Follows) return Encode::Second;
   return Encode::Both;
 }

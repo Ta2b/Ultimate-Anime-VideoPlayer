@@ -515,7 +515,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     const BenchResult* explored = bench_here && !file_options.bench_level ? &*measured_tier : nullptr;
     const auto machine_now = [&] {
       return machine_of(
-          (*screen)->window(), tier, explored,
+          (*screen)->window(), tier, explored, host,
           file_options.bench_level ? std::nullopt : calibrated_chain(settings_path.parent_path(), host));
     };
     chosen = apply_preset(chosen, machine_now(), source);

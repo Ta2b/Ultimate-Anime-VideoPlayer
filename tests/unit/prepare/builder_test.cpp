@@ -42,19 +42,21 @@ TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[pre
       engine_name({.content = content.value(),
                    .settings = "--builderOptimizationLevel=5 --optShapes=input:1x3x1080x1920 --skipInference",
                    .runtime = bench.config.runtime.token(),
-                   .device = bench.config.device.token()});
+                   .device = bench.config.device.token(),
+                   .build_environment = command_line_version()});
   CHECK(artifact->cache_key == expected.value());
 
   const auto args = bench.logged_args(kHd);
-  REQUIRE(args.size() == 8);
+  REQUIRE(args.size() == 9);
   CHECK(args[0] == "--onnx=" + bench.model.onnx_path.string());
   CHECK(args[1].starts_with("--saveEngine=" + (bench.cache() / ".aji-build-").string()));
-  CHECK(std::vector(args.begin() + 2, args.end() - 3) ==
+  CHECK(std::vector(args.begin() + 2, args.end() - 4) ==
         std::vector<std::string>{"--builderOptimizationLevel=5", "--optShapes=input:1x3x1080x1920",
                                  "--skipInference"});
   // Le rapport des couches, écrit dans le dossier de travail puis publié à côté du moteur.
   CHECK(args[5] == "--profilingVerbosity=detailed");
   CHECK(args[6].starts_with("--exportLayerInfo=" + (bench.cache() / ".aji-build-").string()));
+  CHECK(args[7] == kTilingOption);
   CHECK(layer_counts(test::read_file(bench.plan(kHd).layer_info)).reformats == 2);
   // trtexec écrit dans une copie du timing cache, publiée après la construction.
   CHECK(args.back().starts_with("--timingCacheFile=" + (bench.cache() / ".aji-build-").string()));
@@ -92,7 +94,7 @@ TEST_CASE("TrtexecBuilder : RIFE garde ses îlots FP32, drapeaux TRT 11 retirés
   REQUIRE(TrtexecBuilder(bench.config).build(bench.model, shapes, progress));
   const auto args = bench.logged_args(shapes);
   // Petit graphe : niveau 5 (kTunedMaxNodes) ; les drapeaux d'E/S et de tactiques retirés.
-  CHECK(std::vector(args.begin() + 2, args.end() - 3) ==
+  CHECK(std::vector(args.begin() + 2, args.end() - 4) ==
         std::vector<std::string>{"--builderOptimizationLevel=5", "--stronglyTyped",
                                  "--optShapes=input:1x11x1088x1920", "--skipInference"});
   CHECK(bench.plan(shapes).command.removed.size() == 3);
@@ -252,7 +254,7 @@ TEST_CASE("TrtexecBuilder : ONNX statique, aucun profil de formes", "[prepare][b
   auto progress = steps.progress();
   REQUIRE(TrtexecBuilder(bench.config).build(bench.model, shapes, progress));
   const auto args = bench.logged_args(shapes);
-  CHECK(std::vector(args.begin() + 2, args.end() - 3) ==
+  CHECK(std::vector(args.begin() + 2, args.end() - 4) ==
         std::vector<std::string>{"--builderOptimizationLevel=5", "--skipInference"});
 }
 
@@ -267,7 +269,7 @@ TEST_CASE("TrtexecBuilder : graphe statique à plusieurs entrées nommées autre
                                   {.name = "half1", .dims = {1, 3, 96, 128}}}});
     REQUIRE(TrtexecBuilder(bench.config).build(bench.model, shapes, progress));
     const auto args = bench.logged_args(shapes);
-    CHECK(std::vector(args.begin() + 2, args.end() - 3) ==
+    CHECK(std::vector(args.begin() + 2, args.end() - 4) ==
           std::vector<std::string>{"--builderOptimizationLevel=5", "--skipInference"});
   }
   SECTION("une entrée d'une autre précision est refusée") {

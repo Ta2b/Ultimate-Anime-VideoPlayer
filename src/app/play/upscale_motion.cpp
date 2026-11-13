@@ -163,7 +163,6 @@ std::expected<void, Refusal> UpscaleStage::interpolate_direct(std::uint32_t outp
   return blend(a, b, run->motion, 0.5F, out);
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 // Le mouvement maximal du milieu relu par l'hôte (ticket 0 : mesuré sur-le-champ), son attente au profil de
 // fin (« attente du mouvement ») : la relecture suit RIFE et flow_max sur la voie d'interpolation, la plus
 // basse (diagnostic async, piste 5).
@@ -253,6 +252,7 @@ std::optional<bool> UpscaleStage::strong_half(float t) const {
   return true;  // mouvement fort : RIFE à cet instant, son mouvement tel quel
 }
 
+// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t output, const gpu::Tensor& a,
                                                                  const gpu::Tensor& b, const Target& out) {
   const float t = instants_[output].t;

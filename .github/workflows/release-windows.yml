@@ -346,12 +346,13 @@ jobs:
         run: |
           pwsh tools/release/smoke-windows.ps1 "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" "$env:RUNNER_TEMP/package/ajp-windows-x64-setup.exe"
           if ($LASTEXITCODE -ne 0) { throw "fumée du paquet" }
-      # Les tests sans GPU du build même du paquet (préréglage de test windows-release) : un échec
+      # Les tests sans GPU du build même du paquet (préréglage de test windows-release-nogpu, la liste de windows-ci :
+      # le runner n'a ni GPU ni Vulkan, les tests Vulkan et e2e passent sous lavapipe dans ci.yml) : un échec
       # arrête tout avant l'artefact et la release, préversions comprises (P1.15).
       - name: Tests sans GPU
         shell: pwsh
         run: |
-          ctest --preset windows-release
+          ctest --preset windows-release-nogpu
           if ($LASTEXITCODE -ne 0) { throw "tests" }
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always() && steps.package.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'

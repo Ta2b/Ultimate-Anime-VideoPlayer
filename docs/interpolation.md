@@ -12,6 +12,15 @@ de calcul qui l'exécute (TensorRT, Vulkan, Core ML) est un autre choix : voir `
 | DistilDRBA | `distil_drba` | oui | oui | `kernels/spec/distil_drba.h` |
 | Apple (VideoToolbox) | `apple` | macOS seulement | non | `gpu/system_interpolator.h` |
 
+## Cadences interpolées (11/2026)
+
+Demande de Tatoub : l'interpolation ne tourne qu'à une cadence d'anime, 23,976, 24, 25, 29,97 ou 30 i/s, à 0,5 %
+près (`anime_rate`, `src/app/play/source_fit.h`). Une source à 50, 59,94 ou 60 i/s (jeu, captation, vidéo déjà
+interpolée) ou à 12 ou 15 i/s joue sans interpolation, en lecture comme à l'export : `prepare_chain` la retire de
+la chaîne jouée, un avis le dit à l'ouverture, Ctrl+I le redit sans rouvrir la chaîne, et l'onglet Fluidité
+l'écrit. `play.toml` garde le choix : la vidéo suivante, à 23,976, est de nouveau interpolée. Une cadence
+inconnue (0) ne change rien.
+
 ## Ce que montre le menu
 
 Le menu ne nomme pas les modèles, il propose des niveaux (`kInterpLevels`, `settings.h`). Le nom du modèle ne

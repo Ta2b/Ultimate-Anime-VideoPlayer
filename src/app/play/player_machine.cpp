@@ -15,7 +15,7 @@
 
 namespace ajp::app::play {
 
-Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored,
+Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored, const CalibrationHost& host,
                    std::optional<CalibratedChain> calibrated) {
   return Machine{.tier = tier,
                  .display_height = display_height(window),
@@ -23,7 +23,8 @@ Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored,
                  .explored_work_height = explored != nullptr ? explored->work_height : 0,
                  .explored_rife_model = explored != nullptr ? explored->rife_model : std::string(),
                  .calibrated = std::move(calibrated),
-                 .display_width = display_width(window)};
+                 .display_width = display_width(window),
+                 .span_fp8 = span_fp8_default(host.gpu, host.tensorrt)};
 }
 
 bool relaunch_allowed(bool lost_recently, std::int64_t launched_s) {
