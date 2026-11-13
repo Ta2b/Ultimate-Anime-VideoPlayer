@@ -94,29 +94,8 @@ vec3 ajl_encode(vec3 n) {
 
 //@LOOK_CHAIN@
 
-// Le look d'un pixel encodé en PQ BT.2020, lu par les passes de ce hook seulement ; grade.cpp n'y
-// insère que la pile (marque LOOK_CHAIN).
-vec3 ajl_look(vec3 e) {
-    if (look_pq > 0.5) {
-        // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.
-        vec3 graded = ajl_chain(e);
-        if (look_toe <= 0.0) return graded;
-        // Pied adouci (audit A41-03, docs/hdr-anime.md). La LUT de base rendait noir tout ce qui est
-        // sous RVB 16 (0,30 nit rendu à 0,02) : les détails des nuits disparaissaient. Sous RVB 48 (là où la
-        // pile vaut presque l'identité), l'image quitte la pile pour un pied de pente 1,3 en log (la pile en
-        // avait 2), teinte gardée ; la pile reprend toute sa part entre RVB 32 et RVB 48. Le noir pur reste
-        // un vrai noir : 0 sous RVB 4, pied entier dès RVB 8. Les seuils sont les codes 8 bits d'une source
-        // au gamma 2,4, sur le maximum RVB : (c / 255)^2,4 × look_toe. Même calcul : render/output_tune.h.
-        vec3 lin = ajl_decode(e);
-        float m = max(lin.r, max(lin.g, lin.b));
-        float join = 1.8167e-2 * look_toe;  // RVB 48
-        if (m >= join) return graded;
-        float toe = join * pow(max(m, 1e-9) / join, 1.3) *
-                    smoothstep(4.6693e-5 * look_toe, 2.4644e-4 * look_toe, m);  // RVB 4 et RVB 8
-        float pile = smoothstep(log(6.8654e-3 * look_toe), log(join), log(max(m, 1e-9)));  // RVB 32
-        return ajl_encode(mix(lin * (toe / max(m, 1e-9)), ajl_decode(graded), pile));
-    }
-    vec3 nits = ajl_decode(e);
+// La pile d'SDR (LUT en BT.709 gamma) sur des nits BT.2020, rendue en nits BT.2020 entre 0 et 10 000.
+vec3 ajl_look_sdr(vec3 nits) {
     // Linéaire BT.709, blanc de référence = 1.
     vec3 lin = AJL_2020_TO_709 * nits / look_white;
     lin = max(lin, 0.0);
@@ -124,7 +103,50 @@ vec3 ajl_look(vec3 e) {
     vec3 enc = pow(lin / over, vec3(1.0 / look_gamma));
     vec3 graded = pow(max(ajl_chain(enc), 0.0), vec3(look_gamma)) * over;
     vec3 out_lin = graded * look_white;
-    return ajl_encode(AJL_709_TO_2020 * out_lin);
+    return clamp(AJL_709_TO_2020 * out_lin, 0.0, 10000.0);
+}
+
+// Pied adouci de la pile d'HDR (audit A41-03, docs/hdr-anime.md). La LUT de base rendait noir tout ce qui est
+// sous RVB 16 (0,30 nit rendu à 0,02) : les détails des nuits disparaissaient. Sous RVB 48 (là où la pile vaut
+// presque l'identité), l'image quitte la pile pour un pied de pente 1,3 en log (la pile en avait 2), teinte
+// gardée ; la pile reprend toute sa part entre RVB 32 et RVB 48. Le noir pur reste un vrai noir : 0 sous RVB 4,
+// pied entier dès RVB 8. Les seuils sont les codes 8 bits d'une source au gamma 2,4, sur le maximum RVB :
+// (c / 255)^2,4 × look_toe. Même calcul : render/output_tune.h. `lin` : le pixel en nits, `m` son maximum RVB
+// (sous RVB 48), `graded` : la pile en nits. Rend des nits.
+vec3 ajl_toe(vec3 lin, float m, vec3 graded) {
+    float join = 1.8167e-2 * look_toe;  // RVB 48
+    float toe = join * pow(max(m, 1e-9) / join, 1.3) *
+                smoothstep(4.6693e-5 * look_toe, 2.4644e-4 * look_toe, m);  // RVB 4 et RVB 8
+    float pile = smoothstep(log(6.8654e-3 * look_toe), log(join), log(max(m, 1e-9)));  // RVB 32
+    return mix(lin * (toe / max(m, 1e-9)), graded, pile);
+}
+
+// Le look d'un pixel encodé en PQ BT.2020, lu par les passes de ce hook seulement ; grade.cpp n'y
+// insère que la pile (marque LOOK_CHAIN).
+vec3 ajl_look(vec3 e) {
+    if (look_pq > 0.5) {
+        // LUT d'HDR : elle lit directement les codes PQ BT.2020 de l'image et rend des codes PQ.
+        vec3 graded = ajl_chain(e);
+        if (look_toe <= 0.0) return graded;
+        vec3 lin = ajl_decode(e);
+        float m = max(lin.r, max(lin.g, lin.b));
+        if (m >= 1.8167e-2 * look_toe) return graded;
+        return ajl_encode(ajl_toe(lin, m, ajl_decode(graded)));
+    }
+    return ajl_encode(ajl_look_sdr(ajl_decode(e)));
+}
+
+// Le même look, des nits aux nits, pour le voisinage de hook() : ajl_decode(ajl_look(ajl_encode(n))) aux
+// arrondis près, bornes de 0 et 10 000 nits comprises, sans les conversions PQ qu'il peut sauter : la pile
+// d'SDR travaille en linéaire, et le pied de la pile d'HDR reprend les nits reçus au lieu de les redécoder.
+#define AJL_LOOK_NITS 1
+vec3 ajl_look_nits(vec3 n) {
+    n = clamp(n, 0.0, 10000.0);
+    if (look_pq < 0.5) return ajl_look_sdr(n);
+    vec3 graded = ajl_decode(ajl_chain(ajl_encode(n)));
+    float m = max(n.r, max(n.g, n.b));
+    if (look_toe <= 0.0 || m >= 1.8167e-2 * look_toe) return graded;
+    return clamp(ajl_toe(n, m, graded), 0.0, 10000.0);
 }
 //@LOOK_END@
 
@@ -145,13 +167,17 @@ float ajl_luma(vec3 n) {
 }
 
 shared float ajl_y[28][28];
+shared vec3 ajl_n[16][16];  // les nits des pixels de la tuile, décodés une fois avec leur luminance
 
 void hook() {
     ivec2 origin = ivec2(gl_WorkGroupID.xy) * 16;
     if (look_clean > 0.5) {
         for (uint i = gl_LocalInvocationIndex; i < 784u; i += 256u) {
-            vec2 q = vec2(origin + ivec2(int(i % 28u), int(i / 28u)) - 6);
-            ajl_y[i / 28u][i % 28u] = ajl_luma(ajl_decode(HOOKED_tex((q + 0.5) * HOOKED_pt).rgb));
+            ivec2 t = ivec2(int(i % 28u), int(i / 28u)) - 6;
+            vec2 q = vec2(origin + t);
+            vec3 n = ajl_decode(HOOKED_tex((q + 0.5) * HOOKED_pt).rgb);
+            ajl_y[i / 28u][i % 28u] = ajl_luma(n);
+            if (all(greaterThanEqual(t, ivec2(0))) && all(lessThan(t, ivec2(16)))) ajl_n[t.y][t.x] = n;
         }
         barrier();
     }
@@ -162,7 +188,7 @@ void hook() {
     vec3 lin = vec3(0.0);
     float r = 1.0;
     if (look_clean > 0.5) {
-        lin = ajl_decode(px.rgb);
+        lin = ajl_n[gl_LocalInvocationID.y][gl_LocalInvocationID.x];
         uvec2 l = gl_LocalInvocationID.xy + 6u;
         float y = ajl_y[l.y][l.x];
         float yb = 0.0;
@@ -172,7 +198,11 @@ void hook() {
         r = y / max(yb / 9.0, 1e-4);
         w = 1.0 - smoothstep(0.06, 0.20, abs(log(r)));
     }
-    vec3 clean = w > 0.0 ? ajl_encode(ajl_decode(ajl_look(ajl_encode(lin / r))) * r) : px.rgb;
+#ifdef AJL_LOOK_NITS
+    vec3 clean = w > 0.0 ? ajl_encode(ajl_look_nits(lin / r) * r) : px.rgb;
+#else
+    vec3 clean = w > 0.0 ? ajl_encode(ajl_decode(ajl_look(ajl_encode(lin / r))) * r) : px.rgb;  // look en table
+#endif
     if (w >= 1.0) {
         px.rgb = clean;
     } else {
