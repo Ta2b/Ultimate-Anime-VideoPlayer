@@ -29,7 +29,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_span_fp8(const ModelSpec
                                                                  const ShapeSet& shapes) {
   if (!SpanFp8Net::supported_device(properties_.major, properties_.minor) &&
       !SpanFp8Net::supported_fp16_device(properties_.major, properties_.minor))
-    return device_refusal(properties_, false);
+    return std::unexpected(device_refusal(properties_, false).error());
   const Shape& shape = shapes.opt;
   if (!(shapes.min == shape) || !(shapes.max == shape) || shape.dims[0] != 1 || shape.dims[1] != 3) {
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une forme fixe 1×3×H×W est attendue");
