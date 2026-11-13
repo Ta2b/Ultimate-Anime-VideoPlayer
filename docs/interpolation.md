@@ -257,6 +257,37 @@ Binaire `linux-release` ou `windows-release`, TensorRT puis Vulkan, RIFE 4.26 (�
 L'option ne deviendrait le défaut que sans perte visible en lecture (le verdict de Tatoub l'a refusée), avec un gain
 sur les paires fortes, et pour moins de 300 Mo de VRAM en plus.
 
+## Blocs du RIFE fusionné en E/S HWC8 (essai, `--rife-hwc8`)
+
+Sous TensorRT, chaque bloc du RIFE fusionné recevait X en plans (NCHW) et rendait Y en plans ; le moteur
+recopiait l'un et l'autre vers son rangement interne (les « Reformatting CopyNode » du profil). Sur la RTX
+4070 Ti, RIFE 4.26 en 1280 × 768, ces copies prenaient 41,5 % du dernier bloc (0,279 ms à l'entrée, 0,063 ms
+à la sortie, sur 0,825 ms) et 10 % de l'encodeur.
+
+Avec `--rife-hwc8`, les blocs se construisent avec `--inputIOFormats=hwc8 --outputIOFormats=hwc8`
+(`TrtexecConfig::hwc8_io`, haché dans la clé : un moteur en plans du cache ne sert pas à sa place), et les
+noyaux de colle écrivent X et lisent Y par pixel, canaux complétés de zéros jusqu'au multiple de 8 (15 → 16,
+28 → 32, 52 → 56 ; `rife_fused_kernels.h`). Le calcul est le même, au rangement près : le test des noyaux
+contre la référence CPU passe dans les deux rangements. `TrtEngine` lit le rangement de chaque E/S au
+chargement et `RifeFusedEngine` refuse des blocs rangés différemment. L'encodeur reste en plans (2 % de la
+passe).
+
+Mesure de trtexec sur les morceaux du 4.26 en 1280 × 768 (graphe CUDA, deux tours ABAB, médianes) :
+
+| Morceau | En plans | HWC8 |
+|---|---:|---:|
+| encodeur | 0,2064 ms | 0,2023 ms |
+| bloc 0 | 0,0625 ms | 0,0605 ms |
+| bloc 1 | 0,0686 ms | 0,0654 ms |
+| bloc 2 | 0,1085 ms | 0,0994 ms |
+| bloc 3 | 0,1808 ms | 0,1558 ms |
+| bloc 4 | 0,8121 ms | 0,4331 ms |
+| passe entière | 1,4388 ms | 1,0164 ms (−29 %) |
+
+Aucun reformatage ne reste au profil des moteurs HWC8. Reste à mesurer dans le lecteur (temps par image, «
+profil GPU · moteur RIFE fusionné ») avant d'en faire le défaut. `tools/trt/nhwc_pieces.py` refait les blocs
+en E/S NHWC dans l'ONNX même, pour un trtexec qui refuserait `--inputIOFormats`.
+
 ## Warp du backend TensorRT : lecture exacte, lecture filtrée à l'essai
 
 Sous TensorRT, le warp et le mélange des images intermédiaires lisent les images, le flot et le masque

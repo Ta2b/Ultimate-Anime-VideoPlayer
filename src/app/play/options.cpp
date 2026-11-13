@@ -127,14 +127,15 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 35> kTrialOptions{
+constexpr std::array<std::string_view, 36> kTrialOptions{
     "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
     "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
     "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
     "--smooth-drawings", "--ring-watcher",   "--no-ring-watcher", "--precise-wait",   "--no-precise-wait",
     "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
     "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
-    "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--tiled-warp",     "--warp-l2"};
+    "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--tiled-warp",     "--warp-l2",
+    "--rife-hwc8"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -612,6 +613,8 @@ std::string play_usage(bool debug) {
          "  --tiled-warp           trial: TensorRT warp computes the middle-pass motion once per flow point\n"
          "                         of each tile instead of each output pixel (slightly changes the image)\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
+         "  --rife-hwc8            trial: fused RIFE blocks built with HWC8 inputs and outputs under\n"
+         "                         TensorRT, without reformat copies (same output)\n"
          "  --rife-warm            trial: calm pairs reuse the coarse RIFE blocks of the previous pair;\n"
          "                         trades quality for speed, neither measured (ghosting if a calm shot\n"
          "                         speeds up)\n"
