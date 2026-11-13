@@ -232,7 +232,8 @@ struct PlaySettings {
   // Échelle par paire (upscale_half.cpp) : une paire qui bouge fort, où RIFE passe à chaque instant, l'estime
   // sur une image deux fois plus petite que celle de RIFE, par un second moteur ; les autres paires ne
   // changent pas. Moins cher seulement, jamais plus grand. RIFE mouvement seulement. Essai, éteint par défaut
-  // ; recharge la chaîne (le second moteur se construit la première fois pour cette taille).
+  // : la mesure image par image ne voit pas de perte, mais elle se voit en lecture (docs/interpolation.md) ;
+  // recharge la chaîne (le second moteur se construit la première fois pour cette taille).
   bool pair_scale = false;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX

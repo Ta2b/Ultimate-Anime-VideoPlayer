@@ -18,6 +18,7 @@ import rapport  # noqa: E402
 import sources  # noqa: E402
 import chroma444  # noqa: E402
 import travail  # noqa: E402
+import rife_taille  # noqa: E402
 
 F16 = TensorProto.FLOAT16
 
@@ -243,6 +244,27 @@ class Chroma444(unittest.TestCase):
         self.assertLess(float(np.abs(tall - rows)[6:-6].max()), 1e-6)
         flat = np.full((27, 48), 512.0)
         self.assertLess(float(np.abs(chroma444.up_axis(flat, 0, 0.5) - 512.0).max()), 1e-9)  # bords compris
+
+
+class RifeTaille(unittest.TestCase):
+    def test_moyenne_de_surface(self):
+        ramp = np.tile(np.arange(6, dtype=np.float32), (1, 3, 1))  # 1 × 3 × 6
+        out = rife_taille.resize(ramp, 4, 2, rife_taille._area_axis)  # 6 → 4 colonnes : 1,5 pixel par sortie
+        np.testing.assert_allclose(out[0, 0], [1 / 3, 5 / 3, 10 / 3, 14 / 3], atol=1e-6)
+        np.testing.assert_allclose(out.sum(), ramp.mean() * 8, rtol=1e-6)  # la moyenne se garde
+
+    def test_bilineaire_garde_une_image_unie(self):
+        flat = np.full((4, 9, 16), 3.0, np.float32)
+        np.testing.assert_allclose(rife_taille.resize(flat, 48, 27, rife_taille._linear_axis), 3.0, atol=1e-6)
+
+    def test_warp(self):
+        img = picture(3, 32, 48)
+        zero = np.zeros((32, 48), np.float32)
+        np.testing.assert_allclose(rife_taille.warp(img, zero, zero), img, atol=1e-6)
+        moved = rife_taille.warp(img, zero + 2.0, zero - 1.0)  # lit 2 px à droite, 1 px plus haut
+        np.testing.assert_allclose(moved[:, 1:, :-2], img[:, :-1, 2:], atol=1e-6)
+        half = rife_taille.warp(img, zero + 0.5, zero)
+        np.testing.assert_allclose(half[:, :, :-1], (img[:, :, :-1] + img[:, :, 1:]) / 2, atol=1e-6)
 
 
 if __name__ == "__main__":

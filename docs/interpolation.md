@@ -123,7 +123,8 @@ seuil (bras qui tourne, caméra qui freine) suit une droite, et les occlusions g
 ## Échelle par paire (essai)
 
 Case « RIFE allégé sur les mouvements rapides (demi-taille) » (Vidéo, sous le multiplicateur ; `[interpolation]
-pair_scale` de `play.toml`, éteinte par défaut). Une paire qui bouge fort, où RIFE mouvement passe à chaque
+pair_scale` de `play.toml`, **éteinte par défaut** : Tatoub la juge nettement moins belle en lecture, voir
+plus bas). Une paire qui bouge fort, où RIFE mouvement passe à chaque
 instant au lieu d'une seule fois au milieu, estime ces passes sur a et b réduites de moitié (filtre Area,
 `pair_scale_side`, `src/app/play/upscale_stage.h`), par un second moteur RIFE à cette taille. Le warp met le
 mouvement à l'échelle des images, comme pour l'estimation en 720p d'une sortie 4K. Le sens est « moins cher »
@@ -139,31 +140,65 @@ seulement : rien ne passe jamais à plus grand que la taille de RIFE.
   à pleine taille, avec la raison dans le journal.
 - RIFE mouvement seulement : ni RIFE image (`--rife-image`), ni DistilDRBA, ni le moteur système.
 - Le journal de fin compte les passes à demi-taille (« échelle par paire : … passes à demi-taille sur … »).
-- Le gain et la perte ne sont **pas mesurés** : l'option reste éteinte jusqu'à la mesure ci-dessous.
+- Au ×2, RIFE ne passe qu'au milieu, toujours à pleine taille : l'option ne change rien.
+
+### Mesure sur processeur (13 novembre 2026)
+
+`tools/bench/qualite/rife_taille.py` : 30 fenêtres k, k+1, k+2 de l'extrait 1080p de Re:Zero (saison 4,
+épisode 18, `bench/rezero-s4e18-1710.mkv` des fichiers du projet), graphes FP16 livrés sous ONNX Runtime. RIFE
+estime flot et masque sur k et k+2 réduits à la hauteur donnée (moyenne de surface), le flot remonte en
+bilinéaire, le warp et le mélange se font en 1080p comme l'étage de warp ; la sortie se compare à la vraie k+1.
+Une paire est « forte » au-dessus de 15 px de mouvement à 720p (99,9e centile de |flot|, comme `k_flow_max`).
+Écarts de PSNR contre l'estimation en 720p (le lecteur aujourd'hui), en dB :
+
+| Estimé à | 4.26, fortes (19) | 4.26, calmes (11) | 4.22 lite, fortes (19) | 4.22 lite, calmes (11) |
+|---|---:|---:|---:|---:|
+| 1080p | +0,03 (pire −0,87) | −0,08 (pire −0,60) | +0,02 (pire −0,43) | −0,24 (pire −1,19) |
+| 540p | −0,02 (pire −0,26) | −0,82 (pire −3,07) | −0,06 (pire −0,54) | −1,25 (pire −3,77) |
+| 360p (demi-taille) | −0,03 (pire −0,38) | −4,28 (pire −11,88) | −0,09 (pire −0,67) | −4,47 (pire −13,14) |
+
+Ce que ça dit :
+
+- **Sur les paires fortes, image par image, la demi-taille ne perd presque rien** : 0,03 à 0,09 dB en moyenne,
+  le pire bloc de 64 × 64 bouge de 0,1 à 0,2 dB. Mais l'œil la voit en lecture (plus bas).
+- **Sur les paires calmes, elle se verrait** : jusqu'à 12 dB de moins sur un plan lent et détaillé. La porte de
+  15 px est donc au bon endroit, et les paires calmes doivent rester à pleine taille, comme le code le fait.
+- **Estimer au-dessus de 720p ne gagne rien** (1080p : −0,01 dB sur les 30 paires) ; **en dessous**, 540p
+  coûte 0,8 à 1,3 dB sur les paires calmes. `kRifeMotionHeight` = 720 est le bon réglage (audit A49-10, C9).
+- Limite : une paire calme qui suit une paire forte prend la demi-taille (la décision lit la paire précédente).
+  C'est le cas d'un mouvement qui s'arrête net ; il ne dure qu'une paire.
+
+### À l'œil (Tatoub, 13 novembre 2026)
+
+Sur sa RTX 4070 Ti, l'interpolation est « de bien moins bonne qualité » avec l'option allumée. Le banc ci-dessus
+ne le voit pas, parce qu'il juge chaque image seule, au milieu d'une paire. En lecture, deux choses lui
+échappent :
+
+- dans une paire forte, le milieu reste à pleine taille et les autres instants passent à la demi-taille : la
+  netteté du mouvement change d'une image affichée à l'autre (scintillement à 165 Hz) ;
+- la décision suit la paire précédente : un mouvement qui ralentit garde la demi-taille une paire de trop, là où
+  elle coûte jusqu'à 12 dB.
+
+L'option reste donc un essai éteint. La reprendre demanderait de juger la suite des images (tous les instants
+d'une paire, et les paires qui suivent un changement d'allure), pas l'image du milieu seule.
 
 ### Mesure sur la RTX (165 Hz)
 
-Binaire `linux-release` ou `windows-release`, TensorRT, RIFE 4.26 (Équilibré) puis 4.22 lite (Rapide), ×2 et
-cadence auto vers 165 Hz, en 1080p puis en 4K (RIFE en 720p) :
+Binaire `linux-release` ou `windows-release`, TensorRT puis Vulkan, RIFE 4.26 (Équilibré) puis 4.22 lite
+(Rapide), cadence auto vers 165 Hz, en 1080p puis en 4K (RIFE en 720p) :
 
 1. **Gain de temps** : 60 s d'un passage riche en panoramiques rapides et en combats, option éteinte puis
    allumée, avec `--stats=`. Relever le temps moyen et le 99ᵉ centile par image de l'étage de mouvement, les
    images en retard, et la part des passes à demi-taille du journal de fin.
-2. **Qualité** : un extrait de 24 images/s réduit à une image sur deux
-   (`ffmpeg -vf "select=not(mod(n\,2))",setpts=N/FRAME_RATE/TB -r 12`), exporté en RIFE ×2 sans agrandissement,
-   une fois par mode (deux `--data-dir`, `pair_scale` éteint puis allumé). Les images créées se comparent aux
-   images retirées (`ffmpeg -lavfi "[0][1]psnr;[0][1]ssim"`) sur les seules paires fortes : panoramiques rapides,
-   puis petits objets et traits fins en mouvement, le risque principal.
-3. **Faux déclenchements** : un flash et un fondu enchaîné ; la part des passes à demi-taille ne doit pas y
+2. **Faux déclenchements** : un flash et un fondu enchaîné ; la part des passes à demi-taille ne doit pas y
    monter.
-4. **Scintillement** : un mouvement qui accélère puis ralentit, regardé à 165 Hz. Aucun saut de netteté ne doit
+3. **Scintillement** : un mouvement qui accélère puis ralentit, regardé à 165 Hz. Aucun saut de netteté ne doit
    se voir quand l'échelle change d'une paire à l'autre.
-5. **Coût** : le temps de la première construction du second jeu de moteurs, et la VRAM en plus
+4. **Coût** : le temps de la première construction du second jeu de moteurs, et la VRAM en plus
    (`nvidia-smi --query-gpu=memory.used`, option éteinte puis allumée, même passage).
 
-L'option devient le défaut si le gain dépasse 1 ms par image sur les paires fortes en 1080p, sans perte visible
-sur les traits fins ni scintillement, et pour moins de 300 Mo de VRAM en plus. Sinon elle reste un essai, ou se
-retire.
+L'option ne deviendrait le défaut que sans perte visible en lecture (le verdict de Tatoub l'a refusée), avec un gain
+sur les paires fortes, et pour moins de 300 Mo de VRAM en plus.
 
 ## Warp du backend TensorRT : lecture exacte, lecture filtrée à l'essai
 

@@ -249,6 +249,47 @@ PSNR moyen 51,5 dB, pire 50,7 dB, SSIM 0,9969, réseau FP8 9,23 ms. Test `[.span
 SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Lecture `ajp play --stats`, 24 i/s, ABAB 3 tours, médiane
 « moteur » : 14,60 / 14,54 / 14,58 ms avec le paquet natif contre 15,55 / 15,55 / 15,52 ms en FP16 (−6 %, même effet d'horloges que ci-dessus).
 
+## SPAN FP16 natif dans le lecteur (essai, `--span-native`)
+
+Les noyaux FP16 de la #792 (`SpanFp8Weights::fp16`, blocs sans quantification, b5f48 en 48 canaux natifs) ne
+servaient qu'à `ajp_span_fp8_run --fp16`. `--span-native` les met dans la lecture, au cran Équilibre :
+
+- le paquet `<modèle>-fp16c-<16 chiffres du SHA-256>.span8` se tire de l'ONNX au chargement
+  (`native16_variant`, `span_int8.cpp`) : les poids tels quels, drapeau `fp16` du paquet (bit 1), échelles à 1.
+  Rien n'est quantifié : ni calibration, ni porte, ni reçu ;
+- le backend le charge comme le FP8 (`build_span_fp8`, `SpanFp8Engine`), qui passe `fp16` aux noyaux
+  (`span_fp8_view`) ; tout refus (carte non prise, taille, CUDA, essai au chargement) laisse SPAN sur
+  TensorRT FP16 ;
+- le journal nomme la variante « SPAN FP16 CUTLASS » ; une source HDR ne l'exclut pas.
+
+Éteint par défaut. Mesure à faire sur la RTX 4070 Ti (binaire `linux-release`, une voie puis trois) : la
+lecture de référence 1080p vers 4K avec le b5f48 au cran Équilibre, ABAB sans option et avec `--span-native`,
+puis la même avec le b8f64 au cran Performance (FP8, le défaut d'Ada sous Linux) ; relever « profil GPU ·
+moteur » de SPAN, le temps par image et les images en retard, et une capture `--snapshot` au même instant
+(attendu : identique à TensorRT FP16 au FP16 près). Si le b5f48 natif bat TensorRT FP16 et le b8f64 FP8, il
+devient le défaut au cran Équilibre, sous Linux et sous Windows (#802 y construit les noyaux).
+
+### RTX 30 et RTX 50, et l'essai au chargement
+
+Les noyaux du FP16 natif n'emploient que le `mma` FP16 m16n8k16 et la copie asynchrone (`cp.async`) : rien
+qu'Ampere n'ait. Ils sont compilés à part (`span_fp8_net16.cu`, bibliothèque `ajp_backend_span_fp16_kernels`)
+pour `86-real;89-real;120`, et `SpanFp8Net::supported_fp16_device` prend sm 8.6 (RTX 30), 8.9 (RTX 40) et
+12.0 (RTX 50) ; le backend l'annonce par `BackendCaps::span_fp16_cutlass` (interface 42), que
+`--span-native` demande. Le FP8 reste à Ada seule (`supported_device`). Les A100 (sm 8.0) et les RTX 20
+(sm 7.5, sans `cp.async` ni m16n8k16) ne sont pas pris : Turing demanderait une boucle CUTLASS à deux
+étages et le `mma` m16n8k8.
+
+Ces noyaux n'ont tourné devant personne hors d'Ada. Le chargement d'un paquet FP16 les juge donc sur la
+carte (`span_fp8_check.{h,cpp}`) : une image d'essai (rampes, ondes, marches) passe par le réseau à la taille
+de la vidéo, et le coin haut-gauche de la sortie se compare au SPAN calculé en f32 sur le processeur
+(`gpu/span_fp8/forward.{h,cpp}`, une boucle simple écrite à part des noyaux) sur la découpe 64 × 64 du même
+coin. Seuls les pixels que la découpe calcule comme l'image entière comptent (`exact_side` : 60 × 60 pour un
+b5f48, 24 × 24 pour un b8f64). Sous 50 dB, ou une valeur non finie, le chargement est refusé et SPAN reste sur
+TensorRT FP16 ; sinon le journal donne l'écart (« sortie de la carte à … dB du calcul du processeur »). La
+référence FP16 des noyaux colle au FP32 à 78,8 dB et le FP8 se tient vers 50 dB : des noyaux faux tombent
+bien plus bas. Le calcul du processeur rend ce que l'interpréteur de l'IR rend du vrai b5f48 à 4·10⁻⁶ près
+(test caché `[.span_b5f48]`), et l'agrandissement au plus proche d'un paquet construit pour (test ordinaire).
+
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour

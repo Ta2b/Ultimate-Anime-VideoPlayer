@@ -15,6 +15,8 @@ tools/bench/qualite.sh --md rapport.md --json r.json    # avec le rapport par ca
 tools/bench/qualite.sh --video episode.mkv --scenes 60  # mouvement réel d'un épisode
 tools/bench/qualite.sh --seulement mouvement --reseau nouveau_rife.onnx
 python3 -I tools/bench/qualite/test_banc.py             # les tests du banc, sans modèle
+python3 -I tools/bench/qualite/rife_taille.py --video extrait-1080p.mkv --reseau rife_v4.26.onnx
+                                                        # RIFE estimé plus petit que l'image (docs/interpolation.md)
 ```
 
 Il faut `python3` avec `numpy`, `onnx` et `onnxruntime`, `ffmpeg`, et `7z` pour le premier téléchargement des

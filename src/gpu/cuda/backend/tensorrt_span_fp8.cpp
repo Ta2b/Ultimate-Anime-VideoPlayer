@@ -2,6 +2,7 @@
 // cela vérifie le paquet et la taille ; « charger » envoie les poids et essaie les noyaux. Tout refus ici
 // fait reprendre la chaîne sur TensorRT FP16 (chain_setup.cpp) : le SPAN d'origine n'est jamais touché.
 #include <format>
+#include <optional>
 
 #include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
@@ -9,14 +10,26 @@
 #include "gpu/span_fp8/package.h"
 
 namespace ajp::gpu::cuda {
+namespace {
+
+// Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 30 et RTX 50 (SpanFp8Net::supported_fp16_device).
+std::expected<void, Refusal> device_refusal(const cudaDeviceProp& properties, bool fp16) {
+  const bool supported = fp16 ? SpanFp8Net::supported_fp16_device(properties.major, properties.minor)
+                              : SpanFp8Net::supported_device(properties.major, properties.minor);
+  if (supported) return {};
+  return refuse(
+      RefusalCode::FormatUnsupported,
+      std::format("SPAN {} (CUTLASS) : {} (sm {}.{}) n'est pas pris, ou backend construit sans CUTLASS",
+                  fp16 ? "FP16 natif" : "FP8", properties.name, properties.major, properties.minor));
+}
+
+}  // namespace
+
 std::expected<Artifact, Refusal> TensorRtBackend::build_span_fp8(const ModelSpec& model,
                                                                  const ShapeSet& shapes) {
-  if (!SpanFp8Net::supported_device(properties_.major, properties_.minor)) {
-    return refuse(
-        RefusalCode::FormatUnsupported,
-        std::format("SPAN FP8 (CUTLASS) : {} (sm {}.{}) n'est pas pris, ou backend construit sans CUTLASS",
-                    properties_.name, properties_.major, properties_.minor));
-  }
+  if (!SpanFp8Net::supported_device(properties_.major, properties_.minor) &&
+      !SpanFp8Net::supported_fp16_device(properties_.major, properties_.minor))
+    return std::unexpected(device_refusal(properties_, false).error());
   const Shape& shape = shapes.opt;
   if (!(shapes.min == shape) || !(shapes.max == shape) || shape.dims[0] != 1 || shape.dims[1] != 3) {
     return refuse(RefusalCode::ShapeInvalid, "SPAN FP8 : une forme fixe 1×3×H×W est attendue");
@@ -33,6 +46,7 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_span_fp8(const ModelSpec
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   auto parsed = span_fp8::parse(*bytes);  // un paquet abîmé se refuse ici, avant tout envoi sur l'appareil
   if (!parsed) return std::unexpected(std::move(parsed.error()));
+  if (auto ok = device_refusal(properties_, parsed->fp16); !ok) return std::unexpected(std::move(ok.error()));
   return Artifact{.cache_key = span_fp8_artifact_key(span_fp8::crc32(*bytes), static_cast<int>(height),
                                                      static_cast<int>(width)),
                   .path = model.onnx_path};
@@ -47,6 +61,11 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   if (!engine) return std::unexpected(std::move(engine.error()));
   log(BackendLogLevel::Info,
       std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}", shape->dims[3], shape->dims[2]));
+  if (const std::optional<double> db = (*engine)->native_check_db())
+    log(BackendLogLevel::Info,
+        std::format(
+            "SPAN FP16 natif ({}) : sortie de la carte à {:.1f} dB du calcul du processeur, au chargement",
+            properties_.name, *db));
   return std::unique_ptr<Engine>(std::move(*engine));
 }
 

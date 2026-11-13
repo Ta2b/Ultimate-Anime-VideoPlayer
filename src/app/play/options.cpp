@@ -158,7 +158,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 35> kFlags{{
+constexpr std::array<Flag, 36> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -182,6 +182,7 @@ constexpr std::array<Flag, 35> kFlags{{
     {"--l2-keep", &PlayOptions::l2_keep, true},
     {"--tiled-warp", &PlayOptions::tiled_warp, true},
     {"--warp-l2", &PlayOptions::warp_l2, true},
+    {"--span-native", &PlayOptions::span_native, true},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},

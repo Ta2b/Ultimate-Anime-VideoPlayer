@@ -38,25 +38,33 @@ if(AJP_WITH_SPAN_FP8)
   else()
     set(ajp_span_fp8_ref span_fp8_ref.cu)
   endif()
-  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_fp8_net16.cu
-    ${ajp_span_fp8_ref})
-  target_include_directories(ajp_backend_span_fp8_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
-  # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
-  target_include_directories(ajp_backend_span_fp8_kernels SYSTEM PRIVATE "${AJP_CUTLASS_INCLUDE}")
-  target_link_libraries(ajp_backend_span_fp8_kernels PRIVATE ajp::gpu_span_fp8 ajp::dep::cudart)
+  # Les options de nvcc des deux bibliothèques de noyaux CUTLASS ci-dessous.
+  function(ajp_span_cutlass_target target architectures)
+    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/src")
+    # SYSTEM : les avertissements de CUTLASS ne sont pas les nôtres.
+    target_include_directories(${target} SYSTEM PRIVATE "${AJP_CUTLASS_INCLUDE}")
+    target_link_libraries(${target} PRIVATE ajp::gpu_span_fp8 ajp::dep::cudart)
+    set_target_properties(${target} PROPERTIES CUDA_ARCHITECTURES "${architectures}" POSITION_INDEPENDENT_CODE ON)
+    # Comme les autres noyaux du backend : un débordement de registres de net_kernel est une erreur sous Linux
+    # (B02-03) ; les diag_suppress de CUTLASS restent.
+    target_compile_options(${target} PRIVATE
+      $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
+        -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose,--warn-on-spills>
+      $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>
+      # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
+      $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
+  endfunction()
+  # Le SPAN FP16 natif (span_fp8_net16.cu) : mma FP16 m16n8k16 et copie asynchrone, rien qui demande plus
+  # qu'Ampere. sm 86 (RTX 30), 89 (RTX 40), 120 (RTX 50, code réel et PTX) ; supported_fp16_device dit les
+  # mêmes, et le chargement juge la sortie sur la carte (span_fp8_check.h).
+  add_library(ajp_backend_span_fp16_kernels STATIC span_fp8_net16.cu)
+  ajp_span_cutlass_target(ajp_backend_span_fp16_kernels "86-real;89-real;120")
+  add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu ${ajp_span_fp8_ref})
   # sm 89 (Ada) et sm 120 (Blackwell grand public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89,
   # et la liste AJP_CUDA_ARCHITECTURES n'y change rien. Le PTX de 120 (code réel et virtuel) garde le module
   # chargeable sur une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
-  set_target_properties(ajp_backend_span_fp8_kernels PROPERTIES
-    CUDA_ARCHITECTURES "89-real;120" POSITION_INDEPENDENT_CODE ON)
-  # Comme les autres noyaux du backend : un débordement de registres de net_kernel est une erreur sous Linux
-  # (B02-03) ; les diag_suppress de CUTLASS restent.
-  target_compile_options(ajp_backend_span_fp8_kernels PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
-      -Xcudafe=--diag_suppress=550 --ptxas-options=--verbose,--warn-on-spills>
-    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<NOT:$<PLATFORM_ID:Windows>>>:-Werror=all-warnings -Xcompiler=-Wall,-Wextra>
-    # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
-    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
+  ajp_span_cutlass_target(ajp_backend_span_fp8_kernels "89-real;120")
+  target_link_libraries(ajp_backend_span_fp8_kernels PRIVATE ajp_backend_span_fp16_kernels)
   set(ajp_span_fp8_net ajp_backend_span_fp8_kernels)
 else()
   add_library(ajp_backend_span_fp8_none STATIC span_fp8_net_none.cpp span_fp8_ref_none.cpp)
@@ -69,7 +77,7 @@ endif()
 
 add_library(ajp_backend_tensorrt MODULE
   drba_fused_engine.cpp entry.cpp fused_graphs.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp
-  ingest_chroma.cpp shared_activations.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
+  ingest_chroma.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
   tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_span_derive.cpp
   span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_warp.cpp trt_engine.cpp)
 target_include_directories(ajp_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")

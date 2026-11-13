@@ -40,8 +40,8 @@ void pair_scale_checkbox(PlaySettings& d) {
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Trial: pairs that move a lot estimate motion on a half-size image, with a second engine "
-               "built the first time. Time saved not measured; small objects may lose precision (loss not "
-               "measured). RIFE only. Reloads playback."));
+               "built the first time. Four times fewer pixels for those passes, but in-between frames look "
+               "worse in playback. RIFE only. Reloads playback."));
 }
 
 struct HeightChoice {

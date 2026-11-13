@@ -373,6 +373,11 @@ std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& 
                                        const SpanFp8Context& fp8_context, WorkSize work, bool bench,
                                        bool strict) {
   const auto log = log_channel("app");
+  if (kind == SpanVariantKind::Fp16Cutlass) {  // --span-native : le paquet se tire de l'ONNX, sans reçu
+    auto native = native16_variant(model.path, variants);
+    if (!native) log->info("SPAN FP16 CUTLASS : {}", native.error().detail);
+    return native ? std::optional<SpanInt8>(std::move(*native)) : std::nullopt;
+  }
   SpanInt8Lookup found = find_span_variant(kind, model.path, variants,
                                            kind == SpanVariantKind::Fp8Cutlass ? &fp8_context : nullptr);
   if (!found.note.empty()) log->info("SPAN {} : {}", variant_text(kind), found.note);
@@ -422,8 +427,13 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   // reçu v1 du FP8 CUTLASS (étape 3.6).
   const bool strict = settings.preset != Preset::Custom;
   const bool cutlass = caps.span_fp8_cutlass && !hdr_source(p.video);
+  // Le FP16 natif ne quantifie rien : une source HDR ne l'exclut pas.
+  const bool native16 = p.options.span_native && caps.span_fp16_cutlass;
   const std::vector<SpanVariantKind> wanted = span_variant_order(
-      tier, SpanVariantCaps{.cutlass = cutlass, .fp8 = caps.fp8, .int8 = caps.int8}, strict);
+      tier, SpanVariantCaps{.cutlass = cutlass, .native16 = native16, .fp8 = caps.fp8, .int8 = caps.int8},
+      strict);
+  if (p.options.span_native && !native16)
+    log->info("SPAN FP16 CUTLASS : ce moteur ou cette carte n'a pas les noyaux CUTLASS, TensorRT FP16");
   if (tier == PrecisionTier::Performance && !caps.fp8)
     log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
   const auto prepare_span = [&] {

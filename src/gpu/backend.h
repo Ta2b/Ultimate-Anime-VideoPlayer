@@ -93,7 +93,8 @@ namespace ajp::gpu {
 // 40 : BackendInit::filtered_warp (le warp par texture, à l'essai) ; SpanFp8Request::fp16, timing_width et
 // timing_height ; SpanFp8Derivation::trt_fp16_ms, timed_size et validation_peaks (E01).
 // 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
-inline constexpr int kBackendAbi = 41;
+// 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, aussi sur RTX 30 et RTX 50).
+inline constexpr int kBackendAbi = 42;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -164,6 +165,9 @@ struct BackendCaps {
   // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
   // dans un backend construit avec CUTLASS.
   bool span_fp8_cutlass = false;
+  // Le SPAN FP16 natif par les mêmes noyaux (paquet « .span8 » au drapeau fp16, --span-native) : sm 8.6, 8.9
+  // et 12.0 (SpanFp8Net::supported_fp16_device), jugé sur la carte au chargement.
+  bool span_fp16_cutlass = false;
   // L'architecture de l'appareil (« sm_89 ») et la version des noyaux du SPAN FP8
   // (SpanFp8Net::kKernelsVersion) : un reçu v2 n'est pris que sur les mêmes (étape 3.7b).
   std::string gpu_arch;

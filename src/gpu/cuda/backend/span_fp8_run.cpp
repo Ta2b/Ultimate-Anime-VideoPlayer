@@ -119,6 +119,15 @@ ajp::gpu::cuda::SpanFp8Weights weights_for(const ajp::gpu::span_fp8::Package& pa
     if (error_ != cudaSuccess) return fail(std::string(#call) + " : " + cudaGetErrorString(error_)); \
   } while (false)
 
+// Pourquoi l'appareil ne prend pas ces noyaux ; nul s'il les prend (le FP16 natif va aussi aux RTX 30 et 50).
+const char* device_refusal(const cudaDeviceProp& props, bool fp16) {
+  if (fp16)
+    return SpanFp8Net::supported_fp16_device(props.major, props.minor) ? nullptr
+                                                                       : "appareil sans noyaux FP16 CUTLASS";
+  return SpanFp8Net::supported_device(props.major, props.minor) ? nullptr
+                                                                : "appareil sans noyaux FP8 CUTLASS";
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -139,8 +148,7 @@ int main(int argc, char* const* argv) {
 
   cudaDeviceProp props{};
   CU(cudaGetDeviceProperties(&props, 0));
-  if (!SpanFp8Net::supported_device(props.major, props.minor))
-    return fail("appareil sans noyaux FP8 CUTLASS");
+  if (const char* why_not = device_refusal(props, options.fp16)) return fail(why_not);
 
   const ajp::gpu::cuda::SpanFp8Weights weights = weights_for(*package, options);
   ajp::gpu::cuda::SpanFp8Status status = ajp::gpu::cuda::SpanFp8Status::Ok;

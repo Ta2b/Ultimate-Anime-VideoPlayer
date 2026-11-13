@@ -14,6 +14,10 @@ bool SpanFp8Net::supported_device(int /*major*/, int /*minor*/) {
   return false;
 }
 
+bool SpanFp8Net::supported_fp16_device(int /*major*/, int /*minor*/) {
+  return false;
+}
+
 std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& /*weights*/, int /*height*/,
                                                int /*width*/, SpanFp8Status& status, std::string& error) {
   status = SpanFp8Status::Failed;

@@ -71,11 +71,11 @@ constexpr std::array kImageTabs{
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{
         "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
-        "first time. Time saved not measured; small objects may lose precision (loss not measured). RIFE "
-        "only. Reloads playback.",
+        "first time. Four times fewer pixels for those passes, but in-between frames look worse in playback. "
+        "RIFE only. Reloads playback.",
         "Essai : les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, "
-        "par un second moteur construit la première fois. Gain de temps non mesuré ; les petits objets "
-        "peuvent perdre en précision (perte non mesurée). RIFE seulement. Recharge la lecture."},
+        "par un second moteur construit la première fois. Quatre fois moins de pixels pour ces passes, mais "
+        "les images intermédiaires sont moins belles en lecture. RIFE seulement. Recharge la lecture."},
     Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},

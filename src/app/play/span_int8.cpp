@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <iterator>
 #include <optional>
 #include <sstream>
 #include <string_view>
@@ -12,7 +13,10 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "core/file_sync.h"
 #include "gpu/span_fp8/derive.h"
+#include "gpu/span_fp8/onnx_weights.h"
+#include "gpu/span_fp8/package.h"
 #include "media/track.h"
 #include "media/yuv_sample.h"
 #include "prepare/sha256.h"
@@ -57,6 +61,8 @@ constexpr KindFacts facts(SpanVariantKind kind) {
               kInt8MinPsnrMeanDb,
               kInt8MinPsnrWorstDb,
               kInt8MinSsimWorst};
+    case SpanVariantKind::Fp16Cutlass:  // sans reçu : rien n'est quantifié, rien ne se juge
+      return {"", "-fp16c-", ".span8", 0.0, 0.0, 0.0};
   }
   return facts(SpanVariantKind::Int8);
 }
@@ -214,8 +220,46 @@ std::string_view variant_text(SpanVariantKind kind) {
       return "FP32";
     case SpanVariantKind::Fp8Cutlass:
       return "FP8 CUTLASS";
+    case SpanVariantKind::Fp16Cutlass:
+      return "FP16 CUTLASS";
   }
   return "INT8";
+}
+
+namespace {
+
+// Le paquet au chemin path, s'il se lit et porte le drapeau fp16 ; faux sinon (absent, abîmé, autre).
+bool native16_readable(const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return false;
+  const std::vector<char> raw{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  const auto* first = reinterpret_cast<const std::byte*>(raw.data());
+  const auto parsed = gpu::span_fp8::parse(std::span<const std::byte>(first, raw.size()));
+  return parsed && parsed->fp16;
+}
+
+}  // namespace
+
+std::expected<SpanInt8, Refusal> native16_variant(const std::filesystem::path& span,
+                                                  const std::filesystem::path& dir) {
+  if (!span_fp8_cutlass_model(span))
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported,
+                                   std::format("{} : pas un SPAN d'AnimeJaNai", prepare::utf8_path(span))});
+  auto sha = prepare::sha256_file_known(span);
+  if (!sha) return std::unexpected(std::move(sha.error()));
+  const std::filesystem::path path = span_variant_path(SpanVariantKind::Fp16Cutlass, span, dir, *sha);
+  if (!native16_readable(path)) {
+    // Les poids du modèle tels quels, rangés pour les noyaux : rien à calibrer, une fraction de seconde.
+    auto package = gpu::span_fp8::package_from_onnx_file(span);
+    if (!package) return std::unexpected(std::move(package.error()));
+    package->fp16 = true;
+    std::error_code error;
+    std::filesystem::create_directories(dir, error);
+    const std::vector<std::byte> bytes = gpu::span_fp8::serialize(*package);
+    if (auto written = core::write_atomic(path, bytes); !written)
+      return std::unexpected(std::move(written.error()));
+  }
+  return SpanInt8{.kind = SpanVariantKind::Fp16Cutlass, .onnx = path};
 }
 
 SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::path& span,
@@ -291,6 +335,7 @@ std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVa
   // L'INT8 au cran Performance seulement : l'Équilibre, annoncé FP16, joue le FP16 même quand un reçu INT8
   // traîne d'un essai du cran Performance (A49-07).
   if (tier == PrecisionTier::Performance && caps.int8) order.push_back(SpanVariantKind::Int8);
+  if (tier == PrecisionTier::Balanced && caps.native16) order.push_back(SpanVariantKind::Fp16Cutlass);
   if (tier == PrecisionTier::Quality) order.push_back(SpanVariantKind::Fp32);
   return order;
 }
@@ -343,8 +388,8 @@ std::string with_gate_refusals(std::string_view receipt, const std::vector<std::
 std::optional<std::string> span_int8_source(const std::string& file, SpanVariantKind* kind) {
   const std::string_view name(file);
   constexpr std::string_view kSuffix = ".onnx";
-  for (const SpanVariantKind candidate :
-       {SpanVariantKind::Int8, SpanVariantKind::Fp8, SpanVariantKind::Fp32, SpanVariantKind::Fp8Cutlass}) {
+  for (const SpanVariantKind candidate : {SpanVariantKind::Int8, SpanVariantKind::Fp8, SpanVariantKind::Fp32,
+                                          SpanVariantKind::Fp8Cutlass, SpanVariantKind::Fp16Cutlass}) {
     const std::string_view extension = facts(candidate).extension;
     if (!name.ends_with(extension)) continue;
     const std::string_view stem = name.substr(0, name.size() - extension.size());

@@ -68,6 +68,11 @@ class SpanFp8Net {
   // compile aussi pour sm 12.0 (CUDA_ARCHITECTURES « 89-real;120 »), mais ils n'y sont pas pris : le FP8
   // reste éteint sur RTX 50 tant qu'aucune mesure ne l'y a jugé.
   static bool supported_device(int major, int minor);
+  // Le SPAN FP16 natif (SpanFp8Weights::fp16) : ses noyaux n'emploient que les mma FP16 d'Ampere
+  // (m16n8k16) et la copie asynchrone, compilés à part pour sm 8.6 (RTX 30), 8.9 (RTX 40) et 12.0 (RTX 50)
+  // (span_fp8_net16.cu). Le chargement les juge sur la carte contre le calcul du processeur
+  // (span_fp8_check.h) : ailleurs qu'en 8.9, personne ne les a vus tourner.
+  static bool supported_fp16_device(int major, int minor);
   // La version des noyaux, écrite au reçu (étape 3.7b) : à augmenter à chaque changement de ce qu'ils
   // calculent (un paquet validé avec d'autres noyaux se revalide). 1 : état après les étapes 3.1 à 3.5 ;
   // 2 : poids FP8 des blocs à une échelle par canal de sortie (étape 10.3) ; 3 : la variante acc16 accumule
