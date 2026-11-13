@@ -102,9 +102,11 @@ struct LookTable::Impl {
 bool LookTable::Impl::build(pl_dispatch dispatch) {
   pl_shader sh = pl_dispatch_begin(dispatch);
   std::vector<pl_shader_desc> descs;
+  descs.reserve(luts.size() + 1);
   for (std::size_t t = 0; t < luts.size(); ++t) descs.push_back(sampled(lut_names[t].c_str(), luts[t]));
   descs.push_back(storage("AJL_TABLE", table));
   std::vector<pl_shader_var> vars;
+  vars.reserve(kLookSlots + 4);
   for (std::size_t i = 0; i < kLookSlots; ++i) vars.push_back(float_var(mix_names[i].c_str(), &in.mixes[i]));
   vars.push_back(float_var("look_white", &in.white));
   vars.push_back(float_var("look_pq", &in.pq));

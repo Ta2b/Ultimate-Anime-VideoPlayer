@@ -111,20 +111,23 @@ class PlaceboSourceGrader final : public SourceGrader {
 
   // Le grade à part suit celui de l'écran : ses LUT (par identité), ses paramètres, la passe de sortie.
   std::expected<void, Refusal> follow(const SourceGradeState& state) {
+    if (!state.params) return {};  // sans grade, rien à suivre (l'appelant l'a déjà écarté)
+    const render::GradeParams& wanted = *state.params;
     if (!grade_) {
       auto made = render::Grade::create(gpu_);
       if (!made) return std::unexpected(std::move(made.error()));
       grade_.emplace(std::move(*made));
       looks_.reset();
     }
+    render::Grade& grade = *grade_;
     if (!looks_ || *looks_ != state.looks) {
-      if (auto ok = grade_->set_looks(state.looks); !ok) return ok;
+      if (auto ok = grade.set_looks(state.looks); !ok) return ok;
       looks_ = state.looks;
     }
-    if (grade_->params() != *state.params) grade_->set_params(*state.params);
-    grade_->set_kwin_match(state.kwin);
+    if (grade.params() != wanted) grade.set_params(wanted);
+    grade.set_kwin_match(state.kwin);
     // Une fois par source : les lissages du grade gardent leur durée en secondes.
-    grade_->set_video_fps(fps_);
+    grade.set_video_fps(fps_);
     return {};
   }
 
@@ -137,6 +140,7 @@ class PlaceboSourceGrader final : public SourceGrader {
     pl_render_params params = pl_render_default_params;
     params.dither_params = nullptr;  // RGBA16 : l'écran tramera vers sa sortie
     if (deband) params.deband_params = &kQuietDeband;
+    if (!grade_) return false;  // follow() pose le grade avant tout rendu
     const std::span<const pl_hook* const> hooks = grade_->hooks();
     params.hooks = hooks.data();
     params.num_hooks = static_cast<int>(hooks.size());
