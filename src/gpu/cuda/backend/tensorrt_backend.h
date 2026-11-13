@@ -91,6 +91,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
                                           const Tensor& out) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
+  // Le grade avant le warp : un emplacement RGBA16 relu dans un tenseur RGB FP16.
+  std::expected<void, Refusal> read_ring(const RingSlotDesc& slot, const RingWrite& sync,
+                                         const Tensor& rgb) override;
   // Entrée de RIFE et mesures d'une paire (tensorrt_rife.cpp).
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;

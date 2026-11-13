@@ -159,6 +159,48 @@ Temps sur lavapipe en 4K (l'ordre relatif seulement) : la passe du look passe de
 (le défaut), de 262 à 76 ms sans. La construction de la table vaut 129³ ≈ 2,1 millions de traversées de la
 pile, un quart d'image 4K, une seule fois.
 
+## Le grade avant le warp (13/11, essai, éteint par défaut)
+
+Réglage « Grade before interpolation » (Vidéo, grade ; `grade_before_warp` dans `[grade]` de `play.toml`). Avec
+RIFE ou DistilDRBA en variante mouvement (warp après SPAN), l'image source sortie de SPAN est gradée une fois, sur place,
+avant que le warp n'en tire les images intermédiaires : à ×8, un grade par source au lieu de huit, un par image
+affichée. L'étage d'agrandissement écrit le tenseur dans une image au protocole du ring, libplacebo la grade
+hors écran avec les paramètres que l'écran applique à cet instant (son propre renderer et sa propre copie du
+grade, `app/play/placebo_source_grade.cpp`), et le backend la relit dans le même tenseur
+(`KernelOps::read_ring`, `ring_load.comp`). Les images marquées gradées (`RingFrame::graded`) passent l'écran
+sans hook ni débandage. Les lissages du grade suivent la cadence de la source : ils gardent leur durée en
+secondes.
+
+Le grade avant le warp ne tourne que pour une sortie HDR10, une source SDR, sans netteté ni Anime4K ;
+ailleurs l'écran grade comme avant. Sous Vulkan, le backend lit l'image gradée sur le même appareil
+(`ring_load.comp`) ; sous TensorRT, l'image est partagée avec CUDA comme les slots du ring et relue par
+`read_rgba16` (`slice_kernels.cu`), aux mêmes sémaphores. Un refus de la relecture rend le grade à l'écran.
+Ce qui change à l'image :
+
+- une image intermédiaire mélange les grades de ses sources au lieu du grade de leur mélange ;
+- un réglage changé en pause ne se voit qu'à l'image source suivante ; les paramètres du plan sont ceux de
+  l'écran une image source plus tôt environ ;
+- le tenseur fp16 de SPAN arrondit l'image gradée (un quart de code PQ 10 bits au pire) ;
+- une paire dont une seule source a été gradée (au premier essai, après un refus) est laissée à l'écran.
+
+Écart à l'image gradée à l'affichage, à mi-chemin d'une paire (t = 0,5), mesuré sur lavapipe sur 36 découpes
+de 256 × 256 des plans de calibration (`tests/unit/render/grade_before_warp_test.cpp`, mesure `[.mesure]`,
+découpes par `tools/grade/warp_stills.sh`), en codes PQ 10 bits :
+
+| Mouvement | Au pire | 99,9 % | 99 % | Moyen | Sans grade, moyen |
+| --- | --- | --- | --- | --- | --- |
+| Panoramique (5,5 ; 2,25 px), flot juste | 57,5 | 20,0 | 7,7 | 0,72 | 0,13 |
+| Zoom de 4 %, flot juste | 78,3 | 25,6 | 9,2 | 0,79 | 0,14 |
+| Fantôme (flot nul, deux plans mêlés) | 179,7 | 150,9 | 107,2 | 27,1 | 22,1 |
+
+« Sans grade » compare le mélange dans le gamma de la source au mélange en PQ, sans aucun grade : la part de
+l'écart que tout grade en PQ donnerait. Quand le flot suit le mouvement, l'écart tient dans les contours (les
+lectures bilinéaires du warp mêlent deux couleurs voisines) : moins d'un code en moyenne, 99 % des pixels sous
+10 codes. Le passage local et les zones du grade, qui lisent un voisinage, en font l'essentiel. Là où le flot
+échoue (fantôme, occlusions), le mélange de deux couleurs différentes change de teinte : 27 codes en moyenne
+sur ces pixels, qui sont déjà un défaut de l'interpolation. Le réglage reste éteint jusqu'à ce que Tatoub juge
+l'image à l'œil, sur une scène d'action en ×4 ou plus.
+
 ## A2 : décisions par plan
 La lumière du plan (sa luminance moyenne) fixe la marge des éclats de la sortie SDR. Les surfaces gardent le
 relèvement fixe (1,15) dans tous les plans : l'exposition par plan est retirée (C41-01).

@@ -1,0 +1,29 @@
+#version 450
+// Lecture d'une image RGBA16 UNORM (core/ring.h) vers un tenseur RGB planaire : l'inverse de ring_store, pour
+// l'image source que le grade a rendue hors écran (app/play/source_grade.h). Chaque code c rend c / 65535,
+// alpha ignoré.
+#extension GL_GOOGLE_include_directive : require
+#include "net_tensor.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(constant_id = 0) const uint TX = 0;
+
+AJP_NET_BUFFER(0, dst, writeonly)
+layout(binding = 1, rgba16) uniform readonly image2D slot;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+} pc;
+
+void main() {
+  uvec2 p = gl_GlobalInvocationID.xy;
+  if (p.x >= pc.width || p.y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = p.y * pc.width + p.x;
+  vec4 v = imageLoad(slot, ivec2(p));
+  AJP_STORE(dst, TX, i, v.r);
+  AJP_STORE(dst, TX, plane + i, v.g);
+  AJP_STORE(dst, TX, 2u * plane + i, v.b);
+}

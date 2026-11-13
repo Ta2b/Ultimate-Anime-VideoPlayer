@@ -290,6 +290,47 @@ TEST_CASE("KernelOps : écriture d'un slot du ring", "[vk_backend][kernels]") {
                   RefusalCode::FieldOutOfRange);
 }
 
+// Le grade avant le warp (app/play/source_grade.h) : le slot écrit est relu dans un tenseur, au code près.
+TEST_CASE("KernelOps : relecture d'un slot du ring", "[vk_backend][kernels]") {
+  TempDir dir("ring_read");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  auto image = vk::StorageImage::create(backend->context(), backend->memory(), 20, 12);
+  if (!image && image.error().code == RefusalCode::FeatureUnavailable) SKIP(describe(image.error()));
+  REQUIRE(image);
+  auto semaphore = require_value(vk::TimelineSemaphore::create(backend->context(), 0));
+  const auto bits = [](auto handle) { return vk::detail::to_bits(handle); };
+  const RingSlotDesc slot{.index = 0,
+                          .generation = 1,
+                          .width = 20,
+                          .height = 12,
+                          .image = bits(image->image()),
+                          .semaphore = bits(semaphore.handle())};
+  std::uint64_t wait = 0;
+  for (const TensorType type : types_of(*backend)) {
+    const k::RgbImage rgb = stored(synthetic_rgb(20, 12, 33, 0.0F, 1.0F), type);
+    auto t = rgb_tensor(*backend, 20, 12, type);
+    write_tensor(*backend, t->tensor(), rgb_bytes(rgb, type));
+    require_ok(ops.write_ring(t->tensor(), slot, {.wait_value = wait, .signal_value = wait + 1}));
+    auto back = rgb_tensor(*backend, 20, 12, type);
+    require_ok(ops.read_ring(slot, {.wait_value = wait + 1, .signal_value = wait + 2}, back->tensor()));
+    require_ok(backend->context().wait_on_host(semaphore.at(wait + 2)));
+    // RGBA16 entre les deux : un demi-code de 16 bits, plus l'arrondi du fp16 pour ce type.
+    const float tolerance = type == TensorType::F32 ? 0.5F / 65535.0F + 1e-6F : k::tolerance::kRgbF16;
+    CHECK(max_abs_diff(download(*backend, *back, 20, 12), stored(rgb, TensorType::F32)) <= tolerance);
+    wait += 2;
+  }
+  // Attente paire, signal qui ne suit pas, autre taille : refusés.
+  auto t = rgb_tensor(*backend, 20, 12, TensorType::F32);
+  require_refusal(ops.read_ring(slot, {.wait_value = wait, .signal_value = wait + 1}, t->tensor()),
+                  RefusalCode::FieldOutOfRange);
+  require_refusal(ops.read_ring(slot, {.wait_value = wait + 1, .signal_value = wait + 3}, t->tensor()),
+                  RefusalCode::FieldOutOfRange);
+  auto other = rgb_tensor(*backend, 22, 12, TensorType::F32);
+  require_refusal(ops.read_ring(slot, {.wait_value = wait + 1, .signal_value = wait + 2}, other->tensor()),
+                  RefusalCode::ShapeInvalid);
+}
+
 // C45-03 : les enregistrements d'un ring sont clés sur la poignée de sa vue. Une vue d'une génération
 // révolue, détruite, entre au journal des destructions : son enregistrement s'oublie, et ne se rejoue pas si
 // le pilote rend la même poignée à une vue suivante.

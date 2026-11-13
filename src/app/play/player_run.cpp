@@ -160,6 +160,16 @@ void mask_before_teardown(Player& p, bool closing, bool reopening) {
   }
 }
 
+// Le grade avant le warp (source_grade.h) : prêt sur toute chaîne d'un ring, il ne grade que si le réglage et
+// l'écran le demandent.
+UpscaleSetup graded(UpscaleSetup setup, const ChainEngines& c, Player& p) {
+  if (!setup.slots.empty()) {
+    setup.grader = p.screen.source_grader(c.backend_name == "tensorrt", fps_of(p.video.frame_rate),
+                                          setup.slots.front().generation);
+  }
+  return setup;
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused) {
@@ -274,8 +284,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
           return std::unexpected(std::move(slots.error()));
         }
         const MasterClock* clock = stage.clock;
-        auto started = UpscaleStage::start(std::move(stage),
-                                           c.upscale(played, live, clock, width, height, std::move(*slots)));
+        auto started = UpscaleStage::start(
+            std::move(stage), graded(c.upscale(played, live, clock, width, height, std::move(*slots)), c, p));
         // Un tenseur de l'étage refusé (cudaMallocAsync sous CachyOS, où la VRAM ne déborde pas) est un refus
         // de l'étage comme l'anneau ; retreat_stage écarte l'appareil perdu.
         stage_refused = !started;

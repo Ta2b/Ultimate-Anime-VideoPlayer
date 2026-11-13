@@ -90,6 +90,10 @@ class GuardedKernelOps final : public KernelOps {
                                           const RingWrite& sync) override {
     return guarded_detail::call("write_ring", [&] { return in_->write_ring(rgb, slot, sync); });
   }
+  std::expected<void, Refusal> read_ring(const RingSlotDesc& slot, const RingWrite& sync,
+                                         const Tensor& rgb) override {
+    return guarded_detail::call("read_ring", [&] { return in_->read_ring(slot, sync, rgb); });
+  }
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override {
     return guarded_detail::call("rife_input", [&] { return in_->rife_input(a, b, t, input); });

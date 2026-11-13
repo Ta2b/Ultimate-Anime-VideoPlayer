@@ -104,6 +104,11 @@ void grade_tab(PlaySettings& d) {
   panel::tip(
       i18n::tr("The LUT stack is computed once into one table on the GPU, then read once per pixel instead "
                "of LUT by LUT. Faster, but not exact: a few PQ codes off at worst on saturated colors."));
+  ImGui::Checkbox(i18n::tr("Grade before interpolation (faster, test)"), &d.grade_before_warp);
+  panel::tip(
+      i18n::tr("HDR, with interpolation after SPAN: each source frame is graded once, and the in-between "
+               "frames are made from graded frames, instead of grading every displayed frame. Much faster "
+               "at high factors, but not exact on moving edges."));
   if (ImGui::Button(i18n::tr("Defaults"))) {
     const PlaySettings defaults;
     g.anime_saturation = defaults.grade_values.anime_saturation;
@@ -113,6 +118,7 @@ void grade_tab(PlaySettings& d) {
     d.look_highlight = defaults.look_highlight;
     d.flash_guard = defaults.flash_guard;
     d.look_table = defaults.look_table;
+    d.grade_before_warp = defaults.grade_before_warp;
     d.face_skin = defaults.face_skin;
     d.surface_white = defaults.surface_white;
     g.shadows = defaults.grade_values.shadows;

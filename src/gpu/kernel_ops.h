@@ -146,6 +146,15 @@ class KernelOps {
   virtual std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                                   const RingWrite& sync) = 0;
 
+  // L'inverse de write_ring : l'image RGBA16 UNORM d'un slot (ou d'une image au même protocole) vers rgb, de
+  // sa taille, chaque code c rendu c / 65535 et alpha ignoré. Attend wait_value (impaire : l'image écrite),
+  // signale signal_value (wait_value + 1 : l'image relue, libre). Le grade avant le warp
+  // (app/play/source_grade.h) y relit l'image source gradée hors écran.
+  virtual std::expected<void, Refusal> read_ring(const RingSlotDesc& /*slot*/, const RingWrite& /*sync*/,
+                                                 const Tensor& /*rgb*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "read_ring : absent de ce backend"});
+  }
+
   // Les opérations qui suivent ont un défaut qui refuse par son nom : un backend qui ne les a pas les
   // laisse.
   //

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -160,6 +161,35 @@ TEST_CASE("Anneau : une rampe écrite par le backend TensorRT se relit par libpl
     // Un code près en 10 bits ; en 16 bits, l'ingestion (FP32 → FP16) et la conversion de la rampe donnent
     // au plus quelques codes de 65 535.
     CHECK(worst <= (ten_bits ? 1 : 64));
+    if (!ten_bits) {
+      // Le grade avant le warp : le slot relu par CUDA (read_ring) puis réécrit rend les mêmes codes, au
+      // FP16 du tenseur près. libplacebo rend le slot (2), le reprend et le rend prêt à relire (3).
+      ring.retire(vk->gpu, written);
+      const RingFrame rendered{.slot = 0, .generation = slot.generation, .ready_value = 2};
+      REQUIRE(ring.acquire(vk->gpu, rendered));
+      ring.retire(vk->gpu, rendered);
+      auto back = (*backend)->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+      REQUIRE(back);
+      REQUIRE(ops.read_ring(slot, {.wait_value = 3, .signal_value = 4}, (*back)->tensor()));
+      REQUIRE(ops.write_ring((*back)->tensor(), slot, {.wait_value = 4, .signal_value = 5}));
+      const RingFrame again{.slot = 0, .generation = slot.generation, .ready_value = 5};
+      auto tex_again = ring.acquire(vk->gpu, again);
+      REQUIRE(tex_again);
+      std::vector<std::byte> host_again(host.size());
+      transfer.tex = *tex_again;
+      transfer.ptr = host_again.data();
+      REQUIRE(pl_tex_download(vk->gpu, &transfer));
+      pl_gpu_finish(vk->gpu);
+      int drift = 0;
+      for (std::size_t at = 0; at < host.size(); at += 2) {
+        std::uint16_t first = 0, second = 0;
+        std::copy_n(host.data() + at, 2, reinterpret_cast<std::byte*>(&first));
+        std::copy_n(host_again.data() + at, 2, reinterpret_cast<std::byte*>(&second));
+        drift = std::max(drift, std::abs(static_cast<int>(first) - static_cast<int>(second)));
+      }
+      WARN("RGBA16 relu puis réécrit : écart maximal " << drift << " code(s)");
+      CHECK(drift <= 16);  // un demi-ulp FP16 près de 1 : 2^-12 × 65 535
+    }
     ring.clear(vk->gpu);
   }
   pl_vulkan_destroy(&vk);

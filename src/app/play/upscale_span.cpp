@@ -6,6 +6,7 @@
 
 #include "app/play/links.h"
 #include "app/play/upscale_stage.h"
+#include "core/log.h"
 #include "core/trace.h"
 
 namespace ajp::app::play {
@@ -43,8 +44,42 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
+  if (ok) ok = grade_spanned(span_of_[current_]);
   use_lane(back);
   return ok;
+}
+
+std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
+  span_graded_[buf] = false;
+  if (!setup_.grader || setup_.yuv_slots) return {};
+  AJP_TRACE("grade avant le warp");
+  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_);
+  if (!graded) {
+    log_channel("gpu")->warn("grade avant le warp : {} {} ; l'écran reprend le grade",
+                             name(graded.error().code), graded.error().detail);
+    setup_.grader.reset();
+    return {};
+  }
+  span_graded_[buf] = *graded;
+  return {};
+}
+
+bool UpscaleStage::source_graded() const {
+  return warps_spanned() && span_graded_[span_of_[current_]];
+}
+
+RingStage::Output UpscaleStage::source_output(std::int64_t pts_us, SourceId id) const {
+  return Output{.pts_us = pts_us,
+                .left = id,
+                .right = id,
+                .uninterpolated = uninterpolated_,
+                .debanded = debanded_,
+                .graded = source_graded()};
+}
+
+bool UpscaleStage::pair_graded() const {
+  return span_graded_[span_of_[current_ ^ 1U]] &&
+         span_graded_[smooth_first_ ? span_ahead_buf_ : span_of_[current_]];
 }
 
 std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::uint32_t slot,

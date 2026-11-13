@@ -59,6 +59,7 @@ set(net_shaders
   "${shaders}/net_reduce_mean.comp"
   "${shaders}/net_resize.comp"
   "${shaders}/net_unary.comp"
+  "${shaders}/ring_load.comp"
   "${shaders}/ring_store.comp")
 # Le noyau à matrices coopératives FP8 exige GL_EXT_float_e4m3 (glslang 15.2 ou plus récent) : il
 # n'entre dans la construction que si le compilateur le connaît ; sans lui, la variante n'est pas

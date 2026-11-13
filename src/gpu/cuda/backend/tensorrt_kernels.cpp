@@ -382,6 +382,38 @@ std::expected<void, Refusal> TensorRtBackend::write_ring(const Tensor& rgb, cons
   return finish_slot(**imported, sync);
 }
 
+// Le pendant de write_ring (le grade avant le warp, app/play/source_grade.h) : attend wait_value (impaire,
+// le rendu de libplacebo fini), relit l'emplacement dans le tenseur, puis le rend en signalant wait_value
+// + 1.
+std::expected<void, Refusal> TensorRtBackend::read_ring(const RingSlotDesc& desc, const RingWrite& sync,
+                                                        const Tensor& rgb) {
+  if (desc.format != RingFormat::Rgba16Unorm)
+    return refuse(RefusalCode::FormatUnsupported, "ring : seul un slot Rgba16Unorm se relit");
+  if (!rgb_tensor(rgb, desc.width, desc.height)) {
+    return refuse(RefusalCode::ShapeInvalid, std::format("slot {} relu : tenseur FP16 1×3×{}×{} attendu",
+                                                         desc.index, desc.height, desc.width));
+  }
+  if (sync.wait_value % 2 != 1 || sync.signal_value != sync.wait_value + 1) {
+    return refuse(RefusalCode::SequenceOrder,
+                  std::format("slot {} relu : attente {} impaire puis signal {} suivant attendus", desc.index,
+                              sync.wait_value, sync.signal_value));
+  }
+  if (auto ok = bind_joined(&desc); !ok) return ok;
+  if (auto ok = order({}, {rgb.handle}); !ok) return ok;
+  auto imported = slot(desc);
+  if (!imported) return std::unexpected(std::move(imported.error()));
+  if (auto ok = (*imported)->wait(sync.wait_value, stream_); !ok) return ok;
+  const ReadParams params{.rgb = address(rgb),
+                          .width = desc.width,
+                          .height = desc.height,
+                          .surface = (*imported)->surface().object};
+  GpuTiming& timing = stage("relecture du ring");
+  timing.begin(stream_);
+  if (auto ok = cuda_check(launch_read_rgba16(params, stream_), "read_rgba16<<<>>>"); !ok) return ok;
+  timing.end(stream_);
+  return finish_slot(**imported, sync);
+}
+
 std::expected<void, Refusal> TensorRtBackend::finish_slot(const ImportedSlot& slot, const RingWrite& sync) {
   return slot.signal(sync.signal_value, stream_);
 }

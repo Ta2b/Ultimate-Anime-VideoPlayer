@@ -56,10 +56,11 @@ enum class OpCode : std::uint64_t {
   RifePair = 47,
   WriteRing = 50,
   FrameStats = 51,
+  ReadRing = 52,
 };
 constexpr std::array kOpCodes{OpCode::Resample,  OpCode::RifeCrop,    OpCode::Warp,         OpCode::Ingest,
                               OpCode::RifeInput, OpCode::ScoresStart, OpCode::FlowMaxStart, OpCode::RifeTime,
-                              OpCode::RifePair,  OpCode::WriteRing,   OpCode::FrameStats};
+                              OpCode::RifePair,  OpCode::WriteRing,   OpCode::FrameStats,   OpCode::ReadRing};
 static_assert(
     [] {
       for (std::size_t i = 0; i < kOpCodes.size(); ++i)
@@ -133,6 +134,8 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
   std::expected<void, Refusal> write_ring(const Tensor& rgb, const RingSlotDesc& slot,
                                           const RingWrite& sync) override;
+  std::expected<void, Refusal> read_ring(const RingSlotDesc& slot, const RingWrite& sync,
+                                         const Tensor& rgb) override;
   std::expected<void, Refusal> health() override { return queue_.health(); }
   // A45-14 : la mémoire de la carte pour les statistiques, lue du budget du pilote.
   std::optional<DeviceMemory> device_memory() override;

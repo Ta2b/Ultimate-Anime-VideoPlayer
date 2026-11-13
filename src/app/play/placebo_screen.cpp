@@ -201,7 +201,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
   }
   // Le grade chargé est celui du PQ ou du SDR : sur une autre cible (instantané SDR d'une sortie
   // HDR10), il est sauté.
-  const bool graded_now = grade.has_value() && graded(target.color);
+  const bool graded_now = grade.has_value() && graded(target.color) && !frame_graded;
   // La case Débandage décide sur tous les moteurs (P3.56) : une image déjà débandée avant SPAN (TensorRT) ne
   // l'est pas deux fois ; sinon libplacebo débande ici. Sous le grade, son grain fabriquait du bruit dans les
   // aplats sombres que le grade étire (écart-type 16x16 de 1,0 contre 0,0) : il y débande sans grain.
@@ -210,7 +210,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image,
     quiet.grain = 0.0F;
     return quiet;
   }();
-  if (deband && !frame_debanded)
+  if (deband && !frame_debanded && !frame_graded)
     params.deband_params = graded_now ? &kQuietDeband : &pl_deband_default_params;
   std::array<const pl_hook*, 16> hooks{};
   if (const std::size_t count = video_hooks(hooks, image, graded_now); count > 0) {
@@ -497,16 +497,14 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
   s.hdr_output = target.color.transfer == PL_COLOR_TRC_PQ;
   s.target_color = target.color;
-  s.take_next_grade(request.frame);
-  s.select_grade(s.target_color);
-  s.match_kwin();
+  s.ready_grade(request.frame);
   if (request.frame != nullptr && request.frame->pts_us != kNoPts && s.grade) {
     s.video_rate.observe(request.frame->pts_us, request.frame->epoch);
     s.grade->set_video_fps(s.video_rate.fps());
   }
 
   const RingFrame* frame = request.frame;
-  s.frame_debanded = frame != nullptr && frame->debanded;
+  s.take_frame_marks(frame);
   pl_frame image{};
   if (frame != nullptr) {
     auto tex = s.ring.acquire(gpu, *frame);
@@ -518,7 +516,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
     image.planes[0].component_mapping[1] = 1;
     image.planes[0].component_mapping[2] = 2;
     image.repr = pl_color_repr_rgb;
-    image.color = s.source;
+    image.color = s.frame_color();
     image.crop = {0, 0, static_cast<float>((*tex)->params.w), static_cast<float>((*tex)->params.h)};
     pl_rect2df_aspect_set(&target.crop, pl_rect2df_aspect(&image.crop) * static_cast<float>(s.sample_aspect),
                           0.0F);
