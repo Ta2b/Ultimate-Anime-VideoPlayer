@@ -92,7 +92,9 @@ std::expected<void, Refusal> UpscaleStage::run_early() {
 
 std::expected<UpscaleStage::StrongRun, Refusal> UpscaleStage::strong_for(std::uint32_t output, float t,
                                                                          const gpu::Motion& full, bool half) {
-  if (early_.ready && output < early_.runs.size() && early_.runs[output]) return *early_.runs[output];
+  if (early_.ready && output < early_.runs.size()) {
+    if (const auto& run = early_.runs[output]) return *run;
+  }
   return run_strong(t, full, half);
 }
 
