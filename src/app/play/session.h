@@ -44,6 +44,8 @@ namespace ajp::app::play {
 // plus de kMaxAtlasesInFlight − 1 atlas (contrat de subs/subtitle_frame.h). Les réponses gardées sont
 // les changements de sous-titres de l'image à l'écran et de celles en avance (SubtitleQueue fond les
 // réponses identiques) : le ring peut être plus profond qu'elles.
+// Cadence fixe : marge sous la période de l'écran, pour présenter avant le vsync visé.
+inline constexpr std::int64_t kCadenceSlackUs = 500;
 inline constexpr std::size_t kMaxSubtitleRequests = 3;
 inline constexpr std::size_t kMaxKeptSubtitles = subs::kMaxAtlasesInFlight - kMaxSubtitleRequests - 1;
 
@@ -245,6 +247,7 @@ class Session {
   bool step_from_queue();  // P3.42 : image suivante de la file, en pause, sans seek
   void check_end(std::int64_t host_now);
   ShowRequest show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const;
+  bool repeats_expected() const;
   std::optional<PairTint> pair_tint_now() const;
   // Une présentation vient d'être rendue. Si c'est la première image d'une époque, l'horloge part de son pts
   // maintenant, et --seconds compte d'ici : partie au choix de l'image, elle courait pendant ce premier rendu
@@ -253,6 +256,7 @@ class Session {
   void shown_at(std::int64_t at_us) {
     shown_once_ = true;
     shown_at_us_ = at_us;
+    if (!fresh_) last_repeat_host_us_ = at_us;  // une image représentée (repeats_expected)
     if (!start_pts_) return;
     if (!paused_) send_play(epoch_, *start_pts_);
     if (!playing_since_us_) playing_since_us_ = at_us;
@@ -391,6 +395,7 @@ class Session {
   std::optional<std::int64_t> playing_since_us_;  // instant hôte de la première image
   std::optional<std::int64_t> start_pts_;         // première image choisie, horloge pas encore partie
   std::int64_t last_fresh_host_us_ = 0;
+  std::int64_t last_repeat_host_us_ = 0;  // instant hôte de la dernière présentation sans image neuve
   bool fullscreen_done_ = false;
   FrameStats stats_;
   std::vector<std::string> refusals_;  // derniers refus, pour l'OSD
