@@ -647,6 +647,9 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     c.backend = std::move(*backend);
   }
   c.backend_name = c.backend->capabilities().name;
+  // Sous Vulkan, une seule voie par défaut : sur une 4070 Ti (SPAN ×2 vers la 4K, RIFE ×8), 40 i/s au lieu de
+  // 31 à 33 à trois voies, qui se disputent la carte sans rien recouvrir. --lanes garde les trois voies.
+  if (c.backend_name == "vulkan" && !p.options.lanes) c.one_lane = true;
   announce_backend(*log, *c.backend, c.backend_name, p.library->path());
   // Sous TensorRT les copies passent par CUDA : le BAR ne joue que pour le moteur Vulkan.
   if (const std::string rebar = rebar_text(gpu);

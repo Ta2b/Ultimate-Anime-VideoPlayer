@@ -127,16 +127,14 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 34> kTrialOptions{
-    "--rife-image",         "--ring-rgb10a2",    "--no-ring-rgb10a2", "--hdr-metadata",
-    "--no-hdr-metadata",    "--probe-nvdec",     "--no-probe-nvdec",  "--shot-cuts",
-    "--no-shot-cuts",       "--one-lane",        "--skip-held",       "--anime-shots",
-    "--no-anime-shots",     "--fast-steady",     "--smooth-drawings", "--ring-watcher",
-    "--no-ring-watcher",    "--precise-wait",    "--no-precise-wait", "--audio-pll",
-    "--no-audio-pll",       "--vsync-index",     "--no-vsync-index",  "--present",
-    "--no-present",         "--no-vrr",          "--rife-calm-model", "--rife-warm",
-    "--profile-dispatches", "--rife-encode-all", "--rife-at-slot",    "--filtered-warp",
-    "--tiled-warp",         "--warp-l2"};
+constexpr std::array<std::string_view, 35> kTrialOptions{
+    "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
+    "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
+    "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
+    "--smooth-drawings", "--ring-watcher",   "--no-ring-watcher", "--precise-wait",   "--no-precise-wait",
+    "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
+    "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
+    "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--tiled-warp",     "--warp-l2"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -158,7 +156,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 36> kFlags{{
+constexpr std::array<Flag, 37> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -177,6 +175,7 @@ constexpr std::array<Flag, 36> kFlags{{
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
     {"--no-vrr", &PlayOptions::no_vrr, true},
     {"--one-lane", &PlayOptions::one_lane, true},
+    {"--lanes", &PlayOptions::lanes, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
     {"--filtered-warp", &PlayOptions::filtered_warp, true},
     {"--l2-keep", &PlayOptions::l2_keep, true},
@@ -589,8 +588,9 @@ std::string play_usage(bool debug) {
          "                         --no-probe-nvdec: software decoding)\n"
          "  --no-shot-cuts         interpolation cuts measured by RIFE alone (default: the pre-analysis\n"
          "                         shots decide, RIFE when they do not cover the pair)\n"
-         "  --one-lane             a single compute queue: slower, but the GPU profile gives each\n"
-         "                         engine's own cost\n"
+         "  --one-lane             a single compute queue (default with the Vulkan engine): the GPU\n"
+         "                         profile gives each engine's own cost\n"
+         "  --lanes                Vulkan engine: three compute queues instead of one\n"
          "  --profile-dispatches   Vulkan engine: GPU time and dispatch count per shader of each network,\n"
          "                         logged when the network is unloaded\n"
          "  --skip-held            playback: an instant identical to the shown frame is neither computed "

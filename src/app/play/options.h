@@ -171,6 +171,9 @@ struct PlayOptions {
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
   bool one_lane = false;
+  // --lanes : sous Vulkan, les trois voies (agrandissement, interpolation, mesure) au lieu d'une seule, le
+  // défaut de ce moteur (chain_setup.cpp) ; sans effet sous TensorRT, qui a ses voies par défaut.
+  bool lanes = false;
   // --rife-warm (essai, P6.15) : la passe du milieu d'une paire calme reprend les blocs grossiers de RIFE de
   // la paire précédente (RIFE fusionné sous Vulkan) ; UpscaleSetup::rife_warm.
   bool rife_warm = false;
