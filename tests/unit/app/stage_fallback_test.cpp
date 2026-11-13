@@ -369,17 +369,17 @@ TEST_CASE("C09-03 : la signature de l'interpolation suit l'ordre réel du warp e
   // SPAN.
   const std::string at60 =
       stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 60.0, .source_fps = 23.976});
-  CHECK(at60.contains("|warp-before|"));
+  CHECK(at60.ends_with("|warp-before"));
   // Sur 144 Hz, ×3 : après SPAN, comme la chaîne.
   const std::string at144 =
       stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976});
-  CHECK(at144.contains("|warp-after|"));
-  // Sans SPAN, l'ordre ne vaut rien : avant. L'ordre n'est plus le dernier champ de la signature (l'échelle
-  // par paire le suit) : il se cherche entre ses séparateurs.
+  CHECK(at144.ends_with("|warp-after"));
+  // Sans SPAN, l'ordre ne vaut rien : avant. L'ordre est le dernier champ de la signature (#790, l'échelle
+  // par paire le précède).
   s.upscale = false;
   CHECK(
       stage_signature(ChainStage::Motion, s, 960, 540, kLibrary, {.display_hz = 144.0, .source_fps = 23.976})
-          .contains("|warp-before|"));
+          .ends_with("|warp-before"));
 }
 
 TEST_CASE("C31-09 : une mémoire vidéo pleine ne retire l'étage que pour sa vidéo", "[stage_fallback]") {
