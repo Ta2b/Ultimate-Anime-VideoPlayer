@@ -171,9 +171,11 @@ grade, `app/play/placebo_source_grade.cpp`), et le backend la relit dans le mêm
 sans hook ni débandage. Les lissages du grade suivent la cadence de la source : ils gardent leur durée en
 secondes.
 
-Le grade avant le warp ne tourne que pour une sortie HDR10, une source SDR, sans netteté ni Anime4K, et sous
-Vulkan ; ailleurs l'écran grade comme avant. La partie CUDA (TensorRT) viendra dans une seconde PR : sans
-`read_ring`, le grader est refusé et l'écran reprend le grade. Ce qui change à l'image :
+Le grade avant le warp ne tourne que pour une sortie HDR10, une source SDR, sans netteté ni Anime4K ;
+ailleurs l'écran grade comme avant. Sous Vulkan, le backend lit l'image gradée sur le même appareil
+(`ring_load.comp`) ; sous TensorRT, l'image est partagée avec CUDA comme les slots du ring et relue par
+`read_rgba16` (`slice_kernels.cu`), aux mêmes sémaphores. Un refus de la relecture rend le grade à l'écran.
+Ce qui change à l'image :
 
 - une image intermédiaire mélange les grades de ses sources au lieu du grade de leur mélange ;
 - un réglage changé en pause ne se voit qu'à l'image source suivante ; les paramètres du plan sont ceux de
