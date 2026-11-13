@@ -146,4 +146,35 @@ TEST_CASE("Étage gpu : RIFE mouvement avec poses, la première paire d'un plan 
   CHECK(rig.backend.count("flow_max_now") == 0);
 }
 
+// Passes à l'arrivée (upscale_early.cpp) : une paire forte enfile toutes ses passes RIFE avant d'avoir un
+// slot pour sa première image ; avec --rife-at-slot, chacune attend le sien. Les images écrites et le nombre
+// de passes sont les mêmes.
+TEST_CASE("Étage gpu : RIFE mouvement fort, les passes de la paire enfilées avant son slot", "[app][stage]") {
+  const bool at_slot = GENERATE(false, true);
+  INFO((at_slot ? "--rife-at-slot" : "à l'arrivée"));
+  Rig rig;
+  rig.live->set_keep_poses(false);
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1}, 1);
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.rife_at_slot = at_slot;
+  rig.start(std::move(s));
+  rig.backend.motion_max(40.0F);
+  rig.feed(1, 2);
+  REQUIRE(rig.collect(1, false));  // la source 1 tient le seul slot
+  if (!at_slot) {
+    // (1,2) : le milieu, sa mesure (forte), puis RIFE à 1/4 et 3/4, tout cela sans slot.
+    REQUIRE(logged(rig, "engine rife_motion", 3));
+    CHECK(rig.backend.count("warp_blend") == 0);
+  }
+  rig.feed(3, 3);
+  REQUIRE(rig.collect(9));
+  rig.stage.reset();
+  CHECK(shape_of(rig.sink.frames()) ==
+        std::vector<std::string>{"1", "1-2", "1-2", "1-2", "2", "2-3", "2-3", "2-3", "3"});
+  // (2,3) suit une paire forte : RIFE d'emblée aux trois instants, sans milieu.
+  CHECK(rig.backend.count("engine rife_motion") == 3 + 3);
+  CHECK(rig.backend.count("warp_blend") == 6);
+}
+
 }  // namespace ajp::app::play

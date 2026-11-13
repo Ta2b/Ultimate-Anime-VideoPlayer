@@ -315,7 +315,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   if (looks_ahead()) {
     if (auto ok = look_ahead(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
   }
-  return outputs_;
+  return run_early().transform([this] { return outputs_; });  // passes RIFE sans slot (upscale_early.cpp)
 }
 
 // Ce que la grille libre sait de l'instant : l'horloge maître prédite à la fin du calcul (retard vidéo mesuré

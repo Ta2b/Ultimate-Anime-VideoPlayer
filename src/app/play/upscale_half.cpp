@@ -85,7 +85,8 @@ std::expected<void, Refusal> UpscaleStage::fill_half_input(float t) {
 }
 
 std::expected<UpscaleStage::StrongRun, Refusal> UpscaleStage::run_strong(float t, const gpu::Motion& full,
-                                                                         bool half) {
+                                                                         bool half,
+                                                                         const gpu::Motion* half_into) {
   if (!half || !halves()) {
     if (auto ok = run_motion(t, full.flow, full.mask); !ok) return std::unexpected(std::move(ok.error()));
     return StrongRun{.motion = full};
@@ -94,7 +95,7 @@ std::expected<UpscaleStage::StrongRun, Refusal> UpscaleStage::run_strong(float t
   ++rife_runs_;
   ++half_.runs;
   warm_from_ = nullptr;  // P6.15 : les blocs grossiers d'un autre moteur ne se reprennent pas
-  const gpu::Motion motion = half_motion();
+  const gpu::Motion motion = half_into != nullptr ? *half_into : half_motion();
   std::array results{motion.flow, motion.mask};
   if (auto ok = enqueue_on(*setup_.rife_motion_half, half_.ins[rife_pair_]->tensor(),
                            half_.in_images[rife_pair_], half_.encoded, results);
