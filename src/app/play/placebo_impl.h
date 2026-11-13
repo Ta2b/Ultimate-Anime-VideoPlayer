@@ -52,10 +52,12 @@ class PlaceboRing {
   // external : le consommateur est une autre API (CUDA), à qui les slots sont cédés par
   // VK_QUEUE_FAMILY_EXTERNAL ; sinon le backend écrit sur le même VkDevice, sans transfert de file.
   // wanted : RGB10A2 si l'appareil l'inscrit et le rend en VK_FORMAT_A2B10G10R10_UNORM_PACK32 (étape 5.5a),
-  // RGBA16 sinon ; le format pris est dans chaque RingSlotDesc.
+  // RGBA16 sinon ; le format pris est dans chaque RingSlotDesc. renderable : les slots servent aussi de cible
+  // à pl_render_image (le grade avant le warp, placebo_source_grade.cpp), le format doit alors se rendre.
   std::expected<std::vector<RingSlotDesc>, Refusal> create(pl_gpu gpu, int width, int height,
                                                            std::uint32_t count, bool external,
-                                                           RingFormat wanted = RingFormat::Rgba16Unorm);
+                                                           RingFormat wanted = RingFormat::Rgba16Unorm,
+                                                           bool renderable = false);
   // La texture d'un RingFrame : rendue à libplacebo, qui attend ready_value, à sa première lecture.
   std::expected<pl_tex, Refusal> acquire(pl_gpu gpu, const RingFrame& frame);
   // Cède le slot à CUDA après le dernier rendu qui l'a lu (signal de ready_value + 1).

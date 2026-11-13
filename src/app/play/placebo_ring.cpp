@@ -82,21 +82,26 @@ std::uint32_t PlaceboRing::family() const {
 
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu, int width, int height,
                                                                       std::uint32_t count, bool external,
-                                                                      RingFormat wanted) {
+                                                                      RingFormat wanted, bool renderable) {
   clear(gpu);
   external_ = external;
   ++generation_;
   // RGB10A2 (étape 5.5a) : inscriptible et échantillonnable, sinon RGBA16 ; le format Vulkan est contrôlé
   // sur le premier emplacement (l'ordre des bits doit être celui de store_ring).
-  constexpr auto kRingCaps = static_cast<pl_fmt_caps>(PL_FMT_CAP_STORABLE | PL_FMT_CAP_SAMPLEABLE);
+  // Une cible de rendu (renderable) demande aussi PL_FMT_CAP_RENDERABLE.
+  const auto ring_caps = static_cast<pl_fmt_caps>(PL_FMT_CAP_STORABLE | PL_FMT_CAP_SAMPLEABLE |
+                                                  (renderable ? PL_FMT_CAP_RENDERABLE : 0));
   if (wanted == RingFormat::Rgb10a2Unorm) {
     const pl_fmt ten = pl_find_named_fmt(gpu, "rgb10a2");
-    if (ten == nullptr || (ten->caps & kRingCaps) != kRingCaps) wanted = RingFormat::Rgba16Unorm;
+    if (ten == nullptr || (ten->caps & ring_caps) != ring_caps) wanted = RingFormat::Rgba16Unorm;
   }
   const bool ten_bits = wanted == RingFormat::Rgb10a2Unorm;
   const pl_fmt format = pl_find_named_fmt(gpu, ten_bits ? "rgb10a2" : "rgba16");
   if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
     return refuse(RefusalCode::FormatUnsupported, "rgba16 n'est pas inscriptible sur cet appareil");
+  }
+  if (renderable && (format->caps & PL_FMT_CAP_RENDERABLE) == 0) {
+    return refuse(RefusalCode::FormatUnsupported, "rgba16 ne se rend pas sur cet appareil");
   }
   // Lecture des sémaphores sans attente (ready) : Vulkan 1.2, ou VK_KHR_timeline_semaphore.
   const pl_vulkan vk = pl_vulkan_get(gpu);
@@ -145,6 +150,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
     params.format = format;
     params.sampleable = true;
     params.storable = true;
+    params.renderable = renderable;
     params.export_handle = handles;
     slot.tex = pl_tex_create(gpu, &params);
     union pl_handle handle{};
@@ -171,7 +177,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
       pl_gpu_finish(gpu);
       pl_vulkan_sem_destroy(gpu, &handover);
       clear(gpu);
-      return create(gpu, width, height, count, external, RingFormat::Rgba16Unorm);
+      return create(gpu, width, height, count, external, RingFormat::Rgba16Unorm, renderable);
     }
     descs.push_back(RingSlotDesc{
         .index = i,
