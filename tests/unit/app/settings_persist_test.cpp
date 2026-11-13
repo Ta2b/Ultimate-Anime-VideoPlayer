@@ -133,24 +133,25 @@ TEST_CASE("play.toml : le warp de Catmull-Rom, absent d'un ancien fichier, s'enr
   std::filesystem::remove(path);
 }
 
-// Un play.toml d'avant l'échelle par paire se lit, l'option éteinte ; allumée, elle se relit.
+// Un play.toml d'avant l'échelle par paire se lit, l'option à son défaut (allumée) ; éteinte, elle se relit
+// éteinte : un fichier qui l'a enregistrée garde son choix.
 TEST_CASE("play.toml : l'échelle par paire, absente d'un ancien fichier, s'enregistre",
           "[app][settings][pair_scale]") {
   const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-pair-scale.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
-  const std::size_t line = text.find("pair_scale = false\n");
+  const std::size_t line = text.find("pair_scale = true\n");
   REQUIRE(line != std::string::npos);
-  text.erase(line, std::string("pair_scale = false\n").size());
+  text.erase(line, std::string("pair_scale = true\n").size());
   write_text(path, text);
   auto old = load_settings(path);
   REQUIRE(old);
-  CHECK_FALSE(old->pair_scale);
-  old->pair_scale = true;
+  CHECK(old->pair_scale);
+  old->pair_scale = false;
   REQUIRE(save_settings(path, *old));
   const auto reread = load_settings(path);
   REQUIRE(reread);
-  CHECK(reread->pair_scale);
+  CHECK_FALSE(reread->pair_scale);
   std::filesystem::remove(path);
 }
 

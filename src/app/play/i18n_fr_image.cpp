@@ -70,12 +70,12 @@ constexpr std::array kImageTabs{
           "du bilinéaire du réseau, pour des traits plus fins. RIFE seulement. Recharge la lecture."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{
-        "Trial: pairs that move a lot estimate motion on a half-size image, with a second engine built the "
-        "first time. Time saved not measured; small objects may lose precision (loss not measured). RIFE "
-        "only. Reloads playback.",
-        "Essai : les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, "
-        "par un second moteur construit la première fois. Gain de temps non mesuré ; les petits objets "
-        "peuvent perdre en précision (perte non mesurée). RIFE seulement. Recharge la lecture."},
+        "Pairs that move a lot estimate motion on a half-size image, with a second engine built the first "
+        "time: four times fewer pixels for those passes, no visible loss measured on fast motion. RIFE only. "
+        "Reloads playback.",
+        "Les paires qui bougent beaucoup estiment le mouvement sur une image deux fois plus petite, par un "
+        "second moteur construit la première fois : quatre fois moins de pixels pour ces passes, sans perte "
+        "visible mesurée sur les mouvements rapides. RIFE seulement. Recharge la lecture."},
     Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},

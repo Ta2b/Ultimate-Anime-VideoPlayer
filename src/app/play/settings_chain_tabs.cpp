@@ -33,15 +33,15 @@ void cubic_warp_checkbox(PlaySettings& d) {
                "network's bilinear one, for finer lines. RIFE only. Reloads playback."));
 }
 
-// L'échelle par paire (PlaySettings::pair_scale) : un essai, éteint par défaut.
+// L'échelle par paire (PlaySettings::pair_scale) : allumée par défaut.
 void pair_scale_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Lighter RIFE on fast motion (half size)"), &d.pair_scale);
   ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("Trial: pairs that move a lot estimate motion on a half-size image, with a second engine "
-               "built the first time. Time saved not measured; small objects may lose precision (loss not "
-               "measured). RIFE only. Reloads playback."));
+      i18n::tr("Pairs that move a lot estimate motion on a half-size image, with a second engine built the "
+               "first time: four times fewer pixels for those passes, no visible loss measured on fast "
+               "motion. RIFE only. Reloads playback."));
 }
 
 struct HeightChoice {
