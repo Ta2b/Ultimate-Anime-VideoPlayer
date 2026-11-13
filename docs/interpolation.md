@@ -120,11 +120,11 @@ seuil (bras qui tourne, caméra qui freine) suit une droite, et les occlusions g
   pire bloc), une fois avec le seuil à 15 px et une fois à 0 (RIFE à chaque instant) ; relever le temps par image
   de l'étage avec `--stats=`. Le seuil se règle ou s'annonce d'après ces chiffres.
 
-## Échelle par paire
+## Échelle par paire (essai)
 
 Case « RIFE allégé sur les mouvements rapides (demi-taille) » (Vidéo, sous le multiplicateur ; `[interpolation]
-pair_scale` de `play.toml`, **allumée par défaut** depuis la mesure ci-dessous ; un `play.toml` qui l'a
-enregistrée éteinte la garde éteinte). Une paire qui bouge fort, où RIFE mouvement passe à chaque
+pair_scale` de `play.toml`, **éteinte par défaut** : Tatoub la juge nettement moins belle en lecture, voir
+plus bas). Une paire qui bouge fort, où RIFE mouvement passe à chaque
 instant au lieu d'une seule fois au milieu, estime ces passes sur a et b réduites de moitié (filtre Area,
 `pair_scale_side`, `src/app/play/upscale_stage.h`), par un second moteur RIFE à cette taille. Le warp met le
 mouvement à l'échelle des images, comme pour l'estimation en 720p d'une sortie 4K. Le sens est « moins cher »
@@ -159,14 +159,28 @@ Une paire est « forte » au-dessus de 15 px de mouvement à 720p (99,9e centile
 
 Ce que ça dit :
 
-- **Sur les paires fortes, la demi-taille ne se voit pas** : 0,03 à 0,09 dB en moyenne, le pire bloc de 64 × 64
-  bouge de 0,1 à 0,2 dB. Le flot d'un grand mouvement n'a pas besoin de la pleine résolution.
+- **Sur les paires fortes, image par image, la demi-taille ne perd presque rien** : 0,03 à 0,09 dB en moyenne,
+  le pire bloc de 64 × 64 bouge de 0,1 à 0,2 dB. Mais l'œil la voit en lecture (plus bas).
 - **Sur les paires calmes, elle se verrait** : jusqu'à 12 dB de moins sur un plan lent et détaillé. La porte de
   15 px est donc au bon endroit, et les paires calmes doivent rester à pleine taille, comme le code le fait.
 - **Estimer au-dessus de 720p ne gagne rien** (1080p : −0,01 dB sur les 30 paires) ; **en dessous**, 540p
   coûte 0,8 à 1,3 dB sur les paires calmes. `kRifeMotionHeight` = 720 est le bon réglage (audit A49-10, C9).
 - Limite : une paire calme qui suit une paire forte prend la demi-taille (la décision lit la paire précédente).
   C'est le cas d'un mouvement qui s'arrête net ; il ne dure qu'une paire.
+
+### À l'œil (Tatoub, 13 novembre 2026)
+
+Sur sa RTX 4070 Ti, l'interpolation est « de bien moins bonne qualité » avec l'option allumée. Le banc ci-dessus
+ne le voit pas, parce qu'il juge chaque image seule, au milieu d'une paire. En lecture, deux choses lui
+échappent :
+
+- dans une paire forte, le milieu reste à pleine taille et les autres instants passent à la demi-taille : la
+  netteté du mouvement change d'une image affichée à l'autre (scintillement à 165 Hz) ;
+- la décision suit la paire précédente : un mouvement qui ralentit garde la demi-taille une paire de trop, là où
+  elle coûte jusqu'à 12 dB.
+
+L'option reste donc un essai éteint. La reprendre demanderait de juger la suite des images (tous les instants
+d'une paire, et les paires qui suivent un changement d'allure), pas l'image du milieu seule.
 
 ### Mesure sur la RTX (165 Hz)
 
@@ -183,8 +197,8 @@ Binaire `linux-release` ou `windows-release`, TensorRT puis Vulkan, RIFE 4.26 (�
 4. **Coût** : le temps de la première construction du second jeu de moteurs, et la VRAM en plus
    (`nvidia-smi --query-gpu=memory.used`, option éteinte puis allumée, même passage).
 
-L'option s'éteint de nouveau par défaut si elle ne fait rien gagner sur les paires fortes, si un scintillement se
-voit, ou si elle coûte plus de 300 Mo de VRAM.
+L'option ne deviendrait le défaut que sans perte visible en lecture (le verdict de Tatoub l'a refusée), avec un gain
+sur les paires fortes, et pour moins de 300 Mo de VRAM en plus.
 
 ## Warp du backend TensorRT : lecture exacte, lecture filtrée à l'essai
 
