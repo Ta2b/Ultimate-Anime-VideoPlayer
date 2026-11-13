@@ -109,6 +109,7 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"look_contrast", [](PlaySettings& s) { s.look_contrast = 20; }},
       {"flash_guard", [](PlaySettings& s) { s.flash_guard = !s.flash_guard; }},
       {"look_table", [](PlaySettings& s) { s.look_table = !s.look_table; }},
+      {"grade_before_warp", [](PlaySettings& s) { s.grade_before_warp = !s.grade_before_warp; }},
       {"face_skin", [](PlaySettings& s) { s.face_skin = !s.face_skin; }},
       {"surface_white", [](PlaySettings& s) { s.surface_white = 70; }},
       {"oled_care", [](PlaySettings& s) { s.oled_care = !s.oled_care; }},

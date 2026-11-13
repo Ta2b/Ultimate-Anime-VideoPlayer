@@ -378,11 +378,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     output_has_source_ = setup_.engine != nullptr;
     shown_source_ = true;
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
-    return Output{.pts_us = b_early ? instant.pts_us : frame.pts_us,
-                  .left = frame.id,
-                  .right = frame.id,
-                  .uninterpolated = uninterpolated_,
-                  .debanded = debanded_};
+    return source_output(b_early ? instant.pts_us : frame.pts_us, frame.id);
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");
@@ -413,6 +409,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     }
     if (last) previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
     made.repeated = drba_held_;
+    made.graded = pair_graded();
     return held_b(made, frame, output);
   }
   if (by_motion() && ring_direct_) {  // sans SPAN : le warp écrit la sortie elle-même

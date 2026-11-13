@@ -199,6 +199,13 @@ constexpr std::array kSettingsPages{
     Entry{"Highlights", "Éclats"},
     Entry{"Limit rapid flashes", "Limiter les flashs rapides"},
     Entry{"LUTs in one table (faster, test)", "LUT en une seule table (plus rapide, essai)"},
+    Entry{"Grade before interpolation (faster, test)", "Grade avant l'interpolation (plus rapide, essai)"},
+    Entry{"HDR, with interpolation after SPAN: each source frame is graded once, and the in-between frames "
+          "are made from graded frames, instead of grading every displayed frame. Much faster at high "
+          "factors, but not exact on moving edges.",
+          "En HDR, avec l'interpolation après SPAN : chaque image source est gradée une fois, et les images "
+          "intermédiaires sont faites d'images gradées, au lieu de grader chaque image affichée. Bien plus "
+          "rapide aux grands facteurs, mais pas exact sur les bords en mouvement."},
     Entry{"The LUT stack is computed once into one table on the GPU, then read once per pixel instead of "
           "LUT by LUT. Faster, but not exact: a few PQ codes off at worst on saturated colors.",
           "La pile de LUT est calculée une fois dans une seule table sur le GPU, puis lue une fois par pixel "

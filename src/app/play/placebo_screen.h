@@ -37,6 +37,7 @@ namespace ajp::app::play {
 inline constexpr int kSwapchainDepth = 2;
 
 class LiveSettings;
+class SourceGrader;
 
 struct ScreenOptions {
   std::string title = "ajp";
@@ -117,6 +118,11 @@ class PlaceboScreen final : public Screen {
   std::expected<std::vector<RingSlotDesc>, Refusal> create_ring(int width, int height, std::uint32_t count,
                                                                 bool external = true,
                                                                 RingFormat format = RingFormat::Rgba16Unorm);
+  // Le grade avant le warp (source_grade.h) pour l'étage d'agrandissement : ses deux images au protocole du
+  // ring (external : cédées à CUDA), les lissages réglés pour source_fps, la génération du ring courant.
+  std::shared_ptr<SourceGrader> source_grader(bool external, double source_fps, std::uint32_t generation);
+  // PlaySettings::grade_before_warp : sans lui, le grader ne grade rien et l'écran grade chaque image.
+  void set_grade_before_warp(bool on);
   // Détruit le ring et l'image composée gardée (A33-01) : à la fermeture d'une chaîne, après le backend qui
   // importait le ring, pour que l'accueil, la calibration et trtexec retrouvent la mémoire vidéo.
   void release_ring();

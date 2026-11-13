@@ -206,7 +206,9 @@ std::expected<pl_tex, Refusal> PlaceboRing::acquire(pl_gpu gpu, const RingFrame&
   auto tex = slot_of(frame);
   if (!tex) return tex;
   Slot& slot = slots_[frame.slot];
-  if (slot.placebo_value != frame.ready_value) {
+  // ready_value 0 : une image que libplacebo écrit la première (le grade avant le warp, source_grade.h),
+  // reprise sans attente.
+  if (slot.placebo_value != frame.ready_value || frame.ready_value == 0) {
     take_from_cuda(gpu, slot.tex, slot.semaphore, frame.ready_value, family());
     slot.placebo_value = frame.ready_value;
   }

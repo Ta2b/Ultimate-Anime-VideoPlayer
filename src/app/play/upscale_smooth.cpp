@@ -142,6 +142,7 @@ std::expected<void, Refusal> UpscaleStage::span_smooth_b() {
   const std::array inputs{smooth_b_rgb()};
   std::array results{spanned_[span_ahead_buf_]->tensor()};
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
+  if (ok) ok = grade_spanned(span_ahead_buf_);
   use_lane(back);
   return ok;
 }

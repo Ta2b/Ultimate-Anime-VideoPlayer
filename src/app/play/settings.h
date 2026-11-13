@@ -337,6 +337,11 @@ struct PlaySettings {
   // points, lue d'une seule lecture par pixel au lieu de vingt. Plus rapide, mais pas au bit près (quelques
   // codes PQ au pire) : éteint par défaut, à juger à l'œil ; en direct, l'export la suit.
   bool look_table = false;
+  // Le grade avant le warp (app/play/source_grade.h) : avec l'interpolation après SPAN, chaque image source
+  // est gradée une fois, et le warp en tire les images intermédiaires déjà gradées, au lieu d'un grade par
+  // image affichée (huit fois moins à RIFE ×8). Pas au bit près (le grade d'un mélange devient le mélange des
+  // grades) : éteint par défaut, à juger à l'œil. Sortie HDR10 seulement ; en direct.
+  bool grade_before_warp = false;
   // Peau des visages (docs/hdr-anime.md) : la pré-analyse cherche les visages (cascade lbpcascade_animeface)
   // et le grade resserre sa plage de peau sur leurs teintes, pour rendre leur lumière aux lampes chaudes.
   // Éteinte par défaut, à juger à l'œil ; prise à la vidéo suivante (l'analyse des plans recommence).

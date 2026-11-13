@@ -269,6 +269,7 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   to.live.scenes().set_flash_gain(choice.pq && !to.source_hdr ? flash_gain_of(choice.pq->peak) : 1.0);
   if (to.flash_limited) cap_flash_peak(choice);
   to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
+  to.screen.set_grade_before_warp(wanted.grade_before_warp);  // source_grade.h, en direct
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
       from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;
