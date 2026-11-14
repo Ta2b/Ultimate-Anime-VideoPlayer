@@ -295,6 +295,17 @@ TEST_CASE("un refus d'une porte plus ancienne, d'une autre carte ou d'autres noy
       find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
   CHECK_FALSE(now.variant);
   CHECK_FALSE(now.stale);
+  // Refusé par la porte d'aujourd'hui, mais par d'autres noyaux ou sur une autre carte : à refaire (un refus
+  // de noyaux faux, kKernelsVersion 4, ne vaut rien pour les noyaux corrigés).
+  SpanFp8Context fixed = here;
+  fixed.kernels_version = 2;
+  const SpanInt8Lookup rejudged =
+      find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &fixed);
+  CHECK_FALSE(rejudged.variant);
+  CHECK(rejudged.stale);
+  SpanFp8Context blackwell = here;
+  blackwell.gpu_arch = "sm_120";
+  CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &blackwell).stale);
   // Le même refus, écrit par la porte 1 (sans gate_version) : à refaire.
   std::string text;
   {
