@@ -60,7 +60,9 @@ inline std::vector<float> quantize_fp8(const std::uint16_t* half_bits, std::size
 // Une image de plus au compte frames si un noyau à accumulateur f16 a débordé (KP::overflow) : un seul fil,
 // à la fin de l'image. frames est dans la mémoire de l'hôte projetée, que Acc16Policy lit sans attendre.
 __global__ void count_overflow_frame(const int* overflow, int* frames) {
-  if (*overflow != 0) *static_cast<volatile int*>(frames) += 1;
+  if (*overflow == 0) return;
+  volatile int* count = frames;
+  *count = *count + 1;
 }
 
 constexpr std::int64_t kAlign = 256;
