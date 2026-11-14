@@ -332,6 +332,15 @@ warps ; to_pixel reprend la tuile de 64 colonnes d'avant (48 sorties utiles, les
 à la compilation que les cartes des fils des deux opérandes couvrent leur tuile entière. Les paquets jugés par la
 version 4 se revalident.
 
+## Balayage des formes de tuile (`ajp_span_tile_bench`)
+
+Le SPAN natif n'a qu'une forme de tuile par précision (FP16 : 128 × 64 × 32, warp 32, 4 étages ; FP8 :
+128 × 64 × 64, warp 32, 3 étages), quand TensorRT en essaie des dizaines à la construction. Avant de juger le
+natif contre TensorRT, `ajp_span_tile_bench [hauteur largeur] [--iterations N]` lance seule la convolution 3×3
+des blocs (18 des 21 convolutions d'un b8f64) sous chaque forme, en FP16 et en FP8, à 64 et 48 canaux, et dit
+le temps et les TFLOPS de chacune. Une forme nettement plus rapide que celle du lecteur se reporte dans
+`Body` (`span_fp8_body.cuh`), puis se juge sur le réseau entier (`ajp_span_fp8_run`) et contre TensorRT.
+
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour

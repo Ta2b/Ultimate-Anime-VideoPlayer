@@ -245,7 +245,8 @@ TEST_CASE("Backend TensorRT : warp au mouvement par tuile (--tiled-warp), proche
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   // Sortie trois fois plus large que la fenêtre, comme un flot en 1280 pour une sortie 4K : le mouvement du
   // milieu calculé aux points du flot puis interpolé s'écarte un peu du calcul par pixel, sur un flot qui
-  // tourne vite (période de 30 points). Les instants à 1/2 et les poses restent exacts.
+  // tourne vite (période de 30 points). Les poses gardées aussi : leur instant réglé se calcule par point et
+  // s'interpole, comme le reste du mouvement.
   check_warp({.pw = 64,
               .ph = 48,
               .w = 192,

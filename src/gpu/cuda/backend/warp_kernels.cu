@@ -221,13 +221,14 @@ __global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
 
 // Mouvement par tuile (WarpBlendParams::tiled_motion, essai) : le mouvement estimé au milieu, mis à l'instant
 // de la sortie, se calcule une fois par point du flot que couvre le bloc, en mémoire partagée, au lieu d'une
-// fois par pixel de la sortie (neuf pixels par point en 4K pour un flot en 1280). Chaque pixel interpole
-// ensuite tx, ty et le poids entre les quatre points qui l'entourent : le calcul n'étant pas linéaire (second
-// prélèvement, sigmoïde), l'image change un peu. Sans les poses ; sortie au moins aussi grande que la
-// fenêtre.
+// fois par pixel de la sortie (neuf pixels par point en 4K pour un flot en 1280). Avec les poses gardées,
+// l'instant réglé (pose_time_at) se calcule aussi par point. Chaque pixel interpole ensuite l'instant, tx, ty
+// et le poids entre les quatre points qui l'entourent : le calcul n'étant pas linéaire (second prélèvement,
+// sigmoïde, rapport des poses), l'image change un peu. Sortie au moins aussi grande que la fenêtre.
 inline constexpr int kTilePoints = kBlock + 2;  // un bloc de 16 pixels couvre au plus 17 points du flot
 
 struct TilePoint {
+  float time;  // l'instant de la sortie, réglé par les poses si elles sont gardées
   float tx;
   float ty;
   float weight;
@@ -236,9 +237,9 @@ struct TilePoint {
 __device__ TilePoint middle_point(const WarpBlendParams& p, float u, float v) {
   const Planes flow = motion_planes(p, p.flow, 0);
   const Planes mask = motion_planes(p, p.mask, 0);
-  const float t = p.time;
   float at_uv[4];
   Exact::sample_n(flow, 0, u, v, at_uv);
+  const float t = p.keep_poses ? pose_time_at<Exact>(p, u, v, at_uv) : p.time;
   const float u2 = u - ((1.0F - t) * at_uv[0] + t * at_uv[2]);
   const float v2 = v - ((1.0F - t) * at_uv[1] + t * at_uv[3]);
   float at2[4];
@@ -249,7 +250,7 @@ __device__ TilePoint middle_point(const WarpBlendParams& p, float u, float v) {
       fminf(fmaxf(Exact::sample(mask, 0, u2, v2), kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
   const float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) + kernels::kBlendLawB * logf((1.0F - t) / t) +
                   kernels::kBlendLawC;
-  return {.tx = tx, .ty = ty, .weight = 1.0F / (1.0F + expf(-z))};
+  return {.time = t, .tx = tx, .ty = ty, .weight = 1.0F / (1.0F + expf(-z))};
 }
 
 // Le premier point du flot qu'un bord de bloc lit, comme Exact::sample (position bornée, partie entière).
@@ -295,7 +296,7 @@ __global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
     const float bottom = tile[j0 + 1][i0].*field * (1.0F - fx) + tile[j0 + 1][i0 + 1].*field * fx;
     return top * (1.0F - fy) + bottom * fy;
   };
-  const float t = p.time;
+  const float t = p.keep_poses ? lerp(&TilePoint::time) : p.time;
   const float tx = lerp(&TilePoint::tx);
   const float ty = lerp(&TilePoint::ty);
   float rgb[3];
@@ -347,8 +348,8 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(Flo
 }  // namespace
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream) {
-  if (params.tiled_motion && params.from_middle && !params.keep_poses &&
-      params.width >= params.window_width && params.height >= params.window_height) {
+  if (params.tiled_motion && params.from_middle && params.width >= params.window_width &&
+      params.height >= params.window_height) {
     const dim3 grid = grid_for(params.width, params.height);
     if (params.cubic)
       warp_blend_tiled<true><<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);

@@ -138,4 +138,15 @@ if(AJP_WITH_SPAN_FP8)
   target_link_libraries(ajp_span_fp8_run PRIVATE ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp_backend_span_fp8_kernels
     ajp::dep::cudart)
   ajp_set_warnings(ajp_span_fp8_run)
+  # Le banc des formes de tuile (span_tile_bench.cu) : des formes que le lecteur ne prend pas, dont certaines
+  # débordent de registres ; ptxas le dit (--warn-on-spills) sans arrêter la construction.
+  add_executable(ajp_span_tile_bench span_tile_bench.cu)
+  target_include_directories(ajp_span_tile_bench PRIVATE "${PROJECT_SOURCE_DIR}/src")
+  target_include_directories(ajp_span_tile_bench SYSTEM PRIVATE "${AJP_CUTLASS_INCLUDE}")
+  target_link_libraries(ajp_span_tile_bench PRIVATE ajp::dep::cudart)
+  set_target_properties(ajp_span_tile_bench PROPERTIES CUDA_ARCHITECTURES "89-real;120")
+  target_compile_options(ajp_span_tile_bench PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -lineinfo -Xcudafe=--diag_suppress=177
+      -Xcudafe=--diag_suppress=550 --ptxas-options=--warn-on-spills>
+    $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
 endif()
