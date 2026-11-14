@@ -252,9 +252,9 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       }
       double t = static_cast<double>(at.t.num) / static_cast<double>(at.t.den);
       if (smooth_first_ || (smooth_second_ && !source)) t = smooth_hold_u(t, smooth_rank_, smooth_hold_);
+      // Le pts de la grille, source comprise (Rapide sur écran fixe : au vsync, FreeGrid B12-04).
       instants_[outputs_++] =
-          Instant{.t = source ? 1.0F : static_cast<float>(t),
-                  .pts_us = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us)};
+          Instant{.t = source ? 1.0F : static_cast<float>(t), .pts_us = at.pts_us.value_or(frame.pts_us)};
       if (!source) ++intermediates_;
     }
     ++interpolated_;
@@ -378,7 +378,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
     output_has_source_ = setup_.engine != nullptr;
     shown_source_ = true;
     previous_ = Previous{.pts_us = frame.pts_us, .id = frame.id, .epoch = frame.epoch};
-    return source_output(b_early ? instant.pts_us : frame.pts_us, frame.id);
+    return source_output(instant.pts_us != kNoPts ? instant.pts_us : frame.pts_us, frame.id);
   }
   // Image intermédiaire, entre la précédente et celle-ci (rife_runs demande la précédente).
   if (!previous_) return refuse(RefusalCode::SequenceOrder, "RIFE : pas d'image précédente");

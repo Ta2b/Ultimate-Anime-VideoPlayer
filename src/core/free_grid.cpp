@@ -98,10 +98,14 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
     base = std::max(base + step, t + spacing);
   }
   if (emitted == 0) {
-    // Le GPU ne tient pas une image dans cette paire : la source seule, comme sans interpolation.
-    out.add({.t = {1, 1}, .pts_us = d});
-    last_emitted_ = d;
-    base = std::max(base, d + min_gap);
+    // Le GPU ne tient pas une image dans cette paire : la source seule, comme sans interpolation. Sur écran
+    // fixe, au vsync le plus proche de son pts (jamais plus près du dernier instant que l'écart minimal) :
+    // hors de la grille, elle pouvait viser le vblank de l'image d'avant, et l'une des deux manquait.
+    const std::int64_t at =
+        vsync > 0 ? on_vsync(std::max(d - vsync / 2, last_emitted_.value_or(INT64_MIN) + spacing)) : d;
+    out.add({.t = {1, 1}, .pts_us = at});
+    last_emitted_ = at;
+    base = std::max(base, at + min_gap);
   }
   // Affamée par le pas : la source seule, alors qu'un instant tenait à un écart minimal avant elle.
   starved_ = interpolated == 0 && inputs.step_us > 0 && unheld <= d - min_gap;
