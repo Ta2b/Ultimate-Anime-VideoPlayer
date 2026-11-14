@@ -74,12 +74,16 @@ inline std::vector<float> download(const gpu::Tensor& tensor) {
   return out;
 }
 
-// Un tenseur FP16 rempli depuis l'hôte, plan après plan.
+// Un tenseur FP16 rempli depuis l'hôte, plan après plan. Depuis une mémoire paginable, cudaMemcpy rend la
+// main dès la copie vers le tampon de transfert, avant la fin du DMA ; le flux du backend, non bloquant, ne
+// l'attend pas : sans la synchronisation, son noyau suivant peut lire l'ancien contenu (cause probable de
+// l'écart de 0,06 du warp avec --warp-l2, au premier instant après l'envoi du flot de la paire précédente).
 inline void upload(const gpu::Tensor& tensor, const std::vector<float>& values) {
   std::vector<std::uint16_t> half(values.size());
   for (std::size_t i = 0; i < values.size(); ++i) half[i] = kernels::ref::float_to_half(values[i]);
   REQUIRE(cudaMemcpy(reinterpret_cast<void*>(tensor.handle), half.data(), half.size() * 2,
                      cudaMemcpyHostToDevice) == cudaSuccess);
+  REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
 }
 
 }  // namespace ajp::test
