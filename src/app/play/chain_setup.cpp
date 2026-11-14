@@ -359,7 +359,6 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
           .profile_dispatches = p.options.profile_dispatches,
           .filtered_warp = p.options.filtered_warp,
           .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
-                    (p.options.tiled_warp ? gpu::kTrialTiledWarp : 0U) |
                     (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
                     (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};

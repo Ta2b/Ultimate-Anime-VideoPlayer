@@ -45,8 +45,7 @@ struct WarpCase {
   kernels::Window area;
   double tolerance = 0.0;
   bool filtered = false;     // l'essai --filtered-warp (BackendInit::filtered_warp)
-  std::uint32_t trials = 0;  // BackendInit::trials (--tiled-warp, --warp-l2)
-  float pace = 1.0F;  // fréquence du flot et du masque : 1, un flot qui tourne vite (période ~15 points)
+  std::uint32_t trials = 0;  // BackendInit::trials (--warp-l2)
 };
 
 void check_warp(const WarpCase& wc) {
@@ -66,13 +65,12 @@ void check_warp(const WarpCase& wc) {
     for (int x = 0; x < pw; ++x) {
       for (int c = 0; c < 4; ++c) {
         const float v =
-            q(4.0F *
-              std::sin(wc.pace * (0.21F * static_cast<float>(x + 3 * c) + 0.37F * static_cast<float>(y))));
+            q(4.0F * std::sin(0.21F * static_cast<float>(x + 3 * c) + 0.37F * static_cast<float>(y)));
         motion.flow[static_cast<std::size_t>(c)].at(x, y) = v;
         flow[static_cast<std::size_t>((c * ph + y) * pw + x)] = v;
       }
-      const float m = q(
-          0.5F + 0.3F * std::cos(wc.pace * (0.17F * static_cast<float>(x) - 0.23F * static_cast<float>(y))));
+      const float m =
+          q(0.5F + 0.3F * std::cos(0.17F * static_cast<float>(x) - 0.23F * static_cast<float>(y)));
       motion.mask.at(x, y) = m;
       mask[static_cast<std::size_t>(y * pw + x)] = m;
     }
@@ -240,37 +238,6 @@ TEST_CASE("Backend TensorRT : warp avec le flot en L2 persistant (--warp-l2), la
               .area = {.x = 0, .y = 8, .width = 64, .height = 32},
               .tolerance = 2e-3,
               .trials = gpu::kTrialWarpL2});
-}
-
-TEST_CASE("Backend TensorRT : warp au mouvement par tuile (--tiled-warp), proche du warp exact",
-          "[backend_tensorrt][cuda]") {
-  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  // Sortie trois fois plus large que la fenêtre, comme un flot en 1280 pour une sortie 4K, sur un flot qui
-  // tourne vite (période d'une quinzaine de points) : entre deux points, le mouvement varie trop pour
-  // s'interpoler (kTileShiftSpread), les pixels le calculent eux-mêmes et l'image reste celle du warp exact.
-  // Les poses gardées aussi (leur instant réglé, kTileTimeSpread). Interpoler partout s'en écartait de 0,11.
-  check_warp({.pw = 64,
-              .ph = 48,
-              .w = 192,
-              .h = 96,
-              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
-              .tolerance = 0.05,
-              .trials = gpu::kTrialTiledWarp});
-}
-
-TEST_CASE("Backend TensorRT : warp par tuile sur un mouvement doux, interpolé, proche du warp exact",
-          "[backend_tensorrt][cuda]") {
-  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  // Le même flot dix fois plus lent : tx, ty et le poids s'écartent peu d'un point à l'autre, les pixels
-  // interpolent le mouvement des points de la tuile.
-  check_warp({.pw = 64,
-              .ph = 48,
-              .w = 192,
-              .h = 96,
-              .area = {.x = 0, .y = 8, .width = 64, .height = 32},
-              .tolerance = 0.02,
-              .trials = gpu::kTrialTiledWarp,
-              .pace = 0.1F});
 }
 
 TEST_CASE("Backend TensorRT : entrée de RIFE, 11 plans remplis, puis recadrage de la fenêtre",

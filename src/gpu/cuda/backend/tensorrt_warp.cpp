@@ -168,7 +168,6 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .time = t,
       .cubic = motion.warp == kernels::RifeWarp::CatmullRom,
       .from_middle = poses.keep || t != 0.5F,
-      .tiled_motion = tiled_warp_,
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
       .out = out != nullptr ? const_cast<void*>(address(*out)) : nullptr,  // NOLINT : écrit

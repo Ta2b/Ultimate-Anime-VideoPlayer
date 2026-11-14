@@ -316,6 +316,19 @@ au lieu de 41, résultat identique au bit près (mêmes opérations dans le mêm
 nvcc regroupait déjà. Mesuré par nsys sur la RTX 4070 Ti (×8 en 4K) : médiane de warp_blend de 529 à 440 µs
 (−17 %), moyenne de 630 à 472 µs.
 
+### Mouvement par tuile (`--tiled-warp`) : retiré
+
+L'idée : calculer le mouvement du milieu (second prélèvement du flot, instant réglé des poses, poids de
+mélange) une fois par point du flot de la tuile d'un bloc, en mémoire partagée, puis l'interpoler à chaque
+pixel de la sortie (neuf pixels par point en 4K pour un flot en 1280). Elle ne payait que tant que chaque pixel
+relisait le flot canal par canal ; depuis les lectures groupées ci-dessus, le warp exact ne lit plus le flot
+qu'une fois par pixel et il n'y a plus rien à partager. Mesuré sur la RTX 4070 Ti (×8 en 4K, deux lectures
+ABAB) : warp et mélange à 0,62 ms avec l'essai contre 0,44 ms sans (+41 %), 154 i/s dans les deux cas, image
+à 46,4 dB du warp exact. L'interpolation elle-même s'écartait du warp exact de 0,08 à 0,11 sur un flot qui
+tourne vite, et encore de 0,025 sur un flot dix fois plus lent, même en laissant les pixels calculer
+eux-mêmes là où le mouvement varie trop entre les points (instant, tx, ty, poids). L'essai, son noyau et ses
+tests sont retirés ; le bit `1U << 2U` des essais du backend reste libre.
+
 ## GMFSS retiré
 
 GMFSS Fortuna (base et union) donnait les images intermédiaires les plus propres sur l'animation, mais coûtait
