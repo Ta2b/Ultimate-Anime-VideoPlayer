@@ -508,13 +508,21 @@ TEST_CASE("KernelOps : analyse d'une image pour le grade, contre kernels/ref", "
       CHECK(std::abs(got->apl_nits - want.apl_nits) <= 1e-3F * std::max(want.apl_nits, 1.0F));
       CHECK(std::abs(got->maxrgb_mean_nits - want.maxrgb_mean_nits) <=
             1e-3F * std::max(want.maxrgb_mean_nits, 1.0F));
-      float maxrgb = 0.0F, ictcp = 0.0F, luma = 0.0F;
-      for (std::size_t i = 0; i < want.maxrgb_hist.size(); ++i) {
-        maxrgb += std::abs(got->maxrgb_hist[i] - want.maxrgb_hist[i]);
-        ictcp += std::abs(got->i_hist[i] - want.i_hist[i]);
-      }
-      for (std::size_t i = 0; i < want.luma_hist.size(); ++i)
-        luma += std::abs(got->luma_hist[i] - want.luma_hist[i]);
+      // Les histogrammes se comparent cumulés (distance du déplacement, en points × cases) : un point que
+      // l'arrondi de pow fait passer dans la case voisine compte une fois, et non deux comme en L1 ; un point
+      // parti loin compte autant de fois qu'il a sauté de cases. Le pow de la PQ du pilote NVIDIA déplace
+      // ainsi ~6 points d'une case sur la grille de l'histogramme I (12,4 points en L1, 8 permis).
+      const auto moved = [](const auto& a, const auto& b) {
+        float cumulative = 0.0F, sum = 0.0F;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+          cumulative += a[i] - b[i];
+          sum += std::abs(cumulative);
+        }
+        return sum;
+      };
+      const float maxrgb = moved(got->maxrgb_hist, want.maxrgb_hist);
+      const float ictcp = moved(got->i_hist, want.i_hist);
+      const float luma = moved(got->luma_hist, want.luma_hist);
       INFO("transfert " << static_cast<int>(transfer) << ", type " << static_cast<int>(type));
       CHECK(maxrgb <= 8.0F * point);
       CHECK(ictcp <= 8.0F * point);

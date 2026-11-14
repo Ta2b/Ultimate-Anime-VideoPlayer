@@ -15,8 +15,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <libplacebo/dispatch.h>
 #include <libplacebo/gpu.h>
 #include <libplacebo/log.h>
+#include <libplacebo/shaders/sampling.h>
 #include <libplacebo/vulkan.h>
 
 #include "app/play/backend_library.h"
@@ -126,13 +128,42 @@ TEST_CASE("Anneau : une rampe écrite par le backend TensorRT se relit par libpl
     auto tex = ring.acquire(vk->gpu, written);
     REQUIRE(tex);
     const std::size_t texel = ten_bits ? 4 : 8;
+    // L'anneau du lecteur n'est ni host_readable ni blit_src (placebo_ring.cpp) : il ne se relit pas
+    // directement. Une passe d'échantillonnage au plus proche le recopie dans une texture intermédiaire du
+    // même format, rendue puis relue ; la conversion unorm → float → unorm y est exacte.
+    const pl_fmt format = (*tex)->params.format;
+    if ((format->caps & PL_FMT_CAP_RENDERABLE) == 0 || (format->caps & PL_FMT_CAP_HOST_READABLE) == 0)
+      SKIP("le format de l'anneau ne se rend pas ou ne se relit pas sur cet appareil");
+    const auto read_back = [&](pl_tex from, std::vector<std::byte>& out) {
+      pl_tex_params readback_params{};
+      readback_params.w = w;
+      readback_params.h = h;
+      readback_params.format = format;
+      readback_params.renderable = true;
+      readback_params.host_readable = true;
+      pl_tex readback = pl_tex_create(vk->gpu, &readback_params);
+      if (readback == nullptr) return false;
+      pl_dispatch dispatch = pl_dispatch_create(log, vk->gpu);
+      pl_shader shader = pl_dispatch_begin(dispatch);
+      pl_sample_src source{};
+      source.tex = from;
+      pl_shader_sample_nearest(shader, &source);
+      pl_dispatch_params dispatch_params{};
+      dispatch_params.shader = &shader;
+      dispatch_params.target = readback;
+      bool ok = pl_dispatch_finish(dispatch, &dispatch_params);
+      pl_tex_transfer_params transfer{};
+      transfer.tex = readback;
+      transfer.ptr = out.data();
+      transfer.row_pitch = static_cast<std::size_t>(w) * texel;
+      ok = ok && pl_tex_download(vk->gpu, &transfer);
+      pl_gpu_finish(vk->gpu);
+      pl_dispatch_destroy(&dispatch);
+      pl_tex_destroy(vk->gpu, &readback);
+      return ok;
+    };
     std::vector<std::byte> host(static_cast<std::size_t>(w) * h * texel);
-    pl_tex_transfer_params transfer{};
-    transfer.tex = *tex;
-    transfer.ptr = host.data();
-    transfer.row_pitch = static_cast<std::size_t>(w) * texel;
-    REQUIRE(pl_tex_download(vk->gpu, &transfer));
-    pl_gpu_finish(vk->gpu);
+    REQUIRE(read_back(*tex, host));
 
     int worst = 0;
     for (int j = 0; j < h; ++j) {
@@ -176,10 +207,7 @@ TEST_CASE("Anneau : une rampe écrite par le backend TensorRT se relit par libpl
       auto tex_again = ring.acquire(vk->gpu, again);
       REQUIRE(tex_again);
       std::vector<std::byte> host_again(host.size());
-      transfer.tex = *tex_again;
-      transfer.ptr = host_again.data();
-      REQUIRE(pl_tex_download(vk->gpu, &transfer));
-      pl_gpu_finish(vk->gpu);
+      REQUIRE(read_back(*tex_again, host_again));
       int drift = 0;
       for (std::size_t at = 0; at < host.size(); at += 2) {
         std::uint16_t first = 0, second = 0;
