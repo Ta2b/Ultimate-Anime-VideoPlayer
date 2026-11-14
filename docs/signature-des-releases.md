@@ -24,6 +24,12 @@ hardware-report-windows.json` (la release de l'étiquette existe après `attach-
 l'absence d'échec et le plafond de tests sautés (`tools/release/hardware-skip-ceiling.txt`). Une préversion n'en a pas
 besoin.
 
+Quand rien de ce que ces tests jugent n'a bougé depuis une préversion déjà jouée sur le poste de référence, une
+**dérogation écrite** les remplace : une ligne `<étiquette> <préversion de référence> <raison>` dans
+`tools/release/hardware-waivers.txt`, poussée avant l'étiquette (elle passe par la CI complète comme tout commit). La
+garde l'accepte si l'empreinte TensorRT, Linux et Windows (`tools/release/trt-fingerprint.sh`), est la même aux deux
+commits, et affiche la raison dans le journal de la release ; sinon elle la refuse (`tools/release/hardware-waiver.sh`).
+
 Puis une seule action : pousser l'étiquette `v<VERSION>` (ou `v<VERSION>-rc.N` pour une préversion), où `<VERSION>`
 est celle de `project()` dans `CMakeLists.txt`, sur ce même commit. Aucune étiquette ne se pose sans la demande de
 Tatoub. Le workflow `release.yml` fait le reste :

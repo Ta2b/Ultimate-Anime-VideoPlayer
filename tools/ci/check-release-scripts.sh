@@ -87,4 +87,19 @@ expect 1 "release finale sans clé de secours" "AJP_UPDATE_PUBKEY_BACKUP est vid
 expect 0 "préversion sans clé de secours" "" "$CI/check-backup-key.sh" v1.0.0-rc.1 cmake-vide.txt
 expect 0 "release finale avec clé de secours" "" "$CI/check-backup-key.sh" v1.0.0 cmake-secours.txt
 expect 1 "clé de secours égale à la clé active" "la clé de secours est la clé active" "$CI/check-backup-key.sh" v1.0.0 cmake-meme.txt
+
+# C28-02 : une dérogation aux tests matériels ne vaut que si l'empreinte TensorRT n'a pas bougé depuis sa référence.
+git init -q waiver && (
+  cd waiver && git config user.email ci@example.invalid && git config user.name ci
+  mkdir -p src/core tools/release docs && echo a > src/core/a.h && echo d > docs/d.md
+  printf 'v1.0.0 v1.0.0-rc.1 rien de neuf\nv2.0.0 v1.0.0-rc.1 autre version\nv1.1.0 v1.1.0 pas une préversion\n' > tools/release/hardware-waivers.txt
+  git add -A && git commit -qm base && git tag v1.0.0-rc.1 && echo e > docs/d.md && git commit -qam docs
+)
+expect 0 "dérogation, empreinte inchangée" "" "$R/hardware-waiver.sh" v1.0.0 waiver
+expect 1 "dérogation d'une autre version" "est d'une autre version" "$R/hardware-waiver.sh" v2.0.0 waiver
+expect 1 "dérogation sans préversion de référence" "n'est pas une préversion" "$R/hardware-waiver.sh" v1.1.0 waiver
+got=0; "$R/hardware-waiver.sh" v1.2.0 waiver >/dev/null 2>&1 || got=$?
+[ "$got" = 3 ] && echo "ok : aucune dérogation pour une autre étiquette" || { echo "ÉCHEC : sans dérogation, code $got au lieu de 3" >&2; fail=1; }
+(cd waiver && echo b > src/core/a.h && git commit -qam core)
+expect 1 "dérogation refusée, src/core a changé" "les tests matériels sont à refaire" "$R/hardware-waiver.sh" v1.0.0 waiver
 exit "$fail"

@@ -1,0 +1,4 @@
+# Dérogations aux rapports des tests matériels d'une étiquette finale (tools/release/hardware-waiver.sh).
+# Une ligne par étiquette : « <étiquette> <préversion de référence> <raison> ». La garde ne l'accepte que si
+# l'empreinte TensorRT, Linux et Windows, est la même qu'à la préversion de référence.
+v0.11.0 v0.11.0-rc.14 aucun changement de TensorRT, CUDA ni FP8 depuis la rc.14, jouée sous Windows et Linux sur le poste de référence ; depuis, sous-titres après un saut, relance de l'AppImage, clé de secours et notes de version
