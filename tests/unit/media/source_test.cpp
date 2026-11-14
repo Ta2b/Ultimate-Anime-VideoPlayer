@@ -536,8 +536,12 @@ TEST_CASE("SourceThread : la réserve à mi-plafond retient la vidéo sans refus
   auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());
   REQUIRE(subs.has_value());
+  // Deux fils de décodage : à un fil par cœur (16 sur un Ryzen 9), le décodeur retient plus de paquets avant
+  // sa deuxième image que la moitié de la réserve minimale n'en laisse passer, et le test ne mesurait plus
+  // que ce nombre de cœurs (1 image sur 8 cœurs ou plus). La réserve par défaut (64 Mio) n'a pas cette
+  // limite.
   Running source(seek_clip(), 4, 0, {{.track = 1, .sink = audio->get()}, {.track = 2, .sink = subs->get()}},
-                 0, kMinReserveBytes);
+                 2, kMinReserveBytes);
   inbox = &source.inbox;
   int frames = 0;
   while (source.sink.pop(source.inbox, 300ms)) ++frames;
