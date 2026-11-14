@@ -359,6 +359,58 @@ gpu::ShapeSet fixed_input(int h, int w) {
   return {.min = shape, .opt = shape, .max = shape};
 }
 
+// Une image en niveaux de gris 8 bits (PGM binaire), value(i) dans [0, 1].
+template <class Value>
+void write_pgm(const fs::path& path, int h, int w, Value value) {
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out << "P5\n" << w << " " << h << "\n255\n";
+  for (std::size_t i = 0; i < static_cast<std::size_t>(h) * static_cast<std::size_t>(w); ++i)
+    out.put(static_cast<char>(static_cast<unsigned char>(std::clamp(value(i), 0.0, 1.0) * 255.0 + 0.5)));
+}
+
+// Diagnostic de la variante mouvement : où le masque de la chaîne s'écarte de celui du moteur entier. Écrit
+// <base>-ecart.pgm (écart absolu ×4), <base>-fusionne.pgm et <base>-entier.pgm, et dit (WARN), pour les
+// bords (8 pixels), le grand mouvement (plus de 8 pixels vers une image), le sigmoïde saturé (masque du
+// moteur entier sous 0,02 ou au-dessus de 0,98) et le reste : pixels, écart moyen et maximal, part de
+// l'erreur.
+void report_mask(const std::vector<float>& got, const std::vector<float>& want,
+                 const std::vector<float>& flow, int h, int w, const fs::path& base) {
+  const std::size_t plane = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
+  write_pgm(fs::path(base.string() + "-ecart.pgm"), h, w,
+            [&](std::size_t i) { return 4.0 * std::fabs(static_cast<double>(got[i]) - want[i]); });
+  write_pgm(fs::path(base.string() + "-fusionne.pgm"), h, w, [&](std::size_t i) { return double{got[i]}; });
+  write_pgm(fs::path(base.string() + "-entier.pgm"), h, w, [&](std::size_t i) { return double{want[i]}; });
+  struct Zone {
+    const char* name;
+    std::size_t pixels = 0;
+    double sum = 0.0, squares = 0.0, worst = 0.0;
+  };
+  std::array<Zone, 4> zones{Zone{"bords"}, Zone{"grand mouvement"}, Zone{"sigmoïde saturé"}, Zone{"reste"}};
+  double total = 0.0;
+  for (std::size_t i = 0; i < plane; ++i) {
+    const int y = static_cast<int>(i / static_cast<std::size_t>(w));
+    const int x = static_cast<int>(i % static_cast<std::size_t>(w));
+    const double move =
+        std::max(std::hypot(flow[i], flow[plane + i]), std::hypot(flow[2 * plane + i], flow[3 * plane + i]));
+    const std::size_t zone = (x < 8 || y < 8 || x >= w - 8 || y >= h - 8) ? 0
+                             : move > 8.0                                 ? 1
+                             : (want[i] < 0.02F || want[i] > 0.98F)       ? 2
+                                                                          : 3;
+    const double d = std::fabs(static_cast<double>(got[i]) - want[i]);
+    Zone& z = zones[zone];
+    ++z.pixels;
+    z.sum += d;
+    z.squares += d * d;
+    z.worst = std::max(z.worst, d);
+    total += d * d;
+  }
+  for (const Zone& z : zones)
+    WARN("masque, " << z.name << " : " << z.pixels << " pixels, écart moyen "
+                    << (z.pixels > 0 ? z.sum / static_cast<double>(z.pixels) : 0.0) << ", maximal " << z.worst
+                    << ", " << (total > 0.0 ? 100.0 * z.squares / total : 0.0) << " % de l'erreur");
+  WARN("cartes du masque : " << base.string() << "-ecart.pgm, -fusionne.pgm, -entier.pgm");
+}
+
 // Compare la chaîne fusionnée au RIFE entier de TensorRT sur la paire, pour un modèle du catalogue.
 void compare_engines(const std::string& file, bool motion) {
   const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
@@ -456,6 +508,8 @@ void compare_engines(const std::string& file, bool motion) {
     // 30 dB attrape encore un mauvais câblage (une sortie fausse tombe sous 20 dB).
     CHECK(score >= 30.0);
   }
+
+  if (motion) report_mask(got[1], want[1], want[0], h, w, scratch / (onnx.stem().string() + "-masque"));
 
   // Étape 5.2 : le dernier lecteur de l'entrée est RIFE fusionné, rife_time n'écrit plus que l'élément 0 du
   // plan de l'instant ; la chaîne fusionnée à l'instant 0,3 doit suivre le moteur entier qui lit une entrée

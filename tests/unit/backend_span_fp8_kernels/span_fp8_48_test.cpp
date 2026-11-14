@@ -112,6 +112,27 @@ std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, co
   return values;
 }
 
+// Diagnostic : les premières valeurs non finies de la sortie 3 × 2H × 2W, en plan, ligne et colonne, et leur
+// nombre (WARN, rien si tout est fini). La répartition désigne le noyau : une colonne de 8 sur 48 (épilogue,
+// tuile N), une tuile de 96 ou 128 lignes de convolution sur deux (tuile M), ou tout un plan (to_pixel).
+void warn_non_finite(const std::vector<double>& got, const char* what) {
+  constexpr std::size_t kOutW = std::size_t{2} * kWidth;
+  constexpr std::size_t kPlane = std::size_t{2} * kHeight * kOutW;
+  std::size_t count = 0;
+  std::string first;
+  for (std::size_t i = 0; i < got.size(); ++i) {
+    if (std::isfinite(got[i])) continue;
+    if (count++ < 12)
+      first += " (" + std::to_string(i / kPlane) + ", " + std::to_string(i % kPlane / kOutW) + ", " +
+               std::to_string(i % kOutW) + ")";
+  }
+  if (count == 0) return;
+  // La ligne et la colonne de la convolution (à la moitié de la sortie, une ligne de convolution par pixel
+  // du corps) aident à lire la tuile M : ligne de convolution = (ligne / 2) × largeur + colonne / 2.
+  WARN(what << " : " << count << " valeurs non finies sur " << got.size()
+            << ", premières (plan, ligne, colonne) :" << first);
+}
+
 // Rapport signal sur bruit de got contre expected, en dB.
 double snr_db(const std::vector<double>& expected, const std::vector<double>& got) {
   double mean = 0.0;
@@ -157,8 +178,13 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   package.scales = *scales;
 
   const std::vector<double> padded = run(package, SpanFp8Width::Padded, in);
-  const double flat = snr_db(padded, run(package, SpanFp8Width::Native, in));
-  const double per_tap = snr_db(padded, run(package, SpanFp8Width::PerTap, in));
+  const std::vector<double> native = run(package, SpanFp8Width::Native, in);
+  const std::vector<double> by_tap = run(package, SpanFp8Width::PerTap, in);
+  warn_non_finite(padded, "en 64 dont 16 nuls");
+  warn_non_finite(native, "K à plat");
+  warn_non_finite(by_tap, "K par position");
+  const double flat = snr_db(padded, native);
+  const double per_tap = snr_db(padded, by_tap);
   INFO("SNR contre le calcul en 64 : K à plat " << flat << " dB, K par position " << per_tap << " dB");
   // Seul l'ordre des sommes diffère : bien au-dessus de l'arrondi FP8 (le test C02-10 exige 20 dB contre la
   // référence FP16).
