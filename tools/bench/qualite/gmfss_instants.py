@@ -17,7 +17,7 @@ réduction de surface ; remplie au multiple de 128 comme le faisait le lecteur).
 la vraie image et le pire bloc 64 × 64 de :
 
   rife       RIFE 4.26 à l'instant (flot et masque du graphe livré, warp et mélange de l'étage du lecteur) ;
-  gmfss      GMFSS Union à l'instant : paire (une fois), six splats, IFNet et GridNet (une fusion par instant) ;
+  gmfss      GMFSS Union (poids de la roue : l'ancien union) à l'instant : paire (une fois), six splats, IFNet et GridNet (une fusion par instant) ;
   splats     GMFSS sans fusion : les deux images splattées à l'instant, mélangées (ce qu'apporte GridNet) ;
   milieu     une seule fusion par paire, au milieu M ; l'instant t s'en déduit par le flot de GMFSS : M est splatté
              de (t − ½) fois le flot porté au milieu (le flot de chaque côté splatté à ½), mêlé à l'image de la
@@ -53,12 +53,31 @@ METHODS = ("rife", "gmfss", "splats", "milieu", "milieu_rife")
 # ---------------------------------------------------------------------------------------------------------------
 # GMFSS (PyTorch)
 
-def load(package, device, scale):
+# Les fichiers d'une archive de 98mxr (train_log/) sous les noms de la roue.
+TRAIN_LOG_NAMES = {"flownet.pkl": "flownet.pkl", "metric.pkl": "metric_union.pkl", "feat.pkl": "feat_union.pkl",
+                   "fusionnet.pkl": "fusionnet_union.pkl", "rife.pkl": "rife.pkl"}
+
+
+def weights_dir(path):
+    """Le dossier des poids sous les noms de la roue : models/ de la roue tel quel, ou un train_log/ de 98mxr
+    (le « new union model ») relié sous ces noms dans un dossier temporaire."""
+    import tempfile
+
+    if os.path.exists(os.path.join(path, "metric_union.pkl")):
+        return path
+    linked = tempfile.mkdtemp(prefix="gmfss_poids_")
+    for theirs, ours in TRAIN_LOG_NAMES.items():
+        os.symlink(os.path.abspath(os.path.join(path, theirs)), os.path.join(linked, ours))
+    return linked
+
+
+def load(package, device, scale, weights=None):
     import torch
     from gmfss_graph import Fusion, Pair, load_gmfss
 
     gmfss_class = load_gmfss(os.path.abspath(package))
-    net = gmfss_class(os.path.join(os.path.abspath(package), "models"), "union", scale, False).eval().to(device)
+    models = weights_dir(weights or os.path.join(os.path.abspath(package), "models"))
+    net = gmfss_class(models, "union", scale, False).eval().to(device)
     return Pair(net).eval(), Fusion(net).eval(), torch.device(device)
 
 
@@ -237,7 +256,7 @@ def perceptual(model, ref, out):
         return float(model(th(ref), th(out)).item())
 
 
-def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, key=0, half_nets=None):
+def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, key=0, variants=()):
     import torch
 
     full = win
@@ -247,7 +266,7 @@ def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, 
     started = time.perf_counter()
     g = Gmfss(nets, pa, pb)
     crop = lambda x: x.cpu().numpy()[window] if isinstance(x, torch.Tensor) else x  # noqa: E731
-    g_half = Gmfss(half_nets, pa, pb) if half_nets else None
+    others = [(name, Gmfss(n, pa, pb)) for name, n in variants]
     _, motion = rife_at(*rife, a, b, 0.5)
     row = {"mouvement": motion}
     for i, t in ((1, 1 / 3), (2, 2 / 3)):
@@ -260,8 +279,8 @@ def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, 
             "milieu": crop(g.from_middle(t)),
             "milieu_rife": rife_at(*rife, *half)[0],
         }
-        if g_half is not None:
-            outs["gmfss_demi"] = crop(g_half.at(t))
+        for name, other in others:
+            outs[name] = crop(other.at(t))
         if images:
             save_png(os.path.join(images, f"{key:05d}_{i}_verite.png"), win[i])
         for name, out in outs.items():
@@ -295,7 +314,7 @@ def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, 
 
 def summary(rows, height):
     global METHODS
-    METHODS = tuple(m for m in dict.fromkeys(METHODS + ("gmfss_demi",)) if f"{m}_1" in rows[0])
+    METHODS = tuple(m for m in dict.fromkeys(METHODS + ("gmfss_demi", "gmfss_neuf")) if f"{m}_1" in rows[0])
     lines = [f"Taille de travail {height}p, {len(rows)} paires (k, k + 3), instants ⅓ et ⅔ : {2 * len(rows)} instants.",
              "", "| Mouvement (px à la taille de travail) | Instants | " +
              " | ".join(f"{m} (dB)" for m in METHODS) + " | gmfss − rife | milieu − gmfss | milieu_rife − gmfss |",
@@ -332,6 +351,7 @@ def main():
                    help="mesure aussi à 1080p (taille de travail 540) : GMFSS agrandi, la composition après SPAN "
                         "d'avant 0.10.0, RIFE après SPAN")
     p.add_argument("--demi", action="store_true", help="ajoute GMFSS au demi-flot (gmfss_demi), celui du lecteur d'avant")
+    p.add_argument("--union-neuf", help="le train_log/ du « new union model » de 98mxr (gmfss_neuf)")
     p.add_argument("--lpips", action="store_true", help="ajoute LPIPS (pip install lpips)")
     p.add_argument("--images-dir", help="écrit chaque instant de chaque méthode en PNG, et la vérité")
     p.add_argument("--suites", type=int, default=40)
@@ -344,7 +364,11 @@ def main():
     torch.set_grad_enabled(False)
     wins = quadruples(rt.decode(args.video, args.images), args.suites)
     nets = load(args.gmfss, args.device, args.echelle)
-    half_nets = load(args.gmfss, args.device, 0.5) if args.demi else None
+    variants = []
+    if args.demi:
+        variants.append(("gmfss_demi", load(args.gmfss, args.device, 0.5)))
+    if args.union_neuf:
+        variants.append(("gmfss_neuf", load(args.gmfss, args.device, args.echelle, args.union_neuf)))
     lpips_model = None
     if args.lpips:
         import lpips
@@ -355,7 +379,7 @@ def main():
     rife = rt.motion_session(args.reseau)
     rows = []
     for k, win in wins:
-        rows.append({"image": k, **measure(nets, rife, win, args.hauteur, args.sortie, lpips_model, args.images_dir, k, half_nets)})
+        rows.append({"image": k, **measure(nets, rife, win, args.hauteur, args.sortie, lpips_model, args.images_dir, k, variants)})
         print(json.dumps({key: round(v, 2) if isinstance(v, float) else v for key, v in rows[-1].items()}), flush=True)
     text = summary(rows, args.hauteur)
     if args.sortie:
