@@ -240,6 +240,28 @@ class KernelOps {
   }
   // Vrai si ingest() débande elle-même quand IngestSpec::deband est posé (même résultat que deband()).
   virtual bool debands_on_ingest() const { return false; }
+  // GMFSS Fortuna Union (kernels/spec/gmfss.h). Entrée du graphe « paire » depuis deux images RGB ingérées
+  // de même taille w × h : a puis b (kGmfssFramePlanes plans) dans rife_geometry(w, h) de la taille de
+  // frames, bords noirs. BackendCaps::gmfss dit que le backend a les deux opérations.
+  virtual std::expected<void, Refusal> gmfss_frames(const Tensor& /*a*/, const Tensor& /*b*/,
+                                                    const Tensor& /*frames*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_frames : absent de ce backend"});
+  }
+  // Les splats d'un instant (les huit de GMFSS : l'image et les caractéristiques du niveau 1, les niveaux 2
+  // et 3, deux côtés) en un seul passage, puis chaque élément de time (FP16, l'entrée « time » de la fusion)
+  // mis à t. Chaque travail suit ref::soft_splat : source, C plans h × w, poussée à l'instant s de [0, 1] par
+  // motion (kGmfssMotionChannels plans fx, fy, z de même taille, donnés pour t = 1), dans out (C plans, une
+  // tranche d'un tenseur plus grand possible). Au premier refus, les sorties sont indéfinies.
+  struct SplatJob {
+    Tensor source;
+    Tensor motion;
+    float s = 0.5F;
+    Tensor out;
+  };
+  virtual std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> /*jobs*/,
+                                                       const Tensor& /*time*/, float /*t*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "soft_splat : absent de ce backend"});
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

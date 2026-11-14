@@ -1,6 +1,6 @@
-// Contrat de GMFSS Fortuna Union au milieu des paires fortes (docs/interpolation.md) : le réseau coupé en
-// deux graphes ONNX autour du softmax splatting, que les backends exécutent eux-mêmes (le seul morceau sans
-// export ONNX). Le lecteur ne s'en sert qu'à l'instant 1/2 : RIFE fait ensuite les demi-paires.
+// Contrat de GMFSS Fortuna Union (docs/interpolation.md) : le réseau coupé en deux graphes ONNX autour du
+// softmax splatting, que les backends exécutent eux-mêmes (le seul morceau sans export ONNX). Le mélange s'en
+// sert au milieu des paires fortes (RIFE fait ensuite les demi-paires), « GMFSS seul » à chaque instant.
 //
 // Repris de vsgmfss_fortuna 1.0.0 (HolyWu, MIT), GMFSS_union.py et softsplat.py :
 //   reuse() : FeatureNet sur les deux images, GMFlow dans les deux sens au flot entier, MetricNet
@@ -8,7 +8,7 @@
 //   forward() : six softsplat « soft » (images et caractéristiques, trois niveaux, deux côtés), l'IFNet de
 //               RIFE à l'instant, puis GridNet ;
 //   softsplat_out : addition bilinéaire en FP32 par atomicAdd, normalisation + 1e-7.
-// L'export : tools/gmfss/export_gmfss.py --middle. Tests : tests/unit/kernels/gmfss_test.cpp.
+// L'export : tools/gmfss/export_gmfss.py. Tests : tests/unit/kernels/gmfss_test.cpp.
 #pragma once
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
@@ -28,8 +28,9 @@ namespace ajp::kernels {
 //     « source{k}_{l} », l = 2, 3 : les caractéristiques splattées, 128 et 192 plans ;
 //     « motion{k}_{l} » : 3 plans, le flot fx, fy en pixels du niveau et la métrique z, tous pour t = 1
 //                         (flot de a vers b au côté 0, de b vers a au côté 1).
-// Le graphe « fusion » (une fois par paire forte, l'instant fixé à 1/2 à l'export) :
-//   entrées « half0 », « half1 », « warped{k}_{l} » : au niveau 1, 3 + 64 plans, l'image splattée puis les
+// Le graphe « fusion » (une fois par image intermédiaire) :
+//   entrées « time » (1 × 1 × 1 × 1, l'instant t), « half0 », « half1 », « warped{k}_{l} » (splattées à
+//   l'instant du côté, gmfss_side_time) : au niveau 1, 3 + 64 plans, l'image splattée puis les
 //   caractéristiques splattées (deux splats du même mouvement, chacun dans sa tranche, ce qui vaut le splat
 //   des 67 plans : chaque plan est normalisé par le poids de son seul pixel) ; aux niveaux 2 et 3,
 //   source{k}_{l} splattée ;
@@ -47,8 +48,10 @@ constexpr int gmfss_warped_channels(int level) {
 }
 inline constexpr int kGmfssMotionChannels = 3;
 
-// L'instant de chaque côté : le milieu, depuis a comme depuis b.
-inline constexpr float kGmfssMiddle = 0.5F;
+// Instant du côté k : t depuis a, 1 − t depuis b.
+constexpr float gmfss_side_time(int side, float t) {
+  return side == 0 ? t : 1.0F - t;
+}
 
 // Softmax splatting à l'instant s du côté (softsplat « soft ») : pour chaque pixel source (x, y), en FP32,
 //   z' = s · clamp(z, −kGmfssMetricLimit, kGmfssMetricLimit) (NaN : la borne basse) ;

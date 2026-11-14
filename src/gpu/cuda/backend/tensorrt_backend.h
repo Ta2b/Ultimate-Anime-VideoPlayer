@@ -108,6 +108,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<float, Refusal> flow_max_now(const Motion& motion) override;
   std::expected<std::uint64_t, Refusal> flow_max_start(const Motion& motion) override;
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
+  // GMFSS Fortuna Union (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
+  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
+  std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
+                                               float t) override;
   // L'analyse d'une image pour le grade (tensorrt_stats.cpp), relue sans attente.
   std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
                                                           kernels::FrameTransfer transfer) override;
@@ -431,6 +435,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::uint64_t stats_tickets_ = 0;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
+  // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
+  float* splat_sums_ = nullptr;
+  std::size_t splat_bytes_ = 0;
   std::size_t ingest_rows_size_ = 0;
   // Image ingérée avant son débandage (ingest avec IngestSpec::deband), à la taille de la plus grande vue.
   void* deband_out_ = nullptr;

@@ -127,4 +127,6 @@ TEST_CASE("Le splat refuse ce qui sort du contrat", "[kernels][gmfss]") {
   CHECK(ref::soft_splat({}, uniform(4, 4, 0, 0, 0), 0.5F).error().code == ErrorCode::SizeMismatch);
   CHECK(ref::soft_splat(source, uniform(4, 3, 0, 0, 0), 0.5F).error().code == ErrorCode::SizeMismatch);
   CHECK(ref::soft_splat(source, uniform(4, 4, 0, 0, 0), 1.5F).error().code == ErrorCode::ParameterOutOfRange);
+  CHECK(gmfss_side_time(0, 0.25F) == 0.25F);
+  CHECK(gmfss_side_time(1, 0.25F) == 0.75F);
 }

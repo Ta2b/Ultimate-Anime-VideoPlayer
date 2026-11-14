@@ -94,7 +94,8 @@ namespace ajp::gpu {
 // timing_height ; SpanFp8Derivation::trt_fp16_ms, timed_size et validation_peaks (E01).
 // 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
 // 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, RTX 40 et RTX 50).
-inline constexpr int kBackendAbi = 42;
+// 43 : GMFSS Fortuna Union revient (KernelOps::gmfss_frames, SplatJob, soft_splat_fill ; BackendCaps::gmfss).
+inline constexpr int kBackendAbi = 43;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -180,6 +181,9 @@ struct BackendCaps {
   // DistilDRBA coupé en quatre moteurs TensorRT et noyaux de colle (manifeste « .drbafused » à la place de
   // l'ONNX, kernels/spec/drba_fused.h).
   bool drba_fused = false;
+  // GMFSS Fortuna Union : KernelOps::gmfss_frames et soft_splat_fill, et un moteur qui construit ses deux
+  // graphes (GMFlow et ses transformeurs : TensorRT seulement).
+  bool gmfss = false;
   bool matrix_units = false;  // unités matricielles utilisées
   // Voies qui se recouvrent vraiment sur l'appareil (gpu/lanes.h) ; 1 : use_lane ne change rien.
   int lanes = 1;
