@@ -272,16 +272,31 @@ template <class EIn, int TM, int TK, int WM, int Stages, class Acc = float,
 struct Cfg {
   using E = EIn;
   static constexpr int kN = TN;
+  // À 48 colonnes, trois warps au lieu de quatre (96 lignes de tuile pour 128) : la carte des fils de CUTLASS
+  // (PitchLinearWarpRakedThreadMap) range les 48 lignes de la tuile des poids par 8 lignes et par warp, et
+  // divise 6 passes entre 4 warps en entier, soit une passe : les lignes 32 à 47 n'étaient jamais chargées,
+  // et la mémoire partagée gardait ce qu'un autre noyau y avait laissé (bleu faux de to_pixel, NaN des
+  // blocs à 48 canaux, résultats qui changent avec l'ordre des lancements). 6 passes pour 3 warps tombent
+  // juste ; covers ci-dessous le vérifie à la compilation.
+  static constexpr int kTM = TN == 48 ? TM / 4 * 3 : TM;
   static constexpr bool kFp8 = cutlass::sizeof_bits<EIn>::value == 8;
   using Inst = typename std::conditional<kFp8, cutlass::gemm::GemmShape<16, 8, 32>,
                                          cutlass::gemm::GemmShape<16, 8, 16>>::type;
   using Dummy = cutlass::epilogue::thread::LinearCombination<EIn, 8, Acc, float>;  // jamais exécuté
   using Base = typename cutlass::conv::kernel::DefaultConv2dFprop<
       EIn, cutlass::layout::TensorNHWC, EIn, cutlass::layout::TensorNHWC, EIn, cutlass::layout::TensorNHWC,
-      Acc, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89, cutlass::gemm::GemmShape<TM, TN, TK>,
+      Acc, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89, cutlass::gemm::GemmShape<kTM, TN, TK>,
       cutlass::gemm::GemmShape<WM, TN, TK>, Inst, Dummy,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, Stages, cutlass::arch::OpMultiplyAdd,
       Alg>::Kernel;
+
+  // Une carte des fils couvre sa tuile entière : passes × fils × éléments par accès = éléments de la tuile.
+  template <class Map>
+  static constexpr bool covers =
+      Map::Iterations::kContiguous * Map::Iterations::kStrided * Map::kThreads * Map::kElementsPerAccess ==
+      Map::Shape::kContiguous * Map::Shape::kStrided;
+  static_assert(covers<typename Base::Mma::IteratorA::ThreadMap>, "tuile des activations chargée en partie");
+  static_assert(covers<typename Base::Mma::IteratorB::ThreadMap>, "tuile des poids chargée en partie");
 };
 
 // Un lancement : paramètres CUTLASS construits une fois, lancement compatible avec la capture de graphe.

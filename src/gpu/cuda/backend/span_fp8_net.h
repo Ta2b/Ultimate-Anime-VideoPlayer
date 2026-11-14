@@ -76,8 +76,10 @@ class SpanFp8Net {
   // calculent (un paquet validé avec d'autres noyaux se revalide). 1 : état après les étapes 3.1 à 3.5 ;
   // 2 : poids FP8 des blocs à une échelle par canal de sortie (étape 10.3) ; 3 : la variante acc16 accumule
   // aussi les blocs FP8 en f16, poids rangés 16 fois plus bas (deuxième passe TensorRT, N3) ; 4 : un modèle à
-  // 48 canaux se calcule en 48 (SpanFp8Width::Native) et non plus en 64 dont 16 nuls.
-  static constexpr int kKernelsVersion = 4;
+  // 48 canaux se calcule en 48 (SpanFp8Width::Native) et non plus en 64 dont 16 nuls ; 5 : les tuiles de 48
+  // colonnes chargent toutes leurs lignes (Cfg::kTM) et to_pixel reprend sa tuile de 64 : un paquet jugé par
+  // la version 4 l'a été avec un troisième plan faux.
+  static constexpr int kKernelsVersion = 5;
 
   // Envoie les poids sur l'appareil courant (FP8 pour les blocs) et prépare les lancements. height et width
   // sont déjà jugés par span_fp8::size_refusal. Nul si l'envoi échoue ; status et error disent pourquoi.

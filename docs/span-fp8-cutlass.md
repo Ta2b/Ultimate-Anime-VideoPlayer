@@ -313,6 +313,25 @@ CI mesurait son FP8 b8f64 à 49,9 dB en moyenne, ce qu'un bleu faux ne donnerait
 Conséquence : `--span-native` reste éteint, les NaN de `kFewChannels` en FP16 ne valent pas d'être corrigés
 tant que rien ne laisse espérer un gain, et la variante Turing (RTX 20) n'est pas écrite.
 
+## Tuiles de 48 colonnes : lignes des poids jamais chargées (kKernelsVersion 5)
+
+Depuis les noyaux à 48 colonnes (kKernelsVersion 4), to_pixel tournait sur une tuile de 48 colonnes, comme les
+blocs d'un modèle à 48 canaux. Avec 128 fils (quatre warps), la carte des fils de CUTLASS
+(`PitchLinearWarpRakedThreadMap`) range la tuile des poids par 8 lignes et par warp : 48 lignes font 6 passes de
+warp, et 6 / 4 se divise en entier, soit une passe par warp. Les lignes 32 à 47 n'étaient jamais chargées en
+mémoire partagée, et le calcul lisait ce qu'un autre noyau y avait laissé. Effets mesurés sur la RTX 4070 Ti :
+
+- le troisième plan de to_pixel (canaux 32 à 47, le bleu) à 21 dB, en FP8 comme en FP16, 48 ou 64 canaux :
+  le FP8 b8f64 refusé au chargement, la lecture retombée sur TensorRT FP16 ;
+- les blocs à 48 canaux en NaN (FP16 et FP8 natifs, K à plat ou par position) ;
+- des résultats qui changent avec l'ordre des lancements (« l'épilogue de to_pixel écrit l'anneau au bit
+  près » passe une fois sur trois).
+
+Correction : à 48 colonnes, la tuile prend trois warps (96 lignes au lieu de 128, `Cfg::kTM`), 6 passes pour 3
+warps ; to_pixel reprend la tuile de 64 colonnes d'avant (48 sorties utiles, les autres masquées). `Cfg` vérifie
+à la compilation que les cartes des fils des deux opérandes couvrent leur tuile entière. Les paquets jugés par la
+version 4 se revalident.
+
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour

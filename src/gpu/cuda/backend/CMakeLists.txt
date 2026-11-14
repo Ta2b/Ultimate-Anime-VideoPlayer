@@ -54,14 +54,11 @@ if(AJP_WITH_SPAN_FP8)
       # CCCL de CUDA 13 exige le préprocesseur conforme de MSVC.
       $<$<AND:$<COMPILE_LANGUAGE:CUDA>,$<PLATFORM_ID:Windows>>:-Xcompiler=/Zc:preprocessor>)
   endfunction()
-  # Une seule bibliothèque pour les noyaux FP8 et FP16 : net_kernel<…> de conv_cat et de to_pixel est le même
-  # type dans span_fp8_net.cu et span_fp8_net16.cu. Séparés dans deux bibliothèques aux architectures
-  # différentes (span_fp8_net16.cu aussi pour sm 86), ils rendaient par to_pixel un troisième plan faux, le
-  # bleu à 21 dB, FP8 compris : le bisect sur RTX 4070 Ti désigne cette séparation, sans doute des souches
-  # d'hôte de mêmes noms pliées en une seule. sm 89 (Ada) et sm 120 (Blackwell grand
-  # public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89, et la liste AJP_CUDA_ARCHITECTURES n'y
-  # change rien. Le PTX de 120 (code réel et virtuel) garde le module chargeable sur une carte plus récente, où
-  # supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
+  # Une seule bibliothèque pour les noyaux FP8 et FP16, aux mêmes architectures : net_kernel<…> de conv_cat et
+  # de to_pixel est le même type dans span_fp8_net.cu et span_fp8_net16.cu. sm 89 (Ada) et sm 120 (Blackwell
+  # grand public, étape 10.2) : les mma FP8 m16n8k32 n'existent pas avant 89, et la liste
+  # AJP_CUDA_ARCHITECTURES n'y change rien. Le PTX de 120 (code réel et virtuel) garde le module chargeable sur
+  # une carte plus récente, où supported_device refuse de lancer les noyaux. CUDA 12.8 au moins.
   add_library(ajp_backend_span_fp8_kernels STATIC span_fp8_net.cu span_fp8_net48.cu span_fp8_net16.cu
     ${ajp_span_fp8_ref})
   ajp_span_cutlass_target(ajp_backend_span_fp8_kernels "89-real;120")

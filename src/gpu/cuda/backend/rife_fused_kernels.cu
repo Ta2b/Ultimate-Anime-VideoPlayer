@@ -376,7 +376,16 @@ cudaError_t launch_fused_glue(const FusedGlueParams& params, cudaStream_t stream
 
 cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t stream) {
   const dim3 block(32, 8);
-  fused_finish<<<grid_for(params.width, params.height, block), block, 0, stream>>>(params);
+  // Fenêtre vide (l'appelant ne la connaît pas) : le tenseur entier, comme le promet FusedFinishParams. Sans
+  // ce repli, window_tap bornait à [0, -1] et lisait avant le plan (image fausse des tests des noyaux).
+  FusedFinishParams p = params;
+  if (p.window_width <= 0 || p.window_height <= 0) {
+    p.window_left = 0;
+    p.window_top = 0;
+    p.window_width = p.width;
+    p.window_height = p.height;
+  }
+  fused_finish<<<grid_for(p.width, p.height, block), block, 0, stream>>>(p);
   return cudaGetLastError();
 }
 

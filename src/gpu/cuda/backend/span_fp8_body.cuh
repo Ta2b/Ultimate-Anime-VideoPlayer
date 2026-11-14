@@ -80,13 +80,13 @@ class Body final : public SpanFp8Body {
   using LT = sk::Launcher<C8, 1, false, Fp16>;
   using C16A = sk::Cfg<F16, 128, 32, 32, 4, float, Alg::kAnalytic, Ch>;
   using C16 = sk::Cfg<F16, 128, 32, 32, 4, float, Alg::kOptimized, Ch>;
-  using C16P = sk::Cfg<F16, 128, 32, 32, 4, float, BlockAlg, kPixel>;  // to_pixel lit Ch canaux
-  using LC1 = sk::Launcher<C16A, 0, false, Fp16>;                      // sa sortie out8 entre au bloc 1
+  using C16P = sk::Cfg<F16, 128, 32, 32, 4, float, BlockAlg>;  // to_pixel : Ch canaux, kPixel colonnes
+  using LC1 = sk::Launcher<C16A, 0, false, Fp16>;              // sa sortie out8 entre au bloc 1
   using LCAT = sk::Launcher<C16, 0, false>;
   using LPIX = sk::Launcher<C16P, 2, false>;  // to_pixel, DepthToSpace fondu (étape 3.4a)
   // Étape 3.5a : les mêmes, accumulateur f16 (mma m16n8k16 .f16.f16.f16.f16), choisis par le paquet.
   using C16H = sk::Cfg<F16, 128, 32, 32, 4, F16, Alg::kOptimized, Ch>;
-  using C16PH = sk::Cfg<F16, 128, 32, 32, 4, F16, BlockAlg, kPixel>;
+  using C16PH = sk::Cfg<F16, 128, 32, 32, 4, F16, BlockAlg>;
   using LCATH = sk::Launcher<C16H, 0, false>;
   using LPIXH = sk::Launcher<C16PH, 2, false>;
   // Les blocs FP8 à accumulateur f16 (mma m16n8k32 .f16.e4m3.e4m3.f16) avec le même drapeau : sur les
@@ -119,9 +119,9 @@ class Body final : public SpanFp8Body {
     std::array<Device, 3> alpha;  // Ch flottants chacun : échelle de l'activation × échelle du canal
   };
 
-  // Les tampons à un multiple de 128 lignes (la tuile M) : la dernière tuile reste dans son tampon même si
-  // une garde manquait (étape 3.1).
-  std::int64_t tiled() const { return (npix_ + 127) / 128 * 128; }
+  // Les tampons à un multiple de 384 lignes, que les tuiles M de 128 et de 96 (Cfg::kTM, 48 colonnes)
+  // divisent : la dernière tuile reste dans son tampon même si une garde manquait (étape 3.1).
+  std::int64_t tiled() const { return (npix_ + 383) / 384 * 384; }
   // L'échelle de l'activation qui entre dans la convolution i du bloc b (s_in, s_r1, s_r2).
   float act_scale(std::size_t b, std::size_t i) const {
     if (i > 0) return scales_[i + 3 * b];
