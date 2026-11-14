@@ -14,6 +14,7 @@
 #include "gpu/cuda/backend/span_fp8_body.h"
 #include "gpu/cuda/backend/span_fp8_kernels.cuh"
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
+#include "gpu/span_fp8/acc16_policy.h"
 #include "gpu/span_fp8/quantize.h"
 
 namespace ajp::gpu::cuda {
@@ -54,6 +55,12 @@ inline std::vector<float> quantize_fp8(const std::uint16_t* half_bits, std::size
           static_cast<std::uint8_t>(__nv_cvt_float_to_fp8(values[i] / scales[c], __NV_SATFINITE, __NV_E4M3));
   }
   return scales;
+}
+
+// Une image de plus au compte frames si un noyau à accumulateur f16 a débordé (KP::overflow) : un seul fil,
+// à la fin de l'image. frames est dans la mémoire de l'hôte projetée, que Acc16Policy lit sans attendre.
+__global__ void count_overflow_frame(const int* overflow, int* frames) {
+  if (*overflow != 0) *static_cast<volatile int*>(frames) += 1;
 }
 
 constexpr std::int64_t kAlign = 256;
@@ -100,7 +107,7 @@ class Body final : public SpanFp8Body {
   Body(int height, int width)
       : height_(height), width_(width), h_(height / 2), w_(width / 2), npix_(std::int64_t{h_} * w_) {}
   ~Body() override {
-    if (overflow_host_ != nullptr) static_cast<void>(cudaFreeHost(overflow_host_));
+    if (frames_host_ != nullptr) static_cast<void>(cudaFreeHost(frames_host_));
   }
   Body(const Body&) = delete;
   Body& operator=(const Body&) = delete;
@@ -116,13 +123,16 @@ class Body final : public SpanFp8Body {
   void bind(void* base) override;
   bool launch_body(cudaStream_t stream, const void* input, std::string& error) override;
   bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error) override;
-  // Lecture sans synchronisation du mot que les noyaux f16 écrivent : un débordement se voit au plus tard
-  // un lancement après le sien.
-  bool take_overflow() override {
-    if (!acc16_ || overflow_host_ == nullptr || *static_cast<volatile int*>(overflow_host_) == 0)
-      return false;
-    acc16_ = false;
-    return true;
+  // Le compte des images débordées, lu sans synchronisation (count_overflow_frame l'écrit en fin d'image).
+  int overflow_frames() const override {
+    return frames_host_ != nullptr ? *static_cast<volatile int*>(frames_host_) : 0;
+  }
+  SpanFp8AccChange poll_accumulator() override {
+    if (!acc16_ || frames_host_ == nullptr) return SpanFp8AccChange::None;
+    const span_fp8::Acc16Change change = policy_.poll(overflow_frames());
+    if (change == span_fp8::Acc16Change::None) return SpanFp8AccChange::None;
+    arm_redo(policy_.f16());
+    return change == span_fp8::Acc16Change::ToF32 ? SpanFp8AccChange::ToF32 : SpanFp8AccChange::ToF16;
   }
 
  private:
@@ -156,11 +166,20 @@ class Body final : public SpanFp8Body {
   int used_ = kBlocks;  // blocs du modèle (étape 3.2c)
   std::array<float, kScaleCount> scales_{};
   bool acc16_ = false;
-  int* overflow_host_ = nullptr;  // mémoire de l'hôte projetée (KP::overflow) ; nulle sans acc16
-  int* overflow_dev_ = nullptr;   // sa vue d'appareil
+  // acc16 : le mot de débordement d'une image (KP::overflow, KP::run_if), le compte des images débordées
+  // (mémoire de l'hôte projetée et sa vue d'appareil) et la règle qui choisit l'accumulateur.
+  Device overflow_;
+  int* frames_host_ = nullptr;
+  int* frames_dev_ = nullptr;
+  span_fp8::Acc16Policy policy_;
+  bool f16_now() const { return acc16_ && policy_.f16(); }
+  // Les lancements f32 en recalcul (run_if posé) tant que le f16 sert, en lancements ordinaires sinon.
+  void arm_redo(bool on);
+  int* overflow_word() const { return static_cast<int*>(overflow_.get()); }
 
   // Lancements : leurs paramètres portent les adresses de la zone de travail (bind).
   LC1 c1_;
+  LC1 c1_redo_;  // conv_1 du recalcul en f32 : le dégroupage qu'il lit recouvre r1, écrasé entre-temps
   std::array<L8, kBlocks> la_, lb_;
   std::array<LT, kBlocks> lc_;
   LCAT cat_;
@@ -204,14 +223,18 @@ bool Body<Ch, BlockAlg, Fp16>::upload(const SpanFp8Weights& weights, SpanFp8Stat
     return false;
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b)
     if (!upload_block(b, weights, status, error)) return false;
-  if (acc16_ && overflow_host_ == nullptr) {
+  if (acc16_ && frames_host_ == nullptr) {
+    if (!sent(overflow_.reserve(sizeof(int)), "mot de débordement") ||
+        !sent(cudaMemset(overflow_word(), 0, sizeof(int)), "mot de débordement"))
+      return false;
     void* host = nullptr;
-    if (!sent(cudaHostAlloc(&host, sizeof(int), cudaHostAllocMapped), "mot de débordement")) return false;
-    overflow_host_ = static_cast<int*>(host);
-    *overflow_host_ = 0;
+    if (!sent(cudaHostAlloc(&host, sizeof(int), cudaHostAllocMapped), "compte des débordements"))
+      return false;
+    frames_host_ = static_cast<int*>(host);
+    *frames_host_ = 0;
     void* dev = nullptr;
-    if (!sent(cudaHostGetDevicePointer(&dev, host, 0), "mot de débordement")) return false;
-    overflow_dev_ = static_cast<int*>(dev);
+    if (!sent(cudaHostGetDevicePointer(&dev, host, 0), "compte des débordements")) return false;
+    frames_dev_ = static_cast<int*>(dev);
   }
   status = SpanFp8Status::Ok;
   return true;
@@ -258,13 +281,14 @@ void Body<Ch, BlockAlg, Fp16>::bind_block(std::size_t b, std::uint8_t* const (&x
   const std::uint8_t* xin = x[b % 2];
   std::uint8_t* xout = x[(b + 1) % 2];
   BlockWeights& bw = blocks_[b];
-  // Les deux accumulateurs sur les mêmes poids : le repli de take_overflow n'a qu'à changer de lancement.
+  // Les deux accumulateurs sur les mêmes poids : le recalcul en f32 d'une image débordée et le passage au
+  // f32 (poll_accumulator) n'ont qu'à changer de lancement.
   const auto init = [&](auto& plain, auto& half, const std::uint8_t* in, std::size_t i, const sk::KP& k) {
     const auto* in8 = reinterpret_cast<const EB*>(in);
     plain.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), k);
     if (!acc16_) return;
     sk::KP guarded = k;
-    guarded.overflow = overflow_dev_;
+    guarded.overflow = overflow_word();
     half.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), guarded);
   };
   {  // c1 + Relu -> FP8 ; pour le dernier bloc, aussi FP16 dans la tranche 3 (son relu1)
@@ -335,6 +359,9 @@ void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
     k.out16 = cat_in;
     k.ld16 = kConcat;
     c1_.init(h_, w_, 3, 1, kPadded, Ch, reinterpret_cast<const F16*>(unshuffled_), c1_w_.as<F16>(), k);
+    k.run_if = overflow_word();
+    if (acc16_)
+      c1_redo_.init(h_, w_, 3, 1, kPadded, Ch, reinterpret_cast<const F16*>(unshuffled_), c1_w_.as<F16>(), k);
   }
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) bind_block(b, x, r1, r2, cat_in);
   {
@@ -349,8 +376,8 @@ void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
     cat_.init(h_, w_, 1, 0, kConcat, Ch, cat_src, cat_w_.as<F16>(), k);
     pix_.init(h_, w_, 3, 1, Ch, kPixel, pix_src, pix_w_.as<F16>(), p);
     if (acc16_) {
-      k.overflow = overflow_dev_;
-      p.overflow = overflow_dev_;
+      k.overflow = overflow_word();
+      p.overflow = overflow_word();
       cat16_.init(h_, w_, 1, 0, kConcat, Ch, cat_src, cat_w_.as<F16>(), k);
       pix16_.init(h_, w_, 3, 1, Ch, kPixel, pix_src, pix_w_.as<F16>(), p);
     }
@@ -362,6 +389,19 @@ void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
       if (attribute_ == cudaSuccess) attribute_ = e;
   for (const cudaError_t e : {cat_.attribute, pix_.attribute, cat16_.attribute, pix16_.attribute})
     if (attribute_ == cudaSuccess) attribute_ = e;
+  arm_redo(f16_now());
+}
+
+template <int Ch, Alg BlockAlg, bool Fp16>
+void Body<Ch, BlockAlg, Fp16>::arm_redo(bool on) {
+  const int* word = on ? overflow_word() : nullptr;
+  for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
+    la_[b].kp.run_if = word;
+    lb_[b].kp.run_if = word;
+    lc_[b].kp.run_if = word;
+  }
+  cat_.kp.run_if = word;
+  pix_.kp.run_if = word;
 }
 
 // Vrai si un lancement de stream a échoué, avec le motif dans error.
@@ -385,23 +425,33 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
   }
   static_cast<void>(cudaGetLastError());  // une erreur d'un appel d'avant n'est pas celle de ces lancements
   const int grid = static_cast<int>((npix_ + 255) / 256);
-  unshuffle_kernel<<<grid, 256, 0, stream>>>(static_cast<const __half*>(input), unshuffled_, height_, width_);
-  c1_.launch(stream);
-  for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
-    if (acc16_) {
-      la16_[b].launch(stream);
-      lb16_[b].launch(stream);
-      lc16_[b].launch(stream);
-    } else {
+  const auto* in = static_cast<const __half*>(input);
+  const auto f32_body = [&](const int* run_if) {
+    unshuffle_kernel<<<grid, 256, 0, stream>>>(in, unshuffled_, height_, width_, run_if);
+    (run_if != nullptr ? c1_redo_ : c1_).launch(stream);
+    for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
       la_[b].launch(stream);
       lb_[b].launch(stream);
       lc_[b].launch(stream);
     }
-  }
-  if (acc16_)
-    cat16_.launch(stream);
-  else
     cat_.launch(stream);
+  };
+  if (!f16_now()) {
+    f32_body(nullptr);
+    return !failed(stream, error);
+  }
+  // Accumulateur f16, puis le même corps en f32 qui ne tourne que si une somme a débordé (run_if) : il repart
+  // de l'entrée, que rien n'a écrasée, et réécrit tout ce que la queue lit.
+  static_cast<void>(cudaMemsetAsync(overflow_word(), 0, sizeof(int), stream));
+  unshuffle_kernel<<<grid, 256, 0, stream>>>(in, unshuffled_, height_, width_);
+  c1_.launch(stream);
+  for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
+    la16_[b].launch(stream);
+    lb16_[b].launch(stream);
+    lc16_[b].launch(stream);
+  }
+  cat16_.launch(stream);
+  f32_body(overflow_word());
   return !failed(stream, error);
 }
 
@@ -423,10 +473,15 @@ bool Body<Ch, BlockAlg, Fp16>::launch_tail(cudaStream_t stream, void* output, co
     pix.kp.surf_h = ring.height;
     pix.launch(stream);
   };
-  if (acc16_)
-    tail(pix16_);
-  else
+  if (!f16_now()) {
     tail(pix_);
+    return !failed(stream, error);
+  }
+  // to_pixel en f16, refait en f32 si une somme de l'image a débordé (corps ou to_pixel), puis l'image
+  // comptée.
+  tail(pix16_);
+  tail(pix_);
+  count_overflow_frame<<<1, 1, 0, stream>>>(overflow_word(), frames_dev_);
   return !failed(stream, error);
 }
 

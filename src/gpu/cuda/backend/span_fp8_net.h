@@ -62,6 +62,9 @@ struct SpanFp8Ring {
 
 enum class SpanFp8Status : std::uint8_t { Ok, OutOfMemory, Failed };
 
+// Ce que SpanFp8Net::poll_accumulator a changé.
+enum class SpanFp8AccChange : std::uint8_t { None, ToF32, ToF16 };
+
 class SpanFp8Net {
  public:
   // Vrai pour sm 8.9 (Ada) seulement : les noyaux emploient les mma FP8 de cette architecture. CMake les
@@ -79,7 +82,8 @@ class SpanFp8Net {
   // 48 canaux se calcule en 48 (SpanFp8Width::Native) et non plus en 64 dont 16 nuls ; 5 : les tuiles de 48
   // colonnes chargent toutes leurs lignes (Cfg::kTM) et to_pixel reprend sa tuile de 64 : un paquet jugé par
   // la version 4 l'a été avec un troisième plan faux ; 6 : l'accumulateur f16 borne une somme débordée et
-  // passe au f32 (take_overflow), la porte juge aussi le blanc plein et la mire saturée.
+  // passe au f32, la porte juge aussi le blanc plein et la mire saturée. Le recalcul en f32 de l'image
+  // débordée (poll_accumulator) ne change pas la version : les images sans débordement restent au bit près.
   static constexpr int kKernelsVersion = 6;
 
   // Envoie les poids sur l'appareil courant (FP8 pour les blocs) et prépare les lancements. height et width
@@ -108,11 +112,14 @@ class SpanFp8Net {
   bool launch_body(cudaStream_t stream, const void* input, std::string& error);
   bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error);
 
-  // Accumulateur f16 (SpanFp8Weights::acc16) : vrai une seule fois, quand une somme a débordé depuis la
-  // création. Le lancement fautif a borné ses sommes au plus grand f16 (rien d'infini ni de NaN dans
-  // l'image), et le réseau accumule désormais en f32, sur les mêmes poids : un graphe capturé avant porte
-  // encore les noyaux f16 et doit être refait. Faux sans acc16, ou si rien n'a débordé.
-  bool take_overflow();
+  // Accumulateur f16 (SpanFp8Weights::acc16) : une image dont une somme déborde est recalculée en f32 dans le
+  // même lancement (corps et queue rejoués, noyaux f32 qui ne tournent que sur débordement), elle sort donc
+  // juste. poll_accumulator, une fois avant chaque corps, applique span_fp8::Acc16Policy : des débordements
+  // rapprochés passent le réseau au f32 pour un temps, puis il revient au f16. Autre chose que None : les
+  // lancements ont changé, un graphe capturé avant est à refaire. Toujours None sans acc16. launch l'appelle.
+  SpanFp8AccChange poll_accumulator();
+  // Les images débordées depuis la création (exact une fois le flux attendu) ; 0 sans acc16.
+  int overflow_frames() const;
 
  private:
   struct Impl;

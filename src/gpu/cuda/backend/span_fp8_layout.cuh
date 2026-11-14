@@ -51,7 +51,10 @@ class Device {
 };
 
 // Dégroupage : NCHW FP16 3×H×W -> NHWC 16 canaux à demi-résolution (canal = c·4 + a·2 + b ; 12 à 15 nuls).
-__global__ void unshuffle_kernel(const __half* in, __half* out, int height, int width) {
+// run_if non nul : seulement s'il vaut 1 (KP::run_if).
+__global__ void unshuffle_kernel(const __half* in, __half* out, int height, int width,
+                                 const int* run_if = nullptr) {
+  if (run_if != nullptr && *run_if == 0) return;
   const int w = width / 2;
   const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   if (idx >= (height / 2) * w) return;

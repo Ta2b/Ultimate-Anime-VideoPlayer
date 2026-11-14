@@ -109,19 +109,29 @@ termes de même signe dépassent 65 504, et des poids à queue lourde l'ont mont
 en 64 et dans K à plat, test des 48 canaux). Les images réelles de la porte n'y arrivent pas, une scène
 atypique le pourrait. Une borne prouvée (somme des |poids| × 448 ≤ 65 504) rangerait les poids des blocs
 environ 20 fois plus bas encore, en dénormaux pour les petits : écartée sans mesure de sa perte. Le garde-fou
-choisi ne coûte rien tant que rien ne déborde :
+ne coûte presque rien tant que rien ne déborde, et l'image débordée sort juste :
 
 - l'épilogue de chaque noyau à accumulateur f16 (`acc_value`) borne une somme infinie au plus grand f16 de son
   signe, et une somme NaN (débordée des deux côtés) à 0, avant alpha, biais et activation : aucun NaN ni infini
-  n'entre dans l'image ;
-- il écrit alors 1 dans un mot de la mémoire de l'hôte projetée (`KP::overflow`, `cudaHostAllocMapped`), sans
-  copie ni synchronisation par image ;
-- au lancement suivant, `SpanFp8Net::take_overflow` le voit, le réseau passe aux noyaux f32 (initialisés dès
-  la création sur les mêmes poids) et le moteur refait ses graphes (`SpanFp8Engine::body`), avec un mot au
-  journal. Une seule image est donc approchée (sommes bornées), les suivantes sont exactes ;
-- la porte appelle `take_overflow` après la validation et les cas durs (`settle_overflow`) : un débordement sur
-  l'une de ces images écarte la variante f16 du paquet, et la validation seule d'un paquet en f16 échoue (il se
-  refait). Le blanc plein et la mire saturée y sont venus pour cela.
+  ne se propage, et il écrit 1 dans un mot de l'appareil (`KP::overflow`), remis à 0 au début de chaque corps ;
+- derrière le corps f16, le même corps en f32 est lancé à chaque image (dégroupage, conv_1, blocs, conv_cat),
+  sur les mêmes poids, mais ses noyaux ne tournent que si ce mot vaut 1 (`KP::run_if`) : sinon chaque bloc rend
+  la main à sa première instruction. Il repart de l'entrée et réécrit tout ce que la queue lit ; to_pixel en f16
+  est suivi de même de to_pixel en f32 sous condition. L'image débordée est donc recalculée en f32 dans son
+  propre lancement, avant d'aller à l'anneau : rien de faux à l'écran, au prix d'un corps de plus pour elle ;
+- un fil compte les images débordées dans la mémoire de l'hôte projetée (`count_overflow_frame`), que
+  `span_fp8::Acc16Policy` lit sans synchronisation avant chaque corps (`SpanFp8Net::poll_accumulator`) : trois
+  images débordées en 240 lancements (un passage clair qui dure) passent le réseau au f32 pendant 2 400
+  lancements, puis il revient au f16 ; à chaque passage, le moteur refait ses graphes et le dit au journal ;
+- la porte lit ce compte après la validation et les cas durs (`settle_overflow`) : un débordement sur l'une de
+  ces images écarte la variante f16 du paquet (un modèle qui y déborde déborderait souvent), et la validation
+  seule d'un paquet en f16 échoue (il se refait). Le blanc plein et la mire saturée y sont venus pour cela.
+
+Première version (repli définitif en f32 au lancement suivant, image fautive bornée) : sur la RTX 4070 Ti, le
+b8f64 passe la porte avec le f16 (52,3 dB, −11 %), mais un passage clair de Re:Zero (épisode 18, vers 21 min 35 s) a
+déclenché le repli en lecture, et le SPAN est resté environ 1 ms plus lent jusqu'à la fin. Le recalcul de
+l'image seule garde le f16 pour le reste. Son coût en régime : 3·blocs + 4 lancements qui rendent la main
+aussitôt, et un d'un fil, à mesurer (temps SPAN du profil contre la version d'avant).
 
 ### SPAN FP16 en noyaux CUTLASS (lot 2 du fil SPAN, à mesurer)
 
