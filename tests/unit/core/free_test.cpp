@@ -361,7 +361,8 @@ TEST_CASE("free grid vsync : la source seule d'une paire sans instant tombe auss
     for (const OutputInstant& at : step.instants()) {
       CHECK(off_grid(*at.pts_us, origin, kVsync) == 0);
       CHECK(*at.pts_us - previous >= kVsync - kVsync / 8);  // jamais deux images pour un même vsync
-      if (at.is_source()) CHECK(std::abs(*at.pts_us - static_cast<std::int64_t>(k) * kSourcePeriod) <= kVsync);
+      if (at.is_source())
+        CHECK(std::abs(*at.pts_us - static_cast<std::int64_t>(k) * kSourcePeriod) <= kVsync);
       previous = *at.pts_us;
     }
   }
