@@ -127,6 +127,10 @@ bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, st
   return launch_body(stream, input, error) && launch_tail(stream, output, {}, error);
 }
 
+bool SpanFp8Net::take_overflow() {
+  return impl_->body->take_overflow();
+}
+
 bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string& error) {
   return impl_->body->launch_body(stream, input, error);
 }

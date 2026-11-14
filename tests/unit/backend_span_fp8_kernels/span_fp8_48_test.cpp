@@ -94,20 +94,11 @@ span_fp8::Package random_package(Random& random, int real = kReal, int blocks = 
   return package;
 }
 
-std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, const DeviceBytes& in,
-                        bool fp16 = false) {
-  SpanFp8Weights weights = span_fp8_view(package);
-  weights.width48 = width;
-  weights.fp16 = fp16;
-  SpanFp8Status status = SpanFp8Status::Ok;
-  std::string error;
-  const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
-  INFO(error);
-  REQUIRE(net != nullptr);
-  DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+// Un lancement de net sur in, la sortie 3 × 2H × 2W en double.
+std::vector<double> launch_once(SpanFp8Net& net, const DeviceBytes& in) {
   DeviceBytes out(kInCount * 4 * sizeof(__half));
-  net->bind(workspace.data);
-  REQUIRE(net->launch(nullptr, in.data, out.data, error));
+  std::string error;
+  REQUIRE(net.launch(nullptr, in.data, out.data, error));
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
   std::vector<__half> half(kInCount * 4);
   REQUIRE(cudaMemcpy(half.data(), out.data, half.size() * sizeof(__half), cudaMemcpyDeviceToHost) ==
@@ -115,6 +106,36 @@ std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, co
   std::vector<double> values(half.size());
   for (std::size_t i = 0; i < half.size(); ++i) values[i] = static_cast<double>(__half2float(half[i]));
   return values;
+}
+
+std::unique_ptr<SpanFp8Net> make_net(const span_fp8::Package& package, SpanFp8Width width,
+                                     bool fp16 = false) {
+  SpanFp8Weights weights = span_fp8_view(package);
+  weights.width48 = width;
+  weights.fp16 = fp16;
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string error;
+  std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
+  INFO(error);
+  REQUIRE(net != nullptr);
+  return net;
+}
+
+// La sortie de package sur in. overflowed non nul : vrai si l'accumulateur f16 a débordé au premier
+// lancement ; la sortie est alors celle du second, en f32 (SpanFp8Net::take_overflow), et celle du premier
+// doit déjà être finie (sommes bornées).
+std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, const DeviceBytes& in,
+                        bool fp16 = false, bool* overflowed = nullptr) {
+  const std::unique_ptr<SpanFp8Net> net = make_net(package, width, fp16);
+  DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+  net->bind(workspace.data);
+  std::vector<double> values = launch_once(*net, in);
+  if (overflowed == nullptr) return values;
+  *overflowed = net->take_overflow();
+  if (!*overflowed) return values;
+  CHECK(std::ranges::all_of(values, [](double v) { return std::isfinite(v); }));
+  CHECK_FALSE(net->take_overflow());  // une seule fois
+  return launch_once(*net, in);
 }
 
 // Diagnostic : les premières valeurs non finies de la sortie 3 × 2H × 2W, en plan, ligne et colonne, et leur
@@ -186,8 +207,11 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   REQUIRE(scales);
   package.scales = *scales;
 
-  const std::vector<double> padded = run(package, SpanFp8Width::Padded, in);
-  const std::vector<double> native = run(package, SpanFp8Width::Native, in);
+  // En acc16, ces poids font déborder quelques sommes : la sortie comparée est celle d'après le repli f32.
+  bool padded_over = false, native_over = false;
+  const std::vector<double> padded = run(package, SpanFp8Width::Padded, in, false, &padded_over);
+  const std::vector<double> native = run(package, SpanFp8Width::Native, in, false, &native_over);
+  if (acc16) WARN("débordement f16 : en 64 " << padded_over << ", K à plat " << native_over);
   warn_non_finite(padded, "en 64 dont 16 nuls");
   INFO("en 64 dont 16 nuls, la référence de ce test, doit rester finie");
   warn_non_finite(native, "K à plat");
@@ -212,6 +236,49 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   // référence FP16).
   CHECK(flat >= 45.0);
   CHECK(per_tap >= 45.0);
+}
+
+// Des poids uniformes à 64 canaux (le b8f64, chemin par défaut) font déborder l'accumulateur f16 dès la
+// première convolution : l'image reste finie, take_overflow le dit une fois, et la suite accumule en f32 sur
+// les mêmes poids, à l'arrondi près des poids rangés 16 fois plus bas (dénormaux seulement).
+TEST_CASE("SPAN FP8 acc16 : une somme débordée reste finie, puis le réseau passe au f32",
+          "[cuda][span_fp8]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  Random random;
+  span_fp8::Package package = random_package(random, kStored, 5, 1);
+  std::vector<__half> image(kInCount);
+  for (__half& value : image) value = __float2half(random.next() + 0.5F);
+  DeviceBytes in(kInCount * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), kInCount * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  SpanFp8Status status = SpanFp8Status::Ok;
+  std::string error;
+  const std::unique_ptr<SpanFp8Reference> reference =
+      SpanFp8Reference::create(span_fp8_view(package), kHeight, kWidth, status, error);
+  REQUIRE(reference != nullptr);
+  DeviceBytes scratch(kInCount * 4 * sizeof(__half));
+  REQUIRE(reference->run(nullptr, in.data, scratch.data, true, error));
+  float peaks[SpanFp8Reference::kPeaks];
+  REQUIRE(reference->peaks(peaks, error));
+  const auto scales = span_fp8::scales_from_peaks(std::span<const float>(peaks), package.blocks.size());
+  REQUIRE(scales);
+  package.scales = *scales;
+
+  const std::vector<double> plain = run(package, SpanFp8Width::Padded, in);  // f32
+  package.acc16 = true;
+  const std::unique_ptr<SpanFp8Net> net = make_net(package, SpanFp8Width::Padded);
+  DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+  net->bind(workspace.data);
+  const std::vector<double> bounded = launch_once(*net, in);
+  warn_non_finite(bounded, "acc16, premier lancement");
+  CHECK(std::ranges::all_of(bounded, [](double v) { return std::isfinite(v); }));
+  REQUIRE(net->take_overflow());
+  CHECK_FALSE(net->take_overflow());
+  const std::vector<double> after = launch_once(*net, in);
+  const double snr = snr_db(plain, after);
+  INFO("SNR du réseau replié contre le f32 : " << snr << " dB");
+  CHECK(snr >= 40.0);
+  CHECK_FALSE(net->take_overflow());  // les noyaux f32 n'écrivent pas le mot
 }
 
 TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_fp8]") {

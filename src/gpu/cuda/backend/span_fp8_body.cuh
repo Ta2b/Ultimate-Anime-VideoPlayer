@@ -99,6 +99,11 @@ class Body final : public SpanFp8Body {
  public:
   Body(int height, int width)
       : height_(height), width_(width), h_(height / 2), w_(width / 2), npix_(std::int64_t{h_} * w_) {}
+  ~Body() override {
+    if (overflow_host_ != nullptr) static_cast<void>(cudaFreeHost(overflow_host_));
+  }
+  Body(const Body&) = delete;
+  Body& operator=(const Body&) = delete;
 
   bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override;
   std::int64_t workspace_bytes() const override {
@@ -111,6 +116,14 @@ class Body final : public SpanFp8Body {
   void bind(void* base) override;
   bool launch_body(cudaStream_t stream, const void* input, std::string& error) override;
   bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error) override;
+  // Lecture sans synchronisation du mot que les noyaux f16 écrivent : un débordement se voit au plus tard
+  // un lancement après le sien.
+  bool take_overflow() override {
+    if (!acc16_ || overflow_host_ == nullptr || *static_cast<volatile int*>(overflow_host_) == 0)
+      return false;
+    acc16_ = false;
+    return true;
+  }
 
  private:
   struct BlockWeights {
@@ -143,6 +156,8 @@ class Body final : public SpanFp8Body {
   int used_ = kBlocks;  // blocs du modèle (étape 3.2c)
   std::array<float, kScaleCount> scales_{};
   bool acc16_ = false;
+  int* overflow_host_ = nullptr;  // mémoire de l'hôte projetée (KP::overflow) ; nulle sans acc16
+  int* overflow_dev_ = nullptr;   // sa vue d'appareil
 
   // Lancements : leurs paramètres portent les adresses de la zone de travail (bind).
   LC1 c1_;
@@ -189,6 +204,15 @@ bool Body<Ch, BlockAlg, Fp16>::upload(const SpanFp8Weights& weights, SpanFp8Stat
     return false;
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b)
     if (!upload_block(b, weights, status, error)) return false;
+  if (acc16_ && overflow_host_ == nullptr) {
+    void* host = nullptr;
+    if (!sent(cudaHostAlloc(&host, sizeof(int), cudaHostAllocMapped), "mot de débordement")) return false;
+    overflow_host_ = static_cast<int*>(host);
+    *overflow_host_ = 0;
+    void* dev = nullptr;
+    if (!sent(cudaHostGetDevicePointer(&dev, host, 0), "mot de débordement")) return false;
+    overflow_dev_ = static_cast<int*>(dev);
+  }
   status = SpanFp8Status::Ok;
   return true;
 }
@@ -234,12 +258,14 @@ void Body<Ch, BlockAlg, Fp16>::bind_block(std::size_t b, std::uint8_t* const (&x
   const std::uint8_t* xin = x[b % 2];
   std::uint8_t* xout = x[(b + 1) % 2];
   BlockWeights& bw = blocks_[b];
+  // Les deux accumulateurs sur les mêmes poids : le repli de take_overflow n'a qu'à changer de lancement.
   const auto init = [&](auto& plain, auto& half, const std::uint8_t* in, std::size_t i, const sk::KP& k) {
     const auto* in8 = reinterpret_cast<const EB*>(in);
-    if (acc16_)
-      half.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), k);
-    else
-      plain.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), k);
+    plain.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), k);
+    if (!acc16_) return;
+    sk::KP guarded = k;
+    guarded.overflow = overflow_dev_;
+    half.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), guarded);
   };
   {  // c1 + Relu -> FP8 ; pour le dernier bloc, aussi FP16 dans la tranche 3 (son relu1)
     sk::KP k;
@@ -320,12 +346,13 @@ void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
     p.bias = pix_b_.as<float>();
     const auto* cat_src = reinterpret_cast<const F16*>(cat_in);
     const auto* pix_src = reinterpret_cast<const F16*>(cat_out);
+    cat_.init(h_, w_, 1, 0, kConcat, Ch, cat_src, cat_w_.as<F16>(), k);
+    pix_.init(h_, w_, 3, 1, Ch, kPixel, pix_src, pix_w_.as<F16>(), p);
     if (acc16_) {
+      k.overflow = overflow_dev_;
+      p.overflow = overflow_dev_;
       cat16_.init(h_, w_, 1, 0, kConcat, Ch, cat_src, cat_w_.as<F16>(), k);
       pix16_.init(h_, w_, 3, 1, Ch, kPixel, pix_src, pix_w_.as<F16>(), p);
-    } else {
-      cat_.init(h_, w_, 1, 0, kConcat, Ch, cat_src, cat_w_.as<F16>(), k);
-      pix_.init(h_, w_, 3, 1, Ch, kPixel, pix_src, pix_w_.as<F16>(), p);
     }
   }
   attribute_ = c1_.attribute;

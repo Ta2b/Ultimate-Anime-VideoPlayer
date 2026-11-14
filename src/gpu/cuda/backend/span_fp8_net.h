@@ -78,8 +78,9 @@ class SpanFp8Net {
   // aussi les blocs FP8 en f16, poids rangés 16 fois plus bas (deuxième passe TensorRT, N3) ; 4 : un modèle à
   // 48 canaux se calcule en 48 (SpanFp8Width::Native) et non plus en 64 dont 16 nuls ; 5 : les tuiles de 48
   // colonnes chargent toutes leurs lignes (Cfg::kTM) et to_pixel reprend sa tuile de 64 : un paquet jugé par
-  // la version 4 l'a été avec un troisième plan faux.
-  static constexpr int kKernelsVersion = 5;
+  // la version 4 l'a été avec un troisième plan faux ; 6 : l'accumulateur f16 borne une somme débordée et
+  // passe au f32 (take_overflow), la porte juge aussi le blanc plein et la mire saturée.
+  static constexpr int kKernelsVersion = 6;
 
   // Envoie les poids sur l'appareil courant (FP8 pour les blocs) et prépare les lancements. height et width
   // sont déjà jugés par span_fp8::size_refusal. Nul si l'envoi échoue ; status et error disent pourquoi.
@@ -106,6 +107,12 @@ class SpanFp8Net {
   // de ce que write_rgba16 écrirait de la sortie FP16.
   bool launch_body(cudaStream_t stream, const void* input, std::string& error);
   bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error);
+
+  // Accumulateur f16 (SpanFp8Weights::acc16) : vrai une seule fois, quand une somme a débordé depuis la
+  // création. Le lancement fautif a borné ses sommes au plus grand f16 (rien d'infini ni de NaN dans
+  // l'image), et le réseau accumule désormais en f32, sur les mêmes poids : un graphe capturé avant porte
+  // encore les noyaux f16 et doit être refait. Faux sans acc16, ou si rien n'a débordé.
+  bool take_overflow();
 
  private:
   struct Impl;
