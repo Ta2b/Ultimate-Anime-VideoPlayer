@@ -144,6 +144,17 @@ std::optional<SpanInt8Lookup> outdated(const toml::table& receipt, const std::st
   return std::nullopt;
 }
 
+// Un reçu refusé : pour de bon, sauf s'il a été jugé par une porte plus ancienne, sur une autre carte ou par
+// d'autres noyaux (fp8, reçu v2 seulement), qui ne disent rien des noyaux d'aujourd'hui : il se rejuge, comme
+// un paquet admis (kKernelsVersion 5 : la version 4 refusait des paquets sains).
+SpanInt8Lookup refusal_lookup(const toml::table& receipt, const std::string& where, const SpanFp8Context* fp8,
+                              bool old_gate, const std::string& note) {
+  if (old_gate) return stale(note);
+  if (fp8 != nullptr)
+    if (auto old = outdated(receipt, where, *fp8, false)) return *old;
+  return refused(note);
+}
+
 // Repris dans « Ready: … » et les refus du menu : dans la langue de l'interface (C07-09).
 std::string variant_scores(const SpanInt8& variant) {
   return i18n::tr_format(
@@ -297,7 +308,7 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
                            variant.ssim_worst >= limits.min_ssim_worst;
   if (!receipt["passed"].value_or(false) || !scores_pass) {
     const std::string note = refusal_note(receipt, where, limits, scores, scores_pass, v2);
-    return old_gate ? stale(note) : refused(note);
+    return refusal_lookup(receipt, where, v2 ? fp8 : nullptr, old_gate, note);
   }
   // C46-06, C46-17 : un reçu qui n'est pas v2 (INT8, FP8 par Q/DQ, FP8 CUTLASS de l'outil Python) n'a que son
   // gain mesuré pour garantir qu'il vaut mieux que le FP16. Sans gain (--skip-speed-check, ou pas de trtexec

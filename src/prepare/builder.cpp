@@ -222,6 +222,13 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
   BuildPlan plan{.settings = engine_settings(*recipe, config.input_name, *profile),
                  .label = shapes_label(shapes)};
   plan.command = sanitize_trt11(plan.settings);
+  if (config.hwc8_io) {
+    // Après le nettoyage, qui retire les --inputIOFormats des réglages du fork (typage faible) : trtexec 11.3
+    // prend « hwc8 » seul, le type restant celui du graphe fortement typé.
+    constexpr std::string_view kHwc8 = " --inputIOFormats=hwc8 --outputIOFormats=hwc8";
+    plan.settings += kHwc8;
+    plan.command.kept += kHwc8;
+  }
   auto name = engine_name({.content = source.content_key,
                            .settings = plan.settings,
                            .runtime = config.runtime.token(),

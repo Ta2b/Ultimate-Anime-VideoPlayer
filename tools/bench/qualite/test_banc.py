@@ -18,6 +18,7 @@ import rapport  # noqa: E402
 import sources  # noqa: E402
 import chroma444  # noqa: E402
 import travail  # noqa: E402
+import rife_instants  # noqa: E402
 import rife_taille  # noqa: E402
 
 F16 = TensorProto.FLOAT16
@@ -265,6 +266,30 @@ class RifeTaille(unittest.TestCase):
         np.testing.assert_allclose(moved[:, 1:, :-2], img[:, :-1, 2:], atol=1e-6)
         half = rife_taille.warp(img, zero + 0.5, zero)
         np.testing.assert_allclose(half[:, :, :-1], (img[:, :, :-1] + img[:, :, 1:]) / 2, atol=1e-6)
+
+
+class RifeInstants(unittest.TestCase):
+    def test_milieu_rendu_tel_quel(self):
+        a, b = picture(3, 16, 24), picture(3, 16, 24)[:, ::-1, :].copy()
+        flow = np.zeros((4, 16, 24), np.float32)
+        mask = np.full((1, 16, 24), 0.3, np.float32)
+        np.testing.assert_allclose(rife_instants.blend_at(a, b, flow, mask, 0.5), a * 0.3 + b * 0.7, atol=1e-5)
+
+    def test_loi_de_melange_hors_du_milieu(self):
+        a, b = np.zeros((3, 8, 8), np.float32), np.ones((3, 8, 8), np.float32)
+        flow, mask = np.zeros((4, 8, 8), np.float32), np.full((1, 8, 8), 0.5, np.float32)
+        # logit(m) = logit(0,5) + B ln((1 − t) / t) : à t = 1/3, m = σ(2,591 ln 2), poids de a.
+        m = 1 / (1 + np.exp(-rife_instants.BLEND_LAW_B * np.log(2)))
+        np.testing.assert_allclose(rife_instants.blend_at(a, b, flow, mask, 1 / 3), 1 - m, atol=1e-5)
+
+    def test_mouvement_prolonge_en_ligne_droite(self):
+        # Un mouvement uniforme de 6 px (a vers b) au milieu : à t = 1/3, a est lue 2 px en arrière.
+        a = picture(3, 16, 32)
+        flow = np.zeros((4, 16, 32), np.float32)
+        flow[0], flow[2] = -3.0, 3.0
+        mask = np.full((1, 16, 32), 1.0, np.float32)
+        out = rife_instants.blend_at(a, a, flow, mask, 1 / 3)
+        np.testing.assert_allclose(out[:, :, 4:], a[:, :, 2:-2], atol=1e-4)
 
 
 if __name__ == "__main__":

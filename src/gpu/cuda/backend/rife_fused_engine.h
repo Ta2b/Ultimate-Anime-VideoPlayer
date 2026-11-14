@@ -129,6 +129,10 @@ class RifeFusedEngine final : public Engine {
   // n'y a écrit depuis.
   bool kept_intact(const SharedActivations& arena) const;
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
+  std::expected<std::int64_t, Refusal> load_blocks(nvinfer1::IRuntime& runtime,
+                                                   const std::filesystem::path& cache_dir,
+                                                   const RifeFusedKey& key,
+                                                   const std::shared_ptr<SharedActivations>& shared);
   std::size_t scratch_offset_for(SharedActivations& zone);
 
   std::unique_ptr<TrtEngine> encode_;
@@ -140,6 +144,10 @@ class RifeFusedEngine final : public Engine {
   kernels::RifeWarp warp_ = kernels::RifeWarp::Bilinear;
   kernels::Window window_;  // set_window
   kernels::RifeFusedLayout layout_;
+  // Les blocs lisent X et écrivent Y au format HWC8 (TrtEngine::input_pitch) : les noyaux de colle aussi.
+  bool hwc8_ = false;
+  // Le pas par pixel d'un tenseur de channels canaux pour les noyaux : 0 en plans.
+  int pitch(int channels) const { return hwc8_ ? kernels::rife_fused_hwc8_pitch(channels) : 0; }
   // Début des tampons intermédiaires dans la zone : au-dessus des activations de ses morceaux et de celles
   // des moteurs entiers de la même zone (SharedActivations::activation_peak, C03-01).
   std::size_t scratch_offset_ = 0;

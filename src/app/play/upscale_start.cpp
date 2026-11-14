@@ -42,6 +42,9 @@ UpscaleStage::~UpscaleStage() {
         "RIFE mouvement : {} passes ; {} paires à une passe, {} à plusieurs (dont {} sans passe au milieu)",
         rife_runs_, single_pairs_, multi_pairs_, direct_pairs_);
   }
+  if (strong_derived_ != 0)
+    log_channel("gpu")->info("paires fortes : {} instants déduits du milieu (moins de passes RIFE)",
+                             strong_derived_);
   if (setup_.rife_motion_calm != nullptr)
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
   if (halves())

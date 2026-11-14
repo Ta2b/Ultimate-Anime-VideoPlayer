@@ -237,7 +237,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   auto live = std::make_shared<LiveSettings>();
   live->set_rife_factor(rife_loaded ? factor_of(played) : Factor{});
   live->set_reduction(reduction_of(settings.downscale));
-  live->set_keep_poses(poses_kept(settings));
+  set_live_motion(*live, settings);
   live->set_pair_marks(settings.stats.pairs);
   const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;

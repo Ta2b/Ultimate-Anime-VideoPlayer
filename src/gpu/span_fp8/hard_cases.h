@@ -1,8 +1,8 @@
 // Le corpus de cas durs de la porte du SPAN FP8 (étape 3.7a) : des images synthétiques, déterministes, que
 // la vidéo de calibration n'apporte pas toujours et où la quantification se voit d'abord : traits d'un pixel
 // à 0, 30, 45 et 90°, rampes sombres en paliers de 8 bits, bords saturés, motifs fins, hautes lumières,
-// grain. Elles ne calibrent pas : la dérivation les juge seulement, au 99,9e centile de l'erreur et au pire
-// PSNR (derive.h, judge_hardened).
+// blanc plein, mire saturée, grain. Elles ne calibrent pas : la dérivation les juge seulement, au 99,9e
+// centile de l'erreur et au pire PSNR (derive.h, judge_hardened).
 #pragma once
 
 #include <cstdint>

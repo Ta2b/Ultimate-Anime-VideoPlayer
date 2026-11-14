@@ -159,11 +159,12 @@ struct PlayOptions {
   // --l2-keep (essai) : l'encodage gardé de RIFE fusionné tenu en L2 (gpu::kTrialL2Keep), pour mesurer
   // son gain ; éteint par défaut.
   bool l2_keep = false;
-  // --tiled-warp (essai) : le warp TensorRT calcule le mouvement du milieu par point du flot de chaque tuile
-  // (gpu::kTrialTiledWarp) ; l'image change un peu, éteint par défaut derrière la porte qualité.
-  bool tiled_warp = false;
   // --warp-l2 (essai) : le warp TensorRT tient le flot en L2 persistant (gpu::kTrialWarpL2) ; même image.
   bool warp_l2 = false;
+  // Les blocs du RIFE fusionné en E/S HWC8 sous TensorRT (gpu::kTrialRifeHwc8) : même image, −19 % par passe
+  // RIFE mesuré dans le lecteur sur la RTX 4070 Ti (docs/interpolation.md) ; allumé par défaut,
+  // --no-rife-hwc8 (essai) revient aux E/S en plans.
+  bool rife_hwc8 = true;
   // --span-native (essai) : au cran Équilibre, SPAN en FP16 par les noyaux CUTLASS du backend (canaux natifs,
   // b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par défaut jusqu'à la
   // mesure sur la carte (docs/span-fp8-cutlass.md, « SPAN FP16 natif dans le lecteur »).

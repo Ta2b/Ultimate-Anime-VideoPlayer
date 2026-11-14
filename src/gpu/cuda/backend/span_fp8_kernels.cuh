@@ -45,7 +45,53 @@ struct KP {
   // surf_w×surf_h pixels au plus (0 : pas d'anneau).
   RingSurface surface{};  // emplacement de l'anneau (ring_surface.h) ; object 0 : aucun
   int surf_w = 0, surf_h = 0;
+  // Accumulateur f16 seulement : un mot de la mémoire de l'hôte projetée (cudaHostAllocMapped), mis à 1
+  // quand une somme a débordé (infinie ou NaN). La somme est alors bornée à ±65504 (NaN à 0) avant
+  // l'épilogue, et le réseau passe à l'accumulateur f32 au lancement suivant (SpanFp8Net::take_overflow).
+  int* overflow = nullptr;
 };
+
+// Une valeur de l'accumulateur en unités du mma. Guard (accumulateur f16) : une somme débordée est bornée au
+// plus grand f16 de son signe (NaN, un débordement des deux signes, à 0) et hit le note.
+template <bool Guard>
+__device__ __forceinline__ float acc_value(float x, bool& hit) {
+  if constexpr (Guard) {
+    if (!isfinite(x)) {
+      hit = true;
+      return isnan(x) ? 0.f : copysignf(65504.f, x);
+    }
+  } else {
+    static_cast<void>(hit);
+  }
+  return x;
+}
+
+// Les sorties de la tuile m du fil, en unités réelles : accumulateur × alpha (par colonne ou global) + biais.
+// Tuile d'accumulateur (m, n) = a[(m + n*kMI)*4 + e] : e=0,1 -> ligne g, colonnes 2t,2t+1 ; e=2,3 -> g+8.
+// Vrai si une somme avait débordé (Guard, acc_value).
+template <int kNT, int kMI, bool Guard, class Element>
+__device__ __forceinline__ bool scaled_acc(float (&v)[kNT][4], const Element* a, const KP& tp, int m, int t,
+                                           int nt_used) {
+  bool hit = false;
+#pragma unroll
+  for (int n = 0; n < kNT; ++n) {
+    float2 bb =
+        n < nt_used ? __ldg(reinterpret_cast<const float2*>(tp.bias + n * 8 + 2 * t)) : make_float2(0.f, 0.f);
+    const float2 aa = tp.alpha_col != nullptr && n < nt_used
+                          ? __ldg(reinterpret_cast<const float2*>(tp.alpha_col + n * 8 + 2 * t))
+                          : make_float2(tp.alpha, tp.alpha);
+    v[n][0] = acc_value<Guard>(float(a[(m + n * kMI) * 4 + 0]), hit) * aa.x + bb.x;
+    v[n][1] = acc_value<Guard>(float(a[(m + n * kMI) * 4 + 1]), hit) * aa.y + bb.y;
+    v[n][2] = acc_value<Guard>(float(a[(m + n * kMI) * 4 + 2]), hit) * aa.x + bb.x;
+    v[n][3] = acc_value<Guard>(float(a[(m + n * kMI) * 4 + 3]), hit) * aa.y + bb.y;
+  }
+  return hit;
+}
+
+// Rare : plusieurs fils écrivent la même valeur, sans atomique.
+__device__ __forceinline__ void note_overflow(const KP& tp, bool hit) {
+  if (hit && tp.overflow != nullptr) *reinterpret_cast<volatile int*>(tp.overflow) = 1;
+}
 
 __device__ __forceinline__ float tanh_approx(float x) {
   float y;
@@ -158,6 +204,8 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
   const int warp_m = warp_idx % Mma::WarpCount::kM;
   const long row_base = long(tile.m()) * Mma::Shape::kM + warp_m * kWarpM;
   const int nt_used = tp.ncols >> 3;
+  constexpr bool kGuard = std::is_same_v<typename Mma::FragmentC::Element, cutlass::half_t>;
+  bool hit = false;  // une somme de l'accumulateur f16 débordée (acc_value)
 
 #pragma unroll
   for (int m = 0; m < kMI; ++m) {
@@ -166,18 +214,7 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
     // même : ils sont collectifs au warp.
     const bool in0 = r0 < tp.rows, in1 = r1 < tp.rows;
     float v[kNT][4];
-#pragma unroll
-    for (int n = 0; n < kNT; ++n) {
-      float2 bb = n < nt_used ? __ldg(reinterpret_cast<const float2*>(tp.bias + n * 8 + 2 * t))
-                              : make_float2(0.f, 0.f);
-      const float2 aa = tp.alpha_col != nullptr && n < nt_used
-                            ? __ldg(reinterpret_cast<const float2*>(tp.alpha_col + n * 8 + 2 * t))
-                            : make_float2(tp.alpha, tp.alpha);
-      v[n][0] = float(a[(m + n * kMI) * 4 + 0]) * aa.x + bb.x;
-      v[n][1] = float(a[(m + n * kMI) * 4 + 1]) * aa.y + bb.y;
-      v[n][2] = float(a[(m + n * kMI) * 4 + 2]) * aa.x + bb.x;
-      v[n][3] = float(a[(m + n * kMI) * 4 + 3]) * aa.y + bb.y;
-    }
+    hit |= scaled_acc<kNT, kMI, kGuard>(v, a, tp, m, t, nt_used);
     if constexpr (Mode == 0) {
 #pragma unroll
       for (int n = 0; n < kNT; ++n) {
@@ -261,6 +298,7 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
       }
     }
   }
+  if constexpr (kGuard) note_overflow(tp, hit);
 }
 
 // EIn : float_e4m3_t ou half_t. Acc : float ou half_t (accumulateur du mma). TN : colonnes du bloc, 64 ou 48
@@ -272,16 +310,31 @@ template <class EIn, int TM, int TK, int WM, int Stages, class Acc = float,
 struct Cfg {
   using E = EIn;
   static constexpr int kN = TN;
+  // À 48 colonnes, trois warps au lieu de quatre (96 lignes de tuile pour 128) : la carte des fils de CUTLASS
+  // (PitchLinearWarpRakedThreadMap) range les 48 lignes de la tuile des poids par 8 lignes et par warp, et
+  // divise 6 passes entre 4 warps en entier, soit une passe : les lignes 32 à 47 n'étaient jamais chargées,
+  // et la mémoire partagée gardait ce qu'un autre noyau y avait laissé (bleu faux de to_pixel, NaN des
+  // blocs à 48 canaux, résultats qui changent avec l'ordre des lancements). 6 passes pour 3 warps tombent
+  // juste ; covers ci-dessous le vérifie à la compilation.
+  static constexpr int kTM = TN == 48 ? TM / 4 * 3 : TM;
   static constexpr bool kFp8 = cutlass::sizeof_bits<EIn>::value == 8;
   using Inst = typename std::conditional<kFp8, cutlass::gemm::GemmShape<16, 8, 32>,
                                          cutlass::gemm::GemmShape<16, 8, 16>>::type;
   using Dummy = cutlass::epilogue::thread::LinearCombination<EIn, 8, Acc, float>;  // jamais exécuté
   using Base = typename cutlass::conv::kernel::DefaultConv2dFprop<
       EIn, cutlass::layout::TensorNHWC, EIn, cutlass::layout::TensorNHWC, EIn, cutlass::layout::TensorNHWC,
-      Acc, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89, cutlass::gemm::GemmShape<TM, TN, TK>,
+      Acc, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm89, cutlass::gemm::GemmShape<kTM, TN, TK>,
       cutlass::gemm::GemmShape<WM, TN, TK>, Inst, Dummy,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, Stages, cutlass::arch::OpMultiplyAdd,
       Alg>::Kernel;
+
+  // Une carte des fils couvre sa tuile entière : passes × fils × éléments par accès = éléments de la tuile.
+  template <class Map>
+  static constexpr bool covers =
+      Map::Iterations::kContiguous * Map::Iterations::kStrided * Map::kThreads * Map::kElementsPerAccess ==
+      Map::Shape::kContiguous * Map::Shape::kStrided;
+  static_assert(covers<typename Base::Mma::IteratorA::ThreadMap>, "tuile des activations chargée en partie");
+  static_assert(covers<typename Base::Mma::IteratorB::ThreadMap>, "tuile des poids chargée en partie");
 };
 
 // Un lancement : paramètres CUTLASS construits une fois, lancement compatible avec la capture de graphe.

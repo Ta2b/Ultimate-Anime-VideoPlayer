@@ -40,6 +40,10 @@ struct TrtexecConfig {
   // qu'un trtexec remplacé depuis (mise à jour à moitié faite) ne construise rien (A05-05). Vide : pas
   // de vérification (tests).
   std::string trtexec_sha256;
+  // Entrées et sorties au format HWC8 (FP16, canaux par pixel arrondis au multiple de 8) au lieu des plans :
+  // les blocs du RIFE fusionné, dont les noyaux de colle écrivent et lisent ce format
+  // (gpu/cuda/backend/rife_fused_kernels.h). Haché dans la clé : un moteur en plans ne sert pas à sa place.
+  bool hwc8_io = false;
 };
 
 // Vérifie un moteur avant sa publication, par exemple en le désérialisant.

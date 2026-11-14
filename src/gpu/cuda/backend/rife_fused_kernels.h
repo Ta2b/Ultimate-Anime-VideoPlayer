@@ -8,6 +8,11 @@
 // sont reproduits aux mêmes endroits. Une exception voulue : la grille des warps, calculée en FP32 depuis la
 // position en pixels et non lue dans le maillage FP16 de l'entrée v1 (A03-20). L'écart au graphe vient de là
 // et de l'ordre des sommes.
+//
+// X_k et Y_k sont rangés en plans (pitch 0, NCHW) ou par pixel (pitch > 0 : les canaux du pixel se suivent,
+// complétés de zéros jusqu'à pitch, un multiple de 8). Le second est le format HWC8 de TensorRT en FP16 :
+// des blocs construits avec --inputIOFormats=hwc8 --outputIOFormats=hwc8 les lisent et les écrivent tels
+// quels, sans les copies de reformatage qui prenaient 41 % du dernier bloc (docs/interpolation.md).
 #pragma once
 
 #include <cuda_runtime_api.h>
@@ -21,6 +26,7 @@ struct FusedFlowSource {
   int height = 0;           // yh
   int width = 0;            // yw
   int scale = 1;            // facteur du Resize de sortie du bloc (32 à 1, puissance de deux)
+  int pitch = 0;            // 0 : plans ; sinon canaux par pixel (56 en HWC8)
 };
 
 // L'entrée X_0 (15 canaux) : moyenne 2 × 2 de l'image A, de l'image B, de leurs encodages et de l'instant.
@@ -34,6 +40,7 @@ struct FusedEntryParams {
   const void* encode = nullptr;    // 4 plans : l'encodage de A
   const void* encode_b = nullptr;  // 4 plans : celui de B (deux emplacements qui alternent, sans copie)
   void* x = nullptr;               // 15 × out_height × out_width
+  int x_pitch = 0;                 // 0 : plans ; 16 : par pixel (HWC8)
 };
 
 // L'entrée X_k d'un bloc k ≥ 1 (28 canaux) : flot accumulé des blocs 0 à k-1, warp des images et de leurs
@@ -51,6 +58,7 @@ struct FusedGlueParams {
   const void* encode = nullptr;    // A
   const void* encode_b = nullptr;  // B
   void* x = nullptr;
+  int x_pitch = 0;  // 0 : plans ; 32 : par pixel (HWC8)
 };
 
 // La fin : flot du dernier bloc ajouté, puis soit l'image (warp des deux images, masque sigmoïde, mélange),
@@ -63,6 +71,8 @@ struct FusedFinishParams {
   const void* y_last = nullptr;  // sortie du dernier bloc : 52 canaux à (height / 2) × (width / 2)
   int y_height = 0;
   int y_width = 0;
+  int x_pitch = 0;  // rangement de x_last et de y_last (voir plus haut)
+  int y_pitch = 0;
   void* image = nullptr;  // 3 plans, ou nul
   void* flow = nullptr;   // 4 plans (variante mouvement)
   void* mask = nullptr;   // 1 plan (variante mouvement)

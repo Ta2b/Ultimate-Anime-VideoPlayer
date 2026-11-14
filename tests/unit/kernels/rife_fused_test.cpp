@@ -101,6 +101,31 @@ TEST_CASE("RIFE fusionné : la disposition des tampons, alignée, sans recouvrem
   CHECK(layout.bytes > std::size_t{80} << 20U);
 }
 
+TEST_CASE("RIFE fusionné : en HWC8, X et Y prennent leurs canaux arrondis au multiple de 8",
+          "[kernels][rife_fused]") {
+  CHECK(rife_fused_hwc8_pitch(15) == 16);
+  CHECK(rife_fused_hwc8_pitch(28) == 32);
+  CHECK(rife_fused_hwc8_pitch(52) == 56);
+  const RifeFusedLayout planes = rife_fused_layout(kV425, 768, 1280);
+  const RifeFusedLayout hwc8 = rife_fused_layout(kV425, 768, 1280, true);
+  CHECK(hwc8.encode == planes.encode);
+  CHECK(hwc8.x[0] == planes.x[0]);
+  std::size_t end = hwc8.x[0];
+  for (int k = 0; k < kV425.blocks; ++k) {
+    const auto i = static_cast<std::size_t>(k);
+    const FusedDims x = rife_fused_x(kV425, k, 768, 1280);
+    const FusedDims y = rife_fused_y(kV425, k, 768, 1280);
+    CHECK(hwc8.x[i] == end);
+    const FusedDims xp{.channels = rife_fused_hwc8_pitch(x.channels), .height = x.height, .width = x.width};
+    const FusedDims yp{.channels = rife_fused_hwc8_pitch(y.channels), .height = y.height, .width = y.width};
+    end += fused_align(static_cast<std::size_t>(xp.elements()) * 2);
+    CHECK(hwc8.y[i] == end);
+    end += fused_align(static_cast<std::size_t>(yp.elements()) * 2);
+  }
+  CHECK(hwc8.bytes == end);
+  CHECK(hwc8.bytes > planes.bytes);
+}
+
 // Sans flot (les Y sont nuls), le warp ne déplace rien : l'image A de X1 est celle de X0 quand les deux
 // réduisent de la même manière, et les canaux de flot sont nuls.
 TEST_CASE("La référence : un flot nul laisse les images en place", "[kernels][rife_fused]") {

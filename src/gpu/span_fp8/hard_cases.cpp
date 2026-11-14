@@ -1,6 +1,7 @@
 #include "gpu/span_fp8/hard_cases.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -73,6 +74,18 @@ std::vector<HardCase> hard_cases(int width, int height) {
     const double dx = x - width / 2.0, dy = y - height / 2.0;
     const double r = std::min(width, height) / 4.0;
     gray(rgb, dx * dx + dy * dy < r * r ? 255 : 224 + x * 32 / width);
+  }));
+  // Blanc plein : toutes les entrées au maximum, la somme la plus haute qu'une image puisse donner aux
+  // premières convolutions (accumulateur f16, SpanFp8Net::take_overflow).
+  out.push_back(draw("blanc plein", width, height, [](int, int, std::uint8_t (&rgb)[3]) { gray(rgb, 255); }));
+  // Mire saturée : huit barres verticales à 100 % (blanc, jaune, cyan, vert, magenta, rouge, bleu, noir),
+  // bits rouge, vert et bleu de haut en bas.
+  out.push_back(draw("mire saturée", width, height, [=](int x, int, std::uint8_t (&rgb)[3]) {
+    constexpr std::array<unsigned, 8> kBars = {0b111U, 0b110U, 0b011U, 0b010U,
+                                               0b101U, 0b100U, 0b001U, 0b000U};
+    const unsigned bits = kBars[static_cast<std::size_t>(x * 8 / width)];
+    for (unsigned c = 0; c < 3; ++c)
+      rgb[c] = static_cast<std::uint8_t>(((bits >> (2U - c)) & 1U) != 0 ? 255 : 0);
   }));
   // Grain : gris 96 et bruit uniforme de ±12 niveaux, d'un générateur congruentiel fixe.
   out.push_back(draw("grain", width, height,

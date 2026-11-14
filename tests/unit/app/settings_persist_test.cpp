@@ -154,6 +154,28 @@ TEST_CASE("play.toml : l'échelle par paire, absente d'un ancien fichier, s'enre
   std::filesystem::remove(path);
 }
 
+// Un play.toml d'avant « moins de passes RIFE sur les mouvements rapides » se lit, l'option éteinte ;
+// allumée, elle se relit.
+TEST_CASE("play.toml : moins de passes sur les paires fortes, absent d'un ancien fichier, s'enregistre",
+          "[app][settings][strong_middle]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-strong-middle.toml";
+  REQUIRE(save_settings(path, PlaySettings{}));
+  std::string text = read_text(path);
+  const std::size_t line = text.find("strong_middle = false\n");
+  REQUIRE(line != std::string::npos);
+  text.erase(line, std::string("strong_middle = false\n").size());
+  write_text(path, text);
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK_FALSE(old->strong_middle);
+  old->strong_middle = true;
+  REQUIRE(save_settings(path, *old));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->strong_middle);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
   std::filesystem::remove_all(dir);

@@ -104,6 +104,25 @@ f32 des mma FP8 tourne à la moitié du débit. Pour que les sommes tiennent en 
 avec un maximum de 448 / 16 par canal (`kAcc16Headroom`), l'échelle reprise par `alpha_col`. À mesurer sur la
 RTX : `kernels_ms_acc16` du reçu contre `kernels_ms`, et la perte de PSNR qu'il note.
 
+**Garde-fou (`kKernelsVersion` 6).** La marge de 16 borne un produit (448 × 28 = 12 544), pas une somme : 576
+termes de même signe dépassent 65 504, et des poids à queue lourde l'ont montré sur la carte (NaN dans le calcul
+en 64 et dans K à plat, test des 48 canaux). Les images réelles de la porte n'y arrivent pas, une scène
+atypique le pourrait. Une borne prouvée (somme des |poids| × 448 ≤ 65 504) rangerait les poids des blocs
+environ 20 fois plus bas encore, en dénormaux pour les petits : écartée sans mesure de sa perte. Le garde-fou
+choisi ne coûte rien tant que rien ne déborde :
+
+- l'épilogue de chaque noyau à accumulateur f16 (`acc_value`) borne une somme infinie au plus grand f16 de son
+  signe, et une somme NaN (débordée des deux côtés) à 0, avant alpha, biais et activation : aucun NaN ni infini
+  n'entre dans l'image ;
+- il écrit alors 1 dans un mot de la mémoire de l'hôte projetée (`KP::overflow`, `cudaHostAllocMapped`), sans
+  copie ni synchronisation par image ;
+- au lancement suivant, `SpanFp8Net::take_overflow` le voit, le réseau passe aux noyaux f32 (initialisés dès
+  la création sur les mêmes poids) et le moteur refait ses graphes (`SpanFp8Engine::body`), avec un mot au
+  journal. Une seule image est donc approchée (sommes bornées), les suivantes sont exactes ;
+- la porte appelle `take_overflow` après la validation et les cas durs (`settle_overflow`) : un débordement sur
+  l'une de ces images écarte la variante f16 du paquet, et la validation seule d'un paquet en f16 échoue (il se
+  refait). Le blanc plein et la mire saturée y sont venus pour cela.
+
 ### SPAN FP16 en noyaux CUTLASS (lot 2 du fil SPAN, à mesurer)
 
 `SpanFp8Weights::fp16` calcule le même graphe avec les blocs en FP16 : aucune quantification, les poids du
@@ -215,7 +234,7 @@ Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « É
 | Taille de travail (étape 3.7a) | `media::reduce_still`, `span_still_reduce` | chaque image entière est d'abord ramenée à la taille de travail de la chaîne par le filtre du menu « Réduction » (Area, Spline36, bilinéaire, cubiques B/C), puis découpée : la calibration et la validation voient ce que SPAN voit en lecture |
 | Calibration | `Backend::derive_span_fp8` (`tensorrt_span_derive.cpp`, `span_fp8_ref.cu`) | 8 images : le SPAN en FP16 par les mêmes convolutions CUTLASS (accumulation FP32) relève le maximum de \|valeur\| des 25 tenseurs ; échelle = maximum × 1,25 / 448, comme l'outil Python |
 | Validation | idem | 4 images mises de côté (une sur trois) : sortie du réseau FP8 contre la même référence FP16, PSNR et SSIM de `quantize_span.py` (`gpu/span_fp8/metrics.cpp`) ; garde-fous du reçu : 42 dB moyen, 38 dB pire, SSIM pire 0,985 |
-| Porte durcie (étape 3.7a) | `gpu/span_fp8/hard_cases.{h,cpp}`, `judge_hardened` | neuf cas durs synthétiques à la taille des images (traits d'un pixel à 0, 30, 45 et 90°, rampes sombres en paliers 8 bits, bords saturés, motifs fins, hautes lumières, grain), jugés sans calibrer ; sur la validation et les cas durs, 99,9e centile de \|FP8 − FP16\| ≤ 4/255 et ≤ 2/255 sur les pixels sombres (luminance < 32/255), pire PSNR des cas durs ≥ 36 dB. Seuils de départ du plan. **Porte 2 (04/11, choix de Tatoub)** : sur la RTX 4070 Ti, le b8f64 fait 52 dB sur les vraies images mais les cas durs synthétiques montent à 125/255 au 99,9e centile (et une marge ×2 ou ×4 sur les échelles n'y change rien) ; seules les images de validation décident désormais (centiles compris), les cas durs sont relevés au reçu (`hard_psnr_worst_db`, `hard_error_p999_worst`) et l'œil juge. `gate_version = 2` au reçu : un refus d'une porte plus ancienne, d'une autre carte ou d'autres noyaux se refait (`SpanInt8Lookup::stale`) **Porte 3 (04/11)** : les seuils de départ refusaient tout le monde (b8f64 à 8,1/255 et 3,6/255 sombre, b5f48 à 5,4/255 et 3,0/255, en 720p sur la RTX 4070 Ti) ; réglés comme le plan le prévoyait à 1,25 × le b8f64 : 10/255 et 4,5/255. `gate_version = 3`, les refus de la porte 2 se refont ; la note de refus dit quand c'est le centile qui refuse, et non plus les seuils de PSNR. |
+| Porte durcie (étape 3.7a) | `gpu/span_fp8/hard_cases.{h,cpp}`, `judge_hardened` | onze cas durs synthétiques à la taille des images (traits d'un pixel à 0, 30, 45 et 90°, rampes sombres en paliers 8 bits, bords saturés, motifs fins, hautes lumières, blanc plein, mire saturée à 100 %, grain ; le blanc plein et la mire depuis `kKernelsVersion` 6, pour l'accumulateur f16), jugés sans calibrer ; sur la validation et les cas durs, 99,9e centile de \|FP8 − FP16\| ≤ 4/255 et ≤ 2/255 sur les pixels sombres (luminance < 32/255), pire PSNR des cas durs ≥ 36 dB. Seuils de départ du plan. **Porte 2 (04/11, choix de Tatoub)** : sur la RTX 4070 Ti, le b8f64 fait 52 dB sur les vraies images mais les cas durs synthétiques montent à 125/255 au 99,9e centile (et une marge ×2 ou ×4 sur les échelles n'y change rien) ; seules les images de validation décident désormais (centiles compris), les cas durs sont relevés au reçu (`hard_psnr_worst_db`, `hard_error_p999_worst`) et l'œil juge. `gate_version = 2` au reçu : un refus d'une porte plus ancienne, d'une autre carte ou d'autres noyaux se refait (`SpanInt8Lookup::stale`) **Porte 3 (04/11)** : les seuils de départ refusaient tout le monde (b8f64 à 8,1/255 et 3,6/255 sombre, b5f48 à 5,4/255 et 3,0/255, en 720p sur la RTX 4070 Ti) ; réglés comme le plan le prévoyait à 1,25 × le b8f64 : 10/255 et 4,5/255. `gate_version = 3`, les refus de la porte 2 se refont ; la note de refus dit quand c'est le centile qui refuse, et non plus les seuils de PSNR. |
 | Reçu v2 (étape 3.7b) | `receipt_text`, `find_span_variant` avec `SpanFp8Context` | `ajp-span-fp8c-v2` : en plus des clés de l'outil Python, `gpu_arch`, `kernels_version` (`SpanFp8Net::kKernelsVersion`, à augmenter à chaque changement des noyaux), `blocks`, `channels`, `accumulator`, les pires centiles, `validated_sizes` et `refused_sizes`. La chaîne refuse un reçu d'une autre architecture ou d'autres noyaux ; une taille de travail non jugée offre une validation seule (`validate_span_size` : échelles du paquet telles quelles, ~10 s), qui ajoute la taille à l'une des deux listes sans toucher au paquet. Un reçu v1 (outil Python) se lit encore mais ne sert pas l'Auto |
 | Auto (étape 3.6) | `auto_config.cpp`, `span_variant_order`, `tick_span_auto(…, quiet)` | les préréglages posent SPAN au cran Performance : la plus basse précision qui passe la porte. Ordre des variantes : FP8 CUTLASS (reçu v2 exigé), INT8, sinon le FP16 d'origine ; le FP8 par Q/DQ (seuils lâches) n'entre pas. La préparation se fait en silence, sans rouvrir la chaîne (le paquet sert à l'ouverture suivante), sur un flux CUDA à la priorité la plus basse, refusée si la VRAM libre est sous 1,5 × le besoin estimé |
 | Choix dans la liste des modèles | `image_tab` (`settings_chain_tabs.cpp`), `prepare_span_fp8` (`player_engines.cpp`), `chain_setup.cpp` | sur une carte qui calcule le SPAN FP8, chaque modèle SPAN paraît deux fois dans Image IA > Modèle : tel quel (FP16) et « · FP8 » (cran Performance, réglage à la main). Le FP8 choisi, la prochaine ouverture d'une vidéo prépare le paquet sur l'écran de chargement, comme un moteur qui se construit (« Préparation du moteur SPAN », le même écran et la même barre qu'un moteur FP16, q annule), puis lit en FP8 ; une taille de travail nouvelle ne coûte qu'une validation (~10 s). Un refus laisse le FP16, la raison au journal. Les préréglages ne posent plus le FP8 (Équilibre) tant que qualité et gain ne sont pas jugés ; l'assistant et le banc n'y touchent pas |
@@ -269,17 +288,19 @@ moteur » de SPAN, le temps par image et les images en retard, et une capture `-
 (attendu : identique à TensorRT FP16 au FP16 près). Si le b5f48 natif bat TensorRT FP16 et le b8f64 FP8, il
 devient le défaut au cran Équilibre, sous Linux et sous Windows (#802 y construit les noyaux).
 
-### RTX 30 et RTX 50, et l'essai au chargement
+### RTX 50, et l'essai au chargement
 
-Les noyaux du FP16 natif n'emploient que le `mma` FP16 m16n8k16 et la copie asynchrone (`cp.async`) : rien
-qu'Ampere n'ait. Ils sont compilés à part (`span_fp8_net16.cu`, bibliothèque `ajp_backend_span_fp16_kernels`)
-pour `86-real;89-real;120`, et `SpanFp8Net::supported_fp16_device` prend sm 8.6 (RTX 30), 8.9 (RTX 40) et
-12.0 (RTX 50) ; le backend l'annonce par `BackendCaps::span_fp16_cutlass` (interface 42), que
-`--span-native` demande. Le FP8 reste à Ada seule (`supported_device`). Les A100 (sm 8.0) et les RTX 20
-(sm 7.5, sans `cp.async` ni m16n8k16) ne sont pas pris : Turing demanderait une boucle CUTLASS à deux
-étages et le `mma` m16n8k8.
+Les noyaux du FP16 natif sont dans la même bibliothèque que le FP8 (`ajp_backend_span_fp8_kernels`,
+`89-real;120`) : `SpanFp8Net::supported_fp16_device` prend sm 8.9 (RTX 40) et 12.0 (RTX 50), et le backend
+l'annonce par `BackendCaps::span_fp16_cutlass` (interface 42), que `--span-native` demande. La #811 les avait
+mis dans une bibliothèque à part, compilée aussi pour sm 8.6 (RTX 30) : `net_kernel<…>` de conv_cat et de
+to_pixel est le même type dans les deux fichiers, et la séparation a cassé to_pixel pour tout le monde (le
+troisième plan à 21 dB, FP8 compris ; le FP8 b8f64 était refusé au chargement et la lecture retombait en
+TensorRT FP16). Le bisect sur la RTX 4070 Ti l'a désignée ; la bibliothèque unique d'avant est revenue, et
+les RTX 30 avec elle sont abandonnées : le natif ne gagne de toute façon pas (mesure ci-dessous). Les A100
+(sm 8.0) et les RTX 20 (sm 7.5) ne sont pas prises non plus.
 
-Ces noyaux n'ont tourné devant personne hors d'Ada. Le chargement d'un paquet FP16 les juge donc sur la
+Ces noyaux n'ont tourné devant personne sur une RTX 50. Le chargement d'un paquet FP16 les juge donc sur la
 carte (`span_fp8_check.{h,cpp}`) : une image d'essai (rampes, ondes, marches) passe par le réseau à la taille
 de la vidéo, et le coin haut-gauche de la sortie se compare au SPAN calculé en f32 sur le processeur
 (`gpu/span_fp8/forward.{h,cpp}`, une boucle simple écrite à part des noyaux) sur la découpe 64 × 64 du même
@@ -289,6 +310,65 @@ TensorRT FP16 ; sinon le journal donne l'écart (« sortie de la carte à … dB
 référence FP16 des noyaux colle au FP32 à 78,8 dB et le FP8 se tient vers 50 dB : des noyaux faux tombent
 bien plus bas. Le calcul du processeur rend ce que l'interpréteur de l'IR rend du vrai b5f48 à 4·10⁻⁶ près
 (test caché `[.span_b5f48]`), et l'agrandissement au plus proche d'un paquet construit pour (test ordinaire).
+
+### Mesure sur la RTX 4070 Ti : le FP16 natif ne gagne pas
+
+Banc direct (`ajp_span_fp8_run`, graphe CUDA, trois tours ABAB, une image 1080p) contre le moteur TensorRT
+FP16 du lecteur :
+
+| Réseau | Noyaux FP16 natifs | TensorRT FP16 |
+|---|---:|---:|
+| b5f48, 48 canaux à plat | 13,4 ms (12,0 en acc16) | 11,2 à 11,45 ms |
+| b5f48, rangé en 64 (`--padded`) | 12,35 ms | |
+| b8f64 | 18,75 ms | 15,56 ms |
+
+Le natif est de 5 à 20 % plus lent que TensorRT : il ne sert pas de marge. En plus, le corps à 48 canaux à plat
+(`kFewChannels`, blocs en FP16) rend 100 % de NaN, en acc16 comme en `--per-tap` ; l'essai au chargement
+l'a bien refusé en lecture (« nan dB »), et la lecture est restée sur TensorRT FP16. Le corps à 64 canaux est
+juste sur R et V (83 dB contre ONNX Runtime). Le bleu à 21 dB de cette construction locale (nvcc 13.4.92),
+aussi en FP8, reste à confirmer par `ajp_span_fp8_kernel_tests` sur la construction de la CI : la rc.13 de la
+CI mesurait son FP8 b8f64 à 49,9 dB en moyenne, ce qu'un bleu faux ne donnerait pas.
+
+Conséquence : `--span-native` reste éteint, les NaN de `kFewChannels` en FP16 ne valent pas d'être corrigés
+tant que rien ne laisse espérer un gain, et la variante Turing (RTX 20) n'est pas écrite.
+
+## Tuiles de 48 colonnes : lignes des poids jamais chargées (kKernelsVersion 5)
+
+Depuis les noyaux à 48 colonnes (kKernelsVersion 4), to_pixel tournait sur une tuile de 48 colonnes, comme les
+blocs d'un modèle à 48 canaux. Avec 128 fils (quatre warps), la carte des fils de CUTLASS
+(`PitchLinearWarpRakedThreadMap`) range la tuile des poids par 8 lignes et par warp : 48 lignes font 6 passes de
+warp, et 6 / 4 se divise en entier, soit une passe par warp. Les lignes 32 à 47 n'étaient jamais chargées en
+mémoire partagée, et le calcul lisait ce qu'un autre noyau y avait laissé. Effets mesurés sur la RTX 4070 Ti :
+
+- le troisième plan de to_pixel (canaux 32 à 47, le bleu) à 21 dB, en FP8 comme en FP16, 48 ou 64 canaux :
+  le FP8 b8f64 refusé au chargement, la lecture retombée sur TensorRT FP16 ;
+- les blocs à 48 canaux en NaN (FP16 et FP8 natifs, K à plat ou par position) ;
+- des résultats qui changent avec l'ordre des lancements (« l'épilogue de to_pixel écrit l'anneau au bit
+  près » passe une fois sur trois).
+
+Correction : à 48 colonnes, la tuile prend trois warps (96 lignes au lieu de 128, `Cfg::kTM`), 6 passes pour 3
+warps ; to_pixel reprend la tuile de 64 colonnes d'avant (48 sorties utiles, les autres masquées). `Cfg` vérifie
+à la compilation que les cartes des fils des deux opérandes couvrent leur tuile entière. Les paquets jugés par la
+version 4 se revalident.
+
+## Balayage des formes de tuile (`ajp_span_tile_bench`)
+
+Le SPAN natif n'a qu'une forme de tuile par précision (FP16 : 128 × 64 × 32, warp 32, 4 étages ; FP8 :
+128 × 64 × 64, warp 32, 3 étages), quand TensorRT en essaie des dizaines à la construction. Avant de juger le
+natif contre TensorRT, `ajp_span_tile_bench [hauteur largeur] [--iterations N]` lance seule la convolution 3×3
+des blocs (18 des 21 convolutions d'un b8f64) sous chaque forme, en FP16 et en FP8, à 64 et 48 canaux, et dit
+le temps et les TFLOPS de chacune. Une forme nettement plus rapide que celle du lecteur se reporte dans
+`Body` (`span_fp8_body.cuh`), puis se juge sur le réseau entier (`ajp_span_fp8_run`) et contre TensorRT.
+
+Mesure sur la RTX 4070 Ti (corps de 960 × 540, médiane de trois tours, 64 canaux) : en FP8, la forme du lecteur
+prend 0,286 ms à accumulateur f32 et 0,222 ms en acc16 (−22 %). À accumulateur f32, elle tient 76 % du pic FP16
+et 83 % du pic FP8, presque au plafond. En acc16, toutes les formes plafonnent entre 52 et 54 % du pic : à
+0,222 ms, la convolution lit et écrit environ 66 Mo, soit environ 300 Go/s pour 504 de pic, et la limite est la
+mémoire, pas la forme. À 48 canaux natifs, rien n'est gagné sur le calcul en 64 en FP8 (0,226 contre
+0,222 ms). Aucune forme ne bat celle du lecteur ; le paquet b8f64 admis est en acc16 (−0,08 dB, noyaux
+7,98 ms contre 9,68 en f32). La suite serait de fondre les convolutions d'un bloc (r1 et r2 tenus en L2 ou en
+mémoire partagée), un chantier à part. K par position à 48 canaux en acc16 donnait 7 % de NaN : chemin de
+mesure seul, sans gain, refusé à la création.
 
 ## Autres architectures (chantier 10)
 

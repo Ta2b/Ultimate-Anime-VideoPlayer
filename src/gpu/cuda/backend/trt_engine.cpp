@@ -27,6 +27,17 @@ std::optional<Shape> fixed_shape(const nvinfer1::Dims& dims) {
   return shape;
 }
 
+// Le pas par pixel d'un tenseur d'E/S (TrtEngine::input_pitch) : 0 en plans, C arrondi au multiple de 8 en
+// HWC8 ; tout autre rangement est refusé.
+std::expected<int, Refusal> tensor_pitch(const nvinfer1::ICudaEngine& engine, const char* name,
+                                         const Shape& shape) {
+  const nvinfer1::TensorFormat format = engine.getTensorFormat(name);
+  if (format == nvinfer1::TensorFormat::kLINEAR) return 0;
+  if (format == nvinfer1::TensorFormat::kHWC8) return (static_cast<int>(shape.dims[1]) + 7) / 8 * 8;
+  return refuse(RefusalCode::FormatUnsupported,
+                std::format("tenseur {} : rangé en plans ou en HWC8 attendu", name));
+}
+
 // Un plan au-delà ne vient pas de nos modèles (le plus gros pèse quelques centaines de Mo).
 constexpr std::uintmax_t kMaxPlanBytes = std::uintmax_t{8} << 30U;
 
@@ -157,8 +168,11 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> TrtEngine::load(
       if (!shape) {
         return refuse(RefusalCode::ShapeInvalid, std::format("tenseur {} : forme NCHW fixe attendue", name));
       }
+      const auto pitch = tensor_pitch(*engine->engine_, name, *shape);
+      if (!pitch) return std::unexpected(pitch.error());
       (is_input ? engine->inputs_ : engine->outputs_).emplace_back(name);
       (is_input ? engine->input_shapes_ : engine->output_shapes_).push_back(*shape);
+      (is_input ? engine->input_pitches_ : engine->output_pitches_).push_back(*pitch);
     }
   }
   // Une entrée et une sortie (l'image), ou plusieurs (la variante mouvement de RIFE : flot, masque ;

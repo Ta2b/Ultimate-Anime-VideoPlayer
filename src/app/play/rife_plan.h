@@ -105,4 +105,14 @@ constexpr PoseCopy poses_copy(bool keep_poses, bool before_still, float t) {
   return t < 0.5F ? PoseCopy::Before : PoseCopy::After;
 }
 
+// Instants déduits du milieu sur une paire qui bouge fort (PlaySettings::strong_middle). Le milieu prolongé
+// jusqu'à t déplace chaque point de 2·|t − ½| fois le mouvement de la paire (warp_blend_at,
+// kernels/spec/warp.h) ; une paire calme accepte déjà jusqu'à single_run (kSingleRunMotion720 à la hauteur
+// de RIFE) vers ses bords. L'instant se déduit du milieu tant que ce prolongement reste sous single_run,
+// RIFE repasse au-delà. pair_motion et single_run en pixels de RIFE.
+constexpr bool middle_reaches(float pair_motion, float t, float single_run) {
+  const float from_middle = t < 0.5F ? 0.5F - t : t - 0.5F;
+  return 2.0F * from_middle * pair_motion < single_run;
+}
+
 }  // namespace ajp::app::play

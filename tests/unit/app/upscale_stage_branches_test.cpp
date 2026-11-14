@@ -80,6 +80,36 @@ TEST_CASE("Étage gpu : échelle par paire, les instants des paires fortes passe
   CHECK(kept + halved == whole);
 }
 
+// Moins de passes sur les paires fortes (strong_middle, rife_plan.h) : avec les poses, une paire forte dont
+// le milieu prolongé à ⅓ et ⅔ reste sous le seuil n'a que sa passe du milieu ; plus forte, RIFE repasse à
+// chaque instant, avec ou sans l'option.
+TEST_CASE("Étage gpu : moins de passes sur les paires fortes, les instants proches du milieu s'en déduisent",
+          "[app][stage][strong_middle]") {
+  const auto run = [](bool on, float motion) {
+    Rig rig;
+    rig.live->set_keep_poses(true);
+    rig.live->set_strong_middle(on);
+    UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
+    s.rife = nullptr;
+    s.rife_motion = &rig.motion;
+    s.rife_width = 320;  // le travail du banc : seuil de 15 × 180 / 720 = 3,75 px
+    s.rife_height = 180;
+    rig.start(std::move(s));
+    rig.feed(1, 4);
+    REQUIRE(rig.collect(10));
+    rig.backend.motion_max(motion);
+    rig.feed(5, 8);
+    REQUIRE(rig.collect(22));
+    rig.stage.reset();
+    CHECK(rig.reported().empty());
+    return rig.backend.count("engine rife_motion");
+  };
+  // 7,5 px : prolongé de 2,5 px à ⅓ et ⅔, sous le seuil.
+  CHECK(run(true, 7.5F) < run(false, 7.5F));
+  // 15 px : prolongé de 5 px, RIFE repasse.
+  CHECK(run(true, 15.0F) == run(false, 15.0F));
+}
+
 // Une horloge que le test change pendant que l'étage la lit.
 struct SwitchedClock final : MasterClock {
   ClockSnapshot snapshot() const override {

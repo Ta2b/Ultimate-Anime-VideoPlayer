@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <utility>
 
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
@@ -43,6 +44,11 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
     return {};
   };
   const prepare::TrtexecBuilder builder(trtexec_config(), check);
+  // Les blocs, sous --rife-hwc8, en E/S HWC8 (kTrialRifeHwc8) ; l'encodeur reste en plans : sa sortie est
+  // relue par plans par les noyaux de colle, et ses copies ne pèsent que 2 % de la passe.
+  prepare::TrtexecConfig block_config = trtexec_config();
+  block_config.hwc8_io = rife_hwc8_;
+  const prepare::TrtexecBuilder block_builder(std::move(block_config), check);
   const std::filesystem::path folder = model.onnx_path.parent_path();
   const std::size_t count = manifest->pieces.size();
   RifeFusedKey key{.height = h,
@@ -72,7 +78,8 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSp
                                         std::format("RIFE fusionné {}/{} : {}", i + 1, count, stage));
                       },
                   .stop = progress.stop};
-    auto built = builder.build(piece, ShapeSet{.min = input, .opt = input, .max = input}, part);
+    auto built = (i == 0 ? builder : block_builder)
+                     .build(piece, ShapeSet{.min = input, .opt = input, .max = input}, part);
     if (!built) return std::unexpected(std::move(built.error()));
     key.engines.push_back(core::to_utf8(built->path.filename()));
   }

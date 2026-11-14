@@ -16,6 +16,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "gpu/backend.h"
@@ -70,8 +71,11 @@ class SpanFp8Engine final : public Engine {
   std::expected<void, Refusal> enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
                                             const SpanFp8Ring& ring);
 
-  // Le mot du moteur pour le journal (graphes coupés, plus de place), une fois ; vide sinon.
-  std::string take_notice() { return book_.take_notice(); }
+  // Le mot du moteur pour le journal (accumulateur f16 débordé, graphes coupés, plus de place), une fois ;
+  // vide sinon.
+  std::string take_notice() {
+    return overflow_notice_.empty() ? book_.take_notice() : std::exchange(overflow_notice_, {});
+  }
   const GraphCounters& graph_counters() const { return book_.counters(); }
   // SPAN FP16 natif : le PSNR de la carte contre le calcul du processeur au chargement (span_fp8_check.h) ;
   // vide pour un paquet FP8, ou une image trop petite pour en juger.
@@ -89,6 +93,7 @@ class SpanFp8Engine final : public Engine {
   GraphBook<std::uintptr_t> book_{kMaxGraphs, kCaptureAttempts};
   std::vector<cudaGraphExec_t> execs_;  // rangés par l'indice du registre
   std::optional<double> native_check_db_;
+  std::string overflow_notice_;
 
   std::unique_ptr<SpanFp8Net> net_;
   std::vector<std::string> inputs_{"input"};

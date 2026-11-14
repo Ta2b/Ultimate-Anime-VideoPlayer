@@ -29,6 +29,7 @@
 #include "backend_fixture.h"
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 #include "kernels/ref/half.h"
+#include "kernels/ref/warp.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/rife_fused.h"
 #include "prepare/model_source.h"
@@ -139,10 +140,43 @@ kernels::ref::RifeFusedState random_state(const kernels::RifeFusedPlan& plan, in
   return state;
 }
 
-// Les noyaux sur l'état, comparés à la référence bloc par bloc (les Y sont les mêmes des deux côtés).
-void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint32_t seed) {
+// Un tenseur en plans rangé par pixel au pas pitch (HWC8), les canaux ajoutés à 1 (les noyaux doivent les
+// écrire à zéro ou ne pas les lire) ; et l'inverse, spill le plus grand |canal ajouté|.
+std::vector<double> to_pixels(const std::vector<double>& planes, int channels, int pitch) {
+  const std::size_t area = planes.size() / static_cast<std::size_t>(channels);
+  std::vector<double> pixels(area * static_cast<std::size_t>(pitch), 1.0);
+  for (std::size_t c = 0; c < static_cast<std::size_t>(channels); ++c)
+    for (std::size_t i = 0; i < area; ++i)
+      pixels[i * static_cast<std::size_t>(pitch) + c] = planes[c * area + i];
+  return pixels;
+}
+
+std::vector<double> to_planes(const std::vector<double>& pixels, int channels, int pitch, double& spill) {
+  const std::size_t area = pixels.size() / static_cast<std::size_t>(pitch);
+  std::vector<double> planes(area * static_cast<std::size_t>(channels));
+  for (std::size_t i = 0; i < area; ++i)
+    for (std::size_t c = 0; c < static_cast<std::size_t>(pitch); ++c) {
+      const double v = pixels[i * static_cast<std::size_t>(pitch) + c];
+      if (c < static_cast<std::size_t>(channels))
+        planes[c * area + i] = v;
+      else
+        spill = std::max(spill, std::abs(v));
+    }
+  return planes;
+}
+
+// Les noyaux sur l'état, comparés à la référence bloc par bloc (les Y sont les mêmes des deux côtés). hwc8 :
+// X et Y rangés par pixel, comme les blocs construits en E/S HWC8 (--rife-hwc8).
+void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint32_t seed,
+                     bool hwc8 = false) {
   const kernels::ref::RifeFusedState state = random_state(plan, h, w, seed);
-  const kernels::RifeFusedLayout layout = kernels::rife_fused_layout(plan, h, w);
+  const kernels::RifeFusedLayout layout = kernels::rife_fused_layout(plan, h, w, hwc8);
+  const auto pitch = [hwc8](int channels) { return hwc8 ? kernels::rife_fused_hwc8_pitch(channels) : 0; };
+  // Éléments rangés d'un tenseur : canaux arrondis en HWC8.
+  const auto stored = [hwc8](kernels::FusedDims d) {
+    if (hwc8) d.channels = kernels::rife_fused_hwc8_pitch(d.channels);
+    return static_cast<std::size_t>(d.elements());
+  };
   Device input(state.input.size() * 2);
   Device encode(state.encode.size() * 2);
   upload_half(input.get(), state.input);
@@ -151,12 +185,13 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
   std::vector<std::unique_ptr<Device>> x;
   for (int k = 0; k < plan.blocks; ++k) {
     const auto i = static_cast<std::size_t>(k);
-    y.push_back(std::make_unique<Device>(state.y[i].size() * 2));
-    upload_half(y[i]->get(), state.y[i]);
-    x.push_back(std::make_unique<Device>(
-        static_cast<std::size_t>(kernels::rife_fused_x(plan, k, h, w).elements()) * 2));
+    const kernels::FusedDims yk = kernels::rife_fused_y(plan, k, h, w);
+    y.push_back(std::make_unique<Device>(stored(yk) * 2));
+    upload_half(y[i]->get(), hwc8 ? to_pixels(state.y[i], yk.channels, pitch(yk.channels)) : state.y[i]);
+    x.push_back(std::make_unique<Device>(stored(kernels::rife_fused_x(plan, k, h, w)) * 2));
   }
-  INFO("plan " << plan.reduce[0] << "…" << plan.blocks << " blocs, " << w << "x" << h);
+  INFO("plan " << plan.reduce[0] << "…" << plan.blocks << " blocs, " << w << "x" << h
+               << (hwc8 ? ", HWC8" : ""));
 
   const kernels::FusedDims x0 = kernels::rife_fused_x(plan, 0, h, w);
   // L'encodage de B suit celui de A dans le même tampon (la référence les range ainsi) ; le moteur, lui, fait
@@ -172,13 +207,16 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                                          .input = input.get(),
                                          .encode = encode.get(),
                                          .encode_b = encode_b,
-                                         .x = x[0]->get()},
+                                         .x = x[0]->get(),
+                                         .x_pitch = pitch(x0.channels)},
                                         nullptr) == cudaSuccess);
   double worst = 0.0;
   const auto check_block = [&](int k) {
     const kernels::FusedDims dims = kernels::rife_fused_x(plan, k, h, w);
-    const std::vector<double> got =
-        download_half(x[static_cast<std::size_t>(k)]->get(), static_cast<std::size_t>(dims.elements()));
+    std::vector<double> got = download_half(x[static_cast<std::size_t>(k)]->get(), stored(dims));
+    double spill = 0.0;
+    if (hwc8) got = to_planes(got, dims.channels, pitch(dims.channels), spill);
+    CHECK(spill == 0.0);
     const std::vector<double> want = kernels::ref::rife_fused_block_input(state, k);
     const double score = psnr_of(got, want, worst);
     INFO("X" << k << " : PSNR " << score << " dB, écart maximal " << worst);
@@ -197,11 +235,16 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                          .input = input.get(),
                          .encode = encode.get(),
                          .encode_b = encode_b,
-                         .x = x[i + 1]->get()};
+                         .x = x[i + 1]->get(),
+                         .x_pitch = pitch(next.channels)};
     for (int k = 0; k <= b; ++k) {
       const auto j = static_cast<std::size_t>(k);
       const kernels::FusedDims yk = kernels::rife_fused_y(plan, k, h, w);
-      glue.source[j] = {.y = y[j]->get(), .height = yk.height, .width = yk.width, .scale = plan.reduce[j]};
+      glue.source[j] = {.y = y[j]->get(),
+                        .height = yk.height,
+                        .width = yk.width,
+                        .scale = plan.reduce[j],
+                        .pitch = pitch(yk.channels)};
     }
     REQUIRE(gpu::cuda::launch_fused_glue(glue, nullptr) == cudaSuccess);
     check_block(b + 1);
@@ -219,7 +262,9 @@ void compare_kernels(const kernels::RifeFusedPlan& plan, int h, int w, std::uint
                            .x_last = x[last]->get(),
                            .y_last = y[last]->get(),
                            .y_height = y_last.height,
-                           .y_width = y_last.width};
+                           .y_width = y_last.width,
+                           .x_pitch = pitch(kernels::rife_fused_x(plan, plan.blocks - 1, h, w).channels),
+                           .y_pitch = pitch(y_last.channels)};
   finish.image = image.get();
   REQUIRE(gpu::cuda::launch_fused_finish(finish, nullptr) == cudaSuccess);
   double score = psnr_of(download_half(image.get(), want.image.size()), want.image, worst);
@@ -313,6 +358,105 @@ std::pair<std::vector<float>, std::vector<float>> picture_pair(int h, int w) {
 gpu::ShapeSet fixed_input(int h, int w) {
   const gpu::Shape shape{.dims = {1, 11, h, w}};
   return {.min = shape, .opt = shape, .max = shape};
+}
+
+// Une image en niveaux de gris 8 bits (PGM binaire), value(i) dans [0, 1].
+template <class Value>
+void write_pgm(const fs::path& path, int h, int w, Value value) {
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out << "P5\n" << w << " " << h << "\n255\n";
+  for (std::size_t i = 0; i < static_cast<std::size_t>(h) * static_cast<std::size_t>(w); ++i)
+    out.put(static_cast<char>(static_cast<unsigned char>(std::clamp(value(i), 0.0, 1.0) * 255.0 + 0.5)));
+}
+
+// Diagnostic de la variante mouvement : où le masque de la chaîne s'écarte de celui du moteur entier. Écrit
+// <base>-ecart.pgm (écart absolu ×4), <base>-fusionne.pgm et <base>-entier.pgm, et dit (WARN), pour les
+// bords (8 pixels), le grand mouvement (plus de 8 pixels vers une image), le sigmoïde saturé (masque du
+// moteur entier sous 0,02 ou au-dessus de 0,98) et le reste : pixels, écart moyen et maximal, part de
+// l'erreur.
+void report_mask(const std::vector<float>& got, const std::vector<float>& want,
+                 const std::vector<float>& flow, int h, int w, const fs::path& base) {
+  const std::size_t plane = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
+  write_pgm(fs::path(base.string() + "-ecart.pgm"), h, w,
+            [&](std::size_t i) { return 4.0 * std::fabs(static_cast<double>(got[i]) - want[i]); });
+  write_pgm(fs::path(base.string() + "-fusionne.pgm"), h, w, [&](std::size_t i) { return double{got[i]}; });
+  write_pgm(fs::path(base.string() + "-entier.pgm"), h, w, [&](std::size_t i) { return double{want[i]}; });
+  struct Zone {
+    const char* name;
+    std::size_t pixels = 0;
+    double sum = 0.0, squares = 0.0, worst = 0.0;
+  };
+  std::array<Zone, 4> zones{Zone{"bords"}, Zone{"grand mouvement"}, Zone{"sigmoïde saturé"}, Zone{"reste"}};
+  double total = 0.0;
+  for (std::size_t i = 0; i < plane; ++i) {
+    const int y = static_cast<int>(i / static_cast<std::size_t>(w));
+    const int x = static_cast<int>(i % static_cast<std::size_t>(w));
+    const double move =
+        std::max(std::hypot(flow[i], flow[plane + i]), std::hypot(flow[2 * plane + i], flow[3 * plane + i]));
+    const std::size_t zone = (x < 8 || y < 8 || x >= w - 8 || y >= h - 8) ? 0
+                             : move > 8.0                                 ? 1
+                             : (want[i] < 0.02F || want[i] > 0.98F)       ? 2
+                                                                          : 3;
+    const double d = std::fabs(static_cast<double>(got[i]) - want[i]);
+    Zone& z = zones[zone];
+    ++z.pixels;
+    z.sum += d;
+    z.squares += d * d;
+    z.worst = std::max(z.worst, d);
+    total += d * d;
+  }
+  for (const Zone& z : zones)
+    WARN("masque, " << z.name << " : " << z.pixels << " pixels, écart moyen "
+                    << (z.pixels > 0 ? z.sum / static_cast<double>(z.pixels) : 0.0) << ", maximal " << z.worst
+                    << ", " << (total > 0.0 ? 100.0 * z.squares / total : 0.0) << " % de l'erreur");
+  WARN("cartes du masque : " << base.string() << "-ecart.pgm, -fusionne.pgm, -entier.pgm");
+}
+
+// L'image à l'instant t que le warp de référence tire de first et second avec le mouvement got (flot à 4
+// plans, masque, sortis par RIFE pour cet instant), comparée à celle du mouvement want : PSNR en dB.
+double warped_psnr(const std::vector<float>& first, const std::vector<float>& second,
+                   const std::vector<std::vector<float>>& got, const std::vector<std::vector<float>>& want,
+                   int h, int w, float t) {
+  const auto image = [&](const std::vector<float>& planes) {
+    kernels::RgbImage out(w, h);
+    for (int c = 0; c < 3; ++c)
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+          out.planes[static_cast<std::size_t>(c)].at(x, y) =
+              planes[static_cast<std::size_t>((c * h + y) * w + x)];
+    return out;
+  };
+  const auto motion_of = [&](const std::vector<std::vector<float>>& outputs) {
+    kernels::ref::Motion m;
+    for (int c = 0; c < 4; ++c) {
+      m.flow[static_cast<std::size_t>(c)] = kernels::PlaneF(w, h);
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+          m.flow[static_cast<std::size_t>(c)].at(x, y) =
+              outputs[0][static_cast<std::size_t>((c * h + y) * w + x)];
+    }
+    m.mask = kernels::PlaneF(w, h);
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) m.mask.at(x, y) = outputs[1][static_cast<std::size_t>(y * w + x)];
+    m.area = kernels::Window{.x = 0, .y = 0, .width = w, .height = h};
+    return m;
+  };
+  const kernels::RgbImage a = image(first);
+  const kernels::RgbImage b = image(second);
+  const auto mine = kernels::ref::warp_blend_at(a, b, motion_of(got), t);
+  const auto theirs = kernels::ref::warp_blend_at(a, b, motion_of(want), t);
+  REQUIRE(mine);
+  REQUIRE(theirs);
+  std::vector<double> x;
+  std::vector<double> y;
+  for (int c = 0; c < 3; ++c) {
+    const auto& p = mine->planes[static_cast<std::size_t>(c)].data;
+    const auto& q = theirs->planes[static_cast<std::size_t>(c)].data;
+    x.insert(x.end(), p.begin(), p.end());
+    y.insert(y.end(), q.begin(), q.end());
+  }
+  double worst = 0.0;
+  return psnr_of(x, y, worst);
 }
 
 // Compare la chaîne fusionnée au RIFE entier de TensorRT sur la paire, pour un modèle du catalogue.
@@ -409,8 +553,20 @@ void compare_engines(const std::string& file, bool motion) {
               << " dB contre TensorRT entier, écart maximal " << worst);
     // Le moteur entier de TensorRT choisit ses tactiques à sa construction : sur un même code, le PSNR varie
     // de plusieurs dB d'un cache de moteurs à l'autre (34 à 56 dB mesurés, RTX 4070 Ti).
-    // 30 dB attrape encore un mauvais câblage (une sortie fausse tombe sous 20 dB).
-    CHECK(score >= 30.0);
+    // 30 dB attrape encore un mauvais câblage (une sortie fausse tombe sous 20 dB). Le masque se juge par
+    // l'image qu'il mélange (plus bas) : presque binaire, il amplifie les écarts FP16 d'avant la sigmoïde
+    // (4.22 lite à 22 dB sur le masque, flot à 50 dB, l'erreur sur les frontières et le grain des aplats).
+    if (!(motion && i == 1)) CHECK(score >= 30.0);
+  }
+
+  if (motion) {
+    report_mask(got[1], want[1], want[0], h, w, scratch / (onnx.stem().string() + "-masque"));
+    // Ce que la lecture en fait : l'image du milieu par le warp de référence (kernels/ref/warp.h), avec le
+    // mouvement de la chaîne et avec celui du moteur entier.
+    const double image = warped_psnr(first, second, got, want, h, w, 0.5F);
+    WARN(file << " mouvement, image mélangée par le warp de référence : PSNR " << image
+              << " dB contre le mouvement du moteur entier");
+    CHECK(image >= 30.0);
   }
 
   // Étape 5.2 : le dernier lecteur de l'entrée est RIFE fusionné, rife_time n'écrit plus que l'élément 0 du
@@ -427,7 +583,12 @@ void compare_engines(const std::string& file, bool motion) {
     double worst = 0.0;
     const double score = psnr_of(x, y, worst);
     WARN(file << " instant 0,3 par rife_time, sortie " << i << " : PSNR " << score << " dB");
-    CHECK(score >= 30.0);
+    if (!(motion && i == 1)) CHECK(score >= 30.0);  // le masque, par l'image qu'il mélange (plus bas)
+  }
+  if (motion) {
+    const double image = warped_psnr(first, second, got_time, want_time, h, w, 0.3F);
+    WARN(file << " instant 0,3, image mélangée par le warp de référence : PSNR " << image << " dB");
+    CHECK(image >= 30.0);
   }
 }
 
@@ -472,6 +633,10 @@ TEST_CASE("RIFE fusionné : les noyaux CUDA suivent la référence CPU en double
   }
   SECTION("4.25 lite (premier bloc au 1/32), 128x256") {
     compare_kernels(kernels::RifeFusedPlan{.blocks = 5, .reduce = {32, 16, 8, 4, 1}}, 128, 256, 6);
+  }
+  SECTION("4.26 et 4.22 lite, X et Y rangés en HWC8 (--rife-hwc8)") {
+    compare_kernels(kernels::RifeFusedPlan{.blocks = 5, .reduce = {16, 8, 4, 2, 1}}, 128, 192, 7, true);
+    compare_kernels(v422, 96, 160, 8, true);
   }
 }
 

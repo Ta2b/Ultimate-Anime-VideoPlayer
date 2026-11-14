@@ -120,6 +120,63 @@ seuil (bras qui tourne, caméra qui freine) suit une droite, et les occlusions g
   pire bloc), une fois avec le seuil à 15 px et une fois à 0 (RIFE à chaque instant) ; relever le temps par image
   de l'étage avec `--stats=`. Le seuil se règle ou s'annonce d'après ces chiffres.
 
+## Instants déduits sur les paires fortes (essai)
+
+Case « Moins de passes RIFE sur les mouvements rapides » (Vidéo, sous le multiplicateur ; `[interpolation]
+strong_middle` de `play.toml`, **éteinte par défaut**, en direct). Une paire forte (mouvement maximal au-dessus de
+`single_run_motion`) fait aujourd'hui passer RIFE à chaque instant : en 24 i/s vers 144 Hz, 5 passes au lieu
+d'une. Un long panoramique n'a que des paires fortes, et RIFE y coûte environ 5 fois plus pendant tout le plan
+(retour de Tatoub sur une ville médiévale en 3D : les détails n'y sont pour rien, un réseau fait le même calcul
+quel que soit le contenu).
+
+Avec l'option, l'instant t d'une paire forte se déduit du milieu (`warp_blend_at`, comme sur une paire calme)
+tant que le milieu prolongé jusqu'à t déplace les points de moins que `single_run_motion` :
+2·|t − ½| × mouvement < 15 px à 720p (`middle_reaches`, `src/app/play/rife_plan.h`). C'est la même tolérance
+qu'une paire calme, qui prolonge déjà son milieu jusqu'à 15 px vers ses bords. Au-delà, RIFE repasse à
+l'instant exact. En 24 vers 144 Hz : sous 45 px, les instants ⅓ et ⅔ (2/6, 4/6) se déduisent et seuls 1/6 et
+5/6 repassent (3 passes au lieu de 5) ; sous 22,5 px, une seule passe.
+
+- Avec les poses gardées (le défaut) ; sans elles, une paire forte prend le mode direct (pas de passe au
+  milieu), que l'option ne change pas.
+- Le journal de fin compte les instants déduits (« paires fortes : … instants déduits du milieu »), et les
+  passes RIFE (« RIFE mouvement : … passes »).
+
+### Mesure sur processeur (13 novembre 2026)
+
+`tools/bench/qualite/rife_instants.py` : 40 suites de quatre images toutes différentes de Re:Zero (1080p,
+animées en uns), paire (k, k + 3), vérités k + 1 et k + 2 à t = ⅓ et ⅔ ; mouvement estimé à 720p comme le
+lecteur, warp en 1080p. « Déduit − RIFE » : PSNR contre la vraie image de l'instant déduit du milieu moins celui
+de RIFE à l'instant.
+
+**RIFE 4.22 lite** (le défaut)
+
+| Mouvement (720p) | prolongé à t = ⅓ | Instants | RIFE (dB) | Déduit − RIFE : moyenne | pire | Pire bloc, écart moyen |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 à 15 px | 0 à 5 px | 32 | 34,38 | -0,26 | -8,04 | -0,64 |
+| 15 à 30 px | 5 à 10 px | 24 | 25,26 | -0,03 | -1,37 | -0,01 |
+| 30 à 45 px | 10 à 15 px | 8 | 25,16 | -0,21 | -0,58 | -0,33 |
+| 45 à 60 px | 15 à 20 px | 6 | 20,59 | +0,46 | -0,01 | +0,04 |
+| 60 à 90 px | 20 à 30 px | 6 | 20,54 | +0,40 | -0,29 | +0,37 |
+| 90 px et plus | 30 px et plus | 4 | 19,40 | -0,27 | -0,66 | -0,15 |
+
+**RIFE 4.26**
+
+| Mouvement (720p) | prolongé à t = ⅓ | Instants | RIFE (dB) | Déduit − RIFE : moyenne | pire | Pire bloc, écart moyen |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 à 15 px | 0 à 5 px | 36 | 33,19 | -0,06 | -1,83 | +0,07 |
+| 15 à 30 px | 5 à 10 px | 22 | 24,16 | +0,01 | -0,42 | +0,11 |
+| 30 à 45 px | 10 à 15 px | 12 | 23,84 | -0,09 | -0,53 | -0,01 |
+| 45 à 60 px | 15 à 20 px | 6 | 21,86 | +0,01 | -0,35 | +0,16 |
+| 60 à 90 px | 20 à 30 px | 4 | 19,64 | +0,21 | -0,22 | +0,20 |
+
+Lecture : déduire du milieu coûte peu (de −0,26 à +0,46 dB en moyenne selon la tranche), et pas plus sur les
+paires fortes (15 à 45 px, celles que l'option déduit à ⅓ et ⅔) que sur les paires calmes, où le lecteur le
+fait déjà par défaut (pire instant : −8,0 dB calme contre −1,4 dB fort en 4.22 lite). Au-delà de 45 px, RIFE à
+l'instant n'est pas meilleur que le milieu prolongé : les deux sont loin de la vraie image (vers 20 dB). Peu de
+paires très fortes dans cet extrait : la mesure oriente, l'œil de Tatoub juge (la même scène de panoramique,
+ABAB avec et sans l'option, et le nombre de passes du journal). L'option ne devient le défaut que sans perte
+visible.
+
 ## Échelle par paire (essai)
 
 Case « RIFE allégé sur les mouvements rapides (demi-taille) » (Vidéo, sous le multiplicateur ; `[interpolation]
@@ -200,6 +257,41 @@ Binaire `linux-release` ou `windows-release`, TensorRT puis Vulkan, RIFE 4.26 (�
 L'option ne deviendrait le défaut que sans perte visible en lecture (le verdict de Tatoub l'a refusée), avec un gain
 sur les paires fortes, et pour moins de 300 Mo de VRAM en plus.
 
+## Blocs du RIFE fusionné en E/S HWC8 (par défaut ; `--no-rife-hwc8` en essai)
+
+Sous TensorRT, chaque bloc du RIFE fusionné recevait X en plans (NCHW) et rendait Y en plans ; le moteur
+recopiait l'un et l'autre vers son rangement interne (les « Reformatting CopyNode » du profil). Sur la RTX
+4070 Ti, RIFE 4.26 en 1280 × 768, ces copies prenaient 41,5 % du dernier bloc (0,279 ms à l'entrée, 0,063 ms
+à la sortie, sur 0,825 ms) et 10 % de l'encodeur.
+
+Les blocs se construisent avec `--inputIOFormats=hwc8 --outputIOFormats=hwc8`
+(`TrtexecConfig::hwc8_io`, haché dans la clé : un moteur en plans du cache ne sert pas à sa place), et les
+noyaux de colle écrivent X et lisent Y par pixel, canaux complétés de zéros jusqu'au multiple de 8 (15 → 16,
+28 → 32, 52 → 56 ; `rife_fused_kernels.h`). Le calcul est le même, au rangement près : le test des noyaux
+contre la référence CPU passe dans les deux rangements. `TrtEngine` lit le rangement de chaque E/S au
+chargement et `RifeFusedEngine` refuse des blocs rangés différemment. L'encodeur reste en plans (2 % de la
+passe).
+
+Mesure de trtexec sur les morceaux du 4.26 en 1280 × 768 (graphe CUDA, deux tours ABAB, médianes) :
+
+| Morceau | En plans | HWC8 |
+|---|---:|---:|
+| encodeur | 0,2064 ms | 0,2023 ms |
+| bloc 0 | 0,0625 ms | 0,0605 ms |
+| bloc 1 | 0,0686 ms | 0,0654 ms |
+| bloc 2 | 0,1085 ms | 0,0994 ms |
+| bloc 3 | 0,1808 ms | 0,1558 ms |
+| bloc 4 | 0,8121 ms | 0,4331 ms |
+| passe entière | 1,4388 ms | 1,0164 ms (−29 %) |
+
+Aucun reformatage ne reste au profil des moteurs HWC8. Dans le lecteur (RTX 4070 Ti, ×8 en 4K, deux fois
+60 s, SPAN en FP16) : RIFE passe de 3,0 à 2,38 ms par passe (−19 %), les images présentées de 142,6 à 146,0 par
+seconde, les images manquées d'environ 520 à 312 ; l'image reste dans le bruit de la lecture (36,9 à 37,1 dB
+pour un plancher de 37,4 entre deux lectures de main) et à 68 dB de la référence CPU. Allumé par défaut depuis
+cette mesure ; `--no-rife-hwc8` (avec `--debug`) revient aux E/S en plans. Le premier lancement reconstruit les
+blocs une fois (autre clé de moteur). `tools/trt/nhwc_pieces.py` refait les blocs
+en E/S NHWC dans l'ONNX même, pour un trtexec qui refuserait `--inputIOFormats`.
+
 ## Warp du backend TensorRT : lecture exacte, lecture filtrée à l'essai
 
 Sous TensorRT, le warp et le mélange des images intermédiaires lisent les images, le flot et le masque
@@ -213,6 +305,29 @@ Mesure à faire sur la RTX : `ncu --kernel-name regex:warp_blend` sur 30 s de le
 une fois sans option, une fois avec `--filtered-warp`, plus le temps par image de `--stats=`. Si le gain dépasse
 0,1 ms par image, il s'écrit ici avec son chiffre et la question de rallumer le chemin filtré se pose ; sinon
 le chemin filtré se retire.
+
+### Lectures du flot groupées par point
+
+Chaque pixel de la sortie lit le flot à quelques points seulement, mais canal par canal : avec les poses gardées
+(le défaut), 41 lectures bilinéaires de quatre chargements, dont les quatre canaux en (u, v) relus à chaque
+itération de `pose_time_at`. `Exact::sample_n` (`bilinear.cuh`) lit les canaux d'un même point en une fois
+(position, voisins et poids calculés une fois) et le flot en (u, v) se lit une seule fois par pixel : 33 lectures
+au lieu de 41, résultat identique au bit près (mêmes opérations dans le même ordre). Le gain dépend de ce que
+nvcc regroupait déjà. Mesuré par nsys sur la RTX 4070 Ti (×8 en 4K) : médiane de warp_blend de 529 à 440 µs
+(−17 %), moyenne de 630 à 472 µs.
+
+### Mouvement par tuile (`--tiled-warp`) : retiré
+
+L'idée : calculer le mouvement du milieu (second prélèvement du flot, instant réglé des poses, poids de
+mélange) une fois par point du flot de la tuile d'un bloc, en mémoire partagée, puis l'interpoler à chaque
+pixel de la sortie (neuf pixels par point en 4K pour un flot en 1280). Elle ne payait que tant que chaque pixel
+relisait le flot canal par canal ; depuis les lectures groupées ci-dessus, le warp exact ne lit plus le flot
+qu'une fois par pixel et il n'y a plus rien à partager. Mesuré sur la RTX 4070 Ti (×8 en 4K, deux lectures
+ABAB) : warp et mélange à 0,62 ms avec l'essai contre 0,44 ms sans (+41 %), 154 i/s dans les deux cas, image
+à 46,4 dB du warp exact. L'interpolation elle-même s'écartait du warp exact de 0,08 à 0,11 sur un flot qui
+tourne vite, et encore de 0,025 sur un flot dix fois plus lent, même en laissant les pixels calculer
+eux-mêmes là où le mouvement varie trop entre les points (instant, tx, ty, poids). L'essai, son noyau et ses
+tests sont retirés ; le bit `1U << 2U` des essais du backend reste libre.
 
 ## GMFSS retiré
 

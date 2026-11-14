@@ -33,7 +33,8 @@ class TrtEngine final : public Engine {
   static constexpr std::size_t kMaxInputs = 16;
   static constexpr std::size_t kMaxOutputs = 16;
   // Lit et désérialise le moteur. Refus : fichier illisible (IoFailed), moteur refusé par
-  // ce TensorRT (VendorCallFailed), entrée ou sortie qui n'est pas un tenseur FP16 de rang 4.
+  // ce TensorRT (VendorCallFailed), entrée ou sortie qui n'est pas un tenseur FP16 de rang 4, rangé en plans
+  // ou en HWC8.
   // shared : les activations dans cette zone commune (kUSER_MANAGED), sinon dans celle du
   // contexte.
   static std::expected<std::unique_ptr<TrtEngine>, Refusal> load(
@@ -49,6 +50,10 @@ class TrtEngine final : public Engine {
   // Forme de l'entrée ou de la sortie i, telle que le moteur la fixe.
   Shape input_shape(std::size_t i) const { return input_shapes_[i]; }
   Shape output_shape(std::size_t i) const { return output_shapes_[i]; }
+  // Rangement de l'entrée ou de la sortie i : 0 en plans (NCHW), sinon les canaux par pixel du format HWC8
+  // (C arrondi au multiple de 8), pour un moteur construit avec --inputIOFormats=hwc8 (RIFE fusionné).
+  int input_pitch(std::size_t i) const { return input_pitches_[i]; }
+  int output_pitch(std::size_t i) const { return output_pitches_[i]; }
 
   // Pose les adresses et lance le moteur sur stream. Les formes doivent être celles du moteur.
   // Les mêmes adresses une troisième fois : le lancement passe par un graphe CUDA capturé à la
@@ -83,6 +88,8 @@ class TrtEngine final : public Engine {
   std::vector<std::string> outputs_;
   std::vector<Shape> input_shapes_;
   std::vector<Shape> output_shapes_;
+  std::vector<int> input_pitches_;
+  std::vector<int> output_pitches_;
   // Graphes capturés, par jeu d'adresses (les tampons de l'étage tournent sur quelques-uns).
   // Une capture refusée est réessayée au lancement suivant : un appel CUDA d'un autre fil au
   // mauvais moment peut l'invalider (les noyaux NVENC sur le flux par défaut le faisaient avant

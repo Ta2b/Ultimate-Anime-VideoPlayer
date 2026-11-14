@@ -33,6 +33,24 @@ void cubic_warp_checkbox(PlaySettings& d) {
                "network's bilinear one, for finer lines. RIFE only. Reloads playback."));
 }
 
+// Moins de passes RIFE sur les paires fortes (PlaySettings::strong_middle) : un essai, éteint par défaut.
+void strong_middle_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Fewer RIFE passes on fast motion"), &d.strong_middle);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Trial: when a pair moves a lot, the in-between frames close to the middle are derived from "
+               "the middle pass, as on calm pairs, and RIFE only runs again for the frames further away. "
+               "Fewer passes on long pans. RIFE with Keep poses only. Applies live."));
+}
+
+// Les essais qui allègent RIFE sur les mouvements rapides.
+void pair_scale_checkbox(PlaySettings& d);
+void motion_trial_checkboxes(PlaySettings& d) {
+  pair_scale_checkbox(d);
+  strong_middle_checkbox(d);
+}
+
 // L'échelle par paire (PlaySettings::pair_scale) : un essai, éteint par défaut.
 void pair_scale_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
@@ -575,7 +593,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
                 : i18n::tr("Scene cuts and held drawings are not interpolated."));
   cubic_warp_checkbox(d);
-  pair_scale_checkbox(d);
+  motion_trial_checkboxes(d);
   if (!panel::advanced()) return;  // poses, ordre du traitement et Smooth Motion : réglages avancés
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife || smoothed);
   ImGui::Checkbox(i18n::tr("Keep poses (DRBA) with RIFE"), &d.keep_poses);
