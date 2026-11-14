@@ -145,13 +145,14 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
   std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(&splat_sums_), time.handle};
   for (const KernelOps::SplatJob& job : jobs) {
     const int channels = static_cast<int>(job.source.shape.dims[1]);
+    const std::size_t first_sum = offset / sizeof(float);  // octets vers floats
     batch.jobs[batch.count++] = SoftSplatParams{.source = address(job.source),
                                                 .motion = address(job.motion),
                                                 .width = width_of(job.source),
                                                 .height = height_of(job.source),
                                                 .channels = channels,
                                                 .s = job.s,
-                                                .sums = splat_sums_ + offset / sizeof(float),
+                                                .sums = splat_sums_ + first_sum,
                                                 .out = address(job.out)};
     offset += aligned_sums(job);
     reads.push_back(job.source.handle);
