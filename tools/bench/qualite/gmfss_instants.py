@@ -82,6 +82,21 @@ def load(package, device, scale, weights=None):
     return Pair(net).eval(), Fusion(net).eval(), torch.device(device)
 
 
+def rife_ifnet(nets, rife):
+    """Les mêmes réseaux d'union, l'IFNet interne remplacé par le RIFE du banc (4.26), sans réentraîner : GridNet
+    reçoit l'image de RIFE à l'instant t, à la demi-taille où union fait tourner son IFNet."""
+    import torch
+
+    class Ifnet(torch.nn.Module):
+        def forward(self, half0, half1, time):
+            a, b = (x[0].float().cpu().numpy() for x in (half0, half1))
+            image = rife_at(*rife, a, b, float(time.reshape(-1)[0]))[0]
+            return torch.from_numpy(np.ascontiguousarray(image))[None].to(half0.device, half0.dtype)
+
+    nets[1].gmfss.ifnet = Ifnet()
+    return nets
+
+
 def splat_sums(source, flow, metric):
     """Le softmax splatting de soft_splat, sans la normalisation : (Σ source·e^m·w, Σ e^m·w), pour mêler
     plusieurs sources avant de diviser."""
@@ -335,7 +350,7 @@ def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, 
 
 def summary(rows, height):
     global METHODS
-    METHODS = tuple(m for m in dict.fromkeys(METHODS + ("gmfss_demi", "gmfss_neuf")) if f"{m}_1" in rows[0])
+    METHODS = tuple(m for m in dict.fromkeys(METHODS + ("gmfss_demi", "gmfss_neuf", "gmfss_ifnet426")) if f"{m}_1" in rows[0])
     gap = rows[0].get("ecart", 3)
     count = sum(len(instants(r)) for r in rows)
     lines = [f"Taille de travail {height}p, {len(rows)} paires (k, k + {gap}), instants i/{gap} : {count} instants.",
@@ -377,6 +392,8 @@ def main():
     p.add_argument("--demi", action="store_true", help="ajoute GMFSS au demi-flot (gmfss_demi), celui du lecteur d'avant")
     p.add_argument("--union-neuf", help="le train_log/ du « new union model » de 98mxr (gmfss_neuf)")
     p.add_argument("--lpips", action="store_true", help="ajoute LPIPS (pip install lpips)")
+    p.add_argument("--ifnet-rife", action="store_true",
+                   help="ajoute union avec son IFNet remplacé par le RIFE de --reseau, sans réentraîner")
     p.add_argument("--images-dir", help="écrit chaque instant de chaque méthode en PNG, et la vérité")
     p.add_argument("--ecart", type=int, default=3, help="images d'écart de la paire (3 : vérités à ⅓ et ⅔)")
     p.add_argument("--suites", type=int, default=40)
@@ -394,6 +411,9 @@ def main():
         variants.append(("gmfss_demi", load(args.gmfss, args.device, 0.5)))
     if args.union_neuf:
         variants.append(("gmfss_neuf", load(args.gmfss, args.device, args.echelle, args.union_neuf)))
+    if args.ifnet_rife:
+        variants.append(("gmfss_ifnet426", rife_ifnet(load(args.gmfss, args.device, args.echelle),
+                                                       rt.motion_session(args.reseau))))
     lpips_model = None
     if args.lpips:
         import lpips
