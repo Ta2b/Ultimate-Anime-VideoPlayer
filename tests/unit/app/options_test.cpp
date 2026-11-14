@@ -163,6 +163,11 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   REQUIRE(warp_trials);
   CHECK(warp_trials->tiled_warp);
   CHECK(warp_trials->warp_l2);
+  // Les blocs du RIFE fusionné en HWC8 : allumés par défaut, --no-rife-hwc8 les remet en plans.
+  CHECK(options->rife_hwc8);
+  const auto planar = parse({"épisode.mkv", "--no-rife-hwc8"});
+  REQUIRE(planar);
+  CHECK_FALSE(planar->rife_hwc8);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

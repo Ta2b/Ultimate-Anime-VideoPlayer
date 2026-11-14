@@ -257,14 +257,14 @@ Binaire `linux-release` ou `windows-release`, TensorRT puis Vulkan, RIFE 4.26 (�
 L'option ne deviendrait le défaut que sans perte visible en lecture (le verdict de Tatoub l'a refusée), avec un gain
 sur les paires fortes, et pour moins de 300 Mo de VRAM en plus.
 
-## Blocs du RIFE fusionné en E/S HWC8 (essai, `--rife-hwc8`)
+## Blocs du RIFE fusionné en E/S HWC8 (par défaut ; `--no-rife-hwc8` en essai)
 
 Sous TensorRT, chaque bloc du RIFE fusionné recevait X en plans (NCHW) et rendait Y en plans ; le moteur
 recopiait l'un et l'autre vers son rangement interne (les « Reformatting CopyNode » du profil). Sur la RTX
 4070 Ti, RIFE 4.26 en 1280 × 768, ces copies prenaient 41,5 % du dernier bloc (0,279 ms à l'entrée, 0,063 ms
 à la sortie, sur 0,825 ms) et 10 % de l'encodeur.
 
-Avec `--rife-hwc8`, les blocs se construisent avec `--inputIOFormats=hwc8 --outputIOFormats=hwc8`
+Les blocs se construisent avec `--inputIOFormats=hwc8 --outputIOFormats=hwc8`
 (`TrtexecConfig::hwc8_io`, haché dans la clé : un moteur en plans du cache ne sert pas à sa place), et les
 noyaux de colle écrivent X et lisent Y par pixel, canaux complétés de zéros jusqu'au multiple de 8 (15 → 16,
 28 → 32, 52 → 56 ; `rife_fused_kernels.h`). Le calcul est le même, au rangement près : le test des noyaux
@@ -284,8 +284,12 @@ Mesure de trtexec sur les morceaux du 4.26 en 1280 × 768 (graphe CUDA, deux tou
 | bloc 4 | 0,8121 ms | 0,4331 ms |
 | passe entière | 1,4388 ms | 1,0164 ms (−29 %) |
 
-Aucun reformatage ne reste au profil des moteurs HWC8. Reste à mesurer dans le lecteur (temps par image, «
-profil GPU · moteur RIFE fusionné ») avant d'en faire le défaut. `tools/trt/nhwc_pieces.py` refait les blocs
+Aucun reformatage ne reste au profil des moteurs HWC8. Dans le lecteur (RTX 4070 Ti, ×8 en 4K, deux fois
+60 s, SPAN en FP16) : RIFE passe de 3,0 à 2,38 ms par passe (−19 %), les images présentées de 142,6 à 146,0 par
+seconde, les images manquées d'environ 520 à 312 ; l'image reste dans le bruit de la lecture (36,9 à 37,1 dB
+pour un plancher de 37,4 entre deux lectures de main) et à 68 dB de la référence CPU. Allumé par défaut depuis
+cette mesure ; `--no-rife-hwc8` (avec `--debug`) revient aux E/S en plans. Le premier lancement reconstruit les
+blocs une fois (autre clé de moteur). `tools/trt/nhwc_pieces.py` refait les blocs
 en E/S NHWC dans l'ONNX même, pour un trtexec qui refuserait `--inputIOFormats`.
 
 ## Warp du backend TensorRT : lecture exacte, lecture filtrée à l'essai
@@ -309,7 +313,8 @@ Chaque pixel de la sortie lit le flot à quelques points seulement, mais canal p
 itération de `pose_time_at`. `Exact::sample_n` (`bilinear.cuh`) lit les canaux d'un même point en une fois
 (position, voisins et poids calculés une fois) et le flot en (u, v) se lit une seule fois par pixel : 33 lectures
 au lieu de 41, résultat identique au bit près (mêmes opérations dans le même ordre). Le gain dépend de ce que
-nvcc regroupait déjà ; à mesurer avec `ncu --kernel-name regex:warp_blend` (file des tests).
+nvcc regroupait déjà. Mesuré par nsys sur la RTX 4070 Ti (×8 en 4K) : médiane de warp_blend de 529 à 440 µs
+(−17 %), moyenne de 630 à 472 µs.
 
 ## GMFSS retiré
 

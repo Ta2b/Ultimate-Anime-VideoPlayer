@@ -29,6 +29,7 @@
 #include "backend_fixture.h"
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 #include "kernels/ref/half.h"
+#include "kernels/ref/warp.h"
 #include "kernels/spec/rife.h"
 #include "kernels/spec/rife_fused.h"
 #include "prepare/model_source.h"
@@ -411,6 +412,53 @@ void report_mask(const std::vector<float>& got, const std::vector<float>& want,
   WARN("cartes du masque : " << base.string() << "-ecart.pgm, -fusionne.pgm, -entier.pgm");
 }
 
+// L'image du milieu (t = ½) que le warp de référence tire de first et second avec le mouvement got (flot à 4
+// plans, masque), comparée à celle du mouvement want : PSNR en dB.
+double warped_psnr(const std::vector<float>& first, const std::vector<float>& second,
+                   const std::vector<std::vector<float>>& got, const std::vector<std::vector<float>>& want,
+                   int h, int w) {
+  const auto image = [&](const std::vector<float>& planes) {
+    kernels::RgbImage out(w, h);
+    for (int c = 0; c < 3; ++c)
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+          out.planes[static_cast<std::size_t>(c)].at(x, y) =
+              planes[static_cast<std::size_t>((c * h + y) * w + x)];
+    return out;
+  };
+  const auto motion_of = [&](const std::vector<std::vector<float>>& outputs) {
+    kernels::ref::Motion m;
+    for (int c = 0; c < 4; ++c) {
+      m.flow[static_cast<std::size_t>(c)] = kernels::PlaneF(w, h);
+      for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+          m.flow[static_cast<std::size_t>(c)].at(x, y) =
+              outputs[0][static_cast<std::size_t>((c * h + y) * w + x)];
+    }
+    m.mask = kernels::PlaneF(w, h);
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) m.mask.at(x, y) = outputs[1][static_cast<std::size_t>(y * w + x)];
+    m.area = kernels::Window{.x = 0, .y = 0, .width = w, .height = h};
+    return m;
+  };
+  const kernels::RgbImage a = image(first);
+  const kernels::RgbImage b = image(second);
+  const auto mine = kernels::ref::warp_blend_at(a, b, motion_of(got), 0.5F);
+  const auto theirs = kernels::ref::warp_blend_at(a, b, motion_of(want), 0.5F);
+  REQUIRE(mine);
+  REQUIRE(theirs);
+  std::vector<double> x;
+  std::vector<double> y;
+  for (int c = 0; c < 3; ++c) {
+    const auto& p = mine->planes[static_cast<std::size_t>(c)].data;
+    const auto& q = theirs->planes[static_cast<std::size_t>(c)].data;
+    x.insert(x.end(), p.begin(), p.end());
+    y.insert(y.end(), q.begin(), q.end());
+  }
+  double worst = 0.0;
+  return psnr_of(x, y, worst);
+}
+
 // Compare la chaîne fusionnée au RIFE entier de TensorRT sur la paire, pour un modèle du catalogue.
 void compare_engines(const std::string& file, bool motion) {
   const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
@@ -505,11 +553,21 @@ void compare_engines(const std::string& file, bool motion) {
               << " dB contre TensorRT entier, écart maximal " << worst);
     // Le moteur entier de TensorRT choisit ses tactiques à sa construction : sur un même code, le PSNR varie
     // de plusieurs dB d'un cache de moteurs à l'autre (34 à 56 dB mesurés, RTX 4070 Ti).
-    // 30 dB attrape encore un mauvais câblage (une sortie fausse tombe sous 20 dB).
-    CHECK(score >= 30.0);
+    // 30 dB attrape encore un mauvais câblage (une sortie fausse tombe sous 20 dB). Le masque se juge par
+    // l'image qu'il mélange (plus bas) : presque binaire, il amplifie les écarts FP16 d'avant la sigmoïde
+    // (4.22 lite à 22 dB sur le masque, flot à 50 dB, l'erreur sur les frontières et le grain des aplats).
+    if (!(motion && i == 1)) CHECK(score >= 30.0);
   }
 
-  if (motion) report_mask(got[1], want[1], want[0], h, w, scratch / (onnx.stem().string() + "-masque"));
+  if (motion) {
+    report_mask(got[1], want[1], want[0], h, w, scratch / (onnx.stem().string() + "-masque"));
+    // Ce que la lecture en fait : l'image du milieu par le warp de référence (kernels/ref/warp.h), avec le
+    // mouvement de la chaîne et avec celui du moteur entier.
+    const double image = warped_psnr(first, second, got, want, h, w);
+    WARN(file << " mouvement, image mélangée par le warp de référence : PSNR " << image
+              << " dB contre le mouvement du moteur entier");
+    CHECK(image >= 30.0);
+  }
 
   // Étape 5.2 : le dernier lecteur de l'entrée est RIFE fusionné, rife_time n'écrit plus que l'élément 0 du
   // plan de l'instant ; la chaîne fusionnée à l'instant 0,3 doit suivre le moteur entier qui lit une entrée

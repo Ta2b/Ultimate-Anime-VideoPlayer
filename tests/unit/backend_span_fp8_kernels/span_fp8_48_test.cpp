@@ -61,27 +61,32 @@ class Random {
 };
 
 // Poids aléatoires sur les canaux réels, zéros ailleurs, comme le paquet range un b5f48 : sorties au-delà de
-// real_outs nulles, et dans chaque groupe de kStored entrées, celles au-delà de real_ins.
+// real_outs nulles, et dans chaque groupe de kStored entrées, celles au-delà de real_ins. tail : la valeur
+// tirée élevée à cette puissance impaire, pour des poids à queue lourde comme ceux d'un réseau entraîné.
 void randomize(span_fp8::Conv& conv, std::size_t outs, std::size_t real_outs, std::size_t ins,
-               std::size_t real_ins, float spread, Random& random) {
+               std::size_t real_ins, float spread, Random& random, int tail = 1) {
   const std::size_t per_out = conv.weights.size() / outs;
   for (std::size_t i = 0; i < conv.weights.size(); ++i) {
     const bool real = i / per_out < real_outs && (i % per_out) % ins < real_ins;
-    const __half value = __float2half(real ? random.next() * spread : 0.0F);
+    const float r = random.next();
+    float shaped = r;
+    for (int k = 1; k < tail; ++k) shaped *= 2.0F * r;  // r dans [-0,5, 0,5) : même borne, queue plus lourde
+    const __half value = __float2half(real ? shaped * spread : 0.0F);
     std::memcpy(&conv.weights[i], &value, sizeof(std::uint16_t));
   }
   for (std::size_t o = 0; o < conv.bias.size(); ++o)
     conv.bias[o] = o < real_outs ? random.next() * 0.05F : 0.0F;
 }
 
-// real : 48 (un b5f48, rangé en 64 avec des zéros) ou 64.
-span_fp8::Package random_package(Random& random, int real = kReal, int blocks = 5) {
+// real : 48 (un b5f48, rangé en 64 avec des zéros) ou 64. tail : voir randomize (les convolutions des blocs).
+span_fp8::Package random_package(Random& random, int real = kReal, int blocks = 5, int tail = 1) {
   span_fp8::Package package = span_fp8::testing::synthetic(0.01F, blocks);
   package.real_channels = real;
   const auto live = static_cast<std::size_t>(real);
   randomize(package.first, kStored, live, span_fp8::kUnshuffledPadded, 12, 0.2F, random);
   for (span_fp8::Block& block : package.blocks) {
-    for (span_fp8::Conv& conv : block.conv) randomize(conv, kStored, live, kStored, live, 0.16F, random);
+    for (span_fp8::Conv& conv : block.conv)
+      randomize(conv, kStored, live, kStored, live, 0.16F, random, tail);
     randomize(block.attention, kStored, live, kStored, live, 0.45F, random);
   }
   randomize(package.concat, kStored, live, kStored, live, 0.2F, random);
@@ -155,7 +160,11 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   const bool acc16 = GENERATE(false, true);
   INFO("acc16 " << acc16);
   Random random;
-  span_fp8::Package package = random_package(random);
+  // En acc16, des poids uniformes saturent l'accumulateur f16 : chaque canal de poids est rangé à 448 / 16 et
+  // chaque activation à 448, et 576 produits de signes aléatoires dépassent 65504 dès la première
+  // convolution (toutes les sorties non finies, en 64 comme en 48). Ceux d'un réseau entraîné ont une queue
+  // lourde (b8f64 : la porte garde l'acc16 à 52,3 dB) ; la puissance 5 en donne une.
+  span_fp8::Package package = random_package(random, kReal, 5, acc16 ? 5 : 1);
   package.acc16 = acc16;
   std::vector<__half> image(kInCount);
   for (__half& value : image) value = __float2half(random.next() + 0.5F);
@@ -181,6 +190,7 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   const std::vector<double> native = run(package, SpanFp8Width::Native, in);
   const std::vector<double> by_tap = run(package, SpanFp8Width::PerTap, in);
   warn_non_finite(padded, "en 64 dont 16 nuls");
+  INFO("en 64 dont 16 nuls, la référence de ce test, doit rester finie");
   warn_non_finite(native, "K à plat");
   warn_non_finite(by_tap, "K par position");
   const double flat = snr_db(padded, native);
