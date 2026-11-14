@@ -345,7 +345,8 @@ def main():
     p.add_argument("--gmfss", required=True, help="le dossier vsgmfss_fortuna extrait de la roue")
     p.add_argument("--reseau", required=True, help="rife_v4.26.onnx (11 plans)")
     p.add_argument("--device", default="cpu", help="cpu ou cuda (GMFSS)")
-    p.add_argument("--echelle", type=float, default=0.5, help="échelle du flot de GMFlow (0,5 : le demi-flot d'avant)")
+    p.add_argument("--echelle", type=float, default=1.0,
+                   help="échelle du flot de GMFlow (1 : celle de GMFSS ; 0,5 : le demi-flot du lecteur d'avant)")
     p.add_argument("--hauteur", type=int, default=720, help="taille de travail")
     p.add_argument("--sortie", action="store_true",
                    help="mesure aussi à 1080p (taille de travail 540) : GMFSS agrandi, la composition après SPAN "
