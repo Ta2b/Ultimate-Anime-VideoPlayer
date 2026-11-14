@@ -227,11 +227,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       const std::int64_t gap = facts.gap_us;
       setup_.live->auto_pair(
           {.now_us = at_us,
-           .made_step = factor.num,
            .late = static_cast<int>(late),
            .period_us = gap >= kPairGapMinUs && gap <= kPairGapMaxUs
                             ? static_cast<std::int64_t>(static_cast<double>(gap) / play_rate)
-                            : 0});
+                            : 0,
+           .made_factor = {.num = factor.num, .den = factor.den}});
     } else {
       setup_.live->auto_alive(at_us);
     }

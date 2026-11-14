@@ -110,6 +110,9 @@ struct PairOutcome {
   int made_step = 0;           // le palier avec lequel elle a été faite (en 1 / granularity)
   int late = 0;                // instants sautés pour rattraper l'horloge
   std::int64_t period_us = 0;  // période de la source à la vitesse de lecture (0 : inconnue)
+  // Ou le facteur avec lequel elle a été faite (den > 0) : il l'emporte sur made_step. À fréquence fixe, le
+  // facteur d'un palier calé est sa fraction exacte (11011/6400 pour le palier 3), pas le palier lui-même.
+  Ratio made_factor{.num = 0, .den = 0};
 };
 
 struct AutoInfo {
@@ -181,6 +184,8 @@ class AutoRate {
   // Départ à un palier retenu (en centièmes de multiplicateur) : un cran en dessous, la montée rapide fait
   // le reste.
   void seed(int remembered_centi, std::int64_t now_us);
+  // Le palier d'un facteur rendu par factor() ; -1 : aucun palier ne le donne.
+  int step_of(Ratio factor) const;
   // Le facteur courant en centièmes de multiplicateur (250 = ×2,5, 344 pour 11011/3200), indépendant de la
   // granularité.
   int centi() const;
