@@ -12,7 +12,8 @@ l'installer, comme pour tools/gmfss/export_gmfss.py :
   python -m zipfile -e gmfss/vsgmfss_fortuna-1.0.0-py3-none-any.whl gmfss/roue
 
 Suites de quatre images 1080p toutes différentes d'un même plan (k à k+3, rife_instants.quadruples) : k et k+3
-forment la paire, k+1 et k+2 sont les vérités à t = ⅓ et ⅔. Tout se fait à la taille de travail (720p par défaut,
+forment la paire, k+1 et k+2 sont les vérités à t = ⅓ et ⅔ (--ecart N : k et k+N, vérités à i/N, un mouvement de
+source à faible cadence). Tout se fait à la taille de travail (720p par défaut,
 réduction de surface ; remplie au multiple de 128 comme le faisait le lecteur). Pour chaque instant, le PSNR contre
 la vraie image et le pire bloc 64 × 64 de :
 
@@ -44,7 +45,7 @@ sys.path.insert(1, os.path.join(HERE, "..", "..", "gmfss"))
 import mesures  # noqa: E402
 import modeles  # noqa: E402
 import rife_taille as rt  # noqa: E402
-from rife_instants import quadruples  # noqa: E402
+CUT = 0.12  # rife_instants.CUT : écart moyen au-delà duquel deux images sont de plans différents
 
 GMFSS_ALIGN = 128  # plans de la paire à 128, comme le lecteur d'avant 0.10.0
 METHODS = ("rife", "gmfss", "splats", "milieu", "milieu_rife")
@@ -256,28 +257,48 @@ def perceptual(model, ref, out):
         return float(model(th(ref), th(out)).item())
 
 
+def suites(frames, count, gap):
+    """count suites k..k+gap d'images toutes différentes d'un même plan, réparties dans l'extrait (à gap = 3, les
+    quadruples de rife_instants.py). Un grand écart imite une source à faible cadence : k et k+gap forment la paire,
+    les images du milieu sont les vérités à i/gap."""
+    from sources import differs
+
+    cand = []
+    for k in range(len(frames) - gap):
+        win = frames[k:k + gap + 1]
+        if all(differs(win[i], win[i + 1]) for i in range(gap)) and float(np.abs(win[0] - win[gap]).mean()) < CUT:
+            cand.append(k)
+    return [(k, frames[k:k + gap + 1]) for k in cand[::max(1, len(cand) // count)][:count]]
+
+
+def instants(row):
+    return range(1, row.get("ecart", 3))
+
+
 def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, key=0, variants=()):
     import torch
 
     full = win
     win = [work(x, height) for x in win]
-    a, b = win[0], win[3]
+    n = len(win) - 1
+    a, b = win[0], win[n]
     (pa, window), (pb, _) = padded(a), padded(b)
     started = time.perf_counter()
     g = Gmfss(nets, pa, pb)
     crop = lambda x: x.cpu().numpy()[window] if isinstance(x, torch.Tensor) else x  # noqa: E731
     others = [(name, Gmfss(n, pa, pb)) for name, n in variants]
     _, motion = rife_at(*rife, a, b, 0.5)
-    row = {"mouvement": motion}
-    for i, t in ((1, 1 / 3), (2, 2 / 3)):
+    row = {"mouvement": motion, "ecart": n}
+    for i in range(1, n):
+        t = i / n
         mid = crop(g.middle())
         half = (a, mid, 2 * t) if t < 0.5 else (mid, b, 2 * t - 1)
         outs = {
             "rife": rife_at(*rife, a, b, t)[0],
-            "gmfss": crop(g.at(t)),
+            "gmfss": mid if t == 0.5 else crop(g.at(t)),
             "splats": crop(g.splats(t)),
-            "milieu": crop(g.from_middle(t)),
-            "milieu_rife": rife_at(*rife, *half)[0],
+            "milieu": mid if t == 0.5 else crop(g.from_middle(t)),
+            "milieu_rife": mid if t == 0.5 else rife_at(*rife, *half)[0],
         }
         for name, other in others:
             outs[name] = crop(other.at(t))
@@ -301,8 +322,8 @@ def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, 
             up = rt.resize(rflow, hw, hh, rt._linear_axis) * factor
             outs_hi = {
                 "haut_gmfss_bilineaire": rt.resize(fused, hw, hh, rt._linear_axis),
-                "haut_compose": g.compose(t, fused, window, full[0], full[3]),
-                "haut_rife": rt.blend(full[0], full[3], up, rt.resize(rmask, hw, hh, rt._linear_axis)),
+                "haut_compose": g.compose(t, fused, window, full[0], full[n]),
+                "haut_rife": rt.blend(full[0], full[n], up, rt.resize(rmask, hw, hh, rt._linear_axis)),
             }
             for name, out in outs_hi.items():
                 out = np.clip(out, 0, 1)
@@ -315,7 +336,9 @@ def measure(nets, rife, win, height, high=False, lpips_model=None, images=None, 
 def summary(rows, height):
     global METHODS
     METHODS = tuple(m for m in dict.fromkeys(METHODS + ("gmfss_demi", "gmfss_neuf")) if f"{m}_1" in rows[0])
-    lines = [f"Taille de travail {height}p, {len(rows)} paires (k, k + 3), instants ⅓ et ⅔ : {2 * len(rows)} instants.",
+    gap = rows[0].get("ecart", 3)
+    count = sum(len(instants(r)) for r in rows)
+    lines = [f"Taille de travail {height}p, {len(rows)} paires (k, k + {gap}), instants i/{gap} : {count} instants.",
              "", "| Mouvement (px à la taille de travail) | Instants | " +
              " | ".join(f"{m} (dB)" for m in METHODS) + " | gmfss − rife | milieu − gmfss | milieu_rife − gmfss |",
              "|---|---:|" + "---:|" * (len(METHODS) + 3)]
@@ -324,17 +347,17 @@ def summary(rows, height):
         group = [r for r in rows if lo <= r["mouvement"] < hi]
         if not group:
             continue
-        mean = {m: float(np.mean([r[f"{m}_{i}"] for r in group for i in (1, 2)])) for m in METHODS}
+        mean = {m: float(np.mean([r[f"{m}_{i}"] for r in group for i in instants(r)])) for m in METHODS}
         label = "toutes" if (lo, hi) == (0, 1e9) else (f"{lo} à {hi}" if hi < 1e9 else f"{lo} et plus")
-        lines.append(f"| {label} | {2 * len(group)} | " + " | ".join(f"{mean[m]:.2f}" for m in METHODS) +
+        lines.append(f"| {label} | {sum(len(instants(r)) for r in group)} | " + " | ".join(f"{mean[m]:.2f}" for m in METHODS) +
                      f" | {mean['gmfss'] - mean['rife']:+.2f} | {mean['milieu'] - mean['gmfss']:+.2f} | "
                      f"{mean['milieu_rife'] - mean['gmfss']:+.2f} |")
     if "lpips_gmfss_1" in rows[0]:
         lines += ["", "LPIPS moyen (plus bas : plus proche à l'œil) : " + ", ".join(
-            f"{m} {np.mean([r[f'lpips_{m}_{i}'] for r in rows for i in (1, 2)]):.4f}" for m in METHODS)]
+            f"{m} {np.mean([r[f'lpips_{m}_{i}'] for r in rows for i in instants(r)]):.4f}" for m in METHODS)]
     lines += ["", "Pire bloc 64 × 64, moyenne (dB) : " + ", ".join(
-        f"{m} {np.mean([r[f'pire_bloc_{m}_{i}'] for r in rows for i in (1, 2)]):.2f}" for m in METHODS)]
-    worse = {m: min(r[f"{m}_{i}"] - r[f"gmfss_{i}"] for r in rows for i in (1, 2)) for m in METHODS if m != "gmfss"}
+        f"{m} {np.mean([r[f'pire_bloc_{m}_{i}'] for r in rows for i in instants(r)]):.2f}" for m in METHODS)]
+    worse = {m: min(r[f"{m}_{i}"] - r[f"gmfss_{i}"] for r in rows for i in instants(r)) for m in METHODS if m != "gmfss"}
     lines.append("Pire écart d'un instant à GMFSS (dB) : " + ", ".join(f"{m} {v:+.2f}" for m, v in worse.items()))
     return "\n".join(lines).replace(".", ",") + "\n"
 
@@ -355,6 +378,7 @@ def main():
     p.add_argument("--union-neuf", help="le train_log/ du « new union model » de 98mxr (gmfss_neuf)")
     p.add_argument("--lpips", action="store_true", help="ajoute LPIPS (pip install lpips)")
     p.add_argument("--images-dir", help="écrit chaque instant de chaque méthode en PNG, et la vérité")
+    p.add_argument("--ecart", type=int, default=3, help="images d'écart de la paire (3 : vérités à ⅓ et ⅔)")
     p.add_argument("--suites", type=int, default=40)
     p.add_argument("--images", type=int, default=740, help="images lues au début de l'extrait")
     p.add_argument("--json")
@@ -363,7 +387,7 @@ def main():
     import torch
 
     torch.set_grad_enabled(False)
-    wins = quadruples(rt.decode(args.video, args.images), args.suites)
+    wins = suites(rt.decode(args.video, args.images), args.suites, args.ecart)
     nets = load(args.gmfss, args.device, args.echelle)
     variants = []
     if args.demi:
@@ -386,9 +410,9 @@ def main():
     if args.sortie:
         hi = ("haut_gmfss_bilineaire", "haut_compose", "haut_rife")
         text += "\nÀ la sortie 1080p (vraies images 1080p comme sources agrandies), moyenne (dB) : " + ", ".join(
-            f"{m} {np.mean([r[f'{m}_{i}'] for r in rows for i in (1, 2)]):.2f}".replace(".", ",") for m in hi)
+            f"{m} {np.mean([r[f'{m}_{i}'] for r in rows for i in instants(r)]):.2f}".replace(".", ",") for m in hi)
         text += " ; pire bloc : " + ", ".join(
-            f"{m} {np.mean([r[f'pire_bloc_{m}_{i}'] for r in rows for i in (1, 2)]):.2f}".replace(".", ",")
+            f"{m} {np.mean([r[f'pire_bloc_{m}_{i}'] for r in rows for i in instants(r)]):.2f}".replace(".", ",")
             for m in hi) + "\n"
     print(text)
     if args.json:
