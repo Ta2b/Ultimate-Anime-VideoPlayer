@@ -120,7 +120,7 @@ std::expected<void, Refusal> order_tensors(const GmfssBuffers& gmfss, std::span<
 // Chaque côté pousse ses sources par son mouvement ; au niveau 1, l'image puis les caractéristiques, chacune
 // dans sa tranche de warped{k}_1.
 void list_splats(GmfssBuffers& gmfss) {
-  const auto at = [&](std::string name) { return *named_tensor(gmfss, name); };
+  const auto at = [&](const std::string& name) { return *named_tensor(gmfss, name); };
   for (int side = 0; side < 2; ++side) {
     for (int level = 1; level <= kernels::kGmfssLevels; ++level) {
       const gpu::Tensor motion = at(std::format("motion{}_{}", side, level));
