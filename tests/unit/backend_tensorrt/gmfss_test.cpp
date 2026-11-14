@@ -164,7 +164,8 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
   upload((*b)->tensor(), flat(pb));
   REQUIRE(ops.gmfss_frames((*a)->tensor(), (*b)->tensor(), (*frames)->tensor()));
   const std::vector<float> got = download((*frames)->tensor());
-  const std::size_t plane = static_cast<std::size_t>(g.padded_width) * g.padded_height;
+  const std::size_t plane =
+      static_cast<std::size_t>(g.padded_width) * static_cast<std::size_t>(g.padded_height);
   for (int c = 0; c < k::kGmfssFramePlanes; ++c) {
     const k::PlaneF& source = c < 3 ? pa[static_cast<std::size_t>(c)] : pb[static_cast<std::size_t>(c - 3)];
     for (int y = 0; y < g.padded_height; ++y) {
@@ -172,7 +173,8 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
         const bool inside = x >= g.left && x < g.left + w && y >= g.top && y < g.top + h;
         const float want = inside ? source.at(x - g.left, y - g.top) : 0.0F;
         const float value = got[static_cast<std::size_t>(c) * plane +
-                                static_cast<std::size_t>(y) * g.padded_width + static_cast<std::size_t>(x)];
+                                static_cast<std::size_t>(y) * static_cast<std::size_t>(g.padded_width) +
+                                static_cast<std::size_t>(x)];
         if (value != want)
           FAIL_CHECK("plan " << c << " (" << x << ", " << y << ") : " << value << " au lieu de " << want);
       }
