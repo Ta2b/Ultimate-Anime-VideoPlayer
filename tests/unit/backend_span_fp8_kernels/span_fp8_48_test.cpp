@@ -188,12 +188,24 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
 
   const std::vector<double> padded = run(package, SpanFp8Width::Padded, in);
   const std::vector<double> native = run(package, SpanFp8Width::Native, in);
-  const std::vector<double> by_tap = run(package, SpanFp8Width::PerTap, in);
   warn_non_finite(padded, "en 64 dont 16 nuls");
   INFO("en 64 dont 16 nuls, la référence de ce test, doit rester finie");
   warn_non_finite(native, "K à plat");
-  warn_non_finite(by_tap, "K par position");
   const double flat = snr_db(padded, native);
+  if (acc16) {
+    // K par position n'a pas d'accumulateur f16 (NaN mesurés) : refusé à la création.
+    SpanFp8Weights weights = span_fp8_view(package);
+    weights.width48 = SpanFp8Width::PerTap;
+    SpanFp8Status status = SpanFp8Status::Ok;
+    std::string error;
+    CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
+    CHECK(error.find("K par position") != std::string::npos);
+    INFO("SNR contre le calcul en 64 : K à plat " << flat << " dB");
+    CHECK(flat >= 45.0);
+    return;
+  }
+  const std::vector<double> by_tap = run(package, SpanFp8Width::PerTap, in);
+  warn_non_finite(by_tap, "K par position");
   const double per_tap = snr_db(padded, by_tap);
   INFO("SNR contre le calcul en 64 : K à plat " << flat << " dB, K par position " << per_tap << " dB");
   // Seul l'ordre des sommes diffère : bien au-dessus de l'arrondi FP8 (le test C02-10 exige 20 dB contre la

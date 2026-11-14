@@ -412,11 +412,11 @@ void report_mask(const std::vector<float>& got, const std::vector<float>& want,
   WARN("cartes du masque : " << base.string() << "-ecart.pgm, -fusionne.pgm, -entier.pgm");
 }
 
-// L'image du milieu (t = ½) que le warp de référence tire de first et second avec le mouvement got (flot à 4
-// plans, masque), comparée à celle du mouvement want : PSNR en dB.
+// L'image à l'instant t que le warp de référence tire de first et second avec le mouvement got (flot à 4
+// plans, masque, sortis par RIFE pour cet instant), comparée à celle du mouvement want : PSNR en dB.
 double warped_psnr(const std::vector<float>& first, const std::vector<float>& second,
                    const std::vector<std::vector<float>>& got, const std::vector<std::vector<float>>& want,
-                   int h, int w) {
+                   int h, int w, float t) {
   const auto image = [&](const std::vector<float>& planes) {
     kernels::RgbImage out(w, h);
     for (int c = 0; c < 3; ++c)
@@ -443,8 +443,8 @@ double warped_psnr(const std::vector<float>& first, const std::vector<float>& se
   };
   const kernels::RgbImage a = image(first);
   const kernels::RgbImage b = image(second);
-  const auto mine = kernels::ref::warp_blend_at(a, b, motion_of(got), 0.5F);
-  const auto theirs = kernels::ref::warp_blend_at(a, b, motion_of(want), 0.5F);
+  const auto mine = kernels::ref::warp_blend_at(a, b, motion_of(got), t);
+  const auto theirs = kernels::ref::warp_blend_at(a, b, motion_of(want), t);
   REQUIRE(mine);
   REQUIRE(theirs);
   std::vector<double> x;
@@ -563,7 +563,7 @@ void compare_engines(const std::string& file, bool motion) {
     report_mask(got[1], want[1], want[0], h, w, scratch / (onnx.stem().string() + "-masque"));
     // Ce que la lecture en fait : l'image du milieu par le warp de référence (kernels/ref/warp.h), avec le
     // mouvement de la chaîne et avec celui du moteur entier.
-    const double image = warped_psnr(first, second, got, want, h, w);
+    const double image = warped_psnr(first, second, got, want, h, w, 0.5F);
     WARN(file << " mouvement, image mélangée par le warp de référence : PSNR " << image
               << " dB contre le mouvement du moteur entier");
     CHECK(image >= 30.0);
@@ -583,7 +583,12 @@ void compare_engines(const std::string& file, bool motion) {
     double worst = 0.0;
     const double score = psnr_of(x, y, worst);
     WARN(file << " instant 0,3 par rife_time, sortie " << i << " : PSNR " << score << " dB");
-    CHECK(score >= 30.0);
+    if (!(motion && i == 1)) CHECK(score >= 30.0);  // le masque, par l'image qu'il mélange (plus bas)
+  }
+  if (motion) {
+    const double image = warped_psnr(first, second, got_time, want_time, h, w, 0.3F);
+    WARN(file << " instant 0,3, image mélangée par le warp de référence : PSNR " << image << " dB");
+    CHECK(image >= 30.0);
   }
 }
 
