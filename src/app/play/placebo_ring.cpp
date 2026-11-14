@@ -111,6 +111,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
   if (!chosen) return std::unexpected(std::move(chosen.error()));
   const pl_fmt format = *chosen;
   const bool ten_bits = std::string_view(format->name) == "rgb10a2";
+  const RingFormat taken = ten_bits ? RingFormat::Rgb10a2Unorm : RingFormat::Rgba16Unorm;
   // Lecture des sémaphores sans attente (ready) : Vulkan 1.2, ou VK_KHR_timeline_semaphore.
   const pl_vulkan vk = pl_vulkan_get(gpu);
   device_ = VK_NULL_HANDLE;
@@ -192,7 +193,7 @@ std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu
         .generation = generation_,
         .width = width,
         .height = height,
-        .format = wanted,
+        .format = taken,
         .image = reinterpret_cast<std::uint64_t>(image),
         .memory = {.kind = kind, .value = exported ? raw_handle(slot.tex->shared_mem.handle) : 0},
         .memory_size = slot.tex->shared_mem.size,
