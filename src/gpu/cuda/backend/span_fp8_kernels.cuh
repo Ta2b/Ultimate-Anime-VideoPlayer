@@ -45,13 +45,10 @@ struct KP {
   // surf_w×surf_h pixels au plus (0 : pas d'anneau).
   RingSurface surface{};  // emplacement de l'anneau (ring_surface.h) ; object 0 : aucun
   int surf_w = 0, surf_h = 0;
-  // Accumulateur f16 seulement : un mot de l'appareil, mis à 1 quand une somme a débordé (infinie ou NaN). La
-  // somme est alors bornée à ±65504 (NaN à 0) avant l'épilogue : rien d'infini ni de NaN ne se propage, et
-  // le corps recalcule l'image en f32 (run_if).
+  // Accumulateur f16 seulement : un mot de la mémoire de l'hôte projetée (cudaHostAllocMapped), mis à 1
+  // quand une somme a débordé (infinie ou NaN). La somme est alors bornée à ±65504 (NaN à 0) avant
+  // l'épilogue ; SpanFp8Net::poll_accumulator compte l'image et applique span_fp8::Acc16Policy.
   int* overflow = nullptr;
-  // Non nul : le noyau ne tourne que si ce mot vaut 1 (le recalcul en f32 d'une image débordée), sinon tous
-  // ses blocs rendent la main dès leur première instruction.
-  const int* run_if = nullptr;
 };
 
 // Une valeur de l'accumulateur en unités du mma. Guard (accumulateur f16) : une somme débordée est bornée au
@@ -176,7 +173,6 @@ __global__ void __launch_bounds__(Base::kThreadCount, 1) net_kernel(typename Bas
   constexpr int kKS = kN / 16;  // pas k16 de la conv 1x1 du mode 1
   constexpr int kLd = kN + 8;   // pas de W1 en smem (36 ou 28 mots) : sans conflit de banques
 
-  if (tp.run_if != nullptr && *tp.run_if == 0) return;  // le même mot pour tout le bloc
   extern __shared__ __align__(16) unsigned char smem[];
   auto& ss = *reinterpret_cast<typename Mma::SharedStorage*>(smem);
   __half* w1s = reinterpret_cast<__half*>(smem + ((sizeof(typename Mma::SharedStorage) + 15) / 16) * 16);

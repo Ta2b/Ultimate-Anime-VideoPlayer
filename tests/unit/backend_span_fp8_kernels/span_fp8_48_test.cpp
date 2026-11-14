@@ -122,15 +122,21 @@ std::unique_ptr<SpanFp8Net> make_net(const span_fp8::Package& package, SpanFp8Wi
   return net;
 }
 
-// La sortie de package sur in. overflowed non nul : vrai si l'accumulateur f16 a débordé ; la sortie est
-// alors celle du recalcul en f32 du même lancement (SpanFp8Net::poll_accumulator).
+// La sortie de package sur in. overflowed non nul : vrai si l'accumulateur f16 a débordé ; la sortie bornée
+// doit être finie, et la sortie rendue est celle d'après le passage au f32 (Acc16Policy::kFrames images
+// débordées de suite, puis un lancement en f32).
 std::vector<double> run(const span_fp8::Package& package, SpanFp8Width width, const DeviceBytes& in,
                         bool fp16 = false, bool* overflowed = nullptr) {
   const std::unique_ptr<SpanFp8Net> net = make_net(package, width, fp16);
   DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
   net->bind(workspace.data);
   std::vector<double> values = launch_once(*net, in);
-  if (overflowed != nullptr) *overflowed = net->overflow_frames() > 0;
+  if (overflowed == nullptr) return values;
+  *overflowed = net->overflow_frames() > 0;
+  if (!*overflowed) return values;
+  CHECK(std::ranges::all_of(values, [](double v) { return std::isfinite(v); }));
+  for (int k = 0; k < span_fp8::Acc16Policy::kFrames; ++k) values = launch_once(*net, in);
+  CHECK(net->overflow_frames() == span_fp8::Acc16Policy::kFrames);
   return values;
 }
 
@@ -203,7 +209,7 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
   REQUIRE(scales);
   package.scales = *scales;
 
-  // En acc16, ces poids font déborder quelques sommes : la sortie comparée est alors celle du recalcul f32.
+  // En acc16, ces poids font déborder quelques sommes : la sortie comparée est alors celle d'après le f32.
   bool padded_over = false, native_over = false;
   const std::vector<double> padded = run(package, SpanFp8Width::Padded, in, false, &padded_over);
   const std::vector<double> native = run(package, SpanFp8Width::Native, in, false, &native_over);
@@ -235,10 +241,10 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
 }
 
 // Des poids uniformes à 64 canaux (le b8f64, chemin par défaut) font déborder l'accumulateur f16 dès la
-// première convolution, à chaque image : chacune est recalculée en f32 dans son lancement et sort comme
-// celle du réseau f32, à l'arrondi près des poids rangés 16 fois plus bas (dénormaux seulement). Après
-// Acc16Policy::kFrames images débordées, le réseau passe au f32 et ne compte plus.
-TEST_CASE("SPAN FP8 acc16 : une image débordée est recalculée en f32, puis le réseau passe au f32",
+// première convolution, à chaque image : chacune sort bornée, finie. Après Acc16Policy::kFrames images
+// débordées, le réseau passe au f32 et sort comme le réseau f32, à l'arrondi près des poids rangés 16 fois
+// plus bas (dénormaux seulement) ; il ne compte plus.
+TEST_CASE("SPAN FP8 acc16 : une image débordée reste finie, puis le réseau passe au f32 pour un temps",
           "[cuda][span_fp8]") {
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   Random random;
@@ -266,17 +272,18 @@ TEST_CASE("SPAN FP8 acc16 : une image débordée est recalculée en f32, puis le
   const std::unique_ptr<SpanFp8Net> net = make_net(package, SpanFp8Width::Padded);
   DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
   net->bind(workspace.data);
-  // launch appelle poll_accumulator : il voit au lancement k les k − 1 images débordées d'avant, et passe au
-  // f32 au lancement kFrames + 1.
+  // launch appelle poll_accumulator : il compte au lancement k l'image débordée du lancement k − 1, et
+  // passe au f32 au lancement kFrames + 1, qui ne déborde plus.
   constexpr int kLaunches = span_fp8::Acc16Policy::kFrames + 1;
   for (int k = 1; k <= kLaunches; ++k) {
     const std::vector<double> got = launch_once(*net, in);
-    warn_non_finite(got, "acc16");
-    const double snr = snr_db(plain, got);
-    INFO("lancement " << k << " : SNR contre le f32 " << snr << " dB, " << net->overflow_frames()
-                      << " images débordées");
-    CHECK(snr >= 40.0);
+    INFO("lancement " << k << ", " << net->overflow_frames() << " images débordées");
+    CHECK(std::ranges::all_of(got, [](double v) { return std::isfinite(v); }));
     CHECK(net->overflow_frames() == std::min(k, span_fp8::Acc16Policy::kFrames));
+    if (k < kLaunches) continue;
+    const double snr = snr_db(plain, got);
+    INFO("SNR du réseau passé au f32 contre le f32 : " << snr << " dB");
+    CHECK(snr >= 40.0);
   }
   CHECK(net->poll_accumulator() == SpanFp8AccChange::None);  // en f32 pour kCooldown lancements
   CHECK(net->overflow_frames() == span_fp8::Acc16Policy::kFrames);

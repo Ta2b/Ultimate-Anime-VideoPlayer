@@ -1,10 +1,9 @@
 // L'accumulateur f16 du SPAN FP8 face à ses débordements (docs/span-fp8-cutlass.md, garde-fou). Une image
-// dont une somme a débordé est recalculée en f32 sur la carte, dans le même lancement : elle sort juste, au
-// prix d'un corps de plus. Tant que ces images restent rares, le réseau garde l'accumulateur f16 ; si kFrames
-// d'entre elles tombent dans kWindow lancements (un passage très lumineux qui dure), il passe au f32 pendant
-// kCooldown lancements, puis réessaie le f16. C++ pur : le corps CUDA (span_fp8_body.cuh) lui donne le compte
-// des images débordées que ses noyaux tiennent, lu sans synchronisation, donc avec un lancement ou deux de
-// retard.
+// dont une somme a débordé sort avec cette somme bornée au plus grand f16, ce qui ne se voit pas. Tant que
+// ces images restent rares, le réseau garde l'accumulateur f16 ; si kFrames d'entre elles tombent dans
+// kWindow lancements (un passage très lumineux qui dure), il passe au f32 pendant kCooldown lancements, puis
+// réessaie le f16. C++ pur : le corps CUDA (span_fp8_body.cuh) lui donne le compte des images débordées, lu
+// sans synchronisation, donc avec un lancement ou deux de retard.
 #pragma once
 
 #include <array>

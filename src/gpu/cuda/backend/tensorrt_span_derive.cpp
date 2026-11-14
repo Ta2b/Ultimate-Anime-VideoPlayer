@@ -144,9 +144,9 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> load_fp16(nvinfer1::IRuntime&
 }
 
 // Après la validation et les cas durs : une image dont une somme de l'accumulateur f16 a débordé
-// (SpanFp8Net::overflow_frames ; elle a été recalculée en f32) écarte la variante f16 : un modèle qui déborde
-// déjà sur ces images déborderait souvent, et chaque image débordée coûte deux corps. Validation seule d'un
-// paquet en f16 : refusée, le paquet se refait.
+// (SpanFp8Net::overflow_frames ; ses sommes ont été bornées) écarte la variante f16 : un modèle qui déborde
+// déjà sur ces images déborderait souvent. Validation seule d'un paquet en f16 : refusée, le paquet se
+// refait.
 std::expected<void, Refusal> settle_overflow(bool validate_only, SpanFp8Net& net,
                                              std::unique_ptr<SpanFp8Net>& net16, SpanFp8Derivation& result) {
   if (validate_only && net.overflow_frames() > 0)

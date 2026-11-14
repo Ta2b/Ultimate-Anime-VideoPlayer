@@ -268,17 +268,17 @@ std::expected<void, Refusal> SpanFp8Engine::body(cudaStream_t stream, const void
       return refuse(RefusalCode::VendorCallFailed, "SPAN FP8 : " + why);
     return {};
   };
-  // Accumulateur f16 : des images débordées rapprochées passent le réseau au f32 pour un temps (chacune a été
-  // recalculée juste), puis il revient au f16 ; les graphes capturés portent les anciens lancements.
+  // Accumulateur f16 : des images débordées rapprochées (sommes bornées) passent le réseau au f32 pour un
+  // temps, puis il revient au f16 ; les graphes capturés portent les anciens lancements.
   if (const SpanFp8AccChange change = net_->poll_accumulator(); change != SpanFp8AccChange::None) {
     drop_graphs();
     overflow_notice_ =
         change == SpanFp8AccChange::ToF32
             ? std::format(
                   "SPAN FP8 : {} images débordées en f16 depuis le chargement, dont plusieurs à la suite "
-                  "(recalculées en f32) ; le réseau accumule en f32 pour un temps",
+                  "(sommes bornées) ; le réseau accumule en f32 pour un temps",
                   net_->overflow_frames())
-            : std::string("SPAN FP8 : retour à l'accumulateur f16");
+            : std::string("SPAN FP8 : retour à l'accumulateur f16 après le passage en f32");
   }
   const GraphBook<std::uintptr_t>::Pick pick = book_.next(reinterpret_cast<std::uintptr_t>(source));
   if (pick.step == GraphStep::Direct || pick.step == GraphStep::Overflow || pick.step == GraphStep::Warm)
