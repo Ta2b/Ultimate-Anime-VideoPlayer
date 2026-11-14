@@ -76,7 +76,7 @@ std::vector<HardCase> hard_cases(int width, int height) {
     gray(rgb, dx * dx + dy * dy < r * r ? 255 : 224 + x * 32 / width);
   }));
   // Blanc plein : toutes les entrées au maximum, la somme la plus haute qu'une image puisse donner aux
-  // premières convolutions (accumulateur f16, SpanFp8Net::take_overflow).
+  // premières convolutions (accumulateur f16, SpanFp8Net::overflow_frames).
   out.push_back(draw("blanc plein", width, height, [](int, int, std::uint8_t (&rgb)[3]) { gray(rgb, 255); }));
   // Mire saturée : huit barres verticales à 100 % (blanc, jaune, cyan, vert, magenta, rouge, bleu, noir),
   // bits rouge, vert et bleu de haut en bas.

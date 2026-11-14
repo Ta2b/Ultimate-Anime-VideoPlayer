@@ -124,11 +124,16 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
 }
 
 bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, std::string& error) {
+  static_cast<void>(poll_accumulator());  // pas de graphe ici
   return launch_body(stream, input, error) && launch_tail(stream, output, {}, error);
 }
 
-bool SpanFp8Net::take_overflow() {
-  return impl_->body->take_overflow();
+SpanFp8AccChange SpanFp8Net::poll_accumulator() {
+  return impl_->body->poll_accumulator();
+}
+
+int SpanFp8Net::overflow_frames() const {
+  return impl_->body->overflow_frames();
 }
 
 bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string& error) {

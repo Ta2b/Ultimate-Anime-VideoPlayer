@@ -48,8 +48,12 @@ bool SpanFp8Net::launch_tail(cudaStream_t /*stream*/, void* /*output*/, const Sp
   return false;
 }
 
-bool SpanFp8Net::take_overflow() {
-  return false;
+SpanFp8AccChange SpanFp8Net::poll_accumulator() {
+  return SpanFp8AccChange::None;
+}
+
+int SpanFp8Net::overflow_frames() const {
+  return 0;
 }
 
 }  // namespace ajp::gpu::cuda

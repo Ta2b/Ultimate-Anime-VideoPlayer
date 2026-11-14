@@ -143,15 +143,16 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> load_fp16(nvinfer1::IRuntime&
   return trt;
 }
 
-// Après la validation et les cas durs : une somme de l'accumulateur f16 qui a débordé (bornée par les
-// noyaux, SpanFp8Net::take_overflow) écarte la variante f16, que le lecteur ne prendrait que pour revenir au
-// f32 à la première image de ce genre. Validation seule d'un paquet en f16 : refusée, le paquet se refait.
+// Après la validation et les cas durs : une image dont une somme de l'accumulateur f16 a débordé
+// (SpanFp8Net::overflow_frames ; ses sommes ont été bornées) écarte la variante f16 : un modèle qui déborde
+// déjà sur ces images déborderait souvent. Validation seule d'un paquet en f16 : refusée, le paquet se
+// refait.
 std::expected<void, Refusal> settle_overflow(bool validate_only, SpanFp8Net& net,
                                              std::unique_ptr<SpanFp8Net>& net16, SpanFp8Derivation& result) {
-  if (validate_only && net.take_overflow())
+  if (validate_only && net.overflow_frames() > 0)
     return refuse(RefusalCode::VendorCallFailed,
                   "validation du SPAN FP8 : une somme de l'accumulateur f16 a débordé sur ces images");
-  if (net16 && net16->take_overflow()) {
+  if (net16 && net16->overflow_frames() > 0) {
     result.scores_acc16.clear();
     result.hard_scores_acc16.clear();
     net16.reset();

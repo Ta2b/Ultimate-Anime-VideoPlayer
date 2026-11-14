@@ -27,7 +27,8 @@ class SpanFp8Body {
   virtual bool launch_body(cudaStream_t stream, const void* input, std::string& error) = 0;
   virtual bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring,
                            std::string& error) = 0;
-  virtual bool take_overflow() = 0;  // SpanFp8Net::take_overflow
+  virtual SpanFp8AccChange poll_accumulator() = 0;  // SpanFp8Net::poll_accumulator
+  virtual int overflow_frames() const = 0;
 };
 
 // height, width : l'image d'entrée, déjà jugée par span_fp8::size_refusal.

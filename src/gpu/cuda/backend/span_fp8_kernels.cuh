@@ -47,7 +47,7 @@ struct KP {
   int surf_w = 0, surf_h = 0;
   // Accumulateur f16 seulement : un mot de la mémoire de l'hôte projetée (cudaHostAllocMapped), mis à 1
   // quand une somme a débordé (infinie ou NaN). La somme est alors bornée à ±65504 (NaN à 0) avant
-  // l'épilogue, et le réseau passe à l'accumulateur f32 au lancement suivant (SpanFp8Net::take_overflow).
+  // l'épilogue ; SpanFp8Net::poll_accumulator compte l'image et applique span_fp8::Acc16Policy.
   int* overflow = nullptr;
 };
 

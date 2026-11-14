@@ -109,19 +109,32 @@ termes de même signe dépassent 65 504, et des poids à queue lourde l'ont mont
 en 64 et dans K à plat, test des 48 canaux). Les images réelles de la porte n'y arrivent pas, une scène
 atypique le pourrait. Une borne prouvée (somme des |poids| × 448 ≤ 65 504) rangerait les poids des blocs
 environ 20 fois plus bas encore, en dénormaux pour les petits : écartée sans mesure de sa perte. Le garde-fou
-choisi ne coûte rien tant que rien ne déborde :
+ne coûte rien tant que rien ne déborde :
 
 - l'épilogue de chaque noyau à accumulateur f16 (`acc_value`) borne une somme infinie au plus grand f16 de son
   signe, et une somme NaN (débordée des deux côtés) à 0, avant alpha, biais et activation : aucun NaN ni infini
   n'entre dans l'image ;
 - il écrit alors 1 dans un mot de la mémoire de l'hôte projetée (`KP::overflow`, `cudaHostAllocMapped`), sans
   copie ni synchronisation par image ;
-- au lancement suivant, `SpanFp8Net::take_overflow` le voit, le réseau passe aux noyaux f32 (initialisés dès
-  la création sur les mêmes poids) et le moteur refait ses graphes (`SpanFp8Engine::body`), avec un mot au
-  journal. Une seule image est donc approchée (sommes bornées), les suivantes sont exactes ;
-- la porte appelle `take_overflow` après la validation et les cas durs (`settle_overflow`) : un débordement sur
-  l'une de ces images écarte la variante f16 du paquet, et la validation seule d'un paquet en f16 échoue (il se
+- avant chaque corps, `SpanFp8Net::poll_accumulator` lit ce mot, compte l'image et le remet à 0, puis applique
+  `span_fp8::Acc16Policy` : trois images débordées en 240 lancements (un passage clair qui dure) passent le
+  réseau aux noyaux f32 (initialisés dès la création sur les mêmes poids) pendant 2 400 lancements, environ
+  20 s, puis il revient au f16. À chaque changement, le moteur refait ses graphes (`SpanFp8Engine::body`) et
+  le dit au journal ;
+- la porte lit ce compte après la validation et les cas durs (`settle_overflow`) : un débordement sur l'une de
+  ces images écarte la variante f16 du paquet, et la validation seule d'un paquet en f16 échoue (il se
   refait). Le blanc plein et la mire saturée y sont venus pour cela.
+
+Mesures sur la RTX 4070 Ti (b8f64, Re:Zero épisode 18) : le générique de fin (kanji blancs sur fond noir, vers
+21 min 35 s) fait déborder trois à quatre images de suite. La première version passait au f32 pour toute la
+suite de la lecture (SPAN environ 1 ms plus lent) ; d'où le retour au f16. Sur l'image débordée, l'image bornée
+est à 46,1 dB du SPAN FP16 de TensorRT (99,9e centile de 49,6 codes) et ne se distingue pas à l'œil.
+
+Écarté, mesuré : recalculer l'image débordée en f32 dans son propre lancement (le corps f32 lancé derrière le
+corps f16 à chaque image, ses noyaux ne tournant que sur débordement). L'image recalculée était à 44,9 dB du
+FP16 de TensorRT, sans différence visible, et les 28 lancements à vide plus le compte coûtaient 0,29 ms par
+image en régime (12,70 → 12,99 ms, médiane de trois paires) : plus qu'ils ne rendent. Un nœud conditionnel de
+graphe CUDA ne coûterait presque rien, mais pour une image qu'on ne voit pas.
 
 ### SPAN FP16 en noyaux CUTLASS (lot 2 du fil SPAN, à mesurer)
 

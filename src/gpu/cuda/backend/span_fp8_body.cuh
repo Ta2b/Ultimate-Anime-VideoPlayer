@@ -14,6 +14,7 @@
 #include "gpu/cuda/backend/span_fp8_body.h"
 #include "gpu/cuda/backend/span_fp8_kernels.cuh"
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
+#include "gpu/span_fp8/acc16_policy.h"
 #include "gpu/span_fp8/quantize.h"
 
 namespace ajp::gpu::cuda {
@@ -116,13 +117,18 @@ class Body final : public SpanFp8Body {
   void bind(void* base) override;
   bool launch_body(cudaStream_t stream, const void* input, std::string& error) override;
   bool launch_tail(cudaStream_t stream, void* output, const SpanFp8Ring& ring, std::string& error) override;
-  // Lecture sans synchronisation du mot que les noyaux f16 écrivent : un débordement se voit au plus tard
-  // un lancement après le sien.
-  bool take_overflow() override {
-    if (!acc16_ || overflow_host_ == nullptr || *static_cast<volatile int*>(overflow_host_) == 0)
-      return false;
-    acc16_ = false;
-    return true;
+  // Le mot que les noyaux f16 écrivent, lu et remis à 0 sans synchronisation : un débordement se voit un
+  // lancement ou deux après le sien.
+  int overflow_frames() const override { return counted_ + (pending() ? 1 : 0); }
+  SpanFp8AccChange poll_accumulator() override {
+    if (!acc16_ || overflow_host_ == nullptr) return SpanFp8AccChange::None;
+    if (pending()) {
+      ++counted_;
+      *static_cast<volatile int*>(overflow_host_) = 0;
+    }
+    const span_fp8::Acc16Change change = policy_.poll(counted_);
+    if (change == span_fp8::Acc16Change::None) return SpanFp8AccChange::None;
+    return change == span_fp8::Acc16Change::ToF32 ? SpanFp8AccChange::ToF32 : SpanFp8AccChange::ToF16;
   }
 
  private:
@@ -158,6 +164,12 @@ class Body final : public SpanFp8Body {
   bool acc16_ = false;
   int* overflow_host_ = nullptr;  // mémoire de l'hôte projetée (KP::overflow) ; nulle sans acc16
   int* overflow_dev_ = nullptr;   // sa vue d'appareil
+  int counted_ = 0;               // images débordées vues par poll_accumulator
+  span_fp8::Acc16Policy policy_;
+  bool pending() const {
+    return overflow_host_ != nullptr && *static_cast<volatile int*>(overflow_host_) != 0;
+  }
+  bool f16_now() const { return acc16_ && policy_.f16(); }
 
   // Lancements : leurs paramètres portent les adresses de la zone de travail (bind).
   LC1 c1_;
@@ -258,7 +270,8 @@ void Body<Ch, BlockAlg, Fp16>::bind_block(std::size_t b, std::uint8_t* const (&x
   const std::uint8_t* xin = x[b % 2];
   std::uint8_t* xout = x[(b + 1) % 2];
   BlockWeights& bw = blocks_[b];
-  // Les deux accumulateurs sur les mêmes poids : le repli de take_overflow n'a qu'à changer de lancement.
+  // Les deux accumulateurs sur les mêmes poids : le passage d'un accumulateur à l'autre (poll_accumulator)
+  // n'a qu'à changer de lancement.
   const auto init = [&](auto& plain, auto& half, const std::uint8_t* in, std::size_t i, const sk::KP& k) {
     const auto* in8 = reinterpret_cast<const EB*>(in);
     plain.init(h_, w_, 3, 1, Ch, Ch, in8, bw.w[i].template as<EB>(), k);
@@ -388,7 +401,7 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
   unshuffle_kernel<<<grid, 256, 0, stream>>>(static_cast<const __half*>(input), unshuffled_, height_, width_);
   c1_.launch(stream);
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
-    if (acc16_) {
+    if (f16_now()) {
       la16_[b].launch(stream);
       lb16_[b].launch(stream);
       lc16_[b].launch(stream);
@@ -398,7 +411,7 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
       lc_[b].launch(stream);
     }
   }
-  if (acc16_)
+  if (f16_now())
     cat16_.launch(stream);
   else
     cat_.launch(stream);
@@ -423,7 +436,7 @@ bool Body<Ch, BlockAlg, Fp16>::launch_tail(cudaStream_t stream, void* output, co
     pix.kp.surf_h = ring.height;
     pix.launch(stream);
   };
-  if (acc16_)
+  if (f16_now())
     tail(pix16_);
   else
     tail(pix_);
