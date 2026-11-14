@@ -100,6 +100,25 @@ TEST_CASE("TrtexecBuilder : RIFE garde ses îlots FP32, drapeaux TRT 11 retirés
   CHECK(bench.plan(shapes).command.removed.size() == 3);
 }
 
+TEST_CASE("TrtexecBuilder : E/S HWC8 demandées après le nettoyage, et un autre moteur que celui en plans",
+          "[prepare][builder]") {
+  const test::FakeModel block{.inputs = {{.dims = {1, 28, 768, 1280}}}, .ops = {"Conv"}};
+  Bench bench("ok", block);
+  const ShapeSet shapes = fixed(28, 768, 1280);
+  const BuildPlan planes = bench.plan(shapes);
+  bench.config.hwc8_io = true;
+  const BuildPlan hwc8 = bench.plan(shapes);
+  CHECK(hwc8.engine_file != planes.engine_file);
+  CHECK(hwc8.command.kept.ends_with(" --inputIOFormats=hwc8 --outputIOFormats=hwc8"));
+  CHECK(hwc8.command.removed == planes.command.removed);
+  Steps steps;
+  auto progress = steps.progress();
+  REQUIRE(TrtexecBuilder(bench.config).build(bench.model, shapes, progress));
+  const auto args = bench.logged_args(shapes);
+  CHECK(std::ranges::find(args, "--inputIOFormats=hwc8") != args.end());
+  CHECK(std::ranges::find(args, "--outputIOFormats=hwc8") != args.end());
+}
+
 TEST_CASE("TrtexecBuilder : trtexec construit sur la carte du rendu, pas sur l'appareil 0 (C37-01)",
           "[prepare][builder]") {
   Bench bench("ok");

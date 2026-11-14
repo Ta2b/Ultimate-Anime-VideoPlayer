@@ -156,13 +156,17 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   const auto kept = parse({"épisode.mkv", "--l2-keep"});
   REQUIRE(kept);
   CHECK(kept->l2_keep);
-  // Le mouvement du warp par tuile et le flot du warp en L2 : deux essais, éteints par défaut.
-  CHECK_FALSE(options->tiled_warp);
+  // Le flot du warp en L2 : un essai, éteint par défaut. --tiled-warp, retiré, n'est plus une option.
   CHECK_FALSE(options->warp_l2);
-  const auto warp_trials = parse({"épisode.mkv", "--tiled-warp", "--warp-l2"});
+  const auto warp_trials = parse({"épisode.mkv", "--warp-l2"});
   REQUIRE(warp_trials);
-  CHECK(warp_trials->tiled_warp);
   CHECK(warp_trials->warp_l2);
+  CHECK_FALSE(parse({"épisode.mkv", "--debug", "--tiled-warp"}));
+  // Les blocs du RIFE fusionné en HWC8 : allumés par défaut, --no-rife-hwc8 les remet en plans.
+  CHECK(options->rife_hwc8);
+  const auto planar = parse({"épisode.mkv", "--no-rife-hwc8"});
+  REQUIRE(planar);
+  CHECK_FALSE(planar->rife_hwc8);
 }
 
 TEST_CASE("ajp play : refus nommés", "[app][options]") {

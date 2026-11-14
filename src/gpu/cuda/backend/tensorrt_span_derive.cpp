@@ -143,6 +143,22 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> load_fp16(nvinfer1::IRuntime&
   return trt;
 }
 
+// Après la validation et les cas durs : une somme de l'accumulateur f16 qui a débordé (bornée par les
+// noyaux, SpanFp8Net::take_overflow) écarte la variante f16, que le lecteur ne prendrait que pour revenir au
+// f32 à la première image de ce genre. Validation seule d'un paquet en f16 : refusée, le paquet se refait.
+std::expected<void, Refusal> settle_overflow(bool validate_only, SpanFp8Net& net,
+                                             std::unique_ptr<SpanFp8Net>& net16, SpanFp8Derivation& result) {
+  if (validate_only && net.take_overflow())
+    return refuse(RefusalCode::VendorCallFailed,
+                  "validation du SPAN FP8 : une somme de l'accumulateur f16 a débordé sur ces images");
+  if (net16 && net16->take_overflow()) {
+    result.scores_acc16.clear();
+    result.hard_scores_acc16.clear();
+    net16.reset();
+  }
+  return {};
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -212,11 +228,9 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
 
   Scratch scratch;
   const std::size_t in_bytes = 3 * plane * sizeof(__half);
-  if (auto e = cudaMalloc(&scratch.input, in_bytes); e != cudaSuccess) return cuda_refusal(e, "cudaMalloc");
-  if (auto e = cudaMalloc(&scratch.output_ref, in_bytes * 4); e != cudaSuccess)
-    return cuda_refusal(e, "cudaMalloc");
-  if (auto e = cudaMalloc(&scratch.output_fp8, in_bytes * 4); e != cudaSuccess)
-    return cuda_refusal(e, "cudaMalloc");
+  for (void** to : {&scratch.input, &scratch.output_ref, &scratch.output_fp8})  // les sorties : ×4 pixels
+    if (auto e = cudaMalloc(to, in_bytes * (1 + 3 * std::size_t{to != &scratch.input})); e != cudaSuccess)
+      return cuda_refusal(e, "cudaMalloc");
   // Étape 3.6 : le flux à la priorité la plus basse, derrière ceux de la lecture.
   int least = 0, greatest = 0;
   if (cudaDeviceGetStreamPriorityRange(&least, &greatest) != cudaSuccess) {
@@ -331,6 +345,8 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
     return std::unexpected(std::move(ok.error()));
   if (auto ok = judge_all(request.hard, result.hard_scores, result.hard_scores_acc16, "validation", false);
       !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (auto ok = settle_overflow(request.validate_only, *net, net16, result); !ok)
     return std::unexpected(std::move(ok.error()));
   {
     float peaks[SpanFp8Reference::kPeaks];

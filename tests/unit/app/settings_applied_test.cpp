@@ -88,6 +88,7 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"smooth_drawings", [](PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; }},
       {"cubic_warp", [](PlaySettings& s) { s.cubic_warp = !s.cubic_warp; }},
       {"pair_scale", [](PlaySettings& s) { s.pair_scale = !s.pair_scale; }},
+      {"strong_middle", [](PlaySettings& s) { s.strong_middle = !s.strong_middle; }},
       {"span_precision", [](PlaySettings& s) { s.span_precision = PrecisionTier::Quality; }},
       {"motion_precision", [](PlaySettings& s) { s.motion_precision = PrecisionTier::Quality; }},
       {"span_order", [](PlaySettings& s) { s.span_order = SpanOrder::After; }},

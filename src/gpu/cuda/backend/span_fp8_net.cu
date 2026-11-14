@@ -72,7 +72,7 @@ bool SpanFp8Net::supported_device(int major, int minor) {
 }
 
 bool SpanFp8Net::supported_fp16_device(int major, int minor) {
-  return (major == 8 && (minor == 6 || minor == 9)) || (major == 12 && minor == 0);
+  return (major == 8 && minor == 9) || (major == 12 && minor == 0);
 }
 
 std::int64_t SpanFp8Net::workspace_bytes() const {
@@ -96,9 +96,17 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
     error = "canaux réels hors de 48 et 64";
     return nullptr;
   }
+  const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
+  // K par position à 48 canaux et accumulateur f16 : 7 % de NaN sur la RTX 4070 Ti, poids à queue lourde,
+  // alors que K à plat et le calcul en 64 restent finis. Ce chemin ne sert qu'à la mesure et n'y gagne rien
+  // (ajp_span_tile_bench : 48 canaux sans gain sur 64 en FP8) : refusé plutôt que corrigé.
+  if (narrow48 && weights.width48 == SpanFp8Width::PerTap && weights.acc16 && !weights.fp16) {
+    status = SpanFp8Status::Failed;
+    error = "48 canaux en K par position : pas d'accumulateur f16 (NaN mesurés)";
+    return nullptr;
+  }
   auto impl = std::make_unique<Impl>();
   bool sent = false;
-  const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
   if (weights.fp16)
     impl->body = make_span_fp8_body16(height, width, narrow48 ? 48 : kStored);
   else if (narrow48)
@@ -117,6 +125,10 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
 
 bool SpanFp8Net::launch(cudaStream_t stream, const void* input, void* output, std::string& error) {
   return launch_body(stream, input, error) && launch_tail(stream, output, {}, error);
+}
+
+bool SpanFp8Net::take_overflow() {
+  return impl_->body->take_overflow();
 }
 
 bool SpanFp8Net::launch_body(cudaStream_t stream, const void* input, std::string& error) {

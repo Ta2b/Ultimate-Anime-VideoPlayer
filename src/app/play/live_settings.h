@@ -353,6 +353,9 @@ class LiveSettings {
   // Garder les poses (kernels/spec/poses.h), lu par gpu au début de chaque paire.
   void set_keep_poses(bool keep) { keep_poses_.store(keep); }
   bool keep_poses() const { return keep_poses_.load(); }
+  // Moins de passes RIFE sur les paires fortes (PlaySettings::strong_middle), lu par gpu à chaque instant.
+  void set_strong_middle(bool on) { strong_middle_.store(on); }
+  bool strong_middle() const { return strong_middle_.load(); }
 
   void set_reduction(const gpu::Reduction& reduction) {
     const std::scoped_lock lock(mutex_);
@@ -415,6 +418,7 @@ class LiveSettings {
   media::LiveScenes scenes_;
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};
+  std::atomic<bool> strong_middle_{false};
   std::atomic<bool> pair_marks_on_{false};
   PairMarks pair_marks_;
   std::atomic<bool> deband_source_{false};
@@ -479,5 +483,11 @@ class LiveSettings {
   std::int64_t previous_done_us_ =
       0;  // la fin de la dernière paire mesurée : le début du service de la suivante
 };
+
+// Les choix de l'interpolation qui passent en direct, posés au lancement (lecture, export).
+inline void set_live_motion(LiveSettings& live, const PlaySettings& s) {
+  live.set_keep_poses(poses_kept(s));
+  live.set_strong_middle(s.strong_middle);
+}
 
 }  // namespace ajp::app::play

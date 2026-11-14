@@ -2,6 +2,7 @@
 // des slots en disposition GENERAL par VK_QUEUE_FAMILY_EXTERNAL (core/ring.h : kRingLayout).
 #include <algorithm>
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include "app/play/placebo_impl.h"
@@ -74,25 +75,17 @@ void take_from_cuda(pl_gpu gpu, pl_tex tex, VkSemaphore sem, std::uint64_t value
   pl_vulkan_release_ex(gpu, &release);
 }
 
-}  // namespace
-
-std::uint32_t PlaceboRing::family() const {
-  return external_ ? VK_QUEUE_FAMILY_EXTERNAL : VK_QUEUE_FAMILY_IGNORED;
-}
-
-namespace {
-
-// RGB10A2 (étape 5.5a) : inscriptible et échantillonnable, sinon RGBA16 ; le format Vulkan est contrôlé sur
-// le premier emplacement (l'ordre des bits doit être celui de store_ring). Une cible de rendu (renderable)
-// demande aussi PL_FMT_CAP_RENDERABLE.
+// Le format des emplacements : RGB10A2 (étape 5.5a) s'il est inscriptible et échantillonnable, sinon
+// RGBA16 ; le format Vulkan est contrôlé sur le premier emplacement (l'ordre des bits doit être celui de
+// store_ring). Une cible de rendu (renderable) demande aussi PL_FMT_CAP_RENDERABLE.
 std::expected<pl_fmt, Refusal> ring_format(pl_gpu gpu, RingFormat wanted, bool renderable) {
   const auto ring_caps = static_cast<pl_fmt_caps>(PL_FMT_CAP_STORABLE | PL_FMT_CAP_SAMPLEABLE |
                                                   (renderable ? PL_FMT_CAP_RENDERABLE : 0));
   if (wanted == RingFormat::Rgb10a2Unorm) {
     const pl_fmt ten = pl_find_named_fmt(gpu, "rgb10a2");
-    if (ten != nullptr && (ten->caps & ring_caps) == ring_caps) return ten;
+    if (ten == nullptr || (ten->caps & ring_caps) != ring_caps) wanted = RingFormat::Rgba16Unorm;
   }
-  const pl_fmt format = pl_find_named_fmt(gpu, "rgba16");
+  const pl_fmt format = pl_find_named_fmt(gpu, wanted == RingFormat::Rgb10a2Unorm ? "rgb10a2" : "rgba16");
   if (format == nullptr || (format->caps & PL_FMT_CAP_STORABLE) == 0) {
     return refuse(RefusalCode::FormatUnsupported, "rgba16 n'est pas inscriptible sur cet appareil");
   }
@@ -104,16 +97,20 @@ std::expected<pl_fmt, Refusal> ring_format(pl_gpu gpu, RingFormat wanted, bool r
 
 }  // namespace
 
+std::uint32_t PlaceboRing::family() const {
+  return external_ ? VK_QUEUE_FAMILY_EXTERNAL : VK_QUEUE_FAMILY_IGNORED;
+}
+
 std::expected<std::vector<RingSlotDesc>, Refusal> PlaceboRing::create(pl_gpu gpu, int width, int height,
                                                                       std::uint32_t count, bool external,
                                                                       RingFormat wanted, bool renderable) {
   clear(gpu);
   external_ = external;
   ++generation_;
-  auto picked = ring_format(gpu, wanted, renderable);
-  if (!picked) return std::unexpected(std::move(picked.error()));
-  const pl_fmt format = *picked;
-  const bool ten_bits = format == pl_find_named_fmt(gpu, "rgb10a2");
+  auto chosen = ring_format(gpu, wanted, renderable);
+  if (!chosen) return std::unexpected(std::move(chosen.error()));
+  const pl_fmt format = *chosen;
+  const bool ten_bits = std::string_view(format->name) == "rgb10a2";
   const RingFormat taken = ten_bits ? RingFormat::Rgb10a2Unorm : RingFormat::Rgba16Unorm;
   // Lecture des sémaphores sans attente (ready) : Vulkan 1.2, ou VK_KHR_timeline_semaphore.
   const pl_vulkan vk = pl_vulkan_get(gpu);

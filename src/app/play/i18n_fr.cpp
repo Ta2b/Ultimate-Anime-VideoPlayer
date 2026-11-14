@@ -54,6 +54,8 @@ constexpr std::array kPlayer{
     Entry{"Italian", "Italien"},
     Entry{"Japanese", "Japonais"},
     Entry{"Keep poses: off", "Poses : warp simple"},
+    Entry{"Fewer RIFE passes on fast motion: on", "Moins de passes RIFE sur les mouvements rapides : oui"},
+    Entry{"Fewer RIFE passes on fast motion: off", "Moins de passes RIFE sur les mouvements rapides : non"},
     Entry{"Keep poses: on", "Poses gardées (DRBA)"},
     Entry{"Korean", "Coréen"},
     Entry{"Language", "Langue"},

@@ -27,9 +27,6 @@ struct WarpBlendParams {
   float time = 0.5F;         // instant de la sortie
   bool cubic = false;        // images lues en Catmull-Rom (kernels::RifeWarp), sinon en bilinéaire
   bool from_middle = false;  // mouvement estimé au milieu, sortie à time (loi de mélange ajustée)
-  // Essai (BackendInit::trials) : avec from_middle et sans poses, le mouvement calculé par point du flot dans
-  // la tuile du bloc puis interpolé à chaque pixel (warp_blend_tiled) ; l'image change un peu.
-  bool tiled_motion = false;
   // Garder les poses (kernels/spec/poses.h, avec from_middle) : l'instant de chaque pixel réglé
   // d'après le mouvement de la paire précédente, mêmes plans et même fenêtre que flow ;
   // previous_flow nul : la paire précédente était tenue.

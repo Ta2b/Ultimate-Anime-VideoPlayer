@@ -304,8 +304,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool filtered_warp_ = false;
   // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
   bool l2_keep_ = false;
-  bool tiled_warp_ = false;  // kTrialTiledWarp (--tiled-warp, essai) : WarpBlendParams::tiled_motion
-  bool warp_l2_ = false;     // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
+  bool rife_hwc8_ = false;  // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
+  bool warp_l2_ = false;    // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
   std::filesystem::path trtexec_;
   std::string trtexec_sha256_;  // relevé à create (A05-05)

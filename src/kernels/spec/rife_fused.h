@@ -108,7 +108,16 @@ constexpr std::size_t fused_align(std::size_t bytes) {
   return (bytes + 255U) / 256U * 256U;
 }
 
-constexpr RifeFusedLayout rife_fused_layout(const RifeFusedPlan& plan, int height, int width) {
+// Canaux rangés par pixel d'un tenseur de C canaux au format HWC8 de TensorRT (FP16) : C arrondi au multiple
+// de 8 supérieur (15 → 16, 28 → 32, 52 → 56).
+constexpr int rife_fused_hwc8_pitch(int channels) {
+  return (channels + 7) / 8 * 8;
+}
+
+// hwc8 : X_k et Y_k rangés par pixel au pas rife_fused_hwc8_pitch (les blocs TensorRT construits en E/S
+// HWC8), sinon en plans.
+constexpr RifeFusedLayout rife_fused_layout(const RifeFusedPlan& plan, int height, int width,
+                                            bool hwc8 = false) {
   RifeFusedLayout layout;
   std::size_t at = 0;
   const auto take = [&at](std::int64_t elements) {
@@ -119,8 +128,14 @@ constexpr RifeFusedLayout rife_fused_layout(const RifeFusedPlan& plan, int heigh
   layout.encode = take(std::int64_t{kFusedEncodePlanes} * height * width);
   for (int k = 0; k < plan.blocks; ++k) {
     const auto i = static_cast<std::size_t>(k);
-    layout.x[i] = take(rife_fused_x(plan, k, height, width).elements());
-    layout.y[i] = take(rife_fused_y(plan, k, height, width).elements());
+    FusedDims x = rife_fused_x(plan, k, height, width);
+    FusedDims y = rife_fused_y(plan, k, height, width);
+    if (hwc8) {
+      x.channels = rife_fused_hwc8_pitch(x.channels);
+      y.channels = rife_fused_hwc8_pitch(y.channels);
+    }
+    layout.x[i] = take(x.elements());
+    layout.y[i] = take(y.elements());
   }
   layout.bytes = at;
   return layout;
