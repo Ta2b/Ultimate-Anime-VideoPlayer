@@ -77,8 +77,9 @@ def main():
     p.add_argument("--ralenti", type=int, default=0,
                    help="ralenti ×N entre dessins distincts : RIFE 4.26 à gauche, à droite une fusion union au "
                         "milieu puis RIFE 4.26 sur chaque demi-paire (N pair)")
-    p.add_argument("--droite", choices=("melange", "union"), default="melange",
-                   help="avec --ralenti : à droite le mélange (union au milieu + RIFE) ou union à chaque instant")
+    p.add_argument("--droite", choices=("melange", "union", "ifnet426"), default="melange",
+                   help="avec --ralenti : à droite le mélange (union au milieu + RIFE) ou union à chaque instant ; "
+                   "ifnet426 met union à gauche et, à droite, union avec son IFNet remplacé par RIFE 4.26")
     p.add_argument("--sortie", required=True)
     args = p.parse_args()
     import torch
@@ -90,12 +91,15 @@ def main():
     else:
         steps = [(i, step) for i, step in enumerate(plan(frames))]
     print(f"{len(frames)} images, {sum(s is not None for _, s in steps)} images créées", flush=True)
+    rife = rt.motion_session(args.reseau)
     nets = gi.load(args.gmfss, args.device, 1.0)
     right_nets = gi.load(args.gmfss, args.device, 1.0, args.union_neuf) if args.union_neuf else None
     titles = ("GMFSS union", "GMFSS new union") if right_nets else ("RIFE 4.26", "GMFSS union")
     if args.ralenti:
         titles = ("RIFE 4.26", "union au milieu + RIFE 4.26" if args.droite == "melange" else "GMFSS union")
-    rife = rt.motion_session(args.reseau)
+    if args.droite == "ifnet426":
+        right_nets = gi.rife_ifnet(gi.load(args.gmfss, args.device, 1.0), rife)
+        titles = ("GMFSS union", "GMFSS union, IFNet = RIFE 4.26")
     pairs = {}
     w, h = 960, 540
     enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{2 * w}x{h}",
