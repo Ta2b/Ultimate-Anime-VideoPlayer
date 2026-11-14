@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "core/types.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/gmfss_kernels.h"
 #include "gpu/cuda/backend/rife_kernels.h"
@@ -17,10 +18,6 @@
 
 namespace ajp::gpu::cuda {
 namespace {
-
-std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
-  return std::unexpected(Refusal{code, std::move(detail)});
-}
 
 // FP16 1 × channels × h × w ; channels 0 : quelconque.
 bool fp16_planes(const Tensor& tensor, std::int64_t channels) {
@@ -38,6 +35,39 @@ int height_of(const Tensor& tensor) {
 
 void* address(const Tensor& tensor) {
   return reinterpret_cast<void*>(tensor.handle + tensor.offset);  // NOLINT(performance-no-int-to-ptr)
+}
+
+// Les sommes d'un travail, alignées comme cudaMalloc l'aurait fait : les travaux se suivent dans un tampon.
+std::size_t aligned_sums(const KernelOps::SplatJob& job) {
+  constexpr std::size_t kAlign = 256;
+  const std::size_t bytes = soft_splat_sums_bytes(width_of(job.source), height_of(job.source),
+                                                  static_cast<int>(job.source.shape.dims[1]));
+  return (bytes + kAlign - 1) / kAlign * kAlign;
+}
+
+bool same_size(const Tensor& a, const Tensor& b) {
+  return a.shape.dims[2] == b.shape.dims[2] && a.shape.dims[3] == b.shape.dims[3];
+}
+
+std::expected<void, Refusal> check_job(const KernelOps::SplatJob& job, const Tensor& time) {
+  if (!fp16_planes(job.source, 0) || !fp16_planes(job.motion, kernels::kGmfssMotionChannels) ||
+      !fp16_planes(job.out, job.source.shape.dims[1]) || !same_size(job.motion, job.source) ||
+      !same_size(job.out, job.source)) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  "soft_splat : source, mouvement (3 plans) et sortie FP16 de même taille attendus");
+  }
+  // La sortie n'est jamais une entrée : le splat lit la source et le mouvement de tous les travaux pendant
+  // que la normalisation écrit les sorties. L'instant n'est ni lu ni écrit par un splat.
+  const auto same = [](const Tensor& a, const Tensor& b) {
+    return a.handle == b.handle && a.offset == b.offset;
+  };
+  if (same(job.out, job.motion) || same(job.out, job.source))
+    return refuse(RefusalCode::ShapeInvalid, "soft_splat : la sortie est l'une des entrées");
+  if (job.source.handle == time.handle || job.motion.handle == time.handle || job.out.handle == time.handle)
+    return refuse(RefusalCode::ShapeInvalid, "soft_splat_fill : l'instant partage la mémoire d'un splat");
+  if (!(job.s >= 0.0F && job.s <= 1.0F))
+    return refuse(RefusalCode::FieldOutOfRange, std::format("soft_splat : instant {} hors de [0, 1]", job.s));
+  return {};
 }
 
 }  // namespace
@@ -87,34 +117,10 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("soft_splat : {} splats en un passage, de 1 à {}", jobs.size(), kMaxSplatJobs));
   }
-  // Les sommes de chaque travail à la suite, chacune alignée comme cudaMalloc l'aurait fait.
-  constexpr std::size_t kAlign = 256;
   std::size_t total = 0;
-  const auto same = [](const Tensor& a, const Tensor& b) {
-    return a.handle == b.handle && a.offset == b.offset;
-  };
   for (const KernelOps::SplatJob& job : jobs) {
-    if (!fp16_planes(job.source, 0) || !fp16_planes(job.motion, kernels::kGmfssMotionChannels) ||
-        !fp16_planes(job.out, job.source.shape.dims[1]) ||
-        job.motion.shape.dims[2] != job.source.shape.dims[2] ||
-        job.motion.shape.dims[3] != job.source.shape.dims[3] ||
-        job.out.shape.dims[2] != job.source.shape.dims[2] ||
-        job.out.shape.dims[3] != job.source.shape.dims[3]) {
-      return refuse(RefusalCode::ShapeInvalid,
-                    "soft_splat : source, mouvement (3 plans) et sortie FP16 de même taille attendus");
-    }
-    // La sortie n'est jamais une entrée : le splat lit la source et le mouvement de tous les travaux pendant
-    // que la normalisation écrit les sorties. L'instant n'est ni lu ni écrit par un splat.
-    if (same(job.out, job.motion) || same(job.out, job.source))
-      return refuse(RefusalCode::ShapeInvalid, "soft_splat : la sortie est l'une des entrées");
-    if (job.source.handle == time.handle || job.motion.handle == time.handle || job.out.handle == time.handle)
-      return refuse(RefusalCode::ShapeInvalid, "soft_splat_fill : l'instant partage la mémoire d'un splat");
-    if (!(job.s >= 0.0F && job.s <= 1.0F))
-      return refuse(RefusalCode::FieldOutOfRange,
-                    std::format("soft_splat : instant {} hors de [0, 1]", job.s));
-    const std::size_t bytes = soft_splat_sums_bytes(width_of(job.source), height_of(job.source),
-                                                    static_cast<int>(job.source.shape.dims[1]));
-    total += (bytes + kAlign - 1) / kAlign * kAlign;
+    if (auto ok = check_job(job, time); !ok) return ok;
+    total += aligned_sums(job);
   }
   if (auto ok = bind(); !ok) return ok;
   if (total > splat_bytes_) {
@@ -139,7 +145,6 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
   std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(&splat_sums_), time.handle};
   for (const KernelOps::SplatJob& job : jobs) {
     const int channels = static_cast<int>(job.source.shape.dims[1]);
-    const std::size_t bytes = soft_splat_sums_bytes(width_of(job.source), height_of(job.source), channels);
     batch.jobs[batch.count++] = SoftSplatParams{.source = address(job.source),
                                                 .motion = address(job.motion),
                                                 .width = width_of(job.source),
@@ -148,7 +153,7 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
                                                 .s = job.s,
                                                 .sums = splat_sums_ + offset / sizeof(float),
                                                 .out = address(job.out)};
-    offset += (bytes + kAlign - 1) / kAlign * kAlign;
+    offset += aligned_sums(job);
     reads.push_back(job.source.handle);
     reads.push_back(job.motion.handle);
     writes.push_back(job.out.handle);

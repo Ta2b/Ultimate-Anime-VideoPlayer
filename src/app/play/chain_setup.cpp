@@ -124,6 +124,7 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
 }
 
 std::string_view ChainEngines::motion_name() const {
+  if (gmfss_use == GmfssUse::Only) return "GMFSS";
   return use_drba() ? "DistilDRBA" : use_apple() ? "Apple" : "RIFE";
 }
 
@@ -132,6 +133,7 @@ std::string ChainEngines::auto_memory_engine(std::string_view span_variant) cons
   if (!use_drba() && rife_model) out += " " + core::to_utf8(rife_model->stem());
   if (rife_fused || drba_fused) out += " fusionné";
   if (rife_motion || drba_motion) out += " mouvement";
+  if (gmfss_use == GmfssUse::Middle) out += " GMFSS au milieu";
   if (model) out += " " + core::to_utf8(model->path.stem());
   return std::format("{} {}", out, span_variant);
 }
@@ -149,9 +151,12 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
     return std::format("DistilDRBA {}{}{} · ", factor_text(factor_of(settings)),
                        drba_fused ? i18n::tr(" fused") : "", reduced);
   if (use_apple()) return std::format("Apple {} · VideoToolbox · ", factor_text(factor_of(settings)));
+  if (gmfss_use == GmfssUse::Only) return std::format("GMFSS union {} · ", factor_text(factor_of(settings)));
   if ((rife || rife_motion) && rife_model)
-    return std::format("RIFE {} · {}{}{} · ", factor_text(factor_of(settings)),
-                       core::to_utf8(rife_model->stem()), rife_fused ? i18n::tr(" fused") : "", reduced);
+    return std::format("RIFE {} · {}{}{}{} · ", factor_text(factor_of(settings)),
+                       core::to_utf8(rife_model->stem()), rife_fused ? i18n::tr(" fused") : "",
+                       gmfss_use == GmfssUse::Middle ? i18n::tr(" + GMFSS union on fast motion") : "",
+                       reduced);
   return {};
 }
 
@@ -204,6 +209,10 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       // constant : l'image serait jetée par la présentation (audit F11).
       .late_fate = clock != nullptr,
       .smooth_drawings = smooth_drawings,
+      .gmfss = {.use = gmfss_use,
+                .pair = gmfss_pair.get(),
+                .fusion = gmfss_fusion.get(),
+                .strong_px = gmfss_px},
       .warp =
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       .slots = std::move(slots)};
@@ -707,7 +716,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
       c.rife_planes = kernels::kRifeV2InputChannels;
     }
   }
-  auto rife = load_rife(p, init, c, settings, inner, library);
+  auto rife = load_motion(p, init, c, settings, inner, library);
   if (!rife) return std::unexpected(std::move(rife.error()));
   if (!*rife) return std::nullopt;
   return std::optional<ChainEngines>(std::move(c));

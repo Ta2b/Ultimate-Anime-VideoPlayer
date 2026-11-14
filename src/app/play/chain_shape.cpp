@@ -55,7 +55,8 @@ OpenedChain::Loaded loaded_by(const PlaySettings& settings) {
           .drba_fused = settings.drba_fused,
           .smooth_drawings = settings.smooth_drawings,
           .cubic_warp = settings.cubic_warp,
-          .pair_scale = settings.pair_scale};
+          .pair_scale = settings.pair_scale,
+          .gmfss_middle = settings.gmfss_middle};
 }
 
 bool fits(const OpenedChain& opened, const PlaySettings& wanted) {

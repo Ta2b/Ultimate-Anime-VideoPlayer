@@ -56,6 +56,11 @@ std::expected<void, Refusal> UpscaleStage::run_early() {
   use_lane(gpu::Lane::Interpolate);
   if (auto ok = begin_motion_pair(instants_[first].t); !ok) return ok;
   early_.ready = true;
+  // Le mélange fait ses passes au slot : M d'abord, puis RIFE sur la demi-paire de chaque instant.
+  if (gmfss_pair()) {
+    use_lane(back);
+    return {};
+  }
   bool queued = false;
   for (std::uint32_t k = first; k < outputs_ && !early_.refused; ++k) {
     const float t = instants_[k].t;

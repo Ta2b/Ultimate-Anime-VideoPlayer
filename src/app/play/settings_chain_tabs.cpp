@@ -110,6 +110,14 @@ std::string motion_description(const InterpChoice& choice) {
       return i18n::tr("RIFE 4.22 lite: light and clean, for most graphics cards.");
     case InterpLevel::Balanced:
       return i18n::tr("RIFE 4.26: cleaner in-between frames, for recent graphics cards.");
+    case InterpLevel::High:
+      return i18n::tr(
+          "RIFE 4.26, with GMFSS union making the middle frame of fast motion: steadier fast turns and "
+          "pans. TensorRT only (NVIDIA RTX), much more work on those pairs.");
+    case InterpLevel::GmfssUnion:
+      return i18n::tr(
+          "GMFSS union alone: every in-between frame from GMFSS. The heaviest level, TensorRT only (NVIDIA "
+          "RTX); for powerful cards.");
     case InterpLevel::Rife425:
       return i18n::tr("RIFE 4.25: the former Balanced level, as clean as 4.26 for a little more work.");
     case InterpLevel::DistilDrba:
@@ -303,6 +311,10 @@ std::string level_name(InterpLevel level) {
       return i18n::tr("Fast");
     case InterpLevel::Balanced:
       return i18n::tr("Balanced");
+    case InterpLevel::High:
+      return i18n::tr("High");
+    case InterpLevel::GmfssUnion:
+      return std::string("GMFSS union");
     case InterpLevel::Rife425:
       return std::string("RIFE 4.25");
     case InterpLevel::DistilDrba:
@@ -313,12 +325,23 @@ std::string level_name(InterpLevel level) {
   return {};
 }
 
+// Le niveau se montre : son moteur est proposé ici, son modèle est là (GMFSS : ses deux graphes, sous
+// TensorRT) ; les entrées avancées en mode avancé seulement.
+bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
+  if (!offered(choice.engine) || (choice.advanced && !panel::advanced())) return false;
+  if ((choice.engine == MotionEngine::Gmfss || choice.gmfss_middle) && !choices.gmfss_available) return false;
+  if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
+  if (choice.engine == MotionEngine::Rife)
+    return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
+  return true;
+}
+
 // Le niveau d'interpolation : liste déroulante et note.
 void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière nommé en mode avancé,
   // où s'ajoutent RIFE 4.25 et DistilDRBA (advanced).
   const std::string rife_now = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
-  const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now);
+  const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now, d.gmfss_middle);
   const auto model_name = [](const InterpChoice& choice) {
     return choice.engine == MotionEngine::Rife ? rife_label(std::string(choice.rife_model))
                                                : std::string(label(choice.engine));
@@ -326,16 +349,10 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   const auto level_text = [&](const InterpChoice& choice) {
     std::string text = level_name(choice.level);
     if (panel::advanced() && !choice.advanced) text += " · " + model_name(choice);
-    if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
+    if (choice.engine == MotionEngine::Rife && !choice.gmfss_middle &&
+        choice.rife_model == choices.default_rife_model)
       text += i18n::tr(" (recommended)");
     return text;
-  };
-  const auto present = [&](const InterpChoice& choice) {
-    if (!offered(choice.engine) || (choice.advanced && !panel::advanced())) return false;
-    if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
-    if (choice.engine == MotionEngine::Rife)
-      return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
-    return true;
   };
   std::string shown = level_now ? std::string() : rife_label(rife_now);
   if (d.motion_engine != MotionEngine::Rife && !level_now) shown = std::string(label(d.motion_engine));
@@ -345,9 +362,10 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(!choices.rife_available);
   if (ImGui::BeginCombo(i18n::tr("Interpolation level"), shown.c_str())) {
     for (const InterpChoice& choice : kInterpLevels) {
-      if (!present(choice)) continue;
+      if (!level_present(choice, choices)) continue;
       if (ImGui::Selectable(level_text(choice).c_str(), level_now == choice.level)) {
         d.motion_engine = choice.engine;
+        d.gmfss_middle = choice.gmfss_middle;
         if (choice.engine == MotionEngine::Rife)
           d.rife_model = choice.rife_model == choices.default_rife_model ? std::string()
                                                                          : std::string(choice.rife_model);
@@ -357,9 +375,10 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Very fast, Fast and Balanced are RIFE models. Advanced settings also offer RIFE 4.25 and "
-               "DistilDRBA. Applies after a short reload."));
+  panel::tip(i18n::tr(
+      "Very fast, Fast and Balanced are RIFE models; High adds GMFSS union on fast motion (NVIDIA "
+      "RTX). Advanced settings also offer RIFE 4.25, DistilDRBA and GMFSS union alone. Applies after "
+      "a short reload."));
 }
 
 // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait

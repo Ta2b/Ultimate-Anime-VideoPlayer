@@ -159,6 +159,22 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
                                         const gpu::Tensor& /*out*/) override {
     return note("resample");
   }
+  std::expected<void, Refusal> gmfss_frames(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+                                            const gpu::Tensor& /*frames*/) override {
+    return note("gmfss_frames");
+  }
+  // L'instant de chaque lot de splats (soft_splat_fill), dans l'ordre.
+  std::expected<void, Refusal> soft_splat_fill(std::span<const gpu::KernelOps::SplatJob> jobs,
+                                               const gpu::Tensor& /*time*/, float t) override {
+    if (jobs.size() != 8)
+      return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "huit splats attendus"});
+    note_t(splat_ts_, t);
+    return note("soft_splat_fill");
+  }
+  std::vector<float> splat_ts() const {
+    const std::scoped_lock lock(mutex_);
+    return splat_ts_;
+  }
   std::expected<void, Refusal> rife_crop(const gpu::Tensor& /*padded*/, const gpu::Tensor& out) override {
     return note("rife_crop", out.handle);
   }
@@ -296,6 +312,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   mutable std::mutex mutex_;
   std::vector<std::string> log_;
   std::vector<std::string> laned_;
+  std::vector<float> splat_ts_;
   std::map<std::string, std::vector<std::uintptr_t>, std::less<>> targets_;
   int lanes_ = 1;
   gpu::Lane lane_ = gpu::Lane::Upscale;

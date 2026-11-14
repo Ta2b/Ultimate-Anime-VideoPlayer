@@ -147,6 +147,12 @@ struct ChainEngines {
   // fort ; nul sans l'option ou si sa préparation est refusée.
   std::unique_ptr<gpu::Engine> rife_motion_half;
   WorkSize rife_half_size;
+  // GMFSS Fortuna Union (chain_gmfss.cpp) : ses deux graphes, le mélange ou seul ; gmfss_px, le seuil du
+  // mélange en pixels à 720 lignes.
+  std::unique_ptr<gpu::Engine> gmfss_pair;
+  std::unique_ptr<gpu::Engine> gmfss_fusion;
+  GmfssUse gmfss_use = GmfssUse::Off;
+  float gmfss_px = 15.0F;
   bool rife_fused = false;  // rife ou rife_motion est RIFE fusionné (six moteurs et noyaux de colle)
   bool drba_fused = false;  // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
   // Le fusionné essayé puis refusé, le réseau entier à sa place (A03-21) : voir OpenedChain.
@@ -164,7 +170,7 @@ struct ChainEngines {
 
   bool use_drba() const { return drba != nullptr; }
   bool use_apple() const { return apple && rife != nullptr; }
-  bool interpolates() const { return rife || rife_motion || use_drba(); }
+  bool interpolates() const { return rife || rife_motion || use_drba() || gmfss_use == GmfssUse::Only; }
   // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
   // C08-08 : le moteur dans la clé de la mémoire de l'Auto (core/auto_memory.h) : l'interpolation, son
@@ -207,6 +213,20 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
 std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                    const PlaySettings& settings, InnerFallbacks& inner,
                                    const std::string& library, const std::filesystem::path& models_dir);
+
+// GMFSS (chain_gmfss.cpp) : ce que settings demande (le mélange avec RIFE, ou GMFSS seul), puis ses deux
+// moteurs dans c, à c.rife_size pour le mélange (après load_rife), à c.work seul (avant). Rien si
+// l'utilisateur ferme la fenêtre ; un refus (moteur autre que TensorRT, graphes absents, construction) laisse
+// RIFE, la raison au journal, retenu pour la séance dans inner.
+GmfssUse gmfss_wanted(const PlaySettings& settings);
+std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                               const PlaySettings& settings, InnerFallbacks& inner,
+                               const std::string& library);
+// L'interpolation entière : GMFSS seul d'abord (RIFE ne se charge que s'il est refusé), puis RIFE, puis le
+// mélange sur le RIFE chargé. Faux : la fenêtre fermée.
+std::expected<bool, StageFailure> load_motion(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                              const PlaySettings& settings, InnerFallbacks& inner,
+                                              const std::string& library);
 
 // RIFE (chain_rife.cpp) : c.rife_size, la géométrie, puis le fusionné, la variante mouvement ou RIFE image,
 // au cran de précision de settings. Faux : la fenêtre fermée pendant une construction ; un refus de l'étage

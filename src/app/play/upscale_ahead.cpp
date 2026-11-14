@@ -87,6 +87,8 @@ bool UpscaleStage::next_pair_measured() const {
 
 bool UpscaleStage::motion_direct(float t) const {
   if (!by_motion() || !flow_max_async_ || (setup_.live && setup_.live->keep_poses())) return false;
+  if (setup_.gmfss.use == GmfssUse::Middle)
+    return false;  // le mélange mesure chaque paire (upscale_gmfss.cpp)
   return (strong_motion_ && intermediates_ > 1) || (intermediates_ == 1 && t != 0.5F);
 }
 

@@ -30,8 +30,9 @@ CUT = 0.12
 
 def decode(video, first, count, height):
     width = int(round(1920 * height / 1080 / 2)) * 2
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", video, "-vf",
-                          f"trim=start_frame={first},setpts=PTS-STARTPTS,scale={width}:{height}:flags=area", "-frames:v", str(count), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    chain = f"trim=start_frame={first},setpts=PTS-STARTPTS,scale={width}:{height}:flags=area"
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", video, "-vf", chain, "-frames:v", str(count),
+                          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
                          check=True, capture_output=True).stdout
     frames = np.frombuffer(raw, np.uint8).reshape(-1, height, width, 3)
     return [f.transpose(2, 0, 1).astype(np.float32) / 255.0 for f in frames]

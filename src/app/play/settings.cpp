@@ -117,6 +117,8 @@ std::string_view name(MotionEngine engine) {
       return "distil_drba";
     case MotionEngine::Apple:
       return "apple";
+    case MotionEngine::Gmfss:
+      return "gmfss_union";
   }
   return "rife";
 }
@@ -129,6 +131,8 @@ std::string_view label(MotionEngine engine) {
       return "DistilDRBA";
     case MotionEngine::Apple:
       return "Apple (VideoToolbox, macOS 15.4)";
+    case MotionEngine::Gmfss:
+      return "GMFSS union";
   }
   return "RIFE";
 }
@@ -227,10 +231,12 @@ std::string_view badge_text(Badge badge) {
   return {};
 }
 
-std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model) {
+std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model, bool gmfss_middle) {
   for (const InterpChoice& choice : kInterpLevels) {
     if (choice.engine != engine) continue;
-    if (engine == MotionEngine::Rife && choice.rife_model != rife_model) continue;
+    if (engine == MotionEngine::Rife &&
+        (choice.rife_model != rife_model || choice.gmfss_middle != gmfss_middle))
+      continue;
     return choice.level;
   }
   return std::nullopt;
@@ -439,6 +445,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.smooth_drawings = wanted.smooth_drawings;
     s.cubic_warp = wanted.cubic_warp;
     s.pair_scale = wanted.pair_scale;
+    s.gmfss_middle = wanted.gmfss_middle;
   }
   // Le modèle RIFE ne sert pas à un autre moteur du mouvement : le changer ne recharge rien.
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
@@ -514,6 +521,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::smooth_drawings);
   keep(&PlaySettings::cubic_warp);
   keep(&PlaySettings::pair_scale);
+  keep(&PlaySettings::gmfss_middle);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -549,6 +557,10 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
   if (base.pair_scale != wanted.pair_scale) {
     reopen.emplace_back(wanted.pair_scale ? i18n::tr("fast motion is estimated at half size (second engine)")
                                           : i18n::tr("fast motion is estimated at full size"));
+  }
+  if (base.gmfss_middle != wanted.gmfss_middle) {
+    reopen.emplace_back(wanted.gmfss_middle ? i18n::tr("GMFSS union makes the middle of fast motion")
+                                            : i18n::tr("RIFE alone on fast motion"));
   }
 }
 
@@ -597,6 +609,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.smooth_drawings = opened->loaded->smooth_drawings;
   base.cubic_warp = opened->loaded->cubic_warp;
   base.pair_scale = opened->loaded->pair_scale;
+  base.gmfss_middle = opened->loaded->gmfss_middle;
   return base;
 }
 

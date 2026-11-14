@@ -101,6 +101,13 @@ class GuardedKernelOps final : public KernelOps {
   std::expected<void, Refusal> rife_time(const Tensor& input, float t) override {
     return guarded_detail::call("rife_time", [&] { return in_->rife_time(input, t); });
   }
+  std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override {
+    return guarded_detail::call("gmfss_frames", [&] { return in_->gmfss_frames(a, b, frames); });
+  }
+  std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> jobs, const Tensor& time,
+                                               float t) override {
+    return guarded_detail::call("soft_splat_fill", [&] { return in_->soft_splat_fill(jobs, time, t); });
+  }
   std::expected<void, Refusal> rife_pair(const Tensor& a, const Tensor& b, float t,
                                          const Tensor& input) override {
     return guarded_detail::call("rife_pair", [&] { return in_->rife_pair(a, b, t, input); });

@@ -51,6 +51,109 @@ __device__ float3 block_sum3(float3 v) {
   return total;
 }
 
+// Où va le pixel (x, y) du travail p : sa cible (tx, ty), sa métrique z ; inactif hors du plan, hors de
+// ]−1, taille[ (aucun coin dans le plan), NaN et infinis compris.
+struct SplatTarget {
+  std::size_t i = 0;  // le pixel dans un plan de la source
+  float tx = 0.0F;
+  float ty = 0.0F;
+  float z = 0.0F;
+  bool active = false;
+};
+
+__device__ __forceinline__ SplatTarget splat_target(const SoftSplatParams& p, int x, int y,
+                                                    std::size_t plane) {
+  SplatTarget s;
+  const bool pixel = x < p.width && y < p.height;
+  float fx = 0.0F;
+  float fy = 0.0F;
+  if (pixel) {
+    const auto* motion = static_cast<const __half*>(p.motion);
+    s.i = at(x, y, p.width);
+    fx = __half2float(motion[s.i]);
+    fy = __half2float(motion[plane + s.i]);
+    s.z = __half2float(motion[2 * plane + s.i]);
+  }
+  s.tx = static_cast<float>(x) + p.s * fx;
+  s.ty = static_cast<float>(y) + p.s * fy;
+  s.active = pixel && s.tx > -1.0F && s.tx < static_cast<float>(p.width) && s.ty > -1.0F &&
+             s.ty < static_cast<float>(p.height);
+  return s;
+}
+
+// Les quatre coins bilinéaires de la cible : leur poids (exp(s · z) borné, comme la référence, fois la part
+// bilinéaire), leur somme globale dans le premier plan, leur cellule dans la fenêtre partagée (ox, oy) ou −1.
+struct SplatCorners {
+  unsigned inside = 0;  // bit k : le coin k est dans le plan
+  float weight[4] = {};
+  float* corner[4] = {};
+  int cell[4] = {};
+};
+
+__device__ __forceinline__ SplatCorners splat_corners(const SoftSplatParams& p, const SplatTarget& s, int ox,
+                                                      int oy) {
+  SplatCorners q;
+  // z borné comme la référence (NaN : le bas de l'intervalle, comme fmaxf).
+  const float bounded_z = fminf(fmaxf(s.z, -kernels::kGmfssMetricLimit), kernels::kGmfssMetricLimit);
+  const float scale = s.active ? expf(p.s * bounded_z) : 0.0F;  // une fois par pixel, pour tous les plans
+  const int cx0 = s.active ? static_cast<int>(floorf(s.tx)) : 0;
+  const int cy0 = s.active ? static_cast<int>(floorf(s.ty)) : 0;
+  const float east = s.tx - static_cast<float>(cx0);
+  const float west = static_cast<float>(cx0 + 1) - s.tx;
+  const float south = s.ty - static_cast<float>(cy0);
+  const float north = static_cast<float>(cy0 + 1) - s.ty;
+  const int cx[4] = {cx0, cx0 + 1, cx0, cx0 + 1};
+  const int cy[4] = {cy0, cy0, cy0 + 1, cy0 + 1};
+  const float share[4] = {west * north, east * north, west * south, east * south};
+#pragma unroll
+  for (int k = 0; k < 4; ++k) {
+    const bool in = s.active && cx[k] >= 0 && cx[k] < p.width && cy[k] >= 0 && cy[k] < p.height;
+    q.inside |= in ? 1U << k : 0U;
+    q.weight[k] = scale * share[k];
+    q.corner[k] = p.sums + (in ? at(cx[k], cy[k], p.width) : 0);
+    const int lx = cx[k] - ox;
+    const int ly = cy[k] - oy;
+    q.cell[k] = lx >= 0 && lx < kSpan && ly >= 0 && ly < kSpan ? ly * kSpan + lx : -1;
+  }
+  return q;
+}
+
+// value fois le poids de chaque coin du plan : dans la fenêtre (window, un plan de cellules), ou aux sommes
+// globales décalées de offset.
+__device__ __forceinline__ void splat_value(const SplatCorners& q, float* window, std::size_t offset,
+                                            float value) {
+#pragma unroll
+  for (int k = 0; k < 4; ++k) {
+    if ((q.inside >> k & 1U) == 0) continue;
+    if (q.cell[k] >= 0) {
+      atomicAdd(&window[q.cell[k]], value * q.weight[k]);
+    } else {
+      atomicAdd(q.corner[k] + offset, value * q.weight[k]);
+    }
+  }
+}
+
+// La fenêtre vers les sommes globales : une addition par cellule touchée et par plan (count plans à partir
+// de first, et celui des poids si with_weights).
+__device__ __forceinline__ void flush_window(const SoftSplatParams& p, const float* cells, int ox, int oy,
+                                             int first, int count, bool with_weights, std::size_t plane,
+                                             int t) {
+  const std::size_t weights = static_cast<std::size_t>(p.channels) * plane;
+  for (int k = t; k < kCells; k += kPixelThreads) {
+    const int gx = ox + k % kSpan;
+    const int gy = oy + k / kSpan;
+    if (gx < 0 || gy < 0 || gx >= p.width || gy >= p.height) continue;
+    float* sum = p.sums + at(gx, gy, p.width);
+#pragma unroll 1
+    for (int c = 0; c < count; ++c) {
+      const float v = cells[c * kCells + k];
+      if (v != 0.0F) atomicAdd(sum + static_cast<std::size_t>(first + c) * plane, v);
+    }
+    const float w = with_weights ? cells[kPass * kCells + k] : 0.0F;
+    if (w != 0.0F) atomicAdd(sum + weights, w);
+  }
+}
+
 __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(SoftSplatBatch b) {
   __shared__ float cells[(kPass + 1) * kCells];
   const SoftSplatParams& p = b.jobs[blockIdx.z];
@@ -60,110 +163,34 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(So
   const int t = static_cast<int>(threadIdx.y) * kBlock + static_cast<int>(threadIdx.x);
   const int x = x0 + static_cast<int>(threadIdx.x);
   const int y = y0 + static_cast<int>(threadIdx.y);
-  const bool pixel = x < p.width && y < p.height;
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
-  const std::size_t i = pixel ? at(x, y, p.width) : 0;
-  float fx = 0.0F;
-  float fy = 0.0F;
-  float z = 0.0F;
-  if (pixel) {
-    const auto* motion = static_cast<const __half*>(p.motion);
-    fx = __half2float(motion[i]);
-    fy = __half2float(motion[plane + i]);
-    z = __half2float(motion[2 * plane + i]);
-  }
-  const float tx = static_cast<float>(x) + p.s * fx;
-  const float ty = static_cast<float>(y) + p.s * fy;
-  // Hors de ]−1, taille[, aucun coin n'est dans le plan ; NaN et infinis échouent aussi.
-  const bool active = pixel && tx > -1.0F && tx < static_cast<float>(p.width) && ty > -1.0F &&
-                      ty < static_cast<float>(p.height);
+  const SplatTarget s = splat_target(p, x, y, plane);
   const float3 shift =
-      block_sum3(active ? make_float3(tx - static_cast<float>(x), ty - static_cast<float>(y), 1.0F)
-                        : make_float3(0.0F, 0.0F, 0.0F));
+      block_sum3(s.active ? make_float3(s.tx - static_cast<float>(x), s.ty - static_cast<float>(y), 1.0F)
+                          : make_float3(0.0F, 0.0F, 0.0F));
   if (shift.z == 0.0F) return;  // tout le bloc : rien n'arrive dans le plan
   const int ox = x0 - kMargin + __float2int_rn(shift.x / shift.z);
   const int oy = y0 - kMargin + __float2int_rn(shift.y / shift.z);
-  // z borné comme la référence (NaN : le bas de l'intervalle, comme fmaxf).
-  const float bounded_z = fminf(fmaxf(z, -kernels::kGmfssMetricLimit), kernels::kGmfssMetricLimit);
-  const float scale = active ? expf(p.s * bounded_z) : 0.0F;  // une fois par pixel, pour tous les plans
-  const int cx0 = active ? static_cast<int>(floorf(tx)) : 0;
-  const int cy0 = active ? static_cast<int>(floorf(ty)) : 0;
-  const float east = tx - static_cast<float>(cx0);
-  const float west = static_cast<float>(cx0 + 1) - tx;
-  const float south = ty - static_cast<float>(cy0);
-  const float north = static_cast<float>(cy0 + 1) - ty;
-  const int cx[4] = {cx0, cx0 + 1, cx0, cx0 + 1};
-  const int cy[4] = {cy0, cy0, cy0 + 1, cy0 + 1};
-  const float share[4] = {west * north, east * north, west * south, east * south};
-  float* corner[4];  // dans le premier plan des sommes globales
-  int cell[4];       // dans la fenêtre partagée, ou −1
-  float weight[4];
-  unsigned inside = 0;
-#pragma unroll
-  for (int k = 0; k < 4; ++k) {
-    const bool in = active && cx[k] >= 0 && cx[k] < p.width && cy[k] >= 0 && cy[k] < p.height;
-    inside |= in ? 1U << k : 0U;
-    weight[k] = scale * share[k];
-    corner[k] = p.sums + (in ? at(cx[k], cy[k], p.width) : 0);
-    const int lx = cx[k] - ox;
-    const int ly = cy[k] - oy;
-    cell[k] = lx >= 0 && lx < kSpan && ly >= 0 && ly < kSpan ? ly * kSpan + lx : -1;
-  }
-  const __half* from = static_cast<const __half*>(p.source) + i;
+  const SplatCorners q = splat_corners(p, s, ox, oy);
+  const __half* from = static_cast<const __half*>(p.source) + s.i;
   const std::size_t weights = static_cast<std::size_t>(p.channels) * plane;
 #pragma unroll 1
   for (int first = 0; first < p.channels; first += kPass) {
     const int count = min(kPass, p.channels - first);
     const bool with_weights = first == 0;
-    for (int k = t; k < kPass * kCells; k += kPixelThreads) cells[k] = 0.0F;
-    if (with_weights) {
-      for (int k = t; k < kCells; k += kPixelThreads) cells[kPass * kCells + k] = 0.0F;
-    }
+    const int cleared = with_weights ? (kPass + 1) * kCells : kPass * kCells;
+    for (int k = t; k < cleared; k += kPixelThreads) cells[k] = 0.0F;
     __syncthreads();
-    if (inside != 0) {
+    if (q.inside != 0) {
 #pragma unroll 1
       for (int c = 0; c < count; ++c) {
         const std::size_t global = static_cast<std::size_t>(first + c) * plane;
-        const float value = __half2float(from[global]);
-#pragma unroll
-        for (int k = 0; k < 4; ++k) {
-          if ((inside >> k & 1U) == 0) continue;
-          if (cell[k] >= 0) {
-            atomicAdd(&cells[c * kCells + cell[k]], value * weight[k]);
-          } else {
-            atomicAdd(corner[k] + global, value * weight[k]);
-          }
-        }
+        splat_value(q, cells + c * kCells, global, __half2float(from[global]));
       }
-      if (with_weights) {
-#pragma unroll
-        for (int k = 0; k < 4; ++k) {
-          if ((inside >> k & 1U) == 0) continue;
-          if (cell[k] >= 0) {
-            atomicAdd(&cells[kPass * kCells + cell[k]], weight[k]);
-          } else {
-            atomicAdd(corner[k] + weights, weight[k]);
-          }
-        }
-      }
+      if (with_weights) splat_value(q, cells + kPass * kCells, weights, 1.0F);
     }
     __syncthreads();
-    // La fenêtre vers les sommes globales : une addition par cellule touchée et par plan.
-    for (int k = t; k < kCells; k += kPixelThreads) {
-      const int gx = ox + k % kSpan;
-      const int gy = oy + k / kSpan;
-      if (gx < 0 || gy < 0 || gx >= p.width || gy >= p.height) continue;
-      float* sum = p.sums + at(gx, gy, p.width);
-#pragma unroll 1
-      for (int c = 0; c < count; ++c) {
-        const float v = cells[c * kCells + k];
-        if (v != 0.0F) atomicAdd(sum + static_cast<std::size_t>(first + c) * plane, v);
-      }
-      if (with_weights) {
-        const float v = cells[kPass * kCells + k];
-        if (v != 0.0F) atomicAdd(sum + weights, v);
-      }
-    }
+    flush_window(p, cells, ox, oy, first, count, with_weights, plane, t);
     __syncthreads();
   }
 }

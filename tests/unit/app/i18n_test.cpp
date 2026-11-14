@@ -208,6 +208,7 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "span_derive.cpp",
                                         "span_derive.h",
                                         "upscale_drba.cpp",
+                                        "upscale_gmfss.cpp",
                                         "user_keys.cpp",
                                         "upscale_stage.cpp",
                                         "upscale_start.cpp",

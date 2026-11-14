@@ -55,6 +55,7 @@ struct OpenedChain {
     bool smooth_drawings = false;
     bool cubic_warp = false;
     bool pair_scale = false;
+    bool gmfss_middle = false;
     bool operator==(const Loaded&) const = default;
   };
 
