@@ -50,6 +50,19 @@ def plan(frames):
     return out
 
 
+def slow_plan(frames, factor):
+    """Ralenti ×factor entre dessins distincts (les tenues retirées, comme une déduplication) : chaque dessin, puis
+    factor − 1 instants vers le suivant ; une coupe garde le dessin seul. Liste de (indice d'image, None) ou
+    (dessin, suivant, u)."""
+    starts = [0] + [i for i in range(1, len(frames)) if differs(frames[i - 1], frames[i])]
+    out = []
+    for d, nxt in zip(starts, starts[1:]):
+        out.append((d, None))
+        if float(np.abs(frames[d] - frames[nxt]).mean()) <= CUT:
+            out += [(None, (d, nxt, k / factor)) for k in range(1, factor)]
+    return out
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument("--video", required=True)
@@ -60,17 +73,27 @@ def main():
     p.add_argument("--hauteur", type=int, default=720)
     p.add_argument("--device", default="cpu")
     p.add_argument("--union-neuf", help="le train_log/ du « new union model » : ancien union à gauche, nouveau à droite")
+    p.add_argument("--ralenti", type=int, default=0,
+                   help="ralenti ×N entre dessins distincts : RIFE 4.26 à gauche, à droite une fusion union au "
+                        "milieu puis RIFE 4.26 sur chaque demi-paire (N pair)")
+    p.add_argument("--droite", choices=("melange", "union"), default="melange",
+                   help="avec --ralenti : à droite le mélange (union au milieu + RIFE) ou union à chaque instant")
     p.add_argument("--sortie", required=True)
     args = p.parse_args()
     import torch
 
     torch.set_grad_enabled(False)
     frames = decode(args.video, args.debut, args.images, args.hauteur)
-    steps = plan(frames)
-    print(f"{len(frames)} images, {sum(s is not None for s in steps)} images de tenue lissées", flush=True)
+    if args.ralenti:
+        steps = slow_plan(frames, args.ralenti)
+    else:
+        steps = [(i, step) for i, step in enumerate(plan(frames))]
+    print(f"{len(frames)} images, {sum(s is not None for _, s in steps)} images créées", flush=True)
     nets = gi.load(args.gmfss, args.device, 1.0)
     right_nets = gi.load(args.gmfss, args.device, 1.0, args.union_neuf) if args.union_neuf else None
     titles = ("GMFSS union", "GMFSS new union") if right_nets else ("RIFE 4.26", "GMFSS union")
+    if args.ralenti:
+        titles = ("RIFE 4.26", "union au milieu + RIFE 4.26" if args.droite == "melange" else "GMFSS union")
     rife = rt.motion_session(args.reseau)
     pairs = {}
     w, h = 960, 540
@@ -82,7 +105,7 @@ def main():
                             f"x={w + 20}:y=20:fontsize=28:fontcolor=white:box=1:boxcolor=black@0.5",
                             "-c:v", "libx264", "-crf", "12", "-preset", "slow", "-pix_fmt", "yuv420p",
                             args.sortie + ".tmp.mp4"], stdin=subprocess.PIPE)
-    for i, step in enumerate(steps):
+    for n, (i, step) in enumerate(steps):
         if step is None:
             left = right = frames[i]
         else:
@@ -93,16 +116,25 @@ def main():
                 (pa, window), (pb, _) = gi.padded(a), gi.padded(b)
                 pairs = {key: (gi.Gmfss(nets, pa, pb), gi.Gmfss(right_nets, pa, pb) if right_nets else None, window)}
             g, g_right, window = pairs[key]
-            right = g.at(u).cpu().numpy()[window]
+            if args.ralenti and args.droite == "melange":
+                mid = g.middle().cpu().numpy()[window]
+                half = (a, mid, 2 * u) if u < 0.5 else (mid, b, 2 * u - 1)
+                right = mid if u == 0.5 else gi.rife_at(*rife, *half)[0]
+            else:
+                right = g.at(u).cpu().numpy()[window]
             if g_right is not None:
                 left, right = right, g_right.at(u).cpu().numpy()[window]
             else:
                 left = gi.rife_at(*rife, a, b, u)[0]
         row = np.concatenate([rt.resize(np.clip(x, 0, 1), w, h, rt._area_axis) for x in (left, right)], 2)
         enc.stdin.write((row.transpose(1, 2, 0) * 255 + 0.5).astype(np.uint8).tobytes())
-        print(f"{i + 1}/{len(steps)}", flush=True)
+        print(f"{n + 1}/{len(steps)}", flush=True)
     enc.stdin.close()
     enc.wait()
+    if args.ralenti:
+        os.replace(args.sortie + ".tmp.mp4", args.sortie)
+        print(args.sortie)
+        return
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", args.sortie + ".tmp.mp4", "-filter_complex",
                     "[0:v]split[a][b];[b]setpts=2*PTS[s];[a][s]concat=n=2:v=1[v]", "-map", "[v]", "-c:v", "libx264",
                     "-crf", "12", "-preset", "slow", "-pix_fmt", "yuv420p", args.sortie], check=True)
