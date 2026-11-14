@@ -226,10 +226,15 @@ __global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
 // et le poids entre les quatre points qui l'entourent : le calcul n'étant pas linéaire (second prélèvement,
 // sigmoïde, rapport des poses), l'image change un peu. Sortie au moins aussi grande que la fenêtre.
 inline constexpr int kTilePoints = kBlock + 2;  // un bloc de 16 pixels couvre au plus 17 points du flot
-// L'instant réglé saute au bord d'une pose gardée (rapport des mouvements) : là où les quatre points voisins
-// s'écartent de plus que ceci, le pixel calcule son mouvement lui-même (middle_point), comme le warp exact.
-// Interpoler à travers ce saut écartait l'image de 0,109 du warp exact (RTX 4070 Ti, test du warp par tuile).
+// Interpoler n'est juste que là où le mouvement varie peu entre les quatre points voisins : au bord d'un
+// objet, ou dans un flot qui tourne vite, le second prélèvement et la sigmoïde ne sont pas linéaires, et
+// l'interpolation s'écartait du warp exact de 0,10 à 0,11 (RTX 4070 Ti, test du warp par tuile, avec ou sans
+// poses). Si l'instant réglé, tx, ty ou le poids des quatre points s'écartent de plus que ces bornes, le
+// pixel calcule son mouvement lui-même (middle_point), comme le warp exact ; l'interpolation reste aux aplats
+// et aux mouvements doux, l'essentiel d'une image d'anime. tx et ty en points du flot.
 inline constexpr float kTileTimeSpread = 1.0F / 64.0F;
+inline constexpr float kTileShiftSpread = 1.0F / 8.0F;
+inline constexpr float kTileWeightSpread = 1.0F / 32.0F;
 
 struct TilePoint {
   float time;  // l'instant de la sortie, réglé par les poses si elles sont gardées
@@ -257,11 +262,20 @@ __device__ TilePoint middle_point(const WarpBlendParams& p, float u, float v) {
   return {.time = t, .tx = tx, .ty = ty, .weight = 1.0F / (1.0F + expf(-z))};
 }
 
-// L'écart des instants réglés des quatre points autour de (i0, j0).
-__device__ float time_spread(const TilePoint (&tile)[kTilePoints][kTilePoints], int i0, int j0) {
-  const float a = tile[j0][i0].time, b = tile[j0][i0 + 1].time;
-  const float c = tile[j0 + 1][i0].time, d = tile[j0 + 1][i0 + 1].time;
+// L'écart d'un champ des quatre points autour de (i0, j0).
+__device__ float spread(const TilePoint (&tile)[kTilePoints][kTilePoints], int i0, int j0,
+                        float TilePoint::* field) {
+  const float a = tile[j0][i0].*field, b = tile[j0][i0 + 1].*field;
+  const float c = tile[j0 + 1][i0].*field, d = tile[j0 + 1][i0 + 1].*field;
   return fmaxf(fmaxf(a, b), fmaxf(c, d)) - fminf(fminf(a, b), fminf(c, d));
+}
+
+// Vrai si le mouvement varie trop entre les quatre points pour s'interpoler (kTileShiftSpread).
+__device__ bool rough(const TilePoint (&tile)[kTilePoints][kTilePoints], int i0, int j0) {
+  return spread(tile, i0, j0, &TilePoint::time) > kTileTimeSpread ||
+         spread(tile, i0, j0, &TilePoint::tx) > kTileShiftSpread ||
+         spread(tile, i0, j0, &TilePoint::ty) > kTileShiftSpread ||
+         spread(tile, i0, j0, &TilePoint::weight) > kTileWeightSpread;
 }
 
 // Le premier point du flot qu'un bord de bloc lit, comme Exact::sample (position bornée, partie entière).
@@ -307,13 +321,12 @@ __global__ void __launch_bounds__(kPixelThreads, kWarpBlocksPerSm<kCubic>)
     const float bottom = tile[j0 + 1][i0].*field * (1.0F - fx) + tile[j0 + 1][i0 + 1].*field * fx;
     return top * (1.0F - fy) + bottom * fy;
   };
-  const TilePoint m = p.keep_poses && time_spread(tile, i0, j0) > kTileTimeSpread
-                          ? middle_point(p, (static_cast<float>(x) + 0.5F) / sx - 0.5F,
-                                         (static_cast<float>(y) + 0.5F) / sy - 0.5F)
-                          : TilePoint{.time = p.keep_poses ? lerp(&TilePoint::time) : p.time,
-                                      .tx = lerp(&TilePoint::tx),
-                                      .ty = lerp(&TilePoint::ty),
-                                      .weight = lerp(&TilePoint::weight)};
+  const TilePoint m = rough(tile, i0, j0) ? middle_point(p, (static_cast<float>(x) + 0.5F) / sx - 0.5F,
+                                                         (static_cast<float>(y) + 0.5F) / sy - 0.5F)
+                                          : TilePoint{.time = p.keep_poses ? lerp(&TilePoint::time) : p.time,
+                                                      .tx = lerp(&TilePoint::tx),
+                                                      .ty = lerp(&TilePoint::ty),
+                                                      .weight = lerp(&TilePoint::weight)};
   const float t = m.time;
   float rgb[3];
   blend_images<Exact, kCubic>(p, x, y,
