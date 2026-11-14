@@ -47,7 +47,7 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
   std::size_t skipped = 0;
   for (const core::OutputInstant& at : step->instants()) {
     const bool source = at.is_source() && !smooth_first_;
-    const std::int64_t pts = at.is_source() ? frame.pts_us : at.pts_us.value_or(frame.pts_us);
+    const std::int64_t pts = at.pts_us.value_or(frame.pts_us);  // celui que outputs() donne à l'image
     const std::int64_t gap = next(pts);
     if (!source && skipped < late) {
       ++skipped;
@@ -64,7 +64,7 @@ std::int64_t UpscaleStage::planned_gap_us(std::uint32_t output) const {
 bool UpscaleStage::instant_late(const DecodedFrame& frame, std::uint32_t output) const {
   if (setup_.clock == nullptr) return false;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
-  const std::int64_t pts = instant.t >= 1.0F ? frame.pts_us : instant.pts_us;
+  const std::int64_t pts = instant.pts_us != kNoPts ? instant.pts_us : frame.pts_us;
   if (pts == kNoPts) return false;
   const ClockSnapshot now = setup_.clock->snapshot();
   if (!now.valid || now.epoch != frame.epoch || now.rate <= 0.0) return false;

@@ -98,6 +98,16 @@ Ratio AutoRate::factor() const {
   return Ratio{step_, granularity_};
 }
 
+int AutoRate::step_of(Ratio factor) const {
+  if (factor.den <= 0 || factor.num <= 0) return -1;
+  if (exact_.size() == locked_.size()) {
+    const auto at = std::ranges::find(exact_, factor);
+    if (at != exact_.end()) return locked_[static_cast<std::size_t>(at - exact_.begin())];
+  }
+  if (factor.num * granularity_ % factor.den != 0) return -1;
+  return static_cast<int>(factor.num * granularity_ / factor.den);
+}
+
 int AutoRate::snap_down(int step) const {
   if (locked_.empty()) return step;
   int best = granularity_;
@@ -377,7 +387,10 @@ int AutoRate::pair(const PairOutcome& outcome) {
   mute_ = false;
   if (outcome.period_us > 0) period_us_ = outcome.period_us;
   // Faite au palier d'avant, ou dans le temps de repos d'un changement : elle ne dit rien du palier d'ici.
-  if (outcome.made_step != step_ || now < hold_until_us_) return step_;
+  // Le facteur exact d'un palier calé n'est pas le palier : comparé tel quel, aucune paire ne comptait et le
+  // Stable restait figé à fréquence fixe (×1,72 à 165 Hz, prédiction à ×4).
+  const int made = outcome.made_factor.den > 0 ? step_of(outcome.made_factor) : outcome.made_step;
+  if (made != step_ || now < hold_until_us_) return step_;
   ++pairs_;
   if (outcome.late > 0) {
     clean_ = 0;

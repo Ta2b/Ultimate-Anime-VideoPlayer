@@ -160,3 +160,28 @@ TEST_CASE("C12-02 : ancrés sur le vblank, les instants du Rapide résistent à 
   CHECK(collisions(instants(on), 0.2) == 0);
   CHECK(collisions(instants(on + period / 2), 0.2) > 0);
 }
+
+TEST_CASE("Stable à 165 Hz fixe : la paire faite au facteur exact du palier calé compte, et l'Auto monte",
+          "[core][auto]") {
+  // Le lecteur donne le facteur de la paire, 11011/6400 au palier calé ×1,72 (palier 3) : comparé au palier
+  // tel quel, aucune paire ne comptait et le Stable restait à ×1,72 avec une prédiction à ×4.
+  const AutoLimits limits = auto_limits(165.0, kFps, false, 4);
+  AutoRate a;
+  a.set_ceiling(limits.ceiling, limits.granularity);
+  a.set_locked(limits.locked, limits.exact);
+  REQUIRE(a.step() == 3);
+  CHECK(a.step_of(a.factor()) == 3);
+  CHECK(a.step_of(Ratio{1, 1}) == limits.granularity);  // ×1, le plancher
+  CHECK(a.step_of(Ratio{11011, 6401}) == -1);
+  std::int64_t t = 1'000'000;
+  for (int i = 0; i < 24 * 20 && a.step() < limits.locked[3]; ++i) {  // 20 s de paires légères
+    t += kPeriod;
+    const int images = static_cast<int>(std::ceil(a.factor().value()));
+    a.cost(images, 1'000 * images, t);
+    a.pair({.now_us = t, .late = 0, .period_us = kPeriod, .made_factor = a.factor()});
+    a.tick(t, true);
+  }
+  CHECK(a.step() == limits.locked[3]);  // ×3,44, le plafond du niveau ×4
+  CHECK(a.factor() == Ratio{11011, 3200});
+  CHECK(a.reason() == AutoReason::Rise);
+}

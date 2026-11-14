@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <optional>
 #include <random>
 #include <vector>
@@ -341,6 +342,31 @@ TEST_CASE("free grid vsync : un GPU plus lent laisse l'image tenue des vsyncs de
                                                             .vsync_period_us = kVsync});
   REQUIRE(late.instants().size() == 1);
   CHECK(late.instants()[0].is_source());
+}
+
+TEST_CASE("free grid vsync : la source seule d'une paire sans instant tombe aussi sur un vsync",
+          "[free][vsync]") {
+  FreeGrid grid;
+  grid.push(stamp(1, 0), {});
+  // Un pas de 100 ms (GPU à 10 i/s) : bien des paires n'ont aucun instant, la source y paraît seule. Hors de
+  // la grille, elle pouvait viser le vblank de l'image d'avant (une image comptée manquée à tort).
+  const std::int64_t origin = 1'234;
+  const FreeInputs inputs{
+      .min_gap_us = kVsync, .step_us = 100'000, .vsync_period_us = kVsync, .vsync_origin_us = origin};
+  std::int64_t previous = 0;
+  int alone = 0;
+  for (std::uint32_t k = 1; k <= 120; ++k) {
+    const CadenceStep step = grid.push(stamp(k + 1, k * kSourcePeriod), inputs);
+    if (step.instants().size() == 1 && step.instants()[0].is_source()) ++alone;
+    for (const OutputInstant& at : step.instants()) {
+      CHECK(off_grid(*at.pts_us, origin, kVsync) == 0);
+      CHECK(*at.pts_us - previous >= kVsync - kVsync / 8);  // jamais deux images pour un même vsync
+      if (at.is_source())
+        CHECK(std::abs(*at.pts_us - static_cast<std::int64_t>(k) * kSourcePeriod) <= kVsync);
+      previous = *at.pts_us;
+    }
+  }
+  CHECK(alone > 30);
 }
 
 TEST_CASE("vsync phase : suit la phase des présentations et rend le vsync le plus proche", "[free][vsync]") {
