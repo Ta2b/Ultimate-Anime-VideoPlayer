@@ -123,8 +123,8 @@ gh release upload v0.11.0 -R Ta2b/ajp-releases --clobber rel/manifest.toml rel/m
 
 ### Clé de secours et révocation
 
-Le lecteur croit deux clés : l'active (`AJP_UPDATE_PUBKEY`) et celle de secours (`AJP_UPDATE_PUBKEY_BACKUP`, compilée
-depuis la 0.11.0). Créer la paire de secours comme ci-dessus, compiler sa clé publique dans
+Le lecteur croit deux clés : l'active (`AJP_UPDATE_PUBKEY`) et celle de secours (`AJP_UPDATE_PUBKEY_BACKUP`, vide
+tant qu'elle n'est pas créée). Créer la paire de secours comme ci-dessus, compiler sa clé publique dans
 `AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **hors ligne**, chez Tatoub, en sauvegarde chiffrée (décision du
 9 novembre 2026) : jamais dans la CI, pour qu'un vol du secret `AJP_UPDATE_KEY` reste révocable. Une release finale ne part pas tant
 qu'elle est vide : la garde (`tools/ci/check-backup-key.sh`) refuse l'étiquette.
