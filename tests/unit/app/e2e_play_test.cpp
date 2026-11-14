@@ -207,11 +207,14 @@ TEST_CASE("Bout en bout : l'assistant se parcourt au clavier, « q » ne le ferm
   const auto clip = wizard_clip("e2e-assistant.mkv");
   REQUIRE(clip);
   const fs::path dir = first_launch_dir("ajp-e2e-assistant");
-  // Bienvenue, Langues, Intégration par Entrée ; sur Prêt, Tab trois fois (Précédent, Optimiser, Régler
-  // moi-même) puis Entrée. Le dernier « q », lui, tombe pendant la lecture.
+  // Entrée vaut « Suivant » sur chaque écran sauf Prêt, où elle ne fait rien (first_run_wizard.cpp) : quatre
+  // Entrée mènent à Prêt que l'écran Moteur soit là (carte NVIDIA avec le module TensorRT) ou non (CI). Sur
+  // Prêt, Tab trois fois (Précédent, Calibrer maintenant, Régler moi-même) puis Entrée. Le dernier « q »,
+  // lui, tombe pendant la lecture.
   const Run run =
       play(alone(*clip, dir), dir,
-           {"--first-run", "--keys=0.5:q,1:Return,1.5:Return,2:Return,2.6:Tab,3:Tab,3.4:Tab,3.8:Return,6:q"});
+           {"--first-run",
+            "--keys=0.5:q,1:Return,1.5:Return,2:Return,2.5:Return,3.1:Tab,3.5:Tab,3.9:Tab,4.3:Return,6.5:q"});
   INFO(run.output);
   CHECK(run.code == 0);
   CHECK(run.output.find("assistant : ") != std::string::npos);
@@ -229,8 +232,9 @@ TEST_CASE("Bout en bout : une calibration qui échoue à l'écran laisse l'Auto 
   const fs::path dir = first_launch_dir("ajp-e2e-calibration");
   // Le clip de calibration déjà là : sa génération (des dizaines de secondes en Debug) n'est pas l'objet.
   fs::copy_file(*clip, dir / "reglages" / "bench-clip-v4.mkv");
-  const Run run = play(alone(*clip, dir), dir,
-                       {"--first-run", "--keys=1:Return,1.5:Return,2:Return,2.6:Tab,3:Tab,3.4:Return,6:q"});
+  const Run run = play(
+      alone(*clip, dir), dir,
+      {"--first-run", "--keys=1:Return,1.5:Return,2:Return,2.5:Return,3.1:Tab,3.5:Tab,3.9:Return,6.5:q"});
   INFO(run.output);
   CHECK(run.code == 0);
   CHECK(run.output.find("calibration de la machine") != std::string::npos);
