@@ -73,8 +73,8 @@ endif()
 # sur le poste de signature (docs/signature-des-releases.md).
 set(AJP_UPDATE_PUBKEY "c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088" CACHE STRING "Clé publique Ed25519 (hexadécimal) des mises à jour")
 # La clé de secours (P1.14) : un manifeste signé par elle est cru aussi, et peut révoquer l'active (revoked_keys).
-# Vide tant qu'elle n'est pas créée (docs/signature-des-releases.md).
-set(AJP_UPDATE_PUBKEY_BACKUP "" CACHE STRING "Clé publique Ed25519 de secours (hexadécimal) des mises à jour")
+# Sa clé privée reste hors ligne, jamais dans la CI (docs/signature-des-releases.md).
+set(AJP_UPDATE_PUBKEY_BACKUP "5300ff802baa8ad547045edf4a02bf469e5837cc7ae7eee1b39980c876880e2a" CACHE STRING "Clé publique Ed25519 de secours (hexadécimal) des mises à jour")
 # Les clés sont des hexadécimaux de 64 chiffres, ramenés en minuscules : le lecteur les compare à celles que les
 # manifestes révoquent, écrites en minuscules (B26-04). La clé de secours peut rester vide.
 foreach(ajp_key_var AJP_UPDATE_PUBKEY AJP_UPDATE_PUBKEY_BACKUP)
