@@ -3,6 +3,7 @@
 // pour être testés (C18-10).
 #pragma once
 
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,6 +21,15 @@ std::vector<std::string> relaunch_arguments(std::span<const std::string_view> la
 // chemin à espaces (« C:\Mes vidéos\a.mkv ») arriverait coupé en deux. Antislashs doublés seulement devant un
 // guillemet, cité ou fermant.
 std::string windows_quoted(const std::string& argument);
+
+// Le programme que la relance lance : dans un AppImage (appimage : la variable APPIMAGE de son lanceur, vide
+// ailleurs), le fichier .AppImage lui-même, pas l'exécutable monté. close_on_exec_all ferme aussi le
+// descripteur par lequel le lanceur garde l'image montée : à l'execv, le montage disparaît, et le lecteur
+// relancé n'y trouvait plus ses bibliothèques ; il se fermait sans se rouvrir.
+std::filesystem::path relaunch_program(const std::filesystem::path& executable, std::string_view appimage);
+
+// Linux : la variable APPIMAGE, posée par le lanceur d'un AppImage ; vide ailleurs.
+std::string appimage_launcher();
 
 // POSIX : tous les descripteurs au-delà de 2 marqués FD_CLOEXEC (A18-12) ; rien d'ouvert ne passe au lecteur
 // relancé (pilote NVIDIA, socket, fichiers) : un contexte CUDA gardé par un descripteur hérité retiendrait sa

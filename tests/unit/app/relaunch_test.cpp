@@ -104,6 +104,15 @@ TEST_CASE(
   CHECK(relaunched.file == "/v/b.mkv");
 }
 
+// Dans un AppImage, l'exécutable est sous un montage provisoire que close_on_exec_all fait disparaître : la
+// relance part du fichier .AppImage, et le lecteur ne se ferme plus sans se rouvrir.
+TEST_CASE("Relance : le fichier .AppImage dans un AppImage, l'exécutable ailleurs", "[app][relaunch]") {
+  const std::filesystem::path mounted = "/tmp/.mount_ajpXy12/usr/lib/ajp/ajp";
+  CHECK(relaunch_program(mounted, "/home/t/Applications/ajp-linux-x86_64.AppImage") ==
+        std::filesystem::path("/home/t/Applications/ajp-linux-x86_64.AppImage"));
+  CHECK(relaunch_program("/opt/ajp/ajp", "") == std::filesystem::path("/opt/ajp/ajp"));
+}
+
 TEST_CASE("Relance : les arguments rejoués, sans le --relaunched= d'avant", "[app][relaunch]") {
   const std::array<std::string_view, 3> launched{"C:\\Mes vidéos\\a.mkv", "--relaunched=engine-updated",
                                                  "--fullscreen"};

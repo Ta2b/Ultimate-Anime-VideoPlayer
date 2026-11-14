@@ -1,5 +1,7 @@
 #include "app/play/relaunch_args.h"
 
+#include <cstdlib>
+
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -37,6 +39,21 @@ std::string windows_quoted(const std::string& argument) {
   out.append(backslashes, '\\');  // avant le guillemet fermant
   out += '"';
   return out;
+}
+
+std::filesystem::path relaunch_program(const std::filesystem::path& executable, std::string_view appimage) {
+  if (appimage.empty()) return executable;
+  return std::filesystem::path(std::string(appimage));
+}
+
+std::string appimage_launcher() {
+#if defined(__linux__)
+  // NOLINTNEXTLINE(concurrency-mt-unsafe)
+  const char* image = std::getenv("APPIMAGE");  // env: lanceur
+  return image != nullptr ? std::string(image) : std::string();
+#else
+  return {};
+#endif
 }
 
 void close_on_exec_all() {
