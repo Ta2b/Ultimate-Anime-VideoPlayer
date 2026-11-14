@@ -311,7 +311,10 @@ void Session::retry_clock() {
 }
 
 void Session::request_subtitles(const RingFrame& frame) {
-  if (!config_.subtitles || frame.pts_us == kNoPts) return;
+  // Une image d'avant un seek (l'écran la garde pendant la préroulée) : subs jette sa demande sans répondre,
+  // et elle resterait comptée dans subtitle_requests_. Trois suffisaient à ne plus rien demander jusqu'au
+  // seek suivant : plus aucun sous-titre (barre qui paraît pendant la préroulée).
+  if (!config_.subtitles || frame.pts_us == kNoPts || frame.epoch != epoch_) return;
   if (subtitle_requests_ >= kMaxSubtitleRequests) {
     subtitle_waiting_ = frame;
     return;
