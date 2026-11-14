@@ -10,7 +10,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Modules, threads, graphe des cibles, règles de dépendance |
 | [`adr/`](adr/README.md) | Décisions d'architecture, une page chacune |
 | [`moteurs.md`](moteurs.md) | Moteurs des réseaux : Vulkan, TensorRT, Core ML ; MIGraphX et OpenVINO retirés ; livraison de TensorRT |
-| [`interpolation.md`](interpolation.md) | Moteurs du mouvement : RIFE, DistilDRBA ; GMFSS retiré |
+| [`interpolation.md`](interpolation.md) | Moteurs du mouvement : RIFE, DistilDRBA, GMFSS union (Élevé, TensorRT) |
 | [`auto-libre.md`](auto-libre.md) | Mode Auto de l'interpolation : Rapide et Stable (le § 3, mesures d'octobre 2026, est historique) |
 | [`hdr-anime.md`](hdr-anime.md) | Le grade HDR anime guidé ; la sortie HDR ou SDR qui suit le système |
 | [`luts.md`](luts.md) | Les LUT 3D du grade (le choix des looks n'est plus dans le menu) |
@@ -47,4 +47,4 @@ prendre pour l'état du code.
 | Méthode HDR (bouton, écran de l'assistant, `hdr.engine`) | PR #532 | `system_hdr` (`src/app/play/host_facts.h`) |
 | Ancien arbre en cinq catégories | PR #533 | Vidéo, Audio et lecture, Général ([ADR 0012](adr/0012-lecteur-simple.md)) |
 | MIGraphX, OpenVINO, Windows ML | 0.10.0 | Vulkan sur AMD et Intel |
-| GMFSS Fortuna (base, union, fusionné, FP8) | 0.10.0 | RIFE et DistilDRBA |
+| GMFSS Fortuna (base, fusionné, FP8, demi-flot) | 0.10.0 | RIFE ; union revenu au flot entier (niveau Élevé, novembre 2026) |

@@ -329,11 +329,27 @@ tourne vite, et encore de 0,025 sur un flot dix fois plus lent, même en laissan
 eux-mêmes là où le mouvement varie trop entre les points (instant, tx, ty, poids). L'essai, son noyau et ses
 tests sont retirés ; le bit `1U << 2U` des essais du backend reste libre.
 
-## GMFSS retiré
+## GMFSS Fortuna Union : le niveau Élevé et GMFSS seul
 
-GMFSS Fortuna (base et union) donnait les images intermédiaires les plus propres sur l'animation, mais coûtait
-plusieurs fois RIFE : la plupart des machines ne le tenaient pas en direct, et en lecture il avait des défauts.
-Débranché de la lecture puis de l'export, il est retiré des sources en 0.10.0 (lecteur, prepare, noyaux,
-backends Vulkan et TensorRT, scripts d'export). Un `play.toml` qui nomme `gmfss` ou `gmfss_union` se lit en
-RIFE ; `gmfss_fused`, `gmfss_quality` et `gmfss_precision` sont ignorés. L'historique git garde le code d'avant
-0.10.0 pour qui voudrait le reprendre, après une mesure en direct face à RIFE (`ajp bench`).
+Retiré en 0.10.0, GMFSS revient en novembre 2026 à la demande de Tatoub, après la mesure de qualité
+([relevé du 14 novembre](reports/gmfss-union-qualite-2026-11-14.md)) : RIFE 4.26 égale ou bat union en PSNR et en
+LPIPS, mais union tient mieux les rotations et panoramiques rapides à l'œil. Seul union revient, flot entier
+(le demi-flot de l'ancien lecteur coûtait 0,5 dB) ; ni la base, ni le fusionné, ni le FP8.
+
+- **Élevé** (`gmfss_middle = true`, RIFE 4.26) : une paire dont le mouvement mesuré atteint `gmfss_motion`
+  (15 px à 720p par défaut, de 4 à 60) a son image du milieu M par une fusion union ; chaque autre instant est
+  RIFE mouvement sur la demi-paire (a, M) ou (M, b), puis le warp de l'étage. Les autres paires restent à RIFE
+  seul. Mesuré : 30,12 dB / 0,0739 contre 30,40 / 0,0734 pour RIFE seul et 29,92 / 0,0745 pour union seul.
+- **GMFSS union** (mode avancé, `engine = "gmfss_union"`) : la fusion à chaque instant, sans RIFE.
+
+Code : `src/app/play/upscale_gmfss.cpp` (l'étage), `chain_gmfss.cpp` (les deux moteurs),
+`src/kernels/spec/gmfss.h` et `ref/gmfss.cpp` (le softmax splatting), `src/gpu/cuda/backend/gmfss_kernels.cu`
+(les huit splats d'un passage). Deux graphes exportés par `tools/gmfss/export_gmfss.py` :
+`gmfss_fortuna_union_pair.onnx` (FeatureNet, GMFlow, MetricNet, une fois par paire) et
+`gmfss_fortuna_union_fusion.onnx` (IFNet et GridNet, qui reçoit l'instant), construits à la taille de la chaîne.
+
+**TensorRT seulement** (`BackendCaps::gmfss`) : le compilateur de Vulkan n'a ni MatMul ni Softmax. Sans les
+deux graphes ou sans TensorRT, le niveau n'est pas proposé, et un `play.toml` qui le demande garde RIFE (raison
+au journal). Les poids d'union sont MIT ; ils ne sont pas livrés sans l'accord de Tatoub. Un `play.toml` qui
+nomme `gmfss` se lit en RIFE ; `gmfss_fused`, `gmfss_quality` et `gmfss_precision` restent ignorés. Les temps
+sont à mesurer sur une carte NVIDIA (`tools/gmfss/banc_temps.sh`).
