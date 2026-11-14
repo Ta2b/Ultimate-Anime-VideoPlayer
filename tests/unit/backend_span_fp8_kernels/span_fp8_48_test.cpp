@@ -196,10 +196,10 @@ TEST_CASE("SPAN FP8 à 48 canaux : le calcul en 48 suit celui en 64 dont 16 nuls
     // K par position n'a pas d'accumulateur f16 (NaN mesurés) : refusé à la création.
     SpanFp8Weights weights = span_fp8_view(package);
     weights.width48 = SpanFp8Width::PerTap;
-    SpanFp8Status status = SpanFp8Status::Ok;
-    std::string error;
-    CHECK(SpanFp8Net::create(weights, kHeight, kWidth, status, error) == nullptr);
-    CHECK(error.find("K par position") != std::string::npos);
+    SpanFp8Status refusal = SpanFp8Status::Ok;
+    std::string why;
+    CHECK(SpanFp8Net::create(weights, kHeight, kWidth, refusal, why) == nullptr);
+    CHECK(why.find("K par position") != std::string::npos);
     INFO("SNR contre le calcul en 64 : K à plat " << flat << " dB");
     CHECK(flat >= 45.0);
     return;

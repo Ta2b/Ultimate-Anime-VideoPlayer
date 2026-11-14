@@ -341,6 +341,16 @@ des blocs (18 des 21 convolutions d'un b8f64) sous chaque forme, en FP16 et en F
 le temps et les TFLOPS de chacune. Une forme nettement plus rapide que celle du lecteur se reporte dans
 `Body` (`span_fp8_body.cuh`), puis se juge sur le réseau entier (`ajp_span_fp8_run`) et contre TensorRT.
 
+Mesure sur la RTX 4070 Ti (corps de 960 × 540, médiane de trois tours, 64 canaux) : en FP8, la forme du lecteur
+prend 0,286 ms à accumulateur f32 et 0,222 ms en acc16 (−22 %). À accumulateur f32, elle tient 76 % du pic FP16
+et 83 % du pic FP8, presque au plafond. En acc16, toutes les formes plafonnent entre 52 et 54 % du pic : à
+0,222 ms, la convolution lit et écrit environ 66 Mo, soit environ 300 Go/s pour 504 de pic, et la limite est la
+mémoire, pas la forme. À 48 canaux natifs, rien n'est gagné sur le calcul en 64 en FP8 (0,226 contre
+0,222 ms). Aucune forme ne bat celle du lecteur ; le paquet b8f64 admis est en acc16 (−0,08 dB, noyaux
+7,98 ms contre 9,68 en f32). La suite serait de fondre les convolutions d'un bloc (r1 et r2 tenus en L2 ou en
+mémoire partagée), un chantier à part. K par position à 48 canaux en acc16 donnait 7 % de NaN : chemin de
+mesure seul, sans gain, refusé à la création.
+
 ## Autres architectures (chantier 10)
 
 - **Blackwell grand public, sm 12.0 (RTX 50, étape 10.2)** : la bibliothèque des noyaux est compilée pour
