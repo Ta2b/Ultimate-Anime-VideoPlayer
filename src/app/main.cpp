@@ -273,20 +273,23 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
   const int error = errno;
   return relaunch_failed(log_file, std::format("_spawnv : {} (errno {})", std::strerror(error), error));
 #else
+  // Dans un AppImage, le fichier .AppImage : close_on_exec_all fait disparaître le montage à la relance.
+  const std::filesystem::path program =
+      ajp::app::play::relaunch_program(executable, ajp::app::play::appimage_launcher());
   ajp::app::play::close_on_exec_all();
-  std::vector<char*> arguments{const_cast<char*>(executable.c_str())};
+  std::vector<char*> arguments{const_cast<char*>(program.c_str())};
   for (const std::string& argument : kept) arguments.push_back(const_cast<char*>(argument.c_str()));
   arguments.push_back(nullptr);
   if (fresh) {
     pid_t child = 0;
     // env: hérité, le bloc passe tel quel à l'enfant, aucune valeur n'en est lue.
     const int spawned =
-        posix_spawn(&child, executable.c_str(), nullptr, nullptr, arguments.data(), environ);  // env: hérité
+        posix_spawn(&child, program.c_str(), nullptr, nullptr, arguments.data(), environ);  // env: hérité
     if (spawned == 0) return 0;
     return relaunch_failed(log_file,
                            std::format("posix_spawn : {} (errno {})", std::strerror(spawned), spawned));
   }
-  execv(executable.c_str(), arguments.data());
+  execv(program.c_str(), arguments.data());
   const int error = errno;  // execv ne revient que sur un échec
   return relaunch_failed(log_file, std::format("execv : {} (errno {})", std::strerror(error), error));
 #endif
