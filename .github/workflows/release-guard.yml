@@ -14,7 +14,8 @@ name: Garde de release
 #   branche dont le SHA est devenu celui de main par avance rapide, ne suffit pas ;
 # - une étiquette finale exige aussi les rapports des tests matériels du poste NVIDIA, Linux et Windows, joints à la
 #   release de l'étiquette (C28-02) : TensorRT, noyaux CUDA, NVDEC et FP8 ne tournent pas en CI
-#   (tools/release/hardware_report.py, docs/signature-des-releases.md).
+#   (tools/release/hardware_report.py, docs/signature-des-releases.md), ou une dérogation écrite dont l'empreinte
+#   TensorRT est celle de sa préversion de référence (tools/release/hardware-waiver.sh).
 # Sans étiquette (artefact seulement), rien n'est vérifié.
 on:
   workflow_call:
@@ -37,6 +38,10 @@ jobs:
         if: inputs.tag != ''
         with:
           persist-credentials: false
+          # Toute l'histoire et les étiquettes : une dérogation aux tests matériels compare l'empreinte TensorRT à
+          # celle de sa préversion de référence (tools/release/hardware-waiver.sh).
+          fetch-depth: 0
+          fetch-tags: true
       - name: Version de l'étiquette
         if: inputs.tag != ''
         env:
@@ -103,6 +108,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
+          # Une dérogation écrite (tools/release/hardware-waivers.txt) remplace les rapports, si l'empreinte TensorRT
+          # n'a pas bougé depuis sa préversion de référence ; elle est refusée sinon.
+          waived=0
+          tools/release/hardware-waiver.sh "$TAG" || waived=$?
+          [ "$waived" -eq 0 ] && exit 0
+          [ "$waived" -eq 3 ] || exit 1
           dir="$(mktemp -d)"
           for platform in linux windows; do
             gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "hardware-report-$platform.json" -D "$dir" \
