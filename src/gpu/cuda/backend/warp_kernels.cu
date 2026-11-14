@@ -39,18 +39,22 @@ __device__ Planes image_planes(const WarpBlendParams& p, const void* data, cudaT
                 .fh = p.height};
 }
 
-// L'instant réglé du pixel (u, v) pour garder les poses (keeping_poses de ref/warp.cpp).
+// L'instant réglé du pixel (u, v) pour garder les poses (keeping_poses de ref/warp.cpp). at_uv : les quatre
+// canaux du flot lus en (u, v), les mêmes à chaque itération ; chaque point se lit en une fois (sample_n),
+// même résultat que canal par canal.
 template <typename S>
-__device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
+__device__ float pose_time_at(const WarpBlendParams& p, float u, float v, const float (&at_uv)[4]) {
   const Planes flow = motion_planes(p, p.flow, p.textures.flow);
   const Planes previous = motion_planes(p, p.previous_flow, p.textures.previous_flow);
   const float t = p.time;
   float tp = t;
   for (int k = 0; k < kernels::kPoseIterations; ++k) {
-    const float u2 = u - ((1.0F - tp) * S::sample(flow, 0, u, v) + tp * S::sample(flow, 2, u, v));
-    const float v2 = v - ((1.0F - tp) * S::sample(flow, 1, u, v) + tp * S::sample(flow, 3, u, v));
-    const float dx = S::sample(flow, 2, u2, v2) - S::sample(flow, 0, u2, v2);
-    const float dy = S::sample(flow, 3, u2, v2) - S::sample(flow, 1, u2, v2);
+    const float u2 = u - ((1.0F - tp) * at_uv[0] + tp * at_uv[2]);
+    const float v2 = v - ((1.0F - tp) * at_uv[1] + tp * at_uv[3]);
+    float at2[4];
+    S::sample_n(flow, 0, u2, v2, at2);
+    const float dx = at2[2] - at2[0];
+    const float dy = at2[3] - at2[1];
     float before = 0.0F;
     if (p.previous_flow != nullptr) {
       const float ax = u - tp * dx;
@@ -58,13 +62,14 @@ __device__ float pose_time_at(const WarpBlendParams& p, float u, float v) {
       float qx = ax;
       float qy = ay;
       for (int step = 0; step < 2; ++step) {
-        const float nx = ax - S::sample(previous, 2, qx, qy);
-        const float ny = ay - S::sample(previous, 3, qx, qy);
-        qx = nx;
-        qy = ny;
+        float back[2];
+        S::sample_n(previous, 2, qx, qy, back);
+        qx = ax - back[0];
+        qy = ay - back[1];
       }
-      before = hypotf(S::sample(previous, 2, qx, qy) - S::sample(previous, 0, qx, qy),
-                      S::sample(previous, 3, qx, qy) - S::sample(previous, 1, qx, qy));
+      float at_q[4];
+      S::sample_n(previous, 0, qx, qy, at_q);
+      before = hypotf(at_q[2] - at_q[0], at_q[3] - at_q[1]);
     }
     const float now = hypotf(dx, dy);
     const float r = (before + kernels::kPoseEpsilon) / (before + now + 2.0F * kernels::kPoseEpsilon);
@@ -118,20 +123,33 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   float bx;
   float by;
   float weight;
+  float at_uv[4];
+  S::sample_n(flow, 0, u, v, at_uv);
   if (!p.from_middle) {
-    ax = S::sample(flow, 0, u, v);
-    ay = S::sample(flow, 1, u, v);
-    bx = S::sample(flow, 2, u, v);
-    by = S::sample(flow, 3, u, v);
+    ax = at_uv[0];
+    ay = at_uv[1];
+    bx = at_uv[2];
+    by = at_uv[3];
     weight = S::sample(mask, 0, u, v);
   } else {
     // L'instant réglé se lit toujours exactement : le rapport des deux mouvements amplifie la
     // fraction sur 8 bits de la texture (émulée sur les images du test : écart porté de 2 à 10/1024).
-    const float t = p.keep_poses ? pose_time_at<Exact>(p, u, v) : p.time;
-    const float u2 = u - ((1.0F - t) * S::sample(flow, 0, u, v) + t * S::sample(flow, 2, u, v));
-    const float v2 = v - ((1.0F - t) * S::sample(flow, 1, u, v) + t * S::sample(flow, 3, u, v));
-    const float tx = S::sample(flow, 2, u2, v2) - S::sample(flow, 0, u2, v2);
-    const float ty = S::sample(flow, 3, u2, v2) - S::sample(flow, 1, u2, v2);
+    float t = p.time;
+    if (p.keep_poses) {
+      if constexpr (std::is_same_v<S, Exact>) {
+        t = pose_time_at<Exact>(p, u, v, at_uv);
+      } else {
+        float exact_uv[4];
+        Exact::sample_n(flow, 0, u, v, exact_uv);
+        t = pose_time_at<Exact>(p, u, v, exact_uv);
+      }
+    }
+    const float u2 = u - ((1.0F - t) * at_uv[0] + t * at_uv[2]);
+    const float v2 = v - ((1.0F - t) * at_uv[1] + t * at_uv[3]);
+    float at2[4];
+    S::sample_n(flow, 0, u2, v2, at2);
+    const float tx = at2[2] - at2[0];
+    const float ty = at2[3] - at2[1];
     const float mm =
         fminf(fmaxf(S::sample(mask, 0, u2, v2), kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
     const float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) +
@@ -219,10 +237,14 @@ __device__ TilePoint middle_point(const WarpBlendParams& p, float u, float v) {
   const Planes flow = motion_planes(p, p.flow, 0);
   const Planes mask = motion_planes(p, p.mask, 0);
   const float t = p.time;
-  const float u2 = u - ((1.0F - t) * Exact::sample(flow, 0, u, v) + t * Exact::sample(flow, 2, u, v));
-  const float v2 = v - ((1.0F - t) * Exact::sample(flow, 1, u, v) + t * Exact::sample(flow, 3, u, v));
-  const float tx = Exact::sample(flow, 2, u2, v2) - Exact::sample(flow, 0, u2, v2);
-  const float ty = Exact::sample(flow, 3, u2, v2) - Exact::sample(flow, 1, u2, v2);
+  float at_uv[4];
+  Exact::sample_n(flow, 0, u, v, at_uv);
+  const float u2 = u - ((1.0F - t) * at_uv[0] + t * at_uv[2]);
+  const float v2 = v - ((1.0F - t) * at_uv[1] + t * at_uv[3]);
+  float at2[4];
+  Exact::sample_n(flow, 0, u2, v2, at2);
+  const float tx = at2[2] - at2[0];
+  const float ty = at2[3] - at2[1];
   const float mm =
       fminf(fmaxf(Exact::sample(mask, 0, u2, v2), kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
   const float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) + kernels::kBlendLawB * logf((1.0F - t) / t) +

@@ -302,6 +302,15 @@ une fois sans option, une fois avec `--filtered-warp`, plus le temps par image d
 0,1 ms par image, il s'écrit ici avec son chiffre et la question de rallumer le chemin filtré se pose ; sinon
 le chemin filtré se retire.
 
+### Lectures du flot groupées par point
+
+Chaque pixel de la sortie lit le flot à quelques points seulement, mais canal par canal : avec les poses gardées
+(le défaut), 41 lectures bilinéaires de quatre chargements, dont les quatre canaux en (u, v) relus à chaque
+itération de `pose_time_at`. `Exact::sample_n` (`bilinear.cuh`) lit les canaux d'un même point en une fois
+(position, voisins et poids calculés une fois) et le flot en (u, v) se lit une seule fois par pixel : 33 lectures
+au lieu de 41, résultat identique au bit près (mêmes opérations dans le même ordre). Le gain dépend de ce que
+nvcc regroupait déjà ; à mesurer avec `ncu --kernel-name regex:warp_blend` (file des tests).
+
 ## GMFSS retiré
 
 GMFSS Fortuna (base et union) donnait les images intermédiaires les plus propres sur l'animation, mais coûtait
