@@ -34,8 +34,12 @@ void UpscaleStage::resync_grids(bool unrun, bool free_mode, bool steady) {
 // gardés.
 void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep* step, std::size_t late,
                              bool on) {
-  // Le mélange déjà en retard au premier instant de la paire : une paire forte reste à RIFE (gmfss_.behind).
-  gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 && instant_late(frame, 0);
+  // Le mélange qui serait en retard au premier instant de la paire s'il y ajoutait le coût de GMFSS : une
+  // paire forte reste à RIFE (gmfss_.behind). Prévu avant le retard plutôt que constaté : la cadence tient,
+  // GMFSS prend les paires fortes que le temps laisse.
+  // La paire déjà faite en avance (adopt_gmfss_ahead) n'en coûte plus que la fusion et les splats.
+  const std::int64_t cost = setup_.gmfss.cost_us - (gmfss_.pair_ready ? setup_.gmfss.pair_us : 0);
+  gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 && instant_late(frame, 0, cost);
   if (!on) {
     planned_pts_ = kNoPts;  // les instants de la paire, neufs, valent 0 : inconnu
     return;
@@ -63,14 +67,16 @@ std::int64_t UpscaleStage::planned_gap_us(std::uint32_t output) const {
   return instants_[std::min<std::size_t>(output, instants_.size() - 1)].gap_us;
 }
 
-bool UpscaleStage::instant_late(const DecodedFrame& frame, std::uint32_t output) const {
+bool UpscaleStage::instant_late(const DecodedFrame& frame, std::uint32_t output,
+                                std::int64_t margin_us) const {
   if (setup_.clock == nullptr) return false;
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   const std::int64_t pts = instant.pts_us != kNoPts ? instant.pts_us : frame.pts_us;
   if (pts == kNoPts) return false;
   const ClockSnapshot now = setup_.clock->snapshot();
   if (!now.valid || now.epoch != frame.epoch || now.rate <= 0.0) return false;
-  return pts < ready_media_us(now, host_now_us(), 0, latency_us());
+  const auto margin = static_cast<std::int64_t>(static_cast<double>(margin_us) * now.rate);
+  return pts < ready_media_us(now, host_now_us(), 0, latency_us()) + margin;
 }
 
 // Une paire du Rapide à une image. Réduite à sa source par le pas seul (FreeGrid::starved), elle fait

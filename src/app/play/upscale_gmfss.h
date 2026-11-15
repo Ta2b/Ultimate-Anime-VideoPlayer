@@ -30,6 +30,10 @@ struct GmfssSetup {
   // Le mélange en travail plus grand que RIFE : M composée à la taille de travail (kernels/spec/gmfss.h),
   // au lieu de la sortie de la fusion agrandie.
   bool compose = false;
+  // Le coût d'une paire GMFSS au-delà de RIFE (paire, fusion, splats), en µs de temps réel : le mélange la
+  // laisse à RIFE si son premier instant serait alors en retard (upscale_late.cpp).
+  std::int64_t cost_us = 0;
+  std::int64_t pair_us = 0;  // la part du graphe « paire » dans cost_us
 };
 
 struct GmfssBuffers {
@@ -70,10 +74,10 @@ struct GmfssBuffers {
   std::uint64_t fusions = 0;   // passes de la fusion
   std::uint64_t halves = 0;    // passes de RIFE sur une demi-paire
   std::uint64_t composed = 0;  // M composées à la taille de travail
-  // Le mélange en retard (upscale_stage.cpp, begin) : la paire forte dont le premier instant est déjà passé
-  // reste à RIFE, qui la rattrape en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
+  // Le mélange sans le temps de GMFSS (upscale_late.cpp, plan_gaps) : la paire forte dont le premier instant
+  // serait passé reste à RIFE, en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
   bool behind = false;
-  std::uint64_t behind_pairs = 0;  // paires fortes laissées à RIFE pour ce retard
+  std::uint64_t behind_pairs = 0;  // paires fortes laissées à RIFE faute de temps
   // La paire suivante en avance (upscale_gmfss.cpp, run_gmfss_ahead) : dès que l'image d'après est ingérée en
   // avance, son graphe « paire » part dans l'autre jeu, derrière le travail de la paire en cours. À son
   // arrivée, la paire n'attend plus ses 12 à 35 ms : le pic tombe pendant la paire d'avant.

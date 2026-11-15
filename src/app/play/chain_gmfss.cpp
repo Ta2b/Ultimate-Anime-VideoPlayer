@@ -29,6 +29,16 @@ constexpr double kGmfssFusionFirstBuildS = 220.0;  // à 640x384, sous kReferenc
 
 }  // namespace
 
+GmfssCost gmfss_cost(WorkSize size, bool half) {
+  // Mesuré sur une RTX 4070 Ti à 1280x720 : paire 35 ms (12 au demi-flot), fusion 12 ms, splats 3,3 ms ;
+  // à l'échelle des pixels.
+  constexpr double kReference = 1280.0 * 720.0;
+  const double scale = static_cast<double>(size.width) * static_cast<double>(size.height) / kReference;
+  const auto us = [scale](double ms) { return static_cast<std::int64_t>(std::llround(ms * 1000.0 * scale)); };
+  const double pair_ms = half ? 12.0 : 35.0;
+  return {.total_us = us(pair_ms + 12.0 + 3.3), .pair_us = us(pair_ms)};
+}
+
 int gmfss_auto_cap(const ChainEngines& c, int cap, double source_fps) {
   if (c.gmfss_use == GmfssUse::Off || source_fps <= 0.0) return cap;
   const bool half = c.played.gmfss_half_flow;
@@ -110,6 +120,10 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   c.gmfss_fusion = std::move(**fusion);
   c.gmfss_use = use;
   c.gmfss_px = static_cast<float>(settings.gmfss_motion);
+  const bool half = !chosen.half_pair.empty() && chosen.pair == chosen.half_pair;
+  const GmfssCost cost = gmfss_cost(size, half);
+  c.gmfss_cost_us = cost.total_us;
+  c.gmfss_pair_us = cost.pair_us;
   log->info("GMFSS union : {} en {}x{}",
             use == GmfssUse::Only ? "à chaque instant" : "au milieu des paires fortes", size.width,
             size.height);

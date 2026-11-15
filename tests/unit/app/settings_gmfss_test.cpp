@@ -106,3 +106,12 @@ TEST_CASE("GMFSS : l'Auto Rapide laisse la place au Stable", "[app][gmfss]") {
   CHECK_FALSE(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Rife, true, true, true).empty());
   CHECK_FALSE(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Gmfss, true, true, true).empty());
 }
+
+TEST_CASE("GMFSS : le coût d'une paire du mélange, à l'échelle des pixels, moindre au demi-flot",
+          "[app][gmfss]") {
+  using ajp::app::play::gmfss_cost;
+  CHECK(gmfss_cost({.width = 1280, .height = 720}, false).total_us == 50300);
+  CHECK(gmfss_cost({.width = 1280, .height = 720}, false).pair_us == 35000);
+  CHECK(gmfss_cost({.width = 1280, .height = 720}, true).total_us == 27300);
+  CHECK(gmfss_cost({.width = 640, .height = 360}, true).total_us == 6825);
+}

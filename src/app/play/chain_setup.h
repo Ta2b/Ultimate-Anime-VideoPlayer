@@ -153,6 +153,8 @@ struct ChainEngines {
   std::unique_ptr<gpu::Engine> gmfss_fusion;
   GmfssUse gmfss_use = GmfssUse::Off;
   float gmfss_px = 15.0F;
+  std::int64_t gmfss_cost_us = 0;  // GmfssSetup::cost_us et pair_us
+  std::int64_t gmfss_pair_us = 0;
   bool rife_fused = false;  // rife ou rife_motion est RIFE fusionné (six moteurs et noyaux de colle)
   bool drba_fused = false;  // drba est DistilDRBA fusionné (quatre moteurs et noyaux de colle)
   // Le fusionné essayé puis refusé, le réseau entier à sa place (A03-21) : voir OpenedChain.
@@ -219,6 +221,12 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
 // l'utilisateur ferme la fenêtre ; un refus (moteur autre que TensorRT, graphes absents, construction) laisse
 // RIFE, la raison au journal, retenu pour la séance dans inner.
 GmfssUse gmfss_wanted(const PlaySettings& settings);
+// Le coût d'une paire GMFSS du mélange au-delà de RIFE, à la taille size (GmfssSetup::cost_us, pair_us).
+struct GmfssCost {
+  std::int64_t total_us = 0;
+  std::int64_t pair_us = 0;  // le graphe « paire » seul
+};
+GmfssCost gmfss_cost(WorkSize size, bool half);
 // Le plafond de la cadence Auto (Hz, 0 : l'écran) quand GMFSS tourne, ce qu'une RTX 4070 Ti tient en travail
 // 720p (une fusion de 11 à 13 ms par instant, une paire de 35 ms, 12 au demi-flot) au lieu de monter à ×8 :
 // GMFSS seul, ×2 de la source (×2,5 au demi-flot) ; le mélange, budgété comme si chaque paire était forte,
