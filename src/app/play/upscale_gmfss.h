@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/cadence.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 
@@ -57,6 +58,12 @@ struct GmfssBuffers {
   std::uint64_t pairs = 0;    // passes du graphe « paire »
   std::uint64_t fusions = 0;  // passes de la fusion
   std::uint64_t halves = 0;   // passes de RIFE sur une demi-paire
+  // Passes à l'arrivée (GMFSS seul, upscale_early.cpp) : la fusion de chaque instant de la paire, enfilée dès
+  // outputs() dans son tampon (1 × 3 × ph × pw) au lieu d'une au slot, recadrée au slot. early_t[k] < 0 :
+  // rien d'enfilé pour la sortie k.
+  std::array<std::unique_ptr<gpu::TensorBuffer>, core::kMaxInstantsPerPair> early;
+  std::array<float, core::kMaxInstantsPerPair> early_t{};
+  std::uint64_t early_fusions = 0;
 };
 
 }  // namespace ajp::app::play

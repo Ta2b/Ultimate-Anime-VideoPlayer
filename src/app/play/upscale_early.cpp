@@ -43,12 +43,16 @@ std::optional<gpu::Motion> UpscaleStage::early_motion(std::uint32_t output, bool
                      .area = kernels::Window{.x = g.left, .y = g.top, .width = w, .height = h}};
 }
 
+bool UpscaleStage::early_possible() const {
+  return !setup_.rife_at_slot && !early_.refused && intermediates_ > 0 && !copy_pair_ && previous_ &&
+         outputs_ <= early_.runs.size();
+}
+
 std::expected<void, Refusal> UpscaleStage::run_early() {
   early_.ready = false;
   early_.runs.fill(std::nullopt);
-  if (setup_.rife_at_slot || early_.refused || !by_motion() || drba() || intermediates_ == 0 || copy_pair_ ||
-      late_fate_now_ || !previous_ || outputs_ > early_.runs.size())
-    return {};
+  if (gmfss_only()) return run_gmfss_early();
+  if (!by_motion() || drba() || late_fate_now_ || !early_possible()) return {};
   std::uint32_t first = 0;
   while (first < outputs_ && instants_[first].t >= 1.0F) ++first;
   if (first == outputs_) return {};
@@ -56,10 +60,10 @@ std::expected<void, Refusal> UpscaleStage::run_early() {
   use_lane(gpu::Lane::Interpolate);
   if (auto ok = begin_motion_pair(instants_[first].t); !ok) return ok;
   early_.ready = true;
-  // Le mélange fait ses passes au slot : M d'abord, puis RIFE sur la demi-paire de chaque instant.
+  // Le mélange fait M ici (run_gmfss_early), puis RIFE sur la demi-paire de chaque instant au slot.
   if (gmfss_pair()) {
     use_lane(back);
-    return {};
+    return run_gmfss_early();
   }
   bool queued = false;
   for (std::uint32_t k = first; k < outputs_ && !early_.refused; ++k) {

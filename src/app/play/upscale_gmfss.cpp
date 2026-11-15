@@ -149,6 +149,7 @@ void list_splats(GmfssBuffers& gmfss) {
 
 std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   if (auto ok = allocate_half(); !ok) return ok;  // appelé à la fin d'allocate, après l'échelle par paire
+  gmfss_.early_t.fill(-1.0F);
   const GmfssSetup& setup = setup_.gmfss;
   if (setup.use == GmfssUse::Off) return {};
   if (auto ok = gmfss_fits(setup_, by_motion(), drba()); !ok) return ok;
@@ -194,6 +195,17 @@ bool UpscaleStage::gmfss_pair() const {
 
 std::expected<void, Refusal> UpscaleStage::run_gmfss(float t, const gpu::Tensor& into) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (gmfss_only()) {  // fusion déjà enfilée à l'arrivée de la paire (run_gmfss_early)
+    for (std::size_t k = 0; k < gmfss_.early_t.size(); ++k) {
+      if (gmfss_.early_t[k] == t) return ops.rife_crop(gmfss_.early[k]->tensor(), into);
+    }
+  }
+  if (auto ok = fuse_gmfss(t, gmfss_.out->tensor()); !ok) return ok;
+  return ops.rife_crop(gmfss_.out->tensor(), into);
+}
+
+std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor& padded) {
+  gpu::KernelOps& ops = *setup_.backend->kernels();
   if (!gmfss_.pair_ready) {  // le graphe « paire » sert toutes les images de la paire
     if (auto ok =
             ops.gmfss_frames(rife_source(current_ ^ 1U), rife_source(current_), gmfss_.frames->tensor());
@@ -215,13 +227,51 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss(float t, const gpu::Tensor&
                            .out = splat.warped});
   }
   if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gmfss_.time, t); !ok) return ok;
-  std::array results{gmfss_.out->tensor()};
+  std::array results{padded};
   if (auto ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.fusion, gmfss_.fusion_inputs, results),
                             kMotionRefusalKey);
       !ok)
     return ok;
   ++gmfss_.fusions;
-  return ops.rife_crop(gmfss_.out->tensor(), into);
+  return {};
+}
+
+std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
+  // Comme les passes à l'arrivée de RIFE (upscale_early.cpp) : sans elles, une fusion partait à chaque slot
+  // rendu par l'écran et le GPU attendait entre elles. Les splats et la fusion d'un instant se suivent sur la
+  // voie d'interpolation, dans l'ordre : warped et time servent à tour de rôle sans se marcher dessus. Le
+  // mélange y fait M ; les demi-paires de RIFE restent au slot.
+  gmfss_.early_t.fill(-1.0F);
+  if (!early_possible()) return {};  // early_.runs et gmfss_.early ont kMaxInstantsPerPair places
+  const gpu::Lane back = lane_;
+  use_lane(gpu::Lane::Interpolate);
+  std::expected<void, Refusal> ok;
+  if (!gmfss_only()) {
+    if (gmfss_pair() && !gmfss_.middle_ready) ok = make_middle();
+    use_lane(back);
+    return ok;
+  }
+  const kernels::RifeGeometry g = gmfss_geometry(setup_.rife_width, setup_.rife_height);
+  for (std::uint32_t k = 0; k < outputs_ && ok; ++k) {
+    const float t = instants_[k].t;
+    if (t <= 0.0F || t >= 1.0F) continue;
+    if (!gmfss_.early[k]) {
+      if (auto made = alloc_f16(*setup_.backend, gmfss_.early[k], 3, g.padded_width, g.padded_height);
+          !made) {
+        log_channel("gpu")->warn("GMFSS : tampons des fusions à l'arrivée refusés ({}), fusions au slot",
+                                 made.error().detail);
+        early_.refused = true;
+        break;
+      }
+    }
+    ok = fuse_gmfss(t, gmfss_.early[k]->tensor());
+    if (ok) {
+      gmfss_.early_t[k] = t;
+      ++gmfss_.early_fusions;
+    }
+  }
+  use_lane(back);
+  return ok;
 }
 
 std::expected<void, Refusal> UpscaleStage::make_middle() {
