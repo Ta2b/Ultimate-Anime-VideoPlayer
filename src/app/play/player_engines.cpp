@@ -233,14 +233,16 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   // même fichier à chaque ouverture, jusqu'à un effacement du cache à la main (C05-01).
   for (int attempt = 0;; ++attempt) {
     LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
-    auto build = EngineBuild::start(
-        EngineRequest{.library = p.library,
-                      .init = init,
-                      .model = {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256},
-                      .shapes = {.min = shape, .opt = shape, .max = shape},
-                      .builder = p.builder,
-                      .wake = &LoopWake::push,
-                      .wake_context = &ready});
+    auto build = EngineBuild::start(EngineRequest{.library = p.library,
+                                                  .init = init,
+                                                  .model = {.id = core::to_utf8(onnx.stem()),
+                                                            .onnx_path = onnx,
+                                                            .sha256 = *sha256,
+                                                            .l2_tiling = label.l2_tiling},
+                                                  .shapes = {.min = shape, .opt = shape, .max = shape},
+                                                  .builder = p.builder,
+                                                  .wake = &LoopWake::push,
+                                                  .wake_context = &ready});
     if (!build) return std::unexpected(std::move(build.error()));
     note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
     auto artifact =

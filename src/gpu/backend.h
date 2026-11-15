@@ -95,7 +95,8 @@ namespace ajp::gpu {
 // 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
 // 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, RTX 40 et RTX 50).
 // 43 : GMFSS Fortuna Union revient (KernelOps::gmfss_frames, SplatJob, soft_splat_fill ; BackendCaps::gmfss).
-inline constexpr int kBackendAbi = 43;
+// 44 : ModelSpec::l2_tiling (la paire GMFSS se construit sans le pavage L2).
+inline constexpr int kBackendAbi = 44;
 
 using DeviceUuid = ajp::DeviceUuid;
 
@@ -202,6 +203,10 @@ struct ModelSpec {
   std::filesystem::path onnx_path;
   std::string sha256;  // du fichier ONNX
   TensorType precision = TensorType::F16;
+  // Pavage L2 de TensorRT (prepare/trtexec_command.h, kTilingOption) à la construction. La paire GMFSS s'en
+  // passe : avec lui, TensorRT 11.3 rejette des centaines de tactiques Myelin (« inputTensors.size() ==
+  // inputs.size() ») et la construction passe de dix à plus de trente-cinq minutes sur une RTX 4070 Ti.
+  bool l2_tiling = true;
 };
 
 // Formes d'entrée pour lesquelles construire le moteur (min, opt, max), NCHW.

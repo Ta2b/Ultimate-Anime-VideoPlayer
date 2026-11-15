@@ -222,6 +222,13 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
   BuildPlan plan{.settings = engine_settings(*recipe, config.input_name, *profile),
                  .label = shapes_label(shapes)};
   plan.command = sanitize_trt11(plan.settings);
+  if (!model.l2_tiling) {
+    // Haché dans la clé : un moteur pavé ne sert pas à sa place. trtexec_arguments n'ajoute alors pas
+    // kTilingOption.
+    constexpr std::string_view kNoTiling = " --tilingOptimizationLevel=0";
+    plan.settings += kNoTiling;
+    plan.command.kept += kNoTiling;
+  }
   if (config.hwc8_io) {
     // Après le nettoyage, qui retire les --inputIOFormats des réglages du fork (typage faible) : trtexec 11.3
     // prend « hwc8 » seul, le type restant celui du graphe fortement typé.

@@ -150,7 +150,7 @@ std::vector<std::string> trtexec_arguments(const TrtexecPaths& paths, std::strin
   // fait passer 66 Mo par activation pour 48 Mo de L2 sur une RTX 4070 Ti. Le constructeur garde la tactique
   // la plus rapide qu'il mesure : sans gain, le moteur reste celui d'avant, la construction seule est plus
   // longue.
-  args.emplace_back(kTilingOption);
+  if (!command_settings.contains("--tilingOptimizationLevel=")) args.emplace_back(kTilingOption);
   args.push_back("--timingCacheFile=" + ansi_safe_path(paths.timing_cache));
   return args;
 }

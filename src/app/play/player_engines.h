@@ -46,6 +46,7 @@ struct EngineLabel {
   int width = 0;        // entrée du moteur
   int height = 0;
   double expected_s = kDefaultBuildSeconds;
+  bool l2_tiling = true;  // gpu::ModelSpec::l2_tiling
 };
 
 // Instantané demandé (--snapshot) : pris pendant la première construction de moteur qui dure jusqu'à

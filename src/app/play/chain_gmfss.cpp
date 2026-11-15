@@ -63,21 +63,23 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   };
   auto fixed = static_gmfss(*found, g.padded_width, g.padded_height, paths::derived_models(p.paths));
   if (!fixed) return refused(fixed.error());
-  const auto build = [&](const std::filesystem::path& model, const gpu::Shape& shape, std::string name) {
+  const auto build = [&](const std::filesystem::path& model, const gpu::Shape& shape, std::string name,
+                         bool tiled) {
     return prepare_engine(p, init, *c.backend, model, shape,
                           EngineLabel{.name = std::move(name),
                                       .model = core::to_utf8(model.stem()),
                                       .width = g.padded_width,
-                                      .height = g.padded_height},
+                                      .height = g.padded_height,
+                                      .l2_tiling = tiled},
                           gpu::Lane::Interpolate);
   };
   auto pair =
       build(fixed->pair, gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
-            i18n::tr("GMFSS (pair)"));
+            i18n::tr("GMFSS (pair)"), false);  // sans pavage L2 : gpu::ModelSpec::l2_tiling
   if (!pair) return refused(pair.error());
   if (!*pair) return std::nullopt;
   auto fusion = build(fixed->fusion, gpu::Shape{.dims = {1, 3, g.padded_height / 2, g.padded_width / 2}},
-                      i18n::tr("GMFSS (fusion)"));
+                      i18n::tr("GMFSS (fusion)"), true);
   if (!fusion) return refused(fusion.error());
   if (!*fusion) return std::nullopt;
   c.gmfss_pair = std::move(**pair);
