@@ -311,16 +311,16 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
   // le mélange ne le lance que si celle-ci bougeait fort : la suivante bougera sans doute de même. Rien
   // pendant une tenue lissée, où l'image d'après n'est pas la B de la paire suivante.
   if (setup_.gmfss.use == GmfssUse::Off) return {};
-  if (!gmfss_only()) {  // la paire en cours a-t-elle eu sa M ? (ahead_cool)
-    if (gmfss_.middle_ready) {
-      gmfss_.ahead_cool = false;
-    } else if (gmfss_.ahead_adopted) {
-      gmfss_.ahead_cool = true;
-      ++gmfss_.ahead_wasted;
-    }
-    gmfss_.ahead_adopted = false;
+  // La paire en cours a-t-elle eu une fusion depuis le dernier passage ? (ahead_cool)
+  if (gmfss_.fusions != gmfss_.fusions_seen) {
+    gmfss_.ahead_cool = false;
+  } else if (gmfss_.ahead_adopted) {
+    gmfss_.ahead_cool = true;
+    ++gmfss_.ahead_wasted;
   }
-  if (!gmfss_.pair_ready || gmfss_.ahead_queued || (!gmfss_only() && gmfss_.ahead_cool)) return {};
+  gmfss_.fusions_seen = gmfss_.fusions;
+  gmfss_.ahead_adopted = false;
+  if (!gmfss_.pair_ready || gmfss_.ahead_queued || gmfss_.ahead_cool) return {};
   if ((!gmfss_only() && !gmfss_strong()) || smooth_first_ || smooth_second_ || !ahead_.id) return {};
   // Le mélange sans le crédit d'une M à l'image d'après : la paire suivante ira à RIFE, rien à préparer.
   if (!gmfss_only() && gmfss_.credit_us + gmfss_.credit_step_us < setup_.gmfss.cost_us) return {};

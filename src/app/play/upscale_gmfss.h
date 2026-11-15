@@ -96,9 +96,10 @@ struct GmfssBuffers {
   std::uint64_t ahead_left = 0;   // numéro de l'image de gauche (source_serial_)
   std::uint64_t ahead_pairs = 0;  // paires lancées en avance
   std::uint64_t ahead_used = 0;   // et reprises à l'arrivée de leur image
-  // Le mélange : une paire reprise dont la paire n'a pas eu de M (calme, ou sans crédit) a coûté sa paire
-  // pour rien ; la suivante attend alors une paire forte faite à la demande avant de repartir en avance.
+  // Une paire reprise sans fusion (calme, tenue, ou sans crédit) a coûté sa paire pour rien ; la suivante
+  // attend alors une fusion faite à la demande avant de repartir en avance.
   bool ahead_adopted = false;
+  std::uint64_t fusions_seen = 0;
   bool ahead_cool = false;
   std::uint64_t ahead_wasted = 0;
   // Passes à l'arrivée (GMFSS seul, upscale_early.cpp) : la fusion de chaque instant de la paire, enfilée dès
