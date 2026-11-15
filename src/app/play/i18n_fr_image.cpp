@@ -100,10 +100,26 @@ constexpr std::array kImageTabs{
           "nor cleaner than RIFE so far, so Auto does not use it.",
           "DistilDRBA : les personnages animés à une image sur deux gardent leur rythme. Une image de "
           "retard. Ni plus rapide ni plus propre que RIFE pour l'instant : Auto ne l'utilise pas."},
-    Entry{"Very fast, Fast and Balanced are RIFE models. Advanced settings also offer RIFE 4.25 and "
-          "DistilDRBA. Applies after a short reload.",
-          "Très rapide, Rapide et Équilibré sont des modèles RIFE. Les réglages avancés proposent aussi "
-          "RIFE 4.25 et DistilDRBA. S'applique après un court rechargement."},
+    Entry{"Very fast, Fast and Balanced are RIFE models; High adds GMFSS union on fast motion and Very high "
+          "uses GMFSS union alone (NVIDIA RTX). Advanced settings also offer RIFE 4.25 and DistilDRBA. "
+          "Applies after a short reload.",
+          "Très rapide, Rapide et Équilibré sont des modèles RIFE ; Élevé y ajoute GMFSS union sur les "
+          "mouvements rapides et Très élevé n'utilise que GMFSS union (NVIDIA RTX). Les réglages avancés "
+          "proposent aussi RIFE 4.25 et DistilDRBA. S'applique après un court rechargement."},
+    Entry{"High", "Élevé"},
+    Entry{"Very high", "Très élevé"},
+    Entry{"RIFE 4.26, with GMFSS union making the middle frame of fast motion: steadier fast turns and "
+          "pans. TensorRT only (NVIDIA RTX), much more work on those pairs.",
+          "RIFE 4.26, avec GMFSS union pour l'image du milieu des mouvements rapides : rotations et "
+          "panoramiques rapides plus stables. TensorRT seulement (NVIDIA RTX), beaucoup plus de calcul sur "
+          "ces paires."},
+    Entry{"GMFSS union alone: every in-between frame from GMFSS. The heaviest level, TensorRT only (NVIDIA "
+          "RTX); for powerful cards.",
+          "GMFSS union seul : chaque image intermédiaire vient de GMFSS. Le niveau le plus lourd, TensorRT "
+          "seulement (NVIDIA RTX) ; pour les cartes puissantes."},
+    Entry{" + GMFSS union on fast motion", " + GMFSS union sur les mouvements rapides"},
+    Entry{"GMFSS (pair)", "GMFSS (paire)"},
+    Entry{"GMFSS (fusion)", "GMFSS (fusion)"},
     Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",
           "Grisé : au-delà de l'écran ({:.0f} Hz pour {:.3f} i/s)."},
     Entry{"Greyed out: the NVIDIA driver is older than 580.82.07, update it.",

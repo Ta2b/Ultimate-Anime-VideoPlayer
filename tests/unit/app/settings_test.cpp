@@ -65,12 +65,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
-  // P5.2 : GMFSS est retiré, et un ancien play.toml qui le nomme se lit en RIFE, (A22-18).
-  for (const char* old : {"gmfss", "gmfss_union"}) {
-    const auto read = parse_settings(std::format("[interpolation]\nengine = \"{}\"\n", old));
-    REQUIRE(read);
-    CHECK(read->motion_engine == MotionEngine::Rife);
-  }
+  // L'ancien GMFSS et le niveau Élevé : settings_gmfss_test.cpp.
   // L'interpolation d'Apple se garde partout ; elle n'est proposée que sur un Mac.
   s.motion_engine = MotionEngine::Apple;
   CHECK(parse_settings(format_settings(s))->motion_engine == MotionEngine::Apple);
@@ -462,7 +457,8 @@ TEST_CASE("crans de précision : play.toml ; les clés de GMFSS d'avant se lisen
   REQUIRE(back);
   CHECK(back->span_precision == PrecisionTier::Performance);
   CHECK(back->motion_precision == PrecisionTier::Quality);
-  CHECK(format_settings(s).find("gmfss") == std::string::npos);
+  CHECK(format_settings(s).find("gmfss_quality") == std::string::npos);
+  CHECK(format_settings(s).find("gmfss_precision") == std::string::npos);
   const auto legacy = parse_settings(
       "version = 1\n[interpolation]\ngmfss_quality = true\ngmfss_fused = true\ngmfss_precision = "
       "\"quality\"\n");

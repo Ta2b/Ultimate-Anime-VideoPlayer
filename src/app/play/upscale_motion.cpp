@@ -49,6 +49,7 @@ std::expected<void, Refusal> UpscaleStage::enqueue_on(gpu::Engine& engine, const
 }
 
 std::expected<void, Refusal> UpscaleStage::interpolate_image(float t) {
+  if (gmfss_only()) return run_gmfss(t, middle());  // GMFSS seul, comme RIFE image
   if (auto ok = fill_rife_input(t); !ok) return ok;
   std::array results{rife_out_->tensor()};
   if (auto ok = enqueue_rife(*setup_.rife, results); !ok) return ok;
@@ -219,7 +220,10 @@ std::expected<void, Refusal> UpscaleStage::begin_motion_pair(float t) {
     // Warp après SPAN : SPAN de b enfilé entre la mesure et sa relecture, qui ne l'attend pas.
     auto ticket = ops.flow_max_start(middle);
     std::expected<float, Refusal> biggest;
-    if (ticket && motion_measured_) {
+    // Le mélange (upscale_gmfss.cpp) décide d'après la paire elle-même : après une paire forte, la mesure est
+    // attendue, la paire calme suivante reprend la mesure en fond.
+    const bool own_measure = strong_motion_ && setup_.gmfss.use == GmfssUse::Middle;
+    if (ticket && motion_measured_ && !own_measure) {
       // La paire précédente, calme, a décidé : celle-ci n'a qu'une passe ; sa mesure décide la suivante.
       motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};
       biggest = 0.0F;
@@ -273,6 +277,13 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   // La paire se décide à sa première image intermédiaire, sauf si son arrivée l'a déjà fait (run_early).
   if (first_middle() && !early_.ready) {
     if (auto ok = begin_motion_pair(t); !ok) return ok;
+  }
+  // Le mélange (upscale_gmfss.cpp) : M par GMFSS, RIFE sur les demi-paires ; b passée par SPAN avant.
+  if (gmfss_pair()) {
+    if (warps_spanned()) {
+      if (auto ok = span_current(); !ok) return ok;
+    }
+    return interpolate_middle(t, a, b, out);
   }
   if (direct_run_) return interpolate_direct(output, t, other, a, b, out);
   // Warp après SPAN : b agrandie ici (si la relecture du mouvement maximal ne l'a pas déjà enfilée),

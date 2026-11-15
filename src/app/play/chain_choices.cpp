@@ -11,6 +11,7 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
+#include "app/play/gmfss_model.h"
 #include "app/play/host_facts.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
@@ -52,6 +53,8 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = c.drba_found,
+      .gmfss_available =
+          c.backend && c.backend->capabilities().gmfss && find_gmfss(c.model_places).has_value(),
       .rife_loaded = rife_loaded,
       .opened = c.opened,
       .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},

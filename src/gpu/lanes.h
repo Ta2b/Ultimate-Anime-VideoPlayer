@@ -18,9 +18,12 @@
 namespace ajp::gpu {
 
 // Mesure : ingestion, mesures de la paire, relectures. Agrandissement : SPAN et l'écriture de son
-// slot. Interpolation : RIFE, DistilDRBA, warp et l'écriture des images intermédiaires.
-enum class Lane : std::uint8_t { Measure, Upscale, Interpolate };
-inline constexpr std::size_t kLanes = 3;
+// slot. Interpolation : RIFE, DistilDRBA, warp et l'écriture des images intermédiaires. Paire : le graphe
+// « paire » de GMFSS (FeatureNet, GMFlow, MetricNet, 14 à 32 ms à 1280x768 sur une RTX 4070 Ti), sur sa
+// propre file et sa propre zone d'activations, pour que la paire suivante tourne pendant les fusions de la
+// paire en cours (app/play/upscale_gmfss.cpp) ; au rang de l'interpolation.
+enum class Lane : std::uint8_t { Measure, Upscale, Interpolate, Pair };
+inline constexpr std::size_t kLanes = 4;
 
 constexpr std::size_t lane_index(Lane lane) {
   return static_cast<std::size_t>(lane);
@@ -37,6 +40,7 @@ constexpr int lane_rank(Lane lane) {
     case Lane::Upscale:
       return 1;
     case Lane::Interpolate:
+    case Lane::Pair:
       return 2;
   }
   return 2;
@@ -49,7 +53,7 @@ constexpr int lane_rank(Lane lane) {
 constexpr int lane_priority(Lane lane, int least, int greatest) {
   const int step = greatest <= least ? 1 : -1;
   const int levels = (least - greatest) * step + 1;
-  const int rank = levels == 2 ? (lane == Lane::Interpolate ? 1 : 0) : lane_rank(lane);
+  const int rank = levels == 2 ? (lane_rank(lane) == 2 ? 1 : 0) : lane_rank(lane);
   const int priority = greatest + step * rank;
   return greatest <= least ? std::min(priority, least) : std::max(priority, least);
 }
@@ -96,7 +100,10 @@ class LaneHazards {
   // file de lane (un rang au moins aussi récent) n'est pas répétée.
   Op access(Lane lane, std::span<const std::uintptr_t> reads, std::span<const std::uintptr_t> writes) {
     const std::size_t self = lane_index(lane);
+    // La première opération de la voie de la paire (GMFSS) suit tout ce qui est déjà enfilé : tant qu'elle
+    // était vide, settled ne l'attendait pas pour oublier des adresses.
     std::array<std::uint64_t, kLanes> need{};
+    if (lane == Lane::Pair && marks_[self] == 0) need = marks_;
     for (const std::uintptr_t resource : reads) {
       const auto found = states_.find(resource);
       if (found != states_.end()) need_write(found->second, self, need);
@@ -158,6 +165,8 @@ class LaneHazards {
   // (tampons libérés, anciennes générations de l'anneau) pour toute la vie du backend (A21-09).
   bool settled(const State& state) const {
     for (std::size_t other = 0; other < kLanes; ++other) {
+      // La voie de la paire, tant qu'elle est vide (sans GMFSS) : sa première opération suivra tout (access).
+      if (other == lane_index(Lane::Pair) && marks_[other] == 0) continue;
       if (state.written != 0 && other != state.writer && waited_[other][state.writer] < state.written)
         return false;
       for (std::size_t reader = 0; reader < kLanes; ++reader) {

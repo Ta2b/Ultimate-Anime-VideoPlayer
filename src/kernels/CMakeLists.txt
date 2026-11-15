@@ -13,6 +13,7 @@ ajp_add_module(kernels
     ref/color.cpp
     ref/detect.cpp
     ref/frame_stats.cpp
+    ref/gmfss.cpp
     ref/half.cpp
     ref/resample.cpp
     ref/rife.cpp

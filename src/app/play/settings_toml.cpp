@@ -129,11 +129,22 @@ void read_auto_mode(const toml::table& table, PlaySettings& s,
   }
 }
 
-// Les essais de l'interpolation qui allègent RIFE sur les mouvements rapides : pair_scale, strong_middle.
+// Ce qui change les passes sur les mouvements rapides : les essais pair_scale et strong_middle, et le mélange
+// de GMFSS (gmfss_middle, gmfss_motion, borné).
 void read_motion_trials(const toml::table& table, PlaySettings& s,
                         std::vector<std::expected<void, Refusal>>& reads) {
   reads.push_back(read(table, "interpolation", "pair_scale", s.pair_scale));
   reads.push_back(read(table, "interpolation", "strong_middle", s.strong_middle));
+  reads.push_back(read(table, "interpolation", "gmfss_middle", s.gmfss_middle));
+  int motion = s.gmfss_motion;
+  reads.push_back(read(table, "interpolation", "gmfss_motion", motion));
+  if (motion >= kGmfssMotionMin && motion <= kGmfssMotionMax) {
+    s.gmfss_motion = motion;
+  } else {
+    reads.emplace_back(
+        refuse_key(RefusalCode::FieldOutOfRange, "interpolation.gmfss_motion",
+                   std::format(" : {} (de {} à {})", motion, kGmfssMotionMin, kGmfssMotionMax)));
+  }
 }
 
 // interpolation.rife : un entier (×3), ou un réel en moitié (×1.5).
@@ -297,9 +308,9 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "warp_after_span", legacy_after));
     if (legacy_after) s.span_order = SpanOrder::After;
     reads.push_back(read_named(*interpolation, "interpolation", "span_order", s.span_order, kSpanOrderCount));
-    // Le flux optique matériel des RTX et GMFSS (P5.2, 0.10.0) ont été retirés : RIFE les remplace, sans
-    // plainte.
-    constexpr std::array<std::string_view, 3> kRetiredMotion{"optical_flow", "gmfss", "gmfss_union"};
+    // Le flux optique matériel des RTX et GMFSS base (P5.2, 0.10.0) ont été retirés : RIFE les remplace, sans
+    // plainte. « gmfss_union » est de nouveau GMFSS union seul (MotionEngine::Gmfss).
+    constexpr std::array<std::string_view, 2> kRetiredMotion{"optical_flow", "gmfss"};
     reads.push_back(read_named(*interpolation, "interpolation", "engine", s.motion_engine, kMotionEngineCount,
                                kRetiredMotion, MotionEngine::Rife));
   }

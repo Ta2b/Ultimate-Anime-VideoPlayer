@@ -256,6 +256,7 @@ TensorRtBackend::~TensorRtBackend() {
     if (read.done != nullptr) cudaEventDestroy(read.done);
   }
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
+  if (splat_sums_ != nullptr) cudaFree(splat_sums_);
   if (deband_out_ != nullptr) cudaFree(deband_out_);
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
@@ -319,6 +320,7 @@ BackendCaps TensorRtBackend::capabilities() const {
       .span_fp8_kernels = SpanFp8Net::kKernelsVersion,
       .rife_fused = true,
       .drba_fused = true,
+      .gmfss = true,
       .matrix_units = true,
       .lanes = lanes_,
       .ring_targets = true,

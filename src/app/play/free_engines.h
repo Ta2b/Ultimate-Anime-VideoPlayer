@@ -25,6 +25,7 @@ constexpr std::uint32_t free_instants_limit(MotionEngine engine) {
   switch (engine) {
     case MotionEngine::Rife:
     case MotionEngine::DistilDrba:
+    case MotionEngine::Gmfss:
       return static_cast<std::uint32_t>(core::kMaxInstantsPerPair);
     case MotionEngine::Apple:
       return 0;

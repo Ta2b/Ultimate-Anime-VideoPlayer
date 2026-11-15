@@ -49,6 +49,10 @@ UpscaleStage::~UpscaleStage() {
     log_channel("gpu")->info("RIFE des paires calmes : {} passes sur {}", calm_runs_, rife_runs_);
   if (halves())
     log_channel("gpu")->info("échelle par paire : {} passes à demi-taille sur {}", half_.runs, rife_runs_);
+  if (setup_.gmfss.use != GmfssUse::Off) {
+    log_channel("gpu")->info("GMFSS union : {} paires, {} fusions, {} passes de RIFE sur une demi-paire",
+                             gmfss_.pairs, gmfss_.fusions, gmfss_.halves);
+  }
   // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
   // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste
   // hors défaut.
@@ -261,7 +265,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
       if (auto ok = alloc(mask_, planes(1, g.padded_width, g.padded_height)); !ok) return ok;
     }
   }
-  return allocate_half();
+  return allocate_gmfss();  // après allocate_half
 }
 
 }  // namespace ajp::app::play

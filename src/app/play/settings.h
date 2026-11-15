@@ -45,15 +45,22 @@ std::string_view label(Downscale filter);  // « Area », pour le menu
 // Libellé lisible d'un modèle RIFE : « rife_v4.22_lite.onnx » devient « RIFE 4.22 lite ».
 std::string rife_label(const std::string& file);
 
+// Le seuil du mélange de GMFSS, en pixels de mouvement à 720 lignes : celui où RIFE passe déjà à chaque
+// instant (kernels::single_run_motion). Bornes de play.toml : [kGmfssMotionMin, kGmfssMotionMax].
+inline constexpr int kDefaultGmfssMotion = 15;
+inline constexpr int kGmfssMotionMin = 4;
+inline constexpr int kGmfssMotionMax = 60;
+
 // Ce qui fait les images intermédiaires : RIFE (réseau, 4.25 ou 4.22 lite, avec ou sans garder les
 // poses), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
 // entraîné à imiter DRBA, les poses gardées par le réseau lui-même, une image de retard), ou
 // l'interpolation d'Apple (VTFrameRateConversion de VideoToolbox, macOS 15.4, sous le backend Core
-// ML : gpu/system_interpolator.h). GMFSS Fortuna est retiré des sources (0.10.0) : un ancien play.toml qui
-// le nomme (« gmfss », « gmfss_union ») se lit en RIFE (settings_toml.cpp). La valeur numérique n'est
-// écrite nulle part : play.toml porte le nom.
-enum class MotionEngine : std::uint8_t { Rife, DistilDrba, Apple };
-inline constexpr int kMotionEngineCount = 3;
+// ML : gpu/system_interpolator.h), ou GMFSS Fortuna Union seul (upscale_gmfss.cpp, TensorRT seulement ; RIFE
+// le remplace ailleurs ou sans ses graphes). Le mélange de RIFE et de GMFSS reste RIFE (gmfss_middle). Les
+// noms de l'ancien GMFSS (0.10.0) : « gmfss » se lit en RIFE, « gmfss_union » en GMFSS seul. La valeur
+// numérique n'est écrite nulle part : play.toml porte le nom.
+enum class MotionEngine : std::uint8_t { Rife, DistilDrba, Apple, Gmfss };
+inline constexpr int kMotionEngineCount = 4;
 // Proposé sur ce système : l'interpolation d'Apple sur un Mac seulement. play.toml garde le choix
 // partout ; ailleurs, la chaîne reprend RIFE.
 #if defined(__APPLE__)
@@ -72,17 +79,34 @@ std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 // Équilibré sont RIFE 4.25 lite, 4.22 lite et 4.26 (docs/rife-candidats.md) ;
 // RIFE 4.25 et DistilDRBA ne se choisissent qu'en mode avancé (advanced). System : l'interpolation d'Apple,
 // sur un Mac seulement.
-enum class InterpLevel : std::uint8_t { VeryFast, Fast, Balanced, Rife425, DistilDrba, System };
+// Élevé : RIFE 4.26 avec GMFSS Fortuna Union au milieu des paires qui bougent fort (gmfss_middle) ; GMFSS
+// union seul, en mode avancé. Les deux sous TensorRT seulement (BackendCaps::gmfss).
+enum class InterpLevel : std::uint8_t {
+  VeryFast,
+  Fast,
+  Balanced,
+  High,
+  Rife425,
+  DistilDrba,
+  GmfssUnion,
+  System
+};
 struct InterpChoice {
   InterpLevel level;
   MotionEngine engine;
   std::string_view rife_model;  // vide hors RIFE
   bool advanced = false;        // proposé en mode avancé seulement
+  bool gmfss_middle = false;    // RIFE et GMFSS au milieu des paires fortes (Élevé)
 };
-inline constexpr std::array<InterpChoice, 6> kInterpLevels{{
+inline constexpr std::array<InterpChoice, 8> kInterpLevels{{
     {.level = InterpLevel::VeryFast, .engine = MotionEngine::Rife, .rife_model = "rife_v4.25_lite.onnx"},
     {.level = InterpLevel::Fast, .engine = MotionEngine::Rife, .rife_model = "rife_v4.22_lite.onnx"},
     {.level = InterpLevel::Balanced, .engine = MotionEngine::Rife, .rife_model = "rife_v4.26.onnx"},
+    {.level = InterpLevel::High,
+     .engine = MotionEngine::Rife,
+     .rife_model = "rife_v4.26.onnx",
+     .gmfss_middle = true},
+    {.level = InterpLevel::GmfssUnion, .engine = MotionEngine::Gmfss, .rife_model = {}},
     {.level = InterpLevel::Rife425,
      .engine = MotionEngine::Rife,
      .rife_model = "rife_v4.25.onnx",
@@ -93,9 +117,10 @@ inline constexpr std::array<InterpChoice, 6> kInterpLevels{{
      .advanced = true},
     {.level = InterpLevel::System, .engine = MotionEngine::Apple, .rife_model = {}},
 }};
-// Le niveau d'un moteur et du modèle RIFE qu'il charge (le nom vide de play.toml déjà résolu) ; nullopt
-// pour un autre modèle RIFE ou un moteur débranché.
-std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model);
+// Le niveau d'un moteur et du modèle RIFE qu'il charge (le nom vide de play.toml déjà résolu), avec ou sans
+// GMFSS au milieu ; nullopt pour un autre modèle RIFE ou un moteur débranché.
+std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model,
+                                        bool gmfss_middle = false);
 
 // Les repères des listes (docs/ux-parametres.md, 3) : une pastille à côté du choix, le détail en infobulle.
 enum class Badge : std::uint8_t { Recommended, Fastest, Finest, Experimental };
@@ -240,6 +265,11 @@ struct PlaySettings {
   // prolongé ne sert plus. Avec les poses (le défaut) ; en direct. Essai, éteint par défaut : à juger à l'œil
   // (docs/interpolation.md, Instants déduits sur les paires fortes).
   bool strong_middle = false;
+  // Élevé (upscale_gmfss.cpp) : une paire dont le mouvement atteint gmfss_motion pixels (à 720 lignes) a son
+  // image du milieu par GMFSS Fortuna Union, ses autres instants par RIFE sur chaque demi-paire ; les autres
+  // paires restent à RIFE. TensorRT seulement ; recharge la chaîne (deux moteurs à construire).
+  bool gmfss_middle = false;
+  int gmfss_motion = kDefaultGmfssMotion;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le

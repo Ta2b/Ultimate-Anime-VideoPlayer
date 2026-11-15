@@ -32,6 +32,7 @@
 #include "app/play/engine_screen.h"
 #include "app/play/engine_switch.h"
 #include "app/play/first_run.h"
+#include "app/play/gmfss_model.h"
 #include "app/play/home_idle.h"
 #include "app/play/host_choices.h"
 #include "app/play/host_facts.h"
@@ -171,6 +172,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = drba,
+      .gmfss_available = find_gmfss(places).has_value(),  // le moteur n'est pas encore ouvert
       .rife_loaded = false,
       .rife_models = rife ? rife->available : std::vector<std::string>{},
       .default_rife_model = rife ? rife->default_name : std::string(),

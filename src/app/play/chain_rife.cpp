@@ -182,7 +182,8 @@ std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& i
                                             const PlaySettings& settings, InnerFallbacks& inner,
                                             const std::string& library) {
   const auto log = log_channel("app");
-  const bool use_rife = settings.rife_factor >= 2 && c.rife_model && !c.use_drba() && !c.use_apple();
+  const bool use_rife = settings.rife_factor >= 2 && c.rife_model && !c.use_drba() && !c.use_apple() &&
+                        c.gmfss_use != GmfssUse::Only;
   c.rife_align = use_rife ? rife_padding_multiple(*c.rife_model) : kernels::kRifeAlign;
   c.geometry = kernels::rife_geometry(c.rife_size.width, c.rife_size.height, c.rife_align);
   c.image_geometry = kernels::rife_geometry(c.work.width, c.work.height, c.rife_align);

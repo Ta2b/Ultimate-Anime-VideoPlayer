@@ -33,6 +33,7 @@
 #include "app/play/rife_plan.h"
 #include "app/play/ring_stage.h"
 #include "app/play/source_grade.h"
+#include "app/play/upscale_gmfss.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
 #include "core/moving_area.h"
@@ -133,6 +134,9 @@ struct UpscaleSetup {
   // gardées ; l'étage lit alors jusqu'à kSmoothMaxHold - 1 images en avance (frames_ahead). Une tenue plus
   // longue, ou coupée, garde le rythme des sources.
   bool smooth_drawings = false;
+  // GMFSS Fortuna Union (upscale_gmfss.cpp) : le mélange avec rife_motion, ou seul (sans rife ni
+  // rife_motion).
+  GmfssSetup gmfss;
   // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
@@ -198,7 +202,9 @@ class UpscaleStage final : public RingStage {
   // calm : la passe peut prendre rife_motion_calm (P6.17).
   std::expected<void, Refusal> run_motion(float t, const gpu::Tensor& flow, const gpu::Tensor& mask,
                                           bool calm = false);
-  bool interpolates() const { return setup_.rife != nullptr || setup_.rife_motion != nullptr || drba(); }
+  bool interpolates() const {
+    return setup_.rife != nullptr || setup_.rife_motion != nullptr || drba() || gmfss_only();
+  }
   bool drba() const { return setup_.distil_drba != nullptr; }
   bool drba_motion() const { return drba() && setup_.drba_motion; }
   // DistilDRBA (upscale_drba.cpp) : ses tenseurs ; l'arrivée de l'image b à la place de son
@@ -322,6 +328,7 @@ class UpscaleStage final : public RingStage {
   void next_source() {
     current_ ^= 1U;
     source_serial_[current_] = ++serials_;
+    gmfss_.pair_ready = gmfss_.middle_ready = false;  // GMFSS : la paire et M sont à refaire
   }
   std::uint64_t serials_ = 0;
   // Les images de chaque tampon de rife_ins_ par leur numéro, A puis B ; 0 pour une image qui n'est pas une
@@ -483,6 +490,20 @@ class UpscaleStage final : public RingStage {
   HalfRife half_;
   bool halves() const { return setup_.rife_motion_half != nullptr && by_motion(); }
   std::expected<void, Refusal> allocate_half();
+  // GMFSS (upscale_gmfss.cpp) : ses tenseurs ; la paire forte qui prend le mélange ; l'image à t du mélange
+  // (M, ou RIFE sur la demi-paire puis le warp) ; GMFSS seul, l'image à t dans middle().
+  GmfssBuffers gmfss_;
+  bool gmfss_only() const { return setup_.gmfss.use == GmfssUse::Only; }
+  std::expected<void, Refusal> allocate_gmfss();
+  bool gmfss_pair() const;
+  std::expected<void, Refusal> run_gmfss(float t, const gpu::Tensor& into);
+  std::expected<void, Refusal> fuse_gmfss(float t, const gpu::Tensor& padded);  // la fusion, sans recadrage
+  std::expected<void, Refusal> run_gmfss_pair();   // le graphe « paire », sur sa voie, dans l'autre jeu
+  std::expected<void, Refusal> run_gmfss_early();  // à l'arrivée : les fusions (seul) ou M (le mélange)
+  std::expected<void, Refusal> interpolate_middle(float t, const gpu::Tensor& a, const gpu::Tensor& b,
+                                                  const Target& out);
+  std::expected<void, Refusal> make_middle();            // M, une fois par paire forte
+  std::expected<void, Refusal> half_pair_rife(float t);  // RIFE mouvement sur la demi-paire de t
   gpu::Motion half_motion() const;
   // La source du tampon index de rgb_ (ou B lissée, smooth) réduite pour le second RIFE.
   std::expected<const gpu::Tensor*, Refusal> half_source(std::uint32_t index, bool smooth);
@@ -515,6 +536,7 @@ class UpscaleStage final : public RingStage {
   EarlyRuns early_;
   // À la fin de outputs() : la paire décidée et ses passes enfilées, quand elle le permet.
   std::expected<void, Refusal> run_early();
+  bool early_possible() const;  // ce que demandent les passes à l'arrivée, RIFE comme GMFSS
   // Les tampons de la passe de la sortie output (second RIFE si half) ; nullopt : allocation refusée.
   std::optional<gpu::Motion> early_motion(std::uint32_t output, bool half);
   // Ce que la paire décide (direct_run_, single_run_, poses_, mouvement fort, et la passe du milieu) : à sa

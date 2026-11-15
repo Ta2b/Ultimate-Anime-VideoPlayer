@@ -334,6 +334,7 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
          a.rife_fused != b.rife_fused || a.drba_fused != b.drba_fused ||
          a.smooth_drawings != b.smooth_drawings || a.cubic_warp != b.cubic_warp ||
          a.pair_scale != b.pair_scale || a.strong_middle != b.strong_middle ||
+         a.gmfss_middle != b.gmfss_middle || a.gmfss_motion != b.gmfss_motion ||
          a.auto_cap != b.auto_cap;  // C23-06
 }
 

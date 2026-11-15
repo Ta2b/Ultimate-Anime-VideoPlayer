@@ -329,11 +329,37 @@ tourne vite, et encore de 0,025 sur un flot dix fois plus lent, même en laissan
 eux-mêmes là où le mouvement varie trop entre les points (instant, tx, ty, poids). L'essai, son noyau et ses
 tests sont retirés ; le bit `1U << 2U` des essais du backend reste libre.
 
-## GMFSS retiré
+## GMFSS Fortuna Union : les niveaux Élevé et Très élevé
 
-GMFSS Fortuna (base et union) donnait les images intermédiaires les plus propres sur l'animation, mais coûtait
-plusieurs fois RIFE : la plupart des machines ne le tenaient pas en direct, et en lecture il avait des défauts.
-Débranché de la lecture puis de l'export, il est retiré des sources en 0.10.0 (lecteur, prepare, noyaux,
-backends Vulkan et TensorRT, scripts d'export). Un `play.toml` qui nomme `gmfss` ou `gmfss_union` se lit en
-RIFE ; `gmfss_fused`, `gmfss_quality` et `gmfss_precision` sont ignorés. L'historique git garde le code d'avant
-0.10.0 pour qui voudrait le reprendre, après une mesure en direct face à RIFE (`ajp bench`).
+Retiré en 0.10.0, GMFSS revient en novembre 2026 à la demande de Tatoub, après la mesure de qualité
+([relevé du 14 novembre](reports/gmfss-union-qualite-2026-11-14.md)) : RIFE 4.26 égale ou bat union en PSNR et en
+LPIPS, mais union tient mieux les rotations et panoramiques rapides à l'œil. Seul union revient, flot entier
+(le demi-flot de l'ancien lecteur coûtait 0,5 dB) ; ni la base, ni le fusionné, ni le FP8.
+
+- **Élevé** (`gmfss_middle = true`, RIFE 4.26) : une paire dont le mouvement mesuré atteint `gmfss_motion`
+  (15 px à 720p par défaut, de 4 à 60) a son image du milieu M par une fusion union ; chaque autre instant est
+  RIFE mouvement sur la demi-paire (a, M) ou (M, b), puis le warp de l'étage. Les autres paires restent à RIFE
+  seul. Mesuré : 30,12 dB / 0,0739 contre 30,40 / 0,0734 pour RIFE seul et 29,92 / 0,0745 pour union seul.
+- **Très élevé** (GMFSS union seul, `engine = "gmfss_union"`) : la fusion à chaque instant, sans RIFE. Proposé
+  hors du mode avancé depuis le 15 novembre 2026, à la demande de Tatoub : l'utilisateur choisit entre le mélange
+  (Élevé) et union seul (Très élevé).
+
+Code : `src/app/play/upscale_gmfss.cpp` (l'étage), `chain_gmfss.cpp` (les deux moteurs),
+`src/kernels/spec/gmfss.h` et `ref/gmfss.cpp` (le softmax splatting), `src/gpu/cuda/backend/gmfss_kernels.cu`
+(les huit splats d'un passage). Deux graphes exportés par `tools/gmfss/export_gmfss.py` :
+`gmfss_fortuna_union_pair.onnx` (FeatureNet, GMFlow, MetricNet, une fois par paire) et
+`gmfss_fortuna_union_fusion.onnx` (IFNet et GridNet, qui reçoit l'instant), construits à la taille de la chaîne.
+
+**IFNet remplacé par RIFE 4.26** (essai du 15 novembre 2026) : `tools/gmfss/ifnet_rife.py` écrit une fusion dont
+l'IFNet d'union (un RIFE ancien, environ 3 ms de la fusion à 1280x768 sur la 4070 Ti, un quart de son temps) est
+remplacé par le graphe `rife_v4.26.onnx` du lecteur (1,5 ms à la même demi-taille), branché devant GridNet dans
+le même ONNX. Mêmes entrées et même sortie que la fusion d'origine, même nom de fichier : le lecteur la charge sans
+changement ; la métadonnée `ajp.gmfss.ifnet` nomme le RIFE. GridNet n'est pas réentraîné : à l'œil, Tatoub ne
+voit pas de différence (vidéos de Re:Zero S4E18). RIFE travaillant à la demi-taille au 1/64, la taille remplie de
+GMFSS est un multiple de 128 (`kGmfssAlign`), ce que sont déjà 1280x768 et 1920x1152.
+
+**TensorRT seulement** (`BackendCaps::gmfss`) : le compilateur de Vulkan n'a ni MatMul ni Softmax. Sans les
+deux graphes ou sans TensorRT, le niveau n'est pas proposé, et un `play.toml` qui le demande garde RIFE (raison
+au journal). Les poids d'union sont MIT ; ils ne sont pas livrés sans l'accord de Tatoub. Un `play.toml` qui
+nomme `gmfss` se lit en RIFE ; `gmfss_fused`, `gmfss_quality` et `gmfss_precision` restent ignorés. Les temps
+sont à mesurer sur une carte NVIDIA (`tools/gmfss/banc_temps.sh`).

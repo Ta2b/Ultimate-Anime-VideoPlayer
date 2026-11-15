@@ -56,6 +56,7 @@ struct SettingsChoices {
   TierSupport rife_tiers;              // les graphes « _fp8 » et « _fp32 » du modèle RIFE en cours
   TierSupport drba_tiers;              // ceux de DistilDRBA
   bool distil_drba_available = false;  // le graphe de DistilDRBA
+  bool gmfss_available = false;        // les deux graphes de GMFSS union, sur un moteur qui les fait tourner
   bool rife_loaded = false;            // moteur RIFE chargé : ×N en direct
   // La chaîne ouverte (chain_shape.h) : un facteur, Auto ou Rapide qui demandent un autre anneau ou un autre
   // ordre du warp attendent « Appliquer ». Rien : à l'accueil, aucune chaîne.

@@ -97,6 +97,16 @@ TEST_CASE("trtexec_arguments : chemins sans guillemets, timing cache en dernier"
                                  "--timingCacheFile=/cache/.aji-build-1/timing.cache"});
 }
 
+TEST_CASE("trtexec_arguments : un pavage L2 demandé par les réglages remplace celui d'office",
+          "[prepare][trtexec]") {
+  // La paire GMFSS (gpu::ModelSpec::l2_tiling faux) : plan_build ajoute le niveau 0 aux réglages hachés.
+  const TrtexecPaths paths{
+      .onnx = "/m/pair.onnx", .engine = "/c/e.engine", .timing_cache = "/c/timing.cache"};
+  CHECK(trtexec_arguments(paths, "--skipInference --tilingOptimizationLevel=0") ==
+        std::vector<std::string>{"--onnx=/m/pair.onnx", "--saveEngine=/c/e.engine", "--skipInference",
+                                 "--tilingOptimizationLevel=0", "--timingCacheFile=/c/timing.cache"});
+}
+
 TEST_CASE("trtexec_arguments : rapport des couches détaillé, hors de la clé", "[prepare][trtexec]") {
   const TrtexecPaths paths{.onnx = "/m/span.onnx",
                            .engine = "/cache/.aji-build-1/model.engine",
