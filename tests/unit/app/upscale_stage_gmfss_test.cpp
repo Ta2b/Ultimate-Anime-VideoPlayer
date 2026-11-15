@@ -1,6 +1,8 @@
 // GMFSS Fortuna Union dans l'étage gpu (upscale_gmfss.cpp) : le mélange (M au milieu des paires fortes, RIFE
 // sur les demi-paires) et GMFSS seul, sur le backend factice.
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -42,6 +44,7 @@ TEST_CASE("Étage gpu : le mélange, M par GMFSS au milieu des paires fortes, RI
   s.rife = nullptr;
   s.rife_motion = &rig.motion;
   s.gmfss = gmfss.setup(GmfssUse::Middle);
+  s.gmfss.max_keys = 1;  // la clé au milieu seulement
   rig.start(std::move(s));
   rig.feed(1, 4);
   REQUIRE(rig.collect(13));
@@ -179,7 +182,7 @@ TEST_CASE("Étage gpu : le mélange, une clé sous le seuil quand le crédit dé
   s.gmfss.cost_us = spare ? 30'000 : 80'000;
   s.gmfss.strong_px = 1.0e6F;  // aucune paire forte, quelle que soit la taille du banc
   rig.start(std::move(s));
-  rig.backend.motion_max(8.0F);  // au-dessus du plancher
+  rig.backend.motion_max(2.0F);  // une paire calme pour RIFE, au-dessus du plancher (1 px ici)
   rig.feed(1, 4);
   REQUIRE(rig.collect(13));
   rig.stage.reset();
@@ -189,6 +192,55 @@ TEST_CASE("Étage gpu : le mélange, une clé sous le seuil quand le crédit dé
     CHECK(fusions >= 1);
   } else {
     CHECK(fusions == 0);
+  }
+}
+
+TEST_CASE("Étage gpu : le mélange, plus de clés quand le mouvement grandit, RIFE entre elles",
+          "[app][stage][gmfss]") {
+  const float motion = GENERATE(0.5F, 1.5F, 3.0F);
+  INFO("mouvement " << motion << " fois le pas");
+  Rig rig;
+  GmfssEngines gmfss;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.gmfss = gmfss.setup(GmfssUse::Middle);
+  s.gmfss.strong_px = 0.0F;  // Très élevé : chaque paire qui bouge
+  rig.start(std::move(s));
+  // Le mouvement se mesure à la paire d'avant : un plan calme d'abord (une clé chacune, Très élevé), puis le
+  // pas de 30 px à 720 lignes, à la hauteur du banc.
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(13));
+  const std::size_t calm_pairs = rig.backend.count("engine gmfss_pair");
+  const std::size_t calm_fusions = rig.backend.count("engine gmfss_fusion");
+  const std::size_t calm_splats = rig.backend.splat_ts().size();
+  rig.backend.motion_max(motion * 30.0F * static_cast<float>(kHeight) / 720.0F);  // RIFE à la taille du banc
+  rig.feed(5, 8);
+  REQUIRE(rig.collect(29));
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+  const std::size_t pairs = rig.backend.count("engine gmfss_pair") - calm_pairs;
+  REQUIRE(pairs >= 2);
+  const std::size_t keys = motion < 1.0F ? 1 : motion < 2.0F ? 2 : 3;  // une de plus par doublement
+  // La première paire du mouvement décide d'après la mesure de la paire calme d'avant : une clé.
+  const std::size_t fusions = rig.backend.count("engine gmfss_fusion") - calm_fusions;
+  CHECK(fusions == 1 + keys * (pairs - 1));
+  // Les clés aux instants k / (n + 1) ; à ×4, trois clés tombent sur les trois instants.
+  const std::vector<float> all = rig.backend.splat_ts();
+  const std::vector<float> splats(all.begin() + static_cast<std::ptrdiff_t>(calm_splats), all.end());
+  const auto at = [&](float t) {
+    return std::ranges::count_if(splats, [t](float x) { return std::abs(x - t) < 1e-4F; });
+  };
+  if (keys == 1) {
+    CHECK(at(0.5F) == static_cast<std::ptrdiff_t>(splats.size()));
+  } else if (keys == 2) {
+    CHECK(at(1.0F / 3.0F) > 0);
+    CHECK(at(2.0F / 3.0F) > 0);
+    CHECK(at(0.5F) == 1);  // la clé de la première paire
+  } else {
+    CHECK(at(0.25F) > 0);
+    CHECK(at(0.5F) > 0);
+    CHECK(at(0.75F) > 0);
   }
 }
 

@@ -3,13 +3,13 @@
 // caractéristiques du niveau 1, les niveaux 2 et 3, deux côtés) puis le graphe « fusion », qui reçoit
 // l'instant.
 //
-// Le mélange (GmfssUse::Middle) : une paire qui bouge fort (mouvement mesuré au seuil strong_px) a sa fusion
-// une seule fois, au milieu : l'image M, la clé. Une paire qui bouge moins l'a aussi quand le crédit de
-// temps déborde (gmfss_.spare). Chaque autre instant t est fait par RIFE mouvement sur la
-// demi-paire (a, M) à 2t, ou (M, b) à 2t − 1, puis le warp de l'étage ; t = 1/2 est M elle-même. Le
-// mouvement y est deux fois plus petit, là où RIFE fait le moins de fantômes, et les formes viennent de
-// GMFSS. Mesuré sur Re:Zero (docs/reports/gmfss-union-qualite-2026-11-14.md). Les autres paires restent à
-// RIFE seul.
+// Le mélange (GmfssUse::Middle) : une paire qui bouge fort (mouvement mesuré au seuil strong_px) a ses
+// clés, des images GMFSS qui servent de sources à RIFE : une au milieu, deux ou trois aux instants k / (n +
+// 1) quand le mouvement est grand (gmfss_keys). Une paire qui bouge moins a sa clé quand le crédit de temps
+// déborde (gmfss_.spare). Chaque autre instant t est fait par RIFE mouvement sur son sous-intervalle (a, K1),
+// (K1, K2)… (Kn, b), puis le warp de l'étage ; un instant sur une clé est la clé elle-même. Le mouvement y
+// est deux à quatre fois plus petit, là où RIFE fait le moins de fantômes, et les formes viennent de GMFSS.
+// Mesuré sur Re:Zero (docs/reports/gmfss-union-qualite-2026-11-14.md). Les autres paires restent à RIFE seul.
 //
 // GMFSS seul (GmfssUse::Only) : la fusion à chaque instant, comme RIFE image, sans RIFE.
 #include <algorithm>
@@ -188,17 +188,23 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
     list_splats(gmfss_, set);
   }
   if (setup.use == GmfssUse::Only) return {};
-  // Le mélange : M à la taille de RIFE, puis à celle de travail et après SPAN si le warp les lit ; l'entrée
-  // de RIFE des demi-paires.
+  // Le mélange : chaque clé à la taille de RIFE, puis à celle de travail et après SPAN si le warp les lit ;
+  // l'entrée de RIFE des sous-intervalles.
   const int w = setup_.work_width;
   const int h = setup_.work_height;
-  if (auto ok = alloc_f16(backend, gmfss_.middle, 3, setup_.rife_width, setup_.rife_height); !ok) return ok;
-  if (setup_.rife_width != w || setup_.rife_height != h) {
-    if (auto ok = alloc_f16(backend, gmfss_.work, 3, w, h); !ok) return ok;
-    if (auto ok = allocate_compose(); !ok) return ok;
+  const std::uint32_t keys = std::clamp<std::uint32_t>(setup.max_keys, 1, kGmfssMaxKeys);
+  for (std::uint32_t k = 0; k < keys; ++k) {
+    GmfssKey& key = gmfss_.keys[k];
+    if (auto ok = alloc_f16(backend, key.middle, 3, setup_.rife_width, setup_.rife_height); !ok) return ok;
+    if (setup_.rife_width != w || setup_.rife_height != h) {
+      if (auto ok = alloc_f16(backend, key.work, 3, w, h); !ok) return ok;
+    }
+    if (warps_spanned()) {
+      if (auto ok = alloc_f16(backend, key.spanned, 3, w * kSpanFactor, h * kSpanFactor); !ok) return ok;
+    }
   }
-  if (warps_spanned()) {
-    if (auto ok = alloc_f16(backend, gmfss_.spanned, 3, w * kSpanFactor, h * kSpanFactor); !ok) return ok;
+  if (setup_.rife_width != w || setup_.rife_height != h) {
+    if (auto ok = allocate_compose(); !ok) return ok;
   }
   const kernels::RifeGeometry r =
       kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);
@@ -224,9 +230,9 @@ std::expected<void, Refusal> UpscaleStage::allocate_compose() {
   return {};
 }
 
-std::expected<void, Refusal> UpscaleStage::compose_middle() {
-  // Les sources de la paire splattées par le flot du niveau 1 au milieu (instant 1/2 des deux côtés), à la
-  // taille de travail et à celle de RIFE, puis M = H + up(F − L) dans gmfss_.work.
+std::expected<void, Refusal> UpscaleStage::compose_key(const GmfssKey& key, float t) {
+  // Les sources de la paire splattées par le flot du niveau 1 à l'instant t de la clé, à la taille de travail
+  // et à celle de RIFE, puis K = H + up(F − L) dans key.work.
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const kernels::RifeGeometry g = gmfss_geometry(setup_.rife_width, setup_.rife_height);
   const float ox = static_cast<float>(g.left) / 2.0F;
@@ -236,7 +242,7 @@ std::expected<void, Refusal> UpscaleStage::compose_middle() {
   for (std::uint32_t side = 0; side < 2; ++side) {
     const std::uint32_t image = side == 0 ? current_ ^ 1U : current_;
     const gpu::Tensor motion = *set_tensor(gmfss_, std::format("motion{}_1", side), gmfss_.set);
-    const float s = kernels::gmfss_side_time(static_cast<int>(side), 0.5F);
+    const float s = kernels::gmfss_side_time(static_cast<int>(side), t);
     gmfss_.jobs.push_back({.source = rgb_[image]->tensor(),
                            .motion = motion,
                            .s = s,
@@ -250,7 +256,7 @@ std::expected<void, Refusal> UpscaleStage::compose_middle() {
                            .grid = {.scale = 2.0F, .x = ox, .y = oy},
                            .coverage = true});
   }
-  if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gpu::Tensor{}, 0.5F); !ok) return ok;
+  if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gpu::Tensor{}, t); !ok) return ok;
   return ops.gmfss_compose(
       {.high_a = gmfss_.high[0]->tensor(),
        .high_b = gmfss_.high[1]->tensor(),
@@ -258,8 +264,8 @@ std::expected<void, Refusal> UpscaleStage::compose_middle() {
        .low_b = gmfss_.low[1]->tensor(),
        .fusion = gmfss_.out->tensor(),
        .window = {.x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height},
-       .t = 0.5F,
-       .out = gmfss_.work->tensor()});
+       .t = t,
+       .out = key.work->tensor()});
 }
 
 bool UpscaleStage::gmfss_pair() const {
@@ -402,7 +408,7 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
   use_lane(gpu::Lane::Interpolate);
   std::expected<void, Refusal> ok;
   if (!gmfss_only()) {
-    if (gmfss_pair() && !gmfss_.middle_ready) ok = make_middle();
+    if (gmfss_pair()) ok = make_keys();
     use_lane(back);
     return ok;
   }
@@ -429,44 +435,63 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
   return ok;
 }
 
-std::expected<void, Refusal> UpscaleStage::make_middle() {
+std::uint32_t UpscaleStage::gmfss_keys() const {
+  // Une clé par paire du mélange, une de plus à chaque doublement du mouvement au-delà de kGmfssKeyStepPx
+  // (à 720 lignes) : plus le mouvement est grand, plus RIFE a de chemin à inventer. Pas plus de clés que
+  // d'instants interpolés, ni que le crédit n'en paie (gmfss_.extra_keys).
+  constexpr float kGmfssKeyStepPx = 30.0F;
+  if (!gmfss_pair()) return 0;
+  const float step = kGmfssKeyStepPx * static_cast<float>(setup_.rife_height) / 720.0F;
+  std::uint32_t keys = 1;
+  for (float at = step; pair_motion_ >= at && keys < kGmfssMaxKeys; at *= 2.0F) ++keys;
+  const std::uint32_t most = std::clamp<std::uint32_t>(setup_.gmfss.max_keys, 1, kGmfssMaxKeys);
+  return std::min({keys, most, 1 + gmfss_.extra_keys, std::max<std::uint32_t>(intermediates_, 1)});
+}
+
+std::expected<void, Refusal> UpscaleStage::make_keys() {
+  const std::uint32_t keys = gmfss_keys();
+  while (gmfss_.keys_made < keys) {
+    const std::uint32_t k = gmfss_.keys_made;
+    const float t = static_cast<float>(k + 1) / static_cast<float>(keys + 1);
+    if (auto ok = make_key(k, t); !ok) return ok;
+    ++gmfss_.keys_made;
+  }
+  return {};
+}
+
+std::expected<void, Refusal> UpscaleStage::make_key(std::uint32_t k, float t) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (auto ok = run_gmfss(0.5F, gmfss_.middle->tensor()); !ok) return ok;
-  if (gmfss_.work && gmfss_.high[0]) {  // la composition, ou l'agrandissement si le backend la refuse
-    auto composed = compose_middle();
+  GmfssKey& key = gmfss_.keys[k];
+  if (auto ok = run_gmfss(t, key.middle->tensor()); !ok) return ok;
+  if (key.work && gmfss_.high[0]) {  // la composition, ou l'agrandissement si le backend la refuse
+    auto composed = compose_key(key, t);
     if (!composed && composed.error().code != RefusalCode::FormatUnsupported) return composed;
     if (!composed) {
-      log_channel("gpu")->warn("GMFSS : composition refusée ({}), M agrandie", composed.error().detail);
+      log_channel("gpu")->warn("GMFSS : composition refusée ({}), clé agrandie", composed.error().detail);
       gmfss_.high = {};
       gmfss_.low = {};
     } else {
       ++gmfss_.composed;
     }
   }
-  if (gmfss_.work &&
-      !gmfss_.high[0]) {  // RIFE plus petit que le travail (travail 1080p, RIFE 720p) : M agrandie
-    if (auto ok = ops.resample(gmfss_.middle->tensor(), kernels::Filter::Spline36, gmfss_.work->tensor());
-        !ok)
+  if (key.work && !gmfss_.high[0]) {  // RIFE plus petit que le travail (travail 1080p, RIFE 720p) : agrandie
+    if (auto ok = ops.resample(key.middle->tensor(), kernels::Filter::Spline36, key.work->tensor()); !ok)
       return ok;
   }
-  gmfss_.credit_us -= setup_.gmfss.cost_us;
-  if (!gmfss_strong()) ++gmfss_.spare_keys;
-  const auto ready = [this] {
-    gmfss_.middle_ready = true;
-    gmfss_.middle_serial = ++serials_;  // jamais celui d'une source
-  };
-  if (!warps_spanned()) {
-    ready();
-    return {};
-  }
+  // La première clé paie la paire, les suivantes leur fusion et leurs splats.
+  gmfss_.credit_us -= k == 0 ? setup_.gmfss.cost_us : setup_.gmfss.cost_us - setup_.gmfss.pair_us;
+  if (k == 0 && !gmfss_strong()) ++gmfss_.spare_keys;
+  if (k > 0) ++gmfss_.more_keys;
+  key.serial = ++serials_;  // jamais celui d'une source
+  if (!warps_spanned()) return {};
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Upscale);
-  const std::array inputs{gmfss_.work ? gmfss_.work->tensor() : gmfss_.middle->tensor()};
-  std::array results{gmfss_.spanned->tensor()};
+  const std::array inputs{key.work ? key.work->tensor() : key.middle->tensor()};
+  std::array results{key.spanned->tensor()};
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
-  // Les sources de la paire sont gradées avant le warp : M aussi, sinon l'image mêlerait les deux.
+  // Les sources de la paire sont gradées avant le warp : la clé aussi, sinon l'image mêlerait les deux.
   if (ok && setup_.grader && !setup_.yuv_slots && pair_graded()) {
-    auto graded = setup_.grader->grade(ops, gmfss_.spanned->tensor(), debanded_);
+    auto graded = setup_.grader->grade(ops, key.spanned->tensor(), debanded_);
     if (!graded) {
       log_channel("gpu")->warn("grade avant le warp (GMFSS) : {} ; l'écran reprend le grade",
                                graded.error().detail);
@@ -474,27 +499,20 @@ std::expected<void, Refusal> UpscaleStage::make_middle() {
     }
   }
   use_lane(back);
-  if (ok) ready();
   return ok;
 }
 
-std::expected<void, Refusal> UpscaleStage::half_pair_rife(float t) {
-  // La demi-paire de t, à son instant ; l'entrée de RIFE n'est réécrite que pour une autre demi-paire.
+std::expected<void, Refusal> UpscaleStage::span_rife(const KeySide& left, const KeySide& right, float u) {
+  // Le sous-intervalle à son instant u ; l'entrée de RIFE n'est réécrite que pour un autre sous-intervalle.
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  const bool first = t < 0.5F;
-  const float u = first ? 2.0F * t : 2.0F * t - 1.0F;
-  const std::array<std::uint64_t, 2> images =
-      first ? std::array{source_serial_[current_ ^ 1U], gmfss_.middle_serial}
-            : std::array{gmfss_.middle_serial, source_serial_[current_]};
+  const std::array<std::uint64_t, 2> images{left.serial, right.serial};
   const gpu::Tensor& input = gmfss_.input->tensor();
   if (gmfss_.in_pair && gmfss_.in_images == images && rife_time_) {
     if (gmfss_.in_t != u) {
       if (auto ok = ops.rife_time(input, u); !ok) return ok;
     }
   } else {
-    const gpu::Tensor& rife_m = gmfss_.middle->tensor();
-    auto ok = first ? ops.rife_input(rife_source(current_ ^ 1U), rife_m, u, input)
-                    : ops.rife_input(rife_m, rife_source(current_), u, input);
+    auto ok = ops.rife_input(*left.rife, *right.rife, u, input);
     gmfss_.in_pair = ok.has_value();
     if (!ok) return ok;
     gmfss_.in_images = images;
@@ -515,20 +533,34 @@ std::expected<void, Refusal> UpscaleStage::half_pair_rife(float t) {
 
 std::expected<void, Refusal> UpscaleStage::interpolate_middle(float t, const gpu::Tensor& a,
                                                               const gpu::Tensor& b, const Target& out) {
-  if (!gmfss_.middle_ready) {
-    if (auto ok = make_middle(); !ok) return ok;
-  }
+  if (auto ok = make_keys(); !ok) return ok;
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  const gpu::Tensor& m = warps_spanned() ? gmfss_.spanned->tensor()
-                         : gmfss_.work   ? gmfss_.work->tensor()
-                                         : gmfss_.middle->tensor();
-  if (t == 0.5F) {  // M elle-même
+  const std::uint32_t keys = gmfss_.keys_made;
+  const float step = 1.0F / static_cast<float>(keys + 1);
+  // Le sous-intervalle de t : entre la clé i − 1 (ou a) et la clé i (ou b).
+  const auto i = std::min(static_cast<std::uint32_t>(t / step), keys);
+  const float u = (t - static_cast<float>(i) * step) / step;
+  const auto shown = [this](std::uint32_t k) -> const gpu::Tensor& {
+    const GmfssKey& key = gmfss_.keys[k];
+    return warps_spanned() ? key.spanned->tensor() : key.work ? key.work->tensor() : key.middle->tensor();
+  };
+  constexpr float kOnKey = 1.0e-4F;
+  const auto on = [&](std::uint32_t k) -> std::expected<void, Refusal> {  // la clé elle-même
+    const gpu::Tensor& m = shown(k);
     if (out.ring != nullptr) return ops.write_ring(m, *out.ring->slot, out.ring->sync);
     return ops.resample(m, kernels::Filter::Area, *out.tensor);  // même taille : copie exacte
-  }
-  if (auto ok = half_pair_rife(t); !ok) return ok;
+  };
+  if (i > 0 && u < kOnKey) return on(i - 1);
+  if (i < keys && u > 1.0F - kOnKey) return on(i);
+  const KeySide left =
+      i == 0 ? KeySide{.rife = &rife_source(current_ ^ 1U), .serial = source_serial_[current_ ^ 1U]}
+             : KeySide{.rife = &gmfss_.keys[i - 1].middle->tensor(), .serial = gmfss_.keys[i - 1].serial};
+  const KeySide right =
+      i == keys ? KeySide{.rife = &rife_source(current_), .serial = source_serial_[current_]}
+                : KeySide{.rife = &gmfss_.keys[i].middle->tensor(), .serial = gmfss_.keys[i].serial};
+  if (auto ok = span_rife(left, right, u); !ok) return ok;
   const gpu::Motion motion{.flow = flow_->tensor(), .mask = mask_->tensor(), .area = mid_motion(mid_).area};
-  return t < 0.5F ? blend(a, m, motion, 0.5F, out) : blend(m, b, motion, 0.5F, out);
+  return blend(i == 0 ? a : shown(i - 1), i == keys ? b : shown(i), motion, 0.5F, out);
 }
 
 }  // namespace ajp::app::play

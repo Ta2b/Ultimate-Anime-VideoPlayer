@@ -21,6 +21,9 @@ namespace ajp::app::play {
 // fort, RIFE 4.26 sur chaque demi-paire), ou GMFSS seul (une fusion à chaque instant, sans RIFE).
 enum class GmfssUse : std::uint8_t { Off, Middle, Only };
 
+// Le mélange : au plus trois clés par paire, aux instants k / (n + 1) ; RIFE fait les sous-intervalles.
+inline constexpr std::uint32_t kGmfssMaxKeys = 3;
+
 struct GmfssSetup {
   GmfssUse use = GmfssUse::Off;
   gpu::Engine* pair = nullptr;    // le graphe « paire », à rife_geometry(taille de RIFE, 64)
@@ -35,6 +38,17 @@ struct GmfssSetup {
   // laisse à RIFE si son premier instant serait alors en retard (upscale_late.cpp).
   std::int64_t cost_us = 0;
   std::int64_t pair_us = 0;  // la part du graphe « paire » dans cost_us
+  // Le mélange : le nombre de clés au plus par paire ; la paire en pose une de plus à chaque doublement du
+  // mouvement au-delà du seuil (kGmfssKeyStepPx), tant que le crédit la paie.
+  std::uint32_t max_keys = kGmfssMaxKeys;
+};
+
+// Une clé du mélange : l'image GMFSS à son instant, à la taille de RIFE, de travail, et après SPAN.
+struct GmfssKey {
+  std::unique_ptr<gpu::TensorBuffer> middle;
+  std::unique_ptr<gpu::TensorBuffer> work;
+  std::unique_ptr<gpu::TensorBuffer> spanned;
+  std::uint64_t serial = 0;  // comme une source (l'encodage de RIFE)
 };
 
 struct GmfssBuffers {
@@ -55,19 +69,18 @@ struct GmfssBuffers {
   std::array<std::vector<Splat>, 2> splats;
   std::uint32_t set = 0;
   std::vector<gpu::KernelOps::SplatJob> jobs;
-  gpu::Tensor time;                           // l'entrée « time » de la fusion
-  std::unique_ptr<gpu::TensorBuffer> out;     // sortie de la fusion, 1 × 3 × ph × pw
-  std::unique_ptr<gpu::TensorBuffer> middle;  // le mélange : M à la taille de RIFE
-  std::unique_ptr<gpu::TensorBuffer> work;    // M agrandie à la taille de travail, si RIFE est plus petit
+  gpu::Tensor time;                        // l'entrée « time » de la fusion
+  std::unique_ptr<gpu::TensorBuffer> out;  // sortie de la fusion, 1 × 3 × ph × pw
+  // Le mélange : les clés de la paire (work si RIFE est plus petit que le travail, spanned si le warp suit
+  // SPAN).
+  std::array<GmfssKey, kGmfssMaxKeys> keys;
   // La composition (GmfssSetup::compose) : par côté, la source de travail et celle de RIFE splattées avec
   // leur couverture (4 plans) ; vide sans composition ou après un refus du backend.
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> high;
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> low;
-  std::unique_ptr<gpu::TensorBuffer> spanned;  // M passée par SPAN, quand le warp suit SPAN
-  std::unique_ptr<gpu::TensorBuffer> input;    // l'entrée de RIFE d'une demi-paire
-  bool pair_ready = false;                     // la paire en cours est passée par le graphe « paire »
-  bool middle_ready = false;                   // et M est faite (le mélange)
-  std::uint64_t middle_serial = 0;             // numéro de M, comme une source (l'encodage de RIFE)
+  std::unique_ptr<gpu::TensorBuffer> input;  // l'entrée de RIFE d'une demi-paire
+  bool pair_ready = false;                   // la paire en cours est passée par le graphe « paire »
+  std::uint32_t keys_made = 0;               // les clés faites de la paire en cours (le mélange)
   std::array<std::uint64_t, 2> in_images{};
   bool in_pair = false;  // input tient la demi-paire in_images
   float in_t = 0.0F;
@@ -84,6 +97,9 @@ struct GmfssBuffers {
   // paire (plan_gaps), avant que sa M ne prenne sur le crédit.
   bool spare = false;
   std::uint64_t spare_keys = 0;  // clés posées sur une paire sous le seuil
+  // Les clés au-delà de la première que le crédit paie pour cette paire (plan_gaps), et celles posées.
+  std::uint32_t extra_keys = 0;
+  std::uint64_t more_keys = 0;
   // Le crédit de temps de GMFSS : chaque image source lui donne kGmfssShare de sa durée, chaque M lui coûte
   // GmfssSetup::cost_us ; sans crédit, la paire forte reste à RIFE. Le coût moyen tient dans la cadence, quel
   // que soit le retard que mesure l'horloge (elle le voit trop tard : la file du GPU l'a déjà pris). Plafonné

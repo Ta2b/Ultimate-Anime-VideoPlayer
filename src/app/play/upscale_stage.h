@@ -328,7 +328,8 @@ class UpscaleStage final : public RingStage {
   void next_source() {
     current_ ^= 1U;
     source_serial_[current_] = ++serials_;
-    gmfss_.pair_ready = gmfss_.middle_ready = false;  // GMFSS : la paire et M sont à refaire
+    gmfss_.pair_ready = false;  // GMFSS : la paire et ses clés sont à refaire
+    gmfss_.keys_made = 0;
   }
   std::uint64_t serials_ = 0;
   // Les images de chaque tampon de rife_ins_ par leur numéro, A puis B ; 0 pour une image qui n'est pas une
@@ -504,12 +505,19 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> run_gmfss_early();   // à l'arrivée : les fusions (seul) ou M (le mélange)
   std::expected<void, Refusal> run_gmfss_ahead();   // la paire suivante en avance, dans l'autre jeu
   std::expected<void, Refusal> allocate_compose();  // les splats de la composition, si elle est demandée
-  std::expected<void, Refusal> compose_middle();    // M composée à la taille de travail
-  void adopt_gmfss_ahead(const DecodedFrame& frame, bool taken);  // à l'arrivée de l'image d'après
+  std::expected<void, Refusal> compose_key(const GmfssKey& key, float t);  // clé composée au travail
+  void adopt_gmfss_ahead(const DecodedFrame& frame, bool taken);           // à l'arrivée de l'image d'après
   std::expected<void, Refusal> interpolate_middle(float t, const gpu::Tensor& a, const gpu::Tensor& b,
                                                   const Target& out);
-  std::expected<void, Refusal> make_middle();            // M, une fois par paire forte
-  std::expected<void, Refusal> half_pair_rife(float t);  // RIFE mouvement sur la demi-paire de t
+  std::uint32_t gmfss_keys() const;          // les clés de la paire en cours
+  std::expected<void, Refusal> make_keys();  // les clés, une fois par paire
+  std::expected<void, Refusal> make_key(std::uint32_t k, float t);
+  // RIFE mouvement entre deux images voisines (source ou clé) à l'instant u du sous-intervalle.
+  struct KeySide {
+    const gpu::Tensor* rife = nullptr;  // à la taille de RIFE
+    std::uint64_t serial = 0;
+  };
+  std::expected<void, Refusal> span_rife(const KeySide& left, const KeySide& right, float u);
   gpu::Motion half_motion() const;
   // La source du tampon index de rgb_ (ou B lissée, smooth) réduite pour le second RIFE.
   std::expected<const gpu::Tensor*, Refusal> half_source(std::uint32_t index, bool smooth);

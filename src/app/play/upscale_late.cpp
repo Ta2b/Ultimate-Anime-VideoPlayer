@@ -49,6 +49,17 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
   gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 &&
                   (gmfss_.credit_us < setup_.gmfss.cost_us || instant_late(frame, 0, cost));
   gmfss_.spare = gmfss_.credit_us >= setup_.gmfss.cost_us + kGmfssSpareUs;
+  // Les clés de plus (gmfss_keys) : leur fusion et leurs splats chacune, si le crédit en garde le quart du
+  // plein après elles et que le premier instant n'en serait pas en retard.
+  const std::int64_t key_us = setup_.gmfss.cost_us - setup_.gmfss.pair_us;
+  gmfss_.extra_keys = 0;
+  while (!gmfss_.behind && gmfss_.extra_keys + 1 < kGmfssMaxKeys) {
+    const std::int64_t more = key_us * (gmfss_.extra_keys + 1);
+    if (gmfss_.credit_us < setup_.gmfss.cost_us + more + kGmfssSpareUs / 2 ||
+        instant_late(frame, 0, cost + more))
+      break;
+    ++gmfss_.extra_keys;
+  }
   if (!on) {
     planned_pts_ = kNoPts;  // les instants de la paire, neufs, valent 0 : inconnu
     return;

@@ -51,12 +51,12 @@ UpscaleStage::~UpscaleStage() {
     log_channel("gpu")->info("échelle par paire : {} passes à demi-taille sur {}", half_.runs, rife_runs_);
   if (setup_.gmfss.use != GmfssUse::Off) {
     log_channel("gpu")->info(
-        "GMFSS union : {} paires, {} fusions, {} passes de RIFE sur une demi-paire, {} paires fortes "
-        "laissées à RIFE en retard, {} clés sous le seuil, {} paires en avance dont {} reprises et {} sans "
-        "M, "
-        "{} milieux composés",
+        "GMFSS union : {} paires, {} fusions, {} passes de RIFE entre clés, {} paires fortes laissées à "
+        "RIFE en retard, {} clés sous le seuil, {} clés de plus sur les grands mouvements, {} paires en "
+        "avance dont {} reprises et {} sans clé, {} clés composées",
         gmfss_.pairs + gmfss_.ahead_pairs, gmfss_.fusions, gmfss_.halves, gmfss_.behind_pairs,
-        gmfss_.spare_keys, gmfss_.ahead_pairs, gmfss_.ahead_used, gmfss_.ahead_wasted, gmfss_.composed);
+        gmfss_.spare_keys, gmfss_.more_keys, gmfss_.ahead_pairs, gmfss_.ahead_used, gmfss_.ahead_wasted,
+        gmfss_.composed);
   }
   // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
   // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste

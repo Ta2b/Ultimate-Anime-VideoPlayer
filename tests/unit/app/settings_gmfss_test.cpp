@@ -89,8 +89,9 @@ TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, ch
 
 namespace ajp::app::play {
 
-TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 au demi-flot), mélangé à ×3 (×4)",
-          "[app][gmfss]") {
+TEST_CASE(
+    "GMFSS : la cadence Auto plafonnée seul à ×2 de la source (×2,5 au demi-flot), le mélange à l'écran",
+    "[app][gmfss]") {
   ChainEngines c;
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 0);  // RIFE : l'écran
   c.gmfss_use = GmfssUse::Only;
@@ -99,21 +100,15 @@ TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 a
   c.played.gmfss_half_flow = true;
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 60);
   CHECK(gmfss_auto_cap(c, 165, 24.0) == 60);
-  c.gmfss_use = GmfssUse::Middle;  // Élevé : budgété au pire cas, chaque paire forte
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
   c.played.gmfss_half_flow = false;
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 72);
   c.played.gmfss_light = true;  // 540 lignes : comme le demi-flot
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
-  c.played.gmfss_light = false;
-  c.played.motion_engine = MotionEngine::Gmfss;  // Très élevé par le mélange : 60 i/s
-  CHECK(gmfss_auto_cap(c, 0, 23.976) == 60);
-  c.played.gmfss_light = true;  // 540 lignes : ×3,5
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 84);
-  c.played.gmfss_half_flow = true;  // et le demi-flot : ×4
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
-  c.played.gmfss_half_flow = false;
-  c.played.gmfss_light = false;
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 60);
+  // Le mélange, Élevé comme Très élevé : les clés guident RIFE jusqu'à l'écran, le plafond choisi reste.
+  c.gmfss_use = GmfssUse::Middle;
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
+  CHECK(gmfss_auto_cap(c, 120, 24.0) == 120);
+  c.played.motion_engine = MotionEngine::Gmfss;
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
   c.gmfss_use = GmfssUse::Off;
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }
@@ -146,9 +141,9 @@ TEST_CASE("GMFSS : Très élevé par la chaîne du mélange, ou à chaque instan
   REQUIRE(back);
   CHECK(back->gmfss_every_instant);
   CHECK_FALSE(parse_settings("version = 1\n")->gmfss_every_instant);
-  // Très élevé par le mélange : ×2,5 de la source, RIFE reprenant les paires que GMFSS ne tient pas.
+  // Très élevé par le mélange : l'écran, RIFE reprenant les paires que GMFSS ne tient pas.
   ChainEngines c;
   c.gmfss_use = GmfssUse::Middle;
   c.played.motion_engine = MotionEngine::Gmfss;
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 60);
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }

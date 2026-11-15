@@ -224,9 +224,10 @@ std::expected<void, Refusal> UpscaleStage::begin_motion_pair(float t) {
     // attendue, la paire calme suivante reprend la mesure en fond.
     const bool own_measure = strong_motion_ && setup_.gmfss.use == GmfssUse::Middle;
     if (ticket && motion_measured_ && !own_measure) {
-      // La paire précédente, calme, a décidé : celle-ci n'a qu'une passe ; sa mesure décide la suivante.
+      // La paire précédente, calme, a décidé : celle-ci n'a qu'une passe ; sa mesure décide la suivante. Son
+      // mouvement reste celui de la paire (les clés du mélange sous le seuil le lisent).
       motion_ = PendingMotion{.ticket = *ticket, .scale = 1.0F, .known = true};
-      biggest = 0.0F;
+      biggest = pair_motion_;
     } else if (ticket) {
       if (warps_spanned()) {
         if (auto ok = span_current(); !ok) return ok;
