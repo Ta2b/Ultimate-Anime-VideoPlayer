@@ -396,6 +396,11 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
         "instant and no RIFE: heavier, frames drop when the card can't keep up. Applies after a reload."));
   }
   if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
+    ImGui::Checkbox(i18n::tr("GMFSS and RIFE at 540p"), &d.gmfss_light);
+    panel::tip(i18n::tr(
+        "RIFE and GMFSS estimate motion at 540p instead of 720p: about half the pixels, so GMFSS keeps up "
+        "with ×2.5 (60 fps from 24) even at full flow. Motion is a little less precise; with \"keeps the "
+        "source detail\" the middle frame stays at the working size. Applies after a reload."));
     ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
     panel::tip(i18n::tr(
         "When the working size is larger than RIFE's (1080p), the GMFSS middle frame is made from the "

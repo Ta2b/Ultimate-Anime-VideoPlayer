@@ -58,6 +58,7 @@ struct OpenedChain {
     bool gmfss_middle = false;
     bool gmfss_half_flow = false;
     bool gmfss_compose = false;
+    bool gmfss_light = false;
     bool gmfss_every_instant = false;
     bool operator==(const Loaded&) const = default;
   };

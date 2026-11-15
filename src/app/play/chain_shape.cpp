@@ -59,6 +59,7 @@ OpenedChain::Loaded loaded_by(const PlaySettings& settings) {
           .gmfss_middle = settings.gmfss_middle,
           .gmfss_half_flow = settings.gmfss_half_flow,
           .gmfss_compose = settings.gmfss_compose,
+          .gmfss_light = settings.gmfss_light,
           .gmfss_every_instant = settings.gmfss_every_instant};
 }
 

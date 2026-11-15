@@ -52,6 +52,14 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   REQUIRE(composed_back);
   CHECK(*composed_back == composed);
   CHECK_FALSE(without->gmfss_compose);
+  // Le mélange léger en 540 lignes se relit ; absent, éteint.
+  PlaySettings light;
+  light.gmfss_middle = true;
+  light.gmfss_light = true;
+  const auto light_back = parse_settings(format_settings(light));
+  REQUIRE(light_back);
+  CHECK(*light_back == light);
+  CHECK_FALSE(without->gmfss_light);
 }
 
 TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, choisie si demandée",
@@ -95,6 +103,11 @@ TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 a
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
   c.played.gmfss_half_flow = false;
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 72);
+  c.played.gmfss_light = true;  // 540 lignes : comme le demi-flot
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
+  c.played.gmfss_light = false;
+  c.played.motion_engine = MotionEngine::Gmfss;  // Très élevé par le mélange : 60 i/s
+  CHECK(gmfss_auto_cap(c, 0, 23.976) == 60);
   c.gmfss_use = GmfssUse::Off;
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }
@@ -128,9 +141,9 @@ TEST_CASE("GMFSS : Très élevé par la chaîne du mélange, ou à chaque instan
   REQUIRE(back);
   CHECK(back->gmfss_every_instant);
   CHECK_FALSE(parse_settings("version = 1\n")->gmfss_every_instant);
-  // Très élevé par le mélange garde le plafond de Très élevé : ×2 de la source.
+  // Très élevé par le mélange : ×2,5 de la source, RIFE reprenant les paires que GMFSS ne tient pas.
   ChainEngines c;
   c.gmfss_use = GmfssUse::Middle;
   c.played.motion_engine = MotionEngine::Gmfss;
-  CHECK(gmfss_auto_cap(c, 0, 24.0) == 48);
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 60);
 }

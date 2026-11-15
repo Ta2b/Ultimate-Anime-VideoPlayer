@@ -302,6 +302,8 @@ constexpr std::array kSettingsPages{
     Entry{"GMFSS estimates motion at full size", "GMFSS estime le mouvement à pleine taille"},
     Entry{"GMFSS keeps the detail of the working size", "GMFSS garde le détail de la taille de travail"},
     Entry{"GMFSS middle frame enlarged", "image du milieu de GMFSS agrandie"},
+    Entry{"GMFSS and RIFE estimate at 540p", "GMFSS et RIFE estiment en 540p"},
+    Entry{"GMFSS and RIFE estimate at 720p", "GMFSS et RIFE estiment en 720p"},
     Entry{"GMFSS union at every instant, without RIFE", "GMFSS union à chaque instant, sans RIFE"},
     Entry{"GMFSS union on every pair, RIFE when time runs short",
           "GMFSS union sur chaque paire, RIFE quand le temps manque"},

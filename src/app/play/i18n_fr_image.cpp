@@ -110,6 +110,14 @@ constexpr std::array kImageTabs{
     Entry{"Very high", "Très élevé"},
     Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
     Entry{"GMFSS keeps the source detail", "GMFSS garde le détail de la source"},
+    Entry{"GMFSS and RIFE at 540p", "GMFSS et RIFE en 540p"},
+    Entry{"RIFE and GMFSS estimate motion at 540p instead of 720p: about half the pixels, so GMFSS keeps up "
+          "with ×2.5 (60 fps from 24) even at full flow. Motion is a little less precise; with \"keeps the "
+          "source detail\" the middle frame stays at the working size. Applies after a reload.",
+          "RIFE et GMFSS estiment le mouvement en 540p au lieu de 720p : environ deux fois moins de pixels, "
+          "GMFSS tient ainsi ×2,5 (60 i/s depuis 24) même au flot entier. Le mouvement est un peu moins "
+          "juste ; avec « garde le détail de la source », l'image du milieu reste à la taille de travail. "
+          "S'applique après un rechargement."},
     Entry{"GMFSS at every instant, without RIFE", "GMFSS à chaque instant, sans RIFE"},
     Entry{"Unchecked, GMFSS union makes the middle frame of every moving pair and RIFE takes over a pair "
           "when time runs short (and makes the other instants beyond ×2). Checked, a GMFSS fusion at every "

@@ -325,11 +325,12 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
 
 namespace {
 
-// Les réglages de GMFSS (gmfss_middle, gmfss_motion, gmfss_half_flow, gmfss_compose, gmfss_every_instant).
+// Les réglages de GMFSS (gmfss_middle, gmfss_motion, gmfss_half_flow, gmfss_compose, gmfss_every_instant,
+// gmfss_light).
 bool gmfss_differs(const PlaySettings& a, const PlaySettings& b) {
   return a.gmfss_middle != b.gmfss_middle || a.gmfss_motion != b.gmfss_motion ||
          a.gmfss_half_flow != b.gmfss_half_flow || a.gmfss_compose != b.gmfss_compose ||
-         a.gmfss_every_instant != b.gmfss_every_instant;
+         a.gmfss_every_instant != b.gmfss_every_instant || a.gmfss_light != b.gmfss_light;
 }
 
 }  // namespace

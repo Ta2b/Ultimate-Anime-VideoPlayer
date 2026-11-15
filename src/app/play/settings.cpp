@@ -574,6 +574,10 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
                             ? i18n::tr("GMFSS union at every instant, without RIFE")
                             : i18n::tr("GMFSS union on every pair, RIFE when time runs short"));
   }
+  if (base.gmfss_light != wanted.gmfss_light) {
+    reopen.emplace_back(wanted.gmfss_light ? i18n::tr("GMFSS and RIFE estimate at 540p")
+                                           : i18n::tr("GMFSS and RIFE estimate at 720p"));
+  }
   if (base.gmfss_compose != wanted.gmfss_compose) {
     reopen.emplace_back(wanted.gmfss_compose ? i18n::tr("GMFSS keeps the detail of the working size")
                                              : i18n::tr("GMFSS middle frame enlarged"));
@@ -628,6 +632,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.gmfss_middle = opened->loaded->gmfss_middle;
   base.gmfss_half_flow = opened->loaded->gmfss_half_flow;
   base.gmfss_compose = opened->loaded->gmfss_compose;
+  base.gmfss_light = opened->loaded->gmfss_light;
   base.gmfss_every_instant = opened->loaded->gmfss_every_instant;
   return base;
 }

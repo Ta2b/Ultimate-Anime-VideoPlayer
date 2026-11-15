@@ -37,6 +37,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"gmfss_half_flow", s.gmfss_half_flow},
                             {"gmfss_compose", s.gmfss_compose},
                             {"gmfss_every_instant", s.gmfss_every_instant},
+                            {"gmfss_light", s.gmfss_light},
                             {"rife_fused", s.rife_fused},
                             {"cubic_warp", s.cubic_warp},
                             {"drba_fused", s.drba_fused},

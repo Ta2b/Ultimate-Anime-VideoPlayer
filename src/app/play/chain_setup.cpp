@@ -597,6 +597,17 @@ void announce_backend(spdlog::logger& log, const gpu::Backend& backend, const st
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
+// Où RIFE mouvement estime. Au-delà de 720 lignes de travail (la 4K sans réduction), sur une copie réduite à
+// 720p, le warp déformant les images de travail : la variante mouvement seulement. Le mélange léger de GMFSS
+// (gmfss_light) : RIFE et GMFSS en 540 lignes.
+WorkSize motion_size(const media::TrackInfo& video, const WorkSize& work, const PlaySettings& settings,
+                     bool rife_image) {
+  if (rife_image) return work;
+  if (settings.gmfss_light && gmfss_wanted(settings) == GmfssUse::Middle && work.height > kGmfssLightHeight)
+    return work_size(video.width, video.height, kGmfssLightHeight);
+  return rife_motion_reduced(work) ? work_size(video.width, video.height, kRifeMotionHeight) : work;
+}
+
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
@@ -675,11 +686,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     if (!upscaled) return std::unexpected(std::move(upscaled.error()));
     if (!*upscaled) return std::nullopt;
   }
-  // Au-delà de 720 lignes de travail (la 4K sans réduction), RIFE estime le mouvement sur une copie
-  // réduite à 720p et le warp déforme les images de travail : la variante mouvement seulement.
-  c.rife_size = !p.options.rife_image && rife_motion_reduced(c.work)
-                    ? work_size(video.width, video.height, kRifeMotionHeight)
-                    : c.work;
+  c.rife_size = motion_size(video, c.work, settings, p.options.rife_image);
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
   const std::string library = library_name(p);
   if (want_drba) {

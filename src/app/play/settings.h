@@ -284,6 +284,10 @@ struct PlaySettings {
   // manque, ou fait les autres instants au-delà de ×2 depuis M. Vrai : la fusion à chaque instant, sans RIFE
   // (le Très élevé d'avant). Recharge la chaîne.
   bool gmfss_every_instant = false;
+  // Élevé et Très élevé par le mélange : RIFE et GMFSS estiment en 540 lignes au lieu de 720
+  // (kGmfssLightHeight), environ 1,8 fois moins de pixels ; le flot un peu moins juste, l'image du milieu
+  // agrandie ou composée (gmfss_compose). Pour tenir ×2,5 au flot entier. Recharge la chaîne.
+  bool gmfss_light = false;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le
@@ -458,6 +462,7 @@ inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
 // Hauteur où RIFE estime le mouvement quand la chaîne travaille plus haut (sortie 4K) : chain_setup et la
 // note du panneau lisent la même (C23-04).
 inline constexpr int kRifeMotionHeight = 720;
+inline constexpr int kGmfssLightHeight = 540;
 inline bool rife_motion_reduced(const WorkSize& work) {
   return work.height > kRifeMotionHeight;
 }
