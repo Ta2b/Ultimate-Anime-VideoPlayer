@@ -106,6 +106,7 @@ inline constexpr std::array<InterpChoice, 8> kInterpLevels{{
      .engine = MotionEngine::Rife,
      .rife_model = "rife_v4.26.onnx",
      .gmfss_middle = true},
+    {.level = InterpLevel::GmfssUnion, .engine = MotionEngine::Gmfss, .rife_model = {}},
     {.level = InterpLevel::Rife425,
      .engine = MotionEngine::Rife,
      .rife_model = "rife_v4.25.onnx",
@@ -114,7 +115,6 @@ inline constexpr std::array<InterpChoice, 8> kInterpLevels{{
      .engine = MotionEngine::DistilDrba,
      .rife_model = {},
      .advanced = true},
-    {.level = InterpLevel::GmfssUnion, .engine = MotionEngine::Gmfss, .rife_model = {}, .advanced = true},
     {.level = InterpLevel::System, .engine = MotionEngine::Apple, .rife_model = {}},
 }};
 // Le niveau d'un moteur et du modèle RIFE qu'il charge (le nom vide de play.toml déjà résolu), avec ou sans

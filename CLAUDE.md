@@ -22,8 +22,8 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 - **menu en trois catégories** : Vidéo, Audio et lecture, Général (`kPages`, `src/app/play/settings_panel.cpp`) ;
 - **moteurs** : Vulkan pour tout GPU (le seul pour AMD et Intel), TensorRT sur NVIDIA RTX, Core ML sur Mac.
   MIGraphX et OpenVINO sont retirés des sources : n'en remettre aucun sans une mesure face à Vulkan
-  (`docs/moteurs.md`). GMFSS union est revenu (novembre 2026, TensorRT seulement) pour le niveau Élevé et GMFSS
-  seul, après une mesure face à RIFE (`docs/interpolation.md`).
+  (`docs/moteurs.md`). GMFSS union est revenu (novembre 2026, TensorRT seulement) pour les niveaux Élevé (mélange avec RIFE)
+  et Très élevé (union seul), après une mesure face à RIFE (`docs/interpolation.md`).
 
 ## Où est quoi
 

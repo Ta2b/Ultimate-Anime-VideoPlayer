@@ -329,7 +329,7 @@ tourne vite, et encore de 0,025 sur un flot dix fois plus lent, même en laissan
 eux-mêmes là où le mouvement varie trop entre les points (instant, tx, ty, poids). L'essai, son noyau et ses
 tests sont retirés ; le bit `1U << 2U` des essais du backend reste libre.
 
-## GMFSS Fortuna Union : le niveau Élevé et GMFSS seul
+## GMFSS Fortuna Union : les niveaux Élevé et Très élevé
 
 Retiré en 0.10.0, GMFSS revient en novembre 2026 à la demande de Tatoub, après la mesure de qualité
 ([relevé du 14 novembre](reports/gmfss-union-qualite-2026-11-14.md)) : RIFE 4.26 égale ou bat union en PSNR et en
@@ -340,7 +340,9 @@ LPIPS, mais union tient mieux les rotations et panoramiques rapides à l'œil. S
   (15 px à 720p par défaut, de 4 à 60) a son image du milieu M par une fusion union ; chaque autre instant est
   RIFE mouvement sur la demi-paire (a, M) ou (M, b), puis le warp de l'étage. Les autres paires restent à RIFE
   seul. Mesuré : 30,12 dB / 0,0739 contre 30,40 / 0,0734 pour RIFE seul et 29,92 / 0,0745 pour union seul.
-- **GMFSS union** (mode avancé, `engine = "gmfss_union"`) : la fusion à chaque instant, sans RIFE.
+- **Très élevé** (GMFSS union seul, `engine = "gmfss_union"`) : la fusion à chaque instant, sans RIFE. Proposé
+  hors du mode avancé depuis le 15 novembre 2026, à la demande de Tatoub : l'utilisateur choisit entre le mélange
+  (Élevé) et union seul (Très élevé).
 
 Code : `src/app/play/upscale_gmfss.cpp` (l'étage), `chain_gmfss.cpp` (les deux moteurs),
 `src/kernels/spec/gmfss.h` et `ref/gmfss.cpp` (le softmax splatting), `src/gpu/cuda/backend/gmfss_kernels.cu`

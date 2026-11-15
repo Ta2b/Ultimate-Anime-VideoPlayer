@@ -83,8 +83,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   CHECK(interp_level(MotionEngine::DistilDrba, "") == InterpLevel::DistilDrba);
   for (const InterpChoice& choice : kInterpLevels)
     CHECK(choice.advanced ==
-          (choice.level == InterpLevel::Rife425 || choice.level == InterpLevel::DistilDrba ||
-           choice.level == InterpLevel::GmfssUnion));
+          (choice.level == InterpLevel::Rife425 || choice.level == InterpLevel::DistilDrba));
   CHECK(interp_level(MotionEngine::Apple, "") == InterpLevel::System);
   CHECK_FALSE(interp_level(MotionEngine::Rife, "rife_v4.6.onnx"));
 }

@@ -301,8 +301,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
 
 namespace {
 
-// Le nom du niveau dans la liste : Très rapide, Rapide, Équilibré pour tous ; le nom du modèle pour les
-// entrées du mode avancé.
+// Le nom du niveau dans la liste : Très rapide, Rapide, Équilibré, Élevé, Très élevé pour tous ; le nom du
+// modèle pour les entrées du mode avancé.
 std::string level_name(InterpLevel level) {
   switch (level) {
     case InterpLevel::VeryFast:
@@ -314,7 +314,7 @@ std::string level_name(InterpLevel level) {
     case InterpLevel::High:
       return i18n::tr("High");
     case InterpLevel::GmfssUnion:
-      return std::string("GMFSS union");
+      return i18n::tr("Very high");
     case InterpLevel::Rife425:
       return std::string("RIFE 4.25");
     case InterpLevel::DistilDrba:
@@ -376,9 +376,9 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   panel::tip(i18n::tr(
-      "Very fast, Fast and Balanced are RIFE models; High adds GMFSS union on fast motion (NVIDIA "
-      "RTX). Advanced settings also offer RIFE 4.25, DistilDRBA and GMFSS union alone. Applies after "
-      "a short reload."));
+      "Very fast, Fast and Balanced are RIFE models; High adds GMFSS union on fast motion and Very high "
+      "uses GMFSS union alone (NVIDIA RTX). Advanced settings also offer RIFE 4.25 and DistilDRBA. "
+      "Applies after a short reload."));
 }
 
 // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait
