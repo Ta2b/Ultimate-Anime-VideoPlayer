@@ -15,10 +15,17 @@ std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dir
   for (const std::filesystem::path& dir : dirs) {
     GmfssModels found{.pair = dir / kGmfssPairFile, .fusion = dir / kGmfssFusionFile};
     if (std::filesystem::is_regular_file(found.pair, error) &&
-        std::filesystem::is_regular_file(found.fusion, error))
+        std::filesystem::is_regular_file(found.fusion, error)) {
+      if (std::filesystem::is_regular_file(dir / kGmfssHalfPairFile, error))
+        found.half_pair = dir / kGmfssHalfPairFile;
       return found;
+    }
   }
   return std::nullopt;
+}
+
+GmfssModels gmfss_chosen(const GmfssModels& found, bool half) {
+  return {.pair = half && !found.half_pair.empty() ? found.half_pair : found.pair, .fusion = found.fusion};
 }
 
 std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {

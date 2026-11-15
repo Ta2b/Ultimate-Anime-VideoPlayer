@@ -108,6 +108,13 @@ constexpr std::array kImageTabs{
           "proposent aussi RIFE 4.25 et DistilDRBA. S'applique après un court rechargement."},
     Entry{"High", "Élevé"},
     Entry{"Very high", "Très élevé"},
+    Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
+    Entry{
+        "GMFSS estimates motion on frames halved in size: about three times cheaper, a little less precise "
+        "on "
+        "small motion. Applies after a reload (its own engine).",
+        "GMFSS estime le mouvement sur des images réduites de moitié : environ trois fois moins cher, un peu "
+        "moins juste sur les petits mouvements. S'applique après un rechargement (son propre moteur)."},
     Entry{"RIFE 4.26, with GMFSS union making the middle frame of fast motion: steadier fast turns and "
           "pans. TensorRT only (NVIDIA RTX), much more work on those pairs.",
           "RIFE 4.26, avec GMFSS union pour l'image du milieu des mouvements rapides : rotations et "

@@ -57,9 +57,12 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
               without);
     return true;
   }
+  if (settings.gmfss_half_flow && found->half_pair.empty())
+    log->warn("GMFSS union : {} introuvable, la paire au flot entier", kGmfssHalfPairFile);
+  const GmfssModels chosen = gmfss_chosen(*found, settings.gmfss_half_flow);
   const WorkSize size = use == GmfssUse::Only ? c.work : c.rife_size;
   const kernels::RifeGeometry g = kernels::rife_geometry(size.width, size.height, kernels::kGmfssAlign);
-  const std::string key = inner_key("gmfss", library, found->pair, g.padded_width, g.padded_height);
+  const std::string key = inner_key("gmfss", library, chosen.pair, g.padded_width, g.padded_height);
   if (inner.refused(ChainStage::Motion, key) != nullptr) {
     log->info("GMFSS union refusé plus tôt dans la séance : {}", without);
     return true;
@@ -69,7 +72,7 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
     inner.failed(ChainStage::Motion, key, refusal);
     return true;
   };
-  auto fixed = static_gmfss(*found, g.padded_width, g.padded_height, paths::derived_models(p.paths));
+  auto fixed = static_gmfss(chosen, g.padded_width, g.padded_height, paths::derived_models(p.paths));
   if (!fixed) return refused(fixed.error());
   // Les deux graphes sans pavage L2 ni niveau 5 (gpu::ModelSpec::tuned). first_s : la durée annoncée tant
   // qu'aucune construction passée ne la donne, mesurée sur une RTX 4070 Ti en travail 720p.

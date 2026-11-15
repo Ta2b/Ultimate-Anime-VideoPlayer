@@ -18,18 +18,27 @@ namespace ajp::app::play {
 
 inline constexpr std::string_view kGmfssPairFile = "gmfss_fortuna_union_pair.onnx";
 inline constexpr std::string_view kGmfssFusionFile = "gmfss_fortuna_union_fusion.onnx";
+// La paire au demi-flot (export_gmfss.py --scale 0.5) : mêmes entrées et sorties, GMFlow sur les images
+// réduites de moitié ; la même fusion la suit (PlaySettings::gmfss_half_flow).
+inline constexpr std::string_view kGmfssHalfPairFile = "gmfss_fortuna_union_s05_pair.onnx";
 
 struct GmfssModels {
   std::filesystem::path pair;
   std::filesystem::path fusion;
+  std::filesystem::path half_pair;  // vide sans le graphe au demi-flot à côté des deux autres
 };
 
-// Les deux graphes du premier de ces dossiers qui les a tous les deux.
+// Les deux graphes du premier de ces dossiers qui les a tous les deux, et la paire au demi-flot de ce
+// dossier si elle y est.
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs);
 
 // Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height (multiples
 // de 64) : « H », « W », puis « H/2 » à « W/8 ».
 std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height);
+
+// Les deux graphes à construire : la paire au demi-flot si half et qu'elle est là, sinon celle au flot
+// entier.
+GmfssModels gmfss_chosen(const GmfssModels& found, bool half);
 
 // Les deux graphes aux tailles fixées pour ces plans remplis, dérivés (s'ils manquent) dans dir ; les tailles
 // d'une autre vidéo s'en vont. Refus : ceux de prepare::with_fixed_dims et de derived_model.

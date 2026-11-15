@@ -379,6 +379,14 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
       "Very fast, Fast and Balanced are RIFE models; High adds GMFSS union on fast motion and Very high "
       "uses GMFSS union alone (NVIDIA RTX). Advanced settings also offer RIFE 4.25 and DistilDRBA. "
       "Applies after a short reload."));
+  if (d.motion_engine == MotionEngine::Gmfss || d.gmfss_middle) {
+    ImGui::BeginDisabled(!choices.gmfss_half_flow_available);
+    ImGui::Checkbox(i18n::tr("GMFSS motion at half size"), &d.gmfss_half_flow);
+    ImGui::EndDisabled();
+    panel::tip(
+        i18n::tr("GMFSS estimates motion on frames halved in size: about three times cheaper, a "
+                 "little less precise on small motion. Applies after a reload (its own engine)."));
+  }
 }
 
 // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait

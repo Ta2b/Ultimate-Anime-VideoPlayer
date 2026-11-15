@@ -139,6 +139,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const std::vector<std::filesystem::path> places = motion_model_dirs(h.paths, rife);
   const std::optional<DrbaModel> drba_file = find_distil_drba(places);
   const bool drba = drba_file.has_value();
+  const std::optional<GmfssModels> gmfss = find_gmfss(places);
   // Sans moteur chargé, le FP8 se présume d'après le nom de la carte, avec la règle du moteur : TensorRT le
   // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02) ni 50 (B08-07). Le moteur le confirme à
   // l'ouverture.
@@ -172,7 +173,8 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_tiers = rife ? sibling_tiers(rife->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = drba,
-      .gmfss_available = find_gmfss(places).has_value(),  // le moteur n'est pas encore ouvert
+      .gmfss_half_flow_available = gmfss && !gmfss->half_pair.empty(),
+      .gmfss_available = gmfss.has_value(),  // le moteur n'est pas encore ouvert
       .rife_loaded = false,
       .rife_models = rife ? rife->available : std::vector<std::string>{},
       .default_rife_model = rife ? rife->default_name : std::string(),

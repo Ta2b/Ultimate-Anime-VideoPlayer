@@ -522,6 +522,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::cubic_warp);
   keep(&PlaySettings::pair_scale);
   keep(&PlaySettings::gmfss_middle);
+  keep(&PlaySettings::gmfss_half_flow);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -561,6 +562,10 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
   if (base.gmfss_middle != wanted.gmfss_middle) {
     reopen.emplace_back(wanted.gmfss_middle ? i18n::tr("GMFSS union makes the middle of fast motion")
                                             : i18n::tr("RIFE alone on fast motion"));
+  }
+  if (base.gmfss_half_flow != wanted.gmfss_half_flow) {
+    reopen.emplace_back(wanted.gmfss_half_flow ? i18n::tr("GMFSS estimates motion at half size")
+                                               : i18n::tr("GMFSS estimates motion at full size"));
   }
 }
 
@@ -610,6 +615,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.cubic_warp = opened->loaded->cubic_warp;
   base.pair_scale = opened->loaded->pair_scale;
   base.gmfss_middle = opened->loaded->gmfss_middle;
+  base.gmfss_half_flow = opened->loaded->gmfss_half_flow;
   return base;
 }
 

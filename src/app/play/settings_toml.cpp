@@ -130,12 +130,13 @@ void read_auto_mode(const toml::table& table, PlaySettings& s,
 }
 
 // Ce qui change les passes sur les mouvements rapides : les essais pair_scale et strong_middle, et le mélange
-// de GMFSS (gmfss_middle, gmfss_motion, borné).
+// de GMFSS (gmfss_middle, gmfss_motion, borné, gmfss_half_flow).
 void read_motion_trials(const toml::table& table, PlaySettings& s,
                         std::vector<std::expected<void, Refusal>>& reads) {
   reads.push_back(read(table, "interpolation", "pair_scale", s.pair_scale));
   reads.push_back(read(table, "interpolation", "strong_middle", s.strong_middle));
   reads.push_back(read(table, "interpolation", "gmfss_middle", s.gmfss_middle));
+  reads.push_back(read(table, "interpolation", "gmfss_half_flow", s.gmfss_half_flow));
   int motion = s.gmfss_motion;
   reads.push_back(read(table, "interpolation", "gmfss_motion", motion));
   if (motion >= kGmfssMotionMin && motion <= kGmfssMotionMax) {

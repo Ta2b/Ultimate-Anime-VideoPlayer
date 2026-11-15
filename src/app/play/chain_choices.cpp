@@ -30,6 +30,7 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
   const bool rife_loaded = c.interpolates();
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
+  const std::optional<GmfssModels> gmfss = find_gmfss(c.model_places);
   return SettingsChoices{
       .models = c.model       ? c.model->available
                 : c.span_list ? c.span_list->available
@@ -53,8 +54,8 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = c.drba_found,
-      .gmfss_available =
-          c.backend && c.backend->capabilities().gmfss && find_gmfss(c.model_places).has_value(),
+      .gmfss_half_flow_available = gmfss && !gmfss->half_pair.empty(),
+      .gmfss_available = c.backend && c.backend->capabilities().gmfss && gmfss.has_value(),
       .rife_loaded = rife_loaded,
       .opened = c.opened,
       .rife_models = c.rife_choice ? c.rife_choice->available : std::vector<std::string>{},

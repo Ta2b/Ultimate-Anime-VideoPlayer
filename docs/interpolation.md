@@ -358,6 +358,18 @@ changement ; la métadonnée `ajp.gmfss.ifnet` nomme le RIFE. GridNet n'est pas 
 voit pas de différence (vidéos de Re:Zero S4E18). RIFE travaillant à la demi-taille au 1/64, la taille remplie de
 GMFSS est un multiple de 128 (`kGmfssAlign`), ce que sont déjà 1280x768 et 1920x1152.
 
+**Demi-flot** (`gmfss_half_flow`, case « Mouvement de GMFSS à demi-taille » sous le niveau, ajoutée le
+15 novembre 2026 à la demande de Tatoub pour juger à l'œil) : la paire `gmfss_fortuna_union_s05_pair.onnx`
+(`export_gmfss.py --scale 0.5`, mêmes entrées et sorties), rangée à côté des deux autres, remplace celle au flot
+entier ; la fusion reste la même. Sur la 4070 Ti, en travail 720p, la paire au flot entier coûte 34 ms par image
+source et la fusion 11 à 13 ms par instant : Très élevé ne tient qu'en ×2 (environ 40 i/s sur 48 au flot
+entier), le demi-flot doit l'amener à 48. Au-delà de ×2, GMFSS seul ne tient pas en temps réel sur cette carte ;
+Élevé ×8 tient (GMFSS sur une paire sur dix environ, au seuil de 15 px). Sans le graphe, la case est grisée.
+
+**Construction** : les deux graphes sans pavage L2 ni niveau d'optimisation 5 (`gpu::ModelSpec::tuned`). Mesuré
+sur la 4070 Ti : la paire en 3 minutes ; la fusion à 640x384 en 218 s au lieu de 692 s, et 6 % plus rapide ; à
+960x576 (travail 1080p), le pavage faisait planter Myelin et la construction dépassait le délai.
+
 **TensorRT seulement** (`BackendCaps::gmfss`) : le compilateur de Vulkan n'a ni MatMul ni Softmax. Sans les
 deux graphes ou sans TensorRT, le niveau n'est pas proposé, et un `play.toml` qui le demande garde RIFE (raison
 au journal). Les poids d'union sont MIT ; ils ne sont pas livrés sans l'accord de Tatoub. Un `play.toml` qui

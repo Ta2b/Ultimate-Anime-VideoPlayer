@@ -323,6 +323,16 @@ PlaySettings apply_preset(const PlaySettings& settings, const Machine& machine,
   return out;
 }
 
+namespace {
+
+// Les réglages de GMFSS (gmfss_middle, gmfss_motion, gmfss_half_flow).
+bool gmfss_differs(const PlaySettings& a, const PlaySettings& b) {
+  return a.gmfss_middle != b.gmfss_middle || a.gmfss_motion != b.gmfss_motion ||
+         a.gmfss_half_flow != b.gmfss_half_flow;
+}
+
+}  // namespace
+
 bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool calibrated) {
   if (calibrated && a.auto_free != b.auto_free) return true;
   return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
@@ -333,8 +343,7 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
          a.motion_engine != b.motion_engine || a.restore_lines != b.restore_lines ||
          a.rife_fused != b.rife_fused || a.drba_fused != b.drba_fused ||
          a.smooth_drawings != b.smooth_drawings || a.cubic_warp != b.cubic_warp ||
-         a.pair_scale != b.pair_scale || a.strong_middle != b.strong_middle ||
-         a.gmfss_middle != b.gmfss_middle || a.gmfss_motion != b.gmfss_motion ||
+         a.pair_scale != b.pair_scale || a.strong_middle != b.strong_middle || gmfss_differs(a, b) ||
          a.auto_cap != b.auto_cap;  // C23-06
 }
 

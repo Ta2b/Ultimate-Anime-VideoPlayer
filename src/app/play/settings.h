@@ -270,6 +270,10 @@ struct PlaySettings {
   // paires restent à RIFE. TensorRT seulement ; recharge la chaîne (deux moteurs à construire).
   bool gmfss_middle = false;
   int gmfss_motion = kDefaultGmfssMotion;
+  // La paire de GMFSS au demi-flot (gmfss_model.h, kGmfssHalfPairFile) : GMFlow sur les images réduites de
+  // moitié, environ trois fois moins cher, un peu moins juste sur les petits mouvements. Élevé et Très élevé
+  // ; recharge la chaîne (la paire a son propre moteur). Sans ce graphe, la paire au flot entier.
+  bool gmfss_half_flow = false;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le
