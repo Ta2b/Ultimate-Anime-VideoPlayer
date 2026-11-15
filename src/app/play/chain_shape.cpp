@@ -27,7 +27,7 @@ int order_factor(const PlaySettings& settings, double display_hz, double source_
   return std::clamp(ceiling, 1, settings.rife_factor);
 }
 
-static_assert(kMaxRingSlots >= 8);
+static_assert(kMaxRingSlots >= 8 && kMaxRingSlots >= kGmfssRingSlots);
 
 std::uint32_t ring_depth(const PlaySettings& settings, Factor factor, double display_hz, double source_fps) {
   if (settings.auto_free && settings.rife_auto && factor.num > factor.den) {
@@ -35,7 +35,14 @@ std::uint32_t ring_depth(const PlaySettings& settings, Factor factor, double dis
     factor = Factor{.num = top_factor(settings, display_hz, source_fps), .den = 1};
   }
   const int den = std::max(factor.den, 1);
-  return factor.num >= 5 * den ? 8U : factor.num >= 3 * den ? 6U : 4U;
+  const std::uint32_t depth = factor.num >= 5 * den ? 8U : factor.num >= 3 * den ? 6U : 4U;
+  // GMFSS (gmfss_wanted) : une paire forte coûte plus qu'une période de source, une paire tenue presque rien.
+  // Dix images d'avance (167 ms à 60 i/s) laissent la paire forte emprunter le temps des dessins tenus
+  // autour d'elle au lieu de passer à RIFE.
+  const bool gmfss =
+      factor.num > den && (settings.motion_engine == MotionEngine::Gmfss ||
+                           (settings.motion_engine == MotionEngine::Rife && settings.gmfss_middle));
+  return gmfss ? std::max(depth, kGmfssRingSlots) : depth;
 }
 
 ChainShape chain_shape(const PlaySettings& settings, const OpenedChain& at) {

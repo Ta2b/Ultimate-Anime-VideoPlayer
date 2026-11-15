@@ -31,6 +31,8 @@ int order_factor(const PlaySettings& settings, double display_hz, double source_
 // Emplacements du ring : 4 images, 6 de ×3 à ×4, 8 au-delà. En Rapide, le facteur suit l'écran : l'anneau
 // se taille sur top_factor de l'écran de l'ouverture (B08-08 : 4 sur 60 Hz au lieu de 8, la moitié de la
 // mémoire vidéo d'une sortie 4K), 8 quand l'écran est inconnu. factor : Factor{} sans interpolation chargée.
+// Avec GMFSS, kGmfssRingSlots au moins.
+inline constexpr std::uint32_t kGmfssRingSlots = 10;
 std::uint32_t ring_depth(const PlaySettings& settings, Factor factor, double display_hz, double source_fps);
 
 struct ChainShape {

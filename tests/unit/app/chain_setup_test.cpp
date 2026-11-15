@@ -32,6 +32,10 @@ TEST_CASE("Rapide : le warp et l'anneau suivent l'écran, pas le facteur demand�
   CHECK(ring_depth(s, factor_of(s), 90.0, 23.976) == 6U);
   CHECK(ring_depth(s, factor_of(s), 0.0, 23.976) == 8U);
   CHECK(ring_depth(s, Factor{}, 165.0, 23.976) == 4U);  // sans interpolation chargée
+  PlaySettings mixed = s;  // GMFSS : dix images d'avance pour emprunter le temps des dessins tenus
+  mixed.gmfss_middle = true;
+  CHECK(ring_depth(mixed, factor_of(mixed), 60.0, 23.976) == kGmfssRingSlots);
+  CHECK(ring_depth(mixed, Factor{}, 60.0, 23.976) == 4U);
 
   s.auto_free = false;  // Stable : le facteur demandé borne toujours
   CHECK(top_factor(s, 165.0, 23.976) == 2);
