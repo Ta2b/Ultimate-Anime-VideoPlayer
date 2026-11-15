@@ -47,6 +47,11 @@ TEST_CASE("RIFE fusionné : essayé par défaut, avec la raison de chaque renonc
   PlaySettings apple;
   apple.motion_engine = MotionEngine::Apple;
   CHECK_FALSE(rife_fused_declined(apple, true, kernels::kRifeInputChannels, apple.motion_precision).empty());
+  // Très élevé : GMFSS au milieu, les autres instants par RIFE, fusionné comme en Élevé.
+  PlaySettings very_high;
+  very_high.motion_engine = MotionEngine::Gmfss;
+  CHECK(
+      rife_fused_declined(very_high, true, kernels::kRifeInputChannels, very_high.motion_precision).empty());
 }
 
 TEST_CASE("RIFE fusionné : le réglage voyage dans play.toml et recharge la lecture",

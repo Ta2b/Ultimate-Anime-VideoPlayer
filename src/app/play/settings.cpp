@@ -602,7 +602,8 @@ Change reopen_for(const std::vector<std::string>& reasons) {
 void add_fused_reasons(std::vector<std::string>& reopen, const PlaySettings& base,
                        const PlaySettings& wanted) {
   if (wanted.rife_factor < 2) return;
-  if (wanted.motion_engine == MotionEngine::Rife && base.rife_fused != wanted.rife_fused)
+  const bool rife = wanted.motion_engine == MotionEngine::Rife || wanted.motion_engine == MotionEngine::Gmfss;
+  if (rife && base.rife_fused != wanted.rife_fused)
     reopen.emplace_back(wanted.rife_fused
                             ? i18n::tr("fused RIFE (six engines, built the first time for this size)")
                             : i18n::tr("whole RIFE instead of fused RIFE"));
