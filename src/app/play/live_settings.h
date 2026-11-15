@@ -155,6 +155,16 @@ class LiveSettings {
     ledger_[ledger_next_++ % ledger_.size()] =
         Expected{.id = id, .images = images, .lead_us = lead_us, .heavy = heavy, .lone = lone};
   }
+  // gpu : un coût fixe de la paire de l'image `id`, payé une fois quel que soit le nombre de ses images (les
+  // clés GMFSS du mélange) ; le mode Rapide l'ôte du temps de service par image, qu'il ne gonfle plus.
+  void auto_fixed(std::uint32_t id, std::int64_t us) {
+    const std::scoped_lock lock(mutex_);
+    for (Expected& e : ledger_) {
+      if (e.id != id || e.images == 0) continue;
+      e.fixed_us += us;
+      return;
+    }
+  }
   // gpu : `count` images de la paire de l'image `id` ne seront pas écrites (déjà à l'écran). Si les autres
   // sont toutes vues, la paire se clôt ici.
   void auto_unexpect(std::uint32_t id, int count) {
@@ -452,10 +462,11 @@ class LiveSettings {
     int images = 0;  // 0 : case libre
     std::int64_t lead_us = 0;
     std::int64_t first_us = 0;
-    int seen = 0;              // images vues écrites (mode Rapide)
-    int repeats = 0;           // dont des copies, sans calcul
-    std::int64_t busy_us = 0;  // temps propre de ses images, sans l'attente d'un slot
-    bool heavy = false;        // mouvement fort
+    int seen = 0;               // images vues écrites (mode Rapide)
+    int repeats = 0;            // dont des copies, sans calcul
+    std::int64_t busy_us = 0;   // temps propre de ses images, sans l'attente d'un slot
+    std::int64_t fixed_us = 0;  // dont le coût fixe de la paire (auto_fixed)
+    bool heavy = false;         // mouvement fort
     LonePair lone = LonePair::Source;
   };
   // Clôt la mesure d'une paire : son coût de service, sans les copies. Sous le verrou.
@@ -469,7 +480,11 @@ class LiveSettings {
       // redescendre l'estimation, que plus rien ne mesurerait (A12-12).
       const int made = e.images - e.repeats;
       if (made >= 2 || (made == 1 && e.lone == LonePair::Interpolated)) {
-        free_.cost(made, e.busy_us + e.lead_us, done_us, e.heavy);
+        // Le coût fixe de la paire ne se répartit pas sur ses images : il fixerait l'écart de chacune au
+        // prix d'une clé GMFSS. Au moins le quart du temps mesuré, si l'estimation du coût fixe est trop
+        // haute.
+        const std::int64_t whole = e.busy_us + e.lead_us;
+        free_.cost(made, std::max(whole - e.fixed_us, whole / 4), done_us, e.heavy);
       } else if (e.lone == LonePair::Starved) {
         free_.starved(done_us, e.heavy);
       }

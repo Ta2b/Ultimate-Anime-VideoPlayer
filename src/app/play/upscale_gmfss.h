@@ -81,6 +81,7 @@ struct GmfssBuffers {
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> low;
   std::unique_ptr<gpu::TensorBuffer> input;  // l'entrée de RIFE d'une demi-paire
   bool pair_ready = false;                   // la paire en cours est passée par le graphe « paire »
+  std::uint32_t frame_id = 0;                // l'image de la paire en cours (LiveSettings::auto_fixed)
   std::uint32_t keys_made = 0;               // les clés faites de la paire en cours (le mélange)
   std::array<std::uint64_t, 2> in_images{};
   bool in_pair = false;  // input tient la demi-paire in_images

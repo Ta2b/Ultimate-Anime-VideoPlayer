@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "doubles.h"
 #include "upscale_rig.h"
 
 namespace ajp::app::play {
@@ -153,7 +154,9 @@ TEST_CASE("Étage gpu : le mélange au crédit de temps, une M plus chère que l
   s.rife_motion = &rig.motion;
   s.gmfss = gmfss.setup(GmfssUse::Middle);
   s.gmfss.cost_us = 100'000;  // plus que les trois quarts de deux images : une M toutes les trois au plus
-  rig.start(std::move(s));
+  test::FakeClock clock;  // le crédit ne vaut qu'en lecture (sans horloge, l'export prend toutes les clés)
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
   rig.backend.motion_max(40.0F);
   rig.feed(1, 4);
   REQUIRE(rig.collect(13));
@@ -181,7 +184,9 @@ TEST_CASE("Étage gpu : le mélange, une clé sous le seuil quand le crédit dé
   // Plein à 120 ms : une M de 30 ms laisse la moitié du plein, une de 80 ms non.
   s.gmfss.cost_us = spare ? 30'000 : 80'000;
   s.gmfss.strong_px = 1.0e6F;  // aucune paire forte, quelle que soit la taille du banc
-  rig.start(std::move(s));
+  test::FakeClock clock;  // le crédit ne vaut qu'en lecture (sans horloge, l'export prend toutes les clés)
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
   rig.backend.motion_max(8.0F);  // au-dessus du plancher de 15 px à 720 lignes (3,75 px ici)
   rig.feed(1, 4);
   REQUIRE(rig.collect(13));
@@ -244,6 +249,27 @@ TEST_CASE("Étage gpu : le mélange, plus de clés quand le mouvement grandit, R
     CHECK(at(0.5F) > 0);
     CHECK(at(0.75F) > 0);
   }
+}
+
+TEST_CASE("Étage gpu : le mélange sans horloge (l'export), une clé à chaque paire, sans crédit",
+          "[app][stage][gmfss]") {
+  Rig rig;
+  GmfssEngines gmfss;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.gmfss = gmfss.setup(GmfssUse::Middle);
+  s.gmfss.max_keys = 1;
+  s.gmfss.cost_us = 1'000'000;  // bien plus que le crédit plein
+  rig.start(std::move(s));
+  rig.backend.motion_max(40.0F);
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(13));
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+  const std::size_t pairs = rig.backend.count("engine gmfss_pair");
+  CHECK(pairs >= 2);
+  CHECK(rig.backend.count("engine gmfss_fusion") == pairs);
 }
 
 }  // namespace ajp::app::play

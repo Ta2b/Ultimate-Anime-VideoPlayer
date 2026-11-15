@@ -46,17 +46,19 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
   // La paire déjà faite en avance (adopt_gmfss_ahead) n'en coûte plus que la fusion et les splats.
   const std::int64_t cost = setup_.gmfss.cost_us - (gmfss_.pair_ready ? setup_.gmfss.pair_us : 0);
   credit_gmfss(frame.pts_us);
-  gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 &&
+  // Sans horloge (l'export), le temps ne compte pas : toutes les clés, sans crédit.
+  const bool timed = setup_.clock != nullptr;
+  gmfss_.behind = timed && setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 &&
                   (gmfss_.credit_us < setup_.gmfss.cost_us || instant_late(frame, 0, cost));
-  gmfss_.spare = gmfss_.credit_us >= setup_.gmfss.cost_us + kGmfssSpareUs;
+  gmfss_.spare = !timed || gmfss_.credit_us >= setup_.gmfss.cost_us + kGmfssSpareUs;
   // Les clés de plus (gmfss_keys) : leur fusion et leurs splats chacune, si le crédit en garde le quart du
   // plein après elles et que le premier instant n'en serait pas en retard.
   const std::int64_t key_us = setup_.gmfss.cost_us - setup_.gmfss.pair_us;
   gmfss_.extra_keys = 0;
   while (!gmfss_.behind && gmfss_.extra_keys + 1 < kGmfssMaxKeys) {
     const std::int64_t more = key_us * (gmfss_.extra_keys + 1);
-    if (gmfss_.credit_us < setup_.gmfss.cost_us + more + kGmfssSpareUs / 2 ||
-        instant_late(frame, 0, cost + more))
+    if (timed && (gmfss_.credit_us < setup_.gmfss.cost_us + more + kGmfssSpareUs / 2 ||
+                  instant_late(frame, 0, cost + more)))
       break;
     ++gmfss_.extra_keys;
   }
@@ -118,6 +120,7 @@ bool UpscaleStage::instant_late(const DecodedFrame& frame, std::uint32_t output,
 // mesure. Toute autre image seule (coupe, dessin tenu, copie d'une pose) ne dit rien.
 void UpscaleStage::expect_pair(std::uint32_t id, int written, std::int64_t lead_us, bool free, bool steady,
                                bool runs) {
+  gmfss_.frame_id = id;  // les clés du mélange y ajoutent leur coût fixe (LiveSettings::auto_fixed)
   LonePair lone = LonePair::Source;
   if (free && !steady && free_grid_.starved()) {
     lone = LonePair::Starved;

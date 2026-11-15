@@ -105,4 +105,28 @@ TEST_CASE("Mode Rapide : une paire d'une image ne compte que si elle est interpo
   CHECK(live.free_info(now).service_us == 17'600);
 }
 
+TEST_CASE("Mode Rapide : le coût fixe d'une paire (clés GMFSS) ne compte pas dans le temps d'une image",
+          "[app][free][gmfss]") {
+  // Quatre images à 2 ms, la première après 24 ms de clés : 32 ms la paire.
+  const auto service = [](std::int64_t fixed_us) {
+    LiveSettings live;
+    live.set_free(true, 1000, 0);
+    std::int64_t now = 20'000'000;
+    for (std::uint32_t pair = 1; pair <= 40; ++pair) {
+      live.auto_expect(pair, 4, 0);
+      if (fixed_us > 0) live.auto_fixed(pair, fixed_us);
+      for (int image = 0; image < 4; ++image) {
+        const std::int64_t submitted = now;
+        now += image == 0 ? 26'000 : 2'000;
+        live.auto_written(image == 3 ? pair : pair - 1, pair, submitted, now);
+      }
+    }
+    return live.free_info(now).service_us;
+  };
+  CHECK(service(0) > 7'500);  // 32 ms sur quatre images : 8 ms chacune
+  CHECK(service(24'000) > 1'900);
+  CHECK(service(24'000) < 2'100);         // 2 ms, le prix d'une image RIFE
+  CHECK(service(1'000'000) > 7'500 / 4);  // une estimation trop haute laisse le quart du temps mesuré
+}
+
 }  // namespace ajp::app::play

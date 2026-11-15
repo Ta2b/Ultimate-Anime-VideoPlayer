@@ -482,8 +482,11 @@ std::expected<void, Refusal> UpscaleStage::make_key(std::uint32_t k, float t) {
     if (auto ok = ops.resample(key.middle->tensor(), kernels::Filter::Spline36, key.work->tensor()); !ok)
       return ok;
   }
-  // La première clé paie la paire, les suivantes leur fusion et leurs splats.
-  gmfss_.credit_us -= k == 0 ? setup_.gmfss.cost_us : setup_.gmfss.cost_us - setup_.gmfss.pair_us;
+  // La première clé paie la paire, les suivantes leur fusion et leurs splats : un coût fixe de la paire,
+  // que le mode Rapide ne compte pas dans l'écart de ses images.
+  const std::int64_t key_us = k == 0 ? setup_.gmfss.cost_us : setup_.gmfss.cost_us - setup_.gmfss.pair_us;
+  gmfss_.credit_us -= key_us;
+  if (setup_.live) setup_.live->auto_fixed(gmfss_.frame_id, key_us);
   if (k == 0 && !gmfss_strong()) ++gmfss_.spare_keys;
   if (k > 0) ++gmfss_.more_keys;
   key.serial = ++serials_;  // jamais celui d'une source
