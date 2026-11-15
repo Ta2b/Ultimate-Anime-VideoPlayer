@@ -50,7 +50,7 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
     return true;
   }
   const WorkSize size = use == GmfssUse::Only ? c.work : c.rife_size;
-  const kernels::RifeGeometry g = kernels::rife_geometry(size.width, size.height, kernels::kRifeAlign);
+  const kernels::RifeGeometry g = kernels::rife_geometry(size.width, size.height, kernels::kGmfssAlign);
   const std::string key = inner_key("gmfss", library, found->pair, g.padded_width, g.padded_height);
   if (inner.refused(ChainStage::Motion, key) != nullptr) {
     log->info("GMFSS union refusé plus tôt dans la séance : {}", without);

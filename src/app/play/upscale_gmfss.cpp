@@ -38,10 +38,10 @@ gpu::Tensor channel_slice(const gpu::Tensor& whole, std::int64_t first, std::int
   return slice;
 }
 
-// Les plans remplis de GMFSS : la taille de RIFE au multiple de 64 (ses graphes divisent par 8, GMFlow par
-// 64 au plus).
+// Les plans remplis de GMFSS : la taille de RIFE au multiple de kGmfssAlign (GMFlow divise par 64, le RIFE
+// d'une fusion à IFNet remplacé travaille à la demi-taille au 1/64).
 kernels::RifeGeometry gmfss_geometry(int width, int height) {
-  return kernels::rife_geometry(width, height, kernels::kRifeAlign);
+  return kernels::rife_geometry(width, height, kernels::kGmfssAlign);
 }
 
 std::expected<void, Refusal> alloc_f16(gpu::Backend& backend, std::unique_ptr<gpu::TensorBuffer>& into,

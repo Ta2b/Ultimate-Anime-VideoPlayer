@@ -159,13 +159,15 @@ class Fusion(nn.Module):
     def forward(self, half0, half1, *rest):
         if self.gmfss.model_type == "union":
             time, warped = rest[0], rest[1:]
-        else:
-            warped = rest
+            return self.grid(half0, half1, self.gmfss.ifnet(half0, half1, time.reshape(1)), warped)
+        return self.grid(half0, half1, None, rest)
+
+    def grid(self, half0, half1, rife, warped):
+        """GridNet, l'image de l'IFNet (union) donnée."""
         w = dict(zip(warped_names(), warped))
         image0, image1 = w["warped0_1"][:, :3], w["warped1_1"][:, :3]
         feat0, feat1 = w["warped0_1"][:, 3:], w["warped1_1"][:, 3:]
-        if self.gmfss.model_type == "union":
-            rife = self.gmfss.ifnet(half0, half1, time.reshape(1))
+        if rife is not None:
             images = torch.cat([image0, rife, image1], 1)
         else:
             images = torch.cat([half0, image0, image1, half1], 1)
@@ -176,6 +178,14 @@ class Fusion(nn.Module):
             torch.cat([w["warped0_3"], w["warped1_3"]], 1),
         )
         return torch.clamp(out, 0, 1)
+
+
+class FusionGiven(Fusion):
+    """La fusion d'union dont l'image de l'IFNet entre par le graphe (« rife ») : ifnet_rife.py y branche
+    un autre RIFE."""
+
+    def forward(self, half0, half1, rife, *warped):
+        return self.grid(half0, half1, rife, warped)
 
 
 def fusion_names(model_type):

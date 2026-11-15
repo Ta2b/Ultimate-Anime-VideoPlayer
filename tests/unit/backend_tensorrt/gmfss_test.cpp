@@ -152,7 +152,7 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
   gpu::KernelOps& ops = *loaded.backend->kernels();
   constexpr int w = 50;
   constexpr int h = 30;
-  const k::RifeGeometry g = k::rife_geometry(w, h, k::kRifeAlign);
+  const k::RifeGeometry g = k::rife_geometry(w, h, k::kGmfssAlign);
   auto a = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
   auto b = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
   auto frames = loaded.backend->alloc_tensor(

@@ -37,6 +37,10 @@ namespace ajp::kernels {
 //   sortie « out », 1 × 3 × ph × pw, bornée à [0, 1].
 // Les dimensions variables des deux graphes s'écrivent « H », « W », « H/2 », « W/8 »… : le lecteur les fixe
 // à la taille remplie avant de construire le moteur.
+// Multiple de la taille remplie : GMFlow divise par 64 ; une fusion dont l'IFNet est un RIFE du lecteur
+// (tools/gmfss/ifnet_rife.py) le fait tourner à la demi-taille, qui doit être un multiple de 64. 1280 × 768
+// et 1920 × 1152 (720p et 1080p) le sont déjà.
+inline constexpr int kGmfssAlign = 128;
 inline constexpr int kGmfssLevels = 3;
 inline constexpr int kGmfssFramePlanes = 6;
 inline constexpr int kGmfssImagePlanes = 3;

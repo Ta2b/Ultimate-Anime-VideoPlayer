@@ -350,6 +350,14 @@ Code : `src/app/play/upscale_gmfss.cpp` (l'étage), `chain_gmfss.cpp` (les deux 
 `gmfss_fortuna_union_pair.onnx` (FeatureNet, GMFlow, MetricNet, une fois par paire) et
 `gmfss_fortuna_union_fusion.onnx` (IFNet et GridNet, qui reçoit l'instant), construits à la taille de la chaîne.
 
+**IFNet remplacé par RIFE 4.26** (essai du 15 novembre 2026) : `tools/gmfss/ifnet_rife.py` écrit une fusion dont
+l'IFNet d'union (un RIFE ancien, environ 3 ms de la fusion à 1280x768 sur la 4070 Ti, un quart de son temps) est
+remplacé par le graphe `rife_v4.26.onnx` du lecteur (1,5 ms à la même demi-taille), branché devant GridNet dans
+le même ONNX. Mêmes entrées et même sortie que la fusion d'origine, même nom de fichier : le lecteur la charge sans
+changement ; la métadonnée `ajp.gmfss.ifnet` nomme le RIFE. GridNet n'est pas réentraîné : à l'œil, Tatoub ne
+voit pas de différence (vidéos de Re:Zero S4E18). RIFE travaillant à la demi-taille au 1/64, la taille remplie de
+GMFSS est un multiple de 128 (`kGmfssAlign`), ce que sont déjà 1280x768 et 1920x1152.
+
 **TensorRT seulement** (`BackendCaps::gmfss`) : le compilateur de Vulkan n'a ni MatMul ni Softmax. Sans les
 deux graphes ou sans TensorRT, le niveau n'est pas proposé, et un `play.toml` qui le demande garde RIFE (raison
 au journal). Les poids d'union sont MIT ; ils ne sont pas livrés sans l'accord de Tatoub. Un `play.toml` qui
