@@ -43,14 +43,15 @@ int gmfss_auto_cap(const ChainEngines& c, int cap, double source_fps) {
   if (c.gmfss_use == GmfssUse::Off || source_fps <= 0.0) return cap;
   // Le demi-flot ou les 540 lignes du mélange léger : environ deux fois moins cher.
   const bool half = c.played.gmfss_half_flow || c.played.gmfss_light;
-  // GMFSS à chaque instant : ×2 (×2,5). Très élevé au milieu de chaque paire : ×2,5, ×3 avec l'un des deux,
-  // ×4 avec les deux (mesuré sur une RTX 4070 Ti en 540p au demi-flot : environ 20 ms par image source pour
-  // 41,7, plafonné à ×2,5 il restait à 55 i/s sur 165 Hz) ; RIFE reprend les paires que GMFSS ne tient pas.
+  // GMFSS à chaque instant : ×2 (×2,5). Très élevé au milieu de chaque paire : ×2,5, ×3,5 avec l'un des
+  // deux, ×4 avec les deux (mesuré sur une RTX 4070 Ti, 720p au demi-flot comme 540p : 54 i/s sans image
+  // manquée, environ 25 ms par image source pour 41,7 ; plafonné à ×2,5, l'Auto restait au palier 55 i/s de
+  // 165 Hz, le suivant étant 82,5) ; RIFE reprend les paires que GMFSS ne tient pas.
   // Le mélange d'Élevé : ×3 (×4).
   const bool both = c.played.gmfss_half_flow && c.played.gmfss_light;
   const bool every = c.gmfss_use == GmfssUse::Only;
   const bool very_high = c.played.motion_engine == MotionEngine::Gmfss;
-  const double mixed = both ? 4.0 : half ? 3.0 : 2.5;
+  const double mixed = both ? 4.0 : half ? 3.5 : 2.5;
   const double factor = every ? (half ? 2.5 : 2.0) : very_high ? mixed : (half ? 4.0 : 3.0);
   const int most = static_cast<int>(std::ceil(source_fps * factor));
   return cap > 0 ? std::min(cap, most) : most;
