@@ -473,20 +473,20 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     const bool free_wanted = chain.running.auto_free;
     const bool on = !motion_guard.held(chain) && chain.running.rife_auto && chain.opened.rife_loaded &&
                     chain.running.rife_factor >= 2;
-    // Le plafond choisi, ou celui de GMFSS seul, borne la cadence ; calée sur l'écran (A12-04, A31-10).
+    // Le plafond choisi, ou celui de GMFSS, borne la cadence ; calée sur l'écran (A12-04, A31-10).
     const double cap_hz = static_cast<double>(auto_cap());
     const double limit_hz = core::auto_limit_hz(known_hz, auto_cap());
-    const std::string why = on && free_wanted ? free_refusal(chain.running.motion_engine, limit_hz > 0.0,
-                                                             vrr_armed || known_period_us > 0)
-                                              : std::string();
+    const std::string why = on && free_wanted
+                                ? free_refusal(chain.running.motion_engine, limit_hz > 0.0,
+                                               vrr_armed || known_period_us > 0, c.gmfss_use != GmfssUse::Off)
+                                : std::string();
     const bool free = on && free_wanted && why.empty();
     if (why != free_note) {
       free_note = why;
       // Rapide est le défaut : là où il ne tient pas, Stable le remplace sans message à l'écran.
       if (!why.empty()) log->info("Mode Rapide indisponible ({}) : mode Stable", why);
     }
-    // B12-02, B12-07 : les paliers calés et la grille des vsyncs sur la fréquence mesurée, celle que la
-    // session suit, et non l'annoncée (164,78 Hz pour 165 : le facteur exact ne se calait plus).
+    // B12-02, B12-07 : paliers et vsyncs sur la fréquence mesurée, pas l'annoncée (164,78 Hz pour 165).
     const double lock_hz = session.display_hz() > 0.0 ? session.display_hz() : known_hz;
     chain.live.set_auto(on && !free, core::auto_limits(lock_hz, fps_of(video.frame_rate), vrr_armed,
                                                        chain.running.rife_factor, cap_hz));

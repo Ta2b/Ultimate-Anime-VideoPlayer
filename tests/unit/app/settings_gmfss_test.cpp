@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/chain_setup.h"
+#include "app/play/chain_shape.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/settings.h"
 
@@ -99,3 +100,9 @@ TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 a
 }
 
 }  // namespace ajp::app::play
+
+TEST_CASE("GMFSS : l'Auto Rapide laisse la place au Stable", "[app][gmfss]") {
+  CHECK(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Rife, true, true).empty());
+  CHECK_FALSE(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Rife, true, true, true).empty());
+  CHECK_FALSE(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Gmfss, true, true, true).empty());
+}

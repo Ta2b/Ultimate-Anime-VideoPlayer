@@ -302,6 +302,8 @@ constexpr std::array kSettingsPages{
     Entry{"GMFSS estimates motion at full size", "GMFSS estime le mouvement à pleine taille"},
     Entry{"GMFSS keeps the detail of the working size", "GMFSS garde le détail de la taille de travail"},
     Entry{"GMFSS middle frame enlarged", "image du milieu de GMFSS agrandie"},
+    Entry{"GMFSS union cost varies too much from one pair to the next",
+          "le coût de GMFSS union varie trop d'une paire à l'autre"},
     Entry{"the frame ring grows for this interpolation",
           "l'anneau d'images s'agrandit pour cette interpolation"},
     Entry{"the interpolation engine loads (built the first time for this size)",

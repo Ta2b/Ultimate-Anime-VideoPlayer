@@ -100,7 +100,7 @@ bool fits(const OpenedChain& opened, const PlaySettings& wanted);
 
 // Pourquoi le mode Rapide (core/free_grid.h) ne peut pas tourner : il lui faut un moteur qui calcule à un
 // instant libre et la fréquence de l'écran (ou un VRR armé). Vide : il le peut ; sinon l'Auto Stable le
-// remplace.
-std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known);
+// remplace. GMFSS (gmfss vrai) le refuse aussi : son coût d'une paire à l'autre fait sauter des instants.
+std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known, bool gmfss = false);
 
 }  // namespace ajp::app::play
