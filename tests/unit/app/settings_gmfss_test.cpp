@@ -115,3 +115,22 @@ TEST_CASE("GMFSS : le coût d'une paire du mélange, à l'échelle des pixels, m
   CHECK(gmfss_cost({.width = 1280, .height = 720}, true).total_us == 27300);
   CHECK(gmfss_cost({.width = 640, .height = 360}, true).total_us == 6825);
 }
+
+TEST_CASE("GMFSS : Très élevé par la chaîne du mélange, ou à chaque instant sans RIFE", "[app][gmfss]") {
+  using namespace ajp::app::play;
+  PlaySettings s;
+  s.motion_engine = MotionEngine::Gmfss;
+  s.rife_factor = 2;
+  CHECK(gmfss_wanted(s) == GmfssUse::Middle);
+  s.gmfss_every_instant = true;
+  CHECK(gmfss_wanted(s) == GmfssUse::Only);
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back);
+  CHECK(back->gmfss_every_instant);
+  CHECK_FALSE(parse_settings("version = 1\n")->gmfss_every_instant);
+  // Très élevé par le mélange garde le plafond de Très élevé : ×2 de la source.
+  ChainEngines c;
+  c.gmfss_use = GmfssUse::Middle;
+  c.played.motion_engine = MotionEngine::Gmfss;
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 48);
+}

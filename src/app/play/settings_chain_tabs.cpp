@@ -387,7 +387,15 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
         i18n::tr("GMFSS estimates motion on frames halved in size: about three times cheaper, a "
                  "little less precise on small motion. Applies after a reload (its own engine)."));
   }
-  if (d.gmfss_middle) {
+  const bool very_high = d.motion_engine == MotionEngine::Gmfss;
+  if (very_high) {
+    ImGui::Checkbox(i18n::tr("GMFSS at every instant, without RIFE"), &d.gmfss_every_instant);
+    panel::tip(i18n::tr(
+        "Unchecked, GMFSS union makes the middle frame of every moving pair and RIFE takes over a pair "
+        "when time runs short (and makes the other instants beyond ×2). Checked, a GMFSS fusion at every "
+        "instant and no RIFE: heavier, frames drop when the card can't keep up. Applies after a reload."));
+  }
+  if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
     ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
     panel::tip(i18n::tr(
         "When the working size is larger than RIFE's (1080p), the GMFSS middle frame is made from the "

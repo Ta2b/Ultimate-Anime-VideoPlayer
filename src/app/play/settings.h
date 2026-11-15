@@ -279,6 +279,11 @@ struct PlaySettings {
   // lieu de la sortie 720p agrandie. Le détail de la source reste ; 4 splats et une composition de plus par
   // paire forte. Recharge la chaîne.
   bool gmfss_compose = false;
+  // Très élevé : faux (le défaut), GMFSS fait l'image du milieu de chaque paire qui bouge, par la chaîne du
+  // mélange (seuil 0) : à ×2 chaque image interpolée est de GMFSS, RIFE ne la remplace que si le temps
+  // manque, ou fait les autres instants au-delà de ×2 depuis M. Vrai : la fusion à chaque instant, sans RIFE
+  // (le Très élevé d'avant). Recharge la chaîne.
+  bool gmfss_every_instant = false;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le

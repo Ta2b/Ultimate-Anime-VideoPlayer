@@ -524,6 +524,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::gmfss_middle);
   keep(&PlaySettings::gmfss_half_flow);
   keep(&PlaySettings::gmfss_compose);
+  keep(&PlaySettings::gmfss_every_instant);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -567,6 +568,11 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
   if (base.gmfss_half_flow != wanted.gmfss_half_flow) {
     reopen.emplace_back(wanted.gmfss_half_flow ? i18n::tr("GMFSS estimates motion at half size")
                                                : i18n::tr("GMFSS estimates motion at full size"));
+  }
+  if (base.gmfss_every_instant != wanted.gmfss_every_instant) {
+    reopen.emplace_back(wanted.gmfss_every_instant
+                            ? i18n::tr("GMFSS union at every instant, without RIFE")
+                            : i18n::tr("GMFSS union on every pair, RIFE when time runs short"));
   }
   if (base.gmfss_compose != wanted.gmfss_compose) {
     reopen.emplace_back(wanted.gmfss_compose ? i18n::tr("GMFSS keeps the detail of the working size")
@@ -622,6 +628,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.gmfss_middle = opened->loaded->gmfss_middle;
   base.gmfss_half_flow = opened->loaded->gmfss_half_flow;
   base.gmfss_compose = opened->loaded->gmfss_compose;
+  base.gmfss_every_instant = opened->loaded->gmfss_every_instant;
   return base;
 }
 

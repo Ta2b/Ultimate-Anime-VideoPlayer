@@ -110,6 +110,14 @@ constexpr std::array kImageTabs{
     Entry{"Very high", "Très élevé"},
     Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
     Entry{"GMFSS keeps the source detail", "GMFSS garde le détail de la source"},
+    Entry{"GMFSS at every instant, without RIFE", "GMFSS à chaque instant, sans RIFE"},
+    Entry{"Unchecked, GMFSS union makes the middle frame of every moving pair and RIFE takes over a pair "
+          "when time runs short (and makes the other instants beyond ×2). Checked, a GMFSS fusion at every "
+          "instant and no RIFE: heavier, frames drop when the card can't keep up. Applies after a reload.",
+          "Décoché, GMFSS union fait l'image du milieu de chaque paire qui bouge, et RIFE prend une paire "
+          "quand le temps manque (et fait les autres instants au-delà de ×2). Coché, une fusion de GMFSS à "
+          "chaque instant, sans RIFE : plus lourd, des images sautent quand la carte ne suit pas. "
+          "S'applique après un rechargement."},
     Entry{
         "When the working size is larger than RIFE's (1080p), the GMFSS middle frame is made from the "
         "source frames moved by its motion, corrected by its fusion, instead of its 720p output enlarged. "
@@ -133,6 +141,7 @@ constexpr std::array kImageTabs{
           "GMFSS union seul : chaque image intermédiaire vient de GMFSS. Le niveau le plus lourd, TensorRT "
           "seulement (NVIDIA RTX) ; pour les cartes puissantes."},
     Entry{" + GMFSS union on fast motion", " + GMFSS union sur les mouvements rapides"},
+    Entry{" + GMFSS union on every pair", " + GMFSS union sur chaque paire"},
     Entry{"GMFSS (pair)", "GMFSS (paire)"},
     Entry{"GMFSS (fusion)", "GMFSS (fusion)"},
     Entry{"Greyed out: above the display ({:.0f} Hz for {:.3f} fps).",

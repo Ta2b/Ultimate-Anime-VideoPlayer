@@ -155,7 +155,9 @@ std::string ChainEngines::motion_label(const PlaySettings& settings) const {
   if ((rife || rife_motion) && rife_model)
     return std::format("RIFE {} · {}{}{}{} · ", factor_text(factor_of(settings)),
                        core::to_utf8(rife_model->stem()), rife_fused ? i18n::tr(" fused") : "",
-                       gmfss_use == GmfssUse::Middle ? i18n::tr(" + GMFSS union on fast motion") : "",
+                       gmfss_use != GmfssUse::Middle ? ""
+                       : gmfss_px == 0.0F            ? i18n::tr(" + GMFSS union on every pair")
+                                                     : i18n::tr(" + GMFSS union on fast motion"),
                        reduced);
   return {};
 }

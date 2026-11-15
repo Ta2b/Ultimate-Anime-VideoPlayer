@@ -42,14 +42,19 @@ GmfssCost gmfss_cost(WorkSize size, bool half) {
 int gmfss_auto_cap(const ChainEngines& c, int cap, double source_fps) {
   if (c.gmfss_use == GmfssUse::Off || source_fps <= 0.0) return cap;
   const bool half = c.played.gmfss_half_flow;
-  const double factor = c.gmfss_use == GmfssUse::Only ? (half ? 2.5 : 2.0) : (half ? 4.0 : 3.0);
+  // Très élevé, à chaque instant ou au milieu de chaque paire : ×2 (×2,5) ; le mélange d'Élevé : ×3 (×4).
+  const bool very_high = c.gmfss_use == GmfssUse::Only || c.played.motion_engine == MotionEngine::Gmfss;
+  const double factor = very_high ? (half ? 2.5 : 2.0) : (half ? 4.0 : 3.0);
   const int most = static_cast<int>(std::ceil(source_fps * factor));
   return cap > 0 ? std::min(cap, most) : most;
 }
 
 GmfssUse gmfss_wanted(const PlaySettings& settings) {
   if (settings.rife_factor < 2) return GmfssUse::Off;
-  if (settings.motion_engine == MotionEngine::Gmfss) return GmfssUse::Only;
+  // Très élevé : le milieu de chaque paire par la chaîne du mélange (RIFE en secours), ou la fusion à chaque
+  // instant sans RIFE (gmfss_every_instant).
+  if (settings.motion_engine == MotionEngine::Gmfss)
+    return settings.gmfss_every_instant ? GmfssUse::Only : GmfssUse::Middle;
   return settings.motion_engine == MotionEngine::Rife && settings.gmfss_middle ? GmfssUse::Middle
                                                                                : GmfssUse::Off;
 }
@@ -119,14 +124,18 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   c.gmfss_pair = std::move(**pair);
   c.gmfss_fusion = std::move(**fusion);
   c.gmfss_use = use;
-  c.gmfss_px = static_cast<float>(settings.gmfss_motion);
+  // Très élevé par le mélange : chaque paire qui bouge (seuil 0).
+  c.gmfss_px =
+      settings.motion_engine == MotionEngine::Gmfss ? 0.0F : static_cast<float>(settings.gmfss_motion);
   const bool half = !chosen.half_pair.empty() && chosen.pair == chosen.half_pair;
   const GmfssCost cost = gmfss_cost(size, half);
   c.gmfss_cost_us = cost.total_us;
   c.gmfss_pair_us = cost.pair_us;
   log->info("GMFSS union : {} en {}x{}",
-            use == GmfssUse::Only ? "à chaque instant" : "au milieu des paires fortes", size.width,
-            size.height);
+            use == GmfssUse::Only ? "à chaque instant"
+            : c.gmfss_px == 0.0F  ? "au milieu de chaque paire"
+                                  : "au milieu des paires fortes",
+            size.width, size.height);
   return true;
 }
 
