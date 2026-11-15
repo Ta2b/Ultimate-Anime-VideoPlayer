@@ -219,6 +219,12 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
 // l'utilisateur ferme la fenêtre ; un refus (moteur autre que TensorRT, graphes absents, construction) laisse
 // RIFE, la raison au journal, retenu pour la séance dans inner.
 GmfssUse gmfss_wanted(const PlaySettings& settings);
+// Le plafond de la cadence Auto (Hz, 0 : l'écran) quand GMFSS tourne, ce qu'une RTX 4070 Ti tient en travail
+// 720p (une fusion de 11 à 13 ms par instant, une paire de 35 ms, 12 au demi-flot) au lieu de monter à ×8 :
+// GMFSS seul, ×2 de la source (×2,5 au demi-flot) ; le mélange, budgété comme si chaque paire était forte,
+// ×3 (×4 au demi-flot, à mesurer), là où l'Auto Stable se posait sur un anime nerveux au lieu d'osciller de
+// ×1 à ×7 entre scènes calmes et fortes. cap, le plafond choisi.
+int gmfss_auto_cap(const ChainEngines& c, int cap, double source_fps);
 std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                const PlaySettings& settings, InnerFallbacks& inner,
                                const std::string& library);

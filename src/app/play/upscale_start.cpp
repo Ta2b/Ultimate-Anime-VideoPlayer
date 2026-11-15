@@ -50,8 +50,11 @@ UpscaleStage::~UpscaleStage() {
   if (halves())
     log_channel("gpu")->info("échelle par paire : {} passes à demi-taille sur {}", half_.runs, rife_runs_);
   if (setup_.gmfss.use != GmfssUse::Off) {
-    log_channel("gpu")->info("GMFSS union : {} paires, {} fusions, {} passes de RIFE sur une demi-paire",
-                             gmfss_.pairs, gmfss_.fusions, gmfss_.halves);
+    log_channel("gpu")->info(
+        "GMFSS union : {} paires, {} fusions, {} passes de RIFE sur une demi-paire, {} paires fortes "
+        "laissées "
+        "à RIFE en retard",
+        gmfss_.pairs, gmfss_.fusions, gmfss_.halves, gmfss_.behind_pairs);
   }
   // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
   // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste

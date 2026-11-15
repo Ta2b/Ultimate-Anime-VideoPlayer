@@ -34,6 +34,8 @@ void UpscaleStage::resync_grids(bool unrun, bool free_mode, bool steady) {
 // gardés.
 void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep* step, std::size_t late,
                              bool on) {
+  // Le mélange déjà en retard au premier instant de la paire : une paire forte reste à RIFE (gmfss_.behind).
+  gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 && instant_late(frame, 0);
   if (!on) {
     planned_pts_ = kNoPts;  // les instants de la paire, neufs, valent 0 : inconnu
     return;

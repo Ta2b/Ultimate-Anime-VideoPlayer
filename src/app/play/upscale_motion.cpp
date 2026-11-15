@@ -248,6 +248,7 @@ std::expected<void, Refusal> UpscaleStage::begin_motion_pair(float t) {
     }
   }
   now_ = PairMotion::Moving;
+  if (gmfss_.behind && gmfss_strong()) ++gmfss_.behind_pairs;
   return {};
 }
 

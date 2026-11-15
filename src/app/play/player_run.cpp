@@ -468,14 +468,14 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // L'interpolation coupée faute de carte, pour cette chaîne seulement : play.toml garde le choix
   // (motion_cut.h).
   MotionGuard motion_guard;
+  const auto auto_cap = [&] { return gmfss_auto_cap(c, chain.running.auto_cap, fps_of(video.frame_rate)); };
   const auto apply_auto = [&] {
     const bool free_wanted = chain.running.auto_free;
     const bool on = !motion_guard.held(chain) && chain.running.rife_auto && chain.opened.rife_loaded &&
                     chain.running.rife_factor >= 2;
-    // Le plafond choisi borne la cadence ; le calage se fait toujours sur l'écran (A12-04), et jamais sur
-    // un plafond de batterie (décision 11, A31-10).
-    const double cap_hz = static_cast<double>(chain.running.auto_cap);
-    const double limit_hz = core::auto_limit_hz(known_hz, chain.running.auto_cap);
+    // Le plafond choisi, ou celui de GMFSS seul, borne la cadence ; calée sur l'écran (A12-04, A31-10).
+    const double cap_hz = static_cast<double>(auto_cap());
+    const double limit_hz = core::auto_limit_hz(known_hz, auto_cap());
     const std::string why = on && free_wanted ? free_refusal(chain.running.motion_engine, limit_hz > 0.0,
                                                              vrr_armed || known_period_us > 0)
                                               : std::string();
@@ -652,8 +652,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
         chain.live.free_missed(host_now_us(), lost);
       }
       // RIFE qui ne tient plus une image interpolée par paire : coupé, la carte rendue à SPAN (motion_cut.h).
-      if (motion_guard.watch(chain, core::auto_limit_hz(known_hz, chain.running.auto_cap),
-                             fps_of(video.frame_rate), host_now_us()))
+      if (motion_guard.watch(chain, core::auto_limit_hz(known_hz, auto_cap()), fps_of(video.frame_rate),
+                             host_now_us()))
         apply_auto();
       if (const auto notice = session.take_notice())
         p.ui.controls().warn(

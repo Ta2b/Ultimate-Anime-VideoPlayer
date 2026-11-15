@@ -6,6 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/chain_setup.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/settings.h"
 
@@ -65,6 +66,28 @@ TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, ch
   CHECK(gmfss_chosen(*found, false).pair == dir / kGmfssPairFile);
   CHECK(gmfss_chosen(*found, true).fusion == dir / kGmfssFusionFile);
   std::filesystem::remove_all(dir);
+}
+
+}  // namespace ajp::app::play
+
+namespace ajp::app::play {
+
+TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 au demi-flot), mélangé à ×3 (×4)",
+          "[app][gmfss]") {
+  ChainEngines c;
+  CHECK(gmfss_auto_cap(c, 0, 23.976) == 0);  // RIFE : l'écran
+  c.gmfss_use = GmfssUse::Only;
+  CHECK(gmfss_auto_cap(c, 0, 23.976) == 48);
+  CHECK(gmfss_auto_cap(c, 30, 23.976) == 30);  // un plafond choisi plus bas reste
+  c.played.gmfss_half_flow = true;
+  CHECK(gmfss_auto_cap(c, 0, 23.976) == 60);
+  CHECK(gmfss_auto_cap(c, 165, 24.0) == 60);
+  c.gmfss_use = GmfssUse::Middle;  // Élevé : budgété au pire cas, chaque paire forte
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
+  c.played.gmfss_half_flow = false;
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 72);
+  c.gmfss_use = GmfssUse::Off;
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }
 
 }  // namespace ajp::app::play

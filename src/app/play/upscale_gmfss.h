@@ -62,6 +62,10 @@ struct GmfssBuffers {
   std::uint64_t pairs = 0;    // passes du graphe « paire »
   std::uint64_t fusions = 0;  // passes de la fusion
   std::uint64_t halves = 0;   // passes de RIFE sur une demi-paire
+  // Le mélange en retard (upscale_stage.cpp, begin) : la paire forte dont le premier instant est déjà passé
+  // reste à RIFE, qui la rattrape en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
+  bool behind = false;
+  std::uint64_t behind_pairs = 0;  // paires fortes laissées à RIFE pour ce retard
   // Passes à l'arrivée (GMFSS seul, upscale_early.cpp) : la fusion de chaque instant de la paire, enfilée dès
   // outputs() dans son tampon (1 × 3 × ph × pw) au lieu d'une au slot, recadrée au slot. early_t[k] < 0 :
   // rien d'enfilé pour la sortie k.

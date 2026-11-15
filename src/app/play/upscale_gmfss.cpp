@@ -207,6 +207,10 @@ bool UpscaleStage::gmfss_pair() const {
   // (begin_motion_pair : le sien, ou celui de la précédente relu sans attente) ; le mélange n'a pas de paire
   // prise d'emblée à chaque instant (motion_direct), la passe du milieu de RIFE mesure chaque paire. Le
   // seuil est donné à 720 lignes : mis à la hauteur où RIFE mesure.
+  return gmfss_strong() && !gmfss_.behind;
+}
+
+bool UpscaleStage::gmfss_strong() const {
   if (setup_.gmfss.use != GmfssUse::Middle || smooth_first_ || copy_pair_) return false;
   return pair_motion_ >= setup_.gmfss.strong_px * static_cast<float>(setup_.rife_height) / 720.0F;
 }

@@ -3,6 +3,8 @@
 // milieu des paires fortes) à la taille où RIFE mesure ; GMFSS seul à la taille de travail. TensorRT
 // seulement (BackendCaps::gmfss : GMFlow et ses transformeurs). Un refus laisse RIFE seul, la raison au
 // journal, retenu pour la séance (C08-12).
+#include <algorithm>
+#include <cmath>
 #include <format>
 #include <optional>
 #include <string>
@@ -26,6 +28,14 @@ constexpr double kGmfssPairFirstBuildS = 170.0;    // 179 s à 1280x768, ramené
 constexpr double kGmfssFusionFirstBuildS = 220.0;  // à 640x384, sous kReferencePixels : telle quelle
 
 }  // namespace
+
+int gmfss_auto_cap(const ChainEngines& c, int cap, double source_fps) {
+  if (c.gmfss_use == GmfssUse::Off || source_fps <= 0.0) return cap;
+  const bool half = c.played.gmfss_half_flow;
+  const double factor = c.gmfss_use == GmfssUse::Only ? (half ? 2.5 : 2.0) : (half ? 4.0 : 3.0);
+  const int most = static_cast<int>(std::ceil(source_fps * factor));
+  return cap > 0 ? std::min(cap, most) : most;
+}
 
 GmfssUse gmfss_wanted(const PlaySettings& settings) {
   if (settings.rife_factor < 2) return GmfssUse::Off;
