@@ -78,27 +78,18 @@ __device__ float bilinear(const __half* plane, int w, int h, float x, float y) {
   return top * (1.0F - fy) + bottom * fy;
 }
 
-template <bool kGrid>
 __device__ __forceinline__ SplatTarget splat_target(const SoftSplatParams& p, int x, int y,
                                                     std::size_t plane) {
   SplatTarget s;
   const bool pixel = x < p.width && y < p.height;
   float fx = 0.0F;
   float fy = 0.0F;
-  const auto* motion = static_cast<const __half*>(p.motion);
-  if (pixel) s.i = at(x, y, p.width);
-  if (pixel && (!kGrid || p.grid_scale == 0.0F)) {
+  if (pixel) {
+    const auto* motion = static_cast<const __half*>(p.motion);
+    s.i = at(x, y, p.width);
     fx = __half2float(motion[s.i]);
     fy = __half2float(motion[plane + s.i]);
     s.z = __half2float(motion[2 * plane + s.i]);
-  } else if (pixel) {  // le mouvement sur sa grille (MotionGrid)
-    const std::size_t grid =
-        static_cast<std::size_t>(p.motion_width) * static_cast<std::size_t>(p.motion_height);
-    const float u = (static_cast<float>(x) + 0.5F) / p.grid_scale - 0.5F + p.grid_x;
-    const float v = (static_cast<float>(y) + 0.5F) / p.grid_scale - 0.5F + p.grid_y;
-    fx = bilinear(motion, p.motion_width, p.motion_height, u, v) * p.grid_scale;
-    fy = bilinear(motion + grid, p.motion_width, p.motion_height, u, v) * p.grid_scale;
-    s.z = bilinear(motion + 2 * grid, p.motion_width, p.motion_height, u, v);
   }
   s.tx = static_cast<float>(x) + p.s * fx;
   s.ty = static_cast<float>(y) + p.s * fy;
@@ -180,10 +171,7 @@ __device__ __forceinline__ void flush_window(const SoftSplatParams& p, const flo
   }
 }
 
-// kGrid : un travail au moins lit son mouvement sur une autre grille ; ses lectures bilinéaires demandent
-// plus de registres que la borne de quatre blocs par SM (sans débordement), d'où une variante à part.
-template <bool kGrid>
-__device__ __forceinline__ void splat_block(const SoftSplatBatch& b) {
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(SoftSplatBatch b) {
   __shared__ float cells[(kPass + 1) * kCells];
   const SoftSplatParams& p = b.jobs[blockIdx.z];
   const int x0 = static_cast<int>(blockIdx.x) * kBlock;
@@ -193,7 +181,7 @@ __device__ __forceinline__ void splat_block(const SoftSplatBatch& b) {
   const int x = x0 + static_cast<int>(threadIdx.x);
   const int y = y0 + static_cast<int>(threadIdx.y);
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
-  const SplatTarget s = splat_target<kGrid>(p, x, y, plane);
+  const SplatTarget s = splat_target(p, x, y, plane);
   const float3 shift =
       block_sum3(s.active ? make_float3(s.tx - static_cast<float>(x), s.ty - static_cast<float>(y), 1.0F)
                           : make_float3(0.0F, 0.0F, 0.0F));
@@ -224,12 +212,23 @@ __device__ __forceinline__ void splat_block(const SoftSplatBatch& b) {
   }
 }
 
-__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(SoftSplatBatch b) {
-  splat_block<false>(b);
-}
-
-__global__ void __launch_bounds__(kPixelThreads) splat_all_grid(SoftSplatBatch b) {
-  splat_block<true>(b);
+// Le mouvement lu sur sa grille (kernels::MotionGrid), écrit à la taille de la source : le splat le lit
+// ensuite pixel par pixel, comme celui de son propre niveau.
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) motion_on_grid(MotionGridParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  const auto* motion = static_cast<const __half*>(p.motion);
+  const std::size_t grid =
+      static_cast<std::size_t>(p.motion_width) * static_cast<std::size_t>(p.motion_height);
+  const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const float u = (static_cast<float>(x) + 0.5F) / p.scale - 0.5F + p.x;
+  const float v = (static_cast<float>(y) + 0.5F) / p.scale - 0.5F + p.y;
+  auto* out = static_cast<__half*>(p.out);
+  const std::size_t i = at(x, y, p.width);
+  out[i] = __float2half_rn(bilinear(motion, p.motion_width, p.motion_height, u, v) * p.scale);
+  out[plane + i] = __float2half_rn(bilinear(motion + grid, p.motion_width, p.motion_height, u, v) * p.scale);
+  out[2 * plane + i] = __float2half_rn(bilinear(motion + 2 * grid, p.motion_width, p.motion_height, u, v));
 }
 
 // Deux pixels voisins par fil : sommes lues en float2 et sorties écrites en half2 quand le travail
@@ -349,17 +348,21 @@ cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t
   const dim3 block(kBlock, kBlock);
   const auto rows = static_cast<unsigned>(tiles_across(height));
   const auto jobs = static_cast<unsigned>(batch.count);
-  bool grid = false;
-  for (int j = 0; j < batch.count; ++j) grid = grid || batch.jobs[j].grid_scale != 0.0F;
-  const dim3 tiles(static_cast<unsigned>(tiles_across(width)), rows, jobs);
-  if (grid) {
-    splat_all_grid<<<tiles, block, 0, stream>>>(batch);
-  } else {
-    splat_all<<<tiles, block, 0, stream>>>(batch);
-  }
+  splat_all<<<dim3(static_cast<unsigned>(tiles_across(width)), rows, jobs), block, 0, stream>>>(batch);
   if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   normalize_all<<<dim3(static_cast<unsigned>(tiles_across((width + 1) / 2)), rows, jobs), block, 0, stream>>>(
       batch);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_motion_on_grid(const MotionGridParams& params, cudaStream_t stream) {
+  if (params.width < 1 || params.height < 1 || params.motion_width < 1 || params.motion_height < 1 ||
+      !(params.scale > 0.0F))
+    return cudaErrorInvalidValue;
+  const dim3 block(kBlock, kBlock);
+  motion_on_grid<<<dim3(static_cast<unsigned>(tiles_across(params.width)),
+                        static_cast<unsigned>(tiles_across(params.height))),
+                   block, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

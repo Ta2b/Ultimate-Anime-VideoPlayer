@@ -257,6 +257,7 @@ TensorRtBackend::~TensorRtBackend() {
   }
   if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
   if (splat_sums_ != nullptr) cudaFree(splat_sums_);
+  if (grid_motion_ != nullptr) cudaFree(grid_motion_);
   if (deband_out_ != nullptr) cudaFree(deband_out_);
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();

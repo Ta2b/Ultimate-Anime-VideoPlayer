@@ -439,6 +439,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
   float* splat_sums_ = nullptr;
   std::size_t splat_bytes_ = 0;
+  // Les mouvements ramenés à la grille de leur source (SplatJob::grid), avant le splat.
+  void* grid_motion_ = nullptr;
+  std::size_t grid_motion_bytes_ = 0;
+  std::expected<void, Refusal> reserve_grid_motion(std::size_t bytes);
   std::size_t ingest_rows_size_ = 0;
   // Image ingérée avant son débandage (ingest avec IngestSpec::deband), à la taille de la plus grande vue.
   void* deband_out_ = nullptr;

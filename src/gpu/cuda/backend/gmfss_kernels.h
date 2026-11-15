@@ -20,14 +20,7 @@ struct SoftSplatParams {
   float* sums = nullptr;  // (channels + 1) plans FP32, le dernier pour les poids
   void* out = nullptr;    // 1 × channels × height × width, FP16 (un plan de plus avec coverage)
   int pairs = 0;          // rempli par launch_soft_splat_all : normalisation en half2
-  // Le mouvement sur sa grille (kernels::MotionGrid) : motion_width × motion_height, lu en bilinéaire ;
-  // grid_scale 0 : la grille de la source, le mouvement du pixel lui-même.
-  int motion_width = 0;
-  int motion_height = 0;
-  float grid_scale = 0.0F;
-  float grid_x = 0.0F;
-  float grid_y = 0.0F;
-  int coverage = 0;  // 1 : le plan channels de out reçoit la couverture
+  int coverage = 0;       // 1 : le plan channels de out reçoit la couverture
 };
 
 inline constexpr int kMaxSplatJobs = 8;
@@ -50,6 +43,22 @@ std::size_t soft_splat_sums_bytes(int width, int height, int channels);
 // [sums, sums + sums_bytes[), enfilées sur stream. cudaErrorInvalidValue hors de ce nombre.
 cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t sums_bytes,
                                   cudaStream_t stream);
+
+// Le mouvement d'une autre grille (kernels::MotionGrid) à la taille de la source, en FP16 : motion
+// 3 × motion_height × motion_width lu en bilinéaire, out 3 × height × width, le flot mis à l'échelle.
+struct MotionGridParams {
+  const void* motion = nullptr;
+  int motion_width = 0;
+  int motion_height = 0;
+  float scale = 1.0F;
+  float x = 0.0F;
+  float y = 0.0F;
+  void* out = nullptr;
+  int width = 0;
+  int height = 0;
+};
+
+cudaError_t launch_motion_on_grid(const MotionGridParams& params, cudaStream_t stream);
 
 // La composition à la taille de travail (spec gmfss_compose) : sources de travail splattées high_a, high_b
 // (4 plans out_width × out_height, la couverture en dernier), celles de RIFE low_a, low_b (4 plans
