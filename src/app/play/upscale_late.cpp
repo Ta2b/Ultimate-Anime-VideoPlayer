@@ -14,6 +14,11 @@
 namespace ajp::app::play {
 namespace {
 
+constexpr std::int64_t kGmfssCreditMaxUs = 120'000;
+// Ce que le crédit doit garder après la M d'une paire sous le seuil : la moitié du plein, pour les paires
+// fortes qui suivent.
+constexpr std::int64_t kGmfssSpareUs = kGmfssCreditMaxUs / 2;
+
 // L'écart de pts planifié entre deux instants qui se suivent ; 0 : inconnu (pas d'instant d'avant, pts absent
 // ou qui recule).
 std::int64_t planned_gap(std::int64_t before_us, std::int64_t pts_us) {
@@ -43,6 +48,7 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
   credit_gmfss(frame.pts_us);
   gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 &&
                   (gmfss_.credit_us < setup_.gmfss.cost_us || instant_late(frame, 0, cost));
+  gmfss_.spare = gmfss_.credit_us >= setup_.gmfss.cost_us + kGmfssSpareUs;
   if (!on) {
     planned_pts_ = kNoPts;  // les instants de la paire, neufs, valent 0 : inconnu
     return;
@@ -69,7 +75,6 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
 void UpscaleStage::credit_gmfss(std::int64_t pts_us) {
   // Une image d'après ajoute sa durée ; un saut en arrière (seek, nouvelle époque) repart plein.
   constexpr double kGmfssShare = 0.75;  // le reste : RIFE, ingestion, rendu
-  constexpr std::int64_t kGmfssCreditMaxUs = 120'000;
   if (pts_us == kNoPts) return;
   const std::int64_t last = std::exchange(gmfss_.credit_pts, pts_us);
   if (last == std::numeric_limits<std::int64_t>::min() || pts_us <= last || pts_us - last > 1'000'000) {

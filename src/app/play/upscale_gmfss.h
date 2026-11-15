@@ -79,6 +79,11 @@ struct GmfssBuffers {
   // serait passé reste à RIFE, en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
   bool behind = false;
   std::uint64_t behind_pairs = 0;  // paires fortes laissées à RIFE faute de temps
+  // Le crédit déborde (kGmfssSpareUs au-delà d'une M) : une paire qui bouge sous le seuil strong_px a aussi
+  // sa clé GMFSS. Le seuil ne fait plus que donner la priorité aux paires fortes. Décidé à l'arrivée de la
+  // paire (plan_gaps), avant que sa M ne prenne sur le crédit.
+  bool spare = false;
+  std::uint64_t spare_keys = 0;  // clés posées sur une paire sous le seuil
   // Le crédit de temps de GMFSS : chaque image source lui donne kGmfssShare de sa durée, chaque M lui coûte
   // GmfssSetup::cost_us ; sans crédit, la paire forte reste à RIFE. Le coût moyen tient dans la cadence, quel
   // que soit le retard que mesure l'horloge (elle le voit trop tard : la file du GPU l'a déjà pris). Plafonné

@@ -165,4 +165,31 @@ TEST_CASE("Étage gpu : le mélange au crédit de temps, une M plus chère que l
   CHECK(fusions <= 5);  // onze paires fortes : le crédit plein de départ, puis une sur trois environ
 }
 
+TEST_CASE("Étage gpu : le mélange, une clé sous le seuil quand le crédit déborde, aucune sinon",
+          "[app][stage][gmfss]") {
+  const bool spare = GENERATE(false, true);
+  INFO((spare ? "crédit qui déborde" : "crédit juste"));
+  Rig rig;
+  GmfssEngines gmfss;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.gmfss = gmfss.setup(GmfssUse::Middle);
+  // Plein à 120 ms : une M de 30 ms laisse la moitié du plein, une de 80 ms non.
+  s.gmfss.cost_us = spare ? 30'000 : 80'000;
+  s.gmfss.strong_px = 1.0e6F;  // aucune paire forte, quelle que soit la taille du banc
+  rig.start(std::move(s));
+  rig.backend.motion_max(8.0F);  // au-dessus du plancher
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(13));
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+  const std::size_t fusions = rig.backend.count("engine gmfss_fusion");
+  if (spare) {
+    CHECK(fusions >= 1);
+  } else {
+    CHECK(fusions == 0);
+  }
+}
+
 }  // namespace ajp::app::play

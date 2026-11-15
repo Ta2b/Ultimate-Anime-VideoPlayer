@@ -4,7 +4,8 @@
 // l'instant.
 //
 // Le mélange (GmfssUse::Middle) : une paire qui bouge fort (mouvement mesuré au seuil strong_px) a sa fusion
-// une seule fois, au milieu : l'image M. Chaque autre instant t est fait par RIFE mouvement sur la
+// une seule fois, au milieu : l'image M, la clé. Une paire qui bouge moins l'a aussi quand le crédit de
+// temps déborde (gmfss_.spare). Chaque autre instant t est fait par RIFE mouvement sur la
 // demi-paire (a, M) à 2t, ou (M, b) à 2t − 1, puis le warp de l'étage ; t = 1/2 est M elle-même. Le
 // mouvement y est deux fois plus petit, là où RIFE fait le moins de fantômes, et les formes viennent de
 // GMFSS. Mesuré sur Re:Zero (docs/reports/gmfss-union-qualite-2026-11-14.md). Les autres paires restent à
@@ -266,7 +267,16 @@ bool UpscaleStage::gmfss_pair() const {
   // (begin_motion_pair : le sien, ou celui de la précédente relu sans attente) ; le mélange n'a pas de paire
   // prise d'emblée à chaque instant (motion_direct), la passe du milieu de RIFE mesure chaque paire. Le
   // seuil est donné à 720 lignes : mis à la hauteur où RIFE mesure.
-  return gmfss_strong() && !gmfss_.behind;
+  // Sous le seuil, la clé ne se pose que si le crédit déborde (gmfss_.spare) et que la paire bouge assez
+  // pour que RIFE seul y laisse des fantômes.
+  if (gmfss_.behind) return false;
+  return gmfss_strong() || (gmfss_.spare && gmfss_moving());
+}
+
+bool UpscaleStage::gmfss_moving() const {
+  constexpr float kSpareFloorPx = 4.0F;  // à 720 lignes : en dessous, RIFE seul est déjà propre
+  if (setup_.gmfss.use != GmfssUse::Middle || smooth_first_ || copy_pair_) return false;
+  return pair_motion_ >= kSpareFloorPx * static_cast<float>(setup_.rife_height) / 720.0F;
 }
 
 bool UpscaleStage::gmfss_strong() const {
@@ -440,6 +450,7 @@ std::expected<void, Refusal> UpscaleStage::make_middle() {
       return ok;
   }
   gmfss_.credit_us -= setup_.gmfss.cost_us;
+  if (!gmfss_strong()) ++gmfss_.spare_keys;
   const auto ready = [this] {
     gmfss_.middle_ready = true;
     gmfss_.middle_serial = ++serials_;  // jamais celui d'une source
