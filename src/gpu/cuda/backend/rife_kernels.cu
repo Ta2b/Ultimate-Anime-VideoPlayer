@@ -151,22 +151,37 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) spline36_enl
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.out_width || y >= p.out_height) return;
+  // Les prises verticales se calculent ligne par ligne, poids non normalisés divisés à la fin : garder les
+  // deux jeux de six prises débordait de la borne de 64 registres sur sm_75.
   const SplineTaps tx = spline_taps(x, p.in_width, p.out_width);
-  const SplineTaps ty = spline_taps(y, p.in_height, p.out_height);
+  const float center =
+      (static_cast<float>(y) + 0.5F) * static_cast<float>(p.in_height) / static_cast<float>(p.out_height) -
+      0.5F;
+  const int first = static_cast<int>(floorf(center)) - 2;
   const std::size_t in_plane = static_cast<std::size_t>(p.in_width) * static_cast<std::size_t>(p.in_height);
   const std::size_t out_plane =
       static_cast<std::size_t>(p.out_width) * static_cast<std::size_t>(p.out_height);
   const auto* in = static_cast<const __half*>(p.in);
   auto* out = static_cast<__half*>(p.out);
   float sum[3] = {0.0F, 0.0F, 0.0F};
+  float total = 0.0F;
   for (int j = 0; j < kSplineTaps; ++j) {
+    const int source = first + j;
+    int row = source < 0 ? -source - 1 : source;
+    row = row >= p.in_height ? 2 * p.in_height - 1 - row : row;
+    row = min(max(row, 0), p.in_height - 1);
+    const float wy = spline36(center - static_cast<float>(source));
+    total += wy;
+    const __half* line = in + at(0, row, p.in_width);
+    float line_sum[3] = {0.0F, 0.0F, 0.0F};
     for (int i = 0; i < kSplineTaps; ++i) {
-      const float w = ty.weight[j] * tx.weight[i];
-      const std::size_t from = at(tx.at[i], ty.at[j], p.in_width);
+      const __half* px = line + tx.at[i];
       for (int c = 0; c < 3; ++c)
-        sum[c] += __half2float(in[static_cast<std::size_t>(c) * in_plane + from]) * w;
+        line_sum[c] += __half2float(px[static_cast<std::size_t>(c) * in_plane]) * tx.weight[i];
     }
+    for (int c = 0; c < 3; ++c) sum[c] += line_sum[c] * wy;
   }
+  for (float& v : sum) v /= total;
   const std::size_t to = at(x, y, p.out_width);
   for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * out_plane + to] = __float2half_rn(sum[c]);
 }
