@@ -159,9 +159,15 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
                                         const gpu::Tensor& /*out*/) override {
     return note("resample");
   }
-  std::expected<void, Refusal> gmfss_frames(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+  std::expected<void, Refusal> gmfss_frames(const gpu::Tensor& a, const gpu::Tensor& b,
                                             const gpu::Tensor& /*frames*/) override {
+    note_pair(a, b, gmfss_pairs_);
     return note("gmfss_frames");
+  }
+  // Les deux sources de chaque entrée du graphe « paire » de GMFSS, dans l'ordre.
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> gmfss_pairs() const {
+    const std::scoped_lock lock(mutex_);
+    return gmfss_pairs_;
   }
   // L'instant de chaque lot de splats (soft_splat_fill), dans l'ordre.
   std::expected<void, Refusal> soft_splat_fill(std::span<const gpu::KernelOps::SplatJob> jobs,
@@ -292,10 +298,12 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     const std::scoped_lock lock(mutex_);
     into.push_back(t);
   }
-  void note_pair(const gpu::Tensor& a, const gpu::Tensor& b) {
+  void note_pair(const gpu::Tensor& a, const gpu::Tensor& b) { note_pair(a, b, rife_pairs_); }
+  void note_pair(const gpu::Tensor& a, const gpu::Tensor& b,
+                 std::vector<std::pair<std::uint32_t, std::uint32_t>>& into) {
     const std::scoped_lock lock(mutex_);
     const gpu::PairScores ids = scores_of(a, b);
-    rife_pairs_.emplace_back(ids.left.value, ids.right.value);
+    into.emplace_back(ids.left.value, ids.right.value);
   }
   void note_warp(const gpu::Tensor& a, const gpu::Tensor& b) {
     const std::scoped_lock lock(mutex_);
@@ -309,6 +317,7 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::vector<std::pair<std::uint32_t, std::uint32_t>> warp_pairs_;
   std::vector<float> rife_ts_;
   std::vector<std::pair<std::uint32_t, std::uint32_t>> rife_pairs_;
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> gmfss_pairs_;
   mutable std::mutex mutex_;
   std::vector<std::string> log_;
   std::vector<std::string> laned_;

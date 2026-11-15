@@ -501,6 +501,8 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> fuse_gmfss(float t, const gpu::Tensor& padded);  // la fusion, sans recadrage
   std::expected<void, Refusal> run_gmfss_pair();   // le graphe « paire », sur sa voie, dans l'autre jeu
   std::expected<void, Refusal> run_gmfss_early();  // à l'arrivée : les fusions (seul) ou M (le mélange)
+  std::expected<void, Refusal> run_gmfss_ahead();  // la paire suivante en avance, dans l'autre jeu
+  void adopt_gmfss_ahead(const DecodedFrame& frame, bool taken);  // à l'arrivée de l'image d'après
   std::expected<void, Refusal> interpolate_middle(float t, const gpu::Tensor& a, const gpu::Tensor& b,
                                                   const Target& out);
   std::expected<void, Refusal> make_middle();            // M, une fois par paire forte
@@ -537,6 +539,7 @@ class UpscaleStage final : public RingStage {
   EarlyRuns early_;
   // À la fin de outputs() : la paire décidée et ses passes enfilées, quand elle le permet.
   std::expected<void, Refusal> run_early();
+  std::expected<void, Refusal> run_early_passes();
   bool early_possible() const;  // ce que demandent les passes à l'arrivée, RIFE comme GMFSS
   // Les tampons de la passe de la sortie output (second RIFE si half) ; nullopt : allocation refusée.
   std::optional<gpu::Motion> early_motion(std::uint32_t output, bool half);

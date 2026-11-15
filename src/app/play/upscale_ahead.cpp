@@ -36,6 +36,7 @@ std::expected<void, Refusal> UpscaleStage::allocate_ahead() {
 bool UpscaleStage::take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& spec) {
   const bool ready = ahead_.id == frame.id && ahead_.epoch == frame.epoch && ahead_.reduce == spec.reduce;
   ahead_.id.reset();
+  adopt_gmfss_ahead(frame, ready);
   if (!ready) {
     ahead_.ticket = 0;
     return false;

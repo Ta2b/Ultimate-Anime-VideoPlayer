@@ -49,6 +49,11 @@ bool UpscaleStage::early_possible() const {
 }
 
 std::expected<void, Refusal> UpscaleStage::run_early() {
+  if (auto ok = run_early_passes(); !ok) return ok;
+  return run_gmfss_ahead();  // derrière tout le travail de la paire en cours
+}
+
+std::expected<void, Refusal> UpscaleStage::run_early_passes() {
   early_.ready = false;
   early_.runs.fill(std::nullopt);
   if (gmfss_only()) return run_gmfss_early();

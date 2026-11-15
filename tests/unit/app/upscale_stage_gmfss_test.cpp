@@ -83,6 +83,14 @@ TEST_CASE("Étage gpu : GMFSS seul, la fusion à chaque instant, la paire une fo
   CHECK(rig.reported().empty());
   CHECK(rig.backend.count("engine gmfss_pair") == 3);
   CHECK(rig.backend.count("engine gmfss_fusion") == 6);
+  // Chaque paire une seule fois, sur ses deux images, qu'elle soit faite en avance (l'image d'après déjà
+  // derrière celle-ci) ou à l'arrivée.
+  const std::vector<std::pair<std::uint32_t, std::uint32_t>> fed = rig.backend.gmfss_pairs();
+  REQUIRE(fed.size() == 3);
+  for (std::size_t i = 0; i < fed.size(); ++i)
+    CHECK(fed[i] == std::pair{static_cast<std::uint32_t>(i + 1), static_cast<std::uint32_t>(i + 2)});
+  const std::vector<std::string> laned = rig.backend.laned();
+  CHECK(std::ranges::count(laned, std::string("pair gmfss_frames")) == 3);
   CHECK(rig.backend.count("engine rife") == 0);
   const std::vector<float> splats = rig.backend.splat_ts();
   REQUIRE(splats.size() == 6);

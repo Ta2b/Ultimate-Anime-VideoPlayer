@@ -247,6 +247,45 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_pair() {
   return {};
 }
 
+std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
+  // La paire en cours a eu son graphe « paire » (sinon le jeu de l'autre côté pourrait encore lui servir) ;
+  // le mélange ne le lance que si celle-ci bougeait fort : la suivante bougera sans doute de même. Rien
+  // pendant une tenue lissée, où l'image d'après n'est pas la B de la paire suivante.
+  if (setup_.gmfss.use == GmfssUse::Off || !gmfss_.pair_ready || gmfss_.ahead_queued) return {};
+  if ((!gmfss_only() && !gmfss_strong()) || smooth_first_ || smooth_second_ || !ahead_.id) return {};
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const std::uint32_t set = gmfss_.set ^ 1U;
+  const gpu::Tensor& next = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
+  const gpu::Lane back = lane_;
+  use_lane(gpu::Lane::Pair);
+  auto ok = ops.gmfss_frames(rife_source(current_), next, gmfss_.frames->tensor());
+  if (ok) {
+    const std::array inputs{gmfss_.frames->tensor()};
+    ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.pair, inputs, gmfss_.pair_outputs[set]),
+                     kMotionRefusalKey);
+  }
+  use_lane(back);
+  if (!ok) return ok;
+  gmfss_.ahead_queued = true;
+  gmfss_.ahead_frame = ahead_.id->value;
+  gmfss_.ahead_epoch = ahead_.epoch;
+  gmfss_.ahead_left = source_serial_[current_];
+  ++gmfss_.ahead_pairs;
+  return {};
+}
+
+void UpscaleStage::adopt_gmfss_ahead(const DecodedFrame& frame, bool taken) {
+  // next_source vient de passer : l'image de gauche est current_ ^ 1. La paire faite en avance sert si
+  // l'image d'après est bien celle-ci, prise telle qu'ingérée en avance, à droite de la même image.
+  const bool same = taken && gmfss_.ahead_queued && gmfss_.ahead_frame == frame.id.value &&
+                    gmfss_.ahead_epoch == frame.epoch && gmfss_.ahead_left == source_serial_[current_ ^ 1U];
+  gmfss_.ahead_queued = false;
+  if (!same) return;
+  gmfss_.set ^= 1U;
+  gmfss_.pair_ready = true;
+  ++gmfss_.ahead_used;
+}
+
 std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor& padded) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (!gmfss_.pair_ready) {  // le graphe « paire » sert toutes les images de la paire

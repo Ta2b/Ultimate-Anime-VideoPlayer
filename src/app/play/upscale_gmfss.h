@@ -66,6 +66,15 @@ struct GmfssBuffers {
   // reste à RIFE, qui la rattrape en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
   bool behind = false;
   std::uint64_t behind_pairs = 0;  // paires fortes laissées à RIFE pour ce retard
+  // La paire suivante en avance (upscale_gmfss.cpp, run_gmfss_ahead) : dès que l'image d'après est ingérée en
+  // avance, son graphe « paire » part dans l'autre jeu, derrière le travail de la paire en cours. À son
+  // arrivée, la paire n'attend plus ses 12 à 35 ms : le pic tombe pendant la paire d'avant.
+  bool ahead_queued = false;
+  std::uint32_t ahead_frame = 0;  // SourceId::value de l'image d'après
+  std::uint32_t ahead_epoch = 0;
+  std::uint64_t ahead_left = 0;   // numéro de l'image de gauche (source_serial_)
+  std::uint64_t ahead_pairs = 0;  // paires lancées en avance
+  std::uint64_t ahead_used = 0;   // et reprises à l'arrivée de leur image
   // Passes à l'arrivée (GMFSS seul, upscale_early.cpp) : la fusion de chaque instant de la paire, enfilée dès
   // outputs() dans son tampon (1 × 3 × ph × pw) au lieu d'une au slot, recadrée au slot. early_t[k] < 0 :
   // rien d'enfilé pour la sortie k.
