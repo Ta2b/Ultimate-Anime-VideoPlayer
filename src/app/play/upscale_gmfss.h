@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -78,6 +79,14 @@ struct GmfssBuffers {
   // serait passé reste à RIFE, en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
   bool behind = false;
   std::uint64_t behind_pairs = 0;  // paires fortes laissées à RIFE faute de temps
+  // Le crédit de temps de GMFSS : chaque image source lui donne kGmfssShare de sa durée, chaque M lui coûte
+  // GmfssSetup::cost_us ; sans crédit, la paire forte reste à RIFE. Le coût moyen tient dans la cadence, quel
+  // que soit le retard que mesure l'horloge (elle le voit trop tard : la file du GPU l'a déjà pris). Plafonné
+  // à kGmfssCreditMaxUs, l'avance de l'anneau : les dessins tenus en remplissent assez pour les paires
+  // fortes.
+  std::int64_t credit_us = 0;
+  std::int64_t credit_step_us = 0;  // ce que la dernière image a donné : la paire en avance s'y fie
+  std::int64_t credit_pts = std::numeric_limits<std::int64_t>::min();
   // La paire suivante en avance (upscale_gmfss.cpp, run_gmfss_ahead) : dès que l'image d'après est ingérée en
   // avance, son graphe « paire » part dans l'autre jeu, derrière le travail de la paire en cours. À son
   // arrivée, la paire n'attend plus ses 12 à 35 ms : le pic tombe pendant la paire d'avant.

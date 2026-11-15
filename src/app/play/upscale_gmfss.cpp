@@ -312,6 +312,8 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_ahead() {
   // pendant une tenue lissée, où l'image d'après n'est pas la B de la paire suivante.
   if (setup_.gmfss.use == GmfssUse::Off || !gmfss_.pair_ready || gmfss_.ahead_queued) return {};
   if ((!gmfss_only() && !gmfss_strong()) || smooth_first_ || smooth_second_ || !ahead_.id) return {};
+  // Le mélange sans le crédit d'une M à l'image d'après : la paire suivante ira à RIFE, rien à préparer.
+  if (!gmfss_only() && gmfss_.credit_us + gmfss_.credit_step_us < setup_.gmfss.cost_us) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const std::uint32_t set = gmfss_.set ^ 1U;
   const gpu::Tensor& next = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
@@ -426,6 +428,7 @@ std::expected<void, Refusal> UpscaleStage::make_middle() {
         !ok)
       return ok;
   }
+  gmfss_.credit_us -= setup_.gmfss.cost_us;
   const auto ready = [this] {
     gmfss_.middle_ready = true;
     gmfss_.middle_serial = ++serials_;  // jamais celui d'une source

@@ -731,6 +731,7 @@ class UpscaleStage final : public RingStage {
   // L'instant de la sortie serait passé quand une image soumise maintenant paraîtrait.
   // margin_us : le temps réel qu'un travail de plus ajouterait avant l'image (le coût de GMFSS).
   bool instant_late(const DecodedFrame& frame, std::uint32_t output, std::int64_t margin_us = 0) const;
+  void credit_gmfss(std::int64_t pts_us);  // le crédit de temps de GMFSS (GmfssBuffers::credit_us)
   // Annonce la paire en cours au compte du mode auto ou du Rapide (`free`), avec ce qu'elle vaut si elle
   // n'a qu'une image (LonePair, A12-12). `runs` : l'interpolation tourne sur cette paire.
   void expect_pair(std::uint32_t id, int written, std::int64_t lead_us, bool free, bool steady, bool runs);

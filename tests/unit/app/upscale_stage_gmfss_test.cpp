@@ -141,4 +141,28 @@ TEST_CASE("Étage gpu : GMFSS refusé sans ses graphes, ou seul à côté de RIF
   CHECK(none.error().code == RefusalCode::FieldMissing);
 }
 
+TEST_CASE("Étage gpu : le mélange au crédit de temps, une M plus chère que la durée d'une image reste rare",
+          "[app][stage][gmfss]") {
+  Rig rig;
+  GmfssEngines gmfss;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.gmfss = gmfss.setup(GmfssUse::Middle);
+  s.gmfss.cost_us = 100'000;  // plus que les trois quarts de deux images : une M toutes les trois au plus
+  rig.start(std::move(s));
+  rig.backend.motion_max(40.0F);
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(13));
+  rig.feed(5, 8);
+  REQUIRE(rig.collect(29));
+  rig.feed(9, 12);
+  REQUIRE(rig.collect(45));
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+  const std::size_t fusions = rig.backend.count("engine gmfss_fusion");
+  CHECK(fusions >= 1);
+  CHECK(fusions <= 5);  // onze paires fortes : le crédit plein de départ, puis une sur trois environ
+}
+
 }  // namespace ajp::app::play

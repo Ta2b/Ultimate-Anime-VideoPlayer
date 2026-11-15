@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <expected>
+#include <limits>
 #include <utility>
 
 #include "app/play/frame_latency.h"
@@ -39,7 +40,9 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
   // GMFSS prend les paires fortes que le temps laisse.
   // La paire déjà faite en avance (adopt_gmfss_ahead) n'en coûte plus que la fusion et les splats.
   const std::int64_t cost = setup_.gmfss.cost_us - (gmfss_.pair_ready ? setup_.gmfss.pair_us : 0);
-  gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 && instant_late(frame, 0, cost);
+  credit_gmfss(frame.pts_us);
+  gmfss_.behind = setup_.gmfss.use == GmfssUse::Middle && outputs_ > 1 &&
+                  (gmfss_.credit_us < setup_.gmfss.cost_us || instant_late(frame, 0, cost));
   if (!on) {
     planned_pts_ = kNoPts;  // les instants de la paire, neufs, valent 0 : inconnu
     return;
@@ -61,6 +64,21 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
     }
     if (kept < outputs_) instants_[kept++].gap_us = gap;
   }
+}
+
+void UpscaleStage::credit_gmfss(std::int64_t pts_us) {
+  // Une image d'après ajoute sa durée ; un saut en arrière (seek, nouvelle époque) repart plein.
+  constexpr double kGmfssShare = 0.75;  // le reste : RIFE, ingestion, rendu
+  constexpr std::int64_t kGmfssCreditMaxUs = 120'000;
+  if (pts_us == kNoPts) return;
+  const std::int64_t last = std::exchange(gmfss_.credit_pts, pts_us);
+  if (last == std::numeric_limits<std::int64_t>::min() || pts_us <= last || pts_us - last > 1'000'000) {
+    gmfss_.credit_us = kGmfssCreditMaxUs;
+    return;
+  }
+  const auto earned = static_cast<std::int64_t>(static_cast<double>(pts_us - last) * kGmfssShare);
+  gmfss_.credit_step_us = earned;
+  gmfss_.credit_us = std::min(gmfss_.credit_us + earned, kGmfssCreditMaxUs);
 }
 
 std::int64_t UpscaleStage::planned_gap_us(std::uint32_t output) const {
