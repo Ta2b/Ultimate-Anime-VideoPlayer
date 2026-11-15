@@ -105,6 +105,72 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) area_reduce(
     out[static_cast<std::size_t>(c) * out_plane + to] = __float2half_rn(sum[c] * norm);
 }
 
+// kernels::spline36 en float, côté appareil.
+__device__ float spline36(float x) {
+  x = fabsf(x);
+  if (x < 1.0F) return ((13.0F / 11.0F * x - 453.0F / 209.0F) * x - 3.0F / 209.0F) * x + 1.0F;
+  if (x < 2.0F) {
+    x -= 1.0F;
+    return ((-6.0F / 11.0F * x + 270.0F / 209.0F) * x - 156.0F / 209.0F) * x;
+  }
+  if (x < 3.0F) {
+    x -= 2.0F;
+    return ((1.0F / 11.0F * x - 45.0F / 209.0F) * x + 26.0F / 209.0F) * x;
+  }
+  return 0.0F;
+}
+
+constexpr int kSplineTaps = 6;
+
+// Les six prises d'un axe autour du centre source de la sortie i (compute_weights de kernels/ref/resample.h),
+// indices passés au miroir du demi-échantillon (kernels::mirror_index) et poids normalisés à 1.
+struct SplineTaps {
+  int at[kSplineTaps];
+  float weight[kSplineTaps];
+};
+
+__device__ SplineTaps spline_taps(int i, int in_size, int out_size) {
+  const float center =
+      (static_cast<float>(i) + 0.5F) * static_cast<float>(in_size) / static_cast<float>(out_size) - 0.5F;
+  const int first = static_cast<int>(floorf(center)) - 2;
+  SplineTaps taps{};
+  float total = 0.0F;
+  for (int k = 0; k < kSplineTaps; ++k) {
+    const int source = first + k;
+    int mirrored = source < 0 ? -source - 1 : source;
+    mirrored = mirrored >= in_size ? 2 * in_size - 1 - mirrored : mirrored;
+    taps.at[k] = min(max(mirrored, 0), in_size - 1);
+    taps.weight[k] = spline36(center - static_cast<float>(source));
+    total += taps.weight[k];
+  }
+  for (float& w : taps.weight) w /= total;
+  return taps;
+}
+
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) spline36_enlarge(AreaReduceParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.out_width || y >= p.out_height) return;
+  const SplineTaps tx = spline_taps(x, p.in_width, p.out_width);
+  const SplineTaps ty = spline_taps(y, p.in_height, p.out_height);
+  const std::size_t in_plane = static_cast<std::size_t>(p.in_width) * static_cast<std::size_t>(p.in_height);
+  const std::size_t out_plane =
+      static_cast<std::size_t>(p.out_width) * static_cast<std::size_t>(p.out_height);
+  const auto* in = static_cast<const __half*>(p.in);
+  auto* out = static_cast<__half*>(p.out);
+  float sum[3] = {0.0F, 0.0F, 0.0F};
+  for (int j = 0; j < kSplineTaps; ++j) {
+    for (int i = 0; i < kSplineTaps; ++i) {
+      const float w = ty.weight[j] * tx.weight[i];
+      const std::size_t from = at(tx.at[i], ty.at[j], p.in_width);
+      for (int c = 0; c < 3; ++c)
+        sum[c] += __half2float(in[static_cast<std::size_t>(c) * in_plane + from]) * w;
+    }
+  }
+  const std::size_t to = at(x, y, p.out_width);
+  for (int c = 0; c < 3; ++c) out[static_cast<std::size_t>(c) * out_plane + to] = __float2half_rn(sum[c]);
+}
+
 // Luma du pixel pointé dans le plan R de trois plans RGB consécutifs, aux coefficients de la source.
 __device__ float luma(const __half* red, std::size_t plane, float kr, float kb) {
   return kr * __half2float(red[0]) + (1.0F - kr - kb) * __half2float(red[plane]) +
@@ -159,6 +225,12 @@ cudaError_t launch_rife_crop(const RifeCropParams& params, cudaStream_t stream) 
 
 cudaError_t launch_area_reduce(const AreaReduceParams& params, cudaStream_t stream) {
   area_reduce<<<grid_for(params.out_width, params.out_height), dim3(kBlock, kBlock), 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_spline36_enlarge(const AreaReduceParams& params, cudaStream_t stream) {
+  spline36_enlarge<<<grid_for(params.out_width, params.out_height), dim3(kBlock, kBlock), 0, stream>>>(
+      params);
   return cudaGetLastError();
 }
 

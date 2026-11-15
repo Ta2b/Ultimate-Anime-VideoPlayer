@@ -93,6 +93,11 @@ TEST_CASE("La durée attendue vient de la construction passée la plus proche en
   CHECK_THAT(expected_build_seconds(dir, "/m/other.onnx", 720 * 1280), WithinAbs(kDefaultBuildSeconds, 1e-9));
   CHECK_THAT(expected_build_seconds(dir / "absent", "/m/span.onnx", 720 * 1280),
              WithinAbs(kDefaultBuildSeconds, 1e-9));
+  // Sans historique, la durée donnée par l'appelant (GMFSS) : à 720p telle quelle, plus longue au-delà.
+  CHECK_THAT(expected_build_seconds(dir, "/m/other.onnx", 720 * 1280, 170.0), WithinAbs(170.0, 1e-9));
+  CHECK(expected_build_seconds(dir, "/m/other.onnx", 1152 * 1920, 170.0) > 170.0);
+  // L'historique du même modèle passe devant.
+  CHECK_THAT(expected_build_seconds(dir, "/m/span.onnx", 720 * 1280, 170.0), WithinAbs(60.0, 1e-9));
   std::filesystem::remove_all(dir);
 }
 

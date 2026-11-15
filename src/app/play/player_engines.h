@@ -46,7 +46,10 @@ struct EngineLabel {
   int width = 0;        // entrée du moteur
   int height = 0;
   double expected_s = kDefaultBuildSeconds;
-  bool l2_tiling = true;  // gpu::ModelSpec::l2_tiling
+  // Durée annoncée sans construction passée du même modèle (expected_build_seconds) : GMFSS dure bien
+  // plus que les autres.
+  double first_build_s = kDefaultBuildSeconds;
+  bool tuned = true;  // gpu::ModelSpec::tuned
 };
 
 // Instantané demandé (--snapshot) : pris pendant la première construction de moteur qui dure jusqu'à

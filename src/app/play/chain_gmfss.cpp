@@ -18,6 +18,14 @@
 #include "kernels/spec/rife.h"
 
 namespace ajp::app::play {
+namespace {
+
+// Premières constructions mesurées dans le lecteur sur une RTX 4070 Ti (travail 720p) :
+// paire 1280x768 en 179 s, fusion 640x384 en 218 s (trtexec, mêmes réglages).
+constexpr double kGmfssPairFirstBuildS = 170.0;    // 179 s à 1280x768, ramenés à 1280x720
+constexpr double kGmfssFusionFirstBuildS = 220.0;  // à 640x384, sous kReferencePixels : telle quelle
+
+}  // namespace
 
 GmfssUse gmfss_wanted(const PlaySettings& settings) {
   if (settings.rife_factor < 2) return GmfssUse::Off;
@@ -63,23 +71,26 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   };
   auto fixed = static_gmfss(*found, g.padded_width, g.padded_height, paths::derived_models(p.paths));
   if (!fixed) return refused(fixed.error());
+  // Les deux graphes sans pavage L2 ni niveau 5 (gpu::ModelSpec::tuned). first_s : la durée annoncée tant
+  // qu'aucune construction passée ne la donne, mesurée sur une RTX 4070 Ti en travail 720p.
   const auto build = [&](const std::filesystem::path& model, const gpu::Shape& shape, std::string name,
-                         bool tiled, gpu::Lane lane) {
+                         gpu::Lane lane, double first_s) {
     return prepare_engine(p, init, *c.backend, model, shape,
                           EngineLabel{.name = std::move(name),
                                       .model = core::to_utf8(model.stem()),
-                                      .width = g.padded_width,
-                                      .height = g.padded_height,
-                                      .l2_tiling = tiled},
+                                      .width = static_cast<int>(shape.dims[3]),
+                                      .height = static_cast<int>(shape.dims[2]),
+                                      .first_build_s = first_s,
+                                      .tuned = false},
                           lane);
   };
   auto pair =
       build(fixed->pair, gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
-            i18n::tr("GMFSS (pair)"), false, gpu::Lane::Pair);  // sans pavage L2 : gpu::ModelSpec::l2_tiling
+            i18n::tr("GMFSS (pair)"), gpu::Lane::Pair, kGmfssPairFirstBuildS);
   if (!pair) return refused(pair.error());
   if (!*pair) return std::nullopt;
   auto fusion = build(fixed->fusion, gpu::Shape{.dims = {1, 3, g.padded_height / 2, g.padded_width / 2}},
-                      i18n::tr("GMFSS (fusion)"), true, gpu::Lane::Interpolate);
+                      i18n::tr("GMFSS (fusion)"), gpu::Lane::Interpolate, kGmfssFusionFirstBuildS);
   if (!fusion) return refused(fusion.error());
   if (!*fusion) return std::nullopt;
   c.gmfss_pair = std::move(**pair);

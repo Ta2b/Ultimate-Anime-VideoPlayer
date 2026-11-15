@@ -95,7 +95,7 @@ namespace ajp::gpu {
 // 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
 // 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, RTX 40 et RTX 50).
 // 43 : GMFSS Fortuna Union revient (KernelOps::gmfss_frames, SplatJob, soft_splat_fill ; BackendCaps::gmfss).
-// 44 : ModelSpec::l2_tiling (la paire GMFSS se construit sans le pavage L2).
+// 44 : ModelSpec::tuned (les graphes de GMFSS se construisent sans pavage L2 ni niveau 5).
 inline constexpr int kBackendAbi = 44;
 
 using DeviceUuid = ajp::DeviceUuid;
@@ -203,10 +203,13 @@ struct ModelSpec {
   std::filesystem::path onnx_path;
   std::string sha256;  // du fichier ONNX
   TensorType precision = TensorType::F16;
-  // Pavage L2 de TensorRT (prepare/trtexec_command.h, kTilingOption) à la construction. La paire GMFSS s'en
-  // passe : avec lui, TensorRT 11.3 rejette des centaines de tactiques Myelin (« inputTensors.size() ==
-  // inputs.size() ») et la construction passe de dix à plus de trente-cinq minutes sur une RTX 4070 Ti.
-  bool l2_tiling = true;
+  // Réglages de construction de TensorRT au-delà du défaut : pavage L2 (prepare/trtexec_command.h,
+  // kTilingOption) et, pour un petit graphe à GridSample, niveau d'optimisation 5 (prepare/model_source.h,
+  // kTunedMaxNodes). Les deux graphes de GMFSS s'en passent : le pavage fait rejeter à TensorRT 11.3 des
+  // centaines de tactiques Myelin et la construction dépasse le délai (paire, fusion à 960x576) ; le niveau 5
+  // triple celle de la fusion (692 s au lieu de 218 s à 640x384 sur une RTX 4070 Ti) pour un moteur 6 % plus
+  // lent.
+  bool tuned = true;
 };
 
 // Formes d'entrée pour lesquelles construire le moteur (min, opt, max), NCHW.

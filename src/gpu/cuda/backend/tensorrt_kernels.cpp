@@ -420,14 +420,15 @@ std::expected<void, Refusal> TensorRtBackend::finish_slot(const ImportedSlot& sl
 
 // À forme égale, un rééchantillonnage est l'identité : une copie appareil → appareil, dans l'ordre de la
 // file (DistilDRBA, côté tenu). Plus petit, en Area : la réduction de area_reduce (rife_kernels.h), que
-// l'échelle par paire demande pour a et b à demi-taille (upscale_half.cpp). Les autres formes et les autres
-// filtres restent refusés (not_here).
+// l'échelle par paire demande pour a et b à demi-taille (upscale_half.cpp). Plus grand, en Spline36 :
+// l'image du milieu de GMFSS portée à la taille du warp (upscale_gmfss.cpp). Les autres formes et les
+// autres filtres restent refusés (not_here).
 std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels::Filter filter,
                                                        const Tensor& out) {
   if (in.handle == 0 || out.handle == 0 || in.type != out.type || in.type != TensorType::F16) {
     return not_here("resample");
   }
-  if (in.shape != out.shape) return area_reduce(in, filter, out);
+  if (in.shape != out.shape) return rescale(in, filter, out);
   const std::size_t bytes =
       static_cast<std::size_t>(in.shape.dims[0] * in.shape.dims[1] * in.shape.dims[2] * in.shape.dims[3]) *
       sizeof(std::uint16_t);
@@ -441,15 +442,16 @@ std::expected<void, Refusal> TensorRtBackend::resample(const Tensor& in, kernels
   return {};
 }
 
-std::expected<void, Refusal> TensorRtBackend::area_reduce(const Tensor& in, kernels::Filter filter,
-                                                          const Tensor& out) {
+std::expected<void, Refusal> TensorRtBackend::rescale(const Tensor& in, kernels::Filter filter,
+                                                      const Tensor& out) {
   const auto rgb = [](const Tensor& t) {
     return t.shape.dims[0] == 1 && t.shape.dims[1] == 3 && t.shape.dims[2] > 0 && t.shape.dims[3] > 0;
   };
-  if (filter != kernels::Filter::Area || !rgb(in) || !rgb(out) || out.shape.dims[2] > in.shape.dims[2] ||
-      out.shape.dims[3] > in.shape.dims[3]) {
+  if (!rgb(in) || !rgb(out)) return not_here("resample");
+  const bool smaller = out.shape.dims[2] <= in.shape.dims[2] && out.shape.dims[3] <= in.shape.dims[3];
+  const bool larger = out.shape.dims[2] >= in.shape.dims[2] && out.shape.dims[3] >= in.shape.dims[3];
+  if (!(smaller && filter == kernels::Filter::Area) && !(larger && filter == kernels::Filter::Spline36))
     return not_here("resample");
-  }
   const AreaReduceParams params{.in = address(in),
                                 .in_width = static_cast<int>(in.shape.dims[3]),
                                 .in_height = static_cast<int>(in.shape.dims[2]),
@@ -458,6 +460,13 @@ std::expected<void, Refusal> TensorRtBackend::area_reduce(const Tensor& in, kern
                                 .out_height = static_cast<int>(out.shape.dims[2])};
   if (auto ok = bind(); !ok) return ok;
   if (auto ok = order({in.handle}, {out.handle}); !ok) return ok;
+  if (!smaller) {
+    GpuTiming& timing = stage("agrandissement Spline36");
+    timing.begin(stream_);
+    auto launched = cuda_check(launch_spline36_enlarge(params, stream_), "spline36_enlarge<<<>>>");
+    timing.end(stream_);
+    return launched;
+  }
   GpuTiming& timing = stage("réduction Area");
   timing.begin(stream_);
   auto launched = cuda_check(launch_area_reduce(params, stream_), "area_reduce<<<>>>");

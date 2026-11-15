@@ -227,7 +227,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
       "sha256", [onnx = std::filesystem::path(onnx)] { return prepare::sha256_file_known(onnx); });
   if (!sha256) return std::unexpected(std::move(sha256.error()));
   label.backend = backend.capabilities().name;
-  label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height);
+  label.expected_s = expected_build_seconds(p.paths.engines, onnx, std::int64_t{label.width} * label.height,
+                                            label.first_build_s);
   // Un moteur repris du cache que le runtime refuse au chargement (pilote mis à jour ou changé, plan abîmé
   // sans changer de taille) est mis de côté et reconstruit une fois : sans cela, « Réessayer » rendait le
   // même fichier à chaque ouverture, jusqu'à un effacement du cache à la main (C05-01).
@@ -238,7 +239,7 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
                                                   .model = {.id = core::to_utf8(onnx.stem()),
                                                             .onnx_path = onnx,
                                                             .sha256 = *sha256,
-                                                            .l2_tiling = label.l2_tiling},
+                                                            .tuned = label.tuned},
                                                   .shapes = {.min = shape, .opt = shape, .max = shape},
                                                   .builder = p.builder,
                                                   .wake = &LoopWake::push,

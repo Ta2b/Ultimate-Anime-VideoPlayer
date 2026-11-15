@@ -75,9 +75,9 @@ bool built_from(const LoadedEngine& engine, const PastBuild& past);
 
 // Durée attendue pour construire onnx à pixels (hauteur × largeur de l'entrée) : la construction
 // passée du même modèle la plus proche en pixels, allongée en pixels^0,8 pour une entrée plus grande
-// (SPAN : 60 s en 720p, 116 s en 1080p sur la 4070 Ti), jamais raccourcie ; kDefaultBuildSeconds
-// sans historique.
+// (SPAN : 60 s en 720p, 116 s en 1080p sur la 4070 Ti), jamais raccourcie ; sans historique, first_s
+// (kDefaultBuildSeconds par défaut) à kReferencePixels, allongé de même.
 double expected_build_seconds(const std::filesystem::path& cache_dir, const std::filesystem::path& onnx,
-                              std::int64_t pixels);
+                              std::int64_t pixels, double first_s = kDefaultBuildSeconds);
 
 }  // namespace ajp::app::play

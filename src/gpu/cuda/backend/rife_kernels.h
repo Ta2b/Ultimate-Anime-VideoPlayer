@@ -60,6 +60,12 @@ struct AreaReduceParams {
 
 cudaError_t launch_area_reduce(const AreaReduceParams& params, cudaStream_t stream);
 
+// Agrandissement Spline36 (kernels/spec/resample.h, support 3, six prises par axe, bords en miroir, centres
+// alignés comme zimg) : l'image du milieu de GMFSS, faite à la taille de RIFE, portée à celle du travail
+// pour le warp (upscale_gmfss.cpp, make_middle). Mêmes champs que la réduction, la sortie au moins aussi
+// grande.
+cudaError_t launch_spline36_enlarge(const AreaReduceParams& params, cudaStream_t stream);
+
 // Mesures d'une paire : total = Σ |Ya − Yb| (Y en [0, 1], BT.709 sur le RGB), worst = pire bloc
 // 16 × 16, moyenne des écarts × levels × 256 tronquée (1/256 de niveau 8 bits). Les deux sorties
 // sont remises à zéro par l'appelant avant le lancement.

@@ -222,7 +222,7 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
   BuildPlan plan{.settings = engine_settings(*recipe, config.input_name, *profile),
                  .label = shapes_label(shapes)};
   plan.command = sanitize_trt11(plan.settings);
-  if (!model.l2_tiling) {
+  if (!model.tuned) {
     // Haché dans la clé : un moteur pavé ne sert pas à sa place. trtexec_arguments n'ajoute alors pas
     // kTilingOption.
     constexpr std::string_view kNoTiling = " --tilingOptimizationLevel=0";

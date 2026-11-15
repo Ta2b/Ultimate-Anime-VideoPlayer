@@ -307,7 +307,7 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
 std::expected<void, Refusal> UpscaleStage::make_middle() {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto ok = run_gmfss(0.5F, gmfss_.middle->tensor()); !ok) return ok;
-  if (gmfss_.work) {  // RIFE plus petit que le travail (source 4K) : M agrandie pour le warp
+  if (gmfss_.work) {  // RIFE plus petit que le travail (travail 1080p, RIFE 720p) : M agrandie pour le warp
     if (auto ok = ops.resample(gmfss_.middle->tensor(), kernels::Filter::Spline36, gmfss_.work->tensor());
         !ok)
       return ok;

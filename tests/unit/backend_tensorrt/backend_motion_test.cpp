@@ -22,6 +22,7 @@
 #include "gpu/ir/interpreter.h"
 #include "kernels/ref/color.h"
 #include "kernels/ref/half.h"
+#include "kernels/ref/resample.h"
 #include "kernels/ref/warp.h"
 #include "kernels/spec/detect.h"
 #include "kernels/spec/resample.h"
@@ -336,9 +337,49 @@ TEST_CASE("Backend TensorRT : réduction Area de moitié, celle de l'échelle pa
     }
   }
   CHECK(worst < 1e-3);
-  // Agrandir n'est pas une réduction Area : refusé, comme avant.
+  // Agrandir n'est pas une réduction Area : refusé ; réduire en Spline36 non plus.
   CHECK_FALSE(
       loaded.backend->kernels()->resample((*half)->tensor(), kernels::Filter::Area, (*full)->tensor()));
+  CHECK_FALSE(
+      loaded.backend->kernels()->resample((*full)->tensor(), kernels::Filter::Spline36, (*half)->tensor()));
+}
+
+TEST_CASE("Backend TensorRT : agrandissement Spline36, celui de l'image du milieu de GMFSS",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  constexpr int w = 40;  // 40x24 vers 60x36 : le rapport 1,5 de 720p à 1080p
+  constexpr int h = 24;
+  constexpr int ow = 60;
+  constexpr int oh = 36;
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  auto small = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto large = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, oh, ow}});
+  REQUIRE(small);
+  REQUIRE(large);
+  const std::vector<float> values = ramp(w, h);
+  upload((*small)->tensor(), values);
+  REQUIRE(
+      loaded.backend->kernels()->resample((*small)->tensor(), kernels::Filter::Spline36, (*large)->tensor()));
+  const auto got = download((*large)->tensor());
+  kernels::RgbImage in(w, h);
+  for (int c = 0; c < 3; ++c) {
+    for (int i = 0; i < w * h; ++i) {
+      in.planes[static_cast<std::size_t>(c)].data[static_cast<std::size_t>(i)] =
+          kernels::ref::round_to_half(values[static_cast<std::size_t>(c * w * h + i)]);
+    }
+  }
+  const auto want = kernels::ref::resize(in, ow, oh, kernels::Filter::Spline36);
+  REQUIRE(want);
+  double worst = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    for (int i = 0; i < ow * oh; ++i) {
+      const float expected = want->planes[static_cast<std::size_t>(c)].data[static_cast<std::size_t>(i)];
+      const float out = got[static_cast<std::size_t>(c * ow * oh + i)];
+      worst = std::max(worst, static_cast<double>(std::fabs(out - expected)));
+    }
+  }
+  CHECK(worst < 2e-3);  // FP16 en sortie, poids float d'un seul passage au lieu de deux
 }
 
 TEST_CASE("Backend TensorRT : mesures d'une paire, coupe de scène et pire bloc",

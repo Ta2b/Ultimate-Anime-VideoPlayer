@@ -217,7 +217,7 @@ std::vector<PastBuild> past_builds_cached(const std::filesystem::path& cache_dir
 }  // namespace
 
 double expected_build_seconds(const std::filesystem::path& cache_dir, const std::filesystem::path& onnx,
-                              std::int64_t pixels) {
+                              std::int64_t pixels, double first_s) {
   std::optional<PastBuild> nearest;
   double nearest_distance = 0.0;
   for (const PastBuild& past : past_builds_cached(cache_dir)) {
@@ -229,7 +229,7 @@ double expected_build_seconds(const std::filesystem::path& cache_dir, const std:
       nearest_distance = distance;
     }
   }
-  if (!nearest) return scaled(kDefaultBuildSeconds, kReferencePixels, pixels);
+  if (!nearest) return scaled(first_s, kReferencePixels, pixels);
   return scaled(nearest->seconds, nearest->pixels, pixels);
 }
 

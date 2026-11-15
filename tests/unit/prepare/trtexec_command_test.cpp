@@ -5,6 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "gpu/backend.h"
+#include "prepare/model_source.h"
+#include "prepare/onnx_scan.h"
 #include "prepare/sha256.h"
 #include "prepare/trtexec_progress.h"
 #include "support.h"
@@ -99,7 +102,7 @@ TEST_CASE("trtexec_arguments : chemins sans guillemets, timing cache en dernier"
 
 TEST_CASE("trtexec_arguments : un pavage L2 demandé par les réglages remplace celui d'office",
           "[prepare][trtexec]") {
-  // La paire GMFSS (gpu::ModelSpec::l2_tiling faux) : plan_build ajoute le niveau 0 aux réglages hachés.
+  // La paire GMFSS (gpu::ModelSpec::tuned faux) : plan_build ajoute le niveau 0 aux réglages hachés.
   const TrtexecPaths paths{
       .onnx = "/m/pair.onnx", .engine = "/c/e.engine", .timing_cache = "/c/timing.cache"};
   CHECK(trtexec_arguments(paths, "--skipInference --tilingOptimizationLevel=0") ==
@@ -210,4 +213,16 @@ TEST_CASE("La ligne de commande de trtexec est figée par la version de la clé"
                                 << " : la ligne a changé, monter la version puis ce condensé");
   CHECK(sha256_hex(all) == "5decb1ced627bd0ec7ec99f8b667b84e825ca36166e2793a1d6f802eca4dd981");
   CHECK(kCommandLineVersion == 2);
+}
+
+TEST_CASE("recipe_for : un petit graphe à GridSample au niveau 5, sauf ModelSpec::tuned faux (GMFSS)",
+          "[prepare][trtexec]") {
+  const OnnxSummary small{.grid_samples = 4, .nodes = 900};
+  ajp::gpu::ModelSpec model{.id = "fusion", .precision = ajp::gpu::TensorType::F16};
+  CHECK(recipe_for(model, small) == Recipe::Fp32IslandsTuned);
+  model.tuned = false;
+  CHECK(recipe_for(model, small) == Recipe::Fp32Islands);
+  const OnnxSummary large{.grid_samples = 4, .nodes = kTunedMaxNodes + 1};
+  model.tuned = true;
+  CHECK(recipe_for(model, large) == Recipe::Fp32Islands);
 }
