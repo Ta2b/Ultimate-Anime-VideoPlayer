@@ -280,11 +280,13 @@ bool UpscaleStage::gmfss_pair() const {
 }
 
 bool UpscaleStage::gmfss_moving() const {
-  // À 720 lignes. Mesuré sur Re:Zero (720p, demi-flot, 40 fenêtres de sept images) : sous 15 px, RIFE seul
-  // fait 36,8 dB contre 35,5 avec une clé, plus douce.
-  constexpr float kKeyFloorPx = 15.0F;
+  // À 720 lignes, le plancher choisi, au moins 4 px pour une clé sous le seuil (gmfss_.spare). Mesuré sur
+  // Re:Zero (720p, demi-flot, 40 fenêtres de sept images) : sous 15 px, RIFE seul fait 36,8 dB contre 35,5
+  // avec une clé, plus douce ; à juger à l'œil (gmfss_key_floor).
+  constexpr float kSpareFloorPx = 4.0F;
   if (setup_.gmfss.use != GmfssUse::Middle || smooth_first_ || copy_pair_) return false;
-  return pair_motion_ >= kKeyFloorPx * static_cast<float>(setup_.rife_height) / 720.0F;
+  const float floor = gmfss_strong() ? setup_.gmfss.floor_px : std::max(setup_.gmfss.floor_px, kSpareFloorPx);
+  return pair_motion_ >= floor * static_cast<float>(setup_.rife_height) / 720.0F;
 }
 
 bool UpscaleStage::gmfss_strong() const {

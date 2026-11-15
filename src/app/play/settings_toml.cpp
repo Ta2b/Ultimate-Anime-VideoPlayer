@@ -131,7 +131,7 @@ void read_auto_mode(const toml::table& table, PlaySettings& s,
 
 // Ce qui change les passes sur les mouvements rapides : les essais pair_scale et strong_middle, et le mélange
 // de GMFSS (gmfss_middle, gmfss_motion, borné, gmfss_half_flow, gmfss_compose,
-// gmfss_every_instant, gmfss_light).
+// gmfss_every_instant, gmfss_light, gmfss_key_floor, borné).
 void read_motion_trials(const toml::table& table, PlaySettings& s,
                         std::vector<std::expected<void, Refusal>>& reads) {
   reads.push_back(read(table, "interpolation", "pair_scale", s.pair_scale));
@@ -149,6 +149,14 @@ void read_motion_trials(const toml::table& table, PlaySettings& s,
     reads.emplace_back(
         refuse_key(RefusalCode::FieldOutOfRange, "interpolation.gmfss_motion",
                    std::format(" : {} (de {} à {})", motion, kGmfssMotionMin, kGmfssMotionMax)));
+  }
+  int floor = s.gmfss_key_floor;
+  reads.push_back(read(table, "interpolation", "gmfss_key_floor", floor));
+  if (floor >= 0 && floor <= kGmfssMotionMax) {
+    s.gmfss_key_floor = floor;
+  } else {
+    reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interpolation.gmfss_key_floor",
+                                  std::format(" : {} (de 0 à {})", floor, kGmfssMotionMax)));
   }
 }
 

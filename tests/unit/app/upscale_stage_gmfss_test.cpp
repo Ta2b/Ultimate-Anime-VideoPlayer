@@ -206,9 +206,10 @@ TEST_CASE("Étage gpu : le mélange, plus de clés quand le mouvement grandit, R
   s.rife_motion = &rig.motion;
   s.gmfss = gmfss.setup(GmfssUse::Middle);
   s.gmfss.strong_px = 0.0F;  // Très élevé : chaque paire qui bouge
+  s.gmfss.floor_px = 15.0F;  // sauf sous 15 px (gmfss_key_floor)
   rig.start(std::move(s));
-  // Le mouvement se mesure à la paire d'avant : un plan calme d'abord (aucune clé, même en Très élevé), puis
-  // le pas de 30 px à 720 lignes, à la hauteur du banc.
+  // Le mouvement se mesure à la paire d'avant : un plan calme d'abord (aucune clé sous le plancher, même en
+  // Très élevé), puis le pas de 30 px à 720 lignes, à la hauteur du banc.
   rig.feed(1, 4);
   REQUIRE(rig.collect(13));
   const std::size_t calm_pairs = rig.backend.count("engine gmfss_pair");

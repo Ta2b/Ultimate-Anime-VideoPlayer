@@ -50,6 +50,9 @@ std::string rife_label(const std::string& file);
 inline constexpr int kDefaultGmfssMotion = 15;
 inline constexpr int kGmfssMotionMin = 4;
 inline constexpr int kGmfssMotionMax = 60;
+// Le mouvement sous lequel le mélange ne pose aucune clé GMFSS, en pixels à 720 lignes ; 0 : une clé sur
+// toute paire qui bouge (Très élevé). Bornes de play.toml : [0, kGmfssMotionMax].
+inline constexpr int kDefaultGmfssKeyFloor = 0;
 
 // Ce qui fait les images intermédiaires : RIFE (réseau, 4.25 ou 4.22 lite, avec ou sans garder les
 // poses), ou DistilDRBA (kernels/spec/distil_drba.h : un RIFE à trois images
@@ -288,6 +291,9 @@ struct PlaySettings {
   // (kGmfssLightHeight), environ 1,8 fois moins de pixels ; le flot un peu moins juste, l'image du milieu
   // agrandie ou composée (gmfss_compose). Pour tenir ×2,5 au flot entier. Recharge la chaîne.
   bool gmfss_light = false;
+  // Aucune clé GMFSS sous ce mouvement (kDefaultGmfssKeyFloor) : à juger à l'œil, les métriques de fidélité
+  // donnent RIFE seul devant sur les petits mouvements. play.toml seulement ; à la prochaine ouverture.
+  int gmfss_key_floor = kDefaultGmfssKeyFloor;
   // RIFE fusionné (kernels/spec/rife_fused.h) : le réseau coupé en six petits moteurs TensorRT reliés par des
   // noyaux CUDA, à la place du moteur RIFE entier (2,2 ms au lieu de 6,5 ms par passe à 768×1280 sur une RTX
   // 4070 Ti) ; seulement sous TensorRT et pour un RIFE dont la structure est reconnue (4.25, 4.22 lite), le

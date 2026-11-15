@@ -31,6 +31,7 @@ struct GmfssSetup {
   // Le mélange : le mouvement de la paire, en pixels à 720 lignes (mis à la hauteur de RIFE), à partir duquel
   // la fusion fait le milieu.
   float strong_px = 15.0F;
+  float floor_px = 0.0F;  // aucune clé sous ce mouvement (PlaySettings::gmfss_key_floor), à 720 lignes
   // Le mélange en travail plus grand que RIFE : M composée à la taille de travail (kernels/spec/gmfss.h),
   // au lieu de la sortie de la fusion agrandie.
   bool compose = false;

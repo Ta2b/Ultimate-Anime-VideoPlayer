@@ -147,3 +147,15 @@ TEST_CASE("GMFSS : Très élevé par la chaîne du mélange, ou à chaque instan
   c.played.motion_engine = MotionEngine::Gmfss;
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }
+
+TEST_CASE("GMFSS : le plancher des clés dans play.toml, borné, 0 dans un ancien fichier", "[app][gmfss]") {
+  using ajp::app::play::format_settings;
+  using ajp::app::play::parse_settings;
+  CHECK(parse_settings("version = 1\n")->gmfss_key_floor == 0);
+  ajp::app::play::PlaySettings s;
+  s.gmfss_key_floor = 15;
+  const auto back = parse_settings(format_settings(s));
+  REQUIRE(back);
+  CHECK(back->gmfss_key_floor == 15);
+  CHECK_FALSE(parse_settings("version = 1\n[interpolation]\ngmfss_key_floor = 99\n"));
+}

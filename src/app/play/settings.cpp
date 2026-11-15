@@ -525,6 +525,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::gmfss_half_flow);
   keep(&PlaySettings::gmfss_compose);
   keep(&PlaySettings::gmfss_every_instant);
+  keep(&PlaySettings::gmfss_key_floor);
   keep(&PlaySettings::span_precision);
   return s;
 }
