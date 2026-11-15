@@ -108,6 +108,12 @@ TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 a
   c.played.gmfss_light = false;
   c.played.motion_engine = MotionEngine::Gmfss;  // Très élevé par le mélange : 60 i/s
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 60);
+  c.played.gmfss_light = true;  // 540 lignes : ×3
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 72);
+  c.played.gmfss_half_flow = true;  // et le demi-flot : ×4
+  CHECK(gmfss_auto_cap(c, 0, 24.0) == 96);
+  c.played.gmfss_half_flow = false;
+  c.played.gmfss_light = false;
   c.gmfss_use = GmfssUse::Off;
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }
