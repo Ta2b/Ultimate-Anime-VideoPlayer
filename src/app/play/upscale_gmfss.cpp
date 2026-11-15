@@ -13,6 +13,7 @@
 // GMFSS seul (GmfssUse::Only) : la fusion à chaque instant, comme RIFE image, sans RIFE.
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <format>
 #include <span>
@@ -193,6 +194,7 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   if (auto ok = alloc_f16(backend, gmfss_.middle, 3, setup_.rife_width, setup_.rife_height); !ok) return ok;
   if (setup_.rife_width != w || setup_.rife_height != h) {
     if (auto ok = alloc_f16(backend, gmfss_.work, 3, w, h); !ok) return ok;
+    if (auto ok = allocate_compose(); !ok) return ok;
   }
   if (warps_spanned()) {
     if (auto ok = alloc_f16(backend, gmfss_.spanned, 3, w * kSpanFactor, h * kSpanFactor); !ok) return ok;
@@ -200,6 +202,63 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   const kernels::RifeGeometry r =
       kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);
   return alloc_f16(backend, gmfss_.input, setup_.rife_planes, r.padded_width, r.padded_height);
+}
+
+std::expected<void, Refusal> UpscaleStage::allocate_compose() {
+  // Une seule échelle du travail à RIFE (MotionGrid) : les deux axes au même rapport, à 1 % près.
+  const double rx = static_cast<double>(setup_.work_width) / setup_.rife_width;
+  const double ry = static_cast<double>(setup_.work_height) / setup_.rife_height;
+  if (!setup_.gmfss.compose || std::abs(rx - ry) > 0.01 * rx) return {};
+  constexpr int kSplatted = kernels::kGmfssImagePlanes + 1;  // et la couverture
+  for (std::size_t side = 0; side < 2; ++side) {
+    if (auto ok =
+            alloc_f16(*setup_.backend, gmfss_.high[side], kSplatted, setup_.work_width, setup_.work_height);
+        !ok)
+      return ok;
+    if (auto ok =
+            alloc_f16(*setup_.backend, gmfss_.low[side], kSplatted, setup_.rife_width, setup_.rife_height);
+        !ok)
+      return ok;
+  }
+  return {};
+}
+
+std::expected<void, Refusal> UpscaleStage::compose_middle() {
+  // Les sources de la paire splattées par le flot du niveau 1 au milieu (instant 1/2 des deux côtés), à la
+  // taille de travail et à celle de RIFE, puis M = H + up(F − L) dans gmfss_.work.
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const kernels::RifeGeometry g = gmfss_geometry(setup_.rife_width, setup_.rife_height);
+  const float ox = static_cast<float>(g.left) / 2.0F;
+  const float oy = static_cast<float>(g.top) / 2.0F;
+  const float scale = 2.0F * static_cast<float>(setup_.work_width) / static_cast<float>(setup_.rife_width);
+  gmfss_.jobs.clear();
+  for (std::uint32_t side = 0; side < 2; ++side) {
+    const std::uint32_t image = side == 0 ? current_ ^ 1U : current_;
+    const gpu::Tensor motion = *set_tensor(gmfss_, std::format("motion{}_1", side), gmfss_.set);
+    const float s = kernels::gmfss_side_time(static_cast<int>(side), 0.5F);
+    gmfss_.jobs.push_back({.source = rgb_[image]->tensor(),
+                           .motion = motion,
+                           .s = s,
+                           .out = gmfss_.high[side]->tensor(),
+                           .grid = {.scale = scale, .x = ox, .y = oy},
+                           .coverage = true});
+    gmfss_.jobs.push_back({.source = rife_source(image),
+                           .motion = motion,
+                           .s = s,
+                           .out = gmfss_.low[side]->tensor(),
+                           .grid = {.scale = 2.0F, .x = ox, .y = oy},
+                           .coverage = true});
+  }
+  if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gpu::Tensor{}, 0.5F); !ok) return ok;
+  return ops.gmfss_compose(
+      {.high_a = gmfss_.high[0]->tensor(),
+       .high_b = gmfss_.high[1]->tensor(),
+       .low_a = gmfss_.low[0]->tensor(),
+       .low_b = gmfss_.low[1]->tensor(),
+       .fusion = gmfss_.out->tensor(),
+       .window = {.x = g.left, .y = g.top, .width = setup_.rife_width, .height = setup_.rife_height},
+       .t = 0.5F,
+       .out = gmfss_.work->tensor()});
 }
 
 bool UpscaleStage::gmfss_pair() const {
@@ -350,7 +409,19 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
 std::expected<void, Refusal> UpscaleStage::make_middle() {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto ok = run_gmfss(0.5F, gmfss_.middle->tensor()); !ok) return ok;
-  if (gmfss_.work) {  // RIFE plus petit que le travail (travail 1080p, RIFE 720p) : M agrandie pour le warp
+  if (gmfss_.work && gmfss_.high[0]) {  // la composition, ou l'agrandissement si le backend la refuse
+    auto composed = compose_middle();
+    if (!composed && composed.error().code != RefusalCode::FormatUnsupported) return composed;
+    if (!composed) {
+      log_channel("gpu")->warn("GMFSS : composition refusée ({}), M agrandie", composed.error().detail);
+      gmfss_.high = {};
+      gmfss_.low = {};
+    } else {
+      ++gmfss_.composed;
+    }
+  }
+  if (gmfss_.work &&
+      !gmfss_.high[0]) {  // RIFE plus petit que le travail (travail 1080p, RIFE 720p) : M agrandie
     if (auto ok = ops.resample(gmfss_.middle->tensor(), kernels::Filter::Spline36, gmfss_.work->tensor());
         !ok)
       return ok;

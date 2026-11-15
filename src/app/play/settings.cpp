@@ -523,6 +523,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::pair_scale);
   keep(&PlaySettings::gmfss_middle);
   keep(&PlaySettings::gmfss_half_flow);
+  keep(&PlaySettings::gmfss_compose);
   keep(&PlaySettings::span_precision);
   return s;
 }
@@ -566,6 +567,10 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
   if (base.gmfss_half_flow != wanted.gmfss_half_flow) {
     reopen.emplace_back(wanted.gmfss_half_flow ? i18n::tr("GMFSS estimates motion at half size")
                                                : i18n::tr("GMFSS estimates motion at full size"));
+  }
+  if (base.gmfss_compose != wanted.gmfss_compose) {
+    reopen.emplace_back(wanted.gmfss_compose ? i18n::tr("GMFSS keeps the detail of the working size")
+                                             : i18n::tr("GMFSS middle frame enlarged"));
   }
 }
 
@@ -616,6 +621,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.pair_scale = opened->loaded->pair_scale;
   base.gmfss_middle = opened->loaded->gmfss_middle;
   base.gmfss_half_flow = opened->loaded->gmfss_half_flow;
+  base.gmfss_compose = opened->loaded->gmfss_compose;
   return base;
 }
 

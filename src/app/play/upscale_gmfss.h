@@ -27,6 +27,9 @@ struct GmfssSetup {
   // Le mélange : le mouvement de la paire, en pixels à 720 lignes (mis à la hauteur de RIFE), à partir duquel
   // la fusion fait le milieu.
   float strong_px = 15.0F;
+  // Le mélange en travail plus grand que RIFE : M composée à la taille de travail (kernels/spec/gmfss.h),
+  // au lieu de la sortie de la fusion agrandie.
+  bool compose = false;
 };
 
 struct GmfssBuffers {
@@ -47,10 +50,14 @@ struct GmfssBuffers {
   std::array<std::vector<Splat>, 2> splats;
   std::uint32_t set = 0;
   std::vector<gpu::KernelOps::SplatJob> jobs;
-  gpu::Tensor time;                            // l'entrée « time » de la fusion
-  std::unique_ptr<gpu::TensorBuffer> out;      // sortie de la fusion, 1 × 3 × ph × pw
-  std::unique_ptr<gpu::TensorBuffer> middle;   // le mélange : M à la taille de RIFE
-  std::unique_ptr<gpu::TensorBuffer> work;     // M agrandie à la taille de travail, si RIFE est plus petit
+  gpu::Tensor time;                           // l'entrée « time » de la fusion
+  std::unique_ptr<gpu::TensorBuffer> out;     // sortie de la fusion, 1 × 3 × ph × pw
+  std::unique_ptr<gpu::TensorBuffer> middle;  // le mélange : M à la taille de RIFE
+  std::unique_ptr<gpu::TensorBuffer> work;    // M agrandie à la taille de travail, si RIFE est plus petit
+  // La composition (GmfssSetup::compose) : par côté, la source de travail et celle de RIFE splattées avec
+  // leur couverture (4 plans) ; vide sans composition ou après un refus du backend.
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> high;
+  std::array<std::unique_ptr<gpu::TensorBuffer>, 2> low;
   std::unique_ptr<gpu::TensorBuffer> spanned;  // M passée par SPAN, quand le warp suit SPAN
   std::unique_ptr<gpu::TensorBuffer> input;    // l'entrée de RIFE d'une demi-paire
   bool pair_ready = false;                     // la paire en cours est passée par le graphe « paire »
@@ -59,9 +66,10 @@ struct GmfssBuffers {
   std::array<std::uint64_t, 2> in_images{};
   bool in_pair = false;  // input tient la demi-paire in_images
   float in_t = 0.0F;
-  std::uint64_t pairs = 0;    // passes du graphe « paire »
-  std::uint64_t fusions = 0;  // passes de la fusion
-  std::uint64_t halves = 0;   // passes de RIFE sur une demi-paire
+  std::uint64_t pairs = 0;     // passes du graphe « paire »
+  std::uint64_t fusions = 0;   // passes de la fusion
+  std::uint64_t halves = 0;    // passes de RIFE sur une demi-paire
+  std::uint64_t composed = 0;  // M composées à la taille de travail
   // Le mélange en retard (upscale_stage.cpp, begin) : la paire forte dont le premier instant est déjà passé
   // reste à RIFE, qui la rattrape en quelques ms, au lieu de figer l'image derrière une paire GMFSS de 50 ms.
   bool behind = false;

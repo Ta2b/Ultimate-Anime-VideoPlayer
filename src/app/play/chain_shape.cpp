@@ -57,7 +57,8 @@ OpenedChain::Loaded loaded_by(const PlaySettings& settings) {
           .cubic_warp = settings.cubic_warp,
           .pair_scale = settings.pair_scale,
           .gmfss_middle = settings.gmfss_middle,
-          .gmfss_half_flow = settings.gmfss_half_flow};
+          .gmfss_half_flow = settings.gmfss_half_flow,
+          .gmfss_compose = settings.gmfss_compose};
 }
 
 bool fits(const OpenedChain& opened, const PlaySettings& wanted) {

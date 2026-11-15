@@ -300,6 +300,8 @@ constexpr std::array kSettingsPages{
     Entry{"RIFE alone on fast motion", "RIFE seul sur les mouvements rapides"},
     Entry{"GMFSS estimates motion at half size", "GMFSS estime le mouvement à demi-taille"},
     Entry{"GMFSS estimates motion at full size", "GMFSS estime le mouvement à pleine taille"},
+    Entry{"GMFSS keeps the detail of the working size", "GMFSS garde le détail de la taille de travail"},
+    Entry{"GMFSS middle frame enlarged", "image du milieu de GMFSS agrandie"},
     Entry{"the frame ring grows for this interpolation",
           "l'anneau d'images s'agrandit pour cette interpolation"},
     Entry{"the interpolation engine loads (built the first time for this size)",

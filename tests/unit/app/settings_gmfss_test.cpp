@@ -43,6 +43,14 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   REQUIRE(half_back);
   CHECK(*half_back == half);
   CHECK_FALSE(without->gmfss_half_flow);
+  // La composition à la taille de travail se relit ; absente (un fichier d'avant), éteinte.
+  PlaySettings composed;
+  composed.gmfss_middle = true;
+  composed.gmfss_compose = true;
+  const auto composed_back = parse_settings(format_settings(composed));
+  REQUIRE(composed_back);
+  CHECK(*composed_back == composed);
+  CHECK_FALSE(without->gmfss_compose);
 }
 
 TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, choisie si demandée",

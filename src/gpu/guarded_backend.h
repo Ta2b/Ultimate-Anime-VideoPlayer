@@ -108,6 +108,9 @@ class GuardedKernelOps final : public KernelOps {
                                                float t) override {
     return guarded_detail::call("soft_splat_fill", [&] { return in_->soft_splat_fill(jobs, time, t); });
   }
+  std::expected<void, Refusal> gmfss_compose(const ComposeJob& job) override {
+    return guarded_detail::call("gmfss_compose", [&] { return in_->gmfss_compose(job); });
+  }
   std::expected<void, Refusal> rife_pair(const Tensor& a, const Tensor& b, float t,
                                          const Tensor& input) override {
     return guarded_detail::call("rife_pair", [&] { return in_->rife_pair(a, b, t, input); });

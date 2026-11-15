@@ -387,6 +387,13 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
         i18n::tr("GMFSS estimates motion on frames halved in size: about three times cheaper, a "
                  "little less precise on small motion. Applies after a reload (its own engine)."));
   }
+  if (d.gmfss_middle) {
+    ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
+    panel::tip(i18n::tr(
+        "When the working size is larger than RIFE's (1080p), the GMFSS middle frame is made from the "
+        "source frames moved by its motion, corrected by its fusion, instead of its 720p output enlarged. "
+        "A few milliseconds more per fast pair. Applies after a reload."));
+  }
 }
 
 // Smooth Motion est une couche de l'écran, absente du fichier, et du seul pilote NVIDIA. Le lecteur ne sait

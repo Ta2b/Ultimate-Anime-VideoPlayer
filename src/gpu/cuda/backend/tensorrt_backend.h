@@ -112,6 +112,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
   std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
                                                float t) override;
+  std::expected<void, Refusal> gmfss_compose(const KernelOps::ComposeJob& job) override;
   // L'analyse d'une image pour le grade (tensorrt_stats.cpp), relue sans attente.
   std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
                                                           kernels::FrameTransfer transfer) override;

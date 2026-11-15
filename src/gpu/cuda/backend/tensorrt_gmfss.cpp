@@ -1,6 +1,7 @@
 // GMFSS Fortuna Union dans le backend TensorRT : entrée du graphe « paire » depuis deux images RGB
 // (gmfss_frames, le noyau de rife_input sans ses plans constants) et softmax splatting entre les deux graphes
-// (soft_splat_fill, gmfss_kernels.cu), l'instant de la fusion rempli au passage.
+// (soft_splat_fill, gmfss_kernels.cu), l'instant de la fusion rempli au passage ; composition du mélange à la
+// taille de travail (gmfss_compose).
 #include <cstddef>
 #include <cstdint>
 #include <format>
@@ -49,13 +50,21 @@ bool same_size(const Tensor& a, const Tensor& b) {
   return a.shape.dims[2] == b.shape.dims[2] && a.shape.dims[3] == b.shape.dims[3];
 }
 
+// Le mouvement lu tel quel, sur la grille de la source (MotionGrid par défaut).
+bool own_grid(const KernelOps::SplatJob& job) {
+  return job.grid.scale == 1.0F && job.grid.x == 0.0F && job.grid.y == 0.0F;
+}
+
 std::expected<void, Refusal> check_job(const KernelOps::SplatJob& job, const Tensor& time) {
+  const std::int64_t planes = job.source.shape.dims[1] + (job.coverage ? 1 : 0);
   if (!fp16_planes(job.source, 0) || !fp16_planes(job.motion, kernels::kGmfssMotionChannels) ||
-      !fp16_planes(job.out, job.source.shape.dims[1]) || !same_size(job.motion, job.source) ||
+      !fp16_planes(job.out, planes) || (own_grid(job) && !same_size(job.motion, job.source)) ||
       !same_size(job.out, job.source)) {
     return refuse(RefusalCode::ShapeInvalid,
                   "soft_splat : source, mouvement (3 plans) et sortie FP16 de même taille attendus");
   }
+  if (!(job.grid.scale > 0.0F))
+    return refuse(RefusalCode::FieldOutOfRange, std::format("soft_splat : échelle {}", job.grid.scale));
   // La sortie n'est jamais une entrée : le splat lit la source et le mouvement de tous les travaux pendant
   // que la normalisation écrit les sorties. L'instant n'est ni lu ni écrit par un splat.
   const auto same = [](const Tensor& a, const Tensor& b) {
@@ -63,7 +72,8 @@ std::expected<void, Refusal> check_job(const KernelOps::SplatJob& job, const Ten
   };
   if (same(job.out, job.motion) || same(job.out, job.source))
     return refuse(RefusalCode::ShapeInvalid, "soft_splat : la sortie est l'une des entrées");
-  if (job.source.handle == time.handle || job.motion.handle == time.handle || job.out.handle == time.handle)
+  if (time.handle != 0 &&
+      (job.source.handle == time.handle || job.motion.handle == time.handle || job.out.handle == time.handle))
     return refuse(RefusalCode::ShapeInvalid, "soft_splat_fill : l'instant partage la mémoire d'un splat");
   if (!(job.s >= 0.0F && job.s <= 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("soft_splat : instant {} hors de [0, 1]", job.s));
@@ -108,7 +118,7 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_frames(const Tensor& a, cons
 
 std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const KernelOps::SplatJob> jobs,
                                                               const Tensor& time, float t) {
-  if (!fp16_planes(time, 0))
+  if (time.handle != 0 && !fp16_planes(time, 0))
     return refuse(RefusalCode::ShapeInvalid, "soft_splat_fill : instant FP16 1 × c × h × w attendu");
   if (!(t >= 0.0F && t <= 1.0F))
     return refuse(RefusalCode::FieldOutOfRange,
@@ -135,14 +145,17 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
     splat_bytes_ = total;
   }
   SoftSplatBatch batch{};
-  batch.fill = address(time);
-  batch.fill_count = 1;
-  for (const auto d : time.shape.dims) batch.fill_count *= static_cast<std::size_t>(d);
-  batch.fill_value = t;
+  // Les sommes sous une clé fixe : elles changent d'adresse en grandissant.
+  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(&splat_sums_)};
+  if (time.handle != 0) {
+    batch.fill = address(time);
+    batch.fill_count = 1;
+    for (const auto d : time.shape.dims) batch.fill_count *= static_cast<std::size_t>(d);
+    batch.fill_value = t;
+    writes.push_back(time.handle);
+  }
   std::size_t offset = 0;
   std::vector<std::uintptr_t> reads;
-  // Les sommes sous une clé fixe : elles changent d'adresse en grandissant.
-  std::vector<std::uintptr_t> writes{reinterpret_cast<std::uintptr_t>(&splat_sums_), time.handle};
   for (const KernelOps::SplatJob& job : jobs) {
     const int channels = static_cast<int>(job.source.shape.dims[1]);
     const std::size_t first_sum = offset / sizeof(float);  // octets vers floats
@@ -153,7 +166,13 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
                                                 .channels = channels,
                                                 .s = job.s,
                                                 .sums = splat_sums_ + first_sum,
-                                                .out = address(job.out)};
+                                                .out = address(job.out),
+                                                .motion_width = width_of(job.motion),
+                                                .motion_height = height_of(job.motion),
+                                                .grid_scale = own_grid(job) ? 0.0F : job.grid.scale,
+                                                .grid_x = job.grid.x,
+                                                .grid_y = job.grid.y,
+                                                .coverage = job.coverage ? 1 : 0};
     offset += aligned_sums(job);
     reads.push_back(job.source.handle);
     reads.push_back(job.motion.handle);
@@ -163,6 +182,52 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
   GpuTiming& timing = stage("splatting de GMFSS");
   timing.begin(stream_);
   auto launched = cuda_check(launch_soft_splat_all(batch, splat_sums_, total, stream_), "soft_splat<<<>>>");
+  timing.end(stream_);
+  return launched;
+}
+
+std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const KernelOps::ComposeJob& job) {
+  constexpr std::int64_t kSplatted = 4;  // RGB et la couverture
+  const bool shapes = fp16_planes(job.high_a, kSplatted) && fp16_planes(job.high_b, kSplatted) &&
+                      fp16_planes(job.low_a, kSplatted) && fp16_planes(job.low_b, kSplatted) &&
+                      fp16_planes(job.fusion, 3) && fp16_planes(job.out, 3) &&
+                      same_size(job.high_a, job.out) && same_size(job.high_b, job.out) &&
+                      same_size(job.low_a, job.low_b);
+  const int w = width_of(job.low_a);
+  const int h = height_of(job.low_a);
+  if (!shapes || job.window.width != w || job.window.height != h || job.window.x < 0 || job.window.y < 0 ||
+      job.window.x + w > width_of(job.fusion) || job.window.y + h > height_of(job.fusion) ||
+      width_of(job.out) < w || height_of(job.out) < h) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  "gmfss_compose : sources splattées (4 plans), fusion et sortie FP16 cohérentes attendues");
+  }
+  if (!(job.t >= 0.0F && job.t <= 1.0F))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("gmfss_compose : instant {} hors de [0, 1]", job.t));
+  if (auto ok = bind(); !ok) return ok;
+  const ComposeParams params{.high_a = address(job.high_a),
+                             .high_b = address(job.high_b),
+                             .low_a = address(job.low_a),
+                             .low_b = address(job.low_b),
+                             .fusion = address(job.fusion),
+                             .width = w,
+                             .height = h,
+                             .out_width = width_of(job.out),
+                             .out_height = height_of(job.out),
+                             .fusion_width = width_of(job.fusion),
+                             .fusion_height = height_of(job.fusion),
+                             .left = job.window.x,
+                             .top = job.window.y,
+                             .t = job.t,
+                             .out = address(job.out)};
+  if (auto ok =
+          order({job.high_a.handle, job.high_b.handle, job.low_a.handle, job.low_b.handle, job.fusion.handle},
+                {job.out.handle});
+      !ok)
+    return ok;
+  GpuTiming& timing = stage("composition de GMFSS");
+  timing.begin(stream_);
+  auto launched = cuda_check(launch_gmfss_compose(params, stream_), "gmfss_compose<<<>>>");
   timing.end(stream_);
   return launched;
 }

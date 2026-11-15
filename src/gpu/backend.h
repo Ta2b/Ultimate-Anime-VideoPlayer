@@ -95,7 +95,9 @@ namespace ajp::gpu {
 // 41 : BackendInit::trials (les options d'essai des chantiers, un bit chacune ; kTrialL2Keep).
 // 42 : BackendCaps::span_fp16_cutlass (le SPAN FP16 natif par noyaux CUTLASS, RTX 40 et RTX 50).
 // 43 : GMFSS Fortuna Union revient (KernelOps::gmfss_frames, SplatJob, soft_splat_fill ; BackendCaps::gmfss).
-// 44 : ModelSpec::tuned (les graphes de GMFSS se construisent sans pavage L2 ni niveau 5).
+// 44 : ModelSpec::tuned (les graphes de GMFSS se construisent sans pavage L2 ni niveau 5) ;
+//      SplatJob::grid et coverage, KernelOps::gmfss_compose (la composition du mélange à la taille de
+//      travail).
 inline constexpr int kBackendAbi = 44;
 
 using DeviceUuid = ajp::DeviceUuid;

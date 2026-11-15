@@ -61,18 +61,44 @@ struct SplatTarget {
   bool active = false;
 };
 
+// Échantillon bilinéaire borné au plan w × h (spec/warp.h : bornes en clamp, NaN donne 0).
+__device__ float bilinear(const __half* plane, int w, int h, float x, float y) {
+  x = fminf(fmaxf(x, 0.0F), static_cast<float>(w - 1));
+  y = fminf(fmaxf(y, 0.0F), static_cast<float>(h - 1));
+  const int x0 = static_cast<int>(x);
+  const int y0 = static_cast<int>(y);
+  const int x1 = min(x0 + 1, w - 1);
+  const int y1 = min(y0 + 1, h - 1);
+  const float fx = x - static_cast<float>(x0);
+  const float fy = y - static_cast<float>(y0);
+  const float top =
+      __half2float(plane[at(x0, y0, w)]) * (1.0F - fx) + __half2float(plane[at(x1, y0, w)]) * fx;
+  const float bottom =
+      __half2float(plane[at(x0, y1, w)]) * (1.0F - fx) + __half2float(plane[at(x1, y1, w)]) * fx;
+  return top * (1.0F - fy) + bottom * fy;
+}
+
+template <bool kGrid>
 __device__ __forceinline__ SplatTarget splat_target(const SoftSplatParams& p, int x, int y,
                                                     std::size_t plane) {
   SplatTarget s;
   const bool pixel = x < p.width && y < p.height;
   float fx = 0.0F;
   float fy = 0.0F;
-  if (pixel) {
-    const auto* motion = static_cast<const __half*>(p.motion);
-    s.i = at(x, y, p.width);
+  const auto* motion = static_cast<const __half*>(p.motion);
+  if (pixel) s.i = at(x, y, p.width);
+  if (pixel && (!kGrid || p.grid_scale == 0.0F)) {
     fx = __half2float(motion[s.i]);
     fy = __half2float(motion[plane + s.i]);
     s.z = __half2float(motion[2 * plane + s.i]);
+  } else if (pixel) {  // le mouvement sur sa grille (MotionGrid)
+    const std::size_t grid =
+        static_cast<std::size_t>(p.motion_width) * static_cast<std::size_t>(p.motion_height);
+    const float u = (static_cast<float>(x) + 0.5F) / p.grid_scale - 0.5F + p.grid_x;
+    const float v = (static_cast<float>(y) + 0.5F) / p.grid_scale - 0.5F + p.grid_y;
+    fx = bilinear(motion, p.motion_width, p.motion_height, u, v) * p.grid_scale;
+    fy = bilinear(motion + grid, p.motion_width, p.motion_height, u, v) * p.grid_scale;
+    s.z = bilinear(motion + 2 * grid, p.motion_width, p.motion_height, u, v);
   }
   s.tx = static_cast<float>(x) + p.s * fx;
   s.ty = static_cast<float>(y) + p.s * fy;
@@ -154,7 +180,10 @@ __device__ __forceinline__ void flush_window(const SoftSplatParams& p, const flo
   }
 }
 
-__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(SoftSplatBatch b) {
+// kGrid : un travail au moins lit son mouvement sur une autre grille ; ses lectures bilinéaires demandent
+// plus de registres que la borne de quatre blocs par SM (sans débordement), d'où une variante à part.
+template <bool kGrid>
+__device__ __forceinline__ void splat_block(const SoftSplatBatch& b) {
   __shared__ float cells[(kPass + 1) * kCells];
   const SoftSplatParams& p = b.jobs[blockIdx.z];
   const int x0 = static_cast<int>(blockIdx.x) * kBlock;
@@ -164,7 +193,7 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(So
   const int x = x0 + static_cast<int>(threadIdx.x);
   const int y = y0 + static_cast<int>(threadIdx.y);
   const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
-  const SplatTarget s = splat_target(p, x, y, plane);
+  const SplatTarget s = splat_target<kGrid>(p, x, y, plane);
   const float3 shift =
       block_sum3(s.active ? make_float3(s.tx - static_cast<float>(x), s.ty - static_cast<float>(y), 1.0F)
                           : make_float3(0.0F, 0.0F, 0.0F));
@@ -193,6 +222,14 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(So
     flush_window(p, cells, ox, oy, first, count, with_weights, plane, t);
     __syncthreads();
   }
+}
+
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) splat_all(SoftSplatBatch b) {
+  splat_block<false>(b);
+}
+
+__global__ void __launch_bounds__(kPixelThreads) splat_all_grid(SoftSplatBatch b) {
+  splat_block<true>(b);
 }
 
 // Deux pixels voisins par fil : sommes lues en float2 et sorties écrites en half2 quand le travail
@@ -225,6 +262,10 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) normalize_al
       const float2 sum = *reinterpret_cast<const float2*>(p.sums + k);
       out[k / 2] = __floats2half2_rn(sum.x / total.x, sum.y / total.y);
     }
+    if (p.coverage != 0) {
+      const std::size_t k = static_cast<std::size_t>(p.channels) * plane + i;
+      out[k / 2] = __floats2half2_rn(weight.x / total.x, weight.y / total.y);
+    }
     return;
   }
   auto* out = static_cast<__half*>(p.out);
@@ -235,6 +276,52 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) normalize_al
       const std::size_t k = static_cast<std::size_t>(c) * plane + i + e;
       out[k] = __float2half_rn(p.sums[k] / total);
     }
+    if (p.coverage != 0)
+      out[static_cast<std::size_t>(p.channels) * plane + i + e] = __float2half_rn(weight / total);
+  }
+}
+
+// Un fil par pixel de sortie : les deux côtés agrandis au pixel, ceux de RIFE et la fusion en bilinéaire.
+__global__ void __launch_bounds__(kPixelThreads) compose(ComposeParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.out_width || y >= p.out_height) return;
+  const std::size_t out_plane =
+      static_cast<std::size_t>(p.out_width) * static_cast<std::size_t>(p.out_height);
+  const std::size_t low_plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const std::size_t fusion_plane =
+      static_cast<std::size_t>(p.fusion_width) * static_cast<std::size_t>(p.fusion_height);
+  const float xw =
+      (static_cast<float>(x) + 0.5F) * static_cast<float>(p.width) / static_cast<float>(p.out_width) - 0.5F;
+  const float yw =
+      (static_cast<float>(y) + 0.5F) * static_cast<float>(p.height) / static_cast<float>(p.out_height) - 0.5F;
+  const auto* ha = static_cast<const __half*>(p.high_a);
+  const auto* hb = static_cast<const __half*>(p.high_b);
+  const auto* la = static_cast<const __half*>(p.low_a);
+  const auto* lb = static_cast<const __half*>(p.low_b);
+  const auto* fusion = static_cast<const __half*>(p.fusion);
+  const std::size_t i = at(x, y, p.out_width);
+  const float w0h = (1.0F - p.t) * __half2float(ha[3 * out_plane + i]);
+  const float w1h = p.t * __half2float(hb[3 * out_plane + i]);
+  const float w0l = (1.0F - p.t) * bilinear(la + 3 * low_plane, p.width, p.height, xw, yw);
+  const float w1l = p.t * bilinear(lb + 3 * low_plane, p.width, p.height, xw, yw);
+  const float high_total = w0h + w1h + kernels::kGmfssNormalizeEpsilon;
+  const float low_total = w0l + w1l + kernels::kGmfssNormalizeEpsilon;
+  // La fusion dans sa fenêtre : coordonnées bornées à l'image de RIFE, puis décalées du coin.
+  const float fx = fminf(fmaxf(xw, 0.0F), static_cast<float>(p.width - 1)) + static_cast<float>(p.left);
+  const float fy = fminf(fmaxf(yw, 0.0F), static_cast<float>(p.height - 1)) + static_cast<float>(p.top);
+  auto* out = static_cast<__half*>(p.out);
+#pragma unroll
+  for (int c = 0; c < 3; ++c) {
+    const std::size_t oc = static_cast<std::size_t>(c) * out_plane;
+    const std::size_t lc = static_cast<std::size_t>(c) * low_plane;
+    const float high = (w0h * __half2float(ha[oc + i]) + w1h * __half2float(hb[oc + i])) / high_total;
+    const float low = (w0l * bilinear(la + lc, p.width, p.height, xw, yw) +
+                       w1l * bilinear(lb + lc, p.width, p.height, xw, yw)) /
+                      low_total;
+    const float fused = bilinear(fusion + static_cast<std::size_t>(c) * fusion_plane, p.fusion_width,
+                                 p.fusion_height, fx, fy);
+    out[oc + i] = __float2half_rn(fminf(fmaxf(high + fused - low, 0.0F), 1.0F));
   }
 }
 
@@ -262,10 +349,29 @@ cudaError_t launch_soft_splat_all(SoftSplatBatch& batch, void* sums, std::size_t
   const dim3 block(kBlock, kBlock);
   const auto rows = static_cast<unsigned>(tiles_across(height));
   const auto jobs = static_cast<unsigned>(batch.count);
-  splat_all<<<dim3(static_cast<unsigned>(tiles_across(width)), rows, jobs), block, 0, stream>>>(batch);
+  bool grid = false;
+  for (int j = 0; j < batch.count; ++j) grid = grid || batch.jobs[j].grid_scale != 0.0F;
+  const dim3 tiles(static_cast<unsigned>(tiles_across(width)), rows, jobs);
+  if (grid) {
+    splat_all_grid<<<tiles, block, 0, stream>>>(batch);
+  } else {
+    splat_all<<<tiles, block, 0, stream>>>(batch);
+  }
   if (const cudaError_t e = cudaGetLastError(); e != cudaSuccess) return e;
   normalize_all<<<dim3(static_cast<unsigned>(tiles_across((width + 1) / 2)), rows, jobs), block, 0, stream>>>(
       batch);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_gmfss_compose(const ComposeParams& params, cudaStream_t stream) {
+  if (params.width < 1 || params.height < 1 || params.out_width < params.width ||
+      params.out_height < params.height || params.left < 0 || params.top < 0 ||
+      params.left + params.width > params.fusion_width || params.top + params.height > params.fusion_height)
+    return cudaErrorInvalidValue;
+  const dim3 block(kBlock, kBlock);
+  const dim3 grid(static_cast<unsigned>(tiles_across(params.out_width)),
+                  static_cast<unsigned>(tiles_across(params.out_height)));
+  compose<<<grid, block, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

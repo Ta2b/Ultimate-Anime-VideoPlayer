@@ -72,6 +72,35 @@ inline constexpr float kGmfssNormalizeEpsilon = 1e-7F;
 // La métrique sort de tanh × 10 : e^z' reste dans [e^-10, e^10], sans débordement en FP32.
 inline constexpr float kGmfssMetricLimit = 10.0F;
 
+// Le mouvement sur une autre grille que la source (splat d'une image d'une autre taille que le niveau du
+// mouvement) : le pixel source (x, y) lit le mouvement en u = (x + 1/2) / scale − 1/2 + ox,
+// v = (y + 1/2) / scale − 1/2 + oy, bilinéaire borné au plan du mouvement (spec/warp.h), le flot lu
+// multiplié par scale, la métrique telle quelle. scale 1 et décalages nuls sur une grille de même taille :
+// le mouvement du pixel lui-même, tel quel. Le flot du niveau 1 (moitié des plans remplis à la taille de
+// RIFE) pousse l'image de RIFE (scale 2, ox = gauche / 2, oy = haut / 2 de la géométrie) ou l'image de
+// travail plus grande (scale 2 × travail / RIFE, mêmes décalages).
+// Couverture : avec un plan de sortie de plus que la source, ce plan vaut
+// poids accumulé / (poids accumulé + kGmfssNormalizeEpsilon) : 1 où une source arrive, 0 où rien n'arrive.
+struct MotionGrid {
+  float scale = 1.0F;
+  float x = 0.0F;
+  float y = 0.0F;
+};
+
+// Composition à la taille de travail (le mélange, travail plus grand que RIFE) : l'image du milieu se
+// compose des sources de travail splattées par le flot du niveau 1, corrigées du résidu de la fusion :
+// out = H + up(F − L), H le mélange des sources de travail splattées, L le même mélange des sources à la
+// taille de RIFE, F la sortie de la fusion dans sa fenêtre, up l'agrandissement bilinéaire. Là où rien
+// n'arrive, H et L sont nuls : la fusion agrandie reste seule. Pour le pixel (X, Y) de la sortie
+// (ow × oh, au moins la taille w × h de RIFE) :
+//   xw = (X + 1/2) · w / ow − 1/2, yw = (Y + 1/2) · h / oh − 1/2 ;
+//   chaque côté k donne (R, G, B, c) de sa source de travail en (X, Y) et de sa source de RIFE en (xw, yw)
+//   (bilinéaire borné au plan) ; poids w0 = (1 − t) c0, w1 = t c1 ;
+//   M = (w0 P0 + w1 P1) / (w0 + w1 + kGmfssNormalizeEpsilon), sur chaque grille (H, L) ;
+//   F lu en (xw, yw) dans la fenêtre, bilinéaire borné à la fenêtre ;
+//   out = clamp(H + F − L, 0, 1), par canal.
+// Le détail de la source de travail reste là où GMFSS le pousse, au lieu d'une image de RIFE agrandie.
+
 }  // namespace ajp::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

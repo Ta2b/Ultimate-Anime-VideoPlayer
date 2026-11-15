@@ -70,6 +70,32 @@ TEST_CASE("Étage gpu : le mélange, M par GMFSS au milieu des paires fortes, RI
   CHECK(with_middle == 2 * pairs);
 }
 
+TEST_CASE("Étage gpu : le mélange en travail plus grand que RIFE, M composée ou agrandie",
+          "[app][stage][gmfss]") {
+  const bool compose = GENERATE(false, true);
+  INFO((compose ? "composée" : "agrandie"));
+  Rig rig;
+  GmfssEngines gmfss;
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.rife_width = kWidth / 2;
+  s.rife_height = kHeight / 2;
+  s.gmfss = gmfss.setup(GmfssUse::Middle);
+  s.gmfss.compose = compose;
+  rig.backend.motion_max(40.0F);
+  rig.start(std::move(s));
+  rig.feed(1, 5);
+  REQUIRE(rig.collect(17));
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+  const std::size_t pairs = rig.backend.count("engine gmfss_fusion");
+  CHECK(pairs >= 2);
+  // Une composition par M (ses quatre splats d'abord), sinon un agrandissement.
+  CHECK(rig.backend.count("soft_splat_grid") == (compose ? pairs : 0));
+  CHECK(rig.backend.count("gmfss_compose") == (compose ? pairs : 0));
+}
+
 TEST_CASE("Étage gpu : GMFSS seul, la fusion à chaque instant, la paire une fois", "[app][stage][gmfss]") {
   Rig rig;
   GmfssEngines gmfss;

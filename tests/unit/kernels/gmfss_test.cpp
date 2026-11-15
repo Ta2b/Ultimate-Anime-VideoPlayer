@@ -130,3 +130,62 @@ TEST_CASE("Le splat refuse ce qui sort du contrat", "[kernels][gmfss]") {
   CHECK(gmfss_side_time(0, 0.25F) == 0.25F);
   CHECK(gmfss_side_time(1, 0.25F) == 0.75F);
 }
+
+TEST_CASE("Splat sur sa grille : à la même taille, le splat tel quel, couverture comprise",
+          "[kernels][gmfss]") {
+  const std::vector<PlaneF> source{ramp(6, 4, 0.0F)};
+  const ref::SplatMotion motion = uniform(6, 4, 2.0F, 0.0F, 1.0F);
+  auto plain = ref::soft_splat(source, motion, 0.5F);
+  auto grid = ref::soft_splat_at(source, motion, 0.5F, MotionGrid{});
+  REQUIRE(plain);
+  REQUIRE(grid);
+  for (std::size_t i = 0; i < source[0].data.size(); ++i)
+    CHECK_THAT(grid->planes[0].data[i], WithinAbs((*plain)[0].data[i], 1e-6));
+  // Flot d'un pixel à s = 1/2 : la première colonne ne reçoit rien.
+  CHECK_THAT(grid->coverage.at(0, 1), WithinAbs(0.0, 1e-6));
+  CHECK_THAT(grid->coverage.at(3, 1), WithinAbs(1.0, 1e-5));
+}
+
+TEST_CASE("Splat sur sa grille : le flot d'une grille deux fois plus petite, mis à l'échelle",
+          "[kernels][gmfss]") {
+  // Mouvement de 2 pixels sur la grille 4 × 2 : 4 pixels sur la source 8 × 4, à s = 1/2 deux pixels.
+  const std::vector<PlaneF> source{ramp(8, 4, 1.0F)};
+  auto out = ref::soft_splat_at(source, uniform(4, 2, 2.0F, 0.0F, 0.0F), 0.5F, MotionGrid{.scale = 2.0F});
+  REQUIRE(out);
+  for (int y = 0; y < 4; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      const float expected = x >= 2 ? source[0].at(x - 2, y) : 0.0F;
+      CHECK_THAT(out->planes[0].at(x, y), WithinAbs(expected, 1e-4));
+    }
+  }
+}
+
+TEST_CASE("Composition : le détail du travail, corrigé du résidu de la fusion", "[kernels][gmfss]") {
+  // Sans mouvement : H est la source de travail, L la source de RIFE ; out = H + up(F − L).
+  const int w = 4;
+  const int h = 2;
+  const auto still = [](int sw, int sh, float value) {
+    const std::vector<PlaneF> planes(3, PlaneF(sw, sh, value));
+    return *ref::soft_splat_at(planes, uniform(sw, sh, 0.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
+  };
+  const ref::Splatted high = still(6, 3, 0.4F);
+  const ref::Splatted low = still(w, h, 0.3F);
+  std::vector<PlaneF> fusion(3, PlaneF(w + 2, h + 2, 0.0F));
+  for (PlaneF& p : fusion) {
+    for (int y = 1; y <= h; ++y) {
+      for (int x = 1; x <= w; ++x) p.at(x, y) = 0.35F;
+    }
+  }
+  auto out =
+      ref::gmfss_compose(high, high, low, low, fusion, Window{.x = 1, .y = 1, .width = w, .height = h}, 0.5F);
+  REQUIRE(out);
+  REQUIRE((*out)[0].width == 6);
+  for (const PlaneF& p : *out) {
+    for (const float v : p.data) CHECK_THAT(v, WithinAbs(0.45, 1e-5));
+  }
+  // Une sortie plus petite que RIFE, ou une fenêtre d'une autre taille : refus.
+  CHECK_FALSE(ref::gmfss_compose(low, low, high, high, fusion,
+                                 Window{.x = 1, .y = 1, .width = 6, .height = 3}, 0.5F));
+  CHECK_FALSE(ref::gmfss_compose(high, high, low, low, fusion,
+                                 Window{.x = 0, .y = 0, .width = 3, .height = 2}, 0.5F));
+}

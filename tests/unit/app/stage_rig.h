@@ -172,10 +172,16 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // L'instant de chaque lot de splats (soft_splat_fill), dans l'ordre.
   std::expected<void, Refusal> soft_splat_fill(std::span<const gpu::KernelOps::SplatJob> jobs,
                                                const gpu::Tensor& /*time*/, float t) override {
+    // La composition : quatre splats sur la grille du mouvement, avec leur couverture, notés à part.
+    const bool covered = std::ranges::all_of(jobs, [](const SplatJob& job) { return job.coverage; });
+    if (jobs.size() == 4 && covered) return note("soft_splat_grid");
     if (jobs.size() != 8)
       return std::unexpected(Refusal{RefusalCode::FieldOutOfRange, "huit splats attendus"});
     note_t(splat_ts_, t);
     return note("soft_splat_fill");
+  }
+  std::expected<void, Refusal> gmfss_compose(const ComposeJob& job) override {
+    return note("gmfss_compose", job.out.handle);
   }
   std::vector<float> splat_ts() const {
     const std::scoped_lock lock(mutex_);

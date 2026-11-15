@@ -251,16 +251,36 @@ class KernelOps {
   // et 3, deux côtés) en un seul passage, puis chaque élément de time (FP16, l'entrée « time » de la fusion)
   // mis à t. Chaque travail suit ref::soft_splat : source, C plans h × w, poussée à l'instant s de [0, 1] par
   // motion (kGmfssMotionChannels plans fx, fy, z de même taille, donnés pour t = 1), dans out (C plans, une
-  // tranche d'un tenseur plus grand possible). Au premier refus, les sorties sont indéfinies.
+  // tranche d'un tenseur plus grand possible). Au premier refus, les sorties sont indéfinies. grid : le
+  // mouvement lu sur une autre grille (kernels::MotionGrid, motion d'une autre taille) ; coverage : out a un
+  // plan de plus, la couverture. time sans mémoire (handle 0) : rien n'est rempli.
   struct SplatJob {
     Tensor source;
     Tensor motion;
     float s = 0.5F;
     Tensor out;
+    kernels::MotionGrid grid{};
+    bool coverage = false;
   };
   virtual std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> /*jobs*/,
                                                        const Tensor& /*time*/, float /*t*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "soft_splat : absent de ce backend"});
+  }
+  // La composition à la taille de travail (spec gmfss_compose, ref::gmfss_compose) : high_* les sources de
+  // travail splattées avec leur couverture (4 plans, taille de out), low_* celles de RIFE (4 plans), fusion
+  // la sortie de la fusion (3 plans remplis), window l'image de RIFE dedans ; out 3 plans FP16.
+  struct ComposeJob {
+    Tensor high_a;
+    Tensor high_b;
+    Tensor low_a;
+    Tensor low_b;
+    Tensor fusion;
+    kernels::Window window;
+    float t = 0.5F;
+    Tensor out;
+  };
+  virtual std::expected<void, Refusal> gmfss_compose(const ComposeJob& /*job*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_compose : absent de ce backend"});
   }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.

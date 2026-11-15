@@ -7,6 +7,7 @@
 
 #include "kernels/image.h"
 #include "kernels/spec/gmfss.h"
+#include "kernels/spec/warp.h"
 
 namespace ajp::kernels::ref {
 
@@ -18,5 +19,23 @@ struct SplatMotion {
 // Les plans de source splattés à l'instant s du côté. Refus : aucun plan, plans ou mouvement de tailles
 // différentes, s hors de [0, 1].
 Result<std::vector<PlaneF>> soft_splat(const std::vector<PlaneF>& source, const SplatMotion& motion, float s);
+
+// Un splat et sa couverture (spec MotionGrid).
+struct Splatted {
+  std::vector<PlaneF> planes;
+  PlaneF coverage;
+};
+
+// Le splat de source par un mouvement lu sur sa grille (spec MotionGrid), avec sa couverture. Refus : ceux de
+// soft_splat, mouvement hors contrat, échelle non positive.
+Result<Splatted> soft_splat_at(const std::vector<PlaneF>& source, const SplatMotion& motion, float s,
+                               const MotionGrid& grid);
+
+// La composition à la taille de travail (spec gmfss_compose) : high_* à la taille de sortie, low_* à celle de
+// RIFE (au plus la sortie), fusion les trois plans remplis et window l'image de RIFE dedans. Refus : tailles
+// incohérentes, t hors de [0, 1].
+Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted& high_b,
+                                          const Splatted& low_a, const Splatted& low_b,
+                                          const std::vector<PlaneF>& fusion, const Window& window, float t);
 
 }  // namespace ajp::kernels::ref

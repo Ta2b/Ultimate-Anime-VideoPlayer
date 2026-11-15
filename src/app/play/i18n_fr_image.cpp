@@ -109,6 +109,14 @@ constexpr std::array kImageTabs{
     Entry{"High", "Élevé"},
     Entry{"Very high", "Très élevé"},
     Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
+    Entry{"GMFSS keeps the source detail", "GMFSS garde le détail de la source"},
+    Entry{
+        "When the working size is larger than RIFE's (1080p), the GMFSS middle frame is made from the "
+        "source frames moved by its motion, corrected by its fusion, instead of its 720p output enlarged. "
+        "A few milliseconds more per fast pair. Applies after a reload.",
+        "Quand la taille de travail dépasse celle de RIFE (1080p), l'image du milieu de GMFSS est faite des "
+        "images sources poussées par son mouvement, corrigées par sa fusion, au lieu de sa sortie 720p "
+        "agrandie. Quelques millisecondes de plus par paire rapide. S'applique après un rechargement."},
     Entry{
         "GMFSS estimates motion on frames halved in size: about three times cheaper, a little less precise "
         "on "

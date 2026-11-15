@@ -212,7 +212,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .gmfss = {.use = gmfss_use,
                 .pair = gmfss_pair.get(),
                 .fusion = gmfss_fusion.get(),
-                .strong_px = gmfss_px},
+                .strong_px = gmfss_px,
+                .compose = settings.gmfss_compose},
       .warp =
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       .slots = std::move(slots)};

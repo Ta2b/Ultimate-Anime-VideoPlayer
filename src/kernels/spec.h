@@ -12,12 +12,15 @@
 //   1 : contrat d'origine.
 //   2 : loi de mélange A = 1, B = 2,591 ; bloc tenu de 16 ; seuil de coupe 0,120 ; mesure de paire sur le RGB
 //       ingéré à la plage de la source (pair_levels) ; Catmull-Rom borné par ses quatre points centraux.
+//   3 : GMFSS, splat sur la grille de son mouvement (MotionGrid, couverture) et composition à la taille de
+//       travail (gmfss_compose).
 #pragma once
 
 #include "kernels/spec/color.h"        // IWYU pragma: export
 #include "kernels/spec/detect.h"       // IWYU pragma: export
 #include "kernels/spec/distil_drba.h"  // IWYU pragma: export
 #include "kernels/spec/frame_stats.h"  // IWYU pragma: export
+#include "kernels/spec/gmfss.h"        // IWYU pragma: export
 #include "kernels/spec/poses.h"        // IWYU pragma: export
 #include "kernels/spec/resample.h"     // IWYU pragma: export
 #include "kernels/spec/rife.h"         // IWYU pragma: export
@@ -27,6 +30,6 @@
 
 namespace ajp::kernels {
 
-inline constexpr int kSpecVersion = 2;
+inline constexpr int kSpecVersion = 3;
 
 }  // namespace ajp::kernels

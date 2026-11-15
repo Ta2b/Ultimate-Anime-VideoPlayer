@@ -1,5 +1,6 @@
 // GMFSS Fortuna Union par le backend TensorRT (gpu/kernel_ops.h) contre kernels/ref : l'entrée de la paire et
-// le softmax splatting par additions atomiques CUDA. Sans GPU NVIDIA, le test se SKIP.
+// le softmax splatting par additions atomiques CUDA, sur sa grille avec couverture, et la composition à la
+// taille de travail. Sans GPU NVIDIA, le test se SKIP.
 #include "kernels/ref/gmfss.h"
 
 #include <algorithm>
@@ -183,4 +184,111 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
   const auto odd = ops.gmfss_frames((*a)->tensor(), (*frames)->tensor(), (*frames)->tensor());
   REQUIRE_FALSE(odd);
   CHECK(odd.error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composition à la taille de travail",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  auto alloc = [&](int channels, int w, int h) {
+    auto t = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, channels, h, w}});
+    REQUIRE(t);
+    return std::move(*t);
+  };
+  // Le mouvement sur 24 × 16 (le niveau 1 de plans remplis 48 × 32), l'image de RIFE 40 × 24 dans la
+  // fenêtre (4, 4), celle de travail 60 × 36 (×1,5).
+  constexpr int kMw = 24;
+  constexpr int kMh = 16;
+  constexpr int kRw = 40;
+  constexpr int kRh = 24;
+  constexpr int kOw = 60;
+  constexpr int kOh = 36;
+  const k::Window window{.x = 4, .y = 4, .width = kRw, .height = kRh};
+  const k::MotionGrid low_grid{.scale = 2.0F, .x = 2.0F, .y = 2.0F};
+  const k::MotionGrid high_grid{.scale = 2.0F * kOw / kRw, .x = 2.0F, .y = 2.0F};
+  std::vector<std::unique_ptr<gpu::TensorBuffer>> keep;
+  std::vector<gpu::KernelOps::SplatJob> jobs;
+  std::array<k::ref::Splatted, 4> want;  // haut a, haut b, bas a, bas b
+  for (int side = 0; side < 2; ++side) {
+    const std::vector<k::PlaneF> flow = planes(2, 40 + side, -3.0F, 3.0F, kMw, kMh);
+    const std::vector<k::PlaneF> metric = planes(1, 50 + side, -4.0F, 4.0F, kMw, kMh);
+    const k::ref::SplatMotion motion{{flow[0], flow[1], metric[0]}};
+    keep.push_back(alloc(3, kMw, kMh));
+    upload(keep.back()->tensor(), flat({flow[0], flow[1], metric[0]}));
+    const gpu::Tensor motion_tensor = keep.back()->tensor();
+    const float s = k::gmfss_side_time(side, 0.5F);
+    for (const bool high : {true, false}) {
+      const int w = high ? kOw : kRw;
+      const int h = high ? kOh : kRh;
+      const std::vector<k::PlaneF> source = planes(3, 60 + side + (high ? 2 : 0), 0.0F, 1.0F, w, h);
+      const k::MotionGrid grid = high ? high_grid : low_grid;
+      auto expected = k::ref::soft_splat_at(source, motion, s, grid);
+      REQUIRE(expected);
+      want[static_cast<std::size_t>((high ? 0 : 2) + side)] = std::move(*expected);
+      keep.push_back(alloc(3, w, h));
+      upload(keep.back()->tensor(), flat(source));
+      const gpu::Tensor source_tensor = keep.back()->tensor();
+      keep.push_back(alloc(4, w, h));
+      jobs.push_back({.source = source_tensor,
+                      .motion = motion_tensor,
+                      .s = s,
+                      .out = keep.back()->tensor(),
+                      .grid = grid,
+                      .coverage = true});
+    }
+  }
+  REQUIRE(ops.soft_splat_fill(jobs, gpu::Tensor{}, 0.5F));
+  // Ordre des travaux : côté a haut, a bas, b haut, b bas.
+  const std::array<std::size_t, 4> order{0, 2, 1, 3};
+  for (std::size_t j = 0; j < jobs.size(); ++j) {
+    CAPTURE(j);
+    const k::ref::Splatted& expected = want[order[j]];
+    std::vector<k::PlaneF> all = expected.planes;
+    all.push_back(expected.coverage);
+    // Le mouvement lu en FP32 sur la carte comme dans la référence ; une contribution qui tombe au bord d'un
+    // pixel peut changer de voisin à l'arrondi près : la tolérance des splats, sur la moyenne.
+    const std::vector<float> got = download(jobs[j].out);
+    CHECK(worst_of(got, flat(all)) <= 0.05F);
+  }
+  const std::vector<k::PlaneF> fusion = planes(3, 70, 0.0F, 1.0F, 48, 32);
+  auto fusion_tensor = alloc(3, 48, 32);
+  upload(fusion_tensor->tensor(), flat(fusion));
+  auto out = alloc(3, kOw, kOh);
+  // Les sorties de la carte, relues, composées par la référence : la composition seule est jugée.
+  const auto read_back = [&](std::size_t j, int w, int h) {
+    const std::vector<float> data = download(jobs[j].out);
+    k::ref::Splatted s{.planes = std::vector<k::PlaneF>(3, k::PlaneF(w, h)), .coverage = k::PlaneF(w, h)};
+    const std::size_t plane = static_cast<std::size_t>(w) * static_cast<std::size_t>(h);
+    for (std::size_t c = 0; c < 4; ++c) {
+      k::PlaneF& into = c < 3 ? s.planes[c] : s.coverage;
+      std::copy_n(data.begin() + static_cast<std::ptrdiff_t>(c * plane), plane, into.data.begin());
+    }
+    return s;
+  };
+  const auto composed =
+      k::ref::gmfss_compose(read_back(0, kOw, kOh), read_back(2, kOw, kOh), read_back(1, kRw, kRh),
+                            read_back(3, kRw, kRh), fusion, window, 0.5F);
+  REQUIRE(composed);
+  REQUIRE(ops.gmfss_compose({.high_a = jobs[0].out,
+                             .high_b = jobs[2].out,
+                             .low_a = jobs[1].out,
+                             .low_b = jobs[3].out,
+                             .fusion = fusion_tensor->tensor(),
+                             .window = window,
+                             .t = 0.5F,
+                             .out = out->tensor()}));
+  CHECK(worst_of(download(out->tensor()), flat(*composed)) <= k::tolerance::kRgbF16);
+  // Une fenêtre qui sort de la fusion : refus.
+  const auto outside = ops.gmfss_compose({.high_a = jobs[0].out,
+                                          .high_b = jobs[2].out,
+                                          .low_a = jobs[1].out,
+                                          .low_b = jobs[3].out,
+                                          .fusion = fusion_tensor->tensor(),
+                                          .window = {.x = 10, .y = 10, .width = kRw, .height = kRh},
+                                          .t = 0.5F,
+                                          .out = out->tensor()});
+  REQUIRE_FALSE(outside);
+  CHECK(outside.error().code == RefusalCode::ShapeInvalid);
 }
