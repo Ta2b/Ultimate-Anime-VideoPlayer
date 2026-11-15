@@ -98,12 +98,9 @@ i18n::Translated reduced_precision_notice(const std::string& engine, const gpu::
                             reduced.layers, loss.str(), gain.str());
 }
 
-std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known, bool gmfss) {
+std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known) {
   if (free_instants_limit(engine) == 0)
     return i18n::tr_format("{} cannot compute at a free instant", label(engine));
-  // Mesuré sur une RTX 4070 Ti : une paire GMFSS coûte 20 fois une passe de RIFE, le Rapide sautait des
-  // instants à chaque paire forte ; Stable tient un facteur qui vaut pour le pire cas (gmfss_auto_cap).
-  if (gmfss) return i18n::tr("GMFSS union cost varies too much from one pair to the next");
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 

@@ -307,8 +307,6 @@ constexpr std::array kSettingsPages{
     Entry{"GMFSS union at every instant, without RIFE", "GMFSS union à chaque instant, sans RIFE"},
     Entry{"GMFSS union on every pair, RIFE when time runs short",
           "GMFSS union sur chaque paire, RIFE quand le temps manque"},
-    Entry{"GMFSS union cost varies too much from one pair to the next",
-          "le coût de GMFSS union varie trop d'une paire à l'autre"},
     Entry{"the frame ring grows for this interpolation",
           "l'anneau d'images s'agrandit pour cette interpolation"},
     Entry{"the interpolation engine loads (built the first time for this size)",

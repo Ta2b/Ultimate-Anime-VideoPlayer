@@ -476,10 +476,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     // Le plafond choisi, ou celui de GMFSS, borne la cadence ; calée sur l'écran (A12-04, A31-10).
     const double cap_hz = static_cast<double>(auto_cap());
     const double limit_hz = core::auto_limit_hz(known_hz, auto_cap());
-    const std::string why = on && free_wanted
-                                ? free_refusal(chain.running.motion_engine, limit_hz > 0.0,
-                                               vrr_armed || known_period_us > 0, c.gmfss_use != GmfssUse::Off)
-                                : std::string();
+    const std::string why = on && free_wanted ? free_refusal(chain.running.motion_engine, limit_hz > 0.0,
+                                                             vrr_armed || known_period_us > 0)
+                                              : std::string();
     const bool free = on && free_wanted && why.empty();
     if (why != free_note) {
       free_note = why;

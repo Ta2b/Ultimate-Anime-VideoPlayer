@@ -120,10 +120,9 @@ TEST_CASE("GMFSS : la cadence Auto plafonnée, seul à ×2 de la source (×2,5 a
 
 }  // namespace ajp::app::play
 
-TEST_CASE("GMFSS : l'Auto Rapide laisse la place au Stable", "[app][gmfss]") {
+TEST_CASE("GMFSS : l'Auto Rapide reste au choix", "[app][gmfss]") {
   CHECK(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Rife, true, true).empty());
-  CHECK_FALSE(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Rife, true, true, true).empty());
-  CHECK_FALSE(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Gmfss, true, true, true).empty());
+  CHECK(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Gmfss, true, true).empty());
 }
 
 TEST_CASE("GMFSS : le coût d'une paire du mélange, à l'échelle des pixels, moindre au demi-flot",
