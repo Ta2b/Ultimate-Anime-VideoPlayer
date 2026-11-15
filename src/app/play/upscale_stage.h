@@ -498,6 +498,7 @@ class UpscaleStage final : public RingStage {
   bool gmfss_pair() const;
   std::expected<void, Refusal> run_gmfss(float t, const gpu::Tensor& into);
   std::expected<void, Refusal> fuse_gmfss(float t, const gpu::Tensor& padded);  // la fusion, sans recadrage
+  std::expected<void, Refusal> run_gmfss_pair();   // le graphe « paire », sur sa voie, dans l'autre jeu
   std::expected<void, Refusal> run_gmfss_early();  // à l'arrivée : les fusions (seul) ou M (le mélange)
   std::expected<void, Refusal> interpolate_middle(float t, const gpu::Tensor& a, const gpu::Tensor& b,
                                                   const Target& out);

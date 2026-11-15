@@ -37,11 +37,15 @@ struct GmfssBuffers {
     gpu::Tensor motion;
     gpu::Tensor warped;
   };
-  std::unique_ptr<gpu::TensorBuffer> frames;                                      // 1 × 6 × ph × pw
-  std::vector<std::pair<std::string, std::unique_ptr<gpu::TensorBuffer>>> named;  // tenseurs des graphes
-  std::vector<gpu::Tensor> pair_outputs;                                          // ordre du moteur
-  std::vector<gpu::Tensor> fusion_inputs;
-  std::vector<Splat> splats;
+  std::unique_ptr<gpu::TensorBuffer> frames;  // 1 × 6 × ph × pw
+  // Tenseurs des graphes. Les sorties de la paire sont en double (« half0 » et « half0#1 ») : la paire
+  // suivante, sur sa voie (gpu::Lane::Pair), écrit l'autre jeu pendant que les fusions lisent celui-ci ;
+  // warped et time sont communs. set : le jeu de la paire en cours.
+  std::vector<std::pair<std::string, std::unique_ptr<gpu::TensorBuffer>>> named;
+  std::array<std::vector<gpu::Tensor>, 2> pair_outputs;  // ordre du moteur, par jeu
+  std::array<std::vector<gpu::Tensor>, 2> fusion_inputs;
+  std::array<std::vector<Splat>, 2> splats;
+  std::uint32_t set = 0;
   std::vector<gpu::KernelOps::SplatJob> jobs;
   gpu::Tensor time;                            // l'entrée « time » de la fusion
   std::unique_ptr<gpu::TensorBuffer> out;      // sortie de la fusion, 1 × 3 × ph × pw

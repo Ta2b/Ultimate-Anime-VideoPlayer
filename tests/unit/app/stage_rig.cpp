@@ -86,7 +86,7 @@ std::expected<void, Refusal> FakeBackend::note_ring(std::string entry, const gpu
 }
 
 void FakeBackend::push(std::string entry) {
-  constexpr std::array<std::string_view, gpu::kLanes> kNames{"measure", "upscale", "interpolate"};
+  constexpr std::array<std::string_view, gpu::kLanes> kNames{"measure", "upscale", "interpolate", "pair"};
   laned_.push_back(std::format("{} {}", kNames[gpu::lane_index(lane_)], entry));
   log_.push_back(std::move(entry));
 }

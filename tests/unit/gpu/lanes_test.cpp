@@ -33,6 +33,9 @@ TEST_CASE("Voies : la mesure d'abord, puis l'agrandissement, puis l'interpolatio
   CHECK(lane_priority(Lane::Measure, 0, -1) == -1);
   CHECK(lane_priority(Lane::Upscale, 0, -1) == -1);
   CHECK(lane_priority(Lane::Interpolate, 0, -1) == 0);
+  // La paire de GMFSS au rang de l'interpolation, dans les deux plages.
+  CHECK(lane_priority(Lane::Pair, 0, -5) == -3);
+  CHECK(lane_priority(Lane::Pair, 0, -1) == 0);
   // Sans plage : tout à la même priorité.
   CHECK(lane_priority(Lane::Measure, 0, 0) == 0);
   CHECK(lane_priority(Lane::Interpolate, 0, 0) == 0);
@@ -109,6 +112,21 @@ TEST_CASE("Voies : une adresse que toutes les voies ont déjà attendue est oubl
   CHECK(hazards.tracked() == 0);
   // Oubliées sans rien changer : rien à attendre, comme avant l'oubli.
   CHECK(op(hazards, Lane::Upscale, {kFrame, kFlow}, {kSpan}).waits.empty());
+}
+
+TEST_CASE("Voies : la voie de la paire, vide, n'empêche pas l'oubli ; sa première opération suit tout",
+          "[gpu][lanes]") {
+  LaneHazards hazards;
+  op(hazards, Lane::Measure, {}, {kFrame});
+  op(hazards, Lane::Interpolate, {}, {kFlow});
+  hazards.join(Lane::Upscale);
+  hazards.join(Lane::Measure);
+  hazards.join(Lane::Interpolate);
+  CHECK(hazards.tracked() == 0);  // sans GMFSS, rien ne change
+  // Puis GMFSS : la paire attend tout ce qui a été enfilé, oublié compris.
+  const auto first = op(hazards, Lane::Pair, {kFrame}, {kSpan});
+  CHECK(first.waits.size() == 3);
+  CHECK(op(hazards, Lane::Pair, {kFrame}, {kSpan}).waits.empty());
 }
 
 TEST_CASE("Voies : une mémoire rendue sort de la table (A21-09)", "[gpu][lanes]") {

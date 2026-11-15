@@ -16,13 +16,14 @@ constexpr std::uintptr_t kUnknownAccess = 2;
 std::expected<BackendQueue, Refusal> BackendQueue::create(VkContext& context, bool lanes) {
   // Les voies sur les files : l'agrandissement sur la principale (0), l'interpolation sur la
   // deuxième, la mesure sur la troisième ou, à défaut, avec l'agrandissement.
-  const std::size_t files = lanes ? std::min<std::size_t>(context.queue_lanes(), kLanes) : 1;
+  const std::size_t files = lanes ? std::min<std::size_t>(context.queue_lanes(), 3) : 1;
   std::vector<LaneState> states;
   for (std::size_t lane = 0; lane < kLanes; ++lane) {
     auto timeline = TimelineSemaphore::create(context, 0);
     if (!timeline) return std::unexpected(timeline.error());
     std::size_t file = 0;
-    if (lane == lane_index(Lane::Interpolate) && files >= 2) file = 1;
+    // La paire de GMFSS (TensorRT seulement) partagerait la file de l'interpolation.
+    if ((lane == lane_index(Lane::Interpolate) || lane == lane_index(Lane::Pair)) && files >= 2) file = 1;
     if (lane == lane_index(Lane::Measure) && files >= 3) file = 2;
     states.push_back(LaneState{.timeline = std::move(*timeline), .file = file});
   }

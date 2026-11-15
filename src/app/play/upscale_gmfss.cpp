@@ -87,11 +87,14 @@ std::expected<void, Refusal> allocate_named(gpu::Backend& backend, GmfssBuffers&
     }
   }
   for (const auto& [name, dims] : wanted) {
-    std::unique_ptr<gpu::TensorBuffer> tensor;
-    const int scale = dims[1];
-    if (auto ok = alloc_f16(backend, tensor, dims[0], g.padded_width / scale, g.padded_height / scale); !ok)
-      return ok;
-    gmfss.named.emplace_back(name, std::move(tensor));
+    const bool doubled = !name.starts_with("warped");  // une sortie de la paire : un tenseur par jeu
+    for (int set = 0; set < (doubled ? 2 : 1); ++set) {
+      std::unique_ptr<gpu::TensorBuffer> tensor;
+      const int scale = dims[1];
+      if (auto ok = alloc_f16(backend, tensor, dims[0], g.padded_width / scale, g.padded_height / scale); !ok)
+        return ok;
+      gmfss.named.emplace_back(set == 0 ? name : name + "#1", std::move(tensor));
+    }
   }
   std::unique_ptr<gpu::TensorBuffer> time;
   if (auto ok = alloc_f16(backend, time, 1, 1, 1); !ok) return ok;
@@ -104,11 +107,20 @@ const gpu::Tensor* named_tensor(const GmfssBuffers& gmfss, std::string_view name
   return found == gmfss.named.end() ? nullptr : &found->second->tensor();
 }
 
+// Le tenseur name du jeu set : sa copie « #1 » au second jeu, sinon le commun (warped, time).
+const gpu::Tensor* set_tensor(const GmfssBuffers& gmfss, std::string_view name, std::uint32_t set) {
+  if (set == 1) {
+    if (const gpu::Tensor* own = named_tensor(gmfss, std::string(name) + "#1")) return own;
+  }
+  return named_tensor(gmfss, name);
+}
+
 // Les tenseurs dans l'ordre que dit le moteur ; un nom inconnu vient d'un autre export.
-std::expected<void, Refusal> order_tensors(const GmfssBuffers& gmfss, std::span<const std::string> names,
-                                           std::vector<gpu::Tensor>& into, std::string_view graph) {
+std::expected<void, Refusal> order_tensors(const GmfssBuffers& gmfss, std::uint32_t set,
+                                           std::span<const std::string> names, std::vector<gpu::Tensor>& into,
+                                           std::string_view graph) {
   for (const std::string& name : names) {
-    const gpu::Tensor* found = named_tensor(gmfss, name);
+    const gpu::Tensor* found = set_tensor(gmfss, name, set);
     if (found == nullptr)
       return refuse(RefusalCode::GraphInvalid,
                     std::format("GMFSS : tenseur « {} » inconnu dans le graphe {}", name, graph));
@@ -119,24 +131,25 @@ std::expected<void, Refusal> order_tensors(const GmfssBuffers& gmfss, std::span<
 
 // Chaque côté pousse ses sources par son mouvement ; au niveau 1, l'image puis les caractéristiques, chacune
 // dans sa tranche de warped{k}_1.
-void list_splats(GmfssBuffers& gmfss) {
-  const auto at = [&](const std::string& name) { return *named_tensor(gmfss, name); };
+void list_splats(GmfssBuffers& gmfss, std::uint32_t set) {
+  const auto at = [&](const std::string& name) { return *set_tensor(gmfss, name, set); };
+  std::vector<GmfssBuffers::Splat>& splats = gmfss.splats[set];
   for (int side = 0; side < 2; ++side) {
     for (int level = 1; level <= kernels::kGmfssLevels; ++level) {
       const gpu::Tensor motion = at(std::format("motion{}_{}", side, level));
       const gpu::Tensor warped = at(std::format("warped{}_{}", side, level));
       if (level > 1) {
-        gmfss.splats.push_back({.side = side,
-                                .source = at(std::format("source{}_{}", side, level)),
-                                .motion = motion,
-                                .warped = warped});
+        splats.push_back({.side = side,
+                          .source = at(std::format("source{}_{}", side, level)),
+                          .motion = motion,
+                          .warped = warped});
         continue;
       }
-      gmfss.splats.push_back({.side = side,
-                              .source = at(std::format("half{}", side)),
-                              .motion = motion,
-                              .warped = channel_slice(warped, 0, kernels::kGmfssImagePlanes)});
-      gmfss.splats.push_back(
+      splats.push_back({.side = side,
+                        .source = at(std::format("half{}", side)),
+                        .motion = motion,
+                        .warped = channel_slice(warped, 0, kernels::kGmfssImagePlanes)});
+      splats.push_back(
           {.side = side,
            .source = at(std::format("feature{}_1", side)),
            .motion = motion,
@@ -162,11 +175,16 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
   if (auto ok = alloc_f16(backend, gmfss_.out, 3, g.padded_width, g.padded_height); !ok) return ok;
   if (auto ok = allocate_named(backend, gmfss_, g); !ok) return ok;
   gmfss_.time = *named_tensor(gmfss_, "time");
-  if (auto ok = order_tensors(gmfss_, setup.pair->output_names(), gmfss_.pair_outputs, "paire"); !ok)
-    return ok;
-  if (auto ok = order_tensors(gmfss_, setup.fusion->input_names(), gmfss_.fusion_inputs, "fusion"); !ok)
-    return ok;
-  list_splats(gmfss_);
+  for (std::uint32_t set = 0; set < 2; ++set) {
+    if (auto ok = order_tensors(gmfss_, set, setup.pair->output_names(), gmfss_.pair_outputs[set], "paire");
+        !ok)
+      return ok;
+    if (auto ok =
+            order_tensors(gmfss_, set, setup.fusion->input_names(), gmfss_.fusion_inputs[set], "fusion");
+        !ok)
+      return ok;
+    list_splats(gmfss_, set);
+  }
   if (setup.use == GmfssUse::Only) return {};
   // Le mélange : M à la taille de RIFE, puis à celle de travail et après SPAN si le warp les lit ; l'entrée
   // de RIFE des demi-paires.
@@ -204,23 +222,34 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss(float t, const gpu::Tensor&
   return ops.rife_crop(gmfss_.out->tensor(), into);
 }
 
+std::expected<void, Refusal> UpscaleStage::run_gmfss_pair() {
+  // Sur sa voie et dans l'autre jeu de tenseurs : la paire tourne pendant les fusions encore en file de la
+  // paire d'avant, qui lisent leur jeu (gpu/lanes.h : le backend pose les attentes entre voies, sur les
+  // images d'entrée écrites par la mesure et sur le jeu que des fusions lisent encore).
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  const gpu::Lane back = lane_;
+  gmfss_.set ^= 1U;
+  use_lane(gpu::Lane::Pair);
+  auto ok = ops.gmfss_frames(rife_source(current_ ^ 1U), rife_source(current_), gmfss_.frames->tensor());
+  if (ok) {
+    const std::array inputs{gmfss_.frames->tensor()};
+    ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.pair, inputs, gmfss_.pair_outputs[gmfss_.set]),
+                     kMotionRefusalKey);
+  }
+  use_lane(back);
+  if (!ok) return ok;
+  gmfss_.pair_ready = true;
+  ++gmfss_.pairs;
+  return {};
+}
+
 std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor& padded) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (!gmfss_.pair_ready) {  // le graphe « paire » sert toutes les images de la paire
-    if (auto ok =
-            ops.gmfss_frames(rife_source(current_ ^ 1U), rife_source(current_), gmfss_.frames->tensor());
-        !ok)
-      return ok;
-    const std::array inputs{gmfss_.frames->tensor()};
-    if (auto ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.pair, inputs, gmfss_.pair_outputs),
-                              kMotionRefusalKey);
-        !ok)
-      return ok;
-    gmfss_.pair_ready = true;
-    ++gmfss_.pairs;
+    if (auto ok = run_gmfss_pair(); !ok) return ok;
   }
   gmfss_.jobs.clear();
-  for (const GmfssBuffers::Splat& splat : gmfss_.splats) {
+  for (const GmfssBuffers::Splat& splat : gmfss_.splats[gmfss_.set]) {
     gmfss_.jobs.push_back({.source = splat.source,
                            .motion = splat.motion,
                            .s = kernels::gmfss_side_time(splat.side, t),
@@ -228,8 +257,9 @@ std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor
   }
   if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gmfss_.time, t); !ok) return ok;
   std::array results{padded};
-  if (auto ok = blame_stage(setup_.backend->enqueue(*setup_.gmfss.fusion, gmfss_.fusion_inputs, results),
-                            kMotionRefusalKey);
+  if (auto ok = blame_stage(
+          setup_.backend->enqueue(*setup_.gmfss.fusion, gmfss_.fusion_inputs[gmfss_.set], results),
+          kMotionRefusalKey);
       !ok)
     return ok;
   ++gmfss_.fusions;

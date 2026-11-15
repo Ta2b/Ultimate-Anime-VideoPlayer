@@ -130,7 +130,9 @@ void TensorRtBackend::use_lane(Lane lane) {
 }
 
 const std::shared_ptr<SharedActivations>& TensorRtBackend::arena() {
-  const std::size_t zone = lanes_ > 1 && lane_ != Lane::Upscale ? 1 : 0;
+  // Trois zones : l'agrandissement ; la mesure et l'interpolation ; la paire de GMFSS, qui tourne pendant les
+  // fusions (une zone commune les mettrait l'une après l'autre).
+  const std::size_t zone = lanes_ <= 1 || lane_ == Lane::Upscale ? 0 : lane_ == Lane::Pair ? 2 : 1;
   if (!arenas_[zone]) {
     arenas_[zone] = std::make_shared<SharedActivations>();
     // Le pool du backend : la zone vit moins longtemps que lui (les moteurs la tiennent, le backend les

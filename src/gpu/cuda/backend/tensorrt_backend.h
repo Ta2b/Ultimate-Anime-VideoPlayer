@@ -344,7 +344,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   LaneHazards hazards_;
   std::unique_ptr<TrtLog> trt_log_;
   std::unique_ptr<nvinfer1::IRuntime> runtime_;
-  std::array<std::shared_ptr<SharedActivations>, 2> arenas_;  // zones d'activation (trt_engine.h)
+  std::array<std::shared_ptr<SharedActivations>, 3> arenas_;  // zones d'activation (trt_engine.h)
   std::array<Held, kHeldFrames> held_{};
   std::uint64_t held_sequence_ = 0;
   std::array<cudaEvent_t, kFences> fences_{};
