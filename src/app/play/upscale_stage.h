@@ -498,7 +498,7 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> allocate_gmfss();
   bool gmfss_pair() const;
   bool gmfss_strong() const;  // la paire forte du mélange, en retard ou non (gmfss_.behind)
-  bool gmfss_moving() const;  // la paire du mélange qui bouge assez pour une clé quand le crédit déborde
+  bool gmfss_moving() const;  // la paire du mélange qui bouge assez pour une clé
   std::expected<void, Refusal> run_gmfss(float t, const gpu::Tensor& into);
   std::expected<void, Refusal> fuse_gmfss(float t, const gpu::Tensor& padded);  // la fusion, sans recadrage
   std::expected<void, Refusal> run_gmfss_pair();    // le graphe « paire », sur sa voie, dans l'autre jeu

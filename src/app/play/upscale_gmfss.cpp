@@ -273,16 +273,18 @@ bool UpscaleStage::gmfss_pair() const {
   // (begin_motion_pair : le sien, ou celui de la précédente relu sans attente) ; le mélange n'a pas de paire
   // prise d'emblée à chaque instant (motion_direct), la passe du milieu de RIFE mesure chaque paire. Le
   // seuil est donné à 720 lignes : mis à la hauteur où RIFE mesure.
-  // Sous le seuil, la clé ne se pose que si le crédit déborde (gmfss_.spare) et que la paire bouge assez
-  // pour que RIFE seul y laisse des fantômes.
-  if (gmfss_.behind) return false;
-  return gmfss_strong() || (gmfss_.spare && gmfss_moving());
+  // Jamais de clé sur une paire qui bouge peu (gmfss_moving) ; sous le seuil, la clé ne se pose que si le
+  // crédit déborde (gmfss_.spare).
+  if (gmfss_.behind || !gmfss_moving()) return false;
+  return gmfss_strong() || gmfss_.spare;
 }
 
 bool UpscaleStage::gmfss_moving() const {
-  constexpr float kSpareFloorPx = 4.0F;  // à 720 lignes : en dessous, RIFE seul est déjà propre
+  // À 720 lignes. Mesuré sur Re:Zero (720p, demi-flot, 40 fenêtres de sept images) : sous 15 px, RIFE seul
+  // fait 36,8 dB contre 35,5 avec une clé, plus douce.
+  constexpr float kKeyFloorPx = 15.0F;
   if (setup_.gmfss.use != GmfssUse::Middle || smooth_first_ || copy_pair_) return false;
-  return pair_motion_ >= kSpareFloorPx * static_cast<float>(setup_.rife_height) / 720.0F;
+  return pair_motion_ >= kKeyFloorPx * static_cast<float>(setup_.rife_height) / 720.0F;
 }
 
 bool UpscaleStage::gmfss_strong() const {
