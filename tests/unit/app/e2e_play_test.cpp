@@ -202,46 +202,24 @@ std::optional<fs::path> wizard_clip(const std::string& name) {
 }  // namespace
 
 // A25-14, A25-18 : run_engine_screen de bout en bout, au clavier seul. « q » n'y ferme plus le lecteur,
-// Entrée vaut « Suivant », Tab mène à « Set it up myself » ; les choix s'écrivent et la lecture suit.
+// Entrée vaut « Suivant », Tab mène à « Terminer » ; les choix s'écrivent et la lecture suit.
 TEST_CASE("Bout en bout : l'assistant se parcourt au clavier, « q » ne le ferme pas", "[.e2e][app]") {
   const auto clip = wizard_clip("e2e-assistant.mkv");
   REQUIRE(clip);
   const fs::path dir = first_launch_dir("ajp-e2e-assistant");
   // Entrée vaut « Suivant » sur chaque écran sauf Prêt, où elle ne fait rien (first_run_wizard.cpp) : quatre
   // Entrée mènent à Prêt que l'écran Moteur soit là (carte NVIDIA avec le module TensorRT) ou non (CI). Sur
-  // Prêt, Tab trois fois (Précédent, Calibrer maintenant, Régler moi-même) puis Entrée. Le dernier « q »,
+  // Prêt, Tab deux fois (Précédent, Terminer) puis Entrée ; l'assistant ne calibre plus. Le dernier « q »,
   // lui, tombe pendant la lecture.
   const Run run =
       play(alone(*clip, dir), dir,
            {"--first-run",
-            "--keys=0.5:q,1:Return,1.5:Return,2:Return,2.5:Return,3.1:Tab,3.5:Tab,3.9:Tab,4.3:Return,6.5:q"});
+            "--keys=0.5:q,1:Return,1.5:Return,2:Return,2.5:Return,3.1:Tab,3.5:Tab,3.9:Return,6.5:q"});
   INFO(run.output);
   CHECK(run.code == 0);
   CHECK(run.output.find("assistant : ") != std::string::npos);
   CHECK(run.output.find("moteurs choisis : Vulkan") != std::string::npos);
   CHECK(run.output.find("calibration de la machine") == std::string::npos);
   CHECK(slurp(dir / "reglages" / "settings.toml").find("first_run_done = true") != std::string::npos);
-  CHECK(fs::exists(dir / "reglages" / "play.toml"));
-}
-
-// A25-18 : calibrate_on_screen de bout en bout. Les essais ne trouvent pas de carte ici (ils ne reçoivent
-// pas --software-gpu) : la calibration échoue, l'assistant garde l'Auto estimé et la lecture suit.
-TEST_CASE("Bout en bout : une calibration qui échoue à l'écran laisse l'Auto et la lecture", "[.e2e][app]") {
-  const auto clip = wizard_clip("e2e-calibration.mkv");
-  REQUIRE(clip);
-  const fs::path dir = first_launch_dir("ajp-e2e-calibration");
-  // Le clip de calibration déjà là : sa génération (des dizaines de secondes en Debug) n'est pas l'objet.
-  fs::copy_file(*clip, dir / "reglages" / "bench-clip-v4.mkv");
-  const Run run = play(
-      alone(*clip, dir), dir,
-      {"--first-run", "--keys=1:Return,1.5:Return,2:Return,2.5:Return,3.1:Tab,3.5:Tab,3.9:Return,6.5:q"});
-  INFO(run.output);
-  CHECK(run.code == 0);
-  CHECK(run.output.find("calibration de la machine") != std::string::npos);
-  CHECK(run.output.find("moteurs choisis : Vulkan") != std::string::npos);
-  const std::string play_toml = slurp(dir / "reglages" / "play.toml");
-  CHECK(play_toml.find("preset = 'auto'") != std::string::npos);
-  // Le dossier des essais ne reste pas (A25-11).
-  for (const auto& entry : fs::directory_iterator(dir / "reglages"))
-    CHECK_FALSE(entry.path().filename().string().starts_with("calibration-essais-"));
+  CHECK(slurp(dir / "reglages" / "play.toml").find("preset = 'auto'") != std::string::npos);
 }
