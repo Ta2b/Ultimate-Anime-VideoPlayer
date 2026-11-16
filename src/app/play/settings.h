@@ -275,8 +275,9 @@ struct PlaySettings {
   int gmfss_motion = kDefaultGmfssMotion;
   // La paire de GMFSS au demi-flot (gmfss_model.h, kGmfssHalfPairFile) : GMFlow sur les images réduites de
   // moitié, environ trois fois moins cher, un peu moins juste sur les petits mouvements. Élevé et Très élevé
-  // ; recharge la chaîne (la paire a son propre moteur). Sans ce graphe, la paire au flot entier.
-  bool gmfss_half_flow = false;
+  // ; recharge la chaîne (la paire a son propre moteur). Sans ce graphe, la paire au flot entier. Pris par
+  // défaut : c'est lui qui fait tenir la cadence, pour une perte mineure.
+  bool gmfss_half_flow = true;
   // Élevé en travail plus grand que RIFE (1080p) : l'image du milieu composée des sources de travail
   // splattées par le flot de GMFSS, corrigées du résidu de sa fusion (kernels/spec/gmfss.h, composition), au
   // lieu de la sortie 720p agrandie. Le détail de la source reste ; 4 splats et une composition de plus par

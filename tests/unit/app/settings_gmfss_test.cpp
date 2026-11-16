@@ -36,14 +36,15 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   CHECK_FALSE(parse_settings("version = 1\n[interpolation]\ngmfss_motion = 200\n"));
   CHECK(interp_level(MotionEngine::Rife, "rife_v4.26.onnx", true) == InterpLevel::High);
   CHECK(interp_level(MotionEngine::Gmfss, "") == InterpLevel::GmfssUnion);
-  // Le demi-flot se relit ; absent, la paire au flot entier.
+  // Le demi-flot se relit ; absent (un fichier d'avant), il est pris par défaut ; éteint, il le reste.
   PlaySettings half;
   half.motion_engine = MotionEngine::Gmfss;
-  half.gmfss_half_flow = true;
+  half.gmfss_half_flow = false;
   const auto half_back = parse_settings(format_settings(half));
   REQUIRE(half_back);
   CHECK(*half_back == half);
-  CHECK_FALSE(without->gmfss_half_flow);
+  CHECK_FALSE(half_back->gmfss_half_flow);
+  CHECK(without->gmfss_half_flow);
   // La composition à la taille de travail se relit ; absente (un fichier d'avant), éteinte.
   PlaySettings composed;
   composed.gmfss_middle = true;
@@ -95,6 +96,7 @@ TEST_CASE(
   ChainEngines c;
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 0);  // RIFE : l'écran
   c.gmfss_use = GmfssUse::Only;
+  c.played.gmfss_half_flow = false;  // le flot entier
   CHECK(gmfss_auto_cap(c, 0, 23.976) == 48);
   CHECK(gmfss_auto_cap(c, 30, 23.976) == 30);  // un plafond choisi plus bas reste
   c.played.gmfss_half_flow = true;

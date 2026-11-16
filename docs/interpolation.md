@@ -365,6 +365,8 @@ entier ; la fusion reste la même. Sur la 4070 Ti, en travail 720p, la paire au 
 source et la fusion 11 à 13 ms par instant : Très élevé ne tient qu'en ×2 (environ 40 i/s sur 48 au flot
 entier), le demi-flot doit l'amener à 48. Au-delà de ×2, GMFSS seul ne tient pas en temps réel sur cette carte ;
 Élevé ×8 tient (GMFSS sur une paire sur dix environ, au seuil de 15 px). Sans le graphe, la case est grisée.
+Activé par défaut depuis la refonte des infobulles (paire environ −65 %, GMFSS environ −40 % en tout, perte
+mineure) ; un `play.toml` qui l'a éteint le garde éteint.
 
 **Clés GMFSS du mélange** (novembre 2026) : une paire qui bouge reçoit une à trois images union, les clés, aux
 instants k/(n+1) ; RIFE mouvement fait chaque autre instant entre les deux voisines (source ou clé), une passe
@@ -376,6 +378,11 @@ instant de la paire) : sans lui, les premiers instants d'une paire à clés para
 contre-pression montait à ×2 pour toutes les paires (au banc, Très élevé : 1 407 images manquées en 90 s) et
 plan_gaps rendait à RIFE les paires fortes dont le premier instant aurait été en retard (573 sur 90 s). Le coût
 des clés est un coût fixe de la paire, hors du temps de service par image (`LiveSettings::auto_fixed`).
+
+**Infobulles** : chaque réglage de l'interpolation dit ce qu'il fait en une phrase, puis « Vitesse » (en %, + = plus
+rapide), « Impact sur la qualité » (imperceptible, mineur, modéré, élevé) et « Recommandé », qui est la valeur
+par défaut ; aucun nom de carte ni de configuration. Les chiffres sont des ordres de grandeur des bancs de
+novembre 2026.
 
 **Construction** : les deux graphes sans pavage L2 ni niveau d'optimisation 5 (`gpu::ModelSpec::tuned`). Mesuré
 sur la 4070 Ti : la paire en 3 minutes ; la fusion à 640x384 en 218 s au lieu de 692 s, et 6 % plus rapide ; à
