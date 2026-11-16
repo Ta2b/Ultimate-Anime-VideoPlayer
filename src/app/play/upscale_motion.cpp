@@ -299,7 +299,10 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
     return blend(a, b, run->motion, 0.5F, out);
   }
   if (strong_motion_ && t != 0.5F) ++strong_derived_;
-  if (poses_ && before_ != PairMotion::Unknown) {
+  // Paire forte : ses autres instants sont RIFE à l'instant exact (strong_half), sans poses ; son milieu suit
+  // la même loi. Avec les poses après un dessin tenu, le milieu sautait jusqu'à b entre 1/4 et 3/4 linéaires
+  // : l'image d'après reculait (retours en arrière une paire sur deux sur un dessin en deux qui bouge vite).
+  if (poses_ && before_ != PairMotion::Unknown && !strong_motion_) {
     const gpu::Motion previous = mid_motion(mid_ ^ 1U);
     return blend_poses(a, b, middle, before_ == PairMotion::Moving ? &previous : nullptr, t, out);
   }

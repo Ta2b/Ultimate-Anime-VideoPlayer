@@ -120,6 +120,16 @@ seuil (bras qui tourne, caméra qui freine) suit une droite, et les occlusions g
   pire bloc), une fois avec le seuil à 15 px et une fois à 0 (RIFE à chaque instant) ; relever le temps par image
   de l'étage avec `--stats=`. Le seuil se règle ou s'annonce d'après ces chiffres.
 
+## Paire forte avec les poses gardées
+
+Une paire forte n'applique les poses à aucun instant : ses instants hors du milieu sont RIFE à l'instant exact
+(`strong_half`), et son milieu est le milieu de RIFE tel quel (`interpolate_by_motion`,
+`src/app/play/upscale_motion.cpp`). Avant, le milieu gardait les poses : après un dessin tenu, il montrait déjà b
+pendant que 1/4 et 3/4 restaient linéaires. L'image à 3/4 reculait donc derrière le milieu, une paire sur deux
+sur un dessin en deux qui bouge vite. Tatoub l'a vu au ralenti dans un export en Équilibré ×4 ; la mesure image
+par image a trouvé 19 reculs sur 425 images, aux rangs multiples de 8. La copie de b après un dessin tenu
+(`--skip-held`) ne change pas : toutes ses images valent a puis b, sans recul.
+
 ## Instants déduits sur les paires fortes (essai)
 
 Case « Moins de passes RIFE sur les mouvements rapides » (Vidéo, sous le multiplicateur ; `[interpolation]

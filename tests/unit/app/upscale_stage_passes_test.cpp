@@ -146,6 +146,24 @@ TEST_CASE("Étage gpu : RIFE mouvement avec poses, la première paire d'un plan 
   CHECK(rig.backend.count("flow_max_now") == 0);
 }
 
+TEST_CASE("Étage gpu : RIFE mouvement avec poses, le milieu d'une paire forte après un dessin tenu suit RIFE",
+          "[app][stage]") {
+  // Dessin en deux qui bouge vite : (1,2) forte, (2,3) tenue, (3,4) forte. Les instants 1/4 et 3/4 de (3,4)
+  // sont RIFE à l'instant exact ; le milieu gardait les poses (b dès 1/2) et l'image à 3/4 reculait.
+  Rig rig;
+  rig.live->set_keep_poses(true);
+  rig.backend.score(SourceId{2}, SourceId{3}, 0.0, 10);  // dessin tenu
+  UpscaleSetup s = rig.setup(true, Factor{.num = 4, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  rig.start(std::move(s));
+  rig.backend.motion_max(40.0F);
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(10));
+  rig.stage.reset();
+  CHECK(rig.backend.count("warp_blend_poses") + rig.backend.count("warp_blend_poses_ring") == 0);
+}
+
 // Passes à l'arrivée (upscale_early.cpp) : une paire forte enfile toutes ses passes RIFE avant d'avoir un
 // slot pour sa première image ; avec --rife-at-slot, chacune attend le sien. Les images écrites et le nombre
 // de passes sont les mêmes.
