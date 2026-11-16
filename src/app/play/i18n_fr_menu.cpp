@@ -34,19 +34,17 @@ constexpr std::array kMenuTexts{
     Entry{
         "Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer detail "
         "if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and Anime4K are "
-        "for weak graphics cards. FP8: prepared once, then about +37 % speed for an imperceptible loss. "
-        "Recommended: the preset's choice.",
+        "for weak graphics cards. FP8: prepared once, then about +37 % speed for an imperceptible loss.",
         "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
         "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu plus "
         "durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles. FP8 : préparé une fois, puis "
-        "environ +37 % de vitesse pour une perte imperceptible. Recommandé : le choix du préréglage."},
+        "environ +37 % de vitesse pour une perte imperceptible."},
     Entry{"Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer "
           "detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and "
-          "Anime4K are for weak graphics cards. Recommended: the preset's choice.",
+          "Anime4K are for weak graphics cards.",
           "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
           "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu "
-          "plus durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles. Recommandé : le choix "
-          "du préréglage."},
+          "plus durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles."},
     Entry{"Anime4K: SDR sources only; an HDR source is upscaled by the display.",
           "Anime4K : sources SDR seulement ; une source HDR est agrandie par l'affichage."},
     Entry{"Output: {} (SPAN ×2).", "Sortie : {} (SPAN ×2)."},
@@ -57,13 +55,13 @@ constexpr std::array kMenuTexts{
           "Qualité calcule en pleine précision (FP32). La différence ne se voit pas, mais la carte travaille "
           "beaucoup plus : utile seulement pour comparer des images. Vitesse : Qualité environ 2 à 3× plus "
           "lent. Impact sur la qualité : imperceptible. Recommandé : Équilibré."},
-    Entry{"Redraws the video at twice its size with a model trained on anime: sharper lines and less blur on "
-          "a big screen. It is the heaviest step: turn it off first if the video stutters. Speed: the "
-          "heaviest step of the chain. Quality impact: high gain. Recommended: on.",
-          "Redessine la vidéo au double de sa taille avec un modèle entraîné sur l'animation : des traits "
-          "plus nets et moins de flou sur un grand écran. C'est l'étape la plus lourde : à couper en premier "
-          "si la vidéo saccade. Vitesse : l'étape la plus lourde de la chaîne. Impact sur la qualité : gain "
-          "élevé. Recommandé : activé."},
+    Entry{
+        "Redraws the video at twice its size with a model trained on anime: sharper lines and less blur on a "
+        "big screen. It is the heaviest step: turn it off first if the video stutters. Speed: the heaviest "
+        "step of the chain. Quality impact: high gain.",
+        "Redessine la vidéo au double de sa taille avec un modèle entraîné sur l'animation : des traits plus "
+        "nets et moins de flou sur un grand écran. C'est l'étape la plus lourde : à couper en premier si la "
+        "vidéo saccade. Vitesse : l'étape la plus lourde de la chaîne. Impact sur la qualité : gain élevé."},
     Entry{"Restore line art", "Restaurer les traits"},
     Entry{"Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, firmer "
           "lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and textures, "
@@ -76,11 +74,10 @@ constexpr std::array kMenuTexts{
           "la qualité : modeste (traits plus propres, moins de grain). Recommandé : activé."},
     Entry{"The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps more detail but "
           "asks much more of the card: lower it first if the video stutters. Speed: 1080p costs about 2.3× "
-          "720p. Quality impact: modest. Recommended: the preset's choice.",
+          "720p. Quality impact: modest.",
           "La taille à laquelle l'agrandissement travaille, puis qu'il double (720p donne 1440p). Plus haut "
           "garde plus de détails mais demande beaucoup plus à la carte : à baisser en premier si la vidéo "
-          "saccade. Vitesse : 1080p coûte environ 2,3× 720p. Impact sur la qualité : modeste. Recommandé : "
-          "le choix du préréglage."},
+          "saccade. Vitesse : 1080p coûte environ 2,3× 720p. Impact sur la qualité : modeste."},
     Entry{"Makes lines crisper after upscaling, without halos. Too high makes the picture look harsh. Speed: "
           "imperceptible cost. Recommended: 0 %, to taste.",
           "Rend les traits plus nets après l'agrandissement, sans halos. Trop haut, l'image devient dure. "
@@ -187,11 +184,10 @@ constexpr std::array kMenuTexts{
         "Les images intermédiaires gardent des traits plus fins, pour quelques pour cent de vitesse. Vitesse "
         ": environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
     Entry{"How clean the in-between frames are. Higher levels fix more artifacts on fast motion but need a "
-          "stronger card; High and Very high add GMFSS and need an NVIDIA RTX. Recommended: Balanced on "
-          "NVIDIA RTX, Fast elsewhere.",
+          "stronger card; High and Very high add GMFSS and need an NVIDIA RTX.",
           "La propreté des images intermédiaires. Les niveaux plus hauts corrigent plus de défauts sur les "
           "mouvements rapides mais demandent une carte plus forte ; Élevé et Très élevé ajoutent GMFSS et "
-          "demandent une NVIDIA RTX. Recommandé : Équilibré sur NVIDIA RTX, Rapide ailleurs."},
+          "demandent une NVIDIA RTX."},
     Entry{"GMFSS", "GMFSS"},
     Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS about "
           "1.7× faster. Quality impact: minor loss on small motion. Recommended: on.",
@@ -205,11 +201,10 @@ constexpr std::array kMenuTexts{
           "carte travaille bien plus et des images tombent quand elle ne suit pas. Vitesse : environ −70 % "
           "face à Très élevé. Impact sur la qualité : changement mineur. Recommandé : désactivé."},
     Entry{"Interpolation about a third faster, with slightly less precise motion. Turn it on if the card "
-          "can't keep up at High or Very high. Speed: about +35 %. Quality impact: minor loss. Recommended: "
-          "off; on if the card can't keep up.",
+          "can't keep up at High or Very high. Speed: about +35 %. Quality impact: minor loss.",
           "L'interpolation environ un tiers plus rapide, avec un mouvement un peu moins précis. À activer si "
           "la carte ne suit pas en Élevé ou Très élevé. Vitesse : environ +35 %. Impact sur la qualité : "
-          "perte mineure. Recommandé : désactivé ; activé si la carte ne suit pas."},
+          "perte mineure."},
     Entry{"Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: about −5 to −15 "
           "%. Quality impact: minor gain, not yet judged. Recommended: off.",
           "Des images GMFSS plus fines au-dessus de 720p de résolution de travail, pour un peu de vitesse. "

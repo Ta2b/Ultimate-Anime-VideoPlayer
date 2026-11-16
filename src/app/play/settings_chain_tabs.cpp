@@ -8,6 +8,7 @@
 #include <imgui.h>
 
 #include "app/play/anime4k_choice.h"
+#include "app/play/card_advice.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
 
@@ -70,17 +71,19 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(
-      i18n::tr("Model"),
-      fp8_offered
-          ? i18n::tr("Which network redraws the picture. Performance keeps up on most cards. Balanced keeps "
-                     "finer detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. "
-                     "ArtCNN and Anime4K are for weak graphics cards. FP8: prepared once, then about +37 % "
-                     "speed for an imperceptible loss. Recommended: the preset's choice.")
-          : i18n::tr("Which network redraws the picture. Performance keeps up on most cards. Balanced keeps "
-                     "finer detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. "
-                     "ArtCNN and Anime4K are for weak graphics cards. Recommended: the preset's choice."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Model"),
+             fp8_offered ? std::string(i18n::tr(
+                               "Which network redraws the picture. Performance keeps up on most cards. "
+                               "Balanced keeps finer detail if your card can afford it. Sharp1 draws crisper "
+                               "lines, a little harsher. ArtCNN and Anime4K are for weak graphics cards. "
+                               "FP8: prepared once, then about +37 % speed for an imperceptible loss.")) +
+                               " " + advice_line(choices, model_advice)
+                         : std::string(i18n::tr(
+                               "Which network redraws the picture. Performance keeps up on most cards. "
+                               "Balanced keeps finer detail if your card can afford it. Sharp1 draws crisper "
+                               "lines, a little harsher. ArtCNN and Anime4K are for weak graphics cards.")) +
+                               " " + advice_line(choices, model_advice),
+             panel::Apply::Reload);
   if (anime4k_size(current))
     note(i18n::tr("Anime4K: SDR sources only; an HDR source is upscaled by the display."));
 }
@@ -136,12 +139,13 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   const bool anime4k = anime4k_size(d.model).has_value();
   const char* toggle = anime4k ? i18n::tr("Anime4K ×2") : i18n::tr("SPAN ×2 (AnimeJaNai)");
   ImGui::Checkbox(toggle, &d.upscale);
-  panel::tip(
-      toggle,
-      i18n::tr("Redraws the video at twice its size with a model trained on anime: sharper lines and less "
-               "blur on a big screen. It is the heaviest step: turn it off first if the video stutters. "
-               "Speed: the heaviest step of the chain. Quality impact: high gain. Recommended: on."),
-      panel::Apply::Reload);
+  panel::tip(toggle,
+             std::string(i18n::tr(
+                 "Redraws the video at twice its size with a model trained on anime: sharper lines and less "
+                 "blur on a big screen. It is the heaviest step: turn it off first if the video stutters. "
+                 "Speed: the heaviest step of the chain. Quality impact: high gain.")) +
+                 " " + advice_line(choices, upscale_advice),
+             panel::Apply::Reload);
   ImGui::BeginDisabled(!d.upscale);
   model_combo(d, choices);
   ImGui::Checkbox(i18n::tr("Restore line art"), &d.restore_lines);
@@ -176,9 +180,10 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   panel::tip(
       i18n::tr("Working resolution"),
-      i18n::tr("The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps more detail "
-               "but asks much more of the card: lower it first if the video stutters. Speed: 1080p costs "
-               "about 2.3× 720p. Quality impact: modest. Recommended: the preset's choice."),
+      std::string(i18n::tr("The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps "
+                           "more detail but asks much more of the card: lower it first if the video "
+                           "stutters. Speed: 1080p costs about 2.3× 720p. Quality impact: modest.")) +
+          " " + advice_line(choices, work_height_advice),
       panel::Apply::Reload);
   // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.
   const int work = chain_work_size(d, choices.source_width, choices.source_height).height;

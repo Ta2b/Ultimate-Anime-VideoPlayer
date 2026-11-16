@@ -133,6 +133,13 @@ constexpr std::array kWizardTexts{
     Entry{"The Quality preset in Video > General changes it at any time.",
           "Le préréglage de qualité, dans Vidéo > Général, le change à tout moment."},
     Entry{"Finish", "Terminer"},
+    Entry{"Recommended: {} (level {} of this card).", "Recommandé : {} (niveau {} de cette carte)."},
+    Entry{"turned on", "activé"},
+    Entry{"turned off", "désactivé"},
+    Entry{"upscaling off", "agrandissement éteint"},
+    Entry{"the default model", "le modèle par défaut"},
+    Entry{"the source, up to 1080p", "la source, jusqu'à 1080p"},
+    Entry{"interpolation off", "interpolation éteinte"},
     Entry{"HDR grade only: upscaling and interpolation stay off, the card keeps up with any video.",
           "Le grade HDR seul : l'agrandissement et l'interpolation restent éteints, la carte suit toute "
           "vidéo."},

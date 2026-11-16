@@ -70,6 +70,7 @@ struct SettingsChoices {
   std::string default_rife_model;        // celui qu'un nom vide désigne
   std::string rife_folder;               // le dossier des modèles RIFE (et de DistilDRBA)
   bool nvidia = false;                   // GPU NVIDIA : Smooth Motion n'est offert qu'à lui
+  bool tensor_cores = false;             // une NVIDIA RTX (GpuFacts) : les conseils de card_advice.h
   bool hdr_output = true;                // l'écran reçoit du PQ (sinon ni HDR natif ni grade)
   int auto_peak = 0;                     // pic automatique de l'écran, en nits
   std::vector<EngineBadge> engines;

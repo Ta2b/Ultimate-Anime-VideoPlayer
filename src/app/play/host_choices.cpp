@@ -47,6 +47,7 @@ void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, co
   choices.span_fp8 = span_fp8_default(machine.name, tensorrt);
   choices.driver_version = screen.device().driver_version;
   choices.gpus = screen.device_names();
+  choices.tensor_cores = machine.tensor_cores;
   choices.nvidia = vendor_from_pci(screen.device_facts().pci_vendor) == GpuVendor::Nvidia;
   choices.luts_dir = paths::luts(paths);
   choices.switchable = installed_switchable(catalog, paths);

@@ -9,6 +9,7 @@
 
 #include <imgui.h>
 
+#include "app/play/card_advice.h"
 #include "app/play/drba_model.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/panel_style.h"
@@ -203,9 +204,10 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   panel::tip(i18n::tr("Interpolation level"),
-             i18n::tr("How clean the in-between frames are. Higher levels fix more artifacts on fast motion "
-                      "but need a stronger card; High and Very high add GMFSS and need an NVIDIA RTX. "
-                      "Recommended: Balanced on NVIDIA RTX, Fast elsewhere."),
+             std::string(i18n::tr(
+                 "How clean the in-between frames are. Higher levels fix more artifacts on fast motion but "
+                 "need a stronger card; High and Very high add GMFSS and need an NVIDIA RTX.")) +
+                 " " + advice_line(choices, interpolation_level_advice),
              panel::Apply::Reload);
 }
 
@@ -232,11 +234,13 @@ void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
   }
   if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
     ImGui::Checkbox(i18n::tr("GMFSS and RIFE at 540p"), &d.gmfss_light);
-    panel::tip(i18n::tr("GMFSS and RIFE at 540p"),
-               i18n::tr("Interpolation about a third faster, with slightly less precise motion. Turn it on "
-                        "if the card can't keep up at High or Very high. Speed: about +35 %. Quality impact: "
-                        "minor loss. Recommended: off; on if the card can't keep up."),
-               panel::Apply::Reload);
+    panel::tip(
+        i18n::tr("GMFSS and RIFE at 540p"),
+        std::string(i18n::tr(
+            "Interpolation about a third faster, with slightly less precise motion. Turn it on if the card "
+            "can't keep up at High or Very high. Speed: about +35 %. Quality impact: minor loss.")) +
+            " " + advice_line(choices, light_motion_advice),
+        panel::Apply::Reload);
     ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
     panel::tip(i18n::tr("GMFSS keeps the source detail"),
                i18n::tr("Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: "
