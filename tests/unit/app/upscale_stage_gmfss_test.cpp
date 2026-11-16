@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
+#include "app/play/gmfss_credit.h"
 #include "doubles.h"
 #include "upscale_rig.h"
 
@@ -314,6 +315,18 @@ TEST_CASE("Étage gpu : Rapide, la grille place la première image après les cl
   rig.stage.reset();
   CHECK(rig.reported().empty());
   CHECK(rig.backend.count("engine gmfss_fusion") >= 2);
+}
+
+TEST_CASE("Étage gpu : le crédit des clés GMFSS garde toujours deux images de RIFE et SPAN",
+          "[app][stage][gmfss]") {
+  constexpr std::int64_t kSource = 41'708;  // 23,976 i/s
+  // Service inconnu ou léger (travail 720p) : les trois quarts de l'image, comme avant.
+  CHECK(gmfss_earned_us(kSource, 0) == kSource * 3 / 4);
+  CHECK(gmfss_earned_us(kSource, 5'000) == kSource * 3 / 4);
+  // Travail 1080p vers la 4K, 16 ms par image : les clés n'ont plus que ce qui reste après deux images.
+  CHECK(gmfss_earned_us(kSource, 16'000) == kSource - 32'000);
+  // Une image plus chère que la moitié de la source : plus aucune clé.
+  CHECK(gmfss_earned_us(kSource, 25'000) == 0);
 }
 
 }  // namespace ajp::app::play
