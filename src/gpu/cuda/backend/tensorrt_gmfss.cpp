@@ -256,8 +256,8 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
   if (grids > 0) writes.push_back(reinterpret_cast<std::uintptr_t>(&grid_motion_));
   SplatPlan plan{.batch = batch, .grid_base = static_cast<char*>(grid_motion_), .sums = splat_sums_};
   for (const KernelOps::SplatJob& job : jobs) plan.add(job);
-  std::vector<MotionGridParams>& regrids = plan.regrids;
-  std::vector<PullParams>& pulls = plan.pulls;
+  const std::vector<MotionGridParams>& regrids = plan.regrids;
+  const std::vector<PullParams>& pulls = plan.pulls;
   reads = std::move(plan.reads);
   writes.insert(writes.end(), plan.writes.begin(), plan.writes.end());
   if (auto ok = order(reads, writes); !ok) return ok;

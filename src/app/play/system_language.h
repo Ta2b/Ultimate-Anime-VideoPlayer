@@ -37,9 +37,9 @@ std::optional<LanguageVersion> version_from_name(std::string_view name);
 
 // Les préférences de pistes d'une langue (code ISO 639-2/B, « fre ») et d'une version. L'originale : la piste
 // marquée originale par le fichier, puis le japonais, puis le chinois (les animés chinois), sous-titrés dans
-// sa langue, puis le japonais sous-titré en anglais, enfin sa langue doublée sans sous-titres. La doublée : sa
-// langue sans sous-titres d'abord, puis la même suite que l'originale. Un audio dans sa propre langue ne prend jamais de sous-titres. Custom n'a
-// pas de suite à elle : celle de l'originale.
+// sa langue, puis le japonais sous-titré en anglais, enfin sa langue doublée sans sous-titres. La doublée :
+// sa langue sans sous-titres d'abord, puis la même suite que l'originale. Un audio dans sa propre langue ne
+// prend jamais de sous-titres. Custom n'a pas de suite à elle : celle de l'originale.
 std::vector<media::LanguagePreset> language_presets_for(std::string_view own, LanguageVersion version);
 // Les deux préférences par défaut d'avant le choix simple ({jpn, X}, {X, ""}) : la langue X, pour relire un
 // ancien play.toml comme l'originale dans cette langue ; rien pour d'autres préférences.
