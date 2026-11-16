@@ -324,6 +324,41 @@ __global__ void __launch_bounds__(kPixelThreads) compose(ComposeParams p) {
   }
 }
 
+// Un fil par pixel : l'écart des sources sur son voisinage 3 × 3, puis la clé tirée vers leur mélange.
+__global__ void __launch_bounds__(kPixelThreads) still(StillParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const auto* a = static_cast<const __half*>(p.a);
+  const auto* b = static_cast<const __half*>(p.b);
+  float d = 0.0F;
+  for (int dy = -1; dy <= 1; ++dy) {
+    const int sy = min(max(y + dy, 0), p.height - 1);
+    for (int dx = -1; dx <= 1; ++dx) {
+      const std::size_t j = at(min(max(x + dx, 0), p.width - 1), sy, p.width);
+#pragma unroll
+      for (int c = 0; c < 3; ++c) {
+        const std::size_t k = static_cast<std::size_t>(c) * plane + j;
+        d = fmaxf(d, fabsf(__half2float(a[k]) - __half2float(b[k])));
+      }
+    }
+  }
+  const float m = fminf(
+      fmaxf((kernels::kGmfssStillHigh - d) / (kernels::kGmfssStillHigh - kernels::kGmfssStillLow), 0.0F),
+      1.0F);
+  if (m <= 0.0F) return;  // la clé telle quelle
+  auto* key = static_cast<__half*>(p.key);
+  const std::size_t i = at(x, y, p.width);
+#pragma unroll
+  for (int c = 0; c < 3; ++c) {
+    const std::size_t k = static_cast<std::size_t>(c) * plane + i;
+    const float value = __half2float(key[k]);
+    const float source = (1.0F - p.t) * __half2float(a[k]) + p.t * __half2float(b[k]);
+    key[k] = __float2half_rn(fminf(fmaxf(value + m * (source - value), 0.0F), 1.0F));
+  }
+}
+
 }  // namespace
 
 std::size_t soft_splat_sums_bytes(int width, int height, int channels) {
@@ -375,6 +410,15 @@ cudaError_t launch_gmfss_compose(const ComposeParams& params, cudaStream_t strea
   const dim3 grid(static_cast<unsigned>(tiles_across(params.out_width)),
                   static_cast<unsigned>(tiles_across(params.out_height)));
   compose<<<grid, block, 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_gmfss_still(const StillParams& params, cudaStream_t stream) {
+  if (params.width < 1 || params.height < 1) return cudaErrorInvalidValue;
+  const dim3 block(kBlock, kBlock);
+  const dim3 grid(static_cast<unsigned>(tiles_across(params.width)),
+                  static_cast<unsigned>(tiles_across(params.height)));
+  still<<<grid, block, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

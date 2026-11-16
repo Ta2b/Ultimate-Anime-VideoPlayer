@@ -103,6 +103,18 @@ struct MotionGrid {
 //   out = clamp(H + F − L, 0, 1), par canal.
 // Le détail de la source de travail reste là où GMFSS le pousse, au lieu d'une image de RIFE agrandie.
 
+// Décor fixe (gmfss_still) : la clé K, à la taille des sources a et b, reprend leurs pixels là où rien ne
+// bouge entre elles. La fusion de GMFSS rend une image plus douce que les sources, et sa composition à la
+// taille de travail n'en rend pas tout le détail : sans cette reprise, chaque clé était plus molle que ses
+// voisines sur toute l'image, décor immobile compris, et les traits changeaient d'épaisseur d'une image à
+// l'autre en lecture. Pour chaque pixel (x, y), en FP32 :
+//   d = max sur le voisinage 3 × 3 (borné au plan) et les trois canaux de |a − b| ;
+//   m = clamp((kGmfssStillHigh − d) / (kGmfssStillHigh − kGmfssStillLow), 0, 1) ;
+//   out = clamp(K + m · ((1 − t) a + t b − K), 0, 1), par canal.
+// Sur place possible : un pixel ne lit que son K.
+inline constexpr float kGmfssStillLow = 3.0F / 255.0F;
+inline constexpr float kGmfssStillHigh = 8.0F / 255.0F;
+
 }  // namespace ajp::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

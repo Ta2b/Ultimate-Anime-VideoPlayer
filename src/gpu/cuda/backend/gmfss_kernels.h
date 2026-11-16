@@ -83,4 +83,17 @@ struct ComposeParams {
 
 cudaError_t launch_gmfss_compose(const ComposeParams& params, cudaStream_t stream);
 
+// Le décor fixe repris des sources (spec gmfss_still), sur place dans key : trois images RGB FP16
+// width × height.
+struct StillParams {
+  void* key = nullptr;
+  const void* a = nullptr;
+  const void* b = nullptr;
+  int width = 0;
+  int height = 0;
+  float t = 0.5F;
+};
+
+cudaError_t launch_gmfss_still(const StillParams& params, cudaStream_t stream);
+
 }  // namespace ajp::gpu::cuda

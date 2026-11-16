@@ -283,6 +283,17 @@ class KernelOps {
   virtual std::expected<void, Refusal> gmfss_compose(const ComposeJob& /*job*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_compose : absent de ce backend"});
   }
+  // Le décor fixe repris des sources (spec gmfss_still, ref::gmfss_still), sur place dans key : trois images
+  // RGB FP16 de même taille, t l'instant de la clé.
+  struct StillJob {
+    Tensor key;
+    Tensor a;
+    Tensor b;
+    float t = 0.5F;
+  };
+  virtual std::expected<void, Refusal> gmfss_still(const StillJob& /*job*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_still : absent de ce backend"});
+  }
   // Mémoire de l'appareil, utilisée et totale, en octets, pour les statistiques ; appelable depuis
   // n'importe quel thread. Rien si le backend ne sait pas la lire.
   struct DeviceMemory {

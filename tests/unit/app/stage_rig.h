@@ -183,6 +183,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   std::expected<void, Refusal> gmfss_compose(const ComposeJob& job) override {
     return note("gmfss_compose", job.out.handle);
   }
+  std::expected<void, Refusal> gmfss_still(const StillJob& job) override {
+    return note("gmfss_still", job.key.handle);
+  }
   std::vector<float> splat_ts() const {
     const std::scoped_lock lock(mutex_);
     return splat_ts_;

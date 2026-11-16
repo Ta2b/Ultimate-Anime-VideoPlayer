@@ -276,4 +276,28 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const KernelOps::Com
   return launched;
 }
 
+std::expected<void, Refusal> TensorRtBackend::gmfss_still(const KernelOps::StillJob& job) {
+  if (!fp16_planes(job.key, 3) || !fp16_planes(job.a, 3) || !fp16_planes(job.b, 3) ||
+      !same_size(job.key, job.a) || !same_size(job.key, job.b)) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  "gmfss_still : clé et sources RGB FP16 de même taille attendues");
+  }
+  if (!(job.t >= 0.0F && job.t <= 1.0F))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("gmfss_still : instant {} hors de [0, 1]", job.t));
+  if (auto ok = bind(); !ok) return ok;
+  const StillParams params{.key = address(job.key),
+                           .a = address(job.a),
+                           .b = address(job.b),
+                           .width = width_of(job.key),
+                           .height = height_of(job.key),
+                           .t = job.t};
+  if (auto ok = order({job.key.handle, job.a.handle, job.b.handle}, {job.key.handle}); !ok) return ok;
+  GpuTiming& timing = stage("décor fixe de GMFSS");
+  timing.begin(stream_);
+  auto launched = cuda_check(launch_gmfss_still(params, stream_), "gmfss_still<<<>>>");
+  timing.end(stream_);
+  return launched;
+}
+
 }  // namespace ajp::gpu::cuda

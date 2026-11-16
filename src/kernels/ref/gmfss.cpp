@@ -185,4 +185,40 @@ Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted
   return out;
 }
 
+Result<std::vector<PlaneF>> gmfss_still(const std::vector<PlaneF>& key, const std::vector<PlaneF>& a,
+                                        const std::vector<PlaneF>& b, float t) {
+  if (!(t >= 0.0F && t <= 1.0F))
+    return fail(ErrorCode::ParameterOutOfRange, std::format("décor fixe : instant {} hors de [0, 1]", t));
+  if (key.size() != 3 || a.size() != 3 || b.size() != 3)
+    return fail(ErrorCode::SizeMismatch, "décor fixe : 3 plans attendus");
+  for (std::size_t c = 0; c < 3; ++c) {
+    if (auto ok = check_same_size(key[0], key[c], "décor fixe : clé"); !ok)
+      return std::unexpected(ok.error());
+    if (auto ok = check_same_size(key[0], a[c], "décor fixe : a"); !ok) return std::unexpected(ok.error());
+    if (auto ok = check_same_size(key[0], b[c], "décor fixe : b"); !ok) return std::unexpected(ok.error());
+  }
+  const int w = key[0].width;
+  const int h = key[0].height;
+  std::vector<PlaneF> out = key;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      float d = 0.0F;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int sx = std::clamp(x + dx, 0, w - 1);
+          const int sy = std::clamp(y + dy, 0, h - 1);
+          for (std::size_t c = 0; c < 3; ++c) d = std::max(d, std::abs(a[c].at(sx, sy) - b[c].at(sx, sy)));
+        }
+      }
+      const float m = std::clamp((kGmfssStillHigh - d) / (kGmfssStillHigh - kGmfssStillLow), 0.0F, 1.0F);
+      for (std::size_t c = 0; c < 3; ++c) {
+        const float k = key[c].at(x, y);
+        const float source = (1.0F - t) * a[c].at(x, y) + t * b[c].at(x, y);
+        out[c].at(x, y) = std::clamp(k + m * (source - k), 0.0F, 1.0F);
+      }
+    }
+  }
+  return out;
+}
+
 }  // namespace ajp::kernels::ref

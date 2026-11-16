@@ -466,6 +466,20 @@ std::expected<void, Refusal> UpscaleStage::make_keys() {
   return {};
 }
 
+// Le décor fixe repris des sources (spec gmfss_still), à la taille de la clé qui s'affiche : sans lui, la
+// clé était plus molle que ses voisines sur toute l'image, et la couleur de ses traits changeait. Un backend
+// sans l'opération garde la clé.
+std::expected<void, Refusal> UpscaleStage::keep_still(const GmfssKey& key, float t) {
+  const bool work = key.work != nullptr;
+  auto still = setup_.backend->kernels()->gmfss_still(
+      {.key = work ? key.work->tensor() : key.middle->tensor(),
+       .a = work ? rgb_[current_ ^ 1U]->tensor() : rife_source(current_ ^ 1U),
+       .b = work ? rgb_[current_]->tensor() : rife_source(current_),
+       .t = t});
+  if (!still && still.error().code != RefusalCode::FormatUnsupported) return still;
+  return {};
+}
+
 std::expected<void, Refusal> UpscaleStage::make_key(std::uint32_t k, float t) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   GmfssKey& key = gmfss_.keys[k];
@@ -485,6 +499,7 @@ std::expected<void, Refusal> UpscaleStage::make_key(std::uint32_t k, float t) {
     if (auto ok = ops.resample(key.middle->tensor(), kernels::Filter::Spline36, key.work->tensor()); !ok)
       return ok;
   }
+  if (auto ok = keep_still(key, t); !ok) return ok;
   // La première clé paie la paire, les suivantes leur fusion et leurs splats : un coût fixe de la paire,
   // que le mode Rapide ne compte pas dans l'écart de ses images.
   const std::int64_t key_us = k == 0 ? setup_.gmfss.cost_us : setup_.gmfss.cost_us - setup_.gmfss.pair_us;

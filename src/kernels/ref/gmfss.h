@@ -38,4 +38,9 @@ Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted
                                           const Splatted& low_a, const Splatted& low_b,
                                           const std::vector<PlaneF>& fusion, const Window& window, float t);
 
+// Le décor fixe repris des sources (spec gmfss_still) : key, a et b de 3 plans de même taille. Refus :
+// tailles différentes, t hors de [0, 1].
+Result<std::vector<PlaneF>> gmfss_still(const std::vector<PlaneF>& key, const std::vector<PlaneF>& a,
+                                        const std::vector<PlaneF>& b, float t);
+
 }  // namespace ajp::kernels::ref

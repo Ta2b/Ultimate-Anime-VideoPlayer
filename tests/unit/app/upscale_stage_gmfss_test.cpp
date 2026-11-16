@@ -79,6 +79,7 @@ TEST_CASE("Étage gpu : le mélange, M par GMFSS au milieu des paires fortes, RI
   const std::size_t pairs = rig.backend.count("engine gmfss_pair");
   CHECK(pairs >= 2);
   CHECK(rig.backend.count("engine gmfss_fusion") == pairs);
+  CHECK(rig.backend.count("gmfss_still") == pairs);  // le décor fixe de chaque clé repris des sources
   const std::vector<float> splats = rig.backend.splat_ts();
   CHECK(std::ranges::all_of(splats, [](float t) { return t == 0.5F; }));
   // Chaque instant hors du milieu se warpe entre une source et M (qui n'est pas une image ingérée, 0) : a et

@@ -110,6 +110,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<float, Refusal> flow_max_take(std::uint64_t ticket) override;
   // GMFSS Fortuna Union (tensorrt_gmfss.cpp) : entrée du graphe « paire » et softmax splatting.
   std::expected<void, Refusal> gmfss_frames(const Tensor& a, const Tensor& b, const Tensor& frames) override;
+  std::expected<void, Refusal> gmfss_still(const StillJob& job) override;
   std::expected<void, Refusal> soft_splat_fill(std::span<const KernelOps::SplatJob> jobs, const Tensor& time,
                                                float t) override;
   std::expected<void, Refusal> gmfss_compose(const KernelOps::ComposeJob& job) override;

@@ -189,3 +189,35 @@ TEST_CASE("Composition : le détail du travail, corrigé du résidu de la fusion
   CHECK_FALSE(ref::gmfss_compose(high, high, low, low, fusion,
                                  Window{.x = 0, .y = 0, .width = 3, .height = 2}, 0.5F));
 }
+
+TEST_CASE("Décor fixe : la clé reprend les sources là où rien ne bouge", "[kernels][gmfss]") {
+  // a et b égaux à gauche, très différents sur la colonne de droite ; la clé, plus douce, vaut 0,2.
+  const int w = 6;
+  const int h = 3;
+  std::vector<PlaneF> a(3, PlaneF(w, h, 0.5F));
+  std::vector<PlaneF> b = a;
+  for (PlaneF& p : b) {
+    for (int y = 0; y < h; ++y) p.at(w - 1, y) = 0.9F;
+  }
+  const std::vector<PlaneF> key(3, PlaneF(w, h, 0.2F));
+  auto out = ref::gmfss_still(key, a, b, 0.25F);
+  REQUIRE(out);
+  for (const PlaneF& p : *out) {
+    for (int y = 0; y < h; ++y) {
+      // Loin de l'écart : les sources exactement ; à côté ou dessus : la clé telle quelle.
+      for (int x = 0; x < w - 2; ++x) CHECK_THAT(p.at(x, y), WithinAbs(0.5, 1e-6));
+      CHECK_THAT(p.at(w - 2, y), WithinAbs(0.2, 1e-6));
+      CHECK_THAT(p.at(w - 1, y), WithinAbs(0.2, 1e-6));
+    }
+  }
+  // Un écart entre les deux seuils : à mi-chemin entre la clé et le mélange des sources.
+  std::vector<PlaneF> near = a;
+  const float gap = (kGmfssStillLow + kGmfssStillHigh) / 2.0F;
+  for (PlaneF& p : near) p = PlaneF(w, h, 0.5F + gap);
+  auto half = ref::gmfss_still(key, a, near, 0.0F);
+  REQUIRE(half);
+  CHECK_THAT((*half)[0].at(2, 1), WithinAbs(0.2F + 0.5F * (0.5F - 0.2F), 1e-5));
+  // Tailles différentes ou instant hors de [0, 1] : refus.
+  CHECK_FALSE(ref::gmfss_still(key, std::vector<PlaneF>(3, PlaneF(w - 1, h, 0.5F)), b, 0.5F));
+  CHECK_FALSE(ref::gmfss_still(key, a, b, 1.5F));
+}
