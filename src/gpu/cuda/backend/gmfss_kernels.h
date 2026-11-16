@@ -60,6 +60,22 @@ struct MotionGridParams {
 
 cudaError_t launch_motion_on_grid(const MotionGridParams& params, cudaStream_t stream);
 
+// Le splat tiré (spec MotionGrid, splat tiré) : flow les trois plans FP16 width × height du flot poussé
+// (fx, fy) et de sa couverture ; la source (channels plans) lue en Catmull-Rom à (X − s fx, Y − s fy) dans
+// out, la couverture en plus si coverage.
+struct PullParams {
+  const void* source = nullptr;
+  int channels = 0;
+  const void* flow = nullptr;
+  int width = 0;
+  int height = 0;
+  float s = 0.5F;
+  void* out = nullptr;
+  int coverage = 0;
+};
+
+cudaError_t launch_soft_pull(const PullParams& params, cudaStream_t stream);
+
 // La composition à la taille de travail (spec gmfss_compose) : sources de travail splattées high_a, high_b
 // (4 plans out_width × out_height, la couverture en dernier), celles de RIFE low_a, low_b (4 plans
 // width × height), la fusion (3 plans fusion_width × fusion_height, l'image de RIFE en (left, top)).
@@ -82,5 +98,18 @@ struct ComposeParams {
 };
 
 cudaError_t launch_gmfss_compose(const ComposeParams& params, cudaStream_t stream);
+
+// Le décor fixe repris des sources (spec gmfss_still), sur place dans key : trois images RGB FP16
+// width × height.
+struct StillParams {
+  void* key = nullptr;
+  const void* a = nullptr;
+  const void* b = nullptr;
+  int width = 0;
+  int height = 0;
+  float t = 0.5F;
+};
+
+cudaError_t launch_gmfss_still(const StillParams& params, cudaStream_t stream);
 
 }  // namespace ajp::gpu::cuda

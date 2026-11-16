@@ -98,7 +98,9 @@ namespace ajp::gpu {
 // 44 : ModelSpec::tuned (les graphes de GMFSS se construisent sans pavage L2 ni niveau 5) ;
 //      SplatJob::grid et coverage, KernelOps::gmfss_compose (la composition du mélange à la taille de
 //      travail).
-inline constexpr int kBackendAbi = 44;
+// 45 : KernelOps::gmfss_still (le décor fixe des clés repris des sources).
+// 46 : SplatJob::pull (le splat tiré).
+inline constexpr int kBackendAbi = 46;
 
 using DeviceUuid = ajp::DeviceUuid;
 

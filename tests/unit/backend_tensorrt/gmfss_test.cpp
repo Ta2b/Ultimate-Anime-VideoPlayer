@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "backend_fixture.h"
 #include "kernels/ref/half.h"
@@ -145,7 +146,7 @@ TEST_CASE("Backend TensorRT : les splats d'un instant en un passage, l'instant r
   }
 }
 
-TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur fenêtre, bords noirs",
+TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur fenêtre, bords recopiés",
           "[backend_tensorrt][cuda][gmfss]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   Loaded loaded;
@@ -189,6 +190,8 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
 TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composition à la taille de travail",
           "[backend_tensorrt][cuda][gmfss]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  const bool pull = GENERATE(false, true);  // le splat poussé, puis tiré (spec MotionGrid)
+  CAPTURE(pull);
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   gpu::KernelOps& ops = *loaded.backend->kernels();
@@ -224,7 +227,8 @@ TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composi
       const int h = high ? kOh : kRh;
       const std::vector<k::PlaneF> source = planes(3, 60 + side + (high ? 2 : 0), 0.0F, 1.0F, w, h);
       const k::MotionGrid grid = high ? high_grid : low_grid;
-      auto expected = k::ref::soft_splat_at(source, motion, s, grid);
+      auto expected = pull ? k::ref::soft_pull_at(source, motion, s, grid)
+                           : k::ref::soft_splat_at(source, motion, s, grid);
       REQUIRE(expected);
       want[static_cast<std::size_t>((high ? 0 : 2) + side)] = std::move(*expected);
       keep.push_back(alloc(3, w, h));
@@ -236,7 +240,8 @@ TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composi
                       .s = s,
                       .out = keep.back()->tensor(),
                       .grid = grid,
-                      .coverage = true});
+                      .coverage = true,
+                      .pull = pull});
     }
   }
   REQUIRE(ops.soft_splat_fill(jobs, gpu::Tensor{}, 0.5F));
@@ -291,4 +296,48 @@ TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composi
                                           .out = out->tensor()});
   REQUIRE_FALSE(outside);
   CHECK(outside.error().code == RefusalCode::ShapeInvalid);
+}
+
+TEST_CASE("Backend TensorRT : GMFSS, le décor fixe de la clé repris des sources, comme la référence",
+          "[backend_tensorrt][cuda][gmfss]") {
+  if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  Loaded loaded;
+  REQUIRE(loaded.backend != nullptr);
+  gpu::KernelOps& ops = *loaded.backend->kernels();
+  constexpr int w = 40;
+  constexpr int h = 24;
+  // a et b égaux sur la moitié gauche, différents à droite : les deux côtés du masque et sa pente.
+  const std::vector<k::PlaneF> pa = planes(3, 61, 0.2F, 0.8F, w, h);
+  std::vector<k::PlaneF> pb = pa;
+  const std::vector<k::PlaneF> noise = planes(3, 62, -0.05F, 0.05F, w, h);
+  for (std::size_t c = 0; c < 3; ++c) {
+    for (int y = 0; y < h; ++y) {
+      for (int x = w / 2; x < w; ++x) pb[c].at(x, y) += noise[c].at(x, y);
+    }
+  }
+  const std::vector<k::PlaneF> pk = planes(3, 63, 0.0F, 1.0F, w, h);
+  auto a = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto b = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  auto key = loaded.backend->alloc_tensor(gpu::TensorType::F16, {.dims = {1, 3, h, w}});
+  REQUIRE((a && b && key));
+  upload((*a)->tensor(), flat(pa));
+  upload((*b)->tensor(), flat(pb));
+  upload((*key)->tensor(), flat(pk));
+  // La référence sur les valeurs FP16 téléversées.
+  const auto as_planes = [&](const gpu::Tensor& t) {
+    const std::vector<float> values = download(t);
+    std::vector<k::PlaneF> out(3, k::PlaneF(w, h));
+    for (std::size_t c = 0; c < 3; ++c)
+      std::copy_n(values.begin() + static_cast<std::ptrdiff_t>(c * w * h), w * h, out[c].data.begin());
+    return out;
+  };
+  const auto want = k::ref::gmfss_still(as_planes((*key)->tensor()), as_planes((*a)->tensor()),
+                                        as_planes((*b)->tensor()), 0.3F);
+  REQUIRE(want);
+  REQUIRE(ops.gmfss_still({.key = (*key)->tensor(), .a = (*a)->tensor(), .b = (*b)->tensor(), .t = 0.3F}));
+  CHECK(worst_of(download((*key)->tensor()), flat(*want)) <= k::tolerance::kRgbF16);
+  const auto odd =
+      ops.gmfss_still({.key = (*key)->tensor(), .a = (*a)->tensor(), .b = (*b)->tensor(), .t = 2.0F});
+  REQUIRE_FALSE(odd);
+  CHECK(odd.error().code == RefusalCode::FieldOutOfRange);
 }

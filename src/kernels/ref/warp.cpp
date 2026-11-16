@@ -188,6 +188,10 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
 
 }  // namespace
 
+float catmull_rom_sample(const PlaneF& p, float x, float y) {
+  return catmull_rom_at(p, x, y);
+}
+
 Result<float> sample(const PlaneF& p, float x, float y) {
   if (auto ok = check_plane(p, "plan échantillonné"); !ok) return std::unexpected(ok.error());
   return bilinear_at(p, x, y);

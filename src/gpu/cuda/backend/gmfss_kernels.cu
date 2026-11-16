@@ -324,6 +324,100 @@ __global__ void __launch_bounds__(kPixelThreads) compose(ComposeParams p) {
   }
 }
 
+// Catmull-Rom d'un plan FP16 (spec/warp.h, RifeWarp::CatmullRom) : position bornée au plan, points répétés
+// au bord, sortie bornée aux quatre points centraux.
+__device__ float catmull_rom_at(const __half* plane, int w, int h, float x, float y) {
+  x = fminf(fmaxf(x, 0.0F), static_cast<float>(w - 1));
+  y = fminf(fmaxf(y, 0.0F), static_cast<float>(h - 1));
+  const int x0 = static_cast<int>(x);
+  const int y0 = static_cast<int>(y);
+  const auto weights = [](float t, float (&w4)[4]) {
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    w4[0] = -0.5F * t3 + t2 - 0.5F * t;
+    w4[1] = 1.5F * t3 - 2.5F * t2 + 1.0F;
+    w4[2] = -1.5F * t3 + 2.0F * t2 + 0.5F * t;
+    w4[3] = 0.5F * t3 - 0.5F * t2;
+  };
+  float wx[4];
+  float wy[4];
+  weights(x - static_cast<float>(x0), wx);
+  weights(y - static_cast<float>(y0), wy);
+  float sum = 0.0F;
+  float lo = 3.0e38F;
+  float hi = -3.0e38F;
+#pragma unroll
+  for (int j = 0; j < 4; ++j) {
+    const int yy = min(max(y0 - 1 + j, 0), h - 1);
+    float row = 0.0F;
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const float v = __half2float(plane[at(min(max(x0 - 1 + i, 0), w - 1), yy, w)]);
+      row += v * wx[i];
+      if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
+        lo = fminf(lo, v);
+        hi = fmaxf(hi, v);
+      }
+    }
+    sum += row * wy[j];
+  }
+  return fminf(fmaxf(sum, lo), hi);
+}
+
+// Un fil par pixel de sortie : la source lue là d'où vient le pixel, d'après le flot poussé.
+__global__ void __launch_bounds__(kPixelThreads) pull(PullParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const std::size_t i = at(x, y, p.width);
+  const auto* flow = static_cast<const __half*>(p.flow);
+  const float sx = static_cast<float>(x) - p.s * __half2float(flow[i]);
+  const float sy = static_cast<float>(y) - p.s * __half2float(flow[plane + i]);
+  const auto* source = static_cast<const __half*>(p.source);
+  auto* out = static_cast<__half*>(p.out);
+  for (int c = 0; c < p.channels; ++c) {
+    const std::size_t pc = static_cast<std::size_t>(c) * plane;
+    out[pc + i] = __float2half_rn(catmull_rom_at(source + pc, p.width, p.height, sx, sy));
+  }
+  if (p.coverage != 0) out[static_cast<std::size_t>(p.channels) * plane + i] = flow[2 * plane + i];
+}
+
+// Un fil par pixel : l'écart des sources sur son voisinage 3 × 3, puis la clé tirée vers leur mélange.
+__global__ void __launch_bounds__(kPixelThreads) still(StillParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.width || y >= p.height) return;
+  const std::size_t plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
+  const auto* a = static_cast<const __half*>(p.a);
+  const auto* b = static_cast<const __half*>(p.b);
+  float d = 0.0F;
+  for (int dy = -1; dy <= 1; ++dy) {
+    const int sy = min(max(y + dy, 0), p.height - 1);
+    for (int dx = -1; dx <= 1; ++dx) {
+      const std::size_t j = at(min(max(x + dx, 0), p.width - 1), sy, p.width);
+#pragma unroll
+      for (int c = 0; c < 3; ++c) {
+        const std::size_t k = static_cast<std::size_t>(c) * plane + j;
+        d = fmaxf(d, fabsf(__half2float(a[k]) - __half2float(b[k])));
+      }
+    }
+  }
+  const float m = fminf(
+      fmaxf((kernels::kGmfssStillHigh - d) / (kernels::kGmfssStillHigh - kernels::kGmfssStillLow), 0.0F),
+      1.0F);
+  if (m <= 0.0F) return;  // la clé telle quelle
+  auto* key = static_cast<__half*>(p.key);
+  const std::size_t i = at(x, y, p.width);
+#pragma unroll
+  for (int c = 0; c < 3; ++c) {
+    const std::size_t k = static_cast<std::size_t>(c) * plane + i;
+    const float value = __half2float(key[k]);
+    const float source = (1.0F - p.t) * __half2float(a[k]) + p.t * __half2float(b[k]);
+    key[k] = __float2half_rn(fminf(fmaxf(value + m * (source - value), 0.0F), 1.0F));
+  }
+}
+
 }  // namespace
 
 std::size_t soft_splat_sums_bytes(int width, int height, int channels) {
@@ -375,6 +469,24 @@ cudaError_t launch_gmfss_compose(const ComposeParams& params, cudaStream_t strea
   const dim3 grid(static_cast<unsigned>(tiles_across(params.out_width)),
                   static_cast<unsigned>(tiles_across(params.out_height)));
   compose<<<grid, block, 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_gmfss_still(const StillParams& params, cudaStream_t stream) {
+  if (params.width < 1 || params.height < 1) return cudaErrorInvalidValue;
+  const dim3 block(kBlock, kBlock);
+  const dim3 grid(static_cast<unsigned>(tiles_across(params.width)),
+                  static_cast<unsigned>(tiles_across(params.height)));
+  still<<<grid, block, 0, stream>>>(params);
+  return cudaGetLastError();
+}
+
+cudaError_t launch_soft_pull(const PullParams& params, cudaStream_t stream) {
+  if (params.width < 1 || params.height < 1 || params.channels < 1) return cudaErrorInvalidValue;
+  const dim3 block(kBlock, kBlock);
+  const dim3 grid(static_cast<unsigned>(tiles_across(params.width)),
+                  static_cast<unsigned>(tiles_across(params.height)));
+  pull<<<grid, block, 0, stream>>>(params);
   return cudaGetLastError();
 }
 

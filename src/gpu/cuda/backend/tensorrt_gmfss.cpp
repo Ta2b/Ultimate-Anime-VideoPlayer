@@ -7,6 +7,7 @@
 #include <format>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/types.h"
@@ -38,11 +39,16 @@ void* address(const Tensor& tensor) {
   return reinterpret_cast<void*>(tensor.handle + tensor.offset);  // NOLINT(performance-no-int-to-ptr)
 }
 
+// Les plans poussés par un travail : la source, ou le flot (fx, fy) d'un splat tiré.
+int pushed_planes(const KernelOps::SplatJob& job) {
+  return job.pull ? 2 : static_cast<int>(job.source.shape.dims[1]);
+}
+
 // Les sommes d'un travail, alignées comme cudaMalloc l'aurait fait : les travaux se suivent dans un tampon.
 std::size_t aligned_sums(const KernelOps::SplatJob& job) {
   constexpr std::size_t kAlign = 256;
-  const std::size_t bytes = soft_splat_sums_bytes(width_of(job.source), height_of(job.source),
-                                                  static_cast<int>(job.source.shape.dims[1]));
+  const std::size_t bytes =
+      soft_splat_sums_bytes(width_of(job.source), height_of(job.source), pushed_planes(job));
   return (bytes + kAlign - 1) / kAlign * kAlign;
 }
 
@@ -88,6 +94,72 @@ std::expected<void, Refusal> check_job(const KernelOps::SplatJob& job, const Ten
     return refuse(RefusalCode::FieldOutOfRange, std::format("soft_splat : instant {} hors de [0, 1]", job.s));
   return {};
 }
+
+// Les paramètres des lancements d'un lot de splats, travail par travail : le mouvement ramené à la grille de
+// la source, le splat, et pour un splat tiré le flot poussé dans le tampon des grilles puis la source tirée.
+struct SplatPlan {
+  SoftSplatBatch& batch;
+  char* grid_base = nullptr;
+  float* sums = nullptr;
+  std::size_t offset = 0;
+  std::size_t grid_offset = 0;
+  std::vector<MotionGridParams> regrids;
+  std::vector<PullParams> pulls;
+  std::vector<std::uintptr_t> reads;
+  std::vector<std::uintptr_t> writes;
+
+  void* take_grid(const KernelOps::SplatJob& job) {
+    void* at = grid_base + grid_offset;
+    grid_offset += aligned_motion(job);
+    return at;
+  }
+
+  void add(const KernelOps::SplatJob& job) {
+    const std::size_t first_sum = offset / sizeof(float);  // octets vers floats
+    const void* motion = address(job.motion);
+    if (!own_grid(job)) {  // le mouvement ramené d'abord à la grille de la source (motion_on_grid)
+      void* regridded = take_grid(job);
+      regrids.push_back({.motion = motion,
+                         .motion_width = width_of(job.motion),
+                         .motion_height = height_of(job.motion),
+                         .scale = job.grid.scale,
+                         .x = job.grid.x,
+                         .y = job.grid.y,
+                         .out = regridded,
+                         .width = width_of(job.source),
+                         .height = height_of(job.source)});
+      motion = regridded;
+    }
+    const void* pushed = address(job.source);
+    void* out = address(job.out);
+    if (job.pull) {  // le flot (les deux premiers plans du mouvement) poussé vers le tampon, puis tiré
+      void* flow = take_grid(job);
+      pulls.push_back({.source = address(job.source),
+                       .channels = static_cast<int>(job.source.shape.dims[1]),
+                       .flow = flow,
+                       .width = width_of(job.source),
+                       .height = height_of(job.source),
+                       .s = job.s,
+                       .out = out,
+                       .coverage = job.coverage ? 1 : 0});
+      pushed = motion;
+      out = flow;
+    }
+    batch.jobs[batch.count++] = SoftSplatParams{.source = pushed,
+                                                .motion = motion,
+                                                .width = width_of(job.source),
+                                                .height = height_of(job.source),
+                                                .channels = pushed_planes(job),
+                                                .s = job.s,
+                                                .sums = sums + first_sum,
+                                                .out = out,
+                                                .coverage = job.pull || job.coverage ? 1 : 0};
+    offset += aligned_sums(job);
+    reads.push_back(job.source.handle);
+    reads.push_back(job.motion.handle);
+    writes.push_back(job.out.handle);
+  }
+};
 
 }  // namespace
 
@@ -155,6 +227,7 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
     if (auto ok = check_job(job, time); !ok) return ok;
     total += aligned_sums(job);
     if (!own_grid(job)) grids += aligned_motion(job);
+    if (job.pull) grids += aligned_motion(job);  // le flot poussé et sa couverture
   }
   if (auto ok = bind(); !ok) return ok;
   if (auto ok = reserve_grid_motion(grids); !ok) return ok;
@@ -179,43 +252,14 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
     batch.fill_value = t;
     writes.push_back(time.handle);
   }
-  std::size_t offset = 0;
-  std::size_t grid_offset = 0;
-  std::vector<MotionGridParams> regrids;
   std::vector<std::uintptr_t> reads;
   if (grids > 0) writes.push_back(reinterpret_cast<std::uintptr_t>(&grid_motion_));
-  for (const KernelOps::SplatJob& job : jobs) {
-    const int channels = static_cast<int>(job.source.shape.dims[1]);
-    const std::size_t first_sum = offset / sizeof(float);  // octets vers floats
-    const void* motion = address(job.motion);
-    if (!own_grid(job)) {  // le mouvement ramené d'abord à la grille de la source (motion_on_grid)
-      void* regridded = static_cast<char*>(grid_motion_) + grid_offset;
-      regrids.push_back({.motion = motion,
-                         .motion_width = width_of(job.motion),
-                         .motion_height = height_of(job.motion),
-                         .scale = job.grid.scale,
-                         .x = job.grid.x,
-                         .y = job.grid.y,
-                         .out = regridded,
-                         .width = width_of(job.source),
-                         .height = height_of(job.source)});
-      grid_offset += aligned_motion(job);
-      motion = regridded;
-    }
-    batch.jobs[batch.count++] = SoftSplatParams{.source = address(job.source),
-                                                .motion = motion,
-                                                .width = width_of(job.source),
-                                                .height = height_of(job.source),
-                                                .channels = channels,
-                                                .s = job.s,
-                                                .sums = splat_sums_ + first_sum,
-                                                .out = address(job.out),
-                                                .coverage = job.coverage ? 1 : 0};
-    offset += aligned_sums(job);
-    reads.push_back(job.source.handle);
-    reads.push_back(job.motion.handle);
-    writes.push_back(job.out.handle);
-  }
+  SplatPlan plan{.batch = batch, .grid_base = static_cast<char*>(grid_motion_), .sums = splat_sums_};
+  for (const KernelOps::SplatJob& job : jobs) plan.add(job);
+  std::vector<MotionGridParams>& regrids = plan.regrids;
+  std::vector<PullParams>& pulls = plan.pulls;
+  reads = std::move(plan.reads);
+  writes.insert(writes.end(), plan.writes.begin(), plan.writes.end());
   if (auto ok = order(reads, writes); !ok) return ok;
   GpuTiming& timing = stage("splatting de GMFSS");
   timing.begin(stream_);
@@ -226,6 +270,10 @@ std::expected<void, Refusal> TensorRtBackend::soft_splat_fill(std::span<const Ke
     }
   }
   auto launched = cuda_check(launch_soft_splat_all(batch, splat_sums_, total, stream_), "soft_splat<<<>>>");
+  for (const PullParams& pull : pulls) {
+    if (!launched) break;
+    launched = cuda_check(launch_soft_pull(pull, stream_), "soft_pull<<<>>>");
+  }
   timing.end(stream_);
   return launched;
 }
@@ -272,6 +320,30 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_compose(const KernelOps::Com
   GpuTiming& timing = stage("composition de GMFSS");
   timing.begin(stream_);
   auto launched = cuda_check(launch_gmfss_compose(params, stream_), "gmfss_compose<<<>>>");
+  timing.end(stream_);
+  return launched;
+}
+
+std::expected<void, Refusal> TensorRtBackend::gmfss_still(const KernelOps::StillJob& job) {
+  if (!fp16_planes(job.key, 3) || !fp16_planes(job.a, 3) || !fp16_planes(job.b, 3) ||
+      !same_size(job.key, job.a) || !same_size(job.key, job.b)) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  "gmfss_still : clé et sources RGB FP16 de même taille attendues");
+  }
+  if (!(job.t >= 0.0F && job.t <= 1.0F))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("gmfss_still : instant {} hors de [0, 1]", job.t));
+  if (auto ok = bind(); !ok) return ok;
+  const StillParams params{.key = address(job.key),
+                           .a = address(job.a),
+                           .b = address(job.b),
+                           .width = width_of(job.key),
+                           .height = height_of(job.key),
+                           .t = job.t};
+  if (auto ok = order({job.key.handle, job.a.handle, job.b.handle}, {job.key.handle}); !ok) return ok;
+  GpuTiming& timing = stage("décor fixe de GMFSS");
+  timing.begin(stream_);
+  auto launched = cuda_check(launch_gmfss_still(params, stream_), "gmfss_still<<<>>>");
   timing.end(stream_);
   return launched;
 }

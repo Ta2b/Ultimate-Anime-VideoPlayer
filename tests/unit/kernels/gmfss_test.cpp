@@ -189,3 +189,60 @@ TEST_CASE("Composition : le détail du travail, corrigé du résidu de la fusion
   CHECK_FALSE(ref::gmfss_compose(high, high, low, low, fusion,
                                  Window{.x = 0, .y = 0, .width = 3, .height = 2}, 0.5F));
 }
+
+TEST_CASE("Décor fixe : la clé reprend les sources là où rien ne bouge", "[kernels][gmfss]") {
+  // a et b égaux à gauche, très différents sur la colonne de droite ; la clé, plus douce, vaut 0,2.
+  const int w = 6;
+  const int h = 3;
+  std::vector<PlaneF> a(3, PlaneF(w, h, 0.5F));
+  std::vector<PlaneF> b = a;
+  for (PlaneF& p : b) {
+    for (int y = 0; y < h; ++y) p.at(w - 1, y) = 0.9F;
+  }
+  const std::vector<PlaneF> key(3, PlaneF(w, h, 0.2F));
+  auto out = ref::gmfss_still(key, a, b, 0.25F);
+  REQUIRE(out);
+  for (const PlaneF& p : *out) {
+    for (int y = 0; y < h; ++y) {
+      // Loin de l'écart : les sources exactement ; à côté ou dessus : la clé telle quelle.
+      for (int x = 0; x < w - 2; ++x) CHECK_THAT(p.at(x, y), WithinAbs(0.5, 1e-6));
+      CHECK_THAT(p.at(w - 2, y), WithinAbs(0.2, 1e-6));
+      CHECK_THAT(p.at(w - 1, y), WithinAbs(0.2, 1e-6));
+    }
+  }
+  // Un écart entre les deux seuils : à mi-chemin entre la clé et le mélange des sources.
+  std::vector<PlaneF> near = a;
+  const float gap = (kGmfssStillLow + kGmfssStillHigh) / 2.0F;
+  for (PlaneF& p : near) p = PlaneF(w, h, 0.5F + gap);
+  auto half = ref::gmfss_still(key, a, near, 0.0F);
+  REQUIRE(half);
+  CHECK_THAT((*half)[0].at(2, 1), WithinAbs(0.2F + 0.5F * (0.5F - 0.2F), 1e-5));
+  // Tailles différentes ou instant hors de [0, 1] : refus.
+  CHECK_FALSE(ref::gmfss_still(key, std::vector<PlaneF>(3, PlaneF(w - 1, h, 0.5F)), b, 0.5F));
+  CHECK_FALSE(ref::gmfss_still(key, a, b, 1.5F));
+}
+
+TEST_CASE("Splat tiré : le flot poussé, la source lue là d'où vient chaque pixel", "[kernels][gmfss]") {
+  // Un pas de 2 px à l'instant 1/2 : chaque pixel avance d'un pixel, la source exacte (Catmull-Rom à un point
+  // entier), la première colonne sans rien qui y arrive.
+  const int w = 6;
+  const int h = 4;
+  const std::vector<PlaneF> source{ramp(w, h, 0.0F), ramp(w, h, 100.0F)};
+  auto out = ref::soft_pull_at(source, uniform(w, h, 2.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
+  REQUIRE(out);
+  REQUIRE(out->planes.size() == 2);
+  for (int y = 0; y < h; ++y) {
+    CHECK_THAT(out->coverage.at(0, y), WithinAbs(0.0, 1e-6));
+    for (int x = 1; x < w; ++x) {
+      CHECK_THAT(out->coverage.at(x, y), WithinAbs(1.0, 1e-5));
+      CHECK_THAT(out->planes[0].at(x, y), WithinAbs(source[0].at(x - 1, y), 1e-4));
+      CHECK_THAT(out->planes[1].at(x, y), WithinAbs(source[1].at(x - 1, y), 1e-4));
+    }
+  }
+  // Un demi-pixel : le splat poussé étale chaque pixel sur deux, le tiré lit la source à mi-chemin, sans
+  // rien mêler d'autre (même valeur au centre d'une rampe, où les deux filtres coïncident).
+  auto half = ref::soft_pull_at(source, uniform(w, h, 1.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
+  REQUIRE(half);
+  CHECK_THAT(half->planes[0].at(3, 1), WithinAbs(source[0].at(3, 1) - 0.5F, 1e-4));
+  CHECK_FALSE(ref::soft_pull_at(source, uniform(w, h, 2.0F, 0.0F, 0.0F), 1.5F, MotionGrid{}));
+}

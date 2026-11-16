@@ -371,6 +371,17 @@ Bord de la paire : `gmfss_frames` recopie le bord de l'image dans le remplissage
 noir. Au demi-flot, le noir passait dans le flot près du bord : chaque clé avait une bande sombre ondulée en
 haut (environ 5 lignes à 720p, jusqu'à 40 niveaux) et en bas, et le bord clignotait à chaque clé, ce qui
 semblait changer la taille de l'image (Tempal 08, 2:46).
+Décor fixe des clés (`gmfss_still`, spec `kernels/spec/gmfss.h`) : la fusion de GMFSS rend une image plus douce
+que les sources, et la composition à la taille de travail n'en rend pas tout le détail. Mesuré en lecture image
+par image (travail 1080p, façade immobile) : une clé perdait 56 % du détail fin sans composition, 9 % avec, et la
+couleur de ses traits s'écartait de ses voisines 3,5 fois plus qu'en Équilibré ; les traits changeaient
+d'épaisseur et de teinte une image sur quatre. Chaque clé reprend maintenant les pixels des sources là où elles
+ne diffèrent pas (écart du voisinage 3 × 3 sous 3/255, fondu jusqu'à 8/255). Avec `gmfss_key_floor = 0`, Élevé
+pose une clé sur toute paire qui bouge un peu (une fontaine suffit) : il se comporte alors comme Très élevé.
+Splat tiré (`SplatJob::pull`) : sur ce qui bouge, la clé composée restait environ 20 % moins nette que ses
+voisines (l'eau de la fontaine de Tempal 08, 5:06), parce que le splat poussé étale chaque pixel sur quatre
+voisins. La composition pousse maintenant le flot, puis lit chaque source en Catmull-Rom là d'où vient le pixel,
+comme le warp de RIFE : même occultation, détail de la source intact.
 
 **Clés GMFSS du mélange** (novembre 2026) : une paire qui bouge reçoit une à trois images union, les clés, aux
 instants k/(n+1) ; RIFE mouvement fait chaque autre instant entre les deux voisines (source ou clé), une passe

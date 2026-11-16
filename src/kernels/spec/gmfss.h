@@ -89,6 +89,15 @@ struct MotionGrid {
   float y = 0.0F;
 };
 
+// Le splat tiré (SplatJob::pull, ref::soft_pull_at) : au lieu de pousser les pixels de la source, ce qui
+// étale chaque pixel sur quatre voisins et adoucit l'image, on pousse le flot lui-même, puis chaque pixel de
+// sortie va lire la source là d'où il vient. Pour la source (x, y) : (fx, fy) son flot sur la grille de la
+// source (comme ci-dessus), splatté avec sa métrique à l'instant s ; en sortie (X, Y), le flot splatté
+// (Fx, Fy) et la couverture c ; valeur = Catmull-Rom de la source en (X − s Fx, Y − s Fy) (spec/warp.h,
+// RifeWarp::CatmullRom : position bornée au plan, sortie bornée aux quatre points centraux) ; le plan de
+// couverture vaut c. La même occultation que le splat (la métrique choisit le flot du premier plan), le
+// détail de la source tel quel. La composition à la taille de travail tire ses sources ainsi.
+
 // Composition à la taille de travail (le mélange, travail plus grand que RIFE) : l'image du milieu se
 // compose des sources de travail splattées par le flot du niveau 1, corrigées du résidu de la fusion :
 // out = H + up(F − L), H le mélange des sources de travail splattées, L le même mélange des sources à la
@@ -102,6 +111,18 @@ struct MotionGrid {
 //   F lu en (xw, yw) dans la fenêtre, bilinéaire borné à la fenêtre ;
 //   out = clamp(H + F − L, 0, 1), par canal.
 // Le détail de la source de travail reste là où GMFSS le pousse, au lieu d'une image de RIFE agrandie.
+
+// Décor fixe (gmfss_still) : la clé K, à la taille des sources a et b, reprend leurs pixels là où rien ne
+// bouge entre elles. La fusion de GMFSS rend une image plus douce que les sources, et sa composition à la
+// taille de travail n'en rend pas tout le détail : sans cette reprise, chaque clé était plus molle que ses
+// voisines sur toute l'image, décor immobile compris, et les traits changeaient d'épaisseur d'une image à
+// l'autre en lecture. Pour chaque pixel (x, y), en FP32 :
+//   d = max sur le voisinage 3 × 3 (borné au plan) et les trois canaux de |a − b| ;
+//   m = clamp((kGmfssStillHigh − d) / (kGmfssStillHigh − kGmfssStillLow), 0, 1) ;
+//   out = clamp(K + m · ((1 − t) a + t b − K), 0, 1), par canal.
+// Sur place possible : un pixel ne lit que son K.
+inline constexpr float kGmfssStillLow = 3.0F / 255.0F;
+inline constexpr float kGmfssStillHigh = 8.0F / 255.0F;
 
 }  // namespace ajp::kernels
 

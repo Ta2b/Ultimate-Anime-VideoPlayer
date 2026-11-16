@@ -130,6 +130,46 @@ Result<Splatted> soft_splat_at(const std::vector<PlaneF>& source, const SplatMot
   });
 }
 
+Result<Splatted> soft_pull_at(const std::vector<PlaneF>& source, const SplatMotion& motion, float s,
+                              const MotionGrid& grid) {
+  if (auto ok = check_source(source, s); !ok) return std::unexpected(ok.error());
+  const int w = source.front().width;
+  const int h = source.front().height;
+  // Le flot sur la grille de la source, poussé avec sa métrique comme le serait la source.
+  std::vector<PlaneF> flow(2, PlaneF(w, h));
+  SplatMotion own{.planes = {PlaneF(w, h), PlaneF(w, h), PlaneF(w, h)}};
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const bool same = grid.scale == 1.0F && grid.x == 0.0F && grid.y == 0.0F &&
+                        motion.planes[0].width == w && motion.planes[0].height == h;
+      const float u =
+          same ? static_cast<float>(x) : (static_cast<float>(x) + 0.5F) / grid.scale - 0.5F + grid.x;
+      const float v =
+          same ? static_cast<float>(y) : (static_cast<float>(y) + 0.5F) / grid.scale - 0.5F + grid.y;
+      const float scale = same ? 1.0F : grid.scale;
+      for (std::size_t c = 0; c < 3; ++c) {
+        auto value = sample(motion.planes[c], u, v);
+        if (!value) return std::unexpected(value.error());
+        own.planes[c].at(x, y) = *value * (c < 2 ? scale : 1.0F);
+      }
+      flow[0].at(x, y) = own.planes[0].at(x, y);
+      flow[1].at(x, y) = own.planes[1].at(x, y);
+    }
+  }
+  auto pushed = soft_splat_at(flow, own, s, MotionGrid{});
+  if (!pushed) return std::unexpected(pushed.error());
+  Splatted out{.planes = std::vector<PlaneF>(source.size(), PlaneF(w, h)), .coverage = pushed->coverage};
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const float px = static_cast<float>(x) - s * pushed->planes[0].at(x, y);
+      const float py = static_cast<float>(y) - s * pushed->planes[1].at(x, y);
+      for (std::size_t c = 0; c < source.size(); ++c)
+        out.planes[c].at(x, y) = catmull_rom_sample(source[c], px, py);
+    }
+  }
+  return out;
+}
+
 Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted& high_b,
                                           const Splatted& low_a, const Splatted& low_b,
                                           const std::vector<PlaneF>& fusion, const Window& window, float t) {
@@ -179,6 +219,42 @@ Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted
         const float low = mix(*sample(low_a.planes[c], xw, yw), la, *sample(low_b.planes[c], xw, yw), lb);
         const float fused = *sample(fusion[c], window, xw, yw);
         out[c].at(x, y) = std::clamp(high + fused - low, 0.0F, 1.0F);
+      }
+    }
+  }
+  return out;
+}
+
+Result<std::vector<PlaneF>> gmfss_still(const std::vector<PlaneF>& key, const std::vector<PlaneF>& a,
+                                        const std::vector<PlaneF>& b, float t) {
+  if (!(t >= 0.0F && t <= 1.0F))
+    return fail(ErrorCode::ParameterOutOfRange, std::format("décor fixe : instant {} hors de [0, 1]", t));
+  if (key.size() != 3 || a.size() != 3 || b.size() != 3)
+    return fail(ErrorCode::SizeMismatch, "décor fixe : 3 plans attendus");
+  for (std::size_t c = 0; c < 3; ++c) {
+    if (auto ok = check_same_size(key[0], key[c], "décor fixe : clé"); !ok)
+      return std::unexpected(ok.error());
+    if (auto ok = check_same_size(key[0], a[c], "décor fixe : a"); !ok) return std::unexpected(ok.error());
+    if (auto ok = check_same_size(key[0], b[c], "décor fixe : b"); !ok) return std::unexpected(ok.error());
+  }
+  const int w = key[0].width;
+  const int h = key[0].height;
+  std::vector<PlaneF> out = key;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      float d = 0.0F;
+      for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int sx = std::clamp(x + dx, 0, w - 1);
+          const int sy = std::clamp(y + dy, 0, h - 1);
+          for (std::size_t c = 0; c < 3; ++c) d = std::max(d, std::abs(a[c].at(sx, sy) - b[c].at(sx, sy)));
+        }
+      }
+      const float m = std::clamp((kGmfssStillHigh - d) / (kGmfssStillHigh - kGmfssStillLow), 0.0F, 1.0F);
+      for (std::size_t c = 0; c < 3; ++c) {
+        const float k = key[c].at(x, y);
+        const float source = (1.0F - t) * a[c].at(x, y) + t * b[c].at(x, y);
+        out[c].at(x, y) = std::clamp(k + m * (source - k), 0.0F, 1.0F);
       }
     }
   }

@@ -514,6 +514,7 @@ class UpscaleStage final : public RingStage {
   std::int64_t gmfss_lead_us(std::int64_t room_us) const;  // Rapide libre : les clés avant la 1re image
   std::expected<void, Refusal> make_keys();                // les clés, une fois par paire
   std::expected<void, Refusal> make_key(std::uint32_t k, float t);
+  std::expected<void, Refusal> keep_still(const GmfssKey& key, float t);  // le décor fixe de la clé
   // RIFE mouvement entre deux images voisines (source ou clé) à l'instant u du sous-intervalle.
   struct KeySide {
     const gpu::Tensor* rife = nullptr;  // à la taille de RIFE
