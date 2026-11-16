@@ -178,6 +178,8 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     if (choice.engine == MotionEngine::Rife && !choice.gmfss_middle &&
         choice.rife_model == choices.default_rife_model)
       text += i18n::tr(" (recommended)");
+    if (choice.level == InterpLevel::High || choice.level == InterpLevel::GmfssUnion)
+      text += i18n::tr(" (experimental)");
     return text;
   };
   std::string shown = level_now ? std::string() : rife_label(rife_now);
@@ -203,10 +205,14 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
+  // GMFSS (Élevé, Très élevé) reste un essai : il n'est recommandé à aucune carte.
+  if (level_now == InterpLevel::High || level_now == InterpLevel::GmfssUnion)
+    panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   panel::tip(i18n::tr("Interpolation level"),
              std::string(i18n::tr(
                  "How clean the in-between frames are. Higher levels fix more artifacts on fast motion but "
-                 "need a stronger card; High and Very high add GMFSS and need an NVIDIA RTX.")) +
+                 "need a stronger card; High and Very high add GMFSS, are still experimental and need an "
+                 "NVIDIA RTX.")) +
                  " " + advice_line(choices, interpolation_level_advice),
              panel::Apply::Reload);
 }

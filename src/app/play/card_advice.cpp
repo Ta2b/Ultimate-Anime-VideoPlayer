@@ -57,9 +57,8 @@ std::string interpolation_level_advice(const CardAdvice& card) {
     case Tier::Normal:
       return i18n::tr("Fast");
     case Tier::Quality:
-      return i18n::tr("Balanced");
     case Tier::Ultra:
-      return card.tensor_cores ? i18n::tr("High") : i18n::tr("Balanced");
+      return i18n::tr("Balanced");  // Élevé et Très élevé restent expérimentaux
   }
   return i18n::tr("Fast");
 }

@@ -8,6 +8,7 @@ namespace {
 // Image IA : (clé anglaise, français).
 constexpr std::array kImageTabs{
     Entry{" (recommended)", " (recommandé)"},
+    Entry{" (experimental)", " (expérimental)"},
     Entry{"{} fps", "{} i/s"},
     Entry{"Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less precise "
           "motion; the speed gained and the quality lost are not measured).",

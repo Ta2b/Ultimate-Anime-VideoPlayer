@@ -184,10 +184,10 @@ constexpr std::array kMenuTexts{
         "Les images intermédiaires gardent des traits plus fins, pour quelques pour cent de vitesse. Vitesse "
         ": environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
     Entry{"How clean the in-between frames are. Higher levels fix more artifacts on fast motion but need a "
-          "stronger card; High and Very high add GMFSS and need an NVIDIA RTX.",
+          "stronger card; High and Very high add GMFSS, are still experimental and need an NVIDIA RTX.",
           "La propreté des images intermédiaires. Les niveaux plus hauts corrigent plus de défauts sur les "
-          "mouvements rapides mais demandent une carte plus forte ; Élevé et Très élevé ajoutent GMFSS et "
-          "demandent une NVIDIA RTX."},
+          "mouvements rapides mais demandent une carte plus forte ; Élevé et Très élevé ajoutent GMFSS, sont "
+          "encore expérimentaux et demandent une NVIDIA RTX."},
     Entry{"GMFSS", "GMFSS"},
     Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS about "
           "1.7× faster. Quality impact: minor loss on small motion. Recommended: on.",
