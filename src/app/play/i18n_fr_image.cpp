@@ -158,10 +158,10 @@ constexpr std::array kImageTabs{
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
     Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: "
           "about −10 %. Quality impact: changes the look of the animation (a matter of taste). Recommended: "
-          "on. RIFE only; replaces Keep poses.",
+          "off. RIFE only; replaces Keep poses.",
           "Un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. Vitesse : "
           "environ −10 %. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
-          "Recommandé : activé. RIFE seulement ; remplace Garder les poses."},
+          "Recommandé : désactivé. RIFE seulement ; remplace Garder les poses."},
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
     Entry{"Source (no downscale)", "Source (sans réduction)"},
     Entry{"Source, no downscale ({})", "Source, sans réduction ({})"},

@@ -116,7 +116,8 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_frames(const Tensor& a, cons
                                .top = g.top,
                                .black = 0.0F,  // la chaîne ingère en plage limitée : le noir vaut 0
                                .input = address(frames),
-                               .planes = kernels::kGmfssFramePlanes};
+                               .planes = kernels::kGmfssFramePlanes,
+                               .replicate = true};
   if (auto ok = order({a.handle, b.handle}, {frames.handle}); !ok) return ok;
   GpuTiming& timing = stage("entrée de GMFSS");
   timing.begin(stream_);

@@ -16,8 +16,10 @@
 namespace ajp::kernels {
 
 // Les images entrent comme celles de RIFE : RGB [0, 1] de la conversion de la chaîne, remplies au multiple
-// de 64 et centrées (rife_geometry), bords noirs ; la sortie se recadre pareil. vsgmfss étire l'image au
-// multiple de 64 au lieu de la remplir : la fenêtre garde ici ses pixels exacts.
+// de 64 et centrées (rife_geometry) ; la sortie se recadre pareil. vsgmfss étire l'image au multiple de 64
+// au lieu de la remplir : la fenêtre garde ici ses pixels exacts. Le bord recopie le pixel le plus proche de
+// l'image, pas le noir de RIFE : au flot réduit de moitié, le noir passait dans le flot près du bord et
+// assombrissait les premières lignes de chaque image union.
 //
 // Le graphe « paire » (une fois par paire forte) :
 //   entrée « frames », 1 × 6 × ph × pw : image a en RGB (plans 0-2), image b (plans 3-5) ;

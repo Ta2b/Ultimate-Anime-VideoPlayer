@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "app/play/frame_latency.h"
+#include "app/play/gmfss_credit.h"
 #include "app/play/upscale_stage.h"
 
 namespace ajp::app::play {
@@ -109,15 +110,24 @@ std::int64_t UpscaleStage::gmfss_lead_us(std::int64_t room_us) const {
 }
 
 void UpscaleStage::credit_gmfss(std::int64_t pts_us) {
-  // Une image d'après ajoute sa durée ; un saut en arrière (seek, nouvelle époque) repart plein.
-  constexpr double kGmfssShare = 0.75;  // le reste : RIFE, ingestion, rendu
+  // Une image d'après ajoute sa durée (gmfss_earned_us) ; un saut en arrière (seek, nouvelle époque) repart
+  // plein.
   if (pts_us == kNoPts) return;
   const std::int64_t last = std::exchange(gmfss_.credit_pts, pts_us);
   if (last == std::numeric_limits<std::int64_t>::min() || pts_us <= last || pts_us - last > 1'000'000) {
     gmfss_.credit_us = kGmfssCreditMaxUs;
     return;
   }
-  const auto earned = static_cast<std::int64_t>(static_cast<double>(pts_us - last) * kGmfssShare);
+  // Le temps de service d'une image du mode Rapide, celui du mouvement fort pour une paire forte, avec la
+  // contre-pression : des images perdues réservent plus de place à RIFE.
+  std::int64_t image_us = 0;
+  if (setup_.live != nullptr) {
+    const core::FreeInfo info = setup_.live->free_info(host_now_us());
+    const std::int64_t service =
+        heavy_pair_ && info.heavy_service_us > 0 ? info.heavy_service_us : info.service_us;
+    image_us = static_cast<std::int64_t>(static_cast<double>(service) * std::max(info.pressure, 1.0));
+  }
+  const std::int64_t earned = gmfss_earned_us(pts_us - last, image_us);
   gmfss_.credit_step_us = earned;
   gmfss_.credit_us = std::min(gmfss_.credit_us + earned, kGmfssCreditMaxUs);
 }

@@ -367,6 +367,10 @@ entier), le demi-flot doit l'amener à 48. Au-delà de ×2, GMFSS seul ne tient 
 Élevé ×8 tient (GMFSS sur une paire sur dix environ, au seuil de 15 px). Sans le graphe, la case est grisée.
 Activé par défaut depuis la refonte des infobulles (paire environ −65 %, GMFSS environ −40 % en tout, perte
 mineure) ; un `play.toml` qui l'a éteint le garde éteint.
+Bord de la paire : `gmfss_frames` recopie le bord de l'image dans le remplissage (720 → 768 lignes) au lieu du
+noir. Au demi-flot, le noir passait dans le flot près du bord : chaque clé avait une bande sombre ondulée en
+haut (environ 5 lignes à 720p, jusqu'à 40 niveaux) et en bas, et le bord clignotait à chaque clé, ce qui
+semblait changer la taille de l'image (Tempal 08, 2:46).
 
 **Clés GMFSS du mélange** (novembre 2026) : une paire qui bouge reçoit une à trois images union, les clés, aux
 instants k/(n+1) ; RIFE mouvement fait chaque autre instant entre les deux voisines (source ou clé), une passe
