@@ -95,20 +95,20 @@ TEST_CASE("play.toml : « Lisser les dessins tenus », absent d'un ancien fichie
   const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-smooth.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
-  const std::size_t line = text.find("smooth_drawings = true\n");
+  const std::size_t line = text.find("smooth_drawings = false\n");
   REQUIRE(line != std::string::npos);
-  text.erase(line, std::string("smooth_drawings = true\n").size());
+  text.erase(line, std::string("smooth_drawings = false\n").size());
   write_text(path, text);
   auto old = load_settings(path);
   REQUIRE(old);
-  CHECK(old->smooth_drawings);  // absent : le défaut, allumé
+  CHECK_FALSE(old->smooth_drawings);  // absent : le défaut, éteint
   CHECK(old->keep_poses);
-  old->smooth_drawings = false;
+  old->smooth_drawings = true;
   REQUIRE(save_settings(path, *old));
-  CHECK(read_text(path).find("smooth_drawings = false") != std::string::npos);
+  CHECK(read_text(path).find("smooth_drawings = true") != std::string::npos);
   const auto reread = load_settings(path);
   REQUIRE(reread);
-  CHECK_FALSE(reread->smooth_drawings);
+  CHECK(reread->smooth_drawings);
   std::filesystem::remove(path);
 }
 

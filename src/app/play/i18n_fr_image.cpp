@@ -224,10 +224,10 @@ constexpr std::array kImageTabs{
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
     Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: "
           "about −10 %. Quality impact: changes the look of the animation (a matter of taste). Recommended: "
-          "on. RIFE only; replaces Keep poses.",
+          "off. RIFE only; replaces Keep poses.",
           "Un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. Vitesse : "
           "environ −10 %. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
-          "Recommandé : activé. RIFE seulement ; remplace Garder les poses."},
+          "Recommandé : désactivé. RIFE seulement ; remplace Garder les poses."},
     Entry{"Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.",
           "Les coupes de scène ne sont pas interpolées ; les dessins tenus de 2 à 6 images sont lissés."},
     Entry{"Scene cuts and held drawings are not interpolated.",

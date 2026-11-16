@@ -254,9 +254,9 @@ struct PlaySettings {
   // « Lisser les dessins tenus » (upscale_smooth.cpp) : un dessin tenu de deux à six images, suivi d'un
   // dessin nouveau, se fond en un seul mouvement au lieu de rester figé puis de sauter ; une tenue plus
   // longue garde la copie, une coupe reste une coupe. RIFE seulement ; prend le pas sur keep_poses
-  // (poses_kept), dont il est l'inverse. Allumé par défaut ; recharge la chaîne (l'étage lit cinq
+  // (poses_kept), dont il est l'inverse. Éteint par défaut ; recharge la chaîne (l'étage lit cinq
   // images en avance).
-  bool smooth_drawings = true;
+  bool smooth_drawings = false;
   // Échelle par paire (upscale_half.cpp) : une paire qui bouge fort, où RIFE passe à chaque instant, l'estime
   // sur une image deux fois plus petite que celle de RIFE, par un second moteur ; les autres paires ne
   // changent pas. Moins cher seulement, jamais plus grand. RIFE mouvement seulement. Essai, éteint par défaut

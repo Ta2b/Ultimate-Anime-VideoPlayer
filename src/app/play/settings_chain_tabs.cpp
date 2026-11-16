@@ -638,7 +638,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   panel::tip(
       i18n::tr("A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. "
                "Speed: about −10 %. Quality impact: changes the look of the animation (a matter of taste). "
-               "Recommended: on. RIFE only; replaces Keep poses."));
+               "Recommended: off. RIFE only; replaces Keep poses."));
   const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
   note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
                 : i18n::tr("Scene cuts and held drawings are not interpolated."));
