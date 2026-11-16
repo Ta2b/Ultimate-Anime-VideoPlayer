@@ -31,9 +31,9 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) rife_input(R
   auto* out = static_cast<__half*>(p.input);
   const int ix = x - p.left;
   const int iy = y - p.top;
-  const bool inside = ix >= 0 && iy >= 0 && ix < p.width && iy < p.height;
+  const bool inside = p.replicate || (ix >= 0 && iy >= 0 && ix < p.width && iy < p.height);
   const std::size_t source_plane = static_cast<std::size_t>(p.width) * static_cast<std::size_t>(p.height);
-  const std::size_t j = inside ? at(ix, iy, p.width) : 0;
+  const std::size_t j = inside ? at(min(max(ix, 0), p.width - 1), min(max(iy, 0), p.height - 1), p.width) : 0;
   const auto* a = static_cast<const __half*>(p.a);
   const auto* b = static_cast<const __half*>(p.b);
   const __half black = __float2half_rn(p.black);

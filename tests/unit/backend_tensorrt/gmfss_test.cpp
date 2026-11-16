@@ -171,8 +171,8 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
     const k::PlaneF& source = c < 3 ? pa[static_cast<std::size_t>(c)] : pb[static_cast<std::size_t>(c - 3)];
     for (int y = 0; y < g.padded_height; ++y) {
       for (int x = 0; x < g.padded_width; ++x) {
-        const bool inside = x >= g.left && x < g.left + w && y >= g.top && y < g.top + h;
-        const float want = inside ? source.at(x - g.left, y - g.top) : 0.0F;
+        // Le bord recopie le pixel le plus proche de l'image.
+        const float want = source.at(std::clamp(x - g.left, 0, w - 1), std::clamp(y - g.top, 0, h - 1));
         const float value = got[static_cast<std::size_t>(c) * plane +
                                 static_cast<std::size_t>(y) * static_cast<std::size_t>(g.padded_width) +
                                 static_cast<std::size_t>(x)];

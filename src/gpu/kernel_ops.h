@@ -242,7 +242,8 @@ class KernelOps {
   virtual bool debands_on_ingest() const { return false; }
   // GMFSS Fortuna Union (kernels/spec/gmfss.h). Entrée du graphe « paire » depuis deux images RGB ingérées
   // de même taille w × h : a puis b (kGmfssFramePlanes plans) dans rife_geometry(w, h) de la taille de
-  // frames, bords noirs. BackendCaps::gmfss dit que le backend a les deux opérations.
+  // frames, le bord recopiant le pixel le plus proche de l'image. BackendCaps::gmfss dit que le backend a les
+  // deux opérations.
   virtual std::expected<void, Refusal> gmfss_frames(const Tensor& /*a*/, const Tensor& /*b*/,
                                                     const Tensor& /*frames*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "gmfss_frames : absent de ce backend"});
