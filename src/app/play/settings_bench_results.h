@@ -1,4 +1,4 @@
-// Vidéo > Post-traitement > « Résultats du bench » : les chaînes que la calibration de la machine a
+// Vidéo > Général > « Résultats du bench » : les chaînes que la calibration de la machine a
 // essayées (machine_calibration.h), celle que le lecteur recommande, un bouton Appliquer par ligne, et de
 // quoi refaire le bench. Les résultats vivent dans calibration.toml, à côté de play.toml.
 #pragma once

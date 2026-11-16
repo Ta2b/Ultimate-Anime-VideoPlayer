@@ -29,7 +29,7 @@ struct SystemNote {
   std::shared_ptr<std::future<std::expected<std::string, Refusal>>> pending;
 };
 
-// Vidéo > Post-traitement (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
+// Vidéo > Général (réglages avancés) : « Refaire la préparation sur cette vidéo » (span_derive.h),
 // la tâche partagée avec la boucle du lecteur (span_auto.h) avec sa progression et son résultat.
 struct PrepareNote {
   std::string text;
@@ -71,12 +71,9 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 // Quand le lecteur est déjà celui des vidéos, un mot qui le dit. Rien ne le propose au démarrage.
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default);
 
-// « Signaler un problème » (Général > À propos, P1.33) : la version, la carte et la fin de ajp.log,
+// « Signaler un problème » (Général > Application, P1.33) : la version, la carte et la fin de ajp.log,
 // déjà nettoyé à l'écriture (core/log_redact.h), copiées dans le presse-papiers ; puis la page de
 // nouvelle issue s'ouvre sur le modèle .github/ISSUE_TEMPLATE/bug.yml.
-// La carte graphique de la lecture (P3.16) : Automatique ou l'une des cartes, au prochain lancement ; rien
-// avec une seule carte.
-void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus);
 void report_problem_section(const PlayerPlace& place, const std::string& gpu_name);
 
 }  // namespace ajp::app::play

@@ -73,7 +73,7 @@ inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KD
 // --motion : RIFE ou DistilDRBA (settings.h : MotionEngine, que ce fichier ne voit pas).
 enum class MotionChoice : std::uint8_t { Rife, DistilDrba };
 
-enum class RelaunchedFor : std::uint8_t { None, GpuLost, EngineUpdated };
+enum class RelaunchedFor : std::uint8_t { None, GpuLost, EngineUpdated, Settings };
 // Le texte de --relaunched= ; vide pour None.
 std::string_view relaunched_name(RelaunchedFor reason);
 
@@ -243,7 +243,7 @@ struct PlayOptions {
   std::optional<int> bench_level;
   std::optional<std::filesystem::path> bench_out;
   Registration registration = Registration::None;
-  // --relaunched=gpu-lost|engine-updated : posé par le lecteur qui se relance (main.cpp), jamais par
+  // --relaunched=gpu-lost|engine-updated|settings : posé par le lecteur qui se relance (main.cpp), jamais par
   // l'utilisateur. Seul un processus relancé lit relaunch.txt (un double-clic sur une autre vidéo n'ouvre
   // plus l'ancienne, B18-02), et la garde contre une boucle de pertes du GPU ne dépend plus du disque
   // (B31-07).

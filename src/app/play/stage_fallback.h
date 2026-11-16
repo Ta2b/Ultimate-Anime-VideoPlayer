@@ -155,7 +155,7 @@ std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refu
                                         const std::filesystem::path& file, const StageRates& rates = {});
 
 // L'avis à l'écran pour ces changements, vide s'il n'y en a pas : « Upscaling unavailable: playing without
-// it (Video > Post-processing: Retry) ».
+// it (Video > General: Retry) ».
 i18n::Translated stage_notice(const std::vector<StageNote>& notes);
 // La ligne du panneau, avec la raison du journal.
 std::string stage_panel_note(const std::vector<StageNote>& notes);

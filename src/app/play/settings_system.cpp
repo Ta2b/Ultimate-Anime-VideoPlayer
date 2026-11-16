@@ -73,7 +73,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
 }
 
 void language_section(PlaySettings& d) {
-  section(i18n::tr("Language"));
+  section(i18n::tr("Interface"));
   const char* shown = d.language == "fr" ? "Français" : "English";  // i18n-ok : noms des langues
   if (ImGui::BeginCombo(i18n::tr("Interface language"), shown)) {
     if (ImGui::Selectable("English", d.language == "en")) d.language = "en";   // i18n-ok
@@ -81,19 +81,6 @@ void language_section(PlaySettings& d) {
     ImGui::EndCombo();
   }
   // La langue se pose par apply_live quand elle change, pas ici à chaque image (C23-11).
-}
-
-void gpu_section(PlaySettings& d, const std::vector<std::string>& gpus) {
-  if (gpus.size() < 2) return;
-  section(i18n::tr("Graphics card"));
-  const char* shown = d.gpu.empty() ? i18n::tr("Automatic (dedicated card first)") : d.gpu.c_str();
-  if (ImGui::BeginCombo(i18n::tr("Card for playback"), shown)) {
-    if (ImGui::Selectable(i18n::tr("Automatic (dedicated card first)"), d.gpu.empty())) d.gpu.clear();
-    for (const std::string& name : gpus)
-      if (ImGui::Selectable(name.c_str(), d.gpu == name)) d.gpu = name;
-    ImGui::EndCombo();
-  }
-  note(i18n::tr("Applies at next launch."));
 }
 
 namespace {

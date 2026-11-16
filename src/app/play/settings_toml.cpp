@@ -327,10 +327,11 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read_named(*interpolation, "interpolation", "engine", s.motion_engine, kMotionEngineCount,
                                kRetiredMotion, MotionEngine::Rife));
   }
-  // Le pic visé par le grade HDR. Le mode HDR n'est plus un réglage (il suit le système) : hdr.engine et la
-  // section rtx_hdr d'avant (RTX HDR retiré, sauf son pic) sont ignorés, comme les clés du HDR adaptatif.
+  // Le pic visé par le grade HDR et la sortie voulue (hdr.output). hdr.engine et la section rtx_hdr d'avant
+  // (RTX HDR retiré, sauf son pic) sont ignorés, comme les clés du HDR adaptatif.
   if (const toml::table* hdr = section(root, "hdr")) {
     reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
+    reads.push_back(read_named(*hdr, "hdr", "output", s.hdr_mode, kHdrModeCount));
   } else if (const toml::table* rtx = section(root, "rtx_hdr")) {
     reads.push_back(read(*rtx, "rtx_hdr", "peak", s.true_hdr_peak));
   }
@@ -407,6 +408,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*stats, "stats", "all", s.stats.all));
     reads.push_back(read(*stats, "stats", "chain", s.stats.chain));
     reads.push_back(read(*stats, "stats", "frames", s.stats.frames));
+    reads.push_back(read(*stats, "stats", "fps", s.stats.fps));
     reads.push_back(read(*stats, "stats", "rife", s.stats.rife));
     reads.push_back(read(*stats, "stats", "tracks", s.stats.tracks));
     reads.push_back(read(*stats, "stats", "output", s.stats.output));

@@ -102,6 +102,7 @@ struct Chain {
   std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
   std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
   bool calibrate = false;               // « Refaire le banc » : à faire avant de rouvrir
+  bool restart = false;  // un réglage posé au lancement : le lecteur se relance (RestartPlayer)
   std::vector<std::filesystem::path>* dropped_subtitles = nullptr;  // Player::dropped_subtitles
   StageMemory* stages = nullptr;          // les étages refusés de la séance, oubliés par « Réessayer »
   ManualTracks* manual_tracks = nullptr;  // les pistes choisies à la main, pour les vidéos suivantes (B29-11)

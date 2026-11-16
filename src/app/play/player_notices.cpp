@@ -20,7 +20,7 @@ i18n::Translated fallback_notice(std::optional<RefusalCode> passed_over, core::E
   if (passed_over == RefusalCode::SdkRejected)
     return i18n::ui_tr_format("{} needs a newer graphics driver: {} is used, slower", engine_label(wanted),
                               engine_label(in_use));
-  return i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > General > Engines)",
+  return i18n::ui_tr_format("{} unavailable: {} is used, slower (Settings > Video > General)",
                             engine_label(wanted), engine_label(in_use));
 }
 

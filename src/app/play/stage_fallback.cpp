@@ -249,8 +249,7 @@ i18n::Translated stage_notice(const std::vector<StageNote>& notes) {
     if (note.change == StageChange::Fallback) continue;
     text = text.empty() ? note_text(note) : text + i18n::Translated::data(" · ") + note_text(note);
   }
-  if (!text.empty())
-    text = text + i18n::Translated::data(" ") + i18n::ui_tr("(Video > Post-processing: Retry)");
+  if (!text.empty()) text = text + i18n::Translated::data(" ") + i18n::ui_tr("(Video > General: Retry)");
   return text;
 }
 

@@ -51,8 +51,22 @@ bool writable_folder(const std::filesystem::path& path) {
   return true;
 }
 
-void install_folder_section(const SettingsChoices& choices, std::string& engines_dir, FolderField& folder) {
-  section(i18n::tr("Install folder"));
+// La carte de la lecture, sur un poste qui en a deux ou plus (portables).
+void gpu_choice(std::string& gpu, const std::vector<std::string>& gpus) {
+  if (gpus.size() < 2) return;
+  const char* shown = gpu.empty() ? i18n::tr("Automatic (dedicated card first)") : gpu.c_str();
+  if (ImGui::BeginCombo(i18n::tr("Graphics card"), shown)) {
+    if (ImGui::Selectable(i18n::tr("Automatic (dedicated card first)"), gpu.empty())) gpu.clear();
+    for (const std::string& name : gpus)
+      if (ImGui::Selectable(name.c_str(), gpu == name)) gpu = name;
+    ImGui::EndCombo();
+  }
+  panel::tip(i18n::tr("Graphics card"), i18n::tr("The card that plays the video. Recommended: Automatic."),
+             panel::Apply::Restart);
+}
+
+void install_folder_row(const SettingsChoices& choices, std::string& engines_dir, FolderField& folder) {
+  ImGui::TextUnformatted(i18n::tr("Install folder"));
   // Un moteur téléchargé (TensorRT : 1,3 Go installés pour une RTX 4070 Ti) et ses téléchargements
   // s'installent ici ; l'espace libre se vérifie AVANT chaque téléchargement. Vide : le dossier des données
   // du lecteur.
@@ -106,73 +120,72 @@ void install_folder_section(const SettingsChoices& choices, std::string& engines
     panel::wrapped(folder.problem.c_str());
     ImGui::PopStyleColor();
   }
-  note(i18n::tr_format("Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
-                       choices.engines_dir_default, choices.engines_dir_free));
+  panel::tip(i18n::tr("Install folder"),
+             i18n::tr("Where downloaded engines go. Installed engines are not moved."),
+             panel::Apply::Restart);
+  note(i18n::tr_format("Default: {}. Free: {}.", choices.engines_dir_default, choices.engines_dir_free));
 }
 
 }  // namespace
 
-void engines_tab(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
-                 std::vector<Input>& actions, std::string& engines_dir, FolderField& folder,
-                 bool& fast_precision) {
-  section(i18n::tr("Active engine"));
+void engine_section(const SettingsChoices& choices, std::optional<core::EngineId>& draft,
+                    std::vector<Input>& actions, std::string& gpu) {
+  section(i18n::tr("Engine"));
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
-  if (in_use) ImGui::TextUnformatted(std::string(engine_label(*in_use)).c_str());
-  if (!choices.engine_note.empty()) note(choices.engine_note);
-  if (choices.switchable.size() < 2) {
-    note(i18n::tr("Only one engine is installed: \"Install more engines\" lists those that suit this GPU."));
-  } else {
-    const core::EngineId shown = draft.value_or(in_use.value_or(core::EngineId::Vulkan));
+  const core::EngineId shown = draft.value_or(in_use.value_or(core::EngineId::Vulkan));
+  ImGui::BeginDisabled(choices.switchable.size() < 2);
+  if (ImGui::BeginCombo(i18n::tr("Backend"), std::string(engine_label(shown)).c_str())) {
     for (const core::EngineId id : choices.switchable) {
-      if (ImGui::RadioButton(std::string(engine_label(id)).c_str(), shown == id)) draft = id;
+      if (ImGui::Selectable(std::string(engine_label(id)).c_str(), shown == id))
+        draft = id == in_use ? std::nullopt : std::optional(id);
     }
-    if (draft && draft != in_use) {
-      ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-      panel::wrapped(
-          i18n::tr_format(i18n::tr("To apply: playback reopens at the same spot with {}; its engines "
-                                   "are built the first time for each model and size."),
-                          engine_label(*draft))
-              .c_str());
-      ImGui::PopStyleColor();
-      if (ImGui::Button(i18n::tr("Use this engine"))) {
-        actions.emplace_back(UseEngine{.id = *draft});
-        draft.reset();
-      }
-      ImGui::SameLine();
-      if (ImGui::Button(i18n::tr("Cancel##moteur"))) draft.reset();
-    }
+    ImGui::EndCombo();
   }
-
-  section(i18n::tr("Installed engines"));
-  panel::wrapped(choices.chosen_engines.c_str());
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Backend"),
+      i18n::tr("Runs SPAN and the interpolation. TensorRT: NVIDIA RTX, fastest, engines built once per "
+               "model and size. Vulkan: every graphics card. Recommended: TensorRT on NVIDIA RTX, Vulkan "
+               "elsewhere."),
+      panel::Apply::Reload);
+  if (!choices.engine_note.empty()) note(choices.engine_note);
+  gpu_choice(gpu, choices.gpus);
   if (ImGui::Button(i18n::tr("Install more engines…"))) actions.emplace_back(OpenEngineScreen{});
-  note(i18n::tr("Reopens the engines screen; playback resumes at the same spot."));
+  panel::tip(i18n::tr("Install more engines…"),
+             i18n::tr("Opens the engines screen. Playback resumes at the same spot."));
+  ImGui::SameLine();
+  ImGui::PushStyleColor(ImGuiCol_Text, kNote);
+  ImGui::TextUnformatted(i18n::tr_format("Installed: {}", choices.chosen_engines).c_str());
+  ImGui::PopStyleColor();
+}
 
-  section(i18n::tr("Built engines"));
-  if (choices.engines.empty()) note(i18n::tr("No engine built yet."));
-  for (const EngineBadge& engine : choices.engines) {
-    // L'état d'abord, sur sa ligne ; le nom, long, passe à la ligne sans déborder ni cacher l'état (B23-11).
-    ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
-    ImGui::TextUnformatted(engine.loaded ? i18n::tr("Loaded") : i18n::tr("Cached"));
-    ImGui::PopStyleColor();
-    panel::wrapped(engine.name.c_str());
-    ImGui::PushStyleColor(ImGuiCol_Text, kNote);
-    panel::wrapped(engine.detail.c_str());
-    ImGui::PopStyleColor();
-    ImGui::Spacing();
-  }
-  note(i18n::tr("An engine is built once per model and size, then read from the cache."));
-
+void engines_advanced(const SettingsChoices& choices, std::string& engines_dir, FolderField& folder,
+                      bool& fast_precision) {
+  section(i18n::tr("Engines"));
   // La porte du moteur Vulkan (gpu::kStrictPrecision, net_gate.h) : float16 gardé quand la perte ne se voit
   // pas. Sans effet sous TensorRT.
   ImGui::Checkbox(i18n::tr("Speed before precision (Vulkan)"), &fast_precision);
-  panel::tip(
-      i18n::tr("Vulkan engines keep half-precision sums when the difference stays invisible (above 60 dB "
-               "against full precision): upscaling runs about twice as fast on recent GeForce cards. "
-               "Unchecked, a loss of more than 0.5 dB is refused. Applies at next launch; engines are "
-               "built again."));
-
-  install_folder_section(choices, engines_dir, folder);
+  panel::tip(i18n::tr("Speed before precision (Vulkan)"),
+             i18n::tr("Vulkan engines keep half precision when the difference is invisible. Speed: about 2× "
+                      "on upscaling. Quality impact: imperceptible. Recommended: on."),
+             panel::Apply::Restart);
+  install_folder_row(choices, engines_dir, folder);
+  if (ImGui::TreeNodeEx(i18n::tr("Built engines"), ImGuiTreeNodeFlags_SpanAvailWidth)) {
+    if (choices.engines.empty()) note(i18n::tr("No engine built yet."));
+    for (const EngineBadge& engine : choices.engines) {
+      // L'état d'abord, sur sa ligne ; le nom, long, passe à la ligne sans déborder ni cacher l'état
+      // (B23-11).
+      ImGui::PushStyleColor(ImGuiCol_Text, engine.loaded ? kAccent : kNote);
+      ImGui::TextUnformatted(engine.loaded ? i18n::tr("Loaded") : i18n::tr("Cached"));
+      ImGui::PopStyleColor();
+      panel::wrapped(engine.name.c_str());
+      ImGui::PushStyleColor(ImGuiCol_Text, kNote);
+      panel::wrapped(engine.detail.c_str());
+      ImGui::PopStyleColor();
+      ImGui::Spacing();
+    }
+    ImGui::TreePop();
+  }
 }
 
 void stages_note(const SettingsChoices& choices, std::vector<Input>& actions) {
@@ -182,7 +195,7 @@ void stages_note(const SettingsChoices& choices, std::vector<Input>& actions) {
   if (!choices.motion_note.empty()) panel::wrapped(choices.motion_note);
   ImGui::PopStyleColor();
   if (ImGui::Button(i18n::tr("Retry"))) actions.emplace_back(RetryStages{});
-  note(i18n::tr("Playback reopens at the same spot and prepares these engines again."));
+  panel::tip(i18n::tr("Retry"), i18n::tr("Prepares these engines again."), panel::Apply::Reload);
 }
 
 }  // namespace ajp::app::play

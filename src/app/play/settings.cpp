@@ -185,6 +185,30 @@ std::string_view label(FinalScaler scaler) {
   return i18n::tr("libplacebo default");
 }
 
+std::string_view name(HdrMode mode) {
+  switch (mode) {
+    case HdrMode::Auto:
+      return "auto";
+    case HdrMode::On:
+      return "on";
+    case HdrMode::Off:
+      return "off";
+  }
+  return "auto";
+}
+
+std::string_view label(HdrMode mode) {
+  switch (mode) {
+    case HdrMode::Auto:
+      return i18n::tr("Auto (follows the system)");
+    case HdrMode::On:
+      return i18n::tr("On");
+    case HdrMode::Off:
+      return i18n::tr("Off");
+  }
+  return i18n::tr("Auto (follows the system)");
+}
+
 std::string_view name(OledBlack mode) {
   switch (mode) {
     case OledBlack::Auto:
@@ -451,14 +475,11 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   if (running.motion_engine == wanted.motion_engine && wanted.motion_engine != MotionEngine::Rife)
     s.rife_model = wanted.rife_model;
   s.true_hdr_peak = wanted.true_hdr_peak;  // hdr_native reste celui de la sortie (il suit le système)
+  s.hdr_mode = wanted.hdr_mode;            // la boucle du lecteur en tire hdr_native (display_follow.cpp)
   s.final_scaler = wanted.final_scaler;
   s.deband = wanted.deband;
   s.sharpness = wanted.sharpness;
   s.autoplay_next = wanted.autoplay_next;
-  s.engines_dir = wanted.engines_dir;
-  s.fast_precision = wanted.fast_precision;  // vaut au prochain lancement, comme gpu
-  s.gpu =
-      wanted.gpu;  // vaut au prochain lancement (le panneau le dit) : il s'enregistre tout de suite (A22-01)
   s.update_mode = wanted.update_mode;
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
@@ -479,15 +500,16 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.flash_guard = wanted.flash_guard;
   s.look_table = wanted.look_table;
   s.grade_before_warp = wanted.grade_before_warp;
-  s.face_skin = wanted.face_skin;
   s.oled_black = wanted.oled_black;
   s.oled_black_steps = wanted.oled_black_steps;
   s.keep_poses = wanted.keep_poses;
   s.strong_middle = wanted.strong_middle;
-  s.smooth_motion = wanted.smooth_motion;  // gardé pour le prochain lancement
   s.oled_care = wanted.oled_care;
   s.steady_cadence = wanted.steady_cadence;
   s.stats = wanted.stats;
+  // La carte, le dossier et la précision des moteurs, Smooth Motion : posés au lancement, ils attendent
+  // « Appliquer », qui relance le lecteur (change_between : Restart). La peau des visages relance l'analyse
+  // des plans : elle attend la réouverture.
   // Ce qui demande un autre anneau ou un autre ordre du warp attend la réouverture, d'un bloc : la cadence
   // en cours reste celle pour laquelle la chaîne a été ouverte.
   if (opened != nullptr && !fits(*opened, s)) {
@@ -614,6 +636,19 @@ void add_fused_reasons(std::vector<std::string>& reopen, const PlaySettings& bas
                             : i18n::tr("whole DistilDRBA instead of fused DistilDRBA"));
 }
 
+// Ce que seul un nouveau lancement prend (ChangeCost::Restart).
+std::vector<std::string> restart_reasons(const PlaySettings& running, const PlaySettings& wanted) {
+  std::vector<std::string> out;
+  if (running.gpu != wanted.gpu) out.emplace_back(i18n::tr("the graphics card changes"));
+  if (running.engines_dir != wanted.engines_dir) out.emplace_back(i18n::tr("the engines folder changes"));
+  if (running.fast_precision != wanted.fast_precision)
+    out.emplace_back(i18n::tr("Vulkan engines are built again with the new precision"));
+  if (running.smooth_motion != wanted.smooth_motion)
+    out.emplace_back(wanted.smooth_motion ? i18n::tr("NVIDIA Smooth Motion turns on")
+                                          : i18n::tr("NVIDIA Smooth Motion turns off"));
+  return out;
+}
+
 }  // namespace
 
 // Le moteur d'interpolation chargé : celui de l'ouverture, pas le réglage en cours. Interpolation coupée, un
@@ -676,6 +711,16 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
                                         precision_text(wanted.motion_precision)));
   }
   add_shape_reasons(reopen, base, wanted, opened);
+  if (running.face_skin != wanted.face_skin)
+    reopen.emplace_back(i18n::tr("the video is analysed again for faces"));
+  if (const std::vector<std::string> restart = restart_reasons(running, wanted); !restart.empty()) {
+    std::vector<std::string> all = restart;
+    all.insert(all.end(), reopen.begin(), reopen.end());
+    std::string reason;
+    for (const std::string& part : all) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
+    return Change{.cost = ChangeCost::Restart,
+                  .reason = reason + i18n::tr(" ; the player restarts on this video, at the same spot")};
+  }
   if (!reopen.empty()) return reopen_for(reopen);
   if (running == wanted) return {};
   return Change{.cost = ChangeCost::Live};

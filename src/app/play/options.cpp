@@ -203,7 +203,8 @@ constexpr std::array<Flag, 38> kFlags{{
 // --relaunched=gpu-lost|engine-updated : posé par main.cpp sur le processus relancé (B39-01).
 std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
   const std::string_view reason = arg.substr(std::string_view("--relaunched=").size());
-  for (const RelaunchedFor known : {RelaunchedFor::GpuLost, RelaunchedFor::EngineUpdated})
+  for (const RelaunchedFor known :
+       {RelaunchedFor::GpuLost, RelaunchedFor::EngineUpdated, RelaunchedFor::Settings})
     if (reason == relaunched_name(known)) return known;
   return refuse(RefusalCode::FieldOutOfRange, std::format("{}: gpu-lost or engine-updated", arg));
 }
@@ -374,6 +375,8 @@ std::string_view relaunched_name(RelaunchedFor reason) {
       return "gpu-lost";
     case RelaunchedFor::EngineUpdated:
       return "engine-updated";
+    case RelaunchedFor::Settings:
+      return "settings";
     case RelaunchedFor::None:
       break;
   }

@@ -49,6 +49,7 @@ DisplayFollow::DisplayFollow(Player& p, Chain& chain, Session& session, DisplayS
       contract_watch_(p.screen.window(), p.display, log_),  // 8.2 : relu sur HDR_STATE_CHANGED et KWin
       vrr_watch_(state.vrr_armed),
       hdr_polled_at_(host_now_us() - kHdrPollUs),  // le premier tour relit le pic, pour le contrat (C11-06)
+      mode_seen_(chain.running.hdr_mode),
       probe_(p.screen.window(), system_display_readers(), wake, context) {}
 
 void DisplayFollow::poll() {
@@ -75,6 +76,10 @@ void DisplayFollow::poll() {
 }
 
 void DisplayFollow::take() {
+  if (chain_.running.hdr_mode != mode_seen_) {
+    mode_seen_ = chain_.running.hdr_mode;
+    if (peak_known_ && !p_.options.sdr) follow_peak(last_peak_);
+  }
   const std::optional<DisplayReading> reading = probe_.take();
   if (!reading) return;
   if (reading->took_us > kSlowReadingUs)
@@ -100,12 +105,14 @@ void DisplayFollow::take() {
 }
 
 void DisplayFollow::follow_peak(std::optional<double> peak_now) {
-  if (system_hdr(peak_now) != chain_.running.hdr_native) {
+  last_peak_ = peak_now;
+  peak_known_ = true;
+  if (hdr_wanted(chain_.running.hdr_mode, false, peak_now) != chain_.running.hdr_native) {
     PlaySettings switched = chain_.running;
     switched.hdr_native = !switched.hdr_native;
     chain_.auto_peak = auto_peak_nits(peak_now);
-    log_->info("HDR du système {} : sortie {}", switched.hdr_native ? "allumé" : "coupé",
-               switched.hdr_native ? "HDR10" : "SDR gradée");
+    log_->info("HDR {} (réglage {}) : sortie {}", switched.hdr_native ? "allumé" : "coupé",
+               name(chain_.running.hdr_mode), switched.hdr_native ? "HDR10" : "SDR gradée");
     apply(Input{ApplySettings{.settings = switched}}, chain_, host_now_us());
   } else {
     follow_display(chain_, peak_now);  // P3.58

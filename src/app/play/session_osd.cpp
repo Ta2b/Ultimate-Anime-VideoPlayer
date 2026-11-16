@@ -43,6 +43,10 @@ void Session::extra_lines(const StatsSettings& show, std::vector<std::string>& l
 std::vector<std::string> Session::osd_lines() const {
   const StatsSettings& show = show_stats_;
   std::vector<std::string> lines;
+  // « Afficher les FPS » : la cadence montrée seule, comme dans un jeu ; les statistiques des images la
+  // donnent déjà.
+  if (show.fps && !show.all && !show.frames)
+    lines.push_back(std::format("{} FPS", format_fps(stats_.shown_fps)));
   if (show.all || show.chain) lines.insert(lines.end(), config_.header.begin(), config_.header.end());
   if (show.all || show.tracks) lines.insert(lines.end(), config_.tracks.begin(), config_.tracks.end());
   if ((show.all || show.output) && !config_.output.empty()) lines.push_back(config_.output);

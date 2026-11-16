@@ -21,10 +21,11 @@ namespace ajp::app::play {
 struct Reopen {
   PlaySettings settings;
   std::int64_t position_us = 0;
-  bool paused = false;                             // la lecture était en pause : elle le reste
-  std::optional<EngineChange> engines;             // onglet Moteurs : à faire avant de rouvrir
-  std::optional<ExportJob> export_job;             // onglet Export : à faire avant de rouvrir
-  bool calibrate = false;                          // « Refaire le banc » : la calibration avant de rouvrir
+  bool paused = false;                  // la lecture était en pause : elle le reste
+  std::optional<EngineChange> engines;  // onglet Moteurs : à faire avant de rouvrir
+  std::optional<ExportJob> export_job;  // onglet Export : à faire avant de rouvrir
+  bool calibrate = false;               // « Refaire le banc » : la calibration avant de rouvrir
+  bool restart = false;  // un réglage posé au lancement (RestartPlayer) : play.toml écrit, puis la relance
   std::optional<std::filesystem::path> next_file;  // fichier glissé sur la fenêtre : le lire à la place
                                                    // (vide : l'accueil)
   std::optional<std::int64_t> next_start_us;       // l'instant où l'ouvrir (PlayFile) ; rien : la reprise

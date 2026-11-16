@@ -219,10 +219,10 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   const int auto_peak = auto_peak_nits(peak_seen);
   // Le HDR suit le système (system_hdr) : sortie HDR10 si l'écran en reçoit assez, sinon SDR gradée, la
   // swapchain en SDR comme avec --sdr.
-  settings.hdr_native = !p.options.sdr && system_hdr(peak_seen);
+  settings.hdr_native = hdr_wanted(settings.hdr_mode, p.options.sdr, peak_seen);
   if (!settings.hdr_native)
-    log->info("sortie SDR (HDR du système absent, coupé ou sous {} nits) : image SDR gradée",
-              kMinHdrPeakNits);
+    log->info("sortie SDR (réglage {}, HDR du système absent, coupé ou sous {} nits) : image SDR gradée",
+              name(settings.hdr_mode), kMinHdrPeakNits);
   p.screen.set_sdr_output(!settings.hdr_native);
   // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
@@ -751,6 +751,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
                     .engines = chain.engines,
                     .export_job = chain.export_job,
                     .calibrate = chain.calibrate,
+                    .restart = chain.restart,
                     .next_file = chain.next_file,
                     .next_start_us = chain.next_start_us,
                     .next_paused = chain.next_paused,

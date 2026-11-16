@@ -15,6 +15,7 @@ std::span<const Entry> french_wizard();    // assistant de premier lancement, é
 std::span<const Entry> french_visible();   // préparation du mode Performance, écran, moteurs, erreurs
 std::span<const Entry> french_stats();     // statistiques à l'écran, export, accueil
 std::span<const Entry> french_sound();     // Audio : sortie, profils, son anime, synchronisation
+std::span<const Entry> french_menu();      // le menu des paramètres : infobulles, encadrés, pied du panneau
 std::span<const Entry>
 french_messages();  // lecteur par défaut, mises à jour, benchmark, installation des moteurs
 

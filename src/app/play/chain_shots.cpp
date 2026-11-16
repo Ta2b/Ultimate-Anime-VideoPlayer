@@ -343,7 +343,7 @@ void open_shots_early(ShotWork& work, const std::filesystem::path& file, PlaySet
   const std::optional<ColorInfo> color = media::track_color(video);
   const bool source_hdr = color && (color->transfer == Transfer::Pq || color->transfer == Transfer::Hlg);
   const int peak = settings.true_hdr_peak > 0 ? settings.true_hdr_peak : auto_peak_nits(peak_seen);
-  const bool hdr_output = !sdr && system_hdr(peak_seen);
+  const bool hdr_output = hdr_wanted(settings.hdr_mode, sdr, peak_seen);
   settings.hdr_native = hdr_output;
   open_shots(
       work, file, settings, start_us,

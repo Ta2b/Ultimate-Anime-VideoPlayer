@@ -34,7 +34,15 @@ bool parse_int(std::string_view text, std::int64_t& value) {
 }
 
 std::string_view reason_name(RelaunchReason reason) {
-  return reason == RelaunchReason::GpuLost ? "gpu-lost" : "engine-updated";
+  switch (reason) {
+    case RelaunchReason::GpuLost:
+      return "gpu-lost";
+    case RelaunchReason::Settings:
+      return "settings";
+    case RelaunchReason::EngineUpdated:
+      break;
+  }
+  return "engine-updated";
 }
 
 }  // namespace
@@ -84,7 +92,9 @@ std::optional<RelaunchTarget> take_relaunch_target(const std::filesystem::path& 
       } else if (key == "paused") {
         target.paused = value == "1";
       } else if (key == "reason") {
-        target.reason = value == "gpu-lost" ? RelaunchReason::GpuLost : RelaunchReason::EngineUpdated;
+        target.reason = value == "gpu-lost"   ? RelaunchReason::GpuLost
+                        : value == "settings" ? RelaunchReason::Settings
+                                              : RelaunchReason::EngineUpdated;
       } else if (key == "written_s" && parse_int(value, number)) {
         target.written_s = number;
         has_time = true;
@@ -115,8 +125,9 @@ bool ask_relaunch(const PlayerPaths& paths, const std::filesystem::path& file,
   }
   *paths.relaunch = true;
   if (paths.relaunch_reason != nullptr)
-    *paths.relaunch_reason =
-        reason == RelaunchReason::GpuLost ? RelaunchedFor::GpuLost : RelaunchedFor::EngineUpdated;
+    *paths.relaunch_reason = reason == RelaunchReason::GpuLost    ? RelaunchedFor::GpuLost
+                             : reason == RelaunchReason::Settings ? RelaunchedFor::Settings
+                                                                  : RelaunchedFor::EngineUpdated;
   relaunch_asked().store(true, std::memory_order_release);
   return true;
 }

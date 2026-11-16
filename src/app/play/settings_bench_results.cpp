@@ -144,7 +144,7 @@ void collect_bench(const SettingsChoices& choices, MachineNote& bench) {
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, MachineNote& bench,
                            std::vector<Input>& actions) {
-  section(i18n::tr("Calibration results"));
+  section(i18n::tr("Calibration"));
   bool applied = false;
   if (!bench.read) {
     bench.read = true;
@@ -225,7 +225,9 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
       bench.read = false;  // calibration.toml relu au retour
     }
   }
-  panel::tip(i18n::tr("Playback closes during the calibration, then resumes at the same spot."));
+  panel::tip(bench.result ? i18n::tr("Run the calibration again") : i18n::tr("Run the calibration"),
+             i18n::tr("Measures which settings this machine holds; Auto then follows them. Playback closes "
+                      "meanwhile, then resumes at the same spot."));
   return applied;
 }
 

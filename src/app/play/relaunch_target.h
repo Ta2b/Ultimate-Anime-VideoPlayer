@@ -17,7 +17,8 @@
 
 namespace ajp::app::play {
 
-enum class RelaunchReason : std::uint8_t { GpuLost, EngineUpdated };
+// Settings : un réglage posé au lancement (carte, moteurs, Smooth Motion), appliqué depuis le menu.
+enum class RelaunchReason : std::uint8_t { GpuLost, EngineUpdated, Settings };
 
 struct RelaunchTarget {
   std::filesystem::path file;

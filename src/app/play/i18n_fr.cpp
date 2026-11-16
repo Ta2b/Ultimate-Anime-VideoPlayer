@@ -80,8 +80,6 @@ constexpr std::array kPlayer{
     Entry{"Russian", "Russe"},
     Entry{"Scaler: {}, deband {}", "Filtre : {}, débandage {}"},
     Entry{"Settings (p)", "Paramètres (p)"},
-    Entry{"Smooth Motion: off at next launch", "Smooth Motion : désactivé au prochain lancement"},
-    Entry{"Smooth Motion: on at next launch", "Smooth Motion : activé au prochain lancement"},
     Entry{"Spanish", "Espagnol"},
     Entry{"Statistics hidden", "Statistiques masquées"},
     Entry{"Statistics shown", "Statistiques affichées"},
@@ -126,7 +124,7 @@ std::span<const Entry> french_entries() {
     std::vector<Entry> merged;
     for (const auto part :
          {french_player(), french_settings(), french_image(), french_sound(), french_system(),
-          french_wizard(), french_messages(), french_stats(), french_visible()})
+          french_wizard(), french_messages(), french_stats(), french_visible(), french_menu()})
       merged.insert(merged.end(), part.begin(), part.end());
     return merged;
   }();

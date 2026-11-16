@@ -172,8 +172,7 @@ void announce_once(Player& player, Announced& announced, UpdateNews& news, Updat
   const auto calibration = load_calibration_at(player.settings_path.parent_path(), display_height);
   if (!announced.calibration && calibration && !calibration->gpu.empty() && calibration->gpu != gpu) {
     announced.calibration = true;
-    const i18n::Translated redo =
-        i18n::ui_tr("New graphics card: calibrate this PC again (Video > Post-processing)");
+    const i18n::Translated redo = i18n::ui_tr("New graphics card: calibrate this PC again (Video > General)");
     player.notice = player.notice.empty() ? redo : player.notice + i18n::Translated::data(" · ") + redo;
   }
 }
@@ -568,7 +567,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       library = std::move(*opened);
       library_wanted = wanted;
       // A31-03 : le moteur choisi refuse ce GPU (pilote trop ancien, module abîmé) : un autre le remplace,
-      // plus lent ; dit à l'écran une fois, la raison au journal et dans Général > Moteurs.
+      // plus lent ; dit à l'écran une fois, la raison au journal et dans Vidéo > Général.
       if (const std::optional<core::EngineId> in_use = engine_of_library(library->path());
           wanted && in_use && wanted != in_use)
         engine_fallback = fallback_notice(library->passed_over_code(), *wanted, *in_use);
@@ -654,6 +653,14 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
           break;
         }
         player.notice = exported.notice;
+      }
+      // Un réglage posé au lancement (carte, moteurs, Smooth Motion) : play.toml d'abord, puis la relance sur
+      // cette vidéo, à cet instant.
+      if ((*outcome)->restart && paths.relaunch != nullptr) {
+        save_before_next(player, **outcome, (*outcome)->settings, file_options);
+        ask_relaunch(paths, file, (*outcome)->position_us, (*outcome)->paused, RelaunchReason::Settings);
+        player.quit = true;
+        break;
       }
       settings = (*outcome)->settings;
       if ((*outcome)->rederive)

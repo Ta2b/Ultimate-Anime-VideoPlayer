@@ -78,28 +78,30 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
                       system_default != nullptr ? system_default->name : std::string_view{});
   if (active != nullptr && active->channels > 0)
     note(i18n::tr_format("{} channels on this device.", active->channels));
-  panel::tip(i18n::tr("Changing the device reopens the video at the same spot."));
+  panel::tip(i18n::tr("Output device"), i18n::tr("Recommended: follow the system."), panel::Apply::Reload);
 
-  if (!panel::advanced()) return false;
+  panel::advanced_header();
   section(i18n::tr("Sync"));
   ImGui::SliderInt(i18n::tr("Audio delay (ms)"), &d.audio_delay_ms, limits::kAudioDelaySlider.lo,
                    limits::kAudioDelaySlider.hi);
   const bool held = ImGui::IsItemActive();
   static_assert(limits::kAudioDelayMs.hi == 5000, "le texte de l'infobulle dit ±5,000 ms");
   panel::tip(
-      i18n::tr("Positive delays the sound. Kept for this output device and every video, until you change it. "
-               "Ctrl+click the slider to type a value (up to ±5,000 ms)."));
+      i18n::tr("Audio delay (ms)"),
+      i18n::tr("Positive delays the sound. Kept for this output device. Ctrl+click to type a value (up "
+               "to ±5,000 ms). Recommended: 0."));
   if (ImGui::Button(i18n::tr("Reset to 0"))) d.audio_delay_ms = 0;
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
   ImGui::Checkbox(i18n::tr("Sync playback to the display"), &d.display_sync);
-  panel::tip(
-      i18n::tr("On a fixed-rate display, playback speeds up or slows down by at most 0.125% so each frame "
-               "fits whole refreshes: no more doubled frames. Sound follows, inaudibly."));
+  panel::tip(i18n::tr("Sync playback to the display"),
+             i18n::tr("On a fixed-rate display, playback speed changes by at most 0.125 % so each frame fits "
+                      "whole refreshes. Sound follows, inaudibly. Recommended: on."));
   ImGui::SliderInt(i18n::tr("Display latency (ms)"), &d.video_latency_ms, limits::kVideoLatencyMs.lo,
                    limits::kVideoLatencyMs.hi, d.video_latency_ms == 0 ? i18n::tr("estimated") : "%d ms",
                    ImGuiSliderFlags_AlwaysClamp);
-  note(i18n::tr(
-      "The time between choosing a frame and seeing it. Set it here if the picture seems early or late."));
+  panel::tip(i18n::tr("Display latency (ms)"),
+             i18n::tr("The time between choosing a frame and seeing it. Set it if the picture seems early or "
+                      "late. Recommended: estimated (0)."));
   d.video_latency_ms = std::clamp(d.video_latency_ms, limits::kVideoLatencyMs.lo, limits::kVideoLatencyMs.hi);
   return held;
 }

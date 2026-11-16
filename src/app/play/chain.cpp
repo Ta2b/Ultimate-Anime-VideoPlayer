@@ -273,11 +273,6 @@ void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
     log_channel("app")->info("débogage des paires : {}", wanted.stats.pairs ? "allumé" : "éteint");
     to.live.set_pair_marks(wanted.stats.pairs);
   }
-  if (wanted.smooth_motion != r.smooth_motion) {
-    controls.notify(wanted.smooth_motion ? i18n::ui_tr(("Smooth Motion: on at next launch"))
-                                         : i18n::ui_tr(("Smooth Motion: off at next launch")),
-                    now_us);
-  }
   if (wanted.oled_care != r.oled_care || wanted.steady_cadence != r.steady_cadence ||
       wanted.oled_black != r.oled_black)
     apply_oled_care(to, wanted);
@@ -564,6 +559,12 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
             } else {
               apply_live(to, apply.settings, now_us);
             }
+          },
+          [&](const RestartPlayer& restart) {
+            log_channel("app")->info("paramètres : le lecteur se relance pour les appliquer");
+            to.ui.close_settings();
+            to.restart = true;
+            to.reopen = restart.settings;
           },
           [&](const UseEngine& use) { ask_engines(to, use); },
           [&](const OpenEngineScreen& open) { ask_engines(to, open); },

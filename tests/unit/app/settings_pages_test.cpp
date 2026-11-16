@@ -4,6 +4,8 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,39 +16,44 @@
 
 using namespace ajp::app::play;
 
-TEST_CASE("l'arbre des réglages tient en trois catégories et dix pages", "[settings][pages]") {
+TEST_CASE("le menu des réglages tient en cinq catégories, Général d'abord", "[settings][pages]") {
   const auto pages = settings_pages();
   CHECK(pages.size() <= 10);
-  std::set<std::string_view> categories;
-  std::set<std::string_view> names;
+  std::vector<std::string_view> categories;
+  std::set<std::pair<std::string_view, std::string_view>> names;
   std::string_view previous;
   for (const SettingsPage& page : pages) {
     CHECK_FALSE(std::string_view(page.name).empty());
-    CHECK(names.insert(page.name).second);  // un nom de page n'est donné qu'une fois
-    // Les pages d'une catégorie se suivent : l'arbre déduit les catégories du changement de `category`.
-    if (page.category != previous) CHECK(categories.insert(page.category).second);
+    CHECK(
+        names.insert({page.category, page.name}).second);  // un onglet n'est donné qu'une fois par catégorie
+    // Les onglets d'une catégorie se suivent : le panneau déduit les catégories du changement de `category`.
+    if (page.category != previous) {
+      CHECK(std::ranges::find(categories, std::string_view(page.category)) == categories.end());
+      categories.emplace_back(page.category);
+    }
     previous = page.category;
   }
-  CHECK(categories.size() == 3);
-  CHECK(std::string_view(pages.front().category) == "Video");
-  CHECK(std::string_view(pages.front().name) == "Post-processing");
+  CHECK(categories == std::vector<std::string_view>{"General", "Video", "Audio", "Languages", "Export"});
+  // Le panneau s'ouvre sur Vidéo > Général (settings_panel.h : page_ = 2).
+  CHECK(pages[2].id == Page::VideoGeneral);
 }
 
-TEST_CASE("l'arbre des réglages garde les pages que les autres écrans citent", "[settings][pages]") {
+TEST_CASE("le menu des réglages garde les onglets que les autres écrans citent", "[settings][pages]") {
   const auto pages = settings_pages();
   const auto has = [&](std::string_view category, std::string_view name) {
     return std::ranges::any_of(pages, [&](const SettingsPage& page) {
       return std::string_view(page.category) == category && std::string_view(page.name) == name;
     });
   };
-  // Les langues et les sous-titres, le lecteur par défaut et les mises à jour vivent ensemble.
-  CHECK(has("Audio and playback", "Playback"));
   CHECK(has("General", "Application"));
-  CHECK(has("General", "Engines"));  // le moteur est un réglage général (ADR 0012)
-  CHECK_FALSE(has("General", "Languages"));
-  CHECK_FALSE(has("General", "Subtitles"));
-  CHECK_FALSE(has("General", "Default player"));
-  CHECK_FALSE(has("General", "Updates"));
+  CHECK(has("General", "Statistics"));
+  CHECK(has("Video", "General"));  // le moteur et le préréglage
+  CHECK(has("Video", "Upscaling"));
+  CHECK(has("Video", "Interpolation"));
+  CHECK(has("Video", "HDR"));
+  CHECK(has("Languages", "Languages"));
+  CHECK_FALSE(has("General", "Engines"));  // le moteur est passé dans Vidéo > Général
+  CHECK_FALSE(has("General", "Export"));
 }
 
 TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[settings][pages][wizard]") {

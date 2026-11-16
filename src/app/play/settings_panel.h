@@ -1,7 +1,10 @@
-// Le menu des paramètres : un panneau à droite de l'écran, un arbre de trois catégories (Vidéo, Audio et
-// lecture, Général) et dix pages (settings_pages). Les réglages en direct
-// s'appliquent pendant qu'on les change ; ceux qui demandent de rouvrir la chaîne attendent « Appliquer »,
-// sous un encadré qui dit ce qui sera reconstruit ou rechargé (settings.h : change_between).
+// Le menu des paramètres, à la manière de Dolphin : un panneau à droite de l'écran, redimensionnable par ses
+// bords, une colonne de cinq catégories (Général, Vidéo, Audio, Langues, Export) et, dans chacune, des
+// onglets (settings_pages). Chaque onglet range ses réglages dans des encadrés titrés, les réglages rares
+// sous « Avancé », en bas, toujours visibles. Les réglages en direct s'appliquent pendant qu'on les change
+// (le panneau s'efface pendant qu'on tient un curseur) ; ceux qui demandent de recharger la vidéo ou de
+// relancer le lecteur attendent « Appliquer », sous un encadré qui dit ce qui sera fait (settings.h :
+// change_between).
 #pragma once
 
 #include <array>
@@ -77,7 +80,7 @@ struct SettingsChoices {
   std::string display_text;                     // l'écran selon son EDID (display_edid.h : describe)
   std::filesystem::path source_file;            // le fichier lu : l'export se propose à côté
   std::string black_status;                     // seuils du vrai noir en cours
-  // Vidéo > Post-traitement (auto_config.h) : la machine telle que le préréglage Auto la voit.
+  // Vidéo > Général (auto_config.h) : la machine telle que le préréglage Auto la voit.
   int machine_tier =
       2;  // la tranche (gpu_tier.h : Tier, 0 à 4), estimée ou mesurée par « Calibrer cette machine »
   // La tranche estimée d'après le nom de la carte (estimate_tier), sans bench.toml : celle dont une
@@ -114,7 +117,7 @@ struct SettingsChoices {
   SpanPrepare span_prepare;
   std::shared_ptr<PrepareNote> span_job;
   // Les étages que la chaîne joue sans eux, ou à un autre cran, et pourquoi (stage_fallback.h) : la page
-  // Post-traitement l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
+  // Vidéo > Général l'affiche avec « Réessayer ». Vide : la chaîne demandée tourne.
   std::string stage_note;
   // L'interpolation coupée faute de carte pour cette vidéo (motion_cut.h), avec le même « Réessayer ». Vide :
   // elle n'est pas coupée.
@@ -123,26 +126,25 @@ struct SettingsChoices {
   std::filesystem::path bench_clip;    // la séquence du banc (paths::bench_clip)
 };
 
-// Une page de l'arbre des réglages (settings_panel.cpp) : ce qu'elle dessine, sa catégorie, son nom, et si
-// elle n'est montrée qu'avec la case « Réglages avancés ».
+// Un onglet des réglages (settings_panel.cpp) : ce qu'il dessine, sa catégorie (la colonne de gauche) et son
+// nom. Une catégorie d'un seul onglet n'a pas de rangée d'onglets.
 enum class Page : std::uint8_t {
-  PostProcessing,
-  Colors,
-  Display,
-  Sound,
-  Playback,
   Application,
-  Engines,
-  Export,
   Statistics,
-  About
+  VideoGeneral,
+  Upscaling,
+  Interpolation,
+  Hdr,
+  Audio,
+  Languages,
+  Export
 };
 struct SettingsPage {
   Page id;
   const char* category;
   const char* name;
 };
-// Toutes les pages, dans l'ordre de l'écran (les catégories se déduisent du changement de `category`).
+// Tous les onglets, dans l'ordre de l'écran (les catégories se déduisent du changement de `category`).
 std::span<const SettingsPage> settings_pages();
 
 // Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
@@ -181,20 +183,25 @@ class SettingsPanel {
   bool wants_draw() const { return open_; }
 
   struct Result {
-    std::optional<PlaySettings> live;    // à appliquer tout de suite
-    std::optional<PlaySettings> reopen;  // confirmé : rouvrir la chaîne avec ces réglages
+    std::optional<PlaySettings> live;     // à appliquer tout de suite
+    std::optional<PlaySettings> reopen;   // confirmé : rouvrir la chaîne avec ces réglages
+    std::optional<PlaySettings> restart;  // confirmé : écrire ces réglages et relancer le lecteur
   };
   // Dessine le panneau dans le cadre ImGui en cours (s'il est ouvert).
   Result draw(const PlaySettings& running, const SettingsChoices& choices, float scale,
               std::vector<Input>& actions);
 
  private:
-  // Le corps de la page choisie, puis le pied du panneau (case avancée, annuler, appliquer) : draw les
-  // assemble.
+  // La colonne des catégories, les onglets de la catégorie, le corps de l'onglet choisi, puis le pied du
+  // panneau (annuler, appliquer) : draw les assemble.
+  void draw_categories(float scale);
+  void draw_tabs();
   void draw_page(const PlaySettings& running, const SettingsChoices& choices, std::vector<Input>& actions,
                  Result& result, bool& delay_held, bool& sub_delay_held);
   void draw_footer(const PlaySettings& running, const SettingsChoices& choices, const PlaySettings& before,
-                   bool delay_held, bool sub_delay_held, Result& result);
+                   bool delay_held, bool sub_delay_held, std::vector<Input>& actions, Result& result);
+  // Le texte du bandeau « Appliquer » et ce que le bouton fera ; vide quand rien n'attend.
+  void measure_pending(const PlaySettings& running, const SettingsChoices& choices);
 
   bool open_ = false;
   PlaySettings draft_;       // ce que montre le panneau ; diffère de running pour ce qui attend « Appliquer »
@@ -204,18 +211,21 @@ class SettingsPanel {
   float wheel_ = 0.0F;       // la molette cumulée sur l'arbre (une page par geste, B23-10)
   float wheel_idle_s_ = 0.0F;
   bool wheel_locked_ = false;
-  bool span_job_pending_ = false;        // la préparation de la boucle tournait à la dernière image (C23-10)
-  int page_ = 0;                         // la page de l'arbre affichée (settings_panel.cpp : kPages)
-  std::array<bool, 8> category_open_{};  // les catégories ouvertes de l'arbre
-  int shown_page_ = -1;       // la page de l'image précédente : sa catégorie s'ouvre quand elle change
-  bool advanced_ = false;     // la case « Réglages avancés » : montre les sections avancées des pages
+  bool span_job_pending_ = false;  // la préparation de la boucle tournait à la dernière image (C23-10)
+  int page_ = 2;        // l'onglet affiché (settings_panel.cpp : kPages) ; Vidéo > Général à l'ouverture
+  int select_tab_ = 2;  // l'onglet que la rangée doit sélectionner à l'image suivante ; -1 : celui du clic
+  float alpha_ = 1.0F;  // l'opacité du panneau : il s'efface pendant qu'on tient un curseur en direct
+  float width_ = 0.0F;  // la taille choisie aux bords, gardée d'une ouverture à l'autre ; 0 : le défaut
+  float height_ = 0.0F;
+  std::array<int, 8> category_page_{-1, -1, -1, -1, -1, -1, -1, -1};  // le dernier onglet de chaque catégorie
   std::string pending_text_;  // le texte du bandeau « Appliquer » de l'image, vide s'il n'y en a pas (C23-02)
+  ChangeCost pending_cost_ = ChangeCost::None;  // Reopen ou Restart : ce que fera « Appliquer »
   FolderField engines_folder_;
-  std::optional<core::EngineId> engine_draft_;  // moteur coché dans l'onglet Moteurs, pas appliqué
+  std::optional<core::EngineId> engine_draft_;  // moteur choisi dans Vidéo > Général, pas appliqué
   std::unique_ptr<ExportDraft> export_;         // l'onglet Export, gardé d'une ouverture à l'autre
-  SystemNote system_;                           // l'onglet Système : sa dernière action
+  SystemNote system_;                           // le lecteur par défaut : sa dernière action
   UpdateNote updates_;                    // Général > Application : la vérification en cours ou son résultat
-  std::unique_ptr<MachineNote> machine_;  // Vidéo > Post-traitement : les résultats du bench
+  std::unique_ptr<MachineNote> machine_;  // Vidéo > Général : les résultats de la calibration
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
 

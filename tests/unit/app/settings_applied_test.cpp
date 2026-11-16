@@ -24,10 +24,13 @@ TEST_CASE("Réglages du menu : « Restaurer les traits », la carte et les moteu
   lines.restore_lines = false;
   CHECK(change_between(running, lines, true).cost == ChangeCost::Reopen);
 
-  // La carte vaut au prochain lancement : prise tout de suite, donc écrite.
+  // La carte ne se choisit qu'au lancement : « Appliquer » relance le lecteur sur la vidéo, et le dit.
   PlaySettings card = running;
-  card.gpu = "NVIDIA GeForce RTX 4070 Ti";
-  CHECK(live_part(running, card, true).gpu == card.gpu);
+  card.gpu = "Une autre carte";
+  CHECK(live_part(running, card, true).gpu == running.gpu);
+  const Change restart = change_between(running, card, true);
+  CHECK(restart.cost == ChangeCost::Restart);
+  CHECK_FALSE(restart.reason.empty());
 
   // Sans interpolation, rien à recharger : les deux réglages fusionnés passent en direct.
   PlaySettings fused = running;
@@ -113,6 +116,9 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"grade_before_warp", [](PlaySettings& s) { s.grade_before_warp = !s.grade_before_warp; }},
       {"face_skin", [](PlaySettings& s) { s.face_skin = !s.face_skin; }},
       {"surface_white", [](PlaySettings& s) { s.surface_white = 70; }},
+      {"hdr_mode", [](PlaySettings& s) { s.hdr_mode = HdrMode::Off; }},
+      {"stats.fps", [](PlaySettings& s) { s.stats.fps = !s.stats.fps; }},
+      {"smooth_motion", [](PlaySettings& s) { s.smooth_motion = !s.smooth_motion; }},
       {"oled_care", [](PlaySettings& s) { s.oled_care = !s.oled_care; }},
       {"autoplay_next", [](PlaySettings& s) { s.autoplay_next = !s.autoplay_next; }},
       {"update_mode", [](PlaySettings& s) { s.update_mode = UpdateMode::Never; }},
@@ -123,7 +129,8 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
     change(wanted);
     REQUIRE(wanted != base);
     const bool applied = live_part(base, wanted, true) != base;
-    const bool announced = change_between(base, wanted, true).cost == ChangeCost::Reopen;
+    const ChangeCost cost = change_between(base, wanted, true).cost;
+    const bool announced = cost == ChangeCost::Reopen || cost == ChangeCost::Restart;
     CHECK((applied || announced));
   }
   // Sans interpolation, rien à recharger : les réglages fusionnés passent en direct.

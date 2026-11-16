@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <format>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -13,454 +12,223 @@
 #include <imgui.h>
 
 #include "app/play/auto_config.h"
+#include "app/play/first_run.h"
 #include "app/play/i18n.h"
-#include "app/play/look_catalog.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_bench_results.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/settings_color_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
+#include "app/play/settings_pages.h"
 #include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"
-#include "app/play/tracks.h"
 #include "core/engines.h"
-#include "render/cube_lut.h"
 
 namespace ajp::app::play {
 namespace {
 
 using panel::kWarn;
-using panel::note;
-using panel::section;
 
-// Vidéo > Affichage : la composition finale, le filtre vers la fenêtre et le débandage.
-void composition_section(PlaySettings& d) {
-  section(i18n::tr("Final scaling"));
-  if (ImGui::BeginCombo(i18n::tr("Scaler"), std::string(label(d.final_scaler)).c_str())) {
-    for (int i = 0; i < kFinalScalerCount; ++i) {
-      const auto scaler = static_cast<FinalScaler>(i);
-      if (ImGui::Selectable(std::string(label(scaler)).c_str(), scaler == d.final_scaler))
-        d.final_scaler = scaler;
-    }
-    ImGui::EndCombo();
+// Les onglets, dans l'ordre de l'écran ; les catégories se déduisent du changement de `category` (ADR 0012,
+// refonte de novembre 2026 à la manière de Dolphin) : Général, Vidéo, Audio, Langues, Export.
+constexpr std::array<SettingsPage, 9> kPages{{
+    {Page::Application, "General",
+     "Application"},  // langue, épisode suivant, mises à jour, lecteur par défaut
+    {Page::Statistics, "General", "Statistics"},
+    {Page::VideoGeneral, "Video", "General"},  // préréglage, moteur, sortie HDR, couleurs, FPS
+    {Page::Upscaling, "Video", "Upscaling"},
+    {Page::Interpolation, "Video", "Interpolation"},
+    {Page::Hdr, "Video", "HDR"},
+    {Page::Audio, "Audio", "Audio"},
+    {Page::Languages, "Languages", "Languages"},  // langues préférées, sous-titres
+    {Page::Export, "Export", "Export"},
+}};
+static_assert(kPages[2].id == Page::VideoGeneral);  // l'onglet ouvert d'abord (settings_panel.h : page_)
+
+// La catégorie d'un onglet, comptée de 0 dans l'ordre de la colonne.
+int category_of(int page) {
+  int category = 0;
+  for (int i = 1; i <= page; ++i) {
+    if (std::string_view(kPages[static_cast<std::size_t>(i)].category) !=
+        kPages[static_cast<std::size_t>(i - 1)].category)
+      ++category;
   }
-  ImGui::Checkbox(i18n::tr("Debanding"), &d.deband);
-  note(
-      i18n::tr("The scaler stretches the output to the window; EWA Lanczos is sharpest but heaviest. No "
-               "effect on export."));
+  return category;
 }
 
-// Noir absolu et soins OLED (Vidéo > Affichage, réglages avancés).
-void oled_sections(PlaySettings& d, const SettingsChoices& choices) {
-  section(i18n::tr("OLED black"));
-  if (ImGui::BeginCombo(i18n::tr("True black"), std::string(label(d.oled_black)).c_str())) {
-    for (int i = 0; i < kOledBlackCount; ++i) {
-      const auto mode = static_cast<OledBlack>(i);
-      if (ImGui::Selectable(std::string(label(mode)).c_str(), mode == d.oled_black)) d.oled_black = mode;
-    }
-    ImGui::EndCombo();
+// Le premier onglet d'une catégorie.
+int first_page(int category) {
+  for (int i = 0; i < static_cast<int>(kPages.size()); ++i) {
+    if (category_of(i) == category) return i;
   }
-  ImGui::BeginDisabled(d.oled_black == OledBlack::Off);
-  grade_slider(i18n::tr("Threshold (code steps)"), d.oled_black_steps, render::grade_limits::kBlackSteps);
-  ImGui::EndDisabled();
-  note((i18n::tr("Display: ") + choices.display_text).c_str());
-  section(i18n::tr("OLED care"));
-  ImGui::Checkbox(i18n::tr("Hide the bar when paused (burn-in)"), &d.oled_care);
-  ImGui::Checkbox(i18n::tr("Steady frame rate (VRR flicker)"), &d.steady_cadence);
-  note(i18n::tr("Steady frame rate keeps VRR at a constant refresh so dark scenes do not flicker on OLED."));
-  if (!choices.black_status.empty()) note(choices.black_status.c_str());
-  note(i18n::tr("Near-blacks become true black (0), up to the threshold. Live."));
+  return 0;
 }
 
-std::string language_label(std::string_view tag) {
-  std::string name = language_name(tag);
-  return name.empty() ? std::string(tag) : name;  // une balise écrite à la main dans play.toml
-}
-
-// Une langue au choix : `none_label` pour la valeur vide (audio : « Selon le fichier », sous-titres :
-// « Aucun »), sinon une des langues du menu.
-void language_combo(const char* label, const char* none_label, std::string& tag) {
-  const std::string current = tag.empty() ? none_label : language_label(tag);
-  if (!ImGui::BeginCombo(label, current.c_str())) return;
-  if (ImGui::Selectable(none_label, tag.empty())) tag.clear();
-  for (const Language& language : menu_languages()) {
-    if (ImGui::Selectable(i18n::tr(language.name), same_language(tag, language.code)))
-      tag = std::string(language.code);
-  }
-  ImGui::EndCombo();
-}
-
-// Deux préférences par ordre : l'audio et les sous-titres voulus ensemble ; la 2e sert quand la 1re
-// n'est pas entière dans le fichier.
-void languages_tab(PlaySettings& d) {
-  d.language_presets.resize(limits::kLanguagePresets);
-  for (std::size_t rank = 0; rank < d.language_presets.size(); ++rank) {
-    ImGui::PushID(static_cast<int>(rank));
-    section(rank == 0 ? i18n::tr("Preferred languages") : i18n::tr("Fallback"));
-    language_combo(i18n::tr("Audio language"), i18n::tr("From the file"), d.language_presets[rank].audio);
-    language_combo(i18n::tr("Subtitle language"), i18n::tr("None"), d.language_presets[rank].subtitles);
-    panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
-    ImGui::PopID();
-  }
-  note(i18n::tr(
-      "The first preference whose tracks exist is used when a file opens. Applies to the next file."));
-}
-
-// Vrai tant que le curseur du délai est tenu : le délai s'applique au relâchement, pas à chaque image du
-// glissement (A23-12).
-bool subtitles_tab(PlaySettings& d) {
-  section(i18n::tr("Subtitle size"));
-  int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
-  if (ImGui::SliderInt(i18n::tr("Size"), &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
-                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d %%",
-                       ImGuiSliderFlags_AlwaysClamp)) {
-    d.subtitle_scale = static_cast<float>(percent) / 100.0F;
-  }
-  if (ImGui::Button(i18n::tr("Reset size"))) d.subtitle_scale = 1.0F;
-  panel::tip(i18n::tr("Scales all text, panels included. Live."));
-  section(i18n::tr("Subtitle delay"));
-  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, limits::kSubtitleDelaySlider.lo,
-                   limits::kSubtitleDelaySlider.hi, "%d", ImGuiSliderFlags_None);
-  const bool held = ImGui::IsItemActive();
-  d.subtitle_delay_ms =
-      std::clamp(d.subtitle_delay_ms, limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
-  if (ImGui::Button(i18n::tr("Reset delay"))) d.subtitle_delay_ms = 0;
-  static_assert(limits::kSubtitleDelayMs.hi == 30'000, "le texte de l'infobulle dit ±30,000 ms");
-  panel::tip(
-      i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. Ctrl+click the slider to type a value "
-               "(up to ±30,000 ms). This session only."));
-  return held;
-}
-
-// L'épisode suivant : lu tout seul à la fin du fichier ouvert.
-void episodes_section(PlaySettings& d) {
-  section(i18n::tr("Episodes"));
-  ImGui::Checkbox(i18n::tr("Autoplay next episode"), &d.autoplay_next);
-  panel::tip(i18n::tr("Plays the next file in the folder. N: next, Shift+N: previous, O: skip credits."));
-}
-
-void stats_tab(PlaySettings& d) {
-  section(i18n::tr("On-screen statistics"));
-  ImGui::Checkbox(i18n::tr("All statistics (Tab)"), &d.stats.all);
-  ImGui::Spacing();
-  ImGui::BeginDisabled(d.stats.all);
-  ImGui::Checkbox(i18n::tr("Pipeline"), &d.stats.chain);
-  ImGui::Checkbox(i18n::tr("Frames"), &d.stats.frames);
-  ImGui::Checkbox(i18n::tr("Interpolation"), &d.stats.rife);
-  ImGui::Checkbox(i18n::tr("Tracks"), &d.stats.tracks);
-  ImGui::Checkbox(i18n::tr("HDR output"), &d.stats.output);
-  ImGui::Checkbox(i18n::tr("Exact position"), &d.stats.position);
-  ImGui::Checkbox(i18n::tr("Video memory"), &d.stats.memory);
-  ImGui::EndDisabled();
-  section(i18n::tr("Debugging"));
-  ImGui::Checkbox(i18n::tr("Show held and cut pairs"), &d.stats.pairs);
-  panel::tip(i18n::tr(
-      "While interpolation runs, each pair judged a held drawing (blue) or a scene cut (red) tints the "
-      "screen for a moment, and goes to ajp.log with its time and scores. This session only."));
-}
-
-// Vidéo > Post-traitement : le niveau, d'Économe à Ultra, refait la chaîne (réduction, SPAN, interpolation)
-// pour cette machine, cet écran et cette vidéo (auto_config.h : apply_preset). Auto prend le niveau de la
-// machine ; un réglage fait à la main plus bas passe en Personnalisé, montré seulement quand il est en cours.
-void level_section(PlaySettings& d, const SettingsChoices& choices) {
-  section(i18n::tr("Preset"));
-  const auto detected = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1));
-  // Le préréglage qui porte le niveau de la machine : le nom qu'Auto affiche entre parenthèses.
-  constexpr std::array<Preset, kTierCount> kByTier{Preset::Economy, Preset::Fast, Preset::Normal,
-                                                   Preset::Quality, Preset::Ultra};
-  const auto text = [&](Preset preset) {
-    if (preset != Preset::Auto) return std::string(label(preset));
-    if (choices.calibrated) return std::string(i18n::tr("Auto (calibrated)"));
-    return i18n::tr_format("Auto ({})", label(kByTier[static_cast<std::size_t>(detected)]));
-  };
-  if (ImGui::BeginCombo(i18n::tr("Processing level"), text(d.preset).c_str())) {
-    for (int i = 0; i < kPresetCount; ++i) {
-      const auto preset = static_cast<Preset>(i);
-      if (preset == Preset::Custom && d.preset != Preset::Custom) continue;
-      if (ImGui::Selectable(text(preset).c_str(), preset == d.preset) && preset != d.preset &&
-          preset != Preset::Custom) {
-        PlaySettings next = d;
-        next.preset = preset;
-        d = apply_preset(
-            next,
-            Machine{.tier = detected,
-                    .display_height = choices.display_height,
-                    .display_hz = choices.display_hz,
-                    .explored_work_height = choices.explored_work_height,
-                    .explored_rife_model = choices.explored_rife_model,
-                    .calibrated = choices.calibrated,
-                    .display_width = choices.display_width,
-                    .span_fp8 = choices.span_fp8},
-            core::SourceInfo{
-                .width = choices.source_width, .height = choices.source_height, .fps = choices.source_fps});
-      }
-    }
-    ImGui::EndCombo();
-  }
-  panel::tip(
-      i18n::tr("From Economy (light on the graphics card) to Ultra. Auto picks the level of this machine. "
-               "Changing a setting below switches to Custom."));
-}
-
-// Vidéo > Post-traitement : la netteté après SPAN (render/sharpen.h), en direct.
-void sharpness_section(PlaySettings& d) {
-  section(i18n::tr("Sharpness"));
-  ImGui::SliderInt(i18n::tr("Sharpness"), &d.sharpness, limits::kSharpness.lo, limits::kSharpness.hi, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
-  panel::tip(
-      i18n::tr("Crisper line art after upscaling, without halos. 0: untouched. Live, no effect on export."));
-}
-
-// Vidéo > Post-traitement, la chaîne : les étages joués sans eux (« Réessayer »), le niveau, l'image, la
-// netteté et la fluidité.
-void chain_sections(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions) {
-  stages_note(choices, actions);
-  level_section(d, choices);
-  image_tab(d, choices);
-  sharpness_section(d);
-  fluidity_tab(d, choices);
-}
-
-// Général > À propos : ce que le lecteur sait de la machine, l'assistant à refaire.
-void about_page(const SettingsChoices& choices, std::vector<Input>& actions) {
-  section(i18n::tr("This machine"));
-  panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
-  if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
-
-  section(i18n::tr("Setup wizard"));
-  if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
-  panel::tip(i18n::tr("Nothing changes until \"Start\"."));
-  report_problem_section(choices.place, choices.gpu_name);
-}
-
-// Général > À propos, en bas.
-// Vrai quand « Tout réinitialiser » est pressé : le panneau rouvre alors la vidéo avec les réglages par
-// défaut, sans attendre « Appliquer ».
-bool reset_page(PlaySettings& draft) {
-  bool reset_all = false;
-  section(i18n::tr("All settings"));
-  note(
-      i18n::tr("Puts every setting back to its default value: chain, HDR, grade and colors, sound, playback. "
-               "The engines folder and the language are kept."));
-  // Une confirmation avant de tout perdre (A23-05) : le premier clic demande, le second réinitialise.
-  ImGuiStorage* storage = ImGui::GetStateStorage();
-  const ImGuiID asking_id = ImGui::GetID("reset-all-asking");
-  if (!storage->GetBool(asking_id, false)) {
-    if (ImGui::Button(i18n::tr("Reset all settings"))) storage->SetBool(asking_id, true);
-  } else {
-    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    panel::wrapped(i18n::tr("Every setting goes back to its default. This cannot be undone."));
-    ImGui::PopStyleColor();
-    if (ImGui::Button(i18n::tr("Yes, reset everything"))) {
-      PlaySettings fresh;
-      fresh.engines_dir = draft.engines_dir;
-      fresh.language = draft.language;
-      draft = fresh;
-      reset_all = true;
-      storage->SetBool(asking_id, false);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button(i18n::tr("Keep my settings"))) storage->SetBool(asking_id, false);
-  }
-  return reset_all;
+int category_count() {
+  return category_of(static_cast<int>(kPages.size()) - 1) + 1;
 }
 
 }  // namespace
-
-// L'arbre : l'ordre est celui de l'écran. Les catégories se déduisent du changement de `category`. Trois
-// catégories (ADR 0012) : Vidéo, Audio et lecture, Général.
-constexpr std::array<SettingsPage, 10> kPages{{
-    {Page::PostProcessing, "Video", "Post-processing"},  // niveau, agrandissement, interpolation
-    {Page::Colors, "Video", "Colors"},    // sortie HDR ou SDR (elle suit le système), grade anime
-    {Page::Display, "Video", "Display"},  // filtre final, débandage ; OLED en avancé
-    {Page::Sound, "Audio and playback", "Sound"},
-    {Page::Playback, "Audio and playback", "Playback"},  // langues préférées, sous-titres, épisode suivant
-    {Page::Application, "General", "Application"},       // langue, mises à jour, lecteur par défaut
-    {Page::Engines, "General", "Engines"},               // le moteur et l'état de ses modules
-    {Page::Export, "General", "Export"},
-    {Page::Statistics, "General", "Statistics"},
-    {Page::About, "General", "About"},  // la machine, l'assistant, tout réinitialiser
-}};
 
 std::span<const SettingsPage> settings_pages() {
   return kPages;
 }
 
-void language_choice(const char* label, const char* none_label, std::string& tag) {
-  language_combo(label, none_label, tag);
-}
-
 SettingsPanel::SettingsPanel() : export_(std::make_unique<ExportDraft>()) {}
 bool SettingsPanel::busy() const {
-  return open_ && (prepare_.pending != nullptr || span_job_pending_ || (machine_ && machine_->running()));
+  // alpha_ : le panneau revient après un curseur relâché, en quelques images, même en pause.
+  return open_ && (prepare_.pending != nullptr || span_job_pending_ || (machine_ && machine_->running()) ||
+                   alpha_ < 0.99F);
 }
 
 SettingsPanel::~SettingsPanel() {
   if (prepare_.stop) prepare_.stop->request_stop();  // la tâche dépend du lecteur qui ouvre ce panneau
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-namespace {
-
-// L'arbre des pages, dessiné à la main : une bande par catégorie (chevron, titre en couleur d'accent), les
-// pages en retrait dessous, la page choisie marquée d'une barre d'accent et d'un fond.
-void draw_tree(int& current, int shown_page, std::array<bool, 8>& opened, float scale) {
+// La colonne des catégories, comme celle de Dolphin : une ligne par catégorie, la choisie sur un fond
+// d'accent. Elle ramène à l'onglet vu en dernier dans la catégorie.
+void SettingsPanel::draw_categories(float scale) {
   ImDrawList* draw = ImGui::GetWindowDrawList();
-  const ImGuiStyle& style = ImGui::GetStyle();
-  const float row_height = ImGui::GetFontSize() + 12.0F * scale;
-  const float head_height = ImGui::GetFontSize() + 14.0F * scale;
-  const float indent = 26.0F * scale;
-  const ImU32 accent = ImGui::ColorConvertFloat4ToU32(panel::kAccent);
-  ImVec4 soft = panel::kAccent;
-  soft.w = 0.20F;
-  ImVec4 band = style.Colors[ImGuiCol_Header];
-  band.w = 0.14F;
-  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {style.ItemSpacing.x, 2.0F * scale});
-  std::string_view category;
-  const std::string_view page_category = kPages[static_cast<std::size_t>(current)].category;
-  std::string_view shown_category;
-  if (shown_page >= 0) shown_category = kPages[static_cast<std::size_t>(shown_page)].category;
-  int category_index = -1;
-  bool category_open = false;
-  for (std::size_t i = 0; i < kPages.size(); ++i) {
-    const SettingsPage& page = kPages[i];
-    if (std::string_view(page.category) != category) {
-      category = page.category;
-      ++category_index;
-      const auto slot = static_cast<std::size_t>(category_index);
-      // Quand la page change de catégorie (clic, molette), la catégorie de la page s'ouvre et les autres
-      // se replient : l'arbre tient dans une fenêtre basse. Ensuite chaque catégorie garde l'état choisi
-      // à la main.
-      if (current != shown_page && shown_category != page_category) opened[slot] = category == page_category;
-      if (category_index > 0) ImGui::Dummy({0.0F, 6.0F * scale});
-      const ImVec2 at = ImGui::GetCursorScreenPos();
-      const float row_width = ImGui::GetContentRegionAvail().x;
-      ImGui::PushID(category_index);
-      if (ImGui::InvisibleButton("##categorie", {row_width, head_height})) opened[slot] = !opened[slot];
-      ImGui::PopID();
-      const bool hovered = ImGui::IsItemHovered();
-      ImVec4 fill = band;
-      if (hovered) fill.w = 0.30F;
-      draw->AddRectFilled(at, {at.x + row_width, at.y + head_height}, ImGui::ColorConvertFloat4ToU32(fill),
-                          5.0F * scale);
-      // Le chevron : un triangle plein, à droite quand c'est replié, vers le bas quand c'est ouvert.
-      const float cx = at.x + 12.0F * scale;
-      const float cy = at.y + head_height * 0.5F;
-      const float r = 4.0F * scale;
-      if (opened[slot])
-        draw->AddTriangleFilled({cx - r, cy - r * 0.6F}, {cx + r, cy - r * 0.6F}, {cx, cy + r * 0.9F},
-                                accent);
-      else
-        draw->AddTriangleFilled({cx - r * 0.6F, cy - r}, {cx - r * 0.6F, cy + r}, {cx + r * 0.9F, cy},
-                                accent);
-      draw->AddText({at.x + 26.0F * scale, at.y + (head_height - ImGui::GetFontSize()) * 0.5F}, accent,
-                    i18n::tr(page.category));
-      category_open = opened[slot];
-    }
-    if (!category_open) continue;
+  const float row_height = ImGui::GetFontSize() + 16.0F * scale;
+  const int current = category_of(page_);
+  const ImU32 accent = ImGui::ColorConvertFloat4ToU32(ImVec4(0.26F, 0.47F, 0.82F, 1.0F));
+  const ImU32 hover = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0F, 1.0F, 1.0F, 0.07F));
+  ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, {0.0F, 2.0F * scale});
+  for (int category = 0; category < category_count(); ++category) {
+    const int first = first_page(category);
     const ImVec2 at = ImGui::GetCursorScreenPos();
     const float row_width = ImGui::GetContentRegionAvail().x;
-    ImGui::PushID(static_cast<int>(i));
-    const bool picked = ImGui::InvisibleButton("##page", {row_width, row_height});
-    ImGui::PopID();
-    if (picked) current = static_cast<int>(i);
-    const bool selected = static_cast<int>(i) == current;
-    if (selected) {
-      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
-                          ImGui::ColorConvertFloat4ToU32(soft), 5.0F * scale);
-      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y + 4.0F * scale},
-                          {at.x + indent - 5.0F * scale, at.y + row_height - 4.0F * scale}, accent,
-                          2.0F * scale);
-    } else if (ImGui::IsItemHovered()) {
-      draw->AddRectFilled({at.x + indent - 8.0F * scale, at.y}, {at.x + row_width, at.y + row_height},
-                          ImGui::ColorConvertFloat4ToU32(band), 5.0F * scale);
+    ImGui::PushID(category);
+    if (ImGui::InvisibleButton("##categorie", {row_width, row_height}) && category != current) {
+      const int remembered = category_page_[static_cast<std::size_t>(category)];
+      page_ = remembered >= 0 ? remembered : first;
+      select_tab_ = page_;
     }
-    draw->AddText({at.x + indent, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
-                  ImGui::GetColorU32(selected ? ImGuiCol_Text : ImGuiCol_TextDisabled), i18n::tr(page.name));
+    ImGui::PopID();
+    if (category == current) {
+      draw->AddRectFilled(at, {at.x + row_width, at.y + row_height}, accent, 4.0F * scale);
+    } else if (ImGui::IsItemHovered()) {
+      draw->AddRectFilled(at, {at.x + row_width, at.y + row_height}, hover, 4.0F * scale);
+    }
+    draw->AddText({at.x + 12.0F * scale, at.y + (row_height - ImGui::GetFontSize()) * 0.5F},
+                  ImGui::GetColorU32(ImGuiCol_Text),
+                  i18n::tr(kPages[static_cast<std::size_t>(first)].category));
   }
   ImGui::PopStyleVar();
 }
 
-}  // namespace
+// Les onglets de la catégorie en cours ; rien pour une catégorie d'un seul onglet.
+void SettingsPanel::draw_tabs() {
+  const int category = category_of(page_);
+  const int first = first_page(category);
+  int count = 0;
+  for (int i = first; i < static_cast<int>(kPages.size()) && category_of(i) == category; ++i) ++count;
+  if (count < 2) return;
+  if (!ImGui::BeginTabBar("##onglets")) return;
+  for (int i = first; i < first + count; ++i) {
+    const ImGuiTabItemFlags flags = select_tab_ == i ? ImGuiTabItemFlags_SetSelected : 0;
+    if (ImGui::BeginTabItem(i18n::tr(kPages[static_cast<std::size_t>(i)].name), nullptr, flags)) {
+      if (select_tab_ < 0 || select_tab_ == i) page_ = i;
+      ImGui::EndTabItem();
+    }
+  }
+  select_tab_ = -1;
+  ImGui::EndTabBar();
+}
 
 void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices& choices,
                               std::vector<Input>& actions, Result& result, bool& delay_held,
                               bool& sub_delay_held) {
   switch (kPages[static_cast<std::size_t>(page_)].id) {
-    case Page::PostProcessing: {
-      chain_sections(draft_, choices, actions);
-      if (advanced_) {
-        span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
-        // Une ligne du bench appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
-        // demandé.
-        if (!machine_) machine_ = std::make_unique<MachineNote>();
-        if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
-          result.reopen = draft_;
-      }
+    case Page::Application: {
+      application_page(draft_, choices, updates_, system_, actions);
+      panel::advanced_header();
+      if (reset_section(draft_)) result.reopen = draft_;
       break;
     }
-    case Page::Colors: {
-      hdr_tab(draft_, choices);
-      grade_tab(draft_);
+    case Page::Statistics: {
+      statistics_page(draft_);
       break;
     }
-    case Page::Display: {
-      composition_section(draft_);
-      if (advanced_) oled_sections(draft_, choices);
+    case Page::VideoGeneral: {
+      video_general_page(draft_, choices, actions, engine_draft_);
+      panel::advanced_header();
+      display_section(draft_, choices);
+      engines_advanced(choices, draft_.engines_dir, engines_folder_, draft_.fast_precision);
+      // Une ligne de la calibration appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
+      // demandé.
+      if (!machine_) machine_ = std::make_unique<MachineNote>();
+      if (bench_results_section(draft_, choices, *machine_, actions) && draft_ != running)
+        result.reopen = draft_;
       break;
     }
-    case Page::Sound: {
+    case Page::Upscaling: {
+      image_tab(draft_, choices);
+      panel::advanced_header();
+      upscale_advanced(draft_, choices);
+      span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
+      break;
+    }
+    case Page::Interpolation: {
+      fluidity_tab(draft_, choices);
+      panel::advanced_header();
+      motion_advanced(draft_, choices);
+      break;
+    }
+    case Page::Hdr: {
+      hdr_page(draft_, choices);
+      break;
+    }
+    case Page::Audio: {
       delay_held = sound_tab(draft_, choices);
       break;
     }
-    case Page::Playback: {
-      languages_tab(draft_);
-      sub_delay_held = subtitles_tab(draft_);
-      episodes_section(draft_);
-      break;
-    }
-    case Page::Application: {
-      language_section(draft_);
-      gpu_section(draft_, choices.gpus);
-      updates_page(draft_, choices.place, updates_);
-      default_player_page(choices.place, system_, choices.default_player_is_ajp);
-      break;
-    }
-    case Page::Engines: {
-      engines_tab(choices, engine_draft_, actions, draft_.engines_dir, engines_folder_,
-                  draft_.fast_precision);
+    case Page::Languages: {
+      sub_delay_held = languages_page(draft_);
       break;
     }
     case Page::Export: {
       export_tab(*export_, running, choices, actions);
       break;
     }
-    case Page::Statistics: {
-      stats_tab(draft_);
-      break;
-    }
-    case Page::About: {
-      about_page(choices, actions);
-      if (reset_page(draft_)) result.reopen = draft_;
-      break;
-    }
   }
+}
+
+void SettingsPanel::measure_pending(const PlaySettings& running, const SettingsChoices& choices) {
+  pending_text_.clear();
+  pending_cost_ = ChangeCost::None;
+  const Change pending = change_between(live_part(running, draft_, choices.rife_loaded, choices.chain()),
+                                        draft_, choices.rife_loaded, choices.chain());
+  std::string reason;
+  if (pending.cost == ChangeCost::Reopen || pending.cost == ChangeCost::Restart) {
+    pending_cost_ = pending.cost;
+    reason = pending.reason;
+  }
+  // Un autre moteur choisi dans Vidéo > Général : la vidéo se rouvre avec lui, au même endroit.
+  if (engine_draft_ && engine_draft_ != choices.engine_in_use) {
+    const std::string engine =
+        i18n::tr_format("the engine changes to {} (built the first time for each model and size)",
+                        engine_label(*engine_draft_));
+    reason =
+        reason.empty() ? engine + i18n::tr(" ; playback resumes at the same spot") : engine + " ; " + reason;
+    if (pending_cost_ == ChangeCost::None) pending_cost_ = ChangeCost::Reopen;
+  }
+  if (pending_cost_ != ChangeCost::None)
+    pending_text_ = i18n::tr_format("To apply: {}. Closing the panel discards these changes.", reason);
 }
 
 void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoices& choices,
                                 const PlaySettings& before, bool delay_held, bool sub_delay_held,
-                                Result& result) {
+                                std::vector<Input>& actions, Result& result) {
   // Un réglage de la chaîne fait à la main : le préréglage devient Personnalisé (les valeurs restent). Avant
   // l'historique : un réglage et son passage en Personnalisé ne font qu'une entrée d'annulation (C23-05).
   if (draft_.preset != Preset::Custom && draft_.preset == before.preset &&
       preset_chain_differs(before, draft_, choices.calibrated.has_value()))
     draft_.preset = Preset::Custom;
-  ImGui::Checkbox(i18n::tr("Advanced settings"), &advanced_);
   // Annuler et rétablir : un état n'est retenu que lorsque plus aucun curseur n'est tenu (un glissement
   // compte pour un seul changement).
   if (!ImGui::IsAnyItemActive()) history_.settle(draft_);
-  ImGui::SameLine();
   ImGui::BeginDisabled(!history_.can_undo());
   if (ImGui::Button(i18n::tr("Undo"))) draft_ = history_.undo(draft_);
   ImGui::EndDisabled();
@@ -477,16 +245,30 @@ void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoic
   if (delay_held) live.audio_delay_ms = running.audio_delay_ms;
   if (sub_delay_held) live.subtitle_delay_ms = running.subtitle_delay_ms;
   if (live != running) result.live = live;
-  // Le bandeau est celui dont la hauteur a été réservée au début de l'image (pending_text_, C23-02).
-  if (!pending_text_.empty()) {
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-    panel::wrapped(pending_text_);
-    ImGui::PopStyleColor();
-    if (ImGui::Button(i18n::tr("Apply (reopens the video)"))) result.reopen = draft_;
-    ImGui::SameLine();
-    if (ImGui::Button(i18n::tr("Discard changes"))) draft_ = live;
+  // Le bandeau est celui dont la hauteur a été réservée au début de l'image (pending_text_, C23-02). Un même
+  // bandeau pour tout ce qui attend : recharger la vidéo ou relancer le lecteur, que le bouton dit.
+  if (pending_text_.empty()) return;
+  ImGui::Spacing();
+  ImGui::Separator();
+  ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+  panel::wrapped(pending_text_);
+  ImGui::PopStyleColor();
+  const bool restart = pending_cost_ == ChangeCost::Restart;
+  if (ImGui::Button(restart ? i18n::tr("Apply (restarts the player)")
+                            : i18n::tr("Apply (reloads the video)"))) {
+    if (engine_draft_ && engine_draft_ != choices.engine_in_use)
+      actions.emplace_back(UseEngine{.id = *engine_draft_});
+    engine_draft_.reset();
+    if (restart) {
+      result.restart = draft_;
+    } else if (draft_ != live) {
+      result.reopen = draft_;
+    }
+  }
+  ImGui::SameLine();
+  if (ImGui::Button(i18n::tr("Discard changes"))) {
+    draft_ = live;
+    engine_draft_.reset();
   }
 }
 
@@ -505,19 +287,33 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   // (C23-10).
   span_job_pending_ = choices.span_job && choices.span_job->pending != nullptr;
   const ImGuiIO& io = ImGui::GetIO();
+  // Un curseur en direct tenu à l'image précédente : le panneau s'efface pour laisser voir l'image, puis
+  // revient au relâchement.
+  const bool dim = std::exchange(panel::state().dim, false);
+  const float target = dim ? 0.18F : 1.0F;
+  alpha_ += (target - alpha_) * std::min(1.0F, io.DeltaTime * 14.0F);
+  if (std::abs(target - alpha_) < 0.01F) alpha_ = target;
   const float pad = 18.0F * scale;
-  const float width = std::min(760.0F * scale, io.DisplaySize.x - 2.0F * pad);
+  const float top = pad + 40.0F * scale;
   const float bottom = 120.0F * scale;  // la barre de lecture reste visible dessous
-  ImGui::SetNextWindowPos({io.DisplaySize.x - pad, pad + 40.0F * scale}, ImGuiCond_Always, {1.0F, 0.0F});
-  ImGui::SetNextWindowSize({width, std::max(240.0F * scale, io.DisplaySize.y - pad - 40.0F * scale - bottom)},
-                           ImGuiCond_Always);
+  const float max_width = std::max(320.0F * scale, io.DisplaySize.x - 2.0F * pad);
+  const float max_height = std::max(240.0F * scale, io.DisplaySize.y - top - bottom);
+  if (width_ <= 0.0F) width_ = std::min(820.0F * scale, max_width);
+  if (height_ <= 0.0F) height_ = max_height;
+  // Redimensionnable par ses bords : la taille choisie revient à chaque ouverture, le bord droit reste collé.
+  ImGui::SetNextWindowPos({io.DisplaySize.x - pad, top}, ImGuiCond_Always, {1.0F, 0.0F});
+  ImGui::SetNextWindowSize({std::min(width_, max_width), std::min(height_, max_height)}, ImGuiCond_Appearing);
+  ImGui::SetNextWindowSizeConstraints(
+      {std::min(520.0F * scale, max_width), std::min(260.0F * scale, max_height)}, {max_width, max_height});
   bool keep = true;
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
-                                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
-                                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
+                                      ImGuiWindowFlags_NoScrollWithMouse;
+  ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha_);
   if (ImGui::Begin((std::string(i18n::tr("Settings")) + "###settings").c_str(), &keep, kFlags)) {
-    ImGui::PushItemWidth(-width * 0.42F);
-    panel::advanced() = advanced_;
+    width_ = ImGui::GetWindowWidth();
+    height_ = ImGui::GetWindowHeight();
+    ImGui::PushItemWidth(-ImGui::GetWindowWidth() * 0.42F);
     bool delay_held = false;
     bool sub_delay_held = false;
     // L'état d'avant les widgets de l'image : copié seulement quand il a changé, pas à chaque image (B23-09).
@@ -533,38 +329,35 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     // Le bandeau « Appliquer » de cette image, mesuré avant de tracer les colonnes : sa hauteur suit son
     // texte, quelle que soit la langue ou le nombre de raisons (C23-02).
     const ImGuiStyle& style = ImGui::GetStyle();
-    pending_text_.clear();
+    measure_pending(running, shown);
     float banner = 0.0F;
-    if (const Change pending = change_between(live_part(running, draft_, shown.rife_loaded, shown.chain()),
-                                              draft_, shown.rife_loaded, shown.chain());
-        pending.cost == ChangeCost::Reopen) {
-      pending_text_ =
-          i18n::tr_format("To apply: {}. Closing the panel discards these changes.", pending.reason);
+    if (!pending_text_.empty()) {
       const std::string measured = french_spaces(pending_text_);
       const float text_height =
           ImGui::CalcTextSize(measured.c_str(), nullptr, false, ImGui::GetContentRegionAvail().x).y;
       // Espace, filet, texte, rangée de boutons : l'espacement entre chacun.
       banner = text_height + ImGui::GetFrameHeight() + 4.0F * style.ItemSpacing.y + 2.0F * scale;
     }
-    // Sous les deux colonnes : la case « Réglages avancés » (et le bandeau « Appliquer » quand il est là).
+    // Sous les deux colonnes : annuler et rétablir (et le bandeau « Appliquer » quand il est là).
     const float footer = banner + ImGui::GetFrameHeightWithSpacing() + 2.0F * style.ItemSpacing.y;
-    const float tree_width = std::min(200.0F * scale, width * 0.3F);
+    const float column = std::min(170.0F * scale, ImGui::GetWindowWidth() * 0.26F);
     // Barre de défilement fine, collée au bord extérieur des deux zones.
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 8.0F * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0F * scale);
-    // Arbre collé à gauche : peu de marge intérieure.
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0F * scale, 4.0F * scale));
-    ImGui::BeginChild("##arbre", ImVec2(tree_width, -footer), ImGuiChildFlags_Borders);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0F * scale, 6.0F * scale));
+    ImGui::BeginChild("##categories", ImVec2(column, -footer), ImGuiChildFlags_Borders);
     ImGui::PopStyleVar();
-    // La molette sur l'arbre passe d'une page à la suivante ou à la précédente.
-    // Une page par geste, pas par cran : une molette libre ou un pavé tactile envoie des dizaines de crans
-    // (B23-10).
+    // La molette sur la colonne passe d'une catégorie à la suivante ou à la précédente. Une catégorie par
+    // geste, pas par cran : une molette libre ou un pavé tactile envoie des dizaines de crans (B23-10).
     if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F && !wheel_locked_) {
       if (wheel_ * io.MouseWheel < 0.0F) wheel_ = 0.0F;  // le sens a changé : un nouveau geste
       wheel_ += io.MouseWheel;
       if (std::abs(wheel_) >= 1.0F) {
         const int step = wheel_ < 0.0F ? 1 : -1;
-        page_ = std::clamp(page_ + step, 0, static_cast<int>(kPages.size()) - 1);
+        const int category = std::clamp(category_of(page_) + step, 0, category_count() - 1);
+        const int remembered = category_page_[static_cast<std::size_t>(category)];
+        page_ = remembered >= 0 ? remembered : first_page(category);
+        select_tab_ = page_;
         wheel_ = 0.0F;
         wheel_idle_s_ = 0.0F;
         wheel_locked_ = true;
@@ -576,19 +369,25 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
       if (io.MouseWheel != 0.0F) wheel_idle_s_ = 0.0F;
       if (wheel_idle_s_ > 0.35F) wheel_locked_ = false;
     }
-    draw_tree(page_, shown_page_, category_open_, scale);
-    shown_page_ = page_;
+    draw_categories(scale);
     ImGui::EndChild();
     ImGui::SameLine();
+    ImGui::BeginGroup();
+    draw_tabs();
+    category_page_[static_cast<std::size_t>(category_of(page_))] = page_;
     ImGui::BeginChild("##page", ImVec2(0, -footer));
     panel::begin_page();
+    ImGui::PushID(page_);
     draw_page(running, shown, actions, result, delay_held, sub_delay_held);
     panel::end_page();
+    ImGui::PopID();
     ImGui::EndChild();
+    ImGui::EndGroup();
     ImGui::PopStyleVar(2);
-    draw_footer(running, shown, before, delay_held, sub_delay_held, result);
+    draw_footer(running, shown, before, delay_held, sub_delay_held, actions, result);
   }
   ImGui::End();
+  ImGui::PopStyleVar();
   if (!keep) open_ = false;
   return result;
 }

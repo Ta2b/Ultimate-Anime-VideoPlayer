@@ -14,10 +14,10 @@ std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   if (facts.backend_name != "tensorrt") {
     if (facts.tensorrt_present) {
       return i18n::tr_format(
-          "TensorRT is installed but the player uses {}: pick TensorRT in Settings > General > Engines",
+          "TensorRT is installed but the player uses {}: pick TensorRT in Settings > Video > General",
           facts.backend_name.empty() ? std::string(i18n::tr("another engine")) : facts.backend_name);
     }
-    return i18n::tr("TensorRT is not installed: install it in Settings > General > Engines");
+    return i18n::tr("TensorRT is not installed: install it in Settings > Video > General");
   }
   if (facts.system_pending)
     return i18n::tr(

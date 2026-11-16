@@ -106,7 +106,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
                                                view.laptop)));
       note(
           i18n::tr("\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
-                   "Post-processing."));
+                   "General."));
       note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
       break;
   }

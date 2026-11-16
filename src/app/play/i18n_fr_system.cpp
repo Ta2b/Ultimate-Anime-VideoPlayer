@@ -20,19 +20,8 @@ constexpr std::array kSystemPages{
         "Above the playback output, libplacebo scales further (EWA Lanczos): a bigger file, no more detail.",
         "Au-dessus de la sortie de la lecture, libplacebo agrandit encore (EWA Lanczos) : fichier plus "
         "lourd, pas plus de détail."},
-    Entry{"Active engine", "Moteur actif"},
     Entry{"Add to \"Open with\"", "Ajouter à « Ouvrir avec »"},
-    Entry{"An engine is built once per model and size, then read from the cache.",
-          "Un moteur est construit une fois par modèle et par taille, puis relu du cache."},
     Entry{"Speed before precision (Vulkan)", "Vitesse avant précision (Vulkan)"},
-    Entry{
-        "Vulkan engines keep half-precision sums when the difference stays invisible (above 60 dB against "
-        "full precision): upscaling runs about twice as fast on recent GeForce cards. Unchecked, a loss of "
-        "more than 0.5 dB is refused. Applies at next launch; engines are built again.",
-        "Les moteurs Vulkan gardent leurs sommes en demi-précision quand l'écart reste invisible (au-dessus "
-        "de 60 dB face à la pleine précision) : l'agrandissement va environ deux fois plus vite sur les "
-        "GeForce récentes. Décochée, une perte de plus de 0,5 dB est refusée. Vaut au prochain lancement ; "
-        "les moteurs se reconstruisent."},
     Entry{"At every launch", "À chaque lancement"},
     Entry{"At scene cuts and held drawings the previous frame repeats, so the file keeps a constant frame "
           "rate any editor reads.",
@@ -50,27 +39,23 @@ constexpr std::array kSystemPages{
     Entry{"Below the playback output, libplacebo scales down with its best filter (EWA Lanczos).",
           "Sous la sortie de la lecture, libplacebo réduit avec son meilleur filtre (EWA Lanczos)."},
     Entry{"Built engines", "Moteurs construits"},
-    Entry{"Cancel##moteur", "Annuler##moteur"},
     Entry{"Cancel##span_prepare", "Annuler##span_prepare"},
     Entry{"Check now", "Vérifier maintenant"},
     Entry{"Choose the output file.", "Choisissez le fichier exporté."},
     Entry{"Codec", "Codec"},
     Entry{"Constant frame rate", "Cadence fixe"},
     Entry{"Daily", "Chaque jour"},
-    Entry{"Applies at next launch.", "Vaut au prochain lancement."},
     Entry{"Automatic (dedicated card first)", "Automatique (la carte dédiée d'abord)"},
-    Entry{"Card for playback", "Carte de la lecture"},
     Entry{"Default", "Par défaut"},
     Entry{"Default folder", "Dossier par défaut"},
     Entry{"Default player", "Lecteur par défaut"},
     Entry{"Graphics card", "Carte graphique"},
-    Entry{"{} does not open on this GPU: choose the NVIDIA card in Settings > General ({} stays active)",
-          "{} ne s'ouvre pas sur ce GPU : choisissez la carte NVIDIA dans Paramètres > Général ({} reste en "
+    Entry{"{} does not open on this GPU: choose the NVIDIA card in Settings > Video > General ({} stays "
+          "active)",
+          "{} ne s'ouvre pas sur ce GPU : choisissez la carte NVIDIA dans Paramètres > Vidéo > Général ({} "
+          "reste en "
           "service)"},
     Entry{"Default##moteurs", "Par défaut##moteurs"},
-    Entry{"Default: {}. Free here: {}. Applies at next launch; installed engines are not moved.",
-          "Par défaut : {}. Libre ici : {}. Vaut au prochain lancement ; les moteurs installés ne sont pas "
-          "déplacés."},
     Entry{"Encoding", "Encodage"},
     Entry{"FFV1 does not fit in a MOV: use .mkv or .mp4.",
           "FFV1 ne va pas dans un MOV : choisissez .mkv ou .mp4."},
@@ -89,7 +74,6 @@ constexpr std::array kSystemPages{
           "HEVC 10 bits : lu presque partout, encodé par le GPU."},
     Entry{"Install folder", "Dossier d'installation"},
     Entry{"Install more engines…", "Installer d'autres moteurs…"},
-    Entry{"Installed engines", "Moteurs installés"},
     Entry{"Installed version: {}", "Version installée : {}"},
     Entry{"Last check: {}", "Dernière vérification : {}"},
     Entry{"MP4 and MOV keep exact frame times, chapters and compatible audio, but no subtitles or fonts. Use "
@@ -102,15 +86,11 @@ constexpr std::array kSystemPages{
           "Aucune notification de mise à jour. Les paquets de moteurs de cette version restent consultés."},
     Entry{"No engine built yet.", "Aucun moteur construit."},
     Entry{"Notify me", "Me prévenir"},
-    Entry{"Only one engine is installed: \"Install more engines\" lists those that suit this GPU.",
-          "Un seul moteur installé : « Installer d'autres moteurs » propose ceux qui conviennent à ce GPU."},
     Entry{"Open a video: the export uses its settings and is named next to it.",
           "Ouvrez une vidéo : l'export reprend ses réglages et se nomme à côté d'elle."},
     Entry{"Playback output · {}x{}", "Sortie de la lecture · {}x{}"},
     Entry{"Prepare again for this video", "Refaire la préparation pour cette vidéo"},
     Entry{"Remove from \"Open with\"", "Retirer de « Ouvrir avec »"},
-    Entry{"Reopens the engines screen; playback resumes at the same spot.",
-          "Rouvre l'écran des moteurs ; la lecture reprend ensuite au même endroit."},
     Entry{"SPAN Performance mode (FP8)", "Mode Performance de SPAN (FP8)"},
     Entry{
         "Same engines and settings as playback, with no skipped frame. The HDR grade comes along: HDR10, "
@@ -130,13 +110,8 @@ constexpr std::array kSystemPages{
           "Donnez un chemin complet (depuis la racine d'un disque)."},
     Entry{"This package has no signing key: updates cannot be verified.",
           "Ce paquet n'a pas de clé de signature : les mises à jour ne peuvent pas être vérifiées."},
-    Entry{"To apply: playback reopens at the same spot with {}; its engines are built the first time for "
-          "each model and size.",
-          "À appliquer : la lecture se rouvre au même endroit avec {} ; ses moteurs se construisent la "
-          "première fois pour chaque modèle et chaque taille."},
     Entry{"Updates", "Mises à jour"},
     Entry{"Use the playback settings", "Reprendre les réglages de la lecture"},
-    Entry{"Use this engine", "Utiliser ce moteur"},
     Entry{"Very high aims for a picture identical to playback; High and Standard make smaller files.",
           "Très haute vise une image identique à la lecture ; Haute et Standard donnent des fichiers plus "
           "légers."},

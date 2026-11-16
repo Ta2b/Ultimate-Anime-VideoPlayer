@@ -215,7 +215,7 @@ bool add_font(ImFontAtlas& fonts, FontFile& file, bool merge) {
 
 // Les polices trouvées par FontSearch ; sinon la police vectorielle d'ImGui. ImGui 1.92 rastérise
 // à la taille demandée.
-void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fonts) {
+void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fonts, ImFont*& bold) {
   const auto log = log_channel("app");
   // Un octet par pixel au lieu de quatre (A24-18) : l'atlas n'a que des couvertures, le dessin
   // (placebo_imgui.cpp) lit une texture r8 comme l'alpha d'un blanc, et chaque glyphe neuf renvoie l'atlas.
@@ -239,6 +239,17 @@ void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fonts) {
                 fonts[i].path);
     }
   }
+#ifdef AJP_WITH_FREETYPE
+  // Les titres des infobulles du menu : la même police, épaissie par FreeType (panel_tip.cpp).
+  ImFontConfig config;
+  config.FontNo = static_cast<ImU32>(std::max(fonts.front().index, 0)) & 0xFFFFU;
+  config.FontDataOwnedByAtlas = false;
+  config.FontLoaderFlags = ImGuiFreeTypeLoaderFlags_Bold;
+  bold = atlas.AddFontFromMemoryTTF(fonts.front().data->data(), static_cast<int>(fonts.front().data->size()),
+                                    kFontSize, &config);
+#else
+  static_cast<void>(bold);
+#endif
 }
 
 // Thème sombre et sobre, accent bleu clair (celui de la barre de progression).
@@ -408,7 +419,7 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
   platform.Platform_GetClipboardTextFn = get_clipboard;
   ImGuiLayer::configure(io);
   ui->fonts_ = fonts.take();
-  load_fonts(*io.Fonts, ui->fonts_);
+  load_fonts(*io.Fonts, ui->fonts_, ui->panel_state_.bold);
   ui->apply_scale();
   return ui;
 }
@@ -628,6 +639,7 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
+    if (result.restart) actions.emplace_back(RestartPlayer{.settings = *result.restart});
     look_.keep_visible = panel_.is_open();  // fermé par sa croix
     drawn = true;
   }
@@ -684,6 +696,7 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
+    if (result.restart) actions.emplace_back(RestartPlayer{.settings = *result.restart});
   }
   ImGui::Render();
   follow_text_input();

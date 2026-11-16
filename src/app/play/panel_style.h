@@ -7,15 +7,18 @@
 #include <imgui.h>
 
 #include "app/play/french_text.h"
+#include "app/play/i18n.h"
 #include "app/play/panel_state.h"
+#include "app/play/panel_tip.h"
 
 namespace ajp::app::play::panel {
 
 using play::french_spaces;
 
-inline constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
-inline constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
-inline constexpr ImVec4 kWarn{1.0F, 0.78F, 0.42F, 1.0F};
+inline constexpr ImVec4 kAccent{0.45F, 0.70F, 1.0F, 1.0F};
+inline constexpr ImVec4 kNote{0.74F, 0.76F, 0.82F, 1.0F};  // assez clair pour se lire sur le fond du menu
+inline constexpr ImVec4 kWarn{1.0F, 0.76F, 0.40F, 1.0F};
+inline constexpr ImVec4 kTitle{0.86F, 0.90F, 1.0F, 1.0F};       // titres des encadrés
 inline constexpr ImVec4 kGood{0.45F, 0.82F, 0.52F, 1.0F};       // pastille Recommandé
 inline constexpr ImVec4 kFine{0.72F, 0.58F, 1.0F, 1.0F};        // pastille Le plus fin
 inline constexpr ImVec4 kExperimental{1.0F, 0.5F, 0.5F, 1.0F};  // pastille Expérimental
@@ -23,10 +26,6 @@ inline constexpr ImVec4 kExperimental{1.0F, 0.5F, 0.5F, 1.0F};  // pastille Exp�
 // L'état de mise en page du menu (panel_state.h), porté par le contexte ImGui.
 inline State& state() {
   return *static_cast<State*>(ImGui::GetIO().UserData);
-}
-
-inline bool& advanced() {
-  return state().advanced;
 }
 
 // Un texte à la ligne, avec la typographie française (A43-07) : toute phrase qui s'écrit passe par ici, ou
@@ -77,11 +76,17 @@ inline void section(const char* title) {
   if (page_open()) {
     end_group();
     ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+    // Le titre de l'encadré en gras (la police grasse de l'atlas, ui.cpp : load_fonts), comme chez Dolphin.
+    ImGui::PushStyleColor(ImGuiCol_Text, kTitle);
+    if (state().bold != nullptr) ImGui::PushFont(state().bold, 0.0F);
     ImGui::TextUnformatted(title);
+    if (state().bold != nullptr) ImGui::PopFont();
     ImGui::PopStyleColor();
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1.0F, 1.0F, 1.0F, 0.025F));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0F, 1.0F, 1.0F, 0.12F));
     ImGui::BeginChild(title, ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
+    ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
     // Un encadré est une fenêtre fille : la largeur des champs repart de son défaut. Les libellés (à droite
     // du champ) gardent 44 % de la largeur, assez pour les plus longs sans les couper.
@@ -96,6 +101,24 @@ inline void section(const char* title) {
   ImGui::Separator();
 }
 
+// Après un curseur qui s'applique en direct : tenu, il efface le panneau, pour voir l'image changer dessous.
+inline void live_preview() {
+  if (ImGui::IsItemActive()) state().dim = true;
+}
+
+// Le bandeau « Avancé » en bas d'un onglet : un titre et un filet, puis les encadrés des réglages rares,
+// toujours visibles (plus de case « Réglages avancés »).
+inline void advanced_header() {
+  end_group();
+  ImGui::Dummy(ImVec2(0.0F, ImGui::GetFontSize() * 0.8F));
+  ImGui::PushStyleColor(ImGuiCol_Text, kAccent);
+  ImGui::TextUnformatted(i18n::tr("Advanced"));
+  ImGui::PopStyleColor();
+  ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(kAccent.x, kAccent.y, kAccent.z, 0.35F));
+  ImGui::Separator();
+  ImGui::PopStyleColor();
+}
+
 // Place le bouton `label` (à venir) sur la ligne du dernier élément s'il y tient, sinon à la ligne : une
 // rangée de boutons ne déborde pas du cadre quand la fenêtre est étroite ou l'échelle grande.
 inline void same_line_if_fits(const char* label) {
@@ -103,21 +126,6 @@ inline void same_line_if_fits(const char* label) {
   const float need = ImGui::CalcTextSize(label).x + 2.0F * style.FramePadding.x;
   const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
   if (ImGui::GetItemRectMax().x + style.ItemSpacing.x + need <= right) ImGui::SameLine();
-}
-
-// Une infobulle sur le dernier élément, après un court délai ; elle s'affiche aussi sur un élément grisé.
-inline void tip(const char* text) {
-  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayNormal)) {
-    const std::string shown = french_spaces(text);
-    ImGui::BeginTooltip();
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0F);
-    ImGui::TextUnformatted(shown.c_str());
-    ImGui::PopTextWrapPos();
-    ImGui::EndTooltip();
-  }
-}
-inline void tip(const std::string& text) {
-  tip(text.c_str());
 }
 
 // Une pastille : le texte sur un rectangle arrondi teinté, sur la ligne du dernier élément. Vert recommandé,

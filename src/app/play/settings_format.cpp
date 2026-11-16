@@ -56,7 +56,7 @@ std::string format_settings(const PlaySettings& s) {
   }
   root.insert("interpolation", std::move(interpolation));
   {
-    toml::table hdr{{"peak", s.true_hdr_peak}};
+    toml::table hdr{{"peak", s.true_hdr_peak}, {"output", std::string(name(s.hdr_mode))}};
     root.insert("hdr", std::move(hdr));
   }
   // Le volume au centième : 0.85 et non 0.8500000238418579.
@@ -121,6 +121,7 @@ std::string format_settings(const PlaySettings& s) {
   root.insert("stats", toml::table{{"all", s.stats.all},
                                    {"chain", s.stats.chain},
                                    {"frames", s.stats.frames},
+                                   {"fps", s.stats.fps},
                                    {"rife", s.stats.rife},
                                    {"tracks", s.stats.tracks},
                                    {"output", s.stats.output},

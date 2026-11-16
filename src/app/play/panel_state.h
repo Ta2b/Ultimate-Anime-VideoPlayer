@@ -3,12 +3,17 @@
 // ui.h l'inclut.
 #pragma once
 
+struct ImFont;
+
 namespace ajp::app::play::panel {
 
 struct State {
-  bool advanced = false;    // la case « Réglages avancés » : les réglages rares ne s'affichent que cochée
   bool page_open = false;   // entre begin_page et end_page
   bool group_open = false;  // un encadré de section ouvert dans la page
+  bool dim = false;         // un curseur qui s'applique en direct est tenu : le panneau s'efface
+  // La police grasse des titres d'infobulle (ui.cpp : load_fonts) ; nulle sans FreeType : le titre est alors
+  // tracé deux fois, décalé d'un pixel.
+  ImFont* bold = nullptr;
 };
 
 }  // namespace ajp::app::play::panel

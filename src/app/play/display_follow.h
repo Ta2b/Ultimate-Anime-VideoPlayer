@@ -67,6 +67,11 @@ class DisplayFollow {
   VrrWatch vrr_watch_;
   bool vrr_fullscreen_ = true;  // relu au premier relevé : VRR, compositeur (P3.45)
   std::int64_t hdr_polled_at_ = 0;
+  // Le dernier pic relu et le mode HDR du réglage quand il l'a été : un mode changé au menu bascule la
+  // sortie au tour suivant, sans attendre le relevé suivant (10 s).
+  std::optional<double> last_peak_;
+  bool peak_known_ = false;
+  HdrMode mode_seen_ = HdrMode::Auto;
   bool display_moved_ = false;  // la fenêtre a changé d'écran : le relevé de l'écran demandé le suit
   DisplayProbe probe_;          // en dernier : son fil s'arrête avant le reste
 };

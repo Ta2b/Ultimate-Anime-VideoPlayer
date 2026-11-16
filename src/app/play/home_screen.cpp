@@ -41,6 +41,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/model_choice.h"
 #include "app/play/paths.h"
+#include "app/play/relaunch_target.h"
 #include "app/play/save_failure.h"
 #include "app/play/scripted_input.h"
 #include "app/play/single_instance.h"
@@ -179,7 +180,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .rife_models = rife ? rife->available : std::vector<std::string>{},
       .default_rife_model = rife ? rife->default_name : std::string(),
       .rife_folder = places.empty() ? std::string() : prepare::utf8_path(places.front()),
-      .hdr_output = !h.options.sdr && system_hdr(content_peak_nits(h.screen.window())),
+      .hdr_output = hdr_wanted(running.hdr_mode, h.options.sdr, content_peak_nits(h.screen.window())),
       .auto_peak = auto_peak_nits(content_peak_nits(h.screen.window())),
       .engines = engine_badges(h.paths.engines, {}),
       .chosen_engines = chosen_line(st.engines),
@@ -189,7 +190,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
       .display_height = display_height(h.screen.window()),
       .span_prepare = {.note =
                            i18n::tr("Open a video: the player prepares Performance mode on its frames.")}};
-  // Vidéo > Post-traitement sans vidéo ouverte : la carte, sa tranche, les sorties son, comme en lecture.
+  // Vidéo > Général sans vidéo ouverte : la carte, sa tranche, les sorties son, comme en lecture.
   fill_host_choices(choices, h.screen, h.paths, h.catalog, h.settings_path.parent_path());
   return choices;
 }
@@ -379,6 +380,12 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                               changed(running);
                             },
                             [&](const ApplySettings& apply) { changed(apply.settings); },
+                            [&](const RestartPlayer& restart) {
+                              // Écrit à la sortie de l'accueil (dirty), puis le lecteur se relance.
+                              changed(restart.settings);
+                              log->info("paramètres : le lecteur se relance pour les appliquer");
+                              quit = ask_relaunch(h.paths, {}, std::nullopt, false, RelaunchReason::Settings);
+                            },
                             [&](const UseEngine& use) {
                               st.engines = using_engine(std::move(st.engines), use.id);
                               if (auto written = core::save_settings(

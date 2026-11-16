@@ -139,11 +139,13 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   if (ImGui::CollapsingHeader(i18n::tr("Upscaling"))) {
     ImGui::PushID("export-image");
     image_tab(job.chain, chain_choices);
+    upscale_advanced(job.chain, chain_choices);
     ImGui::PopID();
   }
   if (ImGui::CollapsingHeader(i18n::tr("Interpolation"))) {
     ImGui::PushID("export-fluidity");
     fluidity_tab(job.chain, chain_choices, true);
+    motion_advanced(job.chain, chain_choices, true);
     ImGui::PopID();
   }
   if (ImGui::Button(i18n::tr("Use the playback settings"))) job.chain = running;

@@ -16,39 +16,67 @@ using panel::note;
 using panel::section;
 using render::grade_limits::kAnimePercent;
 
-void hdr_tab(PlaySettings& d, const SettingsChoices& choices) {
-  // Pas de choix : le HDR suit le système (host_facts.h, system_hdr). La page dit ce qui tourne ; le pic de
-  // l'écran, en avancé, est grisé tant que l'écran ne reçoit pas de HDR.
+void output_section(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Output"));
-  note(choices.hdr_output
-           ? i18n::tr("HDR: on. The player follows your system's HDR setting.")
-           : i18n::tr("SDR: HDR is off in your system, or the display is too dim for it. The Color page's "
-                      "grade still applies."));
-  // Tri de l'ADR 0012 : la méthode HDR anime règle seule la luminosité ; reste le pic de l'écran, en avancé.
-  if (panel::advanced()) {
-    panel::end_group();  // l'encadré Sortie se ferme avant la zone grisée
-    ImGui::BeginDisabled(!choices.hdr_output);
-    section(i18n::tr("Display peak"));
-    bool automatic = d.true_hdr_peak == 0;
-    if (ImGui::Checkbox(i18n::tr_format("Auto peak ({} nits)", choices.auto_peak).c_str(), &automatic))
-      d.true_hdr_peak =
-          automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
-    ImGui::BeginDisabled(automatic);
-    int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
-    if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi,
-                         "%d", ImGuiSliderFlags_AlwaysClamp) &&
-        !automatic)
-      d.true_hdr_peak = peak;
-    ImGui::EndDisabled();
-#if defined(__linux__)
-    // Sous KDE, le pic est en nits du contenu : KWin les affiche × luminosité SDR / 203 (system_peak.cpp).
-    // Windows affiche le PQ d'une application tel quel : contenu = écran, rien à dire.
-    note(
-        i18n::tr("In content nits: KDE shows them brighter (× its SDR brightness / 203), so a 1000-nit "
-                 "screen reads lower here."));
-#endif
-    panel::end_group();  // le dernier encadré s'ouvre dans la zone grisée : il se ferme avant d'en sortir
-    ImGui::EndDisabled();
+  if (ImGui::BeginCombo(i18n::tr("HDR"), std::string(label(d.hdr_mode)).c_str())) {
+    for (int i = 0; i < kHdrModeCount; ++i) {
+      const auto mode = static_cast<HdrMode>(i);
+      if (ImGui::Selectable(std::string(label(mode)).c_str(), mode == d.hdr_mode)) d.hdr_mode = mode;
+    }
+    ImGui::EndCombo();
+  }
+  panel::tip(
+      i18n::tr("HDR"),
+      i18n::tr("Auto: HDR when the system is in HDR and the display is bright enough (350 nits). On: HDR "
+               "whenever the system is in HDR. Off: SDR. HDR needs HDR turned on in the system. "
+               "Recommended: Auto."));
+  note(choices.hdr_output ? i18n::tr("Now: HDR10.") : i18n::tr("Now: SDR."));
+}
+
+// Un curseur en % du grade anime (100 % : la méthode telle que réglée), qui efface le panneau tant qu'il est
+// tenu.
+void percent_slider(const char* label, int& value, const char* body) {
+  ImGui::SliderInt(label, &value, kAnimePercent.lo, kAnimePercent.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  panel::live_preview();
+  panel::tip(label, body);
+}
+
+void colors_section(PlaySettings& d) {
+  // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu, en HDR comme en SDR. Restent
+  // ses trois dosages, les noirs profonds (le curseur est leur maximum, dans un épisode très clair : A38-16)
+  // et l'intensité des LUT de contraste et d'éclats (0 : la pile de référence).
+  section(i18n::tr("Colors"));
+  render::GradeSettings& g = d.grade_values;
+  percent_slider(i18n::tr("Saturation"), g.anime_saturation,
+                 i18n::tr("Color intensity. Recommended: 100 %."));
+  percent_slider(i18n::tr("Contrast"), g.anime_contrast,
+                 i18n::tr("Gap between dark and bright areas. Recommended: 100 %."));
+  percent_slider(i18n::tr("Highlights"), g.anime_highlights,
+                 i18n::tr("Brightness of lights and glints. Recommended: 100 %."));
+  grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
+  panel::live_preview();
+  panel::tip(
+      i18n::tr("Deep blacks"),
+      i18n::tr("How much dark scenes are deepened, at most; less in dark episodes. Recommended: 0.50."));
+  ImGui::SliderInt(i18n::tr("LUT contrast"), &d.look_contrast, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+  panel::live_preview();
+  panel::tip(i18n::tr("LUT contrast"),
+             i18n::tr("Strength of the contrast LUT. 0: the reference look; −100: removed; 100: doubled. "
+                      "Recommended: 0."));
+  ImGui::SliderInt(i18n::tr("LUT highlights"), &d.look_highlight, -100, 100, "%d",
+                   ImGuiSliderFlags_AlwaysClamp);
+  panel::live_preview();
+  panel::tip(i18n::tr("LUT highlights"),
+             i18n::tr("Strength of the highlight LUT. 0: the reference look; −100: removed; 100: doubled. "
+                      "Recommended: 0."));
+  if (ImGui::Button(i18n::tr("Defaults##couleurs"))) {
+    const PlaySettings defaults;
+    g.anime_saturation = defaults.grade_values.anime_saturation;
+    g.anime_contrast = defaults.grade_values.anime_contrast;
+    g.anime_highlights = defaults.grade_values.anime_highlights;
+    g.shadows = defaults.grade_values.shadows;
+    d.look_contrast = defaults.look_contrast;
+    d.look_highlight = defaults.look_highlight;
   }
 }
 
@@ -65,63 +93,73 @@ bool grade_slider(const char* label, double& value, core::Range<double> range) {
   return true;
 }
 
-void grade_tab(PlaySettings& d) {
-  // Tri de l'ADR 0012 : la méthode HDR anime (guidée, par plan) fait le rendu. Restent les noirs profonds,
-  // qui suivent l'épisode (le curseur est leur maximum, dans un épisode très clair : A38-16), et le look : la
-  // LUT de base et « skin fix » fixes, le contraste et les éclats de -100 à 100 (0 : le réglage de
-  // référence).
-  section(i18n::tr("Color grading"));
-  render::GradeSettings& g = d.grade_values;
-  ImGui::SliderInt(i18n::tr("Saturation"), &g.anime_saturation, kAnimePercent.lo, kAnimePercent.hi, "%d %%",
+// Vidéo > HDR : le pic de l'écran, le blanc des surfaces, le limiteur de flashs ; en avancé, ce qui touche au
+// calcul du grade. Grisé en sortie SDR, sauf le grade, qui sert aussi en SDR.
+void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
+  if (!choices.hdr_output)
+    panel::wrapped(i18n::tr("The output is SDR: these settings apply when it is HDR (Video > General)."));
+  ImGui::BeginDisabled(!choices.hdr_output);
+  section(i18n::tr("Brightness"));
+  bool automatic = d.true_hdr_peak == 0;
+  if (ImGui::Checkbox(i18n::tr_format("Display peak: auto ({} nits)", choices.auto_peak).c_str(), &automatic))
+    d.true_hdr_peak =
+        automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
+  panel::tip(i18n::tr("Display peak"),
+             i18n::tr("The brightest light the grade aims for, read from the display. Recommended: auto."));
+  ImGui::BeginDisabled(automatic);
+  int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
+  if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi, "%d",
+                       ImGuiSliderFlags_AlwaysClamp) &&
+      !automatic)
+    d.true_hdr_peak = peak;
+  panel::live_preview();
+  ImGui::EndDisabled();
+#if defined(__linux__)
+  // Sous KDE, le pic est en nits du contenu : KWin les affiche × luminosité SDR / 203 (system_peak.cpp).
+  // Windows affiche le PQ d'une application tel quel : contenu = écran, rien à dire.
+  panel::tip(i18n::tr("Peak (nits)"),
+             i18n::tr("In content nits: KDE shows them brighter (× its SDR brightness / 203)."));
+#endif
+  ImGui::SliderInt(i18n::tr("Surface white"), &d.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi, "%d %%",
                    ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Contrast"), &g.anime_contrast, kAnimePercent.lo, kAnimePercent.hi, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
-  ImGui::SliderInt(i18n::tr("Highlights"), &g.anime_highlights, kAnimePercent.lo, kAnimePercent.hi, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
-  if (panel::advanced()) {
-    ImGui::SliderInt(i18n::tr("LUT contrast intensity"), &d.look_contrast, -100, 100, "%d",
-                     ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SliderInt(i18n::tr("LUT highlight intensity"), &d.look_highlight, -100, 100, "%d",
-                     ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SliderInt(i18n::tr("Surface white"), &d.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi, "%d %%",
-                     ImGuiSliderFlags_AlwaysClamp);
-    panel::tip(
-        i18n::tr("HDR: the white of walls and skin, in % of where the LUTs put it (about 70 % of the screen "
-                 "peak). Lower leaves more room to the lights, which still reach the peak."));
-    grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
-    panel::tip(i18n::tr("The maximum, reached in a very bright episode; it fades out in a very dark one."));
-    ImGui::Checkbox(i18n::tr("Skin from faces (test)"), &d.face_skin);
-    panel::tip(
-        i18n::tr("Faces are found ahead of playback and the grade only treats their skin tones as skin: warm "
-                 "lamps of another tone light up again. A shot without a found face keeps the wide range. "
-                 "Takes effect with the next video."));
-  }
+  panel::live_preview();
+  panel::tip(i18n::tr("Surface white"),
+             i18n::tr("Brightness of walls and skin. Lower leaves more room to the lights, which still reach "
+                      "the peak. Recommended: 100 %."));
   ImGui::Checkbox(i18n::tr("Limit rapid flashes"), &d.flash_guard);
+  panel::tip(i18n::tr("Limit rapid flashes"),
+             i18n::tr("Dims bursts of more than three flashes a second for one second, for photosensitive "
+                      "viewers. Recommended: on."));
+  panel::end_group();  // l'encadré se ferme dans la zone grisée
+  ImGui::EndDisabled();
+
+  panel::advanced_header();
+  section(i18n::tr("Grade"));
+  ImGui::BeginDisabled(!choices.hdr_output);
+  ImGui::Checkbox(i18n::tr("Grade before interpolation"), &d.grade_before_warp);
+  ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("HDR only: a burst of rapid flashes (more than three a second) is dimmed for a second, for "
-               "photosensitive viewers. Off: flashes keep their full light."));
-  ImGui::Checkbox(i18n::tr("LUTs in one table (faster)"), &d.look_table);
-  panel::tip(
-      i18n::tr("The LUT stack is computed once into one table on the GPU, then read once per pixel instead "
-               "of LUT by LUT. Faster, but not exact: a few PQ codes off at worst on saturated colors."));
-  ImGui::Checkbox(i18n::tr("Grade before interpolation (faster, test)"), &d.grade_before_warp);
-  panel::tip(
-      i18n::tr("HDR, with interpolation after SPAN: each source frame is graded once, and the in-between "
-               "frames are made from graded frames, instead of grading every displayed frame. Much faster "
-               "at high factors, but not exact on moving edges."));
-  if (ImGui::Button(i18n::tr("Defaults"))) {
+      i18n::tr("Grade before interpolation"),
+      i18n::tr("HDR, interpolation after SPAN: each source frame is graded once instead of every shown "
+               "frame. Speed: up to 8× less grading at ×8. Quality impact: minor, on moving edges. "
+               "Recommended: off."));
+  ImGui::Checkbox(i18n::tr("LUTs in one table"), &d.look_table);
+  panel::tip(i18n::tr("LUTs in one table"),
+             i18n::tr("The LUT stack is read once per pixel instead of LUT by LUT. Speed: grading about 4× "
+                      "faster. Quality impact: imperceptible. Recommended: on."));
+  ImGui::Checkbox(i18n::tr("Skin from faces (test)"), &d.face_skin);
+  panel::tip(i18n::tr("Skin from faces (test)"),
+             i18n::tr("Faces are found ahead of playback and only their tones are treated as skin, so warm "
+                      "lamps light up again. Quality impact: minor gain, not yet judged. Recommended: off."),
+             panel::Apply::Reload);
+  if (ImGui::Button(i18n::tr("Defaults##hdr"))) {
     const PlaySettings defaults;
-    g.anime_saturation = defaults.grade_values.anime_saturation;
-    g.anime_contrast = defaults.grade_values.anime_contrast;
-    g.anime_highlights = defaults.grade_values.anime_highlights;
-    d.look_contrast = defaults.look_contrast;
-    d.look_highlight = defaults.look_highlight;
-    d.flash_guard = defaults.flash_guard;
-    d.look_table = defaults.look_table;
-    d.grade_before_warp = defaults.grade_before_warp;
-    d.face_skin = defaults.face_skin;
+    d.true_hdr_peak = defaults.true_hdr_peak;
     d.surface_white = defaults.surface_white;
-    g.shadows = defaults.grade_values.shadows;
+    d.flash_guard = defaults.flash_guard;
+    d.grade_before_warp = defaults.grade_before_warp;
+    d.look_table = defaults.look_table;
+    d.face_skin = defaults.face_skin;
   }
 }
 

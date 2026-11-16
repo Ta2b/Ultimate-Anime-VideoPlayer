@@ -7,15 +7,6 @@ namespace {
 
 // Image IA : (clé anglaise, français).
 constexpr std::array kImageTabs{
-    Entry{"Restore line art (reduce, then upscale)", "Restaurer les traits (réduire, puis agrandir)"},
-    Entry{
-        "A source sharper than the working resolution is reduced, then SPAN redraws its lines: cleaner lines "
-        "for a quarter of the work. Off: such a source keeps all its detail (grain, textures), without SPAN.",
-        "Une source plus nette que la résolution de travail est réduite, puis SPAN redessine ses traits : "
-        "des "
-        "traits plus propres pour quatre fois moins de calcul. Coupé : une telle source garde tout son "
-        "détail "
-        "(grain, textures), sans SPAN."},
     Entry{" (recommended)", " (recommandé)"},
     Entry{"{} fps", "{} i/s"},
     Entry{"Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less precise "
@@ -42,17 +33,6 @@ constexpr std::array kImageTabs{
     Entry{"Auto", "Auto"},
     Entry{"Auto limit", "Plafond d'Auto"},
     Entry{"Auto mode", "Mode d'Auto"},
-    Entry{"Balanced is FP16, Quality FP32. Speed: Quality about 2 to 3× slower. Quality impact: "
-          "imperceptible. Recommended: Balanced. Reloads playback.",
-          "Équilibre est en FP16, Qualité en FP32. Vitesse : Qualité environ 2 à 3× plus lent. Impact sur la "
-          "qualité : imperceptible. Recommandé : Équilibre. Recharge la lecture."},
-    Entry{"Balanced is FP16; Quality is FP32. Reloads playback.",
-          "Équilibre : FP16 ; Qualité : FP32. Recharge la lecture."},
-    Entry{"Characters animated on twos keep their rhythm while the background moves. Speed: slightly faster "
-          "(held poses skip a pass). Quality impact: minor gain. Recommended: on. RIFE only.",
-          "Les personnages animés à une image sur deux gardent leur rythme pendant que le fond bouge. "
-          "Vitesse : un peu plus rapide (une pose tenue saute une passe). Impact sur la qualité : gain "
-          "mineur. Recommandé : activé. RIFE seulement."},
     Entry{"DistilDRBA model not found in {} ({}); RIFE is used instead.",
           "Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place."},
     Entry{"Double the frames (NVIDIA driver)", "Doubler les images (pilote NVIDIA)"},
@@ -62,11 +42,6 @@ constexpr std::array kImageTabs{
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
     Entry{"Sharper interpolation warp (Catmull-Rom)", "Warp de l'interpolation plus net (Catmull-Rom)"},
-    Entry{"In-between frames read the source with a sharper filter (Catmull-Rom), for finer lines. Speed: "
-          "about −3 %. Quality impact: minor gain. Recommended: on. RIFE only.",
-          "Les images intermédiaires lisent la source avec un filtre plus net (Catmull-Rom), pour des traits "
-          "plus fins. Vitesse : environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE "
-          "seulement."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
     Entry{"Trial: on fast motion, frames near the middle reuse the middle RIFE pass. Speed: up to +30 % on "
@@ -103,39 +78,12 @@ constexpr std::array kImageTabs{
           "DistilDRBA : les personnages animés à une image sur deux gardent leur rythme ; une image de "
           "retard. Vitesse : environ Rapide jusqu'à ×5, plus lent au-delà. Impact sur la qualité : aucun "
           "mesuré face à RIFE. Auto ne l'utilise pas."},
-    Entry{"Very fast, Fast and Balanced use RIFE alone; High and Very high add GMFSS key frames (NVIDIA "
-          "RTX). Recommended: Balanced on NVIDIA RTX, Fast elsewhere. Applies after a short reload.",
-          "Très rapide, Rapide et Équilibré n'utilisent que RIFE ; Élevé et Très élevé y ajoutent des images "
-          "clés GMFSS (NVIDIA RTX). Recommandé : Équilibré sur NVIDIA RTX, Rapide ailleurs. S'applique après "
-          "un court rechargement."},
     Entry{"High", "Élevé"},
     Entry{"Very high", "Très élevé"},
     Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
     Entry{"GMFSS keeps the source detail", "GMFSS garde le détail de la source"},
     Entry{"GMFSS and RIFE at 540p", "GMFSS et RIFE en 540p"},
-    Entry{"RIFE and GMFSS estimate motion at 540p instead of 720p. Speed: about +35 %. Quality impact: minor "
-          "loss. Recommended: off; on if the card can't keep up. Reloads playback.",
-          "RIFE et GMFSS estiment le mouvement en 540p au lieu de 720p. Vitesse : environ +35 %. Impact sur "
-          "la qualité : perte mineure. Recommandé : désactivé ; activé si la carte ne suit pas. Recharge la "
-          "lecture."},
     Entry{"GMFSS at every instant, without RIFE", "GMFSS à chaque instant, sans RIFE"},
-    Entry{
-        "Every in-between frame comes from GMFSS, without RIFE. Speed: about −70 % vs Very high; frames drop "
-        "when the card can't keep up. Quality impact: minor change. Recommended: off. Reloads playback.",
-        "Chaque image intermédiaire vient de GMFSS, sans RIFE. Vitesse : environ −70 % face à Très élevé ; "
-        "des images sautent si la carte ne suit pas. Impact sur la qualité : changement mineur. Recommandé : "
-        "désactivé. Recharge la lecture."},
-    Entry{"Above 720p of working resolution, GMFSS key frames are rebuilt from the full-size source instead "
-          "of enlarged. Speed: about −5 to −15 %. Quality impact: minor gain, not yet judged. Recommended: "
-          "off. Reloads playback.",
-          "Au-delà de 720p de résolution de travail, les images clés GMFSS sont refaites depuis la source en "
-          "pleine taille au lieu d'être agrandies. Vitesse : environ −5 à −15 %. Impact sur la qualité : "
-          "gain mineur, pas encore jugé. Recommandé : désactivé. Recharge la lecture."},
-    Entry{"GMFSS estimates motion on half-size frames. Speed: GMFSS about 1.7× faster. Quality impact: minor "
-          "loss on small motion. Recommended: on. Reloads playback.",
-          "GMFSS estime le mouvement sur des images de demi-taille. Vitesse : GMFSS environ 1,7× plus "
-          "rapide. Impact sur la qualité : perte mineure sur les petits mouvements. Recommandé : activé. "
-          "Recharge la lecture."},
     Entry{
         "RIFE guided by 1 to 3 GMFSS key frames on fast motion only. Speed: about −20 to −40 % vs Balanced, "
         "depending on the scene. Quality impact: moderate gain on fast turns and pans. NVIDIA RTX only.",
@@ -163,8 +111,6 @@ constexpr std::array kImageTabs{
     Entry{"Maximum (display)", "Maximum (écran)"},
     Entry{"Model", "Modèle"},
     Entry{"Multiplier", "Multiplicateur"},
-    Entry{"No downscale: the source goes into SPAN as is.",
-          "Pas de réduction : la source entre telle quelle dans SPAN."},
     Entry{"No interpolation model found: put a RIFE model in the models folder.",
           "Aucun modèle d'interpolation trouvé : placez un modèle RIFE dans le dossier des modèles."},
     Entry{"No steps: each frame is computed for the exact moment it is shown.",
@@ -174,18 +120,6 @@ constexpr std::array kImageTabs{
     Entry{
         "Off for this video: {:.2f} fps is not an anime frame rate (23.976, 24, 25, 29.97 or 30).",
         "Coupée pour cette vidéo : {:.2f} i/s n'est pas une cadence d'anime (23,976, 24, 25, 29,97 ou 30)."},
-    Entry{"Output: {}, twice the working resolution (SPAN ×2).",
-          "Sortie : {}, le double de la résolution de travail (SPAN ×2)."},
-    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more "
-          "than C4F32).",
-          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger "
-          "(C4F16 plus que C4F32)."},
-    Entry{"Models: Performance is fast, Balanced finer, Sharp1 crisp, ArtCNN the lightest (C4F16 more "
-          "than C4F32). FP8: prepared once on this PC, then about 37 % faster per pass (14.7 to 9.2 ms "
-          "at 1080p on an RTX 4070 Ti), at about 49 to 52 dB PSNR against FP16.",
-          "Modèles : Performance est rapide, Balanced plus fin, Sharp1 plus net, ArtCNN le plus léger "
-          "(C4F16 plus que C4F32). FP8 : préparé une fois sur ce PC, puis environ 37 % plus rapide par "
-          "passe (14,7 à 9,2 ms en 1080p sur une RTX 4070 Ti), à environ 49 à 52 dB de PSNR face au FP16."},
     Entry{"DistilDRBA is running: fused engines.", "DistilDRBA tourne : moteurs fusionnés."},
     Entry{"DistilDRBA is running: whole network.", "DistilDRBA tourne : réseau entier."},
     Entry{"Motion variant: one SPAN pass per source frame.",
@@ -228,15 +162,9 @@ constexpr std::array kImageTabs{
           "Un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. Vitesse : "
           "environ −10 %. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
           "Recommandé : activé. RIFE seulement ; remplace Garder les poses."},
-    Entry{"Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.",
-          "Les coupes de scène ne sont pas interpolées ; les dessins tenus de 2 à 6 images sont lissés."},
-    Entry{"Scene cuts and held drawings are not interpolated.",
-          "Les coupes de scène et les dessins tenus ne sont pas interpolés."},
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
     Entry{"Source (no downscale)", "Source (sans réduction)"},
     Entry{"Source, no downscale ({})", "Source, sans réduction ({})"},
-    Entry{"Spline36 is AnimeJaNai's sharp choice; Hermite is sharp without halos. Applies live.",
-          "Spline36 est le choix net d'AnimeJaNai ; Hermite est net sans halo. En direct."},
     Entry{"Runs DistilDRBA as small TensorRT engines. Speed: about 2× faster per pass. Quality impact: "
           "imperceptible. Recommended: on. NVIDIA only; built on first use.",
           "Fait tourner DistilDRBA en petits moteurs TensorRT. Vitesse : environ 2× plus rapide par passe. "
@@ -255,14 +183,9 @@ constexpr std::array kImageTabs{
           "chaque image faite pour l'instant où elle s'affiche. Vitesse : Instantané environ +20 à +40 % "
           "d'images. Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la "
           "carte). Recommandé : Instantané."},
-    Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames. Applies at next launch.",
-          "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre deux images affichées. Vaut au prochain "
-          "lancement."},
     Entry{"The highest frame rate Auto aims for; a lower limit saves power and heat. Recommended: Maximum.",
           "La cadence la plus haute visée par Auto ; une limite plus basse économise l'énergie et la "
           "chauffe. Recommandé : Maximum."},
-    Entry{"The size the video is reduced to before SPAN, which doubles it: 720p gives 1440p.",
-          "Taille à laquelle la vidéo est ramenée avant SPAN, qui la double : 720p donne du 1440p."},
     Entry{"VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync).",
           "VRR coupé par le système : activez la synchronisation adaptative (KDE : Affichage > "
           "Synchronisation adaptative)."},
@@ -287,17 +210,8 @@ constexpr std::array kImageTabs{
           "Sans VRR, la cadence suit le rafraîchissement ; une image tardive répète la précédente."},
     Entry{"Without VRR, motion may judder at a fixed refresh rate.",
           "Sans VRR, le mouvement peut vibrer à fréquence fixe."},
-    Entry{"Without upscaling, the output stays at the working resolution: {}.",
-          "Sans agrandissement, la sortie garde la résolution de travail : {}."},
     Entry{"Working resolution", "Résolution de travail"},
     Entry{"Anime4K ×2", "Anime4K ×2"},
-    Entry{
-        "Anime4K: shaders drawn by the display, with no engine to build, for small GPUs. Mode A, B or C "
-        "follows the source and the downscale. SDR sources only: an HDR source is upscaled by the display.",
-        "Anime4K : des shaders dessinés par l'affichage, sans moteur à construire, pour les petites cartes. "
-        "Le mode A, B ou C suit la source et la réduction. Sources SDR seulement : une source HDR est "
-        "agrandie "
-        "par l'affichage."},
     Entry{"the upscaler changes to Anime4K", "l'agrandissement passe à Anime4K"},
 };
 

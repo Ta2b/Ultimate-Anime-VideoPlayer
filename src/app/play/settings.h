@@ -157,6 +157,14 @@ constexpr bool warp_after_span(SpanOrder order, int output_height, int max_facto
                                                                     max_factor >= kWarpAfterSpanFactor));
 }
 
+// La sortie HDR (Vidéo > Général) : Auto suit le système (HDR10 dès que l'écran en reçoit assez, host_facts.h
+// : system_hdr), Activé la prend dès que le système est en HDR, même sous le seuil de luminosité, Désactivé
+// garde le SDR gradé, comme --sdr. Section [hdr] output de play.toml.
+enum class HdrMode : std::uint8_t { Auto, On, Off };
+inline constexpr int kHdrModeCount = 3;
+std::string_view name(HdrMode mode);   // « auto », la clé de play.toml
+std::string_view label(HdrMode mode);  // « Auto (suit le système) », pour le menu
+
 enum class OledBlack : std::uint8_t { Auto, On, Off };
 inline constexpr int kOledBlackCount = 3;
 std::string_view name(OledBlack mode);   // « auto », la clé de play.toml
@@ -165,6 +173,7 @@ std::string_view label(OledBlack mode);  // « Auto », pour le menu
 // Statistiques à l'écran : toutes (Tab), ou mesure par mesure.
 struct StatsSettings {
   bool all = false;
+  bool fps = false;       // la cadence montrée seule, en haut à gauche (Vidéo > Général)
   bool chain = false;     // modèles, tailles, moteur
   bool frames = false;    // temps par image, σ, composition, images sautées
   bool rife = false;      // paires interpolées, dessins tenus, coupes
@@ -175,7 +184,7 @@ struct StatsSettings {
   // Débogage : chaque paire jugée tenue ou coupée teinte l'écran et va au journal (pair_marks.h). Le temps de
   // la session seulement : ni play.toml ni any() ne le connaissent.
   bool pairs = false;
-  bool any() const { return all || chain || frames || rife || tracks || output || position || memory; }
+  bool any() const { return all || fps || chain || frames || rife || tracks || output || position || memory; }
   friend bool operator==(const StatsSettings&, const StatsSettings&) = default;
 };
 
@@ -325,9 +334,12 @@ struct PlaySettings {
   bool smooth_motion = false;
   // Le pic visé par le grade HDR, en nits (section hdr de play.toml) ; 0 : la crête que l'écran annonce.
   int true_hdr_peak = 0;
+  // La sortie HDR voulue (HdrMode) ; hdr_native en découle à chaque ouverture et suit le système en Auto et
+  // Activé. En direct.
+  HdrMode hdr_mode = HdrMode::Auto;
   // La sortie en cours : HDR (le SDR passe en PQ par libplacebo, puis le grade anime guidé) ou SDR gradée.
-  // Pas un réglage : décidée à chaque ouverture selon le système (host_facts.h, system_hdr), suivie si le
-  // HDR est allumé ou coupé pendant la lecture, jamais écrite dans play.toml.
+  // Pas un réglage : décidée à chaque ouverture selon hdr_mode et le système (host_facts.h, hdr_wanted),
+  // suivie si le HDR est allumé ou coupé pendant la lecture, jamais écrite dans play.toml.
   bool hdr_native = false;
   // Composition finale de libplacebo (toutes les routes) : filtre qui étire la chaîne vers la
   // fenêtre, et débandage des aplats et dégradés, sans effet sur l'export ; en direct.
@@ -352,7 +364,7 @@ struct PlaySettings {
   // La carte graphique de la lecture (P3.16, portables à deux cartes) : son nom Vulkan ; vide, le choix de
   // libplacebo (la carte dédiée d'abord). Vaut au prochain lancement.
   std::string gpu;
-  // « Vitesse avant précision » (Général > Moteurs) : le moteur Vulkan garde ses sommes en float16 quand la
+  // « Vitesse avant précision » (Vidéo > Général) : le moteur Vulkan garde ses sommes en float16 quand la
   // perte ne se voit pas (au-dessus de 60 dB contre le calcul en float, gpu/vulkan/backend/net_gate.h), au
   // lieu de la règle stricte des 0,5 dB qui rendait SPAN deux fois plus lent sur une GeForce Ada. Décochée :
   // la règle stricte (gpu::kStrictPrecision). Vaut au prochain lancement ; les moteurs se reconstruisent.
@@ -530,11 +542,14 @@ PlaySettings settings_to_save(const PlaySettings& running, const PlaySettings& f
 // Les options de lecture qui en découlent (modèle, hauteur, RIFE, HDR).
 PlayOptions options_for(const PlayOptions& options, const PlaySettings& settings);
 
-// Ce qu'un changement de réglages demande.
-enum class ChangeCost : std::uint8_t { None, Live, Reopen };
+// Ce qu'un changement de réglages demande : rien, en direct, rouvrir la vidéo au même endroit, ou relancer le
+// lecteur sur la vidéo au même endroit (la carte, le dossier ou la précision des moteurs, Smooth Motion :
+// posés au lancement). Le panneau le dit de la même manière pour tous, avant d'appliquer.
+enum class ChangeCost : std::uint8_t { None, Live, Reopen, Restart };
 struct Change {
   ChangeCost cost = ChangeCost::None;
-  std::string reason;  // pour Reopen : ce qui sera reconstruit ou rechargé, affiché avant d'appliquer
+  std::string
+      reason;  // pour Reopen et Restart : ce qui sera reconstruit ou rechargé, affiché avant d'appliquer
 };
 struct OpenedChain;  // chain_shape.h
 // rife_loaded : un moteur RIFE est chargé (passer de 0 à ×N se fait alors en direct).

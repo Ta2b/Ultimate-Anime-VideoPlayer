@@ -344,6 +344,12 @@ bool system_hdr(std::optional<double> peak_nits) {
   return peak_nits && std::isfinite(*peak_nits) && *peak_nits >= kMinHdrPeakNits;
 }
 
+bool hdr_wanted(HdrMode mode, bool forced_sdr, std::optional<double> peak_nits) {
+  if (forced_sdr || mode == HdrMode::Off) return false;
+  if (mode == HdrMode::On) return peak_nits && std::isfinite(*peak_nits) && *peak_nits > 0.0;
+  return system_hdr(peak_nits);
+}
+
 int auto_peak_nits(std::optional<double> detected) {
   constexpr double kUnknown = 1000.0;
   constexpr double kLow = 200.0;

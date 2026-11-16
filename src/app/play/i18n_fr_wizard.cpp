@@ -8,8 +8,8 @@ namespace {
 // Assistant et écran des moteurs : (clé anglaise, français).
 constexpr std::array kWizardTexts{
     Entry{"Calibrating this machine", "Calibration de la machine"},
-    Entry{"New graphics card: calibrate this PC again (Video > Post-processing)",
-          "Nouvelle carte graphique : refaites la calibration de ce PC (Vidéo > Post-traitement)"},
+    Entry{"New graphics card: calibrate this PC again (Video > General)",
+          "Nouvelle carte graphique : refaites la calibration de ce PC (Vidéo > Général)"},
     Entry{"Machine calibration failed: settings unchanged (see log)",
           "La calibration de la machine a échoué : réglages inchangés (voir le journal)"},
     Entry{"Machine calibration", "Calibration de la machine"},
@@ -23,13 +23,13 @@ constexpr std::array kWizardTexts{
         "tient. Seule une barre de chargement s'affiche ; l'estimation ci-dessous est plus longue avec "
         "TensorRT, qui construit ses moteurs pendant l'essai."},
     Entry{"\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
-          "Post-processing.",
+          "General.",
           "« Régler moi-même » : le préréglage Auto estimé pour cette carte, modifiable dans Vidéo > "
-          "Post-traitement."},
+          "Général."},
     Entry{"Machine calibration: with \"Calibrate now\", the best settings this machine sustains (Video > "
-          "Post-processing)",
+          "General)",
           "Calibration de la machine : avec « Calibrer maintenant », les meilleurs réglages que la machine "
-          "tient (Vidéo > Post-traitement)"},
+          "tient (Vidéo > Général)"},
     Entry{"Default video player: asked at the end of the assistant (General > Application)",
           "Lecteur vidéo par défaut : demandé à la fin de l'assistant (Général > Application)"},
     Entry{"Integration", "Intégration"},
@@ -42,8 +42,8 @@ constexpr std::array kWizardTexts{
           "Vulkan takes over if one fails.",
           "Vulkan sert tous les GPU. Les moteurs cochés s'installent à la fin de l'assistant, vérifiés par "
           "empreinte ; Vulkan prend le relais si l'un échoue."},
-    Entry{"Machine calibration: skipped, Auto preset (Video > Post-processing)",
-          "Calibration de la machine : passée, préréglage Auto (Vidéo > Post-traitement)"},
+    Entry{"Machine calibration: skipped, Auto preset (Video > General)",
+          "Calibration de la machine : passée, préréglage Auto (Vidéo > Général)"},
     Entry{" · Tensor cores", " · cœurs Tensor"},
     Entry{" · matrix units (WMMA)", " · unités matricielles (WMMA)"},
     Entry{"Always available", "Toujours présent"},
@@ -67,10 +67,8 @@ constexpr std::array kWizardTexts{
     Entry{"Fastest for this GPU", "Le plus rapide pour ce GPU"},
     Entry{"I accept its licence", "J'accepte sa licence"},
     Entry{"Languages", "Langues"},
-    Entry{"Languages: chosen (Audio and playback > Playback)",
-          "Langues : choisies (Audio et lecture > Lecture)"},
-    Entry{"Languages: skipped (Audio and playback > Playback)",
-          "Langues : sauté (Audio et lecture > Lecture)"},
+    Entry{"Languages: chosen (Languages > Languages)", "Langues : choisies (Langues > Langues)"},
+    Entry{"Languages: skipped (Languages > Languages)", "Langues : sauté (Langues > Langues)"},
     Entry{"Loading the engine", "Chargement du moteur"},
     Entry{"Loading", "Chargement"},
     Entry{"Loading the engines", "Chargement des moteurs"},

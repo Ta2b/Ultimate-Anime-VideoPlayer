@@ -88,12 +88,11 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
   std::vector<std::string> out;
   out.push_back(wizard.calibrate
                     ? i18n::tr("Machine calibration: with \"Calibrate now\", the best settings this "
-                               "machine sustains (Video > Post-processing)")
-                    : i18n::tr("Machine calibration: skipped, Auto preset (Video > Post-processing)"));
+                               "machine sustains (Video > General)")
+                    : i18n::tr("Machine calibration: skipped, Auto preset (Video > General)"));
   if (has(WizardStep::Languages))
-    out.push_back(skipped(WizardStep::Languages)
-                      ? i18n::tr("Languages: skipped (Audio and playback > Playback)")
-                      : i18n::tr("Languages: chosen (Audio and playback > Playback)"));
+    out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (Languages > Languages)")
+                                                 : i18n::tr("Languages: chosen (Languages > Languages)"));
   if (has(WizardStep::Updates)) {
     std::string_view mode = i18n::tr("notify me");
     if (wizard.update_mode == UpdateMode::Never) mode = i18n::tr("never");

@@ -369,8 +369,8 @@ bool finish_wizard(const EngineScreen& s, Wizard wizard, core::Settings& engines
     wizard.calibrate = false;
     log->warn("assistant : un moteur n'a pas pu s'installer, calibration non lancée");
     s.ui.controls().defer(i18n::ui_tr(
-        "Calibration skipped: the engine did not install. Install it in Settings > General > Engines, then "
-        "calibrate again (Video > Post-processing)."));
+        "Calibration skipped: the engine did not install. Install it in Settings > Video > General, then "
+        "calibrate again (Video > General)."));
   }
   engines = wizard_settings(std::move(engines));
   auto play = load_settings(play_path);
@@ -575,7 +575,7 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
         std::ranges::any_of(cards, [](const std::string& card) { return card.contains("RTX"); });
     p.notice = rtx_elsewhere ? i18n::ui_tr_format(
                                    "{} does not open on this GPU: choose the NVIDIA card in "
-                                   "Settings > General ({} stays active)",
+                                   "Settings > Video > General ({} stays active)",
                                    engine_label(use->id), name)
                              : i18n::ui_tr_format("{} does not open on this GPU: {} stays active",
                                                   engine_label(use->id), name);

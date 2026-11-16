@@ -146,7 +146,7 @@ std::expected<bool, Refusal> install_chosen(PlaceboScreen& screen, PlayerUi& ui,
     }
     ui.controls().defer(
         i18n::ui_tr_format("{} not installed: {}", engine_label(row.offer.id),
-                           i18n::tr("Vulkan for now; install it in Settings > General > Engines")));
+                           i18n::tr("Vulkan for now; install it in Settings > Video > General")));
     engines = without_engine(std::move(engines), row.offer.id);
     if (failed != nullptr) failed->push_back(row.offer.id);
   }
@@ -253,7 +253,7 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
     // (A06-01). Rien n'est noté pour un moteur installé avant la note du paquet : il ne l'a été que par
     // l'écran des moteurs, licence acceptée, et c'est la même que celle du paquet de cette version.
     if (found.note && found.note->license != package.license) {
-      log->warn("{}: module from a previous version, licence changed ({}): General > Engines", label,
+      log->warn("{}: module from a previous version, licence changed ({}): Video > General", label,
                 package.license);
       ui.controls().defer(i18n::ui_tr_format("{}: new licence to accept (Engines)", label));
       continue;

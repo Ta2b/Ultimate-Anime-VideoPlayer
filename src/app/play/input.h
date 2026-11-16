@@ -63,6 +63,11 @@ struct ApplySettings {
   PlaySettings settings;
   bool reopen = false;
 };
+// « Appliquer (redémarre le lecteur) » : un réglage posé au lancement (settings.h : ChangeCost::Restart). Les
+// réglages s'écrivent dans play.toml, puis le lecteur se relance sur la vidéo, au même endroit.
+struct RestartPlayer {
+  PlaySettings settings;
+};
 // Onglet Moteurs : SPAN et RIFE sur un autre moteur installé (engine_switch.h), ou l'écran des
 // moteurs rouvert ; la chaîne se rouvre ensuite au même endroit.
 struct UseEngine {
@@ -76,7 +81,7 @@ struct PlayFile {
   bool paused = false;
 };
 struct OpenEngineScreen {
-  bool wizard = false;  // Vidéo > Post-traitement > « Relancer l'assistant » : les huit écrans, pas seulement
+  bool wizard = false;  // Vidéo > Général > « Relancer l'assistant » : les huit écrans, pas seulement
                         // les moteurs
 };
 using EngineChange = std::variant<UseEngine, OpenEngineScreen>;
@@ -92,7 +97,7 @@ struct StartCalibration {};
 struct RetryStages {};
 using Input = std::variant<Command, ToggleFullscreen, LeaveFullscreen, ToggleMute, VolumeStep, SelectAudio,
                            SelectSubtitles, CycleAudio, CycleSubtitles, SubtitleDelayStep, StepChapter,
-                           StepEpisode, SkipCredits, ToggleSettings, ApplySettings, UseEngine,
+                           StepEpisode, SkipCredits, ToggleSettings, ApplySettings, RestartPlayer, UseEngine,
                            OpenEngineScreen, StartExport, PlayFile, StartCalibration, RetryStages>;
 
 // L'action d'un événement SDL, ou rien. Fermer la fenêtre vaut cmd::Quit.

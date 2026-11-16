@@ -17,6 +17,7 @@
 #include "app/play/options.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/player.h"
+#include "app/play/settings.h"
 #include "app/play/system_peak.h"
 
 namespace ajp::app::play {
@@ -74,6 +75,9 @@ int auto_peak_nits(std::optional<double> detected);
 // un écran HDR : SDR aussi. --sdr force le SDR.
 inline constexpr double kMinHdrPeakNits = 350.0;
 bool system_hdr(std::optional<double> peak_nits);
+// La sortie HDR voulue (Vidéo > Général) : Auto suit system_hdr ; Activé prend le HDR dès que le système en
+// reçoit (peak_nits connu), même sous kMinHdrPeakNits ; Désactivé et --sdr (forced_sdr) gardent le SDR.
+bool hdr_wanted(HdrMode mode, bool forced_sdr, std::optional<double> peak_nits);
 
 // Un portable débranché (SDL_GetPowerInfo) : la carte y est bridée (P3.12), le banc le note. L'Auto n'y est
 // pas plafonné : son plafond reste le maximum de l'écran (décision 11).
