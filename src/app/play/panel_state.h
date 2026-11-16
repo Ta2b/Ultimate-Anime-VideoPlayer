@@ -10,7 +10,9 @@ namespace ajp::app::play::panel {
 struct State {
   bool page_open = false;   // entre begin_page et end_page
   bool group_open = false;  // un encadré de section ouvert dans la page
-  bool dim = false;         // un curseur qui s'applique en direct est tenu : le panneau s'efface
+  bool dim = false;
+  const char* group_title = nullptr;  // le titre de l'encadré ouvert, posé dans sa bordure à sa fermeture //
+                                      // un curseur qui s'applique en direct est tenu : le panneau s'efface
   // La police grasse des titres d'infobulle (ui.cpp : load_fonts) ; nulle sans FreeType : le titre est alors
   // tracé deux fois, décalé d'un pixel.
   ImFont* bold = nullptr;

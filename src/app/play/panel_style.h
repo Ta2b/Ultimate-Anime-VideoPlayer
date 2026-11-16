@@ -57,10 +57,38 @@ inline bool& page_open() {
 inline bool& group_open() {
   return state().group_open;
 }
+// Le cadre d'un encadré, son titre posé dans la bordure du haut, comme les QGroupBox de Dolphin : un filet
+// fin aux coins arrondis, comme le reste de l'interface, interrompu par le titre en gras.
+inline void frame_group(const char* title, ImVec2 min, ImVec2 max) {
+  ImDrawList* draw = ImGui::GetWindowDrawList();
+  const ImU32 line = ImGui::GetColorU32(ImVec4(1.0F, 1.0F, 1.0F, 0.16F));
+  max.x -= 1.0F;  // le filet de droite reste dans la fenêtre fille, hors de la barre de défilement
+  const float unit = ImGui::GetFontSize() / 16.0F;
+  if (state().bold != nullptr) ImGui::PushFont(state().bold, 0.0F);
+  const ImVec2 text = ImGui::CalcTextSize(title);
+  const float start = min.x + 10.0F * unit;
+  const float gap = 4.0F * unit;
+  const float r = 6.0F * unit;
+  // De la fin du titre, dans le sens des aiguilles d'une montre, jusqu'à son début (angles en douzièmes de
+  // tour : 0 à droite, 3 en bas, 6 à gauche, 9 en haut).
+  draw->PathLineTo(ImVec2(start + text.x + gap, min.y));
+  draw->PathArcToFast(ImVec2(max.x - r, min.y + r), r, 9, 12);
+  draw->PathArcToFast(ImVec2(max.x - r, max.y - r), r, 0, 3);
+  draw->PathArcToFast(ImVec2(min.x + r, max.y - r), r, 3, 6);
+  draw->PathArcToFast(ImVec2(min.x + r, min.y + r), r, 6, 9);
+  draw->PathLineTo(ImVec2(start - gap, min.y));
+  draw->PathStroke(line, ImDrawFlags_None, 1.0F);
+  draw->AddText(ImVec2(start, min.y - text.y * 0.5F), ImGui::ColorConvertFloat4ToU32(kTitle), title);
+  if (state().bold != nullptr) ImGui::PopFont();
+}
+
 inline void end_group() {
   if (group_open()) {
     ImGui::PopItemWidth();
     ImGui::EndChild();
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    if (state().group_title != nullptr) frame_group(state().group_title, min, max);
   }
   group_open() = false;
 }
@@ -100,19 +128,18 @@ inline bool combo(const char* label, const char* preview) {
 inline void section(const char* title) {
   if (page_open()) {
     end_group();
-    ImGui::Spacing();
-    // Le titre de l'encadré en gras (la police grasse de l'atlas, ui.cpp : load_fonts), comme chez Dolphin.
-    ImGui::PushStyleColor(ImGuiCol_Text, kTitle);
-    if (state().bold != nullptr) ImGui::PushFont(state().bold, 0.0F);
-    ImGui::TextUnformatted(title);
-    if (state().bold != nullptr) ImGui::PopFont();
-    ImGui::PopStyleColor();
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F);
+    // Le titre se pose dans la bordure du haut à la fermeture (frame_group) : ici, la place de sa
+    // demi-hauteur.
+    ImGui::Dummy(ImVec2(0.0F, ImGui::GetFontSize() * 0.5F));
+    state().group_title = title;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(ImGui::GetStyle().WindowPadding.x + 2.0F, ImGui::GetFontSize() * 0.7F));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0F * ImGui::GetFontSize() / 16.0F);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1.0F, 1.0F, 1.0F, 0.025F));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0F, 1.0F, 1.0F, 0.12F));
-    ImGui::BeginChild(title, ImVec2(0, 0), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
+    ImGui::BeginChild(title, ImVec2(0, 0),
+                      ImGuiChildFlags_AlwaysUseWindowPadding | ImGuiChildFlags_AutoResizeY);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
     // Un encadré est une fenêtre fille : la largeur des champs repart de son défaut. Les libellés (à droite
     // du champ) gardent 44 % de la largeur, assez pour les plus longs sans les couper.
     ImGui::PushItemWidth(-ImGui::GetContentRegionAvail().x * 0.44F);
