@@ -29,8 +29,9 @@ titrés, les libellés à gauche en colonne ; les réglages rares sont sous « A
 ce qu'elle y perd, pas comment il marche : le nom peut rester technique (on le cherche sur le web), l'infobulle
 en donne l'usage. Le nom du réglage en gras, ces phrases, puis « Vitesse », « Impact sur la qualité »
 (imperceptible, mineur, modéré, élevé) et « Recommandé » en bleu (`panel_tip.cpp` : `split_tip`). Les valeurs
-par défaut suivent la recommandation. Les chiffres de vitesse à confirmer sur une vraie machine sont listés dans
-`reglages/mesures-a-faire.md` (dossier du projet).
+par défaut suivent la recommandation. Les chiffres de vitesse restent des ordres de grandeur (« plus de +30 % »,
+« environ 2× », « un peu plus lent ») : ils viennent d'une seule carte (RTX 4070 Ti), une mesure de 44,7 % se
+dit « plus de +40 % ». Les mesures elles-mêmes sont dans `reglages/mesures-a-faire.md` (dossier du projet).
 
 **Appliquer.** Un réglage s'applique de trois façons, dites de la même manière partout : en direct ; en
 rechargeant la vidéo au même endroit ; en relançant le lecteur sur la vidéo, au même endroit (la carte

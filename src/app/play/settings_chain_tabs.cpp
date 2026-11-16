@@ -76,7 +76,7 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
                                "Which network redraws the picture. Performance keeps up on most cards. "
                                "Balanced keeps finer detail if your card can afford it. Sharp1 draws crisper "
                                "lines, a little harsher. ArtCNN and Anime4K are for weak graphics cards. "
-                               "FP8: prepared once, then about +37 % speed for an imperceptible loss.")) +
+                               "FP8: prepared once, then over +30 % speed for an imperceptible loss.")) +
                                " " + advice_line(choices, model_advice)
                          : std::string(i18n::tr(
                                "Which network redraws the picture. Performance keeps up on most cards. "
