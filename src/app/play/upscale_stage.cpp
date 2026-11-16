@@ -123,7 +123,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
     step = steady_grid_.push(core::stamp_of(frame), setup_.live->steady_factor());
   } else if (free_mode) {
     cadence_.reset();
-    step = free_grid_.push(core::stamp_of(frame), free_inputs(frame.epoch));
+    step = free_grid_.push(core::stamp_of(frame), free_inputs(frame));
   } else if (factor.num > factor.den &&
              (valid_factor(factor) || (setup_.live != nullptr && factor.den <= kLiveFactorMaxDen &&
                                        factor.num <= core::kAutoMaxStep * factor.den))) {
@@ -308,13 +308,13 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
 
 // Ce que la grille libre sait de l'instant : l'horloge maître prédite à la fin du calcul (retard vidéo mesuré
 // compris), l'écart minimal de l'écran et le temps de service mesuré, en temps de contenu.
-core::FreeInputs UpscaleStage::free_inputs(std::uint32_t epoch) const {
+core::FreeInputs UpscaleStage::free_inputs(const DecodedFrame& frame) const {
   core::FreeInputs inputs;
   const std::int64_t at = host_now_us();
   const auto [step_real, gap_real] = setup_.live->free_step(at, heavy_pair_);
   double rate = 1.0;
   const ClockSnapshot now = setup_.clock != nullptr ? setup_.clock->snapshot() : ClockSnapshot{};
-  const bool running = now.valid && now.epoch == epoch && now.rate > 0.0;
+  const bool running = now.valid && now.epoch == frame.epoch && now.rate > 0.0;
   if (running) rate = now.rate;
   const auto media = [rate](std::int64_t real_us) {
     return static_cast<std::int64_t>(std::llround(static_cast<double>(real_us) * rate));
@@ -322,8 +322,12 @@ core::FreeInputs UpscaleStage::free_inputs(std::uint32_t epoch) const {
   inputs.min_gap_us = std::max<std::int64_t>(media(gap_real), 1);
   inputs.step_us = media(step_real);
   inputs.max_instants = free_instants_limit(engine_kind());
-  if (running) inputs.ready_us = ready_media_us(now, at, inputs.min_gap_us, latency_us());
   if (running) {
+    inputs.ready_us = ready_media_us(now, at, inputs.min_gap_us, latency_us());
+    // Les clés GMFSS de la paire passent avant sa première image (gmfss_lead_us), sans prendre son dernier
+    // instant : la place qui reste avant la source droite, en temps réel.
+    const std::int64_t room = frame.pts_us == kNoPts ? 0 : frame.pts_us - inputs.ready_us - inputs.min_gap_us;
+    inputs.ready_us += media(gmfss_lead_us(static_cast<std::int64_t>(static_cast<double>(room) / rate)));
     // Écran à fréquence fixe : la grille des vsyncs en temps de contenu, calée sur la dernière phase mesurée.
     if (const auto grid = setup_.live->vsync_grid(at); grid.period_us > 0) {
       inputs.vsync_period_us = media(grid.period_us);

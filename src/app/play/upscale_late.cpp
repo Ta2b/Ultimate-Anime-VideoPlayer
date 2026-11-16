@@ -85,6 +85,29 @@ void UpscaleStage::plan_gaps(const DecodedFrame& frame, const core::CadenceStep*
   }
 }
 
+// Rapide libre : le temps des clés GMFSS que la paire calculera avant sa première image, que free_inputs
+// ajoute à l'horloge prédite de la grille. Sans lui, la grille posait les premiers instants comme si les
+// clés ne coûtaient rien : ils paraissaient en retard (manqués), la contre-pression montait à ×2 pour toutes
+// les paires, et plan_gaps rendait à RIFE la paire forte dont le premier instant serait en retard. Le même
+// choix que plan_gaps, sur le crédit d'avant cette paire : la clé de la paire forte ou celle du crédit qui
+// déborde, puis les clés que le mouvement demande tant que le crédit les paie. room_us : ce qui reste de la
+// paire après l'horloge prédite ; une clé qui ne laisserait aucun instant n'est pas comptée (la paire garde
+// RIFE, que plan_gaps lui laisse alors).
+std::int64_t UpscaleStage::gmfss_lead_us(std::int64_t room_us) const {
+  if (setup_.gmfss.use != GmfssUse::Middle || setup_.clock == nullptr || !gmfss_moving()) return 0;
+  const std::int64_t whole = setup_.gmfss.cost_us;
+  const std::int64_t credit = gmfss_.credit_us;
+  if (credit < whole || (!gmfss_strong() && credit < whole + kGmfssSpareUs)) return 0;
+  const std::int64_t key_us = whole - setup_.gmfss.pair_us;
+  std::int64_t lead = whole - (gmfss_.pair_ready ? setup_.gmfss.pair_us : 0);
+  if (lead >= room_us) return 0;
+  for (std::uint32_t k = 1; k < gmfss_motion_keys(); ++k) {
+    if (credit < whole + key_us * k + kGmfssSpareUs / 2 || lead + key_us >= room_us) break;
+    lead += key_us;
+  }
+  return lead;
+}
+
 void UpscaleStage::credit_gmfss(std::int64_t pts_us) {
   // Une image d'après ajoute sa durée ; un saut en arrière (seek, nouvelle époque) repart plein.
   constexpr double kGmfssShare = 0.75;  // le reste : RIFE, ingestion, rendu

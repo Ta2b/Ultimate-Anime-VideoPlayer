@@ -448,7 +448,7 @@ class UpscaleStage final : public RingStage {
   std::optional<core::CadenceAccumulator> cadence_;
   core::SteadyGrid steady_grid_;  // Rapide à pas constant (--fast-steady) : N images par source
   core::FreeGrid free_grid_;      // mode Rapide : la grille des instants à la place de cadence_
-  core::FreeInputs free_inputs(std::uint32_t epoch) const;
+  core::FreeInputs free_inputs(const DecodedFrame& frame) const;
   MotionEngine engine_kind() const { return drba() ? MotionEngine::DistilDrba : MotionEngine::Rife; }
   Factor cadence_factor_;
   // Tampons passés d'une voie à l'autre (entrée de RIFE, image intermédiaire) : deux quand le
@@ -509,8 +509,10 @@ class UpscaleStage final : public RingStage {
   void adopt_gmfss_ahead(const DecodedFrame& frame, bool taken);           // à l'arrivée de l'image d'après
   std::expected<void, Refusal> interpolate_middle(float t, const gpu::Tensor& a, const gpu::Tensor& b,
                                                   const Target& out);
-  std::uint32_t gmfss_keys() const;          // les clés de la paire en cours
-  std::expected<void, Refusal> make_keys();  // les clés, une fois par paire
+  std::uint32_t gmfss_keys() const;         // les clés de la paire en cours
+  std::uint32_t gmfss_motion_keys() const;  // les clés que demande le mouvement seul (1 à kGmfssMaxKeys)
+  std::int64_t gmfss_lead_us(std::int64_t room_us) const;  // Rapide libre : les clés avant la 1re image
+  std::expected<void, Refusal> make_keys();                // les clés, une fois par paire
   std::expected<void, Refusal> make_key(std::uint32_t k, float t);
   // RIFE mouvement entre deux images voisines (source ou clé) à l'instant u du sous-intervalle.
   struct KeySide {

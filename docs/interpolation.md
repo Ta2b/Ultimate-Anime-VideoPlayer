@@ -366,6 +366,17 @@ source et la fusion 11 à 13 ms par instant : Très élevé ne tient qu'en ×2 (
 entier), le demi-flot doit l'amener à 48. Au-delà de ×2, GMFSS seul ne tient pas en temps réel sur cette carte ;
 Élevé ×8 tient (GMFSS sur une paire sur dix environ, au seuil de 15 px). Sans le graphe, la case est grisée.
 
+**Clés GMFSS du mélange** (novembre 2026) : une paire qui bouge reçoit une à trois images union, les clés, aux
+instants k/(n+1) ; RIFE mouvement fait chaque autre instant entre les deux voisines (source ou clé), une passe
+par image créée. Une clé de plus à chaque doublement du mouvement au-delà de 30 px à 720p (`gmfss_keys`) ;
+aucune sous `gmfss_key_floor` (0 par défaut). En lecture, un crédit de temps (0,75 de la durée de chaque
+source, au plus 120 ms) les paie ; l'export, sans horloge, les prend toutes. En Auto instantané, la grille libre
+place la première image de la paire après le temps de ses clés (`gmfss_lead_us`, qui ne prend jamais le dernier
+instant de la paire) : sans lui, les premiers instants d'une paire à clés paraissaient en retard, la
+contre-pression montait à ×2 pour toutes les paires (au banc, Très élevé : 1 407 images manquées en 90 s) et
+plan_gaps rendait à RIFE les paires fortes dont le premier instant aurait été en retard (573 sur 90 s). Le coût
+des clés est un coût fixe de la paire, hors du temps de service par image (`LiveSettings::auto_fixed`).
+
 **Construction** : les deux graphes sans pavage L2 ni niveau d'optimisation 5 (`gpu::ModelSpec::tuned`). Mesuré
 sur la 4070 Ti : la paire en 3 minutes ; la fusion à 640x384 en 218 s au lieu de 692 s, et 6 % plus rapide ; à
 960x576 (travail 1080p), le pavage faisait planter Myelin et la construction dépassait le délai.

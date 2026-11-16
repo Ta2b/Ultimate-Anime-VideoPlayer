@@ -443,13 +443,16 @@ std::uint32_t UpscaleStage::gmfss_keys() const {
   // Une clé par paire du mélange, une de plus à chaque doublement du mouvement au-delà de kGmfssKeyStepPx
   // (à 720 lignes) : plus le mouvement est grand, plus RIFE a de chemin à inventer. Pas plus de clés que
   // d'instants interpolés, ni que le crédit n'en paie (gmfss_.extra_keys).
-  constexpr float kGmfssKeyStepPx = 30.0F;
   if (!gmfss_pair()) return 0;
+  return std::min({gmfss_motion_keys(), 1 + gmfss_.extra_keys, std::max<std::uint32_t>(intermediates_, 1)});
+}
+
+std::uint32_t UpscaleStage::gmfss_motion_keys() const {
+  constexpr float kGmfssKeyStepPx = 30.0F;
   const float step = kGmfssKeyStepPx * static_cast<float>(setup_.rife_height) / 720.0F;
   std::uint32_t keys = 1;
   for (float at = step; pair_motion_ >= at && keys < kGmfssMaxKeys; at *= 2.0F) ++keys;
-  const std::uint32_t most = std::clamp<std::uint32_t>(setup_.gmfss.max_keys, 1, kGmfssMaxKeys);
-  return std::min({keys, most, 1 + gmfss_.extra_keys, std::max<std::uint32_t>(intermediates_, 1)});
+  return std::min(keys, std::clamp<std::uint32_t>(setup_.gmfss.max_keys, 1, kGmfssMaxKeys));
 }
 
 std::expected<void, Refusal> UpscaleStage::make_keys() {

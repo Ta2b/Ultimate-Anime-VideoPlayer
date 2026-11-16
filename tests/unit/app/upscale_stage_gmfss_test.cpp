@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,21 @@ struct GmfssEngines {
                            "warped1_2", "warped1_3"},
                           {"out"}};
   GmfssSetup setup(GmfssUse use) { return {.use = use, .pair = &pair, .fusion = &fusion}; }
+};
+
+// Une horloge arrêtée au pts que le test choisit, lue comme si elle venait d'être prise.
+struct HeldClock final : MasterClock {
+  mutable std::mutex mutex;
+  std::int64_t media_us = 0;
+  ClockSnapshot snapshot() const override {
+    const std::scoped_lock lock(mutex);
+    return ClockSnapshot{
+        .media_us = media_us, .host_us = host_now_us(), .rate = 1.0, .epoch = 0, .valid = true};
+  }
+  void hold(std::int64_t us) {
+    const std::scoped_lock lock(mutex);
+    media_us = us;
+  }
 };
 
 }  // namespace
@@ -270,6 +286,34 @@ TEST_CASE("Étage gpu : le mélange sans horloge (l'export), une clé à chaque 
   const std::size_t pairs = rig.backend.count("engine gmfss_pair");
   CHECK(pairs >= 2);
   CHECK(rig.backend.count("engine gmfss_fusion") == pairs);
+}
+
+TEST_CASE("Étage gpu : Rapide, la grille place la première image après les clés de la paire",
+          "[app][stage][gmfss][free]") {
+  // L'horloge tient chaque paire au plus juste : prête à la source gauche. Sans le temps des clés dans la
+  // grille, le premier instant serait en retard dès qu'on y ajoute la clé, et la paire forte restait à RIFE.
+  constexpr std::int64_t kGap = 6'060;  // 165 Hz
+  Rig rig;
+  GmfssEngines gmfss;
+  rig.live->set_free(true, kGap, host_now_us());
+  UpscaleSetup s = rig.setup(true, Factor{.num = 2, .den = 1});
+  s.rife = nullptr;
+  s.rife_motion = &rig.motion;
+  s.gmfss = gmfss.setup(GmfssUse::Middle);
+  s.gmfss.max_keys = 1;
+  s.gmfss.cost_us = 20'000;  // la moitié d'une paire de 40 ms
+  HeldClock clock;
+  s.clock = &clock;
+  rig.start(std::move(s), &clock);
+  rig.backend.motion_max(40.0F);
+  for (std::uint32_t id = 1; id <= 6; ++id) {
+    clock.hold((static_cast<std::int64_t>(id) - 1) * kPeriodUs - kGap);
+    rig.feed(id, id);
+    (void)rig.collect(2 * id - 1, true, std::chrono::milliseconds(500));
+  }
+  rig.stage.reset();
+  CHECK(rig.reported().empty());
+  CHECK(rig.backend.count("engine gmfss_fusion") >= 2);
 }
 
 }  // namespace ajp::app::play
