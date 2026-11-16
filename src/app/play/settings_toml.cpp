@@ -321,14 +321,13 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*interpolation, "interpolation", "warp_after_span", legacy_after));
     if (legacy_after) s.span_order = SpanOrder::After;
     reads.push_back(read_named(*interpolation, "interpolation", "span_order", s.span_order, kSpanOrderCount));
-    // Le flux optique matériel des RTX et GMFSS base (P5.2, 0.10.0) ont été retirés : RIFE les remplace, sans
-    // plainte. « gmfss_union » est de nouveau GMFSS union seul (MotionEngine::Gmfss).
+    // Flux optique des RTX et GMFSS base retirés (P5.2) : RIFE, sans plainte ; « gmfss_union » : GMFSS union.
     constexpr std::array<std::string_view, 2> kRetiredMotion{"optical_flow", "gmfss"};
     reads.push_back(read_named(*interpolation, "interpolation", "engine", s.motion_engine, kMotionEngineCount,
                                kRetiredMotion, MotionEngine::Rife));
   }
-  // Le pic visé par le grade HDR et la sortie voulue (hdr.output). hdr.engine et la section rtx_hdr d'avant
-  // (RTX HDR retiré, sauf son pic) sont ignorés, comme les clés du HDR adaptatif.
+  // Le pic du grade HDR et la sortie voulue ; hdr.engine, rtx_hdr (sauf son pic) et le HDR adaptatif :
+  // ignorés.
   if (const toml::table* hdr = section(root, "hdr")) {
     reads.push_back(read(*hdr, "hdr", "peak", s.true_hdr_peak));
     reads.push_back(read_named(*hdr, "hdr", "output", s.hdr_mode, kHdrModeCount));
@@ -339,8 +338,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read(*audio, "audio", "delay_ms", s.audio_delay_ms));
     reads.push_back(read(*audio, "audio", "volume", s.volume));
     reads.push_back(read(*audio, "audio", "device", s.audio_device));
-    if (const toml::table* delays = (*audio)["delays"].as_table()) {
-      // Une entrée d'un autre type ou hors bornes est écartée seule.
+    if (const toml::table* delays = (*audio)["delays"].as_table()) {  // une entrée fautive est écartée seule
       for (const auto& [device, value] : *delays) {
         const auto ms = value.value_exact<std::int64_t>();
         if (ms && *ms >= limits::kAudioDelayMs.lo && *ms <= limits::kAudioDelayMs.hi)

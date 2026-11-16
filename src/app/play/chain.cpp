@@ -323,6 +323,15 @@ void ask_engines(Chain& to, EngineChange request) {
   to.reopen = to.running;
 }
 
+// « Appliquer (relance le lecteur) » : la chaîne se ferme, play.toml s'écrit, puis le lecteur se relance sur
+// cette vidéo, à cet instant (player.cpp).
+void ask_restart(Chain& to, const PlaySettings& settings) {
+  log_channel("app")->info("paramètres : le lecteur se relance pour les appliquer");
+  to.ui.close_settings();
+  to.restart = true;
+  to.reopen = settings;
+}
+
 }  // namespace
 
 // L'épisode voisin dans le dossier. Hors du thread de la fenêtre, borné comme la fin d'épisode : un dossier
@@ -546,8 +555,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
           },
           [&](const ToggleSettings&) { to.ui.toggle_settings(); },
           [&](const ApplySettings& apply) {
-            // Le menu qui change un de ces réglages le choisit pour de bon ; sinon le raccourci reste de
-            // séance.
+            // Le menu qui change un de ces réglages le choisit pour de bon ; sinon le raccourci reste.
             if (apply.settings.grade != to.running.grade) to.kept.grade.reset();
             if (apply.settings.rife_factor != to.running.rife_factor ||
                 apply.settings.rife_factor_den != to.running.rife_factor_den)
@@ -560,12 +568,7 @@ void apply(const Input& input, Chain& to, std::int64_t now_us) {
               apply_live(to, apply.settings, now_us);
             }
           },
-          [&](const RestartPlayer& restart) {
-            log_channel("app")->info("paramètres : le lecteur se relance pour les appliquer");
-            to.ui.close_settings();
-            to.restart = true;
-            to.reopen = restart.settings;
-          },
+          [&](const RestartPlayer& restart) { ask_restart(to, restart.settings); },
           [&](const UseEngine& use) { ask_engines(to, use); },
           [&](const OpenEngineScreen& open) { ask_engines(to, open); },
           [&](const StartExport& start) {

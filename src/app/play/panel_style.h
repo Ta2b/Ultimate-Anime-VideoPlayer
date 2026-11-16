@@ -1,6 +1,7 @@
 // Les couleurs, notes et titres de section communs au menu des paramètres et à ses onglets.
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -70,6 +71,30 @@ inline void begin_page() {
 inline void end_page() {
   end_group();
   page_open() = false;
+}
+
+// Le libellé d'un champ à gauche, en colonne comme chez Dolphin, et le champ sur le reste de la ligne : rend
+// l'identifiant caché à passer au widget, `ImGui::BeginCombo(panel::left(label).c_str(), …)`. Hors d'un
+// encadré (l'assistant), le libellé reste à droite du champ, comme ImGui le dessine.
+inline std::string left(const char* label) {
+  if (ImGui::GetIO().UserData == nullptr || !group_open()) return label;
+  const std::string_view whole(label);
+  const std::string shown = french_spaces(std::string(whole.substr(0, whole.find("##"))));
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float column = std::max(ImGui::GetContentRegionAvail().x * 0.36F,
+                                ImGui::CalcTextSize(shown.c_str()).x + style.ItemSpacing.x * 2.0F);
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted(shown.c_str());
+  ImGui::SameLine(column + style.WindowPadding.x);
+  ImGui::SetNextItemWidth(-1.0F);
+  return "##" + std::string(whole);
+}
+inline std::string left(const std::string& label) {
+  return left(label.c_str());
+}
+// Une liste déroulante, son libellé à gauche (left).
+inline bool combo(const char* label, const char* preview) {
+  return ImGui::BeginCombo(left(label).c_str(), preview);
 }
 
 inline void section(const char* title) {

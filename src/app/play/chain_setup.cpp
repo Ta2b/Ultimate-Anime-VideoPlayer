@@ -261,6 +261,7 @@ std::string library_name(const Player& p) {
 std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, const PlaySettings& settings,
                                                                   StageMemory* memory) {
   const auto log = log_channel("app");
+  p.ui.preparing(settings);  // le menu ouvert pendant la préparation montre cette chaîne (loading_settings.h)
   // Sans mémoire de séance (export, banc), une mémoire de cet appel : les crans retombent, rien d'autre.
   StageMemory local;
   StageMemory& refused = memory != nullptr ? *memory : local;
@@ -320,7 +321,7 @@ std::expected<std::optional<ChainEngines>, Refusal> prepare_chain(Player& p, con
     if (failure.refusal.key == kWindowClosedKey) return std::nullopt;  // fenêtre fermée, comme « q »
     // Une vidéo glissée arrête toute la préparation : rien n'est retenu, la lecture passe à elle (A08-08).
     // Un appareil perdu n'est pas un refus de l'étage : la chaîne entière s'arrête, la relance suit (A31-02).
-    if (!failure.stage || failure.refusal.key == kDroppedVideoKey ||
+    if (!failure.stage || preparation_stopped(failure.refusal) ||
         failure.refusal.code == RefusalCode::DeviceLost)
       return std::unexpected(std::move(failure.refusal));
     // Le refus retenu sous la signature de l'étage tel qu'il a été essayé : la suite (ce tour, la vidéo
@@ -423,6 +424,7 @@ std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::Backe
       prepare_span_fp8(p, init, c.model->path, paths::derived_models(p.paths),
                        span_still_reduce(c.work.width, c.work.height, settings.downscale), fp8_context);
   if (!ready && p.dropped_video) return stage_refused(dropped_video_refusal(), std::nullopt);
+  if (!ready && p.loading.stops()) return stage_refused(settings_changed_refusal(), std::nullopt);
   if (!ready) return false;
   p.span_job.attempted = prepare::utf8_path(c.model->path) + "|" + prepare::utf8_path(p.options.file);
   return true;

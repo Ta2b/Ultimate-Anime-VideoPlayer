@@ -37,6 +37,11 @@ struct Reopen {
   bool rederive = false;
 };
 
+// Une préparation arrêtée sans refus de l'étage (player_engines.h : preparation_stopped) : la réouverture qui
+// suit, vers la vidéo glissée (A08-08) ou avec les réglages du menu (loading_settings.h) ; rien sinon.
+std::optional<Reopen> stopped_preparation(Player& p, const Refusal& refusal, const PlaySettings& settings,
+                                          std::int64_t start_us, bool start_paused);
+
 // Une ouverture de la chaîne : moteurs, HDR, threads, session et boucle de main, jusqu'à la
 // fin du fichier, q, ou un réglage qui demande de la rouvrir. start_paused : la lecture rouverte
 // attend l'utilisateur sur sa première image.

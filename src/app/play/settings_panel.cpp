@@ -31,7 +31,7 @@ namespace {
 using panel::kWarn;
 
 // Les onglets, dans l'ordre de l'écran ; les catégories se déduisent du changement de `category` (ADR 0012,
-// refonte de novembre 2026 à la manière de Dolphin) : Général, Vidéo, Audio, Langues, Export.
+// à la manière de Dolphin) : Général, Vidéo, Audio, Langues, Export.
 constexpr std::array<SettingsPage, 9> kPages{{
     {Page::Application, "General",
      "Application"},  // langue, épisode suivant, mises à jour, lecteur par défaut
@@ -272,6 +272,32 @@ void SettingsPanel::draw_footer(const PlaySettings& running, const SettingsChoic
   }
 }
 
+void SettingsPanel::scroll_categories() {
+  const ImGuiIO& io = ImGui::GetIO();
+  // La molette sur la colonne passe d'une catégorie à la suivante ou à la précédente. Une catégorie par
+  // geste, pas par cran : une molette libre ou un pavé tactile envoie des dizaines de crans (B23-10).
+  if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F && !wheel_locked_) {
+    if (wheel_ * io.MouseWheel < 0.0F) wheel_ = 0.0F;  // le sens a changé : un nouveau geste
+    wheel_ += io.MouseWheel;
+    if (std::abs(wheel_) >= 1.0F) {
+      const int step = wheel_ < 0.0F ? 1 : -1;
+      const int category = std::clamp(category_of(page_) + step, 0, category_count() - 1);
+      const int remembered = category_page_[static_cast<std::size_t>(category)];
+      page_ = remembered >= 0 ? remembered : first_page(category);
+      select_tab_ = page_;
+      wheel_ = 0.0F;
+      wheel_idle_s_ = 0.0F;
+      wheel_locked_ = true;
+    }
+  }
+  if (wheel_locked_) {
+    // Le geste dure tant que la molette tourne ; un court calme le termine.
+    wheel_idle_s_ += io.DeltaTime;
+    if (io.MouseWheel != 0.0F) wheel_idle_s_ = 0.0F;
+    if (wheel_idle_s_ > 0.35F) wheel_locked_ = false;
+  }
+}
+
 SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const SettingsChoices& choices,
                                           float scale, std::vector<Input>& actions) {
   Result result;
@@ -347,28 +373,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0F * scale, 6.0F * scale));
     ImGui::BeginChild("##categories", ImVec2(column, -footer), ImGuiChildFlags_Borders);
     ImGui::PopStyleVar();
-    // La molette sur la colonne passe d'une catégorie à la suivante ou à la précédente. Une catégorie par
-    // geste, pas par cran : une molette libre ou un pavé tactile envoie des dizaines de crans (B23-10).
-    if (ImGui::IsWindowHovered() && io.MouseWheel != 0.0F && !wheel_locked_) {
-      if (wheel_ * io.MouseWheel < 0.0F) wheel_ = 0.0F;  // le sens a changé : un nouveau geste
-      wheel_ += io.MouseWheel;
-      if (std::abs(wheel_) >= 1.0F) {
-        const int step = wheel_ < 0.0F ? 1 : -1;
-        const int category = std::clamp(category_of(page_) + step, 0, category_count() - 1);
-        const int remembered = category_page_[static_cast<std::size_t>(category)];
-        page_ = remembered >= 0 ? remembered : first_page(category);
-        select_tab_ = page_;
-        wheel_ = 0.0F;
-        wheel_idle_s_ = 0.0F;
-        wheel_locked_ = true;
-      }
-    }
-    if (wheel_locked_) {
-      // Le geste dure tant que la molette tourne ; un court calme le termine.
-      wheel_idle_s_ += io.DeltaTime;
-      if (io.MouseWheel != 0.0F) wheel_idle_s_ = 0.0F;
-      if (wheel_idle_s_ > 0.35F) wheel_locked_ = false;
-    }
+    scroll_categories();
     draw_categories(scale);
     ImGui::EndChild();
     ImGui::SameLine();

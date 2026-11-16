@@ -11,6 +11,8 @@
 
 #include "app/play/french_text.h"
 #include "app/play/i18n.h"
+#include "app/play/loading_settings.h"
+#include "app/play/panel_tip.h"
 #include "app/play/settings_panel.h"
 #include "app/play/wizard.h"
 
@@ -87,4 +89,39 @@ TEST_CASE("les notes gardent les guillemets et la ponctuation haute avec leur mo
   CHECK(french_spaces("Quoi ? Oui ! 3 % ; fin") == "Quoi\xC2\xA0? Oui\xC2\xA0! 3\xC2\xA0%\xC2\xA0; fin");
   CHECK(french_spaces("rien à changer") == "rien à changer");
   CHECK(french_spaces("") == "");
+}
+
+TEST_CASE("une infobulle se découpe en description, vitesse, qualité et recommandation", "[settings][tip]") {
+  using ajp::app::play::panel::split_tip;
+  const auto parts = split_tip(
+      "In-between frames read the source with a sharper filter. Speed: about −3 %. Quality impact: minor "
+      "gain. "
+      "Recommended: on. RIFE only.");
+  CHECK(parts.text == "In-between frames read the source with a sharper filter.");
+  CHECK(parts.speed == "about −3 %");
+  CHECK(parts.quality == "minor gain");
+  CHECK(parts.recommended == "on");
+  CHECK(parts.after == "RIFE only.");
+  // Les repères français, et un texte sans repère reste entier.
+  const auto french = split_tip("Un filtre plus net. Vitesse : environ −3 %. Recommandé : activé.");
+  CHECK(french.speed == "environ −3 %");
+  CHECK(french.recommended == "activé");
+  CHECK(split_tip("Une phrase seule.").text == "Une phrase seule.");
+}
+
+TEST_CASE("le menu pendant une préparation rouvre avec les réglages qu'il a confirmés",
+          "[settings][loading]") {
+  PlaySettings current;
+  LoadingChange change;
+  CHECK_FALSE(change.stops());
+  PlaySettings live = current;
+  live.look_contrast = 20;
+  change.live = live;
+  CHECK_FALSE(change.stops());  // un réglage en direct attend la lecture, sans arrêter la préparation
+  CHECK(change.settings_or(current) == live);
+  PlaySettings reopen = live;
+  reopen.work_height = 540;
+  change.reopen = reopen;
+  CHECK(change.stops());
+  CHECK(change.settings_or(current) == reopen);
 }

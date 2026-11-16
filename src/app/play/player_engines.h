@@ -21,6 +21,7 @@
 #include "app/play/drba_model.h"
 #include "app/play/engine_install.h"
 #include "app/play/i18n.h"
+#include "app/play/loading_settings.h"
 #include "app/play/model_choice.h"
 #include "app/play/pipeline.h"
 #include "app/play/placebo_screen.h"
@@ -120,6 +121,8 @@ struct Player {
   // Une vidéo glissée sur la fenêtre pendant la construction d'un moteur (A08-08) : la préparation s'arrête
   // et la lecture passe à elle.
   std::optional<std::filesystem::path> dropped_video;
+  // Le menu des paramètres ouvert pendant la préparation (loading_settings.h) : ce qu'il a demandé.
+  LoadingChange loading;
   // Où en était la dernière ouverture de la chaîne quand elle s'est fermée : la relance après une perte du
   // GPU reprend là (A31-02).
   std::int64_t stopped_at_us = 0;
@@ -158,6 +161,12 @@ inline constexpr std::string_view kWatchNowKey = "engine.watch-now";
 // A08-08 : la clé du refus d'une préparation arrêtée par une vidéo glissée (Player::dropped_video).
 inline constexpr std::string_view kDroppedVideoKey = "engine.dropped-video";
 Refusal dropped_video_refusal();
+// Une préparation arrêtée sans refus de l'étage : une vidéo glissée, ou un réglage du menu qui rouvre la
+// vidéo (kSettingsChangedKey). Rien n'est retenu contre le moteur.
+inline bool preparation_stopped(const Refusal& refusal) {
+  return refusal.key == kDroppedVideoKey || refusal.key == kSettingsChangedKey;
+}
+Refusal settings_changed_refusal();
 
 // Construit (ou lit du cache) puis charge un moteur, la préparation à l'écran. Rien si
 // l'utilisateur ferme la fenêtre. lane : la voie où le moteur tournera (ses activations y sont

@@ -92,6 +92,24 @@ const ExportDraft::PathCheck& checked_path(ExportDraft& draft, const std::filesy
   return seen;
 }
 
+// La chaîne de l'export : les onglets Agrandissement et Interpolation, sans les limites de l'écran.
+void chain_headers(ExportJob& job, const SettingsChoices& choices) {
+  SettingsChoices chain_choices = choices;
+  chain_choices.display_hz = 0.0;
+  if (ImGui::CollapsingHeader(i18n::tr("Upscaling"))) {
+    ImGui::PushID("export-image");
+    image_tab(job.chain, chain_choices);
+    upscale_advanced(job.chain, chain_choices);
+    ImGui::PopID();
+  }
+  if (ImGui::CollapsingHeader(i18n::tr("Interpolation"))) {
+    ImGui::PushID("export-fluidity");
+    fluidity_tab(job.chain, chain_choices, true);
+    motion_advanced(job.chain, chain_choices, true);
+    ImGui::PopID();
+  }
+}
+
 }  // namespace
 
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
@@ -117,7 +135,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   const ExportSize chain = chain_output(job.chain, source.width, source.height);
 
   section(i18n::tr("Resolution"));
-  if (ImGui::BeginCombo(i18n::tr("Size"), height_label(job.height, chain, source).c_str())) {
+  if (panel::combo(i18n::tr("Size"), height_label(job.height, chain, source).c_str())) {
     for (const int height : kHeights) {
       if (ImGui::Selectable(height_label(height, chain, source).c_str(), height == job.height))
         job.height = height;
@@ -133,28 +151,14 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     note(i18n::tr("Below the playback output, libplacebo scales down with its best filter (EWA Lanczos)."));
   }
 
-  // La chaîne de l'export : les onglets Image et Fluidité, sans les limites de l'écran.
-  SettingsChoices chain_choices = choices;
-  chain_choices.display_hz = 0.0;
-  if (ImGui::CollapsingHeader(i18n::tr("Upscaling"))) {
-    ImGui::PushID("export-image");
-    image_tab(job.chain, chain_choices);
-    upscale_advanced(job.chain, chain_choices);
-    ImGui::PopID();
-  }
-  if (ImGui::CollapsingHeader(i18n::tr("Interpolation"))) {
-    ImGui::PushID("export-fluidity");
-    fluidity_tab(job.chain, chain_choices, true);
-    motion_advanced(job.chain, chain_choices, true);
-    ImGui::PopID();
-  }
+  chain_headers(job, choices);
   if (ImGui::Button(i18n::tr("Use the playback settings"))) job.chain = running;
   note(i18n::tr(
       "Same engines and settings as playback, with no skipped frame. The HDR grade comes along: HDR10, "
       "or graded SDR in H.264; an HDR source stays as is."));
 
   section(i18n::tr("Encoding"));
-  if (ImGui::BeginCombo(i18n::tr("Codec"), std::string(exporter::label(job.codec)).c_str())) {
+  if (panel::combo(i18n::tr("Codec"), std::string(exporter::label(job.codec)).c_str())) {
     for (int i = 0; i < exporter::kCodecCount; ++i) {
       const auto codec = static_cast<exporter::Codec>(i);
       if (ImGui::Selectable(std::string(exporter::label(codec)).c_str(), codec == job.codec))
@@ -164,7 +168,7 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   }
   note(codec_note(job.codec));
   ImGui::BeginDisabled(job.codec == exporter::Codec::Lossless);
-  if (ImGui::BeginCombo(i18n::tr("Quality"), std::string(exporter::label(job.quality)).c_str())) {
+  if (panel::combo(i18n::tr("Quality"), std::string(exporter::label(job.quality)).c_str())) {
     for (int i = 0; i < exporter::kQualityCount; ++i) {
       const auto quality = static_cast<exporter::Quality>(i);
       if (ImGui::Selectable(std::string(exporter::label(quality)).c_str(), quality == job.quality))

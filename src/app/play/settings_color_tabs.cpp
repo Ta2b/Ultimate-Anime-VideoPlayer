@@ -18,7 +18,7 @@ using render::grade_limits::kAnimePercent;
 
 void output_section(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Output"));
-  if (ImGui::BeginCombo(i18n::tr("HDR"), std::string(label(d.hdr_mode)).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("HDR")).c_str(), std::string(label(d.hdr_mode)).c_str())) {
     for (int i = 0; i < kHdrModeCount; ++i) {
       const auto mode = static_cast<HdrMode>(i);
       if (ImGui::Selectable(std::string(label(mode)).c_str(), mode == d.hdr_mode)) d.hdr_mode = mode;
@@ -36,7 +36,8 @@ void output_section(PlaySettings& d, const SettingsChoices& choices) {
 // Un curseur en % du grade anime (100 % : la méthode telle que réglée), qui efface le panneau tant qu'il est
 // tenu.
 void percent_slider(const char* label, int& value, const char* body) {
-  ImGui::SliderInt(label, &value, kAnimePercent.lo, kAnimePercent.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(panel::left(label).c_str(), &value, kAnimePercent.lo, kAnimePercent.hi, "%d %%",
+                   ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
   panel::tip(label, body);
 }
@@ -58,12 +59,13 @@ void colors_section(PlaySettings& d) {
   panel::tip(
       i18n::tr("Deep blacks"),
       i18n::tr("How much dark scenes are deepened, at most; less in dark episodes. Recommended: 0.50."));
-  ImGui::SliderInt(i18n::tr("LUT contrast"), &d.look_contrast, -100, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(panel::left(i18n::tr("LUT contrast")).c_str(), &d.look_contrast, -100, 100, "%d",
+                   ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
   panel::tip(i18n::tr("LUT contrast"),
              i18n::tr("Strength of the contrast LUT. 0: the reference look; −100: removed; 100: doubled. "
                       "Recommended: 0."));
-  ImGui::SliderInt(i18n::tr("LUT highlights"), &d.look_highlight, -100, 100, "%d",
+  ImGui::SliderInt(panel::left(i18n::tr("LUT highlights")).c_str(), &d.look_highlight, -100, 100, "%d",
                    ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
   panel::tip(i18n::tr("LUT highlights"),
@@ -86,8 +88,8 @@ void colors_section(PlaySettings& d) {
 // l'une comme l'autre faisait refuser tout le grade.
 bool grade_slider(const char* label, double& value, core::Range<double> range) {
   auto shown = static_cast<float>(value);
-  if (!ImGui::SliderFloat(label, &shown, static_cast<float>(range.lo), static_cast<float>(range.hi), "%.2f",
-                          ImGuiSliderFlags_AlwaysClamp))
+  if (!ImGui::SliderFloat(panel::left(label).c_str(), &shown, static_cast<float>(range.lo),
+                          static_cast<float>(range.hi), "%.2f", ImGuiSliderFlags_AlwaysClamp))
     return false;
   value = std::clamp(std::round(static_cast<double>(shown) * 100.0) / 100.0, range.lo, range.hi);
   return true;
@@ -108,8 +110,8 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
              i18n::tr("The brightest light the grade aims for, read from the display. Recommended: auto."));
   ImGui::BeginDisabled(automatic);
   int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
-  if (ImGui::SliderInt(i18n::tr("Peak (nits)"), &peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi, "%d",
-                       ImGuiSliderFlags_AlwaysClamp) &&
+  if (ImGui::SliderInt(panel::left(i18n::tr("Peak (nits)")).c_str(), &peak, limits::kTrueHdrPeak.lo,
+                       limits::kTrueHdrPeak.hi, "%d", ImGuiSliderFlags_AlwaysClamp) &&
       !automatic)
     d.true_hdr_peak = peak;
   panel::live_preview();
@@ -120,8 +122,8 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
   panel::tip(i18n::tr("Peak (nits)"),
              i18n::tr("In content nits: KDE shows them brighter (× its SDR brightness / 203)."));
 #endif
-  ImGui::SliderInt(i18n::tr("Surface white"), &d.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(panel::left(i18n::tr("Surface white")).c_str(), &d.surface_white, kSurfaceWhite.lo,
+                   kSurfaceWhite.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
   panel::tip(i18n::tr("Surface white"),
              i18n::tr("Brightness of walls and skin. Lower leaves more room to the lights, which still reach "

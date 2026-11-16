@@ -82,15 +82,17 @@ bool keep_drop(const SDL_Event& event, std::optional<std::filesystem::path>& dro
 std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
     EngineBuild& build, PlaceboScreen& screen, PlayerUi& ui, const EngineLabel& engine, bool& details,
     SnapshotPlan& snapshot, std::optional<std::filesystem::path>& dropped_video,
-    const std::filesystem::path& current) {
+    const std::filesystem::path& current, LoadingChange& loading) {
   const core::KeyMap& keys = configured_keys();
   const std::int64_t started = host_now_us();
   BuildProgress progress(engine.expected_s, started);
   const AwakeWhile awake;  // une construction dure des minutes sans touche
   std::vector<Input> actions;
   bool watch_now = false;
-  bool show_failed = false;  // une ligne de journal, pas une toutes les 100 ms
+  bool open_settings = false;  // le bouton « Paramètres » de l'écran de préparation
+  bool show_failed = false;    // une ligne de journal, pas une toutes les 100 ms
   while (true) {
+    if (std::exchange(open_settings, false)) actions.emplace_back(ToggleSettings{});
     if (watch_now) {
       log_channel("app")->info("construction de {} annulée : la vidéo part sans ce moteur", engine.name);
       return std::unexpected(Refusal{.code = RefusalCode::Cancelled,
@@ -103,6 +105,8 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
       if (ui.handle(event, host_now_us(), actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
+    take_loading_inputs(ui, actions, loading);
+    if (loading.stops()) return std::unexpected(settings_changed_refusal());
     for (const Input& input : actions) {
       if (const auto* command = std::get_if<Command>(&input)) {
         if (std::holds_alternative<cmd::Quit>(*command)) return std::nullopt;
@@ -135,11 +139,12 @@ std::expected<std::optional<gpu::Artifact>, Refusal> wait_engine(
                       i18n::tr_format("{} · input {}x{} · {}", engine.model, engine.width, engine.height,
                                       engine.backend)},
           .show_details = details,
-          .watch_now = &watch_now};
+          .watch_now = &watch_now,
+          .open_settings = &open_settings};
       // C08-04 : une surface perdue pendant la construction (HDR du système basculé, écran débranché) n'est
       // pas un refus du moteur : retenue sous la signature de l'étage, elle le couperait pour la séance. Le
       // journal le dit et la construction continue ; seul un appareil perdu arrête tout.
-      if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view)}); !shown) {
+      if (auto shown = screen.show(ShowRequest{.ui = ui.preparation(now, view, &actions)}); !shown) {
         if (shown.error().code == RefusalCode::DeviceLost) return std::unexpected(std::move(shown.error()));
         if (!show_failed)
           log_channel("app")->warn("préparation de {} : image non présentée ({})", engine.name,
@@ -171,6 +176,12 @@ Refusal dropped_video_refusal() {
   return Refusal{.code = RefusalCode::Cancelled,
                  .detail = "préparation arrêtée : une autre vidéo a été glissée",
                  .key = std::string(kDroppedVideoKey)};
+}
+
+Refusal settings_changed_refusal() {
+  return Refusal{.code = RefusalCode::Cancelled,
+                 .detail = "préparation arrêtée : un réglage du menu rouvre la vidéo",
+                 .key = std::string(kSettingsChangedKey)};
 }
 
 namespace {
@@ -246,8 +257,8 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
                                                   .wake_context = &ready});
     if (!build) return std::unexpected(std::move(build.error()));
     note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
-    auto artifact =
-        wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video, p.options.file);
+    auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video,
+                                p.options.file, p.loading);
     if (!artifact) return std::unexpected(std::move(artifact.error()));
     if (!*artifact) return std::nullopt;  // fenêtre fermée pendant la construction
     log_channel("app")->info("moteur {} {}", label.name, core::to_utf8((*artifact)->path.filename()));
@@ -303,7 +314,9 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
   const core::KeyMap& keys = configured_keys();
   std::vector<Input> actions;
   bool watch_now = false;  // A08-08 : « Annuler et regarder » aussi pendant la préparation du FP8
+  bool open_settings = false;
   while (note.pending) {
+    if (std::exchange(open_settings, false)) actions.emplace_back(ToggleSettings{});
     if (watch_now) {
       log->info("SPAN FP8 : préparation annulée, la vidéo part sans elle");
       stop_and_wait(note);
@@ -318,6 +331,11 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
       if (p.ui.handle(event, host_now_us(), actions)) continue;
       if (auto input = input_of(event, keys)) actions.push_back(*input);
     }
+    take_loading_inputs(p.ui, actions, p.loading);
+    if (p.loading.stops()) {
+      stop_and_wait(note);
+      return std::nullopt;
+    }
     for (const Input& input : actions) {
       const auto* command = std::get_if<Command>(&input);
       if (command != nullptr && std::holds_alternative<cmd::Quit>(*command)) {
@@ -331,8 +349,10 @@ std::optional<bool> prepare_span_fp8(Player& p, const gpu::BackendInit& init,
                            .fraction = fraction,
                            .details = {stage, core::to_utf8(model.stem())},
                            .show_details = p.details,
-                           .watch_now = &watch_now};
-    if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(host_now_us(), view)}); !shown)
+                           .watch_now = &watch_now,
+                           .open_settings = &open_settings};
+    if (auto shown = p.screen.show(ShowRequest{.ui = p.ui.preparation(host_now_us(), view, &actions)});
+        !shown)
       log->warn("SPAN FP8 : {}", shown.error().detail);
     (void)SDL_WaitEventTimeout(nullptr, kBuildFrameMs);
     poll_prepare(note);

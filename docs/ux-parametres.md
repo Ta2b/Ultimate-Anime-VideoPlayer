@@ -6,26 +6,42 @@
 configuration automatique, lecteur par défaut, mise à jour). L'implémentation avance par petites PR :
 (a) détection et tranche, (b) préréglages, (c) benchmark, (d) textes et pastilles, (e) cadre en arbre.
 
-## 0. L'arbre en vigueur (novembre 2026)
+## 0. Le menu en vigueur (novembre 2026, à la manière de Dolphin)
 
-Ce qui suit (sections 1 et plus) est l'historique du tri. L'arbre du code (`settings_panel.cpp`, `kPages`) est
-désormais celui-ci, trois catégories et dix pages :
+Ce qui suit (sections 1 et plus) est l'historique du tri. Le menu du code (`settings_panel.cpp`, `kPages`) est
+une colonne de cinq catégories et, dans chacune, des onglets. Chaque onglet range ses réglages dans des encadrés
+titrés, les libellés à gauche en colonne ; les réglages rares sont sous « Avancé », en bas, toujours visibles
+(plus de case « Réglages avancés »).
 
-| Catégorie | Page | Contenu |
+| Catégorie | Onglet | Contenu (Avancé en dernier) |
 |---|---|---|
-| Vidéo | Post-traitement | niveau de traitement (Auto, Économe, Rapide, Normal, Qualité, Ultra ; Personnalisé dès qu'un réglage est fait à la main), agrandissement SPAN, résolution de travail, interpolation. Avancé : préparation FP8, résultats du bench |
-| Vidéo | Couleurs | sortie HDR ou SDR (elle suit le système, pas de bouton), grade anime. Avancé : pic de l'écran |
-| Vidéo | Affichage | filtre final, débandage. Avancé : vrai noir et soins OLED |
-| Audio et lecture | Son | sortie, délai, calage sur l'écran |
-| Audio et lecture | Lecture | langues préférées, sous-titres, épisode suivant |
-| Général | Application | langue, mises à jour, lecteur par défaut |
-| Général | Moteurs | le moteur d'inférence et l'état de ses modules |
-| Général | Export | export de la chaîne en cours |
-| Général | Statistiques | ce que Tab affiche. Débogage : montrer les paires tenues et coupées (teinte bleue ou rouge un instant, ligne dans `ajp.log` ; le temps de la session, `pair_marks.h`) |
-| Général | À propos | la machine, l'assistant à refaire, tout réinitialiser |
+| Général | Application | langue de l'interface, épisode suivant, mises à jour, lecteur par défaut, l'assistant, signaler un problème. Avancé : tout réinitialiser |
+| Général | Statistiques | ce que Tab affiche. Avancé : débogage (paires tenues et coupées) |
+| Vidéo | Général | préréglage de qualité, moteur de calcul et carte graphique, sortie HDR (Auto par défaut, Activé, Désactivé), couleurs (en HDR comme en SDR), « Afficher les FPS ». Avancé : affichage (filtre, débandage, vrai noir, OLED, cadence fixe), moteurs (vitesse avant précision, dossier, moteurs construits), calibration |
+| Vidéo | Agrandissement | SPAN ×2 et son modèle, restaurer les traits, résolution de travail, netteté. Avancé : filtre de réduction, précision, préparation FP8 |
+| Vidéo | Interpolation | multiplicateur, Auto, niveau, dessins tenus, warp cubique. Avancé : moteurs et précision, GMFSS, essais, Smooth Motion |
+| Vidéo | HDR | pic de l'écran, blanc des surfaces, flashs. Avancé : grade avant l'interpolation, LUT en une table, peau des visages |
+| Audio | Audio | sortie, délai, calage sur l'écran, latence |
+| Langues | Langues | langues préférées, taille et délai des sous-titres |
+| Export | Export | export de la chaîne en cours |
 
-Plus de profils, plus de méthode HDR à choisir. Le niveau de traitement applique `apply_preset`
-(`auto_config.h`) à la machine, à l'écran et à la vidéo ouverts.
+**Infobulles.** Le nom du réglage en gras, une phrase, puis « Vitesse », « Impact sur la qualité »
+(imperceptible, mineur, modéré, élevé) et « Recommandé » en bleu (`panel_tip.cpp` : `split_tip`). Les valeurs
+par défaut suivent la recommandation. Les chiffres de vitesse à confirmer sur une vraie machine sont listés dans
+`reglages/mesures-a-faire.md` (dossier du projet).
+
+**Appliquer.** Un réglage s'applique de trois façons, dites de la même manière partout : en direct ; en
+rechargeant la vidéo au même endroit ; en relançant le lecteur sur la vidéo, au même endroit (la carte
+graphique, le dossier et la précision des moteurs, Smooth Motion : `ChangeCost::Restart`, `RestartPlayer`).
+L'infobulle le dit en ambre, le bandeau du pied le rappelle avec un seul bouton « Appliquer ». Plus de « au
+prochain lancement ».
+
+**Pendant le chargement.** Le menu s'ouvre aussi pendant la construction d'un moteur ou la préparation du FP8
+(bouton « Paramètres » ou p) : un réglage qui recharge arrête la préparation et la vidéo se rouvre avec lui
+(`loading_settings.h`).
+
+**Panneau.** Redimensionnable par ses bords (la taille reste d'une ouverture à l'autre) ; il s'efface pendant
+qu'on tient un curseur en direct, pour voir l'image changer (`panel::live_preview`).
 
 ## 1. Ce qu'il y a aujourd'hui
 

@@ -655,12 +655,20 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   return UiFrame{.draw = draw_, .changed = true, .serial = serial_, .bottom = bottom_, .top = top_};
 }
 
-const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view) {
+const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& view,
+                                        std::vector<Input>* actions) {
   home_ = false;
   wizard_ = false;
   begin_frame(now_us);
   clicks_.clear();
   draw_preparation(view, look_, now_us);
+  if (actions != nullptr && panel_.wants_draw()) {
+    refresh_choices(now_us);
+    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, *actions);
+    if (result.live) actions->emplace_back(ApplySettings{.settings = *result.live});
+    if (result.reopen) actions->emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
+    if (result.restart) actions->emplace_back(RestartPlayer{.settings = *result.restart});
+  }
   ImGui::Render();
   draw_ = nullptr;  // la barre de lecture se recompose à son premier tour
   controls_.framed(now_us, ControlsView{}, false);
@@ -724,6 +732,12 @@ void PlayerUi::set_display_output(bool hdr_output, int auto_peak) {
   choices_.hdr_output = hdr_output;
   choices_.auto_peak = auto_peak;
   input_pending_ = true;
+}
+
+void PlayerUi::preparing(const PlaySettings& settings) {
+  running_ = settings;
+  choices_.opened.reset();
+  choices_.rife_loaded = false;
 }
 
 void PlayerUi::set_running(const PlaySettings& running) {

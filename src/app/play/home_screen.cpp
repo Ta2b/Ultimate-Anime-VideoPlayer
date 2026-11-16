@@ -226,6 +226,15 @@ bool home_engines(const HomeScreen& h, HomeState& st, bool wizard, LatestWriter&
   return !shown || *shown;
 }
 
+// L'accueil passe sur un autre moteur des réseaux : settings.toml le garde pour la vidéo qui s'ouvrira.
+void keep_engine(const HomeScreen& h, HomeState& st, core::EngineId id) {
+  st.engines = using_engine(std::move(st.engines), id);
+  if (auto written = core::save_settings(paths::engine_settings(h.settings_path.parent_path()), st.engines);
+      !written)
+    log_channel("app")->warn("{}", written.error().detail);
+  log_channel("app")->info("moteur des réseaux : {}", engine_label(id));
+}
+
 }  // namespace
 
 std::optional<std::filesystem::path> dropped_file(const SDL_Event& event) {
@@ -322,8 +331,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   HomeView view{.problem = problem};
   bool dirty = false;
   std::int64_t saved_at = host_now_us();
-  // A24-16 : play.toml s'écrit hors du thread de l'interface, comme en lecture (une écriture lente, disque
-  // qui dort ou partage réseau, ne fige plus l'accueil). La sortie de la fonction attend la dernière.
+  // A24-16 : play.toml s'écrit hors du thread de l'interface (disque lent) ; la sortie attend la dernière.
   LatestWriter writer;
   const auto save = [&] {
     st.saved = settings_to_save(running, from_file, started, h.options);
@@ -381,18 +389,11 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                             },
                             [&](const ApplySettings& apply) { changed(apply.settings); },
                             [&](const RestartPlayer& restart) {
-                              // Écrit à la sortie de l'accueil (dirty), puis le lecteur se relance.
-                              changed(restart.settings);
-                              log->info("paramètres : le lecteur se relance pour les appliquer");
+                              changed(restart.settings);  // écrit à la sortie de l'accueil, puis la relance
                               quit = ask_relaunch(h.paths, {}, std::nullopt, false, RelaunchReason::Settings);
                             },
                             [&](const UseEngine& use) {
-                              st.engines = using_engine(std::move(st.engines), use.id);
-                              if (auto written = core::save_settings(
-                                      paths::engine_settings(h.settings_path.parent_path()), st.engines);
-                                  !written)
-                                log->warn("{}", written.error().detail);
-                              log->info("moteur des réseaux : {}", engine_label(use.id));
+                              keep_engine(h, st, use.id);
                               refresh();
                             },
                             [&](const OpenEngineScreen& open) {

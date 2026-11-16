@@ -37,6 +37,9 @@ struct PrepareView {
   bool show_details = false;
   // Non nul : le bouton « Annuler et regarder », qui le met à vrai (P3.10).
   bool* watch_now = nullptr;
+  // Non nul : le bouton « Paramètres », qui le met à vrai ; le menu s'ouvre sur la préparation
+  // (loading_settings.h).
+  bool* open_settings = nullptr;
 };
 void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t now_us);
 

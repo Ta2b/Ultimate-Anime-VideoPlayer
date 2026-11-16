@@ -452,3 +452,45 @@ TEST_CASE("C36-10 : seules les trois dernières copies mises de côté restent",
   CHECK(std::filesystem::exists(dir / "settings.toml.invalide-20250101-000000"));
   std::filesystem::remove_all(dir);
 }
+
+namespace ajp::app::play {
+namespace {
+
+std::string text_of(const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+// Un play.toml d'avant la sortie HDR choisie et « Afficher les FPS » se lit : Auto et éteint ; changés, ils
+// se relisent.
+TEST_CASE("play.toml : la sortie HDR et les FPS, absents d'un ancien fichier, s'enregistrent",
+          "[app][settings][hdr]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-hdr-mode.toml";
+  REQUIRE(save_settings(path, PlaySettings{}));
+  std::string text = text_of(path);
+  const std::size_t at = text.find("output = ", text.find("[hdr]"));  // la sortie HDR, en tête de [hdr]
+  REQUIRE(at != std::string::npos);
+  text.erase(at, text.find('\n', at) + 1 - at);
+  const std::size_t fps = text.find("fps = ");
+  REQUIRE(fps != std::string::npos);
+  text.erase(fps, text.find('\n', fps) + 1 - fps);
+  {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << text;
+  }
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK(old->hdr_mode == HdrMode::Auto);
+  CHECK_FALSE(old->stats.fps);
+  old->hdr_mode = HdrMode::Off;
+  old->stats.fps = true;
+  REQUIRE(save_settings(path, *old));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->hdr_mode == HdrMode::Off);
+  CHECK(reread->stats.fps);
+  std::filesystem::remove(path);
+}
+
+}  // namespace
+}  // namespace ajp::app::play

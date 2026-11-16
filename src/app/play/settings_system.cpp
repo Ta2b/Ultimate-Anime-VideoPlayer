@@ -75,7 +75,7 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
 void language_section(PlaySettings& d) {
   section(i18n::tr("Interface"));
   const char* shown = d.language == "fr" ? "Français" : "English";  // i18n-ok : noms des langues
-  if (ImGui::BeginCombo(i18n::tr("Interface language"), shown)) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Interface language")).c_str(), shown)) {
     if (ImGui::Selectable("English", d.language == "en")) d.language = "en";   // i18n-ok
     if (ImGui::Selectable("Français", d.language == "fr")) d.language = "fr";  // i18n-ok
     ImGui::EndCombo();
@@ -134,7 +134,7 @@ void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& result)
                           : d.update_frequency == UpdateFrequency::Weekly ? i18n::tr("Weekly")
                                                                           : i18n::tr("Daily");
   ImGui::BeginDisabled(d.update_mode == UpdateMode::Never);  // sans vérification, la fréquence ne sert à rien
-  if (ImGui::BeginCombo(i18n::tr("Frequency"), frequency)) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Frequency")).c_str(), frequency)) {
     if (ImGui::Selectable(i18n::tr("At every launch"), d.update_frequency == UpdateFrequency::Launch))
       d.update_frequency = UpdateFrequency::Launch;
     if (ImGui::Selectable(i18n::tr("Daily"), d.update_frequency == UpdateFrequency::Daily))

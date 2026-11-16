@@ -14,7 +14,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`auto-libre.md`](auto-libre.md) | Mode Auto de l'interpolation : Rapide et Stable (le § 3, mesures d'octobre 2026, est historique) |
 | [`hdr-anime.md`](hdr-anime.md) | Le grade HDR anime guidé ; la sortie HDR ou SDR qui suit le système |
 | [`luts.md`](luts.md) | Les LUT 3D du grade (le choix des looks n'est plus dans le menu) |
-| [`ux-parametres.md`](ux-parametres.md) | Le menu des paramètres : section 0 pour l'arbre en vigueur, le reste est l'historique du tri |
+| [`ux-parametres.md`](ux-parametres.md) | Le menu des paramètres : section 0 pour le menu en vigueur (à la manière de Dolphin), le reste est l'historique du tri |
 | [`nvidia-linux.md`](nvidia-linux.md), [`nvidia-windows.md`](nvidia-windows.md) | TensorRT et NVIDIA par système |
 | [`amd-windows.md`](amd-windows.md) | AMD et Windows : le profil RDNA4 du moteur Vulkan, D3D11VA |
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |
@@ -46,5 +46,6 @@ prendre pour l'état du code.
 | Profils (Ctrl+1 à 9, profil de démarrage) | PR #531 | `play.toml` garde la dernière chaîne ; `user.toml` ne garde que `[keys]` |
 | Méthode HDR (bouton, écran de l'assistant, `hdr.engine`) | PR #532 | `system_hdr` (`src/app/play/host_facts.h`) |
 | Ancien arbre en cinq catégories | PR #533 | Vidéo, Audio et lecture, Général ([ADR 0012](adr/0012-lecteur-simple.md)) |
+| Arbre en trois catégories | menu à la manière de Dolphin | Général, Vidéo, Audio, Langues, Export ([`ux-parametres.md`](ux-parametres.md), section 0) |
 | MIGraphX, OpenVINO, Windows ML | 0.10.0 | Vulkan sur AMD et Intel |
 | GMFSS Fortuna (base, fusionné, FP8, demi-flot) | 0.10.0 | RIFE ; union revenu au flot entier (niveau Élevé, novembre 2026) |

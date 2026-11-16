@@ -186,7 +186,7 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     if (level_now == choice.level) shown = level_text(choice);
   }
   ImGui::BeginDisabled(!choices.rife_available);
-  if (ImGui::BeginCombo(i18n::tr("Interpolation level"), shown.c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Interpolation level")).c_str(), shown.c_str())) {
     bool separated = false;
     for (const InterpChoice& choice : kInterpLevels) {
       if (!level_present(choice, choices)) continue;
@@ -287,7 +287,7 @@ void auto_cap_row(PlaySettings& d, const SettingsChoices& choices) {
   const auto cap_label = [](int cap) {
     return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : i18n::tr_format("{} fps", cap);
   };
-  if (ImGui::BeginCombo(i18n::tr("Auto limit"), cap_label(d.auto_cap).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Auto limit")).c_str(), cap_label(d.auto_cap).c_str())) {
     for (const int cap : {0, 120, 60}) {
       if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
     }
@@ -339,7 +339,7 @@ void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
   // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Une image en retard laisse la source.
   const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
   const char* const shown = d.auto_free ? i18n::tr("Instant") : i18n::tr("Stable");
-  if (ImGui::BeginCombo(i18n::tr("Auto mode"), shown)) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Auto mode")).c_str(), shown)) {
     if (ImGui::Selectable(i18n::tr("Stable"), !d.auto_free)) d.auto_free = false;
     if (ImGui::Selectable(i18n::tr("Instant"), d.auto_free)) d.auto_free = true;
     if (vrr_armed) {
@@ -393,7 +393,7 @@ void multiplier_combo(PlaySettings& d, const SettingsChoices& choices, bool expo
   const Factor now = factor_of(d);
   const std::string factor_shown =
       d.rife_auto && now.num > now.den ? std::string(i18n::tr("Auto")) : factor_label(now);
-  if (ImGui::BeginCombo(i18n::tr("Multiplier"), factor_shown.c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Multiplier")).c_str(), factor_shown.c_str())) {
     if (!exporting && ImGui::Selectable(i18n::tr("Auto"), d.rife_auto && now.num > now.den)) {
       d.rife_auto = true;
       if (now.num <= now.den) d.rife_factor = core::kAutoMaxStep;  // ×10, le plafond de l'Auto (C12-06)
@@ -421,10 +421,37 @@ void multiplier_combo(PlaySettings& d, const SettingsChoices& choices, bool expo
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
-void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
+namespace {
+
+// Ce que la carte aura du mal à tenir : DistilDRBA au-delà de ×5, la sortie 4K, la copie 720p de RIFE.
+void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor now, bool exporting) {
   // Sortie 4K : une source 1080p (ou plus) sans réduction, agrandie par SPAN.
   const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
                       choices.source_height >= 1080;
+  if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
+    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
+  }
+  // La copie 720p de RIFE : la même condition que la chaîne, sur la taille de travail réellement jouée
+  // (C23-04).
+  const bool reduced_motion =
+      now.num > now.den && choices.source_height > 0 &&
+      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height));
+  if (exporting) {
+    // Les limites de la lecture en direct ne valent pas à l'export.
+  } else if (four_k && now.num >= 3 * now.den) {
+    note(i18n::tr(
+        "4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything."));
+  } else if (reduced_motion) {
+    // Le gain de vitesse n'est pas mesuré : la note le dit, sans chiffre inventé (C23-03).
+    note(
+        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less "
+                 "precise motion; the speed gained and the quality lost are not measured)."));
+  }
+}
+
+}  // namespace
+
+void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   section(i18n::tr("Interpolation"));
   // La chaîne ne l'allume qu'à une cadence d'anime (source_fit.h) : le choix reste, pour la vidéo suivante.
   if (d.rife_factor >= 2 && !anime_rate(choices.source_fps))
@@ -458,25 +485,7 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
                          kDistilDrbaFile));
   }
   fused_state_notes(d, choices);
-  if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
-    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
-  }
-  // La copie 720p de RIFE : la même condition que la chaîne, sur la taille de travail réellement jouée
-  // (C23-04).
-  const bool reduced_motion =
-      now.num > now.den && choices.source_height > 0 &&
-      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height));
-  if (exporting) {
-    // Les limites de la lecture en direct ne valent pas à l'export.
-  } else if (four_k && now.num >= 3 * now.den) {
-    note(i18n::tr(
-        "4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything."));
-  } else if (reduced_motion) {
-    // Le gain de vitesse n'est pas mesuré : la note le dit, sans chiffre inventé (C23-03).
-    note(
-        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less "
-                 "precise motion; the speed gained and the quality lost are not measured)."));
-  }
+  load_notes(d, choices, now, exporting);
   // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
@@ -521,7 +530,8 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   // DistilDRBA aussi choisit sa variante (mouvement ou non) d'après l'ordre du warp : seuls les moteurs sans
   // warp à ordonner grisent la liste (A23-02).
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && d.motion_engine != MotionEngine::DistilDrba);
-  if (ImGui::BeginCombo(i18n::tr("Warp and SPAN"), std::string(label(d.span_order)).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Warp and SPAN")).c_str(),
+                        std::string(label(d.span_order)).c_str())) {
     for (int i = 0; i < kSpanOrderCount; ++i) {
       const auto order = static_cast<SpanOrder>(i);
       if (ImGui::Selectable(std::string(label(order)).c_str(), order == d.span_order)) d.span_order = order;

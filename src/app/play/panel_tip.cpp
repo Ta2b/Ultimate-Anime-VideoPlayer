@@ -10,6 +10,7 @@
 #include "app/play/french_text.h"
 #include "app/play/i18n.h"
 #include "app/play/panel_state.h"
+#include "core/text.h"
 
 namespace ajp::app::play::panel {
 namespace {
@@ -29,18 +30,11 @@ constexpr std::array<Marker, 6> kMarkers{{
     {"Recommandé :", Field::Recommended},         // i18n-ok : repère des traductions
 }};
 
-std::string_view trimmed(std::string_view s) {
-  const auto blank = [](char c) { return c == ' ' || c == '\n'; };
-  while (!s.empty() && blank(s.front())) s.remove_prefix(1);
-  while (!s.empty() && blank(s.back())) s.remove_suffix(1);
-  return s;
-}
-
 // La valeur d'un champ, sans le point final : « environ −3 % ».
 std::string value_of(std::string_view s) {
-  s = trimmed(s);
+  s = core::trim(s);
   if (s.ends_with('.')) s.remove_suffix(1);
-  return std::string(trimmed(s));
+  return std::string(core::trim(s));
 }
 
 // Le prochain repère à partir de `from` : sa place et lequel ; npos s'il n'y en a plus.
@@ -99,7 +93,7 @@ void field_line(const char* key, const std::string& value) {
 TipParts split_tip(std::string_view text) {
   TipParts parts;
   auto [at, marker] = next_marker(text, 0);
-  parts.text = std::string(trimmed(text.substr(0, at)));
+  parts.text = std::string(core::trim(text.substr(0, at)));
   while (marker != nullptr) {
     const std::size_t start = at + marker->text.size();
     const auto [next, next_mark] = next_marker(text, start);
@@ -114,10 +108,10 @@ TipParts split_tip(std::string_view text) {
         break;
       case Field::Recommended: {
         // La recommandation s'arrête à sa première phrase ; la suite (« RIFE seulement. ») va dessous.
-        value = trimmed(value);
+        value = core::trim(value);
         const std::size_t end = value.find(". ");
         parts.recommended = value_of(value.substr(0, end));
-        if (end != std::string_view::npos) parts.after = std::string(trimmed(value.substr(end + 1)));
+        if (end != std::string_view::npos) parts.after = std::string(core::trim(value.substr(end + 1)));
         break;
       }
     }

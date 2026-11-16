@@ -108,8 +108,7 @@ const Refusal* InnerFallbacks::refused(ChainStage stage, const std::string& key)
 void InnerFallbacks::failed(ChainStage stage, std::string key, const Refusal& refusal) {
   // « Annuler et regarder », une vidéo glissée ou un appareil perdu ne sont pas des refus du moteur : rien
   // n'est retenu.
-  if (watch_now(refusal) || refusal.key == kDroppedVideoKey || refusal.code == RefusalCode::DeviceLost)
-    return;
+  if (watch_now(refusal) || preparation_stopped(refusal) || refusal.code == RefusalCode::DeviceLost) return;
   fresh_ = true;
   note(stage, refusal);
   if (memory_ != nullptr)
@@ -127,7 +126,7 @@ std::optional<ChainStage> retreat_stage(StageMemory* memory, const Refusal& refu
                                         int source_width, int source_height, std::string_view library,
                                         const std::filesystem::path& file, const StageRates& rates) {
   if (memory == nullptr || watch_now(refusal) || refusal.code == RefusalCode::DeviceLost ||
-      refusal.code == RefusalCode::SourceResized || refusal.key == kDroppedVideoKey)
+      refusal.code == RefusalCode::SourceResized || preparation_stopped(refusal))
     return std::nullopt;
   const bool motion_on = motion && played.rife_factor >= 2;
   const bool upscale_on = upscale && played.upscale;

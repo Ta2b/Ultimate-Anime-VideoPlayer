@@ -139,6 +139,24 @@ void save_before_next(const Player& player, const Reopen& reopen, const PlaySett
     log_channel("app")->warn("{}", written.error().detail);
 }
 
+// Après une chaîne fermée pour l'export ou pour une relance : vrai quand le lecteur s'arrête là. Un réglage
+// posé au lancement (carte, moteurs, Smooth Motion) écrit play.toml, puis relance sur cette vidéo, à cet
+// instant.
+bool leaves_after(Player& player, const PlayerPaths& paths, const Reopen& outcome,
+                  const std::filesystem::path& file, const PlayOptions& file_options) {
+  if (outcome.export_job) {
+    const ExportOutcome exported = run_export(player, *outcome.export_job);
+    player.quit = exported.end == ExportEnd::Quit;
+    if (player.quit) return true;
+    player.notice = exported.notice;
+  }
+  if (!outcome.restart || paths.relaunch == nullptr) return false;
+  save_before_next(player, outcome, outcome.settings, file_options);
+  ask_relaunch(paths, file, outcome.position_us, outcome.paused, RelaunchReason::Settings);
+  player.quit = true;
+  return true;
+}
+
 // A33-02 : SDL coupe l'économiseur dès son ouverture ; l'accueil et l'assistant le laissent agir, la
 // lecture le coupe pendant qu'une vidéo avance (sleep_watch.h).
 void allow_screensaver() {
@@ -646,22 +664,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
         }
         follow_wizard(*request, **outcome, file);  // A25-01 : réglages de l'assistant relus
       }
-      if (const std::optional<ExportJob>& job = (*outcome)->export_job) {
-        const ExportOutcome exported = run_export(player, *job);
-        if (exported.end == ExportEnd::Quit) {
-          player.quit = true;
-          break;
-        }
-        player.notice = exported.notice;
-      }
-      // Un réglage posé au lancement (carte, moteurs, Smooth Motion) : play.toml d'abord, puis la relance sur
-      // cette vidéo, à cet instant.
-      if ((*outcome)->restart && paths.relaunch != nullptr) {
-        save_before_next(player, **outcome, (*outcome)->settings, file_options);
-        ask_relaunch(paths, file, (*outcome)->position_us, (*outcome)->paused, RelaunchReason::Settings);
-        player.quit = true;
-        break;
-      }
+      if (leaves_after(player, paths, **outcome, file, file_options)) break;  // export, relance
       settings = (*outcome)->settings;
       if ((*outcome)->rederive)
         settings = rederived(settings, machine_now(), source, file_options, player.kept);

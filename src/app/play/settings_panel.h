@@ -195,6 +195,7 @@ class SettingsPanel {
   // La colonne des catégories, les onglets de la catégorie, le corps de l'onglet choisi, puis le pied du
   // panneau (annuler, appliquer) : draw les assemble.
   void draw_categories(float scale);
+  void scroll_categories();  // la molette sur la colonne : une catégorie par geste (B23-10)
   void draw_tabs();
   void draw_page(const PlaySettings& running, const SettingsChoices& choices, std::vector<Input>& actions,
                  Result& result, bool& delay_held, bool& sub_delay_held);

@@ -1,4 +1,4 @@
-// Le menu des paramètres refait à la manière de Dolphin (novembre 2026) : infobulles, encadrés, onglets
+// Le menu des paramètres, à la manière de Dolphin : infobulles, encadrés, onglets
 // Vidéo > Général, Agrandissement, Interpolation et HDR, et ce que le pied du panneau dit.
 #include <array>
 #include <span>

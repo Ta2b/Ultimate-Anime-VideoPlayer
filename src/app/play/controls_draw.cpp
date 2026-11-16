@@ -442,6 +442,19 @@ void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t 
     ImGui::End();
     ImGui::PopStyleVar();
   }
+  // « Paramètres » en haut à droite : changer de moteur, de modèle ou de résolution sans attendre la fin.
+  if (view.open_settings != nullptr) {
+    ImGui::SetNextWindowPos({x1, pad}, ImGuiCond_Always, {1.0F, 0.0F});
+    ImGui::SetNextWindowBgAlpha(0.0F);
+    constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                                        ImGuiWindowFlags_NoSavedSettings |
+                                        ImGuiWindowFlags_NoFocusOnAppearing;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0.0F, 0.0F});
+    if (ImGui::Begin("##parametres", nullptr, kFlags) && ImGui::Button(i18n::tr("Settings (p)")))
+      *view.open_settings = true;
+    ImGui::End();
+    ImGui::PopStyleVar();
+  }
 }
 
 }  // namespace ajp::app::play

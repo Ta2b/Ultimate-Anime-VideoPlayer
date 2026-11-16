@@ -33,7 +33,7 @@ std::string language_label(std::string_view tag) {
 // « Aucun »), sinon une des langues du menu.
 void language_combo(const char* label, const char* none_label, std::string& tag) {
   const std::string current = tag.empty() ? none_label : language_label(tag);
-  if (!ImGui::BeginCombo(label, current.c_str())) return;
+  if (!ImGui::BeginCombo(panel::left(label).c_str(), current.c_str())) return;
   if (ImGui::Selectable(none_label, tag.empty())) tag.clear();
   for (const Language& language : menu_languages()) {
     if (ImGui::Selectable(i18n::tr(language.name), same_language(tag, language.code)))
@@ -56,7 +56,7 @@ void preset_section(PlaySettings& d, const SettingsChoices& choices) {
     if (choices.calibrated) return std::string(i18n::tr("Auto (calibrated)"));
     return i18n::tr_format("Auto ({})", label(kByTier[static_cast<std::size_t>(detected)]));
   };
-  if (ImGui::BeginCombo(i18n::tr("Quality preset"), text(d.preset).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Quality preset")).c_str(), text(d.preset).c_str())) {
     for (int i = 0; i < kPresetCount; ++i) {
       const auto preset = static_cast<Preset>(i);
       if (preset == Preset::Custom && d.preset != Preset::Custom) continue;
@@ -178,7 +178,8 @@ void video_general_page(PlaySettings& d, const SettingsChoices& choices, std::ve
 
 void display_section(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Display"));
-  if (ImGui::BeginCombo(i18n::tr("Scaler"), std::string(label(d.final_scaler)).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Scaler")).c_str(),
+                        std::string(label(d.final_scaler)).c_str())) {
     for (int i = 0; i < kFinalScalerCount; ++i) {
       const auto scaler = static_cast<FinalScaler>(i);
       if (ImGui::Selectable(std::string(label(scaler)).c_str(), scaler == d.final_scaler))
@@ -193,7 +194,8 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
   panel::tip(i18n::tr("Debanding"),
              i18n::tr("Smooths steps in flat areas and gradients. Speed: minor cost. Quality impact: minor; "
                       "can soften fine grain. Recommended: off."));
-  if (ImGui::BeginCombo(i18n::tr("True black"), std::string(label(d.oled_black)).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("True black")).c_str(),
+                        std::string(label(d.oled_black)).c_str())) {
     for (int i = 0; i < kOledBlackCount; ++i) {
       const auto mode = static_cast<OledBlack>(i);
       if (ImGui::Selectable(std::string(label(mode)).c_str(), mode == d.oled_black)) d.oled_black = mode;
@@ -237,15 +239,17 @@ bool languages_page(PlaySettings& d) {
   }
   section(i18n::tr("Subtitles"));
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
-  if (ImGui::SliderInt(i18n::tr("Size"), &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
+  if (ImGui::SliderInt(panel::left(i18n::tr("Size")).c_str(), &percent,
+                       static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
                        static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d %%",
                        ImGuiSliderFlags_AlwaysClamp)) {
     d.subtitle_scale = static_cast<float>(percent) / 100.0F;
   }
   panel::live_preview();
   panel::tip(i18n::tr("Size"), i18n::tr("Scales all subtitle text. Recommended: 100 %."));
-  ImGui::SliderInt(i18n::tr("Delay (ms)"), &d.subtitle_delay_ms, limits::kSubtitleDelaySlider.lo,
-                   limits::kSubtitleDelaySlider.hi, "%d", ImGuiSliderFlags_None);
+  ImGui::SliderInt(panel::left(i18n::tr("Delay (ms)")).c_str(), &d.subtitle_delay_ms,
+                   limits::kSubtitleDelaySlider.lo, limits::kSubtitleDelaySlider.hi, "%d",
+                   ImGuiSliderFlags_None);
   const bool held = ImGui::IsItemActive();
   panel::live_preview();
   d.subtitle_delay_ms =

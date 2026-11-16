@@ -60,7 +60,7 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   const std::string missing = !d.audio_device.empty() && chosen == nullptr
                                   ? i18n::tr_format("{} (not connected)", d.audio_device)
                                   : std::string();
-  if (ImGui::BeginCombo(i18n::tr("Output device"),
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Output device")).c_str(),
                         chosen != nullptr  ? chosen->name.c_str()
                         : !missing.empty() ? missing.c_str()
                                            : (system_default != nullptr ? system_default->name.c_str()
@@ -82,8 +82,8 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
 
   panel::advanced_header();
   section(i18n::tr("Sync"));
-  ImGui::SliderInt(i18n::tr("Audio delay (ms)"), &d.audio_delay_ms, limits::kAudioDelaySlider.lo,
-                   limits::kAudioDelaySlider.hi);
+  ImGui::SliderInt(panel::left(i18n::tr("Audio delay (ms)")).c_str(), &d.audio_delay_ms,
+                   limits::kAudioDelaySlider.lo, limits::kAudioDelaySlider.hi);
   const bool held = ImGui::IsItemActive();
   static_assert(limits::kAudioDelayMs.hi == 5000, "le texte de l'infobulle dit ±5,000 ms");
   panel::tip(
@@ -96,9 +96,9 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   panel::tip(i18n::tr("Sync playback to the display"),
              i18n::tr("On a fixed-rate display, playback speed changes by at most 0.125 % so each frame fits "
                       "whole refreshes. Sound follows, inaudibly. Recommended: on."));
-  ImGui::SliderInt(i18n::tr("Display latency (ms)"), &d.video_latency_ms, limits::kVideoLatencyMs.lo,
-                   limits::kVideoLatencyMs.hi, d.video_latency_ms == 0 ? i18n::tr("estimated") : "%d ms",
-                   ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(panel::left(i18n::tr("Display latency (ms)")).c_str(), &d.video_latency_ms,
+                   limits::kVideoLatencyMs.lo, limits::kVideoLatencyMs.hi,
+                   d.video_latency_ms == 0 ? i18n::tr("estimated") : "%d ms", ImGuiSliderFlags_AlwaysClamp);
   panel::tip(i18n::tr("Display latency (ms)"),
              i18n::tr("The time between choosing a frame and seeing it. Set it if the picture seems early or "
                       "late. Recommended: estimated (0)."));

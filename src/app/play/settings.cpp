@@ -674,6 +674,27 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   return base;
 }
 
+namespace {
+
+// La fin de change_between : les visages, puis relancer, recharger, en direct ou rien.
+Change settle(const PlaySettings& running, const PlaySettings& wanted, std::vector<std::string> reopen) {
+  if (running.face_skin != wanted.face_skin)
+    reopen.emplace_back(i18n::tr("the video is analysed again for faces"));
+  std::vector<std::string> all = restart_reasons(running, wanted);
+  if (!all.empty()) {
+    all.insert(all.end(), reopen.begin(), reopen.end());
+    std::string reason;
+    for (const std::string& part : all) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
+    return Change{.cost = ChangeCost::Restart,
+                  .reason = reason + i18n::tr(" ; the player restarts on this video, at the same spot")};
+  }
+  if (!reopen.empty()) return reopen_for(reopen);
+  if (running == wanted) return {};
+  return Change{.cost = ChangeCost::Live};
+}
+
+}  // namespace
+
 Change change_between(const PlaySettings& running, const PlaySettings& wanted, bool rife_loaded,
                       const OpenedChain* opened) {
   std::vector<std::string> reopen;
@@ -711,19 +732,7 @@ Change change_between(const PlaySettings& running, const PlaySettings& wanted, b
                                         precision_text(wanted.motion_precision)));
   }
   add_shape_reasons(reopen, base, wanted, opened);
-  if (running.face_skin != wanted.face_skin)
-    reopen.emplace_back(i18n::tr("the video is analysed again for faces"));
-  if (const std::vector<std::string> restart = restart_reasons(running, wanted); !restart.empty()) {
-    std::vector<std::string> all = restart;
-    all.insert(all.end(), reopen.begin(), reopen.end());
-    std::string reason;
-    for (const std::string& part : all) reason += std::format("{}{}", reason.empty() ? "" : " ; ", part);
-    return Change{.cost = ChangeCost::Restart,
-                  .reason = reason + i18n::tr(" ; the player restarts on this video, at the same spot")};
-  }
-  if (!reopen.empty()) return reopen_for(reopen);
-  if (running == wanted) return {};
-  return Change{.cost = ChangeCost::Live};
+  return settle(running, wanted, std::move(reopen));
 }
 
 std::optional<std::int64_t> audio_fallback_delay_us(const PlaySettings& settings) {

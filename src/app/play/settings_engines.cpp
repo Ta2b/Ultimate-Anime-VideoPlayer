@@ -55,7 +55,7 @@ bool writable_folder(const std::filesystem::path& path) {
 void gpu_choice(std::string& gpu, const std::vector<std::string>& gpus) {
   if (gpus.size() < 2) return;
   const char* shown = gpu.empty() ? i18n::tr("Automatic (dedicated card first)") : gpu.c_str();
-  if (ImGui::BeginCombo(i18n::tr("Graphics card"), shown)) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Graphics card")).c_str(), shown)) {
     if (ImGui::Selectable(i18n::tr("Automatic (dedicated card first)"), gpu.empty())) gpu.clear();
     for (const std::string& name : gpus)
       if (ImGui::Selectable(name.c_str(), gpu == name)) gpu = name;
@@ -134,7 +134,7 @@ void engine_section(const SettingsChoices& choices, std::optional<core::EngineId
   const std::optional<core::EngineId> in_use = choices.engine_in_use;
   const core::EngineId shown = draft.value_or(in_use.value_or(core::EngineId::Vulkan));
   ImGui::BeginDisabled(choices.switchable.size() < 2);
-  if (ImGui::BeginCombo(i18n::tr("Backend"), std::string(engine_label(shown)).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Backend")).c_str(), std::string(engine_label(shown)).c_str())) {
     for (const core::EngineId id : choices.switchable) {
       if (ImGui::Selectable(std::string(engine_label(id)).c_str(), shown == id))
         draft = id == in_use ? std::nullopt : std::optional(id);

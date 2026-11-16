@@ -41,7 +41,7 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
   const auto entry = [](const std::string& model, bool fp8) {
     return fp8 ? model_label(model) + " · FP8" : model_label(model);
   };
-  if (ImGui::BeginCombo(i18n::tr("Model"), entry(current, fp8_now).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Model")).c_str(), entry(current, fp8_now).c_str())) {
     for (const std::string& model : choices.models) {
       for (const bool fp8 : {false, true}) {
         if (fp8 && !fp8_offered) continue;
@@ -108,7 +108,7 @@ bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& 
   };
   const std::string shown = text(support.effective(tier));
   bool changed = false;
-  if (ImGui::BeginCombo(title, shown.c_str())) {
+  if (ImGui::BeginCombo(panel::left(title).c_str(), shown.c_str())) {
     for (int i = 0; i < kPrecisionTierCount; ++i) {
       const auto candidate = static_cast<PrecisionTier>(i);
       if (!support.has(candidate)) continue;
@@ -159,7 +159,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   const auto height = std::ranges::find(kHeights, d.work_height, &HeightChoice::lines);
   const std::string height_label =
       height != kHeights.end() ? label_of(*height) : resolution_text(d.work_height);
-  if (ImGui::BeginCombo(i18n::tr("Working resolution"), height_label.c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Working resolution")).c_str(), height_label.c_str())) {
     for (const HeightChoice& choice : kHeights) {
       if (ImGui::Selectable(label_of(choice).c_str(), choice.lines == d.work_height))
         d.work_height = choice.lines;
@@ -176,8 +176,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.
   const int work = chain_work_size(d, choices.source_width, choices.source_height).height;
   if (choices.source_height > 0) output_notes(d, choices, work);
-  ImGui::SliderInt(i18n::tr("Sharpness"), &d.sharpness, limits::kSharpness.lo, limits::kSharpness.hi, "%d %%",
-                   ImGuiSliderFlags_AlwaysClamp);
+  ImGui::SliderInt(panel::left(i18n::tr("Sharpness")).c_str(), &d.sharpness, limits::kSharpness.lo,
+                   limits::kSharpness.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
   panel::tip(
       i18n::tr("Sharpness"),
@@ -191,7 +191,8 @@ void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
       choices.source_height <= 0 ||
       chain_work_size(d, choices.source_width, choices.source_height).height < choices.source_height;
   ImGui::BeginDisabled(!reduces);
-  if (ImGui::BeginCombo(i18n::tr("Downscaler"), std::string(label(d.downscale)).c_str())) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Downscaler")).c_str(),
+                        std::string(label(d.downscale)).c_str())) {
     for (int i = 0; i < kDownscaleCount; ++i) {
       const auto filter = static_cast<Downscale>(i);
       std::string text(label(filter));

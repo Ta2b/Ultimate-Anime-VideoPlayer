@@ -75,7 +75,13 @@ class PlayerUi {
   // actions.
   UiFrame frame(std::int64_t now_us, const ControlsView& view, std::vector<Input>& actions);
   // L'image de la préparation des moteurs (avant la lecture), recomposée à chaque appel.
-  const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view);
+  // actions non nul : le menu des paramètres s'y dessine aussi, ses demandes vont dans actions
+  // (loading_settings.h).
+  const ImDrawData* preparation(std::int64_t now_us, const PrepareView& view,
+                                std::vector<Input>* actions = nullptr);
+  // Avant une préparation : le menu montre ces réglages, sans la chaîne d'avant (tout ce qui touche à la
+  // chaîne demande alors de recharger).
+  void preparing(const PlaySettings& settings);
   // L'image de l'écran de bienvenue (first_run.h), recomposée à chaque appel.
   const ImDrawData* welcome(std::int64_t now_us, FirstRunView& view);
   // La navigation au clavier d'ImGui, le temps de l'assistant (A25-14) : Tab et les flèches parcourent les

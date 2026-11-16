@@ -189,12 +189,9 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   // demandée ou rien.
   const ResourcesAfterTeardown ring_release(p.screen);  // après le backend (A33-01), puis le relevé (C33-03)
   auto prepared = prepare_chain(p, settings, p.options.bench_out ? nullptr : p.stages);
-  if (!prepared && prepared.error().key == kDroppedVideoKey && p.dropped_video) {
-    // A08-08 : une vidéo glissée pendant la construction d'un moteur : la lecture passe à elle.
-    Reopen to_dropped{
-        .settings = settings, .position_us = start_us, .next_file = std::exchange(p.dropped_video, {})};
-    return to_dropped;
-  }
+  if (auto reopen = prepared ? std::nullopt
+                             : stopped_preparation(p, prepared.error(), settings, start_us, start_paused))
+    return reopen;
   if (!prepared) return std::unexpected(std::move(prepared.error()));
   if (!*prepared) {  // q ou la fenêtre fermée pendant la préparation des moteurs
     p.quit = true;
@@ -405,6 +402,8 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   std::optional<Refusal> failure;
   if (p.began_us == 0) p.began_us = host_now_us();
   std::vector<Input> actions;  // vidée à chaque tour en s'appliquant (la 0.10.0 la rejouait sans fin)
+  // Les réglages en direct changés pendant la préparation (loading_settings.h).
+  if (auto later = std::exchange(p.loading.live, {})) actions.emplace_back(ApplySettings{.settings = *later});
   session.begin(host_now_us());
   save_reopened(p);
   announce_start(p, start_us, session.view().duration_us);
