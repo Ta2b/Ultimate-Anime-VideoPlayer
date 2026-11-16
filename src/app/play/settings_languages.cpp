@@ -55,7 +55,7 @@ const char* version_label(LanguageVersion version) {
 }
 
 const char* rank_title(std::size_t rank) {
-  static_assert(limits::kLanguagePresets == 4, "un titre par choix");
+  static_assert(limits::kLanguagePresets == 5, "un titre par choix");
   switch (rank) {
     case 0:
       return i18n::tr("1st choice");
@@ -63,8 +63,10 @@ const char* rank_title(std::size_t rank) {
       return i18n::tr("2nd choice");
     case 2:
       return i18n::tr("3rd choice");
-    default:
+    case 3:
       return i18n::tr("4th choice");
+    default:
+      return i18n::tr("5th choice");
   }
 }
 
@@ -82,11 +84,12 @@ void simple_languages(std::string& own, LanguageVersion& version,
     }
     ImGui::EndCombo();
   }
-  panel::tip(i18n::tr("I prefer"),
-             i18n::tr("Original version: the audio the file marks as original, else Japanese, else Chinese, "
-                      "with subtitles in your language; your dub when none of them has those subtitles.\n"
-                      "Dubbed: your language without subtitles, else the original version.\n"
-                      "Recommended: original version."));
+  panel::tip(
+      i18n::tr("I prefer"),
+      i18n::tr("Original version: the audio the file marks as original, else Japanese, else Chinese, "
+               "with subtitles in your language, else Japanese with English subtitles, else your dub.\n"
+               "Dubbed: your language without subtitles, else the original version.\n"
+               "Recommended: original version."));
   if (picked != version || (own_changed && version != LanguageVersion::Custom)) {
     version = picked;
     presets = language_presets_for(own, version);

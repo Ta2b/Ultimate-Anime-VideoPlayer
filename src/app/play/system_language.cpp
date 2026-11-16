@@ -149,16 +149,19 @@ std::optional<LanguageVersion> version_from_name(std::string_view name) {
 std::vector<media::LanguagePreset> language_presets_for(std::string_view own_in, LanguageVersion version) {
   const std::string own = own_in.empty() ? std::string("eng") : std::string(own_in);
   std::vector<media::LanguagePreset> out;
-  const auto add = [&](std::string_view audio) {
+  const auto add_with = [&](std::string_view audio, std::string_view subtitles) {
     // Sa propre langue en audio : pas de sous-titres par-dessus.
-    media::LanguagePreset preset{std::string(audio), audio == own ? std::string{} : own};
+    media::LanguagePreset preset{std::string(audio), audio == own ? std::string{} : std::string(subtitles)};
     if (std::ranges::find(out, preset) == out.end()) out.push_back(std::move(preset));
   };
+  const auto add = [&](std::string_view audio) { add_with(audio, own); };
   if (version == LanguageVersion::Dubbed) add(own);
   add(media::kOriginalAudio);
   add("jpn");
   add("chi");
-  add(own);
+  // Sans sous-titres dans sa langue, les anglais, bien plus répandus ; sans eux non plus, rien.
+  if (own != "jpn") add_with("jpn", "eng");
+  if (version != LanguageVersion::Dubbed) add(own);
   return out;
 }
 

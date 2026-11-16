@@ -459,7 +459,7 @@ inline constexpr core::Range<int> kSubtitleDelaySlider{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
-inline constexpr std::size_t kLanguagePresets = 4;  // préréglages de langue
+inline constexpr std::size_t kLanguagePresets = 5;  // préréglages de langue
 inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
 // Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66 ; tenu par un static_assert de
 // host_facts.cpp) : un pic réglable fait toujours une sortie HDR.

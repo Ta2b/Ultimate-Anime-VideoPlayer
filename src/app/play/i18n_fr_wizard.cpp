@@ -109,16 +109,17 @@ constexpr std::array kWizardTexts{
     Entry{"2nd choice", "2e choix"},
     Entry{"3rd choice", "3e choix"},
     Entry{"4th choice", "4e choix"},
+    Entry{"5th choice", "5e choix"},
     Entry{"My language", "Ma langue"},
     Entry{"The language of your subtitles, or of the dub. The system language by default.",
           "La langue de vos sous-titres, ou du doublage. Celle du système par défaut."},
     Entry{"I prefer", "Je préfère"},
     Entry{"Original version: the audio the file marks as original, else Japanese, else Chinese, with "
-          "subtitles in your language; your dub when none of them has those subtitles.\n"
+          "subtitles in your language, else Japanese with English subtitles, else your dub.\n"
           "Dubbed: your language without subtitles, else the original version.\n"
           "Recommended: original version.",
           "VO : l'audio que le fichier indique comme original, sinon le japonais, sinon le chinois, avec des "
-          "sous-titres dans votre langue ; votre doublage quand aucun n'a ces sous-titres.\n"
+          "sous-titres dans votre langue, sinon le japonais sous-titré en anglais, sinon votre doublage.\n"
           "Doublée : votre langue sans sous-titres, sinon la VO.\n"
           "Recommandé : VO."},
     Entry{"Tracks chosen one by one in Advanced. Pick a version to go back to the automatic choice.",

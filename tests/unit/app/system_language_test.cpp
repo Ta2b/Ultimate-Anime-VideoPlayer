@@ -38,13 +38,13 @@ TEST_CASE("langues par défaut : la version originale sous-titrée dans la langu
   using namespace ajp::app::play;
   using Presets = std::vector<ajp::media::LanguagePreset>;
   set_system_language("fre");
-  const Presets original{{"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}, {"fre", ""}};
+  const Presets original{{"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}, {"jpn", "eng"}, {"fre", ""}};
   CHECK(default_language_presets() == original);
   CHECK(PlaySettings{}.language_presets == original);
   CHECK(PlaySettings{}.own_language == "fre");
   // Doublée : sa langue sans sous-titres d'abord, puis la version originale.
   CHECK(language_presets_for("fre", LanguageVersion::Dubbed) ==
-        Presets{{"fre", ""}, {"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}});
+        Presets{{"fre", ""}, {"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}, {"jpn", "eng"}});
   set_system_language("jpn");  // japonais : l'audio japonais ne prend pas de sous-titres
   CHECK(default_language_presets() == Presets{{"original", "jpn"}, {"jpn", ""}, {"chi", "jpn"}});
   set_system_language("eng");
