@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <string>
 #include <string_view>
 
@@ -101,8 +102,11 @@ void simple_languages(std::string& own, LanguageVersion& version,
 
 void track_choices(std::vector<media::LanguagePreset>& presets, LanguageVersion& version) {
   presets.resize(limits::kLanguagePresets);
+  // Les cinq choix en encadrés deux par deux.
+  if (!panel::begin_boxes()) return;
   for (std::size_t rank = 0; rank < presets.size(); ++rank) {
     ImGui::PushID(static_cast<int>(rank));
+    panel::next_box();
     section(rank_title(rank));
     bool changed =
         language_combo(i18n::tr("Audio language"), i18n::tr("From the file"), presets[rank].audio, true);
@@ -118,24 +122,29 @@ void track_choices(std::vector<media::LanguagePreset>& presets, LanguageVersion&
     panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
     ImGui::PopID();
   }
+  panel::end_boxes();
 }
 
 bool languages_page(PlaySettings& d) {
+  // Les langues et les sous-titres côte à côte.
+  if (!panel::begin_boxes()) return false;
+  panel::next_box();
   section(i18n::tr("Languages"));
   simple_languages(d.own_language, d.language_version, d.language_presets);
+  panel::next_box();
   section(i18n::tr("Subtitles"));
   int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
-  if (ImGui::SliderInt(panel::left(i18n::tr("Size")).c_str(), &percent,
-                       static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
-                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d %%",
-                       ImGuiSliderFlags_AlwaysClamp)) {
+  const std::string size_id = panel::left(i18n::tr("Size"));
+  if (panel::slider_int(size_id.c_str(), &percent, static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
+                        static_cast<int>(limits::kSubtitleScale.hi * 100.0F), std::format("{} %", percent))) {
     d.subtitle_scale = static_cast<float>(percent) / 100.0F;
   }
   panel::live_preview();
   panel::tip(i18n::tr("Size"), i18n::tr("Scales all subtitle text. Recommended: 100 %."));
-  ImGui::SliderInt(panel::left(i18n::tr("Delay (ms)")).c_str(), &d.subtitle_delay_ms,
-                   limits::kSubtitleDelaySlider.lo, limits::kSubtitleDelaySlider.hi, "%d",
-                   ImGuiSliderFlags_None);
+  const std::string delay_id = panel::left(i18n::tr("Delay (ms)"));
+  panel::slider_int(delay_id.c_str(), &d.subtitle_delay_ms, limits::kSubtitleDelaySlider.lo,
+                    limits::kSubtitleDelaySlider.hi, std::format("{} ms", d.subtitle_delay_ms),
+                    ImGuiSliderFlags_None);
   const bool held = ImGui::IsItemActive();
   panel::live_preview();
   d.subtitle_delay_ms =
@@ -148,6 +157,7 @@ bool languages_page(PlaySettings& d) {
     d.subtitle_scale = 1.0F;
     d.subtitle_delay_ms = 0;
   }
+  panel::end_boxes();
   panel::advanced_header();
   track_choices(d.language_presets, d.language_version);
   return held;

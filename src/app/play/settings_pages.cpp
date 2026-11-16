@@ -5,6 +5,7 @@
 #include <cmath>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <imgui.h>
 
@@ -82,20 +83,29 @@ void fps_section(PlaySettings& d) {
 
 void application_page(PlaySettings& d, const SettingsChoices& choices, UpdateNote& updates,
                       SystemNote& system, std::vector<Input>& actions) {
+  // Des encadrés deux par deux, comme les onglets de Dolphin : chaque section ouvre la case suivante.
+  if (!panel::begin_boxes()) return;
+  panel::next_box();
   language_section(d);
+  panel::next_box();
   section(i18n::tr("Playback"));
   ImGui::Checkbox(i18n::tr("Autoplay next episode"), &d.autoplay_next);
   panel::tip(i18n::tr("Autoplay next episode"),
              i18n::tr("Plays the next file of the folder at the end. N: next, Shift+N: previous, O: skip "
                       "credits. Recommended: on."));
+  panel::next_box();
   updates_page(d, choices.place, updates);
+  panel::next_box();
   default_player_page(choices.place, system, choices.default_player_is_ajp);
+  panel::next_box();
   section(i18n::tr("This machine"));
   panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
   if (choices.display_hz > 0.0) note(i18n::tr_format("Display {:.0f} Hz", choices.display_hz));
   if (ImGui::Button(i18n::tr("Run the wizard again"))) actions.emplace_back(OpenEngineScreen{.wizard = true});
   panel::tip(i18n::tr("Run the wizard again"), i18n::tr("Nothing changes until \"Start\"."));
+  panel::next_box();
   report_problem_section(choices.place, choices.gpu_name);
+  panel::end_boxes();
 }
 
 bool reset_section(PlaySettings& draft) {
@@ -131,14 +141,22 @@ bool reset_section(PlaySettings& draft) {
 void statistics_page(PlaySettings& d) {
   section(i18n::tr("On-screen statistics"));
   ImGui::Checkbox(i18n::tr("All statistics (Tab)"), &d.stats.all);
+  // Toutes cochée, le détail ne sert plus : grisé, deux cases par ligne.
   ImGui::BeginDisabled(d.stats.all);
-  ImGui::Checkbox(i18n::tr("Pipeline"), &d.stats.chain);
-  ImGui::Checkbox(i18n::tr("Frames"), &d.stats.frames);
-  ImGui::Checkbox(i18n::tr("Interpolation"), &d.stats.rife);
-  ImGui::Checkbox(i18n::tr("Tracks"), &d.stats.tracks);
-  ImGui::Checkbox(i18n::tr("HDR output"), &d.stats.output);
-  ImGui::Checkbox(i18n::tr("Exact position"), &d.stats.position);
-  ImGui::Checkbox(i18n::tr("Video memory"), &d.stats.memory);
+  if (panel::begin_grid("##stats")) {
+    const std::array<std::pair<const char*, bool*>, 7> boxes{{{i18n::tr("Pipeline"), &d.stats.chain},
+                                                              {i18n::tr("Frames"), &d.stats.frames},
+                                                              {i18n::tr("Interpolation"), &d.stats.rife},
+                                                              {i18n::tr("Tracks"), &d.stats.tracks},
+                                                              {i18n::tr("HDR output"), &d.stats.output},
+                                                              {i18n::tr("Exact position"), &d.stats.position},
+                                                              {i18n::tr("Video memory"), &d.stats.memory}}};
+    for (const auto& [label, value] : boxes) {
+      panel::cell();
+      ImGui::Checkbox(label, value);
+    }
+    panel::end_grid();
+  }
   ImGui::EndDisabled();
   panel::advanced_header();
   section(i18n::tr("Debugging"));
@@ -151,11 +169,20 @@ void statistics_page(PlaySettings& d) {
 void video_general_page(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions,
                         std::optional<core::EngineId>& engine_draft) {
   stages_note(choices, actions);
-  preset_section(d, choices);
-  engine_section(choices, engine_draft, actions, d.gpu);
-  output_section(d, choices);
-  colors_section(d);
-  fps_section(d);
+  // Le préréglage et le moteur, puis la sortie et l'affichage des FPS, côte à côte ; les couleurs, six
+  // curseurs, prennent toute la largeur.
+  if (panel::begin_boxes()) {
+    panel::next_box();
+    preset_section(d, choices);
+    panel::next_box();
+    engine_section(choices, engine_draft, actions, d.gpu);
+    panel::next_box();
+    output_section(d, choices);
+    panel::next_box();
+    fps_section(d);
+    panel::end_boxes();
+  }
+  colors_section(d, choices.source_hdr);
 }
 
 void display_section(PlaySettings& d, const SettingsChoices& choices) {
@@ -188,16 +215,24 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
       i18n::tr("True black"),
       i18n::tr("On an OLED, near-black areas become truly black: deeper blacks, no grey glow. The very "
                "darkest details can merge into black. Auto: on an OLED display. Recommended: Auto."));
-  ImGui::BeginDisabled(d.oled_black == OledBlack::Off);
+  // Le vrai noir ne joue que sur un OLED (dit par l'EDID, ou forcé par Activé) : son seuil et le soin de la
+  // barre se grisent ailleurs ; la cadence fixe ne sert qu'avec le VRR.
+  const bool oled =
+      d.oled_black == OledBlack::On || (d.oled_black == OledBlack::Auto && choices.display_oled);
+  ImGui::BeginDisabled(!oled);
   grade_slider(i18n::tr("Threshold (code steps)"), d.oled_black_steps, render::grade_limits::kBlackSteps);
   panel::live_preview();
   ImGui::EndDisabled();
   note((i18n::tr("Display: ") + choices.display_text).c_str());
   if (!choices.black_status.empty()) note(choices.black_status.c_str());
+  ImGui::BeginDisabled(!oled && !choices.display_oled);
   ImGui::Checkbox(i18n::tr("Hide the bar when paused (burn-in)"), &d.oled_care);
+  ImGui::EndDisabled();
   panel::tip(i18n::tr("Hide the bar when paused (burn-in)"),
              i18n::tr("On an OLED display, the bar fades after 20 s of pause. Recommended: on."));
+  ImGui::BeginDisabled(!choices.display_vrr);
   ImGui::Checkbox(i18n::tr("Steady frame rate (VRR flicker)"), &d.steady_cadence);
+  ImGui::EndDisabled();
   panel::tip(i18n::tr("Steady frame rate (VRR flicker)"),
              i18n::tr("On an OLED with VRR, keeps the refresh rate constant so dark scenes stop flickering. "
                       "Costs a little card work. Speed: one more composition per refresh. Recommended: off; "

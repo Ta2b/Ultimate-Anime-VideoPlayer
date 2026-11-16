@@ -21,21 +21,89 @@ constexpr std::array kImageTabs{
         "Above ×4 each pair needs a RIFE pass per created frame; a fast GPU is needed or frames are skipped.",
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un GPU rapide, sinon "
         "des images sont sautées."},
-    Entry{"After: each source frame is upscaled once, then moved; much lighter at high multipliers. Before: "
-          "every shown frame is upscaled. No visible difference. Speed: After about −50 to −85 % of "
-          "upscaling time from ×2 to ×8. Quality impact: imperceptible. Recommended: Auto (After above 1080p "
-          "and from ×3).",
-          "Après : chaque image source est agrandie une fois, puis déplacée ; bien plus léger aux grands "
-          "multiplicateurs. Avant : chaque image affichée est agrandie. Aucune différence visible. Vitesse : "
-          "Après environ −50 à −85 % du temps d'agrandissement de ×2 à ×8. Impact sur la qualité : "
-          "imperceptible. Recommandé : Auto (Après au-dessus de 1080p et dès ×3)."},
+    Entry{"Low", "Bas"},
+    Entry{"Medium", "Moyen"},
+    Entry{"High+", "Élevé+"},
+    Entry{"Mode", "Mode"},
+    Entry{"Max ({} fps)", "Max ({} i/s)"},
+    Entry{"Turn off if the graphics card can't keep up", "Couper si la carte graphique ne suit pas"},
+    Entry{"If the card can't keep up for about 10 s, interpolation stops for this video and upscaling "
+          "keeps running, instead of stuttering. Recommended: on. Instant mode only.",
+          "Si la carte ne suit pas pendant environ 10 s, l'interpolation s'arrête pour cette vidéo et "
+          "l'agrandissement continue, au lieu de saccader. Recommandé : activé. Mode Instantané seulement."},
+    Entry{"RIFE 4.25 lite, the lightest level. Speed: about 2× Medium. Quality impact: moderate loss "
+          "(softer in-between frames).",
+          "RIFE 4.25 lite, le niveau le plus léger. Vitesse : environ 2× Moyen. Impact sur la qualité : "
+          "perte modérée (images intermédiaires plus douces)."},
+    Entry{"RIFE 4.26 guided by 1 to 3 GMFSS key frames on fast motion only. Experimental. Speed: about −20"
+          " to −40 % vs High, depending on the scene. Quality impact: moderate gain on fast turns and "
+          "pans. NVIDIA RTX only.",
+          "RIFE 4.26 guidé par 1 à 3 images clés GMFSS, sur les mouvements rapides seulement. "
+          "Expérimental. Vitesse : environ −20 à −40 % face à Élevé, selon la scène. Impact sur la qualité"
+          " : gain modéré sur les rotations et panoramiques rapides. NVIDIA RTX seulement."},
+    Entry{"RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Medium. Quality impact: minor gain."
+          " Recommended on NVIDIA RTX.",
+          "RIFE 4.26 : des images intermédiaires plus propres. Vitesse : environ −10 % face à Moyen. "
+          "Impact sur la qualité : gain mineur. Recommandé sur NVIDIA RTX."},
+    Entry{"The highest frame rate interpolation aims for; a lower limit saves power and heat. Recommended:"
+          " the display maximum.",
+          "La cadence la plus haute visée par l'interpolation ; une limite plus basse économise l'énergie "
+          "et la chauffe. Recommandé : le maximum de l'écran."},
+    Entry{
+        "Adds frames between the video's own frames for smoother motion, as many as the display and the "
+        "graphics card allow. Higher levels make cleaner in-between frames on fast motion but need a "
+        "stronger card. Low, Medium and High are RIFE 4.25 lite, 4.22 lite and 4.26; High+ adds GMFSS to "
+        "High on fast motion, is still experimental and needs an NVIDIA RTX.",
+        "Ajoute des images entre celles de la vidéo pour un mouvement plus fluide, autant que l'écran et la "
+        "carte graphique le permettent. Les niveaux plus hauts font des images intermédiaires plus propres "
+        "sur les mouvements rapides, mais demandent une carte plus puissante. Bas, Moyen et Élevé sont "
+        "RIFE 4.25 lite, 4.22 lite et 4.26 ; Élevé+ ajoute GMFSS à Élevé sur les mouvements rapides, est "
+        "encore expérimental et demande une NVIDIA RTX."},
+    Entry{"FPS limit", "Limite d'i/s"},
+    Entry{"Here interpolation goes up to ×{} ({:.0f} fps limit).",
+          "Ici, l'interpolation va jusqu'à ×{} (limite de {:.0f} i/s)."},
+    Entry{"Very low", "Très bas"},
+    Entry{"Anime4K, shaders without a network: runs on any graphics card, even integrated. Quality impact:"
+          " modest gain over plain scaling.",
+          "Anime4K, des shaders sans réseau : tourne sur toute carte graphique, même intégrée. Impact sur "
+          "la qualité : gain modeste face à un simple agrandissement."},
+    Entry{"AnimeJaNai Performance (SPAN): firm, clean lines; keeps up on most dedicated cards.",
+          "AnimeJaNai Performance (SPAN) : des traits fermes et propres ; suit sur la plupart des cartes "
+          "dédiées."},
+    Entry{"AnimeJaNai Balanced (SPAN): finer detail, for strong graphics cards.",
+          "AnimeJaNai Balanced (SPAN) : des détails plus fins, pour les cartes graphiques puissantes."},
+    Entry{"FP8", "FP8"},
+    Entry{"Sharp lines (Sharp1)", "Traits nets (Sharp1)"},
+    Entry{"ArtCNN, a light network for small graphics cards.",
+          "ArtCNN, un réseau léger pour les petites cartes graphiques."},
+    Entry{"AnimeJaNai computes in 8-bit precision: prepared once the first time, then faster. Speed: about"
+          " +37 %. Quality impact: imperceptible. Recommended: on when offered. AnimeJaNai on an NVIDIA "
+          "RTX 40 or newer only.",
+          "AnimeJaNai calcule en précision 8 bits : préparé une fois la première fois, puis plus rapide. "
+          "Vitesse : environ +37 %. Impact sur la qualité : imperceptible. Recommandé : activé quand il "
+          "est proposé. AnimeJaNai sur une NVIDIA RTX 40 ou plus récente seulement."},
+    Entry{"Redraws the video at twice its size with a model trained on anime: sharper lines and less blur "
+          "on a big screen. Higher levels keep finer detail but need a stronger card; it is the heaviest "
+          "step, lower it first if the video stutters. Very low is Anime4K, Low is ArtCNN, Medium and High"
+          " are AnimeJaNai Performance and Balanced (SPAN).",
+          "Redessine la vidéo au double de sa taille avec un modèle entraîné sur l'anime : des traits plus"
+          " nets et moins de flou sur un grand écran. Les niveaux plus hauts gardent plus de détails mais "
+          "demandent une carte plus puissante ; c'est l'étape la plus lourde, à baisser d'abord si la "
+          "vidéo saccade. Très bas est Anime4K, Bas est ArtCNN, Moyen et Élevé sont AnimeJaNai Performance"
+          " et Balanced (SPAN)."},
+    Entry{"The Sharp1 version of AnimeJaNai draws crisper lines, a little harsher. Its engine is built "
+          "once the first time it is used, which takes a few minutes. Quality impact: a matter of taste. "
+          "Recommended: off. Medium and High only.",
+          "La version Sharp1 d'AnimeJaNai dessine des traits plus nets, un peu plus durs. Son moteur se "
+          "construit une fois, à la première utilisation, ce qui prend quelques minutes. Impact sur la "
+          "qualité : une affaire de goût. Recommandé : désactivé. Moyen et Élevé seulement."},
+    Entry{"Greyed out: the video is already HDR, it is shown without the anime grade.",
+          "Grisé : la vidéo est déjà en HDR, elle s'affiche sans le grade anime."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "
           "Core ML seulement ; ailleurs RIFE prend la place."},
     Entry{"Auto", "Auto"},
-    Entry{"Auto limit", "Plafond d'Auto"},
-    Entry{"Auto mode", "Mode d'Auto"},
     Entry{"DistilDRBA model not found in {} ({}); RIFE is used instead.",
           "Modèle DistilDRBA introuvable dans {} ({}) ; RIFE prend la place."},
     Entry{"Double the frames (NVIDIA driver)", "Doubler les images (pilote NVIDIA)"},
@@ -61,21 +129,12 @@ constexpr std::array kImageTabs{
           "rapides peuvent paraître moins précis. Un essai, pour les cartes à leur limite. Vitesse : jusqu'à "
           "+50 % sur les mouvements rapides. Impact sur la qualité : perte modérée. Recommandé : désactivé. "
           "RIFE seulement."},
-    Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
-    Entry{"RIFE 4.25 lite, the lightest level. Speed: about 2× Fast. Quality impact: moderate loss (softer "
-          "in-between frames).",
-          "RIFE 4.25 lite, le niveau le plus léger. Vitesse : environ 2× Rapide. Impact sur la qualité : "
-          "perte modérée (images intermédiaires plus douces)."},
     Entry{"RIFE 4.22 lite: light and clean, the reference for the other levels. Recommended on graphics "
           "cards other than NVIDIA RTX.",
           "RIFE 4.22 lite : léger et propre, la référence des autres niveaux. Recommandé sur les cartes "
           "graphiques autres que NVIDIA RTX."},
-    Entry{"RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Fast. Quality impact: minor gain. "
-          "Recommended on NVIDIA RTX.",
-          "RIFE 4.26 : des images intermédiaires plus propres. Vitesse : environ −10 % face à Rapide. Impact "
-          "sur la qualité : gain mineur. Recommandé sur NVIDIA RTX."},
     Entry{"RIFE 4.25: the former Balanced level. Speed: about −10 % vs Balanced. Quality impact: "
           "imperceptible.",
           "RIFE 4.25 : l'ancien niveau Équilibré. Vitesse : environ −10 % face à Équilibré. Impact sur la "
@@ -86,17 +145,10 @@ constexpr std::array kImageTabs{
           "retard. Vitesse : environ Rapide jusqu'à ×5, plus lent au-delà. Impact sur la qualité : aucun "
           "mesuré face à RIFE. Auto ne l'utilise pas."},
     Entry{"High", "Élevé"},
-    Entry{"Very high", "Très élevé"},
     Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
     Entry{"GMFSS keeps the source detail", "GMFSS garde le détail de la source"},
     Entry{"GMFSS and RIFE at 540p", "GMFSS et RIFE en 540p"},
     Entry{"GMFSS at every instant, without RIFE", "GMFSS à chaque instant, sans RIFE"},
-    Entry{
-        "RIFE guided by 1 to 3 GMFSS key frames on fast motion only. Speed: about −20 to −40 % vs Balanced, "
-        "depending on the scene. Quality impact: moderate gain on fast turns and pans. NVIDIA RTX only.",
-        "RIFE guidé par 1 à 3 images clés GMFSS, sur les mouvements rapides seulement. Vitesse : environ −20 "
-        "à −40 % face à Équilibré, selon la scène. Impact sur la qualité : gain modéré sur les rotations et "
-        "panoramiques rapides. NVIDIA RTX seulement."},
     Entry{
         "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about −45 % vs Balanced. "
         "Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.",
@@ -115,8 +167,6 @@ constexpr std::array kImageTabs{
     Entry{"Greyed out: turn on RIFE at ×2 or more, or playback stalls.",
           "Grisé : activez RIFE à ×2 ou plus, sans quoi la lecture cale."},
     Entry{"Keep poses (DRBA) with RIFE", "Garder les poses (DRBA) avec RIFE"},
-    Entry{"Maximum (display)", "Maximum (écran)"},
-    Entry{"Model", "Modèle"},
     Entry{"Multiplier", "Multiplicateur"},
     Entry{"No interpolation model found: put a RIFE model in the models folder.",
           "Aucun modèle d'interpolation trouvé : placez un modèle RIFE dans le dossier des modèles."},
@@ -153,15 +203,9 @@ constexpr std::array kImageTabs{
     Entry{"speed gain not measured", "gain de vitesse non mesuré"},
     Entry{"Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter.",
           "Au-delà de ×5, DistilDRBA calcule plus que RIFE : Rapide (RIFE 4.22 lite) est plus léger."},
-    Entry{"Here Auto goes up to ×{} ({:.0f} fps limit).",
-          "Ici Auto monte jusqu'à ×{} (plafond de {:.0f} i/s)."},
-    Entry{"Interpolation precision", "Précision de l'interpolation"},
-    Entry{"Fused engines only run at Balanced precision: the whole network is used instead.",
-          "Les moteurs fusionnés ne tournent qu'au cran Équilibre : le réseau entier sert à la place."},
     Entry{"RIFE model", "Modèle RIFE"},
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
-    Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
     Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: no "
           "loss. Quality impact: changes the look of the animation (a matter of taste). Recommended: off. "
@@ -172,18 +216,6 @@ constexpr std::array kImageTabs{
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
     Entry{"Source (no downscale)", "Source (sans réduction)"},
     Entry{"Source, no downscale ({})", "Source, sans réduction ({})"},
-    Entry{"DistilDRBA about 3 times faster on NVIDIA, with no visible difference. Built once on first use. "
-          "Speed: about 3× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; "
-          "built on first use.",
-          "DistilDRBA environ trois fois plus rapide sur NVIDIA, sans différence visible. Construit une fois "
-          "au premier usage. Vitesse : environ 3× plus rapide par passe. Impact sur la qualité : "
-          "imperceptible. Recommandé : activé. NVIDIA seulement ; construit au premier usage."},
-    Entry{"RIFE about 3 times faster on NVIDIA, with no visible difference. Built once on first use. Speed: "
-          "about 3× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; built on "
-          "first use.",
-          "RIFE environ 3 fois plus rapide sur NVIDIA, sans différence visible. Construit une fois au "
-          "premier usage. Vitesse : environ 3× plus rapide par passe. Impact sur la qualité : imperceptible. "
-          "Recommandé : activé. NVIDIA seulement ; construit au premier usage."},
     Entry{"Stable", "Stable"},
     Entry{"Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
           "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at the "
@@ -194,9 +226,6 @@ constexpr std::array kImageTabs{
           "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané environ +50 à +85 % "
           "d'images. Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la "
           "carte). Recommandé : Instantané."},
-    Entry{"The highest frame rate Auto aims for; a lower limit saves power and heat. Recommended: Maximum.",
-          "La cadence la plus haute visée par Auto ; une limite plus basse économise l'énergie et la "
-          "chauffe. Recommandé : Maximum."},
     Entry{"VRR is off in the system: turn on adaptive sync (KDE: Display > Adaptive sync).",
           "VRR coupé par le système : activez la synchronisation adaptative (KDE : Affichage > "
           "Synchronisation adaptative)."},
@@ -210,19 +239,11 @@ constexpr std::array kImageTabs{
           "VRR coupé par le système : le mouvement peut vibrer."},
     Entry{"VRR unavailable: turn on G-Sync / FreeSync / Adaptive Sync to avoid judder.",
           "VRR indisponible : activez G-Sync / FreeSync / Adaptive Sync pour éviter les saccades."},
-    Entry{"Turn interpolation off if the graphics card can't keep up",
-          "Couper l'interpolation si la carte ne suit pas"},
-    Entry{"If the card can't keep up for about 10 s, interpolation stops for this video and upscaling keeps "
-          "running, instead of stuttering. Recommended: on.",
-          "Si la carte ne suit pas pendant environ 10 s, l'interpolation s'arrête pour cette vidéo et "
-          "l'agrandissement continue, au lieu de saccader. Recommandé : activé."},
-    Entry{"Warp and SPAN", "Warp et SPAN"},
     Entry{"Without VRR, frames follow the display refresh; a late frame repeats the previous one.",
           "Sans VRR, la cadence suit le rafraîchissement ; une image tardive répète la précédente."},
     Entry{"Without VRR, motion may judder at a fixed refresh rate.",
           "Sans VRR, le mouvement peut vibrer à fréquence fixe."},
     Entry{"Working resolution", "Résolution de travail"},
-    Entry{"Anime4K ×2", "Anime4K ×2"},
     Entry{"the upscaler changes to Anime4K", "l'agrandissement passe à Anime4K"},
 };
 

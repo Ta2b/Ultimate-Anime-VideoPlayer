@@ -3,6 +3,7 @@
 // (exporting) pour la chaîne de l'export.
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <string>
 #include <utility>
@@ -63,7 +64,7 @@ std::string motion_description(const InterpChoice& choice) {
   switch (choice.level) {
     case InterpLevel::VeryFast:
       return i18n::tr(
-          "RIFE 4.25 lite, the lightest level. Speed: about 2× Fast. Quality impact: moderate loss (softer "
+          "RIFE 4.25 lite, the lightest level. Speed: about 2× Medium. Quality impact: moderate loss (softer "
           "in-between frames).");
     case InterpLevel::Fast:
       return i18n::tr(
@@ -71,13 +72,13 @@ std::string motion_description(const InterpChoice& choice) {
           "cards other than NVIDIA RTX.");
     case InterpLevel::Balanced:
       return i18n::tr(
-          "RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Fast. Quality impact: minor gain. "
+          "RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Medium. Quality impact: minor gain. "
           "Recommended on NVIDIA RTX.");
     case InterpLevel::High:
       return i18n::tr(
-          "RIFE guided by 1 to 3 GMFSS key frames on fast motion only. Speed: about −20 to −40 % vs "
-          "Balanced, depending on the scene. Quality impact: moderate gain on fast turns and pans. NVIDIA "
-          "RTX only.");
+          "RIFE 4.26 guided by 1 to 3 GMFSS key frames on fast motion only. Experimental. Speed: about −20 "
+          "to −40 % vs High, depending on the scene. Quality impact: moderate gain on fast turns and pans. "
+          "NVIDIA RTX only.");
     case InterpLevel::GmfssUnion:
       return i18n::tr(
           "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about −45 % vs Balanced. "
@@ -132,20 +133,20 @@ void fused_state_notes(const PlaySettings& d, const SettingsChoices& choices) {
   rife_state_notes(d, choices);
 }
 
-// Le nom du niveau dans la liste : Très rapide, Rapide, Équilibré, Élevé, Très élevé pour tous ; le nom du
-// modèle pour les entrées avancées, rangées sous un filet « Avancé ».
+// Le nom du niveau dans la liste : Faible, Moyen, Élevé, Élevé+ (RIFE 4.25 lite, 4.22 lite, 4.26, 4.26 avec
+// GMFSS) ; le nom du moteur pour les choix qui ne sont plus au menu mais qu'un play.toml peut porter.
 std::string level_name(InterpLevel level) {
   switch (level) {
     case InterpLevel::VeryFast:
-      return i18n::tr("Very fast");
+      return i18n::tr("Low");
     case InterpLevel::Fast:
-      return i18n::tr("Fast");
+      return i18n::tr("Medium");
     case InterpLevel::Balanced:
-      return i18n::tr("Balanced");
-    case InterpLevel::High:
       return i18n::tr("High");
+    case InterpLevel::High:
+      return i18n::tr("High+");
     case InterpLevel::GmfssUnion:
-      return i18n::tr("Very high");
+      return std::string("GMFSS union");
     case InterpLevel::Rife425:
       return std::string("RIFE 4.25");
     case InterpLevel::DistilDrba:
@@ -167,12 +168,41 @@ bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   return true;
 }
 
-// Le niveau d'interpolation : liste déroulante et note.
-void level_combo(PlaySettings& d, const SettingsChoices& choices) {
-  // Le niveau : un nom pour tous (Très rapide, Rapide, Équilibré), le modèle derrière dans l'infobulle ;
-  // RIFE 4.25 et DistilDRBA (advanced) sous un filet « Avancé ».
+// Les niveaux au menu : Faible, Moyen, Élevé, Élevé+, et Système sur un Mac.
+bool in_menu(const InterpChoice& choice) {
+  return !choice.advanced && choice.level != InterpLevel::GmfssUnion;
+}
+
+// Les niveaux de la liste Interpolation ; choisir un niveau quand elle est désactivée l'allume.
+template <class Text>
+void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting, bool on,
+                 std::optional<InterpLevel> level_now, const Text& level_text) {
+  for (const InterpChoice& choice : kInterpLevels) {
+    if (!level_present(choice, choices) || (!in_menu(choice) && level_now != choice.level)) continue;
+    if (ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level)) {
+      d.motion_engine = choice.engine;
+      d.gmfss_middle = choice.gmfss_middle;
+      if (choice.engine == MotionEngine::Rife)
+        d.rife_model =
+            choice.rife_model == choices.default_rife_model ? std::string() : std::string(choice.rife_model);
+      if (!on) {
+        // En lecture, l'Auto jusqu'à ×10 (C12-06) ; à l'export, ×2 en attendant le multiplicateur.
+        d.rife_auto = !exporting;
+        d.rife_factor = exporting ? 2 : core::kAutoMaxStep;
+        d.rife_factor_den = 1;
+      }
+    }
+    panel::tip(level_name(choice.level).c_str(), motion_description(choice));
+  }
+}
+
+// L'interpolation : Désactivée ou un niveau, en tête de l'onglet. Un niveau allume l'Auto en lecture (un
+// facteur fixe à l'export) ; Désactivée garde le niveau pour la fois suivante.
+void interpolation_combo(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
   const std::string rife_now = d.rife_model.empty() ? choices.default_rife_model : d.rife_model;
   const std::optional<InterpLevel> level_now = interp_level(d.motion_engine, rife_now, d.gmfss_middle);
+  const Factor now = factor_of(d);
+  const bool on = now.num > now.den;
   const auto level_text = [&](const InterpChoice& choice) {
     std::string text = level_name(choice.level);
     if (choice.engine == MotionEngine::Rife && !choice.gmfss_middle &&
@@ -187,39 +217,33 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
   for (const InterpChoice& choice : kInterpLevels) {
     if (level_now == choice.level) shown = level_text(choice);
   }
+  if (!on || !choices.rife_available) shown = i18n::tr("Off");
   ImGui::BeginDisabled(!choices.rife_available);
-  if (ImGui::BeginCombo(panel::left(i18n::tr("Interpolation level")).c_str(), shown.c_str())) {
-    bool separated = false;
-    for (const InterpChoice& choice : kInterpLevels) {
-      if (!level_present(choice, choices)) continue;
-      if (choice.advanced && !std::exchange(separated, true)) ImGui::SeparatorText(i18n::tr("Advanced"));
-      if (ImGui::Selectable(level_text(choice).c_str(), level_now == choice.level)) {
-        d.motion_engine = choice.engine;
-        d.gmfss_middle = choice.gmfss_middle;
-        if (choice.engine == MotionEngine::Rife)
-          d.rife_model = choice.rife_model == choices.default_rife_model ? std::string()
-                                                                         : std::string(choice.rife_model);
-      }
-      panel::tip(level_name(choice.level).c_str(), motion_description(choice));
+  if (panel::combo(i18n::tr("Interpolation"), shown.c_str())) {
+    if (ImGui::Selectable(i18n::tr("Off"), !on)) {
+      d.rife_auto = false;
+      d.rife_factor = 0;
+      d.rife_factor_den = 1;
     }
+    level_items(d, choices, exporting, on, level_now, level_text);
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  // GMFSS (Élevé, Très élevé) reste un essai : il n'est recommandé à aucune carte.
-  if (level_now == InterpLevel::High || level_now == InterpLevel::GmfssUnion)
+  // Élevé+ (GMFSS) reste un essai : il n'est recommandé à aucune carte.
+  if (on && (level_now == InterpLevel::High || level_now == InterpLevel::GmfssUnion))
     panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
-  panel::tip(i18n::tr("Interpolation level"),
+  panel::tip(i18n::tr("Interpolation"),
              std::string(i18n::tr(
-                 "How clean the in-between frames are. Higher levels fix more artifacts on fast motion but "
-                 "need a stronger card; High and Very high add GMFSS, are still experimental and need an "
-                 "NVIDIA RTX.")) +
+                 "Adds frames between the video's own frames for smoother motion, as many as the display "
+                 "and the graphics card allow. Higher levels make cleaner in-between frames on fast motion "
+                 "but need a stronger card. Low, Medium and High are RIFE 4.25 lite, 4.22 lite and 4.26; "
+                 "High+ adds GMFSS to High on fast motion, is still experimental and needs an NVIDIA RTX.")) +
                  " " + advice_line(choices, interpolation_level_advice),
              panel::Apply::Reload);
 }
 
 // Les options de GMFSS (Élevé et Très élevé), dans l'Avancé de l'onglet.
 void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
-  if (d.motion_engine != MotionEngine::Gmfss && !d.gmfss_middle) return;
   section(i18n::tr("GMFSS"));
   ImGui::BeginDisabled(!choices.gmfss_half_flow_available);
   ImGui::Checkbox(i18n::tr("GMFSS motion at half size"), &d.gmfss_half_flow);
@@ -238,7 +262,7 @@ void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
                         "high. Quality impact: minor change. Recommended: off."),
                panel::Apply::Reload);
   }
-  if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
+  if (!very_high || !d.gmfss_every_instant) {
     ImGui::Checkbox(i18n::tr("GMFSS and RIFE at 540p"), &d.gmfss_light);
     panel::tip(i18n::tr("GMFSS and RIFE at 540p"),
                std::string(i18n::tr(
@@ -289,33 +313,23 @@ void smooth_motion_section([[maybe_unused]] PlaySettings& d,
 #endif
 }
 
-// La liste du plafond de la cadence Auto et la phrase qui dit où il s'arrête.
-void auto_cap_row(PlaySettings& d, const SettingsChoices& choices) {
-  // Le plafond de la cadence : le maximum de l'écran par défaut, ou une valeur plus basse pour ménager le
-  // GPU.
-  const auto cap_label = [](int cap) {
-    return cap == 0 ? std::string(i18n::tr("Maximum (display)")) : i18n::tr_format("{} fps", cap);
-  };
-  if (ImGui::BeginCombo(panel::left(i18n::tr("Auto limit")).c_str(), cap_label(d.auto_cap).c_str())) {
-    for (const int cap : {0, 120, 60}) {
-      if (ImGui::Selectable(cap_label(cap).c_str(), d.auto_cap == cap)) d.auto_cap = cap;
-    }
-    // Un plafond de play.toml hors de cette liste reste visible et choisi (B23-05).
-    if (d.auto_cap != 0 && d.auto_cap != 120 && d.auto_cap != 60)
-      ImGui::Selectable(cap_label(d.auto_cap).c_str(), true);
-    ImGui::EndCombo();
-  }
-  panel::tip(
-      i18n::tr("Auto limit"),
-      i18n::tr("The highest frame rate Auto aims for; a lower limit saves power and heat. Recommended: "
-               "Maximum."));
-  // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
-  if (choices.display_hz > 0.0 && choices.source_fps > 0.0) {
-    // Le plafond choisi (60 ou 120) abaisse celui de l'écran : c'est lui que la phrase cite (B23-05).
-    note(i18n::tr_format("Here Auto goes up to ×{} ({:.0f} fps limit).",
-                         top_factor(d, choices.display_hz, choices.source_fps),
-                         core::auto_limit_hz(choices.display_hz, d.auto_cap)));
-  }
+// La limite d'images par seconde de l'interpolation : un curseur jusqu'à la fréquence de l'écran, comme dans
+// les jeux, et la phrase qui dit où l'Auto s'arrête.
+void fps_limit_row(PlaySettings& d, const SettingsChoices& choices) {
+  // Tout en haut, le maximum de l'écran : auto_cap vaut 0 et suit l'écran s'il change.
+  const int top = choices.display_hz > 0.0 ? static_cast<int>(std::lround(choices.display_hz)) : 240;
+  const int bottom = std::min(48, top);
+  int shown = d.auto_cap == 0 ? top : std::clamp(d.auto_cap, bottom, top);
+  const std::string value =
+      shown >= top ? i18n::tr_format("Max ({} fps)", top) : i18n::tr_format("{} fps", shown);
+  // La valeur est écrite au bout du rail : le panneau tient la colonne du libellé (left), sans champ.
+  const std::string id = panel::left(i18n::tr("FPS limit"));
+  ImGui::SetNextItemWidth(-1.0F);
+  // Le texte le plus long, réservé au bout, pour que le rail ne bouge pas quand la valeur change.
+  if (panel::slider_int(id.c_str(), &shown, bottom, top, value)) d.auto_cap = shown >= top ? 0 : shown;
+  panel::tip(i18n::tr("FPS limit"),
+             i18n::tr("The highest frame rate interpolation aims for; a lower limit saves power and heat. "
+                      "Recommended: the display maximum."));
 }
 
 // L'Auto au-dessus de ×1 : ce que le VRR de l'écran lui permet, et comment l'armer.
@@ -341,14 +355,13 @@ void vrr_notes(const SettingsChoices& choices) {
 #endif
 }
 
-// Lecture en Auto : le mode Stable ou Instantané, et en Instantané la coupure de l'interpolation quand la
-// carte ne suit pas (motion_cut.h).
-void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
+// Le mode Stable ou Instantané de l'interpolation en lecture.
+void mode_combo(PlaySettings& d, const SettingsChoices& choices) {
   // Mode Rapide : sur un écran VRR armé, chaque image part dès qu'elle est prête ; sans VRR, les instants
   // sont calés sur les vsyncs de l'écran (comme un jeu en vsync). Une image en retard laisse la source.
   const bool vrr_armed = choices.display_vrr && choices.display_vrr_armed;
   const char* const shown = d.auto_free ? i18n::tr("Instant") : i18n::tr("Stable");
-  if (ImGui::BeginCombo(panel::left(i18n::tr("Auto mode")).c_str(), shown)) {
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Mode")).c_str(), shown)) {
     if (ImGui::Selectable(i18n::tr("Stable"), !d.auto_free)) d.auto_free = false;
     if (ImGui::Selectable(i18n::tr("Instant"), d.auto_free)) d.auto_free = true;
     if (vrr_armed) {
@@ -360,21 +373,26 @@ void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(
-      i18n::tr("Auto mode"),
+      i18n::tr("Mode"),
       i18n::tr("Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
                "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at "
                "the card's limit. Speed: Instant about +50 to +85 % frames. Quality impact: minor (Instant "
                "can stutter slightly at the card's limit). Recommended: Instant."));
-  if (d.auto_free) {
-    ImGui::Checkbox(i18n::tr("Turn interpolation off if the graphics card can't keep up"), &d.auto_off);
-    panel::tip(i18n::tr("Turn interpolation off if the graphics card can't keep up"),
-               i18n::tr("If the card can't keep up for about 10 s, interpolation stops for this video and "
-                        "upscaling keeps running, instead of stuttering. Recommended: on."));
-  }
 }
 
-// Le multiplicateur : Auto ou rien en lecture, les facteurs fixes à l'export.
-void multiplier_combo(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
+// En Instantané, la coupure de l'interpolation quand la carte ne suit pas (motion_cut.h) ; grisée en
+// Stable.
+void keep_up_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(!d.auto_free);
+  ImGui::Checkbox(i18n::tr("Turn off if the graphics card can't keep up"), &d.auto_off);
+  ImGui::EndDisabled();
+  panel::tip(i18n::tr("Turn off if the graphics card can't keep up"),
+             i18n::tr("If the card can't keep up for about 10 s, interpolation stops for this video and "
+                      "upscaling keeps running, instead of stuttering. Recommended: on. Instant mode only."));
+}
+
+// Le multiplicateur de l'export : un facteur fixe (la lecture suit l'Auto).
+void multiplier_combo(PlaySettings& d, const SettingsChoices& choices, bool exporting = true) {
   // Une liste déroulante plutôt qu'un bouton par facteur : ×1,5 puis ×2 à ×8 tiennent sur une ligne.
   // Jusqu'à ×8 : au-delà, le profil (core::limits::kInterpFactor) refuserait la règle, et le choix
   // ne survivrait pas au fichier suivant.
@@ -467,96 +485,85 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
     note(i18n::tr_format(
         "Off for this video: {:.2f} fps is not an anime frame rate (23.976, 24, 25, 29.97 or 30).",
         choices.source_fps));
-  ImGui::BeginDisabled(!choices.rife_available);
-  multiplier_combo(d, choices, exporting);
   const Factor now = factor_of(d);
-  if (d.rife_auto && now.num > now.den && !exporting) auto_cap_row(d, choices);
-  if (d.rife_auto && now.num > now.den && !exporting) auto_mode_rows(d, choices);
-  if (d.rife_auto && now.num > now.den) vrr_notes(choices);
-  // En lecture, les facteurs fixes sont masqués : rien n'y est grisé. L'export les montre, grisés (B23-05).
+  // Sans modèle RIFE, rien ne tourne : tout se grise, comme Désactivée.
+  const bool on = now.num > now.den && choices.rife_available;
+  // Deux réglages par ligne, comme chez Dolphin : l'interpolation et sa coupure, le mode et la limite
+  // d'images par seconde, puis les deux options de rendu. Désactivée, tout le reste est grisé.
+  if (panel::begin_grid("##interpolation")) {
+    panel::cell();
+    interpolation_combo(d, choices, exporting);
+    panel::cell();
+    ImGui::BeginDisabled(!on);
+    if (exporting) {
+      multiplier_combo(d, choices);
+    } else {
+      keep_up_checkbox(d);
+      panel::cell();
+      mode_combo(d, choices);
+      panel::cell();
+      fps_limit_row(d, choices);
+    }
+    // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
+    panel::cell();
+    ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+    ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
+    ImGui::EndDisabled();
+    panel::tip(
+        i18n::tr("Smooth held drawings"),
+        i18n::tr("A drawing held 2 to 6 frames glides to the next one instead of freezing, then "
+                 "jumping. Speed: no loss. Quality impact: changes the look of the animation (a matter "
+                 "of taste). Recommended: off. RIFE only; replaces Keep poses."),
+        panel::Apply::Reload);
+    panel::cell();
+    cubic_warp_checkbox(d);
+    ImGui::EndDisabled();
+    panel::end_grid();
+  }
+  // Le plafond réel (A23-09) : il dépend de l'écran, de la source et du mode, pas du seul choix ci-dessus.
+  if (on && d.rife_auto && !exporting && choices.display_hz > 0.0 && choices.source_fps > 0.0) {
+    note(i18n::tr_format("Here interpolation goes up to ×{} ({:.0f} fps limit).",
+                         top_factor(d, choices.display_hz, choices.source_fps),
+                         core::auto_limit_hz(choices.display_hz, d.auto_cap)));
+  }
+  if (on && !exporting) vrr_notes(choices);
   if (exporting && choices.source_fps > 0.0 && choices.display_hz > 0.0) {
     note(i18n::tr_format("Greyed out: above the display ({:.0f} Hz for {:.3f} fps).", choices.display_hz,
                          choices.source_fps));
   }
-  if (exporting && now.num > now.den) {
+  if (exporting && on) {
     note(i18n::tr("Export skips no frames: each created frame costs a pass."));
-  } else if (now.num > 4 * now.den) {
+  } else if (now.num > 4 * now.den && !d.rife_auto) {
     note(
         i18n::tr("Above ×4 each pair needs a RIFE pass per created frame; a fast GPU is needed or frames are "
                  "skipped."));
   }
-  ImGui::EndDisabled();
   if (!choices.rife_available)
     note(i18n::tr("No interpolation model found: put a RIFE model in the models folder."));
-  level_combo(d, choices);
   if (d.motion_engine == MotionEngine::DistilDrba && !choices.distil_drba_available) {
     note(i18n::tr_format("DistilDRBA model not found in {} ({}); RIFE is used instead.", choices.rife_folder,
                          kDistilDrbaFile));
   }
   fused_state_notes(d, choices);
   load_notes(d, choices, now, exporting);
-  // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
-  ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
-  ImGui::EndDisabled();
-  panel::tip(i18n::tr("Smooth held drawings"),
-             i18n::tr("A drawing held 2 to 6 frames glides to the next one instead of freezing, then "
-                      "jumping. Speed: no loss. Quality impact: changes the look of the animation (a matter "
-                      "of taste). Recommended: off. RIFE only; replaces Keep poses."),
-             panel::Apply::Reload);
-  cubic_warp_checkbox(d);
 }
 
+// L'Avancé de l'onglet : GMFSS et les essais côte à côte, puis Smooth Motion. Les moteurs fusionnés, la
+// précision et l'ordre du warp ne sont plus au menu : leur réglage par défaut est le bon partout, et
+// play.toml les garde (fused, motion_precision, span_order).
 void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool exporting) {
-  section(i18n::tr("Engines and precision"));
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
-  ImGui::Checkbox(i18n::tr("Fused RIFE"), &d.rife_fused);
-  ImGui::EndDisabled();
-  panel::tip(i18n::tr("Fused RIFE"),
-             i18n::tr("RIFE about 3 times faster on NVIDIA, with no visible difference. Built once on first "
-                      "use. Speed: about 3× faster per pass. Quality impact: imperceptible. Recommended: on. "
-                      "NVIDIA only; built on first use."),
-             panel::Apply::Reload);
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::DistilDrba);
-  ImGui::Checkbox(i18n::tr("Fused DistilDRBA"), &d.drba_fused);
-  ImGui::EndDisabled();
-  panel::tip(i18n::tr("Fused DistilDRBA"),
-             i18n::tr("DistilDRBA about 3 times faster on NVIDIA, with no visible difference. Built once on "
-                      "first use. Speed: about 3× faster per pass. Quality impact: imperceptible. "
-                      "Recommended: on. NVIDIA only; built on first use."),
-             panel::Apply::Reload);
-  // Le cran de précision du mouvement (A23-06) : hors Équilibre, la chaîne fusionnée ne tourne pas.
-  const TierSupport& motion_tiers =
-      d.motion_engine == MotionEngine::DistilDrba ? choices.drba_tiers : choices.rife_tiers;
-  if (d.motion_engine != MotionEngine::Apple &&
-      (motion_tiers.performance || motion_tiers.quality || d.motion_precision != PrecisionTier::Balanced)) {
-    TierSupport offered = motion_tiers;
-    offered.performance = offered.performance || d.motion_precision == PrecisionTier::Performance;
-    offered.quality = offered.quality || d.motion_precision == PrecisionTier::Quality;
-    precision_combo(i18n::tr("Interpolation precision"), d.motion_precision, offered);
-    if (d.motion_precision != PrecisionTier::Balanced && (d.rife_fused || d.drba_fused))
-      note(i18n::tr("Fused engines only run at Balanced precision: the whole network is used instead."));
-  }
-  // DistilDRBA aussi choisit sa variante (mouvement ou non) d'après l'ordre du warp : seuls les moteurs sans
-  // warp à ordonner grisent la liste (A23-02).
-  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife && d.motion_engine != MotionEngine::DistilDrba);
-  if (ImGui::BeginCombo(panel::left(i18n::tr("Warp and SPAN")).c_str(),
-                        std::string(label(d.span_order)).c_str())) {
-    for (int i = 0; i < kSpanOrderCount; ++i) {
-      const auto order = static_cast<SpanOrder>(i);
-      if (ImGui::Selectable(std::string(label(order)).c_str(), order == d.span_order)) d.span_order = order;
-    }
-    ImGui::EndCombo();
-  }
-  ImGui::EndDisabled();
-  panel::tip(i18n::tr("Warp and SPAN"),
-             i18n::tr("After: each source frame is upscaled once, then moved; much lighter at high "
-                      "multipliers. Before: every shown frame is upscaled. No visible difference. Speed: "
-                      "After about −50 to −85 % of upscaling time from ×2 to ×8. Quality impact: "
-                      "imperceptible. Recommended: Auto (After above 1080p and from ×3)."),
-             panel::Apply::Reload);
+  if (!panel::begin_boxes()) return;
+  const Factor now = factor_of(d);
+  const bool on = now.num > now.den && choices.rife_available;
+  // GMFSS ne sert qu'à Élevé+ : son encadré reste là, grisé aux autres niveaux.
+  const bool gmfss = d.motion_engine == MotionEngine::Gmfss || d.gmfss_middle;
+  panel::next_box();
+  ImGui::BeginDisabled(!on || !gmfss);
   gmfss_options(d, choices);
-
+  panel::end_group();
+  ImGui::EndDisabled();
+  ImGui::BeginDisabled(!on);
+  panel::next_box();
   section(i18n::tr("Trials"));
   const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife || smoothed);
@@ -569,7 +576,13 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
                "RIFE only; Smooth held drawings replaces it."));
   pair_scale_checkbox(d);
   strong_middle_checkbox(d);
-  if (!exporting && choices.nvidia) smooth_motion_section(d, choices);
+  panel::end_group();
+  ImGui::EndDisabled();
+  if (!exporting && choices.nvidia) {
+    panel::next_box();
+    smooth_motion_section(d, choices);
+  }
+  panel::end_boxes();
 }
 
 }  // namespace ajp::app::play

@@ -110,6 +110,42 @@ void chain_headers(ExportJob& job, const SettingsChoices& choices) {
   }
 }
 
+// Le codec, la qualité et la cadence fixe du fichier exporté.
+void encoding_section(ExportJob& job) {
+  section(i18n::tr("Encoding"));
+  if (panel::combo(i18n::tr("Codec"), std::string(exporter::label(job.codec)).c_str())) {
+    for (int i = 0; i < exporter::kCodecCount; ++i) {
+      const auto codec = static_cast<exporter::Codec>(i);
+      if (ImGui::Selectable(std::string(exporter::label(codec)).c_str(), codec == job.codec))
+        job.codec = codec;
+    }
+    ImGui::EndCombo();
+  }
+  note(codec_note(job.codec));
+  ImGui::BeginDisabled(job.codec == exporter::Codec::Lossless);
+  if (panel::combo(i18n::tr("Quality"), std::string(exporter::label(job.quality)).c_str())) {
+    for (int i = 0; i < exporter::kQualityCount; ++i) {
+      const auto quality = static_cast<exporter::Quality>(i);
+      if (ImGui::Selectable(std::string(exporter::label(quality)).c_str(), quality == job.quality))
+        job.quality = quality;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::EndDisabled();
+  if (job.codec != exporter::Codec::Lossless)
+    note(i18n::tr(
+        "Very high aims for a picture identical to playback; High and Standard make smaller files."));
+  // Sans interpolation, chaque image source sort telle quelle : la cadence est fixe de toute façon.
+  const Factor exported = factor_of(export_chain(job.chain));
+  ImGui::BeginDisabled(exported.num <= exported.den);
+  ImGui::Checkbox(i18n::tr("Constant frame rate"), &job.constant_rate);
+  ImGui::EndDisabled();
+  note(job.constant_rate ? i18n::tr("At scene cuts and held drawings the previous frame repeats, so the file "
+                                    "keeps a constant frame rate any editor reads.")
+                         : i18n::tr("Frames the chain does not interpolate are left out: variable frame "
+                                    "rate, a bit smaller, fine in players."));
+}
+
 }  // namespace
 
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
@@ -134,6 +170,9 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   const ExportSize source{.width = choices.source_width, .height = choices.source_height};
   const ExportSize chain = chain_output(job.chain, source.width, source.height);
 
+  // La taille et l'encodage côte à côte, comme chez Dolphin ; la chaîne et le fichier prennent la largeur.
+  if (!panel::begin_boxes()) return;
+  panel::next_box();
   section(i18n::tr("Resolution"));
   if (panel::combo(i18n::tr("Size"), height_label(job.height, chain, source).c_str())) {
     for (const int height : kHeights) {
@@ -151,40 +190,16 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
     note(i18n::tr("Below the playback output, libplacebo scales down with its best filter (EWA Lanczos)."));
   }
 
-  chain_headers(job, choices);
+  panel::next_box();
+  encoding_section(job);
+
+  panel::end_boxes();
+  ImGui::Spacing();
   if (ImGui::Button(i18n::tr("Use the playback settings"))) job.chain = running;
   note(i18n::tr(
       "Same engines and settings as playback, with no skipped frame. The HDR grade comes along: HDR10, "
       "or graded SDR in H.264; an HDR source stays as is."));
-
-  section(i18n::tr("Encoding"));
-  if (panel::combo(i18n::tr("Codec"), std::string(exporter::label(job.codec)).c_str())) {
-    for (int i = 0; i < exporter::kCodecCount; ++i) {
-      const auto codec = static_cast<exporter::Codec>(i);
-      if (ImGui::Selectable(std::string(exporter::label(codec)).c_str(), codec == job.codec))
-        job.codec = codec;
-    }
-    ImGui::EndCombo();
-  }
-  note(codec_note(job.codec));
-  ImGui::BeginDisabled(job.codec == exporter::Codec::Lossless);
-  if (panel::combo(i18n::tr("Quality"), std::string(exporter::label(job.quality)).c_str())) {
-    for (int i = 0; i < exporter::kQualityCount; ++i) {
-      const auto quality = static_cast<exporter::Quality>(i);
-      if (ImGui::Selectable(std::string(exporter::label(quality)).c_str(), quality == job.quality))
-        job.quality = quality;
-    }
-    ImGui::EndCombo();
-  }
-  ImGui::EndDisabled();
-  if (job.codec != exporter::Codec::Lossless)
-    note(i18n::tr(
-        "Very high aims for a picture identical to playback; High and Standard make smaller files."));
-  ImGui::Checkbox(i18n::tr("Constant frame rate"), &job.constant_rate);
-  note(job.constant_rate ? i18n::tr("At scene cuts and held drawings the previous frame repeats, so the file "
-                                    "keeps a constant frame rate any editor reads.")
-                         : i18n::tr("Frames the chain does not interpolate are left out: variable frame "
-                                    "rate, a bit smaller, fine in players."));
+  chain_headers(job, choices);
 
   section(i18n::tr("File"));
   const media::Rational rate = export_rate(choices.source_rate, factor_of(export_chain(job.chain)));

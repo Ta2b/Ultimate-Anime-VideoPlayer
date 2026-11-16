@@ -99,7 +99,6 @@ constexpr std::array kSettingsPages{
     Entry{"Replace the file and export", "Remplacer le fichier et exporter"},
     Entry{"Fast", "Rapide"},
     Entry{"Instant", "Instantané"},
-    Entry{"Interpolation level", "Niveau d'interpolation"},
     Entry{"Fastest", "Le plus rapide"},
     Entry{"Finest", "Le plus fin"},
     Entry{"Frames", "Images"},

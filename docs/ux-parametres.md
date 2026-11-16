@@ -18,12 +18,20 @@ titrés, les libellés à gauche en colonne ; les réglages rares sont sous « A
 | Général | Application | langue de l'interface, épisode suivant, mises à jour, lecteur par défaut, l'assistant, signaler un problème. Avancé : tout réinitialiser |
 | Général | Statistiques | ce que Tab affiche. Avancé : débogage (paires tenues et coupées) |
 | Vidéo | Général | préréglage de qualité, moteur de calcul et carte graphique, sortie HDR (Auto par défaut, Activé, Désactivé), couleurs (en HDR comme en SDR), « Afficher les FPS ». Avancé : affichage (filtre, débandage, vrai noir, OLED, cadence fixe), moteurs (vitesse avant précision, dossier, moteurs construits), calibration |
-| Vidéo | Agrandissement | SPAN ×2 et son modèle, restaurer les traits, résolution de travail, netteté. Avancé : filtre de réduction, précision, préparation FP8 |
-| Vidéo | Interpolation | multiplicateur, Auto, niveau, dessins tenus, warp cubique. Avancé : moteurs et précision, GMFSS, essais, Smooth Motion |
+| Vidéo | Agrandissement | liste Agrandissement (Désactivé, Très bas : Anime4K, Bas : ArtCNN, Moyen : AnimeJaNai Performance, Élevé : AnimeJaNai Balanced), restaurer les traits, traits nets (Sharp1) et FP8 grisés hors AnimeJaNai, résolution de travail, netteté. Avancé : filtre de réduction, précision, préparation FP8 (grisée hors FP8) |
+| Vidéo | Interpolation | liste Interpolation (Désactivée, Bas, Moyen, Élevé, Élevé+), coupure si la carte ne suit pas, mode, limite d'images par seconde (curseur jusqu'à l'écran), dessins tenus, warp cubique. Avancé : GMFSS (grisé hors Élevé+), essais, Smooth Motion |
 | Vidéo | HDR | pic de l'écran, blanc des surfaces, flashs. Avancé : grade avant l'interpolation, LUT en une table, peau des visages |
 | Audio | Audio | sortie, délai, calage sur l'écran, latence |
 | Langues | Langues | langues préférées, taille et délai des sous-titres |
 | Export | Export | export de la chaîne en cours |
+
+**Disposition (novembre 2026, à la manière de Dolphin).** Deux encadrés par ligne (`panel::begin_boxes`), deux
+réglages par ligne dans un encadré (`panel::begin_grid`), les champs qui remplissent leur case, des curseurs fins
+avec la valeur au bout (`panel::slider_int`, `slider_float`) ; sous une largeur minimale, une barre de défilement
+horizontale au lieu d'un repli. Un onglet qui a un interrupteur général (Agrandissement, Interpolation) le met en
+tête comme une liste de niveaux. **Grisage** : tout réglage sans effet dans la situation en cours est grisé
+(niveau Désactivé ou sans modèle, option d'un autre niveau, source déjà HDR pour les couleurs, vrai noir hors
+OLED, cadence fixe sans VRR, précision Vulkan sous un autre moteur, cadence fixe d'export sans interpolation).
 
 **Infobulles.** Comme chez Dolphin, elles disent ce que le réglage change pour la personne, pourquoi l'activer et
 ce qu'elle y perd, pas comment il marche : le nom peut rester technique (on le cherche sur le web), l'infobulle

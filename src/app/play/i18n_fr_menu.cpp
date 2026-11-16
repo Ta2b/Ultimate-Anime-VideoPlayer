@@ -31,20 +31,6 @@ constexpr std::array kMenuTexts{
           "then resumes at the same spot.",
           "Mesure les réglages que cette machine tient ; Auto les suit ensuite. La lecture se ferme pendant "
           "la mesure, puis reprend au même endroit."},
-    Entry{
-        "Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer detail "
-        "if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and Anime4K are "
-        "for weak graphics cards. FP8: prepared once, then about +37 % speed for an imperceptible loss.",
-        "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
-        "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu plus "
-        "durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles. FP8 : préparé une fois, puis "
-        "environ +37 % de vitesse pour une perte imperceptible."},
-    Entry{"Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer "
-          "detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and "
-          "Anime4K are for weak graphics cards.",
-          "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
-          "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu "
-          "plus durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles."},
     Entry{"Anime4K: SDR sources only; an HDR source is upscaled by the display.",
           "Anime4K : sources SDR seulement ; une source HDR est agrandie par l'affichage."},
     Entry{"Output: {} (SPAN ×2).", "Sortie : {} (SPAN ×2)."},
@@ -57,13 +43,6 @@ constexpr std::array kMenuTexts{
           "comme Équilibré, ce qui est le cas des modèles SPAN actuels. Utile seulement pour comparer des "
           "images. Vitesse : jusqu'à 2 à 3× plus lent, aucun changement avec les modèles SPAN actuels. "
           "Impact sur la qualité : imperceptible. Recommandé : Équilibré."},
-    Entry{
-        "Redraws the video at twice its size with a model trained on anime: sharper lines and less blur on a "
-        "big screen. It is the heaviest step: turn it off first if the video stutters. Speed: the heaviest "
-        "step of the chain. Quality impact: high gain.",
-        "Redessine la vidéo au double de sa taille avec un modèle entraîné sur l'animation : des traits plus "
-        "nets et moins de flou sur un grand écran. C'est l'étape la plus lourde : à couper en premier si la "
-        "vidéo saccade. Vitesse : l'étape la plus lourde de la chaîne. Impact sur la qualité : gain élevé."},
     Entry{"Restore line art", "Restaurer les traits"},
     Entry{"Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, firmer "
           "lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and textures, "
@@ -188,11 +167,6 @@ constexpr std::array kMenuTexts{
         "minor gain. Recommended: on. RIFE only.",
         "Les images intermédiaires gardent des traits plus fins, pour quelques pour cent de vitesse. Vitesse "
         ": environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
-    Entry{"How clean the in-between frames are. Higher levels fix more artifacts on fast motion but need a "
-          "stronger card; High and Very high add GMFSS, are still experimental and need an NVIDIA RTX.",
-          "La propreté des images intermédiaires. Les niveaux plus hauts corrigent plus de défauts sur les "
-          "mouvements rapides mais demandent une carte plus forte ; Élevé et Très élevé ajoutent GMFSS, sont "
-          "encore expérimentaux et demandent une NVIDIA RTX."},
     Entry{"GMFSS", "GMFSS"},
     Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS about "
           "1.7× faster. Quality impact: minor loss on small motion. Recommended: on.",
@@ -232,7 +206,6 @@ constexpr std::array kMenuTexts{
           "Recommended: Auto.",
           "Auto : autant d'images que l'écran et la carte graphique le permettent. Désactivé : pas "
           "d'interpolation. Recommandé : Auto."},
-    Entry{"Engines and precision", "Moteurs et précision"},
     Entry{"Trials", "Essais"},
     Entry{"Characters animated on twos keep their rhythm while the background moves. Speed: slightly faster "
           "(held poses skip a pass). Quality impact: minor gain. Recommended: on. RIFE only; Smooth held "

@@ -23,6 +23,7 @@
 #include "app/play/settings_languages.h"
 #include "app/play/settings_pages.h"
 #include "app/play/settings_sound.h"
+#include "app/play/settings_upscale_level.h"
 #include "app/play/text_fit.h"
 #include "core/engines.h"
 
@@ -155,8 +156,13 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
     case Page::VideoGeneral: {
       video_general_page(draft_, choices, actions, engine_draft_);
       panel::advanced_header();
-      display_section(draft_, choices);
-      engines_advanced(choices, draft_.engines_dir, engines_folder_, draft_.fast_precision);
+      if (panel::begin_boxes()) {
+        panel::next_box();
+        display_section(draft_, choices);
+        panel::next_box();
+        engines_advanced(choices, draft_.engines_dir, engines_folder_, draft_.fast_precision);
+        panel::end_boxes();
+      }
       // Une ligne de la calibration appliquée l'est tout de suite, sans « Appliquer » : c'est ce qu'on a
       // demandé.
       if (!machine_) machine_ = std::make_unique<MachineNote>();
@@ -167,8 +173,17 @@ void SettingsPanel::draw_page(const PlaySettings& running, const SettingsChoices
     case Page::Upscaling: {
       image_tab(draft_, choices);
       panel::advanced_header();
-      upscale_advanced(draft_, choices);
-      span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
+      // La réduction et la préparation du FP8 côte à côte ; la seconde ne sert qu'au FP8 choisi.
+      if (panel::begin_boxes()) {
+        panel::next_box();
+        upscale_advanced(draft_, choices);
+        panel::next_box();
+        ImGui::BeginDisabled(!fp8_in_use(draft_, choices));
+        span_prepare_section(choices.span_prepare, choices.span_job ? *choices.span_job : prepare_);
+        panel::end_group();
+        ImGui::EndDisabled();
+        panel::end_boxes();
+      }
       break;
     }
     case Page::Interpolation: {
@@ -327,7 +342,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   const float max_height = std::max(240.0F * scale, io.DisplaySize.y - top - bottom);
   // Redimensionnable par ses bords : la taille choisie, en part de la fenêtre (panel_size.h), revient à
   // chaque ouverture et suit la fenêtre quand elle change de taille ; le bord droit reste collé.
-  const PanelArea wanted = size_.target({max_width, max_height}, 820.0F * scale);
+  const PanelArea wanted = size_.target({max_width, max_height}, 1100.0F * scale);
   ImGui::SetNextWindowPos({io.DisplaySize.x - pad, top}, ImGuiCond_Always, {1.0F, 0.0F});
   ImGui::SetNextWindowSize({wanted.width, wanted.height},
                            size_.area_changed() ? ImGuiCond_Always : ImGuiCond_Appearing);
@@ -381,7 +396,12 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
     ImGui::BeginGroup();
     draw_tabs();
     category_page_[static_cast<std::size_t>(category_of(page_))] = page_;
-    ImGui::BeginChild("##page", ImVec2(0, -footer));
+    // Une page trop étroite garde sa disposition et gagne une barre de défilement horizontale, comme chez
+    // Dolphin, plutôt que de tasser ses colonnes.
+    const float page_min = 680.0F * scale;
+    if (ImGui::GetContentRegionAvail().x < page_min) ImGui::SetNextWindowContentSize(ImVec2(page_min, 0.0F));
+    ImGui::BeginChild("##page", ImVec2(0, -footer), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_HorizontalScrollbar);
     panel::begin_page();
     ImGui::PushID(page_);
     draw_page(running, shown, actions, result, delay_held, sub_delay_held);

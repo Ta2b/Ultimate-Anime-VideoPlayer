@@ -11,6 +11,7 @@
 #include "app/play/card_advice.h"
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
+#include "app/play/settings_upscale_level.h"
 
 namespace ajp::app::play {
 
@@ -31,62 +32,6 @@ constexpr std::array<HeightChoice, 6> kHeights{{
     {540, "540p"},
     {480, "480p"},
 }};
-
-// Le modèle SPAN, en FP16 et, quand la carte le permet, en FP8.
-void model_combo(PlaySettings& d, const SettingsChoices& choices) {
-  const std::string current = d.model.empty() ? choices.default_model : d.model;
-  // Chaque modèle en FP16 et, sur une carte qui calcule le SPAN FP8 (RTX 40 et plus), en FP8 : le FP8 se
-  // prépare à la prochaine ouverture d'une vidéo, sur l'écran de chargement, comme un moteur (chain_setup).
-  const bool fp8_offered = choices.span_tiers.performance;
-  const bool fp8_now = fp8_offered && d.span_precision == PrecisionTier::Performance;
-  const auto entry = [](const std::string& model, bool fp8) {
-    return fp8 ? model_label(model) + " · FP8" : model_label(model);
-  };
-  if (ImGui::BeginCombo(panel::left(i18n::tr("Model")).c_str(), entry(current, fp8_now).c_str())) {
-    for (const std::string& model : choices.models) {
-      for (const bool fp8 : {false, true}) {
-        if (fp8 && !fp8_offered) continue;
-        const bool chosen = model == current && fp8 == fp8_now;
-        ImGui::PushID(fp8 ? 1 : 0);
-        if (ImGui::Selectable(entry(model, fp8).c_str(), chosen)) {
-          d.model = model == choices.default_model ? std::string() : model;
-          if (fp8) {
-            d.span_precision = PrecisionTier::Performance;
-          } else if (d.span_precision == PrecisionTier::Performance) {
-            d.span_precision = PrecisionTier::Balanced;
-          }
-        }
-        ImGui::PopID();
-        if (chosen) ImGui::SetItemDefaultFocus();
-      }
-    }
-    // Anime4K, sans fichier ni moteur : toujours proposé, après les modèles ONNX (anime4k_choice.h).
-    for (const std::string_view shader : kAnime4kModels) {
-      const bool chosen = current == shader;
-      if (ImGui::Selectable(model_label(std::string(shader)).c_str(), chosen)) {
-        d.model = std::string(shader);
-        if (d.span_precision == PrecisionTier::Performance) d.span_precision = PrecisionTier::Balanced;
-      }
-      if (chosen) ImGui::SetItemDefaultFocus();
-    }
-    ImGui::EndCombo();
-  }
-  panel::tip(i18n::tr("Model"),
-             fp8_offered ? std::string(i18n::tr(
-                               "Which network redraws the picture. Performance keeps up on most cards. "
-                               "Balanced keeps finer detail if your card can afford it. Sharp1 draws crisper "
-                               "lines, a little harsher. ArtCNN and Anime4K are for weak graphics cards. "
-                               "FP8: prepared once, then about +37 % speed for an imperceptible loss.")) +
-                               " " + advice_line(choices, model_advice)
-                         : std::string(i18n::tr(
-                               "Which network redraws the picture. Performance keeps up on most cards. "
-                               "Balanced keeps finer detail if your card can afford it. Sharp1 draws crisper "
-                               "lines, a little harsher. ArtCNN and Anime4K are for weak graphics cards.")) +
-                               " " + advice_line(choices, model_advice),
-             panel::Apply::Reload);
-  if (anime4k_size(current))
-    note(i18n::tr("Anime4K: SDR sources only; an HDR source is upscaled by the display."));
-}
 
 // La sortie de la chaîne sous le choix de la résolution de travail : doublée par SPAN, ou telle quelle, et la
 // réduction faite pour rester en 4K (chain_work_size).
@@ -134,30 +79,32 @@ bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& 
   return changed;
 }
 
-// NOLINTNEXTLINE(readability-function-cognitive-complexity)
 void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Upscaling"));
-  const bool anime4k = anime4k_size(d.model).has_value();
-  const char* toggle = anime4k ? i18n::tr("Anime4K ×2") : i18n::tr("SPAN ×2 (AnimeJaNai)");
-  ImGui::Checkbox(toggle, &d.upscale);
-  panel::tip(toggle,
-             std::string(i18n::tr(
-                 "Redraws the video at twice its size with a model trained on anime: sharper lines and less "
-                 "blur on a big screen. It is the heaviest step: turn it off first if the video stutters. "
-                 "Speed: the heaviest step of the chain. Quality impact: high gain.")) +
-                 " " + advice_line(choices, upscale_advice),
-             panel::Apply::Reload);
-  ImGui::BeginDisabled(!d.upscale);
-  model_combo(d, choices);
-  ImGui::Checkbox(i18n::tr("Restore line art"), &d.restore_lines);
-  panel::tip(
-      i18n::tr("Restore line art"),
-      i18n::tr("Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, "
-               "firmer lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and "
-               "textures, and the card rests. Speed: about 2× less work than upscaling such a video at full "
-               "size. Quality impact: modest (cleaner lines, less grain). Recommended: on."),
-      panel::Apply::Reload);
-  ImGui::EndDisabled();
+  // Le niveau et la restauration des traits côte à côte, comme chez Dolphin ; Désactivé grise ce qui ne
+  // vaut que pour l'agrandissement. La hauteur de travail et la netteté valent toujours.
+  if (panel::begin_grid("##agrandissement")) {
+    panel::cell();
+    upscale_combo(d, choices);
+    panel::cell();
+    ImGui::BeginDisabled(!upscale_on(d, choices));
+    ImGui::Checkbox(i18n::tr("Restore line art"), &d.restore_lines);
+    ImGui::EndDisabled();
+    panel::tip(
+        i18n::tr("Restore line art"),
+        i18n::tr("Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, "
+                 "firmer lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain "
+                 "and textures, and the card rests. Speed: about 2× less work than upscaling such a video at "
+                 "full size. Quality impact: modest (cleaner lines, less grain). Recommended: on."),
+        panel::Apply::Reload);
+    panel::cell();
+    sharp_checkbox(d, choices);
+    panel::cell();
+    fp8_checkbox(d, choices);
+    panel::end_grid();
+  }
+  if (d.upscale && anime4k_size(d.model))
+    note(i18n::tr("Anime4K: SDR sources only; an HDR source is upscaled by the display."));
 
   section(i18n::tr("Resolution"));
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080p », pas « 4K », que la sortie
@@ -170,6 +117,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   const auto height = std::ranges::find(kHeights, d.work_height, &HeightChoice::lines);
   const std::string height_label =
       height != kHeights.end() ? label_of(*height) : resolution_text(d.work_height);
+  if (!panel::begin_grid("##resolution")) return;
+  panel::cell();
   if (ImGui::BeginCombo(panel::left(i18n::tr("Working resolution")).c_str(), height_label.c_str())) {
     for (const HeightChoice& choice : kHeights) {
       if (ImGui::Selectable(label_of(choice).c_str(), choice.lines == d.work_height))
@@ -186,15 +135,18 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
                            "stutters. Speed: 1080p costs about 2× 720p. Quality impact: modest.")) +
           " " + advice_line(choices, work_height_advice),
       panel::Apply::Reload);
-  // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.
-  const int work = chain_work_size(d, choices.source_width, choices.source_height).height;
-  if (choices.source_height > 0) output_notes(d, choices, work);
-  ImGui::SliderInt(panel::left(i18n::tr("Sharpness")).c_str(), &d.sharpness, limits::kSharpness.lo,
-                   limits::kSharpness.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
+  panel::cell();
+  const std::string id = panel::left(i18n::tr("Sharpness"));
+  panel::slider_int(id.c_str(), &d.sharpness, limits::kSharpness.lo, limits::kSharpness.hi,
+                    std::format("{} %", d.sharpness));
   panel::live_preview();
   panel::tip(i18n::tr("Sharpness"),
              i18n::tr("Makes lines crisper after upscaling, without halos. Too high makes the picture look "
                       "harsh. Speed: imperceptible cost. Recommended: 0 %, to taste."));
+  panel::end_grid();
+  // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.
+  const int work = chain_work_size(d, choices.source_width, choices.source_height).height;
+  if (choices.source_height > 0) output_notes(d, choices, work);
 }
 
 void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
@@ -222,7 +174,7 @@ void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
     // Le FP8 se choisit dans la liste des modèles ; une fois choisi il se lit ici aussi, au lieu d'un faux
     // « Équilibre · FP16 » (B23-02).
     tiers.performance = tiers.performance && d.span_precision == PrecisionTier::Performance;
-    ImGui::BeginDisabled(!d.upscale);
+    ImGui::BeginDisabled(!upscale_on(d, choices));
     precision_combo(i18n::tr("SPAN precision"), d.span_precision, tiers);
     ImGui::EndDisabled();
   }

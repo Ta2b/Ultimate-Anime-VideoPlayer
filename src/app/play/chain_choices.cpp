@@ -24,7 +24,7 @@
 namespace ajp::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
-                              int auto_peak) {
+                              int auto_peak, bool source_hdr) {
   const media::TrackInfo& video = p.video;
   const PlaceboScreen& out = p.screen;
   const bool rife_loaded = c.interpolates();
@@ -41,12 +41,14 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .source_width = video.width,
       .source_height = video.height,
       .source_fps = fps_of(video.frame_rate),
+      .source_hdr = source_hdr,
       .source_rate = video.frame_rate,
       .display_hz = display_period_us(out.window()) > 0
                         ? 1e6 / static_cast<double>(display_period_us(out.window()))
                         : 0.0,
       .display_vrr = p.display && p.display->vrr.value_or(false),
       .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
+      .display_oled = p.display && p.display->oled,
       .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
       .span_tiers = c.model ? span_tiers(c.model->path, paths::derived_models(p.paths), fp8_engine,
                                          c.backend && c.backend->capabilities().span_fp8_cutlass)

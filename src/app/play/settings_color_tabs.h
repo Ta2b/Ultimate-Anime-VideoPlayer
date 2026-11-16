@@ -15,7 +15,7 @@ bool grade_slider(const char* label, double& value, core::Range<double> range);
 // Vidéo > Général : la sortie HDR voulue (Auto, Activé, Désactivé) et ce qui tourne.
 void output_section(PlaySettings& d, const SettingsChoices& choices);
 // Vidéo > Général : saturation, contraste, éclats, noirs profonds, intensité des LUT.
-void colors_section(PlaySettings& d);
+void colors_section(PlaySettings& d, bool source_hdr);
 void hdr_page(PlaySettings& d, const SettingsChoices& choices);
 
 }  // namespace ajp::app::play

@@ -48,10 +48,12 @@ struct SettingsChoices {
   int source_width = 0;             // la vidéo lue (onglet Export)
   int source_height = 0;            // la réduction n'a de sens que sous cette hauteur
   double source_fps = 0.0;          // images par seconde de la source ; 0 : inconnues
+  bool source_hdr = false;          // la vidéo est PQ ou HLG : pas de grade anime (Couleurs grisées)
   media::Rational source_rate;      // la même, exacte (nom et fréquence de l'export)
   double display_hz = 0.0;          // fréquence de l'écran ; 0 : inconnue
   bool display_vrr = false;         // l'écran sait le VRR (vrr_capable)
   bool display_vrr_armed = false;   // le système l'a armé en ce moment
+  bool display_oled = false;        // l'EDID dit OLED (vrai noir, soin de la barre)
   bool window_fullscreen = false;   // KDE n'arme le VRR qu'en plein écran
   bool rife_available = false;      // une interpolation possible : RIFE, DistilDRBA, Apple (Mac)
   // Les crans de précision (precision.h) que le poste rend : Équilibre toujours ; Performance (FP8) et

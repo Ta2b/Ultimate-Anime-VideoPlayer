@@ -6,6 +6,7 @@
 #include <string_view>
 
 #include <imgui.h>
+#include <imgui_internal.h>  // GetCurrentTable : la colonne des libellés d'une grille
 
 #include "app/play/french_text.h"
 #include "app/play/i18n.h"
@@ -78,7 +79,8 @@ inline void frame_group(const char* title, ImVec2 min, ImVec2 max) {
   draw->PathArcToFast(ImVec2(min.x + r, min.y + r), r, 6, 9);
   draw->PathLineTo(ImVec2(start - gap, min.y));
   draw->PathStroke(line, ImDrawFlags_None, 1.0F);
-  draw->AddText(ImVec2(start, min.y - text.y * 0.5F), ImGui::ColorConvertFloat4ToU32(kTitle), title);
+  draw->AddText(ImVec2(start, min.y - text.y * 0.5F), ImGui::GetColorU32(kTitle),
+                title);  // grisé avec l'encadré
   if (state().bold != nullptr) ImGui::PopFont();
 }
 
@@ -101,20 +103,39 @@ inline void end_page() {
   page_open() = false;
 }
 
-// Le libellé d'un champ à gauche, en colonne comme chez Dolphin, et le champ sur le reste de la ligne : rend
-// l'identifiant caché à passer au widget, `ImGui::BeginCombo(panel::left(label).c_str(), …)`. Hors d'un
-// encadré (l'assistant), le libellé reste à droite du champ, comme ImGui le dessine.
+// La largeur de la colonne des libellés d'un encadré ou d'une case de grille : le plus long libellé de
+// l'image précédente, gardé dans la mémoire d'ImGui, pour que les champs d'une colonne s'alignent sans
+// laisser de vide entre un libellé court et son champ (comme la QGridLayout de Dolphin).
+inline float label_column(float text) {
+  ImGuiStorage* storage = ImGui::GetStateStorage();
+  const int column = ImGui::GetCurrentTable() != nullptr ? ImGui::TableGetColumnIndex() : -1;
+  const ImGuiID used = ImGui::GetID(column) + 1U;  // la largeur de l'image précédente
+  const ImGuiID widest = used + 1U;                // le maximum de cette image
+  const ImGuiID frame = used + 2U;
+  if (storage->GetInt(frame, -1) != ImGui::GetFrameCount()) {
+    storage->SetFloat(used, storage->GetFloat(widest, text));
+    storage->SetFloat(widest, 0.0F);
+    storage->SetInt(frame, ImGui::GetFrameCount());
+  }
+  storage->SetFloat(widest, std::max(storage->GetFloat(widest), text));
+  return std::max(storage->GetFloat(used), text);
+}
+
+// Le libellé d'un champ à gauche, en colonne comme chez Dolphin, et le champ juste après : rend l'identifiant
+// caché à passer au widget, `ImGui::BeginCombo(panel::left(label).c_str(), …)`. Hors d'un encadré
+// (l'assistant), le libellé reste à droite du champ, comme ImGui le dessine.
 inline std::string left(const char* label) {
   if (ImGui::GetIO().UserData == nullptr || !group_open()) return label;
   const std::string_view whole(label);
   const std::string shown = french_spaces(std::string(whole.substr(0, whole.find("##"))));
   const ImGuiStyle& style = ImGui::GetStyle();
-  const float column = std::max(ImGui::GetContentRegionAvail().x * 0.36F,
-                                ImGui::CalcTextSize(shown.c_str()).x + style.ItemSpacing.x * 2.0F);
+  const float start = ImGui::GetCursorScreenPos().x;
+  const float column = label_column(ImGui::CalcTextSize(shown.c_str()).x) + style.ItemSpacing.x * 2.0F;
   ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted(shown.c_str());
-  ImGui::SameLine(column + style.WindowPadding.x);
-  ImGui::SetNextItemWidth(-1.0F);
+  ImGui::SameLine(0.0F, 0.0F);
+  ImGui::SetCursorScreenPos(ImVec2(start + column, ImGui::GetCursorScreenPos().y));
+  ImGui::SetNextItemWidth(-1.0F);  // le champ remplit le reste de sa case ou de sa ligne, comme chez Dolphin
   return "##" + std::string(whole);
 }
 inline std::string left(const std::string& label) {
@@ -151,6 +172,96 @@ inline void section(const char* title) {
   ImGui::TextUnformatted(title);
   ImGui::PopStyleColor();
   ImGui::Separator();
+}
+
+// Deux réglages côte à côte dans un encadré, comme les grilles de Dolphin : chaque cell() ouvre la case
+// suivante, de gauche à droite puis à la ligne. Un libellé à gauche (left) se place dans sa case.
+// Deux colonnes égales séparées d'un écart fixe ; les champs remplissent leur case, comme chez Dolphin, et
+// deux réglages voisins ne sont séparés que par cet écart.
+inline bool begin_grid(const char* id = "##grille") {
+  ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,
+                      ImVec2(ImGui::GetFontSize() * 1.25F, ImGui::GetStyle().CellPadding.y));
+  const bool open = ImGui::BeginTable(
+      id, 2,
+      ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_NoPadOuterX);
+  ImGui::PopStyleVar();
+  return open;
+}
+inline void cell() {
+  ImGui::TableNextColumn();
+}
+inline void end_grid() {
+  ImGui::EndTable();
+}
+
+// Des encadrés côte à côte, deux par ligne : next_box() avant chaque section, end_boxes() à la fin.
+inline bool begin_boxes() {
+  end_group();
+  const float gap = ImGui::GetStyle().ItemSpacing.x;
+  ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(gap * 0.5F, 0.0F));
+  const bool open = ImGui::BeginTable(
+      "##encadres", 2,
+      ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_NoPadOuterX);
+  ImGui::PopStyleVar();
+  return open;
+}
+inline void next_box() {
+  end_group();
+  ImGui::TableNextColumn();
+}
+inline void end_boxes() {
+  end_group();
+  ImGui::EndTable();
+}
+
+// Un curseur à la manière de Dolphin : un rail fin sur toute la largeur, une poignée, et la valeur écrite au
+// bout, hors du rail. `value` est le texte de la valeur en cours (« 144 i/s ») ; sa place est réservée sur
+// trois caractères au moins, pour que le rail ne bouge pas avec la valeur. `draw` dessine le curseur ImGui
+// (sans texte) à la largeur posée.
+template <class Draw>
+bool dolphin_slider(const char* id, const std::string& value, Draw draw) {
+  const ImGuiStyle& style = ImGui::GetStyle();
+  const float unit = ImGui::GetFontSize() / 16.0F;
+  const float text = std::max(ImGui::CalcTextSize(value.c_str()).x, ImGui::GetFontSize() * 2.5F);
+  const float width =
+      std::max(ImGui::GetFontSize() * 4.0F, ImGui::GetContentRegionAvail().x - text - style.ItemSpacing.x);
+  const ImVec2 at = ImGui::GetCursorScreenPos();
+  const float mid = at.y + ImGui::GetFrameHeight() * 0.5F;
+  // Le rail, sous la poignée : tracé avant le curseur, dont le fond est transparent.
+  ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(at.x, mid - 1.5F * unit),
+                                            ImVec2(at.x + width, mid + 1.5F * unit),
+                                            ImGui::GetColorU32(ImGuiCol_FrameBgActive), 2.0F * unit);
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+  ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+  ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
+  ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 10.0F * unit);
+  ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 5.0F * unit);
+  // Le texte du curseur est caché (la valeur s'écrit au bout), sauf pendant une saisie au clavier
+  // (Ctrl + clic), qui le montre dans le champ.
+  const bool typing = ImGui::GetCurrentContext()->TempInputId == ImGui::GetID(id);
+  ImGui::PushStyleColor(ImGuiCol_Text, typing ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ImVec4(0, 0, 0, 0));
+  ImGui::SetNextItemWidth(width);
+  const bool changed = draw();
+  ImGui::PopStyleVar(2);
+  ImGui::PopStyleColor(4);
+  // La valeur se dessine sans être un élément : le dernier élément reste le curseur, pour live_preview, tip
+  // et IsItemActive.
+  const ImVec2 end = ImGui::GetItemRectMax();
+  const float y = at.y + (ImGui::GetFrameHeight() - ImGui::GetFontSize()) * 0.5F;
+  ImGui::GetWindowDrawList()->AddText(ImVec2(end.x + style.ItemSpacing.x, y),
+                                      ImGui::GetColorU32(ImGuiCol_Text), value.c_str());
+  return changed;
+}
+
+// Flags : AlwaysClamp par défaut ; sans lui, Ctrl + clic peut saisir une valeur hors du rail (le délai
+// audio).
+inline bool slider_int(const char* id, int* v, int lo, int hi, const std::string& value,
+                       ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp) {
+  return dolphin_slider(id, value, [&] { return ImGui::SliderInt(id, v, lo, hi, "%d", flags); });
+}
+inline bool slider_float(const char* id, float* v, float lo, float hi, const std::string& value) {
+  return dolphin_slider(
+      id, value, [&] { return ImGui::SliderFloat(id, v, lo, hi, "%.2f", ImGuiSliderFlags_AlwaysClamp); });
 }
 
 // Après un curseur qui s'applique en direct : tenu, il efface le panneau, pour voir l'image changer dessous.

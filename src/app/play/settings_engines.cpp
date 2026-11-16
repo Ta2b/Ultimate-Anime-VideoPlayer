@@ -163,7 +163,10 @@ void engines_advanced(const SettingsChoices& choices, std::string& engines_dir, 
   section(i18n::tr("Engines"));
   // La porte du moteur Vulkan (gpu::kStrictPrecision, net_gate.h) : float16 gardé quand la perte ne se voit
   // pas. Sans effet sous TensorRT.
+  // Sans effet sous un autre moteur : grisée.
+  ImGui::BeginDisabled(choices.engine_in_use && *choices.engine_in_use != core::EngineId::Vulkan);
   ImGui::Checkbox(i18n::tr("Speed before precision (Vulkan)"), &fast_precision);
+  ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Speed before precision (Vulkan)"),
       i18n::tr("Lets the Vulkan upscaler use reduced precision where the player finds no visible difference; "

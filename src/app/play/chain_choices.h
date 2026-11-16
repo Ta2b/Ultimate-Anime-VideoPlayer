@@ -11,6 +11,6 @@
 namespace ajp::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
-                              int auto_peak);
+                              int auto_peak, bool source_hdr = false);
 
 }  // namespace ajp::app::play
