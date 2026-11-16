@@ -73,11 +73,13 @@ void model_combo(PlaySettings& d, const SettingsChoices& choices) {
   panel::tip(
       i18n::tr("Model"),
       fp8_offered
-          ? i18n::tr("Performance: fastest. Balanced: finer. Sharp1: crisper lines. ArtCNN: lightest. "
-                     "Anime4K: shaders, for small graphics cards. FP8: prepared once, then about +37 % "
+          ? i18n::tr("Which network redraws the picture. Performance keeps up on most cards. Balanced keeps "
+                     "finer detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. "
+                     "ArtCNN and Anime4K are for weak graphics cards. FP8: prepared once, then about +37 % "
                      "speed for an imperceptible loss. Recommended: the preset's choice.")
-          : i18n::tr("Performance: fastest. Balanced: finer. Sharp1: crisper lines. ArtCNN: lightest. "
-                     "Anime4K: shaders, for small graphics cards. Recommended: the preset's choice."),
+          : i18n::tr("Which network redraws the picture. Performance keeps up on most cards. Balanced keeps "
+                     "finer detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. "
+                     "ArtCNN and Anime4K are for weak graphics cards. Recommended: the preset's choice."),
       panel::Apply::Reload);
   if (anime4k_size(current))
     note(i18n::tr("Anime4K: SDR sources only; an HDR source is upscaled by the display."));
@@ -121,8 +123,9 @@ bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& 
     ImGui::EndCombo();
   }
   panel::tip(title,
-             i18n::tr("Balanced is FP16, Quality FP32. Speed: Quality about 2 to 3× slower. Quality impact: "
-                      "imperceptible. Recommended: Balanced."),
+             i18n::tr("Quality computes in full precision (FP32). You will not see the difference, but the "
+                      "card works much harder: only useful to compare pictures. Speed: Quality about 2 to 3× "
+                      "slower. Quality impact: imperceptible. Recommended: Balanced."),
              panel::Apply::Reload);
   return changed;
 }
@@ -133,18 +136,21 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   const bool anime4k = anime4k_size(d.model).has_value();
   const char* toggle = anime4k ? i18n::tr("Anime4K ×2") : i18n::tr("SPAN ×2 (AnimeJaNai)");
   ImGui::Checkbox(toggle, &d.upscale);
-  panel::tip(toggle,
-             i18n::tr("Doubles the resolution with a model trained on anime. Speed: the heaviest step of the "
-                      "chain. Quality impact: high gain. Recommended: on."),
-             panel::Apply::Reload);
+  panel::tip(
+      toggle,
+      i18n::tr("Redraws the video at twice its size with a model trained on anime: sharper lines and less "
+               "blur on a big screen. It is the heaviest step: turn it off first if the video stutters. "
+               "Speed: the heaviest step of the chain. Quality impact: high gain. Recommended: on."),
+      panel::Apply::Reload);
   ImGui::BeginDisabled(!d.upscale);
   model_combo(d, choices);
   ImGui::Checkbox(i18n::tr("Restore line art"), &d.restore_lines);
   panel::tip(
       i18n::tr("Restore line art"),
-      i18n::tr("A source above the working resolution is reduced, then SPAN redraws its lines. Off: such "
-               "a source keeps its grain and textures, without SPAN. Speed: about 4× less SPAN work on "
-               "such a source. Quality impact: modest (cleaner lines, less grain). Recommended: on."),
+      i18n::tr("Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, "
+               "firmer lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and "
+               "textures, and the card rests. Speed: about 4× less work than upscaling such a video at full "
+               "size. Quality impact: modest (cleaner lines, less grain). Recommended: on."),
       panel::Apply::Reload);
   ImGui::EndDisabled();
 
@@ -170,8 +176,9 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   panel::tip(
       i18n::tr("Working resolution"),
-      i18n::tr("The size the video is reduced to before SPAN doubles it: 720p gives 1440p. Speed: 1080p "
-               "costs about 2.3× 720p. Quality impact: modest. Recommended: the preset's choice."),
+      i18n::tr("The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps more detail "
+               "but asks much more of the card: lower it first if the video stutters. Speed: 1080p costs "
+               "about 2.3× 720p. Quality impact: modest. Recommended: the preset's choice."),
       panel::Apply::Reload);
   // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.
   const int work = chain_work_size(d, choices.source_width, choices.source_height).height;
@@ -179,10 +186,9 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::SliderInt(panel::left(i18n::tr("Sharpness")).c_str(), &d.sharpness, limits::kSharpness.lo,
                    limits::kSharpness.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
-  panel::tip(
-      i18n::tr("Sharpness"),
-      i18n::tr("Crisper lines after upscaling, without halos. 0: untouched. Speed: imperceptible cost. "
-               "Recommended: 0 %, to taste."));
+  panel::tip(i18n::tr("Sharpness"),
+             i18n::tr("Makes lines crisper after upscaling, without halos. Too high makes the picture look "
+                      "harsh. Speed: imperceptible cost. Recommended: 0 %, to taste."));
 }
 
 void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
@@ -203,8 +209,8 @@ void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
   }
   ImGui::EndDisabled();
   panel::tip(i18n::tr("Downscaler"),
-             i18n::tr("The filter that reduces the source before SPAN. Hermite: sharp, no halos. Spline36: "
-                      "sharper. Quality impact: minor. Recommended: Hermite."));
+             i18n::tr("How the video is shrunk before upscaling. Hermite keeps lines clean, with no halos; "
+                      "Spline36 keeps a little more detail. Quality impact: minor. Recommended: Hermite."));
   if (choices.span_tiers.quality && !anime4k_size(d.model)) {
     TierSupport tiers = choices.span_tiers;
     // Le FP8 se choisit dans la liste des modèles ; une fois choisi il se lit ici aussi, au lieu d'un faux

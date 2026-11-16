@@ -31,51 +31,65 @@ constexpr std::array kMenuTexts{
           "then resumes at the same spot.",
           "Mesure les réglages que cette machine tient ; Auto les suit ensuite. La lecture se ferme pendant "
           "la mesure, puis reprend au même endroit."},
-    Entry{"Performance: fastest. Balanced: finer. Sharp1: crisper lines. ArtCNN: lightest. Anime4K: shaders, "
-          "for small graphics cards. FP8: prepared once, then about +37 % speed for an imperceptible loss. "
-          "Recommended: the preset's choice.",
-          "Performance : le plus rapide. Équilibre : plus fin. Sharp1 : traits plus nets. ArtCNN : le plus "
-          "léger. Anime4K : shaders, pour les petites cartes graphiques. FP8 : préparé une fois, puis "
-          "environ +37 % de vitesse pour une perte imperceptible. Recommandé : le choix du préréglage."},
     Entry{
-        "Performance: fastest. Balanced: finer. Sharp1: crisper lines. ArtCNN: lightest. Anime4K: shaders, "
-        "for small graphics cards. Recommended: the preset's choice.",
-        "Performance : le plus rapide. Équilibre : plus fin. Sharp1 : traits plus nets. ArtCNN : le plus "
-        "léger. Anime4K : shaders, pour les petites cartes graphiques. Recommandé : le choix du préréglage."},
+        "Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer detail "
+        "if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and Anime4K are "
+        "for weak graphics cards. FP8: prepared once, then about +37 % speed for an imperceptible loss. "
+        "Recommended: the preset's choice.",
+        "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
+        "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu plus "
+        "durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles. FP8 : préparé une fois, puis "
+        "environ +37 % de vitesse pour une perte imperceptible. Recommandé : le choix du préréglage."},
+    Entry{"Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer "
+          "detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and "
+          "Anime4K are for weak graphics cards. Recommended: the preset's choice.",
+          "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
+          "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu "
+          "plus durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles. Recommandé : le choix "
+          "du préréglage."},
     Entry{"Anime4K: SDR sources only; an HDR source is upscaled by the display.",
           "Anime4K : sources SDR seulement ; une source HDR est agrandie par l'affichage."},
     Entry{"Output: {} (SPAN ×2).", "Sortie : {} (SPAN ×2)."},
     Entry{"Output: {} (no upscaling).", "Sortie : {} (sans agrandissement)."},
-    Entry{"Balanced is FP16, Quality FP32. Speed: Quality about 2 to 3× slower. Quality impact: "
-          "imperceptible. Recommended: Balanced.",
-          "Équilibre est en FP16, Qualité en FP32. Vitesse : Qualité environ 2 à 3× plus lent. Impact sur la "
-          "qualité : imperceptible. Recommandé : Équilibre."},
-    Entry{"Doubles the resolution with a model trained on anime. Speed: the heaviest step of the chain. "
-          "Quality impact: high gain. Recommended: on.",
-          "Double la résolution avec un modèle entraîné sur l'anime. Vitesse : l'étape la plus lourde de la "
-          "chaîne. Impact sur la qualité : gain élevé. Recommandé : activé."},
+    Entry{"Quality computes in full precision (FP32). You will not see the difference, but the card works "
+          "much harder: only useful to compare pictures. Speed: Quality about 2 to 3× slower. Quality "
+          "impact: imperceptible. Recommended: Balanced.",
+          "Qualité calcule en pleine précision (FP32). La différence ne se voit pas, mais la carte travaille "
+          "beaucoup plus : utile seulement pour comparer des images. Vitesse : Qualité environ 2 à 3× plus "
+          "lent. Impact sur la qualité : imperceptible. Recommandé : Équilibré."},
+    Entry{"Redraws the video at twice its size with a model trained on anime: sharper lines and less blur on "
+          "a big screen. It is the heaviest step: turn it off first if the video stutters. Speed: the "
+          "heaviest step of the chain. Quality impact: high gain. Recommended: on.",
+          "Redessine la vidéo au double de sa taille avec un modèle entraîné sur l'animation : des traits "
+          "plus nets et moins de flou sur un grand écran. C'est l'étape la plus lourde : à couper en premier "
+          "si la vidéo saccade. Vitesse : l'étape la plus lourde de la chaîne. Impact sur la qualité : gain "
+          "élevé. Recommandé : activé."},
     Entry{"Restore line art", "Restaurer les traits"},
-    Entry{"A source above the working resolution is reduced, then SPAN redraws its lines. Off: such a source "
-          "keeps its grain and textures, without SPAN. Speed: about 4× less SPAN work on such a source. "
-          "Quality impact: modest (cleaner lines, less grain). Recommended: on.",
-          "Une source plus grande que la résolution de travail est réduite, puis SPAN redessine ses traits. "
-          "Désactivé : une telle source garde son grain et ses textures, sans SPAN. Vitesse : environ 4× "
-          "moins de travail pour SPAN sur une telle source. Impact sur la qualité : modéré (traits plus "
-          "propres, moins de grain). Recommandé : activé."},
-    Entry{"The size the video is reduced to before SPAN doubles it: 720p gives 1440p. Speed: 1080p costs "
-          "about 2.3× 720p. Quality impact: modest. Recommended: the preset's choice.",
-          "La taille à laquelle la vidéo est réduite avant que SPAN la double : 720p donne 1440p. Vitesse : "
-          "1080p coûte environ 2,3× 720p. Impact sur la qualité : modéré. Recommandé : le choix du "
-          "préréglage."},
-    Entry{"Crisper lines after upscaling, without halos. 0: untouched. Speed: imperceptible cost. "
-          "Recommended: 0 %, to taste.",
-          "Des traits plus nets après l'agrandissement, sans halos. 0 : intact. Vitesse : coût "
-          "imperceptible. Recommandé : 0 %, selon le goût."},
+    Entry{"Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, firmer "
+          "lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and textures, "
+          "and the card rests. Speed: about 4× less work than upscaling such a video at full size. Quality "
+          "impact: modest (cleaner lines, less grain). Recommended: on.",
+          "Les vidéos plus fines que la résolution de travail (une vidéo 1080p pour un travail en 720p) "
+          "gagnent des traits plus propres et plus fermes, redessinés par l'agrandissement. Désactivé : une "
+          "telle vidéo s'affiche telle quelle, avec son grain et ses textures, et la carte se repose. "
+          "Vitesse : environ 4× moins de travail que d'agrandir une telle vidéo à pleine taille. Impact sur "
+          "la qualité : modeste (traits plus propres, moins de grain). Recommandé : activé."},
+    Entry{"The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps more detail but "
+          "asks much more of the card: lower it first if the video stutters. Speed: 1080p costs about 2.3× "
+          "720p. Quality impact: modest. Recommended: the preset's choice.",
+          "La taille à laquelle l'agrandissement travaille, puis qu'il double (720p donne 1440p). Plus haut "
+          "garde plus de détails mais demande beaucoup plus à la carte : à baisser en premier si la vidéo "
+          "saccade. Vitesse : 1080p coûte environ 2,3× 720p. Impact sur la qualité : modeste. Recommandé : "
+          "le choix du préréglage."},
+    Entry{"Makes lines crisper after upscaling, without halos. Too high makes the picture look harsh. Speed: "
+          "imperceptible cost. Recommended: 0 %, to taste.",
+          "Rend les traits plus nets après l'agrandissement, sans halos. Trop haut, l'image devient dure. "
+          "Vitesse : coût imperceptible. Recommandé : 0 %, selon le goût."},
     Entry{"Filter and precision", "Filtre et précision"},
-    Entry{"The filter that reduces the source before SPAN. Hermite: sharp, no halos. Spline36: sharper. "
-          "Quality impact: minor. Recommended: Hermite.",
-          "Le filtre qui réduit la source avant SPAN. Hermite : net, sans halos. Spline36 : plus net. Impact "
-          "sur la qualité : mineur. Recommandé : Hermite."},
+    Entry{"How the video is shrunk before upscaling. Hermite keeps lines clean, with no halos; Spline36 "
+          "keeps a little more detail. Quality impact: minor. Recommended: Hermite.",
+          "La façon de réduire la vidéo avant l'agrandissement. Hermite garde des traits propres, sans halos "
+          "; Spline36 garde un peu plus de détails. Impact sur la qualité : mineur. Recommandé : Hermite."},
     Entry{"HDR", "HDR"},
     Entry{"Auto: HDR when the system is in HDR and the display is bright enough (350 nits). On: HDR whenever "
           "the system is in HDR. Off: SDR. HDR needs HDR turned on in the system. Recommended: Auto.",
@@ -89,52 +103,61 @@ constexpr std::array kMenuTexts{
           "L'écart entre les zones sombres et claires. Recommandé : 100 %."},
     Entry{"Brightness of lights and glints. Recommended: 100 %.",
           "La luminosité des lumières et des reflets. Recommandé : 100 %."},
-    Entry{"How much dark scenes are deepened, at most; less in dark episodes. Recommended: 0.50.",
-          "De combien les scènes sombres sont approfondies, au plus ; moins dans un épisode sombre. "
-          "Recommandé : 0,50."},
+    Entry{"Makes dark scenes deeper and richer, less so in episodes that are dark throughout. Lower it if "
+          "shadows lose detail. Recommended: 0.50.",
+          "Rend les scènes sombres plus profondes et plus riches, moins dans les épisodes sombres de bout en "
+          "bout. À baisser si les ombres perdent des détails. Recommandé : 0,50."},
     Entry{"LUT contrast", "Contraste des LUT"},
-    Entry{"Strength of the contrast LUT. 0: the reference look; −100: removed; 100: doubled. Recommended: 0.",
-          "La force de la LUT de contraste. 0 : le rendu de référence ; −100 : retirée ; 100 : doublée. "
-          "Recommandé : 0."},
+    Entry{"More or less contrast than the reference look. Higher makes colors punchier; lower is softer and "
+          "closer to the source. 0: the reference look; −100: removed; 100: doubled. Recommended: 0.",
+          "Plus ou moins de contraste que le rendu de référence. Plus haut, les couleurs claquent davantage "
+          "; plus bas, l'image est plus douce et plus proche de la source. 0 : le rendu de référence ; −100 "
+          ": retirée ; 100 : doublée. Recommandé : 0."},
     Entry{"LUT highlights", "Éclats des LUT"},
-    Entry{
-        "Strength of the highlight LUT. 0: the reference look; −100: removed; 100: doubled. Recommended: 0.",
-        "La force de la LUT des éclats. 0 : le rendu de référence ; −100 : retirée ; 100 : doublée. "
-        "Recommandé : 0."},
+    Entry{"How much lights, sparks and skies shine. Higher makes them brighter; lower stays closer to the "
+          "source. 0: the reference look; −100: removed; 100: doubled. Recommended: 0.",
+          "À quel point les lumières, les étincelles et les ciels brillent. Plus haut, ils éclatent "
+          "davantage ; plus bas, ils restent proches de la source. 0 : le rendu de référence ; −100 : "
+          "retirée ; 100 : doublée. Recommandé : 0."},
     Entry{"Defaults##couleurs", "Par défaut##couleurs"},
     Entry{"The output is SDR: these settings apply when it is HDR (Video > General).",
           "La sortie est en SDR : ces réglages s'appliquent quand elle est en HDR (Vidéo > Général)."},
     Entry{"Brightness", "Luminosité"},
     Entry{"Display peak: auto ({} nits)", "Pic de l'écran : auto ({} nits)"},
-    Entry{"The brightest light the grade aims for, read from the display. Recommended: auto.",
-          "La lumière la plus forte que vise le grade, lue sur l'écran. Recommandé : auto."},
+    Entry{"How bright the brightest lights get. Read from the display; set it by hand if highlights look "
+          "clipped or dull. Recommended: auto.",
+          "La luminosité des lumières les plus vives. Lue sur l'écran ; à régler à la main si les éclats "
+          "paraissent écrêtés ou ternes. Recommandé : auto."},
     Entry{"In content nits: KDE shows them brighter (× its SDR brightness / 203).",
           "En nits du contenu : KDE les montre plus lumineux (× sa luminosité SDR / 203)."},
-    Entry{"Brightness of walls and skin. Lower leaves more room to the lights, which still reach the peak. "
-          "Recommended: 100 %.",
-          "La luminosité des murs et de la peau. Plus bas laisse plus de place aux lumières, qui atteignent "
-          "toujours le pic. Recommandé : 100 %."},
+    Entry{"How bright walls and skin are. Lower makes the picture calmer and lets lights stand out more; "
+          "they still reach the peak. Recommended: 100 %.",
+          "La luminosité des murs et de la peau. Plus bas, l'image est plus calme et les lumières ressortent "
+          "davantage ; elles atteignent toujours le pic. Recommandé : 100 %."},
     Entry{"Dims bursts of more than three flashes a second for one second, for photosensitive viewers. "
           "Recommended: on.",
           "Atténue pendant une seconde les rafales de plus de trois flashs par seconde, pour les personnes "
           "photosensibles. Recommandé : activé."},
     Entry{"Grade", "Grade"},
     Entry{"Grade before interpolation", "Grade avant l'interpolation"},
-    Entry{"HDR, interpolation after SPAN: each source frame is graded once instead of every shown frame. "
-          "Speed: up to 8× less grading at ×8. Quality impact: minor, on moving edges. Recommended: off.",
-          "En HDR, interpolation après SPAN : chaque image de la source est gradée une fois, au lieu de "
-          "chaque image affichée. Vitesse : jusqu'à 8× moins de grade à ×8. Impact sur la qualité : mineur, "
-          "sur les bords en mouvement. Recommandé : désactivé."},
+    Entry{"Grades each source frame once instead of every displayed frame: frees the card at high "
+          "multipliers. Moving edges can show slight color differences. Speed: up to 8× less grading at ×8. "
+          "Quality impact: minor, on moving edges. Recommended: off.",
+          "Le grade passe une fois par image source au lieu de chaque image affichée : soulage la carte aux "
+          "grands multiplicateurs. Les bords en mouvement peuvent montrer de légers écarts de couleur. "
+          "Vitesse : jusqu'à 8× moins de grade à ×8. Impact sur la qualité : mineur, sur les bords en "
+          "mouvement. Recommandé : désactivé."},
     Entry{"LUTs in one table", "LUT en une seule table"},
-    Entry{"The LUT stack is read once per pixel instead of LUT by LUT. Speed: grading about 4× faster. "
-          "Quality impact: imperceptible. Recommended: on.",
-          "La pile de LUT est lue une fois par pixel au lieu de LUT par LUT. Vitesse : grade environ 4× plus "
-          "rapide. Impact sur la qualité : imperceptible. Recommandé : activé."},
-    Entry{"Faces are found ahead of playback and only their tones are treated as skin, so warm lamps light "
-          "up again. Quality impact: minor gain, not yet judged. Recommended: off.",
-          "Les visages sont cherchés avant la lecture et seuls leurs tons sont traités comme de la peau : "
-          "les lampes chaudes se rallument. Impact sur la qualité : gain mineur, pas encore jugé. Recommandé "
-          ": désactivé."},
+    Entry{"Makes the HDR grade about 4 times lighter for the card, with no visible difference. Turn it off "
+          "only to compare. Speed: grading about 4× faster. Quality impact: imperceptible. Recommended: on.",
+          "Rend le grade HDR environ 4 fois plus léger pour la carte, sans différence visible. À couper "
+          "seulement pour comparer. Vitesse : grade environ 4× plus rapide. Impact sur la qualité : "
+          "imperceptible. Recommandé : activé."},
+    Entry{"Warm lamps in scenes with faces light up again, instead of being toned down like skin. A trial: "
+          "some faces can be missed. Quality impact: minor gain, not yet judged. Recommended: off.",
+          "Les lampes chaudes des scènes avec des visages se rallument, au lieu d'être adoucies comme de la "
+          "peau. Un essai : certains visages peuvent être manqués. Impact sur la qualité : gain mineur, pas "
+          "encore jugé. Recommandé : désactivé."},
     Entry{"Defaults##hdr", "Par défaut##hdr"},
     Entry{"The card that plays the video. Recommended: Automatic.",
           "La carte qui lit la vidéo. Recommandé : Automatique."},
@@ -142,52 +165,63 @@ constexpr std::array kMenuTexts{
           "Là où vont les moteurs téléchargés. Les moteurs installés ne sont pas déplacés."},
     Entry{"Default: {}. Free: {}.", "Par défaut : {}. Libre : {}."},
     Entry{"Backend", "Moteur de calcul"},
-    Entry{"Runs SPAN and the interpolation. TensorRT: NVIDIA RTX, fastest, engines built once per model and "
-          "size. Vulkan: every graphics card. Recommended: TensorRT on NVIDIA RTX, Vulkan elsewhere.",
-          "Fait tourner SPAN et l'interpolation. TensorRT : NVIDIA RTX, le plus rapide, moteurs construits "
-          "une fois par modèle et par taille. Vulkan : toutes les cartes graphiques. Recommandé : TensorRT "
-          "sur NVIDIA RTX, Vulkan ailleurs."},
+    Entry{"What runs upscaling and interpolation. TensorRT is the fastest on NVIDIA RTX cards, but builds "
+          "its engines once per model and size (a few minutes the first time). Vulkan works on every "
+          "graphics card. Recommended: TensorRT on NVIDIA RTX, Vulkan elsewhere.",
+          "Ce qui fait tourner l'agrandissement et l'interpolation. TensorRT est le plus rapide sur les "
+          "cartes NVIDIA RTX, mais construit ses moteurs une fois par modèle et par taille (quelques minutes "
+          "la première fois). Vulkan marche sur toutes les cartes graphiques. Recommandé : TensorRT sur "
+          "NVIDIA RTX, Vulkan ailleurs."},
     Entry{"Opens the engines screen. Playback resumes at the same spot.",
           "Ouvre l'écran des moteurs. La lecture reprend au même endroit."},
-    Entry{"Vulkan engines keep half precision when the difference is invisible. Speed: about 2× on "
-          "upscaling. Quality impact: imperceptible. Recommended: on.",
-          "Les moteurs Vulkan gardent la demi-précision quand la différence est invisible. Vitesse : environ "
-          "2× sur l'agrandissement. Impact sur la qualité : imperceptible. Recommandé : activé."},
+    Entry{
+        "Upscaling about twice as fast with Vulkan, with no visible difference. Turn it off only if you see "
+        "banding or artifacts. Speed: about 2× on upscaling. Quality impact: imperceptible. Recommended: on.",
+        "L'agrandissement environ deux fois plus rapide avec Vulkan, sans différence visible. À couper "
+        "seulement si des aplats en escalier ou des défauts apparaissent. Vitesse : environ 2× sur "
+        "l'agrandissement. Impact sur la qualité : imperceptible. Recommandé : activé."},
     Entry{"Prepares these engines again.", "Prépare de nouveau ces moteurs."},
     Entry{
-        "In-between frames read the source with a sharper filter, for finer lines. Speed: about −3 %. "
-        "Quality impact: minor gain. Recommended: on. RIFE only.",
-        "Les images intermédiaires lisent la source avec un filtre plus net, pour des traits plus fins. "
-        "Vitesse : environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
-    Entry{"Very fast, Fast and Balanced use RIFE alone; High and Very high add GMFSS key frames (NVIDIA "
-          "RTX). Recommended: Balanced on NVIDIA RTX, Fast elsewhere.",
-          "Très rapide, Rapide et Équilibré n'utilisent que RIFE ; Élevé et Très élevé ajoutent des images "
-          "clés GMFSS (NVIDIA RTX). Recommandé : Équilibré sur NVIDIA RTX, Rapide ailleurs."},
+        "In-between frames keep finer lines, for a few percent of speed. Speed: about −3 %. Quality impact: "
+        "minor gain. Recommended: on. RIFE only.",
+        "Les images intermédiaires gardent des traits plus fins, pour quelques pour cent de vitesse. Vitesse "
+        ": environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
+    Entry{"How clean the in-between frames are. Higher levels fix more artifacts on fast motion but need a "
+          "stronger card; High and Very high add GMFSS and need an NVIDIA RTX. Recommended: Balanced on "
+          "NVIDIA RTX, Fast elsewhere.",
+          "La propreté des images intermédiaires. Les niveaux plus hauts corrigent plus de défauts sur les "
+          "mouvements rapides mais demandent une carte plus forte ; Élevé et Très élevé ajoutent GMFSS et "
+          "demandent une NVIDIA RTX. Recommandé : Équilibré sur NVIDIA RTX, Rapide ailleurs."},
     Entry{"GMFSS", "GMFSS"},
-    Entry{"GMFSS estimates motion on half-size frames. Speed: GMFSS about 1.7× faster. Quality impact: minor "
-          "loss on small motion. Recommended: on.",
-          "GMFSS estime le mouvement sur des images de demi-taille. Vitesse : GMFSS environ 1,7× plus "
-          "rapide. Impact sur la qualité : perte mineure sur les petits mouvements. Recommandé : activé."},
-    Entry{"Every in-between frame comes from GMFSS, without RIFE. Speed: about −70 % vs Very high; frames "
-          "drop when the card can't keep up. Quality impact: minor change. Recommended: off.",
-          "Chaque image intermédiaire vient de GMFSS, sans RIFE. Vitesse : environ −70 % face à Très élevé ; "
-          "des images sautent quand la carte ne suit pas. Impact sur la qualité : changement mineur. "
-          "Recommandé : désactivé."},
-    Entry{"RIFE and GMFSS estimate motion at 540p instead of 720p. Speed: about +35 %. Quality impact: minor "
-          "loss. Recommended: off; on if the card can't keep up.",
-          "RIFE et GMFSS estiment le mouvement en 540p au lieu de 720p. Vitesse : environ +35 %. Impact sur "
-          "la qualité : perte mineure. Recommandé : désactivé ; activé si la carte ne suit pas."},
-    Entry{
-        "Above 720p of working resolution, GMFSS key frames are rebuilt from the full-size source instead of "
-        "enlarged. Speed: about −5 to −15 %. Quality impact: minor gain, not yet judged. Recommended: off.",
-        "Au-dessus de 720p de résolution de travail, les images clés GMFSS sont refaites à partir de la "
-        "source en pleine taille au lieu d'être agrandies. Vitesse : environ −5 à −15 %. Impact sur la "
-        "qualité : gain mineur, pas encore jugé. Recommandé : désactivé."},
-    Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames, on top of interpolation. "
-          "Quality impact: moderate loss (driver frames are rougher). Recommended: off.",
-          "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre les images affichées, en plus de "
-          "l'interpolation. Impact sur la qualité : perte modérée (les images du pilote sont plus "
-          "grossières). Recommandé : désactivé."},
+    Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS about "
+          "1.7× faster. Quality impact: minor loss on small motion. Recommended: on.",
+          "GMFSS va beaucoup plus vite ; les très petits mouvements peuvent être un peu moins précis. "
+          "Vitesse : GMFSS environ 1,7× plus rapide. Impact sur la qualité : perte mineure sur les petits "
+          "mouvements. Recommandé : activé."},
+    Entry{"Every in-between frame comes from GMFSS, the cleanest on hard motion, but the card works far more "
+          "and frames drop when it can't keep up. Speed: about −70 % vs Very high. Quality impact: minor "
+          "change. Recommended: off.",
+          "Chaque image intermédiaire vient de GMFSS, le plus propre sur les mouvements difficiles, mais la "
+          "carte travaille bien plus et des images tombent quand elle ne suit pas. Vitesse : environ −70 % "
+          "face à Très élevé. Impact sur la qualité : changement mineur. Recommandé : désactivé."},
+    Entry{"Interpolation about a third faster, with slightly less precise motion. Turn it on if the card "
+          "can't keep up at High or Very high. Speed: about +35 %. Quality impact: minor loss. Recommended: "
+          "off; on if the card can't keep up.",
+          "L'interpolation environ un tiers plus rapide, avec un mouvement un peu moins précis. À activer si "
+          "la carte ne suit pas en Élevé ou Très élevé. Vitesse : environ +35 %. Impact sur la qualité : "
+          "perte mineure. Recommandé : désactivé ; activé si la carte ne suit pas."},
+    Entry{"Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: about −5 to −15 "
+          "%. Quality impact: minor gain, not yet judged. Recommended: off.",
+          "Des images GMFSS plus fines au-dessus de 720p de résolution de travail, pour un peu de vitesse. "
+          "Vitesse : environ −5 à −15 %. Impact sur la qualité : gain mineur, pas encore jugé. Recommandé : "
+          "désactivé."},
+    Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between each displayed frame, for even smoother "
+          "motion on a high-refresh display. Its frames are rougher than the player's. Quality impact: "
+          "moderate loss (driver frames are rougher). Recommended: off.",
+          "Le pilote NVIDIA (RTX 40 et 50) ajoute une image entre chaque image affichée, pour un mouvement "
+          "encore plus fluide sur un écran à haute fréquence. Ses images sont plus grossières que celles du "
+          "lecteur. Impact sur la qualité : perte modérée (images du pilote plus grossières). Recommandé : "
+          "désactivé."},
     Entry{"How many frames per source frame the export makes.",
           "Combien d'images l'export fait pour chaque image de la source."},
     Entry{"Auto: as many frames as the display and the graphics card allow. Off: no interpolation. "
@@ -222,25 +256,28 @@ constexpr std::array kMenuTexts{
           "goes to ajp.log. This session only.",
           "Chaque paire jugée dessin tenu (bleu) ou changement de plan (rouge) teinte l'écran un instant et "
           "va dans ajp.log. Cette séance seulement."},
-    Entry{"Stretches the picture to the window. EWA Lanczos is the sharpest and the heaviest. Recommended: "
-          "the default.",
-          "Étire l'image à la fenêtre. EWA Lanczos est le plus net et le plus lourd. Recommandé : celui par "
-          "défaut."},
-    Entry{"Smooths steps in flat areas and gradients. Speed: minor cost. Quality impact: minor; can soften "
-          "fine grain. Recommended: off.",
-          "Lisse les marches dans les aplats et les dégradés. Vitesse : coût mineur. Impact sur la qualité : "
-          "mineur ; peut adoucir le grain fin. Recommandé : désactivé."},
-    Entry{"Near-blacks become true black (0), up to the threshold. Auto: on an OLED display. Recommended: "
-          "Auto.",
-          "Les quasi-noirs deviennent du vrai noir (0), jusqu'au seuil. Auto : sur un écran OLED. Recommandé "
-          ": Auto."},
+    Entry{"How the picture is stretched to the window. EWA Lanczos is the sharpest but the heaviest for the "
+          "card. Recommended: the default.",
+          "La façon d'étirer l'image à la fenêtre. EWA Lanczos est le plus net mais le plus lourd pour la "
+          "carte. Recommandé : celui par défaut."},
+    Entry{"Smooths visible steps in skies and dark gradients. Can soften fine grain. Speed: minor cost. "
+          "Quality impact: minor; can soften fine grain. Recommended: off.",
+          "Lisse les marches visibles dans les ciels et les dégradés sombres. Peut adoucir un grain fin. "
+          "Vitesse : coût mineur. Impact sur la qualité : mineur ; peut adoucir un grain fin. Recommandé : "
+          "désactivé."},
+    Entry{"On an OLED, near-black areas become truly black: deeper blacks, no grey glow. The very darkest "
+          "details can merge into black. Auto: on an OLED display. Recommended: Auto.",
+          "Sur un OLED, les zones presque noires deviennent vraiment noires : des noirs plus profonds, sans "
+          "voile gris. Les détails les plus sombres peuvent se fondre dans le noir. Auto : sur un écran "
+          "OLED. Recommandé : Auto."},
     Entry{"On an OLED display, the bar fades after 20 s of pause. Recommended: on.",
           "Sur un écran OLED, la barre s'efface après 20 s de pause. Recommandé : activé."},
-    Entry{"Keeps VRR at a constant refresh so dark scenes do not flicker on OLED. Speed: one more "
-          "composition per refresh. Recommended: off; on if dark scenes flicker.",
-          "Garde le VRR à une fréquence constante pour que les scènes sombres ne scintillent pas sur OLED. "
-          "Vitesse : une composition de plus par rafraîchissement. Recommandé : désactivé ; activé si les "
-          "scènes sombres scintillent."},
+    Entry{
+        "On an OLED with VRR, keeps the refresh rate constant so dark scenes stop flickering. Costs a little "
+        "card work. Speed: one more composition per refresh. Recommended: off; on if dark scenes flicker.",
+        "Sur un OLED avec VRR, garde une fréquence constante pour que les scènes sombres ne scintillent "
+        "plus. Coûte un peu de travail à la carte. Vitesse : une composition de plus par rafraîchissement. "
+        "Recommandé : désactivé ; activé si les scènes sombres scintillent."},
     Entry{"Picked when a file opens. Change the current track from the bar.",
           "Choisies à l'ouverture d'un fichier. La piste en cours se change depuis la barre."},
     Entry{"Scales all subtitle text. Recommended: 100 %.",
@@ -259,11 +296,11 @@ constexpr std::array kMenuTexts{
           "ms). Recommended: 0.",
           "Positif : le son plus tard. Gardé pour cet appareil de sortie. Ctrl+clic pour taper une valeur "
           "(jusqu'à ±5 000 ms). Recommandé : 0."},
-    Entry{
-        "On a fixed-rate display, playback speed changes by at most 0.125 % so each frame fits whole "
-        "refreshes. Sound follows, inaudibly. Recommended: on.",
-        "Sur un écran à fréquence fixe, la vitesse de lecture change d'au plus 0,125 % pour que chaque image "
-        "tienne en rafraîchissements entiers. Le son suit, sans que cela s'entende. Recommandé : activé."},
+    Entry{"On a fixed-rate display, every frame lasts the same time: no regular judder. Playback speed "
+          "changes by at most 0.125 %, and sound follows inaudibly. Recommended: on.",
+          "Sur un écran à fréquence fixe, chaque image dure le même temps : pas de saccade régulière. La "
+          "vitesse de lecture change de 0,125 % au plus, et le son suit sans que ça s'entende. Recommandé : "
+          "activé."},
     Entry{"The time between choosing a frame and seeing it. Set it if the picture seems early or late. "
           "Recommended: estimated (0).",
           "Le temps entre le choix d'une image et son affichage. À régler si l'image semble en avance ou en "

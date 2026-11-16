@@ -170,12 +170,12 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   panel::tip(i18n::tr("Scaler"),
-             i18n::tr("Stretches the picture to the window. EWA Lanczos is the sharpest and the heaviest. "
-                      "Recommended: the default."));
+             i18n::tr("How the picture is stretched to the window. EWA Lanczos is the sharpest but the "
+                      "heaviest for the card. Recommended: the default."));
   ImGui::Checkbox(i18n::tr("Debanding"), &d.deband);
   panel::tip(i18n::tr("Debanding"),
-             i18n::tr("Smooths steps in flat areas and gradients. Speed: minor cost. Quality impact: minor; "
-                      "can soften fine grain. Recommended: off."));
+             i18n::tr("Smooths visible steps in skies and dark gradients. Can soften fine grain. Speed: "
+                      "minor cost. Quality impact: minor; can soften fine grain. Recommended: off."));
   if (ImGui::BeginCombo(panel::left(i18n::tr("True black")).c_str(),
                         std::string(label(d.oled_black)).c_str())) {
     for (int i = 0; i < kOledBlackCount; ++i) {
@@ -184,9 +184,10 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(i18n::tr("True black"),
-             i18n::tr("Near-blacks become true black (0), up to the threshold. Auto: on an OLED display. "
-                      "Recommended: Auto."));
+  panel::tip(
+      i18n::tr("True black"),
+      i18n::tr("On an OLED, near-black areas become truly black: deeper blacks, no grey glow. The very "
+               "darkest details can merge into black. Auto: on an OLED display. Recommended: Auto."));
   ImGui::BeginDisabled(d.oled_black == OledBlack::Off);
   grade_slider(i18n::tr("Threshold (code steps)"), d.oled_black_steps, render::grade_limits::kBlackSteps);
   panel::live_preview();
@@ -197,10 +198,10 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
   panel::tip(i18n::tr("Hide the bar when paused (burn-in)"),
              i18n::tr("On an OLED display, the bar fades after 20 s of pause. Recommended: on."));
   ImGui::Checkbox(i18n::tr("Steady frame rate (VRR flicker)"), &d.steady_cadence);
-  panel::tip(
-      i18n::tr("Steady frame rate (VRR flicker)"),
-      i18n::tr("Keeps VRR at a constant refresh so dark scenes do not flicker on OLED. Speed: one more "
-               "composition per refresh. Recommended: off; on if dark scenes flicker."));
+  panel::tip(i18n::tr("Steady frame rate (VRR flicker)"),
+             i18n::tr("On an OLED with VRR, keeps the refresh rate constant so dark scenes stop flickering. "
+                      "Costs a little card work. Speed: one more composition per refresh. Recommended: off; "
+                      "on if dark scenes flicker."));
 }
 
 }  // namespace ajp::app::play

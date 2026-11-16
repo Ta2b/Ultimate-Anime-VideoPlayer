@@ -20,12 +20,14 @@ constexpr std::array kImageTabs{
         "Above ×4 each pair needs a RIFE pass per created frame; a fast GPU is needed or frames are skipped.",
         "Au-delà de ×4, chaque paire demande une passe RIFE par image créée : il faut un GPU rapide, sinon "
         "des images sont sautées."},
-    Entry{"After: SPAN upscales each source frame once, then frames are moved. Before: SPAN on every shown "
-          "frame. Speed: After about −50 to −85 % of SPAN time from ×2 to ×8. Quality impact: imperceptible. "
-          "Recommended: Auto (After above 1080p and from ×3).",
-          "Après : SPAN agrandit chaque image source une fois, puis les images sont déplacées. Avant : SPAN "
-          "sur chaque image affichée. Vitesse : Après, environ −50 à −85 % du temps de SPAN de ×2 à ×8. "
-          "Impact sur la qualité : imperceptible. Recommandé : Auto (Après au-delà de 1080p et dès ×3)."},
+    Entry{"After: each source frame is upscaled once, then moved; much lighter at high multipliers. Before: "
+          "every shown frame is upscaled. No visible difference. Speed: After about −50 to −85 % of "
+          "upscaling time from ×2 to ×8. Quality impact: imperceptible. Recommended: Auto (After above 1080p "
+          "and from ×3).",
+          "Après : chaque image source est agrandie une fois, puis déplacée ; bien plus léger aux grands "
+          "multiplicateurs. Avant : chaque image affichée est agrandie. Aucune différence visible. Vitesse : "
+          "Après environ −50 à −85 % du temps d'agrandissement de ×2 à ×8. Impact sur la qualité : "
+          "imperceptible. Recommandé : Auto (Après au-dessus de 1080p et dès ×3)."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "
@@ -44,16 +46,20 @@ constexpr std::array kImageTabs{
     Entry{"Sharper interpolation warp (Catmull-Rom)", "Warp de l'interpolation plus net (Catmull-Rom)"},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
-    Entry{"Trial: on fast motion, frames near the middle reuse the middle RIFE pass. Speed: up to +30 % on "
-          "long pans. Quality impact: minor loss. Recommended: off. RIFE with Keep poses only.",
-          "Essai : sur un mouvement rapide, les images proches du milieu reprennent la passe RIFE du milieu. "
-          "Vitesse : jusqu'à +30 % sur les longs panoramiques. Impact sur la qualité : perte mineure. "
-          "Recommandé : désactivé. RIFE avec Garder les poses seulement."},
-    Entry{
-        "Trial: fast motion is estimated on half-size frames. Speed: up to +50 % on fast motion. Quality "
-        "impact: moderate loss. Recommended: off. RIFE only.",
-        "Essai : le mouvement rapide s'estime sur des images de demi-taille. Vitesse : jusqu'à +50 % sur les "
-        "mouvements rapides. Impact sur la qualité : perte modérée. Recommandé : désactivé. RIFE seulement."},
+    Entry{"Long pans are made faster by reusing the middle in-between frame for its neighbors, which are "
+          "then a little less accurate. A trial. Speed: up to +30 % on long pans. Quality impact: minor "
+          "loss. Recommended: off. RIFE with Keep poses only.",
+          "Les longs panoramiques vont plus vite en reprenant l'image intermédiaire du milieu pour ses "
+          "voisines, alors un peu moins justes. Un essai. Vitesse : jusqu'à +30 % sur les longs "
+          "panoramiques. Impact sur la qualité : perte mineure. Recommandé : désactivé. RIFE avec Garder les "
+          "poses seulement."},
+    Entry{"Fast action is made faster by estimating motion at half size; fast motion can look less precise. "
+          "A trial, for cards at their limit. Speed: up to +50 % on fast motion. Quality impact: moderate "
+          "loss. Recommended: off. RIFE only.",
+          "Les scènes d'action vont plus vite en estimant le mouvement à demi-taille ; les mouvements "
+          "rapides peuvent paraître moins précis. Un essai, pour les cartes à leur limite. Vitesse : jusqu'à "
+          "+50 % sur les mouvements rapides. Impact sur la qualité : perte modérée. Recommandé : désactivé. "
+          "RIFE seulement."},
     Entry{"Very fast", "Très rapide"},
     Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
@@ -165,22 +171,26 @@ constexpr std::array kImageTabs{
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
     Entry{"Source (no downscale)", "Source (sans réduction)"},
     Entry{"Source, no downscale ({})", "Source, sans réduction ({})"},
-    Entry{"Runs DistilDRBA as small TensorRT engines. Speed: about 2× faster per pass. Quality impact: "
-          "imperceptible. Recommended: on. NVIDIA only; built on first use.",
-          "Fait tourner DistilDRBA en petits moteurs TensorRT. Vitesse : environ 2× plus rapide par passe. "
-          "Impact sur la qualité : imperceptible. Recommandé : activé. NVIDIA seulement ; construit à la "
-          "première utilisation."},
-    Entry{"Runs RIFE as small TensorRT engines. Speed: about 3× faster per pass. Quality impact: "
-          "imperceptible. Recommended: on. NVIDIA only; built on first use.",
-          "Fait tourner RIFE en petits moteurs TensorRT. Vitesse : environ 3× plus rapide par passe. Impact "
-          "sur la qualité : imperceptible. Recommandé : activé. NVIDIA seulement ; construit à la première "
-          "utilisation."},
+    Entry{"DistilDRBA about twice as fast on NVIDIA, with no visible difference. Built once on first use. "
+          "Speed: about 2× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; "
+          "built on first use.",
+          "DistilDRBA environ deux fois plus rapide sur NVIDIA, sans différence visible. Construit une fois "
+          "au premier usage. Vitesse : environ 2× plus rapide par passe. Impact sur la qualité : "
+          "imperceptible. Recommandé : activé. NVIDIA seulement ; construit au premier usage."},
+    Entry{"RIFE about 3 times faster on NVIDIA, with no visible difference. Built once on first use. Speed: "
+          "about 3× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; built on "
+          "first use.",
+          "RIFE environ 3 fois plus rapide sur NVIDIA, sans différence visible. Construit une fois au "
+          "premier usage. Vitesse : environ 3× plus rapide par passe. Impact sur la qualité : imperceptible. "
+          "Recommandé : activé. NVIDIA seulement ; construit au premier usage."},
     Entry{"Stable", "Stable"},
-    Entry{"Stable: fixed steps (×1 to ×8), the most regular motion. Instant: no steps, each frame made for "
-          "the moment it is shown. Speed: Instant about +20 to +40 % frames. Quality impact: minor (Instant "
-          "can stutter slightly at the card's limit). Recommended: Instant.",
-          "Stable : des paliers fixes (×1 à ×8), le mouvement le plus régulier. Instantané : sans palier, "
-          "chaque image faite pour l'instant où elle s'affiche. Vitesse : Instantané environ +20 à +40 % "
+    Entry{"Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
+          "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at the "
+          "card's limit. Speed: Instant about +20 to +40 % frames. Quality impact: minor (Instant can "
+          "stutter slightly at the card's limit). Recommended: Instant.",
+          "Stable : des paliers fixes (×1 à ×8), le mouvement le plus régulier. Instantané : chaque image "
+          "est faite pour l'instant exact où elle s'affiche, pour plus d'images et un mouvement plus fluide "
+          "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané environ +20 à +40 % "
           "d'images. Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la "
           "carte). Recommandé : Instantané."},
     Entry{"The highest frame rate Auto aims for; a lower limit saves power and heat. Recommended: Maximum.",
@@ -201,10 +211,10 @@ constexpr std::array kImageTabs{
           "VRR indisponible : activez G-Sync / FreeSync / Adaptive Sync pour éviter les saccades."},
     Entry{"Turn interpolation off if the graphics card can't keep up",
           "Couper l'interpolation si la carte ne suit pas"},
-    Entry{"Stops interpolation for this video when it makes less than one frame per source pair for about 10 "
-          "s; the card goes back to upscaling. Recommended: on.",
-          "Arrête l'interpolation pour cette vidéo quand elle fait moins d'une image par paire de sources "
-          "pendant environ 10 s ; la carte revient à l'agrandissement. Recommandé : activé."},
+    Entry{"If the card can't keep up for about 10 s, interpolation stops for this video and upscaling keeps "
+          "running, instead of stuttering. Recommended: on.",
+          "Si la carte ne suit pas pendant environ 10 s, l'interpolation s'arrête pour cette vidéo et "
+          "l'agrandissement continue, au lieu de saccader. Recommandé : activé."},
     Entry{"Warp and SPAN", "Warp et SPAN"},
     Entry{"Without VRR, frames follow the display refresh; a late frame repeats the previous one.",
           "Sans VRR, la cadence suit le rafraîchissement ; une image tardive répète la précédente."},

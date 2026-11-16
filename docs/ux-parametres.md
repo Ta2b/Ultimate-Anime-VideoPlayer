@@ -25,7 +25,9 @@ titrés, les libellés à gauche en colonne ; les réglages rares sont sous « A
 | Langues | Langues | langues préférées, taille et délai des sous-titres |
 | Export | Export | export de la chaîne en cours |
 
-**Infobulles.** Le nom du réglage en gras, une phrase, puis « Vitesse », « Impact sur la qualité »
+**Infobulles.** Comme chez Dolphin, elles disent ce que le réglage change pour la personne, pourquoi l'activer et
+ce qu'elle y perd, pas comment il marche : le nom peut rester technique (on le cherche sur le web), l'infobulle
+en donne l'usage. Le nom du réglage en gras, ces phrases, puis « Vitesse », « Impact sur la qualité »
 (imperceptible, mineur, modéré, élevé) et « Recommandé » en bleu (`panel_tip.cpp` : `split_tip`). Les valeurs
 par défaut suivent la recommandation. Les chiffres de vitesse à confirmer sur une vraie machine sont listés dans
 `reglages/mesures-a-faire.md` (dossier du projet).

@@ -29,11 +29,10 @@ void cubic_warp_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Sharper interpolation warp (Catmull-Rom)"), &d.cubic_warp);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Sharper interpolation warp (Catmull-Rom)"),
-      i18n::tr("In-between frames read the source with a sharper filter, for finer lines. Speed: about "
-               "−3 %. Quality impact: minor gain. Recommended: on. RIFE only."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Sharper interpolation warp (Catmull-Rom)"),
+             i18n::tr("In-between frames keep finer lines, for a few percent of speed. Speed: about −3 %. "
+                      "Quality impact: minor gain. Recommended: on. RIFE only."),
+             panel::Apply::Reload);
 }
 
 // Moins de passes RIFE sur les paires fortes (PlaySettings::strong_middle) : un essai, éteint par défaut.
@@ -41,10 +40,10 @@ void strong_middle_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Fewer RIFE passes on fast motion"), &d.strong_middle);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Fewer RIFE passes on fast motion"),
-      i18n::tr("Trial: on fast motion, frames near the middle reuse the middle RIFE pass. Speed: up to +30 % "
-               "on long pans. Quality impact: minor loss. Recommended: off. RIFE with Keep poses only."));
+  panel::tip(i18n::tr("Fewer RIFE passes on fast motion"),
+             i18n::tr("Long pans are made faster by reusing the middle in-between frame for its neighbors, "
+                      "which are then a little less accurate. A trial. Speed: up to +30 % on long pans. "
+                      "Quality impact: minor loss. Recommended: off. RIFE with Keep poses only."));
 }
 
 // L'échelle par paire (PlaySettings::pair_scale) : un essai, éteint par défaut.
@@ -52,11 +51,11 @@ void pair_scale_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Lighter RIFE on fast motion (half size)"), &d.pair_scale);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Lighter RIFE on fast motion (half size)"),
-      i18n::tr("Trial: fast motion is estimated on half-size frames. Speed: up to +50 % on fast motion. "
-               "Quality impact: moderate loss. Recommended: off. RIFE only."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Lighter RIFE on fast motion (half size)"),
+             i18n::tr("Fast action is made faster by estimating motion at half size; fast motion can look "
+                      "less precise. A trial, for cards at their limit. Speed: up to +50 % on fast motion. "
+                      "Quality impact: moderate loss. Recommended: off. RIFE only."),
+             panel::Apply::Reload);
 }
 
 std::string motion_description(const InterpChoice& choice) {
@@ -203,11 +202,11 @@ void level_combo(PlaySettings& d, const SettingsChoices& choices) {
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Interpolation level"),
-      i18n::tr("Very fast, Fast and Balanced use RIFE alone; High and Very high add GMFSS key frames (NVIDIA "
-               "RTX). Recommended: Balanced on NVIDIA RTX, Fast elsewhere."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Interpolation level"),
+             i18n::tr("How clean the in-between frames are. Higher levels fix more artifacts on fast motion "
+                      "but need a stronger card; High and Very high add GMFSS and need an NVIDIA RTX. "
+                      "Recommended: Balanced on NVIDIA RTX, Fast elsewhere."),
+             panel::Apply::Reload);
 }
 
 // Les options de GMFSS (Élevé et Très élevé), dans l'Avancé de l'onglet.
@@ -217,32 +216,32 @@ void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(!choices.gmfss_half_flow_available);
   ImGui::Checkbox(i18n::tr("GMFSS motion at half size"), &d.gmfss_half_flow);
   ImGui::EndDisabled();
-  panel::tip(i18n::tr("GMFSS motion at half size"),
-             i18n::tr("GMFSS estimates motion on half-size frames. Speed: GMFSS about 1.7× faster. Quality "
-                      "impact: minor loss on small motion. Recommended: on."),
-             panel::Apply::Reload);
+  panel::tip(
+      i18n::tr("GMFSS motion at half size"),
+      i18n::tr("GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS "
+               "about 1.7× faster. Quality impact: minor loss on small motion. Recommended: on."),
+      panel::Apply::Reload);
   const bool very_high = d.motion_engine == MotionEngine::Gmfss;
   if (very_high) {
     ImGui::Checkbox(i18n::tr("GMFSS at every instant, without RIFE"), &d.gmfss_every_instant);
     panel::tip(i18n::tr("GMFSS at every instant, without RIFE"),
-               i18n::tr("Every in-between frame comes from GMFSS, without RIFE. Speed: about −70 % vs Very "
-                        "high; frames drop when the card can't keep up. Quality impact: minor change. "
-                        "Recommended: off."),
+               i18n::tr("Every in-between frame comes from GMFSS, the cleanest on hard motion, but the card "
+                        "works far more and frames drop when it can't keep up. Speed: about −70 % vs Very "
+                        "high. Quality impact: minor change. Recommended: off."),
                panel::Apply::Reload);
   }
   if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
     ImGui::Checkbox(i18n::tr("GMFSS and RIFE at 540p"), &d.gmfss_light);
     panel::tip(i18n::tr("GMFSS and RIFE at 540p"),
-               i18n::tr("RIFE and GMFSS estimate motion at 540p instead of 720p. Speed: about +35 %. Quality "
-                        "impact: minor loss. Recommended: off; on if the card can't keep up."),
+               i18n::tr("Interpolation about a third faster, with slightly less precise motion. Turn it on "
+                        "if the card can't keep up at High or Very high. Speed: about +35 %. Quality impact: "
+                        "minor loss. Recommended: off; on if the card can't keep up."),
                panel::Apply::Reload);
     ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
-    panel::tip(
-        i18n::tr("GMFSS keeps the source detail"),
-        i18n::tr("Above 720p of working resolution, GMFSS key frames are rebuilt from the full-size "
-                 "source instead of enlarged. Speed: about −5 to −15 %. Quality impact: minor gain, not "
-                 "yet judged. Recommended: off."),
-        panel::Apply::Reload);
+    panel::tip(i18n::tr("GMFSS keeps the source detail"),
+               i18n::tr("Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: "
+                        "about −5 to −15 %. Quality impact: minor gain, not yet judged. Recommended: off."),
+               panel::Apply::Reload);
   }
 }
 
@@ -263,12 +262,11 @@ void smooth_motion_section([[maybe_unused]] PlaySettings& d,
   const SmoothMotionBlock block = smooth_motion_block(choices.gpu_name, choices.driver_version);
   ImGui::BeginDisabled(without_rife || block != SmoothMotionBlock::None);
   ImGui::Checkbox(i18n::tr("Double the frames (NVIDIA driver)"), &d.smooth_motion);
-  panel::tip(
-      i18n::tr("Double the frames (NVIDIA driver)"),
-      i18n::tr("The NVIDIA driver (RTX 40 and 50) adds a frame between displayed frames, on top of "
-               "interpolation. Quality impact: moderate loss (driver frames are rougher). Recommended: "
-               "off."),
-      panel::Apply::Restart);
+  panel::tip(i18n::tr("Double the frames (NVIDIA driver)"),
+             i18n::tr("The NVIDIA driver (RTX 40 and 50) adds a frame between each displayed frame, for even "
+                      "smoother motion on a high-refresh display. Its frames are rougher than the player's. "
+                      "Quality impact: moderate loss (driver frames are rougher). Recommended: off."),
+             panel::Apply::Restart);
   panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
   if (block == SmoothMotionBlock::Gpu)
@@ -352,15 +350,15 @@ void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
   }
   panel::tip(
       i18n::tr("Auto mode"),
-      i18n::tr("Stable: fixed steps (×1 to ×8), the most regular motion. Instant: no steps, each frame made "
-               "for the moment it is shown. Speed: Instant about +20 to +40 % frames. Quality impact: minor "
-               "(Instant can stutter slightly at the card's limit). Recommended: Instant."));
+      i18n::tr("Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
+               "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at "
+               "the card's limit. Speed: Instant about +20 to +40 % frames. Quality impact: minor (Instant "
+               "can stutter slightly at the card's limit). Recommended: Instant."));
   if (d.auto_free) {
     ImGui::Checkbox(i18n::tr("Turn interpolation off if the graphics card can't keep up"), &d.auto_off);
-    panel::tip(
-        i18n::tr("Turn interpolation off if the graphics card can't keep up"),
-        i18n::tr("Stops interpolation for this video when it makes less than one frame per source pair for "
-                 "about 10 s; the card goes back to upscaling. Recommended: on."));
+    panel::tip(i18n::tr("Turn interpolation off if the graphics card can't keep up"),
+               i18n::tr("If the card can't keep up for about 10 s, interpolation stops for this video and "
+                        "upscaling keeps running, instead of stuttering. Recommended: on."));
   }
 }
 
@@ -505,15 +503,17 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   ImGui::Checkbox(i18n::tr("Fused RIFE"), &d.rife_fused);
   ImGui::EndDisabled();
   panel::tip(i18n::tr("Fused RIFE"),
-             i18n::tr("Runs RIFE as small TensorRT engines. Speed: about 3× faster per pass. Quality impact: "
-                      "imperceptible. Recommended: on. NVIDIA only; built on first use."),
+             i18n::tr("RIFE about 3 times faster on NVIDIA, with no visible difference. Built once on first "
+                      "use. Speed: about 3× faster per pass. Quality impact: imperceptible. Recommended: on. "
+                      "NVIDIA only; built on first use."),
              panel::Apply::Reload);
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::DistilDrba);
   ImGui::Checkbox(i18n::tr("Fused DistilDRBA"), &d.drba_fused);
   ImGui::EndDisabled();
   panel::tip(i18n::tr("Fused DistilDRBA"),
-             i18n::tr("Runs DistilDRBA as small TensorRT engines. Speed: about 2× faster per pass. Quality "
-                      "impact: imperceptible. Recommended: on. NVIDIA only; built on first use."),
+             i18n::tr("DistilDRBA about twice as fast on NVIDIA, with no visible difference. Built once on "
+                      "first use. Speed: about 2× faster per pass. Quality impact: imperceptible. "
+                      "Recommended: on. NVIDIA only; built on first use."),
              panel::Apply::Reload);
   // Le cran de précision du mouvement (A23-06) : hors Équilibre, la chaîne fusionnée ne tourne pas.
   const TierSupport& motion_tiers =
@@ -539,12 +539,12 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Warp and SPAN"),
-      i18n::tr("After: SPAN upscales each source frame once, then frames are moved. Before: SPAN on "
-               "every shown frame. Speed: After about −50 to −85 % of SPAN time from ×2 to ×8. Quality "
-               "impact: imperceptible. Recommended: Auto (After above 1080p and from ×3)."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Warp and SPAN"),
+             i18n::tr("After: each source frame is upscaled once, then moved; much lighter at high "
+                      "multipliers. Before: every shown frame is upscaled. No visible difference. Speed: "
+                      "After about −50 to −85 % of upscaling time from ×2 to ×8. Quality impact: "
+                      "imperceptible. Recommended: Auto (After above 1080p and from ×3)."),
+             panel::Apply::Reload);
   gmfss_options(d, choices);
 
   section(i18n::tr("Trials"));

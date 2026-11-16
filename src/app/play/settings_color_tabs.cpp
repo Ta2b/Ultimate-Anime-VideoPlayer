@@ -56,21 +56,24 @@ void colors_section(PlaySettings& d) {
                  i18n::tr("Brightness of lights and glints. Recommended: 100 %."));
   grade_slider(i18n::tr("Deep blacks"), g.shadows, render::grade_limits::kShadows);
   panel::live_preview();
-  panel::tip(
-      i18n::tr("Deep blacks"),
-      i18n::tr("How much dark scenes are deepened, at most; less in dark episodes. Recommended: 0.50."));
+  panel::tip(i18n::tr("Deep blacks"),
+             i18n::tr("Makes dark scenes deeper and richer, less so in episodes that are dark throughout. "
+                      "Lower it if shadows lose detail. Recommended: 0.50."));
   ImGui::SliderInt(panel::left(i18n::tr("LUT contrast")).c_str(), &d.look_contrast, -100, 100, "%d",
                    ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
-  panel::tip(i18n::tr("LUT contrast"),
-             i18n::tr("Strength of the contrast LUT. 0: the reference look; −100: removed; 100: doubled. "
-                      "Recommended: 0."));
+  panel::tip(
+      i18n::tr("LUT contrast"),
+      i18n::tr(
+          "More or less contrast than the reference look. Higher makes colors punchier; lower is softer and "
+          "closer to the source. 0: the reference look; −100: removed; 100: doubled. Recommended: 0."));
   ImGui::SliderInt(panel::left(i18n::tr("LUT highlights")).c_str(), &d.look_highlight, -100, 100, "%d",
                    ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
-  panel::tip(i18n::tr("LUT highlights"),
-             i18n::tr("Strength of the highlight LUT. 0: the reference look; −100: removed; 100: doubled. "
-                      "Recommended: 0."));
+  panel::tip(
+      i18n::tr("LUT highlights"),
+      i18n::tr("How much lights, sparks and skies shine. Higher makes them brighter; lower stays closer to "
+               "the source. 0: the reference look; −100: removed; 100: doubled. Recommended: 0."));
   if (ImGui::Button(i18n::tr("Defaults##couleurs"))) {
     const PlaySettings defaults;
     g.anime_saturation = defaults.grade_values.anime_saturation;
@@ -107,7 +110,8 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
     d.true_hdr_peak =
         automatic ? 0 : std::clamp(choices.auto_peak, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
   panel::tip(i18n::tr("Display peak"),
-             i18n::tr("The brightest light the grade aims for, read from the display. Recommended: auto."));
+             i18n::tr("How bright the brightest lights get. Read from the display; set it by hand if "
+                      "highlights look clipped or dull. Recommended: auto."));
   ImGui::BeginDisabled(automatic);
   int peak = automatic ? choices.auto_peak : d.true_hdr_peak;
   if (ImGui::SliderInt(panel::left(i18n::tr("Peak (nits)")).c_str(), &peak, limits::kTrueHdrPeak.lo,
@@ -126,8 +130,8 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
                    kSurfaceWhite.hi, "%d %%", ImGuiSliderFlags_AlwaysClamp);
   panel::live_preview();
   panel::tip(i18n::tr("Surface white"),
-             i18n::tr("Brightness of walls and skin. Lower leaves more room to the lights, which still reach "
-                      "the peak. Recommended: 100 %."));
+             i18n::tr("How bright walls and skin are. Lower makes the picture calmer and lets lights stand "
+                      "out more; they still reach the peak. Recommended: 100 %."));
   ImGui::Checkbox(i18n::tr("Limit rapid flashes"), &d.flash_guard);
   panel::tip(i18n::tr("Limit rapid flashes"),
              i18n::tr("Dims bursts of more than three flashes a second for one second, for photosensitive "
@@ -140,20 +144,22 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(!choices.hdr_output);
   ImGui::Checkbox(i18n::tr("Grade before interpolation"), &d.grade_before_warp);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Grade before interpolation"),
-      i18n::tr("HDR, interpolation after SPAN: each source frame is graded once instead of every shown "
-               "frame. Speed: up to 8× less grading at ×8. Quality impact: minor, on moving edges. "
-               "Recommended: off."));
+  panel::tip(i18n::tr("Grade before interpolation"),
+             i18n::tr("Grades each source frame once instead of every displayed frame: frees the card at "
+                      "high multipliers. Moving edges can show slight color differences. Speed: up to 8× "
+                      "less grading at ×8. Quality impact: minor, on moving edges. Recommended: off."));
   ImGui::Checkbox(i18n::tr("LUTs in one table"), &d.look_table);
   panel::tip(i18n::tr("LUTs in one table"),
-             i18n::tr("The LUT stack is read once per pixel instead of LUT by LUT. Speed: grading about 4× "
-                      "faster. Quality impact: imperceptible. Recommended: on."));
+             i18n::tr("Makes the HDR grade about 4 times lighter for the card, with no visible difference. "
+                      "Turn it off only to compare. Speed: grading about 4× faster. Quality impact: "
+                      "imperceptible. Recommended: on."));
   ImGui::Checkbox(i18n::tr("Skin from faces (test)"), &d.face_skin);
-  panel::tip(i18n::tr("Skin from faces (test)"),
-             i18n::tr("Faces are found ahead of playback and only their tones are treated as skin, so warm "
-                      "lamps light up again. Quality impact: minor gain, not yet judged. Recommended: off."),
-             panel::Apply::Reload);
+  panel::tip(
+      i18n::tr("Skin from faces (test)"),
+      i18n::tr(
+          "Warm lamps in scenes with faces light up again, instead of being toned down like skin. A trial: "
+          "some faces can be missed. Quality impact: minor gain, not yet judged. Recommended: off."),
+      panel::Apply::Reload);
   if (ImGui::Button(i18n::tr("Defaults##hdr"))) {
     const PlaySettings defaults;
     d.true_hdr_peak = defaults.true_hdr_peak;

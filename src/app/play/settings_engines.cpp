@@ -142,12 +142,11 @@ void engine_section(const SettingsChoices& choices, std::optional<core::EngineId
     ImGui::EndCombo();
   }
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Backend"),
-      i18n::tr("Runs SPAN and the interpolation. TensorRT: NVIDIA RTX, fastest, engines built once per "
-               "model and size. Vulkan: every graphics card. Recommended: TensorRT on NVIDIA RTX, Vulkan "
-               "elsewhere."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Backend"),
+             i18n::tr("What runs upscaling and interpolation. TensorRT is the fastest on NVIDIA RTX cards, "
+                      "but builds its engines once per model and size (a few minutes the first time). Vulkan "
+                      "works on every graphics card. Recommended: TensorRT on NVIDIA RTX, Vulkan elsewhere."),
+             panel::Apply::Reload);
   if (!choices.engine_note.empty()) note(choices.engine_note);
   gpu_choice(gpu, choices.gpus);
   if (ImGui::Button(i18n::tr("Install more engines…"))) actions.emplace_back(OpenEngineScreen{});
@@ -166,8 +165,9 @@ void engines_advanced(const SettingsChoices& choices, std::string& engines_dir, 
   // pas. Sans effet sous TensorRT.
   ImGui::Checkbox(i18n::tr("Speed before precision (Vulkan)"), &fast_precision);
   panel::tip(i18n::tr("Speed before precision (Vulkan)"),
-             i18n::tr("Vulkan engines keep half precision when the difference is invisible. Speed: about 2× "
-                      "on upscaling. Quality impact: imperceptible. Recommended: on."),
+             i18n::tr("Upscaling about twice as fast with Vulkan, with no visible difference. Turn it off "
+                      "only if you see banding or artifacts. Speed: about 2× on upscaling. Quality impact: "
+                      "imperceptible. Recommended: on."),
              panel::Apply::Restart);
   install_folder_row(choices, engines_dir, folder);
   if (ImGui::TreeNodeEx(i18n::tr("Built engines"), ImGuiTreeNodeFlags_SpanAvailWidth)) {

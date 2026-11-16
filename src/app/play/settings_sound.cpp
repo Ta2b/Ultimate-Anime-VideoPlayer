@@ -94,8 +94,8 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   d.audio_delay_ms = std::clamp(d.audio_delay_ms, limits::kAudioDelayMs.lo, limits::kAudioDelayMs.hi);
   ImGui::Checkbox(i18n::tr("Sync playback to the display"), &d.display_sync);
   panel::tip(i18n::tr("Sync playback to the display"),
-             i18n::tr("On a fixed-rate display, playback speed changes by at most 0.125 % so each frame fits "
-                      "whole refreshes. Sound follows, inaudibly. Recommended: on."));
+             i18n::tr("On a fixed-rate display, every frame lasts the same time: no regular judder. Playback "
+                      "speed changes by at most 0.125 %, and sound follows inaudibly. Recommended: on."));
   ImGui::SliderInt(panel::left(i18n::tr("Display latency (ms)")).c_str(), &d.video_latency_ms,
                    limits::kVideoLatencyMs.lo, limits::kVideoLatencyMs.hi,
                    d.video_latency_ms == 0 ? i18n::tr("estimated") : "%d ms", ImGuiSliderFlags_AlwaysClamp);
