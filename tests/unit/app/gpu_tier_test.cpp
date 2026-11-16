@@ -39,12 +39,12 @@ TEST_CASE("des cartes connues tombent dans la tranche attendue", "[gpu_tier]") {
   ajp::app::play::FrenchUi french;
   CHECK(of("NVIDIA GeForce RTX 4090", GpuVendor::Nvidia, 24, true).tier == Tier::Ultra);
   CHECK(of("NVIDIA GeForce RTX 4070 Ti", GpuVendor::Nvidia, 12, true).tier == Tier::Quality);
-  CHECK(of("NVIDIA GeForce RTX 3060", GpuVendor::Nvidia, 12, true).tier == Tier::Normal);
-  CHECK(of("NVIDIA GeForce GTX 1060 6GB", GpuVendor::Nvidia, 6).tier == Tier::Fast);
+  CHECK(of("NVIDIA GeForce RTX 3060", GpuVendor::Nvidia, 12, true).tier == Tier::Fast);
+  CHECK(of("NVIDIA GeForce GTX 1060 6GB", GpuVendor::Nvidia, 6).tier == Tier::Economy);
   CHECK(of("NVIDIA GeForce GT 1030", GpuVendor::Nvidia, 2).tier == Tier::Economy);
-  CHECK(of("AMD Radeon RX 7900 XTX (RADV NAVI31)", GpuVendor::Amd, 24, false, true).tier == Tier::Ultra);
-  CHECK(of("AMD Radeon RX 6600", GpuVendor::Amd, 8).tier == Tier::Normal);
-  CHECK(of("AMD Radeon RX 580 Series", GpuVendor::Amd, 8).tier == Tier::Fast);
+  CHECK(of("AMD Radeon RX 7900 XTX (RADV NAVI31)", GpuVendor::Amd, 24, false, true).tier == Tier::Quality);
+  CHECK(of("AMD Radeon RX 6600", GpuVendor::Amd, 8).tier == Tier::Fast);
+  CHECK(of("AMD Radeon RX 580 Series", GpuVendor::Amd, 8).tier == Tier::Economy);
   CHECK(of("Intel(R) Arc(tm) A770 Graphics", GpuVendor::Intel, 16).tier == Tier::Normal);
   CHECK(of("Intel(R) UHD Graphics 630", GpuVendor::Intel, 1).tier == Tier::Economy);
   CHECK(of("Apple M3 Pro", GpuVendor::Apple, 18).tier == Tier::Quality);
@@ -66,7 +66,7 @@ TEST_CASE("les iGPU sont signalés", "[gpu_tier]") {
 TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bureau (A07-08)", "[gpu_tier]") {
   ajp::app::play::FrenchUi french;
   const auto nvidia = [](std::string name) { return of(std::move(name), GpuVendor::Nvidia, 8, true).tier; };
-  CHECK(nvidia("NVIDIA GeForce RTX 4060") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 4060") == Tier::Fast);
   CHECK(nvidia("NVIDIA GeForce RTX 4060 Laptop GPU") == Tier::Fast);
   CHECK(nvidia("NVIDIA GeForce RTX 4050 Laptop GPU") == Tier::Fast);
   CHECK(nvidia("NVIDIA GeForce RTX 3060 Laptop GPU") == Tier::Fast);
@@ -89,8 +89,20 @@ TEST_CASE("les RTX portables sans règle à leur nom passent sous la carte de bu
   CHECK(nvidia("NVIDIA Quadro RTX 6000") == Tier::Normal);
   // C37-09 : la RTX 3050 de bureau rejoint la portable ; les Quadro RTX 4000 et 5000 prennent leur règle.
   CHECK(nvidia("NVIDIA GeForce RTX 3050") == Tier::Fast);
-  CHECK(nvidia("NVIDIA GeForce RTX 3060") == Tier::Normal);
-  CHECK(nvidia("NVIDIA Quadro RTX 4000") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 3060") == Tier::Fast);
+  // Classées par puissance pour ajp, pas par date : la 2080 Ti au-dessus de la 3060, la 1080 Ti (sans cœurs
+  // Tensor) sous la 2060, les GTX en Économe (le grade seul).
+  CHECK(nvidia("NVIDIA GeForce RTX 2080 Ti") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 3060 Ti") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 2070 SUPER") == Tier::Normal);
+  CHECK(nvidia("NVIDIA GeForce RTX 2060 SUPER") == Tier::Fast);
+  CHECK(nvidia("NVIDIA GeForce GTX 1080 Ti") == Tier::Fast);
+  CHECK(nvidia("NVIDIA GeForce GTX 1080") == Tier::Economy);
+  CHECK(nvidia("NVIDIA GeForce GTX 1660 SUPER") == Tier::Economy);
+  CHECK(nvidia("NVIDIA GeForce GTX 1650 with Max-Q Design") == Tier::Economy);
+  CHECK(nvidia("NVIDIA GeForce RTX 4070 Ti SUPER") == Tier::Ultra);
+  CHECK(nvidia("NVIDIA GeForce RTX 4060 Ti") == Tier::Normal);
+  CHECK(nvidia("NVIDIA Quadro RTX 4000") == Tier::Fast);
   CHECK(nvidia("NVIDIA Quadro RTX 5000") == Tier::Normal);
   CHECK(nvidia("NVIDIA RTX 6000 Ada Generation") == Tier::Ultra);
   CHECK(nvidia("NVIDIA RTX A400") == Tier::Economy);
@@ -111,9 +123,9 @@ TEST_CASE("les décisions par famille NVIDIA, du nom à la tranche et au FP8 (A3
     bool span_fp8;
   };
   constexpr std::array kRows{
-      Row{"NVIDIA GeForce RTX 2060", Tier::Normal, "sm75", false, false},
+      Row{"NVIDIA GeForce RTX 2060", Tier::Fast, "sm75", false, false},
       Row{"NVIDIA GeForce RTX 2070 with Max-Q Design", Tier::Fast, "sm75", false, false},
-      Row{"NVIDIA GeForce RTX 2050", Tier::Fast, "sm86", false, false},
+      Row{"NVIDIA GeForce RTX 2050", Tier::Economy, "sm86", false, false},
       Row{"NVIDIA GeForce RTX 3050 Laptop GPU", Tier::Fast, "sm86", false, false},
       Row{"NVIDIA GeForce RTX 3050 A Laptop GPU", Tier::Fast, "sm89", true, true},
       Row{"NVIDIA GeForce RTX 3080", Tier::Normal, "sm86", false, false},
@@ -122,7 +134,7 @@ TEST_CASE("les décisions par famille NVIDIA, du nom à la tranche et au FP8 (A3
       Row{"NVIDIA GeForce RTX 4090", Tier::Ultra, "sm89", true, true},
       Row{"NVIDIA GeForce RTX 5070 Laptop GPU", Tier::Normal, "sm120", false, false},
       Row{"NVIDIA GeForce RTX 5090", Tier::Ultra, "sm120", false, false},
-      Row{"NVIDIA RTX A2000", Tier::Normal, "sm86", false, false},
+      Row{"NVIDIA RTX A2000", Tier::Fast, "sm86", false, false},
       Row{"NVIDIA RTX 4000 Ada Generation", Tier::Normal, "sm89", true, true},
       Row{"NVIDIA RTX PRO 6000 Blackwell Workstation Edition", Tier::Ultra, "sm120", false, false},
       Row{"NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition", Tier::Ultra, "sm120", false, false},

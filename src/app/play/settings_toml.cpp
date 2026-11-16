@@ -97,6 +97,46 @@ std::expected<void, Refusal> read_named(const toml::table& table, std::string_vi
                     std::format(" : « {} »", text));
 }
 
+// [languages] : audio_N et subtitles_N (N de 1 à kLanguagePresets ; un ancien fichier n'en a que deux), la
+// langue de l'utilisateur (own) et la version (version). Hors de Custom, les préférences se refont depuis own
+// et version. Sans version (avant le choix simple) : les deux préférences par défaut d'alors se lisent comme
+// l'originale dans leur langue, d'autres préférences comme Custom.
+void read_languages(const toml::table& table, PlaySettings& s,
+                    std::vector<std::expected<void, Refusal>>& reads) {
+  // Une clé absente (ou écartée par la lecture tolérante) vaut vide : selon le fichier, ou aucun sous-titre.
+  std::vector<media::LanguagePreset> presets(limits::kLanguagePresets);
+  std::size_t count = 0;
+  for (std::size_t i = 0; i < limits::kLanguagePresets; ++i) {
+    const std::string audio = std::format("audio_{}", i + 1);
+    const std::string subtitles = std::format("subtitles_{}", i + 1);
+    if (table.contains(audio) || table.contains(subtitles)) count = i + 1;
+    reads.push_back(read(table, "languages", audio, presets[i].audio));
+    reads.push_back(read(table, "languages", subtitles, presets[i].subtitles));
+  }
+  if (count > 0) {
+    presets.resize(std::max<std::size_t>(count, 2));  // un ancien fichier les écrit toujours par deux
+    s.language_presets = std::move(presets);
+  }
+  reads.push_back(read(table, "languages", "own", s.own_language));
+  std::string version;
+  reads.push_back(read(table, "languages", "version", version));
+  if (!version.empty()) {
+    const std::optional<LanguageVersion> known = version_from_name(version);
+    if (!known) {
+      reads.emplace_back(
+          refuse_key(RefusalCode::FieldOutOfRange, "languages.version", std::format(" : « {} »", version)));
+      return;
+    }
+    s.language_version = *known;
+  } else if (count > 0) {
+    const std::optional<std::string> legacy = legacy_default_language(s.language_presets);
+    s.language_version = legacy ? LanguageVersion::Original : LanguageVersion::Custom;
+    if (legacy) s.own_language = *legacy;
+  }
+  if (s.language_version != LanguageVersion::Custom)
+    s.language_presets = language_presets_for(s.own_language, s.language_version);
+}
+
 // L'ancienne liste de langues : un tableau de balises (« ["fre", "eng"] ») ; FieldType sinon.
 std::expected<void, Refusal> read_legacy_languages(const toml::table& table, std::string_view section,
                                                    std::vector<std::string>& out) {
@@ -384,10 +424,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     reads.push_back(read_legacy_languages(*subtitles, "subtitles", legacy_subtitles));
   }
   if (const toml::table* languages = section(root, "languages")) {
-    reads.push_back(read(*languages, "languages", "audio_1", s.language_presets[0].audio));
-    reads.push_back(read(*languages, "languages", "subtitles_1", s.language_presets[0].subtitles));
-    reads.push_back(read(*languages, "languages", "audio_2", s.language_presets[1].audio));
-    reads.push_back(read(*languages, "languages", "subtitles_2", s.language_presets[1].subtitles));
+    read_languages(*languages, s, reads);
   } else if (!legacy_audio.empty() || !legacy_subtitles.empty()) {
     // Le format d'avant : deux listes, converties en deux préréglages (rang 1, puis rang 2).
     const auto rank = [](const std::vector<std::string>& list, std::size_t i) {
@@ -396,6 +433,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     s.language_presets = {
         {rank(legacy_audio, 0), rank(legacy_subtitles, 0)},
         {legacy_audio.size() > 1 ? legacy_audio[1] : rank(legacy_audio, 0), rank(legacy_subtitles, 1)}};
+    s.language_version = LanguageVersion::Custom;
   }
   if (const toml::table* oled = section(root, "oled")) {
     reads.push_back(read(*oled, "oled", "care", s.oled_care));

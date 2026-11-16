@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "app/play/auto_config.h"
+#include "app/play/tracks.h"
 
 namespace ajp::app::play {
 
@@ -70,10 +71,6 @@ void skip(Wizard& wizard) {
   if (std::ranges::find(wizard.skipped, step) == wizard.skipped.end()) wizard.skipped.push_back(step);
 }
 
-void set_up_myself(Wizard& wizard) {
-  wizard.calibrate = false;
-}
-
 std::string progress_text(const Wizard& wizard) {
   return i18n::tr_format("Step {} of {}: {}", wizard.at + 1, wizard.steps.size(), title(current(wizard)));
 }
@@ -86,13 +83,18 @@ std::vector<std::string> wizard_summary(const Wizard& wizard) {
     return std::ranges::find(wizard.steps, step) != wizard.steps.end();
   };
   std::vector<std::string> out;
-  out.push_back(wizard.calibrate
-                    ? i18n::tr("Machine calibration: with \"Calibrate now\", the best settings this "
-                               "machine sustains (Video > General)")
-                    : i18n::tr("Machine calibration: skipped, Auto preset (Video > General)"));
-  if (has(WizardStep::Languages))
-    out.push_back(skipped(WizardStep::Languages) ? i18n::tr("Languages: skipped (Languages > Languages)")
-                                                 : i18n::tr("Languages: chosen (Languages > Languages)"));
+  if (has(WizardStep::Languages)) {
+    if (skipped(WizardStep::Languages))
+      out.push_back(i18n::tr("Languages: skipped (Languages > Languages)"));
+    else if (wizard.language_version == LanguageVersion::Dubbed)
+      out.push_back(i18n::tr_format("Languages: {}, dubbed (Languages > Languages)",
+                                    language_name(wizard.own_language)));
+    else if (wizard.language_version == LanguageVersion::Original)
+      out.push_back(i18n::tr_format("Languages: {}, original version with subtitles (Languages > Languages)",
+                                    language_name(wizard.own_language)));
+    else
+      out.push_back(i18n::tr("Languages: chosen track by track (Languages > Languages)"));
+  }
   if (has(WizardStep::Updates)) {
     std::string_view mode = i18n::tr("notify me");
     if (wizard.update_mode == UpdateMode::Never) mode = i18n::tr("never");
@@ -126,16 +128,16 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
   const auto skipped = [&](WizardStep step) {
     return std::ranges::find(wizard.skipped, step) != wizard.skipped.end();
   };
-  // La calibration de la machine pose ensuite sa chaîne ; sans elle, le préréglage Auto estimé.
-  if (!wizard.calibrate) settings.preset = Preset::Auto;
+  // Le niveau estimé pour la carte (gpu_tier.h) : Auto le prend à l'ouverture de la vidéo.
+  settings.preset = Preset::Auto;
   if (!wizard.interface_language.empty()) settings.language = wizard.interface_language;
   if (!skipped(WizardStep::Updates)) {
     settings.update_mode = wizard.update_mode;
   }
   if (!skipped(WizardStep::Languages)) {
-    if (settings.language_presets.empty()) settings.language_presets.resize(1);
-    settings.language_presets[0].audio = wizard.audio_language;
-    settings.language_presets[0].subtitles = wizard.subtitle_language;
+    settings.own_language = wizard.own_language;
+    settings.language_version = wizard.language_version;
+    settings.language_presets = wizard.language_presets;
   }
   return settings;
 }
@@ -143,14 +145,10 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings) {
 void resume_choices(Wizard& wizard, const PlaySettings& saved) {
   wizard.interface_language = saved.language;
   wizard.update_mode = saved.update_mode;
-  if (!saved.language_presets.empty()) {
-    wizard.audio_language = saved.language_presets[0].audio;
-    wizard.subtitle_language = saved.language_presets[0].subtitles;
-  }
-}
-
-bool wants_machine_calibration(const Wizard& wizard) {
-  return wizard.calibrate;
+  wizard.own_language = saved.own_language;
+  wizard.language_version = saved.language_version;
+  wizard.language_presets = saved.language_presets;
+  wizard.advanced_languages = saved.language_version == LanguageVersion::Custom;
 }
 
 }  // namespace ajp::app::play

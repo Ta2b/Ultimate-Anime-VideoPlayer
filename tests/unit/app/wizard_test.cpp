@@ -38,7 +38,8 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
   CHECK(current(begin_wizard(facts, 8)) == WizardStep::Summary);  // rang d'une version d'avant
 }
 
-TEST_CASE("Prêt : Calibrer maintenant ou Régler moi-même ; un écran sauté n'écrase rien", "[wizard]") {
+TEST_CASE("Prêt : le préréglage Auto de la carte, sans calibration ; un écran sauté n'écrase rien",
+          "[wizard]") {
   ajp::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   wizard.update_mode = UpdateMode::Never;
@@ -47,12 +48,17 @@ TEST_CASE("Prêt : Calibrer maintenant ou Régler moi-même ; un écran sauté n
   const PlaySettings play = wizard_play_settings(wizard, PlaySettings{});
   CHECK(play.update_mode == UpdateMode::Never);
   CHECK(play.language == "fr");
-  CHECK(wants_machine_calibration(wizard));
-  Wizard myself = wizard;
-  set_up_myself(myself);
-  CHECK_FALSE(wants_machine_calibration(myself));
-  CHECK(wizard_play_settings(myself, PlaySettings{}).preset == Preset::Auto);
-  CHECK(wizard_summary(myself).front().contains("passée"));
+  PlaySettings custom;
+  custom.preset = Preset::Custom;
+  CHECK(wizard_play_settings(wizard, custom).preset == Preset::Auto);
+  // Les langues : la version choisie et sa langue, dites au résumé.
+  wizard.own_language = "fre";
+  wizard.language_version = LanguageVersion::Dubbed;
+  wizard.language_presets = language_presets_for("fre", LanguageVersion::Dubbed);
+  const PlaySettings dubbed = wizard_play_settings(wizard, PlaySettings{});
+  CHECK(dubbed.language_version == LanguageVersion::Dubbed);
+  CHECK(dubbed.language_presets.front() == ajp::media::LanguagePreset{"fre", ""});
+  CHECK(wizard_summary(wizard).front() == "Langues : Français, doublé (Langues > Langues)");
   wizard.skipped = {WizardStep::Updates};
   CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Notify);
 }
@@ -61,10 +67,12 @@ TEST_CASE("l'assistant repris en route retrouve ses choix (P3.3)", "[wizard]") {
   PlaySettings saved;
   saved.update_mode = UpdateMode::Never;
   saved.language_presets = {{.audio = "fra", .subtitles = ""}};
+  saved.language_version = LanguageVersion::Custom;
   Wizard wizard = begin_wizard(WizardFacts{}, 3);
   resume_choices(wizard, saved);
   CHECK(wizard.update_mode == UpdateMode::Never);
-  CHECK(wizard.audio_language == "fra");
+  CHECK(wizard.language_presets == saved.language_presets);
+  CHECK(wizard.advanced_languages);  // des choix faits un à un se montrent un à un
   CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Never);
 }
 
@@ -73,6 +81,7 @@ TEST_CASE("l'assistant relancé part des réglages en place et ne les efface pas
   saved.update_mode = UpdateMode::Never;
   saved.language = "fr";
   saved.language_presets = {{.audio = "fra", .subtitles = "eng"}};
+  saved.language_version = LanguageVersion::Custom;
   // --first-run : depuis le premier écran, avec les choix du poste ; « Suivant » sur Bienvenue récrit
   // play.toml avec les écrans pas encore vus, qui gardent donc ce qui était réglé.
   Wizard wizard = begin_wizard(WizardFacts{}, 0);

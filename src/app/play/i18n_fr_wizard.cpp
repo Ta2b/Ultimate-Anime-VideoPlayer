@@ -12,38 +12,16 @@ constexpr std::array kWizardTexts{
           "Nouvelle carte graphique : refaites la calibration de ce PC (Vidéo > Général)"},
     Entry{"Machine calibration failed: settings unchanged (see log)",
           "La calibration de la machine a échoué : réglages inchangés (voir le journal)"},
-    Entry{"Machine calibration", "Calibration de la machine"},
-    Entry{
-        "\"Calibrate now\" tests several settings on a very demanding sequence: picture resolution, SPAN "
-        "upscaling and RIFE smoothness, and keeps the best combination this machine sustains. Only a "
-        "progress bar is shown; the estimate below is longer with TensorRT, which builds its engines during "
-        "the test.",
-        "« Calibrer maintenant » essaie plusieurs réglages sur une séquence très éprouvante : résolution de "
-        "l'image, agrandissement SPAN et fluidité RIFE, et garde la meilleure combinaison que la machine "
-        "tient. Seule une barre de chargement s'affiche ; l'estimation ci-dessous est plus longue avec "
-        "TensorRT, qui construit ses moteurs pendant l'essai."},
-    Entry{"\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
-          "General.",
-          "« Régler moi-même » : le préréglage Auto estimé pour cette carte, modifiable dans Vidéo > "
-          "Général."},
-    Entry{"Machine calibration: with \"Calibrate now\", the best settings this machine sustains (Video > "
-          "General)",
-          "Calibration de la machine : avec « Calibrer maintenant », les meilleurs réglages que la machine "
-          "tient (Vidéo > Général)"},
     Entry{"Default video player: asked at the end of the assistant (General > Application)",
           "Lecteur vidéo par défaut : demandé à la fin de l'assistant (Général > Application)"},
     Entry{"Integration", "Intégration"},
     Entry{"Make it the default video player", "En faire le lecteur vidéo par défaut"},
     Entry{"AJP is added to \"Open with\" in any case.", "AJP s'ajoute à « Ouvrir avec » dans tous les cas."},
-    Entry{"Calibrate now", "Calibrer maintenant"},
-    Entry{"Estimated for this machine: about {} minutes.", "Estimé pour cette machine : environ {} minutes."},
     Entry{"Ready", "Prêt"},
     Entry{"Vulkan works on every GPU. Checked engines install at the end of the assistant, verified by hash; "
           "Vulkan takes over if one fails.",
           "Vulkan sert tous les GPU. Les moteurs cochés s'installent à la fin de l'assistant, vérifiés par "
           "empreinte ; Vulkan prend le relais si l'un échoue."},
-    Entry{"Machine calibration: skipped, Auto preset (Video > General)",
-          "Calibration de la machine : passée, préréglage Auto (Vidéo > Général)"},
     Entry{" · Tensor cores", " · cœurs Tensor"},
     Entry{" · matrix units (WMMA)", " · unités matricielles (WMMA)"},
     Entry{"Always available", "Toujours présent"},
@@ -67,7 +45,6 @@ constexpr std::array kWizardTexts{
     Entry{"Fastest for this GPU", "Le plus rapide pour ce GPU"},
     Entry{"I accept its licence", "J'accepte sa licence"},
     Entry{"Languages", "Langues"},
-    Entry{"Languages: chosen (Languages > Languages)", "Langues : choisies (Langues > Langues)"},
     Entry{"Languages: skipped (Languages > Languages)", "Langues : sauté (Langues > Langues)"},
     Entry{"Loading the engine", "Chargement du moteur"},
     Entry{"Loading", "Chargement"},
@@ -80,8 +57,8 @@ constexpr std::array kWizardTexts{
     Entry{"Continuing installs it under this licence; untick the box to skip it.",
           "Continuer l'installe sous cette licence ; décochez la case pour l'éviter."},
     Entry{"{} is not available here: {}", "{} n'est pas disponible ici : {}"},
-    Entry{"{}: recommended for this card but not selected. The calibration will measure a slower engine.",
-          "{} : recommandé pour cette carte mais pas coché. La calibration mesurera un moteur plus lent."},
+    Entry{"{}: recommended for this card but not selected. Playback will use a slower engine.",
+          "{} : recommandé pour cette carte mais pas coché. La lecture prendra un moteur plus lent."},
     Entry{"{}: licence not accepted, it will not be installed",
           "{} : licence non acceptée, il ne s'installera pas"},
     Entry{"Engines: {} ({} to download)", "Moteurs : {} ({} à télécharger)"},
@@ -93,7 +70,6 @@ constexpr std::array kWizardTexts{
     Entry{"{}: {} replaces it.", "{} : {} le remplace."},
     Entry{"Resume playback", "Continuer la lecture"},
     Entry{"Skip", "Passer"},
-    Entry{"Set it up myself", "Régler moi-même"},
     Entry{"Cancel and watch", "Annuler et regarder"},
     Entry{"Start", "Commencer"},
     Entry{"The player chose for this GPU; change anything later in Settings (p).",
@@ -125,6 +101,57 @@ constexpr std::array kWizardTexts{
           "{} est choisi mais ne s'ouvre pas sur ce GPU (journal) : {} le remplace."},
     Entry{"{} needs a newer graphics driver: update it. {} replaces it until then.",
           "{} demande un pilote graphique plus récent : mettez-le à jour. {} le remplace d'ici là."},
+    Entry{"Original (marked by the file)", "Originale (indiquée par le fichier)"},
+    Entry{"Original version, subtitled", "VO sous-titrée"},
+    Entry{"Dubbed in my language", "Doublée dans ma langue"},
+    Entry{"Custom (Advanced)", "Personnalisé (Avancé)"},
+    Entry{"1st choice", "1er choix"},
+    Entry{"2nd choice", "2e choix"},
+    Entry{"3rd choice", "3e choix"},
+    Entry{"4th choice", "4e choix"},
+    Entry{"My language", "Ma langue"},
+    Entry{"The language of your subtitles, or of the dub. The system language by default.",
+          "La langue de vos sous-titres, ou du doublage. Celle du système par défaut."},
+    Entry{"I prefer", "Je préfère"},
+    Entry{"Original version: the audio the file marks as original, else Japanese, else Chinese, with "
+          "subtitles in your language; your dub when none of them has those subtitles.\n"
+          "Dubbed: your language without subtitles, else the original version.\n"
+          "Recommended: original version.",
+          "VO : l'audio que le fichier indique comme original, sinon le japonais, sinon le chinois, avec des "
+          "sous-titres dans votre langue ; votre doublage quand aucun n'a ces sous-titres.\n"
+          "Doublée : votre langue sans sous-titres, sinon la VO.\n"
+          "Recommandé : VO."},
+    Entry{"Tracks chosen one by one in Advanced. Pick a version to go back to the automatic choice.",
+          "Pistes choisies une à une dans Avancé. Choisissez une version pour revenir au choix automatique."},
+    Entry{"Picked when a file opens: the first choice whose audio and subtitles are both in the file. Change "
+          "the current track from the bar.",
+          "Pris à l'ouverture d'un fichier : le premier choix dont l'audio et les sous-titres sont tous deux "
+          "dans le fichier. La piste en cours se change depuis la barre."},
+    Entry{"Show the exact track choices", "Voir le choix exact des pistes"},
+    Entry{"Settings for this card", "Réglages pour cette carte"},
+    Entry{"The Quality preset in Video > General changes it at any time.",
+          "Le préréglage de qualité, dans Vidéo > Général, le change à tout moment."},
+    Entry{"Finish", "Terminer"},
+    Entry{"HDR grade only: upscaling and interpolation stay off, the card keeps up with any video.",
+          "Le grade HDR seul : l'agrandissement et l'interpolation restent éteints, la carte suit toute "
+          "vidéo."},
+    Entry{"HDR grade, upscaling from 540p and interpolation up to ×2.",
+          "Grade HDR, agrandissement depuis 540p et interpolation jusqu'à ×2."},
+    Entry{"HDR grade, upscaling from 720p and interpolation up to ×3.",
+          "Grade HDR, agrandissement depuis 720p et interpolation jusqu'à ×3."},
+    Entry{"HDR grade, upscaling from the source up to 1080p with the finest models, and interpolation up to "
+          "×4.",
+          "Grade HDR, agrandissement depuis la source jusqu'à 1080p avec les modèles les plus fins, et "
+          "interpolation "
+          "jusqu'à ×4."},
+    Entry{"Languages: {}, dubbed (Languages > Languages)", "Langues : {}, doublé (Langues > Langues)"},
+    Entry{"Languages: {}, original version with subtitles (Languages > Languages)",
+          "Langues : {}, VO sous-titrée (Langues > Langues)"},
+    Entry{"Languages: chosen track by track (Languages > Languages)",
+          "Langues : choisies piste par piste (Langues > Langues)"},
+    Entry{"An engine did not install: Vulkan is used. Install it again in Settings > Video > General.",
+          "Un moteur ne s'est pas installé : Vulkan le remplace. Réinstallez-le dans Paramètres > Vidéo > "
+          "Général."},
 };
 
 }  // namespace

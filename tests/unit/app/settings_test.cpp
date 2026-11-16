@@ -62,6 +62,7 @@ TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]")
   s.span_order = SpanOrder::Before;
   s.grade_values.highlights_rtx = 0.7;
   s.language_presets = {{"eng", ""}, {"", "fre"}};
+  s.language_version = LanguageVersion::Custom;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);
   CHECK(*back == s);
@@ -233,7 +234,15 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   const auto written =
       parse_settings("[languages]\naudio_1 = \"jpn\"\nsubtitles_1 = \"fre\"\naudio_2 = \"fre\"\n");
   REQUIRE(written);
-  CHECK(written->language_presets == std::vector<ajp::media::LanguagePreset>{{"jpn", "fre"}, {"fre", ""}});
+  // Les deux préférences par défaut d'avant le choix simple : la VO sous-titrée en français, refaite.
+  CHECK(written->language_version == LanguageVersion::Original);
+  CHECK(written->own_language == "fre");
+  CHECK(written->language_presets == language_presets_for("fre", LanguageVersion::Original));
+  const auto dubbed = parse_settings("[languages]\nown = \"ger\"\nversion = \"dubbed\"\naudio_1 = \"jpn\"\n");
+  REQUIRE(dubbed);
+  CHECK(dubbed->language_presets == language_presets_for("ger", LanguageVersion::Dubbed));
+  CHECK(parse_settings(format_settings(*dubbed)).value() == *dubbed);
+  CHECK(parse_settings("[languages]\nversion = \"vf\"\n").error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse_settings("[languages]\naudio_1 = 3\n").error().code == RefusalCode::FieldType);
   CHECK(parse_settings("[languages]\naudio_1 = \"fr/../x\"\n").error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse_settings("[subtitles]\nlanguages = \"fre\"\n").error().code == RefusalCode::FieldType);

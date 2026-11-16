@@ -14,15 +14,15 @@
 
 namespace ajp::app::play {
 
-// Dans l'ordre de l'assistant (P3.18) : les choix légers d'abord, le lourd (moteurs) en dernier, puis Prêt
-// avec « Calibrer maintenant » ou « Régler moi-même ». La valeur est celle de first_run_step (1 à 5) ; une
-// valeur plus haute d'une version d'avant (1 à 8) reprend au dernier écran.
+// Dans l'ordre de l'assistant (P3.18) : les choix légers d'abord, le lourd (moteurs) en dernier, puis Prêt,
+// qui pose le préréglage Auto estimé pour la carte (gpu_tier.h). La valeur est celle de first_run_step (1 à
+// 5) ; une valeur plus haute d'une version d'avant (1 à 8) reprend au dernier écran.
 enum class WizardStep : std::uint8_t {
   Welcome = 1,  // carte, tranche, écran, langue de l'interface
-  Languages,    // audio et sous-titres préférés
+  Languages,    // sa langue, version originale ou doublée (Avancé : les pistes une à une)
   Updates,      // intégration : mises à jour (Me prévenir / Jamais), lecteur par défaut
   Engines,      // moteurs à installer (TensorRT sur RTX, Core ML sur Mac)
-  Summary,      // Prêt : ce qui a été choisi, la calibration proposée
+  Summary,      // Prêt : ce qui a été choisi, les réglages de la carte
 };
 inline constexpr int kWizardSteps = 5;
 
@@ -44,13 +44,14 @@ struct Wizard {
   std::size_t at = 0;
   std::vector<WizardStep> skipped;
   UpdateMode update_mode = UpdateMode::Notify;
-  // Première préférence de langue de l'audio (vide : selon le fichier) et des sous-titres (vide : aucun),
-  // celle par défaut d'abord : audio japonais, sous-titres dans la langue du système.
-  std::string audio_language = default_language_presets().front().audio;
-  std::string subtitle_language = default_language_presets().front().subtitles;
+  // Le choix des langues (system_language.h) : sa langue (celle du système par défaut), la version, et les
+  // préférences de pistes qui en découlent ; advanced_languages montre ces préférences une à une.
+  std::string own_language = std::string(system_language());
+  LanguageVersion language_version = LanguageVersion::Original;
+  std::vector<media::LanguagePreset> language_presets = default_language_presets();
+  bool advanced_languages = false;
   std::string interface_language;  // « en » ou « fr » ; vide : celle détectée, inchangée
   bool make_default = false;       // lecteur par défaut des vidéos, demandé à « Terminer »
-  bool calibrate = true;           // « Calibrer maintenant » ; « Régler moi-même » l'éteint
   int seen = 0;                    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
 
@@ -71,8 +72,6 @@ bool is_last(const Wizard& wizard);
 void next(Wizard& wizard);      // Suivant
 void previous(Wizard& wizard);  // Précédent
 void skip(Wizard& wizard);      // Passer : l'écran est noté sauté, on avance
-// « Régler moi-même » (P3.1) : la calibration sautée, le préréglage Auto estimé comme point de départ.
-void set_up_myself(Wizard& wizard);
 // « Étape 3 sur 5 » : le rang parmi les écrans de cette machine.
 std::string progress_text(const Wizard& wizard);
 
@@ -81,12 +80,10 @@ std::vector<std::string> wizard_summary(const Wizard& wizard);
 
 // Ce que « Terminer » écrit : les mises à jour, le dernier écran vu.
 core::Settings wizard_settings(core::Settings settings);
-// Les réglages de lecture : langues, mises à jour choisis. Un écran sauté n'écrase rien. La calibration
-// de la machine sautée : le préréglage Auto.
+// Les réglages de lecture : langues, mises à jour choisis, et le préréglage Auto (le niveau estimé pour la
+// carte). Un écran sauté n'écrase rien.
 PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
 // P3.3 : l'assistant repris en route retrouve les choix enregistrés à chaque écran (mises à jour, langues).
 void resume_choices(Wizard& wizard, const PlaySettings& saved);
-// « Calibrer maintenant » : la calibration de la machine après l'assistant.
-bool wants_machine_calibration(const Wizard& wizard);
 
 }  // namespace ajp::app::play

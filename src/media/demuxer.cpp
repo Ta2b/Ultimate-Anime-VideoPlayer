@@ -210,6 +210,7 @@ std::expected<TrackInfo, Refusal> describe(const AVStream& stream, TrackKind kin
       .is_default = (stream.disposition & AV_DISPOSITION_DEFAULT) != 0,
       .forced = (stream.disposition & AV_DISPOSITION_FORCED) != 0,
       .attached_picture = (stream.disposition & AV_DISPOSITION_ATTACHED_PIC) != 0,
+      .original = (stream.disposition & AV_DISPOSITION_ORIGINAL) != 0,
       .duration_us = duration_to_us(stream.duration, stream.time_base),
       .parameters = std::move(parameters),
   };

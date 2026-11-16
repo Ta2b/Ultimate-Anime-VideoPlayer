@@ -33,17 +33,29 @@ TEST_CASE("langue du système : la première que les menus proposent, l'anglais 
   CHECK(pick_menu_language(std::vector<std::string>{}) == "eng");
 }
 
-TEST_CASE("langues par défaut : audio japonais et sous-titres du système, puis audio du système",
+TEST_CASE("langues par défaut : la version originale sous-titrée dans la langue du système",
           "[app][language]") {
   using namespace ajp::app::play;
   using Presets = std::vector<ajp::media::LanguagePreset>;
   set_system_language("fre");
-  CHECK(default_language_presets() == Presets{{"jpn", "fre"}, {"fre", ""}});
-  CHECK(PlaySettings{}.language_presets == Presets{{"jpn", "fre"}, {"fre", ""}});
-  set_system_language("jpn");  // japonais : la version originale, sans sous-titres
-  CHECK(default_language_presets() == Presets{{"jpn", ""}, {"", ""}});
+  const Presets original{{"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}, {"fre", ""}};
+  CHECK(default_language_presets() == original);
+  CHECK(PlaySettings{}.language_presets == original);
+  CHECK(PlaySettings{}.own_language == "fre");
+  // Doublée : sa langue sans sous-titres d'abord, puis la version originale.
+  CHECK(language_presets_for("fre", LanguageVersion::Dubbed) ==
+        Presets{{"fre", ""}, {"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}});
+  set_system_language("jpn");  // japonais : l'audio japonais ne prend pas de sous-titres
+  CHECK(default_language_presets() == Presets{{"original", "jpn"}, {"jpn", ""}, {"chi", "jpn"}});
   set_system_language("eng");
-  CHECK(default_language_presets() == Presets{{"jpn", "eng"}, {"eng", ""}});
+  CHECK(default_language_presets() ==
+        Presets{{"original", "eng"}, {"jpn", "eng"}, {"chi", "eng"}, {"eng", ""}});
+  // Les défauts d'avant le choix simple se reconnaissent ; d'autres préférences, non.
+  CHECK(legacy_default_language(Presets{{"jpn", "fre"}, {"fre", ""}}) == "fre");
+  CHECK(legacy_default_language(Presets{{"jpn", ""}, {"", ""}}) == "jpn");
+  CHECK_FALSE(legacy_default_language(Presets{{"jpn", "eng"}, {"fre", ""}}));
+  CHECK(version_from_name("dubbed") == LanguageVersion::Dubbed);
+  CHECK_FALSE(version_from_name("vf"));
 }
 
 TEST_CASE("langue de l'interface : celle du système tant que play.toml n'en dit rien (A19-03)",

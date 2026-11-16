@@ -122,6 +122,7 @@ struct FirstRunView {
   Wizard wizard;
   WizardFacts facts;
   std::string tier_line;     // « Niveau estimé : Rapide »
+  std::string tier_detail;   // ce que ce niveau règle : agrandissement, interpolation, grade (tier_summary)
   std::string display_line;  // « Écran 3840×2160 · 165 Hz »
   bool laptop = false;       // un portable : la construction des moteurs y dure le double (A25-03)
   // Refait les textes traduits à la construction (ligne GPU, niveau, écran, état des moteurs) quand la

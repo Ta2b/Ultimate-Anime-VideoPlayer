@@ -391,6 +391,10 @@ struct PlaySettings {
   // et les sous-titres existent dans le fichier est pris (media/selection.h). Audio vide : « selon le
   // fichier » ; sous-titres vides : aucun.
   std::vector<media::LanguagePreset> language_presets = default_language_presets();
+  // Le choix simple qui a donné ces préférences (language_presets_for) : la langue de l'utilisateur et la
+  // version ; Custom quand elles ont été réglées une à une dans Avancé.
+  std::string own_language = std::string(system_language());
+  LanguageVersion language_version = LanguageVersion::Original;
   // Grade HDR sur la sortie PQ (render/grade_params.h), sur les deux routes ; en direct.
   bool grade = true;
   render::GradeSettings grade_values = default_grade_values();
@@ -455,7 +459,7 @@ inline constexpr core::Range<int> kSubtitleDelaySlider{-5000, 5000};
 inline constexpr core::Range<int> kVideoLatencyMs{0, 250};
 inline constexpr core::Range<float> kVolume{0.0F, 1.5F};
 inline constexpr core::Range<float> kSubtitleScale{0.5F, 2.0F};
-inline constexpr std::size_t kLanguagePresets = 2;  // préréglages de langue
+inline constexpr std::size_t kLanguagePresets = 4;  // préréglages de langue
 inline constexpr core::Range<int> kSubtitleDelayMs{-30'000, 30'000};
 // Le bas de la plage est le seuil du HDR (kMinHdrPeakNits, host_facts.h, P3.66 ; tenu par un static_assert de
 // host_facts.cpp) : un pic réglable fait toujours une sortie HDR.

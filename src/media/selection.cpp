@@ -102,6 +102,12 @@ std::optional<int> subtitle_in(std::span<const TrackInfo> tracks, const std::str
 }
 
 std::optional<int> audio_in(std::span<const TrackInfo> tracks, const std::string& language) {
+  if (language == kOriginalAudio) {
+    return best_track(tracks, TrackKind::Audio, [](const TrackInfo& t) -> std::optional<Rank> {
+      if (!t.original) return std::nullopt;
+      return Rank{0, true, t.is_default, false, -t.index};
+    });
+  }
   const std::vector<std::string> wanted{language};
   return best_track(tracks, TrackKind::Audio, [&](const TrackInfo& t) -> std::optional<Rank> {
     const int score = language_score(wanted, track_language(t));
@@ -139,7 +145,7 @@ TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePrior
   }
   // Aucun préréglage entier : leurs langues, de rang en rang, rejoignent les listes.
   for (const LanguagePreset& preset : priorities.presets) {
-    if (!preset.audio.empty()) priorities.audio.push_back(preset.audio);
+    if (!preset.audio.empty() && preset.audio != kOriginalAudio) priorities.audio.push_back(preset.audio);
     if (!preset.subtitles.empty()) priorities.subtitles.push_back(preset.subtitles);
   }
   choice.audio = best_track(tracks, TrackKind::Audio, [&](const TrackInfo& t) -> std::optional<Rank> {

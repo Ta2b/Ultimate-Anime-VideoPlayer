@@ -2,7 +2,7 @@
 // (docs/ux-parametres.md, 4.7). Elle vient de data/gpu_tiers.toml, embarqué dans le lecteur : des règles
 // par famille (« rtx 4070 », « rx 7900 », « arc a7 »…), la première qui correspond gagne ; une carte
 // inconnue reçoit une estimation par fabricant, VRAM et unités matricielles. Ce sont des estimations,
-// que « Calibrer cette machine » corrige. Rien ici ne change un réglage.
+// que le menu laisse changer (Vidéo > Général). Rien ici ne change un réglage.
 #pragma once
 
 #include <cstdint>
@@ -23,6 +23,8 @@ inline constexpr int kTierCount = 5;
 // Les noms du menu : « Economy », « Fast », « Normal », « Quality », « Ultra » (en français Économe, Rapide,
 // Normal, Qualité, Ultra), ceux des valeurs. Les fichiers gardent l'entier (0 à 4), inchangé.
 std::string_view tier_label(Tier tier);
+// Ce que le préréglage Auto de la tranche règle, en une phrase (l'écran Prêt de l'assistant).
+std::string_view tier_summary(Tier tier);
 
 struct TierRule {
   GpuVendor vendor = GpuVendor::Other;

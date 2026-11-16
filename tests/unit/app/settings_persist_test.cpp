@@ -387,8 +387,8 @@ TEST_CASE("play.toml : valeurs écartées dites, langues écartées une à une (
   CHECK(loaded->true_hdr_peak == 0);
   REQUIRE(loaded->language_presets.size() >= 2);
   CHECK(loaded->language_presets[0].subtitles == "fre");  // les sous-titres valides restent
-  CHECK(loaded->language_presets[0].audio == PlaySettings{}.language_presets[0].audio);  // le défaut
-  CHECK(loaded->language_presets[1].audio == PlaySettings{}.language_presets[1].audio);
+  CHECK(loaded->language_presets[0].audio.empty());       // écartée : selon le fichier
+  CHECK(loaded->language_presets[1].audio.empty());
   CHECK(ignored.size() == 4);
   const std::string note = ignored_values_note(ignored);
   CHECK(note.find("image.work_height") != std::string::npos);

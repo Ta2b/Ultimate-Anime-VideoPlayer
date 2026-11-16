@@ -20,6 +20,7 @@
 #include "app/play/settings_color_tabs.h"
 #include "app/play/settings_engines.h"
 #include "app/play/settings_export.h"
+#include "app/play/settings_languages.h"
 #include "app/play/settings_pages.h"
 #include "app/play/settings_sound.h"
 #include "app/play/text_fit.h"

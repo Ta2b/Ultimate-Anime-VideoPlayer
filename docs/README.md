@@ -15,6 +15,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`hdr-anime.md`](hdr-anime.md) | Le grade HDR anime guidé ; la sortie HDR ou SDR qui suit le système |
 | [`luts.md`](luts.md) | Les LUT 3D du grade (le choix des looks n'est plus dans le menu) |
 | [`ux-parametres.md`](ux-parametres.md) | Le menu des paramètres : section 0 pour le menu en vigueur (à la manière de Dolphin), le reste est l'historique du tri |
+| [`classement-gpu.md`](classement-gpu.md) | Les cartes graphiques classées par puissance pour ajp, et ce que règle chaque tranche du préréglage Auto |
 | [`nvidia-linux.md`](nvidia-linux.md), [`nvidia-windows.md`](nvidia-windows.md) | TensorRT et NVIDIA par système |
 | [`amd-windows.md`](amd-windows.md) | AMD et Windows : le profil RDNA4 du moteur Vulkan, D3D11VA |
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |

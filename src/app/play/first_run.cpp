@@ -406,13 +406,12 @@ std::vector<std::string> engines_summary(const std::vector<EngineRow>& rows) {
   std::vector<std::string> refused;
   for (const EngineRow& row : rows) {
     const std::string_view label = engine_label(row.offer.id);
-    // Le moteur recommandé pour cette carte décoché à l'écran : la calibration mesurerait l'autre sans le
+    // Le moteur recommandé pour cette carte décoché à l'écran : la lecture prendrait l'autre sans le
     // dire (A25-02).
     if (row.usable && !row.chosen && std::ranges::contains(row.offer.badges, core::Badge::Recommended) &&
         row.offer.id != core::EngineId::Vulkan)
       refused.push_back(i18n::tr_format(
-          "{}: recommended for this card but not selected. The calibration will measure a slower engine.",
-          label));
+          "{}: recommended for this card but not selected. Playback will use a slower engine.", label));
     // Le moteur recommandé que ce poste ne peut pas installer : sa raison (pilote trop ancien, place, paquet
     // non publié) se lit ici, l'écran Moteurs étant sauté quand Vulkan est le seul choix (A25-13).
     if (!row.usable && !row.status.empty() && row.offer.id != core::EngineId::Vulkan &&

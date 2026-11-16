@@ -302,6 +302,13 @@ Mécanique (`src/app/play/updater.h`) :
 
 ### 4.8 Assistant de premier démarrage (« first-run wizard »)
 
+**État actuel** : quatre écrans au plus, Bienvenue, Langues, Intégration, Moteur, puis Prêt (`wizard.h`). Langues
+demande sa langue (celle du système par défaut) et la version préférée, originale sous-titrée ou doublée dans
+cette langue ; « Voir le choix exact des pistes » montre les quatre préférences de pistes qui en découlent
+(`language_presets_for`, `system_language.h`), réglables une à une. Prêt ne propose plus de calibration : il pose
+le préréglage Auto de la tranche de la carte, classée par puissance pour ajp ([classement-gpu.md](classement-gpu.md)),
+et dit ce qu'elle règle. Le tableau ci-dessous est le plan d'origine.
+
 Il fait évoluer l'écran de bienvenue actuel (`first_run.cpp` : GPU vu par Vulkan, moteurs proposés avec badges,
 profil de démarrage ; `--first-run` le remontre). Plusieurs **écrans guidés, tous sautables** (« Plus tard »),
 **refaisables depuis Général** (bouton « Relancer l'assistant ») et par `ajp --first-run`. Barre de progression,

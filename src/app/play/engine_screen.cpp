@@ -332,6 +332,7 @@ std::function<void(FirstRunView&)> retranslation(GpuFacts gpu, EnginesHere here,
       if (same != fresh.engines.end()) row.status = same->status;
     }
     shown.tier_line = i18n::tr_format("Estimated level: {}", tier_label(tier));
+    shown.tier_detail = std::string(tier_summary(tier));
     shown.display_line = display_text(height, hertz);
   };
 }
@@ -358,40 +359,26 @@ void save_wizard_progress(const std::filesystem::path& engines_path, const std::
     log->warn("{}", written.error().detail);
 }
 
-// La fin de l'assistant : réglages, inscription et calibration. Faux si la fenêtre se ferme pendant la
-// calibration. Un moteur coché qui n'a pas pu s'installer (install_failed) : pas de calibration, qui
-// mesurerait Vulkan sur une carte faite pour TensorRT ; le préréglage Auto estimé reste, et l'avis dit où
-// réinstaller le moteur puis refaire la calibration.
-bool finish_wizard(const EngineScreen& s, Wizard wizard, core::Settings& engines,
+// La fin de l'assistant : réglages (le préréglage Auto de la carte) et inscription. Un moteur coché qui n'a
+// pas pu s'installer (install_failed) : Auto prend Vulkan, et l'avis dit où réinstaller le moteur.
+void finish_wizard(const EngineScreen& s, const Wizard& wizard, core::Settings& engines,
                    const std::filesystem::path& play_path, bool install_failed) {
   const auto log = log_channel("app");
-  if (install_failed && wizard.calibrate) {
-    wizard.calibrate = false;
-    log->warn("assistant : un moteur n'a pas pu s'installer, calibration non lancée");
-    s.ui.controls().defer(i18n::ui_tr(
-        "Calibration skipped: the engine did not install. Install it in Settings > Video > General, then "
-        "calibrate again (Video > General)."));
+  if (install_failed) {
+    log->warn("assistant : un moteur n'a pas pu s'installer");
+    s.ui.controls().defer(
+        i18n::ui_tr("An engine did not install: Vulkan is used. Install it again in Settings > Video > "
+                    "General."));
   }
   engines = wizard_settings(std::move(engines));
-  auto play = load_settings(play_path);
   PlaySettings chosen_play;
-  if (play) chosen_play = std::move(*play);
+  if (auto play = load_settings(play_path)) chosen_play = std::move(*play);
   chosen_play = wizard_play_settings(wizard, std::move(chosen_play));
   integrate(s.paths, wizard, engines);
   for (const std::string& line : wizard_summary(wizard)) log->info("assistant : {}", line);
-  // P3.2 : play.toml, settings.toml et l'inscription s'écrivent avant la calibration ; la fenêtre fermée
-  // pendant qu'elle tourne ne perd plus les choix (seule la chaîne calibrée manque, Auto la remplace).
   if (auto written = save_settings(play_path, chosen_play); !written) log->warn("{}", written.error().detail);
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
-  if (wants_machine_calibration(wizard)) {
-    auto calibrated =
-        calibrate_on_screen(s.screen, s.ui, s.paths, s.engines_path.parent_path(), std::move(chosen_play));
-    if (!calibrated) return false;
-    if (auto written = save_settings(play_path, *calibrated); !written)
-      log->warn("{}", written.error().detail);
-  }
-  return true;
 }
 
 }  // namespace
@@ -420,6 +407,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
     view.wizard =
         begin_wizard(view.facts, s.options.first_run || s.restart_wizard ? 0 : engines.first_run_step);
     view.tier_line = i18n::tr_format("Estimated level: {}", tier_label(estimate.tier));
+    view.tier_detail = std::string(tier_summary(estimate.tier));
     host_notes(view, gpu, s.screen.window());
     view.retranslate =
         retranslation(gpu, engines_here(s.options, s.paths, s.catalog, gpu.name), engines, estimate.tier,
@@ -462,8 +450,7 @@ std::expected<bool, Refusal> run_engine_screen(const EngineScreen& s, core::Sett
   const std::optional<core::EngineId> kept = before.preferred[usage(core::Usage::Upscale)];
   if (revisit && kept && chosen(engines, *kept) && !network_added(before, engines))
     engines = using_engine(std::move(engines), *kept);
-  if (wizard_mode && !finish_wizard(s, (*chosen_view)->wizard, engines, play_path, !failed.empty()))
-    return false;
+  if (wizard_mode) finish_wizard(s, (*chosen_view)->wizard, engines, play_path, !failed.empty());
   if (auto written = core::save_settings(s.engines_path, engines); !written)
     log->warn("{}", written.error().detail);
   log->info("moteurs choisis : {}", chosen_line(engines));

@@ -29,8 +29,4 @@ void video_general_page(PlaySettings& d, const SettingsChoices& choices, std::ve
 // Vidéo > Général > Avancé : la composition finale (filtre, débandage) et l'OLED.
 void display_section(PlaySettings& d, const SettingsChoices& choices);
 
-// Langues : les langues préférées, puis la taille et le délai des sous-titres. Vrai tant que le curseur du
-// délai est tenu : le délai s'applique au relâchement (A23-12).
-bool languages_page(PlaySettings& d);
-
 }  // namespace ajp::app::play

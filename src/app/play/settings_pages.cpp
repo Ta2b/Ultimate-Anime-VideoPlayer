@@ -24,24 +24,6 @@ using panel::section;
 
 namespace {
 
-std::string language_label(std::string_view tag) {
-  std::string name = language_name(tag);
-  return name.empty() ? std::string(tag) : name;  // une balise écrite à la main dans play.toml
-}
-
-// Une langue au choix : `none_label` pour la valeur vide (audio : « Selon le fichier », sous-titres :
-// « Aucun »), sinon une des langues du menu.
-void language_combo(const char* label, const char* none_label, std::string& tag) {
-  const std::string current = tag.empty() ? none_label : language_label(tag);
-  if (!ImGui::BeginCombo(panel::left(label).c_str(), current.c_str())) return;
-  if (ImGui::Selectable(none_label, tag.empty())) tag.clear();
-  for (const Language& language : menu_languages()) {
-    if (ImGui::Selectable(i18n::tr(language.name), same_language(tag, language.code)))
-      tag = std::string(language.code);
-  }
-  ImGui::EndCombo();
-}
-
 // Vidéo > Général : le niveau, d'Économe à Ultra, refait la chaîne (réduction, SPAN, interpolation) pour
 // cette machine, cet écran et cette vidéo (auto_config.h : apply_preset). Auto prend le niveau de la machine
 // ; un réglage fait à la main ailleurs passe en Personnalisé, montré seulement quand il est en cours.
@@ -219,54 +201,6 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
       i18n::tr("Steady frame rate (VRR flicker)"),
       i18n::tr("Keeps VRR at a constant refresh so dark scenes do not flicker on OLED. Speed: one more "
                "composition per refresh. Recommended: off; on if dark scenes flicker."));
-}
-
-bool languages_page(PlaySettings& d) {
-  // Deux préférences par ordre : l'audio et les sous-titres voulus ensemble ; la 2e sert quand la 1re n'est
-  // pas entière dans le fichier.
-  d.language_presets.resize(limits::kLanguagePresets);
-  for (std::size_t rank = 0; rank < d.language_presets.size(); ++rank) {
-    ImGui::PushID(static_cast<int>(rank));
-    section(rank == 0 ? i18n::tr("Preferred languages") : i18n::tr("Fallback"));
-    language_combo(i18n::tr("Audio language"), i18n::tr("From the file"), d.language_presets[rank].audio);
-    panel::tip(i18n::tr("Audio language"),
-               i18n::tr("Picked when a file opens. Change the current track from the bar."));
-    language_combo(i18n::tr("Subtitle language"), i18n::tr("None"), d.language_presets[rank].subtitles);
-    panel::tip(i18n::tr("Subtitle language"),
-               i18n::tr("Picked when a file opens. Change the current track from the bar."));
-    panel::end_group();  // l'encadré de la section ouvre sa propre fenêtre fille : il se ferme avant le PopID
-    ImGui::PopID();
-  }
-  section(i18n::tr("Subtitles"));
-  int percent = static_cast<int>(std::lround(d.subtitle_scale * 100.0F));
-  if (ImGui::SliderInt(panel::left(i18n::tr("Size")).c_str(), &percent,
-                       static_cast<int>(limits::kSubtitleScale.lo * 100.0F),
-                       static_cast<int>(limits::kSubtitleScale.hi * 100.0F), "%d %%",
-                       ImGuiSliderFlags_AlwaysClamp)) {
-    d.subtitle_scale = static_cast<float>(percent) / 100.0F;
-  }
-  panel::live_preview();
-  panel::tip(i18n::tr("Size"), i18n::tr("Scales all subtitle text. Recommended: 100 %."));
-  ImGui::SliderInt(panel::left(i18n::tr("Delay (ms)")).c_str(), &d.subtitle_delay_ms,
-                   limits::kSubtitleDelaySlider.lo, limits::kSubtitleDelaySlider.hi, "%d",
-                   ImGuiSliderFlags_None);
-  const bool held = ImGui::IsItemActive();
-  panel::live_preview();
-  d.subtitle_delay_ms =
-      std::clamp(d.subtitle_delay_ms, limits::kSubtitleDelayMs.lo, limits::kSubtitleDelayMs.hi);
-  static_assert(limits::kSubtitleDelayMs.hi == 30'000, "le texte de l'infobulle dit ±30,000 ms");
-  panel::tip(i18n::tr("Delay (ms)"),
-             i18n::tr("Positive: subtitles later. Keys z and x: 100 ms. Ctrl+click to type a value (up to "
-                      "±30,000 ms). This session only."));
-  if (ImGui::Button(i18n::tr("Reset size and delay"))) {
-    d.subtitle_scale = 1.0F;
-    d.subtitle_delay_ms = 0;
-  }
-  return held;
-}
-
-void language_choice(const char* label, const char* none_label, std::string& tag) {
-  language_combo(label, none_label, tag);
 }
 
 }  // namespace ajp::app::play

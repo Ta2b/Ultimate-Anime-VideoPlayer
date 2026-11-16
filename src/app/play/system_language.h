@@ -4,7 +4,9 @@
 // (Windows : les langues d'affichage de l'utilisateur ; Linux et macOS : celles de la session).
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -26,8 +28,25 @@ std::vector<std::string> kde_locales(std::string_view plasma_localerc, std::stri
 // proposent ; « eng » sans aucune.
 std::string pick_menu_language(std::span<const std::string> locales);
 
+// Le choix simple des langues (Langues > Langues, assistant) : la version originale sous-titrée dans sa
+// langue, ou la version doublée dans sa langue ; Custom : les préférences réglées une à une (Avancé).
+enum class LanguageVersion : std::uint8_t { Original, Dubbed, Custom };
+inline constexpr std::size_t kLanguageVersionCount = 3;
+std::string_view version_name(LanguageVersion version);  // « original », « dubbed », « custom » (play.toml)
+std::optional<LanguageVersion> version_from_name(std::string_view name);
+
+// Les préférences de pistes d'une langue (code ISO 639-2/B, « fre ») et d'une version. L'originale : la piste
+// marquée originale par le fichier, puis le japonais, puis le chinois (les animés chinois), sous-titrés dans
+// sa langue, enfin sa langue doublée sans sous-titres. La doublée : sa langue sans sous-titres d'abord, puis
+// la même suite que l'originale. Un audio dans sa propre langue ne prend jamais de sous-titres. Custom n'a
+// pas de suite à elle : celle de l'originale.
+std::vector<media::LanguagePreset> language_presets_for(std::string_view own, LanguageVersion version);
+// Les deux préférences par défaut d'avant le choix simple ({jpn, X}, {X, ""}) : la langue X, pour relire un
+// ancien play.toml comme l'originale dans cette langue ; rien pour d'autres préférences.
+std::optional<std::string> legacy_default_language(const std::vector<media::LanguagePreset>& presets);
+
 // La langue du système retenue au démarrage (« eng » tant qu'aucune ne l'a été) et les préférences de
-// langue par défaut qui en découlent.
+// langue par défaut qui en découlent (l'originale dans cette langue).
 void set_system_language(std::string code);
 std::string_view system_language();
 std::vector<media::LanguagePreset> default_language_presets();

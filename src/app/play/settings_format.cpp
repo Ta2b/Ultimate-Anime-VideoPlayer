@@ -1,6 +1,7 @@
 // L'écriture de play.toml : format_settings met les réglages en forme. La lecture et l'accès au fichier sont
 // dans settings_toml.cpp.
 #include <cmath>
+#include <format>
 #include <sstream>
 #include <string>
 
@@ -72,14 +73,13 @@ std::string format_settings(const PlaySettings& s) {
     root.insert("audio", std::move(audio));
   }
   {
-    const media::LanguagePreset first =
-        !s.language_presets.empty() ? s.language_presets[0] : media::LanguagePreset{};
-    const media::LanguagePreset second =
-        s.language_presets.size() > 1 ? s.language_presets[1] : media::LanguagePreset{};
-    root.insert("languages", toml::table{{"audio_1", first.audio},
-                                         {"subtitles_1", first.subtitles},
-                                         {"audio_2", second.audio},
-                                         {"subtitles_2", second.subtitles}});
+    toml::table languages{{"own", s.own_language},
+                          {"version", std::string(version_name(s.language_version))}};
+    for (std::size_t i = 0; i < s.language_presets.size(); ++i) {
+      languages.insert(std::format("audio_{}", i + 1), s.language_presets[i].audio);
+      languages.insert(std::format("subtitles_{}", i + 1), s.language_presets[i].subtitles);
+    }
+    root.insert("languages", std::move(languages));
   }
   root.insert("sync", toml::table{{"display", s.display_sync}, {"video_latency_ms", s.video_latency_ms}});
   root.insert("picture", toml::table{{"deband", s.deband},

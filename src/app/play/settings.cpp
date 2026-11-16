@@ -310,6 +310,7 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
         std::format(" : {} préréglages, {} au plus", s.language_presets.size(), limits::kLanguagePresets));
   // La clé du fichier, « languages.audio_2 » : la lecture tolérante écarte celle-là seule, les autres langues
   // valides restent (B22-06).
+  if (auto ok = check_languages("languages.own", {s.own_language}); !ok) return std::unexpected(ok.error());
   for (std::size_t i = 0; i < s.language_presets.size(); ++i) {
     const media::LanguagePreset& preset = s.language_presets[i];
     const auto tags = [](const std::string& tag) {
@@ -492,6 +493,8 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.subtitle_scale = wanted.subtitle_scale;
   s.subtitle_delay_ms = wanted.subtitle_delay_ms;
   s.language_presets = wanted.language_presets;  // au prochain fichier
+  s.own_language = wanted.own_language;
+  s.language_version = wanted.language_version;
   s.grade = wanted.grade;
   s.grade_values = wanted.grade_values;
   s.look_contrast = wanted.look_contrast;

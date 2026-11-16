@@ -13,6 +13,11 @@ namespace ajp::media {
 
 // Un préréglage : l'audio et les sous-titres voulus ensemble. audio vide : la piste que le fichier
 // préfère (sa langue ne compte pas) ; subtitles vide : aucun sous-titre.
+// La langue d'audio « original » : la piste que le fichier marque comme langue originale du contenu (drapeau
+// FlagOriginal de Matroska), quelle que soit sa langue ; aucune piste marquée, le préréglage ne s'applique
+// pas.
+inline constexpr std::string_view kOriginalAudio = "original";
+
 struct LanguagePreset {
   std::string audio;
   std::string subtitles;

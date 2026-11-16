@@ -285,7 +285,7 @@ TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est
   const auto refused = engines_summary({vulkan, trt});
   REQUIRE(refused.size() == 2);
   CHECK(refused[0].find("TensorRT") == std::string::npos);
-  // Le moteur recommandé pour la carte laissé décoché : dit, la calibration mesurerait l'autre (A25-02).
+  // Le moteur recommandé pour la carte laissé décoché : dit, la lecture prendrait l'autre (A25-02).
   trt.chosen = false;
   CHECK(engines_summary({vulkan, trt}).size() == 1);  // sans badge Recommandé : rien à dire
   trt.offer.badges = {ajp::core::Badge::Recommended};

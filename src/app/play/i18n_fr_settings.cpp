@@ -24,10 +24,6 @@ constexpr std::array kSettingsPages{
           "Calibration terminée : {} pour tenir {:.1f} images par seconde sur {:.0f} visées."},
     Entry{"The next heavier setting lost {:.1f} % of its frames in this test.",
           "Le réglage juste au-dessus perdait {:.1f} % de ses images à ce banc."},
-    Entry{"Calibration skipped: the engine did not install. Install it in Settings > Video > General, then "
-          "calibrate again (Video > General).",
-          "Calibration non lancée : le moteur ne s'est pas installé. Installez-le dans Paramètres > Vidéo > "
-          "Général, puis refaites la calibration (Vidéo > Général)."},
     Entry{"Cancel##calibration", "Annuler##calibration"},
     Entry{"Interpolation runs in Auto Instant mode. The working resolution goes up to the 1080p of the test "
           "sequence; SPAN doubles it.",
@@ -101,7 +97,6 @@ constexpr std::array kSettingsPages{
     Entry{"Experimental", "Expérimental"},
     Entry{"Export", "Export"},
     Entry{"Replace the file and export", "Remplacer le fichier et exporter"},
-    Entry{"Fallback", "Sinon"},
     Entry{"Fast", "Rapide"},
     Entry{"Instant", "Instantané"},
     Entry{"Interpolation level", "Niveau d'interpolation"},
@@ -129,7 +124,6 @@ constexpr std::array kSettingsPages{
     Entry{"Peak (nits)", "Pic (nits)"},
     Entry{"Pipeline", "Chaîne"},
     Entry{"Playback", "Lecture"},
-    Entry{"Preferred languages", "Langues préférées"},
     Entry{"Preset", "Préréglage"},
     Entry{"Quality", "Qualité"},
     Entry{"Recommended", "Recommandé"},

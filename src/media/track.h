@@ -54,6 +54,7 @@ struct TrackInfo {
   bool is_default = false;
   bool forced = false;
   bool attached_picture = false;  // pochette : jamais choisie comme vidéo
+  bool original = false;          // langue originale du contenu (FlagOriginal de Matroska)
   std::int64_t duration_us = 0;   // 0 si inconnue
 
   int width = 0;  // vidéo, ramenée à une valeur paire comme les images (chain_dimension, core/frame.h)

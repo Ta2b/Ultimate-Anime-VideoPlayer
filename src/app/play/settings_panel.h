@@ -147,9 +147,6 @@ struct SettingsPage {
 // Tous les onglets, dans l'ordre de l'écran (les catégories se déduisent du changement de `category`).
 std::span<const SettingsPage> settings_pages();
 
-// Une liste de langues (settings_panel.cpp), partagée avec l'assistant de premier démarrage.
-void language_choice(const char* label, const char* none_label, std::string& tag);
-
 // Le champ « Dossier d'installation » de l'onglet Moteurs : le texte en cours de saisie, repris du réglage à
 // chaque ouverture du menu (P5.27 : à SettingsPanel, plus un tampon statique).
 struct FolderField {

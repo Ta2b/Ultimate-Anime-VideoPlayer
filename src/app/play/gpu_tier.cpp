@@ -60,6 +60,24 @@ std::string_view tier_label(Tier tier) {
   return i18n::tr("Normal");
 }
 
+std::string_view tier_summary(Tier tier) {
+  switch (tier) {
+    case Tier::Economy:
+      return i18n::tr(
+          "HDR grade only: upscaling and interpolation stay off, the card keeps up with any video.");
+    case Tier::Fast:
+      return i18n::tr("HDR grade, upscaling from 540p and interpolation up to ×2.");
+    case Tier::Normal:
+      return i18n::tr("HDR grade, upscaling from 720p and interpolation up to ×3.");
+    case Tier::Quality:
+    case Tier::Ultra:
+      return i18n::tr(
+          "HDR grade, upscaling from the source up to 1080p with the finest models, and interpolation "
+          "up to ×4.");
+  }
+  return {};
+}
+
 std::expected<TierTable, Refusal> parse_tier_table(std::string_view text) {
   toml::parse_result parsed = toml::parse(text);
   if (!parsed)

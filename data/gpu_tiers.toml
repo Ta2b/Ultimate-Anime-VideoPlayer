@@ -1,137 +1,176 @@
-# Classement approximatif des cartes graphiques (et des iGPU) par tranche de performance, de 2015 à
-# aujourd'hui. Il sert à choisir les réglages automatiques (docs/ux-parametres.md, 4.7) : ce sont des
-# ESTIMATIONS, corrigées par « Évaluer ma machine ».
+# Les cartes graphiques classées par puissance POUR AJP, pas par date : ce qui compte est le débit des réseaux
+# (SPAN, RIFE, GMFSS), surtout le calcul FP16 matriciel (cœurs Tensor sous TensorRT, matrices coopératives sous
+# Vulkan). Une RTX 2060 y dépasse ainsi une GTX 1080 Ti, plus rapide en jeu mais sans unités matricielles. Le
+# classement sert au préréglage Auto (docs/ux-parametres.md, 4.7) : ce sont des ESTIMATIONS, que le menu laisse
+# changer (Vidéo > Général) ; docs/classement-gpu.md donne les chiffres et la méthode.
 #
-# Tranches, avec les noms du menu (gpu_tier.cpp, tier_label) : 0 Économe, 1 Rapide (Tier::Fast),
-# 2 Normal, 3 Qualité (Tier::Quality), 4 Ultra.
-# La première règle dont le fabricant correspond et dont TOUTES les chaînes de `contains` se trouvent dans
-# le nom (minuscules, sans « (tm) » ni « (r) ») gagne : du plus précis au plus général. Une carte inconnue
-# tombe sur l'estimation par fabricant, VRAM et unités matricielles (gpu_tier.cpp).
+# Tranches, avec les noms du menu (gpu_tier.cpp, tier_label) et ce qu'Auto y règle (auto_config.cpp) :
+#   0 Économe : grade HDR seul, ni agrandissement ni interpolation ;
+#   1 Rapide  : agrandissement depuis 540p, interpolation jusqu'à ×2 ;
+#   2 Normal  : agrandissement depuis 720p, interpolation jusqu'à ×3 ;
+#   3 Qualité : la source jusqu'à 1080p avec les modèles fins, interpolation jusqu'à ×4 ;
+#   4 Ultra   : comme Qualité, avec de la marge.
+# Repère des seuils, en débit FP16 matriciel face à la RTX 4070 Ti (mesurée : 14,25 ms de SPAN b8f64 par image
+# 1080p sous TensorRT) : Ultra à partir de 1,2 fois, Qualité de 0,7, Normal de 0,4, Rapide de 0,2. Les cartes
+# sans unités matricielles (GTX, Radeon avant RDNA 3, Intel sans XMX) passent par Vulkan en FP32 ou FP16 simple,
+# environ quatre fois moins efficace : Économe, sauf les plus fortes, en Rapide.
+#
+# La première règle dont le fabricant correspond et dont TOUTES les chaînes de `contains` se trouvent dans le
+# nom (minuscules, sans « (tm) » ni « (r) ») gagne. D'où l'ordre : les portables d'abord (leur nom contient celui
+# de la carte de bureau), puis les cartes de bureau de la plus puissante à la moins puissante, un nom plus long
+# avant celui qu'il contient (« rtx 3060 ti » avant « rtx 3060 »), enfin les règles de famille pour les noms à
+# venir. Une carte inconnue tombe sur l'estimation par fabricant, VRAM et unités matricielles (gpu_tier.cpp).
 # `integrated = true` : iGPU (mémoire partagée avec le processeur).
-version = 1
+version = 2
 
 rules = [
-  # NVIDIA : les portables d'abord (« … Laptop GPU »), une tranche sous la carte de bureau du même nom
+  # ---- NVIDIA, portables : moins de watts que la carte de bureau du même nom ----------------------------------
+  # « … Laptop GPU » depuis les RTX 30 ; les RTX 20 portables disent « with Max-Q Design » (A37-04) ou rien.
+  # La RTX PRO 6000 « Max-Q Workstation Edition » est une carte de bureau (A37-12) : avant les règles Max-Q.
+  { vendor = "nvidia", contains = ["rtx pro 6000"], tier = 4 },
+  # Qualité (TensorRT recommandé)
   { vendor = "nvidia", contains = ["rtx 5090", "laptop"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx 5080", "laptop"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4090", "laptop"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 5080", "laptop"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4080", "laptop"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx pro 5000", "laptop"], tier = 3 },
+  # Normal (TensorRT recommandé)
+  { vendor = "nvidia", contains = ["rtx 5070 ti", "laptop"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 3080 ti", "laptop"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 5070", "laptop"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 4070", "laptop"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 3080", "laptop"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 3070", "laptop"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 2080", "laptop"], tier = 2 },
-  # Les portables RTX 20 ne portent pas « Laptop » : « GeForce RTX 2080 with Max-Q Design » (A37-04). Ceux sans
-  # suffixe gardent le nom du bureau ; la calibration les corrige.
-  { vendor = "nvidia", contains = ["rtx 2080", "max-q"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 3050", "laptop"], tier = 1 },
-  { vendor = "nvidia", contains = ["rtx 2050"], tier = 1 },
-  # Les RTX PRO Blackwell (A37-12) : « NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition » ne prend
-  # pas la règle des portables Max-Q, et « rtx pro 6000 » ne contient pas « rtx 6000 ». Portables d'abord.
-  { vendor = "nvidia", contains = ["rtx pro 5000", "laptop"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx pro 4000", "laptop"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx pro", "laptop"], tier = 1 },
-  { vendor = "nvidia", contains = ["rtx pro 6000"], tier = 4 },
-  { vendor = "nvidia", contains = ["rtx pro 5000"], tier = 4 },
-  { vendor = "nvidia", contains = ["rtx pro 4500"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx pro 4000"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx pro"], tier = 2 },
-  # Les autres RTX portables (4060, 4050, 3060, 5060, 2070, 2060, RTX A… Laptop) : une tranche sous la règle
-  # générale de leur famille, plus bas dans la table (A07-08).
+  { vendor = "nvidia", contains = ["rtx 2080", "max-q"], tier = 2 },
+  # Rapide (TensorRT recommandé) : 3070 Ti, 3070, 5060, 4060, 3060, 4050, 2070, 2060, 3050, RTX A… et PRO…
+  # Laptop. L'A500 et l'A1000 portables restent ici : le Rapide tient sur 4 Go.
+  { vendor = "nvidia", contains = ["rtx 2050"], tier = 0 },
   { vendor = "nvidia", contains = ["rtx", "laptop"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx", "max-q"], tier = 1 },
+  # Économe (Vulkan) : les GTX et MX portables.
+  { vendor = "nvidia", contains = ["gtx", "laptop"], tier = 0 },
+  { vendor = "nvidia", contains = ["max-q"], tier = 0 },
+  { vendor = "nvidia", contains = ["mx"], tier = 0 },
+
+  # ---- NVIDIA, bureau, de la plus puissante à la moins puissante ---------------------------------------------
+  # Ultra (TensorRT recommandé)
   { vendor = "nvidia", contains = ["rtx 5090"], tier = 4 },
-  { vendor = "nvidia", contains = ["rtx 5080"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 4090"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 6000 ada"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 5080"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx pro 5000"], tier = 4 },
   { vendor = "nvidia", contains = ["rtx 4080"], tier = 4 },
-  { vendor = "nvidia", contains = ["rtx 5070"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx 4070"], tier = 3 },
-  # Qualité joue SPAN b8f64 à 1080p et RIFE 4.26. Sa place a été mesurée sur une RTX 4070 Ti seulement, avec
-  # RIFE 4.25 (14,25 ms de SPAN pour 41,7 ms par image) : RIFE 4.26 n'y est pas encore mesuré (C07-07). Turing
-  # et Ampere n'y restent que pour les cartes au débit FP16 matriciel voisin (3090, 3080 Ti, A6000, A5500 :
-  # environ 0,9 fois la 4070 Ti) ; une 3080, une 3070, une 2080 en ont 0,5 à 0,75 fois, et vont en Normal tant
-  # qu'aucune mesure ne les place plus haut (B07-04). La calibration, qui mesure, les remonte : quand la
-  # chaîne de Normal tient à 1080p, elle essaie aussi les modèles de Qualité et les garde s'ils tiennent.
-  { vendor = "nvidia", contains = ["rtx 3090"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx 3080 ti"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx 3080"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 3070"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 2080"], tier = 2 },
-  { vendor = "nvidia", contains = ["titan rtx"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx a6000"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx a5500"], tier = 3 },
-  { vendor = "nvidia", contains = ["rtx a5000"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx a4500"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx a4000"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx a3000"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx a2000"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx a1000"], tier = 1 },
-  { vendor = "nvidia", contains = ["rtx a500"], tier = 1 },
-  # Après « rtx a4000 » et « rtx a4500 », dont le nom contient « rtx a400 » : la RTX A400 (4 Go).
-  { vendor = "nvidia", contains = ["rtx a400"], tier = 0 },
-  # La Quadro RTX 6000 (Turing) avant « rtx 6000 », qui est la RTX 6000 Ada.
-  { vendor = "nvidia", contains = ["quadro rtx 6000"], tier = 2 },
-  # Les autres Quadro RTX (Turing) avant « rtx 40 » et « rtx 50 », que « Quadro RTX 4000 » et « 5000 »
-  # contiennent (C37-09).
-  { vendor = "nvidia", contains = ["quadro rtx"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 6000"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 4070 ti super"], tier = 4 },
+  { vendor = "nvidia", contains = ["rtx 5070 ti"], tier = 4 },
+  # Qualité (TensorRT recommandé) : la place de la 4070 Ti est mesurée, les autres suivent leur débit.
+  { vendor = "nvidia", contains = ["rtx 4070 ti"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 3090 ti"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 5000 ada"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx pro 4500"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 3090"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 4070 super"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx a6000"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 3080 ti"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 5070"], tier = 3 },
   { vendor = "nvidia", contains = ["rtx 4500 ada"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx a5500"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx pro 4000"], tier = 3 },
+  { vendor = "nvidia", contains = ["rtx 4070"], tier = 3 },
+  # Normal (TensorRT recommandé). La 2080 Ti passe devant la 3060 Ti et la 4060 Ti : plus de cœurs Tensor.
+  { vendor = "nvidia", contains = ["rtx 3080"], tier = 2 },
+  { vendor = "nvidia", contains = ["titan rtx"], tier = 2 },
+  { vendor = "nvidia", contains = ["quadro rtx 8000"], tier = 2 },
+  { vendor = "nvidia", contains = ["quadro rtx 6000"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 2080 ti"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx a5000"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 3070 ti"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx a4500"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 4060 ti"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 5060 ti"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 2080"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 3070"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 4000 ada"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 2000 ada"], tier = 2 },
-  # La RTX 3050 de bureau a moins de SM que la 3060 et le débit de la 3050 portable, en tranche 1 : la
-  # règle « rtx 30 » la mettait en Normal (C37-09). La 2060, la 2070 et la 5050 restent à la règle de leur
-  # famille tant qu'aucune calibration ne les place.
+  { vendor = "nvidia", contains = ["rtx a4000"], tier = 2 },
+  { vendor = "nvidia", contains = ["quadro rtx 5000"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 5060"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx pro 2000"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 2070 super"], tier = 2 },
+  { vendor = "nvidia", contains = ["rtx 3060 ti"], tier = 2 },
+  # Rapide (TensorRT recommandé)
+  { vendor = "nvidia", contains = ["rtx 4060"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 2070"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 2000 ada"], tier = 1 },
+  { vendor = "nvidia", contains = ["quadro rtx 4000"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 2060 super"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 3060"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 2060"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 5050"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx a2000"], tier = 1 },
+  { vendor = "nvidia", contains = ["quadro rtx 3000"], tier = 1 },
   { vendor = "nvidia", contains = ["rtx 3050"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx a1000"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx pro 1000"], tier = 1 },
+  # Rapide (Vulkan) : les plus fortes sans cœurs Tensor, environ 11 TFLOPS FP32. À confirmer par une mesure.
+  { vendor = "nvidia", contains = ["titan v"], tier = 1 },
+  { vendor = "nvidia", contains = ["titan xp"], tier = 1 },
+  { vendor = "nvidia", contains = ["titan x", "pascal"], tier = 1 },
+  { vendor = "nvidia", contains = ["gtx 1080 ti"], tier = 1 },
+  # Économe (Vulkan) : les autres GTX et GT, et les RTX à 4 Go de bureau les plus faibles.
+  { vendor = "nvidia", contains = ["rtx a500"], tier = 0 },
+  { vendor = "nvidia", contains = ["rtx a400"], tier = 0 },
+  { vendor = "nvidia", contains = ["gtx"], tier = 0 },
+  { vendor = "nvidia", contains = ["gt "], tier = 0 },
+  { vendor = "nvidia", contains = ["titan"], tier = 0 },
+  # Familles, pour les noms à venir (Quadro RTX avant « rtx 40 » et « rtx 50 », que leur nom contient).
+  { vendor = "nvidia", contains = ["quadro rtx"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx pro"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 50"], tier = 2 },
   { vendor = "nvidia", contains = ["rtx 40"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 30"], tier = 2 },
-  { vendor = "nvidia", contains = ["rtx 20"], tier = 2 },
-  { vendor = "nvidia", contains = ["titan"], tier = 2 },
-  { vendor = "nvidia", contains = ["gtx 1080"], tier = 2 },
-  { vendor = "nvidia", contains = ["gtx 1070"], tier = 2 },
-  { vendor = "nvidia", contains = ["gtx 16"], tier = 1 },
-  { vendor = "nvidia", contains = ["gtx 10"], tier = 1 },
-  { vendor = "nvidia", contains = ["gtx 9"], tier = 1 },
-  { vendor = "nvidia", contains = ["gt 10"], tier = 0 },
-  { vendor = "nvidia", contains = ["mx"], tier = 0 },
-  # AMD
-  { vendor = "amd", contains = ["rx 9070"], tier = 4 },
-  { vendor = "amd", contains = ["rx 9060"], tier = 3 },
-  { vendor = "amd", contains = ["rx 7900"], tier = 4 },
-  { vendor = "amd", contains = ["navi31"], tier = 4 },
-  { vendor = "amd", contains = ["rx 7800"], tier = 3 },
-  { vendor = "amd", contains = ["rx 7700"], tier = 3 },
-  { vendor = "amd", contains = ["rx 7600"], tier = 2 },
-  { vendor = "amd", contains = ["rx 69"], tier = 3 },
-  { vendor = "amd", contains = ["rx 68"], tier = 3 },
-  { vendor = "amd", contains = ["rx 67"], tier = 2 },
-  { vendor = "amd", contains = ["rx 66"], tier = 2 },
-  { vendor = "amd", contains = ["rx 65"], tier = 1 },
-  { vendor = "amd", contains = ["rx 64"], tier = 1 },
-  { vendor = "amd", contains = ["rx 5700"], tier = 2 },
-  { vendor = "amd", contains = ["rx 5"], tier = 1 },
-  { vendor = "amd", contains = ["vega"], tier = 1 },
-  { vendor = "amd", contains = ["rx 4"], tier = 1 },
-  { vendor = "amd", contains = ["r9"], tier = 1 },
-  { vendor = "amd", contains = ["8060s"], tier = 3, integrated = true },
-  { vendor = "amd", contains = ["gfx1151"], tier = 3, integrated = true },
+  { vendor = "nvidia", contains = ["rtx 30"], tier = 1 },
+  { vendor = "nvidia", contains = ["rtx 20"], tier = 1 },
+
+  # ---- AMD (Vulkan) : RDNA 3 et 4 ont des matrices coopératives, les précédentes non ------------------------
+  { vendor = "amd", contains = ["rx 9070"], tier = 3 },
+  { vendor = "amd", contains = ["rx 7900"], tier = 3 },
+  { vendor = "amd", contains = ["navi31"], tier = 3 },
+  { vendor = "amd", contains = ["8060s"], tier = 2, integrated = true },
+  { vendor = "amd", contains = ["gfx1151"], tier = 2, integrated = true },
+  { vendor = "amd", contains = ["rx 9060"], tier = 2 },
+  { vendor = "amd", contains = ["rx 7800"], tier = 2 },
+  { vendor = "amd", contains = ["rx 7700"], tier = 2 },
+  { vendor = "amd", contains = ["rx 69"], tier = 2 },
+  { vendor = "amd", contains = ["rx 68"], tier = 2 },
+  { vendor = "amd", contains = ["rx 7600"], tier = 1 },
+  { vendor = "amd", contains = ["rx 67"], tier = 1 },
+  { vendor = "amd", contains = ["rx 66"], tier = 1 },
+  { vendor = "amd", contains = ["rx 5700"], tier = 1 },
+  { vendor = "amd", contains = ["radeon vii"], tier = 1 },
+  { vendor = "amd", contains = ["vega 64"], tier = 1 },
+  { vendor = "amd", contains = ["vega 56"], tier = 1 },
   { vendor = "amd", contains = ["radeon 8"], tier = 1, integrated = true },
-  { vendor = "amd", contains = ["radeon 7"], tier = 1, integrated = true },
-  { vendor = "amd", contains = ["gfx1103"], tier = 1, integrated = true },
+  { vendor = "amd", contains = ["rx 65"], tier = 0 },
+  { vendor = "amd", contains = ["rx 64"], tier = 0 },
+  { vendor = "amd", contains = ["rx 5"], tier = 0 },
+  { vendor = "amd", contains = ["vega"], tier = 0 },
+  { vendor = "amd", contains = ["rx 4"], tier = 0 },
+  { vendor = "amd", contains = ["r9"], tier = 0 },
+  { vendor = "amd", contains = ["radeon 7"], tier = 0, integrated = true },
+  { vendor = "amd", contains = ["gfx1103"], tier = 0, integrated = true },
   { vendor = "amd", contains = ["radeon graphics"], tier = 0, integrated = true },
-  # Intel
+
+  # ---- Intel (Vulkan) : les Arc ont des unités XMX ------------------------------------------------------------
   { vendor = "intel", contains = ["arc", "b5"], tier = 2 },
   { vendor = "intel", contains = ["arc", "a7"], tier = 2 },
-  { vendor = "intel", contains = ["arc", "a5"], tier = 2 },
-  { vendor = "intel", contains = ["arc", "a3"], tier = 1 },
+  { vendor = "intel", contains = ["arc", "a5"], tier = 1 },
   { vendor = "intel", contains = ["arc", "140"], tier = 1, integrated = true },
-  { vendor = "intel", contains = ["arc", "graphics"], tier = 1, integrated = true },
-  { vendor = "intel", contains = ["iris xe"], tier = 1, integrated = true },
+  { vendor = "intel", contains = ["arc", "a3"], tier = 0 },
+  { vendor = "intel", contains = ["arc", "graphics"], tier = 0, integrated = true },
+  { vendor = "intel", contains = ["iris xe"], tier = 0, integrated = true },
   { vendor = "intel", contains = ["uhd"], tier = 0, integrated = true },
   { vendor = "intel", contains = ["hd graphics"], tier = 0, integrated = true },
   { vendor = "intel", contains = ["iris"], tier = 0, integrated = true },
-  # Apple (puces M, mémoire unifiée)
+
+  # ---- Apple (Core ML, mémoire unifiée ; macOS n'est plus construit) ------------------------------------------
   { vendor = "apple", contains = ["ultra"], tier = 4, integrated = true },
   { vendor = "apple", contains = ["max"], tier = 3, integrated = true },
   { vendor = "apple", contains = ["pro"], tier = 3, integrated = true },

@@ -1,5 +1,5 @@
 // L'assistant du premier lancement à l'écran : un écran par étape (wizard.h), la barre de progression et
-// les boutons Retour, Passer, Suivant ; Prêt finit par « Calibrer maintenant » ou « Régler moi-même ».
+// les boutons Retour, Passer, Suivant ; Prêt finit par « Terminer », qui pose les réglages de la carte.
 #include <algorithm>
 #include <string>
 
@@ -8,9 +8,8 @@
 #include "app/play/first_run.h"
 #include "app/play/first_run_draw.h"
 #include "app/play/i18n.h"
-#include "app/play/machine_calibration.h"
 #include "app/play/panel_style.h"
-#include "app/play/settings_panel.h"
+#include "app/play/settings_languages.h"
 #include "app/play/wizard.h"
 
 namespace ajp::app::play {
@@ -63,8 +62,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       break;
     case WizardStep::Languages:
       section(i18n::tr("Languages"));
-      language_choice(i18n::tr("Audio language"), i18n::tr("From the file"), wizard.audio_language);
-      language_choice(i18n::tr("Subtitle language"), i18n::tr("None"), wizard.subtitle_language);
+      simple_languages(wizard.own_language, wizard.language_version, wizard.language_presets);
+      ImGui::Checkbox(i18n::tr("Show the exact track choices"), &wizard.advanced_languages);
+      if (wizard.advanced_languages) track_choices(wizard.language_presets, wizard.language_version);
       break;
     case WizardStep::Updates: {
       section(i18n::tr("Updates"));
@@ -87,33 +87,17 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       section(i18n::tr("Ready"));
       for (const std::string& line : engines_summary(view.engines)) ImGui::BulletText("%s", line.c_str());
       for (const std::string& line : wizard_summary(wizard)) ImGui::BulletText("%s", line.c_str());
-      section(i18n::tr("Machine calibration"));
-      note(
-          i18n::tr("\"Calibrate now\" tests several settings on a very demanding sequence: picture "
-                   "resolution, SPAN upscaling and RIFE smoothness, and keeps the best combination this "
-                   "machine sustains. Only a progress bar is shown; the estimate below is longer with "
-                   "TensorRT, which builds its engines during the test."));
-      // Calculée au moment de l'afficher, d'après les moteurs cochés maintenant : TensorRT choisi à l'écran
-      // des moteurs construit ses moteurs pendant l'essai (A25-03).
-      note(i18n::tr_format("Estimated for this machine: about {} minutes.",
-                           calibration_minutes(std::ranges::any_of(view.engines,
-                                                                   [](const EngineRow& row) {
-                                                                     return row.offer.id ==
-                                                                                core::EngineId::TensorRt &&
-                                                                            row.chosen && row.usable &&
-                                                                            engine_installs(row);
-                                                                   }),
-                                               view.laptop)));
-      note(
-          i18n::tr("\"Set it up myself\": the Auto preset estimated for this card, changeable in Video > "
-                   "General."));
+      section(i18n::tr("Settings for this card"));
+      ImGui::BulletText("%s", view.tier_line.c_str());
+      if (!view.tier_detail.empty()) note(view.tier_detail);
+      note(i18n::tr("The Quality preset in Video > General changes it at any time."));
       note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
       break;
   }
 }
 
 // Entrée sans rien de choisi au clavier vaut « Suivant » (A25-14) ; un choix en surbrillance ou une liste
-// ouverte la gardent pour eux. Pas sur Prêt : la calibration ne part pas d'une touche tapée trop vite.
+// ouverte la gardent pour eux. Pas sur Prêt : l'installation ne part pas d'une touche tapée trop vite.
 bool enter_goes_next() {
   const ImGuiIO& io = ImGui::GetIO();
   return (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0 && !io.NavVisible &&
@@ -161,23 +145,12 @@ void draw_wizard(FirstRunView& view, float scale) {
     ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{0.05F, 0.07F, 0.12F, 1.0F});
     if (is_last(wizard)) {
-      if (ImGui::Button(i18n::tr("Calibrate now"), {0.0F, tall})) {
-        wizard.calibrate = true;
-        view.done = true;
-      }
+      if (ImGui::Button(i18n::tr("Finish"), {0.0F, tall})) view.done = true;
     } else if (ImGui::Button(i18n::tr("Next"), {0.0F, tall}) || enter_goes_next()) {
       next(wizard);
     }
     ImGui::SetItemDefaultFocus();  // au clavier, Entrée part du bouton principal
     ImGui::PopStyleColor(2);
-    // Le bouton secondaire de Prêt : sans calibration, le niveau Auto estimé pour cette carte (P3.1).
-    if (is_last(wizard)) {
-      ImGui::SameLine();
-      if (ImGui::Button(i18n::tr("Set it up myself"), {0.0F, tall})) {
-        set_up_myself(wizard);
-        view.done = true;
-      }
-    }
     if (view.during_playback) {
       ImGui::SameLine();
       if (ImGui::Button(i18n::tr("Cancel"), {0.0F, tall})) view.cancelled = true;

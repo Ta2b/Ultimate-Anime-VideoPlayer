@@ -126,11 +126,53 @@ std::string default_interface_language() {
   return g_system_language == "fre" ? "fr" : "en";
 }
 
+std::string_view version_name(LanguageVersion version) {
+  switch (version) {
+    case LanguageVersion::Original:
+      return "original";
+    case LanguageVersion::Dubbed:
+      return "dubbed";
+    case LanguageVersion::Custom:
+      return "custom";
+  }
+  return "original";
+}
+
+std::optional<LanguageVersion> version_from_name(std::string_view name) {
+  for (std::size_t i = 0; i < kLanguageVersionCount; ++i) {
+    const auto version = static_cast<LanguageVersion>(i);
+    if (version_name(version) == name) return version;
+  }
+  return std::nullopt;
+}
+
+std::vector<media::LanguagePreset> language_presets_for(std::string_view own_in, LanguageVersion version) {
+  const std::string own = own_in.empty() ? std::string("eng") : std::string(own_in);
+  std::vector<media::LanguagePreset> out;
+  const auto add = [&](std::string_view audio) {
+    // Sa propre langue en audio : pas de sous-titres par-dessus.
+    media::LanguagePreset preset{std::string(audio), audio == own ? std::string{} : own};
+    if (std::ranges::find(out, preset) == out.end()) out.push_back(std::move(preset));
+  };
+  if (version == LanguageVersion::Dubbed) add(own);
+  add(media::kOriginalAudio);
+  add("jpn");
+  add("chi");
+  add(own);
+  return out;
+}
+
+std::optional<std::string> legacy_default_language(const std::vector<media::LanguagePreset>& presets) {
+  using Presets = std::vector<media::LanguagePreset>;
+  if (presets == Presets{{"jpn", ""}, {"", ""}}) return "jpn";  // le défaut d'un système en japonais
+  if (presets.size() != 2) return std::nullopt;
+  const std::string& own = presets[1].audio;
+  if (own.empty() || presets != Presets{{"jpn", own}, {own, ""}}) return std::nullopt;
+  return own;
+}
+
 std::vector<media::LanguagePreset> default_language_presets() {
-  const std::string own = g_system_language.empty() ? std::string("eng") : g_system_language;
-  // Japonais : la version originale, sans sous-titres ; la seconde préférence prend l'audio du fichier.
-  if (own == "jpn") return {{"jpn", ""}, {"", ""}};
-  return {{"jpn", own}, {own, ""}};
+  return language_presets_for(g_system_language, LanguageVersion::Original);
 }
 
 }  // namespace ajp::app::play
