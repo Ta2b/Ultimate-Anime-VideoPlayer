@@ -72,13 +72,13 @@ constexpr std::array kImageTabs{
           "cards other than NVIDIA RTX.",
           "RIFE 4.22 lite : léger et propre, la référence des autres niveaux. Recommandé sur les cartes "
           "graphiques autres que NVIDIA RTX."},
-    Entry{"RIFE 4.26: cleaner in-between frames. Speed: slightly slower than Fast. Quality impact: minor "
-          "gain. Recommended on NVIDIA RTX.",
-          "RIFE 4.26 : des images intermédiaires plus propres. Vitesse : un peu plus lent que Rapide. Impact "
+    Entry{"RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Fast. Quality impact: minor gain. "
+          "Recommended on NVIDIA RTX.",
+          "RIFE 4.26 : des images intermédiaires plus propres. Vitesse : environ −10 % face à Rapide. Impact "
           "sur la qualité : gain mineur. Recommandé sur NVIDIA RTX."},
-    Entry{"RIFE 4.25: the former Balanced level. Speed: slightly slower than Balanced. Quality impact: "
+    Entry{"RIFE 4.25: the former Balanced level. Speed: about −10 % vs Balanced. Quality impact: "
           "imperceptible.",
-          "RIFE 4.25 : l'ancien niveau Équilibré. Vitesse : un peu plus lent qu'Équilibré. Impact sur la "
+          "RIFE 4.25 : l'ancien niveau Équilibré. Vitesse : environ −10 % face à Équilibré. Impact sur la "
           "qualité : imperceptible."},
     Entry{"DistilDRBA: characters animated on twos keep their rhythm; one frame of delay. Speed: about Fast "
           "up to ×5, slower above. Quality impact: none measured over RIFE. Auto does not use it.",
@@ -97,11 +97,11 @@ constexpr std::array kImageTabs{
         "RIFE guidé par 1 à 3 images clés GMFSS, sur les mouvements rapides seulement. Vitesse : environ −20 "
         "à −40 % face à Équilibré, selon la scène. Impact sur la qualité : gain modéré sur les rotations et "
         "panoramiques rapides. NVIDIA RTX seulement."},
-    Entry{"RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about half the speed of "
-          "Balanced. Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.",
-          "RIFE guidé par 1 à 3 images clés GMFSS, sur chaque paire qui bouge. Vitesse : environ deux fois "
-          "plus lent qu'Équilibré. Impact sur la qualité : gain modéré, le mouvement le plus stable. NVIDIA "
-          "RTX seulement."},
+    Entry{
+        "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about −45 % vs Balanced. "
+        "Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.",
+        "RIFE guidé par 1 à 3 images clés GMFSS, sur chaque paire qui bouge. Vitesse : environ −45 % face à "
+        "Équilibré. Impact sur la qualité : gain modéré, le mouvement le plus stable. NVIDIA RTX seulement."},
     Entry{" + GMFSS union on fast motion", " + GMFSS union sur les mouvements rapides"},
     Entry{" + GMFSS union on every pair", " + GMFSS union sur chaque paire"},
     Entry{"GMFSS (pair)", "GMFSS (paire)"},
@@ -187,13 +187,13 @@ constexpr std::array kImageTabs{
     Entry{"Stable", "Stable"},
     Entry{"Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
           "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at the "
-          "card's limit. Speed: Instant +50 % frames or more. Quality impact: minor (Instant can stutter "
-          "slightly at the card's limit). Recommended: Instant.",
+          "card's limit. Speed: Instant about +50 to +85 % frames. Quality impact: minor (Instant can "
+          "stutter slightly at the card's limit). Recommended: Instant.",
           "Stable : des paliers fixes (×1 à ×8), le mouvement le plus régulier. Instantané : chaque image "
           "est faite pour l'instant exact où elle s'affiche, pour plus d'images et un mouvement plus fluide "
-          "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané +50 % d'images ou plus. "
-          "Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la carte). "
-          "Recommandé : Instantané."},
+          "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané environ +50 à +85 % "
+          "d'images. Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la "
+          "carte). Recommandé : Instantané."},
     Entry{"The highest frame rate Auto aims for; a lower limit saves power and heat. Recommended: Maximum.",
           "La cadence la plus haute visée par Auto ; une limite plus basse économise l'énergie et la "
           "chauffe. Recommandé : Maximum."},

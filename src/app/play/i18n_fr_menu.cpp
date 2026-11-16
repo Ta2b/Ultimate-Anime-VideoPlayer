@@ -34,11 +34,11 @@ constexpr std::array kMenuTexts{
     Entry{
         "Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer detail "
         "if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and Anime4K are "
-        "for weak graphics cards. FP8: prepared once, then over +30 % speed for an imperceptible loss.",
+        "for weak graphics cards. FP8: prepared once, then about +37 % speed for an imperceptible loss.",
         "Le réseau qui redessine l'image. Performance suit sur la plupart des cartes. Équilibré garde plus "
         "de détails fins si la carte peut se le permettre. Sharp1 dessine des traits plus nets, un peu plus "
         "durs. ArtCNN et Anime4K sont faits pour les cartes graphiques faibles. FP8 : préparé une fois, puis "
-        "plus de +30 % de vitesse pour une perte imperceptible."},
+        "environ +37 % de vitesse pour une perte imperceptible."},
     Entry{"Which network redraws the picture. Performance keeps up on most cards. Balanced keeps finer "
           "detail if your card can afford it. Sharp1 draws crisper lines, a little harsher. ArtCNN and "
           "Anime4K are for weak graphics cards.",
@@ -184,42 +184,41 @@ constexpr std::array kMenuTexts{
           "actuels. Impact sur la qualité : imperceptible. Recommandé : activé."},
     Entry{"Prepares these engines again.", "Prépare de nouveau ces moteurs."},
     Entry{
-        "In-between frames keep finer lines, for a few percent of speed. Speed: a slight cost. Quality "
-        "impact: minor gain. Recommended: on. RIFE only.",
+        "In-between frames keep finer lines, for a few percent of speed. Speed: about −3 %. Quality impact: "
+        "minor gain. Recommended: on. RIFE only.",
         "Les images intermédiaires gardent des traits plus fins, pour quelques pour cent de vitesse. Vitesse "
-        ": un léger coût. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
+        ": environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE seulement."},
     Entry{"How clean the in-between frames are. Higher levels fix more artifacts on fast motion but need a "
           "stronger card; High and Very high add GMFSS, are still experimental and need an NVIDIA RTX.",
           "La propreté des images intermédiaires. Les niveaux plus hauts corrigent plus de défauts sur les "
           "mouvements rapides mais demandent une carte plus forte ; Élevé et Très élevé ajoutent GMFSS, sont "
           "encore expérimentaux et demandent une NVIDIA RTX."},
     Entry{"GMFSS", "GMFSS"},
-    Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS over 1.5× "
-          "faster. Quality impact: minor loss on small motion. Recommended: on.",
+    Entry{"GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS about "
+          "1.7× faster. Quality impact: minor loss on small motion. Recommended: on.",
           "GMFSS va beaucoup plus vite ; les très petits mouvements peuvent être un peu moins précis. "
-          "Vitesse : GMFSS plus de 1,5× plus rapide. Impact sur la qualité : perte mineure sur les petits "
+          "Vitesse : GMFSS environ 1,7× plus rapide. Impact sur la qualité : perte mineure sur les petits "
           "mouvements. Recommandé : activé."},
     Entry{"Every in-between frame comes from GMFSS, the cleanest on hard motion, but the card works far more "
-          "and frames drop when it can't keep up. Speed: about a third of the frames of Very high. Quality "
-          "impact: minor change. Recommended: off.",
+          "and frames drop when it can't keep up. Speed: about −70 % vs Very high. Quality impact: minor "
+          "change. Recommended: off.",
           "Chaque image intermédiaire vient de GMFSS, le plus propre sur les mouvements difficiles, mais la "
-          "carte travaille bien plus et des images tombent quand elle ne suit pas. Vitesse : environ trois "
-          "fois moins d'images qu'en Très élevé. Impact sur la qualité : changement mineur. Recommandé : "
-          "désactivé."},
+          "carte travaille bien plus et des images tombent quand elle ne suit pas. Vitesse : environ −70 % "
+          "face à Très élevé. Impact sur la qualité : changement mineur. Recommandé : désactivé."},
     Entry{"GMFSS and RIFE work on a smaller picture, with slightly less precise motion. The time saved does "
-          "not add frames per second: it lets GMFSS draw more of the in-between frames (over +50 %). Turn it "
-          "on if the card can't keep up at High or Very high. Speed: same frames per second, over +50 % "
+          "not add frames per second: it lets GMFSS draw more of the in-between frames (about +60 %). Turn "
+          "it on if the card can't keep up at High or Very high. Speed: same frames per second, about +60 % "
           "frames drawn by GMFSS. Quality impact: minor loss.",
           "GMFSS et RIFE travaillent sur une image plus petite, avec un mouvement un peu moins précis. Le "
           "temps gagné n'ajoute pas d'images par seconde : il laisse GMFSS dessiner plus d'images "
-          "intermédiaires (plus de +50 %). À activer si la carte ne suit pas en Élevé ou Très élevé. Vitesse "
-          ": autant d'images par seconde, plus de +50 % d'images dessinées par GMFSS. Impact sur la qualité "
+          "intermédiaires (environ +60 %). À activer si la carte ne suit pas en Élevé ou Très élevé. Vitesse "
+          ": autant d'images par seconde, environ +60 % d'images dessinées par GMFSS. Impact sur la qualité "
           ": perte mineure."},
-    Entry{"Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: slightly slower "
-          "(around −10 %). Quality impact: minor gain, not yet judged. Recommended: off.",
+    Entry{"Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: about −5 to −15 "
+          "%. Quality impact: minor gain, not yet judged. Recommended: off.",
           "Des images GMFSS plus fines au-dessus de 720p de résolution de travail, pour un peu de vitesse. "
-          "Vitesse : un peu plus lent (autour de −10 %). Impact sur la qualité : gain mineur, pas encore "
-          "jugé. Recommandé : désactivé."},
+          "Vitesse : environ −5 à −15 %. Impact sur la qualité : gain mineur, pas encore jugé. Recommandé : "
+          "désactivé."},
     Entry{"The NVIDIA driver (RTX 40 and 50) adds a frame between each displayed frame, for even smoother "
           "motion on a high-refresh display. Its frames are rougher than the player's. Quality impact: "
           "moderate loss (driver frames are rougher). Recommended: off.",

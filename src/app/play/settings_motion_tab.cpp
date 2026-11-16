@@ -31,7 +31,7 @@ void cubic_warp_checkbox(PlaySettings& d) {
   ImGui::Checkbox(i18n::tr("Sharper interpolation warp (Catmull-Rom)"), &d.cubic_warp);
   ImGui::EndDisabled();
   panel::tip(i18n::tr("Sharper interpolation warp (Catmull-Rom)"),
-             i18n::tr("In-between frames keep finer lines, for a few percent of speed. Speed: a slight cost. "
+             i18n::tr("In-between frames keep finer lines, for a few percent of speed. Speed: about −3 %. "
                       "Quality impact: minor gain. Recommended: on. RIFE only."),
              panel::Apply::Reload);
 }
@@ -71,8 +71,8 @@ std::string motion_description(const InterpChoice& choice) {
           "cards other than NVIDIA RTX.");
     case InterpLevel::Balanced:
       return i18n::tr(
-          "RIFE 4.26: cleaner in-between frames. Speed: slightly slower than Fast. Quality impact: minor "
-          "gain. Recommended on NVIDIA RTX.");
+          "RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Fast. Quality impact: minor gain. "
+          "Recommended on NVIDIA RTX.");
     case InterpLevel::High:
       return i18n::tr(
           "RIFE guided by 1 to 3 GMFSS key frames on fast motion only. Speed: about −20 to −40 % vs "
@@ -80,11 +80,11 @@ std::string motion_description(const InterpChoice& choice) {
           "RTX only.");
     case InterpLevel::GmfssUnion:
       return i18n::tr(
-          "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about half the speed of "
-          "Balanced. Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.");
+          "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about −45 % vs Balanced. "
+          "Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.");
     case InterpLevel::Rife425:
       return i18n::tr(
-          "RIFE 4.25: the former Balanced level. Speed: slightly slower than Balanced. Quality impact: "
+          "RIFE 4.25: the former Balanced level. Speed: about −10 % vs Balanced. Quality impact: "
           "imperceptible.");
     case InterpLevel::DistilDrba:
       return i18n::tr(
@@ -224,17 +224,18 @@ void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
   ImGui::BeginDisabled(!choices.gmfss_half_flow_available);
   ImGui::Checkbox(i18n::tr("GMFSS motion at half size"), &d.gmfss_half_flow);
   ImGui::EndDisabled();
-  panel::tip(i18n::tr("GMFSS motion at half size"),
-             i18n::tr("GMFSS runs much faster; very small movements can be slightly less precise. Speed: "
-                      "GMFSS over 1.5× faster. Quality impact: minor loss on small motion. Recommended: on."),
-             panel::Apply::Reload);
+  panel::tip(
+      i18n::tr("GMFSS motion at half size"),
+      i18n::tr("GMFSS runs much faster; very small movements can be slightly less precise. Speed: GMFSS "
+               "about 1.7× faster. Quality impact: minor loss on small motion. Recommended: on."),
+      panel::Apply::Reload);
   const bool very_high = d.motion_engine == MotionEngine::Gmfss;
   if (very_high) {
     ImGui::Checkbox(i18n::tr("GMFSS at every instant, without RIFE"), &d.gmfss_every_instant);
     panel::tip(i18n::tr("GMFSS at every instant, without RIFE"),
                i18n::tr("Every in-between frame comes from GMFSS, the cleanest on hard motion, but the card "
-                        "works far more and frames drop when it can't keep up. Speed: about a third of the "
-                        "frames of Very high. Quality impact: minor change. Recommended: off."),
+                        "works far more and frames drop when it can't keep up. Speed: about −70 % vs Very "
+                        "high. Quality impact: minor change. Recommended: off."),
                panel::Apply::Reload);
   }
   if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
@@ -243,16 +244,15 @@ void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
                std::string(i18n::tr(
                    "GMFSS and RIFE work on a smaller picture, with slightly less precise motion. The time "
                    "saved does not add frames per second: it lets GMFSS draw more of the in-between frames "
-                   "(over +50 %). Turn it on if the card can't keep up at High or Very high. Speed: same "
-                   "frames per second, over +50 % frames drawn by GMFSS. Quality impact: minor loss.")) +
+                   "(about +60 %). Turn it on if the card can't keep up at High or Very high. Speed: same "
+                   "frames per second, about +60 % frames drawn by GMFSS. Quality impact: minor loss.")) +
                    " " + advice_line(choices, light_motion_advice),
                panel::Apply::Reload);
     ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
-    panel::tip(
-        i18n::tr("GMFSS keeps the source detail"),
-        i18n::tr("Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: slightly "
-                 "slower (around −10 %). Quality impact: minor gain, not yet judged. Recommended: off."),
-        panel::Apply::Reload);
+    panel::tip(i18n::tr("GMFSS keeps the source detail"),
+               i18n::tr("Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: "
+                        "about −5 to −15 %. Quality impact: minor gain, not yet judged. Recommended: off."),
+               panel::Apply::Reload);
   }
 }
 
@@ -359,11 +359,12 @@ void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
     }
     ImGui::EndCombo();
   }
-  panel::tip(i18n::tr("Auto mode"),
-             i18n::tr("Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made "
-                      "for the exact moment it is shown, for more frames and smoother motion; it can stutter "
-                      "slightly at the card's limit. Speed: Instant +50 % frames or more. Quality impact: "
-                      "minor (Instant can stutter slightly at the card's limit). Recommended: Instant."));
+  panel::tip(
+      i18n::tr("Auto mode"),
+      i18n::tr("Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
+               "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at "
+               "the card's limit. Speed: Instant about +50 to +85 % frames. Quality impact: minor (Instant "
+               "can stutter slightly at the card's limit). Recommended: Instant."));
   if (d.auto_free) {
     ImGui::Checkbox(i18n::tr("Turn interpolation off if the graphics card can't keep up"), &d.auto_off);
     panel::tip(i18n::tr("Turn interpolation off if the graphics card can't keep up"),
