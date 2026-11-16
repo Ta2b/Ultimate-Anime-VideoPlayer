@@ -35,10 +35,11 @@ void take_loading_inputs(PlayerUi& ui, std::vector<Input>& actions, LoadingChang
             change.restart = std::move(value.settings);
           } else if constexpr (std::is_same_v<T, UseEngine> || std::is_same_v<T, OpenEngineScreen>) {
             change.engines = EngineChange(value);
-          } else {
-            return false;
           }
-          return true;
+          // Un seul return : MSVC tient pour inatteignable un « return true » qui suit une branche else.
+          return std::is_same_v<T, ToggleSettings> || std::is_same_v<T, ApplySettings> ||
+                 std::is_same_v<T, RestartPlayer> || std::is_same_v<T, UseEngine> ||
+                 std::is_same_v<T, OpenEngineScreen>;
         },
         input);
     if (!taken) kept.push_back(std::move(input));
@@ -60,7 +61,7 @@ std::optional<Reopen> stopped_preparation(Player& p, const Refusal& refusal, con
   Reopen reopen{.settings = change.settings_or(settings),
                 .position_us = start_us,
                 .paused = start_paused,
-                .engines = std::move(change.engines),
+                .engines = change.engines,
                 .restart = change.restart.has_value()};
   return reopen;
 }
