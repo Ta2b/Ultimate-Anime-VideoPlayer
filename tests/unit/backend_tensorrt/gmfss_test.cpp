@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "backend_fixture.h"
 #include "kernels/ref/half.h"
@@ -189,6 +190,8 @@ TEST_CASE("Backend TensorRT : l'entrée de la paire de GMFSS, a puis b dans leur
 TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composition à la taille de travail",
           "[backend_tensorrt][cuda][gmfss]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
+  const bool pull = GENERATE(false, true);  // le splat poussé, puis tiré (spec MotionGrid)
+  CAPTURE(pull);
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   gpu::KernelOps& ops = *loaded.backend->kernels();
@@ -224,7 +227,8 @@ TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composi
       const int h = high ? kOh : kRh;
       const std::vector<k::PlaneF> source = planes(3, 60 + side + (high ? 2 : 0), 0.0F, 1.0F, w, h);
       const k::MotionGrid grid = high ? high_grid : low_grid;
-      auto expected = k::ref::soft_splat_at(source, motion, s, grid);
+      auto expected = pull ? k::ref::soft_pull_at(source, motion, s, grid)
+                           : k::ref::soft_splat_at(source, motion, s, grid);
       REQUIRE(expected);
       want[static_cast<std::size_t>((high ? 0 : 2) + side)] = std::move(*expected);
       keep.push_back(alloc(3, w, h));
@@ -236,7 +240,8 @@ TEST_CASE("Backend TensorRT : GMFSS, splat sur la grille du mouvement et composi
                       .s = s,
                       .out = keep.back()->tensor(),
                       .grid = grid,
-                      .coverage = true});
+                      .coverage = true,
+                      .pull = pull});
     }
   }
   REQUIRE(ops.soft_splat_fill(jobs, gpu::Tensor{}, 0.5F));

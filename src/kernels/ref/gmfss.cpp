@@ -130,6 +130,46 @@ Result<Splatted> soft_splat_at(const std::vector<PlaneF>& source, const SplatMot
   });
 }
 
+Result<Splatted> soft_pull_at(const std::vector<PlaneF>& source, const SplatMotion& motion, float s,
+                              const MotionGrid& grid) {
+  if (auto ok = check_source(source, s); !ok) return std::unexpected(ok.error());
+  const int w = source.front().width;
+  const int h = source.front().height;
+  // Le flot sur la grille de la source, poussé avec sa métrique comme le serait la source.
+  std::vector<PlaneF> flow(2, PlaneF(w, h));
+  SplatMotion own{.planes = {PlaneF(w, h), PlaneF(w, h), PlaneF(w, h)}};
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const bool same = grid.scale == 1.0F && grid.x == 0.0F && grid.y == 0.0F &&
+                        motion.planes[0].width == w && motion.planes[0].height == h;
+      const float u =
+          same ? static_cast<float>(x) : (static_cast<float>(x) + 0.5F) / grid.scale - 0.5F + grid.x;
+      const float v =
+          same ? static_cast<float>(y) : (static_cast<float>(y) + 0.5F) / grid.scale - 0.5F + grid.y;
+      const float scale = same ? 1.0F : grid.scale;
+      for (std::size_t c = 0; c < 3; ++c) {
+        auto value = sample(motion.planes[c], u, v);
+        if (!value) return std::unexpected(value.error());
+        own.planes[c].at(x, y) = *value * (c < 2 ? scale : 1.0F);
+      }
+      flow[0].at(x, y) = own.planes[0].at(x, y);
+      flow[1].at(x, y) = own.planes[1].at(x, y);
+    }
+  }
+  auto pushed = soft_splat_at(flow, own, s, MotionGrid{});
+  if (!pushed) return std::unexpected(pushed.error());
+  Splatted out{.planes = std::vector<PlaneF>(source.size(), PlaneF(w, h)), .coverage = pushed->coverage};
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const float px = static_cast<float>(x) - s * pushed->planes[0].at(x, y);
+      const float py = static_cast<float>(y) - s * pushed->planes[1].at(x, y);
+      for (std::size_t c = 0; c < source.size(); ++c)
+        out.planes[c].at(x, y) = catmull_rom_sample(source[c], px, py);
+    }
+  }
+  return out;
+}
+
 Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted& high_b,
                                           const Splatted& low_a, const Splatted& low_b,
                                           const std::vector<PlaneF>& fusion, const Window& window, float t) {

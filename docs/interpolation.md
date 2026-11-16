@@ -378,6 +378,10 @@ couleur de ses traits s'écartait de ses voisines 3,5 fois plus qu'en Équilibr�
 d'épaisseur et de teinte une image sur quatre. Chaque clé reprend maintenant les pixels des sources là où elles
 ne diffèrent pas (écart du voisinage 3 × 3 sous 3/255, fondu jusqu'à 8/255). Avec `gmfss_key_floor = 0`, Élevé
 pose une clé sur toute paire qui bouge un peu (une fontaine suffit) : il se comporte alors comme Très élevé.
+Splat tiré (`SplatJob::pull`) : sur ce qui bouge, la clé composée restait environ 20 % moins nette que ses
+voisines (l'eau de la fontaine de Tempal 08, 5:06), parce que le splat poussé étale chaque pixel sur quatre
+voisins. La composition pousse maintenant le flot, puis lit chaque source en Catmull-Rom là d'où vient le pixel,
+comme le warp de RIFE : même occultation, détail de la source intact.
 
 **Clés GMFSS du mélange** (novembre 2026) : une paire qui bouge reçoit une à trois images union, les clés, aux
 instants k/(n+1) ; RIFE mouvement fait chaque autre instant entre les deux voisines (source ou clé), une passe

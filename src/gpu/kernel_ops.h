@@ -262,6 +262,9 @@ class KernelOps {
     Tensor out;
     kernels::MotionGrid grid{};
     bool coverage = false;
+    // Splat tiré (spec MotionGrid, splat tiré) : le flot poussé, puis la source lue en Catmull-Rom là d'où
+    // vient chaque pixel ; out a les mêmes plans qu'un splat.
+    bool pull = false;
   };
   virtual std::expected<void, Refusal> soft_splat_fill(std::span<const SplatJob> /*jobs*/,
                                                        const Tensor& /*time*/, float /*t*/) {

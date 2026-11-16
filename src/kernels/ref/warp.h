@@ -25,6 +25,9 @@ struct Motion {
 Result<float> sample(const PlaneF& p, float x, float y);
 Result<float> sample(const PlaneF& p, const Window& area, float x, float y);
 
+// Lecture de Catmull-Rom (spec/warp.h, RifeWarp::CatmullRom) d'un plan en (x, y).
+float catmull_rom_sample(const PlaneF& p, float x, float y);
+
 // Un mouvement conforme : plans de même taille, fenêtre non vide incluse dans les plans.
 Result<void> check_motion(const Motion& motion);
 

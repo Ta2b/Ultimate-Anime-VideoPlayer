@@ -99,7 +99,8 @@ namespace ajp::gpu {
 //      SplatJob::grid et coverage, KernelOps::gmfss_compose (la composition du mélange à la taille de
 //      travail).
 // 45 : KernelOps::gmfss_still (le décor fixe des clés repris des sources).
-inline constexpr int kBackendAbi = 45;
+// 46 : SplatJob::pull (le splat tiré).
+inline constexpr int kBackendAbi = 46;
 
 using DeviceUuid = ajp::DeviceUuid;
 

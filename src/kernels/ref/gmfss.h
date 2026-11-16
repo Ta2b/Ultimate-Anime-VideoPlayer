@@ -31,6 +31,11 @@ struct Splatted {
 Result<Splatted> soft_splat_at(const std::vector<PlaneF>& source, const SplatMotion& motion, float s,
                                const MotionGrid& grid);
 
+// Le splat tiré (spec MotionGrid, splat tiré) : la source lue en Catmull-Rom là d'où vient chaque pixel de
+// sortie, avec la couverture. Refus : ceux de soft_splat_at.
+Result<Splatted> soft_pull_at(const std::vector<PlaneF>& source, const SplatMotion& motion, float s,
+                              const MotionGrid& grid);
+
 // La composition à la taille de travail (spec gmfss_compose) : high_* à la taille de sortie, low_* à celle de
 // RIFE (au plus la sortie), fusion les trois plans remplis et window l'image de RIFE dedans. Refus : tailles
 // incohérentes, t hors de [0, 1].

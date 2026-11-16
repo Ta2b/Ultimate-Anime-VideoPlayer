@@ -89,6 +89,15 @@ struct MotionGrid {
   float y = 0.0F;
 };
 
+// Le splat tiré (SplatJob::pull, ref::soft_pull_at) : au lieu de pousser les pixels de la source, ce qui
+// étale chaque pixel sur quatre voisins et adoucit l'image, on pousse le flot lui-même, puis chaque pixel de
+// sortie va lire la source là d'où il vient. Pour la source (x, y) : (fx, fy) son flot sur la grille de la
+// source (comme ci-dessus), splatté avec sa métrique à l'instant s ; en sortie (X, Y), le flot splatté
+// (Fx, Fy) et la couverture c ; valeur = Catmull-Rom de la source en (X − s Fx, Y − s Fy) (spec/warp.h,
+// RifeWarp::CatmullRom : position bornée au plan, sortie bornée aux quatre points centraux) ; le plan de
+// couverture vaut c. La même occultation que le splat (la métrique choisit le flot du premier plan), le
+// détail de la source tel quel. La composition à la taille de travail tire ses sources ainsi.
+
 // Composition à la taille de travail (le mélange, travail plus grand que RIFE) : l'image du milieu se
 // compose des sources de travail splattées par le flot du niveau 1, corrigées du résidu de la fusion :
 // out = H + up(F − L), H le mélange des sources de travail splattées, L le même mélange des sources à la

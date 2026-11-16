@@ -221,3 +221,28 @@ TEST_CASE("Décor fixe : la clé reprend les sources là où rien ne bouge", "[k
   CHECK_FALSE(ref::gmfss_still(key, std::vector<PlaneF>(3, PlaneF(w - 1, h, 0.5F)), b, 0.5F));
   CHECK_FALSE(ref::gmfss_still(key, a, b, 1.5F));
 }
+
+TEST_CASE("Splat tiré : le flot poussé, la source lue là d'où vient chaque pixel", "[kernels][gmfss]") {
+  // Un pas de 2 px à l'instant 1/2 : chaque pixel avance d'un pixel, la source exacte (Catmull-Rom à un point
+  // entier), la première colonne sans rien qui y arrive.
+  const int w = 6;
+  const int h = 4;
+  const std::vector<PlaneF> source{ramp(w, h, 0.0F), ramp(w, h, 100.0F)};
+  auto out = ref::soft_pull_at(source, uniform(w, h, 2.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
+  REQUIRE(out);
+  REQUIRE(out->planes.size() == 2);
+  for (int y = 0; y < h; ++y) {
+    CHECK_THAT(out->coverage.at(0, y), WithinAbs(0.0, 1e-6));
+    for (int x = 1; x < w; ++x) {
+      CHECK_THAT(out->coverage.at(x, y), WithinAbs(1.0, 1e-5));
+      CHECK_THAT(out->planes[0].at(x, y), WithinAbs(source[0].at(x - 1, y), 1e-4));
+      CHECK_THAT(out->planes[1].at(x, y), WithinAbs(source[1].at(x - 1, y), 1e-4));
+    }
+  }
+  // Un demi-pixel : le splat poussé étale chaque pixel sur deux, le tiré lit la source à mi-chemin, sans
+  // rien mêler d'autre (même valeur au centre d'une rampe, où les deux filtres coïncident).
+  auto half = ref::soft_pull_at(source, uniform(w, h, 1.0F, 0.0F, 0.0F), 0.5F, MotionGrid{});
+  REQUIRE(half);
+  CHECK_THAT(half->planes[0].at(3, 1), WithinAbs(source[0].at(3, 1) - 0.5F, 1e-4));
+  CHECK_FALSE(ref::soft_pull_at(source, uniform(w, h, 2.0F, 0.0F, 0.0F), 1.5F, MotionGrid{}));
+}

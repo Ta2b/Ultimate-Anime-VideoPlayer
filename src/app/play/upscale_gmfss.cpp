@@ -231,8 +231,9 @@ std::expected<void, Refusal> UpscaleStage::allocate_compose() {
 }
 
 std::expected<void, Refusal> UpscaleStage::compose_key(const GmfssKey& key, float t) {
-  // Les sources de la paire splattées par le flot du niveau 1 à l'instant t de la clé, à la taille de travail
-  // et à celle de RIFE, puis K = H + up(F − L) dans key.work.
+  // Les sources de la paire tirées par le flot du niveau 1 à l'instant t de la clé (splat tiré : le détail de
+  // la source tel quel, là où le splat poussé l'étalait), à la taille de travail et à celle de RIFE, puis
+  // K = H + up(F − L) dans key.work.
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const kernels::RifeGeometry g = gmfss_geometry(setup_.rife_width, setup_.rife_height);
   const float ox = static_cast<float>(g.left) / 2.0F;
@@ -248,13 +249,15 @@ std::expected<void, Refusal> UpscaleStage::compose_key(const GmfssKey& key, floa
                            .s = s,
                            .out = gmfss_.high[side]->tensor(),
                            .grid = {.scale = scale, .x = ox, .y = oy},
-                           .coverage = true});
+                           .coverage = true,
+                           .pull = true});
     gmfss_.jobs.push_back({.source = rife_source(image),
                            .motion = motion,
                            .s = s,
                            .out = gmfss_.low[side]->tensor(),
                            .grid = {.scale = 2.0F, .x = ox, .y = oy},
-                           .coverage = true});
+                           .coverage = true,
+                           .pull = true});
   }
   if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gpu::Tensor{}, t); !ok) return ok;
   return ops.gmfss_compose(
