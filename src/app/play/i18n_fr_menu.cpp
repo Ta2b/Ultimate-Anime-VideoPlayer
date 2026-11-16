@@ -49,12 +49,14 @@ constexpr std::array kMenuTexts{
           "Anime4K : sources SDR seulement ; une source HDR est agrandie par l'affichage."},
     Entry{"Output: {} (SPAN ×2).", "Sortie : {} (SPAN ×2)."},
     Entry{"Output: {} (no upscaling).", "Sortie : {} (sans agrandissement)."},
-    Entry{"Quality computes in full precision (FP32). You will not see the difference, but the card works "
-          "much harder: only useful to compare pictures. Speed: Quality about 2 to 3× slower. Quality "
-          "impact: imperceptible. Recommended: Balanced.",
-          "Qualité calcule en pleine précision (FP32). La différence ne se voit pas, mais la carte travaille "
-          "beaucoup plus : utile seulement pour comparer des images. Vitesse : Qualité environ 2 à 3× plus "
-          "lent. Impact sur la qualité : imperceptible. Recommandé : Équilibré."},
+    Entry{"Quality computes in full precision (FP32) when the model has such a version; otherwise it runs "
+          "like Balanced, as with the current SPAN models. Only useful to compare pictures. Speed: up to 2 "
+          "to 3× slower, no change with the current SPAN models. Quality impact: imperceptible. Recommended: "
+          "Balanced.",
+          "Qualité calcule en pleine précision (FP32) quand le modèle en a une version ; sinon il tourne "
+          "comme Équilibré, ce qui est le cas des modèles SPAN actuels. Utile seulement pour comparer des "
+          "images. Vitesse : jusqu'à 2 à 3× plus lent, aucun changement avec les modèles SPAN actuels. "
+          "Impact sur la qualité : imperceptible. Recommandé : Équilibré."},
     Entry{
         "Redraws the video at twice its size with a model trained on anime: sharper lines and less blur on a "
         "big screen. It is the heaviest step: turn it off first if the video stutters. Speed: the heaviest "
@@ -65,19 +67,19 @@ constexpr std::array kMenuTexts{
     Entry{"Restore line art", "Restaurer les traits"},
     Entry{"Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, firmer "
           "lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and textures, "
-          "and the card rests. Speed: about 4× less work than upscaling such a video at full size. Quality "
+          "and the card rests. Speed: about 2× less work than upscaling such a video at full size. Quality "
           "impact: modest (cleaner lines, less grain). Recommended: on.",
           "Les vidéos plus fines que la résolution de travail (une vidéo 1080p pour un travail en 720p) "
           "gagnent des traits plus propres et plus fermes, redessinés par l'agrandissement. Désactivé : une "
           "telle vidéo s'affiche telle quelle, avec son grain et ses textures, et la carte se repose. "
-          "Vitesse : environ 4× moins de travail que d'agrandir une telle vidéo à pleine taille. Impact sur "
+          "Vitesse : environ 2× moins de travail que d'agrandir une telle vidéo à pleine taille. Impact sur "
           "la qualité : modeste (traits plus propres, moins de grain). Recommandé : activé."},
     Entry{"The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps more detail but "
-          "asks much more of the card: lower it first if the video stutters. Speed: 1080p costs about 2.3× "
+          "asks much more of the card: lower it first if the video stutters. Speed: 1080p costs about 2× "
           "720p. Quality impact: modest.",
           "La taille à laquelle l'agrandissement travaille, puis qu'il double (720p donne 1440p). Plus haut "
           "garde plus de détails mais demande beaucoup plus à la carte : à baisser en premier si la vidéo "
-          "saccade. Vitesse : 1080p coûte environ 2,3× 720p. Impact sur la qualité : modeste."},
+          "saccade. Vitesse : 1080p coûte environ 2× 720p. Impact sur la qualité : modeste."},
     Entry{"Makes lines crisper after upscaling, without halos. Too high makes the picture look harsh. Speed: "
           "imperceptible cost. Recommended: 0 %, to taste.",
           "Rend les traits plus nets après l'agrandissement, sans halos. Trop haut, l'image devient dure. "
@@ -171,12 +173,15 @@ constexpr std::array kMenuTexts{
           "NVIDIA RTX, Vulkan ailleurs."},
     Entry{"Opens the engines screen. Playback resumes at the same spot.",
           "Ouvre l'écran des moteurs. La lecture reprend au même endroit."},
-    Entry{
-        "Upscaling about twice as fast with Vulkan, with no visible difference. Turn it off only if you see "
-        "banding or artifacts. Speed: about 2× on upscaling. Quality impact: imperceptible. Recommended: on.",
-        "L'agrandissement environ deux fois plus rapide avec Vulkan, sans différence visible. À couper "
-        "seulement si des aplats en escalier ou des défauts apparaissent. Vitesse : environ 2× sur "
-        "l'agrandissement. Impact sur la qualité : imperceptible. Recommandé : activé."},
+    Entry{"Lets the Vulkan upscaler use reduced precision where the player finds no visible difference; "
+          "elsewhere it keeps full precision and nothing changes, as with the current SPAN models. Turn it "
+          "off only if you see banding or artifacts. Speed: up to about 2× on upscaling, none with the "
+          "current SPAN models. Quality impact: imperceptible. Recommended: on.",
+          "Laisse l'agrandissement Vulkan calculer en précision réduite là où le lecteur ne trouve pas de "
+          "différence visible ; ailleurs il garde la pleine précision et rien ne change, ce qui est le cas "
+          "des modèles SPAN actuels. À couper seulement si des aplats en escalier ou des défauts "
+          "apparaissent. Vitesse : jusqu'à environ 2× sur l'agrandissement, aucun gain avec les modèles SPAN "
+          "actuels. Impact sur la qualité : imperceptible. Recommandé : activé."},
     Entry{"Prepares these engines again.", "Prépare de nouveau ces moteurs."},
     Entry{
         "In-between frames keep finer lines, for a few percent of speed. Speed: about −3 %. Quality impact: "
@@ -200,11 +205,15 @@ constexpr std::array kMenuTexts{
           "Chaque image intermédiaire vient de GMFSS, le plus propre sur les mouvements difficiles, mais la "
           "carte travaille bien plus et des images tombent quand elle ne suit pas. Vitesse : environ −70 % "
           "face à Très élevé. Impact sur la qualité : changement mineur. Recommandé : désactivé."},
-    Entry{"Interpolation about a third faster, with slightly less precise motion. Turn it on if the card "
-          "can't keep up at High or Very high. Speed: about +35 %. Quality impact: minor loss.",
-          "L'interpolation environ un tiers plus rapide, avec un mouvement un peu moins précis. À activer si "
-          "la carte ne suit pas en Élevé ou Très élevé. Vitesse : environ +35 %. Impact sur la qualité : "
-          "perte mineure."},
+    Entry{"GMFSS and RIFE work on a smaller picture, with slightly less precise motion. The time saved does "
+          "not add frames per second: it lets GMFSS draw more of the in-between frames (about +60 %). Turn "
+          "it on if the card can't keep up at High or Very high. Speed: same frames per second, about +60 % "
+          "frames drawn by GMFSS. Quality impact: minor loss.",
+          "GMFSS et RIFE travaillent sur une image plus petite, avec un mouvement un peu moins précis. Le "
+          "temps gagné n'ajoute pas d'images par seconde : il laisse GMFSS dessiner plus d'images "
+          "intermédiaires (environ +60 %). À activer si la carte ne suit pas en Élevé ou Très élevé. Vitesse "
+          ": autant d'images par seconde, environ +60 % d'images dessinées par GMFSS. Impact sur la qualité "
+          ": perte mineure."},
     Entry{"Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: about −5 to −15 "
           "%. Quality impact: minor gain, not yet judged. Recommended: off.",
           "Des images GMFSS plus fines au-dessus de 720p de résolution de travail, pour un peu de vitesse. "

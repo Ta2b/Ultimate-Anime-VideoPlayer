@@ -164,11 +164,13 @@ void engines_advanced(const SettingsChoices& choices, std::string& engines_dir, 
   // La porte du moteur Vulkan (gpu::kStrictPrecision, net_gate.h) : float16 gardé quand la perte ne se voit
   // pas. Sans effet sous TensorRT.
   ImGui::Checkbox(i18n::tr("Speed before precision (Vulkan)"), &fast_precision);
-  panel::tip(i18n::tr("Speed before precision (Vulkan)"),
-             i18n::tr("Upscaling about twice as fast with Vulkan, with no visible difference. Turn it off "
-                      "only if you see banding or artifacts. Speed: about 2× on upscaling. Quality impact: "
-                      "imperceptible. Recommended: on."),
-             panel::Apply::Restart);
+  panel::tip(
+      i18n::tr("Speed before precision (Vulkan)"),
+      i18n::tr("Lets the Vulkan upscaler use reduced precision where the player finds no visible difference; "
+               "elsewhere it keeps full precision and nothing changes, as with the current SPAN models. Turn "
+               "it off only if you see banding or artifacts. Speed: up to about 2× on upscaling, none with "
+               "the current SPAN models. Quality impact: imperceptible. Recommended: on."),
+      panel::Apply::Restart);
   install_folder_row(choices, engines_dir, folder);
   if (ImGui::TreeNodeEx(i18n::tr("Built engines"), ImGuiTreeNodeFlags_SpanAvailWidth)) {
     if (choices.engines.empty()) note(i18n::tr("No engine built yet."));

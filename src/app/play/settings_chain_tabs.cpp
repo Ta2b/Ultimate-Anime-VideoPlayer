@@ -126,9 +126,10 @@ bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& 
     ImGui::EndCombo();
   }
   panel::tip(title,
-             i18n::tr("Quality computes in full precision (FP32). You will not see the difference, but the "
-                      "card works much harder: only useful to compare pictures. Speed: Quality about 2 to 3× "
-                      "slower. Quality impact: imperceptible. Recommended: Balanced."),
+             i18n::tr("Quality computes in full precision (FP32) when the model has such a version; "
+                      "otherwise it runs like Balanced, as with the current SPAN models. Only useful to "
+                      "compare pictures. Speed: up to 2 to 3× slower, no change with the current SPAN "
+                      "models. Quality impact: imperceptible. Recommended: Balanced."),
              panel::Apply::Reload);
   return changed;
 }
@@ -153,7 +154,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       i18n::tr("Restore line art"),
       i18n::tr("Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, "
                "firmer lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and "
-               "textures, and the card rests. Speed: about 4× less work than upscaling such a video at full "
+               "textures, and the card rests. Speed: about 2× less work than upscaling such a video at full "
                "size. Quality impact: modest (cleaner lines, less grain). Recommended: on."),
       panel::Apply::Reload);
   ImGui::EndDisabled();
@@ -182,7 +183,7 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
       i18n::tr("Working resolution"),
       std::string(i18n::tr("The size the upscaler works at, then doubles (720p gives 1440p). Higher keeps "
                            "more detail but asks much more of the card: lower it first if the video "
-                           "stutters. Speed: 1080p costs about 2.3× 720p. Quality impact: modest.")) +
+                           "stutters. Speed: 1080p costs about 2× 720p. Quality impact: modest.")) +
           " " + advice_line(choices, work_height_advice),
       panel::Apply::Reload);
   // La taille que la chaîne joue vraiment (chain_work_size) : la hauteur choisie, ou moins pour rester en 4K.

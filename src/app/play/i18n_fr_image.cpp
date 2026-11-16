@@ -163,20 +163,20 @@ constexpr std::array kImageTabs{
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
-    Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: "
-          "about −10 %. Quality impact: changes the look of the animation (a matter of taste). Recommended: "
-          "off. RIFE only; replaces Keep poses.",
+    Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: no "
+          "loss. Quality impact: changes the look of the animation (a matter of taste). Recommended: off. "
+          "RIFE only; replaces Keep poses.",
           "Un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. Vitesse : "
-          "environ −10 %. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
+          "aucune perte. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
           "Recommandé : désactivé. RIFE seulement ; remplace Garder les poses."},
     Entry{"Smooth Motion (NVIDIA driver)", "Smooth Motion (pilote NVIDIA)"},
     Entry{"Source (no downscale)", "Source (sans réduction)"},
     Entry{"Source, no downscale ({})", "Source, sans réduction ({})"},
-    Entry{"DistilDRBA about twice as fast on NVIDIA, with no visible difference. Built once on first use. "
-          "Speed: about 2× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; "
+    Entry{"DistilDRBA about 3 times faster on NVIDIA, with no visible difference. Built once on first use. "
+          "Speed: about 3× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; "
           "built on first use.",
-          "DistilDRBA environ deux fois plus rapide sur NVIDIA, sans différence visible. Construit une fois "
-          "au premier usage. Vitesse : environ 2× plus rapide par passe. Impact sur la qualité : "
+          "DistilDRBA environ trois fois plus rapide sur NVIDIA, sans différence visible. Construit une fois "
+          "au premier usage. Vitesse : environ 3× plus rapide par passe. Impact sur la qualité : "
           "imperceptible. Recommandé : activé. NVIDIA seulement ; construit au premier usage."},
     Entry{"RIFE about 3 times faster on NVIDIA, with no visible difference. Built once on first use. Speed: "
           "about 3× faster per pass. Quality impact: imperceptible. Recommended: on. NVIDIA only; built on "
@@ -187,11 +187,11 @@ constexpr std::array kImageTabs{
     Entry{"Stable", "Stable"},
     Entry{"Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
           "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at the "
-          "card's limit. Speed: Instant about +20 to +40 % frames. Quality impact: minor (Instant can "
+          "card's limit. Speed: Instant about +50 to +85 % frames. Quality impact: minor (Instant can "
           "stutter slightly at the card's limit). Recommended: Instant.",
           "Stable : des paliers fixes (×1 à ×8), le mouvement le plus régulier. Instantané : chaque image "
           "est faite pour l'instant exact où elle s'affiche, pour plus d'images et un mouvement plus fluide "
-          "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané environ +20 à +40 % "
+          "; il peut saccader un peu à la limite de la carte. Vitesse : Instantané environ +50 à +85 % "
           "d'images. Impact sur la qualité : mineur (Instantané peut saccader un peu à la limite de la "
           "carte). Recommandé : Instantané."},
     Entry{"The highest frame rate Auto aims for; a lower limit saves power and heat. Recommended: Maximum.",

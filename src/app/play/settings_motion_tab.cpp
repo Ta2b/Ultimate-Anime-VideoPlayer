@@ -240,13 +240,14 @@ void gmfss_options(PlaySettings& d, const SettingsChoices& choices) {
   }
   if (d.gmfss_middle || (very_high && !d.gmfss_every_instant)) {
     ImGui::Checkbox(i18n::tr("GMFSS and RIFE at 540p"), &d.gmfss_light);
-    panel::tip(
-        i18n::tr("GMFSS and RIFE at 540p"),
-        std::string(i18n::tr(
-            "Interpolation about a third faster, with slightly less precise motion. Turn it on if the card "
-            "can't keep up at High or Very high. Speed: about +35 %. Quality impact: minor loss.")) +
-            " " + advice_line(choices, light_motion_advice),
-        panel::Apply::Reload);
+    panel::tip(i18n::tr("GMFSS and RIFE at 540p"),
+               std::string(i18n::tr(
+                   "GMFSS and RIFE work on a smaller picture, with slightly less precise motion. The time "
+                   "saved does not add frames per second: it lets GMFSS draw more of the in-between frames "
+                   "(about +60 %). Turn it on if the card can't keep up at High or Very high. Speed: same "
+                   "frames per second, about +60 % frames drawn by GMFSS. Quality impact: minor loss.")) +
+                   " " + advice_line(choices, light_motion_advice),
+               panel::Apply::Reload);
     ImGui::Checkbox(i18n::tr("GMFSS keeps the source detail"), &d.gmfss_compose);
     panel::tip(i18n::tr("GMFSS keeps the source detail"),
                i18n::tr("Sharper GMFSS frames above 720p of working resolution, for a little speed. Speed: "
@@ -362,7 +363,7 @@ void auto_mode_rows(PlaySettings& d, const SettingsChoices& choices) {
       i18n::tr("Auto mode"),
       i18n::tr("Stable: fixed steps (×1 to ×8), the most regular motion. Instant: each frame is made for the "
                "exact moment it is shown, for more frames and smoother motion; it can stutter slightly at "
-               "the card's limit. Speed: Instant about +20 to +40 % frames. Quality impact: minor (Instant "
+               "the card's limit. Speed: Instant about +50 to +85 % frames. Quality impact: minor (Instant "
                "can stutter slightly at the card's limit). Recommended: Instant."));
   if (d.auto_free) {
     ImGui::Checkbox(i18n::tr("Turn interpolation off if the graphics card can't keep up"), &d.auto_off);
@@ -498,12 +499,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
   ImGui::EndDisabled();
-  panel::tip(
-      i18n::tr("Smooth held drawings"),
-      i18n::tr("A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. "
-               "Speed: about −10 %. Quality impact: changes the look of the animation (a matter of taste). "
-               "Recommended: off. RIFE only; replaces Keep poses."),
-      panel::Apply::Reload);
+  panel::tip(i18n::tr("Smooth held drawings"),
+             i18n::tr("A drawing held 2 to 6 frames glides to the next one instead of freezing, then "
+                      "jumping. Speed: no loss. Quality impact: changes the look of the animation (a matter "
+                      "of taste). Recommended: off. RIFE only; replaces Keep poses."),
+             panel::Apply::Reload);
   cubic_warp_checkbox(d);
 }
 
@@ -521,8 +521,8 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   ImGui::Checkbox(i18n::tr("Fused DistilDRBA"), &d.drba_fused);
   ImGui::EndDisabled();
   panel::tip(i18n::tr("Fused DistilDRBA"),
-             i18n::tr("DistilDRBA about twice as fast on NVIDIA, with no visible difference. Built once on "
-                      "first use. Speed: about 2× faster per pass. Quality impact: imperceptible. "
+             i18n::tr("DistilDRBA about 3 times faster on NVIDIA, with no visible difference. Built once on "
+                      "first use. Speed: about 3× faster per pass. Quality impact: imperceptible. "
                       "Recommended: on. NVIDIA only; built on first use."),
              panel::Apply::Reload);
   // Le cran de précision du mouvement (A23-06) : hors Équilibre, la chaîne fusionnée ne tourne pas.
