@@ -20,6 +20,7 @@
 #include "app/play/chain_shape.h"
 #include "app/play/default_player.h"
 #include "app/play/input.h"
+#include "app/play/panel_size.h"
 #include "app/play/precision.h"
 #include "app/play/settings.h"
 #include "app/play/settings_history.h"
@@ -214,8 +215,7 @@ class SettingsPanel {
   int page_ = 2;        // l'onglet affiché (settings_panel.cpp : kPages) ; Vidéo > Général à l'ouverture
   int select_tab_ = 2;  // l'onglet que la rangée doit sélectionner à l'image suivante ; -1 : celui du clic
   float alpha_ = 1.0F;  // l'opacité du panneau : il s'efface pendant qu'on tient un curseur en direct
-  float width_ = 0.0F;  // la taille choisie aux bords, gardée d'une ouverture à l'autre ; 0 : le défaut
-  float height_ = 0.0F;
+  PanelSize size_;  // la taille choisie aux bords, en part de la fenêtre, gardée d'une ouverture à l'autre
   std::array<int, 8> category_page_{-1, -1, -1, -1, -1, -1, -1, -1};  // le dernier onglet de chaque catégorie
   std::string pending_text_;  // le texte du bandeau « Appliquer » de l'image, vide s'il n'y en a pas (C23-02)
   ChangeCost pending_cost_ = ChangeCost::None;  // Reopen ou Restart : ce que fera « Appliquer »

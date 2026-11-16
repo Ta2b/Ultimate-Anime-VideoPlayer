@@ -325,11 +325,12 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   const float bottom = 120.0F * scale;  // la barre de lecture reste visible dessous
   const float max_width = std::max(320.0F * scale, io.DisplaySize.x - 2.0F * pad);
   const float max_height = std::max(240.0F * scale, io.DisplaySize.y - top - bottom);
-  if (width_ <= 0.0F) width_ = std::min(820.0F * scale, max_width);
-  if (height_ <= 0.0F) height_ = max_height;
-  // Redimensionnable par ses bords : la taille choisie revient à chaque ouverture, le bord droit reste collé.
+  // Redimensionnable par ses bords : la taille choisie, en part de la fenêtre (panel_size.h), revient à
+  // chaque ouverture et suit la fenêtre quand elle change de taille ; le bord droit reste collé.
+  const PanelArea wanted = size_.target({max_width, max_height}, 820.0F * scale);
   ImGui::SetNextWindowPos({io.DisplaySize.x - pad, top}, ImGuiCond_Always, {1.0F, 0.0F});
-  ImGui::SetNextWindowSize({std::min(width_, max_width), std::min(height_, max_height)}, ImGuiCond_Appearing);
+  ImGui::SetNextWindowSize({wanted.width, wanted.height},
+                           size_.area_changed() ? ImGuiCond_Always : ImGuiCond_Appearing);
   ImGui::SetNextWindowSizeConstraints(
       {std::min(520.0F * scale, max_width), std::min(260.0F * scale, max_height)}, {max_width, max_height});
   bool keep = true;
@@ -338,8 +339,7 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
                                       ImGuiWindowFlags_NoScrollWithMouse;
   ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha_);
   if (ImGui::Begin((std::string(i18n::tr("Settings")) + "###settings").c_str(), &keep, kFlags)) {
-    width_ = ImGui::GetWindowWidth();
-    height_ = ImGui::GetWindowHeight();
+    size_.observe({ImGui::GetWindowWidth(), ImGui::GetWindowHeight()});
     ImGui::PushItemWidth(-ImGui::GetWindowWidth() * 0.42F);
     bool delay_held = false;
     bool sub_delay_held = false;
