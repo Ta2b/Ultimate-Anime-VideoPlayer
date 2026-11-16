@@ -280,8 +280,8 @@ TEST_CASE("le rapport nomme le minidump seulement après une séance plantée", 
 TEST_CASE("les réglages changés sont listés, les défauts non", "[problem_report]") {
   CHECK(settings_changes_text(PlaySettings{}) == "(aucun)");
   PlaySettings s;
-  s.cubic_warp = true;
+  s.cubic_warp = false;
   const std::string text = settings_changes_text(s);
   CHECK(text.find("cubic_warp") != std::string::npos);
-  CHECK(text.find("true") != std::string::npos);
+  CHECK(text.find("false") != std::string::npos);
 }

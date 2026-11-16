@@ -62,11 +62,11 @@ constexpr std::array kImageTabs{
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
     Entry{"Sharper interpolation warp (Catmull-Rom)", "Warp de l'interpolation plus net (Catmull-Rom)"},
-    Entry{"Trial: in-between frames read the source with a sharper filter (Catmull-Rom), for finer lines. "
-          "Speed: about −3 %. Quality impact: imperceptible to minor gain. Recommended: off. RIFE only.",
-          "Essai : les images intermédiaires lisent la source avec un filtre plus net (Catmull-Rom), pour "
-          "des traits plus fins. Vitesse : environ −3 %. Impact sur la qualité : gain imperceptible à "
-          "mineur. Recommandé : désactivé. RIFE seulement."},
+    Entry{"In-between frames read the source with a sharper filter (Catmull-Rom), for finer lines. Speed: "
+          "about −3 %. Quality impact: minor gain. Recommended: on. RIFE only.",
+          "Les images intermédiaires lisent la source avec un filtre plus net (Catmull-Rom), pour des traits "
+          "plus fins. Vitesse : environ −3 %. Impact sur la qualité : gain mineur. Recommandé : activé. RIFE "
+          "seulement."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
     Entry{"Trial: on fast motion, frames near the middle reuse the middle RIFE pass. Speed: up to +30 % on "
@@ -222,12 +222,12 @@ constexpr std::array kImageTabs{
     Entry{"SPAN precision", "Précision de SPAN"},
     Entry{"SPAN ×2 (AnimeJaNai)", "SPAN ×2 (AnimeJaNai)"},
     Entry{"Smooth held drawings", "Lisser les dessins tenus"},
-    Entry{"Trial: a drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. "
-          "Speed: about −10 %. Quality impact: changes the look of the animation (a matter of taste). "
-          "Recommended: off. RIFE only; replaces Keep poses.",
-          "Essai : un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. "
-          "Vitesse : environ −10 %. Impact sur la qualité : change le rendu de l'animation (affaire de "
-          "goût). Recommandé : désactivé. RIFE seulement ; remplace Garder les poses."},
+    Entry{"A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. Speed: "
+          "about −10 %. Quality impact: changes the look of the animation (a matter of taste). Recommended: "
+          "on. RIFE only; replaces Keep poses.",
+          "Un dessin tenu 2 à 6 images glisse vers le suivant au lieu de se figer, puis de sauter. Vitesse : "
+          "environ −10 %. Impact sur la qualité : change le rendu de l'animation (affaire de goût). "
+          "Recommandé : activé. RIFE seulement ; remplace Garder les poses."},
     Entry{"Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.",
           "Les coupes de scène ne sont pas interpolées ; les dessins tenus de 2 à 6 images sont lissés."},
     Entry{"Scene cuts and held drawings are not interpolated.",

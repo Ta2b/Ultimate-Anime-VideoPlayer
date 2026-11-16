@@ -254,9 +254,9 @@ struct PlaySettings {
   // « Lisser les dessins tenus » (upscale_smooth.cpp) : un dessin tenu de deux à six images, suivi d'un
   // dessin nouveau, se fond en un seul mouvement au lieu de rester figé puis de sauter ; une tenue plus
   // longue garde la copie, une coupe reste une coupe. RIFE seulement ; prend le pas sur keep_poses
-  // (poses_kept), dont il est l'inverse. Essai, éteint par défaut ; recharge la chaîne (l'étage lit cinq
+  // (poses_kept), dont il est l'inverse. Allumé par défaut ; recharge la chaîne (l'étage lit cinq
   // images en avance).
-  bool smooth_drawings = false;
+  bool smooth_drawings = true;
   // Échelle par paire (upscale_half.cpp) : une paire qui bouge fort, où RIFE passe à chaque instant, l'estime
   // sur une image deux fois plus petite que celle de RIFE, par un second moteur ; les autres paires ne
   // changent pas. Moins cher seulement, jamais plus grand. RIFE mouvement seulement. Essai, éteint par défaut
@@ -302,9 +302,9 @@ struct PlaySettings {
   bool rife_fused = true;
   // Le warp final de l'interpolation en Catmull-Rom (kernels::RifeWarp : 4 × 4 points, a = −0,5) au lieu du
   // bilinéaire du réseau : des traits fins plus nets dans les images intermédiaires, pour un peu plus de
-  // lectures. RIFE seulement (la fin de RIFE fusionné, et le warp de la variante mouvement). Essai, éteint
-  // par défaut ; recharge la chaîne.
-  bool cubic_warp = false;
+  // lectures. RIFE seulement (la fin de RIFE fusionné, et le warp de la variante mouvement). Allumé par
+  // défaut ; recharge la chaîne.
+  bool cubic_warp = true;
   // DistilDRBA fusionné (kernels/spec/drba_fused.h) : le réseau coupé en quatre petits moteurs TensorRT
   // reliés par des noyaux CUDA, à la place du moteur DistilDRBA entier (0,92 ms au lieu de 2,10 ms par passe
   // à 1088×1920 sur une RTX 4070 Ti) ; seulement sous TensorRT, au cran Équilibre et pour un DistilDRBA v2

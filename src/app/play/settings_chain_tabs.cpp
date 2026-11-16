@@ -23,14 +23,14 @@ using panel::section;
 
 namespace {
 
-// Le warp de Catmull-Rom (PlaySettings::cubic_warp) : un essai, éteint par défaut.
+// Le warp de Catmull-Rom (PlaySettings::cubic_warp) : allumé par défaut.
 void cubic_warp_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Sharper interpolation warp (Catmull-Rom)"), &d.cubic_warp);
   ImGui::EndDisabled();
-  panel::tip(i18n::tr(
-      "Trial: in-between frames read the source with a sharper filter (Catmull-Rom), for finer lines. Speed: "
-      "about −3 %. Quality impact: imperceptible to minor gain. Recommended: off. RIFE only."));
+  panel::tip(
+      i18n::tr("In-between frames read the source with a sharper filter (Catmull-Rom), for finer lines. "
+               "Speed: about −3 %. Quality impact: minor gain. Recommended: on. RIFE only."));
 }
 
 // Moins de passes RIFE sur les paires fortes (PlaySettings::strong_middle) : un essai, éteint par défaut.
@@ -634,12 +634,11 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
   // « Lisser les dessins tenus » (upscale_smooth.cpp) : RIFE seulement, à la place des poses gardées.
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Smooth held drawings"), &d.smooth_drawings);
-  panel::badge(std::string(badge_text(Badge::Experimental)).c_str(), panel::kExperimental);
   ImGui::EndDisabled();
   panel::tip(
-      i18n::tr("Trial: a drawing held 2 to 6 frames glides to the next one instead of freezing, then "
-               "jumping. Speed: about −10 %. Quality impact: changes the look of the animation (a matter of "
-               "taste). Recommended: off. RIFE only; replaces Keep poses."));
+      i18n::tr("A drawing held 2 to 6 frames glides to the next one instead of freezing, then jumping. "
+               "Speed: about −10 %. Quality impact: changes the look of the animation (a matter of taste). "
+               "Recommended: on. RIFE only; replaces Keep poses."));
   const bool smoothed = d.smooth_drawings && d.motion_engine == MotionEngine::Rife;
   note(smoothed ? i18n::tr("Scene cuts are not interpolated; drawings held 2 to 6 frames are smoothed.")
                 : i18n::tr("Scene cuts and held drawings are not interpolated."));

@@ -95,41 +95,41 @@ TEST_CASE("play.toml : « Lisser les dessins tenus », absent d'un ancien fichie
   const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-smooth.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
-  const std::size_t line = text.find("smooth_drawings = false\n");
+  const std::size_t line = text.find("smooth_drawings = true\n");
   REQUIRE(line != std::string::npos);
-  text.erase(line, std::string("smooth_drawings = false\n").size());
+  text.erase(line, std::string("smooth_drawings = true\n").size());
   write_text(path, text);
   auto old = load_settings(path);
   REQUIRE(old);
-  CHECK_FALSE(old->smooth_drawings);
+  CHECK(old->smooth_drawings);  // absent : le défaut, allumé
   CHECK(old->keep_poses);
-  old->smooth_drawings = true;
+  old->smooth_drawings = false;
   REQUIRE(save_settings(path, *old));
-  CHECK(read_text(path).find("smooth_drawings = true") != std::string::npos);
+  CHECK(read_text(path).find("smooth_drawings = false") != std::string::npos);
   const auto reread = load_settings(path);
   REQUIRE(reread);
-  CHECK(reread->smooth_drawings);
+  CHECK_FALSE(reread->smooth_drawings);
   std::filesystem::remove(path);
 }
 
-// Un play.toml d'avant le warp de Catmull-Rom se lit, l'option éteinte ; allumée, elle se relit.
+// Un play.toml d'avant le warp de Catmull-Rom se lit, l'option au défaut (allumée) ; éteinte, elle se relit.
 TEST_CASE("play.toml : le warp de Catmull-Rom, absent d'un ancien fichier, s'enregistre",
           "[app][settings][cubic]") {
   const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-cubic.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
-  const std::size_t line = text.find("cubic_warp = false\n");
+  const std::size_t line = text.find("cubic_warp = true\n");
   REQUIRE(line != std::string::npos);
-  text.erase(line, std::string("cubic_warp = false\n").size());
+  text.erase(line, std::string("cubic_warp = true\n").size());
   write_text(path, text);
   auto old = load_settings(path);
   REQUIRE(old);
-  CHECK_FALSE(old->cubic_warp);
-  old->cubic_warp = true;
+  CHECK(old->cubic_warp);
+  old->cubic_warp = false;
   REQUIRE(save_settings(path, *old));
   const auto reread = load_settings(path);
   REQUIRE(reread);
-  CHECK(reread->cubic_warp);
+  CHECK_FALSE(reread->cubic_warp);
   std::filesystem::remove(path);
 }
 

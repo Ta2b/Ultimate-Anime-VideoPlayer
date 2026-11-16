@@ -140,6 +140,7 @@ TEST_CASE("Réglages : « Lisser les dessins tenus » rouvre la lecture, l'optio
           "[app][settings][smooth]") {
   PlaySettings running;
   running.rife_factor = 3;
+  running.smooth_drawings = false;
   PlaySettings smooth = running;
   smooth.smooth_drawings = true;
   const Change change = change_between(running, smooth, true);
@@ -155,6 +156,7 @@ TEST_CASE("Réglages : « Lisser les dessins tenus » rouvre la lecture, l'optio
   PlaySettings off = running;
   off.rife_factor = 0;
   PlaySettings off_smooth = off;
+  off.smooth_drawings = false;
   off_smooth.smooth_drawings = true;
   CHECK(live_part(off, off_smooth, true).smooth_drawings);
 
@@ -164,6 +166,7 @@ TEST_CASE("Réglages : « Lisser les dessins tenus » rouvre la lecture, l'optio
   CHECK(smooth.keep_poses);
 
   PlaySettings from_file;
+  from_file.smooth_drawings = false;
   PlayOptions options;
   options.smooth_drawings = true;
   const PlaySettings started = settings_for(from_file, options);
