@@ -37,6 +37,16 @@ DirectML n'a jamais eu de backend.
 Le mode Performance de SPAN (FP8) existe aussi sous Vulkan, sur une carte à matrices coopératives FP8 (RDNA 4,
 RX 9000) : même paquet, même reçu, même porte que sous TensorRT (`docs/span-fp8-cutlass.md`, « Sous
 Vulkan »). Les graphes Q/DQ FP8 de RIFE et DistilDRBA (cran Performance) y passent par les mêmes matrices.
+
+La variante INT8 du SPAN (`tools/span/quantize_span.py`, reçu `ajp-span-int8-v1`) se lit aussi sous Vulkan :
+l'import plie ses paires Q/DQ INT8 en `FakeQuantInt8` et ses poids INT8 en q × échelle, les passes fondent
+l'arrondi dans les Conv (`ConvAttrs::quant_grid`), le noyau direct arrondit à la grille INT8 et la variante
+`coopmat_int8` multiplie des entiers sur les tuiles s8 × s8 → s32 16 × 16 × 16 (`net_conv_coopmat_int8.glsl`).
+Le lecteur ne la propose au cran Performance (`BackendCaps::int8`) que là où l'INT8 va deux fois plus vite que
+le float16 : RDNA 4 et GeForce Turing à Ada (`int8_graphs_allowed`, `family.h`). Les RDNA 3 font l'INT8 au
+rythme du float16 (122,8 TOPS INT8 comme TFLOPS FP16 sur RX 7900 XTX) : elles y perdraient de la qualité sans
+rien gagner, et gardent le FP16. Une RX 9000 prend d'abord le FP8, plus juste ; l'INT8 ne lui sert que sans
+paquet FP8. Les Arc annoncent leurs tuiles INT8 en 8 × 16 × 32, que ce noyau ne sait pas tuiler.
 **Écrit sans carte AMD ni Intel pour l'essayer** : les tests tournent sous lavapipe ; les retours
 d'utilisateurs diront ce qui manque.
 

@@ -2,10 +2,11 @@
 // une qualité et le GPU du rendu, avec leurs options. Logique pure, sans FFmpeg : video_encoder.cpp
 // ouvre le premier qui accepte (un encodeur absent de cette construction de FFmpeg est sauté).
 //
-// L'ordre suit le GPU du rendu : NVENC sur une carte NVIDIA, AMF puis VA-API sur une AMD, QSV puis
-// VA-API sur une Intel, VideoToolbox sur un Mac ; Media Foundation (Windows) et Vulkan Video
-// viennent ensuite, pour tout GPU. Les qualités visent un rendu visuellement identique à la lecture
-// en direct : quantification constante basse, 10 bits sauf en H.264.
+// L'ordre suit le GPU du rendu : NVENC sur une carte NVIDIA, Vulkan Video puis AMF et VA-API sur une
+// AMD, QSV puis VA-API sur une Intel (Vulkan Video d'abord quand il encode sur l'appareil du rendu),
+// VideoToolbox sur un Mac ; Media Foundation (Windows) et Vulkan Video viennent ensuite, pour tout GPU. Les
+// qualités visent un rendu visuellement identique à la lecture en direct : quantification constante basse, 10
+// bits sauf en H.264.
 #pragma once
 
 #include <cstdint>
@@ -66,8 +67,11 @@ struct EncoderCandidate {
   std::vector<EncoderOption> fallback;
 };
 
-// Les encodeurs à essayer, le meilleur d'abord. Toujours au moins un.
-std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, GpuVendor vendor);
+// Les encodeurs à essayer, le meilleur d'abord. Toujours au moins un. render_device : l'appareil Vulkan du
+// rendu est donné à l'encodeur (EncoderSetup::vulkan_device), Vulkan Video peut y lire ses images sans
+// relecture par l'hôte ; sur une Intel, il passe alors avant Quick Sync.
+std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, GpuVendor vendor,
+                                                 bool render_device = false);
 
 std::string_view label(Codec codec);      // « HEVC 10 bits »
 std::string_view label(Quality quality);  // « Très haute »

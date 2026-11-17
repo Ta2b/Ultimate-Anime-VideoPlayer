@@ -166,7 +166,8 @@ nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés
 Détails : [`docs/moteurs.md`](docs/moteurs.md).
 
 **Cartes AMD et Intel : non testées.** Sous Vulkan, une carte AMD ou Intel a les mêmes fonctions qu'une
-NVIDIA sous TensorRT, mode Performance (FP8) compris sur une Radeon RX 9000, et tout devrait fonctionner.
+NVIDIA sous TensorRT, mode Performance (FP8) compris sur une Radeon RX 9000 (et la variante INT8 du SPAN sur
+les cartes où l'INT8 va plus vite que le FP16), et tout devrait fonctionner.
 Mais rien n'a été essayé sur une vraie carte AMD ou Intel : seulement sur le Vulkan logiciel (lavapipe) des
 tests. Si quelque chose ne va pas sur la vôtre, ouvrez une issue avec le journal (`ajp.log`) : c'est ainsi que
 ces voies seront corrigées.

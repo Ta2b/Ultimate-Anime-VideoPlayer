@@ -6,6 +6,7 @@
 #include <limits>
 #include <new>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -189,6 +190,11 @@ std::expected<std::vector<Node>, Refusal> sort_nodes(const Graph& graph, std::ve
   return sorted;
 }
 
+// QuantizeLinear ou DequantizeLinear (un modèle aux poids INT8 peut n'avoir que des DequantizeLinear).
+bool quantize_op(std::string_view op_type) {
+  return op_type == "QuantizeLinear" || op_type == "DequantizeLinear";
+}
+
 // Zéros FP8 et entiers INT8 des Q/DQ : jamais des constantes du graphe.
 bool quantized_storage(std::int32_t data_type) {
   return data_type == onnx::kFloat8E4M3Fn || data_type == onnx::kInt8;
@@ -201,8 +207,8 @@ std::expected<Graph, Refusal> import_model(const onnx::Model& model) {
   if (!opset) return std::unexpected(opset.error());
   // Les Q/DQ FP8 et INT8 deviennent des FakeQuant sur une copie du graphe, jamais sur l'original.
   onnx::Graph fused;
-  const bool quantized = std::ranges::any_of(
-      model.graph.nodes, [](const onnx::Node& n) { return n.op_type.ends_with("QuantizeLinear"); });
+  const bool quantized =
+      std::ranges::any_of(model.graph.nodes, [](const onnx::Node& n) { return quantize_op(n.op_type); });
   if (quantized) {
     fused = model.graph;
     onnx::fuse_fp8_quant_pairs(fused);
