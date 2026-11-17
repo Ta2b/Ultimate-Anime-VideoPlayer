@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "gpu/ir/fp8.h"
+#include "gpu/ir/int8.h"
+#include "kernels/ref/half.h"
 
 namespace ajp::gpu::ir::onnx {
 namespace {
@@ -19,12 +21,27 @@ const Tensor* find_initializer(const Graph& graph, const std::string& name) {
   return it == graph.initializers.end() ? nullptr : &*it;
 }
 
-// Zéros FP8 E4M3 tous nuls (scalaire ou un par canal) : les seuls que la fusion sait absorber.
-bool fp8_zero(const Graph& graph, const Node& node) {
-  if (node.inputs.size() != 3) return false;
+// La grille de zéros tous nuls (scalaire ou un par canal), FP8 E4M3 ou INT8 : les seuls que la fusion sait
+// absorber. Sans zéro, l'ONNX quantifie en UINT8 : rien.
+enum class Grid : std::uint8_t { E4m3, Int8 };
+std::optional<Grid> zero_grid(const Graph& graph, const Node& node) {
+  if (node.inputs.size() != 3) return std::nullopt;
   const Tensor* zero = find_initializer(graph, node.inputs[2]);
-  return zero != nullptr && zero->data_type == kFloat8E4M3Fn &&
-         std::ranges::all_of(zero->floats, [](float v) { return v == 0.0F; });
+  if (zero == nullptr || !std::ranges::all_of(zero->floats, [](float v) { return v == 0.0F; }))
+    return std::nullopt;
+  if (zero->data_type == kFloat8E4M3Fn) return Grid::E4m3;
+  if (zero->data_type == kInt8) return Grid::Int8;
+  return std::nullopt;
+}
+
+float on_grid(Grid grid, float v, float s) {
+  return grid == Grid::Int8 ? round_to_int8(v / s) * s : round_to_e4m3(v / s) * s;
+}
+
+// q × échelle comme le calcule DequantizeLinear : dans le type de l'échelle (FLOAT ou FLOAT16).
+float dequantized(float q, float scale, std::int32_t type) {
+  const float v = q * scale;
+  return type == kFloat16 ? kernels::ref::round_to_half(v) : v;
 }
 
 // Échelles flottantes strictement positives, scalaire ou une par canal.
@@ -47,14 +64,16 @@ std::optional<std::int64_t> quant_axis(const Node& node) {
   return axis;
 }
 
-// Poids constants quantifiés par canal : x_k arrondi à la grille E4M3 de l'échelle de son canal.
+// Poids constants quantifiés par canal : x_k arrondi à la grille de l'échelle de son canal. dequantize : x_k
+// est déjà le q d'un initialiseur INT8 (DequantizeLinear seul), rendu q × échelle.
 std::optional<Tensor> fold_per_channel(const Tensor& weights, const Tensor& scale, std::int64_t axis,
-                                       std::string name) {
+                                       std::string name, Grid grid, bool dequantize = false) {
   const auto rank = static_cast<std::int64_t>(weights.dims.size());
   if (axis < 0) axis += rank;
   if (axis < 0 || axis >= rank || weights.floats.empty() ||
       weights.dims[static_cast<std::size_t>(axis)] != static_cast<std::int64_t>(scale.floats.size()) ||
-      (weights.data_type != kFloat && weights.data_type != kFloat16)) {
+      (dequantize ? weights.data_type != kInt8
+                  : (weights.data_type != kFloat && weights.data_type != kFloat16))) {
     return std::nullopt;
   }
   std::size_t inner = 1;
@@ -62,18 +81,77 @@ std::optional<Tensor> fold_per_channel(const Tensor& weights, const Tensor& scal
     inner *= static_cast<std::size_t>(weights.dims[static_cast<std::size_t>(d)]);
   Tensor out = weights;
   out.name = std::move(name);
+  if (dequantize) out.data_type = scale.data_type;
   for (std::size_t k = 0; k < out.floats.size(); ++k) {
     const float s = scale.floats[(k / inner) % scale.floats.size()];
-    out.floats[k] = round_to_e4m3(out.floats[k] / s) * s;
+    out.floats[k] =
+        dequantize ? dequantized(out.floats[k], s, scale.data_type) : on_grid(grid, out.floats[k], s);
   }
   return out;
 }
 
-// Le DequantizeLinear FP8 qui lit seul la sortie du QuantizeLinear.
-bool pairs_with(const Graph& graph, const Node& quant, const Node& dequant) {
+// Le DequantizeLinear de même grille qui lit seul la sortie du QuantizeLinear. Sans zéro (deux entrées), le
+// sien vaut 0 dans le type de son entrée, celui du QuantizeLinear.
+bool pairs_with(const Graph& graph, const Node& quant, const Node& dequant, Grid grid) {
   return is_default_domain(dequant.domain) && dequant.op_type == "DequantizeLinear" &&
-         dequant.outputs.size() == 1 && dequant.inputs.size() == 3 && dequant.inputs[0] == quant.outputs[0] &&
-         fp8_zero(graph, dequant);
+         dequant.outputs.size() == 1 && (dequant.inputs.size() == 2 || dequant.inputs.size() == 3) &&
+         dequant.inputs[0] == quant.outputs[0] &&
+         (dequant.inputs.size() == 2 || zero_grid(graph, dequant) == grid);
+}
+
+// Un DequantizeLinear seul d'un initialiseur INT8 (poids rangés en entiers par l'outil de quantification) :
+// l'initialiseur flottant q × échelle, dans le type de l'échelle, scalaire ou par canal ; nullopt sinon. Sans
+// zéro (deux entrées), celui d'un INT8 vaut 0.
+std::optional<Tensor> fold_dequantized(const Graph& graph, const Node& dequant) {
+  if (!is_default_domain(dequant.domain) || dequant.op_type != "DequantizeLinear" ||
+      dequant.outputs.size() != 1 || (dequant.inputs.size() != 2 && zero_grid(graph, dequant) != Grid::Int8))
+    return std::nullopt;
+  const Tensor* weights = find_initializer(graph, dequant.inputs[0]);
+  const Tensor* scale = positive_scale(graph, dequant);
+  const auto axis = quant_axis(dequant);
+  if (weights == nullptr || weights->data_type != kInt8 || scale == nullptr || !axis) return std::nullopt;
+  if (scale->dims.empty()) {
+    Tensor out = *weights;
+    out.name = dequant.outputs[0];
+    out.data_type = scale->data_type;
+    for (float& v : out.floats) v = dequantized(v, scale->floats[0], scale->data_type);
+    return out;
+  }
+  return fold_per_channel(*weights, *scale, *axis, dequant.outputs[0], Grid::Int8, true);
+}
+
+// Les DequantizeLinear INT8 seuls, sur des poids entiers, pliés en initialiseurs (ajoutés à folded) ; leur
+// nombre.
+std::size_t fold_lone_dequantized(const Graph& graph, std::vector<bool>& removed,
+                                  std::vector<Tensor>& folded) {
+  std::size_t fused = 0;
+  for (std::size_t d = 0; d < graph.nodes.size(); ++d) {
+    if (removed[d]) continue;
+    auto weights = fold_dequantized(graph, graph.nodes[d]);
+    if (!weights) continue;
+    folded.push_back(std::move(*weights));
+    removed[d] = true;
+    ++fused;
+  }
+  return fused;
+}
+
+// Les nœuds retirés, les initialiseurs pliés ajoutés ; puis les zéros FP8 et INT8, et les poids INT8, que
+// plus aucun nœud ne lit.
+void apply_fusion(Graph& graph, const std::vector<bool>& removed, std::vector<Tensor>& folded) {
+  std::size_t kept = 0;
+  for (std::size_t n = 0; n < graph.nodes.size(); ++n) {
+    if (removed[n]) continue;
+    if (kept != n) graph.nodes[kept] = std::move(graph.nodes[n]);
+    ++kept;
+  }
+  graph.nodes.resize(kept);
+  for (Tensor& t : folded) graph.initializers.push_back(std::move(t));
+  std::unordered_set<std::string> still_read;
+  for (const Node& node : graph.nodes) still_read.insert(node.inputs.begin(), node.inputs.end());
+  std::erase_if(graph.initializers, [&](const Tensor& t) {
+    return (t.data_type == kFloat8E4M3Fn || t.data_type == kInt8) && !still_read.contains(t.name);
+  });
 }
 
 }  // namespace
@@ -96,13 +174,14 @@ std::size_t fuse_fp8_quant_pairs(Graph& graph) {
     Node& quant = graph.nodes[q];
     if (!is_default_domain(quant.domain) || quant.op_type != "QuantizeLinear" || quant.outputs.size() != 1)
       continue;
-    if (quant.inputs.size() != 3 || !fp8_zero(graph, quant)) continue;
+    const std::optional<Grid> grid = zero_grid(graph, quant);
+    if (!grid) continue;
     const auto users = readers.find(quant.outputs[0]);
     if (users == readers.end() || users->second.size() != 1 || graph_outputs.contains(quant.outputs[0]))
       continue;
     const std::size_t d = users->second[0];
     Node& dequant = graph.nodes[d];
-    if (!pairs_with(graph, quant, dequant)) continue;
+    if (!pairs_with(graph, quant, dequant, *grid)) continue;
     const Tensor* qs = positive_scale(graph, quant);
     const Tensor* ds = positive_scale(graph, dequant);
     const auto q_axis = quant_axis(quant);
@@ -111,7 +190,7 @@ std::size_t fuse_fp8_quant_pairs(Graph& graph) {
 
     if (qs->dims.empty()) {
       Node fake{.name = dequant.name.empty() ? quant.name : dequant.name,
-                .op_type = "FakeQuantE4M3",
+                .op_type = *grid == Grid::Int8 ? "FakeQuantInt8" : "FakeQuantE4M3",
                 .domain = "",
                 .inputs = {quant.inputs[0], quant.inputs[1]},
                 .outputs = {dequant.outputs[0]}};
@@ -121,7 +200,7 @@ std::size_t fuse_fp8_quant_pairs(Graph& graph) {
       // Par canal : seuls des poids constants se plient, en un initialiseur arrondi.
       const Tensor* weights = find_initializer(graph, quant.inputs[0]);
       if (weights == nullptr || *q_axis != *d_axis) continue;
-      auto rounded = fold_per_channel(*weights, *qs, *q_axis, dequant.outputs[0]);
+      auto rounded = fold_per_channel(*weights, *qs, *q_axis, dequant.outputs[0], *grid);
       if (!rounded) continue;
       folded.push_back(std::move(*rounded));
       removed[q] = true;
@@ -129,23 +208,9 @@ std::size_t fuse_fp8_quant_pairs(Graph& graph) {
     }
     ++fused;
   }
+  fused += fold_lone_dequantized(graph, removed, folded);
   if (fused == 0) return 0;
-
-  std::size_t kept = 0;
-  for (std::size_t n = 0; n < graph.nodes.size(); ++n) {
-    if (removed[n]) continue;
-    if (kept != n) graph.nodes[kept] = std::move(graph.nodes[n]);
-    ++kept;
-  }
-  graph.nodes.resize(kept);
-  for (Tensor& t : folded) graph.initializers.push_back(std::move(t));
-
-  // Les zéros FP8 que plus aucun nœud ne lit.
-  std::unordered_set<std::string> still_read;
-  for (const Node& node : graph.nodes) still_read.insert(node.inputs.begin(), node.inputs.end());
-  std::erase_if(graph.initializers, [&](const Tensor& t) {
-    return t.data_type == kFloat8E4M3Fn && !still_read.contains(t.name);
-  });
+  apply_fusion(graph, removed, folded);
   return fused;
 }
 

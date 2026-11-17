@@ -22,11 +22,9 @@ bool internal_image(const Graph& graph, TensorId id) {
          t.dims[1] >= kNhwcMinChannels && !is_graph_output(graph, id);
 }
 
-// Le nœud sait-il lire ou écrire ce tenseur en NHWC ? Les opérations qui
-// réinterprètent les axes (Reshape, Transpose, Gather…) ne le savent pas.
-bool accepts_nhwc(const Graph& graph, const Node& node, TensorId id) {
-  const auto output_dims = [&] { return graph.tensors[node.outputs[0]].dims; };
-  switch (node.op) {
+// Les opérations qui lisent toute entrée image en Nhwc16 quelle qu'en soit la forme.
+bool layout_free(OpKind op) {
+  switch (op) {
     case OpKind::Conv:
     case OpKind::ConvTranspose:
     case OpKind::Relu:
@@ -36,6 +34,7 @@ bool accepts_nhwc(const Graph& graph, const Node& node, TensorId id) {
     case OpKind::Clip:
     case OpKind::Reciprocal:
     case OpKind::FakeQuantE4M3:
+    case OpKind::FakeQuantInt8:
     case OpKind::Cast:
     case OpKind::Identity:
     case OpKind::Concat:
@@ -47,12 +46,22 @@ bool accepts_nhwc(const Graph& graph, const Node& node, TensorId id) {
     case OpKind::SpaceToDepth:
     case OpKind::AveragePool:
       return true;
+    default:
+      return false;
+  }
+}
+
+// Le nœud sait-il lire ou écrire ce tenseur en NHWC ? Les opérations qui
+// réinterprètent les axes (Reshape, Transpose, Gather…) ne le savent pas.
+bool accepts_nhwc(const Graph& graph, const Node& node, TensorId id) {
+  if (layout_free(node.op)) return true;
+  switch (node.op) {
     case OpKind::Add:
     case OpKind::Sub:
     case OpKind::Mul:
     case OpKind::Div:
-    case OpKind::PRelu:
-      return graph.tensors[id].dims == output_dims();  // un opérande diffusé reste en Nchw
+    case OpKind::PRelu:  // un opérande diffusé reste en Nchw
+      return graph.tensors[id].dims == graph.tensors[node.outputs[0]].dims;
     case OpKind::GridSample:  // la grille [N, H, W, 2] n'a pas de canaux ; [N, 2, H, W] en a deux
       return id != node.inputs[1] || std::get<GridSampleAttrs>(node.attrs).grid_nchw;
     default:

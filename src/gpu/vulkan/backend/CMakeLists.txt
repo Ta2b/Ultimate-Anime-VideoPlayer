@@ -26,6 +26,7 @@ ajp_add_module(vk_backend
     net_engine.cpp
     net_hoist.cpp
     net_lower.cpp
+    net_conv_low_bit.cpp
     net_lower_conv.cpp
     net_lower_copy.cpp
     net_measure.cpp
@@ -67,7 +68,7 @@ set(net_shaders
   "${shaders}/ring_store.comp")
 # Le noyau à matrices coopératives FP8 exige GL_EXT_float_e4m3 (glslang 15.2 ou plus récent) : il
 # n'entre dans la construction que si le compilateur le connaît ; sans lui, la variante n'est pas
-# proposée (net_lower_conv.cpp, fp8_eligible).
+# proposée (net_conv_low_bit.cpp, low_bit_eligible).
 set(fp8_probe "${CMAKE_CURRENT_BINARY_DIR}/fp8_probe.comp")
 file(WRITE "${fp8_probe}" "#version 450
 #extension GL_EXT_float_e4m3 : require
@@ -96,6 +97,7 @@ ajp_add_spirv(ajp_vk_backend
     "${shaders}/net_conv_f16p.comp"
     "${shaders}/net_conv_coopmat_f16.comp"
     "${shaders}/net_conv_coopmat_acc16.comp"
+    "${shaders}/net_conv_coopmat_int8_f16.comp"
     "${shaders}/net_conv_wino_f16.comp"
     "${shaders}/net_conv_wino_f16p.comp"
   VARIANT f16

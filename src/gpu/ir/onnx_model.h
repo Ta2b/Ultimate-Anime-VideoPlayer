@@ -18,6 +18,7 @@ namespace ajp::gpu::ir::onnx {
 
 // Valeurs de TensorProto.DataType lues par le décodeur ; les autres sont refusées.
 inline constexpr std::int32_t kFloat = 1;
+inline constexpr std::int32_t kInt8 = 3;  // poids et zéros des Q/DQ INT8 : décodés en flottants exacts
 inline constexpr std::int32_t kInt32 = 6;
 inline constexpr std::int32_t kInt64 = 7;
 inline constexpr std::int32_t kFloat16 = 10;

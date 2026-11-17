@@ -15,6 +15,7 @@ struct MatrixTiles {
   bool f32_sums = false;
   bool f16_sums = false;
   bool f8_e4m3 = false;  // FP8 E4M3 × E4M3 → float32 (VK_EXT_shader_float8) : RDNA 4, Blackwell
+  bool s8 = false;       // INT8 × INT8 → int32 : RDNA 3 et 4, GeForce ; pas les Arc (M = 8)
   std::string shapes;    // toutes celles du pilote, pour le journal
 };
 
@@ -44,6 +45,15 @@ std::string_view component(VkComponentTypeKHR type) {
   }
 }
 
+// Une tuile 16 × 16 × 16 par sous-groupe, A et B du type inputs, sommes et résultat du type sums.
+bool offers_tile(const std::vector<VkCooperativeMatrixPropertiesKHR>& properties, VkComponentTypeKHR inputs,
+                 VkComponentTypeKHR sums) {
+  return std::ranges::any_of(properties, [&](const VkCooperativeMatrixPropertiesKHR& p) {
+    return p.MSize == 16 && p.NSize == 16 && p.KSize == 16 && p.AType == inputs && p.BType == inputs &&
+           p.CType == sums && p.ResultType == sums && p.scope == VK_SCOPE_SUBGROUP_KHR;
+  });
+}
+
 MatrixTiles matrix_tiles(const VkContext& context) {
   const auto query = reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR>(
       context.get_instance_proc_addr()(context.instance(),
@@ -56,17 +66,8 @@ MatrixTiles matrix_tiles(const VkContext& context) {
   if (query(context.physical_device(), &count, properties.data()) != VK_SUCCESS) return {};
   properties.resize(count);
   const auto tile = [&](VkComponentTypeKHR sums) {
-    return std::ranges::any_of(properties, [&](const VkCooperativeMatrixPropertiesKHR& p) {
-      return p.MSize == 16 && p.NSize == 16 && p.KSize == 16 && p.AType == VK_COMPONENT_TYPE_FLOAT16_KHR &&
-             p.BType == VK_COMPONENT_TYPE_FLOAT16_KHR && p.CType == sums && p.ResultType == sums &&
-             p.scope == VK_SCOPE_SUBGROUP_KHR;
-    });
+    return offers_tile(properties, VK_COMPONENT_TYPE_FLOAT16_KHR, sums);
   };
-  const bool f8 = std::ranges::any_of(properties, [](const VkCooperativeMatrixPropertiesKHR& p) {
-    return p.MSize == 16 && p.NSize == 16 && p.KSize == 16 && p.AType == kComponentFloat8E4M3 &&
-           p.BType == kComponentFloat8E4M3 && p.CType == VK_COMPONENT_TYPE_FLOAT32_KHR &&
-           p.ResultType == VK_COMPONENT_TYPE_FLOAT32_KHR && p.scope == VK_SCOPE_SUBGROUP_KHR;
-  });
   // « 8×16×16 f16→f32 » : Intel Arc et Xe2 annoncent M = 8, que net_conv_coopmat.glsl ne sait pas
   // tuiler ; le journal le dit plutôt que de supposer 16 × 16 × 16.
   std::string shapes;
@@ -78,7 +79,8 @@ MatrixTiles matrix_tiles(const VkContext& context) {
   }
   return {.f32_sums = tile(VK_COMPONENT_TYPE_FLOAT32_KHR),
           .f16_sums = tile(VK_COMPONENT_TYPE_FLOAT16_KHR),
-          .f8_e4m3 = f8,
+          .f8_e4m3 = offers_tile(properties, kComponentFloat8E4M3, VK_COMPONENT_TYPE_FLOAT32_KHR),
+          .s8 = offers_tile(properties, VK_COMPONENT_TYPE_SINT8_KHR, VK_COMPONENT_TYPE_SINT32_KHR),
           .shapes = std::move(shapes)};
 }
 
@@ -107,6 +109,7 @@ DeviceProfile profile_device(const VkContext& context) {
       .matrix_first = offered && !profile.matrix_unlisted,
       .matrix_f16_acc = offered && tiles.f16_sums,
       .matrix_f8 = offered && tiles.f8_e4m3 && f.float8_matrix && matrix_f8_allowed(profile.family),
+      .matrix_i8 = offered && tiles.s8 && f.shader_int8,
       .subgroup_size = caps.subgroup_size,
       // Taille exigée seulement avec des sous-groupes pleins garantis.
       .subgroup_min = sized ? caps.min_subgroup_size : 0,

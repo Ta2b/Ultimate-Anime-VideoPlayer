@@ -1,5 +1,6 @@
 // Décodeur ONNX, moitié tenseurs et attributs : TensorProto (données brutes ou typées, FLOAT, FLOAT16, INT32,
-// INT64, FLOAT8E4M3FN) et AttributeProto. Le graphe, les nœuds et les entrées sont dans onnx_reader.cpp.
+// INT64, FLOAT8E4M3FN, INT8) et AttributeProto. Le graphe, les nœuds et les entrées sont dans
+// onnx_reader.cpp.
 #include <bit>
 #include <format>
 #include <limits>
@@ -36,6 +37,7 @@ std::size_t element_size(std::int32_t data_type) {
     case kFloat16:
       return 2;
     case kFloat8E4M3Fn:
+    case kInt8:
       return 1;
     default:
       return 0;
@@ -48,7 +50,8 @@ std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t c
     return proto::malformed(
         std::format("tenseur {} : {} octets bruts pour {} éléments", tensor.name, raw.size(), count));
   }
-  if (tensor.data_type == kFloat || tensor.data_type == kFloat16 || tensor.data_type == kFloat8E4M3Fn) {
+  if (tensor.data_type == kFloat || tensor.data_type == kFloat16 || tensor.data_type == kFloat8E4M3Fn ||
+      tensor.data_type == kInt8) {
     tensor.floats.reserve(count);
   } else {
     tensor.ints.reserve(count);
@@ -66,6 +69,10 @@ std::expected<void, Refusal> decode_raw(Tensor& tensor, Bytes raw, std::size_t c
       }
       case kFloat8E4M3Fn:
         tensor.floats.push_back(e4m3_to_float(std::to_integer<std::uint8_t>(raw[i])));
+        break;
+      case kInt8:
+        tensor.floats.push_back(
+            static_cast<float>(static_cast<std::int8_t>(std::to_integer<std::uint8_t>(raw[i]))));
         break;
       case kInt32:
         tensor.ints.push_back(static_cast<std::int32_t>(proto::read_le32(raw.subspan(4 * i, 4))));
@@ -86,6 +93,16 @@ std::expected<void, Refusal> decode_e4m3_words(Tensor& tensor, const std::vector
           std::format("tenseur {} : motif FLOAT8E4M3FN {} hors de 8 bits", tensor.name, word));
     }
     tensor.floats.push_back(e4m3_to_float(static_cast<std::uint8_t>(word)));
+  }
+  return {};
+}
+
+// INT8 en int32_data : une valeur de −128 à 127 par élément.
+std::expected<void, Refusal> decode_int8_words(Tensor& tensor, const std::vector<std::int64_t>& words) {
+  for (const std::int64_t word : words) {
+    if (word < -128 || word > 127)
+      return proto::malformed(std::format("tenseur {} : valeur INT8 {} hors plage", tensor.name, word));
+    tensor.floats.push_back(static_cast<float>(word));
   }
   return {};
 }
@@ -117,6 +134,7 @@ std::expected<void, Refusal> decode_half_words(Tensor& tensor, const std::vector
 std::expected<void, Refusal> decode_int32_data(Tensor& tensor, std::vector<std::int64_t>& words) {
   if (tensor.data_type == kFloat16) return decode_half_words(tensor, words);
   if (tensor.data_type == kFloat8E4M3Fn) return decode_e4m3_words(tensor, words);
+  if (tensor.data_type == kInt8) return decode_int8_words(tensor, words);
   if (tensor.data_type != kInt32) return {};
   if (auto ok = check_int32_words(tensor, words); !ok) return ok;
   tensor.ints = std::move(words);
@@ -166,7 +184,7 @@ std::expected<Tensor, Refusal> finish_tensor(RawTensor raw) {
     case kInt64:
       placed = !has_floats && !has_int32;
       break;
-    default:  // kFloat16, kFloat8E4M3Fn, kInt32
+    default:  // kFloat16, kFloat8E4M3Fn, kInt8, kInt32
       placed = !has_floats && !has_int64;
       break;
   }

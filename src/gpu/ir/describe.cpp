@@ -48,8 +48,9 @@ std::string node_params(const Graph& graph, const Node& node) {
     std::string out = w.size() == 4 ? std::format("k{}x{} ", w[2], w[3]) : std::string{};
     out += std::format("s{}x{} g{}", conv->strides[0], conv->strides[1], conv->group);
     if (node.inputs.size() > kConvB && node.inputs[kConvB] != kNoTensor) out += " +biais";
-    if (conv->in_quant > 0.0F) out += std::format(" +entrée E4M3 {}", conv->in_quant);
-    if (conv->out_quant > 0.0F) out += std::format(" +sortie E4M3 {}", conv->out_quant);
+    const char* grid = conv->quant_grid == QuantGrid::Int8 ? "INT8" : "E4M3";
+    if (conv->in_quant > 0.0F) out += std::format(" +entrée {} {}", grid, conv->in_quant);
+    if (conv->out_quant > 0.0F) out += std::format(" +sortie {} {}", grid, conv->out_quant);
     if (conv->epilogue.residual) out += " +résiduel";
     if (conv->epilogue.act != Activation::None)
       out += std::format(" +{}", activation_name(conv->epilogue.act));

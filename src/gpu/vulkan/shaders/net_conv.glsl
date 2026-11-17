@@ -10,8 +10,9 @@
 // Variante « _f16 » : tenseurs float16 permis, calcul en float. Variante « _f16p » (AJP_CONV_PACKED,
 // fp16 de calcul) : poids float16, produits en f16vec4 sommés par paquets de 16 canaux, puis
 // ajoutés en float. Une entrée float16 en Nhwc16 sans groupes (VEC) se lit par uvec4, huit
-// canaux d'un pixel par lecture. IN_Q et OUT_Q : arrondi FP8 E4M3 de l'entrée et du résultat
-// (ConvAttrs::in_quant et out_quant). Référence : gpu/ir/op_window.cpp (eval_conv).
+// canaux d'un pixel par lecture. IN_Q et OUT_Q : arrondi de l'entrée et du résultat
+// (ConvAttrs::in_quant et out_quant ; > 0 grille FP8 E4M3, < 0 grille INT8, net_quant).
+// Référence : gpu/ir/op_window.cpp (eval_conv).
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 #ifdef AJP_CONV_PACKED
@@ -22,9 +23,9 @@ layout(local_size_x_id = 31) in;
 
 #include "net_conv_consts.glsl"
 
-// L'entrée de la Conv telle que la lit le FP8 (ConvAttrs::in_quant) ; la porte relit x brut.
+// L'entrée de la Conv telle que la lit le FP8 ou l'INT8 (ConvAttrs::in_quant) ; la porte relit x brut.
 float quant_in(float v) {
-  return IN_Q > 0.0 ? round_e4m3(v / IN_Q) * IN_Q : v;
+  return net_quant(v, IN_Q);
 }
 
 const uint CING = CIN / GROUPS;
@@ -109,7 +110,7 @@ void main() {
               f16vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
               for (uint p = 0u; p < PIX; ++p) {
                 f16vec2 xv = unpackFloat2x16(packed[p][h]);
-                if (IN_Q > 0.0) xv = f16vec2(quant_in(float(xv.x)), quant_in(float(xv.y)));  // comme la queue (B49-05)
+                if (IN_Q != 0.0) xv = f16vec2(quant_in(float(xv.x)), quant_in(float(xv.y)));  // comme la queue (B49-05)
                 part[p * QUADS + q] += xv.x * w0;
                 part[p * QUADS + q] += xv.y * w1;
               }
@@ -118,7 +119,7 @@ void main() {
               vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
               for (uint p = 0u; p < PIX; ++p) {
                 vec2 xv = unpackHalf2x16(packed[p][h]);
-                if (IN_Q > 0.0) xv = vec2(quant_in(xv.x), quant_in(xv.y));
+                if (IN_Q != 0.0) xv = vec2(quant_in(xv.x), quant_in(xv.y));
                 acc[p * QUADS + q] += xv.x * w0;
                 acc[p * QUADS + q] += xv.y * w1;
               }
@@ -187,7 +188,7 @@ void main() {
           continue;
         }
         float v = acc[p * QUADS + q][k] + bias.v[co];
-        if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
+        v = net_quant(v, OUT_Q);
         if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
         v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
         // Porte de SPAN : sortie de la forme de x, lue au même élément.

@@ -33,7 +33,7 @@ void main() {
   float v = 0.0;
   for (uint s = 0u; s < SPLIT; ++s) v += partial.v[(((s * N + n) * COUT + co) * HOUT + oy) * WOUT + ox];
   v += bias.v[co];
-  if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
+  v = net_quant(v, OUT_Q);
   if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
   v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
   if (RESIDUAL == 2u) v *= AJP_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));

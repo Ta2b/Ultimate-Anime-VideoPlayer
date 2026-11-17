@@ -27,7 +27,8 @@ namespace ajp::gpu::vk::net {
 // reconstruisent ; 8 : l'avis de précision réduite (ArtifactData::notice, C45-01), les artefacts d'avant se
 // reconstruisent pour le recevoir ; 9 : une perte gardée au-dessus de 60 dB contre le float
 // (kGateInvisibleDb), les artefacts repassés en sommes float par la seule règle des 0,5 dB se reconstruisent
-inline constexpr std::uint32_t kArtifactVersion = 9;
+// ; 10 : ConvAttrs::quant_grid et l'opération FakeQuantInt8 (INT8 sous Vulkan)
+inline constexpr std::uint32_t kArtifactVersion = 10;
 
 struct ShaderHash {
   std::string shader;

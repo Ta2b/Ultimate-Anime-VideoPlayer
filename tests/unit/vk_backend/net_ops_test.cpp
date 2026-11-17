@@ -93,6 +93,10 @@ TEST_CASE("Réseau : opérations élément par élément et diffusion", "[vk_bac
   check_op({.op = "FakeQuantE4M3", .x = {1, 3, 7, 9}, .extra_inputs = {"s"}, .setup = [](ModelBuilder& m) {
               m.initializer(tensor_f32("s", {}, std::vector<float>{0.004F}));
             }});
+  // Paire Q/DQ INT8 fusionnée : arrondi entier à l'échelle posée, saturé à [-128, 127] × s.
+  check_op({.op = "FakeQuantInt8", .x = {1, 3, 7, 9}, .extra_inputs = {"s"}, .setup = [](ModelBuilder& m) {
+              m.initializer(tensor_f32("s", {}, std::vector<float>{0.004F}));
+            }});
   check_op({.op = "LeakyRelu", .x = {1, 3, 5, 5}, .attrs = {}});
   check_op({.op = "Clip", .x = {1, 3, 6, 6}, .extra_inputs = {"lo", "hi"}, .setup = [](ModelBuilder& m) {
               m.initializer(tensor_f32("lo", {}, std::vector<float>{-0.25F}));

@@ -16,6 +16,7 @@
 #include "core/utf8_path.h"
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/drba_fused_engine.h"
+#include "gpu/vulkan/backend/family.h"
 #include "gpu/vulkan/backend/host_tensor.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/backend/net_build.h"
@@ -303,7 +304,9 @@ BackendCaps VulkanBackend::capabilities() const {
           .driver_version = caps.driver_info,
           .needs_host_sync = false,
           .fp16 = profile_.target.f16_storage,
-          .int8 = false,
+          // Les matrices coopératives INT8 (s8 → s32) : les graphes Q/DQ INT8 (onnx_fp8.h, variante INT8 du
+          // SPAN), là où elles vont plus vite que le float16 (family.h, int8_graphs_allowed).
+          .int8 = profile_.target.matrix_i8 && int8_graphs_allowed(profile_.family),
           // Les matrices coopératives FP8 (RDNA 4, VK_EXT_shader_float8) : les graphes Q/DQ FP8 (onnx_fp8.h)
           // et le paquet « .span8 » (net_span8.h), dérivé par derive_span_fp8 (vulkan_span_derive.cpp).
           .fp8 = profile_.target.matrix_f8,
