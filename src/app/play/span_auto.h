@@ -17,6 +17,7 @@
 #include "app/play/precision.h"
 #include "app/play/settings_system.h"
 #include "app/play/span_derive.h"
+#include "core/gpu_device.h"
 
 namespace ajp::app::play {
 
@@ -32,6 +33,7 @@ inline constexpr bool kSpanFp8Here = true;
 struct SpanFp8Facts {
   std::string backend_name;             // le moteur en service (« tensorrt », « vulkan »…)
   std::string gpu_name;                 // « NVIDIA GeForce RTX 4050 Laptop GPU »
+  GpuVendor vendor = GpuVendor::Other;  // la carte du rendu : hors NVIDIA, TensorRT ne peut pas tourner
   bool tensorrt_present = false;        // le module TensorRT est installé (il peut ne pas être en service)
   bool capability = false;              // le moteur en service annonce BackendCaps::span_fp8_cutlass
   bool system_pending = !kSpanFp8Here;  // pas encore sur ce système (!kSpanFp8Here) : la phrase le dit

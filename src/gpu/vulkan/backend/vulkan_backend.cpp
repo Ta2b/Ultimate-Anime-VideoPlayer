@@ -5,6 +5,9 @@
 #include <filesystem>
 #include <format>
 #include <limits>
+#include <span>
+#include <string>
+#include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -113,6 +116,26 @@ std::expected<net::BuildRequest, Refusal> request_of(const ModelSpec& model, con
                            .input_shape = {shapes.opt.dims.begin(), shapes.opt.dims.end()},
                            .fp16 = model.precision == TensorType::F16,
                            .strict = strict};
+}
+
+// Les noms du profil GPU (stage_clock.h), ceux de TensorRT. Un moteur qui agrandit (sortie plus haute que
+// l'entrée) est le SPAN de sa source ; les autres interpolent.
+std::string_view engine_role(std::span<const Tensor> inputs, std::span<const Tensor> outputs) {
+  const bool upscales =
+      !inputs.empty() && !outputs.empty() && outputs[0].shape.dims[2] > inputs[0].shape.dims[2];
+  return upscales ? "rôle agrandissement" : "rôle interpolation";
+}
+
+std::string engine_stage(std::span<const Tensor> inputs) {
+  if (inputs.empty()) return "moteur";
+  const auto& d = inputs[0].shape.dims;
+  return std::format("moteur {}×{}×{}", d[1], d[2], d[3]);
+}
+
+std::string fused_stage(std::string_view model, std::span<const Tensor> inputs) {
+  if (inputs.empty()) return std::format("moteur {} fusionné", model);
+  const auto& d = inputs[0].shape.dims;
+  return std::format("moteur {} fusionné {}×{}", model, d[3], d[2]);
 }
 
 }  // namespace
@@ -481,15 +504,21 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> VulkanBackend::alloc_tenso
 std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<const Tensor> inputs,
                                                     std::span<Tensor> outputs) {
   if (runtime_) return enqueue_runtime(engine, inputs, outputs);
+  // Le profil GPU (stage_clock.h), aux noms de TensorRT : le moteur, et son rôle.
+  StageClock* clock = kernels_ ? kernels_->clock() : nullptr;
   if (auto* rife = dynamic_cast<RifeFusedEngine*>(&engine)) {
     if (!queue_) {
       rife->drop_hint();
       return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
     }
+    const StageClock::Scope role(clock, "rôle interpolation");
+    const StageClock::Scope timed(clock, fused_stage("RIFE", inputs));
     return rife->enqueue(*queue_, inputs, outputs);
   }
   if (auto* drba = dynamic_cast<DrbaFusedEngine*>(&engine)) {
     if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+    const StageClock::Scope role(clock, "rôle interpolation");
+    const StageClock::Scope timed(clock, fused_stage("DistilDRBA", inputs));
     return drba->enqueue(*queue_, inputs, outputs);
   }
   auto* vulkan = dynamic_cast<VulkanEngine*>(&engine);
@@ -528,6 +557,8 @@ std::expected<void, Refusal> VulkanBackend::enqueue(Engine& engine, std::span<co
   auto recording = net.recording(views.first(inputs.size()), views.subspan(inputs.size(), outputs.size()));
   if (!recording) return std::unexpected(recording.error());
   if (!queue_) return refuse_backend(RefusalCode::DeviceUnavailable, "file du backend absente");
+  const StageClock::Scope role(clock, engine_role(inputs, outputs));
+  const StageClock::Scope timed(clock, engine_stage(inputs));
   return queue_->submit(**recording);
 }
 

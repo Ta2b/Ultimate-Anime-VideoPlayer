@@ -36,6 +36,7 @@ ajp_add_unit_tests(vk_backend
     rife_fused_test.cpp
     runtime_queue_test.cpp
     slice_ops_test.cpp
+    stage_clock_test.cpp
     test_models.cpp
     vendor_runtime_test.cpp
   # core : le SHA-256 du vrai modèle des références (core/model_index.h).

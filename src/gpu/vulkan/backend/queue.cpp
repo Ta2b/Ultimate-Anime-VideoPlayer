@@ -88,7 +88,7 @@ void BackendQueue::wait(const TimelinePoint& point) {
 }
 
 Done BackendQueue::submit(Recording& recording, std::span<const TimelinePoint> extra_waits,
-                          std::span<const TimelinePoint> extra_signals) {
+                          std::span<const TimelinePoint> extra_signals, bool flush_signals) {
   LaneState& state = lanes_[current_];
   waits_.assign(state.pending.begin(), state.pending.end());
   if (state.value > 0) waits_.push_back(state.timeline.at(state.value));
@@ -121,7 +121,7 @@ Done BackendQueue::submit(Recording& recording, std::span<const TimelinePoint> e
   for (std::size_t i = 0; i < mark_count; ++i) keep_mark(current_, marks[i]);
   state.pending.clear();
   // Un sémaphore d'ailleurs (slot du ring, image décodée) est attendu hors du lot : il part.
-  return extra_signals.empty() ? Done{} : context_->flush();
+  return extra_signals.empty() || !flush_signals ? Done{} : context_->flush();
 }
 
 std::expected<TimelinePoint, Refusal> BackendQueue::joined() {

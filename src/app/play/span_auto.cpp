@@ -11,6 +11,13 @@ namespace ajp::app::play {
 
 std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   if (facts.capability) return {};
+  // Une carte AMD, Intel ou Apple : ni installer TensorRT ni le choisir n'y changerait rien.
+  if (facts.vendor != GpuVendor::Nvidia) {
+    return i18n::tr_format(
+        "Performance mode (FP8) needs TensorRT, which runs only on NVIDIA RTX cards: {} "
+        "plays SPAN in FP16",
+        facts.gpu_name.empty() ? std::string(i18n::tr("this card")) : facts.gpu_name);
+  }
   if (facts.backend_name != "tensorrt") {
     if (facts.tensorrt_present) {
       return i18n::tr_format(

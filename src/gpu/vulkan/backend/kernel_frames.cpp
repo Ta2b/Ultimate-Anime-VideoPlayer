@@ -373,7 +373,12 @@ std::expected<void, Refusal> VulkanKernelOps::submit_frames(Recording& recording
     signals_.push_back({.semaphore = to_semaphore(a.semaphore), .value = a.signal_value});
     if (a.state.queue_family != VK_QUEUE_FAMILY_IGNORED) after.queue_family = context_.queue_family();
   }
-  auto ok = queue_.submit(recording, waits_, signals_);
+  std::expected<void, Refusal> ok;
+  {  // l'estampille de fin part dans le même lot que l'ingestion (VulkanKernelOps::submit)
+    const StageClock::Scope timed(clock_.get(), "ingestion");
+    ok = queue_.submit(recording, waits_, signals_, clock_ == nullptr);
+  }
+  if (ok && clock_ != nullptr && !signals_.empty()) ok = queue_.flush();
   guard.release_all(after, ok.has_value());
   if (!ok) return ok;
   const std::uint64_t value = queue_.ticket();

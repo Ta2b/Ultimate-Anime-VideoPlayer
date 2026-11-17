@@ -109,7 +109,7 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
       TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
   const std::span<const TimelinePoint> waits =
       sync.wait_value > 0 ? std::span<const TimelinePoint>(wait) : std::span<const TimelinePoint>();
-  if (auto ok = submit(**rec, waits, signal); !ok) return ok;
+  if (auto ok = submit("écriture du ring", **rec, waits, signal); !ok) return ok;
   for (RingView& v : ring_views_) {
     if (v.view == *view) v.last_write = queue_.ticket();
   }
@@ -162,7 +162,7 @@ std::expected<void, Refusal> VulkanKernelOps::read_ring(const RingSlotDesc& slot
   const std::array<TimelinePoint, 1> wait{TimelinePoint{.semaphore = semaphore, .value = sync.wait_value}};
   const std::array<TimelinePoint, 1> signal{
       TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
-  if (auto ok = submit(**rec, wait, signal); !ok) return ok;
+  if (auto ok = submit("relecture du ring", **rec, wait, signal); !ok) return ok;
   for (RingView& v : ring_views_) {
     if (v.view == *view) v.last_write = queue_.ticket();
   }

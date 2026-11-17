@@ -152,6 +152,7 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const SpanFp8Facts fp8_facts{
       .backend_name = tensorrt_backend_present(h.catalog, h.paths) ? "tensorrt" : "vulkan",
       .gpu_name = gpu_facts(h.screen).name,
+      .vendor = gpu_facts(h.screen).vendor,
       .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
       .capability = kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
                     span_fp8_presumed(gpu_facts(h.screen).name) &&

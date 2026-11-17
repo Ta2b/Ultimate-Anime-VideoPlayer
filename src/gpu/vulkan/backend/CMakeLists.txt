@@ -37,6 +37,7 @@ ajp_add_module(vk_backend
     queue.cpp
     reduce_weights.cpp
     rife_fused_engine.cpp
+    stage_clock.cpp
     vulkan_backend.cpp
     vulkan_backend_runtime.cpp
     vulkan_drba_fused.cpp

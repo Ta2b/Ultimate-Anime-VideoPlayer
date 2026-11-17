@@ -21,6 +21,7 @@
 #include <optional>
 #include <span>
 #include <stop_token>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -32,6 +33,7 @@
 #include "gpu/kernel_ops.h"
 #include "gpu/tensor.h"
 #include "gpu/vulkan/backend/queue.h"
+#include "gpu/vulkan/backend/stage_clock.h"
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/kernel_runner.h"
@@ -137,6 +139,10 @@ class VulkanKernelOps final : public KernelOps {
   std::expected<void, Refusal> read_ring(const RingSlotDesc& slot, const RingWrite& sync,
                                          const Tensor& rgb) override;
   std::expected<void, Refusal> health() override { return queue_.health(); }
+  // Le profil GPU de la lecture, étape par étape (stage_clock.h) ; vide sans horodatage sur la file.
+  std::vector<GpuStageSummary> gpu_profile() override;
+  // L'horloge des étapes, pour les moteurs que le backend soumet ; nullptr sans horodatage.
+  StageClock* clock() { return clock_.get(); }
   // A45-14 : la mémoire de la carte pour les statistiques, lue du budget du pilote.
   std::optional<DeviceMemory> device_memory() override;
 
@@ -237,7 +243,9 @@ class VulkanKernelOps final : public KernelOps {
   void forget_destroyed();
   // Détruit une vue après l'avoir notée au journal des destructions (C45-03).
   void destroy_view(VkImageView view);
-  std::expected<void, Refusal> submit(Recording& recording, std::span<const TimelinePoint> waits = {},
+  // stage : le nom de l'étape au profil GPU (gpu_profile), le même que sous TensorRT quand il y en a un.
+  std::expected<void, Refusal> submit(std::string_view stage, Recording& recording,
+                                      std::span<const TimelinePoint> waits = {},
                                       std::span<const TimelinePoint> signals = {});
   void reclaim();
   // L'image prête à lire : en place si direct et si son lot le permet (échantillonnable, format
@@ -283,6 +291,7 @@ class VulkanKernelOps final : public KernelOps {
   PipelineCache& pipelines_;
   BackendQueue& queue_;
   KernelRunner runner_;
+  std::unique_ptr<StageClock> clock_;  // nullptr : file sans horodatage
   std::vector<Cached> recordings_;
   RetiredRecordings retired_;  // sortis du cache, libérés à leur arrêt (après recordings_)
   std::uint64_t uses_ = 0;
