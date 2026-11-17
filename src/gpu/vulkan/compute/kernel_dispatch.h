@@ -149,6 +149,17 @@ struct FlowMaxPush {
   std::uint32_t area_height;
 };
 
+struct TensorPeakPush {
+  std::uint32_t plane_width;
+  std::uint32_t plane_height;
+  std::uint32_t planes;
+  std::uint32_t area_x;
+  std::uint32_t area_y;
+  std::uint32_t area_width;
+  std::uint32_t area_height;
+  std::uint32_t slot;
+};
+
 struct FrameStatsPush {
   std::uint32_t width;
   std::uint32_t height;

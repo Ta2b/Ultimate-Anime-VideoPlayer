@@ -114,7 +114,7 @@ std::string refusal_note(const toml::table& receipt, const std::string& where, c
                          const std::string& scores, bool scores_pass, bool v2) {
   const double speedup = receipt["speedup"].value_or(0.0);
   if (v2 && scores_pass && speedup > 0.0 && speedup < gpu::span_fp8::kMinSpeedup)
-    return i18n::tr_format("{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)", where,
+    return i18n::tr_format("{}: no faster than SPAN FP16 ({:.2f}× as fast, {:.2f}× is required)", where,
                            speedup, gpu::span_fp8::kMinSpeedup);
   if (scores_pass && v2)
     return i18n::tr_format("{}: rejected at the 99.9th percentile ({:.1f}/255, dark {:.1f}/255; {} passes)",
@@ -317,9 +317,8 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   if (!v2 && kind != SpanVariantKind::Fp32 && receipt["speedup"].value_or(0.0) < gpu::span_fp8::kMinSpeedup) {
     const double speedup = receipt["speedup"].value_or(0.0);
     if (speedup > 0.0)
-      return refused(
-          i18n::tr_format("{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)", where,
-                          speedup, gpu::span_fp8::kMinSpeedup));
+      return refused(i18n::tr_format("{}: no faster than SPAN FP16 ({:.2f}× as fast, {:.2f}× is required)",
+                                     where, speedup, gpu::span_fp8::kMinSpeedup));
     return refused(
         i18n::tr_format("{}: gain over FP16 not measured, prepare it again with the speed check", where));
   }

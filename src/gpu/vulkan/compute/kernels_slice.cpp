@@ -149,4 +149,31 @@ Done KernelRunner::deband(Recorder& recorder, const TensorView& rgb) {
                      std::as_bytes(std::span(push)), groups);
 }
 
+Done KernelRunner::tensor_peak(Recorder& recorder, const TensorView& t, const kernels::Window& area,
+                               const BufferView& result, std::uint32_t slot) {
+  if (auto ok = check_tensor(t, t.planes, context_->caps().enabled, "maximum d'un tenseur"); !ok) return ok;
+  const std::int64_t right = std::int64_t{area.x} + area.width;
+  const std::int64_t bottom = std::int64_t{area.y} + area.height;
+  if (area.x < 0 || area.y < 0 || area.width < 1 || area.height < 1 || right > t.width || bottom > t.height) {
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("maximum d'un tenseur : fenêtre {}x{} en ({}, {}) hors du tenseur {}x{}",
+                              area.width, area.height, area.x, area.y, t.width, t.height));
+  }
+  if (result.size < (VkDeviceSize{slot} + 1) * sizeof(std::uint32_t))
+    return refuse(RefusalCode::InputMismatch,
+                  std::format("maximum d'un tenseur : mot {} hors du résultat", slot));
+  const detail::TensorPeakPush push{t.width,
+                                    t.height,
+                                    t.planes,
+                                    static_cast<std::uint32_t>(area.x),
+                                    static_cast<std::uint32_t>(area.y),
+                                    static_cast<std::uint32_t>(area.width),
+                                    static_cast<std::uint32_t>(area.height),
+                                    slot};
+  const std::array buffers{t.buffer, result};
+  return detail::run(*pipelines_, recorder, "tensor_peak", t.precision, {}, buffers, {}, bytes_of(push),
+                     {groups_for(static_cast<std::uint32_t>(area.width)),
+                      groups_for(static_cast<std::uint32_t>(area.height)), 1});
+}
+
 }  // namespace ajp::gpu::vk

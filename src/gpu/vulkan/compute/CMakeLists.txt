@@ -59,6 +59,7 @@ set(tensor_shaders
   "${glsl}/rife_fused_finish.comp"
   "${glsl}/rife_fused_glue.comp"
   "${glsl}/rife_frames.comp"
+  "${glsl}/tensor_peak.comp"
   "${glsl}/transfer.comp"
   "${glsl}/warp_blend.comp"
   "${glsl}/warp_blend_ring.comp")

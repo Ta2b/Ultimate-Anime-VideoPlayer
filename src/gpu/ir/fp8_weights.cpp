@@ -11,11 +11,15 @@ namespace {
 
 // Les valeurs de [first, last) tombent-elles sur la grille E4M3 de cette échelle ? À un arrondi
 // float16 près (2^-10 de la valeur : un modèle float16 range q × échelle en demi-flottants) ; une
-// mauvaise échelle laisse des écarts d'un demi-pas de la grille, de l'ordre de 2^-4 de la valeur.
+// mauvaise échelle laisse des écarts d'un demi-pas de la grille, de l'ordre de 2^-4 de la valeur. Sous 2^-14,
+// un float16 est dénormal, au pas absolu de 2^-24 : son arrondi en écarte jusqu'à 2^-25 (un canal de petits
+// poids, sous 2^-4, du paquet du SPAN FP8, gpu/span_fp8/package_model.h).
 bool on_grid(const std::vector<float>& values, std::size_t first, std::size_t last, float scale, float amax) {
+  constexpr float kHalfSubnormalError = 0x1p-25F;
   for (std::size_t k = first; k < last; ++k) {
     const float rebuilt = round_to_e4m3(values[k] / scale) * scale;
-    const float tolerance = std::max(std::ldexp(std::fabs(values[k]), -10), std::ldexp(amax, -21));
+    const float tolerance =
+        std::max({std::ldexp(std::fabs(values[k]), -10), std::ldexp(amax, -21), kHalfSubnormalError});
     if (!(std::fabs(rebuilt - values[k]) <= tolerance)) return false;
   }
   return true;

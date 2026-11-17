@@ -32,6 +32,14 @@ Pour en rebrancher un : l'historique git garde `src/gpu/migraphx`, `src/gpu/open
 
 DirectML n'a jamais eu de backend.
 
+## Ce que Vulkan offre face à TensorRT (novembre 2026)
+
+Le mode Performance de SPAN (FP8) existe aussi sous Vulkan, sur une carte à matrices coopératives FP8 (RDNA 4,
+RX 9000) : même paquet, même reçu, même porte que sous TensorRT (`docs/span-fp8-cutlass.md`, « Sous
+Vulkan »). Les graphes Q/DQ FP8 de RIFE et DistilDRBA (cran Performance) y passent par les mêmes matrices.
+**Écrit sans carte AMD ni Intel pour l'essayer** : les tests tournent sous lavapipe ; les retours
+d'utilisateurs diront ce qui manque.
+
 ## Vulkan : la précision des noyaux
 
 Le moteur Vulkan range ses tenseurs en float16. Chaque couche a plusieurs noyaux candidats, que l'autotuner

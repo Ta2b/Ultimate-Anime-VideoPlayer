@@ -1,0 +1,50 @@
+#version 450
+// Le plus grand |valeur| d'une fenêtre d'un tenseur NCHW, tous ses plans : la calibration du SPAN FP8 sous
+// Vulkan (gpu/vulkan/backend/vulkan_span_derive.cpp) en tire les échelles E4M3, comme la référence FP16 des
+// noyaux CUDA (span_fp8_ref.cu). Un maximum par groupe en mémoire partagée, puis atomicMax dans
+// result[slot] : des float positifs se rangent comme leurs motifs de bits. Une valeur non finie (NaN, infini)
+// y met le motif de l'infini, que l'hôte refuse (span_fp8::scales_from_peaks). result n'est pas remis à zéro :
+// les fenêtres et les images d'une calibration s'y cumulent.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer Src { AJP_TENSOR v[]; } src;
+layout(std430, binding = 1) buffer Result { uint v[]; } result;
+
+layout(push_constant) uniform Push {
+  uint plane_width;
+  uint plane_height;
+  uint planes;
+  uint area_x;
+  uint area_y;
+  uint area_width;
+  uint area_height;
+  uint slot;
+} pc;
+
+const uint kInfinity = 0x7f800000u;
+
+shared uint group_peak;
+
+void main() {
+  if (gl_LocalInvocationIndex == 0u) group_peak = 0u;
+  barrier();
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x < pc.area_width && y < pc.area_height) {
+    uint plane = pc.plane_width * pc.plane_height;
+    uint i = (pc.area_y + y) * pc.plane_width + pc.area_x + x;
+    uint peak = 0u;
+    for (uint c = 0u; c < pc.planes; ++c) {
+      // Le motif de |v| : le bit de signe retiré ; exposant plein (infini, NaN) ramené à l'infini.
+      uint bits = floatBitsToUint(float(src.v[c * plane + i])) & 0x7fffffffu;
+      if ((bits & kInfinity) == kInfinity) bits = kInfinity;
+      peak = max(peak, bits);
+    }
+    atomicMax(group_peak, peak);
+  }
+  barrier();
+  if (gl_LocalInvocationIndex == 0u && group_peak != 0u) atomicMax(result.v[pc.slot], group_peak);
+}

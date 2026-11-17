@@ -11,11 +11,12 @@ namespace ajp::app::play {
 
 std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   if (facts.capability) return {};
-  // Une carte AMD, Intel ou Apple : ni installer TensorRT ni le choisir n'y changerait rien.
+  // Une carte AMD, Intel ou Apple : le moteur Vulkan le calcule là où la carte a des matrices FP8 (RDNA 4 et
+  // un pilote qui annonce VK_EXT_shader_float8, gpu/vulkan/backend/net_span8.h) ; TensorRT n'y change rien.
   if (facts.vendor != GpuVendor::Nvidia) {
     return i18n::tr_format(
-        "Performance mode (FP8) needs TensorRT, which runs only on NVIDIA RTX cards: {} "
-        "plays SPAN in FP16",
+        "Performance mode (FP8) needs FP8 matrix units (an AMD Radeon RX 9000 with a recent driver, or an "
+        "NVIDIA RTX 40): {} plays SPAN in FP16",
         facts.gpu_name.empty() ? std::string(i18n::tr("this card")) : facts.gpu_name);
   }
   if (facts.backend_name != "tensorrt") {
@@ -33,6 +34,12 @@ std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   return i18n::tr_format(
       "{} is not an NVIDIA RTX 40 (Ada) card, or the engine was built without these kernels",
       facts.gpu_name.empty() ? std::string(i18n::tr("this card")) : facts.gpu_name);
+}
+
+bool rdna4_presumed(std::string_view gpu_name) {
+  if (gpu_name.contains("GFX12")) return true;
+  return gpu_name.contains("Radeon") &&
+         (gpu_name.contains("RX 90") || gpu_name.contains("R9700") || gpu_name.contains("R9600"));
 }
 
 SpanJob::~SpanJob() {

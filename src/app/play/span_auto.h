@@ -39,6 +39,10 @@ struct SpanFp8Facts {
   bool system_pending = !kSpanFp8Here;  // pas encore sur ce système (!kSpanFp8Here) : la phrase le dit
 };
 
+// Une RDNA 4 d'après son nom (« AMD Radeon RX 9070 XT », « … (RADV GFX1201) », « Radeon AI PRO R9700 ») :
+// des matrices coopératives FP8, que le moteur Vulkan confirme à l'ouverture d'une vidéo (Target::matrix_f8).
+bool rdna4_presumed(std::string_view gpu_name);
+
 // Vide si le mode Performance est possible ; sinon une phrase qui dit pourquoi et ce qu'il faut faire. Une
 // RTX 40 de portable (Ada, calcul 8.9) est une carte prise : seul le moteur peut manquer.
 std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts);

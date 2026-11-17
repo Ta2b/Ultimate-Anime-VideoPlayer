@@ -15,7 +15,7 @@
 //
 // Le chemin FP16 par défaut ne change pas tant que le reçu n'existe pas ou est refusé (span_int8.h) ; en cas
 // d'échec technique, rien n'est écrit. Un échec des garde-fous écrit le reçu « passed = false » (le paquet
-// d'avant ne correspond plus à lui) et laisse la lecture sur TensorRT FP16.
+// d'avant ne correspond plus à lui) et laisse la lecture en FP16.
 #pragma once
 
 #include <atomic>

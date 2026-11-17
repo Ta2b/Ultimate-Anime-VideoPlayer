@@ -33,6 +33,7 @@ ajp_add_module(vk_backend
     net_profile.cpp
     net_query.cpp
     net_runtime.cpp
+    net_span8.cpp
     net_weights.cpp
     queue.cpp
     reduce_weights.cpp
@@ -42,8 +43,10 @@ ajp_add_module(vk_backend
     vulkan_backend_runtime.cpp
     vulkan_drba_fused.cpp
     vulkan_rife_fused.cpp
+    vulkan_span8.cpp
+    vulkan_span_derive.cpp
   DEPS ajp::vk_compute ajp::gpu ajp::gpu_ir ajp::core_types
-  PRIVATE_DEPS ajp::core ajp::kernels ajp::prepare ajp::dep::spdlog)
+  PRIVATE_DEPS ajp::core ajp::kernels ajp::prepare ajp::gpu_span_fp8_onnx ajp::dep::spdlog)
 
 set(shaders "${PROJECT_SOURCE_DIR}/src/gpu/vulkan/shaders")
 # Une variante « _f16 » (tenseurs float16 permis) de chaque shader de réseau.
@@ -102,7 +105,7 @@ ajp_add_spirv(ajp_vk_backend
 # La bibliothèque chargée à l'exécution lie ces bibliothèques statiques : code indépendant de
 # la position.
 set_target_properties(ajp_vk_backend ajp_vk_compute ajp_gpu_ir ajp_kernels ajp_core_log ajp_core_os ajp_core
-  PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  ajp_gpu_span_fp8 ajp_gpu_span_fp8_onnx PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # La bibliothèque chargée à l'exécution : ajp_backend_vulkan.so (ajp_backend_<nom>, sans
 # préfixe lib), qui n'exporte que les points d'entrée de gpu/backend.h. Les bibliothèques

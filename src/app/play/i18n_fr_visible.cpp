@@ -37,8 +37,8 @@ constexpr std::array kVisibleTexts{
     Entry{"GB", "Go"},
     Entry{"Not validated at {} yet: a validation pass (about ten seconds) is offered.",
           "Pas encore validé en {} : une validation seule (une dizaine de secondes) est proposée."},
-    Entry{"Performance mode rejected at {}: {}. Playback stays on TensorRT FP16 at this size.",
-          "Mode Performance refusé en {} : {}. La lecture reste sur TensorRT FP16 à cette taille."},
+    Entry{"Performance mode rejected at {}: {}. Playback stays in FP16 at this size.",
+          "Mode Performance refusé en {} : {}. La lecture reste en FP16 à cette taille."},
     Entry{"Performance mode validated at {}: {}.", "Mode Performance validé en {} : {}."},
     Entry{"\"{}\" could not be opened: {}", "« {} » ne s'ouvre pas : {}"},
     Entry{", average {:.0f}", ", moyenne {:.0f}"},
@@ -55,8 +55,8 @@ constexpr std::array kVisibleTexts{
     Entry{"No SPAN model in use: nothing to prepare.", "Aucun modèle SPAN en service : rien à préparer."},
     Entry{"Performance mode (FP8) is for the AnimeJaNai SPAN models: ArtCNN stays in FP16.",
           "Le mode Performance (FP8) est réservé aux modèles SPAN d'AnimeJaNai : ArtCNN reste en FP16."},
-    Entry{"Not prepared yet: playback stays on TensorRT FP16 at the Performance level.",
-          "Pas encore préparé : la lecture reste sur TensorRT FP16 au cran Performance."},
+    Entry{"Not prepared yet: playback stays in FP16 at the Performance level.",
+          "Pas encore préparé : la lecture reste en FP16 au cran Performance."},
     Entry{"Performance mode (FP8) is not available: ", "Le mode Performance (FP8) n'est pas disponible : "},
     Entry{"Performance mode could not be prepared on this machine; playback stays in FP16.",
           "Le mode Performance n'a pas pu être préparé sur cette machine ; la lecture reste en FP16."},
@@ -64,10 +64,8 @@ constexpr std::array kVisibleTexts{
           "is used the next time a video opens.",
           "Mode Performance prêt : {} ({} images de calibration, {} de validation en {}, noyaux {} ms). Il "
           "sert à la prochaine ouverture d'une vidéo."},
-    Entry{"Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on "
-          "TensorRT FP16.",
-          "Mode Performance refusé : {} ; il faut {:.0f} dB, {:.0f} dB et {}. La lecture reste sur TensorRT "
-          "FP16."},
+    Entry{"Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays in FP16.",
+          "Mode Performance refusé : {} ; il faut {:.0f} dB, {:.0f} dB et {}. La lecture reste en FP16."},
     Entry{"Performance mode unavailable, playing in FP16.",
           "Mode Performance indisponible, lecture en FP16."},
     Entry{"Preparing engine {}", "Préparation du moteur {}"},
@@ -101,8 +99,8 @@ constexpr std::array kVisibleTexts{
     Entry{"floor rearmed", "réarmement au plancher"},
     Entry{"hardware slowdown", "ralentissement matériel"},
     Entry{"heat", "chaleur"},
-    Entry{"it needs an RTX 40 (Ada) with the TensorRT engine",
-          "il demande une RTX 40 (Ada) avec le moteur TensorRT"},
+    Entry{"it needs an NVIDIA RTX 40 with the TensorRT engine, or an AMD Radeon RX 9000",
+          "il demande une NVIDIA RTX 40 avec le moteur TensorRT, ou une AMD Radeon RX 9000"},
     Entry{"late pairs", "paires en retard"},
     Entry{"lighter scene", "scène allégée"},
     Entry{"low clocks under load ({} of {} MHz): \"maximum performance\" mode?",
@@ -177,32 +175,31 @@ constexpr std::array kVisibleTexts{
           "{} : refusé au 99,9e centile ({:.1f}/255, sombre {:.1f}/255 ; {} passes)"},
     Entry{"{}: derived on {}, this GPU is {}: prepare it again",
           "{} : dérivé sur {}, ce GPU est {} : à préparer de nouveau"},
-    Entry{"{}: no faster than TensorRT FP16 ({:.2f}× as fast, {:.2f}× is required)",
-          "{} : pas plus rapide que TensorRT FP16 ({:.2f} fois plus vite, il faut {:.2f} ×)"},
+    Entry{"{}: no faster than SPAN FP16 ({:.2f}× as fast, {:.2f}× is required)",
+          "{} : pas plus rapide que SPAN FP16 ({:.2f} fois plus vite, il faut {:.2f} ×)"},
     Entry{"{}: gain over FP16 not measured, prepare it again with the speed check",
           "{} : gain sur le FP16 non mesuré, à préparer de nouveau avec le contrôle de vitesse"},
     Entry{
         "{}: prepared by an older player under an older quality and speed gate: prepare it again",
         "{} : préparé par un lecteur plus ancien, sous une porte de qualité et de vitesse plus ancienne : à "
         "préparer de nouveau"},
-    Entry{
-        "Performance mode rejected: FP8 kernels {} ms against {} ms for TensorRT FP16 ({}× as fast, at least "
-        "{}× is required). Playback stays on TensorRT FP16.",
-        "Mode Performance refusé : noyaux FP8 {} ms contre {} ms pour TensorRT FP16 ({} fois plus vite, il "
-        "faut au moins {} ×). La lecture reste sur TensorRT FP16."},
-    Entry{"TensorRT FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the quality given above.",
-          "TensorRT FP16 prend ici {} ms : les noyaux FP8 vont {} fois plus vite, pour la qualité dite plus "
+    Entry{"Performance mode rejected: FP8 kernels {} ms against {} ms for SPAN FP16 ({}× as fast, at least "
+          "{}× is required). Playback stays in FP16.",
+          "Mode Performance refusé : noyaux FP8 {} ms contre {} ms pour SPAN FP16 ({} fois plus vite, il "
+          "faut au moins {} ×). La lecture reste en FP16."},
+    Entry{"SPAN FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the quality given above.",
+          "SPAN FP16 prend ici {} ms : les noyaux FP8 vont {} fois plus vite, pour la qualité dite plus "
           "haut."},
-    Entry{"TensorRT FP16 engine", "moteur TensorRT FP16"},
+    Entry{"SPAN FP16 engine", "moteur SPAN FP16"},
     Entry{"The f16 accumulator variant is kept: it costs {} dB of mean PSNR and saves {} % of the time.",
           "La variante à accumulateur f16 est gardée : elle coûte {} dB de PSNR moyen et fait gagner {} % du "
           "temps."},
     Entry{"Performance mode rejected: {} FP8 tensors would clip on the validation frames (peak at {}× their "
-          "range): the calibration frames do not cover this video. Playback stays on TensorRT FP16.",
+          "range): the calibration frames do not cover this video. Playback stays in FP16.",
           "Mode Performance refusé : {} tenseurs FP8 seraient écrêtés sur les images de validation (maximum "
           "à {} "
-          "fois leur plage) : les images de calibration ne couvrent pas cette vidéo. La lecture reste sur "
-          "TensorRT FP16."},
+          "fois leur plage) : les images de calibration ne couvrent pas cette vidéo. La lecture reste en "
+          "FP16."},
     Entry{"{}: kernels version {}, this engine has {}: prepare it again",
           "{} : noyaux en version {}, ce moteur a la {} : à préparer de nouveau"},
     Entry{"{}: the engine package of this version is out of date, Vulkan instead",
