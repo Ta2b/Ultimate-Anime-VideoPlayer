@@ -265,7 +265,7 @@ struct PlaceboScreen::Impl {
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
   std::expected<void, Refusal> submit(const pl_vulkan_present* present);  // placebo_screen.cpp
   std::expected<void, Refusal> present_frame(std::int64_t target_us);     // feedback, puis submit
-  void swap_buffers();                                                    // pl_swapchain_swap_buffers gardé
+  void swap_buffers() const;                                              // pl_swapchain_swap_buffers gardé
   // A10-08 : l'image de la swapchain acquise par start_frame et pas encore soumise. Une sortie de show sur
   // une erreur (texture, overlays, rendu) la laissait acquise pour toujours ; au tour suivant elle est
   // soumise avant d'en acquérir une autre, sans quoi la swapchain finit sans image libre ; effacée en noir
