@@ -271,7 +271,8 @@ std::expected<Opened, std::string> attempt(const AVCodec& codec, const EncoderCa
 std::expected<VideoEncoder, Refusal> VideoEncoder::open(const EncoderSetup& setup) {
   const auto log = log_channel("export");
   std::vector<std::string> tried;
-  for (const EncoderCandidate& candidate : encoder_candidates(setup.codec, setup.quality, setup.vendor)) {
+  for (const EncoderCandidate& candidate :
+       encoder_candidates(setup.codec, setup.quality, setup.vendor, setup.vulkan_device != nullptr)) {
     const AVCodec* codec = avcodec_find_encoder_by_name(candidate.name.c_str());
     if (codec == nullptr) {
       tried.push_back(std::format("{} absent", candidate.name));

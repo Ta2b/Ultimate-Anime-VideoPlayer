@@ -156,6 +156,8 @@ directement dans une image du pool de l'encodeur (`KernelOps::write_yuv`,
 tampons Vulkan exportés vers CUDA (`media::CudaDriver::import_memory`), l'encodeur
 Vulkan Video reçoit ses propres images rendues dans leurs plans
 (`placebo_export_vulkan.cpp`), et tout autre encodeur lit ou charge des tampons hôte.
+C'est pourquoi Vulkan Video passe en tête sur une AMD, et sur une Intel quand l'appareil du
+rendu lui est prêté, avant AMF et Quick Sync (`export/encoder_choice.cpp`).
 
 ### Backends (`gpu/backend.h`, ABI 29)
 

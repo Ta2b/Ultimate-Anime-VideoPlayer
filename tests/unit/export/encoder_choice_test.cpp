@@ -47,6 +47,23 @@ TEST_CASE("Encodeur : celui du GPU du rendu d'abord", "[export]") {
   CHECK(names(encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Amd))[1] == "hevc_amf");
 }
 
+TEST_CASE("Encodeur : sur une Intel, Vulkan Video avant Quick Sync sur l'appareil du rendu", "[export]") {
+  const std::vector<std::string> shared =
+      names(encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Intel, true));
+  REQUIRE(shared.size() >= 2);
+  CHECK(shared[0] == "hevc_vulkan");
+  CHECK(shared[1] == "hevc_qsv");
+  // Sans l'appareil du rendu, Vulkan Video relirait chaque image comme Quick Sync : Quick Sync d'abord.
+  CHECK(names(encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Intel, false)).front() == "hevc_qsv");
+  // Les autres constructeurs ne changent pas d'ordre.
+  for (const GpuVendor vendor : {GpuVendor::Nvidia, GpuVendor::Amd, GpuVendor::Apple, GpuVendor::Other}) {
+    CHECK(names(encoder_candidates(Codec::Hevc, Quality::High, vendor, true)) ==
+          names(encoder_candidates(Codec::Hevc, Quality::High, vendor, false)));
+  }
+  // L'AV1 n'a pas de Quick Sync : Vulkan Video d'abord aussi.
+  CHECK(names(encoder_candidates(Codec::Av1, Quality::High, GpuVendor::Intel, true)).front() == "av1_vulkan");
+}
+
 TEST_CASE("Encodeur : NVENC lit la mémoire CUDA, VA-API et Vulkan Video chargent leurs surfaces",
           "[export]") {
   for (const EncoderCandidate& c : encoder_candidates(Codec::Hevc, Quality::High, GpuVendor::Amd)) {

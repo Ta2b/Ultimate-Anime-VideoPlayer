@@ -139,7 +139,7 @@ EncoderCandidate vulkan(Codec codec, Quality quality) {
 }
 
 // Les familles dans l'ordre d'essai pour un GPU : la sienne d'abord, puis celles de tout GPU.
-std::vector<Family> order_for(GpuVendor vendor) {
+std::vector<Family> order_for(GpuVendor vendor, bool render_device) {
   using enum Family;
   switch (vendor) {
     case GpuVendor::Nvidia:
@@ -149,7 +149,11 @@ std::vector<Family> order_for(GpuVendor vendor) {
     // image. Un pilote sans encodage Vulkan le refuse à l'ouverture : AMF prend la suite.
     case GpuVendor::Amd:
       return {Vulkan, Amf, Vaapi, MediaFoundation, Nvenc, Qsv, VideoToolbox};
+    // Intel : Vulkan Video d'abord quand il encode sur l'appareil du rendu, sans relecture 4K par image comme
+    // sur AMD ; sinon Quick Sync, dont la qualité constante (ICQ) est la référence d'Intel. Un pilote sans
+    // encodage Vulkan (ou sans le 10 bits) le refuse à l'ouverture : Quick Sync prend la suite.
     case GpuVendor::Intel:
+      if (render_device) return {Vulkan, Qsv, Vaapi, MediaFoundation, Nvenc, Amf, VideoToolbox};
       return {Qsv, Vaapi, MediaFoundation, Vulkan, Nvenc, Amf, VideoToolbox};
     case GpuVendor::Apple:
       return {VideoToolbox, Vulkan};
@@ -177,7 +181,8 @@ GpuVendor vendor_of(std::uint32_t pci_vendor) {
   }
 }
 
-std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, GpuVendor vendor) {
+std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, GpuVendor vendor,
+                                                 bool render_device) {
   if (codec == Codec::Lossless) {
     // FFV1 version 3 : découpé en tranches encodées en parallèle, chacune avec sa somme de contrôle.
     EncoderCandidate ffv1{.name = "ffv1", .label = "FFV1"};
@@ -187,7 +192,7 @@ std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, G
     return {std::move(ffv1)};
   }
   std::vector<EncoderCandidate> out;
-  for (const Family family : order_for(vendor)) {
+  for (const Family family : order_for(vendor, render_device)) {
     switch (family) {
       case Family::Nvenc:
         out.push_back(nvenc(codec, quality));
