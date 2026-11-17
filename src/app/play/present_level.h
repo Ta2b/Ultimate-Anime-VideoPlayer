@@ -82,15 +82,6 @@ constexpr bool wants_wayland(PresentWanted wanted) {
   return wanted != PresentWanted::Open;
 }
 
-// L'écran de la fenêtre branché sur une autre carte que celle du rendu (portable hybride, Optimus sans MUX :
-// l'image de la RTX est recopiée vers l'iGPU) : aucun retour de présentation. Sous Windows, le pilote NVIDIA
-// d'une RTX 4070 Laptop y figeait le thread de la fenêtre dès l'accueil, « Ne répond pas » (le même portable
-// répond avec --no-present). screen_on_render : faux seulement quand l'écart est établi (display_gpu.h).
-constexpr PresentCaps present_caps_for_screen(const PresentCaps& caps, bool screen_on_render) {
-  if (screen_on_render) return caps;
-  return PresentCaps{.wayland_presentation = caps.wayland_presentation};
-}
-
 // Le niveau retenu : jamais au-dessus de ce qui est demandé ni de ce qui est offert. Open reste Open. Un
 // niveau qui date l'affichage passe devant celui qui ne fait que sonder (A10-02 : sans date, pas de grille
 // des vblanks). À --present=wait, le défaut : wp_presentation d'abord (CachyOS), sinon present timing relu

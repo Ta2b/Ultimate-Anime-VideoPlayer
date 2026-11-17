@@ -76,3 +76,12 @@ Ce qui fonde les défauts, tel que le code le note :
 Les chiffres de 6.11 (σ visé − affiché, réveils de main, p99 de l'attente, σ de `lag_us`) n'ont pas été
 consignés. Ils restent à relever sur le PC de référence, en A/B contre `--present=open --no-ring-watcher
 --no-precise-wait --no-audio-pll --no-vsync-index`, et à reporter ici avant la 1.0.
+
+## Garde de présentation (novembre 2026)
+Sur une RTX 4070 Laptop (pilote NVIDIA 621.01, Windows), le niveau par défaut figeait le thread de la fenêtre
+dès l'accueil (« Ne répond pas », rien au journal ; `--debug --no-present` répond), avec l'écran branché sur
+la RTX. Un garde (`src/app/play/present_watch.h`) surveille l'acquisition, la présentation et
+`swap_buffers` quand un retour de présentation est actif : un appel qui ne revient pas en 4 s se dit au
+journal (l'étape figée), `present-stall.txt` (à côté de `shaders.cache`) garde la carte et le pilote, une boîte
+prévient et le lecteur sort. Le lancement suivant présente comme `--present=open` sur cette carte et ce pilote ;
+un autre pilote retente le retour.

@@ -83,6 +83,10 @@ constexpr std::array kMessages{
           "d'être construits."},
     Entry{"Upscaling, interpolation and HDR for anime: adjust the settings here before playback.",
           "Upscale, interpolation et HDR pour les animes : réglez les paramètres ici avant la lecture."},
+    Entry{"ajp stopped responding inside the graphics driver and will close. Start it again: it will present "
+          "frames without presentation feedback on this driver.",
+          "ajp ne répond plus dans le pilote graphique et va se fermer. Relancez-le : il présentera les "
+          "images sans retour de présentation sur ce pilote."},
     Entry{"another engine", "un autre moteur"},
     Entry{"bench.toml: ", "bench.toml : "},
     Entry{"cannot write the downloaded file", "impossible d'écrire le fichier téléchargé"},
