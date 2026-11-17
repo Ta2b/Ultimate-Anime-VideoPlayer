@@ -20,10 +20,10 @@ layout(local_size_x = 16, local_size_y = 16) in;
 // 1 : les images a et b lues en Catmull-Rom (spec/warp.h : RifeWarp), le flot et le masque restant bilinéaires.
 layout(constant_id = 0) const uint CUBIC = 0;
 
-layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
-layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
-layout(std430, binding = 2) readonly buffer Flow { AJP_TENSOR v[]; } flow;  // f0x, f0y, f1x, f1y
-layout(std430, binding = 3) readonly buffer Mask { AJP_TENSOR v[]; } mask;  // poids de a
+layout(std430, binding = 0) restrict readonly buffer ImageA { AJP_TENSOR v[]; } a;
+layout(std430, binding = 1) restrict readonly buffer ImageB { AJP_TENSOR v[]; } b;
+layout(std430, binding = 2) restrict readonly buffer Flow { AJP_TENSOR v[]; } flow;  // f0x, f0y, f1x, f1y
+layout(std430, binding = 3) restrict readonly buffer Mask { AJP_TENSOR v[]; } mask;  // poids de a
 #ifdef AJP_WARP_RING
 // Le slot du ring par sa vue R16G16B16A16_UNORM, comme ring_store (écrit après les tampons).
 #define AJP_WARP_PREVIOUS 4
@@ -83,14 +83,27 @@ float bilinear(float p00, float p10, float p01, float p11, Taps t) {
   return value;
 }
 
-// Plan c du mouvement (4 : le masque) lu dans la fenêtre, en (u, v) relatifs à son coin.
-float motion_at(uint c, float u, float v) {
-  Taps t = taps_in(pc.flow_width, pc.area_x, pc.area_y, pc.area_width, pc.area_height, u, v);
-  if (c == 4u) return bilinear(float(mask.v[t.i00]), float(mask.v[t.i10]), float(mask.v[t.i01]),
-                               float(mask.v[t.i11]), t);
-  uint base = c * pc.flow_width * pc.flow_height;
-  return bilinear(float(flow.v[base + t.i00]), float(flow.v[base + t.i10]), float(flow.v[base + t.i01]),
-                  float(flow.v[base + t.i11]), t);
+// Les voisins d'un point (u, v) de la fenêtre du mouvement, relatifs à son coin : calculés une fois pour
+// tous les plans lus au même point (comme sample_n sous CUDA ; même résultat que plan par plan).
+Taps motion_taps(float u, float v) {
+  return taps_in(pc.flow_width, pc.area_x, pc.area_y, pc.area_width, pc.area_height, u, v);
+}
+
+// Les quatre plans du mouvement (f0x, f0y, f1x, f1y) aux voisins t.
+vec4 flow_at(Taps t) {
+  uint plane = pc.flow_width * pc.flow_height;
+  vec4 at;
+  for (uint c = 0u; c < 4u; ++c) {
+    uint base = c * plane;
+    at[c] = bilinear(float(flow.v[base + t.i00]), float(flow.v[base + t.i10]), float(flow.v[base + t.i01]),
+                     float(flow.v[base + t.i11]), t);
+  }
+  return at;
+}
+
+// Le masque (poids de a) aux voisins t.
+float mask_at(Taps t) {
+  return bilinear(float(mask.v[t.i00]), float(mask.v[t.i10]), float(mask.v[t.i01]), float(mask.v[t.i11]), t);
 }
 
 // Le point (x, y) du plan c de a ou de b, sans borne.
@@ -143,24 +156,31 @@ float image_at(bool from_a, uint c, float x, float y) {
                   float(b.v[base + t.i11]), t);
 }
 
-// Plan c du mouvement de la paire précédente, lu comme motion_at.
-float previous_at(uint c, float u, float v) {
-  Taps t = taps_in(pc.flow_width, pc.area_x, pc.area_y, pc.area_width, pc.area_height, u, v);
-  uint base = c * pc.flow_width * pc.flow_height;
-  return bilinear(float(previous.v[base + t.i00]), float(previous.v[base + t.i10]),
-                  float(previous.v[base + t.i01]), float(previous.v[base + t.i11]), t);
+// Les plans first à first + count − 1 (count ≤ 4) du mouvement de la paire précédente au point (u, v), lus
+// comme flow_at.
+vec4 previous_at(uint first, uint count, float u, float v) {
+  Taps t = motion_taps(u, v);
+  uint plane = pc.flow_width * pc.flow_height;
+  vec4 at = vec4(0.0);
+  for (uint k = 0u; k < count; ++k) {
+    uint base = (first + k) * plane;
+    at[k] = bilinear(float(previous.v[base + t.i00]), float(previous.v[base + t.i10]),
+                     float(previous.v[base + t.i01]), float(previous.v[base + t.i11]), t);
+  }
+  return at;
 }
 
 // L'instant réglé du pixel (u, v) pour garder les poses (keeping_poses de ref/warp.cpp) : le
 // déplacement de la paire, celui de la paire précédente remonté jusqu'au même point, et
-// pose_time (spec/poses.h).
-float pose_time_at(float u, float v, float t) {
+// pose_time (spec/poses.h). at_uv : le mouvement lu en (u, v), le même à chaque itération.
+float pose_time_at(float u, float v, float t, vec4 at_uv) {
   float tp = t;
   for (int k = 0; k < AJP_POSE_ITERATIONS; ++k) {
-    precise float u2 = u - ((1.0 - tp) * motion_at(0u, u, v) + tp * motion_at(2u, u, v));
-    precise float v2 = v - ((1.0 - tp) * motion_at(1u, u, v) + tp * motion_at(3u, u, v));
-    precise float dx = motion_at(2u, u2, v2) - motion_at(0u, u2, v2);
-    precise float dy = motion_at(3u, u2, v2) - motion_at(1u, u2, v2);
+    precise float u2 = u - ((1.0 - tp) * at_uv.x + tp * at_uv.z);
+    precise float v2 = v - ((1.0 - tp) * at_uv.y + tp * at_uv.w);
+    vec4 at2 = flow_at(motion_taps(u2, v2));
+    precise float dx = at2.z - at2.x;
+    precise float dy = at2.w - at2.y;
     float before = 0.0;
     if (pc.has_previous != 0u) {
       precise float ax = u - tp * dx;
@@ -168,13 +188,15 @@ float pose_time_at(float u, float v, float t) {
       float qx = ax;
       float qy = ay;
       for (int step = 0; step < 2; ++step) {
-        precise float nx = ax - previous_at(2u, qx, qy);
-        precise float ny = ay - previous_at(3u, qx, qy);
+        vec4 back = previous_at(2u, 2u, qx, qy);
+        precise float nx = ax - back.x;
+        precise float ny = ay - back.y;
         qx = nx;
         qy = ny;
       }
-      precise float px = previous_at(2u, qx, qy) - previous_at(0u, qx, qy);
-      precise float py = previous_at(3u, qx, qy) - previous_at(1u, qx, qy);
+      vec4 at_q = previous_at(0u, 4u, qx, qy);
+      precise float px = at_q.z - at_q.x;
+      precise float py = at_q.w - at_q.y;
       before = sqrt(px * px + py * py);
     }
     precise float now = sqrt(dx * dx + dy * dy);
@@ -191,23 +213,21 @@ struct Displacement {
   float weight;
 };
 
-Displacement estimated(float u, float v) {
-  return Displacement(vec4(motion_at(0u, u, v), motion_at(1u, u, v), motion_at(2u, u, v), motion_at(3u, u, v)),
-                      motion_at(4u, u, v));
+Displacement estimated(vec4 at_uv, Taps uv) {
+  return Displacement(at_uv, mask_at(uv));
 }
 
 // Un autre instant depuis le mouvement du milieu : où le point vu en t était au milieu, son
-// mouvement de là, et la loi logit(m) = A logit(mm) + B ln((1 − t) / t) + C.
-Displacement from_middle(float u, float v, float t) {
-  float a0x = motion_at(0u, u, v);
-  float a0y = motion_at(1u, u, v);
-  float a1x = motion_at(2u, u, v);
-  float a1y = motion_at(3u, u, v);
-  precise float u2 = u - ((1.0 - t) * a0x + t * a1x);
-  precise float v2 = v - ((1.0 - t) * a0y + t * a1y);
-  precise float tx = motion_at(2u, u2, v2) - motion_at(0u, u2, v2);
-  precise float ty = motion_at(3u, u2, v2) - motion_at(1u, u2, v2);
-  float mm = bounded(motion_at(4u, u2, v2), AJP_MASK_EPSILON, 1.0 - AJP_MASK_EPSILON);
+// mouvement de là, et la loi logit(m) = A logit(mm) + B ln((1 − t) / t) + C. at_uv : le mouvement lu
+// en (u, v).
+Displacement from_middle(float u, float v, float t, vec4 at_uv) {
+  precise float u2 = u - ((1.0 - t) * at_uv.x + t * at_uv.z);
+  precise float v2 = v - ((1.0 - t) * at_uv.y + t * at_uv.w);
+  Taps at = motion_taps(u2, v2);
+  vec4 at2 = flow_at(at);
+  precise float tx = at2.z - at2.x;
+  precise float ty = at2.w - at2.y;
+  float mm = bounded(mask_at(at), AJP_MASK_EPSILON, 1.0 - AJP_MASK_EPSILON);
   precise float z =
       AJP_BLEND_LAW_A * log(mm / (1.0 - mm)) + AJP_BLEND_LAW_B * log((1.0 - t) / t) + AJP_BLEND_LAW_C;
   precise float weight = 1.0 / (1.0 + exp(-z));
@@ -238,13 +258,16 @@ void main() {
   precise float sy = float(pc.height) / float(pc.area_height);
   precise float u = (float(x) + 0.5) / sx - 0.5;
   precise float v = (float(y) + 0.5) / sy - 0.5;
+  // Le mouvement en (u, v), lu une fois pour les poses, le mélange et l'instant du milieu.
+  Taps uv = motion_taps(u, v);
+  vec4 at_uv = flow_at(uv);
   Displacement d;
   if (pc.keep_poses != 0u) {
-    d = from_middle(u, v, pose_time_at(u, v, params.t));
+    d = from_middle(u, v, pose_time_at(u, v, params.t, at_uv), at_uv);
   } else if (params.t == 0.5) {
-    d = estimated(u, v);
+    d = estimated(at_uv, uv);
   } else {
-    d = from_middle(u, v, params.t);
+    d = from_middle(u, v, params.t, at_uv);
   }
   precise float ax = float(x) + sx * d.to.x;
   precise float ay = float(y) + sy * d.to.y;
