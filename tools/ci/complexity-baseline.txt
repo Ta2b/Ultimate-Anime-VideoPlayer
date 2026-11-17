@@ -37,11 +37,9 @@ src/gpu/ir/import.cpp	ajp::gpu::ir::import_model	26	63
 src/gpu/ir/import_attrs.cpp	ajp::gpu::ir::detail::import_attrs	38	87
 src/gpu/ir/interpreter.cpp	ajp::gpu::ir::run	28	61
 src/gpu/ir/memory_plan.cpp	ajp::gpu::ir::plan_memory	32	99
-src/gpu/ir/onnx_fp8.cpp	ajp::gpu::ir::onnx::fuse_fp8_quant_pairs	31	70
 src/gpu/ir/onnx_unshuffle.cpp	ajp::gpu::ir::onnx::plan_of	30	68
 src/gpu/ir/op_sample.cpp	ajp::gpu::ir::detail::resize_plan	30	59
 src/gpu/ir/op_window.cpp	ajp::gpu::ir::detail::eval_conv	26	62
-src/gpu/ir/pass_layout.cpp	ajp::gpu::ir::accepts_nhwc	27	35
 src/gpu/ir/pass_transpose.cpp	ajp::gpu::ir::rewrite	49	120
 src/gpu/span_fp8/onnx_weights.cpp	ajp::gpu::span_fp8::package_from_onnx	60	153
 src/gpu/span_fp8/package.cpp	ajp::gpu::span_fp8::parse	29	54
@@ -50,12 +48,10 @@ src/gpu/vulkan/backend/kernel_frames.cpp	ajp::gpu::vk::VulkanKernelOps::staging_
 src/gpu/vulkan/backend/net_alias.cpp	ajp::gpu::vk::net::Planner::slice_channels	26	24
 src/gpu/vulkan/backend/net_autotune.cpp	ajp::gpu::vk::net::Autotuner::choose	34	142
 src/gpu/vulkan/backend/net_autotune.cpp	ajp::gpu::vk::net::Autotuner::measure_with	66	204
-src/gpu/vulkan/backend/net_lower.cpp	ajp::gpu::vk::net::Lowerer::node	34	59
 src/gpu/vulkan/backend/net_lower_conv.cpp	ajp::gpu::vk::net::Lowerer::conv	60	116
 src/gpu/vulkan/backend/net_lower_conv.cpp	ajp::gpu::vk::net::Lowerer::conv_matrix	60	123
-src/gpu/vulkan/backend/net_lower_conv.cpp	ajp::gpu::vk::net::candidates	104	200
-src/gpu/vulkan/compute/caps.cpp	ajp::gpu::vk::read_link	27	63
-src/gpu/vulkan/compute/context_create.cpp	ajp::gpu::vk::VkContext::create_device	32	122
+src/gpu/vulkan/backend/net_lower_conv.cpp	ajp::gpu::vk::net::candidates	95	182
+src/gpu/vulkan/compute/context_create.cpp	ajp::gpu::vk::VkContext::create_device	29	113
 src/gpu/vulkan/compute/spirv_access.cpp	ajp::gpu::vk::spirv_readonly_bindings	37	51
 src/kernels/ref/frame_stats.cpp	ajp::kernels::ref::frame_counts	27	83
 src/media/bench_clip.cpp	ajp::media::draw_frame	26	73

@@ -67,9 +67,12 @@ struct Target {
   // Tuiles 16 × 16 × 16 à sommes float16 aussi annoncées (variante coopmat_acc16, deux fois plus
   // rapide sur GeForce, retenue seulement si sa sortie concorde).
   bool matrix_f16_acc = false;
-  // Tuiles 16 × 16 × 16 FP8 E4M3 à sommes float32 annoncées par le pilote. Aucun noyau ne les
-  // emploie encore : le champ n'est lu que pour le journal et la préparation de la variante FP8.
+  // Tuiles 16 × 16 × 16 FP8 E4M3 à sommes float32 annoncées par le pilote (VK_EXT_shader_float8,
+  // RDNA 4) : la variante coopmat_fp8 des Conv quantifiées en FP8 et le SPAN FP8 (net_span8.h).
   bool matrix_f8 = false;
+  // Tuiles 16 × 16 × 16 s8 × s8 → s32 annoncées par le pilote, shaderInt8 activé (RDNA 3 et 4) : la
+  // variante coopmat_int8 des Conv quantifiées en INT8 (graphes Q/DQ INT8, SPAN INT8).
+  bool matrix_i8 = false;
   std::uint32_t subgroup_size = 0;
   // Tailles de sous-groupe qu'un dispatch peut exiger ; 0 : aucune (le pilote choisit).
   std::uint32_t subgroup_min = 0;

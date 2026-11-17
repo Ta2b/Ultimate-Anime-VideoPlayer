@@ -6,7 +6,6 @@
 #include <format>
 #include <utility>
 
-#include "gpu/ir/fp8.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
@@ -233,7 +232,7 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
   Value rounded;
   if ((*attrs)->in_quant > 0.0F) {
     rounded = raw;
-    for (float& v : rounded.f) v = round_to_e4m3(v / (*attrs)->in_quant) * (*attrs)->in_quant;
+    for (float& v : rounded.f) v = quant_round((*attrs)->quant_grid, v, (*attrs)->in_quant);
   }
   const Value& x = (*attrs)->in_quant > 0.0F ? rounded : raw;
   auto win = conv_window(node, **attrs, x.dims, w.dims);
@@ -267,7 +266,7 @@ Evaluated eval_conv(const Node& node, std::span<const Value* const> in, std::spa
   }
   if (in.size() > kConvB && in[kConvB] != nullptr) add_per_channel(out, *in[kConvB]);
   if ((*attrs)->out_quant > 0.0F) {
-    for (float& v : out.f) v = round_to_e4m3(v / (*attrs)->out_quant) * (*attrs)->out_quant;
+    for (float& v : out.f) v = quant_round((*attrs)->quant_grid, v, (*attrs)->out_quant);
   }
 
   // Épilogue : résiduel, puis activation, puis porte, élément par élément (la porte garde la

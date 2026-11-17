@@ -39,7 +39,7 @@ int fuse_residuals(Graph& graph);
 // Conv suivie de Relu, LeakyRelu, PRelu, Sigmoid, Tanh ou Clip : l'activation entre dans l'épilogue.
 int fuse_activations(Graph& graph);
 
-// FakeQuantE4M3 à échelle constante que la Conv voisine absorbe : lecteur unique d'une Conv
+// FakeQuantE4M3 ou FakeQuantInt8 à échelle constante que la Conv voisine absorbe : lecteur unique d'une Conv
 // (ConvAttrs::in_quant), sinon sortie d'une Conv sans résiduel ni activation (out_quant). Avant
 // fuse_residuals : le résiduel et l'activation qui suivent le nœud se fondent ensuite après.
 int fuse_fp8_quant(Graph& graph);

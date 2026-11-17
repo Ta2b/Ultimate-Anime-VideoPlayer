@@ -270,6 +270,7 @@ struct ComputeFeatures {
   VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
                                        .pNext = &v13,
                                        .shaderFloat16 = VK_TRUE,
+                                       .shaderInt8 = VK_TRUE,  // tuiles INT8 (net_conv_coopmat_int8.glsl)
                                        .vulkanMemoryModel = VK_TRUE};
   VkPhysicalDeviceVulkan11Features v11{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
                                        .pNext = &v12,

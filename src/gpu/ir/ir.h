@@ -87,7 +87,12 @@ enum class OpKind : std::uint8_t {
   Range,  // plié : ses bornes viennent des formes, connues avant la construction
   // Paire Q/DQ FP8 E4M3 fusionnée à l'import (onnx_fp8.h) : x → arrondi(x / échelle) × échelle.
   FakeQuantE4M3,
+  // Paire Q/DQ INT8 à zéro nul, fusionnée de même : x → sature(arrondi(x / échelle)) × échelle (int8.h).
+  FakeQuantInt8,
 };
+
+// La grille d'un arrondi de Conv (ConvAttrs::in_quant et out_quant).
+enum class QuantGrid : std::uint8_t { E4m3, Int8 };
 
 enum class AutoPad : std::uint8_t { NotSet, SameUpper, SameLower, Valid };
 
@@ -146,12 +151,17 @@ struct ConvAttrs {
   AutoPad auto_pad = AutoPad::NotSet;
   std::int64_t group = 1;
   Epilogue epilogue;
-  // FP8 E4M3 (FakeQuantE4M3 fusionnés par fuse_fp8_quant) : in_quant > 0 lit x arrondi à la grille
-  // de cette échelle (la porte de SPAN garde le x brut) ; out_quant > 0 arrondit de même le
+  // FP8 E4M3 ou INT8 (FakeQuantE4M3, FakeQuantInt8 fusionnés par fuse_fp8_quant) : in_quant > 0 lit x arrondi
+  // à la grille de cette échelle (la porte de SPAN garde le x brut) ; out_quant > 0 arrondit de même le
   // résultat, après le biais et avant résiduel, activation et porte.
   float in_quant = 0.0F;
   float out_quant = 0.0F;
+  // Grille de ces deux arrondis : E4M3 (FakeQuantE4M3), ou INT8 (FakeQuantInt8) ; jamais l'une et l'autre.
+  QuantGrid quant_grid = QuantGrid::E4m3;
 };
+
+// La valeur rendue par l'arrondi d'une Conv : v sur la grille grid de l'échelle scale.
+float quant_round(QuantGrid grid, float v, float scale);
 
 struct ConvTransposeAttrs {
   Pair kernel{0, 0};

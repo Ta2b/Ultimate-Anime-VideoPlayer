@@ -4,7 +4,6 @@
 #include <format>
 #include <limits>
 
-#include "gpu/ir/fp8.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
@@ -262,7 +261,8 @@ Evaluated eval_fake_quant(const Node& node, std::span<const Value* const> in,
   const float scale = in[1]->f[0];
   if (!(scale > 0.0F) || !std::isfinite(scale)) return graph_error(node, "l'échelle est positive et finie");
   Value out = make_output(outs[0]);
-  for (std::size_t k = 0; k < x.f.size(); ++k) out.f[k] = round_to_e4m3(x.f[k] / scale) * scale;
+  const QuantGrid grid = node.op == OpKind::FakeQuantInt8 ? QuantGrid::Int8 : QuantGrid::E4m3;
+  for (std::size_t k = 0; k < x.f.size(); ++k) out.f[k] = quant_round(grid, x.f[k], scale);
   return std::vector<Value>{std::move(out)};
 }
 

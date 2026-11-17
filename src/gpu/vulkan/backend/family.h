@@ -60,6 +60,13 @@ bool matrix_units_allowed(GpuFamily family, DriverKind driver);
 // mesure.
 bool matrix_f8_allowed(GpuFamily family);
 
+// Les graphes INT8 (variante INT8 du SPAN, cran Performance) : seulement là où les tuiles INT8 vont deux fois
+// plus vite que les tuiles float16, d'après les fiches des constructeurs : RDNA 4 et GeForce Turing à Ada.
+// Les RDNA 3 font l'INT8 au rythme du float16 (122,8 TOPS INT8 comme TFLOPS FP16 sur RX 7900 XTX) : l'INT8 y
+// perdrait de la qualité sans rien gagner. Pas de RTX 50 ni de famille inconnue, comme pour le FP8. Les
+// tuiles INT8 restent proposées à l'autotuner partout où le pilote les annonce (Target::matrix_i8).
+bool int8_graphs_allowed(GpuFamily family);
+
 // Permises sur une famille inconnue (puce hors des plages PCI) : proposées et vérifiées par l'autotuner,
 // jamais en tête des candidats.
 bool matrix_units_unlisted(GpuFamily family, DriverKind driver);

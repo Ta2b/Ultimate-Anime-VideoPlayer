@@ -24,6 +24,16 @@ std::string version_text(std::uint32_t version) {
   return std::format("{}.{}", VK_API_VERSION_MAJOR(version), VK_API_VERSION_MINOR(version));
 }
 
+// Fonctions de Vulkan 1.2.
+void read_v12(const VkPhysicalDeviceVulkan12Features& v12, Features& f) {
+  f.timeline_semaphore = f.timeline_semaphore || yes(v12.timelineSemaphore);
+  f.shader_float16 = f.shader_float16 || yes(v12.shaderFloat16);
+  f.shader_int8 = f.shader_int8 || yes(v12.shaderInt8);
+  f.vulkan_memory_model = f.vulkan_memory_model || yes(v12.vulkanMemoryModel);
+  f.vulkan_memory_model_device_scope =
+      f.vulkan_memory_model_device_scope || yes(v12.vulkanMemoryModelDeviceScope);
+}
+
 // Fonctions lues dans une structure de la chaîne ; les autres structures sont ignorées.
 void read_link(const VkBaseInStructure& link, Features& f) {
   switch (link.sType) {
@@ -32,15 +42,9 @@ void read_link(const VkBaseInStructure& link, Features& f) {
       f.storage_buffer_16bit = f.storage_buffer_16bit || yes(v11.storageBuffer16BitAccess);
       break;
     }
-    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES: {
-      const auto& v12 = reinterpret_cast<const VkPhysicalDeviceVulkan12Features&>(link);
-      f.timeline_semaphore = f.timeline_semaphore || yes(v12.timelineSemaphore);
-      f.shader_float16 = f.shader_float16 || yes(v12.shaderFloat16);
-      f.vulkan_memory_model = f.vulkan_memory_model || yes(v12.vulkanMemoryModel);
-      f.vulkan_memory_model_device_scope =
-          f.vulkan_memory_model_device_scope || yes(v12.vulkanMemoryModelDeviceScope);
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
+      read_v12(reinterpret_cast<const VkPhysicalDeviceVulkan12Features&>(link), f);
       break;
-    }
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES: {
       const auto& model = reinterpret_cast<const VkPhysicalDeviceVulkanMemoryModelFeatures&>(link);
       f.vulkan_memory_model = f.vulkan_memory_model || yes(model.vulkanMemoryModel);
@@ -82,6 +86,7 @@ void read_link(const VkBaseInStructure& link, Features& f) {
     case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES: {
       const auto& float16 = reinterpret_cast<const VkPhysicalDeviceShaderFloat16Int8Features&>(link);
       f.shader_float16 = f.shader_float16 || yes(float16.shaderFloat16);
+      f.shader_int8 = f.shader_int8 || yes(float16.shaderInt8);
       break;
     }
     default:
@@ -229,12 +234,13 @@ std::string describe(const DeviceCaps& caps) {
   if (f.float8_matrix) matrices += ", matrices FP8";
   const auto flag = [](bool on, const char* name) { return on ? std::format(", {}", name) : std::string{}; };
   return std::format(
-      "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} invocations, "
+      "{} ({} {}), Vulkan {}, UUID {}{}{}{}{}{}{}{}{}{}, sous-groupes de {}, push {} o, groupe {} "
+      "invocations, "
       "partagée {} o, tampon {} o{}",
       caps.device_name, caps.driver_name, caps.driver_info, version_text(caps.api_version),
       uuid_text(caps.uuid), caps.pci ? std::format(", PCI {}", pci_text(*caps.pci)) : std::string{},
       flag(f.timeline_semaphore, "timeline"), flag(f.storage_buffer_16bit, "stockage 16 bits"),
-      flag(f.shader_float16, "fp16"), flag(f.shader_int16, "int16"),
+      flag(f.shader_float16, "fp16"), flag(f.shader_int16, "int16"), flag(f.shader_int8, "int8"),
       flag(f.subgroup_size_control, "contrôle des sous-groupes"),
       flag(f.compute_full_subgroups, "sous-groupes pleins"), flag(f.float_atomic_add, "atomiques float"),
       caps.subgroup_size, caps.max_push_constants, caps.max_workgroup_invocations, caps.max_shared_memory,

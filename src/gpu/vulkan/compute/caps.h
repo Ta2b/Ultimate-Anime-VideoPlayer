@@ -34,6 +34,7 @@ struct Features {
   bool storage_buffer_16bit = false;  // variantes « _f16 » des noyaux (tenseurs float16_t)
   bool shader_float16 = false;        // calcul en fp16 (réseaux)
   bool shader_int16 = false;
+  bool shader_int8 = false;  // entiers 8 bits des shaders : tuiles INT8 (net_conv_coopmat_int8.glsl)
   bool subgroup_size_control = false;   // Vulkan 1.3
   bool compute_full_subgroups = false;  // Vulkan 1.3
   bool vulkan_memory_model = false;     // exigé par les shaders à matrices coopératives

@@ -181,6 +181,11 @@ bool matrix_units_unlisted(GpuFamily family, DriverKind driver) {
   return family == GpuFamily::Unknown && matrix_units_allowed(family, driver);
 }
 
+bool int8_graphs_allowed(GpuFamily family) {
+  return family == GpuFamily::AmdRdna4 || family == GpuFamily::NvidiaTuring ||
+         family == GpuFamily::NvidiaAmpere || family == GpuFamily::NvidiaAda;
+}
+
 bool matrix_f8_allowed(GpuFamily family) {
   // Une famille inconnue peut être une RTX 50 dont l'identifiant PCI sort des plages des tables (C45-05) :
   // pas de FP8 sur RTX 50 tant qu'aucune mesure ne le justifie, donc seulement sur une famille connue et

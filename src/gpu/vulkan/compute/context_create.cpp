@@ -252,34 +252,24 @@ Done VkContext::create_device(const CreateOptions& options) {
                       available.vulkan_memory_model && available.vulkan_memory_model_device_scope &&
                       has_extension(present, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
   std::vector<std::string> enabled_extensions = options.extensions;
-  if (matrix && std::ranges::find(options.extensions, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) ==
-                    options.extensions.end()) {
-    extensions.push_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
-    enabled_extensions.emplace_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
-  }
+  // Une extension que l'appelant n'a pas déjà demandée.
+  const auto add_extension = [&](const char* name) {
+    if (std::ranges::find(options.extensions, name) != options.extensions.end()) return;
+    extensions.push_back(name);
+    enabled_extensions.emplace_back(name);
+  };
+  if (matrix) add_extension(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
   // Les additions atomiques de float, quand l'appareil les a (plus aucun noyau ne s'en sert depuis
   // le retrait de GMFSS ; gardées le temps d'une mesure sans elles sur un vrai GPU).
   const bool atomic =
       available.float_atomic_add && has_extension(present, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
-  if (atomic && std::ranges::find(options.extensions, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME) ==
-                    options.extensions.end()) {
-    extensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
-    enabled_extensions.emplace_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
-  }
+  if (atomic) add_extension(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
   // Les matrices coopératives FP8 (RDNA 4), avec leurs tuiles : noyau net_conv_coopmat_fp8.glsl.
   const bool float8 = matrix && available.float8_matrix && has_extension(present, kShaderFloat8ExtensionName);
-  if (float8 &&
-      std::ranges::find(options.extensions, kShaderFloat8ExtensionName) == options.extensions.end()) {
-    extensions.push_back(kShaderFloat8ExtensionName);
-    enabled_extensions.emplace_back(kShaderFloat8ExtensionName);
-  }
+  if (float8) add_extension(kShaderFloat8ExtensionName);
   // Le budget mémoire du pilote (device_limits) : l'extension n'a ni feature ni structure.
-  if (has_extension(present, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) &&
-      std::ranges::find(options.extensions, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME) ==
-          options.extensions.end()) {
-    extensions.push_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
-    enabled_extensions.emplace_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
-  }
+  if (has_extension(present, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME))
+    add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
   VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomic_features{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
       .shaderBufferFloat32AtomicAdd = VK_TRUE};
@@ -301,6 +291,7 @@ Done VkContext::create_device(const CreateOptions& options) {
   VkPhysicalDeviceVulkan12Features v12{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
                                        .pNext = extension_chain,
                                        .shaderFloat16 = flag(available.shader_float16),
+                                       .shaderInt8 = flag(available.shader_int8),
                                        .timelineSemaphore = VK_TRUE,
                                        .vulkanMemoryModel = flag(matrix),
                                        .vulkanMemoryModelDeviceScope = flag(matrix)};

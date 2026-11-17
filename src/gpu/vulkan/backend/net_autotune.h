@@ -63,11 +63,12 @@ inline constexpr std::uint32_t kPatternPeriodF16 = 32749;  // 65 498 octets
 inline constexpr std::uint32_t kPatternPeriodF32 = 16381;  // 65 524 octets
 float tuning_input(ir::DataType type, std::uint64_t index);
 
-// Les variantes à précision réduite (P2.45) : sommes en float16 (coopmat_acc16, *_f16p) ou produits en FP8.
+// Les variantes à précision réduite (P2.45) : sommes en float16 (coopmat_acc16, *_f16p) ou produits en FP8
+// ou en INT8.
 // Leur sortie a droit à un écart plus large que celle des sommes en float, par couche comme de bout en bout.
 inline bool low_precision(const KernelChoice& c) {
   return c.variant == "coopmat_acc16" || c.variant == "direct_f16p" || c.variant == "winograd_f16p" ||
-         c.variant == "coopmat_fp8";
+         c.variant == "coopmat_fp8" || c.variant == "coopmat_int8";
 }
 
 // Ce que disent les estampilles d'une mesure (C45-06). À l'envers : l'horloge est fausse, la mesure se

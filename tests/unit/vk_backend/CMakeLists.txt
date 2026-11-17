@@ -23,6 +23,7 @@ ajp_add_unit_tests(vk_backend
     net_alias_test.cpp
     net_artcnn_test.cpp
     net_conv_test.cpp
+    net_int8_test.cpp
     net_gate_test.cpp
     net_hoist_test.cpp
     net_measure_test.cpp

@@ -34,7 +34,7 @@ layout(constant_id = 30) const uint QUADS = 1;
 layout(constant_id = 32) const uint PIX = 1;  // 31 : la taille du groupe de travail
 layout(constant_id = 33) const uint SPACE = 0;      // DepthToSpace fondu : blocs de SPACE × SPACE
 layout(constant_id = 34) const uint SPACE_CRD = 0;  // 1 : ordre CRD, 0 : DCR
-layout(constant_id = 35) const float IN_Q = 0.0;    // > 0 : x arrondi à la grille E4M3 de cette échelle
+layout(constant_id = 35) const float IN_Q = 0.0;    // > 0 : x arrondi à la grille E4M3 de cette échelle, < 0 : INT8 de -IN_Q
 layout(constant_id = 36) const float OUT_Q = 0.0;   // > 0 : résultat arrondi de même, après le biais
 // Découpe de K (V1) : SPLIT tranches des canaux d'entrée, chacune dans son groupe de travail ; les sommes
 // partielles vont dans le tampon de travail (binding 6), net_conv_reduce les ajoute et applique l'épilogue.

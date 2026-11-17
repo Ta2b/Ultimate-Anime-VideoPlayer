@@ -8,10 +8,9 @@
 #include <optional>
 #include <variant>
 
-#include "ajp_vk_backend_spirv.h"
-#include "gpu/ir/fp8_weights.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
+#include "gpu/vulkan/backend/net_conv_low_bit.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/net_lower_detail.h"
 #include "gpu/vulkan/backend/net_params.h"
@@ -39,12 +38,16 @@ std::uint32_t detail::matrix_halo_pixels(std::uint32_t rows, std::uint32_t kh, s
 
 namespace {
 
+using detail::add_low_bit_candidates;
+using detail::grid_scale;
+using detail::low_bit_eligible;
+using detail::low_bit_grid;
+using detail::matrix_subgroup;
+
 constexpr std::string_view kDirect = "direct";
 constexpr std::string_view kPacked = "direct_f16p";
 constexpr std::string_view kMatrix = "coopmat";
-constexpr std::string_view kMatrixAcc16 = "coopmat_acc16";  // sommes en float16
-constexpr std::string_view kMatrixFp8 = "coopmat_fp8";      // produits E4M3 × E4M3, sommes en float
-constexpr std::string_view kMatrixFp8Shader = "net_conv_coopmat_fp8_f16";
+constexpr std::string_view kMatrixAcc16 = "coopmat_acc16";     // sommes en float16
 constexpr std::string_view kWinograd = "winograd";             // F(2×2, 3×3)
 constexpr std::uint32_t kMaxSplit = 8;                         // tranches de K au plus (V1)
 constexpr std::uint64_t kSplitMaxPixels = 256ULL * 256ULL;     // découpe de K proposée jusque-là
@@ -102,14 +105,6 @@ std::uint32_t matrix_halo_step_channels(std::uint32_t cinp, std::uint32_t subgro
   return 16;
 }
 
-// Taille de sous-groupe des matrices coopératives : 32 exigé quand l'appareil le permet (les WMMA
-// des RDNA en wave32, comme llama.cpp ; le pilote AMD annonce 64 par défaut), sinon celle du
-// pilote. Les noyaux en déduisent leurs sous-groupes par groupe de travail (SGS).
-std::uint32_t matrix_subgroup(const Target& target) {
-  if (target.subgroup_min != 0 && target.subgroup_min <= 32 && target.subgroup_max >= 32) return 32;
-  return target.subgroup_size;
-}
-
 // Forme calculée par une Conv avant son DepthToSpace fondu (dims sinon).
 ir::Dims result_dims(const ir::Node& node, const ir::Dims& dims) {
   const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
@@ -132,8 +127,8 @@ std::array<std::uint32_t, 2> space_constants(const ir::Epilogue& e) {
   return {static_cast<std::uint32_t>(e.space), e.space_mode == ir::BlockMode::Crd ? 1U : 0U};
 }
 
-// Une Conv qui arrondit son entrée ou sa sortie à la grille FP8 E4M3 (ConvAttrs::in_quant et
-// out_quant) : seul le noyau direct en float sait le faire pour l'instant.
+// Une Conv qui arrondit son entrée ou sa sortie à une grille FP8 E4M3 ou INT8 (ConvAttrs::in_quant et
+// out_quant) : seuls le noyau direct en float et les variantes à matrices de cette grille savent le faire.
 bool quantized(const ir::Node& node) {
   const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
   return attrs != nullptr && (attrs->in_quant > 0.0F || attrs->out_quant > 0.0F);
@@ -182,23 +177,6 @@ std::vector<std::byte> replicated_bias(const std::vector<std::byte>& row, std::u
   constexpr std::uint16_t kOne = 0x3C00;  // 1.0 en float16
   for (std::size_t i = 0; i < 16; ++i) std::memcpy(out.data() + (16 * line) + ((i * 17) * 2), &kOne, 2);
   return out;
-}
-
-// La variante coopmat FP8 (net_conv_coopmat_fp8.glsl) convient-elle à ce nœud ? Les conditions de la
-// variante float16, plus : tuiles E4M3 annoncées par le pilote, shader compilé (glslang assez
-// récent), entrée arrondie par la Conv (in_quant) et poids rangés sur une grille E4M3.
-bool fp8_eligible(const ir::Graph& graph, const ir::Node& node, const Target& target) {
-  const auto* attrs = std::get_if<ir::ConvAttrs>(&node.attrs);
-  if (!target.matrix_f8 || attrs == nullptr || !(attrs->in_quant > 0.0F) || groups_of(node) != 1)
-    return false;
-  if (spirv::words(kMatrixFp8Shader).empty()) return false;
-  const ir::Tensor& x = graph.tensors[node.inputs[ir::kConvX]];
-  const ir::Tensor& y = graph.tensors[node.outputs[0]];
-  const ir::Tensor* w = constant_input(graph, node, ir::kConvW);
-  if (!x.known || !y.known || y.dims.size() != 4 || w == nullptr) return false;
-  const ir::Dims result = result_dims(node, y.dims);
-  return target.subgroup_size != 0 && x.type == ir::DataType::F16 && x.layout == ir::Layout::Nhwc16 &&
-         matrix_tiles(static_cast<std::uint32_t>(result[1])) <= 16 && ir::recover_fp8_weights(w->value);
 }
 
 // Winograd F(2×2, 3×3) (net_conv_wino.glsl) : Conv 3 × 3 de pas 1 sans dilatation ni groupes,
@@ -395,26 +373,8 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     }
   }
   if (!target.matrix_first) out.insert(out.end(), matrix.begin(), matrix.end());
-  // FP8 : derrière le noyau direct, qui reste le choix par défaut et la référence de l'autotuner
-  // (sortie comparée avant de retenir la variante).
-  if (conv && fp8_eligible(graph, node, target)) {
-    const std::uint32_t tiles = matrix_tiles(static_cast<std::uint32_t>(result[1]));
-    const std::uint64_t pixels =
-        static_cast<std::uint64_t>(result[2]) * static_cast<std::uint64_t>(result[3]);
-    for (const std::uint32_t subgroups : {4U, 2U, 8U}) {
-      for (const std::uint32_t tm : {2U, 1U, 4U}) {
-        const std::uint64_t block = static_cast<std::uint64_t>(subgroups) * tm * 16;
-        if ((pixels + block - 1) / block > target.max_workgroup_count_x) continue;
-        if (tm * tiles > 16 || subgroups * matrix_subgroup(target) > target.max_workgroup_invocations ||
-            detail::matrix_shared_bytes(subgroups, tm, 16, 0) > target.max_shared_memory) {
-          continue;
-        }
-        out.push_back({.variant = std::string(kMatrixFp8), .tuning = {tm, subgroups}});
-        if (tm == 2 && detail::matrix_shared_bytes(subgroups, tm, 16, tiles * 16) <= target.max_shared_memory)
-          out.push_back({.variant = std::string(kMatrixFp8), .tuning = {tm, subgroups, 1}});
-      }
-    }
-  }
+  // FP8 et INT8 : derrière le noyau direct, qui reste le choix par défaut et la référence de l'autotuner.
+  if (conv) add_low_bit_candidates(graph, node, target, out);
   return out;
 }
 
@@ -489,7 +449,7 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
     return refuse_node(RefusalCode::FeatureUnavailable, n, "taille de sous-groupe hors de l'appareil");
   }
   if ((packed || winograd) && quantized(n))
-    return refuse_node(RefusalCode::FeatureUnavailable, n, "arrondi FP8 : noyau direct en float seulement");
+    return refuse_node(RefusalCode::FeatureUnavailable, n, "FP8 ou INT8 : noyau direct en float seulement");
   if (packed && !(target_.f16_math && target_.f16_storage)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "fp16 de calcul absent");
   }
@@ -550,8 +510,8 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
   constants.push_back(wg);
   constants.push_back(pix);
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
-  constants.push_back(std::bit_cast<std::uint32_t>(attrs->in_quant));
-  constants.push_back(std::bit_cast<std::uint32_t>(attrs->out_quant));
+  constants.push_back(std::bit_cast<std::uint32_t>(grid_scale(*attrs, attrs->in_quant)));
+  constants.push_back(std::bit_cast<std::uint32_t>(grid_scale(*attrs, attrs->out_quant)));
   const Binding w{
       .kind = BindingKind::Blob,
       .index = add_blob(
@@ -588,14 +548,14 @@ std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice
 std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const KernelChoice& choice) {
   const ir::Node& n = graph_.nodes[index];
   const bool acc16 = choice.variant == kMatrixAcc16;
-  const bool fp8 = choice.variant == kMatrixFp8;
-  if ((!acc16 && !fp8 && choice.variant != kMatrix) || choice.tuning.size() < 2 ||
-      choice.tuning.size() > (fp8 ? 3U : 6U))
+  const std::optional<ir::QuantGrid> low_bit = low_bit_grid(choice.variant);  // FP8 ou INT8 : mêmes réglages
+  if ((!acc16 && !low_bit && choice.variant != kMatrix) || choice.tuning.size() < 2 ||
+      choice.tuning.size() > (low_bit ? 3U : 6U))
     return refuse_node(RefusalCode::InputMismatch, n, "réglage coopmat incomplet");
   if (acc16 && !target_.matrix_f16_acc) {
     return refuse_node(RefusalCode::FeatureUnavailable, n, "tuiles à sommes float16 absentes du pilote");
   }
-  if (fp8 ? !fp8_eligible(graph_, n, target_) : !matrix_eligible(graph_, n, target_)) {
+  if (low_bit ? !low_bit_eligible(graph_, n, target_, *low_bit) : !matrix_eligible(graph_, n, target_)) {
     return refuse_node(RefusalCode::FeatureUnavailable, n,
                        "matrices coopératives indisponibles pour ce nœud");
   }
@@ -673,7 +633,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
                 : matrix_step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
-  if (!fp8) {
+  if (!low_bit) {
     constants.push_back(direct);
     constants.push_back(halo);
     constants.push_back(ntg);
@@ -681,17 +641,16 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   const ir::Tensor* weights = constant_input(graph_, n, ir::kConvW);
   Binding w;
   Binding b;
-  if (fp8) {
-    // Octets E4M3 et échelles retrouvés des poids ; l'entrée arrondie vaut q × in_quant.
-    const auto recovered = ir::recover_fp8_weights(weights->value);
-    if (!recovered) return refuse_node(RefusalCode::ShapeInvalid, n, "poids FP8 non retrouvés");
+  if (low_bit) {
+    // Octets de la grille (E4M3 ou INT8) et échelles retrouvés des poids ; l'entrée arrondie vaut
+    // q × in_quant.
+    auto blobs = detail::low_bit_blobs(*weights, constant_input(graph_, n, ir::kConvB), *low_bit,
+                                       attrs->in_quant, x->desc.cp, tiles * 16);
+    if (!blobs) return refuse_node(RefusalCode::ShapeInvalid, n, "poids FP8 ou INT8 non retrouvés");
     constants.push_back(std::bit_cast<std::uint32_t>(attrs->in_quant));
     constants.push_back(std::bit_cast<std::uint32_t>(attrs->out_quant));
-    w = {.kind = BindingKind::Blob,
-         .index = add_blob(matrix_weights_fp8(weights->dims, recovered->bytes, x->desc.cp, tiles * 16))};
-    b = {.kind = BindingKind::Blob,
-         .index = add_blob(fp8_bias_and_scales(constant_input(graph_, n, ir::kConvB), recovered->scale,
-                                               attrs->in_quant, tiles * 16))};
+    w = {.kind = BindingKind::Blob, .index = add_blob(std::move(blobs->weights))};
+    b = {.kind = BindingKind::Blob, .index = add_blob(std::move(blobs->bias))};
   } else {
     w = {.kind = BindingKind::Blob, .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
     auto bias = channel_floats(constant_input(graph_, n, ir::kConvB), yc.c);
@@ -700,7 +659,8 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   }
   if (x->desc.n > kMaxGroups) return refuse_node(RefusalCode::ShapeInvalid, n, "trop d'images");
   emit(index,
-       fp8 ? std::string(kMatrixFp8Shader) : (acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16"),
+       low_bit ? std::string(detail::low_bit_shader(*low_bit))
+               : (acc16 ? "net_conv_coopmat_acc16" : "net_conv_coopmat_f16"),
        std::move(constants), {x->binding, w, b, slope, residual, y->binding}, {},
        halo == 1
            ? std::array<std::uint32_t, 3>{div_up(yc.w, 16), div_up(yc.h, rows), x->desc.n * (tiles / ntw)}

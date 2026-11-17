@@ -46,8 +46,32 @@ std::uint32_t activation_code(ir::OpKind op) {
       return 7;
     case ir::OpKind::FakeQuantE4M3:
       return 8;
+    case ir::OpKind::FakeQuantInt8:
+      return 9;
     default:
       return 0;
+  }
+}
+
+// Les opérations du noyau net_unary (une entrée, valeur par valeur, ou une simple vue).
+bool unary_kernel(ir::OpKind op) {
+  switch (op) {
+    case ir::OpKind::Relu:
+    case ir::OpKind::LeakyRelu:
+    case ir::OpKind::Sigmoid:
+    case ir::OpKind::Tanh:
+    case ir::OpKind::Clip:
+    case ir::OpKind::Reciprocal:
+    case ir::OpKind::FakeQuantE4M3:
+    case ir::OpKind::FakeQuantInt8:
+    case ir::OpKind::Cast:
+    case ir::OpKind::Identity:
+    case ir::OpKind::Reshape:
+    case ir::OpKind::Unsqueeze:
+    case ir::OpKind::Squeeze:
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -163,20 +187,8 @@ std::expected<void, Refusal> Lowerer::node(std::size_t index, const KernelChoice
   }
   if (!plain)
     return refuse_node(RefusalCode::InputMismatch, n, std::format("variante {} inconnue", choice.variant));
+  if (unary_kernel(n.op)) return unary(index);
   switch (n.op) {
-    case ir::OpKind::Relu:
-    case ir::OpKind::LeakyRelu:
-    case ir::OpKind::Sigmoid:
-    case ir::OpKind::Tanh:
-    case ir::OpKind::Clip:
-    case ir::OpKind::Reciprocal:
-    case ir::OpKind::FakeQuantE4M3:
-    case ir::OpKind::Cast:
-    case ir::OpKind::Identity:
-    case ir::OpKind::Reshape:
-    case ir::OpKind::Unsqueeze:
-    case ir::OpKind::Squeeze:
-      return unary(index);
     case ir::OpKind::Add:
     case ir::OpKind::Sub:
     case ir::OpKind::Mul:
@@ -251,7 +263,7 @@ std::expected<void, Refusal> Lowerer::unary(std::size_t index) {
       (k == 1 ? lo : hi) = (*bound)[0];
     }
   }
-  if (n.op == ir::OpKind::FakeQuantE4M3) {
+  if (n.op == ir::OpKind::FakeQuantE4M3 || n.op == ir::OpKind::FakeQuantInt8) {
     auto scale = const_floats(graph_, n, 1);
     if (!scale || scale->size() != 1 || !((*scale)[0] > 0.0F))
       return refuse_node(RefusalCode::ShapeInvalid, n, "échelle non constante");

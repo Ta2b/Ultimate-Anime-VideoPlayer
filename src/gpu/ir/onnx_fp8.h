@@ -1,6 +1,8 @@
-// Q/DQ FP8 d'ONNX (modèles quantifiés par Model Optimizer, tools/fp8) : chaque paire
-// QuantizeLinear → DequantizeLinear à zéro FP8 E4M3 et même échelle scalaire devient un seul nœud
-// FakeQuantE4M3(x, échelle), qui arrondit x / échelle à la grille E4M3 puis remultiplie. Aucun
+// Q/DQ FP8 et INT8 d'ONNX (modèles quantifiés par Model Optimizer, tools/fp8, tools/span/quantize_span.py) :
+// chaque paire QuantizeLinear → DequantizeLinear à zéro FP8 E4M3 (ou INT8) nul et même échelle scalaire
+// devient un seul nœud FakeQuantE4M3(x, échelle) (ou FakeQuantInt8), qui arrondit x / échelle à la grille
+// puis remultiplie ; par canal, sur des poids constants, un initialiseur arrondi ; un DequantizeLinear INT8
+// seul de poids entiers, l'initialiseur q × échelle. Aucun
 // tenseur FP8 n'entre dans l'IR : le noyau des matrices coopératives FP8 relit le motif à la
 // fusion avec la Conv qui consomme la paire.
 #pragma once

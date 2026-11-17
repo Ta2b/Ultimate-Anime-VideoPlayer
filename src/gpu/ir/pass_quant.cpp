@@ -1,6 +1,7 @@
-// Fusion des FakeQuantE4M3 (paires Q/DQ FP8) dans les convolutions voisines : une Conv qui lit
-// ou écrit des valeurs arrondies à la grille E4M3 le fait elle-même (ConvAttrs::in_quant et
-// out_quant), sans noyau ni tenseur intermédiaire pour l'arrondi.
+// Fusion des FakeQuantE4M3 et FakeQuantInt8 (paires Q/DQ FP8 et INT8) dans les convolutions voisines :
+// une Conv qui lit ou écrit des valeurs arrondies à la grille E4M3 ou INT8 le fait elle-même
+// (ConvAttrs::in_quant, out_quant et quant_grid), sans noyau ni tenseur intermédiaire pour l'arrondi.
+// Une Conv ne mêle pas deux grilles : un second arrondi d'une autre grille reste un nœud.
 #include <algorithm>
 #include <optional>
 
@@ -25,7 +26,12 @@ bool plain_epilogue(const Epilogue& e) {
 
 bool try_quant(Graph& graph, std::size_t n, GraphIndex& index) {
   const Node& quant = graph.nodes[n];
-  if (quant.op != OpKind::FakeQuantE4M3) return false;
+  if (quant.op != OpKind::FakeQuantE4M3 && quant.op != OpKind::FakeQuantInt8) return false;
+  const QuantGrid grid = quant.op == OpKind::FakeQuantInt8 ? QuantGrid::Int8 : QuantGrid::E4m3;
+  // La grille d'une Conv qui a déjà un arrondi est la sienne.
+  const auto fits = [grid](const ConvAttrs& a) {
+    return (a.in_quant == 0.0F && a.out_quant == 0.0F) || a.quant_grid == grid;
+  };
   const auto scale = constant_scale(graph, quant);
   if (!scale) return false;
   const TensorId x = quant.inputs[0];
@@ -35,9 +41,11 @@ bool try_quant(Graph& graph, std::size_t n, GraphIndex& index) {
   if (const auto reader = index.sole_reader(y)) {
     Node& conv = graph.nodes[*reader];
     auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
-    if (conv.op == OpKind::Conv && attrs != nullptr && attrs->in_quant == 0.0F && conv.inputs[kConvX] == y) {
+    if (conv.op == OpKind::Conv && attrs != nullptr && attrs->in_quant == 0.0F && fits(*attrs) &&
+        conv.inputs[kConvX] == y) {
       conv.inputs[kConvX] = x;
       attrs->in_quant = *scale;
+      attrs->quant_grid = grid;
       graph.nodes.erase(graph.nodes.begin() + static_cast<std::ptrdiff_t>(n));
       return true;
     }
@@ -47,12 +55,13 @@ bool try_quant(Graph& graph, std::size_t n, GraphIndex& index) {
   if (producer == kNoNode || index.sole_reader(x) != n) return false;
   Node& conv = graph.nodes[producer];
   auto* attrs = std::get_if<ConvAttrs>(&conv.attrs);
-  if (conv.op != OpKind::Conv || attrs == nullptr || attrs->out_quant != 0.0F ||
+  if (conv.op != OpKind::Conv || attrs == nullptr || attrs->out_quant != 0.0F || !fits(*attrs) ||
       !plain_epilogue(attrs->epilogue) || conv.outputs[0] != x) {
     return false;
   }
   conv.outputs[0] = y;
   attrs->out_quant = *scale;
+  attrs->quant_grid = grid;
   graph.nodes.erase(graph.nodes.begin() + static_cast<std::ptrdiff_t>(n));
   return true;
 }
