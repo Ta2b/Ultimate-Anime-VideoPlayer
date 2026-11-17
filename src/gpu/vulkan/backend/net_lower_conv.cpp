@@ -626,8 +626,8 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
   constants.push_back(wg);
   constants.push_back(sgs);
   constants.push_back(
-      halo == 1 ? matrix_halo_step_channels(x->desc.cp, subgroups, hpix, target_.max_shared_memory)
-                : matrix_step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
+      halo == 1 ? matrix_halo_step_channels(ckp(x->desc), subgroups, hpix, target_.max_shared_memory)
+                : matrix_step_channels(ckp(x->desc), subgroups, tm, np_shared, target_.max_shared_memory));
   for (const std::uint32_t c : space_constants(attrs->epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
   if (!low_bit) {
@@ -642,14 +642,14 @@ std::expected<void, Refusal> Lowerer::conv_matrix(std::size_t index, const Kerne
     // Octets de la grille (E4M3 ou INT8) et échelles retrouvés des poids ; l'entrée arrondie vaut
     // q × in_quant.
     auto blobs = detail::low_bit_blobs(*weights, constant_input(graph_, n, ir::kConvB), *low_bit,
-                                       attrs->in_quant, x->desc.cp, tiles * 16);
+                                       attrs->in_quant, ckp(x->desc), tiles * 16);
     if (!blobs) return refuse_node(RefusalCode::ShapeInvalid, n, "poids FP8 ou INT8 non retrouvés");
     constants.push_back(std::bit_cast<std::uint32_t>(attrs->in_quant));
     constants.push_back(std::bit_cast<std::uint32_t>(attrs->out_quant));
     w = {.kind = BindingKind::Blob, .index = add_blob(std::move(blobs->weights))};
     b = {.kind = BindingKind::Blob, .index = add_blob(std::move(blobs->bias))};
   } else {
-    w = {.kind = BindingKind::Blob, .index = add_blob(matrix_weights(*weights, x->desc.cp, tiles * 16))};
+    w = {.kind = BindingKind::Blob, .index = add_blob(matrix_weights(*weights, ckp(x->desc), tiles * 16))};
     auto bias = channel_floats(constant_input(graph_, n, ir::kConvB), yc.c);
     if (direct == 1) bias = replicated_bias(bias, tiles * 16);
     b = {.kind = BindingKind::Blob, .index = add_blob(std::move(bias))};

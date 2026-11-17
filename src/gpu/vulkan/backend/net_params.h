@@ -25,6 +25,12 @@ struct Desc4 {
   std::uint32_t cp = 1;     // canaux rangés (Nhwc16 : multiple de 16)
 };
 
+// Canaux de K d'une convolution matricielle : ceux de x complétés à 16 (CKP des noyaux coopmat). cp, le pas
+// de pixel, est plus large quand x est une tranche de canaux de son parent (Lowerer::bind).
+inline std::uint32_t ckp(const Desc4& x) {
+  return (x.c + 15U) / 16U * 16U;
+}
+
 // Refus ShapeInvalid : forme inconnue, rang au-delà de 4, ou entier I64 qui atteindrait un noyau.
 std::expected<Desc4, Refusal> desc_of(const ir::Graph& graph, ir::TensorId id);
 std::uint32_t type_code(const ir::Graph& graph, ir::TensorId id);  // 0 float, 1 float16
