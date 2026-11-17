@@ -617,10 +617,10 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   std::unique_ptr<WaylandPresentation> wayland;
   if (wants_wayland(present)) wayland = WaylandPresentation::open(impl->window, impl->channel);
   impl->present_caps.wayland_presentation = wayland != nullptr;
-  impl->present_level = choose_present_level(impl->present_caps, present);
+  impl->present_level = choose_trial_level(impl->present_caps, present);
   if (present != PresentWanted::Open)
     log_present_level(*impl->channel, impl->present_level, impl->present_caps);
-  const SwapchainShape shape = swapchain_shape(impl->present_level);
+  const SwapchainShape shape = swapchain_shape(impl->present_level, present);
   pl_vulkan_swapchain_params sw_params{};
   sw_params.surface = impl->surface;
   sw_params.present_mode = VK_PRESENT_MODE_FIFO_KHR;
