@@ -45,7 +45,7 @@ class SubsWorker {
              std::vector<FontSubstitute> substitutes);
 
   // Les remplacements de substitutes_ sur la piste ASS qui vient d'être choisie.
-  void substitute_fonts();
+  void substitute_fonts(SubtitleTrack& track);
 
   bool on(RenderRequest&& request);
   bool on(SelectTrack&& select);

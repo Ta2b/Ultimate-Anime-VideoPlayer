@@ -84,7 +84,7 @@ bool SubsWorker::on(SelectTrack&& select) {
   if (track) {
     track_ = std::move(*track);
     if (track_ && track_->embeds_fonts()) renderer_.fonts_changed();
-    if (track_ && track_->kind() == TrackKind::Ass) substitute_fonts();
+    if (track_ && track_->kind() == TrackKind::Ass) substitute_fonts(*track_);
   } else {
     report(track.error());
   }
@@ -111,16 +111,16 @@ bool SubsWorker::on(AttachFont&& font) {
   return true;
 }
 
-void SubsWorker::substitute_fonts() {
+void SubsWorker::substitute_fonts(SubtitleTrack& track) {
   // Un script à section [Fonts] apporte ses polices : on ne sait pas lesquelles, il les garde toutes.
-  if (track_->embeds_fonts()) return;
+  if (track.embeds_fonts()) return;
   for (const FontSubstitute& substitute : substitutes_) {
     const std::string prefix = core::ascii_lower(substitute.attachment_prefix);
     const bool attached = !prefix.empty() && std::ranges::any_of(attachments_, [&](const std::string& name) {
       return name.starts_with(prefix);
     });
     if (attached) continue;
-    const int count = track_->substitute_font(substitute.family, substitute.replacement, substitute.scale_x);
+    const int count = track.substitute_font(substitute.family, substitute.replacement, substitute.scale_x);
     if (count > 0)
       log_->info("{} style(s) en {}, absente du système : {} à la place", count, substitute.family,
                  substitute.replacement);
