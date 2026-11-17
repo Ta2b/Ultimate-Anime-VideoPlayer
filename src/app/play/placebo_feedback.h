@@ -99,6 +99,7 @@ class PresentFeedback {
   void read_wayland();
   void fall_back(std::string_view why);
   void drop_if_silent();
+  bool wants_timing(bool timing) const;
 
   pl_vulkan vk_;
   PresentLevel level_;
