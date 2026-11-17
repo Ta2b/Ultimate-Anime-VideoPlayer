@@ -65,6 +65,9 @@ struct UpdateNote {
 };
 // La langue de l'interface : anglais ou français, prise en direct.
 void language_section(PlaySettings& d);
+// La liste de la langue de l'interface : Système (celle de l'ordinateur), English, Français. code : le
+// réglage (« system », « en », « fr ») ; vide se montre comme Système. Vrai quand un autre est choisi.
+bool interface_language_combo(const char* label, std::string& code);
 void updates_page(PlaySettings& d, const PlayerPlace& place, UpdateNote& note);
 
 // Le lecteur par défaut et « Ouvrir avec » (Général > Application).

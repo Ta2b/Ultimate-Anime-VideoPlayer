@@ -317,7 +317,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   const std::filesystem::path settings_path = paths::play_settings(paths::settings_dir(paths));
   std::vector<std::string> startup_notes;  // fichiers mis de côté, dits à l'accueil
   auto saved = load_with_notes(settings_path, startup_notes);
-  i18n::set_language(i18n::language_from_code(saved ? saved->language : default_interface_language()));
+  i18n::set_language(interface_language(saved ? saved->language : kSystemInterfaceLanguage));
   if (!saved) {
     log->warn("{} ; réglages par défaut", saved.error().detail);
     startup_notes.push_back(set_aside(settings_path, saved.error()));
@@ -497,7 +497,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
       // Réglages relus : l'accueil ou la vidéo précédente les ont peut-être changés.
       if (auto reread = load_settings(settings_path)) {
         saved = std::move(*reread);
-        i18n::set_language(i18n::language_from_code(saved->language));
+        i18n::set_language(interface_language(saved->language));
       }
       SDL_SetWindowTitle((*screen)->window(),
                          std::format("ajp — {}", core::to_utf8(file.filename())).c_str());
@@ -731,7 +731,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     }
     if (auto reread = load_settings(settings_path)) {
       saved = std::move(*reread);
-      i18n::set_language(i18n::language_from_code(saved->language));
+      i18n::set_language(interface_language(saved->language));
     }
   }
 }

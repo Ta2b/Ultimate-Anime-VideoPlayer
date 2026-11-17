@@ -13,6 +13,19 @@ constexpr std::array kSettingsPages{
     Entry{"Display peak", "Pic de l'écran"},
     Entry{"SPAN off", "SPAN coupé"},
     Entry{"Apply", "Appliquer"},
+    Entry{"System ({})", "Système ({})"},
+    Entry{
+        "System follows the language of the computer when the player has it, English otherwise. The change "
+        "shows at once.",
+        "Système suit la langue de l'ordinateur quand le lecteur l'a, l'anglais sinon. Le changement se voit "
+        "tout de suite."},
+    Entry{"HEVC 10-bit", "HEVC 10 bits"},
+    Entry{"AV1 10-bit", "AV1 10 bits"},
+    Entry{"H.264 8-bit", "H.264 8 bits"},
+    Entry{"FFV1 4:2:0 10-bit, lossless codec", "FFV1 4:2:0 10 bits, sans perte du codec"},
+    Entry{"Very high quality", "Très haute qualité"},
+    Entry{"High quality", "Haute qualité"},
+    Entry{"Standard quality", "Qualité standard"},
     Entry{"Calibration done: no setting held the target, the lightest is kept ({}).",
           "Calibration terminée : aucun réglage ne tient la cadence visée, le plus léger est gardé ({})."},
     Entry{"working resolution {}p instead of {}p", "résolution de travail {}p au lieu de {}p"},

@@ -5,6 +5,7 @@
 #include <format>
 #include <fstream>
 #include <optional>
+#include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -192,12 +193,21 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
 }
 
 TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  {
+    ajp::app::play::FrenchUi french;
+    CHECK(export_label(exporter::Codec::Hevc, exporter::Quality::VeryHigh) ==
+          "HEVC 10 bits · très haute qualité");
+    CHECK(export_label(exporter::Codec::Av1, exporter::Quality::Standard) ==
+          "AV1 10 bits · qualité standard");
+    CHECK(export_label(exporter::Codec::Lossless, exporter::Quality::High) ==
+          "FFV1 4:2:0 10 bits, sans perte du codec");
+    CHECK(std::string_view(quality_label(exporter::Quality::High)) == "Haute qualité");
+  }
+  // L'interface en anglais : plus de « Très haute » dans la liste de la qualité.
   CHECK(export_label(exporter::Codec::Hevc, exporter::Quality::VeryHigh) ==
-        "HEVC 10 bits · qualité très haute");
-  CHECK(export_label(exporter::Codec::Av1, exporter::Quality::Standard) == "AV1 10 bits · qualité standard");
-  CHECK(export_label(exporter::Codec::Lossless, exporter::Quality::High) ==
-        "FFV1 4:2:0 10 bits, sans perte du codec");
+        "HEVC 10-bit · very high quality");
+  CHECK(std::string_view(quality_label(exporter::Quality::Standard)) == "Standard quality");
+  CHECK(std::string_view(codec_label(exporter::Codec::Lossless)) == "FFV1 4:2:0 10-bit, lossless codec");
 }
 
 TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'avant sinon", "[app][export]") {

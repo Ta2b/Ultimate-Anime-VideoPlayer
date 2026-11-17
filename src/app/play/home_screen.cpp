@@ -130,6 +130,12 @@ class FilePick {
   std::string start_in_;
 };
 
+// Les réglages que l'accueil prend, et leur langue tout de suite : l'image suivante est dans la nouvelle.
+const PlaySettings& with_language(const PlaySettings& wanted) {
+  i18n::set_language(interface_language(wanted.language));
+  return wanted;
+}
+
 // Ce que le menu propose sans vidéo ouverte : les modèles et les moteurs du poste, la source type.
 SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const PlaySettings& running) {
   const auto model = choose_model(h.options, h.paths.home, running, h.paths.models);
@@ -340,7 +346,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     saved_at = host_now_us();
   };
   const auto changed = [&](const PlaySettings& wanted) {
-    running = wanted;
+    running = with_language(wanted);
     running.volume = h.ui.controls().volume();
     h.ui.set_running(running);
     dirty = true;

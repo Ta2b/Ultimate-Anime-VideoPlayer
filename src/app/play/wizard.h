@@ -50,7 +50,7 @@ struct Wizard {
   LanguageVersion language_version = LanguageVersion::Original;
   std::vector<media::LanguagePreset> language_presets = default_language_presets();
   bool advanced_languages = false;
-  std::string interface_language;  // « en » ou « fr » ; vide : celle détectée, inchangée
+  std::string interface_language;  // « system », « en » ou « fr » ; vide : celle de play.toml, inchangée
   bool make_default = false;       // lecteur par défaut des vidéos, demandé à « Terminer »
   int seen = 0;                    // le plus loin atteint (rang de WizardStep), pour reprendre en route
 };
