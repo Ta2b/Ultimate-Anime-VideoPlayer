@@ -30,7 +30,9 @@ StageClock::~StageClock() {
   pairs_.clear();
   // Un GPU bloqué garde les pools des estampilles (~Recording) : le pool de requêtes reste aussi, comme les
   // autres objets du socle (C49-04).
-  if (context_.stalled()) static_cast<void>(pool_.release());
+  if (context_.stalled()) {
+    [[maybe_unused]] const net::QueryPool* kept = pool_.release();
+  }
 }
 
 std::expected<std::unique_ptr<Recording>, Refusal> StageClock::stamp(std::uint32_t query) {
