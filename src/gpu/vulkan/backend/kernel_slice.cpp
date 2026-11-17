@@ -3,6 +3,7 @@
 // plus grand déplacement), enfilées sans attente puis attendues seules, comme le backend TensorRT.
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -210,7 +211,8 @@ std::expected<PairScores, Refusal> VulkanKernelOps::scores_take(std::uint64_t ti
   }
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
   // Elle ne couvre que la mesure, pas ce que la file a reçu depuis.
-  if (auto ok = context_.wait_on_host(queue_.at(slot.value)); !ok) return std::unexpected(ok.error());
+  if (auto ok = context_.wait_on_host(queue_.at(slot.value), std::chrono::seconds(10), kQueryBeforeWait); !ok)
+    return std::unexpected(ok.error());
   slot.ticket = 0;
   std::vector<float> partials(slot.blocks);
   std::memcpy(partials.data(), slot.sums->mapped(), partials.size() * sizeof(float));
@@ -263,7 +265,8 @@ std::expected<float, Refusal> VulkanKernelOps::flow_max_take(std::uint64_t ticke
     return refuse_slice(RefusalCode::SequenceOrder, std::format("flow_max_take : ticket {} périmé", ticket));
   }
   // Attente hôte voulue : relancer RIFE aux autres instants dépend de ce maximum.
-  if (auto ok = context_.wait_on_host(queue_.at(slot.value)); !ok) return std::unexpected(ok.error());
+  if (auto ok = context_.wait_on_host(queue_.at(slot.value), std::chrono::seconds(10), kQueryBeforeWait); !ok)
+    return std::unexpected(ok.error());
   slot.ticket = 0;
   std::array<std::uint32_t, kernels::kFlowBins> bins{};
   std::memcpy(bins.data(), slot.result->mapped(), sizeof(bins));
