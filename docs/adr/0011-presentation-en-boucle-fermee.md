@@ -77,10 +77,18 @@ Les chiffres de 6.11 (σ visé − affiché, réveils de main, p99 de l'attente,
 consignés. Ils restent à relever sur le PC de référence, en A/B contre `--present=open --no-ring-watcher
 --no-precise-wait --no-audio-pll --no-vsync-index`, et à reporter ici avant la 1.0.
 
-## Garde de présentation (novembre 2026)
-Sur une RTX 4070 Laptop (pilote NVIDIA 621.01, Windows), le niveau par défaut figeait le thread de la fenêtre
-dès l'accueil (« Ne répond pas », rien au journal ; `--debug --no-present` répond), avec l'écran branché sur
-la RTX. Un garde (`src/app/play/present_watch.h`) surveille l'acquisition, la présentation et
+## File de dates pleine et garde de présentation (novembre 2026)
+Sur une RTX 4070 Laptop (pilote NVIDIA 621.01, Windows) et une RTX 4050 Laptop (Fedora 42, GNOME), le niveau
+par défaut figeait le thread de la fenêtre dès l'accueil (« Ne répond pas », rien au journal ;
+`--debug --no-present` répond). Le vidage nomme l'appel : `pl_swapchain_swap_buffers` attend sans délai la fin
+du rendu de l'image précédente, rendu qui attend une image que le pilote ne rend plus. La cause était chez nous :
+le lecteur laissait se remplir la file de dates du pilote (`kQueueSize`, 16 places) et comptait sur
+`VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT` pour cesser d'en demander. La spécification tient cette présentation
+pour mise en file, mais ces pilotes ne rendent plus l'image. La date n'est plus demandée quand la file est
+pleine (`PresentFeedback::wants_timing`) ; confirmé sur la RTX 4050 Laptop.
+
+Les essais `--debug --present=bare|poll|timing-plain` (`present_level.h`) ajoutent chacun une pièce à open, pour
+isoler la prochaine pièce fautive. Un garde (`src/app/play/present_watch.h`) surveille l'acquisition, la présentation et
 `swap_buffers` quand un retour de présentation est actif : un appel qui ne revient pas en 4 s se dit au
 journal (l'étape figée), `present-stall.txt` (à côté de `shaders.cache`) garde la carte et le pilote, une boîte
 prévient et le lecteur sort. Le lancement suivant présente comme `--present=open` sur cette carte et ce pilote ;
