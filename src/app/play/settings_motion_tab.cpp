@@ -474,7 +474,8 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   // (C23-04).
   const bool reduced_motion =
       now.num > now.den && choices.source_height > 0 &&
-      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height));
+      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height),
+                          d.motion_full_size);
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {

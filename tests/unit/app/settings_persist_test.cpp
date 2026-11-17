@@ -176,6 +176,30 @@ TEST_CASE("play.toml : moins de passes sur les paires fortes, absent d'un ancien
   std::filesystem::remove(path);
 }
 
+// Un play.toml d'avant le RIFE mouvement à la taille de travail se lit, l'option éteinte ; allumée, elle se
+// relit.
+TEST_CASE("play.toml : RIFE mouvement à la taille de travail, absent d'un ancien fichier, s'enregistre",
+          "[app][settings][motion_full_size]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-motion-full.toml";
+  REQUIRE(save_settings(path, PlaySettings{}));
+  std::string text = read_text(path);
+  const std::size_t line = text.find("motion_full_size = false\n");
+  REQUIRE(line != std::string::npos);
+  text.erase(line, std::string("motion_full_size = false\n").size());
+  write_text(path, text);
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK_FALSE(old->motion_full_size);
+  old->motion_full_size = true;
+  REQUIRE(save_settings(path, *old));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->motion_full_size);
+  CHECK_FALSE(rife_motion_reduced(WorkSize{1920, 1080}, reread->motion_full_size));
+  CHECK(rife_motion_reduced(WorkSize{1920, 1080}));
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
   std::filesystem::remove_all(dir);

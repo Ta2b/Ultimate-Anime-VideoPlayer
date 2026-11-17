@@ -608,7 +608,9 @@ WorkSize motion_size(const media::TrackInfo& video, const WorkSize& work, const 
   if (rife_image) return work;
   if (settings.gmfss_light && gmfss_wanted(settings) == GmfssUse::Middle && work.height > kGmfssLightHeight)
     return work_size(video.width, video.height, kGmfssLightHeight);
-  return rife_motion_reduced(work) ? work_size(video.width, video.height, kRifeMotionHeight) : work;
+  return rife_motion_reduced(work, settings.motion_full_size)
+             ? work_size(video.width, video.height, kRifeMotionHeight)
+             : work;
 }
 
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
