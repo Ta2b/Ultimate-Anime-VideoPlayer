@@ -299,7 +299,10 @@ paramètres. Un moteur n'est retiré que s'il n'a plus d'intérêt nulle part.
 `vk_backend` abaisse chaque graphe ONNX en dispatchs GLSL (`--profile-dispatches` donne le temps
 GPU par shader). Les copies se réduisent en trois temps :
 - tenseurs sans copie (`net_alias.h`) : entrées d'un Concat écrites en place par leur producteur,
-  sorties de Split et de Slice lues dans leur source, Reshape renommés ;
+  même quand une Conv ou un noyau élément par élément les lit aussi (au pas de pixel du Concat : le
+  Concat final du SPAN n'a plus de copie, comme sous TensorRT), sorties de Split et de Slice lues dans
+  leur source, Reshape renommés. Une Conv à matrices coopératives qui lit une telle tranche compte K
+  sur ses propres canaux (`ckp`, `net_params.h`), pas sur le pas de pixel de son parent ;
 - `net_hoist.h`, un Resize qui réduit remonté devant le Concat, le Reshape (lot et canaux) et le
   Split (lot > 1) qui le précèdent : Resize traite chaque canal à part, le résultat est identique
   bit à bit et les copies se font à la taille réduite ; seuls les Concat à lecteur unique dont une

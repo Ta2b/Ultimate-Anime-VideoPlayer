@@ -5,6 +5,7 @@
 #include <format>
 #include <optional>
 #include <span>
+#include <thread>
 #include <vector>
 
 #include <spdlog/logger.h>
@@ -372,11 +373,30 @@ void VkContext::recover_signals(std::size_t first, std::size_t groups, std::size
   }
 }
 
-Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout) {
+Done VkContext::wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout,
+                             std::chrono::microseconds query_first) {
   if (point.semaphore == VK_NULL_HANDLE)
     return refuse(RefusalCode::InputMismatch, "attente d'un sémaphore nul");
   if (auto ok = flush(); !ok) return ok;
   ++host_waits_;
+  if (query_first.count() > 0) {
+    const auto start = std::chrono::steady_clock::now();
+    const auto until = start + query_first;
+    while (true) {
+      std::uint64_t current = 0;
+      if (auto ok = observe(device_fn_.vkGetSemaphoreCounterValue(device_, point.semaphore, &current),
+                            "vkGetSemaphoreCounterValue");
+          !ok) {
+        return ok;
+      }
+      if (current >= point.value) {
+        note_wait(start);
+        return {};
+      }
+      if (std::chrono::steady_clock::now() >= until) break;
+      std::this_thread::yield();
+    }
+  }
   const VkSemaphoreWaitInfo wait{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
                                  .semaphoreCount = 1,
                                  .pSemaphores = &point.semaphore,

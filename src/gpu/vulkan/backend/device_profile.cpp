@@ -92,6 +92,7 @@ DeviceProfile profile_device(const VkContext& context) {
   const bool matrix_features = f.cooperative_matrix && f.vulkan_memory_model && f.storage_buffer_16bit &&
                                f.shader_float16 && caps.subgroup_size > 0;
   const MatrixTiles tiles = matrix_features ? query_matrix_tiles(context) : MatrixTiles{};
+  profile.family = family_from_tiles(profile.family, caps.device_name, tiles.f32_sums, tiles.f8_e4m3);
   profile.matrix_hardware = tiles.f32_sums;
   profile.matrix_shapes = tiles.shapes;
   profile.matrix_allowed = matrix_units_allowed(profile.family, profile.driver);

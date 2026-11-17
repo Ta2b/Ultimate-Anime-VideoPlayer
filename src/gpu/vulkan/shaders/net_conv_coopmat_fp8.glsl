@@ -67,7 +67,10 @@ const uint BM = SUBGROUPS * TM * 16u;
 const uint QA = KC / 16u;                       // uvec4 de 16 canaux E4M3 par pixel et par étape
 const uint AS = QA + (QA >= 2u ? 1u : 0u);      // pas d'une ligne de A, en uvec4 (+1 dès KC = 32)
 const uint ABUF = BM * AS;                      // un tampon de A
-const uint CSTEPS = CXP / KC;
+// Canaux de K par prise : ceux de x complétés à 16. CXP n'est que le pas de pixel de x, plus large quand x
+// est une tranche de canaux de son parent (sortie de Split, entrée d'un Concat rangée en place).
+const uint CKP = (CIN + 15u) / 16u * 16u;
+const uint CSTEPS = CKP / KC;
 const uint STEPS = KH * KW * CSTEPS;
 const uint QB = KC * NP / 16u;                  // uvec4 de B par étape
 const uint BBUF = SHARED_B == 1u ? QB : 1u;     // un tampon de B
@@ -152,7 +155,7 @@ void stage_a(uint buf, uint n, uint first_pixel, uint s) {
 // B de l'étape s dans le tampon buf : ses KC lignes de NP octets se suivent dans le tampon des
 // poids, copiées d'un bloc.
 void stage_b(uint buf, uint s) {
-  uint k0 = (s / CSTEPS) * CXP + (s % CSTEPS) * KC;
+  uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
   for (uint i = gl_LocalInvocationIndex; i < QB; i += gl_WorkGroupSize.x) {
     tile_b[buf * BBUF + i] = weights4.v[k0 * (NP / 16u) + i];
   }
@@ -181,7 +184,7 @@ void main() {
       stage_a(buf ^ 1u, n, first_pixel, s + 1u);
       if (SHARED_B == 1u) stage_b(buf ^ 1u, s + 1u);
     }
-    uint k0 = (s / CSTEPS) * CXP + (s % CSTEPS) * KC;
+    uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
     for (uint c16 = 0u; c16 < KC; c16 += 16u) {
       coopmat<floate4m3_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
       for (uint t = 0u; t < TM; ++t) {

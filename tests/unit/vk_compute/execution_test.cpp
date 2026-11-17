@@ -213,6 +213,27 @@ TEST_CASE("exécution : soumissions enchaînées côté GPU, une seule attente h
   CHECK(require_value(recording->runs().value()) == 5);
 }
 
+TEST_CASE("exécution : l'attente hôte interroge d'abord la valeur, puis bloque", "[vk_compute][execution]") {
+  Rig rig = make_rig();
+  const kernels::RgbImage image = synthetic_rgb(32, 32, 4, 0.0F, 1.0F);
+  TensorBuffer src = upload_rgb(rig, image, Precision::F32);
+  TensorBuffer middle = tensor_target(rig, 32, 32, 3, Precision::F32);
+  TensorBuffer dst = tensor_target(rig, 32, 32, 3, Precision::F32);
+  const std::unique_ptr<Recording> recording = round_trip(rig, src.view, middle.view, dst.view);
+  const std::uint64_t waits = rig.context->host_waits();
+  require_ok(rig.context->submit(*recording));
+  // Une exécution courte : l'interrogation la voit finie, ou l'attente bloquante prend le relais.
+  require_ok(rig.context->wait_on_host(recording->last_run(), std::chrono::seconds(10), kQueryBeforeWait));
+  CHECK(rig.context->host_waits() == waits + 1);
+  CHECK(require_value(recording->runs().value()) == 1);
+  CHECK(max_abs_diff(download_rgb(rig, dst), image) <= 1e-3F);
+  // Un point jamais signalé : l'interrogation s'épuise, l'attente bloquante expire et cite son appel.
+  TimelineSemaphore never = require_value(TimelineSemaphore::create(*rig.context, 0));
+  const Done late = rig.context->wait_on_host(never.at(1), std::chrono::milliseconds(1), kQueryBeforeWait);
+  require_refusal(late, RefusalCode::VulkanCallFailed);
+  CHECK(late.error().detail.find("vkWaitSemaphores") != std::string::npos);
+}
+
 TEST_CASE("exécution : attente et signal de sémaphores timeline externes", "[vk_compute][execution]") {
   Rig rig = make_rig();
   const kernels::RgbImage image = synthetic_rgb(16, 16, 2, 0.0F, 1.0F);

@@ -189,11 +189,22 @@ class Planner {
     last_[root(in)] = std::max(last_[root(in)], last_[out]);
   }
 
+  // Les autres lecteurs d'un enfant de Concat le lisent dans sa tranche, au pas de pixel du parent
+  // (Lowerer::bind) : seuls les noyaux qui lisent par leur descripteur, ceux qui y écrivent aussi
+  // (slab_writer). Un SPAN lit ainsi en place la sortie de conv_1 et celles des blocs que son
+  // Concat final reprend, comme le moteur FP8 CUDA (docs/span-fp8-cutlass.md).
+  bool read_in_slab(ir::TensorId id, const ir::Node& concat) const {
+    if (readers_[id] == 1) return true;
+    return std::ranges::all_of(graph_.nodes, [&](const ir::Node& reader) {
+      return &reader == &concat || std::ranges::count(reader.inputs, id) == 0 || slab_writer(reader.op);
+    });
+  }
+
   // Entrées d'un Concat sur les canaux Nhwc16 : la Conv écrit dans la sortie du Concat, au pas
-  // de pixel de celle-ci, à son décalage de canaux. L'enfant n'est lu que par le Concat, dont les
-  // décalages sont des multiples de 16 canaux (tuiles entières, vues alignées) ; les canaux de
-  // bourrage d'un enfant, non multiple de 16, tomberaient dans l'entrée suivante : seul le dernier
-  // enfant peut en avoir.
+  // de pixel de celle-ci, à son décalage de canaux. Ses autres lecteurs y lisent par leur
+  // descripteur (read_in_slab). Les décalages sont des multiples de 16 canaux (tuiles entières,
+  // vues alignées) ; les canaux de bourrage d'un enfant, non multiple de 16, tomberaient dans
+  // l'entrée suivante : seul le dernier enfant peut en avoir.
   void concat_channels(const ir::Node& node, std::size_t axis) {
     const ir::TensorId out = node.outputs[0];
     const ir::Tensor& y = graph_.tensors[out];
@@ -208,7 +219,7 @@ class Planner {
       if (offset % 16 != 0 || (channels % 16 != 0 && k + 1 != node.inputs.size())) continue;
       const std::uint64_t bytes = static_cast<std::uint64_t>(offset) * ir::element_size(y.type);
       const ir::Node* maker = producer_[in];
-      if (maker == nullptr || !slab_writer(maker->op) || readers_[in] != 1 ||
+      if (maker == nullptr || !slab_writer(maker->op) || !read_in_slab(in, node) ||
           std::ranges::count(node.inputs, in) != 1 || x.kind != ir::TensorKind::Activation || io_[in] ||
           aliases_[in].parent != ir::kNoTensor || x.layout != ir::Layout::Nhwc16 || x.type != y.type ||
           !x.known || bytes % alignment_ != 0 || x.dims[0] != y.dims[0] || x.dims[2] != y.dims[2] ||

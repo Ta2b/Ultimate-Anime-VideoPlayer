@@ -99,6 +99,9 @@ class KernelRunner {
   // Le débandage de la source avant SPAN, sur place (ref::deband, au décalage près de ref/deband.h) : deux
   // passes par un tampon de travail de l'enregistrement.
   Done deband(Recorder& recorder, const TensorView& rgb);
+  // Le même débandage de in dans out, de même forme et même précision, en une passe (l'ingestion qui
+  // débande, KernelOps::debands_on_ingest).
+  Done deband_into(Recorder& recorder, const TensorView& in, const TensorView& out);
   // Le plus grand |valeur| de la fenêtre area de tous les plans de t, cumulé (atomicMax, motif de float) dans
   // le mot slot de result, sans remise à zéro : la calibration du SPAN FP8 (vulkan_span_derive.cpp).
   Done tensor_peak(Recorder& recorder, const TensorView& t, const kernels::Window& area,

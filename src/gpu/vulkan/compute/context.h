@@ -35,6 +35,10 @@ namespace ajp::gpu::vk {
 
 class Recording;
 
+// Interrogation avant l'attente bloquante d'une mesure lue par l'hôte (VkContext::wait_on_host), la durée
+// de la voie CUDA (tensorrt_lanes.cpp).
+inline constexpr auto kQueryBeforeWait = std::chrono::microseconds(200);
+
 // Un appareil à créer.
 // Délai d'une fin de vie (VkContext::settle) : au moins kSettleFloor, et kSettleFactor fois la plus longue
 // attente hôte réussie jusque-là, sans dépasser kSettleCeiling (P2.16) : un GPU lent n'est pas tenu pour
@@ -175,8 +179,12 @@ class VkContext {
   std::uint64_t submit_infos() const { return submit_infos_; }    // VkSubmitInfo soumis, tous appels
 
   // Attente hôte d'une valeur (tests, outils, envoi et lecture hôte) ; chaque appel compte dans
-  // host_waits. Refus VulkanCallFailed au délai dépassé ou à la perte de l'appareil.
-  Done wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout = std::chrono::seconds(10));
+  // host_waits. query_first : la valeur d'abord interrogée pendant au plus cette durée, puis l'attente
+  // bloquante, comme TensorRtBackend::wait_event (kQueryBeforeWait : une mesure courte est souvent finie
+  // avant que le fil bloqué ne se réveille). Refus VulkanCallFailed au délai dépassé ou à la perte de
+  // l'appareil.
+  Done wait_on_host(const TimelinePoint& point, std::chrono::nanoseconds timeout = std::chrono::seconds(10),
+                    std::chrono::microseconds query_first = std::chrono::microseconds(0));
   std::uint64_t host_waits() const { return host_waits_; }
 
   // Enregistre, soumet et attend sur l'hôte un command buffer jetable : envoi et lecture hôte,

@@ -110,7 +110,10 @@ const uint ROWS = SUBGROUPS * TM;               // HALO : lignes de 16 pixels d'
 const uint HWID = 16u + (KW - 1u) * DW;         // HALO : largeur de la fenêtre
 const uint HPIX = (ROWS + (KH - 1u) * DH) * HWID;  // HALO : pixels de la fenêtre
 const uint ABUF = (HALO == 1u ? HPIX : BM) * AS;  // un tampon de A
-const uint CSTEPS = CXP / KC;
+// Canaux de K par prise : ceux de x complétés à 16. CXP n'est que le pas de pixel de x, plus large quand x
+// est une tranche de canaux de son parent (sortie de Split, entrée d'un Concat rangée en place).
+const uint CKP = (CIN + 15u) / 16u * 16u;
+const uint CSTEPS = CKP / KC;
 const uint TAPS = KH * KW;
 const uint STEPS = TAPS * CSTEPS;
 const uint QB = KC * NP / 8u;                   // uvec4 de B par étape
@@ -193,7 +196,7 @@ void stage_halo(uint buf, uint n, uint row0, uint x0, uint chunk) {
 // B de l'étape s dans le tampon buf : ses KC lignes de NP poids se suivent dans le tampon des
 // poids, copiées d'un bloc.
 void stage_b(uint buf, uint s) {
-  uint k0 = (s / CSTEPS) * CXP + (s % CSTEPS) * KC;
+  uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
   for (uint i = gl_LocalInvocationIndex; i < QB; i += gl_WorkGroupSize.x) {
     tile_b[buf * BBUF + i] = weights4.v[k0 * (NP / 8u) + i];
   }
@@ -233,7 +236,7 @@ void main() {
       for (uint tap = 0u; tap < TAPS; ++tap) {
         uint ky = tap / KW;
         uint kx = tap % KW;
-        uint k0 = tap * CXP + chunk * KC;
+        uint k0 = tap * CKP + chunk * KC;
         for (uint c16 = 0u; c16 < KC; c16 += 16u) {
           coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
           for (uint t = 0u; t < TM; ++t) {
@@ -262,7 +265,7 @@ void main() {
       stage_a(buf ^ 1u, n, first_pixel, s + 1u);
       if (SHARED_B == 1u) stage_b(buf ^ 1u, s + 1u);
     }
-    uint k0 = (s / CSTEPS) * CXP + (s % CSTEPS) * KC;
+    uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
     for (uint c16 = 0u; c16 < KC; c16 += 16u) {
       coopmat<float16_t, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseA> a[TM];
       for (uint t = 0u; t < TM; ++t) {

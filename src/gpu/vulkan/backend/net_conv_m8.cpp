@@ -147,7 +147,8 @@ std::expected<void, Refusal> Lowerer::conv_matrix_m8(std::size_t index, const Ke
   constants.push_back(tm);
   constants.push_back(subgroups * sgs);
   constants.push_back(sgs);
-  constants.push_back(detail::step_channels(x->desc.cp, subgroups, tm, np_shared, target_.max_shared_memory));
+  constants.push_back(
+      detail::step_channels(ckp(x->desc), subgroups, tm, np_shared, target_.max_shared_memory));
   for (const std::uint32_t c : detail::space_constants(attrs.epilogue)) constants.push_back(c);
   constants.push_back(shared_b);
   constants.push_back(0);
@@ -155,7 +156,7 @@ std::expected<void, Refusal> Lowerer::conv_matrix_m8(std::size_t index, const Ke
   constants.push_back(0);
   const Binding w{
       .kind = BindingKind::Blob,
-      .index = add_blob(matrix_weights(graph_.tensors[n.inputs[ir::kConvW]], x->desc.cp, tiles * 16))};
+      .index = add_blob(matrix_weights(graph_.tensors[n.inputs[ir::kConvW]], ckp(x->desc), tiles * 16))};
   const Binding b{.kind = BindingKind::Blob,
                   .index = add_blob(channel_floats(detail::constant_input(graph_, n, ir::kConvB), yc.c))};
   const std::uint64_t bm = static_cast<std::uint64_t>(subgroups) * tm * detail::kMatrixM8Pixels;

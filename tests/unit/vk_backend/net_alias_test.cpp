@@ -348,3 +348,90 @@ TEST_CASE("Réseau : Concat de sorties Sigmoid, Add, Tanh et Conv écrites dans 
   const std::vector<ir::NamedValue> half_inputs{{"x", test_values(ir::DataType::F16, {1, 5, 13, 17}, 13)}};
   check_graph(rig, half, half_inputs, kFp16);
 }
+
+namespace {
+
+// SPAN en petit : x → Conv 5 → 16 (feat) → Conv 3 × 3 et Relu (r1) → Conv 3 × 3 plus feat (s2) → Concat
+// (feat, r1, s2) → Conv 1 × 1. feat et r1 ont d'autres lecteurs que le Concat (une Conv, l'Add ou le résiduel
+// fondu) : ils sont écrits dans leur tranche et lus au pas de pixel du Concat. shared : un second Concat lit
+// aussi feat et r1, sans lire par descripteur ; tous deux sont alors recopiés.
+ModelBuilder span_concat(bool half, bool shared) {
+  ModelBuilder m;
+  const std::int32_t type = half ? ir::onnx::kFloat16 : ir::onnx::kFloat;
+  m.input("x", {1, 5, 13, 17}, type);
+  const auto same = attr_ints("pads", {1, 1, 1, 1});
+  add_weight(m, "wf", {16, 5, 3, 3}, half, 101);
+  add_weight(m, "bf", {16}, half, 102);
+  m.node("Conv", {"x", "wf", "bf"}, {"feat"}, {same});
+  add_weight(m, "w1", {16, 16, 3, 3}, half, 103);
+  add_weight(m, "b1", {16}, half, 104);
+  m.node("Conv", {"feat", "w1", "b1"}, {"c1"}, {same}).node("Relu", {"c1"}, {"r1"});
+  add_weight(m, "w2", {16, 16, 3, 3}, half, 105);
+  add_weight(m, "b2", {16}, half, 106);
+  m.node("Conv", {"r1", "w2", "b2"}, {"c2"}, {same}).node("Add", {"c2", "feat"}, {"s2"});
+  m.node("Concat", {"feat", "r1", "s2"}, {"cat"}, {attr_int("axis", 1)});
+  add_weight(m, "wo", {8, 48, 1, 1}, half, 107);
+  add_weight(m, "bo", {8}, half, 108);
+  m.node("Conv", {"cat", "wo", "bo"}, {"y"}).output("y", type);
+  if (shared) {
+    m.node("Concat", {"r1", "feat"}, {"cat2"}, {attr_int("axis", 1)});
+    add_weight(m, "wt", {4, 32, 1, 1}, half, 109);
+    add_weight(m, "bt", {4}, half, 110);
+    m.node("Conv", {"cat2", "wt", "bt"}, {"y2"}).output("y2", type);
+  }
+  return m;
+}
+
+}  // namespace
+
+TEST_CASE("Réseau : Concat dont les entrées ont d'autres lecteurs, rangé en place",
+          "[vk_backend][net][alias]") {
+  NetRig rig = make_net_rig();
+  const ir::Graph graph = build(span_concat(false, false));
+  const auto id = [&](const ir::Graph& g, std::string_view name) {
+    return static_cast<ir::TensorId>(std::ranges::find(g.tensors, name, &ir::Tensor::name) -
+                                     g.tensors.begin());
+  };
+  const std::vector<ir::Alias> aliases = vk::net::plan_aliases(graph, 16);
+  CHECK(vk::net::channel_slab_of(aliases, id(graph, "feat"), id(graph, "cat"), 0));
+  CHECK(vk::net::channel_slab_of(aliases, id(graph, "r1"), id(graph, "cat"), 16 * 4));
+  CHECK(vk::net::channel_slab_of(aliases, id(graph, "s2"), id(graph, "cat"), 32 * 4));
+  rig.target.storage_alignment = 16;
+  CHECK(copy_dispatches(graph, rig.target) == 0);
+  const std::vector<ir::NamedValue> inputs{{"x", test_values(ir::DataType::F32, {1, 5, 13, 17}, 14)}};
+  check_in_place(rig, graph, inputs, true, true);
+
+  // Un lecteur qui ne lit pas par descripteur (un autre Concat) : feat et r1 restent à part.
+  const ir::Graph both = build(span_concat(false, true));
+  const std::vector<ir::Alias> kept = vk::net::plan_aliases(both, 16);
+  CHECK(kept[id(both, "feat")].parent == ir::kNoTensor);
+  CHECK(kept[id(both, "r1")].parent == ir::kNoTensor);
+  CHECK(vk::net::channel_slab_of(kept, id(both, "s2"), id(both, "cat"), 32 * 4));
+  check_graph(rig, both, inputs, kFp32);
+
+  // Matrices coopératives sur une tranche (abaissement seul, en float16) : K suit les 16 canaux de r1, pas
+  // les 48 du pas de pixel du Concat.
+  const ir::Graph half = build(span_concat(true, false));
+  vk::net::Target target = rig.target;
+  target.f16_storage = true;
+  target.f16_math = true;
+  target.matrix_units = true;
+  target.matrix_first = true;
+  if (target.subgroup_size == 0) target.subgroup_size = 32;
+  const auto choices = require_value(vk::net::default_choices(half, target));
+  const vk::net::Program program = require_value(vk::net::lower(half, choices, target));
+  const auto reads_r1 = std::ranges::find_if(program.dispatches, [&](const vk::net::Dispatch& d) {
+    const ir::Node& node = half.nodes[d.node];
+    return node.op == ir::OpKind::Conv && node.inputs[0] == id(half, "r1");
+  });
+  REQUIRE(reads_r1 != program.dispatches.end());
+  CHECK(reads_r1->shader.starts_with("net_conv_coopmat"));
+  CHECK(reads_r1->constants[6] == 48U);   // CXP : le pas de pixel du Concat
+  CHECK(reads_r1->constants[33] == 16U);  // KC
+  REQUIRE(reads_r1->bindings[1].kind == vk::net::BindingKind::Blob);
+  CHECK(program.blobs[reads_r1->bindings[1].index].size() == std::size_t{9} * 16 * 16 * 2);
+
+  require_f16(rig);
+  const std::vector<ir::NamedValue> half_inputs{{"x", test_values(ir::DataType::F16, {1, 5, 13, 17}, 14)}};
+  check_graph(rig, half, half_inputs, kFp16);
+}

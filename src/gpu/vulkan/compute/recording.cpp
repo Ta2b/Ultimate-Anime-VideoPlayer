@@ -168,8 +168,36 @@ Done Recorder::check_view(const BufferView& view, std::string_view what) const {
   return {};
 }
 
+std::expected<std::shared_ptr<const Buffer>, Refusal> ScratchShare::take(const VkContext& context,
+                                                                         MemoryAllocator& memory,
+                                                                         VkDeviceSize bytes,
+                                                                         std::size_t rank) {
+  std::erase_if(entries_, [](const Entry& e) { return e.buffer.expired(); });
+  for (const Entry& e : entries_) {
+    if (e.bytes != bytes || e.rank != rank) continue;
+    if (std::shared_ptr<const Buffer> alive = e.buffer.lock()) return alive;
+  }
+  auto buffer = Buffer::create(context, memory, bytes, MemoryUse::Device);
+  if (!buffer) return std::unexpected(buffer.error());
+  auto made = std::make_shared<const Buffer>(std::move(*buffer));
+  entries_.push_back({.bytes = bytes, .rank = rank, .buffer = made});
+  return made;
+}
+
+std::size_t ScratchShare::buffers() const {
+  return static_cast<std::size_t>(
+      std::ranges::count_if(entries_, [](const Entry& e) { return !e.buffer.expired(); }));
+}
+
 std::expected<BufferView, Refusal> Recorder::scratch(VkDeviceSize bytes, MemoryUse use) {
   if (auto ok = open(); !ok) return std::unexpected(ok.error());
+  if (share_ != nullptr && use == MemoryUse::Device) {
+    auto shared = share_->take(*context_, *memory_, bytes, shared_rank_++);
+    if (!shared) return std::unexpected(shared.error());
+    const BufferView view = (*shared)->view();
+    recording_->shared_.push_back(std::move(*shared));
+    return view;
+  }
   auto buffer = Buffer::create(*context_, *memory_, bytes, use);
   if (!buffer) return std::unexpected(buffer.error());
   const BufferView view = buffer->view();

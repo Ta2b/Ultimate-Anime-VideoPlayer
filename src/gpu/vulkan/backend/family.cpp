@@ -120,6 +120,13 @@ GpuFamily detect_family(std::uint32_t vendor_id, std::uint32_t device_id, bool c
   }
 }
 
+GpuFamily family_from_tiles(GpuFamily family, std::string_view device_name, bool f16_tile, bool e4m3_tile) {
+  if (family != GpuFamily::AmdBeforeRdna3 || device_name.find("(RADV ") != std::string_view::npos)
+    return family;
+  if (e4m3_tile) return GpuFamily::AmdRdna4;
+  return f16_tile ? GpuFamily::Unknown : family;
+}
+
 DriverKind driver_kind(std::string_view driver_name) {
   if (driver_name == "NVIDIA") return DriverKind::NvidiaProprietary;
   if (driver_name == "radv") return DriverKind::Radv;

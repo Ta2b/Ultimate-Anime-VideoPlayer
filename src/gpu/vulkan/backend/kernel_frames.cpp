@@ -441,21 +441,37 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
     key.add(static_cast<std::uint64_t>(spec.reduce.kind));
     key.add(std::bit_cast<std::uint32_t>(spec.reduce.b)).add(std::bit_cast<std::uint32_t>(spec.reduce.c));
   }
+  key.add(spec.deband ? 1 : 0);
   auto rec = recording(key, [&](Recorder& r) -> Done {
     if (auto ok = prepare_image(r, *src); !ok) return ok;
+    // Travail de cette exécution seule (la chroma, l'image avant réduction, l'image avant débandage) : un jeu
+    // pour toutes les images du lot.
+    r.share_scratch(&ingest_scratch_);
+    // Débandage : l'image ingérée dans un tampon de travail, que le débandage rend dans le tenseur, en une
+    // passe au lieu de deux (KernelOps::deband débande sur place, par une copie de retour).
+    TensorView target = *dst;
+    if (spec.deband) {
+      auto work = r.scratch(tensor_bytes(dst->width, dst->height, 3, dst->precision));
+      if (!work) return std::unexpected(work.error());
+      target.buffer = *work;
+    }
     const auto ingest = [&](const TensorView& out) {
       return src->planes ? runner_.ingest(r, *src->planes, *color, out, chroma)
                          : runner_.ingest(r, src->view, *color, out, chroma);
     };
-    if (!reduced) return ingest(*dst);
-    const auto w = static_cast<std::uint32_t>(frame.width);
-    const auto h = static_cast<std::uint32_t>(frame.height);
-    auto full = r.scratch(tensor_bytes(w, h, 3, Precision::F32));
-    if (!full) return std::unexpected(full.error());
-    const TensorView image{
-        .buffer = *full, .width = w, .height = h, .planes = 3, .precision = Precision::F32};
-    if (auto ok = ingest(image); !ok) return ok;
-    return runner_.resize(r, image, *dst, *wx, *wy);
+    if (!reduced) {
+      if (auto ok = ingest(target); !ok) return ok;
+    } else {
+      const auto w = static_cast<std::uint32_t>(frame.width);
+      const auto h = static_cast<std::uint32_t>(frame.height);
+      auto full = r.scratch(tensor_bytes(w, h, 3, Precision::F32));
+      if (!full) return std::unexpected(full.error());
+      const TensorView image{
+          .buffer = *full, .width = w, .height = h, .planes = 3, .precision = Precision::F32};
+      if (auto ok = ingest(image); !ok) return ok;
+      if (auto ok = runner_.resize(r, image, target, *wx, *wy); !ok) return ok;
+    }
+    return spec.deband ? runner_.deband_into(r, target, *dst) : Done{};
   });
   if (!rec) return std::unexpected(rec.error());
   pending.dismiss();  // submit_frames ferme l'accès, soumission faite ou non
