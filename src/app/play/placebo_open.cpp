@@ -352,6 +352,21 @@ void request_smooth_motion(spdlog::logger& log) {
 #endif
 }
 
+// Les capacités de retour de présentation (present_level.h) : aucune à --present=open, ni sur un écran
+// branché sur une autre carte que celle du rendu (portable hybride), où le pilote fige la fenêtre.
+PresentCaps screen_present_caps(PresentWanted wanted, pl_vulkan vk, VkSurfaceKHR surface, SDL_Window* window,
+                                spdlog::logger& log) {
+  if (wanted == PresentWanted::Open) return {};
+  const PresentCaps caps = read_present_caps(vk, surface);
+  const std::optional<ScreenCard> card = screen_card(window, {}, GpuDevice{.luid = device_luid(vk)});
+  if (!card || card->renders) return caps;
+  log.warn(
+      "présentation : écran sur la carte « {} », pas sur celle du rendu : retour de présentation coupé (le "
+      "pilote y fige la fenêtre)",
+      card->name);
+  return present_caps_for_screen(caps, false);
+}
+
 // Le profil GPU d'une passe à la fermeture : médiane et p95 en temps linéaire (C10-07 : le tri complet de
 // réservoirs de 2^20 échantillons pesait sur le temps de fermeture, sous la garde des 60 s).
 void log_gpu_profile(spdlog::logger& channel, std::string_view what,
@@ -557,20 +572,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
 
   // Le niveau de retour de présentation (present_level.h) : à --present=open, la swapchain d'aujourd'hui.
   impl->present_caps =
-      options.present == PresentWanted::Open ? PresentCaps{} : read_present_caps(impl->vk, impl->surface);
-  // Un écran sur une autre carte (portable hybride) : aucun retour, le pilote y fige la fenêtre
-  // (present_level.h).
-  if (options.present != PresentWanted::Open) {
-    const std::optional<ScreenCard> card =
-        screen_card(impl->window, {}, GpuDevice{.luid = device_luid(impl->vk)});
-    if (card && !card->renders) {
-      impl->channel->warn(
-          "présentation : écran sur la carte « {} », pas sur celle du rendu : retour de "
-          "présentation coupé (le pilote y fige la fenêtre)",
-          card->name);
-      impl->present_caps = present_caps_for_screen(impl->present_caps, false);
-    }
-  }
+      screen_present_caps(options.present, impl->vk, impl->surface, impl->window, *impl->channel);
   // wp_presentation (placebo_wayland.h), seulement s'il peut servir.
   std::unique_ptr<WaylandPresentation> wayland;
   if (wants_wayland(options.present)) wayland = WaylandPresentation::open(impl->window, impl->channel);
