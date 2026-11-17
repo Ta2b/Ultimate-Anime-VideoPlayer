@@ -60,3 +60,42 @@ TEST_CASE("KernelOps : débandage de la source, contre kernels/ref", "[vk_backen
     }
   }
 }
+
+TEST_CASE("KernelOps : l'ingestion qui débande rend l'image de l'ingestion puis du débandage",
+          "[vk_backend][kernels][deband]") {
+  TempDir dir("deband-ingest");
+  auto backend = make_backend(dir.path());
+  KernelOps& ops = *backend->kernels();
+  REQUIRE(ops.debands_on_ingest());
+  std::vector<TensorType> types{TensorType::F32};
+  if (backend->profile().target.f16_storage) types.push_back(TensorType::F16);
+  const ColorInfo color{
+      .matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+  constexpr int kW = 80;
+  constexpr int kH = 48;
+  const k::YuvImage yuv = synthetic_yuv(k::Format::Nv12, kW, kH, 83);
+  const DecodedFrame frame = host_frame(yuv, color, 1);
+  for (const TensorType type : types) {
+    CAPTURE(static_cast<int>(type));
+    const std::size_t element = type == TensorType::F16 ? 2 : 4;
+    // À taille égale, puis réduite de moitié : les deux chemins de l'ingestion.
+    for (const int scale : {1, 2}) {
+      CAPTURE(scale);
+      const int w = kW / scale;
+      const int h = kH / scale;
+      const std::size_t bytes = element * 3 * std::size_t{static_cast<std::size_t>(w * h)};
+      auto separate = rgb_tensor(*backend, w, h, type);
+      auto fused = rgb_tensor(*backend, w, h, type);
+      require_ok(ops.ingest(frame, {}, separate->tensor()));
+      require_ok(ops.deband(separate->tensor()));
+      require_ok(ops.ingest(frame, {.deband = true}, fused->tensor()));
+      CHECK(read_tensor(*backend, fused->tensor(), bytes) ==
+            read_tensor(*backend, separate->tensor(), bytes));
+      // Sans débandage, l'ingestion rend toujours l'image non débandée (l'enregistrement est distinct).
+      require_ok(ops.ingest(frame, {}, fused->tensor()));
+      auto plain = rgb_tensor(*backend, w, h, type);
+      require_ok(ops.ingest(frame, {}, plain->tensor()));
+      CHECK(read_tensor(*backend, fused->tensor(), bytes) == read_tensor(*backend, plain->tensor(), bytes));
+    }
+  }
+}

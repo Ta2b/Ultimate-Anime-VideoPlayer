@@ -129,6 +129,8 @@ class VulkanKernelOps final : public KernelOps {
                                                      const Motion* previous, float t,
                                                      const RingTarget& target) override;
   std::expected<void, Refusal> deband(const Tensor& rgb) override;
+  // ingest() débande en une passe quand IngestSpec::deband est posé (même résultat que deband()).
+  bool debands_on_ingest() const override { return true; }
   // Hors de KernelOps, pour la dérivation du SPAN FP8 (vulkan_span_derive.cpp) : le plus grand |valeur| de
   // la fenêtre area de chaque tenseur de tensors (1 × C × H × W), cumulé dans le mot k de result (motifs de
   // float, atomicMax), sans remise à zéro.

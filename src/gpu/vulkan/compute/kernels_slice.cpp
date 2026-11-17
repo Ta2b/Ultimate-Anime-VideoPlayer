@@ -136,17 +136,28 @@ Done KernelRunner::deband(Recorder& recorder, const TensorView& rgb) {
   // points jusqu'à kDebandRadius autour de lui, l'image ne peut pas changer pendant la passe.
   auto work = recorder.scratch(tensor_bytes(rgb.width, rgb.height, 3, rgb.precision));
   if (!work) return std::unexpected(work.error());
+  TensorView debanded = rgb;
+  debanded.buffer = *work;
+  if (auto ok = deband_into(recorder, rgb, debanded); !ok) return ok;
   const std::array<std::uint32_t, 2> push{rgb.width, rgb.height};
-  const std::array<std::uint32_t, 3> groups{groups_for(rgb.width), groups_for(rgb.height), 1};
-  const std::array debanded{rgb.buffer, *work};
-  if (auto ok = detail::run(*pipelines_, recorder, "deband", rgb.precision, std::array{0U}, debanded, {},
-                            std::as_bytes(std::span(push)), groups);
-      !ok) {
-    return ok;
-  }
   const std::array back{*work, rgb.buffer};
   return detail::run(*pipelines_, recorder, "deband", rgb.precision, std::array{1U}, back, {},
-                     std::as_bytes(std::span(push)), groups);
+                     std::as_bytes(std::span(push)), {groups_for(rgb.width), groups_for(rgb.height), 1});
+}
+
+Done KernelRunner::deband_into(Recorder& recorder, const TensorView& in, const TensorView& out) {
+  if (auto ok = check_tensor(in, 3, context_->caps().enabled, "débandage : entrée"); !ok) return ok;
+  if (auto ok = check_tensor(out, 3, context_->caps().enabled, "débandage : sortie"); !ok) return ok;
+  if (in.width != out.width || in.height != out.height || in.precision != out.precision) {
+    return refuse(
+        RefusalCode::InputMismatch,
+        std::format("débandage : entrée {}x{}, sortie {}x{}, précisions {} et {}", in.width, in.height,
+                    out.width, out.height, static_cast<int>(in.precision), static_cast<int>(out.precision)));
+  }
+  const std::array<std::uint32_t, 2> push{in.width, in.height};
+  const std::array buffers{in.buffer, out.buffer};
+  return detail::run(*pipelines_, recorder, "deband", in.precision, std::array{0U}, buffers, {},
+                     std::as_bytes(std::span(push)), {groups_for(in.width), groups_for(in.height), 1});
 }
 
 Done KernelRunner::tensor_peak(Recorder& recorder, const TensorView& t, const kernels::Window& area,
