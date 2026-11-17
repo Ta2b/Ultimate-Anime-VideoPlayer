@@ -128,6 +128,7 @@ class PlayerUi {
   panel::State panel_state_;  // io.UserData du contexte (panel_style.h)
   Controls controls_;
   UiLook look_;
+  bool applied_ui_scale_ = false;  // apply_scale a posé le style une première fois
   SettingsPanel panel_;
   PlaySettings running_;
   SettingsChoices choices_;

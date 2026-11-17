@@ -517,5 +517,25 @@ TEST_CASE("play.toml : la sortie HDR et les FPS, absents d'un ancien fichier, s'
   std::filesystem::remove(path);
 }
 
+TEST_CASE("play.toml : la taille de l'interface s'enregistre, automatique dans un ancien fichier",
+          "[app][settings]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-ui-scale.toml";
+  std::filesystem::remove_all(path);
+  write_text(path, "[interface]\nlanguage = \"fr\"\n");
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK(old->ui_scale == 0);
+  PlaySettings wanted = *old;
+  wanted.ui_scale = 150;
+  REQUIRE(save_settings(path, wanted));
+  auto again = load_settings(path);
+  REQUIRE(again);
+  CHECK(again->ui_scale == 150);
+  PlaySettings wrong;
+  wrong.ui_scale = 90;
+  CHECK_FALSE(validate(wrong));
+  std::filesystem::remove(path);
+}
+
 }  // namespace
 }  // namespace ajp::app::play

@@ -82,6 +82,8 @@ constexpr std::array kSettingsPages{
     Entry{"Audio language", "Langue audio"},
     Entry{"Auto (after SPAN above 1080p or from ×3)", "Auto (après SPAN au-dessus de 1080p ou dès ×3)"},
     Entry{"Auto (from the display)", "Auto (selon l'écran)"},
+    Entry{"Interface size", "Taille de l'interface"},
+    Entry{"Automatic", "Automatique"},
     Entry{"Autoplay next episode", "Lire l'épisode suivant"},
     Entry{"Balance", "Équilibre"},
     Entry{"Before SPAN (best quality)", "Avant SPAN (qualité maximale)"},

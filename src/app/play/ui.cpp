@@ -21,6 +21,7 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/ui_fonts.h"
+#include "app/play/ui_scale.h"
 #include "core/log.h"
 #include "core/thread.h"
 
@@ -203,8 +204,18 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
 }
 
 void PlayerUi::apply_scale() {
-  float scale = SDL_GetWindowDisplayScale(window_);
-  if (!(scale > 0.0F)) scale = 1.0F;
+  int display_height = 0;
+  if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window_)))
+    display_height = static_cast<int>(static_cast<float>(mode->h) * std::max(mode->pixel_density, 1.0F));
+#if defined(_WIN32) || defined(__APPLE__)
+  constexpr bool kTrustSystem = true;  // l'échelle que le système recommande pour l'écran
+#else
+  constexpr bool kTrustSystem = false;
+#endif
+  const float scale =
+      ui_scale(running_.ui_scale, SDL_GetWindowDisplayScale(window_), display_height, kTrustSystem);
+  if (scale == look_.scale && applied_ui_scale_) return;
+  applied_ui_scale_ = true;
   ImGuiStyle& style = ImGui::GetStyle();
   style = ImGuiStyle();
   apply_theme(style);
@@ -493,7 +504,9 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
 
 void PlayerUi::set_settings(const PlaySettings& running, SettingsChoices choices,
                             const EngineCatalog* catalog) {
+  const bool rescale = running.ui_scale != running_.ui_scale;
   running_ = running;
+  if (rescale) apply_scale();
   catalog_ = catalog;
   choices_ = std::move(choices);
   input_pending_ = true;
@@ -513,13 +526,17 @@ void PlayerUi::set_display_output(bool hdr_output, int auto_peak) {
 }
 
 void PlayerUi::preparing(const PlaySettings& settings) {
+  const bool rescale = settings.ui_scale != running_.ui_scale;
   running_ = settings;
+  if (rescale) apply_scale();
   choices_.opened.reset();
   choices_.rife_loaded = false;
 }
 
 void PlayerUi::set_running(const PlaySettings& running) {
+  const bool rescale = running.ui_scale != running_.ui_scale;
   running_ = running;
+  if (rescale) apply_scale();
   input_pending_ = true;
 }
 

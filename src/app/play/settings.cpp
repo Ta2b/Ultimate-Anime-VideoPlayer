@@ -18,6 +18,7 @@
 #include "app/play/anime4k_choice.h"
 #include "app/play/chain_shape.h"
 #include "app/play/settings_refuse.h"
+#include "app/play/ui_scale.h"
 #include "core/utf8_path.h"
 #include "render/cube_lut.h"
 
@@ -48,6 +49,12 @@ std::expected<void, Refusal> check(std::string_view key, T value, core::Range<T>
 }
 
 // Des balises de langue : lettres et tirets (« fre », « en-US »).
+// La taille de l'interface : 0 (automatique) ou kUiScalePercent.
+std::expected<void, Refusal> check_ui_scale(int percent) {
+  if (percent == 0) return {};
+  return check("interface.ui_scale", percent, kUiScalePercent);
+}
+
 std::expected<void, Refusal> check_languages(std::string_view key,
                                              const std::vector<std::string>& languages) {
   for (const std::string& tag : languages) {
@@ -289,13 +296,14 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                       std::format(" : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
                                   s.rife_factor_den, limits::kRifeFactor.hi));
   }
-  const std::array<std::expected<void, Refusal>, 6> checks{
+  const std::array<std::expected<void, Refusal>, 7> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
       check("sync.video_latency_ms", s.video_latency_ms, limits::kVideoLatencyMs),
       check("audio.volume", s.volume, limits::kVolume),
       check("subtitles.scale", s.subtitle_scale, limits::kSubtitleScale),
       check("picture.sharpness", s.sharpness, limits::kSharpness),
+      check_ui_scale(s.ui_scale),
   };
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
@@ -484,6 +492,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.update_mode = wanted.update_mode;
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
+  s.ui_scale = wanted.ui_scale;
   // Le délai d'un autre appareil ne vaut qu'à la réouverture : en direct, le son de l'appareil en cours ne
   // se décale pas, et ce délai ne s'enregistre pas pour lui (C23-01).
   if (wanted.audio_device == running.audio_device) s.audio_delay_ms = wanted.audio_delay_ms;

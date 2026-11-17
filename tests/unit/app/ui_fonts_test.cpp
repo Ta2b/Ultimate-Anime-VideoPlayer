@@ -1,4 +1,4 @@
-// La table des polices de l'interface sous Windows (ui_fonts.h).
+// La table des polices de l'interface sous Windows (ui_fonts.h) et la taille de l'interface (ui_scale.h).
 #include "app/play/ui_fonts.h"
 
 #include <algorithm>
@@ -6,6 +6,8 @@
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "app/play/ui_scale.h"
 
 namespace ajp::app::play {
 namespace {
@@ -38,6 +40,22 @@ TEST_CASE("Polices de Windows : le coréen et le chinois ont leur police de repl
   CHECK(korean != chinese);
   // Chaque groupe a au moins une police.
   for (const WindowsFontGroup& group : kWindowsFonts) CHECK(group.files[0] != nullptr);
+}
+
+TEST_CASE("ui_scale : un grand écran laissé à 100 % hors Windows s'agrandit, un choix l'emporte",
+          "[app][ui]") {
+  // L'écran 2560×1440 de Fedora 42 sous GNOME à 100 % : 125 %, comme Windows le propose.
+  CHECK(ui_scale(0, 1.0F, 1440, false) == 1.25F);
+  CHECK(ui_scale(0, 1.0F, 2160, false) == 1.5F);
+  CHECK(ui_scale(0, 1.0F, 1080, false) == 1.0F);
+  // Une échelle du bureau déjà choisie, ou celle de Windows et macOS, reste.
+  CHECK(ui_scale(0, 1.5F, 1440, false) == 1.5F);
+  CHECK(ui_scale(0, 1.0F, 1440, true) == 1.0F);
+  CHECK(ui_scale(0, 0.0F, 0, false) == 1.0F);  // échelle inconnue
+  // Le choix de l'utilisateur, borné à 100–200 %.
+  CHECK(ui_scale(100, 1.0F, 1440, false) == 1.0F);
+  CHECK(ui_scale(175, 1.0F, 1080, true) == 1.75F);
+  CHECK(ui_scale(400, 1.0F, 1080, true) == 2.0F);
 }
 
 }  // namespace ajp::app::play
