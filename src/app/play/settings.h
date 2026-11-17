@@ -319,6 +319,12 @@ struct PlaySettings {
   // lectures. RIFE seulement (la fin de RIFE fusionné, et le warp de la variante mouvement). Allumé par
   // défaut ; recharge la chaîne.
   bool cubic_warp = true;
+  // Mouvement d'ensemble (kernels/spec/warp_pan.h) : au warp de la variante mouvement de RIFE, la translation
+  // de la paire, mesurée au centième de pixel, remplace le flot là où il est petit et proche d'elle, et le
+  // mélange glisse vers un fondu sous un demi-pixel : moins d'ondulation et de saccade sur les panoramiques
+  // lents (docs/interpolation.md, « Mouvement d'ensemble »). RIFE seulement, hors garder les poses. Éteint
+  // par défaut ; recharge la chaîne.
+  bool pan_lock = false;
   // DistilDRBA fusionné (kernels/spec/drba_fused.h) : le réseau coupé en quatre petits moteurs TensorRT
   // reliés par des noyaux CUDA, à la place du moteur DistilDRBA entier (0,92 ms au lieu de 2,10 ms par passe
   // à 1088×1920 sur une RTX 4070 Ti) ; seulement sous TensorRT, au cran Équilibre et pour un DistilDRBA v2

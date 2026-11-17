@@ -191,6 +191,19 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
     return launch_into(target, "warp et mélange", [&](RingSurface surface) {
       WarpBlendParams into = params;
       into.surface = surface;
+      if (motion.pan_lock && !poses.keep) {  // une estimation par warp, relue par tous ses pixels
+        if (pan_estimate_ == nullptr) {
+          if (auto ok = cuda_check(
+                  cudaMallocAsync(reinterpret_cast<void**>(&pan_estimate_), 4 * sizeof(float), stream_),
+                  "cudaMallocAsync");
+              !ok) {
+            return ok;
+          }
+        }
+        if (auto ok = cuda_check(launch_pan_global(into, pan_estimate_, stream_), "pan_global<<<>>>"); !ok)
+          return ok;
+        into.pan = pan_estimate_;
+      }
       return cuda_check(launch_warp_blend(into, stream_), "warp_blend<<<>>>");
     });
   });

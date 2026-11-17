@@ -61,6 +61,9 @@ struct Motion {
   kernels::Window area;  // la fenêtre de l'image dans les plans remplis
   // Le filtre qui lit a et b au warp (kernels/spec/warp.h) ; le flot et le masque restent bilinéaires.
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
+  // Mouvement d'ensemble (kernels/spec/warp_pan.h) : translation de la paire estimée par le warp, hors garder
+  // les poses ; réglage pan_lock de [interpolation].
+  bool pan_lock = false;
 };
 
 // Synchronisation d'une écriture dans le ring (protocole de core/ring.h).

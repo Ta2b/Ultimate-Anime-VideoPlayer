@@ -37,6 +37,19 @@ void cubic_warp_checkbox(PlaySettings& d) {
              panel::Apply::Reload);
 }
 
+// Le mouvement d'ensemble (PlaySettings::pan_lock) : éteint par défaut.
+void pan_lock_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Steady slow pans"), &d.pan_lock);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Steady slow pans"),
+      i18n::tr("On slow pans, the motion of the whole picture, measured to a hundredth of a pixel, "
+               "replaces small uneven motion: backgrounds stop rippling and juddering. Speed: no "
+               "noticeable loss. Quality impact: clear gain on slow pans. Recommended: on. RIFE only."),
+      panel::Apply::Reload);
+}
+
 // Le mouvement estimé sur une copie 720p (PlaySettings::motion_720p) : éteint par défaut, la taille de
 // travail.
 void motion_720p_checkbox(PlaySettings& d) {
@@ -545,6 +558,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         panel::Apply::Reload);
     panel::cell();
     cubic_warp_checkbox(d);
+    panel::cell();
+    pan_lock_checkbox(d);
     panel::cell();
     motion_720p_checkbox(d);
     ImGui::EndDisabled();

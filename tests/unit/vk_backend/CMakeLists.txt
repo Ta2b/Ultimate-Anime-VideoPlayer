@@ -19,6 +19,7 @@ ajp_add_unit_tests(vk_backend
     family_test.cpp
     host_import_test.cpp
     kernel_ops_test.cpp
+    pan_warp_test.cpp
     kernel_planes_test.cpp
     net_alias_test.cpp
     net_artcnn_test.cpp

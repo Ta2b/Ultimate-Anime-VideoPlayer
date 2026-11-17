@@ -105,6 +105,7 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"smooth_drawings", [](PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; }},
       {"cubic_warp", [](PlaySettings& s) { s.cubic_warp = !s.cubic_warp; }},
       {"motion_720p", [](PlaySettings& s) { s.motion_720p = !s.motion_720p; }},
+      {"pan_lock", [](PlaySettings& s) { s.pan_lock = !s.pan_lock; }},
       {"auto_off", [](PlaySettings& s) { s.auto_off = !s.auto_off; }},
       {"gmfss_compose", [](PlaySettings& s) { s.gmfss_compose = !s.gmfss_compose; }},
       {"gmfss_every_instant", [](PlaySettings& s) { s.gmfss_every_instant = !s.gmfss_every_instant; }},

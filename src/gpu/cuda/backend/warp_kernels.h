@@ -31,6 +31,9 @@ struct WarpBlendParams {
   // d'après le mouvement de la paire précédente, mêmes plans et même fenêtre que flow ;
   // previous_flow nul : la paire précédente était tenue.
   bool keep_poses = false;
+  // Mouvement d'ensemble (kernels/spec/warp_pan.h) : l'estimation de la paire (dx, dy, sûre), écrite par
+  // launch_pan_global sur la même file ; nul : flot de RIFE tel quel. Ignoré quand keep_poses.
+  const float* pan = nullptr;
   const void* previous_flow = nullptr;
   void* out = nullptr;  // 1 × 3 × height × width, FP16
   // Non nul : la sortie va dans ce slot RGBA16 UNORM du ring (width × height), au code que
@@ -49,6 +52,10 @@ struct WarpBlendParams {
 };
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream);
+
+// Mouvement d'ensemble de la paire (a et b de params, kernels/spec/warp_pan.h) dans out[0..2] : dx, dy et
+// 1 si l'estimation est sûre, 0 sinon. Un seul bloc ; pan de params n'est pas lu.
+cudaError_t launch_pan_global(const WarpBlendParams& params, float* out, cudaStream_t stream);
 
 // Plus grand |déplacement| des 4 plans de flot dans la fenêtre, en pixels de la fenêtre, écrit en
 // bits de float dans *result (remis à zéro par l'appelant ; les valeurs positives se comparent

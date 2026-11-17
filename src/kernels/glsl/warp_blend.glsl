@@ -28,17 +28,22 @@ layout(std430, binding = 3) restrict readonly buffer Mask { AJP_TENSOR v[]; } ma
 // Le slot du ring par sa vue R16G16B16A16_UNORM, comme ring_store (écrit après les tampons).
 #define AJP_WARP_PREVIOUS 4
 #define AJP_WARP_PARAMS 5
-layout(binding = 6, rgba16) uniform writeonly image2D slot;
+#define AJP_WARP_PAN 6
+layout(binding = 7, rgba16) uniform writeonly image2D slot;
 #else
 layout(std430, binding = 4) writeonly buffer Blend { AJP_TENSOR v[]; } dst;
 #define AJP_WARP_PREVIOUS 5
 #define AJP_WARP_PARAMS 6
+#define AJP_WARP_PAN 7
 #endif
 // Mouvement au milieu de la paire précédente, mêmes plans et même fenêtre ; lu seulement avec
 // keep_poses et has_previous (sinon le flot y est lié à sa place).
 layout(std430, binding = AJP_WARP_PREVIOUS) readonly buffer Previous { AJP_TENSOR v[]; } previous;
 // L'instant, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
 layout(std430, binding = AJP_WARP_PARAMS) readonly buffer Params { float t; } params;
+// Mouvement d'ensemble de la paire (pan_global.comp, spec/warp_pan.h) : dx, dy, 1 si sûre ; lu seulement avec
+// pan_lock (sinon l'instant y est lié à sa place).
+layout(std430, binding = AJP_WARP_PAN) readonly buffer Pan { float v[]; } pan;
 
 layout(push_constant) uniform Push {
   uint width;  // images a, b et sortie
@@ -51,6 +56,7 @@ layout(push_constant) uniform Push {
   uint area_height;
   uint keep_poses;    // 1 : garder les poses
   uint has_previous;  // 0 : paire précédente tenue, sans mouvement
+  uint pan_lock;      // 1 : mouvement d'ensemble (spec/warp_pan.h), hors garder les poses
 } pc;
 
 // Les quatre voisins d'une lecture bilinéaire et ses fractions (spec/warp.h) : coordonnées
@@ -213,8 +219,39 @@ struct Displacement {
   float weight;
 };
 
-Displacement estimated(vec4 at_uv, Taps uv) {
-  return Displacement(at_uv, mask_at(uv));
+// Le mouvement d'ensemble : le flot lu f remplacé par la translation de la paire au milieu, en pixels de la
+// fenêtre, là où il est petit et proche d'elle (spec/warp_pan.h).
+// pan_lock hors garder les poses : le fondu sous un demi-pixel ; le flot n'est remplacé que si l'estimation
+// est sûre (pan.v[2]).
+bool pan_on() {
+  return pc.pan_lock != 0u && pc.keep_poses == 0u;
+}
+
+vec4 pan_flow(vec4 f) {
+  float sx = float(pc.width) / float(pc.area_width);
+  float sy = float(pc.height) / float(pc.area_height);
+  if (pan.v[2] < 0.5) return f;
+  vec4 g = vec4(-0.5 * pan.v[0] / sx, -0.5 * pan.v[1] / sy, 0.5 * pan.v[0] / sx, 0.5 * pan.v[1] / sy);
+  vec4 af = abs(f);
+  vec4 ae = abs(f - g);
+  float m = max(max(af.x, af.y), max(af.z, af.w));
+  float e = max(max(ae.x, ae.y), max(ae.z, ae.w));
+  return (m < AJP_PAN_FLOW_LIMIT && e < AJP_PAN_AGREEMENT) ? g : f;
+}
+
+float slow_fade(float d) {
+  return smoothstep(AJP_SLOW_FADE_LO, AJP_SLOW_FADE_HI, d);
+}
+
+Displacement estimated(vec4 at_uv, Taps uv, float t) {
+  float weight = mask_at(uv);
+  if (pan_on()) {  // sous un demi-pixel, le masque glisse vers le fondu (ln((1 − t) / t), nul à t = 1/2)
+    float mm = bounded(weight, AJP_MASK_EPSILON, 1.0 - AJP_MASK_EPSILON);
+    float w = slow_fade(length(at_uv.zw - at_uv.xy));
+    precise float z = w * log(mm / (1.0 - mm)) + (1.0 - w) * log((1.0 - t) / t);
+    weight = 1.0 / (1.0 + exp(-z));
+  }
+  return Displacement(at_uv, weight);
 }
 
 // Un autre instant depuis le mouvement du milieu : où le point vu en t était au milieu, son
@@ -225,11 +262,17 @@ Displacement from_middle(float u, float v, float t, vec4 at_uv) {
   precise float v2 = v - ((1.0 - t) * at_uv.y + t * at_uv.w);
   Taps at = motion_taps(u2, v2);
   vec4 at2 = flow_at(at);
+  bool on = pan_on();
+  if (on) at2 = pan_flow(at2);
   precise float tx = at2.z - at2.x;
   precise float ty = at2.w - at2.y;
   float mm = bounded(mask_at(at), AJP_MASK_EPSILON, 1.0 - AJP_MASK_EPSILON);
   precise float z =
       AJP_BLEND_LAW_A * log(mm / (1.0 - mm)) + AJP_BLEND_LAW_B * log((1.0 - t) / t) + AJP_BLEND_LAW_C;
+  if (on) {
+    float w = slow_fade(sqrt(tx * tx + ty * ty));
+    z = w * z + (1.0 - w) * log((1.0 - t) / t);
+  }
   precise float weight = 1.0 / (1.0 + exp(-z));
   return Displacement(vec4(-t * tx, -t * ty, (1.0 - t) * tx, (1.0 - t) * ty), weight);
 }
@@ -264,10 +307,9 @@ void main() {
   Displacement d;
   if (pc.keep_poses != 0u) {
     d = from_middle(u, v, pose_time_at(u, v, params.t, at_uv), at_uv);
-  } else if (params.t == 0.5) {
-    d = estimated(at_uv, uv);
   } else {
-    d = from_middle(u, v, params.t, at_uv);
+    if (pan_on()) at_uv = pan_flow(at_uv);
+    d = params.t == 0.5 ? estimated(at_uv, uv, params.t) : from_middle(u, v, params.t, at_uv);
   }
   precise float ax = float(x) + sx * d.to.x;
   precise float ay = float(y) + sy * d.to.y;

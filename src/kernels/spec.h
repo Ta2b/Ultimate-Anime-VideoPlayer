@@ -27,6 +27,7 @@
 #include "kernels/spec/tolerance.h"    // IWYU pragma: export
 #include "kernels/spec/transfer.h"     // IWYU pragma: export
 #include "kernels/spec/warp.h"         // IWYU pragma: export
+#include "kernels/spec/warp_pan.h"     // IWYU pragma: export
 
 namespace ajp::kernels {
 

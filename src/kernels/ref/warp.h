@@ -8,6 +8,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/poses.h"
 #include "kernels/spec/warp.h"
+#include "kernels/spec/warp_pan.h"
 
 namespace ajp::kernels::ref {
 
@@ -18,7 +19,13 @@ struct Motion {
   PlaneF mask;
   Window area;
   RifeWarp warp = RifeWarp::Bilinear;  // le filtre qui lit a et b (le flot et le masque restent bilinéaires)
+  // Mouvement d'ensemble (spec/warp_pan.h) : estimé sur a et b par le warp, hors garder les poses.
+  bool pan_lock = false;
 };
+
+// Translation globale de b par rapport à a (spec/warp_pan.h), en pixels de l'image ; images de même taille,
+// d'au moins 16 × 16 (sinon non sûre).
+PanEstimate pan_estimate(const RgbImage& a, const RgbImage& b);
 
 // Échantillon bilinéaire borné au plan (sample_plane), ou à une fenêtre (sample_window).
 // Refus : plan hors contrat, fenêtre vide ou qui dépasse du plan.

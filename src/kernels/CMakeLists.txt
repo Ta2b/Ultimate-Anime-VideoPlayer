@@ -20,7 +20,8 @@ ajp_add_module(kernels
     ref/rife.cpp
     ref/rife_fused.cpp
     ref/transfer.cpp
-    ref/warp.cpp)
+    ref/warp.cpp
+    ref/warp_pan.cpp)
 
 # La référence ne contracte jamais a × b + c en FMA : ses arrondis sont ceux écrits dans spec.h.
 # PRIVATE : les formules inline de spec/ s'évaluent dans le fichier qui les appelle, et chaque

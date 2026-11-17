@@ -43,6 +43,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"gmfss_key_floor", s.gmfss_key_floor},
                             {"rife_fused", s.rife_fused},
                             {"cubic_warp", s.cubic_warp},
+                            {"pan_lock", s.pan_lock},
                             {"drba_fused", s.drba_fused},
                             {"motion_precision", std::string(name(s.motion_precision))},
                             {"auto", s.rife_auto},

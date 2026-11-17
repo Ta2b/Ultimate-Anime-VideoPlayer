@@ -116,6 +116,17 @@ constexpr std::array kImageTabs{
     Entry{"Fused DistilDRBA", "DistilDRBA fusionné"},
     Entry{"Fused RIFE", "RIFE fusionné"},
     Entry{"Sharper interpolation warp (Catmull-Rom)", "Warp de l'interpolation plus net (Catmull-Rom)"},
+    Entry{"Steady slow pans", "Panoramiques lents stables"},
+    Entry{
+        "On slow pans, the motion of the whole picture, measured to a hundredth of a pixel, replaces small "
+        "uneven motion: backgrounds stop rippling and juddering. Speed: no noticeable loss. Quality impact: "
+        "clear gain on slow pans. Recommended: on. RIFE only.",
+        "Sur les panoramiques lents, le mouvement de l'image entière, mesuré au centième de pixel, remplace "
+        "les petits mouvements irréguliers : les décors n'ondulent plus et ne saccadent plus. Vitesse : pas "
+        "de "
+        "perte sensible. Effet sur la qualité : gain net sur les panoramiques lents. Conseillé : activé. "
+        "RIFE "
+        "seulement."},
     Entry{"Estimate motion at 720p", "Estimer le mouvement en 720p"},
     Entry{
         "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, but slow "

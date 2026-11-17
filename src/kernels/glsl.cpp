@@ -174,6 +174,17 @@ void add_rife_warp(Table& t) {
   t.integer("POSE_ITERATIONS", kPoseIterations, "Garder les poses (spec/poses.h)");
   t.real("POSE_EPSILON", kPoseEpsilon);
   t.real("POSE_TIME_LIMIT", kPoseTimeLimit);
+  t.integer("PAN_GRID", kPanGrid, "Mouvement d'ensemble (spec/warp_pan.h)");
+  t.integer("PAN_ITERATIONS", kPanIterations);
+  t.real("PAN_LUMA_R", kPanLumaR);
+  t.real("PAN_LUMA_G", kPanLumaG);
+  t.real("PAN_LUMA_B", kPanLumaB);
+  t.real("PAN_DET_RATIO", kPanDetRatio);
+  t.real("PAN_MAX_SHIFT", kPanMaxShift);
+  t.real("PAN_FLOW_LIMIT", kPanFlowLimit);
+  t.real("PAN_AGREEMENT", kPanAgreement);
+  t.real("SLOW_FADE_LO", kSlowFadeLo);
+  t.real("SLOW_FADE_HI", kSlowFadeHi);
 }
 
 // La luma BT.709 de l'analyse des images et de la mesure des coupes : les mêmes coefficients que la

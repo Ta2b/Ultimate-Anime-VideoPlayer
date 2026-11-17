@@ -21,7 +21,7 @@ set(AJP_DRBA_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ON
 set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
 # Les pièces du module testées seules (backend_parts_test.cpp, B01-09) : compilées ici, le module n'étant pas lié.
 set(ajp_trt_dir "${PROJECT_SOURCE_DIR}/src/gpu/cuda/backend")
-add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_parts_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_test.cpp
+add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_pan_test.cpp backend_parts_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_test.cpp
   ingest_chroma_test.cpp rife_fused_encode_test.cpp rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp
   ${ajp_trt_dir}/gpu_timing.cpp ${ajp_trt_dir}/host_upload.cpp ${ajp_trt_dir}/shared_activations.cpp)
 target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
