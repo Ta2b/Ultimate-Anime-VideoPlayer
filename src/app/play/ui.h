@@ -1,5 +1,5 @@
 // L'interface du lecteur : le contexte Dear ImGui, les événements SDL3 vers ImGui (en pixels de
-// la sortie, sans le backend SDL d'ImGui), la police du système à l'échelle de l'écran, le thème,
+// la sortie, sans le backend SDL d'ImGui), la police embarquée à l'échelle de l'écran, le thème,
 // et l'image de l'interface, recomposée seulement quand Controls le demande.
 //
 // La souris sur l'image (hors de la barre) : simple clic pause, double clic plein écran, clic
@@ -21,9 +21,9 @@
 #include "app/play/home_view.h"
 #include "app/play/input.h"
 #include "app/play/links.h"
-#include "app/play/mapped_file.h"
 #include "app/play/panel_state.h"
 #include "app/play/settings_panel.h"
+#include "app/play/ui_fonts.h"
 #include "core/types.h"
 
 struct SDL_Window;
@@ -36,16 +36,9 @@ struct EngineCatalog;
 
 class PlaceboScreen;
 
-// Une police du système, lue en mémoire : son fichier et son numéro dans une collection (.ttc).
-struct FontFile {
-  std::string path;
-  int index = 0;
-  std::shared_ptr<const MappedFile> data;  // projeté (P4.19)
-};
-
 // Les polices de l'interface, cherchées (fontconfig) et lues sur un thread pendant que l'écran
 // s'ouvre : à froid, FcInit bâtit son cache (300 ms pour une centaine de polices) et la police
-// japonaise pèse souvent 17 Mo. Sans fontconfig, aucune : la police vectorielle d'ImGui.
+// japonaise pèse souvent 17 Mo. Elles complètent la police embarquée (ui_fonts.h).
 class FontSearch {
  public:
   static FontSearch start();

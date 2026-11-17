@@ -28,7 +28,7 @@ leak:libnvidia-glsi.so
 leak:libnvidia-gpucomp.so
 #
 # Lecteur entier sous ASan (ci.yml, étendue complète), fuites des bibliothèques du système :
-# - fontconfig : FcInit (app/play/ui.cpp, system_font) charge la configuration par défaut, gardée tout le
+# - fontconfig : FcInit (app/play/ui_fonts.cpp, system_font) charge la configuration par défaut, gardée tout le
 #   processus ; FcFini n'est pas appelé exprès, libass s'en sert jusqu'à la fin. Les tampons d'expat qu'elle
 #   garde sont les siens.
 # - libX11 : _Xutf8TextListToTextProperty, appelé par SDL_X11_SetWindowTitle, garde quelques octets par titre
