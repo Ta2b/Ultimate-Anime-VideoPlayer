@@ -8,7 +8,7 @@ que les passages animés « sur un » (panoramiques, combats, effets), découpé
     sortie/<vidéo>/<image de départ>/frames.npy (N × H × W × 3, uint8) et meta.json
 
 Les images restent brutes : l'entraînement les lit par np.load(mmap_mode="r") et n'en touche que la découpe, sans
-rien décoder ; le processeur ne freine plus la carte. Compter 2,8 Mo par image en 720p.
+rien décoder ; le processeur ne freine plus la carte. Compter 6,2 Mo par image en 1080p (2,8 Mo en 720p).
 
 Une suite s'arrête à une image tenue (moins de --visible des pixels changent de plus de 10 niveaux 8 bits : le seul
 écart moyen de differs(), dans tools/bench/qualite/sources.py, est trompé par le grain) ou à une coupe (écart moyen
@@ -109,7 +109,9 @@ def extract(video: Path, cap: int, args: argparse.Namespace, holdout: list[dict]
         return f"{video.name} : ignorée (cadence {info[0] if info else '?'})"
     _, w, h, duration = info
     height = args.hauteur
-    width = round(w * height / h / 2) * 2
+    # Largeur multiple de --multiple : en 1080p avec un flux NVOF en 720p (grille 4), une case de flux vaut 6 px ;
+    # 12 garde les cases entières et les découpes alignées (une source en 1908 × 1072 donne 1920 × 1080).
+    width = round(w * height / h / args.multiple) * args.multiple
     skip = excluded(video, holdout)
     out_dir = args.sortie / folder_name(video)
     fps = float(CADENCE)
@@ -190,7 +192,10 @@ def main() -> int:
     parser.add_argument("sources", type=Path, nargs="*", help="vidéos ou dossiers (parcourus en profondeur)")
     parser.add_argument("--sortie", type=Path, required=True)
     parser.add_argument("--exclure", type=Path, help="JSON [{fichier, debut, fin}] : intervalles mis à part")
-    parser.add_argument("--hauteur", type=int, default=720)
+    parser.add_argument("--hauteur", type=int, default=1080,
+                        help="hauteur des images gardées ; 1080 pour des sources 1080p : aucun rééchantillonnage, les "
+                             "traits restent ceux de la source")
+    parser.add_argument("--multiple", type=int, default=12, help="la largeur est arrondie à ce multiple")
     parser.add_argument("--min", type=int, default=5, help="images au moins par suite (écart 4 au moins)")
     parser.add_argument("--max", type=int, default=9, help="images au plus par suite (écart 8 au plus)")
     parser.add_argument("--coupe", type=float, default=30.0, help="écart moyen de luminance d'une coupe, en niveaux")

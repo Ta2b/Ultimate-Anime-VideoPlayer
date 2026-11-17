@@ -4,7 +4,9 @@
 Pour chaque suite de N images et chaque écart g de --ecarts (2 à 8 par défaut, g < N), les paires (i, i + g) :
 flows.npy (P × 4 × H/4 × W/4, float16 : F_ij x, y puis F_ji x, y, en pixels) et pairs.npy (P × 2, les indices i, j)
 et mag.npy (P, float32 : le 90e centile de |F_ij| en pixels, qui sert à tirer plus souvent les grands mouvements).
-Grille 4 à la taille des images (720p) : la configuration retenue à l'étape 1 bis, la meilleure et la moins chère.
+NVOF tourne comme dans le lecteur : grille 4 sur une luma réduite à --hauteur-flux (720p, la configuration retenue à
+l'étape 1 bis, la meilleure et la moins chère), puis les vecteurs sont ramenés en pixels des images (×1,5 pour des
+images 1080p). Une case de flux couvre alors H / (hauteur du flux) × 4 pixels de l'image, 6 en 1080p.
 Une suite qui a déjà ses flux est sautée.
 
     python -I tools/nvof_interp/precompute_pairs.py /ssd/ajp-dataset/suites --tool build/nvof_dump/nvof_dump
@@ -19,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from precompute_nvof import to_planes  # noqa: E402
@@ -30,17 +33,28 @@ def luma(rgb: np.ndarray) -> np.ndarray:
     return np.clip(np.rint(16.0 + 219.0 * y), 0, 255).astype(np.uint8)
 
 
+def at_height(rgb: np.ndarray, height: int | None) -> np.ndarray:
+    """Réduction par moyenne de surface (le filtre du banc nvof_warp) à la hauteur du flux."""
+    h, w, _ = rgb.shape
+    if height is None or height == h:
+        return rgb
+    width = round(w * height / h / 2) * 2
+    return np.asarray(Image.fromarray(np.ascontiguousarray(rgb)).resize((width, height), Image.BOX))
+
+
 def pairs_of(n: int, gaps: list[int]) -> list[tuple[int, int]]:
     return [(i, i + g) for g in gaps if g < n for i in range(n - g)]
 
 
-def run_chunk(runs: list[Path], tool: Path, gaps: list[int], tmp: Path) -> int:
+def run_chunk(runs: list[Path], tool: Path, gaps: list[int], tmp: Path, flow_height: int | None) -> int:
     tasks, owners = [], {}
     for r, folder in enumerate(runs):
         frames = np.load(folder / "frames.npy", mmap_mode="r")
-        n, h, w, _ = frames.shape
+        n = frames.shape[0]
         for i in range(n):
-            luma(frames[i]).tofile(tmp / f"{r}_{i}.raw")
+            small = luma(at_height(frames[i], flow_height))
+            small.tofile(tmp / f"{r}_{i}.raw")
+        h, w = small.shape
         for p, (i, j) in enumerate(pairs_of(n, gaps)):
             out = tmp / f"{r}_{p}.flow"
             # Champs séparés par des tabulations : le dossier peut contenir des espaces.
@@ -55,7 +69,9 @@ def run_chunk(runs: list[Path], tool: Path, gaps: list[int], tmp: Path) -> int:
     for line in done.stdout.splitlines():
         out = line.removeprefix("ok ").strip()
         r, p, w, h = owners.pop(out)
-        flows.setdefault(r, {})[p] = to_planes(Path(out).read_bytes(), w, h).astype(np.float16)
+        # Vecteurs en pixels du flux, ramenés en pixels des images.
+        scale = np.load(runs[r] / "frames.npy", mmap_mode="r").shape[1] / h
+        flows.setdefault(r, {})[p] = (to_planes(Path(out).read_bytes(), w, h) * scale).astype(np.float16)
     holes = 0
     for r, folder in enumerate(runs):
         n = np.load(folder / "frames.npy", mmap_mode="r").shape[0]
@@ -80,6 +96,8 @@ def main() -> int:
     parser.add_argument("--tool", type=Path, required=True, help="l'exécutable nvof_dump")
     parser.add_argument("--ecarts", default="2,3,4,5,6,7,8")
     parser.add_argument("--chunk", type=int, default=64, help="suites par appel de nvof_dump")
+    parser.add_argument("--hauteur-flux", type=int, default=720,
+                        help="hauteur de la luma donnée à NVOF (0 : celle des images)")
     args = parser.parse_args()
     gaps = sorted({int(g) for g in args.ecarts.split(",")})
 
@@ -91,7 +109,7 @@ def main() -> int:
     shm = Path("/dev/shm") if Path("/dev/shm").is_dir() else None
     with tempfile.TemporaryDirectory(dir=shm) as tmp:
         for begin in range(0, len(todo), args.chunk):
-            holes += run_chunk(todo[begin : begin + args.chunk], args.tool, gaps, Path(tmp))
+            holes += run_chunk(todo[begin : begin + args.chunk], args.tool, gaps, Path(tmp), args.hauteur_flux or None)
             print(f"{min(begin + args.chunk, len(todo))}/{len(todo)}", flush=True)
     if holes:
         print(f"{holes} suite(s) sans flux : relancer la commande")
