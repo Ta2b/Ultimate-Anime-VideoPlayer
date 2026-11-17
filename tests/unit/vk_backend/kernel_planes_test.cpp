@@ -382,3 +382,49 @@ TEST_CASE("KernelOps : une image hôte s'envoie une fois pour toutes ses lecture
   REQUIRE(want_d);
   CHECK(max_abs_diff(download(*backend, *rgb, 48, 32), *want_d) <= k::tolerance::kRgbF16);
 }
+
+TEST_CASE("KernelOps : les images d'un lot partagent la mémoire de travail de l'ingestion",
+          "[vk_backend][kernels]") {
+  TempDir dir("partage");
+  auto backend = make_backend(dir.path());
+  auto& ops = dynamic_cast<vk::VulkanKernelOps&>(*backend->kernels());
+  const ColorInfo color{
+      .matrix = ColorMatrix::Bt709, .range = ColorRange::Limited, .siting = ChromaSiting::Left};
+  auto pool = std::make_shared<const FakePool>();
+  constexpr int kW = 70;
+  constexpr int kH = 38;
+  std::vector<k::YuvImage> images;
+  std::vector<PlanarImage> planar;
+  planar.reserve(4);
+  std::vector<std::shared_ptr<const VulkanFrame>> data;
+  for (std::uint32_t seed = 61; seed < 65; ++seed) {
+    images.push_back(synthetic_yuv(k::Format::Nv12, kW, kH, seed));
+    auto made = PlanarImage::create(*backend, images.back(), kSampled);
+    if (!made) SKIP("NV12 multiplan hors de l'appareil");
+    planar.push_back(std::move(*made));
+    data.push_back(vulkan_data(*backend, planar.back(), pool));
+  }
+  // Ingestion réduite (chroma en float, image entière avant réduction) puis pleine, de chaque image du lot
+  // vers les mêmes tenseurs : un enregistrement par image, un seul jeu de tampons de travail par forme, et
+  // chaque tenseur égal à celui de l'image hôte.
+  auto reduced = rgb_tensor(*backend, kW / 2, kH / 2, TensorType::F32);
+  auto reduced_host = rgb_tensor(*backend, kW / 2, kH / 2, TensorType::F32);
+  auto full = rgb_tensor(*backend, kW, kH, TensorType::F32);
+  auto full_host = rgb_tensor(*backend, kW, kH, TensorType::F32);
+  std::size_t first = 0;
+  for (std::size_t i = 0; i < images.size(); ++i) {
+    const auto id = static_cast<std::uint32_t>(10 + 2 * i);
+    const DecodedFrame frame = vulkan_frame(images[i], data[i], color, id);
+    const DecodedFrame host = host_frame(images[i], color, id + 1);
+    require_ok(ops.ingest(frame, {}, reduced->tensor()));
+    require_ok(ops.ingest(host, {}, reduced_host->tensor()));
+    require_ok(ops.ingest(frame, {}, full->tensor()));
+    require_ok(ops.ingest(host, {}, full_host->tensor()));
+    CHECK(max_abs_diff(download(*backend, *reduced, kW / 2, kH / 2),
+                       download(*backend, *reduced_host, kW / 2, kH / 2)) <= 1e-6F);
+    CHECK(max_abs_diff(download(*backend, *full, kW, kH), download(*backend, *full_host, kW, kH)) <= 1e-6F);
+    if (i == 0) first = ops.ingest_scratch();
+  }
+  CHECK(first > 0);
+  CHECK(ops.ingest_scratch() == first);
+}

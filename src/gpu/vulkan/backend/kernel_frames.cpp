@@ -443,6 +443,8 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
   }
   auto rec = recording(key, [&](Recorder& r) -> Done {
     if (auto ok = prepare_image(r, *src); !ok) return ok;
+    r.share_scratch(
+        &ingest_scratch_);  // travail de cette exécution seule : la chroma, l'image avant réduction
     const auto ingest = [&](const TensorView& out) {
       return src->planes ? runner_.ingest(r, *src->planes, *color, out, chroma)
                          : runner_.ingest(r, src->view, *color, out, chroma);

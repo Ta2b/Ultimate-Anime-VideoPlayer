@@ -2,8 +2,8 @@
 // remplissages, barrières entre eux), puis rejoué à chaque soumission (VkContext::submit).
 // Chaque exécution signale la valeur suivante du sémaphore timeline de l'enregistrement, et
 // la suivante l'attend côté GPU : deux exécutions ne se chevauchent jamais, sans attente hôte.
-// L'enregistrement possède ses tampons de travail et de constantes ; les tampons et images
-// liés par l'appelant doivent vivre aussi longtemps que lui.
+// L'enregistrement possède ses tampons de travail et de constantes (ou les partage, ScratchShare) ; les
+// tampons et images liés par l'appelant doivent vivre aussi longtemps que lui.
 #pragma once
 
 #include <array>
@@ -76,6 +76,7 @@ class Recording {
   VkCommandPool pool_ = VK_NULL_HANDLE;
   VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;
   std::vector<Buffer> owned_;
+  std::vector<std::shared_ptr<const Buffer>> shared_;  // tampons de travail d'un ScratchShare
   std::vector<std::uint32_t> parameters_;
   std::vector<std::byte*> parameter_words_;  // la projection de chaque mot, dans owned_
   std::uint32_t dispatches_ = 0;
@@ -111,6 +112,32 @@ class RetiredRecordings {
   std::vector<std::unique_ptr<Recording>> recordings_;
 };
 
+// Tampons de travail que des enregistrements d'une même opération se partagent (Recorder::share_scratch),
+// un par taille et par rang dans l'enregistrement, au lieu d'un jeu par enregistrement : l'ingestion d'une
+// image décodée lue en place s'enregistre une fois par image du lot du décodeur, et chacune gardait le sien
+// (en 4K réduite, environ 170 Mo). Sûr pour un travail qui ne survit pas à l'exécution (rien n'est relu
+// d'une exécution à l'autre ni par l'hôte) : sur une même file, la barrière finale d'un enregistrement
+// précède tout ce qui suit ; entre deux voies, l'ordre suit ce que chacun écrit (Recording::writes), le
+// tampon partagé compris. Un tampon vit tant qu'un enregistrement le lie.
+class ScratchShare {
+ public:
+  // Le tampon Device de bytes octets du rang rank, celui d'un autre enregistrement s'il vit encore.
+  // Refus : ceux de Buffer::create.
+  std::expected<std::shared_ptr<const Buffer>, Refusal> take(const VkContext& context,
+                                                             MemoryAllocator& memory, VkDeviceSize bytes,
+                                                             std::size_t rank);
+  // Tampons encore liés par un enregistrement.
+  std::size_t buffers() const;
+
+ private:
+  struct Entry {
+    VkDeviceSize bytes = 0;
+    std::size_t rank = 0;
+    std::weak_ptr<const Buffer> buffer;
+  };
+  std::vector<Entry> entries_;
+};
+
 // Ce qu'un dispatch attend : ce qui le précède et touche l'un de ses tampons ou une image (une
 // barrière avant lui, seulement alors), ou rien (aucune barrière, même sur un tampon commun : il
 // n'écrit rien que le précédent lit ni ne lit ce qu'il écrit, comme les additions atomiques de
@@ -126,8 +153,12 @@ class Recorder {
   VkContext& context() const { return *context_; }
   MemoryAllocator& memory() const { return *memory_; }
 
-  // Tampon de travail possédé par l'enregistrement.
+  // Tampon de travail possédé par l'enregistrement, ou pris au ScratchShare donné (share_scratch) pour un
+  // tampon Device.
   std::expected<BufferView, Refusal> scratch(VkDeviceSize bytes, MemoryUse use = MemoryUse::Device);
+  // Les tampons de travail Device suivants viennent de share, qui doit survivre à l'enregistrement ; nul :
+  // possédés par l'enregistrement seul.
+  void share_scratch(ScratchShare* share) { share_ = share; }
   // Données de l'hôte figées dans l'enregistrement (tables de poids) : un tampon Upload rempli
   // maintenant, lu à chaque exécution.
   std::expected<BufferView, Refusal> constants(std::span<const std::byte> bytes);
@@ -193,6 +224,8 @@ class Recorder {
   std::vector<Touched> touched_;
   bool touched_images_ = false;
   bool touched_all_ = false;  // commands() : accès inconnus
+  ScratchShare* share_ = nullptr;
+  std::size_t shared_rank_ = 0;  // rang du prochain tampon partagé
 };
 
 }  // namespace ajp::gpu::vk

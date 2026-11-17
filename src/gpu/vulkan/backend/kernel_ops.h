@@ -165,6 +165,9 @@ class VulkanKernelOps final : public KernelOps {
   std::size_t uploads_pending() const;   // copies d'images hôte en file ou en cours sur le fil d'envoi
   std::uint64_t uploads_queued() const;  // copies d'images hôte mises en file, depuis le début
   std::size_t plane_views() const { return plane_views_.size(); }  // images décodées lues en place
+  std::size_t ingest_scratch() const {
+    return ingest_scratch_.buffers();
+  }  // tampons de travail de l'ingestion
 
  private:
   struct Cached {
@@ -316,6 +319,9 @@ class VulkanKernelOps final : public KernelOps {
   BackendQueue& queue_;
   KernelRunner runner_;
   std::unique_ptr<StageClock> clock_;  // nullptr : file sans horodatage
+  // Tampons de travail des enregistrements d'ingestion, un jeu par forme : chaque image du lot du décodeur
+  // a son enregistrement, mais pas sa propre copie de la chroma en float ni de l'image avant réduction.
+  ScratchShare ingest_scratch_;
   std::vector<Cached> recordings_;
   RetiredRecordings retired_;  // sortis du cache, libérés à leur arrêt (après recordings_)
   std::uint64_t uses_ = 0;
