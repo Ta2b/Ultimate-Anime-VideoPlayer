@@ -11,6 +11,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 #include "gpu/vulkan/backend/net_alias.h"
+#include "gpu/vulkan/backend/net_conv_m8.h"
 #include "gpu/vulkan/backend/net_lower_detail.h"
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_weights.h"
@@ -179,6 +180,7 @@ std::expected<void, Refusal> Lowerer::node(std::size_t index, const KernelChoice
   const bool plain = choice.variant == "default";
   switch (n.op) {
     case ir::OpKind::Conv:
+      if (choice.variant == detail::kMatrixM8) return conv_matrix_m8(index, choice);
       return choice.variant.starts_with("coopmat") ? conv_matrix(index, choice) : conv(index, choice);
     case ir::OpKind::ConvTranspose:
       return conv_transpose(index, choice);

@@ -58,9 +58,10 @@ struct Program {
 
 // Ce que l'appareil permet aux noyaux.
 struct Target {
-  bool f16_storage = false;   // tenseurs float16 (variantes « _f16 »)
-  bool f16_math = false;      // calcul en fp16 (« _f16p »)
-  bool matrix_units = false;  // matrices coopératives proposées (famille et pilote, voir family.h)
+  bool f16_storage = false;  // tenseurs float16 (variantes « _f16 »)
+  bool f16_math = false;     // calcul en fp16 (« _f16p »)
+  // Matrices coopératives en tuiles 16 × 16 × 16 proposées (famille et pilote, voir family.h).
+  bool matrix_units = false;
   // Et en tête des candidats, choix par défaut sans autotuner : famille de la liste
   // d'autorisation ; faux pour un appareil hors liste (matrix_units_unlisted).
   bool matrix_first = false;
@@ -73,6 +74,10 @@ struct Target {
   // Tuiles 16 × 16 × 16 s8 × s8 → s32 annoncées par le pilote, shaderInt8 activé (RDNA 3 et 4) : la
   // variante coopmat_int8 des Conv quantifiées en INT8 (graphes Q/DQ INT8, SPAN INT8).
   bool matrix_i8 = false;
+  // Tuiles 8 × 16 × 16 f16 × f16 → f32 par sous-groupe annoncées (M = 8 : Intel Xe2 sous ANV, Lunar Lake et
+  // Battlemage), sur un appareil permis qui n'annonce pas la tuile 16 × 16 × 16 et laisse exiger des
+  // sous-groupes de 16 : la variante coopmat_m8 (net_conv_m8.h), toujours derrière le noyau direct.
+  bool matrix_m8 = false;
   std::uint32_t subgroup_size = 0;
   // Tailles de sous-groupe qu'un dispatch peut exiger ; 0 : aucune (le pilote choisit).
   std::uint32_t subgroup_min = 0;

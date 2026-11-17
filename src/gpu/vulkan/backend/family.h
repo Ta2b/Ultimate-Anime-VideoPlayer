@@ -49,8 +49,9 @@ DriverKind driver_kind(std::string_view driver_name);
 // (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR, device_profile.cpp) et sur la sortie de chaque couche,
 // vérifiée par l'autotuner ; une seule liste d'exclusion écarte les appareils et pilotes connus pour les
 // annoncer à tort (AMD avant RDNA3, Intel sans XMX, processeur, NVIDIA hors pilote propriétaire...).
-// matrix_units_excluded en donne la raison. Intel Arc et Xe2 ne sont pas exclus, mais leur tuile 8×16×16
-// n'entre pas encore dans net_conv_coopmat.glsl, qui ne tuile qu'en 16×16×16.
+// matrix_units_excluded en donne la raison. Intel Alchemist et Xe2 ne sont pas exclus. Les Xe2 annoncent sous
+// ANV une tuile 8×16×16 : la variante coopmat_m8 (net_conv_m8.h, Target::matrix_m8), que l'autotuner seul
+// retient, en sous-groupes de 16. Les Arc A (DG2) y annoncent 8×8×16 (N = 8), qu'aucun noyau ne tuile encore.
 std::optional<std::string_view> matrix_units_excluded(GpuFamily family, DriverKind driver);
 bool matrix_units_allowed(GpuFamily family, DriverKind driver);
 

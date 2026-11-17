@@ -2,22 +2,13 @@
 
 #include <algorithm>
 #include <format>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace ajp::gpu::vk {
 namespace {
-
-// Tuiles 16 × 16 × 16 de produits float16 par sous-groupe qu'annonce le pilote
-// (VK_KHR_cooperative_matrix), sommes en float (net_conv_coopmat.glsl) ou en float16 (_acc16).
-struct MatrixTiles {
-  bool f32_sums = false;
-  bool f16_sums = false;
-  bool f8_e4m3 = false;  // FP8 E4M3 × E4M3 → float32 (VK_EXT_shader_float8) : RDNA 4, Blackwell
-  bool s8 = false;       // INT8 × INT8 → int32 : RDNA 3 et 4, GeForce ; pas les Arc (M = 8)
-  std::string shapes;    // toutes celles du pilote, pour le journal
-};
 
 // VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT / _E5M2_EXT (VK_EXT_shader_float8), absents des en-têtes
 // plus anciens : valeurs de l'extension.
@@ -45,16 +36,16 @@ std::string_view component(VkComponentTypeKHR type) {
   }
 }
 
-// Une tuile 16 × 16 × 16 par sous-groupe, A et B du type inputs, sommes et résultat du type sums.
-bool offers_tile(const std::vector<VkCooperativeMatrixPropertiesKHR>& properties, VkComponentTypeKHR inputs,
-                 VkComponentTypeKHR sums) {
+// Une tuile m × 16 × 16 par sous-groupe, A et B du type inputs, sommes et résultat du type sums.
+bool offers_tile(std::span<const VkCooperativeMatrixPropertiesKHR> properties, VkComponentTypeKHR inputs,
+                 VkComponentTypeKHR sums, std::uint32_t m = 16) {
   return std::ranges::any_of(properties, [&](const VkCooperativeMatrixPropertiesKHR& p) {
-    return p.MSize == 16 && p.NSize == 16 && p.KSize == 16 && p.AType == inputs && p.BType == inputs &&
+    return p.MSize == m && p.NSize == 16 && p.KSize == 16 && p.AType == inputs && p.BType == inputs &&
            p.CType == sums && p.ResultType == sums && p.scope == VK_SCOPE_SUBGROUP_KHR;
   });
 }
 
-MatrixTiles matrix_tiles(const VkContext& context) {
+MatrixTiles query_matrix_tiles(const VkContext& context) {
   const auto query = reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR>(
       context.get_instance_proc_addr()(context.instance(),
                                        "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"));
@@ -65,11 +56,17 @@ MatrixTiles matrix_tiles(const VkContext& context) {
       count, VkCooperativeMatrixPropertiesKHR{.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR});
   if (query(context.physical_device(), &count, properties.data()) != VK_SUCCESS) return {};
   properties.resize(count);
-  const auto tile = [&](VkComponentTypeKHR sums) {
-    return offers_tile(properties, VK_COMPONENT_TYPE_FLOAT16_KHR, sums);
+  return matrix_tiles(properties);
+}
+
+}  // namespace
+
+MatrixTiles matrix_tiles(std::span<const VkCooperativeMatrixPropertiesKHR> properties) {
+  const auto tile = [&](VkComponentTypeKHR sums, std::uint32_t m) {
+    return offers_tile(properties, VK_COMPONENT_TYPE_FLOAT16_KHR, sums, m);
   };
-  // « 8×16×16 f16→f32 » : Intel Arc et Xe2 annoncent M = 8, que net_conv_coopmat.glsl ne sait pas
-  // tuiler ; le journal le dit plutôt que de supposer 16 × 16 × 16.
+  // Toutes les tuiles du pilote au journal (« 8×8×16 f16→f32 » des Arc A, qu'aucun noyau ne tuile), plutôt
+  // que de supposer 16 × 16 × 16.
   std::string shapes;
   for (const VkCooperativeMatrixPropertiesKHR& p : properties) {
     if (p.scope != VK_SCOPE_SUBGROUP_KHR) continue;
@@ -77,14 +74,13 @@ MatrixTiles matrix_tiles(const VkContext& context) {
         std::format("{}×{}×{} {}→{}", p.MSize, p.NSize, p.KSize, component(p.AType), component(p.ResultType));
     if (shapes.find(shape) == std::string::npos) shapes += (shapes.empty() ? "" : ", ") + shape;
   }
-  return {.f32_sums = tile(VK_COMPONENT_TYPE_FLOAT32_KHR),
-          .f16_sums = tile(VK_COMPONENT_TYPE_FLOAT16_KHR),
+  return {.f32_sums = tile(VK_COMPONENT_TYPE_FLOAT32_KHR, 16),
+          .f16_sums = tile(VK_COMPONENT_TYPE_FLOAT16_KHR, 16),
           .f8_e4m3 = offers_tile(properties, kComponentFloat8E4M3, VK_COMPONENT_TYPE_FLOAT32_KHR),
           .s8 = offers_tile(properties, VK_COMPONENT_TYPE_SINT8_KHR, VK_COMPONENT_TYPE_SINT32_KHR),
+          .m8_f32_sums = tile(VK_COMPONENT_TYPE_FLOAT32_KHR, 8),
           .shapes = std::move(shapes)};
 }
-
-}  // namespace
 
 DeviceProfile profile_device(const VkContext& context) {
   const DeviceCaps& caps = context.caps();
@@ -95,13 +91,17 @@ DeviceProfile profile_device(const VkContext& context) {
   const Features& f = caps.enabled;
   const bool matrix_features = f.cooperative_matrix && f.vulkan_memory_model && f.storage_buffer_16bit &&
                                f.shader_float16 && caps.subgroup_size > 0;
-  const MatrixTiles tiles = matrix_features ? matrix_tiles(context) : MatrixTiles{};
+  const MatrixTiles tiles = matrix_features ? query_matrix_tiles(context) : MatrixTiles{};
   profile.matrix_hardware = tiles.f32_sums;
   profile.matrix_shapes = tiles.shapes;
   profile.matrix_allowed = matrix_units_allowed(profile.family, profile.driver);
   profile.matrix_unlisted = matrix_units_unlisted(profile.family, profile.driver);
   const bool offered = profile.matrix_hardware && profile.matrix_allowed;
   const bool sized = f.subgroup_size_control && f.compute_full_subgroups;
+  // Tuiles 8 × 16 × 16 (coopmat_m8) : là seulement où la tuile 16 × 16 × 16 manque (rien ne change ailleurs),
+  // et où des sous-groupes de 16 peuvent s'exiger (net_conv_m8.h).
+  const bool m8 = tiles.m8_f32_sums && !tiles.f32_sums && profile.matrix_allowed && sized &&
+                  caps.min_subgroup_size <= 16 && caps.max_subgroup_size >= 16;
   profile.target = net::Target{
       .f16_storage = f.storage_buffer_16bit,
       .f16_math = f.storage_buffer_16bit && f.shader_float16,
@@ -110,6 +110,7 @@ DeviceProfile profile_device(const VkContext& context) {
       .matrix_f16_acc = offered && tiles.f16_sums,
       .matrix_f8 = offered && tiles.f8_e4m3 && f.float8_matrix && matrix_f8_allowed(profile.family),
       .matrix_i8 = offered && tiles.s8 && f.shader_int8,
+      .matrix_m8 = m8,
       .subgroup_size = caps.subgroup_size,
       // Taille exigée seulement avec des sous-groupes pleins garantis.
       .subgroup_min = sized ? caps.min_subgroup_size : 0,

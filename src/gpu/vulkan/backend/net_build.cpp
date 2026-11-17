@@ -215,9 +215,12 @@ std::expected<Program, Refusal> verify_artifact(const ArtifactData& data, const 
 }
 
 std::uint64_t artifact_key(const BuildRequest& request, const DeviceProfile& profile) {
-  const std::string text = std::format("{}|{}|{}|{}|{}|{}|{}{}", request.model_id, request.model_sha256,
-                                       ir::format_dims(request.input_shape), request.fp16, profile.key,
-                                       kLoweringVersion, kArtifactVersion, request.strict ? "|strict" : "");
+  // « |m8 » : un appareil à tuiles 8 × 16 × 16 (Target::matrix_m8) refait les artefacts construits avant la
+  // variante coopmat_m8, que l'autotuner mesure alors ; la clé des autres appareils ne change pas.
+  const std::string text =
+      std::format("{}|{}|{}|{}|{}|{}|{}{}{}", request.model_id, request.model_sha256,
+                  ir::format_dims(request.input_shape), request.fp16, profile.key, kLoweringVersion,
+                  kArtifactVersion, request.strict ? "|strict" : "", profile.target.matrix_m8 ? "|m8" : "");
   return fnv1a(std::as_bytes(std::span(text)));
 }
 

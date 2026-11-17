@@ -50,4 +50,24 @@ std::uint32_t matrix_halo_shared_bytes(std::uint32_t subgroups, std::uint32_t kc
 std::uint32_t matrix_halo_pixels(std::uint32_t rows, std::uint32_t kh, std::uint32_t kw, std::uint32_t dh,
                                  std::uint32_t dw);
 
+// Épilogue des constantes 0 à 29 communes aux shaders de convolution (net_conv.comp).
+struct ConvConstants {
+  std::uint32_t tr = 0;
+  std::uint32_t lr = 0;
+  std::uint32_t crp = 1;
+  std::uint32_t act = 0;
+  float alpha = 0.0F;
+  float lo = 0.0F;
+  float hi = 0.0F;
+  std::uint32_t residual = 0;  // 1 : ajouté avant l'activation ; 2 : porte (Epilogue::gate)
+};
+// Les constantes 0 à 29, dans l'ordre des constant_id de net_conv.comp et net_conv_coopmat.glsl.
+std::vector<std::uint32_t> conv_constants(const Desc4& x, std::uint32_t tx, const Desc4& y, std::uint32_t ty,
+                                          const Window& w, std::uint32_t groups, const ConvConstants& e);
+// La forme calculée par une Conv avant son DepthToSpace fondu : le rangement (disposition, canaux rangés)
+// reste celui de la sortie y.
+Desc4 result_desc(const Desc4& y, const ir::Epilogue& e);
+// Constantes du DepthToSpace fondu : taille des blocs (0 sans), ordre CRD.
+std::array<std::uint32_t, 2> space_constants(const ir::Epilogue& e);
+
 }  // namespace ajp::gpu::vk::net::detail

@@ -34,7 +34,8 @@ namespace {
 // 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
 // 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct ; 5 : Conv 3 × 3
 // par Winograd ; 6 : coopmat à 16 sous-groupes et tm 8 (mémoire partagée des RDNA 4) ; 7 : tolérance selon
-// la précision, 1 % en sommes float (P2.45).
+// la précision, 1 % en sommes float (P2.45). Un appareil à tuiles 8 × 16 × 16 y ajoute « m8 »
+// (candidate_set).
 constexpr std::string_view kCandidateSet = "c7";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
@@ -279,6 +280,10 @@ std::optional<Measured> pick_best(std::vector<Measured>& measured, std::optional
 
 }  // namespace
 
+std::string candidate_set(const Target& target) {
+  return std::format("{}{}", kCandidateSet, target.matrix_m8 ? "m8" : "");
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, std::size_t node,
                                                        std::span<const KernelChoice> candidates,
@@ -292,7 +297,7 @@ std::expected<KernelChoice, Refusal> Autotuner::choose(const ir::Graph& graph, s
   // La carte et le nom du pilote, pas sa version : une mise à jour du pilote ne remesure rien. La
   // version des candidats : une entrée tranchée avant l'ajout d'une variante est remesurée.
   const std::string key =
-      std::format("{}|{}|{:016x}|{}", profile_.stable_key, scope, signature, kCandidateSet);
+      std::format("{}|{}|{:016x}|{}", profile_.stable_key, scope, signature, candidate_set(profile_.target));
   std::optional<KernelChoice> remembered;
   if (const auto found = cache_.find(key); found != cache_.end() && known(found->second.choice)) {
     if (found->second.driver == profile_.driver_build) {
