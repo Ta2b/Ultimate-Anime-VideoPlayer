@@ -72,15 +72,39 @@ void default_player_page(const PlayerPlace& place, SystemNote& last, bool alread
 #endif
 }
 
-void language_section(PlaySettings& d) {
-  section(i18n::tr("Interface"));
-  const char* shown = d.language == "fr" ? "Français" : "English";  // i18n-ok : noms des langues
-  if (ImGui::BeginCombo(panel::left(i18n::tr("Interface language")).c_str(), shown)) {
-    if (ImGui::Selectable("English", d.language == "en")) d.language = "en";   // i18n-ok
-    if (ImGui::Selectable("Français", d.language == "fr")) d.language = "fr";  // i18n-ok
+bool interface_language_combo(const char* label, std::string& code) {
+  // Les noms des langues restent dans leur langue ; « Système » dit celle qu'il donne ici.
+  const auto name = [](i18n::Language language) {
+    return language == i18n::Language::French ? "Français" : "English";  // i18n-ok : noms des langues
+  };
+  const std::string system =
+      i18n::tr_format("System ({})", name(interface_language(kSystemInterfaceLanguage)));
+  const bool follows = code.empty() || code == kSystemInterfaceLanguage;
+  const std::string shown = follows ? system : name(i18n::language_from_code(code));
+  bool picked = false;
+  if (ImGui::BeginCombo(label, shown.c_str())) {
+    const auto entry = [&](const char* text, std::string_view value, bool selected) {
+      if (ImGui::Selectable(text, selected) && !selected) {
+        code = std::string(value);
+        picked = true;
+      }
+    };
+    entry(system.c_str(), kSystemInterfaceLanguage, follows);
+    entry("English", "en", code == "en");   // i18n-ok
+    entry("Français", "fr", code == "fr");  // i18n-ok
     ImGui::EndCombo();
   }
-  // La langue se pose par apply_live quand elle change, pas ici à chaque image (C23-11).
+  return picked;
+}
+
+void language_section(PlaySettings& d) {
+  section(i18n::tr("Interface"));
+  interface_language_combo(panel::left(i18n::tr("Interface language")).c_str(), d.language);
+  panel::tip(i18n::tr("Interface language"),
+             i18n::tr("System follows the language of the computer when the player has it, English "
+                      "otherwise. The change shows at once."));
+  // La langue se pose par apply_live (lecture) ou à l'accueil quand elle change, pas ici à chaque image
+  // (C23-11).
 }
 
 namespace {

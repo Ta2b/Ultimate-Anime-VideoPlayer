@@ -277,6 +277,11 @@ struct PlaySettings {
   // prolongé ne sert plus. Avec les poses (le défaut) ; en direct. Essai, éteint par défaut : à juger à l'œil
   // (docs/interpolation.md, Instants déduits sur les paires fortes).
   bool strong_middle = false;
+  // RIFE mouvement estimé en 720p : au-delà de 720 lignes de travail, le flot s'estime sur une copie réduite
+  // à kRifeMotionHeight, plus rapide. Éteint par défaut : le flot s'estime à la taille de travail, car sur un
+  // panoramique de moins d'un pixel par image la copie 720p fait coller le milieu de 4.25 lite à la source et
+  // le panoramique ondule (docs/interpolation.md). Recharge la chaîne.
+  bool motion_720p = false;
   // Élevé (upscale_gmfss.cpp) : une paire dont le mouvement atteint gmfss_motion pixels (à 720 lignes) a son
   // image du milieu par GMFSS Fortuna Union, ses autres instants par RIFE sur chaque demi-paire ; les autres
   // paires restent à RIFE. TensorRT seulement ; recharge la chaîne (deux moteurs à construire).
@@ -354,9 +359,9 @@ struct PlaySettings {
   // ; la fréquence « launch », « daily », « weekly ».
   UpdateMode update_mode = UpdateMode::Notify;
   UpdateFrequency update_frequency = UpdateFrequency::Daily;
-  // Langue de l'interface : « en » ou « fr », celle du système par défaut (default_interface_language) ;
-  // prise en direct (app/play/i18n.h).
-  std::string language = default_interface_language();
+  // Langue de l'interface : « system » (le défaut, celle du système si l'interface l'a, l'anglais sinon :
+  // interface_language), « en » ou « fr » ; prise en direct, à l'accueil comme en lecture (app/play/i18n.h).
+  std::string language = std::string(kSystemInterfaceLanguage);
   // Le dossier où s'installent les moteurs téléchargés (TensorRT) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.
@@ -486,8 +491,8 @@ inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
 // note du panneau lisent la même (C23-04).
 inline constexpr int kRifeMotionHeight = 720;
 inline constexpr int kGmfssLightHeight = 540;
-inline bool rife_motion_reduced(const WorkSize& work) {
-  return work.height > kRifeMotionHeight;
+inline bool rife_motion_reduced(const WorkSize& work, bool at_720p) {
+  return at_720p && work.height > kRifeMotionHeight;
 }
 
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.

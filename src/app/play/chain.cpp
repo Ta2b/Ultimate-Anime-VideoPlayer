@@ -228,7 +228,7 @@ void apply_live_motion(Chain& to, const PlaySettings& wanted, std::int64_t now_u
 void apply_live(Chain& to, const PlaySettings& wanted, std::int64_t now_us) {
   PlaySettings& r = to.running;
   Controls& controls = to.ui.controls();
-  i18n::set_language(i18n::language_from_code(wanted.language));
+  i18n::set_language(interface_language(wanted.language));
   if (factor_of(wanted) != factor_of(r)) apply_factor(to, wanted, now_us);
   if (wanted.rife_auto != r.rife_auto) {
     if (wanted.rife_auto) controls.notify(i18n::ui_tr("Interpolation: Auto"), now_us);

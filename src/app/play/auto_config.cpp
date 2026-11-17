@@ -347,7 +347,7 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
          a.rife_fused != b.rife_fused || a.drba_fused != b.drba_fused ||
          a.smooth_drawings != b.smooth_drawings || a.cubic_warp != b.cubic_warp ||
          a.pair_scale != b.pair_scale || a.strong_middle != b.strong_middle || gmfss_differs(a, b) ||
-         a.auto_cap != b.auto_cap;  // C23-06
+         a.motion_720p != b.motion_720p || a.auto_cap != b.auto_cap;  // C23-06
 }
 
 bool display_moves_chain(Preset preset, const DisplayMove& move) {

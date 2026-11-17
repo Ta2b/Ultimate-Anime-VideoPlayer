@@ -10,6 +10,7 @@
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_languages.h"
+#include "app/play/settings_system.h"
 #include "app/play/wizard.h"
 
 namespace ajp::app::play {
@@ -36,15 +37,9 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       note(i18n::tr(
           "The player picks the settings for this machine; everything is in Settings (p) afterwards."));
       {
-        // La langue de l'interface (P3.18), détectée au lancement, confirmée ici ; prise en direct.
-        const bool french = i18n::language() == i18n::Language::French;
-        if (ImGui::BeginCombo(i18n::tr("Interface language"), french ? "Français" : "English")) {  // i18n-ok
-          if (ImGui::Selectable("English", !french)) wizard.interface_language = "en";             // i18n-ok
-          if (ImGui::Selectable("Français", french)) wizard.interface_language = "fr";             // i18n-ok
-          ImGui::EndCombo();
-        }
-        if (!wizard.interface_language.empty()) {
-          const i18n::Language wanted = i18n::language_from_code(wizard.interface_language);
+        // La langue de l'interface (P3.18) : celle du système par défaut, confirmée ici ; prise en direct.
+        if (interface_language_combo(i18n::tr("Interface language"), wizard.interface_language)) {
+          const i18n::Language wanted = interface_language(wizard.interface_language);
           if (wanted != i18n::language()) {
             i18n::set_language(wanted);
             if (view.retranslate) view.retranslate(view);

@@ -1,6 +1,8 @@
 #include "subs/subtitle_track.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <format>
 #include <fstream>
 #include <string>
@@ -172,6 +174,24 @@ std::expected<void, Refusal> SubtitleTrack::add_packet(const SubtitlePacket& pac
       std::format("{},0,Default,,0,0,0,,{}", seen_text_.size() - 1, srt_text_to_ass(packet.data));
   ass_process_chunk(track_.get(), line.data(), static_cast<int>(line.size()), start_ms, duration_ms);
   return {};
+}
+
+int SubtitleTrack::substitute_font(std::string_view family, std::string_view replacement, double scale_x) {
+  int count = 0;
+  for (int i = 0; i < track_->n_styles; ++i) {
+    ass_style& style = track_->styles[i];
+    if (style.FontName == nullptr || !core::iequal(style.FontName, family)) continue;
+    // libass libère FontName par free() (ass_free_style) : la copie vient de malloc.
+    char* name = static_cast<char*>(std::malloc(replacement.size() + 1));  // NOLINT(*-no-malloc)
+    if (name == nullptr) break;
+    std::memcpy(name, replacement.data(), replacement.size());
+    name[replacement.size()] = '\0';
+    std::free(style.FontName);  // NOLINT(*-no-malloc)
+    style.FontName = name;
+    style.ScaleX *= scale_x;
+    ++count;
+  }
+  return count;
 }
 
 int SubtitleTrack::event_count() const {

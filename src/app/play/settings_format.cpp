@@ -33,6 +33,7 @@ std::string format_settings(const PlaySettings& s) {
                             {"smooth_drawings", s.smooth_drawings},
                             {"pair_scale", s.pair_scale},
                             {"strong_middle", s.strong_middle},
+                            {"motion_720p", s.motion_720p},
                             {"gmfss_middle", s.gmfss_middle},
                             {"gmfss_motion", s.gmfss_motion},
                             {"gmfss_half_flow", s.gmfss_half_flow},

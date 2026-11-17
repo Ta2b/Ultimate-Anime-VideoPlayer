@@ -14,6 +14,7 @@
 #include "app/play/controls_icons.h"
 #include "app/play/french_text.h"
 #include "app/play/i18n.h"
+#include "app/play/ui_fonts.h"
 #include "app/play/user_keys.h"
 #include "core/keys.h"
 
@@ -38,7 +39,7 @@ constexpr float kPad = 18.0F;
 constexpr float kRow = 46.0F;
 constexpr float kBarZone = 22.0F;
 constexpr float kPanelExtra = 8.0F;
-constexpr float kTitleSize = 17.0F * 1.1F;  // taille du titre (police de l'interface × 1,1)
+constexpr float kTitleSize = kUiFontSize * 1.1F;  // taille du titre (police de l'interface × 1,1)
 
 // Menu d'une liste de pistes, au-dessus de son bouton. none_label : l'entrée « aucune » (ou rien).
 void track_popup(const char* id, const char* heading, const std::vector<TrackEntry>& entries,

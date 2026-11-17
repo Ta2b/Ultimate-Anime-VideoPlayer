@@ -1,5 +1,7 @@
 #include <string>
 
+#include <ass/ass.h>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "subs/ass_library.h"
@@ -180,4 +182,30 @@ TEST_CASE("SubtitleTrack : les doublons ASS revus après un seek ne remplissent 
   for (std::size_t i = 0; i < 2 * ajp::subs::kMaxTrackBytes / ajp::subs::kMaxPacketBytes; ++i)
     REQUIRE(track->add_packet(big));  // même ReadOrder : un seul événement, compté une fois
   CHECK(track->event_count() == 1);
+}
+
+TEST_CASE("SubtitleTrack : substitute_font remplace la police des styles qui la nomment", "[track]") {
+  auto library = AssLibrary::create();
+  REQUIRE(library);
+  auto track = SubtitleTrack::from_ass(*library,
+                                       "[Script Info]\nScriptType: v4.00+\n\n[V4+ Styles]\n"
+                                       "Format: Name, Fontname, Fontsize, ScaleX\n"
+                                       "Style: Default,Trebuchet MS,22,100\n"
+                                       "Style: Italique,trebuchet ms,22,100\n"
+                                       "Style: Sign,Arial,18,100\n");
+  REQUIRE(track);
+  CHECK(track->substitute_font("Trebuchet MS", "Gandhi Sans", 1.05) == 2);
+  const ass_track* raw = track->get();
+  REQUIRE(raw->n_styles >= 3);
+  int gandhi = 0;
+  for (int i = 0; i < raw->n_styles; ++i) {
+    const std::string name = raw->styles[i].FontName;
+    if (name == "Gandhi Sans") {
+      ++gandhi;
+      CHECK(raw->styles[i].ScaleX == Catch::Approx(1.05));
+    }
+    CHECK(name != "Trebuchet MS");
+  }
+  CHECK(gandhi == 2);
+  CHECK(track->substitute_font("Trebuchet MS", "Gandhi Sans", 1.05) == 0);  // plus rien à remplacer
 }

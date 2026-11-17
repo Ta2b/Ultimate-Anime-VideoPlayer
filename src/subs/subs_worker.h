@@ -9,6 +9,8 @@
 #include <expected>
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "core/types.h"
 #include "subs/ass_library.h"
@@ -39,7 +41,11 @@ class SubsWorker {
   std::size_t atlases_in_flight() const { return pool_.in_flight(); }
 
  private:
-  SubsWorker(AssLibrary library, SubtitleRenderer renderer, SubtitleSink& sink, AtlasReturn route);
+  SubsWorker(AssLibrary library, SubtitleRenderer renderer, SubtitleSink& sink, AtlasReturn route,
+             std::vector<FontSubstitute> substitutes);
+
+  // Les remplacements de substitutes_ sur la piste ASS qui vient d'être choisie.
+  void substitute_fonts(SubtitleTrack& track);
 
   bool on(RenderRequest&& request);
   bool on(SelectTrack&& select);
@@ -63,6 +69,8 @@ class SubsWorker {
   AtlasPool pool_;
   SubtitleRenderer renderer_;
   std::optional<SubtitleTrack> track_;
+  std::vector<FontSubstitute> substitutes_;
+  std::vector<std::string> attachments_;  // noms des polices jointes, en minuscules
   std::uint32_t track_id_ = 0;
   std::deque<RenderRequest> pending_;  // au plus kMaxPendingRequests
   bool starved_ = false;               // la tête de pending_ attend un atlas libre

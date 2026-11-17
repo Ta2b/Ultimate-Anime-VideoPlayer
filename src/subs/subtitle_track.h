@@ -69,6 +69,9 @@ class SubtitleTrack {
   // Le script porte une section [Fonts] : libass a joint ses polices à la
   // bibliothèque en le lisant, un moteur qui a déjà rendu doit les revoir.
   bool embeds_fonts() const { return embeds_fonts_; }
+  // Les styles dont la police est family (sans égard à la casse) prennent replacement, élargie de scale_x ;
+  // rend leur nombre. Les balises \fn des événements ne changent pas.
+  int substitute_font(std::string_view family, std::string_view replacement, double scale_x);
   ass_track* get() const { return track_.get(); }
 
  private:

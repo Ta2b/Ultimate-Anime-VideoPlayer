@@ -37,6 +37,22 @@ void cubic_warp_checkbox(PlaySettings& d) {
              panel::Apply::Reload);
 }
 
+// Le mouvement estimé sur une copie 720p (PlaySettings::motion_720p) : éteint par défaut, la taille de
+// travail.
+void motion_720p_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Estimate motion at 720p"), &d.motion_720p);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Estimate motion at 720p"),
+      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, "
+               "but slow pans can ripple instead of moving in even steps (RIFE 4.25 lite and 4.26 "
+               "especially). Speed: about 15 % more frames in Auto (RIFE pass about 2× faster). "
+               "Quality impact: moderate loss on slow pans. "
+               "Recommended: off. RIFE only."),
+      panel::Apply::Reload);
+}
+
 // Moins de passes RIFE sur les paires fortes (PlaySettings::strong_middle) : un essai, éteint par défaut.
 void strong_middle_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
@@ -157,15 +173,22 @@ std::string level_name(InterpLevel level) {
   return {};
 }
 
-// Le niveau se montre : son moteur est proposé ici, son modèle est là (GMFSS : ses deux graphes, sous
-// TensorRT).
+// Le niveau se montre : son moteur est proposé ici, son modèle est là. Un niveau GMFSS sans TensorRT ni
+// ses deux graphes se montre quand même, grisé (`gmfss_missing`).
 bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   if (!offered(choice.engine)) return false;
-  if ((choice.engine == MotionEngine::Gmfss || choice.gmfss_middle) && !choices.gmfss_available) return false;
   if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
   if (choice.engine == MotionEngine::Rife)
     return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
   return true;
+}
+
+// Ce qui manque à un niveau GMFSS pour être choisi, vide s'il ne manque rien.
+std::string gmfss_missing(const InterpChoice& choice, const SettingsChoices& choices) {
+  if ((choice.engine != MotionEngine::Gmfss && !choice.gmfss_middle) || choices.gmfss_available) return {};
+  if (choices.engine_in_use != core::EngineId::TensorRt)
+    return i18n::tr("Needs the TensorRT engine (NVIDIA RTX card).");
+  return i18n::tr("Needs the two GMFSS models in the models folder.");
 }
 
 // Les niveaux au menu : Faible, Moyen, Élevé, Élevé+, et Système sur un Mac.
@@ -179,7 +202,11 @@ void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting
                  std::optional<InterpLevel> level_now, const Text& level_text) {
   for (const InterpChoice& choice : kInterpLevels) {
     if (!level_present(choice, choices) || (!in_menu(choice) && level_now != choice.level)) continue;
-    if (ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level)) {
+    const std::string missing = gmfss_missing(choice, choices);
+    ImGui::BeginDisabled(!missing.empty());
+    const bool picked = ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level);
+    ImGui::EndDisabled();
+    if (picked) {
       d.motion_engine = choice.engine;
       d.gmfss_middle = choice.gmfss_middle;
       if (choice.engine == MotionEngine::Rife)
@@ -192,7 +219,8 @@ void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting
         d.rife_factor_den = 1;
       }
     }
-    panel::tip(level_name(choice.level).c_str(), motion_description(choice));
+    panel::tip(level_name(choice.level).c_str(),
+               missing.empty() ? motion_description(choice) : motion_description(choice) + "\n\n" + missing);
   }
 }
 
@@ -462,7 +490,7 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   // (C23-04).
   const bool reduced_motion =
       now.num > now.den && choices.source_height > 0 &&
-      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height));
+      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height), d.motion_720p);
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {
@@ -471,8 +499,8 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   } else if (reduced_motion) {
     // Le gain de vitesse n'est pas mesuré : la note le dit, sans chiffre inventé (C23-03).
     note(
-        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less "
-                 "precise motion; the speed gained and the quality lost are not measured)."));
+        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (Estimate "
+                 "motion at 720p): slow pans can ripple."));
   }
 }
 
@@ -517,6 +545,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         panel::Apply::Reload);
     panel::cell();
     cubic_warp_checkbox(d);
+    panel::cell();
+    motion_720p_checkbox(d);
     ImGui::EndDisabled();
     panel::end_grid();
   }

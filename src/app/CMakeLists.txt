@@ -14,7 +14,7 @@ ajp_add_module(app
     play/placebo_snapshot.cpp play/player.cpp play/player_engines.cpp play/player_run.cpp play/player_after.cpp play/latest_writer.cpp play/loop_wait.cpp
 
     play/anime_shots.cpp play/gpu_profile_out.cpp play/display_contract.cpp play/cut_book.cpp play/pair_marks.cpp play/user_keys.cpp play/resume.cpp
-    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/session_steps.cpp play/sleep_watch.cpp play/relaunch_target.cpp play/update_thread.cpp play/stage_fallback.cpp play/chain_choices.cpp play/session_subtitles.cpp play/session_osd.cpp play/session_display.cpp play/settings.cpp play/settings_toml.cpp play/settings_format.cpp play/settings_history.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/panel_tip.cpp play/loading_settings.cpp play/settings_pages.cpp play/settings_motion_tab.cpp play/settings_chain_tabs.cpp play/settings_upscale_level.cpp play/settings_color_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_languages.cpp play/card_advice.cpp play/panel_size.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/mapped_file.cpp play/relaunch_args.cpp play/launch_data.cpp
+    play/present_stats.cpp play/ring_stage.cpp play/drba_fused_choice.cpp play/rife_fused_choice.cpp play/rife_plan.cpp play/scripted_input.cpp play/session.cpp play/session_steps.cpp play/sleep_watch.cpp play/relaunch_target.cpp play/update_thread.cpp play/stage_fallback.cpp play/chain_choices.cpp play/session_subtitles.cpp play/session_osd.cpp play/session_display.cpp play/settings.cpp play/settings_toml.cpp play/settings_format.cpp play/settings_history.cpp play/settings_toml_lenient.cpp play/settings_merge.cpp play/panel_tip.cpp play/loading_settings.cpp play/settings_pages.cpp play/settings_motion_tab.cpp play/settings_chain_tabs.cpp play/settings_upscale_level.cpp play/settings_color_tabs.cpp play/settings_engines.cpp play/settings_export.cpp play/settings_languages.cpp play/card_advice.cpp play/panel_size.cpp play/settings_panel.cpp play/settings_sound.cpp play/settings_system.cpp play/subtitle_queue.cpp play/tracks.cpp play/ui.cpp play/ui_fonts.cpp "${CMAKE_CURRENT_BINARY_DIR}/ui_font_data.cpp" play/subtitle_fonts.cpp "${CMAKE_CURRENT_BINARY_DIR}/gandhi_sans_regular.cpp" "${CMAKE_CURRENT_BINARY_DIR}/gandhi_sans_italic.cpp" "${CMAKE_CURRENT_BINARY_DIR}/gandhi_sans_bold.cpp" "${CMAKE_CURRENT_BINARY_DIR}/gandhi_sans_bold_italic.cpp" play/mapped_file.cpp play/relaunch_args.cpp play/launch_data.cpp
     play/upscale_ahead.cpp play/upscale_gmfss.cpp play/upscale_half.cpp play/upscale_drba.cpp play/upscale_early.cpp play/upscale_late.cpp play/upscale_fate.cpp play/upscale_motion.cpp play/upscale_smooth.cpp play/upscale_stage.cpp play/upscale_start.cpp play/upscale_span.cpp play/vulkan_share.cpp play/wiring.cpp play/sleep_notice.cpp play/after_gap.cpp play/player_machine.cpp
   DEPS ajp::core ajp::core_log ajp::core_os ajp::media ajp::gpu ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::prepare ajp::audio ajp::subs
        ajp::render ajp::export
@@ -29,6 +29,30 @@ add_custom_command(
   DEPENDS "${PROJECT_SOURCE_DIR}/data/gpu_tiers.toml" "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
   COMMENT "Embarque data/gpu_tiers.toml"
   VERBATIM)
+# La police de l'interface (ui_fonts.h), embarquée octet pour octet.
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ui_font_data.cpp"
+  COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/ui_font_data.cpp"
+          "-DINPUT=${PROJECT_SOURCE_DIR}/third_party/inter/Inter-Regular.ttf" -DNAME=kUiFontTtf
+          -DNAMESPACE=ajp::app::play "-DHEADER=app/play/ui_fonts.h" -P "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
+  DEPENDS "${PROJECT_SOURCE_DIR}/third_party/inter/Inter-Regular.ttf" "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
+  COMMENT "Embarque third_party/inter/Inter-Regular.ttf"
+  VERBATIM)
+# La police des sous-titres (subtitle_fonts.h), ses quatre styles embarqués octet pour octet.
+foreach(ajp_style IN ITEMS "regular;Regular" "italic;Italic" "bold;Bold" "bold_italic;BoldItalic")
+  list(GET ajp_style 0 ajp_file)
+  list(GET ajp_style 1 ajp_name)
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/gandhi_sans_${ajp_file}.cpp"
+    COMMAND "${CMAKE_COMMAND}" "-DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/gandhi_sans_${ajp_file}.cpp"
+            "-DINPUT=${PROJECT_SOURCE_DIR}/third_party/gandhi-sans/GandhiSans-${ajp_name}.otf"
+            -DNAME=kGandhiSans${ajp_name} -DNAMESPACE=ajp::app::play "-DHEADER=app/play/subtitle_fonts.h"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
+    DEPENDS "${PROJECT_SOURCE_DIR}/third_party/gandhi-sans/GandhiSans-${ajp_name}.otf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/play/embed_text.cmake"
+    COMMENT "Embarque third_party/gandhi-sans/GandhiSans-${ajp_name}.otf"
+    VERBATIM)
+endforeach()
 # L'EDID des écrans sous Windows (display_edid.cpp) : SetupAPI.
 # Le registre et SHChangeNotify de l'inscription comme lecteur par défaut (default_player.cpp) :
 # advapi32 et shell32. Les minidumps de plantage (crash_dump.cpp) : dbghelp.

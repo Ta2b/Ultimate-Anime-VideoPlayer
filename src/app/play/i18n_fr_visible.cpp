@@ -168,7 +168,6 @@ constexpr std::array kVisibleTexts{
     Entry{"{} unreadable: {}", "{} illisible : {}"},
     Entry{"{} was invalid: copy kept as {}", "{} était invalide : copie gardée sous {}"},
     Entry{"{} · input {}x{} · {}", "{} · entrée {}x{} · {}"},
-    Entry{"{} · quality {}", "{} · qualité {}"},
     Entry{"{}: below the quality limits ({}; {:.0f} dB, {:.0f} dB and {:.3f} are required)",
           "{} : sous les garde-fous ({} ; il faut {:.0f} dB, {:.0f} dB et {:.3f})"},
     Entry{"{}: changed since its receipt", "{} : modifié depuis son reçu"},

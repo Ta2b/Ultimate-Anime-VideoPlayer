@@ -113,21 +113,19 @@ void chain_headers(ExportJob& job, const SettingsChoices& choices) {
 // Le codec, la qualité et la cadence fixe du fichier exporté.
 void encoding_section(ExportJob& job) {
   section(i18n::tr("Encoding"));
-  if (panel::combo(i18n::tr("Codec"), std::string(exporter::label(job.codec)).c_str())) {
+  if (panel::combo(i18n::tr("Codec"), codec_label(job.codec))) {
     for (int i = 0; i < exporter::kCodecCount; ++i) {
       const auto codec = static_cast<exporter::Codec>(i);
-      if (ImGui::Selectable(std::string(exporter::label(codec)).c_str(), codec == job.codec))
-        job.codec = codec;
+      if (ImGui::Selectable(codec_label(codec), codec == job.codec)) job.codec = codec;
     }
     ImGui::EndCombo();
   }
   note(codec_note(job.codec));
   ImGui::BeginDisabled(job.codec == exporter::Codec::Lossless);
-  if (panel::combo(i18n::tr("Quality"), std::string(exporter::label(job.quality)).c_str())) {
+  if (panel::combo(i18n::tr("Quality"), quality_label(job.quality))) {
     for (int i = 0; i < exporter::kQualityCount; ++i) {
       const auto quality = static_cast<exporter::Quality>(i);
-      if (ImGui::Selectable(std::string(exporter::label(quality)).c_str(), quality == job.quality))
-        job.quality = quality;
+      if (ImGui::Selectable(quality_label(quality), quality == job.quality)) job.quality = quality;
     }
     ImGui::EndCombo();
   }

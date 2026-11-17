@@ -13,8 +13,8 @@ struct State {
   bool dim = false;
   const char* group_title = nullptr;  // le titre de l'encadré ouvert, posé dans sa bordure à sa fermeture //
                                       // un curseur qui s'applique en direct est tenu : le panneau s'efface
-  // La police grasse des titres d'infobulle (ui.cpp : load_fonts) ; nulle sans FreeType : le titre est alors
-  // tracé deux fois, décalé d'un pixel.
+  // La police grasse des titres d'infobulle (ui_fonts.cpp : load_fonts) ; nulle sans FreeType : le titre est
+  // alors tracé deux fois, décalé d'un pixel.
   ImFont* bold = nullptr;
 };
 

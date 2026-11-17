@@ -58,15 +58,22 @@ TEST_CASE("langues par défaut : la version originale sous-titrée dans la langu
   CHECK_FALSE(version_from_name("vf"));
 }
 
-TEST_CASE("langue de l'interface : celle du système tant que play.toml n'en dit rien (A19-03)",
+TEST_CASE("langue de l'interface : « system » suit celle du système, l'anglais sans elle (A19-03)",
           "[app][language]") {
   using namespace ajp::app::play;
+  // Le défaut reste « system » dans play.toml : il suit le système à chaque lancement, au lieu d'y figer la
+  // langue trouvée au premier.
+  CHECK(PlaySettings{}.language == "system");
+  CHECK(parse_settings("")->language == "system");
   set_system_language("fre");
-  CHECK(PlaySettings{}.language == "fr");
-  CHECK(parse_settings("")->language == "fr");
-  CHECK(parse_settings("[interface]\nlanguage = \"en\"\n")->language == "en");  // un choix gardé l'emporte
-  set_system_language("jpn");
-  CHECK(PlaySettings{}.language == "en");
+  CHECK(interface_language(PlaySettings{}.language) == i18n::Language::French);
+  CHECK(interface_language("en") == i18n::Language::English);  // un choix gardé l'emporte
+  CHECK(parse_settings("[interface]\nlanguage = \"en\"\n")->language == "en");
+  CHECK(parse_settings("[interface]\nlanguage = \"system\"\n")->language == "system");
+  CHECK(parse_settings(format_settings(PlaySettings{}))->language == "system");
+  set_system_language("jpn");  // une langue que l'interface n'a pas : l'anglais
+  CHECK(interface_language("system") == i18n::Language::English);
+  CHECK(interface_language("fr") == i18n::Language::French);
   set_system_language("eng");
-  CHECK(PlaySettings{}.language == "en");
+  CHECK(interface_language("system") == i18n::Language::English);
 }

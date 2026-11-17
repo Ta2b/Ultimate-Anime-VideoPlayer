@@ -130,6 +130,33 @@ sur un dessin en deux qui bouge vite. Tatoub l'a vu au ralenti dans un export en
 par image a trouvé 19 reculs sur 425 images, aux rangs multiples de 8. La copie de b après un dessin tenu
 (`--skip-held`) ne change pas : toutes ses images valent a puis b, sans recul.
 
+## Taille de l'estimation du mouvement
+
+Case « Estimer le mouvement en 720p » (Vidéo > Interpolation ; `[interpolation] motion_720p` de `play.toml`),
+**décochée par défaut** : au-delà de 720 lignes de travail, RIFE mouvement estime le flot à la taille de travail.
+Cochée, il l'estime sur une copie réduite à 720 lignes (`kRifeMotionHeight`, `motion_size` dans
+`src/app/play/chain_setup.cpp`), plus rapide. Recharge la chaîne. Avant ce réglage, la copie 720p était
+toujours faite ; Tatoub a choisi la taille de travail par défaut après la mesure ci-dessous.
+
+Origine : un panoramique lent (environ 1,3 px par image source en 1080p) ondule en 4.25 lite et pas en
+4.22 lite. Mesure sur le PC de Tatoub (×4, médiane du flot du rang 0 vers chaque instant, en part du pas
+d'une source ; régulier : 0,25 / 0,50 / 0,75) :
+
+| Modèle et mode | ¼ | ½ | ¾ |
+|---|---|---|---|
+| 4.25 lite, mouvement estimé en 720p | 0,03 | 0,11 | 0,35 |
+| 4.22 lite, mouvement estimé en 720p | 0,12 | 0,34 | 0,69 |
+| 4.25 lite, RIFE image en 720p | 0,02 | 0,14 | 0,93 |
+| 4.25 lite, RIFE image en 1080p | 0,01 | 0,47 | 0,96 |
+| 4.22 lite, RIFE image en 1080p | 0,07 | 0,41 | 0,86 |
+
+Le réseau 4.25 lite n'est pas régulier sur un mouvement de moins d'un pixel, même en 1080p ; en 720p, son milieu
+colle à la source (0,14) et le mode mouvement, qui prolonge ce milieu en ligne droite, garde l'écart à tous les
+instants. En 1080p, le milieu revient à 0,47 : le mode mouvement doit alors répartir les instants presque
+régulièrement. Mesuré ensuite, même passage, mode mouvement estimé à la taille de travail : 4.25 lite
+0,22 / 0,47 / 0,69, 4.22 lite 0,22 / 0,45 / 0,72, 4.26 0,21 / 0,45 / 0,72 ; le même paquet en 720p redonne
+0,03 / 0,11 / 0,35 pour 4.25 lite.
+
 ## Instants déduits sur les paires fortes (essai)
 
 Case « Moins de passes RIFE sur les mouvements rapides » (Vidéo, sous le multiplicateur ; `[interpolation]
