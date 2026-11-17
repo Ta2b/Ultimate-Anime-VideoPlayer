@@ -29,6 +29,7 @@
 #include <libplacebo/vulkan.h>
 
 #include "app/play/close_watch.h"
+#include "app/play/display_gpu.h"
 #include "app/play/host_facts.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
@@ -557,6 +558,19 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   // Le niveau de retour de présentation (present_level.h) : à --present=open, la swapchain d'aujourd'hui.
   impl->present_caps =
       options.present == PresentWanted::Open ? PresentCaps{} : read_present_caps(impl->vk, impl->surface);
+  // Un écran sur une autre carte (portable hybride) : aucun retour, le pilote y fige la fenêtre
+  // (present_level.h).
+  if (options.present != PresentWanted::Open) {
+    const std::optional<ScreenCard> card =
+        screen_card(impl->window, {}, GpuDevice{.luid = device_luid(impl->vk)});
+    if (card && !card->renders) {
+      impl->channel->warn(
+          "présentation : écran sur la carte « {} », pas sur celle du rendu : retour de "
+          "présentation coupé (le pilote y fige la fenêtre)",
+          card->name);
+      impl->present_caps = present_caps_for_screen(impl->present_caps, false);
+    }
+  }
   // wp_presentation (placebo_wayland.h), seulement s'il peut servir.
   std::unique_ptr<WaylandPresentation> wayland;
   if (wants_wayland(options.present)) wayland = WaylandPresentation::open(impl->window, impl->channel);
