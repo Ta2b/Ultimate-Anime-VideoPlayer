@@ -1,11 +1,16 @@
 // Le niveau de retour de présentation (chantier 6.2, app/play/present_level.h) : la table des niveaux.
 #include "app/play/present_level.h"
 
+#include <chrono>
 #include <cstdint>
-#include <initializer_list>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <thread>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/play/present_watch.h"
 #include "app/play/queue_lanes.h"
 
 namespace ajp::app::play {
@@ -185,29 +190,6 @@ TEST_CASE("Surface perdue : des acquisitions qui échouent de suite finissent pa
   CHECK_FALSE(streak.failed(9'000'000 + kLostSurfaceUs / 2));
 }
 
-TEST_CASE("présentation : aucun retour sur un écran d'une autre carte (portable hybride, fenêtre figée)",
-          "[app][present]") {
-  const PresentCaps absolute{.present_id2 = true,
-                             .present_wait2 = true,
-                             .timing = true,
-                             .timing_absolute = true,
-                             .calibrated = true,
-                             .wayland_presentation = true};
-  // L'écran sur la carte du rendu : rien ne change.
-  CHECK(choose_present_level(present_caps_for_screen(absolute, true), PresentWanted::Wait) ==
-        PresentLevel::Wayland);
-  const PresentCaps timing{.present_id2 = true, .present_wait2 = true, .timing = true};
-  CHECK(choose_present_level(present_caps_for_screen(timing, true), PresentWanted::Wait) ==
-        PresentLevel::Timing);
-  // Recopié vers l'iGPU (Optimus sous Windows) : la présentation d'avant, à tous les niveaux demandés.
-  for (const PresentWanted wanted :
-       {PresentWanted::Auto, PresentWanted::Wait, PresentWanted::Timing, PresentWanted::TimingAbsolute})
-    CHECK(choose_present_level(present_caps_for_screen(timing, false), wanted) == PresentLevel::Open);
-  // wp_presentation vient du compositeur, pas du pilote Vulkan : gardé.
-  CHECK(present_caps_for_screen(absolute, false).wayland_presentation);
-  CHECK_FALSE(present_caps_for_screen(absolute, false).present_wait2);
-}
-
 TEST_CASE("Voies de calcul du backend adopté : comptées sur la famille, pas sur le pool (B10-04)",
           "[app][present]") {
   // RTX : famille de calcul à 8 files, libplacebo en emploie une, le backend la deuxième. Avant, la file de
@@ -227,4 +209,40 @@ TEST_CASE("Instantané : l'espace de la fenêtre SDR, sRGB seulement pour une fe
   CHECK(snapshot_keeps_target(false, false));       // fenêtre SDR : son espace, avant c'était sRGB
   CHECK_FALSE(snapshot_keeps_target(false, true));  // fenêtre HDR, fichier .ppm : sRGB
   CHECK(snapshot_keeps_target(true, true));         // fenêtre HDR, fichier .pq.ppm : PQ tel quel
+}
+
+TEST_CASE("Garde de présentation : la carte et le pilote du fichier present-stall.txt", "[app][present]") {
+  using namespace ajp::app::play;
+  // Pilote NVIDIA 621.01 du portable figé (10.8.8.6 : 621 << 22 | 1 << 14).
+  const std::string key =
+      present_stall_key("NVIDIA GeForce RTX 4070 Laptop GPU", (621U << 22U) | (1U << 14U));
+  CHECK(key == "NVIDIA GeForce RTX 4070 Laptop GPU · 9b404000");
+  CHECK(key != present_stall_key("NVIDIA GeForce RTX 4070 Laptop GPU", (621U << 22U) | (2U << 14U)));
+
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-present-stall-test";
+  std::filesystem::create_directories(dir);
+  const std::filesystem::path file = dir / "present-stall.txt";
+  std::filesystem::remove(file);
+  CHECK(read_present_stall(file).empty());  // absent : retour de présentation demandé
+  {
+    std::ofstream out(file, std::ios::binary);
+    out << key << "\r\n";  // écrit à la main sous Windows
+  }
+  CHECK(read_present_stall(file) == key);
+  std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("Garde de présentation : un appel court ne déclenche rien", "[app][present]") {
+  using namespace ajp::app::play;
+  const std::filesystem::path file =
+      std::filesystem::temp_directory_path() / "ajp-present-stall-short" / "present-stall.txt";
+  {
+    PresentWatch watch(file, "carte · 00000000", false);
+    for (int i = 0; i < 3; ++i) {
+      const PresentWatch::Scope scope(&watch, "présentation");
+      std::this_thread::sleep_for(std::chrono::milliseconds(300));  // au-delà d'un tour du garde
+    }
+    const PresentWatch::Scope none(nullptr, "présentation");  // sans garde : rien
+  }
+  CHECK_FALSE(std::filesystem::exists(file));
 }

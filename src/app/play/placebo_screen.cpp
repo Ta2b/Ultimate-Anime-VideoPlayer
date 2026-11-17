@@ -24,6 +24,7 @@
 #include "app/play/i18n.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
+#include "app/play/present_watch.h"
 #include "app/play/visible_error.h"
 #include "core/clock.h"
 #include "core/log.h"
@@ -417,6 +418,20 @@ std::expected<void, Refusal> PlaceboScreen::Impl::submit(const pl_vulkan_present
   return {};
 }
 
+// Le retour de présentation préparé (placebo_feedback.h), puis l'image soumise, sous le garde
+// (present_watch.h).
+std::expected<void, Refusal> PlaceboScreen::Impl::present_frame(std::int64_t target_us) {
+  const PresentWatch::Scope watched(present_watch.get(), "présentation");
+  const pl_vulkan_present* present =
+      feedback ? feedback->prepare(swapchain, host_now_us(), target_us) : nullptr;
+  return submit(present);
+}
+
+void PlaceboScreen::Impl::swap_buffers() {
+  const PresentWatch::Scope watched(present_watch.get(), "fin de présentation (swap_buffers)");
+  pl_swapchain_swap_buffers(swapchain);
+}
+
 bool PlaceboScreen::Impl::start_frame(pl_swapchain_frame* frame) {
   if (frame_pending) {
     channel->warn(
@@ -428,7 +443,10 @@ bool PlaceboScreen::Impl::start_frame(pl_swapchain_frame* frame) {
     if (auto sent = submit(nullptr); !sent) channel->warn("présentation : {}", sent.error().detail);
     pl_swapchain_swap_buffers(swapchain);
   }
-  frame_pending = pl_swapchain_start_frame(swapchain, frame);
+  {
+    const PresentWatch::Scope watched(present_watch.get(), "acquisition d'une image de la swapchain");
+    frame_pending = pl_swapchain_start_frame(swapchain, frame);
+  }
   pending_fbo = frame_pending ? frame->fbo : nullptr;
   return frame_pending;
 }
@@ -574,11 +592,9 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   }
   // Retour de présentation (placebo_feedback.h) : ce qui est revenu est relu, la présentation part avec
   // son identifiant et sa demande de date.
-  const pl_vulkan_present* present =
-      s.feedback ? s.feedback->prepare(s.swapchain, host_now_us(), request.target_us) : nullptr;
-  if (auto sent = s.submit(present); !sent) return std::unexpected(std::move(sent.error()));
+  if (auto sent = s.present_frame(request.target_us); !sent) return std::unexpected(std::move(sent.error()));
   const std::int64_t submitted = host_now_us();
-  pl_swapchain_swap_buffers(s.swapchain);  // attend les commandes des images en vol, pas l'écran (A10-14)
+  s.swap_buffers();  // attend les commandes des images en vol, pas l'écran (A10-14)
   const std::int64_t presented = host_now_us();
   ScreenTiming timing{.acquire_us = acquired - start,
                       .render_us = submitted - acquired,

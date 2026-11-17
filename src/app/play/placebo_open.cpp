@@ -29,18 +29,19 @@
 #include <libplacebo/vulkan.h>
 
 #include "app/play/close_watch.h"
-#include "app/play/display_gpu.h"
 #include "app/play/host_facts.h"
 #include "app/play/osd_text.h"
 #include "app/play/placebo_impl.h"
 #include "app/play/placebo_present.h"
 #include "app/play/placebo_screen.h"
+#include "app/play/present_watch.h"
 #include "app/play/queue_lanes.h"
 #include "app/play/relaunch_target.h"
 #include "app/play/window_size.h"
 #include "core/clock.h"
 #include "core/file_sync.h"
 #include "core/log.h"
+#include "core/utf8_path.h"
 
 namespace ajp::app::play {
 namespace {
@@ -336,6 +337,57 @@ const char* pick_device(const ScreenOptions& options, ScreenImpl& impl) {
   return impl.device_choice.c_str();
 }
 
+// Le niveau retenu et ce qui l'a permis, au journal.
+void log_present_level(spdlog::logger& log, PresentLevel level, const PresentCaps& c) {
+  log.info(
+      "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date absolue {}, "
+      "horodatages calibrés {}, wp_presentation {})",
+      name(level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated,
+      c.wayland_presentation);
+}
+
+// present-stall.txt, à côté du cache des shaders : un fichier de ce poste, qui se perd sans dommage (le garde
+// le récrit au blocage suivant).
+std::filesystem::path present_stall_file(const std::filesystem::path& shader_cache) {
+  return shader_cache.parent_path() / "present-stall.txt";
+}
+
+// present-stall.txt (present_watch.h) : la demande de retour de présentation, ou open quand ce retour a figé
+// la fenêtre sur ce poste ; stalled reçoit la carte et le pilote du fichier.
+PresentWanted present_after_stall(const ScreenOptions& options, std::string& stalled) {
+  if (options.present == PresentWanted::Open || options.shader_cache.empty()) return options.present;
+  stalled = read_present_stall(present_stall_file(options.shader_cache));
+  return stalled.empty() ? options.present : PresentWanted::Open;
+}
+
+// Le garde des appels de la swapchain, avec un retour de présentation ; le fichier d'un blocage passé retiré
+// quand la carte ou le pilote ont changé (le retour se retente au lancement suivant).
+template <class ScreenImpl>  // PlaceboScreen::Impl est privé : le gabarit évite de le nommer
+void watch_presentation(ScreenImpl& impl, const ScreenOptions& options, const std::string& stalled) {
+  const auto properties_of = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+      impl.vk->get_proc_addr(impl.vk->instance, "vkGetPhysicalDeviceProperties"));
+  if (properties_of == nullptr || options.shader_cache.empty()) return;
+  const std::filesystem::path file = present_stall_file(options.shader_cache);
+  VkPhysicalDeviceProperties properties{};
+  properties_of(impl.vk->phys_device, &properties);
+  const std::string key = present_stall_key(properties.deviceName, properties.driverVersion);
+  if (stalled == key) {
+    impl.channel->warn(
+        "présentation : sans retour de présentation, il a figé la fenêtre avec {} (retirer {} pour "
+        "réessayer)",
+        key, core::to_utf8(file.filename()));
+  } else if (!stalled.empty()) {
+    std::error_code error;
+    std::filesystem::remove(file, error);
+    impl.channel->info(
+        "présentation : carte ou pilote changés depuis le blocage ({} → {}), retour de présentation retenté "
+        "au prochain lancement",
+        stalled, key);
+  }
+  if (impl.present_level != PresentLevel::Open)
+    impl.present_watch = std::make_unique<PresentWatch>(file, key, !options.hidden);
+}
+
 }  // namespace
 
 namespace {
@@ -350,21 +402,6 @@ void request_smooth_motion(spdlog::logger& log) {
 #else
   log.info("Smooth Motion : réglé par l'application NVIDIA sous Windows, rien n'est demandé ici");
 #endif
-}
-
-// Les capacités de retour de présentation (present_level.h) : aucune à --present=open, ni sur un écran
-// branché sur une autre carte que celle du rendu (portable hybride), où le pilote fige la fenêtre.
-PresentCaps screen_present_caps(PresentWanted wanted, pl_vulkan vk, VkSurfaceKHR surface, SDL_Window* window,
-                                spdlog::logger& log) {
-  if (wanted == PresentWanted::Open) return {};
-  const PresentCaps caps = read_present_caps(vk, surface);
-  const std::optional<ScreenCard> card = screen_card(window, {}, GpuDevice{.luid = device_luid(vk)});
-  if (!card || card->renders) return caps;
-  log.warn(
-      "présentation : écran sur la carte « {} », pas sur celle du rendu : retour de présentation coupé (le "
-      "pilote y fige la fenêtre)",
-      card->name);
-  return present_caps_for_screen(caps, false);
 }
 
 // Le profil GPU d'une passe à la fermeture : médiane et p95 en temps linéaire (C10-07 : le tri complet de
@@ -535,13 +572,16 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   vk_params.get_proc_addr = impl->inst->get_proc_addr;
   vk_params.surface = impl->surface;
   vk_params.allow_software = options.allow_software;
+  // present-stall.txt (present_watch.h) : un retour de présentation qui a déjà figé la fenêtre ici.
+  std::string stalled;
+  const PresentWanted present = present_after_stall(options, stalled);
   ComputeFeatures compute;
   // Retour de présentation (chantier 6.2) : rien de plus demandé à --present=open.
   PresentFeatures present_features;
-  if (options.present != PresentWanted::Open) compute.video2.pNext = present_features.head(nullptr);
+  if (present != PresentWanted::Open) compute.video2.pNext = present_features.head(nullptr);
   vk_params.features = &compute.features;
   std::vector<const char*> extensions(kOptionalExtensions.begin(), kOptionalExtensions.end());
-  for (const char* extension : present_extensions(options.present)) extensions.push_back(extension);
+  for (const char* extension : present_extensions(present)) extensions.push_back(extension);
   vk_params.opt_extensions = extensions.data();
   vk_params.num_opt_extensions = static_cast<int>(extensions.size());
   vk_params.extra_queues = kVideoQueueFlags | kBackendQueueFlags;
@@ -572,20 +612,14 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
 
   // Le niveau de retour de présentation (present_level.h) : à --present=open, la swapchain d'aujourd'hui.
   impl->present_caps =
-      screen_present_caps(options.present, impl->vk, impl->surface, impl->window, *impl->channel);
+      present == PresentWanted::Open ? PresentCaps{} : read_present_caps(impl->vk, impl->surface);
   // wp_presentation (placebo_wayland.h), seulement s'il peut servir.
   std::unique_ptr<WaylandPresentation> wayland;
-  if (wants_wayland(options.present)) wayland = WaylandPresentation::open(impl->window, impl->channel);
+  if (wants_wayland(present)) wayland = WaylandPresentation::open(impl->window, impl->channel);
   impl->present_caps.wayland_presentation = wayland != nullptr;
-  impl->present_level = choose_present_level(impl->present_caps, options.present);
-  if (options.present != PresentWanted::Open) {
-    const PresentCaps& c = impl->present_caps;
-    impl->channel->info(
-        "présentation : niveau {} (present_id2 {}, present_wait2 {}, present timing {}, date "
-        "absolue {}, horodatages calibrés {}, wp_presentation {})",
-        name(impl->present_level), c.present_id2, c.present_wait2, c.timing, c.timing_absolute, c.calibrated,
-        c.wayland_presentation);
-  }
+  impl->present_level = choose_present_level(impl->present_caps, present);
+  if (present != PresentWanted::Open)
+    log_present_level(*impl->channel, impl->present_level, impl->present_caps);
   const SwapchainShape shape = swapchain_shape(impl->present_level);
   pl_vulkan_swapchain_params sw_params{};
   sw_params.surface = impl->surface;
@@ -625,6 +659,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
       impl->device.driver_version = std::format("{}.{}.{:02}", v >> 22, (v >> 14) & 0xFF, (v >> 6) & 0xFF);
     }
   }
+  watch_presentation(*impl, options, stalled);
   const QueueRef engines = impl->device.vulkan->compute;
   if (impl->device.vulkan->lock_queue == nullptr) {
     impl->channel->info("moteurs sur leur propre file (famille {}, file {}), à côté de l'affichage",

@@ -31,6 +31,7 @@
 #include "app/play/placebo_imgui.h"
 #include "app/play/placebo_screen.h"
 #include "app/play/present_level.h"
+#include "app/play/present_watch.h"
 #include "app/play/ring_watcher.h"
 #include "app/play/source_grade.h"
 #include "app/play/video_rate.h"
@@ -198,6 +199,7 @@ struct PlaceboScreen::Impl {
   std::atomic<bool> shader_cache_writing{false};
   PresentLevel present_level = PresentLevel::Open;  // ScreenOptions::present (present_level.h)
   PresentCaps present_caps;
+  std::unique_ptr<PresentWatch> present_watch;      // le garde des appels de la swapchain (present_watch.h)
   std::unique_ptr<PresentFeedback> feedback;        // niveaux Timing et Wait (placebo_feedback.h) ; nul sinon
   std::optional<render::DisplayContract> contract;  // 8.2 : le contrat d'écran relu
   // Le veilleur d'écriture (ring_watcher.h), le temps d'une chaîne ; arrêté en tête de ~Impl, avant
@@ -262,6 +264,8 @@ struct PlaceboScreen::Impl {
   bool kwin_metadata() const;    // la passe « kwin » et les métadonnées HDR10 en jeu
   double sdr_reference() const;  // la luminosité SDR que la passe « kwin » imite (--hdr-metadata)
   std::expected<void, Refusal> submit(const pl_vulkan_present* present);  // placebo_screen.cpp
+  std::expected<void, Refusal> present_frame(std::int64_t target_us);     // feedback, puis submit
+  void swap_buffers();                                                    // pl_swapchain_swap_buffers gardé
   // A10-08 : l'image de la swapchain acquise par start_frame et pas encore soumise. Une sortie de show sur
   // une erreur (texture, overlays, rendu) la laissait acquise pour toujours ; au tour suivant elle est
   // soumise avant d'en acquérir une autre, sans quoi la swapchain finit sans image libre ; effacée en noir
