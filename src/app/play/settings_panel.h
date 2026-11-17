@@ -19,6 +19,7 @@
 #include "app/play/calibrated_chain.h"
 #include "app/play/chain_shape.h"
 #include "app/play/default_player.h"
+#include "app/play/home_view.h"
 #include "app/play/input.h"
 #include "app/play/panel_size.h"
 #include "app/play/precision.h"
@@ -178,6 +179,10 @@ class SettingsPanel {
   }
   void close() { open_ = false; }
   bool is_open() const { return open_; }
+  // Ouvert : ses bords gauche et droit à l'image précédente (l'écran d'accueil se pose à côté).
+  std::optional<PanelSpan> span() const {
+    return open_ && span_.right > 0.0F ? std::optional(span_) : std::nullopt;
+  }
   // Une tâche tourne dans le panneau (optimisation, préparation) : des images régulières, même en pause.
   bool busy() const;
   // Il y a quelque chose à dessiner : le panneau ouvert.
@@ -217,7 +222,9 @@ class SettingsPanel {
   int page_ = 2;        // l'onglet affiché (settings_panel.cpp : kPages) ; Vidéo > Général à l'ouverture
   int select_tab_ = 2;  // l'onglet que la rangée doit sélectionner à l'image suivante ; -1 : celui du clic
   float alpha_ = 1.0F;  // l'opacité du panneau : il s'efface pendant qu'on tient un curseur en direct
-  PanelSize size_;  // la taille choisie aux bords, en part de la fenêtre, gardée d'une ouverture à l'autre
+  PanelSize size_;
+  PanelSpan span_;  // les bords du panneau à l'image précédente  // la taille choisie aux bords, en part de
+                    // la fenêtre, gardée d'une ouverture à l'autre
   std::array<int, 8> category_page_{-1, -1, -1, -1, -1, -1, -1, -1};  // le dernier onglet de chaque catégorie
   std::string pending_text_;  // le texte du bandeau « Appliquer » de l'image, vide s'il n'y en a pas (C23-02)
   ChangeCost pending_cost_ = ChangeCost::None;  // Reopen ou Restart : ce que fera « Appliquer »

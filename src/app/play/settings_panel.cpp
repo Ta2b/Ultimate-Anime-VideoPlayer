@@ -335,26 +335,36 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   const float target = dim ? 0.18F : 1.0F;
   alpha_ += (target - alpha_) * std::min(1.0F, io.DeltaTime * 14.0F);
   if (std::abs(target - alpha_) < 0.01F) alpha_ = target;
+  // Le panneau se déplace par son titre et se redimensionne par tous ses bords, dans la fenêtre moins une
+  // marge. Sa place, en parts de la fenêtre (panel_size.h), revient à chaque ouverture et suit la fenêtre
+  // quand elle change de taille. La première fois : à droite, sous le titre, au-dessus de la barre de
+  // lecture.
   const float pad = 18.0F * scale;
-  const float top = pad + 40.0F * scale;
-  const float bottom = 120.0F * scale;  // la barre de lecture reste visible dessous
-  const float max_width = std::max(320.0F * scale, io.DisplaySize.x - 2.0F * pad);
-  const float max_height = std::max(240.0F * scale, io.DisplaySize.y - top - bottom);
-  // Redimensionnable par ses bords : la taille choisie, en part de la fenêtre (panel_size.h), revient à
-  // chaque ouverture et suit la fenêtre quand elle change de taille ; le bord droit reste collé.
-  const PanelArea wanted = size_.target({max_width, max_height}, 1100.0F * scale);
-  ImGui::SetNextWindowPos({io.DisplaySize.x - pad, top}, ImGuiCond_Always, {1.0F, 0.0F});
-  ImGui::SetNextWindowSize({wanted.width, wanted.height},
-                           size_.area_changed() ? ImGuiCond_Always : ImGuiCond_Appearing);
+  const PanelArea area{std::max(320.0F * scale, io.DisplaySize.x - 2.0F * pad),
+                       std::max(240.0F * scale, io.DisplaySize.y - 2.0F * pad)};
+  const float first_width = std::min(1100.0F * scale, area.width);
+  const float first_top = 40.0F * scale;
+  const PanelRect first{.x = area.width - first_width,
+                        .y = first_top,
+                        .width = first_width,
+                        .height = std::max(240.0F * scale, area.height - first_top - 102.0F * scale)};
+  const PanelRect wanted = size_.target(area, first);
+  const ImGuiCond imposed = size_.area_changed() ? ImGuiCond_Always : ImGuiCond_Appearing;
+  ImGui::SetNextWindowPos({pad + wanted.x, pad + wanted.y}, imposed);
+  ImGui::SetNextWindowSize({wanted.width, wanted.height}, imposed);
   ImGui::SetNextWindowSizeConstraints(
-      {std::min(520.0F * scale, max_width), std::min(260.0F * scale, max_height)}, {max_width, max_height});
+      {std::min(520.0F * scale, area.width), std::min(260.0F * scale, area.height)},
+      {area.width, area.height});
   bool keep = true;
-  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove |
-                                      ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
-                                      ImGuiWindowFlags_NoScrollWithMouse;
+  constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
   ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha_);
   if (ImGui::Begin((std::string(i18n::tr("Settings")) + "###settings").c_str(), &keep, kFlags)) {
-    size_.observe({ImGui::GetWindowWidth(), ImGui::GetWindowHeight()});
+    span_ = {.left = ImGui::GetWindowPos().x, .right = ImGui::GetWindowPos().x + ImGui::GetWindowWidth()};
+    size_.observe({.x = ImGui::GetWindowPos().x - pad,
+                   .y = ImGui::GetWindowPos().y - pad,
+                   .width = ImGui::GetWindowWidth(),
+                   .height = ImGui::GetWindowHeight()});
     ImGui::PushItemWidth(-ImGui::GetWindowWidth() * 0.42F);
     bool delay_held = false;
     bool sub_delay_held = false;

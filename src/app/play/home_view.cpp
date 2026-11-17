@@ -13,21 +13,39 @@ using panel::kAccent;
 using panel::kWarn;
 using panel::note;
 
-void draw_home(HomeView& view, float scale, bool settings_open) {
+void draw_home(HomeView& view, float scale, std::optional<PanelSpan> settings) {
   const ImGuiIO& io = ImGui::GetIO();
   const ImGuiStyle& style = ImGui::GetStyle();
   const float pad = 18.0F * scale;
-  // La largeur du menu des paramètres (settings_panel.cpp) ; trop étroit à côté, on le chevauche.
-  const float panel = settings_open ? std::min(760.0F * scale, io.DisplaySize.x - 2.0F * pad) + pad : 0.0F;
-  float room = io.DisplaySize.x - panel;
-  if (room < 420.0F * scale) room = io.DisplaySize.x;
-  const float width = std::max(std::min(560.0F * scale, room - 2.0F * pad), 120.0F * scale);
-  ImGui::SetNextWindowPos({room * 0.5F, io.DisplaySize.y * 0.5F}, ImGuiCond_Always, {0.5F, 0.5F});
+  // La carte grandit avec la fenêtre, texte compris : à 1280 × 720 (à l'échelle de l'interface) elle a sa
+  // taille de base, au-delà elle suit le plus petit des deux rapports, jusqu'à trois fois.
+  const float grow = std::clamp(
+      std::min(io.DisplaySize.x / (1280.0F * scale), io.DisplaySize.y / (720.0F * scale)), 1.0F, 3.0F);
+  // À côté du menu des paramètres, dans la plus grande des deux places qu'il laisse ; trop étroit, on le
+  // chevauche.
+  float from = 0.0F;
+  float room = io.DisplaySize.x;
+  if (settings) {
+    const float left = settings->left;
+    const float right = io.DisplaySize.x - settings->right;
+    const float best = std::max(left, right);
+    if (best >= 420.0F * scale) {
+      from = left >= right ? 0.0F : settings->right;
+      room = best;
+    }
+  }
+  const float width = std::max(std::min(560.0F * scale * grow, room - 2.0F * pad), 120.0F * scale);
+  ImGui::SetNextWindowPos({from + room * 0.5F, io.DisplaySize.y * 0.5F}, ImGuiCond_Always, {0.5F, 0.5F});
   ImGui::SetNextWindowSize({width, 0.0F}, ImGuiCond_Always);  // hauteur : son contenu
   constexpr ImGuiWindowFlags kFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
-  if (ImGui::Begin("##accueil", nullptr, kFlags)) {
-    ImGui::PushFont(nullptr, style.FontSizeBase * 2.2F);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                      {style.WindowPadding.x * grow, style.WindowPadding.y * grow});
+  const bool shown = ImGui::Begin("##accueil", nullptr, kFlags);
+  ImGui::PopStyleVar();
+  if (shown) {
+    ImGui::PushFont(nullptr, style.FontSizeBase * grow);
+    ImGui::PushFont(nullptr, style.FontSizeBase * 2.2F * grow);
     ImGui::TextUnformatted("ajp");
     ImGui::PopFont();
     note(
@@ -50,9 +68,10 @@ void draw_home(HomeView& view, float scale, bool settings_open) {
       ImGui::PopStyleColor();
     }
     ImGui::Spacing();
-    if (!settings_open && ImGui::Button(i18n::tr("Settings (p)"))) view.show_settings = true;
-    if (!settings_open) ImGui::SameLine();
+    if (!settings && ImGui::Button(i18n::tr("Settings (p)"))) view.show_settings = true;
+    if (!settings) ImGui::SameLine();
     note(i18n::tr("q: quit"));
+    ImGui::PopFont();
   }
   ImGui::End();
 }

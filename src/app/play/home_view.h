@@ -3,6 +3,7 @@
 // paramètres se dessine à côté (PlayerUi::home).
 #pragma once
 
+#include <optional>
 #include <string>
 
 namespace ajp::app::play {
@@ -14,7 +15,14 @@ struct HomeView {
   bool show_settings = false;  // rendu : « Paramètres » cliqué (menu fermé)
 };
 
-// Dans le cadre ImGui en cours ; au milieu de la place que le menu laisse à gauche s'il est ouvert.
-void draw_home(HomeView& view, float scale, bool settings_open);
+// Le menu des paramètres ouvert, de son bord gauche à son bord droit, en pixels de la fenêtre.
+struct PanelSpan {
+  float left = 0.0F;
+  float right = 0.0F;
+};
+
+// Dans le cadre ImGui en cours ; au milieu de la plus grande place que le menu laisse à côté de lui s'il est
+// ouvert (il se déplace), sinon de la fenêtre.
+void draw_home(HomeView& view, float scale, std::optional<PanelSpan> settings);
 
 }  // namespace ajp::app::play

@@ -698,7 +698,7 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   input_pending_ = false;
   begin_frame(now_us);
   clicks_.clear();
-  draw_home(view, look_.scale, panel_.is_open());
+  draw_home(view, look_.scale, panel_.span());
   if (panel_.wants_draw()) {
     refresh_choices(now_us);
     const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
