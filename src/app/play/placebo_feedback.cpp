@@ -113,9 +113,7 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
     target_us -= clock_.output_latency_us();
     target_us = target_us <= now_us ? 0 : std::min(target_us, now_us + kMaxLeadUs);
   }
-  // Au niveau Timing, la date n'est demandée qu'avec un domaine de temps calé.
-  const core::PresentLedger::Issue issue =
-      ledger_.issue(now_us, target_us, !timing || (domain_.known() && level_ != PresentLevel::Wait));
+  const core::PresentLedger::Issue issue = ledger_.issue(now_us, target_us, wants_timing(timing));
   last_id_ = issue.id;
   // Wait et Timing seulement : la swapchain a VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR (present_flags).
   present_ = pl_vulkan_present{.present_id = caps_.present_id2 ? issue.id : 0, .timing = nullptr};
@@ -151,6 +149,17 @@ void PresentFeedback::fall_back(std::string_view why) {
 void PresentFeedback::drop_if_silent() {
   if (timing_level(level_) && feedback_silent(ledger_.issued(), ledger_.returned()))
     fall_back(std::format("aucun retour après {} présentations", ledger_.issued()));
+}
+
+// Au niveau Timing, la date n'est demandée qu'avec un domaine de temps calé, et jamais au-delà des places de
+// la file de retour du pilote : une présentation dans une file pleine échoue
+// (VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT). La spécification la tient pour mise en file, mais ce chemin
+// d'erreur est le moins sûr des pilotes (NVIDIA 615 sous Linux : sa barrière ne se signale jamais, voir le
+// correctif de libplacebo) ; il n'est plus emprunté. Seules les présentations datées sont en vol dans le
+// registre.
+bool PresentFeedback::wants_timing(bool timing) const {
+  if (!timing) return true;
+  return domain_.known() && level_ != PresentLevel::Wait && ledger_.in_flight() < kQueueSize;
 }
 
 void PresentFeedback::submitted(VkResult result) {
