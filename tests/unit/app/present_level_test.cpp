@@ -2,6 +2,7 @@
 #include "app/play/present_level.h"
 
 #include <cstdint>
+#include <initializer_list>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -182,6 +183,29 @@ TEST_CASE("Surface perdue : des acquisitions qui échouent de suite finissent pa
   streak.reset();  // une image acquise, ou la fenêtre cachée
   CHECK_FALSE(streak.failed(9'000'000));
   CHECK_FALSE(streak.failed(9'000'000 + kLostSurfaceUs / 2));
+}
+
+TEST_CASE("présentation : aucun retour sur un écran d'une autre carte (portable hybride, fenêtre figée)",
+          "[app][present]") {
+  const PresentCaps absolute{.present_id2 = true,
+                             .present_wait2 = true,
+                             .timing = true,
+                             .timing_absolute = true,
+                             .calibrated = true,
+                             .wayland_presentation = true};
+  // L'écran sur la carte du rendu : rien ne change.
+  CHECK(choose_present_level(present_caps_for_screen(absolute, true), PresentWanted::Wait) ==
+        PresentLevel::Wayland);
+  const PresentCaps timing{.present_id2 = true, .present_wait2 = true, .timing = true};
+  CHECK(choose_present_level(present_caps_for_screen(timing, true), PresentWanted::Wait) ==
+        PresentLevel::Timing);
+  // Recopié vers l'iGPU (Optimus sous Windows) : la présentation d'avant, à tous les niveaux demandés.
+  for (const PresentWanted wanted :
+       {PresentWanted::Auto, PresentWanted::Wait, PresentWanted::Timing, PresentWanted::TimingAbsolute})
+    CHECK(choose_present_level(present_caps_for_screen(timing, false), wanted) == PresentLevel::Open);
+  // wp_presentation vient du compositeur, pas du pilote Vulkan : gardé.
+  CHECK(present_caps_for_screen(absolute, false).wayland_presentation);
+  CHECK_FALSE(present_caps_for_screen(absolute, false).present_wait2);
 }
 
 TEST_CASE("Voies de calcul du backend adopté : comptées sur la famille, pas sur le pool (B10-04)",
