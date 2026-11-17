@@ -157,15 +157,22 @@ std::string level_name(InterpLevel level) {
   return {};
 }
 
-// Le niveau se montre : son moteur est proposé ici, son modèle est là (GMFSS : ses deux graphes, sous
-// TensorRT).
+// Le niveau se montre : son moteur est proposé ici, son modèle est là. Un niveau GMFSS sans TensorRT ni
+// ses deux graphes se montre quand même, grisé (`gmfss_missing`).
 bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   if (!offered(choice.engine)) return false;
-  if ((choice.engine == MotionEngine::Gmfss || choice.gmfss_middle) && !choices.gmfss_available) return false;
   if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
   if (choice.engine == MotionEngine::Rife)
     return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
   return true;
+}
+
+// Ce qui manque à un niveau GMFSS pour être choisi, vide s'il ne manque rien.
+std::string gmfss_missing(const InterpChoice& choice, const SettingsChoices& choices) {
+  if ((choice.engine != MotionEngine::Gmfss && !choice.gmfss_middle) || choices.gmfss_available) return {};
+  if (choices.engine_in_use != core::EngineId::TensorRt)
+    return i18n::tr("Needs the TensorRT engine (NVIDIA RTX card).");
+  return i18n::tr("Needs the two GMFSS models in the models folder.");
 }
 
 // Les niveaux au menu : Faible, Moyen, Élevé, Élevé+, et Système sur un Mac.
@@ -179,7 +186,11 @@ void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting
                  std::optional<InterpLevel> level_now, const Text& level_text) {
   for (const InterpChoice& choice : kInterpLevels) {
     if (!level_present(choice, choices) || (!in_menu(choice) && level_now != choice.level)) continue;
-    if (ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level)) {
+    const std::string missing = gmfss_missing(choice, choices);
+    ImGui::BeginDisabled(!missing.empty());
+    const bool picked = ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level);
+    ImGui::EndDisabled();
+    if (picked) {
       d.motion_engine = choice.engine;
       d.gmfss_middle = choice.gmfss_middle;
       if (choice.engine == MotionEngine::Rife)
@@ -192,7 +203,8 @@ void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting
         d.rife_factor_den = 1;
       }
     }
-    panel::tip(level_name(choice.level).c_str(), motion_description(choice));
+    panel::tip(level_name(choice.level).c_str(),
+               missing.empty() ? motion_description(choice) : motion_description(choice) + "\n\n" + missing);
   }
 }
 

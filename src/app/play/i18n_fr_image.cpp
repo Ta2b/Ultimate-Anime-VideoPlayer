@@ -99,6 +99,9 @@ constexpr std::array kImageTabs{
           "qualité : une affaire de goût. Recommandé : désactivé. Moyen et Élevé seulement."},
     Entry{"Greyed out: the video is already HDR, it is shown without the anime grade.",
           "Grisé : la vidéo est déjà en HDR, elle s'affiche sans le grade anime."},
+    Entry{"Needs the TensorRT engine (NVIDIA RTX card).", "Demande le moteur TensorRT (carte NVIDIA RTX)."},
+    Entry{"Needs the two GMFSS models in the models folder.",
+          "Demande les deux modèles GMFSS dans le dossier des modèles."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "
