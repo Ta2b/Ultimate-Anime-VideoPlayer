@@ -65,3 +65,23 @@ temps de chaque appel au matériel sur la sortie d'erreur.
   jeu de données), sinon le lecteur garde la passe au milieu et la loi de mélange du warp.
 - Le modèle n'a jamais tourné : les tailles des étages (`FlowJaNai.STAGES`) sont un point de
   départ, à régler sur le PC selon le coût mesuré face à RIFE 4.25 lite.
+
+## Étape 2 : RIFE 4.26 guidé par le flux NVOF (novembre 2026)
+
+L'étape 1 bis a montré que le flux NVOF (grille 4 à 720p) vaut celui de GMFlow comme guide sur les grands mouvements
+(125 paires, +0,03 dB). L'étape 2 part de RIFE 4.26 tel quel et lui donne ce flux en entrée, avec des poids nouveaux
+à zéro : au pas 0, le modèle est RIFE 4.26. Critère : battre RIFE 4.26 en LPIPS sur les paires de plus de 30 px des
+passages du banc (0,175 en écart 3), qui restent hors de l'entraînement.
+
+1. **Suites animées « sur un ».** Une douzaine de fenêtres de 30 s par vidéo, réparties sur toute sa durée ; au plus
+   25 suites par vidéo et 150 par série ; les vidéos à une autre cadence que 23,976 i/s sont écartées ; les passages
+   du banc (`holdout.json`) ne donnent rien. Images brutes (`frames.npy`), lues en mmap :
+   ```sh
+   python -I tools/nvof_interp/sequences.py --liste videos.txt --sortie /ssd/ajp-dataset/suites \
+       --exclure holdout.json --travaux 4
+   ```
+2. **Flux de toutes les paires** d'écart 2 à 8 (`flows.npy`, `pairs.npy`, `mag.npy`) :
+   ```sh
+   python -I tools/nvof_interp/precompute_pairs.py /ssd/ajp-dataset/suites --tool build/nvof_dump/nvof_dump
+   ```
+3. **Échantillons** (`seq_dataset.py`) : t quelconque, la moitié tirée parmi les paires de plus de 16 px.
