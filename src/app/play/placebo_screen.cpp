@@ -427,7 +427,7 @@ std::expected<void, Refusal> PlaceboScreen::Impl::present_frame(std::int64_t tar
   return submit(present);
 }
 
-void PlaceboScreen::Impl::swap_buffers() {
+void PlaceboScreen::Impl::swap_buffers() const {
   const PresentWatch::Scope watched(present_watch.get(), "fin de présentation (swap_buffers)");
   pl_swapchain_swap_buffers(swapchain);
 }
