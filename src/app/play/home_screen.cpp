@@ -130,9 +130,11 @@ class FilePick {
   std::string start_in_;
 };
 
-// La langue des réglages que l'accueil prend, posée tout de suite : l'image suivante est dans la nouvelle.
-void apply_language(const PlaySettings& wanted) {
+// Les réglages que l'accueil prend, et leur langue tout de suite : l'image suivante est dans la nouvelle. Par
+// valeur : une référence au paramètre rendue survivrait mal à un temporaire.
+PlaySettings with_language(PlaySettings wanted) {
   i18n::set_language(interface_language(wanted.language));
+  return wanted;
 }
 
 // Ce que le menu propose sans vidéo ouverte : les modèles et les moteurs du poste, la source type.
@@ -348,8 +350,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
     saved_at = host_now_us();
   };
   const auto changed = [&](const PlaySettings& wanted) {
-    apply_language(wanted);
-    running = wanted;
+    running = with_language(wanted);
     running.volume = h.ui.controls().volume();
     h.ui.set_running(running);
     dirty = true;
