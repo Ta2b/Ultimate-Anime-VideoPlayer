@@ -8,7 +8,9 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -33,11 +35,31 @@ enum class FontProvider : std::uint8_t {
   None,    // seulement les polices jointes et default_font
 };
 
+// Une police livrée avec le lecteur, jointe à la bibliothèque libass avant le moteur de rendu.
+struct BundledFont {
+  std::string_view name;            // nom de fichier, pour le journal de libass
+  std::span<const std::byte> data;  // vit autant que le programme
+};
+
+// Une police que les scripts ASS demandent et que le système n'a pas, remplacée dans leurs styles par une
+// police livrée. Sans cela, fontconfig donne la police du bureau (DejaVu Sans, Noto Sans) : Trebuchet MS, la
+// police des sous-titres de Crunchyroll et d'ADN, manque à tout Linux.
+struct FontSubstitute {
+  std::string family;       // telle que les styles la nomment, sans égard à la casse
+  std::string replacement;  // une police jointe (bundled)
+  double scale_x = 1.0;     // élargissement de la remplaçante, pour garder la longueur des lignes
+  // Une police jointe au conteneur dont le nom de fichier commence par ce préfixe (sans égard à la casse)
+  // apporte la police demandée : la piste la garde.
+  std::string attachment_prefix;
+};
+
 struct RendererOptions {
   FontProvider fonts = FontProvider::System;
   std::string default_family = "sans-serif";
-  std::filesystem::path default_font;  // facultatif : police de repli explicite
-  int render_threads = 1;              // threads de libass : 1 aucun, 0 automatique, au plus 64
+  std::filesystem::path default_font;       // facultatif : police de repli explicite
+  int render_threads = 1;                   // threads de libass : 1 aucun, 0 automatique, au plus 64
+  std::vector<BundledFont> bundled;         // jointes à la création (SubsWorker::create)
+  std::vector<FontSubstitute> substitutes;  // appliquées à chaque piste ASS choisie (SubsWorker)
 };
 
 // Résolution de sortie, taille de stockage de la vidéo source pour l'aspect et

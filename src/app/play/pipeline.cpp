@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "app/play/i18n.h"
+#include "app/play/subtitle_fonts.h"
 #include "app/play/subtitle_lead.h"
 #include "app/play/visible_error.h"
 #include "audio/devices.h"
@@ -374,7 +375,7 @@ std::expected<void, Refusal> Pipeline::open_subtitles(
 
   // Le fil des sous-titres tourne même sans piste : un fichier glissé pendant la lecture s'y ajoute (P3.85).
   subs_inbox_ = std::make_shared<subs::SubsInbox>(subs::kSubsInboxBounds);
-  auto thread = subs::SubsThread::start(config.subs, mail_, subs_inbox_);
+  auto thread = subs::SubsThread::start(with_subtitle_fonts(config.subs), mail_, subs_inbox_);
   if (!thread) {
     // C13-06 : un étage qui manque laisse la vidéo continuer. Sans fil des sous-titres, la lecture se fait
     // sans eux, avec un avis ; le menu n'en propose aucun, et un fichier glissé est refusé (subs_inbox_ nul).

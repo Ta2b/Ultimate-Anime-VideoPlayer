@@ -1,11 +1,14 @@
 #include "subs/subs_worker.h"
 
+#include <algorithm>
 #include <format>
+#include <string>
 #include <utility>
 #include <variant>
 
 #include <spdlog/logger.h>
 
+#include "core/text.h"
 #include "subs/log.h"
 
 namespace ajp::subs {
@@ -30,22 +33,30 @@ OpenedTrack open_track(const AssLibrary& library, const TrackSource& source) {
 
 }  // namespace
 
-SubsWorker::SubsWorker(AssLibrary library, SubtitleRenderer renderer, SubtitleSink& sink, AtlasReturn route)
+SubsWorker::SubsWorker(AssLibrary library, SubtitleRenderer renderer, SubtitleSink& sink, AtlasReturn route,
+                       std::vector<FontSubstitute> substitutes)
     : log_(make_logger()),
       sink_(sink),
       library_(std::move(library)),
       pool_(std::move(route)),
-      renderer_(std::move(renderer)) {}
+      renderer_(std::move(renderer)),
+      substitutes_(std::move(substitutes)) {}
 
 std::expected<std::unique_ptr<SubsWorker>, Refusal> SubsWorker::create(const RendererOptions& options,
                                                                        SubtitleSink& sink,
                                                                        AtlasReturn route) {
   auto library = AssLibrary::create();
   if (!library) return std::unexpected(std::move(library.error()));
+  // Les polices livrées (police par défaut des sous-titres) : avant le moteur de rendu, qui les lit à sa
+  // création.
+  for (const BundledFont& font : options.bundled) {
+    if (auto added = library->add_font(font.name, font.data); !added)
+      return std::unexpected(std::move(added.error()));
+  }
   auto renderer = SubtitleRenderer::create(*library, options);
   if (!renderer) return std::unexpected(std::move(renderer.error()));
   return std::unique_ptr<SubsWorker>(
-      new SubsWorker(std::move(*library), std::move(*renderer), sink, std::move(route)));
+      new SubsWorker(std::move(*library), std::move(*renderer), sink, std::move(route), options.substitutes));
 }
 
 bool SubsWorker::handle(SubsInbox::Message&& message) {
@@ -73,6 +84,7 @@ bool SubsWorker::on(SelectTrack&& select) {
   if (track) {
     track_ = std::move(*track);
     if (track_ && track_->embeds_fonts()) renderer_.fonts_changed();
+    if (track_ && track_->kind() == TrackKind::Ass) substitute_fonts();
   } else {
     report(track.error());
   }
@@ -93,9 +105,26 @@ bool SubsWorker::on(AttachFont&& font) {
   if (auto added = library_.add_font(font.name, font.data); !added) {
     report(added.error());
   } else {
+    attachments_.push_back(core::ascii_lower(font.name));
     renderer_.fonts_changed();
   }
   return true;
+}
+
+void SubsWorker::substitute_fonts() {
+  // Un script à section [Fonts] apporte ses polices : on ne sait pas lesquelles, il les garde toutes.
+  if (track_->embeds_fonts()) return;
+  for (const FontSubstitute& substitute : substitutes_) {
+    const std::string prefix = core::ascii_lower(substitute.attachment_prefix);
+    const bool attached = !prefix.empty() && std::ranges::any_of(attachments_, [&](const std::string& name) {
+      return name.starts_with(prefix);
+    });
+    if (attached) continue;
+    const int count = track_->substitute_font(substitute.family, substitute.replacement, substitute.scale_x);
+    if (count > 0)
+      log_->info("{} style(s) en {}, absente du système : {} à la place", count, substitute.family,
+                 substitute.replacement);
+  }
 }
 
 bool SubsWorker::on(Command&& command) {

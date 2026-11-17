@@ -149,6 +149,151 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
+## Gandhi Sans (police des sous-titres embarquée)
+Gandhi Sans, © Librerías Gandhi S.A. de C.V., licence propre (texte ci-dessous) : distribution libre, ni modification
+ni vente. Les quatre styles (`third_party/gandhi-sans/`), embarqués tels quels : la police par défaut des sous-titres
+texte et des ASS dont la police manque. https://www.fontsquirrel.com/fonts/gandhi-sans
+
+```
+[The English version of this License is reproduced below.]
+[El texto en espanol se presenta sin acentos ni diacriticos de modo intencional.]
+
+Reglas de uso
+
+Usted puede:
+-Instalar las fuentes tipograficas en tantos dispositivos como desee.
+-Distribuir las fuentes tipograficas a quienes desee.
+-Utilizar las fuentes tipograficas en documentos comerciales y no comerciales.
+-Guardar las fuentes tipograficas en un formato que se adapte mejor a sus propositos.
+
+Pero no puede:
+-Modificar las fuentes tipograficas en un programa de edicion tipografica.
+-Vender o rentar las fuentes tipograficas.
+
+Notas:
+-Las fuentes tipograficas y cualquier otro material escrito o electronico que las acompañen se proporcionan en su estado actual sin garantia de ninguna especie, expresa o implicita. Los autores no garantizan que las funciones contenidas en las fuentes tipograficas seran las mismas que las requeridas por el usuario.
+-Los autores no seran responsables por danos directos, indirectos, consecuentes o incidentales (incluyendo los danos por perdida de ganancias, interrupcion del negocio, perdida de informacion y similares) que surjan del uso o incapacidad de uso de las fuentes tipograficas.
+
+---
+
+Conditions of use
+
+You may:
+-Install the fonts on as many devices as you wish.
+-Distribute the fonts to anyone you wish.
+-Use the fonts in any commercial or non-commercial document.
+-Save the fonts in a format that would best fit your purposes.
+
+You may not:
+-Modify the fonts in a font editor software.
+-Sell or rent out the fonts.
+
+Notes:
+-The fonts and any other accompanying written or electronic materials are provided "as is" without warranty of any kind, expressed or implied. The authors do not warrant that the functions contained in the fonts will meet the user's requirements.
+-The authors shall not be liable for any direct, indirect, consequential, or incidental damages (including damages from loss of business profits, business interruption, loss of business information, and the like) arising out of the use of or inability to use the fonts.
+```
+
+## Noto Sans CJK JP (paquet Linux, `fonts/`)
+Noto Sans CJK, © 2014-2021 Adobe (http://www.adobe.com/), avec le nom réservé « Source », SIL Open Font License 1.1.
+`NotoSansCJKjp-Regular.otf` de l'étiquette Sans2.004 (`tools/release/fetch-fonts.sh`, SHA-256 vérifié), joint tel
+quel au paquet Linux : repli des sous-titres et de l'interface sur un système sans police japonaise.
+https://github.com/notofonts/noto-cjk
+
+```
+This Font Software is licensed under the SIL Open Font License,
+Version 1.1.
+
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font
+creation efforts of academic and linguistic communities, and to
+provide a free and open framework in which fonts may be shared and
+improved in partnership with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply to
+any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software
+components as distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to,
+deleting, or substituting -- in part or in whole -- any of the
+components of the Original Version, by changing formats or by porting
+the Font Software to a new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed,
+modify, redistribute, and sell modified and unmodified copies of the
+Font Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components, in
+Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the
+corresponding Copyright Holder. This restriction only applies to the
+primary font name as presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created using
+the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+```
+
 ## Anime4K (shaders embarqués)
 Anime4K, © 2019-2021 bloc97, licence MIT. Neuf shaders GLSL de mpv (commit `7684e95`, `third_party/anime4k/`),
 embarqués tels quels dans le lecteur pour l'agrandissement Anime4K (Vidéo > Modèle). https://github.com/bloc97/Anime4K

@@ -21,8 +21,8 @@ struct SrtCue {
 // Heures au plus dans un horodatage SRT.
 inline constexpr int kSrtMaxHours = 99;
 
-// En-tête ASS des pistes texte : un style « Default » sur 384×288, les valeurs
-// par défaut de FFmpeg pour les sous-titres convertis.
+// En-tête ASS des pistes texte : un style « Default » sur 384×288, en Gandhi Sans gras
+// contourné de noir (les sous-titres d'anime de fansub), au lieu du « sans-serif » fin de FFmpeg.
 std::string_view text_track_header();
 
 // Découpe un fichier SRT en UTF-8 (BOM et fins de ligne CRLF acceptés). Les

@@ -17,6 +17,7 @@
 #include <windows.h>
 #endif
 
+#include "app/play/subtitle_fonts.h"
 #include "core/log.h"
 #include "core/text.h"
 #include "core/utf8_path.h"
@@ -177,6 +178,15 @@ std::vector<FontFile> find_fonts() {
     log_channel("app")->info("interface : la police du bureau couvre le japonais, pas de police de repli");
     add_hangul_hanzi_fallback(fonts, nullptr);
     return fonts;
+  }
+  // Aucune dans le système : celle que le paquet Linux joint (fonts/ à côté du lecteur, subtitle_fonts.h).
+  if (const std::filesystem::path bundled = bundled_cjk_font(); !bundled.empty()) {
+    FontFile cjk{.path = core::to_utf8(bundled), .index = 0};
+    if (read_font(bundled, cjk)) {
+      log_channel("app")->info("interface : aucune police CJK dans le système, celle du paquet {}", cjk.path);
+      fonts.push_back(std::move(cjk));
+      return fonts;
+    }
   }
   log_channel("app")->warn(
       "interface : aucune police CJK trouvée, les titres japonais s'afficheront en carrés (Noto Sans CJK)");
