@@ -4,8 +4,11 @@
 #include <chrono>
 #include <cstddef>
 #include <format>
+#include <span>
 #include <utility>
 #include <variant>
+
+#include "app/play/ui_fonts.h"
 
 namespace ajp::app::play {
 namespace {
@@ -48,11 +51,11 @@ std::string osd_script(std::span<const std::string> lines, OutputSize size) {
       "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
       "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
       "Style: "
-      "Osd,sans-serif,{},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,7,{},{},{},"
+      "Osd,{},{},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,7,{},{},{},"
       "1\n\n"
       "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
       "Dialogue: 0,0:00:00.00,9:59:59.99,Osd,,0,0,0,,{}\n",
-      size.width, size.height, font, font, font, font, text);
+      size.width, size.height, kUiFontFamily, font, font, font, font, text);
 }
 
 bool osd_refresh_due(bool had_text, bool has_text, bool size_changed, std::int64_t since_render_us) {
@@ -75,6 +78,11 @@ OsdText::~OsdText() {
 std::expected<std::unique_ptr<OsdText>, Refusal> OsdText::create() {
   auto library = subs::AssLibrary::create();
   if (!library) return std::unexpected(std::move(library.error()));
+  // La police de l'interface (ui_fonts.h), jointe avant le moteur de rendu qui la lit : le compteur de FPS a
+  // le même dessin partout. Avant, « sans-serif » passait par fontconfig, et sous Fedora les chiffres et les
+  // lettres pouvaient venir de deux polices de tailles différentes.
+  if (auto added = library->add_font("Inter-Regular.ttf", std::as_bytes(std::span(kUiFontTtf))); !added)
+    return std::unexpected(std::move(added.error()));
   auto renderer = subs::SubtitleRenderer::create(*library, subs::RendererOptions{});
   if (!renderer) return std::unexpected(std::move(renderer.error()));
   return std::unique_ptr<OsdText>(new OsdText(std::move(*library), std::move(*renderer)));
