@@ -223,6 +223,11 @@ constexpr std::array kMenuTexts{
     Entry{"The frame rate on screen, top left. Tab shows every statistic. Recommended: off.",
           "La cadence à l'écran, en haut à gauche. Tab montre toutes les statistiques. Recommandé : "
           "désactivé."},
+    Entry{
+        "Size of the menus and the playback bar. Automatic follows the scale of the desktop, and enlarges a "
+        "large screen left at 100 % (1440p and up) on Linux. Recommended: Automatic.",
+        "Taille des menus et de la barre de lecture. Automatique suit l'échelle du bureau, et agrandit un "
+        "grand écran laissé à 100 % (1440p et plus) sous Linux. Recommandé : automatique."},
     Entry{"Plays the next file of the folder at the end. N: next, Shift+N: previous, O: skip credits. "
           "Recommended: on.",
           "Lit le fichier suivant du dossier à la fin. N : suivant, Maj+N : précédent, O : passer le "

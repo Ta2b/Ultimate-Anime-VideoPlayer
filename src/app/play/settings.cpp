@@ -18,6 +18,7 @@
 #include "app/play/anime4k_choice.h"
 #include "app/play/chain_shape.h"
 #include "app/play/settings_refuse.h"
+#include "app/play/ui_scale.h"
 #include "core/utf8_path.h"
 #include "render/cube_lut.h"
 
@@ -300,6 +301,10 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
   }
+  if (s.ui_scale != 0 && !kUiScalePercent.contains(s.ui_scale))
+    return refuse_key(
+        RefusalCode::FieldOutOfRange, "interface.ui_scale",
+        std::format(" : {} hors de {} à {} (ou 0)", s.ui_scale, kUiScalePercent.lo, kUiScalePercent.hi));
   if (s.auto_cap != 0 && (s.auto_cap < kAutoCapMin || s.auto_cap > kAutoCapMax))
     return refuse_key(
         RefusalCode::FieldOutOfRange, "interpolation.auto_cap",
@@ -484,6 +489,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
   s.update_mode = wanted.update_mode;
   s.update_frequency = wanted.update_frequency;
   s.language = wanted.language;
+  s.ui_scale = wanted.ui_scale;
   // Le délai d'un autre appareil ne vaut qu'à la réouverture : en direct, le son de l'appareil en cours ne
   // se décale pas, et ce délai ne s'enregistre pas pour lui (C23-01).
   if (wanted.audio_device == running.audio_device) s.audio_delay_ms = wanted.audio_delay_ms;

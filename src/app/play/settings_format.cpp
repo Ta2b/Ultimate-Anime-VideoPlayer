@@ -87,7 +87,9 @@ std::string format_settings(const PlaySettings& s) {
                                      {"scaler", std::string(name(s.final_scaler))},
                                      {"sharpness", s.sharpness}});
   root.insert("playlist", toml::table{{"autoplay_next", s.autoplay_next}});
-  root.insert("interface", toml::table{{"language", s.language}});
+  toml::table interface{{"language", s.language}};
+  if (s.ui_scale != 0) interface.insert("ui_scale", s.ui_scale);
+  root.insert("interface", std::move(interface));
   if (!s.engines_dir.empty() || !s.gpu.empty() || !s.fast_precision) {
     toml::table engines;
     if (!s.engines_dir.empty()) engines.insert("install_dir", s.engines_dir);

@@ -20,6 +20,7 @@
 #include "app/play/problem_report.h"
 #include "app/play/pumped_task.h"
 #include "app/play/span_auto.h"
+#include "app/play/ui_scale.h"
 #include "app/play/updater.h"
 #include "app/play/visible_error.h"
 #include "core/log.h"
@@ -97,12 +98,34 @@ bool interface_language_combo(const char* label, std::string& code) {
   return picked;
 }
 
+namespace {
+
+// Taille de l'interface : automatique, ou de 100 à 200 % par pas de 25.
+void ui_scale_combo(int& percent) {
+  const std::string automatic = i18n::tr("Automatic");
+  const std::string shown = percent == 0 ? automatic : std::format("{} %", percent);
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Interface size")).c_str(), shown.c_str())) {
+    if (ImGui::Selectable(automatic.c_str(), percent == 0)) percent = 0;
+    for (int value = kUiScalePercent.lo; value <= kUiScalePercent.hi; value += 25) {
+      if (ImGui::Selectable(std::format("{} %", value).c_str(), percent == value)) percent = value;
+    }
+    ImGui::EndCombo();
+  }
+  panel::tip(i18n::tr("Interface size"),
+             i18n::tr("Size of the menus and the playback bar. Automatic follows the scale of the desktop, "
+                      "and enlarges a large screen left at 100 % (1440p and up) on Linux. Recommended: "
+                      "Automatic."));
+}
+
+}  // namespace
+
 void language_section(PlaySettings& d) {
   section(i18n::tr("Interface"));
   interface_language_combo(panel::left(i18n::tr("Interface language")).c_str(), d.language);
   panel::tip(i18n::tr("Interface language"),
              i18n::tr("System follows the language of the computer when the player has it, English "
                       "otherwise. The change shows at once."));
+  ui_scale_combo(d.ui_scale);
   // La langue se pose par apply_live (lecture) ou à l'accueil quand elle change, pas ici à chaque image
   // (C23-11).
 }

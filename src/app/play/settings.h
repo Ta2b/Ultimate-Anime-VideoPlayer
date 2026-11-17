@@ -362,6 +362,9 @@ struct PlaySettings {
   // Langue de l'interface : « system » (le défaut, celle du système si l'interface l'a, l'anglais sinon :
   // interface_language), « en » ou « fr » ; prise en direct, à l'accueil comme en lecture (app/play/i18n.h).
   std::string language = std::string(kSystemInterfaceLanguage);
+  // Taille de l'interface en pour cent (kUiScalePercent, ui_scale.h) ; 0 : automatique, l'échelle du bureau,
+  // plus grande sur un grand écran que Linux laisse à 100 %. Prise en direct.
+  int ui_scale = 0;
   // Le dossier où s'installent les moteurs téléchargés (TensorRT) et leurs téléchargements ; vide
   // : le dossier des données de l'utilisateur. Vaut au prochain lancement ; les moteurs déjà installés ne
   // sont pas déplacés.

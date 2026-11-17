@@ -411,6 +411,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   }
   if (const toml::table* interface = section(root, "interface")) {
     reads.push_back(read(*interface, "interface", "language", s.language));
+    reads.push_back(read(*interface, "interface", "ui_scale", s.ui_scale));
     if (!known_interface_language(s.language))
       reads.emplace_back(refuse_key(RefusalCode::FieldOutOfRange, "interface.language",
                                     std::format(" : « {} »", s.language)));

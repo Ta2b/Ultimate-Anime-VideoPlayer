@@ -102,6 +102,7 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"gpu", [](PlaySettings& s) { s.gpu = "Une carte"; }},
       {"fast_precision", [](PlaySettings& s) { s.fast_precision = !s.fast_precision; }},
       {"language", [](PlaySettings& s) { s.language = "fr"; }},
+      {"ui_scale", [](PlaySettings& s) { s.ui_scale = 150; }},
       {"audio_delay_ms", [](PlaySettings& s) { s.audio_delay_ms = 80; }},
       {"audio_device", [](PlaySettings& s) { s.audio_device = "casque"; }},
       {"display_sync", [](PlaySettings& s) { s.display_sync = !s.display_sync; }},
