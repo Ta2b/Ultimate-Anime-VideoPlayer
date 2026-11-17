@@ -25,6 +25,12 @@ bool moved(PanelRect a, PanelRect b) {
 
 }  // namespace
 
+PanelRect fixed_panel(PanelArea area, float widest, float narrowest, float keep_left) {
+  const float width =
+      std::min(std::clamp(area.width - keep_left, std::min(narrowest, widest), widest), area.width);
+  return {.x = area.width - width, .y = 0.0F, .width = width, .height = area.height};
+}
+
 PanelRect PanelSize::target(PanelArea area, PanelRect first) {
   if (!placed_) {
     share_ = shares_of(first, area);

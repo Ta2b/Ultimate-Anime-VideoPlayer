@@ -31,13 +31,11 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
   const bool fp8_engine = c.backend && c.backend->capabilities().fp8;
   const std::optional<DrbaModel> drba_file = find_distil_drba(c.model_places);
   const std::optional<GmfssModels> gmfss = find_gmfss(c.model_places);
+  // Les modèles du poste, que SPAN tourne ou non : un agrandissement désactivé ne vide pas le menu.
+  const std::optional<ModelChoice>& span = c.model ? c.model : c.span_list;
   return SettingsChoices{
-      .models = c.model       ? c.model->available
-                : c.span_list ? c.span_list->available
-                              : std::vector<std::string>{},
-      .default_model = c.model       ? c.model->default_name
-                       : c.span_list ? c.span_list->default_name
-                                     : std::string(),
+      .models = span ? span->available : std::vector<std::string>{},
+      .default_model = span ? span->default_name : std::string(),
       .source_width = video.width,
       .source_height = video.height,
       .source_fps = fps_of(video.frame_rate),
@@ -50,9 +48,9 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
       .display_oled = p.display && p.display->oled,
       .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
-      .span_tiers = c.model ? span_tiers(c.model->path, paths::derived_models(p.paths), fp8_engine,
-                                         c.backend && c.backend->capabilities().span_fp8_cutlass)
-                            : TierSupport{},
+      .span_tiers = span ? span_tiers(span->path, paths::derived_models(p.paths), fp8_engine,
+                                      c.backend && c.backend->capabilities().span_fp8_cutlass)
+                         : TierSupport{},
       .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = c.drba_found,

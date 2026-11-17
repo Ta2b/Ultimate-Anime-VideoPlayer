@@ -425,7 +425,8 @@ UiFrame PlayerUi::frame(std::int64_t now_us, const ControlsView& view, std::vect
   bool drawn = draw_controls(controls_, view, look_, now_us, actions);
   if (panel_.wants_draw()) {
     refresh_choices(now_us);
-    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
+    const SettingsPanel::Result result =
+        panel_.draw(running_, choices_, look_.scale, actions, PanelBackdrop::Video);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
     if (result.restart) actions.emplace_back(RestartPlayer{.settings = *result.restart});
@@ -453,7 +454,8 @@ const ImDrawData* PlayerUi::preparation(std::int64_t now_us, const PrepareView& 
   draw_preparation(view, look_, now_us);
   if (actions != nullptr && panel_.wants_draw()) {
     refresh_choices(now_us);
-    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, *actions);
+    const SettingsPanel::Result result =
+        panel_.draw(running_, choices_, look_.scale, *actions, PanelBackdrop::Screen);
     if (result.live) actions->emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions->emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
     if (result.restart) actions->emplace_back(RestartPlayer{.settings = *result.restart});
@@ -490,7 +492,8 @@ const ImDrawData* PlayerUi::home(std::int64_t now_us, HomeView& view, std::vecto
   draw_home(view, look_.scale, panel_.span());
   if (panel_.wants_draw()) {
     refresh_choices(now_us);
-    const SettingsPanel::Result result = panel_.draw(running_, choices_, look_.scale, actions);
+    const SettingsPanel::Result result =
+        panel_.draw(running_, choices_, look_.scale, actions, PanelBackdrop::Screen);
     if (result.live) actions.emplace_back(ApplySettings{.settings = *result.live});
     if (result.reopen) actions.emplace_back(ApplySettings{.settings = *result.reopen, .reopen = true});
     if (result.restart) actions.emplace_back(RestartPlayer{.settings = *result.restart});
