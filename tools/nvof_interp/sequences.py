@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from concurrent.futures import ProcessPoolExecutor
 from fractions import Fraction
@@ -164,6 +165,22 @@ def extract(video: Path, cap: int, args: argparse.Namespace, holdout: list[dict]
     return f"{video.name} : {kept} suites, {frames_kept} images"
 
 
+def series(video: Path) -> str:
+    """La série d'une vidéo, d'après son nom : sans les balises entre crochets ou parenthèses (groupe, résolution,
+    somme de contrôle) ni le numéro d'épisode. « [SubsPlease] Jujutsu Kaisen - 12 (1080p) [ABCD].mkv » et
+    « Jujutsu.Kaisen.S01E13.1080p.WEB.mkv » donnent « jujutsu kaisen ». Des épisodes rangés en vrac dans un même
+    dossier ne partagent ainsi plus un seul plafond ; un nom sans rien de reconnaissable retombe sur le dossier."""
+    name = re.sub(r"\[[^\]]*\]|\([^)]*\)|\{[^}]*\}", " ", video.stem)
+    name = re.sub(r"[._]+", " ", name)
+    # Ce qui suit le numéro d'épisode (S01E12, E12, Ep 12, - 12, 第12話) ne nomme plus la série.
+    name = re.split(r"(?i)\bS\d{1,2}\s?E\d{1,4}\b|\bE(?:p(?:isode)?)?\s?\d{1,4}\b|\s-\s\d{1,4}\b|第\s?\d+\s?話|"
+                    r"\b(?:1080p|720p|2160p|4k|bd|bdrip|web|web-dl|hevc|x26[45]|av1)\b", name)[0]
+    name = re.sub(r"\s+\d{1,4}\s*$", "", name)  # « Titre 12 » à la fin
+    name = re.sub(r"[^\w\s]+", " ", name).strip().lower()
+    name = re.sub(r"\s+", " ", name)
+    return name if len(name) >= 3 else f"dossier:{video.parent}"
+
+
 def folder_name(video: Path) -> str:
     return "".join(c if c.isalnum() or c in "-_." else "_" for c in video.stem)[:80]
 
@@ -185,8 +202,8 @@ def main() -> int:
                         help="secondes au moins entre deux suites gardées d'une même fenêtre")
     parser.add_argument("--liste", type=Path, help="fichier : une vidéo par ligne, à la place des sources")
     parser.add_argument("--par-serie", type=int, default=150,
-                        help="suites au plus par dossier (une série) : 37 épisodes d'Evangelion ne doivent pas noyer "
-                             "un film seul")
+                        help="suites au plus par série (d'après le nom de fichier) : 37 épisodes d'Evangelion ne "
+                             "doivent pas noyer un film seul")
     parser.add_argument("--par-video", type=int, default=25, help="suites au plus par vidéo (25 × 9 images ≈ 0,6 Go en 720p)")
     parser.add_argument("--travaux", type=int, default=3, help="vidéos traitées en parallèle")
     parser.add_argument("--hwaccel", action="store_true", help="décodage par le GPU (ffmpeg -hwaccel cuda)")
@@ -202,10 +219,10 @@ def main() -> int:
     if not todo:
         parser.error("aucune vidéo")
     # Plafond par série : partagé entre ses épisodes, avant d'écarter ceux déjà extraits.
-    per_dir: dict[Path, int] = {}
+    per_series: dict[str, int] = {}
     for v in todo:
-        per_dir[v.parent] = per_dir.get(v.parent, 0) + 1
-    caps = {v: min(args.par_video, -(-args.par_serie // per_dir[v.parent])) for v in todo}
+        per_series[series(v)] = per_series.get(series(v), 0) + 1
+    caps = {v: min(args.par_video, -(-args.par_serie // per_series[series(v)])) for v in todo}
     # Une vidéo déjà extraite (son dossier existe) est sautée : on peut relancer après une coupure.
     done_dirs = {p.name for p in args.sortie.iterdir()} if args.sortie.exists() else set()
     todo = [v for v in todo if folder_name(v) not in done_dirs]
