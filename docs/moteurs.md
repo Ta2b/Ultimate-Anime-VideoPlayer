@@ -50,6 +50,34 @@ paquet FP8. Les Arc annoncent leurs tuiles INT8 en 8 × 16 × 32, que ce noyau n
 **Écrit sans carte AMD ni Intel pour l'essayer** : les tests tournent sous lavapipe ; les retours
 d'utilisateurs diront ce qui manque.
 
+### Optimisations : audit face à TensorRT (17 novembre 2026, sans carte AMD)
+
+À parité dans le code : autotuner et cache par carte et pilote, FP16, FP8 (RDNA 4) et INT8, formes fixes, Conv
+fondue avec biais, activation, résiduel et porte du SPAN, DepthToSpace fondu, enregistrements rejoués
+(l'équivalent des graphes CUDA), voies sur plusieurs files ordonnées par ressource, décodage sans copie (Vulkan
+Video), anneau partagé avec libplacebo, tailles de travail, choix et portes de l'interpolation.
+
+Comblé ce jour-là :
+- le Concat final du SPAN est rangé en place même quand ses entrées ont d'autres lecteurs, comme dans le moteur
+  FP8 CUDA : plus de copie en pleine taille à chaque image. Une Conv à matrices coopératives qui lit une
+  tranche compte K sur ses propres canaux (`ckp`) au lieu de calculer sur des zéros ;
+- warp : le mouvement lu une fois par point, comme `sample_n` sous CUDA ;
+- débandage fait à l'ingestion, en une passe ; tampons de travail de l'ingestion partagés entre les images du
+  décodeur ;
+- mesures du flux : 200 µs d'interrogation avant l'attente bloquante, comme `TensorRtBackend::wait_event` ;
+- une puce AMD hors des tables (pilote Adrenalin) se range d'après ses tuiles (`family_from_tiles`) au lieu de
+  perdre les matrices.
+
+Reste en retrait, à mesurer sur une carte avant d'y toucher :
+- entrées et sorties des morceaux fusionnés de RIFE en Nchw : l'équivalent du HWC8 de TensorRT (−29 % sous
+  TensorRT) serait le Nhwc16 ;
+- fin de bloc du SPAN (c3, puis la Conv 1 × 1 d'attention et la porte) en deux noyaux, là où le moteur FP8 CUDA
+  en fait un ; activations FP8 rangées en FP16 ; le mode Performance FP8 n'est le défaut que sous TensorRT (Ada) ;
+- ni découpage pour le cache L2, ni zone d'activations partagée entre les voies (mémoire, pas vitesse) ;
+- priorités de file : libplacebo crée toutes les files à la même priorité, sans réglage pour la changer ;
+- ingestion en trois passes float et copie de l'encodage de RIFE à chaque paire : de l'ordre d'un dixième de
+  milliseconde par image en 1080p.
+
 ## Vulkan : les matrices coopératives d'Intel (tuiles 8×16×16)
 
 Le noyau à matrices coopératives float16 (`net_conv_coopmat.glsl`) tuile en 16 × 16 × 16, ce qu'annoncent les
