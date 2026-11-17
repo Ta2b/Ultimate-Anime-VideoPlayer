@@ -48,6 +48,20 @@ TEST_CASE("Réglages du menu : « Restaurer les traits », la carte et les moteu
   CHECK(change_between(running, whole, true).cost == ChangeCost::Reopen);
 }
 
+// L'estimation du mouvement en 720p change la taille où RIFE mesure le mouvement : « Appliquer » rouvre la
+// lecture et le dit (elle n'apparaissait pas, le réglage se perdait).
+TEST_CASE("Réglages du menu : le mouvement estimé en 720p rouvre la lecture",
+          "[app][settings][motion_720p]") {
+  PlaySettings running;
+  running.rife_factor = 3;
+  running.rife_auto = false;
+  PlaySettings wanted = running;
+  wanted.motion_720p = !running.motion_720p;
+  const Change change = change_between(running, wanted, true);
+  CHECK(change.cost == ChangeCost::Reopen);
+  CHECK_FALSE(change.reason.empty());
+}
+
 // A22-05 : `--rife` coupe le mode auto pour la lecture ; play.toml garde le mode auto du fichier.
 TEST_CASE("L'option --rife n'enregistre pas la coupure du mode auto", "[app][settings]") {
   PlaySettings from_file;
@@ -90,6 +104,12 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"rife_fused", [](PlaySettings& s) { s.rife_fused = !s.rife_fused; }},
       {"smooth_drawings", [](PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; }},
       {"cubic_warp", [](PlaySettings& s) { s.cubic_warp = !s.cubic_warp; }},
+      {"motion_720p", [](PlaySettings& s) { s.motion_720p = !s.motion_720p; }},
+      {"auto_off", [](PlaySettings& s) { s.auto_off = !s.auto_off; }},
+      {"gmfss_compose", [](PlaySettings& s) { s.gmfss_compose = !s.gmfss_compose; }},
+      {"gmfss_every_instant", [](PlaySettings& s) { s.gmfss_every_instant = !s.gmfss_every_instant; }},
+      {"gmfss_half_flow", [](PlaySettings& s) { s.gmfss_half_flow = !s.gmfss_half_flow; }},
+      {"gmfss_light", [](PlaySettings& s) { s.gmfss_light = !s.gmfss_light; }},
       {"pair_scale", [](PlaySettings& s) { s.pair_scale = !s.pair_scale; }},
       {"strong_middle", [](PlaySettings& s) { s.strong_middle = !s.strong_middle; }},
       {"span_precision", [](PlaySettings& s) { s.span_precision = PrecisionTier::Quality; }},

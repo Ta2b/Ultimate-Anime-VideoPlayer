@@ -477,6 +477,7 @@ PlaySettings live_part(const PlaySettings& running, const PlaySettings& wanted, 
     s.drba_fused = wanted.drba_fused;
     s.smooth_drawings = wanted.smooth_drawings;
     s.cubic_warp = wanted.cubic_warp;
+    s.motion_720p = wanted.motion_720p;
     s.pair_scale = wanted.pair_scale;
     s.gmfss_middle = wanted.gmfss_middle;
   }
@@ -554,6 +555,7 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::drba_fused);
   keep(&PlaySettings::smooth_drawings);
   keep(&PlaySettings::cubic_warp);
+  keep(&PlaySettings::motion_720p);
   keep(&PlaySettings::pair_scale);
   keep(&PlaySettings::gmfss_middle);
   keep(&PlaySettings::gmfss_half_flow);
@@ -591,6 +593,10 @@ void add_rife_option_reasons(std::vector<std::string>& reopen, const PlaySetting
   if (base.cubic_warp != wanted.cubic_warp) {
     reopen.emplace_back(wanted.cubic_warp ? i18n::tr("the interpolation warp turns Catmull-Rom")
                                           : i18n::tr("the interpolation warp turns bilinear"));
+  }
+  if (base.motion_720p != wanted.motion_720p) {
+    reopen.emplace_back(wanted.motion_720p ? i18n::tr("motion is estimated at 720p")
+                                           : i18n::tr("motion is estimated at the working size"));
   }
   if (base.pair_scale != wanted.pair_scale) {
     reopen.emplace_back(wanted.pair_scale ? i18n::tr("fast motion is estimated at half size (second engine)")
@@ -677,6 +683,7 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
   base.drba_fused = opened->loaded->drba_fused;
   base.smooth_drawings = opened->loaded->smooth_drawings;
   base.cubic_warp = opened->loaded->cubic_warp;
+  base.motion_720p = opened->loaded->motion_720p;
   base.pair_scale = opened->loaded->pair_scale;
   base.gmfss_middle = opened->loaded->gmfss_middle;
   base.gmfss_half_flow = opened->loaded->gmfss_half_flow;

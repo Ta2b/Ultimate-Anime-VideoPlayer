@@ -56,6 +56,7 @@ struct OpenedChain {
     bool drba_fused = true;
     bool smooth_drawings = false;
     bool cubic_warp = false;
+    bool motion_720p = false;
     bool pair_scale = false;
     bool gmfss_middle = false;
     bool gmfss_half_flow = false;
