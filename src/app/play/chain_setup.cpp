@@ -139,9 +139,9 @@ std::string ChainEngines::auto_memory_engine(std::string_view span_variant) cons
 }
 
 std::string ChainEngines::motion_label(const PlaySettings& settings) const {
-  // C08-03 : au-delà de 720 lignes de travail, le flot s'estime sur une copie réduite (kRifeMotionHeight)
-  // puis le warp l'applique à la taille de travail. Une perte de précision consentie pour la vitesse : elle
-  // se dit, et son gain n'est pas mesuré.
+  // C08-03 : avec « Estimer le mouvement en 720p », au-delà de 720 lignes de travail, le flot s'estime sur
+  // une copie réduite (kRifeMotionHeight) puis le warp l'applique à la taille de travail. Une perte de
+  // précision consentie pour la vitesse (passe RIFE environ deux fois plus courte) : elle se dit.
   const int estimated = drba_motion ? drba_size.height : rife_motion ? rife_size.height : work.height;
   const std::string reduced =
       estimated < work.height
@@ -608,7 +608,9 @@ WorkSize motion_size(const media::TrackInfo& video, const WorkSize& work, const 
   if (rife_image) return work;
   if (settings.gmfss_light && gmfss_wanted(settings) == GmfssUse::Middle && work.height > kGmfssLightHeight)
     return work_size(video.width, video.height, kGmfssLightHeight);
-  return rife_motion_reduced(work) ? work_size(video.width, video.height, kRifeMotionHeight) : work;
+  return rife_motion_reduced(work, settings.motion_720p)
+             ? work_size(video.width, video.height, kRifeMotionHeight)
+             : work;
 }
 
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {

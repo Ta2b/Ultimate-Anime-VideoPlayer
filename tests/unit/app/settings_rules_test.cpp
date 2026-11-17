@@ -33,11 +33,11 @@ TEST_CASE("RIFE : la copie 720p suit la taille de travail jouée (C23-04)", "[ap
   PlaySettings s;
   s.upscale = true;
   s.work_height = 0;
-  CHECK(rife_motion_reduced(chain_work_size(s, 1920, 1080)));
+  CHECK(rife_motion_reduced(chain_work_size(s, 1920, 1080), true));
   s.work_height = 720;
-  CHECK_FALSE(rife_motion_reduced(chain_work_size(s, 1920, 1080)));
+  CHECK_FALSE(rife_motion_reduced(chain_work_size(s, 1920, 1080), true));
   s.work_height = 1080;  // une source 4K réduite à 1080p : la copie 720p est faite aussi
-  CHECK(rife_motion_reduced(chain_work_size(s, 3840, 2160)));
+  CHECK(rife_motion_reduced(chain_work_size(s, 3840, 2160), true));
 }
 
 // C22-05 : sans agrandissement, ni le modèle ni les traits ne rechargent rien ; la hauteur de travail le dit

@@ -277,6 +277,11 @@ struct PlaySettings {
   // prolongé ne sert plus. Avec les poses (le défaut) ; en direct. Essai, éteint par défaut : à juger à l'œil
   // (docs/interpolation.md, Instants déduits sur les paires fortes).
   bool strong_middle = false;
+  // RIFE mouvement estimé en 720p : au-delà de 720 lignes de travail, le flot s'estime sur une copie réduite
+  // à kRifeMotionHeight, plus rapide. Éteint par défaut : le flot s'estime à la taille de travail, car sur un
+  // panoramique de moins d'un pixel par image la copie 720p fait coller le milieu de 4.25 lite à la source et
+  // le panoramique ondule (docs/interpolation.md). Recharge la chaîne.
+  bool motion_720p = false;
   // Élevé (upscale_gmfss.cpp) : une paire dont le mouvement atteint gmfss_motion pixels (à 720 lignes) a son
   // image du milieu par GMFSS Fortuna Union, ses autres instants par RIFE sur chaque demi-paire ; les autres
   // paires restent à RIFE. TensorRT seulement ; recharge la chaîne (deux moteurs à construire).
@@ -486,8 +491,8 @@ inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
 // note du panneau lisent la même (C23-04).
 inline constexpr int kRifeMotionHeight = 720;
 inline constexpr int kGmfssLightHeight = 540;
-inline bool rife_motion_reduced(const WorkSize& work) {
-  return work.height > kRifeMotionHeight;
+inline bool rife_motion_reduced(const WorkSize& work, bool at_720p) {
+  return at_720p && work.height > kRifeMotionHeight;
 }
 
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.

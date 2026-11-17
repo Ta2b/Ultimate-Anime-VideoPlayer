@@ -176,6 +176,31 @@ TEST_CASE("play.toml : moins de passes sur les paires fortes, absent d'un ancien
   std::filesystem::remove(path);
 }
 
+// Un play.toml d'avant le choix de la taille du mouvement se lit : le flot à la taille de travail ; le 720p
+// coché se relit.
+TEST_CASE("play.toml : mouvement estimé en 720p, absent d'un ancien fichier, s'enregistre",
+          "[app][settings][motion_720p]") {
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-motion-720p.toml";
+  REQUIRE(save_settings(path, PlaySettings{}));
+  std::string text = read_text(path);
+  const std::size_t line = text.find("motion_720p = false\n");
+  REQUIRE(line != std::string::npos);
+  text.erase(line, std::string("motion_720p = false\n").size());
+  write_text(path, text);
+  auto old = load_settings(path);
+  REQUIRE(old);
+  CHECK_FALSE(old->motion_720p);
+  CHECK_FALSE(rife_motion_reduced(WorkSize{1920, 1080}, old->motion_720p));
+  old->motion_720p = true;
+  REQUIRE(save_settings(path, *old));
+  const auto reread = load_settings(path);
+  REQUIRE(reread);
+  CHECK(reread->motion_720p);
+  CHECK(rife_motion_reduced(WorkSize{1920, 1080}, reread->motion_720p));
+  CHECK_FALSE(rife_motion_reduced(WorkSize{1280, 720}, reread->motion_720p));
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
   std::filesystem::remove_all(dir);
