@@ -1,6 +1,6 @@
 // La taille de l'interface : l'échelle du bureau, ou celle choisie dans Général > Application.
 // GNOME laisse un écran 2560×1440 de 24 pouces à 100 % là où Windows propose 125 % : le menu y paraissait
-// minuscule et crénelé (Fedora 42, Lenovo M90a, novembre 2026). Hors Windows et macOS, dont l'échelle est
+// minuscule et crénelé. Hors Windows et macOS, dont l'échelle est
 // celle que le système recommande, l'automatique agrandit donc un grand écran laissé à 100 %.
 #pragma once
 
