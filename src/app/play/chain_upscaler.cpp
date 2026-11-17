@@ -12,8 +12,9 @@
 namespace ajp::app::play {
 namespace {
 
-// La liste des modèles ONNX du menu quand Anime4K remplace SPAN : rien n'est chargé, et un --model qui nomme
-// Anime4K n'est pas un fichier à chercher. Aucun modèle ONNX : la liste ne propose qu'Anime4K.
+// La liste des modèles ONNX du menu quand SPAN n'est pas chargé (agrandissement désactivé, coupé pour la
+// source, ou Anime4K à sa place) : le menu offre ce que le poste a, pas ce que la chaîne a ouvert. Un --model
+// qui nomme Anime4K n'est pas un fichier à chercher. Aucun modèle ONNX : la liste ne propose qu'Anime4K.
 std::optional<ModelChoice> span_menu_list(const Player& p, const PlaySettings& settings) {
   PlayOptions listing = p.options;
   listing.model.reset();
@@ -35,7 +36,8 @@ bool take_upscaler(Player& p, ChainEngines& c, const PlaySettings& settings) {
     log_channel("app")->info("restaurer les traits coupé : source {}p gardée telle quelle, sans SPAN",
                              height);
   c.anime4k = anime4k_choice(settings.model, upscales, height, c.work.height);
-  if (c.anime4k) c.span_list = span_menu_list(p, settings);
+  const bool span = upscales && !anime4k_size(settings.model);
+  if (!span) c.span_list = span_menu_list(p, settings);
   if (auto shaders = p.screen.set_anime4k(c.anime4k); !shaders) {
     log_channel("app")->warn("Anime4K refusé ({}) : image de travail sans agrandissement",
                              shaders.error().detail);
@@ -46,7 +48,7 @@ bool take_upscaler(Player& p, ChainEngines& c, const PlaySettings& settings) {
                              .refusal = std::move(shaders.error())});
     c.anime4k.reset();
   }
-  return upscales && !anime4k_size(settings.model);
+  return span;
 }
 
 }  // namespace ajp::app::play

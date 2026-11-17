@@ -162,6 +162,12 @@ struct FolderField {
   bool read = false;
 };
 
+// Ce qu'il y a derrière le menu. Une vidéo : il se déplace, se redimensionne et s'efface pendant qu'on tient
+// un réglage en direct, pour la laisser voir. Un écran du lecteur (l'accueil sans vidéo, la construction d'un
+// moteur) : rien à voir derrière, il garde une place fixe à droite, qui laisse la carte de l'écran visible,
+// et reste opaque.
+enum class PanelBackdrop : std::uint8_t { Video, Screen };
+
 class SettingsPanel {
  public:
   SettingsPanel();
@@ -195,13 +201,17 @@ class SettingsPanel {
   };
   // Dessine le panneau dans le cadre ImGui en cours (s'il est ouvert).
   Result draw(const PlaySettings& running, const SettingsChoices& choices, float scale,
-              std::vector<Input>& actions);
+              std::vector<Input>& actions, PanelBackdrop backdrop);
 
  private:
   // La colonne des catégories, les onglets de la catégorie, le corps de l'onglet choisi, puis le pied du
   // panneau (annuler, appliquer) : draw les assemble.
   void draw_categories(float scale);
-  void scroll_categories();  // la molette sur la colonne : une catégorie par geste (B23-10)
+  void scroll_categories();
+  // Pose la place de la fenêtre du panneau pour l'image (fixe ou choisie, selon ce qu'il y a derrière) ;
+  // rend ses drapeaux ImGui.
+  int place(float scale,
+            PanelBackdrop backdrop);  // la molette sur la colonne : une catégorie par geste (B23-10)
   void draw_tabs();
   void draw_page(const PlaySettings& running, const SettingsChoices& choices, std::vector<Input>& actions,
                  Result& result, bool& delay_held, bool& sub_delay_held);
@@ -222,7 +232,8 @@ class SettingsPanel {
   int page_ = 2;        // l'onglet affiché (settings_panel.cpp : kPages) ; Vidéo > Général à l'ouverture
   int select_tab_ = 2;  // l'onglet que la rangée doit sélectionner à l'image suivante ; -1 : celui du clic
   float alpha_ = 1.0F;  // l'opacité du panneau : il s'efface pendant qu'on tient un curseur en direct
-  PanelSize size_;
+  PanelSize size_;      // la place choisie pendant une vidéo ; l'accueil ne la change pas
+  PanelBackdrop backdrop_ = PanelBackdrop::Video;  // celui de l'image précédente
   PanelSpan span_;  // les bords du panneau à l'image précédente  // la taille choisie aux bords, en part de
                     // la fenêtre, gardée d'une ouverture à l'autre
   std::array<int, 8> category_page_{-1, -1, -1, -1, -1, -1, -1, -1};  // le dernier onglet de chaque catégorie

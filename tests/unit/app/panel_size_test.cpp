@@ -55,3 +55,19 @@ TEST_CASE("Menu des réglages : un rectangle raboté par le minimum ne change pa
   // La fenêtre regrandit : la moitié droite revient.
   CHECK(size.target({1600.0F, 900.0F}, {}) == PanelRect{800.0F, 0.0F, 800.0F, 900.0F});
 }
+
+// Sans vidéo derrière (accueil, construction d'un moteur), le menu a une place fixe à droite qui laisse la
+// carte de l'écran visible à sa gauche.
+TEST_CASE("Menu des réglages : sans vidéo, une place fixe qui laisse la carte de l'accueil", "[app][panel]") {
+  using ajp::app::play::fixed_panel;
+  // Une grande fenêtre : la largeur la plus grande, collée à droite, toute la hauteur.
+  CHECK(fixed_panel({2524.0F, 1404.0F}, 1375.0F, 650.0F, 727.5F) ==
+        PanelRect{1149.0F, 0.0F, 1375.0F, 1404.0F});
+  // La fenêtre de 1280 × 720 à 125 % : le menu prenait toute la largeur et cachait « Ouvrir une vidéo » ;
+  // il laisse maintenant la place de la carte à gauche, à sa largeur la plus petite s'il le faut.
+  const PanelRect small = fixed_panel({1244.0F, 684.0F}, 1244.0F, 650.0F, 727.5F);
+  CHECK(small.width == 650.0F);
+  CHECK(small.x == 594.0F);
+  // Une fenêtre plus étroite que le minimum : le menu la remplit, sans en sortir.
+  CHECK(fixed_panel({500.0F, 400.0F}, 500.0F, 650.0F, 727.5F) == PanelRect{0.0F, 0.0F, 500.0F, 400.0F});
+}

@@ -21,6 +21,11 @@ struct PanelRect {
   bool operator==(const PanelRect&) const = default;
 };
 
+// Le menu sans vidéo derrière lui (accueil, construction d'un moteur) : collé à droite sur toute la hauteur,
+// d'une largeur fixe qui laisse `keep_left` à gauche pour la carte de l'écran (bornée à `narrowest` et
+// `widest`). Il ne se déplace ni ne se redimensionne : rien à dévoiler derrière, et la carte reste visible.
+PanelRect fixed_panel(PanelArea area, float widest, float narrowest, float keep_left);
+
 class PanelSize {
  public:
   // Le rectangle voulu pour cette place, gardé dedans ; la première fois, `first` (en pixels).
