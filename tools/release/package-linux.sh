@@ -194,6 +194,8 @@ sed -e "s/@GLIBC@/$GLIBC_NEEDED/" -e "s/@PREVIEW@/$PREVIEW/" \
 cp "$ROOT/tools/release/linux/ajp.png" "$STAGE/"
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
 cp -R "$ROOT/data/luts" "$STAGE/luts"
+# La police japonaise de dernier recours (fonts/), pour un Linux sans police CJK (subtitle_fonts.h).
+"$ROOT/tools/release/fetch-fonts.sh" "$STAGE/fonts"
 # Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
 [ -n "${AJP_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"
 

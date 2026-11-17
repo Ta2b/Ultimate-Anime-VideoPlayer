@@ -8,6 +8,7 @@
 #include <utility>
 #include <variant>
 
+#include "app/play/subtitle_fonts.h"
 #include "app/play/ui_fonts.h"
 
 namespace ajp::app::play {
@@ -83,7 +84,8 @@ std::expected<std::unique_ptr<OsdText>, Refusal> OsdText::create() {
   // lettres pouvaient venir de deux polices de tailles différentes.
   if (auto added = library->add_font("Inter-Regular.ttf", std::as_bytes(std::span(kUiFontTtf))); !added)
     return std::unexpected(std::move(added.error()));
-  auto renderer = subs::SubtitleRenderer::create(*library, subs::RendererOptions{});
+  auto renderer =
+      subs::SubtitleRenderer::create(*library, subs::RendererOptions{.default_font = bundled_cjk_font()});
   if (!renderer) return std::unexpected(std::move(renderer.error()));
   return std::unique_ptr<OsdText>(new OsdText(std::move(*library), std::move(*renderer)));
 }

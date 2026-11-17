@@ -116,8 +116,8 @@ bool starts_cue(std::span<const std::string_view> lines, std::size_t i) {
 std::string_view text_track_header() {
   return "[Script Info]\n"
          "ScriptType: v4.00+\n"
-         "PlayResX: 384\n"
-         "PlayResY: 288\n"
+         "PlayResX: 640\n"
+         "PlayResY: 360\n"
          "ScaledBorderAndShadow: yes\n"
          "YCbCr Matrix: None\n"
          "\n"
@@ -125,8 +125,12 @@ std::string_view text_track_header() {
          "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
          "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
          "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-         "Style: Default,sans-serif,16,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,"
-         "0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n"
+         // Le style des sous-titres français de Crunchyroll (script cr_fr : Trebuchet MS 22 sur 360 lignes,
+         // gras, contour et ombre noirs de 1, marge basse de 25), avec Gandhi Sans élargie de 5 % à la place
+         // de Trebuchet MS, propriétaire. Le lecteur joint la police (app/play/subtitle_fonts.h) ; sans elle,
+         // libass prend sa police par défaut.
+         "Style: Default,Gandhi Sans,22,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,"
+         "-1,0,0,0,105,100,0,0,1,1,1,2,2,2,25,1\n"
          "\n"
          "[Events]\n"
          "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
