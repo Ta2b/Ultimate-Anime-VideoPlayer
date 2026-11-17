@@ -37,6 +37,22 @@ void cubic_warp_checkbox(PlaySettings& d) {
              panel::Apply::Reload);
 }
 
+// Le mouvement estimé sur une copie 720p (PlaySettings::motion_720p) : éteint par défaut, la taille de
+// travail.
+void motion_720p_checkbox(PlaySettings& d) {
+  ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
+  ImGui::Checkbox(i18n::tr("Estimate motion at 720p"), &d.motion_720p);
+  ImGui::EndDisabled();
+  panel::tip(
+      i18n::tr("Estimate motion at 720p"),
+      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, "
+               "but slow pans can ripple instead of moving in even steps (RIFE 4.25 lite and 4.26 "
+               "especially). Speed: about 15 % more frames in Auto (RIFE pass about 2× faster). "
+               "Quality impact: moderate loss on slow pans. "
+               "Recommended: off. RIFE only."),
+      panel::Apply::Reload);
+}
+
 // Moins de passes RIFE sur les paires fortes (PlaySettings::strong_middle) : un essai, éteint par défaut.
 void strong_middle_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
@@ -474,8 +490,7 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   // (C23-04).
   const bool reduced_motion =
       now.num > now.den && choices.source_height > 0 &&
-      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height),
-                          d.motion_full_size);
+      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height), d.motion_720p);
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {
@@ -484,8 +499,8 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   } else if (reduced_motion) {
     // Le gain de vitesse n'est pas mesuré : la note le dit, sans chiffre inventé (C23-03).
     note(
-        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (less "
-                 "precise motion; the speed gained and the quality lost are not measured)."));
+        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (Estimate "
+                 "motion at 720p): slow pans can ripple."));
   }
 }
 
@@ -530,6 +545,8 @@ void fluidity_tab(PlaySettings& d, const SettingsChoices& choices, bool exportin
         panel::Apply::Reload);
     panel::cell();
     cubic_warp_checkbox(d);
+    panel::cell();
+    motion_720p_checkbox(d);
     ImGui::EndDisabled();
     panel::end_grid();
   }

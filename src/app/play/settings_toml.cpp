@@ -176,7 +176,7 @@ void read_motion_trials(const toml::table& table, PlaySettings& s,
                         std::vector<std::expected<void, Refusal>>& reads) {
   reads.push_back(read(table, "interpolation", "pair_scale", s.pair_scale));
   reads.push_back(read(table, "interpolation", "strong_middle", s.strong_middle));
-  reads.push_back(read(table, "interpolation", "motion_full_size", s.motion_full_size));
+  reads.push_back(read(table, "interpolation", "motion_720p", s.motion_720p));
   reads.push_back(read(table, "interpolation", "gmfss_middle", s.gmfss_middle));
   reads.push_back(read(table, "interpolation", "gmfss_half_flow", s.gmfss_half_flow));
   reads.push_back(read(table, "interpolation", "gmfss_compose", s.gmfss_compose));
