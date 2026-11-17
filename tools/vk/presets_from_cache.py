@@ -72,7 +72,8 @@ def read_cache(path: pathlib.Path, wanted_set: str) -> tuple[dict[int, collectio
             print(f"{path}:{number} : clé illisible, ignorée", file=sys.stderr)
             continue
         prefix, signature, cset = parts
-        if cset != wanted_set:
+        # « m8 » : la même version sur un appareil à tuiles 8 × 16 × 16 (candidate_set, net_autotune.cpp).
+        if cset not in (wanted_set, wanted_set + "m8"):
             stale += 1
             continue
         if not re.fullmatch(r"[0-9a-f]{16}", signature) or not re.fullmatch(r"(\d+(,\d+)*)?", tuning):

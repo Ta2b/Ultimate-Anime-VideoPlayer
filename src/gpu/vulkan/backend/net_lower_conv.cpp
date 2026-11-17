@@ -11,6 +11,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 #include "gpu/vulkan/backend/net_conv_low_bit.h"
+#include "gpu/vulkan/backend/net_conv_m8.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/net_lower_detail.h"
 #include "gpu/vulkan/backend/net_params.h"
@@ -36,13 +37,66 @@ std::uint32_t detail::matrix_halo_pixels(std::uint32_t rows, std::uint32_t kh, s
   return (rows + ((kh - 1) * dh)) * (16 + ((kw - 1) * dw));
 }
 
+Desc4 detail::result_desc(const Desc4& y, const ir::Epilogue& e) {
+  if (e.space < 2) return y;
+  const auto b = static_cast<std::uint32_t>(e.space);
+  Desc4 r = y;
+  r.c = y.c * b * b;
+  r.h = y.h / b;
+  r.w = y.w / b;
+  return r;
+}
+
+std::array<std::uint32_t, 2> detail::space_constants(const ir::Epilogue& e) {
+  return {static_cast<std::uint32_t>(e.space), e.space_mode == ir::BlockMode::Crd ? 1U : 0U};
+}
+
+std::vector<std::uint32_t> detail::conv_constants(const Desc4& x, std::uint32_t tx, const Desc4& y,
+                                                  std::uint32_t ty, const Window& w, std::uint32_t groups,
+                                                  const ConvConstants& e) {
+  return {tx,
+          ty,
+          e.tr,
+          x.order,
+          y.order,
+          e.lr,
+          x.cp,
+          y.cp,
+          e.crp,
+          x.n,
+          x.c,
+          x.h,
+          x.w,
+          y.c,
+          y.h,
+          y.w,
+          w.kh,
+          w.kw,
+          w.sh,
+          w.sw,
+          w.dh,
+          w.dw,
+          w.pt,
+          w.pl,
+          groups,
+          e.act,
+          std::bit_cast<std::uint32_t>(e.alpha),
+          std::bit_cast<std::uint32_t>(e.lo),
+          std::bit_cast<std::uint32_t>(e.hi),
+          e.residual};
+}
+
 namespace {
 
 using detail::add_low_bit_candidates;
+using detail::conv_constants;
+using detail::ConvConstants;
 using detail::grid_scale;
 using detail::low_bit_eligible;
 using detail::low_bit_grid;
 using detail::matrix_subgroup;
+using detail::result_desc;
+using detail::space_constants;
 
 constexpr std::string_view kDirect = "direct";
 constexpr std::string_view kPacked = "direct_f16p";
@@ -111,22 +165,6 @@ ir::Dims result_dims(const ir::Node& node, const ir::Dims& dims) {
   return attrs != nullptr ? ir::conv_result_dims(dims, attrs->epilogue) : dims;
 }
 
-// Même chose en Desc4 : le rangement (disposition, canaux rangés) reste celui de la sortie.
-Desc4 result_desc(const Desc4& y, const ir::Epilogue& e) {
-  if (e.space < 2) return y;
-  const auto b = static_cast<std::uint32_t>(e.space);
-  Desc4 r = y;
-  r.c = y.c * b * b;
-  r.h = y.h / b;
-  r.w = y.w / b;
-  return r;
-}
-
-// Constantes du DepthToSpace fondu : taille des blocs (0 sans), ordre CRD.
-std::array<std::uint32_t, 2> space_constants(const ir::Epilogue& e) {
-  return {static_cast<std::uint32_t>(e.space), e.space_mode == ir::BlockMode::Crd ? 1U : 0U};
-}
-
 // Une Conv qui arrondit son entrée ou sa sortie à une grille FP8 E4M3 ou INT8 (ConvAttrs::in_quant et
 // out_quant) : seuls le noyau direct en float et les variantes à matrices de cette grille savent le faire.
 bool quantized(const ir::Node& node) {
@@ -190,6 +228,15 @@ bool winograd_eligible(const ir::Graph& graph, const ir::Node& node, const Targe
   if (!x.known || x.type != ir::DataType::F16 || x.layout != ir::Layout::Nhwc16) return false;
   const auto win = conv_window(graph, node);
   return win && win->kh == 3 && win->kw == 3 && win->sh == 1 && win->sw == 1 && win->dh == 1 && win->dw == 1;
+}
+
+// Les variantes que l'autotuner seul retient, derrière le noyau direct, qui reste le choix par défaut et sa
+// référence : FP8 et INT8 (Conv quantifiées, net_conv_low_bit.h), tuiles 8 × 16 × 16 (les autres,
+// net_conv_m8.h).
+void add_trailing_candidates(const ir::Graph& graph, const ir::Node& node, const Target& target,
+                             std::vector<KernelChoice>& out) {
+  add_low_bit_candidates(graph, node, target, out);
+  detail::add_matrix_m8_candidates(graph, node, target, out);
 }
 
 }  // namespace
@@ -373,60 +420,10 @@ std::expected<std::vector<KernelChoice>, Refusal> candidates(const ir::Graph& gr
     }
   }
   if (!target.matrix_first) out.insert(out.end(), matrix.begin(), matrix.end());
-  // FP8 et INT8 : derrière le noyau direct, qui reste le choix par défaut et la référence de l'autotuner.
-  if (conv) add_low_bit_candidates(graph, node, target, out);
+  // FP8, INT8, tuiles 8 × 16 × 16 : derrière le noyau direct, choix par défaut et référence de l'autotuner.
+  if (conv) add_trailing_candidates(graph, node, target, out);
   return out;
 }
-
-namespace {
-
-// Constantes 0 à 29 communes aux shaders de convolution (net_conv.comp).
-struct ConvConstants {
-  std::uint32_t tr = 0;
-  std::uint32_t lr = 0;
-  std::uint32_t crp = 1;
-  std::uint32_t act = 0;
-  float alpha = 0.0F;
-  float lo = 0.0F;
-  float hi = 0.0F;
-  std::uint32_t residual = 0;  // 1 : ajouté avant l'activation ; 2 : porte (Epilogue::gate)
-};
-
-std::vector<std::uint32_t> conv_constants(const Desc4& x, std::uint32_t tx, const Desc4& y, std::uint32_t ty,
-                                          const Window& w, std::uint32_t groups, const ConvConstants& e) {
-  return {tx,
-          ty,
-          e.tr,
-          x.order,
-          y.order,
-          e.lr,
-          x.cp,
-          y.cp,
-          e.crp,
-          x.n,
-          x.c,
-          x.h,
-          x.w,
-          y.c,
-          y.h,
-          y.w,
-          w.kh,
-          w.kw,
-          w.sh,
-          w.sw,
-          w.dh,
-          w.dw,
-          w.pt,
-          w.pl,
-          groups,
-          e.act,
-          std::bit_cast<std::uint32_t>(e.alpha),
-          std::bit_cast<std::uint32_t>(e.lo),
-          std::bit_cast<std::uint32_t>(e.hi),
-          e.residual};
-}
-
-}  // namespace
 
 std::expected<void, Refusal> Lowerer::conv(std::size_t index, const KernelChoice& choice) {
   const ir::Node& n = graph_.nodes[index];

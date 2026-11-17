@@ -22,6 +22,7 @@ ajp_add_unit_tests(vk_backend
     kernel_planes_test.cpp
     net_alias_test.cpp
     net_artcnn_test.cpp
+    net_conv_m8_test.cpp
     net_conv_test.cpp
     net_int8_test.cpp
     net_gate_test.cpp
@@ -40,6 +41,7 @@ ajp_add_unit_tests(vk_backend
     ring_warp_test.cpp
     runtime_queue_test.cpp
     slice_ops_test.cpp
+    spirv_shared.cpp
     stage_clock_test.cpp
     test_models.cpp
     vendor_runtime_test.cpp

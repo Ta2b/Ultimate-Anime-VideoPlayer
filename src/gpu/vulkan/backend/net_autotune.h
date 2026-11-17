@@ -39,6 +39,11 @@ namespace ajp::gpu::vk::net {
 // tenseurs, sans les valeurs des poids ni les noms.
 std::uint64_t layer_signature(const ir::Graph& graph, std::size_t node);
 
+// La version des candidats dans la clé du cache : celle de tous les appareils, suivie de « m8 » là où la
+// variante coopmat_m8 s'ajoute aux candidats (Target::matrix_m8) : ces appareils seuls remesurent ce qu'ils
+// avaient tranché sans elle, les autres gardent leurs mesures.
+std::string candidate_set(const Target& target);
+
 // Réglages connus d'avance pour une famille, relevés dans le cache d'un PC de référence
 // (net_presets.cpp, tools/vk/presets_from_cache.py) : le choix d'une couche de même signature.
 struct PresetEntry {

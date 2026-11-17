@@ -271,7 +271,10 @@ std::expected<void, Refusal> VulkanBackend::open(const BackendInit& init) {
   log(BackendLogLevel::Info,
       std::format(
           "backend Vulkan : {}, famille {}, unités matricielles {}{}{}", context_->caps().device_name,
-          name(profile_.family), profile_.target.matrix_units ? "utilisées" : "non utilisées",
+          name(profile_.family),
+          profile_.target.matrix_units ? "utilisées"
+          : profile_.target.matrix_m8  ? "en tuiles 8×16×16 (coopmat_m8, retenue par l'autotuner seul)"
+                                       : "non utilisées",
           !profile_.matrix_hardware ? ""
           : !profile_.matrix_allowed
               ? std::format(" (présentes, exclues : {})",

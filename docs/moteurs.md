@@ -50,6 +50,35 @@ paquet FP8. Les Arc annoncent leurs tuiles INT8 en 8 × 16 × 32, que ce noyau n
 **Écrit sans carte AMD ni Intel pour l'essayer** : les tests tournent sous lavapipe ; les retours
 d'utilisateurs diront ce qui manque.
 
+## Vulkan : les matrices coopératives d'Intel (tuiles 8×16×16)
+
+Le noyau à matrices coopératives float16 (`net_conv_coopmat.glsl`) tuile en 16 × 16 × 16, ce qu'annoncent les
+WMMA d'AMD (RDNA 3 et 4) et les tensor cores de NVIDIA. Les XMX d'Intel Xe2 (Lunar Lake, Battlemage ; Panther
+Lake aussi) annoncent sous ANV des tuiles de M = 8 : 8 × 16 × 16, f16 × f16 → f32 (et → f16), par sous-groupe.
+La variante `coopmat_m8` (`net_conv_m8.cpp`, noyau `net_conv_coopmat_m8_f16`, novembre 2026) les sert : même
+noyau compilé en tuiles de 8 pixels (`AJP_COOPMAT_M8`), mêmes poids que `coopmat` (N et K restent 16), sommes en
+float, B lue dans le tampon ou partagée, sans les tuiles à halo, l'épilogue en registres ni les canaux découpés.
+Des sous-groupes de 16 sont exigés à chaque dispatch, la largeur SIMD des Xe2 (leur `minSubgroupSize`).
+
+Règles tenues :
+
+- **rien ne change ailleurs** : `Target::matrix_m8` n'est vrai que si le pilote annonce la tuile 8 × 16 × 16
+  f16 → f32 *sans* la tuile 16 × 16 × 16, sur une famille permise (`matrix_units_excluded`), avec des sous-groupes
+  de 16 exigeables. Les modules SPIR-V des autres variantes sont restés identiques à l'octet près ;
+- **jamais en tête** : écrite sans carte Intel pour l'essayer, la variante est toujours proposée derrière le noyau
+  direct, quel que soit l'appareil. L'autotuner seul la retient, si sa sortie concorde avec celle du noyau direct
+  et qu'elle va plus vite ; la porte de bout en bout juge ensuite le réseau entier. Sans autotuner, le noyau direct
+  (ou Winograd) reste le choix ;
+- **mesure neuve sur ces appareils seuls** : la version des candidats de leur cache prend le suffixe « m8 »
+  (`candidate_set`) et leurs artefacts une clé à part (`artifact_key`) ; les autres cartes gardent leurs mesures
+  et leurs artefacts.
+
+Ce qui reste : les Arc A (Alchemist, DG2) annoncent sous ANV 8 × 8 × 16 (N = 8), qu'aucun noyau ne tuile ; ce
+que le pilote Windows d'Intel annonce n'est pas relevé. Les tuiles du pilote sont au journal d'ouverture du
+backend (« tuiles du pilote : … »). `ajp_vk_backend_tests "[m8]"` exécute la variante contre l'interpréteur sur un
+appareil qui l'a ; sous lavapipe, seuls son abaissement et sa mémoire partagée (évaluée dans le module SPIR-V)
+sont vérifiés.
+
 ## Vulkan : la précision des noyaux
 
 Le moteur Vulkan range ses tenseurs en float16. Chaque couche a plusieurs noyaux candidats, que l'autotuner

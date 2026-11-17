@@ -32,6 +32,18 @@
 #define ACC_T float
 #endif
 
+// Variante « _m8 » (AJP_COOPMAT_M8) : tuiles de 8 pixels, celles des XMX d'Intel Xe2 (8 × 16 × 16, f16 → f32) :
+// A de 8 × 16, sommes de 8 × 16, B de 16 × 16 rangée comme ailleurs. Sommes en float, ni HALO ni DIRECT_EPI : le
+// module ne déclare que les types de cette tuile. L'hôte exige des sous-groupes de 16 (net_conv_m8.cpp).
+#ifdef AJP_COOPMAT_M8
+#ifdef AJP_COOPMAT_ACC16
+#error "AJP_COOPMAT_M8 : sommes en float seulement"
+#endif
+#define AJP_TILE_M 8
+#else
+#define AJP_TILE_M 16
+#endif
+
 layout(local_size_x_id = 31) in;
 
 layout(constant_id = 0) const uint TX = 0;
@@ -89,7 +101,9 @@ const uint NT = (COUT + 15u) / 16u;
 const uint NP = NT * 16u;
 const uint NTW = NTG == 0u ? NT : NTG;  // tuiles de canaux du groupe
 const uint SUBGROUPS = gl_WorkGroupSize.x / SGS;
-const uint BM = SUBGROUPS * TM * 16u;
+const uint TPIX = AJP_TILE_M;                   // pixels d'une tuile : lignes de A et des sommes
+const uint TC = TPIX * 16u;                     // valeurs d'une tuile de sommes
+const uint BM = SUBGROUPS * TM * TPIX;
 const uint QA = KC / 8u;                        // uvec4 de canaux par pixel et par étape
 const uint AS = QA + (QA / 4u + 1u) / 2u;      // pas d'une ligne de A, en uvec4 (+1 dès KC = 32)
 const uint ROWS = SUBGROUPS * TM;               // HALO : lignes de 16 pixels d'un groupe
@@ -113,7 +127,7 @@ AJP_NET_BUFFER(5, dst, writeonly)
 
 shared uvec4 tile_a[2u * ABUF];
 shared uvec4 tile_b[2u * BBUF];
-shared float tile_c[SUBGROUPS * 256u];
+shared float tile_c[SUBGROUPS * TC];
 
 // Les demi-flottants d'indice ≥ valid d'un paquet de 8 (un uvec4) mis à zéro.
 uvec4 keep_halves(uvec4 v, uint valid) {
@@ -198,17 +212,18 @@ void main() {
   uint x0 = gl_WorkGroupID.x * 16u;
   uint row0 = gl_WorkGroupID.y * ROWS;
 
-  coopmat<ACC_T, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> acc[TM * NTW];
+  coopmat<ACC_T, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseAccumulator> acc[TM * NTW];
   for (uint i = 0u; i < TM * NTW; ++i) {
-    acc[i] = coopmat<ACC_T, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(0.0);
+    acc[i] = coopmat<ACC_T, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseAccumulator>(0.0);
   }
-#ifndef AJP_COOPMAT_ACC16
+#if !defined(AJP_COOPMAT_ACC16) && !defined(AJP_COOPMAT_M8)
   if (DIRECT_EPI == 1u) {
     // Les sommes partent du biais (16 lignes identiques), ajouté ainsi sans addition de matrices.
     for (uint i = 0u; i < TM * NTW; ++i)
       coopMatLoad(acc[i], bias.v, (j0 + i % NTW) * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
   }
 #endif
+#ifndef AJP_COOPMAT_M8
   if (HALO == 1u) {
     stage_halo(0u, n, row0, x0, 0u);
     barrier();
@@ -236,6 +251,7 @@ void main() {
       barrier();
     }
   }
+#endif
   if (HALO == 0u) stage_a(0u, n, first_pixel, 0u);
   if (SHARED_B == 1u) stage_b(0u, 0u);
   if (HALO == 0u) barrier();
@@ -248,9 +264,9 @@ void main() {
     }
     uint k0 = (s / CSTEPS) * CXP + (s % CSTEPS) * KC;
     for (uint c16 = 0u; c16 < KC; c16 += 16u) {
-      coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
+      coopmat<float16_t, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseA> a[TM];
       for (uint t = 0u; t < TM; ++t) {
-        coopMatLoad(a[t], tile_a, buf * ABUF + (sg * TM + t) * 16u * AS + c16 / 8u, AS,
+        coopMatLoad(a[t], tile_a, buf * ABUF + (sg * TM + t) * TPIX * AS + c16 / 8u, AS,
                     gl_CooperativeMatrixLayoutRowMajor);
       }
       uint k = k0 + c16;
@@ -270,10 +286,10 @@ void main() {
   for (uint t = 0u; t < TM; ++t) {
     // Les pixels de la tuile : count pixels consécutifs dès p0 (une ligne de 16 avec HALO).
     const uint oy_h = row0 + sg * TM + t;
-    const uint p0 = HALO == 1u ? oy_h * WOUT + x0 : first_pixel + (sg * TM + t) * 16u;
+    const uint p0 = HALO == 1u ? oy_h * WOUT + x0 : first_pixel + (sg * TM + t) * TPIX;
     const uint count = HALO == 1u ? (oy_h < HOUT && x0 < WOUT ? min(16u, WOUT - x0) : 0u)
-                                  : (p0 < HOUT * WOUT ? min(16u, HOUT * WOUT - p0) : 0u);
-#ifndef AJP_COOPMAT_ACC16
+                                  : (p0 < HOUT * WOUT ? min(TPIX, HOUT * WOUT - p0) : 0u);
+#if !defined(AJP_COOPMAT_ACC16) && !defined(AJP_COOPMAT_M8)
     if (DIRECT_EPI == 1u && count == 16u) {
       for (uint jl = 0u; jl < NTW; ++jl) {
         uint j = j0 + jl;
@@ -309,24 +325,24 @@ void main() {
           coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(acc[t * NTW + jl]);
       // Une somme float16 qui a débordé est ±Inf (puis NaN au calcul suivant) : plafonnée avant l'épilogue (B49-01).
       for (int e = 0; e < sum.length(); ++e) sum[e] = clamp(sum[e], -60000.0, 60000.0);
-      coopMatStore(sum, tile_c, sg * 256u, 16u, gl_CooperativeMatrixLayoutRowMajor);
+      coopMatStore(sum, tile_c, sg * TC, 16u, gl_CooperativeMatrixLayoutRowMajor);
 #else
-      coopMatStore(acc[t * NTW + jl], tile_c, sg * 256u, 16u, gl_CooperativeMatrixLayoutRowMajor);
+      coopMatStore(acc[t * NTW + jl], tile_c, sg * TC, 16u, gl_CooperativeMatrixLayoutRowMajor);
 #endif
       subgroupMemoryBarrierShared();
       subgroupBarrier();
-      for (uint e = gl_SubgroupInvocationID; e < 256u; e += gl_SubgroupSize) {
+      for (uint e = gl_SubgroupInvocationID; e < TC; e += gl_SubgroupSize) {
         uint p = p0 + e / 16u;
         uint co = j * 16u + e % 16u;
         if (e / 16u < count && co < COUT) {
           uint oy = p / WOUT;
           uint ox = p % WOUT;
-#ifdef AJP_COOPMAT_ACC16
-          // Les sommes float16 ne partent jamais du biais (initialisation sous #ifndef plus haut) : il s'ajoute
-          // toujours ici, quel que soit DIRECT_EPI (C49-03).
-          float v = tile_c[sg * 256u + e] + bias.v[co];
+#if defined(AJP_COOPMAT_ACC16) || defined(AJP_COOPMAT_M8)
+          // Les sommes float16, comme celles de la variante _m8, ne partent jamais du biais (initialisation sous #if
+          // plus haut) : il s'ajoute toujours ici, quel que soit DIRECT_EPI (C49-03).
+          float v = tile_c[sg * TC + e] + bias.v[co];
 #else
-          float v = tile_c[sg * 256u + e] + (DIRECT_EPI == 1u ? 0.0 : bias.v[co]);  // biais déjà sommé
+          float v = tile_c[sg * TC + e] + (DIRECT_EPI == 1u ? 0.0 : bias.v[co]);  // biais déjà sommé
 #endif
           if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);

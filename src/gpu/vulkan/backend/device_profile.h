@@ -2,6 +2,7 @@
 // que les noyaux peuvent y faire (net::Target), plus la clé des caches (autotuner, artefacts).
 #pragma once
 
+#include <span>
 #include <string>
 
 #include "gpu/vulkan/backend/family.h"
@@ -30,5 +31,21 @@ struct DeviceProfile {
 };
 
 DeviceProfile profile_device(const VkContext& context);
+
+// Les tuiles de produits par sous-groupe qu'annonce le pilote
+// (vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR) et dont un noyau se sert : 16 × 16 × 16 à sommes en
+// float (net_conv_coopmat.glsl) ou en float16 (_acc16), FP8 et INT8 en 16 × 16 × 16, et 8 × 16 × 16 à sommes
+// en float (_m8).
+struct MatrixTiles {
+  bool f32_sums = false;
+  bool f16_sums = false;
+  bool f8_e4m3 = false;  // FP8 E4M3 × E4M3 → float32 (VK_EXT_shader_float8) : RDNA 4, Blackwell
+  bool s8 = false;       // INT8 × INT8 → int32 : RDNA 3 et 4, GeForce ; pas les Arc (M = 8)
+  // float16 × float16 → float32 en 8 × 16 × 16 (M = 8) : Intel Xe2 sous ANV. Les Arc A (DG2) y annoncent
+  // 8 × 8 × 16 (N = 8), qu'aucun noyau ne tuile.
+  bool m8_f32_sums = false;
+  std::string shapes;  // toutes celles du pilote, pour le journal
+};
+MatrixTiles matrix_tiles(std::span<const VkCooperativeMatrixPropertiesKHR> properties);
 
 }  // namespace ajp::gpu::vk

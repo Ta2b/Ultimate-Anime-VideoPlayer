@@ -41,9 +41,12 @@ est de toute façon remesuré (`docs/moteurs.md`).
 Reste à relever (P2.46) : RDNA4 (RX 9070 XT, sous le pilote AMD puis RADV), RDNA3 et Intel Arc. Depuis
 novembre, les unités matricielles ne dépendent plus d'une liste de familles permises mais des tuiles que le
 pilote annonce, avec une liste d'exclusion (`matrix_units_excluded`, `family.h`) ; le journal d'ouverture du
-backend dit « exclues : raison » quand elle s'applique. Arc annonce des tuiles 8×16×16 que nos shaders ne
-tuilent pas encore : sa table ne gagnera rien avant ce travail. Les caches relevés avant `c7` (tolérance de
-P2.45) sont ignorés par le script : il faut une lecture neuve.
+backend dit « exclues : raison » quand elle s'applique. Les Xe2 (Arc B, Lunar Lake) annoncent des tuiles 8×16×16 :
+la variante `coopmat_m8` les sert depuis novembre 2026, retenue par l'autotuner seul (`docs/moteurs.md`), et
+leur cache porte la version `c7m8`, que le script relit aussi. À relever sur une Arc B : `ajp_vk_backend_tests
+"[m8]"` (la variante contre l'interpréteur), puis le journal d'une construction (couches où `coopmat_m8` gagne).
+Les Arc A (DG2) annoncent 8×8×16, qu'aucun noyau ne tuile : leur table ne gagnera rien avant ce travail. Les
+caches relevés avant `c7` (tolérance de P2.45) sont ignorés par le script : il faut une lecture neuve.
 
 ## Garder les poses (DRBA)
 

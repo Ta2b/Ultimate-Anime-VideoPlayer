@@ -27,6 +27,7 @@ ajp_add_module(vk_backend
     net_hoist.cpp
     net_lower.cpp
     net_conv_low_bit.cpp
+    net_conv_m8.cpp
     net_lower_conv.cpp
     net_lower_copy.cpp
     net_measure.cpp
@@ -97,6 +98,7 @@ ajp_add_spirv(ajp_vk_backend
     "${shaders}/net_conv_f16p.comp"
     "${shaders}/net_conv_coopmat_f16.comp"
     "${shaders}/net_conv_coopmat_acc16.comp"
+    "${shaders}/net_conv_coopmat_m8_f16.comp"
     "${shaders}/net_conv_coopmat_int8_f16.comp"
     "${shaders}/net_conv_wino_f16.comp"
     "${shaders}/net_conv_wino_f16p.comp"

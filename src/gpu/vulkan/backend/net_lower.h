@@ -83,6 +83,8 @@ class Lowerer {
   std::expected<void, Refusal> average_pool(std::size_t index);
   std::expected<void, Refusal> conv(std::size_t index, const KernelChoice& choice);
   std::expected<void, Refusal> conv_matrix(std::size_t index, const KernelChoice& choice);
+  // Variante coopmat_m8, en tuiles 8 × 16 × 16 (net_conv_m8.cpp).
+  std::expected<void, Refusal> conv_matrix_m8(std::size_t index, const KernelChoice& choice);
   std::expected<void, Refusal> conv_transpose(std::size_t index, const KernelChoice& choice);
 
   const ir::Graph& graph_;
