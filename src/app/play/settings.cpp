@@ -49,6 +49,12 @@ std::expected<void, Refusal> check(std::string_view key, T value, core::Range<T>
 }
 
 // Des balises de langue : lettres et tirets (« fre », « en-US »).
+// La taille de l'interface : 0 (automatique) ou kUiScalePercent.
+std::expected<void, Refusal> check_ui_scale(int percent) {
+  if (percent == 0) return {};
+  return check("interface.ui_scale", percent, kUiScalePercent);
+}
+
 std::expected<void, Refusal> check_languages(std::string_view key,
                                              const std::vector<std::string>& languages) {
   for (const std::string& tag : languages) {
@@ -290,21 +296,18 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
                       std::format(" : {}/{} hors de 0 à {} (entier ou moitié)", s.rife_factor,
                                   s.rife_factor_den, limits::kRifeFactor.hi));
   }
-  const std::array<std::expected<void, Refusal>, 6> checks{
+  const std::array<std::expected<void, Refusal>, 7> checks{
       check("image.work_height", s.work_height, limits::kWorkHeight),
       check("audio.delay_ms", s.audio_delay_ms, limits::kAudioDelayMs),
       check("sync.video_latency_ms", s.video_latency_ms, limits::kVideoLatencyMs),
       check("audio.volume", s.volume, limits::kVolume),
       check("subtitles.scale", s.subtitle_scale, limits::kSubtitleScale),
       check("picture.sharpness", s.sharpness, limits::kSharpness),
+      check_ui_scale(s.ui_scale),
   };
   for (const auto& checked : checks) {
     if (!checked) return std::unexpected(checked.error());
   }
-  if (s.ui_scale != 0 && !kUiScalePercent.contains(s.ui_scale))
-    return refuse_key(
-        RefusalCode::FieldOutOfRange, "interface.ui_scale",
-        std::format(" : {} hors de {} à {} (ou 0)", s.ui_scale, kUiScalePercent.lo, kUiScalePercent.hi));
   if (s.auto_cap != 0 && (s.auto_cap < kAutoCapMin || s.auto_cap > kAutoCapMax))
     return refuse_key(
         RefusalCode::FieldOutOfRange, "interpolation.auto_cap",
