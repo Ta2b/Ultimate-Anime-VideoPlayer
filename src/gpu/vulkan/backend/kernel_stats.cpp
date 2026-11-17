@@ -43,7 +43,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::frame_stats_start(const T
   key.add(static_cast<std::uint64_t>(transfer)).add(detail::handle_bits(counts.buffer));
   auto rec = recording(key, [&](Recorder& r) { return runner_.frame_stats(r, *view, transfer, counts); });
   if (!rec) return std::unexpected(rec.error());
-  if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
+  if (auto ok = submit("analyse de l'image", **rec); !ok) return std::unexpected(ok.error());
   if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());  // comme scores_start
   stats_tickets_ = ticket;
   slot.ticket = ticket;

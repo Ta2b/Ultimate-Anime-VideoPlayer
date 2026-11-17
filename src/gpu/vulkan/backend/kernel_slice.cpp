@@ -116,7 +116,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_input(const Tensor& a, const 
     return runner_.rife_constants(r, v->input, t);
   });
   if (!rec) return std::unexpected(rec.error());
-  return submit(**rec);
+  return submit("entrée de RIFE", **rec);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::rife_pair(const Tensor& a, const Tensor& b, float t,
@@ -133,7 +133,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_pair(const Tensor& a, const T
     return runner_.rife_time(r, v->input, t);
   });
   if (!rec) return std::unexpected(rec.error());
-  return submit(**rec);
+  return submit("entrée de RIFE", **rec);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::rife_time(const Tensor& input, float t) {
@@ -153,7 +153,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_time(const Tensor& input, flo
   const std::array time{std::bit_cast<std::uint32_t>(t)};
   auto rec = recording_with(key, time, [&](Recorder& r) { return runner_.rife_time(r, *vi, t); });
   if (!rec) return std::unexpected(rec.error());
-  return submit(**rec);
+  return submit("entrée de RIFE", **rec);
 }
 
 std::expected<PairScores, Refusal> VulkanKernelOps::scores_now(const Tensor& a, const Tensor& b) {
@@ -186,7 +186,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::scores_start(const Tensor
   auto rec =
       recording(key, [&](Recorder& r) { return runner_.rgb_pair_diff(r, *va, *vb, sums, worst, levels); });
   if (!rec) return std::unexpected(rec.error());
-  if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
+  if (auto ok = submit("mesures de la paire", **rec); !ok) return std::unexpected(ok.error());
   // Le lot part aussitôt : la mesure tourne pendant que l'hôte prépare la suite, au lieu
   // d'attendre l'attente de scores_take pour être soumise.
   if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());
@@ -247,7 +247,7 @@ std::expected<std::uint64_t, Refusal> VulkanKernelOps::flow_max_start(const Moti
   key.add(detail::handle_bits(result.buffer));
   auto rec = recording(key, [&](Recorder& r) { return runner_.flow_max(r, mv, result); });
   if (!rec) return std::unexpected(rec.error());
-  if (auto ok = submit(**rec); !ok) return std::unexpected(ok.error());
+  if (auto ok = submit("mouvement maximal de la paire", **rec); !ok) return std::unexpected(ok.error());
   if (auto ok = queue_.flush(); !ok) return std::unexpected(ok.error());  // comme scores_start
   flow_tickets_ = ticket;
   slot.ticket = ticket;

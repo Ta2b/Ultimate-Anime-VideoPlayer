@@ -41,12 +41,17 @@ class BackendQueue {
   int lanes() const { return files_; }
   // La voie des soumissions suivantes ; sans voies, rien ne change.
   void use_lane(Lane lane) { current_ = files_ > 1 ? lane_index(lane) : kMain; }
+  // La file de la voie courante (indice de VkContext::queue_lanes) : ce qui s'y glisse hors des voies, comme
+  // les estampilles du profil GPU (stage_clock.h), suit l'ordre de soumission de cette file.
+  std::size_t current_file() const { return lanes_[current_].file; }
 
   // L'enregistrement après tout ce qui a été soumis avant sur sa voie, après ce qu'il lit ou écrit
   // sur les autres, et après les attentes demandées par wait() depuis ; extra_waits et
-  // extra_signals s'y ajoutent (sémaphores d'un slot du ring, d'une image décodée).
+  // extra_signals s'y ajoutent (sémaphores d'un slot du ring, d'une image décodée). Des extra_signals
+  // font partir le lot, sauf flush_signals faux : l'appelant le fait alors partir lui-même, après ce
+  // qu'il glisse encore derrière (l'estampille de fin d'une étape, stage_clock.h).
   Done submit(Recording& recording, std::span<const TimelinePoint> extra_waits = {},
-              std::span<const TimelinePoint> extra_signals = {});
+              std::span<const TimelinePoint> extra_signals = {}, bool flush_signals = true);
 
   // Le point atteint quand la dernière soumission de la voie courante s'achève (valeur 0 avant la
   // première).

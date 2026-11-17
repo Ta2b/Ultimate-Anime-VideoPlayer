@@ -72,6 +72,23 @@ void add_view(OpKey& key, const TensorView& v) {
 using detail::add_view;
 using detail::tensor_view;
 
+namespace {
+
+// Les noms de TensorRT pour ses deux filtres, pour que les profils se comparent.
+std::string_view resample_stage(kernels::Filter filter) {
+  switch (filter) {
+    case kernels::Filter::Spline36:
+      return "agrandissement Spline36";
+    case kernels::Filter::Area:
+      return "réduction Area";
+    case kernels::Filter::Bilinear:
+      return "rééchantillonnage bilinéaire";
+  }
+  return "rééchantillonnage";
+}
+
+}  // namespace
+
 VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, PipelineCache& pipelines,
                                  BackendQueue& queue)
     : context_(context),
@@ -79,6 +96,7 @@ VulkanKernelOps::VulkanKernelOps(VkContext& context, MemoryAllocator& memory, Pi
       pipelines_(pipelines),
       queue_(queue),
       runner_(context, pipelines),
+      clock_(StageClock::create(context, memory, queue)),
       destroyed_mark_(context.destroyed().mark()) {
   context_.before_flush([this] { return uploads_wait(); });
 }
@@ -129,10 +147,18 @@ void VulkanKernelOps::destroy_view(VkImageView view) {
   context_.fn().vkDestroyImageView(context_.device(), view, nullptr);
 }
 
-std::expected<void, Refusal> VulkanKernelOps::submit(Recording& recording,
+std::expected<void, Refusal> VulkanKernelOps::submit(std::string_view stage, Recording& recording,
                                                      std::span<const TimelinePoint> waits,
                                                      std::span<const TimelinePoint> signals) {
-  if (auto ok = queue_.submit(recording, waits, signals); !ok) return ok;
+  // Mesurée, l'étape part avec son estampille de fin : le lot que ses signaux font partir attend qu'elle
+  // y soit (sinon elle attendrait la soumission suivante, et l'étape compterait l'intervalle).
+  {
+    const StageClock::Scope timed(clock_.get(), stage);
+    if (auto ok = queue_.submit(recording, waits, signals, clock_ == nullptr); !ok) return ok;
+  }
+  if (clock_ != nullptr && !signals.empty()) {
+    if (auto ok = queue_.flush(); !ok) return ok;
+  }
   reclaim();
   return {};
 }
@@ -164,7 +190,7 @@ std::expected<void, Refusal> VulkanKernelOps::resample(const Tensor& in, kernels
   key.add(static_cast<std::uint64_t>(filter));
   auto rec = recording(key, [&](Recorder& r) { return runner_.resize(r, *src, *dst, filter); });
   if (!rec) return std::unexpected(rec.error());
-  return submit(**rec);
+  return submit(resample_stage(filter), **rec);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, const Tensor& out) {
@@ -185,7 +211,7 @@ std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, co
   add_view(key, *dst);
   auto rec = recording(key, [&](Recorder& r) { return runner_.rife_crop(r, *src, *dst); });
   if (!rec) return std::unexpected(rec.error());
-  return submit(**rec);
+  return submit("recadrage de RIFE", **rec);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::warp_blend(const Tensor& a, const Tensor& b,
@@ -244,7 +270,11 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
   auto rec =
       recording_with(key, time, [&](Recorder& r) { return runner_.warp_blend(r, *va, *vb, mv, t, *vo, pv); });
   if (!rec) return std::unexpected(rec.error());
-  return submit(**rec);
+  return submit("warp et mélange", **rec);
+}
+
+std::vector<GpuStageSummary> VulkanKernelOps::gpu_profile() {
+  return clock_ ? clock_->profile() : std::vector<GpuStageSummary>{};
 }
 
 }  // namespace ajp::gpu::vk

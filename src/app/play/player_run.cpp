@@ -146,6 +146,16 @@ void announce_start(Player& p, std::int64_t start_us, std::int64_t duration_us) 
                            host_now_us());
 }
 
+// Ce que le message du mode Performance de SPAN demande : le moteur, la carte et son fabricant.
+SpanFp8Facts span_fp8_facts(Player& p, const ChainEngines& c) {
+  const GpuFacts gpu = gpu_facts(p.screen);
+  return {.backend_name = c.backend_name,
+          .gpu_name = gpu.name,
+          .vendor = gpu.vendor,
+          .tensorrt_present = tensorrt_backend_present(p.catalog, p.paths),
+          .capability = c.backend->capabilities().span_fp8_cutlass};
+}
+
 }  // namespace
 
 // Le démontage qui suit se compte en secondes (jointure des fils, attente du GPU, moteurs TensorRT) :
@@ -342,10 +352,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   Session session(std::move(session_config), (*pipeline)->stages(), out, (*pipeline)->clock());
   if (start_paused) session.command(cmd::Pause{});
   // Le mode Performance de SPAN : ce que le moteur annonce, et sinon pourquoi (moteur absent ou autre carte).
-  const SpanFp8Facts fp8_facts{.backend_name = c.backend_name,
-                               .gpu_name = gpu_facts(p.screen).name,
-                               .tensorrt_present = tensorrt_backend_present(p.catalog, p.paths),
-                               .capability = c.backend->capabilities().span_fp8_cutlass};
+  const SpanFp8Facts fp8_facts = span_fp8_facts(p, c);
   const std::string fp8_reason = span_fp8_unavailable_reason(fp8_facts);
   log_channel("app")->info("SPAN Performance (FP8) : {} (moteur {}, capacite CUTLASS {})",
                            fp8_reason.empty() ? "disponible" : fp8_reason, c.backend_name,

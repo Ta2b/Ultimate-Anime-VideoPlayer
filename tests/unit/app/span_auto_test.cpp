@@ -20,21 +20,28 @@ namespace fs = std::filesystem;
 TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", "[span_auto]") {
   ajp::app::play::FrenchUi french;
   // Possible : rien à dire.
-  CHECK(span_fp8_unavailable_reason({.backend_name = "tensorrt", .gpu_name = "RTX 4050", .capability = true})
+  CHECK(span_fp8_unavailable_reason({.backend_name = "tensorrt",
+                                     .gpu_name = "RTX 4050",
+                                     .vendor = GpuVendor::Nvidia,
+                                     .capability = true})
             .empty());
   // Moteur TensorRT absent.
-  const std::string absent = span_fp8_unavailable_reason({.backend_name = "vulkan", .gpu_name = "RTX 4050"});
+  const std::string absent = span_fp8_unavailable_reason(
+      {.backend_name = "vulkan", .gpu_name = "RTX 4050", .vendor = GpuVendor::Nvidia});
   CHECK(absent.contains("moteur TensorRT non installé"));
   CHECK(absent.contains("Paramètres > Vidéo > Général"));
   // Installé mais pas celui en service.
-  const std::string other = span_fp8_unavailable_reason(
-      {.backend_name = "vulkan", .gpu_name = "RTX 4050", .tensorrt_present = true});
+  const std::string other = span_fp8_unavailable_reason({.backend_name = "vulkan",
+                                                         .gpu_name = "RTX 4050",
+                                                         .vendor = GpuVendor::Nvidia,
+                                                         .tensorrt_present = true});
   CHECK(other.contains("installé"));
   CHECK(other.contains("choisissez TensorRT"));
   // TensorRT en service, mais la carte n'est pas une Ada (sur un système où le mode existe : sous Windows,
   // system_pending vaut true par défaut).
   const std::string old = span_fp8_unavailable_reason({.backend_name = "tensorrt",
                                                        .gpu_name = "NVIDIA GeForce RTX 3060",
+                                                       .vendor = GpuVendor::Nvidia,
                                                        .tensorrt_present = true,
                                                        .system_pending = false});
   CHECK(old.contains("RTX 3060"));
@@ -42,10 +49,27 @@ TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", 
   // Sous Windows, les noyaux ne sont pas encore construits : la phrase ne blâme pas la carte (B02-09).
   const std::string windows = span_fp8_unavailable_reason({.backend_name = "tensorrt",
                                                            .gpu_name = "NVIDIA GeForce RTX 4070 Ti",
+                                                           .vendor = GpuVendor::Nvidia,
                                                            .tensorrt_present = true,
                                                            .system_pending = true});
   CHECK(windows.contains("Windows"));
   CHECK_FALSE(windows.contains("RTX 40"));
+  // Une carte AMD ou Intel : ni installer ni choisir TensorRT n'y changerait rien, la phrase ne le demande
+  // pas.
+  for (const GpuVendor vendor : {GpuVendor::Amd, GpuVendor::Intel}) {
+    const std::string elsewhere = span_fp8_unavailable_reason(
+        {.backend_name = "vulkan", .gpu_name = "AMD Radeon RX 9070 XT", .vendor = vendor});
+    CHECK(elsewhere.contains("RX 9070 XT"));
+    CHECK(elsewhere.contains("NVIDIA RTX"));
+    CHECK(elsewhere.contains("FP16"));
+    CHECK_FALSE(elsewhere.contains("installez"));
+    CHECK_FALSE(elsewhere.contains("choisissez"));
+  }
+  // Même avec un module TensorRT resté d'une ancienne carte NVIDIA.
+  const std::string leftover = span_fp8_unavailable_reason(
+      {.backend_name = "vulkan", .gpu_name = "", .vendor = GpuVendor::Amd, .tensorrt_present = true});
+  CHECK(leftover.contains("cette carte"));
+  CHECK_FALSE(leftover.contains("choisissez"));
 }
 
 TEST_CASE("rien n'exclut à tort une RTX 4050 de portable : Ada, calcul 8.9", "[span_auto]") {
