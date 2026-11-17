@@ -629,7 +629,8 @@ std::string play_usage(bool debug) {
          "                         --no-vsync-index: the clock)\n"
          "  --present=LEVEL        presentation feedback wait (default), auto, timing, timing-absolute\n"
          "                         (timing with a target date), wayland or open; --no-present: open, the\n"
-         "                         former presentation\n"
+         "                         former presentation; trials: bare (extensions only), poll (present\n"
+         "                         ids and waits only), timing-plain (timing, default swapchain)\n"
          "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
 }
 

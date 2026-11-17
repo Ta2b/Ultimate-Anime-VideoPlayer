@@ -20,7 +20,20 @@ enum class PresentLevel : std::uint8_t { Open, Wayland, Wait, Timing, TimingAbso
 // retombe sur le meilleur en dessous, sauf wait (le défaut, options.h), qui prend un niveau qui date quand il
 // y en a un (choose_present_level). timing relit les dates sans en viser ; timing-absolute vise une date
 // (presentAtAbsoluteTime), pour comparer les deux. open est la présentation d'avant.
-enum class PresentWanted : std::uint8_t { Open, Auto, Wayland, Wait, Timing, TimingAbsolute };
+// Essais de diagnostic (le gel du RTX 4070 Laptop, present_watch.h), chacun ajoute une pièce à open :
+// bare active seulement les extensions et fonctionnalités, poll le niveau Wait (present_id2 et
+// present_wait2, sans present timing), timing-plain le niveau Timing avec la swapchain de libplacebo.
+enum class PresentWanted : std::uint8_t {
+  Open,
+  Auto,
+  Wayland,
+  Wait,
+  Timing,
+  TimingAbsolute,
+  Bare,
+  Poll,
+  TimingPlain
+};
 
 // Ce que l'appareil (fonctionnalités activées) et la surface (capacités) offrent.
 struct PresentCaps {
@@ -33,6 +46,13 @@ struct PresentCaps {
   bool wayland_presentation = false;  // wp_presentation offert par le compositeur (6.4)
 };
 
+constexpr std::optional<PresentWanted> parse_present_trial(std::string_view text) {
+  if (text == "bare") return PresentWanted::Bare;
+  if (text == "poll") return PresentWanted::Poll;
+  if (text == "timing-plain") return PresentWanted::TimingPlain;
+  return std::nullopt;
+}
+
 constexpr std::optional<PresentWanted> parse_present(std::string_view text) {
   if (text == "open") return PresentWanted::Open;
   if (text == "auto") return PresentWanted::Auto;
@@ -40,7 +60,7 @@ constexpr std::optional<PresentWanted> parse_present(std::string_view text) {
   if (text == "wait") return PresentWanted::Wait;
   if (text == "timing") return PresentWanted::Timing;
   if (text == "timing-absolute") return PresentWanted::TimingAbsolute;
-  return std::nullopt;
+  return parse_present_trial(text);
 }
 
 constexpr std::string_view name(PresentLevel level) {
@@ -102,6 +122,20 @@ constexpr PresentLevel choose_present_level(const PresentCaps& caps, PresentWant
   return available(Wait, caps) ? Wait : Open;
 }
 
+// choose_present_level, avec les essais de diagnostic.
+constexpr PresentLevel choose_trial_level(const PresentCaps& caps, PresentWanted wanted) {
+  switch (wanted) {
+    case PresentWanted::Bare:
+      return PresentLevel::Open;
+    case PresentWanted::Poll:
+      return available(PresentLevel::Wait, caps) ? PresentLevel::Wait : PresentLevel::Open;
+    case PresentWanted::TimingPlain:
+      return choose_present_level(caps, PresentWanted::Timing);
+    default:
+      return choose_present_level(caps, wanted);
+  }
+}
+
 constexpr bool timing_level(PresentLevel level) {
   return level == PresentLevel::Timing || level == PresentLevel::TimingAbsolute;
 }
@@ -127,6 +161,10 @@ struct SwapchainShape {
 constexpr SwapchainShape swapchain_shape(PresentLevel level) {
   if (level == PresentLevel::Open || level == PresentLevel::Wayland) return {};
   return {.min_images = 4, .depth = 2};
+}
+// L'essai timing-plain garde la swapchain de libplacebo.
+constexpr SwapchainShape swapchain_shape(PresentLevel level, PresentWanted wanted) {
+  return wanted == PresentWanted::TimingPlain ? SwapchainShape{} : swapchain_shape(level);
 }
 
 // L'état de la fréquence lu par present timing (6.10) : VkSwapchainTimingPropertiesEXT dit VRR par un

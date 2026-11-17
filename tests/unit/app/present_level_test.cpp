@@ -140,6 +140,21 @@ TEST_CASE("présentation : --present et la forme de la swapchain", "[app][presen
   CHECK(name(PresentLevel::TimingAbsolute) == "timing-absolute");
 }
 
+TEST_CASE("présentation : les essais de diagnostic ajoutent une pièce à open", "[app][present]") {
+  const PresentCaps windows{.present_id2 = true, .present_wait2 = true, .timing = true};
+  CHECK(parse_present("bare") == PresentWanted::Bare);
+  CHECK(parse_present("poll") == PresentWanted::Poll);
+  CHECK(parse_present("timing-plain") == PresentWanted::TimingPlain);
+  CHECK(choose_trial_level(windows, PresentWanted::Bare) == PresentLevel::Open);
+  CHECK(choose_trial_level(windows, PresentWanted::Poll) == PresentLevel::Wait);
+  CHECK(choose_trial_level(PresentCaps{}, PresentWanted::Poll) == PresentLevel::Open);
+  CHECK(choose_trial_level(windows, PresentWanted::TimingPlain) == PresentLevel::Timing);
+  CHECK(choose_trial_level(windows, PresentWanted::Wait) == PresentLevel::Timing);
+  CHECK(swapchain_shape(PresentLevel::Timing, PresentWanted::TimingPlain).min_images == 0);
+  CHECK(swapchain_shape(PresentLevel::Timing, PresentWanted::Wait).min_images == 4);
+  CHECK(swapchain_shape(PresentLevel::Wait, PresentWanted::Poll).depth == 2);
+}
+
 TEST_CASE("présentation : l'état VRR lu par present timing", "[app][present]") {
   CHECK(vrr_state(0, 0) == RefreshState::Unknown);
   CHECK(vrr_state(6'068'740, UINT64_MAX) == RefreshState::Variable);
