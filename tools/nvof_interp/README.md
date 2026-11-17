@@ -36,6 +36,27 @@ retiré par le commit 97feba0, `nvof_session.cpp`) devant le moteur, dans le bac
 5. **Export.** `export_onnx.py runs/flowjanai/best.pt --out modeles/flowjanai.onnx` : FP16, vérifié
    contre le modèle PyTorch à deux tailles.
 
+## Mesure préalable : le flux NVOF vaut-il un guide ? (étape 1, novembre 2026)
+
+Avant tout entraînement, `tools/bench/qualite/nvof_warp.py` fabrique l'image du milieu par warp seul avec le flux
+NVOF (grilles 4, 2 et 1, calculé à 720p et à 1080p), et la compare à la vraie image, au même warp par le flux de
+GMFlow (GMFSS union) et de RIFE 4.26, et à RIFE 4.26 tel que le lecteur le joue. Seuil : sur les paires de plus de
+30 px, la meilleure configuration NVOF reste à 1 dB ou moins de GMFlow ; sinon la piste s'arrête.
+
+```sh
+# En-têtes publics de NVIDIA (nvOpticalFlowCommon.h, nvOpticalFlowCuda.h), ou ceux du SDK 5.0 téléchargé :
+git clone https://github.com/NVIDIA/NVIDIAOpticalFlowSDK ~/nvof-sdk
+cmake -S tools/nvof_interp/nvof_dump -B build/nvof_dump -DNVOF_SDK_INCLUDE=$HOME/nvof-sdk
+cmake --build build/nvof_dump
+python3 -I tools/bench/qualite/nvof_warp.py --video rezero-s4e18-1710.mkv --reseau rife_v4.26.onnx \
+    --outil build/nvof_dump/nvof_dump --gmfss gmfss/roue/vsgmfss_fortuna --device cuda --lpips \
+    --md nvof-ecart3.md --json nvof-ecart3.json
+# puis la même chose avec --ecart 6 (paires espacées, grands mouvements) : --md nvof-ecart6.md
+```
+
+`nvof_dump` prend `--grid 1|2|4` et `--preset slow|medium|fast` (par défaut 4 et slow, comme avant) et écrit le
+temps de chaque appel au matériel sur la sortie d'erreur.
+
 ## Ce qui reste ouvert
 
 - Les flux sont calculés sans indices temporels (paires indépendantes) ; le lecteur devra faire de

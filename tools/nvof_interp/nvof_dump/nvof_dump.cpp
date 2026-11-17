@@ -5,8 +5,13 @@
 // paire, avant (a → b) puis arrière (b → a) : chacun (largeur/4) × (hauteur/4) vecteurs int16
 // (x, y) en S10.5, comme le matériel les rend. Une ligne « ok <sortie> » par tâche réussie.
 //
-// Les réglages sont ceux que le lecteur prendra : grille 4, qualité la plus haute (SLOW), sans
-// indices temporels (les paires d'entraînement ne se suivent pas). Une session par taille.
+// Par défaut, grille 4 et qualité la plus haute (SLOW), sans indices temporels (les paires
+// d'entraînement ne se suivent pas). Une session par taille. Options (banc nvof_warp.py) :
+//   --grid 1|2|4        taille des blocs (1 et 2 : Ampere et après seulement) ;
+//   --preset slow|medium|fast.
+// Chaque appel au matériel écrit sur la sortie d'erreur « temps_ms <l>x<h> <ms> » (exécution et
+// synchronisation, sans les copies), pour le banc.
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -29,8 +34,6 @@
 #endif
 
 namespace {
-
-constexpr std::uint32_t kGrid = 4;
 
 [[noreturn]] void die(const std::string& what) {
   std::cerr << "nvof_dump : " << what << '\n';
@@ -77,15 +80,21 @@ struct Session {
   NvOFHandle handle = nullptr;
   NvOFGPUBufferHandle input = nullptr, reference = nullptr, flow = nullptr;
 
-  Session(const Api& a, CUcontext context, std::uint32_t w, std::uint32_t h) : api(a), width(w), height(h) {
+  std::uint32_t grid;
+
+  Session(const Api& a, CUcontext context, std::uint32_t w, std::uint32_t h, std::uint32_t g,
+          NV_OF_PERF_LEVEL preset)
+      : api(a), width(w), height(h), grid(g) {
     ok(api, nullptr, api.calls.nvCreateOpticalFlowCuda(context, &handle), "nvCreateOpticalFlowCuda");
     NV_OF_INIT_PARAMS init{};
     init.width = w;
     init.height = h;
-    init.outGridSize = NV_OF_OUTPUT_VECTOR_GRID_SIZE_4;
+    init.outGridSize = g == 1   ? NV_OF_OUTPUT_VECTOR_GRID_SIZE_1
+                       : g == 2 ? NV_OF_OUTPUT_VECTOR_GRID_SIZE_2
+                                : NV_OF_OUTPUT_VECTOR_GRID_SIZE_4;
     init.hintGridSize = NV_OF_HINT_VECTOR_GRID_SIZE_UNDEFINED;
     init.mode = NV_OF_MODE_OPTICALFLOW;
-    init.perfLevel = NV_OF_PERF_LEVEL_SLOW;
+    init.perfLevel = preset;
     ok(api, handle, api.calls.nvOFInit(handle, &init), "nvOFInit");
     const NV_OF_BUFFER_DESCRIPTOR luma{.width = w,
                                        .height = h,
@@ -107,7 +116,7 @@ struct Session {
     }
     if (handle != nullptr) api.calls.nvOFDestroy(handle);
   }
-  static std::uint32_t cells(std::uint32_t n) { return (n + kGrid - 1) / kGrid; }
+  std::uint32_t cells(std::uint32_t n) const { return (n + grid - 1) / grid; }
 
   void upload(NvOFGPUBufferHandle buffer, const std::vector<std::uint8_t>& host, std::uint32_t w,
               std::uint32_t h, std::uint32_t bytes_per_row) {
@@ -135,7 +144,12 @@ struct Session {
     in.disableTemporalHints = NV_OF_TRUE;
     NV_OF_EXECUTE_OUTPUT_PARAMS out{};
     out.outputBuffer = flow;
+    check(cuCtxSynchronize(), "cuCtxSynchronize");
+    const auto start = std::chrono::steady_clock::now();
     ok(api, handle, api.calls.nvOFExecute(handle, &in, &out), "nvOFExecute");
+    check(cuCtxSynchronize(), "cuCtxSynchronize");
+    const std::chrono::duration<double, std::milli> spent = std::chrono::steady_clock::now() - start;
+    std::cerr << "temps_ms " << width << 'x' << height << ' ' << spent.count() << '\n';
     NV_OF_CUDA_BUFFER_STRIDE_INFO stride{};
     ok(api, handle, api.calls.nvOFGPUBufferGetStrideInfo(flow, &stride), "nvOFGPUBufferGetStrideInfo");
     const std::uint32_t row = cells(width) * 4U;  // deux int16
@@ -164,7 +178,25 @@ std::vector<std::uint8_t> read_luma(const std::string& path, std::size_t bytes) 
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  std::uint32_t grid = 4;
+  NV_OF_PERF_LEVEL preset = NV_OF_PERF_LEVEL_SLOW;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    const std::string value = i + 1 < argc ? argv[i + 1] : "";
+    if (arg == "--grid" && (value == "1" || value == "2" || value == "4")) {
+      grid = static_cast<std::uint32_t>(std::stoul(value));
+    } else if (arg == "--preset" && value == "slow") {
+      preset = NV_OF_PERF_LEVEL_SLOW;
+    } else if (arg == "--preset" && value == "medium") {
+      preset = NV_OF_PERF_LEVEL_MEDIUM;
+    } else if (arg == "--preset" && value == "fast") {
+      preset = NV_OF_PERF_LEVEL_FAST;
+    } else {
+      die("option inconnue : " + arg + " (--grid 1|2|4, --preset slow|medium|fast)");
+    }
+    ++i;
+  }
   check(cuInit(0), "cuInit");
   CUdevice device{};
   check(cuDeviceGet(&device, 0), "cuDeviceGet");
@@ -192,7 +224,7 @@ int main() {
     const std::string &a = fields[2], &b = fields[3], &out = fields[4];
     if (!session || session->width != w || session->height != h) {
       session.reset();
-      session = std::make_unique<Session>(api, context, w, h);
+      session = std::make_unique<Session>(api, context, w, h, grid, preset);
     }
     const auto la = read_luma(a, static_cast<std::size_t>(w) * h);
     const auto lb = read_luma(b, static_cast<std::size_t>(w) * h);
