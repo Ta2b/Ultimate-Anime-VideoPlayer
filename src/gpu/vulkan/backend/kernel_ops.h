@@ -59,10 +59,12 @@ enum class OpCode : std::uint64_t {
   WriteRing = 50,
   FrameStats = 51,
   ReadRing = 52,
+  Deband = 53,
 };
 constexpr std::array kOpCodes{OpCode::Resample,  OpCode::RifeCrop,    OpCode::Warp,         OpCode::Ingest,
                               OpCode::RifeInput, OpCode::ScoresStart, OpCode::FlowMaxStart, OpCode::RifeTime,
-                              OpCode::RifePair,  OpCode::WriteRing,   OpCode::FrameStats,   OpCode::ReadRing};
+                              OpCode::RifePair,  OpCode::WriteRing,   OpCode::FrameStats,   OpCode::ReadRing,
+                              OpCode::Deband};
 static_assert(
     [] {
       for (std::size_t i = 0; i < kOpCodes.size(); ++i)
@@ -120,6 +122,12 @@ class VulkanKernelOps final : public KernelOps {
                                           const Tensor& out) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
+  std::expected<void, Refusal> warp_blend_ring(const Tensor& a, const Tensor& b, const Motion& motion,
+                                               float t, const RingTarget& target) override;
+  std::expected<void, Refusal> warp_blend_poses_ring(const Tensor& a, const Tensor& b, const Motion& motion,
+                                                     const Motion* previous, float t,
+                                                     const RingTarget& target) override;
+  std::expected<void, Refusal> deband(const Tensor& rgb) override;
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;
@@ -223,8 +231,18 @@ class VulkanKernelOps final : public KernelOps {
     bool keep = false;
     const Motion* previous = nullptr;
   };
+  // warp_blend vers out, ou vers le slot de ring quand out est nul (warp_blend_ring).
   std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
-                                    const Poses& poses, float t, const Tensor& out);
+                                    const Poses& poses, float t, const Tensor* out, const RingTarget* ring);
+  // Le slot de write_ring : Rgba16Unorm de width × height, VkImage et sémaphore du même appareil, signal
+  // impair après l'attente ; sa vue de stockage (ring_view).
+  std::expected<VkImageView, Refusal> ring_slot(const RingSlotDesc& slot, const RingWrite& sync,
+                                                std::uint32_t width, std::uint32_t height);
+  // Soumet rec qui écrit le slot par view : attend wait_value (0 : rien), signale signal_value.
+  std::expected<void, Refusal> submit_ring(std::string_view stage, Recording& rec, VkImageView view,
+                                           const RingSlotDesc& slot, const RingWrite& sync);
+  // Le mouvement précédent de warp_blend_poses : mêmes plans et même fenêtre que motion.
+  static std::expected<void, Refusal> check_previous(const Motion& motion, const Motion* previous);
   // Recording de la clé, fait par body au premier passage, puis soumis sur la file.
   template <class Body>
   std::expected<Recording*, Refusal> recording(const OpKey& key, Body&& body);

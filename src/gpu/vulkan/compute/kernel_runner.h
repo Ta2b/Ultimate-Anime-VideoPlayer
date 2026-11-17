@@ -75,6 +75,10 @@ class KernelRunner {
   // poses.keep : l'instant de chaque pixel réglé d'après poses.previous (ref warp_blend_poses).
   Done warp_blend(Recorder& recorder, const TensorView& a, const TensorView& b, const MotionView& motion,
                   float t, const TensorView& dst, const PoseView& poses = {});
+  // Le même, écrit dans le slot du ring par sa vue de stockage R16G16B16A16_UNORM (VK_IMAGE_LAYOUT_GENERAL,
+  // de la taille de a) : les codes que ring_store écrirait du tenseur de warp_blend, au bit près.
+  Done warp_blend_ring(Recorder& recorder, const TensorView& a, const TensorView& b, const MotionView& motion,
+                       float t, VkImageView slot, const PoseView& poses = {});
 
   // Extensions de la tranche verticale (gpu/kernel_ops.h), sur des tenseurs RGB déjà ingérés.
   //
@@ -92,6 +96,9 @@ class KernelRunner {
   // L'analyse d'une image RGB pour le grade (kernels/spec/frame_stats.h) : counts reçoit FrameCounts.
   Done frame_stats(Recorder& recorder, const TensorView& rgb, kernels::FrameTransfer transfer,
                    const BufferView& counts);
+  // Le débandage de la source avant SPAN, sur place (ref::deband, au décalage près de ref/deband.h) : deux
+  // passes par un tampon de travail de l'enregistrement.
+  Done deband(Recorder& recorder, const TensorView& rgb);
 
   // Fonction de transfert ou conversion de primaires, pixel par pixel (ref transfer).
   Done transfer(Recorder& recorder, TransferOp op, const TensorView& src, const TensorView& dst,
@@ -113,6 +120,9 @@ class KernelRunner {
  private:
   // rife_constants sur ses planes premiers plans : 11, ou 7 pour l'instant seul.
   Done rife_constant_planes(Recorder& recorder, const TensorView& input, float t, std::uint32_t planes);
+  // warp_blend vers dst, ou vers le slot quand dst est nul.
+  Done warp(Recorder& recorder, const TensorView& a, const TensorView& b, const MotionView& motion, float t,
+            const TensorView* dst, VkImageView slot, const PoseView& poses);
 
   const VkContext* context_;
   PipelineCache* pipelines_;

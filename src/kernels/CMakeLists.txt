@@ -11,6 +11,7 @@ ajp_add_module(kernels
   SOURCES
     glsl.cpp
     ref/color.cpp
+    ref/deband.cpp
     ref/detect.cpp
     ref/frame_stats.cpp
     ref/gmfss.cpp

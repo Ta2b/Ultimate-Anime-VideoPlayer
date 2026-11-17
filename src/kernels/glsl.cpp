@@ -8,6 +8,7 @@
 #include <string_view>
 #include <utility>
 
+#include "kernels/ref/deband.h"
 #include "kernels/spec.h"
 
 namespace ajp::kernels {
@@ -218,6 +219,12 @@ void add_detect(Table& t) {
     t.unsigned_integer(std::format("HELD_SCALE_{}", glsl_name(f)), held_scale(f));
 }
 
+// Le débandage de la source (ref/deband.h), hors de spec/ : il ne passe pas la frontière des moteurs.
+void add_deband(Table& t) {
+  t.real("DEBAND_RADIUS", ref::kDebandRadius, "Débandage : rayon en pixels et seuil, ceux de libplacebo");
+  t.real("DEBAND_THRESHOLD", ref::kDebandThreshold);
+}
+
 void add_frame_stats(Table& t) {
   namespace fs = frame_stats;
   t.integer("FS_GRID_W", fs::kGridW, "Analyse d'une image (spec/frame_stats.h)");
@@ -291,6 +298,7 @@ std::vector<GlslConstant> glsl_constants() {
   add_transfer(t);
   add_detect(t);
   add_frame_stats(t);
+  add_deband(t);
   return t.take();
 }
 

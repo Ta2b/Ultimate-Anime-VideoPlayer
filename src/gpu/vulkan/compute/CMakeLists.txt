@@ -39,6 +39,7 @@ target_compile_definitions(ajp_vk_compute PUBLIC VK_NO_PROTOTYPES)
 set(glsl "${PROJECT_SOURCE_DIR}/src/kernels/glsl")
 # Les tenseurs des réseaux en float16 : variante « _f16 » des shaders qui en lisent ou écrivent.
 set(tensor_shaders
+  "${glsl}/deband.comp"
   "${glsl}/drba_fused_finish.comp"
   "${glsl}/drba_fused_glue.comp"
   "${glsl}/drba_fused_post.comp"
@@ -59,7 +60,8 @@ set(tensor_shaders
   "${glsl}/rife_fused_glue.comp"
   "${glsl}/rife_frames.comp"
   "${glsl}/transfer.comp"
-  "${glsl}/warp_blend.comp")
+  "${glsl}/warp_blend.comp"
+  "${glsl}/warp_blend_ring.comp")
 ajp_add_spirv(ajp_vk_compute
   NAMESPACE ajp::gpu::vk::spirv
   SHADERS

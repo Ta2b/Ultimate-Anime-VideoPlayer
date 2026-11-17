@@ -58,16 +58,15 @@ std::expected<VkImageView, Refusal> VulkanKernelOps::ring_view(const RingSlotDes
   return view;
 }
 
-std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, const RingSlotDesc& slot,
-                                                         const RingWrite& sync) {
-  auto src = detail::tensor_view(rgb, 3, "ring : tenseur RGB");
-  if (!src) return std::unexpected(src.error());
+std::expected<VkImageView, Refusal> VulkanKernelOps::ring_slot(const RingSlotDesc& slot,
+                                                               const RingWrite& sync, std::uint32_t width,
+                                                               std::uint32_t height) {
   if (slot.format != RingFormat::Rgba16Unorm) {
     return refuse_ring(RefusalCode::FormatUnsupported, "ring : slot Yuv444p16, seul Rgba16Unorm s'écrit");
   }
-  if (std::cmp_not_equal(slot.width, src->width) || std::cmp_not_equal(slot.height, src->height)) {
-    return refuse_ring(RefusalCode::ShapeInvalid, std::format("ring : slot {}x{}, tenseur {}x{}", slot.width,
-                                                              slot.height, src->width, src->height));
+  if (std::cmp_not_equal(slot.width, width) || std::cmp_not_equal(slot.height, height)) {
+    return refuse_ring(RefusalCode::ShapeInvalid,
+                       std::format("ring : slot {}x{}, image {}x{}", slot.width, slot.height, width, height));
   }
   if (slot.image == 0 || slot.semaphore == 0) {
     return refuse_ring(
@@ -80,7 +79,30 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
                        std::format("ring : signal {} après {}, impair et croissant attendu",
                                    sync.signal_value, sync.wait_value));
   }
-  auto view = ring_view(slot);
+  return ring_view(slot);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::submit_ring(std::string_view stage, Recording& rec,
+                                                          VkImageView view, const RingSlotDesc& slot,
+                                                          const RingWrite& sync) {
+  const VkSemaphore semaphore = detail::to_semaphore(static_cast<std::uintptr_t>(slot.semaphore));
+  const std::array<TimelinePoint, 1> wait{TimelinePoint{.semaphore = semaphore, .value = sync.wait_value}};
+  const std::array<TimelinePoint, 1> signal{
+      TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
+  const std::span<const TimelinePoint> waits =
+      sync.wait_value > 0 ? std::span<const TimelinePoint>(wait) : std::span<const TimelinePoint>();
+  if (auto ok = submit(stage, rec, waits, signal); !ok) return ok;
+  for (RingView& v : ring_views_) {
+    if (v.view == view) v.last_write = queue_.ticket();
+  }
+  return {};
+}
+
+std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, const RingSlotDesc& slot,
+                                                         const RingWrite& sync) {
+  auto src = detail::tensor_view(rgb, 3, "ring : tenseur RGB");
+  if (!src) return std::unexpected(src.error());
+  auto view = ring_slot(slot, sync, src->width, src->height);
   if (!view) return std::unexpected(view.error());
   const std::string_view shader = src->precision == Precision::F16 ? "ring_store_f16" : "ring_store";
   const std::array<std::uint32_t, 1> constants{src->precision == Precision::F16 ? 1U : 0U};
@@ -103,17 +125,7 @@ std::expected<void, Refusal> VulkanKernelOps::write_ring(const Tensor& rgb, cons
                       {(src->width + 15) / 16, (src->height + 15) / 16, 1});
   });
   if (!rec) return std::unexpected(rec.error());
-  const VkSemaphore semaphore = detail::to_semaphore(static_cast<std::uintptr_t>(slot.semaphore));
-  const std::array<TimelinePoint, 1> wait{TimelinePoint{.semaphore = semaphore, .value = sync.wait_value}};
-  const std::array<TimelinePoint, 1> signal{
-      TimelinePoint{.semaphore = semaphore, .value = sync.signal_value}};
-  const std::span<const TimelinePoint> waits =
-      sync.wait_value > 0 ? std::span<const TimelinePoint>(wait) : std::span<const TimelinePoint>();
-  if (auto ok = submit("écriture du ring", **rec, waits, signal); !ok) return ok;
-  for (RingView& v : ring_views_) {
-    if (v.view == *view) v.last_write = queue_.ticket();
-  }
-  return {};
+  return submit_ring("écriture du ring", **rec, *view, slot, sync);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::read_ring(const RingSlotDesc& slot, const RingWrite& sync,

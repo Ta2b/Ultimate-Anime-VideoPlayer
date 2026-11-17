@@ -130,4 +130,23 @@ Done KernelRunner::frame_stats(Recorder& recorder, const TensorView& rgb, kernel
                      {1, 1, 1});
 }
 
+Done KernelRunner::deband(Recorder& recorder, const TensorView& rgb) {
+  if (auto ok = check_tensor(rgb, 3, context_->caps().enabled, "débandage : image"); !ok) return ok;
+  // Le tampon de travail de l'enregistrement reçoit l'image débandée, puis la rend : chaque pixel lit des
+  // points jusqu'à kDebandRadius autour de lui, l'image ne peut pas changer pendant la passe.
+  auto work = recorder.scratch(tensor_bytes(rgb.width, rgb.height, 3, rgb.precision));
+  if (!work) return std::unexpected(work.error());
+  const std::array<std::uint32_t, 2> push{rgb.width, rgb.height};
+  const std::array<std::uint32_t, 3> groups{groups_for(rgb.width), groups_for(rgb.height), 1};
+  const std::array debanded{rgb.buffer, *work};
+  if (auto ok = detail::run(*pipelines_, recorder, "deband", rgb.precision, std::array{0U}, debanded, {},
+                            std::as_bytes(std::span(push)), groups);
+      !ok) {
+    return ok;
+  }
+  const std::array back{*work, rgb.buffer};
+  return detail::run(*pipelines_, recorder, "deband", rgb.precision, std::array{1U}, back, {},
+                     std::as_bytes(std::span(push)), groups);
+}
+
 }  // namespace ajp::gpu::vk

@@ -1,0 +1,67 @@
+#version 450
+// Débandage de l'image RGB d'une source avant SPAN (KernelOps::deband) : l'algorithme de libplacebo
+// (pl_shader_deband, une itération, sans grain), comme le noyau CUDA (gpu/cuda/backend/deband_kernels.cuh).
+// Référence : kernels/ref/deband.cpp ; le décalage passe par sin et cos, qu'un pilote ne fixe pas au bit près
+// (ref/deband.h, kDebandSpread). En place en deux passes : COPY = 0 débande src dans dst (le tampon de
+// travail), COPY = 1 recopie dst dans l'image.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(constant_id = 0) const uint COPY = 0;
+
+layout(std430, binding = 0) readonly buffer Src { AJP_TENSOR v[]; } src;
+layout(std430, binding = 1) writeonly buffer Dst { AJP_TENSOR v[]; } dst;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+} pc;
+
+// Bruit uniforme dans [0, 1) tiré d'un hachage entier (PCG) du pixel (ref::deband_uniform).
+float deband_uniform(uint x, uint y, uint salt) {
+  uint v = (x * 0x9E3779B1u) ^ (y * 0x85EBCA77u) ^ (salt * 0xC2B2AE3Du);
+  v = v * 747796405u + 2891336453u;
+  v = ((v >> ((v >> 28u) + 4u)) ^ v) * 277803737u;
+  v = (v >> 22u) ^ v;
+  return float(v >> 8u) * (1.0 / 16777216.0);
+}
+
+uint at(int x, int y) {
+  uint sx = uint(clamp(x, 0, int(pc.width) - 1));
+  uint sy = uint(clamp(y, 0, int(pc.height) - 1));
+  return sy * pc.width + sx;
+}
+
+void main() {
+  uint x = gl_GlobalInvocationID.x;
+  uint y = gl_GlobalInvocationID.y;
+  if (x >= pc.width || y >= pc.height) return;
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  if (COPY == 1u) {
+    for (uint c = 0u; c < 3u; ++c) dst.v[c * plane + i] = src.v[c * plane + i];
+    return;
+  }
+  precise float distance = AJP_DEBAND_RADIUS * deband_uniform(x, y, 1u);
+  precise float angle = 6.2831853 * deband_uniform(x, y, 2u);
+  precise float ox = distance * cos(angle);
+  precise float oy = distance * sin(angle);
+  int dx = int(roundEven(ox));
+  int dy = int(roundEven(oy));
+  int ix = int(x);
+  int iy = int(y);
+  uint a = at(ix + dx, iy + dy);
+  uint b = at(ix - dx, iy - dy);
+  uint d = at(ix - dy, iy + dx);
+  uint e = at(ix + dy, iy - dx);
+  for (uint c = 0u; c < 3u; ++c) {
+    uint base = c * plane;
+    float value = float(src.v[base + i]);
+    precise float average =
+        0.25 * (((float(src.v[base + a]) + float(src.v[base + b])) + float(src.v[base + d])) + float(src.v[base + e]));
+    dst.v[base + i] = AJP_TENSOR(abs(average - value) > AJP_DEBAND_THRESHOLD ? value : average);
+  }
+}
