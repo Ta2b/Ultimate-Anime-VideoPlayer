@@ -1,7 +1,7 @@
-// L'analyse d'une image pour le grade (gpu/kernel_ops.h, frame_stats_start) : le noyau frame_stats
-// sur la voie courante, ses comptes relus par l'hôte sans copie et sans attente, puis tirés en mesures
-// par kernels/ref/frame_stats.h (la même fonction que la pré-analyse des plans). Aussi la mémoire de la
-// carte pour les statistiques (device_memory).
+// Le débandage de la source, et l'analyse d'une image pour le grade (gpu/kernel_ops.h, frame_stats_start) :
+// le noyau frame_stats sur la voie courante, ses comptes relus par l'hôte sans copie et sans attente, puis
+// tirés en mesures par kernels/ref/frame_stats.h (la même fonction que la pré-analyse des plans). Aussi la
+// mémoire de la carte pour les statistiques (device_memory).
 #include <cstring>
 #include <format>
 #include <optional>
@@ -26,6 +26,19 @@ std::optional<KernelOps::DeviceMemory> VulkanKernelOps::device_memory() {
   const std::optional<HeapUse> use = device_heap_use(context_);
   if (!use) return std::nullopt;
   return DeviceMemory{.used = use->used, .total = use->total};
+}
+
+// Le débandage de la source avant SPAN (gpu/kernel_ops.h) : comme TensorRT, l'écran ne débande plus l'image
+// agrandie à chaque présentation.
+std::expected<void, Refusal> VulkanKernelOps::deband(const Tensor& rgb) {
+  auto view = detail::tensor_view(rgb, 3, "débandage : image");
+  if (!view) return std::unexpected(view.error());
+  OpKey key;
+  key.add(OpCode::Deband);
+  detail::add_view(key, *view);
+  auto rec = recording(key, [&](Recorder& r) { return runner_.deband(r, *view); });
+  if (!rec) return std::unexpected(rec.error());
+  return submit("débandage", **rec);
 }
 
 std::expected<std::uint64_t, Refusal> VulkanKernelOps::frame_stats_start(const Tensor& rgb,

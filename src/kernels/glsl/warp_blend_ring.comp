@@ -1,0 +1,7 @@
+#version 450
+// Warp et mélange écrits directement dans le slot du ring (KernelOps::warp_blend_ring) : les codes que
+// write_ring écrirait du tenseur de warp_blend.comp, sans le tenseur ni sa relecture. Corps : warp_blend.glsl.
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#define AJP_WARP_RING 1
+#include "warp_blend.glsl"

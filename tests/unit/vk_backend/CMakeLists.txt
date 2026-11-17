@@ -13,6 +13,7 @@ ajp_add_unit_tests(vk_backend
   SOURCES
     backend_rig.cpp
     backend_test.cpp
+    deband_test.cpp
     deferred_steps_test.cpp
     entry_test.cpp
     family_test.cpp
@@ -34,6 +35,7 @@ ajp_add_unit_tests(vk_backend
     drba_fused_chain_test.cpp
     rife_fused_chain_test.cpp
     rife_fused_test.cpp
+    ring_warp_test.cpp
     runtime_queue_test.cpp
     slice_ops_test.cpp
     stage_clock_test.cpp

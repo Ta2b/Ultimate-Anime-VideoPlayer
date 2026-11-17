@@ -216,12 +216,31 @@ std::expected<void, Refusal> VulkanKernelOps::rife_crop(const Tensor& padded, co
 
 std::expected<void, Refusal> VulkanKernelOps::warp_blend(const Tensor& a, const Tensor& b,
                                                          const Motion& motion, float t, const Tensor& out) {
-  return warp(a, b, motion, {}, t, out);
+  return warp(a, b, motion, {}, t, &out, nullptr);
 }
 
 std::expected<void, Refusal> VulkanKernelOps::warp_blend_poses(const Tensor& a, const Tensor& b,
                                                                const Motion& motion, const Motion* previous,
                                                                float t, const Tensor& out) {
+  if (auto ok = check_previous(motion, previous); !ok) return ok;
+  return warp(a, b, motion, {.keep = true, .previous = previous}, t, &out, nullptr);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::warp_blend_ring(const Tensor& a, const Tensor& b,
+                                                              const Motion& motion, float t,
+                                                              const RingTarget& target) {
+  return warp(a, b, motion, {}, t, nullptr, &target);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::warp_blend_poses_ring(const Tensor& a, const Tensor& b,
+                                                                    const Motion& motion,
+                                                                    const Motion* previous, float t,
+                                                                    const RingTarget& target) {
+  if (auto ok = check_previous(motion, previous); !ok) return ok;
+  return warp(a, b, motion, {.keep = true, .previous = previous}, t, nullptr, &target);
+}
+
+std::expected<void, Refusal> VulkanKernelOps::check_previous(const Motion& motion, const Motion* previous) {
   const auto same_area = [&](const kernels::Window& w) {
     return w.x == motion.area.x && w.y == motion.area.y && w.width == motion.area.width &&
            w.height == motion.area.height;
@@ -231,11 +250,12 @@ std::expected<void, Refusal> VulkanKernelOps::warp_blend_poses(const Tensor& a, 
     return std::unexpected(Refusal{RefusalCode::ShapeInvalid,
                                    "poses : mouvement précédent d'autres plans ou d'une autre fenêtre"});
   }
-  return warp(a, b, motion, {.keep = true, .previous = previous}, t, out);
+  return {};
 }
 
 std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor& b, const Motion& motion,
-                                                   const Poses& poses, float t, const Tensor& out) {
+                                                   const Poses& poses, float t, const Tensor* out,
+                                                   const RingTarget* ring) {
   if (!(t > 0.0F && t < 1.0F)) {
     return std::unexpected(
         Refusal{RefusalCode::FieldOutOfRange, std::format("warp : instant {} hors de ]0, 1[", t)});
@@ -244,8 +264,19 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
   if (!va) return std::unexpected(va.error());
   auto vb = tensor_view(b, 3, "warp : image b");
   if (!vb) return std::unexpected(vb.error());
-  auto vo = tensor_view(out, 3, "warp : sortie");
-  if (!vo) return std::unexpected(vo.error());
+  std::optional<TensorView> vo;
+  VkImageView slot = VK_NULL_HANDLE;
+  if (out != nullptr) {
+    auto v = tensor_view(*out, 3, "warp : sortie");
+    if (!v) return std::unexpected(v.error());
+    vo = *v;
+  } else {
+    if (ring == nullptr || ring->slot == nullptr)
+      return std::unexpected(Refusal{RefusalCode::InputMismatch, "warp : ni sortie ni slot du ring"});
+    auto view = ring_slot(*ring->slot, ring->sync, va->width, va->height);
+    if (!view) return std::unexpected(view.error());
+    slot = *view;
+  }
   auto flow = tensor_view(motion.flow, 4, "warp : flot");
   if (!flow) return std::unexpected(flow.error());
   auto mask = tensor_view(motion.mask, 1, "warp : masque");
@@ -260,17 +291,22 @@ std::expected<void, Refusal> VulkanKernelOps::warp(const Tensor& a, const Tensor
   const PoseView pv{.keep = poses.keep, .previous = before ? &*before : nullptr};
   OpKey key;
   key.add(OpCode::Warp);
-  for (const TensorView* v : {&*va, &*vb, &*vo, &*flow, &*mask}) add_view(key, *v);
+  for (const TensorView* v : {&*va, &*vb, &*flow, &*mask}) add_view(key, *v);
+  if (vo) add_view(key, *vo);
+  key.add(detail::to_bits(slot));
   key.add(static_cast<std::uint64_t>(motion.area.x)).add(static_cast<std::uint64_t>(motion.area.y));
   key.add(static_cast<std::uint64_t>(motion.area.width)).add(static_cast<std::uint64_t>(motion.area.height));
   key.add(poses.keep ? 1 : 0);
   key.add(static_cast<std::uint64_t>(motion.warp));
   if (before) add_view(key, *before);
   const std::array time{std::bit_cast<std::uint32_t>(t)};
-  auto rec =
-      recording_with(key, time, [&](Recorder& r) { return runner_.warp_blend(r, *va, *vb, mv, t, *vo, pv); });
+  auto rec = recording_with(key, time, [&](Recorder& r) {
+    return vo ? runner_.warp_blend(r, *va, *vb, mv, t, *vo, pv)
+              : runner_.warp_blend_ring(r, *va, *vb, mv, t, slot, pv);
+  });
   if (!rec) return std::unexpected(rec.error());
-  return submit("warp et mélange", **rec);
+  if (vo) return submit("warp et mélange", **rec);
+  return submit_ring("warp et mélange", **rec, slot, *ring->slot, ring->sync);
 }
 
 std::vector<GpuStageSummary> VulkanKernelOps::gpu_profile() {

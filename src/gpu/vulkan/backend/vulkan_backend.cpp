@@ -307,7 +307,9 @@ BackendCaps VulkanBackend::capabilities() const {
           .rife_fused = profile_.target.f16_storage,
           .drba_fused = profile_.target.f16_storage,
           .matrix_units = profile_.target.matrix_units,
-          .lanes = queue_ ? queue_->lanes() : 1};
+          .lanes = queue_ ? queue_->lanes() : 1,
+          // warp_blend_ring et warp_blend_poses_ring : le warp écrit le slot, comme write_ring.
+          .ring_targets = true};
 }
 
 DeviceMatch VulkanBackend::match(const DeviceUuid& render_device) const {

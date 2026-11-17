@@ -84,22 +84,37 @@ Done KernelRunner::rife_time(Recorder& recorder, const TensorView& input, float 
 Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const TensorView& b,
                               const MotionView& motion, float t, const TensorView& dst,
                               const PoseView& poses) {
+  if (auto ok = check_tensor(dst, 3, context_->caps().enabled, "warp : sortie"); !ok) return ok;
+  if (auto ok = check_same_size(a.width, a.height, dst.width, dst.height, "warp : sortie"); !ok) return ok;
+  if (dst.precision != a.precision)
+    return refuse(RefusalCode::InputMismatch, "warp : tenseurs de précisions différentes");
+  return warp(recorder, a, b, motion, t, &dst, VK_NULL_HANDLE, poses);
+}
+
+Done KernelRunner::warp_blend_ring(Recorder& recorder, const TensorView& a, const TensorView& b,
+                                   const MotionView& motion, float t, VkImageView slot,
+                                   const PoseView& poses) {
+  if (slot == VK_NULL_HANDLE) return refuse(RefusalCode::InputMismatch, "warp : slot du ring sans vue");
+  return warp(recorder, a, b, motion, t, nullptr, slot, poses);
+}
+
+Done KernelRunner::warp(Recorder& recorder, const TensorView& a, const TensorView& b,
+                        const MotionView& motion, float t, const TensorView* dst, VkImageView slot,
+                        const PoseView& poses) {
   if (!(t > 0.0F && t < 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("instant {} hors de ]0, 1[", t));
   const Features& enabled = context_->caps().enabled;
   if (auto ok = check_tensor(a, 3, enabled, "warp : image a"); !ok) return ok;
   if (auto ok = check_tensor(b, 3, enabled, "warp : image b"); !ok) return ok;
-  if (auto ok = check_tensor(dst, 3, enabled, "warp : sortie"); !ok) return ok;
   if (auto ok = check_tensor(motion.flow, 4, enabled, "warp : mouvement"); !ok) return ok;
   if (auto ok = check_tensor(motion.mask, 1, enabled, "warp : masque"); !ok) return ok;
   if (auto ok = check_same_size(a.width, a.height, b.width, b.height, "warp : images a et b"); !ok) return ok;
-  if (auto ok = check_same_size(a.width, a.height, dst.width, dst.height, "warp : sortie"); !ok) return ok;
   if (auto ok = check_same_size(motion.flow.width, motion.flow.height, motion.mask.width, motion.mask.height,
                                 "warp : mouvement et masque");
       !ok) {
     return ok;
   }
-  for (const Precision p : {b.precision, dst.precision, motion.flow.precision, motion.mask.precision}) {
+  for (const Precision p : {b.precision, motion.flow.precision, motion.mask.precision}) {
     if (p != a.precision)
       return refuse(RefusalCode::InputMismatch, "warp : tenseurs de précisions différentes");
   }
@@ -126,11 +141,18 @@ Done KernelRunner::warp_blend(Recorder& recorder, const TensorView& a, const Ten
   const BufferView previous = poses.previous != nullptr ? poses.previous->buffer : motion.flow.buffer;
   auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
   if (!time) return std::unexpected(time.error());
-  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst.buffer,
-                           previous, *time};
   const std::array constants{motion.warp == kernels::RifeWarp::CatmullRom ? 1U : 0U};
+  const std::array<std::uint32_t, 3> groups{groups_for(a.width), groups_for(a.height), 1};
+  if (dst == nullptr) {  // warp_blend_ring.comp : le slot lié après les tampons
+    const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, previous, *time};
+    const std::array images{slot};
+    return detail::run(*pipelines_, recorder, "warp_blend_ring", a.precision, constants, buffers, images,
+                       bytes_of(push), groups);
+  }
+  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst->buffer,
+                           previous, *time};
   return detail::run(*pipelines_, recorder, "warp_blend", a.precision, constants, buffers, {}, bytes_of(push),
-                     {groups_for(a.width), groups_for(a.height), 1});
+                     groups);
 }
 
 Done KernelRunner::transfer(Recorder& recorder, TransferOp op, const TensorView& src, const TensorView& dst,
