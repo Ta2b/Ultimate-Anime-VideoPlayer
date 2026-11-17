@@ -157,6 +157,50 @@ régulièrement. Mesuré ensuite, même passage, mode mouvement estimé à la ta
 0,22 / 0,47 / 0,69, 4.22 lite 0,22 / 0,45 / 0,72, 4.26 0,21 / 0,45 / 0,72 ; le même paquet en 720p redonne
 0,03 / 0,11 / 0,35 pour 4.25 lite.
 
+Observation à l'œil (Tatoub, 17 novembre 2026) : avec le mouvement d'ensemble ci-dessous (« Panoramiques lents
+stables »), l'estimation en 720p reste très bien sur ses panoramiques lents. Le défaut de `motion_720p` ne change
+pas sans son accord.
+
+## Mouvement d'ensemble (« Panoramiques lents stables »)
+
+Case « Panoramiques lents stables » (Vidéo > Interpolation ; `[interpolation] pan_lock` de `play.toml`),
+**décochée par défaut** tant qu'elle n'a pas été vérifiée à l'écran sur la RTX ; RIFE seulement, recharge la
+chaîne. Contrat : `src/kernels/spec/warp_pan.h` ; référence `src/kernels/ref/warp_pan.cpp` et `ref/warp.cpp` ;
+GLSL `pan_global.comp` et `warp_blend.glsl` ; CUDA `warp_kernels.cu` (`pan_global`, `warp_pixel`).
+
+Au warp de la variante mouvement, une petite passe (un seul groupe de 16 × 16) estime la translation de la paire
+par Lucas-Kanade sur la luma (32 × 32 points, 3 itérations, au centième de pixel), dans un tampon de 3 flottants
+relu par tous les pixels du warp. Là où le flot de RIFE est petit (moins de 2 px) et proche de cette translation
+(moins de 1 px d'écart), il est remplacé par elle ; puis, sous un demi-pixel de déplacement, le mélange glisse
+vers un fondu linéaire (poids 1 − t), pleinement au-dessus de 2 px. Garder les poses n'est pas touché.
+
+Pourquoi. Sur des panoramiques lents de synthèse (vérité exacte), RIFE voit mal le sous-pixel : à 1 px par image,
+4.26 estime 0,2 px vers chaque image au lieu de 0,5, et rien à 0,3 px ; son flot varie de 0,13 à 0,24 px d'un
+trait à l'autre. La loi de mélange (`kBlendLawB`) colle alors les instants à la source la plus proche : à 0,3 px
+par image, ×4, l'instant ¼ tombe à 0,05 du pas et l'instant ¾ à 0,85 (saccade), et les traits ondulent.
+
+Mesures (×4, Python, chemin du lecteur ; « irrégularité » : écart-type du pas d'une image affichée à la
+suivante, par pavé de 32 px riche en traits, rapporté au pas moyen ; panoramique parfait 0,02 à 0,04 ;
+« écart » : différence moyenne entre pavés voisins, rapportée au pas) :
+
+| Plan | Modèle | lecteur actuel | fondu seul | mouvement d'ensemble + fondu |
+|---|---|---|---|---|
+| synthèse 1080p, 0,6 px/image (irrégularité, PSNR) | 4.26 | 0,67 (57,1 dB) | 0,06 (65,1 dB) | 0,09 (64,3 dB) |
+| synthèse 1080p, 1 px/image | 4.26 | 0,44 (54,4 dB) | 0,12 (59,0 dB) | 0,07 (62,2 dB) |
+| synthèse 1080p, 1,5 px/image | 4.26 | 0,19 (55,4 dB) | 0,06 (58,0 dB) | 0,04 (60,9 dB) |
+| Re:Zero 18, 21:22, 720p, 0,65 px/image (irrégularité) | 4.22 lite / 4.26 | 0,78 / 0,74 | 0,17 / 0,21 | 0,24 / 0,22 |
+| Nia Liston 07, 2:10–2:20, travelling ≈ 1,7 px/image (irrégularité ; écart) | 4.22 lite | 0,31 ; 0,064 | 0,30 ; 0,049 | 0,05 ; 0,035 |
+| même plan | 4.26 | 0,14 ; 0,066 | 0,11 ; 0,050 | 0,06 ; 0,035 |
+
+Le mouvement d'ensemble gagne nettement dès 1 px par image et sur le travelling de Nia, où il réduit l'écart d'un
+pavé à l'autre (l'ondulation du mur) d'environ 45 % sans perte de netteté ; le fondu seul reste un peu meilleur
+sur le panoramique très lent de Rem (0,65 px). Le plan de Nia vient d'une source dont la compression fait pomper la
+netteté d'une image sur trois (+60 à +75 %) : ce scintillement est dans la source, pas dans l'interpolation.
+À l'œil, Tatoub a préféré la variante avec mouvement d'ensemble sur ses panoramiques (version de test).
+
+Coût attendu : une passe d'un groupe par warp (environ 50 000 lectures demi-précision, servies par le cache),
+de l'ordre de 20 µs par image créée ; à mesurer sur la RTX avant de l'allumer par défaut.
+
 ## Instants déduits sur les paires fortes (essai)
 
 Case « Moins de passes RIFE sur les mouvements rapides » (Vidéo, sous le multiplicateur ; `[interpolation]

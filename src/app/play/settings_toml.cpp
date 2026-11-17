@@ -349,6 +349,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
     read_motion_trials(*interpolation, s, reads);
     reads.push_back(read(*interpolation, "interpolation", "rife_fused", s.rife_fused));
     reads.push_back(read(*interpolation, "interpolation", "cubic_warp", s.cubic_warp));
+    reads.push_back(read(*interpolation, "interpolation", "pan_lock", s.pan_lock));
     reads.push_back(read(*interpolation, "interpolation", "drba_fused", s.drba_fused));
     // gmfss_fused, gmfss_quality et gmfss_precision : GMFSS retiré (0.10.0), clés ignorées.
     reads.push_back(read_named(*interpolation, "interpolation", "motion_precision", s.motion_precision,

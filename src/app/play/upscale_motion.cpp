@@ -129,6 +129,7 @@ std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu
   gpu::KernelOps& ops = *setup_.backend->kernels();
   gpu::Motion read = motion;
   read.warp = setup_.warp;
+  read.pan_lock = setup_.pan_lock;
   return out.ring != nullptr ? ops.warp_blend_ring(a, b, read, t, *out.ring)
                              : ops.warp_blend(a, b, read, t, *out.tensor);
 }

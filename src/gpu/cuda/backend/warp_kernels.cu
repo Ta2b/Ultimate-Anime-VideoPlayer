@@ -8,6 +8,7 @@
 #include "gpu/cuda/backend/warp_kernels.h"
 #include "kernels/spec/poses.h"
 #include "kernels/spec/warp.h"
+#include "kernels/spec/warp_pan.h"
 
 namespace ajp::gpu::cuda {
 namespace {
@@ -107,6 +108,30 @@ __device__ void blend_images(const WarpBlendParams& p, int x, int y, const Shift
   }
 }
 
+// Mouvement d'ensemble (kernels/spec/warp_pan.h) : le flot lu f remplacé par la translation de la paire au
+// milieu, en pixels de la fenêtre, là où il est petit et proche d'elle.
+__device__ void pan_substitute(const WarpBlendParams& p, float sx, float sy, float (&f)[4]) {
+  if (p.pan == nullptr || __ldg(p.pan + 2) < 0.5F) return;
+  const float dx = __ldg(p.pan);
+  const float dy = __ldg(p.pan + 1);
+  const float g[4] = {-0.5F * dx / sx, -0.5F * dy / sy, 0.5F * dx / sx, 0.5F * dy / sy};
+  float m = 0.0F;
+  float e = 0.0F;
+  for (int c = 0; c < 4; ++c) {
+    m = fmaxf(m, fabsf(f[c]));
+    e = fmaxf(e, fabsf(f[c] - g[c]));
+  }
+  if (m < kernels::kPanFlowLimit && e < kernels::kPanAgreement)
+    for (int c = 0; c < 4; ++c) f[c] = g[c];
+}
+
+// kernels::slow_fade_weight, réécrit ici : nvcc n'appelle pas une fonction constexpr de l'hôte.
+__device__ float slow_fade(float d) {
+  const float s =
+      fminf(fmaxf((d - kernels::kSlowFadeLo) / (kernels::kSlowFadeHi - kernels::kSlowFadeLo), 0.0F), 1.0F);
+  return s * s * (3.0F - 2.0F * s);
+}
+
 // Les trois canaux du pixel (x, y) de la sortie : mouvement lu dans la fenêtre, puis les deux
 // images déformées et mélangées. kCubic : les images lues par Catmull-Rom (option cubic, éteinte par
 // défaut), dans des noyaux à eux.
@@ -125,12 +150,20 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
   float weight;
   float at_uv[4];
   S::sample_n(flow, 0, u, v, at_uv);
+  const bool pan = p.pan != nullptr && !p.keep_poses;
+  if (pan) pan_substitute(p, sx, sy, at_uv);
   if (!p.from_middle) {
     ax = at_uv[0];
     ay = at_uv[1];
     bx = at_uv[2];
     by = at_uv[3];
     weight = S::sample(mask, 0, u, v);
+    if (pan) {  // sous un demi-pixel, le masque glisse vers le fondu (ln((1 − t) / t), nul à t = 1/2)
+      const float mm = fminf(fmaxf(weight, kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
+      const float w = slow_fade(hypotf(bx - ax, by - ay));
+      const float t = p.time;
+      weight = 1.0F / (1.0F + expf(-(w * logf(mm / (1.0F - mm)) + (1.0F - w) * logf((1.0F - t) / t))));
+    }
   } else {
     // L'instant réglé se lit toujours exactement : le rapport des deux mouvements amplifie la
     // fraction sur 8 bits de la texture (émulée sur les images du test : écart porté de 2 à 10/1024).
@@ -148,12 +181,17 @@ __device__ void warp_pixel(const WarpBlendParams& p, int x, int y, float* rgb) {
     const float v2 = v - ((1.0F - t) * at_uv[1] + t * at_uv[3]);
     float at2[4];
     S::sample_n(flow, 0, u2, v2, at2);
+    if (pan) pan_substitute(p, sx, sy, at2);
     const float tx = at2[2] - at2[0];
     const float ty = at2[3] - at2[1];
     const float mm =
         fminf(fmaxf(S::sample(mask, 0, u2, v2), kernels::kMaskEpsilon), 1.0F - kernels::kMaskEpsilon);
-    const float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) +
-                    kernels::kBlendLawB * logf((1.0F - t) / t) + kernels::kBlendLawC;
+    float z = kernels::kBlendLawA * logf(mm / (1.0F - mm)) + kernels::kBlendLawB * logf((1.0F - t) / t) +
+              kernels::kBlendLawC;
+    if (pan) {
+      const float w = slow_fade(hypotf(tx, ty));
+      z = w * z + (1.0F - w) * logf((1.0F - t) / t);
+    }
     ax = -t * tx;
     ay = -t * ty;
     bx = (1.0F - t) * tx;
@@ -247,6 +285,116 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) flow_max(Flo
 }
 
 }  // namespace
+
+// Mouvement d'ensemble (kernels/spec/warp_pan.h) : un bloc de 16 × 16 fils, kPanGrid² points, réduction en
+// mémoire partagée. La validité ne dépend que des gradients de a : la même à chaque itération.
+__device__ float pan_luma(const __half* img, int plane, int width, int x, int y) {
+  const int i = y * width + x;
+  return kernels::kPanLumaR * __half2float(img[i]) + kernels::kPanLumaG * __half2float(img[plane + i]) +
+         kernels::kPanLumaB * __half2float(img[2 * plane + i]);
+}
+
+__device__ float pan_luma_bilinear(const __half* img, int plane, int width, int height, float x, float y) {
+  x = fminf(fmaxf(x, 0.0F), static_cast<float>(width - 1));
+  y = fminf(fmaxf(y, 0.0F), static_cast<float>(height - 1));
+  const int x0 = static_cast<int>(x);
+  const int y0 = static_cast<int>(y);
+  const int x1 = min(x0 + 1, width - 1);
+  const int y1 = min(y0 + 1, height - 1);
+  const float fx = x - static_cast<float>(x0);
+  const float fy = y - static_cast<float>(y0);
+  const float top =
+      pan_luma(img, plane, width, x0, y0) * (1.0F - fx) + pan_luma(img, plane, width, x1, y0) * fx;
+  const float bottom =
+      pan_luma(img, plane, width, x0, y1) * (1.0F - fx) + pan_luma(img, plane, width, x1, y1) * fx;
+  return top * (1.0F - fy) + bottom * fy;
+}
+
+// kernels::pan_point, réécrit ici (constexpr de l'hôte).
+__device__ int pan_point(int i, int n) {
+  const int m = max(4, n / 12);
+  return m + (i * (n - 2 * m)) / kernels::kPanGrid;
+}
+
+constexpr int kPanThreads = kBlock * kBlock;
+constexpr int kPanPerThread = kernels::kPanGrid * kernels::kPanGrid / kPanThreads;
+
+__global__ void __launch_bounds__(kPanThreads) pan_global(WarpBlendParams p, float* out) {
+  __shared__ float sums[5][kPanThreads];
+  __shared__ float shift[3];
+  const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+  const auto* a = static_cast<const __half*>(p.a);
+  const auto* b = static_cast<const __half*>(p.b);
+  const int plane = p.width * p.height;
+  float la[kPanPerThread];
+  float gx[kPanPerThread];
+  float gy[kPanPerThread];
+  int px[kPanPerThread];
+  int py[kPanPerThread];
+  for (int k = 0; k < kPanPerThread; ++k) {
+    const int q = tid + k * kPanThreads;
+    px[k] = pan_point(q % kernels::kPanGrid, p.width);
+    py[k] = pan_point(q / kernels::kPanGrid, p.height);
+    la[k] = pan_luma(a, plane, p.width, px[k], py[k]);
+    gx[k] = 0.5F *
+            (pan_luma(a, plane, p.width, px[k] + 1, py[k]) - pan_luma(a, plane, p.width, px[k] - 1, py[k]));
+    gy[k] = 0.5F *
+            (pan_luma(a, plane, p.width, px[k], py[k] + 1) - pan_luma(a, plane, p.width, px[k], py[k] - 1));
+  }
+  if (tid == 0) {
+    shift[0] = 0.0F;
+    shift[1] = 0.0F;
+    shift[2] = 0.0F;
+  }
+  __syncthreads();
+  for (int it = 0; it < kernels::kPanIterations; ++it) {
+    const float dx = shift[0];
+    const float dy = shift[1];
+    float s[5] = {0.0F, 0.0F, 0.0F, 0.0F, 0.0F};
+    for (int k = 0; k < kPanPerThread; ++k) {
+      const float r = pan_luma_bilinear(b, plane, p.width, p.height, static_cast<float>(px[k]) + dx,
+                                        static_cast<float>(py[k]) + dy) -
+                      la[k];
+      s[0] += gx[k] * gx[k];
+      s[1] += gx[k] * gy[k];
+      s[2] += gy[k] * gy[k];
+      s[3] += gx[k] * r;
+      s[4] += gy[k] * r;
+    }
+    for (int c = 0; c < 5; ++c) sums[c][tid] = s[c];
+    __syncthreads();
+    for (int h = kPanThreads / 2; h > 0; h >>= 1) {
+      if (tid < h)
+        for (int c = 0; c < 5; ++c) sums[c][tid] += sums[c][tid + h];
+      __syncthreads();
+    }
+    if (tid == 0) {
+      const float sxx = sums[0][0];
+      const float sxy = sums[1][0];
+      const float syy = sums[2][0];
+      const float det = sxx * syy - sxy * sxy;
+      const bool valid = det > kernels::kPanDetRatio * (sxx + syy) * (sxx + syy) && det > 0.0F;
+      if (valid) {
+        shift[0] = dx - (syy * sums[3][0] - sxy * sums[4][0]) / det;
+        shift[1] = dy - (sxx * sums[4][0] - sxy * sums[3][0]) / det;
+      }
+      shift[2] = valid ? 1.0F : 0.0F;
+    }
+    __syncthreads();
+    if (shift[2] < 0.5F) break;
+  }
+  if (tid == 0) {
+    out[0] = shift[0];
+    out[1] = shift[1];
+    out[2] = shift[2] > 0.5F && hypotf(shift[0], shift[1]) < kernels::kPanMaxShift ? 1.0F : 0.0F;
+  }
+}
+
+cudaError_t launch_pan_global(const WarpBlendParams& params, float* out, cudaStream_t stream) {
+  if (params.width < 16 || params.height < 16) return cudaMemsetAsync(out, 0, 3 * sizeof(float), stream);
+  pan_global<<<1, dim3(kBlock, kBlock), 0, stream>>>(params, out);
+  return cudaGetLastError();
+}
 
 cudaError_t launch_warp_blend(const WarpBlendParams& params, cudaStream_t stream) {
   const WarpBlendParams::Textures& t = params.textures;

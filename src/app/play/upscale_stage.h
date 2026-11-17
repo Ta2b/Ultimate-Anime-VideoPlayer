@@ -139,6 +139,8 @@ struct UpscaleSetup {
   GmfssSetup gmfss;
   // Le filtre qui lit les images au warp de la variante mouvement de RIFE (PlaySettings::cubic_warp).
   kernels::RifeWarp warp = kernels::RifeWarp::Bilinear;
+  // Le mouvement d'ensemble au même warp (PlaySettings::pan_lock, kernels/spec/warp_pan.h).
+  bool pan_lock = false;
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
   // Le grade avant le warp (PlaySettings::grade_before_warp, source_grade.h) : chaque source gradée à sa
   // sortie de SPAN, quand le warp se fait après lui (warp_after_span) et que l'écran lit le ring ; nullptr :

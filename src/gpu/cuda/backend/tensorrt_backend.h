@@ -442,6 +442,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::size_t splat_bytes_ = 0;
   // Les mouvements ramenés à la grille de leur source (SplatJob::grid), avant le splat.
   void* grid_motion_ = nullptr;
+  float* pan_estimate_ = nullptr;  // mouvement d'ensemble de la paire du warp en cours (4 flottants)
   std::size_t grid_motion_bytes_ = 0;
   std::expected<void, Refusal> reserve_grid_motion(std::size_t bytes);
   std::size_t ingest_rows_size_ = 0;

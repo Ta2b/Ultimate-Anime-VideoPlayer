@@ -84,6 +84,32 @@ Result<void> check_window(const PlaneF& p, const Window& a, std::string_view wha
   return {};
 }
 
+// Le mouvement d'ensemble d'un warp (spec/warp_pan.h) : g, flot au milieu en pixels de la fenêtre.
+struct Pan {
+  bool fade = false;  // pan_lock hors garder les poses : le fondu sous un demi-pixel
+  bool on = false;    // et l'estimation est sûre : le flot remplacé
+  std::array<float, 4> g{};
+};
+
+// Le flot lu f remplacé par g là où il est petit et proche.
+void pan_substitute(std::array<float, 4>& f, const Pan& pan) {
+  if (!pan.on) return;
+  float m = 0.0F;
+  float e = 0.0F;
+  for (std::size_t c = 0; c < 4; ++c) {
+    m = std::fmax(m, std::fabs(f[c]));
+    e = std::fmax(e, std::fabs(f[c] - pan.g[c]));
+  }
+  if (m < kPanFlowLimit && e < kPanAgreement) f = pan.g;
+}
+
+std::array<float, 4> flow_at(const Motion& m, float u, float v, const Pan& pan) {
+  std::array<float, 4> f{};
+  for (std::size_t c = 0; c < 4; ++c) f[c] = bilinear_at(m.flow[c], m.area, u, v);
+  pan_substitute(f, pan);
+  return f;
+}
+
 // Déplacements vers a et vers b, et poids de a, pour un point de la grille du mouvement.
 struct Displacement {
   float ax = 0.0F;
@@ -94,31 +120,39 @@ struct Displacement {
 };
 
 // previous : mouvement de la paire précédente, pour garder les poses seulement.
-using DisplacementAt = Displacement (*)(const Motion&, const Motion*, float, float, float);
+using DisplacementAt = Displacement (*)(const Motion&, const Motion*, const Pan&, float, float, float);
 
-// L'instant que RIFE a estimé : mouvement et masque tels quels.
-Displacement estimated(const Motion& m, const Motion* /*previous*/, float u, float v, float /*t*/) {
-  return {.ax = bilinear_at(m.flow[0], m.area, u, v),
-          .ay = bilinear_at(m.flow[1], m.area, u, v),
-          .bx = bilinear_at(m.flow[2], m.area, u, v),
-          .by = bilinear_at(m.flow[3], m.area, u, v),
-          .weight = bilinear_at(m.mask, m.area, u, v)};
+// L'instant que RIFE a estimé : mouvement et masque tels quels (mouvement d'ensemble : flot remplacé, masque
+// ramené vers le fondu sous un demi-pixel).
+Displacement estimated(const Motion& m, const Motion* /*previous*/, const Pan& pan, float u, float v,
+                       float t) {
+  const std::array<float, 4> f = flow_at(m, u, v, pan);
+  float weight = bilinear_at(m.mask, m.area, u, v);
+  if (pan.fade) {
+    const float mm = std::fmin(std::fmax(weight, kMaskEpsilon), 1.0F - kMaskEpsilon);
+    const float w = slow_fade_weight(std::hypot(f[2] - f[0], f[3] - f[1]));
+    const float z = w * std::log(mm / (1.0F - mm)) + (1.0F - w) * std::log((1.0F - t) / t);
+    weight = 1.0F / (1.0F + std::exp(-z));
+  }
+  return {.ax = f[0], .ay = f[1], .bx = f[2], .by = f[3], .weight = weight};
 }
 
 // Un autre instant depuis le mouvement du milieu : ligne droite et loi de mélange ajustée.
-Displacement from_middle(const Motion& m, const Motion* /*previous*/, float u, float v, float t) {
-  const float a0x = bilinear_at(m.flow[0], m.area, u, v);
-  const float a0y = bilinear_at(m.flow[1], m.area, u, v);
-  const float a1x = bilinear_at(m.flow[2], m.area, u, v);
-  const float a1y = bilinear_at(m.flow[3], m.area, u, v);
-  const float u2 = u - ((1.0F - t) * a0x + t * a1x);
-  const float v2 = v - ((1.0F - t) * a0y + t * a1y);
-  const float tx = bilinear_at(m.flow[2], m.area, u2, v2) - bilinear_at(m.flow[0], m.area, u2, v2);
-  const float ty = bilinear_at(m.flow[3], m.area, u2, v2) - bilinear_at(m.flow[1], m.area, u2, v2);
+Displacement from_middle(const Motion& m, const Motion* /*previous*/, const Pan& pan, float u, float v,
+                         float t) {
+  const std::array<float, 4> f = flow_at(m, u, v, pan);
+  const float u2 = u - ((1.0F - t) * f[0] + t * f[2]);
+  const float v2 = v - ((1.0F - t) * f[1] + t * f[3]);
+  const std::array<float, 4> f2 = flow_at(m, u2, v2, pan);
+  const float tx = f2[2] - f2[0];
+  const float ty = f2[3] - f2[1];
   const float mm =
       std::fmin(std::fmax(bilinear_at(m.mask, m.area, u2, v2), kMaskEpsilon), 1.0F - kMaskEpsilon);
-  const float z =
-      kBlendLawA * std::log(mm / (1.0F - mm)) + kBlendLawB * std::log((1.0F - t) / t) + kBlendLawC;
+  float z = kBlendLawA * std::log(mm / (1.0F - mm)) + kBlendLawB * std::log((1.0F - t) / t) + kBlendLawC;
+  if (pan.fade) {
+    const float w = slow_fade_weight(std::hypot(tx, ty));
+    z = w * z + (1.0F - w) * std::log((1.0F - t) / t);
+  }
   return {.ax = -t * tx,
           .ay = -t * ty,
           .bx = (1.0F - t) * tx,
@@ -127,7 +161,8 @@ Displacement from_middle(const Motion& m, const Motion* /*previous*/, float u, f
 }
 
 // L'instant réglé du pixel (u, v) puis from_middle à cet instant (spec/poses.h).
-Displacement keeping_poses(const Motion& m, const Motion* previous, float u, float v, float t) {
+Displacement keeping_poses(const Motion& m, const Motion* previous, const Pan& /*pan*/, float u, float v,
+                           float t) {
   const Window& w = m.area;
   float tp = t;
   for (int k = 0; k < kPoseIterations; ++k) {
@@ -158,7 +193,7 @@ Displacement keeping_poses(const Motion& m, const Motion* previous, float u, flo
     const float r = (before + kPoseEpsilon) / (before + now + 2.0F * kPoseEpsilon);
     tp = std::fmin(std::fmax(pose_time(t, r), kPoseTimeLimit), 1.0F - kPoseTimeLimit);
   }
-  return from_middle(m, previous, u, v, tp);
+  return from_middle(m, previous, Pan{}, u, v, tp);
 }
 
 Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motion, const Motion* previous,
@@ -170,12 +205,19 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
   // Où chaque pixel tombe dans la grille du mouvement, centres alignés.
   const float sx = static_cast<float>(w) / static_cast<float>(motion.area.width);
   const float sy = static_cast<float>(h) / static_cast<float>(motion.area.height);
+  Pan pan;
+  if (motion.pan_lock && previous == nullptr && at != keeping_poses) {
+    const PanEstimate e = pan_estimate(a, b);
+    pan.fade = true;
+    pan.on = e.sure;
+    pan.g = {-0.5F * e.dx / sx, -0.5F * e.dy / sy, 0.5F * e.dx / sx, 0.5F * e.dy / sy};
+  }
   RgbImage out(w, h);
   for (int y = 0; y < h; ++y) {
     for (int x = 0; x < w; ++x) {
       const float fx = static_cast<float>(x);
       const float fy = static_cast<float>(y);
-      const Displacement d = at(motion, previous, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
+      const Displacement d = at(motion, previous, pan, (fx + 0.5F) / sx - 0.5F, (fy + 0.5F) / sy - 0.5F, t);
       for (std::size_t c = 0; c < out.planes.size(); ++c) {
         const float va = image_at(a.planes[c], motion.warp, fx + sx * d.ax, fy + sy * d.ay);
         const float vb = image_at(b.planes[c], motion.warp, fx + sx * d.bx, fy + sy * d.by);

@@ -17,7 +17,8 @@ ajp_add_unit_tests(kernels
     tolerance_test.cpp
     transfer_test.cpp
     frame_stats_test.cpp
-    warp_test.cpp)
+    warp_test.cpp
+    warp_pan_test.cpp)
 
 # Les tests évaluent les formules constexpr de spec.h avec les arrondis de la référence :
 # ajp_add_unit_tests leur donne -ffp-contract=off. Les ports FMA simulés appellent std::fma.

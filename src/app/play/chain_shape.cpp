@@ -62,6 +62,8 @@ OpenedChain::Loaded loaded_by(const PlaySettings& settings) {
           .drba_fused = settings.drba_fused,
           .smooth_drawings = settings.smooth_drawings,
           .cubic_warp = settings.cubic_warp,
+          .motion_720p = settings.motion_720p,
+          .pan_lock = settings.pan_lock,
           .pair_scale = settings.pair_scale,
           .gmfss_middle = settings.gmfss_middle,
           .gmfss_half_flow = settings.gmfss_half_flow,

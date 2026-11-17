@@ -137,20 +137,39 @@ Done KernelRunner::warp(Recorder& recorder, const TensorView& a, const TensorVie
                               static_cast<std::uint32_t>(area.width),
                               static_cast<std::uint32_t>(area.height),
                               poses.keep ? 1U : 0U,
-                              poses.previous != nullptr ? 1U : 0U};
+                              poses.previous != nullptr ? 1U : 0U,
+                              motion.pan_lock && !poses.keep ? 1U : 0U};
   const BufferView previous = poses.previous != nullptr ? poses.previous->buffer : motion.flow.buffer;
   auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
   if (!time) return std::unexpected(time.error());
+  // Mouvement d'ensemble (spec/warp_pan.h) : estimé par pan_global.comp dans un tampon de l'enregistrement,
+  // relu par le warp ; éteint, l'instant est lié à sa place (jamais lu).
+  BufferView pan = *time;
+  if (push.pan_lock != 0U) {
+    auto scratch = recorder.scratch(4 * sizeof(float));
+    if (!scratch) return std::unexpected(scratch.error());
+    pan = *scratch;
+    const detail::PanPush pan_push{a.width, a.height};
+    const std::array pan_buffers{a.buffer, b.buffer, pan};
+    if (a.width < 16 || a.height < 16) {
+      if (auto ok = recorder.fill(pan, 0); !ok) return ok;
+    } else if (auto ok = detail::run(*pipelines_, recorder, "pan_global", a.precision, {}, pan_buffers, {},
+                                     bytes_of(pan_push), {1, 1, 1});
+               !ok) {
+      return ok;
+    }
+  }
   const std::array constants{motion.warp == kernels::RifeWarp::CatmullRom ? 1U : 0U};
   const std::array<std::uint32_t, 3> groups{groups_for(a.width), groups_for(a.height), 1};
   if (dst == nullptr) {  // warp_blend_ring.comp : le slot lié après les tampons
-    const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, previous, *time};
+    const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, previous,
+                             *time,    pan};
     const std::array images{slot};
     return detail::run(*pipelines_, recorder, "warp_blend_ring", a.precision, constants, buffers, images,
                        bytes_of(push), groups);
   }
-  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst->buffer,
-                           previous, *time};
+  const std::array buffers{a.buffer, b.buffer, motion.flow.buffer, motion.mask.buffer, dst->buffer, previous,
+                           *time,    pan};
   return detail::run(*pipelines_, recorder, "warp_blend", a.precision, constants, buffers, {}, bytes_of(push),
                      groups);
 }

@@ -61,6 +61,7 @@ set(tensor_shaders
   "${glsl}/rife_frames.comp"
   "${glsl}/tensor_peak.comp"
   "${glsl}/transfer.comp"
+  "${glsl}/pan_global.comp"
   "${glsl}/warp_blend.comp"
   "${glsl}/warp_blend_ring.comp")
 ajp_add_spirv(ajp_vk_compute

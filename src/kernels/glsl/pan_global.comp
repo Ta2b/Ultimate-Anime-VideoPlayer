@@ -1,0 +1,130 @@
+#version 450
+// Mouvement d'ensemble d'une paire (kernels/spec/warp_pan.h) : translation globale de b par rapport à a par
+// Lucas-Kanade sur la luma, kPanGrid² points, un seul groupe de 16 × 16, réduction en mémoire partagée.
+// result.v[0..2] : dx, dy (pixels de l'image), 1 si sûre, 0 sinon. Lu par warp_blend.glsl (pan_lock).
+// Référence : kernels/ref/warp_pan.cpp (pan_estimate) ; même calcul que warp_kernels.cu (pan_global).
+#extension GL_GOOGLE_include_directive : require
+#include "tensor.glsl"
+#include "ajp_kernels_spec.glsl"
+#include "common.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
+layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
+layout(std430, binding = 2) writeonly buffer Result { float v[]; } result;
+
+layout(push_constant) uniform Push {
+  uint width;
+  uint height;
+} pc;
+
+const uint THREADS = 256u;
+const uint PER_THREAD = uint(AJP_PAN_GRID * AJP_PAN_GRID) / THREADS;
+
+shared float sums[5][256];
+shared float shift[3];
+
+float luma_a(uint x, uint y) {
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  return AJP_PAN_LUMA_R * float(a.v[i]) + AJP_PAN_LUMA_G * float(a.v[plane + i]) +
+         AJP_PAN_LUMA_B * float(a.v[2u * plane + i]);
+}
+
+float luma_b(uint x, uint y) {
+  uint plane = pc.width * pc.height;
+  uint i = y * pc.width + x;
+  return AJP_PAN_LUMA_R * float(b.v[i]) + AJP_PAN_LUMA_G * float(b.v[plane + i]) +
+         AJP_PAN_LUMA_B * float(b.v[2u * plane + i]);
+}
+
+float luma_b_bilinear(float x, float y) {
+  x = bounded(x, 0.0, float(pc.width - 1u));
+  y = bounded(y, 0.0, float(pc.height - 1u));
+  uint x0 = uint(x);
+  uint y0 = uint(y);
+  uint x1 = min(x0 + 1u, pc.width - 1u);
+  uint y1 = min(y0 + 1u, pc.height - 1u);
+  float fx = x - float(x0);
+  float fy = y - float(y0);
+  float top = luma_b(x0, y0) * (1.0 - fx) + luma_b(x1, y0) * fx;
+  float bottom = luma_b(x0, y1) * (1.0 - fx) + luma_b(x1, y1) * fx;
+  return top * (1.0 - fy) + bottom * fy;
+}
+
+uint pan_point(uint i, uint n) {
+  uint m = max(4u, n / 12u);
+  return m + (i * (n - 2u * m)) / uint(AJP_PAN_GRID);
+}
+
+void main() {
+  uint tid = gl_LocalInvocationIndex;
+  float la[PER_THREAD];
+  float gx[PER_THREAD];
+  float gy[PER_THREAD];
+  uint px[PER_THREAD];
+  uint py[PER_THREAD];
+  for (uint k = 0u; k < PER_THREAD; ++k) {
+    uint q = tid + k * THREADS;
+    px[k] = pan_point(q % uint(AJP_PAN_GRID), pc.width);
+    py[k] = pan_point(q / uint(AJP_PAN_GRID), pc.height);
+    la[k] = luma_a(px[k], py[k]);
+    gx[k] = 0.5 * (luma_a(px[k] + 1u, py[k]) - luma_a(px[k] - 1u, py[k]));
+    gy[k] = 0.5 * (luma_a(px[k], py[k] + 1u) - luma_a(px[k], py[k] - 1u));
+  }
+  if (tid == 0u) {
+    shift[0] = 0.0;
+    shift[1] = 0.0;
+    shift[2] = 0.0;
+  }
+  barrier();
+  for (int it = 0; it < AJP_PAN_ITERATIONS; ++it) {
+    float dx = shift[0];
+    float dy = shift[1];
+    float s0 = 0.0;
+    float s1 = 0.0;
+    float s2 = 0.0;
+    float s3 = 0.0;
+    float s4 = 0.0;
+    for (uint k = 0u; k < PER_THREAD; ++k) {
+      float r = luma_b_bilinear(float(px[k]) + dx, float(py[k]) + dy) - la[k];
+      s0 += gx[k] * gx[k];
+      s1 += gx[k] * gy[k];
+      s2 += gy[k] * gy[k];
+      s3 += gx[k] * r;
+      s4 += gy[k] * r;
+    }
+    sums[0][tid] = s0;
+    sums[1][tid] = s1;
+    sums[2][tid] = s2;
+    sums[3][tid] = s3;
+    sums[4][tid] = s4;
+    barrier();
+    for (uint h = THREADS / 2u; h > 0u; h >>= 1u) {
+      if (tid < h) {
+        for (uint c = 0u; c < 5u; ++c) sums[c][tid] += sums[c][tid + h];
+      }
+      barrier();
+    }
+    if (tid == 0u) {
+      float sxx = sums[0][0];
+      float sxy = sums[1][0];
+      float syy = sums[2][0];
+      float det = sxx * syy - sxy * sxy;
+      bool valid = det > AJP_PAN_DET_RATIO * (sxx + syy) * (sxx + syy) && det > 0.0;
+      if (valid) {
+        shift[0] = dx - (syy * sums[3][0] - sxy * sums[4][0]) / det;
+        shift[1] = dy - (sxx * sums[4][0] - sxy * sums[3][0]) / det;
+      }
+      shift[2] = valid ? 1.0 : 0.0;
+    }
+    barrier();
+    if (shift[2] < 0.5) break;
+  }
+  if (tid == 0u) {
+    result.v[0] = shift[0];
+    result.v[1] = shift[1];
+    result.v[2] = (shift[2] > 0.5 && length(vec2(shift[0], shift[1])) < AJP_PAN_MAX_SHIFT) ? 1.0 : 0.0;
+  }
+}

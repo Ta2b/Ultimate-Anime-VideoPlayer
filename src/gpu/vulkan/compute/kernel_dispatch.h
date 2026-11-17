@@ -111,6 +111,12 @@ struct WarpPush {
   std::uint32_t area_height;
   std::uint32_t keep_poses;
   std::uint32_t has_previous;
+  std::uint32_t pan_lock;
+};
+
+struct PanPush {
+  std::uint32_t width;
+  std::uint32_t height;
 };
 
 struct TransferPush {
@@ -179,7 +185,8 @@ struct PairPush {
 static_assert(sizeof(ChromaPush) == 32 && sizeof(PlanesPush) == 32 && sizeof(ResamplePush) == 16);
 static_assert(sizeof(YuvWindowPush) == 44 && sizeof(RgbWindowPush) == 28 && sizeof(RifeConstantsPush) == 12);
 static_assert(sizeof(RifeFramesPush) == 28 && sizeof(RgbPairPush) == 12 && sizeof(FlowMaxPush) == 24);
-static_assert(sizeof(WarpPush) == 40 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
+static_assert(sizeof(WarpPush) == 44 && sizeof(TransferPush) == 32 && sizeof(PairPush) == 24);
+static_assert(sizeof(PanPush) == 8);
 
 // Constantes 0 à 5 de yuv.glsl : format, matrice, plage, octets par échantillon, chroma
 // entrelacée, chroma 4:2:0, tirées de kernels::info.
