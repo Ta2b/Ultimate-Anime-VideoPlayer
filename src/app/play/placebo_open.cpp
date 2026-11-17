@@ -238,8 +238,9 @@ VulkanDevice vulkan_description(pl_vulkan vk) {
 }
 
 // Ce que le backend Vulkan demande à l'appareil qu'il adopte (tenseurs float16, matrices
-// coopératives, additions atomiques de float) et ce que FFmpeg attend du même appareil pour Vulkan
-// Video (video maintenance 1 et 2), activé par libplacebo seulement là où le pilote le propose.
+// coopératives, FP8 compris sur RDNA 4, additions atomiques de float) et ce que FFmpeg attend du même
+// appareil pour Vulkan Video (video maintenance 1 et 2), activé par libplacebo seulement là où le pilote le
+// propose.
 struct ComputeFeatures {
   VkPhysicalDeviceVideoMaintenance2FeaturesKHR video2{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR,
@@ -252,9 +253,15 @@ struct ComputeFeatures {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT,
       .pNext = &video1,
       .shaderBufferFloat32AtomicAdd = VK_TRUE};
+  // Les matrices coopératives FP8 (E4M3) : le SPAN Performance sous Vulkan (gpu/vulkan/backend/net_span8.h).
+  VkPhysicalDeviceShaderFloat8FeaturesEXT float8{
+      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT,
+      .pNext = &atomic,
+      .shaderFloat8 = VK_TRUE,
+      .shaderFloat8CooperativeMatrix = VK_TRUE};
   VkPhysicalDeviceCooperativeMatrixFeaturesKHR matrix{
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR,
-      .pNext = &atomic,
+      .pNext = &float8,
       .cooperativeMatrix = VK_TRUE};
   VkPhysicalDeviceVulkan13Features v13{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
                                        .pNext = &matrix,
@@ -280,15 +287,15 @@ struct ComputeFeatures {
 // Les extensions demandées si l'appareil les a : celles du backend Vulkan, puis Vulkan Video, pour
 // que FFmpeg décode et encode sur cet appareil (vulkan_share.h) ; ses files vidéo sont créées en
 // plus (extra_queues).
-constexpr std::array<const char*, 15> kOptionalExtensions{
-    VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME, VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME,
-    VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,      VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,
-    VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME, VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,
-    VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,  VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME,
-    VK_KHR_VIDEO_DECODE_VP9_EXTENSION_NAME,   VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,
-    VK_KHR_VIDEO_ENCODE_H264_EXTENSION_NAME,  VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME,
-    VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,   VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME,
-    VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME};
+constexpr std::array<const char*, 16> kOptionalExtensions{
+    VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME,  VK_EXT_SHADER_FLOAT8_EXTENSION_NAME,
+    VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME,
+    VK_KHR_VIDEO_QUEUE_EXTENSION_NAME,         VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME,
+    VK_KHR_VIDEO_DECODE_H264_EXTENSION_NAME,   VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,
+    VK_KHR_VIDEO_DECODE_AV1_EXTENSION_NAME,    VK_KHR_VIDEO_DECODE_VP9_EXTENSION_NAME,
+    VK_KHR_VIDEO_ENCODE_QUEUE_EXTENSION_NAME,  VK_KHR_VIDEO_ENCODE_H264_EXTENSION_NAME,
+    VK_KHR_VIDEO_ENCODE_H265_EXTENSION_NAME,   VK_KHR_VIDEO_ENCODE_AV1_EXTENSION_NAME,
+    VK_KHR_VIDEO_MAINTENANCE_1_EXTENSION_NAME, VK_KHR_VIDEO_MAINTENANCE_2_EXTENSION_NAME};
 
 // B37-01 : sur un poste à deux cartes (portable RTX + iGPU : Optimus, PRIME), libplacebo prend la première
 // que le système lui donne, souvent l'iGPU, et TensorRT refuse alors la carte. Sans carte demandée, la carte

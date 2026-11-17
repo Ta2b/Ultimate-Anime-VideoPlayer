@@ -60,11 +60,12 @@ enum class OpCode : std::uint64_t {
   FrameStats = 51,
   ReadRing = 52,
   Deband = 53,
+  TensorPeak = 54,
 };
 constexpr std::array kOpCodes{OpCode::Resample,  OpCode::RifeCrop,    OpCode::Warp,         OpCode::Ingest,
                               OpCode::RifeInput, OpCode::ScoresStart, OpCode::FlowMaxStart, OpCode::RifeTime,
                               OpCode::RifePair,  OpCode::WriteRing,   OpCode::FrameStats,   OpCode::ReadRing,
-                              OpCode::Deband};
+                              OpCode::Deband,    OpCode::TensorPeak};
 static_assert(
     [] {
       for (std::size_t i = 0; i < kOpCodes.size(); ++i)
@@ -128,6 +129,11 @@ class VulkanKernelOps final : public KernelOps {
                                                      const Motion* previous, float t,
                                                      const RingTarget& target) override;
   std::expected<void, Refusal> deband(const Tensor& rgb) override;
+  // Hors de KernelOps, pour la dérivation du SPAN FP8 (vulkan_span_derive.cpp) : le plus grand |valeur| de
+  // la fenêtre area de chaque tenseur de tensors (1 × C × H × W), cumulé dans le mot k de result (motifs de
+  // float, atomicMax), sans remise à zéro.
+  std::expected<void, Refusal> tensor_peaks(std::span<const Tensor> tensors, const kernels::Window& area,
+                                            const BufferView& result);
   std::expected<void, Refusal> rife_input(const Tensor& a, const Tensor& b, float t,
                                           const Tensor& input) override;
   std::expected<void, Refusal> rife_time(const Tensor& input, float t) override;

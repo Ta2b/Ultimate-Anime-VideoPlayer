@@ -61,15 +61,33 @@ TEST_CASE("le mode Performance dit pourquoi il manque, et ce qu'il faut faire", 
         {.backend_name = "vulkan", .gpu_name = "AMD Radeon RX 9070 XT", .vendor = vendor});
     CHECK(elsewhere.contains("RX 9070 XT"));
     CHECK(elsewhere.contains("NVIDIA RTX"));
+    CHECK(elsewhere.contains("RX 9000"));  // le moteur Vulkan le calcule sur une RDNA 4
     CHECK(elsewhere.contains("FP16"));
     CHECK_FALSE(elsewhere.contains("installez"));
     CHECK_FALSE(elsewhere.contains("choisissez"));
   }
+  // Une RDNA 4 dont le moteur Vulkan a les matrices FP8 : rien à dire.
+  CHECK(span_fp8_unavailable_reason({.backend_name = "vulkan",
+                                     .gpu_name = "AMD Radeon RX 9070 XT",
+                                     .vendor = GpuVendor::Amd,
+                                     .capability = true})
+            .empty());
   // Même avec un module TensorRT resté d'une ancienne carte NVIDIA.
   const std::string leftover = span_fp8_unavailable_reason(
       {.backend_name = "vulkan", .gpu_name = "", .vendor = GpuVendor::Amd, .tensorrt_present = true});
   CHECK(leftover.contains("cette carte"));
   CHECK_FALSE(leftover.contains("choisissez"));
+}
+
+TEST_CASE("une RDNA 4 se reconnaît à son nom, pas une RDNA 3", "[span_auto]") {
+  CHECK(rdna4_presumed("AMD Radeon RX 9070 XT"));
+  CHECK(rdna4_presumed("AMD Radeon RX 9060 XT (RADV GFX1200)"));
+  CHECK(rdna4_presumed("AMD Radeon Graphics (RADV GFX1201)"));
+  CHECK(rdna4_presumed("AMD Radeon AI PRO R9700"));
+  CHECK_FALSE(rdna4_presumed("AMD Radeon RX 7900 XTX"));
+  CHECK_FALSE(rdna4_presumed("AMD Radeon RX 6800 (RADV NAVI21)"));
+  CHECK_FALSE(rdna4_presumed("AMD Radeon 890M Graphics (RADV GFX1150)"));
+  CHECK_FALSE(rdna4_presumed("NVIDIA GeForce RTX 4090"));
 }
 
 TEST_CASE("rien n'exclut à tort une RTX 4050 de portable : Ada, calcul 8.9", "[span_auto]") {

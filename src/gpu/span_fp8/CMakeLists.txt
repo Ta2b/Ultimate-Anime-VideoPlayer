@@ -5,5 +5,6 @@
 ajp_add_module(gpu_span_fp8 SOURCES acc16_policy.cpp derive.cpp forward.cpp hard_cases.cpp metrics.cpp package.cpp quantize.cpp
   DEPS ajp::core_types PRIVATE_DEPS ajp::kernels)
 
-# Les poids du SPAN lus dans son ONNX (onnx_weights.h) : le lecteur seulement, pas le backend, qui n'emporte pas gpu_ir.
-ajp_add_module(gpu_span_fp8_onnx SOURCES onnx_weights.cpp DEPS ajp::gpu_span_fp8 ajp::gpu_ir ajp::kernels)
+# Les poids du SPAN lus dans son ONNX (onnx_weights.h), pour le lecteur, et le graphe ONNX rebâti d'un paquet
+# (package_model.h), pour le moteur Vulkan : pas le backend TensorRT, qui n'emporte pas gpu_ir.
+ajp_add_module(gpu_span_fp8_onnx SOURCES onnx_weights.cpp package_model.cpp DEPS ajp::gpu_span_fp8 ajp::gpu_ir ajp::kernels)

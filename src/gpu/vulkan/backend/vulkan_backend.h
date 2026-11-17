@@ -22,6 +22,8 @@
 
 #include "core/types.h"
 #include "gpu/backend.h"
+#include "gpu/span_fp8/package.h"
+#include "gpu/span_fp8/package_model.h"
 #include "gpu/vulkan/backend/device_profile.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/net_artifact.h"
@@ -36,6 +38,7 @@
 namespace ajp::gpu::vk {
 
 struct HostViews;  // vulkan_backend_detail.h
+struct Span8Run;   // vulkan_span_derive.cpp
 
 // Réglages hors contrat, pour les tests et le banc.
 struct BackendOptions {
@@ -53,6 +56,10 @@ struct BackendOptions {
   bool validation = false;
   std::function<void(bool error, std::string_view message)> validation_sink;
   bool alias_lanes = false;  // tests : CreateOptions::alias_lanes
+  // Tests de derive_span_fp8 sous lavapipe : la dérivation sans matrices FP8 (le noyau direct calcule le même
+  // arrondi E4M3 en float), et le côté des tuiles de sa calibration (0 : celui du lecteur, 512).
+  bool span_fp8_emulated = false;
+  int span_fp8_tile = 0;
 };
 
 // Un réseau chargé : son moteur et les noms de ses entrées et sorties.
@@ -99,6 +106,11 @@ class VulkanBackend final : public Backend {
                                        std::span<Tensor> outputs) override;
   std::expected<Fence, Refusal> signal() override;
   std::expected<void, Refusal> wait(const Fence& fence) override;
+  // Le paquet « .span8 » calibré, jugé et chronométré sur une carte à matrices FP8 (vulkan_span_derive.cpp).
+  // Refus FormatUnsupported : pas de matrices FP8, paquet FP16 ou taille refusée ; ShapeInvalid : images
+  // absentes ou de tailles différentes ; GpuMemoryExhausted, Cancelled ; ceux des constructions.
+  std::expected<SpanFp8Derivation, Refusal> derive_span_fp8(const SpanFp8Request& request,
+                                                            Progress& progress) override;
   // Voies sur plusieurs files quand l'appareil en a (queue.h, V7).
   void use_lane(Lane lane) override {
     if (queue_) queue_->use_lane(lane);
@@ -113,6 +125,7 @@ class VulkanBackend final : public Backend {
   std::filesystem::path artifact_path(const ModelSpec& model, const ShapeSet& shapes) const;
 
  private:
+  friend struct Span8Run;
   explicit VulkanBackend(const BackendInit& init, BackendOptions options);
   std::expected<void, Refusal> open(const BackendInit& init);
   void log(BackendLogLevel level, std::string_view message) const;
@@ -147,6 +160,16 @@ class VulkanBackend final : public Backend {
   // Fin d'une étape faite par le runtime sur son propre fil (RuntimeNet::run_deferred) : son
   // échec éventuel est gardé pour le prochain enqueue, et l'étape est signalée quoi qu'il
   // arrive, sans quoi la file attendrait sans fin.
+  // La dérivation du SPAN FP8 (vulkan_span_derive.cpp) : le graphe d'un paquet construit en moteur à cette
+  // taille, avec l'autotuner et la porte de la lecture (tuned) ou les noyaux par défaut (la référence) ; la
+  // file vidée et attendue sur l'hôte ; une copie entre tampons, après cette attente.
+  std::expected<std::unique_ptr<Engine>, Refusal> span8_engine(const span_fp8::Package& package,
+                                                               const span_fp8::ModelOptions& options,
+                                                               int width, int height, bool tuned,
+                                                               Progress& progress);
+  std::expected<void, Refusal> finish_on_host();
+  std::expected<void, Refusal> copy_on_host(VkBuffer from, VkDeviceSize from_offset, VkBuffer to,
+                                            VkDeviceSize to_offset, VkDeviceSize size);
   void finish_host_step(BackendQueue& queue, std::uint64_t signal, std::expected<void, Refusal> ran);
 
   // L'artefact que build() vient de lire, vérifier et trouver valable : load() le reprend au lieu de le

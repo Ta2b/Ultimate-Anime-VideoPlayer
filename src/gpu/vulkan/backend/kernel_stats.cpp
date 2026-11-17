@@ -41,6 +41,26 @@ std::expected<void, Refusal> VulkanKernelOps::deband(const Tensor& rgb) {
   return submit("débandage", **rec);
 }
 
+std::expected<void, Refusal> VulkanKernelOps::tensor_peaks(std::span<const Tensor> tensors,
+                                                           const kernels::Window& area,
+                                                           const BufferView& result) {
+  for (std::size_t k = 0; k < tensors.size(); ++k) {
+    auto view = detail::tensor_view(tensors[k], 0, "maximum d'un tenseur");
+    if (!view) return std::unexpected(view.error());
+    OpKey key;
+    key.add(OpCode::TensorPeak);
+    detail::add_view(key, *view);
+    key.add(static_cast<std::uint64_t>(area.x)).add(static_cast<std::uint64_t>(area.y));
+    key.add(static_cast<std::uint64_t>(area.width)).add(static_cast<std::uint64_t>(area.height));
+    key.add(detail::handle_bits(result.buffer)).add(result.offset).add(k);
+    const auto slot = static_cast<std::uint32_t>(k);
+    auto rec = recording(key, [&](Recorder& r) { return runner_.tensor_peak(r, *view, area, result, slot); });
+    if (!rec) return std::unexpected(rec.error());
+    if (auto ok = submit("maximum des tenseurs", **rec); !ok) return ok;
+  }
+  return {};
+}
+
 std::expected<std::uint64_t, Refusal> VulkanKernelOps::frame_stats_start(const Tensor& rgb,
                                                                          kernels::FrameTransfer transfer) {
   auto view = detail::tensor_view(rgb, 3, "frame_stats_start : image");

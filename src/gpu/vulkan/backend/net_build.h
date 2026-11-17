@@ -40,6 +40,10 @@ using BuildReport = std::function<void(float fraction, const std::string& stage)
 std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, const DeviceProfile& profile,
                                                    Autotuner* tuner, const BuildReport& report,
                                                    const std::stop_token& stop);
+// build_network sur un graphe déjà importé (prepare_imported).
+std::expected<ArtifactData, Refusal> build_imported(ir::Graph imported, const BuildRequest& request,
+                                                    const DeviceProfile& profile, Autotuner* tuner,
+                                                    const BuildReport& report, const std::stop_token& stop);
 
 // Les passes du moteur sur un graphe aux formes connues : grille des GridSample en float, passes de gpu_ir
 // (ConvTranspose réécrites pour les matrices coopératives), précision demandée, Cast entre flottants
@@ -49,8 +53,13 @@ std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, 
 std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& model_id, bool fp16,
                                            const Target& target, bool fold_casts = true);
 
-// Le graphe d'un modèle importé, à cette forme, optimisé, dans la précision demandée.
+// Le graphe d'un modèle importé, à cette forme, optimisé, dans la précision demandée. request.onnx est un
+// ONNX ou un paquet « .span8 » (net_span8.h, load_network_graph).
 std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, const Target& target);
+// La même chose sur un graphe déjà importé (request.onnx n'est pas lu) : la dérivation du SPAN FP8 construit
+// ainsi les graphes d'un paquet en mémoire (vulkan_span_derive.cpp).
+std::expected<ir::Graph, Refusal> prepare_imported(ir::Graph imported, const BuildRequest& request,
+                                                   const Target& target);
 
 // Hachages SPIR-V des shaders que le programme utilise, un par nom.
 std::vector<ShaderHash> shader_hashes(std::span<const Dispatch> dispatches);

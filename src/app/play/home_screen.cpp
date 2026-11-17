@@ -142,21 +142,23 @@ SettingsChoices home_choices(const HomeScreen& h, const HomeState& st, const Pla
   const bool drba = drba_file.has_value();
   const std::optional<GmfssModels> gmfss = find_gmfss(places);
   // Sans moteur chargé, le FP8 se présume d'après le nom de la carte, avec la règle du moteur : TensorRT le
-  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02) ni 50 (B08-07). Le moteur le confirme à
-  // l'ouverture.
-  const bool fp8_engine = gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
-                          gpu_facts(h.screen).tensor_cores && fp8_presumed(gpu_facts(h.screen).name);
+  // calcule dès Ada (sm 8.9), pas sur une RTX 20 ou 30 (A37-02) ni 50 (B08-07) ; Vulkan sur une RDNA 4. Le
+  // moteur le confirme à l'ouverture.
+  const bool rdna4 = gpu_facts(h.screen).vendor == GpuVendor::Amd && rdna4_presumed(gpu_facts(h.screen).name);
+  const bool fp8_engine =
+      rdna4 || (gpu_facts(h.screen).vendor == GpuVendor::Nvidia && gpu_facts(h.screen).tensor_cores &&
+                fp8_presumed(gpu_facts(h.screen).name));
   // Le mode Performance de SPAN (noyaux CUTLASS) : une RTX 40 (Ada, 8.9, portable compris : le nom de la
-  // carte le dit, « RTX 4050 Laptop GPU » comme « RTX 4070 Ti ») et le module TensorRT ; le moteur le
-  // confirme à l'ouverture d'une vidéo.
+  // carte le dit, « RTX 4050 Laptop GPU » comme « RTX 4070 Ti ») et le module TensorRT, ou une RDNA 4 sous
+  // Vulkan ; le moteur le confirme à l'ouverture d'une vidéo.
   const SpanFp8Facts fp8_facts{
       .backend_name = tensorrt_backend_present(h.catalog, h.paths) ? "tensorrt" : "vulkan",
       .gpu_name = gpu_facts(h.screen).name,
       .vendor = gpu_facts(h.screen).vendor,
       .tensorrt_present = tensorrt_backend_present(h.catalog, h.paths),
-      .capability = kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
-                    span_fp8_presumed(gpu_facts(h.screen).name) &&
-                    tensorrt_backend_present(h.catalog, h.paths)};
+      .capability = rdna4 || (kSpanFp8Here && gpu_facts(h.screen).vendor == GpuVendor::Nvidia &&
+                              span_fp8_presumed(gpu_facts(h.screen).name) &&
+                              tensorrt_backend_present(h.catalog, h.paths))};
   const std::int64_t period = display_period_us(h.screen.window());
   const std::optional<DisplayFacts> display = window_display(h.screen.window());
   SettingsChoices choices{

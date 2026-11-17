@@ -21,6 +21,7 @@
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_gate.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/backend/net_span8.h"
 #include "gpu/vulkan/backend/rife_fused_engine.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/buffer.h"
@@ -303,6 +304,13 @@ BackendCaps VulkanBackend::capabilities() const {
           .needs_host_sync = false,
           .fp16 = profile_.target.f16_storage,
           .int8 = false,
+          // Les matrices coopératives FP8 (RDNA 4, VK_EXT_shader_float8) : les graphes Q/DQ FP8 (onnx_fp8.h)
+          // et le paquet « .span8 » (net_span8.h), dérivé par derive_span_fp8 (vulkan_span_derive.cpp).
+          .fp8 = profile_.target.matrix_f8,
+          .span_fp8_cutlass = profile_.target.matrix_f8,
+          // Un reçu v2 du paquet n'est repris que sur la même carte et le même graphe (étape 3.7b).
+          .gpu_arch = "vulkan:" + profile_.stable_key,
+          .span_fp8_kernels = static_cast<int>(net::kLoweringVersion) * 100 + net::kSpan8GraphVersion,
           // Les noyaux de colle lisent et écrivent des tenseurs FP16.
           .rife_fused = profile_.target.f16_storage,
           .drba_fused = profile_.target.f16_storage,

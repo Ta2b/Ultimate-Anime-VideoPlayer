@@ -127,7 +127,7 @@ TEST_CASE("la préparation mesure le SPAN FP16 de TensorRT et annonce son gain (
   CHECK(backend.seen.timing_width == 128);
   CHECK(report->speedup == Catch::Approx(11.5 / 9.2));
   INFO(report->text);
-  CHECK(report->text.find("TensorRT FP16 prend ici 11,5 ms") != std::string::npos);
+  CHECK(report->text.find("SPAN FP16 prend ici 11,5 ms") != std::string::npos);
   CHECK(report->text.find("1,25 fois plus vite") != std::string::npos);
   const std::string receipt = receipt_of(folder);
   CHECK(receipt.find("trt_fp16_ms = 11.5000") != std::string::npos);
@@ -159,7 +159,7 @@ TEST_CASE("un FP8 qui ne va pas plus vite que le FP16 est refusé, pour de bon (
       find_span_variant(SpanVariantKind::Fp8Cutlass, folder.model, folder.models(), &here);
   CHECK_FALSE(found.variant);
   CHECK_FALSE(found.stale);  // la préparation automatique ne le refait pas à chaque vidéo
-  CHECK(found.note.find("pas plus rapide que TensorRT FP16") != std::string::npos);
+  CHECK(found.note.find("pas plus rapide que SPAN FP16") != std::string::npos);
 }
 
 TEST_CASE("une qualité refusée n'exige pas de gain ; une taille nouvelle le mesure (B02-01)",

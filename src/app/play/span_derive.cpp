@@ -109,7 +109,7 @@ std::expected<void, Refusal> ask_timing(const SpanDerivePlan& plan, SpanDerivePr
   request.timing_width = (plan.work_width > 0 ? plan.work_width : still.width) / 2 * 2;
   request.timing_height = (plan.work_height > 0 ? plan.work_height : still.height) / 2 * 2;
   if (!plan.fp16_engine) return {};
-  progress.set(0.3F, i18n::tr("TensorRT FP16 engine"));
+  progress.set(0.3F, i18n::tr("SPAN FP16 engine"));
   gpu::Progress building{.report = {}, .stop = stop};
   auto engine = plan.fp16_engine(request.timing_width, request.timing_height, building);
   if (!engine) return std::unexpected(std::move(engine.error()));
@@ -133,11 +133,11 @@ std::string speed_text(const SpanDeriveReport& report, double kernels_ms) {
   if (report.trt_fp16_ms <= 0.0) return {};
   if (report.too_slow)
     return i18n::tr_format(
-        "Performance mode rejected: FP8 kernels {} ms against {} ms for TensorRT FP16 ({}× as fast, at least "
-        "{}× is required). Playback stays on TensorRT FP16.",
+        "Performance mode rejected: FP8 kernels {} ms against {} ms for SPAN FP16 ({}× as fast, at least "
+        "{}× is required). Playback stays in FP16.",
         db(kernels_ms), db(report.trt_fp16_ms), times(report.speedup), times(gpu::span_fp8::kMinSpeedup));
   return " " + i18n::tr_format(
-                   "TensorRT FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the "
+                   "SPAN FP16 takes {} ms here: the FP8 kernels are {}× as fast, for the "
                    "quality given above.",
                    db(report.trt_fp16_ms), times(report.speedup));
 }
@@ -174,7 +174,7 @@ double keep_variant(const gpu::SpanFp8Derivation& derived, std::size_t blocks, S
 std::string clipped_text(const gpu::span_fp8::Verdict& verdict) {
   return i18n::tr_format(
       "Performance mode rejected: {} FP8 tensors would clip on the validation frames (peak at {}× their "
-      "range): the calibration frames do not cover this video. Playback stays on TensorRT FP16.",
+      "range): the calibration frames do not cover this video. Playback stays in FP16.",
       verdict.clipped_tensors, times(verdict.peak_ratio));
 }
 
@@ -191,8 +191,7 @@ std::string derived_text(const SpanDeriveReport& report, double kernels_ms) {
            acc16_text(report) + speed_text(report, kernels_ms);
   if (report.verdict.clipped_tensors > 0) return clipped_text(report.verdict);
   return i18n::tr_format(
-      "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays on TensorRT "
-      "FP16.",
+      "Performance mode rejected: {}; {:.0f} dB, {:.0f} dB and {} are required. Playback stays in FP16.",
       scores_text, gpu::span_fp8::kMinPsnrMeanDb, gpu::span_fp8::kMinPsnrWorstDb,
       ratio(gpu::span_fp8::kMinSsimWorst));
 }
@@ -393,13 +392,12 @@ std::expected<SpanDeriveReport, Refusal> validate_span_size(const SpanDerivePlan
   else if (report.verdict.clipped_tensors > 0)
     report.text = clipped_text(report.verdict);
   else
-    report.text = report.passed
-                      ? i18n::tr_format("Performance mode validated at {}: {}.", report.size, scores_text) +
-                            speed_text(report, derived->kernels_ms)
-                      : i18n::tr_format(
-                            "Performance mode rejected at {}: {}. Playback stays on TensorRT FP16 at this "
-                            "size.",
-                            report.size, scores_text);
+    report.text =
+        report.passed
+            ? i18n::tr_format("Performance mode validated at {}: {}.", report.size, scores_text) +
+                  speed_text(report, derived->kernels_ms)
+            : i18n::tr_format("Performance mode rejected at {}: {}. Playback stays in FP16 at this size.",
+                              report.size, scores_text);
   if (!report.passed) report.package.clear();
   progress.set(1.0F, i18n::tr("done"));
   return report;
@@ -422,11 +420,12 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
                               const SpanFp8Context& context, bool automatic, bool during_playback) {
   SpanPrepare prepare;
   if (!supported) {
-    prepare.note =
-        i18n::tr("Performance mode (FP8) is not available: ") +
-        (unavailable.empty() ? std::string(i18n::tr("it needs an RTX 40 (Ada) with the TensorRT engine"))
-                             : unavailable) +
-        ".";
+    prepare.note = i18n::tr("Performance mode (FP8) is not available: ") +
+                   (unavailable.empty()
+                        ? std::string(i18n::tr(
+                              "it needs an NVIDIA RTX 40 with the TensorRT engine, or an AMD Radeon RX 9000"))
+                        : unavailable) +
+                   ".";
     return prepare;
   }
   if (model.empty()) {
@@ -451,7 +450,7 @@ SpanPrepare make_span_prepare(const std::shared_ptr<BackendLibrary>& library, co
     prepare.refused = true;
     prepare.note = i18n::tr("Rejected: ") + found.note;
   } else {
-    prepare.note = i18n::tr("Not prepared yet: playback stays on TensorRT FP16 at the Performance level.");
+    prepare.note = i18n::tr("Not prepared yet: playback stays in FP16 at the Performance level.");
   }
   if (video.empty()) {
     prepare.note += i18n::tr(" Open a video to prepare: the player calibrates on it.");

@@ -31,6 +31,7 @@ ajp_add_unit_tests(vk_backend
     net_profile_test.cpp
     net_rig.cpp
     net_runtime_test.cpp
+    span8_test.cpp
     net_sums_test.cpp
     drba_fused_chain_test.cpp
     rife_fused_chain_test.cpp
@@ -42,7 +43,7 @@ ajp_add_unit_tests(vk_backend
     test_models.cpp
     vendor_runtime_test.cpp
   # core : le SHA-256 du vrai modèle des références (core/model_index.h).
-  DEPS ajp::gpu_ir ajp::kernels ajp::core ajp::prepare ${CMAKE_DL_LIBS}
+  DEPS ajp::gpu_ir ajp::gpu_span_fp8_onnx ajp::kernels ajp::core ajp::prepare ${CMAKE_DL_LIBS}
   MAIN ajp_test_vulkan)
 
 # Sorties de référence par modèle (vendor_runtime_test.cpp) : enregistrées sous le dossier du

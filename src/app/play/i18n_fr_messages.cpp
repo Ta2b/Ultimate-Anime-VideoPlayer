@@ -52,9 +52,10 @@ constexpr std::array kMessages{
           "être mesurées"},
     Entry{"Performance mode ready: used from the next video",
           "Mode Performance prêt : utilisé dès la vidéo suivante"},
-    Entry{"Performance mode (FP8) needs TensorRT, which runs only on NVIDIA RTX cards: {} plays SPAN in FP16",
-          "le mode Performance (FP8) demande TensorRT, qui ne tourne que sur une carte NVIDIA RTX : {} joue "
-          "SPAN en FP16"},
+    Entry{"Performance mode (FP8) needs FP8 matrix units (an AMD Radeon RX 9000 with a recent driver, or an "
+          "NVIDIA RTX 40): {} plays SPAN in FP16",
+          "le mode Performance (FP8) demande des unités matricielles FP8 (une AMD Radeon RX 9000 au pilote "
+          "récent, ou une NVIDIA RTX 40) : {} joue SPAN en FP16"},
     Entry{"Pick the video in the open window.", "Choisissez la vidéo dans la fenêtre ouverte."},
     Entry{"Preparing Performance mode… {} %", "Préparation du mode Performance… {} %"},
     Entry{"Settings opened on {}: \"Set default\" at the top of the page, or one type at a time.",

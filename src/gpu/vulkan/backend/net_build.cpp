@@ -17,6 +17,7 @@
 #include "gpu/ir/shape.h"
 #include "gpu/vulkan/backend/net_hoist.h"
 #include "gpu/vulkan/backend/net_lower.h"
+#include "gpu/vulkan/backend/net_span8.h"
 
 namespace ajp::gpu::vk::net {
 namespace {
@@ -68,16 +69,22 @@ std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& 
 }
 
 std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, const Target& target) {
-  auto graph = ir::load_onnx_file(request.onnx);
+  auto graph = load_network_graph(request.onnx);
   if (!graph) return std::unexpected(graph.error());
-  if (graph->inputs.empty())
+  return prepare_imported(std::move(*graph), request, target);
+}
+
+std::expected<ir::Graph, Refusal> prepare_imported(ir::Graph imported, const BuildRequest& request,
+                                                   const Target& target) {
+  ir::Graph graph = std::move(imported);
+  if (graph.inputs.empty())
     return refuse(RefusalCode::InputMismatch, std::format("{} : aucune entrée", request.model_id));
   // Une entrée prend la forme demandée ; plusieurs (DistilDRBA) gardent celles du modèle,
   // que le lecteur fige avant la construction (derived_model.h).
   std::vector<ir::InputShape> shapes;
-  for (const ir::TensorId id : graph->inputs) {
-    const ir::Tensor& input = graph->tensors[id];
-    if (graph->inputs.size() == 1) {
+  for (const ir::TensorId id : graph.inputs) {
+    const ir::Tensor& input = graph.tensors[id];
+    if (graph.inputs.size() == 1) {
       shapes.push_back({.name = input.name, .dims = request.input_shape});
       break;
     }
@@ -89,8 +96,8 @@ std::expected<ir::Graph, Refusal> prepare_graph(const BuildRequest& request, con
     }
     shapes.push_back({.name = input.name, .dims = input.dims});
   }
-  if (auto ok = ir::infer_shapes(*graph, shapes); !ok) return std::unexpected(ok.error());
-  if (auto ok = engine_passes(*graph, request.model_id, request.fp16, target); !ok)
+  if (auto ok = ir::infer_shapes(graph, shapes); !ok) return std::unexpected(ok.error());
+  if (auto ok = engine_passes(graph, request.model_id, request.fp16, target); !ok)
     return std::unexpected(ok.error());
   return graph;
 }
@@ -112,7 +119,18 @@ std::expected<ArtifactData, Refusal> build_network(const BuildRequest& request, 
     if (report) report(fraction, stage);
   };
   progress(0.0F, "import");
-  auto graph = prepare_graph(request, profile.target);
+  auto graph = load_network_graph(request.onnx);
+  if (!graph) return std::unexpected(graph.error());
+  return build_imported(std::move(*graph), request, profile, tuner, report, stop);
+}
+
+std::expected<ArtifactData, Refusal> build_imported(ir::Graph imported, const BuildRequest& request,
+                                                    const DeviceProfile& profile, Autotuner* tuner,
+                                                    const BuildReport& report, const std::stop_token& stop) {
+  const auto progress = [&](float fraction, const std::string& stage) {
+    if (report) report(fraction, stage);
+  };
+  auto graph = prepare_imported(std::move(imported), request, profile.target);
   if (!graph) return std::unexpected(graph.error());
   if (stop.stop_requested()) return refuse(RefusalCode::Cancelled, "construction arrêtée");
 

@@ -401,6 +401,36 @@ mesure seul, sans gain, refusé à la création.
   la dérivation native de ces noyaux : elle attend la même mesure. Aucune de ces cartes n'est dans la maison,
   la décision reste ouverte et sera documentée ici.
 
+### Sous Vulkan : RDNA 4 et toute carte à matrices FP8 (novembre 2026, non mesuré)
+
+Le moteur Vulkan sert le même cran Performance, avec le même paquet « .span8 », le même reçu v2 et la même
+porte (`judge_hardened`, `judge_peaks`, gain d'au moins `kMinSpeedup` sur le SPAN FP16 du même moteur). Il ne
+fait pas tourner les noyaux CUTLASS : il rebâtit le graphe ONNX du SPAN depuis les poids du paquet
+(`gpu/span_fp8/package_model.h`), avec un `FakeQuantE4M3` devant chaque entrée de convolution de bloc et les
+poids de bloc sur la grille E4M3 de leur canal. Les passes de `gpu_ir` en font des convolutions à entrée
+quantifiée (`ConvAttrs::in_quant`) que l'autotuner essaie en matrices coopératives FP8 (`coopmat_fp8`), puis la
+porte de bout en bout de la lecture les juge comme tout autre réseau (`net_span8.h`).
+
+- **Carte** : `BackendCaps::span_fp8_cutlass` et `fp8` suivent `Target::matrix_f8` : VK_EXT_shader_float8 avec
+  `shaderFloat8CooperativeMatrix`, une tuile E4M3 annoncée par le pilote, une famille qualifiée (pas RTX 50).
+  Le lecteur demande l'extension à libplacebo (`placebo_open.cpp`). Aujourd'hui : RDNA 4 (RX 9000) sous un
+  pilote récent (RADV, AMDVLK, Adrenalin).
+- **Dérivation** (`vulkan_span_derive.cpp`) : la référence est le même graphe sans arrondi (`reference =
+  "vulkan-fp16"`). Les maxima des 1 + 3·blocs tenseurs se relèvent par tuiles de 512 pixels, chacune ne
+  comptant que sa partie à plus de 2 + 3·blocs points du demi-plan de ses bords intérieurs : la mémoire reste
+  bornée (budget de l'allocateur : 2 Go) et le résultat est celui de l'image entière (test
+  `span8 : la dérivation…`). Un noyau `tensor_peak.comp` garde le maximum par atomicMax des motifs de float.
+  Pas de variante acc16 : les matrices FP8 de RDNA 4 somment en float.
+- **Reçu** : `gpu_arch = "vulkan:<constructeur>:<appareil>:<pilote>"` (`DeviceProfile::stable_key`),
+  `kernels_version = kLoweringVersion × 100 + kSpan8GraphVersion` : un paquet ne passe ni d'une carte à
+  l'autre, ni d'un moteur à l'autre, ni d'une version du graphe à la suivante sans être refait.
+- **Écart aux noyaux CUTLASS** : le saut de chaque bloc lit `x` tel quel, pas son arrondi E4M3 ; les biais
+  sont en FP16. La porte juge ce que ce moteur rend, contre sa propre référence FP16.
+- **Ce qui n'est pas vérifié** : rien n'a tourné sur une carte RDNA 4. Les tests passent sous lavapipe, où le
+  noyau direct calcule le même arrondi en float (`BackendOptions::span_fp8_emulated`) : graphe contre
+  l'interpréteur de l'IR, maxima par tuiles contre l'image entière, porte et mesure du temps. Le gain réel des
+  matrices FP8, et donc le passage de la porte de vitesse, reste à mesurer sur la carte.
+
 ## Ce qui est connu et pas fait
 
 - **Tailles dynamiques** : le moteur est à une taille fixe, comme les moteurs TensorRT du lecteur (un changement
