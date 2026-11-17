@@ -13,7 +13,7 @@ mesure : le code est soigné, mais rien ne montre qu'il bat Vulkan sur cette car
 | AW-12 | L'offre DirectML est retirée de l'écran d'accueil : aucun moteur DirectML n'existe. Les anciens AMD restent sur Vulkan. |
 | AW-14 | Le manifeste Windows active les chemins longs (noms de fichiers d'anime à l'export). |
 | AW-03 | Une table d'autotune peut être réservée à un pilote (`PresetTable::driver`). Nom de fichier : `AmdRdna4-radv-rx9070xt-1.tsv` (`radv`, `amd` pour le pilote Adrenalin, `nvidia`). Le journal de construction du moteur donne la famille et la version du pilote. |
-| AW-05 | Krackan (0x1114) et Strix Halo (0x1586) sont reconnus comme RDNA3 par identifiant PCI, sans dépendre du nom RADV. |
+| AW-05 | Krackan (0x1114) et Strix Halo (0x1586) sont reconnus comme RDNA3 par identifiant PCI, sans dépendre du nom RADV. Une puce AMD hors des plages que RADV ne nomme pas (pilote Adrenalin, puce plus récente que les tables) se range d'après ses tuiles (`family_from_tiles`) : FP8 E4M3 annoncé, RDNA 4 ; la seule tuile float16, famille inconnue dont l'autotuner vérifie et mesure les unités matricielles, au lieu de les perdre. |
 
 Ajouts après le contre-audit AMD Windows :
 

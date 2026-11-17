@@ -61,6 +61,28 @@ TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
   CHECK(detect_family(0x10005, 0, false) == GpuFamily::Unknown);
 }
 
+TEST_CASE("Familles : un AMD hors des plages se range d'après ses tuiles", "[vk_backend][family]") {
+  // Pilote AMD de Windows, identifiant inconnu des tables : des tuiles FP8 n'existent qu'à partir de RDNA 4.
+  const GpuFamily unlisted = detect_family(pci::kAmd, 0x7600, false, "AMD Radeon RX 9050");
+  REQUIRE(unlisted == GpuFamily::AmdBeforeRdna3);
+  CHECK(family_from_tiles(unlisted, "AMD Radeon RX 9050", true, true) == GpuFamily::AmdRdna4);
+  // La seule tuile float16 : famille inconnue, unités proposées à l'autotuner au lieu d'être écartées.
+  const GpuFamily apu = family_from_tiles(unlisted, "AMD Radeon 890M", true, false);
+  CHECK(apu == GpuFamily::Unknown);
+  CHECK(matrix_units_unlisted(apu, DriverKind::AmdProprietary));
+  CHECK_FALSE(matrix_f8_allowed(apu));
+  CHECK_FALSE(int8_graphs_allowed(apu));
+  // Sans tuile, ou une puce que RADV nomme, ou une famille déjà connue : rien ne change.
+  CHECK(family_from_tiles(unlisted, "AMD Radeon RX 6800", false, false) == GpuFamily::AmdBeforeRdna3);
+  CHECK(family_from_tiles(GpuFamily::AmdBeforeRdna3, "AMD Radeon RX 6800 (RADV NAVI21)", true, false) ==
+        GpuFamily::AmdBeforeRdna3);
+  CHECK(family_from_tiles(GpuFamily::AmdRdna3, "AMD Radeon RX 7900 XTX", true, false) == GpuFamily::AmdRdna3);
+  CHECK(family_from_tiles(GpuFamily::NvidiaBlackwell, "NVIDIA GeForce RTX 5090", true, true) ==
+        GpuFamily::NvidiaBlackwell);
+  CHECK(family_from_tiles(GpuFamily::IntelXeLp, "Intel(R) UHD Graphics 770", true, false) ==
+        GpuFamily::IntelXeLp);
+}
+
 TEST_CASE("Familles : liste d'autorisation des unités matricielles", "[vk_backend][family]") {
   CHECK(driver_kind("NVIDIA") == DriverKind::NvidiaProprietary);
   CHECK(driver_kind("radv") == DriverKind::Radv);

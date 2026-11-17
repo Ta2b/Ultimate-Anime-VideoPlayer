@@ -34,6 +34,14 @@ std::string_view name(GpuFamily family);
 GpuFamily detect_family(std::uint32_t vendor_id, std::uint32_t device_id, bool cpu,
                         std::string_view device_name = {});
 
+// La famille revue d'après les tuiles que le pilote annonce, pour un appareil AMD hors des plages PCI que
+// RADV ne nomme pas (pilote AMD de Windows, puce plus récente que les tables) : detect_family le range avant
+// RDNA3, sans unités matricielles. Des tuiles FP8 E4M3 n'existent qu'à partir de RDNA 4 : il y est rangé. La
+// seule tuile float16 16 × 16 × 16 en fait une famille inconnue : les unités matricielles sont proposées à
+// l'autotuner, qui les vérifie et les mesure (matrix_units_unlisted), au lieu d'être écartées. Une puce que
+// RADV nomme garde sa famille.
+GpuFamily family_from_tiles(GpuFamily family, std::string_view device_name, bool f16_tile, bool e4m3_tile);
+
 // Pilotes connus, depuis VkPhysicalDeviceDriverProperties::driverName.
 enum class DriverKind : std::uint8_t {
   Other,
