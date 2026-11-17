@@ -126,6 +126,15 @@ std::string default_interface_language() {
   return g_system_language == "fre" ? "fr" : "en";
 }
 
+i18n::Language interface_language(std::string_view setting) {
+  return i18n::language_from_code(setting == kSystemInterfaceLanguage ? default_interface_language()
+                                                                      : std::string(setting));
+}
+
+bool known_interface_language(std::string_view setting) {
+  return setting == kSystemInterfaceLanguage || setting == "en" || setting == "fr";
+}
+
 std::string_view version_name(LanguageVersion version) {
   switch (version) {
     case LanguageVersion::Original:

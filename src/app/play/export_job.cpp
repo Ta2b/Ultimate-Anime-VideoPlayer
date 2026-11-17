@@ -151,11 +151,37 @@ bool on_fat32(const std::filesystem::path& dir) {
 #endif
 }
 
+const char* codec_label(exporter::Codec codec) {
+  switch (codec) {
+    case exporter::Codec::Hevc:
+      return i18n::tr("HEVC 10-bit");
+    case exporter::Codec::Av1:
+      return i18n::tr("AV1 10-bit");
+    case exporter::Codec::H264:
+      return i18n::tr("H.264 8-bit");
+    case exporter::Codec::Lossless:
+      return i18n::tr("FFV1 4:2:0 10-bit, lossless codec");
+  }
+  return "?";
+}
+
+const char* quality_label(exporter::Quality quality) {
+  switch (quality) {
+    case exporter::Quality::VeryHigh:
+      return i18n::tr("Very high quality");
+    case exporter::Quality::High:
+      return i18n::tr("High quality");
+    case exporter::Quality::Standard:
+      return i18n::tr("Standard quality");
+  }
+  return "?";
+}
+
 std::string export_label(exporter::Codec codec, exporter::Quality quality) {
-  if (codec == exporter::Codec::Lossless) return std::string(exporter::label(codec));
-  std::string level(exporter::label(quality));  // « Très haute » → « très haute »
+  if (codec == exporter::Codec::Lossless) return codec_label(codec);
+  std::string level = quality_label(quality);  // « Très haute qualité » → « très haute qualité »
   level[0] = core::ascii_lower(level[0]);
-  return i18n::tr_format("{} · quality {}", exporter::label(codec), level);
+  return std::format("{} · {}", codec_label(codec), level);
 }
 
 }  // namespace ajp::app::play

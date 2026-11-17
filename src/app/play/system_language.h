@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/play/i18n.h"
 #include "media/selection.h"
 
 namespace ajp::app::play {
@@ -50,8 +51,14 @@ std::optional<std::string> legacy_default_language(const std::vector<media::Lang
 void set_system_language(std::string code);
 std::string_view system_language();
 std::vector<media::LanguagePreset> default_language_presets();
-// La langue de l'interface tant que play.toml n'en dit aucune : « fr » sur un système en français, « en »
-// sinon (A19-03).
+// La langue de l'interface que suit le réglage « system » (le défaut) : « fr » sur un système en français,
+// « en » sinon, l'anglais pour toute langue que l'interface n'a pas (A19-03).
 std::string default_interface_language();
+// Le réglage de la langue de l'interface (interface.language de play.toml) qui suit celle du système.
+inline constexpr std::string_view kSystemInterfaceLanguage = "system";
+// La langue montrée pour un réglage « system », « en » ou « fr » : « system » prend celle du système.
+i18n::Language interface_language(std::string_view setting);
+// « system », « en » ou « fr » : ce que play.toml peut dire de la langue de l'interface.
+bool known_interface_language(std::string_view setting);
 
 }  // namespace ajp::app::play
