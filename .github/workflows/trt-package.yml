@@ -83,7 +83,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_PACKAGE zstd
           pip install --user --require-hashes -r tools/ci/requirements/meson.txt
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.SKIP != '1'
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
