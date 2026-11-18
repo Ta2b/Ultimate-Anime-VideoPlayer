@@ -26,7 +26,8 @@ std::string format_settings(const PlaySettings& s) {
                                    {"model", s.model},
                                    {"work_height", s.work_height},
                                    {"downscale", std::string(name(s.downscale))},
-                                   {"span_precision", std::string(name(s.span_precision))}});
+                                   {"span_precision", std::string(name(s.span_precision))},
+                                   {"temporal_fix", std::string(name(s.temporal_fix))}});
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},

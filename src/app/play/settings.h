@@ -25,6 +25,7 @@
 #include "app/play/options.h"
 #include "app/play/precision.h"
 #include "app/play/system_language.h"
+#include "app/play/temporal_fix.h"
 #include "app/play/update_choice.h"
 #include "core/profile.h"
 #include "core/settings.h"
@@ -235,6 +236,9 @@ struct PlaySettings {
   // tout son détail et SPAN ne la touche pas.
   bool restore_lines = true;
   std::string model;  // fichier ONNX de SPAN (nom seul) ; vide : celui du lecteur actuel
+  // La stabilisation temporelle avant SPAN (temporal_fix.h) ; éteinte par défaut. L'Auto n'y touche pas.
+  // Recharge la chaîne.
+  TemporalFix temporal_fix = TemporalFix::Off;
   int work_height = 720;
   Downscale downscale = Downscale::Hermite;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation

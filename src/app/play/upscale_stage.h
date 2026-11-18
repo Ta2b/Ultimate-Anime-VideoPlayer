@@ -33,6 +33,7 @@
 #include "app/play/rife_plan.h"
 #include "app/play/ring_stage.h"
 #include "app/play/source_grade.h"
+#include "app/play/temporal_window.h"
 #include "app/play/upscale_gmfss.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
@@ -69,6 +70,9 @@ constexpr int pair_scale_side(int rife_side) {
 struct UpscaleSetup {
   gpu::Backend* backend = nullptr;  // vit plus longtemps que l'étage
   gpu::Engine* engine = nullptr;    // SPAN aux formes de travail ; nullptr : sans agrandissement
+  // La stabilisation temporelle (upscale_temporal.cpp) : sept images de travail en entrée, l'image du milieu
+  // stabilisée en sortie ; nullptr : éteinte. L'étage lit alors kTemporalFixRadius images de plus en avance.
+  gpu::Engine* temporal_fix = nullptr;
   // Lecture (horloge présente) : un instant identique à l'image affichée n'est ni calculé ni écrit.
   bool skip_held = false;
   gpu::Engine* rife = nullptr;  // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
@@ -161,6 +165,7 @@ class UpscaleStage final : public RingStage {
  private:
   UpscaleStage(VideoStageInit init, UpscaleSetup setup);
   std::expected<void, Refusal> allocate();
+  void map_yuv_fences();  // l'export : les signaux de ses images YUV écrits par le GPU, s'il sait
   std::expected<std::uint32_t, Refusal> outputs(const DecodedFrame& frame) override;
   std::expected<void, Refusal> health() override { return setup_.backend->kernels()->health(); }
   bool passed(const DecodedFrame& frame, const DecodedFrame& next) override;
@@ -444,9 +449,16 @@ class UpscaleStage final : public RingStage {
   }
   // Débande l'image ingérée dans rgb si wants_deband() ; vrai si elle l'est.
   std::expected<bool, Refusal> deband_source(const gpu::Tensor& rgb);
-  // ingest() de la source dans rgb puis son débandage (fusionné si le backend sait) ; vrai si débandée.
+  // ingest() de la source dans rgb puis son débandage (fusionné si le backend sait), stabilisée si demandé
+  // (upscale_temporal.cpp ; ingest_plain sans elle) ; vrai si débandée.
   std::expected<bool, Refusal> ingest_source(const DecodedFrame& frame, gpu::IngestSpec spec,
                                              const gpu::Tensor& rgb);
+  std::expected<bool, Refusal> ingest_plain(const DecodedFrame& frame, gpu::IngestSpec spec,
+                                            const gpu::Tensor& rgb);
+  TemporalBuffers temporal_;
+  std::expected<void, Refusal> allocate_temporal();
+  void log_temporal() const;
+  std::size_t temporal_ahead(std::size_t base) const;  // frames_ahead : base, la chaîne sans stabilisation
   std::optional<core::CadenceAccumulator> cadence_;
   core::SteadyGrid steady_grid_;  // Rapide à pas constant (--fast-steady) : N images par source
   core::FreeGrid free_grid_;      // mode Rapide : la grille des instants à la place de cadence_
@@ -698,7 +710,7 @@ class UpscaleStage final : public RingStage {
   // (smooth_second_) : la paire elle-même, ses instants pris au rang smooth_rank_.
   bool smooth_possible() const { return setup_.smooth_drawings && by_motion() && !drba() && interpolates(); }
   std::size_t frames_ahead() const override {
-    return drba() ? 1 : smooth_possible() ? kSmoothMaxHold - 1 : 0;
+    return temporal_ahead(drba() ? 1 : smooth_possible() ? kSmoothMaxHold - 1 : 0);
   }
   std::expected<void, Refusal> allocate_smooth();
   // La tenue en cours passe à la paire suivante, ou s'arrête (époque, coupe, grille) ; avant smooth_decide.

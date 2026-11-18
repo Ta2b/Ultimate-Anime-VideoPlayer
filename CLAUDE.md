@@ -6,7 +6,8 @@ documents décrivent le code actuel et lesquels sont historiques.
 ## Le produit
 
 `ajp`, un lecteur vidéo C++23 pour l'anime : agrandissement SPAN ×2 (AnimeJaNai), ou Anime4K en shaders pour
-les petites cartes ([`docs/anime4k.md`](docs/anime4k.md)), interpolation (RIFE 4.22 lite,
+les petites cartes ([`docs/anime4k.md`](docs/anime4k.md)), stabilisation temporelle avant SPAN (TemporalFix, TensorRT,
+[`docs/temporalfix.md`](docs/temporalfix.md)), interpolation (RIFE 4.22 lite,
 DistilDRBA au choix) en mode Auto, grade HDR anime (surfaces fixes d'un plan à l'autre, marge des éclats par plan en SDR), export qui rejoue la même chaîne. Linux,
 Windows ; macOS est délaissé pour l'instant (plus construit par la CI ni par les releases, novembre 2026). Le propriétaire est Tatoub ; il écrit en français et décide des releases.
 

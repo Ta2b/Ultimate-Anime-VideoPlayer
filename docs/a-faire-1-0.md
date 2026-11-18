@@ -8,6 +8,11 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
   Linux et Windows se construisent en CI s'ils manquent. Aucune release sans demande de Tatoub.
 - **Banc Windows contre Linux** sur le même PC, mêmes réglages.
 
+## Stabilisation temporelle
+
+- La mesurer sur une RTX (coût, première construction) et compter son coût dans le budget de l'Auto.
+- La porter sur Vulkan : les opérateurs qui manquent à l'import sont dans [`temporalfix.md`](temporalfix.md).
+
 ## Code mort à retirer (sans effet sur l'image)
 
 - `src/render/curve.*` : les fonctions de courbe et de cuisson qui ne servaient qu'au HDR adaptatif.

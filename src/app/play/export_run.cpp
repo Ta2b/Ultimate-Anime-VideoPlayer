@@ -307,7 +307,7 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   set_live_motion(*live, settings);
   const PipelineConfig config{.file = p.options.file,
                               .decoder = decoder_options(c.backend_name, p.screen.device(),
-                                                         p.screen.shared_devices(), c.smooth_drawings),
+                                                         p.screen.shared_devices(), c.held_extras()),
                               .audio = false,
                               .subtitles = false};
   auto pipeline = Pipeline::open(

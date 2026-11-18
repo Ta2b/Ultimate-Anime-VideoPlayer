@@ -45,6 +45,30 @@ void output_notes(const PlaySettings& d, const SettingsChoices& choices, int wor
     note(i18n::tr_format("Reduced to {} first, so the output stays within 4K.", resolution_text(work)));
 }
 
+// La stabilisation temporelle (temporal_fix.h) : avant SPAN et l'interpolation, elle vaut même sans eux.
+void stability_section(PlaySettings& d, const SettingsChoices& choices) {
+  section(i18n::tr("Stability"));
+  if (ImGui::BeginCombo(panel::left(i18n::tr("Temporal stabilization")).c_str(),
+                        i18n::tr(label(d.temporal_fix).data()))) {
+    for (int i = 0; i < kTemporalFixCount; ++i) {
+      const auto level = static_cast<TemporalFix>(i);
+      if (ImGui::Selectable(i18n::tr(label(level).data()), level == d.temporal_fix)) d.temporal_fix = level;
+    }
+    ImGui::EndCombo();
+  }
+  panel::tip(
+      i18n::tr("Temporal stabilization"),
+      i18n::tr("Removes the shimmer from one frame to the next (fizzling lines, crawling textures, "
+               "flickering grain) by comparing each frame with the three before and the three after. "
+               "Upscaling and interpolation then work on a steady picture. Stronger also smooths very "
+               "small movements. Speed: heavy, about as much as upscaling at 1080p; a high-end card is "
+               "needed. TensorRT only for now. Recommended: Off, or Normal on a high-end RTX card."),
+      panel::Apply::Reload);
+  if (d.temporal_fix != TemporalFix::Off && choices.engine_in_use &&
+      *choices.engine_in_use != core::EngineId::TensorRt)
+    note(i18n::tr("Temporal stabilization runs on TensorRT only for now: this engine plays without it."));
+}
+
 }  // namespace
 
 // Le sélecteur de cran de précision : « Performance · FP8 », « Équilibre · FP16 », « Qualité · FP32 ». Il ne
@@ -105,6 +129,8 @@ void image_tab(PlaySettings& d, const SettingsChoices& choices) {
   }
   if (d.upscale && anime4k_size(d.model))
     note(i18n::tr("Anime4K: SDR sources only; an HDR source is upscaled by the display."));
+
+  stability_section(d, choices);
 
   section(i18n::tr("Resolution"));
   // La source sans réduction, avec sa hauteur quand on la connaît : « 1080p », pas « 4K », que la sortie

@@ -306,6 +306,17 @@ void read_grade(const toml::table& grade, PlaySettings& s, std::vector<std::expe
   for (double* x : {&v.shadows, &v.highlights_rtx, &v.area_rtx, &s.oled_black_steps}) hundredth(*x);
 }
 
+// La table [image] : l'agrandissement et la stabilisation temporelle.
+void read_image(const toml::table& image, PlaySettings& s, std::vector<std::expected<void, Refusal>>& reads) {
+  reads.push_back(read(image, "image", "upscale", s.upscale));
+  reads.push_back(read(image, "image", "restore_lines", s.restore_lines));
+  reads.push_back(read(image, "image", "model", s.model));
+  reads.push_back(read(image, "image", "work_height", s.work_height));
+  reads.push_back(read_named(image, "image", "downscale", s.downscale, kDownscaleCount));
+  reads.push_back(read_named(image, "image", "span_precision", s.span_precision, kPrecisionTierCount));
+  reads.push_back(read_named(image, "image", "temporal_fix", s.temporal_fix, kTemporalFixCount));
+}
+
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root) {
   PlaySettings s;
@@ -332,14 +343,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
           refuse_key(RefusalCode::FieldOutOfRange, "auto.priority", std::format(" : « {} »", priority)));
     }
   }
-  if (const toml::table* image = section(root, "image")) {
-    reads.push_back(read(*image, "image", "upscale", s.upscale));
-    reads.push_back(read(*image, "image", "restore_lines", s.restore_lines));
-    reads.push_back(read(*image, "image", "model", s.model));
-    reads.push_back(read(*image, "image", "work_height", s.work_height));
-    reads.push_back(read_named(*image, "image", "downscale", s.downscale, kDownscaleCount));
-    reads.push_back(read_named(*image, "image", "span_precision", s.span_precision, kPrecisionTierCount));
-  }
+  if (const toml::table* image = section(root, "image")) read_image(*image, s, reads);
   if (const toml::table* interpolation = section(root, "interpolation")) {
     reads.push_back(read_factor(*interpolation, s));
     reads.push_back(read(*interpolation, "interpolation", "smooth_motion", s.smooth_motion));

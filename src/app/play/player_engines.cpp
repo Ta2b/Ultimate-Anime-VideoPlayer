@@ -507,7 +507,8 @@ PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const st
                                const std::string& backend_name) {
   return {.file = file,
           .decoder = decoder_options(backend_name, p.screen.device(), p.screen.shared_devices(),
-                                     settings.smooth_drawings),
+                                     {.smooth_drawings = settings.smooth_drawings,
+                                      .temporal_fix = settings.temporal_fix != TemporalFix::Off}),
           .languages = {.presets = settings.language_presets},
           .audio_device = settings.audio_device,
           .audio_fallback_delay_us = audio_fallback_delay_us(settings),

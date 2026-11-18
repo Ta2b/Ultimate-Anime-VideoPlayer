@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string>
 #include <thread>
 
 namespace ajp::app::play::test {
@@ -122,7 +123,17 @@ std::expected<void, Refusal> FakeBackend::enqueue(gpu::Engine& engine, std::span
     if (name == refused_engine_)
       return refuse(RefusalCode::VendorCallFailed, std::format("moteur {} refusé", name));
   }
-  if (name == "span") {  // la sortie de SPAN porte l'image de son entrée
+  if (name == "temporalfix") {  // « temporalfix 3,6,1,… » : les images lues, dans l'ordre des entrées
+    const std::scoped_lock lock(mutex_);
+    std::string ids;
+    for (const gpu::Tensor& input : inputs) {
+      const auto source = ingested_.find(input.handle);
+      ids +=
+          std::format("{}{}", ids.empty() ? "" : ",", source != ingested_.end() ? source->second.value : 0);
+    }
+    push("temporalfix " + ids);
+  }
+  if (name == "span" || name == "temporalfix") {  // la sortie porte l'image de la première entrée
     const std::scoped_lock lock(mutex_);
     const auto source = ingested_.find(inputs[0].handle);
     if (source != ingested_.end()) {

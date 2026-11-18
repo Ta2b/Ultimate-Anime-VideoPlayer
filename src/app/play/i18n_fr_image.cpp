@@ -268,6 +268,30 @@ constexpr std::array kImageTabs{
           "Sans VRR, la cadence suit le rafraîchissement ; une image tardive répète la précédente."},
     Entry{"Without VRR, motion may judder at a fixed refresh rate.",
           "Sans VRR, le mouvement peut vibrer à fréquence fixe."},
+    Entry{"Light", "Légère"},
+    Entry{"Strong", "Forte"},
+    Entry{"Stability", "Stabilité"},
+    Entry{"Temporal stabilization", "Stabilisation temporelle"},
+    Entry{
+        "Removes the shimmer from one frame to the next (fizzling lines, crawling textures, flickering "
+        "grain) "
+        "by comparing each frame with the three before and the three after. Upscaling and interpolation "
+        "then work on a steady picture. Stronger also smooths very small movements. Speed: heavy, about as "
+        "much as upscaling at 1080p; a high-end card is needed. TensorRT only for now. Recommended: Off, or "
+        "Normal on a high-end RTX card.",
+        "Retire le fourmillement d'une image à l'autre (traits qui grésillent, textures qui grouillent, "
+        "grain "
+        "qui scintille) en comparant chaque image aux trois d'avant et aux trois d'après. L'agrandissement "
+        "et l'interpolation travaillent ensuite sur une image stable. Plus fort lisse aussi les tout petits "
+        "mouvements. Vitesse : lourd, à peu près autant que l'agrandissement en 1080p ; il faut une carte "
+        "haut de gamme. TensorRT seulement pour l'instant. Recommandé : Désactivée, ou Normale sur une "
+        "carte RTX haut de gamme."},
+    Entry{
+        "Temporal stabilization runs on TensorRT only for now: this engine plays without it.",
+        "La stabilisation temporelle ne tourne que sous TensorRT pour l'instant : ce moteur lit sans elle."},
+    Entry{"temporal stabilization turns off", "la stabilisation temporelle s'arrête"},
+    Entry{"temporal stabilization loads (built the first time for this size)",
+          "la stabilisation temporelle se charge (construite la première fois pour cette taille)"},
     Entry{"Working resolution", "Résolution de travail"},
     Entry{"the upscaler changes to Anime4K", "l'agrandissement passe à Anime4K"},
 };
