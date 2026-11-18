@@ -56,6 +56,25 @@ bool ring_fits(const RingTarget* ring, const Tensor& a) {
          ring->slot->height == height_of(a);
 }
 
+// Images a et b, et la sortie (un tenseur, ou le slot de l'anneau), RGB FP16 de même taille ; un instant de
+// ]0, 1[.
+std::expected<void, Refusal> check_warp_target(const Tensor& a, const Tensor& b, const Tensor* out,
+                                               const RingTarget* ring, float t) {
+  if (!fp16_planes(a, 3) || a.shape.dims != b.shape.dims || b.type != TensorType::F16 || b.handle == 0 ||
+      (out != nullptr &&
+       (a.shape.dims != out->shape.dims || out->type != TensorType::F16 || out->handle == 0))) {
+    return refuse(RefusalCode::ShapeInvalid, "warp_blend : trois images RGB FP16 de même taille attendues");
+  }
+  if (out == nullptr && !ring_fits(ring, a)) {
+    return refuse(RefusalCode::ShapeInvalid,
+                  std::format("warp_blend_ring : slot de la taille des images {}x{} attendu", width_of(a),
+                              height_of(a)));
+  }
+  if (!(t > 0.0F && t < 1.0F))
+    return refuse(RefusalCode::FieldOutOfRange, std::format("warp_blend : instant {}", t));
+  return {};
+}
+
 std::expected<void, Refusal> check_motion(const Motion& motion) {
   if (!fp16_planes(motion.flow, 4) || !fp16_planes(motion.mask, 1) ||
       motion.flow.shape.dims[2] != motion.mask.shape.dims[2] ||
@@ -132,18 +151,7 @@ std::expected<void, Refusal> TensorRtBackend::warp_blend_poses_ring(const Tensor
 std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor& b, const Motion& motion,
                                                    const Poses& poses, float t, const Target& target) {
   const Tensor* out = target.out;
-  if (!fp16_planes(a, 3) || a.shape.dims != b.shape.dims || b.type != TensorType::F16 || b.handle == 0 ||
-      (out != nullptr &&
-       (a.shape.dims != out->shape.dims || out->type != TensorType::F16 || out->handle == 0))) {
-    return refuse(RefusalCode::ShapeInvalid, "warp_blend : trois images RGB FP16 de même taille attendues");
-  }
-  if (out == nullptr && !ring_fits(target.ring, a)) {
-    return refuse(RefusalCode::ShapeInvalid,
-                  std::format("warp_blend_ring : slot de la taille des images {}x{} attendu", width_of(a),
-                              height_of(a)));
-  }
-  if (!(t > 0.0F && t < 1.0F))
-    return refuse(RefusalCode::FieldOutOfRange, std::format("warp_blend : instant {}", t));
+  if (auto ok = check_warp_target(a, b, out, target.ring, t); !ok) return ok;
   if (auto ok = check_motion(motion); !ok) return ok;
   if (auto ok = bind_joined(target.ring); !ok) return ok;
   // La lecture par texture (fraction sur 8 bits) seulement à l'essai, pour la mesurer : par défaut, sans
@@ -191,22 +199,27 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
     return launch_into(target, "warp et mélange", [&](RingSurface surface) {
       WarpBlendParams into = params;
       into.surface = surface;
-      if (motion.pan_lock && !poses.keep) {  // une estimation par warp, relue par tous ses pixels
-        if (pan_estimate_ == nullptr) {
-          if (auto ok = cuda_check(
-                  cudaMallocAsync(reinterpret_cast<void**>(&pan_estimate_), 4 * sizeof(float), stream_),
-                  "cudaMallocAsync");
-              !ok) {
-            return ok;
-          }
-        }
-        if (auto ok = cuda_check(launch_pan_global(into, pan_estimate_, stream_), "pan_global<<<>>>"); !ok)
-          return ok;
-        into.pan = pan_estimate_;
-      }
-      return cuda_check(launch_warp_blend(into, stream_), "warp_blend<<<>>>");
+      return launch_warp(into, motion.pan_lock && !poses.keep);
     });
   });
+}
+
+std::expected<void, Refusal> TensorRtBackend::launch_warp(const WarpBlendParams& base, bool pan) {
+  WarpBlendParams params = base;
+  if (pan) {  // une estimation par warp, relue par tous ses pixels
+    if (pan_estimate_ == nullptr) {
+      if (auto ok = cuda_check(
+              cudaMallocAsync(reinterpret_cast<void**>(&pan_estimate_), 4 * sizeof(float), stream_),
+              "cudaMallocAsync");
+          !ok) {
+        return ok;
+      }
+    }
+    if (auto ok = cuda_check(launch_pan_global(params, pan_estimate_, stream_), "pan_global<<<>>>"); !ok)
+      return ok;
+    params.pan = pan_estimate_;
+  }
+  return cuda_check(launch_warp_blend(params, stream_), "warp_blend<<<>>>");
 }
 
 std::expected<float, Refusal> TensorRtBackend::flow_max_now(const Motion& motion) {

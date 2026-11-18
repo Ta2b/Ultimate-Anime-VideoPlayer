@@ -226,6 +226,21 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   return backend;
 }
 
+namespace {
+
+// Les lectures vers l'hôte d'un anneau (pair_reads_, flow_reads_, stats_reads_) : mémoire d'appareil, mémoire
+// hôte épinglée et événement, chacun s'il a été créé.
+template <typename Reads>
+void free_reads(const Reads& reads) {
+  for (const auto& read : reads) {
+    if (read.device != nullptr) cudaFree(read.device);
+    if (read.host != nullptr) cudaFreeHost(read.host);
+    if (read.done != nullptr) cudaEventDestroy(read.done);
+  }
+}
+
+}  // namespace
+
 TensorRtBackend::~TensorRtBackend() {
   releaser_->backend = nullptr;  // un tenseur détruit après le backend se libère par cudaFree
   // Rien de créé : create_lanes a échoué avant la première file. Une file créée suffit à tout passer en
@@ -240,26 +255,13 @@ TensorRtBackend::~TensorRtBackend() {
   for (auto& timing : role_timing_) timing.reset();
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
-  for (const PairRead& read : pair_reads_) {
-    if (read.device != nullptr) cudaFree(read.device);
-    if (read.host != nullptr) cudaFreeHost(read.host);
-    if (read.done != nullptr) cudaEventDestroy(read.done);
+  free_reads(pair_reads_);
+  free_reads(flow_reads_);
+  free_reads(stats_reads_);
+  for (void* scratch : {static_cast<void*>(ingest_rows_), static_cast<void*>(splat_sums_), grid_motion_,
+                        static_cast<void*>(pan_estimate_), deband_out_}) {
+    if (scratch != nullptr) cudaFree(scratch);
   }
-  for (const FlowRead& read : flow_reads_) {
-    if (read.device != nullptr) cudaFree(read.device);
-    if (read.host != nullptr) cudaFreeHost(read.host);
-    if (read.done != nullptr) cudaEventDestroy(read.done);
-  }
-  for (const StatsRead& read : stats_reads_) {
-    if (read.device != nullptr) cudaFree(read.device);
-    if (read.host != nullptr) cudaFreeHost(read.host);
-    if (read.done != nullptr) cudaEventDestroy(read.done);
-  }
-  if (ingest_rows_ != nullptr) cudaFree(ingest_rows_);
-  if (splat_sums_ != nullptr) cudaFree(splat_sums_);
-  if (grid_motion_ != nullptr) cudaFree(grid_motion_);
-  if (pan_estimate_ != nullptr) cudaFree(pan_estimate_);
-  if (deband_out_ != nullptr) cudaFree(deband_out_);
   uploads_.reset();  // attend ses envois et les ingestions qui les lisent
   release_yuv_tables();
   release_chroma_tables();

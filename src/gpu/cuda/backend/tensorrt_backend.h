@@ -49,6 +49,7 @@ class SpanFp8Engine;
 class RifeFusedEngine;
 class DrbaFusedEngine;
 struct IngestParams;
+struct WarpBlendParams;
 
 class TensorRtBackend final : public Backend, public KernelOps {
  public:
@@ -273,6 +274,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   };
   std::expected<void, Refusal> warp(const Tensor& a, const Tensor& b, const Motion& motion,
                                     const Poses& poses, float t, const Target& target);
+  // Le noyau du warp, précédé de l'estimation du mouvement d'ensemble quand pan (kernels/spec/warp_pan.h).
+  std::expected<void, Refusal> launch_warp(const WarpBlendParams& params, bool pan);
   // launch(surface) chronométré sous name : surface nulle (object 0) vers un tenseur ; vers un slot,
   // l'attente de wait_value avant et le signal après, comme write_ring.
   template <typename Launch>

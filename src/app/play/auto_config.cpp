@@ -334,6 +334,15 @@ bool gmfss_differs(const PlaySettings& a, const PlaySettings& b) {
          a.gmfss_key_floor != b.gmfss_key_floor;
 }
 
+// Les réglages avancés du mouvement que l'infobulle de Personnalisé promet de suivre (C23-06).
+bool motion_options_differ(const PlaySettings& a, const PlaySettings& b) {
+  return a.keep_poses != b.keep_poses || a.motion_precision != b.motion_precision ||
+         a.rife_model != b.rife_model || a.motion_engine != b.motion_engine || a.rife_fused != b.rife_fused ||
+         a.drba_fused != b.drba_fused || a.smooth_drawings != b.smooth_drawings ||
+         a.cubic_warp != b.cubic_warp || a.pan_lock != b.pan_lock || a.pair_scale != b.pair_scale ||
+         a.strong_middle != b.strong_middle || gmfss_differs(a, b) || a.motion_720p != b.motion_720p;
+}
+
 }  // namespace
 
 bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool calibrated) {
@@ -341,13 +350,8 @@ bool preset_chain_differs(const PlaySettings& a, const PlaySettings& b, bool cal
   return a.upscale != b.upscale || a.work_height != b.work_height || a.downscale != b.downscale ||
          a.model != b.model || a.span_order != b.span_order || a.rife_auto != b.rife_auto ||
          a.rife_factor != b.rife_factor || a.rife_factor_den != b.rife_factor_den ||
-         a.keep_poses != b.keep_poses || a.span_precision != b.span_precision ||
-         a.motion_precision != b.motion_precision || a.rife_model != b.rife_model ||
-         a.motion_engine != b.motion_engine || a.restore_lines != b.restore_lines ||
-         a.rife_fused != b.rife_fused || a.drba_fused != b.drba_fused ||
-         a.smooth_drawings != b.smooth_drawings || a.cubic_warp != b.cubic_warp || a.pan_lock != b.pan_lock ||
-         a.pair_scale != b.pair_scale || a.strong_middle != b.strong_middle || gmfss_differs(a, b) ||
-         a.motion_720p != b.motion_720p || a.auto_cap != b.auto_cap;  // C23-06
+         a.span_precision != b.span_precision || a.restore_lines != b.restore_lines ||
+         motion_options_differ(a, b) || a.auto_cap != b.auto_cap;  // C23-06
 }
 
 bool display_moves_chain(Preset preset, const DisplayMove& move) {
