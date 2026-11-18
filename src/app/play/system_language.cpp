@@ -181,7 +181,7 @@ std::optional<std::string> legacy_default_language(const std::vector<media::Lang
   const Presets japanese{{"jpn", ""}, {"", ""}};
   if (presets == japanese) return "jpn";  // le défaut d'un système en japonais
   if (presets.size() != 2) return std::nullopt;
-  const std::string own = presets[1].audio;
+  std::string own = presets[1].audio;
   const Presets expected{{"jpn", own}, {own, ""}};
   if (own.empty() || presets != expected) return std::nullopt;
   return own;

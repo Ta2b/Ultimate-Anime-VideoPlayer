@@ -49,10 +49,11 @@ void output_notes(const PlaySettings& d, const SettingsChoices& choices, int wor
 void stability_section(PlaySettings& d, const SettingsChoices& choices) {
   section(i18n::tr("Stability"));
   if (ImGui::BeginCombo(panel::left(i18n::tr("Temporal stabilization")).c_str(),
-                        i18n::tr(label(d.temporal_fix).data()))) {
+                        i18n::tr(std::string(label(d.temporal_fix)).c_str()))) {
     for (int i = 0; i < kTemporalFixCount; ++i) {
       const auto level = static_cast<TemporalFix>(i);
-      if (ImGui::Selectable(i18n::tr(label(level).data()), level == d.temporal_fix)) d.temporal_fix = level;
+      if (ImGui::Selectable(i18n::tr(std::string(label(level)).c_str()), level == d.temporal_fix))
+        d.temporal_fix = level;
     }
     ImGui::EndCombo();
   }
