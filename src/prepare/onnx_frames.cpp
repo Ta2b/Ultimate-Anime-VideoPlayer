@@ -1,0 +1,301 @@
+// Numéros de champ d'onnx.proto (ONNX 1.19.1) : ModelProto.graph = 7 ; GraphProto.node = 1, .initializer = 5,
+// .input = 11, .output = 12, .value_info = 13 ; NodeProto.input = 1, .output = 2, .name = 3, .op_type = 4,
+// .attribute = 5 ; AttributeProto.name = 1, .i = 3, .s = 4, .ints = 8, .type = 20 (INT = 2, STRING = 3,
+// INTS = 7) ; TensorProto.dims = 1, .data_type = 2 (FLOAT = 1), .name = 8, .raw_data = 9 ;
+// ValueInfoProto.name = 1, .type = 2 ; TypeProto.tensor_type = 1 ; TypeProto.Tensor.elem_type = 1, .shape = 2
+// ; TensorShapeProto.dim = 1 ; Dimension.dim_value = 1, .dim_param = 2.
+#include "prepare/onnx_frames.h"
+
+#include <algorithm>
+#include <array>
+#include <bit>
+#include <format>
+#include <utility>
+
+#include "prepare/onnx_scan.h"
+#include "prepare/onnx_split.h"
+#include "prepare/protobuf_fields.h"
+
+namespace ajp::prepare {
+namespace {
+
+using protobuf::Bytes;
+using protobuf::Fields;
+using protobuf::RawField;
+
+constexpr std::uint32_t kModelGraph = 7;
+constexpr std::uint32_t kGraphNode = 1;
+constexpr std::uint32_t kGraphInitializer = 5;
+constexpr std::uint32_t kGraphInput = 11;
+constexpr std::uint32_t kGraphOutput = 12;
+constexpr std::uint32_t kGraphValueInfo = 13;
+constexpr std::uint32_t kNodeInput = 1;
+constexpr std::uint32_t kNodeOutput = 2;
+constexpr std::uint32_t kNodeName = 3;
+constexpr std::uint32_t kNodeOpType = 4;
+constexpr std::uint32_t kNodeAttribute = 5;
+constexpr std::uint32_t kValueInfoName = 1;
+
+// Les noms que la demi-taille ajoute au graphe.
+constexpr std::string_view kFull = "ajp_frames_full";
+constexpr std::string_view kNetOut = "ajp_frames_net_out";
+constexpr std::string_view kCenterHalf = "ajp_frames_center_half";
+constexpr std::string_view kDeltaHalf = "ajp_frames_delta_half";
+constexpr std::string_view kDelta = "ajp_frames_delta";
+constexpr std::string_view kScales = "ajp_frames_scales";
+
+Bytes as_bytes(std::string_view text) {
+  return {reinterpret_cast<const std::byte*>(text.data()), text.size()};
+}
+
+std::string_view as_text(Bytes bytes) {
+  return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+class Message {
+ public:
+  Message& varint(std::uint32_t number, std::uint64_t value) {
+    protobuf::put_varint(out_, std::uint64_t{number} << 3U);
+    protobuf::put_varint(out_, value);
+    return *this;
+  }
+  Message& bytes(std::uint32_t number, Bytes data) {
+    protobuf::put_delimited(out_, number, data);
+    return *this;
+  }
+  Message& text(std::uint32_t number, std::string_view value) { return bytes(number, as_bytes(value)); }
+  Message& message(std::uint32_t number, const Message& inner) { return bytes(number, inner.out_); }
+  Message& raw(Bytes field) {  // un champ recopié tel quel, son en-tête compris
+    out_.insert(out_.end(), field.begin(), field.end());
+    return *this;
+  }
+  const std::vector<std::byte>& data() const { return out_; }
+
+ private:
+  std::vector<std::byte> out_;
+};
+
+// ValueInfoProto { name ; type { tensor_type { elem_type ; shape { dim… } } } } ; une dimension libre (-1)
+// prend un nom : les sept images partagent ainsi les leurs.
+Message value_info(std::string_view name, std::int32_t elem_type, std::span<const std::int64_t> dims) {
+  constexpr std::array<std::string_view, 4> kNames = {"batch", "channels", "height", "width"};
+  Message shape;
+  for (std::size_t i = 0; i < dims.size(); ++i) {
+    Message dim;
+    if (dims[i] >= 0) {
+      dim.varint(1, static_cast<std::uint64_t>(dims[i]));
+    } else {
+      dim.text(2, i < kNames.size() ? kNames[i] : std::string_view("dim"));
+    }
+    shape.message(1, dim);
+  }
+  Message tensor;
+  tensor.varint(1, static_cast<std::uint64_t>(static_cast<std::uint32_t>(elem_type))).message(2, shape);
+  Message info;
+  info.text(kValueInfoName, name).message(2, Message().message(1, tensor));
+  return info;
+}
+
+Message node(std::string_view op, std::string_view name, std::span<const std::string_view> inputs,
+             std::string_view output) {
+  Message n;
+  for (const std::string_view in : inputs) n.text(kNodeInput, in);
+  n.text(kNodeOutput, output).text(kNodeName, name).text(kNodeOpType, op);
+  return n;
+}
+
+Message int_attribute(std::string_view name, std::int64_t value) {
+  return std::move(Message().text(1, name).varint(3, static_cast<std::uint64_t>(value)).varint(20, 2));
+}
+
+Message ints_attribute(std::string_view name, std::span<const std::int64_t> values) {
+  Message a;
+  a.text(1, name);
+  for (const std::int64_t v : values) a.varint(8, static_cast<std::uint64_t>(v));
+  a.varint(20, 7);
+  return a;
+}
+
+Message text_attribute(std::string_view name, std::string_view value) {
+  return std::move(Message().text(1, name).text(4, value).varint(20, 3));
+}
+
+// AveragePool 2 × 2, pas de 2 : la moyenne de chaque bloc, exacte sur une taille paire.
+Message pool_node(std::string_view name, std::string_view input, std::string_view output) {
+  constexpr std::array<std::int64_t, 2> kTwo = {2, 2};
+  Message n = node("AveragePool", name, std::array{input}, output);
+  n.message(kNodeAttribute, ints_attribute("kernel_shape", kTwo))
+      .message(kNodeAttribute, ints_attribute("strides", kTwo));
+  return n;
+}
+
+// Les échelles du Resize, [1, 1, 2, 2] en float32 petit-boutiste.
+Message scales_initializer() {
+  constexpr std::array<float, 4> kScaleValues = {1.0F, 1.0F, 2.0F, 2.0F};
+  std::array<std::byte, sizeof(kScaleValues)> raw{};
+  for (std::size_t i = 0; i < kScaleValues.size(); ++i) {
+    const auto bits = std::bit_cast<std::uint32_t>(kScaleValues[i]);
+    for (std::size_t b = 0; b < 4; ++b) raw[i * 4 + b] = static_cast<std::byte>((bits >> (8U * b)) & 0xFFU);
+  }
+  Message t;
+  t.varint(1, 4).varint(2, 1).text(8, kScales).bytes(9, raw);
+  return t;
+}
+
+// Les nœuds ajoutés en tête : le Concat des images vers input ; en demi-taille, vers kFull, moyenné vers
+// input, et l'image du milieu moyennée.
+void head_nodes(Message& graph, const FrameSplit& split) {
+  std::vector<std::string> names;
+  names.reserve(static_cast<std::size_t>(split.frames));
+  for (int k = 0; k < split.frames; ++k) names.push_back(frame_input_name(split.input, k));
+  Message concat;
+  for (const std::string& name : names) concat.text(kNodeInput, name);
+  concat.text(kNodeOutput, split.half ? kFull : split.input)
+      .text(kNodeName, std::format("ajp_frames_{}", split.input))
+      .text(kNodeOpType, "Concat")
+      .message(kNodeAttribute, int_attribute("axis", 1));
+  graph.message(kGraphNode, concat);
+  if (!split.half) return;
+  graph.message(kGraphNode, pool_node("ajp_frames_pool", kFull, split.input));
+  graph.message(kGraphNode, pool_node("ajp_frames_center_pool", names[static_cast<std::size_t>(split.center)],
+                                      kCenterHalf));
+}
+
+// Les nœuds ajoutés en queue (demi-taille) : output = milieu + agrandi(réseau − milieu moyenné).
+void tail_nodes(Message& graph, const FrameSplit& split) {
+  const std::string center = frame_input_name(split.input, split.center);
+  graph.message(kGraphNode,
+                node("Sub", "ajp_frames_delta_half", std::array{kNetOut, kCenterHalf}, kDeltaHalf));
+  Message resize =
+      node("Resize", "ajp_frames_resize", std::array{kDeltaHalf, std::string_view(), kScales}, kDelta);
+  resize.message(kNodeAttribute, text_attribute("mode", "linear"));
+  graph.message(kGraphNode, resize);
+  graph.message(kGraphNode,
+                node("Add", "ajp_frames_add", std::array{std::string_view(center), kDelta}, split.output));
+  graph.message(kGraphInitializer, scales_initializer());
+}
+
+// Le nom d'un ValueInfoProto, vide s'il n'en a pas.
+std::string_view info_name(Bytes info) {
+  Fields fields(info);
+  RawField part;
+  while (fields.next(part)) {
+    if (part.number == kValueInfoName && part.delimited) return as_text(part.payload);
+  }
+  return {};
+}
+
+// Le nœud, ses entrées et sorties nommées output renommées kNetOut.
+std::expected<Message, Refusal> renamed_output(Bytes node_bytes, std::string_view output, bool& renamed) {
+  Message out;
+  Fields node_fields(node_bytes);
+  RawField part;
+  while (node_fields.next(part)) {
+    const bool io = (part.number == kNodeInput || part.number == kNodeOutput) && part.delimited;
+    if (io && as_text(part.payload) == output) {
+      out.text(part.number, kNetOut);
+      renamed = true;
+    } else {
+      out.raw(part.raw);
+    }
+  }
+  if (!node_fields.ok()) return refuse(RefusalCode::ModelUnreadable, "ONNX : nœud malformé");
+  return out;
+}
+
+// Le graphe recopié derrière les nœuds de tête : sans l'entrée coupée ; en demi-taille, sans ses value_info
+// et la sortie du réseau renommée kNetOut (output_found : la sortie du graphe est là ; renamed : un nœud la
+// produisait).
+std::expected<void, Refusal> copy_graph(Bytes graph, const FrameSplit& split, Message& new_graph,
+                                        bool& output_found, bool& renamed) {
+  Fields graph_fields(graph);
+  RawField field;
+  while (graph_fields.next(field)) {
+    if (field.number == kGraphInput && field.delimited && info_name(field.payload) == split.input) continue;
+    if (split.half && field.number == kGraphValueInfo) continue;  // formes d'avant la demi-taille
+    if (split.half && field.number == kGraphOutput && field.delimited &&
+        info_name(field.payload) == split.output)
+      output_found = true;
+    if (split.half && field.number == kGraphNode && field.delimited) {
+      auto node_bytes = renamed_output(field.payload, split.output, renamed);
+      if (!node_bytes) return std::unexpected(std::move(node_bytes.error()));
+      new_graph.message(kGraphNode, *node_bytes);
+      continue;
+    }
+    new_graph.raw(field.raw);
+  }
+  if (!graph_fields.ok()) return refuse(RefusalCode::ModelUnreadable, "ONNX : protobuf du graphe malformé");
+  return {};
+}
+
+std::expected<void, Refusal> check_split(const OnnxSummary& summary, const FrameSplit& split,
+                                         const OnnxInput*& found) {
+  if (split.frames < 2)
+    return refuse(RefusalCode::FieldOutOfRange, std::format("ONNX : {} image(s) à couper", split.frames));
+  if (split.half && (split.center < 0 || split.center >= split.frames))
+    return refuse(RefusalCode::FieldOutOfRange,
+                  std::format("ONNX : image du milieu {} hors des {} images", split.center, split.frames));
+  const auto it = std::ranges::find(summary.inputs, split.input, &OnnxInput::name);
+  if (it == summary.inputs.end())
+    return refuse(RefusalCode::FieldMissing, std::format("ONNX : pas d'entrée « {} »", split.input));
+  found = &*it;
+  if (found->dims.size() != 4 || found->dims[1] <= 0 || found->dims[1] % split.frames != 0) {
+    return refuse(
+        RefusalCode::FormatUnsupported,
+        std::format("ONNX : l'entrée « {} » n'est pas une pile N × {}·C × H × W", split.input, split.frames));
+  }
+  for (int k = 0; k < split.frames; ++k) {
+    if (std::ranges::contains(summary.inputs, frame_input_name(split.input, k), &OnnxInput::name))
+      return refuse(RefusalCode::FormatUnsupported,
+                    std::format("ONNX : une entrée s'appelle déjà « {} »", frame_input_name(split.input, k)));
+  }
+  return {};
+}
+
+}  // namespace
+
+std::string frame_input_name(std::string_view input, int k) {
+  return std::format("{}_{}", input, k);
+}
+
+std::expected<std::vector<std::byte>, Refusal> with_frame_inputs(std::span<const std::byte> model,
+                                                                 const FrameSplit& split) {
+  auto summary = scan_onnx(model);
+  if (!summary) return std::unexpected(std::move(summary.error()));
+  const OnnxInput* found = nullptr;
+  if (auto ok = check_split(*summary, split, found); !ok) return std::unexpected(std::move(ok.error()));
+  std::vector<std::int64_t> dims = found->dims;
+  dims[1] /= split.frames;
+  const std::int32_t elem_type = found->elem_type;
+
+  auto graph = onnx_graph_field(model);
+  if (!graph) return std::unexpected(std::move(graph.error()));
+  // Les nœuds ajoutés d'abord : les nœuds restent dans l'ordre d'un tri topologique.
+  Message new_graph;
+  head_nodes(new_graph, split);
+  bool output_found = false;
+  bool renamed = false;
+  if (auto ok = copy_graph(*graph, split, new_graph, output_found, renamed); !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (split.half && (!output_found || !renamed))
+    return refuse(RefusalCode::FieldMissing, std::format("ONNX : pas de sortie « {} »", split.output));
+  if (split.half) tail_nodes(new_graph, split);
+  for (int k = 0; k < split.frames; ++k)
+    new_graph.message(kGraphInput, value_info(frame_input_name(split.input, k), elem_type, dims));
+
+  std::vector<std::byte> out;
+  out.reserve(model.size() + 1024);
+  Fields model_fields(model);
+  RawField field;
+  while (model_fields.next(field)) {
+    if (field.number == kModelGraph && field.delimited) {
+      protobuf::put_delimited(out, kModelGraph, new_graph.data());
+    } else {
+      out.insert(out.end(), field.raw.begin(), field.raw.end());
+    }
+  }
+  if (!model_fields.ok()) return refuse(RefusalCode::ModelUnreadable, "ONNX : protobuf du modèle malformé");
+  return out;
+}
+
+}  // namespace ajp::prepare

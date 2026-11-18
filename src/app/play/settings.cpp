@@ -701,8 +701,16 @@ static PlaySettings loaded_base(const PlaySettings& running, bool rife_loaded, c
 
 namespace {
 
-// La fin de change_between : les visages, puis relancer, recharger, en direct ou rien.
+// La fin de change_between : la stabilisation, les visages, puis relancer, recharger, en direct ou rien.
 Change settle(const PlaySettings& running, const PlaySettings& wanted, std::vector<std::string> reopen) {
+  if (running.temporal_fix != wanted.temporal_fix) {
+    reopen.emplace_back(wanted.temporal_fix == TemporalFix::Off
+                            ? i18n::tr("temporal stabilization turns off")
+                            : i18n::tr("temporal stabilization loads (built the first time for this size)"));
+  } else if (wanted.temporal_fix != TemporalFix::Off &&
+             running.temporal_fix_full != wanted.temporal_fix_full) {
+    reopen.emplace_back(i18n::tr("temporal stabilization changes size (built the first time for this size)"));
+  }
   if (running.face_skin != wanted.face_skin)
     reopen.emplace_back(i18n::tr("the video is analysed again for faces"));
   std::vector<std::string> all = restart_reasons(running, wanted);

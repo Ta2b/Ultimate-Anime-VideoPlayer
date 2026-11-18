@@ -1,0 +1,103 @@
+# Stabilisation temporelle (TemporalFix)
+
+À jour, 18 novembre 2026. Réglage : Vidéo > Agrandissement > Stabilité, « Stabilisation temporelle »
+(`[image] temporal_fix` de `play.toml` : `off`, `light`, `normal`, `strong`), et dans Avancé « Stabilisation à
+pleine taille » (`temporal_fix_full`, éteinte : demi-taille). Éteinte par défaut, l'Auto n'y touche pas.
+
+## Ce qu'elle fait
+
+TemporalFix (pifroggi, [vs_temporalfix](https://github.com/pifroggi/vs_temporalfix), Apache 2.0) retire le
+scintillement d'une image à l'autre : grain, bruit de compression, aplats et traits qui bougent sans raison
+sur un plan fixe. Le réseau (un demi-million de poids, un flot à la RIFE puis un mélange) lit sept images, trois
+avant et trois après, et rend l'image du milieu stabilisée. Ce qui bouge vraiment reste net : le flot aligne les
+voisines avant de les mélanger.
+
+| Force | Modèle | Pour |
+|---|---|---|
+| Légère | `temporalfix_s1_v1.1_op18_fp16.onnx` | une source propre, un peu de grain |
+| Normale | `temporalfix_s2_v1_op18_fp16.onnx` | le défaut conseillé par pifroggi |
+| Forte | `temporalfix_s3_v1_op18_fp16.onnx` | une source très bruitée ou bloquée |
+
+s0, plus faible que s1, n'est pas livré.
+
+## Où elle est dans la chaîne
+
+Avant tout le reste, à la taille de travail (au plus 1080p, `chain_work_size`) : l'image ingérée (et débandée)
+passe par TemporalFix, puis SPAN, RIFE, DistilDRBA, les mesures et le grade lisent l'image stabilisée sans le
+savoir. Stabiliser avant l'interpolation aide aussi RIFE : moins de bruit, des flots plus propres.
+
+- `src/app/play/temporal_fix.h` : les forces et leurs modèles.
+- `src/app/play/temporal_fix_model.*` : le modèle livré (`models/temporalfix/`) dérivé une fois pour toutes les
+  tailles (`derived_model.h`) : son entrée 1 × 21 × H × W coupée en sept entrées 1 × 3 × H × W
+  (`src/prepare/onnx_frames.h`), un Concat en tête du graphe refaisant l'entrée d'origine ; l'étage gpu passe
+  ses sept tampons sans copie ni noyau de plus. H et W restent libres (voir « Construction »).
+- **Demi-taille** (le défaut) : le même graphe moyenne d'abord les sept images 2 × 2 (AveragePool), fait
+  tourner le réseau sur elles, retire de sa sortie l'image du milieu moyennée, agrandit cette correction
+  (Resize bilinéaire) et l'ajoute à l'image du milieu à pleine taille. Le réseau coûte un quart ; le détail de
+  l'image reste entier, seule la correction est basse fréquence (le grain le plus fin reste tel quel). Tout se
+  fait dans le graphe : TensorRT le fond avec le reste. Vérifié sur processeur (onnxruntime) : le graphe coupé
+  à pleine taille rend exactement celui de pifroggi.
+- `src/app/play/chain_temporal.cpp` : la construction et le chargement (TensorRT, voie Upscale). Un refus laisse
+  la lecture sans elle, retenu pour la séance.
+- `src/app/play/temporal_window.*` : les tampons bruts gardés par pts et le choix des sept images.
+- `src/app/play/upscale_temporal.cpp` : `ingest_source` passe par TemporalFix quand il est chargé ; ses
+  ingestions brutes restent dans `ingest_plain`.
+
+## Avance et bords
+
+L'étage attend trois images de plus derrière la plus lointaine qu'il lit déjà (`frames_ahead`, et la suivante
+de `look_ahead` qu'il ne compte pas) : `temporal_extra_frames` en vol en plus, autant de surfaces NVDEC
+(`held_decoded_frames`, sous les 32 de NVDEC). Chaque image n'est ingérée qu'une fois : la fenêtre garde de
+quoi couvrir trois images avant la tête jusqu'à la plus lointaine lue en avance.
+
+Au début d'une époque (ouverture, saut) et à la fin du flux, les voisines manquent : la fenêtre se reflète comme
+`gen_shifts` de vs_temporalfix, l'image d'avant manquante k prend l'image d'après k et inversement ; sans
+aucune des deux, la plus proche déjà prise, puis l'image elle-même. Le journal de fin compte les passes, celles
+qui se sont reflétées et les ingestions brutes.
+
+Une image sans pts, ou d'une autre taille que la source, n'est pas stabilisée (et n'entre pas dans les
+fenêtres). Les images réduites à la taille de RIFE (`small_`) restent celles de la source : RIFE mesure son
+mouvement sur elles.
+
+## Construction
+
+Le premier essai figeait la taille de travail dans le graphe (`with_fixed_dims`, comme DistilDRBA). TemporalFix
+calcule ses grilles de base depuis la forme (ConstantOfShape → CumSum → Expand, 10 CumSum et 23 Expand) :
+figées, elles deviennent des constantes que TensorRT range comme des poids. Mesuré sur la RTX 4070 Ti de Tatoub
+(TensorRT 11.3, 1080p) : moteur de 6,2 Go, 295 ms par image, la mémoire vidéo saturée à l'ouverture.
+
+Maintenant :
+
+- H et W restent libres dans le graphe, et le profil laisse la largeur descendre de 8 pixels sous celle du
+  travail (`EngineLabel::loose_width`, comme vs_temporalfix) : la forme n'est jamais une constante. Les sept
+  entrées sont jumelles (`ModelSource::twins`) : trtexec reçoit le même profil pour chacune.
+- Niveau d'optimisation 3, sans pavage L2 (`ModelSpec::tuned = false`, recette Fp32Islands, `--stronglyTyped`).
+
+| Réglage (1080p, RTX 4070 Ti) | Moteur | Par image | Construction |
+|---|---|---|---|
+| Taille figée (premier essai) | 6,2 Go | 295 ms | 377 s |
+| Libre, niveau 5 + pavage 3 (réglages de SPAN) | 5,4 Mo | 42,4 ms | 482 s |
+| Libre, niveau 3, sans pavage (pleine taille) | 4,4 Mo | 27,9 ms | 79 s |
+| Le même réseau en 540p (ce que tourne la demi-taille) | | 6,2 ms | |
+
+À 24 i/s, la demi-taille prend environ 15 % de la carte, la moitié de SPAN FP8 (12,5 ms) ; la pleine taille
+environ 67 %. Le graphe à demi-taille complet (moyennes, Resize, addition à pleine taille) reste à mesurer sur
+la RTX.
+
+## Coût dans l'Auto
+
+Le choix de la chaîne par l'Auto (préréglages, calibration) ne la compte pas : la calibration l'a mesurée sans
+elle. Pendant la lecture, le palier de l'Auto baisse le multiplicateur de RIFE si la chaîne prend du retard,
+ce qui absorbe la demi-taille. Une place dans le budget de la calibration demande une mesure sur la RTX.
+
+## Ce qui manque
+
+- **Vulkan** : l'import du graphe (`src/gpu/ir/ops.cpp`) ne connaît pas ConstantOfShape, Equal, Where
+  (calculs de forme, repliables à la taille fixée), Expand, CumSum, ReduceSum (la grille de base, construite
+  depuis `flow * 0 + 1`), ReduceL2 et Abs. Tant qu'ils manquent, un autre moteur que TensorRT lit sans elle
+  (une ligne au journal, une note dans le menu).
+- **Core ML** : pas essayé.
+- **Auto** : compter son coût dans la calibration (`auto_config`, `machine_calibration`).
+- **Dessins tenus** : une image identique à la précédente (un dessin tenu en deux ou en trois) pourrait reprendre
+  la sortie de la précédente au lieu d'une passe : jusqu'à deux passes sur trois de moins en anime. Il faut
+  pour cela une copie de tenseur dans KernelOps et la mesure du dessin tenu avant la passe, sans attente hôte.

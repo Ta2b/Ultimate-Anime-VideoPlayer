@@ -59,7 +59,7 @@ jobs:
       # Restauration et sauvegarde séparées : les dépendances déjà construites (marquées .built-*)
       # restent en cache même quand la construction échoue plus loin.
       - id: deps-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.AJP_DEPS_PREFIX }}
           key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-${{ github.run_id }}
@@ -119,7 +119,7 @@ jobs:
         # Préversions comprises (P1.15).
         run: ctest --preset macos-release
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         continue-on-error: true
         with:
           retention-days: 3

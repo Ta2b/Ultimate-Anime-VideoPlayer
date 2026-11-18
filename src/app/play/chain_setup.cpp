@@ -109,7 +109,7 @@ std::vector<media::HwApi> decoder_attempts(std::string_view backend, bool shared
 }
 
 media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
-                                      const media::HwDeviceSource* shared, bool smooth_drawings) {
+                                      const media::HwDeviceSource* shared, HeldExtras extras) {
   const bool tensorrt = backend == "tensorrt";
   return {.attempts = decoder_attempts(backend, shared != nullptr, render.vendor() == GpuVendor::Nvidia),
           .render_device = render.uuid,
@@ -120,7 +120,7 @@ media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice&
           // 4:2:2 (Yuv422p16) : la chroma d'une source logicielle n'est jamais réduite (B01-03).
           .full_host_formats = true,
           .host_422 = tensorrt,
-          .direct_surfaces = tensorrt ? held_decoded_frames(smooth_drawings) : 0};
+          .direct_surfaces = tensorrt ? held_decoded_frames(extras) : 0};
 }
 
 std::string_view ChainEngines::motion_name() const {
@@ -179,6 +179,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
+      .temporal_fix = temporal_fix.get(),
       .skip_held = skip_held && clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
@@ -615,6 +616,29 @@ WorkSize motion_size(const media::TrackInfo& video, const WorkSize& work, const 
              : work;
 }
 
+namespace {
+
+// RIFE au cran de précision demandé : le graphe « _fp8 » ou « _fp32 » à côté du modèle quand il y est (FP8
+// sur un moteur qui l'accélère seulement) ; le modèle tel que livré sinon.
+void choose_rife_tier(ChainEngines& c, const PlaySettings& settings) {
+  if (!c.rife_model || settings.motion_engine != MotionEngine::Rife ||
+      settings.motion_precision == PrecisionTier::Balanced)
+    return;
+  const auto log = log_channel("app");
+  const PrecisionTier tier = settings.motion_precision;
+  if (tier == PrecisionTier::Performance && !c.backend->capabilities().fp8) {
+    log->info("RIFE Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
+  } else if (const std::filesystem::path variant = tier_variant(*c.rife_model, tier);
+             variant != *c.rife_model) {
+    log->info("RIFE {} : {}", label(tier), core::to_utf8(variant.filename()));
+    c.rife_model = variant;
+  } else {
+    log->info("RIFE {} : aucun graphe {}, Équilibre à la place", label(tier), precision_text(tier));
+  }
+}
+
+}  // namespace
+
 Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   const auto log = log_channel("app");
   const media::TrackInfo& video = p.video;
@@ -696,26 +720,13 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   c.rife_size = motion_size(video, c.work, settings, p.options.rife_image);
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
   const std::string library = library_name(p);
+  if (!load_temporal_fix(p, init, c, settings, inner, library)) return std::nullopt;
   if (want_drba) {
     auto drba = load_drba(p, init, c, settings, inner, library);
     if (!drba) return std::unexpected(std::move(drba.error()));
     if (!*drba) return std::nullopt;
   }
-  // RIFE au cran de précision demandé : le graphe « _fp8 » ou « _fp32 » à côté du modèle quand il y est (FP8
-  // sur un moteur qui l'accélère seulement) ; le modèle tel que livré sinon.
-  if (c.rife_model && settings.motion_engine == MotionEngine::Rife &&
-      settings.motion_precision != PrecisionTier::Balanced) {
-    const PrecisionTier tier = settings.motion_precision;
-    if (tier == PrecisionTier::Performance && !c.backend->capabilities().fp8) {
-      log->info("RIFE Performance (FP8) : ce moteur ne le calcule pas, Équilibre à la place");
-    } else if (const std::filesystem::path variant = tier_variant(*c.rife_model, tier);
-               variant != *c.rife_model) {
-      log->info("RIFE {} : {}", label(tier), core::to_utf8(variant.filename()));
-      c.rife_model = variant;
-    } else {
-      log->info("RIFE {} : aucun graphe {}, Équilibre à la place", label(tier), precision_text(tier));
-    }
-  }
+  choose_rife_tier(c, settings);
   // L'interpolation d'Apple à la place de RIFE image, à la taille de travail ; RIFE reprend sous un
   // autre backend que Core ML, ou sur un Mac qui ne l'offre pas.
   if (want_apple) {

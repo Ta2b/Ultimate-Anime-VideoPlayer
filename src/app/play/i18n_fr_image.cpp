@@ -239,6 +239,38 @@ constexpr std::array kImageTabs{
           "Sans VRR, la cadence suit le rafraîchissement ; une image tardive répète la précédente."},
     Entry{"Without VRR, motion may judder at a fixed refresh rate.",
           "Sans VRR, le mouvement peut vibrer à fréquence fixe."},
+    Entry{"Light", "Légère"},
+    Entry{"Strong", "Forte"},
+    Entry{"Stability", "Stabilité"},
+    Entry{"Temporal stabilization", "Stabilisation temporelle"},
+    Entry{
+        "Removes the shimmer from one frame to the next (fizzling lines, crawling textures, flickering "
+        "grain) by comparing each frame with the three before and the three after. Upscaling and "
+        "interpolation then work on a steady picture. Stronger also smooths very small movements. Speed: "
+        "about half the cost of upscaling, as it works at half size and keeps the full detail. TensorRT "
+        "only for now. Recommended: Off, or Normal on an RTX card.",
+        "Retire le fourmillement d'une image à l'autre (traits qui grésillent, textures qui grouillent, "
+        "grain qui scintille) en comparant chaque image aux trois d'avant et aux trois d'après. "
+        "L'agrandissement et l'interpolation travaillent ensuite sur une image stable. Plus fort lisse "
+        "aussi les tout petits mouvements. Vitesse : environ la moitié de l'agrandissement, car elle "
+        "travaille à demi-taille en gardant tout le détail. TensorRT seulement pour l'instant. Recommandé : "
+        "Désactivée, ou Normale sur une carte RTX."},
+    Entry{"Full-size stabilization", "Stabilisation à pleine taille"},
+    Entry{"Runs the temporal stabilization on the full working picture instead of half size: it also "
+          "steadies the finest grain and lines, for about four times the cost (about twice upscaling). "
+          "Recommended: off, except on a high-end RTX card with interpolation low.",
+          "Fait tourner la stabilisation temporelle sur toute l'image de travail au lieu de la demi-taille : "
+          "elle stabilise aussi le grain et les traits les plus fins, pour environ quatre fois le coût (à "
+          "peu près deux fois l'agrandissement). Recommandé : désactivée, sauf sur une carte RTX haut de "
+          "gamme avec peu d'interpolation."},
+    Entry{
+        "Temporal stabilization runs on TensorRT only for now: this engine plays without it.",
+        "La stabilisation temporelle ne tourne que sous TensorRT pour l'instant : ce moteur lit sans elle."},
+    Entry{"temporal stabilization turns off", "la stabilisation temporelle s'arrête"},
+    Entry{"temporal stabilization loads (built the first time for this size)",
+          "la stabilisation temporelle se charge (construite la première fois pour cette taille)"},
+    Entry{"temporal stabilization changes size (built the first time for this size)",
+          "la stabilisation temporelle change de taille (construite la première fois pour cette taille)"},
     Entry{"Working resolution", "Résolution de travail"},
     Entry{"the upscaler changes to Anime4K", "l'agrandissement passe à Anime4K"},
 };
