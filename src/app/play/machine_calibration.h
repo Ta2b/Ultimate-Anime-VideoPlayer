@@ -13,7 +13,7 @@
 //      tient pas avec RIFE ;
 //   3. si SPAN + RIFE tient au plus haut palier avec des modèles plus légers que ceux de Qualité, ce palier
 //      rejoué avec ceux de Qualité (C07-03) : une carte que la table sous-estime monte de modèle.
-// Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.26
+// Les modèles sont ceux du niveau estimé de la carte (auto_config.h : SPAN Balanced Sharp b8f64 et RIFE 4.25
 // en Qualité et Ultra, SPAN Performance Sharp et RIFE 4.22 lite en dessous), SPAN au cran Performance comme
 // l'Auto qui jouera (ADR 0007 reprise) : le FP8 si son reçu passe la porte, sinon le FP16. Sans palier SPAN
 // qui tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas essayé (décision 8 des audits). Ici

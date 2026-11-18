@@ -55,12 +55,12 @@ std::string interpolation_level_advice(const CardAdvice& card) {
       return i18n::tr("interpolation off");
     case Tier::Fast:
     case Tier::Normal:
-      return i18n::tr("Fast");
+      return "RIFE 4.22 lite";
     case Tier::Quality:
     case Tier::Ultra:
-      return i18n::tr("Balanced");  // Élevé et Très élevé restent expérimentaux
+      return "RIFE 4.25";
   }
-  return i18n::tr("Fast");
+  return "RIFE 4.22 lite";
 }
 
 std::string light_motion_advice(const CardAdvice& card) {

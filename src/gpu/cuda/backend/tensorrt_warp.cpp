@@ -175,7 +175,8 @@ std::expected<void, Refusal> TensorRtBackend::warp(const Tensor& a, const Tensor
       .window_height = motion.area.height,
       .time = t,
       .cubic = motion.warp == kernels::RifeWarp::CatmullRom,
-      .from_middle = poses.keep || t != 0.5F,
+      .from_middle = poses.keep || (t != 0.5F && !motion.at_instant),
+      .at_instant = motion.at_instant && !poses.keep,
       .keep_poses = poses.keep,
       .previous_flow = poses.previous != nullptr ? address(poses.previous->flow) : nullptr,
       .out = out != nullptr ? const_cast<void*>(address(*out)) : nullptr,  // NOLINT : écrit

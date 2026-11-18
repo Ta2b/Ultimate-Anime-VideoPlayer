@@ -8,7 +8,6 @@ namespace {
 // Image IA : (clé anglaise, français).
 constexpr std::array kImageTabs{
     Entry{" (recommended)", " (recommandé)"},
-    Entry{" (experimental)", " (expérimental)"},
     Entry{"{} fps", "{} i/s"},
     Entry{"Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (Estimate motion "
           "at 720p): slow pans can ripple.",
@@ -23,7 +22,6 @@ constexpr std::array kImageTabs{
         "des images sont sautées."},
     Entry{"Low", "Bas"},
     Entry{"Medium", "Moyen"},
-    Entry{"High+", "Élevé+"},
     Entry{"Mode", "Mode"},
     Entry{"Max ({} fps)", "Max ({} i/s)"},
     Entry{"Turn off if the graphics card can't keep up", "Couper si la carte graphique ne suit pas"},
@@ -31,34 +29,10 @@ constexpr std::array kImageTabs{
           "keeps running, instead of stuttering. Recommended: on. Instant mode only.",
           "Si la carte ne suit pas pendant environ 10 s, l'interpolation s'arrête pour cette vidéo et "
           "l'agrandissement continue, au lieu de saccader. Recommandé : activé. Mode Instantané seulement."},
-    Entry{"RIFE 4.25 lite, the lightest level. Speed: about 2× Medium. Quality impact: moderate loss "
-          "(softer in-between frames).",
-          "RIFE 4.25 lite, le niveau le plus léger. Vitesse : environ 2× Moyen. Impact sur la qualité : "
-          "perte modérée (images intermédiaires plus douces)."},
-    Entry{"RIFE 4.26 guided by 1 to 3 GMFSS key frames on fast motion only. Experimental. Speed: about −20"
-          " to −40 % vs High, depending on the scene. Quality impact: moderate gain on fast turns and "
-          "pans. NVIDIA RTX only.",
-          "RIFE 4.26 guidé par 1 à 3 images clés GMFSS, sur les mouvements rapides seulement. "
-          "Expérimental. Vitesse : environ −20 à −40 % face à Élevé, selon la scène. Impact sur la qualité"
-          " : gain modéré sur les rotations et panoramiques rapides. NVIDIA RTX seulement."},
-    Entry{"RIFE 4.26: cleaner in-between frames. Speed: about −10 % vs Medium. Quality impact: minor gain."
-          " Recommended on NVIDIA RTX.",
-          "RIFE 4.26 : des images intermédiaires plus propres. Vitesse : environ −10 % face à Moyen. "
-          "Impact sur la qualité : gain mineur. Recommandé sur NVIDIA RTX."},
     Entry{"The highest frame rate interpolation aims for; a lower limit saves power and heat. Recommended:"
           " the display maximum.",
           "La cadence la plus haute visée par l'interpolation ; une limite plus basse économise l'énergie "
           "et la chauffe. Recommandé : le maximum de l'écran."},
-    Entry{
-        "Adds frames between the video's own frames for smoother motion, as many as the display and the "
-        "graphics card allow. Higher levels make cleaner in-between frames on fast motion but need a "
-        "stronger card. Low, Medium and High are RIFE 4.25 lite, 4.22 lite and 4.26; High+ adds GMFSS to "
-        "High on fast motion, is still experimental and needs an NVIDIA RTX.",
-        "Ajoute des images entre celles de la vidéo pour un mouvement plus fluide, autant que l'écran et la "
-        "carte graphique le permettent. Les niveaux plus hauts font des images intermédiaires plus propres "
-        "sur les mouvements rapides, mais demandent une carte plus puissante. Bas, Moyen et Élevé sont "
-        "RIFE 4.25 lite, 4.22 lite et 4.26 ; Élevé+ ajoute GMFSS à Élevé sur les mouvements rapides, est "
-        "encore expérimental et demande une NVIDIA RTX."},
     Entry{"FPS limit", "Limite d'i/s"},
     Entry{"Here interpolation goes up to ×{} ({:.0f} fps limit).",
           "Ici, l'interpolation va jusqu'à ×{} (limite de {:.0f} i/s)."},
@@ -99,9 +73,6 @@ constexpr std::array kImageTabs{
           "qualité : une affaire de goût. Recommandé : désactivé. Moyen et Élevé seulement."},
     Entry{"Greyed out: the video is already HDR, it is shown without the anime grade.",
           "Grisé : la vidéo est déjà en HDR, elle s'affiche sans le grade anime."},
-    Entry{"Needs the TensorRT engine (NVIDIA RTX card).", "Demande le moteur TensorRT (carte NVIDIA RTX)."},
-    Entry{"Needs the two GMFSS models in the models folder.",
-          "Demande les deux modèles GMFSS dans le dossier des modèles."},
     Entry{"Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
           "only; RIFE is used elsewhere.",
           "Apple : le flot optique de macOS (VideoToolbox, macOS 15.4+), sans modèle à télécharger. Moteur "
@@ -120,13 +91,11 @@ constexpr std::array kImageTabs{
     Entry{
         "On slow pans, the motion of the whole picture, measured to a hundredth of a pixel, replaces small "
         "uneven motion: backgrounds stop rippling and juddering. Speed: no noticeable loss. Quality impact: "
-        "clear gain on slow pans. Recommended: on. RIFE only.",
+        "clear gain on slow pans. Recommended: on. RIFE and DistilDRBA.",
         "Sur les panoramiques lents, le mouvement de l'image entière, mesuré au centième de pixel, remplace "
         "les petits mouvements irréguliers : les décors n'ondulent plus et ne saccadent plus. Vitesse : pas "
-        "de "
-        "perte sensible. Effet sur la qualité : gain net sur les panoramiques lents. Conseillé : activé. "
-        "RIFE "
-        "seulement."},
+        "de perte sensible. Effet sur la qualité : gain net sur les panoramiques lents. Conseillé : activé. "
+        "RIFE et DistilDRBA."},
     Entry{"Estimate motion at 720p", "Estimer le mouvement en 720p"},
     Entry{
         "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, but slow "
@@ -154,31 +123,33 @@ constexpr std::array kImageTabs{
           "rapides peuvent paraître moins précis. Un essai, pour les cartes à leur limite. Vitesse : jusqu'à "
           "+50 % sur les mouvements rapides. Impact sur la qualité : perte modérée. Recommandé : désactivé. "
           "RIFE seulement."},
-    Entry{"Balanced", "Équilibré"},
     Entry{"System (macOS)", "Système (macOS)"},
-    Entry{"RIFE 4.22 lite: light and clean, the reference for the other levels. Recommended on graphics "
-          "cards other than NVIDIA RTX.",
-          "RIFE 4.22 lite : léger et propre, la référence des autres niveaux. Recommandé sur les cartes "
-          "graphiques autres que NVIDIA RTX."},
-    Entry{"RIFE 4.25: the former Balanced level. Speed: about −10 % vs Balanced. Quality impact: "
-          "imperceptible.",
-          "RIFE 4.25 : l'ancien niveau Équilibré. Vitesse : environ −10 % face à Équilibré. Impact sur la "
-          "qualité : imperceptible."},
-    Entry{"DistilDRBA: characters animated on twos keep their rhythm; one frame of delay. Speed: about Fast "
-          "up to ×5, slower above. Quality impact: none measured over RIFE. Auto does not use it.",
-          "DistilDRBA : les personnages animés à une image sur deux gardent leur rythme ; une image de "
-          "retard. Vitesse : environ Rapide jusqu'à ×5, plus lent au-delà. Impact sur la qualité : aucun "
-          "mesuré face à RIFE. Auto ne l'utilise pas."},
+    Entry{
+        "Keeps the rhythm of the animation: characters drawn on twos hold their poses while the background "
+        "moves. Solid on fine repeating patterns (bars, grids). Lighter than RIFE up to ×5, heavier above. "
+        "One frame of delay.",
+        "Garde le rythme de l'animation : les personnages dessinés une image sur deux tiennent leur pose "
+        "pendant que le décor bouge. Solide sur les motifs fins répétés (barreaux, grilles). Plus léger que "
+        "RIFE jusqu'à ×5, plus lourd au-delà. Une image de retard."},
+    Entry{
+        "The lightest RIFE, with fine lines. Recommended on graphics cards other than NVIDIA RTX.",
+        "Le RIFE le plus léger, aux traits fins. Conseillé sur les cartes graphiques autres que NVIDIA RTX."},
+    Entry{"The most precise RIFE, for about 15 % more computation than RIFE 4.22 lite. Recommended on NVIDIA "
+          "RTX.",
+          "Le RIFE le plus précis, pour environ 15 % de calcul en plus que RIFE 4.22 lite. Conseillé sur "
+          "NVIDIA RTX."},
+    Entry{
+        "Adds frames between the video's own frames for smoother motion, as many as the display and the "
+        "graphics card allow. DistilDRBA v2 lite keeps the rhythm of the animation; RIFE 4.22 lite is the "
+        "lightest; RIFE 4.25 is the most precise RIFE.",
+        "Ajoute des images entre celles de la vidéo pour un mouvement plus fluide, autant que l'écran et la "
+        "carte graphique le permettent. DistilDRBA v2 lite garde le rythme de l'animation ; RIFE 4.22 lite "
+        "est le plus léger ; RIFE 4.25 est le RIFE le plus précis."},
     Entry{"High", "Élevé"},
     Entry{"GMFSS motion at half size", "Mouvement de GMFSS à demi-taille"},
     Entry{"GMFSS keeps the source detail", "GMFSS garde le détail de la source"},
     Entry{"GMFSS and RIFE at 540p", "GMFSS et RIFE en 540p"},
     Entry{"GMFSS at every instant, without RIFE", "GMFSS à chaque instant, sans RIFE"},
-    Entry{
-        "RIFE guided by 1 to 3 GMFSS key frames on every moving pair. Speed: about −45 % vs Balanced. "
-        "Quality impact: moderate gain, the steadiest motion. NVIDIA RTX only.",
-        "RIFE guidé par 1 à 3 images clés GMFSS, sur chaque paire qui bouge. Vitesse : environ −45 % face à "
-        "Équilibré. Impact sur la qualité : gain modéré, le mouvement le plus stable. NVIDIA RTX seulement."},
     Entry{" + GMFSS union on fast motion", " + GMFSS union sur les mouvements rapides"},
     Entry{" + GMFSS union on every pair", " + GMFSS union sur chaque paire"},
     Entry{"GMFSS (pair)", "GMFSS (paire)"},

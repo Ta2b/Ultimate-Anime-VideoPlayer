@@ -60,12 +60,14 @@ std::expected<ModelChoice, Refusal> choose_model(const PlayOptions& options,
 inline constexpr std::array<std::string_view, 4> kRifeCatalogue{
     "rife_v4.26.onnx", "rife_v4.25.onnx", "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx"};
 
-// Le modèle par défaut, le premier présent dans cet ordre : 4.26 sur une RTX, 4.25 s'il manque ; 4.22 lite,
-// plus légère, sur les autres cartes (AMD, Intel, GTX), 4.25 lite si elle manque.
-inline constexpr std::array<std::string_view, 4> kRifeForRtx{"rife_v4.26.onnx", "rife_v4.25.onnx",
-                                                             "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx"};
-inline constexpr std::array<std::string_view, 4> kRifeForOthers{
-    "rife_v4.22_lite.onnx", "rife_v4.25_lite.onnx", "rife_v4.26.onnx", "rife_v4.25.onnx"};
+// Le modèle par défaut, le premier présent dans cet ordre : 4.25 sur une RTX, 4.22 lite s'il
+// manque ; 4.22 lite, plus légère, sur les autres cartes (AMD, Intel, GTX), 4.25 si elle manque. 4.26 et
+// 4.25 lite, retirés du menu (interp_retired.h), ne servent qu'en dernier recours, à un dossier sans les
+// deux.
+inline constexpr std::array<std::string_view, 4> kRifeForRtx{"rife_v4.25.onnx", "rife_v4.22_lite.onnx",
+                                                             "rife_v4.26.onnx", "rife_v4.25_lite.onnx"};
+inline constexpr std::array<std::string_view, 4> kRifeForOthers{"rife_v4.22_lite.onnx", "rife_v4.25.onnx",
+                                                                "rife_v4.25_lite.onnx", "rife_v4.26.onnx"};
 std::span<const std::string_view> rife_preference(const GpuFacts& gpu);
 
 // RIFE : --rife-model, sinon settings.rife_model s'il est au catalogue, sinon le premier de

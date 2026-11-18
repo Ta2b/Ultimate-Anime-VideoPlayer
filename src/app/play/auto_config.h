@@ -53,10 +53,10 @@ std::optional<Priority> priority_from_key(std::string_view text);
 // la chaîne tient au plus haut palier : calibrer ne fait plus baisser le modèle (A49-01, A38-02) et peut le
 // monter (C07-03). Le b8f64 FP16 est mesuré à 14,25 ms en 1088 × 1920 sur une RTX 4070 Ti
 // (docs/span-fp8-cutlass.md), pour un seul SPAN par image source (41,7 ms à 24 i/s) ; la place de Qualité l'a
-// été avec RIFE 4.25, pas encore avec RIFE 4.26 (C07-07).
+// été avec RIFE 4.25, le modèle de Qualité depuis que 4.26 a quitté le menu.
 inline constexpr std::string_view kQualitySpanModel =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
-inline constexpr std::string_view kQualityRifeModel = "rife_v4.26.onnx";
+inline constexpr std::string_view kQualityRifeModel = "rife_v4.25.onnx";
 inline constexpr std::string_view kLightRifeModel = "rife_v4.22_lite.onnx";
 // span_fp8 : les noyaux FP8 de SPAN sont présumés sur ce poste (Machine::span_fp8) ; le b8f64 y sert à tous
 // les niveaux, seul modèle dont le paquet FP8 passe la porte (le b5f48 y est refusé sur la RTX 4070 Ti).

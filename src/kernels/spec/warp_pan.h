@@ -20,14 +20,17 @@
 //   sûre : le dernier det était valable et |(dx, dy)| < kPanMaxShift.
 // (dx, dy) est le déplacement du contenu de a vers b, en pixels de l'image.
 //
-// Emploi (from_middle et estimated du warp, hors garder les poses) : le flot lu f (4 plans, pixels de la
-// fenêtre du mouvement) est remplacé par g = (−dx / 2 sx, −dy / 2 sy, dx / 2 sx, dy / 2 sy) quand
-// l'estimation est sûre, max |f| < kPanFlowLimit et max |f − g| < kPanAgreement ; puis, même sans estimation
-// sûre, d le déplacement du point,
+// Emploi (from_middle et estimated du warp, hors garder les poses) : s l'instant du flot lu, 1/2 pour le flot
+// du milieu de RIFE, t pour un flot estimé à l'instant de la sortie (Motion::at_instant : DistilDRBA, que le
+// warp reçoit avec l'image du centre en a, et RIFE estimé directement à t). Le flot lu f (4 plans, pixels de
+// la fenêtre du mouvement) est remplacé par g = (−s dx / sx, −s dy / sy, (1 − s) dx / sx, (1 − s) dy / sy)
+// quand l'estimation est sûre, max |f| < kPanFlowLimit et max |f − g| < kPanAgreement ; puis, même sans
+// estimation sûre, d le déplacement du point,
 //   w = smoothstep(kSlowFadeLo, kSlowFadeHi, |d|) ;
-//   logit(m) = w · (loi ajustée de spec/warp.h) + (1 − w) · ln((1 − t) / t)
+//   logit(m) = w · (loi ajustée de spec/warp.h, ou masque estimé tel quel) + (1 − w) · ln((1 − t) / t)
 // (fondu linéaire, poids 1 − t, sous un demi-pixel ; à t = 1/2, ln vaut 0 et le masque est ramené vers 1/2).
-// Garder les poses (spec/poses.h) n'est pas touché.
+// Garder les poses (spec/poses.h) n'est pas touché ; celles que DistilDRBA garde de lui-même restent hors du
+// fondu dès qu'elles bougent de plus de deux pixels, et leur flot ne suit pas la translation de la paire.
 #pragma once
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep

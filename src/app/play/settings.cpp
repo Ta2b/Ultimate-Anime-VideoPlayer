@@ -263,11 +263,10 @@ std::string_view badge_text(Badge badge) {
 }
 
 std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model, bool gmfss_middle) {
+  if (gmfss_middle) return std::nullopt;
   for (const InterpChoice& choice : kInterpLevels) {
     if (choice.engine != engine) continue;
-    if (engine == MotionEngine::Rife &&
-        (choice.rife_model != rife_model || choice.gmfss_middle != gmfss_middle))
-      continue;
+    if (engine == MotionEngine::Rife && choice.rife_model != rife_model) continue;
     return choice.level;
   }
   return std::nullopt;
