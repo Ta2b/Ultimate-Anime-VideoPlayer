@@ -60,11 +60,14 @@ std::array<std::size_t, kTemporalFixFrames> TemporalWindow::window(std::size_t c
   // elle non plus, la voisine k - 1 de son propre côté (déjà comblée), et le milieu pour la première.
   const auto fill = [&](std::array<std::optional<std::size_t>, kRadius>& side,
                         const std::array<std::optional<std::size_t>, kRadius>& other) {
-    std::array<std::optional<std::size_t>, kRadius> filled = side;
+    std::array<std::size_t, kRadius> filled{};
     for (std::size_t k = 0; k < kRadius; ++k) {
-      if (filled[k]) continue;
+      if (side[k]) {
+        filled[k] = *side[k];
+        continue;
+      }
       reflected = true;
-      filled[k] = other[k] ? other[k] : k > 0 ? filled[k - 1] : std::optional(center);
+      filled[k] = other[k] ? *other[k] : k > 0 ? filled[k - 1] : center;
     }
     return filled;
   };
@@ -72,8 +75,8 @@ std::array<std::size_t, kTemporalFixFrames> TemporalWindow::window(std::size_t c
   const auto next_filled = fill(next, past);
   std::array<std::size_t, kTemporalFixFrames> out{};
   for (std::size_t k = 0; k < kRadius; ++k) {
-    out[kRadius - 1 - k] = *past_filled[k];
-    out[kRadius + 1 + k] = *next_filled[k];
+    out[kRadius - 1 - k] = past_filled[k];
+    out[kRadius + 1 + k] = next_filled[k];
   }
   out[kRadius] = center;
   if (mirrored != nullptr) *mirrored = reflected;

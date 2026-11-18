@@ -146,6 +146,7 @@ Message scales_initializer() {
 // input, et l'image du milieu moyennée.
 void head_nodes(Message& graph, const FrameSplit& split) {
   std::vector<std::string> names;
+  names.reserve(static_cast<std::size_t>(split.frames));
   for (int k = 0; k < split.frames; ++k) names.push_back(frame_input_name(split.input, k));
   Message concat;
   for (const std::string& name : names) concat.text(kNodeInput, name);
