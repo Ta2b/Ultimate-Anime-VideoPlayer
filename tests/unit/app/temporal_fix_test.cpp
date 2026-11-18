@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/play/settings.h"
+#include "app/play/temporal_fix_model.h"
 #include "app/play/temporal_window.h"
 #include "stage_rig.h"
 
@@ -106,7 +107,39 @@ TEST_CASE("play.toml : la stabilisation temporelle, absente d'un ancien fichier,
   const auto reread = load_settings(path);
   REQUIRE(reread);
   CHECK(reread->temporal_fix == TemporalFix::Strong);
+  CHECK_FALSE(reread->temporal_fix_full);  // absente : à demi-taille
+  PlaySettings full = *reread;
+  full.temporal_fix_full = true;
+  REQUIRE(save_settings(path, full));
+  const auto full_read = load_settings(path);
+  REQUIRE(full_read);
+  CHECK(full_read->temporal_fix_full);
   std::filesystem::remove(path);
+}
+
+TEST_CASE("Stabilisation : la taille de travail doit se diviser en deux, puis encore en deux à demi-taille",
+          "[app][temporal]") {
+  CHECK(temporal_fix_fits(1920, 1080, true));
+  CHECK(temporal_fix_fits(1280, 720, true));
+  CHECK_FALSE(temporal_fix_fits(1918, 1078, true));  // 959 × 539 à demi-taille
+  CHECK(temporal_fix_fits(1918, 1078, false));
+  CHECK_FALSE(temporal_fix_fits(1919, 1080, false));
+  CHECK_FALSE(temporal_fix_fits(0, 1080, false));
+}
+
+TEST_CASE("Stabilisation : l'allumer, l'éteindre ou changer sa taille recharge la vidéo", "[app][temporal]") {
+  PlaySettings running;
+  PlaySettings on = running;
+  on.temporal_fix = TemporalFix::Normal;
+  CHECK(change_between(running, on, true).cost == ChangeCost::Reopen);
+  CHECK(change_between(on, running, true).cost == ChangeCost::Reopen);
+  PlaySettings full = on;
+  full.temporal_fix_full = true;
+  CHECK(change_between(on, full, true).cost == ChangeCost::Reopen);
+  // Éteinte, sa taille ne recharge rien : le réglage attend qu'on l'allume.
+  PlaySettings off_full = running;
+  off_full.temporal_fix_full = true;
+  CHECK(change_between(running, off_full, true).cost != ChangeCost::Reopen);
 }
 
 }  // namespace ajp::app::play

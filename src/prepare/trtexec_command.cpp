@@ -7,6 +7,7 @@
 #include <array>
 #include <format>
 #include <ranges>
+#include <span>
 
 #include "prepare/process.h"
 #include "prepare/sha256.h"
@@ -19,12 +20,20 @@ bool is_fixed(const gpu::ShapeSet& shapes) {
   return shapes.min.dims == shapes.opt.dims && shapes.opt.dims == shapes.max.dims;
 }
 
+// « input:1x3x1080x1920 », suivi des jumelles (« ,input_1:1x3x1080x1920 ») : les mêmes formes.
+std::string shape_list(std::string_view input, std::span<const std::string> twins, const gpu::Shape& shape) {
+  std::string list = std::format("{}:{}", input, shape_text(shape));
+  for (const std::string& twin : twins) list += std::format(",{}:{}", twin, shape_text(shape));
+  return list;
+}
+
 // Formes de trtexec : --optShapes seul pour un moteur statique (le défaut du
 // fork), les trois profils pour un moteur dynamique.
-std::string profile_flags(std::string_view input, const gpu::ShapeSet& shapes) {
-  if (is_fixed(shapes)) return std::format(" --optShapes={}:{}", input, shape_text(shapes.opt));
-  return std::format(" --minShapes={0}:{1} --optShapes={0}:{2} --maxShapes={0}:{3}", input,
-                     shape_text(shapes.min), shape_text(shapes.opt), shape_text(shapes.max));
+std::string profile_flags(std::string_view input, std::span<const std::string> twins,
+                          const gpu::ShapeSet& shapes) {
+  if (is_fixed(shapes)) return " --optShapes=" + shape_list(input, twins, shapes.opt);
+  return std::format(" --minShapes={} --optShapes={} --maxShapes={}", shape_list(input, twins, shapes.min),
+                     shape_list(input, twins, shapes.opt), shape_list(input, twins, shapes.max));
 }
 
 bool positive(const gpu::Shape& shape) {
@@ -66,8 +75,8 @@ std::expected<void, Refusal> check_shapes(const gpu::ShapeSet& shapes) {
 }
 
 std::string engine_settings(Recipe recipe, std::string_view input_name,
-                            const std::optional<gpu::ShapeSet>& shapes) {
-  const std::string profile = shapes ? profile_flags(input_name, *shapes) : "";
+                            const std::optional<gpu::ShapeSet>& shapes, std::span<const std::string> twins) {
+  const std::string profile = shapes ? profile_flags(input_name, twins, *shapes) : "";
   switch (recipe) {
     case Recipe::Upscaler:
       // Le préréglage « Dynamic » du Manager ajoute ses trois profils après

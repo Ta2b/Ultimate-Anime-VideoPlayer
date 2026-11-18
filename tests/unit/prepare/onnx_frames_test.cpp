@@ -103,9 +103,45 @@ TEST_CASE("L'entrée empilée devient sept images, que le Concat de tête refait
   CHECK(scanned->nodes == 3);
 }
 
-TEST_CASE("Une entrée absente, dynamique ou indivisible est refusée", "[prepare][onnx]") {
+TEST_CASE("Une hauteur libre le reste : les sept images partagent son nom", "[prepare][onnx]") {
+  const auto split = with_frame_inputs(model(0), "input", 7);
+  REQUIRE(split);
+  const auto scanned = scan_onnx(*split);
+  REQUIRE(scanned);
+  REQUIRE(scanned->inputs.size() == 7);
+  for (const OnnxInput& input : scanned->inputs) CHECK(input.dims == std::vector<std::int64_t>{1, 3, -1, 12});
+}
+
+TEST_CASE("Demi-taille : le réseau lit les images moyennées, sa correction agrandie s'ajoute au milieu",
+          "[prepare][onnx]") {
+  const auto split = with_frame_inputs(model(0), FrameSplit{.half = true});
+  REQUIRE(split);
+  const auto nodes = onnx_nodes(*split);
+  REQUIRE(nodes);
+  std::vector<std::string> ops;
+  for (const auto& n : *nodes) ops.push_back(n.op_type);
+  CHECK(ops == std::vector<std::string>{"Concat", "AveragePool", "AveragePool", "Relu", "Identity", "Sub",
+                                        "Resize", "Add"});
+  CHECK((*nodes)[0].outputs == std::vector<std::string>{"ajp_frames_full"});
+  CHECK((*nodes)[1].inputs == std::vector<std::string>{"ajp_frames_full"});
+  CHECK((*nodes)[1].outputs == std::vector<std::string>{"input"});
+  CHECK((*nodes)[2].inputs == std::vector<std::string>{"input_3"});
+  CHECK((*nodes)[4].outputs == std::vector<std::string>{"ajp_frames_net_out"});  // l'ancienne sortie
+  CHECK((*nodes)[5].inputs == std::vector<std::string>{"ajp_frames_net_out", "ajp_frames_center_half"});
+  CHECK((*nodes)[6].inputs == std::vector<std::string>{"ajp_frames_delta_half", "", "ajp_frames_scales"});
+  CHECK((*nodes)[7].inputs == std::vector<std::string>{"input_3", "ajp_frames_delta"});
+  CHECK((*nodes)[7].outputs == std::vector<std::string>{"output"});
+  const auto scanned = scan_onnx(*split);
+  REQUIRE(scanned);
+  CHECK(scanned->inputs.size() == 7);  // l'initialiseur des échelles n'est pas une entrée
+  CHECK(with_frame_inputs(model(), FrameSplit{.half = true, .center = 7}).error().code ==
+        RefusalCode::FieldOutOfRange);
+  CHECK(with_frame_inputs(model(), FrameSplit{.half = true, .output = "y"}).error().code ==
+        RefusalCode::FieldMissing);
+}
+
+TEST_CASE("Une entrée absente ou indivisible est refusée", "[prepare][onnx]") {
   CHECK(with_frame_inputs(model(), "x", 7).error().code == RefusalCode::FieldMissing);
-  CHECK(with_frame_inputs(model(0), "input", 7).error().code == RefusalCode::FormatUnsupported);
   CHECK(with_frame_inputs(model(), "input", 5).error().code == RefusalCode::FormatUnsupported);
   CHECK(with_frame_inputs(model(), "input", 1).error().code == RefusalCode::FieldOutOfRange);
   const Bytes broken{std::byte{0x3a}, std::byte{0xff}};

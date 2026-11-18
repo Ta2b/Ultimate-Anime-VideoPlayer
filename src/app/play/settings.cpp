@@ -708,6 +708,9 @@ Change settle(const PlaySettings& running, const PlaySettings& wanted, std::vect
     reopen.emplace_back(wanted.temporal_fix == TemporalFix::Off
                             ? i18n::tr("temporal stabilization turns off")
                             : i18n::tr("temporal stabilization loads (built the first time for this size)"));
+  } else if (wanted.temporal_fix != TemporalFix::Off &&
+             running.temporal_fix_full != wanted.temporal_fix_full) {
+    reopen.emplace_back(i18n::tr("temporal stabilization changes size (built the first time for this size)"));
   }
   if (running.face_skin != wanted.face_skin)
     reopen.emplace_back(i18n::tr("the video is analysed again for faces"));

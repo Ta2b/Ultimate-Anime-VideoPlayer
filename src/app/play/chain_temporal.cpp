@@ -17,9 +17,11 @@
 namespace ajp::app::play {
 namespace {
 
-// Première construction annoncée tant qu'aucune passée ne la donne : un petit graphe (un demi-million de
-// poids), à GridSample ; à mesurer sur une RTX.
-constexpr double kTemporalFixFirstBuildS = 120.0;
+// Première construction annoncée tant qu'aucune passée ne la donne : 79 s pour le graphe à pleine taille en
+// 1080p sur une RTX 4070 Ti (niveau 3, sans pavage).
+constexpr double kTemporalFixFirstBuildS = 80.0;
+// La largeur que le profil laisse libre sous celle du travail : comme vs_temporalfix (width - 8).
+constexpr int kTemporalFixLooseWidth = 8;
 
 }  // namespace
 
@@ -47,7 +49,8 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
               level_of(fix).model, kTemporalFixDir);
     return true;
   }
-  const std::string key = inner_key("temporal-fix", library, *found, c.work.width, c.work.height);
+  const std::string key = inner_key(settings.temporal_fix_full ? "temporal-fix-full" : "temporal-fix",
+                                    library, *found, c.work.width, c.work.height);
   if (inner.refused(ChainStage::Upscale, key) != nullptr) {
     log->info("stabilisation temporelle refusée plus tôt dans la séance : lecture sans elle");
     return true;
@@ -57,16 +60,26 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
     inner.failed(ChainStage::Upscale, key, refusal);
     return true;
   };
-  auto fixed = static_temporal_fix(*found, c.work.width, c.work.height, paths::derived_models(p.paths));
-  if (!fixed) return refused(fixed.error());
-  // La forme d'une des sept entrées : prepare_engine ne s'en sert que pour l'étiquette d'un graphe statique.
+  const bool half = !settings.temporal_fix_full;
+  if (!temporal_fix_fits(c.work.width, c.work.height, half)) {
+    log->info("stabilisation temporelle : taille de travail {}x{} impaire{}, lecture sans elle", c.work.width,
+              c.work.height, half ? " à demi-taille" : "");
+    return true;
+  }
+  auto graph = temporal_fix_graph(*found, half, paths::derived_models(p.paths));
+  if (!graph) return refused(graph.error());
+  // La forme d'une des sept entrées ; le profil laisse la largeur libre de quelques pixels (loose_width), le
+  // niveau d'optimisation 3 sans pavage (tuned = false) : 28 ms au lieu de 42 en 1080p, construit en 79 s au
+  // lieu de 8 min (RTX 4070 Ti, docs/temporalfix.md).
   const gpu::Shape shape{.dims = {1, 3, c.work.height, c.work.width}};
-  auto engine = prepare_engine(p, init, *c.backend, *fixed, shape,
+  auto engine = prepare_engine(p, init, *c.backend, *graph, shape,
                                EngineLabel{.name = i18n::tr("Temporal stabilization"),
                                            .model = core::to_utf8(found->stem()),
                                            .width = c.work.width,
                                            .height = c.work.height,
-                                           .first_build_s = kTemporalFixFirstBuildS},
+                                           .first_build_s = kTemporalFixFirstBuildS,
+                                           .tuned = false,
+                                           .loose_width = kTemporalFixLooseWidth},
                                gpu::Lane::Upscale);
   if (!engine) return refused(engine.error());
   if (!*engine) return std::nullopt;  // fenêtre fermée pendant la construction
@@ -76,8 +89,8 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
         std::format("{} entrées au lieu de {}", (**engine)->input_names().size(), kTemporalFixFrames)});
   }
   c.temporal_fix = std::move(**engine);
-  log->info("stabilisation temporelle {} : {} en {}x{}", name(fix), core::to_utf8(found->filename()),
-            c.work.width, c.work.height);
+  log->info("stabilisation temporelle {} : {} en {}x{}{}", name(fix), core::to_utf8(found->filename()),
+            c.work.width, c.work.height, half ? ", réseau à demi-taille" : "");
   return true;
 }
 

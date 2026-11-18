@@ -302,6 +302,16 @@ TEST_CASE("TrtexecBuilder : graphe statique à plusieurs entrées nommées autre
     CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, fixed(6, 64, 64), progress)) ==
           RefusalCode::ModelMismatch);
   }
+  SECTION("jumelles libres : la première sert aux formes, toutes reçoivent le profil") {
+    Bench bench("ok", {.inputs = {{.name = "input_0", .dims = {1, 3, -1, -1}},
+                                  {.name = "input_1", .dims = {1, 3, -1, -1}}}});
+    const ShapeSet loose{.min = {{1, 3, 96, 120}}, .opt = {{1, 3, 96, 128}}, .max = {{1, 3, 96, 128}}};
+    REQUIRE(TrtexecBuilder(bench.config).build(bench.model, loose, progress));
+    const auto args = bench.logged_args(loose);
+    CAPTURE(args);
+    CHECK(std::ranges::contains(args, "--minShapes=input_0:1x3x96x120,input_1:1x3x96x120"));
+    CHECK(std::ranges::contains(args, "--maxShapes=input_0:1x3x96x128,input_1:1x3x96x128"));
+  }
 }
 
 #ifndef _WIN32

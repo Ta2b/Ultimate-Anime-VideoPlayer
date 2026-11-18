@@ -51,6 +51,10 @@ struct EngineLabel {
   // plus que les autres.
   double first_build_s = kDefaultBuildSeconds;
   bool tuned = true;  // gpu::ModelSpec::tuned
+  // Plus que 0 : le profil de construction descend jusqu'à width - loose_width (libre), la forme du moteur
+  // restant width × height. Une forme figée laisse TensorRT plier les calculs de forme en constantes
+  // (TemporalFix : 6,5 Go de grilles, temporal_fix_model.h).
+  int loose_width = 0;
 };
 
 // Instantané demandé (--snapshot) : pris pendant la première construction de moteur qui dure jusqu'à

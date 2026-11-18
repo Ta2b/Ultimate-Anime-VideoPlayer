@@ -239,6 +239,7 @@ struct PlaySettings {
   // La stabilisation temporelle avant SPAN (temporal_fix.h) ; éteinte par défaut. L'Auto n'y touche pas.
   // Recharge la chaîne.
   TemporalFix temporal_fix = TemporalFix::Off;
+  bool temporal_fix_full = false;  // à pleine taille de travail ; sinon à demi-taille, le détail gardé
   int work_height = 720;
   Downscale downscale = Downscale::Hermite;
   int rife_factor = kDefaultRifeFactor;  // 0 : aucune interpolation

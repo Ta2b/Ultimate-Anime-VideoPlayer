@@ -315,6 +315,7 @@ void read_image(const toml::table& image, PlaySettings& s, std::vector<std::expe
   reads.push_back(read_named(image, "image", "downscale", s.downscale, kDownscaleCount));
   reads.push_back(read_named(image, "image", "span_precision", s.span_precision, kPrecisionTierCount));
   reads.push_back(read_named(image, "image", "temporal_fix", s.temporal_fix, kTemporalFixCount));
+  reads.push_back(read(image, "image", "temporal_fix_full", s.temporal_fix_full));
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)

@@ -61,8 +61,9 @@ void stability_section(PlaySettings& d, const SettingsChoices& choices) {
       i18n::tr("Removes the shimmer from one frame to the next (fizzling lines, crawling textures, "
                "flickering grain) by comparing each frame with the three before and the three after. "
                "Upscaling and interpolation then work on a steady picture. Stronger also smooths very "
-               "small movements. Speed: heavy, about as much as upscaling at 1080p; a high-end card is "
-               "needed. TensorRT only for now. Recommended: Off, or Normal on a high-end RTX card."),
+               "small movements. Speed: about half the cost of upscaling, as it works at half size and "
+               "keeps the full detail. TensorRT only for now. Recommended: Off, or Normal on an RTX "
+               "card."),
       panel::Apply::Reload);
   if (d.temporal_fix != TemporalFix::Off && choices.engine_in_use &&
       *choices.engine_in_use != core::EngineId::TensorRt)
@@ -195,6 +196,14 @@ void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
   panel::tip(i18n::tr("Downscaler"),
              i18n::tr("How the video is shrunk before upscaling. Hermite keeps lines clean, with no halos; "
                       "Spline36 keeps a little more detail. Quality impact: minor. Recommended: Hermite."));
+  ImGui::BeginDisabled(d.temporal_fix == TemporalFix::Off);
+  ImGui::Checkbox(i18n::tr("Full-size stabilization"), &d.temporal_fix_full);
+  ImGui::EndDisabled();
+  panel::tip(i18n::tr("Full-size stabilization"),
+             i18n::tr("Runs the temporal stabilization on the full working picture instead of half size: it "
+                      "also steadies the finest grain and lines, for about four times the cost (about twice "
+                      "upscaling). Recommended: off, except on a high-end RTX card with interpolation low."),
+             panel::Apply::Reload);
   if (choices.span_tiers.quality && !anime4k_size(d.model)) {
     TierSupport tiers = choices.span_tiers;
     // Le FP8 se choisit dans la liste des modèles ; une fois choisi il se lit ici aussi, au lieu d'un faux

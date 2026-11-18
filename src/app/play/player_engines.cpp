@@ -229,6 +229,15 @@ void show_loading(PlaceboScreen& screen, PlayerUi& ui, i18n::Translated label) {
     log_channel("app")->warn("préparation : {}", shown.error().detail);
 }
 
+namespace {
+
+gpu::Shape loosened(gpu::Shape shape, int loose_width) {
+  if (loose_width > 0 && shape.dims[3] > loose_width) shape.dims[3] -= loose_width;
+  return shape;
+}
+
+}  // namespace
+
 std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engine(
     Player& p, const gpu::BackendInit& init, gpu::Backend& backend, const std::filesystem::path& onnx,
     const gpu::Shape& shape, EngineLabel label, gpu::Lane lane) {
@@ -245,16 +254,15 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_engi
   // même fichier à chaque ouverture, jusqu'à un effacement du cache à la main (C05-01).
   for (int attempt = 0;; ++attempt) {
     LoopWake ready{.event = loop_wake_event()};  // B08-03 : le résultat réveille l'attente ; vit après build
-    auto build = EngineBuild::start(EngineRequest{.library = p.library,
-                                                  .init = init,
-                                                  .model = {.id = core::to_utf8(onnx.stem()),
-                                                            .onnx_path = onnx,
-                                                            .sha256 = *sha256,
-                                                            .tuned = label.tuned},
-                                                  .shapes = {.min = shape, .opt = shape, .max = shape},
-                                                  .builder = p.builder,
-                                                  .wake = &LoopWake::push,
-                                                  .wake_context = &ready});
+    auto build = EngineBuild::start(EngineRequest{
+        .library = p.library,
+        .init = init,
+        .model =
+            {.id = core::to_utf8(onnx.stem()), .onnx_path = onnx, .sha256 = *sha256, .tuned = label.tuned},
+        .shapes = {.min = loosened(shape, label.loose_width), .opt = shape, .max = shape},
+        .builder = p.builder,
+        .wake = &LoopWake::push,
+        .wake_context = &ready});
     if (!build) return std::unexpected(std::move(build.error()));
     note_crash_stage(std::format("construction du moteur {} ({})", label.name, label.backend));
     auto artifact = wait_engine(**build, p.screen, p.ui, label, p.details, p.snapshot, p.dropped_video,
