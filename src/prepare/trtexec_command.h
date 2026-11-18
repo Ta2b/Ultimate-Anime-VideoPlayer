@@ -15,6 +15,7 @@
 #include <expected>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -47,9 +48,11 @@ std::string shapes_label(const gpu::ShapeSet& shapes);
 std::expected<void, Refusal> check_shapes(const gpu::ShapeSet& shapes);
 
 // Réglages hachés dans la clé. Sans formes (ONNX statique), aucun profil :
-// trtexec 11 refuse même un profil égal aux formes déclarées.
+// trtexec 11 refuse même un profil égal aux formes déclarées. twins : les autres entrées libres, de mêmes
+// formes (ModelSource::twins) ; sans elles, la ligne est celle d'avant.
 std::string engine_settings(Recipe recipe, std::string_view input_name,
-                            const std::optional<gpu::ShapeSet>& shapes);
+                            const std::optional<gpu::ShapeSet>& shapes,
+                            std::span<const std::string> twins = {});
 
 struct SanitizedSettings {
   std::string kept;                  // réglages pour la ligne de commande

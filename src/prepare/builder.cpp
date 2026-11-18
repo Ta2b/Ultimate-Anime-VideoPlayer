@@ -219,7 +219,7 @@ std::expected<BuildPlan, Refusal> plan_build(const TrtexecConfig& config, const 
   if (!recipe) return std::unexpected(recipe.error());
   auto profile = profile_shapes(source.input, shapes);
   if (!profile) return std::unexpected(profile.error());
-  BuildPlan plan{.settings = engine_settings(*recipe, config.input_name, *profile),
+  BuildPlan plan{.settings = engine_settings(*recipe, source.input.name, *profile, source.twins),
                  .label = shapes_label(shapes)};
   plan.command = sanitize_trt11(plan.settings);
   if (!model.tuned) {

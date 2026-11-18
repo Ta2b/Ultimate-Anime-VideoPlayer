@@ -14,6 +14,9 @@
 #                  export-interpolation-models.yml (tools/drba/export_distil_drba.py, depuis
 #                  routineLife1/DistilDRBA db51bde, weights/v2_lite.pkl), depuis la release
 #                  models-interp-1 d'ajp-releases ; DistilDRBA est sous licence MIT
+#   <dest>/temporalfix/  TemporalFix s1, s2 et s3 en fp16 (la stabilisation temporelle, Légère, Normale,
+#                  Forte), depuis pifroggi/vs_temporalfix à un commit fixé ; licence Apache 2.0, son texte
+#                  à côté
 #
 #   tools/release/fetch-models.sh <dest> [dossier-de-cache]
 #
@@ -26,7 +29,7 @@ CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models}"
 SEVENZ="$(command -v 7z || command -v 7zz || true)"
 [ -n "$SEVENZ" ] || { echo "7z manquant (apt install p7zip-full, brew install sevenzip)" >&2; exit 1; }
 if command -v sha256sum >/dev/null; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
-mkdir -p "$DEST/onnx" "$DEST/rife" "$CACHE"
+mkdir -p "$DEST/onnx" "$DEST/rife" "$DEST/temporalfix" "$CACHE"
 
 SPAN_COMMIT=55a8ae53bb0e2dc531449b68a9a0717c61ae982b
 SPAN_URL="https://raw.githubusercontent.com/Ta2b/mpv-AnimeJaNai-HDR/$SPAN_COMMIT/BuildMpvUpscale2xAnimeJaNai/mpv-upscale-2x_animejanai/animejanai/onnx"
@@ -100,6 +103,22 @@ for entry in "${INTERP[@]}"; do
   check "$sha" "$DEST/rife/$name"
 done
 
+# TemporalFix (docs/temporalfix.md) : les trois forces que le menu propose ; s0, plus faible que s1, n'est pas
+# prise. La licence Apache 2.0 demande son texte avec chaque copie.
+TEMPORALFIX_URL="https://raw.githubusercontent.com/pifroggi/vs_temporalfix/bc3d5d8b8bdf5ee3e785cc9a083fc6218dc91d63"
+TEMPORALFIX=(
+  "90deed0d4b672c918e112a760107455a9a1689db22b5b45311b23953ab3dd35f temporalfix_s1_v1.1_op18_fp16.onnx"
+  "9d6c7f6f3d63ebe5b4db0d715f9760c949d7dc1fe8142fce48ccfedcca62a477 temporalfix_s2_v1_op18_fp16.onnx"
+  "671aa090c89fa048dd3051551fe34f081291a902713831afedafa17fb7dda333 temporalfix_s3_v1_op18_fp16.onnx"
+)
+for entry in "${TEMPORALFIX[@]}"; do
+  read -r sha name <<<"$entry"
+  curl -fsSL --retry 5 --retry-delay 5 -o "$DEST/temporalfix/$name" "$TEMPORALFIX_URL/vs_temporalfix/models/$name"
+  check "$sha" "$DEST/temporalfix/$name"
+done
+curl -fsSL --retry 5 --retry-delay 5 -o "$DEST/temporalfix/LICENSE.txt" "$TEMPORALFIX_URL/LICENSE"
+check ac39d19ec56e24af87037923712ca84d1a1125c04a9312069c6721f3b8b52921 "$DEST/temporalfix/LICENSE.txt"
+
 cat > "$DEST/LICENCES.txt" <<'TXT'
 Modèles livrés avec le lecteur
 
@@ -114,5 +133,8 @@ rife/  RIFE 4.26, 4.25, 4.22 lite et 4.25 lite (Practical-RIFE, hzwer), conversi
        https://github.com/hzwer/Practical-RIFE
        DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par ajp : licence MIT.
        https://github.com/routineLife1/DistilDRBA
+temporalfix/  TemporalFix s1, s2 et s3 (pifroggi), tels que publiés : licence Apache 2.0
+       (texte complet dans temporalfix/LICENSE.txt).
+       https://github.com/pifroggi/vs_temporalfix
 TXT
 echo "modèles : $DEST"

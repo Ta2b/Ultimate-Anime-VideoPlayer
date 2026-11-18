@@ -175,11 +175,15 @@ std::vector<media::LanguagePreset> language_presets_for(std::string_view own_in,
 }
 
 std::optional<std::string> legacy_default_language(const std::vector<media::LanguagePreset>& presets) {
+  // Les listes attendues sont nommées : comparées en temporaires, GCC 16 en -O3 y voit un pointeur pendant
+  // (-Wdangling-pointer, faux positif sur leur initializer_list).
   using Presets = std::vector<media::LanguagePreset>;
-  if (presets == Presets{{"jpn", ""}, {"", ""}}) return "jpn";  // le défaut d'un système en japonais
+  const Presets japanese{{"jpn", ""}, {"", ""}};
+  if (presets == japanese) return "jpn";  // le défaut d'un système en japonais
   if (presets.size() != 2) return std::nullopt;
-  const std::string& own = presets[1].audio;
-  if (own.empty() || presets != Presets{{"jpn", own}, {own, ""}}) return std::nullopt;
+  const std::string own = presets[1].audio;
+  const Presets expected{{"jpn", own}, {own, ""}};
+  if (own.empty() || presets != expected) return std::nullopt;
   return own;
 }
 

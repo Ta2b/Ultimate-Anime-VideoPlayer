@@ -48,8 +48,8 @@ bool UpscaleStage::take_ahead(const DecodedFrame& frame, const gpu::IngestSpec& 
   return true;
 }
 
-std::expected<bool, Refusal> UpscaleStage::ingest_source(const DecodedFrame& frame, gpu::IngestSpec spec,
-                                                         const gpu::Tensor& rgb) {
+std::expected<bool, Refusal> UpscaleStage::ingest_plain(const DecodedFrame& frame, gpu::IngestSpec spec,
+                                                        const gpu::Tensor& rgb) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   spec.deband = wants_deband() && ops.debands_on_ingest();
   if (auto ok = ops.ingest(frame, spec, rgb); !ok) return std::unexpected(std::move(ok.error()));

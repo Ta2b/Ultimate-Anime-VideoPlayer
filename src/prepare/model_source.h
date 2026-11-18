@@ -26,7 +26,10 @@ inline constexpr std::uintmax_t kMaxOnnxBytes = std::uintmax_t{2} << 30U;
 struct ModelSource {
   std::vector<std::byte> graph;
   OnnxSummary summary;
-  OnnxInput input;          // l'entrée nommée du graphe ; la première s'il les a toutes statiques
+  OnnxInput input;  // l'entrée nommée du graphe ; la première s'il les a toutes statiques ou jumelles
+  // Les autres entrées libres de même forme qu'input (les sept images de la stabilisation temporelle,
+  // prepare/onnx_frames.h) : le profil de construction leur donne les formes d'input.
+  std::vector<std::string> twins;
   std::string content_key;  // onnx_source_key : graphe et poids externes
 };
 
@@ -34,8 +37,8 @@ struct ModelSource {
 std::expected<std::vector<std::byte>, Refusal> read_onnx_bytes(const std::filesystem::path& file);
 
 // Lit l'ONNX, vérifie son SHA-256, ses poids externes, son entrée et la précision de toutes.
-// L'entrée est celle du nom donné ; un graphe aux entrées toutes statiques peut les nommer
-// autrement (sa première sert alors aux formes).
+// L'entrée est celle du nom donné ; un graphe aux entrées toutes statiques, ou toutes de même forme, peut
+// les nommer autrement (sa première sert alors aux formes).
 std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std::string_view input_name);
 
 // Le type d'entrée du graphe décide de la précision sous TensorRT 11 : il doit

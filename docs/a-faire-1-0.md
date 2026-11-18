@@ -8,6 +8,13 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
   Linux et Windows se construisent en CI s'ils manquent. Aucune release sans demande de Tatoub.
 - **Banc Windows contre Linux** sur le même PC, mêmes réglages.
 
+## Stabilisation temporelle
+
+- Mesurer la demi-taille complète sur une RTX (le réseau seul : 6,2 ms en 540p) et compter son coût dans la
+  calibration de l'Auto.
+- Reprendre la sortie de l'image d'avant sur un dessin tenu (deux passes sur trois de moins en anime).
+- La porter sur Vulkan : les opérateurs qui manquent à l'import sont dans [`temporalfix.md`](temporalfix.md).
+
 ## Code mort à retirer (sans effet sur l'image)
 
 - `src/render/curve.*` : les fonctions de courbe et de cuisson qui ne servaient qu'au HDR adaptatif.

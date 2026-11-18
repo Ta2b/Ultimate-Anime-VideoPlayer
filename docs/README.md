@@ -23,6 +23,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
 | [`rife-candidats.md`](rife-candidats.md) | RIFE 4.25 lite et 4.26 face à 4.22 lite et 4.25 : mesures sur processeur, niveaux choisis, protocole ABAB sur la RTX |
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |
+| [`temporalfix.md`](temporalfix.md) | La stabilisation temporelle (TemporalFix, avant SPAN, TensorRT) : fenêtre de sept images, reflet aux bords, ce qui manque à Vulkan |
 | [`anime4k.md`](anime4k.md) | Anime4K, l'agrandissement en shaders des petites cartes ; le banc des petites cartes |
 | [`banc-qualite.md`](banc-qualite.md) | Banc de qualité des réseaux contre leur référence FP32 et la vraie image, sans carte graphique |
 | [`parite-windows-linux.md`](parite-windows-linux.md) | Banc de parité Windows contre Linux sur le même PC |

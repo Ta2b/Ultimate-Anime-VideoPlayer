@@ -16,17 +16,28 @@
 
 namespace ajp::app::play {
 
+namespace {
+
+// La table [image] : l'agrandissement et la stabilisation temporelle.
+toml::table image_table(const PlaySettings& s) {
+  return toml::table{{"upscale", s.upscale},
+                     {"restore_lines", s.restore_lines},
+                     {"model", s.model},
+                     {"work_height", s.work_height},
+                     {"downscale", std::string(name(s.downscale))},
+                     {"span_precision", std::string(name(s.span_precision))},
+                     {"temporal_fix", std::string(name(s.temporal_fix))},
+                     {"temporal_fix_full", s.temporal_fix_full}};
+}
+
+}  // namespace
+
 std::string format_settings(const PlaySettings& s) {
   toml::table root;
   root.insert("version", kSettingsVersion);
   root.insert("auto", toml::table{{"preset", std::string(key(s.preset))},
                                   {"priority", std::string(key(s.priority))}});
-  root.insert("image", toml::table{{"upscale", s.upscale},
-                                   {"restore_lines", s.restore_lines},
-                                   {"model", s.model},
-                                   {"work_height", s.work_height},
-                                   {"downscale", std::string(name(s.downscale))},
-                                   {"span_precision", std::string(name(s.span_precision))}});
+  root.insert("image", image_table(s));
   toml::table interpolation{{"engine", std::string(name(s.motion_engine))},
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},

@@ -77,21 +77,29 @@ std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
 
 // Images décodées tenues au plus en même temps : par le thread source, par l'étage gpu
 // (RingStage::kMaxFrames en vol) et par le backend après ingest. Autant de surfaces NVDEC rendues
-// sans copie (DecoderOptions::direct_surfaces). Le Smooth en tient plus en vol (smooth_extra_frames).
+// sans copie (DecoderOptions::direct_surfaces). Le Smooth en tient plus en vol (smooth_extra_frames), la
+// stabilisation temporelle aussi (temporal_extra_frames).
 inline constexpr int kHeldDecodedFrames =
     media::kSourceHeldFrames + static_cast<int>(RingStage::kMaxFrames) + gpu::kMaxIngestHeldFrames;
-constexpr int held_decoded_frames(bool smooth_drawings) {
-  return kHeldDecodedFrames + static_cast<int>(smooth_extra_frames(smooth_drawings));
+// Ce que l'étage gpu tient en plus : les images du Smooth, la fenêtre de la stabilisation temporelle.
+struct HeldExtras {
+  bool smooth_drawings = false;
+  bool temporal_fix = false;
+};
+constexpr int held_decoded_frames(HeldExtras extras) {
+  return kHeldDecodedFrames + static_cast<int>(smooth_extra_frames(extras.smooth_drawings)) +
+         static_cast<int>(temporal_extra_frames(extras.temporal_fix));
 }
-static_assert(held_decoded_frames(true) + 1 <= media::kMaxExtraHwFrames,
+static_assert(held_decoded_frames({.smooth_drawings = true, .temporal_fix = true}) + 1 <=
+                  media::kMaxExtraHwFrames,
               "NVDEC: 32 extra surfaces at most, the one frame the decoder still holds included (B15-03)");
 
 // Les options du décodeur pour ce backend et cet écran : les essais de decoder_attempts ; sous
 // TensorRT, qui lit les images NVDEC en place, les surfaces directes ; ailleurs, la copie en
 // mémoire hôte des images matérielles (DecoderOptions::download).
-// smooth_drawings : l'étage gpu tient les images du Smooth en plus (held_decoded_frames).
+// extras : ce que l'étage gpu tient en plus (held_decoded_frames).
 media::DecoderOptions decoder_options(std::string_view backend, const GpuDevice& render,
-                                      const media::HwDeviceSource* shared, bool smooth_drawings = false);
+                                      const media::HwDeviceSource* shared, HeldExtras extras = {});
 
 // Ordre de déclaration = ordre inverse de destruction : les moteurs partent avant leur backend.
 struct ChainEngines {
@@ -139,6 +147,9 @@ struct ChainEngines {
   bool rife_at_slot = false;            // --rife-at-slot (UpscaleSetup::rife_at_slot)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
+  // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail ; nul : éteinte ou
+  // refusée.
+  std::unique_ptr<gpu::Engine> temporal_fix;
   std::unique_ptr<gpu::Engine> drba;
   std::unique_ptr<gpu::Engine> rife;  // RIFE image, ou l'interpolation d'Apple (apple)
   std::unique_ptr<gpu::Engine> rife_motion;
@@ -175,6 +186,9 @@ struct ChainEngines {
   bool interpolates() const { return rife || rife_motion || use_drba() || gmfss_use == GmfssUse::Only; }
   // « DistilDRBA », « Apple » ou « RIFE », pour les compteurs.
   std::string_view motion_name() const;
+  HeldExtras held_extras() const {
+    return {.smooth_drawings = smooth_drawings, .temporal_fix = temporal_fix != nullptr};
+  }
   // C08-08 : le moteur dans la clé de la mémoire de l'Auto (core/auto_memory.h) : l'interpolation, son
   // modèle, fusionné ou entier, image ou mouvement, et le SPAN chargé (span_variant : FP16, FP8, INT8). Un
   // palier appris sur RIFE 4.25 lite ne vaut pas pour RIFE 4.26.
@@ -241,6 +255,14 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
 std::expected<bool, StageFailure> load_motion(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                               const PlaySettings& settings, InnerFallbacks& inner,
                                               const std::string& library);
+
+// La stabilisation temporelle (chain_temporal.cpp) : le modèle de settings.temporal_fix à c.work dans
+// c.temporal_fix, sous TensorRT. Rien si l'utilisateur ferme la fenêtre ; un refus (autre moteur, modèle
+// absent, construction) laisse la lecture sans elle, la raison au journal, retenu pour la séance dans inner.
+std::vector<std::filesystem::path> temporal_fix_dirs(const PlayerPaths& paths);
+std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, ChainEngines& c,
+                                      const PlaySettings& settings, InnerFallbacks& inner,
+                                      const std::string& library);
 
 // RIFE (chain_rife.cpp) : c.rife_size, la géométrie, puis le fusionné, la variante mouvement ou RIFE image,
 // au cran de précision de settings. Faux : la fenêtre fermée pendant une construction ; un refus de l'étage
