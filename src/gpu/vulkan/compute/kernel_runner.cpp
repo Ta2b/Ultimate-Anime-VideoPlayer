@@ -36,6 +36,57 @@ Done check_window(const kernels::Window& area, const TensorView& flow) {
                             area.height, area.x, area.y, flow.width, flow.height));
 }
 
+// Les entrées du warp : images a et b, mouvement et masque, mouvement précédent des poses, de même précision.
+Done check_warp_inputs(const TensorView& a, const TensorView& b, const MotionView& motion,
+                       const PoseView& poses, const Features& enabled) {
+  if (auto ok = check_tensor(a, 3, enabled, "warp : image a"); !ok) return ok;
+  if (auto ok = check_tensor(b, 3, enabled, "warp : image b"); !ok) return ok;
+  if (auto ok = check_tensor(motion.flow, 4, enabled, "warp : mouvement"); !ok) return ok;
+  if (auto ok = check_tensor(motion.mask, 1, enabled, "warp : masque"); !ok) return ok;
+  if (auto ok = check_same_size(a.width, a.height, b.width, b.height, "warp : images a et b"); !ok) return ok;
+  if (auto ok = check_same_size(motion.flow.width, motion.flow.height, motion.mask.width, motion.mask.height,
+                                "warp : mouvement et masque");
+      !ok) {
+    return ok;
+  }
+  for (const Precision p : {b.precision, motion.flow.precision, motion.mask.precision}) {
+    if (p != a.precision)
+      return refuse(RefusalCode::InputMismatch, "warp : tenseurs de précisions différentes");
+  }
+  if (poses.previous != nullptr) {
+    const TensorView& p = *poses.previous;
+    if (auto ok = check_tensor(p, 4, enabled, "warp : mouvement précédent"); !ok) return ok;
+    if (p.width != motion.flow.width || p.height != motion.flow.height || p.precision != a.precision) {
+      return refuse(RefusalCode::InputMismatch,
+                    "warp : mouvement précédent d'autres dimensions ou précision");
+    }
+  }
+  return check_window(motion.area, motion.flow);
+}
+
+// Mouvement d'ensemble (spec/warp_pan.h) : estimé par pan_global.comp dans un tampon de l'enregistrement,
+// relu par le warp ; éteint (on faux), l'instant est lié à sa place (jamais lu).
+std::expected<BufferView, Refusal> pan_buffer(PipelineCache& pipelines, Recorder& recorder,
+                                              const TensorView& a, const TensorView& b,
+                                              const BufferView& time, bool on) {
+  if (!on) return time;
+  auto scratch = recorder.scratch(4 * sizeof(float));
+  if (!scratch) return std::unexpected(scratch.error());
+  const BufferView pan = *scratch;
+  if (a.width < 16 || a.height < 16) {
+    if (auto ok = recorder.fill(pan, 0); !ok) return std::unexpected(ok.error());
+    return pan;
+  }
+  const detail::PanPush pan_push{a.width, a.height};
+  const std::array pan_buffers{a.buffer, b.buffer, pan};
+  if (auto ok = detail::run(pipelines, recorder, "pan_global", a.precision, {}, pan_buffers, {},
+                            bytes_of(pan_push), {1, 1, 1});
+      !ok) {
+    return std::unexpected(ok.error());
+  }
+  return pan;
+}
+
 }  // namespace
 
 Done KernelRunner::rife_constants(Recorder& recorder, const TensorView& input, float t) {
@@ -103,31 +154,8 @@ Done KernelRunner::warp(Recorder& recorder, const TensorView& a, const TensorVie
                         const PoseView& poses) {
   if (!(t > 0.0F && t < 1.0F))
     return refuse(RefusalCode::FieldOutOfRange, std::format("instant {} hors de ]0, 1[", t));
-  const Features& enabled = context_->caps().enabled;
-  if (auto ok = check_tensor(a, 3, enabled, "warp : image a"); !ok) return ok;
-  if (auto ok = check_tensor(b, 3, enabled, "warp : image b"); !ok) return ok;
-  if (auto ok = check_tensor(motion.flow, 4, enabled, "warp : mouvement"); !ok) return ok;
-  if (auto ok = check_tensor(motion.mask, 1, enabled, "warp : masque"); !ok) return ok;
-  if (auto ok = check_same_size(a.width, a.height, b.width, b.height, "warp : images a et b"); !ok) return ok;
-  if (auto ok = check_same_size(motion.flow.width, motion.flow.height, motion.mask.width, motion.mask.height,
-                                "warp : mouvement et masque");
-      !ok) {
-    return ok;
-  }
-  for (const Precision p : {b.precision, motion.flow.precision, motion.mask.precision}) {
-    if (p != a.precision)
-      return refuse(RefusalCode::InputMismatch, "warp : tenseurs de précisions différentes");
-  }
-  if (poses.previous != nullptr) {
-    const TensorView& p = *poses.previous;
-    if (auto ok = check_tensor(p, 4, enabled, "warp : mouvement précédent"); !ok) return ok;
-    if (p.width != motion.flow.width || p.height != motion.flow.height || p.precision != a.precision) {
-      return refuse(RefusalCode::InputMismatch,
-                    "warp : mouvement précédent d'autres dimensions ou précision");
-    }
-  }
+  if (auto ok = check_warp_inputs(a, b, motion, poses, context_->caps().enabled); !ok) return ok;
   const kernels::Window& area = motion.area;
-  if (auto ok = check_window(area, motion.flow); !ok) return ok;
   const detail::WarpPush push{a.width,
                               a.height,
                               motion.flow.width,
@@ -142,23 +170,9 @@ Done KernelRunner::warp(Recorder& recorder, const TensorView& a, const TensorVie
   const BufferView previous = poses.previous != nullptr ? poses.previous->buffer : motion.flow.buffer;
   auto time = recorder.parameter(std::bit_cast<std::uint32_t>(t));
   if (!time) return std::unexpected(time.error());
-  // Mouvement d'ensemble (spec/warp_pan.h) : estimé par pan_global.comp dans un tampon de l'enregistrement,
-  // relu par le warp ; éteint, l'instant est lié à sa place (jamais lu).
-  BufferView pan = *time;
-  if (push.pan_lock != 0U) {
-    auto scratch = recorder.scratch(4 * sizeof(float));
-    if (!scratch) return std::unexpected(scratch.error());
-    pan = *scratch;
-    const detail::PanPush pan_push{a.width, a.height};
-    const std::array pan_buffers{a.buffer, b.buffer, pan};
-    if (a.width < 16 || a.height < 16) {
-      if (auto ok = recorder.fill(pan, 0); !ok) return ok;
-    } else if (auto ok = detail::run(*pipelines_, recorder, "pan_global", a.precision, {}, pan_buffers, {},
-                                     bytes_of(pan_push), {1, 1, 1});
-               !ok) {
-      return ok;
-    }
-  }
+  auto pan_view = pan_buffer(*pipelines_, recorder, a, b, *time, push.pan_lock != 0U);
+  if (!pan_view) return std::unexpected(pan_view.error());
+  const BufferView pan = *pan_view;
   const std::array constants{motion.warp == kernels::RifeWarp::CatmullRom ? 1U : 0U};
   const std::array<std::uint32_t, 3> groups{groups_for(a.width), groups_for(a.height), 1};
   if (dst == nullptr) {  // warp_blend_ring.comp : le slot lié après les tampons
