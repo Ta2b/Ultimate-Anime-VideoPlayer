@@ -245,7 +245,8 @@ void SpanTiles::blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& bl
   };
   for (std::size_t i = 0; i < blocks.deviation.size(); ++i) {
     if (kernels::is_held(blocks.deviation[i], kBlockChange)) continue;
-    const auto col = static_cast<float>(i % blocks.cols), row = static_cast<float>(i / blocks.cols);
+    const std::size_t col_index = i % blocks.cols, row_index = i / blocks.cols;
+    const auto col = static_cast<float>(col_index), row = static_cast<float>(row_index);
     // Arrondi vers l'extérieur, comme Rect::moved : un bloc à cheval touche les deux tuiles.
     const Rect at{static_cast<int>(std::floor(col * blocks.side_px)),
                   static_cast<int>(std::floor(row * blocks.side_px)),
