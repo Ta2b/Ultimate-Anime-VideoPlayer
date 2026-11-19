@@ -23,11 +23,16 @@ int FreeRate::produced_in(std::int64_t now_us, std::int64_t span_us) const {
 }
 
 void FreeRate::cost(int images, std::int64_t busy_us, std::int64_t now_us, bool heavy) {
-  if (images < 1 || busy_us <= 0 || now_us < settled_until_us_) return;
-  const double sample = static_cast<double>(std::min(busy_us, kMaxSampleUs * images)) / images;
+  const bool starting = now_us < started_until_us_;
+  if (images < 1 || busy_us <= 0 || (!starting && now_us < settled_until_us_)) return;
+  // Au démarrage, une passe qui chauffe (graphe CUDA capturé, shaders) ne compte pas plus qu'une demi-paire.
+  const std::int64_t cap = starting ? kStartCapUs : kMaxSampleUs;
+  const double sample = static_cast<double>(std::min(busy_us, cap * images)) / images;
   double& service = heavy ? heavy_us_ : service_us_;
   if (service <= 0.0) {
     service = sample;
+  } else if (starting) {
+    service += kStartFollow * (sample - service);  // démarrage : vite, dans les deux sens
   } else if (sample > service) {
     service += 0.6 * (sample - service);  // une scène lourde : tout de suite
   } else {
@@ -64,6 +69,7 @@ void FreeRate::reset(std::int64_t now_us) {
   *this = FreeRate{};
   min_gap_us_ = gap;
   settled_until_us_ = now_us + kStartUs;  // le démarrage perd toujours quelques images
+  started_until_us_ = now_us + kStartUs;
 }
 
 double FreeRate::pressure(std::int64_t now_us) const {
