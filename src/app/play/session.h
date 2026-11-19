@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "app/play/cadence_watch.h"
 #include "app/play/controls.h"
 #include "app/play/edition_plan.h"
 #include "app/play/frame_latency.h"
@@ -398,6 +399,7 @@ class Session {
   std::int64_t last_repeat_host_us_ = 0;  // instant hôte de la dernière présentation sans image neuve
   bool fullscreen_done_ = false;
   FrameStats stats_;
+  ReadySeen ready_seen_;               // le premier tour où chaque image a été vue écrite (cadence_watch.h)
   std::vector<std::string> refusals_;  // derniers refus, pour l'OSD
   std::optional<Refusal> notice_;      // voir take_notice()
 

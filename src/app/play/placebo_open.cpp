@@ -46,6 +46,16 @@
 namespace kirari::app::play {
 namespace {
 
+// --swap-mode (cadence_watch.h) : relaxed est le FIFO relâché, qui présente tout de suite une image en
+// retard.
+VkPresentModeKHR vk_present_mode(SwapMode mode, spdlog::logger& channel) {
+  if (mode != SwapMode::Fifo) channel.info("présentation : mode {} demandé (--swap-mode)", name(mode));
+  constexpr std::array<VkPresentModeKHR, 4> kModes{VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_MAILBOX_KHR,
+                                                   VK_PRESENT_MODE_IMMEDIATE_KHR,
+                                                   VK_PRESENT_MODE_FIFO_RELAXED_KHR};
+  return kModes[static_cast<std::size_t>(mode)];
+}
+
 // La fenêtre en points de l'écran sous Windows et X11 aussi (window_size.h), centrée sur son
 // écran.
 void fit_display_scale(spdlog::logger& log, SDL_Window* window, int width, int height) {
@@ -623,7 +633,7 @@ std::expected<std::unique_ptr<PlaceboScreen>, Refusal> PlaceboScreen::open(const
   const SwapchainShape shape = swapchain_shape(impl->present_level, present);
   pl_vulkan_swapchain_params sw_params{};
   sw_params.surface = impl->surface;
-  sw_params.present_mode = VK_PRESENT_MODE_FIFO_KHR;
+  sw_params.present_mode = vk_present_mode(options.swap_mode, *impl->channel);
   sw_params.swapchain_depth = shape.depth > 0 ? shape.depth : kSwapchainDepth;
   sw_params.min_images = shape.min_images;
   sw_params.present_flags = present_flags(impl->present_level, impl->present_caps);

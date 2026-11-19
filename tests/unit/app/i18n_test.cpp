@@ -226,7 +226,8 @@ TEST_CASE("i18n: aucune chaîne française en dur dans les fichiers traduits", "
                                         "system_peak.cpp",
                                         "display_gpu.cpp",
                                         "present_watch.cpp",
-                                        "window_vrr.cpp"};
+                                        "window_vrr.cpp",
+                                        "cadence_watch.cpp"};
   // Un journal, un refus interne ou une étiquette de débogage : du texte de développeur, même dans un fichier
   // qui dessine l'interface.
   const std::regex diagnostic(

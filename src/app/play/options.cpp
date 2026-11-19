@@ -175,6 +175,7 @@ constexpr std::array<Flag, 38> kFlags{{
     // Le relèvement fixe, la lumière de la scène mesurée en direct.
     {"--no-anime-shots", &PlayOptions::anime_shots, false},
     {"--no-vrr", &PlayOptions::no_vrr, true},
+    {"--display-loss-pressure", &PlayOptions::display_loss_pressure, true},
     {"--one-lane", &PlayOptions::one_lane, true},
     {"--lanes", &PlayOptions::lanes, true},
     {"--profile-dispatches", &PlayOptions::profile_dispatches, true},
@@ -209,9 +210,26 @@ std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
   return refuse(RefusalCode::FieldOutOfRange, std::format("{}: gpu-lost or engine-updated", arg));
 }
 
+// La cadence haute (cadence_watch.h) : --swap-mode=MODE et --vrr-margin=N. Une valeur refusée laisse l'option
+// inconnue.
+bool set_cadence(std::string_view arg, PlayOptions& options) {
+  constexpr std::string_view kSwap = "--swap-mode=";
+  constexpr std::string_view kMargin = "--vrr-margin=";
+  if (arg.starts_with(kSwap)) {
+    const auto mode = parse_swap_mode(arg.substr(kSwap.size()));
+    if (mode) options.swap_mode = *mode;
+    return mode.has_value();
+  }
+  if (!arg.starts_with(kMargin)) return false;
+  const auto margin = number<double>(arg.substr(kMargin.size()));
+  if (!margin || *margin < 0.0 || *margin > 10.0) return false;
+  options.vrr_margin_pct = *margin;
+  return true;
+}
+
 bool set_flag(std::string_view arg, PlayOptions& options) {
   const auto flag = std::ranges::find(kFlags, arg, &Flag::name);
-  if (flag == kFlags.end()) return false;
+  if (flag == kFlags.end()) return set_cadence(arg, options);
   options.*(flag->field) = flag->value;
   return true;
 }
@@ -633,7 +651,11 @@ std::string play_usage(bool debug) {
          "                         (timing with a target date), wayland or open; --no-present: open, the\n"
          "                         former presentation; trials: bare (extensions only), poll (present\n"
          "                         ids and waits only), timing-plain (timing, default swapchain)\n"
-         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n";
+         "  --no-vrr               fixed refresh screen even if VRR is armed (Instant mode trial)\n"
+         "  --swap-mode=MODE       swapchain present mode: fifo (default), mailbox, immediate, relaxed\n"
+         "  --vrr-margin=N         Instant mode stays N % under a VRR screen's maximum (default 1)\n"
+         "  --display-loss-pressure  frames the display lost while ready widen the Instant step too\n"
+         "                         (former count)\n";
 }
 
 std::vector<std::filesystem::path> default_model_candidates(const std::filesystem::path& home,

@@ -354,6 +354,7 @@ void Session::measure_latency(std::int64_t host_now) {
     if (!screen_.ready(frame)) return false;
     // L'heure où le veilleur l'a vue écrite, sinon celle de ce tour (au plus une attente de main plus tard).
     const std::int64_t written = screen_.written_at(frame).value_or(host_now);
+    ready_seen_.note(frame.slot, frame.ready_value, host_now);
     config_.latency->observe(written - frame.submitted_us);
     if (config_.on_written) config_.on_written(frame, written);
     return true;
@@ -398,6 +399,8 @@ void Session::choose(std::int64_t host_now) {
   // lieu d'attendre le GPU des moteurs à chaque présentation.
   const std::optional<RingFrame> picked = pick(now, host_now, lead_us);
   for (const RingFrame& frame : late_) {
+    // Déjà écrite à un tour d'avant : main l'a vue prête, l'affichage l'a perdue (cadence_watch.h).
+    if (ready_seen_.before(frame.slot, frame.ready_value, host_now)) ++stats_.dropped_ready;
     retire(frame);
     ++stats_.dropped;
   }
