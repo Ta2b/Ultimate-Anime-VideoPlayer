@@ -218,26 +218,30 @@ l'image à l'œil, sur une scène d'action en ×4 ou plus.
 
 ## Éclats sur les seuls effets (19/11, cartes NVIDIA, à mesurer)
 
-Piste 6 du plan du flux optique NVIDIA : la marge des éclats ne va qu'aux vrais effets (explosions, magie,
-éclairs), pas à un ciel ni à une feuille blanche. Aucun modèle nouveau : la carte de la scène
-(`kernels/spec/scene_flow.h`, flux NVOF réduit par tuiles de 32 pixels en 1080p) dit, par tuile, décor,
-dessin, effet ou incertain. Un effet est clair, change vite et est mal suivi par le flux ; un fond blanc est
-suivi.
+Piste 6 du plan du flux optique NVIDIA : plus d'éclats sur les vrais effets (explosions, magie, éclairs),
+aucun de perdu ailleurs. Aucun modèle nouveau : la carte de la scène (`kernels/spec/scene_flow.h`, flux NVOF
+réduit par tuiles de 32 pixels en 1080p) dit, par tuile, décor, dessin, effet ou incertain. Un effet est
+clair, change vite et est mal suivi par le flux.
 
-- **Le masque** (`render/effect_mask.h`) : par tuile, 1 sur un effet, 1 − confiance sur un décor ou un
-  dessin, 0 sur un aplat qui ne change pas, sans verdict sur un aplat qui change (`app/play/effect_book.h`,
-  `effect_tiles_of`). Dilaté d'une tuile, lissé dans le temps (vers l'effet en 40 ms, vers le décor en
-  0,7 s : une tuile qui hésite reste haute), flouté en 3 × 3, lu en bilinéaire. Une paire tenue ou un fondu
-  n'apprennent rien (un effet animé en deux ne retombe pas une paire sur deux) ; une coupe pose le masque
-  d'un coup, ou le remet au neutre quand la carte de sa paire n'est pas encore là (celle de la paire
-  d'avant décrirait l'ancien plan).
+Le but de départ était la marge des éclats sur les seuls effets, pas sur un ciel ni une feuille blanche.
+L'essai du PC du 19/11 (9baf5c9c, Re:Zero à 16:20) l'a écarté : une bougie immobile sortait en décor, puis
+en dessin (son contour net sur le noir), et le masque lui retirait 60 % de sa montée. Aucune classe de la
+carte ne sépare une lumière d'une surface ; la marge reste donc entière partout (#967 pour le décor, puis pour les dessins).
+La tache verte de la même image venait de la paire qui enjambait la coupe de 977,2 s : NVOF y voyait 243
+tuiles d'effet. Une coupe ne donne plus de tuiles.
+
+- **Le masque** (`render/effect_mask.h`) : par tuile, la marge entière, et la couche des effets sûrs sur
+  la classe effet (`app/play/effect_book.h`, `effect_tiles_of`) ; une coupe le remet au neutre. Dilaté
+  d'une tuile, lissé dans le temps (vers l'effet en 40 ms, hors de lui en 0,7 s), flouté en 3 × 3, lu en
+  bilinéaire. Une paire tenue ou un fondu n'apprennent rien (un effet animé en deux ne retombe pas une
+  paire sur deux).
 - **Le grade** : un hook de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
   dans l'alpha. Il n'ajoute pas de passe : ses quelques lignes se fondent dans la couleur en attente
   (`PL_HOOK_SIG_COLOR`), que libplacebo rend de toute façon pour la passe anime. Une passe à part recopiait
   l'image entière, 0,41 ms en 4K sur une RTX 4070 Ti (passage 9 du 19/11) ; son coût, une lecture de la
   petite texture par pixel, compte maintenant dans la passe de sortie et non dans « grade HDR ».
   `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
-  voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
+  voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : là où la part gardée tombe à 0, une lumière garde 40 % de sa
   montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
 - **Plus haut sur les effets sûrs** (essai du PC du 19/11 sur main 5bc93d99 : l'effet se voyait, 2 % des
   pixels à plus de 10 % d'écart à 16:20, d'où la demande d'un effet plus marqué sur les vrais effets sans

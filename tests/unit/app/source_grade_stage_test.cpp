@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "app/play/source_grade.h"
 #include "core/clock.h"
@@ -144,9 +145,12 @@ TEST_CASE("Étage gpu : grade avant le warp sans warp après SPAN, l'écran grad
 // L'essai du PC du 19 novembre : SPAN natif en 4K, warp après SPAN, grade avant le warp ; aucune image par
 // tuiles, le grade réécrivant sur place la sortie d'avant. Elle est maintenant copiée avant le grade, et les
 // tuiles partent de la copie : dès la troisième source (la première n'a pas d'avant, la deuxième suit un
-// grade sans copie), jamais d'un tampon gradé.
+// grade sans copie), jamais d'un tampon gradé. La plaque de décor allumée ne les coupe plus (elle réécrit la
+// sortie comme le grade, docs/calques.md) ; sans carte, elle ne tourne pas.
 TEST_CASE("Étage gpu : grade avant le warp, les tuiles de SPAN partent de la sortie d'avant le grade",
           "[app][stage]") {
+  const bool plate = GENERATE(false, true);
+  INFO("plaque " << plate);
   Rig rig;
   IdleClock clock;
   rig.span.offer_tiles(kTileGrid);
@@ -159,6 +163,7 @@ TEST_CASE("Étage gpu : grade avant le warp, les tuiles de SPAN partent de la so
   s.grader = grader;
   s.span_reuse.tiles = true;
   s.clock = &clock;
+  s.layers = {.plate_copy = plate};
   rig.start(std::move(s), &clock);
   rig.feed(1, 6);
   REQUIRE(rig.collect(11));  // six sources et une image entre chaque paire

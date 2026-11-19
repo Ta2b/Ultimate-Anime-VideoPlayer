@@ -19,8 +19,9 @@ AnimeJaNai.
 
 ## Ce que font les nouveaux noyaux
 
-`src/gpu/cuda/backend/span_native16_kernels.cuh` (noyaux), `span_native16.cu` (le réseau, derrière
-`SpanFp8Body`, à la place de l'ancien `span_fp8_net16.cu`). Une seule famille de convolutions :
+`src/gpu/cuda/backend/span_native16_kernels.cuh` (outils des noyaux), `span_native_conv.cuh` (la
+convolution), `span_native16.cu` (le réseau, derrière `SpanFp8Body`, à la place de l'ancien
+`span_fp8_net16.cu`). Une seule famille de convolutions :
 
 - **mma.sync m16n8k16 FP16, sommes en f16** (`Frag<true>`) ; en f32 au cran Qualité (`SpanFp8Weights::acc32`,
   ci-dessous ; `kirari_span_fp8_run --acc32` au banc) ;
@@ -166,6 +167,40 @@ Le banc balaie la hauteur (`BANDS`, 0, 64, 192 et 270 en plus du défaut). Avec 
 sortie sans bandes, que `justesse_cpu.py` compare au bit près à celle du défaut : l'ordre des bandes ne change
 aucune somme.
 
+## Poids partagés (à l'essai)
+
+Le plafond du b8f64 en f16 est de 6,3 ms (1,006 TFLOP par image à 160 TFLOPS, sommes f16) ; le natif en fait
+10,64, soit 59 % du plafond, quand le f32 tient 85 % du sien (14,74 contre 12,6 ms) avec les mêmes noyaux. Ce
+qui ne pèse qu'en f16 se cache derrière des sommes deux fois plus lentes en f32 : c'est la piste.
+
+Les bandes gardent déjà les activations dans le L2. Reste les poids : chaque warp lit tous ceux de la couche,
+en `__ldg`, à chaque tuile. Une 3×3 à 64 canaux en a 73,7 Ko ; quatre warps par tuile en lisent 295 Ko depuis
+le L2 (le L1 qui reste à côté des deux tuiles de 43,5 Ko, environ 28 Ko, ne les garde pas), contre 43,5 Ko
+pour la tuile d'entrée : 87 % de ce qu'une tuile lit vient des poids, et le même octet est lu quatre fois.
+C'est l'hypothèse ; le banc la tranche.
+
+La variante (`SpanFp8Weights::shared_weights`, `kirari_span_fp8_run --shared-weights`,
+`accumulate_shared` dans `span_native_conv.cuh`) copie les poids de chaque pas k (16 canaux d'entrée × Cout,
+2 Ko à 64 canaux) une fois par bloc en mémoire partagée, par `cp.async`, en double tampon : le pas suivant
+arrive pendant les mma du pas courant, une barrière de bloc par pas (36 pour une 3×3 à 64 canaux). Les warps
+lisent leurs fragments B dans la mémoire partagée au lieu du L2 : 74 Ko par tuile au lieu de 295.
+
+Pour tenir deux blocs par SM sous 48 Ko avec les 4 Ko des deux tampons, la tuile d'entrée à 64 canaux perd son
+rembourrage : le morceau c de 16 octets du pixel p est rangé en c ^ (p & 7) (`Tile`), et les huit lignes d'une
+matrice de `ldmatrix`, huit pixels voisins, tombent encore sur des banques distinctes. 43 520 + 4 096 octets ;
+à 48 canaux, le pas impair de 7 morceaux reste.
+
+Mêmes produits, même ordre des sommes : la sortie est celle du défaut au bit près. Vérifié sur processeur
+dans le cloud (l'émulateur des noyaux, chaque fil une fibre, `mma`, `ldmatrix` et `cp.async` refaits, la
+mémoire partagée remplie de NaN à chaque bloc et ses bornes vérifiées) pour 48 et 64 canaux, sommes f16 et
+f32, avec et sans bandes ; sur GPU, par le test « les poids partagés rendent la même sortie au bit près ».
+Aucun débordement de registres sur sm 8.9 et 12.0.
+
+Le banc les passe dans les mêmes tours que le défaut (colonne « Poids partagés ») ; avec EXPORT,
+`justesse_cpu.py` vérifie le bit près sur l'image réelle. Gagnant, la variante devient le défaut et
+l'option disparaît ; perdante, elle part. Si elle gagne sans approcher le plafond, la suite est de fondre les
+couches d'un bloc SPAB, puis un réglage par couche ; Winograd en dernier, après une mesure de ses dB.
+
 ## Mesurer
 
 Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,
@@ -182,18 +217,18 @@ EXPORT=/mnt/project-files/span-native/$(date +%Y%m%d-%H%M) \
 Il construit le moteur TensorRT FP16 de chaque modèle, puis donne en ABAB 3 tours la médiane de TensorRT et
 des noyaux natifs (graphe CUDA tous deux, bandes par défaut), et les natifs à d'autres hauteurs de bande et en
 f32. EXPORT est à donner seulement quand les noyaux ont changé : après les temps, le banc dépose pour chaque
-modèle le modèle, l'entrée et une sortie de chaque mode (f16 aux bandes du lecteur, f16 sans bandes, f32), en
-demi-flottants, un plan par fichier (16,6 Mo en 4K). Dans le cloud :
+modèle le modèle, l'entrée et une sortie de chaque mode (f16 aux bandes du lecteur, f16 sans bandes, f16 aux
+poids partagés, f32), en demi-flottants, un plan par fichier (16,6 Mo en 4K). Dans le cloud :
 
 ```sh
 python3 -I tools/bench/span_native/justesse_cpu.py /mnt/project-files/span-native/<date>/<modèle>
 ```
 
 refait le modèle en FP32 par ONNX Runtime sur processeur (quelques secondes en 1080p), donne l'écart de
-chaque sortie (PSNR, plus grand écart, valeurs non finies) et dit si la sortie sans bandes est la même au bit
-près. La référence n'est plus celle du GPU (FP16 à sommes f32, `--compare`) mais le FP32 entier : les dB
-ne se comparent pas un à un à ceux de l'État ci-dessous. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il
-a perdu.
+chaque sortie (PSNR, plus grand écart, valeurs non finies) et dit si les sorties sans bandes et aux poids
+partagés sont celle du défaut au bit près. La référence n'est plus celle du GPU (FP16 à sommes f32,
+`--compare`) mais le FP32 entier : les dB ne se comparent pas un à un à ceux de l'État ci-dessous. L'essai C0
+(E/S HWC8 de TensorRT) n'y est plus : il a perdu.
 
 Dans le lecteur : `kirari play --stats` ; le journal dit « SPAN FP16 natif chargé : …, sommes f16 » au cran
 Équilibre, « …, sommes f32 » au cran Qualité, « SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran

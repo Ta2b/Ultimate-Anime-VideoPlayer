@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
+#include <type_traits>
 
 namespace kirari::gpu::cuda::rife_native {
 
@@ -52,6 +53,27 @@ struct Params {
   float* partial = nullptr;  // ksplit > 1 : [ksplit][oh · ow][canaux de la grille z], f32
   float in_slope = 1.F;      // PReLU de l'entrée, appliqué à la tuile chargée (1 : aucun) ; l'image aussi
 };
+
+// Un lot d'images (TemporalFix : les six appuis) : blockIdx.z = image · (grille z par image) + reste,
+// chaque image à in_batch, out_batch et skip_batch éléments de la précédente ; partial :
+// [batch][ksplit][oh · ow][canaux]. À part de Params : les noyaux de RIFE gardent leurs registres.
+struct BatchParams : Params {
+  int batch = 1;
+  long in_batch = 0;
+  long out_batch = 0;
+  long skip_batch = 0;
+};
+template <bool Batch>
+using ParamsOf = std::conditional_t<Batch, BatchParams, Params>;
+
+// Les adresses de l'image img du lot ; width : canaux de la grille z d'une image (sommes partielles).
+__device__ __forceinline__ void select_image(BatchParams& p, int img, long width) {
+  if (img == 0) return;
+  p.in += img * p.in_batch;
+  p.out += img * p.out_batch;
+  if (p.skip != nullptr) p.skip += img * p.skip_batch;
+  if (p.partial != nullptr) p.partial += img * p.ksplit * static_cast<long>(p.oh) * p.ow * width;
+}
 
 // Hauteur et largeur de la tuile d'entrée (halo compris), et octets de mémoire partagée.
 template <int KH, int S, int Rows>
@@ -434,12 +456,14 @@ __device__ __forceinline__ void store(const __half* o, const Params& p, int ty0,
 }
 
 // K découpé : les sommes partielles de ce bloc, en f32, au canal z · CT + n de la grille z, pour la part kz.
-template <int CT, int Rows, Acc A>
-__device__ __forceinline__ void spill(const Frag<A> (&acc)[Rows * 2][CT / 8], const Params& p, int ty0,
-                                      int tx0, int z, int kz, int warp, int lane) {
+template <int CT, int Rows, Acc A, bool Batch = false>
+__device__ __forceinline__ void spill(const Frag<A> (&acc)[Rows * 2][CT / 8], const ParamsOf<Batch>& p,
+                                      int ty0, int tx0, int z, int kz, int warp, int lane) {
   const int g = lane >> 2, t = lane & 3;
   const long pixels = static_cast<long>(p.oh) * p.ow;
-  const long width = static_cast<long>(gridDim.z) / p.ksplit * CT;
+  long width = static_cast<long>(gridDim.z);
+  if constexpr (Batch) width /= p.batch;
+  width = width / p.ksplit * CT;
   float* base = p.partial + kz * pixels * width + static_cast<long>(z) * CT + 2 * t;
 #pragma unroll
   for (int f = 0; f < Rows * 2; ++f) {
@@ -456,9 +480,11 @@ __device__ __forceinline__ void spill(const Frag<A> (&acc)[Rows * 2][CT / 8], co
 }
 
 // La fin d'une couche à K découpé : somme des parts, biais, arrondi FP16, puis comme store (résiduel et
-// activation, ou la phase d'une transposée). Un fil par pixel et par huit canaux de la grille z (width).
-template <Out O>
-__global__ void reduce_kernel(Params p, int width) {
+// activation, ou la phase d'une transposée). Un fil par pixel et par huit canaux de la grille z (width) ;
+// blockIdx.y : l'image du lot (Batch).
+template <Out O, bool Batch = false>
+__global__ void reduce_kernel(ParamsOf<Batch> p, int width) {
+  if constexpr (Batch) select_image(p, static_cast<int>(blockIdx.y), width);
   const long pixels = static_cast<long>(p.oh) * p.ow;
   const int groups = width / 8;
   const long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -493,9 +519,10 @@ __global__ void reduce_kernel(Params p, int width) {
 }
 
 // Une convolution. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase blockIdx.z / tiles d'une
-// transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py.
-template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahead = false>
-__global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
+// transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py. Batch : un lot
+// d'images (BatchParams) ; sans lui, RIFE garde ses registres d'avant.
+template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahead = false, bool Batch = false>
+__global__ void __launch_bounds__(kThreads, 2) conv_kernel(ParamsOf<Batch> p) {
   static_assert(Kc % 16 == 0 && CT % 16 == 0, "canaux par 16");
   static_assert(I != In::kImage || Kc == 16, "l'image tient en une tranche de 16 canaux");
   static_assert(O != Out::kPlanes4 || CT == 16, "la transposée de l'encodeur : 16 canaux");
@@ -504,7 +531,14 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int ty0 = static_cast<int>(blockIdx.y) * G::kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
-  const int z = static_cast<int>(blockIdx.z) / p.ksplit, kz = static_cast<int>(blockIdx.z) - z * p.ksplit;
+  int zb = static_cast<int>(blockIdx.z);
+  if constexpr (Batch) {
+    const int per = static_cast<int>(gridDim.z) / p.batch;  // blocs z d'une image du lot
+    const int img = zb / per;
+    zb -= img * per;
+    select_image(p, img, static_cast<long>(per / p.ksplit) * CT);
+  }
+  const int z = zb / p.ksplit, kz = zb - z * p.ksplit;
   const int phase = z / p.tiles, tile = z - phase * p.tiles;
   const int origin_y = KH == 2 ? (phase >> 1) - 1 : -1;
   const int origin_x = KH == 2 ? (phase & 1) - 1 : -1;
@@ -540,7 +574,7 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
     accumulate<Kc, CT, KH, S, Rows, A, Ahead>(acc, s, w, q, kcs, t0, t1, warp, lane);
   }
   if (p.ksplit > 1) {
-    spill<CT, Rows, A>(acc, p, ty0, tx0, z, kz, warp, lane);
+    spill<CT, Rows, A, Batch>(acc, p, ty0, tx0, z, kz, warp, lane);
     return;
   }
   __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie

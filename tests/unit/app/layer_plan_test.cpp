@@ -7,6 +7,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "app/play/chain_setup.h"
+#include "app/play/layer_stage.h"
 #include "app/play/settings.h"
 #include "doubles.h"
 #include "upscale_rig.h"
@@ -140,9 +141,9 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK_FALSE(layer_setup(c, &clock).layers);  // sans RIFE mouvement
   CHECK_FALSE(layer_setup(c, nullptr).layers);
 
-  // play.toml : les deux clés se relisent ; un ancien fichier sans elles les laisse éteintes.
+  // play.toml : les deux clés se relisent ; un ancien fichier sans elles prend les calques (allumés par
+  // défaut), pas la plaque ; un fichier qui les a éteints les garde éteints.
   PlaySettings on;
-  on.layers = true;
   on.background_plate = true;
   const auto reread = parse_settings(format_settings(on));
   REQUIRE(reread);
@@ -150,8 +151,13 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK(reread->background_plate);
   const auto old = parse_settings("[interpolation]\nsmooth_drawings = true\n");
   REQUIRE(old);
-  CHECK_FALSE(old->layers);
+  CHECK(old->layers);
   CHECK_FALSE(old->background_plate);
+  PlaySettings off;
+  off.layers = false;
+  const auto kept = parse_settings(format_settings(off));
+  REQUIRE(kept);
+  CHECK_FALSE(kept->layers);
 }
 
 // L'affinage en retard : la caméra lk d'une des deux paires d'avant, si elle s'accorde à un demi-pixel près
@@ -215,6 +221,38 @@ TEST_CASE("calques : caméra voisine, plaque sans second SPAN", "[layers]") {
   const test::FakeClock clock;
   CHECK(layer_setup(c, &clock).plate_on());
   CHECK_FALSE(layer_setup(c, nullptr).plate_on());
+}
+
+// La plaque dans l'étage : une clé copiée de la sortie de SPAN ne la réécrit pas ; les sources suivantes du
+// plan la réécrivent (l'étage en garde d'abord la copie pour les tuiles de SPAN, rewrites) ; avec le SPAN de
+// la plaque, la clé aussi, qui s'y compose.
+TEST_CASE("calques : la plaque ne réécrit la sortie de SPAN que pour y reprendre le décor", "[layers][app]") {
+  const bool copy = GENERATE(false, true);
+  INFO("plate_copy " << copy);
+  test::FakeBackend backend;
+  test::FakeEngine engine{"plate", {"input"}, {"output"}};
+  const LayerSetup setup{.plate = copy ? nullptr : &engine, .plate_copy = copy};
+  const gpu::Shape work{.dims = {1, 3, 36, 64}};
+  const gpu::Shape out{.dims = {1, 3, 72, 128}};
+  LayerStage stage;
+  REQUIRE(stage.allocate(backend, setup, work, out, true));
+  auto rgb = backend.alloc_tensor(gpu::TensorType::F16, work);
+  auto spanned = backend.alloc_tensor(gpu::TensorType::F16, out);
+  REQUIRE(rgb);
+  REQUIRE(spanned);
+  const PairFacts facts{.same_epoch = true, .scene = pan(2.0)};
+  stage.arrive(facts, setup, false, false);  // la clé
+  CHECK(stage.rewrites(setup) == !copy);
+  REQUIRE(stage.after_span(backend, setup, (*rgb)->tensor(), (*spanned)->tensor(), true));
+  CHECK(backend.count("resample") == (copy ? 1U : 0U));
+  CHECK(backend.count("compose_layers") == (copy ? 0U : 1U));
+  stage.arrive(facts, setup, false, false);  // b reprend son décor de la clé, à deux pixels
+  CHECK(stage.rewrites(setup));
+  REQUIRE(stage.after_span(backend, setup, (*rgb)->tensor(), (*spanned)->tensor(), true));
+  CHECK(backend.count("compose_layers") == (copy ? 1U : 2U));
+  // Une paire sans caméra : plus de plaque, rien de réécrit.
+  stage.arrive(PairFacts{.same_epoch = true}, setup, false, false);
+  CHECK_FALSE(stage.rewrites(setup));
 }
 
 // La règle absolue : calques et plaque allumés sans carte de la scène (AMD, Intel, NVOF refusé) donnent les

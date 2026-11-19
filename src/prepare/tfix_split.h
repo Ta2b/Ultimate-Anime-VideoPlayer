@@ -27,6 +27,8 @@ std::string_view role_name(TfixRole role);  // « encoder », « window »
 struct TfixSplit {
   std::string encode_input = "/Reshape_1_output_0";
   std::string encode_output = "/encode/Resize_output_0";
+  // La dernière convolution de l'encodeur, que son Resize agrandit ×2 : là s'arrêtent les noyaux natifs.
+  std::string encode_last = "/encode/proj/Conv_output_0";
   std::vector<std::string> block_input;   // X0, X1, X2
   std::vector<std::string> block_output;  // la dernière convolution de chaque bloc, avant son Resize
   std::string conf_input = "/conf_head/Concat_output_0";

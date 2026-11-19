@@ -90,11 +90,21 @@ std::uint64_t input_recipe(bool debanded, const gpu::Reduction& reduce) {
 }
 
 // Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près), ni
-// TemporalFix (la mesure de la paire ne voit pas sa sortie), ni Smooth (SPAN fait en avance), ni plaque de
-// décor (layer_stage.h : elle réécrit la sortie, ses pixels ne se reprennent pas d'une image à l'autre).
+// TemporalFix (la mesure de la paire ne voit pas sa sortie), ni Smooth (SPAN fait en avance). La plaque de
+// décor réécrit la sortie comme le grade : les tuiles partent de la copie d'avant elle (keep_ungraded).
 bool tiles_fit(const UpscaleSetup& setup) {
   const bool playing = setup.clock != nullptr && !setup.yuv_slots;
-  return playing && setup.temporal_fix == nullptr && !setup.smooth_drawings && !setup.layers.plate_on();
+  return playing && setup.temporal_fix == nullptr && !setup.smooth_drawings;
+}
+
+// La sortie de SPAN se copie avant d'être réécrite (grade, plaque) quand la suivante peut partir de la copie.
+bool keeps_ungraded(const UpscaleSetup& setup, const SpanReuse& reuse) {
+  return setup.engine != nullptr && reuse.tiles.active() && reuse.ungraded_ok && tiles_fit(setup);
+}
+
+// Le tampon buf de spanned_ ne tient plus la sortie de SPAN telle quelle : gradé ou plaqué sur place.
+bool rewritten(const std::array<bool, 2>& graded, const SpanReuse& reuse, std::uint32_t buf) {
+  return graded[buf] || reuse.plated[buf];
 }
 
 // Avant le warp, la sortie d'avant est dans l'autre tampon, si la source d'avant a vraiment eu son SPAN et
@@ -126,10 +136,10 @@ float measure_block_px(const gpu::Tensor& span_input, const gpu::Tensor& measure
 }
 
 // La sortie d'avant telle que SPAN l'a rendue, d'où l'image se calcule par tuiles : le tampon buf de la
-// précédente, ou sa copie d'avant le grade quand le grade avant le warp l'a réécrit ; nul sans elle.
+// précédente, ou sa copie quand le grade avant le warp ou la plaque l'a réécrit (rewritten) ; nul sans elle.
 const gpu::Tensor* ungraded_previous(const SpanReuse& reuse, const gpu::Tensor& previous, std::uint32_t buf,
-                                     bool graded) {
-  if (!graded) return &previous;
+                                     bool rewritten) {
+  if (!rewritten) return &previous;
   return reuse.ungraded && reuse.ungraded_of == buf ? &reuse.ungraded->tensor() : nullptr;
 }
 
@@ -141,7 +151,8 @@ std::expected<void, Refusal> keep_ungraded(gpu::Backend& backend, const gpu::Ten
   KIRARI_TRACE("span.ungraded");
   const auto stop = [&reuse](const Refusal& why) {
     log_channel("gpu")->info(
-        "SPAN par tuiles : copie d'avant le grade refusée ({}) ; images entières sous le grade", why.detail);
+        "SPAN par tuiles : copie d'avant le grade ou la plaque refusée ({}) ; images entières sous eux",
+        why.detail);
     reuse.ungraded_ok = false;
   };
   if (!reuse.ungraded) {
@@ -233,7 +244,7 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
   tile_facts(rf, setup_,
              TileContext{.before_warp = warps_spanned(),
                          .previous_spanned = reuse_.spanned_is(previous_),
-                         .previous_graded = span_graded_[span_of_[current_ ^ 1U]],
+                         .previous_graded = rewritten(span_graded_, reuse_, span_of_[current_ ^ 1U]),
                          .ungraded_kept = reuse_.ungraded_of == span_of_[current_ ^ 1U],
                          .output_has_source = output_has_source_,
                          .intermediates = intermediates_,
@@ -301,14 +312,19 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   const std::uint32_t before = span_of_[current_ ^ 1U];
   if (reuse_.ungraded_of == span_of_[current_]) reuse_.ungraded_of.reset();  // ce tampon va changer
   const gpu::Tensor* previous =
-      ungraded_previous(reuse_, spanned(current_ ^ 1U), before, span_graded_[before]);
+      ungraded_previous(reuse_, spanned(current_ ^ 1U), before, rewritten(span_graded_, reuse_, before));
   if (previous == nullptr) drop_plan(reuse_);
   const bool tiled = previous != nullptr && send_tiles(reuse_, *setup_.engine, previous);
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
   if (!ok && tiled) drop_tiles(*setup_.engine);
   if (ok && tiled) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, results[0]);
   reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
-  // La plaque de décor (layer_stage.h), avant le grade : le décor de b repris de l'image clé.
+  // La plaque de décor (layer_stage.h), avant le grade : le décor de b repris de l'image clé, sur place ; la
+  // sortie de SPAN est copiée juste avant, pour les tuiles de la suivante.
+  const std::uint32_t buf = span_of_[current_];
+  reuse_.plated[buf] = ok && layers_.rewrites(setup_.layers);
+  if (reuse_.plated[buf] && keeps_ungraded(setup_, reuse_))
+    ok = keep_ungraded(*setup_.backend, results[0], buf, reuse_);
   if (ok)
     ok = layers_.after_span(*setup_.backend, setup_.layers, inputs[0], results[0],
                             setup_.warp == kernels::RifeWarp::CatmullRom);
@@ -319,13 +335,13 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
 
 std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   span_graded_[buf] = false;
-  if (reuse_.ungraded_of == buf) reuse_.ungraded_of.reset();
+  // Copiée avant la plaque, la sortie de SPAN l'est déjà.
+  if (reuse_.ungraded_of == buf && !reuse_.plated[buf]) reuse_.ungraded_of.reset();
   if (!setup_.grader || setup_.yuv_slots) return {};
   KIRARI_TRACE("grade avant le warp");
   // La copie d'avant le grade, si les tuiles peuvent servir et que le grade a écrit l'image d'avant : un
   // grader qui ne grade pas (réglage, écran) ne coûte pas de copie.
-  if (setup_.engine != nullptr && reuse_.tiles.active() && reuse_.ungraded_ok && span_graded_[buf ^ 1U] &&
-      tiles_fit(setup_)) {
+  if (!reuse_.plated[buf] && span_graded_[buf ^ 1U] && keeps_ungraded(setup_, reuse_)) {
     if (auto ok = keep_ungraded(*setup_.backend, spanned_[buf]->tensor(), buf, reuse_); !ok) return ok;
   }
   const GradedSource source{.epoch = head_.epoch,

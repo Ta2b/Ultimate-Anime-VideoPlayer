@@ -24,21 +24,23 @@ temps du PC.
   avance (`look_ahead`, `drba_next` sous DistilDRBA) ; en SPAN seul comme depuis le lot A (#901), avec ou sans
   `--no-span-reuse`. Sans mesure, l'image se calcule entière.
 - **En lecture** : jamais à l'export (l'export rejoue la chaîne au bit près), ni avec TemporalFix (la mesure
-  ne voit pas sa sortie), ni avec « Lisser les dessins tenus » (SPAN fait en avance), ni avec la plaque de
-  décor.
+  ne voit pas sa sortie), ni avec « Lisser les dessins tenus » (SPAN fait en avance).
 - **Sous le grade avant le warp** (le cas du PC : SPAN avant le warp en 4K, grade HDR anime) : le grade
   réécrit sur place le tampon de SPAN que le warp lit. Juste avant, la sortie de SPAN telle quelle est copiée
   (`SpanReuse::ungraded`, une copie exacte de l'image de sortie, environ 0,2 ms en 4K sur une 4070 Ti) et
   l'image suivante part de cette copie. La copie ne se fait que si les tuiles peuvent servir (moteur à
   grille, tuiles non coupées, chaîne en lecture) et que le grade a écrit l'image d'avant : un grader qui ne grade
   pas ne coûte rien. Sans elle (refus de place), l'image se calcule entière.
+- **Sous la plaque de décor** (`docs/calques.md`) : elle réécrit de même le décor de la sortie de SPAN. La
+  copie se fait juste avant elle, sur chaque image dont elle reprend le décor ; la clé, copie de la sortie de
+  SPAN, ne la réécrit pas.
 
 La ligne de fin du journal sort sous SPAN, sauf avec `--no-span-tiles`, même sans aucune image par tuiles :
 « SPAN par tuiles : t images sur n calculées (p %), x % des tuiles recalculées (y % avec le halo) ; images
 entières : … ». Chaque image entière y compte sous une seule raison (seules les raisons non nulles sont
-écrites) : sans mesure des blocs, région trop large, refus du moteur, sortie d'avant gradée sur place (pas de
-copie), sortie d'avant écrasée (image créée par-dessus, source sautée), chaîne sans tuiles (export, YUV,
-TemporalFix, Smooth, plaque), début, saut ou image abîmée, entrée de SPAN changée, rafraîchissement. La région
+écrites) : sans mesure des blocs, région trop large, refus du moteur, sortie d'avant gradée ou plaquée sur place
+(pas de copie), sortie d'avant écrasée (image créée par-dessus, source sautée), chaîne sans tuiles (export, YUV,
+TemporalFix, Smooth), début, saut ou image abîmée, entrée de SPAN changée, rafraîchissement. La région
 trop large dit ce qui la remplissait : part des tuiles en cause et de la région une fois les deux portées
 ajoutées, puis la part des blocs et de l'âge. Sur un moteur sans grille, la ligne le dit ; le démarrage donne
 la grille. La ligne « SPAN repris » compte à part les « arrêts aux tuiles » : paire et ancre tenues, mais la
