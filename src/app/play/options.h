@@ -114,6 +114,7 @@ struct PlayOptions {
   int true_hdr_peak = 0;  // --truehdr-peak=350..4000 nits (limits::kTrueHdrPeak) ; 0 : la crête vue par le
                           // contenu sur l'écran
   bool help = false;      // --help
+  bool version = false;   // --version : la version du lecteur, puis rien d'autre
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
   bool rife_image = false;
@@ -338,6 +339,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
 
 // debug : avec les options d'essai (--debug --help).
 std::string play_usage(bool debug = false);
+// Ce que --help ou --version écrivent avant que le lecteur ne s'arrête ; rien sans l'une ni l'autre.
+std::optional<std::string> help_or_version(const PlayOptions& options);
 
 // « kirari bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
 struct BenchOptions {

@@ -92,6 +92,10 @@ void FrameStats::paced(std::int64_t pts_us, std::int64_t lag_us, std::int64_t pe
     const std::int64_t periods = (pts_us - last_new_pts_us + period_us / 4) / period_us;
     if (periods > 1) (on_purpose ? uninterpolated : missing) += periods - 1;
   }
+  if (last_new_pts_us != kNoPts && pts_us > last_new_pts_us && !on_purpose) {
+    ++moving_frames;
+    moving_us += pts_us - last_new_pts_us;
+  }
   last_new_pts_us = pts_us;
   lag.add(std::max<std::int64_t>(lag_us, 0));
 }

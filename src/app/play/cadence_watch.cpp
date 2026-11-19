@@ -59,6 +59,7 @@ void CadenceWatch::poll(LiveSettings& live, const FrameStats& shown, std::int64_
   const bool active = live.free_active();
   if (active) live.free_missed(now_us, lost);
   sample(active, live.free_info(now_us), live.free_step(now_us).second);
+  motion(shown.moving_frames, shown.moving_us);
 }
 
 std::string CadenceWatch::summary() const {
@@ -68,6 +69,10 @@ std::string CadenceWatch::summary() const {
       "pertes du GPU {}",
       name(options_.swap_mode), options_.vrr_margin_pct, display_losses_,
       options_.display_loss_pressure ? "comptées dans" : "hors de", gpu_losses_);
+  if (moving_us_ > 0) {
+    text += std::format(" ; en mouvement (hors coupes et dessins tenus) {:.1f} i/s",
+                        static_cast<double>(moving_frames_) * 1e6 / static_cast<double>(moving_us_));
+  }
   if (samples_ == 0) return text + " ; mode Rapide inactif";
   const double n = samples_;
   const auto share = [n](int count) { return static_cast<int>(std::lround(100.0 * count / n)); };
