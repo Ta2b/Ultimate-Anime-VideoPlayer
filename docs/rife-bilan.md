@@ -1,11 +1,8 @@
 # Bilan : RIFE natif et DistilDRBA (19 novembre 2026)
 
-Mis à jour le 19 novembre 2026 à 18 h 56 : la porte et la fin fondue sont poussées sur la branche de #961
-(e05a3a5, main d4866bb fusionnée dedans, conflit de `conv_kernel` résolu : il garde le lot d'images de TemporalFix
-et appelle `conv_sums`) ; #961 devient une seule PR (entrée à la volée, porte, fin fondue), ci.yml relancé sur
-e05a3a5 (celui de b68466c : tout vert sauf Windows MSVC, encore en construction). Séance PC envoyée au
-coordinateur sur e05a3a5 sans attendre la CI ([`rife-seance-pc.md`](rife-seance-pc.md)) ; si elle passe, la rc.1 la prend, avec le
-natif par défaut si l'ABAB le confirme.
+Mis à jour le 19 novembre 2026 à 19 h 40 : séance PC sur e05a3a5 dépouillée (partie 0) ; Tatoub la valide, #961
+se fusionne dès que ci.yml est vert (Windows MSVC en tests), le natif passe par défaut avec le verdict gardé
+(PR qui suit), puis le peaufinage : porte du lite, blocs grossiers, glue_conv, warp_blend.
 
 Pour reprendre ce travail sans son auteur. Tout est mesuré en 1080p (1920 × 1088 rempli) sur la RTX 4070 Ti du PC
 de Tatoub, sauf mention contraire. Une « passe » est une passe de lecture ×2 de RIFE fusionné : l'image B seule
@@ -16,17 +13,54 @@ Documents de détail : `docs/rife-natif.md` (le code et l'essai), `docs/drba-fus
 
 ## En bref
 
-- RIFE 4.25 : TensorRT 3,39 ms par passe, mélange natif 3,00 ms (−11 %), plafond 2,28 ms couche par couche, 1,58 ms
-  morceaux fondus. Le natif est derrière `--rife-native`, éteint par défaut.
-- RIFE 4.22 lite : TensorRT 3,31 ms, mélange 3,20 ms (−3 %), mêmes plafonds à peu près (2,28 et 1,59 ms). Il
-  perd sur 4.25 parce que la porte lui refuse notre encodeur, alors que cet encodeur est juste : la porte se juge
-  contre TensorRT, qui est lui-même à 43,6 dB du calcul exact sur cette chaîne (partie 2). Avec une porte jugée
-  contre le calcul exact, environ 2,9 ms attendues (−12 %).
+- RIFE 4.25 : **2,51 ms par passe en natif contre 3,40 pour TensorRT (−26 %)**, chaîne à 48,5 dB de TensorRT et
+  49,6 dB du natif f32 (séance du 19 novembre, e05a3a5). Plafond 2,28 ms couche par couche, 1,58 ms morceaux fondus.
+- RIFE 4.22 lite : **2,95 ms contre 3,56 (−17 %)**, 47,6 dB. La porte contre le calcul exact n'a pas joué (partie
+  0) : l'encodeur reste à TensorRT ; avec elle, environ 2,6 à 2,7 ms attendues.
+- En lecture, avec ou sans SPAN, ×2 et ×3 : rien de perdu des deux côtés (0,1 à 0,3 % d'images).
+- Natif par défaut avec le verdict de l'essai gardé sur le disque (PR après #961) : l'essai de 4,5 s ne passe
+  qu'une fois par carte, pilote, modèle et taille.
 - DistilDRBA v2 lite : chaîne fusionnée 0,917 ms par image créée (TensorRT pour les convolutions), allumée par
   défaut ; aucun noyau natif encore. Plafond 0,37 ms couche par couche, environ 0,27 ms fondu.
-- En cours : l'entrée du dernier bloc de RIFE calculée à la volée (PR #961, environ −0,4 ms attendues), la porte
-  contre le calcul exact (pour le lite), puis la fin fondue dans la dernière couche (noyau écrit, branchement en
-  cours, environ −0,15 à −0,2 ms attendues).
+
+## 0. Séance PC du 19 novembre 2026 (e05a3a5, RTX 4070 Ti, Re:Zero S4E18 à 960 s)
+
+Sorties brutes : `/mnt/project-files/rife-natif-seance.tar.gz`.
+
+**Verdict de l'essai** (passe ×2 chronométrée par l'essai, carte seule) :
+
+| Modèle | Mélange retenu | Natif | TensorRT | Gain | Contre TensorRT | Contre natif f32 |
+|---|---|---|---|---|---|---|
+| 4.25 | encodeur f32, blocs 0 à 2 TensorRT, blocs 3 et 4 f16 | 2,51 ms | 3,40 ms | −26 % | 48,5 dB | 49,6 dB |
+| 4.22 lite | encodeur et bloc 0 TensorRT, blocs 1 à 3 f16 | 2,95 ms | 3,56 ms | −17 % | 47,6 dB | 43,5 dB |
+
+- **Entrée du dernier bloc à la volée** : gardée sur les deux modèles et tous les crans ; bloc 4 de 4.25 en f16 à
+  0,944 ms colle comprise contre 1,242 à part (−0,30 ms), bloc 3 du lite 0,894 contre 1,230 (−0,34 ms).
+- **Fin fondue** : gardée, 2,511 contre 2,716 ms à part sur 4.25 (−0,21 ms), 2,950 contre 3,131 sur le lite
+  (−0,18 ms) ; `finish_conv_kernel` remplace la transposée du dernier bloc et `fused_finish` dans le profil.
+- **Porte contre le calcul exact** : elle n'a pas joué. « Référence du mélange : TensorRT (bloc 0 du natif f32 à
+  55,7 dB de TensorRT, moins de 60) » sur 4.25, 59,3 dB sur le lite. Les morceaux f32 sont à 50,9 à 62,4 dB de
+  TensorRT, et nos morceaux f16 sont plus près de TensorRT que nos f32 (bloc 1 de 4.25 : 56,6 contre 50,9 dB) :
+  c'est TensorRT qui s'écarte, ses blocs tournent en FP16. Le plancher de 60 dB par morceau est trop haut pour le
+  bruit propre de TensorRT ; à reprendre (partie 4). Sur le lite, la chaîne TensorRT est à 43,6 dB du natif f32
+  (au-dessus du plancher de chaîne de 42) : avec une garde des morceaux qui passe, l'encodeur natif entrerait.
+- **Lecture, ABAB** (`kirari compare`, 60 s, une voie) : A et B tiennent tous deux, 18,2 ms par image en ×2,
+  12,1 ms en ×3 avec SPAN, 0,1 à 0,3 % d'images perdues des deux côtés : le lecteur suit la cadence de l'écran,
+  le gain se voit dans le temps du moteur, pas dans les images.
+- **Temps du moteur en lecture** (profil GPU, « moteur RIFE fusionné ») : 4.25 médiane 6,59 ms contre 7,23,
+  minimum 2,64 contre 3,62 ; lite 6,74 contre 7,13, minimum 2,93 contre 3,60. Les minimums sont la passe de
+  l'essai (2,51 et 2,95). La médiane mesure, entre deux horodatages GPU sur la voie de RIFE, la même passe pendant
+  que la carte fait autre chose sur ses autres voies (ingestion, entrée de RIFE, warp et mélange, écriture du
+  ring, composition de l'écran) et à des horloges basses : la carte est occupée moins d'un cinquième du temps,
+  elle redescend en fréquence entre deux images. Les noyaux le montrent dans nsys : `glue_conv_kernel` en
+  médiane 1,02 ms en lecture contre 0,52 ms à l'essai, `fused_glue<1,3>` 1,01 ms des deux côtés. L'écart de 4 ms
+  n'est donc pas du travail en plus : c'est la passe étirée par le partage et par l'horloge. Le gain relatif s'y
+  tasse (−9 % au lieu de −26 %) parce que les noyaux qui ne changent pas (colles, warp) s'étirent autant que
+  les autres.
+- **Occupation, nsys** (30 s) : 18,7 % de noyaux en natif contre 16,2 % en TensorRT, mais la capture native
+  contient l'essai au chargement (154 noyaux distincts, dont les quatre crans, la colle à part, les passes f32) :
+  508 passes de lecture dans la capture native contre 630 dans celle de TensorRT. La comparaison n'est pas juste ;
+  à refaire avec `nsys profile --delay=15` (après l'essai, ou avec le verdict gardé qui le saute).
 
 ## 1. Ce qui est fait
 
@@ -229,6 +263,21 @@ ne plus construire les quatre moteurs (38 s), mais seulement avec une référenc
 
 Règle de Tatoub : tout ce qui se vérifie hors carte se fait dans le cloud ; le PC ne sert qu'à chronométrer, et
 seulement après les chantiers qui n'ont pas encore passé leur porte.
+
+**Après la séance du 19 novembre** (dans l'ordre du gain) :
+
+a. **Fusion de #961**, puis la PR « natif par défaut » (`--no-rife-native`, verdict gardé : `rife_native_verdict.h`,
+   `RifeFusedEngine::try_cached`), avec ci.yml, pour la rc.1.
+b. **La garde des morceaux de la porte** : 60 dB contre TensorRT ne passe jamais (TensorRT FP16 est lui-même à
+   51 à 59 dB de nos morceaux f32). Juger chaque morceau f32 contre un témoin qui ne doit rien à TensorRT : le
+   même morceau en f32 par un chemin indépendant (la forme de référence du banc, tranche et tuile de 16, sans K
+   découpé), ou abaisser la garde vers 48 dB en gardant le plancher de chaîne. Gain attendu sur le lite :
+   l'encodeur natif (0,21 contre 0,52 ms), environ −0,3 ms.
+c. **Les blocs 0 à 2 de 4.25** restent à TensorRT (0,143, 0,104, 0,200 ms seuls contre 0,170, 0,119, 0,210 en
+   f16) : un lancement par bloc grossier entier (onze couches en un noyau, activations en mémoire partagée).
+d. **Les noyaux lourds du profil** : `glue_conv_kernel<4,16>` (0,52 ms à l'essai), `fused_glue<1,3>` (la colle de
+   X_3, à la volée dans le bloc 3), `warp_blend` (0,90 ms, hors de la passe).
+e. **nsys refait** avec `--delay=15` pour l'occupation, après l'essai.
 
 1. **#961, l'entrée du dernier bloc à la volée** (cloud). Deux relectures sévères, points corrigés (422c6a6 : le
    flot du dernier bloc relu après la passe de l'essai, car une variante image ne montrait pas un flot oublié ; la
