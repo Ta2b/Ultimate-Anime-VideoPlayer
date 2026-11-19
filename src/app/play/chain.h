@@ -127,6 +127,7 @@ struct Chain {
   // de la mesure en direct, dès qu'il est analysé. Nul : aucune.
   ShotWork* shots = nullptr;
   bool shot_cuts = false;  // --shot-cuts (8.7) : les plans donnent aussi les coupes de l'interpolation
+  bool shot_plan = false;  // --shot-plan : l'Auto plan par plan (shot_plan.h) lit les plans
   // --anime-shots (méga plan A2) : la méthode « HDR anime » décide par plan (anime_shots.h) ; anime_glide, ce
   // qu'elle montre, anime_series_apl la médiane des APL des plans connus.
   bool anime_shots = false;

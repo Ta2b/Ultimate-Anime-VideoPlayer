@@ -143,11 +143,17 @@ struct PlayOptions {
   // Les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus que signaler les
   // désaccords) ; --no-shot-cuts les coupe.
   bool shot_cuts = true;  // par défaut (désaccords jugés à l'image)
+  // --shot-plan, essai : l'Auto plan par plan (shot_plan.h). DistilDRBA chargé avec RIFE, l'un ou l'autre
+  // selon le rythme de chaque plan lu par la pré-analyse ; TemporalFix sauté sur les plans sans grain.
+  bool shot_plan = false;
   // --anime-shots (méga plan A2, actif par défaut) : en sortie SDR, la méthode « HDR anime » décide par plan
   // : exposition des surfaces et marge des éclats fixées par la pré-analyse, glissant hors des coupes
   // (anime_shots.h) ; --no-anime-shots garde le relèvement fixe. Sans effet en sortie HDR
   // (render::steady_hdr).
   bool anime_shots = true;  // par défaut (jugé à l'image)
+  // Éclats HDR sur les seuls effets (render/effect_mask.h), là où la carte de la scène existe (NVIDIA) ;
+  // --no-effect-highlights garde la marge des éclats sur toute lumière, comme sans carte.
+  bool effect_highlights = true;
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
@@ -210,6 +216,10 @@ struct PlayOptions {
   // (chantier 7.9, UpscaleSetup::smooth_drawings) ; pour cette lecture, l'option du menu
   // (PlaySettings::smooth_drawings, settings_for). RIFE mouvement seulement, éteint par défaut.
   bool smooth_drawings = false;
+  // --pair-triage : la carte de la scène (flux optique de NVIDIA) trie les paires de RIFE mouvement : dessin
+  // tenu copié, paire impossible fondue, zone douteuse fondue par endroits (UpscaleSetup::pair_triage,
+  // rife_triage.h). Sans carte, sans effet. Éteint par défaut jusqu'à la porte du groupe 3.
+  bool pair_triage = false;
   // Un thread attend l'écriture des slots et réveille main (ring_watcher.h, 6.5), par défaut ;
   // --no-ring-watcher : main sonde l'anneau.
   bool ring_watcher = true;

@@ -247,6 +247,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   live->set_reduction(reduction_of(settings.downscale));
   set_live_motion(*live, settings);
   live->set_pair_marks(settings.stats.pairs);
+  live->set_effect_highlights(options.effect_highlights);
   const PipelineConfig config = pipeline_config(p, settings, options.file, c.backend_name);
   PlaceboScreen& out = p.screen;
   LoopWake wake{.event = loop_wake_event()};  // vit plus longtemps que la chaîne, qui l'appelle
@@ -397,6 +398,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .kernels = c.backend->kernels(),
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
+              .shot_plan = p.options.shot_plan,
               .anime_shots = p.options.anime_shots};
   carry_session(chain, p.stages, p.dropped_subtitles, p.subtitle_track, p.manual_tracks);
   apply_oled_care(chain, settings);

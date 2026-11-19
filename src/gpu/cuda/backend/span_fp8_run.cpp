@@ -140,6 +140,71 @@ const char* device_refusal(const cudaDeviceProp& props, bool fp16) {
                                                                 : "appareil sans noyaux FP8 CUTLASS";
 }
 
+// --compare : la sortie out (FP16 en float) contre la référence FP16 à sommes f32, sur la sortie standard.
+int compare_to_reference(const kirari::gpu::cuda::SpanFp8Weights& weights, int height, int width, void* input,
+                         cudaStream_t stream, std::size_t pixels, const std::vector<float>& out) {
+  kirari::gpu::cuda::SpanFp8Status status = kirari::gpu::cuda::SpanFp8Status::Ok;
+  std::string why;
+  const auto ref = kirari::gpu::cuda::SpanFp8Reference::create(weights, height, width, status, why);
+  if (!ref) return fail(why);
+  void* ref_out = nullptr;
+  CU(cudaMalloc(&ref_out, pixels * 8));
+  if (!ref->run(stream, input, ref_out, false, why)) return fail(why);
+  CU(cudaStreamSynchronize(stream));
+  std::vector<__half> ref_half(pixels * 4);
+  CU(cudaMemcpy(ref_half.data(), ref_out, pixels * 8, cudaMemcpyDeviceToHost));
+  CU(cudaFree(ref_out));
+  double squared = 0.0, worst = 0.0;
+  std::size_t nonfinite = 0;
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    const double r = static_cast<double>(__half2float(ref_half[i]));
+    const double d = static_cast<double>(out[i]) - r;
+    if (!std::isfinite(d)) {
+      ++nonfinite;
+      continue;
+    }
+    squared += d * d;
+    worst = std::max(worst, std::abs(d));
+  }
+  const double mse = squared / static_cast<double>(out.size());
+  const double psnr = mse > 0.0 ? 10.0 * std::log10(1.0 / mse) : 999.0;
+  std::printf("écart à la référence FP16 (sommes f32) : %.2f dB, plus grand écart %.5f, non finies %zu\n",
+              psnr, worst, nonfinite);
+  return 0;
+}
+
+// --bench N : N lancements du réseau dans un graphe CUDA, la médiane sur la sortie standard.
+int bench_graph(SpanFp8Net& net, const Options& options, int height, int width, void* input, void* output,
+                cudaStream_t stream) {
+  const int bench = options.bench;
+  std::string why;
+  cudaGraph_t graph = nullptr;
+  cudaGraphExec_t exec = nullptr;
+  CU(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+  const bool queued = net.launch(stream, input, output, why);
+  CU(cudaStreamEndCapture(stream, &graph));
+  if (!queued) return fail(why);
+  CU(cudaGraphInstantiate(&exec, graph, 0));
+  for (int i = 0; i < 50; ++i) CU(cudaGraphLaunch(exec, stream));
+  CU(cudaStreamSynchronize(stream));
+  std::vector<cudaEvent_t> events(static_cast<std::size_t>(2 * bench));
+  for (cudaEvent_t& e : events) CU(cudaEventCreate(&e));
+  for (std::size_t i = 0; i < static_cast<std::size_t>(bench); ++i) {
+    CU(cudaEventRecord(events[2 * i], stream));
+    CU(cudaGraphLaunch(exec, stream));
+    CU(cudaEventRecord(events[2 * i + 1], stream));
+  }
+  CU(cudaStreamSynchronize(stream));
+  std::vector<float> ms(static_cast<std::size_t>(bench));
+  for (std::size_t i = 0; i < ms.size(); ++i)
+    CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
+  std::ranges::sort(ms);
+  std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n",
+              options.fp16 ? (options.acc32 ? "FP16 natif (sommes f32)" : "FP16 natif") : "FP8", width,
+              height, static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
+  return 0;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
@@ -214,59 +279,10 @@ int main(int argc, char* const* argv) {
              static_cast<std::streamsize>(out.size() * sizeof(float)));
   if (!file) return fail("sortie non écrite");
 
-  if (options.compare && net) {
-    const auto ref = kirari::gpu::cuda::SpanFp8Reference::create(weights, height, width, status, why);
-    if (!ref) return fail(why);
-    void* ref_out = nullptr;
-    CU(cudaMalloc(&ref_out, pixels * 8));
-    if (!ref->run(stream, input, ref_out, false, why)) return fail(why);
-    CU(cudaStreamSynchronize(stream));
-    std::vector<__half> ref_half(pixels * 4);
-    CU(cudaMemcpy(ref_half.data(), ref_out, pixels * 8, cudaMemcpyDeviceToHost));
-    CU(cudaFree(ref_out));
-    double squared = 0.0, worst = 0.0;
-    std::size_t nonfinite = 0;
-    for (std::size_t i = 0; i < out.size(); ++i) {
-      const double r = static_cast<double>(__half2float(ref_half[i]));
-      const double d = static_cast<double>(out[i]) - r;
-      if (!std::isfinite(d)) {
-        ++nonfinite;
-        continue;
-      }
-      squared += d * d;
-      worst = std::max(worst, std::abs(d));
-    }
-    const double mse = squared / static_cast<double>(out.size());
-    const double psnr = mse > 0.0 ? 10.0 * std::log10(1.0 / mse) : 999.0;
-    std::printf("écart à la référence FP16 (sommes f32) : %.2f dB, plus grand écart %.5f, non finies %zu\n",
-                psnr, worst, nonfinite);
-  }
-
-  if (bench > 0 && net) {
-    cudaGraph_t graph = nullptr;
-    cudaGraphExec_t exec = nullptr;
-    CU(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
-    const bool queued = net->launch(stream, input, output, why);
-    CU(cudaStreamEndCapture(stream, &graph));
-    if (!queued) return fail(why);
-    CU(cudaGraphInstantiate(&exec, graph, 0));
-    for (int i = 0; i < 50; ++i) CU(cudaGraphLaunch(exec, stream));
-    CU(cudaStreamSynchronize(stream));
-    std::vector<cudaEvent_t> events(static_cast<std::size_t>(2 * bench));
-    for (cudaEvent_t& e : events) CU(cudaEventCreate(&e));
-    for (std::size_t i = 0; i < static_cast<std::size_t>(bench); ++i) {
-      CU(cudaEventRecord(events[2 * i], stream));
-      CU(cudaGraphLaunch(exec, stream));
-      CU(cudaEventRecord(events[2 * i + 1], stream));
-    }
-    CU(cudaStreamSynchronize(stream));
-    std::vector<float> ms(static_cast<std::size_t>(bench));
-    for (std::size_t i = 0; i < ms.size(); ++i)
-      CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
-    std::ranges::sort(ms);
-    std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n",
-                options.fp16 ? (options.acc32 ? "FP16 natif (sommes f32)" : "FP16 natif") : "FP8", width,
-                height, static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
-  }
+  if (options.compare && net)
+    if (const int failed = compare_to_reference(weights, height, width, input, stream, pixels, out);
+        failed != 0)
+      return failed;
+  if (bench > 0 && net) return bench_graph(*net, options, height, width, input, output, stream);
   return 0;
 }

@@ -23,6 +23,7 @@
 #include "app/play/cadence_watch.h"
 #include "app/play/controls.h"
 #include "app/play/edition_plan.h"
+#include "app/play/effect_book.h"
 #include "app/play/frame_latency.h"
 #include "app/play/frame_queue.h"
 #include "app/play/frame_stats.h"
@@ -75,6 +76,11 @@ class StatsSource {
   // Débogage des paires : le verdict de la paire d'où vient l'image d'époque epoch à pts_us (pair_marks.h) ;
   // rien hors d'une paire notée.
   virtual std::optional<PairVerdict> pair_verdict(std::uint32_t /*epoch*/, std::int64_t /*pts_us*/) const {
+    return std::nullopt;
+  }
+  // Éclats HDR sur les seuls effets : la carte de la paire d'où vient l'image (effect_book.h) ; rien sans
+  // carte.
+  virtual std::optional<EffectNote> effect_note(std::uint32_t /*epoch*/, std::int64_t /*pts_us*/) const {
     return std::nullopt;
   }
 };
@@ -250,6 +256,7 @@ class Session {
   ShowRequest show_request(const UiFrame& ui, const subs::SubtitleFrame* subtitles) const;
   bool repeats_expected() const;
   std::optional<PairTint> pair_tint_now() const;
+  std::optional<EffectNote> effect_note_now() const;
   // Une présentation vient d'être rendue. Si c'est la première image d'une époque, l'horloge part de son pts
   // maintenant, et --seconds compte d'ici : partie au choix de l'image, elle courait pendant ce premier rendu
   // (la compilation des shaders, plus d'une seconde sous lavapipe sans cache) et la lecture sautait autant
