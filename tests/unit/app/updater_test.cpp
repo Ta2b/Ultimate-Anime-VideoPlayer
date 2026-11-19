@@ -27,10 +27,11 @@ void write(const fs::path& file, const std::string& text) {
   std::ofstream(file, std::ios::binary) << text;
 }
 
-// Un manifeste du canal stable signé par la clé de test kTestKey (sa signature : kTestSignature).
+// Un manifeste du canal stable signé par la clé de test kTestKey (sa signature : kTestSignature), texte signé
+// tel quel, nom d'archive d'ajp compris.
 constexpr std::string_view kSignedManifest =
     "version = \"99.0.0\"\nchannel = \"stable\"\ndate = \"2026-11-07\"\nexpires = \"2099-12-31\"\n"
-    "[linux-x64]\nurl = \"https://example.invalid/kirari-linux-x64.tar.gz\"\n"
+    "[linux-x64]\nurl = \"https://example.invalid/ajp-linux-x64.tar.gz\"\n"
     "sha256 = \"6ec20ccae9a53cf2b47c765c124b7de6bdaed3b7f8a438381501cbde525b9638\"\nsize = 138\n";
 constexpr std::string_view kTestSignature =
     "722f81d4e2982752f0d8a6d65437ce8e86e1ab86e9b775285c9d650beae012a5e2c94162d4877cd76f9362f6fa7ffef8d0434"

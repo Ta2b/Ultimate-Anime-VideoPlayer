@@ -10,7 +10,8 @@ using namespace kirari::app::play;
 
 namespace {
 
-// Un vecteur produit par OpenSSL 3 (openssl pkeyutl -sign -rawin), message « kirari update manifest ».
+// Un vecteur produit par OpenSSL 3 (openssl pkeyutl -sign -rawin), message « ajp update manifest » (signé tel
+// quel : le texte ne change pas avec le nom du lecteur).
 constexpr const char* kKey = "023c519fd679f07cada015b990d1be35150f24fa582c7136aedcdde124a8ab47";
 constexpr const char* kSig =
     "7d78ea645ec1ad57c74e3aec612b891802df3cfbab104ca0985f7754f34316d9617bd3d94521e84e3f48377e8ae76c9f65e08d70"
@@ -19,7 +20,7 @@ constexpr const char* kSig =
 }  // namespace
 
 TEST_CASE("Ed25519 : une signature d'OpenSSL se vérifie", "[ed25519]") {
-  CHECK(ed25519_verify_hex(kKey, "kirari update manifest", kSig));
+  CHECK(ed25519_verify_hex(kKey, "ajp update manifest", kSig));
 }
 
 TEST_CASE("Ed25519 : RFC 8032, essai 1 (message vide)", "[ed25519]") {
@@ -40,16 +41,16 @@ TEST_CASE("Ed25519 : RFC 8032, essais 2 et 3 (un et deux octets)", "[ed25519]") 
 }
 
 TEST_CASE("Ed25519 : message, clé ou signature altérés sont refusés", "[ed25519]") {
-  CHECK_FALSE(ed25519_verify_hex(kKey, "kirari update manifesT", kSig));
+  CHECK_FALSE(ed25519_verify_hex(kKey, "ajp update manifesT", kSig));
   CHECK_FALSE(ed25519_verify_hex(kKey, "", kSig));
   std::string bad_sig = kSig;
   bad_sig[10] = bad_sig[10] == '0' ? '1' : '0';
-  CHECK_FALSE(ed25519_verify_hex(kKey, "kirari update manifest", bad_sig));
+  CHECK_FALSE(ed25519_verify_hex(kKey, "ajp update manifest", bad_sig));
   std::string bad_key = kKey;
   bad_key[0] = '1';
-  CHECK_FALSE(ed25519_verify_hex(bad_key, "kirari update manifest", kSig));
+  CHECK_FALSE(ed25519_verify_hex(bad_key, "ajp update manifest", kSig));
   // S non canonique (S + L) : refusé.
-  CHECK_FALSE(ed25519_verify_hex(kKey, "kirari update manifest", std::string(128, 'f')));
+  CHECK_FALSE(ed25519_verify_hex(kKey, "ajp update manifest", std::string(128, 'f')));
 }
 
 TEST_CASE("Ed25519 : tailles et chiffres hexadécimaux faux", "[ed25519]") {
@@ -60,14 +61,14 @@ TEST_CASE("Ed25519 : tailles et chiffres hexadécimaux faux", "[ed25519]") {
 }
 
 // Un manifeste écrit et signé par tools/release/sign-manifest.sh (clé jetable) : le format se vérifie de bout
-// en bout.
+// en bout. Le texte est celui qui a été signé, adresses d'ajp comprises.
 TEST_CASE("Ed25519 : le manifeste de sign-manifest.sh se vérifie et se lit", "[ed25519]") {
   const std::string manifest = R"MANIFEST(version = "0.5.0"
 channel = "stable"
 date = "2026-10-28"
-notes_url = "https://github.com/Ta2b/kirari-player/releases/tag/v0.5.0"
+notes_url = "https://github.com/Ta2b/ajp-releases/releases/tag/v0.5.0"
 [linux-x64]
-url = "https://github.com/Ta2b/kirari-player/releases/download/v0.5.0/kirari-linux-x64.tar.gz"
+url = "https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0/ajp-linux-x64.tar.gz"
 sha256 = "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
 size = 1
 )MANIFEST";
