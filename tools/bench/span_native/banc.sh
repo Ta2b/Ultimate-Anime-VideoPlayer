@@ -2,9 +2,10 @@
 # Banc unique du SPAN FP16 natif (lot C du chantier AnimeJaNai, docs/span-native16.md) : pour chaque modèle,
 # TensorRT FP16 (trtexec, graphe CUDA) contre nos noyaux FP16 natifs (kirari_span_fp8_run, graphe CUDA), en
 # ABAB, plus la justesse des noyaux natifs contre la référence FP16 à sommes f32 (--compare), sommes en f16
-# (le défaut) et en f32. L'essai C0 du chantier y est aussi : le même moteur TensorRT construit en E/S HWC8
-# (--inputIOFormats=hwc8 --outputIOFormats=hwc8, comme les blocs du RIFE fusionné), pour voir ce que TensorRT
-# gagne seul sur ses reformatages. Un seul lancement donne tout ; le tableau finit dans $OUT/resume.md.
+# (le défaut) et en f32, et le balayage des bandes (docs/span-native16.md, « Bandes ») : le défaut du lecteur
+# (64 lignes) en ABAB, puis sans bandes et à d'autres hauteurs ($BANDS). L'essai C0 (E/S HWC8 de TensorRT) a
+# perdu au premier banc (15,96 ms contre 15,39) et n'y est plus. Un seul lancement donne tout ; le tableau
+# finit dans $OUT/resume.md.
 #
 #   flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh BUILD MODELE.onnx [MODELE.onnx…] \
 #       [-- video.mkv]
@@ -19,7 +20,7 @@ while (($#)); do
   if [ "$1" = "--" ]; then VIDEO="${2:-}"; break; fi
   MODELS+=("$1"); shift
 done
-H=1080; W=1920; ROUNDS="${ROUNDS:-3}"
+H=1080; W=1920; ROUNDS="${ROUNDS:-3}"; BANDS="${BANDS:-0 32 128}"
 RUN="$BUILD/src/gpu/cuda/backend/kirari_span_fp8_run"
 [ -x "$RUN" ] || RUN="$(find "$BUILD" -name kirari_span_fp8_run -type f -perm -u+x | head -1)"
 [ -x "$RUN" ] || { echo "kirari_span_fp8_run introuvable sous $BUILD" >&2; exit 2; }
@@ -56,8 +57,11 @@ native_ms() { # modèle [options] -> médiane en ms
 }
 
 {
-  echo "| Modèle | TensorRT FP16 (ms) | TensorRT HWC8 (ms) | Natif f16 (ms) | Natif f32 (ms) | Natif/TRT | Écart f16 | Écart f32 |"
-  echo "|---|---:|---:|---:|---:|---:|---|---|"
+  printf '| Modèle | TensorRT FP16 (ms) | Natif f16 (ms) | Natif/TRT |'
+  for b in $BANDS; do printf ' Bandes %s (ms) |' "$b"; done
+  printf ' Natif f32 (ms) | Écart f16 | Écart f16 sans bandes | Écart f32 |\n|---|---:|---:|---:|'
+  for b in $BANDS; do printf -- '---:|'; done
+  printf -- '---:|---|---|---|\n'
 } >"$OUT/resume.md"
 for model in "${MODELS[@]}"; do
   name="$(basename "$model" .onnx)"
@@ -69,12 +73,11 @@ for model in "${MODELS[@]}"; do
     --builderOptimizationLevel=5 --saveEngine="$engine" >"$OUT/$name.build.log" 2>&1 ||
     "$TRTEXEC" --onnx="$model" --builderOptimizationLevel=5 --saveEngine="$engine" >"$OUT/$name.build.log" 2>&1 ||
     { echo "construction TensorRT de $name échouée ($OUT/$name.build.log)" >&2; exit 1; }
-  hwc8="$OUT/$name.hwc8.engine"
-  "$TRTEXEC" --onnx="$model" --minShapes="$shape" --optShapes="$shape" --maxShapes="$shape" \
-    --builderOptimizationLevel=5 --inputIOFormats=hwc8 --outputIOFormats=hwc8 --saveEngine="$hwc8" \
-    >"$OUT/$name.hwc8.build.log" 2>&1 || hwc8=""
-  # Justesse : une fois chaque accumulateur, contre la référence FP16 à sommes f32.
+  # Justesse sur l'image entière, contre la référence FP16 à sommes f32 : chaque accumulateur en bandes, et
+  # sans bandes (deux écarts égaux à l'arrondi près : l'ordre des bandes ne change aucune somme).
   q16="$("$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f16.f32" --fp16 --compare | sed -n 's/^écart[^:]*: //p')"
+  q0="$("$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f16b0.f32" --fp16 --band 0 --compare |
+    sed -n 's/^écart[^:]*: //p')"
   q32="$("$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f32.f32" --fp16 --acc32 --compare | sed -n 's/^écart[^:]*: //p')"
   t=(); n=(); for r in $(seq 1 "$ROUNDS"); do  # ABAB : une dérive d'horloge ne pèse pas d'un seul côté
     if ((r % 2)); then t+=("$(trt_ms "$engine")"); n+=("$(native_ms "$model")"); else
@@ -82,11 +85,12 @@ for model in "${MODELS[@]}"; do
     echo "$name tour $r : TensorRT ${t[-1]} ms, natif ${n[-1]} ms"
   done
   n32="$(native_ms "$model" --acc32)"
-  h8="échec"; [ -n "$hwc8" ] && h8="$(trt_ms "$hwc8")"
+  sweep=""; for b in $BANDS; do sweep+=" $(native_ms "$model" --band "$b") |"; done
   med() { printf '%s\n' "$@" | sort -g | sed -n "$((($# + 1) / 2))p"; }
   mt="$(med "${t[@]}")"; mn="$(med "${n[@]}")"
-  printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' "$name" "$mt" "$h8" "$mn" "$n32" \
-    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$q16" "$q32" >>"$OUT/resume.md"
+  printf '| %s | %s | %s | %s |%s %s | %s | %s | %s |\n' "$name" "$mt" "$mn" \
+    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$sweep" "$n32" "$q16" "$q0" "$q32" \
+    >>"$OUT/resume.md"
 done
 cat "$OUT/resume.md"
 echo "rapport : $OUT"
