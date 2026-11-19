@@ -59,10 +59,20 @@ class SourceGradeShare {
     const std::scoped_lock lock(mutex_);
     return state_;
   }
+  // L'autre sens : le masque des effets de la dernière source gradée, pour le journal d'un instantané.
+  void note_effects(const EffectSummary& seen) {
+    const std::scoped_lock lock(mutex_);
+    effects_ = seen;
+  }
+  EffectSummary effects() const {
+    const std::scoped_lock lock(mutex_);
+    return effects_;
+  }
 
  private:
   mutable std::mutex mutex_;
   SourceGradeState state_;
+  EffectSummary effects_;
 };
 
 // La source gradée : son époque, son pts (le journal de fin dit où voir le masque), et la note des éclats sur

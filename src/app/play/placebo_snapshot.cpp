@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <format>
 #include <fstream>
+#include <string>
 #include <vector>
 
 #include "app/play/placebo_impl.h"
@@ -98,7 +99,29 @@ void PlaceboScreen::Impl::take_snapshot(const pl_frame* image, const pl_frame& t
   if (++snapshot_index >= snapshot_count) snapshot.reset();
   if (auto saved = save_snapshot(image, target, out, drawn_ui, path); !saved) {
     channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
+    return;
   }
+  note_snapshot_effects(core::to_utf8(path.filename()));
+}
+
+// L'essai du PC du 19/11 ne pouvait pas dire d'une capture si la carte de la scène était déjà là : le journal
+// dit à chaque instantané le masque de l'image, celui de l'écran ou celui de la source gradée avant le warp.
+void PlaceboScreen::Impl::note_snapshot_effects(const std::string& name) const {
+  if (!grade) return;
+  const EffectSummary seen =
+      frame_graded ? source_grade_share->effects() : effect_summary(effects.mask(), effects_on);
+  const char* where = frame_graded ? "grade avant le warp" : "écran";
+  if (!seen.on) {
+    channel->info(
+        "instantané {} : masque des effets ({}) neutre : pas encore de carte de la scène, ou rien "
+        "de retenu ni d'effet sûr",
+        name, where);
+    return;
+  }
+  channel->info(
+      "instantané {} : masque des effets ({}) de {} × {} tuiles, effet sûr sur {:.0f} % d'entre "
+      "elles, marge des éclats retenue sur {:.0f} %",
+      name, where, seen.cols, seen.rows, 100.0 * seen.sure, 100.0 * seen.held);
 }
 
 }  // namespace kirari::app::play

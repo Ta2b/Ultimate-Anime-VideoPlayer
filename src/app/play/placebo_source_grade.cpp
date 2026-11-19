@@ -37,7 +37,7 @@ pl_frame frame_of(pl_tex tex, const pl_color_space& color) {
 
 class PlaceboSourceGrader final : public SourceGrader {
  public:
-  PlaceboSourceGrader(pl_gpu gpu, pl_log log, std::shared_ptr<const SourceGradeShare> share, bool external,
+  PlaceboSourceGrader(pl_gpu gpu, pl_log log, std::shared_ptr<SourceGradeShare> share, bool external,
                       double source_fps, std::uint32_t generation)
       : gpu_(gpu),
         log_(log),
@@ -158,6 +158,7 @@ class PlaceboSourceGrader final : public SourceGrader {
     effects_.source(source.epoch, source.effects);
     const bool on = grade_->set_effect_mask(&effects_.mask());
     effects_tally_.count(source.effects.has_value(), on, effects_.mask(), source.pts_us);
+    share_->note_effects(effect_summary(effects_.mask(), on));
     if (const auto& refused = grade_->effect_mask_refusal(); refused && !effects_refusal_noted_) {
       effects_refusal_noted_ = true;
       log_channel("app")->warn(
@@ -193,7 +194,7 @@ class PlaceboSourceGrader final : public SourceGrader {
 
   pl_gpu gpu_;
   pl_log log_;
-  std::shared_ptr<const SourceGradeShare> share_;
+  std::shared_ptr<SourceGradeShare> share_;  // lu à chaque source, et le masque des effets y est noté
   bool external_;
   double fps_;
   std::uint32_t generation_;

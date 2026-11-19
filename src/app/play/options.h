@@ -155,6 +155,9 @@ struct PlayOptions {
   // Éclats HDR sur les seuls effets (render/effect_mask.h), là où la carte de la scène existe (NVIDIA) ;
   // --no-effect-highlights garde la marge des éclats sur toute lumière, comme sans carte.
   bool effect_highlights = true;
+  // --effect-mask-view (essai) : le grade peint le masque au lieu de l'image (lumières en rouge, effets sûrs
+  // en vert, marge retenue en bleu), pour le voir sur un instantané.
+  bool effect_mask_view = false;
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;

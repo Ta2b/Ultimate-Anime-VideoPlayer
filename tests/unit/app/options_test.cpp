@@ -112,6 +112,8 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
   CHECK(options->effect_highlights);  // défaut ; sans carte de la scène, rien ne change
   CHECK_FALSE(parse({"épisode.mkv", "--no-effect-highlights"})->effect_highlights);
+  CHECK_FALSE(options->effect_mask_view);  // défaut : l'image, pas le masque
+  CHECK(parse({"épisode.mkv", "--effect-mask-view"})->effect_mask_view);
   CHECK(options->present == PresentWanted::Wait);
   CHECK(parse({"épisode.mkv", "--no-present"})->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});

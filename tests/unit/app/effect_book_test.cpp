@@ -53,6 +53,12 @@ TEST_CASE("Éclats des effets : la carte de la scène devient une valeur d'effet
   CHECK(t.effect[2] == render::kEffectUnsure);
   CHECK(t.effect[3] > 0.19F);
   CHECK(t.effect[3] < 0.21F);
+  // La couche des effets sûrs : la seule tuile d'effet, quelle que soit sa confiance.
+  REQUIRE(t.sure.size() == t.effect.size());
+  CHECK(t.sure[0] == 1.0F);
+  CHECK(t.sure[1] == 0.0F);
+  CHECK(t.sure[2] == 0.0F);
+  CHECK(t.sure[3] == 0.0F);
   CHECK(t.cover_x == 1.0);
   CHECK(t.cover_y > 1.0);  // 34 × 32 = 1 088 lignes pour 1 080
   CHECK_FALSE(t.cut);
@@ -145,7 +151,7 @@ TEST_CASE("Éclats des effets : le journal de fin compte les images et garde les
   tally.count(false, false, none, 0);  // sans carte
   CHECK(tally.images() == 1);
   CHECK(tally.noted() == 0);
-  // Un masque posé d'un coup : moitié effet (1), moitié décor sûr (0), dilaté puis flouté.
+  // Un masque posé d'un coup : moitié effet sûr (1), moitié décor sûr (0), dilaté puis flouté.
   const auto mask_of = [](float left, float right) {
     render::EffectTiles t;
     t.cols = 8;
@@ -153,6 +159,7 @@ TEST_CASE("Éclats des effets : le journal de fin compte les images et garde les
     t.cut = true;
     for (int r = 0; r < 2; ++r)
       for (int c = 0; c < 8; ++c) t.effect.push_back(c < 4 ? left : right);
+    t.sure = t.effect;
     render::EffectMask m;
     m.update(t);
     return m;
@@ -170,9 +177,20 @@ TEST_CASE("Éclats des effets : le journal de fin compte les images et garde les
   CHECK(tally.held() > 0.2);
   CHECK(tally.held() < 1.0);
   CHECK(tally.moments()[0].pts_us == 5'000'000);
+  CHECK(tally.moments()[0].effect > 0.4);  // la moitié gauche et sa dilatation
   CHECK(tally.moments()[0].held > 0.0);
   CHECK(tally.moments()[1].pts_us == 30'000'000);
-  CHECK(tally.moments()[2].held == 0.0);  // la troisième place reste vide
+  CHECK(tally.moments()[2].effect == 0.0);  // la troisième place reste vide
+  // Le résumé d'une image : ce que le journal d'un instantané dit.
+  const EffectSummary seen = effect_summary(half, true);
+  CHECK(seen.on);
+  CHECK(seen.cols == 8);
+  CHECK(seen.rows == 2);
+  CHECK(seen.sure > 0.4);
+  CHECK(seen.sure < 0.8);
+  CHECK(seen.held > 0.2);
+  CHECK_FALSE(effect_summary(half, false).on);
+  CHECK_FALSE(effect_summary(none, true).on);
 }
 
 }  // namespace kirari::app::play
