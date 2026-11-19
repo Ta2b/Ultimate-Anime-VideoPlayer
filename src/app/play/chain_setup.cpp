@@ -34,6 +34,13 @@ void note_gpu_facts(const GpuFacts& gpu, const PlaySettings& settings, const Gpu
   if (device.vendor() == GpuVendor::Nvidia) note_report_fact("Pilote NVIDIA", device.driver_version);
 }
 
+// Le mouvement d'ensemble (pan_lock) : la case, ou RIFE mouvement estimé plus petit que le travail.
+bool pan_lock_on(const PlaySettings& settings, bool rife_motion, bool drba_motion, const WorkSize& rife_size,
+                 const WorkSize& work) {
+  return (settings.pan_lock && (rife_motion || drba_motion)) ||
+         (rife_motion && rife_size.height < work.height);
+}
+
 // Le cran de précision voulu n'est pas tenu : le journal et le rapport le disent (A39-07).
 void warn_span_fallback(spdlog::logger& log, PrecisionTier tier) {
   log.warn("SPAN {} : aucune variante utilisable, FP16 à la place", label(tier));
@@ -230,8 +237,9 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .layers = layer_setup(*this, clock),
       .warp =
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
-      // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.
-      .pan_lock = settings.pan_lock && (rife_motion || drba_motion),
+      // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement ; toujours sur RIFE
+      // estimé plus petit que le travail, où les panoramiques lents onduleraient sans lui.
+      .pan_lock = pan_lock_on(settings, rife_motion != nullptr, drba_motion, rife_size, sized),
       .pair_triage = pair_triage && (rife_motion || gmfss_use != GmfssUse::Off),
       .slots = std::move(slots),
       .scene_map = scene_map};
@@ -637,11 +645,11 @@ void announce_backend(spdlog::logger& log, const gpu::Backend& backend, const st
 // 720p, le warp déformant les images de travail : la variante mouvement seulement. Le mélange léger de GMFSS
 // (gmfss_light) : RIFE et GMFSS en 540 lignes.
 WorkSize motion_size(const media::TrackInfo& video, const WorkSize& work, const PlaySettings& settings,
-                     bool rife_image) {
+                     bool rife_image, int order_factor) {
   if (rife_image) return work;
   if (settings.gmfss_light && gmfss_wanted(settings) == GmfssUse::Middle && work.height > kGmfssLightHeight)
     return work_size(video.width, video.height, kGmfssLightHeight);
-  return rife_motion_reduced(work, settings.motion_720p)
+  return rife_motion_reduced(work, settings.motion_720p, order_factor)
              ? work_size(video.width, video.height, kRifeMotionHeight)
              : work;
 }
@@ -751,7 +759,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     if (!*upscaled) return std::nullopt;
     if (!load_plate(p, init, c, settings)) return std::nullopt;
   }
-  c.rife_size = motion_size(video, c.work, settings, p.options.rife_image);
+  c.rife_size = motion_size(video, c.work, settings, p.options.rife_image, c.order_factor);
   InnerFallbacks inner(p.stages, c.stage_notes, c.fallback_fresh);
   const std::string library = library_name(p);
   if (!load_temporal_fix(p, init, c, settings, inner, library)) return std::nullopt;

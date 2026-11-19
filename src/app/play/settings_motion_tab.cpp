@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include "app/play/card_advice.h"
+#include "app/play/chain_shape.h"
 #include "app/play/drba_model.h"
 #include "app/play/gpu_telemetry.h"
 #include "app/play/panel_style.h"
@@ -51,18 +52,16 @@ void pan_lock_checkbox(PlaySettings& d) {
 }
 
 // Le mouvement estimé sur une copie 720p (PlaySettings::motion_720p) : éteint par défaut, la taille de
-// travail.
+// travail jusqu'à ×4, la copie 720p au-delà (kRifeMotion720Above).
 void motion_720p_checkbox(PlaySettings& d) {
   ImGui::BeginDisabled(d.motion_engine != MotionEngine::Rife);
   ImGui::Checkbox(i18n::tr("Estimate motion at 720p"), &d.motion_720p);
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Estimate motion at 720p"),
-      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, "
-               "but slow pans can ripple instead of moving in even steps. Speed: about 15 % more frames in "
-               "Auto (RIFE pass about 2× faster). "
-               "Quality impact: moderate loss on slow pans. "
-               "Recommended: off. RIFE only."),
+      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy, with slow "
+               "pans steadied. Above ×4 it always does. Speed: RIFE pass about 2× faster. Quality impact: "
+               "none measured. Recommended: off (automatic above ×4). RIFE only."),
       panel::Apply::Reload);
 }
 
@@ -448,10 +447,11 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
     note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: RIFE 4.22 lite is lighter."));
   }
   // La copie 720p de RIFE : la même condition que la chaîne, sur la taille de travail réellement jouée
-  // (C23-04).
+  // (C23-04) et le facteur qui la décide au-delà de ×4.
   const bool reduced_motion =
       now.num > now.den && choices.source_height > 0 &&
-      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height), d.motion_720p);
+      rife_motion_reduced(chain_work_size(d, choices.source_width, choices.source_height), d.motion_720p,
+                          order_factor(d, choices.display_hz, choices.source_fps));
   if (exporting) {
     // Les limites de la lecture en direct ne valent pas à l'export.
   } else if (four_k && now.num >= 3 * now.den) {
@@ -460,8 +460,8 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   } else if (reduced_motion) {
     // Le gain de vitesse n'est pas mesuré : la note le dit, sans chiffre inventé (C23-03).
     note(
-        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (Estimate "
-                 "motion at 720p): slow pans can ripple."));
+        i18n::tr("Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy, slow pans "
+                 "steadied."));
   }
 }
 

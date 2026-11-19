@@ -9,10 +9,10 @@ namespace {
 constexpr std::array kImageTabs{
     Entry{" (recommended)", " (recommandé)"},
     Entry{"{} fps", "{} i/s"},
-    Entry{"Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy (Estimate motion "
-          "at 720p): slow pans can ripple.",
-          "Au-dessus de 720p de résolution de travail, RIFE estime le mouvement sur une copie 720p plus "
-          "légère (Estimer le mouvement en 720p) : les panoramiques lents peuvent onduler."},
+    Entry{
+        "Above 720p of working resolution, RIFE estimates motion on a lighter 720p copy, slow pans steadied.",
+        "Au-dessus de 720p de résolution de travail, RIFE estime le mouvement sur une copie 720p plus "
+        "légère, panoramiques lents stabilisés."},
     Entry{"4K output: ×3 and above need a high-end GPU. A 720p working resolution lightens everything.",
           "Sortie 4K : ×3 et plus demandent un GPU haut de gamme. Une résolution de travail de 720p allège "
           "tout."},
@@ -98,15 +98,13 @@ constexpr std::array kImageTabs{
         "RIFE et DistilDRBA."},
     Entry{"Estimate motion at 720p", "Estimer le mouvement en 720p"},
     Entry{
-        "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, but slow "
-        "pans can ripple instead of moving in even steps. Speed: "
-        "about 15 % more frames in Auto (RIFE pass about 2× faster). Quality impact: moderate loss on slow "
-        "pans. Recommended: off. RIFE only.",
-        "Au-delà de 720p de résolution de travail, RIFE mesure le mouvement sur une copie 720p plus "
-        "légère. Plus rapide, mais les panoramiques lents peuvent onduler au lieu d'avancer à pas réguliers. "
-        "Vitesse : environ 15 % d'images en plus en Auto (passe RIFE "
-        "environ 2× plus rapide). Impact sur la qualité : perte modérée sur "
-        "les panoramiques lents. Recommandé : désactivé. RIFE seulement."},
+        "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy, with slow pans "
+        "steadied. Above ×4 it always does. Speed: RIFE pass about 2× faster. Quality impact: none measured. "
+        "Recommended: off (automatic above ×4). RIFE only.",
+        "Au-delà de 720p de résolution de travail, RIFE mesure le mouvement sur une copie 720p plus légère, "
+        "panoramiques lents stabilisés. Au-delà de ×4, toujours. Vitesse : passe RIFE environ 2× plus "
+        "rapide. Impact sur la qualité : aucun mesuré. Recommandé : désactivé (automatique au-delà de ×4). "
+        "RIFE seulement."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
     Entry{"Long pans are made faster by reusing the middle in-between frame for its neighbors, which are "
