@@ -219,14 +219,16 @@ suivi.
   `effect_tiles_of`). Dilaté d'une tuile, lissé dans le temps (vers l'effet en 40 ms, vers le décor en
   0,7 s : une tuile qui hésite reste haute), flouté en 3 × 3, lu en bilinéaire. Une paire tenue ou un fondu
   n'apprennent rien (un effet animé en deux ne retombe pas une paire sur deux) ; une coupe pose le masque
-  d'un coup.
+  d'un coup, ou le remet au neutre quand la carte de sa paire n'est pas encore là (celle de la paire
+  d'avant décrirait l'ancien plan).
 - **Le grade** : une passe de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
   dans l'alpha ; `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
   voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
   montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
-  puis la passe s'ôte : le grade est celui d'aujourd'hui, octet pour octet
-  (`tests/unit/render/grade_gpu_effects_test.cpp`). L'export et le grade avant le warp ne lisent pas le
+  puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
+  zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
+  échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui. L'export et le grade avant le warp ne lisent pas le
   masque.
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
