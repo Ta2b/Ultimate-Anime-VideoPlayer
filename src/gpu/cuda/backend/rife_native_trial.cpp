@@ -9,6 +9,8 @@
 #include <iterator>
 #include <limits>
 #include <optional>
+#include <span>
+#include <string>
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -42,6 +44,13 @@ double psnr(const std::vector<float>& want, const std::vector<float>& got) {
 double median(std::vector<double> of) {
   std::ranges::sort(of);
   return of.empty() ? 0.0 : of[of.size() / 2];
+}
+
+// Le nom d'une variante au journal : TensorRT (option 0), ou le réseau names[option - 1], colle à part s'il
+// y a lieu.
+std::string variant_name(std::span<const char* const> names, std::size_t option, bool apart) {
+  if (option == 0) return "TensorRT";
+  return std::format("{}{}", names[option - 1], apart ? ", colle à part" : "");
 }
 
 // Un événement CUDA rendu quoi qu'il arrive.
@@ -121,7 +130,8 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::qualit
   return db;
 }
 
-std::expected<RifeNativeTrial::Exec, Refusal> RifeNativeTrial::capture(int piece, const RifeNativeNet* net) {
+std::expected<RifeNativeTrial::Exec, Refusal> RifeNativeTrial::capture(int piece, const RifeNativeNet* net,
+                                                                       std::string_view who) {
   cudaGraph_t graph = nullptr;
   std::expected<void, Refusal> queued;
   cudaError_t e = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
@@ -140,8 +150,7 @@ std::expected<RifeNativeTrial::Exec, Refusal> RifeNativeTrial::capture(int piece
   if (sticky(e)) return failed(e, "capture");
   static_cast<void>(cudaGetLastError());
   notes_.push_back(std::format("RIFE natif : {} chronométré sans graphe par {} (capture refusée : {})",
-                               piece_name(piece), net == nullptr ? "TensorRT" : "un réseau natif",
-                               queued ? cudaGetErrorName(e) : queued.error().detail));
+                               piece_name(piece), who, queued ? cudaGetErrorName(e) : queued.error().detail));
   return Exec(nullptr);
 }
 
@@ -174,6 +183,7 @@ std::expected<double, Refusal> RifeNativeTrial::time(int piece, const RifeNative
 
 std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
     std::span<RifeNativeNet* const> nets, std::span<const char* const> names) {
+  if (names.size() < nets.size()) return refuse(RefusalCode::ShapeInvalid, "RIFE natif : un réseau sans nom");
   std::vector<const RifeNativeNet*> options{nullptr};
   options.insert(options.end(), nets.begin(), nets.end());
   const auto count = static_cast<std::size_t>(pieces());
@@ -189,17 +199,22 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
     for (std::size_t o = 0; o < options.size(); ++o) variants[p].push_back({.option = o});
   for (std::size_t n = 0; n < nets.size(); ++n)
     if (nets[n]->can_glue(block)) variants.back().push_back({.option = n + 1, .apart = true});
-  // Une capture ou un lot d'une variante : son réseau sans la colle à la volée le temps de l'appel.
+  // Une capture ou un lot d'une variante : son réseau sans la colle à la volée le temps de l'appel, puis
+  // dans l'état d'avant.
   const auto as = [&](const Variant& v, auto&& step) {
-    if (v.apart) nets[v.option - 1]->use_glue(false);
+    RifeNativeNet* const net = v.apart ? nets[v.option - 1] : nullptr;
+    const bool before = net != nullptr && net->glues(block);
+    if (net != nullptr) net->use_glue(false);
     auto result = step();
-    if (v.apart) nets[v.option - 1]->use_glue(true);
+    if (net != nullptr) net->use_glue(before);
     return result;
   };
   std::vector<std::vector<Exec>> execs(count);
   for (std::size_t p = 0; p < count; ++p)
     for (const Variant& v : variants[p]) {
-      auto exec = as(v, [&] { return capture(static_cast<int>(p), options[v.option]); });
+      auto exec = as(v, [&] {
+        return capture(static_cast<int>(p), options[v.option], variant_name(names, v.option, v.apart));
+      });
       if (!exec) return std::unexpected(std::move(exec.error()));
       execs[p].push_back(std::move(*exec));
     }
@@ -228,9 +243,8 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
           std::format("RIFE natif {}, {} : colle à la volée {:.3f} ms, colle à part {:.3f} ms ({})",
                       names[o - 1], piece_name(static_cast<int>(p)), out[p][o], medians[v],
                       apart ? "à part gardée" : "à la volée gardée"));
-      if (!apart) continue;
-      nets[o - 1]->use_glue(false);
-      out[p][o] = medians[v];
+      nets[o - 1]->use_glue(!apart);
+      if (apart) out[p][o] = medians[v];
     }
   }
   return out;

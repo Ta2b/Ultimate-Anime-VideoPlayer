@@ -22,7 +22,8 @@ sur une carte Ada, il garde des sommes en f32 (moitié du débit des tensor core
 le résiduel des ResConv dans la convolution. Le natif supprime aussi la construction des six moteurs au premier
 lancement (47 s), dès qu'on n'a plus besoin d'eux comme référence.
 
-Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif (`/mnt/project-files/chantier-natif/gmfss-natif.md`).
+Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif
+(`/mnt/project-files/chantier-natif/gmfss-natif.md`).
 
 ## Ce que font les noyaux
 
@@ -140,15 +141,17 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
 2. une paire de test (ondes et carrés, B décalée de (5, 3) pixels, instant 0,5) passe par la chaîne avec
    TensorRT : la référence ;
 3. **chaque morceau seul** (l'encodeur sur l'image A, chaque bloc sur le X_k que TensorRT a laissé dans la zone),
-   par TensorRT et par chaque réseau (`rife_native_trial.cpp`) : sa sortie contre celle de TensorRT, en dB, et son
-   temps (un graphe de deux passes, cinq tours intercalés, la médiane ; ces passes lancées une à une si la
-   capture est refusée, ce que le journal dit). Le dernier bloc, quand un réseau natif sait prendre son entrée à
-   la volée, se mesure colle comprise pour chaque option (TensorRT : la colle puis le moteur ; chaque tel réseau
-   avec sa colle à la volée et avec la colle à part, la plus rapide gardée), et la sortie de TensorRT de chaque
-   morceau reprend sa place après ses réseaux : la colle en relit les Y. Sur la chaîne, X du dernier bloc part
-   de NaN quand son réseau le refait à la volée : un pixel de flot oublié rend la sortie non finie, et le
-   mélange est écarté. Le profil couche par couche du réseau f16 va au journal ; un profil qui échoue n'y laisse
-   qu'une ligne, l'essai continue ;
+   par TensorRT et par chaque réseau (`rife_native_trial.cpp`) : son temps (un graphe de deux passes, cinq tours
+   intercalés, la médiane ; ces passes lancées une à une si la capture est refusée, ce que le journal dit), puis
+   sa sortie contre celle de TensorRT, en dB. Le dernier bloc, quand un réseau natif sait prendre son entrée à la
+   volée, se mesure colle comprise pour chaque option (TensorRT : la colle puis le moteur ; chaque tel réseau
+   avec sa colle à la volée et avec la colle à part, la plus rapide gardée, ce que le journal dit) ; sa justesse,
+   puis la chaîne, se mesurent avec la colle gardée. La sortie de TensorRT de chaque morceau reprend sa place
+   après ses réseaux : la colle en relit les Y. Sur la chaîne, X du dernier bloc part de NaN quand son réseau le
+   refait à la volée, et son flot est relu après la passe : un pixel oublié y reste non fini, la sortie entière
+   est alors rendue NaN et l'option écartée (la sortie seule ne le montrerait pas toujours : la fin d'une
+   variante image ramène un flot NaN au bord de la fenêtre). Le profil couche par couche du réseau f16 va au
+   journal ; un profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
 4. **le mélange** (`rife_native_mix.cpp`). Un morceau peut prendre TensorRT ou un réseau plus rapide que lui.
    L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul en natif : l'erreur
    quadratique de la sortie contre TensorRT (images au pic 1 ; flot au pic de son plus grand écart, masque à
@@ -190,8 +193,9 @@ qui arrondissent à des endroits différents. Aucune variante native ne passera 
 TensorRT ; les 50 dB de la cible se jugent contre le natif f32 (la ligne du verdict les donne).
 
 Remesure avec les sommes mixtes et la mesure du temps (#897, même PC, même extrait) : f16 41,8 dB, mixtes
-43,8 dB, f32 49,3 dB contre TensorRT ; seul le f32 tenait les 45 dB, et il restait plus lent (passe de lecture ×2 :
-TensorRT 3,64 ms, f32 4,03 ms). Le natif était donc écarté, TensorRT gardait la chaîne à la même cadence (138,6 i/s).
+43,8 dB, f32 49,3 dB contre TensorRT ; seul le f32 tenait les 45 dB, et il restait plus lent (passe de lecture
+×2 : TensorRT 3,64 ms, f32 4,03 ms). Le natif était donc écarté, TensorRT gardait la chaîne à la même cadence
+(138,6 i/s).
 D'où ce travail : têtes en f32 et précision par morceau pour la justesse, réglage des formes pour la vitesse.
 
 Mesure de #919 (même PC, main 7b14e78) : **retenu en mélange, 9 % plus rapide**. Encodeur f32 (0,215 ms contre
@@ -229,19 +233,20 @@ L'entrée du dernier bloc à la volée est vérifiée hors carte, avant toute me
 Les plafonds théoriques d'une passe ×2 en 1080p sur la 4070 Ti
 (`/mnt/project-files/chantier-natif/rife-plafonds.md`) : 2,28 ms couche par couche, 1,58 ms morceaux fondus, contre
 3,00 ms mesurées pour le mélange de 4.25 (#942). La suite vise ces plafonds : la colle et la fin fondues (environ
-1,2 ms mesurées contre 0,82 de plafond), puis la passe entière en un noyau. Sur 4.22 lite, natif f32 et TensorRT ne
-sont qu'à 43,5 dB l'un de l'autre : l'encodeur seul en f32 sort à 79,6 dB de TensorRT mais la chaîne en fait
-43,8 dB ; la référence f32 n'est donc pas fautive, la chaîne du lite amplifie l'écart de son encodeur (à expliquer).
+1,2 ms mesurées contre 0,82 de plafond), puis la passe entière en un noyau. Sur 4.22 lite, natif f32 et TensorRT
+ne sont qu'à 43,5 dB l'un de l'autre : l'encodeur seul en f32 sort à 79,6 dB de TensorRT mais la chaîne en fait
+43,8 dB ; la référence f32 n'est donc pas fautive, la chaîne du lite amplifie l'écart de son encodeur (à
+expliquer).
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
 Les formes « poids à l'avance » ajoutent 20 noyaux (116 convolutions en tout) : elles lisent les mêmes fragments
 dans le même ordre, plus tôt, et passent par le même contrôle au réglage. La plus grande (tranche et tuile de 64,
 deux lignes par warp, f16) prend 252 registres sur sm_75 et 246 à 250 ailleurs, sans débordement : la marge est
-mince, un changement qui la fait déborder casse la construction (`--warn-on-spills`). Le réglage par couche et le mélange par morceau
-(novembre 2026) : les 96 noyaux instanciés (contre 66) passent
-l'émulateur ci-dessous dans 216 cas (sommes f16 et f32 ; tranches, tuiles, lignes par warp, K découpé ou non ;
-grilles à bords incomplets et grilles de quelques blocs), à 1e-7 près ; le module grossit d'environ 3 Mo par
+mince, un changement qui la fait déborder casse la construction (`--warn-on-spills`). Le réglage par couche et le
+mélange par morceau (novembre 2026) : les 96 noyaux instanciés (contre 66) passent l'émulateur ci-dessous dans
+216 cas (sommes f16 et f32 ; tranches, tuiles, lignes par warp, K découpé ou non ; grilles à bords incomplets et
+grilles de quelques blocs), à 1e-7 près ; le module grossit d'environ 3 Mo par
 architecture (9 Mo au lieu de 6 pour sm_89). Quand le réglage aura tourné sur le PC, les formes jamais retenues
 pourront quitter le module. L'essai dure plus longtemps (le journal donne la durée du réglage et de l'essai) :
 si c'est trop, garder les formes réglées d'un chargement à l'autre par carte et par taille.
@@ -285,7 +290,8 @@ nsys stats --report cuda_gpu_kern_sum rife-natif.nsys-rep rife-trt.nsys-rep
 ```
 
 PSNR natif contre TensorRT et contre le natif f32 : la ligne du verdict (étape 0) ; 50 dB ou plus attendu contre
-le natif f32. Garder aussi les lignes par morceau et par couche : elles disent où le natif perd. Décision : natif par défaut si
-il tient 50 dB et passe sous 23 % d'occupation ; sinon le profil dit quel noyau perd (tuiles, tranches, fusion de
-plusieurs ResConv d'un bloc grossier en un lancement) avant de redécider. Ensuite seulement : ne plus construire
-les moteurs TensorRT quand le natif est retenu (47 s gagnées au premier lancement), et DistilDRBA.
+le natif f32. Garder aussi les lignes par morceau et par couche : elles disent où le natif perd. Décision : natif
+par défaut s'il tient 50 dB et passe sous 23 % d'occupation ; sinon le profil dit quel noyau perd (tuiles,
+tranches, fusion de plusieurs ResConv d'un bloc grossier en un lancement) avant de redécider. Ensuite seulement :
+ne plus construire les moteurs TensorRT quand le natif est retenu (47 s gagnées au premier lancement), et
+DistilDRBA.

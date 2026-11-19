@@ -3,9 +3,11 @@
 // en tours intercalés, l'aiguillage de chaque morceau vers un réseau natif ou vers TensorRT, et un morceau
 // seul (rife_native_trial.h).
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cuda_fp16.h>
 #include <format>
+#include <limits>
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -51,18 +53,24 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
     cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
     std::span<const Tensor> outputs, std::size_t elements) {
   forget_passes();
-  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée. Avant elle, X du dernier
-  // bloc part de NaN quand son réseau le refait à la volée (il n'y écrit que le flot, que lit la fin) : un
-  // pixel qu'il oublierait rend la sortie non finie, au lieu de garder le flot de la passe d'avant.
+  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée. Quand le réseau du dernier
+  // bloc refait X à la volée (il n'y écrit que le flot, canaux 24 à 27, que lit la fin), X part de NaN avant
+  // la dernière passe, puis son flot est relu : un pixel oublié y reste non fini. La sortie ne suffit pas à
+  // le voir, la fin d'une variante image ramenant un flot NaN au bord de la fenêtre (warp::tap_at) ; une
+  // sortie entière à NaN le rend alors à la comparaison, qui écarte l'option.
   const int last = plan_.blocks - 1;
+  const bool glue = glued(last);
+  kernels::FusedDims x = kernels::rife_fused_x(plan_, last, height_, width_);
+  x.channels = pitch(x.channels);
+  const auto x_last = [&] {
+    return static_cast<std::byte*>(shared->data()) + scratch_offset_ +
+           layout_.x[static_cast<std::size_t>(last)];
+  };
   for (int pass = 0; pass < 3; ++pass) {
-    if (pass == 2 && glued(last)) {
-      kernels::FusedDims x = kernels::rife_fused_x(plan_, last, height_, width_);
-      x.channels = pitch(x.channels);
-      auto* base = static_cast<std::byte*>(shared->data()) + scratch_offset_;
-      if (auto ok = cuda_check(cudaMemsetAsync(base + layout_.x[static_cast<std::size_t>(last)], 0xFF,
-                                               static_cast<std::size_t>(x.elements()) * 2U, stream),
-                               "RIFE natif : X du dernier bloc à NaN");
+    if (pass == 2 && glue) {
+      if (auto ok =
+              cuda_check(cudaMemsetAsync(x_last(), 0xFF, static_cast<std::size_t>(x.elements()) * 2U, stream),
+                         "RIFE natif : X du dernier bloc à NaN");
           !ok)
         return std::unexpected(std::move(ok.error()));
     }
@@ -72,6 +80,18 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
     if (auto ok = cuda_check(cudaStreamSynchronize(stream), "RIFE natif : essai"); !ok)
       return std::unexpected(std::move(ok.error()));
   }
+  bool unwritten = false;
+  if (glue) {
+    const auto pixels = static_cast<std::size_t>(x.height) * static_cast<std::size_t>(x.width);
+    std::vector<__half> flow(pixels * 4U);
+    const std::size_t row = static_cast<std::size_t>(x.channels) * 2U;
+    if (auto ok =
+            cuda_check(cudaMemcpy2D(flow.data(), 8, x_last() + 48, row, 8, pixels, cudaMemcpyDeviceToHost),
+                       "RIFE natif : flot du dernier bloc");
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    unwritten = !std::ranges::all_of(flow, [](__half v) { return std::isfinite(__half2float(v)); });
+  }
   std::vector<__half> half(elements);
   if (auto ok =
           cuda_check(cudaMemcpy(half.data(), fused_address(outputs[0]), elements * 2, cudaMemcpyDeviceToHost),
@@ -79,7 +99,10 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
       !ok)
     return std::unexpected(std::move(ok.error()));
   std::vector<float> out(elements);
-  std::ranges::transform(half, out.begin(), [](__half v) { return __half2float(v); });
+  if (unwritten)
+    std::ranges::fill(out, std::numeric_limits<float>::quiet_NaN());
+  else
+    std::ranges::transform(half, out.begin(), [](__half v) { return __half2float(v); });
   return out;
 }
 

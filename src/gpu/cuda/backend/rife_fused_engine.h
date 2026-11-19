@@ -188,7 +188,7 @@ class RifeFusedEngine final : public Engine {
                                                           std::span<const std::vector<int>> routes);
   // Le morceau piece seul (0 : l'encodeur sur l'image A de input, vers le premier emplacement d'encodage ;
   // 1 + k : le bloc k, du X_k de la zone vers Y_k) par net, ou par TensorRT si net est nul. Un bloc dont un
-  // réseau natif calcule l'entrée à la volée passe, par chaque option, colle comprise.
+  // réseau natif sait calculer l'entrée à la volée passe, par chaque option, colle comprise.
   std::expected<void, Refusal> run_piece(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                          const Tensor& input, int piece, const RifeNativeNet* net);
   void forget_passes();

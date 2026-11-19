@@ -3,8 +3,9 @@
 // ceux des moteurs en E/S HWC8 : l'encodeur lit les trois plans d'une image et écrit ses quatre plans
 // d'encodage, un bloc lit X_k rangé par pixel (pas 16 ou 32) et écrit Y_k par pixel au pas 56. La colle, les
 // warps et la fin restent ceux de rife_fused_kernels.h : RifeFusedEngine appelle ce réseau là où il appelait
-// TensorRT, sauf la colle du dernier bloc en pleine résolution, que sa première couche refait à la volée
-// (rife_native_glue.cu). En-tête sans std::expected : il est lu par nvcc en C++20.
+// TensorRT. La colle du dernier bloc en pleine résolution fait exception quand sa première couche sait la
+// refaire à la volée (rife_native_glue.cu) et que l'essai garde cette variante (use_glue). En-tête sans
+// std::expected : il est lu par nvcc en C++20.
 #pragma once
 
 #include <cstdint>
