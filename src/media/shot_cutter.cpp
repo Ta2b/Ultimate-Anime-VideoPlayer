@@ -29,8 +29,10 @@ constexpr std::int64_t kRecentUs = 1'500'000;
 // distances suit mal une scène qui s'emballe : elle ne montait qu'après douze dessins rapides, et chaque
 // dessin plus vif d'un combat ouvrait un plan en attendant (Re:Zero S4E18, 17:10). Le seuil prend la plus
 // haute des deux ; les sauts des coupes n'entrent pas dans la droite, qui sinon montait juste après chaque
-// coupe et cachait la suivante.
+// coupe et cachait la suivante. La tendance ne compte que pour kTrendMotion fois : à 2,5 comme la médiane,
+// elle cachait dix coupes nettes sur vingt-six extraits (saut 0,330 sous un seuil de 0,446, Chainsaw Man).
 constexpr std::size_t kTrendPairs = 8;
+constexpr float kTrendMotion = 2.0F;
 constexpr std::size_t kTrendMin = 4;
 constexpr float kHeldDrawing = 0.02F;  // sous cette distance, le même dessin tenu
 // Une image noire et unie : ses seize zones à moins de kBlankZones l'une de l'autre, et 99 % de ses points
@@ -287,9 +289,9 @@ float ShotCutter::limit(std::int64_t pts_us) {
     if (!m.cut) drawn.push_back(m.distance);
   }
   if (drawn.size() > kTrendPairs) drawn.erase(drawn.begin(), drawn.end() - kTrendPairs);
-  const float moving =
-      std::max(median(std::move(distances)), drawn.size() >= kTrendMin ? trend(drawn) : 0.0F);
-  return std::min(std::max(kCutBase, kCutMotion * moving), kCutCap);
+  const float moving = std::max(kCutMotion * median(std::move(distances)),
+                                kTrendMotion * (drawn.size() >= kTrendMin ? trend(drawn) : 0.0F));
+  return std::min(std::max(kCutBase, moving), kCutCap);
 }
 
 std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
