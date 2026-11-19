@@ -157,10 +157,23 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK(triage.sort(moving(calm, true), true) == PairSort::Today);
   CHECK(triage.counts().read == 1);
 
-  // Presque rien qui corresponde : toute la paire fondue.
+  // Presque rien qui corresponde, pas même un décor que la caméra explique : toute la paire fondue.
   kernels::SceneMotion lost = calm_scene();
-  lost.unmatched = 0.7;
+  lost.unmatched = 0.5;
+  lost.camera_fit = false;
+  CHECK(flow_lost(lost));
   CHECK(triage.sort(moving(lost, true), true) == PairSort::Fade);
+  CHECK(triage.counts().lost == 1);
+  // Autant sans correspondance, mais une caméra ajustée sur le décor : le mal est local (un personnage
+  // rapide), et aucune tuile n'y doute ici : RIFE tel quel.
+  kernels::SceneMotion fast = lost;
+  fast.camera_fit = true;
+  CHECK_FALSE(flow_lost(fast));
+  CHECK(triage.sort(moving(fast, true), true) == PairSort::Today);
+  // Une coupe probable reste impossible (la carte n'ajuste pas de caméra sur une coupe).
+  kernels::SceneMotion cut_map = calm_scene();
+  cut_map.cut_likely = true;
+  CHECK(flow_lost(cut_map));
 
   // Un effet dans un coin : fondu par endroits, le bord adouci, le coin opposé intact.
   triage.reset();
@@ -186,6 +199,22 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK(triage.sort(moving(calm, true), true) == PairSort::Today);
   CHECK(triage.counts().masked == 2);
   CHECK(triage.counts().faded == 1);
+
+  // Les aplats (Uncertain) qui changent ne doutent pas : RIFE n'y fait pas de fantôme qui se voie.
+  triage.reset();
+  kernels::SceneMotion flats = calm_scene();
+  for (kernels::SceneTile& t : flats.tiles)
+    t = {.kind = kernels::SceneClass::Uncertain, .confidence = 0.1F, .changed = true};
+  CHECK(std::ranges::all_of(tile_doubt(flats), [](float d) { return d == 0.0F; }));
+  CHECK(triage.sort(moving(flats, true), true) == PairSort::Today);
+  // Une tuile sur huit qui doute, éparse : la part est celle des tuiles mêmes (1/8), pas celle de leur
+  // voisinage élargi (presque toute l'image) ; fondu par endroits, pas la paire entière.
+  kernels::SceneMotion sparse = calm_scene();
+  for (const std::size_t i : {0U, 3U, 6U, 24U, 27U, 30U})
+    sparse.tiles[i] = {.kind = kernels::SceneClass::Effect, .confidence = 0.2F, .changed = true};
+  const DoubtGrid spread = doubt_grid(tile_doubt(sparse), sparse.cols, sparse.rows);
+  CHECK(spread.share == 6.0 / 48.0);
+  CHECK(triage.sort(moving(sparse, true), true) == PairSort::Masked);
 
   // Le doute gardé passe une tenue de dessin en quatre (trois paires sans RIFE), pas une plus longue.
   triage.reset();
@@ -213,6 +242,7 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK(gmfss.sort(by_flow, rife_runs(by_flow)) == PairSort::Held);
   CHECK(gmfss.sort(moving(smoke, true), true) == PairSort::Today);
   CHECK(gmfss.sort(moving(lost, true), true) == PairSort::Fade);
+  CHECK(gmfss.sort(moving(fast, true), true) == PairSort::Today);
   CHECK(gmfss.camera() == kernels::kCameraStill);
   kernels::SceneMotion pan = calm_scene();
   for (kernels::SceneTile& t : pan.tiles) t = {.kind = kernels::SceneClass::Background, .confidence = 0.9F};
