@@ -179,6 +179,10 @@ struct PlayOptions {
   // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
   // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
   bool span_native = false;
+  // --rife-native (essai) : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA
+  // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
+  // finale.
+  bool rife_native = false;
   // TemporalFix fusionné (docs/temporalfix.md) sous TensorRT, par défaut ; --no-tfix-fused (essai) garde
   // le graphe à cache de l'encodeur, pour la mesure ABAB.
   bool temporal_fix_fused = true;

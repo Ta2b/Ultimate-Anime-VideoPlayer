@@ -108,7 +108,9 @@ namespace kirari::gpu {
 // 50 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
 // changées, la sortie d'avant reprise ou décalée ; kernels/spec/span_tiles.h).
 // 51 : KernelOps::compose_layers (l'interpolation par calques et la plaque de décor, kernels/spec/layers.h).
-inline constexpr int kBackendAbi = 51;
+// 52 : kTrialRifeNative (le RIFE fusionné par nos noyaux, docs/rife-natif.md) : un module d'avant ignorerait
+// le bit sans le dire.
+inline constexpr int kBackendAbi = 52;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -141,6 +143,11 @@ inline constexpr std::uint32_t kTrialRifeHwc8 = 1U << 4U;
 // (docs/span-native16.md) ; le FP16 natif lui-même passe par son paquet (SpanVariantKind::Fp16Cutlass). Lu
 // par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
+// --rife-native : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux
+// (docs/rife-natif.md) au lieu des moteurs TensorRT, gardés s'ils tiennent 45 dB contre eux à l'essai au
+// chargement ; les blocs TensorRT se construisent alors en E/S HWC8. Lu par le backend TensorRT ; sans effet
+// ailleurs.
+inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le

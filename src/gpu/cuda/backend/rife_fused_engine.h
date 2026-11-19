@@ -25,6 +25,7 @@
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/fused_graphs.h"
 #include "gpu/cuda/backend/fused_keys.h"
+#include "gpu/cuda/backend/rife_native_net.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "kernels/spec/rife_fused.h"
 #include "kernels/spec/warp.h"
@@ -98,6 +99,16 @@ class RifeFusedEngine final : public Engine {
     l2_max_window_ = max_window;
   }
 
+  // --rife-native (docs/rife-natif.md) : l'encodeur et les convolutions des blocs passent aux noyaux natifs
+  // (pieces : l'encodeur puis les blocs) si leur sortie, sur une paire de test, tient min_db contre celle des
+  // moteurs TensorRT déjà chargés ; sommes f16 d'abord, f32 ensuite. Rend la ligne du journal qui dit ce qui
+  // est retenu. Refus (la chaîne reste alors à TensorRT, intacte) : blocs TensorRT en plans, erreur CUDA de
+  // l'essai.
+  std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 double min_db);
+  bool native() const { return native_on_; }
+
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
   std::string take_notice() { return graphs_.take_notice(); }
 
@@ -135,8 +146,19 @@ class RifeFusedEngine final : public Engine {
                                                    const std::shared_ptr<SharedActivations>& shared);
   std::size_t scratch_offset_for(SharedActivations& zone);
 
+  // L'essai de try_native : la chaîne sur la paire de test, sortie copiée vers l'hôte.
+  std::expected<std::vector<float>, Refusal> trial_output(cudaStream_t stream,
+                                                          const std::shared_ptr<SharedActivations>& shared,
+                                                          const Tensor& input,
+                                                          std::span<const Tensor> outputs,
+                                                          std::size_t elements);
+  void forget_passes();
+
   std::unique_ptr<TrtEngine> encode_;
   std::vector<std::unique_ptr<TrtEngine>> blocks_;
+  // Les noyaux natifs (try_native) : actifs à la place de encode_ et blocks_, qui restent chargés.
+  std::unique_ptr<RifeNativeNet> native_;
+  bool native_on_ = false;
   kernels::RifeFusedPlan plan_;
   int height_ = 0;
   int width_ = 0;
