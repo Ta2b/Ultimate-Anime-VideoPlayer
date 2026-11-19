@@ -135,7 +135,12 @@ warp, une en pas 2) d'abord, puis chaque forme que les noyaux font, sur une sort
 référence aux tolérances du RIFE (1/16 du pic en f16, 1/32 en mixtes, 1/128 en f32 : `native_sums.h`) et
 chronométrée ; la plus rapide de celles qui rendent la sortie de la référence est gardée. Une convolution à une
 seule forme n'est pas mesurée ; une convolution jumelle d'une autre déjà réglée (même genre, même géométrie,
-même résiduel, même activation : les blocs d'une ligne) en reprend les formes. La convolution du PixelShuffle a
+même résiduel, même activation : les blocs d'une ligne) en reprend les formes. Le banc ne lance une grande
+couche que sur une bande de ses lignes de sortie (`band_of`), 64 Mio au plus par tampon (entrée, sortie,
+référence) : il prend ainsi 192 Mio au plus pendant le chargement, au lieu de 810 Mio pour des plans de la paire
+à 1920 × 1152 (la queue de la fusion : 270 Mio par tampon) et de 3 Gio à 3840 × 2176. Une couche dont une forme
+découpe K (moins de deux vagues de blocs) passe entière ; une bande garde plusieurs vagues, où les formes se
+classent comme sur la couche entière, à la traîne de la dernière vague près. La convolution du PixelShuffle a
 son genre dans le choix des noyaux du RIFE (`Kind::kShuffle`, `rife_native_pick.cu`, tranche de 64 seulement) :
 12 instances de plus, celles du RIFE inchangées (mêmes registres sur sm_75, 86, 89 et 120).
 

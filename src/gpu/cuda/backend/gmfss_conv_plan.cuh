@@ -39,8 +39,8 @@ constexpr std::size_t sums_index(RifeNativeSums sums) {
   return static_cast<std::size_t>(sums);
 }
 
-// La forme d'une convolution pour des sommes : la plus rapide au banc (ms, son temps), ou la seule qu'un
-// noyau fasse (ms nul : pas mesurée).
+// La forme d'une convolution pour des sommes : la plus rapide au banc (ms, son temps, sur une bande de ses
+// lignes pour une grande couche), ou la seule qu'un noyau fasse (ms nul : pas mesurée).
 struct Shape {
   rn::Config cfg;
   rn::Launch launch = nullptr;
