@@ -56,7 +56,7 @@ std::vector<Shot> cut(const std::vector<ShotFrame>& frames) {
   std::vector<Shot> shots;
   for (const ShotFrame& f : frames)
     if (auto s = cutter.push(f)) shots.push_back(*s);
-  if (auto s = cutter.finish(frames.back().pts_us + kFrame)) shots.push_back(*s);
+  for (const Shot& s : cutter.finish(frames.back().pts_us + kFrame)) shots.push_back(s);
   return shots;
 }
 
@@ -127,6 +127,33 @@ TEST_CASE("plans : un éclair tenu deux ou trois images n'est pas une coupe (A42
   REQUIRE(shots.size() == 3);
   CHECK(shots.at(1).start_us == 30 * kFrame);
   CHECK(shots.at(1).end_us == 34 * kFrame);
+}
+
+TEST_CASE("plans : une rafale de coupes à deux images d'écart n'en garde qu'une", "[media][shots]") {
+  // Un éclair qui s'ouvre sur deux images, puis le plan suivant : deux coupes à deux images d'écart (Re:Zero,
+  // 170 et 173). Le plan de deux images se fond dans un voisin ; à égalité, la seconde coupe reste.
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 48; ++i) frames.push_back(flat(i, 0.15F));
+  for (int i = 48; i < 50; ++i) frames.push_back(flat(i, 0.5F, 1));
+  for (int i = 50; i < 100; ++i) frames.push_back(flat(i, 0.9F));
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(0).end_us == 50 * kFrame);
+  CHECK(shots.at(1).start_us == 50 * kFrame);
+  CHECK(shots.at(1).end_us == 100 * kFrame);
+}
+
+TEST_CASE("plans : un plan court se fond du côté de sa coupe la plus faible", "[media][shots]") {
+  // Une coupe franche (0,15 → 0,85), deux images, puis une coupe faible de cadrage : la coupe franche reste
+  // et les deux images rejoignent le plan qui suit.
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 48; ++i) frames.push_back(flat(i, 0.15F));
+  for (int i = 48; i < 50; ++i) frames.push_back(flat(i, 0.85F));
+  for (int i = 50; i < 100; ++i) frames.push_back(flat(i, 0.85F, 1));
+  REQUIRE(frame_distance(frames.at(49), frames.at(50)) < frame_distance(frames.at(47), frames.at(48)));
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(1).start_us == 48 * kFrame);
 }
 
 // Un décor qui défile sur la grille : `speed` colonnes par dessin vu, chaque dessin tenu `held` images.

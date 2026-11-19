@@ -129,12 +129,13 @@ class ShotCutter {
   // cut_before du premier plan : faux pour une analyse qui part au milieu de la vidéo.
   explicit ShotCutter(bool starts_at_cut = true) : starts_at_cut_(starts_at_cut) {}
 
-  // Une image de plus, dans l'ordre de présentation. Rend le plan qui vient de finir, s'il y en a un.
+  // Une image de plus, dans l'ordre de présentation. Rend le plan qui vient de finir, s'il y en a un. Un plan
+  // fini attend que le suivant dure un quart de seconde : plus court, ce dernier se fond dans l'un des deux.
   // Un saut attend jusqu'à trois images pour être jugé : un éclair de une à trois images (tenu deux images
   // en animation sur deux) n'est pas une coupe.
   std::optional<Shot> push(const ShotFrame& frame);
-  // Fin de la vidéo (ou de l'analyse) à end_us : rend le plan en cours.
-  std::optional<Shot> finish(std::int64_t end_us);
+  // Fin de la vidéo (ou de l'analyse) à end_us : rend les plans encore gardés, dans l'ordre (deux au plus).
+  std::vector<Shot> finish(std::int64_t end_us);
 
  private:
   // Les sommes d'un plan (ou d'un de ses bords) : le plan en cours ne garde pas ses images, un flux sans
@@ -158,7 +159,10 @@ class ShotCutter {
     bool cut = false;  // le saut d'une coupe : compté par la médiane, pas par la tendance
   };
 
+  std::optional<Shot> advance(const ShotFrame& frame);
   std::optional<Shot> judge(const ShotFrame& anchor, const ShotFrame& frame);
+  std::optional<Shot> cut_at(std::int64_t end_us, float jump);
+  void discard_shot();
   void keep(const ShotFrame& frame);
   float limit(std::int64_t pts_us);
   std::optional<Shot> close_shot(std::int64_t end_us);
@@ -179,6 +183,8 @@ class ShotCutter {
   bool jump_moves_ =
       false;  // le saut ne change que la place de la lumière : peut-être un départ de mouvement
   std::deque<Motion> recent_;  // les dernières distances entre dessins distincts, pour le seuil
+  std::optional<Shot> held_;   // le plan fini qui attend de savoir si le suivant s'y fond
+  float start_jump_ = 0.0F;    // le saut de la coupe qui a ouvert le plan en cours
 };
 
 }  // namespace ajp::media

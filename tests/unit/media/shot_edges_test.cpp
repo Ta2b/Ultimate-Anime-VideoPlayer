@@ -53,7 +53,7 @@ std::vector<Shot> cut(const std::vector<ShotFrame>& frames) {
   std::vector<Shot> shots;
   for (const ShotFrame& f : frames)
     if (auto s = cutter.push(f)) shots.push_back(*s);
-  if (auto s = cutter.finish(frames.back().pts_us + kFrame)) shots.push_back(*s);
+  for (const Shot& s : cutter.finish(frames.back().pts_us + kFrame)) shots.push_back(s);
   return shots;
 }
 

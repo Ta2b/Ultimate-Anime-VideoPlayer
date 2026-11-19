@@ -339,7 +339,9 @@ chaque plan, l'interpolation ses coupes (`--shot-cuts`, donc aussi sans grade).
   distances, et la tendance des huit dernières (droite de Theil-Sen prolongée d'un pas, idée de SVFI), qui suit
   un combat qui s'emballe. Un saut attend trois images avant d'être jugé : un éclair de une à trois images
   reste dans son plan. Après une image noire et unie, la première image qui ne l'est plus ouvre un plan : un
-  fondu au noir suivi d'un fondu d'ouverture fait deux plans.
+  fondu au noir suivi d'un fondu d'ouverture fait deux plans. Un plan dure au moins 160 ms (quatre images à
+  24 i/s) : d'une rafale de coupes à une ou deux images d'écart (un éclair qui s'ouvre, une explosion), seule la
+  plus forte reste. Un plan fini attend donc ce délai avant de sortir.
 - **Flashs** (`media/flash_guard.h`, UIT-R BT.1702-2). Plus de trois flashs par seconde, chacun d'au moins 20 cd/m²
   sur un quart de l'écran, l'image sombre sous 160 cd/m², en lumière de sortie du grade : le pic du grade tombe à
   250 nits, jusqu'à une seconde après le dernier. La pré-analyse marque ces séquences d'avance, le plafond les

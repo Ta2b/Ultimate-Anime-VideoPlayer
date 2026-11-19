@@ -43,6 +43,12 @@ constexpr float kBlankDark = 0.1F;
 // Un éclair dure au plus trois images (A42-02) : tenu deux images en animation sur deux, il ouvrait un plan
 // à l'entrée et un autre à la sortie.
 constexpr std::size_t kFlashFrames = 3;
+// Un plan dure au moins kMinShotUs (quatre images à 24 i/s) : une rafale d'effets (un éclair qui s'ouvre en
+// blanc, une explosion découpée en trois dessins) ouvrait un plan à chaque dessin, à une ou deux images
+// d'écart (Re:Zero : 170 et 172 avant la vraie coupe de 173, 718, 720, 722 avant celle de 723). D'un plan
+// plus court, seule la plus forte de ses deux coupes reste ; à égalité, la seconde, qui suit la fin de
+// l'effet.
+constexpr std::int64_t kMinShotUs = 160'000;
 // Les bords d'un plan gardés pour juger un fondu : le sixième du plan, au plus deux secondes à 24 i/s.
 constexpr std::size_t kEdgeKept = 48;
 // Les palettes de visages gardées d'un plan : un long plan n'en garde pas des milliers.
@@ -287,6 +293,18 @@ float ShotCutter::limit(std::int64_t pts_us) {
 }
 
 std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
+  // Le plan d'avant sort dès que celui-ci dure assez pour ne plus s'y fondre.
+  // Un saut en attente peut encore finir ce plan à sa première image : la durée se compte jusque-là.
+  const std::int64_t until = jumped_.empty() ? frame.pts_us : jumped_.front().pts_us;
+  if (held_ && totals_.count > 0 && until - start_us_ >= kMinShotUs) {
+    std::optional<Shot> out = std::exchange(held_, std::nullopt);
+    (void)advance(frame);  // held_ vide : une coupe de cette image y attendrait, sans rien rendre
+    return out;
+  }
+  return advance(frame);
+}
+
+std::optional<Shot> ShotCutter::advance(const ShotFrame& frame) {
   if (!anchor_) {
     keep(frame);
     anchor_ = frame;
@@ -318,14 +336,14 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
   if (jumped_.size() <= kFlashFrames) return std::nullopt;
   const std::vector<ShotFrame> after = std::move(jumped_);
   jumped_.clear();
-  std::optional<Shot> closed = close_shot(after.front().pts_us);
+  std::optional<Shot> closed = cut_at(after.front().pts_us, jump_);
   recent_.push_back({.pts_us = after.front().pts_us, .distance = jump_, .cut = true});
   keep(after.front());
   anchor_ = after.front();
   // Les images d'après la coupe repassent une à une : aucune n'a pu ouvrir un autre plan en si peu d'images
   // sans que la première coupe soit elle-même un éclair.
   for (std::size_t i = 1; i < after.size(); ++i) {
-    if (auto again = push(after.at(i)); again && !closed) closed = again;
+    if (auto again = advance(after.at(i)); again && !closed) closed = again;
   }
   return closed;
 }
@@ -349,14 +367,44 @@ std::optional<Shot> ShotCutter::judge(const ShotFrame& anchor, const ShotFrame& 
   return std::nullopt;
 }
 
-std::optional<Shot> ShotCutter::finish(std::int64_t end_us) {
+std::vector<Shot> ShotCutter::finish(std::int64_t end_us) {
   // Un saut encore en attente à la fin (trois images au plus) reste dans le dernier plan.
   for (const ShotFrame& f : jumped_) keep(f);
   jumped_.clear();
-  std::optional<Shot> closed = close_shot(end_us);
+  std::vector<Shot> out;
+  // Un dernier plan trop court se fond dans celui d'avant.
+  if (held_ && totals_.count > 0 && end_us - start_us_ < kMinShotUs) {
+    held_->end_us = std::max(end_us, held_->start_us + 1);
+    discard_shot();
+  }
+  if (held_) out.push_back(*std::exchange(held_, std::nullopt));
+  if (auto closed = close_shot(end_us)) out.push_back(*closed);
   recent_.clear();
   anchor_.reset();
-  return closed;
+  return out;
+}
+
+// Une coupe confirmée à end_us, de saut jump. Le plan qui finit là attend la suite (held_) ; s'il est trop
+// court, il se fond dans le plan qui commence (sa coupe d'ouverture était la plus forte) ou dans celui
+// d'avant.
+std::optional<Shot> ShotCutter::cut_at(std::int64_t end_us, float jump) {
+  if (totals_.count > 0 && end_us - start_us_ < kMinShotUs) {
+    if (!held_ || jump < start_jump_) return std::nullopt;  // le plan continue : cette coupe s'efface
+    held_->end_us = end_us;  // la coupe d'ouverture s'efface : le plan court rejoint celui d'avant
+    discard_shot();
+    start_jump_ = jump;
+    return std::nullopt;
+  }
+  std::optional<Shot> closed = close_shot(end_us);
+  start_jump_ = jump;
+  if (!closed) return std::nullopt;
+  return std::exchange(held_, closed);
+}
+
+void ShotCutter::discard_shot() {
+  totals_ = {};
+  head_.clear();
+  tail_.clear();
 }
 
 // B42-03 : la part du plan où la lumière change vraiment. Un plan long fini par un fondu au noir restait
@@ -412,9 +460,7 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
       ramp_of(shot, begin.mean, end.mean);
     }
   }
-  totals_ = {};
-  head_.clear();
-  tail_.clear();
+  discard_shot();
   return shot;
 }
 

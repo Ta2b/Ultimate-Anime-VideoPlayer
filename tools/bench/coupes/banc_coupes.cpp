@@ -21,7 +21,8 @@ int main(int argc, char** argv) {
   std::vector<unsigned char> pixels(static_cast<std::size_t>(kW * kH * 3));
   media::ShotCutter cutter;
   const auto print = [&](const std::optional<media::Shot>& shot) {
-    if (shot) std::printf("%lld\n", std::llround(static_cast<double>(shot->end_us) * fps / 1e6));
+    if (shot && shot->start_us > 0)
+      std::printf("%lld\n", std::llround(static_cast<double>(shot->start_us) * fps / 1e6));
   };
   long long count = 0;
   while (std::fread(pixels.data(), 1, pixels.size(), stdin) == pixels.size()) {
@@ -37,7 +38,8 @@ int main(int argc, char** argv) {
     print(cutter.push(media::shot_frame_of(pts, kernels::ref::frame_stats_of(*counts))));
     ++count;
   }
-  (void)cutter.finish(std::llround(static_cast<double>(count) * 1e6 / fps));
+  for (const media::Shot& shot : cutter.finish(std::llround(static_cast<double>(count) * 1e6 / fps)))
+    print(shot);
   std::fprintf(stderr, "%lld images\n", count);
   return 0;
 }
