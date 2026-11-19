@@ -162,7 +162,9 @@ struct Fake {
   bool interleaved = false;  // la colle de 4.25 lite : Split 4, 9 et Concat de 4 entrées
 };
 
-Bytes fake_rife(const Fake& f) {
+// [[maybe_unused]] : rife_native_test.cpp n'en prend que les aides protobuf (GCC refuse sinon une fonction
+// d'espace anonyme jamais appelée).
+[[maybe_unused]] Bytes fake_rife(const Fake& f) {
   Bytes graph;
   std::vector<Bytes> inits;
   const auto add = [&](const Bytes& n) { delimited(graph, 1, n); };
