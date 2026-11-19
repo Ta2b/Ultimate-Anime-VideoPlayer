@@ -5,11 +5,12 @@
 # lecteur (128 lignes, ou 64 si le L2 ne les tient pas) en ABAB, puis sans bandes et à d'autres hauteurs
 # ($BANDS). Les poids partagés forcés, avec et sans (« Poids partagés », --shared-weights et
 # --no-shared-weights ; le défaut les prend à 48 canaux), passent dans les mêmes tours que le défaut, dans
-# l'ordre inverse un tour sur deux. Le tableau des temps finit dans $OUT/resume.md.
+# l'ordre inverse un tour sur deux ; Winograd forcé (« Winograd », --winograd : les 3×3 des blocs à 64 canaux)
+# aussi. Le tableau des temps finit dans $OUT/resume.md.
 #
 # Le PC ne fait que les temps : la justesse se juge sur processeur, dans le cloud. Avec EXPORT=DOSSIER, le banc
 # écrit pour chaque modèle, dans DOSSIER/<modèle>/, le modèle, l'entrée et une sortie de chaque mode (f16 aux
-# bandes du lecteur, f16 sans bandes, f16 aux poids partagés, f32) en demi-flottants, un fichier par plan ;
+# bandes du lecteur, f16 sans bandes, f16 aux poids partagés, f16 par Winograd, f32) en demi-flottants, un fichier par plan ;
 # tools/bench/span_native/justesse_cpu.py les compare ensuite à ONNX Runtime FP32. Sans EXPORT, rien.
 #
 #   [EXPORT=/mnt/project-files/span-native/…] flock ~/kirari-reports/gpu-bench.lock \
@@ -62,9 +63,9 @@ native_ms() { # modèle [options] -> médiane en ms
 }
 
 {
-  printf '| Modèle | TensorRT FP16 (ms) | Natif f16 (ms) | Natif/TRT | Poids partagés (ms) | Sans (ms) |'
+  printf '| Modèle | TensorRT FP16 (ms) | Natif f16 (ms) | Natif/TRT | Poids partagés (ms) | Sans (ms) | Winograd (ms) |'
   for b in $BANDS; do printf ' Bandes %s (ms) |' "$b"; done
-  printf ' Natif f32 (ms) |\n|---|---:|---:|---:|---:|---:|'
+  printf ' Natif f32 (ms) |\n|---|---:|---:|---:|---:|---:|---:|'
   for b in $BANDS; do printf -- '---:|'; done
   printf -- '---:|\n'
 } >"$OUT/resume.md"
@@ -78,22 +79,24 @@ for model in "${MODELS[@]}"; do
     --builderOptimizationLevel=5 --saveEngine="$engine" >"$OUT/$name.build.log" 2>&1 ||
     "$TRTEXEC" --onnx="$model" --builderOptimizationLevel=5 --saveEngine="$engine" >"$OUT/$name.build.log" 2>&1 ||
     { echo "construction TensorRT de $name échouée ($OUT/$name.build.log)" >&2; exit 1; }
-  t=(); n=(); s=(); o=(); for r in $(seq 1 "$ROUNDS"); do  # ABAB : une dérive d'horloge ne pèse pas d'un seul côté
+  t=(); n=(); s=(); o=(); g=(); for r in $(seq 1 "$ROUNDS"); do  # ABAB : une dérive d'horloge ne pèse pas d'un seul côté
     if ((r % 2)); then
       t+=("$(trt_ms "$engine")"); n+=("$(native_ms "$model")")
       s+=("$(native_ms "$model" --shared-weights)"); o+=("$(native_ms "$model" --no-shared-weights)")
+      g+=("$(native_ms "$model" --winograd)")
     else
+      g+=("$(native_ms "$model" --winograd)")
       o+=("$(native_ms "$model" --no-shared-weights)"); s+=("$(native_ms "$model" --shared-weights)")
       n+=("$(native_ms "$model")"); t+=("$(trt_ms "$engine")")
     fi
-    echo "$name tour $r : TensorRT ${t[-1]} ms, natif ${n[-1]} ms, poids partagés ${s[-1]} ms, sans ${o[-1]} ms"
+    echo "$name tour $r : TensorRT ${t[-1]} ms, natif ${n[-1]} ms, poids partagés ${s[-1]} ms, sans ${o[-1]} ms, Winograd ${g[-1]} ms"
   done
   n32="$(native_ms "$model" --acc32)"
   sweep=""; for b in $BANDS; do sweep+=" $(native_ms "$model" --band "$b") |"; done
   med() { printf '%s\n' "$@" | sort -g | sed -n "$((($# + 1) / 2))p"; }
-  mt="$(med "${t[@]}")"; mn="$(med "${n[@]}")"; ms="$(med "${s[@]}")"; mo="$(med "${o[@]}")"
-  printf '| %s | %s | %s | %s | %s | %s |%s %s |\n' "$name" "$mt" "$mn" \
-    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$ms" "$mo" "$sweep" "$n32" >>"$OUT/resume.md"
+  mt="$(med "${t[@]}")"; mn="$(med "${n[@]}")"; ms="$(med "${s[@]}")"; mo="$(med "${o[@]}")"; mg="$(med "${g[@]}")"
+  printf '| %s | %s | %s | %s | %s | %s | %s |%s %s |\n' "$name" "$mt" "$mn" \
+    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$ms" "$mo" "$mg" "$sweep" "$n32" >>"$OUT/resume.md"
 done
 
 # Les données de la justesse, après tous les temps : une sortie par mode, en demi-flottants (les noyaux
@@ -104,6 +107,7 @@ if [ -n "${EXPORT:-}" ]; then
     "$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f16.f32" --fp16 >/dev/null
     "$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.b0.f32" --fp16 --band 0 >/dev/null
     "$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.pp.f32" --fp16 --shared-weights >/dev/null
+    "$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.wg.f32" --fp16 --winograd >/dev/null
     "$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f32.f32" --fp16 --acc32 >/dev/null
     cp "$model" "$dest/modele.onnx"
     python3 -I - "$dest" "$IN" "$H" "$W" "$OUT/$name" <<'PY'
@@ -113,12 +117,12 @@ import numpy as np
 dest, entree, h, w, base = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
 (dest / "dims.txt").write_text(f"{h} {w}\n")
 np.fromfile(entree, dtype="<f4").astype("<f2").tofile(dest / "entree.f16")  # comme __float2half
-for mode in ("f16", "b0", "pp", "f32"):
+for mode in ("f16", "b0", "pp", "wg", "f32"):
     sortie = np.fromfile(f"{base}.{mode}.f32", dtype="<f4").astype("<f2").reshape(3, 2 * h, 2 * w)
     for c in range(3):
         sortie[c].tofile(dest / f"{mode}.p{c}.f16")
 PY
-    rm -f "$OUT/$name".{f16,b0,pp,f32}.f32
+    rm -f "$OUT/$name".{f16,b0,pp,wg,f32}.f32
     echo "export : $dest"
   done
 fi

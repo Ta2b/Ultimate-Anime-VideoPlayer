@@ -383,4 +383,38 @@ TEST_CASE("SPAN FP16 natif : les poids partagés rendent la même sortie au bit 
   CHECK(outputs[0] == outputs[1]);
 }
 
+// Winograd F(2×2, 3×3) (SpanFp8Weights::winograd, 64 canaux, sommes f16) arrondit autrement que le chemin
+// direct (V et U en f16, d'autres sommes) : même justesse à peu près, pas les mêmes bits. Les tuiles 2×2
+// partent des lignes paires quelle que soit la bande : en bandes, la sortie est celle de l'image entière.
+TEST_CASE("SPAN FP16 natif : Winograd suit le chemin direct, et les bandes ne le changent pas",
+          "[cuda][span_fp8]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  Random random;
+  span_fp8::Package package = random_package(random, 64, 8);
+  std::vector<__half> image(kInCount);
+  for (__half& value : image) value = __float2half(random.next() + 0.5F);
+  DeviceBytes in(kInCount * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), kInCount * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  const auto run = [&](SpanWinograd winograd, int band) {
+    SpanFp8Weights weights = span_fp8_view(package);
+    weights.fp16 = true;
+    weights.winograd = winograd;
+    weights.band = band;
+    SpanFp8Status status = SpanFp8Status::Ok;
+    std::string error;
+    const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
+    INFO(error);
+    REQUIRE(net != nullptr);
+    DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+    net->bind(workspace.data);
+    return launch_once(*net, in);
+  };
+  const std::vector<double> direct = run(SpanWinograd::Off, 0), wino = run(SpanWinograd::On, 0);
+  const double snr = snr_db(direct, wino);
+  INFO("SNR de Winograd contre le chemin direct : " << snr << " dB");
+  CHECK(snr >= 50.0);
+  CHECK(run(SpanWinograd::On, 5) == wino);
+}
+
 }  // namespace kirari::gpu::cuda

@@ -295,7 +295,7 @@ __device__ __forceinline__ void store_nhwc(const __half* o, const Params& p, int
   for (int i = static_cast<int>(threadIdx.x); i < kTH * kTW * kChunks; i += kThreads) {
     const int q = i / kChunks, c = i - q * kChunks;
     const int y = ty0 + q / kTW, x = tx0 + q % kTW;
-    if (y >= ye || x >= p.fw) continue;
+    if (y < p.y0 || y >= ye || x >= p.fw) continue;  // y0 : wino_kernel commence à la ligne paire d'avant
     const long pixel = static_cast<long>(y) * p.fw + x;
     const uint4 v = *reinterpret_cast<const uint4*>(o + q * kLdo + c * 8);
     if (p.out != nullptr) *reinterpret_cast<uint4*>(p.out + pixel * ld + c * 8) = v;

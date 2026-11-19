@@ -4,7 +4,7 @@
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
 //                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N]
-//                    [--shared-weights | --no-shared-weights] [--compare]
+//                    [--shared-weights | --no-shared-weights] [--winograd | --no-winograd] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -17,7 +17,8 @@
 // --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
 // sans l'option, SpanFp8Weights::band, celle du lecteur). --shared-weights, --no-shared-weights : le FP16
 // natif prend ou non les poids de chaque pas en mémoire partagée ; sans l'option, le choix du lecteur
-// (SpanFp8Weights::shared_weights).
+// (SpanFp8Weights::shared_weights). --winograd, --no-winograd : les 3×3 des blocs par Winograd F(2×2, 3×3)
+// (64 canaux, sommes f16) ou non ; sans l'option, le choix du lecteur (SpanFp8Weights::winograd).
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
 // standard (PSNR, plus grand écart, valeurs non finies) : un seul lancement juge la vitesse et la justesse.
 // À lancer sous le
@@ -77,6 +78,7 @@ struct Options {
   bool compare = false;
   int band = -1;  // --band ; négatif : celle du lecteur
   kirari::gpu::cuda::SpanSharedWeights shared_weights = kirari::gpu::cuda::SpanSharedWeights::Auto;
+  kirari::gpu::cuda::SpanWinograd winograd = kirari::gpu::cuda::SpanWinograd::Auto;
 };
 
 // Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
@@ -97,6 +99,10 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.shared_weights = kirari::gpu::cuda::SpanSharedWeights::On;
     } else if (option == "--no-shared-weights") {
       options.shared_weights = kirari::gpu::cuda::SpanSharedWeights::Off;
+    } else if (option == "--winograd") {
+      options.winograd = kirari::gpu::cuda::SpanWinograd::On;
+    } else if (option == "--no-winograd") {
+      options.winograd = kirari::gpu::cuda::SpanWinograd::Off;
     } else if (option == "--compare") {
       options.compare = true;
     } else if (option == "--per-tap") {
@@ -137,6 +143,7 @@ kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Packa
   weights.sums = options.sums;
   if (options.band >= 0) weights.band = options.band;
   weights.shared_weights = options.shared_weights;
+  weights.winograd = options.winograd;
   return weights;
 }
 

@@ -18,6 +18,7 @@
 
 #include "gpu/cuda/backend/span_fp8_body.h"
 #include "gpu/cuda/backend/span_native_conv.cuh"
+#include "gpu/cuda/backend/span_native_wino.cuh"
 
 namespace kirari::gpu::cuda {
 namespace {
@@ -130,6 +131,7 @@ class NativeBody final : public SpanFp8Body {
     shared_ = weights.shared_weights == SpanSharedWeights::Auto
                   ? C == 48
                   : weights.shared_weights == SpanSharedWeights::On;
+    wino_ = C == sn::kWinoC && A == sn::Acc::kF16 && weights.winograd == SpanWinograd::On;
     band_ = weights.band == SpanFp8Weights::kBandAuto ? auto_band(fw_, C) : weights.band;
     const auto sent = [&](cudaError_t result) {
       if (result == cudaSuccess) return true;
@@ -143,12 +145,19 @@ class NativeBody final : public SpanFp8Body {
       return sent(to.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) &&
              sent(to.b.upload(view.bias, static_cast<std::size_t>(cout) * sizeof(float)));
     };
+    const auto put_wino = [&](Conv& to, const SpanFp8ConvView& view) {
+      const std::vector<std::uint32_t> packed = sn::pack_wino(view.weights, C, C);
+      return sent(to.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) &&
+             sent(to.b.upload(view.bias, static_cast<std::size_t>(C) * sizeof(float)));
+    };
     if (!put(first_, weights.first, C, 9, sn::kImageCh) || !put(cat_, weights.concat, C, 1, 4 * C) ||
         !put(pixel_, weights.pixel, sn::kPixel, 9, C))
       return false;
     for (int b = 0; b < used_; ++b) {
       for (int i = 0; i < 3; ++i)
-        if (!put(conv_[b][i], weights.conv[b][i], C, 9, C)) return false;
+        if (!(wino_ ? put_wino(conv_[b][i], weights.conv[b][i])
+                    : put(conv_[b][i], weights.conv[b][i], C, 9, C)))
+          return false;
       if (!put(attention_[b], weights.attention[b], C, 1, C)) return false;
     }
     status = SpanFp8Status::Ok;
@@ -273,16 +282,16 @@ class NativeBody final : public SpanFp8Body {
       __half* out = b == 0 ? t_[kK1] : b == last ? x[used_ % 2] : x[(b + 1) % 2];
       sn::Params c1 = params(conv_[b][0], t_[kT1]);
       c1.in[0] = in;
-      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c1, front.next(1));
+      block<M::kPlain, true>(stream, c1, front.next(1));
       sn::Params c2 = params(conv_[b][1], t_[kT2]);
       c2.in[0] = t_[kT1];
-      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, front.next(1));
+      block<M::kPlain, true>(stream, c2, front.next(1));
       sn::Params c3 = params(conv_[b][2], out);
       c3.in[0] = t_[kT2];
       c3.skip = in;
       c3.w1 = attention_[b].w.template as<uint4>();
       c3.b1 = attention_[b].b.template as<float>();
-      run<C, C, 9, 1, S::kNhwc, M::kGate, false>(stream, c3, front.next(1));
+      block<M::kGate, false>(stream, c3, front.next(1));
     }
     // Les tranches de la concaténation du SPAN : sortie de conv_1, du dernier bloc, du premier bloc, premier
     // Relu du dernier bloc (l'ordre des poids de conv_cat). La sortie s'écrit sur S0, sur place : une 1×1 ne
@@ -310,6 +319,24 @@ class NativeBody final : public SpanFp8Body {
       sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, A><<<grid, sn::kThreads, smem, stream>>>(p);
   }
 
+  // Une 3×3 carrée d'un bloc : par Winograd (wino_), ou comme les autres convolutions.
+  template <sn::Mode Mode, bool Relu>
+  void block(cudaStream_t stream, sn::Params p, Rows rows) const {
+    if constexpr (C == sn::kWinoC && A == sn::Acc::kF16) {
+      if (wino_) {
+        if (rows.from >= rows.to) return;
+        p.y0 = rows.from;
+        p.y1 = rows.to;
+        const int first = sn::wino_first_row(rows.from);
+        const dim3 grid(grid_.x, static_cast<unsigned>((rows.to - first + sn::kTH - 1) / sn::kTH));
+        sn::wino_kernel<Mode, Relu>
+            <<<grid, sn::kThreads, static_cast<std::size_t>(sn::wino_smem_bytes()), stream>>>(p);
+        return;
+      }
+    }
+    run<C, C, 9, 1, S::kNhwc, Mode, Relu>(stream, p, rows);
+  }
+
   static bool failed(std::string& error) {
     const cudaError_t result = cudaGetLastError();
     if (result == cudaSuccess) return false;
@@ -322,6 +349,7 @@ class NativeBody final : public SpanFp8Body {
   int used_ = kBlocks;
   int band_ = 0;         // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
   bool shared_ = false;  // poids partagés (SpanFp8Weights::shared_weights)
+  bool wino_ = false;    // les 3×3 des blocs par Winograd (SpanFp8Weights::winograd)
   bool bound_ = false;
   const std::uint32_t* region_ = nullptr;  // tuiles qui bougent : masques d'appareil, nuls hors d'un appel
   const std::uint32_t* core_ = nullptr;
