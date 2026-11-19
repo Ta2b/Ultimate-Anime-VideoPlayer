@@ -16,6 +16,7 @@
 #include "gpu/cuda/backend/rife_native_kernels.cuh"
 #include "gpu/cuda/backend/rife_native_plan.h"
 #include "gpu/cuda/backend/tfix_fused.cuh"
+#include "gpu/cuda/backend/tfix_head.h"
 #include "gpu/cuda/backend/tfix_native_net.h"
 #include "kernels/spec/tfix_fused.h"
 
@@ -132,40 +133,62 @@ __global__ void traits_kernel(const __half* in, int ih, int iw, __half* out, int
     out[c * plane + static_cast<long long>(y) * w + x] = __float2half_rn(tfix::resized(v, c, iw, ax, ay));
 }
 
-// La dernière couche de la tête (un canal, sans activation ni résiduel) : un fil par point, sommes f32 sur
-// les cœurs CUDA ; la tuile de 16 canaux des tensor cores y ferait seize fois le travail utile. w : [9][cin].
-__global__ void single_kernel(const __half* in, int in_ld, __half* out, int out_ld, const float* w,
-                              float bias, int cin, int h, int width) {
-  extern __shared__ float taps[];
-  const int threads = static_cast<int>(blockDim.x * blockDim.y);
-  for (int i = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x); i < 9 * cin; i += threads)
-    taps[i] = w[i];
+// La dernière couche de la tête (un canal, sans activation ni résiduel), sommes f32 sur les cœurs CUDA ; la
+// tuile de 16 canaux des tensor cores y ferait seize fois le travail utile. Quatre fils par point, chacun
+// huit canaux lus en 16 octets : les lectures d'une chaîne sont contiguës (un fil par point les éparpillait
+// au pas de 64 octets). Les quatre sommes se rejoignent par échanges de chaîne ; le premier fil écrit le
+// point (le canal puis sept zéros). w : [9][32], in au pas 32, out au pas 8.
+constexpr int kSingleCin = 32;
+constexpr int kSingleLanes = kSingleCin / 8;
+constexpr int kSingleRow = 128;  // fils par ligne de bloc : 32 points
+constexpr int kSingleRows = 2;
+static_assert(kernels::tfix_out_ld(1, true) == 8, "single_kernel écrit 8 canaux par point");
+
+__global__ void __launch_bounds__(kSingleRow* kSingleRows)
+    single_kernel(const __half* in, __half* out, const float* w, float bias, int h, int width) {
+  __shared__ float taps[9 * kSingleCin];
+  const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
+  for (int i = tid; i < 9 * kSingleCin; i += static_cast<int>(blockDim.x * blockDim.y)) taps[i] = w[i];
   __syncthreads();
-  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int lane = static_cast<int>(threadIdx.x) % kSingleLanes;
+  const int x = static_cast<int>(blockIdx.x) * (kSingleRow / kSingleLanes) +
+                static_cast<int>(threadIdx.x) / kSingleLanes;
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
-  if (x >= width || y >= h) return;
+  const bool inside = x < width && y < h;
   const long plane = static_cast<long>(h) * width;
-  const __half* image = in + static_cast<long>(blockIdx.z) * plane * in_ld;
-  float sum = bias;
-  for (int tap = 0; tap < 9; ++tap) {
-    const int sy = y + tap / 3 - 1;
-    const int sx = x + tap % 3 - 1;
-    if (sy < 0 || sy >= h || sx < 0 || sx >= width) continue;
-    const auto* at = reinterpret_cast<const uint4*>(image + (static_cast<long>(sy) * width + sx) * in_ld);
-    for (int c8 = 0; c8 < cin / 8; ++c8) {
-      const uint4 v = at[c8];
+  const __half* image = in + static_cast<long>(blockIdx.z) * plane * kSingleCin + lane * 8;
+  float sum = 0.F;
+  if (inside) {
+#pragma unroll
+    for (int tap = 0; tap < 9; ++tap) {
+      const int sy = y + tap / 3 - 1;
+      const int sx = x + tap % 3 - 1;
+      if (sy < 0 || sy >= h || sx < 0 || sx >= width) continue;
+      const uint4 v =
+          *reinterpret_cast<const uint4*>(image + (static_cast<long>(sy) * width + sx) * kSingleCin);
       const auto* pairs = reinterpret_cast<const __half2*>(&v);
-      const float* t = taps + tap * cin + c8 * 8;
+      const float* t = taps + tap * kSingleCin + lane * 8;
+#pragma unroll
       for (int k = 0; k < 4; ++k) {
         const float2 f = __half22float2(pairs[k]);
         sum += f.x * t[2 * k] + f.y * t[2 * k + 1];
       }
     }
   }
-  __half* o =
-      out + static_cast<long>(blockIdx.z) * plane * out_ld + (static_cast<long>(y) * width + x) * out_ld;
-  o[0] = __float2half_rn(sum);
-  for (int c = 1; c < out_ld; ++c) o[c] = __float2half_rn(0.F);
+  // Toute la chaîne échange, dehors compris (sommes nulles) : les quatre fils d'un point sont voisins.
+  sum += __shfl_xor_sync(0xFFFFFFFFU, sum, 1);
+  sum += __shfl_xor_sync(0xFFFFFFFFU, sum, 2);
+  if (!inside || lane != 0) return;
+  const __half2 first = __halves2half2(__float2half_rn(sum + bias), __float2half_rn(0.F));
+  const __half2 zero = __float2half2_rn(0.F);
+  uint4 point;
+  auto* pairs = reinterpret_cast<__half2*>(&point);
+  pairs[0] = first;
+  pairs[1] = zero;
+  pairs[2] = zero;
+  pairs[3] = zero;
+  *reinterpret_cast<uint4*>(out + static_cast<long>(blockIdx.z) * plane * 8 +
+                            (static_cast<long>(y) * width + x) * 8) = point;
 }
 
 struct Layer {
@@ -212,6 +235,13 @@ bool uploaded(cudaError_t result, std::string& error) {
   static_cast<void>(cudaGetLastError());
   error = std::string("poids de TemporalFix natif : ") + cudaGetErrorString(result);
   return false;
+}
+
+// La dernière couche de la tête (un canal, sans activation ni résiduel, 32 canaux d'entrée au pas 32) va à
+// single_kernel.
+bool takes_single(const RifeNativeConv& conv, const Layer& layer) {
+  return conv.cout == 1 && layer.kind == Kind::kSame && conv.scale.empty() && conv.slope.empty() &&
+         layer.cin == kSingleCin && layer.in_ld == kSingleCin;
 }
 
 // La dernière couche de la tête par single_kernel : ses poids f32 [9][cin] et son biais.
@@ -312,8 +342,16 @@ class Net final : public TfixNativeNet {
   }
   cudaError_t window(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const override {
     if (k < 0 || k > kernels::kTfixLevels) return cudaErrorInvalidValue;
-    return run(stream, static_cast<std::size_t>(k) + 1, x, y, workspace);
+    const auto index = static_cast<std::size_t>(k) + 1;
+    if (k == kernels::kTfixLevels && head_ != nullptr && index < pieces_.size() &&
+        !pieces_[index].layers.empty()) {
+      const Layer& first = pieces_[index].layers.front();
+      return head_->run(stream, x, y, first.ih, first.iw, pieces_[index].batch);
+    }
+    return run(stream, index, x, y, workspace);
   }
+  // La tête fondue (tfix_head.h), si la tête en a la forme ; sinon, elle passe couche par couche.
+  void fuse_head(std::unique_ptr<TfixHead> head) { head_ = std::move(head); }
 
  private:
   // Tranche des canaux d'entrée, tuile des canaux de sortie, poids rangés, lancement, K découpé.
@@ -324,8 +362,7 @@ class Net final : public TfixNativeNet {
     layer.residual = !conv.scale.empty();
     layer.activation = !conv.slope.empty();
     const int cin = layer.cin;
-    if (last && conv.cout == 1 && layer.kind == Kind::kSame && !layer.residual && !layer.activation)
-      return build_single(folded, layer, error);
+    if (last && takes_single(conv, layer)) return build_single(folded, layer, error);
     const int cout = pad16(conv.cout);
     const bool half = layer.kind != Kind::kSame;
     layer.kc = layer.kind == Kind::kImage ? 16 : (cin % 64 == 0 && !half) ? 64 : cin % 32 == 0 ? 32 : 16;
@@ -414,12 +451,13 @@ class Net final : public TfixNativeNet {
       const bool last = i + 1 == piece.layers.size();
       __half* to = last ? static_cast<__half*>(out) : buffers[i % 2];
       if (layer.single) {
-        const dim3 block(32, 8);
-        const dim3 grid(static_cast<unsigned>((layer.ow + 31) / 32),
-                        static_cast<unsigned>((layer.oh + 7) / 8), static_cast<unsigned>(piece.batch));
-        single_kernel<<<grid, block, static_cast<std::size_t>(9) * layer.cin * sizeof(float), stream>>>(
-            from, layer.in_ld, to, layer.out_ld, layer.w.as<float>(), layer.single_bias, layer.cin, layer.oh,
-            layer.ow);
+        constexpr int kPoints = kSingleRow / kSingleLanes;
+        const dim3 block(kSingleRow, kSingleRows);
+        const dim3 grid(static_cast<unsigned>((layer.ow + kPoints - 1) / kPoints),
+                        static_cast<unsigned>((layer.oh + kSingleRows - 1) / kSingleRows),
+                        static_cast<unsigned>(piece.batch));
+        single_kernel<<<grid, block, 0, stream>>>(from, to, layer.w.as<float>(), layer.single_bias, layer.oh,
+                                                  layer.ow);
         from = to;
         continue;
       }
@@ -457,6 +495,7 @@ class Net final : public TfixNativeNet {
   RifeNativeSums sums_;
   int sms_ = 1;
   std::vector<Piece> pieces_;
+  std::unique_ptr<TfixHead> head_;
 };
 
 }  // namespace
@@ -499,6 +538,11 @@ std::unique_ptr<TfixNativeNet> TfixNativeNet::create(const std::vector<RifeNativ
                  kernels::kTfixSupports, half.height, half.width, 1, error)) {
     error = "tête : " + error;
     return nullptr;
+  }
+  if (!encoder) {
+    // Une tête d'une autre forme reste couche par couche : la raison n'empêche rien.
+    std::string unfused;
+    net->fuse_head(TfixHead::create(pieces.back(), sums, unfused));
   }
   // Les poids partent par cudaMemcpy, que les flux non bloquants des voies n'attendent pas.
   if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) {

@@ -90,38 +90,53 @@ Différences :
 - **la variante de tuile** : eux la chronomètrent au chargement ; nous la choisissons par une règle (même
   remarque que [`rife-natif.md`](rife-natif.md)).
 
-La dernière convolution de la tête (32 → 1) passe par un petit noyau à part (`single_kernel`, un fil par
-point, sommes f32 sur les cœurs CUDA) : sur les tensor cores, sa tuile de 16 sorties pour une faisait 12 % du
-travail de la fenêtre.
+## La colle et la tête (novembre 2026, après le premier profil)
+
+Le profil par noyau (nsys `--cuda-graph-trace=node`) et les plafonds couche par couche
+(`/mnt/project-files/chantier-natif/tfix-plafonds.md` : fenêtre à 1,08 ms en demi-taille, 0,22 ms tout fondu)
+ont montré que les convolutions natives étaient déjà près de leur plafond, deux fois plus rapides que TensorRT,
+et que l'écart venait d'ailleurs :
+
+- **la colle par pixel** : `first_kernel`, `glue_kernel` et `conf_kernel` écrivaient leurs 15 à 32 canaux deux
+  octets à la fois, au pas d'un point (64 octets) d'un fil à l'autre, et relisaient Y de même (10 à 28 fois
+  leur plafond). Un point s'écrit et se lit maintenant en mots de 16 octets (`tfix::store_point`,
+  `load_point`, `View::pair` dans `tfix_fused.cuh`) ; le chemin en plans de TensorRT garde ses calculs. La
+  fenêtre native est passée de 3,32 à 2,02 ms par passe à l'essai ;
+- **la tête** (`tfix_head.cu`) : ses trois convolutions (25 → 32 et 32 → 32 activées, puis 32 → 1) en un noyau,
+  par tuiles de 16 × 8 points. L'entrée, halo de trois points compris, est copiée une fois en mémoire partagée
+  ; la première convolution en tire 20 × 12 points, la deuxième 18 × 10, la dernière les 16 × 8 sur les cœurs
+  CUDA (deux fils par point, sommes f32). Les deux activations du milieu (200 des 390 Mo de la fenêtre en
+  demi-taille) ne quittent plus la puce. Tensor cores (mma m16n8k16, mêmes sommes f16, mixtes et f32), huit
+  warps et 45 Ko par bloc : deux blocs par SM sur Ada, et la tuile tient sur Turing. Les index des fragments
+  ont été vérifiés par une émulation sur processeur contre une convolution directe (écart nul, bords compris).
+  Une tête d'une autre forme passe couche par couche.
+
+Fondre aussi `conf_kernel` dans la tête serait plus lent : pour son halo de trois points, conf calculerait
+22 × 14 points pour 128 utiles, et 2,4 fois ses cellules pleine taille, pour 100 Mo épargnés.
+
+## État
+
+Mesuré sur la RTX 4070 Ti (Re:Zero, demi-taille, Normal, `--one-lane`), une passe de l'essai au chargement :
+
+| | justesse (f16) | natif | TensorRT | retenu |
+|---|---|---|---|---|
+| encodeur | 64,7 dB | 0,11 ms | 0,12 ms | natif |
+| fenêtre, couche par couche | 56,2 dB | 3,32 ms | 2,14 ms | TensorRT |
+| fenêtre, colle en 16 octets | 56,2 dB | 2,02 ms | 2,05 ms | TensorRT (1,5 %, sous la marge de 2 %) |
+| fenêtre, tête fondue (8 warps) | 56,2 dB | 2,01 ms | 2,16 ms | natif |
+
+En lecture, la fenêtre native fait 7,33 ms en médiane (p95 7,53) contre 7,71 en TensorRT, l'encodeur 0,29 ms.
+Les noyaux y durent environ trois fois leur temps d'essai, pour TensorRT comme pour le natif : la carte, peu
+chargée par un épisode à 24 i/s, ne monte sans doute pas à ses fréquences hautes. Le profil de lecture donne
+la tête fondue à 2,91 ms (32 % du GPU), `conf_kernel` à 1,03 ms : la tête reste le premier poste (plafond
+d'environ 0,26 ms à l'essai, halo compris), à regarder avec ncu.
 
 ## Mémoire
 
 Par pixel, les tampons de la fenêtre grossissent (26 → 32 et 25 → 32 canaux) ; la zone de travail des noyaux
-garde deux tampons de la plus grande activation (la tête : 6 × 32 canaux à demi-résolution du réseau), soit
-environ 400 Mo à pleine taille en 1080p et 100 Mo en demi-taille (le défaut). L'entrée de la tête n'est plus
-lue après sa première convolution : elle pourrait servir de second tampon (200 Mo de moins à pleine taille).
-
-## État
-
-Mesuré sur la RTX 4070 Ti (Re:Zero, Normal, `--one-lane`, médianes de trois tours ABAB, avant le petit noyau de
-la tête) :
-
-| | demi-taille | pleine taille |
-|---|---|---|
-| justesse, sommes f16 (encodeur, fenêtre) | 64,7 et 56,0 dB | 65,3 et 57,7 dB |
-| encodeur, natif contre TensorRT | 0,25 contre 0,34 ms | 0,36 contre 0,46 ms |
-| fenêtre, natif contre TensorRT | 10,55 contre 7,85 ms | 16,29 contre 13,25 ms |
-
-L'encodeur natif gagne ; la fenêtre native perd, et le choix au temps la laisse à TensorRT. Le travail de la
-fenêtre en demi-taille (s2, en MAC, rembourrage compris) : la tête près des deux tiers (270 × 480, six appuis,
-32 canaux), les trois blocs le reste. Un premier profil nsys (30 s, `--cuda-graph-trace=node`) n'a vu de la
-fenêtre, native ou TensorRT, que l'essai au chargement (`conf_kernel` 4 fois) : la cause reste à trouver. Il
-montre déjà l'encodeur : 0,14 ms de GPU par image en natif (trois convolutions et `traits_kernel`) contre 0,20 ms
-pour TensorRT (convolutions, Resize, reformatages).
-
-Avec le choix au temps (e75530c9) : encodeur natif retenu (64,7 dB, une passe à 0,11 contre 0,12 ms), fenêtre
-laissée à TensorRT (56,2 dB, une passe à 3,32 contre 2,14 ms) ; en lecture, encodeur à 0,29 ms et fenêtre à
-7,74 ms en médiane.
+garde deux tampons de la plus grande activation (la tête couche par couche : 6 × 32 canaux à demi-résolution
+du réseau), soit environ 400 Mo à pleine taille en 1080p et 100 Mo en demi-taille (le défaut). La tête fondue
+n'en a pas besoin ; la zone reste réservée pour une tête qui passerait couche par couche.
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 
