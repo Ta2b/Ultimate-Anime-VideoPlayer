@@ -3,8 +3,11 @@
 // en tours intercalés, l'aiguillage de chaque morceau vers un réseau natif ou vers TensorRT, et un morceau
 // seul (rife_native_trial.h).
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <cuda_fp16.h>
 #include <format>
+#include <limits>
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -50,13 +53,55 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
     cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
     std::span<const Tensor> outputs, std::size_t elements) {
   forget_passes();
-  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée.
+  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée. Quand le réseau du dernier
+  // bloc refait X à la volée (il n'y écrit que le flot, canaux 24 à 27, que lit la fin), X part de NaN avant
+  // la dernière passe, puis son flot est relu : un pixel oublié y reste non fini. La sortie ne suffit pas à
+  // le voir, la fin d'une variante image ramenant un flot NaN au bord de la fenêtre (warp::tap_at) ; une
+  // sortie entière à NaN le rend alors à la comparaison, qui écarte l'option.
+  const int last = plan_.blocks - 1;
+  const bool glue = glued(last);
+  kernels::FusedDims x = kernels::rife_fused_x(plan_, last, height_, width_);
+  x.channels = pitch(x.channels);
+  const auto x_last = [&] {
+    return static_cast<std::byte*>(shared->data()) + scratch_offset_ +
+           layout_.x[static_cast<std::size_t>(last)];
+  };
   for (int pass = 0; pass < 3; ++pass) {
+    // Les sorties partent de NaN : un pixel que la fin (à part ou dans la dernière couche) n'écrit pas ne
+    // garde pas la valeur d'une passe d'avant, TensorRT compris.
+    for (const Tensor& out : pass == 2 ? outputs : std::span<const Tensor>{}) {
+      std::size_t count = 1;
+      for (const auto d : out.shape.dims) count *= static_cast<std::size_t>(d);
+      if (auto ok = cuda_check(cudaMemsetAsync(fused_address(out), 0xFF, count * 2U, stream),
+                               "RIFE natif : sortie à NaN");
+          !ok)
+        return std::unexpected(std::move(ok.error()));
+    }
+    if (pass == 2 && glue) {
+      if (auto ok =
+              cuda_check(cudaMemsetAsync(x_last(), 0xFF, static_cast<std::size_t>(x.elements()) * 2U, stream),
+                         "RIFE natif : X du dernier bloc à NaN");
+          !ok)
+        return std::unexpected(std::move(ok.error()));
+    }
     const Tensor inputs[]{input};
     if (auto ok = enqueue(stream, shared, inputs, outputs); !ok)
       return std::unexpected(std::move(ok.error()));
     if (auto ok = cuda_check(cudaStreamSynchronize(stream), "RIFE natif : essai"); !ok)
       return std::unexpected(std::move(ok.error()));
+  }
+  // En variante mouvement, la fin sort le flot tel quel : un NaN s'y voit déjà, la relecture n'y sert pas.
+  bool unwritten = false;
+  if (glue && !motion_) {
+    const auto pixels = static_cast<std::size_t>(x.height) * static_cast<std::size_t>(x.width);
+    std::vector<__half> flow(pixels * 4U);
+    const std::size_t row = static_cast<std::size_t>(x.channels) * 2U;
+    if (auto ok =
+            cuda_check(cudaMemcpy2D(flow.data(), 8, x_last() + 48, row, 8, pixels, cudaMemcpyDeviceToHost),
+                       "RIFE natif : flot du dernier bloc");
+        !ok)
+      return std::unexpected(std::move(ok.error()));
+    unwritten = !std::ranges::all_of(flow, [](__half v) { return std::isfinite(__half2float(v)); });
   }
   std::vector<__half> half(elements);
   if (auto ok =
@@ -65,13 +110,16 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
       !ok)
     return std::unexpected(std::move(ok.error()));
   std::vector<float> out(elements);
-  std::ranges::transform(half, out.begin(), [](__half v) { return __half2float(v); });
+  if (unwritten)
+    std::ranges::fill(out, std::numeric_limits<float>::quiet_NaN());
+  else
+    std::ranges::transform(half, out.begin(), [](__half v) { return __half2float(v); });
   return out;
 }
 
 std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_times(
     cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
-    std::span<const Tensor> outputs, std::span<const std::vector<int>> routes) {
+    std::span<const Tensor> outputs, std::span<const TrialRoute> routes) {
   const auto failed = [](cudaError_t error, const char* step) {
     static_cast<void>(cudaGetLastError());
     return std::unexpected(cuda_refusal(error, std::format("RIFE natif : mesure du temps ({})", step)));
@@ -91,7 +139,8 @@ std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_times(
   // Le lot de l'aiguillage v. warm : passes de chauffe (au premier tour, un premier lancement puis une
   // capture par emplacement de A).
   const auto batch = [&](std::size_t v, int warm) -> std::expected<double, Refusal> {
-    set_route(routes[v]);
+    set_route(routes[v].pieces);
+    set_fused_end(routes[v].fused_end);
     std::expected<void, Refusal> ok;
     for (int i = 0; i < warm && ok; ++i) ok = pass();
     cudaError_t e = ok ? cudaEventRecord(start.event, stream) : cudaSuccess;
@@ -118,6 +167,18 @@ std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_times(
   return times;
 }
 
+std::expected<std::vector<double>, Refusal> RifeFusedEngine::trial_mix_times(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
+    std::span<const Tensor> outputs, const std::vector<int>& route) {
+  set_route(route);
+  set_fused_end(true);
+  std::vector<TrialRoute> routes{{}, {.pieces = route}};
+  auto* base = static_cast<std::byte*>(shared->data()) + scratch_offset_;
+  if (fused_end(finish_params(fused_address(input), base, outputs)))
+    routes.push_back({.pieces = route, .fused_end = false});
+  return trial_times(stream, shared, input, outputs, routes);
+}
+
 void RifeFusedEngine::set_route(std::vector<int> route) {
   route_ = std::move(route);
   native_on_ = false;
@@ -130,6 +191,12 @@ void RifeFusedEngine::set_route(std::vector<int> route) {
         std::max(native_workspace_, natives_[static_cast<std::size_t>(route_[p])]->workspace_bytes());
     route_code_ |= static_cast<std::uintptr_t>(route_[p] + 1) << (3U * p);
   }
+  if (!fused_end_) route_code_ |= kSeparateEnd;
+}
+
+void RifeFusedEngine::set_fused_end(bool on) {
+  fused_end_ = on;
+  route_code_ = on ? route_code_ & ~kSeparateEnd : route_code_ | kSeparateEnd;
 }
 
 std::expected<void, Refusal> RifeFusedEngine::run_piece(cudaStream_t stream,
@@ -149,16 +216,17 @@ std::expected<void, Refusal> RifeFusedEngine::run_piece(cudaStream_t stream,
         fused_tensor(reinterpret_cast<std::uintptr_t>(base + layout_.encode), 0, 4, height_, width_);
     return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
   }
-  const auto i = static_cast<std::size_t>(piece - 1);
-  if (net != nullptr)
-    return cuda_check(net->block(stream, piece - 1, base + layout_.x[i], base + layout_.y[i], arena->data()),
-                      "RIFE natif : bloc");
-  const kernels::FusedDims x = kernels::rife_fused_x(plan_, piece - 1, height_, width_);
-  const kernels::FusedDims y = kernels::rife_fused_y(plan_, piece - 1, height_, width_);
-  const auto at = [base](std::size_t offset) { return reinterpret_cast<std::uintptr_t>(base + offset); };
-  const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
-  const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
-  return blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1), std::span(&block_out, 1));
+  // Un bloc dont un réseau natif sait calculer l'entrée à la volée se mesure colle comprise, quelle que soit
+  // l'option (ce réseau sans elle, use_glue, compris) : sans elle, TensorRT et un réseau qui ne la refait pas
+  // passeraient pour plus rapides.
+  const int b = piece - 1;
+  const auto [encode_a, encode_b] = trial_encodes();
+  const void* const in = fused_address(input);
+  const bool with_glue = std::ranges::any_of(natives_, [b](const auto& n) { return n->can_glue(b); });
+  if (with_glue && (net == nullptr || !net->glues(b))) {
+    if (auto ok = launch_glue(stream, in, b, base, encode_a, encode_b); !ok) return ok;
+  }
+  return run_block(stream, arena, in, b, base, encode_a, encode_b, net);
 }
 
 }  // namespace kirari::gpu::cuda

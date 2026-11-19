@@ -15,13 +15,13 @@
 #include <cstdint>
 #include <cuda_fp16.h>
 
+#include "gpu/cuda/backend/rife_finish.cuh"
 #include "gpu/cuda/backend/rife_fused_kernels.h"
+#include "gpu/cuda/backend/rife_glue.cuh"
 #include "gpu/cuda/backend/warp_lib.cuh"
 
 namespace kirari::gpu::cuda {
 namespace {
-
-using warp::rounded;
 
 // Les C valeurs d'un pixel de X, arrondies en FP16, en plans ou par pixel (pitch 0 ou P). Par pixel, les
 // canaux C à P - 1 sont écrits à zéro (les poids que TensorRT y applique sont nuls, mais un NaN resté en
@@ -102,24 +102,6 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
       static_cast<std::size_t>(oy) * static_cast<std::size_t>(p.out_width) + static_cast<std::size_t>(ox), v);
 }
 
-// Z (DepthToSpace CRD de Y, facteur 2) lu dans un Y relevé : Z[c][zy][zx] = Y[4c + 2 (zy & 1) + (zx & 1)].
-__device__ __forceinline__ float z_at(const warp::Staged& s, int c, int zy, int zx) {
-  return __half2float(s.at(zy >> 1, zx >> 1)[4 * c + 2 * (zy & 1) + (zx & 1)]);
-}
-
-// Resize bilinéaire demi-pixel du canal c de Z au point pleine résolution, arrondi FP16 comme la sortie du
-// Resize du graphe.
-__device__ __forceinline__ float z_enlarge(const warp::Staged& s, int c, const warp::Axis& ax,
-                                           const warp::Axis& ay) {
-  return rounded(warp::lerp2(z_at(s, c, ay.i0, ax.i0), z_at(s, c, ay.i0, ax.i1), z_at(s, c, ay.i1, ax.i0),
-                             z_at(s, c, ay.i1, ax.i1), ax, ay));
-}
-
-// Canaux relevés par pixel de Y : 16 pour un flot seul (les 4 canaux de flot de Z à ses quatre parités), 56
-// pour le dernier bloc (flot, masque, attributs : 52 canaux, complétés au pas HWC8).
-constexpr int kFlowStride = 16;
-constexpr int kLastStride = 56;
-
 // La tuile de sorties d'un bloc de 256 fils et la place réservée par source (en pixels de Y). Une source
 // d'échelle s ≥ d couvre au plus (largeur + 2) / 2 + 1 colonnes de Y et autant de lignes : 17 × 5 en pleine
 // résolution, 10 × 4 réduite (vérifié pour d de 1 à 32 et s ≥ d) ; la marge couvre les arrondis.
@@ -138,17 +120,8 @@ __device__ __forceinline__ void stage_sources(const FusedGlueParams& p, warp::Sp
   int offset = 0;
 #pragma unroll
   for (int j = 0; j < K; ++j) {
-    const FusedFlowSource& f = p.source[j];
-    const float inv = 1.0F / static_cast<float>(f.scale);
-    const warp::Span zr = warp::coarse_span(py.lo, py.hi, inv, 2 * f.height);
-    const warp::Span zc = warp::coarse_span(px.lo, px.hi, inv, 2 * f.width);
-    const warp::Span rows{zr.lo >> 1, zr.hi >> 1};
-    const warp::Span cols{zc.lo >> 1, zc.hi >> 1};
-    const int stride = j == K - 1 ? kLastStride : kFlowStride;
-    warp::stage_region(stage + offset, stride, static_cast<const __half*>(f.y), f.height, f.width, f.pitch, 0,
-                       j == K - 1 ? 52 : 16, rows, cols);
-    src[j] = {stage + offset, rows.lo, cols.lo, cols.hi - cols.lo + 1, stride};
-    offset += stride * Capacity;
+    src[j] = glue::stage_source(p.source[j], j == K - 1, px, py, stage + offset);
+    offset += (j == K - 1 ? glue::kLastStride : glue::kFlowStride) * Capacity;
   }
 }
 
@@ -157,7 +130,7 @@ __device__ __forceinline__ void stage_sources(const FusedGlueParams& p, warp::Sp
 template <bool Coarse, int K>
 __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
   using Tile = GlueTile<Coarse>;
-  __shared__ __align__(16) __half stage[((K - 1) * kFlowStride + kLastStride) * Tile::kCapacity];
+  __shared__ __align__(16) __half stage[((K - 1) * glue::kFlowStride + glue::kLastStride) * Tile::kCapacity];
   const int d = Coarse ? p.reduce : 1;
   const int base = Coarse ? d / 2 - 1 : 0;
   const int last_tap = Coarse ? 1 : 0;
@@ -194,47 +167,8 @@ __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
   const int px = d * ox + base + tx;
   const int py = d * oy + base + ty;
 
-  // Flot accumulé (Add : sommes FP16 de chaque bloc, multiplié par l'échelle de son Resize).
-  float fl[4];
-  warp::Axis ax{};
-  warp::Axis ay{};
-#pragma unroll
-  for (int j = 0; j < K; ++j) {
-    const FusedFlowSource& f = p.source[j];
-    const float inv = 1.0F / static_cast<float>(f.scale);
-    ax = warp::coarse_axis(px, inv, 2 * f.width);
-    ay = warp::coarse_axis(py, inv, 2 * f.height);
-    const float scale = static_cast<float>(f.scale);
-#pragma unroll
-    for (int k = 0; k < 4; ++k) {
-      const float r = z_enlarge(src[j], k, ax, ay) * scale;
-      fl[k] = j == 0 ? r : rounded(fl[k] + r);
-    }
-  }
-
   float v[28];
-  const std::size_t plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
-  const auto* input = static_cast<const __half*>(p.input);
-  const warp::Bounds whole{0, 0, p.width, p.height};
-  // Warp des deux images (7 canaux chacune : 3 de l'image, 4 de l'encodage).
-#pragma unroll
-  for (int n = 0; n < 2; ++n) {
-    const warp::Tap tap = warp::tap_at(px, py, fl[2 * n], fl[2 * n + 1], whole);
-    const auto* encode = static_cast<const __half*>(n == 0 ? p.encode : p.encode_b);
-#pragma unroll
-    for (int ch = 0; ch < 7; ++ch) {
-      const __half* from = ch < 3 ? input + static_cast<std::size_t>(3 * n + ch) * plane
-                                  : encode + static_cast<std::size_t>(ch - 3) * plane;
-      v[ch < 3 ? 3 * n + ch : 6 + 4 * n + ch - 3] = rounded(warp::bilinear(from, tap, p.width));
-    }
-  }
-  v[14] = __half2float(input[6 * plane]);  // l'instant, à l'élément 0 (étape 5.2)
-  // Masque et attributs du dernier bloc calculé (ax, ay : ses axes, laissés par la dernière itération).
-#pragma unroll
-  for (int k = 0; k < 9; ++k) v[15 + k] = z_enlarge(src[K - 1], 4 + k, ax, ay);
-  const float flow_scale = 1.0F / static_cast<float>(d);
-#pragma unroll
-  for (int k = 0; k < 4; ++k) v[24 + k] = rounded(fl[k] * flow_scale);
+  glue::values<K>(p, src, px, py, d, v);
 
   const std::size_t out_plane =
       static_cast<std::size_t>(p.out_height) * static_cast<std::size_t>(p.out_width);
@@ -259,8 +193,8 @@ __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
 }
 
 // Fin : flot du dernier bloc ajouté ; image (warp bilinéaire ou Catmull-Rom, masque sigmoïde, mélange) ou
-// flot et masque. Lectures groupées : les 4 canaux de flot de x_last en 8 octets, chaque canal de Z en 8
-// octets (ses quatre parités), quand les tenseurs sont rangés par pixel.
+// flot et masque (rife_finish.cuh). Lectures groupées : les 4 canaux de flot de x_last en 8 octets, chaque
+// canal de Z en 8 octets (ses quatre parités), quand les tenseurs sont rangés par pixel.
 __global__ void __maxnreg__(128) fused_finish(FusedFinishParams p) {  // même raison que fused_glue (sm_75)
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -268,23 +202,10 @@ __global__ void __maxnreg__(128) fused_finish(FusedFinishParams p) {  // même r
   const std::size_t plane = static_cast<std::size_t>(p.height) * static_cast<std::size_t>(p.width);
   const std::size_t i =
       static_cast<std::size_t>(y) * static_cast<std::size_t>(p.width) + static_cast<std::size_t>(x);
-  const auto* input = static_cast<const __half*>(p.input);
-  const auto* last_x = static_cast<const __half*>(p.x_last);
   const auto* last_y = static_cast<const __half*>(p.y_last);
 
   float acc[4];
-  if (p.x_pitch > 0) {
-    const uint2 word = *reinterpret_cast<const uint2*>(last_x + i * static_cast<std::size_t>(p.x_pitch) + 24);
-    const float2 a = __half22float2(*reinterpret_cast<const __half2*>(&word.x));
-    const float2 b = __half22float2(*reinterpret_cast<const __half2*>(&word.y));
-    acc[0] = a.x;
-    acc[1] = a.y;
-    acc[2] = b.x;
-    acc[3] = b.y;
-  } else {
-#pragma unroll
-    for (int k = 0; k < 4; ++k) acc[k] = __half2float(last_x[static_cast<std::size_t>(24 + k) * plane + i]);
-  }
+  finish::accumulated(p, i, plane, acc);
   const int parity = 2 * (y & 1) + (x & 1);
   const std::size_t y_pixel = static_cast<std::size_t>(y >> 1) * static_cast<std::size_t>(p.y_width) +
                               static_cast<std::size_t>(x >> 1);
@@ -302,37 +223,7 @@ __global__ void __maxnreg__(128) fused_finish(FusedFinishParams p) {  // même r
       z[c] = __half2float(last_y[static_cast<std::size_t>(4 * c + parity) * y_plane + y_pixel]);
     }
   }
-  float fl[4];
-#pragma unroll
-  for (int k = 0; k < 4; ++k) fl[k] = rounded(acc[k] + z[k]);
-  const float sig = rounded(1.0F / (1.0F + __expf(-z[4])));
-  if (p.image == nullptr) {  // variante mouvement : le flot final et le masque
-    auto* flow = static_cast<__half*>(p.flow);
-    auto* out_mask = static_cast<__half*>(p.mask);
-#pragma unroll
-    for (int k = 0; k < 4; ++k) flow[static_cast<std::size_t>(k) * plane + i] = __float2half_rn(fl[k]);
-    out_mask[i] = __float2half_rn(sig);
-    return;
-  }
-  float warped[2][3];
-  const warp::Bounds window{p.window_left, p.window_top, p.window_left + p.window_width,
-                            p.window_top + p.window_height};
-#pragma unroll
-  for (int n = 0; n < 2; ++n) {
-    const warp::Tap tap = warp::tap_at(x, y, fl[2 * n], fl[2 * n + 1], window);
-#pragma unroll
-    for (int ch = 0; ch < 3; ++ch) {
-      const __half* source = input + static_cast<std::size_t>(3 * n + ch) * plane;
-      warped[n][ch] = rounded(p.cubic != 0 ? warp::catmull_rom(source, tap, p.width, window)
-                                           : warp::bilinear(source, tap, p.width));
-    }
-  }
-  const float rest = rounded(1.0F - sig);
-  auto* image = static_cast<__half*>(p.image);
-#pragma unroll
-  for (int ch = 0; ch < 3; ++ch)
-    image[static_cast<std::size_t>(ch) * plane + i] =
-        __float2half_rn(rounded(warped[0][ch] * sig) + rounded(warped[1][ch] * rest));
+  finish::at(p, x, y, i, plane, acc, z);
 }
 
 dim3 grid_for(int width, int height, dim3 block) {
@@ -398,15 +289,7 @@ cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t st
   if ((params.x_pitch != 0 && params.x_pitch != 32) || (params.y_pitch != 0 && params.y_pitch != 56))
     return cudaErrorInvalidValue;
   const dim3 block(32, 8);
-  // Fenêtre vide (l'appelant ne la connaît pas) : le tenseur entier, comme le promet FusedFinishParams. Sans
-  // ce repli, la prise bornait à [0, -1] et lisait avant le plan (image fausse des tests des noyaux).
-  FusedFinishParams p = params;
-  if (p.window_width <= 0 || p.window_height <= 0) {
-    p.window_left = 0;
-    p.window_top = 0;
-    p.window_width = p.width;
-    p.window_height = p.height;
-  }
+  const FusedFinishParams p = with_window(params);
   fused_finish<<<grid_for(p.width, p.height, block), block, 0, stream>>>(p);
   return cudaGetLastError();
 }

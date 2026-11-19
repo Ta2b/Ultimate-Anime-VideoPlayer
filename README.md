@@ -3,7 +3,7 @@
 # Kirari Player
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
-![Version 0.11.0](https://img.shields.io/badge/version-0.11.0-informational.svg)
+![Version 0.13.0](https://img.shields.io/badge/version-0.13.0-informational.svg)
 ![Linux · Windows](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows-lightgrey.svg)
 
 Un lecteur vidéo fait **uniquement pour l'anime**. Il agrandit l'image, ajoute des images intermédiaires et

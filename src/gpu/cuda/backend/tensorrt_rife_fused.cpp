@@ -3,12 +3,14 @@
 // fait un essai de toute la chaîne. Tout refus ici fait reprendre la chaîne sur le moteur RIFE entier
 // (chain_setup.cpp) : l'ONNX d'origine n'est jamais touché.
 #include <algorithm>
+#include <cstdint>
 #include <format>
 #include <fstream>
 #include <iterator>
 #include <system_error>
 #include <utility>
 
+#include "core/file_sync.h"
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
@@ -66,6 +68,16 @@ std::expected<std::vector<RifeNativePiece>, Refusal> native_pieces(
     }
   }
   return pieces;
+}
+
+// L'identité d'un verdict gardé (rife_native_verdict.h) : la carte (nom, architecture, UUID), le pilote, les
+// moteurs de la chaîne (clé d'artefact : taille, variante, warp, plan, noms des moteurs), les sources des
+// noyaux natifs et le seuil. Un changement de l'un refait l'essai.
+std::string verdict_identity(const cudaDeviceProp& device, int driver, const std::string& artifact_key) {
+  std::string uuid;
+  for (const char byte : device.uuid.bytes) uuid += std::format("{:02x}", static_cast<std::uint8_t>(byte));
+  return std::format("{}|sm{}.{}|{}|CUDA {}|{}|{}|{:.1f}", device.name, device.major, device.minor, uuid,
+                     driver, artifact_key, KIRARI_RIFE_NATIVE_SOURCES, kNativeMinDb);
 }
 
 }  // namespace
@@ -148,21 +160,13 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
   if (l2_keep_)
     (*engine)->keep_in_l2(persisting_l2(), static_cast<std::size_t>(properties_.accessPolicyMaxWindowSize));
   if (rife_native_) {
-    // --rife-native : un refus laisse la chaîne à TensorRT, chargée et intacte, sauf un contexte perdu.
-    auto pieces = native_pieces(artifact.path);
-    auto kept =
-        pieces ? (*engine)->try_native(*pieces, arena(), kNativeMinDb)
-               : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(pieces.error())));
-    // Un noyau fautif pendant l'essai (accès hors limites) perd le contexte CUDA : TensorRT n'y peut plus
-    // rien non plus, le chargement échoue au lieu de rendre une chaîne morte.
+    // Un refus laisse la chaîne à TensorRT, chargée et intacte, sauf un contexte perdu : un noyau fautif
+    // pendant l'essai (accès hors limites) le perd, TensorRT n'y peut plus rien non plus, le chargement
+    // échoue au lieu de rendre une chaîne morte.
+    auto kept = settle_rife_native(**engine, artifact);
     if (!kept && kept.error().code == RefusalCode::DeviceLost)
       return std::unexpected(std::move(kept.error()));
-    if (kept) {
-      // Les temps et la justesse de chaque morceau, le profil des couches, puis le verdict.
-      for (std::size_t i = 0; i < kept->size(); ++i)
-        log(i + 1 == kept->size() && !(*engine)->native() ? BackendLogLevel::Warn : BackendLogLevel::Info,
-            (*kept)[i]);
-    } else
+    if (!kept)
       log(BackendLogLevel::Warn, "RIFE natif refusé, TensorRT garde la chaîne : " + kept.error().detail);
   }
   log(BackendLogLevel::Info,
@@ -171,6 +175,32 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
           key->motion ? "flot et masque"
                       : (key->warp == kernels::RifeWarp::CatmullRom ? "image (warp Catmull-Rom)" : "image")));
   return std::unique_ptr<Engine>(std::move(*engine));
+}
+
+std::expected<void, Refusal> TensorRtBackend::settle_rife_native(RifeFusedEngine& engine,
+                                                                 const Artifact& artifact) {
+  auto pieces = native_pieces(artifact.path);
+  if (!pieces) return std::unexpected(std::move(pieces.error()));
+  const std::filesystem::path file = cache_dir_ / rife_verdict::file_name(verdict_identity(
+                                                      properties_, driver_version_, artifact.cache_key));
+  std::ifstream in(file, std::ios::binary);
+  const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+  if (const auto verdict = rife_verdict::parse(text, pieces->size(), rife_verdict::kOptionsMax)) {
+    auto cached = engine.try_cached(*pieces, arena(), *verdict);
+    if (!cached) return std::unexpected(std::move(cached.error()));
+    for (const std::string& line : cached->lines)
+      log(cached->held ? BackendLogLevel::Info : BackendLogLevel::Warn, line);
+    if (cached->held) return {};
+  }
+  auto trial = engine.try_native(*pieces, arena(), kNativeMinDb);
+  if (!trial) return std::unexpected(std::move(trial.error()));
+  // Les temps et la justesse de chaque morceau, le profil des couches, puis le verdict.
+  for (std::size_t i = 0; i < trial->lines.size(); ++i)
+    log(i + 1 == trial->lines.size() && !engine.native() ? BackendLogLevel::Warn : BackendLogLevel::Info,
+        trial->lines[i]);
+  if (auto saved = core::write_text_atomically(file, rife_verdict::text_of(trial->verdict)); !saved)
+    log(BackendLogLevel::Warn, "RIFE natif : verdict non gardé, l'essai se refera : " + saved.error().detail);
+  return {};
 }
 
 std::size_t TensorRtBackend::persisting_l2() {

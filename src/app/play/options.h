@@ -198,10 +198,10 @@ struct PlayOptions {
   // --span-native-edges (essai) : les bords du SPAN FP8 (conv_1, conv_cat, to_pixel) par les mêmes noyaux
   // (gpu::kTrialSpanNative) ; éteint jusqu'à sa mesure.
   bool span_native_edges = false;
-  // --rife-native (essai) : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA
-  // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
-  // finale.
-  bool rife_native = false;
+  // L'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA, morceau par morceau à côté
+  // de TensorRT (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB : le défaut depuis la séance PC
+  // (4.25 et 4.22 lite plus rapides de 26 et 17 % par passe), --no-rife-native (essai) l'éteint.
+  bool rife_native = true;
   // --gmfss-native (essai) : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par
   // nos noyaux CUDA (docs/gmfss-natif.md, gpu::kTrialGmfssNative), l'IFNet et GMFlow restant des moteurs
   // TensorRT ; chacun gardé à 45 dB de son graphe TensorRT entier et plus rapide que lui, éteint jusqu'à la

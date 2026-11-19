@@ -183,6 +183,14 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   const auto planar = parse({"épisode.mkv", "--no-rife-hwc8"});
   REQUIRE(planar);
   CHECK_FALSE(planar->rife_hwc8);
+  // Le RIFE natif : allumé par défaut, --no-rife-native rend la chaîne à TensorRT, --rife-native reste lu.
+  CHECK(options->rife_native);
+  const auto trt = parse({"épisode.mkv", "--no-rife-native"});
+  REQUIRE(trt);
+  CHECK_FALSE(trt->rife_native);
+  const auto native = parse({"épisode.mkv", "--rife-native"});
+  REQUIRE(native);
+  CHECK(native->rife_native);
 }
 
 TEST_CASE("kirari play : refus nommés", "[app][options]") {
