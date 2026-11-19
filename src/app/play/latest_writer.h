@@ -20,7 +20,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class LatestWriter {
  public:
@@ -77,4 +77,4 @@ class LatestWriter {
   std::jthread thread_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

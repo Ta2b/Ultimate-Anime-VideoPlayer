@@ -2,14 +2,14 @@
 
 #include "app/play/i18n_fr.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Export, moteurs, application : (clé anglaise, français).
 constexpr std::array kSystemPages{
     Entry{"A notification when a new version is out; you install it yourself.",
           "Une notification quand une nouvelle version existe ; vous l'installez vous-même."},
-    Entry{"AJP is already the default video player.", "AJP est déjà le lecteur par défaut des vidéos."},
+    Entry{"Kirari is already the default video player.", "Kirari est déjà le lecteur par défaut des vidéos."},
     Entry{"Download page", "Page de téléchargement"},
     Entry{"The last check failed: {}", "La dernière vérification a échoué : {}"},
     Entry{"AV1 10-bit: smaller at equal quality; needs a GPU AV1 encoder (RTX 40/50, Radeon RX 7000/9000, "
@@ -115,8 +115,8 @@ constexpr std::array kSystemPages{
     Entry{"Very high aims for a picture identical to playback; High and Standard make smaller files.",
           "Très haute vise une image identique à la lecture ; Haute et Standard donnent des fichiers plus "
           "légers."},
-    Entry{"Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager.",
-          "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers."},
+    Entry{"Videos (mkv, mp4, webm, avi, mov…) open in Kirari from the file manager.",
+          "Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans Kirari depuis le gestionnaire de fichiers."},
     Entry{"Weekly", "Chaque semaine"},
     Entry{"With SPAN's Performance precision, the player prepares this mode by itself for the open video "
           "(about a minute, FP16 meanwhile). Redo it by hand here.",
@@ -133,4 +133,4 @@ std::span<const Entry> french_system() {
   return kSystemPages;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

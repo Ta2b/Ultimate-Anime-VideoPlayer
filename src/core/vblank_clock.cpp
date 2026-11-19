@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-namespace ajp::core {
+namespace kirari::core {
 
 void VblankClock::reset() {
   times_.clear();
@@ -112,4 +112,4 @@ std::int64_t VblankClock::output_latency_us() const {
   return sorted[sorted.size() / 2];
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

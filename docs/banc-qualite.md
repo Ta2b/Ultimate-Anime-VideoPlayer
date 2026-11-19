@@ -22,7 +22,7 @@ python3 -I tools/bench/qualite/rife_instants.py --video extrait-1080p.mkv --rese
 ```
 
 Il faut `python3` avec `numpy`, `onnx` et `onnxruntime`, `ffmpeg`, et `7z` pour le premier téléchargement des
-modèles (`tools/release/fetch-models.sh`, gardés dans `~/.cache/ajp-release-models`).
+modèles (`tools/release/fetch-models.sh`, gardés dans `~/.cache/kirari-release-models`).
 
 ## Ce qu'il mesure
 
@@ -202,7 +202,7 @@ et A49-13). Même échelle ½ : la moitié d'un plan 1080p de `calibration.mkv` 
 La réduction est celle de swscale lui-même, la remontée Spline36 celle de l'ingestion.
 
 ```sh
-python3 -I tools/bench/qualite/chroma444.py --modeles ~/.cache/ajp-release-models/modeles --md chroma444.md
+python3 -I tools/bench/qualite/chroma444.py --modeles ~/.cache/kirari-release-models/modeles --md chroma444.md
 ```
 
 Six plans, SPAN b8f64 FP16, ONNX Runtime 1.29 sur processeur.
@@ -235,7 +235,7 @@ comme libplacebo par défaut (Lanczos vers le haut, Hermite vers le bas). Les ha
 lecteur.
 
 ```sh
-python3 -I tools/bench/qualite/travail.py --modeles ~/.cache/ajp-release-models/modeles --md travail.md
+python3 -I tools/bench/qualite/travail.py --modeles ~/.cache/kirari-release-models/modeles --md travail.md
 ```
 
 Six plans, modèles Sharp1 en FP16, ONNX Runtime 1.29 sur processeur. PSNR contre la vérité de l'écran.
@@ -311,7 +311,7 @@ vraie image du milieu (ce que serait l'image si elle était une source : l'écar
 sources qui l'entourent), et par sa netteté (énergie du gradient, rapportée à SPAN de la vraie image).
 
 ```sh
-python3 -I tools/bench/qualite/ordre.py --modeles ~/.cache/ajp-release-models/modeles --md ordre.md
+python3 -I tools/bench/qualite/ordre.py --modeles ~/.cache/kirari-release-models/modeles --md ordre.md
 ```
 
 | RIFE | Allure | Ordre | PSNR vrai (dB) | PSNR face à SPAN de la vraie (dB) | Netteté | SSIM |

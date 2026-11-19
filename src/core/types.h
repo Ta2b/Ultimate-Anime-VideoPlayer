@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-namespace ajp {
+namespace kirari {
 
 // Identifie une source d'images : la vidéo décodée, ou la sortie d'un niveau
 // d'interpolation qui devient la source du niveau suivant.
@@ -19,7 +19,7 @@ struct SourceId {
 // Toute erreur qui traverse une frontière de module est un refus nommé,
 // renvoyé par std::expected<T, Refusal> et affiché tel quel.
 // Les codes de refus, une ligne chacun : l'énumération et son nom (name) en viennent (P5.18).
-#define AJP_REFUSAL_CODES(X)                                                                                 \
+#define KIRARI_REFUSAL_CODES(X)                                                                              \
   X(ProfileUnreadable) /* fichier absent ou TOML invalide */                                                 \
   X(FieldMissing)      /* clé obligatoire absente */                                                         \
   X(FieldType)         /* clé du mauvais type */                                                             \
@@ -94,9 +94,9 @@ struct SourceId {
   X(EncodeFailed)       /* l'encodeur ou le mux a refusé une image ou un paquet */
 
 enum class RefusalCode : std::uint8_t {
-#define AJP_REFUSAL_ENUM(code) code,
-  AJP_REFUSAL_CODES(AJP_REFUSAL_ENUM)
-#undef AJP_REFUSAL_ENUM
+#define KIRARI_REFUSAL_ENUM(code) code,
+  KIRARI_REFUSAL_CODES(KIRARI_REFUSAL_ENUM)
+#undef KIRARI_REFUSAL_ENUM
 };
 
 struct Refusal {
@@ -117,13 +117,13 @@ inline std::unexpected<Refusal> refuse(RefusalCode code, std::string detail) {
 
 constexpr std::string_view name(RefusalCode code) {
   switch (code) {
-#define AJP_REFUSAL_NAME(code) \
-  case RefusalCode::code:      \
+#define KIRARI_REFUSAL_NAME(code) \
+  case RefusalCode::code:         \
     return #code;
-    AJP_REFUSAL_CODES(AJP_REFUSAL_NAME)
-#undef AJP_REFUSAL_NAME
+    KIRARI_REFUSAL_CODES(KIRARI_REFUSAL_NAME)
+#undef KIRARI_REFUSAL_NAME
   }
   return "Unknown";
 }
 
-}  // namespace ajp
+}  // namespace kirari

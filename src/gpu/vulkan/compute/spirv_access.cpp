@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr std::uint32_t kMagic = 0x07230203;
@@ -74,4 +74,4 @@ std::uint64_t spirv_readonly_bindings(std::span<const std::uint32_t> words) {
   return bound & ~written;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

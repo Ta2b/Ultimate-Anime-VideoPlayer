@@ -20,7 +20,7 @@
 #include <ctime>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::int64_t suspend_aware_now_us() {
 #if defined(_WIN32)
@@ -120,4 +120,4 @@ void ScreenSaverHold::want(bool awake) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

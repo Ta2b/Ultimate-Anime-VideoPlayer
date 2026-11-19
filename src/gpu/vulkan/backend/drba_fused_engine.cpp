@@ -10,7 +10,7 @@
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using kernels::kDrbaFusedBlocks;
@@ -342,4 +342,4 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue(BackendQueue& queue, std::
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

@@ -1,226 +1,97 @@
-# Ultimate Anime VideoPlayer
+<img src="tools/release/linux/kirari.png" alt="" width="96" align="right">
+
+# Kirari Player
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
 ![Version 0.11.0](https://img.shields.io/badge/version-0.11.0-informational.svg)
 ![Linux · Windows](https://img.shields.io/badge/plateformes-Linux%20%C2%B7%20Windows-lightgrey.svg)
 
-Un lecteur vidéo fait pour l'anime. Il agrandit l'image avec les modèles **AnimeJaNai**, ajoute des images
-intermédiaires pour une animation fluide et convertit l'anime SDR en **HDR**, en temps réel, sur la carte
-graphique de votre PC. Il s'ouvre comme n'importe quel lecteur : double-clic sur une vidéo, et c'est tout.
+Un lecteur vidéo fait **uniquement pour l'anime**. Il agrandit l'image, ajoute des images intermédiaires et
+convertit l'anime SDR en HDR, **en temps réel**, pendant la lecture, sur la carte graphique de votre PC. Il
+s'ouvre comme n'importe quel lecteur : double-clic sur une vidéo, et c'est tout.
 
-<p align="center"><img src="docs/images/menu.png" alt="Le menu des paramètres : Vidéo, Audio et lecture, Général" width="560"></p>
+## Ses points forts
 
-## Sommaire
+- **Spécialisé anime.** Chaque étape est choisie et réglée pour l'animation : modèles entraînés sur l'anime,
+  traits nets et aplats propres, dessins tenus et coupes de scène respectés, interpolation seulement aux
+  cadences d'anime (23,976 à 30 i/s).
+- **Upscale et interpolation en temps réel, haute performance.** Agrandissement ×2 par les modèles
+  **AnimeJaNai** (SPAN), interpolation par **RIFE** ou **DistilDRBA** jusqu'à la fréquence de votre écran.
+  Le mode Auto règle la chaîne selon la carte, l'écran et la vidéo, et redescend tout seul quand la carte ne suit
+  plus. Moteurs coupés sur mesure, noyaux CUDA maison et FP8 sur les RTX récentes pour tenir la cadence.
+- **Auto HDR spécialisé anime.** L'anime SDR devient du HDR10 avec un grade pensé pour l'animation : surfaces
+  à luminosité stable d'un plan à l'autre, éclats (lumières, effets) qui montent vers le pic de l'écran, noirs
+  intacts. La sortie HDR ou SDR suit votre système, sans réglage ; sur un écran SDR, le même grade s'applique en
+  SDR.
+- **Stabilisation temporelle** (TemporalFix, facultative) : retire le scintillement du grain et de la
+  compression avant l'agrandissement.
+- **Export** (expérimental, pas encore au point) : la même chaîne rejouée image par image vers un fichier MKV,
+  MP4 ou MOV.
+- Et ce qu'on attend d'un lecteur : sous-titres (libass), pistes par langue préférée, épisode suivant, passage du
+  générique.
 
-- [Ce qu'il fait](#ce-quil-fait)
-- [Installation](#installation)
-- [Premier lancement](#premier-lancement)
-- [Niveaux de traitement](#niveaux-de-traitement)
-- [Le menu](#le-menu)
-- [HDR](#hdr)
-- [Raccourcis clavier](#raccourcis-clavier)
-- [Moteurs et cartes graphiques](#moteurs-et-cartes-graphiques)
-- [Mises à jour](#mises-à-jour)
-- [Construire depuis les sources](#construire-depuis-les-sources)
-- [Remerciements](#remerciements)
-- [Licence](#licence)
+## Cartes graphiques
 
-## Ce qu'il fait
+**Le lecteur est surtout testé et optimisé sur NVIDIA RTX**, avec le moteur TensorRT : c'est là qu'il donne
+le meilleur et que tout a été mesuré.
 
-- **Agrandissement ×2** par les modèles SPAN d'AnimeJaNai HD V3.1 : SPAN double la résolution de travail,
-  traits nets et aplats propres. Aux niveaux Qualité et Ultra, une source jusqu'à 1080p entre entière dans
-  SPAN (une 1080p sort en 4K) avec le modèle le plus fin (Balanced, b8f64). Aux niveaux Rapide et Normal, la
-  source est d'abord réduite à la moitié de l'écran ou moins (de 480p à 720p selon le niveau et l'écran, voir le
-  tableau des niveaux), puis SPAN la double ; libplacebo ajuste ensuite à la taille de l'écran.
-- **Interpolation** par RIFE 4.22 lite, ou 4.26 aux niveaux Qualité et Ultra. Pour les petites cartes, 4.25 lite
-  (niveau « Très rapide ») et Anime4K (Vidéo > Modèle) se choisissent à la main ; 4.25 et DistilDRBA se règlent
-  en avancé. Le mode Auto vise la fréquence de votre écran et
-  redescend tout seul quand la carte ne suit plus. Les coupes de scène et les dessins tenus ne sont pas
-  interpolés.
-- **HDR anime** : l'anime SDR passe en HDR10 avec un grade à luminosité stable d'un plan à l'autre (sur un écran SDR, la
-  courbe est réglée plan par plan). Le rendu est lumineux : une
-  surface blanche sort vers 70 % du pic de l'écran (690 nits sur un écran de 1 000 nits), et les éclats
-  (lumières, effets) montent au-dessus, vers le pic. Le noir pur reste noir, les scènes de nuit gardent leurs
-  détails. Sur un écran SDR, le même grade s'applique en SDR : les surfaces gardent leur niveau jusqu'à 90 % du
-  blanc, le blanc sort à 95 % et les éclats prennent les derniers 5 %.
-- **Netteté** réglable après l'agrandissement, à halo limité.
-- **Export** : l'agrandissement et l'interpolation rejoués image par image vers un fichier MKV, MP4 ou MOV
-  (avec le grade HDR anime : un fichier HDR10 en HEVC, AV1 ou sans perte, du SDR gradé en H.264).
-- Sous-titres (libass), choix des pistes par langue préférée, épisode suivant automatique, passage du générique.
-
-## Installation
-
-Téléchargez la dernière version sur la page des [releases](https://github.com/Ta2b/ajp-releases/releases) :
-
-| Système | Fichier | Remarque |
-|---|---|---|
-| Windows 10 et 11 (x64) | `ajp-windows-x64-setup.exe` | installeur ; ou `ajp-windows-x64.zip` à décompresser, puis lancer `ajp.exe` |
-| Linux (x64) | `ajp-linux-x86_64.AppImage` | rendre exécutable et lancer ; ou `ajp-linux-x64.tar.gz` à décompresser, puis lancer `ajp`. Vulkan et un pilote récent requis |
-| macOS 14+ (Apple Silicon) | aucun pour l'instant | délaissé, non publié (décision de novembre 2026) ; se construit depuis les sources |
-
-Mettez à jour le pilote de votre carte graphique avant le premier lancement. Le lecteur s'installe léger : il
-embarque son moteur Vulkan, et le moteur NVIDIA (TensorRT) se télécharge à part si vous le choisissez.
-
-## Premier lancement
-
-Un assistant de quelques écrans, tous sautables :
-
-1. **Bienvenue**.
-2. **Langues** audio et sous-titres préférées.
-3. **Intégration** : mises à jour, lecteur vidéo par défaut.
-4. **Moteur** (seulement s'il y a un choix à faire) : sur une carte NVIDIA RTX, TensorRT est proposé
-   (téléchargé depuis NVIDIA après l'accord de licence). Les autres cartes utilisent Vulkan, livré avec le
-   lecteur.
-5. **Prêt** : « Calibrer maintenant » essaie plusieurs réglages sur une séquence exigeante et garde la
-   meilleure combinaison que votre PC tient sans saccade ; « Régler moi-même » garde le niveau Auto estimé
-   pour la carte. La calibration prend environ 5 minutes en Vulkan, et environ 23 minutes avec TensorRT sur un
-   poste fixe (40 sur un portable), car TensorRT construit ses moteurs pendant l'essai. L'assistant affiche
-   l'estimation pour votre machine ; un essai limite est rejoué, ce qui peut l'allonger.
-
-Ensuite, `p` ouvre le menu des paramètres et `Tab` les statistiques à l'écran.
-
-## Niveaux de traitement
-
-Le niveau se choisit dans **Vidéo > Post-traitement**. **Auto**, le défaut, prend le niveau de votre carte et
-règle la chaîne selon l'écran et la vidéo ouverte. Changer un réglage à la main passe en **Personnalisé**.
-
-| Niveau | Agrandissement (résolution de travail) | Interpolation en mode Stable | Cartes typiques |
-|---|---|---|---|
-| Économe | aucun, la vidéo telle quelle | aucune | graphiques intégrés d'entrée de gamme, GT, MX, RTX A400 |
-| Rapide | SPAN depuis 480p (écran 1080p) ou 540p (écran 1440p et plus) | jusqu'à ×2 | GTX 9, 10 (sauf 1070 et 1080) et 16, RX 400 et 500, RX 5000 (sauf 5700), RX 6400 et 6500, Arc A3, Iris Xe, RTX portables d'entrée de gamme |
-| Normal | SPAN depuis 540p (écran 1080p) ou 720p (écran 1440p et plus) | jusqu'à ×3 | GTX 1070 et 1080, RTX 20 à 50 d'entrée de gamme, RX 5700, RX 6600 à 7600, Arc A5/A7/B5, Apple M, RTX 2080, 3070 et 3080 (bureau), RTX 4070 et 5070 portables |
-| Qualité | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 3080 Ti et 3090, RTX 4070, RTX 5070 (bureau), RX 6800 à 7800, RX 9060, Apple Pro et Max, RTX 4080 à 5090 portables |
-| Ultra | SPAN sur la source entière jusqu'à 1080p | jusqu'à ×4 | RTX 4080 à 5090, RX 7900, RX 9070, Apple Ultra |
-
-La priorité Fluidité descend la résolution de travail d'un cran (720p au plus en Qualité et Ultra) et relève
-d'un cran le plafond du multiplicateur (jusqu'à ×5). La priorité Image abaisse ce plafond d'un cran (×2 au
-minimum) ; elle ne monte pas la résolution aux niveaux Qualité et Ultra, déjà au plafond de 1080p. La calibration, qui mesure votre carte, peut monter plus haut. En mode **Instantané** de l'interpolation (le
-défaut), le multiplicateur n'a pas de plafond : il suit la fréquence de l'écran (jusqu'à ×6 sur un écran
-144 Hz pour une source à 23,976 i/s), et seul le plafond de cadence choisi dans le menu le borne. Le
-multiplicateur du tableau ne vaut qu'en mode **Stable** (le niveau Rapide du tableau n'a rien à voir avec ce
-mode). La table complète des cartes est
-[`data/gpu_tiers.toml`](data/gpu_tiers.toml).
-
-## Le menu
-
-| Catégorie | Pages |
-|---|---|
-| **Vidéo** | Post-traitement (niveau, agrandissement, netteté, interpolation), Couleurs (saturation, contraste, éclats), Affichage (filtre final, débandage ; noir OLED en avancé) |
-| **Audio et lecture** | Son (sortie, délai, calage sur l'écran), Lecture (langues, sous-titres, épisode suivant) |
-| **Général** | Application (langue, mises à jour, lecteur par défaut), Moteurs, Export, Statistiques, À propos |
-
-Les réglages qui s'appliquent en direct changent l'image tout de suite ; ceux qui demandent de recharger la
-chaîne attendent « Appliquer ». La case **Réglages avancés** montre le reste.
-
-## HDR
-
-Il n'y a pas de bouton HDR : le lecteur suit votre système.
-
-- HDR activé dans Windows (ou dans votre bureau Linux) sur un écran d'au moins 350 nits : sortie **HDR10**.
-- HDR coupé, écran SDR, ou écran « HDR » trop peu lumineux : sortie **SDR**, avec le même grade.
-- Allumer ou couper le HDR pendant la lecture bascule la sortie en direct.
-
-Le pic de l'écran se lit dans le système (étalonnage HDR de Windows, EDID) ; il se règle à la main dans les
-réglages avancés.
-
-## Raccourcis clavier
-
-| Touche | Action |
-|---|---|
-| Espace | pause |
-| ← → | reculer, avancer de 5 s |
-| ↑ ↓ | volume |
-| `m` | muet |
-| `f` | plein écran (Échap en sort) |
-| `a` / `j` | piste audio / sous-titres suivants |
-| `z` / `x` | sous-titres 100 ms plus tôt / plus tard |
-| `Ctrl` + `-` / `Ctrl` + `+` | son 100 ms plus tôt / plus tard |
-| `n` / Maj+`n` | épisode suivant / précédent |
-| Page↑ / Page↓ | chapitre suivant / précédent |
-| `o` | passer le générique |
-| `.` / `,` | image par image |
-| `p` | paramètres |
-| Tab | statistiques |
-| Ctrl+0 | sans grade ni interpolation (l'agrandissement reste) |
-| Ctrl+G / Ctrl+I | grade / interpolation |
-| `q` | quitter |
-
-Neuf actions se changent dans `user.toml` (section `[keys]`, dossier des données du lecteur) : `pause`,
-`seek_backward`, `seek_forward`, `step_forward`, `step_backward`, `processing_off`, `toggle_grade`,
-`toggle_interpolation` et `toggle_osd`. Les autres touches du tableau sont fixes et passent avant `[keys]` :
-`Ctrl` + `-` et `Ctrl` + `+` (délai du son) ne peuvent pas être données à une action, le lecteur le dit au
-chargement.
-`ajp --help` liste aussi les options de la ligne de commande.
-
-## Moteurs et cartes graphiques
+Les autres cartes (AMD, Intel, NVIDIA sans TensorRT) passent par le moteur **Vulkan**, livré avec le lecteur.
+Elles ont l'agrandissement et l'interpolation et **devraient fonctionner**, mais elles n'ont pas encore été
+essayées sur du vrai matériel. Quelques fonctions restent propres à TensorRT pour l'instant (stabilisation
+temporelle, GMFSS). Si quelque chose ne va pas sur votre carte, ouvrez une issue avec le journal (`kirari.log`) :
+c'est ainsi que ces voies seront corrigées. Pour les petites cartes et les graphiques intégrés, Anime4K
+(shaders) prend la place de SPAN.
 
 | Carte | Moteur | Livraison |
 |---|---|---|
-| NVIDIA RTX | TensorRT (CUDA) | téléchargé au premier lancement : notre module, puis les bibliothèques de NVIDIA |
-| AMD, Intel, NVIDIA sans TensorRT | Vulkan | livré avec le lecteur |
-| Apple Silicon | Core ML | se construit depuis les sources (macOS n'est plus publié) |
+| NVIDIA RTX | TensorRT | proposé au premier lancement, téléchargé à part |
+| AMD, Intel, autres NVIDIA | Vulkan | livré avec le lecteur |
 
-TensorRT construit ses moteurs pour votre carte : quelques minutes pour chaque taille d'image, puis de
-nouveau après une mise à jour de TensorRT. Les moteurs construits sont gardés d'une lecture à l'autre, jusqu'à 45 jours sans usage et dans la limite d'environ
-8 Gio, mesurée au lancement (les moins récents partent d'abord ; un moteur servi dans les dernières 24 h n'est jamais retiré).
-Détails : [`docs/moteurs.md`](docs/moteurs.md).
+## Installation
 
-**Cartes AMD et Intel : non testées.** Sous Vulkan, une carte AMD ou Intel a les mêmes fonctions qu'une
-NVIDIA sous TensorRT, mode Performance (FP8) compris sur une Radeon RX 9000 (et la variante INT8 du SPAN sur
-les cartes où l'INT8 va plus vite que le FP16), et tout devrait fonctionner.
-Mais rien n'a été essayé sur une vraie carte AMD ou Intel : seulement sur le Vulkan logiciel (lavapipe) des
-tests. Si quelque chose ne va pas sur la vôtre, ouvrez une issue avec le journal (`ajp.log`) : c'est ainsi que
-ces voies seront corrigées.
+Téléchargez la dernière version sur la page des [releases](https://github.com/Ta2b/kirari-player/releases) :
 
-## Mises à jour
+| Système | Fichier |
+|---|---|
+| Windows 10 et 11 (x64) | `kirari-windows-x64-setup.exe` (installeur), ou `kirari-windows-x64.zip` |
+| Linux (x64) | `kirari-linux-x86_64.AppImage`, ou `kirari-linux-x64.tar.gz` |
 
-Le lecteur regarde une fois par jour, par semaine ou à chaque lancement (au choix) s'il existe une nouvelle version
-et vous prévient ; la page Général > Application ouvre la page de la version, et vous l'installez vous-même. Au
-premier lancement, il lit la liste des moteurs téléchargeables (pour proposer TensorRT) avant que l'assistant vous
-demande si vous voulez des vérifications. « Jamais » ne vérifie rien : Général >
-Application. Les manifestes sont signés (Ed25519) ; vos réglages sont
-gardés.
+Mettez à jour le pilote de votre carte graphique avant le premier lancement. Kirari Player s'appelait ajp jusqu'à la
+0.11 : il reprend tout seul vos réglages et vos moteurs déjà construits. macOS n'est plus publié pour
+l'instant.
+
+Au premier lancement, un court assistant demande vos langues, propose TensorRT sur une NVIDIA RTX, puis peut
+calibrer le lecteur sur votre machine. Ensuite, **`p`** ouvre les paramètres, **Tab** les statistiques, et
+`kirari --help` liste les options de la ligne de commande.
 
 ## Construire depuis les sources
 
-Prérequis : CMake 3.28+, Ninja, un compilateur C++23 (GCC 13+, Clang 20+, MSVC 17.10+).
+CMake 3.28+, Ninja et un compilateur C++23 (GCC 13+, Clang 20+, MSVC 17.10+) :
 
 ```sh
-# Linux, dépendances construites depuis leurs dépôts
-tools/deps/linux-from-source.sh ~/ajp-deps
-export AJP_DEPS_PREFIX=~/ajp-deps
+tools/deps/linux-from-source.sh ~/kirari-deps
+export KIRARI_DEPS_PREFIX=~/kirari-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
-# linux-prefix est en Debug : pour un banc ou une mesure, le binaire livré (Release)
-cmake --preset linux-release && cmake --build --preset linux-release
-
-# Windows et CI, avec vcpkg
-cmake --preset debug && cmake --build --preset debug && ctest --preset debug
-
-# macOS (Apple Silicon)
-tools/deps/macos-from-source.sh ~/ajp-deps
-AJP_DEPS_PREFIX=~/ajp-deps tools/release/package-macos.sh
 ```
 
-Les paquets se font avec `tools/release/package-linux.sh` et `package-windows.ps1` ; le paquet TensorRT avec
-`tools/release/trt-package.sh` (Linux) ou `tools/release/attach-nvidia-windows.ps1` (Windows) sur un poste
-NVIDIA. Aucun fichier de NVIDIA n'est dans nos archives.
-
-Pour reprendre le code : [`CLAUDE.md`](CLAUDE.md) (guide de reprise), [`docs/README.md`](docs/README.md) (carte
-des documents), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) et [`docs/adr/`](docs/adr/README.md).
+Windows se construit avec vcpkg (`cmake --preset debug`). Pour reprendre le code :
+[`CLAUDE.md`](CLAUDE.md) (guide de reprise), puis [`docs/README.md`](docs/README.md) (carte des documents).
 
 ## Remerciements
 
-- [the-database](https://github.com/the-database) pour les modèles **AnimeJaNai** et
-  [mpv-AnimeJaNai](https://github.com/the-database/mpv-AnimeJaNai), dont ce lecteur est parti.
-- [hzwer](https://github.com/hzwer/Practical-RIFE) pour **RIFE**, et routineLife1 pour **DistilDRBA**.
-- [AmusementClub/vs-mlrt](https://github.com/AmusementClub/vs-mlrt) pour les conversions ONNX de RIFE.
-- [libplacebo](https://code.videolan.org/videolan/libplacebo) (composition, filtres, hooks mpv),
-  [FFmpeg](https://ffmpeg.org), [libass](https://github.com/libass/libass), [SDL3](https://libsdl.org),
-  [Dear ImGui](https://github.com/ocornut/imgui), spdlog, toml++ et dav1d.
+[the-database](https://github.com/the-database) pour **AnimeJaNai** et
+[mpv-AnimeJaNai](https://github.com/the-database/mpv-AnimeJaNai), dont ce lecteur est parti ;
+[hzwer](https://github.com/hzwer/Practical-RIFE) pour **RIFE** ; routineLife1 pour **DistilDRBA** ;
+[pifroggi](https://github.com/pifroggi/vs_temporalfix) pour **TemporalFix** ;
+[bloc97](https://github.com/bloc97/Anime4K) pour **Anime4K** ;
+[AmusementClub/vs-mlrt](https://github.com/AmusementClub/vs-mlrt) ;
+[libplacebo](https://code.videolan.org/videolan/libplacebo), [FFmpeg](https://ffmpeg.org),
+[libass](https://github.com/libass/libass), [SDL3](https://libsdl.org) et
+[Dear ImGui](https://github.com/ocornut/imgui).
 
 ## Licence
 
 Le code est sous [Mozilla Public License 2.0](LICENSE). Les modèles gardent leur licence : AnimeJaNai est sous
-**CC BY-NC-SA 4.0** (usage non commercial), RIFE et DistilDRBA sous MIT. Le détail de chaque composant tiers est
-dans [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+**CC BY-NC-SA 4.0** (usage non commercial), RIFE, DistilDRBA et Anime4K sous MIT, TemporalFix sous Apache 2.0.
+Le détail est dans [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

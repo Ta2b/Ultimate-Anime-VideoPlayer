@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::core;
+using namespace kirari::core;
 
 namespace {
 
@@ -12,9 +12,9 @@ constexpr const char* kManifest = R"(version = "0.5.0"
 channel = "stable"
 date = "2026-10-30"
 expires = "2027-02-27"
-notes_url = "https://github.com/Ta2b/ajp-releases/releases/tag/v0.5.0"
+notes_url = "https://github.com/Ta2b/kirari-player/releases/tag/v0.5.0"
 [linux-x64]
-url = "https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0/ajp-linux-x64.tar.gz"
+url = "https://github.com/Ta2b/kirari-player/releases/download/v0.5.0/kirari-linux-x64.tar.gz"
 sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 size = 123456
 )";
@@ -25,7 +25,7 @@ TEST_CASE("manifeste : lecture", "[update]") {
   const auto manifest = parse_update_manifest(kManifest);
   REQUIRE(manifest);
   CHECK(manifest->version == "0.5.0");
-  CHECK(manifest->notes_url == "https://github.com/Ta2b/ajp-releases/releases/tag/v0.5.0");
+  CHECK(manifest->notes_url == "https://github.com/Ta2b/kirari-player/releases/tag/v0.5.0");
   CHECK(manifest->revoked_keys.empty());
 }
 
@@ -39,7 +39,7 @@ TEST_CASE("manifeste : les sections d'archive, le canal et la date n'empêchent 
   // Une archive d'une autre plateforme vide ou en http, un canal inconnu, une date absurde : ignorés.
   CHECK(parse_update_manifest(with("size = 123456", "size = 0")));
   CHECK(parse_update_manifest(
-      with("https://github.com/Ta2b/ajp-releases/releases/download", "http://x/releases/download")));
+      with("https://github.com/Ta2b/kirari-player/releases/download", "http://x/releases/download")));
   CHECK(
       parse_update_manifest(with("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "xyz")));
   CHECK(parse_update_manifest(with("stable", "nightly")));
@@ -65,7 +65,7 @@ TEST_CASE("manifeste : refus nets", "[update]") {
   CHECK_FALSE(parse_update_manifest("version = ["));
   CHECK_FALSE(parse_update_manifest(with("0.5.0\"\nchannel", "cinq\"\nchannel")));
   CHECK_FALSE(
-      parse_update_manifest(with("https://github.com/Ta2b/ajp-releases/releases/tag", "http://x/tag")));
+      parse_update_manifest(with("https://github.com/Ta2b/kirari-player/releases/tag", "http://x/tag")));
   CHECK_FALSE(parse_update_manifest(with("expires = \"2027-02-27\"\n", "")));
   CHECK_FALSE(parse_update_manifest(with("2027-02-27", "2027-02-30")));
 }

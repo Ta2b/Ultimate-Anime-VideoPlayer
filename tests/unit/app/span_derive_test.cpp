@@ -29,7 +29,7 @@
 #include "prepare/sha256.h"
 #include "span_derive_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using namespace span_test;
 namespace fs = std::filesystem;
@@ -50,7 +50,7 @@ TEST_CASE("la préparation réduit ses images comme le noyau d'ingestion (3.7a)"
 }
 
 TEST_CASE("douze images : huit calibrent, quatre sont mises de côté", "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const StillsSplit twelve_split = split_stills(12);
   CHECK(twelve_split.calibration.size() == 8);
   CHECK(twelve_split.validation == std::vector<std::size_t>{2, 5, 8, 11});
@@ -62,7 +62,7 @@ TEST_CASE("douze images : huit calibrent, quatre sont mises de côté", "[app][s
 
 TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecteur relit",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   const FakeBackend backend;
   SpanDeriveProgress progress;
@@ -107,7 +107,7 @@ TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecte
   std::ifstream in(folder.receipt());
   std::ostringstream receipt;
   receipt << in.rdbuf();
-  CHECK(receipt.str().find("format = \"ajp-span-fp8c-v2\"") != std::string::npos);
+  CHECK(receipt.str().find("format = \"kirari-span-fp8c-v2\"") != std::string::npos);
   CHECK(receipt.str().find("validated_sizes = [\"128x4\"]") != std::string::npos);
   CHECK(receipt.str().find("reference = \"cutlass-fp16\"") != std::string::npos);
   CHECK(receipt.str().find("validation_size = \"128x4\"") != std::string::npos);
@@ -115,7 +115,7 @@ TEST_CASE("une dérivation qui passe écrit le paquet et son reçu, que le lecte
 
 TEST_CASE("le paquet prend l'accumulateur f16 hors blocs à 0,3 dB du f32 au plus (3.5a)",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const auto [psnr16, kept] = GENERATE(std::pair{49.8, true}, std::pair{49.6, false});
   INFO(psnr16);
   const Folder folder;
@@ -139,7 +139,7 @@ TEST_CASE("le paquet prend l'accumulateur f16 hors blocs à 0,3 dB du f32 au plu
 
 TEST_CASE("la porte durcie refuse au 99,9e centile ; les cas durs sont relevés sans décider (porte 2)",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const auto [p999, hard, passes] =
       GENERATE(std::tuple{1.0 / 255.0, 40.0, true}, std::tuple{11.0 / 255.0, 40.0, false},
                std::tuple{1.0 / 255.0, 16.0, true});
@@ -159,7 +159,7 @@ TEST_CASE("la porte durcie refuse au 99,9e centile ; les cas durs sont relevés 
 
 TEST_CASE("un paquet d'une RTX 40 n'est pas pris sur une autre architecture ni d'autres noyaux (3.7b)",
           "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   const FakeBackend backend;
   SpanDeriveProgress progress;
@@ -194,7 +194,7 @@ TEST_CASE("un paquet d'une RTX 40 n'est pas pris sur une autre architecture ni d
 }
 
 TEST_CASE("une taille se valide seule, sans recalibrer, et se note au reçu (3.7b)", "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   FakeBackend backend;
   SpanDeriveProgress progress;
@@ -254,7 +254,7 @@ TEST_CASE("une taille se valide seule, sans recalibrer, et se note au reçu (3.7
 
 TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paquet d'avant",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   SpanDeriveProgress progress;
   FakeBackend good;
@@ -283,7 +283,7 @@ TEST_CASE("des garde-fous manqués écrivent le reçu refusé et retirent le paq
 
 TEST_CASE("un refus d'une porte plus ancienne, d'une autre carte ou d'autres noyaux se refait",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   SpanDeriveProgress progress;
   FakeBackend bad;
@@ -333,7 +333,7 @@ TEST_CASE("un refus d'une porte plus ancienne, d'une autre carte ou d'autres noy
 }
 
 TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   SpanDeriveProgress progress;
   FakeBackend good;
@@ -393,7 +393,7 @@ TEST_CASE("un échec technique n'écrit rien et laisse l'état d'avant", "[app][
 }
 
 TEST_CASE("une écriture qui échoue ne laisse aucun fichier à moitié écrit", "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   const std::vector<std::byte> bytes(64, std::byte{7});
   // Un état d'avant, entier.
@@ -429,7 +429,7 @@ TEST_CASE("une écriture qui échoue ne laisse aucun fichier à moitié écrit",
 
 TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une vidéo ouverte",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   const fs::path video = folder.root / "episode.mkv";
   const gpu::BackendInit init;
@@ -474,16 +474,16 @@ TEST_CASE("la préparation n'est offerte qu'avec un moteur qui la calcule et une
 
 TEST_CASE("le paquet et le reçu de l'outil Python sont ceux que le lecteur prend",
           "[.span_compat][app][span_derive]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path model(AJP_SPAN_FP8_MODEL), package(AJP_SPAN_FP8_PYTHON_PACKAGE);
+  kirari::app::play::FrenchUi french;
+  const fs::path model(KIRARI_SPAN_FP8_MODEL), package(KIRARI_SPAN_FP8_PYTHON_PACKAGE);
   if (!fs::is_regular_file(model) || !fs::is_regular_file(package))
     SKIP(
-        "AJP_SPAN_FP8_MODEL et AJP_SPAN_FP8_PYTHON_PACKAGE (CMake) : le SPAN et le paquet de "
+        "KIRARI_SPAN_FP8_MODEL et KIRARI_SPAN_FP8_PYTHON_PACKAGE (CMake) : le SPAN et le paquet de "
         "derive_span_fp8.py");
   fs::path receipt = package;
   receipt.replace_extension(".toml");
   REQUIRE(fs::is_regular_file(receipt));
-  const fs::path dir = fs::temp_directory_path() / "ajp-span-python-compat";
+  const fs::path dir = fs::temp_directory_path() / "kirari-span-python-compat";
   fs::remove_all(dir);
   fs::create_directories(dir);
   fs::copy_file(package, dir / package.filename());
@@ -501,16 +501,17 @@ TEST_CASE("le paquet et le reçu de l'outil Python sont ceux que le lecteur pren
 
 TEST_CASE("la préparation de bout en bout, par le vrai backend, sur une vraie vidéo",
           "[.span_prepare][app][span_derive]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path backend_path(AJP_BACKEND_TENSORRT), model(AJP_SPAN_FP8_MODEL), video(AJP_SPAN_DERIVE_VIDEO);
+  kirari::app::play::FrenchUi french;
+  const fs::path backend_path(KIRARI_BACKEND_TENSORRT), model(KIRARI_SPAN_FP8_MODEL),
+      video(KIRARI_SPAN_DERIVE_VIDEO);
   if (backend_path.empty() || !fs::is_regular_file(backend_path) || !fs::is_regular_file(model) ||
       !fs::is_regular_file(video))
-    SKIP("AJP_SPAN_FP8_MODEL, AJP_SPAN_DERIVE_VIDEO (CMake) et le backend TensorRT");
+    SKIP("KIRARI_SPAN_FP8_MODEL, KIRARI_SPAN_DERIVE_VIDEO (CMake) et le backend TensorRT");
   const fs::path candidates[] = {backend_path};
   auto library = BackendLibrary::open(candidates);
   INFO((library ? std::string() : library.error().detail));
   REQUIRE(library);
-  const fs::path work = fs::temp_directory_path() / "ajp-span-prepare-test";
+  const fs::path work = fs::temp_directory_path() / "kirari-span-prepare-test";
   fs::create_directories(work / "engines");
   const gpu::BackendInit init{.cache_dir = work / "engines"};
   auto probe = BackendLibrary::create(*library, init);
@@ -518,7 +519,7 @@ TEST_CASE("la préparation de bout en bout, par le vrai backend, sur une vraie v
   if (!(*probe)->capabilities().span_fp8_cutlass) SKIP("appareil sans les noyaux FP8 CUTLASS (sm 8.9)");
   probe->reset();
   const fs::path out =
-      std::string_view(AJP_SPAN_DERIVE_OUT).empty() ? work / "modeles" : fs::path(AJP_SPAN_DERIVE_OUT);
+      std::string_view(KIRARI_SPAN_DERIVE_OUT).empty() ? work / "modeles" : fs::path(KIRARI_SPAN_DERIVE_OUT);
   const SpanPrepare prepare = make_span_prepare(*library, init, true, model, out, video);
   REQUIRE(prepare.offered);
   SpanDeriveProgress progress;
@@ -537,7 +538,7 @@ TEST_CASE("la préparation de bout en bout, par le vrai backend, sur une vraie v
 
 TEST_CASE("la préparation à la main ne part qu'une fois à la fois, et seulement si elle est offerte",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   PrepareNote note;
   int started = 0;
   SpanPrepare prepare;
@@ -561,7 +562,7 @@ TEST_CASE("la préparation à la main ne part qu'une fois à la fois, et seuleme
 
 TEST_CASE("le « .old » d'une opération coupée entre deux renommages revient à sa place (B07-12)",
           "[app][span_derive]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder folder;
   const std::vector<std::byte> bytes(64, std::byte{7});
   REQUIRE(commit_derivation(folder.package(), folder.receipt(), bytes, "passed = true\n", true));
@@ -583,4 +584,4 @@ TEST_CASE("le « .old » d'une opération coupée entre deux renommages revient 
   CHECK_FALSE(fs::exists(old));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -16,7 +16,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 namespace fs = std::filesystem;
@@ -212,4 +212,4 @@ std::expected<Production, Refusal> produce_once(const CacheEntry& entry, const P
   return Production::Produced;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

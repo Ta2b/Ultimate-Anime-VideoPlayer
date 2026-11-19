@@ -1,7 +1,7 @@
 // La source telle que le choix automatique de la chaîne la voit : taille et cadence.
 #pragma once
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct SourceInfo {
   int width = 0;
@@ -9,4 +9,4 @@ struct SourceInfo {
   double fps = 0.0;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -293,12 +293,12 @@ class AuditE16Scripts(unittest.TestCase):
     def test_banc_alterne_l_ordre_des_variantes(self):  # C46-05
         with tempfile.TemporaryDirectory() as tmp:
             t = Path(tmp)
-            ajp = t / "ajp"
-            ajp.write_text('#!/bin/bash\nfor a in "$@"; do case $a in --data-dir=*) echo "${a##*data-}" >> "%s";; esac; done\n' % (t / "ordre.txt"))
-            ajp.chmod(0o755)
+            kirari = t / "kirari"
+            kirari.write_text('#!/bin/bash\nfor a in "$@"; do case $a in --data-dir=*) echo "${a##*data-}" >> "%s";; esac; done\n' % (t / "ordre.txt"))
+            kirari.chmod(0o755)
             (t / "e.tsv").write_text("video.mkv\t0\n")
             self.run_script([str(TOOLS / "bench/banc.sh"), "--a=-a", "--b=-b", f"--extraits={t / 'e.tsv'}",
-                             f"--sortie={t / 'out'}", "--tours=2", "--secondes=1", f"--ajp={ajp}"], os.environ)
+                             f"--sortie={t / 'out'}", "--tours=2", "--secondes=1", f"--kirari={kirari}"], os.environ)
             ordre = (t / "ordre.txt").read_text().split()[2:]  # sans les deux passages de préchauffage
             self.assertEqual("".join(ordre), "ABABBABA")
 

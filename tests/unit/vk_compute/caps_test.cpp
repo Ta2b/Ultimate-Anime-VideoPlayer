@@ -10,7 +10,7 @@
 
 #include "gpu/vulkan/compute/functions.h"
 
-using namespace ajp::gpu::vk;
+using namespace kirari::gpu::vk;
 
 namespace {
 

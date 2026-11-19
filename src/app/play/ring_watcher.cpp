@@ -7,7 +7,7 @@
 #include "core/log.h"
 #include "core/thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::uint64_t kTimeoutNs =
@@ -184,4 +184,4 @@ void RingWatcher::run(const std::stop_token& stop) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

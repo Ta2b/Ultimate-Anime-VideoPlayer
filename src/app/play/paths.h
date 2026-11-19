@@ -9,7 +9,7 @@
 
 #include "app/play/player.h"
 
-namespace ajp::app::play::paths {
+namespace kirari::app::play::paths {
 
 // Le dossier des données : paths.heavy, sinon le parent des moteurs construits.
 inline std::filesystem::path data_root(const PlayerPaths& p) {
@@ -72,4 +72,4 @@ inline std::filesystem::path update_state(const std::filesystem::path& app_data)
   return app_data / "update.toml";
 }
 
-}  // namespace ajp::app::play::paths
+}  // namespace kirari::app::play::paths

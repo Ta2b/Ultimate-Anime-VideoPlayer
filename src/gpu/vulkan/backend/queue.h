@@ -30,7 +30,7 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/sync.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class BackendQueue {
  public:
@@ -142,4 +142,4 @@ class BackendQueue {
   std::vector<std::uintptr_t> reads_;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

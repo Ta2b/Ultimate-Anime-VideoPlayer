@@ -1,5 +1,5 @@
 // Les pointeurs d'un paquet « .span8 » pour SpanFp8Net::create : un seul endroit pour le lecteur, la
-// dérivation native et l'outil ajp_span_fp8_run, qui en avait une copie sans acc16 (A02-11).
+// dérivation native et l'outil kirari_span_fp8_run, qui en avait une copie sans acc16 (A02-11).
 #pragma once
 
 #include <cstddef>
@@ -7,7 +7,7 @@
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Les pointeurs du paquet, pour SpanFp8Net::create et SpanFp8Reference::create : valables autant que lui.
 inline SpanFp8Weights span_fp8_view(const span_fp8::Package& package) {
@@ -30,4 +30,4 @@ inline SpanFp8Weights span_fp8_view(const span_fp8::Package& package) {
   return weights;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

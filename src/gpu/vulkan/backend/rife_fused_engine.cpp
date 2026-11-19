@@ -10,7 +10,7 @@
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using kernels::kFusedEncodePlanes;
@@ -429,4 +429,4 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue(BackendQueue& queue, std::
   return done;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

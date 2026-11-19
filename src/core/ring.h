@@ -36,7 +36,7 @@
 #include "core/messages.h"
 #include "core/types.h"
 
-namespace ajp {
+namespace kirari {
 
 // Rgba16Unorm par défaut ; Rgb10a2Unorm (VK_FORMAT_A2B10G10R10_UNORM_PACK32, moitié moins de mémoire) sous
 // TensorRT avec --ring-rgb10a2 (étape 5.5a) ; Yuv444p16 reste réservé au contrat des slots, sans chemin qui
@@ -118,4 +118,4 @@ constexpr SlotFree release_of(const RingFrame& frame) {
       .slot = frame.slot, .semaphore_value = frame.ready_value + 1, .generation = frame.generation};
 }
 
-}  // namespace ajp
+}  // namespace kirari

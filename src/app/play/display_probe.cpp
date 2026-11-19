@@ -6,7 +6,7 @@
 #include "core/log.h"
 #include "core/thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 DisplayReaders system_display_readers() {
   return {.hz = [](SDL_Window* window, const DisplaySdl& sdl) { return display_refresh_hz(window, sdl); },
@@ -136,4 +136,4 @@ void DisplayProbe::serve(const Request& request) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

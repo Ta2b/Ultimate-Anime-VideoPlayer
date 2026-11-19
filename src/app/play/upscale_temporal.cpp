@@ -18,7 +18,7 @@
 #include "core/log.h"
 #include "prepare/onnx_frames.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr auto kRadius = static_cast<std::size_t>(kTemporalFixRadius);
@@ -131,4 +131,4 @@ void UpscaleStage::log_temporal() const {
       temporal_.mirrored, temporal_.raws);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

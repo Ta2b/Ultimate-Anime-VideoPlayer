@@ -11,7 +11,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -165,4 +165,4 @@ TEST_CASE("B13-04 : les trous de sous-titres se comptent par présentation", "[a
   CHECK(session.stats().subtitle_gaps <= static_cast<std::int64_t>(presents));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

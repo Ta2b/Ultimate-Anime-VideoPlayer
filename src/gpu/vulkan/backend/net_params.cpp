@@ -11,7 +11,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 std::unexpected<Refusal> node_refusal(const ir::Node& node, std::string_view detail) {
@@ -328,4 +328,4 @@ std::expected<std::vector<bool>, Refusal> reduced_axes(const ir::Graph& graph, c
   return reduced;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

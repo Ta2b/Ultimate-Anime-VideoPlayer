@@ -15,7 +15,7 @@
 
 #include "core/types.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 
 // Le fichier réécrit, ou vide quand il n'a aucun dépliage 6-D. À n'appeler que pour un lot de 1
 // (la première dimension de la forme cible est retirée sans être lue). Un dépliage est réécrit
@@ -25,4 +25,4 @@ namespace ajp::gpu::ir::onnx {
 // sont retirées. Refus OnnxMalformed, OnnxUnsupported : ceux du décodeur.
 std::expected<std::vector<std::byte>, Refusal> with_unshuffle_5d(std::span<const std::byte> model);
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

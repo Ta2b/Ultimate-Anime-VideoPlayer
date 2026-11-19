@@ -9,7 +9,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Entre la somme de la grille et GridSample : des nœuds qui déplacent ou convertissent, sans calcul.
@@ -133,4 +133,4 @@ int promote_grid_chains(Graph& graph) {
   return chains.promoted();
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

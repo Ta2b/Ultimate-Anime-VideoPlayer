@@ -22,7 +22,7 @@
 #include "core/text.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 int even(double value) {
@@ -121,7 +121,7 @@ std::filesystem::path default_export_path(const std::filesystem::path& source, E
     while (cut > 0 && (static_cast<unsigned char>(stem[cut]) & 0xC0) == 0x80) --cut;
     stem.resize(cut);
   }
-  const std::string base = std::format("{} [ajp {}x{}{}]", stem, size.width, size.height,
+  const std::string base = std::format("{} [kirari {}x{}{}]", stem, size.width, size.height,
                                        fps.empty() ? std::string() : std::format(" {}fps", fps));
   const std::filesystem::path dir = source.parent_path();
   std::filesystem::path path = dir / prepare::path_from_utf8(base + ".mkv");
@@ -184,4 +184,4 @@ std::string export_label(exporter::Codec codec, exporter::Quality quality) {
   return std::format("{} · {}", codec_label(codec), level);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

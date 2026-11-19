@@ -16,7 +16,7 @@
 #include "french_ui.h"
 #include "prepare/sha256.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -25,7 +25,7 @@ struct Folder {
   // Un dossier par cas de test : ctest lance les cas en parallèle, chacun dans son processus.
   Folder()
       : root(fs::temp_directory_path() /
-             std::format("ajp-span-int8-test-{:x}",
+             std::format("kirari-span-int8-test-{:x}",
                          std::hash<std::string>{}(Catch::getResultCapture().getCurrentTestName()))) {
     fs::remove_all(root);
     fs::create_directories(root / "modeles");
@@ -51,12 +51,12 @@ struct Folder {
                std::string source_sha = {}, std::string model_sha = {}, double speedup = 1.30) const {
     if (source_sha.empty()) source_sha = sha;
     if (model_sha.empty()) model_sha = prepare::sha256_file(variant()).value();
-    write(
-        dir() / (stem + ".toml"),
-        std::format("# reçu\nformat = \"ajp-span-int8-v1\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\n"
-                    "speedup = {:.4f}\npsnr_mean_db = {:.4f}\npsnr_worst_db = {:.4f}\nssim_worst = "
-                    "{:.4f}\npassed = {}\n",
-                    source_sha, model_sha, speedup, psnr_mean, psnr_worst, ssim, passed ? "true" : "false"));
+    write(dir() / (stem + ".toml"),
+          std::format(
+              "# reçu\nformat = \"kirari-span-int8-v1\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\n"
+              "speedup = {:.4f}\npsnr_mean_db = {:.4f}\npsnr_worst_db = {:.4f}\nssim_worst = "
+              "{:.4f}\npassed = {}\n",
+              source_sha, model_sha, speedup, psnr_mean, psnr_worst, ssim, passed ? "true" : "false"));
   }
 
   fs::path root;
@@ -66,7 +66,7 @@ struct Folder {
 };
 
 TEST_CASE("SPAN INT8 : la variante d'un reçu qui passe les garde-fous", "[app][int8]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   CHECK_FALSE(find_span_int8(f.span, f.dir()).variant);  // sans reçu : rien, et rien à dire
   CHECK(find_span_int8(f.span, f.dir()).note.empty());
@@ -81,7 +81,7 @@ TEST_CASE("SPAN INT8 : la variante d'un reçu qui passe les garde-fous", "[app][
 }
 
 TEST_CASE("SPAN INT8 : reçu refusé, le SPAN d'origine reste", "[app][int8]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   SECTION("sous les garde-fous du lecteur, même marqué passé") {
     f.receipt(41.9, 40.0, 0.99);
@@ -121,7 +121,7 @@ TEST_CASE("SPAN INT8 : reçu refusé, le SPAN d'origine reste", "[app][int8]") {
 }
 
 TEST_CASE("SPAN INT8 : le nom d'origine se lit dans celui de la variante", "[app][int8]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(span_int8_source("2x_AnimeJaNai_HD_V3.1_Sharp1_Performance-int8-0123456789abcdef.onnx") ==
         "2x_AnimeJaNai_HD_V3.1_Sharp1_Performance.onnx");
   CHECK_FALSE(span_int8_source("2x_AnimeJaNai_HD_V3.1_Sharp1_Performance.onnx"));
@@ -145,33 +145,33 @@ void write_variant(const Folder& f, std::string_view infix, std::string_view for
 }
 
 TEST_CASE("SPAN FP8 et FP32 : garde-fous propres à chaque cran", "[app][int8]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
   // Le FP8 passe des seuils plus lâches que l'INT8 : 33 dB suffit, 24 dB non.
-  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 33.0, 29.0, 0.96);
+  write_variant(f, "-fp8-", "kirari-span-fp8-v1", 33.0, 29.0, 0.96);
   const SpanInt8Lookup fast = find_span_variant(SpanVariantKind::Fp8, f.span, f.dir());
   REQUIRE(fast.variant);
   CHECK(fast.variant->kind == SpanVariantKind::Fp8);
   CHECK(fast.variant->onnx.filename().string().find("-fp8-") != std::string::npos);
   // Le même score ne passe pas pour l'INT8 : son reçu n'existe pas, et ses seuils sont à 42 dB.
-  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 24.0, 20.0, 0.80);
+  write_variant(f, "-fp8-", "kirari-span-fp8-v1", 24.0, 20.0, 0.80);
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
   // Un reçu FP8 n'est pas lu comme un reçu FP32 ni INT8 (autre infixe, autre format).
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp32, f.span, f.dir()).variant);
-  write_variant(f, "-fp32-", "ajp-span-fp32-v1", 60.0, 55.0, 0.9999);
+  write_variant(f, "-fp32-", "kirari-span-fp32-v1", 60.0, 55.0, 0.9999);
   const SpanInt8Lookup quality = find_span_variant(SpanVariantKind::Fp32, f.span, f.dir());
   REQUIRE(quality.variant);
   CHECK(quality.variant->kind == SpanVariantKind::Fp32);
   // Les crans d'un dossier : le FP8 demande un moteur qui le calcule.
-  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 33.0, 29.0, 0.96);
+  write_variant(f, "-fp8-", "kirari-span-fp8-v1", 33.0, 29.0, 0.96);
   CHECK(span_tiers(f.span, f.dir(), true) == TierSupport{.performance = true, .quality = true});
   CHECK(span_tiers(f.span, f.dir(), false) == TierSupport{.performance = false, .quality = true});
   CHECK(variant_text(SpanVariantKind::Fp8) == "FP8");
 }
 
 TEST_CASE("SPAN INT8, FP8 : un reçu sans gain mesuré sur le FP16 est refusé (C46-06)", "[app][int8]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   f.receipt(45.2, 41.0, 0.9931, true, {}, {}, 0.0);  // --skip-speed-check : speedup = 0
   const SpanInt8Lookup unmeasured = find_span_int8(f.span, f.dir());
@@ -184,15 +184,15 @@ TEST_CASE("SPAN INT8, FP8 : un reçu sans gain mesuré sur le FP16 est refusé (
   CHECK(slow.note.find("pas plus rapide") != std::string::npos);
   f.receipt(45.2, 41.0, 0.9931, true, {}, {}, 1.05);  // pile au seuil
   CHECK(find_span_int8(f.span, f.dir()).variant);
-  write_variant(f, "-fp8-", "ajp-span-fp8-v1", 33.0, 29.0, 0.96, 0.0);
+  write_variant(f, "-fp8-", "kirari-span-fp8-v1", 33.0, 29.0, 0.96, 0.0);
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8, f.span, f.dir()).variant);
   // Le FP32 du cran Qualité ne promet pas de vitesse.
-  write_variant(f, "-fp32-", "ajp-span-fp32-v1", 60.0, 55.0, 0.9999, 0.0);
+  write_variant(f, "-fp32-", "kirari-span-fp32-v1", 60.0, 55.0, 0.9999, 0.0);
   CHECK(find_span_variant(SpanVariantKind::Fp32, f.span, f.dir()).variant);
 }
 
 TEST_CASE("SPAN FP8 et FP32 : le nom d'origine se lit dans celui de la variante", "[app][int8]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   SpanVariantKind kind = SpanVariantKind::Int8;
   CHECK(span_int8_source("modele-fp8-0123456789abcdef.onnx", &kind) == "modele.onnx");
   CHECK(kind == SpanVariantKind::Fp8);
@@ -204,4 +204,4 @@ TEST_CASE("SPAN FP8 et FP32 : le nom d'origine se lit dans celui de la variante"
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

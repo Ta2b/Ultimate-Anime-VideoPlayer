@@ -2,11 +2,11 @@
 // Vulkan, mais n'exporte pas vkGetInstanceProcAddr. Le contexte doit la refuser
 // (LibraryUnavailable) au lieu d'appeler un symbole absent.
 #if defined(_WIN32)
-#define AJP_FAKE_EXPORT __declspec(dllexport)
+#define KIRARI_FAKE_EXPORT __declspec(dllexport)
 #else
-#define AJP_FAKE_EXPORT __attribute__((visibility("default")))
+#define KIRARI_FAKE_EXPORT __attribute__((visibility("default")))
 #endif
 
-extern "C" AJP_FAKE_EXPORT int ajp_fake_vulkan_loader() {
+extern "C" KIRARI_FAKE_EXPORT int kirari_fake_vulkan_loader() {
   return 0;
 }

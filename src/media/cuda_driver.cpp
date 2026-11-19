@@ -19,7 +19,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 using CUresult = int;
@@ -458,4 +458,4 @@ std::expected<void, Refusal> CudaDriver::synchronize(std::uintptr_t context, std
   return {};
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

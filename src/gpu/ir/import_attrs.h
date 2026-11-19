@@ -10,7 +10,7 @@
 #include "gpu/ir/ir.h"
 #include "gpu/ir/onnx_model.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 
 struct ImportedAttrs {
   Attrs attrs;
@@ -27,4 +27,4 @@ std::expected<Value, Refusal> tensor_value(const onnx::Tensor& tensor);
 // Valeur d'un nœud Constant (value, value_float(s), value_int(s)).
 std::expected<Value, Refusal> constant_value(const onnx::Node& node);
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

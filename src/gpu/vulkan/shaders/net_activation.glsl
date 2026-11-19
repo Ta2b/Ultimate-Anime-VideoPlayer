@@ -3,8 +3,8 @@
 // 3 PRelu, 4 Sigmoid, 5 Tanh, 6 Clip, puis, pour net_unary seulement, 7 Reciprocal, 8 FakeQuantE4M3
 // (arrondi à la grille FP8 E4M3 de l'échelle alpha, gpu/ir/fp8.h) et 9 FakeQuantInt8 (grille INT8,
 // gpu/ir/int8.h). NaN suit fmin et fmax de C pour Clip.
-#ifndef AJP_NET_ACTIVATION_GLSL
-#define AJP_NET_ACTIVATION_GLSL
+#ifndef KIRARI_NET_ACTIVATION_GLSL
+#define KIRARI_NET_ACTIVATION_GLSL
 
 const uint kActNone = 0u;
 const uint kActRelu = 1u;
@@ -66,4 +66,4 @@ float net_activate(uint act, float v, float alpha, float lo, float hi, float slo
   return v;
 }
 
-#endif  // AJP_NET_ACTIVATION_GLSL
+#endif  // KIRARI_NET_ACTIVATION_GLSL

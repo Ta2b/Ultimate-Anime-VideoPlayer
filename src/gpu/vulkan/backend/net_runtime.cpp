@@ -14,7 +14,7 @@
 #include "gpu/vulkan/backend/net_build.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 std::filesystem::path names_path(const std::filesystem::path& artifact) {
@@ -186,4 +186,4 @@ std::expected<bool, Refusal> onnx_uses_op(const std::filesystem::path& onnx, std
   });
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

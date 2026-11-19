@@ -10,7 +10,7 @@
 
 #include "core/clock.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("attente précise : l'échéance tenue à la microseconde, jamais avant", "[app][present]") {
   std::int64_t worst = 0;
@@ -30,4 +30,4 @@ TEST_CASE("attente précise : l'échéance tenue à la microseconde, jamais avan
   CHECK(worst < 20'000);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

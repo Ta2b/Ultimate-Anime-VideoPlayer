@@ -14,7 +14,7 @@
 #include "core/utf8_path.h"
 #include "prepare/key_lock.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -25,7 +25,7 @@ struct Place {
   std::filesystem::path dir;
   std::filesystem::path store;
   explicit Place(const std::string& name)
-      : dir(std::filesystem::temp_directory_path() / ("ajp_resume_" + name)), store(dir / "resume.tsv") {
+      : dir(std::filesystem::temp_directory_path() / ("kirari_resume_" + name)), store(dir / "resume.tsv") {
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
   }
@@ -36,7 +36,7 @@ struct Place {
   ~Place() { std::filesystem::remove_all(dir); }
 
   std::filesystem::path video(const std::string& name, std::size_t bytes = 16) const {
-    const std::filesystem::path path = dir / ajp::core::path_from_utf8(name);
+    const std::filesystem::path path = dir / kirari::core::path_from_utf8(name);
     std::ofstream(path) << std::string(bytes, 'x');
     return path;
   }
@@ -159,11 +159,11 @@ TEST_CASE("reprise : un verrou tenu par un autre lecteur fait refuser sans écri
   {
     // Un autre lecteur (un autre processus) tient le verrou au-delà du délai : écrire sans lui perdrait ce
     // qu'il écrit, la position est refusée et le fichier reste tel quel.
-    auto held = ajp::prepare::KeyLock::acquire(lock_file);
+    auto held = kirari::prepare::KeyLock::acquire(lock_file);
     REQUIRE(held);
     const auto refused = remember_position(place.store, second, 9 * kMinute, 4 * kEpisode);
     REQUIRE_FALSE(refused);
-    CHECK(refused.error().code == ajp::RefusalCode::CacheBusy);
+    CHECK(refused.error().code == kirari::RefusalCode::CacheBusy);
   }
   CHECK(resume_position(place.store, first) == 7 * kMinute);
   CHECK_FALSE(resume_position(place.store, second));

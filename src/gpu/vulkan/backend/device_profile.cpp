@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT / _E5M2_EXT (VK_EXT_shader_float8), absents des en-têtes
@@ -129,4 +129,4 @@ DeviceProfile profile_device(const VkContext& context) {
   return profile;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

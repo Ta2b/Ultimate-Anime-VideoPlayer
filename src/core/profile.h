@@ -12,7 +12,7 @@
 
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Filtres de la réduction : Area et Spline36 (ceux d'AnimeJaNai), puis ceux du menu du lecteur.
 enum class DownscaleFilter : std::uint8_t {
@@ -49,4 +49,4 @@ inline constexpr Range<std::int64_t> kRatioTerm{1, 100000};
 inline constexpr Range<double> kInterpFactor{1.0, 8.0};  // borne basse exclue
 }  // namespace limits
 
-}  // namespace ajp::core
+}  // namespace kirari::core

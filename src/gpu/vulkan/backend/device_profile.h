@@ -9,7 +9,7 @@
 #include "gpu/vulkan/backend/net_program.h"
 #include "gpu/vulkan/compute/context.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 struct DeviceProfile {
   GpuFamily family = GpuFamily::Unknown;
@@ -48,4 +48,4 @@ struct MatrixTiles {
 };
 MatrixTiles matrix_tiles(std::span<const VkCooperativeMatrixPropertiesKHR> properties);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

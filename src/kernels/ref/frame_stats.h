@@ -6,7 +6,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/frame_stats.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Le signal R'G'B' décodé en cd/m², dans les primaires de la source.
 Rgb frame_nits(const Rgb& encoded, FrameTransfer transfer);
@@ -18,4 +18,4 @@ Result<FrameCounts> frame_counts(const RgbImage& rgb, FrameTransfer transfer);
 // Les mesures, à partir des comptes (de la référence ou du noyau).
 FrameStats frame_stats_of(const FrameCounts& counts);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

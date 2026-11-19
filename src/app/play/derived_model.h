@@ -13,7 +13,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La version des transformations : à monter avec toute correction de l'une d'elles (A36-04).
 inline constexpr int kDerivedModelVersion = 2;
@@ -42,4 +42,4 @@ inline constexpr int kDerivedSizesKept = 4;
 int purge_sized_derivatives(const std::filesystem::path& dir, std::string_view family,
                             const std::filesystem::path& used, int keep = kDerivedSizesKept);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

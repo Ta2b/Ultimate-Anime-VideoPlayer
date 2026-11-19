@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class PrecisionTier : std::uint8_t { Performance, Balanced, Quality };
 inline constexpr int kPrecisionTierCount = 3;
@@ -63,4 +63,4 @@ struct TierSupport {
   friend constexpr bool operator==(const TierSupport&, const TierSupport&) = default;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

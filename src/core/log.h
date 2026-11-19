@@ -13,7 +13,7 @@
 //     (le spdlog.dll de vcpkg sous Windows), le registre et le journal par défaut sont ceux
 //     du lecteur ; y poser le rappel le ferait se rappeler lui-même, sous le verrou du
 //     répartiteur.
-// Cible ajp::core_log : dépend de spdlog seulement, en dépendance privée des modules.
+// Cible kirari::core_log : dépend de spdlog seulement, en dépendance privée des modules.
 #pragma once
 
 #include <cstddef>
@@ -25,7 +25,7 @@
 #include <spdlog/common.h>
 #include <spdlog/logger.h>
 
-namespace ajp {
+namespace kirari {
 
 // Canal du module : les puits du journal par défaut au moment de l'appel, partagés et non
 // copiés, son niveau et son niveau de vidage ; ou, après install_module_log_sinks dans ce
@@ -60,4 +60,4 @@ void close_log();
 // fermé par close_log(), puis std::abort(). Un std::terminate ne perd plus les dernières lignes.
 void install_terminate_flush();
 
-}  // namespace ajp
+}  // namespace kirari

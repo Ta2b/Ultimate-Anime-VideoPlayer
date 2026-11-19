@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::app::play::find_external_subtitles;
+using kirari::app::play::find_external_subtitles;
 
 namespace {
 
@@ -18,7 +18,7 @@ void touch(const std::filesystem::path& path) {
 }  // namespace
 
 TEST_CASE("Sous-titres externes : le nom de la vidéo, suivi de rien ou d'un point", "[subtitles]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-external-subs";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-external-subs";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   touch(dir / "Episode 01.mkv");
@@ -42,7 +42,7 @@ TEST_CASE("Sous-titres externes : le nom de la vidéo, suivi de rien ou d'un poi
 }
 
 TEST_CASE("Sous-titres externes : dossiers Subs/ et noms proches (P3.80)", "[subtitles]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-external-subs-near";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-external-subs-near";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir / "Subs" / "[G] Show - 01 [1080p]");
   touch(dir / "[G] Show - 01 [1080p].mkv");
@@ -58,7 +58,7 @@ TEST_CASE("Sous-titres externes : dossiers Subs/ et noms proches (P3.80)", "[sub
 }
 
 TEST_CASE("Sous-titres externes : la langue voulue passe avant la coupe à 16 (A17-11)", "[subtitles]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-external-subs-many";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-external-subs-many";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir / "Subs" / "Episode 01");
   touch(dir / "Episode 01.mkv");
@@ -68,12 +68,12 @@ TEST_CASE("Sous-titres externes : la langue voulue passe avant la coupe à 16 (A
     touch(dir / "Subs" / "Episode 01" / (std::to_string(i) + "_" + language + ".srt"));
   }
   const auto unordered = find_external_subtitles(dir / "Episode 01.mkv");
-  REQUIRE(unordered.size() == ajp::app::play::kMaxExternalSubtitles);
+  REQUIRE(unordered.size() == kirari::app::play::kMaxExternalSubtitles);
   CHECK(std::ranges::none_of(unordered, [](const auto& s) { return s.language == "fr"; }));
 
   const std::vector<std::string> wanted{"fre", "fr", "eng", "en"};
   const auto found = find_external_subtitles(dir / "Episode 01.mkv", wanted);
-  REQUIRE(found.size() == ajp::app::play::kMaxExternalSubtitles);
+  REQUIRE(found.size() == kirari::app::play::kMaxExternalSubtitles);
   CHECK(found[0].path.filename() == "28_French.srt");
   CHECK(found[1].path.filename() == "2_English.srt");
   std::filesystem::remove_all(dir);

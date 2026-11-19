@@ -12,7 +12,7 @@
 #include "doubles.h"
 #include "gpu/kernel_ops.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Paires notées : retrouvées par l'époque et l'intervalle (a, b], la plus récente d'abord",
@@ -98,4 +98,4 @@ TEST_CASE("Session : la teinte de la paire va à l'écran seulement quand le dé
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -9,7 +9,7 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Fonctions des requêtes d'horodatage, hors des tables du socle.
 struct QueryFunctions {
@@ -60,4 +60,4 @@ class QueryPool {
   VkQueryPool pool_ = VK_NULL_HANDLE;
 };
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

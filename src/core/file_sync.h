@@ -16,7 +16,7 @@
 
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Le contenu du fichier sur le disque ; l'erreur de l'ouverture ou de l'écriture sinon. Un système de
 // fichiers qui ne sait pas vider (fsync : EINVAL, ENOTSUP) n'est pas une erreur.
@@ -55,4 +55,4 @@ std::optional<Refusal> lacking_space(const std::filesystem::path& dir, std::uint
 
 std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& path, std::string_view text);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

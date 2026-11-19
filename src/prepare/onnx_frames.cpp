@@ -16,7 +16,7 @@
 #include "prepare/onnx_split.h"
 #include "prepare/protobuf_fields.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using protobuf::Bytes;
@@ -37,12 +37,12 @@ constexpr std::uint32_t kNodeAttribute = 5;
 constexpr std::uint32_t kValueInfoName = 1;
 
 // Les noms que la demi-taille ajoute au graphe.
-constexpr std::string_view kFull = "ajp_frames_full";
-constexpr std::string_view kNetOut = "ajp_frames_net_out";
-constexpr std::string_view kCenterHalf = "ajp_frames_center_half";
-constexpr std::string_view kDeltaHalf = "ajp_frames_delta_half";
-constexpr std::string_view kDelta = "ajp_frames_delta";
-constexpr std::string_view kScales = "ajp_frames_scales";
+constexpr std::string_view kFull = "kirari_frames_full";
+constexpr std::string_view kNetOut = "kirari_frames_net_out";
+constexpr std::string_view kCenterHalf = "kirari_frames_center_half";
+constexpr std::string_view kDeltaHalf = "kirari_frames_delta_half";
+constexpr std::string_view kDelta = "kirari_frames_delta";
+constexpr std::string_view kScales = "kirari_frames_scales";
 
 Bytes as_bytes(std::string_view text) {
   return {reinterpret_cast<const std::byte*>(text.data()), text.size()};
@@ -151,27 +151,27 @@ void head_nodes(Message& graph, const FrameSplit& split) {
   Message concat;
   for (const std::string& name : names) concat.text(kNodeInput, name);
   concat.text(kNodeOutput, split.half ? kFull : split.input)
-      .text(kNodeName, std::format("ajp_frames_{}", split.input))
+      .text(kNodeName, std::format("kirari_frames_{}", split.input))
       .text(kNodeOpType, "Concat")
       .message(kNodeAttribute, int_attribute("axis", 1));
   graph.message(kGraphNode, concat);
   if (!split.half) return;
-  graph.message(kGraphNode, pool_node("ajp_frames_pool", kFull, split.input));
-  graph.message(kGraphNode, pool_node("ajp_frames_center_pool", names[static_cast<std::size_t>(split.center)],
-                                      kCenterHalf));
+  graph.message(kGraphNode, pool_node("kirari_frames_pool", kFull, split.input));
+  graph.message(kGraphNode, pool_node("kirari_frames_center_pool",
+                                      names[static_cast<std::size_t>(split.center)], kCenterHalf));
 }
 
 // Les nœuds ajoutés en queue (demi-taille) : output = milieu + agrandi(réseau − milieu moyenné).
 void tail_nodes(Message& graph, const FrameSplit& split) {
   const std::string center = frame_input_name(split.input, split.center);
   graph.message(kGraphNode,
-                node("Sub", "ajp_frames_delta_half", std::array{kNetOut, kCenterHalf}, kDeltaHalf));
+                node("Sub", "kirari_frames_delta_half", std::array{kNetOut, kCenterHalf}, kDeltaHalf));
   Message resize =
-      node("Resize", "ajp_frames_resize", std::array{kDeltaHalf, std::string_view(), kScales}, kDelta);
+      node("Resize", "kirari_frames_resize", std::array{kDeltaHalf, std::string_view(), kScales}, kDelta);
   resize.message(kNodeAttribute, text_attribute("mode", "linear"));
   graph.message(kGraphNode, resize);
   graph.message(kGraphNode,
-                node("Add", "ajp_frames_add", std::array{std::string_view(center), kDelta}, split.output));
+                node("Add", "kirari_frames_add", std::array{std::string_view(center), kDelta}, split.output));
   graph.message(kGraphInitializer, scales_initializer());
 }
 
@@ -298,4 +298,4 @@ std::expected<std::vector<std::byte>, Refusal> with_frame_inputs(std::span<const
   return out;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

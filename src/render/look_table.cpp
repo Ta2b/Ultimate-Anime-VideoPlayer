@@ -9,7 +9,7 @@
 #include <libplacebo/colorspace.h>
 #include <libplacebo/dispatch.h>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 // Le nom d'un //!PARAM ou d'une texture du `slot`-ième emplacement (0 : le premier, sans numéro), comme
@@ -321,4 +321,4 @@ std::uint64_t LookTable::builds() const {
 LookTable::LookTable(std::unique_ptr<Impl> impl) : impl_(std::move(impl)) {}
 LookTable::~LookTable() = default;
 
-}  // namespace ajp::render
+}  // namespace kirari::render

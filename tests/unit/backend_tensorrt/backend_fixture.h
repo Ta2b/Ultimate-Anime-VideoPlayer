@@ -13,7 +13,7 @@
 #include "gpu/backend.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::test {
+namespace kirari::test {
 
 // Dans backend_fixture.cpp : <windows.h> y reste, ses macros (small, near, far…) hors des tests.
 void* open_backend_library();
@@ -43,7 +43,7 @@ struct Loaded {
   Library library;
   gpu::Backend* backend = nullptr;
   Refusal refusal{};
-  std::filesystem::path cache = std::filesystem::path(AJP_TEST_CACHE_DIR);
+  std::filesystem::path cache = std::filesystem::path(KIRARI_TEST_CACHE_DIR);
 
   // filtered_warp : l'essai --filtered-warp (warp par objets texture) ; trials : BackendInit::trials.
   explicit Loaded(bool filtered_warp = false, std::uint32_t trials = 0) {
@@ -51,12 +51,12 @@ struct Loaded {
     std::filesystem::create_directories(cache);
     const gpu::BackendInit init{
         .cache_dir = cache, .filtered_warp = filtered_warp, .trials = trials, .refusal = &refusal};
-    backend = library.symbol<std::remove_pointer_t<gpu::BackendCreateFn>>("ajp_backend_create")(
+    backend = library.symbol<std::remove_pointer_t<gpu::BackendCreateFn>>("kirari_backend_create")(
         gpu::kBackendAbi, &init);
   }
   ~Loaded() {
     if (backend != nullptr) {
-      library.symbol<std::remove_pointer_t<gpu::BackendDestroyFn>>("ajp_backend_destroy")(backend);
+      library.symbol<std::remove_pointer_t<gpu::BackendDestroyFn>>("kirari_backend_destroy")(backend);
     }
   }
 };
@@ -86,4 +86,4 @@ inline void upload(const gpu::Tensor& tensor, const std::vector<float>& values) 
   REQUIRE(cudaDeviceSynchronize() == cudaSuccess);
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

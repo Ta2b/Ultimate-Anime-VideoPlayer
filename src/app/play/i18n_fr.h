@@ -4,7 +4,7 @@
 
 #include "app/play/i18n.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 
 // Les tables françaises, une par zone de l'interface ; french_entries() les réunit.
 std::span<const Entry> french_player();    // barre de lecture, pistes, notifications
@@ -19,4 +19,4 @@ std::span<const Entry> french_menu();      // le menu des paramètres : infobull
 std::span<const Entry>
 french_messages();  // lecteur par défaut, mises à jour, benchmark, installation des moteurs
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

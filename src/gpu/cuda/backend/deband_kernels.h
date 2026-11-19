@@ -5,7 +5,7 @@
 
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Rayon et seuil de libplacebo (pl_deband_default_params : 16 pixels, 3 / 1000 du code) : un pixel prend la
 // moyenne de quatre points tirés dans son rayon tant qu'elle reste sous le seuil, canal par canal ; un vrai
@@ -22,4 +22,4 @@ struct DebandParams {
 
 cudaError_t launch_deband(const DebandParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

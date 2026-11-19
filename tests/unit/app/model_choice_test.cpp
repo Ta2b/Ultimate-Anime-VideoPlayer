@@ -17,7 +17,7 @@
 #include "app/play/derived_model.h"
 #include "app/play/drba_model.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Un dossier personnel jetable avec le dossier RIFE de l'installation d'AnimeJaNai ; un nom par
@@ -26,7 +26,7 @@ struct FakeHome {
   std::filesystem::path home;
   std::filesystem::path rife;
   explicit FakeHome(std::string_view test)
-      : home(std::filesystem::temp_directory_path() / std::format("ajp-model-choice-{}", test)),
+      : home(std::filesystem::temp_directory_path() / std::format("kirari-model-choice-{}", test)),
         rife(home / ".local/share/AnimeJaNai-HDR-linux/animejanai/rife") {
     std::filesystem::remove_all(home);
     std::filesystem::create_directories(rife);
@@ -63,7 +63,7 @@ TEST_CASE("Modèle RIFE : le défaut, le choix du menu, la liste du dossier", "[
 }
 
 TEST_CASE("Modèle RIFE introuvable : refus qui cite les chemins essayés", "[app][model_choice]") {
-  const auto home = std::filesystem::temp_directory_path() / "ajp-model-choice-empty";
+  const auto home = std::filesystem::temp_directory_path() / "kirari-model-choice-empty";
   std::filesystem::remove_all(home);
   const auto refused = choose_rife_model(PlayOptions{}, home, PlaySettings{});
   REQUIRE_FALSE(refused);
@@ -257,4 +257,4 @@ TEST_CASE("Crans de précision de RIFE et DistilDRBA : le graphe à côté du mo
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

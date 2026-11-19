@@ -2,7 +2,7 @@
 
 #include <format>
 
-#ifdef AJP_WITH_WAYLAND_PRESENTATION
+#ifdef KIRARI_WITH_WAYLAND_PRESENTATION
 #include <cstring>
 #include <poll.h>
 #include <string_view>
@@ -15,7 +15,7 @@
 #include "presentation-time-client.h"
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 ScreenStamp stamp_of(std::uint64_t seq, std::uint32_t sec_hi, std::uint32_t sec_lo, std::uint32_t nsec,
                      std::uint32_t refresh_ns, std::uint32_t seq_hi, std::uint32_t seq_lo,
@@ -36,7 +36,7 @@ std::string screen_stamp_line(const ScreenStamp& s) {
   return std::format("{}\t{}\t{}\t{}\t{:#x}\n", s.seq, s.presented_us, s.refresh_ns, s.msc, s.flags);
 }
 
-#ifdef AJP_WITH_WAYLAND_PRESENTATION
+#ifdef KIRARI_WITH_WAYLAND_PRESENTATION
 
 struct WaylandPresentation::State {
   struct Pending {
@@ -206,4 +206,4 @@ WaylandPresentation::WaylandPresentation() = default;
 WaylandPresentation::WaylandPresentation(std::unique_ptr<State> state) : state_(std::move(state)) {}
 WaylandPresentation::~WaylandPresentation() = default;
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

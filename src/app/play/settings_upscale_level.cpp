@@ -12,7 +12,7 @@
 #include "app/play/model_choice.h"
 #include "app/play/panel_style.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -154,4 +154,4 @@ void fp8_checkbox(PlaySettings& d, const SettingsChoices& choices) {
              panel::Apply::Reload);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

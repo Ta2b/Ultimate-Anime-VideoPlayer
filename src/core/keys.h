@@ -16,7 +16,7 @@
 #include "core/messages.h"
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Touche physique. Lettres, chiffres et touches de fonction se suivent, dans l'ordre.
 enum class Key : std::uint8_t {
@@ -180,4 +180,4 @@ struct KeysRead {
 };
 KeysRead read_keys(std::string_view profile_toml);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

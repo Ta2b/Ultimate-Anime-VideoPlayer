@@ -26,7 +26,7 @@
 #include "gpu/span_fp8/derive.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kReal = 48;
@@ -305,9 +305,9 @@ TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_
   CHECK(native->workspace_bytes() * 4 < padded->workspace_bytes() * 3 + 4096);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Lot 2 du fil SPAN : les blocs en FP16 sans quantification suivent la référence FP16 (span_fp8_ref.h), qui
 // calcule le même réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps réduit à 48 ; à 64, le
@@ -344,4 +344,4 @@ TEST_CASE("SPAN FP16 en noyaux CUTLASS : suit la référence FP16", "[cuda][span
   CHECK(snr >= (acc16 ? 30.0 : 40.0));
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -10,7 +10,7 @@
 set -euo pipefail
 
 DEST="${1:?dossier de destination}"
-CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-fonts}"
+CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/kirari-release-fonts}"
 if command -v sha256sum >/dev/null; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi
 mkdir -p "$DEST" "$CACHE"
 

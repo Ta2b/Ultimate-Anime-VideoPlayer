@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Plus long que tout tour de boucle ordinaire (une fenêtre déplacée sous Windows tient la boucle une ou deux
 // secondes), plus court que toute veille.
@@ -106,4 +106,4 @@ class ScreenSaverHold {
   bool failed_ = false;        // le dernier essai a échoué : dit au journal une fois
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

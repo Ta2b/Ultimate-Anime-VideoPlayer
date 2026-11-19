@@ -19,7 +19,7 @@
 #include "media/track.h"
 #include "subs/subs_messages.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Paramètres du flux audio recopiés d'AVCodecParameters. Refus AudioCodecUnavailable
 // pour un codec sans nom connu de FFmpeg.
@@ -109,4 +109,4 @@ std::span<const std::byte> mov_text_payload(std::span<const std::byte> packet);
 // Le TrackPacket de subs d'un paquet du conteneur ; mov_text : le texte sans sa longueur.
 subs::TrackPacket subs_packet(const media::Packet& packet, bool mov_text);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

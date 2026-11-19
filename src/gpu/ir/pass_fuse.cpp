@@ -10,7 +10,7 @@
 #include "gpu/ir/passes.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Valeurs par canal d'une constante qui se diffuse sur [N, channels, H, W] sans
@@ -326,4 +326,4 @@ int fuse_gates(Graph& graph) {
   return fused;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

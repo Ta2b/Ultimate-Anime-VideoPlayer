@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le plus long préfixe de text qui tient dans max_bytes octets sans couper un caractère UTF-8.
 inline std::size_t utf8_prefix(std::string_view text, std::size_t max_bytes) {
@@ -24,4 +24,4 @@ void copy_text(std::array<char, N>& to, std::string_view text) {
   to[n] = '\0';
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -7,13 +7,13 @@
 #   tools/release/trt-package.sh            # construit et joint si absent
 #   tools/release/trt-package.sh --check    # dit seulement si le paquet existe (code 0) ou manque (code 3)
 #
-# Variables : AJP_RELEASE_REPO (défaut : celui de versions.env), AJP_TRT_WORK (dossier de travail, défaut ~/ajp-work/trt) ;
-# celles de preflight/nvidia-package.sh (AJP_TRT_ROOT, CUDA_DIR, CCCL_DIR).
+# Variables : KIRARI_RELEASE_REPO (défaut : celui de versions.env), KIRARI_TRT_WORK (dossier de travail, défaut ~/kirari-work/trt) ;
+# celles de preflight/nvidia-package.sh (KIRARI_TRT_ROOT, CUDA_DIR, CCCL_DIR).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-repo="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"
+repo="${KIRARI_RELEASE_REPO:-$(sed -n 's/^KIRARI_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"
 fp="$("$HERE/trt-fingerprint.sh" "$ROOT")"
 tag="trt-$fp"
 echo "empreinte : $fp (release $repo $tag)"
@@ -25,6 +25,6 @@ fi
 [ "${1:-}" = "--check" ] && { echo "paquet absent : tools/release/trt-package.sh le construit"; exit 3; }
 
 [ -z "$(git -C "$ROOT" status --porcelain --untracked-files=no)" ] || { echo "$ROOT a des changements locaux : le paquet doit sortir d'un commit" >&2; exit 1; }
-work="${AJP_TRT_WORK:-$HOME/ajp-work/trt}/$fp"
-AJP_ALLOW_UNTAGGED=1 "$HERE/preflight/nvidia-package.sh" "$ROOT" "$tag" "$work"
-AJP_RELEASE_REPO="$repo" "$HERE/attach-nvidia-linux.sh" "$work/package" "$tag" --publish
+work="${KIRARI_TRT_WORK:-$HOME/kirari-work/trt}/$fp"
+KIRARI_ALLOW_UNTAGGED=1 "$HERE/preflight/nvidia-package.sh" "$ROOT" "$tag" "$work"
+KIRARI_RELEASE_REPO="$repo" "$HERE/attach-nvidia-linux.sh" "$work/package" "$tag" --publish

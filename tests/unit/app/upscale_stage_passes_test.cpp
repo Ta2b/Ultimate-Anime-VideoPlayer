@@ -15,7 +15,7 @@
 #include "app/play/live_settings.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 using namespace std::chrono_literals;
 
@@ -195,4 +195,4 @@ TEST_CASE("Étage gpu : RIFE mouvement fort, les passes de la paire enfilées av
   CHECK(rig.backend.count("warp_blend") == 6);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

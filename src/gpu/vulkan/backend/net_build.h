@@ -21,7 +21,7 @@
 #include "gpu/vulkan/backend/net_autotune.h"
 #include "gpu/vulkan/backend/net_program.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 struct BuildRequest {
   std::filesystem::path onnx;
@@ -47,7 +47,7 @@ std::expected<ArtifactData, Refusal> build_imported(ir::Graph imported, const Bu
 
 // Les passes du moteur sur un graphe aux formes connues : grille des GridSample en float, passes de gpu_ir
 // (ConvTranspose réécrites pour les matrices coopératives), précision demandée, Cast entre flottants
-// retirés, réductions remontées. Ce que prepare_graph joue après l'inférence des formes ; ajp_onnx_info
+// retirés, réductions remontées. Ce que prepare_graph joue après l'inférence des formes ; kirari_onnx_info
 // --vulkan l'appelle aussi, pour décrire le graphe qui tourne (A44-10). fold_casts = false garde les Cast
 // entre flottants : le graphe reste exécutable par l'interpréteur, qui exige des types égaux (C44-01).
 std::expected<void, Refusal> engine_passes(ir::Graph& graph, const std::string& model_id, bool fp16,
@@ -87,4 +87,4 @@ int purge_stale_temporaries(const std::filesystem::path& folder,
                             std::chrono::seconds older_than = std::chrono::hours(1));
 std::expected<std::vector<std::byte>, Refusal> read_file(const std::filesystem::path& path);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

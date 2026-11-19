@@ -20,7 +20,7 @@
 #include "prepare/onnx_scan.h"
 #include "prepare/sha256.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Tenseurs du flot et du masque des exports de vs-mlrt (v1 et v2) et de vs-rife : le flot final
@@ -123,4 +123,4 @@ int rife_padding_multiple(const std::filesystem::path& rife_onnx) {
                                                                         : kernels::kRifeAlign;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

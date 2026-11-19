@@ -4,7 +4,7 @@
 
 #include <string_view>
 
-namespace ajp::render::shaders {
+namespace kirari::render::shaders {
 
 // Les //!PARAM du grade (la passe anime se lit derrière eux).
 extern const std::string_view anime_hdr_params;
@@ -19,4 +19,4 @@ extern const std::string_view anime_hdr_black;
 // La netteté (render/sharpen.h) : un masque flou adaptatif sur SCALED.
 extern const std::string_view sharpen;
 
-}  // namespace ajp::render::shaders
+}  // namespace kirari::render::shaders

@@ -24,7 +24,7 @@
 #include <winhttp.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<std::filesystem::path> system_tool(std::string_view name) {
 #if defined(_WIN32)
@@ -134,7 +134,7 @@ std::optional<std::string> auto_proxy(const WINHTTP_CURRENT_USER_IE_PROXY_CONFIG
                                       const std::wstring& target) {
   if (config.fAutoDetect == FALSE && config.lpszAutoConfigUrl == nullptr) return std::nullopt;
   HINTERNET session =
-      WinHttpOpen(L"ajp", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+      WinHttpOpen(L"kirari", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
   if (session == nullptr) return std::nullopt;
   WINHTTP_AUTOPROXY_OPTIONS options{};
   if (config.lpszAutoConfigUrl != nullptr) {
@@ -265,4 +265,4 @@ std::expected<void, Refusal> run_tool(const prepare::ProcessSpec& spec, const pr
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

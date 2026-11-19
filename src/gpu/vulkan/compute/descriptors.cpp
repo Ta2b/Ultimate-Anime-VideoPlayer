@@ -9,7 +9,7 @@
 
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 std::expected<DescriptorArena, Refusal> DescriptorArena::create(const VkContext& context,
                                                                 DescriptorLimits limits) {
@@ -154,4 +154,4 @@ std::expected<VkDescriptorSet, Refusal> DescriptorArena::bind(const Pipeline& pi
   return set;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

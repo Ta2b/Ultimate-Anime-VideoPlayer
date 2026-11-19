@@ -5,7 +5,7 @@
 // avec le moteur (A45-11) ; la variante mouvement, un flot borné. La CI le lance la nuit et à la demande, sur
 // les modèles téléchargés (ci.yml) ; sans modèle il est sauté. Et l'encodage gardé d'un appel à l'autre
 // (même paire à un autre instant, paire qui suit), bit à bit contre la chaîne qui encode tout.
-//   ajp_vk_backend_tests "[.rife_fused]"
+//   kirari_vk_backend_tests "[.rife_fused]"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,7 +22,7 @@
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 namespace fs = std::filesystem;
@@ -58,9 +58,9 @@ ModelSpec spec_of(const fs::path& file) {
 }
 
 void compare_chain(const std::string& file, bool motion) {
-  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
+  const fs::path onnx = fs::path(KIRARI_RIFE_MODEL_DIR) / file;
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
-  TempDir dir("ajp-rife-fused-vk");
+  TempDir dir("kirari-rife-fused-vk");
   std::unique_ptr<VulkanBackend> backend = make_backend(dir.path() / "cache");
   if (!backend->capabilities().rife_fused) SKIP("appareil sans stockage 16 bits");
   constexpr int h = 64;
@@ -142,9 +142,9 @@ void compare_chain(const std::string& file, bool motion) {
 // chaîne qui encode tout à chaque appel : trois images, deux paires dans deux tampons d'entrée à tour de
 // rôle, deux instants pour la première, sur la variante image et la variante mouvement.
 void kept_encoding_is_exact(const std::string& file, bool motion) {
-  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
+  const fs::path onnx = fs::path(KIRARI_RIFE_MODEL_DIR) / file;
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
-  TempDir dir("ajp-rife-fused-encode-vk");
+  TempDir dir("kirari-rife-fused-encode-vk");
   std::unique_ptr<VulkanBackend> backend = make_backend(dir.path() / "cache");
   if (!backend->capabilities().rife_fused) SKIP("appareil sans stockage 16 bits");
   constexpr int h = 64;
@@ -262,4 +262,4 @@ TEST_CASE("RIFE fusionné : la chaîne Vulkan contre le RIFE entier", "[vk_backe
   }
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

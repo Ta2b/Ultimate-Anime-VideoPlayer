@@ -18,7 +18,7 @@
 #include "app/play/placebo_impl.h"
 #include "core/file_sync.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les « <cache>.<n>.part » d'une fermeture interrompue (save_shader_cache) : effacés passé une heure, le
@@ -115,4 +115,4 @@ void PlaceboScreen::Impl::save_shader_cache() {
   pl_cache_destroy(&shader_cache);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

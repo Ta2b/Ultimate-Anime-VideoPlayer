@@ -14,7 +14,7 @@
 #include "gpu/span_fp8/package.h"
 #include "gpu/span_fp8/package_model.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // La version du graphe d'un paquet : à augmenter à chaque changement de package_model ; elle entre dans
 // BackendCaps::span_fp8_kernels (les reçus d'un autre graphe se refont, app/play/span_int8.cpp).
@@ -31,4 +31,4 @@ std::expected<ir::Graph, Refusal> span8_graph(const span_fp8::Package& package,
 // (ir::load_onnx_file). Refus FileUnreadable : paquet illisible ; ceux de parse et de l'import.
 std::expected<ir::Graph, Refusal> load_network_graph(const std::filesystem::path& path);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

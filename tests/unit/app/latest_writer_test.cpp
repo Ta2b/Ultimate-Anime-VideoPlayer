@@ -15,7 +15,7 @@
 
 #include "app/play/save_failure.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("Écritures : la dernière version de chaque fichier, faite avant la fin de flush", "[app][writer]") {
   std::mutex mutex;
@@ -129,7 +129,7 @@ TEST_CASE("Écritures : tous les refus sont relevés d'un coup (C22-02)", "[app]
 // C22-02 : à la sortie, le dernier essai de play.toml a lieu même si une autre clé a échoué avant lui.
 TEST_CASE("Écritures : un refus d'une autre clé ne cache pas celui de play.toml à la sortie (C22-02)",
           "[app][writer]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-finish-writes";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-finish-writes";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   LatestWriter writer;
@@ -161,4 +161,4 @@ TEST_CASE("Écritures : détruit pendant une écriture lente, le writer rend la 
   CHECK(finished.load());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

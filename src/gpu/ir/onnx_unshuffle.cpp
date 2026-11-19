@@ -13,7 +13,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "gpu/ir/protobuf.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 namespace {
 
 using proto::Bytes;
@@ -163,8 +163,8 @@ Plan plan_of(const Graph& g) {
     });
     if (next.empty() || !reshaped || outputs.contains(permuted)) continue;
     if (plan.sites.empty()) {
-      plan.starts = unique("ajp.unbatch.starts");
-      plan.ends = unique("ajp.unbatch.ends");
+      plan.starts = unique("kirari.unbatch.starts");
+      plan.ends = unique("kirari.unbatch.ends");
     }
     plan.sites.push_back({.reshape = made->second,
                           .transpose = t,
@@ -193,7 +193,7 @@ void write_slice(Writer& graph, const Site& site, const Plan& plan) {
   node.string(kNodeInput, plan.starts);
   node.string(kNodeInput, plan.ends);
   node.string(kNodeOutput, site.unbatched);
-  node.string(kNodeName, std::format("ajp.unbatch.{}", site.unbatched));
+  node.string(kNodeName, std::format("kirari.unbatch.{}", site.unbatched));
   node.string(kNodeOpType, "Slice");
   graph.message(kGraphNode, node);
 }
@@ -295,4 +295,4 @@ std::expected<std::vector<std::byte>, Refusal> with_unshuffle_5d(std::span<const
   return std::move(out).take();
 }
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

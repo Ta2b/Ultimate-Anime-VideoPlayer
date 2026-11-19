@@ -14,7 +14,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 class ClockPll {
  public:
@@ -59,4 +59,4 @@ class ClockPll {
   bool locked_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

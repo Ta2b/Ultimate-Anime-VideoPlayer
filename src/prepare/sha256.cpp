@@ -14,7 +14,7 @@
 #include "core/sha256_blocks.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 void Sha256::blocks(const std::uint8_t* data, std::size_t count) {
   core::sha256_blocks(state_, data, count);
 }
@@ -117,4 +117,4 @@ bool is_sha256_hex(std::string_view text) {
          std::ranges::all_of(text, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

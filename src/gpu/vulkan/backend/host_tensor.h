@@ -12,7 +12,7 @@
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 #include "gpu/vulkan/compute/context.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // L'alignement des mémoires hôte que l'appareil importe (VK_EXT_external_memory_host activée,
 // minImportedHostPointerAlignment), ou 0 s'il n'en importe pas. Tous systèmes.
@@ -28,4 +28,4 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
     VkContext& context, net::Runtime& runtime, TensorType type, const Shape& shape, std::uint64_t bytes,
     std::uint64_t alignment, std::shared_ptr<HostViews> views, bool verify);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

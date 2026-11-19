@@ -23,7 +23,7 @@
 #include "prepare/sha256.h"
 #include "prepare/split_index.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using split::block_name;
@@ -417,7 +417,7 @@ std::string_view output_name(RifeFusedOutput output) {
 }
 
 std::string format_manifest(const RifeFusedManifest& manifest) {
-  std::string text = "ajp-rife-fused 1\n";
+  std::string text = "kirari-rife-fused 1\n";
   text += std::format("output {}\n", output_name(manifest.output));
   text += std::format("size {} {}\n", manifest.height, manifest.width);
   text += "reduce";
@@ -483,7 +483,7 @@ std::expected<RifeFusedManifest, Refusal> parse_manifest(std::string_view text) 
       while (!rest.empty() && rest.front() == ' ') rest.remove_prefix(1);
       return value;
     };
-    if (key == "ajp-rife-fused") {
+    if (key == "kirari-rife-fused") {
       if (rest != "1") return bad("version " + std::string(rest));
       header = true;
     } else if (key == "output") {
@@ -580,4 +580,4 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
   return manifest_path;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

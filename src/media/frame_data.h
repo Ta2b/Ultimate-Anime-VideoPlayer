@@ -1,4 +1,4 @@
-// AVFrame vers ajp::DecodedFrame : FrameData tient une référence AVFrame, la
+// AVFrame vers kirari::DecodedFrame : FrameData tient une référence AVFrame, la
 // dernière copie relâchée rend le tampon à son pool. Interne au module.
 #pragma once
 
@@ -10,7 +10,7 @@
 #include "core/types.h"
 #include "media/av_util.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Événement GPU à attendre avant de lire l'image (CUevent du flux de décodage), avec ce
 // qui le garde en vie. handle 0 : rien à attendre. Une image Vulkan porte son propre
@@ -40,4 +40,4 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
 // Tests seulement : le chemin de lecture s'en tient à FrameData.
 const AVFrame* av_frame_of(const FrameData& data);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

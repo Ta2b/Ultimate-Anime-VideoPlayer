@@ -1,7 +1,7 @@
-// L'écran d'accueil : « ajp » lancé sans fichier, et rendu à la fin d'une vidéo ouverte depuis lui.
+// L'écran d'accueil : « kirari » lancé sans fichier, et rendu à la fin d'une vidéo ouverte depuis lui.
 // La fenêtre montre le menu des paramètres, tous ses onglets, et « Ouvrir une vidéo »
 // (SDL_ShowOpenFileDialog) ; un fichier glissé sur la fenêtre lance aussi la lecture, comme celui que
-// le Finder ouvre avec AJP.app sous macOS (SDL le rend en SDL_EVENT_DROP_FILE). Les réglages changés
+// le Finder ouvre avec Kirari.app sous macOS (SDL le rend en SDL_EVENT_DROP_FILE). Les réglages changés
 // ici sont gardés comme pendant la lecture : play.toml, user.toml (raccourcis), settings.toml (moteurs).
 #pragma once
 
@@ -27,7 +27,7 @@
 
 union SDL_Event;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La source supposée tant qu'aucune vidéo n'est ouverte, la plus courante : un épisode 1080p à
 // 23,976 images par seconde. Elle choisit la règle que le menu montre.
@@ -89,4 +89,4 @@ class DeferredDrops {
 std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const HomeScreen& h, HomeState& state,
                                                                       const std::string& problem);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -3,7 +3,7 @@
 // chroma : comme ingest_chroma_h, les codes bruts de Cb et de Cr lus dans le plan 1.
 // Contrat : kernels/spec/resample.h ; référence : kernels/ref/color.cpp (yuv_to_rgb).
 #extension GL_GOOGLE_include_directive : require
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 #include "yuv.glsl"
 #include "planes.glsl"

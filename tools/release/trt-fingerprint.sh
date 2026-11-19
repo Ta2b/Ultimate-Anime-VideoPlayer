@@ -8,7 +8,7 @@
 # Entrées communes : le code que le module lie (src/core, gpu, kernels, prepare), CUTLASS (noyaux SPAN FP8), les
 # définitions CMake (cmake/, le CMakeLists.txt racine sans sa ligne VERSION, qui change à chaque release sans
 # toucher le module, et CMakePresets.json, qui porte les options du préréglage de livraison) et, de versions.env, les
-# seules lignes CUDA_*, TENSORRT_* et AJP_RELEASE_REPO (C51-15).
+# seules lignes CUDA_*, TENSORRT_* et KIRARI_RELEASE_REPO (C51-15).
 # Linux : la recette des dépendances, l'extraction de trtexec et des en-têtes TensorRT (linux-tensorrt.sh), le workflow
 # qui construit le paquet (architectures passées à CMake), l'image du préflight, l'empaquetage et l'index des fichiers
 # NVIDIA (B51-09). Windows :
@@ -42,7 +42,7 @@ fi
       # Les seules lignes qui touchent le module : le kit CUDA, TensorRT et le dépôt des releases (les liens de
       # l'index). Meson, les paquets apt, appimagetool et le reste portent le lecteur : une mise à jour de l'un
       # d'eux ne refait pas un paquet TensorRT de une à deux heures (C51-15).
-      tr -d '\r' < "$file" | grep -E '^(CUDA_|TENSORRT_|AJP_RELEASE_REPO=)' | sha256sum
+      tr -d '\r' < "$file" | grep -E '^(CUDA_|TENSORRT_|KIRARI_RELEASE_REPO=)' | sha256sum
     else
       tr -d '\r' < "$file" | sha256sum
     fi | cut -d' ' -f1 | sed "s|\$|  $file|"

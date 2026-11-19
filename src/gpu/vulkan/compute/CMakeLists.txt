@@ -2,9 +2,9 @@
 # depuis un vkGetInstanceProcAddr), contexte adopté ou créé, sous-allocateur borné, pipelines
 # depuis le SPIR-V embarqué, enregistrements rejouables sur sémaphore timeline, et les noyaux
 # GLSL de src/kernels/glsl/ (KernelRunner). Bibliothèque statique : le moteur Vulkan la liera.
-include(AjpSpirv)
+include(KirariSpirv)
 
-ajp_add_module(vk_compute
+kirari_add_module(vk_compute
   SOURCES
     buffer.cpp
     caps.cpp
@@ -30,11 +30,11 @@ ajp_add_module(vk_compute
     spirv_access.cpp
     sync.cpp
     weights.cpp
-  DEPS ajp::core_types ajp::core_os ajp::kernels ajp::dep::vulkan
-  PRIVATE_DEPS ajp::core_log ajp::dep::spdlog ${CMAKE_DL_LIBS})
+  DEPS kirari::core_types kirari::core_os kirari::kernels kirari::dep::vulkan
+  PRIVATE_DEPS kirari::core_log kirari::dep::spdlog ${CMAKE_DL_LIBS})
 
 # Aucun prototype Vulkan, ici comme chez ceux qui incluent nos en-têtes.
-target_compile_definitions(ajp_vk_compute PUBLIC VK_NO_PROTOTYPES)
+target_compile_definitions(kirari_vk_compute PUBLIC VK_NO_PROTOTYPES)
 
 set(glsl "${PROJECT_SOURCE_DIR}/src/kernels/glsl")
 # Les tenseurs des réseaux en float16 : variante « _f16 » des shaders qui en lisent ou écrivent.
@@ -64,8 +64,8 @@ set(tensor_shaders
   "${glsl}/pan_global.comp"
   "${glsl}/warp_blend.comp"
   "${glsl}/warp_blend_ring.comp")
-ajp_add_spirv(ajp_vk_compute
-  NAMESPACE ajp::gpu::vk::spirv
+kirari_add_spirv(kirari_vk_compute
+  NAMESPACE kirari::gpu::vk::spirv
   SHADERS
     ${tensor_shaders}
     "${glsl}/block_diff.comp"
@@ -78,5 +78,5 @@ ajp_add_spirv(ajp_vk_compute
     "${glsl}/yuv_window.comp"
     "${glsl}/yuv_window_planes.comp"
   VARIANT f16
-  DEFINES AJP_TENSOR_F16
+  DEFINES KIRARI_TENSOR_F16
   VARIANT_SHADERS ${tensor_shaders})

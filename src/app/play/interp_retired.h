@@ -11,7 +11,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le modèle RIFE du menu le plus proche d'un modèle retiré ; les autres noms, et le nom vide (le défaut),
 // tels quels.
@@ -20,4 +20,4 @@ std::string_view nearest_rife_model(std::string_view model);
 // play.toml relu : modèle retiré remplacé, GMFSS ramené à RIFE 4.25.
 void retire_interpolation(PlaySettings& settings);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

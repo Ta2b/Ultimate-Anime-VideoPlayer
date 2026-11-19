@@ -10,7 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -124,4 +124,4 @@ TEST_CASE("C11-06 : l'écran de la fenêtre se relit sur le fil, pas sur le thre
   CHECK(gate.display_reads.load() == 1);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

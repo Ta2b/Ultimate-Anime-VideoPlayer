@@ -6,11 +6,11 @@
 #include <dlfcn.h>
 #endif
 
-namespace ajp::test {
+namespace kirari::test {
 
 #if defined(_WIN32)
 void* open_backend_library() {
-  return LoadLibraryA(AJP_BACKEND_TENSORRT);
+  return LoadLibraryA(KIRARI_BACKEND_TENSORRT);
 }
 
 void close_backend_library(void* handle) {
@@ -22,7 +22,7 @@ void* backend_symbol(void* handle, const char* name) {
 }
 #else
 void* open_backend_library() {
-  return dlopen(AJP_BACKEND_TENSORRT, RTLD_NOW | RTLD_LOCAL);
+  return dlopen(KIRARI_BACKEND_TENSORRT, RTLD_NOW | RTLD_LOCAL);
 }
 
 void close_backend_library(void* handle) {
@@ -34,4 +34,4 @@ void* backend_symbol(void* handle, const char* name) {
 }
 #endif
 
-}  // namespace ajp::test
+}  // namespace kirari::test

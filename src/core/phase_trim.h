@@ -21,7 +21,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 class PhaseTrim {
  public:
@@ -69,4 +69,4 @@ class PhaseTrim {
   std::int64_t changed_us_ = -kMinGapUs;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

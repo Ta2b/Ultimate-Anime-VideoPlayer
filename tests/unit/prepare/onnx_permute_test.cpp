@@ -14,7 +14,7 @@
 #include "prepare/onnx_split.h"
 #include "support.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using test::field;
@@ -51,4 +51,4 @@ TEST_CASE("Les poids d'une convolution se permutent sur leur axe d'entrée", "[p
   CHECK(permute_input_channels(model, "k", short_one).error().code == RefusalCode::FormatUnsupported);
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

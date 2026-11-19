@@ -9,7 +9,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/resample.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Une image de la chaîne : dimensions paires dans [2, kMaxDimension].
 inline Result<void> check_frame(int width, int height, std::string_view what) {
@@ -75,4 +75,4 @@ inline Result<void> check_same_size(const RgbImage& a, const RgbImage& b, std::s
   return check_same_size(a.planes[0], b.planes[0], what);
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

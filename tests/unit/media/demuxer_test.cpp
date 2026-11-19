@@ -24,8 +24,8 @@ extern "C" {
 #include "clips.h"
 #include "media/selection.h"
 
-using namespace ajp::media;
-using ajp::RefusalCode;
+using namespace kirari::media;
+using kirari::RefusalCode;
 
 namespace {
 
@@ -488,7 +488,7 @@ TEST_CASE("Demuxer : BT.2020 à luminance constante n'est pas lue comme NCL", "[
   spec.color.matrix = AVCOL_SPC_BT2020_NCL;
   Demuxer non_constant = open_clip(spec);
   REQUIRE(non_constant.tracks()[0].color_matrix.has_value());
-  CHECK(*non_constant.tracks()[0].color_matrix == ajp::ColorMatrix::Bt2020Ncl);
+  CHECK(*non_constant.tracks()[0].color_matrix == kirari::ColorMatrix::Bt2020Ncl);
 }
 
 // C35-01 : un fichier .mkv qui est une liste ffconcat n'est pas un conteneur vidéo accepté (il ouvrirait

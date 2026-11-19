@@ -6,7 +6,7 @@
 // Contrat : kernels/spec/color.h et resample.h ; référence : kernels/ref/color.cpp (rgb_to_yuv).
 // Repris de animejanai-inference-rtx@118c272 src/kernels.cu:260-283 (k_uv_v_store).
 #extension GL_GOOGLE_include_directive : require
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 #include "yuv.glsl"
 
@@ -48,9 +48,9 @@ void main() {
   uint word = gl_GlobalInvocationID.x;
   uint y = gl_GlobalInvocationID.y;
   // Entrelacé : un pixel de chroma occupe deux échantillons (Cb puis Cr).
-  uint pixels_per_word = AJP_INTERLEAVED ? AJP_SAMPLES_PER_WORD / 2u : AJP_SAMPLES_PER_WORD;
-  uint samples_per_row = AJP_INTERLEAVED ? 2u * pc.width : pc.width;
-  uint words_per_row = (samples_per_row * AJP_SAMPLE_BYTES + 3u) / 4u;
+  uint pixels_per_word = KIRARI_INTERLEAVED ? KIRARI_SAMPLES_PER_WORD / 2u : KIRARI_SAMPLES_PER_WORD;
+  uint samples_per_row = KIRARI_INTERLEAVED ? 2u * pc.width : pc.width;
+  uint words_per_row = (samples_per_row * KIRARI_SAMPLE_BYTES + 3u) / 4u;
   if (word >= words_per_row || y >= pc.dst_rows) return;
   uint cb_word = 0u;
   uint cr_word = 0u;
@@ -58,7 +58,7 @@ void main() {
     uint x = word * pixels_per_word + p;
     if (x >= pc.width) break;
     uvec2 codes = chroma_codes(x, y);
-    if (AJP_INTERLEAVED) {
+    if (KIRARI_INTERLEAVED) {
       cb_word |= sample_to_word(codes.x, 2u * p) | sample_to_word(codes.y, 2u * p + 1u);
     } else {
       cb_word |= sample_to_word(codes.x, p);
@@ -66,5 +66,5 @@ void main() {
     }
   }
   frame.words[(pc.cb_offset + y * pc.cb_pitch) / 4u + word] = cb_word;
-  if (!AJP_INTERLEAVED) frame.words[(pc.cr_offset + y * pc.cr_pitch) / 4u + word] = cr_word;
+  if (!KIRARI_INTERLEAVED) frame.words[(pc.cr_offset + y * pc.cr_pitch) / 4u + word] = cr_word;
 }

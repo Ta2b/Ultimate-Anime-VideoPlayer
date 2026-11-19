@@ -12,7 +12,7 @@
 #include <optional>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class PresentLevel : std::uint8_t { Open, Wayland, Wait, Timing, TimingAbsolute };
 
@@ -240,4 +240,4 @@ constexpr bool snapshot_keeps_target(bool pq_file, bool target_hdr) {
   return pq_file || !target_hdr;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

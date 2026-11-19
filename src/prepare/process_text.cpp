@@ -4,7 +4,7 @@
 
 #include "prepare/process.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 LineSplitter::LineSplitter(LineSink sink, std::size_t max_line)
     : sink_(std::move(sink)), max_line_(max_line) {}
@@ -79,4 +79,4 @@ std::string describe(const ProcessExit& exit) {
   return "fin inconnue";
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

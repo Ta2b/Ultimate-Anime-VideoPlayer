@@ -19,16 +19,16 @@ extern "C" {
 #include "media/av_util.h"
 #include "media/demuxer.h"
 
-using namespace ajp::media;
-using ajp::ChromaSiting;
-using ajp::ColorMatrix;
-using ajp::ColorRange;
-using ajp::DecodedFrame;
-using ajp::FrameMemory;
-using ajp::PixelFormat;
-using ajp::Primaries;
-using ajp::RefusalCode;
-using ajp::Transfer;
+using namespace kirari::media;
+using kirari::ChromaSiting;
+using kirari::ColorMatrix;
+using kirari::ColorRange;
+using kirari::DecodedFrame;
+using kirari::FrameMemory;
+using kirari::PixelFormat;
+using kirari::Primaries;
+using kirari::RefusalCode;
+using kirari::Transfer;
 
 namespace {
 
@@ -122,7 +122,7 @@ TEST_CASE("VideoDecoder : pixels FFV1 exacts, pts et durées en microsecondes", 
 TEST_CASE("VideoDecoder : une source non étiquetée reçoit la couleur devinée comme mpv", "[media][decoder]") {
   const std::vector<DecodedFrame> frames = decode_all(test::full_clip());
   REQUIRE_FALSE(frames.empty());
-  const ajp::ColorInfo& color = frames[0].color;
+  const kirari::ColorInfo& color = frames[0].color;
   CHECK(color.matrix == ColorMatrix::Bt601);   // 64x48 : définition standard
   CHECK(color.primaries == Primaries::Bt709);  // ni 576 ni 480 lignes
   CHECK(color.transfer == Transfer::Bt1886);
@@ -139,14 +139,14 @@ TEST_CASE("VideoDecoder : ColorInfo HDR10 depuis les side data, pixels 10 bits",
   CHECK(sample(frame, 0, 5, 7, 10) == test::pattern(0, 5, 7, 2, 10));
   CHECK(sample(frame, 2, 3, 1, 10) == test::pattern(2, 3, 1, 2, 10));
 
-  const ajp::ColorInfo& color = frame.color;
+  const kirari::ColorInfo& color = frame.color;
   CHECK(color.matrix == ColorMatrix::Bt2020Ncl);
   CHECK(color.primaries == Primaries::Bt2020);
   CHECK(color.transfer == Transfer::Pq);
   CHECK(color.range == ColorRange::Limited);
   CHECK(color.siting == ChromaSiting::TopLeft);
   REQUIRE(color.hdr.has_value());
-  const ajp::HdrMetadata& hdr = *color.hdr;
+  const kirari::HdrMetadata& hdr = *color.hdr;
   CHECK(hdr.primaries_xy[0] == Catch::Approx(0.708).margin(1e-4));
   CHECK(hdr.primaries_xy[1] == Catch::Approx(0.292).margin(1e-4));
   CHECK(hdr.primaries_xy[2] == Catch::Approx(0.170).margin(1e-4));

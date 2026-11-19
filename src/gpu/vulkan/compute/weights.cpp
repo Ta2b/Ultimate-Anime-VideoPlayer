@@ -12,7 +12,7 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "kernels/spec/transfer.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 std::size_t at(int i) {
@@ -115,4 +115,4 @@ std::expected<Bt1886Display, Refusal> bt1886_display(float white, float black) {
   return Bt1886Display{.white = white, .black = black, .a = std::pow(wg - bg, gamma), .b = bg / (wg - bg)};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

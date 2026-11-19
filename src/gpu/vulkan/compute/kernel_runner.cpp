@@ -10,7 +10,7 @@
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/weights.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using detail::bytes_of;
@@ -226,4 +226,4 @@ double scene_sum(std::span<const float> partials) {
   return sum;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

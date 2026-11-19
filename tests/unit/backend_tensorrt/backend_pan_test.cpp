@@ -14,8 +14,8 @@
 
 namespace {
 
-using namespace ajp;
-using namespace ajp::test;
+using namespace kirari;
+using namespace kirari::test;
 
 }  // namespace
 

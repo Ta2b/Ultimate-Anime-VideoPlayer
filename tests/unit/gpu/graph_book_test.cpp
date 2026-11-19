@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 TEST_CASE("Graphes : chaud, capture, rejeu, puis dépassement compté et signalé", "[gpu][graphs]") {
   GraphBook<int> book(16, 3);
@@ -158,4 +158,4 @@ TEST_CASE("Graphes : un registre de capacité nulle garde une place (B21-03)", "
   CHECK(book.size() == 1);
 }
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

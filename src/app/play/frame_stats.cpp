@@ -7,7 +7,7 @@
 #include "app/play/i18n.h"
 #include "core/frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 void Window::add(std::int64_t us) {
   values_[next_] = us;
@@ -118,4 +118,4 @@ std::string format_position(std::int64_t us) {
   return std::format("{:02}:{:02}:{:02}.{:03}", ms / 3'600'000, ms / 60'000 % 60, ms / 1000 % 60, ms % 1000);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

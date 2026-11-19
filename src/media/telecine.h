@@ -18,7 +18,7 @@
 #include "media/field_alignment.h"
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 class TelecineMeter {
  public:
@@ -59,4 +59,4 @@ struct InterlaceMeasure {
 };
 InterlaceMeasure measure_interlace(Demuxer& demuxer, const TrackInfo& track);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

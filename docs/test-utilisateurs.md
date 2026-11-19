@@ -5,7 +5,7 @@ l'essentiel des points de friction. On corrige, puis on recommence avec cinq aut
 
 ## Préparer
 
-- Un PC propre par personne (aucun réglage d'ajp : supprimer `~/.config/ajp` ou `%APPDATA%\ajp`), l'installeur
+- Un PC propre par personne (aucun réglage d'kirari : supprimer `~/.config/kirari` ou `%APPDATA%\kirari`), l'installeur
   ou l'archive de la release sur le bureau, un épisode 1080p avec deux pistes de sous-titres (japonais et
   français ou anglais) dans `Vidéos`.
 - Un observateur, qui ne parle pas sauf pour lire la tâche suivante. Un chronomètre, la grille ci-dessous.

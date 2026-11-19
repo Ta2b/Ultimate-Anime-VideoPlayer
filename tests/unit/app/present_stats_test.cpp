@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("Option --stats : l'en-tête nomme chaque colonne écrite, dans l'ordre", "[app][stats]") {
   const PresentRecord record{.seq = 7, .host_us = 1000, .why = "i", .display_gpu_us = 42};
@@ -45,4 +45,4 @@ TEST_CASE("B32-04 : --stats s'écrit sur le fil d'écriture, toutes les lignes, 
   CHECK(ordered);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

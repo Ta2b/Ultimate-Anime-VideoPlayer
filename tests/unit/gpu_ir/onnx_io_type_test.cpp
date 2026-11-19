@@ -17,8 +17,8 @@
 #include "kernels/ref/half.h"
 #include "test_util.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
 using test::ModelBuilder;
 
 namespace {
@@ -100,7 +100,7 @@ TEST_CASE("onnx : interface FLOAT16 autour d'un graphe FLOAT, poids et formes in
   REQUIRE(infer_shapes(*before, {}));
   REQUIRE(infer_shapes(*after, {}));
   std::vector<float> values = test::sequence(8, -1.0F, 1.0F);
-  for (float& v : values) v = ajp::kernels::ref::half_to_float(ajp::kernels::ref::float_to_half(v));
+  for (float& v : values) v = kirari::kernels::ref::half_to_float(kirari::kernels::ref::float_to_half(v));
   const Value expected = test::execute1(*before, {{"x", test::floats({1, 2, 2, 2}, values)}});
   const Value got = test::execute1(*after, {{"x", test::floats({1, 2, 2, 2}, values, DataType::F16)}});
   CHECK(got.type == DataType::F16);
@@ -289,11 +289,11 @@ TEST_CASE("onnx : une entrée de métadonnées posée, remplacée, ou déjà là
   ModelBuilder m;
   m.input("x", {1, 2, 2, 2}).weight("w", {1}, {2.0F}).node("Mul", {"x", "w"}, {"y"}).output("y");
   const std::vector<std::byte> original = m.bytes();
-  auto keyed = onnx::with_metadata(original, "COREML_CACHE_KEY", "ajp");
+  auto keyed = onnx::with_metadata(original, "COREML_CACHE_KEY", "kirari");
   REQUIRE(keyed);
   REQUIRE_FALSE(keyed->empty());
   using Entries = std::vector<std::pair<std::string, std::string>>;
-  CHECK(metadata_of(*keyed) == Entries{{"COREML_CACHE_KEY", "ajp"}});
+  CHECK(metadata_of(*keyed) == Entries{{"COREML_CACHE_KEY", "kirari"}});
   // Le graphe et ses poids intacts : le modèle calcule comme avant.
   auto before = onnx::read_onnx(original);
   auto after = onnx::read_onnx(*keyed);
@@ -303,14 +303,14 @@ TEST_CASE("onnx : une entrée de métadonnées posée, remplacée, ou déjà là
   REQUIRE(after->graph.initializers.size() == 1);
   CHECK(after->graph.initializers[0].floats == std::vector<float>{2.0F});
   // Déjà là : rien à réécrire.
-  auto again = onnx::with_metadata(*keyed, "COREML_CACHE_KEY", "ajp");
+  auto again = onnx::with_metadata(*keyed, "COREML_CACHE_KEY", "kirari");
   REQUIRE(again);
   CHECK(again->empty());
   // Une autre valeur remplace la première ; une autre clé s'ajoute à côté.
   auto replaced = onnx::with_metadata(*keyed, "COREML_CACHE_KEY", "autre");
   REQUIRE(replaced);
   CHECK(metadata_of(*replaced) == Entries{{"COREML_CACHE_KEY", "autre"}});
-  auto both = onnx::with_metadata(*replaced, "producteur", "ajp");
+  auto both = onnx::with_metadata(*replaced, "producteur", "kirari");
   REQUIRE(both);
-  CHECK(metadata_of(*both) == Entries{{"COREML_CACHE_KEY", "autre"}, {"producteur", "ajp"}});
+  CHECK(metadata_of(*both) == Entries{{"COREML_CACHE_KEY", "autre"}, {"producteur", "kirari"}});
 }

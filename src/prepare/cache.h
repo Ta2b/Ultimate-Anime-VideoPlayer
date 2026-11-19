@@ -19,7 +19,7 @@
 #include "core/types.h"
 #include "prepare/key_lock.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 enum class Production : std::uint8_t {
   Reused,    // l'entrée existait déjà, ou un autre processus l'a produite pendant l'attente
@@ -63,4 +63,4 @@ std::expected<void, Refusal> set_aside_entry(const CacheEntry& entry, const std:
 // Fichier régulier non vide.
 bool is_published(const std::filesystem::path& file);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

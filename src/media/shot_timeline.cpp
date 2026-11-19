@@ -6,7 +6,7 @@
 #include <memory>
 #include <utility>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 bool overlaps(const Shot& a, const Shot& b) {
@@ -240,4 +240,4 @@ void ShotTimeline::clear() {
   ++shots_version_;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

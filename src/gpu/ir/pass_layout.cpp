@@ -6,7 +6,7 @@
 #include "gpu/ir/log.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Canaux en dessous desquels un tenseur reste en Nchw : rangés par 16, le flot (2), une image
@@ -165,4 +165,4 @@ std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& 
   return stats;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

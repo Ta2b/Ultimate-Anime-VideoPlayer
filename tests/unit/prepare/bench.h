@@ -10,20 +10,20 @@
 #include "prepare/sha256.h"
 #include "support.h"
 
-namespace ajp::prepare::test_bench {
+namespace kirari::prepare::test_bench {
 
 using namespace std::chrono_literals;
-using ajp::gpu::ShapeSet;
-using ajp::gpu::TensorType;
+using kirari::gpu::ShapeSet;
+using kirari::gpu::TensorType;
 
 inline ShapeSet fixed(std::int64_t channels, std::int64_t h, std::int64_t w) {
-  const ajp::gpu::Shape shape{{1, channels, h, w}};
+  const kirari::gpu::Shape shape{{1, channels, h, w}};
   return {.min = shape, .opt = shape, .max = shape};
 }
 
 struct Steps {
   std::vector<std::pair<float, std::string>> seen;
-  ajp::gpu::Progress progress() {
+  kirari::gpu::Progress progress() {
     return {.report = [this](float f, const std::string& stage) { seen.emplace_back(f, stage); }, .stop = {}};
   }
 };
@@ -72,10 +72,10 @@ class Bench {
   const test::fs::path& cache() const { return config.cache_dir; }
 
   test::TempDir dir_;
-  ajp::gpu::ModelSpec model;
+  kirari::gpu::ModelSpec model;
   TrtexecConfig config;
 };
 
 inline const ShapeSet kHd = fixed(3, 1080, 1920);
 
-}  // namespace ajp::prepare::test_bench
+}  // namespace kirari::prepare::test_bench

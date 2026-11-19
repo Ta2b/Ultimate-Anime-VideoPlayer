@@ -14,7 +14,7 @@
 
 #include "kernels/image.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Rayon et seuil de libplacebo (pl_deband_default_params : 16 pixels, 3 / 1000 du code), les valeurs de
 // gpu/cuda/backend/deband_kernels.h : un pixel prend la moyenne de quatre points tirés dans son rayon tant
@@ -50,4 +50,4 @@ float deband_rule(float value, float a, float b, float d, float e);
 // L'image débandée, de la taille de la source ; les points hors de l'image sont ramenés au bord.
 Result<RgbImage> deband(const RgbImage& image);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

@@ -9,7 +9,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -26,7 +26,7 @@ struct Rig {
 };
 
 TEST_CASE("Un refus fatal d'un thread arrête la lecture et s'affiche", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(
       StageRefusal{.stage = "gpu", .refusal = {RefusalCode::ThreadFailed, "boum"}, .fatal = true});
@@ -65,7 +65,7 @@ TEST_CASE("Le fil des sous-titres tombé coupe les sous-titres, pas la vidéo (B
 
 TEST_CASE("Un changement de taille de la source arrête la session et demande la réouverture",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   CHECK_FALSE(rig.session.resize_asked());
   rig.session.handle(StageRefusal{.stage = "gpu", .refusal = {RefusalCode::SourceResized, "1920x1080"}});
@@ -116,4 +116,4 @@ TEST_CASE("Un écran sans appareil arrête la session sur DeviceLost", "[app][se
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

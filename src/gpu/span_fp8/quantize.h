@@ -11,7 +11,7 @@
 
 #include "gpu/span_fp8/e4m3.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 // x arrondi au plus proche E4M3 (pair en cas d'égalité), saturé à ±448 : la conversion
 // __nv_cvt_float_to_fp8(x, __NV_SATFINITE, __NV_E4M3), sur l'hôte.
@@ -25,4 +25,4 @@ float tensor_scale(std::span<const float> weights);
 // Les poids tels que le noyau les voit : e4m3_round(w / échelle du canal) × échelle du canal.
 std::vector<float> reconstruct(std::span<const float> weights, std::span<const float> scales);
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

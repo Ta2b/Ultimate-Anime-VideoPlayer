@@ -12,7 +12,7 @@
 #include "core/thread.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPaths& paths,
                                      const PlaySettings& saved) {
@@ -80,4 +80,4 @@ EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved
   return catalog;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

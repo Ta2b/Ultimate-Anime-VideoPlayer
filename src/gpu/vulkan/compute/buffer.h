@@ -14,7 +14,7 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Une plage d'un tampon, telle qu'un noyau la lie. Le tampon doit vivre plus longtemps que
 // tout enregistrement qui la lie.
@@ -68,4 +68,4 @@ Done upload(VkContext& context, MemoryAllocator& memory, const Buffer& buffer, V
 Done download(VkContext& context, MemoryAllocator& memory, const Buffer& buffer, VkDeviceSize offset,
               std::span<std::byte> out);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

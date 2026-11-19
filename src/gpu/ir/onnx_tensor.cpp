@@ -14,7 +14,7 @@
 #include "gpu/ir/protobuf.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 namespace detail {
 namespace {
 
@@ -326,4 +326,4 @@ std::expected<Attribute, Refusal> read_attribute(Bytes bytes) {
 }
 
 }  // namespace detail
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

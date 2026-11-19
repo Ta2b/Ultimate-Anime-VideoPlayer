@@ -31,7 +31,7 @@
 #include "gpu/system_interpolator.h"
 #include "gpu/vulkan/backend/net_build.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 std::string_view units_option(Units units) {
   switch (units) {
@@ -203,7 +203,7 @@ std::expected<bool, Refusal> derive_onnx(const ModelSpec& model, std::span<const
     }
   }
   // Le cache est propre à l'artefact (cache_of) : une clé fixe y suffit.
-  auto keyed = ir::onnx::with_metadata(current, "COREML_CACHE_KEY", "ajp");
+  auto keyed = ir::onnx::with_metadata(current, "COREML_CACHE_KEY", "kirari");
   if (!keyed) return std::unexpected(keyed.error());
   if (!keyed->empty()) {
     current = std::move(*keyed);
@@ -681,7 +681,7 @@ std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk:
     // Le canal vit autant que l'environnement, qui garde son adresse.
     auto channel = log_channel("onnxruntime");
     spdlog::logger* sink = channel.get();
-    std::shared_ptr<Ort::Env> env(new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "ajp", &forward_log, sink),
+    std::shared_ptr<Ort::Env> env(new Ort::Env(ORT_LOGGING_LEVEL_WARNING, "kirari", &forward_log, sink),
                                   [channel = std::move(channel)](Ort::Env* e) { delete e; });
     return std::make_shared<CoremlRuntime>(std::move(env), caps.device_name);
   } catch (const std::exception& e) {
@@ -689,4 +689,4 @@ std::expected<std::shared_ptr<vk::net::Runtime>, Refusal> make_runtime(const vk:
   }
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

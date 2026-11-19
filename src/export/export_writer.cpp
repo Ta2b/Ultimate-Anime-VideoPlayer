@@ -10,7 +10,7 @@
 #include "export/muxer.h"
 #include "export/video_encoder.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 struct ExportWriter::State {
   Muxer muxer;
@@ -301,4 +301,4 @@ void ExportWriter::run(const std::stop_token& stop) {
   wake_.notify_all();
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

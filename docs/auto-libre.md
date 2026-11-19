@@ -120,7 +120,7 @@ s'arrêtait pour la séance (A12-12, `tests/unit/core/free_starved_test.cpp`). P
    hors du compte), la lecture le coupe pour la vidéo en cours et rend la carte à SPAN, avec un message bref
    (`MotionWatch`, `app/play/motion_cut.h`). L'option « Couper l'interpolation si la carte ne suit pas »
    (`interpolation.auto_off`, cochée par défaut) le décide ; décochée, RIFE continue quoi qu'il arrive.
-   L'interpolation revient à la vidéo suivante, avec « Réessayer » (Vidéo > Post-traitement) ou dès qu'un
+   L'interpolation revient à la vidéo suivante, avec « Réessayer » (Vidéo > Général) ou dès qu'un
    réglage de l'interpolation change.
 
 ### Ce qui reste fixe

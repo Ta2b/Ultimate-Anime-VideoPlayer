@@ -8,11 +8,11 @@
 #include "subs/subs_worker.h"
 #include "support.h"
 
-using ajp::subs::AtlasReturned;
-using ajp::subs::RenderRequest;
-using ajp::subs::SubsInbox;
-using ajp::subs::SubsWorker;
-using ajp::subs::test::RecordingSink;
+using kirari::subs::AtlasReturned;
+using kirari::subs::RenderRequest;
+using kirari::subs::SubsInbox;
+using kirari::subs::SubsWorker;
+using kirari::subs::test::RecordingSink;
 
 namespace {
 const char* kHeader =
@@ -25,23 +25,24 @@ const char* kHeader =
 
 struct H {
   RecordingSink sink;
-  std::shared_ptr<SubsInbox> inbox = std::make_shared<SubsInbox>(ajp::subs::kSubsInboxBounds);
+  std::shared_ptr<SubsInbox> inbox = std::make_shared<SubsInbox>(kirari::subs::kSubsInboxBounds);
   std::unique_ptr<SubsWorker> worker;
   std::uint32_t epoch = 0;
   H() {
-    auto created = SubsWorker::create({}, sink, [box = inbox](std::unique_ptr<ajp::subs::SubtitleAtlas> a) {
-      std::ignore = box->try_push(AtlasReturned{std::move(a)});
-    });
+    auto created =
+        SubsWorker::create({}, sink, [box = inbox](std::unique_ptr<kirari::subs::SubtitleAtlas> a) {
+          std::ignore = box->try_push(AtlasReturned{std::move(a)});
+        });
     REQUIRE(created);
     worker = std::move(*created);
-    worker->handle(ajp::subs::SelectTrack{.id = 1, .source = ajp::subs::AssStream{kHeader}});
+    worker->handle(kirari::subs::SelectTrack{.id = 1, .source = kirari::subs::AssStream{kHeader}});
   }
   void packet(int order, std::int64_t start_ms, std::int64_t dur_ms, const std::string& text) {
     worker->handle(
-        ajp::subs::TrackPacket{.track = 1,
-                               .packet = {.start_us = start_ms * 1000,
-                                          .duration_us = dur_ms * 1000,
-                                          .data = std::to_string(order) + ",0,Default,,0,0,0,," + text}});
+        kirari::subs::TrackPacket{.track = 1,
+                                  .packet = {.start_us = start_ms * 1000,
+                                             .duration_us = dur_ms * 1000,
+                                             .data = std::to_string(order) + ",0,Default,,0,0,0,," + text}});
   }
   bool shown(double s) {
     worker->handle(RenderRequest{.pts_us = static_cast<std::int64_t>(s * 1e6),
@@ -75,7 +76,7 @@ TEST_CASE("Piste en flux : seek dans une réplique déjà connue", "[worker][los
   CHECK(h.shown(9.0));
   CHECK(h.shown(9.04));
   h.epoch = 1;
-  h.worker->handle(ajp::Flush{1});
+  h.worker->handle(kirari::Flush{1});
   CHECK(h.shown(2.0));
   CHECK_FALSE(h.shown(5.0));
   CHECK(h.shown(10.0));

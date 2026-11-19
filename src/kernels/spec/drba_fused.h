@@ -29,7 +29,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 inline constexpr int kDrbaFusedBlocks = 3;
 inline constexpr int kDrbaFusedInputPlanes = 7;  // pair01 et pair12 (kernels/spec/distil_drba.h)
@@ -110,6 +110,6 @@ constexpr DrbaFusedLayout drba_fused_layout(const DrbaFusedPlan& plan, int heigh
   return layout;
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

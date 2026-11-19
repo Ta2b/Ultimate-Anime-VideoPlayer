@@ -6,11 +6,11 @@
 
 #include "gpu/vulkan/backend/net_autotune.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 std::span<const PresetTable> preset_tables() {
   static constexpr std::array<PresetTable, 0> kTables{};
   return kTables;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

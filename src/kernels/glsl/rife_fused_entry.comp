@@ -7,9 +7,9 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;  // 11 plans
-layout(std430, binding = 1) readonly buffer Encode { AJP_TENSOR v[]; } encode;       // 8 plans
-layout(std430, binding = 2) writeonly buffer X { AJP_TENSOR v[]; } x;                // 15 plans réduits
+layout(std430, binding = 0) readonly buffer Input { KIRARI_TENSOR v[]; } input_planes;  // 11 plans
+layout(std430, binding = 1) readonly buffer Encode { KIRARI_TENSOR v[]; } encode;       // 8 plans
+layout(std430, binding = 2) writeonly buffer X { KIRARI_TENSOR v[]; } x;                // 15 plans réduits
 
 layout(push_constant) uniform Push {
   uint height;
@@ -36,6 +36,6 @@ void main() {
   for (uint c = 0u; c < 15u; ++c) {
     precise float v =
         (source(c, i00) + source(c, i00 + 1u) + source(c, i00 + pc.width) + source(c, i00 + pc.width + 1u)) * 0.25;
-    x.v[c * out_plane + oy * pc.out_width + ox] = AJP_TENSOR(v);
+    x.v[c * out_plane + oy * pc.out_width + ox] = KIRARI_TENSOR(v);
   }
 }

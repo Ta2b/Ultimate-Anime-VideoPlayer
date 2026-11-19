@@ -40,10 +40,10 @@ std::string text_of(const std::uint8_t* data, std::size_t size) {
 
 }  // namespace
 
-int ajp::fuzz::onnx(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::onnx(const std::uint8_t* data, std::size_t size) {
   const std::vector<std::byte> bytes(reinterpret_cast<const std::byte*>(data),
                                      reinterpret_cast<const std::byte*>(data) + size);
-  (void)ajp::gpu::ir::load_onnx(bytes);
+  (void)kirari::gpu::ir::load_onnx(bytes);
   return 0;
 }
 
@@ -51,27 +51,28 @@ namespace {
 
 // Les lecteurs ONNX de prepare/ sur un modèle : rien ne doit planter ni lire hors du tampon (SEC-21).
 void read_with_prepare(std::span<const std::byte> model) {
-  (void)ajp::prepare::scan_onnx(model);
-  (void)ajp::prepare::onnx_external_locations(model);
-  (void)ajp::prepare::read_onnx_graph(model);
-  (void)ajp::prepare::onnx_nodes(model);
-  (void)ajp::prepare::analyze_rife(model);
-  (void)ajp::prepare::analyze_drba(model);
-  (void)ajp::prepare::with_drba_motion_outputs(model);
-  const std::array<ajp::prepare::NamedDim, 2> dims{ajp::prepare::NamedDim{.name = "height", .value = 64},
-                                                   ajp::prepare::NamedDim{.name = "width", .value = 64}};
-  (void)ajp::prepare::with_fixed_dims(model, dims);
+  (void)kirari::prepare::scan_onnx(model);
+  (void)kirari::prepare::onnx_external_locations(model);
+  (void)kirari::prepare::read_onnx_graph(model);
+  (void)kirari::prepare::onnx_nodes(model);
+  (void)kirari::prepare::analyze_rife(model);
+  (void)kirari::prepare::analyze_drba(model);
+  (void)kirari::prepare::with_drba_motion_outputs(model);
+  const std::array<kirari::prepare::NamedDim, 2> dims{
+      kirari::prepare::NamedDim{.name = "height", .value = 64},
+      kirari::prepare::NamedDim{.name = "width", .value = 64}};
+  (void)kirari::prepare::with_fixed_dims(model, dims);
 }
 
 }  // namespace
 
 // A04-08 : les octets reçus, puis un vrai petit modèle (blend_model) qu'ils abîment : les deux premiers
 // octets disent où, le reste s'y mélange par ou exclusif ; un premier octet impair coupe le modèle là.
-int ajp::fuzz::prepare_onnx(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::prepare_onnx(const std::uint8_t* data, std::size_t size) {
   const std::vector<std::byte> raw(reinterpret_cast<const std::byte*>(data),
                                    reinterpret_cast<const std::byte*>(data) + size);
   read_with_prepare(raw);
-  std::vector<std::byte> model = ajp::prepare::blend_model("ajp-fuzz", "1");
+  std::vector<std::byte> model = kirari::prepare::blend_model("kirari-fuzz", "1");
   if (size >= 2 && !model.empty()) {
     const std::size_t at = ((std::size_t{data[0]} << 8U) | data[1]) % model.size();
     for (std::size_t i = 2; i < size && i < 66; ++i)
@@ -82,34 +83,34 @@ int ajp::fuzz::prepare_onnx(const std::uint8_t* data, std::size_t size) {
   return 0;
 }
 
-int ajp::fuzz::srt(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::srt(const std::uint8_t* data, std::size_t size) {
   // Le premier octet choisit un indice de nom de fichier : les branches des encodages hérités (A17-13).
   constexpr std::array<std::string_view, 8> kHints = {
       "", "ja", "zh", "zh_TW", "ko", "ru", "chs&jpn.forced", "big5"};
   const std::string_view hint = size > 0 ? kHints[data[0] % kHints.size()] : std::string_view{};
-  const std::string utf8 = ajp::subs::to_utf8(text_of(data, size), hint);
+  const std::string utf8 = kirari::subs::to_utf8(text_of(data, size), hint);
   std::vector<std::string> skipped;
-  if (const auto cues = ajp::subs::parse_srt(utf8, &skipped)) {
-    for (const auto& cue : *cues) (void)ajp::subs::srt_text_to_ass(cue.text);
+  if (const auto cues = kirari::subs::parse_srt(utf8, &skipped)) {
+    for (const auto& cue : *cues) (void)kirari::subs::srt_text_to_ass(cue.text);
   }
   return 0;
 }
 
-int ajp::fuzz::cube(const std::uint8_t* data, std::size_t size) {
-  if (auto lut = ajp::render::parse_cube(text_of(data, size))) {
+int kirari::fuzz::cube(const std::uint8_t* data, std::size_t size) {
+  if (auto lut = kirari::render::parse_cube(text_of(data, size))) {
     // Une LUT lue se réécrit et se relit.
-    ajp::fuzz::require(ajp::render::parse_cube(ajp::render::write_cube(*lut)).has_value(),
-                       "une LUT écrite se relit");
+    kirari::fuzz::require(kirari::render::parse_cube(kirari::render::write_cube(*lut)).has_value(),
+                          "une LUT écrite se relit");
   }
   return 0;
 }
 
-int ajp::fuzz::inflate(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::inflate(const std::uint8_t* data, std::size_t size) {
   // Lue par morceaux de 7 octets, pour éprouver les reprises ; la sortie bornée à 64 Mio (une bombe
   // de décompression n'est pas un défaut ici).
   std::size_t at = 0;
   std::uint64_t out = 0;
-  (void)ajp::core::inflate_raw(
+  (void)kirari::core::inflate_raw(
       [&](std::span<std::uint8_t> buffer) {
         const std::size_t n = std::min({buffer.size(), size - at, std::size_t{7}});
         std::copy_n(data + at, n, buffer.begin());
@@ -123,43 +124,44 @@ int ajp::fuzz::inflate(const std::uint8_t* data, std::size_t size) {
   return 0;
 }
 
-int ajp::fuzz::manifest(const std::uint8_t* data, std::size_t size) {
-  if (const auto manifest = ajp::core::parse_update_manifest(text_of(data, size))) {
+int kirari::fuzz::manifest(const std::uint8_t* data, std::size_t size) {
+  if (const auto manifest = kirari::core::parse_update_manifest(text_of(data, size))) {
     // La version s'affiche et nomme des fichiers : rien qu'une ligne de SemVer (A35-03, A35-08).
-    ajp::fuzz::require(!manifest->version.empty() && std::ranges::all_of(manifest->version,
-                                                                         [](char c) {
-                                                                           return (c >= '0' && c <= '9') ||
-                                                                                  (c >= 'a' && c <= 'z') ||
-                                                                                  (c >= 'A' && c <= 'Z') ||
-                                                                                  c == '.' || c == '-';
-                                                                         }),
-                       "une version lue est une ligne de SemVer");
+    kirari::fuzz::require(!manifest->version.empty() && std::ranges::all_of(manifest->version,
+                                                                            [](char c) {
+                                                                              return (c >= '0' && c <= '9') ||
+                                                                                     (c >= 'a' && c <= 'z') ||
+                                                                                     (c >= 'A' && c <= 'Z') ||
+                                                                                     c == '.' || c == '-';
+                                                                            }),
+                          "une version lue est une ligne de SemVer");
   }
   return 0;
 }
 
-int ajp::fuzz::engine_index(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::engine_index(const std::uint8_t* data, std::size_t size) {
   // engines.lock livré et engines-nvidia.lock relu en ligne (A35-08) : un paquet gardé a une adresse https et
   // un SHA-256 entier.
-  if (const auto index = ajp::core::read_engine_index(text_of(data, size))) {
+  if (const auto index = kirari::core::read_engine_index(text_of(data, size))) {
     for (const auto& package : index->packages) {
-      ajp::fuzz::require(package.url.starts_with("https://"), "un paquet gardé a une adresse https");
-      ajp::fuzz::require(package.sha256.size() == 64, "un paquet gardé a un SHA-256 entier");
+      kirari::fuzz::require(package.url.starts_with("https://"), "un paquet gardé a une adresse https");
+      kirari::fuzz::require(package.sha256.size() == 64, "un paquet gardé a un SHA-256 entier");
     }
   }
   return 0;
 }
 
-int ajp::fuzz::update_state(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::update_state(const std::uint8_t* data, std::size_t size) {
   // update.toml (A35-08) : un état lu se réécrit et se relit à l'identique.
-  if (const auto state = ajp::app::play::parse_update_state(text_of(data, size))) {
-    const auto reread = ajp::app::play::parse_update_state(ajp::app::play::format_update_state(*state));
-    ajp::fuzz::require(reread.has_value() && *reread == *state, "un update.toml lu se relit à l'identique");
+  if (const auto state = kirari::app::play::parse_update_state(text_of(data, size))) {
+    const auto reread = kirari::app::play::parse_update_state(kirari::app::play::format_update_state(*state));
+    kirari::fuzz::require(reread.has_value() && *reread == *state,
+                          "un update.toml lu se relit à l'identique");
   }
   return 0;
 }
 
-int ajp::fuzz::options(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::options(const std::uint8_t* data, std::size_t size) {
   // Un argument par ligne.
   const std::string text = text_of(data, size);
   std::vector<std::string_view> args;
@@ -169,6 +171,6 @@ int ajp::fuzz::options(const std::uint8_t* data, std::size_t size) {
     args.push_back(rest.substr(0, end));
     rest = end == std::string_view::npos ? std::string_view{} : rest.substr(end + 1);
   }
-  (void)ajp::app::play::parse_play_options(args);
+  (void)kirari::app::play::parse_play_options(args);
   return 0;
 }

@@ -9,7 +9,7 @@
 #include "app/play/derived_model.h"
 #include "prepare/onnx_frames.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<std::filesystem::path> find_temporal_fix(TemporalFix fix,
                                                        std::span<const std::filesystem::path> dirs) {
@@ -35,4 +35,4 @@ std::expected<std::filesystem::path, Refusal> temporal_fix_graph(const std::file
   return derived_model(model, half ? "frames-half" : "frames", dir, derive);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

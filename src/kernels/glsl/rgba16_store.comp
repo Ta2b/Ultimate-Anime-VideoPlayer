@@ -5,12 +5,12 @@
 // Référence : kernels/ref/color.cpp (to_rgba16).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer Rgb { AJP_TENSOR v[]; } rgb;
+layout(std430, binding = 0) readonly buffer Rgb { KIRARI_TENSOR v[]; } rgb;
 layout(binding = 1, rgba16ui) uniform writeonly uimage2D image;
 
 layout(push_constant) uniform Push {
@@ -25,6 +25,6 @@ void main() {
   uint plane = pc.width * pc.height;
   uint i = y * pc.width + x;
   uvec4 codes = uvec4(unorm16(float(rgb.v[i])), unorm16(float(rgb.v[plane + i])),
-                      unorm16(float(rgb.v[2u * plane + i])), AJP_OPAQUE_ALPHA16);
+                      unorm16(float(rgb.v[2u * plane + i])), KIRARI_OPAQUE_ALPHA16);
   imageStore(image, ivec2(x, y), codes);
 }

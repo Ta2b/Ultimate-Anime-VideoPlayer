@@ -9,7 +9,7 @@
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 30 et RTX 50 (SpanFp8Net::supported_fp16_device).
@@ -119,4 +119,4 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   return finish_slot(*imported, ring->sync);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

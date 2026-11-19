@@ -12,7 +12,7 @@
 #include "core/log.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 // « profil hôte · attente … : médiane, p95 (nombre) » au journal de fin, si l'attente a été chronométrée.
 void UpscaleStage::HostWaits::log(std::string_view what) {
   if (us.empty()) return;
@@ -278,4 +278,4 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   return allocate_gmfss();  // après allocate_half
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -17,7 +17,7 @@
 #include <deque>
 #include <optional>
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct PresentSample {
   std::uint64_t id = 0;
@@ -99,4 +99,4 @@ class TimeDomainMap {
   bool known_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

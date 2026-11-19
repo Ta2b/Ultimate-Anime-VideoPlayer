@@ -9,7 +9,7 @@
 
 #include "app/play/ui_scale.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::size_t group_of(std::wstring_view file) {
@@ -58,4 +58,4 @@ TEST_CASE("ui_scale : un grand écran laissé à 100 % hors Windows s'agrandit, 
   CHECK(ui_scale(400, 1.0F, 1080, true) == 2.0F);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

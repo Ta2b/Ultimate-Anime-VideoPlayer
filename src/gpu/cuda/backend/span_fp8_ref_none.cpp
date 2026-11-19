@@ -5,7 +5,7 @@
 // construits.
 #include "gpu/cuda/backend/span_fp8_ref.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 struct SpanFp8Reference::Impl {};
 
@@ -31,4 +31,4 @@ bool SpanFp8Reference::peaks(float (& /*out*/)[kPeaks], std::string& error) {
   return false;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

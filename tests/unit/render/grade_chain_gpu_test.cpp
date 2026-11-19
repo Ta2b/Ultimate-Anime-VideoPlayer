@@ -13,7 +13,7 @@
 
 #include "grade_chain_support.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 using namespace gpu_test;
 
@@ -37,7 +37,7 @@ std::vector<std::uint16_t> halo(double lit = 195.0) {
 
 }  // namespace
 
-// La mesure du chantier C06, avant et après : `ajp_render_tests "[.mesure]"` écrit la courbe neutre de la
+// La mesure du chantier C06, avant et après : `kirari_render_tests "[.mesure]"` écrit la courbe neutre de la
 // chaîne et le niveau d'un émetteur, à lire en nits affichés.
 TEST_CASE("mesure : courbe neutre de la chaîne HDR et niveau d'un émetteur", "[.mesure][gpu]") {
   Gpu gpu;
@@ -65,9 +65,9 @@ TEST_CASE("mesure : courbe neutre de la chaîne HDR et niveau d'un émetteur", "
   }
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render
 
-namespace ajp::render {
+namespace kirari::render {
 
 using namespace gpu_test;
 using Catch::Approx;
@@ -436,4 +436,4 @@ TEST_CASE("look : le shader parcourt la pile LUT par LUT, sans table composée (
   CHECK(gpu.grade->hooks()[1] == before);
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

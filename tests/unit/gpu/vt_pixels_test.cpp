@@ -13,7 +13,7 @@
 
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::coreml_rt::vt {
+namespace kirari::gpu::coreml_rt::vt {
 namespace {
 
 constexpr int kWidth = 6;
@@ -125,4 +125,4 @@ TEST_CASE("vt_pixels : le format préféré parmi ceux qu'offre l'interpolateur"
   CHECK(four_cc(Pixels::RgbaHalf) == 0x52476841U);                             // « RGhA »
 }
 
-}  // namespace ajp::gpu::coreml_rt::vt
+}  // namespace kirari::gpu::coreml_rt::vt

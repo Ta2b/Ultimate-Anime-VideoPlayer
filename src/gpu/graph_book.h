@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 enum class GraphStep : std::uint8_t {
   Direct,    // graphes coupés : lancement direct
@@ -187,4 +187,4 @@ class GraphBook {
   std::string notice_;
 };
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

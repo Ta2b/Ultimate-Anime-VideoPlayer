@@ -8,7 +8,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 AfterGap after_gap(Session& session, const ChainEngines& c, PlayerUi& ui, SleepWatch& watch,
                    const WindowEvents& window, bool& announced) {
@@ -48,4 +48,4 @@ AfterGap after_gap_seen(Session& session, Controls& controls, std::int64_t gap_u
   return out;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

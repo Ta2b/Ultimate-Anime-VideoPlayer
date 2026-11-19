@@ -14,7 +14,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Première construction annoncée tant qu'aucune passée ne la donne : 79 s pour le graphe à pleine taille en
@@ -94,4 +94,4 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

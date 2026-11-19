@@ -8,7 +8,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Vide : RIFE fusionné s'essaie. Sinon la raison, pour le journal.
 // tier : le cran que la lecture aura vraiment (model_tier, model_choice.h), pas celui du réglage : un cran
@@ -17,4 +17,4 @@ namespace ajp::app::play {
 std::string rife_fused_declined(const PlaySettings& settings, bool backend_does_it, int rife_planes,
                                 PrecisionTier tier);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

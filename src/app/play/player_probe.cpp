@@ -10,7 +10,7 @@
 #include "media/demuxer.h"
 #include "media/selection.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La piste vidéo que la source choisira, lue d'avance : sa taille fixe le moteur et le ring.
 std::expected<media::TrackInfo, Refusal> probe_once(const std::filesystem::path& file) {
@@ -62,4 +62,4 @@ std::expected<media::TrackInfo, Refusal> finish_given_probe(GivenProbe& probe) {
   return probe.wait(kProbeLimit, true, true);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -1,4 +1,4 @@
-// ajp : « ajp play <fichier> [options] », ou « ajp <fichier> » ; « ajp --register » l'inscrit
+// kirari : « kirari play <fichier> [options] », ou « kirari <fichier> » ; « kirari --register » l'inscrit
 // comme lecteur vidéo auprès du système (default_player.h).
 //
 // Tranche verticale : la ligne de commande complète (export, bench, engines…) vient du
@@ -51,6 +51,7 @@ extern char** environ;  // NOLINT : env: hérité, posix_spawn le transmet tel q
 #include "app/play/i18n.h"
 #include "app/play/latest_writer.h"
 #include "app/play/launch_data.h"
+#include "app/play/legacy_dirs.h"
 #include "app/play/machine_calibration.h"
 #include "app/play/options.h"
 #include "app/play/paths.h"
@@ -96,23 +97,23 @@ namespace {
 // reçoit le nom, la version et l'identifiant de l'application (B19-01). L'identifiant devient l'app_id
 // Wayland et le WM_CLASS X11 : le bureau rattache la fenêtre à la fiche .desktop (icône, épinglage).
 void prepare_libraries() {
-  ajp::media::route_ffmpeg_log_to_journal();
-  SDL_SetAppMetadata(std::string(ajp::app::play::kAppName).c_str(),
-                     std::string(ajp::app::play::installed_version()).c_str(),
-                     std::string(ajp::app::play::kAppId).c_str());
+  kirari::media::route_ffmpeg_log_to_journal();
+  SDL_SetAppMetadata(std::string(kirari::app::play::kAppName).c_str(),
+                     std::string(kirari::app::play::installed_version()).c_str(),
+                     std::string(kirari::app::play::kAppId).c_str());
 }
 
 // SDL rend ses chemins en UTF-8, quel que soit le système.
 std::filesystem::path sdl_path(const char* path) {
-  return path != nullptr ? ajp::prepare::path_from_utf8(path) : std::filesystem::path();
+  return path != nullptr ? kirari::prepare::path_from_utf8(path) : std::filesystem::path();
 }
 
-// Le lecteur, que l'inscription nomme : à côté de SDL_GetBasePath hors de macOS, où AJP.app
+// Le lecteur, que l'inscription nomme : à côté de SDL_GetBasePath hors de macOS, où Kirari.app
 // s'inscrit par son Info.plist.
 #ifdef _WIN32
-constexpr std::string_view kExecutable = "ajp.exe";
+constexpr std::string_view kExecutable = "kirari.exe";
 #else
-constexpr std::string_view kExecutable = "ajp";
+constexpr std::string_view kExecutable = "kirari";
 #endif
 
 // Les modules des backends (bibliothèques MODULE de CMake : .so hors de Windows, macOS compris).
@@ -132,7 +133,7 @@ std::vector<std::filesystem::path> module_dirs(const std::filesystem::path& base
   return dirs;
 }
 
-constexpr int kKeptLogs = 3;  // ajp.log.1 à ajp.log.3
+constexpr int kKeptLogs = 3;  // kirari.log.1 à kirari.log.3
 
 // Le journal est ouvert : un refus s'y écrit (A18-10).
 bool& log_open() {
@@ -140,11 +141,11 @@ bool& log_open() {
   return open;
 }
 
-int fail(const ajp::Refusal& refusal) {
+int fail(const kirari::Refusal& refusal) {
   if (log_open()) {
-    ajp::log_channel("app")->error("{} {}", ajp::name(refusal.code), refusal.detail);  // stderr compris
+    kirari::log_channel("app")->error("{} {}", kirari::name(refusal.code), refusal.detail);  // stderr compris
   } else {
-    std::fprintf(stderr, "ajp : %s %s\n", std::string(ajp::name(refusal.code)).c_str(),
+    std::fprintf(stderr, "kirari : %s %s\n", std::string(kirari::name(refusal.code)).c_str(),
                  refusal.detail.c_str());
   }
   return 1;
@@ -153,17 +154,17 @@ int fail(const ajp::Refusal& refusal) {
 // Un refus avant toute fenêtre, lancé par un double-clic : sans console, personne ne lit stderr, une boîte le
 // dit (A18-07, A18-10). SDL_ShowSimpleMessageBox se passe de SDL_Init. Pas de boîte pendant un essai scripté
 // (--keys, --snapshot, banc, fenêtre cachée), qui doit finir seul.
-int fail_shown(const ajp::Refusal& refusal, const ajp::app::play::PlayOptions& options) {
+int fail_shown(const kirari::Refusal& refusal, const kirari::app::play::PlayOptions& options) {
   const int code = fail(refusal);
   if (!options.keys.empty() || options.snapshot || options.bench_out || options.hidden) return code;
-  const std::string text = "ajp : " + refusal.detail;
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+  const std::string text = "kirari : " + refusal.detail;
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Kirari Player", text.c_str(), nullptr);
   return code;
 }
 
 // C18-04 : une ligne de commande refusée (option inconnue ou retirée, raccourci ou fiche .desktop d'une
 // version d'avant) se dit aussi dans une boîte quand personne ne lit stderr : ni terminal, ni essai scripté.
-int fail_arguments(const ajp::Refusal& refusal, std::span<const std::string_view> args) {
+int fail_arguments(const kirari::Refusal& refusal, std::span<const std::string_view> args) {
   const int code = fail(refusal);
   const bool scripted = std::ranges::any_of(args, [](std::string_view arg) {
     return arg.starts_with("--hidden") || arg.starts_with("--keys") || arg.starts_with("--snapshot") ||
@@ -176,8 +177,8 @@ int fail_arguments(const ajp::Refusal& refusal, std::span<const std::string_view
 #endif
   if (scripted || terminal) return code;
   const std::string text =
-      ajp::app::play::i18n::tr_format("The player could not start with these options: {}", refusal.detail);
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+      kirari::app::play::i18n::tr_format("The player could not start with these options: {}", refusal.detail);
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Kirari Player", text.c_str(), nullptr);
   return code;
 }
 
@@ -188,34 +189,34 @@ int write_report(const std::optional<std::filesystem::path>& file, const std::st
   out << report;
   out.flush();
   if (out) return 0;
-  return fail({ajp::RefusalCode::FileUnwritable,
-               std::format("--report : {} ne s'écrit pas", ajp::prepare::utf8_path(*file))});
+  return fail({kirari::RefusalCode::FileUnwritable,
+               std::format("--report : {} ne s'écrit pas", kirari::prepare::utf8_path(*file))});
 }
 
 // Le diagnostic d'une séance : un plantage laisse un minidump à côté du journal sous Windows (P2.2), et le
 // rapport de « Signaler un problème » garde en tête la version, le système et le journal à lire. La marque
 // de séance, restée ouverte, dit que la séance d'avant s'est arrêtée brutalement : son journal est alors
-// ajp.log.1 (A39-01).
+// kirari.log.1 (A39-01).
 // B39-01 : après une relance voulue (perte du GPU, moteur mis à jour), la séance d'avant n'a pas planté mais
-// son journal, ajp.log.1, porte la cause : le rapport le joint aussi.
+// son journal, kirari.log.1, porte la cause : le rapport le joint aussi.
 void start_diagnostics(const std::filesystem::path& settings_dir, const std::filesystem::path& log_file,
-                       ajp::app::play::RelaunchedFor relaunched, bool scripted) {
-  namespace play = ajp::app::play;
+                       kirari::app::play::RelaunchedFor relaunched, bool scripted) {
+  namespace play = kirari::app::play;
   if (!log_file.empty()) play::install_crash_dumps(log_file.parent_path() / "crashes");  // B36-08
   play::set_report_log_file(log_file);
-  play::note_report_fact("ajp", play::installed_version());
+  play::note_report_fact("kirari", play::installed_version());
   play::note_report_fact("Système", play::os_description());
   if (const std::string build = play::build_id_description(); !build.empty())
     play::note_report_fact("Build", build);
   // C36-07 : un lancement scripté (--keys, --snapshot, banc) partage le dossier du lecteur sans être lui :
   // il ne prend ni ne retire la marque du lecteur qui tourne peut-être à côté.
   if (!scripted && !settings_dir.empty() && play::begin_session(settings_dir))
-    ajp::log_channel("app")->warn(
-        "la séance précédente s'est arrêtée brutalement : son journal est ajp.log.1");
+    kirari::log_channel("app")->warn(
+        "la séance précédente s'est arrêtée brutalement : son journal est kirari.log.1");
   if (relaunched != play::RelaunchedFor::None) {
     play::note_previous_session_relaunched(play::relaunched_name(relaunched));
-    ajp::log_channel("app")->info("lecteur relancé ({}) : la séance d'avant est dans ajp.log.1",
-                                  play::relaunched_name(relaunched));
+    kirari::log_channel("app")->info("lecteur relancé ({}) : la séance d'avant est dans kirari.log.1",
+                                     play::relaunched_name(relaunched));
   }
 }
 
@@ -227,23 +228,23 @@ bool& quiet_failures() {
   return quiet;
 }
 
-// Une ligne ajoutée à ajp.log quand le journal est déjà fermé (la relance l'a vidé avant execv).
+// Une ligne ajoutée à kirari.log quand le journal est déjà fermé (la relance l'a vidé avant execv).
 void append_to_log(const std::filesystem::path& log_file, std::string_view line) {
   if (log_file.empty()) return;
   std::ofstream out(log_file, std::ios::binary | std::ios::app);
   // Hors du puits : la cause peut citer un chemin avec le nom d'utilisateur.
-  out << "[error] " << ajp::reduce_log_paths(ajp::redact_log_text(line)) << '\n';
+  out << "[error] " << kirari::reduce_log_paths(kirari::redact_log_text(line)) << '\n';
 }
 
 // B18-01 : une relance ratée ne ferme plus la fenêtre sans un mot. Le journal est déjà fermé : la cause va
-// au bout d'ajp.log, sur stderr, et dans une boîte.
+// au bout d'kirari.log, sur stderr, et dans une boîte.
 int relaunch_failed(const std::filesystem::path& log_file, const std::string& cause) {
   const std::string line = "relance impossible : " + cause;  // i18n-ok : journal
   append_to_log(log_file, line);
-  std::fprintf(stderr, "ajp : %s\n", line.c_str());
+  std::fprintf(stderr, "kirari : %s\n", line.c_str());
   if (!quiet_failures()) {
-    const std::string text = ajp::app::play::i18n::tr("The player could not restart: open it again.");
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+    const std::string text = kirari::app::play::i18n::tr("The player could not restart: open it again.");
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Kirari Player", text.c_str(), nullptr);
   }
   return 1;
 }
@@ -253,19 +254,19 @@ int relaunch_failed(const std::filesystem::path& log_file, const std::string& ca
 // posix_spawn, l'appelant sortant ensuite ; une fermeture figée ne peut pas faire execv, qui attendrait la
 // fin d'un fil bloqué dans un ioctl du pilote (C31-03).
 int relaunch(const std::filesystem::path& executable, int argc, char** argv,
-             ajp::app::play::RelaunchedFor reason, const std::filesystem::path& log_file,
+             kirari::app::play::RelaunchedFor reason, const std::filesystem::path& log_file,
              bool fresh = false) {
   const std::vector<std::string_view> launched(argv + 1, argv + argc);
-  const std::vector<std::string> kept = ajp::app::play::relaunch_arguments(launched, reason);
-  ajp::log_channel("app")->info("relance ({})", ajp::app::play::relaunched_name(reason));
-  ajp::app::play::end_session();  // une relance voulue n'est pas un plantage
-  ajp::close_log();               // execv remplace le processus : la file du journal s'écrit avant
+  const std::vector<std::string> kept = kirari::app::play::relaunch_arguments(launched, reason);
+  kirari::log_channel("app")->info("relance ({})", kirari::app::play::relaunched_name(reason));
+  kirari::app::play::end_session();  // une relance voulue n'est pas un plantage
+  kirari::close_log();               // execv remplace le processus : la file du journal s'écrit avant
 #ifdef _WIN32
   static_cast<void>(fresh);  // _spawnv lance toujours un processus neuf
   // L'exécutable est gardé dans une chaîne qui vit jusqu'au lancement (c_str() d'un temporaire pendrait).
   const std::string program = executable.string();
-  std::vector<std::string> arguments{ajp::app::play::windows_quoted(program)};
-  for (const std::string& argument : kept) arguments.push_back(ajp::app::play::windows_quoted(argument));
+  std::vector<std::string> arguments{kirari::app::play::windows_quoted(program)};
+  for (const std::string& argument : kept) arguments.push_back(kirari::app::play::windows_quoted(argument));
   std::vector<const char*> pointers;
   for (const std::string& argument : arguments) pointers.push_back(argument.c_str());
   pointers.push_back(nullptr);
@@ -275,8 +276,8 @@ int relaunch(const std::filesystem::path& executable, int argc, char** argv,
 #else
   // Dans un AppImage, le fichier .AppImage : close_on_exec_all fait disparaître le montage à la relance.
   const std::filesystem::path program =
-      ajp::app::play::relaunch_program(executable, ajp::app::play::appimage_launcher());
-  ajp::app::play::close_on_exec_all();
+      kirari::app::play::relaunch_program(executable, kirari::app::play::appimage_launcher());
+  kirari::app::play::close_on_exec_all();
   std::vector<char*> arguments{const_cast<char*>(program.c_str())};
   for (const std::string& argument : kept) arguments.push_back(const_cast<char*>(argument.c_str()));
   arguments.push_back(nullptr);
@@ -311,7 +312,7 @@ void relaunch_when_stuck() {
   const StuckRelaunch& args = stuck_relaunch_args();
   // Une fermeture bloquée vient d'un GPU qui ne répond plus : la relance se dit perte du GPU (B39-01).
   if (args.argv != nullptr)
-    (void)relaunch(args.executable, args.argc, args.argv, ajp::app::play::RelaunchedFor::GpuLost,
+    (void)relaunch(args.executable, args.argc, args.argv, kirari::app::play::RelaunchedFor::GpuLost,
                    args.log_file, /*fresh=*/true);
 }
 // Le dossier des moteurs, et la relance armée avant la lecture.
@@ -321,12 +322,12 @@ void before_play(const std::filesystem::path& engines, const std::filesystem::pa
   std::filesystem::create_directories(engines, error);
   stuck_relaunch_args() =
       StuckRelaunch{.executable = executable, .argc = argc, .argv = argv, .log_file = log_file};
-  ajp::app::play::set_stuck_relaunch(&relaunch_when_stuck);
+  kirari::app::play::set_stuck_relaunch(&relaunch_when_stuck);
 }
 
-// « ajp compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
+// « kirari compare <fichier> --a=… --b=… » : deux chaînes côte à côte (auto_bench_run.h).
 int run_compare_command(const std::vector<std::string_view>& args) {
-  namespace play = ajp::app::play;
+  namespace play = kirari::app::play;
   const auto options = play::parse_compare_options(args);
   if (!options) {
     std::fputs(play::compare_usage().c_str(), stderr);
@@ -337,11 +338,9 @@ int run_compare_command(const std::vector<std::string_view>& args) {
     return 0;
   }
   std::error_code error;
-  const auto work = std::filesystem::temp_directory_path(error) / "ajp-compare";
+  const auto work = std::filesystem::temp_directory_path(error) / "kirari-compare";
   std::filesystem::create_directories(work, error);
-  char* compare_pref = SDL_GetPrefPath("ajp", "ajp");
-  const auto compare_data = sdl_path(compare_pref);
-  SDL_free(compare_pref);
+  const auto compare_data = kirari::app::play::prefs_dir();
   const play::BenchPlan plan{.executable = sdl_path(SDL_GetBasePath()) / std::string(kExecutable),
                              .video = options->file,
                              .work_dir = work,
@@ -361,9 +360,10 @@ int run_compare_command(const std::vector<std::string_view>& args) {
   return write_report(options->report, report);
 }
 
-// « ajp bench <fichier> » : les essais sont des processus « ajp play » ; celui-ci n'ouvre ni fenêtre ni SDL.
+// « kirari bench <fichier> » : les essais sont des processus « kirari play » ; celui-ci n'ouvre ni fenêtre ni
+// SDL.
 int run_bench_command(const std::vector<std::string_view>& args) {
-  namespace play = ajp::app::play;
+  namespace play = kirari::app::play;
   const auto options = play::parse_bench_options(args);
   if (!options) {
     std::fputs(play::bench_usage().c_str(), stderr);
@@ -374,11 +374,9 @@ int run_bench_command(const std::vector<std::string_view>& args) {
     return 0;
   }
   const auto base = sdl_path(SDL_GetBasePath());
-  char* pref = SDL_GetPrefPath("ajp", "ajp");
-  const auto data = sdl_path(pref);
-  SDL_free(pref);
+  const auto data = kirari::app::play::prefs_dir();
   std::error_code error;
-  const auto work = std::filesystem::temp_directory_path(error) / "ajp-bench";
+  const auto work = std::filesystem::temp_directory_path(error) / "kirari-bench";
   std::filesystem::create_directories(work, error);
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
                              .video = options->file,
@@ -397,17 +395,18 @@ int run_bench_command(const std::vector<std::string_view>& args) {
   return write_report(options->report, report->report);
 }
 
-// « ajp calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench »,
-// en ligne de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de
+// « kirari calibrate [--display-height=N] [--tier=N] [--visible] » : le bench de la page « Résultats du bench
+// », en ligne de commande (essais sur un poste de mesure) ; écrit calibration.toml dans les données de
 // l'utilisateur. --tier : le niveau de la carte (0 Économe à 4 Ultra), qui donne les modèles joués
 // (auto_config.h) ; cette commande n'ouvre pas la carte et ne peut pas l'estimer : sans --tier, 3 (Qualité,
 // Tier::Quality), le niveau de la RTX 4070 Ti du poste de mesure.
 int run_calibrate_command(const std::vector<std::string_view>& args) {
-  namespace play = ajp::app::play;
+  namespace play = kirari::app::play;
   int display_height = 2160;
   int tier = static_cast<int>(play::Tier::Quality);
   bool silent = true;
-  constexpr const char* kUsage = "ajp calibrate [--display-height=N 360..4320] [--tier=N 0..4] [--visible]\n";
+  constexpr const char* kUsage =
+      "kirari calibrate [--display-height=N 360..4320] [--tier=N 0..4] [--visible]\n";
   for (const std::string_view arg : args) {
     if (arg == "--help" || arg == "-h") {
       std::fputs(kUsage, stdout);
@@ -417,7 +416,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
       const std::string_view text = arg.substr(7);
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), tier);
       if (error != std::errc{} || end != text.data() + text.size() || tier < 0 || tier >= play::kTierCount) {
-        std::fputs("ajp calibrate : --tier=N, N de 0 (Économe) à 4 (Ultra)\n", stderr);
+        std::fputs("kirari calibrate : --tier=N, N de 0 (Économe) à 4 (Ultra)\n", stderr);
         return 2;
       }
     } else if (arg.starts_with("--display-height=")) {
@@ -426,7 +425,7 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
       const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), display_height);
       if (error != std::errc{} || end != text.data() + text.size() || display_height < 360 ||
           display_height > 4320) {
-        std::fputs("ajp calibrate : --display-height=N, N de 360 à 4320\n", stderr);
+        std::fputs("kirari calibrate : --display-height=N, N de 360 à 4320\n", stderr);
         return 2;
       }
     } else if (arg == "--visible") {
@@ -437,10 +436,8 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
     }
   }
   const auto base = sdl_path(SDL_GetBasePath());
-  char* pref = SDL_GetPrefPath("ajp", "ajp");
   // Le dossier des réglages du lecteur (settings.toml, moteurs choisis), comme le panneau du bench.
-  const auto data = sdl_path(pref);
-  SDL_free(pref);
+  const auto data = kirari::app::play::prefs_dir();
   std::error_code error;
   const play::BenchPlan plan{.executable = base / std::string(kExecutable),
                              .video = data / std::string(play::kBenchClipName),
@@ -469,10 +466,11 @@ int run_calibrate_command(const std::vector<std::string_view>& args) {
 }
 
 // --register, --unregister : l'inscription auprès du système, puis la sortie.
-int run_registration(ajp::app::play::Registration registration, const ajp::app::play::PlayerPlace& place) {
-  const auto done = registration == ajp::app::play::Registration::Register
-                        ? ajp::app::play::register_player(place)
-                        : ajp::app::play::unregister_player(place);
+int run_registration(kirari::app::play::Registration registration,
+                     const kirari::app::play::PlayerPlace& place) {
+  const auto done = registration == kirari::app::play::Registration::Register
+                        ? kirari::app::play::register_player(place)
+                        : kirari::app::play::unregister_player(place);
   if (!done) return fail(done.error());
   std::fprintf(stdout, "%s\n", done->c_str());
   return 0;
@@ -482,62 +480,64 @@ int run_registration(ajp::app::play::Registration registration, const ajp::app::
 // réglages et journal (les essais du benchmark).
 std::filesystem::path open_journal(const std::filesystem::path& home, const std::filesystem::path& data,
                                    const std::filesystem::path& trial_dir) {
-  // Le journal va aussi dans <données>/ajp.log, recommencé à chaque lancement : ouvert depuis le
+  // Le journal va aussi dans <données>/kirari.log, recommencé à chaque lancement : ouvert depuis le
   // Finder ou l'Explorateur, le lecteur n'a pas de terminal, et c'est le fichier à joindre à un
   // rapport. Sans fichier (dossier en lecture seule, chemin hors de la page de code), stderr seul.
   // Chaque ligne y entre nettoyée (P1.32) : le dossier personnel devient « ~ ».
-  ajp::set_log_home(ajp::prepare::utf8_path(home));
+  kirari::set_log_home(kirari::prepare::utf8_path(home));
   std::vector<spdlog::sink_ptr> sinks{
-      ajp::redacting_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>())};
+      kirari::redacting_sink(std::make_shared<spdlog::sinks::stderr_color_sink_mt>())};
   // B36-08 : journal et minidumps dans le dossier local (pas dans le profil itinérant de Windows) ; ceux
   // d'une version d'avant y passent, ce qui est dit une fois le journal ouvert.
   std::vector<std::string> moved;
   std::filesystem::path diagnostics = trial_dir.empty() ? data : trial_dir;
   if (trial_dir.empty() && !data.empty()) {
-    diagnostics = ajp::app::play::local_data(data);
-    ajp::app::play::move_diagnostics(data, diagnostics,
-                                     [&](const std::string& line) { moved.push_back(line); });
+    diagnostics = kirari::app::play::local_data(data);
+    kirari::app::play::move_diagnostics(data, diagnostics,
+                                        [&](const std::string& line) { moved.push_back(line); });
   }
   const std::filesystem::path log_file =
-      diagnostics.empty() ? std::filesystem::path() : diagnostics / "ajp.log";
+      diagnostics.empty() ? std::filesystem::path() : diagnostics / "kirari.log";
   if (!log_file.empty()) {
-    // Borné pendant la séance (P2.43) : passé 32 Mo, ajp.log devient ajp.1.log (puis ajp.2.log), une soirée
-    // de lecture ne remplit plus le disque.
+    // Borné pendant la séance (P2.43) : passé 32 Mo, kirari.log devient kirari.1.log (puis kirari.2.log), une
+    // soirée de lecture ne remplit plus le disque.
     constexpr std::size_t kLogBytes = std::size_t{32} * 1024 * 1024;
     constexpr std::size_t kLogParts = 2;
-    ajp::rotate_session_logs(log_file, kKeptLogs, kLogParts);
+    kirari::rotate_session_logs(log_file, kKeptLogs, kLogParts);
     // Ouvert par son chemin (UTF-16 sous Windows) : un dossier de données au nom japonais ne fait plus
     // partir le journal sans un mot (B33-06).
-    if (spdlog::sink_ptr file_sink = ajp::log_file_sink(log_file, kLogBytes, kLogParts))
-      sinks.push_back(ajp::redacting_sink(std::move(file_sink)));
+    if (spdlog::sink_ptr file_sink = kirari::log_file_sink(log_file, kLogBytes, kLogParts))
+      sinks.push_back(kirari::redacting_sink(std::move(file_sink)));
   }
   const bool logs_to_file = sinks.size() > 1;
-  ajp::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
+  kirari::install_log_sinks(std::move(sinks), spdlog::level::info, /*asynchronous=*/true);  // 1.11
   log_open() = true;
   if (logs_to_file) {
     // Un plantage dans un pilote ne vide rien (pas de vidage sûr depuis un signal) : un quart de seconde au
     // plus de perdu, l'étage qui tournait reste au journal (C20-03).
     spdlog::flush_every(std::chrono::milliseconds(250));
-    ajp::log_channel("app")->info("journal : {} · ajp {}", ajp::core::to_utf8(log_file.filename()),
-                                  ajp::app::play::installed_version());
+    kirari::log_channel("app")->info("journal : {} · kirari {}", kirari::core::to_utf8(log_file.filename()),
+                                     kirari::app::play::installed_version());
   } else if (!log_file.empty()) {
-    ajp::log_channel("app")->warn("journal : {} ne s'ouvre pas, stderr seulement",
-                                  ajp::core::to_utf8(log_file.filename()));
+    kirari::log_channel("app")->warn("journal : {} ne s'ouvre pas, stderr seulement",
+                                     kirari::core::to_utf8(log_file.filename()));
   }
-  for (const std::string& line : moved) ajp::log_channel("app")->info("données : {}", line);
+  for (const std::string& line : moved) kirari::log_channel("app")->info("données : {}", line);
+  for (const std::string& line : kirari::app::play::adopted_dir_lines())
+    kirari::log_channel("app")->info("données : {}", line);
   return log_file;
 }
 
 // B20-06 : un rôle refusé par le système (MMCSS, rtkit) se dit une fois au journal ; sans cela, une cadence
 // qui dérive sous charge ne se distinguait pas d'un défaut du lecteur.
 void report_role_refusals() {
-  ajp::set_role_refusal_reporter([](ajp::ThreadRole role, const char* what) noexcept {
+  kirari::set_role_refusal_reporter([](kirari::ThreadRole role, const char* what) noexcept {
     try {
-      ajp::log_channel("app")->warn("rôle {} du thread : {}",
-                                    role == ajp::ThreadRole::Background ? "de fond"
-                                    : role == ajp::ThreadRole::Audio    ? "audio"
-                                                                        : "de lecture",
-                                    what);
+      kirari::log_channel("app")->warn("rôle {} du thread : {}",
+                                       role == kirari::ThreadRole::Background ? "de fond"
+                                       : role == kirari::ThreadRole::Audio    ? "audio"
+                                                                              : "de lecture",
+                                       what);
     } catch (...) {  // NOLINT(bugprone-empty-catch) : le journal a échoué, le rôle reste tel quel
     }
   });
@@ -545,10 +545,10 @@ void report_role_refusals() {
 
 // Le lecteur, puis l'attente d'une écriture que la fin d'une vidéo n'a pas attendue (disque lent) : elle
 // finit avant que le processus ne parte.
-std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOptions& options,
-                                                   const ajp::app::play::PlayerPaths& paths) {
-  auto played = ajp::app::play::play(options, paths);
-  ajp::app::play::LatestWriter::wait_abandoned(std::chrono::seconds(5));
+std::expected<void, kirari::Refusal> play_then_settle(const kirari::app::play::PlayOptions& options,
+                                                      const kirari::app::play::PlayerPaths& paths) {
+  auto played = kirari::app::play::play(options, paths);
+  kirari::app::play::LatestWriter::wait_abandoned(std::chrono::seconds(5));
   return played;
 }
 
@@ -556,13 +556,13 @@ std::expected<void, ajp::Refusal> play_then_settle(const ajp::app::play::PlayOpt
 // partage le dossier des réglages sans être le lecteur de l'utilisateur.
 // Un essai scripté (--keys, --snapshot, banc, fenêtre cachée, --seconds) : ses échecs ne se disent pas
 // dans une boîte (quiet_failures).
-bool scripted_trial(const ajp::app::play::PlayOptions& options) {
+bool scripted_trial(const kirari::app::play::PlayOptions& options) {
   return !options.keys.empty() || options.snapshot || options.bench_out || options.hidden ||
          options.stop_after_us > 0;
 }
 
-bool scripted_launch(const ajp::app::play::PlayOptions& options, std::span<const std::string_view> args) {
-  return options.data_dir || options.bench_out || !ajp::app::play::shares_instance(args);
+bool scripted_launch(const kirari::app::play::PlayOptions& options, std::span<const std::string_view> args) {
+  return options.data_dir || options.bench_out || !kirari::app::play::shares_instance(args);
 }
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
@@ -591,7 +591,7 @@ int run_player(int argc, char** argv) {
   SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof(throttling));
 #endif
 #endif
-  ajp::app::play::leave_lone_console();
+  kirari::app::play::leave_lone_console();
   std::vector<std::string_view> args(argv + 1, argv + argc);
   if (!args.empty() && args.front() == "bench") {
     args.erase(args.begin());
@@ -606,44 +606,44 @@ int run_player(int argc, char** argv) {
     return run_compare_command(args);
   }
   if (!args.empty() && args.front() == "play") args.erase(args.begin());
-  const auto options = ajp::app::play::parse_play_options(args);
+  const auto options = kirari::app::play::parse_play_options(args);
   if (!options) {
-    std::fputs(ajp::app::play::play_usage().c_str(), stderr);
+    std::fputs(kirari::app::play::play_usage().c_str(), stderr);
     return fail_arguments(options.error(), args);
   }
   if (options->help) {
-    std::fputs(ajp::app::play::play_usage(options->debug).c_str(), stdout);
+    std::fputs(kirari::app::play::play_usage(options->debug).c_str(), stdout);
     return 0;
   }
   quiet_failures() = scripted_trial(*options);
   const auto base = sdl_path(SDL_GetBasePath());
-  char* pref = SDL_GetPrefPath("ajp", "ajp");  // avant SDL_Init comme permis : l'inscription s'en sert
-  const auto data = sdl_path(pref);
-  SDL_free(pref);
+  const auto data = kirari::app::play::prefs_dir();  // avant SDL_Init comme permis : l'inscription s'en sert
   if (data.empty())  // A18-07 : sans dossier de données, play.toml et engines/ iraient dans le dossier
                      // courant
-    return fail_shown({ajp::RefusalCode::FileUnwritable, std::string("SDL_GetPrefPath : ") + SDL_GetError()},
-                      *options);
-  const ajp::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
-                                          .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
-                                          .data = ajp::app::play::user_data(data),
-                                          .app_data = data};
+    return fail_shown(
+        {kirari::RefusalCode::FileUnwritable, std::string("SDL_GetPrefPath : ") + SDL_GetError()}, *options);
+  const kirari::app::play::PlayerPlace place{.executable = base / std::string(kExecutable),
+                                             .home = sdl_path(SDL_GetUserFolder(SDL_FOLDER_HOME)),
+                                             .data = kirari::app::play::user_data(data),
+                                             .app_data = data};
   // La langue du système, avant tout réglage : les langues préférées par défaut la prennent.
-  ajp::app::play::set_system_language(
-      ajp::app::play::pick_menu_language(ajp::app::play::system_locales(place.home)));
-  if (options->registration != ajp::app::play::Registration::None)
+  kirari::app::play::set_system_language(
+      kirari::app::play::pick_menu_language(kirari::app::play::system_locales(place.home)));
+  if (options->registration != kirari::app::play::Registration::None)
     return run_registration(options->registration, place);
   // Un seul lecteur (P2.13) : un double-clic sur une vidéo l'ouvre dans la fenêtre déjà là ; rendu avant
   // chaque relance.
-  std::shared_ptr<ajp::app::play::InstanceListener> instance;
-  if (!options->data_dir && !options->bench_out && !data.empty() && ajp::app::play::shares_instance(args)) {
+  std::shared_ptr<kirari::app::play::InstanceListener> instance;
+  if (!options->data_dir && !options->bench_out && !data.empty() &&
+      kirari::app::play::shares_instance(args)) {
     std::vector<std::string> files;
     std::error_code absolute;
     if (!options->file.empty())
-      files.push_back(ajp::prepare::utf8_path(std::filesystem::absolute(options->file, absolute)));
+      files.push_back(kirari::prepare::utf8_path(std::filesystem::absolute(options->file, absolute)));
     // C31-03 : un lecteur relancé prend la place de l'ancien, même s'il tient encore le canal.
-    auto claim = ajp::app::play::claim_instance(data, ajp::app::play::instance_key(data), files,
-                                                options->relaunched != ajp::app::play::RelaunchedFor::None);
+    auto claim =
+        kirari::app::play::claim_instance(data, kirari::app::play::instance_key(data), files,
+                                          options->relaunched != kirari::app::play::RelaunchedFor::None);
     if (claim.forwarded) return 0;
     instance = std::move(claim.listener);
   }
@@ -660,24 +660,24 @@ int run_player(int argc, char** argv) {
   start_diagnostics(settings_dir, log_file, options->relaunched, scripted_launch(*options, args));
   report_role_refusals();
   // Le thread principal présente les images : il passe devant les travaux de fond (core/thread_role.h).
-  ajp::set_thread_role(ajp::ThreadRole::Playback);
+  kirari::set_thread_role(kirari::ThreadRole::Playback);
   if (options->bake_looks) {
-    const auto baked = ajp::app::play::bake_looks(ajp::app::play::paths::play_settings(settings_dir),
-                                                  ajp::app::play::local_data(data) / "luts",  // A18-06
-                                                  *options->bake_looks);
+    const auto baked = kirari::app::play::bake_looks(kirari::app::play::paths::play_settings(settings_dir),
+                                                     kirari::app::play::local_data(data) / "luts",  // A18-06
+                                                     *options->bake_looks);
     if (!baked) return fail(baked.error());
     return 0;
   }
   prepare_libraries();
   if (!SDL_Init(SDL_INIT_VIDEO))
-    return fail_shown({ajp::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()},
+    return fail_shown({kirari::RefusalCode::LibraryUnavailable, std::string("SDL_Init : ") + SDL_GetError()},
                       *options);
   // Linux : le thread principal et ceux de la lecture passent devant les travaux de fond (rtkit au besoin).
   {
-    const bool raised = ajp::set_thread_priority_raiser(
+    const bool raised = kirari::set_thread_priority_raiser(
         []() noexcept { return SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_HIGH); });
 #ifdef __linux__
-    ajp::log_channel("app")->info("priorité haute : {}", raised ? "accordée" : "refusée");
+    kirari::log_channel("app")->info("priorité haute : {}", raised ? "accordée" : "refusée");
 #else
     static_cast<void>(raised);
 #endif
@@ -688,17 +688,17 @@ int run_player(int argc, char** argv) {
   // C18-05 : la connexion à PipeWire ou WASAPI se fait avant la fenêtre ; sa durée se dit quand elle se voit.
   const auto audio_from = std::chrono::steady_clock::now();
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
-    ajp::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
+    kirari::log_channel("app")->warn("audio indisponible, lecture sans son : {}", SDL_GetError());
   if (const auto took = std::chrono::steady_clock::now() - audio_from; took > std::chrono::milliseconds(100))
-    ajp::log_channel("app")->info("audio prêt en {} ms",
-                                  std::chrono::duration_cast<std::chrono::milliseconds>(took).count());
-  const ajp::app::play::DataPlaces places =
-      ajp::app::play::settle_data(data, place, !options->data_dir && !options->bench_out);
+    kirari::log_channel("app")->info("audio prêt en {} ms",
+                                     std::chrono::duration_cast<std::chrono::milliseconds>(took).count());
+  const kirari::app::play::DataPlaces places =
+      kirari::app::play::settle_data(data, place, !options->data_dir && !options->bench_out);
   const std::filesystem::path& heavy = places.heavy;
   const std::filesystem::path& cache = places.cache;
   bool engines_updated = false;  // un moteur mis à jour ou le GPU perdu : le lecteur se relance (play())
-  auto relaunch_reason = ajp::app::play::RelaunchedFor::EngineUpdated;
-  ajp::app::play::PlayerPaths paths{
+  auto relaunch_reason = kirari::app::play::RelaunchedFor::EngineUpdated;
+  kirari::app::play::PlayerPaths paths{
       .home = place.home,
       .data = data,  // le dossier des données du lecteur
       .executable = place.executable,
@@ -716,19 +716,19 @@ int run_player(int argc, char** argv) {
   const auto beside = [&](std::string_view backend) {
     for (const std::filesystem::path& dir : module_dirs(base))
       paths.backends.push_back(
-          dir / (std::string("ajp_backend_") + std::string(backend) + std::string(kModuleSuffix)));
+          dir / (std::string("kirari_backend_") + std::string(backend) + std::string(kModuleSuffix)));
   };
   beside("tensorrt");
-#ifdef AJP_BACKEND_TENSORRT
-  paths.backends.emplace_back(AJP_BACKEND_TENSORRT);
+#ifdef KIRARI_BACKEND_TENSORRT
+  paths.backends.emplace_back(KIRARI_BACKEND_TENSORRT);
 #endif
   beside("coreml");  // Mac : Core ML, qui refuse les autres appareils
-#ifdef AJP_BACKEND_COREML
-  paths.backends.emplace_back(AJP_BACKEND_COREML);
+#ifdef KIRARI_BACKEND_COREML
+  paths.backends.emplace_back(KIRARI_BACKEND_COREML);
 #endif
   beside("vulkan");
-#ifdef AJP_BACKEND_VULKAN
-  paths.backends.emplace_back(AJP_BACKEND_VULKAN);
+#ifdef KIRARI_BACKEND_VULKAN
+  paths.backends.emplace_back(KIRARI_BACKEND_VULKAN);
 #endif
   before_play(paths.engines, place.executable, argc, argv, log_file);
   const auto played = play_then_settle(*options, paths);
@@ -738,35 +738,35 @@ int run_player(int argc, char** argv) {
   if (played) return 0;
   // C18-09 : la fenêtre fermée pendant une attente (moteur, sonde) est une sortie voulue : ni erreur ni
   // code 1.
-  if (played.error().code == ajp::RefusalCode::Cancelled) {
-    ajp::log_channel("app")->info("fermé pendant l'attente : {}", played.error().detail);
+  if (played.error().code == kirari::RefusalCode::Cancelled) {
+    kirari::log_channel("app")->info("fermé pendant l'attente : {}", played.error().detail);
     return 0;
   }
-  // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans ajp.log.
-  ajp::log_channel("app")->error("{} {}", ajp::name(played.error().code), played.error().detail);
+  // Par le journal, qui l'écrit aussi sur stderr : le refus reste dans kirari.log.
+  kirari::log_channel("app")->error("{} {}", kirari::name(played.error().code), played.error().detail);
   // Lancé par un double-clic, personne ne lit stderr : la fenêtre ne se ferme pas sans un mot. Pas
   // de boîte pendant un essai scripté (--keys, --snapshot, banc), qui doit finir seul, ni pour une
   // annulation voulue.
   if (!quiet_failures()) {
-    namespace i18n = ajp::app::play::i18n;
+    namespace i18n = kirari::app::play::i18n;
     std::string text =
-        i18n::tr_format("Playback stopped: {}.", ajp::app::play::visible_error(played.error()));
+        i18n::tr_format("Playback stopped: {}.", kirari::app::play::visible_error(played.error()));
     if (!log_file.empty())
-      text += "\n\n" + i18n::tr_format("Details in {}", ajp::prepare::utf8_path(log_file));
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+      text += "\n\n" + i18n::tr_format("Details in {}", kirari::prepare::utf8_path(log_file));
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Kirari Player", text.c_str(), nullptr);
   }
   return 1;
 }
 
 }  // namespace
 
-// Une exception qui sort du lecteur, ou un std::terminate, laisse sa cause dans ajp.log et vide la file
+// Une exception qui sort du lecteur, ou un std::terminate, laisse sa cause dans kirari.log et vide la file
 // asynchrone du journal avant de s'arrêter (P2.1).
 int main(int argc, char** argv) {
-  ajp::install_terminate_flush();
-  ajp::install_system_thread_names();  // Nsight, gdb et les vidages nomment chaque thread (A20-11)
-  bool threw = true;                   // remis à faux par run_player qui rend
-  const int code = ajp::run_logged([&] {
+  kirari::install_terminate_flush();
+  kirari::install_system_thread_names();  // Nsight, gdb et les vidages nomment chaque thread (A20-11)
+  bool threw = true;                      // remis à faux par run_player qui rend
+  const int code = kirari::run_logged([&] {
     const int returned = run_player(argc, argv);
     threw = false;
     return returned;
@@ -775,19 +775,19 @@ int main(int argc, char** argv) {
     // B31-10 : une exception (mémoire pleine) ne ferme plus la fenêtre sans un mot, et la séance reste
     // marquée ouverte : le lancement suivant joint ce journal au rapport.
     if (!quiet_failures()) {
-      const std::string text = ajp::app::play::i18n::tr("The player stopped on an internal error.");
-      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ajp", text.c_str(), nullptr);
+      const std::string text = kirari::app::play::i18n::tr("The player stopped on an internal error.");
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Kirari Player", text.c_str(), nullptr);
     }
   } else {
-    ajp::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
+    kirari::app::play::end_session();  // une sortie qui revient jusqu'ici n'est pas un plantage
   }
   // Une sonde de fichier bloquée sur un partage muet (run_pumped_for) : un instant pour finir, sinon le
   // processus se termine sans elle, avant qu'elle ne journalise après close_log (A30-05).
-  if (!ajp::app::play::settle_abandoned_threads(std::chrono::seconds(2))) {
-    ajp::log_channel("app")->warn("sonde d'un fichier toujours bloquée : sortie sans l'attendre");
-    ajp::close_log();
+  if (!kirari::app::play::settle_abandoned_threads(std::chrono::seconds(2))) {
+    kirari::log_channel("app")->warn("sonde d'un fichier toujours bloquée : sortie sans l'attendre");
+    kirari::close_log();
     std::quick_exit(code);
   }
-  ajp::close_log();
+  kirari::close_log();
   return code;
 }

@@ -5,7 +5,7 @@
 #include <format>
 #include <system_error>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr std::string_view kRifePrefix = "rife-fused:";
@@ -107,4 +107,4 @@ std::optional<DrbaFusedKey> drba_fused_artifact_key_parse(std::string_view text)
   return key;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

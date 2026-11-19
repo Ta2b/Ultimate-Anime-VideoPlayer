@@ -16,7 +16,7 @@
 #include "app/play/temporal_window.h"
 #include "stage_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 DecodedFrame frame(std::uint32_t id, std::uint32_t epoch = 0) {
@@ -87,7 +87,7 @@ TEST_CASE("Stabilisation : un seek oublie l'époque d'avant, le plus petit pts p
 
 TEST_CASE("play.toml : la stabilisation temporelle, absente d'un ancien fichier, s'enregistre",
           "[app][settings][temporal]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-temporal.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-temporal.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::string key = "temporal_fix = 'off'\n";
@@ -142,4 +142,4 @@ TEST_CASE("Stabilisation : l'allumer, l'éteindre ou changer sa taille recharge 
   CHECK(change_between(running, off_full, true).cost != ChangeCost::Reopen);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

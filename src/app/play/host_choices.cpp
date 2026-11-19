@@ -17,7 +17,7 @@
 #include "core/gpu_device.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 void fill_host_choices(SettingsChoices& choices, const PlaceboScreen& screen, const PlayerPaths& paths,
                        const EngineCatalog& catalog, const std::filesystem::path& settings_dir) {
@@ -64,7 +64,7 @@ void refresh_host_choices(SettingsChoices& choices, const EngineCatalog& catalog
     choices.audio_outputs.push_back(
         {.name = device.name, .channels = device.channels, .is_default = device.is_default});
   choices.engines_dir_free = shown_size(free_bytes(catalog.layout.engines));
-  choices.default_player_is_ajp = is_default_player(choices.place);
+  choices.default_player_is_kirari = is_default_player(choices.place);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

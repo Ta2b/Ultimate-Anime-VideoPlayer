@@ -13,7 +13,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Les images entrent comme celles de RIFE : RGB [0, 1] de la conversion de la chaîne, remplies au multiple
 // de 64 et centrées (rife_geometry) ; la sortie se recadre pareil. vsgmfss étire l'image au multiple de 64
@@ -124,6 +124,6 @@ struct MotionGrid {
 inline constexpr float kGmfssStillLow = 3.0F / 255.0F;
 inline constexpr float kGmfssStillHigh = 8.0F / 255.0F;
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

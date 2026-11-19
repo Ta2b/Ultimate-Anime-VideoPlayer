@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string_view text_of(std::span<const std::byte> bytes) {
@@ -29,4 +29,4 @@ TEST_CASE("mov_text : le texte derrière sa longueur, sans les boîtes de style"
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

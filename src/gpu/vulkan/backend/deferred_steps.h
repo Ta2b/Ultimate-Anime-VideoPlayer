@@ -20,7 +20,7 @@
 #include "core/types.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 class DeferredSteps {
  public:
@@ -69,4 +69,4 @@ class DeferredSteps {
   std::jthread worker_;
 };
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

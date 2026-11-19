@@ -14,7 +14,7 @@
 #include "core/types.h"
 #include "prepare/onnx_dims.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::string_view kGmfssPairFile = "gmfss_fortuna_union_pair.onnx";
 inline constexpr std::string_view kGmfssFusionFile = "gmfss_fortuna_union_fusion.onnx";
@@ -45,4 +45,4 @@ GmfssModels gmfss_chosen(const GmfssModels& found, bool half);
 std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int padded_width,
                                                  int padded_height, const std::filesystem::path& dir);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

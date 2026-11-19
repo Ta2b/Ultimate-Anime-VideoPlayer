@@ -10,10 +10,10 @@
 #include "gpu/ir/ops.h"
 #include "test_util.h"
 
-using ajp::Refusal;
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using kirari::Refusal;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 

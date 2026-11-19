@@ -18,14 +18,14 @@
 
 #include "support.h"
 
-using namespace ajp::prepare;
-using ajp::RefusalCode;
+using namespace kirari::prepare;
+using kirari::RefusalCode;
 using namespace std::chrono_literals;
 
 namespace {
 
 struct Run {
-  std::expected<ProcessExit, ajp::Refusal> exit;
+  std::expected<ProcessExit, kirari::Refusal> exit;
   std::vector<std::string> lines;
 };
 

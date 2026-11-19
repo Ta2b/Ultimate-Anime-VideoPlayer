@@ -6,7 +6,7 @@
 #include "app/play/subtitle_lead.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 ClockSnapshot HostClock::snapshot() const {
   const std::scoped_lock lock(mutex_);
@@ -191,4 +191,4 @@ void ThreadStages::quit() {
   if (links_.subs) std::ignore = links_.subs->try_push(Command{cmd::Quit{}});
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

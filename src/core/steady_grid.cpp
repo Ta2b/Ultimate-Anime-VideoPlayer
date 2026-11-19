@@ -4,7 +4,7 @@
 #include <optional>
 #include <tuple>
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 bool usable(const Ratio& r) {
@@ -82,4 +82,4 @@ std::expected<void, Refusal> SteadyGrid::flush(std::uint32_t epoch) {
   return {};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

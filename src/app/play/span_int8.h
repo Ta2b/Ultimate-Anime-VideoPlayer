@@ -34,11 +34,11 @@
 #include "app/play/precision.h"
 #include "core/types.h"
 
-namespace ajp::media {
+namespace kirari::media {
 struct TrackInfo;
 }
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr double kInt8MinPsnrMeanDb = 42.0;
 inline constexpr double kInt8MinPsnrWorstDb = 38.0;
@@ -59,7 +59,7 @@ struct SpanInt8 {  // une variante quantifiée ou recalculée du SPAN, quel que 
   double psnr_mean_db = 0.0;
   double psnr_worst_db = 0.0;
   double ssim_worst = 0.0;
-  bool receipt_v2 = false;  // FP8 CUTLASS : reçu ajp-span-fp8c-v2 (seul à servir l'Auto, étape 3.7b)
+  bool receipt_v2 = false;  // FP8 CUTLASS : reçu kirari-span-fp8c-v2 (seul à servir l'Auto, étape 3.7b)
 };
 
 struct SpanInt8Lookup {
@@ -156,4 +156,4 @@ std::string_view variant_text(SpanVariantKind kind);
 // pour un autre nom. Les badges du cache nomment ainsi le modèle d'origine. kind rend laquelle des trois.
 std::optional<std::string> span_int8_source(const std::string& file, SpanVariantKind* kind = nullptr);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

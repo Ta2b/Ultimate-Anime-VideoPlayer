@@ -1,48 +1,48 @@
 # Le backend se charge par dlopen, comme le lecteur le charge : le test ne le lie pas.
-# AJP_SPAN_MODEL : le modèle SPAN d'AnimeJaNai installé sur le poste, lu en place (jamais
+# KIRARI_SPAN_MODEL : le modèle SPAN d'AnimeJaNai installé sur le poste, lu en place (jamais
 # copié dans le dépôt) ; absent, le test qui l'exécute se SKIP.
-set(AJP_SPAN_MODEL "${AJP_ANIMEJANAI_ONNX_DIR}/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
+set(KIRARI_SPAN_MODEL "${KIRARI_ANIMEJANAI_ONNX_DIR}/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
     CACHE FILEPATH "Modèle SPAN ×2 d'AnimeJaNai pour le test du backend TensorRT")
-# AJP_SPAN_FP8_PACKAGE, AJP_SPAN_FP8_MODEL : le paquet dérivé par tools/span/derive_span_fp8.py et le SPAN dont il
+# KIRARI_SPAN_FP8_PACKAGE, KIRARI_SPAN_FP8_MODEL : le paquet dérivé par tools/span/derive_span_fp8.py et le SPAN dont il
 # vient, pour le test caché [.span_fp8] (docs/span-fp8-cutlass.md) ; vides, il se SKIP.
-set(AJP_SPAN_FP8_PACKAGE "" CACHE FILEPATH "Paquet .span8 du SPAN FP8 (test caché [.span_fp8])")
-set(AJP_SPAN_FP8_MODEL "" CACHE FILEPATH "SPAN d'origine du paquet (test caché [.span_fp8])")
-# AJP_SPAN_DERIVE_IMAGES : des PPM P6 d anime de 1920×1088 au moins, séparés par des virgules, pour le test caché
+set(KIRARI_SPAN_FP8_PACKAGE "" CACHE FILEPATH "Paquet .span8 du SPAN FP8 (test caché [.span_fp8])")
+set(KIRARI_SPAN_FP8_MODEL "" CACHE FILEPATH "SPAN d'origine du paquet (test caché [.span_fp8])")
+# KIRARI_SPAN_DERIVE_IMAGES : des PPM P6 d anime de 1920×1088 au moins, séparés par des virgules, pour le test caché
 # [.span_derive] (dérivation native du paquet).
-set(AJP_SPAN_DERIVE_IMAGES "" CACHE STRING "Images PPM séparées par des virgules (test caché [.span_derive])")
-set(AJP_SPAN_FP8_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.span_fp8] (sinon un dessin synthétique)")
-# AJP_RIFE_MODEL_DIR : le dossier des RIFE du lecteur (rife_v4.25.onnx, rife_v4.22_lite.onnx), lus en place par le test
-# caché [.rife_fused] ; AJP_RIFE_IMAGE : une image d'anime en PPM pour sa paire (sinon un dessin synthétique).
-set(AJP_RIFE_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
-set(AJP_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.rife_fused]")
-# AJP_DRBA_MODEL_DIR : le dossier des DistilDRBA du lecteur (distil_drba_v2_lite.onnx, distil_drba_v2_lite_s05.onnx), lus en
-# place par le test caché [.drba_fused] ; AJP_DRBA_IMAGE : une image d'anime en PPM pour ses trois images (sinon un dessin).
-set(AJP_DRBA_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
-set(AJP_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
+set(KIRARI_SPAN_DERIVE_IMAGES "" CACHE STRING "Images PPM séparées par des virgules (test caché [.span_derive])")
+set(KIRARI_SPAN_FP8_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.span_fp8] (sinon un dessin synthétique)")
+# KIRARI_RIFE_MODEL_DIR : le dossier des RIFE du lecteur (rife_v4.25.onnx, rife_v4.22_lite.onnx), lus en place par le test
+# caché [.rife_fused] ; KIRARI_RIFE_IMAGE : une image d'anime en PPM pour sa paire (sinon un dessin synthétique).
+set(KIRARI_RIFE_MODEL_DIR "${KIRARI_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
+set(KIRARI_RIFE_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.rife_fused]")
+# KIRARI_DRBA_MODEL_DIR : le dossier des DistilDRBA du lecteur (distil_drba_v2_lite.onnx, distil_drba_v2_lite_s05.onnx), lus en
+# place par le test caché [.drba_fused] ; KIRARI_DRBA_IMAGE : une image d'anime en PPM pour ses trois images (sinon un dessin).
+set(KIRARI_DRBA_MODEL_DIR "${KIRARI_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test caché [.drba_fused])")
+set(KIRARI_DRBA_IMAGE "" CACHE FILEPATH "Image PPM d'anime pour le test caché [.drba_fused]")
 # Les pièces du module testées seules (backend_parts_test.cpp, B01-09) : compilées ici, le module n'étant pas lié.
-set(ajp_trt_dir "${PROJECT_SOURCE_DIR}/src/gpu/cuda/backend")
-add_executable(ajp_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_pan_test.cpp backend_parts_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_test.cpp
+set(kirari_trt_dir "${PROJECT_SOURCE_DIR}/src/gpu/cuda/backend")
+add_executable(kirari_backend_tensorrt_tests backend_fixture.cpp backend_motion_test.cpp backend_pan_test.cpp backend_parts_test.cpp backend_test.cpp cuda_status_test.cpp drba_fused_test.cpp export_test.cpp frame_stats_test.cpp gmfss_test.cpp
   ingest_chroma_test.cpp rife_fused_encode_test.cpp rife_fused_test.cpp span_derive_test.cpp span_fp8_test.cpp
-  ${ajp_trt_dir}/gpu_timing.cpp ${ajp_trt_dir}/host_upload.cpp ${ajp_trt_dir}/shared_activations.cpp)
-target_link_libraries(ajp_backend_tensorrt_tests PRIVATE
-  ajp::gpu ajp::gpu_ir ajp::gpu_span_fp8 ajp::gpu_span_fp8_onnx ajp::kernels ajp::prepare ajp::core_log ajp_backend_tensorrt_kernels ajp::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
-target_compile_definitions(ajp_backend_tensorrt_tests PRIVATE
-  AJP_BACKEND_TENSORRT="$<TARGET_FILE:ajp_backend_tensorrt>"
-  AJP_TEST_CACHE_DIR="${CMAKE_CURRENT_BINARY_DIR}/engines"
-  AJP_SPAN_MODEL="${AJP_SPAN_MODEL}"
-  AJP_SPAN_FP8_PACKAGE="${AJP_SPAN_FP8_PACKAGE}"
-  AJP_SPAN_FP8_MODEL="${AJP_SPAN_FP8_MODEL}"
-  AJP_SPAN_FP8_IMAGE="${AJP_SPAN_FP8_IMAGE}"
-  AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
-  AJP_RIFE_IMAGE="${AJP_RIFE_IMAGE}"
-  AJP_DRBA_MODEL_DIR="${AJP_DRBA_MODEL_DIR}"
-  AJP_DRBA_IMAGE="${AJP_DRBA_IMAGE}"
-  AJP_SPAN_DERIVE_IMAGES="${AJP_SPAN_DERIVE_IMAGES}")
-add_dependencies(ajp_backend_tensorrt_tests ajp_backend_tensorrt)
-ajp_set_warnings(ajp_backend_tensorrt_tests)
-catch_discover_tests(ajp_backend_tensorrt_tests TEST_PREFIX "backend_tensorrt: " DISCOVERY_MODE PRE_TEST)
+  ${kirari_trt_dir}/gpu_timing.cpp ${kirari_trt_dir}/host_upload.cpp ${kirari_trt_dir}/shared_activations.cpp)
+target_link_libraries(kirari_backend_tensorrt_tests PRIVATE
+  kirari::gpu kirari::gpu_ir kirari::gpu_span_fp8 kirari::gpu_span_fp8_onnx kirari::kernels kirari::prepare kirari::core_log kirari_backend_tensorrt_kernels kirari::dep::cudart ${CMAKE_DL_LIBS} Catch2::Catch2WithMain)
+target_compile_definitions(kirari_backend_tensorrt_tests PRIVATE
+  KIRARI_BACKEND_TENSORRT="$<TARGET_FILE:kirari_backend_tensorrt>"
+  KIRARI_TEST_CACHE_DIR="${CMAKE_CURRENT_BINARY_DIR}/engines"
+  KIRARI_SPAN_MODEL="${KIRARI_SPAN_MODEL}"
+  KIRARI_SPAN_FP8_PACKAGE="${KIRARI_SPAN_FP8_PACKAGE}"
+  KIRARI_SPAN_FP8_MODEL="${KIRARI_SPAN_FP8_MODEL}"
+  KIRARI_SPAN_FP8_IMAGE="${KIRARI_SPAN_FP8_IMAGE}"
+  KIRARI_RIFE_MODEL_DIR="${KIRARI_RIFE_MODEL_DIR}"
+  KIRARI_RIFE_IMAGE="${KIRARI_RIFE_IMAGE}"
+  KIRARI_DRBA_MODEL_DIR="${KIRARI_DRBA_MODEL_DIR}"
+  KIRARI_DRBA_IMAGE="${KIRARI_DRBA_IMAGE}"
+  KIRARI_SPAN_DERIVE_IMAGES="${KIRARI_SPAN_DERIVE_IMAGES}")
+add_dependencies(kirari_backend_tensorrt_tests kirari_backend_tensorrt)
+kirari_set_warnings(kirari_backend_tensorrt_tests)
+catch_discover_tests(kirari_backend_tensorrt_tests TEST_PREFIX "backend_tensorrt: " DISCOVERY_MODE PRE_TEST)
 
 # Les tests cachés qui jugent la qualité sur la vraie carte (B40-02) : RIFE et DistilDRBA fusionnés contre le moteur entier,
 # SPAN FP8 dérivé et ses noyaux. `ctest -L nvidia` les lance tous avant un tag (voir tests/CMakeLists.txt). Sans modèle ni
 # image (variables CMake ci-dessus), un groupe se saute avec sa raison.
-ajp_add_hardware_tests(ajp_backend_tensorrt_tests nvidia 3600 rife_fused drba_fused span_derive span_fp8)
+kirari_add_hardware_tests(kirari_backend_tensorrt_tests nvidia 3600 rife_fused drba_fused span_derive span_fp8)

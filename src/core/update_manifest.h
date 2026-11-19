@@ -23,7 +23,7 @@
 
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct UpdateManifest {
   std::string version;              // « 0.5.0 » ou « 0.5.0-rc.1 »
@@ -46,4 +46,4 @@ inline bool manifest_expired(const UpdateManifest& manifest, std::chrono::sys_da
 // l'un des textes n'est pas une version.
 std::optional<int> compare_versions(std::string_view a, std::string_view b);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

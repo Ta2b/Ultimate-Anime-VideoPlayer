@@ -5,7 +5,7 @@
 #include <string_view>
 #include <utility>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr VkBufferUsageFlags kUsage =
@@ -141,4 +141,4 @@ Done download(VkContext& context, MemoryAllocator& memory, const Buffer& buffer,
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

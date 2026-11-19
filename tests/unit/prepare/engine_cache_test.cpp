@@ -20,9 +20,9 @@
 #include "prepare/trtexec_progress.h"
 #include "support.h"
 
-using namespace ajp::prepare;
-using namespace ajp::prepare::test_bench;
-using ajp::RefusalCode;
+using namespace kirari::prepare;
+using namespace kirari::prepare::test_bench;
+using kirari::RefusalCode;
 
 // C05-01 : un moteur repris du cache dit qu'il l'est ; le lecteur, s'il le voit refusé au chargement, le met
 // de côté (sans son empreinte) et la construction suivante en refait un.
@@ -64,7 +64,7 @@ TEST_CASE("Mettre de côté une entrée absente n'est pas une erreur", "[prepare
 TEST_CASE("Une date changée sur un moteur intact est reprise dans l'empreinte", "[prepare][cache]") {
   const test::TempDir dir;
   const CacheEntry entry{.destination = dir / "a.engine"};
-  const auto produce = [](const test::fs::path& output) -> std::expected<void, ajp::Refusal> {
+  const auto produce = [](const test::fs::path& output) -> std::expected<void, kirari::Refusal> {
     test::write_file(output, "moteur");
     return {};
   };
@@ -89,7 +89,8 @@ TEST_CASE("L'attente du verrou de la clé se dit", "[prepare][cache]") {
     stop.request_stop();
   });
   const auto produced = produce_once(
-      entry, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> { return {}; }, stop.get_token());
+      entry, [](const test::fs::path&) -> std::expected<void, kirari::Refusal> { return {}; },
+      stop.get_token());
   CHECK(test::refusal(produced) == RefusalCode::Cancelled);
   CHECK(told == 1);
 }
@@ -98,7 +99,7 @@ TEST_CASE("Une entrée libre ne dit rien d'attente", "[prepare][cache]") {
   const test::TempDir dir;
   int told = 0;
   CacheEntry entry{.destination = dir / "a.engine", .on_wait = [&told] { ++told; }};
-  REQUIRE(produce_once(entry, [](const test::fs::path& output) -> std::expected<void, ajp::Refusal> {
+  REQUIRE(produce_once(entry, [](const test::fs::path& output) -> std::expected<void, kirari::Refusal> {
     test::write_file(output, "moteur");
     return {};
   }));

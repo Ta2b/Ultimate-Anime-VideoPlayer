@@ -8,7 +8,7 @@ visible. Rendu : moyenne, p95, p99, p99,9 et maximum sur tous les pixels.
       code retour 1 si p95 dépasse --max-p95 ou p99,9 --max-p999 ; --heatmap écrit une carte 8 bits (noir 0,
       blanc >= 2) ; --json écrit le résumé en JSON sur une ligne (tools/grade/compare_shots.sh).
 
-Les PPM viennent de `ajp play … --snapshot=FICHIER.pq.ppm --snapshot-at=S` sur une sortie HDR10
+Les PPM viennent de `kirari play … --snapshot=FICHIER.pq.ppm --snapshot-at=S` sur une sortie HDR10
 (placebo_snapshot.cpp : P6, maximum 65535, poids fort d'abord). A : `--legacy-grade=split`, B : par défaut.
 """
 import argparse

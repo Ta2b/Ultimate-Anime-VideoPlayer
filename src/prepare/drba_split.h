@@ -21,7 +21,7 @@
 #include "core/types.h"
 #include "kernels/spec/drba_fused.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct DrbaSplit {
   kernels::DrbaFusedPlan plan;
@@ -117,4 +117,4 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
                                                                 const std::filesystem::path& dir, int height,
                                                                 int width);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

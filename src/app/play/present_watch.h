@@ -18,7 +18,7 @@
 #include <string_view>
 #include <thread>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Au-delà, un appel de la swapchain est figé : une image prend 4 à 42 ms, une swapchain refaite ou un
 // changement de mode d'écran moins d'une seconde.
@@ -69,4 +69,4 @@ class PresentWatch {
   std::jthread thread_;  // dernier : arrêté et attendu avant le reste
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -10,7 +10,7 @@
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 namespace {
 
 struct Block {
@@ -159,4 +159,4 @@ Evaluated eval_reduce_mean(const Node& node, std::span<const Value* const> in,
   return std::vector<Value>{std::move(out)};
 }
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

@@ -10,7 +10,7 @@
 
 #include "kernels/ref/check.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 // Deux lumas de même taille, aux codes valides du format (P010 compris : 6 bits bas nuls).
@@ -73,9 +73,9 @@ Result<std::uint32_t> block_diff_max(const PlaneU16& a, const PlaneU16& b, Forma
   return worst;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float levels,
                                 const RifeGeometry& geometry, float kr, float kb) {
@@ -115,4 +115,4 @@ Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float leve
   return out;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

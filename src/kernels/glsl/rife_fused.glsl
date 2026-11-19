@@ -3,8 +3,8 @@
 // (gpu/cuda/backend/rife_fused_kernels.cu), formules et arrondis FP16 aux mêmes endroits, la grille des
 // warps exceptée (pixel_tap). Référence :
 // kernels/ref/rife_fused.cpp. S'inclut après tensor.glsl.
-#ifndef AJP_RIFE_FUSED_GLSL
-#define AJP_RIFE_FUSED_GLSL
+#ifndef KIRARI_RIFE_FUSED_GLSL
+#define KIRARI_RIFE_FUSED_GLSL
 
 // L'arrondi FP16 d'une sortie du graphe (Resize, Mul, Add, Cast, Sigmoid…).
 float rounded(float v) {
@@ -47,4 +47,4 @@ float mix4(float a, float b, float d, float e, float wx, float wy) {
   return v;
 }
 
-#endif  // AJP_RIFE_FUSED_GLSL
+#endif  // KIRARI_RIFE_FUSED_GLSL

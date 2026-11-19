@@ -5,7 +5,7 @@
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/slice_kernels.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
@@ -481,4 +481,4 @@ cudaError_t launch_read_rgba16(const ReadParams& params, cudaStream_t stream) {
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

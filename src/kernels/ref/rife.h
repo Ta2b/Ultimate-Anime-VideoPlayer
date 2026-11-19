@@ -14,7 +14,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // L'image au centre de pw × ph, bords noir studio (rife_pad_luma, rife_pad_chroma).
 Result<YuvImage> rife_pad(const YuvImage& frame);
@@ -38,4 +38,4 @@ Result<std::array<PlaneF, 4>> rife_constant_planes(int padded_width, int padded_
 // Refus : tailles différentes ou non multiples de 64, t hors de [0, 1].
 Result<std::vector<PlaneF>> rife_input(const RgbImage& a, const RgbImage& b, float t);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

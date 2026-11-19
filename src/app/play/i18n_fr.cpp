@@ -3,7 +3,7 @@
 #include <array>
 #include <vector>
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Textes de l'interface : (clé anglaise, français). Les messages de la barre de lecture, des pistes et des
@@ -131,4 +131,4 @@ std::span<const Entry> french_entries() {
   return all;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

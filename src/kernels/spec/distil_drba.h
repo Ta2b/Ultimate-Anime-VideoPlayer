@@ -12,7 +12,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Le graphe, entrées dans l'ordre :
 //   « pair01 », 1 × 7 × ph × pw : rife_input(img0, img1, u), en 7 plans (RIFE v2) ;
@@ -37,6 +37,6 @@ constexpr DrbaCall drba_call(float t) {
   return {.on_b = true, .u = t / 2.0F};
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

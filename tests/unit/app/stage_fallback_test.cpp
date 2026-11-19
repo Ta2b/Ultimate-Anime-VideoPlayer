@@ -7,12 +7,12 @@
 #include "app/play/links.h"
 #include "app/play/player_engines.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr int kWidth = 1920;
 constexpr int kHeight = 1080;
-constexpr std::string_view kLibrary = "libajp_backend_tensorrt.so";
+constexpr std::string_view kLibrary = "libkirari_backend_tensorrt.so";
 
 PlaySettings chain(PrecisionTier span, PrecisionTier motion) {
   PlaySettings s;
@@ -421,4 +421,4 @@ TEST_CASE("C31-05 : un refus de l'affichage sans clé retire un étage, pas une 
                       kWidth, kHeight, kLibrary, "ep01.mkv") == ChainStage::Motion);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

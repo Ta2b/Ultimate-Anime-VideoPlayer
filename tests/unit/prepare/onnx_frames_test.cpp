@@ -11,7 +11,7 @@
 #include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -122,14 +122,15 @@ TEST_CASE("Demi-taille : le réseau lit les images moyennées, sa correction agr
   for (const auto& n : *nodes) ops.push_back(n.op_type);
   CHECK(ops == std::vector<std::string>{"Concat", "AveragePool", "AveragePool", "Relu", "Identity", "Sub",
                                         "Resize", "Add"});
-  CHECK((*nodes)[0].outputs == std::vector<std::string>{"ajp_frames_full"});
-  CHECK((*nodes)[1].inputs == std::vector<std::string>{"ajp_frames_full"});
+  CHECK((*nodes)[0].outputs == std::vector<std::string>{"kirari_frames_full"});
+  CHECK((*nodes)[1].inputs == std::vector<std::string>{"kirari_frames_full"});
   CHECK((*nodes)[1].outputs == std::vector<std::string>{"input"});
   CHECK((*nodes)[2].inputs == std::vector<std::string>{"input_3"});
-  CHECK((*nodes)[4].outputs == std::vector<std::string>{"ajp_frames_net_out"});  // l'ancienne sortie
-  CHECK((*nodes)[5].inputs == std::vector<std::string>{"ajp_frames_net_out", "ajp_frames_center_half"});
-  CHECK((*nodes)[6].inputs == std::vector<std::string>{"ajp_frames_delta_half", "", "ajp_frames_scales"});
-  CHECK((*nodes)[7].inputs == std::vector<std::string>{"input_3", "ajp_frames_delta"});
+  CHECK((*nodes)[4].outputs == std::vector<std::string>{"kirari_frames_net_out"});  // l'ancienne sortie
+  CHECK((*nodes)[5].inputs == std::vector<std::string>{"kirari_frames_net_out", "kirari_frames_center_half"});
+  CHECK((*nodes)[6].inputs ==
+        std::vector<std::string>{"kirari_frames_delta_half", "", "kirari_frames_scales"});
+  CHECK((*nodes)[7].inputs == std::vector<std::string>{"input_3", "kirari_frames_delta"});
   CHECK((*nodes)[7].outputs == std::vector<std::string>{"output"});
   const auto scanned = scan_onnx(*split);
   REQUIRE(scanned);
@@ -153,4 +154,4 @@ TEST_CASE("Une entrée absente ou indivisible est refusée", "[prepare][onnx]") 
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

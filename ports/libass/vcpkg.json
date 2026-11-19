@@ -1,7 +1,7 @@
 {
   "name": "libass",
   "version-string": "0.17.5-rendu-sur-plusieurs-fils",
-  "description": "Portable subtitle renderer for ASS/SSA, upstream with multithreaded rendering from the-database (overlay ajp).",
+  "description": "Portable subtitle renderer for ASS/SSA, upstream with multithreaded rendering from the-database (overlay kirari).",
   "homepage": "https://github.com/libass/libass",
   "license": "ISC",
   "dependencies": [

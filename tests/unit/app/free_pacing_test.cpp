@@ -7,7 +7,7 @@
 
 #include "app/play/frame_stats.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::int64_t kVsync = 6'061;  // 165 Hz
@@ -61,4 +61,4 @@ TEST_CASE("Rapide : sans écart planifié, la période de sortie compte comme av
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

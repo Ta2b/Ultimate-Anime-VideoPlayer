@@ -31,7 +31,7 @@ Le modèle INT8 est dérivé des poids d'AnimeJaNai : il se construit chez vous 
 
     pip install "nvidia-modelopt[onnx]" pillow
     python -I tools/span/quantize_span.py 2x_AnimeJaNai_HD_V3_….onnx --corpus images/ \\
-        --out "%APPDATA%/ajp/ajp/modeles"
+        --out "%APPDATA%/kirari/modeles"
 
 Écrit dans --out « <nom>-int8-<16 premiers chiffres du SHA-256 du modèle>.onnx » et son reçu
 « .toml » ; si les garde-fous échouent, seul le reçu est écrit (passed = false).
@@ -64,9 +64,9 @@ NVIDIA_OUTPUTS = re.compile(r"rtx[ _.-]?(hdr|vsr|video)|true[ _.-]?hdr|nvidia[ _
 F32, F16 = TensorProto.FLOAT, TensorProto.FLOAT16
 # Par précision : le format du reçu, l'infixe du fichier et les seuils que le lecteur exige (span_int8.cpp).
 PRECISIONS = {
-    "int8": {"format": "ajp-span-int8-v1", "infix": "int8", "psnr": 42.0, "worst": 38.0, "ssim": 0.985, "mode": "int8"},
-    "fp8": {"format": "ajp-span-fp8-v1", "infix": "fp8", "psnr": 30.0, "worst": 26.0, "ssim": 0.93, "mode": "fp8"},
-    "fp32": {"format": "ajp-span-fp32-v1", "infix": "fp32", "psnr": 42.0, "worst": 38.0, "ssim": 0.985, "mode": None},
+    "int8": {"format": "kirari-span-int8-v1", "infix": "int8", "psnr": 42.0, "worst": 38.0, "ssim": 0.985, "mode": "int8"},
+    "fp8": {"format": "kirari-span-fp8-v1", "infix": "fp8", "psnr": 30.0, "worst": 26.0, "ssim": 0.93, "mode": "fp8"},
+    "fp32": {"format": "kirari-span-fp32-v1", "infix": "fp32", "psnr": 42.0, "worst": 38.0, "ssim": 0.985, "mode": None},
 }
 
 
@@ -392,7 +392,7 @@ def main() -> int:
     input_name = model.graph.input[0].name
     print(f"{source.name} : {len(calibration)} images de calibration, {len(validation)} de validation")
     data = crops(calibration, args.crop, args.crops, seed=int(source_sha[:8], 16))
-    with tempfile.TemporaryDirectory(prefix="ajp-int8-") as work:
+    with tempfile.TemporaryDirectory(prefix="kirari-int8-") as work:
         source32 = Path(work) / "source32.onnx"
         onnx.save(to_float32(model), str(source32))
         quantized = Path(work) / "int8.onnx"

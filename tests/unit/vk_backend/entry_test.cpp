@@ -1,5 +1,5 @@
-// ajp_backend_vulkan chargée comme le lecteur la charge : par son chemin, points d'entrée lus
-// par nom, version et empreinte vérifiées par check_backend_abi avant ajp_backend_create. Une
+// kirari_backend_vulkan chargée comme le lecteur la charge : par son chemin, points d'entrée lus
+// par nom, version et empreinte vérifiées par check_backend_abi avant kirari_backend_create. Une
 // bibliothèque d'une autre ABI est refusée ; une mauvaise version passée à create aussi.
 #include <memory>
 #include <string>
@@ -15,8 +15,8 @@
 #include <dlfcn.h>
 #endif
 
-using namespace ajp;
-using namespace ajp::gpu;
+using namespace kirari;
+using namespace kirari::gpu;
 
 namespace {
 
@@ -58,13 +58,13 @@ class Library {
 
 }  // namespace
 
-TEST_CASE("Entrée : ajp_backend_vulkan se charge et vérifie son ABI", "[vk_backend][entry]") {
-  const Library library(AJP_TEST_BACKEND);
+TEST_CASE("Entrée : kirari_backend_vulkan se charge et vérifie son ABI", "[vk_backend][entry]") {
+  const Library library(KIRARI_TEST_BACKEND);
   REQUIRE(library.open());
-  const auto abi = library.symbol<BackendAbiFn>("ajp_backend_abi");
-  const auto layout = library.symbol<BackendLayoutFn>("ajp_backend_layout");
-  const auto create = library.symbol<BackendCreateFn>("ajp_backend_create");
-  const auto destroy = library.symbol<BackendDestroyFn>("ajp_backend_destroy");
+  const auto abi = library.symbol<BackendAbiFn>("kirari_backend_abi");
+  const auto layout = library.symbol<BackendLayoutFn>("kirari_backend_layout");
+  const auto create = library.symbol<BackendCreateFn>("kirari_backend_create");
+  const auto destroy = library.symbol<BackendDestroyFn>("kirari_backend_destroy");
   REQUIRE(abi != nullptr);
   REQUIRE(layout != nullptr);
   REQUIRE(create != nullptr);
@@ -101,14 +101,14 @@ TEST_CASE("Entrée : ajp_backend_vulkan se charge et vérifie son ABI", "[vk_bac
 }
 
 TEST_CASE("Entrée : une bibliothèque d'une autre ABI est refusée", "[vk_backend][entry]") {
-  const Library library(AJP_TEST_FAKE_BACKEND);
+  const Library library(KIRARI_TEST_FAKE_BACKEND);
   REQUIRE(library.open());
-  const auto abi = library.symbol<BackendAbiFn>("ajp_backend_abi");
-  const auto layout = library.symbol<BackendLayoutFn>("ajp_backend_layout");
+  const auto abi = library.symbol<BackendAbiFn>("kirari_backend_abi");
+  const auto layout = library.symbol<BackendLayoutFn>("kirari_backend_layout");
   REQUIRE(abi != nullptr);
   REQUIRE(layout != nullptr);
   const auto checked = check_backend_abi(abi(), layout());
   REQUIRE_FALSE(checked);
   CHECK(checked.error().code == RefusalCode::AbiMismatch);
-  CHECK(library.symbol<BackendCreateFn>("ajp_backend_create") == nullptr);
+  CHECK(library.symbol<BackendCreateFn>("kirari_backend_create") == nullptr);
 }

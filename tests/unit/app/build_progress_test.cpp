@@ -11,7 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using Catch::Matchers::WithinAbs;
@@ -74,7 +74,7 @@ TEST_CASE("Un journal de construction donne le modèle, les pixels et la durée"
 }
 
 TEST_CASE("La durée attendue vient de la construction passée la plus proche en pixels", "[app][build]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-build-progress-test";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-build-progress-test";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const auto write = [&](const char* name, const char* shape, const char* seconds) {
@@ -102,7 +102,7 @@ TEST_CASE("La durée attendue vient de la construction passée la plus proche en
 }
 
 TEST_CASE("Un long journal se lit par ses deux bouts", "[app][build]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-build-progress-long";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-build-progress-long";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   {
@@ -123,7 +123,7 @@ TEST_CASE("Un long journal se lit par ses deux bouts", "[app][build]") {
 
 TEST_CASE("C24-06 : le journal récent du modèle est lu même dans un cache de mille journaux",
           "[app][build]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-build-progress-many";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-build-progress-many";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const auto write = [&](const std::string& name, const char* model, const char* seconds) {
@@ -171,4 +171,4 @@ TEST_CASE("B08-12 : le moteur RIFE chargé se reconnaît à son graphe dérivé 
                                   .height = 368}));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

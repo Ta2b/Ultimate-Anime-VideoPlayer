@@ -11,9 +11,9 @@
 #include "core/engines.h"
 #include "core/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
-// Le moteur d'une bibliothèque de backend, par son nom (« ajp_backend_tensorrt.so ») ; rien
+// Le moteur d'une bibliothèque de backend, par son nom (« kirari_backend_tensorrt.so ») ; rien
 // pour un fichier qui n'en est pas une.
 std::optional<core::EngineId> engine_of_library(const std::filesystem::path& library);
 // La bibliothèque d'un moteur retiré (MIGraphX, OpenVINO) laissée par une ancienne version.
@@ -31,4 +31,4 @@ core::Settings using_engine(core::Settings settings, core::EngineId id);
 std::vector<std::filesystem::path> preferred_first(std::vector<std::filesystem::path> candidates,
                                                    const core::Settings& engines);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

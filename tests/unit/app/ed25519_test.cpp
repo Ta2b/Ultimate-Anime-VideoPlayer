@@ -6,11 +6,12 @@
 
 #include "wycheproof_ed25519.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 
-// Un vecteur produit par OpenSSL 3 (openssl pkeyutl -sign -rawin), message « ajp update manifest ».
+// Un vecteur produit par OpenSSL 3 (openssl pkeyutl -sign -rawin), message « ajp update manifest » (signé tel
+// quel : le texte ne change pas avec le nom du lecteur).
 constexpr const char* kKey = "023c519fd679f07cada015b990d1be35150f24fa582c7136aedcdde124a8ab47";
 constexpr const char* kSig =
     "7d78ea645ec1ad57c74e3aec612b891802df3cfbab104ca0985f7754f34316d9617bd3d94521e84e3f48377e8ae76c9f65e08d70"
@@ -60,7 +61,7 @@ TEST_CASE("Ed25519 : tailles et chiffres hexadécimaux faux", "[ed25519]") {
 }
 
 // Un manifeste écrit et signé par tools/release/sign-manifest.sh (clé jetable) : le format se vérifie de bout
-// en bout.
+// en bout. Le texte est celui qui a été signé, adresses d'ajp comprises.
 TEST_CASE("Ed25519 : le manifeste de sign-manifest.sh se vérifie et se lit", "[ed25519]") {
   const std::string manifest = R"MANIFEST(version = "0.5.0"
 channel = "stable"

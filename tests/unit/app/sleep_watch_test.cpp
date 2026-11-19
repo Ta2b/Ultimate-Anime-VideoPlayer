@@ -9,7 +9,7 @@
 #include "app/play/player_machine.h"
 #include "app/play/relaunch_target.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Veille : un trou sur l'une des deux horloges est vu, un tour ordinaire non", "[app][sleep]") {
@@ -74,7 +74,7 @@ TEST_CASE("Économiseur : coupé seulement quand une vidéo avance", "[app][slee
 TEST_CASE("Relance : la vidéo et l'instant relus une fois, pas un fichier d'une autre séance",
           "[app][relaunch]") {
   std::error_code error;
-  const std::filesystem::path dir = std::filesystem::temp_directory_path(error) / "ajp-relaunch-test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path(error) / "kirari-relaunch-test";
   std::filesystem::remove_all(dir, error);
   std::filesystem::create_directories(dir, error);
   const std::filesystem::path store = relaunch_target_file(dir);
@@ -106,4 +106,4 @@ TEST_CASE("Relance : une perte du GPU juste après une relance ne boucle pas", "
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

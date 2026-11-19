@@ -12,7 +12,7 @@
 #include "gpu/cuda/backend/span_fp8_body.cuh"
 #include "gpu/cuda/backend/span_fp8_net.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kStored = 64;  // canaux du paquet (gpu/span_fp8/package.h)
@@ -99,7 +99,7 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
   const bool narrow48 = weights.channels == 48 && weights.width48 != SpanFp8Width::Padded;
   // K par position à 48 canaux et accumulateur f16 : 7 % de NaN sur la RTX 4070 Ti, poids à queue lourde,
   // alors que K à plat et le calcul en 64 restent finis. Ce chemin ne sert qu'à la mesure et n'y gagne rien
-  // (ajp_span_tile_bench : 48 canaux sans gain sur 64 en FP8) : refusé plutôt que corrigé.
+  // (kirari_span_tile_bench : 48 canaux sans gain sur 64 en FP8) : refusé plutôt que corrigé.
   if (narrow48 && weights.width48 == SpanFp8Width::PerTap && weights.acc16 && !weights.fp16) {
     status = SpanFp8Status::Failed;
     error = "48 canaux en K par position : pas d'accumulateur f16 (NaN mesurés)";
@@ -144,4 +144,4 @@ bool SpanFp8Net::launch_tail(cudaStream_t stream, void* output, const SpanFp8Rin
   return impl_->body->launch_tail(stream, output, ring, error);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

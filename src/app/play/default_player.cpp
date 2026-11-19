@@ -44,7 +44,7 @@
 #include <SDL3/SDL_misc.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les conteneurs vidéo courants, tous lus par FFmpeg. AVI a deux noms dans shared-mime-info.
@@ -61,7 +61,7 @@ constexpr std::array<std::string_view, 19> kExtensions{
     ".mts", ".flv",  ".wmv", ".ogv", ".3gp", ".ogm", ".vob", ".asf",  ".divx"};
 
 constexpr std::string_view kClasses = "Software\\Classes\\";
-constexpr std::string_view kCapabilities = "Software\\AJP\\Capabilities";
+constexpr std::string_view kCapabilities = "Software\\Kirari\\Capabilities";
 constexpr std::string_view kRegisteredApplications = "Software\\RegisteredApplications";
 
 // Une valeur de chaîne d'un .desktop : « \ » s'écrit « \\ ». Les autres échappements (\n, \t, \r,
@@ -138,7 +138,7 @@ std::expected<void, Refusal> erase_registry(std::string_view executable) {
       return refuse(RefusalCode::FileUnwritable,
                     i18n::tr_format("registry: HKCU\\{} (error {})", tree, status));
   }
-  RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\AJP");  // seulement vide : rien d'autre n'y est à nous
+  RegDeleteKeyW(HKEY_CURRENT_USER, L"Software\\Kirari");  // seulement vide : rien d'autre n'y est à nous
   for (const RegistryValue& value : registry_shared_values()) {
     const LSTATUS status =
         RegDeleteKeyValueW(HKEY_CURRENT_USER, wide(value.key).c_str(), wide(value.name).c_str());
@@ -237,7 +237,7 @@ std::string without_desktop_id(std::string_view mimeapps, std::string_view id) {
       if (end != std::string_view::npos) out += '\n';
       continue;
     }
-    // « video/x-matroska=ajp.desktop;vlc.desktop; » : la liste sans la fiche du lecteur.
+    // « video/x-matroska=kirari.desktop;vlc.desktop; » : la liste sans la fiche du lecteur.
     std::string kept;
     std::string_view values = line.substr(equal + 1);
     bool removed = false;
@@ -272,7 +272,8 @@ std::filesystem::path desktop_file(const PlayerPlace& place) {
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 // B19-01 : l'icône du lecteur sous <données>/icons/hicolor, où le bureau la cherche par son nom. Elle vient
-// de ajp.png à côté de l'exécutable (le paquet Linux la livre) ; sans elle, la fiche garde l'icône générique.
+// de kirari.png à côté de l'exécutable (le paquet Linux la livre) ; sans elle, la fiche garde l'icône
+// générique.
 std::filesystem::path icon_file(const PlayerPlace& place) {
   const std::filesystem::path data = place.data.empty() ? place.home / ".local" / "share" : place.data;
   return data / "icons" / "hicolor" / "256x256" / "apps" / (std::string(kAppId) + ".png");
@@ -281,7 +282,7 @@ std::filesystem::path icon_file(const PlayerPlace& place) {
 bool install_icon(const PlayerPlace& place) {
   namespace fs = std::filesystem;
   std::error_code error;
-  const fs::path source = place.executable.parent_path() / "ajp.png";
+  const fs::path source = place.executable.parent_path() / "kirari.png";
   if (!fs::is_regular_file(source, error)) return false;
   const fs::path target = icon_file(place);
   if (fs::is_regular_file(target, error) && fs::file_size(target, error) == fs::file_size(source, error))
@@ -312,7 +313,8 @@ bool names_other_live_launcher(const std::string& current, const std::string& wa
 #endif
 
 #if defined(_WIN32)
-// L'exécutable que nomme une commande du registre (« "C:\\x\\ajp.exe" "%1" » ou sans guillemets) existe-t-il
+// L'exécutable que nomme une commande du registre (« "C:\\x\\kirari.exe" "%1" » ou sans guillemets)
+// existe-t-il
 // ?
 bool names_other_live_executable(const std::string& command) {
   if (command.empty()) return false;
@@ -332,7 +334,7 @@ bool names_other_live_executable(const std::string& command) {
 std::filesystem::path user_data(std::filesystem::path pref) {
   if (pref.empty()) return {};
   if (!pref.has_filename()) pref = pref.parent_path();  // la barre finale de SDL
-  return pref.parent_path().parent_path();
+  return pref.parent_path();
 }
 
 std::vector<RegistryValue> registry_values(std::string_view executable) {
@@ -418,14 +420,14 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
   if (auto written = write_registry(registry_values(prepare::utf8_path(place.executable))); !written)
     return std::unexpected(std::move(written.error()));
   return i18n::tr_format(
-      "AJP is in \"Open with\". To make it the default: \"Make this the default player\" in Settings > "
+      "Kirari is in \"Open with\". To make it the default: \"Make this the default player\" in Settings > "
       "General > Application, or Settings > Apps > Default apps > {}.",
       kAppName);
 #elif defined(__APPLE__)
   static_cast<void>(place);
-  return std::string(
-      i18n::tr("AJP.app already declares the videos it opens. To make it the default: right-click a video > "
-               "Get Info > Open with: AJP > Change All."));
+  return std::string(i18n::tr(
+      "Kirari.app already declares the videos it opens. To make it the default: right-click a video > "
+      "Get Info > Open with: Kirari > Change All."));
 #else
   if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
@@ -436,7 +438,8 @@ std::expected<std::string, Refusal> register_player(const PlayerPlace& place) {
     return std::unexpected(written.error());
   refresh_desktop_database(file.parent_path());
   return i18n::tr_format(
-      "AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings > "
+      "Kirari is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in Settings "
+      "> "
       "General > Application, or xdg-mime default {}{}",
       prepare::utf8_path(file), kDesktopId, mime_list());
 #endif
@@ -447,7 +450,7 @@ bool refresh_registration(const PlayerPlace& place) {
   // Inscrit si le ProgId a sa commande ; à refaire si elle nomme un autre exécutable.
   const std::vector<RegistryValue> values = registry_values(prepare::utf8_path(place.executable));
   const auto command = std::ranges::find_if(values, [](const RegistryValue& value) {
-    return value.key.ends_with("AJP.Video\\shell\\open\\command");
+    return value.key.ends_with("Kirari.Video\\shell\\open\\command");
   });
   if (command == values.end()) return false;
   const std::wstring key = wide(command->key);
@@ -458,7 +461,7 @@ bool refresh_registration(const PlayerPlace& place) {
     return false;
   const std::string current = core::to_utf8(std::filesystem::path(std::wstring(data.data())));
   if (current == command->data) return false;
-  // Une commande qui nomme encore un autre ajp.exe présent (une version publiée et un dossier de
+  // Une commande qui nomme encore un autre kirari.exe présent (une version publiée et un dossier de
   // développement) n'est pas reprise : deux installations qui alternent la réécriraient, et l'Explorateur
   // rechargerait ses icônes et ses associations (SHCNE_ASSOCCHANGED), à chaque lancement. Seule une commande
   // dont l'exécutable a disparu suit celui-ci, comme la fiche de Linux.
@@ -466,7 +469,7 @@ bool refresh_registration(const PlayerPlace& place) {
   return write_registry(values).has_value();
 #elif defined(__APPLE__)
   static_cast<void>(place);
-  return false;  // l'Info.plist suit AJP.app où qu'il soit
+  return false;  // l'Info.plist suit Kirari.app où qu'il soit
 #else
   // Inscrit si la fiche existe ; à refaire si elle n'est plus celle de cet exécutable.
   const std::filesystem::path file = desktop_file(place);
@@ -488,10 +491,11 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
 #if defined(_WIN32)
   if (auto erased = erase_registry(prepare::utf8_path(place.executable)); !erased)
     return std::unexpected(std::move(erased.error()));
-  return std::string(i18n::tr("AJP is no longer in \"Open with\"."));
+  return std::string(i18n::tr("Kirari is no longer in \"Open with\"."));
 #elif defined(__APPLE__)
   static_cast<void>(place);
-  return std::string(i18n::tr("On macOS the registration follows AJP.app: remove it by trashing the app."));
+  return std::string(
+      i18n::tr("On macOS the registration follows Kirari.app: remove it by trashing the app."));
 #else
   if (place.home.empty() && place.data.empty())
     return refuse(RefusalCode::FieldMissing, i18n::tr("default player: home folder unknown"));
@@ -502,7 +506,7 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
       return refuse(RefusalCode::FileUnwritable,
                     std::format("{} : {}", prepare::utf8_path(file), error.message()));
     }
-    return std::string(i18n::tr("AJP was not registered: nothing to remove."));
+    return std::string(i18n::tr("Kirari was not registered: nothing to remove."));
   }
   std::filesystem::remove(icon_file(place), error);  // l'icône copiée à l'inscription
   // C36-09 : les lignes que xdg-mime default a écrites ne pointent plus vers rien ; retirées.
@@ -514,7 +518,7 @@ std::expected<std::string, Refusal> unregister_player(const PlayerPlace& place) 
     }
   }
   refresh_desktop_database(file.parent_path());
-  return std::string(i18n::tr("AJP is no longer in \"Open with\"."));
+  return std::string(i18n::tr("Kirari is no longer in \"Open with\"."));
 #endif
 }
 
@@ -549,15 +553,16 @@ std::expected<std::string, Refusal> default_once_registered([[maybe_unused]] con
       return refuse(RefusalCode::FileUnwritable, std::format("xdg-mime : {}{}{}", prepare::describe(*run),
                                                              last.empty() ? "" : " : ", last));
     }
-    return std::string(i18n::tr("AJP is now the video player (mkv, mp4, webm, avi, mov…)."));
+    return std::string(i18n::tr("Kirari is now the video player (mkv, mp4, webm, avi, mov…)."));
   }
-  return refuse(RefusalCode::LibraryUnavailable,
-                i18n::tr("xdg-mime not found (xdg-utils package): right-click a video > Open with > AJP and "
-                         "tick \"always\""));
+  return refuse(
+      RefusalCode::LibraryUnavailable,
+      i18n::tr("xdg-mime not found (xdg-utils package): right-click a video > Open with > Kirari and "
+               "tick \"always\""));
 #endif
 }
 
-bool default_handler_is_ajp(std::string_view query_output) {
+bool default_handler_is_kirari(std::string_view query_output) {
   while (!query_output.empty() &&
          (query_output.back() == '\n' || query_output.back() == '\r' || query_output.back() == ' '))
     query_output.remove_suffix(1);
@@ -566,7 +571,7 @@ bool default_handler_is_ajp(std::string_view query_output) {
 
 namespace {
 
-// Les deux conteneurs que l'on ouvre le plus : AJP est le lecteur par défaut s'il l'est pour les deux. La
+// Les deux conteneurs que l'on ouvre le plus : Kirari est le lecteur par défaut s'il l'est pour les deux. La
 // seconde question ne part que si la première dit oui (A19-05).
 #if defined(_WIN32)
 constexpr std::array<std::string_view, 2> kAskedExtensions{".mkv", ".mp4"};
@@ -597,14 +602,15 @@ std::string associated_executable(std::string_view extension) {
 #elif !defined(__APPLE__)
 constexpr std::array<std::string_view, 2> kAskedMimes{"video/x-matroska", "video/mp4"};
 
-bool xdg_default_is_ajp(const char* tool, std::string_view mime) {
+bool xdg_default_is_kirari(const char* tool, std::string_view mime) {
   const prepare::ProcessSpec spec{
       .program = tool, .args = {"query", "default", std::string(mime)}, .timeout = std::chrono::seconds(10)};
   // Toutes les lignes (stdout et stderr mêlés) : un avertissement de Qt ou de KDE écrit après l'identifiant
   // ne doit pas faire comparer autre chose que la fiche .desktop.
   bool found = false;
   auto run = prepare::run_process(
-      spec, [&](std::string_view line) { found = found || default_handler_is_ajp(line); }, std::stop_token());
+      spec, [&](std::string_view line) { found = found || default_handler_is_kirari(line); },
+      std::stop_token());
   return run && run->kind == prepare::ExitKind::Exited && run->code == 0 && found;
 }
 #endif
@@ -612,7 +618,8 @@ bool xdg_default_is_ajp(const char* tool, std::string_view mime) {
 bool query_default_player() {
 #if defined(_WIN32)
   return std::ranges::all_of(kAskedExtensions, [](std::string_view extension) {
-    return user_choice_is_ajp(user_choice(extension)) || executable_is_ajp(associated_executable(extension));
+    return user_choice_is_kirari(user_choice(extension)) ||
+           executable_is_kirari(associated_executable(extension));
   });
 #elif defined(__APPLE__)
   return false;  // le Finder ne le dit pas sans LaunchServices : la case suffit
@@ -621,26 +628,26 @@ bool query_default_player() {
     std::error_code error;
     if (!std::filesystem::exists(tool, error)) continue;
     return std::ranges::all_of(kAskedMimes,
-                               [tool](std::string_view mime) { return xdg_default_is_ajp(tool, mime); });
+                               [tool](std::string_view mime) { return xdg_default_is_kirari(tool, mime); });
   }
   return false;
 #endif
 }
 }  // namespace
 
-bool user_choice_is_ajp(std::string_view prog_id) {
-  // « Ouvrir avec > Toujours » écrit « Applications\ajp.exe » et non notre ProgId (B19-02).
-  constexpr std::string_view kApplication = "Applications\\ajp.exe";
+bool user_choice_is_kirari(std::string_view prog_id) {
+  // « Ouvrir avec > Toujours » écrit « Applications\kirari.exe » et non notre ProgId (B19-02).
+  constexpr std::string_view kApplication = "Applications\\kirari.exe";
   if (prog_id == kProgId) return true;
   return prog_id.size() == kApplication.size() &&
          std::ranges::equal(prog_id, kApplication,
                             [](char a, char b) { return core::ascii_lower(a) == core::ascii_lower(b); });
 }
 
-bool executable_is_ajp(std::string_view executable) {
+bool executable_is_kirari(std::string_view executable) {
   const std::size_t cut = executable.find_last_of("/\\");
   const std::string_view name = cut == std::string_view::npos ? executable : executable.substr(cut + 1);
-  return core::ascii_lower(name) == "ajp.exe";
+  return core::ascii_lower(name) == "kirari.exe";
 }
 
 bool is_default_player(const PlayerPlace& place) {
@@ -687,7 +694,7 @@ bool is_default_player(const PlayerPlace& place) {
 
 void leave_lone_console() {
 #ifdef _WIN32
-  // ajp.exe est une application fenêtrée : un double clic n'ouvre plus de console (elle apparaissait un
+  // kirari.exe est une application fenêtrée : un double clic n'ouvre plus de console (elle apparaissait un
   // instant puis se refermait, le lecteur semblait s'ouvrir deux fois). Lancé d'un terminal, le lecteur
   // écrit dans la console de ce terminal ; une sortie redirigée (tube, fichier) reste la sienne.
   const auto missing = [](DWORD which) {
@@ -713,4 +720,4 @@ void leave_lone_console() {
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

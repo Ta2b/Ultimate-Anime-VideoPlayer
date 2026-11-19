@@ -8,8 +8,8 @@
 
 #include "audio/timeline.h"
 
-using ajp::RefusalCode;
-using namespace ajp::audio;
+using kirari::RefusalCode;
+using namespace kirari::audio;
 
 TEST_CASE("pcm : conversions trames et microsecondes arrondies au plus proche", "[audio][pcm]") {
   CHECK(frames_to_us(48'000, 48'000) == 1'000'000);

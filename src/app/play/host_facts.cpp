@@ -21,7 +21,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 #if defined(_WIN32)
 namespace {
@@ -440,4 +440,4 @@ bool on_battery() {
   return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_ON_BATTERY;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

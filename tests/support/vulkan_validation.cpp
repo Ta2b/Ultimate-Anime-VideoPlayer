@@ -7,7 +7,7 @@
 
 #include <catch2/interfaces/catch_interfaces_capture.hpp>
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 std::mutex& errors_mutex() {
@@ -44,7 +44,7 @@ std::string env_value(const char* name) {
 
 ValidationMode validation_mode() {
   // Les tests lisent l'environnement ; src/ jamais (tools/ci/check-no-getenv.sh).
-  const std::string text = env_value("AJP_TEST_VULKAN_VALIDATION");
+  const std::string text = env_value("KIRARI_TEST_VULKAN_VALIDATION");
   if (text == "off" || text == "0") return ValidationMode::Off;
   if (text == "require") return ValidationMode::Require;
   return ValidationMode::IfPresent;
@@ -83,10 +83,10 @@ void warn_without_layer(std::string_view why) {
   static std::once_flag once;
   std::call_once(once, [why] {
     std::fprintf(stderr,
-                 "tests sans la couche de validation Vulkan (%.*s) ; AJP_TEST_VULKAN_VALIDATION=require "
+                 "tests sans la couche de validation Vulkan (%.*s) ; KIRARI_TEST_VULKAN_VALIDATION=require "
                  "pour l'exiger\n",
                  static_cast<int>(why.size()), why.data());
   });
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

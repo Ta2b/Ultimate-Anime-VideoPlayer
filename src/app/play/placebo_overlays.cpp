@@ -9,7 +9,7 @@
 #include "app/play/controls.h"
 #include "app/play/placebo_impl.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 Overlays::~Overlays() {
   pl_tex_destroy(gpu_, &subtitles_.tex);
@@ -174,4 +174,4 @@ std::expected<Overlays::Built, Refusal> Overlays::build(const subs::SubtitleFram
   return Built{.all = all, .subtitles = all.first(subtitle_count), .osd = all.subspan(subtitle_count)};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

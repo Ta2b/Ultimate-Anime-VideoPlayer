@@ -14,7 +14,7 @@ struct AVCodecContext;
 struct AVFrame;
 struct AVPacket;
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 class AudioDecoder {
  public:
@@ -49,4 +49,4 @@ class AudioDecoder {
   PcmConverter converter_;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

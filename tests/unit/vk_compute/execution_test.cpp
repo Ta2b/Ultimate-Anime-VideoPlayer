@@ -7,15 +7,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "ajp_vk_compute_spirv.h"
 #include "gpu/vulkan/compute/descriptors.h"
 #include "gpu/vulkan/compute/spirv_access.h"
 #include "gpu/vulkan/compute/sync.h"
+#include "kirari_vk_compute_spirv.h"
 #include "rig.h"
 
-using namespace ajp;
-using namespace ajp::gpu::vk;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu::vk;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 

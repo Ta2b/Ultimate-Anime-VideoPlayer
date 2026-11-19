@@ -5,7 +5,7 @@
 
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Pointeur générique rendu par vk*ProcAddr vers le type exact de la fonction : les deux sont
@@ -25,10 +25,10 @@ std::unexpected<Refusal> missing(std::string_view name) {
 std::expected<GlobalFunctions, Refusal> load_global(PFN_vkGetInstanceProcAddr get_instance_proc_addr) {
   if (get_instance_proc_addr == nullptr) return missing("vkGetInstanceProcAddr");
   GlobalFunctions f;
-#define AJP_VK_LOAD(name) \
+#define KIRARI_VK_LOAD(name) \
   if (!assign(f.name, get_instance_proc_addr(VK_NULL_HANDLE, #name))) return missing(#name);
-  AJP_VK_GLOBAL_FUNCTIONS(AJP_VK_LOAD)
-#undef AJP_VK_LOAD
+  KIRARI_VK_GLOBAL_FUNCTIONS(KIRARI_VK_LOAD)
+#undef KIRARI_VK_LOAD
   return f;
 }
 
@@ -36,20 +36,20 @@ std::expected<InstanceFunctions, Refusal> load_instance(PFN_vkGetInstanceProcAdd
                                                         VkInstance instance) {
   if (get_instance_proc_addr == nullptr) return missing("vkGetInstanceProcAddr");
   InstanceFunctions f;
-#define AJP_VK_LOAD(name) \
+#define KIRARI_VK_LOAD(name) \
   if (!assign(f.name, get_instance_proc_addr(instance, #name))) return missing(#name);
-  AJP_VK_INSTANCE_FUNCTIONS(AJP_VK_LOAD)
-#undef AJP_VK_LOAD
+  KIRARI_VK_INSTANCE_FUNCTIONS(KIRARI_VK_LOAD)
+#undef KIRARI_VK_LOAD
   return f;
 }
 
 std::expected<DeviceFunctions, Refusal> load_device(const InstanceFunctions& instance, VkDevice device) {
   DeviceFunctions f;
-#define AJP_VK_LOAD(name) \
+#define KIRARI_VK_LOAD(name) \
   if (!assign(f.name, instance.vkGetDeviceProcAddr(device, #name))) return missing(#name);
-  AJP_VK_DEVICE_FUNCTIONS(AJP_VK_LOAD)
-#undef AJP_VK_LOAD
+  KIRARI_VK_DEVICE_FUNCTIONS(KIRARI_VK_LOAD)
+#undef KIRARI_VK_LOAD
   return f;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

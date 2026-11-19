@@ -15,7 +15,7 @@
 
 #include "gpu/cuda/backend/ring_surface.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Filtre de la réduction fusionnée (IngestParams::reduce_kind).
 inline constexpr int kReduceArea = 0;
@@ -113,4 +113,4 @@ struct ReadParams {
 
 cudaError_t launch_read_rgba16(const ReadParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

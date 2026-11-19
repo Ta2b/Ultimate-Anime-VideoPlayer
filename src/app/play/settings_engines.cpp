@@ -14,7 +14,7 @@
 #include "app/play/panel_style.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::kAccent;
 using panel::kNote;
@@ -40,7 +40,7 @@ namespace {
 bool writable_folder(const std::filesystem::path& path) {
   std::error_code error;
   const std::filesystem::path where = std::filesystem::is_directory(path, error) ? path : path.parent_path();
-  const std::filesystem::path probe = where / ".ajp-ecriture-essai";
+  const std::filesystem::path probe = where / ".kirari-ecriture-essai";
   {
     std::ofstream out(probe, std::ios::binary | std::ios::trunc);
     if (!out) return false;
@@ -203,4 +203,4 @@ void stages_note(const SettingsChoices& choices, std::vector<Input>& actions) {
   panel::tip(i18n::tr("Retry"), i18n::tr("Prepares these engines again."), panel::Apply::Reload);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

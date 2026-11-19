@@ -3,7 +3,7 @@
 // de SDL ; une demande de retour (wp_presentation.feedback) juste avant chaque présentation, que le commit
 // du pilote dans vkQueuePresentKHR emporte ; une relecture non bloquante sur main. Exige l'horloge
 // CLOCK_MONOTONIC du compositeur, celle de host_now_us (comme mpv). Rien sans Wayland, sans wp_presentation
-// ou sans wayland-client à la compilation (AJP_WITH_WAYLAND_PRESENTATION).
+// ou sans wayland-client à la compilation (KIRARI_WITH_WAYLAND_PRESENTATION).
 #pragma once
 
 #include <cstdint>
@@ -16,7 +16,7 @@
 
 struct SDL_Window;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct WaylandDone {
   std::uint64_t id = 0;
@@ -68,4 +68,4 @@ class WaylandPresentation {
   std::unique_ptr<State> state_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

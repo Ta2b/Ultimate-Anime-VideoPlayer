@@ -15,7 +15,7 @@
 #include "core/trace.h"
 #include "kernels/spec/detect.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<void, Refusal> UpscaleStage::allocate_ahead() {
   gpu::Backend& backend = *setup_.backend;
@@ -66,7 +66,7 @@ std::expected<bool, Refusal> UpscaleStage::deband_source(const gpu::Tensor& rgb)
 }
 
 std::expected<gpu::PairScores, Refusal> UpscaleStage::pair_scores() {
-  AJP_TRACE("rife.scores");
+  KIRARI_TRACE("rife.scores");
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (auto taken = std::exchange(ahead_taken_, std::nullopt);
       taken && previous_ && taken->first == previous_->id)
@@ -161,7 +161,7 @@ std::expected<void, Refusal> UpscaleStage::write_rife_pair(float t) {
 }
 
 std::expected<void, Refusal> UpscaleStage::fill_rife_input(float t) {
-  AJP_TRACE("rife.pair");
+  KIRARI_TRACE("rife.pair");
   if (rife_in_pair_ && rife_in_t_ == t) return {};
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (rife_in_pair_ && rife_time_) {
@@ -243,4 +243,4 @@ void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) 
   log_channel("gpu")->info("{}", pair_mark_line(mark, *facts.scores, facts.known_cut, useful_area_));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

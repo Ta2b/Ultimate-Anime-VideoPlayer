@@ -18,7 +18,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 #if defined(_WIN32)
 namespace {
@@ -186,4 +186,4 @@ std::optional<bool> window_vrr_armed([[maybe_unused]] SDL_Window* window, std::s
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

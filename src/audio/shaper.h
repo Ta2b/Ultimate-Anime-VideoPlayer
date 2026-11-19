@@ -9,7 +9,7 @@
 #include <cstddef>
 #include <span>
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 // Durée des rampes, en millisecondes.
 inline constexpr int kRampMs = 10;
@@ -38,4 +38,4 @@ class OutputShaper {
   bool fading_ = false;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

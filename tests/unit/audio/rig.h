@@ -13,7 +13,7 @@
 #include "fake_sink.h"
 #include "sine.h"
 
-namespace ajp::audio::test {
+namespace kirari::audio::test {
 
 inline constexpr std::int64_t kLatency = 480;  // tampon du faux périphérique : 10 ms à 48 kHz
 
@@ -47,4 +47,4 @@ class Rig {
   std::vector<Refusal> refusals;
 };
 
-}  // namespace ajp::audio::test
+}  // namespace kirari::audio::test

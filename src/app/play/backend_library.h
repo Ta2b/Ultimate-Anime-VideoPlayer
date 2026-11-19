@@ -14,7 +14,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class BackendLibrary {
  public:
@@ -70,4 +70,4 @@ class BackendLibrary {
   gpu::BackendDestroyFn destroy_ = nullptr;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

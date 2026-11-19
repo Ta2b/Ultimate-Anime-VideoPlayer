@@ -11,7 +11,7 @@
 
 #include "app/play/options.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les arguments du lancement, sans un --relaunched= d'une relance d'avant, puis celui de cette relance : le
 // lecteur relancé sait qu'il l'est et pourquoi (options.h).
@@ -36,4 +36,4 @@ std::string appimage_launcher();
 // mémoire vidéo. close_range quand le noyau l'a (C18-12), sinon un balayage borné. Rien sous Windows.
 void close_on_exec_all();
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

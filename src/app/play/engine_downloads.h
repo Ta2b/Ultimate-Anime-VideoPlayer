@@ -13,7 +13,7 @@
 #include "app/play/ui.h"
 #include "core/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // false : fenêtre fermée pendant les téléchargements. engines perd les moteurs non installés, que failed
 // (s'il est donné) liste : l'assistant ne calibre pas sous Vulkan un poste dont le moteur recommandé a
@@ -46,4 +46,4 @@ std::expected<bool, Refusal> update_stale_engines(PlaceboScreen& screen, PlayerU
                                                   const EngineCatalog& catalog, const core::Settings& engines,
                                                   bool& updated);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

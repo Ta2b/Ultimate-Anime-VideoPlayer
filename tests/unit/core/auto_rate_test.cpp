@@ -7,10 +7,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::core::auto_ceiling;
-using ajp::core::AutoRate;
-using ajp::core::kFineGranularity;
-using ajp::core::PairOutcome;
+using kirari::core::auto_ceiling;
+using kirari::core::AutoRate;
+using kirari::core::kFineGranularity;
+using kirari::core::PairOutcome;
 
 namespace {
 
@@ -97,8 +97,8 @@ TEST_CASE("auto : les demi-paliers et le pas fin suivent l'écran", "[core][auto
   CHECK(auto_ceiling(0.0, 24.0, 2) == 2);
   CHECK(auto_ceiling(100.0, 24.0, kFineGranularity) == 100);  // 100 i/s pile ; ×101/24 ferait 101
   CHECK(auto_ceiling(0.0, 24.0, kFineGranularity) == kFineGranularity);
-  CHECK(ajp::core::auto_granularity(7) == kFineGranularity);
-  CHECK(ajp::core::auto_granularity(0) == 1);
+  CHECK(kirari::core::auto_granularity(7) == kFineGranularity);
+  CHECK(kirari::core::auto_granularity(0) == 1);
 }
 
 TEST_CASE("auto : les images manquées font descendre vite", "[core][auto_rate]") {
@@ -108,7 +108,7 @@ TEST_CASE("auto : les images manquées font descendre vite", "[core][auto_rate]"
   CHECK(rate.step() == 3);
   CHECK(rate.missed(now, 2) == 3);            // deux ne suffisent pas
   CHECK(rate.missed(now + 500'000, 1) == 2);  // trois en 1 s : un palier de moins, tout de suite
-  CHECK(rate.reason() == ajp::core::AutoReason::Missed);
+  CHECK(rate.reason() == kirari::core::AutoReason::Missed);
   // Les manquées du temps de repos (images du palier d'avant) ne comptent pas.
   CHECK(rate.missed(now + 600'000, 5) == 2);
 }
@@ -311,7 +311,7 @@ TEST_CASE("auto : jamais au-delà du plafond, et le palier le suit", "[core][aut
   CHECK(rate.step() == 3);
   rate.set_ceiling(2);
   CHECK(rate.step() == 2);
-  CHECK(rate.reason() == ajp::core::AutoReason::Ceiling);
+  CHECK(rate.reason() == kirari::core::AutoReason::Ceiling);
 }
 
 TEST_CASE("auto : les demi-paliers montent et descendent d'une moitié", "[core][auto_rate]") {
@@ -347,7 +347,7 @@ TEST_CASE("auto : départ mémorisé un cran en dessous, puis remontée rapide",
   std::int64_t now = 0;
   rate.seed(400, now);
   CHECK(rate.step() == 3);
-  CHECK(rate.reason() == ajp::core::AutoReason::Memory);
+  CHECK(rate.reason() == kirari::core::AutoReason::Memory);
   const Trace trace = run(rate, now, 8, [](std::int64_t) { return Gpu{.a = 6'000, .b = 4'000}; });
   CHECK(rate.step() >= 4);
   REQUIRE_FALSE(trace.changes.empty());
@@ -365,7 +365,7 @@ TEST_CASE("auto : le coût mesuré au-dessus de la période fait descendre sans 
     rate.pair({.now_us = now, .made_step = rate.step(), .late = 0, .period_us = kPeriod});
   }
   CHECK(rate.step() < 4);
-  CHECK(rate.reason() == ajp::core::AutoReason::Predicted);
+  CHECK(rate.reason() == kirari::core::AutoReason::Predicted);
 }
 
 TEST_CASE("auto : après une scène lourde, la cadence revient vite près de ce que le GPU tient",
@@ -416,7 +416,7 @@ TEST_CASE("auto : en régime, au pas fin, au plus un changement par cinq seconde
 
 TEST_CASE("auto : le coût d'une paire ne compte pas son attente derrière la paire d'avant",
           "[core][auto_rate][mesure]") {
-  using ajp::core::service_cost_us;
+  using kirari::core::service_cost_us;
   // GPU libre : soumise à 1000, finie à 13 000, mesures attendues 500 : 12,5 ms.
   CHECK(service_cost_us(1'000, 0, 13'000, 500) == 12'500);
   // File pleine : soumise à 2000, mais la paire d'avant ne finit qu'à 40 000 ; la nôtre finit à 52 000 :
@@ -429,7 +429,7 @@ TEST_CASE("auto : le coût d'une paire ne compte pas son attente derrière la pa
 }
 
 TEST_CASE("auto : le plafond choisi borne la fréquence de l'écran", "[core][auto_rate][plafond]") {
-  using ajp::core::auto_limit_hz;
+  using kirari::core::auto_limit_hz;
   CHECK(auto_limit_hz(165.0, 0) == 165.0);                      // maximum : l'écran
   CHECK(auto_limit_hz(165.0, 120) == 120.0);                    // plafond sous l'écran
   CHECK(auto_limit_hz(60.0, 120) == 60.0);                      // jamais au-dessus de l'écran
@@ -451,7 +451,7 @@ TEST_CASE("auto : figé à ×1 par des images manquées qui ne cessent pas, il s
     rate.pair(PairOutcome{.now_us = now, .made_step = rate.step(), .late = 0, .period_us = kPeriod});
     if (i % 8 == 0) rate.missed(now, 3);
     rate.tick(now, true);
-    if (rate.reason() == ajp::core::AutoReason::Rearm) last_rise = now;
+    if (rate.reason() == kirari::core::AutoReason::Rearm) last_rise = now;
     if (i == 40) CHECK(rate.step() >= 1);
   }
   CHECK(last_rise != 0);  // au moins un cran d'essai en une quinzaine de secondes
@@ -495,12 +495,12 @@ TEST_CASE("auto : le moteur muet au plancher ne monte pas d'essai", "[core][auto
 }
 
 TEST_CASE("auto : à fréquence fixe, seuls les paliers calés sur l'écran (P3.33)", "[auto_rate]") {
-  using ajp::core::auto_limits;
+  using kirari::core::auto_limits;
   // 23,976 i/s : à 60 Hz, ×2,5 (une image par rafraîchissement) ; à 144 Hz, ×1,5, ×2, ×3 et ×6.
   CHECK(auto_limits(60.0, 23.976, false, 0).locked == std::vector<int>{2, 5});
   CHECK(auto_limits(144.0, 23.976, false, 0).locked == std::vector<int>{2, 3, 4, 6, 12});
   CHECK(auto_limits(0.0, 23.976, false, 0).locked.empty());
-  ajp::core::AutoRate rate(5, 2);
+  kirari::core::AutoRate rate(5, 2);
   CHECK(rate.step() == 4);  // ×2 au départ
   rate.set_locked(auto_limits(60.0, 23.976, false, 0).locked);
   CHECK(rate.step() == 2);  // ×2 ne cale pas à 60 Hz : ×1 en attendant de tenir ×2,5
@@ -508,11 +508,11 @@ TEST_CASE("auto : à fréquence fixe, seuls les paliers calés sur l'écran (P3.
 
 TEST_CASE("auto : le plafond du niveau tient en lecture (P3.36)", "[auto_rate]") {
   // 165 Hz VRR, 23,976 i/s : l'écran permettrait ×6,88 ; un niveau à ×3 s'arrête à ×3.
-  const ajp::core::AutoLimits vrr = ajp::core::auto_limits(165.0, 23.976, true, 3);
-  CHECK(vrr.ceiling == 3 * ajp::core::kFineGranularity);
+  const kirari::core::AutoLimits vrr = kirari::core::auto_limits(165.0, 23.976, true, 3);
+  CHECK(vrr.ceiling == 3 * kirari::core::kFineGranularity);
   CHECK(vrr.locked.empty());
   // 60 Hz fixe, niveau à ×2 : ×2,5 reste permis, c'est le seul palier calé.
-  const ajp::core::AutoLimits fixed = ajp::core::auto_limits(60.0, 23.976, false, 2);
+  const kirari::core::AutoLimits fixed = kirari::core::auto_limits(60.0, 23.976, false, 2);
   CHECK(fixed.ceiling == 5);
   CHECK(fixed.locked == std::vector<int>{2, 5});
 }
@@ -523,18 +523,18 @@ constexpr double kFilm = 24000.0 / 1001.0;   // 23,976 i/s
 constexpr double kVideo = 30000.0 / 1001.0;  // 29,97 i/s
 
 // Les facteurs des paliers calés, en multiplicateur.
-std::vector<double> locked_factors(const ajp::core::AutoLimits& limits) {
+std::vector<double> locked_factors(const kirari::core::AutoLimits& limits) {
   std::vector<double> out;
-  for (const ajp::core::Ratio& r : limits.exact) out.push_back(r.value());
+  for (const kirari::core::Ratio& r : limits.exact) out.push_back(r.value());
   return out;
 }
 
 }  // namespace
 
 TEST_CASE("A12-02 : à 165 Hz fixe, le Stable a des paliers calés pour 23,976 et 29,97", "[auto_rate]") {
-  using ajp::core::auto_limits;
-  using ajp::core::Ratio;
-  const ajp::core::AutoLimits film = auto_limits(165.0, kFilm, false, 4);
+  using kirari::core::auto_limits;
+  using kirari::core::Ratio;
+  const kirari::core::AutoLimits film = auto_limits(165.0, kFilm, false, 4);
   REQUIRE(film.locked.size() == film.exact.size());
   REQUIRE(film.locked.size() >= 4);
   // ×1, puis 165 / (k · 23,976) pour k = 4, 3, 2 : chaque image tient k rafraîchissements, exactement.
@@ -550,21 +550,21 @@ TEST_CASE("A12-02 : à 165 Hz fixe, le Stable a des paliers calés pour 23,976 e
   CHECK(film.ceiling == 9);
   CHECK(film.locked[3] == 7);
   // Niveau ×8 : ×6,88, une image par rafraîchissement, arrondi à 14 demi-paliers et atteignable.
-  const ajp::core::AutoLimits top = auto_limits(165.0, kFilm, false, 8);
+  const kirari::core::AutoLimits top = auto_limits(165.0, kFilm, false, 8);
   CHECK(top.exact.back() == Ratio{11011, 1600});
   CHECK(top.locked.back() == 14);
   CHECK(top.ceiling >= 14);
 
-  const ajp::core::AutoLimits video = auto_limits(165.0, kVideo, false, 4);
+  const kirari::core::AutoLimits video = auto_limits(165.0, kVideo, false, 4);
   CHECK(video.exact.size() >= 3);
   CHECK(video.exact[2] == Ratio{11, 4});  // ×2,75 : deux rafraîchissements par image
 }
 
 TEST_CASE("A12-02 : à 144 Hz fixe, le 29,97 est interpolé ; les écrans d'avant gardent leurs paliers",
           "[auto_rate]") {
-  using ajp::core::auto_limits;
-  using ajp::core::Ratio;
-  const ajp::core::AutoLimits video = auto_limits(144.0, kVideo, false, 4);
+  using kirari::core::auto_limits;
+  using kirari::core::Ratio;
+  const kirari::core::AutoLimits video = auto_limits(144.0, kVideo, false, 4);
   REQUIRE(video.exact.size() >= 3);
   CHECK(video.exact[1] == Ratio{1001, 625});   // ×1,60 : trois rafraîchissements par image
   CHECK(video.exact[2] == Ratio{3003, 1250});  // ×2,40 : deux
@@ -579,9 +579,9 @@ TEST_CASE("A12-02 : à 144 Hz fixe, le 29,97 est interpolé ; les écrans d'avan
 }
 
 TEST_CASE("A37-14 : en Stable, le plafond du niveau laisse le palier calé juste au-dessus", "[auto_rate]") {
-  using ajp::core::auto_limits;
+  using kirari::core::auto_limits;
   // 120 Hz, 23,976 i/s, niveau ×4 : ×5 (une image par deux rafraîchissements) au lieu de ×2,5.
-  const ajp::core::AutoLimits tv = auto_limits(120.0, kFilm, false, 4);
+  const kirari::core::AutoLimits tv = auto_limits(120.0, kFilm, false, 4);
   CHECK(tv.ceiling == 10);
   CHECK(locked_factors(tv).back() == 5.0);
   // 240 Hz, même source : ×5 aussi.
@@ -591,35 +591,35 @@ TEST_CASE("A37-14 : en Stable, le plafond du niveau laisse le palier calé juste
   // Niveau ×2 à 120 Hz : ×5 reste hors d'atteinte.
   CHECK(auto_limits(120.0, kFilm, false, 2).ceiling == 5);
   // VRR : aucun palier calé, rien ne change.
-  CHECK(auto_limits(240.0, kFilm, true, 4).ceiling == 4 * ajp::core::kFineGranularity);
+  CHECK(auto_limits(240.0, kFilm, true, 4).ceiling == 4 * kirari::core::kFineGranularity);
 }
 
 TEST_CASE("A12-02 : le palier courant rend son facteur exact", "[auto_rate]") {
-  ajp::core::AutoLimits limits = ajp::core::auto_limits(165.0, kFilm, false, 4);
-  ajp::core::AutoRate rate;
+  kirari::core::AutoLimits limits = kirari::core::auto_limits(165.0, kFilm, false, 4);
+  kirari::core::AutoRate rate;
   rate.set_ceiling(limits.ceiling, limits.granularity);
   rate.set_locked(limits.locked, limits.exact);
   // Départ à ×2 (4 demi-paliers) : ramené au palier calé du dessous, ×1,72.
   CHECK(rate.step() == 3);
-  CHECK(rate.factor() == ajp::core::Ratio{11011, 6400});
+  CHECK(rate.factor() == kirari::core::Ratio{11011, 6400});
   // Sans facteurs exacts (VRR, ou paliers posés à la main) : palier / granularité.
-  ajp::core::AutoRate plain(6, 2);
-  CHECK(plain.factor() == ajp::core::Ratio{4, 2});
+  kirari::core::AutoRate plain(6, 2);
+  CHECK(plain.factor() == kirari::core::Ratio{4, 2});
 }
 
 TEST_CASE("A12-04 : les paliers se calent sur l'écran, le plafond ne fait que borner", "[auto_rate]") {
   // Écran fixe à 165 Hz, plafond de 120 i/s : ×2,5 et ×5 calent 120 Hz, pas 165. Restent les paliers de
   // l'écran dont la cadence tient sous le plafond : ×1,72 (41 i/s), ×2,29 (55 i/s), ×3,44 (82,5 i/s).
-  const ajp::core::AutoLimits capped = ajp::core::auto_limits(165.0, kFilm, false, 8, 120.0);
+  const kirari::core::AutoLimits capped = kirari::core::auto_limits(165.0, kFilm, false, 8, 120.0);
   CHECK(capped.locked == std::vector<int>{2, 3, 5, 7});
-  CHECK(capped.exact.back() == ajp::core::Ratio{11011, 3200});
-  for (const ajp::core::Ratio& r : capped.exact) CHECK(r.value() * kFilm <= 120.0 * 1.01);
+  CHECK(capped.exact.back() == kirari::core::Ratio{11011, 3200});
+  for (const kirari::core::Ratio& r : capped.exact) CHECK(r.value() * kFilm <= 120.0 * 1.01);
   // Sans plafond, comme avant.
-  CHECK(ajp::core::auto_limits(165.0, kFilm, false, 8).locked.back() == 14);
+  CHECK(kirari::core::auto_limits(165.0, kFilm, false, 8).locked.back() == 14);
 }
 
 TEST_CASE("A12-05 : aucun réarmement quand aucun palier n'existe au-dessus du plancher", "[auto_rate]") {
-  ajp::core::AutoRate rate(9, 2);
+  kirari::core::AutoRate rate(9, 2);
   rate.set_locked({2});
   CHECK(rate.step() == 2);
   const std::uint32_t before = rate.changes();
@@ -632,7 +632,7 @@ TEST_CASE("A12-05 : aucun réarmement quand aucun palier n'existe au-dessus du p
   CHECK(rate.step() == 2);
   CHECK(rate.changes() == before);
   // Avec un palier calé au-dessus, le réarmement tient toujours.
-  ajp::core::AutoRate locked(9, 2);
+  kirari::core::AutoRate locked(9, 2);
   locked.set_locked({2, 5});
   for (int i = 0; i < 200; ++i) {
     now += 100'000;

@@ -9,7 +9,7 @@
 
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 namespace limits {
 // SDL3 place de 1 à 8 canaux, dans son ordre documenté.
@@ -56,4 +56,4 @@ struct PcmBlock {
   void drop_before(std::int64_t media_us, int sample_rate);
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

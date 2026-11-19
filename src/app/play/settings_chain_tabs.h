@@ -8,7 +8,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 void image_tab(PlaySettings& d, const SettingsChoices& choices);
 // Le filtre de réduction et la précision de SPAN.
@@ -22,4 +22,4 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
 // le choix a changé.
 bool precision_combo(const char* title, PrecisionTier& tier, const TierSupport& support);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

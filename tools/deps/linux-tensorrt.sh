@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Le kit CUDA (nvcc, runtime, en-têtes) et TensorRT pour construire ajp_backend_tensorrt sous Linux,
+# Le kit CUDA (nvcc, runtime, en-têtes) et TensorRT pour construire kirari_backend_tensorrt sous Linux,
 # aux versions de tools/release/versions.env, dans le dossier donné. Le lancer, c'est accepter la
 # licence du kit CUDA (https://docs.nvidia.com/cuda/eula/index.html) et celle de TensorRT
 # (https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html). Rien de ce dossier
@@ -10,9 +10,9 @@
 # (bibliothèques, empreinte épinglée) et des en-têtes de NVIDIA/TensorRT au commit épinglé. Avec
 # --trtexec, trtexec en plus, sorti de l'archive Linux de TensorRT (empreinte épinglée, lue en flux
 # sans être gardée sur le disque) : le paquet TensorRT le porte à côté du module (P1.19).
-# Sous GitHub Actions, CUDACXX, CUDAToolkit_ROOT et AJP_TENSORRT_ROOT passent aux étapes suivantes.
+# Sous GitHub Actions, CUDACXX, CUDAToolkit_ROOT et KIRARI_TENSORRT_ROOT passent aux étapes suivantes.
 #
-#   tools/deps/linux-tensorrt.sh [--trtexec] ~/ajp-nvidia
+#   tools/deps/linux-tensorrt.sh [--trtexec] ~/kirari-nvidia
 set -euo pipefail
 
 with_trtexec=0
@@ -143,7 +143,7 @@ if [ -n "${GITHUB_ENV:-}" ]; then
   {
     echo "CUDACXX=$cuda_root/bin/nvcc"
     echo "CUDAToolkit_ROOT=$cuda_root"
-    echo "AJP_TENSORRT_ROOT=$trt_root"
+    echo "KIRARI_TENSORRT_ROOT=$trt_root"
   } >>"$GITHUB_ENV"
 fi
 echo "CUDA : $cuda_root ; TensorRT : $trt_root"

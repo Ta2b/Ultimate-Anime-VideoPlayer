@@ -21,7 +21,7 @@
 #include "core/engines.h"
 #include "core/text.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr ImVec4 kNote{0.66F, 0.68F, 0.74F, 1.0F};
@@ -271,7 +271,7 @@ FirstRunView first_run_view(const GpuFacts& gpu, const EnginesHere& here, const 
           }
         }
         break;
-      case core::EngineId::Metal:  // Core ML, dans AJP.app
+      case core::EngineId::Metal:  // Core ML, dans Kirari.app
         row.usable = here.coreml;
         row.status = here.coreml ? i18n::tr("bundled with the player") : i18n::tr("not in this package");
         break;
@@ -481,4 +481,4 @@ void draw_first_run(FirstRunView& view, float scale) {
   ImGui::End();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

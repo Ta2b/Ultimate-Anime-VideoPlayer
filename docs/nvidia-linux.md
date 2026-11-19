@@ -22,14 +22,14 @@ machine, et ce qu'il reste à mesurer.
 Prérequis : kit CUDA 12.x, TensorRT 10 ou 11 (paquets NVIDIA), pilote récent.
 
 ```
-export AJP_DEPS_PREFIX=...                       # préfixe des dépendances (tools/deps/linux-from-source.sh)
+export KIRARI_DEPS_PREFIX=...                       # préfixe des dépendances (tools/deps/linux-from-source.sh)
 cmake --preset linux-prefix-cuda-machine         # CUDA sm_89, -O3, LTO, x86-64-v3 (CPU récent)
 cmake --build --preset linux-prefix-cuda-machine
 ```
 
 `linux-prefix-cuda-release` reste le préréglage sans LTO ni `-march`. Le préréglage « machine » ne
 change rien aux noyaux GPU : il accélère les threads source et préparation. Pour une autre carte,
-changer `AJP_CUDA_ARCHITECTURES` (`89-real` pour la 4070 Ti).
+changer `KIRARI_CUDA_ARCHITECTURES` (`89-real` pour la 4070 Ti).
 
 ## Ce que le lecteur fait seul sur une carte NVIDIA
 
@@ -119,8 +119,8 @@ index dans l'`engines.lock` de la release :
 # Depuis la 0.5, le paquet se construit dans le conteneur de préflight (image reconstruite d'abord, contrôle de portabilité intact) :
 #   tools/release/preflight/nvidia-package.sh <worktree à l'étiquette> v0.3.0 <sortie>
 # À la main, sur un poste dont les bibliothèques sont celles d'Ubuntu 24.04 :
-AJP_WITH_CUDA=ON AJP_TENSORRT_ROOT=$HOME/ajp-sdk/tensorrt AJP_PACKAGE_NVIDIA=1 AJP_DEPS_PREFIX=... \
-AJP_RELEASE_REPO=<dépôt des releases> AJP_RELEASE_TAG=v0.3.0 tools/release/package-linux.sh <dossier>
+KIRARI_WITH_CUDA=ON KIRARI_TENSORRT_ROOT=$HOME/kirari-sdk/tensorrt KIRARI_PACKAGE_NVIDIA=1 KIRARI_DEPS_PREFIX=... \
+KIRARI_RELEASE_REPO=<dépôt des releases> KIRARI_RELEASE_TAG=v0.3.0 tools/release/package-linux.sh <dossier>
 tools/release/attach-nvidia-linux.sh <dossier> v0.3.0               # contrôle seulement
 tools/release/attach-nvidia-linux.sh <dossier> v0.3.0 --publish     # crée la release si besoin et joint
 git tag v0.3.0 && git push origin v0.3.0                            # la CI fusionne et joint le reste
@@ -129,7 +129,7 @@ git tag v0.3.0 && git push origin v0.3.0                            # la CI fusi
 Le script refuse une archive qui contient des fichiers NVIDIA, un index qui ne nomme pas cette archive à cette
 étiquette et dans ce dépôt (hachage et taille compris), ou sans `[[vendor_file]]`. Le paquet ne doit pas
 changer entre la construction et l'étiquette : son SHA-256 est dans l'index. Le test caché
-`ajp_app_tests "[.package]"` (`AJP_PACKAGE_DIR=<dossier>`) installe le paquet avec le vrai code du lecteur,
+`kirari_app_tests "[.package]"` (`KIRARI_PACKAGE_DIR=<dossier>`) installe le paquet avec le vrai code du lecteur,
 fichiers de NVIDIA tirés pour de bon (~0,74 Go pour une carte sm89).
 
 ## Réglages de départ pour la 4070 Ti

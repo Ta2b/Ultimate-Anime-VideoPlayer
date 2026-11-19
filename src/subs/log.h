@@ -6,11 +6,11 @@
 
 #include "core/log.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Un canal neuf, qui partage les puits installés par app ; chaque objet garde le sien.
 inline std::shared_ptr<spdlog::logger> make_logger() {
   return log_channel("subs");
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

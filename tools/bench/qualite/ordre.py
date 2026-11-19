@@ -16,7 +16,7 @@ image créée se compare :
   elle était une source. L'écart dit si l'image créée « pompe » face aux sources qui l'entourent ;
   par sa netteté : l'énergie du gradient de la luminance, rapportée à celle de SPAN de la vraie image.
 
-  python3 -I tools/bench/qualite/ordre.py --modeles ~/.cache/ajp-release-models/modeles --md ordre.md
+  python3 -I tools/bench/qualite/ordre.py --modeles ~/.cache/kirari-release-models/modeles --md ordre.md
 
 Limites : un mouvement de translation de calques (pas de déformation ni d'animation « sur deux »), à l'échelle ½
 (les traits sont deux fois plus fins que ceux que SPAN a appris) ; ONNX Runtime sur processeur, pas TensorRT ;

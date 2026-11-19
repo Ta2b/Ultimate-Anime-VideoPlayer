@@ -10,7 +10,7 @@
 
 #include <SDL3/SDL_video.h>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct WaylandOutput {
   std::string name;  // « DP-2 » (wl_output v4) ; vide si le compositeur ne le dit pas
@@ -29,4 +29,4 @@ std::string with_connector(std::string_view sdl_name, std::string_view connector
 // sortie ne change pas, seule une position nouvelle la relit. Tout thread.
 std::string wayland_connector(SDL_DisplayID display);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

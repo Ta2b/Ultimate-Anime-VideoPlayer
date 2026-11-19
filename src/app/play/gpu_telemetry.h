@@ -18,7 +18,7 @@
 
 #include "core/gpu_device.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct GpuSample {
   unsigned sm_mhz = 0;
@@ -128,4 +128,4 @@ class LateTelemetry {
   std::thread thread_;  // en dernier : lancé une fois le reste construit
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

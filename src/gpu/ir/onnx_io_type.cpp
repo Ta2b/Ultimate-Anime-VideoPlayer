@@ -15,7 +15,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "gpu/ir/protobuf.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 namespace {
 
 using proto::Bytes;
@@ -128,7 +128,7 @@ void write_cast(Writer& graph, std::string_view from, std::string_view to, std::
   Writer node;
   node.string(kNodeInput, from);
   node.string(kNodeOutput, to);
-  node.string(kNodeName, std::format("ajp.cast.{}", to));
+  node.string(kNodeName, std::format("kirari.cast.{}", to));
   node.string(kNodeOpType, "Cast");
   node.message(kNodeAttribute, attr);
   graph.message(kGraphNode, node);
@@ -419,4 +419,4 @@ std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std
   return std::move(out).take();
 }
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

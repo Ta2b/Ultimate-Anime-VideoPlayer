@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // L'étape de construction de prepare (une clé anglaise, prepare/trtexec_progress.cpp) dans la langue de
 // l'interface ; une étape inconnue reste telle quelle.
@@ -80,4 +80,4 @@ bool built_from(const LoadedEngine& engine, const PastBuild& past);
 double expected_build_seconds(const std::filesystem::path& cache_dir, const std::filesystem::path& onnx,
                               std::int64_t pixels, double first_s = kDefaultBuildSeconds);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

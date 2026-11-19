@@ -1,4 +1,4 @@
-// Points d'entrée de ajp_backend_tensorrt.so (gpu/backend.h). Aucune exception ne traverse la
+// Points d'entrée de kirari_backend_tensorrt.so (gpu/backend.h). Aucune exception ne traverse la
 // frontière C : un échec devient nullptr et un refus dans init->refusal.
 #ifdef _WIN32
 #include <windows.h>
@@ -43,21 +43,21 @@ std::filesystem::path own_file() {
 }
 
 // trtexec livré à côté de la bibliothèque, d'empreinte vérifiée ; à défaut, dans un build de
-// développement seulement, celui trouvé à la configuration (AJP_TRTEXEC_PATH).
+// développement seulement, celui trouvé à la configuration (KIRARI_TRTEXEC_PATH).
 std::filesystem::path pick_trtexec_path() {
 #ifdef _WIN32
   constexpr const char* kTrtexec = "trtexec.exe";
 #else
   constexpr const char* kTrtexec = "trtexec";
 #endif
-#ifdef AJP_TRTEXEC_NO_FALLBACK
+#ifdef KIRARI_TRTEXEC_NO_FALLBACK
   const std::filesystem::path fallback;
 #else
-  const std::filesystem::path fallback = AJP_TRTEXEC_PATH;
+  const std::filesystem::path fallback = KIRARI_TRTEXEC_PATH;
 #endif
   const std::filesystem::path self = own_file();
-  return ajp::prepare::pick_trtexec(self.empty() ? std::filesystem::path{} : self.parent_path() / kTrtexec,
-                                    AJP_TRTEXEC_SHA256, fallback);
+  return kirari::prepare::pick_trtexec(self.empty() ? std::filesystem::path{} : self.parent_path() / kTrtexec,
+                                       KIRARI_TRTEXEC_SHA256, fallback);
 }
 
 // Le même, cherché une fois par processus : pick_trtexec hache trtexec (plusieurs Mo), et chaque instance du
@@ -70,43 +70,44 @@ std::filesystem::path trtexec_path() {
   return picked;
 }
 
-void tell(const ajp::gpu::BackendInit* init, ajp::Refusal refusal) {
+void tell(const kirari::gpu::BackendInit* init, kirari::Refusal refusal) {
   if (init != nullptr && init->refusal != nullptr) *init->refusal = std::move(refusal);
 }
 
 }  // namespace
 
-extern "C" AJP_BACKEND_EXPORT int ajp_backend_abi() noexcept {
-  return ajp::gpu::kBackendAbi;
+extern "C" KIRARI_BACKEND_EXPORT int kirari_backend_abi() noexcept {
+  return kirari::gpu::kBackendAbi;
 }
 
-extern "C" AJP_BACKEND_EXPORT std::uint64_t ajp_backend_layout() noexcept {
-  return ajp::gpu::kBackendLayout;
+extern "C" KIRARI_BACKEND_EXPORT std::uint64_t kirari_backend_layout() noexcept {
+  return kirari::gpu::kBackendLayout;
 }
 
-extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
-    int abi, const ajp::gpu::BackendInit* init) noexcept {
+extern "C" KIRARI_BACKEND_EXPORT kirari::gpu::Backend* kirari_backend_create(
+    int abi, const kirari::gpu::BackendInit* init) noexcept {
   if (init == nullptr) return nullptr;
-  if (abi != ajp::gpu::kBackendAbi) {
-    tell(init, {ajp::RefusalCode::AbiMismatch,
-                std::format("backend tensorrt : ABI {} demandée, {} fournie", abi, ajp::gpu::kBackendAbi)});
+  if (abi != kirari::gpu::kBackendAbi) {
+    tell(init,
+         {kirari::RefusalCode::AbiMismatch,
+          std::format("backend tensorrt : ABI {} demandée, {} fournie", abi, kirari::gpu::kBackendAbi)});
     return nullptr;
   }
   try {
     // Les canaux de la bibliothèque (prepare, tensorrt) vers le journal du lecteur, comme pour Vulkan.
-    ajp::gpu::route_module_logs(init->log);
-    auto backend = ajp::gpu::cuda::TensorRtBackend::create(*init, trtexec_path());
+    kirari::gpu::route_module_logs(init->log);
+    auto backend = kirari::gpu::cuda::TensorRtBackend::create(*init, trtexec_path());
     if (!backend) {
       tell(init, std::move(backend.error()));
       return nullptr;
     }
-    return new ajp::gpu::GuardedBackend(std::move(*backend));  // NOLINT(cppcoreguidelines-owning-memory)
+    return new kirari::gpu::GuardedBackend(std::move(*backend));  // NOLINT(cppcoreguidelines-owning-memory)
   } catch (...) {
-    tell(init, ajp::refusal_from_exception(ajp::RefusalCode::LibraryUnavailable, "backend tensorrt"));
+    tell(init, kirari::refusal_from_exception(kirari::RefusalCode::LibraryUnavailable, "backend tensorrt"));
     return nullptr;
   }
 }
 
-extern "C" AJP_BACKEND_EXPORT void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept {
+extern "C" KIRARI_BACKEND_EXPORT void kirari_backend_destroy(kirari::gpu::Backend* backend) noexcept {
   delete backend;
 }

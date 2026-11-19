@@ -6,11 +6,11 @@
 
 #include "core/log.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Un canal neuf, qui partage les puits installés par app ; chaque objet garde le sien.
 inline std::shared_ptr<spdlog::logger> make_logger() {
   return log_channel("prepare");
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

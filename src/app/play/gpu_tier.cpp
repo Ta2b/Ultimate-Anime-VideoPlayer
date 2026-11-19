@@ -11,9 +11,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::uint64_t kGiB = std::uint64_t{1} << 30U;
@@ -137,4 +137,4 @@ TierEstimate estimate_tier(const TierTable& table, const GpuFacts& gpu) {
   return {.tier = Tier::Fast, .integrated = integrated};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

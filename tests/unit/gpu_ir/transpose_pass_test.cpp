@@ -10,8 +10,8 @@
 #include "gpu/ir/passes.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -35,7 +35,7 @@ PassStats check(const ModelBuilder& model, std::int64_t max_channels, Graph& aft
   const Graph before = build(model);
   after = before;
   auto stats = optimize(after, {.transpose_conv_channels = max_channels, .transpose_phases = phases});
-  if (!stats) FAIL("refus " << ajp::name(stats.error().code) << " : " << stats.error().detail);
+  if (!stats) FAIL("refus " << kirari::name(stats.error().code) << " : " << stats.error().detail);
   const std::vector<NamedValue> inputs{{.name = "x", .value = random_floats({1, 8, 5, 6}, 43)}};
   const std::vector<NamedValue> expected = execute(before, inputs);
   const std::vector<NamedValue> got = execute(after, inputs);

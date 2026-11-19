@@ -18,7 +18,7 @@
 
 #include "gpu/cuda/backend/span_fp8_net.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class SpanFp8Reference {
  public:
@@ -47,4 +47,4 @@ class SpanFp8Reference {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -24,9 +24,9 @@
 #include "gpu/vulkan/compute/context.h"
 #include "net_rig.h"
 
-using namespace ajp;
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk;
+using namespace kirari;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk;
 
 namespace {
 
@@ -80,7 +80,7 @@ class HostRuntime final : public net::Runtime {
 
 TEST_CASE("host_imported_tensor : le GPU voit la mémoire hôte du runtime elle-même",
           "[vk_backend][runtime]") {
-  auto context = ajp::test::with_validation([](bool validation, ajp::test::ValidationSink sink) {
+  auto context = kirari::test::with_validation([](bool validation, kirari::test::ValidationSink sink) {
     return VkContext::create({.extensions = {VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME},
                               .validation = validation,
                               .validation_sink = std::move(sink)});

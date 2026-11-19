@@ -16,7 +16,7 @@
 #include "export/av_handles.h"
 #include "export/container.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 class Muxer {
  public:
@@ -80,4 +80,4 @@ class Muxer {
   bool finished_ = false;
 };
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

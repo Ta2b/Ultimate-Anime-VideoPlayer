@@ -13,7 +13,7 @@
 #include <span>
 #include <vector>
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Inférences de chauffe (compilation paresseuse, caches, montée en fréquence), puis inférences
 // chronométrées : la médiane de vingt écarte un lancement retardé par l'hôte, qui sur cinq pouvait
@@ -54,4 +54,4 @@ std::optional<std::size_t> choose_unit(std::span<const std::optional<UnitMeasure
                                        std::size_t preferred, double tolerance = kUnitTolerance,
                                        double max_error = kUnitMaxMeanError);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

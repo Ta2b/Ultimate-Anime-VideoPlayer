@@ -15,7 +15,7 @@
 #include <span>
 #include <unordered_map>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 // Mesure : ingestion, mesures de la paire, relectures. Agrandissement : SPAN et l'écriture de son
 // slot. Interpolation : RIFE, DistilDRBA, warp et l'écriture des images intermédiaires. Paire : le graphe
@@ -201,4 +201,4 @@ class LaneHazards {
   std::size_t prune_above_ = kPruneAbove;
 };
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

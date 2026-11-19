@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <optional>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 struct Name {
@@ -134,4 +134,4 @@ std::string track_language(const TrackInfo& track) {
                                                     : language_from_title(track.title));
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

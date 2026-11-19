@@ -17,7 +17,7 @@
 struct AVFrame;
 struct SwrContext;
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 // Masque AV_CH_* dont l'ordre natif est celui que SDL3 attend pour ce nombre de canaux.
 std::uint64_t sdl_channel_mask(int channels);
@@ -55,4 +55,4 @@ class PcmConverter {
   bool downmix_ = false;  // plus de canaux en entrée qu'en sortie : limiteur doux après le mixage
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

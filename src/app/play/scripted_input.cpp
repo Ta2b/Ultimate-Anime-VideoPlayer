@@ -13,7 +13,7 @@
 #include "export/encoder_choice.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // « mouse=XxY » ou « click=XxY » de --keys : la souris passe (et clique) à ce point de la
 // fenêtre (fractions de sa taille).
@@ -130,4 +130,4 @@ std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettin
   return job;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

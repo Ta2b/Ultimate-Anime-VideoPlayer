@@ -5,8 +5,8 @@
 
 #include "support.h"
 
-using namespace ajp::prepare;
-using ajp::RefusalCode;
+using namespace kirari::prepare;
+using kirari::RefusalCode;
 
 TEST_CASE("scan_onnx : entrées, types, dimensions et GridSample", "[prepare][onnx]") {
   const std::string model =

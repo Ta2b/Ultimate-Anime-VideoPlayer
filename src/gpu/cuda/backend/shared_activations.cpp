@@ -6,7 +6,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 SharedActivations::~SharedActivations() {
   if (data_ == nullptr) return;
@@ -74,4 +74,4 @@ std::expected<void, Refusal> SharedActivations::reserve(std::int64_t bytes) {
   return {};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

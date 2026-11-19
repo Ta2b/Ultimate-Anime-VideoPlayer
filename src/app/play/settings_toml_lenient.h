@@ -11,9 +11,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La version du fichier que ce lecteur écrit : une plus récente garde ses clés à la réécriture (P2.22).
 inline constexpr std::int64_t kSettingsVersion = 1;
@@ -47,4 +47,4 @@ void keep_rejected_values(toml::table& fresh, const toml::table& existing, const
 // Une clé de before absente de now est retirée de disk. Les tableaux comptent comme une valeur.
 void apply_own_changes(toml::table& disk, const toml::table& before, const toml::table& now);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -9,7 +9,7 @@
 #include "core/text.h"
 #include "core/toml_fields.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 char lower(char c) {
@@ -347,4 +347,4 @@ KeysRead read_keys(std::string_view profile_toml) {
   return out;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

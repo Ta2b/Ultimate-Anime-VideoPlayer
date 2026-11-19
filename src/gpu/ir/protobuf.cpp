@@ -4,7 +4,7 @@
 #include <format>
 #include <limits>
 
-namespace ajp::gpu::ir::proto {
+namespace kirari::gpu::ir::proto {
 namespace {
 
 // Un varint de 64 bits tient en 10 octets au plus.
@@ -182,9 +182,9 @@ std::expected<void, Refusal> append_floats(const Field& field, std::vector<float
   return {};
 }
 
-}  // namespace ajp::gpu::ir::proto
+}  // namespace kirari::gpu::ir::proto
 
-namespace ajp::gpu::ir::proto {
+namespace kirari::gpu::ir::proto {
 
 void Writer::raw_varint(std::uint64_t value) {
   while (value >= 0x80U) {
@@ -246,4 +246,4 @@ void Writer::field(const Field& field) {
   }
 }
 
-}  // namespace ajp::gpu::ir::proto
+}  // namespace kirari::gpu::ir::proto

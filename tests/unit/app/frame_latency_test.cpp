@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Retard des images : médiane des dernières mesures, un à-coup isolé ne compte pas",
@@ -42,4 +42,4 @@ TEST_CASE("Retard des images : prête une période plus loin, ou après le retar
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

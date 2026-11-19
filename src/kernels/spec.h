@@ -29,8 +29,8 @@
 #include "kernels/spec/warp.h"         // IWYU pragma: export
 #include "kernels/spec/warp_pan.h"     // IWYU pragma: export
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 inline constexpr int kSpecVersion = 3;
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels

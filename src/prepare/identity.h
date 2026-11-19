@@ -20,7 +20,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Seul TensorRt entre dans une clé publiée ; les valeurs gardent leur rang (OrtProvider et MiGraphX, retirés
 // avec leurs moteurs, étaient les deux dernières).
@@ -103,4 +103,4 @@ struct EngineIdentity {
 // Nom du fichier moteur : « aji-v3-<program_key>.engine ».
 std::expected<std::string, Refusal> engine_name(const EngineIdentity& identity);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

@@ -4,7 +4,7 @@
 #include "app/play/i18n.h"
 #include "app/play/session.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les deux lignes des images : intervalle, rendu, images sautées ; fluidité, manques, retard et calage.
 void Session::frame_lines(std::vector<std::string>& lines) const {
@@ -120,4 +120,4 @@ ControlsView Session::view() const {
                       .chapters = config_.chapters};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

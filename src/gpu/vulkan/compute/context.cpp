@@ -12,7 +12,7 @@
 #include "gpu/vulkan/compute/log.h"
 #include "gpu/vulkan/compute/sync.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 std::string version_text(std::uint32_t version) {
@@ -166,4 +166,4 @@ VkContext::~VkContext() {
   }
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

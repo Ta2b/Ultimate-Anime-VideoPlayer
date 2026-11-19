@@ -9,7 +9,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/detect.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Σ |a − b| × scene_norm(format) sur deux plans de luma de même taille. Chaque terme se calcule
 // en float comme sur GPU ; la somme est en double, sans dépendre de l'ordre.
@@ -35,4 +35,4 @@ Result<PairMeasure> pair_scores(const RgbImage& a, const RgbImage& b, float leve
                                 const RifeGeometry& geometry, float kr = coefficients(Matrix::Bt709).kr,
                                 float kb = coefficients(Matrix::Bt709).kb);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

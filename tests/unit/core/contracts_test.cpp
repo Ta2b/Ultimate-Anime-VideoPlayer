@@ -16,9 +16,9 @@
 #include "core/messages.h"
 #include "core/ring.h"
 
-using namespace ajp;
+using namespace kirari;
 
-static_assert(std::is_same_v<ajp::RingFormat, RingFormat>, "un seul RingFormat, celui du ring");
+static_assert(std::is_same_v<kirari::RingFormat, RingFormat>, "un seul RingFormat, celui du ring");
 static_assert(std::is_same_v<core::GpuVendor, GpuVendor>, "un seul GpuVendor, celui de l'appareil");
 static_assert(sizeof(DeviceUuid) == 16 && sizeof(DeviceLuid) == 8);
 

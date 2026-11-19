@@ -1,6 +1,6 @@
 #include "subs/atlas_pool.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 std::unique_ptr<SubtitleAtlas> AtlasPool::take() {
   if (!free_.empty()) {
@@ -30,4 +30,4 @@ std::shared_ptr<const SubtitleAtlas> AtlasPool::share(std::unique_ptr<SubtitleAt
   return {atlas.release(), std::move(release)};
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

@@ -13,7 +13,7 @@
 #include "app/play/panel_style.h"
 #include "app/play/settings_upscale_level.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::note;
 using panel::section;
@@ -216,4 +216,4 @@ void upscale_advanced(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

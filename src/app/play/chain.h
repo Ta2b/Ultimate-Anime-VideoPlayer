@@ -1,4 +1,4 @@
-// La chaîne ouverte par « ajp play » et ce que les actions de l'utilisateur y changent : touches,
+// La chaîne ouverte par « kirari play » et ce que les actions de l'utilisateur y changent : touches,
 // menu des paramètres en direct, pistes, grade HDR et vrai noir OLED, soins OLED. Le
 // thread main seul y touche (player.cpp ouvre la chaîne et tient la boucle).
 #pragma once
@@ -35,7 +35,7 @@
 #include "media/demuxer.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ShotWork;  // chain_shots.h
 
@@ -208,4 +208,4 @@ void log_summary(const Session& session);
 void carry_session(Chain& to, StageMemory* stages, std::vector<std::filesystem::path>& dropped,
                    std::optional<std::optional<int>> wanted, ManualTracks* manual);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

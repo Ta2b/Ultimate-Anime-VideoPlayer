@@ -19,7 +19,7 @@
 #include "gpu/backend.h"
 #include "gpu/graph_book.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Un tenseur FP16 n × c × h × w à l'adresse handle + offset.
 inline Tensor fused_tensor(std::uintptr_t handle, std::uint64_t offset, std::int64_t c, int h, int w,
@@ -111,4 +111,4 @@ class FusedGraphs {
   std::string who_;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

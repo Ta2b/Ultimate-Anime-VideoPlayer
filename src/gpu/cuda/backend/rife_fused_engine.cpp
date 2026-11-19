@@ -8,7 +8,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Pose la fenêtre d'accès persistante du flux (bytes 0 : la retire) ; les noyaux enfilés ou capturés ensuite
@@ -423,4 +423,4 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
   return cuda_check(reset, "cudaStreamSetAttribute");
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -14,10 +14,10 @@
 #include "kernels/ref/half.h"
 #include "test_util.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
-using ajp::kernels::ref::round_to_half;
-using namespace ajp::gpu::ir::test;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
+using kirari::kernels::ref::round_to_half;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -162,7 +162,7 @@ const ConvAttrs& conv_attrs(const Node& node) {
 PassStats check_preserved(const Graph& before, Graph& after, const std::vector<NamedValue>& inputs) {
   after = before;
   auto stats = optimize(after);
-  if (!stats) FAIL("refus " << ajp::name(stats.error().code) << " : " << stats.error().detail);
+  if (!stats) FAIL("refus " << kirari::name(stats.error().code) << " : " << stats.error().detail);
   const std::vector<NamedValue> expected = execute(before, inputs);
   const std::vector<NamedValue> got = execute(after, inputs);
   REQUIRE(got.size() == expected.size());
@@ -487,7 +487,7 @@ TEST_CASE("passes : une longue chaîne Conv + Relu fond sans rien perdre", "[gpu
 
 // C44-01 : le graphe que fold_float_casts rend est celui des noyaux typés du moteur, pas un graphe pour
 // l'interpréteur : un Add aux opérandes float16 et float y est refusé (types égaux). Le graphe d'avant la
-// passe reste exécutable, et c'est lui qu'ajp_onnx_info --vulkan --run exécute.
+// passe reste exécutable, et c'est lui qu'kirari_onnx_info --vulkan --run exécute.
 TEST_CASE("passes : le graphe replié par fold_float_casts n'est pas exécutable, celui d'avant l'est",
           "[gpu_ir][passes]") {
   ModelBuilder m;
@@ -503,7 +503,7 @@ TEST_CASE("passes : le graphe replié par fold_float_casts n'est pas exécutable
   CHECK(fold_float_casts(folded) == 2);
   Value x = random_floats({1, 4, 5, 5}, 3);
   x.type = DataType::F16;
-  for (float& v : x.f) v = ajp::kernels::ref::round_to_half(v);
+  for (float& v : x.f) v = kirari::kernels::ref::round_to_half(v);
   const std::vector<NamedValue> inputs{{.name = "x", .value = x}};
   CHECK(run(graph, inputs));
   CHECK_FALSE(run(folded, inputs));

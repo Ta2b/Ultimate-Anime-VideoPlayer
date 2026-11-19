@@ -12,7 +12,7 @@
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // La référence FP16 des noyaux colle au FP32 à 78,8 dB (docs/span-fp8-cutlass.md) ; le réseau FP8 se tient
 // vers 50 dB. Des noyaux faux sur une architecture tombent bien plus bas.
@@ -30,4 +30,4 @@ float native_check_pattern(int c, int y, int x);
 std::expected<std::optional<double>, Refusal> check_native(SpanFp8Net& net, const span_fp8::Package& package,
                                                            int height, int width);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

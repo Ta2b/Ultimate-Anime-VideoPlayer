@@ -16,7 +16,7 @@
 #include "core/utf8_path.h"
 #include "media/demuxer.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -331,4 +331,4 @@ bool SubtitleLead::Core::push(subs::TrackPacket packet, std::uint64_t at_generat
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

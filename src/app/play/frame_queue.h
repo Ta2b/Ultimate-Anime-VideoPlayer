@@ -15,7 +15,7 @@
 #include "core/frame.h"
 #include "core/ring.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class FrameQueue {
  public:
@@ -90,4 +90,4 @@ class FrameQueue {
   std::vector<RingFrame> frames_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

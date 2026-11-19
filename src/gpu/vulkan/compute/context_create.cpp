@@ -12,7 +12,7 @@
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/log.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
@@ -179,8 +179,8 @@ Done VkContext::create_instance(const CreateOptions& options) {
   }
   const std::uint32_t api = std::min(loader, kMaxApiVersion);
   const VkApplicationInfo app{.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                              .pApplicationName = "ajp",
-                              .pEngineName = "ajp vk_compute",
+                              .pApplicationName = "kirari",
+                              .pEngineName = "kirari vk_compute",
                               .apiVersion = api};
   const VkInstanceCreateInfo info{.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                                   .pNext = debug_utils ? &messenger : nullptr,
@@ -339,4 +339,4 @@ Done VkContext::create_device(const CreateOptions& options) {
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

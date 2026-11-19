@@ -7,35 +7,35 @@
 #   - chaque moteur TensorRT d'une release finale a ses [[vendor_file]] (sans eux, il s'installerait sans les
 #     bibliothèques de NVIDIA) et son archive existe vraiment, avec la taille et le SHA-256 que l'index annonce : un
 #     paquet trt-* réécrit après coup n'est plus signé « latest » sans qu'on le voie (B51-02, B51-16).
-#     AJP_CHECK_ARCHIVES=0 saute le téléchargement des archives (essais hors ligne).
+#     KIRARI_CHECK_ARCHIVES=0 saute le téléchargement des archives (essais hors ligne).
 #
-#   AJP_RELEASE_REPO=… tools/release/check-release.sh <étiquette> <dossier des fichiers téléchargés>
+#   KIRARI_RELEASE_REPO=… tools/release/check-release.sh <étiquette> <dossier des fichiers téléchargés>
 set -euo pipefail
 
 [ $# -eq 2 ] || { sed -n '2,13p' "$0"; exit 2; }
 tag=$1 dir=$2
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-repo="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$root/tools/release/versions.env")}"
+repo="${KIRARI_RELEASE_REPO:-$(sed -n 's/^KIRARI_RELEASE_REPO=//p' "$root/tools/release/versions.env")}"
 final=true
 [[ "$tag" == *-* ]] && final=false
 fail=0
 error() { echo "::error::$*" >&2; fail=1; }
 
-for f in ajp-linux-x64.tar.gz ajp-windows-x64.zip engines.lock; do
+for f in kirari-linux-x64.tar.gz kirari-windows-x64.zip engines.lock; do
   [ -s "$dir/$f" ] || error "$tag : $f absent de la release"
 done
-[ -s "$dir/ajp-macos-arm64.zip" ] || echo "::warning::$tag : pas d'archive macOS (hors cible) : publiée sans elle"
+[ -s "$dir/kirari-macos-arm64.zip" ] || echo "::warning::$tag : pas d'archive macOS (hors cible) : publiée sans elle"
 [ "$fail" -eq 0 ] || exit 1
 
 # L'engines.lock de Linux est lu dans l'archive vérifiée, comme celui de Windows ci-dessous : le fichier joint à
 # part à la release n'est lié à aucune construction, et c'est lui qui nomme le module que l'index signé fera
 # installer (C51-01). Il ne sert plus : il est remplacé par celui de l'archive, et une différence est une erreur.
-python3 -I - "$dir/ajp-linux-x64.tar.gz" "$dir/engines.lock" <<'PY' || fail=1
+python3 -I - "$dir/kirari-linux-x64.tar.gz" "$dir/engines.lock" <<'PY' || fail=1
 import sys, tarfile
 with tarfile.open(sys.argv[1], "r:gz") as t:
     members = [m for m in t.getmembers() if m.isfile() and m.name.split("/")[-1] == "engines.lock"]
     if not members:
-        sys.exit("::error::ajp-linux-x64.tar.gz sans engines.lock")
+        sys.exit("::error::kirari-linux-x64.tar.gz sans engines.lock")
     inside = t.extractfile(members[0]).read()
 try:
     joint = open(sys.argv[2], "rb").read()
@@ -43,17 +43,17 @@ except FileNotFoundError:
     joint = None
 open(sys.argv[2], "wb").write(inside)
 if joint is not None and joint != inside:
-    sys.exit("::error::l'engines.lock joint à la release n'est pas celui de ajp-linux-x64.tar.gz : fichier remplacé ou resté d'une autre construction")
+    sys.exit("::error::l'engines.lock joint à la release n'est pas celui de kirari-linux-x64.tar.gz : fichier remplacé ou resté d'une autre construction")
 PY
 [ "$fail" -eq 0 ] || exit 1
 
-# L'engines.lock livré dans le zip Windows (ajp/engines.lock ; séparateur / ou \ selon Compress-Archive).
-python3 -I - "$dir/ajp-windows-x64.zip" "$dir/engines-windows.lock" <<'PY'
+# L'engines.lock livré dans le zip Windows (kirari/engines.lock ; séparateur / ou \ selon Compress-Archive).
+python3 -I - "$dir/kirari-windows-x64.zip" "$dir/engines-windows.lock" <<'PY'
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1]) as z:
     names = [n for n in z.namelist() if n.replace("\\", "/").endswith("engines.lock")]
     if not names:
-        sys.exit("ajp-windows-x64.zip sans engines.lock")
+        sys.exit("kirari-windows-x64.zip sans engines.lock")
     open(sys.argv[2], "wb").write(z.read(names[0]))
 PY
 
@@ -67,7 +67,7 @@ has_tensorrt() {  # index plateforme
 }
 # Les archives des moteurs TensorRT d'un index : adresse, taille et SHA-256 relus sur le serveur.
 check_archives() {  # index plateforme
-  [ "${AJP_CHECK_ARCHIVES:-1}" = 0 ] && return 0
+  [ "${KIRARI_CHECK_ARCHIVES:-1}" = 0 ] && return 0
   local line url sha size tmp
   while IFS='|' read -r url sha size; do
     tmp="$(mktemp)"

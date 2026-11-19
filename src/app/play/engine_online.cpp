@@ -16,7 +16,7 @@
 #include "core/toml_fields.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -243,4 +243,4 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
   merge_release_copy(catalog, read_release_index(cache), repo, keys, version);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

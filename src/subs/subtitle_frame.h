@@ -29,7 +29,7 @@
 
 #include "core/types.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Atlas vivants au plus, chez subs et chez render réunis (estimation du plan).
 inline constexpr std::size_t kMaxAtlasesInFlight = 8;
@@ -97,4 +97,4 @@ class SubtitleSink {
   virtual void refused(const Refusal& refusal) = 0;
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

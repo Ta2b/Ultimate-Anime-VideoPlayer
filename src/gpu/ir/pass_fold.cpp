@@ -6,7 +6,7 @@
 #include "gpu/ir/ops.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Au-delà, plier coûterait plus de mémoire que de calculer à l'exécution.
@@ -190,4 +190,4 @@ int eliminate_identities(Graph& graph) {
   return removed;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

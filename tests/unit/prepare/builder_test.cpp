@@ -16,13 +16,13 @@
 #include "prepare/sha256.h"
 #include "support.h"
 
-using namespace ajp::prepare;
-using ajp::RefusalCode;
-using ajp::gpu::ShapeSet;
-using ajp::gpu::TensorType;
+using namespace kirari::prepare;
+using kirari::RefusalCode;
+using kirari::gpu::ShapeSet;
+using kirari::gpu::TensorType;
 using namespace std::chrono_literals;
 
-using namespace ajp::prepare::test_bench;
+using namespace kirari::prepare::test_bench;
 
 TEST_CASE("TrtexecBuilder : construit, publie, puis réutilise le moteur", "[prepare][builder]") {
   Bench bench("ok");
@@ -158,7 +158,7 @@ TEST_CASE("TrtexecBuilder : chaque échec de trtexec devient un refus, rien n'es
   CHECK(bench.timing_cache() == std::vector<std::string>{"ancien"});
   if (mode == "fail") {
     CHECK(result.error().detail.find("fausse erreur de construction") != std::string::npos);
-    CHECK(test::read_lines(bench.plan(kHd).log_file).back().starts_with("[ajp] "));
+    CHECK(test::read_lines(bench.plan(kHd).log_file).back().starts_with("[kirari] "));
   }
 }
 
@@ -212,11 +212,11 @@ TEST_CASE("TrtexecBuilder : un échec qui nomme le timing cache le remplace", "[
 TEST_CASE("TrtexecBuilder : annulation pendant la construction", "[prepare][builder]") {
   Bench bench("hang");
   std::stop_source stop;
-  ajp::gpu::Progress progress{.report =
-                                  [&](float, const std::string& stage) {
-                                    if (stage == "Choosing tactics") stop.request_stop();
-                                  },
-                              .stop = stop.get_token()};
+  kirari::gpu::Progress progress{.report =
+                                     [&](float, const std::string& stage) {
+                                       if (stage == "Choosing tactics") stop.request_stop();
+                                     },
+                                 .stop = stop.get_token()};
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==
         RefusalCode::Cancelled);
   CHECK(test::stage_count(bench.cache()) == 0);
@@ -336,7 +336,7 @@ TEST_CASE("TrtexecBuilder : le même lien est refusé pour un modèle nommé san
   test::write_file(outside.path() / "secret.bin", "hors du dossier");
   test::fs::create_symlink(outside.path() / "secret.bin", bench.model.onnx_path.parent_path() / "poids.bin");
   // « --model=modele.onnx » : le chemin n'a pas de dossier, le dossier courant est celui du modèle.
-  ajp::gpu::ModelSpec bare = bench.model;
+  kirari::gpu::ModelSpec bare = bench.model;
   bare.onnx_path = bench.model.onnx_path.filename();
   const test::fs::path previous = test::fs::current_path();
   test::fs::current_path(bench.model.onnx_path.parent_path());
@@ -348,9 +348,10 @@ TEST_CASE("TrtexecBuilder : le même lien est refusé pour un modèle nommé san
 
 TEST_CASE("TrtexecBuilder : la vérification du moteur peut refuser sa publication", "[prepare][builder]") {
   Bench bench("ok");
-  const TrtexecBuilder builder(bench.config, [](const test::fs::path&) -> std::expected<void, ajp::Refusal> {
-    return std::unexpected(ajp::Refusal{RefusalCode::BuilderFailed, "désérialisation impossible"});
-  });
+  const TrtexecBuilder builder(
+      bench.config, [](const test::fs::path&) -> std::expected<void, kirari::Refusal> {
+        return std::unexpected(kirari::Refusal{RefusalCode::BuilderFailed, "désérialisation impossible"});
+      });
   Steps steps;
   auto progress = steps.progress();
   CHECK(test::refusal(builder.build(bench.model, kHd, progress)) == RefusalCode::BuilderFailed);
@@ -431,10 +432,10 @@ TEST_CASE("TrtexecBuilder : un timing cache par GPU, partagé par les tailles et
 TEST_CASE("TrtexecBuilder : un trtexec à la fois par GPU, les temps de chacun gardés", "[prepare][builder]") {
   Bench bench("slow");
   test::write_file(bench.dir_ / "modeles/autre.onnx", test::onnx({.ops = {"Conv", "PRelu"}}));
-  const ajp::gpu::ModelSpec other{.id = "autre",
-                                  .onnx_path = bench.dir_ / "modeles/autre.onnx",
-                                  .sha256 = sha256_file(bench.dir_ / "modeles/autre.onnx").value(),
-                                  .precision = TensorType::F16};
+  const kirari::gpu::ModelSpec other{.id = "autre",
+                                     .onnx_path = bench.dir_ / "modeles/autre.onnx",
+                                     .sha256 = sha256_file(bench.dir_ / "modeles/autre.onnx").value(),
+                                     .precision = TensorType::F16};
   const TrtexecBuilder builder(bench.config);
   // Pas de std::vector<bool> : ses éléments partagent un mot, que les deux threads écriraient.
   std::array<bool, 2> built{};
@@ -461,12 +462,13 @@ TEST_CASE("TrtexecBuilder : l'attente du GPU se dit et s'annule", "[prepare][bui
   lock_file += ".build-lock";
   std::stop_source stop;
   std::vector<std::string> stages;
-  ajp::gpu::Progress progress{.report =
-                                  [&](float, const std::string& stage) {
-                                    stages.push_back(stage);
-                                    if (stage == "Waiting for another build on this GPU") stop.request_stop();
-                                  },
-                              .stop = stop.get_token()};
+  kirari::gpu::Progress progress{.report =
+                                     [&](float, const std::string& stage) {
+                                       stages.push_back(stage);
+                                       if (stage == "Waiting for another build on this GPU")
+                                         stop.request_stop();
+                                     },
+                                 .stop = stop.get_token()};
   auto held = KeyLock::acquire(lock_file);
   REQUIRE(held);
   CHECK(test::refusal(TrtexecBuilder(bench.config).build(bench.model, kHd, progress)) ==

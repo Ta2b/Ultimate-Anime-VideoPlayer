@@ -23,11 +23,11 @@
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
 
-#ifndef AJP_DRBA_MODEL_DIR
-#define AJP_DRBA_MODEL_DIR ""
+#ifndef KIRARI_DRBA_MODEL_DIR
+#define KIRARI_DRBA_MODEL_DIR ""
 #endif
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -368,15 +368,15 @@ TEST_CASE("Le manifeste d'un DistilDRBA fusionné s'écrit, se relit et refuse l
   wide.height = 128;  // 128 = 2 × 64
   wide.width = 320;
   CHECK(parse_drba_manifest(format_drba_manifest(wide)));
-  CHECK_FALSE(parse_drba_manifest("ajp-drba-fused 2\nsize 192 320\ntail 4\n"));
+  CHECK_FALSE(parse_drba_manifest("kirari-drba-fused 2\nsize 192 320\ntail 4\n"));
   CHECK_FALSE(parse_drba_manifest(""));
-  CHECK_FALSE(parse_drba_manifest("ajp-drba-fused 1\ninconnu 1\n"));
+  CHECK_FALSE(parse_drba_manifest("kirari-drba-fused 1\ninconnu 1\n"));
 }
 
 TEST_CASE("La dérivation écrit quatre morceaux et leur manifeste une fois, puis les relit",
           "[prepare][drba_fused]") {
   namespace fs = std::filesystem;
-  const fs::path dir = fs::temp_directory_path() / "ajp-drba-split-test";
+  const fs::path dir = fs::temp_directory_path() / "kirari-drba-split-test";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const Bytes model = fake_drba(Edit{});
@@ -440,10 +440,10 @@ TEST_CASE("La dérivation écrit quatre morceaux et leur manifeste une fois, pui
   fs::remove_all(dir, ignored);
 }
 
-// Les vrais modèles du lecteur, quand ils sont sur la machine (AJP_DRBA_MODEL_DIR) : DistilDRBA v2 lite,
+// Les vrais modèles du lecteur, quand ils sont sur la machine (KIRARI_DRBA_MODEL_DIR) : DistilDRBA v2 lite,
 // réduction 4 (distil_drba_v2_lite.onnx) ou 8 (distil_drba_v2_lite_s05.onnx, flot à l'échelle 0,5).
 TEST_CASE("Les DistilDRBA du catalogue se coupent en quatre morceaux", "[prepare][onnx][drba_fused]") {
-  const std::filesystem::path dir = AJP_DRBA_MODEL_DIR;
+  const std::filesystem::path dir = KIRARI_DRBA_MODEL_DIR;
   struct Known {
     std::string_view file;
     int tail;
@@ -481,7 +481,7 @@ TEST_CASE("Les DistilDRBA du catalogue se coupent en quatre morceaux", "[prepare
     }
     CHECK(nodes > 60);
   }
-  if (!any) SKIP("modèles DistilDRBA du lecteur absents (AJP_DRBA_MODEL_DIR)");
+  if (!any) SKIP("modèles DistilDRBA du lecteur absents (KIRARI_DRBA_MODEL_DIR)");
 }
 
 // A04-07 : un morceau dérivé déjà présent n'est jamais réécrit tant que kDrbaFusedDerivation ne change pas.
@@ -491,7 +491,7 @@ TEST_CASE("Les DistilDRBA du catalogue se coupent en quatre morceaux", "[prepare
 TEST_CASE("Les morceaux DistilDRBA ne changent pas sans que leur version monte (A04-07)",
           "[prepare][drba_fused]") {
   namespace fs = std::filesystem;
-  const fs::path dir = fs::temp_directory_path() / "ajp-drba-empreinte";
+  const fs::path dir = fs::temp_directory_path() / "kirari-drba-empreinte";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const Bytes model = fake_drba(Edit{});
@@ -574,4 +574,4 @@ TEST_CASE("C04-06 : les empreintes des morceaux se relisent dans le manifeste", 
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

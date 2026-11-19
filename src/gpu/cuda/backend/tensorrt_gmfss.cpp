@@ -18,7 +18,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // FP16 1 × channels × h × w ; channels 0 : quelconque.
@@ -348,4 +348,4 @@ std::expected<void, Refusal> TensorRtBackend::gmfss_still(const KernelOps::Still
   return launched;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

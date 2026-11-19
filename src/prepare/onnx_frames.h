@@ -19,7 +19,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Le nom de l'entrée k (0 ≤ k < frames) du modèle coupé : « <input>_<k> ».
 std::string frame_input_name(std::string_view input, int k);
@@ -50,4 +50,4 @@ inline std::expected<std::vector<std::byte>, Refusal> with_frame_inputs(std::spa
   return with_frame_inputs(model, FrameSplit{.input = input, .frames = frames});
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

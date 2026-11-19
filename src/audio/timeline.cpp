@@ -5,7 +5,7 @@
 
 #include "audio/pcm.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 void Timeline::append(std::int64_t start, std::int64_t frames, std::optional<std::int64_t> pts_us) {
   if (frames <= 0) return;
@@ -26,4 +26,4 @@ void Timeline::forget_before(std::int64_t index) {
   while (segments_.size() > 1 && segments_[1].start <= index) segments_.pop_front();
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

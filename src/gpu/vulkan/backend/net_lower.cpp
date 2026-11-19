@@ -16,7 +16,7 @@
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_weights.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 using detail::count_of;
 using detail::dims_of;
@@ -463,4 +463,4 @@ std::expected<std::vector<KernelChoice>, Refusal> default_choices(const ir::Grap
   return choices;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

@@ -16,7 +16,7 @@
 #include "media/flash_guard.h"
 #include "media/shot_cutter.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 inline constexpr float kLiveCut = 0.35F;
 inline constexpr std::size_t kLiveKept = 64;  // images gardées, environ 2,5 s à 24 i/s
@@ -59,4 +59,4 @@ class LiveScenes {
   FlashGuard flashes_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -6,8 +6,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::app::play;
-using ajp::media::Shot;
+using namespace kirari::app::play;
+using kirari::media::Shot;
 
 namespace {
 

@@ -12,7 +12,7 @@
 #include "app/play/i18n.h"
 #include "core/clock.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Le pic et le HDR du système se relisent sur événement (ContractWatch::take_peak_change) ; ce sondage n'est
@@ -184,4 +184,4 @@ void DisplayFollow::follow_display_facts(const std::optional<DisplayFacts>& disp
   follow_vrr(display->vrr_armed);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

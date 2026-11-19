@@ -11,7 +11,7 @@
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 cudaTextureObject_t TensorRtBackend::texture(const Tensor& tensor) {
   if (tensor.type != TensorType::F16 || tensor.handle == 0) return 0;
@@ -110,4 +110,4 @@ void TensorRtBackend::destroy_textures() {
   textures_.clear();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

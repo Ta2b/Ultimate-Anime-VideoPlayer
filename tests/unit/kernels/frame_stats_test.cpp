@@ -9,10 +9,10 @@
 
 #include "kernels/ref/transfer.h"
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
-namespace fs = ajp::kernels::frame_stats;
+namespace fs = kirari::kernels::frame_stats;
 
 namespace {
 

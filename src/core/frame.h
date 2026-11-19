@@ -13,7 +13,7 @@
 
 #include "core/types.h"
 
-namespace ajp {
+namespace kirari {
 
 // Horodatage inconnu, partout où un pts tient dans un std::int64_t (DecodedFrame, ring,
 // paquets). media traduit AV_NOPTS_VALUE de FFmpeg en kNoPts ; un module qui préfère
@@ -165,4 +165,4 @@ class FrameSink {
   virtual bool try_push(DecodedFrame&& frame) = 0;
 };
 
-}  // namespace ajp
+}  // namespace kirari

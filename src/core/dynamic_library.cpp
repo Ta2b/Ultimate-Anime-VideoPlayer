@@ -10,7 +10,7 @@
 #include <dlfcn.h>
 #endif
 
-namespace ajp {
+namespace kirari {
 namespace {
 
 std::string utf8(const std::filesystem::path& path) {
@@ -146,4 +146,4 @@ void DynamicLibrary::close() {
   handle_ = nullptr;
 }
 
-}  // namespace ajp
+}  // namespace kirari

@@ -5,7 +5,7 @@
 // sanitizer, propriété fausse, signal) est nommée par son numéro, que --only rejoue seul (et que
 // --save écrit dans un fichier au lieu de la passer à la cible, pour l'ajouter au corpus).
 //
-//   ajp_fuzz_replay <cible> <corpus> [mutations] [--only <numéro> [--save <fichier>]]
+//   kirari_fuzz_replay <cible> <corpus> [mutations] [--only <numéro> [--save <fichier>]]
 #include <algorithm>
 #include <array>
 #include <csignal>
@@ -32,25 +32,25 @@ struct Named {
   Target run;
 };
 constexpr std::array kTargets{
-    Named{"settings", &ajp::fuzz::settings},
-    Named{"play_settings", &ajp::fuzz::play_settings},
-    Named{"edid", &ajp::fuzz::edid},
-    Named{"build_log", &ajp::fuzz::build_log},
-    Named{"resume", &ajp::fuzz::resume},
-    Named{"osd_script", &ajp::fuzz::osd_script},
-    Named{"mkv_chapters", &ajp::fuzz::mkv_chapters},
-    Named{"ass_render", &ajp::fuzz::ass_render},
-    Named{"keys", &ajp::fuzz::keys},
-    Named{"span_package", &ajp::fuzz::span_package},
-    Named{"onnx", &ajp::fuzz::onnx},
-    Named{"srt", &ajp::fuzz::srt},
-    Named{"cube", &ajp::fuzz::cube},
-    Named{"inflate", &ajp::fuzz::inflate},
-    Named{"manifest", &ajp::fuzz::manifest},
-    Named{"options", &ajp::fuzz::options},
-    Named{"engine_index", &ajp::fuzz::engine_index},
-    Named{"update_state", &ajp::fuzz::update_state},
-    Named{"prepare_onnx", &ajp::fuzz::prepare_onnx},
+    Named{"settings", &kirari::fuzz::settings},
+    Named{"play_settings", &kirari::fuzz::play_settings},
+    Named{"edid", &kirari::fuzz::edid},
+    Named{"build_log", &kirari::fuzz::build_log},
+    Named{"resume", &kirari::fuzz::resume},
+    Named{"osd_script", &kirari::fuzz::osd_script},
+    Named{"mkv_chapters", &kirari::fuzz::mkv_chapters},
+    Named{"ass_render", &kirari::fuzz::ass_render},
+    Named{"keys", &kirari::fuzz::keys},
+    Named{"span_package", &kirari::fuzz::span_package},
+    Named{"onnx", &kirari::fuzz::onnx},
+    Named{"srt", &kirari::fuzz::srt},
+    Named{"cube", &kirari::fuzz::cube},
+    Named{"inflate", &kirari::fuzz::inflate},
+    Named{"manifest", &kirari::fuzz::manifest},
+    Named{"options", &kirari::fuzz::options},
+    Named{"engine_index", &kirari::fuzz::engine_index},
+    Named{"update_state", &kirari::fuzz::update_state},
+    Named{"prepare_onnx", &kirari::fuzz::prepare_onnx},
 };
 
 using Bytes = std::vector<std::uint8_t>;

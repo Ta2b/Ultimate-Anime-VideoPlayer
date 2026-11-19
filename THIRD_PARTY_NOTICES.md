@@ -1,6 +1,6 @@
 # Avis des composants tiers
 
-Le lecteur (Ultimate Anime VideoPlayer) est publié sous la **Mozilla Public License 2.0** (fichier `LICENSE`). Les composants ci-dessous gardent leur propre licence. Cette liste décrit ce que les paquets livrent ou chargent ; chaque licence amont fait foi.
+Le lecteur (Kirari Player) est publié sous la **Mozilla Public License 2.0** (fichier `LICENSE`). Les composants ci-dessous gardent leur propre licence. Cette liste décrit ce que les paquets livrent ou chargent ; chaque licence amont fait foi.
 
 ## Modèles de réseaux livrés dans `models/`
 Source de chaque fichier : `tools/release/fetch-models.sh` (SHA-256 vérifiés).

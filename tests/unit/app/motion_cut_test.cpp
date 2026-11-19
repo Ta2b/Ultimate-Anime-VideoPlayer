@@ -10,7 +10,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // La boucle du lecteur relit l'écran toutes les 500 ms ; une source à 24 i/s donne 12 paires par relevé.
@@ -119,4 +119,4 @@ TEST_CASE("play.toml : « Couper l'interpolation si la carte ne suit pas », abs
   CHECK_FALSE(live_part(running, off, true).auto_off);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

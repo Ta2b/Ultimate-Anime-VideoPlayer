@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 Acc16Change Acc16Policy::poll(std::int64_t overflowed) {
   ++launch_;
@@ -30,4 +30,4 @@ Acc16Change Acc16Policy::poll(std::int64_t overflowed) {
   return Acc16Change::ToF32;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

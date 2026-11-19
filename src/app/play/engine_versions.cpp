@@ -13,7 +13,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -211,4 +211,4 @@ bool recover_interrupted_install(const EngineCatalog& catalog, const core::Engin
   return false;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

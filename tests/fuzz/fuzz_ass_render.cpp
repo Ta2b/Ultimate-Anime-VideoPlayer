@@ -28,16 +28,16 @@ namespace {
 constexpr int kRenderThreads = 4;
 
 struct Engine {
-  ajp::subs::AssLibrary library;
-  ajp::subs::SubtitleRenderer renderer;
+  kirari::subs::AssLibrary library;
+  kirari::subs::SubtitleRenderer renderer;
 };
 
 Engine& engine() {
   static Engine instance = [] {
-    auto library = ajp::subs::AssLibrary::create();
-    ajp::fuzz::require(library.has_value(), "la bibliothèque libass se crée");
-    auto renderer = ajp::subs::SubtitleRenderer::create(*library, {.render_threads = kRenderThreads});
-    ajp::fuzz::require(renderer.has_value(), "le moteur de rendu se crée");
+    auto library = kirari::subs::AssLibrary::create();
+    kirari::fuzz::require(library.has_value(), "la bibliothèque libass se crée");
+    auto renderer = kirari::subs::SubtitleRenderer::create(*library, {.render_threads = kRenderThreads});
+    kirari::fuzz::require(renderer.has_value(), "le moteur de rendu se crée");
     return Engine{std::move(*library), std::move(*renderer)};
   }();
   return instance;
@@ -45,24 +45,25 @@ Engine& engine() {
 
 }  // namespace
 
-int ajp::fuzz::ass_render(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::ass_render(const std::uint8_t* data, std::size_t size) {
   Engine& e = engine();
   const std::string_view script(reinterpret_cast<const char*>(data), size);
-  auto track = ajp::subs::SubtitleTrack::from_ass(e.library, script);
+  auto track = kirari::subs::SubtitleTrack::from_ass(e.library, script);
   if (!track) return 0;
 
   // Les atlas relâchés attendent ici, comme dans la boîte du thread subs ; déclarés avant la réserve qui les
   // rend.
-  std::vector<std::unique_ptr<ajp::subs::SubtitleAtlas>> returned;
-  ajp::subs::AtlasPool pool{
-      [&returned](std::unique_ptr<ajp::subs::SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); }};
+  std::vector<std::unique_ptr<kirari::subs::SubtitleAtlas>> returned;
+  kirari::subs::AtlasPool pool{[&returned](std::unique_ptr<kirari::subs::SubtitleAtlas> atlas) {
+    returned.push_back(std::move(atlas));
+  }};
   constexpr std::array<std::int64_t, 5> kInstantsUs{0, 750'000, 2'500'000, 10'000'000, 600'000'000};
   constexpr std::array<std::array<int, 2>, 2> kSizes{{{640, 360}, {1920, 1080}}};
   for (const auto& [width, height] : kSizes) {
     for (const std::int64_t pts : kInstantsUs) {
       for (auto& atlas : returned) pool.give_back(std::move(atlas));
       returned.clear();
-      const ajp::subs::RenderRequest request{
+      const kirari::subs::RenderRequest request{
           .pts_us = pts, .epoch = 0, .target = {.width = width, .height = height}};
       // Un refus (atlas plein, cible hors plage) est une réponse permise ; seul un arrêt du processus est un
       // défaut.

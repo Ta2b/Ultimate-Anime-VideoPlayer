@@ -7,7 +7,7 @@
 #include "app/play/problem_report.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les lignes d'un texte TOML, coupées à chaque fin de ligne.
@@ -60,4 +60,4 @@ void note_preset_facts(const PlaySettings& settings) {
   note_report_fact("Réglages changés", "\n" + settings_changes_text(settings));  // i18n-ok : rapport
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

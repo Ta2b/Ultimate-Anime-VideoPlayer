@@ -2,7 +2,7 @@
 # Construit dans un dossier de build Ninja les seuls fichiers générés que lit le compilateur (en-têtes, .inc,
 # en-tête GLSL des noyaux, code de wayland-scanner), sans compiler ni lier le lecteur. clang-tidy n'a besoin que
 # d'eux et de compile_commands.json : sa tâche de ci.yml construisait le lecteur entier (7 min) pour analyser
-# quelques fichiers. Les petits outils qui produisent ces fichiers (ajp_kernels_glsl) se construisent avec eux.
+# quelques fichiers. Les petits outils qui produisent ces fichiers (kirari_kernels_glsl) se construisent avec eux.
 # Usage : tools/ci/build-generated.sh <dossier de build>
 set -euo pipefail
 

@@ -14,16 +14,16 @@
 #include "fuzz_targets.h"
 #include "gpu/span_fp8/package.h"
 
-int ajp::fuzz::keys(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::keys(const std::uint8_t* data, std::size_t size) {
   const std::string_view text(reinterpret_cast<const char*>(data), size);
   // La lecture stricte, puis la tolérante : la seconde ne refuse jamais, quoi que le fichier contienne.
-  (void)ajp::core::parse_keys(text);
-  const ajp::core::KeysRead read = ajp::core::read_keys(text);
+  (void)kirari::core::parse_keys(text);
+  const kirari::core::KeysRead read = kirari::core::read_keys(text);
   // Un raccourci de la carte retrouve son action : une touche n'ouvre pas deux actions.
-  for (std::size_t index = 0; index < ajp::core::kActionCount; ++index) {
-    const auto action = static_cast<ajp::core::Action>(index);
+  for (std::size_t index = 0; index < kirari::core::kActionCount; ++index) {
+    const auto action = static_cast<kirari::core::Action>(index);
     if (const auto& chord = read.map.chord(action)) {
-      ajp::fuzz::require(read.map.action_for(*chord) == action, "un raccourci retrouve son action");
+      kirari::fuzz::require(read.map.action_for(*chord) == action, "un raccourci retrouve son action");
     }
   }
   return 0;
@@ -34,14 +34,14 @@ int ajp::fuzz::keys(const std::uint8_t* data, std::size_t size) {
 // dit le nombre de blocs (bits 2 à 4), s'il faut couper le paquet (bit 0) et recalculer le CRC après
 // l'abîmage (bit 1, pour atteindre les contrôles qui suivent le CRC : valeurs finies, échelles positives) ;
 // les deux suivants disent où (le bit 7 du premier : dans l'en-tête), le reste s'y mélange par ou exclusif.
-int ajp::fuzz::span_package(const std::uint8_t* data, std::size_t size) {
-  namespace pkg = ajp::gpu::span_fp8;
+int kirari::fuzz::span_package(const std::uint8_t* data, std::size_t size) {
+  namespace pkg = kirari::gpu::span_fp8;
   const auto raw = pkg::parse({reinterpret_cast<const std::byte*>(data), size});
   if (raw) {
     // Un paquet lu se réécrit et se relit à l'identique (la lecture a vérifié tailles, CRC et valeurs
     // finies).
     const auto again = pkg::parse(pkg::serialize(*raw));
-    ajp::fuzz::require(again.has_value(), "un paquet écrit se relit");
+    kirari::fuzz::require(again.has_value(), "un paquet écrit se relit");
   }
   if (size < 3) return 0;
   const int blocks =

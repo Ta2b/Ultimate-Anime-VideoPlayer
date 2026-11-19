@@ -4,7 +4,7 @@
 
 #include <span>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 // Un échantillon qui n'est pas fini (NaN, infini) dans l'une des deux images donne à chaque mesure sa pire
 // note : 0 dB, un SSIM de 0, une erreur de kNotFiniteError (l'écart entier), quel que soit le quantile
@@ -28,4 +28,4 @@ inline constexpr double kDarkLuma = 32.0 / 255.0;
 double dark_abs_error_quantile(int width, int height, std::span<const float> a, std::span<const float> b,
                                double q, double dark = kDarkLuma);
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

@@ -1,5 +1,5 @@
 // Les ressources du processus au journal (A33-08) : une fuite par réouverture ou par fichier se voit dans
-// ajp.log, en chiffres, avant qu'un utilisateur ne la sente au bout de quelques heures.
+// kirari.log, en chiffres, avant qu'un utilisateur ne la sente au bout de quelques heures.
 #pragma once
 
 #include <cstdint>
@@ -9,7 +9,7 @@
 #include <thread>
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ProcessResources {
   // La mémoire du processus : résidente (VmRSS) sous Linux ; charge privée sous Windows (C34-14), que
@@ -34,7 +34,7 @@ void set_device_memory_reader(DeviceMemoryReader reader);
 std::string resource_drift(const ProcessResources& first, const ProcessResources& now);
 
 // Une ligne « ressources : … » au journal toutes les 5 minutes, jusqu'à la destruction du fil, avec la
-// mémoire vidéo et un avertissement de dérive (B33-05 : un essai de 8 h se lit dans ajp.log seul).
+// mémoire vidéo et un avertissement de dérive (B33-05 : un essai de 8 h se lit dans kirari.log seul).
 std::jthread start_resource_log();
 
 class PlaceboScreen;
@@ -53,4 +53,4 @@ class ResourcesAfterTeardown {
   PlaceboScreen& screen_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

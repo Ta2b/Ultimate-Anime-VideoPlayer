@@ -18,7 +18,7 @@
 #include "core/utf8_path.h"
 #include "media/shot_cache.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::int64_t kSeekBehindUs = 2'000'000;  // la lecture revient derrière l'analyse : saut
@@ -350,4 +350,4 @@ void open_shots_early(ShotWork& work, const std::filesystem::path& file, PlaySet
       ShotOutput{.source_hdr = source_hdr, .hdr_output = hdr_output, .peak_nits = static_cast<double>(peak)});
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

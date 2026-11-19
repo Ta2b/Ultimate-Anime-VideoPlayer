@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les hauteurs de travail que la calibration essaie, de la plus légère à la plus lourde, jusqu'à celle de la
 // séquence (media/bench_clip.h : 1080p). 900p n'y est pas : un essai et un moteur de plus pour une réduction
@@ -51,4 +51,4 @@ enum class CalibrationUse : std::uint8_t {
   OtherEngine,   // mesurée sous Vulkan et jouée sous TensorRT, ou l'inverse : ses bornes ne valent pas
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

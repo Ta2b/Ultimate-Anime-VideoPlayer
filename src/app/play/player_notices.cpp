@@ -2,7 +2,7 @@
 
 #include "app/play/first_run.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 i18n::Translated relaunch_notice(const PlayOptions& options, const std::optional<RelaunchTarget>& reopened,
                                  bool video_reopens, std::string& problem) {
@@ -24,4 +24,4 @@ i18n::Translated fallback_notice(std::optional<RefusalCode> passed_over, core::E
                             engine_label(wanted), engine_label(in_use));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

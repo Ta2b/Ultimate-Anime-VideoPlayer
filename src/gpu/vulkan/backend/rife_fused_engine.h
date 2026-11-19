@@ -32,7 +32,7 @@
 #include "gpu/vulkan/compute/recording.h"
 #include "kernels/spec/rife_fused.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // La clé d'un Artifact de ce moteur : «
 // rife-fused-vk:<h>x<w>:<image|motion|image-cubic>:<d0,d1…>:<artefact0>|<artefact1>… », les artefacts des
@@ -157,4 +157,4 @@ class RifeFusedEngine final : public Engine {
   std::unique_ptr<Recording> shift_;  // détruit le premier : il attend sa fin avant que le tampon parte
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

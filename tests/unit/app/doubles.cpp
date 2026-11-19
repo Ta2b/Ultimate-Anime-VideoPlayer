@@ -4,7 +4,7 @@
 #include <utility>
 #include <variant>
 
-namespace ajp::app::play::test {
+namespace kirari::app::play::test {
 
 bool FakeStages::flush(std::uint32_t epoch) {
   if (refuse_flushes > 0) {
@@ -98,4 +98,4 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> PassthroughStage::start(Vide
   return stage;
 }
 
-}  // namespace ajp::app::play::test
+}  // namespace kirari::app::play::test

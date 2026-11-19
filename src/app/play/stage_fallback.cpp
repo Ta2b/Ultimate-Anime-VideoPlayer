@@ -15,7 +15,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 bool watch_now(const Refusal& refusal) {
   // La fenêtre fermée pendant l'attente (run_pumped) est aussi un Cancelled, mais pas ce choix de
@@ -262,4 +262,4 @@ std::string stage_panel_note(const std::vector<StageNote>& notes) {
   return text;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

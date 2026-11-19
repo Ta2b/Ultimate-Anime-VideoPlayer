@@ -13,7 +13,7 @@
 #include "app/play/gpu_tier.h"
 #include "gpu/gpu_profile.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // « run.tsv » → « run.gpu.tsv ».
 std::filesystem::path gpu_profile_path(const std::filesystem::path& stats);
@@ -37,4 +37,4 @@ struct BenchChain {
 void write_bench_reading(const std::filesystem::path& file, const GpuFacts& gpu, const FrameStats& seen,
                          const BenchChain& chain);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

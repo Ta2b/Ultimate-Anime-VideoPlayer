@@ -17,7 +17,7 @@
 #include "core/dir_entries.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string build_stage_text(std::string_view stage) {
   // Un littéral par étape : le test des traductions les voit (tr de variable, il ne verrait rien).
@@ -233,4 +233,4 @@ double expected_build_seconds(const std::filesystem::path& cache_dir, const std:
   return scaled(nearest->seconds, nearest->pixels, pixels);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

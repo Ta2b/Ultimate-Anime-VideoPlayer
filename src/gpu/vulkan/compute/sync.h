@@ -12,7 +12,7 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Un VkSemaphore de type timeline, de valeur initiale initial, exportable vers ces types de
 // descripteurs (aucun par défaut). Le propriétaire le détruit.
@@ -51,4 +51,4 @@ class TimelineSemaphore {
   VkSemaphore semaphore_ = VK_NULL_HANDLE;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

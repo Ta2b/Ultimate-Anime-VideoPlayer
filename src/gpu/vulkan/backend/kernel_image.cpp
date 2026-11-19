@@ -8,7 +8,7 @@
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 namespace detail {
 
@@ -178,4 +178,4 @@ Done VulkanKernelOps::prepare_image(Recorder& r, const Source& src) const {
       src.planes ? std::span<const BufferView>{} : std::span<const BufferView>(staging), true);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

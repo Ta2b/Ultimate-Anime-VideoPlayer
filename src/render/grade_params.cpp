@@ -5,7 +5,7 @@
 #include <format>
 #include <string_view>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 // Un curseur float relu en double dépasse sa borne d'un cheveu (0,8f vaut 0,800000012) : la
@@ -155,4 +155,4 @@ std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nit
   return BlackThresholds{.lo = lo, .hi = std::min(hi, grade_limits::kBlackNits.hi)};
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

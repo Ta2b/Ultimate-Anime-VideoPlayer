@@ -5,7 +5,7 @@
 
 #include "gpu/ir/graph.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 namespace {
 
 std::string where(const Node& node) {
@@ -125,4 +125,4 @@ Value gather_elements(const Value& in, const OutputInfo& out, std::span<const st
   return result;
 }
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

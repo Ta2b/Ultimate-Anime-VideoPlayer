@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Un handle non dispatchable en entier : un pointeur en 64 bits, un entier de 64 bits ailleurs.
 template <class Handle>
@@ -59,4 +59,4 @@ class DestroyedLog {
   std::atomic<std::uint64_t> count_{0};
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

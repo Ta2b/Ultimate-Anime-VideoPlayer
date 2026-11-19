@@ -65,7 +65,7 @@ def collect(directory):
         if not summary:
             continue
         base = path[:-len(".tsv")]
-        log = read_text(base + ".ajp.log") + read_text(base + ".log")
+        log = read_text(base + ".kirari.log") + read_text(base + ".log")
         summary["vulkan_ms"] = vulkan_ms(log)
         summary["tensorrt_ms"] = tensorrt_ms(base + ".gpu.tsv")
         summary["int8"] = INT8.search(log) is not None
@@ -119,11 +119,11 @@ def selftest():
                 base = os.path.join(tmp, f"extrait1-tour{tour}-{label}")
                 with open(base + ".tsv", "w", encoding="utf-8") as f:
                     f.write(table(41_667))
-                with open(base + ".ajp.log", "w", encoding="utf-8") as f:
+                with open(base + ".kirari.log", "w", encoding="utf-8") as f:
                     if ms is not None:
                         f.write(f"total des dispatchs : 3.0 ms ; de la première estampille à la dernière : {ms} ms\n")
                 if label == "span-int8":
-                    with open(base + ".ajp.log", "w", encoding="utf-8") as f:
+                    with open(base + ".kirari.log", "w", encoding="utf-8") as f:
                         if tour == 1:
                             f.write("SPAN INT8 : 2x_b5f48-int8-0123456789abcdef.onnx (PSNR 45.1 dB)\n")
                         else:

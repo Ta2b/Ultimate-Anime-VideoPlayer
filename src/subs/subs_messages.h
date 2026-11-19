@@ -29,7 +29,7 @@
 #include "subs/subtitle_renderer.h"
 #include "subs/subtitle_track.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 struct NoTrack {};
 struct AssStream {
@@ -67,4 +67,4 @@ using SubsInbox = Inbox<RenderRequest, SelectTrack, TrackPacket, AttachFont, Com
 inline constexpr SubsInbox::Bounds kSubsInboxBounds{kMaxPendingRequests, 4, 1024, 64, 16, 4,
                                                     kMaxAtlasesInFlight};
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

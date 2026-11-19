@@ -25,7 +25,7 @@
 #include "core/log.h"
 #include "core/thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Une tâche du panneau (l'optimisation) fait avancer sa barre : une image tous les 100 ms, même en pause.
@@ -192,7 +192,7 @@ std::expected<std::unique_ptr<PlayerUi>, Refusal> PlayerUi::create(SDL_Window* w
   io.IniFilename = nullptr;
   io.LogFilename = nullptr;
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-  io.BackendPlatformName = "ajp_play_sdl3";
+  io.BackendPlatformName = "kirari_play_sdl3";
   ImGuiPlatformIO& platform = ImGui::GetPlatformIO();
   platform.Platform_SetClipboardTextFn = set_clipboard;
   platform.Platform_GetClipboardTextFn = get_clipboard;
@@ -590,4 +590,4 @@ void PlayerUi::release(PlaceboScreen& screen) {
   draw_ = nullptr;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

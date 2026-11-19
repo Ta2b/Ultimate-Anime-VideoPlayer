@@ -19,7 +19,7 @@
 #include "core/cadence.h"
 #include "gpu/kernel_ops.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le facteur que tient une paire de l'accumulateur de cadence (et le ring, RingStage::kMaxOutputs).
 inline constexpr auto kMaxRifeFactor = static_cast<std::uint32_t>(core::kMaxInstantsPerPair);
@@ -115,4 +115,4 @@ constexpr bool middle_reaches(float pair_motion, float t, float single_run) {
   return 2.0F * from_middle * pair_motion < single_run;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

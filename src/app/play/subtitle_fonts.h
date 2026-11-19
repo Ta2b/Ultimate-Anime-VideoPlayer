@@ -10,7 +10,7 @@
 
 #include "subs/subtitle_renderer.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les quatre styles de Gandhi Sans, octet pour octet (src/app/CMakeLists.txt).
 extern const std::string_view kGandhiSansRegular;
@@ -34,4 +34,4 @@ std::filesystem::path bundled_cjk_font();
 // quand le système ne l'a pas, la police CJK livrée en dernier recours.
 subs::RendererOptions with_subtitle_fonts(subs::RendererOptions options);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

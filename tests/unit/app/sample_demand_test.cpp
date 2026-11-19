@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using std::chrono::milliseconds;
@@ -72,4 +72,4 @@ TEST_CASE("Relevé à la demande : l'arrêt réveille un relevé endormi", "[app
   CHECK(eventually([&] { return left.load(); }));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

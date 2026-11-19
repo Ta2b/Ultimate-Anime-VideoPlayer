@@ -8,7 +8,7 @@
 
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les moteurs des réseaux, dans l'ordre de l'onglet, et le mot de leur bibliothèque.
@@ -29,7 +29,7 @@ constexpr std::size_t usage(core::Usage u) {
 
 std::optional<core::EngineId> engine_of_library(const std::filesystem::path& library) {
   const std::string file = core::to_utf8(library.filename());
-  if (!file.contains("ajp_backend_")) return std::nullopt;
+  if (!file.contains("kirari_backend_")) return std::nullopt;
   for (const auto& [word, id] : kLibraries) {
     if (file.contains(word)) return id;
   }
@@ -38,7 +38,7 @@ std::optional<core::EngineId> engine_of_library(const std::filesystem::path& lib
 
 bool retired_library(const std::filesystem::path& library) {
   const std::string file = core::to_utf8(library.filename());
-  return file.contains("ajp_backend_") &&
+  return file.contains("kirari_backend_") &&
          std::ranges::any_of(kRetiredLibraries, [&](std::string_view word) { return file.contains(word); });
 }
 
@@ -69,4 +69,4 @@ std::vector<std::filesystem::path> preferred_first(std::vector<std::filesystem::
   return candidates;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

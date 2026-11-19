@@ -11,7 +11,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_params.h"
 
-namespace ajp::gpu::vk::net::detail {
+namespace kirari::gpu::vk::net::detail {
 
 // TDesc de net_tensor.glsl : n, c, h, w, ordre, canaux rangés.
 void put(std::vector<std::uint32_t>& push, const Desc4& d);
@@ -70,4 +70,4 @@ Desc4 result_desc(const Desc4& y, const ir::Epilogue& e);
 // Constantes du DepthToSpace fondu : taille des blocs (0 sans), ordre CRD.
 std::array<std::uint32_t, 2> space_constants(const ir::Epilogue& e);
 
-}  // namespace ajp::gpu::vk::net::detail
+}  // namespace kirari::gpu::vk::net::detail

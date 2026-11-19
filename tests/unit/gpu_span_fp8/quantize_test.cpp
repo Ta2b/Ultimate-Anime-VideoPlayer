@@ -10,7 +10,7 @@
 
 #include "gpu/span_fp8/derive.h"  // les deux ensemble : une seule kE4m3Max (A02-09)
 
-using namespace ajp::gpu::span_fp8;
+using namespace kirari::gpu::span_fp8;
 
 TEST_CASE("E4M3 sur l'hôte : valeurs exactes, arrondi pair, saturation", "[span_fp8][quantize]") {
   CHECK(e4m3_round(0.0F) == 0.0F);

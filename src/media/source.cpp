@@ -8,7 +8,7 @@
 #include "core/thread_role.h"
 #include "media/source_loop.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 std::unexpected<Refusal> refuse_link(std::string detail) {
@@ -75,4 +75,4 @@ std::expected<std::unique_ptr<SourceThread>, Refusal> SourceThread::start(Source
   return source;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

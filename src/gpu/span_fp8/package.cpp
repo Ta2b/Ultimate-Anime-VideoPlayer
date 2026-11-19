@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 constexpr std::string_view kMagic = "AJPSPAN8";
@@ -207,4 +207,4 @@ std::vector<std::byte> serialize(const Package& package) {
   return out;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

@@ -10,10 +10,10 @@
 
 #include <SDL3/SDL.h>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 #if defined(VK_KHR_present_id2) && defined(VK_KHR_present_wait2) && defined(VK_EXT_present_timing)
-#define AJP_PRESENT_FEEDBACK 1
+#define KIRARI_PRESENT_FEEDBACK 1
 #endif
 
 namespace {
@@ -22,7 +22,7 @@ constexpr std::int64_t kMaxLeadUs = 25'000;  // avance au plus d'une date visée
 }  // namespace
 
 struct PresentFeedback::Api {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   PFN_vkSetSwapchainPresentTimingQueueSizeEXT queue_size = nullptr;
   PFN_vkGetSwapchainTimingPropertiesEXT properties = nullptr;
   PFN_vkGetSwapchainTimeDomainPropertiesEXT domains = nullptr;
@@ -33,7 +33,7 @@ struct PresentFeedback::Api {
 };
 
 struct PresentFeedback::TimingStorage {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   VkPresentTimingInfoEXT info{.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT};
   VkPresentTimingsInfoEXT infos{.sType = VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT};
   std::array<VkPastPresentationTimingEXT, kQueueSize> past{};
@@ -51,7 +51,7 @@ PresentFeedback::PresentFeedback(pl_vulkan vk, PresentLevel level, const Present
       api_(std::make_unique<Api>()),
       wayland_(std::move(wayland)),
       timing_(std::make_unique<TimingStorage>()) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   // Sans appareil (tests, C10-11), aucune fonction : present timing retombe aussitôt.
   const auto load = [&](auto& into, const char* fn) {
     if (vk_ == nullptr) return;
@@ -117,7 +117,7 @@ const pl_vulkan_present* PresentFeedback::prepare(pl_swapchain swapchain, std::i
   last_id_ = issue.id;
   // Wait et Timing seulement : la swapchain a VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR (present_flags).
   present_ = pl_vulkan_present{.present_id = caps_.present_id2 ? issue.id : 0, .timing = nullptr};
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (timing && issue.timing) {
     VkPresentTimingInfoEXT& info = timing_->info;
     info = VkPresentTimingInfoEXT{.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_INFO_EXT};
@@ -163,7 +163,7 @@ bool PresentFeedback::wants_timing(bool timing) const {
 }
 
 void PresentFeedback::submitted(VkResult result) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (result == VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT) {
     ++queue_full_;
     ledger_.queue_full();
@@ -182,7 +182,7 @@ void PresentFeedback::new_swapchain(VkSwapchainKHR swapchain, std::int64_t now_u
   properties_counter_ = UINT64_MAX;
   domains_counter_ = UINT64_MAX;
   (void)now_us;  // le calage du domaine local se fait à la première présentation (prepare)
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (level_ != PresentLevel::Timing && level_ != PresentLevel::TimingAbsolute) return;
   if (const VkResult r = api_->queue_size(vk_->device, swapchain, kQueueSize); r != VK_SUCCESS) {
     fall_back(std::format("vkSetSwapchainPresentTimingQueueSizeEXT a échoué ({})", static_cast<int>(r)));
@@ -197,7 +197,7 @@ void PresentFeedback::new_swapchain(VkSwapchainKHR swapchain, std::int64_t now_u
 }
 
 void PresentFeedback::read_properties(VkSwapchainKHR swapchain) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (api_->properties == nullptr) return;
   VkSwapchainTimingPropertiesEXT props{.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_TIMING_PROPERTIES_EXT};
   std::uint64_t counter = 0;
@@ -218,7 +218,7 @@ void PresentFeedback::read_properties(VkSwapchainKHR swapchain) {
 #endif
 }
 
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
 namespace {
 
 // L'horloge de host_now_us vue par Vulkan (A10-07). Avant, le calage demandait CLOCK_MONOTONIC partout : sous
@@ -240,7 +240,7 @@ HostDomain host_domain() {
 #endif
 
 void PresentFeedback::choose_domain(VkSwapchainKHR swapchain) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   VkSwapchainTimeDomainPropertiesEXT props{.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_TIME_DOMAIN_PROPERTIES_EXT};
   std::uint64_t counter = 0;
   if (api_->domains(vk_->device, swapchain, &props, &counter) != VK_SUCCESS || props.timeDomainCount == 0)
@@ -280,7 +280,7 @@ void PresentFeedback::choose_domain(VkSwapchainKHR swapchain) {
 }
 
 void PresentFeedback::calibrate(VkSwapchainKHR swapchain, std::int64_t now_us) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (!local_domain_ || api_->calibrated == nullptr) return;
   const HostDomain host = host_domain();
   const VkSwapchainCalibratedTimestampInfoEXT local{
@@ -304,7 +304,7 @@ void PresentFeedback::calibrate(VkSwapchainKHR swapchain, std::int64_t now_us) {
 #endif
 }
 
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
 // Une date relue en heure hôte (µs). Le domaine de l'hôte n'a pas d'écart : CLOCK_MONOTONIC est en ns ; le
 // compteur de Windows en ns ou en tics, selon le pilote (host_stamp_in_ticks, appris une fois).
 std::int64_t PresentFeedback::host_us_of(VkTimeDomainKHR domain, std::uint64_t time, std::int64_t now_us) {
@@ -331,7 +331,7 @@ std::uint64_t PresentFeedback::target_time(std::int64_t target_us) const {
 #endif
 
 void PresentFeedback::read_back(VkSwapchainKHR swapchain, std::int64_t now_us) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (ledger_.in_flight() == 0) return;
   TimingStorage& t = *timing_;
   for (std::size_t i = 0; i < kQueueSize; ++i) {
@@ -366,7 +366,7 @@ void PresentFeedback::read_back(VkSwapchainKHR swapchain, std::int64_t now_us) {
 }
 
 void PresentFeedback::poll_wait(VkSwapchainKHR swapchain, std::int64_t now_us) {
-#ifdef AJP_PRESENT_FEEDBACK
+#ifdef KIRARI_PRESENT_FEEDBACK
   if (api_->wait == nullptr || !caps_.present_wait2) return;
   // Sondé seulement (délai 0) : l'attente bloquante tourne à vide chez certains pilotes. La date n'est que
   // celle du sondage : elle confirme l'affichage sans nourrir la grille des vblanks.
@@ -441,4 +441,4 @@ void PresentFeedback::accept(std::uint64_t id, std::int64_t visible_us, bool dat
     read_.vsync_k = std::llround(grid->index_of(static_cast<double>(sample->visible_us)));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

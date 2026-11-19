@@ -10,7 +10,7 @@
 #include "core/text.h"
 #include "core/toml_fields.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 struct Version {
@@ -127,4 +127,4 @@ std::optional<int> compare_versions(std::string_view a, std::string_view b) {
   return left->pre < right->pre ? -1 : 1;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

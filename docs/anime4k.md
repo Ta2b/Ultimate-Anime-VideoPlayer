@@ -11,7 +11,7 @@ construction, sur toute carte qui affiche déjà la vidéo. C'est le plancher de
 |---|---|
 | Les shaders, copiés tels quels de l'amont (commit `7684e95`), avec leur licence | `third_party/anime4k/` (`PROVENANCE.md`, vérifiés par `tools/deps/anime4k-copy.sh --check`) |
 | Leur chargement, le mode, les jeux de passes | `src/render/anime4k.h` |
-| Les deux entrées de Vidéo > Modèle, leur nom dans `play.toml` | `src/app/play/anime4k_choice.h` |
+| Le niveau « Très bas » de Vidéo > Agrandissement (Anime4K Fast ; HQ par `play.toml`), leur nom dans `play.toml` | `src/app/play/anime4k_choice.h` |
 | La chaîne : Anime4K à la place de SPAN | `prepare_chain_once` (`chain_setup.cpp`) |
 | L'écran : les shaders devant la netteté et le grade | `PlaceboScreen::set_anime4k`, `compose` (`placebo_screen.cpp`) |
 | L'export : le même ×2 au rendu de chaque image | `run_export` (`export_run.cpp`), `FrameExportSetup::hooks` |
@@ -51,8 +51,8 @@ Sans moteur de réseau (ni TensorRT ni Vulkan cochés à l'accueil), Anime4K gar
 
 ```sh
 python3 -I tools/bench/petits_gpu.py --video EPISODE.mkv --sortie banc-igpu \
-  --span ~/.local/share/ajp/models/onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx \
-  --artcnn ~/.local/share/ajp/models/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx
+  --span ~/.local/share/kirari/models/onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx \
+  --artcnn ~/.local/share/kirari/models/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx
 ```
 
 - **Temps** : chaque variante (Économe sans agrandissement, Anime4K Fast et HQ, SPAN Performance, ArtCNN, et

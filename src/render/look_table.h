@@ -23,7 +23,7 @@
 #include "core/types.h"
 #include "render/cube_lut.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 // Les nœuds par axe : 4 par maille des LUT de 33 points, dont la grille tombe ainsi sur des nœuds (la
 // première LUT de la pile y est exacte). 129³ × 16 octets : 34 Mo de mémoire vidéo.
@@ -67,4 +67,4 @@ class LookTable {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace ajp::render
+}  // namespace kirari::render

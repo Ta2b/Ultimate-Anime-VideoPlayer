@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 struct SoftSplatParams {
   const void* source = nullptr;  // 1 × channels × height × width, FP16
@@ -112,4 +112,4 @@ struct StillParams {
 
 cudaError_t launch_gmfss_still(const StillParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

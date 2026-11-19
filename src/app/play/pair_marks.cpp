@@ -6,7 +6,7 @@
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/detect.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 void PairMarks::add(const PairMark& mark) {
   const std::scoped_lock lock(mutex_);
@@ -53,4 +53,4 @@ PairTint pair_tint(PairVerdict verdict) {
   return {.wash = {0.15F, 0.55F, 1.0F, 0.22F}, .frame = {0.15F, 0.55F, 1.0F, 0.85F}};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

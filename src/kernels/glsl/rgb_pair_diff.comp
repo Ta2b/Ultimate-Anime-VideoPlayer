@@ -6,17 +6,17 @@
 // Même calcul que rife_kernels.cu (pair_diff).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 
-const uint AJP_GROUP_X = 32u;
-const uint AJP_GROUP_Y = 8u;
-const uint AJP_GROUP_SIZE = AJP_GROUP_X * AJP_GROUP_Y;
-const uint AJP_BLOCK = uint(AJP_HELD_BLOCK);
+const uint KIRARI_GROUP_X = 32u;
+const uint KIRARI_GROUP_Y = 8u;
+const uint KIRARI_GROUP_SIZE = KIRARI_GROUP_X * KIRARI_GROUP_Y;
+const uint KIRARI_BLOCK = uint(KIRARI_HELD_BLOCK);
 
-layout(local_size_x = AJP_GROUP_X, local_size_y = AJP_GROUP_Y) in;
+layout(local_size_x = KIRARI_GROUP_X, local_size_y = KIRARI_GROUP_Y) in;
 
-layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
-layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
+layout(std430, binding = 0) readonly buffer ImageA { KIRARI_TENSOR v[]; } a;
+layout(std430, binding = 1) readonly buffer ImageB { KIRARI_TENSOR v[]; } b;
 layout(std430, binding = 2) writeonly buffer Sums { float v[]; } sums;
 layout(std430, binding = 3) buffer Worst { uint v[]; } worst;
 
@@ -26,25 +26,25 @@ layout(push_constant) uniform Push {
   float levels;  // pas de luma 8 bits entre noir et blanc : 219 limitée, 255 pleine
 } pc;
 
-shared float partial[AJP_GROUP_SIZE];
+shared float partial[KIRARI_GROUP_SIZE];
 
 float luma_a(uint plane, uint i) {
-  return AJP_LUMA_709_R * float(a.v[i]) + AJP_LUMA_709_G * float(a.v[plane + i]) + AJP_LUMA_709_B * float(a.v[2u * plane + i]);
+  return KIRARI_LUMA_709_R * float(a.v[i]) + KIRARI_LUMA_709_G * float(a.v[plane + i]) + KIRARI_LUMA_709_B * float(a.v[2u * plane + i]);
 }
 
 float luma_b(uint plane, uint i) {
-  return AJP_LUMA_709_R * float(b.v[i]) + AJP_LUMA_709_G * float(b.v[plane + i]) + AJP_LUMA_709_B * float(b.v[2u * plane + i]);
+  return KIRARI_LUMA_709_R * float(b.v[i]) + KIRARI_LUMA_709_G * float(b.v[plane + i]) + KIRARI_LUMA_709_B * float(b.v[2u * plane + i]);
 }
 
 void main() {
-  uint x0 = gl_WorkGroupID.x * AJP_BLOCK;
-  uint y0 = gl_WorkGroupID.y * AJP_BLOCK;
-  uint x1 = min(x0 + AJP_BLOCK, pc.width);
-  uint y1 = min(y0 + AJP_BLOCK, pc.height);
+  uint x0 = gl_WorkGroupID.x * KIRARI_BLOCK;
+  uint y0 = gl_WorkGroupID.y * KIRARI_BLOCK;
+  uint x1 = min(x0 + KIRARI_BLOCK, pc.width);
+  uint y1 = min(y0 + KIRARI_BLOCK, pc.height);
   uint plane = pc.width * pc.height;
   float sum = 0.0;
-  for (uint y = y0 + gl_LocalInvocationID.y; y < y1; y += AJP_GROUP_Y) {
-    for (uint x = x0 + gl_LocalInvocationID.x; x < x1; x += AJP_GROUP_X) {
+  for (uint y = y0 + gl_LocalInvocationID.y; y < y1; y += KIRARI_GROUP_Y) {
+    for (uint x = x0 + gl_LocalInvocationID.x; x < x1; x += KIRARI_GROUP_X) {
       uint i = y * pc.width + x;
       sum += abs(luma_a(plane, i) - luma_b(plane, i));
     }
@@ -52,7 +52,7 @@ void main() {
   uint tid = gl_LocalInvocationIndex;
   partial[tid] = sum;
   barrier();
-  for (uint n = AJP_GROUP_SIZE / 2u; n > 0u; n >>= 1u) {
+  for (uint n = KIRARI_GROUP_SIZE / 2u; n > 0u; n >>= 1u) {
     if (tid < n) partial[tid] += partial[tid + n];
     barrier();
   }

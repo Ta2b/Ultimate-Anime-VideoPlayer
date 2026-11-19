@@ -8,7 +8,7 @@
 
 #include <spdlog/logger.h>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Écritures des noyaux et des transferts, avant les lectures et écritures de la commande suivante.
@@ -317,4 +317,4 @@ std::expected<std::unique_ptr<Recording>, Refusal> Recorder::finish() {
   return std::move(recording_);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

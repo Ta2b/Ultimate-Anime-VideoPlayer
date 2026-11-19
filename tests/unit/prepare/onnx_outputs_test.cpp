@@ -10,7 +10,7 @@
 
 #include "prepare/onnx_scan.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -112,4 +112,4 @@ TEST_CASE("Un tenseur que personne ne produit est refusé par son nom", "[prepar
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

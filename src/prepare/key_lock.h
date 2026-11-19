@@ -16,7 +16,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 enum class LockWait : std::uint8_t {
   Block,    // attend, par tranches de 20 ms, jusqu'au verrou, à l'arrêt ou au délai maximum
@@ -47,4 +47,4 @@ class KeyLock {
   std::intptr_t handle_;  // descripteur POSIX, ou HANDLE Windows
 };
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

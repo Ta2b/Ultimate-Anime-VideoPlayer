@@ -11,7 +11,7 @@
 #include "subs/subtitle_frame.h"
 #include "subs/subtitle_renderer.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 class SubsThread {
  public:
@@ -34,4 +34,4 @@ class SubsThread {
   std::jthread thread_;
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

@@ -12,7 +12,7 @@
 
 #include "export/encoder_choice.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 enum class Container : std::uint8_t { Matroska, Mp4, Mov };
 
@@ -39,4 +39,4 @@ struct CopyChoice {
   friend bool operator==(const CopyChoice&, const CopyChoice&) = default;
 };
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

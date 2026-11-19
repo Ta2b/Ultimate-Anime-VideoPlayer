@@ -11,7 +11,7 @@
 #include "app/play/settings.h"
 #include "render/cube_lut.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -35,7 +35,7 @@ TEST_CASE("le look est la pile HDR anime, une LUT par emplacement", "[app][look]
       {std::string(kAnimeLookContrast), 1.0},  {std::string(kAnimeLookContrast), 1.0},
       {std::string(kAnimeLookContrast), 1.0}};
   CHECK(applied(look_slots(s)) == reference);
-  CHECK(ajp::render::look_is_pq(look_slots(s).front().key, ""));
+  CHECK(kirari::render::look_is_pq(look_slots(s).front().key, ""));
   // Toujours 19 emplacements, dans les 20 du grade : aux curseurs à 100, tous servent ; au minimum, la base
   // et « skin fix » seuls.
   CHECK(look_slots(s).size() == 19);
@@ -68,11 +68,11 @@ TEST_CASE("look HDR anime : un curseur ne change que des intensités, jamais les
 }
 
 TEST_CASE("look HDR anime : chaque fichier de la pile se lit", "[app][look]") {
-  const std::filesystem::path luts = std::string(AJP_APP_SOURCE_DIR) + "/../../data/luts";
+  const std::filesystem::path luts = std::string(KIRARI_APP_SOURCE_DIR) + "/../../data/luts";
   for (const LookLayer& layer : look_slots(PlaySettings{})) {
     const auto lut = load_look(layer.key, luts);
     INFO(layer.key);
     REQUIRE(lut);
-    CHECK(lut->size >= ajp::render::kLutMinSize);
+    CHECK(lut->size >= kirari::render::kLutMinSize);
   }
 }

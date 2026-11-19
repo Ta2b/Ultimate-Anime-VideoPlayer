@@ -9,7 +9,7 @@
 #include "kernels/ref/check.h"
 #include "kernels/ref/transfer.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 namespace fs = frame_stats;
@@ -202,4 +202,4 @@ FrameStats frame_stats_of(const FrameCounts& c) {
   return s;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

@@ -29,7 +29,7 @@
 #include "render/grade.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce que l'écran applique à sa dernière présentation, publié pour le fil de l'agrandissement.
 struct SourceGradeState {
@@ -75,4 +75,4 @@ class SourceGrader {
   virtual std::expected<bool, Refusal> grade(gpu::KernelOps& ops, const gpu::Tensor& rgb, bool debanded) = 0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

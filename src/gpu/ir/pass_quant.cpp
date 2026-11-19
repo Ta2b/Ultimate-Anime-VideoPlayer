@@ -8,7 +8,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Échelle constante, scalaire et positive du FakeQuantE4M3.
@@ -82,4 +82,4 @@ int fuse_fp8_quant(Graph& graph) {
   return fused;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

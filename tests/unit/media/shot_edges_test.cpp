@@ -24,7 +24,7 @@
 #include "media/shot_probe.h"
 #include "media/shot_timeline.h"
 
-using namespace ajp::media;
+using namespace kirari::media;
 using Catch::Approx;
 
 namespace {
@@ -104,7 +104,7 @@ TEST_CASE("plans : un flux vidéo qui commence tard ne laisse pas de trou en tê
 }
 
 TEST_CASE("plans : un cache tronqué au compte énorme est refusé (B42-06)", "[media][shots]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-edges";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-shot-cache-edges";
   std::filesystem::remove_all(dir);
   const std::string key = "cccccccccccccccc";
   std::vector<Shot> shots(1);
@@ -128,7 +128,7 @@ TEST_CASE("plans : un cache tronqué au compte énorme est refusé (B42-06)", "[
 
 TEST_CASE("plans : les restes d'une écriture coupée du cache sont retirés (B33-07, B36-04)",
           "[media][shots]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-orphans";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-shot-cache-orphans";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const auto touch = [&](const std::string& name, std::chrono::hours age) {
@@ -157,13 +157,13 @@ TEST_CASE("plans : la scène vue à l'ingestion suit une dérive lente de la lum
   // Un dégradé horizontal autour de v : un histogramme étalé, comme une vraie image (un aplat uniforme
   // changerait de case à chaque pas et ferait une coupe).
   const auto gray = [](float v) {
-    ajp::kernels::RgbImage image(64, 36);
+    kirari::kernels::RgbImage image(64, 36);
     for (int y = 0; y < 36; ++y)
       for (int x = 0; x < 64; ++x)
         for (auto& plane : image.planes) plane.at(x, y) = v * (0.5F + (static_cast<float>(x) / 64.0F));
-    const auto counts = ajp::kernels::ref::frame_counts(image, ajp::kernels::FrameTransfer::Sdr);
+    const auto counts = kirari::kernels::ref::frame_counts(image, kirari::kernels::FrameTransfer::Sdr);
     REQUIRE(counts);
-    return ajp::kernels::ref::frame_stats_of(*counts);
+    return kirari::kernels::ref::frame_stats_of(*counts);
   };
   LiveScenes live;
   std::int64_t index = 0;
@@ -234,7 +234,7 @@ TEST_CASE("plans : chaque plan garde la peau de ses visages, et seulement la sie
 
 TEST_CASE("C36-02 : deux variantes du même épisode (deux écrans) gardent chacune leur analyse",
           "[media][shots]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-variants";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-shot-cache-variants";
   std::filesystem::remove_all(dir);
   const std::string key = "abababababababab";
   std::vector<Shot> hdr(1);

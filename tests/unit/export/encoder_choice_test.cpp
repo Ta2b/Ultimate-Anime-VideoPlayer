@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 namespace {
 
 std::vector<std::string> names(const std::vector<EncoderCandidate>& candidates) {
@@ -166,4 +166,4 @@ TEST_CASE("Encodeur : libellés", "[export]") {
   CHECK(label(Quality::Standard) == "Standard");
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

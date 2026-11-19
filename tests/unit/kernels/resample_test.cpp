@@ -11,7 +11,7 @@
 
 #include "kernels/spec.h"
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
 

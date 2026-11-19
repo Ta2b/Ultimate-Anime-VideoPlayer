@@ -12,7 +12,7 @@
 #include "app/play/settings.h"
 #include "core/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Dans l'ordre de l'assistant (P3.18) : les choix légers d'abord, le lourd (moteurs) en dernier, puis Prêt,
 // qui pose le préréglage Auto estimé pour la carte (gpu_tier.h). La valeur est celle de first_run_step (1 à
@@ -86,4 +86,4 @@ PlaySettings wizard_play_settings(const Wizard& wizard, PlaySettings settings);
 // P3.3 : l'assistant repris en route retrouve les choix enregistrés à chaque écran (mises à jour, langues).
 void resume_choices(Wizard& wizard, const PlaySettings& saved);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

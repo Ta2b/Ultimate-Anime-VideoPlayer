@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 enum class Codec : std::uint8_t {
   Hevc,      // HEVC Main 10 : le défaut, lu partout
@@ -76,4 +76,4 @@ std::vector<EncoderCandidate> encoder_candidates(Codec codec, Quality quality, G
 std::string_view label(Codec codec);      // « HEVC 10 bits »
 std::string_view label(Quality quality);  // « Très haute »
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

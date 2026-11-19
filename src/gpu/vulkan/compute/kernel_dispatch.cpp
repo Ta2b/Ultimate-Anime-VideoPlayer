@@ -3,7 +3,7 @@
 #include <format>
 #include <string>
 
-namespace ajp::gpu::vk::detail {
+namespace kirari::gpu::vk::detail {
 namespace {
 
 // Les numéros de yuv.glsl suivent les énumérations de kernels/spec/color.h.
@@ -85,4 +85,4 @@ Done run_planes(PipelineCache& pipelines, Recorder& recorder, std::string_view s
   return recorder.dispatch(**pipeline, buffers, sampled, push, groups, DispatchOrder::AfterPrevious);
 }
 
-}  // namespace ajp::gpu::vk::detail
+}  // namespace kirari::gpu::vk::detail

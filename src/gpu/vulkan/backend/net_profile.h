@@ -17,7 +17,7 @@
 #include "gpu/ir/ir.h"
 #include "gpu/vulkan/backend/net_program.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Une exécution mesurée : durée de chaque dispatch (ms, dans l'ordre du programme) et durée de la
 // première estampille à la dernière.
@@ -59,4 +59,4 @@ struct ShaderCount {
 // Par nombre de dispatchs décroissant.
 std::vector<ShaderCount> static_count(const ir::Graph& graph, const Program& program);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

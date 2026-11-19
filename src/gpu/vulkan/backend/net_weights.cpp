@@ -6,7 +6,7 @@
 
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 // Valeurs rangées en float ou en binary16 (au plus proche, égalités au pair).
@@ -185,4 +185,4 @@ std::vector<std::byte> fp8_bias_and_scales(const ir::Tensor* bias, const std::ve
   return out;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

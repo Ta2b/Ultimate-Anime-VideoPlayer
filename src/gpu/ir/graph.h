@@ -14,7 +14,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 // Bornes de toute forme connue : au-delà, l'inférence refuse.
 inline constexpr std::int64_t kMaxDim = std::int64_t{1} << 24;
@@ -86,4 +86,4 @@ void compact(Graph& graph);
 // cohérence des constantes et que toute entrée figure dans l'interface.
 std::expected<void, Refusal> validate(const Graph& graph);
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

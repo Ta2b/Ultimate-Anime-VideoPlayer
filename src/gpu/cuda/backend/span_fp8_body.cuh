@@ -17,7 +17,7 @@
 #include "gpu/span_fp8/acc16_policy.h"
 #include "gpu/span_fp8/quantize.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 namespace sk = span_fp8_kernels;
@@ -444,4 +444,4 @@ bool Body<Ch, BlockAlg, Fp16>::launch_tail(cudaStream_t stream, void* output, co
 }
 
 }  // namespace
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

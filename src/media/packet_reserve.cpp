@@ -3,7 +3,7 @@
 #include <format>
 #include <utility>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Une copie : un refus ne consomme rien, et l'époque se pose à la livraison.
@@ -52,4 +52,4 @@ void PacketReserve::clear() {
   bytes_ = 0;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

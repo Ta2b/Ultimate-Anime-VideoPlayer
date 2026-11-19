@@ -12,13 +12,13 @@
 #include "prepare/trtexec_progress.h"
 #include "support.h"
 
-using namespace ajp::prepare;
-using ajp::RefusalCode;
+using namespace kirari::prepare;
+using kirari::RefusalCode;
 
 namespace {
 
-ajp::gpu::ShapeSet fixed(std::int64_t channels, std::int64_t h, std::int64_t w) {
-  const ajp::gpu::Shape shape{{1, channels, h, w}};
+kirari::gpu::ShapeSet fixed(std::int64_t channels, std::int64_t h, std::int64_t w) {
+  const kirari::gpu::Shape shape{{1, channels, h, w}};
   return {.min = shape, .opt = shape, .max = shape};
 }
 
@@ -41,7 +41,7 @@ TEST_CASE("engine_settings : chaînes du fork pour SPAN et RIFE", "[prepare][trt
 }
 
 TEST_CASE("engine_settings : les entrées jumelles suivent le profil de la première", "[prepare][trtexec]") {
-  const ajp::gpu::ShapeSet loose{
+  const kirari::gpu::ShapeSet loose{
       .min = {{1, 3, 1080, 1912}}, .opt = {{1, 3, 1080, 1920}}, .max = {{1, 3, 1080, 1920}}};
   const std::vector<std::string> twins{"input_1", "input_2"};
   CHECK(engine_settings(Recipe::Fp32Islands, "input_0", loose, twins) ==
@@ -53,14 +53,14 @@ TEST_CASE("engine_settings : les entrées jumelles suivent le profil de la premi
 }
 
 TEST_CASE("engine_settings : profil dynamique et ONNX statique", "[prepare][trtexec]") {
-  const ajp::gpu::ShapeSet dynamic{
+  const kirari::gpu::ShapeSet dynamic{
       .min = {{1, 3, 360, 640}}, .opt = {{1, 3, 720, 1280}}, .max = {{1, 3, 1080, 1920}}};
   CHECK(engine_settings(Recipe::Upscaler, "input", dynamic) ==
         "--builderOptimizationLevel=5 --skipInference --minShapes=input:1x3x360x640 "
         "--optShapes=input:1x3x720x1280 --maxShapes=input:1x3x1080x1920");
   // Préréglage « Dynamic » du Manager (MainWindowViewModel.cs:1606-1610) appliqué
   // au réglage par défaut, octet pour octet : la clé du moteur du fork est reprise.
-  const ajp::gpu::ShapeSet manager_dynamic{
+  const kirari::gpu::ShapeSet manager_dynamic{
       .min = {{1, 3, 8, 8}}, .opt = {{1, 3, 1080, 1920}}, .max = {{1, 3, 1080, 1920}}};
   CHECK(engine_settings(Recipe::Upscaler, "input", manager_dynamic) ==
         "--builderOptimizationLevel=5 --skipInference --minShapes=input:1x3x8x8 "
@@ -153,7 +153,7 @@ TEST_CASE("layer_counts : couches et reformatages du rapport de trtexec", "[prep
 TEST_CASE("check_shapes : dimensions positives et ordonnées", "[prepare][trtexec]") {
   CHECK(check_shapes(fixed(3, 720, 1280)));
   CHECK(test::refusal(check_shapes(fixed(3, 0, 1280))) == RefusalCode::FieldOutOfRange);
-  const ajp::gpu::ShapeSet reversed{
+  const kirari::gpu::ShapeSet reversed{
       .min = {{1, 3, 1080, 1920}}, .opt = {{1, 3, 720, 1280}}, .max = {{1, 3, 1080, 1920}}};
   CHECK(test::refusal(check_shapes(reversed)) == RefusalCode::FieldOutOfRange);
 }
@@ -210,8 +210,8 @@ TEST_CASE("trtexec_arguments : l'ordinal CUDA de la carte du rendu (C37-01)", "[
 // (trtexec_command.h), sinon les moteurs déjà en cache, construits avec l'ancienne ligne, seraient repris
 // tels quels.
 TEST_CASE("La ligne de commande de trtexec est figée par la version de la clé", "[prepare][trtexec]") {
-  const ajp::gpu::Shape shape{{1, 3, 1080, 1920}};
-  const ajp::gpu::ShapeSet shapes{.min = shape, .opt = shape, .max = shape};
+  const kirari::gpu::Shape shape{{1, 3, 1080, 1920}};
+  const kirari::gpu::ShapeSet shapes{.min = shape, .opt = shape, .max = shape};
   std::string all;
   for (const Recipe recipe : {Recipe::Upscaler, Recipe::Fp32Islands, Recipe::Fp32IslandsTuned}) {
     const auto settings = sanitize_trt11(engine_settings(recipe, "input", shapes));
@@ -230,7 +230,7 @@ TEST_CASE("La ligne de commande de trtexec est figée par la version de la clé"
 TEST_CASE("recipe_for : un petit graphe à GridSample au niveau 5, sauf ModelSpec::tuned faux (GMFSS)",
           "[prepare][trtexec]") {
   const OnnxSummary small{.grid_samples = 4, .nodes = 900};
-  ajp::gpu::ModelSpec model{.id = "fusion", .precision = ajp::gpu::TensorType::F16};
+  kirari::gpu::ModelSpec model{.id = "fusion", .precision = kirari::gpu::TensorType::F16};
   CHECK(recipe_for(model, small) == Recipe::Fp32IslandsTuned);
   model.tuned = false;
   CHECK(recipe_for(model, small) == Recipe::Fp32Islands);

@@ -29,7 +29,7 @@
 #include "gpu/vulkan/compute/recording.h"
 #include "kernels/image.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 std::string describe(const Refusal& refusal);
 
@@ -121,4 +121,4 @@ float max_abs_diff(const kernels::PlaneF& a, const kernels::PlaneF& b);
 float max_abs_diff(const kernels::RgbImage& a, const kernels::RgbImage& b);
 int max_code_diff(const kernels::PlaneU16& a, const kernels::PlaneU16& b);
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

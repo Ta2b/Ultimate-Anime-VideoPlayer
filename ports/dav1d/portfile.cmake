@@ -6,7 +6,7 @@ vcpkg_from_github(
     HEAD_REF master
 )
 
-# Overlay ajp : MSVC 19.52 (Visual Studio 18, image windows-2025) évalue
+# Overlay Kirari : MSVC 19.52 (Visual Studio 18, image windows-2025) évalue
 # __has_include_next même derrière « defined(__clang__) && » et s'arrête sur C7780. Le test
 # est découpé en deux #if pour que cl.exe ne le voie jamais. À retirer quand l'amont l'aura corrigé.
 vcpkg_replace_string("${SOURCE_PATH}/include/compat/msvc/stdatomic.h"

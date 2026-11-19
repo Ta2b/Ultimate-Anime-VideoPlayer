@@ -16,7 +16,7 @@
 #include "core/types.h"
 #include "media/frame_data.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 using CudaUuid = std::array<std::uint8_t, 16>;
 
@@ -109,4 +109,4 @@ class CudaDriver : public std::enable_shared_from_this<CudaDriver> {
   std::unique_ptr<Api> api_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

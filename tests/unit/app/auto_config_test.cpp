@@ -6,8 +6,8 @@
 
 #include "app/play/options.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -253,40 +253,40 @@ TEST_CASE("l'interpolation est en Auto par défaut et après le benchmark", "[au
 }
 
 TEST_CASE("un réglage de chaîne fait à la main se voit, pas un réglage de lecture", "[auto_config]") {
-  const ajp::app::play::PlaySettings base;
-  ajp::app::play::PlaySettings moved = base;
-  CHECK_FALSE(ajp::app::play::preset_chain_differs(base, moved));
+  const kirari::app::play::PlaySettings base;
+  kirari::app::play::PlaySettings moved = base;
+  CHECK_FALSE(kirari::app::play::preset_chain_differs(base, moved));
   moved.volume = 0.5F;
-  CHECK_FALSE(ajp::app::play::preset_chain_differs(base, moved));
+  CHECK_FALSE(kirari::app::play::preset_chain_differs(base, moved));
   moved.work_height = base.work_height == 540 ? 720 : 540;
-  CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  CHECK(kirari::app::play::preset_chain_differs(base, moved));
   moved = base;
   moved.keep_poses = !base.keep_poses;
-  CHECK(ajp::app::play::preset_chain_differs(base, moved));
+  CHECK(kirari::app::play::preset_chain_differs(base, moved));
   // Les réglages avancés de la chaîne comptent aussi : l'infobulle promet Personnalisé (C23-06).
   for (const auto change :
-       {+[](ajp::app::play::PlaySettings& s) { s.rife_fused = !s.rife_fused; },
-        +[](ajp::app::play::PlaySettings& s) { s.drba_fused = !s.drba_fused; },
-        +[](ajp::app::play::PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; },
-        +[](ajp::app::play::PlaySettings& s) { s.cubic_warp = !s.cubic_warp; },
-        +[](ajp::app::play::PlaySettings& s) { s.pan_lock = !s.pan_lock; },
-        +[](ajp::app::play::PlaySettings& s) { s.pair_scale = !s.pair_scale; },
-        +[](ajp::app::play::PlaySettings& s) { s.strong_middle = !s.strong_middle; },
-        +[](ajp::app::play::PlaySettings& s) { s.auto_cap = s.auto_cap == 60 ? 120 : 60; }}) {
+       {+[](kirari::app::play::PlaySettings& s) { s.rife_fused = !s.rife_fused; },
+        +[](kirari::app::play::PlaySettings& s) { s.drba_fused = !s.drba_fused; },
+        +[](kirari::app::play::PlaySettings& s) { s.smooth_drawings = !s.smooth_drawings; },
+        +[](kirari::app::play::PlaySettings& s) { s.cubic_warp = !s.cubic_warp; },
+        +[](kirari::app::play::PlaySettings& s) { s.pan_lock = !s.pan_lock; },
+        +[](kirari::app::play::PlaySettings& s) { s.pair_scale = !s.pair_scale; },
+        +[](kirari::app::play::PlaySettings& s) { s.strong_middle = !s.strong_middle; },
+        +[](kirari::app::play::PlaySettings& s) { s.auto_cap = s.auto_cap == 60 ? 120 : 60; }}) {
     moved = base;
     change(moved);
-    CHECK(ajp::app::play::preset_chain_differs(base, moved));
+    CHECK(kirari::app::play::preset_chain_differs(base, moved));
   }
   // Le mode auto Rapide n'appartient à la chaîne que sous l'Auto calibré, qui l'écrit (A07-06).
   moved = base;
   moved.auto_free = !base.auto_free;
-  CHECK_FALSE(ajp::app::play::preset_chain_differs(base, moved));
-  CHECK(ajp::app::play::preset_chain_differs(base, moved, true));
+  CHECK_FALSE(kirari::app::play::preset_chain_differs(base, moved));
+  CHECK(kirari::app::play::preset_chain_differs(base, moved, true));
 }
 
 TEST_CASE("auto : ce que l'exploration a trouvé relève la chaîne du niveau, seulement en Auto",
           "[auto_config][exploration]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   const core::SourceInfo source{.width = 1920, .height = 1080, .fps = 24.0};
   Machine machine{.tier = Tier::Normal, .display_height = 1080, .display_hz = 165.0};
   PlaySettings settings;

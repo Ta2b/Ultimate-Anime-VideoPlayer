@@ -14,7 +14,7 @@
 
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 using ir::onnx::Attribute;
@@ -233,9 +233,9 @@ TEST_CASE("le Concat de conv_cat doit avoir l'ordre des tranches des noyaux (3.2
 
 TEST_CASE("structure du SPAN b5f48, lue sur son ONNX", "[.span_b5f48][span_fp8][onnx]") {
   // Étape 3.2a : ce que le b5f48 change (canaux, blocs, att_conv, entrées du Concat), imprimé pour le plan.
-  const std::string path = AJP_SPAN_B5F48_MODEL;
+  const std::string path = KIRARI_SPAN_B5F48_MODEL;
   if (path.empty() || !std::filesystem::exists(path))
-    SKIP("-DAJP_SPAN_B5F48_MODEL=… (SPAN b5f48 d'AnimeJaNai)");
+    SKIP("-DKIRARI_SPAN_B5F48_MODEL=… (SPAN b5f48 d'AnimeJaNai)");
   const std::vector<std::byte> bytes = read_file(path.c_str());
   const auto model = ir::onnx::read_onnx(bytes);
   REQUIRE(model);
@@ -260,10 +260,11 @@ TEST_CASE("structure du SPAN b5f48, lue sur son ONNX", "[.span_b5f48][span_fp8][
 }
 
 TEST_CASE("les poids lus ici sont ceux du paquet de derive_span_fp8.py", "[.span_compat][span_fp8][onnx]") {
-  const std::string model_path = AJP_SPAN_FP8_MODEL;
-  const std::string package_path = AJP_SPAN_FP8_PYTHON_PACKAGE;
+  const std::string model_path = KIRARI_SPAN_FP8_MODEL;
+  const std::string package_path = KIRARI_SPAN_FP8_PYTHON_PACKAGE;
   if (model_path.empty() || package_path.empty())
-    SKIP("-DAJP_SPAN_FP8_MODEL=… -DAJP_SPAN_FP8_PYTHON_PACKAGE=… (paquet écrit par derive_span_fp8.py)");
+    SKIP(
+        "-DKIRARI_SPAN_FP8_MODEL=… -DKIRARI_SPAN_FP8_PYTHON_PACKAGE=… (paquet écrit par derive_span_fp8.py)");
   const std::vector<std::byte> theirs = read_file(package_path.c_str());
   const auto parsed = parse(theirs);
   REQUIRE(parsed);  // un paquet de l'outil Python se lit avec le lecteur C++
@@ -281,4 +282,4 @@ TEST_CASE("les poids lus ici sont ceux du paquet de derive_span_fp8.py", "[.span
   CHECK(std::memcmp(rewritten.data(), theirs.data(), theirs.size()) == 0);  // en-tête, CRC et charge compris
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

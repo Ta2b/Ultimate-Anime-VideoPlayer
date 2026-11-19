@@ -11,7 +11,7 @@
 #include "core/thread_role.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 namespace {
 
 constexpr std::size_t kMaxPacketBound = 4096;
@@ -97,4 +97,4 @@ void AudioThread::release_packet() {
   if (in_flight_.fetch_sub(1) >= max_packets_ && credit_) credit_(Credit{});
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

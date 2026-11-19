@@ -17,7 +17,7 @@
 #include "app/play/text_fit.h"
 #include "app/play/tracks.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::note;
 using panel::section;
@@ -126,4 +126,4 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices) {
   return held;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

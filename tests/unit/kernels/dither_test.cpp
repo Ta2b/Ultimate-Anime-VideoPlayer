@@ -12,7 +12,7 @@
 #include "kernels/ref/color.h"
 #include "kernels/spec.h"
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 
 namespace {
 

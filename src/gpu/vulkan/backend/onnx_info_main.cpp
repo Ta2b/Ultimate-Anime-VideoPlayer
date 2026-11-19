@@ -1,4 +1,4 @@
-// ajp_onnx_info : charge un modèle ONNX dans l'IR et imprime opérateurs,
+// kirari_onnx_info : charge un modèle ONNX dans l'IR et imprime opérateurs,
 // formes et mémoire, avant et après les passes. --run exécute l'interpréteur
 // sur une entrée déterministe (et --dump écrit la première sortie en float32 brut),
 // pour comparer à une autre implémentation. --vulkan décrit le graphe que le moteur Vulkan abaisse : le même
@@ -28,10 +28,10 @@
 
 namespace {
 
-using namespace ajp::gpu::ir;
+using namespace kirari::gpu::ir;
 
 constexpr std::string_view kUsage =
-    "usage : ajp_onnx_info <modèle.onnx> [--input nom=1x3x720x1280]... [--nodes] [--no-passes]\n"
+    "usage : kirari_onnx_info <modèle.onnx> [--input nom=1x3x720x1280]... [--nodes] [--no-passes]\n"
     "                      [--vulkan] [--matrices] [--fp32] [--run] [--dump sortie.f32]\n"
     "  --vulkan   : le graphe du moteur Vulkan (prepare_graph), en float16 là où le modèle l'est\n"
     "  --matrices : avec --vulkan, comme un appareil à matrices coopératives (ConvTranspose réécrites)\n"
@@ -104,13 +104,13 @@ Value deterministic_input(const Tensor& tensor) {
   for (std::size_t k = 0; k < value.f.size(); ++k) {
     double whole = 0.0;
     const auto f = static_cast<float>(std::modf(static_cast<double>(k) * 0.6180339887498949, &whole));
-    value.f[k] = tensor.type == DataType::F16 ? ajp::kernels::ref::round_to_half(f) : f;
+    value.f[k] = tensor.type == DataType::F16 ? kirari::kernels::ref::round_to_half(f) : f;
   }
   return value;
 }
 
-int refused(const ajp::Refusal& refusal) {
-  std::cerr << std::format("refus {} : {}\n", ajp::name(refusal.code), refusal.detail);
+int refused(const kirari::Refusal& refusal) {
+  std::cerr << std::format("refus {} : {}\n", kirari::name(refusal.code), refusal.detail);
   return 1;
 }
 
@@ -160,7 +160,7 @@ int run_graph(const Graph& graph, const Options& options) {
 }
 
 // Les passes communes à tous les moteurs, celles de l'interpréteur.
-std::expected<void, ajp::Refusal> generic_passes(Graph& graph) {
+std::expected<void, kirari::Refusal> generic_passes(Graph& graph) {
   // Comme le moteur Vulkan (net_build.cpp) : la grille des GridSample en float avant les passes.
   if (const int grid = promote_grid_chains(graph); grid > 0)
     std::cout << std::format("Grille des GridSample : {} tenseurs passés en float\n", grid);
@@ -172,8 +172,8 @@ std::expected<void, ajp::Refusal> generic_passes(Graph& graph) {
 }
 
 // Les passes du moteur Vulkan, les mêmes que prepare_graph après l'inférence des formes.
-std::expected<void, ajp::Refusal> vulkan_passes(Graph& graph, const Options& options) {
-  namespace net = ajp::gpu::vk::net;
+std::expected<void, kirari::Refusal> vulkan_passes(Graph& graph, const Options& options) {
+  namespace net = kirari::gpu::vk::net;
   const net::Target target{.f16_storage = true, .matrix_units = options.matrices};
   // C44-01 : l'interpréteur exige des types égaux aux opérateurs binaires, que le repli des Cast entre
   // flottants (noyaux typés du moteur) ne respecte plus. Avec --run, le graphe garde donc ses Cast : il est

@@ -26,7 +26,7 @@
 #include "gpu/span_fp8/derive.h"
 #include "span_derive_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using namespace span_test;
 using namespace std::chrono_literals;
@@ -345,4 +345,4 @@ TEST_CASE("pendant la lecture, la préparation laisse la carte entre deux images
   CHECK(spent("calibration", stop.get_token()) < kBackgroundPause);  // un arrêt n'attend pas la pause
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

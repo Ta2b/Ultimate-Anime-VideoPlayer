@@ -15,7 +15,7 @@
 #include "app/play/engine_tools.h"
 #include "core/text.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -140,4 +140,4 @@ std::string detect_cuda_arch(std::string_view gpu_name) {
   return known->empty() ? std::string() : known->front().second;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -1,6 +1,6 @@
 // Mesure sur demande (C05, A45-01) : ce que coûtent les variantes à précision réduite sur les vrais réseaux,
 // en PSNR contre le calcul en float, sur le dessin de la porte de bout en bout (net_gate.h).
-//   ajp_vk_backend_tests "[.sommes]"
+//   kirari_vk_backend_tests "[.sommes]"
 // Sur lavapipe : direct_f16p et winograd_f16p. Sur une RTX : coopmat_acc16 aussi, dont l'arrondi interne des
 // Tensor Cores ne se mesure que là.
 #include <algorithm>
@@ -22,8 +22,8 @@
 #include "gpu/vulkan/backend/net_lower.h"
 #include "net_rig.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 
@@ -68,8 +68,8 @@ void measure(NetRig& rig, const std::string& name, const std::filesystem::path& 
 TEST_CASE("Mesure : précision réduite contre le calcul en float sur les vrais réseaux", "[.sommes]") {
   NetRig rig = make_net_rig();
   require_f16(rig);
-  const std::filesystem::path rife(AJP_RIFE_MODEL_DIR);
-  measure(rig, "SPAN b5f48", AJP_SPAN_MODEL, {1, 3, 360, 640});
+  const std::filesystem::path rife(KIRARI_RIFE_MODEL_DIR);
+  measure(rig, "SPAN b5f48", KIRARI_SPAN_MODEL, {1, 3, 360, 640});
   measure(rig, "RIFE 4.25", rife / "rife_v4.25.onnx", {1, 11, 384, 640});
   measure(rig, "RIFE 4.22 lite", rife / "rife_v4.22_lite.onnx", {1, 11, 384, 640});
 }

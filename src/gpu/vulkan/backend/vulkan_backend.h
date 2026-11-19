@@ -3,7 +3,7 @@
 // banc, tests) ; les noyaux de la chaîne (kernel_ops.h) ; les réseaux de gpu_ir construits en
 // artefacts dans le dossier de cache, chargés, puis rejoués sur la file du backend.
 //
-// Bibliothèque statique : ajp_backend_vulkan (entry.cpp) l'enveloppe dans les points d'entrée
+// Bibliothèque statique : kirari_backend_vulkan (entry.cpp) l'enveloppe dans les points d'entrée
 // extern "C" ; les tests l'utilisent directement.
 #pragma once
 
@@ -35,7 +35,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "gpu/vulkan/compute/pipeline.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 struct HostViews;  // vulkan_backend_detail.h
 struct Span8Run;   // vulkan_span_derive.cpp
@@ -49,7 +49,8 @@ struct BackendOptions {
   // La porte stricte (kStrictPrecision) : aussi par BackendInit::trials. Entre dans la clé des artefacts.
   bool strict_precision = false;
   net::TunerOptions tuner;
-  // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil : ajp_backend_coreml.
+  // Les réseaux par un autre runtime (net_runtime.h), créé à l'ouverture de l'appareil :
+  // kirari_backend_coreml.
   net::RuntimeFactory runtime;
   // Couche de validation Vulkan sur l'appareil que le backend crée lui-même (sans appareil de
   // rendu) : ses messages vont au journal et à validation_sink (tests : chaque erreur en échec).
@@ -206,4 +207,4 @@ class VulkanBackend final : public Backend {
 // Refus DeviceMismatch : appareil sans description Vulkan.
 std::expected<AdoptedDevice, Refusal> adopted_device(const GpuDevice& render);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

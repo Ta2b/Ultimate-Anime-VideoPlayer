@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::app::play::panel {
+namespace kirari::app::play::panel {
 
 // Ce qu'un réglage demande pour s'appliquer : rien (en direct), rouvrir la vidéo au même endroit, ou relancer
 // le lecteur (settings.h : ChangeCost). Le pied du panneau le dit de la même manière pour tous.
@@ -33,4 +33,4 @@ inline void tip(const std::string& body) {
   tip(body.c_str());
 }
 
-}  // namespace ajp::app::play::panel
+}  // namespace kirari::app::play::panel

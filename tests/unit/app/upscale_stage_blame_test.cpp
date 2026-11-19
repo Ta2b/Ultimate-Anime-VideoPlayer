@@ -12,7 +12,7 @@
 #include "stage_rig.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -63,4 +63,4 @@ TEST_CASE("C09-01 : les clés des refus d'étage", "[app][stage]") {
   CHECK(blame_stage({}, kSpanRefusalKey).has_value());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

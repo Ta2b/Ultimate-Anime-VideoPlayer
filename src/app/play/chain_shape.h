@@ -14,7 +14,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le plus haut facteur d'interpolation que la lecture peut prendre : celui choisi à la main, ou en Auto le
 // palier entier le plus haut que l'écran affiche (core/auto_ceiling), jusqu'à rife_factor ; 1 sans
@@ -110,4 +110,4 @@ bool fits(const OpenedChain& opened, const PlaySettings& wanted);
 // les deux modes.
 std::string free_refusal(MotionEngine engine, bool limit_known, bool display_known);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

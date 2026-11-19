@@ -18,7 +18,7 @@
 #include "gpu/coreml/vt_pixels.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Le système interpole-t-il des images width × height ? Une session ouverte, une paire unie
 // interpolée sur des IOSurface et vérifiée, la session refermée ; rend le format de pixels retenu
@@ -38,4 +38,4 @@ std::expected<std::unique_ptr<vk::net::RuntimeNet>, Refusal> vt_net(vk::net::IoN
 // taille refusée, hors d'un Mac ; DeviceUnavailable : un écart.
 std::expected<void, Refusal> vt_gpu_check(vt::Pixels format, int width, int height);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

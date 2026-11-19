@@ -12,14 +12,14 @@
 #include "core/clock_pll.h"
 #include "rig.h"
 
-using ajp::Command;
-using namespace ajp::audio;
-using ajp::audio::test::encode_sine;
-using ajp::audio::test::EncodedClip;
-using ajp::audio::test::FakeMaster;
-using ajp::audio::test::kLatency;
-using ajp::audio::test::Rig;
-namespace cmd = ajp::cmd;
+using kirari::Command;
+using namespace kirari::audio;
+using kirari::audio::test::encode_sine;
+using kirari::audio::test::EncodedClip;
+using kirari::audio::test::FakeMaster;
+using kirari::audio::test::kLatency;
+using kirari::audio::test::Rig;
+namespace cmd = kirari::cmd;
 
 TEST_CASE("AudioPlayer : écran maître, l'audio en retard est coupé jusqu'à l'image", "[audio][sync]") {
   Rig rig;
@@ -189,6 +189,6 @@ TEST_CASE("AudioPlayer : retour à l'audio maître, le rapport revient à 1 sans
   CHECK(rig.fake->clears() == clears);
   const DeviceReading reading = rig.fake->play(1'024, t0 + 401 * 21'333);
   rig.player->handle(reading);
-  CHECK(std::abs(rig.clock().rate - 1.0) <= ajp::core::ClockPll::kMaxSpeed + 1e-9);  // PLL du produit
+  CHECK(std::abs(rig.clock().rate - 1.0) <= kirari::core::ClockPll::kMaxSpeed + 1e-9);  // PLL du produit
   CHECK(rig.clock().host_us == reading.host_us);
 }

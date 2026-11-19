@@ -12,8 +12,8 @@
 #include "core/steady_grid.h"
 #include "core/steady_rate.h"
 
-using namespace ajp;
-using namespace ajp::core;
+using namespace kirari;
+using namespace kirari::core;
 
 namespace {
 constexpr double kFps = 24000.0 / 1001.0;

@@ -1,12 +1,12 @@
 // Les cibles de fuzz : chacune lit des octets quelconques et vérifie ses propriétés
 // (fuzz_check.h). replay_main.cpp les appelle par leur nom ; libfuzzer_entry.cpp en fait la
-// LLVMFuzzerTestOneInput d'un exécutable libFuzzer (AJP_FUZZ_TARGET).
+// LLVMFuzzerTestOneInput d'un exécutable libFuzzer (KIRARI_FUZZ_TARGET).
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
 
-namespace ajp::fuzz {
+namespace kirari::fuzz {
 
 int settings(const std::uint8_t* data, std::size_t size);       // settings.toml
 int play_settings(const std::uint8_t* data, std::size_t size);  // play.toml
@@ -30,4 +30,4 @@ int engine_index(const std::uint8_t* data, std::size_t size);  // engines.lock, 
 int update_state(const std::uint8_t* data, std::size_t size);  // update.toml
 int prepare_onnx(const std::uint8_t* data, std::size_t size);  // lecteurs ONNX de prepare/ (A04-08)
 
-}  // namespace ajp::fuzz
+}  // namespace kirari::fuzz

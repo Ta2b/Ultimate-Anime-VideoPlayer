@@ -31,7 +31,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "gpu/vulkan/compute/pipeline.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 inline constexpr double kNetworkDrift = 0.01;
 inline constexpr double kNetworkDriftLow = 0.02;
@@ -138,4 +138,4 @@ std::expected<Gated, Refusal> gate_network(VkContext& context, MemoryAllocator& 
                                            std::vector<KernelChoice> tuned, const Target& target,
                                            const GateWatch& watch = {}, bool strict = false);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

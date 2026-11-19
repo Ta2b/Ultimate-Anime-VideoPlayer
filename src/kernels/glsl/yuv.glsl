@@ -2,82 +2,82 @@
 // accès aux codes rangés en mots de 32 bits. Un plan commence à un octet multiple de 4 de la
 // vue liée et son pas de ligne aussi : un échantillon de 16 bits ne chevauche jamais deux mots.
 // Les numéros suivent kernels::Format, Matrix et Range (gpu/vulkan/compute/kernel_types.h).
-// S'inclut après ajp_kernels_spec.glsl et common.glsl.
-#ifndef AJP_YUV_GLSL
-#define AJP_YUV_GLSL
+// S'inclut après kirari_kernels_spec.glsl et common.glsl.
+#ifndef KIRARI_YUV_GLSL
+#define KIRARI_YUV_GLSL
 
-const uint AJP_FORMAT_NV12 = 0u;
-const uint AJP_FORMAT_P010 = 1u;
-const uint AJP_FORMAT_P016 = 2u;
-const uint AJP_FORMAT_YUV420P = 3u;
-const uint AJP_FORMAT_YUV420P10 = 4u;
-const uint AJP_FORMAT_YUV444P16 = 5u;
+const uint KIRARI_FORMAT_NV12 = 0u;
+const uint KIRARI_FORMAT_P010 = 1u;
+const uint KIRARI_FORMAT_P016 = 2u;
+const uint KIRARI_FORMAT_YUV420P = 3u;
+const uint KIRARI_FORMAT_YUV420P10 = 4u;
+const uint KIRARI_FORMAT_YUV444P16 = 5u;
 
-const uint AJP_MATRIX_BT601 = 0u;
-const uint AJP_MATRIX_BT709 = 1u;
-const uint AJP_MATRIX_BT2020 = 2u;
+const uint KIRARI_MATRIX_BT601 = 0u;
+const uint KIRARI_MATRIX_BT709 = 1u;
+const uint KIRARI_MATRIX_BT2020 = 2u;
 
 // Fixées par l'hôte depuis kernels::info(format) : rien de la structure n'est recopié ici.
-layout(constant_id = 0) const uint AJP_FORMAT = AJP_FORMAT_NV12;
-layout(constant_id = 1) const uint AJP_MATRIX = AJP_MATRIX_BT709;
-layout(constant_id = 2) const uint AJP_RANGE = 0u;  // 0 limitée, 1 pleine
-layout(constant_id = 3) const uint AJP_SAMPLE_BYTES = 1u;
-layout(constant_id = 4) const bool AJP_INTERLEAVED = true;
-layout(constant_id = 5) const bool AJP_SUBSAMPLED = true;
+layout(constant_id = 0) const uint KIRARI_FORMAT = KIRARI_FORMAT_NV12;
+layout(constant_id = 1) const uint KIRARI_MATRIX = KIRARI_MATRIX_BT709;
+layout(constant_id = 2) const uint KIRARI_RANGE = 0u;  // 0 limitée, 1 pleine
+layout(constant_id = 3) const uint KIRARI_SAMPLE_BYTES = 1u;
+layout(constant_id = 4) const bool KIRARI_INTERLEAVED = true;
+layout(constant_id = 5) const bool KIRARI_SUBSAMPLED = true;
 
-const uint AJP_SAMPLES_PER_WORD = 4u / AJP_SAMPLE_BYTES;
+const uint KIRARI_SAMPLES_PER_WORD = 4u / KIRARI_SAMPLE_BYTES;
 
 // yuv_scale(format, plage) : (yoff, yscale, coff, cscale).
 vec4 yuv_scale() {
-  bool full = AJP_RANGE == 1u;
-  if (AJP_FORMAT == AJP_FORMAT_NV12) return full ? AJP_YUV_SCALE_NV12_FULL : AJP_YUV_SCALE_NV12_LIMITED;
-  if (AJP_FORMAT == AJP_FORMAT_P010) return full ? AJP_YUV_SCALE_P010_FULL : AJP_YUV_SCALE_P010_LIMITED;
-  if (AJP_FORMAT == AJP_FORMAT_P016) return full ? AJP_YUV_SCALE_P016_FULL : AJP_YUV_SCALE_P016_LIMITED;
-  if (AJP_FORMAT == AJP_FORMAT_YUV420P) {
-    return full ? AJP_YUV_SCALE_YUV420P_FULL : AJP_YUV_SCALE_YUV420P_LIMITED;
+  bool full = KIRARI_RANGE == 1u;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_NV12) return full ? KIRARI_YUV_SCALE_NV12_FULL : KIRARI_YUV_SCALE_NV12_LIMITED;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_P010) return full ? KIRARI_YUV_SCALE_P010_FULL : KIRARI_YUV_SCALE_P010_LIMITED;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_P016) return full ? KIRARI_YUV_SCALE_P016_FULL : KIRARI_YUV_SCALE_P016_LIMITED;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_YUV420P) {
+    return full ? KIRARI_YUV_SCALE_YUV420P_FULL : KIRARI_YUV_SCALE_YUV420P_LIMITED;
   }
-  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) {
-    return full ? AJP_YUV_SCALE_YUV420P10_FULL : AJP_YUV_SCALE_YUV420P10_LIMITED;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_YUV420P10) {
+    return full ? KIRARI_YUV_SCALE_YUV420P10_FULL : KIRARI_YUV_SCALE_YUV420P10_LIMITED;
   }
-  return full ? AJP_YUV_SCALE_YUV444P16_FULL : AJP_YUV_SCALE_YUV444P16_LIMITED;
+  return full ? KIRARI_YUV_SCALE_YUV444P16_FULL : KIRARI_YUV_SCALE_YUV444P16_LIMITED;
 }
 
 // quantizer(format) : (qdiv, qmax).
 vec2 quantizer() {
-  if (AJP_FORMAT == AJP_FORMAT_NV12) return AJP_QUANT_NV12;
-  if (AJP_FORMAT == AJP_FORMAT_P010) return AJP_QUANT_P010;
-  if (AJP_FORMAT == AJP_FORMAT_P016) return AJP_QUANT_P016;
-  if (AJP_FORMAT == AJP_FORMAT_YUV420P) return AJP_QUANT_YUV420P;
-  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) return AJP_QUANT_YUV420P10;
-  return AJP_QUANT_YUV444P16;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_NV12) return KIRARI_QUANT_NV12;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_P010) return KIRARI_QUANT_P010;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_P016) return KIRARI_QUANT_P016;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_YUV420P) return KIRARI_QUANT_YUV420P;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_YUV420P10) return KIRARI_QUANT_YUV420P10;
+  return KIRARI_QUANT_YUV444P16;
 }
 
 // coefficients(matrice) : (kr, kb).
 vec2 coefficients() {
-  if (AJP_MATRIX == AJP_MATRIX_BT601) return vec2(AJP_KR_BT601, AJP_KB_BT601);
-  if (AJP_MATRIX == AJP_MATRIX_BT709) return vec2(AJP_KR_BT709, AJP_KB_BT709);
-  return vec2(AJP_KR_BT2020, AJP_KB_BT2020);
+  if (KIRARI_MATRIX == KIRARI_MATRIX_BT601) return vec2(KIRARI_KR_BT601, KIRARI_KB_BT601);
+  if (KIRARI_MATRIX == KIRARI_MATRIX_BT709) return vec2(KIRARI_KR_BT709, KIRARI_KB_BT709);
+  return vec2(KIRARI_KR_BT2020, KIRARI_KB_BT2020);
 }
 
 // Octet de l'échantillon i de la ligne y d'un plan, depuis le début de la vue.
 uint sample_byte(uint offset, uint pitch, uint i, uint y) {
-  return offset + y * pitch + i * AJP_SAMPLE_BYTES;
+  return offset + y * pitch + i * KIRARI_SAMPLE_BYTES;
 }
 
 // Le code rangé à l'octet byte, extrait du mot qui le contient.
 uint sample_in_word(uint word, uint byte) {
-  uint mask = AJP_SAMPLE_BYTES == 1u ? 0xFFu : 0xFFFFu;
+  uint mask = KIRARI_SAMPLE_BYTES == 1u ? 0xFFu : 0xFFFFu;
   return (word >> ((byte & 3u) * 8u)) & mask;
 }
 
 // Place le code de l'échantillon s (0 en tête) dans un mot.
 uint sample_to_word(uint code, uint s) {
-  return code << (s * 8u * AJP_SAMPLE_BYTES);
+  return code << (s * 8u * KIRARI_SAMPLE_BYTES);
 }
 
 // Échantillon de Cb (ou Cr) de la colonne x dans un plan entrelacé ou planaire.
 uint chroma_sample_index(uint x, bool cr) {
-  return AJP_INTERLEAVED ? 2u * x + (cr ? 1u : 0u) : x;
+  return KIRARI_INTERLEAVED ? 2u * x + (cr ? 1u : 0u) : x;
 }
 
 // normalize puis to_rgb (spec/color.h, k_pre_combine), y, u et v en codes du conteneur.
@@ -116,4 +116,4 @@ uint encode_chroma(float c) {
   return quantize(raw, quantizer());
 }
 
-#endif  // AJP_YUV_GLSL
+#endif  // KIRARI_YUV_GLSL

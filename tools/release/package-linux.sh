@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Paquets Linux d'une version : un seul lecteur pour tous les GPU, et ses moteurs à la demande.
 #
-#   ajp-linux-x64.tar.gz                  le lecteur, le backend Vulkan, leurs bibliothèques et
+#   kirari-linux-x64.tar.gz                  le lecteur, le backend Vulkan, leurs bibliothèques et
 #                                         engines.lock (l'index haché des paquets ci-dessous)
-#   ajp-engine-tensorrt-linux-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA)
+#   kirari-engine-tensorrt-linux-x64.tar.gz  backend TensorRT, TensorRT et trtexec (NVIDIA)
 #
 # Une release peut réunir deux constructions : la CI (le lecteur) et un poste NVIDIA ou le paquet
-# TensorRT de la CI (trt-package.yml). AJP_ENGINES_LOCK=<fichier ou lien de l'engines.lock de l'autre> reprend ses
+# TensorRT de la CI (trt-package.yml). KIRARI_ENGINES_LOCK=<fichier ou lien de l'engines.lock de l'autre> reprend ses
 # moteurs non construits ici, dont les paquets restent ceux qu'elle a joints à la release. Le
 # poste NVIDIA joint les siens avant l'étiquette, son index renommé engines-nvidia.lock, que
 # release-linux.yml reprend.
@@ -14,18 +14,18 @@
 # L'écran de bienvenue propose les moteurs qui conviennent au GPU ; les cochés se téléchargent
 # depuis la release (engine_install.h). Chaque moteur n'est empaqueté que s'il a été construit :
 #
-#   AJP_DEPS_PREFIX=<prefixe> [AJP_WITH_CUDA=ON [AJP_TENSORRT_ROOT=<racine>]] \
-#     [AJP_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
+#   KIRARI_DEPS_PREFIX=<prefixe> [KIRARI_WITH_CUDA=ON [KIRARI_TENSORRT_ROOT=<racine>]] \
+#     [KIRARI_RELEASE_TAG=v0.2.0] tools/release/package-linux.sh [dossier-de-sortie]
 #
 # patchelf range chaque binaire sur $ORIGIN : rien ne dépend du préfixe de construction.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT="$(mkdir -p "${1:-$ROOT/build/package}" && cd "${1:-$ROOT/build/package}" && pwd)"
-: "${AJP_DEPS_PREFIX:?AJP_DEPS_PREFIX : le préfixe des dépendances}"
+: "${KIRARI_DEPS_PREFIX:?KIRARI_DEPS_PREFIX : le préfixe des dépendances}"
 command -v patchelf >/dev/null || { echo "patchelf manquant (apt install patchelf)" >&2; exit 1; }
 VERSION="$(sed -n 's/^  VERSION \([0-9.]*\)$/\1/p' "$ROOT/CMakeLists.txt")"
-TAG="${AJP_RELEASE_TAG:-v$VERSION}"
+TAG="${KIRARI_RELEASE_TAG:-v$VERSION}"
 # Archives reproductibles : mêmes fichiers, mêmes octets. Sans cela, remplacer un paquet d'une
 # release publiée (gh release upload --clobber) change son SHA-256 et invalide les engines.lock des
 # lecteurs déjà installés. Date : celle du commit, ou SOURCE_DATE_EPOCH.
@@ -35,16 +35,16 @@ pack() {  # dossier-parent entrée archive.tar.gz : tar trié, propriétaire neu
   tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$EPOCH" -C "$1" -cf - "$2" | gzip -9n > "$3"
 }
 # Le dépôt dont la release porte les paquets : il doit être public pour que le lecteur les télécharge.
-# Le dépôt par défaut vient de versions.env, la seule source (A28-05) ; AJP_RELEASE_REPO posé l'emporte.
-AJP_RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
-BASE_URL="https://github.com/${AJP_RELEASE_REPO}/releases/download/$TAG"
+# Le dépôt par défaut vient de versions.env, la seule source (A28-05) ; KIRARI_RELEASE_REPO posé l'emporte.
+KIRARI_RELEASE_REPO="${KIRARI_RELEASE_REPO:-$(sed -n 's/^KIRARI_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
+BASE_URL="https://github.com/${KIRARI_RELEASE_REPO}/releases/download/$TAG"
 
 # Une étiquette de préversion (v0.11.0-rc.1) donne son suffixe au binaire : il dit la version de l'étiquette (A26-04).
 SUFFIX=""
 case "$TAG" in "v$VERSION"-*) SUFFIX="${TAG#"v$VERSION"}" ;; esac
 cmake --preset linux-release -S "$ROOT" \
-  -DAJP_WITH_CUDA="${AJP_WITH_CUDA:-OFF}" -DAJP_VERSION_SUFFIX="$SUFFIX" \
-  ${AJP_TENSORRT_ROOT:+-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT"}
+  -DKIRARI_WITH_CUDA="${KIRARI_WITH_CUDA:-OFF}" -DKIRARI_VERSION_SUFFIX="$SUFFIX" \
+  ${KIRARI_TENSORRT_ROOT:+-DKIRARI_TENSORRT_ROOT="$KIRARI_TENSORRT_ROOT"}
 cmake --build --preset linux-release
 BUILD="$ROOT/build/linux-release"
 
@@ -73,7 +73,7 @@ system_lib() {
 # libbz2.so.1.0, par exemple, n'existe que sous Debian et Ubuntu (Fedora n'a que libbz2.so.1) : le
 # FFmpeg livré la demandait et le lecteur ne démarrait pas sous Fedora. Une bibliothèque hors de
 # cette liste fait refuser le paquet : la livrer (system_lib), ou s'en passer.
-# libwayland-client.so.0 : lue par le retour de présentation du compositeur (wp_presentation, libajp_wayland_presentation) ;
+# libwayland-client.so.0 : lue par le retour de présentation du compositeur (wp_presentation, libkirari_wayland_presentation) ;
 # même nom sur Debian, Ubuntu, Fedora et Arch, et installée avec Mesa et SDL3 sous Wayland.
 PORTABLE_SONAMES=" ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1
   libresolv.so.2 libutil.so.1 libgcc_s.so.1 libstdc++.so.6 libX11.so.6 libxcb.so.1 libdrm.so.2
@@ -106,7 +106,7 @@ check_portable() {  # dossier des binaires vérifiés, [autres dossiers livrés 
 check_direct_needed() {  # dossier lock-vendor
   local dir="$1" vendor="$2" bad=0 f soname
   local names=" $(sed -n 's/^name = "\(.*\)"$/\1/p' "$vendor" | xargs -n1 basename | tr '\n' ' ')"
-  for f in "$dir/ajp_backend_tensorrt.so" "$dir/trtexec"; do
+  for f in "$dir/kirari_backend_tensorrt.so" "$dir/trtexec"; do
     [ -e "$f" ] || continue
     while read -r soname; do
       [ -e "$dir/$soname" ] && continue
@@ -170,13 +170,13 @@ origin() {  # rpath $ORIGIN (et $ORIGIN/$2) sur chaque fichier ELF du dossier $1
 }
 
 # --- Le lecteur. ---
-STAGE="$OUT/ajp-linux-x64"
+STAGE="$OUT/kirari-linux-x64"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/lib"
-cp "$BUILD/src/app/ajp" "$STAGE/"
-cp "$BUILD/src/gpu/vulkan/backend/ajp_backend_vulkan.so" "$STAGE/"
-copy_deps "$STAGE/lib" "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
-patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$STAGE/ajp" "$STAGE/ajp_backend_vulkan.so"
+cp "$BUILD/src/app/kirari" "$STAGE/"
+cp "$BUILD/src/gpu/vulkan/backend/kirari_backend_vulkan.so" "$STAGE/"
+copy_deps "$STAGE/lib" "$STAGE/kirari" "$STAGE/kirari_backend_vulkan.so"
+patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$STAGE/kirari" "$STAGE/kirari_backend_vulkan.so"
 origin "$STAGE/lib"
 check_portable "$STAGE/lib"
 check_portable "$STAGE" "$STAGE/lib"
@@ -191,13 +191,13 @@ PREVIEW=""
 sed -e "s/@GLIBC@/$GLIBC_NEEDED/" -e "s/@PREVIEW@/$PREVIEW/" \
   "$ROOT/tools/release/linux/LISEZMOI.txt" > "$STAGE/LISEZMOI.txt"
 # L'icône, que le lecteur installe sous ~/.local/share/icons à son inscription (B19-01).
-cp "$ROOT/tools/release/linux/ajp.png" "$STAGE/"
+cp "$ROOT/tools/release/linux/kirari.png" "$STAGE/"
 # Les LUT d'HDR (data/luts), lues par le lecteur dans luts/ à côté de lui.
 cp -R "$ROOT/data/luts" "$STAGE/luts"
 # La police japonaise de dernier recours (fonts/), pour un Linux sans police CJK (subtitle_fonts.h).
 "$ROOT/tools/release/fetch-fonts.sh" "$STAGE/fonts"
-# Les modèles SPAN et RIFE, pour lire dès l'extraction (AJP_WITHOUT_MODELS=1 pour s'en passer).
-[ -n "${AJP_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"
+# Les modèles SPAN et RIFE, pour lire dès l'extraction (KIRARI_WITHOUT_MODELS=1 pour s'en passer).
+[ -n "${KIRARI_WITHOUT_MODELS:-}" ] || "$ROOT/tools/release/fetch-models.sh" "$STAGE/models"
 
 # --- Les moteurs. ---
 LOCK="$STAGE/engines.lock"
@@ -205,7 +205,7 @@ echo "version = 1" > "$LOCK"
 
 engine_package() {  # id version licence dossier [intact : binaires laissés tels quels]
   local id="$1" version="$2" license="$3" dir="$4"
-  local archive="ajp-engine-$id-linux-x64.tar.gz"
+  local archive="kirari-engine-$id-linux-x64.tar.gz"
   [ -n "${5:-}" ] || origin "$dir"
   pack "$dir" . "$OUT/$archive"
   {
@@ -222,22 +222,22 @@ engine_package() {  # id version licence dossier [intact : binaires laissés tel
   echo "moteur $id : $OUT/$archive"
 }
 
-TRT_MODULE="$BUILD/src/gpu/cuda/backend/ajp_backend_tensorrt.so"
+TRT_MODULE="$BUILD/src/gpu/cuda/backend/kirari_backend_tensorrt.so"
 # TensorRT et RTX HDR ne sont pas publiés (licence NVIDIA) : ils ne s'empaquettent que sur demande
-# expresse (AJP_PACKAGE_NVIDIA=1), pour qu'un poste NVIDIA qui construit le paquet ne les joigne pas
+# expresse (KIRARI_PACKAGE_NVIDIA=1), pour qu'un poste NVIDIA qui construit le paquet ne les joigne pas
 # par mégarde. Le chemin normal est la construction sur la machine (docs/nvidia-linux.md).
-if [ -f "$TRT_MODULE" ] && [ -z "${AJP_PACKAGE_NVIDIA:-}" ]; then
-  echo "TensorRT trouvé, non empaqueté (AJP_PACKAGE_NVIDIA=1 pour le joindre)" >&2
+if [ -f "$TRT_MODULE" ] && [ -z "${KIRARI_PACKAGE_NVIDIA:-}" ]; then
+  echo "TensorRT trouvé, non empaqueté (KIRARI_PACKAGE_NVIDIA=1 pour le joindre)" >&2
 fi
-if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
+if [ -f "$TRT_MODULE" ] && [ -n "${KIRARI_PACKAGE_NVIDIA:-}" ]; then
   dir="$OUT/engine-tensorrt"; rm -rf "$dir"; mkdir -p "$dir"
   cp "$TRT_MODULE" "$dir/"
-  TRTEXEC="$(sed -n 's/^AJP_TRTEXEC_PACKAGED:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
+  TRTEXEC="$(sed -n 's/^KIRARI_TRTEXEC_PACKAGED:[A-Z]*=//p' "$BUILD/CMakeCache.txt")"
   # Sans trtexec, le moteur ne construit aucun réseau : le paquet ne part pas (TRT-04).
-  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] || { echo "trtexec introuvable (AJP_TRTEXEC_PACKAGED : « $TRTEXEC »)" >&2; exit 1; }
+  [ -n "$TRTEXEC" ] && [ -x "$TRTEXEC" ] || { echo "trtexec introuvable (KIRARI_TRTEXEC_PACKAGED : « $TRTEXEC »)" >&2; exit 1; }
   cp "$TRTEXEC" "$dir/trtexec"
   # Le module ne lance que le trtexec dont il garde l'empreinte : un paquet où elle manque ne construirait rien.
-  if [ -f "$dir/trtexec" ] && ! strings "$dir/ajp_backend_tensorrt.so" |
+  if [ -f "$dir/trtexec" ] && ! strings "$dir/kirari_backend_tensorrt.so" |
       grep -qx "$(sha256sum "$dir/trtexec" | cut -d' ' -f1)"; then
     echo "trtexec : son SHA-256 n'est pas celui que le module attend (reconfigurer la construction)" >&2
     exit 1
@@ -248,7 +248,7 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   TRT_VERSION="$(sed -n 's/^TENSORRT_LIBS_VERSION=//p' "$ROOT/tools/release/versions.env")"
   [ -n "$TRT_VERSION" ] || { echo "TENSORRT_LIBS_VERSION absent de versions.env" >&2; exit 1; }
   VENDOR="$ROOT/tools/release/nvidia-vendor/tensorrt-linux-x64.lock"
-  if [ -z "${AJP_NVIDIA_BUNDLE:-}" ] && [ -f "$VENDOR" ]; then
+  if [ -z "${KIRARI_NVIDIA_BUNDLE:-}" ] && [ -f "$VENDOR" ]; then
     # Lien direct : le paquet ne porte que ce qui est à nous (module, trtexec). Les bibliothèques de
     # NVIDIA n'y entrent pas : le lecteur les tire des archives de NVIDIA elles-mêmes, après
     # l'acceptation de sa licence à l'écran (entrées [[vendor_file]], tools/release/vendor-index.py).
@@ -260,19 +260,19 @@ if [ -f "$TRT_MODULE" ] && [ -n "${AJP_PACKAGE_NVIDIA:-}" ]; then
   else
     # Les ressources du constructeur, ouvertes par libnvinfer selon l'architecture du GPU, et les
     # bibliothèques que trtexec ouvre lui-même (dlopen, invisibles pour ldd) : greffons et lecteur ONNX.
-    copy_beside "$dir" "$dir/ajp_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*' \
+    copy_beside "$dir" "$dir/kirari_backend_tensorrt.so" libnvinfer 'libnvinfer_builder_resource*' \
       'libnvinfer_plugin.so.[0-9]*' 'libnvonnxparser.so.[0-9]*'
-    for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/ajp_backend_tensorrt.so" ] && rm "$f"; done
+    for f in "$dir"/*; do [ -e "$STAGE/lib/$(basename "$f")" ] && [ "$f" != "$dir/kirari_backend_tensorrt.so" ] && rm "$f"; done
     check_portable "$dir" "$STAGE/lib"
     engine_package tensorrt "$TRT_VERSION" \
       "https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html" "$dir"
   fi
 fi
 
-if [ -n "${AJP_ENGINES_LOCK:-}" ]; then
-  other="$AJP_ENGINES_LOCK"
+if [ -n "${KIRARI_ENGINES_LOCK:-}" ]; then
+  other="$KIRARI_ENGINES_LOCK"
   case "$other" in
-    http://*|https://*) other="$OUT/engines-autre.lock"; curl -fsSL "$AJP_ENGINES_LOCK" -o "$other" ;;
+    http://*|https://*) other="$OUT/engines-autre.lock"; curl -fsSL "$KIRARI_ENGINES_LOCK" -o "$other" ;;
   esac
   have="$(sed -n 's/^id = "\(.*\)"$/\1/p' "$LOCK" | tr '\n' ' ')"
   # Les blocs [[engine]] de l'autre dont l'id manque ici, et les blocs [[vendor_file]] des mêmes moteurs
@@ -290,7 +290,7 @@ if [ -n "${AJP_ENGINES_LOCK:-}" ]; then
 fi
 cp "$LOCK" "$OUT/engines.lock"
 
-pack "$OUT" ajp-linux-x64 "$OUT/ajp-linux-x64.tar.gz"
-( cd "$OUT" && sha256sum ajp-*.tar.gz engines.lock > SHA256SUMS )
-echo "lecteur : $OUT/ajp-linux-x64.tar.gz"
-echo "à joindre à la release $TAG : $OUT/ajp-*.tar.gz, engines.lock et SHA256SUMS"
+pack "$OUT" kirari-linux-x64 "$OUT/kirari-linux-x64.tar.gz"
+( cd "$OUT" && sha256sum kirari-*.tar.gz engines.lock > SHA256SUMS )
+echo "lecteur : $OUT/kirari-linux-x64.tar.gz"
+echo "à joindre à la release $TAG : $OUT/kirari-*.tar.gz, engines.lock et SHA256SUMS"

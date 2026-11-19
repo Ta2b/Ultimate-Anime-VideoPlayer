@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 TEST_CASE("Conteneur : choisi par l'extension, quelle que soit la casse", "[export]") {
   CHECK(container_of("a/b.mkv") == Container::Matroska);
@@ -45,4 +45,4 @@ TEST_CASE("Conteneur : chaque période tombe sur un nombre entier de pas", "[exp
   CHECK(off_grid == 0);
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

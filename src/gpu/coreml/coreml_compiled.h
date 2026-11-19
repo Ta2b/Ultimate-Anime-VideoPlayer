@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Le nom qu'ONNX Runtime donne à un tenseur dans un programme ML (GetSafeName de model_builder.cc) :
 // « _ » devant un chiffre initial, « _ » à la place de tout caractère hors de [A-Za-z0-9_].
@@ -18,4 +18,4 @@ std::string ml_program_name(std::string_view name);
 // ONNX Runtime a coupé le réseau en morceaux, avec des nœuds au CPU entre eux.
 std::optional<std::filesystem::path> single_compiled(const std::filesystem::path& dir);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

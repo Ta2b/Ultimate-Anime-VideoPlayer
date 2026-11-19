@@ -8,7 +8,7 @@
 #include "app/play/source_grade.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::uint32_t kIn = 0;
@@ -196,4 +196,4 @@ std::shared_ptr<SourceGrader> PlaceboScreen::source_grader(bool external, double
                                                external, source_fps, generation);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

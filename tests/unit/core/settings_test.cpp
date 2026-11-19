@@ -8,14 +8,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using namespace ajp::core;
+using kirari::RefusalCode;
+using namespace kirari::core;
 namespace fs = std::filesystem;
 
 namespace {
 
 fs::path scratch(const std::string& name) {
-  const fs::path dir = fs::temp_directory_path() / "ajp-test-tmp" / name;
+  const fs::path dir = fs::temp_directory_path() / "kirari-test-tmp" / name;
   fs::remove_all(dir);
   fs::create_directories(dir);
   return dir;

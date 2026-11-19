@@ -4,17 +4,17 @@
 // atomicMax sur worst[0], remis à zéro avant chaque exécution.
 // Contrat : kernels/spec/detect.h ; référence : kernels/ref/detect.cpp (block_diff_max).
 #extension GL_GOOGLE_include_directive : require
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 #include "yuv.glsl"
 #include "planes.glsl"
 
-const uint AJP_GROUP_X = 32u;
-const uint AJP_GROUP_Y = 8u;
-const uint AJP_GROUP_SIZE = AJP_GROUP_X * AJP_GROUP_Y;
-const uint AJP_BLOCK = uint(AJP_HELD_BLOCK);
+const uint KIRARI_GROUP_X = 32u;
+const uint KIRARI_GROUP_Y = 8u;
+const uint KIRARI_GROUP_SIZE = KIRARI_GROUP_X * KIRARI_GROUP_Y;
+const uint KIRARI_BLOCK = uint(KIRARI_HELD_BLOCK);
 
-layout(local_size_x = AJP_GROUP_X, local_size_y = AJP_GROUP_Y) in;
+layout(local_size_x = KIRARI_GROUP_X, local_size_y = KIRARI_GROUP_Y) in;
 
 // [0] : pire écart ; [1 + by × blocs_x + bx] : écart du bloc (bx, by).
 layout(std430, binding = 0) buffer Result { uint value[]; } result;
@@ -30,25 +30,25 @@ layout(push_constant) uniform Push {
   uint height;
 } pc;
 
-shared uint partial[AJP_GROUP_SIZE];
+shared uint partial[KIRARI_GROUP_SIZE];
 
 uint held_scale() {
-  if (AJP_FORMAT == AJP_FORMAT_NV12) return AJP_HELD_SCALE_NV12;
-  if (AJP_FORMAT == AJP_FORMAT_P010) return AJP_HELD_SCALE_P010;
-  if (AJP_FORMAT == AJP_FORMAT_P016) return AJP_HELD_SCALE_P016;
-  if (AJP_FORMAT == AJP_FORMAT_YUV420P) return AJP_HELD_SCALE_YUV420P;
-  if (AJP_FORMAT == AJP_FORMAT_YUV420P10) return AJP_HELD_SCALE_YUV420P10;
-  return AJP_HELD_SCALE_YUV444P16;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_NV12) return KIRARI_HELD_SCALE_NV12;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_P010) return KIRARI_HELD_SCALE_P010;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_P016) return KIRARI_HELD_SCALE_P016;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_YUV420P) return KIRARI_HELD_SCALE_YUV420P;
+  if (KIRARI_FORMAT == KIRARI_FORMAT_YUV420P10) return KIRARI_HELD_SCALE_YUV420P10;
+  return KIRARI_HELD_SCALE_YUV444P16;
 }
 
 void main() {
-  uint x0 = gl_WorkGroupID.x * AJP_BLOCK;
-  uint y0 = gl_WorkGroupID.y * AJP_BLOCK;
-  uint x1 = min(x0 + AJP_BLOCK, pc.width);
-  uint y1 = min(y0 + AJP_BLOCK, pc.height);
+  uint x0 = gl_WorkGroupID.x * KIRARI_BLOCK;
+  uint y0 = gl_WorkGroupID.y * KIRARI_BLOCK;
+  uint x1 = min(x0 + KIRARI_BLOCK, pc.width);
+  uint y1 = min(y0 + KIRARI_BLOCK, pc.height);
   uint sum = 0u;
-  for (uint y = y0 + gl_LocalInvocationID.y; y < y1; y += AJP_GROUP_Y) {
-    for (uint x = x0 + gl_LocalInvocationID.x; x < x1; x += AJP_GROUP_X) {
+  for (uint y = y0 + gl_LocalInvocationID.y; y < y1; y += KIRARI_GROUP_Y) {
+    for (uint x = x0 + gl_LocalInvocationID.x; x < x1; x += KIRARI_GROUP_X) {
       uint va = luma_code(luma_a, x, y);
       uint vb = luma_code(luma_b, x, y);
       sum += va > vb ? va - vb : vb - va;
@@ -57,7 +57,7 @@ void main() {
   uint tid = gl_LocalInvocationIndex;
   partial[tid] = sum;
   barrier();
-  for (uint n = AJP_GROUP_SIZE / 2u; n > 0u; n >>= 1u) {
+  for (uint n = KIRARI_GROUP_SIZE / 2u; n > 0u; n >>= 1u) {
     if (tid < n) partial[tid] += partial[tid + n];
     barrier();
   }

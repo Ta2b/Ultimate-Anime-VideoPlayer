@@ -12,7 +12,7 @@
 #include "grade_chain_support.h"
 #include "render/display_model.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 using Catch::Approx;
 
@@ -201,4 +201,4 @@ TEST_CASE("pied des noirs : vrai noir sous RVB 4, nuits gardées, courbe croissa
   }
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

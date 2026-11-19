@@ -12,7 +12,7 @@
 #include "prepare/onnx_split.h"
 #include "prepare/protobuf_fields.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using protobuf::Bytes;
@@ -135,4 +135,4 @@ std::expected<std::vector<std::byte>, Refusal> with_outputs(std::span<const std:
   return out;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

@@ -12,11 +12,11 @@ extern "C" {
 
 #include "sine.h"
 
-using namespace ajp::audio;
-using ajp::audio::test::channel;
-using ajp::audio::test::concat;
-using ajp::audio::test::sine_frame;
-using ajp::audio::test::tone_amplitude;
+using namespace kirari::audio;
+using kirari::audio::test::channel;
+using kirari::audio::test::concat;
+using kirari::audio::test::sine_frame;
+using kirari::audio::test::tone_amplitude;
 
 namespace {
 

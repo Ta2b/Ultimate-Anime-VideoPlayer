@@ -13,7 +13,7 @@
 
 #include "core/types.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 inline constexpr int kLutMinSize = 17;
 inline constexpr int kLutMaxSize = 65;
@@ -79,4 +79,4 @@ CubeLut identity_lut(int size);
 // ; toute autre est lue comme une LUT SDR BT.709.
 bool look_is_pq(std::string_view name, std::string_view title);
 
-}  // namespace ajp::render
+}  // namespace kirari::render

@@ -7,7 +7,7 @@
 
 #include "gpu/cuda/backend/deband_kernels.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Bruit uniforme dans [0, 1) tiré d'un hachage entier (PCG) du pixel : fixe d'une image à l'autre, pour
 // qu'un aplat immobile ne scintille pas.
@@ -36,4 +36,4 @@ __device__ __forceinline__ float deband_rule(float value, float a, float b, floa
   return fabsf(average - value) > kDebandThreshold ? value : average;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

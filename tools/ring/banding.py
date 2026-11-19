@@ -13,7 +13,7 @@ excluait presque toute la plage utile).
   banding.py --compare A.ppm B.ppm [--max-ratio 1.10]
       rapport B / A (A : anneau RGBA16, B : RGB10A2) ; code retour 1 au-delà de --max-ratio.
 
-Les PPM viennent de `ajp play … --snapshot=FICHIER --snapshot-at=S`, sur les plans sombres de
+Les PPM viennent de `kirari play … --snapshot=FICHIER --snapshot-at=S`, sur les plans sombres de
 data/calibration/calibration.mkv, une fois avec l'anneau par défaut et une fois avec --ring-rgb10a2.
 """
 import argparse

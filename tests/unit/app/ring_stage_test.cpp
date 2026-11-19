@@ -18,7 +18,7 @@
 
 #include "app/play/links.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -308,4 +308,4 @@ TEST_CASE(
   CHECK(bench.ring.size() == 1);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

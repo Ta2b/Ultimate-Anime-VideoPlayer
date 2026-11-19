@@ -28,7 +28,7 @@
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 
-namespace ajp::app::play::test {
+namespace kirari::app::play::test {
 
 // Un moteur nommé par ses entrées et sorties ; l'étage ne fait que l'enfiler.
 class FakeEngine final : public gpu::Engine {
@@ -397,4 +397,4 @@ struct StageRig {
   std::size_t released_ = 0;  // images de la boîte dont le slot est rendu
 };
 
-}  // namespace ajp::app::play::test
+}  // namespace kirari::app::play::test

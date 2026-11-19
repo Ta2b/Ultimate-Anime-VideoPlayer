@@ -19,7 +19,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Premières constructions mesurées dans le lecteur sur une RTX 4070 Ti (travail 720p) :
@@ -150,4 +150,4 @@ std::expected<bool, StageFailure> load_motion(Player& p, const gpu::BackendInit&
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

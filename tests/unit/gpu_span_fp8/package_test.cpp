@@ -8,7 +8,7 @@
 
 #include "../../support/span_fp8_synthetic.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 using testing::synthetic;
@@ -178,4 +178,4 @@ TEST_CASE("les tailles que les noyaux prennent", "[span_fp8]") {
   CHECK(size_refusal(4608, 8192).find("8K") != std::string::npos);
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

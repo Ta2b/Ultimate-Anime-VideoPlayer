@@ -12,7 +12,7 @@
 
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Tampon de stockage dans une mémoire hôte du runtime : Vulkan rend son tampon et sa mémoire
@@ -208,4 +208,4 @@ std::expected<std::unique_ptr<TensorBuffer>, Refusal> host_imported_tensor(
   return buffer;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

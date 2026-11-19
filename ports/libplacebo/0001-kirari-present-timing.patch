@@ -7,7 +7,7 @@ index c5b3a1d..6ae4ebb 100644
      // if no matching format is found, lower bit depths will be accepted.
      uint8_t color_bits;
 +
-+    // AJP present timing patch. Extra `VkSwapchainCreateFlagsKHR` added at
++    // Kirari present timing patch. Extra `VkSwapchainCreateFlagsKHR` added at
 +    // every (re)creation, e.g. VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR,
 +    // VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR or
 +    // VK_SWAPCHAIN_CREATE_PRESENT_TIMING_BIT_EXT. The matching device features
@@ -28,7 +28,7 @@ index c5b3a1d..6ae4ebb 100644
  // who have `params->allow_suboptimal` enabled.
  PL_API bool pl_vulkan_swapchain_suboptimal(pl_swapchain sw);
  
-+// AJP present timing patch: what `pl_vulkan_swapchain_submit` chains to the
++// Kirari present timing patch: what `pl_vulkan_swapchain_submit` chains to the
 +// presentation.
 +struct pl_vulkan_present {
 +    // If nonzero, chained as `VkPresentId2KHR` (requires
@@ -74,10 +74,10 @@ index c4b6952..08bb75c 100644
 +// extensions: with older Vulkan headers the code below is compiled out and
 +// the player silently loses its frame timing, so refuse to build instead
 +#ifndef VK_KHR_present_id2
-+#error "ajp: the Vulkan headers lack VK_KHR_present_id2 (Vulkan-Headers 1.4.363 expected)"
++#error "kirari: the Vulkan headers lack VK_KHR_present_id2 (Vulkan-Headers 1.4.363 expected)"
 +#endif
 +#ifndef VK_EXT_present_timing
-+#error "ajp: the Vulkan headers lack VK_EXT_present_timing (Vulkan-Headers 1.4.363 expected)"
++#error "kirari: the Vulkan headers lack VK_EXT_present_timing (Vulkan-Headers 1.4.363 expected)"
 +#endif
 +
  struct vk_swapchain {

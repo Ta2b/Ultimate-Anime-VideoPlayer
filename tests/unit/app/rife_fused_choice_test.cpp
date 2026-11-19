@@ -11,7 +11,7 @@
 #include "app/play/settings.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("RIFE fusionné : essayé par défaut, avec la raison de chaque renoncement", "[app][rife_fused]") {
   const PlaySettings defaults;
@@ -84,4 +84,4 @@ TEST_CASE("RIFE fusionné : le réglage voyage dans play.toml et recharge la lec
   CHECK(change_between(running, wanted, false).cost != ChangeCost::Reopen);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

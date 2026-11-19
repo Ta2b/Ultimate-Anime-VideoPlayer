@@ -22,7 +22,7 @@ extern "C" {
 
 #include "core/log.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 namespace {
 
 // Les formats hôte qu'un encodeur accepte ; vide s'il ne le dit pas.
@@ -358,4 +358,4 @@ std::expected<void, Refusal> VideoEncoder::encode(AVFrame* frame, const PacketSi
   return drain(sink);
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

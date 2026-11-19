@@ -17,7 +17,7 @@
 #include "gpu/vulkan/compute/weights.h"
 #include "kernels/spec/color.h"
 
-namespace ajp::gpu::vk::detail {
+namespace kirari::gpu::vk::detail {
 
 // Groupes 16 × 16 de tous les shaders, sauf block_diff (un groupe par bloc).
 inline constexpr std::uint32_t kGroup = 16;
@@ -218,4 +218,4 @@ Done run_planes(PipelineCache& pipelines, Recorder& recorder, std::string_view s
                 std::span<const VkImageView> sampled, std::span<const std::byte> push,
                 std::array<std::uint32_t, 3> groups);
 
-}  // namespace ajp::gpu::vk::detail
+}  // namespace kirari::gpu::vk::detail

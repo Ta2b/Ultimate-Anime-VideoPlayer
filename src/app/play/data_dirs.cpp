@@ -10,6 +10,7 @@
 #include <string_view>
 #include <system_error>
 
+#include "app/play/legacy_dirs.h"
 #include "app/play/machine_calibration.h"
 #include "core/utf8_path.h"
 #include "prepare/cache_purge.h"
@@ -19,7 +20,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -74,10 +75,13 @@ std::filesystem::path local_data(const std::filesystem::path& roaming) {
   if (SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &found) == S_OK && found) {
     std::filesystem::path local(found);
     CoTaskMemFree(found);
-    // Les deux derniers noms du dossier de SDL (« ajp\ajp\ », barre finale comprise).
+    // Le nom du dossier de SDL (« kirari\ », barre finale comprise) ; celui d'ajp (« ajp\ajp ») y est repris
+    // une fois (legacy_dirs.h).
     std::filesystem::path pref = roaming;
     if (!pref.has_filename()) pref = pref.parent_path();
-    local = local / pref.parent_path().filename() / pref.filename();
+    const std::filesystem::path base = local;
+    local = base / pref.filename();
+    adopt_legacy_dir(base / kLegacyName / kLegacyName, local);
     std::error_code made;
     std::filesystem::create_directories(local, made);
     if (!made) return local;
@@ -170,9 +174,9 @@ int move_entries(const std::filesystem::path& from, const std::filesystem::path&
 // B36-08 : le journal, ses parts et les séances gardées (main.cpp), les minidumps et la séquence du banc se
 // refont ou se jettent : ils ne voyagent plus avec le profil itinérant.
 constexpr std::array<std::string_view, 14> kDiagnostics{
-    "ajp.log",     "ajp.log.1",   "ajp.log.2",   "ajp.log.3",        "ajp.1.log",
-    "ajp.1.log.1", "ajp.1.log.2", "ajp.1.log.3", "ajp.2.log",        "ajp.2.log.1",
-    "ajp.2.log.2", "ajp.2.log.3", "crashes",     "bench-clip-v4.mkv"};
+    "kirari.log",     "kirari.log.1",   "kirari.log.2",   "kirari.log.3",     "kirari.1.log",
+    "kirari.1.log.1", "kirari.1.log.2", "kirari.1.log.3", "kirari.2.log",     "kirari.2.log.1",
+    "kirari.2.log.2", "kirari.2.log.3", "crashes",        "bench-clip-v4.mkv"};
 
 }  // namespace
 
@@ -196,8 +200,8 @@ std::filesystem::path cache_data([[maybe_unused]] const std::filesystem::path& h
                                  [[maybe_unused]] const std::filesystem::path& xdg_cache) {
 #if defined(__linux__)
   if (home.empty()) return heavy;
-  if (xdg_cache.is_absolute()) return xdg_cache / "ajp";
-  return home / ".cache" / "ajp";
+  if (xdg_cache.is_absolute()) return xdg_cache / kDataName;
+  return home / ".cache" / kDataName;
 #else
   return heavy;
 #endif
@@ -305,4 +309,4 @@ void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::pa
                      purged.removed_stages, purged.removed_locks));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

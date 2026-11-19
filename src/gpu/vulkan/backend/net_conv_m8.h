@@ -1,10 +1,10 @@
 // La variante coopmat_m8 d'une Conv float16 : matrices coopératives en tuiles 8 × 16 × 16 (f16 × f16 → f32,
 // Target::matrix_m8), celles qu'annoncent les XMX d'Intel Xe2 (Lunar Lake, Battlemage) sous ANV. Noyau
-// net_conv_coopmat_m8_f16 : net_conv_coopmat.glsl en tuiles de 8 pixels (AJP_COOPMAT_M8), poids rangés comme
-// la variante coopmat (matrix_weights : N et K restent 16), B lue dans le tampon ou partagée, ni halo, ni
-// épilogue en registres, ni canaux découpés. Sous-groupes de 16 exigés. Jamais en tête des candidats : écrite
-// sans carte Intel pour l'essayer, elle n'est retenue que par l'autotuner, qui compare sa sortie à celle du
-// noyau direct, puis par la porte de bout en bout. Interne à l'abaissement (net_lower_conv.cpp,
+// net_conv_coopmat_m8_f16 : net_conv_coopmat.glsl en tuiles de 8 pixels (KIRARI_COOPMAT_M8), poids rangés
+// comme la variante coopmat (matrix_weights : N et K restent 16), B lue dans le tampon ou partagée, ni halo,
+// ni épilogue en registres, ni canaux découpés. Sous-groupes de 16 exigés. Jamais en tête des candidats :
+// écrite sans carte Intel pour l'essayer, elle n'est retenue que par l'autotuner, qui compare sa sortie à
+// celle du noyau direct, puis par la porte de bout en bout. Interne à l'abaissement (net_lower_conv.cpp,
 // net_lower.cpp).
 #pragma once
 
@@ -15,7 +15,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_program.h"
 
-namespace ajp::gpu::vk::net::detail {
+namespace kirari::gpu::vk::net::detail {
 
 inline constexpr std::string_view kMatrixM8 = "coopmat_m8";
 inline constexpr std::string_view kMatrixM8Shader = "net_conv_coopmat_m8_f16";
@@ -43,4 +43,4 @@ bool matrix_m8_eligible(const ir::Graph& graph, const ir::Node& node, const Targ
 void add_matrix_m8_candidates(const ir::Graph& graph, const ir::Node& node, const Target& target,
                               std::vector<KernelChoice>& out);
 
-}  // namespace ajp::gpu::vk::net::detail
+}  // namespace kirari::gpu::vk::net::detail

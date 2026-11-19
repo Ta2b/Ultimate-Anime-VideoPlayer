@@ -21,7 +21,7 @@
 // Le SDK de macOS 15.4 et plus déclare VTFrameProcessor ; avec un SDK plus ancien, l'interpolation
 // d'Apple reste absente (refus FeatureUnavailable), comme hors d'un Mac.
 #if defined(__MAC_15_4) && __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_15_4
-#define AJP_VT_FRC 1
+#define KIRARI_VT_FRC 1
 #if __has_include(<VideoToolbox/VTFrameProcessor.h>)
 #import <VideoToolbox/VTFrameProcessor.h>
 #endif
@@ -29,7 +29,7 @@
 #import <VideoToolbox/VTFrameProcessor_FrameRateConversion.h>
 #endif
 #else
-#define AJP_VT_FRC 0
+#define KIRARI_VT_FRC 0
 #endif
 
 #include "core/log.h"
@@ -41,12 +41,12 @@
 #include "gpu/coreml/vt_pixels.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 using vk::net::HostBinding;
 
-#if AJP_VT_FRC
+#if KIRARI_VT_FRC
 
 // Les instants des images, en millièmes d'image : l'image n de la vidéo est à n × kTicks.
 constexpr std::int32_t kTicks = 1000;
@@ -450,12 +450,12 @@ class API_AVAILABLE(macos(15.4)) VtNet final : public vk::net::RuntimeNet {
                        }};
 };
 
-#endif  // AJP_VT_FRC
+#endif  // KIRARI_VT_FRC
 
 }  // namespace
 
 std::expected<std::string, Refusal> vt_probe(int width, int height) {
-#if AJP_VT_FRC
+#if KIRARI_VT_FRC
   if (@available(macOS 15.4, *)) {
     // Les tenseurs dans des IOSurface comme ceux de la chaîne : les conversions passent par le
     // même chemin qu'à la lecture.
@@ -508,7 +508,7 @@ std::expected<std::string, Refusal> vt_probe(int width, int height) {
 std::expected<std::unique_ptr<vk::net::RuntimeNet>, Refusal> vt_net(vk::net::IoNames names, int width,
                                                                     int height,
                                                                     std::shared_ptr<Surfaces> surfaces) {
-#if AJP_VT_FRC
+#if KIRARI_VT_FRC
   if (@available(macOS 15.4, *)) {
     auto opened = Interpolator::open(width, height, std::move(surfaces));
     if (!opened) return std::unexpected(opened.error());
@@ -518,4 +518,4 @@ std::expected<std::unique_ptr<vk::net::RuntimeNet>, Refusal> vt_net(vk::net::IoN
   return refuse_vt(RefusalCode::FeatureUnavailable, "macOS 15.4 ou plus requis");
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

@@ -11,7 +11,7 @@
 #include "media/language.h"
 #include "media/track_language.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // La seule table des noms de langue : une ligne par langue, les autres formes (« ja », « fra »,
@@ -126,4 +126,4 @@ std::optional<int> matching_track(std::span<const media::TrackInfo> tracks, medi
   return std::nullopt;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

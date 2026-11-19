@@ -24,7 +24,7 @@
 #include "prepare/sha256.h"
 #include "prepare/split_index.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using split::block_name;
@@ -455,7 +455,7 @@ std::expected<std::vector<DrbaPiece>, Refusal> split_drba(std::span<const std::b
 }
 
 std::string format_drba_manifest(const DrbaFusedManifest& manifest) {
-  std::string text = "ajp-drba-fused 1\n";
+  std::string text = "kirari-drba-fused 1\n";
   text += std::format("size {} {}\n", manifest.height, manifest.width);
   text += std::format("tail {}\n", manifest.plan.tail);
   for (const std::string& piece : manifest.pieces) text += std::format("piece {}\n", piece);
@@ -512,7 +512,7 @@ std::expected<DrbaFusedManifest, Refusal> parse_drba_manifest(std::string_view t
     const std::string_view key = line.substr(0, space);
     std::string_view rest = space == std::string_view::npos ? std::string_view() : line.substr(space + 1);
     const auto number = [&rest] { return next_number(rest); };
-    if (key == "ajp-drba-fused") {
+    if (key == "kirari-drba-fused") {
       if (rest != "1") return bad("version " + std::string(rest));
       header = true;
     } else if (key == "size") {
@@ -603,4 +603,4 @@ std::expected<std::filesystem::path, Refusal> derive_drba_fused(const std::files
   return manifest_path;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

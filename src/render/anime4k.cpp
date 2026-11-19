@@ -5,7 +5,7 @@
 
 #include "render/anime4k_shaders.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 std::string_view name(Anime4kMode mode) {
   switch (mode) {
@@ -99,4 +99,4 @@ bool is_anime4k_pass(std::string_view description) {
   return description.find("Anime4K-") != std::string_view::npos;
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

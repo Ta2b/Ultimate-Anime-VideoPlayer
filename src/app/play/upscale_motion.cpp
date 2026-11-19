@@ -17,7 +17,7 @@
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -322,4 +322,4 @@ std::expected<void, Refusal> UpscaleStage::interpolate_by_motion(std::uint32_t o
   return blend(a, b, middle, t, out);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // UTF-8 tel quel (BOM retiré) ; UTF-16 reconnu à son BOM ou, sans BOM, à ses octets nuls alternés (une
 // demi-paire seule donne U+FFFD). Sinon (P3.74), un encodage hérité : `hint` porte les suffixes du nom de
@@ -22,4 +22,4 @@ std::string to_utf8(std::string_view bytes, std::string_view hint = {});
 // définies. Sous Linux, iconv les refuse et le décodage les remplace aussi par U+FFFD (C34-07). Pur.
 char32_t single_byte_char(unsigned char byte, std::optional<char32_t> decoded);
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

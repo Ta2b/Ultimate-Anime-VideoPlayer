@@ -7,11 +7,11 @@
 
 #include "app/play/updater.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 TEST_CASE("mises à jour : un update.toml illisible est un refus, rien n'est réécrit (C36-03)", "[updater]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-update-unreadable";
+  const fs::path dir = fs::temp_directory_path() / "kirari-update-unreadable";
   fs::remove_all(dir);
   const fs::path file = dir / "update.toml";
   fs::create_directories(file);  // présent, illisible

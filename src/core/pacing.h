@@ -14,7 +14,7 @@
 #include "core/profile.h"
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 namespace pacing {
 // L'audio suit la vitesse par rééchantillonnage, borné à 0,125 %.
@@ -35,4 +35,4 @@ std::optional<double> vsync_lock(double refresh_hz, double output_fps);
 // exacte, ou rien (cible ≤ 1).
 std::optional<Ratio> lock_factor(double target);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -7,12 +7,12 @@
 // Repris de animejanai-inference-rtx@118c272 src/kernels.cu:415-429 (k_rs_h) et 244-258 (k_h_f32).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } src;
+layout(std430, binding = 0) readonly buffer Source { KIRARI_TENSOR v[]; } src;
 layout(std430, binding = 1) readonly buffer Starts { int start[]; } starts;
 layout(std430, binding = 2) readonly buffer Weights { float w[]; } weights;
 layout(std430, binding = 3) writeonly buffer Destination { float v[]; } dst;

@@ -16,15 +16,15 @@
 #include "app/play/bench_events.h"
 #include "french_ui.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
 
 [[maybe_unused]] fs::path scratch(const std::string& name) {
   static std::atomic<int> counter{0};
-  const fs::path dir = fs::temp_directory_path() / std::format("ajp-bench-test-{}-{}", name, counter++);
+  const fs::path dir = fs::temp_directory_path() / std::format("kirari-bench-test-{}-{}", name, counter++);
   fs::remove_all(dir);
   fs::create_directories(dir);
   return dir;
@@ -33,7 +33,7 @@ namespace {
 }  // namespace
 
 TEST_CASE("les étapes se lisent « Étape n sur 3 » et la barre globale ne recule jamais", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(step_line(BenchStep::Levels, "test des réglages « Rapide »") ==
         "Étape 2 sur 3 : test des réglages « Rapide »");
   float last = -1.0F;
@@ -50,7 +50,7 @@ TEST_CASE("les étapes se lisent « Étape n sur 3 » et la barre globale ne rec
 }
 
 TEST_CASE("l'avancement partagé rend l'étape, la phrase et la note posées", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   BenchProgress progress;
   progress.set(BenchStep::Levels, "test des réglages « Normal »", 0.5F, "patience");
   auto view = progress.get();
@@ -63,7 +63,7 @@ TEST_CASE("l'avancement partagé rend l'étape, la phrase et la note posées", "
 }
 
 TEST_CASE("la dernière ligne d'erreur de l'enfant perd son horodatage et son canal", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(strip_log_prefix("[2026-10-29 12:53:57.048] [app] [error] refus : GPU saturé") ==
         "refus : GPU saturé");
   CHECK(strip_log_prefix(
@@ -86,7 +86,7 @@ TEST_CASE("la dernière ligne d'erreur de l'enfant perd son horodatage et son ca
 }
 
 TEST_CASE("un essai qui n'a rien rendu est toujours expliqué en une phrase", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   using prepare::ExitKind;
   const auto exit = [](ExitKind kind, std::int64_t code) {
     return prepare::ProcessExit{.kind = kind, .code = code, .elapsed = std::chrono::seconds(3)};
@@ -112,10 +112,10 @@ TEST_CASE("un essai qui n'a rien rendu est toujours expliqué en une phrase", "[
 
 namespace {
 
-// Un faux « ajp » : un script qui rend la lecture du niveau demandé, ou échoue au-dessus d'un niveau.
+// Un faux « kirari » : un script qui rend la lecture du niveau demandé, ou échoue au-dessus d'un niveau.
 struct FakePlayer {
   fs::path dir = scratch("fake");
-  fs::path exe = dir / "ajp";
+  fs::path exe = dir / "kirari";
 
   // fail_above : les niveaux plus hauts s'arrêtent avec une erreur ; fail_all : tous échouent ; sleepy :
   // dort.
@@ -163,7 +163,7 @@ struct FakePlayer {
 
 TEST_CASE("l'évaluation monte jusqu'au dernier niveau qui tient et explique l'essai qui échoue",
           "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const FakePlayer fake(2);
   BenchProgress shown;
   const BenchPlan plan{
@@ -184,7 +184,7 @@ TEST_CASE("l'évaluation monte jusqu'au dernier niveau qui tient et explique l'e
 }
 
 TEST_CASE("un premier essai qui échoue donne un refus qui cite la dernière ligne d'erreur", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const FakePlayer fake(0, true);
   const BenchPlan plan{.executable = fake.exe, .video = "/v/a.mkv", .work_dir = fake.dir / "w"};
   const auto outcome = run_bench(plan, std::stop_token{});
@@ -194,7 +194,7 @@ TEST_CASE("un premier essai qui échoue donne un refus qui cite la dernière lig
 }
 
 TEST_CASE("annuler arrête l'évaluation vite, sans attendre l'essai en cours", "[bench_steps]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const FakePlayer fake(4, false, true);
   const BenchPlan plan{.executable = fake.exe, .video = "/v/a.mkv", .work_dir = fake.dir / "w"};
   std::stop_source stop;
@@ -213,16 +213,16 @@ TEST_CASE("annuler arrête l'évaluation vite, sans attendre l'essai en cours", 
 
 TEST_CASE("Banc : l'enfant dit ses événements en JSON, le parent les relit champ par champ (P2.11)",
           "[app][bench]") {
-  using ajp::app::play::ChildBenchEvent;
+  using kirari::app::play::ChildBenchEvent;
   const ChildBenchEvent refusal{
       .event = "refusal", .code = "DeviceLost", .detail = "« échec » \"cité\" \\ fin"};
-  const std::string line = ajp::app::play::bench_event_line(refusal);
-  CHECK(line.starts_with("ajp-bench {\"event\":\"refusal\""));
-  CHECK(ajp::app::play::parse_bench_event(line) == refusal);
-  CHECK(ajp::app::play::parse_bench_event("ajp-bench {\"event\":\"build\",\"futur\":\"x\"}") ==
+  const std::string line = kirari::app::play::bench_event_line(refusal);
+  CHECK(line.starts_with("kirari-bench {\"event\":\"refusal\""));
+  CHECK(kirari::app::play::parse_bench_event(line) == refusal);
+  CHECK(kirari::app::play::parse_bench_event("kirari-bench {\"event\":\"build\",\"futur\":\"x\"}") ==
         ChildBenchEvent{.event = "build"});
   // Une ligne du journal qui parle de construction ou d'échec n'est pas un événement.
-  CHECK_FALSE(ajp::app::play::parse_bench_event("[app] [info] construction de x.engine"));
-  CHECK_FALSE(ajp::app::play::parse_bench_event("ajp-bench {\"event\":\"build\""));
-  CHECK_FALSE(ajp::app::play::parse_bench_event("ajp-bench {}"));
+  CHECK_FALSE(kirari::app::play::parse_bench_event("[app] [info] construction de x.engine"));
+  CHECK_FALSE(kirari::app::play::parse_bench_event("kirari-bench {\"event\":\"build\""));
+  CHECK_FALSE(kirari::app::play::parse_bench_event("kirari-bench {}"));
 }

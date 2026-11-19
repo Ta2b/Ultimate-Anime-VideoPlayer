@@ -5,7 +5,7 @@
 
 struct ImFont;
 
-namespace ajp::app::play::panel {
+namespace kirari::app::play::panel {
 
 struct State {
   bool page_open = false;   // entre begin_page et end_page
@@ -18,4 +18,4 @@ struct State {
   ImFont* bold = nullptr;
 };
 
-}  // namespace ajp::app::play::panel
+}  // namespace kirari::app::play::panel

@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("B33-05 : la dérive de la mémoire ou des descripteurs se signale au-delà de la moitié de plus",
           "[resources]") {
@@ -23,4 +23,4 @@ TEST_CASE("B33-05 : la dérive de la mémoire ou des descripteurs se signale au-
   CHECK(threads.find("61 threads") != std::string::npos);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

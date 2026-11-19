@@ -16,7 +16,7 @@ extern "C" {
 #include "av/input_whitelist.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 using av::av_error_text;
 namespace {
@@ -170,4 +170,4 @@ std::expected<std::vector<PcmBlock>, Refusal> AudioDecoder::receive() {
   }
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

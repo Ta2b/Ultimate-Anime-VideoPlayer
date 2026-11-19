@@ -18,7 +18,7 @@ while IFS= read -r member; do
   name="${name%/}"
   case "$name" in
     "" | .) ;;  # la racine de l'archive
-    ajp_backend_tensorrt.so | ajp_backend_tensorrt.dll) module=1 ;;
+    kirari_backend_tensorrt.so | kirari_backend_tensorrt.dll) module=1 ;;
     trtexec | trtexec.exe) trtexec=1 ;;
     *) bad="$bad$member"$'\n' ;;
   esac
@@ -28,6 +28,6 @@ if [ -n "$bad" ]; then
   printf '%s' "$bad" >&2
   exit 1
 fi
-[ "$module" -eq 1 ] || { echo "$archive : le module ajp_backend_tensorrt est absent" >&2; exit 1; }
+[ "$module" -eq 1 ] || { echo "$archive : le module kirari_backend_tensorrt est absent" >&2; exit 1; }
 [ "$trtexec" -eq 1 ] || { echo "$archive : trtexec est absent" >&2; exit 1; }
 echo "$archive : module et trtexec seulement"

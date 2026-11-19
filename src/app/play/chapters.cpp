@@ -9,7 +9,7 @@
 #include "app/play/i18n.h"
 #include "core/text.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<std::size_t> chapter_at(std::span<const ChapterMark> chapters, std::int64_t position_us) {
   std::optional<std::size_t> found;
@@ -84,4 +84,4 @@ i18n::Translated chapter_label(std::span<const ChapterMark> chapters, std::size_
   return label;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

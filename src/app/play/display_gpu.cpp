@@ -19,7 +19,7 @@
 #include <fstream>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string drm_card_of(std::string_view connector) {
   if (!connector.starts_with("card")) return {};
@@ -132,4 +132,4 @@ std::optional<i18n::Translated> note_render_device(SDL_Window* window, std::stri
       "for G-SYNC and lower latency");
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -15,7 +15,7 @@
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/spec/color.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 std::unexpected<Refusal> not_here(std::string_view kernel) {
@@ -474,4 +474,4 @@ std::expected<void, Refusal> TensorRtBackend::rescale(const Tensor& in, kernels:
   return launched;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

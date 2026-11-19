@@ -26,7 +26,7 @@ extern "C" {
 #include "media/hw_device.h"
 #include "media/log.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 namespace {
 
@@ -734,4 +734,4 @@ void VideoDecoder::flush() {
   s.delivered_us = kNoPts;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

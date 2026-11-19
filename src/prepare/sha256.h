@@ -16,7 +16,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 class Sha256 {
  public:
@@ -51,4 +51,4 @@ std::expected<std::string, Refusal> sha256_file_known(const std::filesystem::pat
 // 64 chiffres hexadécimaux minuscules.
 bool is_sha256_hex(std::string_view text);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

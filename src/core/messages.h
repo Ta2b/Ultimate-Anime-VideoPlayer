@@ -6,7 +6,7 @@
 #include <memory>
 #include <variant>
 
-namespace ajp {
+namespace kirari {
 
 // Le consommateur rend une place : le producteur peut réessayer try_push.
 struct Credit {
@@ -75,4 +75,4 @@ using Command = std::variant<cmd::Play, cmd::Pause, cmd::TogglePause, cmd::Seek,
                              cmd::StepFrame, cmd::ProcessingOff, cmd::ToggleGrade, cmd::ToggleInterpolation,
                              cmd::ToggleOsd, cmd::SetAudioDelay, cmd::SetVolume, cmd::Quit>;
 
-}  // namespace ajp
+}  // namespace kirari

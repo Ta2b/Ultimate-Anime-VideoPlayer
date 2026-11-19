@@ -11,7 +11,7 @@
 #include "core/file_sync.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::filesystem::path partial_of(const std::filesystem::path& path) {
@@ -130,4 +130,4 @@ std::expected<void, Refusal> commit_derivation(const std::filesystem::path& pack
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

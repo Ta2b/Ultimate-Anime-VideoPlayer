@@ -17,7 +17,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct MachineNote {
   bool read = false;                         // calibration.toml relu à l'ouverture de la page
@@ -41,4 +41,4 @@ struct MachineNote {
 bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, MachineNote& bench,
                            std::vector<Input>& actions);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

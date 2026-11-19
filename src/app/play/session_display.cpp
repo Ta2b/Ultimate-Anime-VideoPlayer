@@ -5,7 +5,7 @@
 #include "app/play/session.h"
 #include "core/pacing.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Période d'écran supposée tant qu'aucune présentation rapprochée ne la borne : 60 Hz.
@@ -98,4 +98,4 @@ void Session::follow_display() {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

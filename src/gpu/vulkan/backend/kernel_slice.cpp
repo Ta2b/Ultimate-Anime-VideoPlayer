@@ -19,7 +19,7 @@
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using detail::add_view;
@@ -273,4 +273,4 @@ std::expected<float, Refusal> VulkanKernelOps::flow_max_take(std::uint64_t ticke
   return kernels::flow_percentile(bins.data(), slot.points);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

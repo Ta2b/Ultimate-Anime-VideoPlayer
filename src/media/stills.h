@@ -16,7 +16,7 @@
 #include "core/frame.h"
 #include "core/types.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Refusal::key d'un refus pour source HDR : la préparation se fait sur une vidéo SDR (P2.11).
 inline constexpr std::string_view kHdrSourceKey = "source.hdr";
@@ -85,4 +85,4 @@ std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem:
                                                           const StillsSpec& spec, const std::stop_token& stop,
                                                           const std::function<void(float)>& progress = {});
 
-}  // namespace ajp::media
+}  // namespace kirari::media

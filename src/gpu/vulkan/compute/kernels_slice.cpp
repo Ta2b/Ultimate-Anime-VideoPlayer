@@ -14,7 +14,7 @@
 #include "kernels/spec/detect.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using detail::bytes_of;
@@ -187,4 +187,4 @@ Done KernelRunner::tensor_peak(Recorder& recorder, const TensorView& t, const ke
                       groups_for(static_cast<std::uint32_t>(area.height)), 1});
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

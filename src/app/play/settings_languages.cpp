@@ -12,7 +12,7 @@
 #include "app/play/panel_style.h"
 #include "app/play/tracks.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::note;
 using panel::section;
@@ -163,4 +163,4 @@ bool languages_page(PlaySettings& d) {
   return held;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

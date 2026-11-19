@@ -10,8 +10,8 @@ extern "C" {
 #include "media/cuda_driver.h"
 #include "media/hw_device.h"
 
-using namespace ajp::media;
-using ajp::RefusalCode;
+using namespace kirari::media;
+using kirari::RefusalCode;
 
 namespace {
 

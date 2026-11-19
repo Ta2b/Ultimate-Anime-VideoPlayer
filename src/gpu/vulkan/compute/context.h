@@ -31,7 +31,7 @@ namespace spdlog {
 class logger;
 }  // namespace spdlog
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class Recording;
 
@@ -308,4 +308,4 @@ class VkContext {
   std::shared_ptr<spdlog::logger> log_;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

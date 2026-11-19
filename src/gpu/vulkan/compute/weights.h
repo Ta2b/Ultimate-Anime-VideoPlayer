@@ -10,7 +10,7 @@
 #include "core/types.h"
 #include "kernels/spec/resample.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Table de dst sorties sur src entrées : start[i] premier indice source (avant le miroir),
 // w[i × taps + j] poids normalisés. Même contenu, au bit près, que kernels/ref compute_weights.
@@ -42,4 +42,4 @@ struct Bt1886Display {
 };
 std::expected<Bt1886Display, Refusal> bt1886_display(float white, float black);  // refus FieldOutOfRange
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

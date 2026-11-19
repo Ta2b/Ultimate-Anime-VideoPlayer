@@ -7,11 +7,11 @@
 // par tout le groupe de travail), enfin Y = Aᵀ M A et l'épilogue de net_conv.glsl (biais,
 // résiduel ou porte de SPAN, activation, DepthToSpace fondu). Entrée float16 en Nhwc16, groupe
 // unique ; les canaux de bourrage ne sont pas lus. L'autotuner compare sa sortie au noyau direct.
-// Variante AJP_CONV_PACKED (fp16 de calcul, comme net_conv_f16p) : U en float16, V et les produits
+// Variante KIRARI_CONV_PACKED (fp16 de calcul, comme net_conv_f16p) : U en float16, V et les produits
 // en f16vec, sommés par paquets de 16 canaux puis ajoutés à M en float.
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #define WINO_D f16vec2
 #define WINO_UNPACK unpackFloat2x16
@@ -56,17 +56,17 @@ layout(constant_id = 34) const uint SPACE_CRD = 0;  // 1 : ordre CRD, 0 : DCR
 const uint BLOCKS = (COUT + 4u * QUADS - 1u) / (4u * QUADS);
 const uint TILES_W = (WOUT + 1u) / 2u;
 
-AJP_NET_BUFFER(0, src, readonly)
+KIRARI_NET_BUFFER(0, src, readonly)
 layout(std430, binding = 0) readonly buffer SourceU { uint v[]; } src_u;  // deux float16 par uint
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
 layout(std430, binding = 1) readonly buffer Weights { f16vec4 w[]; } weights;
 #else
 layout(std430, binding = 1) readonly buffer Weights { vec4 w[]; } weights;
 #endif
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
-AJP_NET_BUFFER(4, res, readonly)
-AJP_NET_BUFFER(5, dst, writeonly)
+KIRARI_NET_BUFFER(4, res, readonly)
+KIRARI_NET_BUFFER(5, dst, writeonly)
 
 void main() {
   const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
@@ -97,7 +97,7 @@ void main() {
 
   vec4 m[16 * QUADS];
   for (uint a = 0u; a < 16u * QUADS; ++a) m[a] = vec4(0.0);
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
   f16vec4 part[16 * QUADS];
   for (uint a = 0u; a < 16u * QUADS; ++a) part[a] = f16vec4(0.0);
 #endif
@@ -115,7 +115,7 @@ void main() {
           if (single) {
             const uint iy = oy0 + r - PT;
             const uint ix = ox0 + c - PL;
-            v.x = WINO_SCALAR(AJP_LOAD(src, TX, t_index(xd, n, ci, iy, ix)));
+            v.x = WINO_SCALAR(KIRARI_LOAD(src, TX, t_index(xd, n, ci, iy, ix)));
           } else {
             v = WINO_UNPACK(src_u.v[row_at[r] + col_at[c] + cp]);
           }
@@ -145,7 +145,7 @@ void main() {
       d[r * 4u + 3u] = t1 - t3;
     }
     const uint w0 = (blk * CIN + ci) * 16u * QUADS;
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
     for (uint p = 0u; p < 16u; ++p) {
       for (uint q = 0u; q < QUADS; ++q) {
         part[p * QUADS + q] += d[p].x * weights.w[w0 + p * QUADS + q];
@@ -195,11 +195,11 @@ void main() {
           const uint co = blk * 4u * QUADS + 4u * q + k;
           if (co >= COUT) continue;
           float v = y[u * 2u + w][k] + bias.v[co];
-          if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          if (RESIDUAL == 1u) v += KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
           // Porte de SPAN : sortie de la forme de x, lue au même élément.
-          if (RESIDUAL == 2u) v *= AJP_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-          AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
+          if (RESIDUAL == 2u) v *= KIRARI_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          KIRARI_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
         }
       }
     }

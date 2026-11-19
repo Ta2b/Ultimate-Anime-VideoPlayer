@@ -21,8 +21,8 @@
 #include "gpu/vulkan/backend/net_lower.h"
 #include "net_rig.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 
@@ -45,7 +45,7 @@ TEST_CASE("Réseau : les ArtCNN livrés, du graphe préparé jusqu'à l'image ×
   // Ni la hauteur ni la largeur ne sont multiples de 8 : les bords des tuiles de chaque Conv comptent.
   const ir::Dims shape{1, 3, 18, 26};
   for (const std::string_view file : kArtCnn) {
-    const std::filesystem::path onnx = std::filesystem::path(AJP_ARTCNN_MODEL_DIR) / file;
+    const std::filesystem::path onnx = std::filesystem::path(KIRARI_ARTCNN_MODEL_DIR) / file;
     INFO(onnx.string());
     REQUIRE(std::filesystem::is_regular_file(onnx));
     const vk::net::BuildRequest request{

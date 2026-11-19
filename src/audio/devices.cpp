@@ -4,7 +4,7 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_stdinc.h>
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 void mark_default_device(std::vector<AudioDevice>& devices, std::string_view default_name) {
   for (AudioDevice& device : devices) device.is_default = false;
@@ -64,4 +64,4 @@ std::optional<AudioDevice> resolve_device(const std::vector<AudioDevice>& device
   return std::nullopt;
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

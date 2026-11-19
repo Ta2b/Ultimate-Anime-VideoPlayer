@@ -9,7 +9,7 @@
 #include "gpu/ir/op_util.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 namespace {
 
 // Pas d'un opérande dans l'espace de la sortie : 0 sur les axes diffusés.
@@ -266,4 +266,4 @@ Evaluated eval_fake_quant(const Node& node, std::span<const Value* const> in,
   return std::vector<Value>{std::move(out)};
 }
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

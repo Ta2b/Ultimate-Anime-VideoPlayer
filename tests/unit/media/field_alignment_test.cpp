@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::media::FieldAlignmentMeter;
+using kirari::media::FieldAlignmentMeter;
 
 namespace {
 

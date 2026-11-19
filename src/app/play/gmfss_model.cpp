@@ -8,7 +8,7 @@
 #include "app/play/derived_model.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs) {
   std::error_code error;
@@ -54,4 +54,4 @@ std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int 
   return fixed;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

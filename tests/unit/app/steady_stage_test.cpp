@@ -11,7 +11,7 @@
 #include "app/play/live_settings.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 
 TEST_CASE("Étage gpu : Rapide à pas constant, à N = 1 chaque paire est mesurée", "[app][stage][steady]") {
@@ -62,4 +62,4 @@ TEST_CASE("Étage gpu : Rapide à pas constant, N = 6,5 et des instants uniforme
   CHECK(rig.backend.count("engine rife") > 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

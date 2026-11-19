@@ -13,7 +13,7 @@ extern "C" {
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::audio::test {
+namespace kirari::audio::test {
 namespace {
 
 struct ContextFree {
@@ -152,4 +152,4 @@ double peak(std::span<const float> mono) {
   return highest;
 }
 
-}  // namespace ajp::audio::test
+}  // namespace kirari::audio::test

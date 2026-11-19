@@ -8,7 +8,7 @@
 #include "gpu/ir/fp8.h"
 #include "gpu/ir/int8.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Les valeurs de [first, last) tombent-elles sur la grille E4M3 de cette échelle ? À un arrondi
@@ -107,4 +107,4 @@ std::optional<Fp8Weights> recover_fp8_weights(const Value& weights) {
   return out;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

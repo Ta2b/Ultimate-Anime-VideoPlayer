@@ -6,14 +6,14 @@
 // travail), COPY = 1 recopie dst dans l'image.
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(constant_id = 0) const uint COPY = 0;
 
-layout(std430, binding = 0) readonly buffer Src { AJP_TENSOR v[]; } src;
-layout(std430, binding = 1) writeonly buffer Dst { AJP_TENSOR v[]; } dst;
+layout(std430, binding = 0) readonly buffer Src { KIRARI_TENSOR v[]; } src;
+layout(std430, binding = 1) writeonly buffer Dst { KIRARI_TENSOR v[]; } dst;
 
 layout(push_constant) uniform Push {
   uint width;
@@ -45,7 +45,7 @@ void main() {
     for (uint c = 0u; c < 3u; ++c) dst.v[c * plane + i] = src.v[c * plane + i];
     return;
   }
-  precise float distance = AJP_DEBAND_RADIUS * deband_uniform(x, y, 1u);
+  precise float distance = KIRARI_DEBAND_RADIUS * deband_uniform(x, y, 1u);
   precise float angle = 6.2831853 * deband_uniform(x, y, 2u);
   precise float ox = distance * cos(angle);
   precise float oy = distance * sin(angle);
@@ -62,6 +62,6 @@ void main() {
     float value = float(src.v[base + i]);
     precise float average =
         0.25 * (((float(src.v[base + a]) + float(src.v[base + b])) + float(src.v[base + d])) + float(src.v[base + e]));
-    dst.v[base + i] = AJP_TENSOR(abs(average - value) > AJP_DEBAND_THRESHOLD ? value : average);
+    dst.v[base + i] = KIRARI_TENSOR(abs(average - value) > KIRARI_DEBAND_THRESHOLD ? value : average);
   }
 }

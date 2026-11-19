@@ -5,12 +5,12 @@
 // les vues des anciennes, détruites une fois leurs écritures achevées côté GPU.
 #include <format>
 
-#include "ajp_vk_backend_spirv.h"
 #include "gpu/vulkan/backend/kernel_ops.h"
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "gpu/vulkan/compute/refuse.h"
+#include "kirari_vk_backend_spirv.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr VkFormat kSlotFormat = VK_FORMAT_R16G16B16A16_UNORM;
@@ -181,4 +181,4 @@ std::expected<void, Refusal> VulkanKernelOps::read_ring(const RingSlotDesc& slot
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

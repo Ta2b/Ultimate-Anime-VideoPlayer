@@ -11,7 +11,7 @@
 
 #include "subs/subtitle_frame.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Appelée par le thread qui relâche la dernière référence d'un atlas, depuis un
 // destructeur : elle ne bloque pas et ne lève rien. Si elle ne garde pas
@@ -38,4 +38,4 @@ class AtlasPool {
   std::size_t created_ = 0;
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

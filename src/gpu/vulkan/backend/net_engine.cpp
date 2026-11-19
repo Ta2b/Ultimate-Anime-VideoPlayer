@@ -4,10 +4,10 @@
 #include <cstring>
 #include <format>
 
-#include "ajp_vk_backend_spirv.h"
 #include "gpu/ir/graph.h"
+#include "kirari_vk_backend_spirv.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 bool same_view(const BufferView& a, const BufferView& b) {
@@ -362,4 +362,4 @@ std::expected<Recording*, Refusal> NetEngine::recording(std::span<const BufferVi
   return recordings_.back().recording.get();
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

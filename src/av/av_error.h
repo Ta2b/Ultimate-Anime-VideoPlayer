@@ -13,7 +13,7 @@ extern "C" {
 #include <libavutil/error.h>
 }
 
-namespace ajp::av {
+namespace kirari::av {
 
 inline std::string av_error_text(int error) {
   // Les refus qu'on voit le plus à l'ouverture d'un fichier, en français (le reste garde le texte de FFmpeg).
@@ -34,4 +34,4 @@ inline std::string av_error_text(int error) {
   return text.data();
 }
 
-}  // namespace ajp::av
+}  // namespace kirari::av

@@ -75,8 +75,14 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
+
+// Le titre de la fenêtre : le nom du lecteur, et celui de la vidéo quand il y en a une.
+std::string window_title(const std::filesystem::path& file) {
+  if (file.empty()) return "Kirari Player";
+  return std::format("Kirari Player — {}", core::to_utf8(file.filename()));
+}
 
 // Un fichier de configuration que le lecteur n'a pas compris sera réécrit au prochain changement
 // de réglage : il est mis de côté d'abord (« nom.invalide-AAAAMMJJ-HHMMSS »), pour qu'aucun profil
@@ -250,7 +256,7 @@ bool settle_given_probe(std::optional<GivenProbe>& probe, PlaceboScreen& screen,
   if (!video && video.error().code == RefusalCode::Cancelled) return false;
   if (video) {
     given = std::move(*video);
-    SDL_SetWindowTitle(screen.window(), std::format("ajp — {}", core::to_utf8(file.filename())).c_str());
+    SDL_SetWindowTitle(screen.window(), std::format("kirari — {}", core::to_utf8(file.filename())).c_str());
     ui.set_title(core::to_utf8(file.filename()));
     return true;
   }
@@ -326,7 +332,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   ReleaseRefresh release_index = start_release_refresh(options, paths, *saved);  // A18-02
   const std::jthread resource_log = start_resource_log();                        // A33-08
   load_user_keys(paths::user_keys(settings_path.parent_path()));                 // [keys] seul
-  const std::string title = given ? std::format("ajp — {}", core::to_utf8(options.file.filename())) : "ajp";
+  const std::string title = window_title(given ? options.file : std::filesystem::path());
   auto screen = PlaceboScreen::open(ScreenOptions{
       .title = title,
       .width = options.hidden ? 16 : options.window_width,
@@ -500,7 +506,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
         i18n::set_language(interface_language(saved->language));
       }
       SDL_SetWindowTitle((*screen)->window(),
-                         std::format("ajp — {}", core::to_utf8(file.filename())).c_str());
+                         std::format("kirari — {}", core::to_utf8(file.filename())).c_str());
       (*ui)->set_title(core::to_utf8(file.filename()));
     }
     note_crash_stage(std::format("ouverture de {}", core::to_utf8(file.filename())));  // B39-10
@@ -758,7 +764,7 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
     log_channel("app")->info("--bake-looks : {} à {:.0f} %", slots[i].key, 100.0 * slots[i].mix);
   }
   render::CubeLut baked = render::compose_luts(luts, mixes);
-  baked.title = "ajp anime HDR (pile composee)";
+  baked.title = "kirari anime HDR (pile composee)";
   std::ofstream file(out, std::ios::binary);
   file << render::write_cube(baked);
   if (!file)
@@ -768,4 +774,4 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

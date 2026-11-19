@@ -5,7 +5,7 @@
 
 #include "core/frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 bool same_look(const subs::SubtitleFrame& a, const subs::SubtitleFrame& b) {
@@ -51,4 +51,4 @@ void SubtitleQueue::forget_before(std::int64_t pts) {
   while (frames_.size() > 1 && frames_[1].pts_us <= pts) frames_.pop_front();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

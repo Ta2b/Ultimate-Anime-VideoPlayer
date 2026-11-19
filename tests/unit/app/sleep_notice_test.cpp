@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -52,4 +52,4 @@ TEST_CASE("C29-06 : un réveil dit par le système se prend une fois et réveill
   CHECK_FALSE(gate.take_resumed());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

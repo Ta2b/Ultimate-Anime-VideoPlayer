@@ -14,7 +14,7 @@ SPAN, puis la ramène à l'écran comme libplacebo par défaut (Lanczos vers le 
 résultat se compare à la vérité de l'écran. Les hauteurs de travail sont dites à l'échelle du lecteur : « 720p »
 est ici 360 lignes.
 
-  python3 -I tools/bench/qualite/travail.py --modeles ~/.cache/ajp-release-models/modeles --md travail.md
+  python3 -I tools/bench/qualite/travail.py --modeles ~/.cache/kirari-release-models/modeles --md travail.md
 
 Limite : les traits sont deux fois plus fins que ceux que SPAN a appris, et SPAN renforce les traits au lieu de
 rendre l'original (voir docs/banc-qualite.md). Les chiffres classent des chaînes entre elles, ils ne disent pas

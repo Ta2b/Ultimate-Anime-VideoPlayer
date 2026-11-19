@@ -36,7 +36,7 @@
 struct AVBufferRef;
 struct AVFrame;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Une image neuve de l'encodeur, ou le refus du pool.
 using FrameSource = std::function<std::expected<exporter::OwnedFrame, Refusal>()>;
@@ -114,4 +114,4 @@ class ExportSink final : public YuvSlots {
   mutable std::vector<std::uint64_t> issued_;  // sous mutex_ : dernière valeur promise par slot
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

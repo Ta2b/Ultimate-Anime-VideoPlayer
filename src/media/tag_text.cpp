@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Longueur de la séquence UTF-8 conforme (RFC 3629) qui commence à text[i], 0 si elle est invalide.
@@ -76,4 +76,4 @@ std::string clean_tag_text(std::string_view raw) {
   return out;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

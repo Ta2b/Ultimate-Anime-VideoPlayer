@@ -3,11 +3,11 @@
 // et plus tard les cartes sans mma FP8. À part pour que ses instanciations CUTLASS se compilent en parallèle.
 #include "gpu/cuda/backend/span_fp8_body.cuh"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels) {
   if (channels == 48) return std::make_unique<Body<48, Alg::kFewChannels, true>>(height, width);
   return std::make_unique<Body<64, Alg::kOptimized, true>>(height, width);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

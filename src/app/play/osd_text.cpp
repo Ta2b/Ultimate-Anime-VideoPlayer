@@ -11,7 +11,7 @@
 #include "app/play/subtitle_fonts.h"
 #include "app/play/ui_fonts.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Neutralise ce qu'ASS interprète dans un texte de dialogue : accolades (en parenthèses) et barre
@@ -116,4 +116,4 @@ std::expected<const subs::SubtitleFrame*, Refusal> OsdText::render(std::span<con
   return frame_.atlas ? &frame_ : nullptr;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

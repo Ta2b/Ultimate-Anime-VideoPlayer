@@ -12,7 +12,7 @@
 #include "media/shot_cutter.h"
 #include "media/shot_timeline.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // La hauteur de l'image où la cascade cherche : un visage de 24 lignes y fait 8 % de la hauteur de l'image.
 inline constexpr int kFaceSearchHeight = 288;
@@ -38,4 +38,4 @@ class FaceSearch {
   int seen_ = 0;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

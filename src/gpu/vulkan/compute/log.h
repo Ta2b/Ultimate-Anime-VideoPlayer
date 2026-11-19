@@ -5,10 +5,10 @@
 
 #include <spdlog/logger.h>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Le canal « vk_compute » (core/log.h) : dans un backend, celui-ci journalise par le rappel du
 // lecteur. Chaque objet du module qui journalise garde le sien.
 std::shared_ptr<spdlog::logger> make_logger();
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

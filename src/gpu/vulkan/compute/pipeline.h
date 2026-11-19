@@ -1,4 +1,4 @@
-// Pipelines de calcul depuis le SPIR-V embarqué (ajp_add_spirv), avec leurs constantes de
+// Pipelines de calcul depuis le SPIR-V embarqué (kirari_add_spirv), avec leurs constantes de
 // spécialisation. Disposition fixe : un ensemble de descripteurs, des tampons de stockage aux
 // bindings 0..n−1 puis des images de stockage aux suivants, et un bloc de push constants. Le
 // cache garde en mémoire chaque pipeline créé, par shader et constantes, et un VkPipelineCache.
@@ -20,7 +20,7 @@
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 struct PipelineDesc {
   std::string_view shader;                   // nom embarqué, variante comprise (« resample_h_f16 »)
@@ -123,4 +123,4 @@ class PipelineCache {
   std::map<Key, std::unique_ptr<Pipeline>> pipelines_;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

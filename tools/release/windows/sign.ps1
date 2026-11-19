@@ -21,7 +21,7 @@ $files = foreach ($p in $Paths) {
 if (-not $files) { throw "signature : aucun fichier dans $($Paths -join ', ')" }
 
 # Le client de Trusted Signing (la bibliothèque que signtool charge) vient de NuGet, à version épinglée.
-$work = Join-Path ($env:RUNNER_TEMP ?? [IO.Path]::GetTempPath()) "ajp-trusted-signing"
+$work = Join-Path ($env:RUNNER_TEMP ?? [IO.Path]::GetTempPath()) "kirari-trusted-signing"
 $dlib = Join-Path $work "Microsoft.Trusted.Signing.Client/bin/x64/Azure.CodeSigning.Dlib.dll"
 if (-not (Test-Path $dlib)) {
   New-Item -ItemType Directory -Force $work | Out-Null

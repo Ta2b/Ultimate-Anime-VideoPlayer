@@ -1,7 +1,7 @@
 // Décodage matériel réel sur un GPU NVIDIA : NVDEC dans le contexte primaire de
 // l'appareil choisi par UUID, et Vulkan Video. Les clips viennent des encodeurs
 // NVENC de FFmpeg, écrits par le test ; sans GPU NVIDIA (la CI, lavapipe), chaque
-// test SKIP avec sa raison. Sur ce PC : ajp-gpu ctest -R 'NVDEC|Vulkan Video'.
+// test SKIP avec sa raison. Sur ce PC : kirari-gpu ctest -R 'NVDEC|Vulkan Video'.
 //
 // Sanitizers sur la RTX :
 // - ASan réserve l'espace d'adresses que le pilote CUDA veut pour son UVM : cuInit rend
@@ -13,9 +13,9 @@
 //   19 octobre : 3231 octets en 69 allocations sous av_hwdevice_ctx_create Vulkan et sous
 //   avcodec_open2 de NVENC). Sur la RTX, ces tests et les tests [vulkan] (leur nom dit
 //   NVDEC ou Vulkan) tournent donc avec detect_leaks=0, le reste de media avec les fuites :
-//     ajp-gpu env ASAN_OPTIONS=protect_shadow_gap=0 ctest --preset linux-prefix-asan
+//     kirari-gpu env ASAN_OPTIONS=protect_shadow_gap=0 ctest --preset linux-prefix-asan
 //       -R '^media: ' -E 'NVDEC|Vulkan'
-//     ajp-gpu env ASAN_OPTIONS=detect_leaks=0:protect_shadow_gap=0 ctest --preset
+//     kirari-gpu env ASAN_OPTIONS=detect_leaks=0:protect_shadow_gap=0 ctest --preset
 //       linux-prefix-asan -R '^media: .*(NVDEC|Vulkan)'
 //   Les fuites des tests [vulkan] se vérifient sur lavapipe (with-lavapipe, la CI).
 #include <bit>
@@ -48,10 +48,10 @@ extern "C" {
 #include "media/hw_device.h"
 #include "media/video_decoder.h"
 
-using namespace ajp::media;
-using ajp::DecodedFrame;
-using ajp::FrameMemory;
-using ajp::PixelFormat;
+using namespace kirari::media;
+using kirari::DecodedFrame;
+using kirari::FrameMemory;
+using kirari::PixelFormat;
 
 namespace {
 

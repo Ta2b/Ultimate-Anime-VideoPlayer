@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 constexpr std::uint32_t kMagic = 0x07230203;
@@ -251,4 +251,4 @@ std::map<std::uint32_t, std::uint32_t> spec_constants(std::span<const std::uint3
   return out;
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

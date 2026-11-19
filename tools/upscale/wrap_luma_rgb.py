@@ -78,7 +78,7 @@ def wrap(model: onnx.ModelProto, chroma: str = "linear") -> onnx.ModelProto:
         initializers)
     opset = max(13, next(o.version for o in model.opset_import if o.domain in ("", "ai.onnx")))
     out = helper.make_model(graph, opset_imports=[helper.make_opsetid("", opset)],
-                            producer_name="ajp wrap_luma_rgb")
+                            producer_name="kirari wrap_luma_rgb")
     out.ir_version = model.ir_version
     onnx.checker.check_model(out)
     return out

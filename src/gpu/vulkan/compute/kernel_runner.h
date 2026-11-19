@@ -22,7 +22,7 @@
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class KernelRunner {
  public:
@@ -139,4 +139,4 @@ class KernelRunner {
 // remplie pw × ph (kernels::rife_geometry), puis se compare avec kernels::is_scene_cut.
 double scene_sum(std::span<const float> partials);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

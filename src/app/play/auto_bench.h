@@ -18,7 +18,7 @@
 #include "core/types.h"
 #include "gpu/gpu_profile.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce qu'un essai a mesuré (les chiffres de FrameStats, frame_stats.h, sur toute la durée de l'essai).
 struct BenchRun {
@@ -47,7 +47,7 @@ std::optional<Tier> next_level(const std::vector<BenchRun>& runs, Tier estimated
 // Le plus haut niveau qui tient ; Économe si aucun ne tient.
 Tier best_level(const std::vector<BenchRun>& runs);
 
-// Ce qu'un essai (un « ajp play --bench-out ») rend à celui qui le lance : la carte et le pilote qui ont
+// Ce qu'un essai (un « kirari play --bench-out ») rend à celui qui le lance : la carte et le pilote qui ont
 // joué, et les mesures. Le niveau de la mesure est celui que l'essai a vraiment joué (le niveau estimé, pour
 // un essai demandé « auto »).
 struct BenchReading {
@@ -122,4 +122,4 @@ bool measured_here(const BenchResult& measured, const GpuFacts& gpu, bool tensor
 // sinon l'estimation.
 Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measured, bool tensorrt);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

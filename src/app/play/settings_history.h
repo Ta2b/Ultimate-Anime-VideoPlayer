@@ -8,7 +8,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce que le lecteur a changé seul entre deux tours du panneau.
 struct ExternalChange {
@@ -47,4 +47,4 @@ class SettingsHistory {
   std::vector<PlaySettings> redo_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

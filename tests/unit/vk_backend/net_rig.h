@@ -23,7 +23,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "gpu/vulkan/compute/pipeline.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 std::string describe(const Refusal& refusal);
 
@@ -84,4 +84,4 @@ void check_graph(NetRig& rig, const ir::Graph& graph, std::span<const ir::NamedV
 ir::Value test_values(ir::DataType type, const ir::Dims& dims, std::size_t seed, float lo = -1.0F,
                       float hi = 1.0F);
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

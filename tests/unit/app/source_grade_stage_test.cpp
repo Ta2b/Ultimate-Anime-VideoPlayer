@@ -11,7 +11,7 @@
 #include "app/play/source_grade.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 namespace {
 
@@ -84,4 +84,4 @@ TEST_CASE("Étage gpu : grade avant le warp sans warp après SPAN, l'écran grad
   for (const RingFrame& frame : frames) CHECK_FALSE(frame.graded);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

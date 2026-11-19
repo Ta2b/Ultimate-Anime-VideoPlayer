@@ -12,7 +12,7 @@
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/ref/frame_stats.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr std::size_t kCountsBytes = sizeof(kernels::FrameCounts);
@@ -70,4 +70,4 @@ std::expected<std::optional<kernels::FrameStats>, Refusal> TensorRtBackend::fram
   return std::optional(kernels::ref::frame_stats_of(counts));
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

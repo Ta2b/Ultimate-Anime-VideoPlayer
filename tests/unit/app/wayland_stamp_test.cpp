@@ -6,7 +6,7 @@
 
 #include "app/play/placebo_wayland.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 TEST_CASE("wp_presentation : un horodatage en clair", "[app][wayland]") {
   // 2^32 + 5 secondes et 123 456 789 ns, MSC 2^32 + 7, vsync | horloge matérielle (0x1 | 0x2).

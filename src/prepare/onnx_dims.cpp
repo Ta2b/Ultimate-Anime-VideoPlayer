@@ -11,7 +11,7 @@
 
 #include "prepare/protobuf_fields.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using protobuf::Bytes;
@@ -172,4 +172,4 @@ std::expected<std::vector<std::byte>, Refusal> with_fixed_dims(std::span<const s
   return out;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

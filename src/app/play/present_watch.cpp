@@ -14,7 +14,7 @@
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::chrono::milliseconds kPresentWatchTick{250};
@@ -75,12 +75,12 @@ void PresentWatch::stalled(const char* stage, std::int64_t for_us) {
   log->flush();
   if (tell_) {
     SDL_ShowSimpleMessageBox(
-        SDL_MESSAGEBOX_ERROR, "ajp",
-        i18n::tr("ajp stopped responding inside the graphics driver and will close. Start it again: it "
+        SDL_MESSAGEBOX_ERROR, "Kirari Player",
+        i18n::tr("kirari stopped responding inside the graphics driver and will close. Start it again: it "
                  "will present frames without presentation feedback on this driver."),
         nullptr);
   }
   exit_stuck("présentation figée dans le pilote");
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

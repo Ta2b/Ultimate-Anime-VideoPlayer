@@ -1,9 +1,9 @@
 # Publier et signer une release
 
 Le lecteur ne croit un manifeste de mise à jour que s'il porte une signature Ed25519 valide pour la clé publique
-compilée dans `AJP_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
+compilée dans `KIRARI_UPDATE_PUBKEY` (`src/app/CMakeLists.txt`).
 
-- **Clé publique** : `c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088` (valeur par défaut de `AJP_UPDATE_PUBKEY`), en place depuis le 10 novembre 2026 : l'ancienne clé privée n'a pas été retrouvée.
+- **Clé publique** : `c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088` (valeur par défaut de `KIRARI_UPDATE_PUBKEY`), en place depuis le 10 novembre 2026 : l'ancienne clé privée n'a pas été retrouvée.
 - **Clé privée** : dans le secret `AJP_UPDATE_KEY` de l'environnement protégé `release` du dépôt des sources (décision
   de Tatoub, 9 novembre 2026). Elle n'est **jamais** dans le dépôt ni dans un message. Une copie de sauvegarde reste
   chez Tatoub, chiffrée.
@@ -89,17 +89,17 @@ Ce qui suit se fait sur GitHub, sans le PC :
    collage. Dans Git Bash ou un terminal : `base64 -w0 update-ed25519.pem` (sous Windows, `| clip` la copie), puis
    coller tel quel. Le fichier PEM entier (`-----BEGIN PRIVATE KEY-----` … `-----END PRIVATE KEY-----`) est accepté
    aussi. `tools/release/update-key.sh` lit le secret, accepte ces formes, et vérifie que la clé correspond à
-   `AJP_UPDATE_PUBKEY` ; en cas d'échec, le journal dit ce qu'il a reçu (longueur, lignes, en-tête) sans afficher la
+   `KIRARI_UPDATE_PUBKEY` ; en cas d'échec, le journal dit ce qu'il a reçu (longueur, lignes, en-tête) sans afficher la
    clé.
 3. **Secret `AJP_RELEASE_TOKEN`** (déjà en place) : un jeton qui peut écrire les releases du dépôt
-   `AJP_RELEASE_REPO` de `tools/release/versions.env`.
+   `KIRARI_RELEASE_REPO` de `tools/release/versions.env`.
 4. **Étiquettes protégées et relecteur requis** (Settings > Rules > Rulesets, puis Environments > `release` > Required
    reviewers) : la création d'une étiquette `v*` est réservée au propriétaire, et le job « publier » (comme la
    re-signature) attend son accord. Le workflow qui s'exécute est celui du commit de l'étiquette : sans cela, tout
    collaborateur qui peut pousser une étiquette peut faire lire `AJP_UPDATE_KEY` à une étape modifiée. La garde de
    release est un contrôle d'intégrité, pas une frontière de sécurité.
 
-Le dépôt des releases est écrit à un seul endroit, `tools/release/versions.env` (`AJP_RELEASE_REPO`) : les workflows,
+Le dépôt des releases est écrit à un seul endroit, `tools/release/versions.env` (`KIRARI_RELEASE_REPO`) : les workflows,
 les scripts de paquet et CMake le lisent.
 
 **Expiration.** Le manifeste porte `expires`, 120 jours après sa signature : au-delà, le lecteur le refuse, pour
@@ -111,39 +111,39 @@ qu'un ancien manifeste signé ne se rejoue pas. Le workflow `resign-manifest.yml
 Si la CI ne peut pas signer, depuis un poste qui a la clé :
 
 ```bash
-gh release download v0.11.0 -R Ta2b/ajp-releases -D rel -p 'ajp-*'
+gh release download v0.11.0 -R Ta2b/kirari-player -D rel -p 'kirari-*'
 AJP_UPDATE_KEY=update-ed25519.pem tools/release/sign-manifest.sh 0.11.0 stable rel \
-  https://github.com/Ta2b/ajp-releases/releases/download/v0.11.0 \
-  https://github.com/Ta2b/ajp-releases/releases/tag/v0.11.0
-gh release upload v0.11.0 -R Ta2b/ajp-releases --clobber rel/manifest.toml rel/manifest.toml.sig
+  https://github.com/Ta2b/kirari-player/releases/download/v0.11.0 \
+  https://github.com/Ta2b/kirari-player/releases/tag/v0.11.0
+gh release upload v0.11.0 -R Ta2b/kirari-player --clobber rel/manifest.toml rel/manifest.toml.sig
 ```
 
 ## Changer ou perdre la clé
 
 - Une nouvelle paire : `openssl genpkey -algorithm ed25519 -out update-ed25519.pem`, puis
   `openssl pkey -in update-ed25519.pem -pubout -outform DER | tail -c 32 | xxd -p -c 64` donne la clé publique à mettre
-  dans `AJP_UPDATE_PUBKEY`. Les lecteurs déjà installés avec l'ancienne clé ne reconnaîtront plus les manifestes : il faut
+  dans `KIRARI_UPDATE_PUBKEY`. Les lecteurs déjà installés avec l'ancienne clé ne reconnaîtront plus les manifestes : il faut
   une release manuelle.
 - Sauvegarder la clé privée (copie chiffrée chez Tatoub) : sans elle, plus de mise à jour. Une nouvelle clé active
   remplace le secret `AJP_UPDATE_KEY`.
 
 ### Clé de secours et révocation
 
-Le lecteur croit deux clés : l'active (`AJP_UPDATE_PUBKEY`) et celle de secours (`AJP_UPDATE_PUBKEY_BACKUP`, compilée
+Le lecteur croit deux clés : l'active (`KIRARI_UPDATE_PUBKEY`) et celle de secours (`KIRARI_UPDATE_PUBKEY_BACKUP`, compilée
 depuis la 0.11.0). Créer la paire de secours comme ci-dessus, compiler sa clé publique dans
-`AJP_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **hors ligne**, chez Tatoub, en sauvegarde chiffrée (décision du
+`KIRARI_UPDATE_PUBKEY_BACKUP`, et garder la clé privée **hors ligne**, chez Tatoub, en sauvegarde chiffrée (décision du
 9 novembre 2026) : jamais dans la CI, pour qu'un vol du secret `AJP_UPDATE_KEY` reste révocable. Une release finale ne part pas tant
 qu'elle est vide : la garde (`tools/ci/check-backup-key.sh`) refuse l'étiquette.
 
 Si l'active est perdue ou volée, depuis le poste qui garde la clé de secours :
 
 ```bash
-gh release download <étiquette> -R Ta2b/ajp-releases -D rel -p 'ajp-*'
+gh release download <étiquette> -R Ta2b/kirari-player -D rel -p 'kirari-*'
 UPDATE_KEY="$(cat secours-ed25519.pem)" tools/release/update-key.sh secours.pem   # dit « (secours) »
 AJP_UPDATE_KEY=secours.pem tools/release/sign-manifest.sh --revoke <clé publique active> \
-  <version> stable rel https://github.com/Ta2b/ajp-releases/releases/download/<étiquette> \
-  https://github.com/Ta2b/ajp-releases/releases/tag/<étiquette>
-gh release upload <étiquette> -R Ta2b/ajp-releases --clobber rel/manifest.toml rel/manifest.toml.sig
+  <version> stable rel https://github.com/Ta2b/kirari-player/releases/download/<étiquette> \
+  https://github.com/Ta2b/kirari-player/releases/tag/<étiquette>
+gh release upload <étiquette> -R Ta2b/kirari-player --clobber rel/manifest.toml rel/manifest.toml.sig
 ```
 
 `--revoke` écrit `revoked_keys` avant la signature (une ligne ajoutée après coup invaliderait la signature).
@@ -153,7 +153,7 @@ aussi le secret `AJP_UPDATE_KEY` de GitHub (sinon `resign-manifest.yml` re-signe
 révocation), puis préparer la release suivante avec une nouvelle active et une nouvelle secours.
 `tools/release/test-signing.sh` (CI, `rules.yml`) rejoue cette procédure avec deux paires jetables.
 
-Tant que `AJP_UPDATE_PUBKEY_BACKUP` est vide, aucun lecteur livré ne connaît de clé de secours et cette procédure
+Tant que `KIRARI_UPDATE_PUBKEY_BACKUP` est vide, aucun lecteur livré ne connaît de clé de secours et cette procédure
 ne protège personne : la créer avant la prochaine release.
 
 Une clé ne révoque que celles qui la précèdent dans la liste « active, secours » (B26-02) : un manifeste signé par
@@ -181,7 +181,7 @@ Le manifeste signé porte le SHA-256 et la taille de chaque archive : il sert de
 outil de plus. Pour vérifier un téléchargement :
 
 ```bash
-tools/release/verify-download.sh manifest.toml manifest.toml.sig ajp-linux-x64.tar.gz
+tools/release/verify-download.sh manifest.toml manifest.toml.sig kirari-linux-x64.tar.gz
 ```
 
 Le script vérifie la signature Ed25519 du manifeste pour la clé publique des releases, puis l'empreinte de
@@ -189,7 +189,7 @@ l'archive. Il ne demande qu'`openssl` et `sha256sum`.
 
 ### Windows : Azure Trusted Signing (environ 10 $ par mois)
 
-`tools/release/windows/sign.ps1` signe `ajp.exe` et ses DLL avant le zip, puis l'installeur. Pour l'activer :
+`tools/release/windows/sign.ps1` signe `kirari.exe` et ses DLL avant le zip, puis l'installeur. Pour l'activer :
 
 1. Créer un compte Trusted Signing et un profil de certificat « Public Trust » (validation d'identité par
    Microsoft, quelques jours).

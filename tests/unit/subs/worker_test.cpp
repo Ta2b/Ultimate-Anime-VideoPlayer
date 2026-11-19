@@ -10,14 +10,14 @@
 #include "subs/subs_worker.h"
 #include "support.h"
 
-using ajp::Flush;
-using ajp::RefusalCode;
-using ajp::subs::AtlasReturned;
-using ajp::subs::RenderRequest;
-using ajp::subs::SubsInbox;
-using ajp::subs::SubsWorker;
-using ajp::subs::SubtitleFrame;
-using ajp::subs::test::RecordingSink;
+using kirari::Flush;
+using kirari::RefusalCode;
+using kirari::subs::AtlasReturned;
+using kirari::subs::RenderRequest;
+using kirari::subs::SubsInbox;
+using kirari::subs::SubsWorker;
+using kirari::subs::SubtitleFrame;
+using kirari::subs::test::RecordingSink;
 
 namespace {
 
@@ -30,12 +30,12 @@ RenderRequest at(double seconds, std::uint32_t epoch = 0) {
 // Le worker sans son thread : la boîte reçoit les atlas rendus, le test les lui passe.
 struct Harness {
   RecordingSink sink;
-  std::shared_ptr<SubsInbox> inbox = std::make_shared<SubsInbox>(ajp::subs::kSubsInboxBounds);
+  std::shared_ptr<SubsInbox> inbox = std::make_shared<SubsInbox>(kirari::subs::kSubsInboxBounds);
   std::unique_ptr<SubsWorker> worker;
 
   Harness() {
     auto created =
-        SubsWorker::create({}, sink, [box = inbox](std::unique_ptr<ajp::subs::SubtitleAtlas> atlas) {
+        SubsWorker::create({}, sink, [box = inbox](std::unique_ptr<kirari::subs::SubtitleAtlas> atlas) {
           std::ignore = box->try_push(AtlasReturned{std::move(atlas)});
         });
     REQUIRE(created);
@@ -55,8 +55,8 @@ struct Harness {
   }
 
   void select_script(std::string_view script, std::uint32_t id = 1) {
-    const ajp::subs::test::TempFile file("piste.ass", script);
-    send(ajp::subs::SelectTrack{.id = id, .source = ajp::subs::ExternalFile{file.path()}});
+    const kirari::subs::test::TempFile file("piste.ass", script);
+    send(kirari::subs::SelectTrack{.id = id, .source = kirari::subs::ExternalFile{file.path()}});
   }
 };
 
@@ -73,26 +73,26 @@ TEST_CASE("SubsWorker : une réponse par demande, vide sans piste", "[worker]") 
 
 TEST_CASE("SubsWorker : piste externe rendue aux pts demandés", "[worker]") {
   Harness harness;
-  harness.select_script(ajp::subs::test::reference_script());
+  harness.select_script(kirari::subs::test::reference_script());
   harness.send(at(0.5));
   harness.send(at(2.5));
   harness.send(at(9.0));
   auto frames = harness.sink.take_frames();
   REQUIRE(frames.size() == 3);
-  ajp::subs::test::check_atlas(frames[0]);
-  ajp::subs::test::check_atlas(frames[1]);
+  kirari::subs::test::check_atlas(frames[0]);
+  kirari::subs::test::check_atlas(frames[1]);
   CHECK(frames[2].atlas == nullptr);
   CHECK(harness.sink.refusals().empty());
 }
 
 TEST_CASE("SubsWorker : le 9e rendu attend qu'un atlas revienne de render", "[worker]") {
   Harness harness;
-  harness.select_script(ajp::subs::test::numbered_script(12));
+  harness.select_script(kirari::subs::test::numbered_script(12));
   for (int i = 0; i < 9; ++i) harness.send(at(i + 0.5));
   std::vector<SubtitleFrame> held = harness.sink.take_frames();
-  REQUIRE(held.size() == ajp::subs::kMaxAtlasesInFlight);
+  REQUIRE(held.size() == kirari::subs::kMaxAtlasesInFlight);
   CHECK(harness.worker->waiting() == 1);
-  CHECK(harness.worker->atlases_in_flight() == ajp::subs::kMaxAtlasesInFlight);
+  CHECK(harness.worker->atlases_in_flight() == kirari::subs::kMaxAtlasesInFlight);
 
   harness.send(at(9.5));  // la suivante attend derrière, dans l'ordre
   CHECK(harness.worker->waiting() == 2);
@@ -102,7 +102,7 @@ TEST_CASE("SubsWorker : le 9e rendu attend qu'un atlas revienne de render", "[wo
   auto served = harness.sink.take_frames();
   REQUIRE(served.size() == 1);
   CHECK(served.front().pts_us == 8'500'000);
-  ajp::subs::test::check_atlas(served.front());
+  kirari::subs::test::check_atlas(served.front());
   CHECK(harness.worker->waiting() == 1);
 
   held.clear();
@@ -115,12 +115,12 @@ TEST_CASE("SubsWorker : le 9e rendu attend qu'un atlas revienne de render", "[wo
 
 TEST_CASE("SubsWorker : au-delà de kMaxPendingRequests, réponse vide et refus", "[worker]") {
   Harness harness;
-  harness.select_script(ajp::subs::test::numbered_script(20));
+  harness.select_script(kirari::subs::test::numbered_script(20));
   std::vector<SubtitleFrame> held;
   for (int i = 0; i < 8; ++i) harness.send(at(i + 0.5));
   held = harness.sink.take_frames();
-  for (std::size_t i = 0; i < ajp::subs::kMaxPendingRequests; ++i) harness.send(at(10.5));
-  CHECK(harness.worker->waiting() == ajp::subs::kMaxPendingRequests);
+  for (std::size_t i = 0; i < kirari::subs::kMaxPendingRequests; ++i) harness.send(at(10.5));
+  CHECK(harness.worker->waiting() == kirari::subs::kMaxPendingRequests);
   harness.send(at(11.5));
   auto frames = harness.sink.take_frames();
   REQUIRE(frames.size() == 1);
@@ -131,7 +131,7 @@ TEST_CASE("SubsWorker : au-delà de kMaxPendingRequests, réponse vide et refus"
 
 TEST_CASE("SubsWorker : Flush jette les demandes d'une époque passée", "[worker]") {
   Harness harness;
-  harness.select_script(ajp::subs::test::numbered_script(12));
+  harness.select_script(kirari::subs::test::numbered_script(12));
   for (int i = 0; i < 9; ++i) harness.send(at(i + 0.5));
   std::vector<SubtitleFrame> held = harness.sink.take_frames();
   CHECK(harness.worker->waiting() == 1);
@@ -154,10 +154,10 @@ TEST_CASE("SubsWorker : Flush jette les demandes d'une époque passée", "[worke
 
 TEST_CASE("SubsWorker : paquets de la piste choisie seulement", "[worker]") {
   Harness harness;
-  harness.send(ajp::subs::SelectTrack{.id = 7, .source = ajp::subs::TextStream{}});
-  harness.send(
-      ajp::subs::TrackPacket{.track = 7, .packet = {.start_us = 0, .duration_us = 1'000'000, .data = "Oui"}});
-  harness.send(ajp::subs::TrackPacket{
+  harness.send(kirari::subs::SelectTrack{.id = 7, .source = kirari::subs::TextStream{}});
+  harness.send(kirari::subs::TrackPacket{.track = 7,
+                                         .packet = {.start_us = 0, .duration_us = 1'000'000, .data = "Oui"}});
+  harness.send(kirari::subs::TrackPacket{
       .track = 3, .packet = {.start_us = 2'000'000, .duration_us = 1'000'000, .data = "Non"}});
   harness.send(at(0.5));
   harness.send(at(2.5));
@@ -166,19 +166,20 @@ TEST_CASE("SubsWorker : paquets de la piste choisie seulement", "[worker]") {
   CHECK(frames[0].atlas != nullptr);
   CHECK(frames[1].atlas == nullptr);
 
-  harness.send(ajp::subs::TrackPacket{.track = 7, .packet = {.start_us = 0, .duration_us = -5, .data = "x"}});
+  harness.send(
+      kirari::subs::TrackPacket{.track = 7, .packet = {.start_us = 0, .duration_us = -5, .data = "x"}});
   REQUIRE(harness.sink.refusals().size() == 1);
   CHECK(harness.sink.refusals().front().code == RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("SubsWorker : une piste illisible est refusée, la suivante fonctionne", "[worker]") {
   Harness harness;
-  harness.send(ajp::subs::SelectTrack{.id = 1, .source = ajp::subs::ExternalFile{"/absent/piste.srt"}});
+  harness.send(kirari::subs::SelectTrack{.id = 1, .source = kirari::subs::ExternalFile{"/absent/piste.srt"}});
   REQUIRE(harness.sink.refusals().size() == 1);
   CHECK(harness.sink.refusals().front().code == RefusalCode::SubtitleUnreadable);
-  harness.send(
-      ajp::subs::SelectTrack{.id = 2, .source = ajp::subs::AssStream{"[Script Info]\nScriptType: v4.00+\n"}});
-  harness.send(ajp::subs::TrackPacket{
+  harness.send(kirari::subs::SelectTrack{
+      .id = 2, .source = kirari::subs::AssStream{"[Script Info]\nScriptType: v4.00+\n"}});
+  harness.send(kirari::subs::TrackPacket{
       .track = 2, .packet = {.start_us = 0, .duration_us = 1'000'000, .data = "0,0,Default,,0,0,0,,A"}});
   harness.send(at(0.5));
   auto frames = harness.sink.take_frames();
@@ -187,26 +188,26 @@ TEST_CASE("SubsWorker : une piste illisible est refusée, la suivante fonctionne
 }
 
 TEST_CASE("SubsWorker : police jointe sans police système", "[worker]") {
-  const std::vector<std::byte> font = ajp::subs::test::system_font_bytes();
+  const std::vector<std::byte> font = kirari::subs::test::system_font_bytes();
   if (font.empty()) SKIP("DejaVu Sans absente du système");
   RecordingSink sink;
-  const auto discard = [](std::unique_ptr<ajp::subs::SubtitleAtlas>) {};
-  auto worker = SubsWorker::create({.fonts = ajp::subs::FontProvider::None}, sink, discard);
+  const auto discard = [](std::unique_ptr<kirari::subs::SubtitleAtlas>) {};
+  auto worker = SubsWorker::create({.fonts = kirari::subs::FontProvider::None}, sink, discard);
   REQUIRE(worker);
-  const ajp::subs::test::TempFile file("piste.ass", ajp::subs::test::reference_script());
-  (*worker)->handle(ajp::subs::SelectTrack{.id = 1, .source = ajp::subs::ExternalFile{file.path()}});
+  const kirari::subs::test::TempFile file("piste.ass", kirari::subs::test::reference_script());
+  (*worker)->handle(kirari::subs::SelectTrack{.id = 1, .source = kirari::subs::ExternalFile{file.path()}});
 
   (*worker)->handle(at(0.5));
-  (*worker)->handle(ajp::subs::AttachFont{.name = "DejaVuSans.ttf", .data = font});
+  (*worker)->handle(kirari::subs::AttachFont{.name = "DejaVuSans.ttf", .data = font});
   (*worker)->handle(at(0.6));
   auto frames = sink.take_frames();
   REQUIRE(frames.size() == 2);
   CHECK(frames[0].atlas == nullptr);  // aucune police connue : rien à dessiner
-  ajp::subs::test::check_atlas(frames[1]);
+  kirari::subs::test::check_atlas(frames[1]);
 }
 
 TEST_CASE("SubsWorker : cmd::Quit arrête la boucle, les autres commandes non", "[worker]") {
   Harness harness;
-  CHECK(harness.send(ajp::Command{ajp::cmd::Pause{}}));
-  CHECK_FALSE(harness.send(ajp::Command{ajp::cmd::Quit{}}));
+  CHECK(harness.send(kirari::Command{kirari::cmd::Pause{}}));
+  CHECK_FALSE(harness.send(kirari::Command{kirari::cmd::Quit{}}));
 }

@@ -26,17 +26,17 @@
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
-#ifndef AJP_RELEASE_REPO
-#define AJP_RELEASE_REPO "Ta2b/ajp-releases"
+#ifndef KIRARI_RELEASE_REPO
+#define KIRARI_RELEASE_REPO "Ta2b/kirari-player"
 #endif
-#ifndef AJP_UPDATE_PUBKEY
-#define AJP_UPDATE_PUBKEY ""
+#ifndef KIRARI_UPDATE_PUBKEY
+#define KIRARI_UPDATE_PUBKEY ""
 #endif
-#ifndef AJP_VERSION
-#define AJP_VERSION "0.0.0"
+#ifndef KIRARI_VERSION
+#define KIRARI_VERSION "0.0.0"
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -52,12 +52,12 @@ std::expected<fs::path, Refusal> private_temp_dir() {
 #if defined(_WIN32)
   std::random_device random;
   for (int attempt = 0; attempt < 8; ++attempt) {
-    const fs::path dir = base / std::format("ajp-update-{:08x}{:08x}", random(), random());
+    const fs::path dir = base / std::format("kirari-update-{:08x}{:08x}", random(), random());
     if (fs::create_directory(dir, error)) return dir;
   }
   return refuse(RefusalCode::FileUnwritable, i18n::tr("no free name for a temporary folder"));
 #else
-  std::string pattern = prepare::utf8_path(base / "ajp-update-XXXXXX");
+  std::string pattern = prepare::utf8_path(base / "kirari-update-XXXXXX");
   if (mkdtemp(pattern.data()) == nullptr)
     return refuse(RefusalCode::FileUnwritable, i18n::tr_format("temporary folder: {}", std::strerror(errno)));
   return fs::path(pattern);
@@ -131,7 +131,7 @@ std::expected<void, Refusal> fetch(std::string_view url, const fs::path& file, i
 }  // namespace
 
 std::string_view release_repo() {
-  return AJP_RELEASE_REPO;
+  return KIRARI_RELEASE_REPO;
 }
 
 std::string read_all(const fs::path& file) {
@@ -164,7 +164,7 @@ std::vector<std::string> update_public_keys(const std::vector<std::string>& revo
   };
   std::vector<std::string> keys;
   for (const std::string_view compiled :
-       {std::string_view(AJP_UPDATE_PUBKEY), std::string_view(AJP_UPDATE_PUBKEY_BACKUP)}) {
+       {std::string_view(KIRARI_UPDATE_PUBKEY), std::string_view(KIRARI_UPDATE_PUBKEY_BACKUP)}) {
     if (compiled.empty()) continue;
     std::string key = core::ascii_lower(compiled);
     if (!is_revoked(key)) keys.push_back(std::move(key));
@@ -177,7 +177,7 @@ std::expected<void, Refusal> fetch_https(std::string_view url, const fs::path& f
 }
 
 std::string_view installed_version() {
-  return AJP_VERSION;
+  return KIRARI_VERSION;
 }
 
 std::string manifest_url(std::string_view repo) {
@@ -189,7 +189,7 @@ std::string releases_page(std::string_view repo) {
 }
 
 std::optional<int> curl_status_line(std::string_view line) {
-  constexpr std::string_view kTag = "ajp-http ";
+  constexpr std::string_view kTag = "kirari-http ";
   if (!line.starts_with(kTag)) return std::nullopt;
   line.remove_prefix(kTag.size());
   int status = 0;
@@ -365,4 +365,4 @@ std::expected<std::string, Refusal> run_update_check(UpdateState& state, const s
   return checked->message;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

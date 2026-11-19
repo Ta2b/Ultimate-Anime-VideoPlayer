@@ -10,11 +10,11 @@
 
 #include "core/utf8_path.h"
 
-#if AJP_WITH_FONTCONFIG
+#if KIRARI_WITH_FONTCONFIG
 #include <fontconfig/fontconfig.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::span<const std::byte> bytes(std::string_view data) {
@@ -24,7 +24,7 @@ std::span<const std::byte> bytes(std::string_view data) {
 // family est installée : fontconfig la connaît sous ce nom exact. Sans fontconfig (Windows, macOS), le
 // système a les polices courantes, Trebuchet MS comprise.
 bool system_has_family(std::string_view family) {
-#if AJP_WITH_FONTCONFIG
+#if KIRARI_WITH_FONTCONFIG
   const std::string name(family);
   FcPattern* pattern = FcPatternCreate();
   FcPatternAddString(pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(name.c_str()));
@@ -73,4 +73,4 @@ subs::RendererOptions with_subtitle_fonts(subs::RendererOptions options) {
   return options;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

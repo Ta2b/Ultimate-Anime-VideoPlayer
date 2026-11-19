@@ -1,8 +1,8 @@
 // Débogage des paires (menu Statistiques, « Paires tenues et coupées ») : chaque paire (a, b) que l'étage gpu
 // juge tenue (dessin identique, pas de RIFE) ou coupée (coupe de scène) est notée ici avec son intervalle de
 // pts, puis teinte à l'écran tant qu'une image de cet intervalle est montrée (b seule, d'ordinaire : une
-// fraction de seconde), et écrite dans ajp.log avec ses mesures. Rien ne s'écrit ni ne se teint tant que le
-// réglage est éteint : la lecture normale n'en voit rien. Le réglage ne vit que le temps de la session.
+// fraction de seconde), et écrite dans kirari.log avec ses mesures. Rien ne s'écrit ni ne se teint tant que
+// le réglage est éteint : la lecture normale n'en voit rien. Le réglage ne vit que le temps de la session.
 #pragma once
 
 #include <array>
@@ -12,11 +12,11 @@
 #include <optional>
 #include <string>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 struct PairScores;
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class PairVerdict : std::uint8_t { Held, Cut };
 
@@ -44,7 +44,7 @@ class PairMarks {
   std::size_t next_ = 0;
 };
 
-// La ligne d'ajp.log d'une paire notée : « paire tenue 12.345 s → 12.387 s, pire bloc 0.41 (tenue ≤ 0.70),
+// La ligne d'kirari.log d'une paire notée : « paire tenue 12.345 s → 12.387 s, pire bloc 0.41 (tenue ≤ 0.70),
 // score 0.031 (coupe > 0.120), plans : même plan ». known_cut : la réponse des plans de la pré-analyse, rien
 // hors de leur chronologie. useful_area : la part de l'image hors bandes noires (le score y est rapporté).
 std::string pair_mark_line(const PairMark& mark, const gpu::PairScores& scores, std::optional<bool> known_cut,
@@ -59,4 +59,4 @@ struct PairTint {
 };
 PairTint pair_tint(PairVerdict verdict);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

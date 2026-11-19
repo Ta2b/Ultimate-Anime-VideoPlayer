@@ -14,7 +14,7 @@
 #include "core/log.h"
 #include "core/thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::jthread start_update_check(const std::filesystem::path& settings_path, const PlayerPaths& paths,
                                 std::atomic<bool>& playing, UpdateNews& news) {
@@ -48,4 +48,4 @@ std::jthread start_update_check(const std::filesystem::path& settings_path, cons
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

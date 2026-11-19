@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <iterator>
 
-namespace ajp::media {
+namespace kirari::media {
 
 void LiveScenes::push(std::int64_t pts_us, const kernels::FrameStats& stats,
                       kernels::FrameTransfer transfer) {
@@ -74,4 +74,4 @@ void LiveScenes::clear() {
   ++serial_;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

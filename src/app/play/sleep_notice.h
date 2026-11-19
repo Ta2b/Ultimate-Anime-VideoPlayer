@@ -20,7 +20,7 @@
 #include <memory>
 #include <mutex>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class SleepGate {
  public:
@@ -67,4 +67,4 @@ class SleepNotice {
   std::unique_ptr<Listener> listener_;  // en dernier : arrêté avant la porte
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

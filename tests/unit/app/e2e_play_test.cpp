@@ -22,19 +22,19 @@
 
 namespace {
 
-using namespace ajp::e2e;  // NOLINT(google-build-using-namespace)
+using namespace kirari::e2e;  // NOLINT(google-build-using-namespace)
 
 // Le vrai lecteur sur un fichier, sous Vulkan logiciel, réglages dans dir/reglages.
 Run play(const fs::path& file, const fs::path& dir, std::vector<std::string> extra) {
   std::vector<std::string> args = {"play",
-                                   ajp::prepare::utf8_path(file),
+                                   kirari::prepare::utf8_path(file),
                                    "--software-gpu",
                                    "--mute",
                                    "--no-upscale",
                                    "--rife=0",
                                    "--no-resume",
                                    "--window=320x180",
-                                   "--data-dir=" + ajp::prepare::utf8_path(dir / "reglages")};
+                                   "--data-dir=" + kirari::prepare::utf8_path(dir / "reglages")};
   args.insert(args.end(), extra.begin(), extra.end());
   return run_player(std::move(args));
 }
@@ -45,14 +45,15 @@ Run play(const fs::path& file, const fs::path& dir, std::vector<std::string> ext
 // s'arrête proprement ; un fichier illisible ne ferme pas la fenêtre en silence, l'accueil dit pourquoi.
 TEST_CASE("Bout en bout : fichier tronqué lu jusqu'à sa fin, fichier illisible refusé avec un message",
           "[.e2e][app]") {
-  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-tronque-source.mkv",
-                                                                            .width = 320,
-                                                                            .height = 180,
-                                                                            .frames = 50,
-                                                                            .shot_frames = 50,
-                                                                            .shot_lumas = {200}});
+  const auto clip =
+      kirari::media::test::write_clip(kirari::media::test::ClipSpec{.name = "e2e-tronque-source.mkv",
+                                                                    .width = 320,
+                                                                    .height = 180,
+                                                                    .frames = 50,
+                                                                    .shot_frames = 50,
+                                                                    .shot_lumas = {200}});
   REQUIRE(clip);
-  const fs::path dir = fresh_dir("ajp-e2e-recette");
+  const fs::path dir = fresh_dir("kirari-e2e-recette");
   const fs::path truncated = dir / "tronque.mkv";
   {
     std::ifstream in(*clip, std::ios::binary);
@@ -61,7 +62,7 @@ TEST_CASE("Bout en bout : fichier tronqué lu jusqu'à sa fin, fichier illisible
         .write(bytes.data(), static_cast<std::streamsize>(bytes.size() / 2));
   }
   const fs::path stats = dir / "stats.tsv";
-  const Run cut = play(truncated, dir, {"--seconds=3", "--stats=" + ajp::prepare::utf8_path(stats)});
+  const Run cut = play(truncated, dir, {"--seconds=3", "--stats=" + kirari::prepare::utf8_path(stats)});
   INFO(cut.output);
   CHECK(cut.code == 0);
   CHECK(read_stats(stats).fresh >= 5);
@@ -77,16 +78,17 @@ TEST_CASE("Bout en bout : fichier tronqué lu jusqu'à sa fin, fichier illisible
 
 // Recette, scénario 14 (P7.12) : une source de taille impaire (853×480, SD anamorphosée courante) se lit.
 TEST_CASE("Bout en bout : une source 853×480 se lit", "[.e2e][app]") {
-  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-853x480.mkv",
-                                                                            .width = 853,
-                                                                            .height = 480,
-                                                                            .frames = 25,
-                                                                            .shot_frames = 25,
-                                                                            .shot_lumas = {200}});
+  const auto clip = kirari::media::test::write_clip(kirari::media::test::ClipSpec{.name = "e2e-853x480.mkv",
+                                                                                  .width = 853,
+                                                                                  .height = 480,
+                                                                                  .frames = 25,
+                                                                                  .shot_frames = 25,
+                                                                                  .shot_lumas = {200}});
   REQUIRE(clip);
-  const fs::path dir = fresh_dir("ajp-e2e-853");
+  const fs::path dir = fresh_dir("kirari-e2e-853");
   const fs::path stats = dir / "stats.tsv";
-  const Run run = play(alone(*clip, dir), dir, {"--seconds=1", "--stats=" + ajp::prepare::utf8_path(stats)});
+  const Run run =
+      play(alone(*clip, dir), dir, {"--seconds=1", "--stats=" + kirari::prepare::utf8_path(stats)});
   INFO(run.output);
   CHECK(run.code == 0);
   CHECK(read_stats(stats).fresh >= 3);
@@ -97,14 +99,14 @@ TEST_CASE("Bout en bout : une source 853×480 se lit", "[.e2e][app]") {
 // Une touche, une action (0.10.0 : la file des actions n'était plus vidée, chaque tour de boucle rejouait la
 // pause).
 TEST_CASE("Bout en bout : une pause demandée une fois s'applique une fois", "[.e2e][app]") {
-  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-pause.mkv",
-                                                                            .width = 320,
-                                                                            .height = 180,
-                                                                            .frames = 50,
-                                                                            .shot_frames = 50,
-                                                                            .shot_lumas = {200}});
+  const auto clip = kirari::media::test::write_clip(kirari::media::test::ClipSpec{.name = "e2e-pause.mkv",
+                                                                                  .width = 320,
+                                                                                  .height = 180,
+                                                                                  .frames = 50,
+                                                                                  .shot_frames = 50,
+                                                                                  .shot_lumas = {200}});
   REQUIRE(clip);
-  const fs::path dir = fresh_dir("ajp-e2e-pause");
+  const fs::path dir = fresh_dir("kirari-e2e-pause");
   const Run run = play(alone(*clip, dir), dir, {"--keys=0.5:Space,1.5:q"});
   INFO(run.output);
   CHECK(run.code >= 0);
@@ -118,29 +120,29 @@ TEST_CASE("Bout en bout : une pause demandée une fois s'applique une fois", "[.
 
 TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sautées comptées",
           "[.e2e][app]") {
-  const fs::path player(AJP_PLAYER_EXE);
+  const fs::path player(KIRARI_PLAYER_EXE);
   REQUIRE(fs::is_regular_file(player));
   // Un seul plan clair (luma 200 sur 255, plage limitée), 2 s à 25 images par seconde.
-  const auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{.name = "e2e-2s.mkv",
-                                                                            .width = 320,
-                                                                            .height = 180,
-                                                                            .frames = 50,
-                                                                            .shot_frames = 50,
-                                                                            .shot_lumas = {200}});
+  const auto clip = kirari::media::test::write_clip(kirari::media::test::ClipSpec{.name = "e2e-2s.mkv",
+                                                                                  .width = 320,
+                                                                                  .height = 180,
+                                                                                  .frames = 50,
+                                                                                  .shot_frames = 50,
+                                                                                  .shot_lumas = {200}});
   REQUIRE(clip);
-  const fs::path dir = fs::temp_directory_path() / "ajp-e2e";
+  const fs::path dir = fs::temp_directory_path() / "kirari-e2e";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path snapshot = dir / "capture.ppm";
   const fs::path stats = dir / "stats.tsv";
   std::string output;
-  const auto exit = ajp::prepare::run_process(
+  const auto exit = kirari::prepare::run_process(
       {.program = player,
-       .args = {"play", ajp::prepare::utf8_path(alone(*clip, dir)), "--software-gpu", "--mute",
+       .args = {"play", kirari::prepare::utf8_path(alone(*clip, dir)), "--software-gpu", "--mute",
                 "--no-upscale", "--rife=0", "--no-resume", "--window=640x360", "--seconds=2",
-                "--data-dir=" + ajp::prepare::utf8_path(dir / "reglages"),
-                "--stats=" + ajp::prepare::utf8_path(stats),
-                "--snapshot=" + ajp::prepare::utf8_path(snapshot), "--snapshot-at=1.5"},
+                "--data-dir=" + kirari::prepare::utf8_path(dir / "reglages"),
+                "--stats=" + kirari::prepare::utf8_path(stats),
+                "--snapshot=" + kirari::prepare::utf8_path(snapshot), "--snapshot-at=1.5"},
        .timeout = std::chrono::seconds(120)},
       [&output](std::string_view line) {
         output += line;
@@ -149,7 +151,7 @@ TEST_CASE("Bout en bout : le lecteur joue un clip de 2 s, image juste, images sa
       std::stop_token{});
   INFO(output);
   REQUIRE(exit);
-  REQUIRE(exit->kind == ajp::prepare::ExitKind::Exited);
+  REQUIRE(exit->kind == kirari::prepare::ExitKind::Exited);
   REQUIRE(exit->code == 0);
   const Picture picture = read_ppm(snapshot);
   REQUIRE(picture.width > 0);
@@ -193,7 +195,7 @@ std::string slurp(const fs::path& path) {
 }
 
 std::optional<fs::path> wizard_clip(const std::string& name) {
-  auto clip = ajp::media::test::write_clip(ajp::media::test::ClipSpec{
+  auto clip = kirari::media::test::write_clip(kirari::media::test::ClipSpec{
       .name = name, .width = 320, .height = 180, .frames = 50, .shot_frames = 50, .shot_lumas = {200}});
   if (!clip) return std::nullopt;
   return *clip;
@@ -206,7 +208,7 @@ std::optional<fs::path> wizard_clip(const std::string& name) {
 TEST_CASE("Bout en bout : l'assistant se parcourt au clavier, « q » ne le ferme pas", "[.e2e][app]") {
   const auto clip = wizard_clip("e2e-assistant.mkv");
   REQUIRE(clip);
-  const fs::path dir = first_launch_dir("ajp-e2e-assistant");
+  const fs::path dir = first_launch_dir("kirari-e2e-assistant");
   // Entrée vaut « Suivant » sur chaque écran sauf Prêt, où elle ne fait rien (first_run_wizard.cpp) : quatre
   // Entrée mènent à Prêt que l'écran Moteur soit là (carte NVIDIA avec le module TensorRT) ou non (CI). Sur
   // Prêt, Tab deux fois (Précédent, Terminer) puis Entrée ; l'assistant ne calibre plus. Le dernier « q »,

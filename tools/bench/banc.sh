@@ -2,14 +2,14 @@
 # Banc A/B du lecteur (chantier 0.8) : rejoue le même extrait en alternant deux variantes (A, B, A, B puis B, A, B, A...) × tours,
 # un processus neuf à chaque passage, et résume avec banc_resume.py.
 #
-#   flock ~/ajp-reports/gpu-bench.lock tools/bench/banc.sh \
-#     --a="OPTIONS" --b="OPTIONS" --extraits=extraits.tsv --sortie=DOSSIER [--tours=3] [--secondes=60] [--ajp=CHEMIN]
+#   flock ~/kirari-reports/gpu-bench.lock tools/bench/banc.sh \
+#     --a="OPTIONS" --b="OPTIONS" --extraits=extraits.tsv --sortie=DOSSIER [--tours=3] [--secondes=60] [--kirari=CHEMIN]
 #
 # extraits.tsv : « fichier<TAB>début en secondes » par ligne (tools/bench/extraits.exemple.tsv).
 # Lancé sur le poste NVIDIA, GPU sans autre charge ; les horloges sont relevées (nvidia-smi), jamais forcées.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-A=""; B=""; EXTRAITS=""; OUT=""; ROUNDS=3; SECONDS_PLAYED=60; AJP="${AJP:-ajp}"
+A=""; B=""; EXTRAITS=""; OUT=""; ROUNDS=3; SECONDS_PLAYED=60; Kirari="${Kirari:-kirari}"
 for arg in "$@"; do
   case "$arg" in
     --a=*) A="${arg#--a=}" ;;
@@ -18,7 +18,7 @@ for arg in "$@"; do
     --sortie=*) OUT="${arg#--sortie=}" ;;
     --tours=*) ROUNDS="${arg#--tours=}" ;;
     --secondes=*) SECONDS_PLAYED="${arg#--secondes=}" ;;
-    --ajp=*) AJP="${arg#--ajp=}" ;;
+    --kirari=*) Kirari="${arg#--kirari=}" ;;
     *) echo "option inconnue : $arg" >&2; exit 2 ;;
   esac
 done
@@ -26,7 +26,7 @@ done
 mkdir -p "$OUT"
 {
   echo "date : $(date -Is)"
-  echo "ajp : $("$AJP" --version 2>&1 | head -1)"
+  echo "kirari : $("$Kirari" --version 2>&1 | head -1)"
   echo "noyau : $(uname -sr)"
   command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
   echo "A : $A"
@@ -37,7 +37,7 @@ play() { # variante options fichier début étiquette
   local label="$1" options="$2" file="$3" start="$4" tag="$5"
   local base="$OUT/$tag"
   # shellcheck disable=SC2086
-  "$AJP" play "$file" --start="$start" --seconds="$SECONDS_PLAYED" --fullscreen --mute --no-resume \
+  "$Kirari" play "$file" --start="$start" --seconds="$SECONDS_PLAYED" --fullscreen --mute --no-resume \
     --data-dir="$OUT/data-$label" --stats="$base.tsv" $options </dev/null >"$base.log" 2>&1 || echo "échec : $tag" >&2
   if command -v nvidia-smi >/dev/null; then
     nvidia-smi --query-gpu=clocks.sm,clocks.mem,power.draw,utilization.gpu --format=csv,noheader >"$base.smi" || true

@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::size_t kMaxUndo = 100;
@@ -65,4 +65,4 @@ void SettingsHistory::adopt(const ExternalChange& changed, const PlaySettings& r
   for (PlaySettings& s : redo_) take(s, changed, running);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

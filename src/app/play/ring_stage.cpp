@@ -12,7 +12,7 @@
 #include "core/thread.h"
 #include "core/thread_role.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 RingStage::RingStage(VideoStageInit init, std::uint32_t slots, std::uint32_t generation,
                      std::size_t extra_frames)
@@ -246,4 +246,4 @@ void RingStage::emit(const ThreadReport& report) {
   slot_wait_since_us_ = 0;  // plus rien n'attend de slot
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

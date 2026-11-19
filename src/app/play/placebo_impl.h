@@ -44,7 +44,7 @@
 #include "render/sharpen.h"
 #include "subs/subtitle_frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les slots du ring : textures RGBA16 exportées et leurs sémaphores timeline. Un slot est soit
 // tenu par CUDA (gpu), soit rendu à libplacebo le temps que main le lise (core/ring.h).
@@ -353,4 +353,4 @@ struct PlaceboScreen::Impl {
   mutable core::SampleReservoir<std::uint32_t> grade_gpu_us{std::size_t{1} << 20};
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

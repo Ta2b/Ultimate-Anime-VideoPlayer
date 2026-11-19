@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 enum class RingPacking : std::uint32_t {
   Rgba16,   // RGBA16 UNORM, 8 octets par pixel (kernels/spec/color.h, unorm16)
@@ -18,4 +18,4 @@ struct RingSurface {
   bool dither = false;  // RGB10A2 seulement : tramage TPDF fixe par pixel
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

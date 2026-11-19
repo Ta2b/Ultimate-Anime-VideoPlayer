@@ -17,7 +17,7 @@
 #include "french_ui.h"
 #include "prepare/sha256.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -25,7 +25,7 @@ namespace fs = std::filesystem;
 struct Folder {
   Folder()
       : root(fs::temp_directory_path() /
-             std::format("ajp-span-fp8c-test-{:x}",
+             std::format("kirari-span-fp8c-test-{:x}",
                          std::hash<std::string>{}(Catch::getResultCapture().getCurrentTestName()))) {
     fs::remove_all(root);
     fs::create_directories(root / "modeles");
@@ -47,8 +47,9 @@ struct Folder {
   }
   fs::path dir() const { return root / "modeles"; }
   fs::path package() const { return dir() / (stem + ".span8"); }
-  void receipt(double psnr_mean, double psnr_worst, double ssim, std::string_view format = "ajp-span-fp8c-v1",
-               bool passed = true, double speedup = 1.30) const {
+  void receipt(double psnr_mean, double psnr_worst, double ssim,
+               std::string_view format = "kirari-span-fp8c-v1", bool passed = true,
+               double speedup = 1.30) const {
     write(
         dir() / (stem + ".toml"),
         std::format("format = \"{}\"\nsource_sha256 = \"{}\"\nmodel_sha256 = \"{}\"\npsnr_mean_db = {:.4f}\n"
@@ -66,7 +67,7 @@ struct Folder {
 }  // namespace
 
 TEST_CASE("SPAN FP8 CUTLASS : le paquet d'un reçu qui passe les seuils de l'INT8", "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);  // sans reçu : rien
   f.receipt(52.0, 49.3, 0.9967);
@@ -81,7 +82,7 @@ TEST_CASE("SPAN FP8 CUTLASS : le paquet d'un reçu qui passe les seuils de l'INT
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 se lit encore, sans valoir reçu v2 (3.7b)", "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   f.receipt(52.0, 49.3, 0.9967);
   const SpanFp8Context here{.gpu_arch = "sm_89", .kernels_version = 1, .width = 1280, .height = 720};
@@ -93,15 +94,15 @@ TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 se lit encore, sans valoir reçu v2 (3
 
 TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 sans gain mesuré est refusé, il échappait aux portes v2 (C46-17)",
           "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
-  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1", true, 0.0);  // dérivé sans --trtexec : speedup = 0
+  f.receipt(52.0, 49.3, 0.9967, "kirari-span-fp8c-v1", true, 0.0);  // dérivé sans --trtexec : speedup = 0
   const SpanInt8Lookup unmeasured = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
   CHECK_FALSE(unmeasured.variant);
   CHECK(unmeasured.note.find("gain sur le FP16 non mesuré") != std::string::npos);
-  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1", true, 1.01);
+  f.receipt(52.0, 49.3, 0.9967, "kirari-span-fp8c-v1", true, 1.01);
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
-  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1", true, 1.40);
+  f.receipt(52.0, 49.3, 0.9967, "kirari-span-fp8c-v1", true, 1.40);
   CHECK(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
 }
 
@@ -137,7 +138,7 @@ TEST_CASE("SPAN natif (--span-native) : l'Équilibre prend le FP16 CUTLASS, les 
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit pas", "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   f.receipt(35.0, 30.0, 0.95);  // au-dessus des seuils lâches du FP8 (30, 26, 0,93), sous ceux de l'INT8
   const SpanInt8Lookup found = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
@@ -147,15 +148,15 @@ TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
   f.receipt(52.0, 49.0, 0.980);  // le pire SSIM sous 0,985
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
-  f.receipt(52.0, 49.0, 0.9967, "ajp-span-fp8c-v1", false);  // passed = false
+  f.receipt(52.0, 49.0, 0.9967, "kirari-span-fp8c-v1", false);  // passed = false
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : reçu d'un autre format, d'un autre modèle ou paquet modifié",
           "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
-  f.receipt(52.0, 49.0, 0.9967, "ajp-span-fp8-v1");  // le format du FP8 par Q/DQ
+  f.receipt(52.0, 49.0, 0.9967, "kirari-span-fp8-v1");  // le format du FP8 par Q/DQ
   const SpanInt8Lookup wrong = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
   CHECK_FALSE(wrong.variant);
   CHECK(wrong.note.find("format inconnu") != std::string::npos);
@@ -175,7 +176,7 @@ TEST_CASE("SPAN FP8 CUTLASS : reçu d'un autre format, d'un autre modèle ou paq
 
 TEST_CASE("SPAN FP8 CUTLASS : un reçu vide ou illisible et un paquet tronqué se refont (A02-14)",
           "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   Folder::write(f.dir() / (f.stem + ".toml"), "");  // coupure : le reçu est resté vide sous son nom
   const SpanInt8Lookup empty = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
@@ -183,7 +184,7 @@ TEST_CASE("SPAN FP8 CUTLASS : un reçu vide ou illisible et un paquet tronqué s
   CHECK(empty.stale);
   CHECK(empty.note.find("reçu vide") != std::string::npos);
 
-  Folder::write(f.dir() / (f.stem + ".toml"), "format = \"ajp-span");  // coupé au milieu d'une ligne
+  Folder::write(f.dir() / (f.stem + ".toml"), "format = \"kirari-span");  // coupé au milieu d'une ligne
   const SpanInt8Lookup cut = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
   CHECK_FALSE(cut.variant);
   CHECK(cut.stale);
@@ -194,13 +195,13 @@ TEST_CASE("SPAN FP8 CUTLASS : un reçu vide ou illisible et un paquet tronqué s
   CHECK_FALSE(truncated.variant);
   CHECK(truncated.stale);
 
-  f.receipt(52.0, 49.0, 0.9967, "ajp-span-fp8-v1");  // un vrai autre format reste un refus
+  f.receipt(52.0, 49.0, 0.9967, "kirari-span-fp8-v1");  // un vrai autre format reste un refus
   CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).stale);
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : le cran Performance demande le moteur qui sait le paquet",
           "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const Folder f;
   f.receipt(52.0, 49.0, 0.9967);
   CHECK(span_tiers(f.span, f.dir(), true, true).performance);
@@ -210,7 +211,7 @@ TEST_CASE("SPAN FP8 CUTLASS : le cran Performance demande le moteur qui sait le 
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : le nom d'origine se lit dans celui du paquet", "[app][int8][fp8c]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   SpanVariantKind kind = SpanVariantKind::Int8;
   CHECK(span_int8_source("modele-fp8c-0123456789abcdef.span8", &kind) == "modele.onnx");
   CHECK(kind == SpanVariantKind::Fp8Cutlass);
@@ -220,4 +221,4 @@ TEST_CASE("SPAN FP8 CUTLASS : le nom d'origine se lit dans celui du paquet", "[a
   CHECK(kind == SpanVariantKind::Fp8);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -15,7 +15,7 @@
 #include "core/types.h"
 #include "gpu/cuda/backend/ring_surface.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class ImportedSlot {
  public:
@@ -48,4 +48,4 @@ class ImportedSlot {
   cudaExternalSemaphore_t semaphore_ = nullptr;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

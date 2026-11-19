@@ -29,7 +29,7 @@ les mesures ont donné, sans arrondir en faveur de la demande.
 
 Par défaut, donc : **GMFSS passe au FP8 sur la paire** (gain réel, qualité tenue), sur une RTX 40 et après avec TensorRT, et
 retombe seul sur le FP16 si le graphe manque ou si le moteur ne calcule pas le FP8. **RIFE et DistilDRBA restent en FP16**,
-et le cran Performance de ces deux réseaux reste visible dans Réglages avancés > Fluidité avec une note honnête (voir
+et le cran Performance de ces deux réseaux ne se choisit plus que dans `play.toml` (`motion_precision`), le menu ne le montre plus (voir
 plus bas) : aucun graphe FP8 de RIFE n'est publié, celui de DistilDRBA l'est comme fichier facultatif.
 
 ## Méthode
@@ -93,7 +93,7 @@ upsampler 47,8, MetricNet 60,8, squelette 34,7 sur les deux cas les plus durs) l
 Contrôle sur TensorRT lui-même (cas le plus dur, t960_0, 768×1280) : les 14 sorties de la paire FP8 contre la paire FP16 du
 même moteur donnent 41 à 57 dB (mouvement 41,4 à 50,3 dB, caractéristiques 47,2 à 57,3 dB, images 99 dB), dans l'ordre de
 ce qu'émule ONNX Runtime (46 à 57 dB) : les PSNR de la chaîne complète ci-dessus sont ceux de l'émulation, pas de
-TensorRT. Lecture réelle (`ajp play`, TensorRT, `--data-dir` jetable) : le cran Performance par défaut charge
+TensorRT. Lecture réelle (`kirari play`, TensorRT, `--data-dir` jetable) : le cran Performance par défaut charge
 `*_s05fp8_pair.onnx` (moteur 1280×768 construit en 46 s, 579 couches, 0 reformatage) avec la fusion FP16 d'Équilibre, sans
 repli ni avertissement ; en 40 s de lecture à 720p la chaîne n'a terminé aucune paire (GMFSS ×3 ne tient pas à 720p, voir
 le plan), le contrôle des sorties a donc été fait sur le moteur seul.
@@ -142,9 +142,9 @@ Performance de RIFE le lecteur couperait de plus RIFE fusionné (1,3 ms contre 4
   reste Équilibre, et l'automatique ne le passe jamais en FP8.
   Conséquence : GMFSS fusionné (`gmfss_fused`, éteint par défaut, `gmfss-fusionne.md`) ne se découpe qu'au cran Équilibre ;
   pour l'essayer il faut passer GMFSS en Équilibre (le journal dit « cran de précision hors Équilibre » sinon).
-- **Réglages avancés > Fluidité** : le sélecteur de précision de RIFE et de DistilDRBA propose Performance quand le graphe
-  `_fp8` est là, avec une infobulle qui donne les chiffres de ce document (RIFE : −5 % à +27 %, qualité hors garde, coupe
-  RIFE fusionné ; DistilDRBA : −11 %, qualité tenue, coupe le fusionné).
+- **`motion_precision` de `play.toml`** (le menu à la manière de Dolphin ne montre plus ce sélecteur) : Performance sert
+  quand le graphe `_fp8` est là. Les chiffres de ce document : RIFE −5 % à +27 %, qualité hors garde, coupe RIFE
+  fusionné ; DistilDRBA −11 %, qualité tenue, coupe le fusionné.
 - Pas de dérivation native C++ à la façon du `.span8` : SPAN a un paquet FP8 parce que ses convolutions en
   pleine résolution y gagnent 34 à 37 % avec des noyaux CUTLASS dédiés (`span-fp8-cutlass.md`). Ici le gain de GMFSS vient d'un graphe ONNX que
   TensorRT fond déjà ; le reste n'a pas de gain à dériver. Le graphe FP8 de GMFSS est calibré hors ligne sur des images
@@ -154,10 +154,10 @@ Performance de RIFE le lecteur couperait de plus RIFE fusionné (1,3 ms contre 4
 
 ```
 tools/fp8/build_interp_fp8.sh VIDEO.mkv SORTIE         # graphes FP8 + gardes de qualité (SORTIE/quality.txt)
-flock ~/ajp-reports/gpu-bench.lock tools/fp8/abab_trt.sh A.onnx B.onnx "frames:1x6x768x1280" 3   # ABAB 3 tours
+flock ~/kirari-reports/gpu-bench.lock tools/fp8/abab_trt.sh A.onnx B.onnx "frames:1x6x768x1280" 3   # ABAB 3 tours
 tools/release/publier-modeles-fp8.sh SORTIE            # essai à blanc ; --publier pour téléverser (Tatoub)
 ```
 
-Fichiers publiés (release `models-interp-1` de `Ta2b/ajp-releases`, SHA-256 dans le rapport de livraison et dans
+Fichiers publiés (release `models-interp-1` de `Ta2b/kirari-player`, SHA-256 dans le rapport de livraison et dans
 `SHA256SUMS`) : `gmfss_fortuna_base_s05fp8_pair.onnx`, `gmfss_fortuna_union_s05fp8_pair.onnx` (par défaut) ;
 `distil_drba_v2_lite_fp8.onnx`, `distil_drba_v2_lite_s05_fp8.onnx` (facultatifs).

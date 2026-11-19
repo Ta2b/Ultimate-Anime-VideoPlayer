@@ -19,7 +19,7 @@
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 struct DescriptorLimits {
   std::uint32_t sets = 64;      // dispatchs par enregistrement
@@ -67,4 +67,4 @@ class DescriptorArena {
   std::uint32_t total_sets_ = 0;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

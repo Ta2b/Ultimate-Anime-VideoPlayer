@@ -1,4 +1,4 @@
-# Le kit CUDA (nvcc, runtime, en-têtes) et TensorRT pour construire ajp_backend_tensorrt sous
+# Le kit CUDA (nvcc, runtime, en-têtes) et TensorRT pour construire kirari_backend_tensorrt sous
 # Windows, aux versions de tools/release/versions.env, dans le dossier donné. Le lancer, c'est
 # accepter la licence du kit CUDA (https://docs.nvidia.com/cuda/eula/index.html) et celle de
 # TensorRT (https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html) : la CI ne le
@@ -6,7 +6,7 @@
 #
 # Le kit vient des archives redist de NVIDIA, chacune vérifiée par l'empreinte de son manifeste,
 # fusionnées en un seul dossier (bin/, include/, lib/x64/, nvvm/) ; TensorRT, de son zip.
-# Sous GitHub Actions, CUDA_PATH, CUDACXX, AJP_TENSORRT_ROOT et le PATH passent aux étapes
+# Sous GitHub Actions, CUDA_PATH, CUDACXX, KIRARI_TENSORRT_ROOT et le PATH passent aux étapes
 # suivantes.
 #
 #   pwsh tools/deps/windows-tensorrt.ps1 C:\deps\nvidia
@@ -116,7 +116,7 @@ if (-not $TrtRoot) { throw "NvInfer.h absent du zip de TensorRT" }
 Get-ChildItem "$TrtRoot/lib", "$TrtRoot/bin" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
 
 if ($env:GITHUB_ENV) {
-  "CUDA_PATH=$CudaRoot", "CUDACXX=$Nvcc", "AJP_TENSORRT_ROOT=$TrtRoot" |
+  "CUDA_PATH=$CudaRoot", "CUDACXX=$Nvcc", "KIRARI_TENSORRT_ROOT=$TrtRoot" |
     Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
   (Join-Path $CudaRoot "bin"), (Join-Path $CudaRoot "bin/x64"), "$TrtRoot/lib", "$TrtRoot/bin" |
     Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8

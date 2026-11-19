@@ -18,7 +18,7 @@
 #include "render/grade_params.h"
 #include "render/output_tune.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 class Grade {
  public:
@@ -85,4 +85,4 @@ class Grade {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace ajp::render
+}  // namespace kirari::render

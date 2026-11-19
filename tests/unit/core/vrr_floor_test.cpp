@@ -2,7 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::core {
+namespace kirari::core {
 
 TEST_CASE("VRR : une image tenue 83 ms est représentée 4 fois, à intervalles égaux", "[core][vrr]") {
   const std::int64_t floor = vrr_floor_us(48);
@@ -21,4 +21,4 @@ TEST_CASE("VRR : au plancher ou en dessous, ou sans plancher, rien n'est représ
   CHECK(vrr_floor_us(0) == 0);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -25,7 +25,7 @@ struct ass_renderer;
 struct ass_image;
 struct ass_library;
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 inline constexpr int kMaxTargetSide = 16384;
 inline constexpr int kMaxRenderThreads = 64;
@@ -169,4 +169,4 @@ class SubtitleRenderer {
   std::uint64_t libass_calls_ = 0;
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

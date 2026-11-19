@@ -7,7 +7,7 @@
 #include <format>
 #include <numeric>
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 constexpr int kMaxSideLimit = 65536;
@@ -91,4 +91,4 @@ std::expected<Packing, Refusal> pack(std::span<const PackSize> sizes, int max_si
   return packing;
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

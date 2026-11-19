@@ -8,9 +8,9 @@
 #include "app/play/player_engines.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
                               int auto_peak, bool source_hdr = false);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

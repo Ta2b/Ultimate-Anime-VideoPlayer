@@ -18,7 +18,7 @@
 #include "core/types.h"
 #include "render/cube_lut.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 // Plages des réglages, incluses ; une valeur hors plage est refusée, jamais corrigée.
 namespace grade_limits {
@@ -204,4 +204,4 @@ struct BlackThresholds {
 // rejoint l'identité à `steps` pas. Rien si la rampe ne monte pas (sortie plate, mesure ratée).
 std::optional<BlackThresholds> black_thresholds(std::span<const double> step_nits, double steps);
 
-}  // namespace ajp::render
+}  // namespace kirari::render

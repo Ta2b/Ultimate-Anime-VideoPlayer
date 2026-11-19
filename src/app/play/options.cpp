@@ -13,7 +13,7 @@
 #include "core/charconv.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 template <class T>
@@ -244,7 +244,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
     } else if (arg == "--no-upscale") {
       options.upscale = false;
       options.given.emplace_back(arg);
-    } else if (arg == "--no-restore-lines") {  // l'essai B de « Restaurer les traits » (ajp compare)
+    } else if (arg == "--no-restore-lines") {  // l'essai B de « Restaurer les traits » (kirari compare)
       options.given.emplace_back(arg);
     } else if (arg == "--mute") {
       options.mute = true;
@@ -505,15 +505,16 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
     if (!known) return refuse(RefusalCode::OptionUnknown, std::format("unknown option: {}", arg));
   }
   if (!options.help && options.file.empty())
-    return refuse(RefusalCode::FieldMissing, "ajp compare: the video to play is missing");
+    return refuse(RefusalCode::FieldMissing, "kirari compare: the video to play is missing");
   return options;
 }
 
 // L'aide de la ligne de commande, en anglais comme l'interface par défaut : elle s'écrit avant que les
 // réglages (et la langue choisie) ne soient lus.
 std::string compare_usage() {
-  return "ajp compare <file> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   two chains side by side, sound off\n"
-         "  --a, --b            \"ajp play\" options of each variant, e.g. --a=\"--rife=3\" "
+  return "kirari compare <file> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   two chains side by side, sound "
+         "off\n"
+         "  --a, --b            \"kirari play\" options of each variant, e.g. --a=\"--rife=3\" "
          "--b=\"--rife=4\"\n"
          "  --a-settings=FILE, --b-settings=FILE   starting play.toml (DRBA poses, interpolation engine…)\n"
          "  --seconds=S         length of one run (5 to 120, default 12); A, B, B, A: the worse of two "
@@ -522,7 +523,8 @@ std::string compare_usage() {
 }
 
 std::string bench_usage() {
-  return "ajp bench [file] [options]   rates the machine at each level, sound off, hidden window; without a "
+  return "kirari bench [file] [options]   rates the machine at each level, sound off, hidden window; without "
+         "a "
          "file, the player's test sequence\n"
          "  --seconds=S      length of one run (5 to 120, default 12)\n"
          "  --report=FILE    the report, besides standard output\n"
@@ -533,7 +535,7 @@ std::string bench_usage() {
 
 std::string play_usage(bool debug) {
   const std::string usage = std::format(
-      "ajp play [file] [options]   (without a file: home screen, Open a video)\n"
+      "kirari play [file] [options]   (without a file: home screen, Open a video)\n"
       "  --model=FILE.onnx      SPAN ×2 model (default: {})\n"
       "  --no-upscale           source picture, reduced only to the working resolution\n"
       "  --no-restore-lines     a source above the working resolution keeps its detail, no SPAN\n"
@@ -569,17 +571,17 @@ std::string play_usage(bool debug) {
       "  --motion=rife|drba     interpolation engine, RIFE or DistilDRBA (default: the preset's)\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade, {} to {} (0 or default: the screen's,\n"
       "                         else 1000)\n"
-      "ajp --register           registers the player with the system (\"Open with\", default\n"
+      "kirari --register           registers the player with the system (\"Open with\", default\n"
       "                         player); --unregister removes this registration\n"
       "Keys: space pause, ← → seek 5 s, ↑ ↓ volume, m mute, f full screen (Esc leaves it), q quit,\n"
       "  a next audio track, j next subtitles, n / Shift+n next / previous episode,\n"
       "  Page↑ / Page↓ next / previous chapter, o skip the credits, . and , frame by frame, z / x\n"
       "  subtitle delay, Ctrl+- / Ctrl++ audio delay, p settings, Tab statistics, Ctrl+0 neither grade nor\n"
       "  interpolation (the upscaling stays), Ctrl+G grade, Ctrl+I interpolation.\n"
-      "Other commands: ajp bench (rates the machine), ajp compare (two chains side by side),\n"
-      "  ajp calibrate (the bench of the Results page); ajp bench --help, ajp compare --help\n",
+      "Other commands: kirari bench (rates the machine), kirari compare (two chains side by side),\n"
+      "  kirari calibrate (the bench of the Results page); kirari bench --help, kirari compare --help\n",
       kDefaultModelFile, kDefaultRifeFile, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
-  if (!debug) return usage + "Trial options: ajp --debug --help\n";
+  if (!debug) return usage + "Trial options: kirari --debug --help\n";
   return usage +
          "Trial options, with --debug:\n"
          "  --rife-image           image RIFE at every instant (without the motion variant)\n"
@@ -739,4 +741,4 @@ std::expected<std::filesystem::path, Refusal> find_rife_model(
   return find_file(options.rife_model, "--rife-model", "RIFE model", candidates);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

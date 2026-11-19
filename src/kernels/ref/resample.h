@@ -9,7 +9,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/resample.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 struct Weights {
   int taps = 0;
@@ -34,4 +34,4 @@ Result<PlaneF> resample_columns(const PlaneF& in, const Weights& wy);
 Result<PlaneF> resize(const PlaneF& in, int width, int height, Filter filter);
 Result<RgbImage> resize(const RgbImage& in, int width, int height, Filter filter);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

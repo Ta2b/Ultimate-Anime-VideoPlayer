@@ -13,7 +13,7 @@
 #include "app/play/live_settings.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 using namespace std::chrono_literals;
 
@@ -106,4 +106,4 @@ TEST_CASE("Étage gpu : Rapide sans late_fate, la paire sort quand même, en ret
   CHECK(old.rife >= 1);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

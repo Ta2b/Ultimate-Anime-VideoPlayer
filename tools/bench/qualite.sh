@@ -9,7 +9,7 @@
 # Il faut python3 avec numpy, onnx et onnxruntime, ffmpeg, et 7z pour le premier téléchargement.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/kirari-release-models"
 MODELS="$CACHE/modeles"
 for model in distil_drba_v2_lite rife_v4.26 rife_v4.25 rife_v4.22_lite rife_v4.25_lite; do
   if [ ! -f "$MODELS/rife/$model.onnx" ]; then

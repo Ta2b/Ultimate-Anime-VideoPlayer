@@ -26,7 +26,7 @@
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 #include "kernels/spec/warp.h"
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 inline constexpr int kFusedMaxBlocks = 5;
 inline constexpr int kFusedInputPlanes = 11;    // l'entrée de RIFE v1 (kernels/spec/rife.h)
@@ -141,6 +141,6 @@ constexpr RifeFusedLayout rife_fused_layout(const RifeFusedPlan& plan, int heigh
   return layout;
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

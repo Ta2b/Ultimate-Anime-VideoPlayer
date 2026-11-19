@@ -5,9 +5,9 @@
 #include "media/frame_rate.h"
 #include "media/tag_text.h"
 
-using ajp::media::clean_tag_text;
-using ajp::media::Rational;
-using ajp::media::standard_frame_rate;
+using kirari::media::clean_tag_text;
+using kirari::media::Rational;
+using kirari::media::standard_frame_rate;
 
 // C14-07 : une moyenne estimée par le conteneur retombe sur la cadence de diffusion.
 TEST_CASE("standard_frame_rate : les moyennes estimées retrouvent leur cadence", "[media][frame_rate]") {
@@ -51,5 +51,5 @@ TEST_CASE("clean_tag_text : coupé à 256 octets, jamais au milieu d'un caractè
   for (int i = 0; i < 200; ++i) text += "\xE6\x97\xA5";  // 600 octets
   const std::string cut = clean_tag_text(text);
   CHECK(cut.size() == 255);  // 85 caractères de 3 octets
-  CHECK(clean_tag_text(std::string(1000, 'a')).size() == ajp::media::kMaxTagBytes);
+  CHECK(clean_tag_text(std::string(1000, 'a')).size() == kirari::media::kMaxTagBytes);
 }

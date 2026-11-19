@@ -32,8 +32,8 @@
 
 namespace {
 
-using namespace ajp;
-using namespace ajp::test;
+using namespace kirari;
+using namespace kirari::test;
 
 // Mouvement dans des plans pw × ph, image dans la fenêtre area ; images 1,5 fois plus grandes
 // (mouvement estimé à 720p, warp à 1080p). tolerance : l'écart admis à la référence, pour warp_blend
@@ -448,7 +448,7 @@ float drawn(int c, int x, int y, int w, int h) {
 TEST_CASE("Backend TensorRT : le vrai SPAN d'AnimeJaNai face à l'interpréteur FP32 (B40-03)",
           "[backend_tensorrt][cuda][span]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  const std::filesystem::path model(AJP_SPAN_MODEL);
+  const std::filesystem::path model(KIRARI_SPAN_MODEL);
   if (!std::filesystem::is_regular_file(model)) SKIP("modèle AnimeJaNai absent : " + core::to_utf8(model));
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);

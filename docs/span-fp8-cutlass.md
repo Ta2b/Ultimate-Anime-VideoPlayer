@@ -17,8 +17,8 @@ TensorRT 11.3, CUDA 13, ABAB sous le verrou GPU.
 | Mesure | TensorRT FP16 | Noyaux FP8 | Écart |
 |---|---|---|---|
 | Prototype, 1×3×1088×1920, graphe CUDA, séance du 28/10 | 14,25 ms | 9,34 ms (acc. f32) ; 9,09 ms (acc. f16 hors blocs) | −34 à −36 % |
-| Lecteur, 1×3×1080×1920, 3 tours ABAB (`ajp_span_fp8_run --bench` contre `trtexec --loadEngine` du moteur du lecteur) | 14,70 / 14,74 / 14,74 ms | 9,22 / 9,22 / 9,21 ms | **−37 %** |
-| Lecteur, `ajp play --stats`, 24 i/s, 1080p → 2160p, SPAN seul, médiane « moteur » | 15,53 ms (min 14,3) | 14,5 ms (min 8,9) | −6,5 % (voir ci-dessous) |
+| Lecteur, 1×3×1080×1920, 3 tours ABAB (`kirari_span_fp8_run --bench` contre `trtexec --loadEngine` du moteur du lecteur) | 14,70 / 14,74 / 14,74 ms | 9,22 / 9,22 / 9,21 ms | **−37 %** |
+| Lecteur, `kirari play --stats`, 24 i/s, 1080p → 2160p, SPAN seul, médiane « moteur » | 15,53 ms (min 14,3) | 14,5 ms (min 8,9) | −6,5 % (voir ci-dessous) |
 
 Pourquoi la médiane en lecture baisse si peu : à 24 i/s le GPU dort les deux tiers du temps et le pilote baisse
 ses horloges. Échantillonnées toutes les 500 ms pendant 30 s de lecture : **2825 MHz et 149 W avec TensorRT FP16,
@@ -88,7 +88,7 @@ le même résultat ; (B) garde le plus simple, et la seule chose à écrire pour
 | `src/gpu/cuda/backend/span_fp8_net_none.cpp` | version vide quand CUTLASS n'est pas construit |
 | `src/gpu/cuda/backend/span_fp8_engine.{h,cpp}` | `SpanFp8Engine : gpu::Engine`, clé d'artefact, essai au chargement |
 | `src/gpu/cuda/backend/tensorrt_span_fp8.cpp` | `TensorRtBackend::build / load / enqueue` pour un paquet |
-| `src/gpu/cuda/backend/span_fp8_run.cpp` | `ajp_span_fp8_run`, l'outil de contrôle de `derive_span_fp8.py` |
+| `src/gpu/cuda/backend/span_fp8_run.cpp` | `kirari_span_fp8_run`, l'outil de contrôle de `derive_span_fp8.py` |
 | `src/app/play/span_int8.{h,cpp}` | variante `-fp8c-` : reçu, garde-fous |
 | `src/app/play/chain_setup.cpp` | l'ordre des variantes et le repli |
 | `tools/span/derive_span_fp8.py` | calibration, paquet, reçu |
@@ -145,7 +145,7 @@ b8f64, 48 natifs (K à plat) pour le b5f48. L'épilogue écrit et lit alors des 
 (`Launcher<…, Act16>`). Zone de travail : 1 Ko par pixel de caractéristiques en 64 canaux, 768 o en 48.
 Visé : battre TensorRT FP16 là où le FP8 n'est pas pris (b5f48 refusé par sa porte, puis Windows et les
 RTX 20 et 30, qui demanderont d'autres architectures de compilation). Rien ne le choisit encore dans le
-lecteur ; il se mesure par `ajp_span_fp8_run MODELE.onnx H L entree.f32 sortie.f32 --fp16 --bench 200` face
+lecteur ; il se mesure par `kirari_span_fp8_run MODELE.onnx H L entree.f32 sortie.f32 --fp16 --bench 200` face
 à `trtexec --loadEngine` du moteur FP16 du lecteur, et le test `span_fp8_48_test.cpp` le compare à la
 référence FP16.
 
@@ -190,19 +190,19 @@ pas, et vit dans le dossier « modeles » des données du lecteur à côté des 
 
 ```
 ~/.animejanai-tools/venv-gpu/bin/python3 -I tools/span/derive_span_fp8.py MODELE.onnx \
-    --corpus images/ --out ~/.cache/ajp/modeles \
-    --runner build/linux-prefix-cuda/src/gpu/cuda/backend/ajp_span_fp8_run \
-    --gpu-prefix ~/ajp-tools/bin/ajp-gpu --trtexec ~/ajp-sdk/tensorrt/bin/trtexec
+    --corpus images/ --out ~/.cache/kirari/modeles \
+    --runner build/linux-prefix-cuda/src/gpu/cuda/backend/kirari_span_fp8_run \
+    --gpu-prefix ~/kirari-tools/bin/kirari-gpu --trtexec ~/kirari-sdk/tensorrt/bin/trtexec
 ```
 
 Le corpus est celui de `quantize_span.py` (images d'anime SDR 8 bits, aucune sortie RTX HDR/TrueHDR/RTX Video ;
 un cinquième des images, choisies par SHA-256, valide et ne calibre jamais). Le script : contrôle le graphe
 (prend le b8f64 et le b5f48, ce dernier rangé en 64 canaux remplis de zéros), calibre en FP32 sur ONNX Runtime CPU, écrit le paquet, fait
-tourner les noyaux du lecteur sur les images de validation (`ajp_span_fp8_run`) et les compare au SPAN d'origine
+tourner les noyaux du lecteur sur les images de validation (`kirari_span_fp8_run`) et les compare au SPAN d'origine
 en FP32, mesure (`--trtexec` est obligatoire, C46-17) le gain sur TensorRT FP16 et exige 1,05. La calibration prend aussi 4
 images pleines à la taille jouée (`--calib-full`, C46-20) : les maxima croissent avec la surface. Le lecteur refuse
 de son côté un reçu v1 (ou INT8, FP8 par Q/DQ) dont le `speedup` est absent ou sous 1,05 (C46-06). Il écrit
-`<nom>-fp8c-<16 chiffres du SHA-256 du modèle>.span8` et son reçu `.toml` (format `ajp-span-fp8c-v1`) ; si un
+`<nom>-fp8c-<16 chiffres du SHA-256 du modèle>.span8` et son reçu `.toml` (format `kirari-span-fp8c-v1`) ; si un
 garde-fou échoue, seul le reçu est écrit (`passed = false`) et un paquet d'avant est retiré.
 
 Garde-fous du reçu, ceux de l'INT8 et non ceux, lâches, du FP8 par Q/DQ : PSNR moyen ≥ 42 dB, pire ≥ 38 dB, pire
@@ -219,7 +219,7 @@ refusée passe à la suivante.
 | Cas | Où | Effet |
 |---|---|---|
 | GPU autre que sm 8.9 (Turing, Ampere, Blackwell : RTX 50 comprises, voir « Autres architectures ») | `BackendCaps::span_fp8_cutlass` faux ; le lecteur n'essaie pas la variante | variante suivante |
-| Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `AJP_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
+| Backend construit sans CUTLASS (hors Linux, `third_party/cutlass` absent, `KIRARI_WITH_SPAN_FP8=OFF`, pas de CUDA) | `span_fp8_net_none.cpp` : capacité fausse | variante suivante |
 | Reçu absent, refusé, d'un autre modèle, paquet modifié | `find_span_variant` | variante suivante |
 | Reçu v2 d'une autre architecture ou d'autres noyaux, taille refusée | `find_span_variant` avec `SpanFp8Context` | variante suivante |
 | Taille de travail pas encore jugée | `find_span_variant` rend `unvalidated_size` | variante suivante, validation seule offerte (silencieuse en Auto) |
@@ -234,11 +234,12 @@ vers TensorRT n'y changerait rien, et rien de ce qui est dans le chemin chaud n'
 
 ## Dérivation native, dans le lecteur
 
-Réglages avancés > Vidéo > Post-traitement : **« Préparer le mode Performance (SPAN FP8) »** (`src/app/play/span_derive.h`).
-Visible quand le moteur annonce `span_fp8_cutlass` (sm 8.9) et qu'une vidéo est ouverte ; sinon une note dit pourquoi.
-Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « Évaluer ma machine ». La case
-« Préparer en tâche de fond » (éteinte par défaut, `[span_prepare] background` de `play.toml`) lance la même tâche à la fin de
-« Évaluer ma machine » quand une vidéo est ouverte, que rien n'est déjà prêt et que le niveau gardé est Rapide ou plus.
+Avec la précision Performance de SPAN, le lecteur prépare ce mode seul pour la vidéo ouverte (environ une minute, FP16
+en attendant). Vidéo > Agrandissement > Avancé, encadré **« Mode Performance de SPAN (FP8) »** : « Préparer de nouveau
+pour cette vidéo » le refait à la main (`src/app/play/span_derive.h`, `span_prepare_section`), grisé hors FP8. Visible
+quand le moteur annonce `span_fp8_cutlass` (sm 8.9) et qu'une vidéo est ouverte ; sinon une note dit pourquoi. Tâche de
+fond (`std::async`, barre de progression, bouton Annuler). L'ancienne case « Préparer en tâche de fond »
+(`[span_prepare] background`) est retirée ; un ancien `play.toml` qui la porte se lit sans elle.
 
 | Étape | Où | Définition |
 |---|---|---|
@@ -248,14 +249,14 @@ Tâche de fond (`std::async`, barre de progression, bouton Annuler), comme « É
 | Calibration | `Backend::derive_span_fp8` (`tensorrt_span_derive.cpp`, `span_fp8_ref.cu`) | 8 images : le SPAN en FP16 par les mêmes convolutions CUTLASS (accumulation FP32) relève le maximum de \|valeur\| des 25 tenseurs ; échelle = maximum × 1,25 / 448, comme l'outil Python |
 | Validation | idem | 4 images mises de côté (une sur trois) : sortie du réseau FP8 contre la même référence FP16, PSNR et SSIM de `quantize_span.py` (`gpu/span_fp8/metrics.cpp`) ; garde-fous du reçu : 42 dB moyen, 38 dB pire, SSIM pire 0,985 |
 | Porte durcie (étape 3.7a) | `gpu/span_fp8/hard_cases.{h,cpp}`, `judge_hardened` | onze cas durs synthétiques à la taille des images (traits d'un pixel à 0, 30, 45 et 90°, rampes sombres en paliers 8 bits, bords saturés, motifs fins, hautes lumières, blanc plein, mire saturée à 100 %, grain ; le blanc plein et la mire depuis `kKernelsVersion` 6, pour l'accumulateur f16), jugés sans calibrer ; sur la validation et les cas durs, 99,9e centile de \|FP8 − FP16\| ≤ 4/255 et ≤ 2/255 sur les pixels sombres (luminance < 32/255), pire PSNR des cas durs ≥ 36 dB. Seuils de départ du plan. **Porte 2 (04/11, choix de Tatoub)** : sur la RTX 4070 Ti, le b8f64 fait 52 dB sur les vraies images mais les cas durs synthétiques montent à 125/255 au 99,9e centile (et une marge ×2 ou ×4 sur les échelles n'y change rien) ; seules les images de validation décident désormais (centiles compris), les cas durs sont relevés au reçu (`hard_psnr_worst_db`, `hard_error_p999_worst`) et l'œil juge. `gate_version = 2` au reçu : un refus d'une porte plus ancienne, d'une autre carte ou d'autres noyaux se refait (`SpanInt8Lookup::stale`) **Porte 3 (04/11)** : les seuils de départ refusaient tout le monde (b8f64 à 8,1/255 et 3,6/255 sombre, b5f48 à 5,4/255 et 3,0/255, en 720p sur la RTX 4070 Ti) ; réglés comme le plan le prévoyait à 1,25 × le b8f64 : 10/255 et 4,5/255. `gate_version = 3`, les refus de la porte 2 se refont ; la note de refus dit quand c'est le centile qui refuse, et non plus les seuils de PSNR. |
-| Reçu v2 (étape 3.7b) | `receipt_text`, `find_span_variant` avec `SpanFp8Context` | `ajp-span-fp8c-v2` : en plus des clés de l'outil Python, `gpu_arch`, `kernels_version` (`SpanFp8Net::kKernelsVersion`, à augmenter à chaque changement des noyaux), `blocks`, `channels`, `accumulator`, les pires centiles, `validated_sizes` et `refused_sizes`. La chaîne refuse un reçu d'une autre architecture ou d'autres noyaux ; une taille de travail non jugée offre une validation seule (`validate_span_size` : échelles du paquet telles quelles, ~10 s), qui ajoute la taille à l'une des deux listes sans toucher au paquet. Un reçu v1 (outil Python) se lit encore mais ne sert pas l'Auto |
+| Reçu v2 (étape 3.7b) | `receipt_text`, `find_span_variant` avec `SpanFp8Context` | `kirari-span-fp8c-v2` : en plus des clés de l'outil Python, `gpu_arch`, `kernels_version` (`SpanFp8Net::kKernelsVersion`, à augmenter à chaque changement des noyaux), `blocks`, `channels`, `accumulator`, les pires centiles, `validated_sizes` et `refused_sizes`. La chaîne refuse un reçu d'une autre architecture ou d'autres noyaux ; une taille de travail non jugée offre une validation seule (`validate_span_size` : échelles du paquet telles quelles, ~10 s), qui ajoute la taille à l'une des deux listes sans toucher au paquet. Un reçu v1 (outil Python) se lit encore mais ne sert pas l'Auto |
 | Auto (étape 3.6) | `auto_config.cpp`, `span_variant_order`, `tick_span_auto(…, quiet)` | les préréglages posent SPAN au cran Performance : la plus basse précision qui passe la porte. Ordre des variantes : FP8 CUTLASS (reçu v2 exigé), INT8, sinon le FP16 d'origine ; le FP8 par Q/DQ (seuils lâches) n'entre pas. La préparation se fait en silence, sans rouvrir la chaîne (le paquet sert à l'ouverture suivante), sur un flux CUDA à la priorité la plus basse, refusée si la VRAM libre est sous 1,5 × le besoin estimé |
 | Choix dans la liste des modèles | `image_tab` (`settings_chain_tabs.cpp`), `prepare_span_fp8` (`player_engines.cpp`), `chain_setup.cpp` | sur une carte qui calcule le SPAN FP8, chaque modèle SPAN paraît deux fois dans Image IA > Modèle : tel quel (FP16) et « · FP8 » (cran Performance, réglage à la main). Le FP8 choisi, la prochaine ouverture d'une vidéo prépare le paquet sur l'écran de chargement, comme un moteur qui se construit (« Préparation du moteur SPAN », le même écran et la même barre qu'un moteur FP16, q annule), puis lit en FP8 ; une taille de travail nouvelle ne coûte qu'une validation (~10 s). Un refus laisse le FP16, la raison au journal. Les préréglages ne posent plus le FP8 (Équilibre) tant que qualité et gain ne sont pas jugés ; l'assistant et le banc n'y touchent pas |
 | Écriture | `commit_derivation` | `.span8` et `.toml` sous `.part`, renommés ensuite, l'ancien restauré si un renommage échoue ; garde-fous manqués : reçu `passed = false` seul, paquet d'avant retiré ; échec technique : rien n'est écrit |
 
 Choix de la référence : le SPAN FP16 des noyaux CUTLASS, pas TensorRT (un moteur TensorRT coûte une minute de construction et ses
 tenseurs intermédiaires sont fondus). Elle colle à ONNX Runtime FP32 : maxima à 0,13 % près et 78,8 dB sur une image 1920×1088
-(`ajp_span_fp8_run --reference`). **Porte 4 (B02-01)** : le gain sur TensorRT FP16 est mesuré et exigé à la dérivation
+(`kirari_span_fp8_run --reference`). **Porte 4 (B02-01)** : le gain sur TensorRT FP16 est mesuré et exigé à la dérivation
 comme par l'outil Python ; le reçu porte `trt_fp16_ms` et `speedup`, un rapport sous 1,05 refuse le paquet (pour de bon, la
 note dit « pas plus rapide que TensorRT FP16 ») et le message de réussite dit le gain. Un paquet admis par une porte plus
 ancienne se refait. **Porte 5 (chantier E01)** : `build_span_fp16` (`span_fp16_engine.cpp`) demande le moteur SPAN FP16 que
@@ -278,13 +279,13 @@ Interface de backend : `kBackendAbi` passe à 12 (`derive_span_fp8`), les backen
 
 Mesures (RTX 4070 Ti, build Debug) : douze images 1080p de la vidéo d'essai, dérivation de 36 s (essentiellement le SSIM en Debug),
 PSNR moyen 51,5 dB, pire 50,7 dB, SSIM 0,9969, réseau FP8 9,23 ms. Test `[.span_derive]` (12 découpes 1920×1088 de PPM) : 49,5 dB,
-SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Lecture `ajp play --stats`, 24 i/s, ABAB 3 tours, médiane
+SSIM 0,997 ; réseau FP8 9,35 ms contre 17,3 ms pour TensorRT FP16 (−46 %). Lecture `kirari play --stats`, 24 i/s, ABAB 3 tours, médiane
 « moteur » : 14,60 / 14,54 / 14,58 ms avec le paquet natif contre 15,55 / 15,55 / 15,52 ms en FP16 (−6 %, même effet d'horloges que ci-dessus).
 
 ## SPAN FP16 natif dans le lecteur (essai, `--span-native`)
 
 Les noyaux FP16 de la #792 (`SpanFp8Weights::fp16`, blocs sans quantification, b5f48 en 48 canaux natifs) ne
-servaient qu'à `ajp_span_fp8_run --fp16`. `--span-native` les met dans la lecture, au cran Équilibre :
+servaient qu'à `kirari_span_fp8_run --fp16`. `--span-native` les met dans la lecture, au cran Équilibre :
 
 - le paquet `<modèle>-fp16c-<16 chiffres du SHA-256>.span8` se tire de l'ONNX au chargement
   (`native16_variant`, `span_int8.cpp`) : les poids tels quels, drapeau `fp16` du paquet (bit 1), échelles à 1.
@@ -303,7 +304,7 @@ devient le défaut au cran Équilibre, sous Linux et sous Windows (#802 y constr
 
 ### RTX 50, et l'essai au chargement
 
-Les noyaux du FP16 natif sont dans la même bibliothèque que le FP8 (`ajp_backend_span_fp8_kernels`,
+Les noyaux du FP16 natif sont dans la même bibliothèque que le FP8 (`kirari_backend_span_fp8_kernels`,
 `89-real;120`) : `SpanFp8Net::supported_fp16_device` prend sm 8.9 (RTX 40) et 12.0 (RTX 50), et le backend
 l'annonce par `BackendCaps::span_fp16_cutlass` (interface 42), que `--span-native` demande. La #811 les avait
 mis dans une bibliothèque à part, compilée aussi pour sm 8.6 (RTX 30) : `net_kernel<…>` de conv_cat et de
@@ -326,7 +327,7 @@ bien plus bas. Le calcul du processeur rend ce que l'interpréteur de l'IR rend 
 
 ### Mesure sur la RTX 4070 Ti : le FP16 natif ne gagne pas
 
-Banc direct (`ajp_span_fp8_run`, graphe CUDA, trois tours ABAB, une image 1080p) contre le moteur TensorRT
+Banc direct (`kirari_span_fp8_run`, graphe CUDA, trois tours ABAB, une image 1080p) contre le moteur TensorRT
 FP16 du lecteur :
 
 | Réseau | Noyaux FP16 natifs | TensorRT FP16 |
@@ -339,7 +340,7 @@ Le natif est de 5 à 20 % plus lent que TensorRT : il ne sert pas de marge. En p
 (`kFewChannels`, blocs en FP16) rend 100 % de NaN, en acc16 comme en `--per-tap` ; l'essai au chargement
 l'a bien refusé en lecture (« nan dB »), et la lecture est restée sur TensorRT FP16. Le corps à 64 canaux est
 juste sur R et V (83 dB contre ONNX Runtime). Le bleu à 21 dB de cette construction locale (nvcc 13.4.92),
-aussi en FP8, reste à confirmer par `ajp_span_fp8_kernel_tests` sur la construction de la CI : la rc.13 de la
+aussi en FP8, reste à confirmer par `kirari_span_fp8_kernel_tests` sur la construction de la CI : la rc.13 de la
 CI mesurait son FP8 b8f64 à 49,9 dB en moyenne, ce qu'un bleu faux ne donnerait pas.
 
 Conséquence : `--span-native` reste éteint, les NaN de `kFewChannels` en FP16 ne valent pas d'être corrigés
@@ -364,14 +365,14 @@ warps ; to_pixel reprend la tuile de 64 colonnes d'avant (48 sorties utiles, les
 à la compilation que les cartes des fils des deux opérandes couvrent leur tuile entière. Les paquets jugés par la
 version 4 se revalident.
 
-## Balayage des formes de tuile (`ajp_span_tile_bench`)
+## Balayage des formes de tuile (`kirari_span_tile_bench`)
 
 Le SPAN natif n'a qu'une forme de tuile par précision (FP16 : 128 × 64 × 32, warp 32, 4 étages ; FP8 :
 128 × 64 × 64, warp 32, 3 étages), quand TensorRT en essaie des dizaines à la construction. Avant de juger le
-natif contre TensorRT, `ajp_span_tile_bench [hauteur largeur] [--iterations N]` lance seule la convolution 3×3
+natif contre TensorRT, `kirari_span_tile_bench [hauteur largeur] [--iterations N]` lance seule la convolution 3×3
 des blocs (18 des 21 convolutions d'un b8f64) sous chaque forme, en FP16 et en FP8, à 64 et 48 canaux, et dit
 le temps et les TFLOPS de chacune. Une forme nettement plus rapide que celle du lecteur se reporte dans
-`Body` (`span_fp8_body.cuh`), puis se juge sur le réseau entier (`ajp_span_fp8_run`) et contre TensorRT.
+`Body` (`span_fp8_body.cuh`), puis se juge sur le réseau entier (`kirari_span_fp8_run`) et contre TensorRT.
 
 Mesure sur la RTX 4070 Ti (corps de 960 × 540, médiane de trois tours, 64 canaux) : en FP8, la forme du lecteur
 prend 0,286 ms à accumulateur f32 et 0,222 ms en acc16 (−22 %). À accumulateur f32, elle tient 76 % du pic FP16
@@ -438,7 +439,7 @@ porte de bout en bout de la lecture les juge comme tout autre réseau (`net_span
 - **Modèle Performance b5f48 (48 canaux, 5 blocs)** : pris depuis les étapes 3.2b et 3.2c, rangé en 64 canaux
   remplis de zéros (Relu(0) = 0, (t + x)·tanh(0) = 0) et les noyaux bouclés sur 5 blocs ; paquet version 2.
   Visé : FP8 ≤ 0,72 × TensorRT FP16 en 720p et ≤ 0,70 en 1080p, reçu 42/38/0,985 (à mesurer sur la RTX).
-- **Windows** (12.4) : le module se construit à la demande (`-DAJP_WITH_SPAN_FP8=ON` ; `AJP_WITH_SPAN_FP8=ON` pour
+- **Windows** (12.4) : le module se construit à la demande (`-DKIRARI_WITH_SPAN_FP8=ON` ; `KIRARI_WITH_SPAN_FP8=ON` pour
   `package-windows.ps1` ; entrée `span_fp8` de `release-windows.yml`, avec `tensorrt`), avec le préprocesseur conforme
   de MSVC (`/Zc:preprocessor`). Le défaut y reste OFF : il ne passera ON qu'avec le même PSNR et le même gain qu'en
   Linux à ±3 %, mesurés sur la RTX ; sinon il reste OFF, et cette ligne le dit. Éteint, le lecteur se comporte comme
@@ -456,18 +457,18 @@ porte de bout en bout de la lecture les juge comme tout autre réseau (`net_span
 ## Construire et tester
 
 ```
-export PATH=$HOME/ajp-tools/venv/bin:$HOME/ajp-tools/bin:$PATH AJP_DEPS_PREFIX=$HOME/ajp-deps
-cmake --preset linux-prefix-cuda -DAJP_TENSORRT_ROOT=$HOME/ajp-sdk/tensorrt
-ajp-build cmake --build build/linux-prefix-cuda --target ajp_backend_tensorrt ajp_span_fp8_run \
-    ajp_gpu_span_fp8_tests ajp_app_tests ajp_backend_tensorrt_tests
-build/linux-prefix-cuda/tests/unit/gpu_span_fp8/ajp_gpu_span_fp8_tests          # paquet et tailles, sans GPU
-build/linux-prefix-cuda/tests/unit/app/ajp_app_tests "[fp8c]"                   # reçu, garde-fous, crans, sans GPU
-ajp-gpu build/linux-prefix-cuda/tests/unit/backend_tensorrt/ajp_backend_tensorrt_tests "[span_fp8]"
+export PATH=$HOME/kirari-tools/venv/bin:$HOME/kirari-tools/bin:$PATH KIRARI_DEPS_PREFIX=$HOME/kirari-deps
+cmake --preset linux-prefix-cuda -DKIRARI_TENSORRT_ROOT=$HOME/kirari-sdk/tensorrt
+kirari-build cmake --build build/linux-prefix-cuda --target kirari_backend_tensorrt kirari_span_fp8_run \
+    kirari_gpu_span_fp8_tests kirari_app_tests kirari_backend_tensorrt_tests
+build/linux-prefix-cuda/tests/unit/gpu_span_fp8/kirari_gpu_span_fp8_tests          # paquet et tailles, sans GPU
+build/linux-prefix-cuda/tests/unit/app/kirari_app_tests "[fp8c]"                   # reçu, garde-fous, crans, sans GPU
+kirari-gpu build/linux-prefix-cuda/tests/unit/backend_tensorrt/kirari_backend_tensorrt_tests "[span_fp8]"
 ```
 
 Le test caché `[.span_fp8]` compare la sortie du moteur FP8 à celle du moteur TensorRT FP16 du même modèle :
-`-DAJP_SPAN_FP8_PACKAGE=…span8 -DAJP_SPAN_FP8_MODEL=…onnx` (et `-DAJP_SPAN_FP8_IMAGE=image.ppm` pour une image
-d'anime au lieu du dessin synthétique), puis `ajp_backend_tensorrt_tests "[.span_fp8]"` sous `ajp-gpu` ; sans ces
+`-DKIRARI_SPAN_FP8_PACKAGE=…span8 -DKIRARI_SPAN_FP8_MODEL=…onnx` (et `-DKIRARI_SPAN_FP8_IMAGE=image.ppm` pour une image
+d'anime au lieu du dessin synthétique), puis `kirari_backend_tensorrt_tests "[.span_fp8]"` sous `kirari-gpu` ; sans ces
 variables CMake, il se SKIP.
 
 `BackendCaps::span_fp8_cutlass` ajoute un champ à la frontière du backend : `kBackendAbi` passe à 11, les backends

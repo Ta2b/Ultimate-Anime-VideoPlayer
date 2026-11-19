@@ -1,12 +1,12 @@
 // Points d'entrée extern "C" d'une bibliothèque de backend bâtie sur VulkanBackend
-// (gpu/backend.h) : ajp_backend_vulkan, et ajp_backend_coreml dont les réseaux passent par Core ML. Aucune
-// exception ne traverse la frontière : le backend rendu est enveloppé par GuardedBackend
+// (gpu/backend.h) : kirari_backend_vulkan, et kirari_backend_coreml dont les réseaux passent par Core ML.
+// Aucune exception ne traverse la frontière : le backend rendu est enveloppé par GuardedBackend
 // (gpu/guarded_backend.h), une exception interne devient un refus nommé. Les canaux de la bibliothèque
 // (core/log.h) vont au rappel BackendInit::log ; avec plusieurs backends créés, le dernier rappel reçoit
 // tout.
 //
 // Inclus par un seul fichier de chaque bibliothèque, qui écrit :
-//   AJP_VULKAN_BACKEND_ENTRY_POINTS("Vulkan", options_function)
+//   KIRARI_VULKAN_BACKEND_ENTRY_POINTS("Vulkan", options_function)
 #pragma once
 
 #include <exception>
@@ -20,7 +20,7 @@
 #include "gpu/module_logs.h"
 #include "gpu/vulkan/backend/vulkan_backend.h"
 
-namespace ajp::gpu::vk::entry {
+namespace kirari::gpu::vk::entry {
 
 inline void tell(const BackendInit* init, Refusal refusal) {
   if (init != nullptr && init->refusal != nullptr) *init->refusal = std::move(refusal);
@@ -50,19 +50,19 @@ Backend* create(int abi, const BackendInit* init, std::string_view label, MakeOp
   return nullptr;
 }
 
-}  // namespace ajp::gpu::vk::entry
+}  // namespace kirari::gpu::vk::entry
 
-#define AJP_VULKAN_BACKEND_ENTRY_POINTS(label, make_options)                                    \
-  extern "C" AJP_BACKEND_EXPORT int ajp_backend_abi() noexcept {                                \
-    return ajp::gpu::kBackendAbi;                                                               \
-  }                                                                                             \
-  extern "C" AJP_BACKEND_EXPORT std::uint64_t ajp_backend_layout() noexcept {                   \
-    return ajp::gpu::kBackendLayout;                                                            \
-  }                                                                                             \
-  extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(                          \
-      int abi, const ajp::gpu::BackendInit* init) noexcept {                                    \
-    return ajp::gpu::vk::entry::create(abi, init, label, make_options);                         \
-  }                                                                                             \
-  extern "C" AJP_BACKEND_EXPORT void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept { \
-    delete backend;                                                                             \
+#define KIRARI_VULKAN_BACKEND_ENTRY_POINTS(label, make_options)                                          \
+  extern "C" KIRARI_BACKEND_EXPORT int kirari_backend_abi() noexcept {                                   \
+    return kirari::gpu::kBackendAbi;                                                                     \
+  }                                                                                                      \
+  extern "C" KIRARI_BACKEND_EXPORT std::uint64_t kirari_backend_layout() noexcept {                      \
+    return kirari::gpu::kBackendLayout;                                                                  \
+  }                                                                                                      \
+  extern "C" KIRARI_BACKEND_EXPORT kirari::gpu::Backend* kirari_backend_create(                          \
+      int abi, const kirari::gpu::BackendInit* init) noexcept {                                          \
+    return kirari::gpu::vk::entry::create(abi, init, label, make_options);                               \
+  }                                                                                                      \
+  extern "C" KIRARI_BACKEND_EXPORT void kirari_backend_destroy(kirari::gpu::Backend* backend) noexcept { \
+    delete backend;                                                                                      \
   }

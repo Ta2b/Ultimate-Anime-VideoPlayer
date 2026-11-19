@@ -9,7 +9,7 @@
 #include "kernels/ref/check.h"
 #include "kernels/ref/color.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 template <class T>
@@ -153,4 +153,4 @@ Result<std::vector<PlaneF>> rife_input(const RgbImage& a, const RgbImage& b, flo
   return input;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

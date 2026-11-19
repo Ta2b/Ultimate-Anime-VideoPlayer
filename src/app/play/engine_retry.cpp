@@ -8,7 +8,7 @@
 
 #include "core/model_index.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 bool contains(const std::vector<core::EngineId>& list, core::EngineId id) {
@@ -75,4 +75,4 @@ void note_install_attempt(const std::filesystem::path& marker) {
   std::ofstream(marker, std::ios::binary | std::ios::trunc).put('\n');
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -33,7 +33,7 @@ namespace nvinfer1 {
 class IRuntime;
 }
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class RifeFusedEngine final : public Engine {
  public:
@@ -182,4 +182,4 @@ class RifeFusedEngine final : public Engine {
   std::array<std::uint64_t, 3> encodes_{};  // appels par travail de l'encodeur (Encode), pour les tests
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

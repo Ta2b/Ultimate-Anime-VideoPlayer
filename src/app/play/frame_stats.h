@@ -11,7 +11,7 @@
 
 #include "core/frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Fenêtre glissante de durées, en microsecondes, sans allocation après construction.
 class Window {
@@ -80,4 +80,4 @@ std::string format_fps(double fps);
 // « 01:23:45.678 » : position média.
 std::string format_position(std::int64_t us);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

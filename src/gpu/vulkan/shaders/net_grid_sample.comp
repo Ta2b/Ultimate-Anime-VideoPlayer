@@ -17,9 +17,9 @@ layout(constant_id = 4) const uint BORDER = 0;
 layout(constant_id = 5) const uint ALIGN = 0;
 layout(constant_id = 6) const uint GRID_NCHW = 0;
 
-AJP_NET_BUFFER(0, src, readonly)
-AJP_NET_BUFFER(1, grid, readonly)
-AJP_NET_BUFFER(2, dst, writeonly)
+KIRARI_NET_BUFFER(0, src, readonly)
+KIRARI_NET_BUFFER(1, grid, readonly)
+KIRARI_NET_BUFFER(2, dst, writeonly)
 
 layout(push_constant) uniform Push {
   TDesc x;
@@ -36,7 +36,7 @@ float pixel(float g, uint size) {
 
 float at(uvec4 o, int yy, int xx) {
   if (yy < 0 || yy >= int(pc.x.h) || xx < 0 || xx >= int(pc.x.w)) return 0.0;
-  return AJP_LOAD(src, TX, t_index(pc.x, o.x, o.y, uint(yy), uint(xx)));
+  return KIRARI_LOAD(src, TX, t_index(pc.x, o.x, o.y, uint(yy), uint(xx)));
 }
 
 void main() {
@@ -45,8 +45,8 @@ void main() {
   uvec4 o = t_coords(pc.y, i);
   uint at_x = GRID_NCHW == 1u ? t_index(pc.g, o.x, 0u, o.z, o.w) : t_index(pc.g, o.x, o.z, o.w, 0u);
   uint at_y = GRID_NCHW == 1u ? t_index(pc.g, o.x, 1u, o.z, o.w) : t_index(pc.g, o.x, o.z, o.w, 1u);
-  float gx = AJP_LOAD(grid, TG, at_x);
-  float gy = AJP_LOAD(grid, TG, at_y);
+  float gx = KIRARI_LOAD(grid, TG, at_x);
+  float gy = KIRARI_LOAD(grid, TG, at_y);
   float v = 0.0;
   if (!isnan(gx) && !isinf(gx) && !isnan(gy) && !isinf(gy)) {
     float px = pixel(gx, pc.x.w);
@@ -63,5 +63,5 @@ void main() {
       v = (1.0 - ty) * top + ty * bottom;
     }
   }
-  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
+  KIRARI_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
 }

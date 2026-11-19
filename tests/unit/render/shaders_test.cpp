@@ -7,7 +7,7 @@
 
 namespace {
 
-using namespace ajp::render;
+using namespace kirari::render;
 
 TEST_CASE("les hooks embarqués n'ont aucun retour chariot", "[render]") {
   // Une extraction Windows mettait les .hook en CRLF : la marque des textures du look restait dans

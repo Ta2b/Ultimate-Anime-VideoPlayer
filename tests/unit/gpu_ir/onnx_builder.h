@@ -18,7 +18,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::ir::test {
+namespace kirari::gpu::ir::test {
 
 class ProtoWriter {
  public:
@@ -228,7 +228,7 @@ class ModelBuilder {
   ProtoWriter model() const {
     ProtoWriter m;
     m.varint(1, 8);
-    m.bytes(2, "ajp-test");
+    m.bytes(2, "kirari-test");
     m.message(7, graph_);
     m.message(8, ProtoWriter{}.bytes(1, "").varint(2, opset_));
     return m;
@@ -242,4 +242,4 @@ class ModelBuilder {
   int nodes_ = 0;
 };
 
-}  // namespace ajp::gpu::ir::test
+}  // namespace kirari::gpu::ir::test

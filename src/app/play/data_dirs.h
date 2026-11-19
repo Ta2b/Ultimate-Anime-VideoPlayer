@@ -5,10 +5,10 @@
 #include <span>
 #include <string>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le dossier des données lourdes (P3.15) : moteurs construits, paquets, modèles, téléchargements, caches.
-// Sous Windows, %LOCALAPPDATA%\ajp\ajp (FOLDERID_LocalAppData), pour que plusieurs Go ne suivent pas un
+// Sous Windows, %LOCALAPPDATA%\kirari (FOLDERID_LocalAppData), pour que plusieurs Go ne suivent pas un
 // profil itinérant ; les réglages restent dans le dossier de SDL_GetPrefPath (Roaming). Ailleurs, le même
 // dossier.
 std::filesystem::path local_data(const std::filesystem::path& roaming);
@@ -20,14 +20,14 @@ std::filesystem::path local_data(const std::filesystem::path& roaming);
 int move_heavy_data(const std::filesystem::path& from, const std::filesystem::path& to,
                     const std::function<void(const std::string&)>& said = {});
 
-// B36-08 : le journal (ajp.log et ses parts, les trois séances gardées), crashes/ et bench-clip-v4.mkv d'une
-// version d'avant, du dossier des réglages (from, itinérant sous Windows) vers le dossier local (to), comme
-// move_heavy_data. Avant l'ouverture du journal : said ne doit pas l'écrire tout de suite.
+// B36-08 : le journal (kirari.log et ses parts, les trois séances gardées), crashes/ et bench-clip-v4.mkv
+// d'une version d'avant, du dossier des réglages (from, itinérant sous Windows) vers le dossier local (to),
+// comme move_heavy_data. Avant l'ouverture du journal : said ne doit pas l'écrire tout de suite.
 int move_diagnostics(const std::filesystem::path& from, const std::filesystem::path& to,
                      const std::function<void(const std::string&)>& said = {});
 
 // Le dossier des caches qui se refont seuls (moteurs construits, modèles dérivés, plans, cache des shaders).
-// Sous Linux, <xdg_cache>/ajp, sinon <home>/.cache/ajp : les outils de sauvegarde l'excluent, pas
+// Sous Linux, <xdg_cache>/kirari, sinon <home>/.cache/kirari : les outils de sauvegarde l'excluent, pas
 // ~/.local/share (A36-08). xdg_cache : $XDG_CACHE_HOME (C34-13), que main lit comme un fait du système (les
 // moteurs TensorRT, plusieurs Gio, suivent le disque que l'utilisateur a choisi pour ses caches) ; un chemin
 // relatif est ignoré, comme la norme XDG le demande. Ailleurs, et sans dossier personnel : heavy.
@@ -64,4 +64,4 @@ int purge_bench_leftovers(const std::filesystem::path& data,
 void tidy_at_launch(const std::filesystem::path& data, const std::filesystem::path& engines,
                     const std::function<void(const std::string&)>& said = {});
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

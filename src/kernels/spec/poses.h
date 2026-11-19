@@ -15,7 +15,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Pour le pixel de sortie (u, v) de la grille du mouvement (spec/warp.h), à l'instant t de la paire
 // (a, b), avec le mouvement au milieu de la paire et celui de la paire précédente (même grille) :
@@ -43,6 +43,6 @@ constexpr float pose_time(float t, float r) {
   return t < 0.5F ? 2.0F * t * r : 1.0F - 2.0F * (1.0F - t) * r;
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

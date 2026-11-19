@@ -7,12 +7,12 @@
 
 #include "media/selection.h"
 
-using ajp::media::choose_tracks;
-using ajp::media::language_from_title;
-using ajp::media::LanguagePriorities;
-using ajp::media::track_language;
-using ajp::media::TrackInfo;
-using ajp::media::TrackKind;
+using kirari::media::choose_tracks;
+using kirari::media::language_from_title;
+using kirari::media::LanguagePriorities;
+using kirari::media::track_language;
+using kirari::media::TrackInfo;
+using kirari::media::TrackKind;
 
 namespace {
 

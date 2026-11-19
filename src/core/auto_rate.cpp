@@ -6,7 +6,7 @@
 
 #include "core/pacing.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 constexpr std::int64_t kNever = std::numeric_limits<std::int64_t>::min() / 4;
@@ -497,4 +497,4 @@ AutoInfo AutoRate::info(std::int64_t now_us) const {
   return out;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

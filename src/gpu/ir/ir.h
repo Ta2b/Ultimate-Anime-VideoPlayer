@@ -15,7 +15,7 @@
 #include <variant>
 #include <vector>
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 enum class DataType : std::uint8_t { F32, F16, I64 };
 
@@ -274,4 +274,4 @@ struct Graph {
   std::int64_t opset = 0;
 };
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

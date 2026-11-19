@@ -13,7 +13,7 @@
 #include "media/shot_cutter.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace std::chrono_literals;
 using namespace upscale_test;
 
@@ -269,4 +269,4 @@ TEST_CASE("Étage gpu : DistilDRBA n'ingère pas une suivante d'une autre taille
   CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "1-2", "2"});
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

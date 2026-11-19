@@ -17,7 +17,7 @@ on:
         required: true
     outputs:
       archive-sha256:
-        description: "SHA-256 de ajp-macos-arm64.zip tel que cette construction l'a produit (B51-07)"
+        description: "SHA-256 de kirari-macos-arm64.zip tel que cette construction l'a produit (B51-07)"
         value: ${{ jobs.package.outputs.archive-sha256 }}
   push:
     branches: ["release/macos"]
@@ -33,10 +33,10 @@ concurrency:
   cancel-in-progress: ${{ !inputs.tag }}
 
 env:
-  AJP_TAG: ${{ inputs.tag || '' }}
+  KIRARI_TAG: ${{ inputs.tag || '' }}
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
-  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+  KIRARI_DEPS_PREFIX: ${{ github.workspace }}-deps
 
 jobs:
   guard:
@@ -45,7 +45,7 @@ jobs:
       tag: ${{ inputs.tag || '' }}
 
   package:
-    name: AJP.app (Apple Silicon)
+    name: Kirari.app (Apple Silicon)
     outputs:
       archive-sha256: ${{ steps.sums.outputs.archive }}
     needs: [guard]
@@ -61,16 +61,16 @@ jobs:
       - id: deps-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-${{ github.run_id }}
           restore-keys: |
             deps-macos-arm64-${{ hashFiles('tools/deps/macos-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}-
             deps-macos-arm64-
-      - run: tools/deps/macos-from-source.sh --locked "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/deps/macos-from-source.sh --locked "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: ${{ steps.deps-cache.outputs.cache-primary-key }}
       # Signature Developer ID et notarisation (P7.1), seulement si les secrets existent ; sinon ad hoc,
       # comme avant. Le certificat (.p12) va dans un trousseau jetable, la clé d'API dans un fichier.
@@ -84,7 +84,7 @@ jobs:
           AJP_NOTARY_ISSUER: ${{ secrets.AJP_NOTARY_ISSUER }}
         run: |
           if [ -n "$MACOS_CERT_P12" ] && [ -n "$MACOS_IDENTITY" ]; then
-            keychain="$RUNNER_TEMP/ajp-signature.keychain-db"
+            keychain="$RUNNER_TEMP/kirari-signature.keychain-db"
             pass="$(openssl rand -hex 16)"
             security create-keychain -p "$pass" "$keychain"
             security set-keychain-settings -lut 3600 "$keychain"
@@ -97,18 +97,18 @@ jobs:
             export AJP_MACOS_IDENTITY="$MACOS_IDENTITY"
             if [ -n "$NOTARY_KEY_P8" ]; then
               printf '%s' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
-              export AJP_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
+              export KIRARI_NOTARY_KEY="$RUNNER_TEMP/notary.p8"
             fi
           else
             echo "::notice::pas de certificat Developer ID : signature ad hoc (P7.1)"
           fi
-          [ -z "$AJP_TAG" ] || export AJP_RELEASE_TAG="$AJP_TAG"
+          [ -z "$KIRARI_TAG" ] || export KIRARI_RELEASE_TAG="$KIRARI_TAG"
           tools/release/package-macos.sh "$RUNNER_TEMP/package"
           rm -f "$RUNNER_TEMP/notary.p8"
       # Ce que « publier » retrouve dans la release avant de signer : le SHA-256 du zip tel que construit ici (B51-07).
       - name: Empreinte de l'archive
         id: sums
-        run: echo "archive=$(shasum -a 256 "$RUNNER_TEMP/package/ajp-macos-arm64.zip" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
+        run: echo "archive=$(shasum -a 256 "$RUNNER_TEMP/package/kirari-macos-arm64.zip" | cut -d' ' -f1)" >>"$GITHUB_OUTPUT"
       # spirv-val ne voit pas ce que seul Metal refuse : chaque shader passe par SPIRV-Cross et le
       # compilateur Metal, comme MoltenVK le fera à la création du pipeline.
       - name: Shaders en Metal
@@ -123,19 +123,19 @@ jobs:
         continue-on-error: true
         with:
           retention-days: 3
-          name: ajp-macos-arm64
+          name: kirari-macos-arm64
           path: |
-            ${{ runner.temp }}/package/ajp-macos-arm64.zip
-            ${{ runner.temp }}/package/ajp-macos-arm64.zip.sha256
-            ${{ runner.temp }}/package/ajp-macos-arm64.dmg
-            ${{ runner.temp }}/package/ajp-macos-arm64.dmg.sha256
+            ${{ runner.temp }}/package/kirari-macos-arm64.zip
+            ${{ runner.temp }}/package/kirari-macos-arm64.zip.sha256
+            ${{ runner.temp }}/package/kirari-macos-arm64.dmg
+            ${{ runner.temp }}/package/kirari-macos-arm64.dmg.sha256
       # Joint à la release de l'étiquette, qui reste une préversion : seul le job « publier » de release.yml la rend
       # finale et « latest » (A28-03). Seule étape à porter le jeton d'écriture, après toute construction (A28-08).
       - name: Joindre à la release
-        if: env.AJP_TAG != ''
+        if: env.KIRARI_TAG != ''
         env:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
-          tools/release/attach-assets.sh "$AJP_TAG" "$RUNNER_TEMP/package/ajp-macos-arm64.zip" \
-            "$RUNNER_TEMP/package/ajp-macos-arm64.zip.sha256" "$RUNNER_TEMP/package/ajp-macos-arm64.dmg" \
-            "$RUNNER_TEMP/package/ajp-macos-arm64.dmg.sha256"
+          tools/release/attach-assets.sh "$KIRARI_TAG" "$RUNNER_TEMP/package/kirari-macos-arm64.zip" \
+            "$RUNNER_TEMP/package/kirari-macos-arm64.zip.sha256" "$RUNNER_TEMP/package/kirari-macos-arm64.dmg" \
+            "$RUNNER_TEMP/package/kirari-macos-arm64.dmg.sha256"

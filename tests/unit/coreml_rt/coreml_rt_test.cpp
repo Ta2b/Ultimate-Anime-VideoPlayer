@@ -24,7 +24,7 @@
 #include "gpu/vulkan/backend/net_runtime.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 namespace irt = ir::test;
@@ -35,7 +35,7 @@ constexpr std::size_t kCount = 3 * kSide * kSide;
 
 struct TempDir {
   explicit TempDir(const char* test)
-      : path(std::filesystem::temp_directory_path() / std::format("ajp-coreml-rt-{}", test)) {
+      : path(std::filesystem::temp_directory_path() / std::format("kirari-coreml-rt-{}", test)) {
     std::filesystem::remove_all(path);
     std::filesystem::create_directories(path);
   }
@@ -208,4 +208,4 @@ TEST_CASE("Interpolation d'Apple : les conversions du GPU retrouvent celles du C
   if (checked == 0) SKIP("conversions sur le GPU indisponibles ici");
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

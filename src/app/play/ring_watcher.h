@@ -19,7 +19,7 @@
 
 #include <vulkan/vulkan.h>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class RingWatcher {
  public:
@@ -83,4 +83,4 @@ class RingWatcher {
   std::jthread thread_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

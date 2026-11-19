@@ -12,7 +12,7 @@
 #include <variant>
 #include <vector>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct PlayPart {
   static constexpr std::int64_t kToEnd = std::numeric_limits<std::int64_t>::max();
@@ -51,4 +51,4 @@ class EditionPlan {
   bool jumped_ = false;    // un saut vers la partie en cours attend sa première image
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

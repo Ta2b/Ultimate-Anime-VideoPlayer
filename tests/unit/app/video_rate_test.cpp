@@ -5,7 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("VideoRate : 24 i/s sans image, la cadence des pts ensuite", "[app][grade]") {
@@ -31,4 +31,4 @@ TEST_CASE("VideoRate : un seek ou un saut ne compte pas comme une cadence", "[ap
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -18,7 +18,7 @@
 #include <utility>
 #include <variant>
 
-namespace ajp {
+namespace kirari {
 
 template <class... Msg>
 class Inbox {
@@ -120,4 +120,4 @@ class Inbox {
   void* waker_context_ = nullptr;
 };
 
-}  // namespace ajp
+}  // namespace kirari

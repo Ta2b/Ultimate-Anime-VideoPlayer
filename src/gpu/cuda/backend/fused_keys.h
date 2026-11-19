@@ -1,5 +1,5 @@
 // Les clés d'Artifact des moteurs fusionnés du backend TensorRT (RIFE, DistilDRBA) : ce que load() doit
-// savoir, écrit et relu sans CUDA (ajp::cuda_fused_keys, testé sur toutes les plateformes, B03-09).
+// savoir, écrit et relu sans CUDA (kirari::cuda_fused_keys, testé sur toutes les plateformes, B03-09).
 #pragma once
 
 #include <optional>
@@ -10,7 +10,7 @@
 #include "kernels/spec/drba_fused.h"
 #include "kernels/spec/rife_fused.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // La clé d'un Artifact de ce moteur : « rife-fused:<h>x<w>:<image|motion|image-cubic>:<d0,d1…>:<moteur0>,… »,
 // les moteurs étant les fichiers du cache, dans l'ordre encodeur, blocs 0 à N-1. Artifact ne porte que la clé
@@ -40,4 +40,4 @@ std::string drba_fused_artifact_key(const DrbaFusedKey& key);
 // Rien si la clé est celle d'un autre moteur ou illisible.
 std::optional<DrbaFusedKey> drba_fused_artifact_key_parse(std::string_view text);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -3,9 +3,9 @@
 # (encodeur en lot de 3, blocs 0 à 2) et le réseau entier (modèle d'origine du lecteur).
 # Usage : moteurs.sh <dossier_onnx_decoupes> <dossier_moteurs> <modele_entier.onnx>
 # Les mesures sortent en « GPU Compute Time » ; tout passe sous le verrou GPU.
-export LD_LIBRARY_PATH=$HOME/ajp-sdk/tensorrt/lib:/opt/cuda/lib64
-TRTEXEC=$HOME/ajp-sdk/tensorrt/bin/trtexec
-GPU=$HOME/ajp-tools/bin/ajp-gpu
+export LD_LIBRARY_PATH=$HOME/kirari-sdk/tensorrt/lib:/opt/cuda/lib64
+TRTEXEC=$HOME/kirari-sdk/tensorrt/bin/trtexec
+GPU=$HOME/kirari-tools/bin/kirari-gpu
 src=$1
 dst=$2
 entier=$3

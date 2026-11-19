@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Écrit la clé privée Ed25519 des mises à jour (secret AJP_UPDATE_KEY, lu dans la variable UPDATE_KEY) dans un
 # fichier PEM que lisent sign-file.sh et sign-manifest.sh, puis vérifie qu'elle correspond à une clé publique
-# compilée dans le lecteur (AJP_UPDATE_PUBKEY ou AJP_UPDATE_PUBKEY_BACKUP de src/app/CMakeLists.txt).
+# compilée dans le lecteur (KIRARI_UPDATE_PUBKEY ou KIRARI_UPDATE_PUBKEY_BACKUP de src/app/CMakeLists.txt).
 #
 #   UPDATE_KEY=<secret> tools/release/update-key.sh <fichier.pem>
 #
@@ -84,18 +84,18 @@ openssl pkey -in "$work/key.pem" -noout -text 2>/dev/null | grep -qi 'ED25519' \
   || { echo "::error::AJP_UPDATE_KEY n'est pas une clé Ed25519"; exit 1; }
 
 # La clé doit être une de celles dont le lecteur connaît la clé publique : sinon il refuserait tout ce qu'elle
-# signe. AJP_UPDATE_PUBKEY posée : celle-là seule ; sinon l'active ou celle de secours de src/app/CMakeLists.txt
+# signe. KIRARI_UPDATE_PUBKEY posée : celle-là seule ; sinon l'active ou celle de secours de src/app/CMakeLists.txt
 # (la secours signe le manifeste qui révoque une active volée, sign-manifest.sh --revoke).
 pub="$(openssl pkey -in "$work/key.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 -v | tr -d ' \n')"
 cmake_key() { sed -n "s/^set($1 \"\([0-9a-f]*\)\".*/\1/p" "$root/src/app/CMakeLists.txt"; }
-if [ -n "${AJP_UPDATE_PUBKEY:-}" ]; then
-  known=("$AJP_UPDATE_PUBKEY")
+if [ -n "${KIRARI_UPDATE_PUBKEY:-}" ]; then
+  known=("$KIRARI_UPDATE_PUBKEY")
 else
-  known=("$(cmake_key AJP_UPDATE_PUBKEY)" "$(cmake_key AJP_UPDATE_PUBKEY_BACKUP)")
+  known=("$(cmake_key KIRARI_UPDATE_PUBKEY)" "$(cmake_key KIRARI_UPDATE_PUBKEY_BACKUP)")
 fi
 # Une clé publique introuvable (CMakeLists.txt réécrit, variable vide) n'est pas « rien à comparer » : sans elle le
 # contrôle ne dit plus rien, la signature partirait avec n'importe quelle clé (B51-17).
-[ -n "${known[0]}" ] || { echo "::error::la clé publique du lecteur est illisible (AJP_UPDATE_PUBKEY, src/app/CMakeLists.txt) : contrôle impossible"; exit 1; }
+[ -n "${known[0]}" ] || { echo "::error::la clé publique du lecteur est illisible (KIRARI_UPDATE_PUBKEY, src/app/CMakeLists.txt) : contrôle impossible"; exit 1; }
 role=""
 for i in "${!known[@]}"; do
   if [ -n "${known[$i]}" ] && [ "$pub" = "${known[$i]}" ]; then
@@ -103,7 +103,7 @@ for i in "${!known[@]}"; do
   fi
 done
 if [ -z "$role" ]; then
-  echo "::error::AJP_UPDATE_KEY ne correspond à aucune clé publique du lecteur : elle donne $pub, le lecteur attend ${known[*]} (AJP_UPDATE_PUBKEY, AJP_UPDATE_PUBKEY_BACKUP)"
+  echo "::error::AJP_UPDATE_KEY ne correspond à aucune clé publique du lecteur : elle donne $pub, le lecteur attend ${known[*]} (KIRARI_UPDATE_PUBKEY, KIRARI_UPDATE_PUBKEY_BACKUP)"
   exit 1
 fi
 

@@ -12,14 +12,14 @@
 
 struct AVBufferRef;
 
-namespace ajp::media {
+namespace kirari::media {
 
 enum class HwApi : std::uint8_t { Cuda, Vulkan, D3d11va, Vaapi, VideoToolbox, Software };
 
 std::string_view name(HwApi api);
 
 // UUID de l'appareil de rendu (pl_gpu.uuid) : le type unique de core/gpu_device.h.
-using DeviceUuid = ajp::DeviceUuid;
+using DeviceUuid = kirari::DeviceUuid;
 
 // Contexte d'appareil déjà créé par un autre module, par exemple le VkDevice
 // de libplacebo enveloppé en AVHWDeviceContext : le décodeur le partage au lieu
@@ -95,4 +95,4 @@ struct Attempt {
   Refusal why{};
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

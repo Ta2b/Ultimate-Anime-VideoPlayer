@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 bool yes(VkBool32 value) {
@@ -247,4 +247,4 @@ std::string describe(const DeviceCaps& caps) {
       caps.max_storage_buffer_range, matrices);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

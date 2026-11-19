@@ -2,7 +2,7 @@
   "name": "libplacebo",
   "version": "7.387.0",
   "port-version": 0,
-  "description": "Reusable library for GPU-accelerated video/image rendering primitives (overlay ajp).",
+  "description": "Reusable library for GPU-accelerated video/image rendering primitives (overlay kirari).",
   "homepage": "https://code.videolan.org/videolan/libplacebo",
   "license": "LGPL-2.1-or-later",
   "supports": "!uwp",

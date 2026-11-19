@@ -6,7 +6,7 @@
 
 #include "app/play/default_player.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Où vivent les données lourdes et les caches, une fois déplacés ceux d'une version d'avant.
 struct DataPlaces {
@@ -17,4 +17,4 @@ struct DataPlaces {
 // purge_updates : le dossier de l'utilisateur est rangé (faux pour --data-dir et le banc).
 DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& place, bool purge_updates);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

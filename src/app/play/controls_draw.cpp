@@ -18,7 +18,7 @@
 #include "app/play/user_keys.h"
 #include "core/keys.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using icons::accent;
@@ -458,4 +458,4 @@ void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t 
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

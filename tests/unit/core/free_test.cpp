@@ -13,7 +13,7 @@
 #include "core/free_rate.h"
 #include "core/vsync_phase.h"
 
-using namespace ajp::core;
+using namespace kirari::core;
 
 namespace {
 
@@ -143,7 +143,7 @@ TEST_CASE("free grid : pts qui ne croît pas ou époque nouvelle : origine", "[f
   CHECK(grid.push(stamp(4, 400, 0), {}).event == GridEvent::Stale);
   CHECK(grid.push(SourceStamp{.id = {5}, .pts_us = std::nullopt, .epoch = 1}, {}).event ==
         GridEvent::InvalidPts);
-  CHECK(grid.flush(0).error().code == ajp::RefusalCode::SequenceOrder);
+  CHECK(grid.flush(0).error().code == kirari::RefusalCode::SequenceOrder);
 }
 
 TEST_CASE("free rate : le pas suit le temps de service mesuré avec 10 % de marge", "[free]") {

@@ -7,7 +7,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 // Pliage des constantes : un nœud dont toutes les entrées sont constantes,
 // ou un Shape d'une forme connue, devient une constante. Renvoie le nombre de nœuds pliés.
@@ -115,4 +115,4 @@ struct OptimizeOptions {
 // Toutes les passes, dans l'ordre. Exige des formes connues (infer_shapes).
 std::expected<PassStats, Refusal> optimize(Graph& graph, const OptimizeOptions& options = {});
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

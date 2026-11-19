@@ -7,7 +7,7 @@
 
 #include "subs/subtitle_renderer.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::int64_t kSecondUs = 1'000'000;
@@ -242,4 +242,4 @@ void Controls::framed(std::int64_t now_us, const ControlsView& view, bool drawn)
   drawn_ = drawn;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

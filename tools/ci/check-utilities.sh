@@ -7,7 +7,7 @@ cd "$(dirname "$0")/../.."
 # motif perl ;; fichiers qui seuls peuvent le contenir (motif) ;; ce qu'il faut écrire à la place. vt_pixels.cpp
 # garde son _Float16 matériel et retombe sur kernels/ref/half.h sans lui.
 rules=(
-  'std::unexpected<\w*:*Refusal>\s+refuse\(\s*RefusalCode\s+\w+\s*,\s*std::string\s+\w+\s*\)\s*\{ ;; src/core/types.h ;; core/types.h : ajp::refuse'
+  'std::unexpected<\w*:*Refusal>\s+refuse\(\s*RefusalCode\s+\w+\s*,\s*std::string\s+\w+\s*\)\s*\{ ;; src/core/types.h ;; core/types.h : kirari::refuse'
   'std::(?:tolower|toupper)\s*\( ;; src/core/text.h ;; core::ascii_lower (core/text.h)'
   'std::string_view\s+(?:trim|trimmed)\s*\(\s*std::string_view ;; src/core/text.h ;; core::trim (core/text.h)'
   '\bav_strerror\s*\( ;; src/av/av_error.h ;; av::av_error_text (av/av_error.h)'
@@ -20,9 +20,9 @@ for rule in "${rules[@]}"; do
   owner=${rest%% ;; *}
   instead=${rest#* ;; }
   hits=$(git ls-files -z -- 'src/*.cpp' 'src/*.h' 'src/*.mm' 'src/*.cu' ':!src/kernels/ref/half.cpp' |
-    AJP_RE="$pattern" AJP_OWNER="$owner" xargs -0 perl -ne '
-      BEGIN { $re = qr/$ENV{AJP_RE}/ }
-      next if $ARGV =~ /^(?:$ENV{AJP_OWNER})$/;
+    KIRARI_RE="$pattern" KIRARI_OWNER="$owner" xargs -0 perl -ne '
+      BEGIN { $re = qr/$ENV{KIRARI_RE}/ }
+      next if $ARGV =~ /^(?:$ENV{KIRARI_OWNER})$/;
       (my $code = $_) =~ s{"(?:\\.|[^"\\])*"}{""}g;
       $code =~ s{//.*}{};
       print "$ARGV:$.: $_" if $code =~ $re;

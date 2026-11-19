@@ -25,24 +25,24 @@
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 
-// Variante « _acc16 » (AJP_COOPMAT_ACC16) : sommes en float16, quand le pilote annonce ces
+// Variante « _acc16 » (KIRARI_COOPMAT_ACC16) : sommes en float16, quand le pilote annonce ces
 // tuiles ; les GeForce les calculent deux fois plus vite que les sommes en float.
-#ifdef AJP_COOPMAT_ACC16
+#ifdef KIRARI_COOPMAT_ACC16
 #define ACC_T float16_t
 #else
 #define ACC_T float
 #endif
 
-// Variante « _m8 » (AJP_COOPMAT_M8) : tuiles de 8 pixels, celles des XMX d'Intel Xe2 (8 × 16 × 16, f16 → f32) :
+// Variante « _m8 » (KIRARI_COOPMAT_M8) : tuiles de 8 pixels, celles des XMX d'Intel Xe2 (8 × 16 × 16, f16 → f32) :
 // A de 8 × 16, sommes de 8 × 16, B de 16 × 16 rangée comme ailleurs. Sommes en float, ni HALO ni DIRECT_EPI : le
 // module ne déclare que les types de cette tuile. L'hôte exige des sous-groupes de 16 (net_conv_m8.cpp).
-#ifdef AJP_COOPMAT_M8
-#ifdef AJP_COOPMAT_ACC16
-#error "AJP_COOPMAT_M8 : sommes en float seulement"
+#ifdef KIRARI_COOPMAT_M8
+#ifdef KIRARI_COOPMAT_ACC16
+#error "KIRARI_COOPMAT_M8 : sommes en float seulement"
 #endif
-#define AJP_TILE_M 8
+#define KIRARI_TILE_M 8
 #else
-#define AJP_TILE_M 16
+#define KIRARI_TILE_M 16
 #endif
 
 layout(local_size_x_id = 31) in;
@@ -102,7 +102,7 @@ const uint NT = (COUT + 15u) / 16u;
 const uint NP = NT * 16u;
 const uint NTW = NTG == 0u ? NT : NTG;  // tuiles de canaux du groupe
 const uint SUBGROUPS = gl_WorkGroupSize.x / SGS;
-const uint TPIX = AJP_TILE_M;                   // pixels d'une tuile : lignes de A et des sommes
+const uint TPIX = KIRARI_TILE_M;                   // pixels d'une tuile : lignes de A et des sommes
 const uint TC = TPIX * 16u;                     // valeurs d'une tuile de sommes
 const uint BM = SUBGROUPS * TM * TPIX;
 const uint QA = KC / 8u;                        // uvec4 de canaux par pixel et par étape
@@ -126,8 +126,8 @@ layout(std430, binding = 1) readonly buffer WeightsV { uvec4 v[]; } weights4;
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 2) readonly buffer BiasH { float16_t v[]; } bias_h;  // identité de DIRECT_EPI
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
-AJP_NET_BUFFER(4, res, readonly)
-AJP_NET_BUFFER(5, dst, writeonly)
+KIRARI_NET_BUFFER(4, res, readonly)
+KIRARI_NET_BUFFER(5, dst, writeonly)
 
 shared uvec4 tile_a[2u * ABUF];
 shared uvec4 tile_b[2u * BBUF];
@@ -216,18 +216,18 @@ void main() {
   uint x0 = gl_WorkGroupID.x * 16u;
   uint row0 = gl_WorkGroupID.y * ROWS;
 
-  coopmat<ACC_T, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseAccumulator> acc[TM * NTW];
+  coopmat<ACC_T, gl_ScopeSubgroup, KIRARI_TILE_M, 16, gl_MatrixUseAccumulator> acc[TM * NTW];
   [[unroll]] for (uint i = 0u; i < TM * NTW; ++i) {
-    acc[i] = coopmat<ACC_T, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseAccumulator>(0.0);
+    acc[i] = coopmat<ACC_T, gl_ScopeSubgroup, KIRARI_TILE_M, 16, gl_MatrixUseAccumulator>(0.0);
   }
-#if !defined(AJP_COOPMAT_ACC16) && !defined(AJP_COOPMAT_M8)
+#if !defined(KIRARI_COOPMAT_ACC16) && !defined(KIRARI_COOPMAT_M8)
   if (DIRECT_EPI == 1u) {
     // Les sommes partent du biais (16 lignes identiques), ajouté ainsi sans addition de matrices.
     [[unroll]] for (uint i = 0u; i < TM * NTW; ++i)
       coopMatLoad(acc[i], bias.v, (j0 + i % NTW) * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
   }
 #endif
-#ifndef AJP_COOPMAT_M8
+#ifndef KIRARI_COOPMAT_M8
   if (HALO == 1u) {
     stage_halo(0u, n, row0, x0, 0u);
     barrier();
@@ -268,7 +268,7 @@ void main() {
     }
     uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
     [[unroll]] for (uint c16 = 0u; c16 < KC; c16 += 16u) {
-      coopmat<float16_t, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseA> a[TM];
+      coopmat<float16_t, gl_ScopeSubgroup, KIRARI_TILE_M, 16, gl_MatrixUseA> a[TM];
       [[unroll]] for (uint t = 0u; t < TM; ++t) {
         coopMatLoad(a[t], tile_a, buf * ABUF + (sg * TM + t) * TPIX * AS + c16 / 8u, AS,
                     gl_CooperativeMatrixLayoutRowMajor);
@@ -293,7 +293,7 @@ void main() {
     const uint p0 = HALO == 1u ? oy_h * WOUT + x0 : first_pixel + (sg * TM + t) * TPIX;
     const uint count = HALO == 1u ? (oy_h < HOUT && x0 < WOUT ? min(16u, WOUT - x0) : 0u)
                                   : (p0 < HOUT * WOUT ? min(TPIX, HOUT * WOUT - p0) : 0u);
-#if !defined(AJP_COOPMAT_ACC16) && !defined(AJP_COOPMAT_M8)
+#if !defined(KIRARI_COOPMAT_ACC16) && !defined(KIRARI_COOPMAT_M8)
     if (DIRECT_EPI == 1u && count == 16u) {
       [[unroll]] for (uint jl = 0u; jl < NTW; ++jl) {
         uint j = j0 + jl;
@@ -324,7 +324,7 @@ void main() {
 #endif
     [[unroll]] for (uint jl = 0u; jl < NTW; ++jl) {
       uint j = j0 + jl;
-#ifdef AJP_COOPMAT_ACC16
+#ifdef KIRARI_COOPMAT_ACC16
       coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> sum =
           coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(acc[t * NTW + jl]);
       // Une somme float16 qui a débordé est ±Inf (puis NaN au calcul suivant) : plafonnée avant l'épilogue (B49-01).
@@ -341,17 +341,17 @@ void main() {
         if (e / 16u < count && co < COUT) {
           uint oy = p / WOUT;
           uint ox = p % WOUT;
-#if defined(AJP_COOPMAT_ACC16) || defined(AJP_COOPMAT_M8)
+#if defined(KIRARI_COOPMAT_ACC16) || defined(KIRARI_COOPMAT_M8)
           // Les sommes float16, comme celles de la variante _m8, ne partent jamais du biais (initialisation sous #if
           // plus haut) : il s'ajoute toujours ici, quel que soit DIRECT_EPI (C49-03).
           float v = tile_c[sg * TC + e] + bias.v[co];
 #else
           float v = tile_c[sg * TC + e] + (DIRECT_EPI == 1u ? 0.0 : bias.v[co]);  // biais déjà sommé
 #endif
-          if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          if (RESIDUAL == 1u) v += KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
-          if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-          AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
+          if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          KIRARI_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
         }
       }
       subgroupBarrier();

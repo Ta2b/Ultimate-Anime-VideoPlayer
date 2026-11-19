@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 
 // Langue de l'interface : l'anglais par défaut, sans détection ; le français par le réglage « Language ».
 enum class Language { English, French };
@@ -92,18 +92,18 @@ struct Entry {
 };
 std::span<const Entry> french_entries();
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n
 
 template <>
-struct std::formatter<ajp::app::play::i18n::LocalDecimal> {
+struct std::formatter<kirari::app::play::i18n::LocalDecimal> {
   constexpr auto parse(std::format_parse_context& context) {
     auto it = context.begin();
     while (it != context.end() && *it != '}') spec_.push_back(*it++);
     return it;
   }
-  auto format(const ajp::app::play::i18n::LocalDecimal& number, std::format_context& context) const {
+  auto format(const kirari::app::play::i18n::LocalDecimal& number, std::format_context& context) const {
     std::string text = std::vformat("{:" + spec_ + "}", std::make_format_args(number.value));
-    std::ranges::replace(text, '.', ajp::app::play::i18n::decimal_point());
+    std::ranges::replace(text, '.', kirari::app::play::i18n::decimal_point());
     return std::ranges::copy(text, context.out()).out;
   }
 

@@ -13,7 +13,7 @@
 #include "net_rig.h"
 #include "vulkan_validation.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 // SplitMix64 : la même suite partout.
@@ -63,7 +63,7 @@ void copy_buffers(VulkanBackend& backend, VkBuffer from, VkDeviceSize from_offse
 
 TempDir::TempDir(std::string_view name) {
   const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-  path_ = std::filesystem::temp_directory_path() / std::format("ajp-{}-{}", name, stamp);
+  path_ = std::filesystem::temp_directory_path() / std::format("kirari-{}-{}", name, stamp);
   std::filesystem::create_directories(path_);
 }
 
@@ -73,7 +73,7 @@ TempDir::~TempDir() {
 }
 
 std::unique_ptr<VulkanBackend> make_backend(const std::filesystem::path& cache_dir, BackendOptions options) {
-  auto backend = ajp::test::with_validation([&](bool validation, ajp::test::ValidationSink sink) {
+  auto backend = kirari::test::with_validation([&](bool validation, kirari::test::ValidationSink sink) {
     BackendOptions wanted = options;
     wanted.validation = validation;
     wanted.validation_sink = std::move(sink);
@@ -277,4 +277,4 @@ ModelSpec write_model(const std::filesystem::path& dir, std::string_view name,
       .id = std::string(name), .onnx_path = path, .sha256 = std::string(64, '0'), .precision = precision};
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::media::ErrorFolder;
+using kirari::media::ErrorFolder;
 using Clock = std::chrono::steady_clock;
 
 // B15-08 : un flux abîmé change un nombre à chaque image ; ce n'est pas une ligne neuve à chaque fois.

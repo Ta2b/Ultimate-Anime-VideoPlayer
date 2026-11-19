@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 // Coefficients de luminance Kr et Kb ; Kg = 1 − Kr − Kb.
@@ -64,4 +64,4 @@ Rgba8 vsfilter_bt601_on_bt709(Rgba8 color) {
   return from_limited_ycbcr(to_limited_ycbcr(color, kBt601), kBt709, color.a);
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

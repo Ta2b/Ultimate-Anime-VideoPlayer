@@ -11,7 +11,7 @@
 #include "core/log.h"
 #include "gpu/cuda/backend/cuda_status.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 inline void cuda_warn(cudaError_t error, std::string_view call) noexcept {
   if (error == cudaSuccess) return;
@@ -32,4 +32,4 @@ inline void cuda_warn(CUresult result, std::string_view call) noexcept {
   }
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

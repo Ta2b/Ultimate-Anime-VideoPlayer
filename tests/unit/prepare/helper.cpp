@@ -109,26 +109,26 @@ int cache_writer(const std::vector<std::string>& args) {
   const fs::path destination = args.at(0);
   const fs::path calls = args.at(1);
   const auto delay = milliseconds(std::stoi(args.at(2)));
-  auto produced = ajp::prepare::produce_once({.destination = destination}, [&](const fs::path& output) {
+  auto produced = kirari::prepare::produce_once({.destination = destination}, [&](const fs::path& output) {
     append_line(calls, "production");
     std::this_thread::sleep_for(delay);
     std::ofstream(output, std::ios::binary) << "contenu unique";
-    return std::expected<void, ajp::Refusal>{};
+    return std::expected<void, kirari::Refusal>{};
   });
   if (!produced) {
     say("refus " + produced.error().detail);
     return 2;
   }
-  say(*produced == ajp::prepare::Production::Produced ? "produit" : "repris");
+  say(*produced == kirari::prepare::Production::Produced ? "produit" : "repris");
   return 0;
 }
 
 // Constructeur qui meurt en pleine production : son dossier de travail reste.
 int cache_orphan(const std::vector<std::string>& args) {
-  const ajp::prepare::CacheEntry entry{.destination = args.at(0)};
-  auto lock = ajp::prepare::KeyLock::acquire(entry.lock_file());
-  auto stage =
-      ajp::prepare::reserve_stage(entry.destination.parent_path(), ajp::prepare::kStagePrefix, entry.owner());
+  const kirari::prepare::CacheEntry entry{.destination = args.at(0)};
+  auto lock = kirari::prepare::KeyLock::acquire(entry.lock_file());
+  auto stage = kirari::prepare::reserve_stage(entry.destination.parent_path(), kirari::prepare::kStagePrefix,
+                                              entry.owner());
   if (!lock || !stage) return 2;
   std::ofstream(*stage / "model.engine", std::ios::binary) << "moitié";
   say("orphelin");
@@ -136,7 +136,7 @@ int cache_orphan(const std::vector<std::string>& args) {
 }
 
 int hold_lock(const std::vector<std::string>& args) {
-  auto lock = ajp::prepare::KeyLock::acquire(args.at(0));
+  auto lock = kirari::prepare::KeyLock::acquire(args.at(0));
   if (!lock) return 2;
   say("verrou pris");
   std::this_thread::sleep_for(milliseconds(std::stoi(args.at(1))));

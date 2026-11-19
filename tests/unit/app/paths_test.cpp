@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 TEST_CASE("Chemins : le dossier des données et celui des réglages", "[app][paths]") {
@@ -34,8 +34,8 @@ TEST_CASE("Chemins : le dossier des données et celui des réglages", "[app][pat
 
 TEST_CASE("Chemins : les caches qui se refont seuls ont leur dossier (A36-08)", "[app][paths]") {
   PlayerPaths p;
-  p.heavy = fs::path("local") / "ajp";
-  p.cache = fs::path("cache") / "ajp";
+  p.heavy = fs::path("local") / "kirari";
+  p.cache = fs::path("cache") / "kirari";
   p.engines = p.cache / "engines";
   CHECK(paths::data_root(p) == p.heavy);  // pas le parent des moteurs construits
   CHECK(paths::luts(p) == p.heavy / "luts");

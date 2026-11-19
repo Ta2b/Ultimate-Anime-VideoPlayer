@@ -4,12 +4,12 @@
 // code du conteneur revient en multipliant par le maximum du plan ; P010 garde ainsi ses 10
 // bits en poids fort (kernels/spec/color.h : shift = 6). Mêmes résultats que les lectures de
 // yuv.glsl dans un tampon de disposition serrée.
-// S'inclut après yuv.glsl ; AJP_INTERLEAVED et AJP_SUBSAMPLED valent toujours ici.
-#ifndef AJP_PLANES_GLSL
-#define AJP_PLANES_GLSL
+// S'inclut après yuv.glsl ; KIRARI_INTERLEAVED et KIRARI_SUBSAMPLED valent toujours ici.
+#ifndef KIRARI_PLANES_GLSL
+#define KIRARI_PLANES_GLSL
 
 float plane_max() {
-  return AJP_SAMPLE_BYTES == 1u ? 255.0 : 65535.0;
+  return KIRARI_SAMPLE_BYTES == 1u ? 255.0 : 65535.0;
 }
 
 // Code du conteneur d'une valeur UNORM lue dans le plan : exacte, l'arrondi rattrape la
@@ -30,4 +30,4 @@ uint chroma_code_at(sampler2D chroma, uint sample_x, uint y) {
   return plane_code((sample_x & 1u) == 0u ? t.r : t.g);
 }
 
-#endif  // AJP_PLANES_GLSL
+#endif  // KIRARI_PLANES_GLSL

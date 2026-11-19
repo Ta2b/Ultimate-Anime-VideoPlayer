@@ -10,7 +10,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 std::string_view activation_name(Activation act) {
@@ -132,4 +132,4 @@ std::string describe_memory(const MemoryPlan& plan) {
       format_bytes(plan.constant_bytes), format_bytes(plan.io_bytes));
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir
