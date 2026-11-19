@@ -101,9 +101,10 @@ class RifeFusedEngine final : public Engine {
 
   // --rife-native (docs/rife-natif.md) : l'encodeur et les convolutions des blocs passent aux noyaux natifs
   // (pieces : l'encodeur puis les blocs) si leur sortie, sur une paire de test, tient min_db contre celle des
-  // moteurs TensorRT déjà chargés ; sommes f16 d'abord, f32 ensuite. Rend la ligne du journal qui dit ce qui
-  // est retenu. Refus (la chaîne reste alors à TensorRT, intacte) : blocs TensorRT en plans, erreur CUDA de
-  // l'essai.
+  // moteurs TensorRT déjà chargés (sommes f16, mixtes, f32), et si la plus rapide de ces variantes bat
+  // TensorRT d'au moins 2 % sur une passe de lecture ×2 chronométrée. Rend la ligne du journal qui dit ce qui
+  // est retenu, avec les dB et les temps. Refus (la chaîne reste alors à TensorRT, intacte) : blocs TensorRT
+  // en plans, erreur CUDA de l'essai (DeviceLost : contexte perdu).
   std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
                                                  const std::shared_ptr<SharedActivations>& shared,
                                                  double min_db);
@@ -152,6 +153,13 @@ class RifeFusedEngine final : public Engine {
                                                           const Tensor& input,
                                                           std::span<const Tensor> outputs,
                                                           std::size_t elements);
+  // La mesure du temps de try_native : nets[0] nul (TensorRT), puis les variantes natives ; la médiane d'une
+  // passe de lecture ×2 (B encodée seule) de chacune, en tours intercalés. Les réseaux reviennent à nets.
+  std::expected<std::vector<double>, Refusal> trial_times(cudaStream_t stream,
+                                                          const std::shared_ptr<SharedActivations>& shared,
+                                                          const Tensor& input,
+                                                          std::span<const Tensor> outputs,
+                                                          std::vector<std::unique_ptr<RifeNativeNet>>& nets);
   void forget_passes();
 
   std::unique_ptr<TrtEngine> encode_;
@@ -181,8 +189,9 @@ class RifeFusedEngine final : public Engine {
   std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
 
   // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone, de travail de l'encodeur,
-  // d'emplacement de A, de premier bloc et de fenêtre L2 : jusqu'à cinq par jeu d'adresses à froid (Both,
-  // puis Second et None sur chaque emplacement), autant à chaud.
+  // d'emplacement de A, de premier bloc, de fenêtre L2 et de variante (TensorRT ou sommes du natif, que la
+  // mesure du temps de try_native alterne) : jusqu'à cinq par jeu d'adresses à froid (Both, puis Second et
+  // None sur chaque emplacement), autant à chaud.
   static constexpr std::size_t kMaxGraphs = 64;
   FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
   // L'encodage que le dernier appel mené jusqu'au bout a laissé dans la zone, et l'entrée qu'il a lue.
