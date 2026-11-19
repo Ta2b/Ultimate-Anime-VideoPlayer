@@ -132,7 +132,7 @@ fusion et la paire sont chacune un seul moteur. Il reste la référence, et le r
 5. le mélange contre TensorRT, onze tours intercalés, la médiane : gardé s'il le bat d'au moins 2 %, les
    poids des tuiles que ses formes n'emploient pas alors libérés.
 
-**Le réglage** (`gmfss_conv_plan.cu`, à la place du choix fixe de la tuile) : chaque convolution passe au banc
+**Le réglage** (`gmfss_conv_tune.cu`, à la place du choix fixe de la tuile) : chaque convolution passe au banc
 du RIFE natif (`rife_native_bench.cu`) pour chacune des trois sommes, puisque l'essai en change sans rien
 reconstruire. La forme de référence (tuile de 16, K entier, sans avance, la plus petite tranche, deux lignes par
 warp, une en pas 2) d'abord, puis chaque forme que les noyaux font, sur une sortie remplie de NaN, comparée à la
@@ -193,13 +193,59 @@ ligne 0 de 7,5 vers 5,5 à 6 ms au mieux ; les lignes 1 et 2, au calcul, par les
 les 19,7 de la paire, dont les réseaux natifs ne font que 3,5 ms au plafond (FeatureNet 1,15 ms par image,
 MetricNet 1,18 ms) : GMFlow, sous TensorRT, en fait l'essentiel. Le reste demande des noyaux nouveaux : un
 chargement en double tampon (la bande suivante en vol pendant les mma de la courante, ce qui épargne aussi le bord
-relu), qui ramènerait la ligne 0 vers ses 0,28 ms par convolution, environ 3,5 ms de moins à lui seul.
+relu) : c'est la forme en flux ci-dessous, qui ramène la ligne 0 vers 0,28 ms par convolution (0,42 ms avec un
+résiduel). Le modèle de coût lui donne 2,3 à 2,8 ms de moins, et non 3,5 : les résiduels lus comptent, et seules
+les 11 convolutions de 64 vers 64 en pas 1 passent en flux.
+
+**La forme en flux** (`conv_stream_kernels.cuh`, calendrier dans `conv_stream.h`). Un bloc descend une colonne de
+32 pixels, bande de 4 lignes après bande, toute l'entrée (64 canaux, une seule tranche) dans un anneau de 10 lignes
+en mémoire partagée (48 960 octets : deux blocs par multiprocesseur, un seul sur sm_75). La fenêtre d'une bande en
+occupe 6 ; les 4 autres reçoivent par `cp.async`, pendant les mma de la bande, les nouvelles lignes de la
+suivante ; les deux lignes du bord sont déjà là. L'entrée est lue 1,08 à 1,12 fois (du L2 aux multiprocesseurs),
+contre 1,33 fois en deux lignes par warp et 1,59 en une. La sortie se range dans les 4 premières lignes de la
+fenêtre, finies, avant de partir. Sommes, PReLU de l'entrée, biais et fin sont ceux de `conv_kernel<64, CT, 3, 1, 1>`
+dans le même ordre : la sortie est la sienne au bit près (`tests/unit/gpu/conv_stream_test.cpp` rejoue le noyau sur
+l'hôte, sommes arrondies en FP16, contre la tuile d'une tranche), celle qu'émule déjà `emul_mix_native.py` pour
+64 canaux en pas 1 (tableau ci-dessus). Trois noyaux : tuile de 64 en sommes f16, de 32 en f16 et en mixtes
+(registres sur sm_75, 86, 89 et 120 : 140, 136, 136, 164 ; 88, 88, 88, 118 ; 120, 124, 124, 154 ; sans
+débordement). Ce sont des formes de plus au réglage du GMFSS natif, et seulement là (`rn::stream_configs`, 3 × 3 de
+pas 1 à 64 entrées, bandes par bloc pour une, deux ou quatre vagues de deux blocs par multiprocesseur) :
+chronométrées sur la bande du banc, avec autant de colonnes de blocs que la couche entière, gardées seulement plus
+rapides et à la sortie de la référence, jamais forme de référence. Le RIFE natif ne les voit pas : `pick_for`,
+`configs` et ses noyaux sont inchangés (les 159 noyaux des fichiers qui lisent ces en-têtes ont le même SASS,
+instruction par instruction, sur les quatre architectures).
+
+Le modèle de coût (sm_89, 160 Tflop/s, 504 Go/s) : une convolution de la ligne 0 fait 40,8 Gflop (0,254 ms), un
+tenseur 70,8 Mo (0,140 ms). Les 11 convolutions 64 → 64 de pas 1 de la ligne 0, dont 6 lisent un résiduel, font
+6,7 ms quand le calcul et les octets se suivent (la forme fixe, à peu près : un bloc ne recouvre pas son propre
+chargement), 3,9 ms recouverts au mieux, 4,5 ms à 85 % du calcul et 88 % de la bande. D'où 2,3 à 2,8 ms de moins
+sur la fusion, de 21,9 vers 19,1 à 19,6 ms, ce que le réglage des tuiles gagnait déjà sur la ligne 0 compris. Les
+3,9 ms visés sont le plafond de ces convolutions dans le tableau des plafonds (3,1 ms), plus la lecture des six
+résiduels, que le tableau suppose fondus (0,84 ms) : compté ainsi, le plafond de la fusion est d'environ 12 ms et
+non 11,2. Le reste de l'écart tient aux lignes 1 et 2, au calcul, et à la queue.
+
+**Le bloc résiduel fondu n'est pas écrit.** Pour les blocs résiduels de la ligne 0 (r01, r04, r05 : PReLU,
+convolution, PReLU, convolution, résiduel), un seul noyau garderait l'image du milieu en mémoire partagée :
+141,6 Mo épargnés par bloc (le milieu écrit puis relu, 0,28 ms). Mais la première convolution se refait sur le
+halo : une sortie de 4 × 32 demande un milieu de 6 × 34 pixels (13 fragments de 16, la première convolution
+1,625 fois), une sortie de 8 × 32 un milieu de 10 × 34 (22 fragments, 1,375 fois). Le bloc passe alors au calcul :
+0,67 ou 0,60 ms, contre 0,70 ms recouverts pour ses deux convolutions en flux. L'entrée et le milieu à 64 canaux
+prennent 70 848 octets de mémoire partagée en 4 × 32, 111 168 en 8 × 32 au pas des noyaux (ne tient pas), 98 816
+sans marge (permutée) : un seul bloc par multiprocesseur, quatre ou huit warps sur 48, et aucun sur sm_75 (64 Ko).
+Les registres ne bornent pas (ceux de deux lignes par warp, 192 sur sm_89, pour 13 fragments sur 4 warps), mais
+les fragments du milieu ne se partagent pas également entre les warps. Gain idéal : 0,04 à 0,10 ms par bloc, 0,1 à
+0,3 ms pour les trois, et 0,26 ms pour head0 (16 → 64 puis 64 → 64) ; à un seul bloc par multiprocesseur, à 65 %
+des tensor cores, il perd 0,13 à 0,23 ms par bloc. Au mieux 0,5 ms des 21,9, au pire une perte : pas un noyau de
+plus. Il redeviendrait intéressant si la forme en flux tenait la bande (88 %) en laissant les tensor cores sous
+60 % (étape 4 de la séance).
 
 **Ce qui reste au PC** : les temps (seul de chaque option, le mélange contre TensorRT) ; les dB contre TensorRT
 (l'émulation juge contre ONNX Runtime sur processeur ; au PC, TensorRT FP16 n'était qu'à 67,7 dB du natif f32
 sur la paire, 65,3 dB sur la fusion) ; le temps du réglage, et ce qu'il gagne (le temps d'une passe contre les
 21,90 et 19,70 ms de la forme fixe ; le temps de chaque morceau par Nsight Systems, étape 3 de la séance
-finale) ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamais tourné sur une carte.
+finale) ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamais tourné sur une carte. Pour la
+forme en flux (étape 4 de la séance) : si le réglage la prend sur la ligne 0, ce qu'elle y gagne contre la
+meilleure tuile, son occupation et ses octets.
 
 ## Justesse
 
@@ -217,7 +263,8 @@ finale) ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamai
   n'est retenu qu'à **45 dB** ou plus ; la séance finale vise 50 dB.
 - Compilé par nvcc 13.5 (sm_75, 86, 89, 120, `--warn-on-spills -Werror`), lancé sur la RTX 4070 Ti le
   19 novembre 2026 (ci-dessous) avec l'ancien essai et la forme fixe de chaque convolution. L'essai par
-  morceaux, le réglage au banc et sa bande sont compilés de même, jamais lancés sur une carte.
+  morceaux, le réglage au banc et sa bande, la forme en flux sont compilés de même, jamais lancés sur une
+  carte.
 - La justesse se vérifie dans le cloud (émulation contre onnxruntime sur processeur, coupe comparée à la fusion
   ou à la paire entière) ; le PC ne donne que ce qui demande la carte : les temps et les dB contre TensorRT.
 
@@ -334,6 +381,36 @@ ffmpeg -i n.mkv -i t.mkv -lavfi psnr -f null - 2>&1 | tail -1
 nsys profile -o gmfss --trace=cuda,nvtx --cuda-graph-trace=node --delay=20 --duration=30 \
   kirari --debug play --motion=gmfss --rife=2 --start=960 extrait.mkv
 nsys stats -r nvtx_kern_sum gmfss.nsys-rep
+
+# 4. La forme en flux, contre la seule tuile : deux binaires linux-release, celui-ci et celui du commit « le
+#    réglage au banc dans son propre fichier », juste avant la forme en flux ; mêmes commandes, même extrait.
+#    a. Au réglage (première ouverture, étape 0), une ligne par convolution réglée où une forme en flux passe
+#       (les jumelles reprennent la forme de leur aînée sans ligne) :
+#       « GMFSS natif, fusion, réglage : convolution i (3×3 64→64 sur 960×576), sommes f16 : en flux au mieux
+#         … µs (… bandes par bloc, tuile …), en tuile au mieux … µs : flux retenu » (ou « tuile gardée »).
+#       Attendu, sur la bande du banc (544 lignes des 576) : 270 à 300 µs en flux contre 500 au plus en tuile
+#       sans résiduel, 400 à 450 contre 640 avec. Une tuile gardée sur la ligne 0 dit que le flux n'y recouvre
+#       pas ; aucune ligne en flux pour une convolution de la ligne 0, mais « N formes écartées », qu'il n'y
+#       rend pas la sortie de la référence (à corriger avant toute mesure).
+kirari play --motion=gmfss --rife=2 --start=960 extrait.mkv 2>&1 | grep -E "réglage : convolution|retenu pour"
+#    b. Le GridNet entier : la plage gmfss.fusion.gridnet de nvtx_kern_sum (étape 3), un rapport par binaire ;
+#       attendu 2,3 à 2,8 ms de moins que la forme fixe (21,90 ms la fusion), moins contre la seule tuile réglée.
+#       Le temps de chaque noyau, stream_kernel contre conv_kernel, nombre d'appels et médiane :
+nsys stats -r cuda_gpu_kern_sum --format csv gmfss.nsys-rep | grep -E "stream_kernel|conv_kernel"
+#    c. Une convolution de la ligne 0 au détail : Nsight Compute, les noyaux lancés dans la plage du GridNet
+#       (domaine kirari ; le réglage au banc se fait hors de la plage, à la construction). Si rien ne se
+#       profile, ôter --nvtx et --nvtx-include : le banc et la paire passent alors aussi, que la grille distingue.
+ncu --nvtx --nvtx-include "kirari@gmfss.fusion.gridnet/" -k regex:stream_kernel -c 12 \
+  --section SpeedOfLight --section Occupancy --section MemoryWorkloadAnalysis -o flux \
+  kirari --debug play --motion=gmfss --rife=2 --start=960 extrait.mkv
+ncu --import flux.ncu-rep --page details --csv > flux.csv
+#       À relever pour chaque lancement de la ligne 0 (grille 30 × 4, 8 ou 16 × 1 en tuile de 64 ; 30 × 2, 4
+#       ou 8 × 2 en tuile de 32) : la durée ; les octets lus en mémoire (70,8 Mo, 141,6 avec un résiduel) et
+#       écrits (70,8 Mo) ; le débit mémoire (88 % de la crête visés) et l'activité des tensor cores (85 %
+#       visés) ; l'occupation atteinte (8 warps sur 48 : deux blocs). La bande tenue avec des tensor cores sous
+#       60 % rouvrirait le bloc résiduel fondu, qui échange des octets contre du calcul ; sinon il reste non
+#       écrit. Les dB contre TensorRT (ligne « retenu pour la fusion ») ne bougent pas au-delà du bruit : la
+#       forme en flux rend la sortie de la tuile en tranche de 64.
 ```
 
 Le paquet Linux change d'empreinte TensorRT (`tools/release/trt-fingerprint.sh`) : `src/gpu` et `src/prepare` ont
