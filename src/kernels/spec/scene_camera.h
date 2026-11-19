@@ -27,12 +27,14 @@
 // H mal conditionné (rapport de ses valeurs propres au-delà de kRefineMaxCondition, ou valeur propre nulle) :
 // le pas n'est pas fait, ni aucun autre ; p reste celui du dernier pas.
 //
-// Vérification, celle que mesure la porte 2.1. Sur chaque tuile du décor, lumas floutées en
+// Vérification, celle que mesure la porte 2.1, sur chaque tuile de l'image (décor ou non). Lumas floutées en
 // (2 kCheckRadius + 1)², kCheckSteps pas de Lucas-Kanade sur le décalage (sx, sy) qui reste après le modèle
 // affiné, sur tous les pixels de la tuile dans l'image (scene_warp_term, au point i + dx + sx) : sommes
 // Σ gx², Σ gx gy, Σ gy², Σ gx e, Σ gy e et le nombre de pixels comptés, puis scene_check_step. Rend
-// (sx, sy, l1, l2, pixels) du dernier pas ; pixels 0 hors du décor. ref::scene_camera_apply en tire l'écart
-// de la caméra.
+// (sx, sy, l1, l2, pixels) du dernier pas. Au premier pas, sur le modèle seul, aussi Σ |e| et le nombre de
+// pixels qui bougent (scene_pixel_moving), rendus par pixel compté (scene_check_seen) : l'écart après la
+// caméra, ce que la carte voit d'un dessin qui bouge hors d'elle (ref::scene_motion_of).
+// ref::scene_camera_apply tire l'écart de la caméra des seules tuiles du décor.
 //
 // Référence : ref::scene_camera_refine (kernels/ref/scene_camera.cpp) ; port : gpu/cuda/backend
 // (scene_camera_kernels.cu). Les sommes du port sont en float par fil puis en double : le résultat suit la
@@ -78,6 +80,12 @@ inline constexpr float kCheckClip = 2.0F;    // pas de vérification par axe au 
 inline constexpr float kCheckCover = 0.25F;  // part des pixels d'une tuile comptés, au moins
 inline constexpr int kCheckMinTiles = 3;     // tuiles mesurées au moins pour un écart
 static_assert(kCheckRadius == kRefineFineRadius, "la vérification reprend les lumas du dernier flou");
+// Un pixel bouge après la caméra si |e| dépasse ce qu'un décalage de kMovingSlack pixels à 720p explique :
+// |e| > kMovingCodes + slack × |∇b| (scene_pixel_moving). Le grain, flouté en 3 × 3, reste sous 2 à 3 codes ;
+// un trait mal recalé de moins d'un demi-pixel (la porte 2.1) reste sous le terme du gradient. Réglés sans
+// mesure (19 novembre), à revoir sur la ligne « image » du banc 2.3 (carte_lecteur.py).
+inline constexpr float kMovingCodes = 6.0F;
+inline constexpr float kMovingSlack = 0.5F;  // pixels à 720p
 }  // namespace scene
 
 // Ce que le lecteur demande pour une paire, et ce qu'il relit.
@@ -91,9 +99,13 @@ struct SceneTileCheck {
   float sy = 0.0F;
   float l1 = 0.0F;  // valeurs propres du tenseur de structure du dernier pas (sommes sur la tuile)
   float l2 = 0.0F;
-  float pixels = 0.0F;  // pixels comptés ; 0 hors du décor
+  float pixels = 0.0F;  // pixels comptés au dernier pas
+  // Au premier pas, sur le modèle seul : écart moyen |e| (codes, lumas floutées) et part des pixels qui
+  // bougent (scene_pixel_moving), sur les pixels comptés.
+  float error = 0.0F;
+  float moving = 0.0F;
 };
-static_assert(sizeof(SceneTileCheck) == 5 * sizeof(float));
+static_assert(sizeof(SceneTileCheck) == 7 * sizeof(float));
 
 struct SceneCameraRefined {
   std::array<double, 6> model{};      // affiné ; celui de la demande si aucun pas n'a été fait
@@ -310,6 +322,8 @@ struct SceneCheckSums {
   float bx = 0.0F;
   float by = 0.0F;
   float pixels = 0.0F;
+  float error = 0.0F;   // Σ |e|
+  float moving = 0.0F;  // pixels qui bougent
 };
 KIRARI_SCENE_HD inline void scene_check_step(const SceneCheckSums& s, SceneTileCheck& out) {
   const float half = 0.5F * (s.xx + s.yy);
@@ -328,6 +342,22 @@ KIRARI_SCENE_HD inline void scene_check_step(const SceneCheckSums& s, SceneTileC
   const float uy = p1 * si + p2 * c;
   out.sx += ux < -scene::kCheckClip ? -scene::kCheckClip : (ux > scene::kCheckClip ? scene::kCheckClip : ux);
   out.sy += uy < -scene::kCheckClip ? -scene::kCheckClip : (uy > scene::kCheckClip ? scene::kCheckClip : uy);
+}
+
+// La tolérance de scene_pixel_moving pour un flux de height lignes : kMovingSlack pixels à 720p.
+KIRARI_SCENE_HD inline float scene_moving_slack(int height) {
+  return scene::kMovingSlack * static_cast<float>(height) / 720.0F;
+}
+// Le pixel bouge après la caméra : son écart n'est pas celui d'un décalage d'au plus slack pixels.
+KIRARI_SCENE_HD inline bool scene_pixel_moving(const SceneWarpTerm& t, float slack) {
+  const float magnitude = t.e < 0.0F ? -t.e : t.e;
+  return magnitude > scene::kMovingCodes + slack * sqrtf(t.gx * t.gx + t.gy * t.gy);
+}
+// Le premier pas de la vérification : l'écart après la caméra, par pixel compté.
+KIRARI_SCENE_HD inline void scene_check_seen(const SceneCheckSums& s, SceneTileCheck& out) {
+  const float count = s.pixels > 1.0F ? s.pixels : 1.0F;
+  out.error = s.error / count;
+  out.moving = s.moving / count;
 }
 
 }  // namespace kirari::kernels

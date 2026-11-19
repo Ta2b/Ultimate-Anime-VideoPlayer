@@ -117,7 +117,6 @@ std::expected<void, Refusal> SceneFlow::enqueue_refine(cudaStream_t own, const L
                                .height = height,
                                .cols = cols_,
                                .rows = rows_,
-                               .decor = refine_decor_,
                                .state = refine_state_,
                                .out = refine_checks_};
   return cuda_check(launch_scene_check(check, own), "scene_check<<<>>>");

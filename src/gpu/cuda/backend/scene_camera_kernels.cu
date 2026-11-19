@@ -140,29 +140,27 @@ __global__ void scene_refine_update(SceneRefineState* state) {
   state->count = 0U;
 }
 
-// Une tuile par bloc, un fil par pixel.
+// Une tuile par bloc, un fil par pixel ; toutes les tuiles, décor ou non (l'écart après la caméra).
 __global__ void scene_check(SceneCheckParams p) {
   const std::size_t tile = static_cast<std::size_t>(blockIdx.y) * static_cast<std::size_t>(p.cols) +
                            static_cast<std::size_t>(blockIdx.x);
   const int tid = static_cast<int>(threadIdx.y * blockDim.x + threadIdx.x);
-  if (p.decor[tile] == 0) {  // le même pour tout le bloc
-    if (tid == 0) p.out[tile] = kernels::SceneTileCheck{};
-    return;
-  }
-  __shared__ float partial[kWarps][6];
+  constexpr int kSums = 8;
+  __shared__ float partial[kWarps][kSums];
   __shared__ float shift[2];  // le décalage du pas en cours, celui du résultat que tient le fil 0
   kernels::SceneTileCheck result;
   if (tid == 0) shift[0] = shift[1] = 0.0F;
   float model[6];
   model_of(p.state, model);
   const kernels::SceneCameraFrame frame = kernels::scene_camera_frame(p.width, p.height);
+  const float slack = kernels::scene_moving_slack(p.height);
   const int i = static_cast<int>(blockIdx.x) * kTile + static_cast<int>(threadIdx.x);
   const int j = static_cast<int>(blockIdx.y) * kTile + static_cast<int>(threadIdx.y);
   const int lane = tid % 32;
   const int warp = tid / 32;
   __syncthreads();
   for (int step = 0; step < scene::kCheckSteps; ++step) {
-    float v[6] = {};
+    float v[kSums] = {};
     if (i < p.width && j < p.height) {
       const kernels::SceneModelAt m = kernels::scene_model_at(model, frame, i, j);
       const kernels::SceneWarpTerm t =
@@ -174,9 +172,11 @@ __global__ void scene_check(SceneCheckParams p) {
         v[3] = t.gx * t.e;
         v[4] = t.gy * t.e;
         v[5] = 1.0F;
+        v[6] = fabsf(t.e);
+        v[7] = kernels::scene_pixel_moving(t, slack) ? 1.0F : 0.0F;
       }
     }
-    for (int k = 0; k < 6; ++k) {
+    for (int k = 0; k < kSums; ++k) {
       float s = v[k];
       for (int offset = 16; offset > 0; offset /= 2) s += __shfl_down_sync(0xFFFFFFFFU, s, offset);
       if (lane == 0) partial[warp][k] = s;
@@ -191,7 +191,10 @@ __global__ void scene_check(SceneCheckParams p) {
         sums.bx += partial[w][3];
         sums.by += partial[w][4];
         sums.pixels += partial[w][5];
+        sums.error += partial[w][6];
+        sums.moving += partial[w][7];
       }
+      if (step == 0) kernels::scene_check_seen(sums, result);
       kernels::scene_check_step(sums, result);
       shift[0] = result.sx;
       shift[1] = result.sy;

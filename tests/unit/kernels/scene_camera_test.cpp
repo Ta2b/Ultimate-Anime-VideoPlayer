@@ -1,7 +1,8 @@
 // L'affinage de la caméra de la carte (kernels/spec/scene_camera.h) : sur une image lisse déplacée par une
 // affine connue, la caméra ajustée sur des vecteurs biaisés (comme NVOF sur un panoramique lent) est
-// ramenée à la vraie par Lucas-Kanade, et l'écart mesuré sur l'image le dit ; un aplat ne s'affine pas ; trop
-// peu de décor, pas de demande.
+// ramenée à la vraie par Lucas-Kanade, et l'écart mesuré sur l'image le dit ; un dessin qui bouge hors de la
+// caméra sans que NVOF le voie (une bouche, des yeux) est dessin par l'écart après la caméra ; un aplat ne
+// s'affine pas ; trop peu de décor, pas de demande.
 // Un seul cas, comme le veut la consigne des tests groupés.
 #include "kernels/ref/scene_camera.h"
 
@@ -50,8 +51,19 @@ struct Pair {
   Plane<std::uint8_t> b{kWidth, kHeight};
 };
 
-// a, et b : le point x de a en x + d(x) dans b, d du modèle p (l'affine inversée exactement).
-Pair moved(const std::array<double, 6>& p, bool flat = false) {
+// Le dessin : 2 × 2 tuiles, décalées de kPatchShift pixels de plus que la caméra dans b.
+constexpr int kPatchX0 = 96;
+constexpr int kPatchY0 = 48;
+constexpr int kPatchSide = 2 * kSceneTileFlowPixels;
+constexpr double kPatchShift = 4.0;
+
+bool in_patch(int i, int j) {
+  return i >= kPatchX0 && i < kPatchX0 + kPatchSide && j >= kPatchY0 && j < kPatchY0 + kPatchSide;
+}
+
+// a, et b : le point x de a en x + d(x) dans b, d du modèle p (l'affine inversée exactement) ; avec patch, le
+// dessin bouge en plus.
+Pair moved(const std::array<double, 6>& p, bool flat = false, bool patch = false) {
   const SceneCameraFrame f = scene_camera_frame(kWidth, kHeight);
   const double s = f.inv_scale;
   const double m00 = 1.0 + p[1] * s;
@@ -71,7 +83,8 @@ Pair moved(const std::array<double, 6>& p, bool flat = false) {
       const double sx = (m11 * ux - m01 * uy) / det;
       const double sy = (-m10 * ux + m00 * uy) / det;
       out.a.at(i, j) = flat ? std::uint8_t{90} : code(scene(x, y));
-      out.b.at(i, j) = flat ? std::uint8_t{90} : code(scene(sx, sy));
+      const double extra = patch && in_patch(i, j) ? kPatchShift : 0.0;
+      out.b.at(i, j) = flat ? std::uint8_t{90} : code(scene(sx - extra, sy));
     }
   }
   return out;
@@ -140,6 +153,46 @@ TEST_CASE("affinage de la caméra de la carte", "[scene_flow][scene_camera]") {
     CHECK_FALSE(plain.camera_refined);
     CHECK(plain.residual_tiles == 0);
     CHECK_THAT(plain.residual, WithinAbs(camera.residual * kDivisor, 1e-9));
+  }
+
+  SECTION("un dessin que NVOF ne voit pas bouge après la caméra : dessin ; le décor reste décor") {
+    const Pair pair = moved(kTruth, false, true);
+    const SceneFlowTiles tiles = tiles_of(pair, kTruth);  // NVOF n'y voit que la caméra
+    ref::SceneCamera camera = ref::scene_camera_of(tiles);
+    REQUIRE(camera.fit);
+    ref::SceneHistory before;
+    const SceneMotion vectors = ref::scene_motion_of(tiles, before, camera);
+    const auto request = ref::scene_camera_request(camera);
+    REQUIRE(request);
+    const auto refined = ref::scene_camera_refine(pair.a, pair.b, *request);
+    REQUIRE(refined);
+    ref::scene_camera_apply(camera, *refined);
+    REQUIRE(camera.checks.size() == tiles.tiles.size());
+    ref::SceneHistory history;
+    const SceneMotion motion = ref::scene_motion_of(tiles, history, camera);
+    const int col0 = kPatchX0 / kSceneTileFlowPixels;
+    const int row0 = kPatchY0 / kSceneTileFlowPixels;
+    for (int row = row0; row < row0 + 2; ++row) {
+      for (int col = col0; col < col0 + 2; ++col) {
+        CHECK(vectors.at(col, row).kind == SceneClass::Background);  // les vecteurs seuls : décor
+        const SceneTileCheck& t = camera.checks[static_cast<std::size_t>(row * tiles.cols + col)];
+        CHECK(t.moving >= scene::kMovingShare);
+        CHECK(motion.at(col, row).kind == SceneClass::Drawing);
+        CHECK(motion.at(col, row).confidence >= 0.5F);
+        CHECK(motion.at(col, row).changed);
+      }
+    }
+    // Loin du dessin (à deux tuiles au moins), tout est décor, sûr, et ses pixels ne bougent pas.
+    for (int row = 1; row + 1 < tiles.rows; ++row) {
+      for (int col = 1; col + 1 < tiles.cols; ++col) {
+        if (col >= col0 - 2 && col < col0 + 4 && row >= row0 - 2 && row < row0 + 4) continue;
+        const SceneTileCheck& t = camera.checks[static_cast<std::size_t>(row * tiles.cols + col)];
+        CHECK(t.moving < 0.02F);
+        CHECK(t.error < 1.0F);
+        CHECK(motion.at(col, row).kind == SceneClass::Background);
+        CHECK(motion.at(col, row).confidence >= 0.9F);
+      }
+    }
   }
 
   SECTION("un aplat ne s'affine pas : rien à suivre") {

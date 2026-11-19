@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kernels/image.h"
+#include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
 
 namespace kirari::kernels::ref {
@@ -59,6 +60,9 @@ struct SceneCamera {
   bool refined = false;             // affinée par Lucas-Kanade (au moins un pas)
   double check = -1.0;              // écart mesuré sur l'image, pixels du flux ; négatif : pas mesuré
   int check_tiles = 0;              // tuiles de cette mesure
+  // Par tuile, cols × rows : l'écart après la caméra mesuré sur l'image (spec/scene_camera.h), dont
+  // scene_motion_of sépare le dessin du décor. Vide sans affinage relu.
+  std::vector<SceneTileCheck> checks;
 };
 
 // La caméra des vecteurs de NVOF, avant l'affinage ; pas ajustée sur une coupe probable.

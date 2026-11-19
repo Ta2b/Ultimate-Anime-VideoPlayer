@@ -53,13 +53,49 @@ struct Classified {
   float confidence = 0.0F;
 };
 
-Classified classify(const TileView& v, const SceneCamera& camera, double cx, double cy, double scale) {
+// Ce que l'image dit d'une tuile après la caméra (SceneCamera::checks, spec/scene_camera.h) : rien sans
+// mesure (pas d'affinage relu, tuile trop peu couverte).
+struct Seen {
+  bool measured = false;
+  bool moving = false;  // au moins kMovingShare de pixels qui bougent, ou un recalage d'au moins kShiftMoving
+  float share = 0.0F;   // part des pixels qui bougent
+};
+
+// unit : pixels du flux par pixel à 720p.
+Seen seen_of(const SceneCamera& camera, std::size_t i, double unit) {
+  constexpr float kArea = static_cast<float>(kSceneTileFlowPixels * kSceneTileFlowPixels);
+  if (i >= camera.checks.size()) return {};
+  const SceneTileCheck& t = camera.checks[i];
+  if (t.pixels < scene::kCheckCover * kArea) return {};
+  const bool resolved = t.l1 >= scene::kCheckFloor * t.pixels;
+  const bool shifted = resolved && std::hypot(t.sx, t.sy) >= scene::kShiftMoving * unit;
+  return {.measured = true, .moving = t.moving >= scene::kMovingShare || shifted, .share = t.moving};
+}
+
+// La classe que l'image donne à une tuile qui correspond (la séparation par l'image, spec/scene_flow.h). Sa
+// confiance : sa part de vecteurs sûrs, et pour le décor, d'autant moins que des pixels bougent ; pour le
+// dessin, d'autant plus (la moitié au seuil, pleine au double).
+Classified by_image(const TileView& v, const Seen& seen) {
+  if (!seen.moving) {
+    return {.kind = SceneClass::Background,
+            .confidence = v.matched * (1.0F - 0.5F * std::min(1.0F, seen.share / scene::kMovingShare))};
+  }
+  if (seen.share >= scene::kEffectShare && v.cost >= scene::kEffectCost)
+    return {.kind = SceneClass::Effect,
+            .confidence = std::min(1.0F, seen.share / (2.0F * scene::kEffectShare))};
+  return {.kind = SceneClass::Drawing,
+          .confidence = v.matched * std::clamp(seen.share / (2.0F * scene::kMovingShare), 0.5F, 1.0F)};
+}
+
+Classified classify(const TileView& v, const SceneCamera& camera, const Seen& seen, double cx, double cy,
+                    double scale) {
   if (!v.valid) return {};
   if (v.matched < scene::kMatchedFloor) {
     if (v.change >= scene::kEffectDiff)
       return {.kind = SceneClass::Effect, .confidence = std::clamp(1.0F - v.matched, 0.0F, 1.0F)};
     return {};
   }
+  if (seen.measured) return by_image(v, seen);
   const float weight = v.matched * scene_fit::texture_weight(v);
   const Classified unsure{.kind = SceneClass::Uncertain, .confidence = weight};
   // Un aplat : NVOF n'y voit rien (son vecteur vient des bords voisins), mais rien n'y bouge de visible tant
@@ -366,10 +402,12 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
   out.tiles.resize(count);
   std::size_t moving = 0;  // tuiles qui bougent hors de la caméra (moves_off_camera)
   const auto divisor = static_cast<float>(tiles.divisor);
+  const double unit = tiles.flow_height / 720.0;
   for (std::size_t i = 0; i < count; ++i) {
     const TileView& v = views[i];
-    const Classified raw = classify(v, used, f.cx, f.cy, f.scale);
-    const bool changed = tile_changed(v);
+    const Seen seen = seen_of(used, i, unit);
+    const Classified raw = classify(v, used, seen, f.cx, f.cy, f.scale);
+    const bool changed = tile_changed(v) || seen.moving;
     if (moves_off_camera(raw.kind, changed, used.fit)) ++moving;
     const Classified kept = smoothed(history, i, raw, !same_grid, !changed && !camera_moves);
     out.tiles[i] = SceneTile{.kind = kept.kind,

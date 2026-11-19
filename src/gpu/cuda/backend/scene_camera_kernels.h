@@ -54,7 +54,6 @@ struct SceneCheckParams {
   int height = 0;
   int cols = 0;
   int rows = 0;
-  const unsigned char* decor = nullptr;
   const SceneRefineState* state = nullptr;  // le modèle affiné
   kernels::SceneTileCheck* out = nullptr;   // cols × rows
 };

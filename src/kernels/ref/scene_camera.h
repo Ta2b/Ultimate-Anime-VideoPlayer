@@ -22,10 +22,11 @@ Result<SceneCameraRefined> scene_camera_refine(const Plane<std::uint8_t>& a, con
 // scene::kRefineMinPixels pixels.
 std::optional<SceneCameraRequest> scene_camera_request(const SceneCamera& camera);
 
-// La caméra affinée : son modèle (si au moins un pas a été fait), et l'écart mesuré sur l'image, médiane des
-// décalages qui restent sur les tuiles résolues dans les deux sens (scene::kCheckMinTiles au moins), sinon
-// sur celles résolues dans un sens (un bord : seul l'écart en travers se mesure, et c'est le seul qui se
-// voit). Une tuile compte si au moins scene::kCheckCover de ses pixels l'ont été.
+// La caméra affinée : son modèle (si au moins un pas a été fait), la vérification de chaque tuile (checks),
+// et l'écart mesuré sur l'image, médiane des décalages qui restent sur les tuiles du décor résolues dans les
+// deux sens (scene::kCheckMinTiles au moins), sinon sur celles résolues dans un sens (un bord : seul l'écart
+// en travers se mesure, et c'est le seul qui se voit). Une tuile compte si au moins scene::kCheckCover de ses
+// pixels l'ont été.
 void scene_camera_apply(SceneCamera& camera, const SceneCameraRefined& refined);
 
 }  // namespace kirari::kernels::ref

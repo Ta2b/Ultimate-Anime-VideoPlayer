@@ -85,15 +85,30 @@ Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`,
   lumas floutées, un histogramme des écarts (la médiane du poids de Huber), les sommes pondérées, et un fil qui
   résout. Les lumas de la paire restent dans leurs tampons jusqu'à l'affinage : une paire plus récente qui les
   réécrirait attend (« relâché » reposé après l'affinage), et un affinage demandé trop tard n'est pas lancé.
-- **Vérification**, celle que mesure la porte : sur chaque tuile du décor, deux pas de Lucas-Kanade sur le
+- **Vérification**, celle que mesure la porte : sur chaque tuile (décor ou non), deux pas de Lucas-Kanade sur le
   décalage qui reste ; une tuile texturée dans un seul sens se mesure en travers du bord. `SceneMotion::residual`
-  est alors la médiane de ces décalages (`residual_tiles` tuiles), sinon l'écart des vecteurs.
+  est alors la médiane de ces décalages sur les tuiles du décor (`residual_tiles` tuiles), sinon l'écart des
+  vecteurs. Sur les autres tuiles, la même mesure sépare le dessin du décor (« Par l'image », plus bas).
 
 ## Les classes des tuiles
 
 Décor : la tuile suit le modèle de la caméra. Dessin : elle s'en écarte, ou ses vecteurs s'éparpillent. Effet :
 elle ne correspond plus et change fort. Incertain : le flux ne tranche pas (vecteurs sans correspondance sans
 effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
+
+- **Par l'image**, quand la caméra est affinée (le cas courant) : l'écart après la caméra de chaque tuile tranche,
+  quoi que disent ses vecteurs. Deuxième passage de la porte 2.3 : sur les dialogues, les personnages finissaient
+  en décor, parce qu'une bouche ou des yeux qui changent ne déplacent pas le vecteur moyen de NVOF. Au premier
+  pas de la vérification, sur le modèle seul, un pixel bouge si son écart |e| dépasse ce qu'un décalage d'un
+  demi-pixel à 720p explique (`kMovingCodes` + 0,5 × |∇|, `spec/scene_camera.h`). La tuile bouge hors de la
+  caméra si au moins `kMovingShare` (10 %) de ses pixels bougent, ou si Lucas-Kanade la recale d'au moins
+  `kShiftMoving` (1 pixel à 720p) dans un sens mesurable. Elle bouge : effet si ses vecteurs coûtent (coût moyen
+  d'au moins `kEffectCost`) sur au moins `kEffectShare` de pixels qui bougent, dessin sinon. Elle ne bouge pas :
+  décor, aplat compris. Une tuile qui bouge compte aussi pour « changée » : sous une caméra tenue, la paire où la
+  bouche change n'est plus une paire sans preuve. Un personnage entièrement immobile reste décor : rien n'y
+  bouge, la chaîne le traite comme le décor sans rien perdre. Seuils réglés sans mesure, à revoir sur la table
+  « Écart après la caméra » de `carte_lecteur.py` (le décor y donne le bruit). Sans affinage relu (affinage trop
+  tard, trop peu de décor, coupe), les règles des vecteurs ci-dessous restent.
 
 - **Aplats** (texture sous `kTextureFloor`). NVOF n'y voit rien, mais rien n'y bouge de visible : un aplat qui
   ne contredit pas la caméra est décor, pleinement sûr sous `kStillDiff` d'écart |b − a|, plus du tout à

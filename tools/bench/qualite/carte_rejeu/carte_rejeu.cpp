@@ -15,12 +15,18 @@
 // camera AJUSTÉE AFFINÉE PAS ÉCART_IMAGE TUILES ÉCART_VECTEURS GARDÉES : la caméra comme le lecteur la tire
 // (ajustée sur les vecteurs, affinée par Lucas-Kanade, spec/scene_camera.h ; PAS −1 : pas d'affinage
 // demandé), l'écart mesuré sur l'image (pixels du flux, −1 : pas mesuré) et sur combien de tuiles, l'écart
-// des vecteurs et les tuiles gardées par l'ajustement. D : le diviseur du travail au flux
-// (scene_flow_divisor), qui ne change que les pixels de travail. --calques : après la carte, les calques et
-// la plaque de décor rejoués sur la paire (calques.h, ligne calques), avec une vue toutes les N paires
-// (défaut 20) dans DOSSIER si --vues est donné. --sans-affinage : le pire du lecteur, l'affinage toujours en
-// retard ; la carte part avec la caméra de NVOF, et la caméra lk de la paire ne sert qu'aux suivantes
-// (layer_plan.h, with_neighbour).
+// des vecteurs et les tuiles gardées par l'ajustement, puis
+// image MESURÉES DÉCOR D50 D90 D99 D_ÉCART AUTRES A50 A90 BOUGENT DÉCALÉES EFFETS : l'écart après la caméra
+// mesuré sur l'image (spec/scene_camera.h ; 0 tuile mesurée sans affinage) ; les tuiles mesurées, celles du
+// décor (gardées par l'ajustement) avec les centiles 50, 90 et 99 de leur part de pixels qui bougent et la
+// médiane de leur écart moyen |e| (codes), les autres avec leurs centiles 50 et 90 ; les tuiles qui bougent
+// par leurs pixels (kMovingShare), par le seul recalage (kShiftMoving), et les effets par l'image
+// (kEffectShare et kEffectCost). Les seuils de la séparation se règlent là-dessus : le décor donne le bruit.
+// D : le diviseur du travail au flux (scene_flow_divisor), qui ne change que les pixels de travail.
+// --calques : après la carte, les calques et la plaque de décor rejoués sur la paire (calques.h, ligne
+// calques), avec une vue toutes les N paires (défaut 20) dans DOSSIER si --vues est donné. --sans-affinage :
+// le pire du lecteur, l'affinage toujours en retard ; la carte part avec la caméra de NVOF, et la caméra lk
+// de la paire ne sert qu'aux suivantes (layer_plan.h, with_neighbour).
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -89,6 +95,46 @@ void print_diagnosis(const SceneFlowTiles& tiles) {
   };
   std::cout << "diag " << candidates << ' ' << minimum << ' ' << bare << ' ' << unmatched << ' ' << spread
             << ' ' << quartile(1) << ' ' << quartile(2) << ' ' << quartile(3) << "\n";
+}
+
+float centile(std::vector<float> values, int c) {
+  if (values.empty()) return 0.0F;
+  std::ranges::sort(values);
+  return values[static_cast<std::size_t>(c) * (values.size() - 1) / 100];
+}
+
+// L'écart après la caméra, tuile par tuile : les critères de seen_of et by_image
+// (kernels/ref/scene_flow.cpp), recopiés.
+void print_image(const SceneFlowTiles& tiles, const ref::SceneCamera& camera) {
+  constexpr float kArea = static_cast<float>(kSceneTileFlowPixels * kSceneTileFlowPixels);
+  const double unit = tiles.flow_height / 720.0;
+  std::vector<float> decor;
+  std::vector<float> decor_error;
+  std::vector<float> others;
+  int moving = 0;
+  int shifted = 0;
+  int effects = 0;
+  for (std::size_t i = 0; i < camera.checks.size() && i < tiles.tiles.size(); ++i) {
+    const SceneTileCheck& t = camera.checks[i];
+    if (t.pixels < scene::kCheckCover * kArea) continue;
+    const bool kept = i < camera.decor.size() && camera.decor[i] != 0U;
+    (kept ? decor : others).push_back(t.moving);
+    if (kept) decor_error.push_back(t.error);
+    const bool by_shift =
+        t.l1 >= scene::kCheckFloor * t.pixels && std::hypot(t.sx, t.sy) >= scene::kShiftMoving * unit;
+    if (t.moving >= scene::kMovingShare) {
+      ++moving;
+    } else if (by_shift) {
+      ++shifted;
+    }
+    const SceneTileSums& sums = tiles.tiles[i];
+    const float cost = sums.cells > 0.0F ? sums.cost / sums.cells : 0.0F;
+    if (t.moving >= scene::kEffectShare && cost >= scene::kEffectCost) ++effects;
+  }
+  std::cout << "image " << decor.size() + others.size() << ' ' << decor.size() << ' ' << centile(decor, 50)
+            << ' ' << centile(decor, 90) << ' ' << centile(decor, 99) << ' ' << centile(decor_error, 50)
+            << ' ' << others.size() << ' ' << centile(others, 50) << ' ' << centile(others, 90) << ' '
+            << moving << ' ' << shifted << ' ' << effects << "\n";
 }
 
 bool write_map(const std::string& path, const SceneMotion& m) {
@@ -173,6 +219,7 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history, carte
   for (const std::uint8_t d : camera.decor) kept += d;
   std::cout << "camera " << int{camera.fit} << ' ' << int{camera.refined} << ' ' << steps << ' '
             << camera.check << ' ' << camera.check_tiles << ' ' << camera.residual << ' ' << kept << "\n";
+  print_image(*tiles, camera);
   if (layers != nullptr && !layers->pair(a, b, m, refined_late)) {
     std::cerr << "carte_rejeu : vue des calques impossible : " << line << "\n";
     return false;

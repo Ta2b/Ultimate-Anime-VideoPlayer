@@ -87,9 +87,10 @@ bool refine_step(const Lumas& l, const SceneCameraRequest& request, std::array<d
   return scene_refine_solve(sums.data(), p.data());
 }
 
-// La vérification d'une tuile du décor (spec/scene_camera.h), sur les lumas du dernier flou.
+// La vérification d'une tuile (spec/scene_camera.h), sur les lumas du dernier flou.
 SceneTileCheck check_tile(const Lumas& l, const std::array<double, 6>& p, int col, int row) {
   const SceneCameraFrame frame = scene_camera_frame(l.width, l.height);
+  const float slack = scene_moving_slack(l.height);
   std::array<float, 6> pf{};
   for (std::size_t k = 0; k < 6; ++k) pf[k] = static_cast<float>(p[k]);
   SceneTileCheck out;
@@ -109,8 +110,11 @@ SceneTileCheck check_tile(const Lumas& l, const std::array<double, 6>& p, int co
         s.bx += t.gx * t.e;
         s.by += t.gy * t.e;
         s.pixels += 1.0F;
+        s.error += std::abs(t.e);
+        s.moving += scene_pixel_moving(t, slack) ? 1.0F : 0.0F;
       }
     }
+    if (step == 0) scene_check_seen(s, out);
     scene_check_step(s, out);
   }
   return out;
@@ -143,8 +147,7 @@ Result<SceneCameraRefined> scene_camera_refine(const Plane<std::uint8_t>& a, con
   out.tiles.resize(request.decor.size());
   for (int row = 0; row < rows; ++row) {
     for (int col = 0; col < cols; ++col) {
-      const std::size_t i = index(col, row, cols);
-      if (request.decor[i] != 0U) out.tiles[i] = check_tile(l, out.model, col, row);
+      out.tiles[index(col, row, cols)] = check_tile(l, out.model, col, row);
     }
   }
   return out;
@@ -160,11 +163,13 @@ void scene_camera_apply(SceneCamera& camera, const SceneCameraRefined& refined) 
     camera.model = refined.model;
     camera.refined = true;
   }
+  camera.checks = refined.tiles;
   constexpr float kArea = static_cast<float>(kSceneTileFlowPixels * kSceneTileFlowPixels);
   std::vector<double> both;
   std::vector<double> one;
-  for (const SceneTileCheck& t : refined.tiles) {
-    if (t.pixels < scene::kCheckCover * kArea) continue;
+  for (std::size_t i = 0; i < refined.tiles.size(); ++i) {
+    const SceneTileCheck& t = refined.tiles[i];
+    if (i >= camera.decor.size() || camera.decor[i] == 0U || t.pixels < scene::kCheckCover * kArea) continue;
     const float floor = scene::kCheckFloor * std::max(t.pixels, 1.0F);
     const double off = std::hypot(static_cast<double>(t.sx), static_cast<double>(t.sy));
     if (t.l2 >= floor) both.push_back(off);

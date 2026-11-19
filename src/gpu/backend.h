@@ -120,7 +120,8 @@ namespace kirari::gpu {
 // Lucas-Kanade, kernels/spec/scene_camera.h).
 // 57 : PairScores::blocks et blocks_x (l'écart de chaque bloc de la mesure de la paire, relu pour les tuiles
 // de SPAN).
-inline constexpr int kBackendAbi = 57;
+// 58 : SceneTileCheck gagne error et moving (l'écart après la caméra), vérification sur toutes les tuiles.
+inline constexpr int kBackendAbi = 58;
 
 using DeviceUuid = kirari::DeviceUuid;
 

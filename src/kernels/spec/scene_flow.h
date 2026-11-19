@@ -84,7 +84,8 @@ struct SceneFlowTiles {
 
 // Classe d'une tuile. Uncertain : le flux ne permet pas de trancher (aplat qui change ou dont le vecteur
 // contredit la caméra, vecteurs sans correspondance sans effet, mouvement sans caméra ajustée). Un aplat qui
-// suit la caméra et ne change guère est décor : rien n'y bouge de visible.
+// suit la caméra et ne change guère est décor : rien n'y bouge de visible. Caméra affinée, c'est l'écart
+// après la caméra mesuré sur l'image qui sépare le décor du dessin et de l'effet (kMovingShare).
 enum class SceneClass : std::uint8_t { Uncertain, Background, Drawing, Effect };
 
 struct SceneTile {
@@ -97,7 +98,8 @@ struct SceneTile {
   // lueur locale s'y voit (les tuiles qui bougent l'additionnent, app/play/upscale_tiles.h).
   float shift = 0.0F;
   // La tuile a changé, sans compter le grain : vecteur moyen d'au moins kStillMotion, vecteurs épars,
-  // un quart de vecteurs sans correspondance, ou un écart moyen d'au moins kChangeDiff. Brut, non lissé.
+  // un quart de vecteurs sans correspondance, un écart moyen d'au moins kChangeDiff, ou (caméra affinée) des
+  // pixels qui bougent après la caméra (kMovingShare). Brut, non lissé.
   bool changed = false;
 };
 
@@ -169,6 +171,21 @@ inline constexpr float kDrawingHeldShare = 0.01F;  // part de tuiles qui bougent
 inline constexpr double kHeldCamera = 0.25;        // translation nulle, pixels de travail
 inline constexpr double kHeldLinear = 0.002;       // partie linéaire égale à l'identité
 inline constexpr float kContradicted = 0.4F;  // facteur de confiance d'une classe contredite (jamais sûre)
+// La séparation par l'image. Deuxième passage de la porte 2.3 (19 novembre) : caméra ajustée sur 95 à 100 %
+// des paires, mais dessin rare (0 à 2 % des tuiles sur 5 extraits sur 8) et effet quasi absent ; sur les
+// dialogues, les personnages finissaient en décor. Une bouche ou des yeux qui changent ne déplacent pas le
+// vecteur moyen de NVOF, qui reste celui de la caméra, et une part sans correspondance n'existe guère (coût
+// au-dessus de kSceneCostHigh sur 0,5 % des vecteurs). D'où l'image : quand la caméra est affinée, chaque
+// tuile a son écart après la caméra (spec/scene_camera.h). Elle bouge hors de la caméra si au moins
+// kMovingShare de ses pixels bougent, ou si Lucas-Kanade la recale d'au moins kShiftMoving pixels à 720p dans
+// un sens résolu : effet si ses vecteurs coûtent (coût moyen d'au moins kEffectCost) et qu'au moins
+// kEffectShare de ses pixels bougent, dessin sinon. Elle ne bouge pas : décor, aplat compris (rien n'y bouge
+// de visible), quoi que disent ses vecteurs. Réglés sans mesure, à revoir sur la ligne « image » du banc 2.3.
+inline constexpr float kMovingShare = 0.1F;
+inline constexpr float kShiftMoving = 1.0F;  // pixels à 720p
+inline constexpr float kEffectShare = 0.3F;
+inline constexpr float kEffectCost =
+    12.0F;  // sur 255 ; 27 % des vecteurs coûtent plus de 8, 2,2 % plus de 16
 }  // namespace scene
 
 }  // namespace kirari::kernels

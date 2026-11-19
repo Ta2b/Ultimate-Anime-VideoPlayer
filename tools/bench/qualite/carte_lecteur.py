@@ -19,6 +19,8 @@ réglage moyen, indices temporels et carte de coût, puis la carte du lecteur re
 - la caméra : part des paires où elle est ajustée, où elle est tenue ; coupes et fondus probables ;
 - la caméra affinée par Lucas-Kanade comme dans le lecteur (porte 2.1) : part des paires affinées, écart du décor
   mesuré sur l'image (médiane, part sous 0,5 pixel à 720p), écart des vecteurs, tuiles gardées ;
+- l'écart après la caméra, qui sépare le dessin du décor : part de pixels qui bougent sur le décor (le bruit) et
+  sur les autres tuiles, tuiles qui bougent, recalées, effets par l'image ;
 - l'ajustement de la caméra : tuiles candidates contre le minimum demandé, paires où elles manquent, paires où
   le rejet des aberrants échoue, tuiles écartées (texture trop faible, coût, vecteurs épars), quartiles de la
   texture ;
@@ -81,7 +83,7 @@ def replay(args, frames, divisor):
         pairs = []
         for line in done.stdout.splitlines():
             head, *fields = line.split()
-            if head in ("diag", "camera"):  # les lignes qui suivent la carte de la même paire
+            if head in ("diag", "camera", "image"):  # les lignes qui suivent la carte de la même paire
                 pairs[-1][head] = [float(f) for f in fields]
                 continue
             k = len(pairs)
@@ -126,7 +128,26 @@ def measure(pairs, frames):
             "camera_ajustee": float(np.mean([p["camera_fit"] for p in pairs])),
             "camera_tenue": float(np.mean([p["background_held"] for p in pairs])),
             "coupes": int(sum(p["cut"] for p in pairs)), "fondus": int(sum(p["fade"] for p in pairs)),
-            "ajustement": fit_diagnosis(pairs), "affinage": camera_diagnosis(pairs, frames.shape[1])}
+            "ajustement": fit_diagnosis(pairs), "affinage": camera_diagnosis(pairs, frames.shape[1]),
+            "image": image_diagnosis(pairs)}
+
+
+def image_diagnosis(pairs):
+    """L'écart après la caméra (ligne image de carte_rejeu), sur les paires où il est mesuré : part de ces paires,
+    centiles médians de la part de pixels qui bougent sur le décor (50, 90, 99) et sur les autres tuiles (50, 90),
+    écart moyen |e| médian du décor (codes), part des tuiles mesurées qui bougent par leurs pixels, par le seul
+    recalage, et part des effets par l'image."""
+    d = np.array([p["image"] for p in pairs if "image" in p], np.float64)
+    if not len(d):
+        return {}
+    measured = d[d[:, 0] > 0]
+    if not len(measured):
+        return {"mesuree": 0.0}
+    tiles = measured[:, 0]
+    med = lambda j: float(np.median(measured[:, j]))  # noqa: E731
+    return {"mesuree": float(len(measured) / len(d)), "decor": [med(2), med(3), med(4)], "decor_ecart": med(5),
+            "autres": [med(7), med(8)], "bougent": float(np.mean(measured[:, 9] / tiles)),
+            "decalees": float(np.mean(measured[:, 10] / tiles)), "effets": float(np.mean(measured[:, 11] / tiles))}
 
 
 def camera_diagnosis(pairs, flow_height):
@@ -214,6 +235,22 @@ def report(rows, tail):
             continue
         L.append(f"| {name} | {pct(f['affinee'])} | {pct(f['mesuree'])} | {f['ecart_image']:.2f} | "
                  f"{pct(f['sous_demi'])} | {f['ecart_vecteurs']:.2f} | {f['gardees']:.0f} |")
+    L += ["", "## Écart après la caméra (séparation dessin / décor)", "",
+          "Sur les paires où il est mesuré (caméra affinée) : part de pixels qui bougent après la caméra, "
+          "centiles médians 50 / 90 / 99 sur les tuiles du décor (le bruit : kMovingShare doit rester au-dessus) "
+          "et 50 / 90 sur les autres ; écart moyen |e| médian du décor, codes ; part des tuiles mesurées qui "
+          "bougent par leurs pixels (kMovingShare, 0.1), par le seul recalage (kShiftMoving, 1 pixel à 720p), et "
+          "effets par l'image (kEffectShare 0.3, kEffectCost 12).", "",
+          "| Extrait | Mesurée | Décor 50 / 90 / 99 | Écart décor | Autres 50 / 90 | Bougent | Recalées | Effets |",
+          "|---|---:|---|---:|---|---:|---:|---:|"]
+    for name, (_, m) in rows.items():
+        f = m.get("image")
+        if not f or "decor" not in f:
+            continue
+        dd, a = f["decor"], f["autres"]
+        L.append(f"| {name} | {pct(f['mesuree'])} | {100 * dd[0]:.1f} / {100 * dd[1]:.1f} / {100 * dd[2]:.1f} % | "
+                 f"{f['decor_ecart']:.2f} | {100 * a[0]:.1f} / {100 * a[1]:.1f} % | {pct(f['bougent'])} | "
+                 f"{pct(f['decalees'])} | {pct(f['effets'])} |")
     L += ["", f"Coûts de NVOF, tous extraits : 99e centile {tail['c99']}, 99,9e {tail['c999']} ; part des vecteurs "
               "au-dessus de " + ", ".join(f"{s} : {100 * v:.3f} %" for s, v in tail["au_dessus"].items())
           + f" (kSceneCostHigh = {COST_HIGH}).", "",
