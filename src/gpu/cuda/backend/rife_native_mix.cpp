@@ -23,6 +23,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/native_mix.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
+#include "gpu/cuda/backend/rife_mix.h"
 #include "gpu/cuda/backend/rife_native_trial.h"
 
 namespace kirari::gpu::cuda {
@@ -91,18 +92,6 @@ std::vector<int> route_of(const Options& options) {
   std::vector<int> route(options.size());
   std::ranges::transform(options, route.begin(), [](int o) { return o - 1; });
   return route;
-}
-
-// Les options qu'un morceau peut prendre (times : [morceau][option]) : TensorRT, et chaque réseau plus
-// rapide que lui (un réseau plus lent ne gagne rien sur TensorRT, la référence).
-std::vector<std::vector<int>> candidates(const std::vector<std::vector<double>>& times) {
-  std::vector<std::vector<int>> out(times.size());
-  for (std::size_t p = 0; p < times.size(); ++p) {
-    out[p].push_back(0);
-    for (std::size_t o = 1; o < times[p].size(); ++o)
-      if (times[p][o] < times[p][0]) out[p].push_back(static_cast<int>(o));
-  }
-  return out;
 }
 
 std::string option_name(int o) {
@@ -215,32 +204,23 @@ struct Mix {
   std::string effects;
 };
 
-// Le choix de native_mix.h, la base à TensorRT (option 0 de chaque morceau, l'erreur nulle contre la
-// référence) : un morceau prend TensorRT ou un réseau plus rapide que lui (chain : la sortie de la chaîne
-// pour des options). La dernière sortie vérifiée est celle du mélange retenu. Rien ne tient : tout à
-// TensorRT.
+// Le choix de native_mix.h sur le problème de rife_mix.h (chain : la sortie de la chaîne pour des
+// options). La dernière sortie vérifiée est celle du mélange retenu. Rien ne tient : tout à TensorRT.
 template <class Chain>
 std::expected<Mix, Refusal> choose_mix(const Grid& times, const std::vector<float>& want, std::size_t plane,
                                        bool motion, double min_db, Chain&& chain) {
   const native_mix::Spans spans = spans_of(plane, motion);
-  const native_mix::Problem problem{.times = times,
-                                    .cands = candidates(times),
-                                    .base = Options(times.size(), 0),
-                                    .seeds = {},
-                                    .peak = native_mix::group_peak(want, spans),
-                                    .floor = std::vector<double>(spans.size(), 0.0),
-                                    .min_db = min_db};
+  const native_mix::Problem problem = rife_mix::problem(times, native_mix::group_peak(want, spans), min_db);
   std::vector<float> last;
   auto chosen =
       native_mix::choose(problem, [&](const Options& o) -> std::expected<native_mix::Eval, Refusal> {
         auto got = chain(o);
         if (!got) return std::unexpected(std::move(got.error()));
         last = std::move(*got);
-        std::vector<double> mse = native_mix::group_mse(want, last, spans);
-        return native_mix::Eval{.want = mse, .base = mse};
+        return rife_mix::eval(native_mix::group_mse(want, last, spans));
       });
   if (!chosen) return std::unexpected(std::move(chosen.error()));
-  Mix mix{.options = chosen->held ? chosen->options : Options(times.size(), 0)};
+  Mix mix{.options = rife_mix::kept(*chosen, times.size())};
   std::string measured;
   for (std::size_t p = 0; p < times.size(); ++p)
     for (const int o : problem.cands[p])
