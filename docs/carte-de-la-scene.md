@@ -101,7 +101,12 @@ Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`,
   1 416 dont 46 ainsi faux (un départ qui glisse vers une autre solution, souvent une image sur trois sur un
   dessin en trois), et écartait des départs justes là où NVOF biaise la caméra de 2 à 9 pixels. Un affinage
   pas fini quand l'étage décide de sa paire est relu plus tard (`SceneMap::last_refined`, pixels de travail) :
-  les calques reprennent la caméra d'une paire voisine.
+  les calques reprennent la caméra d'une paire voisine. Sur la RTX 4070 Ti (19 novembre, RIFE 4.25 Auto et
+  SPAN, trois tours de 60 s) : caméra affinée sur toutes les paires ajustées (Re:Zero 16:00, 1 339 sur 1 339 ;
+  panoramique, 424 sur 424), aucun affinage perdu (les 57 et 22 arrivés trop tard sont tous relus ensuite),
+  calques sur 74 à 83 % des paires. L'affinage coûte 0,85 ms en médiane (p95 1,95 ms) sur la file de NVOF,
+  l'hôte 69 µs par paire lancée et 214 µs par carte tirée ; la lecture avec la carte reste à 131 i/s contre
+  130 sans (p95 du retard 2,0 à 2,5 ms contre 2,4 à 2,5).
 - **Vérification**, celle que mesure la porte : sur chaque tuile (décor ou non), deux pas de Lucas-Kanade sur le
   décalage qui reste ; une tuile texturée dans un seul sens se mesure en travers du bord. `SceneMotion::residual`
   est alors la médiane de ces décalages sur les tuiles du décor (`residual_tiles` tuiles), sinon l'écart des
@@ -182,3 +187,11 @@ au-dessus de 3 codes ; le banc 2.1 y ajuste sa caméra sur tout bloc où la luma
 prend maintenant les tuiles dès 1,5 code (`kFitTexture`) sur 3 % de l'image, l'aplat est sous 3 codes. Et aucun
 vecteur n'était « sans correspondance » : NVOF ne donne presque jamais un coût au-dessus de 32 (99e centile 20,
 99,9e 30), le seuil était à 160 ; il est à 24.
+
+Passage du 19 novembre au soir (RTX 4070 Ti, commit 9baf5c9c, les 8 extraits plus la lueur de 16:17 et l'aura
+de 16:40) : 80 à 99,6 % de tuiles sûres (23 à 67 % au passage précédent), 0 à 19 % d'incertain, bascule de 0 à
+2,1 % ; dessin 25 % sur le premier panoramique, 17 % sur le cinquième, 0 sur les dialogues ; caméra affinée
+sur toutes les paires ajustées, écart sur l'image de 0,00 à 0,12 pixel. Les effets sont là, mais sur peu de
+l'image : 0,1 à 0,3 % des tuiles, sur 17 paires sur 159 de l'aura et 34 de la lueur au rejeu des mêmes
+vecteurs ; le tableau de `carte_lecteur.py` les arrondissait à 0, il les donne maintenant au dixième, avec
+la part des paires qui en ont. Reste, pour la porte, à juger sur les vues la classe des tuiles sûres.

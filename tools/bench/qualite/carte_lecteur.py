@@ -85,7 +85,7 @@ def replay(args, frames, divisor):
         pairs = []
         for line in done.stdout.splitlines():
             head, *fields = line.split()
-            if head in ("diag", "camera", "image"):  # les lignes qui suivent la carte de la même paire
+            if head in ("diag", "camera", "image", "tot"):  # les lignes qui suivent la carte de la même paire
                 pairs[-1][head] = [float(f) for f in fields]
                 continue
             k = len(pairs)
@@ -125,6 +125,7 @@ def measure(pairs, frames):
     doubles = [k for k in range(len(frames) - 1) if np.array_equal(frames[k], frames[k + 1])]
     return {"paires": len(pairs), "doublons": len(doubles),
             "classes": [float((kinds == j).mean()) for j in range(4)], "sures": float(sure.mean()),
+            "paires_effet": float((kinds == 3).any((1, 2)).mean()),
             "bascule": float(flips.mean()) if len(flips) else math.nan,
             "bascule_tenue": float(flips[held].mean()) if held.any() else math.nan,
             "camera_ajustee": float(np.mean([p["camera_fit"] for p in pairs])),
@@ -204,15 +205,17 @@ def report(rows, tail):
     L = ["# Carte de la scène du lecteur (porte 2.3)", "",
          "Toutes les paires voisines, doublons compris, à la taille du flux du lecteur ; NVOF grille 4, réglage "
          "moyen, indices temporels ; carte rejouée par carte_rejeu (lissage compris). Sûres : décor ou dessin de "
-         f"confiance ≥ {SURE}. Bascule : tuiles qui changent de classe d'une paire à la suivante ; tenue : sur les "
-         "paires où la caméra est tenue.", "",
-         "| Extrait | Flux | Paires (doublons) | Décor / dessin / effet / incertain | Sûres | Bascule | Bascule tenue "
-         "| Caméra ajustée / tenue | Coupes, fondus |",
-         "|---|---|---:|---|---:|---:|---:|---|---|"]
+         f"confiance ≥ {SURE}. Effet : part de toutes les tuiles, au dixième (une lueur couvre peu de l'image), "
+         "puis part des paires qui en ont au moins une. Bascule : tuiles qui changent de classe d'une paire à la "
+         "suivante ; tenue : sur les paires où la caméra est tenue.", "",
+         "| Extrait | Flux | Paires (doublons) | Décor / dessin / effet / incertain | Paires avec effet | Sûres "
+         "| Bascule | Bascule tenue | Caméra ajustée / tenue | Coupes, fondus |",
+         "|---|---|---:|---|---:|---:|---:|---:|---|---|"]
     for name, (size, m) in rows.items():
         c = m["classes"]
         L.append(f"| {name} | {size[0]} × {size[1]} | {m['paires']} ({m['doublons']}) | "
-                 f"{100 * c[1]:.0f} / {100 * c[2]:.0f} / {100 * c[3]:.0f} / {100 * c[0]:.0f} | {pct(m['sures'])} | "
+                 f"{100 * c[1]:.0f} / {100 * c[2]:.0f} / {100 * c[3]:.1f} / {100 * c[0]:.0f} | "
+                 f"{pct(m.get('paires_effet', math.nan))} | {pct(m['sures'])} | "
                  f"{pct(m['bascule'])} | {pct(m['bascule_tenue'])} | {100 * m['camera_ajustee']:.0f} / "
                  f"{100 * m['camera_tenue']:.0f} % | {m['coupes']}, {m['fondus']} |")
     L += ["", "## Ajustement de la caméra", "",
