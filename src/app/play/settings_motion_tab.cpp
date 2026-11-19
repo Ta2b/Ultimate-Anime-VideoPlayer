@@ -58,10 +58,11 @@ void motion_720p_checkbox(PlaySettings& d) {
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Estimate motion at 720p"),
-      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster; "
-               "without Steady slow pans, slow pans can ripple instead of moving in even steps. Speed: "
-               "about 15 % more frames in Auto (RIFE pass about 2× faster). Quality impact: minor loss "
-               "with Steady slow pans on. Recommended: off. RIFE only."),
+      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, "
+               "but slow pans can ripple instead of moving in even steps. Speed: about 15 % more frames in "
+               "Auto (RIFE pass about 2× faster). "
+               "Quality impact: moderate loss on slow pans. "
+               "Recommended: off. RIFE only."),
       panel::Apply::Reload);
 }
 

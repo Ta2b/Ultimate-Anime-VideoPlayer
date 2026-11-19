@@ -19,8 +19,8 @@ namespace ajp::app::play {
 
 // DistilDRBA dans l'Auto (tranches Qualité et Ultra) : faux tant que sa porte de qualité n'est pas passée. La
 // porte (décision 8 de docs/audits/SYNTHESE.md, A07-13) : au banc de qualité (docs/banc-qualite.md), sur des
-// fenêtres d'un vrai épisode, DistilDRBA doit faire au moins aussi bien que RIFE 4.26 contre l'image vraie,
-// et tenir son temps sur la carte. D'ici là ces tranches prennent RIFE 4.26 (level_rife_model). Le choix
+// fenêtres d'un vrai épisode, DistilDRBA doit faire au moins aussi bien que RIFE 4.25 contre l'image vraie,
+// et tenir son temps sur la carte. D'ici là ces tranches prennent RIFE 4.25 (level_rife_model). Le choix
 // manuel de DistilDRBA reste ouvert.
 inline constexpr bool kDistilDrbaInAuto = false;
 
@@ -47,13 +47,12 @@ std::string_view key(Priority priority);    // « fluidity », « balance », «
 std::string_view label(Priority priority);  // « Fluidité », « Équilibre », « Image »
 std::optional<Priority> priority_from_key(std::string_view text);
 
-// Les modèles d'un niveau, en FP16 : le SPAN Balanced Sharp (b8f64) et RIFE 4.26 aux niveaux Qualité et Ultra
+// Les modèles d'un niveau, en FP16 : le SPAN Balanced Sharp (b8f64) et RIFE 4.25 aux niveaux Qualité et Ultra
 // (Tier::Quality et Tier::Ultra), le SPAN par défaut (Performance Sharp, b5f48 ; rendu vide) et RIFE 4.22
 // lite en dessous. La calibration joue ces mêmes modèles (machine_calibration.h), puis ceux de Qualité quand
 // la chaîne tient au plus haut palier : calibrer ne fait plus baisser le modèle (A49-01, A38-02) et peut le
 // monter (C07-03). Le b8f64 FP16 est mesuré à 14,25 ms en 1088 × 1920 sur une RTX 4070 Ti
-// (docs/span-fp8-cutlass.md), pour un seul SPAN par image source (41,7 ms à 24 i/s) ; la place de Qualité l'a
-// été avec RIFE 4.25, le modèle de Qualité depuis que 4.26 a quitté le menu.
+// (docs/span-fp8-cutlass.md), pour un seul SPAN par image source (41,7 ms à 24 i/s), avec RIFE 4.25.
 inline constexpr std::string_view kQualitySpanModel =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx";
 inline constexpr std::string_view kQualityRifeModel = "rife_v4.25.onnx";
