@@ -52,10 +52,10 @@ bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr, 
 // La variante du cache (media/shot_cache.h) : le chemin de décodage, et le gain du limiteur de flashs avec
 // lequel les séquences de flashs ont été marquées (B42-07) ; un autre écran les juge à nouveau.
 // La recherche des visages (face_skin) en fait une autre : un cache sans visages se refait quand elle
-// s'allume.
-std::uint32_t cache_variant(bool nvdec, double flash_gain, bool faces) {
+// s'allume. --no-probe-flow aussi : une découpe sans le flux de NVIDIA ne reprend pas celle faite avec.
+std::uint32_t cache_variant(bool nvdec, double flash_gain, bool faces, bool flow) {
   const auto gain = static_cast<std::uint32_t>(std::lround(std::clamp(flash_gain, 0.0, 100.0) * 100.0));
-  return (nvdec ? 1U : 0U) + (gain << 1U) + (faces ? 1U << 30U : 0U);
+  return (nvdec ? 1U : 0U) + (gain << 1U) + (faces ? 1U << 30U : 0U) + (flow ? 0U : 1U << 31U);
 }
 
 // Le thread de l'analyse garde au cache la part faite quand elle s'arrête (B42-05), sauf si la vidéo y est
@@ -130,7 +130,7 @@ ShotJob new_job(const ShotWork& work, const std::filesystem::path& file, const S
   job.cache = std::make_shared<ShotJob::Cache>();
   job.flash_gain = flash_gain_for(output);
   job.faces = faces;
-  job.variant = cache_variant(!work.probe.cuvid_resize.empty(), job.flash_gain, faces);
+  job.variant = cache_variant(!work.probe.cuvid_resize.empty(), job.flash_gain, faces, work.probe.flow);
   job.timeline = std::make_shared<media::ShotTimeline>();
   return job;
 }
@@ -220,6 +220,7 @@ void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySet
 ShotWork shot_work(std::filesystem::path cache_dir, const PlayOptions& options) {
   ShotWork work{.cache_dir = std::move(cache_dir)};
   if (options.probe_nvdec) work.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
+  work.probe.flow = options.probe_flow;
   work.shot_cuts = options.shot_cuts;
   work.shot_plan = options.shot_plan;
   // Le gain du limiteur de flashs de la pré-analyse suit le pic de l'écran de chaque vidéo (new_job, B42-07).

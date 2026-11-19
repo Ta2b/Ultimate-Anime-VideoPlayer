@@ -182,6 +182,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .backend = backend.get(),
       .engine = engine.get(),
       .temporal_fix = temporal_fix.get(),
+      .temporal_encoder = temporal_encoder.get(),
+      .temporal_features = temporal_features,
       .skip_held = skip_held && clock != nullptr,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
@@ -369,6 +371,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
   c.one_lane = o.one_lane || !o.lanes;
   c.rife_warm = o.rife_warm;
+  c.temporal_fix_whole = o.temporal_fix_whole;
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
   c.skip_held = o.skip_held;
@@ -385,6 +388,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
           .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
                     (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
                     (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
+                    (p.options.span_native ? gpu::kTrialSpanNative : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 

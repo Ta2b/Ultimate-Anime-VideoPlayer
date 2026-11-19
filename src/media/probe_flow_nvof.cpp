@@ -4,13 +4,13 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <expected>
 #include <format>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "media/cuda_driver.h"
-#include "media/log.h"
 #include "media/probe_flow.h"
 
 // <cuda.h>, que l'en-tête inclut, est media/nvof_cuda/cuda.h : quatre types, sans le toolkit.
@@ -175,12 +175,8 @@ struct ProbeFlow::Session {
 ProbeFlow::ProbeFlow(std::unique_ptr<Session> session) : session_(std::move(session)) {}
 ProbeFlow::~ProbeFlow() = default;
 
-std::unique_ptr<ProbeFlow> ProbeFlow::open(int device) {
-  auto log = make_logger();
-  const auto off = [&](const std::string& why) -> std::unique_ptr<ProbeFlow> {
-    log->info("pré-analyse des plans : sans flux optique NVIDIA ({})", why);
-    return nullptr;
-  };
+std::expected<std::unique_ptr<ProbeFlow>, std::string> ProbeFlow::open(int device) {
+  const auto off = [](std::string why) { return std::unexpected(std::move(why)); };
   auto driver = CudaDriver::load();
   if (!driver) return off(driver.error().detail);
   void* library = open_library();
@@ -198,8 +194,7 @@ std::unique_ptr<ProbeFlow> ProbeFlow::open(int device) {
   session->driver = std::move(*driver);
   session->context = std::move(*context);
   session->stream = *stream;
-  if (std::string error = session->start(); !error.empty()) return off(error);
-  log->info("pré-analyse des plans : flux optique NVIDIA en {}x{}", kProbeFlowWidth, kProbeFlowHeight);
+  if (std::string error = session->start(); !error.empty()) return off(std::move(error));
   return std::unique_ptr<ProbeFlow>(new ProbeFlow(std::move(session)));
 }
 
@@ -210,19 +205,29 @@ std::optional<ProbeMotion> ProbeFlow::push(const DecodedFrame& frame) {
     previous_.reset();
     return std::nullopt;
   }
+  return push(std::move(*current));
+}
+
+std::optional<ProbeMotion> ProbeFlow::push(ProbeLuma current) {
+  if (session_ == nullptr || current.size() != static_cast<std::size_t>(kProbeFlowWidth) * kProbeFlowHeight)
+    return std::nullopt;
   std::optional<ProbeMotion> out;
   if (previous_) {
-    auto vectors = session_->run(*previous_, *current);
+    auto vectors = session_->run(*previous_, current);
     if (!vectors) {
-      make_logger()->warn("pré-analyse des plans : flux optique NVIDIA arrêté ({})", vectors.error());
+      failure_ = std::move(vectors.error());
       session_.reset();
       previous_.reset();
       return std::nullopt;
     }
-    out = motion_of(*previous_, *current, *vectors);
+    out = motion_of(*previous_, current, *vectors);
   }
   previous_ = std::move(current);
   return out;
+}
+
+std::optional<std::string> ProbeFlow::take_failure() {
+  return std::exchange(failure_, std::nullopt);
 }
 
 void ProbeFlow::forget() {

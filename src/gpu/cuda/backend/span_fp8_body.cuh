@@ -14,6 +14,7 @@
 #include "gpu/cuda/backend/span_fp8_body.h"
 #include "gpu/cuda/backend/span_fp8_kernels.cuh"
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
+#include "gpu/cuda/backend/span_native16_edges.cuh"
 #include "gpu/span_fp8/acc16_policy.h"
 #include "gpu/span_fp8/quantize.h"
 
@@ -99,7 +100,9 @@ class Body final : public SpanFp8Body {
 
  public:
   Body(int height, int width)
-      : height_(height), width_(width), h_(height / 2), w_(width / 2), npix_(std::int64_t{h_} * w_) {}
+      : height_(height), width_(width), h_(height / 2), w_(width / 2), npix_(std::int64_t{h_} * w_) {
+    edges_.size(height, width);
+  }
   ~Body() override {
     if (overflow_host_ != nullptr) static_cast<void>(cudaFreeHost(overflow_host_));
   }
@@ -183,6 +186,13 @@ class Body final : public SpanFp8Body {
   std::array<LTH, kBlocks> lc16_;
   void* workspace_ = nullptr;
   __half* unshuffled_ = nullptr;  // recouvre r1 (posé par bind)
+  // Les bords natifs (SpanFp8Weights::native_edges) : conv_1, conv_cat et to_pixel par les noyaux du FP16
+  // natif ; les adresses que bind pose pour eux.
+  NativeEdges<Ch> edges_;
+  bool native_edges_ = false;
+  std::uint8_t* x0_ = nullptr;
+  __half* cat_in_ = nullptr;
+  __half* cat_out_ = nullptr;
   cudaError_t attribute_ = cudaSuccess;
 };
 
@@ -191,6 +201,7 @@ bool Body<Ch, BlockAlg, Fp16>::upload(const SpanFp8Weights& weights, SpanFp8Stat
                                       std::string& error) {
   used_ = weights.blocks;
   acc16_ = weights.acc16;
+  native_edges_ = weights.native_edges;
   scales_.fill(1.F);
   if (!Fp16)
     for (std::size_t i = 0; i < static_cast<std::size_t>(1 + 3 * used_); ++i) scales_[i] = weights.scales[i];
@@ -216,6 +227,7 @@ bool Body<Ch, BlockAlg, Fp16>::upload(const SpanFp8Weights& weights, SpanFp8Stat
     return false;
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b)
     if (!upload_block(b, weights, status, error)) return false;
+  if (native_edges_ && !sent(edges_.upload(weights), "poids des bords natifs")) return false;
   if (acc16_ && overflow_host_ == nullptr) {
     void* host = nullptr;
     if (!sent(cudaHostAlloc(&host, sizeof(int), cudaHostAllocMapped), "mot de débordement")) return false;
@@ -339,6 +351,9 @@ void Body<Ch, BlockAlg, Fp16>::bind(void* base) {
   // et r2 qui se suivent (2·Ch·kAct o par ligne).
   unshuffled_ = reinterpret_cast<__half*>(r1);
   auto* cat_out = reinterpret_cast<__half*>(r1);
+  x0_ = x[0];
+  cat_in_ = cat_in;
+  cat_out_ = cat_out;
 
   {  // conv_1 : sorties FP8 (entrée du bloc 1) et FP16 (tranche 0 de la concaténation)
     sk::KP k;
@@ -397,9 +412,14 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
     return false;
   }
   static_cast<void>(cudaGetLastError());  // une erreur d'un appel d'avant n'est pas celle de ces lancements
-  const int grid = static_cast<int>((npix_ + 255) / 256);
-  unshuffle_kernel<<<grid, 256, 0, stream>>>(static_cast<const __half*>(input), unshuffled_, height_, width_);
-  c1_.launch(stream);
+  if (native_edges_) {  // dégroupage fondu dans conv_1 : E4M3 du bloc 1 et tranche 0 en une passe
+    edges_.first(stream, input, x0_, 1.F / scales_[0], cat_in_, kConcat);
+  } else {
+    const int grid = static_cast<int>((npix_ + 255) / 256);
+    unshuffle_kernel<<<grid, 256, 0, stream>>>(static_cast<const __half*>(input), unshuffled_, height_,
+                                               width_);
+    c1_.launch(stream);
+  }
   for (std::size_t b = 0; b < static_cast<std::size_t>(used_); ++b) {
     if (f16_now()) {
       la16_[b].launch(stream);
@@ -411,7 +431,9 @@ bool Body<Ch, BlockAlg, Fp16>::launch_body(cudaStream_t stream, const void* inpu
       lc_[b].launch(stream);
     }
   }
-  if (f16_now())
+  if (native_edges_)
+    edges_.cat(stream, cat_in_, kConcat, cat_out_, f16_now());
+  else if (f16_now())
     cat16_.launch(stream);
   else
     cat_.launch(stream);
@@ -436,7 +458,9 @@ bool Body<Ch, BlockAlg, Fp16>::launch_tail(cudaStream_t stream, void* output, co
     pix.kp.surf_h = ring.height;
     pix.launch(stream);
   };
-  if (f16_now())
+  if (native_edges_)
+    edges_.pixel(stream, cat_out_, output, ring, f16_now());
+  else if (f16_now())
     tail(pix16_);
   else
     tail(pix_);

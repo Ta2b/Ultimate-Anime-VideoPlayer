@@ -1,6 +1,6 @@
 # Stabilisation temporelle (TemporalFix)
 
-À jour, 18 novembre 2026. Réglage : Vidéo > Agrandissement > Stabilité, « Stabilisation temporelle »
+À jour, 19 novembre 2026. Réglage : Vidéo > Agrandissement > Stabilité, « Stabilisation temporelle »
 (`[image] temporal_fix` de `play.toml` : `off`, `light`, `normal`, `strong`), et dans Avancé « Stabilisation à
 pleine taille » (`temporal_fix_full`, éteinte : demi-taille). Éteinte par défaut, l'Auto n'y touche pas.
 
@@ -37,11 +37,28 @@ savoir. Stabiliser avant l'interpolation aide aussi RIFE : moins de bruit, des f
   l'image reste entier, seule la correction est basse fréquence (le grain le plus fin reste tel quel). Tout se
   fait dans le graphe : TensorRT le fond avec le reste. Vérifié sur processeur (onnxruntime) : le graphe coupé
   à pleine taille rend exactement celui de pifroggi.
-- `src/app/play/chain_temporal.cpp` : la construction et le chargement (TensorRT, voie Upscale). Un refus laisse
-  la lecture sans elle, retenu pour la séance.
+- **Cache de l'encodeur** (`src/prepare/onnx_cache.h`, lot B du chantier AnimeJaNai) : le réseau encode ses
+  sept images (quatre convolutions image par image, puis un Resize ×2 : 21 % des multiplications du réseau
+  en 1080p) avant de les aligner. Une image lue par sept passes de suite était encodée sept fois. Le modèle
+  livré donne maintenant deux moteurs : l'**encodeur** (une image 1 × 3 × H × W → ses traits 1 × 4 × H × W),
+  lancé une fois par image ingérée, et la **fenêtre**, le graphe d'origine où la sortie de l'encodeur
+  (`/encode/Resize_output_0`) est remplacée par la concaténation de sept entrées de traits gardés
+  (`features_0` à `features_6`), à côté des sept images. Vérifié sur le graphe : l'encodeur ne lit que son
+  image (lot de sept, convolutions sans mélange entre images), dans s1, s2 et s3. Vérifié sur processeur
+  (onnxruntime, s2) : à pleine taille, encodeur puis fenêtre rendent au bit près le graphe en un morceau ; à
+  demi-taille, 75 dB. En demi-taille, l'encodeur moyenne son image 2 × 2 et range ses traits à demi-taille
+  en DepthToSpace (1 × 1 × H × W), que la fenêtre remet en place par SpaceToDepth : toutes les entrées
+  gardent les dimensions H et W, et le profil de construction les donne à toutes (`ModelSource::twins`, au
+  nombre de canaux près). Les traits sont gardés à côté de leur image dans `temporal_window` : le reflet aux
+  bords et les époques s'appliquent aux deux à la fois. Idée reprise de libaji (`src/native/tfix.cpp`,
+  commit `1fea490`), écrite sur nos propres découpes ; aucune ligne reprise. Retour en arrière : `--debug --no-tfix-cache`
+  reconstruit le graphe en un seul moteur, chaque image encodée à chaque passe (même sortie).
+- `src/app/play/chain_temporal.cpp` : la construction et le chargement des deux moteurs (TensorRT, voie
+  Upscale). Un refus laisse la lecture sans elle, retenu pour la séance.
 - `src/app/play/temporal_window.*` : les tampons bruts gardés par pts et le choix des sept images.
 - `src/app/play/upscale_temporal.cpp` : `ingest_source` passe par TemporalFix quand il est chargé ; ses
-  ingestions brutes restent dans `ingest_plain`.
+  ingestions brutes restent dans `ingest_plain`, et chaque image ingérée pour une passe est encodée juste
+  avant elle, sur la même voie.
 
 ## Avance et bords
 
@@ -79,6 +96,9 @@ Maintenant :
 | Libre, niveau 5 + pavage 3 (réglages de SPAN) | 5,4 Mo | 42,4 ms | 482 s |
 | Libre, niveau 3, sans pavage (pleine taille) | 4,4 Mo | 27,9 ms | 79 s |
 | Le même réseau en 540p (ce que tourne la demi-taille) | | 6,2 ms | |
+
+Ces temps sont ceux du graphe en un morceau, avant le cache de l'encodeur : à mesurer de nouveau sur la RTX
+(cible du lot B, étape 1 : 20 ms ou moins à pleine taille en 1080p).
 
 À 24 i/s, la demi-taille prend environ 15 % de la carte, la moitié de SPAN FP8 (12,5 ms) ; la pleine taille
 environ 67 %. Le graphe à demi-taille complet (moyennes, Resize, addition à pleine taille) reste à mesurer sur

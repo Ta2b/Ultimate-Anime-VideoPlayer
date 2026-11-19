@@ -5,14 +5,16 @@
 //
 // Deux parties : motion_of, pur calcul sur le processeur (les vecteurs et les deux lumas donnent la part de
 // blocs sans correspondance), testé sans GPU ; ProbeFlow, la session NVOF (bibliothèque du pilote chargée à
-// l'exécution, comme media/cuda_driver.h), qui rend rien sans carte NVIDIA, sans pilote ou sur un refus :
-// le découpeur se comporte alors exactement comme avant.
+// l'exécution, comme media/cuda_driver.h), qui ne s'ouvre pas sans carte NVIDIA, sans pilote ou sur un refus
+// : le découpeur se comporte alors exactement comme avant.
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "core/frame.h"
@@ -55,9 +57,9 @@ std::optional<ProbeLuma> probe_luma_of(const DecodedFrame& frame);
 // Sans indices temporels : le résultat d'une paire ne dépend pas de l'historique (sauts, cache, export).
 class ProbeFlow {
  public:
-  // Ouvre la session sur l'appareil CUDA d'ordinal device ; rien (et une ligne de journal) sans carte NVIDIA,
-  // sans flux optique dans le pilote, ou sur un refus.
-  static std::unique_ptr<ProbeFlow> open(int device = 0);
+  // Ouvre la session sur l'appareil CUDA d'ordinal device ; la raison du refus sans carte NVIDIA, sans flux
+  // optique dans le pilote, ou sur un refus de NVOF.
+  static std::expected<std::unique_ptr<ProbeFlow>, std::string> open(int device = 0);
   ~ProbeFlow();
   ProbeFlow(const ProbeFlow&) = delete;
   ProbeFlow& operator=(const ProbeFlow&) = delete;
@@ -67,6 +69,10 @@ class ProbeFlow {
   // Le mouvement de frame face à l'image poussée juste avant ; rien pour la première après forget(), pour un
   // format non lu, ou sur un refus de NVOF (la session se ferme alors pour de bon).
   std::optional<ProbeMotion> push(const DecodedFrame& frame);
+  // La même chose pour une luma déjà réduite (ProbeLuma) : le banc des coupes (tools/bench/coupes).
+  std::optional<ProbeMotion> push(ProbeLuma luma);
+  // Le refus qui a fermé la session pendant push, une seule fois.
+  std::optional<std::string> take_failure();
   // Une rupture de la suite d'images (un saut de l'analyse) : la prochaine image n'a pas de précédente.
   void forget();
 
@@ -76,6 +82,7 @@ class ProbeFlow {
   explicit ProbeFlow(std::unique_ptr<Session> session);
   std::unique_ptr<Session> session_;
   std::optional<ProbeLuma> previous_;
+  std::optional<std::string> failure_;
 };
 
 }  // namespace kirari::media

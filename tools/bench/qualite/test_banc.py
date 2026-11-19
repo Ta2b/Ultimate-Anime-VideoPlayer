@@ -20,6 +20,7 @@ import chroma444  # noqa: E402
 import travail  # noqa: E402
 import rife_instants  # noqa: E402
 import rife_taille  # noqa: E402
+import scintillement  # noqa: E402
 
 F16 = TensorProto.FLOAT16
 
@@ -290,6 +291,43 @@ class RifeInstants(unittest.TestCase):
         mask = np.full((1, 16, 32), 1.0, np.float32)
         out = rife_instants.blend_at(a, a, flow, mask, 1 / 3)
         np.testing.assert_allclose(out[:, :, 4:], a[:, :, 2:-2], atol=1e-4)
+
+
+class Scintillement(unittest.TestCase):
+    def test_plans_coupes_fondus_et_porte(self):
+        """Un panoramique de 3 px par image (12 images), une coupe, un dessin tenu qui finit en fondu (12 images).
+        La sortie « calme » tremble moins que la « vive » : elle doit gagner chaque plan, la coupe fermer le premier
+        et le fondu être exclu. Le flux est exact (0 ou 3 px, le meilleur des deux), lu par lots de 10 images."""
+        rng = np.random.default_rng(1)
+        tex = [scintillement.box(rng.uniform(0, 255, (60, 160)).astype(np.float32), 2) for _ in range(2)]
+        refs = [tex[0][5:45, 3 * n:3 * n + 64] for n in range(12)]
+        refs += [tex[1][5:45, 40:104] * (1.0 - 0.02 * max(0, n - 8)) for n in range(12)]
+        refs = [np.repeat(np.clip(r, 0, 255)[..., None], 3, 2).astype(np.uint8) for r in refs]
+
+        def flux(imgs):
+            out = []
+            for a, b in zip(imgs, imgs[1:]):
+                ya, yb = scintillement.luma(a), scintillement.luma(b)
+                d = min((0, 3), key=lambda d: np.abs(ya[:, d:] - yb[:, :64 - d]).mean())
+                fa = np.zeros((2, 40, 64), np.float32)
+                fa[0] = d
+                out.append(scintillement.Aligned(fa, None))
+            return out
+
+        def noisy(amp):
+            return [scintillement.luma(r) + rng.uniform(-amp, amp, (40, 64)) for r in refs]
+
+        outs = {"vive": noisy(4.0), "calme": noisy(1.0)}
+        plans, count = scintillement.run(refs, outs, flux, chunk=10)
+        self.assertEqual(count, {"ok": 19, "coupe": 1, "fondu": 3})
+        self.assertEqual([(p["debut"], p["fin"], p["paires"], p["exclues"]) for p in plans],
+                         [(0, 11, 11, 0), (12, 23, 8, 3)])
+        self.assertTrue(all(p["meilleure"] == "calme" for p in plans))
+        self.assertEqual(scintillement.verdict(plans, "vive", "calme"), 1.0)
+        self.assertEqual(scintillement.verdict(plans, "calme", "vive"), 0.0)
+        self.assertIn("100%", scintillement.markdown(plans, ["vive", "calme"], count, 1.0))
+        flow = scintillement.scale(np.ones((2, 4, 4), np.float32), 16, 16)  # un champ uni le reste
+        self.assertTrue(np.allclose(flow, 1.0))
 
 
 if __name__ == "__main__":

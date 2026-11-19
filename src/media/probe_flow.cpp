@@ -152,17 +152,26 @@ std::optional<ProbeLuma> probe_luma_of(const DecodedFrame& frame) {
   const std::size_t stride = frame.data->host_stride(0);
   const int down = layout->bits - 8;
   ProbeLuma out(static_cast<std::size_t>(kProbeFlowWidth) * kProbeFlowHeight);
-  // Moyenne de la zone de la source que couvre chaque point (un point seul si la source est plus petite).
+  // Moyenne de la zone de la source que couvre chaque point (un point seul si la source est plus petite), sur
+  // au plus kTaps × kTaps points répartis : une source 4K en décodage logiciel n'en lit pas trente-deux
+  // millions par image.
+  constexpr int kTaps = 4;
   for (int oy = 0; oy < kProbeFlowHeight; ++oy) {
     const int y_from = oy * frame.height / kProbeFlowHeight;
     const int y_to = std::max(y_from + 1, (oy + 1) * frame.height / kProbeFlowHeight);
+    const int y_step = std::max(1, (y_to - y_from) / kTaps);
     for (int ox = 0; ox < kProbeFlowWidth; ++ox) {
       const int x_from = ox * frame.width / kProbeFlowWidth;
       const int x_to = std::max(x_from + 1, (ox + 1) * frame.width / kProbeFlowWidth);
+      const int x_step = std::max(1, (x_to - x_from) / kTaps);
       long sum = 0;
-      for (int y = y_from; y < y_to; ++y)
-        for (int x = x_from; x < x_to; ++x) sum += yuv::sample(plane, stride, x, y, *layout);
-      const long count = static_cast<long>(y_to - y_from) * (x_to - x_from);
+      long count = 0;
+      for (int y = y_from; y < y_to; y += y_step) {
+        for (int x = x_from; x < x_to; x += x_step) {
+          sum += yuv::sample(plane, stride, x, y, *layout);
+          ++count;
+        }
+      }
       const long value = ((sum + count / 2) / count) >> down;
       out[static_cast<std::size_t>(oy * kProbeFlowWidth + ox)] =
           static_cast<std::uint8_t>(std::clamp(value, 0L, 255L));
