@@ -50,7 +50,9 @@ un décor rayé que la caméra longe) se mesure en travers du bord, le seul éca
 passe la main aux vecteurs qu'à moins de 3 tuiles mesurables. Le banc juge quatre pistes du modèle de
 caméra au même critère : nvof, traits (blocs de traits seuls), lk (l'affine NVOF affinée par
 Lucas-Kanade global sur l'image, qui corrige le biais sous-pixel de NVOF sur les caméras lentes) et
-traits_lk. Sur les panoramiques, le mode pyramide
+traits_lk, et lk_bords (lk, avec un décor où un bloc texturé dans un seul sens se juge en travers de son
+bord et où les blocs que la caméra sort de l'image ne comptent pas). `--garder` sauve images, flux et coûts
+des panoramiques dans `SORTIE/flux` pour régler le banc hors ligne. Sur les panoramiques, le mode pyramide
 (`--pyramide 360:720`, par défaut) passe la caméra d'une passe en 360p en indices externes
 (`nvof_dump --hint-grid 8`) à la passe 720p, et compare avec et sans par vitesse de caméra. Les en-têtes de NVIDIA sont dans
 `third_party/nvidia-optical-flow` : rien à télécharger.
