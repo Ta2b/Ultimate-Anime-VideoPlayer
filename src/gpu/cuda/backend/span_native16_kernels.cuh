@@ -48,6 +48,9 @@ struct Params {
   const float* b1 = nullptr;     // kGate : son biais
   const __half* skip = nullptr;  // kGate : x, NHWC Cin
   int fh = 0, fw = 0;            // taille de la convolution (demi-résolution)
+  // Lignes [y0, y1) de la sortie que le lancement calcule (bandes, docs/span-native16.md) ; y1 = 0 : toutes.
+  // La grille couvre ces lignes seulement ; les lectures prennent toute l'image (halo hors de la bande).
+  int y0 = 0, y1 = 0;
   // Pas d'un pixel des sources et de out en demi-flottants ; 0 : Cin et Cout. Le FP8 lit et écrit les
   // tranches de sa concaténation (pas 4·C).
   int in_ld = 0, out_ld = 0;
@@ -61,8 +64,14 @@ struct Params {
   int surf_w = 0, surf_h = 0;
   // Tuiles qui bougent (kernels/spec/span_tiles.h) : un bit par tuile kTH × kTW de la grille du lancement,
   // ligne par ligne ; un bloc dont le bit est nul sort sans rien lire ni écrire. Nul : toutes les tuiles.
+  // Seulement sur l'image entière (y0 = 0, y1 = 0) : la grille d'une bande n'est pas celle des tuiles.
   const std::uint32_t* mask = nullptr;
 };
+
+// La fin des lignes écrites : y1, ou toute l'image.
+__host__ __device__ __forceinline__ int row_end(const Params& p) {
+  return p.y1 > 0 && p.y1 < p.fh ? p.y1 : p.fh;
+}
 
 // Octets de mémoire partagée d'un noyau : la tuile d'entrée (halo compris) ou la sortie, la plus grande.
 constexpr int smem_bytes(int cin, int cout, int taps) {
@@ -250,11 +259,11 @@ __device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[kMF][Cout / 8], co
 template <int Cout>
 __device__ __forceinline__ void store_nhwc(const __half* o, const Params& p, int ty0, int tx0) {
   constexpr int kChunks = Cout / 8, kLdo = Cout + 8;
-  const int ld = p.out_ld != 0 ? p.out_ld : Cout;
+  const int ld = p.out_ld != 0 ? p.out_ld : Cout, ye = row_end(p);
   for (int i = static_cast<int>(threadIdx.x); i < kTH * kTW * kChunks; i += kThreads) {
     const int q = i / kChunks, c = i - q * kChunks;
     const int y = ty0 + q / kTW, x = tx0 + q % kTW;
-    if (y >= p.fh || x >= p.fw) continue;
+    if (y >= ye || x >= p.fw) continue;
     const long pixel = static_cast<long>(y) * p.fw + x;
     const uint4 v = *reinterpret_cast<const uint4*>(o + q * kLdo + c * 8);
     if (p.out != nullptr) *reinterpret_cast<uint4*>(p.out + pixel * ld + c * 8) = v;
@@ -279,14 +288,14 @@ __device__ __forceinline__ void store_nhwc(const __half* o, const Params& p, int
 // (4y + bh, 4x + bw). Sortie NCHW FP16 par 8 pixels (16 octets), et l'anneau pixel par pixel.
 __device__ __forceinline__ void store_pixel(const __half* o, const Params& p, int ty0, int tx0) {
   constexpr int kLdo = kPixel + 8, kRowsOut = 4 * kTH, kChunks = 4 * kTW / 8;
-  const int ow = 4 * p.fw, oh = 4 * p.fh;
+  const int ow = 4 * p.fw, oh = 4 * p.fh, ye = row_end(p);
   const long plane = static_cast<long>(oh) * ow;
   if (p.out != nullptr) {
     for (int i = static_cast<int>(threadIdx.x); i < 3 * kRowsOut * kChunks; i += kThreads) {
       const int c = i / (kRowsOut * kChunks), rest = i - c * kRowsOut * kChunks;
       const int ly = rest / kChunks, k = rest - ly * kChunks;
       const int y = ty0 + (ly >> 2), x = tx0 + 2 * k;
-      if (y >= p.fh || x >= p.fw) continue;
+      if (y >= ye || x >= p.fw) continue;
       const int bh = ly & 3;
       const __half* row = o + ((ly >> 2) * kTW + 2 * k) * kLdo + 16 * c + 4 * bh;
       uint4 v;
@@ -305,7 +314,7 @@ __device__ __forceinline__ void store_pixel(const __half* o, const Params& p, in
   for (int i = static_cast<int>(threadIdx.x); i < kRowsOut * 4 * kTW; i += kThreads) {
     const int ly = i / (4 * kTW), lx = i - ly * 4 * kTW;
     const int ox = 4 * tx0 + lx, oy = 4 * ty0 + ly;
-    if (ox >= p.surf_w || oy >= p.surf_h || ty0 + (ly >> 2) >= p.fh || tx0 + (lx >> 2) >= p.fw) continue;
+    if (ox >= p.surf_w || oy >= p.surf_h || ty0 + (ly >> 2) >= ye || tx0 + (lx >> 2) >= p.fw) continue;
     const __half* px = o + ((ly >> 2) * kTW + (lx >> 2)) * kLdo + 4 * (ly & 3) + (lx & 3);
     store_ring(p.surface, ox, oy, px[0], px[16], px[32]);
   }
@@ -404,7 +413,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
-  const int ty0 = static_cast<int>(blockIdx.y) * kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
+  const int ty0 = p.y0 + static_cast<int>(blockIdx.y) * kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
   if (p.mask != nullptr) {  // tout le bloc sort ensemble, avant la première barrière
     const unsigned tile = blockIdx.y * gridDim.x + blockIdx.x;
     if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
