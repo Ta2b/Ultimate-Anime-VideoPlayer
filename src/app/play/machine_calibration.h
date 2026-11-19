@@ -43,7 +43,11 @@ namespace kirari::app::play {
 // vraiment la cadence (A07-02) : une version 2 a pu retenir une chaîne où le Rapide avait coupé RIFE.
 // 4 : une chaîne ne tient qu'avec au plus kMaxLossPerImage de pertes par image visée (B07-02) ; une version
 // 3 a pu retenir une chaîne qui perd une image par seconde.
-inline constexpr int kCalibrationVersion = 4;
+// 5 : Vulkan est deux fois plus rapide (noyaux de SPAN, autotuneur, réseaux fusionnés, docs/moteurs.md) ; une
+// mesure Vulkan de version 4 borne la carte trop bas. TensorRT n'a pas changé : sa version 4 reste suivie
+// (kTensorRtCalibrationVersion).
+inline constexpr int kCalibrationVersion = 5;
+inline constexpr int kTensorRtCalibrationVersion = 4;
 // Un essai avec RIFE tient si les images neuves obtenues, créditées des instants laissés sans image à dessein
 // (coupes et dessins tenus de la séquence), font au moins cette part de la cadence doublée. En dessous, le
 // mode Rapide a baissé le facteur faute de temps : aucune image n'est perdue, mais RIFE ne tourne pas.

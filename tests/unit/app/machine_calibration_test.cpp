@@ -529,6 +529,41 @@ target_fps = 48.0
         CalibrationUse::OldVersion);
 }
 
+TEST_CASE("une calibration Vulkan de version 4 se refait, celle de TensorRT reste suivie",
+          "[calibration-machine]") {
+  constexpr std::string_view kFour = R"(version = 4
+gpu = "RX 7900 XTX"
+engine = "{}"
+date = "2026-11-12"
+display_height = 1440
+on_battery = false
+
+[chosen]
+span = true
+rife = true
+height = 720
+
+[[trials]]
+span = true
+rife = true
+height = 720
+holds = true
+)";
+  const auto parse = [&](std::string_view engine) {
+    std::string text(kFour);
+    text.replace(text.find("{}"), 2, engine);
+    return parse_calibration(text);
+  };
+  const auto vulkan = parse("vulkan");
+  REQUIRE(vulkan);
+  CHECK(calibration_use(*vulkan, {.gpu = "RX 7900 XTX", .display_height = 1440, .tensorrt = false}) ==
+        CalibrationUse::OldVersion);
+  const auto tensorrt = parse("tensorrt");
+  REQUIRE(tensorrt);
+  CHECK(calibration_use(*tensorrt, {.gpu = "RX 7900 XTX", .display_height = 1440, .tensorrt = true}) ==
+        CalibrationUse::Followed);
+}
+
 TEST_CASE("calibration : le dossier des essais est propre au lancement, sous les données (A25-11)",
           "[app][calibration]") {
   const std::filesystem::path data = std::filesystem::temp_directory_path() / "kirari-donnees";
