@@ -15,10 +15,11 @@ arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
   qui bavent sur un panoramique, un zoom ou un travelling. Les dessins, les effets et tout ce dont la carte doute
   gardent RIFE. Avec « Garder les poses », le décor suit la caméra pendant que les dessins gardent leur rythme
   (le rythme par calque).
-- **Plaque de décor** (`[interpolation] background_plate = true`). Une image clé par plan
-  passe par un second SPAN, le modèle tel que livré en FP16 ; chaque source suivante du plan reprend son décor
-  de cette clé, recadrée au mouvement de caméra cumulé. Le décor d'une lecture en SPAN FP8 ou INT8 prend la
-  précision du FP16, et il ne scintille plus d'une image à l'autre (mêmes pixels, déplacés). Une nouvelle clé
+- **Plaque de décor** (`[interpolation] background_plate = true`). Une image clé par plan ; chaque source
+  suivante du plan reprend son décor de cette clé, recadrée au mouvement de caméra cumulé : il ne scintille plus
+  d'une image à l'autre (mêmes pixels, déplacés). La clé est la sortie de SPAN de l'image, quand SPAN tourne en
+  FP16 ou mieux ; en FP8 ou en INT8, elle passe par un second SPAN, le modèle tel que livré en FP16, et le décor
+  prend la précision du FP16 (une passe de SPAN de plus par clé). Une nouvelle clé
   quand la plaque couvre moins des trois quarts de l'image, que le zoom a bougé de plus de 3 % ou après
   240 paires ; plus de plaque dès qu'une paire perd la caméra, jusqu'à la paire sûre suivante.
 
@@ -32,9 +33,13 @@ journal.
 
 - La caméra : celle que Lucas-Kanade affine sur les lumas de la paire (`SceneMotion::camera_refined`,
   `kernels/spec/scene_camera.h`, porte 2.1 : 97 % des paires sous 0,5 pixel). L'affine de NVOF seule (affinage
-  fini trop tard, pas lancé) invente un cisaillement d'environ 2 pixels sur les panoramiques lents : la paire
-  n'a alors ni calques ni plaque (« caméra non affinée » au journal). La carte compte en coordonnées continues
-  (centre du pixel i en i + ½), les calques en indices : `index_camera`.
+  fini trop tard, pas lancé) invente un cisaillement d'environ 2 pixels sur les panoramiques lents ; elle ne sert
+  jamais. Une paire dont l'affinage est en retard reprend la caméra lk d'une des deux paires d'avant du plan,
+  si les deux s'accordent à un demi-pixel de travail près aux coins et au centre (`with_neighbour`) ; sinon,
+  ni calques ni plaque (« caméra non affinée » au journal). Au rejeu des dix extraits de flux-carte, la caméra lk
+  de la paire d'avant est à 0,03 à 0,16 pixel médian de la vraie sur sept extraits, celle de NVOF à 0,2 à 1,8 ;
+  la reprise garde 53 % des paires en retard, dont 1 % à plus d'un demi-pixel. La carte compte en coordonnées
+  continues (centre du pixel i en i + ½), les calques en indices : `index_camera`.
 - Décision par paire, sur l'hôte (`src/app/play/layer_plan.h`) : tuiles décor sûres (Background à confiance
   0,5 ou plus, ou Uncertain qui ne change pas), puis tout le chemin d'un dessin, d'un effet ou d'une tuile
   incertaine qui change (de sa tuile dans a à sa tuile dans b, élargi d'une tuile) est retiré.
@@ -52,8 +57,34 @@ journal.
   `layered`). Une clé dont le SPAN de la plaque n'a pas tourné (SPAN de b repris d'un dessin tenu, ou fait en
   avance par le Smooth) est refaite à la paire suivante ; les tuiles qui bougent sont coupées avec la plaque. RIFE tourne toujours sur toute l'image : le gain est la qualité, pas le temps.
 
-Journal de fin : `calques : N paires avec calques (X % de décor en moyenne), M images composées ; sans : … ;
-plaque : K clés, P sources reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
+Journal de fin : `calques : N paires avec calques (dont V avec la caméra lk d'une voisine, X % de décor en
+moyenne), M images composées ; sans : … ; plaque : K clés (reprises de SPAN | SPAN FP16 de plus), P sources
+reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
+
+## Rejeu sur processeur
+
+Les décisions se rejouent sans le PC, sur les flux NVOF exportés une fois (lumas, vecteurs et coûts à la taille
+du flux du lecteur, le format de `carte_rejeu`) : `carte_rejeu --calques` rejoue la carte puis `plan_layers` et
+la plaque (compilés tels quels) et mesure ce que la garde refuserait sur les lumas ;
+`tools/bench/qualite/calques_rejeu.py` en tire, par extrait, la part des paires avec calques et les raisons des
+autres, la garde des calques et de la plaque, et des vues (décor repris en bleu, rendu à RIFE en rouge). La garde
+y est approchée : le lecteur compare des images agrandies, en RVB, et sa plaque passe par SPAN. Le PC ne garde que
+l'essai ci-dessous : images, temps et retards. `--sans-affinage` rejoue le pire du lecteur, l'affinage toujours
+en retard : la carte part avec la caméra de NVOF et seule la caméra lk d'une voisine sert.
+
+Rejeu du 19 novembre, dix extraits de 160 images (huit de carte_lecteur, lueur, aura) : avec l'affinage à
+l'heure, 82 à 100 % des paires ont des calques ; affinage toujours en retard, 47 à 97 % sur neuf extraits (17 %
+sur le panoramique rapide de Re:Zero 12:10, où la caméra accélère). Garder la clé de la plaque à travers une
+paire sans calques à caméra sûre a été essayé et écarté : 12 % de clés en moins, mais une plaque qui dérive
+(garde de la plaque au 90e centile de 13 à 44 % sur lueur).
+
+## Essai du 19 novembre (#946, RTX 4070 Ti)
+
+Rien de cassé (aucun personnage effacé ni doublé, aucune couture), mais pas la porte : 34 % des paires avec
+calques (177 sans caméra lk : affinage trop tard sur 45 % des paires), calques 0,82 ms par appel en 4K, plaque
+0,30 ms mais un retard p95 de 4,7 à 5 ms. Le retard venait du second SPAN de la plaque sur chaque clé (37) : quand
+SPAN tourne déjà en FP16 ou mieux, la plaque reprend désormais sa sortie (`plate_copy`). Les calques n'ajoutent
+pas de retard (p95 0 ms, comme éteints). L'affinage à l'heure revient à la carte (`scene_map.cpp`).
 
 ## Essai (avec le reste, à la fin)
 
@@ -85,14 +116,16 @@ grep -h "calques\|plaque\|carte de la scène :\|profil GPU · .*SPAN" $E/*/t*.lo
 
 À relever :
 
-- `calques : N paires avec calques (X % de décor en moyenne), M images composées ; sans : …` : sur un
+- `calques : N paires avec calques (dont V avec la caméra lk d'une voisine, …), M images composées ; sans : …` : sur un
   panoramique, au moins la moitié des paires avec calques ; les raisons de « sans » (« caméra non affinée »,
   « décor hors du modèle de caméra » : le résidu, « trop peu de décor »). Avec la plaque : `K clés, P sources
   reprises` (0 clé : le warp n'est pas après SPAN, la plaque ne tourne pas ; le dire).
 - `carte de la scène : … affinée sur …, (… affinages trop tard …)` : les paires où Lucas-Kanade arrive trop
   tard n'ont pas de calques.
-- Profil GPU : les étapes « calques » et « plaque de décor » sous 0,3 ms par appel en 4K ; le SPAN de la
-  plaque, une fois par clé.
+- Profil GPU : « calques » vers 0,8 ms par appel en 4K (deux lectures Catmull-Rom de toute l'image, à l'essai du
+  19 novembre ; les 0,3 ms visés d'abord n'étaient qu'une estimation), « plaque de décor » vers 0,3 ms ; le
+  SPAN de la plaque, une fois par clé, seulement quand SPAN tourne sous le FP16. Ce qui tranche : la ligne
+  suivante.
 - `--stats` : pas plus d'images en retard que la variante éteinte.
 - Les 24 images de chaque variante côte à côte : les traits du décor n'ondulent plus et les aplats ne bavent
   plus au bord des personnages (calques) ; le décor ne scintille plus d'une image à l'autre (plaque) ; aucun

@@ -38,7 +38,7 @@ gpu::Shape output_shape(const UpscaleSetup& s) {
 // Ni GMFSS, ni les calques, ni Smooth, ni TemporalFix : ils lisent les sources de travail (l'écran grade).
 bool graded_copies(const UpscaleSetup& s) {
   return s.engine == nullptr && s.grader != nullptr && !s.yuv_slots && s.gmfss.use == GmfssUse::Off &&
-         !s.layers.layers && s.layers.plate == nullptr && !s.smooth_drawings && s.temporal_fix == nullptr;
+         !s.layers.layers && !s.layers.plate_on() && !s.smooth_drawings && s.temporal_fix == nullptr;
 }
 
 // L'écran grade chaque image de cette chaîne : le journal le dit, sans quoi seule l'absence de la ligne de

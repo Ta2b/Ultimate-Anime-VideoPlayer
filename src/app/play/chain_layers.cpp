@@ -1,5 +1,6 @@
-// La plaque de décor dans la chaîne (chain_setup.h, load_plate ; docs/calques.md) : un second moteur SPAN,
-// le réseau tel que livré en FP16, que l'étage gpu passe sur une image clé par plan (layer_stage.h).
+// La plaque de décor dans la chaîne (chain_setup.h, load_plate ; docs/calques.md) : la sortie de SPAN sur une
+// image clé par plan (layer_stage.h), ou, quand SPAN tourne sous le FP16, un second moteur SPAN, le réseau
+// tel que livré en FP16.
 #include <format>
 
 #include "app/play/chain_setup.h"
@@ -22,6 +23,11 @@ std::optional<bool> load_plate(Player& p, const gpu::BackendInit& init, ChainEng
     log->info(
         "plaque de décor : elle suit la carte de la scène, comme les calques ; les images intermédiaires "
         "gardent RIFE seul");
+  if (!span_below_fp16(c.span_int8)) {
+    c.plate_copy = true;
+    log->info("plaque de décor : la sortie de SPAN de l'image clé, déjà en FP16 ou mieux, sans second SPAN");
+    return true;
+  }
   const gpu::Shape shape{.dims = {1, 3, c.work.height, c.work.width}};
   auto engine = prepare_engine(p, init, *c.backend, c.model->path, shape,
                                EngineLabel{.name = i18n::tr("Background plate"),
@@ -41,7 +47,22 @@ std::optional<bool> load_plate(Player& p, const gpu::BackendInit& init, ChainEng
 
 LayerSetup layer_setup(const ChainEngines& c, const MasterClock* clock) {
   if (clock == nullptr || !c.scene_map) return {};
-  return {.layers = c.layers && c.rife_motion != nullptr, .plate = c.plate.get()};
+  return {.layers = c.layers && c.rife_motion != nullptr, .plate = c.plate.get(), .plate_copy = c.plate_copy};
+}
+
+bool span_below_fp16(const std::optional<SpanInt8>& variant) {
+  if (!variant) return false;
+  switch (variant->kind) {
+    case SpanVariantKind::Int8:
+    case SpanVariantKind::Fp8:
+    case SpanVariantKind::Fp8Cutlass:
+      return true;
+    case SpanVariantKind::Fp32:
+    case SpanVariantKind::Fp16Cutlass:
+    case SpanVariantKind::Fp32Native:
+      return false;
+  }
+  return true;
 }
 
 }  // namespace kirari::app::play

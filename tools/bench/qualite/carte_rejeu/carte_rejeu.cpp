@@ -1,6 +1,6 @@
 // carte_rejeu : la carte de la scène du lecteur rejouée hors du lecteur (CMakeLists.txt à côté).
 //
-//   carte_rejeu [--diviseur D] < tâches
+//   carte_rejeu [--diviseur D] [--calques [--sans-affinage] [--vues DOSSIER] [--pas N]] < tâches
 //
 // Une tâche par ligne, champs séparés par des tabulations, dans l'ordre de lecture (le lissage des classes
 // suit les paires d'une ligne à l'autre, comme SceneMap) : LARGEUR HAUTEUR A.y B.y FLUX SORTIE.
@@ -16,7 +16,11 @@
 // (ajustée sur les vecteurs, affinée par Lucas-Kanade, spec/scene_camera.h ; PAS −1 : pas d'affinage
 // demandé), l'écart mesuré sur l'image (pixels du flux, −1 : pas mesuré) et sur combien de tuiles, l'écart
 // des vecteurs et les tuiles gardées par l'ajustement. D : le diviseur du travail au flux
-// (scene_flow_divisor), qui ne change que les pixels de travail.
+// (scene_flow_divisor), qui ne change que les pixels de travail. --calques : après la carte, les calques et
+// la plaque de décor rejoués sur la paire (calques.h, ligne calques), avec une vue toutes les N paires
+// (défaut 20) dans DOSSIER si --vues est donné. --sans-affinage : le pire du lecteur, l'affinage toujours en
+// retard ; la carte part avec la caméra de NVOF, et la caméra lk de la paire ne sert qu'aux suivantes
+// (layer_plan.h, with_neighbour).
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -25,18 +29,21 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "calques.h"
 #include "kernels/ref/scene_camera.h"
 #include "kernels/ref/scene_flow.h"
 
 namespace {
 
 using namespace kirari::kernels;
+namespace play = kirari::app::play;
 
 bool read_all(const std::string& path, std::span<std::byte> out) {
   std::ifstream in(path, std::ios::binary);
@@ -102,7 +109,9 @@ bool write_map(const std::string& path, const SceneMotion& m) {
 }
 
 // Une tâche : faux (et un message) si un fichier manque ou si la carte refuse la paire.
-bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
+// late : l'affinage toujours en retard (--sans-affinage), comme au pire dans le lecteur.
+bool run(const std::string& line, int divisor, ref::SceneHistory& history, carte_rejeu::LayerReplay* layers,
+         bool late) {
   std::istringstream fields(line);
   int width = 0;
   int height = 0;
@@ -134,6 +143,7 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
   }
   // La caméra comme le lecteur : ajustée sur les vecteurs, puis affinée sur les lumas (scene_map.h).
   ref::SceneCamera camera = ref::scene_camera_of(*tiles);
+  const ref::SceneCamera nvof = camera;
   int steps = -1;  // pas d'affinage demandé
   if (const auto request = ref::scene_camera_request(camera)) {
     const auto refined = ref::scene_camera_refine(a, b, *request);
@@ -144,7 +154,13 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
     ref::scene_camera_apply(camera, *refined);
     steps = refined->steps;
   }
-  const SceneMotion m = ref::scene_motion_of(*tiles, history, camera);
+  // En retard : la carte part avec la caméra de NVOF ; la caméra lk, relue après, sert aux paires suivantes.
+  std::optional<play::NeighbourCamera> refined_late;
+  if (late) {
+    ref::SceneHistory scratch = history;
+    refined_late = play::refined_camera(ref::scene_motion_of(*tiles, scratch, camera));
+  }
+  const SceneMotion m = ref::scene_motion_of(*tiles, history, late ? nvof : camera);
   if (!write_map(out_path, m)) {
     std::cerr << "carte_rejeu : écriture impossible : " << out_path << "\n";
     return false;
@@ -157,29 +173,61 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
   for (const std::uint8_t d : camera.decor) kept += d;
   std::cout << "camera " << int{camera.fit} << ' ' << int{camera.refined} << ' ' << steps << ' '
             << camera.check << ' ' << camera.check_tiles << ' ' << camera.residual << ' ' << kept << "\n";
+  if (layers != nullptr && !layers->pair(a, b, m, refined_late)) {
+    std::cerr << "carte_rejeu : vue des calques impossible : " << line << "\n";
+    return false;
+  }
   return true;
+}
+
+// Un entier d'au moins 1, en entier.
+bool read_count(std::string_view value, int& out) {
+  const auto read = std::from_chars(value.data(), value.data() + value.size(), out);
+  return read.ec == std::errc{} && read.ptr == value.data() + value.size() && out >= 1;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
   int divisor = 1;
+  bool layers = false;
+  bool late = false;
+  std::string views;
+  int every = 20;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg = argv[i];
     const std::string_view value = i + 1 < argc ? argv[i + 1] : "";
-    const auto read = std::from_chars(value.data(), value.data() + value.size(), divisor);
-    if (arg != "--diviseur" || read.ec != std::errc{} || read.ptr != value.data() + value.size() ||
-        divisor < 1) {
-      std::cerr << "usage : carte_rejeu [--diviseur D] < tâches\n";
+    bool ok = true;
+    if (arg == "--calques") {
+      layers = true;
+    } else if (arg == "--sans-affinage") {
+      late = true;
+    } else if (arg == "--diviseur") {
+      ok = read_count(value, divisor);
+      ++i;
+    } else if (arg == "--pas") {
+      ok = read_count(value, every);
+      ++i;
+    } else if (arg == "--vues" && !value.empty()) {
+      views = value;
+      ++i;
+    } else {
+      ok = false;
+    }
+    if (!ok) {
+      std::cerr
+          << "usage : carte_rejeu [--diviseur D] [--calques [--sans-affinage] [--vues DOSSIER] [--pas N]] < "
+             "tâches\n";
       return 2;
     }
-    ++i;
   }
+  std::optional<carte_rejeu::LayerReplay> replay;
+  if (layers) replay.emplace(divisor, views, every);
   ref::SceneHistory history;
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) continue;
-    if (!run(line, divisor, history)) return 1;
+    if (!run(line, divisor, history, replay ? &*replay : nullptr, late)) return 1;
   }
   return 0;
 }
