@@ -130,9 +130,31 @@ struct GlueTile {
   static constexpr int kCapacity = Coarse ? 48 : 112;
 };
 
-template <bool Coarse, int K>
+// Relève dans stage la région de chaque Y que lisent les points pleine résolution px × py d'un bloc de fils ;
+// src[j] la décrit. L'appelant synchronise.
+template <int K, int Capacity>
+__device__ __forceinline__ void stage_sources(const FusedGlueParams& p, warp::Span px, warp::Span py,
+                                              __half* stage, warp::Staged (&src)[K]) {  // NOLINT
+  int offset = 0;
+#pragma unroll
+  for (int j = 0; j < K; ++j) {
+    const FusedFlowSource& f = p.source[j];
+    const float inv = 1.0F / static_cast<float>(f.scale);
+    const warp::Span zr = warp::coarse_span(py.lo, py.hi, inv, 2 * f.height);
+    const warp::Span zc = warp::coarse_span(px.lo, px.hi, inv, 2 * f.width);
+    const warp::Span rows{zr.lo >> 1, zr.hi >> 1};
+    const warp::Span cols{zc.lo >> 1, zc.hi >> 1};
+    const int stride = j == K - 1 ? kLastStride : kFlowStride;
+    warp::stage_region(stage + offset, stride, static_cast<const __half*>(f.y), f.height, f.width, f.pitch, 0,
+                       j == K - 1 ? 52 : 16, rows, cols);
+    src[j] = {stage + offset, rows.lo, cols.lo, cols.hi - cols.lo + 1, stride};
+    offset += stride * Capacity;
+  }
+}
+
 // __maxnreg__ plutôt que __launch_bounds__ : nvcc 13 débordait de 4 octets à 48 registres (pleine résolution,
 // un flot).
+template <bool Coarse, int K>
 __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
   using Tile = GlueTile<Coarse>;
   __shared__ __align__(16) __half stage[((K - 1) * kFlowStride + kLastStride) * Tile::kCapacity];
@@ -146,27 +168,8 @@ __global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
 
   // Le relèvement : la région de chaque Y que lisent les points pleine résolution du bloc.
   warp::Staged src[K];  // NOLINT(modernize-avoid-c-arrays)
-  {
-    const int px_lo = d * bx + base;
-    const int px_hi = d * ex + base + last_tap;
-    const int py_lo = d * by + base;
-    const int py_hi = d * ey + base + last_tap;
-    int offset = 0;
-#pragma unroll
-    for (int j = 0; j < K; ++j) {
-      const FusedFlowSource& f = p.source[j];
-      const float inv = 1.0F / static_cast<float>(f.scale);
-      const warp::Span zr = warp::coarse_span(py_lo, py_hi, inv, 2 * f.height);
-      const warp::Span zc = warp::coarse_span(px_lo, px_hi, inv, 2 * f.width);
-      const warp::Span rows{zr.lo >> 1, zr.hi >> 1};
-      const warp::Span cols{zc.lo >> 1, zc.hi >> 1};
-      const int stride = j == K - 1 ? kLastStride : kFlowStride;
-      warp::stage_region(stage + offset, stride, static_cast<const __half*>(f.y), f.height, f.width, f.pitch,
-                         0, j == K - 1 ? 52 : 16, rows, cols);
-      src[j] = {stage + offset, rows.lo, cols.lo, cols.hi - cols.lo + 1, stride};
-      offset += stride * Tile::kCapacity;
-    }
-  }
+  stage_sources<K, Tile::kCapacity>(p, {d * bx + base, d * ex + base + last_tap},
+                                    {d * by + base, d * ey + base + last_tap}, stage, src);
   __syncthreads();
 
   const int t = static_cast<int>(threadIdx.x);
