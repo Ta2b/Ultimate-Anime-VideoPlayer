@@ -1,8 +1,10 @@
-# GMFSS natif (`--gmfss-native`)
+# GMFSS natif
 
 Novembre 2026. GMFSS Fortuna Union ([`interpolation.md`](interpolation.md)) en temps réel sur la RTX 4070 Ti : ses
-petits réseaux de convolutions par nos noyaux CUDA, GMFlow restant sous TensorRT. Le chantier se fait par étapes,
-chacune derrière `--gmfss-native` (éteint par défaut, essai) :
+petits réseaux de convolutions par nos noyaux CUDA, GMFlow restant sous TensorRT. Par défaut depuis le
+19 novembre 2026, une fois la paire et la fusion natives mesurées sur le PC, chacune gardée par son essai au
+chargement (TensorRT reprend le morceau qui perd) ; `--no-gmfss-native` (essai) laisse tout GMFSS à TensorRT et
+le retire du menu. Le chantier s'est fait par étapes, chacune derrière `--gmfss-native` :
 
 1. le tri des paires pour GMFSS (`--pair-triage` : dessins tenus, paires impossibles, panoramiques purs) ;
 2. les lectures des splats sur la bibliothèque de warp ([`warp-lib.md`](warp-lib.md)) ;
@@ -96,37 +98,59 @@ coûte jamais de qualité ni de vitesse. Le journal dit, pour chacune, les dB de
   natif ; trois passes, la dernière comparée. De la paire (`gmfss_pair_trial.cpp`) : les deux dessins passent par
   la paire entière, puis par le flot et les réseaux natifs ; la pire des quatorze sorties est comparée, rapportée
   à son étendue (au moins 1). Une variante n'est mesurée qu'à **45 dB** ou plus ; la séance finale vise 50 dB.
-- Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`), jamais lancé sur une carte.
+- Compilé par nvcc 13.5 (sm_75, 86, 89, 120, `--warn-on-spills -Werror`), lancé sur la RTX 4070 Ti le
+  19 novembre 2026 (ci-dessous).
+- La justesse se vérifie dans le cloud (émulation contre onnxruntime sur processeur, coupe comparée à la fusion
+  ou à la paire entière) ; le PC ne donne que ce qui demande la carte : les temps et les dB contre TensorRT.
+
+## Résultats du PC (RTX 4070 Ti, 19 novembre 2026)
+
+Extrait de Re:Zero, GMFSS union seul (`--motion=gmfss`), SPAN derrière, travail 720p (plans remplis de la paire à
+1920×1152).
+
+- **Paire native retenue**, sommes f16 : contre la paire TensorRT, f16 64,8 dB au pire (mixtes 66,0, f32 67,7) ;
+  une passe en 19,75 ms contre 22,55 ms (mixtes 21,83, f32 22,76), 12 % de moins. En lecture (`--stats`, 30 s) :
+  19,73 ms en médiane (p95 20,02) ; les splats 7,14 ms, le décor fixe et l'entrée 0,08 ms chacun.
+- **Image** : export sans perte de 5 s, ×2, natif contre TensorRT : **63,15 dB** en moyenne (Y 62,98, U 61,23,
+  V 68,66 ; la pire image 57,84). Au-dessus des 50 dB visés.
+- **Cadence** (`kirari compare`, A TensorRT, B natif) : ×2 tenu des deux côtés (1,1 % et 1,4 % d'images perdues,
+  p95 42,4 et 36,4 ms) ; ×3 tenu par aucun (35,6 % et 28,4 % perdues, p95 54,5 ms des deux) ; ×2 avec le tri des
+  paires (`--scene-map --pair-triage`) : 0,7 % perdues des deux côtés, p95 42,4 et 30,3 ms.
+- **Fusion** : restée entière à TensorRT pendant cette séance, la coupe ne connaissant que la fusion
+  d'`ifnet_rife.py` ; corrigé (la coupe trouve l'IFNet par la structure, ci-dessus). Sa mesure native reste à
+  faire : une lecture, la commande 0 ci-dessous.
+- Première ouverture : 149 s pour construire la paire, 180 s pour la fusion.
 
 ## Séance finale (sur le PC, binaire `linux-release`)
 
-Sous `--gmfss-native`, le menu propose de nouveau « RIFE 4.25 + GMFSS union » (l'ancien Élevé) et « GMFSS union »
-(l'ancien Très élevé), et `play.toml` les garde ; sans l'option, ils tombent sur RIFE 4.25 comme avant
-(`interp_retired.h`). `--motion=gmfss` joue GMFSS union seul pour une lecture, avec ou sans l'option : la
-comparaison du natif et de TensorRT sur le même extrait.
+Avec le natif (le défaut), le menu propose de nouveau « RIFE 4.25 + GMFSS union » (l'ancien Élevé) et « GMFSS
+union » (l'ancien Très élevé), et `play.toml` les garde ; sous `--no-gmfss-native`, ils tombent sur RIFE 4.25 comme
+avant (`interp_retired.h`). `--motion=gmfss` joue GMFSS union seul pour une lecture, natif ou non : la comparaison
+du natif et de TensorRT sur le même extrait. `kirari compare` passe `--debug` à ses deux variantes.
 
 ```sh
 # 0. Première ouverture : la fusion et la paire entières, l'IFNet et le flot se construisent ; les lignes
 #    « GMFSS natif retenu pour la fusion… » et « … pour la paire… » donnent les dB (50 visés) et les temps,
 #    « GMFSS natif écarté… » dit pourquoi TensorRT garde la fusion ou la paire.
-kirari --debug play --gmfss-native --motion=gmfss --rife=2 --start=960 extrait.mkv 2>&1 | grep -i "gmfss natif"
+#    Les deux graphes : dans un dossier de RIFE, son voisin gmfss (~/kirari/models/gmfss) ou --gmfss-dir DOSSIER.
+kirari play --motion=gmfss --rife=2 --start=960 extrait.mkv 2>&1 | grep -i "gmfss natif"
 
 # 1. Vitesse, GMFSS union seul ×2 puis ×3 avec SPAN : TensorRT (A) contre natif (B), en A, B, B, A.
 for x in 2 3; do
-  kirari compare extrait.mkv --a="--motion=gmfss --rife=$x --start=960" \
-    --b="--gmfss-native --motion=gmfss --rife=$x --start=960" --seconds=30 --report=gmfss-x$x.txt
+  kirari compare extrait.mkv --a="--no-gmfss-native --motion=gmfss --rife=$x --start=960" \
+    --b="--motion=gmfss --rife=$x --start=960" --seconds=30 --report=gmfss-x$x.txt
 done
 #    Le tri des paires (il demande la carte de la scène), sur le natif :
-kirari compare extrait.mkv --a="--gmfss-native --motion=gmfss --rife=2 --start=960" \
-  --b="--gmfss-native --motion=gmfss --rife=2 --start=960 --scene-map --pair-triage" --seconds=30 \
+kirari compare extrait.mkv --a="--motion=gmfss --rife=2 --start=960" \
+  --b="--motion=gmfss --rife=2 --start=960 --scene-map --pair-triage" --seconds=30 \
   --report=gmfss-tri.txt
 #    Le temps de chaque image et les étages (GMFSS paire native, GMFSS fusion native) :
-kirari --debug play --gmfss-native --motion=gmfss --rife=2 --start=960 --stats=n2.csv extrait.mkv
+kirari play --motion=gmfss --rife=2 --start=960 --stats=n2.csv extrait.mkv
 
 # 2. Justesse sur l'extrait : deux exports sans perte, TensorRT puis natif (l'export porte sur tout l'extrait,
 #    puis la lecture reprend : fermer le lecteur), et leur PSNR (50 dB visés).
-kirari --mute --motion=gmfss --rife=2 --keys=1:export-lossless=t.mkv extrait.mkv
-kirari --mute --gmfss-native --motion=gmfss --rife=2 --keys=1:export-lossless=n.mkv extrait.mkv
+kirari --debug --mute --no-gmfss-native --motion=gmfss --rife=2 --keys=1:export-lossless=t.mkv extrait.mkv
+kirari --mute --motion=gmfss --rife=2 --keys=1:export-lossless=n.mkv extrait.mkv
 ffmpeg -i n.mkv -i t.mkv -lavfi psnr -f null - 2>&1 | tail -1
 ```
 

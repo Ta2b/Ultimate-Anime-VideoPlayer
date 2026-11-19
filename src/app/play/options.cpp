@@ -137,7 +137,7 @@ constexpr std::array<std::string_view, 51> kTrialOptions{
     "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--filtered-warp",
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
     "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
-    "--pair-triage", "--span-tiles-check", "--gmfss-native", "--no-span-native", "--span-native-edges",
+    "--pair-triage", "--span-tiles-check", "--no-gmfss-native", "--no-span-native", "--span-native-edges",
     "--effect-mask-view", "--pause-at"};
 // clang-format on
 
@@ -161,7 +161,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 54> kFlags{{
+constexpr std::array<Flag, 55> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -195,7 +195,8 @@ constexpr std::array<Flag, 54> kFlags{{
     {"--no-span-native", &PlayOptions::span_native, false},
     {"--span-native-edges", &PlayOptions::span_native_edges, true},
     {"--rife-native", &PlayOptions::rife_native, true},
-    {"--gmfss-native", &PlayOptions::gmfss_native, true},
+    {"--gmfss-native", &PlayOptions::gmfss_native, true},  // le défaut, gardé pour les anciennes commandes
+    {"--no-gmfss-native", &PlayOptions::gmfss_native, false},
     {"--no-tfix-fused", &PlayOptions::temporal_fix_fused, false},
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},

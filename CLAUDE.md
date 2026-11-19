@@ -26,9 +26,11 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
   `src/app/play/settings_panel.cpp`, `docs/ux-parametres.md`) ;
 - **moteurs** : Vulkan pour tout GPU (le seul pour AMD et Intel), TensorRT sur NVIDIA RTX, Core ML sur Mac.
   MIGraphX et OpenVINO sont retirés des sources : n'en remettre aucun sans une mesure face à Vulkan
-  (`docs/moteurs.md`). GMFSS union reste dans le code (TensorRT seulement) mais a quitté le menu
-  en novembre 2026, comme RIFE 4.26 et 4.25 lite : un ancien `play.toml` tombe sur le plus proche
-  (`src/app/play/interp_retired.h`, `docs/interpolation.md`).
+  (`docs/moteurs.md`). RIFE 4.26 et 4.25 lite restent dans le code mais ont quitté le menu en
+  novembre 2026 : un ancien `play.toml` tombe sur le plus proche (`src/app/play/interp_retired.h`,
+  `docs/interpolation.md`). GMFSS union (TensorRT seulement) est revenu au menu avec ses petits réseaux par nos
+  noyaux, par défaut, quand ses deux graphes sont là (`docs/gmfss-natif.md`, `--no-gmfss-native` pour l'en
+  retirer).
 
 ## Où est quoi
 

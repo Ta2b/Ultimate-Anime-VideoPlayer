@@ -80,9 +80,9 @@ std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
 // Les modèles d'interpolation que montre le menu (docs/interpolation.md), par leur nom
 // : DistilDRBA v2 lite, RIFE 4.22 lite et RIFE 4.25 ; System : l'interpolation d'Apple, sur un Mac seulement.
-// Sous --gmfss-native (interp_retired.h : gmfss_kept), RIFE 4.25 avec GMFSS union au milieu des paires
-// fortes, et GMFSS union seul. Les niveaux d'avant (4.25 lite, 4.26, GMFSS sans l'option) se relisent sur le
-// plus proche (interp_retired.h).
+// Avec le natif de GMFSS (le défaut, interp_retired.h : gmfss_kept), RIFE 4.25 avec GMFSS union au milieu
+// des paires fortes, et GMFSS union seul. Les niveaux d'avant (4.25 lite, 4.26, GMFSS sous --no-gmfss-native)
+// se relisent sur le plus proche (interp_retired.h).
 enum class InterpLevel : std::uint8_t { DistilDrba, Rife422Lite, Rife425, GmfssMiddle, GmfssUnion, System };
 inline constexpr std::string_view kRife422LiteFile = "rife_v4.22_lite.onnx";
 inline constexpr std::string_view kRife425File = "rife_v4.25.onnx";

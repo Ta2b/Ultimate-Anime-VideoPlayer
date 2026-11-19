@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "core/types.h"
-#include "prepare/onnx_dims.h"
 
 namespace kirari::app::play {
 
@@ -35,10 +34,6 @@ std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem:
 // Les deux graphes du premier dossier de gmfss_places(dirs) qui les a tous les deux, et la paire au demi-flot
 // de ce dossier si elle y est.
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs);
-
-// Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height (multiples
-// de 64) : « H », « W », puis « H/2 » à « W/8 ».
-std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height);
 
 // Les deux graphes à construire : la paire au demi-flot si half et qu'elle est là, sinon celle au flot
 // entier.

@@ -5,11 +5,27 @@
 #include <string>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "app/play/derived_model.h"
 #include "core/utf8_path.h"
+#include "prepare/onnx_dims.h"
 
 namespace kirari::app::play {
+namespace {
+
+// Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height (multiples
+// de 64) : « H », « W », puis « H/2 » à « W/8 ».
+std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {
+  std::vector<prepare::NamedDim> dims{{"H", padded_height}, {"W", padded_width}};
+  for (const int scale : {2, 4, 8}) {
+    dims.push_back({std::format("H/{}", scale), padded_height / scale});
+    dims.push_back({std::format("W/{}", scale), padded_width / scale});
+  }
+  return dims;
+}
+
+}  // namespace
 
 std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem::path> dirs) {
   std::vector<std::filesystem::path> places;
@@ -41,15 +57,6 @@ std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dir
 
 GmfssModels gmfss_chosen(const GmfssModels& found, bool half) {
   return {.pair = half && !found.half_pair.empty() ? found.half_pair : found.pair, .fusion = found.fusion};
-}
-
-std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {
-  std::vector<prepare::NamedDim> dims{{"H", padded_height}, {"W", padded_width}};
-  for (const int scale : {2, 4, 8}) {
-    dims.push_back({std::format("H/{}", scale), padded_height / scale});
-    dims.push_back({std::format("W/{}", scale), padded_width / scale});
-  }
-  return dims;
 }
 
 std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int padded_width,

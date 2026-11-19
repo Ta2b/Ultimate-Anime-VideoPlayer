@@ -409,6 +409,12 @@ TEST_CASE("kirari play : l'aide ne cite aucune option inconnue de l'analyseur", 
   // Le tri des paires ne vaut qu'avec la carte de la scène, une option d'essai : essai lui aussi.
   CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--pair-triage"}));
   CHECK(parse({"video.mkv", "--scene-map", "--pair-triage"})->pair_triage);
+  // GMFSS natif par défaut (19 novembre 2026) : --gmfss-native reste lu sans --debug, l'essai est de
+  // l'éteindre.
+  CHECK(parse_play_options(std::vector<std::string_view>{"video.mkv"})->gmfss_native);
+  CHECK(parse_play_options(std::vector<std::string_view>{"video.mkv", "--gmfss-native"})->gmfss_native);
+  CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--no-gmfss-native"}));
+  CHECK_FALSE(parse({"video.mkv", "--no-gmfss-native"})->gmfss_native);
 }
 
 }  // namespace kirari::app::play

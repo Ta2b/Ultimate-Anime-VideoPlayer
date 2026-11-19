@@ -73,7 +73,7 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   CHECK_FALSE(without->gmfss_light);
 }
 
-TEST_CASE("play.toml sous --gmfss-native : GMFSS union, seul ou au milieu, se relit tel quel",
+TEST_CASE("play.toml avec le natif (défaut) : GMFSS union, seul ou au milieu, se relit tel quel",
           "[app][settings][gmfss]") {
   // keep_gmfss est posé par le lecteur au lancement ; le test le rend éteint quoi qu'il arrive.
   struct Kept {
@@ -98,7 +98,7 @@ TEST_CASE("play.toml sous --gmfss-native : GMFSS union, seul ou au milieu, se re
     CHECK(interp_level(high_back->motion_engine, high_back->rife_model, high_back->gmfss_middle) ==
           InterpLevel::GmfssMiddle);
   }
-  // L'option retirée, le même fichier retombe sur RIFE 4.25.
+  // Sous --no-gmfss-native, le même fichier retombe sur RIFE 4.25.
   const auto alone = parse_settings("[interpolation]\nengine = \"gmfss_union\"\n");
   REQUIRE(alone);
   CHECK(alone->motion_engine == MotionEngine::Rife);
