@@ -38,7 +38,7 @@ ResConv séparable est une convolution par canal 3 × 3 suivie d'une 1 × 1, san
   partagée reste possible.
 - **Six appuis en un lot** (`BatchParams`, `rife_native_kernels.cuh`) : blockIdx.z = image · (grille z d'une
   image) + reste, chaque image décalée de son pas. Le lot est un paramètre de modèle des noyaux, et ses champs
-  sont hors de `Params` : les 49 noyaux de RIFE natif gardent exactement leurs registres d'avant. Les blocs grossiers remplissent ainsi la carte (bloc 0 :
+  sont hors de `Params` : les noyaux de RIFE natif gardent exactement leurs registres d'avant. Les blocs grossiers remplissent ainsi la carte (bloc 0 :
   34 × 60 points au 1/32 de 1080p, six fois) ; le K découpé ne sert que s'il manque encore des blocs.
 - **Par pixel** (NHWC) : la colle écrit X0 au pas 16, X1, X2 et l'entrée de la tête au pas 32 (canaux en trop à
   zéro), et lit Y au pas 16 et la sortie de la tête au pas 8 (`kernels::tfix_in_ld`, `tfix_out_ld`,
