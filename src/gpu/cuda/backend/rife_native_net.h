@@ -27,15 +27,19 @@ struct RifeNativeConv {
 };
 using RifeNativePiece = std::vector<RifeNativeConv>;
 
+// Les sommes des convolutions : f16 (le débit plein des tensor cores des GeForce), mixtes (chaque prise en
+// f16, les prises entre elles en f32, au débit du f16), f32 (moitié du débit sur GeForce).
+enum class RifeNativeSums : std::uint8_t { kF16, kMixed, kF32 };
+
 class RifeNativeNet {
  public:
   virtual ~RifeNativeNet() = default;
   // pieces : l'encodeur puis les blocs ; reduce : d_k de chaque bloc ; height × width : la taille remplie.
-  // acc32 : sommes en f32. Rien et error rempli si une couche sort de ce que les noyaux font, ou si les
-  // poids ne s'envoient pas.
+  // sums : les sommes des convolutions. Rien et error rempli si une couche sort de ce que les noyaux font, ou
+  // si les poids ne s'envoient pas.
   static std::unique_ptr<RifeNativeNet> create(const std::vector<RifeNativePiece>& pieces,
                                                const std::vector<int>& reduce, int height, int width,
-                                               bool acc32, std::string& error);
+                                               RifeNativeSums sums, std::string& error);
   // La zone de travail (activations entre les couches) : octets, et son adresse pour les appels suivants.
   virtual std::int64_t workspace_bytes() const = 0;
   // L'encodeur sur une image (3 plans height × width) vers encoded (4 plans).
@@ -43,7 +47,7 @@ class RifeNativeNet {
                              void* workspace) const = 0;
   // Le bloc k : x (X_k par pixel), y (Y_k par pixel, pas 56).
   virtual cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const = 0;
-  virtual bool acc32() const = 0;
+  virtual RifeNativeSums sums() const = 0;
 };
 
 }  // namespace kirari::gpu::cuda
