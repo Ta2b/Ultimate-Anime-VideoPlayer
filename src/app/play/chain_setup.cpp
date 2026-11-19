@@ -384,6 +384,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.span_tiles_check = o.span_tiles_check;
   c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;
+  c.span_reuse = o.span_reuse;
 }
 
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).
