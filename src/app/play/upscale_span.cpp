@@ -182,16 +182,23 @@ void drop_tiles(gpu::Engine& engine) {
 
 namespace {
 
-// L'écart entre l'ancre et l'image en cours ; nullopt si le backend ne sait pas le mesurer (la reprise
-// retombe alors à deux de suite). waited_us : l'attente hôte de la relecture.
+// L'écart entre l'ancre et l'image en cours, et celui de chaque bloc (block_px : son côté en pixels de
+// l'entrée de SPAN) ; nullopt si le backend ne sait pas le mesurer (la reprise retombe alors à deux de
+// suite). waited_us : l'attente hôte de la relecture.
 std::optional<AnchorGap> measure_anchor(gpu::KernelOps& ops, const gpu::Tensor& anchor,
-                                        const gpu::Tensor& now, SpanReuse& reuse, std::int64_t& waited_us) {
+                                        const gpu::Tensor& now, float block_px, SpanReuse& reuse,
+                                        std::int64_t& waited_us) {
   KIRARI_TRACE("span.anchor");
   const auto asked = std::chrono::steady_clock::now();
   auto scores = ops.scores_now(anchor, now);
   waited_us =
       std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked).count();
-  if (scores) return AnchorGap{.worst_block = scores->worst_block};
+  if (scores) {
+    return AnchorGap{.worst_block = scores->worst_block,
+                     .blocks = std::move(scores->blocks),
+                     .blocks_x = scores->blocks_x,
+                     .side_px = block_px};
+  }
   log_channel("gpu")->info("SPAN repris : pas de mesure contre l'ancre ({}) ; deux de suite au plus",
                            scores.error().detail);
   reuse.anchor_measure = false;
@@ -237,6 +244,7 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
     return true;
   }
   const bool pair_measured = facts.scores.has_value();
+  const float block_px = measure_block_px(rgb_[current_]->tensor(), rife_source(current_));
   ReuseFacts rf{.same_epoch = facts.same_epoch,
                 .corrupt = frame.corrupt,
                 .has_output = warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_),
@@ -250,7 +258,7 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                          .intermediates = intermediates_,
                          .debanded = debanded_,
                          .reduce = reduce,
-                         .block_px = measure_block_px(rgb_[current_]->tensor(), rife_source(current_))},
+                         .block_px = block_px},
              facts);
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
   if (pair_measured && rf.same_epoch) reuse_.note_pair(facts.scores->worst_block);
@@ -264,7 +272,7 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
   if (candidate && reuse_.anchor_measure && reuse_.wants_anchor(pair_measured) && anchored) {
     std::int64_t waited = 0;
     rf.anchor = measure_anchor(*setup_.backend->kernels(), in_row == 0 ? previous : reuse_.anchor->tensor(),
-                               rife_source(current_), reuse_, waited);
+                               rife_source(current_), block_px, reuse_, waited);
     keep_scores_wait(waited);
   }
   // Sans mesure du tout (SPAN seul, mesure refusée) : rien ne dit que l'image est tenue.

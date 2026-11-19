@@ -13,6 +13,9 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
   ++seen_;
   if (facts.corrupt) ++corrupt_;
   tile_plan = TilePlan{};
+  // L'écart de l'ancre (la dernière image calculée) à l'image : sa mesure, ou la paire au début d'une série
+  // (la précédente est l'ancre).
+  const PairBlocks gap = facts.anchor ? facts.anchor->view() : in_row_ == 0 ? facts.blocks : PairBlocks{};
   const auto compute = [&] {
     in_row_ = 0;
     anchor_ready_ = false;
@@ -24,7 +27,8 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
         .stale = facts.tiles_stale != TileStale::Chain && restart ? TileStale::Restart : facts.tiles_stale,
         .spread_px = facts.spread_px,
         .input_key = facts.input_key,
-        .blocks = facts.blocks});
+        .blocks = facts.blocks,
+        .gap = gap});
     return tile_plan.tiled ? ReuseKind::Tiles : ReuseKind::Compute;
   };
   if (!enabled || !facts.same_epoch || facts.corrupt || anchor_bad_ || !facts.has_output || !facts.pair_held)
@@ -42,12 +46,10 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     ++stopped_limit_;
     return compute();
   }
-  if (!tiles.holds(facts.blocks)) {
-    ++stopped_tiles_;
-    return compute();
-  }
+  // Après une image par tuiles aussi, la reprise entière suit la seule règle du lot A : les tuiles s'ajoutent
+  // à ses séries sans en arrêter aucune (SpanTiles::held).
   take();
-  tiles.held(facts.blocks);
+  tiles.held(facts.blocks, gap);
   return ReuseKind::Whole;
 }
 
@@ -55,7 +57,7 @@ void SpanReuse::force() {
   ++seen_;
   anchor_ready_ = false;  // la série imposée reprend a sans en copier l'image
   tile_plan = TilePlan{};
-  tiles.held(PairBlocks{});
+  tiles.held(PairBlocks{}, PairBlocks{});
   take();
 }
 
@@ -81,7 +83,6 @@ std::string SpanReuse::summary() const {
       "{}, images abîmées {}{}",
       reused_, seen_, share, longest_, stopped_limit_, stopped_anchor_, corrupt_,
       anchor_measure ? "" : " (sans mesure contre l'ancre : deux de suite au plus)");
-  if (stopped_tiles_ > 0) line += std::format(", arrêts aux tuiles {}", stopped_tiles_);
   if (std::ranges::any_of(pairs_, [](std::uint64_t n) { return n > 0; }))
     line += std::format(
         " ; paires par pire bloc (niveaux) : jusqu'à 0.7 {}, 1 {}, 1.5 {}, 2 {}, 3 {}, 5 {}, au-delà {}",
