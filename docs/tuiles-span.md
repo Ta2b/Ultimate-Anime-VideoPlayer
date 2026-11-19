@@ -17,9 +17,10 @@ Aucun modèle nouveau : SPAN tel quel, la carte de la scène (`docs/carte-de-la-
   chemin SPAN après RIFE sait faire les tuiles sur place (sans décalage) quand une carte est là.
 - **En lecture** : jamais à l'export (la carte arrive quand elle peut ; l'export rejoue la chaîne au bit
   près), ni avec TemporalFix (la carte ne voit pas sa sortie), ni avec « Lisser les dessins tenus » (SPAN fait
-  en avance), ni avec le grade avant le warp (la sortie d'avant est gradée sur place).
+  en avance), ni avec la plaque de décor, ni quand le grade avant le warp a réécrit la sortie d'avant sur
+  place (`span_graded_` : le grader existe sur toute chaîne d'un anneau, seul compte ce qu'il a fait).
 
-`--no-span-tiles` (avec `--debug`) les éteint pour l'ABAB. La ligne de fin du journal dit ce qu'elles ont
+`--no-span-tiles` et `--span-tiles-check` (avec `--debug`, options d'essai) : l'ABAB et le contrôle. La ligne de fin du journal dit ce qu'elles ont
 fait : « SPAN par tuiles : t images sur n calculées (p %), x % des tuiles recalculées (y % avec le halo), d
 décalées sur un panoramique ; images entières : … sans carte, … région trop large, … refus du moteur ».
 
@@ -35,20 +36,30 @@ décalées sur un panoramique ; images entières : … sans carte, … région t
   tampons intermédiaires tiennent n'importe quoi, mais une valeur fausse n'avance que d'un rayon par couche :
   elle n'atteint jamais le cœur. Seul le cœur est écrit (`to_pixel` masqué). Le calcul des tuiles est donc
   celui d'un calcul complet, au flottant près.
-- **Décision** (`app/play/upscale_tiles.{h,cpp}`) : une tuile se recalcule si une tuile de la carte dessous a
-  changé (le signal `changed` de la carte, qui ignore le grain), ainsi que là où son contenu va ; si elle a
-  dérivé de plus d'un demi-pixel de travail depuis son dernier calcul (mouvements lents additionnés) ; si
-  elle a été reprise 24 fois de suite. L'image entière se recalcule à chaque coupe, fondu, saut, image
-  abîmée, toutes les 120 images, et quand la région dilatée dépasse 70 % de l'image.
+- **Décision** (`app/play/upscale_tiles.{h,cpp}`) : ce qui a changé, c'est une tuile dont une tuile de la
+  carte dessous a changé (le signal `changed` de la carte, qui ignore le grain), ainsi que là où son contenu
+  va ; une tuile qui a dérivé de plus d'un demi-pixel de travail depuis son dernier calcul (mouvements lents
+  additionnés), ou glissé de plus d'un code de luminosité (`SceneTile::shift`, signé : le grain s'y annule,
+  une lueur ou un fondu local s'additionne) ; une tuile reprise 24 fois de suite. Le **cœur** recalculé est
+  ce qui a changé dilaté de la portée (une sortie voit l'entrée jusqu'à 26 pixels de demi-résolution autour
+  d'elle), plus le rayon du débandage (16 pixels de travail) quand l'entrée est débandée ; la **région**
+  calculée est le cœur dilaté encore de la portée. L'image entière se recalcule à chaque coupe, fondu, saut,
+  image abîmée, toutes les 120 images, quand la recette de l'entrée de SPAN change (débandage, filtre de
+  réduction) et quand la région dépasse 70 % de l'image.
 - **Décalage** : caméra ajustée sans zoom ni rotation, résidu sous un demi-pixel, translation à moins de 1/8 de
   pixel d'un multiple de 2 pixels de travail (le pas du dégroupage). La sortie d'avant (l'autre tampon de
-  SPAN) se copie décalée dans la nouvelle ; ne se reprend que le décor sûr qui suit, la bande qui entre se
-  recalcule, la part fractionnaire va dans la dérive.
+  SPAN) se copie décalée dans la nouvelle ; ne se reprend que le décor sûr qui suit. Les deux bords de l'axe
+  décalé sont dans ce qui a changé : la bande qui entre n'a pas de source, et près du bord d'où le contenu
+  sort, la sortie voit maintenant le bourrage de zéros. La part fractionnaire va dans la dérive. Le
+  débandage tire ses points sur une grille fixe de l'écran : sous un décalage, un aplat débandé repris peut
+  s'écarter d'un seuil du débandage (environ un niveau) de son calcul complet ; la porte le mesure.
 - **Moteur** (`gpu/cuda/backend/span_fp8_tiles.cpp`) : `next_span_tiles` avant l'appel, puis l'appel lance le
   corps masqué en direct (pas le graphe de l'image entière) ; les masques passent par une mémoire épinglée
-  tournante. Le chemin qui écrit l'anneau depuis SPAN abandonne les tuiles.
+  tournante. Le chemin qui écrit l'anneau depuis SPAN abandonne les tuiles. La sortie d'avant lue pour le
+  décalage est déclarée aux voies comme une lecture (`SpanFp8Engine::tile_read`). Un appel refusé avant le
+  moteur annule la demande (`next_span_tiles` avec un cœur vide) : elle ne vaut pas pour l'appel suivant.
 
-ABI du backend : 48 (`Engine::span_tile_grid`, `Engine::next_span_tiles`). Nouvelle empreinte TensorRT,
+ABI du backend : 50 (`Engine::span_tile_grid`, `Engine::next_span_tiles`). Nouvelle empreinte TensorRT,
 nouveau paquet Linux.
 
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
@@ -65,6 +76,8 @@ nouveau paquet Linux.
 
 ## État
 
-Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA) ; jamais lancé. Le test
+Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA) ; jamais lancé. Audit du
+19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
+grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Le test
 `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques et la décision sur des cartes
 synthétiques.

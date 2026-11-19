@@ -27,8 +27,11 @@ Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif (`/mnt
 `src/gpu/cuda/backend/rife_native_kernels.cuh` (une famille de convolutions), `rife_native_net.cu` (le réseau),
 `rife_fused_native.cpp` (l'essai au chargement), `prepare/rife_native.h` (les poids lus dans les morceaux ONNX).
 
-- **mma.sync FP16**, sommes en f16 par défaut, en f32 si l'essai le demande ; m16n8k16 dès sm_80, deux m16n8k8
-  sur sm_75 (Turing), mêmes fragments ;
+- **mma.sync FP16**, sommes en f16, mixtes ou f32 selon l'essai ; m16n8k16 dès sm_80, deux m16n8k8 sur sm_75
+  (Turing), mêmes fragments. Mixtes : chaque prise (Kc produits au plus) s'accumule en f16, au débit plein des
+  tensor cores des GeForce, puis s'ajoute en f32 ; l'arrondi f16 ne porte plus sur les 9 · cin produits de la
+  couche. Simulé sur une couche 3 × 3 (activations après LeakyRelu, poids N(0, 1/K)) : f16 de 56 à 67 dB contre
+  la somme exacte selon cin, mixtes de 69 à 74 dB, f32 au-delà de 130 dB ;
 - **tuile en mémoire partagée** de 8 × 32 pixels (4 × 32 en pas 2), halo compris, copiée par `cp.async` au pas
   Kc + 8 (les lignes d'un `ldmatrix` sur des banques distinctes en pas 1) ; les canaux d'entrée par tranches de
   Kc = 16, 32 ou 64 pour rester sous 48 Ko, ceux de sortie par tuiles de 16, 32 ou 64 (blockIdx.z), la plus large
@@ -86,10 +89,23 @@ découpé sur les petites grilles (leur `ksplit`). Restent chez eux :
 
 Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent comme avant (en E/S HWC8), puis une
 paire de test (ondes et carrés, B décalée de (5, 3) pixels, instant 0,5) passe par la chaîne avec TensorRT, puis
-avec les noyaux natifs : trois passes (directe, capture du graphe CUDA, rejeu), la dernière comparée. Gardé à
-45 dB ou plus (images au pic 1 ; flot au pic de son plus grand écart, masque à part), sommes f16 d'abord, f32
-ensuite ; sinon TensorRT garde la chaîne. Le journal dit ce qui est retenu, avec les dB : « RIFE natif retenu
-(960×576, sommes f16 : 52,3 dB contre TensorRT, seuil 45 dB) ».
+avec les noyaux natifs en sommes f16, mixtes et f32 : trois passes chacune (directe, capture du graphe CUDA,
+rejeu), la dernière comparée. Une variante tient si elle fait 45 dB ou plus contre TensorRT (images au pic 1 ;
+flot au pic de son plus grand écart, masque à part).
+
+Les variantes qui tiennent sont chronométrées avec TensorRT, comme le SPAN FP8 (`span_timing.h`) : une passe de
+lecture ×2 (B encodée seule, graphes rejoués), onze tours intercalés (TensorRT, les natifs, puis l'inverse) d'une
+passe de chauffe et deux passes mesurées, la médiane des tours. La plus rapide n'est gardée que si elle bat
+TensorRT d'au moins 2 % ; sinon TensorRT garde la chaîne, même quand le natif tient le seuil. Le journal donne
+tout : « RIFE natif retenu, sommes mixtes (1920×1088, contre TensorRT : f16 41.8 dB, mixtes 47.0 dB, f32 49.3 dB,
+seuil 45 dB ; passe de lecture ×2 : TensorRT 4.98 ms, mixtes 4.70 ms, f32 5.60 ms) » (chiffres d'exemple).
+
+Mesure sur 4070 Ti avant les sommes mixtes et la mesure du temps (RIFE 4.25 seul, 1080p) : f16 41,8 dB, f32
+49,3 dB, retenu en f32 et 13 % plus lent que TensorRT (5,62 ms contre 4,98 ms par image créée). Le f32 natif somme
+presque exactement : ses 49,3 dB contre TensorRT disent surtout l'écart entre deux calculs FP16 qui arrondissent
+à des endroits différents (TensorRT peut sommer en f16, ses fusions arrondissent ailleurs). Aucune variante
+native ne passera nettement au-dessus contre TensorRT ; les 50 dB de la cible se jugeraient mieux contre une
+référence f32.
 
 Une valeur non finie d'un côté ou de l'autre (référence TensorRT comprise) écarte le natif. Un essai qui fait
 perdre le contexte CUDA (accès fautif d'un noyau) fait échouer le chargement au lieu de rendre une chaîne

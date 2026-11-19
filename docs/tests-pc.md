@@ -119,8 +119,12 @@ caches relevés avant `c7` (tolérance de P2.45) sont ignorés par le script : i
   SPAN nettoie le warp ; avec, il ne passe qu'une fois par image source.
 - **SPAN réutilisé sur les dessins tenus** (lot A, `src/app/play/upscale_reuse.h`) : avec ou sans
   interpolation, TemporalFix compris. Le journal de fin dit « SPAN repris : r sur n images (p %) », avec la
-  série la plus longue et les arrêts à la limite (24 de suite) et au fondu. Cible : 16 à 57 % sur un épisode
-  complet, interpolation coupée ; aucune image figée sur nuages, fumée, fondu de carton-titre, fond flou.
+  série la plus longue, les arrêts à la limite (24 de suite) et à l'ancre (paire tenue, écart à l'ancre
+  au-delà du seuil), puis les paires mesurées par pire bloc : beaucoup entre 0,7 et 2 niveaux, c'est du
+  grain que le seuil des dessins tenus refuse (Spy×Family 13 en BD : 0,4 %) ; au-delà de 5, le dessin
+  change. Cible : 16 à 57 % sur 60 s de dialogue (un passage d'action reste vers 10 %, Re:Zero 18 à
+  16:00) ; aucune image figée sur nuages, fumée, fondu de carton-titre, fond flou. Sans interpolation, la
+  ligne « attente des mesures de la paire » doit rester vers 0 ms (la paire se mesure en avance).
   ABAB : `kirari --debug play --no-span-reuse …` passe SPAN sur chaque image (charge GPU, puissance).
 - **Graphes CUDA de TensorRT** : même lecture qu'avant, coût CPU du thread gpu plus bas. Si un
   moteur refuse la capture, il repasse en lancements directs sans message ; un écran noir ou une

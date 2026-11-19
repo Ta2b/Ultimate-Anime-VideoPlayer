@@ -3,7 +3,7 @@
 // (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--compare]
+//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -13,6 +13,8 @@
 // le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
 // accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32 (il somme en f16 sinon).
+// --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
+// sans l'option, SpanFp8Weights::band, celle du lecteur).
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
 // standard (PSNR, plus grand écart, valeurs non finies) : un seul lancement juge la vitesse et la justesse.
 // À lancer sous le
@@ -70,6 +72,7 @@ struct Options {
   bool acc16 = false;
   bool acc32 = false;
   bool compare = false;
+  int band = -1;  // --band ; négatif : celle du lecteur
 };
 
 // Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
@@ -91,6 +94,8 @@ std::string read_options(int argc, char* const* argv, Options& options) {
     } else if (option == "--per-tap") {
       options.width48 = kirari::gpu::cuda::SpanFp8Width::PerTap;
     } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
+      ++i;
+    } else if (option == "--band" && i + 1 < argc && number(argv[i + 1], options.band) && options.band >= 0) {
       ++i;
     } else {
       return std::string(option);
@@ -122,6 +127,7 @@ kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Packa
   weights.fp16 = options.fp16;
   weights.acc16 = weights.acc16 || options.acc16;
   weights.acc32 = options.acc32;
+  if (options.band >= 0) weights.band = options.band;
   return weights;
 }
 

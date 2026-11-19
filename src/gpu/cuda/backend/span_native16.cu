@@ -4,8 +4,11 @@
 //   - le dégroupage est fondu au chargement de conv_1 (un lancement de moins) ;
 //   - la concaténation n'existe plus : conv_cat lit les quatre tenseurs là où leurs convolutions les ont
 //     écrits (trois écritures de 2·C octets par pixel en moins) ;
-//   - sommes en f16 par défaut (SpanFp8Weights::acc32 pour le f32), le débit plein des tensor cores.
+//   - sommes en f16 par défaut (SpanFp8Weights::acc32 pour le f32), le débit plein des tensor cores ;
+//   - le corps en bandes (SpanFp8Weights::band) : chaque couche lit ce que la précédente vient d'écrire,
+//     encore en L2, au lieu de 4 Go par image en mémoire (docs/span-native16.md, « Bandes »).
 // La zone de travail tient six tenseurs de C canaux FP16 (768 o par pixel à 64 canaux, comme avant).
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -48,6 +51,29 @@ class Buffer {
   void* ptr_ = nullptr;
 };
 
+// Des lignes de demi-résolution [from, to) d'une couche.
+struct Rows {
+  int from = 0, to = 0;
+};
+
+// Le front d'une vague de couches (les bandes) : end, la fin des lignes que la couche d'avant a faites ;
+// next(r) rend les lignes que la suivante, de rayon r, peut faire maintenant, sans attendre, et avance. Une
+// couche finit r lignes avant celle qu'elle lit (son halo), sauf au bas de l'image, où tout est là. done : la
+// fin atteinte par chaque couche à la vague d'avant, d'où elle reprend.
+struct Front {
+  int fh = 0;
+  int end = 0;
+  int* done = nullptr;
+  int layer = 0;
+  Rows next(int radius) {
+    const int to = std::max(done[layer], end >= fh ? fh : end - radius);
+    const Rows rows{done[layer], to};
+    done[layer++] = to;
+    end = to;
+    return rows;
+  }
+};
+
 constexpr std::int64_t kAlign = 256;
 constexpr std::int64_t align_up(std::int64_t bytes) {
   return (bytes + kAlign - 1) / kAlign * kAlign;
@@ -76,6 +102,8 @@ class NativeBody final : public SpanFp8Body {
   static constexpr int kSmemPixel = sn::smem_bytes(C, sn::kPixel, 9);
   static_assert(kSmemConv <= 48 * 1024 && kSmemCat <= 48 * 1024 && kSmemPixel <= 48 * 1024);
   static constexpr int kBlocks = SpanFp8Weights::kBlocks;
+  static constexpr int kLayers = 2 + 3 * kBlocks;  // conv_1, les blocs, conv_cat
+  // S0 : conv_1, puis (sur place) conv_cat, que to_pixel lit.
   enum Tensor : int { kS0, kK1, kX0, kX1, kT1, kT2, kTensors };
 
  public:
@@ -86,6 +114,7 @@ class NativeBody final : public SpanFp8Body {
 
   bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override {
     used_ = weights.blocks;
+    band_ = weights.band;
     const auto sent = [&](cudaError_t result) {
       if (result == cudaSuccess) return true;
       static_cast<void>(cudaGetLastError());
@@ -127,35 +156,12 @@ class NativeBody final : public SpanFp8Body {
       return false;
     }
     static_cast<void>(cudaGetLastError());
-    sn::Params p = params(first_, t_[kS0]);
-    p.in[0] = static_cast<const __half*>(input);
-    run<sn::kImageCh, C, 9, 1, S::kImage, M::kPlain, false>(stream, p, kSmemFirst);
-    const int last = used_ - 1;
-    __half* const x[2] = {t_[kX0], t_[kX1]};
-    for (int b = 0; b < used_; ++b) {
-      const __half* in = b == 0 ? t_[kS0] : b == 1 ? t_[kK1] : x[b % 2];
-      __half* out = b == 0 ? t_[kK1] : b == last ? x[used_ % 2] : x[(b + 1) % 2];
-      sn::Params c1 = params(conv_[b][0], t_[kT1]);
-      c1.in[0] = in;
-      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c1, kSmemConv);
-      sn::Params c2 = params(conv_[b][1], t_[kT2]);
-      c2.in[0] = t_[kT1];
-      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, kSmemConv);
-      sn::Params c3 = params(conv_[b][2], out);
-      c3.in[0] = t_[kT2];
-      c3.skip = in;
-      c3.w1 = attention_[b].w.template as<uint4>();
-      c3.b1 = attention_[b].b.template as<float>();
-      run<C, C, 9, 1, S::kNhwc, M::kGate, false>(stream, c3, kSmemConv);
-    }
-    // Les tranches de la concaténation du SPAN : sortie de conv_1, du dernier bloc, du premier bloc, premier
-    // Relu du dernier bloc (l'ordre des poids de conv_cat).
-    sn::Params cat = params(cat_, t_[kT2]);
-    cat.in[0] = t_[kS0];
-    cat.in[1] = x[used_ % 2];
-    cat.in[2] = t_[kK1];
-    cat.in[3] = t_[kT1];
-    run<C, C, 1, 4, S::kNhwc, M::kPlain, false>(stream, cat, kSmemCat);
+    // Les tuiles qui bougent veulent la grille de l'image entière : pas de bandes avec elles.
+    const int band = region_ == nullptr && band_ > 0 ? band_ : fh_;
+    std::array<int, kLayers> done{};
+    for (int top = 0; top < fh_; top += band)
+      wave(stream, static_cast<const __half*>(input),
+           Front{.fh = fh_, .end = std::min(fh_, top + band), .done = done.data()});
     return !failed(error);
   }
 
@@ -169,12 +175,12 @@ class NativeBody final : public SpanFp8Body {
       return false;
     }
     sn::Params p = params(pixel_, static_cast<__half*>(output));
-    p.in[0] = t_[kT2];
+    p.in[0] = t_[kS0];  // la sortie de conv_cat
     p.surface = ring.surface;
     p.surf_w = ring.width;
     p.surf_h = ring.height;
     p.mask = core_;  // la queue n'écrit que le cœur ; le corps a calculé sa région
-    run<C, sn::kPixel, 9, 1, S::kNhwc, M::kPixel, false>(stream, p, kSmemPixel);
+    run<C, sn::kPixel, 9, 1, S::kNhwc, M::kPixel, false>(stream, p, kSmemPixel, Rows{0, fh_});
     return !failed(error);
   }
 
@@ -235,10 +241,53 @@ class NativeBody final : public SpanFp8Body {
     return p;
   }
 
+  // Une vague : conv_1 jusqu'à la ligne front.end, puis chaque couche aussi loin que la précédente le permet.
+  // Ce qu'une couche lit vient d'être écrit par la précédente et tient encore en L2. Les tampons partagés
+  // entre couches (T1, T2, X0 et X1 d'un bloc à l'autre) restent justes : la couche qui réécrit un tampon
+  // suit de trois lignes au moins celle qui le lit encore, qui n'y revient jamais en arrière
+  // (docs/span-native16.md).
+  void wave(cudaStream_t stream, const __half* input, Front front) const {
+    sn::Params p = params(first_, t_[kS0]);
+    p.in[0] = input;
+    run<sn::kImageCh, C, 9, 1, S::kImage, M::kPlain, false>(stream, p, kSmemFirst, front.next(0));
+    const int last = used_ - 1;
+    __half* const x[2] = {t_[kX0], t_[kX1]};
+    for (int b = 0; b < used_; ++b) {
+      const __half* in = b == 0 ? t_[kS0] : b == 1 ? t_[kK1] : x[b % 2];
+      __half* out = b == 0 ? t_[kK1] : b == last ? x[used_ % 2] : x[(b + 1) % 2];
+      sn::Params c1 = params(conv_[b][0], t_[kT1]);
+      c1.in[0] = in;
+      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c1, kSmemConv, front.next(1));
+      sn::Params c2 = params(conv_[b][1], t_[kT2]);
+      c2.in[0] = t_[kT1];
+      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, kSmemConv, front.next(1));
+      sn::Params c3 = params(conv_[b][2], out);
+      c3.in[0] = t_[kT2];
+      c3.skip = in;
+      c3.w1 = attention_[b].w.template as<uint4>();
+      c3.b1 = attention_[b].b.template as<float>();
+      run<C, C, 9, 1, S::kNhwc, M::kGate, false>(stream, c3, kSmemConv, front.next(1));
+    }
+    // Les tranches de la concaténation du SPAN : sortie de conv_1, du dernier bloc, du premier bloc, premier
+    // Relu du dernier bloc (l'ordre des poids de conv_cat). La sortie s'écrit sur S0, sur place : une 1×1 ne
+    // lit que ses propres pixels, et les blocs ont fini de lire S0 sur ces lignes.
+    sn::Params cat = params(cat_, t_[kS0]);
+    cat.in[0] = t_[kS0];
+    cat.in[1] = x[used_ % 2];
+    cat.in[2] = t_[kK1];
+    cat.in[3] = t_[kT1];
+    run<C, C, 1, 4, S::kNhwc, M::kPlain, false>(stream, cat, kSmemCat, front.next(0));
+  }
+
+  // Les lignes rows d'une convolution ; rien si elles sont vides.
   template <int Cin, int Cout, int Taps, int Sources, sn::Src From, sn::Mode Mode, bool Relu>
-  void run(cudaStream_t stream, const sn::Params& p, int smem) const {
+  void run(cudaStream_t stream, sn::Params p, int smem, Rows rows) const {
+    if (rows.from >= rows.to) return;
+    p.y0 = rows.from;
+    p.y1 = rows.to;
+    const dim3 grid(grid_.x, static_cast<unsigned>((rows.to - rows.from + sn::kTH - 1) / sn::kTH));
     sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, Acc16>
-        <<<grid_, sn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
+        <<<grid, sn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
   }
 
   static bool failed(std::string& error) {
@@ -251,6 +300,7 @@ class NativeBody final : public SpanFp8Body {
   int fh_, fw_;
   dim3 grid_;
   int used_ = kBlocks;
+  int band_ = 0;  // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
   bool bound_ = false;
   const std::uint32_t* region_ = nullptr;  // tuiles qui bougent : masques d'appareil, nuls hors d'un appel
   const std::uint32_t* core_ = nullptr;

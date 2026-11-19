@@ -184,8 +184,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
   // DistilDRBA mesure aussi une paire « source seule » (facteur 1) : sans cela, la paire suivante n'aurait
   // pas les mesures du côté d'avant.
-  // Rapide à pas constant : chaque paire est mesurée, à N = 1 aussi (les coupes changent N).
-  if ((facts.factor > 1 || drba() || steady) && facts.same_epoch) {
+  // Rapide à pas constant (les coupes changent N) et SPAN seul (la reprise) : chaque paire, à N = 1 aussi.
+  if ((facts.factor > 1 || drba() || steady || reuse_.alone) && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
     // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.
@@ -266,7 +266,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
   // Dessin tenu : l'image agrandie de l'ancre sert à celle-ci, sans passe de SPAN. La série se juge contre
   // l'ancre et non paire par paire : un fondu lent ne fige pas l'image (upscale_reuse.h).
-  auto reused = reuses_span(frame, facts, held);
+  auto reused = reuses_span(frame, facts, held, spec.reduce);
   if (!reused) return std::unexpected(std::move(reused.error()));
   reuse_span_ = *reused;
   pick_span_buffer();
@@ -296,11 +296,12 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
       return std::unexpected(std::move(ok.error()));
   }
   spanned_now_ = false;  // SPAN de cette image : à sa première utilisation (span_current)
-  // Avant RIFE et SPAN de cette image : la suivante, si elle attend, ingérée et mesurée.
+  // Avant RIFE et SPAN de cette image : la suivante, si elle attend, ingérée et mesurée. SPAN seul, l'avance
+  // ne sert qu'à la mesure : un refus attend l'arrivée de la suivante, qui le redira.
   ahead_.ticket = 0;
-  if (looks_ahead()) {
-    if (auto ok = look_ahead(frame, spec); !ok) return std::unexpected(std::move(ok.error()));
-  }
+  if (auto ok = looks_ahead() ? look_ahead(frame, spec) : std::expected<void, Refusal>{};
+      !ok && !reuse_.alone)
+    return std::unexpected(std::move(ok.error()));
   return run_early().transform([this] { return outputs_; });  // passes RIFE sans slot (upscale_early.cpp)
 }
 

@@ -127,7 +127,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
 // clang-format off
-constexpr std::array<std::string_view, 46> kTrialOptions{
+constexpr std::array<std::string_view, 47> kTrialOptions{
     "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
     "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
     "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
@@ -136,7 +136,7 @@ constexpr std::array<std::string_view, 46> kTrialOptions{
     "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--filtered-warp",
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
     "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
-    "--pair-triage", "--gmfss-native"};
+    "--pair-triage", "--span-tiles-check", "--gmfss-native"};
 // clang-format on
 
 bool is_trial(std::string_view arg) {

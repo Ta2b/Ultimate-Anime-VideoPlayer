@@ -3,7 +3,8 @@
 // même facture que celle du SPAN natif (span_native16_kernels.cuh) mais aux formes de RIFE : canaux d'entrée
 // pris par tranches de Kc (la tuile d'entrée et son halo tiennent sous 48 Ko), canaux de sortie par tuiles de
 // CT (blockIdx.z), pas 1 ou 2, et la transposée 4 × 4 de pas 2 vue comme quatre convolutions 2 × 2, une par
-// phase de sortie (blockIdx.z). Sommes en f16 (Acc16, le débit plein des tensor cores des GeForce) ou en f32.
+// phase de sortie (blockIdx.z). Sommes (Acc) en f16 (le débit plein des tensor cores des GeForce), en f32
+// (moitié du débit sur GeForce), ou mixtes : chaque prise sommée en f16, les prises entre elles en f32.
 // sm_80 et après : mma m16n8k16 ; sm_75 (Turing) : deux m16n8k8, mêmes fragments.
 //
 // Un bloc de 4 warps calcule Rows lignes par warp sur 32 colonnes. La fin passe par la mémoire partagée :
@@ -105,37 +106,70 @@ __device__ __forceinline__ void ldmatrix4(std::uint32_t (&a)[4], std::uint32_t a
                : "r"(addr));
 }
 
-// Accumulateur d'une tuile m16n8 : 2 mots (4 demi-flottants) en f16, 4 flottants en f32. mma de m16n8k16 ;
-// sur sm_75, deux m16n8k8 (a0 a1 / b0 : k 0-7 ; a2 a3 / b1 : k 8-15).
-template <bool Acc16>
+// Les sommes d'une couche : f16, mixtes (f16 dans une prise, f32 d'une prise à l'autre), f32.
+enum class Acc : int { kF16, kMixed, kF32 };
+
+// d += a · b en f16 (deux mots : ligne g puis g + 8, colonnes 2t et 2t + 1). mma de m16n8k16 ; sur sm_75,
+// deux m16n8k8 (a0 a1 / b0 : k 0-7 ; a2 a3 / b1 : k 8-15).
+__device__ __forceinline__ void mma_f16(std::uint32_t (&d)[2], const std::uint32_t (&a)[4], std::uint32_t b0,
+                                        std::uint32_t b1) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+  asm("mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};\n"
+      : "+r"(d[0]), "+r"(d[1])
+      : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
+#else
+  asm("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
+      : "+r"(d[0]), "+r"(d[1])
+      : "r"(a[0]), "r"(a[1]), "r"(b0));
+  asm("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
+      : "+r"(d[0]), "+r"(d[1])
+      : "r"(a[2]), "r"(a[3]), "r"(b1));
+#endif
+}
+
+__device__ __forceinline__ float2 half_pair(std::uint32_t bits) {
+  __half2 v;
+  *reinterpret_cast<std::uint32_t*>(&v) = bits;
+  return __half22float2(v);
+}
+
+// Accumulateur d'une tuile m16n8 : 2 mots (4 demi-flottants) en f16, 4 flottants en f32, les deux en mixte.
+// promote() finit une prise (rien hors du mixte) ; pair(h) : h = 0, ligne g, colonnes 2t et 2t + 1 ; h = 1,
+// ligne g + 8.
+template <Acc A>
 struct Frag;
 template <>
-struct Frag<true> {
+struct Frag<Acc::kF16> {
   std::uint32_t r[2];
   __device__ __forceinline__ void clear() { r[0] = r[1] = 0U; }
   __device__ __forceinline__ void mma(const std::uint32_t (&a)[4], std::uint32_t b0, std::uint32_t b1) {
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
-    asm("mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};\n"
-        : "+r"(r[0]), "+r"(r[1])
-        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
-#else
-    asm("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
-        : "+r"(r[0]), "+r"(r[1])
-        : "r"(a[0]), "r"(a[1]), "r"(b0));
-    asm("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3}, {%4}, {%0,%1};\n"
-        : "+r"(r[0]), "+r"(r[1])
-        : "r"(a[2]), "r"(a[3]), "r"(b1));
-#endif
+    mma_f16(r, a, b0, b1);
   }
-  // h = 0 : ligne g, colonnes 2t et 2t + 1 ; h = 1 : ligne g + 8.
-  __device__ __forceinline__ float2 pair(int h) const {
-    __half2 v;
-    *reinterpret_cast<std::uint32_t*>(&v) = r[h];
-    return __half22float2(v);
+  __device__ __forceinline__ void promote() {}
+  __device__ __forceinline__ float2 pair(int h) const { return half_pair(r[h]); }
+};
+// Mixte : la prise s'accumule en f16 dans part (Kc produits au plus, au débit plein), puis s'ajoute en f32 à
+// r. L'arrondi f16 ne porte que sur la somme d'une prise, pas sur les 9 · cin produits de la couche.
+template <>
+struct Frag<Acc::kMixed> {
+  float r[4];
+  std::uint32_t part[2];
+  __device__ __forceinline__ void clear() {
+    r[0] = r[1] = r[2] = r[3] = 0.F;
+    part[0] = part[1] = 0U;
   }
+  __device__ __forceinline__ void mma(const std::uint32_t (&a)[4], std::uint32_t b0, std::uint32_t b1) {
+    mma_f16(part, a, b0, b1);
+  }
+  __device__ __forceinline__ void promote() {
+    const float2 lo = half_pair(part[0]), hi = half_pair(part[1]);
+    r[0] += lo.x, r[1] += lo.y, r[2] += hi.x, r[3] += hi.y;
+    part[0] = part[1] = 0U;
+  }
+  __device__ __forceinline__ float2 pair(int h) const { return make_float2(r[2 * h], r[2 * h + 1]); }
 };
 template <>
-struct Frag<false> {
+struct Frag<Acc::kF32> {
   float r[4];
   __device__ __forceinline__ void clear() { r[0] = r[1] = r[2] = r[3] = 0.F; }
   __device__ __forceinline__ void mma(const std::uint32_t (&a)[4], std::uint32_t b0, std::uint32_t b1) {
@@ -153,6 +187,7 @@ struct Frag<false> {
         : "r"(a[2]), "r"(a[3]), "r"(b1));
 #endif
   }
+  __device__ __forceinline__ void promote() {}
   __device__ __forceinline__ float2 pair(int h) const { return make_float2(r[2 * h], r[2 * h + 1]); }
 };
 
@@ -219,12 +254,12 @@ __device__ __forceinline__ void load_image(__half* s, const Params& p, int y0, i
 }
 
 // Les sommes des prises [t0, t1) d'une tranche : (Kc / 16) pas k par prise, à partir de la tranche q des
-// poids rangés. Les fragments B du pas suivant se chargent pendant les mma du pas courant.
+// poids rangés. Les fragments B du pas suivant se chargent pendant les mma du pas courant. En sommes
+// mixtes, chaque prise finit par son report en f32.
 // acc[f][nt] : fragment f (ligne f / 2 du warp, colonnes 16·(f % 2) à + 15), tuile n8 nt.
-template <int Kc, int CT, int KH, int S, int Rows, bool Acc16>
-__device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[Rows * 2][CT / 8], const __half* s,
-                                           const uint4* w, int q, int kcs, int t0, int t1, int warp,
-                                           int lane) {
+template <int Kc, int CT, int KH, int S, int Rows, Acc A>
+__device__ __forceinline__ void accumulate(Frag<A> (&acc)[Rows * 2][CT / 8], const __half* s, const uint4* w,
+                                           int q, int kcs, int t0, int t1, int warp, int lane) {
   using G = Geometry<KH, S, Rows>;
   constexpr int kLds = Kc + 8, kSub = Kc / 16, kNP = CT / 16, kMF = Rows * 2;
   // ldmatrix.x4 : la lane l donne la ligne l % 16 du fragment (la colonne de sortie), demi-K l / 16. En pas
@@ -269,13 +304,17 @@ __device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[Rows * 2][CT / 8],
 #pragma unroll
       for (int np = 0; np < kNP; ++np) b[np] = next[np];
     }
+#pragma unroll
+    for (int f = 0; f < kMF; ++f)
+#pragma unroll
+      for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].promote();
   }
 }
 
 // Biais de acc vers o (pas CT + 8), arrondi FP16.
-template <int CT, int Rows, bool Acc16>
-__device__ __forceinline__ void stage(const Frag<Acc16> (&acc)[Rows * 2][CT / 8], __half* o,
-                                      const float* bias, int warp, int lane) {
+template <int CT, int Rows, Acc A>
+__device__ __forceinline__ void stage(const Frag<A> (&acc)[Rows * 2][CT / 8], __half* o, const float* bias,
+                                      int warp, int lane) {
   constexpr int kLdo = CT + 8;
   const int g = lane >> 2, t = lane & 3;
 #pragma unroll
@@ -363,8 +402,8 @@ __device__ __forceinline__ void store(const __half* o, const Params& p, int ty0,
 }
 
 // K découpé : les sommes partielles de ce bloc, en f32, au canal z · CT + n de la grille z, pour la part kz.
-template <int CT, int Rows, bool Acc16>
-__device__ __forceinline__ void spill(const Frag<Acc16> (&acc)[Rows * 2][CT / 8], const Params& p, int ty0,
+template <int CT, int Rows, Acc A>
+__device__ __forceinline__ void spill(const Frag<A> (&acc)[Rows * 2][CT / 8], const Params& p, int ty0,
                                       int tx0, int z, int kz, int warp, int lane) {
   const int g = lane >> 2, t = lane & 3;
   const long pixels = static_cast<long>(p.oh) * p.ow;
@@ -423,7 +462,7 @@ __global__ void reduce_kernel(Params p, int width) {
 
 // Une convolution. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase blockIdx.z / tiles d'une
 // transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py.
-template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, bool Acc16>
+template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A>
 __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   static_assert(Kc % 16 == 0 && CT % 16 == 0, "canaux par 16");
   static_assert(I != In::kImage || Kc == 16, "l'image tient en une tranche de 16 canaux");
@@ -440,7 +479,7 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   const int kcs = p.cin / 16;
   const uint4* w = p.w + static_cast<long>(z) * KH * KH * kcs * (CT / 16) * 32;
 
-  Frag<Acc16> acc[Rows * 2][CT / 8];
+  Frag<A> acc[Rows * 2][CT / 8];
 #pragma unroll
   for (int f = 0; f < Rows * 2; ++f)
 #pragma unroll
@@ -466,15 +505,15 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
     }
     const int t0 = u0 > q * kTaps ? u0 - q * kTaps : 0;
     const int t1 = u1 - q * kTaps < kTaps ? u1 - q * kTaps : kTaps;
-    accumulate<Kc, CT, KH, S, Rows, Acc16>(acc, s, w, q, kcs, t0, t1, warp, lane);
+    accumulate<Kc, CT, KH, S, Rows, A>(acc, s, w, q, kcs, t0, t1, warp, lane);
   }
   if (p.ksplit > 1) {
-    spill<CT, Rows, Acc16>(acc, p, ty0, tx0, z, kz, warp, lane);
+    spill<CT, Rows, A>(acc, p, ty0, tx0, z, kz, warp, lane);
     return;
   }
   __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
   const int n0 = tile * CT;
-  stage<CT, Rows, Acc16>(acc, s, p.bias + static_cast<long>(phase) * p.tiles * CT + n0, warp, lane);
+  stage<CT, Rows, A>(acc, s, p.bias + static_cast<long>(phase) * p.tiles * CT + n0, warp, lane);
   __syncthreads();
   store<CT, Rows, O>(s, p, ty0, tx0, phase, n0);
 }

@@ -6,13 +6,16 @@
 // the-database/mpv@5b3f31d) : une ancre, une mesure ancre → image et une limite de reprises de suite. Rien
 // n'en est recopié ; la règle ci-dessous est la nôtre, sur nos mesures (kernels/spec/detect.h) :
 //
-// - la première reprise d'une série lit la paire (précédente, image) : la précédente est l'ancre ;
-// - les suivantes lisent l'écart entre l'ancre et l'image, sur ce que SPAN lit (après TemporalFix et le
-//   débandage) : un fondu lent ou un mouvement qui commence s'accumule contre l'ancre et passe le seuil, là
-//   où des paires voisines, chacune sous le seuil, laisseraient l'image se figer. C'est ce qui permet de
-//   passer de 2 à kMaxInRow reprises de suite ;
-// - au-delà de kPairOnlyInRow, l'écart moyen contre l'ancre doit aussi rester sous kFadeMean (un changement
-//   étendu, même faible partout, est un fondu) ;
+// - la première reprise d'une série lit la paire (précédente, image) : la précédente est l'ancre. Sans
+//   interpolation aussi (alone) : la paire se mesure alors en avance, comme sous RIFE (look_ahead), et non
+//   à l'arrivée de l'image, où la relecture attendait le SPAN de la précédente ;
+// - les suivantes lisent l'écart entre l'ancre et l'image, sur les images de la mesure de la paire (la
+//   copie réduite de RIFE quand elle existe, A09-18 ; l'image de travail sinon) : un fondu lent ou un
+//   mouvement qui commence s'accumule contre l'ancre et passe le seuil de chaque bloc, là où des paires
+//   voisines, chacune sous le seuil, laisseraient l'image se figer. C'est ce qui permet de passer de 2 à
+//   kMaxInRow reprises de suite. Pas de critère sur l'écart moyen : un fondu change tous les blocs autant,
+//   le pire bloc l'arrête donc aussi tôt ; l'écart moyen, lui, mesurait surtout le grain d'un BD (Spy×Family
+//   13, deux de suite au plus) ;
 // - sans mesure contre l'ancre (backend sans scores_now, allocation refusée), la règle d'avant : deux de
 // suite ;
 // - une image abîmée au décodage (DecodedFrame::corrupt) n'est ni reprise ni ancre.
@@ -22,6 +25,7 @@
 // changées, lues sur la carte de la scène : sorte Tiles, et le plan dans SpanReuse::tile_plan.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -33,10 +37,9 @@
 
 namespace kirari::app::play {
 
-// L'écart entre l'ancre et l'image arrivée (gpu::PairScores sur les images que SPAN lit).
+// L'écart entre l'ancre et l'image arrivée (gpu::PairScores sur les images de la mesure de la paire).
 struct AnchorGap {
   std::uint32_t worst_block = 0;  // pire bloc 16 × 16, en 1/256 de niveau 8 bits (kernels::is_held)
-  double mean_levels = 0.0;       // écart moyen de luma, en niveaux 8 bits
 };
 
 // Ce que l'étage sait de l'image arrivée.
@@ -52,6 +55,8 @@ struct ReuseFacts {
   bool tiles_ok = false;
   bool can_shift = false;
   const kernels::SceneMotion* scene = nullptr;
+  int spread_px = 0;            // TileFacts::spread_px
+  std::uint64_t input_key = 0;  // TileFacts::input_key
 };
 
 // Ce que l'étage règle au démarrage (UpscaleSetup::span_reuse).
@@ -69,11 +74,11 @@ enum class ReuseKind : std::uint8_t {
 
 class SpanReuse {
  public:
-  static constexpr int kMaxInRow = 24;       // comme libaji : un rafraîchissement au moins par seconde
-  static constexpr int kPairOnlyInRow = 2;   // sans mesure contre l'ancre, ou avant le critère de fondu
-  static constexpr double kFadeMean = 0.25;  // niveaux 8 bits, au-delà de kPairOnlyInRow
+  static constexpr int kMaxInRow = 24;      // comme libaji : un rafraîchissement au moins par seconde
+  static constexpr int kPairOnlyInRow = 2;  // sans mesure contre l'ancre
 
   bool enabled = true;  // --no-span-reuse : SPAN sur chaque image
+  bool alone = false;   // SPAN sans interpolation : l'étage mesure la paire pour la reprise, en avance
   // La mesure contre l'ancre sert-elle ? Pas au début d'une série dont la paire est mesurée (l'ancre est la
   // précédente).
   bool wants_anchor(bool pair_measured) const { return enabled && (in_row_ > 0 || !pair_measured); }
@@ -81,12 +86,19 @@ class SpanReuse {
   ReuseKind decide(const ReuseFacts& facts);
   // Une reprise imposée par l'étage (copie d'une tenue fondue, Smooth) : comptée comme une reprise.
   void force();
+  // Le pire bloc d'une paire mesurée de la même époque, au bilan : sous le seuil, juste au-dessus (du grain),
+  // ou loin (un dessin qui change).
+  void note_pair(std::uint32_t worst_block);
   // Le journal de fin : « SPAN repris : r sur n images (p %) … » ; vide si rien n'a été décidé.
   std::string summary() const;
 
-  // L'image de l'ancre telle que SPAN l'a lue, copiée au début d'une série ; nul tant qu'aucune n'a servi.
+  // L'image de l'ancre telle que la paire la mesure, copiée au début d'une série ; nul tant qu'aucune n'a
+  // servi. Elle ne vaut que pour la série où elle a été copiée (anchor_kept) : une série imposée (force) ou
+  // une image calculée la périme.
   std::unique_ptr<gpu::TensorBuffer> anchor;
-  bool anchor_measure = true;  // faux après un refus (backend sans scores_now, allocation)
+  bool anchor_measure = true;                   // faux après un refus (backend sans scores_now, allocation)
+  void anchor_kept() { anchor_ready_ = true; }  // l'étage vient de copier l'ancre de la série
+  bool anchor_ready() const { return anchor_ready_; }
 
   // Les tuiles qui bougent, et le plan de l'image arrivée (tiled faux hors de ReuseKind::Tiles) : à donner au
   // moteur (gpu::Engine::next_span_tiles) juste avant le SPAN de cette image, puis à oublier.
@@ -106,13 +118,16 @@ class SpanReuse {
  private:
   void take();
   int in_row_ = 0;
-  bool anchor_bad_ = false;  // l'ancre est une image abîmée
+  bool anchor_bad_ = false;    // l'ancre est une image abîmée
+  bool anchor_ready_ = false;  // anchor tient l'ancre de la série en cours
   std::uint64_t seen_ = 0;
   std::uint64_t reused_ = 0;
   std::uint64_t longest_ = 0;
   std::uint64_t stopped_limit_ = 0;
-  std::uint64_t stopped_fade_ = 0;
+  std::uint64_t stopped_anchor_ = 0;  // paire tenue, mais l'écart à l'ancre passe le seuil
   std::uint64_t corrupt_ = 0;
+  // Les paires mesurées par pire bloc : jusqu'à 0,7, 1, 1,5, 2, 3 et 5 niveaux, puis au-delà (note_pair).
+  std::array<std::uint64_t, 7> pairs_{};
 };
 
 }  // namespace kirari::app::play

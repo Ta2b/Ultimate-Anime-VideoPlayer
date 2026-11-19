@@ -42,7 +42,10 @@ Le flux NVOF sépare-t-il le décor des personnages assez bien pour un rendu par
 `tools/bench/qualite/nvof_scene.py` passe des extraits typés dans `nvof_dump` (grilles 4, 2, 1 en 540p,
 720p et 1080p, carte de coût, flux CUDA propres à la session) et rend le temps GPU par appel, le gain
 du recalage, le coût sur aplats, traits et grain, l'ajustement de la caméra, les tuiles décor contre
-dessin avec des vues PNG, et le verdict de la porte. Sur les panoramiques, le mode pyramide
+dessin avec des vues PNG, et le verdict de la porte. L'écart du décor au modèle de caméra, celui de la
+porte, se mesure sur l'image (Lucas-Kanade sur les tuiles de décor, `nvof_mesures.py`) : les vecteurs
+NVOF sont bruités d'environ 0,3 px sur un décor fixe et un personnage lent les tire, ce qui faisait
+rater les caméras lentes (4070 Ti, 19 novembre). Sur les panoramiques, le mode pyramide
 (`--pyramide 360:720`, par défaut) passe la caméra d'une passe en 360p en indices externes
 (`nvof_dump --hint-grid 8`) à la passe 720p, et compare avec et sans par vitesse de caméra. Les en-têtes de NVIDIA sont dans
 `third_party/nvidia-optical-flow` : rien à télécharger.
