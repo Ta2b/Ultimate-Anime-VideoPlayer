@@ -138,6 +138,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   // Fondu local du mouvement de RIFE (tensorrt_doubt.cpp).
   std::expected<void, Refusal> motion_doubt(const Motion& motion, std::span<const std::uint8_t> weights,
                                             int cols, int rows, float fade, const Motion& out) override;
+  // Mouvement d'une caméra affine (tensorrt_doubt.cpp) : le tri des paires de GMFSS.
+  std::expected<void, Refusal> motion_camera(const std::array<float, 6>& camera, float scale,
+                                             const Motion& out) override;
   // Export par puits CUDA (tensorrt_export.cpp) : RGB → NV12 ou P010 dans l'image de l'encodeur.
   std::expected<void, Refusal> write_yuv(const Tensor& rgb, const YuvTarget& target) override;
   // Étape 11.5 (tensorrt_export.cpp) : chaque voie interrogée par cudaStreamQuery ; les signaux de l'export

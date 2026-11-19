@@ -131,6 +131,15 @@ struct GmfssBuffers {
   std::array<std::unique_ptr<gpu::TensorBuffer>, core::kMaxInstantsPerPair> early;
   std::array<float, core::kMaxInstantsPerPair> early_t{};
   std::uint64_t early_fusions = 0;
+  // Tri des paires de GMFSS seul (rife_triage.h) : le mouvement de la caméra d'une paire impossible ou d'un
+  // panoramique pur (kernels/spec/motion_camera.h), écrit une fois par paire, lu par le warp à chaque
+  // instant.
+  std::unique_ptr<gpu::TensorBuffer> camera_flow;  // 1 × 4 × h × w, taille de travail
+  std::unique_ptr<gpu::TensorBuffer> camera_mask;  // 1 × 1 × h × w
+  bool camera_ready = false;                       // écrit pour la paire en cours
+  bool camera_refused = false;                     // le backend n'a pas motion_camera : la fusion
+  std::uint64_t camera_pairs = 0;                  // paires faites par la caméra
+  std::uint64_t camera_images = 0;                 // et leurs images
 };
 
 }  // namespace kirari::app::play

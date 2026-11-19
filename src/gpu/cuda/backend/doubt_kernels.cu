@@ -1,4 +1,4 @@
-// Port CUDA de kernels/ref/motion_doubt.cpp : un fil par point des plans du mouvement.
+// Ports CUDA de kernels/ref/motion_doubt.cpp et motion_camera.cpp : un fil par point des plans du mouvement.
 #include <cstddef>
 #include <cstdint>
 #include <cuda_fp16.h>
@@ -67,7 +67,46 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) motion_doubt
   out_mask[at] = __float2half_rn(w >= 1.0F ? p.fade : m + __fmul_rn(p.fade - m, w));
 }
 
+// kernels::camera_shift réécrit ici, mêmes arrondis (sans FMA).
+__global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) motion_camera(MotionCameraParams p) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
+  if (x >= p.plane_width || y >= p.plane_height) return;
+  const std::size_t plane =
+      static_cast<std::size_t>(p.plane_width) * static_cast<std::size_t>(p.plane_height);
+  const std::size_t at =
+      static_cast<std::size_t>(y) * static_cast<std::size_t>(p.plane_width) + static_cast<std::size_t>(x);
+  auto* out_flow = static_cast<__half*>(p.out_flow);
+  auto* out_mask = static_cast<__half*>(p.out_mask);
+  const int wx = x - p.window_x;
+  const int wy = y - p.window_y;
+  float dx = 0.0F;
+  float dy = 0.0F;
+  if (wx >= 0 && wy >= 0 && wx < p.window_width && wy < p.window_height) {
+    const float px = static_cast<float>(wx) / p.scale;
+    const float py = static_cast<float>(wy) / p.scale;
+    dx = __fmul_rn(
+        __fadd_rn(__fadd_rn(p.camera[0], __fmul_rn(p.camera[1] - 1.0F, px)), __fmul_rn(p.camera[2], py)),
+        p.scale);
+    dy = __fmul_rn(
+        __fadd_rn(__fadd_rn(p.camera[3], __fmul_rn(p.camera[4], px)), __fmul_rn(p.camera[5] - 1.0F, py)),
+        p.scale);
+  }
+  out_flow[at] = __float2half_rn(-0.5F * dx);
+  out_flow[plane + at] = __float2half_rn(-0.5F * dy);
+  out_flow[2 * plane + at] = __float2half_rn(0.5F * dx);
+  out_flow[3 * plane + at] = __float2half_rn(0.5F * dy);
+  out_mask[at] = __float2half_rn(0.5F);
+}
+
 }  // namespace
+
+cudaError_t launch_motion_camera(const MotionCameraParams& params, cudaStream_t stream) {
+  const dim3 grid(static_cast<unsigned>((params.plane_width + kBlock - 1) / kBlock),
+                  static_cast<unsigned>((params.plane_height + kBlock - 1) / kBlock));
+  motion_camera<<<grid, dim3(kBlock, kBlock), 0, stream>>>(params);
+  return cudaGetLastError();
+}
 
 cudaError_t launch_motion_doubt(const MotionDoubtParams& params, cudaStream_t stream) {
   const dim3 grid(static_cast<unsigned>((params.plane_width + kBlock - 1) / kBlock),

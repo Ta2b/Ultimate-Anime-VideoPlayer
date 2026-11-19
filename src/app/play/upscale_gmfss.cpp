@@ -160,6 +160,39 @@ void list_splats(GmfssBuffers& gmfss, std::uint32_t set) {
   }
 }
 
+// Tri des paires de GMFSS seul (rife_triage.h) : une paire impossible ou un panoramique pur se fait par le
+// warp de la caméra (kernels/spec/motion_camera.h), sans la paire ni la fusion. Faux : la fusion tourne
+// (paire ordinaire, sans --pair-triage, ou backend sans motion_camera, dit une fois au journal).
+std::expected<bool, Refusal> by_camera(gpu::KernelOps& ops, GmfssBuffers& gmfss, const RifeTriage& triage,
+                                       const gpu::Tensor& a, const gpu::Tensor& b, float t,
+                                       const gpu::Tensor& into) {
+  const PairSort sort = triage.now();
+  if ((sort != PairSort::Fade && sort != PairSort::Pan) || !gmfss.camera_flow || gmfss.camera_refused)
+    return false;
+  const gpu::Tensor& flow = gmfss.camera_flow->tensor();
+  const gpu::Motion motion{.flow = flow,
+                           .mask = gmfss.camera_mask->tensor(),
+                           .area = {.x = 0,
+                                    .y = 0,
+                                    .width = static_cast<int>(flow.shape.dims[3]),
+                                    .height = static_cast<int>(flow.shape.dims[2])}};
+  if (!gmfss.camera_ready) {
+    // Travail et GMFSS à la même taille (gmfss_fits) : la caméra de la carte se lit telle quelle.
+    if (auto ok = ops.motion_camera(triage.camera(), 1.0F, motion); !ok) {
+      if (ok.error().code != RefusalCode::FormatUnsupported) return std::unexpected(std::move(ok.error()));
+      log_channel("gpu")->warn("GMFSS : mouvement de la caméra refusé ({}), la fusion fait chaque paire",
+                               ok.error().detail);
+      gmfss.camera_refused = true;
+      return false;
+    }
+    gmfss.camera_ready = true;
+    ++gmfss.camera_pairs;
+  }
+  if (auto ok = ops.warp_blend(a, b, motion, t, into); !ok) return std::unexpected(std::move(ok.error()));
+  ++gmfss.camera_images;
+  return true;
+}
+
 }  // namespace
 
 std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
@@ -187,7 +220,13 @@ std::expected<void, Refusal> UpscaleStage::allocate_gmfss() {
       return ok;
     list_splats(gmfss_, set);
   }
-  if (setup.use == GmfssUse::Only) return {};
+  if (setup.use == GmfssUse::Only) {
+    if (!setup_.pair_triage) return {};
+    // Le tri des paires : le mouvement de la caméra, à la taille de travail (celle de GMFSS seul).
+    if (auto ok = alloc_f16(backend, gmfss_.camera_flow, 4, setup_.rife_width, setup_.rife_height); !ok)
+      return ok;
+    return alloc_f16(backend, gmfss_.camera_mask, 1, setup_.rife_width, setup_.rife_height);
+  }
   // Le mélange : chaque clé à la taille de RIFE, puis à celle de travail et après SPAN si le warp les lit ;
   // l'entrée de RIFE des sous-intervalles.
   const int w = setup_.work_width;
@@ -279,6 +318,9 @@ bool UpscaleStage::gmfss_pair() const {
   // Jamais de clé sur une paire qui bouge peu (gmfss_moving) ; sous le seuil, la clé ne se pose que si le
   // crédit déborde (gmfss_.spare).
   if (gmfss_.behind || !gmfss_moving()) return false;
+  // Tri des paires (rife_triage.h) : une paire que la carte fond (en entier ou par endroits) reste à RIFE et
+  // à son fondu ; une clé GMFSS y referait les fantômes que le fondu évite.
+  if (triage_.now() == PairSort::Fade || triage_.now() == PairSort::Masked) return false;
   return gmfss_strong() || gmfss_.spare;
 }
 
@@ -300,6 +342,9 @@ bool UpscaleStage::gmfss_strong() const {
 std::expected<void, Refusal> UpscaleStage::run_gmfss(float t, const gpu::Tensor& into) {
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (gmfss_only()) {  // fusion déjà enfilée à l'arrivée de la paire (run_gmfss_early)
+    auto camera = by_camera(ops, gmfss_, triage_, rife_source(current_ ^ 1U), rife_source(current_), t, into);
+    if (!camera) return std::unexpected(std::move(camera.error()));
+    if (*camera) return {};
     for (std::size_t k = 0; k < gmfss_.early_t.size(); ++k) {
       if (gmfss_.early_t[k] == t) return ops.rife_crop(gmfss_.early[k]->tensor(), into);
     }
@@ -419,8 +464,11 @@ std::expected<void, Refusal> UpscaleStage::run_gmfss_early() {
     use_lane(back);
     return ok;
   }
+  // Paire impossible ou panoramique pur : le warp de la caméra, au slot (by_camera), sans fusion.
+  const bool camera = (triage_.now() == PairSort::Fade || triage_.now() == PairSort::Pan) &&
+                      gmfss_.camera_flow && !gmfss_.camera_refused;
   const kernels::RifeGeometry g = gmfss_geometry(setup_.rife_width, setup_.rife_height);
-  for (std::uint32_t k = 0; k < outputs_ && ok; ++k) {
+  for (std::uint32_t k = 0; k < outputs_ && ok && !camera; ++k) {
     const float t = instants_[k].t;
     if (t <= 0.0F || t >= 1.0F) continue;
     if (!gmfss_.early[k]) {

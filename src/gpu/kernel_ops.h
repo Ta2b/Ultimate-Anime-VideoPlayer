@@ -362,6 +362,14 @@ class KernelOps {
                                                     int /*rows*/, float /*fade*/, const Motion& /*out*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "motion_doubt : absent de ce backend"});
   }
+  // Mouvement d'une caméra affine (kernels/spec/motion_camera.h) : le tri des paires de GMFSS fait un
+  // panoramique pur ou une paire impossible (caméra identité : le fondu) par le warp, sans réseau. Écrit dans
+  // out.flow et out.mask (FP16 1 × 4 et 1 × 1, mêmes plans), fenêtre out.area ; scale : pixels de la fenêtre
+  // par pixel de travail. Refus : formes, fenêtre hors des plans, scale ≤ 0, caméra non finie.
+  virtual std::expected<void, Refusal> motion_camera(const std::array<float, 6>& /*camera*/, float /*scale*/,
+                                                     const Motion& /*out*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "motion_camera : absent de ce backend"});
+  }
   // L'appareil répond-il encore (étape 11.5) ? Chaque file interrogée sans l'attendre ; DeviceLost quand le
   // contexte est perdu. RingStage le demande quand une image attend un slot depuis plus de 200 ms.
   virtual std::expected<void, Refusal> health() { return {}; }

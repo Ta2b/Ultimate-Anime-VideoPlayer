@@ -8,10 +8,15 @@
 //     mouvement est remplacé par un fondu enchaîné de a et b (kernels/spec/motion_doubt.h).
 //   - Zone douteuse (Masked) : seules les tuiles où le flux doute (effet, tuile qui change sans
 //     correspondance) passent au fondu, avec un bord adouci ; RIFE reste ailleurs.
+// GMFSS seul (for_gmfss) : le dessin tenu copié de même, la paire impossible fondue par le warp de l'étage
+// (caméra identité), le panoramique pur (Pan : seule la caméra bouge) fait par le warp de la caméra de la
+// carte, sans réseau (kernels/spec/motion_camera.h) ; pas de zone fondue par endroits, où GMFSS fait mieux
+// que RIFE. Le mélange garde le tri de RIFE : une paire fondue n'a pas de clé GMFSS (upscale_gmfss.cpp).
 // Sans carte (AMD, Intel, Turing, NVOF refusé, --scene-map éteint) ou sans --pair-triage : la décision
 // d'aujourd'hui, image pour image. Les seuils ne sont pas mesurés : la porte du groupe 3 les règle.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -24,7 +29,7 @@
 
 namespace kirari::app::play {
 
-enum class PairSort : std::uint8_t { Today, Held, Fade, Masked };
+enum class PairSort : std::uint8_t { Today, Held, Fade, Masked, Pan };
 
 namespace triage {
 // Part des tuiles qui changent (hors grain) au plus d'un dessin tenu par le flux.
@@ -39,6 +44,10 @@ inline constexpr float kDoubtConfidence = 0.5F;
 inline constexpr float kDoubtFloor = 0.04F;
 // Part du doute de la paire précédente gardée à la suivante (une zone ne clignote pas d'une paire à l'autre).
 inline constexpr float kDoubtKeep = 0.5F;
+// Panoramique pur (GMFSS) : écart moyen des tuiles décor à la caméra, pixels de travail, au plus.
+inline constexpr double kPanResidual = 1.0;
+// Et part des vecteurs sans correspondance au plus (bords qui entrent dans l'image compris).
+inline constexpr double kPanUnmatched = 0.1;
 }  // namespace triage
 
 // Vrai si la carte dit la paire tenue : ni dessin ni caméra qui bougent, ni fondu, presque aucune tuile qui
@@ -47,6 +56,10 @@ bool flow_held(const kernels::SceneMotion& scene);
 
 // Le doute brut de chaque tuile de la carte, dans [0, 1] : 1 pour un effet qui change, 1 − confiance / seuil
 // pour une tuile qui change avec une confiance basse, 0 sinon.
+// Vrai si la carte dit un panoramique pur : la caméra ajustée bouge, aucun dessin ne bouge par rapport à
+// elle, ni fondu ni coupe, peu de vecteurs sans correspondance et un décor qui suit le modèle.
+bool flow_pan(const kernels::SceneMotion& scene);
+
 std::vector<float> tile_doubt(const kernels::SceneMotion& scene);
 
 // La grille de doute d'un champ de doutes cols × rows (tuiles) : dilatée d'une tuile puis adoucie (3 × 3),
@@ -65,6 +78,7 @@ struct TriageCounts {
   std::uint64_t held = 0;     // tenues par le flux seul
   std::uint64_t faded = 0;    // impossibles, fondues
   std::uint64_t masked = 0;   // fondues par endroits
+  std::uint64_t panned = 0;   // panoramiques purs par le warp de la caméra (GMFSS seul)
   std::uint64_t refused = 0;  // le backend n'a pas motion_doubt : RIFE tel quel
 };
 
@@ -72,6 +86,11 @@ struct TriageCounts {
 // de ses instants, et le doute de la paire précédente (gardé en partie, oublié au saut et à la coupe).
 class RifeTriage {
  public:
+  // GMFSS seul : Fade et Pan par le warp de la caméra, jamais Masked (UpscaleStage).
+  void for_gmfss(bool only) { gmfss_only_ = only; }
+  PairSort now() const { return now_; }
+  // La caméra de la paire Fade (identité) ou Pan (celle de la carte), pixels de travail.
+  const std::array<float, 6>& camera() const { return camera_; }
   // runs : RIFE tourne sur la paire d'après rife_runs(facts) (le flux tenu compris). Rend la décision.
   PairSort sort(const PairFacts& facts, bool runs);
   void reset();  // saut, nouvelle époque : rien de la paire précédente ne vaut plus
@@ -92,7 +111,10 @@ class RifeTriage {
  private:
   PairSort sort_unrun(const PairFacts& facts);  // RIFE ne tourne pas : tenue par le flux, ou rien
   void keep_doubt(std::vector<float>& doubt, const kernels::SceneMotion& scene);
+  PairSort sort_gmfss(const kernels::SceneMotion& scene, const std::vector<float>& doubt);
   bool asked_ = false;
+  bool gmfss_only_ = false;
+  std::array<float, 6> camera_{};
   PairSort now_ = PairSort::Today;
   DoubtGrid grid_;
   std::vector<float> kept_;  // le doute de la paire précédente, tuile par tuile

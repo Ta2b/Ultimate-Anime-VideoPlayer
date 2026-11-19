@@ -37,6 +37,7 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
       setup_(std::move(setup)),
       scene_(setup_.scene_map) {
   reuse_.enabled = setup_.span_reuse.whole;
+  triage_.for_gmfss(gmfss_only());
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
   reuse_.check = setup_.span_reuse.check;
   if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
@@ -66,10 +67,10 @@ UpscaleStage::~UpscaleStage() {
     log_channel("gpu")->info(
         "GMFSS union : {} paires, {} fusions, {} passes de RIFE entre clés, {} paires fortes laissées à "
         "RIFE en retard, {} clés sous le seuil, {} clés de plus sur les grands mouvements, {} paires en "
-        "avance dont {} reprises et {} sans clé, {} clés composées",
+        "avance dont {} reprises et {} sans clé, {} clés composées, {} paires par la caméra ({} images)",
         gmfss_.pairs + gmfss_.ahead_pairs, gmfss_.fusions, gmfss_.halves, gmfss_.behind_pairs,
         gmfss_.spare_keys, gmfss_.more_keys, gmfss_.ahead_pairs, gmfss_.ahead_used, gmfss_.ahead_wasted,
-        gmfss_.composed);
+        gmfss_.composed, gmfss_.camera_pairs, gmfss_.camera_images);
   }
   // RIFE à chaud, un compromis qualité contre vitesse (B45-07) : le milieu d'une paire calme qui accélère
   // garde l'échelle grossière de la paire d'avant. Ni le gain ni la perte ne sont mesurés : l'essai reste
