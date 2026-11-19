@@ -86,12 +86,6 @@ jobs:
           dir="$RUNNER_TEMP/release"
           gh release upload "$TAG" -R "$KIRARI_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
           echo "manifeste de $TAG re-signé" | tee -a "$GITHUB_STEP_SUMMARY"
-          # Le relais de l'ancien dépôt (release.yml) porte le même manifeste : il suit, pour les lecteurs ajp 0.11.
-          source tools/release/versions.env
-          if [ -n "${KIRARI_LEGACY_RELEASE_REPO:-}" ] && gh release view "$TAG" -R "$KIRARI_LEGACY_RELEASE_REPO" >/dev/null 2>&1; then
-            gh release upload "$TAG" -R "$KIRARI_LEGACY_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
-            echo "relais de $TAG re-signé dans $KIRARI_LEGACY_RELEASE_REPO" | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
       # GitHub désactive les planifications d'un dépôt public sans activité depuis 60 jours : « enable » sur un
       # workflow déjà actif ne coûte rien, et sur un workflow désactivé le réactive (C51-03).
       - name: Planification

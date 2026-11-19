@@ -16,13 +16,12 @@ dépôt des sources est public. Ses données étaient rangées sur deux niveaux 
 - **Un seul dépôt** : les releases, les paquets TensorRT et le manifeste des mises à jour vivent dans le dépôt des
   sources (`KIRARI_RELEASE_REPO`, `tools/release/versions.env`). Le jeton `AJP_RELEASE_TOKEN` reste le seul à
   écrire, le jeton du workflow ne fait que lire (B51-12).
-- **Relais** : les lecteurs ajp 0.11 et d'avant lisent le manifeste de `Ta2b/ajp-releases`. Chaque release finale
-  y dépose aussi son manifeste signé (`release.yml`, `KIRARI_LEGACY_RELEASE_REPO`), que `resign-manifest.yml`
-  re-signe avec celui du dépôt.
 - **Pas de reprise des anciennes releases** : celles d'ajp restent dans `Ta2b/ajp-releases`, rien n'est recopié
-  (leurs numéros et leurs préversions ne suivaient pas de règle claire, dit Tatoub). La release `models-interp-1`,
-  dont `tools/release/fetch-models.sh` tire les graphes d'interpolation, est refaite dans le nouveau dépôt par
-  `export-interpolation-models.yml` (case « publier »), avant la première release de Kirari.
+  (leurs numéros et leurs préversions ne suivaient pas de règle claire, dit Tatoub). Aucun relais non plus :
+  personne d'autre que Tatoub n'avait ajp, les lecteurs 0.11 ne verront pas Kirari dans leurs mises à jour.
+  La release `models-interp-1`, dont `tools/release/fetch-models.sh` tire les graphes d'interpolation, est
+  refaite dans le nouveau dépôt par `export-interpolation-models.yml` (case « publier »), avant la première
+  release de Kirari.
 
 ## Ce qui ne change pas
 - Les noms des secrets et variables de GitHub (`AJP_UPDATE_KEY`, `AJP_RELEASE_TOKEN`, `AJP_TS_*`…) : les
@@ -36,8 +35,7 @@ dépôt des sources est public. Ses données étaient rangées sur deux niveaux 
 ## Conséquences
 - `src/core`, `src/gpu`, `src/kernels` et `src/prepare` changent : nouveau paquet TensorRT, moteurs reconstruits.
 - Le lecteur par défaut se choisit de nouveau après la mise à jour (le ProgId devient `Kirari.Video`).
-- `Ta2b/ajp-releases` reste en ligne tant que des lecteurs 0.11 tournent ; vider `KIRARI_LEGACY_RELEASE_REPO`
-  arrête le relais.
+- Un ajp 0.11 ne propose pas Kirari : Kirari s'installe à la main une fois (l'installeur Windows remplace ajp).
 - Le logo (piste « Étincelle » : le bouton lecture et l'éclat kirari sur sa pointe) a sa source dans
   `tools/release/logo/kirari.svg` ; `node tools/release/logo/render.mjs` en refait `kirari.ico` et `kirari.png`.
   Choisi en novembre 2026, il peut encore changer.

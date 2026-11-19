@@ -154,15 +154,3 @@ jobs:
           fi
           gh release edit "$TAG" -R "$KIRARI_RELEASE_REPO" --prerelease=false "$latest"
           echo "release $TAG publiée ($latest)" | tee -a "$GITHUB_STEP_SUMMARY"
-          # Relais : les lecteurs d'avant Kirari (0.11.0 et plus anciens) lisent le manifeste de l'ancien dépôt des
-          # releases. Le même manifeste signé y est déposé, dans une release qui renvoie vers celle-ci : ils voient la
-          # nouvelle version. À retirer quand plus personne n'est en 0.11 (KIRARI_LEGACY_RELEASE_REPO vide).
-          source tools/release/versions.env
-          [ -n "${KIRARI_LEGACY_RELEASE_REPO:-}" ] || exit 0
-          page="https://github.com/$KIRARI_RELEASE_REPO/releases/tag/$TAG"
-          gh release view "$TAG" -R "$KIRARI_LEGACY_RELEASE_REPO" >/dev/null 2>&1 \
-            || gh release create "$TAG" -R "$KIRARI_LEGACY_RELEASE_REPO" --title "$TAG : ajp devient Kirari Player" \
-                 --notes "ajp s'appelle maintenant Kirari Player, et ses releases vivent dans $KIRARI_RELEASE_REPO : $page"
-          gh release upload "$TAG" -R "$KIRARI_LEGACY_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
-          gh release edit "$TAG" -R "$KIRARI_LEGACY_RELEASE_REPO" --prerelease=false --latest
-          echo "relais $TAG déposé dans $KIRARI_LEGACY_RELEASE_REPO" | tee -a "$GITHUB_STEP_SUMMARY"
