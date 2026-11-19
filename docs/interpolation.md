@@ -32,12 +32,17 @@ Plus rien n'est caché en mode avancé.
 | DistilDRBA v2 lite | garde le rythme de l'animation (poses tenues) ; juste sur les barreaux de Kill Blue (4:08,6) où 4.26 et 4.25 lite se trompent ; un réseau environ 5 fois plus léger que 4.22 lite (140 ms contre 776 par image en 720p sur processeur), mais refait à chaque image créée : plus léger que RIFE jusqu'à ×5, plus lourd au-delà ; une image de retard ; hors de l'Auto (`kDistilDrbaInAuto`) |
 | RIFE 4.22 lite | le RIFE le plus léger, traits fins ; le défaut hors RTX |
 | RIFE 4.25 | le RIFE le plus précis (premier bloc au 1/8 : juste sur les barreaux) ; environ 15 % de calcul en plus que 4.22 lite (906 ms contre 776 sur processeur) ; le défaut sur une RTX, et l'Auto en Qualité et Ultra |
+| RIFE 4.25 + GMFSS union | sous `--gmfss-native` seulement : RIFE 4.25, et GMFSS union au milieu des paires fortes (l'ancien Élevé) ; NVIDIA RTX (TensorRT) |
+| GMFSS union | sous `--gmfss-native` seulement : GMFSS union à chaque image (l'ancien Très élevé), le plus lourd ; NVIDIA RTX (TensorRT) |
 | Système (macOS) | interpolation d'Apple, sur un Mac seulement |
 
 Retirés du menu : RIFE 4.25 lite (Très rapide), RIFE 4.26 (Équilibré), GMFSS au milieu des paires fortes (Élevé+)
 et GMFSS union seul. Un `play.toml` ou une calibration qui les nomme se relit et tombe sur le plus proche
 (`src/app/play/interp_retired.h`) : 4.26 et GMFSS sur 4.25, 4.25 lite sur 4.22 lite. Leurs moteurs restent dans le
-code ; `--rife-model` charge encore 4.26 ou 4.25 lite pour un essai.
+code ; `--rife-model` charge encore 4.26 ou 4.25 lite pour un essai. GMFSS revient sous `--gmfss-native`
+([`gmfss-natif.md`](gmfss-natif.md), étape 5) : le lecteur pose `keep_gmfss` avant de lire `play.toml`, qui garde
+alors GMFSS tel quel, et le menu propose ses deux niveaux. `--motion=gmfss` joue GMFSS union seul pour une
+lecture, avec ou sans l'option (la comparaison du natif et de TensorRT), sans l'écrire dans `play.toml`.
 Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « Arrêt » et « Auto » en lecture.
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.

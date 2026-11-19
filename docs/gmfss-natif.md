@@ -8,7 +8,7 @@ chacune derrière `--gmfss-native` (éteint par défaut, essai) :
 2. les lectures des splats sur la bibliothèque de warp ([`warp-lib.md`](warp-lib.md)) ;
 3. **le GridNet de la fusion** (ce document) ;
 4. **FeatureNet et MetricNet de la paire** (ce document) ;
-5. GMFSS union de retour au menu, seulement derrière le natif ;
+5. **GMFSS union de retour au menu**, seulement derrière le natif (ce document) ;
 6. GMFlow natif, s'il égale TensorRT FP16 en qualité et en vitesse (GMFlow n'a pas de FP8) ; sinon TensorRT
    reste.
 
@@ -95,10 +95,10 @@ coûte jamais de qualité ni de vitesse. Le journal dit, pour chacune, les dB de
 
 ## Séance finale (sur le PC, binaire `linux-release`)
 
-GMFSS union a quitté le menu ([`interpolation.md`](interpolation.md)) : un `play.toml` qui le nomme tombe sur
-RIFE 4.25 (`interp_retired.h`). Il revient à l'étape 5, seulement derrière `--gmfss-native` ; d'ici là le natif ne
-s'essaie que par les tests GPU du backend. Les commandes ci-dessous sont celles de l'étape 5 (Très élevé,
-GMFSS union seul ; Élevé, le mélange avec RIFE 4.26).
+Sous `--gmfss-native`, le menu propose de nouveau « RIFE 4.25 + GMFSS union » (l'ancien Élevé) et « GMFSS union »
+(l'ancien Très élevé), et `play.toml` les garde ; sans l'option, ils tombent sur RIFE 4.25 comme avant
+(`interp_retired.h`). `--motion=gmfss` joue GMFSS union seul pour une lecture, avec ou sans l'option : la
+comparaison du natif et de TensorRT sur le même extrait.
 
 ```sh
 # 0. Première ouverture : la fusion et la paire entières, l'IFNet et le flot se construisent ; les lignes
