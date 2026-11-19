@@ -1,6 +1,10 @@
 # GMFSS union en temps réel : bilan du chantier natif
 
-> **Mis à jour le 19 novembre 2026, en fin de journée** :
+> **Mis à jour le 19 novembre 2026, au soir : GMFSS en pause**, à la demande de Tatoub, une fois #959 fusionné
+> pour la première release. Le travail en cours (splats par étapes dans le L2, émulation de Winograd et du FP8)
+> est arrêté et rangé ; son état exact et l'ordre de reprise sont en partie 4, « En pause ».
+>
+> Avant, le 19 novembre en fin de journée :
 > - étape 0 de la séance PC faite sur `e5f56f69` : paire et fusion natives retenues, 0 forme écartée ; la forme
 >   en flux n'est retenue qu'en sommes mixtes (partie 1) ;
 > - gel avant la première release : seule l'étape 0 de la séance PC passe avant elle ; elle décide de la fusion
@@ -243,14 +247,15 @@ Le plafond par couche suppose que chaque couche lit et écrit la mémoire. On pe
 |---|---|---|---|---|
 | Forme en flux : un bloc descend une colonne, l'entrée dans un anneau de 10 lignes, la bande suivante en vol pendant les mma | GridNet, ligne 0 | ligne 0 de 6,7 vers 3,9 à 4,5 ms ; fusion de 21,9 vers 19,1 à 19,6 ms (modèle) | faible : le banc ne la garde que plus rapide et juste ; occupation de 8 warps, sm_75 sans doute perdant | **écrite, dans #959** ; temps au PC |
 | Bloc résiduel fondu par tuiles (conv, PReLU, conv, addition), comme SPAN natif | GridNet, ligne 0 | 0,28 ms d'octets épargnés par bloc, mais le halo refait la première convolution 1,4 à 1,6 fois : +0,5 ms au mieux pour les trois blocs, une perte à 65 % des tensor cores | moyen à élevé : 70 à 99 Ko de mémoire partagée, un bloc par multiprocesseur, rien sur sm_75 | **écarté** ; à rouvrir si Nsight Compute montre le flux à 88 % de la bande avec des tensor cores sous 60 % |
-| Queue fondue : la convolution du PixelShuffle écrit en sortie de phases et `conv_last` lit sa tuile sur la puce | GridNet, queue | octets de 650 à environ 85 Mo ; plafond de la queue de 1,6 à environ 1,1 ms | moyen | cloud, à faire |
+| Queue fondue : la convolution du PixelShuffle écrit en sortie de phases et `conv_last` lit sa tuile sur la puce | GridNet, queue | fusion complète : le halo refait 20 à 40 % des 163 Gflop de la convolution du PixelShuffle, et une tuile utile ne tient pas en mémoire partagée ; ne fondre que le PixelShuffle et `conv_last` : 0,1 à 0,6 ms au mieux | moyen | **à écarter** (calcul non fini, en pause) |
 | Couches enchaînées par bandes dans le L2 (48 Mo) | GridNet | plafond du calcul seul : 9,7 ms au lieu de 10,9 ; plus au réel, où la ligne 0 ne recouvre pas ses octets | moyen à élevé : ordre des bandes, halo qui grandit | cloud, après le double tampon |
-| Winograd F(2,3) sur les couches limitées par le calcul (surtout les lignes 1 et 2 et la convolution du PixelShuffle : 6,3 ms au plafond) | GridNet | −2 à −2,5 ms au plafond. Utile seulement une fois les octets réglés : ces couches deviennent alors limitées par les octets. | moyen : précision f16 des transformées | émulation dans le cloud, puis noyaux |
-| FP8 (E4M3) dans le GridNet, ligne par ligne | GridNet | plafond de 10,9 à 8,2 ms avec les poids seuls ; fusion vers 5 à 6 ms avec des activations FP8 et des couches fondues | **élevé** : le FP8 de GMFSS a été retiré pour les gros mouvements | émulation d'abord, sur de vraies paires à mouvement fort ; lignes 1 et 2 d'abord, la queue en f16 |
+| Winograd F(2,3) sur les couches limitées par le calcul (surtout les lignes 1 et 2 et la convolution du PixelShuffle : 6,3 ms au plafond) | GridNet | plafond du GridNet de 11,65 à 8,97 ms en F(2×2), 8,71 en F(4×4) (`plafond_leviers.py`). La ligne 0, limitée par les octets, reste vers 3,8 ms. | moyen : sur une couche 64 → 64 aux poids aléatoires, F(2×2) perd 0 à 2 dB face au direct f16, F(4×4) environ 14 dB | émulation sur le vrai réseau écrite, **pas lancée** (en pause) |
+| FP8 (E4M3) dans le GridNet, ligne par ligne | GridNet | plafond du GridNet de 11,65 à 8,79 ms ; 5,82 ms avec les activations stockées en FP8 | **élevé** : le FP8 de GMFSS a été retiré pour les gros mouvements ; une couche seule tombe vers 43 dB ; la 4070 Ti ne double son débit FP8 qu'en sommes f16, qui débordent si les échelles servent toute la plage E4M3 | émulation écrite, **pas lancée** (en pause) ; lignes 1 et 2 d'abord, la queue en f16 |
 | Attention fenêtrée fondue (PR 2) et MLP fondu (PR 3) de GMFlow | paire | GMFlow de 6,6 à 2,3 ms au plafond. Modèle : environ 9 ms natif contre 13 à 15 sous TensorRT en 1080p. | moyen : vitesse non prouvée, Myelin fond peut-être déjà l'attention | cloud, en cours (`gmflow-attn-mlp`) ; banc au PC |
 | Sommes f16 dans GMFlow | paire | débit doublé sur les GEMM ; −5 dB sur l'image, encore au-dessus du graphe actuel | moyen : débordement, il faut un garde-fou | après les PR 4 à 6 de GMFlow |
 | Flot au quart (GMFlow sur 144×240 en 1080p) | paire | GMFlow divisé par environ 4 | **élevé** : le demi-flot coûtait déjà 0,5 dB | émulation d'abord, sur de gros mouvements |
-| Splats : normalisation fondue dans la lecture du GridNet, entrées par pixel | splats et fusion | de 7,1 à environ 2 à 3 ms ; deux copies en moins | faible à moyen | cloud, à faire |
+| Splats par étapes dans le L2 : les sommes f32 des huit splats (environ 500 Mo en 1080p) en étapes qui tiennent dans la moitié du L2 | splats | de 7,14 à environ 2 à 3 ms par instant (modèle) ; zone des sommes de 501 à 24 Mio | faible à moyen : que les sommes restent dans le L2 d'un lancement à l'autre | **écrit, pas lancé sur une carte** (en pause, patch rangé) |
+| Entrées du GridNet lues par pixel (mode « plans » des convolutions de tête) | splats et fusion | environ −1,0 ms, une recopie de 506 Mo en moins | moyen : un champ ajouté à `Params`, les noyaux RIFE à vérifier au SASS | à faire (en pause) |
 | Creux 2:4 (sparsity) | GridNet | ×2 sur les couches limitées par le calcul, environ −3 ms | **élevé** : demande un réentraînement et une requalification | déconseillé pour l'instant |
 | IFNet par les noyaux du RIFE natif | fusion | temps : presque rien ; construction : −54,6 s | faible | cloud, facultatif |
 | Hors GMFSS : un SPAN plus léger pour l'image créée | chaîne | 5 ms par image créée, avec un SPAN à 6 ms au lieu de 11 | qualité de SPAN | fil SPAN |
@@ -294,6 +299,26 @@ le coût reste à peu près celui du ×2 de GMFSS seul, plus les flots et les wa
    - le flot au quart ;
    - l'erreur de Winograd F(2,3) en f16.
 6. Facultatif : l'IFNet par les noyaux du RIFE natif, pour retirer la construction TensorRT de la fusion.
+
+### En pause (19 novembre 2026, au soir)
+
+Tatoub a mis GMFSS de côté une fois #959 fusionné. Ce qui était en cours :
+
+| Levier | État | Chiffres | Où le reprendre |
+|---|---|---|---|
+| Splats par étapes dans le L2 | écrit et commité (branche locale `gridnet-plafond`, `c0c57845`), jamais lancé sur une carte. Le calendrier est dans `gmfss_splat_plan.h` ; le budget vient de `cudaDevAttrL2CacheSize` (32 Mio au moins, sinon le passage unique d'avant). Compile en sm_75, 86, 89 et 120 sous CUDA 13.4 et 13.5, sans débordement ; le test hôte rejoue les étapes au bit près contre le passage unique et `kernels/ref`. Le test GPU `gmfss_splat_steps_test.cpp` (backend_tensorrt) est écrit, pas lancé | 28 étapes, 84 lancements par instant en 1080p ; mémoire vive de 2,5 à 0,5 Go ; reste surtout la boucle CAS des atomiques en mémoire partagée (environ 0,6 ms) | le patch `chantier-natif/en-pause/gridnet-plafond/` du dossier partagé |
+| Entrées du GridNet par pixel | examiné, pas écrit. Deux voies : le contrat étage, backend, moteur (jugé fragile), ou un mode « plans » dans les convolutions de tête (un champ en fin de `Params`) | environ −1,0 ms | à écrire |
+| Lignes 1 et 2 du GridNet vers 60 % du pic | analyse SASS commencée sur sm_89 : `conv_kernel<64,64,3,1,2,f16>` tient en 192 registres, sa boucle des prises paraît propre (128 HMMA pour 16 LDSM et 20 LDG). La cause de l'écart demande Nsight Compute | — | au PC, `ncu --section SpeedOfLight,WarpStateStats` sur `conv_kernel` |
+| Queue fondue | à écarter (tableau 3.4), calcul à écrire au propre | 0,1 à 0,6 ms au mieux | — |
+| Winograd et FP8 du GridNet | émulation écrite (`tools/gmfss/emul_gridnet_leviers.py`, avec `plafond_leviers.py` et `resultats-leviers/`). Seules les bases sont mesurées, sur six paires de Re:Zero (1024×576, GridNet à la moitié, t = 0,5 ; quatre paires voisines jusqu'à 433 px de mouvement, deux mouvements de caméra synthétiques de 96 px) : natif f32 à 78,8 dB au pire contre ORT FP32, natif f16 à 66,8 dB au pire. Aucune variante de Winograd ni de FP8 lancée : environ 2 h de processeur pour 60 variantes | plafonds en partie 3.4 | `python3 -I tools/gmfss/emul_gridnet_leviers.py PAIRE FUSION --video rezero-s4e18-1710.mkv --work DOSSIER --levier winograd`, puis `--levier fp8` |
+| Attention fondue de GMFlow, au-delà des PR 2 et 3 | pas commencée : la suite (PR 4 et 5) attend le banc du PC | — | règle de décision ci-dessous |
+
+Ordre de reprise :
+1. Au PC : le test `[gmfss]` de backend_tensorrt avec le patch des splats, puis la plage `gmfss.splats` de Nsight
+   Systems contre 7,14 ms ; les bancs de GMFlow (étape 4 ci-dessous) et Nsight Compute sur les lignes 1 et 2.
+2. Dans le cloud : l'émulation de Winograd puis du FP8 (les variantes, une par morceau puis en mélange) ; les
+   entrées du GridNet par pixel par le mode « plans », avec le contrôle du SASS des noyaux RIFE.
+3. Les lignes 1 et 2 d'après Nsight Compute ; la queue écrite comme écartée dans `gmfss-natif.md`.
 
 ### Sur le PC, en dernier, une seule séance
 
@@ -420,11 +445,12 @@ Linux. Il ne se fait que sur demande de Tatoub, comme toute release.
 
 | Branche | Commit | Contenu |
 |---|---|---|
-| `claude/project-thread-1t05iy` (#959) | sa tête | Le natif par défaut, le mélange, GMFlow PR 2 et 3, ce bilan, à jour de main (#962) |
+| `main` (#959 fusionnée) | `19060168` | Le natif par défaut, le mélange, GMFlow PR 2 et 3, ce bilan, à jour de main (#962) |
 | `gmfss-defaut` | `6532362a` | Le natif par défaut seul, à jour de main |
 | `gmfss-melange-2` | `4f1df2bf` | Le mélange, le réglage, les plages NVTX, la doc de la fusion mesurée |
 | `gridnet-noyaux` | `aa81450b` | La forme en flux du GridNet, fusionnée dans #959 |
 | `gmflow-attn-mlp` | `e7e5cba0` | Les PR 2 et 3 de GMFlow auditées, fusionnées dans #959 |
+| `gridnet-plafond` (locale, en pause) | `c0c57845` | Les splats par étapes dans le L2, pas lancés sur une carte ; patch dans le dossier partagé |
 
 | Fichier | Rôle |
 |---|---|
@@ -438,4 +464,5 @@ Linux. Il ne se fait que sur demande de Tatoub, comme toute release.
 | [`gmfss-natif.md`](gmfss-natif.md), [`gmflow-natif.md`](gmflow-natif.md) | Le détail technique et les résultats |
 
 Une copie de ce bilan est rangée dans le dossier partagé du projet, sous `chantier-natif/bilan-gmfss.md`, à côté de
-la séance (`seance-pc-gmfss.md`) et des plafonds (`gmfss-plafonds.md`).
+la séance (`seance-pc-gmfss.md`), des plafonds (`gmfss-plafonds.md`) et du travail en pause (`en-pause/`, un patch
+par branche, à appliquer par `git am` sur `main`).
