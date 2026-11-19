@@ -120,6 +120,9 @@ struct FlashSpan {
 
 // Différence entre deux images, de 0 (identiques) à 1 : histogramme et grille.
 float frame_distance(const ShotFrame& a, const ShotFrame& b);
+// Vrai pour une image noire et unie (le noir d'un fondu) : la première image qui la suit sans l'être ouvre un
+// plan.
+bool blank_frame(const ShotFrame& frame);
 
 class ShotCutter {
  public:
@@ -152,6 +155,7 @@ class ShotCutter {
   struct Motion {
     std::int64_t pts_us = 0;
     float distance = 0.0F;
+    bool cut = false;  // le saut d'une coupe : compté par la médiane, pas par la tendance
   };
 
   std::optional<Shot> judge(const ShotFrame& anchor, const ShotFrame& frame);

@@ -193,6 +193,81 @@ TEST_CASE("plans : un fondu au noir reste un plan, suivi du début à la fin", "
   CHECK(shots.at(0).first.mean > shots.at(0).last.mean + 0.3F);
 }
 
+TEST_CASE("plans : un combat qui s'emballe reste un plan, la coupe qui le suit est vue", "[media][shots]") {
+  // Un plan calme, puis un combat dont chaque dessin change de couleur (0,21 de distance), l'un plus vif
+  // (0,33) : la médiane des vingt-quatre dernières distances restait à celle du calme et le dessin vif
+  // ouvrait un plan (Re:Zero, 451) ; la tendance des huit dernières suit le combat. Une vraie coupe le
+  // termine.
+  std::vector<ShotFrame> frames = pan(48, 0.1F, 1);  // le calme : 0,04 d'un dessin à l'autre
+  for (ShotFrame& f : frames) f.chroma = 0.3F;
+  float blue = 0.0F;
+  for (int i = 48; i < 72; ++i) {
+    blue += i == 55 ? 0.075F : 0.035F;  // le bleu monte, le blanc des éclats va et vient
+    ShotFrame f = frames.at(47);
+    f.pts_us = i * kFrame;
+    f.blue = blue;
+    f.chroma = i % 2 == 0 ? 0.335F : 0.3F;
+    frames.push_back(f);
+  }
+  CHECK(frame_distance(frames.at(54), frames.at(55)) > 0.3F);
+  for (int i = 72; i < 120; ++i) frames.push_back(flat(i, 0.85F, 1));
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(1).start_us == 72 * kFrame);
+}
+
+TEST_CASE("plans : un dessin vif juste avant une coupe ne la cache pas", "[media][shots]") {
+  // Une droite des moindres carrés, tirée par ce seul dessin au bout de sept calmes, montait le seuil
+  // au-dessus de la coupe d'après (Re:Zero, 649) : la tendance prend la pente médiane.
+  std::vector<ShotFrame> frames = pan(40, 0.1F, 1);
+  ShotFrame vivid = frames.back();
+  vivid.pts_us = 40 * kFrame;
+  vivid.chroma = 0.08F;  // 0,24 de distance
+  frames.push_back(vivid);
+  for (int i = 41; i < 80; ++i) {
+    ShotFrame f = vivid;
+    f.pts_us = i * kFrame;
+    for (float& cell : f.grid) cell += 0.13F;  // 0,325 de distance
+    frames.push_back(f);
+  }
+  CHECK(frame_distance(frames.at(40), frames.at(41)) < 0.35F);
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(1).start_us == 41 * kFrame);
+}
+
+TEST_CASE("plans : la première image qui sort du noir ouvre un plan", "[media][shots]") {
+  // Un plan qui s'éteint en deux secondes, six images noires, puis un autre plan qui s'allume en deux
+  // secondes : chaque pas reste sous le seuil, et le tout faisait un seul plan.
+  const auto lit = [](int index, float light, int framing) {
+    ShotFrame f = flat(index, 0.6F * light);
+    for (std::size_t i = 0; i < f.grid.size(); ++i)
+      f.grid.at(i) = light * (0.6F + ((i + static_cast<std::size_t>(framing)) % 2 == 0 ? 0.3F : 0.0F));
+    return f;
+  };
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 72; ++i)
+    frames.push_back(lit(i, std::min(1.0F, 1.0F - static_cast<float>(i - 23) / 48.0F), 0));
+  for (int i = 72; i < 78; ++i) frames.push_back(lit(i, 0.0F, 0));
+  for (int i = 78; i < 150; ++i)
+    frames.push_back(lit(i, std::min(1.0F, static_cast<float>(i - 77) / 48.0F), 1));
+  REQUIRE(blank_frame(frames.at(74)));
+  CHECK_FALSE(blank_frame(frames.at(30)));
+  std::size_t opened = 78;
+  while (blank_frame(frames.at(opened))) ++opened;
+  const std::vector<Shot> shots = cut(frames);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.at(0).fade);
+  CHECK(shots.at(1).start_us == static_cast<std::int64_t>(opened) * kFrame);
+  CHECK(shots.at(1).fade);
+}
+
+TEST_CASE("plans : un éclair noir d'une image reste dans le plan", "[media][shots]") {
+  std::vector<ShotFrame> frames;
+  for (int i = 0; i < 60; ++i) frames.push_back(flat(i, i == 30 ? 0.0F : 0.5F, 1));
+  REQUIRE(cut(frames).size() == 1);
+}
+
 TEST_CASE("plans : la chronologie rend le plan d'un instant, et interpole un fondu", "[media][shots]") {
   ShotTimeline timeline;
   Shot a{.start_us = 0, .end_us = 1'000'000};
