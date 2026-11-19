@@ -116,6 +116,11 @@ struct PairScores {
   bool identical = false;         // luma égale au bit : somme des écarts nulle
   // Les blocs 16 × 16 qui changent et leur boîte (P6.6, P6.18) ; vide si le backend ne la relit pas.
   core::MovingArea moving;
+  // L'écart de chaque bloc 16 × 16, ligne par ligne, blocks_x par ligne, dans l'unité de worst_block : les
+  // tuiles de SPAN y voient ce que la carte de la scène laisse passer (app/play/upscale_tiles.h). Vide si
+  // le backend ne le relit pas.
+  std::vector<std::uint32_t> blocks;
+  std::uint32_t blocks_x = 0;
 };
 
 // Mesures lancées sans attente (scores_start, flow_max_start) et pas encore relues, par sorte.

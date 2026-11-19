@@ -221,7 +221,9 @@ __global__ void __launch_bounds__(kPixelThreads, kPixelBlocksPerSm) pair_diff(Pa
     const int h = min(kTile, p.height - y0);
     atomicAdd(p.total, static_cast<double>(sum));
     const float mean = sum / static_cast<float>(w * h);
-    atomicMax(p.worst, static_cast<unsigned int>(mean * p.levels * 256.0F));
+    const auto deviation = static_cast<unsigned int>(mean * p.levels * 256.0F);
+    atomicMax(p.worst, deviation);
+    if (p.blocks != nullptr) p.blocks[blockIdx.y * gridDim.x + blockIdx.x] = deviation;
   }
 }
 

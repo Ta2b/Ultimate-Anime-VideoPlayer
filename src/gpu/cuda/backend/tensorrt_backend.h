@@ -483,6 +483,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
     std::uint64_t ticket = 0;
     double area = 0.0;      // aire remplie de RIFE
     float levels = 219.0F;  // pas de luma de la source lors de la mesure
+    // L'écart de chaque bloc (PairScores::blocks) : room blocs pris ; count et blocks_x ceux de la dernière
+    // mesure, count nul si la place a été refusée (la mesure se fait sans).
+    unsigned int* blocks_device = nullptr;
+    unsigned int* blocks_host = nullptr;
+    std::size_t blocks_room = 0;
+    std::size_t blocks_count = 0;
+    std::uint32_t blocks_x = 0;
   };
   struct FlowRead {
     unsigned int* device = nullptr;  // histogramme des déplacements (kernels::kFlowBins cases)
@@ -506,6 +513,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::uint64_t stats_tickets_ = 0;
   // La mesure de la paire lancée dans slot, puis relue (attente hôte de cette mesure seule).
   std::expected<void, Refusal> pair_launch(PairRead& slot, const Tensor& a, const Tensor& b);
+  static void reserve_blocks(PairRead& slot, std::size_t count);
   std::expected<PairScores, Refusal> pair_read(const PairRead& slot);
   // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
   std::unique_ptr<SceneFlow> scene_flow_;

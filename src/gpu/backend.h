@@ -118,7 +118,9 @@ namespace kirari::gpu {
 // par nos noyaux) : un module 54 ne saurait pas les construire.
 // 56 : KernelOps::scene_camera_start et scene_camera_take (l'affinage de la caméra de la carte par
 // Lucas-Kanade, kernels/spec/scene_camera.h).
-inline constexpr int kBackendAbi = 56;
+// 57 : PairScores::blocks et blocks_x (l'écart de chaque bloc de la mesure de la paire, relu pour les tuiles
+// de SPAN).
+inline constexpr int kBackendAbi = 57;
 
 using DeviceUuid = kirari::DeviceUuid;
 
