@@ -1,8 +1,8 @@
-// ajp_span_fp8_run : fait tourner un paquet de poids du SPAN FP8 (gpu/span_fp8/package.h) sur une image, avec
-// les noyaux mêmes du lecteur. C'est l'outil de tools/span/derive_span_fp8.py pour juger la qualité (PSNR et
-// SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
+// kirari_span_fp8_run : fait tourner un paquet de poids du SPAN FP8 (gpu/span_fp8/package.h) sur une image,
+// avec les noyaux mêmes du lecteur. C'est l'outil de tools/span/derive_span_fp8.py pour juger la qualité
+// (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
-//   ajp_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
+//   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
 //                    [--padded | --per-tap] [--fp16] [--acc16]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
@@ -14,7 +14,7 @@
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
 // accumulateur f16, comme le drapeau du paquet. À lancer sous le
 // verrou GPU
-// (~/ajp-tools/bin/ajp-gpu).
+// (~/kirari-tools/bin/kirari-gpu).
 #include <algorithm>
 #include <charconv>
 #include <cstdint>
@@ -36,10 +36,11 @@
 
 namespace {
 
-using ajp::gpu::cuda::SpanFp8Net;
+using kirari::gpu::cuda::SpanFp8Net;
+using kirari::gpu::span_fp8::size_refusal;
 
 int fail(const std::string& what) {
-  std::fprintf(stderr, "ajp_span_fp8_run : %s\n", what.c_str());
+  std::fprintf(stderr, "kirari_span_fp8_run : %s\n", what.c_str());
   return 2;
 }
 
@@ -60,7 +61,7 @@ bool number(const char* text, int& value) {
 struct Options {
   int bench = 0;
   bool reference = false;
-  ajp::gpu::cuda::SpanFp8Width width48 = ajp::gpu::cuda::SpanFp8Width::Native;
+  kirari::gpu::cuda::SpanFp8Width width48 = kirari::gpu::cuda::SpanFp8Width::Native;
   bool fp16 = false;
   bool acc16 = false;
 };
@@ -72,13 +73,13 @@ std::string read_options(int argc, char* const* argv, Options& options) {
     if (option == "--reference") {
       options.reference = true;
     } else if (option == "--padded") {
-      options.width48 = ajp::gpu::cuda::SpanFp8Width::Padded;
+      options.width48 = kirari::gpu::cuda::SpanFp8Width::Padded;
     } else if (option == "--fp16") {
       options.fp16 = true;
     } else if (option == "--acc16") {
       options.acc16 = true;
     } else if (option == "--per-tap") {
-      options.width48 = ajp::gpu::cuda::SpanFp8Width::PerTap;
+      options.width48 = kirari::gpu::cuda::SpanFp8Width::PerTap;
     } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
       ++i;
     } else {
@@ -90,23 +91,23 @@ std::string read_options(int argc, char* const* argv, Options& options) {
 
 // Un paquet « .span8 », ou avec --fp16 l'ONNX du SPAN lui-même (ses échelles, qui valent 1, ne servent pas
 // au FP16 ; il n'y a rien à dériver pour mesurer le FP16 d'un modèle).
-std::expected<ajp::gpu::span_fp8::Package, ajp::Refusal> load_package(const char* path, bool fp16) {
+std::expected<kirari::gpu::span_fp8::Package, kirari::Refusal> load_package(const char* path, bool fp16) {
   if (std::string_view(path).ends_with(".onnx")) {
     if (!fp16)
       return std::unexpected(
-          ajp::Refusal{ajp::RefusalCode::FormatUnsupported, "un ONNX ne sert qu'avec --fp16"});
-    return ajp::gpu::span_fp8::package_from_onnx_file(path);
+          kirari::Refusal{kirari::RefusalCode::FormatUnsupported, "un ONNX ne sert qu'avec --fp16"});
+    return kirari::gpu::span_fp8::package_from_onnx_file(path);
   }
   std::vector<std::byte> bytes;
   if (!read_all(path, bytes))
-    return std::unexpected(ajp::Refusal{ajp::RefusalCode::FileUnreadable, "paquet illisible"});
-  return ajp::gpu::span_fp8::parse(bytes);
+    return std::unexpected(kirari::Refusal{kirari::RefusalCode::FileUnreadable, "paquet illisible"});
+  return kirari::gpu::span_fp8::parse(bytes);
 }
 
 // Les pointeurs du paquet, avec la forme de calcul demandée.
-ajp::gpu::cuda::SpanFp8Weights weights_for(const ajp::gpu::span_fp8::Package& package,
-                                           const Options& options) {
-  ajp::gpu::cuda::SpanFp8Weights weights = ajp::gpu::cuda::span_fp8_view(package);
+kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Package& package,
+                                              const Options& options) {
+  kirari::gpu::cuda::SpanFp8Weights weights = kirari::gpu::cuda::span_fp8_view(package);
   weights.width48 = options.width48;
   weights.fp16 = options.fp16;
   weights.acc16 = weights.acc16 || options.acc16;
@@ -133,7 +134,7 @@ const char* device_refusal(const cudaDeviceProp& props, bool fp16) {
 // NOLINTNEXTLINE(readability-function-cognitive-complexity)
 int main(int argc, char* const* argv) {
   if (argc < 6)
-    return fail("usage : ajp_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N]");
+    return fail("usage : kirari_span_fp8_run PAQUET HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N]");
   int height = 0, width = 0;
   if (!number(argv[2], height) || !number(argv[3], width)) return fail("hauteur ou largeur illisible");
   Options options;
@@ -141,7 +142,7 @@ int main(int argc, char* const* argv) {
     return fail("option inconnue ou illisible : " + bad);
   const int bench = options.bench;
   const bool reference_mode = options.reference;
-  if (const std::string why = ajp::gpu::span_fp8::size_refusal(height, width); !why.empty()) return fail(why);
+  if (const std::string why = size_refusal(height, width); !why.empty()) return fail(why);
 
   const auto package = load_package(argv[1], options.fp16);
   if (!package) return fail(package.error().detail);
@@ -150,13 +151,13 @@ int main(int argc, char* const* argv) {
   CU(cudaGetDeviceProperties(&props, 0));
   if (const char* why_not = device_refusal(props, options.fp16)) return fail(why_not);
 
-  const ajp::gpu::cuda::SpanFp8Weights weights = weights_for(*package, options);
-  ajp::gpu::cuda::SpanFp8Status status = ajp::gpu::cuda::SpanFp8Status::Ok;
+  const kirari::gpu::cuda::SpanFp8Weights weights = weights_for(*package, options);
+  kirari::gpu::cuda::SpanFp8Status status = kirari::gpu::cuda::SpanFp8Status::Ok;
   std::string why;
-  std::unique_ptr<ajp::gpu::cuda::SpanFp8Reference> reference;
+  std::unique_ptr<kirari::gpu::cuda::SpanFp8Reference> reference;
   std::unique_ptr<SpanFp8Net> net;
   if (reference_mode) {
-    reference = ajp::gpu::cuda::SpanFp8Reference::create(weights, height, width, status, why);
+    reference = kirari::gpu::cuda::SpanFp8Reference::create(weights, height, width, status, why);
     if (!reference) return fail(why);
   } else {
     net = SpanFp8Net::create(weights, height, width, status, why);
@@ -184,7 +185,7 @@ int main(int argc, char* const* argv) {
   CU(cudaStreamCreate(&stream));
   if (reference) {
     if (!reference->run(stream, input, output, true, why)) return fail(why);
-    float peaks[ajp::gpu::cuda::SpanFp8Reference::kPeaks];
+    float peaks[kirari::gpu::cuda::SpanFp8Reference::kPeaks];
     if (!reference->peaks(peaks, why)) return fail(why);
     for (const float peak : peaks) std::printf("pic %.6f\n", static_cast<double>(peak));
   } else {

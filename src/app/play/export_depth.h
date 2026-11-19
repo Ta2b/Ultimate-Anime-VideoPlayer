@@ -13,7 +13,7 @@
 #include "app/play/placebo_export.h"
 #include "export/export_writer.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ExportDepth {
   std::uint32_t ring_slots = 4;                      // slots du ring de l'étage gpu
@@ -40,4 +40,4 @@ static_assert(export_depth(3).buffers >= export_depth(3).ring_slots + 1);
 static_assert(export_depth(1).buffers >= export_depth(1).ring_slots + 1);
 static_assert(export_depth(3).ring_slots <= kMaxRingSlots);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

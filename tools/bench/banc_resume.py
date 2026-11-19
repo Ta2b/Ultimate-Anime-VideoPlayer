@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Résumé du banc A/B (chantier 0.8) : lit les fichiers extraitN-tourT-V-*.tsv écrits par `ajp play --stats`
+"""Résumé du banc A/B (chantier 0.8) : lit les fichiers extraitN-tourT-V-*.tsv écrits par `kirari play --stats`
 (14 colonnes) et compare A et B par extrait.
 
   python3 -I tools/bench/banc_resume.py DOSSIER

@@ -12,7 +12,7 @@
 #include "gpu/system_interpolator.h"
 #include "prepare/onnx_blend.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<std::filesystem::path, Refusal> apple_model(const std::filesystem::path& dir) {
   const std::vector<std::byte> wanted =
@@ -30,4 +30,4 @@ std::expected<std::filesystem::path, Refusal> apple_model(const std::filesystem:
   return target;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

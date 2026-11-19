@@ -25,7 +25,7 @@
 #include "gpu/span_fp8/metrics.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 Conv noise_conv(int outs, int taps, int inputs, std::uint32_t& seed, float amplitude) {
@@ -198,4 +198,4 @@ TEST_CASE("le graphe d'un paquet refuse un nombre de blocs ou une échelle impos
   CHECK(package_model(p));  // un paquet FP16 ne quantifie rien
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

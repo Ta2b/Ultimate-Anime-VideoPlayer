@@ -17,7 +17,7 @@
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 enum class MemoryUse : std::uint8_t {
   Device,    // lu et écrit par le GPU seul ; DEVICE_LOCAL de préférence
@@ -157,4 +157,4 @@ class MemoryAllocator {
   friend class Allocation;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

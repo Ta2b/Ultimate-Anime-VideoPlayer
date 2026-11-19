@@ -42,7 +42,7 @@
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // L'écran des moteurs suit la souris : ~60 images par seconde tant qu'un événement vient d'arriver. Sans
@@ -589,4 +589,4 @@ std::string fallback_note(const core::Settings& engines, const std::filesystem::
                          engine_label(*preferred), engine_label(*in_use));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

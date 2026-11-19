@@ -22,7 +22,7 @@
 #include "core/utf8_path.h"
 #include "render/cube_lut.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 struct DownscaleName {
@@ -774,4 +774,4 @@ std::optional<std::int64_t> audio_fallback_delay_us(const PlaySettings& settings
   return std::int64_t{known != settings.audio_device_delays_ms.end() ? known->second : 0} * 1000;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

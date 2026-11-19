@@ -13,7 +13,7 @@
 #include "core/types.h"
 #include "prepare/process.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<std::filesystem::path> system_tool(std::string_view name);
 
@@ -51,4 +51,4 @@ std::optional<std::string> kde_proxy(std::string_view kioslaverc);
 std::expected<void, Refusal> run_tool(const prepare::ProcessSpec& spec, const prepare::LineSink& on_line,
                                       const std::stop_token& stop, std::string_view what);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

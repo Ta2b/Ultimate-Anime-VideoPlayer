@@ -22,7 +22,7 @@
 #include "media/shot_probe_steps.h"
 #include "media/video_decoder.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 namespace {
 
@@ -442,4 +442,4 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
   }
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

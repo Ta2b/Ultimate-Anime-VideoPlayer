@@ -8,7 +8,7 @@
 
 #include "media/log.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 template <class... F>
@@ -265,4 +265,4 @@ void SourceLoop::fail(const Refusal& refusal) {
   links_.listener->failed(refusal);
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

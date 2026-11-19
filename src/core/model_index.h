@@ -22,7 +22,7 @@
 #include "core/profile.h"
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // --- SHA-256 (FIPS 180-4), en C++ pur. ---
 
@@ -138,8 +138,8 @@ struct InstallLayout {
 
 InstallLayout install_layout(Os os, const std::filesystem::path& user_data_dir);
 std::filesystem::path engine_dir(const InstallLayout& layout, const EnginePackage& package);
-// Bibliothèque du backend dans engine_dir : ajp_backend_<nom>.dll sous Windows, .so ailleurs.
+// Bibliothèque du backend dans engine_dir : kirari_backend_<nom>.dll sous Windows, .so ailleurs.
 std::filesystem::path backend_library(const InstallLayout& layout, const EnginePackage& package);
 std::filesystem::path download_path(const InstallLayout& layout, std::string_view sha256);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

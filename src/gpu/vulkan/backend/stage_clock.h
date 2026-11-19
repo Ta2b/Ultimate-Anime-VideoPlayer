@@ -30,7 +30,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "gpu/vulkan/compute/recording.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class StageClock {
  public:
@@ -113,4 +113,4 @@ class StageClock {
   std::map<std::string, std::size_t, std::less<>> by_name_;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

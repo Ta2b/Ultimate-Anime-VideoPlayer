@@ -6,7 +6,7 @@
 #include "core/log.h"
 #include "core/text_file.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::filesystem::path gpu_profile_path(const std::filesystem::path& stats) {
   std::filesystem::path out = stats;
@@ -60,4 +60,4 @@ void write_bench_reading(const std::filesystem::path& file, const GpuFacts& gpu,
     log_channel("app")->warn("{}", written.error().detail);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -7,7 +7,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 CardAdvice card_advice(const SettingsChoices& choices) {
   return {.tier = static_cast<Tier>(std::clamp(choices.machine_tier, 0, kTierCount - 1)),
@@ -68,4 +68,4 @@ std::string light_motion_advice(const CardAdvice& card) {
                                                                 : i18n::tr("turned on");
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

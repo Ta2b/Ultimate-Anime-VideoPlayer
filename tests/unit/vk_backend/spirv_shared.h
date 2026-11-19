@@ -9,7 +9,7 @@
 #include <optional>
 #include <span>
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 // constants : SpecId → valeur, la valeur par défaut du module pour les autres. nullopt : module illisible, ou
 // opération de constante que l'évaluateur ne connaît pas.
@@ -19,4 +19,4 @@ std::optional<std::uint64_t> spirv_shared_bytes(std::span<const std::uint32_t> w
 // Les constantes d'un dispatch (Dispatch::constants : SpecId i pour l'entrée i), comme le pipeline les passe.
 std::map<std::uint32_t, std::uint32_t> spec_constants(std::span<const std::uint32_t> constants);
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

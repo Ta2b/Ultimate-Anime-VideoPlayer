@@ -5,12 +5,12 @@
 // gl_WorkGroupID.z. Contrat : kernels/spec/rife.h ; référence : kernels/ref/rife.cpp (rife_crop).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer Source { AJP_TENSOR v[]; } src;
-layout(std430, binding = 1) writeonly buffer Destination { AJP_TENSOR v[]; } dst;
+layout(std430, binding = 0) readonly buffer Source { KIRARI_TENSOR v[]; } src;
+layout(std430, binding = 1) writeonly buffer Destination { KIRARI_TENSOR v[]; } dst;
 
 layout(push_constant) uniform Push {
   uint src_width;
@@ -33,5 +33,5 @@ void main() {
   // Un float16_t relu en float puis rangé à nouveau reste identique.
   float value = pc.fill;
   if (inside) value = float(src.v[(plane * pc.src_height + uint(sy)) * pc.src_width + uint(sx)]);
-  dst.v[(plane * pc.dst_height + y) * pc.dst_width + x] = AJP_TENSOR(value);
+  dst.v[(plane * pc.dst_height + y) * pc.dst_width + x] = KIRARI_TENSOR(value);
 }

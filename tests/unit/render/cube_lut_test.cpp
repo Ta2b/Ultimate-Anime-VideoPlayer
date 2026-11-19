@@ -13,7 +13,7 @@
 
 using Catch::Approx;
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 std::string cube_text(int size, const std::string& header = "") {
@@ -108,9 +108,9 @@ TEST_CASE("le bloc de texture garde chaque nœud au bit près (C41-02)", "[rende
   CHECK(read(3) == 1.0F);
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render
 
-namespace ajp::render {
+namespace kirari::render {
 
 TEST_CASE("une LUT d'HDR se reconnaît à son nom ou à son titre", "[render][lut][looks]") {
   CHECK(look_is_pq("HDR_grading_LUT_ver9.1.cube", ""));
@@ -119,9 +119,9 @@ TEST_CASE("une LUT d'HDR se reconnaît à son nom ou à son titre", "[render][lu
   CHECK_FALSE(look_is_pq("teal-orange.cube", "Teal Orange"));
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render
 
-namespace ajp::render {
+namespace kirari::render {
 
 TEST_CASE("les entrées noires d'un gamut d'entrée inutile sont recopiées du voisin valide", "[render][lut]") {
   CubeLut lut = identity_lut(17);
@@ -143,9 +143,9 @@ TEST_CASE("les entrées noires d'un gamut d'entrée inutile sont recopiées du v
   CHECK(neutral.rgb == identity_lut(17).rgb);
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 // Une LUT de `size` points d'une fonction couleur f.
@@ -209,7 +209,7 @@ TEST_CASE("compose_luts : deux LUT s'enchaînent dans l'ordre, une intensité nu
 TEST_CASE("write_cube : la LUT écrite se relit à 1e-6 près, titre et taille compris", "[render][lut]") {
   CubeLut lut;
   lut.size = 17;
-  lut.title = "ajp anime HDR (pile composee)";
+  lut.title = "kirari anime HDR (pile composee)";
   lut.rgb.resize(17 * 17 * 17 * 3);
   for (std::size_t i = 0; i < lut.rgb.size(); ++i) lut.rgb[i] = static_cast<float>((i * 37) % 1000) / 999.0F;
   const auto back = parse_cube(write_cube(lut));
@@ -221,4 +221,4 @@ TEST_CASE("write_cube : la LUT écrite se relit à 1e-6 près, titre et taille c
 }
 
 }  // namespace
-}  // namespace ajp::render
+}  // namespace kirari::render

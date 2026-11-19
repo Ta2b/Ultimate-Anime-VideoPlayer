@@ -3,7 +3,7 @@
 #include <bit>
 
 #if defined(__x86_64__) || defined(_M_X64)
-#define AJP_SHA_NI 1
+#define KIRARI_SHA_NI 1
 #include <immintrin.h>
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -12,7 +12,7 @@
 #endif
 #endif
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 constexpr std::array<std::uint32_t, 64> kRound = {
@@ -50,7 +50,7 @@ void block_portable(std::array<std::uint32_t, 8>& state, const std::uint8_t* dat
   for (std::size_t i = 0; i < 8; ++i) state[i] += s[i];
 }
 
-#ifdef AJP_SHA_NI
+#ifdef KIRARI_SHA_NI
 // P4.10 : les instructions SHA des x86 (Intel depuis Goldmont et Ice Lake, AMD depuis Zen), 4 à 5 fois le
 // débit du code portable. Quatre tours par groupe ; le message des groupes 4 à 15 se calcule au fil de l'eau.
 bool cpu_has_sha() {
@@ -117,7 +117,7 @@ void sha256_blocks_portable(std::array<std::uint32_t, 8>& state, const std::uint
 }
 
 void sha256_blocks(std::array<std::uint32_t, 8>& state, const std::uint8_t* data, std::size_t count) {
-#ifdef AJP_SHA_NI
+#ifdef KIRARI_SHA_NI
   static const bool sha_ni = cpu_has_sha();
   if (sha_ni) {
     blocks_sha_ni(state, data, count);
@@ -127,4 +127,4 @@ void sha256_blocks(std::array<std::uint32_t, 8>& state, const std::uint8_t* data
   for (; count > 0; --count, data += 64) block_portable(state, data);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

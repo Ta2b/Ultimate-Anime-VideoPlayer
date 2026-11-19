@@ -23,7 +23,7 @@
 
 #include "subs/subs_messages.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::int64_t kSubtitlePrerollUs = 10'000'000;    // relu avant la cible d'un seek
 inline constexpr std::int64_t kSubtitleBackfillUs = 120'000'000;  // relu en second, avant la préroulée
@@ -67,4 +67,4 @@ class SubtitleLead {
   std::jthread thread_;  // en dernier : il part quand tout le reste existe
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::vector<RingFrame> FrameQueue::take_stale(std::uint32_t epoch) {
   std::vector<RingFrame> stale;
@@ -32,4 +32,4 @@ std::optional<RingFrame> FrameQueue::pop_front() {
   return front;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

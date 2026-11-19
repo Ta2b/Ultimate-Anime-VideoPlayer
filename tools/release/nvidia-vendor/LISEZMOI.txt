@@ -16,6 +16,6 @@ Régénérer (une version de TensorRT ou de NVRTC qui change) :
    ^nvinfer_builder_resource_ptx_\d+\.dll$, ^nvrtc64_\d+_\d+\.dll$, ^nvrtc-builtins64_\d+\.dll$)
 
 Vérifier avec le vrai lecteur, réseau, ~0,74 Go pour une carte sm89 (caché) :
-  cd build/<préréglage> && ./tests/unit/app/ajp_app_tests "[.vendor]"
-  (AJP_VENDOR_OUT=dossier garde les fichiers tirés.)
+  cd build/<préréglage> && ./tests/unit/app/kirari_app_tests "[.vendor]"
+  (KIRARI_VENDOR_OUT=dossier garde les fichiers tirés.)
 Il n'y a pas de trtexec dans ces roues : il vient de notre paquet.

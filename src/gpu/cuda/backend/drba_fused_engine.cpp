@@ -8,7 +8,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/drba_fused_kernels.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 DrbaFusedEngine::~DrbaFusedEngine() {
   if (zone_) zone_->drop_region(this);  // sa région ne repousse plus celles des autres moteurs fusionnés
@@ -304,4 +304,4 @@ std::expected<void, Refusal> DrbaFusedEngine::enqueue_chain(cudaStream_t stream,
   return graphs_.launch(stream, key, [&] { return run(stream, arena, inputs, outputs, times_only); });
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

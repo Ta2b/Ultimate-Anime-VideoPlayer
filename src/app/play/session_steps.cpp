@@ -6,7 +6,7 @@
 #include "app/play/i18n.h"
 #include "app/play/session.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Fin de flux : plus rien n'arrive depuis ce délai, la lecture est finie (si l'horloge a passé la fin).
@@ -169,4 +169,4 @@ std::int64_t Session::source_period() const {
   return period > 0 ? period : kAssumedFramePeriodUs;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

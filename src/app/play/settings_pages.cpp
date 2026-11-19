@@ -17,7 +17,7 @@
 #include "app/play/tracks.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::kWarn;
 using panel::note;
@@ -96,7 +96,7 @@ void application_page(PlaySettings& d, const SettingsChoices& choices, UpdateNot
   panel::next_box();
   updates_page(d, choices.place, updates);
   panel::next_box();
-  default_player_page(choices.place, system, choices.default_player_is_ajp);
+  default_player_page(choices.place, system, choices.default_player_is_kirari);
   panel::next_box();
   section(i18n::tr("This machine"));
   panel::wrapped(choices.gpu_name.empty() ? i18n::tr("Unknown graphics card") : choices.gpu_name.c_str());
@@ -163,7 +163,7 @@ void statistics_page(PlaySettings& d) {
   ImGui::Checkbox(i18n::tr("Show held and cut pairs"), &d.stats.pairs);
   panel::tip(i18n::tr("Show held and cut pairs"),
              i18n::tr("Each pair judged a held drawing (blue) or a scene cut (red) tints the screen for a "
-                      "moment and goes to ajp.log. This session only."));
+                      "moment and goes to kirari.log. This session only."));
 }
 
 void video_general_page(PlaySettings& d, const SettingsChoices& choices, std::vector<Input>& actions,
@@ -239,4 +239,4 @@ void display_section(PlaySettings& d, const SettingsChoices& choices) {
                       "on if dark scenes flicker."));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -7,7 +7,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Sa langue et la version voulue ; refait les préférences (language_presets_for) quand l'une change. En
 // Custom, choisir une version revient aux préférences de cette version.
@@ -20,4 +20,4 @@ void track_choices(std::vector<media::LanguagePreset>& presets, LanguageVersion&
 // délai est tenu : le délai s'applique au relâchement (A23-12).
 bool languages_page(PlaySettings& d);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -15,10 +15,10 @@
 #include "grade_gpu_support.h"
 #include "render/cube_lut.h"
 
-namespace ajp::render::gpu_test {
+namespace kirari::render::gpu_test {
 
 inline CubeLut shipped_lut(const std::string& name) {
-  const std::filesystem::path path = std::filesystem::path(AJP_DATA_DIR) / "luts" / name;
+  const std::filesystem::path path = std::filesystem::path(KIRARI_DATA_DIR) / "luts" / name;
   std::ifstream file(path, std::ios::binary);
   REQUIRE(file);
   const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -100,4 +100,4 @@ inline double chain_level(Gpu& gpu, double nits, const GradeParams& params) {
   return graded(gpu, uniform(nits), params)[kSide / 2];
 }
 
-}  // namespace ajp::render::gpu_test
+}  // namespace kirari::render::gpu_test

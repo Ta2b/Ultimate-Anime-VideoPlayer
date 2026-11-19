@@ -6,10 +6,10 @@
 
 #include "media/demuxer.h"
 
-using namespace ajp::media;
+using namespace kirari::media;
 
 TEST_CASE("la séquence de l'évaluation s'écrit et se rouvre", "[media][bench_clip]") {
-  const std::filesystem::path file = std::filesystem::temp_directory_path() / "ajp-bench-clip-test.mkv";
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "kirari-bench-clip-test.mkv";
   std::filesystem::remove(file);
   const auto written =
       write_bench_clip(file, BenchClipSpec{.width = 320, .height = 180, .fps = 24, .seconds = 2});

@@ -15,7 +15,7 @@
 #include "core/utf8_path.h"
 #include "media/language.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // B35-07 : un dossier de 20 000 fichiers sur un partage réseau ne retarde pas la première image.
@@ -156,4 +156,4 @@ std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::pat
   return found;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -89,7 +89,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Seuils du vrai noir recalés au plus 5 fois par seconde pendant qu'on règle.
@@ -795,4 +795,4 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
   return reopen;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 subs::SubtitleFrame line(std::uint64_t generation, int dst_y) {
@@ -82,4 +82,4 @@ TEST_CASE("Clé de composition : change avec les sous-titres, la taille, le grad
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

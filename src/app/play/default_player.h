@@ -1,5 +1,5 @@
-// Le lecteur par défaut : AJP s'inscrit auprès du système pour paraître dans « Ouvrir avec » et
-// pouvoir devenir le lecteur des vidéos (« ajp --register », onglet Système des paramètres).
+// Le lecteur par défaut : Kirari s'inscrit auprès du système pour paraître dans « Ouvrir avec » et
+// pouvoir devenir le lecteur des vidéos (« kirari --register », onglet Système des paramètres).
 //
 //   Linux   : un fichier .desktop dans $XDG_DATA_HOME/applications, ~/.local/share/applications
 //             sans la variable (spécification XDG Desktop Entry) ; « Définir par défaut » le
@@ -7,7 +7,7 @@
 //   Windows : les clés du registre de l'utilisateur (HKCU) d'un ProgID, des extensions vidéo et de
 //             Capabilities, que Paramètres > Applications par défaut propose. Windows ne laisse
 //             aucun programme se choisir lui-même : « Définir par défaut » ouvre cette page.
-//   macOS   : rien à écrire, l'Info.plist d'AJP.app déclare les vidéos qu'il ouvre
+//   macOS   : rien à écrire, l'Info.plist de Kirari.app déclare les vidéos qu'il ouvre
 //             (tools/release/package-macos.sh) ; le Finder fait le reste.
 //
 // Rien n'est lu de l'environnement : les dossiers de l'utilisateur viennent de SDL, comme ailleurs.
@@ -22,11 +22,11 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Où vit le lecteur.
 struct PlayerPlace {
-  std::filesystem::path executable;  // ajp ou ajp.exe, chemin absolu
+  std::filesystem::path executable;  // kirari ou kirari.exe, chemin absolu
   std::filesystem::path home;        // dossier de l'utilisateur (SDL_GetUserFolder)
   // Données de l'utilisateur, celles de SDL_GetPrefPath (user_data) : sous Linux $XDG_DATA_HOME,
   // ~/.local/share sans la variable. Vide : <home>/.local/share. Sert à l'inscription seulement.
@@ -35,13 +35,13 @@ struct PlayerPlace {
   std::filesystem::path app_data;
 };
 
-inline constexpr std::string_view kAppName = "Ultimate Anime Video Player";
+inline constexpr std::string_view kAppName = "Kirari Player";
 // L'identifiant de l'application (app_id Wayland, WM_CLASS X11, nom de l'icône) et celui de sa fiche .desktop
 // : le bureau rattache la fenêtre à la fiche par le premier (B19-01).
-inline constexpr std::string_view kAppId = "io.github.ta2b.ajp";
-inline constexpr std::string_view kDesktopId = "io.github.ta2b.ajp.desktop";
-inline constexpr std::string_view kProgId = "AJP.Video";
-inline constexpr std::string_view kRegisteredName = "AJP";  // HKCU\Software\RegisteredApplications
+inline constexpr std::string_view kAppId = "io.github.ta2b.kirari";
+inline constexpr std::string_view kDesktopId = "io.github.ta2b.kirari.desktop";
+inline constexpr std::string_view kProgId = "Kirari.Video";
+inline constexpr std::string_view kRegisteredName = "Kirari";  // HKCU\Software\RegisteredApplications
 
 // Les types vidéo proposés au système : types MIME (Linux) et extensions (Windows).
 std::span<const std::string_view> video_mime_types();
@@ -54,14 +54,14 @@ const char* video_dialog_pattern();
 // icon_installed : l'icône du lecteur est sous <données>/icons (sinon l'icône générique d'un lecteur vidéo).
 std::expected<std::string, Refusal> desktop_entry(const std::filesystem::path& executable,
                                                   bool icon_installed = false);
-// <data>/applications/io.github.ta2b.ajp.desktop ; sans data, sous <home>/.local/share.
+// <data>/applications/io.github.ta2b.kirari.desktop ; sans data, sous <home>/.local/share.
 std::filesystem::path desktop_file(const PlayerPlace& place);
 // Le texte de mimeapps.list sans la fiche id dans les listes de types (C36-09) ; une liste vidée retire sa
 // ligne, le reste est rendu tel quel.
 std::string without_desktop_id(std::string_view mimeapps, std::string_view id);
 
-// Les données de l'utilisateur d'après le dossier de préférences de SDL (<données>/ajp/ajp/,
-// SDL_GetPrefPath("ajp", "ajp")) ; vide pour un dossier vide.
+// Les données de l'utilisateur d'après le dossier de préférences de SDL (<données>/kirari/,
+// SDL_GetPrefPath("", "kirari")) ; vide pour un dossier vide.
 std::filesystem::path user_data(std::filesystem::path pref);
 
 // Une valeur chaîne (REG_SZ) du registre de l'utilisateur, en UTF-8 : clé sous HKEY_CURRENT_USER,
@@ -72,7 +72,7 @@ struct RegistryValue {
   std::string data;
   friend bool operator==(const RegistryValue&, const RegistryValue&) = default;
 };
-// Ce que l'inscription écrit pour l'exécutable, chemin Windows en UTF-8 (« C:\…\ajp.exe »).
+// Ce que l'inscription écrit pour l'exécutable, chemin Windows en UTF-8 (« C:\…\kirari.exe »).
 std::vector<RegistryValue> registry_values(std::string_view executable);
 // Ce que le retrait efface : les clés du lecteur entières, puis ses valeurs dans les clés partagées
 // (extensions, RegisteredApplications), dont le reste ne lui appartient pas.
@@ -96,19 +96,19 @@ std::expected<std::string, Refusal> choose_as_default(const PlayerPlace& place);
 std::expected<std::string, Refusal> default_once_registered(const std::string& registered);
 
 // La sortie de « xdg-mime query default <type> » désigne-t-elle ce lecteur ?
-bool default_handler_is_ajp(std::string_view query_output);
-// Windows : le ProgId de UserChoice (FileExts\.mkv\UserChoice) désigne AJP (A19-05).
-bool user_choice_is_ajp(std::string_view prog_id);
-// Windows : l'exécutable associé à l'extension par le système (AssocQueryString) est ajp.exe (B34-09). Un
+bool default_handler_is_kirari(std::string_view query_output);
+// Windows : le ProgId de UserChoice (FileExts\.mkv\UserChoice) désigne Kirari (A19-05).
+bool user_choice_is_kirari(std::string_view prog_id);
+// Windows : l'exécutable associé à l'extension par le système (AssocQueryString) est kirari.exe (B34-09). Un
 // chemin de n'importe quelle forme, sans entrée de registre ; sa seule partie fichier compte.
-bool executable_is_ajp(std::string_view executable);
+bool executable_is_kirari(std::string_view executable);
 // Ce lecteur est-il déjà celui des vidéos, pour MKV et MP4 ? Linux : xdg-mime ; Windows : UserChoice ;
 // macOS : on ne sait pas (faux). Ne bloque jamais : la première fois, la question part sur un fil à elle et
 // la réponse vaut faux jusqu'à ce qu'elle arrive (A19-04).
 bool is_default_player(const PlayerPlace& place);
 
-// Windows : ajp.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans la
-// console de ce terminal, en UTF-8. Rien ailleurs.
+// Windows : kirari.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans
+// la console de ce terminal, en UTF-8. Rien ailleurs.
 void leave_lone_console();
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

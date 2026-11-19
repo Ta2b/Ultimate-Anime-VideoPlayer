@@ -16,7 +16,7 @@
 #include "prepare/onnx_scan.h"
 #include "prepare/onnx_split.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -329,4 +329,4 @@ Bytes fake_rife(const Fake& f) {
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

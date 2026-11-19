@@ -18,7 +18,7 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 #include "kernels/image.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 // Un dossier temporaire neuf, supprimé à la destruction.
 class TempDir {
@@ -70,4 +70,4 @@ float max_abs_diff(const kernels::RgbImage& a, const kernels::RgbImage& b);
 ModelSpec write_model(const std::filesystem::path& dir, std::string_view name,
                       std::span<const std::byte> bytes, TensorType precision);
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

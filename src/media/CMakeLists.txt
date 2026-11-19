@@ -1,13 +1,13 @@
 # media : démultiplexage, décodage matériel, horodatage. Thread source.
 # FFmpeg reste hors des en-têtes d'interface (source, demuxer, video_decoder,
 # packet, track, selection, hw_api) : seuls les en-têtes internes et les .cpp l'incluent.
-ajp_add_module(media
+kirari_add_module(media
   SOURCES
     av_util.cpp face_cascade.cpp face_skin.cpp faces.cpp field_alignment.cpp "${CMAKE_CURRENT_BINARY_DIR}/face_cascade_data.cpp" ffmpeg_log.cpp bench_clip.cpp color.cpp live_scenes.cpp shot_cache.cpp shot_cutter.cpp shot_measure.cpp shot_probe.cpp shot_timeline.cpp stills.cpp cuda_driver.cpp demuxer.cpp frame_data.cpp hw_device.cpp
     language.cpp packet.cpp packet_reserve.cpp selection.cpp source.cpp source_loop.cpp
     tag_text.cpp track.cpp track_language.cpp video_decoder.cpp deinterlace.cpp mkv_chapters.cpp telecine.cpp
-  DEPS ajp::core_types ajp::kernels
-  PRIVATE_DEPS ajp::av ajp::dep::ffmpeg ajp::core ajp::core_log ajp::core_os ajp::dep::vulkan ${CMAKE_DL_LIBS})
+  DEPS kirari::core_types kirari::kernels
+  PRIVATE_DEPS kirari::av kirari::dep::ffmpeg kirari::core kirari::core_log kirari::core_os kirari::dep::vulkan ${CMAKE_DL_LIBS})
 
 # La cascade de visages (media/face_cascade.h), embarquée octet pour octet depuis sa copie intacte.
 set(face_cascade_xml "${CMAKE_SOURCE_DIR}/third_party/lbpcascade_animeface/lbpcascade_animeface.xml")
@@ -20,11 +20,11 @@ add_custom_command(
   VERBATIM)
 
 if(WIN32)
-  target_link_libraries(ajp_media PRIVATE dxgi)
+  target_link_libraries(kirari_media PRIVATE dxgi)
 endif()
 
-if(TARGET ajp::dep::va)
-  target_sources(ajp_media PRIVATE vaapi_device.cpp)
-  target_link_libraries(ajp_media PRIVATE ajp::dep::va)
-  target_compile_definitions(ajp_media PRIVATE AJP_HAVE_VA=1)
+if(TARGET kirari::dep::va)
+  target_sources(kirari_media PRIVATE vaapi_device.cpp)
+  target_link_libraries(kirari_media PRIVATE kirari::dep::va)
+  target_compile_definitions(kirari_media PRIVATE KIRARI_HAVE_VA=1)
 endif()

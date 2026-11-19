@@ -11,12 +11,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 struct TempDir {
   explicit TempDir(const char* test)
-      : path(std::filesystem::temp_directory_path() / std::format("ajp-coreml-{}", test)) {
+      : path(std::filesystem::temp_directory_path() / std::format("kirari-coreml-{}", test)) {
     std::filesystem::remove_all(path);
     std::filesystem::create_directories(path);
   }
@@ -53,16 +53,16 @@ TEST_CASE("Core ML : le seul modèle compilé du cache", "[gpu][coreml]") {
   const std::filesystem::path cache = dir.path / "net.coreml.mlcache";
   // Aucun : dossier absent, puis vide, puis un paquet ML sans modèle compilé.
   CHECK_FALSE(single_compiled(cache).has_value());
-  std::filesystem::create_directories(cache / "ajp" / "0_dynamic_mlprogram" / "model.mlpackage");
+  std::filesystem::create_directories(cache / "kirari" / "0_dynamic_mlprogram" / "model.mlpackage");
   CHECK_FALSE(single_compiled(cache).has_value());
   // Un seul, à n'importe quelle profondeur ; un fichier au nom en .mlmodelc ne compte pas.
-  const std::filesystem::path one = cache / "ajp" / "0_dynamic_mlprogram" / "compiled_model.mlmodelc";
+  const std::filesystem::path one = cache / "kirari" / "0_dynamic_mlprogram" / "compiled_model.mlmodelc";
   compiled_at(one);
-  std::ofstream(cache / "ajp" / "notes.mlmodelc") << "pas un dossier";
+  std::ofstream(cache / "kirari" / "notes.mlmodelc") << "pas un dossier";
   CHECK(single_compiled(cache) == std::optional(one));
   // Deux morceaux : rien.
-  compiled_at(cache / "ajp" / "1_dynamic_mlprogram" / "compiled_model.mlmodelc");
+  compiled_at(cache / "kirari" / "1_dynamic_mlprogram" / "compiled_model.mlmodelc");
   CHECK_FALSE(single_compiled(cache).has_value());
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

@@ -26,7 +26,7 @@
 #include "stage_rig.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -696,4 +696,4 @@ TEST_CASE("Étage gpu : une image refusée arrête la vidéo, les suivantes rend
   CHECK(reported[0].detail.contains("image 3 refusée"));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

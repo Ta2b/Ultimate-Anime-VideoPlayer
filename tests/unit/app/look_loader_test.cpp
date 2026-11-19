@@ -10,13 +10,13 @@
 
 #include "app/play/chain.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
 
 TEST_CASE("LookLoader détruit juste après une demande, puis pendant une rafale (A30-07)", "[app][looks]") {
-  const std::filesystem::path luts = std::filesystem::temp_directory_path() / "ajp-look-loader-vide";
+  const std::filesystem::path luts = std::filesystem::temp_directory_path() / "kirari-look-loader-vide";
   for (int round = 0; round < 20; ++round) {
     LookLoader loader;
     loader.request(PlaySettings{}, luts);
@@ -34,4 +34,4 @@ TEST_CASE("LookLoader détruit juste après une demande, puis pendant une rafale
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

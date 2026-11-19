@@ -19,7 +19,7 @@ extern "C" {
 #include "core/types.h"
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 struct FormatCloser {
   void operator()(AVFormatContext* ctx) const { avformat_close_input(&ctx); }
@@ -66,4 +66,4 @@ std::int64_t duration_to_us(std::int64_t duration, AVRational time_base);
 // format de la piste fait foi ; inconnu, le profil.
 bool chroma_beyond_420(const AVCodecParameters& av);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

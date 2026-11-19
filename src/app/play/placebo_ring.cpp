@@ -14,7 +14,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr VkImageLayout kLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -292,4 +292,4 @@ void PlaceboRing::clear(pl_gpu gpu) {
   refused_ = 0;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -4,7 +4,7 @@
 // l'image du milieu (tau 0,5 et 1,25) : PSNR d'au moins 50 dB ; la variante mouvement, un flot borné.
 // Aussi contre l'interpréteur en float, qui ne partage aucun noyau avec le moteur : au moins 55 dB (A45-11).
 // La CI le lance la nuit et à la demande, sur le modèle téléchargé (ci.yml) ; sans modèle il est sauté.
-//   ajp_vk_backend_tests "[.drba_fused]"
+//   kirari_vk_backend_tests "[.drba_fused]"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -24,7 +24,7 @@
 #include "prepare/onnx_dims.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 namespace fs = std::filesystem;
@@ -71,9 +71,9 @@ ModelSpec spec_of(const fs::path& file) {
 }  // namespace
 
 TEST_CASE("DistilDRBA fusionné : la chaîne Vulkan contre le DistilDRBA entier", "[vk_backend][.drba_fused]") {
-  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / "distil_drba_v2_lite.onnx";
+  const fs::path onnx = fs::path(KIRARI_RIFE_MODEL_DIR) / "distil_drba_v2_lite.onnx";
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
-  TempDir dir("ajp-drba-fused-vk");
+  TempDir dir("kirari-drba-fused-vk");
   std::unique_ptr<VulkanBackend> backend = make_backend(dir.path() / "cache");
   if (!backend->capabilities().drba_fused) SKIP("appareil sans stockage 16 bits");
   constexpr int h = 64;
@@ -172,4 +172,4 @@ TEST_CASE("DistilDRBA fusionné : la chaîne Vulkan contre le DistilDRBA entier"
   CHECK(largest < 64.0F);
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

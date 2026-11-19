@@ -8,7 +8,7 @@
 #include "core/clock.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 bool MotionGuard::held(Chain& chain) {
   if (cut_ && *cut_ != interpolation_choice(chain.running)) {
@@ -37,4 +37,4 @@ bool MotionGuard::watch(Chain& chain, double room_hz, double source_fps, std::in
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

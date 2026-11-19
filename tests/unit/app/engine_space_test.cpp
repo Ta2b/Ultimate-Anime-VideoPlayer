@@ -8,12 +8,12 @@
 #include "app/play/engine_build.h"
 #include "app/play/visible_error.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Construction refusée à l'écriture, disque plein : InsufficientSpace", "[app][engines]") {
   std::error_code error;
-  const std::filesystem::path cache = std::filesystem::temp_directory_path(error) / "ajp-engines";
+  const std::filesystem::path cache = std::filesystem::temp_directory_path(error) / "kirari-engines";
   const std::uintmax_t huge = std::numeric_limits<std::uintmax_t>::max() / 2;
   const std::expected<gpu::Artifact, Refusal> refused =
       std::unexpected(Refusal{RefusalCode::BuilderFailed, "trtexec : écriture du plan refusée"});
@@ -30,4 +30,4 @@ TEST_CASE("Construction refusée à l'écriture, disque plein : InsufficientSpac
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

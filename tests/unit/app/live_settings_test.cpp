@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Une paire de 4 images écrites : `copies` d'entre elles sont des copies à 100 µs, les autres du calcul à 1
@@ -129,4 +129,4 @@ TEST_CASE("Mode Rapide : le coût fixe d'une paire (clés GMFSS) ne compte pas d
   CHECK(service(1'000'000) > 7'500 / 4);  // une estimation trop haute laisse le quart du temps mesuré
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

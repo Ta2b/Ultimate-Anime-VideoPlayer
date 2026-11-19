@@ -15,7 +15,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -45,7 +45,7 @@ struct Rig {
 }  // namespace
 
 TEST_CASE("Veilleur d'écriture : retard à l'heure exacte, plus de sondage de la tête", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   FrameLatency latency;
   Rig rig(SessionConfig{.latency = &latency});
   rig.screen.now_us = 1'000'000;
@@ -72,7 +72,7 @@ TEST_CASE("Veilleur d'écriture : retard à l'heure exacte, plus de sondage de l
 }
 
 TEST_CASE("Synchro sur l'écran : la fréquence mesurée remplace l'annoncée", "[app][session][present]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   OutputRate rate;
   Rig rig(
       SessionConfig{.display_period_us = 6061, .display_hz = 165.0, .display_sync = true, .extra = &rate});
@@ -136,7 +136,7 @@ std::vector<int> held_vblanks(bool index) {
 }
 
 TEST_CASE("Choix par numéro de vblank : 3-2 tenu à 60 Hz malgré la gigue", "[app][session][present]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const std::vector<int> held = held_vblanks(true);
   REQUIRE(held.size() > 1'000);
   int repeats = 0;
@@ -154,4 +154,4 @@ TEST_CASE("Choix par numéro de vblank : 3-2 tenu à 60 Hz malgré la gigue", "[
   CHECK(plain_repeats > 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

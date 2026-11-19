@@ -9,7 +9,7 @@
 #include "core/thread.h"
 #include "core/thread_role.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<gpu::Artifact, Refusal> with_space_reason(std::expected<gpu::Artifact, Refusal> outcome,
                                                         const std::filesystem::path& cache_dir,
@@ -102,4 +102,4 @@ std::string EngineBuild::progress() const {
   return std::format("{} % : {}", std::lround(fraction_ * 100.0F), stage_);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

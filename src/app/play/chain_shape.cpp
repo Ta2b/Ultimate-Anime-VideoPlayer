@@ -7,7 +7,7 @@
 #include "app/play/visible_error.h"
 #include "core/auto_rate.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 int top_factor(const PlaySettings& settings, double display_hz, double source_fps) {
   if (settings.rife_factor < 2) return 1;
@@ -106,4 +106,4 @@ std::string free_refusal(MotionEngine engine, bool limit_known, bool display_kno
   return limit_known && display_known ? std::string() : std::string(i18n::tr("display refresh rate unknown"));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

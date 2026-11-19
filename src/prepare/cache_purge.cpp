@@ -12,7 +12,7 @@
 #include "prepare/key_lock.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 namespace fs = std::filesystem;
@@ -202,4 +202,4 @@ CachePurgeResult purge_engine_cache(const fs::path& dir, const CachePurgeLimits&
   return result;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

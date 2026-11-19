@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // NvAPI_Disp_GetVRRInfo (Windows, B11-02) : bit 0 bIsVRREnabled (G-SYNC permis sur cet écran), bit 4
 // bIsDisplayInVRRMode (engagé en ce moment), une hypothèse : le SDK public ne connaît que le bit 0 (C11-08).
@@ -61,4 +61,4 @@ class VrrWatch {
   bool pending_ = false;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

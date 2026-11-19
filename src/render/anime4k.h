@@ -22,7 +22,7 @@
 
 #include "core/types.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 // La taille des réseaux : M (Rapide, le jeu « lower-end GPU » d'Anime4K) ou VL (Qualité, le jeu « higher-end
 // GPU »). Chaque cran de taille double à peu près le temps (S, M, L, VL : ×2 à chaque pas, selon Anime4K).
@@ -77,4 +77,4 @@ class Anime4k {
 // image se compte à part, comme celui du grade.
 bool is_anime4k_pass(std::string_view description);
 
-}  // namespace ajp::render
+}  // namespace kirari::render

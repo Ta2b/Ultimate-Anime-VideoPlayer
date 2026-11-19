@@ -11,8 +11,8 @@
 #include "app/play/options.h"
 #include "french_ui.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -28,7 +28,7 @@ BenchRun run(Tier level, std::int64_t lost = 0, std::int64_t presents = 2000, st
 }  // namespace
 
 TEST_CASE("un essai tient quand peu d'images sont perdues et le retard est court", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(holds(run(Tier::Quality)));
   CHECK(holds(run(Tier::Quality, 40)));        // 2 %
   CHECK_FALSE(holds(run(Tier::Quality, 41)));  // juste au-dessus
@@ -37,12 +37,12 @@ TEST_CASE("un essai tient quand peu d'images sont perdues et le retard est court
 }
 
 TEST_CASE("un essai trop court ne tient pas", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK_FALSE(holds(run(Tier::Fast, 0, 50)));
 }
 
 TEST_CASE("la recherche monte tant que ça tient puis s'arrête", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   std::vector<BenchRun> runs;
   CHECK(next_level(runs, Tier::Normal) == Tier::Normal);
   runs.push_back(run(Tier::Normal));
@@ -55,7 +55,7 @@ TEST_CASE("la recherche monte tant que ça tient puis s'arrête", "[auto_bench]"
 }
 
 TEST_CASE("la recherche descend quand le niveau estimé ne tient pas", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   std::vector<BenchRun> runs{run(Tier::Quality, 500)};
   CHECK(next_level(runs, Tier::Quality) == Tier::Normal);
   runs.push_back(run(Tier::Normal, 500));
@@ -66,7 +66,7 @@ TEST_CASE("la recherche descend quand le niveau estimé ne tient pas", "[auto_be
 }
 
 TEST_CASE("rien ne tient : Économe, et la recherche s'arrête en bas", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const std::vector<BenchRun> runs{run(Tier::Fast, 500)};
   CHECK(next_level(runs, Tier::Fast) == Tier::Economy);
   std::vector<BenchRun> all = runs;
@@ -76,13 +76,13 @@ TEST_CASE("rien ne tient : Économe, et la recherche s'arrête en bas", "[auto_b
 }
 
 TEST_CASE("la recherche s'arrête en haut", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK_FALSE(next_level({run(Tier::Ultra)}, Tier::Ultra));
   CHECK(best_level({run(Tier::Ultra)}) == Tier::Ultra);
 }
 
 TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const BenchResult result{.gpu = "NVIDIA GeForce RTX 4070 Ti", .level = Tier::Ultra, .date = "2026-10-28"};
   const auto read = parse_bench(format_bench(result));
   REQUIRE(read);
@@ -96,9 +96,9 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
   CHECK(parse_bench("version = 3\nlevel = 3\ngpu = \"x\""));
   CHECK_FALSE(parse_bench("level = 1"));
   CHECK_FALSE(parse_bench("gpu = ["));
-  CHECK_FALSE(load_bench(std::filesystem::temp_directory_path() / "ajp-no-such-bench.toml"));
+  CHECK_FALSE(load_bench(std::filesystem::temp_directory_path() / "kirari-no-such-bench.toml"));
 
-  const auto file = std::filesystem::temp_directory_path() / "ajp-bench-test.toml";
+  const auto file = std::filesystem::temp_directory_path() / "kirari-bench-test.toml";
   REQUIRE(save_bench(file, result));
   const auto loaded = load_bench(file);
   REQUIRE(loaded);
@@ -107,7 +107,7 @@ TEST_CASE("bench.toml : aller-retour, refus, fichier absent", "[auto_bench]") {
 }
 
 TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
   CHECK(effective_tier(gpu, std::nullopt, false) == Tier::Quality);  // l'estimation
   CHECK(effective_tier(gpu, BenchResult{.gpu = gpu.name, .level = Tier::Ultra}, false) == Tier::Ultra);
@@ -117,7 +117,7 @@ TEST_CASE("la mesure remplace l'estimation pour la même carte seulement", "[aut
 }
 
 TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti",
                      .driver = "2400",
                      .vendor = GpuVendor::Nvidia,
@@ -144,7 +144,7 @@ TEST_CASE("la mesure est refaite quand le pilote change", "[auto_bench]") {
 }
 
 TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const BenchReading reading{
       .gpu = "g", .driver = "7", .run = run(Tier::Quality, 10), .span_variant = "FP8 CUTLASS"};
   const auto read = parse_reading(format_reading(reading));
@@ -164,13 +164,13 @@ TEST_CASE("la lecture d'un essai : aller-retour et refus", "[auto_bench]") {
 TEST_CASE("la lecture d'un essai : le profil GPU fait l'aller-retour en TOML", "[auto_bench][profile]") {
   BenchReading reading{.gpu = "g", .driver = "7", .run = run(Tier::Quality, 10)};
   reading.gpu_stages = {
-      ajp::gpu::GpuStageSummary{
+      kirari::gpu::GpuStageSummary{
           .name = "rôle agrandissement", .count = 1200, .total_ms = 5400.5, .median_ms = 4.5, .p95_ms = 5.25},
-      ajp::gpu::GpuStageSummary{.name = "source jusqu'à son SPAN",
-                                .count = 1199,
-                                .total_ms = 7000.0,
-                                .median_ms = 5.75,
-                                .p95_ms = 6.5}};
+      kirari::gpu::GpuStageSummary{.name = "source jusqu'à son SPAN",
+                                   .count = 1199,
+                                   .total_ms = 7000.0,
+                                   .median_ms = 5.75,
+                                   .p95_ms = 6.5}};
   const auto read = parse_reading(format_reading(reading));
   REQUIRE(read);
   CHECK(read->gpu_stages == reading.gpu_stages);
@@ -178,8 +178,8 @@ TEST_CASE("la lecture d'un essai : le profil GPU fait l'aller-retour en TOML", "
 }
 
 TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
-  const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = "/tmp/w", .seconds = 9};
+  kirari::app::play::FrenchUi french;
+  const BenchPlan plan{.executable = "/x/kirari", .video = "/v/a.mkv", .work_dir = "/tmp/w", .seconds = 9};
   const auto args = bench_child_args(plan, Tier::Fast, "/tmp/w/d", "/tmp/w/o.toml");
   const auto has = [&](std::string_view arg) { return std::ranges::find(args, arg) != args.end(); };
   CHECK(args.front() == "play");
@@ -188,7 +188,7 @@ TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau
   CHECK(has("--no-resume"));
   CHECK((has("--hidden") || has("--window=320x180")));  // masquée, ou petite et visible sous GNOME / Wayland
   CHECK_FALSE(has("--fullscreen"));
-  const BenchPlan visible{.executable = "/x/ajp", .video = "/v/a.mkv", .silent = false};
+  const BenchPlan visible{.executable = "/x/kirari", .video = "/v/a.mkv", .silent = false};
   const auto shown = bench_child_args(visible, Tier::Fast, "/d", "/o");
   CHECK(std::ranges::find(shown, "--fullscreen") != shown.end());
   CHECK(std::ranges::find(shown, "--hidden") == shown.end());
@@ -207,8 +207,8 @@ TEST_CASE("la ligne de commande d'un essai : son coupé, dossier jetable, niveau
   CHECK(parsed->bench_out == std::filesystem::path("/tmp/w/o.toml"));
 }
 
-TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+TEST_CASE("kirari bench : options et refus", "[auto_bench]") {
+  kirari::app::play::FrenchUi french;
   const std::vector<std::string_view> good{"a.mkv", "--seconds=20", "--report=r.txt", "--windowed"};
   const auto options = parse_bench_options(good);
   REQUIRE(options);
@@ -225,7 +225,7 @@ TEST_CASE("ajp bench : options et refus", "[auto_bench]") {
 }
 
 TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   BenchOutcome outcome;
   outcome.estimated = Tier::Quality;
   outcome.runs = {run(Tier::Quality), run(Tier::Ultra, 600)};
@@ -236,8 +236,8 @@ TEST_CASE("le rapport nomme chaque essai et le niveau gardé", "[auto_bench]") {
   CHECK(report.contains("Niveau gardé : Qualité"));
 }
 
-TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+TEST_CASE("kirari compare : options, ligne de commande d'une variante, rapport", "[auto_bench]") {
+  kirari::app::play::FrenchUi french;
   const std::vector<std::string_view> args{"a.mkv",    "--a=--rife=3  --work-height=540", "--b",
                                            "--rife=4", "--b-settings=poses.toml",         "--seconds=8"};
   const auto options = parse_compare_options(args);
@@ -248,7 +248,7 @@ TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[
   CHECK(options->seconds == 8);
   CHECK_FALSE(parse_compare_options(std::vector<std::string_view>{}));
 
-  const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .seconds = 8};
+  const BenchPlan plan{.executable = "/x/kirari", .video = "/v/a.mkv", .seconds = 8};
   const auto child = variant_child_args(plan, Variant{.name = "A", .args = options->a}, "/d", "/o");
   CHECK(std::ranges::find(child, "--rife=3") != child.end());
   CHECK(std::ranges::find(child, "--mute") != child.end());
@@ -264,7 +264,7 @@ TEST_CASE("ajp compare : options, ligne de commande d'une variante, rapport", "[
 
 TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais au-dessus de la source",
           "[auto_bench][exploration]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(next_work_height(540, 1080) == 720);
   CHECK(next_work_height(720, 1080) == 900);
   CHECK(next_work_height(900, 1080) == 1080);
@@ -276,14 +276,14 @@ TEST_CASE("l'exploration monte la hauteur de travail palier par palier, jamais a
 
 TEST_CASE("l'exploration propose RIFE 4.25 au-dessus du modèle léger, rien d'autre",
           "[auto_bench][exploration]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(next_rife_model("rife_v4.22_lite.onnx") == "rife_v4.25.onnx");
   CHECK_FALSE(next_rife_model("rife_v4.25.onnx").has_value());
   CHECK_FALSE(next_rife_model("").has_value());
 }
 
 TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto_bench][exploration]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   BenchResult result{.gpu = "NVIDIA GeForce RTX 4070 Ti",
                      .driver = "615.78",
                      .level = Tier::Quality,
@@ -306,7 +306,7 @@ TEST_CASE("bench.toml garde l'exploration et relit les anciens fichiers", "[auto
 }
 
 TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_bench][exploration]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   BenchReading reading{.gpu = "g",
                        .driver = "d",
                        .run = run(Tier::Normal),
@@ -319,7 +319,7 @@ TEST_CASE("la lecture d'un essai garde la hauteur et le modèle joués", "[auto_
 }
 
 TEST_CASE("le banc juge un niveau comme la calibration juge ses essais (C07-06)", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   // Dix secondes sur un écran à 60 Hz, RIFE ×2 à 48 i/s : tient.
   BenchReading reading{
       .gpu = "x",
@@ -346,7 +346,7 @@ TEST_CASE("le banc juge un niveau comme la calibration juge ses essais (C07-06)"
 }
 
 TEST_CASE("bench.toml note le moteur et ne vaut que pour lui (C07-06)", "[auto_bench]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = GpuVendor::Nvidia, .tensor_cores = true};
   const BenchResult tensorrt{.gpu = gpu.name, .level = Tier::Ultra, .engine = "tensorrt"};
   const auto back = parse_bench(format_bench(tensorrt));

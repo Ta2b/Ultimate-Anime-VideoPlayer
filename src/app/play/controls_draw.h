@@ -12,7 +12,7 @@
 #include "app/play/input.h"
 #include "app/play/tracks.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct UiLook {
   float scale = 1.0F;         // échelle de l'écran (densité de pixels × échelle du bureau)
@@ -48,4 +48,4 @@ void draw_preparation(const PrepareView& view, const UiLook& look, std::int64_t 
 bool draw_controls(Controls& controls, const ControlsView& view, const UiLook& look, std::int64_t now_us,
                    std::vector<Input>& actions);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

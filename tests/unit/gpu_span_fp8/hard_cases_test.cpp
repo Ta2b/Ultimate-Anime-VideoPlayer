@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 TEST_CASE("les cas durs sont toujours les mêmes, à la taille demandée", "[span_fp8][hard_cases]") {
   const std::vector<HardCase> a = hard_cases(128, 72);
@@ -50,4 +50,4 @@ TEST_CASE("les rampes sombres restent sous 36, les bords saturés et la mire aux
   CHECK((bars.rgb[8] == 255 && bars.rgb[plane + 8] == 255 && bars.rgb[2 * plane + 8] == 0));
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

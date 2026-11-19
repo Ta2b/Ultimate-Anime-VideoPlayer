@@ -11,7 +11,7 @@
 #   artcnn-c4f16    ArtCNN C4F16 (16 canaux)
 #
 #   tools/bench/banc_leger.sh --extraits=extraits.tsv --sortie=DOSSIER [--tours=3] [--secondes=60]
-#     [--hauteur=540] [--variantes=econome,span-fp16,...] [--reglages=settings.toml] [--ajp=CHEMIN]
+#     [--hauteur=540] [--variantes=econome,span-fp16,...] [--reglages=settings.toml] [--kirari=CHEMIN]
 #
 # extraits.tsv : « fichier<TAB>début en secondes » par ligne (tools/bench/extraits.exemple.tsv). Chaque passage est
 # un processus neuf, dans l'ordre des variantes tourné d'un tour à l'autre, après un préchauffage non compté (moteurs,
@@ -21,7 +21,7 @@
 # Le résumé : tools/bench/banc_leger_resume.py DOSSIER.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXTRAITS=""; OUT=""; ROUNDS=3; SECONDS_PLAYED=60; HEIGHT=540; SETTINGS=""; AJP="${AJP:-ajp}"
+EXTRAITS=""; OUT=""; ROUNDS=3; SECONDS_PLAYED=60; HEIGHT=540; SETTINGS=""; Kirari="${Kirari:-kirari}"
 VARIANTS="econome,span-fp16,span-int8,artcnn-c4f32,artcnn-c4f16"
 for arg in "$@"; do
   case "$arg" in
@@ -32,7 +32,7 @@ for arg in "$@"; do
     --hauteur=*) HEIGHT="${arg#--hauteur=}" ;;
     --variantes=*) VARIANTS="${arg#--variantes=}" ;;
     --reglages=*) SETTINGS="${arg#--reglages=}" ;;
-    --ajp=*) AJP="${arg#--ajp=}" ;;
+    --kirari=*) Kirari="${arg#--kirari=}" ;;
     *) echo "option inconnue : $arg" >&2; exit 2 ;;
   esac
 done
@@ -40,7 +40,7 @@ done
 IFS=, read -r -a LABELS <<<"$VARIANTS"
 SPAN=2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx
 
-# Les options de « ajp play » et le cran de précision de SPAN (play.toml) d'une variante.
+# Les options de « kirari play » et le cran de précision de SPAN (play.toml) d'une variante.
 options_of() {
   case "$1" in
     econome) echo "--no-upscale --work-height=0" ;;
@@ -56,7 +56,7 @@ for label in "${LABELS[@]}"; do options_of "$label" >/dev/null; done
 mkdir -p "$OUT"
 {
   echo "date : $(date -Is)"
-  echo "ajp : $("$AJP" --version 2>&1 | head -1)"
+  echo "kirari : $("$Kirari" --version 2>&1 | head -1)"
   echo "noyau : $(uname -sr)"
   command -v nvidia-smi >/dev/null && nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
   command -v vulkaninfo >/dev/null && vulkaninfo --summary 2>/dev/null | grep -m2 -E "deviceName|driverInfo"
@@ -80,10 +80,10 @@ play() {  # variante fichier début étiquette secondes [capture]
   dir="$(settings_dir "$tag" "$label")"
   [ -n "$shot" ] && extra="--snapshot=$OUT/capture-$shot-$label.ppm --snapshot-at=$((seconds / 2))"
   # shellcheck disable=SC2046,SC2086
-  "$AJP" play "$file" --start="$start" --seconds="$seconds" --fullscreen --mute --no-resume --rife=0 \
+  "$Kirari" play "$file" --start="$start" --seconds="$seconds" --fullscreen --mute --no-resume --rife=0 \
     --profile-dispatches --data-dir="$dir" --stats="$base.tsv" $(options_of "$label") $extra \
     </dev/null >"$base.log" 2>&1 || echo "échec : $tag" >&2
-  [ -f "$dir/ajp.log" ] && cp "$dir/ajp.log" "$base.ajp.log"
+  [ -f "$dir/kirari.log" ] && cp "$dir/kirari.log" "$base.kirari.log"
   if command -v nvidia-smi >/dev/null; then
     nvidia-smi --query-gpu=clocks.sm,clocks.mem,power.draw,utilization.gpu --format=csv,noheader >"$base.smi" || true
   fi

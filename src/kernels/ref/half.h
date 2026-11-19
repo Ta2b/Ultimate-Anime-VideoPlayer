@@ -10,7 +10,7 @@
 
 #include "kernels/image.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // float → bits binary16 : au plus proche, égalités au pair ; ≥ 65520 en valeur absolue donne
 // l'infini, NaN reste NaN (silencieux), les sous-normaux sont conservés.
@@ -23,4 +23,4 @@ float round_to_half(float value);
 // Chaque échantillon de l'image arrondi en fp16.
 RgbImage round_to_half(const RgbImage& image);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

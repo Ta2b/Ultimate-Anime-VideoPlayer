@@ -10,7 +10,7 @@
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<void, Refusal> UpscaleStage::allocate_half() {
   if (!halves()) return {};
@@ -108,4 +108,4 @@ std::expected<UpscaleStage::StrongRun, Refusal> UpscaleStage::run_strong(float t
                             static_cast<float>(pair_scale_side(setup_.rife_height))};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

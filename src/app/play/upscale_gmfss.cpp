@@ -27,7 +27,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les plans [first, first + count) d'un tenseur F16 1 × c × h × w : les plans se suivent en mémoire, la
@@ -591,4 +591,4 @@ std::expected<void, Refusal> UpscaleStage::interpolate_middle(float t, const gpu
   return blend(i == 0 ? a : shown(i - 1), i == keys ? b : shown(i), motion, 0.5F, out);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

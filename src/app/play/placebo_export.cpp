@@ -21,7 +21,7 @@ extern "C" {
 #include "core/log.h"
 #include "render/display_model.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Alignement de la mémoire d'un tampon : celui des pointeurs hôte que Vulkan sait importer
@@ -493,4 +493,4 @@ std::expected<bool, Refusal> FrameExport::deliver_cuda(Cuda& c,
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

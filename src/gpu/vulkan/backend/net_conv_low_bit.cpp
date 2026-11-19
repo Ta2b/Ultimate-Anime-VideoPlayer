@@ -4,13 +4,13 @@
 #include <utility>
 #include <variant>
 
-#include "ajp_vk_backend_spirv.h"
 #include "gpu/ir/fp8_weights.h"
 #include "gpu/vulkan/backend/net_lower_detail.h"
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_weights.h"
+#include "kirari_vk_backend_spirv.h"
 
-namespace ajp::gpu::vk::net::detail {
+namespace kirari::gpu::vk::net::detail {
 namespace {
 
 constexpr std::string_view kFp8Shader = "net_conv_coopmat_fp8_f16";
@@ -115,4 +115,4 @@ std::optional<LowBitBlobs> low_bit_blobs(const ir::Tensor& weights, const ir::Te
                      .bias = fp8_bias_and_scales(bias, scale, in_scale, cout_padded)};
 }
 
-}  // namespace ajp::gpu::vk::net::detail
+}  // namespace kirari::gpu::vk::net::detail

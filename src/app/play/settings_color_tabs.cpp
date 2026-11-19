@@ -11,7 +11,7 @@
 #include "app/play/panel_style.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::note;
 using panel::section;
@@ -214,4 +214,4 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

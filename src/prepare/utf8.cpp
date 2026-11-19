@@ -16,7 +16,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 std::string utf8_path(const std::filesystem::path& path) {
   return core::to_utf8(path);
@@ -39,8 +39,8 @@ std::optional<bool> ansi_page_decides(std::uint32_t page, std::u16string_view te
 namespace {
 
 // La page de code ANSI du SYSTÈME, celle que relisent les programmes sans manifeste UTF-8 (trtexec, curl,
-// tar). Les exécutables d'ajp portent activeCodePage=UTF-8 : pour eux CP_ACP vaut 65001, quelle que soit la
-// page du système (B34-01). 0 quand elle ne se lit pas.
+// tar). Les exécutables d'kirari portent activeCodePage=UTF-8 : pour eux CP_ACP vaut 65001, quelle que soit
+// la page du système (B34-01). 0 quand elle ne se lit pas.
 UINT system_ansi_code_page() {
   DWORD page = 0;
   const int written =
@@ -132,4 +132,4 @@ bool is_utf8(std::string_view text) {
   return true;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

@@ -10,7 +10,7 @@
 #include "prepare/cache_io.h"
 #include "support.h"
 
-using namespace ajp::prepare;
+using namespace kirari::prepare;
 using namespace std::chrono_literals;
 
 namespace {
@@ -84,7 +84,7 @@ TEST_CASE("Cache des moteurs : un moteur repris rafraîchit sa date d'usage", "[
   const CacheEntry entry{.destination = file};
   fs::remove(entry.digest_file());  // une empreinte d'avant : refaite à la reprise
   fs::last_write_time(file, fs::file_time_type::clock::now() - 24h * 90);
-  auto produced = produce_once(entry, [](const fs::path&) -> std::expected<void, ajp::Refusal> {
+  auto produced = produce_once(entry, [](const fs::path&) -> std::expected<void, kirari::Refusal> {
     FAIL("le moteur publié doit se reprendre");
     return {};
   });
@@ -96,13 +96,13 @@ TEST_CASE("Cache des moteurs : un moteur repris rafraîchit sa date d'usage", "[
 
   // Une empreinte déjà là est rafraîchie aussi.
   fs::last_write_time(entry.digest_file(), fs::file_time_type::clock::now() - 24h * 90);
-  REQUIRE(produce_once(entry, [](const fs::path&) -> std::expected<void, ajp::Refusal> { return {}; }));
+  REQUIRE(produce_once(entry, [](const fs::path&) -> std::expected<void, kirari::Refusal> { return {}; }));
   CHECK(purge_engine_cache(dir.path()).removed == 0);
 }
 
 TEST_CASE("Cache des moteurs : un dossier absent ne lève rien", "[prepare][cache]") {
   const CachePurgeResult result =
-      purge_engine_cache(std::filesystem::temp_directory_path() / "ajp-absent-xyz");
+      purge_engine_cache(std::filesystem::temp_directory_path() / "kirari-absent-xyz");
   CHECK(result.removed == 0);
   CHECK(result.kept == 0);
 }

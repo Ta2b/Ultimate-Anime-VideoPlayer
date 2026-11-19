@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 void sha256_blocks(std::array<std::uint32_t, 8>& state, const std::uint8_t* data, std::size_t count);
 
@@ -16,4 +16,4 @@ void sha256_blocks(std::array<std::uint32_t, 8>& state, const std::uint8_t* data
 // inaperçue (C06-11). Exposé pour qu'un test compare les deux chemins.
 void sha256_blocks_portable(std::array<std::uint32_t, 8>& state, const std::uint8_t* data, std::size_t count);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

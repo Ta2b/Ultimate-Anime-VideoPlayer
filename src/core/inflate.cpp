@@ -3,7 +3,7 @@
 #include <array>
 #include <zlib.h>
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 constexpr std::size_t kChunk = 1U << 16;
@@ -55,4 +55,4 @@ std::expected<std::uint64_t, Refusal> inflate_raw(const InflateRead& read, const
   }
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -8,8 +8,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 
 TEST_CASE("run_pumped_for : une lecture qui ne répond plus rend la main au bout du délai (P2.15)",
           "[app][pumped]") {

@@ -7,7 +7,7 @@
 
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 void prune_invalid_copies(const std::filesystem::path& path, std::size_t kept) {
   const std::string prefix = core::to_utf8(path.filename()) + ".invalide-";
@@ -25,4 +25,4 @@ void prune_invalid_copies(const std::filesystem::path& path, std::size_t kept) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

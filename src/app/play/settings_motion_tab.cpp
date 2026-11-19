@@ -19,7 +19,7 @@
 #include "app/play/visible_error.h"
 #include "core/auto_rate.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::note;
 using panel::section;
@@ -580,4 +580,4 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   panel::end_boxes();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

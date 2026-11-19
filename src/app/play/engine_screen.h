@@ -25,7 +25,7 @@
 #include "core/settings.h"
 #include "gpu/backend.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct EngineScreen {
   PlaceboScreen& screen;
@@ -77,4 +77,4 @@ std::expected<bool, Refusal> handle_engine_change(Player& p, const EngineChange&
 std::string fallback_note(const core::Settings& engines, const std::filesystem::path& library,
                           const GpuFacts& gpu, std::optional<RefusalCode> refused = std::nullopt);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

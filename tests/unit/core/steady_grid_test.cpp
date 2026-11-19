@@ -12,7 +12,7 @@
 
 #include "core/steady_rate.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 // 23,976 i/s : le pts de la source k, arrondi au µs comme le démuxeur.
@@ -209,4 +209,4 @@ TEST_CASE("steady : T9 relancé, dix minutes, GPU de 67 à 55 puis 120 i/s", "[f
   CHECK(sources - static_cast<std::int64_t>(last * 24 / 1'001'000) <= 1);  // pas de dérive
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

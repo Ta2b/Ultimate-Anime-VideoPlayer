@@ -28,10 +28,10 @@
 #include "kernels/ref/half.h"
 #include "net_rig.h"
 
-using namespace ajp;
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk;
+using namespace kirari::gpu::vk::test;
 
 TEST_CASE("Familles : identifiants PCI connus", "[vk_backend][family]") {
   CHECK(detect_family(pci::kNvidia, 0x2782, false) == GpuFamily::NvidiaAda);        // RTX 4070 Ti
@@ -174,7 +174,7 @@ TEST_CASE("Autotuner : mesure, cache par appareil et relecture", "[vk_backend][a
   REQUIRE(options.size() > 1);
   const std::filesystem::path file =
       std::filesystem::temp_directory_path() /
-      std::format("ajp-autotune-{}.tsv", std::chrono::steady_clock::now().time_since_epoch().count());
+      std::format("kirari-autotune-{}.tsv", std::chrono::steady_clock::now().time_since_epoch().count());
   const net::TunerOptions quick{.warmup = 1, .passes = 3, .repeats = 2};
   net::KernelChoice best;
   {

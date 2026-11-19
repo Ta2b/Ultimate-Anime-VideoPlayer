@@ -22,7 +22,7 @@ struct ImGuiIO;
 struct ImGuiPlatformIO;
 struct ImTextureData;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Rectangles salis de l'interface gardée : au plus kMaxDirtyRects bandes, celles qui se touchent fondues.
 inline constexpr std::size_t kMaxDirtyRects = 8;
@@ -83,4 +83,4 @@ class ImGuiLayer {
   std::vector<pl_rect2d> cache_bounds_;  // les bandes couvertes, une par rectangle disjoint
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

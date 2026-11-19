@@ -28,7 +28,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Échecs de suite d'étapes différées au-delà desquels le backend refuse tout nouveau réseau.
@@ -333,4 +333,4 @@ void VulkanBackend::finish_host_step(BackendQueue& queue, std::uint64_t signal,
   }
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

@@ -8,9 +8,9 @@
 
 #include "test_util.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 

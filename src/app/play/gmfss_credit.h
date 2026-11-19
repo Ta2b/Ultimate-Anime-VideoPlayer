@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les images de RIFE et SPAN qu'une paire garde toujours devant ses clés.
 inline constexpr int kGmfssFloorImages = 2;
@@ -21,4 +21,4 @@ constexpr std::int64_t gmfss_earned_us(std::int64_t pts_step_us, std::int64_t im
   return std::max<std::int64_t>(std::min(share, left), 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

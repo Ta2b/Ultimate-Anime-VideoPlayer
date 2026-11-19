@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 // Paramètres du flux, recopiés d'AVCodecParameters par celui qui démultiplexe.
 struct AudioCodecInfo {
@@ -52,4 +52,4 @@ struct EndOfStream {
   std::uint32_t epoch = 0;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

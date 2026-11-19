@@ -12,15 +12,15 @@
 #include "kernels/spec/rife.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
+using namespace kirari::gpu::ir;
 
 TEST_CASE("onnx : modèle d'interpolateur à l'interface de RIFE v2, marqué", "[gpu_ir][onnx]") {
-  const std::vector<std::byte> bytes =
-      ajp::prepare::blend_model(ajp::gpu::kSystemInterpolatorProducer, ajp::gpu::kVideoToolboxFrameRate);
+  const std::vector<std::byte> bytes = kirari::prepare::blend_model(kirari::gpu::kSystemInterpolatorProducer,
+                                                                    kirari::gpu::kVideoToolboxFrameRate);
   auto model = onnx::read_onnx(bytes);
   REQUIRE(model);
-  CHECK(model->producer_name == ajp::gpu::kSystemInterpolatorProducer);
-  CHECK(model->producer_version == ajp::gpu::kVideoToolboxFrameRate);
+  CHECK(model->producer_name == kirari::gpu::kSystemInterpolatorProducer);
+  CHECK(model->producer_version == kirari::gpu::kVideoToolboxFrameRate);
   const onnx::Graph& g = model->graph;
   REQUIRE(g.inputs.size() == 1);
   REQUIRE(g.outputs.size() == 1);
@@ -29,14 +29,14 @@ TEST_CASE("onnx : modèle d'interpolateur à l'interface de RIFE v2, marqué", "
   CHECK(g.inputs[0].elem_type == onnx::kFloat16);
   CHECK(g.outputs[0].elem_type == onnx::kFloat16);
   CHECK(g.inputs[0].dims.size() == 4);
-  CHECK(g.inputs[0].dims[1] == ajp::kernels::kRifeV2InputChannels);
+  CHECK(g.inputs[0].dims[1] == kirari::kernels::kRifeV2InputChannels);
   CHECK(g.outputs[0].dims[1] == 3);
   CHECK(g.inputs[0].symbols[2] == "height");
   CHECK(g.inputs[0].symbols[3] == "width");
 }
 
 TEST_CASE("onnx : le graphe de l'interpolateur fait le fondu a + (b − a) t", "[gpu_ir][onnx]") {
-  const std::vector<std::byte> bytes = ajp::prepare::blend_model("x", "y");
+  const std::vector<std::byte> bytes = kirari::prepare::blend_model("x", "y");
   auto graph = load_onnx(bytes);
   REQUIRE(graph);
   constexpr std::int64_t kHeight = 2;

@@ -10,7 +10,7 @@
 #include "app/play/visible_error.h"
 #include "stage_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 PlaySettings fast_settings() {
@@ -345,4 +345,4 @@ TEST_CASE("ChainEngines::upscale câble le warp de Catmull-Rom et les options à
   CHECK_FALSE(plain.skip_held);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

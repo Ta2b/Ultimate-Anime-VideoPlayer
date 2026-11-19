@@ -22,7 +22,7 @@
 #include "core/log.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 template <class... F>
@@ -604,4 +604,4 @@ void log_summary(const Session& session) {
   if (const std::string range = take_gpu_range_text(); !range.empty()) log_channel("app")->info("{}", range);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

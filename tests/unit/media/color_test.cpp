@@ -13,14 +13,14 @@ extern "C" {
 
 #include "media/av_util.h"
 
-using namespace ajp::media;
-using ajp::ChromaSiting;
-using ajp::ColorMatrix;
-using ajp::ColorRange;
-using ajp::PixelFormat;
-using ajp::Primaries;
-using ajp::RefusalCode;
-using ajp::Transfer;
+using namespace kirari::media;
+using kirari::ChromaSiting;
+using kirari::ColorMatrix;
+using kirari::ColorRange;
+using kirari::PixelFormat;
+using kirari::Primaries;
+using kirari::RefusalCode;
+using kirari::Transfer;
 
 namespace {
 

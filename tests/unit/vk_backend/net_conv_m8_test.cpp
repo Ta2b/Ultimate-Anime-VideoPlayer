@@ -19,7 +19,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../gpu_ir/onnx_builder.h"
-#include "ajp_vk_backend_spirv.h"
 #include "gpu/ir/graph.h"
 #include "gpu/ir/import.h"
 #include "gpu/ir/passes.h"
@@ -29,16 +28,17 @@
 #include "gpu/vulkan/backend/net_build.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/net_lower_detail.h"
+#include "kirari_vk_backend_spirv.h"
 #include "net_rig.h"
 #include "spirv_shared.h"
 #include "test_models.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
-using ajp::RefusalCode;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 using ir::test::attr_float;
 using ir::test::attr_ints;
 using ir::test::ModelBuilder;
+using kirari::RefusalCode;
 
 namespace {
 

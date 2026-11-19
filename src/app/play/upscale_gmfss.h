@@ -15,7 +15,7 @@
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le choix de l'étage (UpscaleSetup::gmfss) : rien, le mélange (une fusion au milieu des paires qui bougent
 // fort, RIFE 4.26 sur chaque demi-paire), ou GMFSS seul (une fusion à chaque instant, sans RIFE).
@@ -133,4 +133,4 @@ struct GmfssBuffers {
   std::uint64_t early_fusions = 0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

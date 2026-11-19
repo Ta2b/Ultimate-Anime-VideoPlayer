@@ -11,7 +11,7 @@
 
 #include "app/play/settings.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
@@ -53,7 +53,7 @@ TEST_CASE("Rapport : ce qui n'est pas un dossier reste lisible", "[app][report]"
 
 TEST_CASE("Rapport : aucun nom d'utilisateur ne survit au nettoyage", "[app][report]") {
   const std::string out = sanitize_report_paths(
-      "ouverture C:\\Users\\Jean Dupont\\Videos\\a.mkv puis /home/ta2b/.local/share/ajp/b.onnx",
+      "ouverture C:\\Users\\Jean Dupont\\Videos\\a.mkv puis /home/ta2b/.local/share/kirari/b.onnx",
       "/home/ta2b");
   CHECK(out.find("Dupont") == std::string::npos);
   CHECK(out.find("ta2b") == std::string::npos);
@@ -84,14 +84,14 @@ TEST_CASE("Rapport : les faits sont gardés dans l'ordre, un même nom remplace 
 
 TEST_CASE("Rapport : en-tête de faits, séance d'avant, minidump et bornes", "[app][report]") {
   ReportParts parts;
-  parts.facts = {{"ajp", "0.10.3"}, {"Système", "Arch Linux"}, {"Préréglage", "Auto"}};
+  parts.facts = {{"kirari", "0.10.3"}, {"Système", "Arch Linux"}, {"Préréglage", "Auto"}};
   parts.previous_log = "démarrage\nPLANTAGE segfault\n";
   parts.current_log = "nouvelle séance\n";
-  parts.dump_name = "ajp-20261109-120000-42.dmp";
+  parts.dump_name = "kirari-20261109-120000-42.dmp";
   parts.home = "/home/u";
   const std::string report = compose_report(parts, 10000);
-  CHECK(report.starts_with("ajp : 0.10.3\nSystème : Arch Linux\nPréréglage : Auto\n"));
-  CHECK(report.find("ajp-20261109-120000-42.dmp") != std::string::npos);
+  CHECK(report.starts_with("kirari : 0.10.3\nSystème : Arch Linux\nPréréglage : Auto\n"));
+  CHECK(report.find("kirari-20261109-120000-42.dmp") != std::string::npos);
   const auto before = report.find("séance précédente");
   const auto crash = report.find("PLANTAGE segfault");
   const auto now = report.find("nouvelle séance");
@@ -110,26 +110,26 @@ TEST_CASE("Rapport : en-tête de faits, séance d'avant, minidump et bornes", "[
   parts.current_log += "\n";
   const std::string small = compose_report(parts, 2000);
   CHECK(small.size() <= 2000);
-  CHECK(small.starts_with("ajp : 0.10.3"));
+  CHECK(small.starts_with("kirari : 0.10.3"));
   CHECK(small.find("premiere ligne") == std::string::npos);
   CHECK(small.find("début du journal omis") != std::string::npos);
 }
 
 TEST_CASE("Rapport : la fin d'un journal commence à une ligne entière", "[app][report]") {
-  const fs::path dir = fresh_dir("ajp-report-tail");
-  write(dir / "ajp.log", "aaaa\nbbbb\ncccc\n");
-  CHECK(read_tail(dir / "ajp.log", 100) == "aaaa\nbbbb\ncccc\n");
-  const std::string cut = read_tail(dir / "ajp.log", 8);
+  const fs::path dir = fresh_dir("kirari-report-tail");
+  write(dir / "kirari.log", "aaaa\nbbbb\ncccc\n");
+  CHECK(read_tail(dir / "kirari.log", 100) == "aaaa\nbbbb\ncccc\n");
+  const std::string cut = read_tail(dir / "kirari.log", 8);
   CHECK(cut.ends_with("\ncccc\n"));
   CHECK(cut.find("début du journal omis") != std::string::npos);  // le rapport le dit (A23-14)
-  CHECK(read_tail(dir / "ajp.log", 100).find("omis") == std::string::npos);
+  CHECK(read_tail(dir / "kirari.log", 100).find("omis") == std::string::npos);
   CHECK(read_tail(dir / "absent.log", 8).empty());
 }
 
 #ifndef _WIN32
 TEST_CASE("Rapport : la marque d'un autre lecteur vivant n'est ni un plantage ni retirée (C19-09)",
           "[app][report]") {
-  const fs::path dir = fresh_dir("ajp-report-other");
+  const fs::path dir = fresh_dir("kirari-report-other");
   write(dir / "session.open", "1\n");  // PID 1 : toujours vivant
   CHECK_FALSE(begin_session(dir));
   CHECK_FALSE(previous_session_crashed());
@@ -146,7 +146,7 @@ TEST_CASE("Rapport : la marque d'un autre lecteur vivant n'est ni un plantage ni
 
 TEST_CASE("Rapport : séance ouverte, retrouvée au lancement suivant seulement si elle ne s'est pas fermée",
           "[app][report]") {
-  const fs::path dir = fresh_dir("ajp-report-session");
+  const fs::path dir = fresh_dir("kirari-report-session");
   CHECK_FALSE(begin_session(dir));
   CHECK_FALSE(previous_session_crashed());
   CHECK(fs::exists(dir / "session.open"));
@@ -161,24 +161,24 @@ TEST_CASE("Rapport : séance ouverte, retrouvée au lancement suivant seulement 
 }
 
 TEST_CASE("Rapport : le rapport complet joint la séance d'avant quand elle a planté", "[app][report]") {
-  const fs::path dir = fresh_dir("ajp-report-full");
-  write(dir / "ajp.log", "séance neuve\n");
-  write(dir / "ajp.log.1", "lecture de /run/media/u/d/ep.mkv\nsegfault dans nvinfer\n");
+  const fs::path dir = fresh_dir("kirari-report-full");
+  write(dir / "kirari.log", "séance neuve\n");
+  write(dir / "kirari.log.1", "lecture de /run/media/u/d/ep.mkv\nsegfault dans nvinfer\n");
   fs::create_directories(dir / "crashes");
-  write(dir / "crashes" / "ajp-1.dmp", "x");
-  set_report_log_file(dir / "ajp.log");
+  write(dir / "crashes" / "kirari-1.dmp", "x");
+  set_report_log_file(dir / "kirari.log");
   clear_report_facts();
-  note_report_fact("ajp", "0.10.3");
+  note_report_fact("kirari", "0.10.3");
 
   end_session();
   begin_session(dir);  // pas de marque d'avant : propre
   CHECK(current_report("").find("segfault") == std::string::npos);
-  CHECK(current_report("").find("ajp-1.dmp") ==
+  CHECK(current_report("").find("kirari-1.dmp") ==
         std::string::npos);  // séance propre : pas de minidump nommé (C39-07)
 
   CHECK(begin_session(dir));  // la marque est restée : plantage
   const std::string report = current_report("");
-  CHECK(report.find("ajp-1.dmp") != std::string::npos);
+  CHECK(report.find("kirari-1.dmp") != std::string::npos);
   CHECK(report.find("segfault dans nvinfer") != std::string::npos);
   CHECK(report.find("/run/media") == std::string::npos);
   CHECK(report.find("…/ep.mkv") != std::string::npos);
@@ -187,7 +187,7 @@ TEST_CASE("Rapport : le rapport complet joint la séance d'avant quand elle a pl
 }
 
 TEST_CASE("Rapport : la fin du journal de construction part avec le refus (B39-03)", "[app][report]") {
-  const fs::path dir = fresh_dir("ajp-report-build");
+  const fs::path dir = fresh_dir("kirari-report-build");
   std::string log = "commande trtexec --onnx=modele.onnx\n";
   for (int i = 0; i < 100; ++i) log += "[I] tactique " + std::to_string(i) + "\n";
   log += "[E] Error Code 2: OutOfMemory (Requested size was 9000000000 bytes.)\n";
@@ -218,10 +218,10 @@ TEST_CASE("Rapport : la fin du journal de construction part avec le refus (B39-0
 
 TEST_CASE("Rapport : après une relance voulue, la séance qui a perdu le GPU est jointe (B39-01)",
           "[app][report]") {
-  const fs::path dir = fresh_dir("ajp-report-relaunched");
-  write(dir / "ajp.log", "séance neuve\n");
-  write(dir / "ajp.log.1", "appareil Vulkan de l'écran perdu (TDR, pilote rechargé)\n");
-  set_report_log_file(dir / "ajp.log");
+  const fs::path dir = fresh_dir("kirari-report-relaunched");
+  write(dir / "kirari.log", "séance neuve\n");
+  write(dir / "kirari.log.1", "appareil Vulkan de l'écran perdu (TDR, pilote rechargé)\n");
+  set_report_log_file(dir / "kirari.log");
   clear_report_facts();
   begin_session(dir);
   end_session();  // la relance voulue retire la marque (main.cpp)
@@ -262,17 +262,17 @@ TEST_CASE("le fait « Moteurs refusés » disparaît quand le moteur suivant n'a
 
 // C39-07 : un vieux minidump sans lien avec la séance d'avant n'est pas nommé.
 TEST_CASE("le rapport nomme le minidump seulement après une séance plantée", "[problem_report]") {
-  const fs::path dir = fresh_dir("ajp-report-dump-test");
-  write(dir / "ajp.log", "ligne\n");
+  const fs::path dir = fresh_dir("kirari-report-dump-test");
+  write(dir / "kirari.log", "ligne\n");
   fs::create_directories(dir / "crashes");
-  write(dir / "crashes" / "ajp-20240101-000000-1.dmp", "x");
-  set_report_log_file(dir / "ajp.log");
+  write(dir / "crashes" / "kirari-20240101-000000-1.dmp", "x");
+  set_report_log_file(dir / "kirari.log");
   begin_session(dir);
   end_session();
   CHECK_FALSE(begin_session(dir));  // la séance d'avant s'est fermée proprement
   CHECK(current_report("").find("Minidump") == std::string::npos);
   CHECK(begin_session(dir));  // la marque est restée : plantage
-  CHECK(current_report("").find("ajp-20240101-000000-1.dmp") != std::string::npos);
+  CHECK(current_report("").find("kirari-20240101-000000-1.dmp") != std::string::npos);
   end_session();
 }
 

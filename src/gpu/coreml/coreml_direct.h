@@ -25,7 +25,7 @@
 #include "gpu/coreml/coreml_units.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Les IOSurface des tenseurs de la chaîne, reconnues à leur adresse. Verrouillées pour le CPU, et
 // pour Vulkan qui y accède par la même projection, sauf pendant une prédiction de Core ML direct.
@@ -66,4 +66,4 @@ std::expected<std::unique_ptr<DirectModel>, Refusal> open_direct(const std::file
                                                                  std::span<const std::string> outputs,
                                                                  std::shared_ptr<Surfaces> surfaces);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

@@ -25,7 +25,7 @@
 #include <array>
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct FreeInfo {
   double fps = 0.0;                   // images créées par seconde (fenêtre de 2 s) ; 0 : pas encore mesuré
@@ -102,4 +102,4 @@ class FreeRate {
   std::array<Bucket, 24> buckets_{};
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

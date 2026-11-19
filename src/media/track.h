@@ -17,7 +17,7 @@
 
 struct AVCodecParameters;
 
-namespace ajp::media {
+namespace kirari::media {
 
 enum class TrackKind : std::uint8_t { Video, Audio, Subtitle, Attachment };
 
@@ -103,4 +103,4 @@ bool is_font(const TrackInfo& track);
 // Le nom et le type MIME d'une pièce jointe disent une police : décidé avant d'en copier les octets (B35-01).
 bool is_font_attachment(std::string_view filename, std::string_view mime_type);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

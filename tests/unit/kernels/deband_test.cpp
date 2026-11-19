@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 
 TEST_CASE("Débandage : le tirage reste dans le rayon et ne dépend que du pixel", "[kernels][deband]") {
   for (int y = 0; y < 64; ++y) {

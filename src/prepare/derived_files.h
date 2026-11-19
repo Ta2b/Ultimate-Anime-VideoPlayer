@@ -17,7 +17,7 @@
 #include "core/utf8_path.h"
 #include "prepare/sha256.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Le fichier existe-t-il avec exactement cette taille ?
 inline bool file_has_size(const std::filesystem::path& file, std::uintmax_t size) {
@@ -97,4 +97,4 @@ inline std::string format_sizes(const std::vector<std::uint64_t>& sizes) {
   return text + '\n';
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

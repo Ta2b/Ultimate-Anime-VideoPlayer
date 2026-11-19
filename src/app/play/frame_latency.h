@@ -17,7 +17,7 @@
 
 #include "core/clock.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class FrameLatency {
  public:
@@ -56,4 +56,4 @@ inline std::int64_t ready_media_us(const ClockSnapshot& now, std::int64_t host_u
   return std::max(now.media_at(host_us) + period_us, now.media_at(host_us + latency_us));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

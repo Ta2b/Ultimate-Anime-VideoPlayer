@@ -14,7 +14,7 @@
 
 #include "core/thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class CloseWatch {
  public:
@@ -40,4 +40,4 @@ class CloseWatch {
   std::jthread thread_;  // en dernier : il s'arrête avant que le verrou ne disparaisse
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct HomeView {
   std::string problem;         // la vidéo choisie ne se lit pas : pourquoi ; vide sinon
@@ -25,4 +25,4 @@ struct PanelSpan {
 // ouvert (il se déplace), sinon de la fenêtre.
 void draw_home(HomeView& view, float scale, std::optional<PanelSpan> settings);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

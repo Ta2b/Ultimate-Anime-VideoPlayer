@@ -16,7 +16,7 @@
 #include "app/play/player.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -38,11 +38,11 @@ TEST_CASE("Lecteur par défaut : la désinscription retire la fiche de mimeapps.
           "[app][default_player]") {
   const std::string before =
       "[Default Applications]\n"
-      "video/x-matroska=io.github.ta2b.ajp.desktop;\n"
-      "video/mp4=io.github.ta2b.ajp.desktop;vlc.desktop;\n"
+      "video/x-matroska=io.github.ta2b.kirari.desktop;\n"
+      "video/mp4=io.github.ta2b.kirari.desktop;vlc.desktop;\n"
       "text/plain=kate.desktop;\n"
       "[Added Associations]\n"
-      "video/webm=vlc.desktop;io.github.ta2b.ajp.desktop\n";
+      "video/webm=vlc.desktop;io.github.ta2b.kirari.desktop\n";
   CHECK(without_desktop_id(before, kDesktopId) ==
         "[Default Applications]\n"
         "video/mp4=vlc.desktop;\n"
@@ -53,14 +53,14 @@ TEST_CASE("Lecteur par défaut : la désinscription retire la fiche de mimeapps.
 }
 
 TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidéo", "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  const auto entry = desktop_entry("/opt/ajp-linux-x64/ajp");
+  kirari::app::play::FrenchUi french;
+  const auto entry = desktop_entry("/opt/kirari-linux-x64/kirari");
   REQUIRE(entry);
   CHECK(entry->starts_with("[Desktop Entry]\n"));
   CHECK(line_of(*entry, "Type") == "Application");
   CHECK(line_of(*entry, "Name") == kAppName);
-  CHECK(line_of(*entry, "Exec") == "\"/opt/ajp-linux-x64/ajp\" %f");
-  CHECK(line_of(*entry, "TryExec") == "/opt/ajp-linux-x64/ajp");
+  CHECK(line_of(*entry, "Exec") == "\"/opt/kirari-linux-x64/kirari\" %f");
+  CHECK(line_of(*entry, "TryExec") == "/opt/kirari-linux-x64/kirari");
   CHECK(line_of(*entry, "Terminal") == "false");
   const std::string mimes = line_of(*entry, "MimeType");
   for (const std::string_view mime : video_mime_types()) CHECK(mimes.contains(std::string(mime) + ";"));
@@ -69,33 +69,33 @@ TEST_CASE("Lecteur par défaut : le .desktop nomme le lecteur et les types vidé
 
 TEST_CASE("Lecteur par défaut : la fiche porte l'identifiant de l'application et l'icône (B19-01)",
           "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  const auto plain = desktop_entry("/opt/ajp-linux-x64/ajp");
+  kirari::app::play::FrenchUi french;
+  const auto plain = desktop_entry("/opt/kirari-linux-x64/kirari");
   REQUIRE(plain);
-  CHECK(line_of(*plain, "StartupWMClass") == "io.github.ta2b.ajp");  // l'app_id de la fenêtre
-  CHECK(line_of(*plain, "Icon") == "video-x-generic");               // pas d'icône installée : la générique
-  const auto with_icon = desktop_entry("/opt/ajp-linux-x64/ajp", true);
+  CHECK(line_of(*plain, "StartupWMClass") == "io.github.ta2b.kirari");  // l'app_id de la fenêtre
+  CHECK(line_of(*plain, "Icon") == "video-x-generic");  // pas d'icône installée : la générique
+  const auto with_icon = desktop_entry("/opt/kirari-linux-x64/kirari", true);
   REQUIRE(with_icon);
-  CHECK(line_of(*with_icon, "Icon") == "io.github.ta2b.ajp");
+  CHECK(line_of(*with_icon, "Icon") == "io.github.ta2b.kirari");
 }
 
 TEST_CASE("Lecteur par défaut : Exec échappe le chemin selon la spécification XDG", "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   // Entre guillemets, « " », « ` », « $ » et « \ » prennent une barre oblique inverse et « % » se
   // double ; la règle des chaînes double ensuite chaque barre oblique inverse.
-  const auto entry = desktop_entry("/home/t/Mes vidéos/a\"b`c$d\\e%f/ajp");
+  const auto entry = desktop_entry("/home/t/Mes vidéos/a\"b`c$d\\e%f/kirari");
   REQUIRE(entry);
-  CHECK(line_of(*entry, "Exec") == R"("/home/t/Mes vidéos/a\\"b\\`c\\$d\\\\e%%f/ajp" %f)");
-  CHECK(line_of(*entry, "TryExec") == R"(/home/t/Mes vidéos/a"b`c$d\\e%f/ajp)");
+  CHECK(line_of(*entry, "Exec") == R"("/home/t/Mes vidéos/a\\"b\\`c\\$d\\\\e%%f/kirari" %f)");
+  CHECK(line_of(*entry, "TryExec") == R"(/home/t/Mes vidéos/a"b`c$d\\e%f/kirari)");
 }
 
 TEST_CASE("Lecteur par défaut : un chemin qu'une ligne ne porte pas est refusé", "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  std::vector<std::string_view> paths{"/opt/a\nb/ajp", "/opt/a\tb/ajp", ""};
+  kirari::app::play::FrenchUi french;
+  std::vector<std::string_view> paths{"/opt/a\nb/kirari", "/opt/a\tb/kirari", ""};
 #ifndef _WIN32
   // Un chemin POSIX est fait d'octets, pas forcément d'UTF-8 ; sous Windows il est en UTF-16, et
   // fs::path refuse de lire cet octet seul.
-  paths.emplace_back("/opt/\xC3/ajp");
+  paths.emplace_back("/opt/\xC3/kirari");
 #endif
   for (const std::string_view path : paths) {
     const auto entry = desktop_entry(fs::path(std::string(path)));
@@ -106,27 +106,29 @@ TEST_CASE("Lecteur par défaut : un chemin qu'une ligne ne porte pas est refusé
 
 TEST_CASE("Lecteur par défaut : les clés du registre de l'utilisateur sous Windows",
           "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  constexpr std::string_view exe = R"(C:\Program Files\AJP\ajp.exe)";
+  kirari::app::play::FrenchUi french;
+  constexpr std::string_view exe = R"(C:\Program Files\Kirari\kirari.exe)";
   const std::vector<RegistryValue> values = registry_values(exe);
-  const std::string command = R"("C:\Program Files\AJP\ajp.exe" "%1")";
-  CHECK(has(values, R"(Software\Classes\AJP.Video\shell\open\command)", "", command));
-  CHECK(has(values, R"(Software\Classes\AJP.Video\DefaultIcon)", "", R"("C:\Program Files\AJP\ajp.exe",0)"));
-  CHECK(has(values, R"(Software\Classes\Applications\ajp.exe\shell\open\command)", "", command));
-  CHECK(has(values, R"(Software\AJP\Capabilities)", "ApplicationName", kAppName));
-  CHECK(has(values, R"(Software\RegisteredApplications)", "AJP", R"(Software\AJP\Capabilities)"));
+  const std::string command = R"("C:\Program Files\Kirari\kirari.exe" "%1")";
+  CHECK(has(values, R"(Software\Classes\Kirari.Video\shell\open\command)", "", command));
+  CHECK(has(values, R"(Software\Classes\Kirari.Video\DefaultIcon)", "",
+            R"("C:\Program Files\Kirari\kirari.exe",0)"));
+  CHECK(has(values, R"(Software\Classes\Applications\kirari.exe\shell\open\command)", "", command));
+  CHECK(has(values, R"(Software\Kirari\Capabilities)", "ApplicationName", kAppName));
+  CHECK(has(values, R"(Software\RegisteredApplications)", "Kirari", R"(Software\Kirari\Capabilities)"));
   for (const std::string_view extension : video_extensions()) {
     INFO(extension);
-    CHECK(has(values, std::string(R"(Software\AJP\Capabilities\FileAssociations)"), extension, "AJP.Video"));
+    CHECK(has(values, std::string(R"(Software\Kirari\Capabilities\FileAssociations)"), extension,
+              "Kirari.Video"));
     CHECK(has(values, std::string(R"(Software\Classes\)") + std::string(extension) + R"(\OpenWithProgids)",
-              "AJP.Video", ""));
-    CHECK(has(values, R"(Software\Classes\Applications\ajp.exe\SupportedTypes)", extension, ""));
+              "Kirari.Video", ""));
+    CHECK(has(values, R"(Software\Classes\Applications\kirari.exe\SupportedTypes)", extension, ""));
   }
 }
 
 TEST_CASE("Lecteur par défaut : le retrait couvre tout ce que l'inscription écrit", "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  constexpr std::string_view exe = R"(D:\ajp-windows-x64\ajp.exe)";
+  kirari::app::play::FrenchUi french;
+  constexpr std::string_view exe = R"(D:\kirari-windows-x64\kirari.exe)";
   const std::vector<std::string> trees = registry_trees(exe);
   const std::vector<RegistryValue> shared = registry_shared_values();
   for (const RegistryValue& value : registry_values(exe)) {
@@ -143,24 +145,24 @@ TEST_CASE("Lecteur par défaut : le retrait couvre tout ce que l'inscription éc
 #if !defined(_WIN32) && !defined(__APPLE__)
 TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utilisateur",
           "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path home = fs::temp_directory_path() / "ajp-default-player-test";
+  kirari::app::play::FrenchUi french;
+  const fs::path home = fs::temp_directory_path() / "kirari-default-player-test";
   std::error_code error;
   fs::remove_all(home, error);
-  const PlayerPlace place{.executable = "/opt/ajp-linux-x64/ajp", .home = home};
+  const PlayerPlace place{.executable = "/opt/kirari-linux-x64/kirari", .home = home};
 
   const auto registered = register_player(place);
   REQUIRE(registered);
-  CHECK(registered->contains("xdg-mime default io.github.ta2b.ajp.desktop"));
+  CHECK(registered->contains("xdg-mime default io.github.ta2b.kirari.desktop"));
   const fs::path file = desktop_file(place);
-  CHECK(file == home / ".local/share/applications/io.github.ta2b.ajp.desktop");
+  CHECK(file == home / ".local/share/applications/io.github.ta2b.kirari.desktop");
   std::ifstream in(file, std::ios::binary);
   const std::string written{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
   CHECK(written == desktop_entry(place.executable).value());
   CHECK_FALSE(fs::exists(fs::path(file.string() + ".tmp")));
 
   CHECK_FALSE(refresh_registration(place));  // à sa place : rien à refaire
-  const PlayerPlace moved{.executable = "/home/moi/Jeux/ajp-linux-x64/ajp", .home = home};
+  const PlayerPlace moved{.executable = "/home/moi/Jeux/kirari-linux-x64/kirari", .home = home};
   CHECK(refresh_registration(moved));  // le dossier a bougé : la fiche suit (A19-06)
   {
     std::ifstream again_in(file, std::ios::binary);
@@ -185,39 +187,39 @@ TEST_CASE("Lecteur par défaut : inscrit puis retiré dans le dossier de l'utili
 
 TEST_CASE("Lecteur par défaut : deux installations ne se disputent pas la fiche (B19-07)",
           "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path home = fs::temp_directory_path() / "ajp-default-player-two-test";
+  kirari::app::play::FrenchUi french;
+  const fs::path home = fs::temp_directory_path() / "kirari-default-player-two-test";
   std::error_code error;
   fs::remove_all(home, error);
   fs::create_directories(home / "a", error);
   fs::create_directories(home / "b", error);
-  std::ofstream(home / "a" / "ajp") << "x";
-  std::ofstream(home / "b" / "ajp") << "x";
-  const PlayerPlace first{.executable = home / "a" / "ajp", .home = home};
-  const PlayerPlace second{.executable = home / "b" / "ajp", .home = home};
+  std::ofstream(home / "a" / "kirari") << "x";
+  std::ofstream(home / "b" / "kirari") << "x";
+  const PlayerPlace first{.executable = home / "a" / "kirari", .home = home};
+  const PlayerPlace second{.executable = home / "b" / "kirari", .home = home};
   REQUIRE(register_player(first));
   CHECK_FALSE(refresh_registration(second));  // la première existe encore : la fiche reste à elle
   CHECK(refresh_registration(first) == false);
-  fs::remove(home / "a" / "ajp", error);
+  fs::remove(home / "a" / "kirari", error);
   CHECK(refresh_registration(second));  // la première a disparu : la fiche suit la seconde
   fs::remove_all(home, error);
 }
 
 TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_HOME)",
           "[app][default_player]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path root = fs::temp_directory_path() / "ajp-default-player-data-test";
+  kirari::app::play::FrenchUi french;
+  const fs::path root = fs::temp_directory_path() / "kirari-default-player-data-test";
   std::error_code error;
   fs::remove_all(root, error);
-  // SDL_GetPrefPath("ajp", "ajp") : <données>/ajp/ajp/, barre finale comprise.
-  CHECK(user_data(root / "donnees" / "ajp" / "ajp" / "") == root / "donnees");
-  CHECK(user_data(root / "donnees" / "ajp" / "ajp") == root / "donnees");
+  // SDL_GetPrefPath("", "kirari") : <données>/kirari/, barre finale comprise.
+  CHECK(user_data(root / "donnees" / "kirari" / "") == root / "donnees");
+  CHECK(user_data(root / "donnees" / "kirari") == root / "donnees");
   CHECK(user_data({}).empty());
-  const PlayerPlace place{.executable = "/opt/ajp-linux-x64/ajp",
+  const PlayerPlace place{.executable = "/opt/kirari-linux-x64/kirari",
                           .home = root / "maison",
-                          .data = user_data(root / "donnees/ajp/ajp/")};
+                          .data = user_data(root / "donnees/kirari/")};
   const fs::path file = desktop_file(place);
-  CHECK(file == root / "donnees/applications/io.github.ta2b.ajp.desktop");
+  CHECK(file == root / "donnees/applications/io.github.ta2b.kirari.desktop");
   const auto registered = register_player(place);
   REQUIRE(registered);
   CHECK(registered->contains(file.string()));
@@ -230,53 +232,53 @@ TEST_CASE("Lecteur par défaut : dans les données de l'utilisateur ($XDG_DATA_H
 #endif
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-TEST_CASE("xdg-mime query default : reconnaît le .desktop d'AJP", "[default_player]") {
-  ajp::app::play::FrenchUi french;
-  using namespace ajp::app::play;
-  CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop\n"));
-  CHECK(default_handler_is_ajp("io.github.ta2b.ajp.desktop"));
-  CHECK_FALSE(default_handler_is_ajp("mpv.desktop\n"));
-  CHECK_FALSE(default_handler_is_ajp(""));
+TEST_CASE("xdg-mime query default : reconnaît le .desktop de Kirari", "[default_player]") {
+  kirari::app::play::FrenchUi french;
+  using namespace kirari::app::play;
+  CHECK(default_handler_is_kirari("io.github.ta2b.kirari.desktop\n"));
+  CHECK(default_handler_is_kirari("io.github.ta2b.kirari.desktop"));
+  CHECK_FALSE(default_handler_is_kirari("mpv.desktop\n"));
+  CHECK_FALSE(default_handler_is_kirari(""));
   // La question ne bloque jamais l'appelant (A19-04) : xdg-mime répond sur un fil à lui.
   const auto asked = std::chrono::steady_clock::now();
   static_cast<void>(is_default_player(PlayerPlace{}));
   // Borne large (B40-08) : un appel bloquant attendrait xdg-mime, bien au-delà ; le lancement d'un fil sur
   // une machine chargée peut, lui, prendre plus de 200 ms.
   CHECK(std::chrono::steady_clock::now() - asked < std::chrono::seconds(1));
-  CHECK(user_choice_is_ajp("AJP.Video"));
-  CHECK(user_choice_is_ajp("Applications\\ajp.exe"));  // « Ouvrir avec > Toujours » (B19-02)
-  CHECK(user_choice_is_ajp("applications\\AJP.EXE"));
-  CHECK_FALSE(user_choice_is_ajp("Applications\\vlc.exe"));
-  CHECK(executable_is_ajp(R"(C:\Users\t\AppData\Local\Programs\AJP\ajp.exe)"));  // B34-09
-  CHECK_FALSE(executable_is_ajp(R"(C:\Program Files\VideoLAN\vlc.exe)"));
-  CHECK_FALSE(executable_is_ajp(""));
-  CHECK_FALSE(user_choice_is_ajp("VLC.mkv"));
-  CHECK_FALSE(user_choice_is_ajp(""));
+  CHECK(user_choice_is_kirari("Kirari.Video"));
+  CHECK(user_choice_is_kirari("Applications\\kirari.exe"));  // « Ouvrir avec > Toujours » (B19-02)
+  CHECK(user_choice_is_kirari("applications\\Kirari.EXE"));
+  CHECK_FALSE(user_choice_is_kirari("Applications\\vlc.exe"));
+  CHECK(executable_is_kirari(R"(C:\Users\t\AppData\Local\Programs\Kirari\kirari.exe)"));  // B34-09
+  CHECK_FALSE(executable_is_kirari(R"(C:\Program Files\VideoLAN\vlc.exe)"));
+  CHECK_FALSE(executable_is_kirari(""));
+  CHECK_FALSE(user_choice_is_kirari("VLC.mkv"));
+  CHECK_FALSE(user_choice_is_kirari(""));
 }
 
 TEST_CASE("Lecteur par défaut : la mise à jour et l'inscription ne lisent pas le même dossier",
           "[app][default_player]") {
   // Le dossier du lecteur garde update.toml (vérification, préparation et application au lancement) ;
-  // l'inscription part de son grand-parent. Avant, la vérification écrivait dans le grand-parent.
-  const ajp::app::play::PlayerPaths paths{
-      .home = "/maison", .data = "/donnees/ajp/ajp", .executable = "/opt/ajp/ajp"};
-  using namespace ajp::app::play;
-  const PlayerPlace place = ajp::app::play::place_of(paths);
-  CHECK(place.app_data == std::filesystem::path("/donnees/ajp/ajp"));
+  // l'inscription part de son parent. Avant, la vérification écrivait dans le parent.
+  const kirari::app::play::PlayerPaths paths{
+      .home = "/maison", .data = "/donnees/kirari", .executable = "/opt/kirari/kirari"};
+  using namespace kirari::app::play;
+  const PlayerPlace place = kirari::app::play::place_of(paths);
+  CHECK(place.app_data == std::filesystem::path("/donnees/kirari"));
   CHECK(place.data == std::filesystem::path("/donnees"));
-  CHECK(place.executable == std::filesystem::path("/opt/ajp/ajp"));
+  CHECK(place.executable == std::filesystem::path("/opt/kirari/kirari"));
 }
 
 TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier local, les réglages restent",
           "[app]") {
   namespace fs = std::filesystem;
-  using ajp::app::play::move_heavy_data;
-  const fs::path root = fs::temp_directory_path() / "ajp-local-data";
+  using kirari::app::play::move_heavy_data;
+  const fs::path root = fs::temp_directory_path() / "kirari-local-data";
   fs::remove_all(root);
-  const fs::path roaming = root / "Roaming" / "ajp" / "ajp";
-  const fs::path local = root / "Local" / "ajp" / "ajp";
+  const fs::path roaming = root / "Roaming" / "kirari" / "kirari";
+  const fs::path local = root / "Local" / "kirari" / "kirari";
   fs::create_directories(roaming / "engines");
   fs::create_directories(roaming / "backends" / "tensorrt");
   std::ofstream(roaming / "engines" / "span.plan") << "plan";
@@ -291,41 +293,41 @@ TEST_CASE("Les moteurs et caches d'une version d'avant passent dans le dossier l
   CHECK(said.size() == 1);
   CHECK(move_heavy_data(roaming, roaming) == 0);
 #ifndef _WIN32
-  CHECK(ajp::app::play::local_data(roaming) == roaming);  // hors Windows, le même dossier
+  CHECK(kirari::app::play::local_data(roaming) == roaming);  // hors Windows, le même dossier
 #endif
   fs::remove_all(root);
 }
 
 TEST_CASE("Journaux, minidumps et séquence du banc quittent le profil itinérant (B36-08)", "[app]") {
   namespace fs = std::filesystem;
-  const fs::path root = fs::temp_directory_path() / "ajp-local-diagnostics";
+  const fs::path root = fs::temp_directory_path() / "kirari-local-diagnostics";
   fs::remove_all(root);
   const fs::path roaming = root / "Roaming";
   const fs::path local = root / "Local";
   fs::create_directories(roaming / "crashes");
-  std::ofstream(roaming / "crashes" / "ajp-1.dmp") << "dump";
-  std::ofstream(roaming / "ajp.log") << "séance";
-  std::ofstream(roaming / "ajp.log.1") << "séance d'avant";
-  std::ofstream(roaming / "ajp.1.log.2") << "part";
+  std::ofstream(roaming / "crashes" / "kirari-1.dmp") << "dump";
+  std::ofstream(roaming / "kirari.log") << "séance";
+  std::ofstream(roaming / "kirari.log.1") << "séance d'avant";
+  std::ofstream(roaming / "kirari.1.log.2") << "part";
   std::ofstream(roaming / "bench-clip-v4.mkv") << "clip";
   std::ofstream(roaming / "play.toml") << "[playlist]";
   std::ofstream(roaming / "resume.tsv") << "";
-  CHECK(ajp::app::play::move_diagnostics(roaming, local) == 5);
-  for (const char* name : {"ajp.log", "ajp.log.1", "ajp.1.log.2", "bench-clip-v4.mkv"}) {
+  CHECK(kirari::app::play::move_diagnostics(roaming, local) == 5);
+  for (const char* name : {"kirari.log", "kirari.log.1", "kirari.1.log.2", "bench-clip-v4.mkv"}) {
     CHECK(fs::is_regular_file(local / name));
     CHECK_FALSE(fs::exists(roaming / name));
   }
-  CHECK(fs::is_regular_file(local / "crashes" / "ajp-1.dmp"));
+  CHECK(fs::is_regular_file(local / "crashes" / "kirari-1.dmp"));
   CHECK(fs::is_regular_file(roaming / "play.toml"));  // les réglages restent
   CHECK(fs::is_regular_file(roaming / "resume.tsv"));
-  CHECK(ajp::app::play::move_diagnostics(roaming, roaming) == 0);
+  CHECK(kirari::app::play::move_diagnostics(roaming, roaming) == 0);
   fs::remove_all(root);
 }
 
 TEST_CASE("Une migration coupée ne passe jamais pour finie : la copie recommence (A19-01)", "[app]") {
   namespace fs = std::filesystem;
-  using ajp::app::play::move_heavy_data;
-  const fs::path root = fs::temp_directory_path() / "ajp-local-cut";
+  using kirari::app::play::move_heavy_data;
+  const fs::path root = fs::temp_directory_path() / "kirari-local-cut";
   fs::remove_all(root);
   const fs::path roaming = root / "Roaming";
   const fs::path local = root / "Local";
@@ -350,11 +352,11 @@ TEST_CASE("Une migration coupée ne passe jamais pour finie : la copie recommenc
 TEST_CASE("Dans le dossier partagé, un updates/ d'un autre programme aux noms de version reste (C19-07)",
           "[app]") {
   namespace fs = std::filesystem;
-  const fs::path shared = fs::temp_directory_path() / "ajp-purge-foreign" / "AppData";
+  const fs::path shared = fs::temp_directory_path() / "kirari-purge-foreign" / "AppData";
   fs::remove_all(shared.parent_path());
   fs::create_directories(shared / "updates" / "2.1");
   std::ofstream(shared / "updates" / "2.1" / "installer.bin") << "x";
-  CHECK(ajp::app::play::purge_misplaced(shared) == 0);
+  CHECK(kirari::app::play::purge_misplaced(shared) == 0);
   CHECK(fs::exists(shared / "updates" / "2.1" / "installer.bin"));
   fs::remove_all(shared.parent_path());
 }
@@ -362,7 +364,7 @@ TEST_CASE("Dans le dossier partagé, un updates/ d'un autre programme aux noms d
 TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux des autres restent (P3.70)",
           "[app]") {
   namespace fs = std::filesystem;
-  const fs::path shared = fs::temp_directory_path() / "ajp-purge" / "AppData";
+  const fs::path shared = fs::temp_directory_path() / "kirari-purge" / "AppData";
   fs::remove_all(shared.parent_path());
   fs::create_directories(shared / "plans");
   fs::create_directories(shared / "updates" / "previous");  // ce que l'ancien lecteur y rangeait
@@ -370,7 +372,7 @@ TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux 
   std::ofstream(shared / "shaders.cache") << "pl_cache....";
   std::ofstream(shared / "plans" / "a.shots") << "x";
   std::ofstream(shared / "engines-relaunched") << "";
-  CHECK(ajp::app::play::purge_misplaced(shared) == 6);
+  CHECK(kirari::app::play::purge_misplaced(shared) == 6);
   CHECK(fs::is_empty(shared));
   // Ce que le lecteur ne reconnaît pas reste : un update.toml étranger, un cache d'un autre, un plans/
   // habité.
@@ -379,7 +381,7 @@ TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux 
   std::ofstream(shared / "update.toml") << "channel = 1\n";
   std::ofstream(shared / "shaders.cache") << "other";
   std::ofstream(shared / "plans" / "notes.txt") << "x";
-  CHECK(ajp::app::play::purge_misplaced(shared) == 0);
+  CHECK(kirari::app::play::purge_misplaced(shared) == 0);
   CHECK(fs::exists(shared / "update.toml"));
   CHECK(fs::exists(shared / "plans" / "notes.txt"));
   CHECK(fs::exists(shared / "updates" / "Other"));
@@ -387,13 +389,13 @@ TEST_CASE("Les fichiers d'une version d'avant partent du dossier partagé, ceux 
 }
 
 TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[episodes]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-growing";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-growing";
   std::filesystem::create_directories(dir);
   const std::filesystem::path file = dir / "ep01.mkv";
   {
     std::ofstream(file, std::ios::binary) << "1234";
   }
-  const ajp::app::play::GrowingFile opened = ajp::app::play::GrowingFile::of(file);
+  const kirari::app::play::GrowingFile opened = kirari::app::play::GrowingFile::of(file);
   CHECK_FALSE(opened.grew(file, std::chrono::milliseconds(200)));  // écrit à l'instant, mais n'a pas grandi
   {
     std::ofstream(file, std::ios::binary | std::ios::app) << "5678";
@@ -402,26 +404,26 @@ TEST_CASE("un fichier encore en téléchargement n'est pas fini (P3.27)", "[epis
   std::filesystem::remove_all(dir);
 }
 
-TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp, le reste reste (A36-08)",
+TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/kirari, le reste reste (A36-08)",
           "[app]") {
   namespace fs = std::filesystem;
-  const fs::path root = fs::temp_directory_path() / "ajp-cache-data";
+  const fs::path root = fs::temp_directory_path() / "kirari-cache-data";
   fs::remove_all(root);
   const fs::path home = root / "home";
-  const fs::path heavy = home / ".local" / "share" / "ajp" / "ajp";
-  const fs::path cache = ajp::app::play::cache_data(home, heavy);
+  const fs::path heavy = home / ".local" / "share" / "kirari" / "kirari";
+  const fs::path cache = kirari::app::play::cache_data(home, heavy);
 #ifdef __linux__
-  CHECK(cache == home / ".cache" / "ajp");
+  CHECK(cache == home / ".cache" / "kirari");
 #else
   CHECK(cache == heavy);
 #endif
-  CHECK(ajp::app::play::cache_data({}, heavy) == heavy);
+  CHECK(kirari::app::play::cache_data({}, heavy) == heavy);
   // C34-13 : $XDG_CACHE_HOME, s'il est absolu ; un chemin relatif est ignoré, comme le veut la norme.
 #ifdef __linux__
-  CHECK(ajp::app::play::cache_data(home, heavy, root / "rapide") == root / "rapide" / "ajp");
-  CHECK(ajp::app::play::cache_data(home, heavy, "relatif") == home / ".cache" / "ajp");
+  CHECK(kirari::app::play::cache_data(home, heavy, root / "rapide") == root / "rapide" / "kirari");
+  CHECK(kirari::app::play::cache_data(home, heavy, "relatif") == home / ".cache" / "kirari");
 #else
-  CHECK(ajp::app::play::cache_data(home, heavy, root / "rapide") == heavy);
+  CHECK(kirari::app::play::cache_data(home, heavy, root / "rapide") == heavy);
 #endif
   for (const char* name : {"engines", "modeles", "plans", "backends", "models", "luts", "downloads"})
     fs::create_directories(heavy / name);
@@ -431,7 +433,7 @@ TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp,
   {
     std::ofstream(heavy / "engines" / "span.plan") << "plan";
   }
-  const int moved = ajp::app::play::move_cache_data(heavy, cache);
+  const int moved = kirari::app::play::move_cache_data(heavy, cache);
 #ifdef __linux__
   CHECK(moved == 4);
   CHECK(fs::is_regular_file(cache / "engines" / "span.plan"));
@@ -444,6 +446,6 @@ TEST_CASE("Sous Linux, les caches qui se refont seuls passent dans ~/.cache/ajp,
 #endif
   // Les paquets, modèles téléchargés, LUT et téléchargements restent avec les données.
   for (const char* name : {"backends", "models", "luts", "downloads"}) CHECK(fs::is_directory(heavy / name));
-  CHECK(ajp::app::play::move_cache_data(heavy, cache) == 0);  // une fois
+  CHECK(kirari::app::play::move_cache_data(heavy, cache) == 0);  // une fois
   fs::remove_all(root);
 }

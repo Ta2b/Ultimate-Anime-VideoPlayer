@@ -13,7 +13,7 @@
 
 #include "core/cadence.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 // La réduite la plus fine de x (x >= 1) dont les deux termes restent dans kRatioTerm.
@@ -67,4 +67,4 @@ std::optional<double> vsync_lock(double refresh_hz, double output_fps) {
   return speed;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

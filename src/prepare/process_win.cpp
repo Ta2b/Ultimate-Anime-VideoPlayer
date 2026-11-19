@@ -21,7 +21,7 @@
 
 #include "prepare/process.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -192,6 +192,6 @@ std::expected<ProcessExit, Refusal> run_process(const ProcessSpec& spec, const L
   return exit;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare
 
 #endif  // _WIN32

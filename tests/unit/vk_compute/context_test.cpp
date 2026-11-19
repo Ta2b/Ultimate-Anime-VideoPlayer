@@ -24,9 +24,9 @@
 #include "gpu/vulkan/compute/sync.h"
 #include "rig.h"
 
-using namespace ajp;
-using namespace ajp::gpu::vk;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu::vk;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 
@@ -110,11 +110,11 @@ std::unique_ptr<OwnDevice> own_device() {
 
 TEST_CASE("chargeur : bibliothèque Vulkan introuvable ou sans vkGetInstanceProcAddr",
           "[vk_compute][context]") {
-  const std::filesystem::path missing = "/nonexistent/ajp/libvulkan-factice.so.1";
+  const std::filesystem::path missing = "/nonexistent/kirari/libvulkan-factice.so.1";
   require_refusal(VulkanLibrary::open(missing), RefusalCode::LibraryUnavailable);
   require_refusal(VkContext::create({.library = missing}), RefusalCode::LibraryUnavailable);
   // Une vraie bibliothèque partagée, construite pour le test, qui n'exporte pas le point d'entrée.
-  const std::filesystem::path fake = AJP_TEST_FAKE_VULKAN;
+  const std::filesystem::path fake = KIRARI_TEST_FAKE_VULKAN;
   REQUIRE(std::filesystem::exists(fake));
   require_refusal(VulkanLibrary::open(fake), RefusalCode::LibraryUnavailable);
   require_refusal(VkContext::create({.library = fake}), RefusalCode::LibraryUnavailable);
@@ -199,7 +199,7 @@ TEST_CASE("contexte : la couche de validation nomme une erreur au rappel", "[vk_
 
 TEST_CASE("contexte : extension d'appareil absente refusée", "[vk_compute][context]") {
   Rig rig = make_rig();
-  require_refusal(VkContext::create({.extensions = {"VK_AJP_extension_inexistante"}}),
+  require_refusal(VkContext::create({.extensions = {"VK_KIRARI_extension_inexistante"}}),
                   RefusalCode::FeatureUnavailable);
 }
 
@@ -266,17 +266,17 @@ TEST_CASE("Cache de pipelines : un fichier abîmé ou d'un autre appareil n'est 
   std::vector<std::byte> driver(48, std::byte{7});
   const std::array<std::uint32_t, 4> head{32, VK_PIPELINE_CACHE_HEADER_VERSION_ONE, 0x10de, 0x2782};
   std::memcpy(driver.data(), head.data(), sizeof(head));
-  const std::vector<std::byte> file = ajp::gpu::vk::seal_pipeline_cache(driver);
-  CHECK(ajp::gpu::vk::open_pipeline_cache(file, 0x10de, 0x2782).size() == driver.size());
-  CHECK(ajp::gpu::vk::open_pipeline_cache(file, 0x1002, 0x2782).empty());
-  CHECK(ajp::gpu::vk::open_pipeline_cache(std::span(file).first(file.size() - 1), 0x10de, 0x2782).empty());
+  const std::vector<std::byte> file = kirari::gpu::vk::seal_pipeline_cache(driver);
+  CHECK(kirari::gpu::vk::open_pipeline_cache(file, 0x10de, 0x2782).size() == driver.size());
+  CHECK(kirari::gpu::vk::open_pipeline_cache(file, 0x1002, 0x2782).empty());
+  CHECK(kirari::gpu::vk::open_pipeline_cache(std::span(file).first(file.size() - 1), 0x10de, 0x2782).empty());
   std::vector<std::byte> damaged = file;
   damaged.at(40) = std::byte{8};
-  CHECK(ajp::gpu::vk::open_pipeline_cache(damaged, 0x10de, 0x2782).empty());
+  CHECK(kirari::gpu::vk::open_pipeline_cache(damaged, 0x10de, 0x2782).empty());
 }
 
 TEST_CASE("contexte : appareil perdu, soumissions refusées en DeviceLost (P2.8)", "[vk_compute][context]") {
-  CHECK(ajp::gpu::vk::check(VK_ERROR_DEVICE_LOST, "appel").error().code == RefusalCode::DeviceLost);
+  CHECK(kirari::gpu::vk::check(VK_ERROR_DEVICE_LOST, "appel").error().code == RefusalCode::DeviceLost);
   Rig rig = make_rig();
   VkContext& ctx = *rig.context;
   REQUIRE(ctx.run_once([](VkCommandBuffer) {}));
@@ -308,7 +308,7 @@ TEST_CASE("contexte : un GPU bloqué laisse les pipelines à leur place, la dest
   auto ctx = require_value(VkContext::create({.settle_floor = std::chrono::milliseconds(50)}));
   auto timeline = require_value(TimelineSemaphore::create(*ctx));
   {
-    auto cache = require_value(ajp::gpu::vk::PipelineCache::create(*ctx));
+    auto cache = require_value(kirari::gpu::vk::PipelineCache::create(*ctx));
     REQUIRE(cache->get({.shader = "transfer", .constants = {}, .buffers = 2, .images = 0, .push_bytes = 32}));
     CHECK(cache->size() == 1);
     CHECK_FALSE(ctx->settle(timeline.at(1)));

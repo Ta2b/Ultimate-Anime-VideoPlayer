@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace ajp::render {
+namespace kirari::render {
 
 inline constexpr double kContentReferenceNits = 203.0;
 
@@ -93,4 +93,4 @@ std::array<double, 5> abl_to_full_frame(double panel_peak_nits, double full_fram
 // La part de L_max(2 %) que la courbe QD-OLED garde à cette surface (1 à 2 % et moins, 0,257 à 100 %).
 double oled_abl_ratio(double area);
 
-}  // namespace ajp::render
+}  // namespace kirari::render

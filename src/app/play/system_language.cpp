@@ -14,7 +14,7 @@
 #include "core/text.h"
 #include "media/language.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string g_system_language = "eng";  // NOLINT : posée une fois au démarrage, avant les réglages
@@ -191,4 +191,4 @@ std::vector<media::LanguagePreset> default_language_presets() {
   return language_presets_for(g_system_language, LanguageVersion::Original);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

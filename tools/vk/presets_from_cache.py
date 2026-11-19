@@ -153,7 +153,7 @@ def main() -> int:
         "",
         '#include "gpu/vulkan/backend/net_autotune.h"',
         "",
-        "namespace ajp::gpu::vk::net {",
+        "namespace kirari::gpu::vk::net {",
     ]
     if merged:
         out += ["namespace {", ""]
@@ -177,7 +177,7 @@ def main() -> int:
         out.append("  }};")
     else:
         out[-1] += ";"
-    out += ["  return kTables;", "}", "", "}  // namespace ajp::gpu::vk::net", ""]
+    out += ["  return kTables;", "}", "", "}  // namespace kirari::gpu::vk::net", ""]
     args.out.write_text("\n".join(out), encoding="utf-8")
     print(f"{args.out} : {sum(len(t) for t in merged.values())} couches, {len(merged)} familles")
     return 0

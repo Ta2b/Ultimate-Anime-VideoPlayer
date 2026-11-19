@@ -5,7 +5,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 bool float_type(DataType type) {
@@ -78,4 +78,4 @@ int fold_float_casts(Graph& graph) {
   return removed;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

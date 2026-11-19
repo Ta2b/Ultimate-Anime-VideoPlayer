@@ -17,13 +17,13 @@
 #include "prepare/sha256.h"
 #include "support.h"
 
-using namespace ajp::prepare;
-using ajp::RefusalCode;
+using namespace kirari::prepare;
+using kirari::RefusalCode;
 using namespace std::chrono_literals;
 
 namespace {
 
-std::expected<void, ajp::Refusal> write_output(const test::fs::path& output, std::string_view content) {
+std::expected<void, kirari::Refusal> write_output(const test::fs::path& output, std::string_view content) {
   test::write_file(output, content);
   return {};
 }
@@ -80,7 +80,7 @@ TEST_CASE("KeyLock : un verrou retiré pendant l'attente est rouvert (C34-08)", 
   });
   std::this_thread::sleep_for(100ms);  // le second attend, ouvert sur l'ancien fichier
   test::fs::remove(file);              // ce que fait remove_orphan_lock, verrou tenu
-  purge = std::unexpected(ajp::Refusal{});
+  purge = std::unexpected(kirari::Refusal{});
   second.join();
   REQUIRE(waiting_got);
   REQUIRE(waiter);
@@ -159,9 +159,9 @@ TEST_CASE("produce_once : un arrêt demandé après la production n'en jette pas
 TEST_CASE("produce_once : un échec ne publie rien et ne laisse rien", "[prepare][cache]") {
   const test::TempDir dir;
   const CacheEntry entry{.destination = dir / "a.engine"};
-  const auto failing = [](const test::fs::path& output) -> std::expected<void, ajp::Refusal> {
+  const auto failing = [](const test::fs::path& output) -> std::expected<void, kirari::Refusal> {
     test::write_file(output, "moitié");
-    return std::unexpected(ajp::Refusal{RefusalCode::BuilderFailed, "échec"});
+    return std::unexpected(kirari::Refusal{RefusalCode::BuilderFailed, "échec"});
   };
   CHECK(test::refusal(produce_once(entry, failing)) == RefusalCode::BuilderFailed);
   const auto empty = [](const test::fs::path& output) { return write_output(output, ""); };
@@ -175,9 +175,9 @@ TEST_CASE("produce_once : disque plein en pleine écriture, rien de publié ni d
   const test::TempDir dir;
   const CacheEntry entry{.destination = dir / "moteurs/a.engine"};
   // Le constructeur écrit un moteur tronqué puis dit que le disque est plein.
-  const auto full = [](const test::fs::path& output) -> std::expected<void, ajp::Refusal> {
+  const auto full = [](const test::fs::path& output) -> std::expected<void, kirari::Refusal> {
     test::write_file(output, "moteur tron");
-    return std::unexpected(ajp::Refusal{RefusalCode::CacheIo, "No space left on device"});
+    return std::unexpected(kirari::Refusal{RefusalCode::CacheIo, "No space left on device"});
   };
   CHECK(test::refusal(produce_once(entry, full)) == RefusalCode::CacheIo);
   CHECK_FALSE(test::fs::exists(entry.destination));

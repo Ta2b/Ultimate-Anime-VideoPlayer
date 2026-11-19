@@ -14,7 +14,7 @@
 
 #include "core/types.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 
 // Valeurs de TensorProto.DataType lues par le décodeur ; les autres sont refusées.
 inline constexpr std::int32_t kFloat = 1;
@@ -114,4 +114,4 @@ struct Model {
 // externes (OnnxExternalData) et les types hors du sous-ensemble (OnnxUnsupported).
 std::expected<Model, Refusal> read_onnx(std::span<const std::byte> bytes);
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

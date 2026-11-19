@@ -1,7 +1,7 @@
 # TensorRT sous Windows (poste NVIDIA)
 
 Même principe que sous Linux (`docs/nvidia-linux.md`) : le paquet du moteur ne porte que **notre module**
-(`ajp_backend_tensorrt.dll`) et `trtexec.exe` ; les bibliothèques de NVIDIA (`nvinfer`, `nvonnxparser`, NVRTC, les ressources
+(`kirari_backend_tensorrt.dll`) et `trtexec.exe` ; les bibliothèques de NVIDIA (`nvinfer`, `nvonnxparser`, NVRTC, les ressources
 par architecture) se tirent de chez NVIDIA par lien direct (entrées `[[vendor_file]]` de
 `tools/release/nvidia-vendor/tensorrt-windows-x64.lock`), après l'acceptation de la licence à l'écran du lecteur, et sont
 vérifiées par leur SHA-256.
@@ -10,13 +10,13 @@ vérifiées par leur SHA-256.
 
 ```powershell
 $env:VCPKG_ROOT = "C:\vcpkg"
-$env:AJP_WITH_CUDA = "ON"
-$env:AJP_TENSORRT_ROOT = "C:\deps\TensorRT"        # tools/deps/windows-tensorrt.ps1 le prépare (accepte les licences NVIDIA)
-$env:AJP_RELEASE_REPO = "Ta2b/ajp-releases"
-$env:AJP_RELEASE_TAG = "v0.5.0"
-pwsh tools/release/package-windows.ps1 C:\ajp-package
-pwsh tools/release/attach-nvidia-windows.ps1 C:\ajp-package v0.5.0            # contrôle
-pwsh tools/release/attach-nvidia-windows.ps1 C:\ajp-package v0.5.0 -Publish   # joint à la release
+$env:KIRARI_WITH_CUDA = "ON"
+$env:KIRARI_TENSORRT_ROOT = "C:\deps\TensorRT"        # tools/deps/windows-tensorrt.ps1 le prépare (accepte les licences NVIDIA)
+$env:KIRARI_RELEASE_REPO = "Ta2b/kirari-player"
+$env:KIRARI_RELEASE_TAG = "v0.5.0"
+pwsh tools/release/package-windows.ps1 C:\kirari-package
+pwsh tools/release/attach-nvidia-windows.ps1 C:\kirari-package v0.5.0            # contrôle
+pwsh tools/release/attach-nvidia-windows.ps1 C:\kirari-package v0.5.0 -Publish   # joint à la release
 git tag v0.5.0; git push origin v0.5.0                                        # la CI Windows fusionne engines-nvidia.lock
 ```
 
@@ -38,14 +38,14 @@ pour cette construction. Lancé à la main sans étiquette, la case `tensorrt` c
 À 24 i/s, le GPU dort entre deux paires et le pilote baisse ses horloges (1790 MHz relevés en lecture contre 2825
 MHz au banc) : une paire à mouvement fort qui suit une scène calme démarre à bas régime (piste N1 de la deuxième
 passe TensorRT). Sous Windows, le réglage se pose pour le lecteur seul, sans droits d'administrateur : Panneau de
-configuration NVIDIA > Gérer les paramètres 3D > Paramètres de programme > `ajp.exe` > Mode de gestion de
+configuration NVIDIA > Gérer les paramètres 3D > Paramètres de programme > `kirari.exe` > Mode de gestion de
 l'alimentation > « Préférer les performances maximales ». La consommation monte pendant la lecture seulement.
 À mesurer : la même lecture avec et sans, images en retard et manquées de la ligne « fin », et la ligne « GPU … »
 de fin de lecture pour les horloges.
 
 ## À essayer sur le poste Windows (non fait : aucune machine Windows côté développement)
 
-1. `package-windows.ps1` sort `ajp-engine-tensorrt-windows-x64.tar.gz` avec `ajp_backend_tensorrt.dll` et `trtexec.exe`.
+1. `package-windows.ps1` sort `kirari-engine-tensorrt-windows-x64.tar.gz` avec `kirari_backend_tensorrt.dll` et `trtexec.exe`.
 2. Installer le moteur depuis l'écran des moteurs : licence, téléchargement des fichiers NVIDIA par plage HTTP, SHA-256 vérifiés.
 3. Lire une vidéo ×3 avec SPAN + RIFE : le moteur se construit (trtexec.exe) la première fois, puis la lecture tient.
 4. RTX HDR : le lecteur charge le pont `aji_rtx.dll` (pas de `rtx_video_api.dll`, qui n'existe pas dans le SDK). Importer un dossier qui contient `aji_rtx.dll`, `nvngx_truehdr.dll`, `nvngx_vsr.dll` et `cudart64_12.dll` ; vérifier que le SDK s'importe (version lue sur `nvngx_truehdr.dll`) et qu'une image HDR sort. Chargeur non exécuté sur Windows (rc.4).

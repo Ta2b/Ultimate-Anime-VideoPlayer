@@ -10,7 +10,7 @@
 #include "app/play/session.h"
 #include "doubles.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::ring_frame;
@@ -57,4 +57,4 @@ TEST_CASE("Départ : en pause avant le premier rendu, l'horloge attend la repris
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

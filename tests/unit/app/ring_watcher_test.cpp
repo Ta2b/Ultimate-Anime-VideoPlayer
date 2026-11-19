@@ -13,7 +13,7 @@
 
 #include "core/clock.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 struct Device {
@@ -138,4 +138,4 @@ TEST_CASE("veilleur d'écriture : une erreur de vkWaitSemaphores le dit mort, fo
   CHECK(wakes.load() == 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

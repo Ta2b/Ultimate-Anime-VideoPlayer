@@ -11,7 +11,7 @@
 #include "gpu/cuda/backend/span_fp8_net.h"
 #include "gpu/cuda/backend/trt_engine.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Un événement et un graphe rendus quoi qu'il arrive.
@@ -170,4 +170,4 @@ std::expected<SpanTimes, Refusal> time_span_set(const SpanTimingSet& set, cudaSt
   return SpanTimes{.fp8_ms = median(times[0]), .fp8_acc16_ms = median(times[1]), .trt_ms = median(times[2])};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

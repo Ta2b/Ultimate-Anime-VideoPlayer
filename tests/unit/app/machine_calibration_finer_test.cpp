@@ -9,7 +9,7 @@
 
 #include "app/play/machine_calibration.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -127,7 +127,7 @@ TEST_CASE("C07-05 : le rejeu de justesse compte les pertes par image visée", "[
   // justesse ; avant, il fallait 1 % des présentations, au-delà de ce que le verdict laisse tenir.
   int played = 0;
   const TrialPlayer play = [&](const ChainCandidate& chain, int,
-                               bool) -> std::expected<BenchReading, ajp::Refusal> {
+                               bool) -> std::expected<BenchReading, kirari::Refusal> {
     BenchReading reading{.gpu = "RTX 4070 Ti", .driver = "581", .engine = "tensorrt"};
     reading.run = {.presents = 600, .lag_p95_us = 4000, .period_us = 16'667};
     const double fps = chain.rife ? 48.0 : 24.0;

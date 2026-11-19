@@ -11,7 +11,7 @@
 #include "core/text_file.h"
 #include "core/toml_fields.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 constexpr std::array<std::string_view, kUsageCount> kUsageNames{"upscale", "interpolate"};
@@ -242,4 +242,4 @@ std::expected<void, Refusal> save_settings(const std::filesystem::path& path, co
   return write_text_atomically(path, *text);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

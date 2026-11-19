@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::audio;
+using namespace kirari::audio;
 
 namespace {
 

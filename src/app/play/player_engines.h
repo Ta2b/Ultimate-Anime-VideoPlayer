@@ -37,7 +37,7 @@
 #include "media/demuxer.h"
 #include "prepare/rife_split.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Un moteur à construire, tel que la préparation le montre.
 struct EngineLabel {
@@ -247,4 +247,4 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_appl
 PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const std::filesystem::path& file,
                                const std::string& backend_name);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

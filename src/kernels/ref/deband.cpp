@@ -6,7 +6,7 @@
 
 #include "kernels/ref/check.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 DebandOffset deband_offset(int x, int y) {
   const auto ux = static_cast<std::uint32_t>(x);
@@ -45,4 +45,4 @@ Result<RgbImage> deband(const RgbImage& image) {
   return out;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

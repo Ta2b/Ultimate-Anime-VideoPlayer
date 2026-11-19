@@ -16,7 +16,7 @@ extern "C" {
 #include "audio/packet.h"
 #include "audio/pcm.h"
 
-namespace ajp::audio::test {
+namespace kirari::audio::test {
 
 struct SineSpec {
   std::string_view encoder = "pcm_s16le";
@@ -52,4 +52,4 @@ std::vector<float> channel(std::span<const float> interleaved, int channels, int
 double tone_amplitude(std::span<const float> mono, int sample_rate, double hz);
 double peak(std::span<const float> mono);
 
-}  // namespace ajp::audio::test
+}  // namespace kirari::audio::test

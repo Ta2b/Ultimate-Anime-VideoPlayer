@@ -15,7 +15,7 @@
 
 #include "prepare/process.h"
 
-namespace ajp::e2e {
+namespace kirari::e2e {
 
 namespace fs = std::filesystem;
 
@@ -97,14 +97,14 @@ struct Run {
 // Le vrai lecteur, ces arguments tels quels ; sa sortie (journal compris) gardée pour INFO.
 inline Run run_player(std::vector<std::string> args) {
   Run run;
-  const auto exit = ajp::prepare::run_process(
-      {.program = fs::path(AJP_PLAYER_EXE), .args = std::move(args), .timeout = std::chrono::seconds(120)},
+  const auto exit = kirari::prepare::run_process(
+      {.program = fs::path(KIRARI_PLAYER_EXE), .args = std::move(args), .timeout = std::chrono::seconds(120)},
       [&run](std::string_view line) {
         run.output += line;
         run.output += '\n';
       },
       std::stop_token{});
-  if (exit && exit->kind == ajp::prepare::ExitKind::Exited) run.code = exit->code;
+  if (exit && exit->kind == kirari::prepare::ExitKind::Exited) run.code = exit->code;
   return run;
 }
 
@@ -123,4 +123,4 @@ inline fs::path alone(const fs::path& clip, const fs::path& dir) {
   return copy;
 }
 
-}  // namespace ajp::e2e
+}  // namespace kirari::e2e

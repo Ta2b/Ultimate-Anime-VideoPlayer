@@ -11,7 +11,7 @@
 #include "app/play/i18n.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Des refus à dire en clair à l'ouverture (P3.26, P3.28) : la clé du refus les distingue.
 inline constexpr std::string_view kDolbyVision5Key = "dolby-vision-5";
@@ -193,4 +193,4 @@ inline std::string visible_error(const Refusal& refusal) {
   return i18n::tr_format("error {} (details in the log)", name(refusal.code));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

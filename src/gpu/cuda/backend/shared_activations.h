@@ -12,7 +12,7 @@
 
 #include "core/types.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Mémoire d'activation partagée par les moteurs d'une voie du backend (gpu/lanes.h) : ils
 // s'exécutent l'un après l'autre sur sa file, une zone de la taille du plus gros suffit. Sans
@@ -120,4 +120,4 @@ class SharedActivations {
   std::vector<Region> regions_;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

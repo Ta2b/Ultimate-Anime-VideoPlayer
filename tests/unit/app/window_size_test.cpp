@@ -2,8 +2,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::app::play::window_size_for;
-using ajp::app::play::WindowSize;
+using kirari::app::play::window_size_for;
+using kirari::app::play::WindowSize;
 
 TEST_CASE("Fenêtre : sans échelle du bureau (macOS, Wayland, 100 %), la taille demandée", "[app][window]") {
   CHECK(window_size_for(1280, 720, 1.0F, 1920, 1040) == WindowSize{1280, 720});

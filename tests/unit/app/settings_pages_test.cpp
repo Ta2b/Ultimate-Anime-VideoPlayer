@@ -16,7 +16,7 @@
 #include "app/play/settings_panel.h"
 #include "app/play/wizard.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 TEST_CASE("le menu des réglages tient en cinq catégories, Général d'abord", "[settings][pages]") {
   const auto pages = settings_pages();
@@ -83,7 +83,7 @@ TEST_CASE("le résumé de l'assistant renvoie à des pages qui existent", "[sett
 }
 
 TEST_CASE("les notes gardent les guillemets et la ponctuation haute avec leur mot", "[settings][typo]") {
-  using ajp::app::play::french_spaces;
+  using kirari::app::play::french_spaces;
   CHECK(french_spaces("bouton « Préparer » plus bas : voir") ==
         "bouton «\xC2\xA0Préparer\xC2\xA0» plus bas\xC2\xA0: voir");
   CHECK(french_spaces("Quoi ? Oui ! 3 % ; fin") == "Quoi\xC2\xA0? Oui\xC2\xA0! 3\xC2\xA0%\xC2\xA0; fin");
@@ -92,7 +92,7 @@ TEST_CASE("les notes gardent les guillemets et la ponctuation haute avec leur mo
 }
 
 TEST_CASE("une infobulle se découpe en description, vitesse, qualité et recommandation", "[settings][tip]") {
-  using ajp::app::play::panel::split_tip;
+  using kirari::app::play::panel::split_tip;
   const auto parts = split_tip(
       "In-between frames read the source with a sharper filter. Speed: about −3 %. Quality impact: minor "
       "gain. "

@@ -26,7 +26,7 @@
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 #include "kernels/spec/resample.h"
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // RIFE travaille sur des dimensions multiples de 64. 4.25 lite en demande 128 (vsmlrt.py,
 // tilesize_requirement) : son premier bloc travaille au 1/32 de l'image, puis deux convolutions de
@@ -115,6 +115,6 @@ constexpr float rife_mesh_step(int n) {
 // Sortie : RGB rempli → YUV rempli (même conversion qu'à l'entrée), puis recadrage de la
 // fenêtre (left, top, width, height).
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

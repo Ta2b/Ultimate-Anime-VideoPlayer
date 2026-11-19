@@ -29,7 +29,7 @@
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::int32_t kFrameMs = 100;
@@ -309,4 +309,4 @@ std::expected<bool, Refusal> refresh_chosen_engines(PlaceboScreen& screen, Playe
   return update_stale_engines(screen, ui, catalog, engines, updated);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

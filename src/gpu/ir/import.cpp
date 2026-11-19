@@ -18,7 +18,7 @@
 #include "gpu/ir/ops.h"
 #include "gpu/ir/protobuf.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 std::unexpected<Refusal> invalid(std::string detail) {
@@ -303,4 +303,4 @@ std::expected<Graph, Refusal> load_onnx_file(const std::filesystem::path& path) 
   return load_onnx(bytes);
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

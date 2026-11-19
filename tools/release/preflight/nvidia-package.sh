@@ -2,13 +2,13 @@
 # Construit le paquet du moteur TensorRT (Linux) dans le conteneur ubuntu:24.04 de préflight, au commit de
 # l'étiquette, pour attach-nvidia-linux.sh. Ce que l'on fait à la main pour chaque release depuis la 0.3, écrit une fois.
 #
-#   git worktree add ~/ajp-work/rel-v0.5.0 v0.5.0
-#   tools/release/preflight/nvidia-package.sh ~/ajp-work/rel-v0.5.0 v0.5.0 ~/ajp-work/rel-v0.5.0-nv
-#   tools/release/attach-nvidia-linux.sh ~/ajp-work/rel-v0.5.0-nv/package v0.5.0 --publish
+#   git worktree add ~/kirari-work/rel-v0.5.0 v0.5.0
+#   tools/release/preflight/nvidia-package.sh ~/kirari-work/rel-v0.5.0 v0.5.0 ~/kirari-work/rel-v0.5.0-nv
+#   tools/release/attach-nvidia-linux.sh ~/kirari-work/rel-v0.5.0-nv/package v0.5.0 --publish
 #
 # Entrées : le dépôt à l'étiquette (monté en lecture seule), l'étiquette, le dossier de sortie.
-# Variables : AJP_TRT_ROOT (défaut ~/ajp-trt-release : bin/trtexec construit en conteneur, lib/ des ressources du
-# constructeur), AJP_RELEASE_REPO (défaut : celui de versions.env), CUDA_DIR (défaut /opt/cuda), CCCL_DIR (/usr/include/cccl).
+# Variables : KIRARI_TRT_ROOT (défaut ~/kirari-trt-release : bin/trtexec construit en conteneur, lib/ des ressources du
+# constructeur), KIRARI_RELEASE_REPO (défaut : celui de versions.env), CUDA_DIR (défaut /opt/cuda), CCCL_DIR (/usr/include/cccl).
 #
 # L'IMAGE EST RECONSTRUITE d'abord (comme run.sh) : une image plus ancienne que tools/deps/linux-from-source.sh embarque
 # un FFmpeg d'avant --disable-bzlib, et le contrôle de portabilité de package-linux.sh (libbz2.so.1.0 n'existe que sous
@@ -21,14 +21,14 @@ OUT="$(mkdir -p "${3:?dossier de sortie}" && cd "$3" && pwd)"
 REPO="$(cd "$REPO" && pwd)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-TRT="${AJP_TRT_ROOT:-$HOME/ajp-trt-release}"
-RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
+TRT="${KIRARI_TRT_ROOT:-$HOME/kirari-trt-release}"
+RELEASE_REPO="${KIRARI_RELEASE_REPO:-$(sed -n 's/^KIRARI_RELEASE_REPO=//p' "$ROOT/tools/release/versions.env")}"
 CUDA="${CUDA_DIR:-/opt/cuda}"
 CCCL="${CCCL_DIR:-/usr/include/cccl}"
-IMAGE=ajp-preflight
+IMAGE=kirari-preflight
 STAGE=deps
 
-[ -x "$TRT/bin/trtexec" ] || { echo "$TRT/bin/trtexec absent (AJP_TRT_ROOT)" >&2; exit 1; }
+[ -x "$TRT/bin/trtexec" ] || { echo "$TRT/bin/trtexec absent (KIRARI_TRT_ROOT)" >&2; exit 1; }
 [ -d "$CUDA" ] || { echo "$CUDA absent (CUDA_DIR)" >&2; exit 1; }
 # Le paquet de ce poste et celui de trt-package.yml partent sous le même nom trt-<empreinte> (A28-10) : le
 # TensorRT et la série CUDA d'ici doivent être ceux de versions.env, que les [[vendor_file]] font tirer au client.
@@ -45,8 +45,8 @@ nvcc_series="$("$CUDA/bin/nvcc" --version | sed -n 's/.*release \([0-9]*\.[0-9]*
 [ "$nvcc_series" = "$CUDA_REDIST_SERIES" ] ||
   { echo "nvcc de $CUDA en CUDA ${nvcc_series:-?}, versions.env demande $CUDA_REDIST_SERIES" >&2; exit 1; }
 # Une étiquette du lecteur : le dépôt doit être à son commit (le SHA-256 de l'archive en dépend). Une release « trt-<empreinte> »
-# (tools/release/trt-package.sh, AJP_ALLOW_UNTAGGED=1) n'est pas une étiquette git : le dépôt propre suffit.
-if [ -z "${AJP_ALLOW_UNTAGGED:-}" ]; then
+# (tools/release/trt-package.sh, KIRARI_ALLOW_UNTAGGED=1) n'est pas une étiquette git : le dépôt propre suffit.
+if [ -z "${KIRARI_ALLOW_UNTAGGED:-}" ]; then
   [ "$(git -C "$REPO" rev-parse HEAD)" = "$(git -C "$REPO" rev-list -n1 "$TAG")" ] \
     || { echo "$REPO n'est pas à l'étiquette $TAG : le SHA-256 de l'archive en dépend" >&2; exit 1; }
 fi
@@ -60,18 +60,18 @@ cp "$REPO/tools/release/preflight/Dockerfile" "$CTX/"
 cp "$REPO/tools/deps/linux-from-source.sh" "$CTX/tools/deps/"
 cp "$REPO/tools/release/versions.env" "$CTX/tools/release/"
 mkdir -p "$CTX/ports/libplacebo" "$CTX/ports/libass"
-cp "$REPO/ports/libplacebo/0001-ajp-present-timing.patch" "$CTX/ports/libplacebo/"
+cp "$REPO/ports/libplacebo/0001-kirari-present-timing.patch" "$CTX/ports/libplacebo/"
 cp "$REPO/ports/libass/rendu-sur-plusieurs-fils.patch" "$CTX/ports/libass/"
 docker build -q -t "$IMAGE:$STAGE" --target "$STAGE" "$CTX" >/dev/null
 echo "image $IMAGE:$STAGE à jour"
 
-docker run --rm -u root -v ajp-preflight-work-cuda:/w -v ajp-preflight-cache:/c "$IMAGE:$STAGE" chown runner:runner /w /c
+docker run --rm -u root -v kirari-preflight-work-cuda:/w -v kirari-preflight-cache:/c "$IMAGE:$STAGE" chown runner:runner /w /c
 docker run --rm \
   -v "$REPO:/src:ro" -v "$OUT:/out" \
-  -v ajp-preflight-work-cuda:/home/runner/work -v ajp-preflight-cache:/home/runner/.cache \
+  -v kirari-preflight-work-cuda:/home/runner/work -v kirari-preflight-cache:/home/runner/.cache \
   -v "$CUDA:/opt/cuda:ro" -v "$CUDA:/usr/local/cuda:ro" -v "$CCCL:/usr/include/cccl:ro" -v "$TRT:/trt:ro" \
-  -e AJP_WITH_CUDA=ON -e AJP_TENSORRT_ROOT=/trt -e AJP_WITHOUT_MODELS=1 -e AJP_PACKAGE_NVIDIA=1 \
-  -e AJP_RELEASE_REPO="$RELEASE_REPO" -e AJP_RELEASE_TAG="$TAG" \
+  -e KIRARI_WITH_CUDA=ON -e KIRARI_TENSORRT_ROOT=/trt -e KIRARI_WITHOUT_MODELS=1 -e KIRARI_PACKAGE_NVIDIA=1 \
+  -e KIRARI_RELEASE_REPO="$RELEASE_REPO" -e KIRARI_RELEASE_TAG="$TAG" \
   "$IMAGE:$STAGE" bash -c '
     set -uo pipefail
     export PATH=/opt/cuda/bin:$PATH CUDACXX=/opt/cuda/bin/nvcc

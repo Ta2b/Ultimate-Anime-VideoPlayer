@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 
 TEST_CASE("l'empaquetage 10 bits rend k/1023 exactement et sature hors de [0, 1]", "[kernels][ring]") {
   for (std::uint32_t k = 0; k <= 1023U; ++k) {

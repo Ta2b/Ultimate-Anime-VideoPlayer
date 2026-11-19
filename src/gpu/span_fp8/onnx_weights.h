@@ -11,7 +11,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 // Le graphe d'un SPAN « unshuffle » d'AnimeJaNai : noms et formes des poids, les 1 + 3·blocs tenseurs que les
 // noyaux quantifient, le dégroupage 2×2 et DepthToSpace(4) du modèle. Le b8f64 (8 blocs de 64 canaux) et le
@@ -23,4 +23,4 @@ std::expected<Package, Refusal> package_from_onnx(const ir::onnx::Model& model);
 // read_onnx puis package_from_onnx. Refus FileUnreadable si le fichier ne se lit pas.
 std::expected<Package, Refusal> package_from_onnx_file(const std::filesystem::path& path);
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

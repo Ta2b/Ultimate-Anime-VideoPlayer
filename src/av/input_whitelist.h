@@ -8,7 +8,7 @@
 // que de vrais épisodes portent.
 #pragma once
 
-namespace ajp::av {
+namespace kirari::av {
 
 // Les noms de démultiplexeurs (AVInputFormat::name, dont chaque nom d'une liste comme « matroska,webm »).
 inline constexpr const char* kAllowedDemuxers =
@@ -26,4 +26,4 @@ inline constexpr const char* kAllowedDecoders =
     "pcm_f32le,pcm_f32be,pcm_f64le,pcm_u8,pcm_bluray,pcm_dvd,"
     "ass,ssa,subrip,srt,text,webvtt,mov_text,hdmv_pgs_subtitle,dvdsub,dvbsub";
 
-}  // namespace ajp::av
+}  // namespace kirari::av

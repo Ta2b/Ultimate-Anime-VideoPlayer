@@ -4,7 +4,7 @@
 #include "gpu/cuda/backend/export_kernels.h"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // 32 × 8 : une ligne de chroma par chaîne d'exécution, lectures contiguës le long de la ligne.
@@ -136,4 +136,4 @@ cudaError_t launch_write_yuv(const YuvWriteParams& params, cudaStream_t stream) 
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

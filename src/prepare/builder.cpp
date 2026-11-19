@@ -30,7 +30,7 @@
 #include "prepare/trtexec_progress.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 namespace fs = std::filesystem;
@@ -438,20 +438,20 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
         },
         progress.stop);
     if (!exit) {
-      log_file << "[ajp] " << exit.error().detail << '\n';
+      log_file << "[kirari] " << exit.error().detail << '\n';
       return std::unexpected(exit.error());
     }
-    log_file << "[ajp] trtexec : " << describe(*exit) << '\n';
+    log_file << "[kirari] trtexec : " << describe(*exit) << '\n';
     log_file.flush();
     if (!log_file)
       log_->warn("journal {} illisible ou incomplet (droits ou disque plein, voir la place libre)",
                  utf8_path(plan.log_file));
     if (auto wrong = wrong_device(selected, config_.device.name)) {
-      log_file << "[ajp] " << wrong->detail << '\n';
+      log_file << "[kirari] " << wrong->detail << '\n';
       return std::unexpected(std::move(*wrong));
     }
     auto verdict = judge(*exit, parsed, plan, config_.timeout);
-    if (!verdict) log_file << "[ajp] " << verdict.error().detail << '\n';
+    if (!verdict) log_file << "[kirari] " << verdict.error().detail << '\n';
     return verdict;
   };
   auto built = attempt(std::ios::trunc);
@@ -500,4 +500,4 @@ std::expected<void, Refusal> TrtexecBuilder::run(const BuildPlan& plan, const gp
   return {};
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

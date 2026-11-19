@@ -9,7 +9,7 @@
 #include "kernels/spec/frame_stats.h"
 #include "kernels/spec/transfer.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 namespace fs = kernels::frame_stats;
@@ -48,11 +48,11 @@ constexpr float kKr709 = kernels::coefficients(kernels::Matrix::Bt709).kr;
 constexpr float kKb709 = kernels::coefficients(kernels::Matrix::Bt709).kb;
 constexpr float kKr2020 = kernels::coefficients(kernels::Matrix::Bt2020Ncl).kr;
 constexpr float kKb2020 = kernels::coefficients(kernels::Matrix::Bt2020Ncl).kb;
-#define AJP_M(r, c) static_cast<float>(kernels::kBt709ToBt2020.at(r, c))
-constexpr float kM00 = AJP_M(0, 0), kM01 = AJP_M(0, 1), kM02 = AJP_M(0, 2);
-constexpr float kM10 = AJP_M(1, 0), kM11 = AJP_M(1, 1), kM12 = AJP_M(1, 2);
-constexpr float kM20 = AJP_M(2, 0), kM21 = AJP_M(2, 1), kM22 = AJP_M(2, 2);
-#undef AJP_M
+#define KIRARI_M(r, c) static_cast<float>(kernels::kBt709ToBt2020.at(r, c))
+constexpr float kM00 = KIRARI_M(0, 0), kM01 = KIRARI_M(0, 1), kM02 = KIRARI_M(0, 2);
+constexpr float kM10 = KIRARI_M(1, 0), kM11 = KIRARI_M(1, 1), kM12 = KIRARI_M(1, 2);
+constexpr float kM20 = KIRARI_M(2, 0), kM21 = KIRARI_M(2, 1), kM22 = KIRARI_M(2, 2);
+#undef KIRARI_M
 
 struct Rgb {
   float r, g, b;
@@ -313,4 +313,4 @@ cudaError_t launch_frame_stats(const FrameStatsParams& params, cudaStream_t stre
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

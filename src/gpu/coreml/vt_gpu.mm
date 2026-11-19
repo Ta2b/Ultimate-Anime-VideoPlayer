@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 std::unexpected<Refusal> refuse_gpu(RefusalCode code, std::string text) {
@@ -573,4 +573,4 @@ std::expected<std::unique_ptr<VtGpu>, Refusal> VtGpu::open(vt::Pixels format, in
   }
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

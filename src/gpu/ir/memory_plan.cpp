@@ -5,7 +5,7 @@
 
 #include "gpu/ir/graph.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 std::uint64_t round_up(std::uint64_t value, std::uint64_t alignment) {
@@ -118,4 +118,4 @@ std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t
   return plan;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

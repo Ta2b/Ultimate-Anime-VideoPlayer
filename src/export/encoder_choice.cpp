@@ -5,7 +5,7 @@
 #include <format>
 #include <utility>
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 namespace {
 
 enum class Family : std::uint8_t { Nvenc, Amf, Qsv, VideoToolbox, Vaapi, MediaFoundation, Vulkan };
@@ -262,4 +262,4 @@ std::string_view label(Quality quality) {
   return "?";
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

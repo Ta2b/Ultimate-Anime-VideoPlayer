@@ -71,7 +71,7 @@ for pair in "tomlplusplus:tomlplusplus" "spdlog:spdlog" "SDL3:sdl3"; do
     bad=1
   fi
 done
-imgui="$(sed -n 's/^set(AJP_IMGUI_VERSION_WANTED "\([0-9.]*\)").*/\1/p' cmake/Dependencies.cmake)"
+imgui="$(sed -n 's/^set(KIRARI_IMGUI_VERSION_WANTED "\([0-9.]*\)").*/\1/p' cmake/Dependencies.cmake)"
 [[ "$imgui" == "$(dep_version imgui)" ]] || {
   echo "imgui : cmake/Dependencies.cmake attend '$imgui', DEPS fixe '$(dep_version imgui)'" >&2
   bad=1

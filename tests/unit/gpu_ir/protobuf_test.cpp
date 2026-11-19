@@ -9,8 +9,8 @@
 
 #include "onnx_builder.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
 
 namespace {
 
@@ -22,8 +22,8 @@ std::vector<std::byte> octets(std::initializer_list<unsigned> values) {
 
 // Lit tous les champs ; le premier refus arrête la lecture. Les champs Length
 // pointent dans data : un tampon temporaire est interdit.
-std::expected<std::vector<proto::Field>, ajp::Refusal> fields(std::vector<std::byte>&& data) = delete;
-std::expected<std::vector<proto::Field>, ajp::Refusal> fields(const std::vector<std::byte>& data) {
+std::expected<std::vector<proto::Field>, kirari::Refusal> fields(std::vector<std::byte>&& data) = delete;
+std::expected<std::vector<proto::Field>, kirari::Refusal> fields(const std::vector<std::byte>& data) {
   proto::Reader reader(data);
   std::vector<proto::Field> out;
   for (;;) {

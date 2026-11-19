@@ -15,7 +15,7 @@
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 std::expected<Artifact, Refusal> TensorRtBackend::build_rife_fused(const ModelSpec& model,
                                                                    const ShapeSet& shapes,
                                                                    Progress& progress) {
@@ -155,4 +155,4 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_rife_fused(RifeFusedEngine
   return queued;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

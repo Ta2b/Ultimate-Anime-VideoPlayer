@@ -7,7 +7,7 @@
 
 #include "app/play/i18n.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 media::TrackInfo track(int index, media::TrackKind kind, std::string codec, std::string language,
@@ -132,4 +132,4 @@ TEST_CASE("Une piste choisie à la main se retrouve dans la vidéo suivante par 
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

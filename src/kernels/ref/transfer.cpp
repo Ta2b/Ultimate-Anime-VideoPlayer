@@ -3,7 +3,7 @@
 #include <cmath>
 #include <format>
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 // Borne une entrée à son domaine ; NaN donne la borne basse, comme fmaxf.
@@ -97,4 +97,4 @@ Rgb convert_primaries(const Rgb& linear, const Mat3& matrix) {
           .b = m(2, 0) * linear.r + m(2, 1) * linear.g + m(2, 2) * linear.b};
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

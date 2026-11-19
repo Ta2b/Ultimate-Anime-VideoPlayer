@@ -33,13 +33,13 @@ on:
         required: true
     outputs:
       archive-sha256:
-        description: "SHA-256 de ajp-windows-x64.zip tel que cette construction l'a produit (B51-07)"
+        description: "SHA-256 de kirari-windows-x64.zip tel que cette construction l'a produit (B51-07)"
         value: ${{ jobs.package.outputs.archive-sha256 }}
       setup-sha256:
-        description: "SHA-256 de ajp-windows-x64-setup.exe tel que cette construction l'a produit (C51-08)"
+        description: "SHA-256 de kirari-windows-x64-setup.exe tel que cette construction l'a produit (C51-08)"
         value: ${{ jobs.package.outputs.setup-sha256 }}
 
-# Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
+# Les releases vivent dans ce dépôt (KIRARI_RELEASE_REPO), écrites avec AJP_RELEASE_TOKEN seul : le jeton du workflow ne sert
 # qu'à lire, pour que vcpkg, MSVC et les actions tierces n'en reçoivent pas un qui écrit (B51-12).
 permissions:
   contents: read
@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: ${{ !inputs.tag }}
 
 env:
-  AJP_TAG: ${{ inputs.tag || '' }}
+  KIRARI_TAG: ${{ inputs.tag || '' }}
 
 jobs:
   guard:
@@ -81,10 +81,10 @@ jobs:
           source tools/release/versions.env
           fp="$(tools/release/trt-fingerprint.sh --windows)"
           echo "fp=$fp" >>"$GITHUB_OUTPUT"
-          echo "repo=$AJP_RELEASE_REPO" >>"$GITHUB_OUTPUT"
+          echo "repo=$KIRARI_RELEASE_REPO" >>"$GITHUB_OUTPUT"
           build=false
-          if [ -n "$AJP_TAG" ]; then
-            gh release view "trt-win-$fp" -R "$AJP_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
+          if [ -n "$KIRARI_TAG" ]; then
+            gh release view "trt-win-$fp" -R "$KIRARI_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
               | grep -qx engines-nvidia.lock || build=true
           elif [ "$IN_TENSORRT" = true ]; then
             build=true
@@ -104,14 +104,14 @@ jobs:
       group: trt-package-windows
       cancel-in-progress: false
     env:
-      AJP_VCPKG: C:\v
-      AJP_VCPKG_BUILDTREES: C:\vb
+      KIRARI_VCPKG: C:\v
+      KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
-      AJP_VCPKG_TRIPLET: x64-windows-release
+      KIRARI_VCPKG_TRIPLET: x64-windows-release
       SCCACHE_GHA_ENABLED: "true"
-      AJP_COMPILER_LAUNCHER: sccache
+      KIRARI_COMPILER_LAUNCHER: sccache
       FP: ${{ needs.trt-check.outputs.fp }}
-      AJP_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
+      KIRARI_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -119,23 +119,23 @@ jobs:
       # Le contrôle du job trt-check date d'avant l'attente du verrou : le paquet a pu être publié entre-temps par une
       # autre étiquette de même empreinte. Rien ne se reconstruit ni ne se réécrit alors (B51-02).
       - name: Paquet publié depuis le contrôle ?
-        if: env.AJP_TAG != ''
+        if: env.KIRARI_TAG != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "trt-win-$FP" -R "$AJP_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
+          if gh release view "trt-win-$FP" -R "$KIRARI_RELEASE_REPO" --json assets -q '.assets[].name' 2>/dev/null \
              | grep -qx engines-nvidia.lock; then
             echo "SKIP=1" >>"$GITHUB_ENV"
             echo "paquet TensorRT Windows trt-win-$FP déjà publié : rien à construire" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
       # Le jeton d'écriture manque : échouer ici, pas après une à deux heures de construction (C51-12).
       - name: Jeton de publication
-        if: env.SKIP != '1' && env.AJP_TAG != ''
+        if: env.SKIP != '1' && env.KIRARI_TAG != ''
         shell: bash
         env:
           RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
-        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication dans $AJP_RELEASE_REPO"; exit 1; }'
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "::error::secret AJP_RELEASE_TOKEN absent : pas de publication dans $KIRARI_RELEASE_REPO"; exit 1; }'
       - id: runner-image
         if: env.SKIP != '1'
         shell: pwsh
@@ -153,9 +153,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
           $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
-          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
-          git -C $env:AJP_VCPKG checkout -q $baseline
-          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+          git clone -q https://github.com/microsoft/vcpkg $env:KIRARI_VCPKG
+          git -C $env:KIRARI_VCPKG checkout -q $baseline
+          & "$env:KIRARI_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         if: env.SKIP != '1'
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -169,7 +169,7 @@ jobs:
         shell: pwsh
         env:
           IN_SPAN_FP8: ${{ inputs.span_fp8 }}
-          # Le module est chargé dans ajp.exe : signé comme lui (Add-Engine, sign.ps1) ; vide tant que le compte
+          # Le module est chargé dans kirari.exe : signé comme lui (Add-Engine, sign.ps1) ; vide tant que le compte
           # Trusted Signing n'existe pas (C51-10). sign.ps1 est dans l'empreinte du paquet.
           AJP_TS_ENDPOINT: ${{ vars.AJP_TS_ENDPOINT }}
           AJP_TS_ACCOUNT: ${{ vars.AJP_TS_ACCOUNT }}
@@ -178,25 +178,25 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AJP_AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         run: |
-          $env:VCPKG_ROOT = $env:AJP_VCPKG
-          $env:AJP_WITH_CUDA = "ON"
+          $env:VCPKG_ROOT = $env:KIRARI_VCPKG
+          $env:KIRARI_WITH_CUDA = "ON"
           # Le SPAN FP8 sous MSVC reste un essai : jamais dans le paquet d'une empreinte publiée.
-          if ($env:IN_SPAN_FP8 -eq "true" -and -not $env:AJP_TAG) { $env:AJP_WITH_SPAN_FP8 = "ON" }
+          if ($env:IN_SPAN_FP8 -eq "true" -and -not $env:KIRARI_TAG) { $env:KIRARI_WITH_SPAN_FP8 = "ON" }
           # Les liens de l'index nomment la release fixe de l'empreinte, celle que lit le paquet du lecteur.
-          $env:AJP_RELEASE_TAG = "trt-win-$env:FP"
-          $env:AJP_WITHOUT_MODELS = "1"
+          $env:KIRARI_RELEASE_TAG = "trt-win-$env:FP"
+          $env:KIRARI_WITHOUT_MODELS = "1"
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
           if ($LASTEXITCODE -ne 0) { throw "paquet TensorRT" }
           # Un paquet sans module ni trtexec.exe ne sert à rien : refusé ici plutôt que chez l'utilisateur (TRT-04).
-          $members = tar tzf "$env:RUNNER_TEMP/package/ajp-engine-tensorrt-windows-x64.tar.gz"
-          if (-not ($members -match 'ajp_backend_tensorrt\.dll$')) { throw "module TensorRT absent de l'archive" }
+          $members = tar tzf "$env:RUNNER_TEMP/package/kirari-engine-tensorrt-windows-x64.tar.gz"
+          if (-not ($members -match 'kirari_backend_tensorrt\.dll$')) { throw "module TensorRT absent de l'archive" }
           if (-not ($members -match 'trtexec\.exe$')) { throw "trtexec.exe absent de l'archive" }
           pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "trt-win-$env:FP"
           if ($LASTEXITCODE -ne 0) { throw "contrôle du paquet TensorRT" }
       # Seulement l'archive du moteur (notre module et trtexec.exe) et son index : le contrôle
       # d'attach-nvidia-windows.ps1 refuse une archive qui contient un fichier de NVIDIA.
       - name: Publication dans trt-win-${{ env.FP }}
-        if: env.SKIP != '1' && env.AJP_TAG != ''
+        if: env.SKIP != '1' && env.KIRARI_TAG != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
@@ -206,9 +206,9 @@ jobs:
         continue-on-error: true
         with:
           retention-days: 7
-          name: ajp-engine-tensorrt-windows-x64-${{ env.FP }}
+          name: kirari-engine-tensorrt-windows-x64-${{ env.FP }}
           path: |
-            ${{ runner.temp }}/package/ajp-engine-tensorrt-windows-x64.tar.gz
+            ${{ runner.temp }}/package/kirari-engine-tensorrt-windows-x64.tar.gz
             ${{ runner.temp }}/package/engines-nvidia.lock
 
   package:
@@ -222,20 +222,20 @@ jobs:
       setup-sha256: ${{ steps.setup.outputs.sha }}
     env:
       # Chemins courts : les sources de spirv-tools dépassent sinon les 260 caractères de MSVC.
-      AJP_VCPKG: C:\v
-      AJP_VCPKG_BUILDTREES: C:\vb
+      KIRARI_VCPKG: C:\v
+      KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
-      AJP_VCPKG_TRIPLET: x64-windows-release
+      KIRARI_VCPKG_TRIPLET: x64-windows-release
       # sccache (cache GitHub) pour cl.exe : sans lui, les ~780 objets se recompilent à chaque release (~25 min).
       # En Release, sans informations de débogage, cl.exe est mis en cache tel quel.
       SCCACHE_GHA_ENABLED: "true"
-      AJP_COMPILER_LAUNCHER: sccache
+      KIRARI_COMPILER_LAUNCHER: sccache
       FP: ${{ needs.trt-check.outputs.fp }}
-      AJP_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
+      KIRARI_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
     steps:
       # Le jeton d'écriture manque : échouer ici, pas après une heure de construction (B51-12).
       - name: Jeton de publication
-        if: env.AJP_TAG != ''
+        if: env.KIRARI_TAG != ''
         shell: bash
         env:
           RELEASE_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
@@ -247,15 +247,15 @@ jobs:
       # L'index du paquet TensorRT Windows, pris AVANT toute construction : le jeton n'est jamais dans
       # l'environnement d'un code tiers (A28-08). Un paquet joint à l'étiquette elle-même reste lu en second.
       - name: Index TensorRT
-        if: env.AJP_TAG != ''
+        if: env.KIRARI_TAG != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release download "trt-win-$FP" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP" \
-             || gh release download "$AJP_TAG" -R "$AJP_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
-            echo "AJP_ENGINES_LOCK=$RUNNER_TEMP/engines-nvidia.lock" >>"$GITHUB_ENV"
-          elif [[ "$AJP_TAG" == *-* ]]; then
+          if gh release download "trt-win-$FP" -R "$KIRARI_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP" \
+             || gh release download "$KIRARI_TAG" -R "$KIRARI_RELEASE_REPO" -p engines-nvidia.lock -D "$RUNNER_TEMP"; then
+            echo "KIRARI_ENGINES_LOCK=$RUNNER_TEMP/engines-nvidia.lock" >>"$GITHUB_ENV"
+          elif [[ "$KIRARI_TAG" == *-* ]]; then
             echo "::warning::pas de paquet TensorRT Windows pour l'empreinte $FP : préversion publiée sans lui"
           else
             echo "::error::pas de paquet TensorRT Windows pour l'empreinte $FP : une release finale en a toujours un (A28-01)"
@@ -278,9 +278,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
           $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
-          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
-          git -C $env:AJP_VCPKG checkout -q $baseline
-          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+          git clone -q https://github.com/microsoft/vcpkg $env:KIRARI_VCPKG
+          git -C $env:KIRARI_VCPKG checkout -q $baseline
+          & "$env:KIRARI_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
       # AMD et Intel passent par Vulkan (docs/moteurs.md).
@@ -297,17 +297,17 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AJP_AZURE_CLIENT_SECRET }}
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
-          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          $env:VCPKG_ROOT = $env:KIRARI_VCPKG
           # Les liens d'engines.lock visent la release de cette étiquette : sans elle, le script
           # prend v<version du projet>, une release qui n'existe pas.
-          if ($env:AJP_TAG) { $env:AJP_RELEASE_TAG = $env:AJP_TAG }
+          if ($env:KIRARI_TAG) { $env:KIRARI_RELEASE_TAG = $env:KIRARI_TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
           if ($LASTEXITCODE -ne 0) { throw "paquet" }
       # Ce que « publier » retrouve dans la release avant de signer : le SHA-256 du zip tel que construit ici (B51-07).
       - name: Empreinte de l'archive
         id: sums
         shell: pwsh
-        run: '"archive=$((Get-FileHash "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT'
+        run: '"archive=$((Get-FileHash "$env:RUNNER_TEMP/package/kirari-windows-x64.zip" -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT'
       # L'installeur (Inno Setup, installation pour l'utilisateur seul) à côté du zip portable.
       # Inno Setup s'installe sans aucun secret : les scripts d'installation d'un paquet tiers ne lisent pas ceux de la
       # signature (C51-09). Version épinglée : un Inno Setup remplacé s'exécuterait chez chaque utilisateur (B51-13).
@@ -329,22 +329,22 @@ jobs:
           $version = [regex]::Match((Get-Content CMakeLists.txt -Raw), '(?m)^  VERSION ([0-9.]+)\r?$').Groups[1].Value
           if (-not $version) { throw "version introuvable dans CMakeLists.txt" }
           # Une préversion affiche sa version entière (0.11.0-rc.1), comme le binaire (A28-04).
-          if ($env:AJP_TAG -and $env:AJP_TAG.StartsWith("v$version-")) { $version = $env:AJP_TAG.Substring(1) }
+          if ($env:KIRARI_TAG -and $env:KIRARI_TAG.StartsWith("v$version-")) { $version = $env:KIRARI_TAG.Substring(1) }
           $out = "$env:RUNNER_TEMP/package"
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\ajp" "/DAppVer=$version" "/DOutput=$out" tools/release/windows/ajp.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DSource=$out\kirari" "/DAppVer=$version" "/DOutput=$out" tools/release/windows/kirari.iss
           if ($LASTEXITCODE -ne 0) { throw "installeur" }
-          pwsh tools/release/windows/sign.ps1 "$out/ajp-windows-x64-setup.exe"
+          pwsh tools/release/windows/sign.ps1 "$out/kirari-windows-x64-setup.exe"
           if ($LASTEXITCODE -ne 0) { throw "signature de l'installeur" }
-          $setup = Get-Item "$out/ajp-windows-x64-setup.exe"
+          $setup = Get-Item "$out/kirari-windows-x64-setup.exe"
           Add-Content -Path "$out/SHA256SUMS-windows.txt" -Value "$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())  $($setup.Name)"
           # Ce que « publier » retrouve dans la release avant de le signer au manifeste (C51-08).
           "sha=$((Get-FileHash $setup -Algorithm SHA256).Hash.ToLower())" >> $env:GITHUB_OUTPUT
       # Le zip et l'installeur lancés tels que l'utilisateur les recevra (B51-04) : le zip extrait, l'installeur installé
-      # en silence, ajp.exe qui répond dans les deux, puis désinstallé. Un échec arrête tout avant la release.
+      # en silence, kirari.exe qui répond dans les deux, puis désinstallé. Un échec arrête tout avant la release.
       - name: Fumée du paquet
         shell: pwsh
         run: |
-          pwsh tools/release/smoke-windows.ps1 "$env:RUNNER_TEMP/package/ajp-windows-x64.zip" "$env:RUNNER_TEMP/package/ajp-windows-x64-setup.exe"
+          pwsh tools/release/smoke-windows.ps1 "$env:RUNNER_TEMP/package/kirari-windows-x64.zip" "$env:RUNNER_TEMP/package/kirari-windows-x64-setup.exe"
           if ($LASTEXITCODE -ne 0) { throw "fumée du paquet" }
       # Les tests sans GPU du build même du paquet (préréglage de test windows-release-nogpu, la liste de windows-ci :
       # le runner n'a ni GPU ni Vulkan, les tests Vulkan et e2e passent sous lavapipe dans ci.yml) : un échec
@@ -365,26 +365,26 @@ jobs:
         continue-on-error: true
         with:
           retention-days: 90
-          name: ajp-windows-x64-pdb
+          name: kirari-windows-x64-pdb
           path: build/windows-release/**/*.pdb
       # Le quota de stockage des artefacts du compte peut être plein : le paquet est construit quand même.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: env.AJP_TAG == ''
+        if: env.KIRARI_TAG == ''
         continue-on-error: true
         with:
           retention-days: 3
-          name: ajp-windows-x64
+          name: kirari-windows-x64
           path: |
-            ${{ runner.temp }}/package/ajp-*
+            ${{ runner.temp }}/package/kirari-*
             ${{ runner.temp }}/package/SHA256SUMS-windows.txt
       # Joint à la release de l'étiquette, qui reste une préversion : seul le job « publier » de release.yml la rend
       # finale et « latest » (A28-03). Seule étape à porter le jeton d'écriture, après toute construction (A28-08).
       - name: Joindre à la release
-        if: env.AJP_TAG != ''
+        if: env.KIRARI_TAG != ''
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
           shopt -s nullglob
-          assets=("$RUNNER_TEMP"/package/ajp-*.zip "$RUNNER_TEMP"/package/ajp-*-setup.exe "$RUNNER_TEMP/package/SHA256SUMS-windows.txt")
-          tools/release/attach-assets.sh "$AJP_TAG" "${assets[@]}"
+          assets=("$RUNNER_TEMP"/package/kirari-*.zip "$RUNNER_TEMP"/package/kirari-*-setup.exe "$RUNNER_TEMP/package/SHA256SUMS-windows.txt")
+          tools/release/attach-assets.sh "$KIRARI_TAG" "${assets[@]}"

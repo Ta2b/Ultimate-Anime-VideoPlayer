@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Score de la balise `tag` (« jpn », « ja », « en-US ») contre les priorités,
 // de la plus voulue à la moins voulue. 0 : aucune correspondance. Plus le score
@@ -18,4 +18,4 @@ int language_score(std::span<const std::string> priorities, std::string_view tag
 // « fra » → « fre ») ; une balise inconnue revient telle quelle.
 std::string_view canonical_language(std::string_view primary);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

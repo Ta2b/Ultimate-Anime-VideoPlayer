@@ -14,7 +14,7 @@
 #include "core/frame.h"
 #include "subs/subtitle_frame.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // En-tête « YCbCr Matrix » du script, tel que libass le lit.
 enum class ScriptMatrix : std::uint8_t {
@@ -39,4 +39,4 @@ bool vsfilter_converts(ScriptMatrix script, const std::optional<VideoMatrix>& vi
 // chaque étape arrondie au plus proche et bornée à [0, 255]. L'alpha ne change pas.
 Rgba8 vsfilter_bt601_on_bt709(Rgba8 color);
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

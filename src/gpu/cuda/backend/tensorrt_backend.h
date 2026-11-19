@@ -3,7 +3,7 @@
 // (gpu/lanes.h), et les noyaux de la chaîne : ingestion des images NVDEC ou du décodage logiciel
 // (slice_kernels.h), mouvement, mesures, et écriture du ring importé de Vulkan.
 //
-// Chargé à l'exécution (ajp_backend_tensorrt.so) : le lecteur démarre sans CUDA ni TensorRT.
+// Chargé à l'exécution (kirari_backend_tensorrt.so) : le lecteur démarre sans CUDA ni TensorRT.
 #pragma once
 
 #include <algorithm>
@@ -37,7 +37,7 @@ namespace nvinfer1 {
 class IRuntime;
 }
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class TrtLog;
 class SharedActivations;
@@ -522,4 +522,4 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::vector<RetiredTextures> retired_textures_;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

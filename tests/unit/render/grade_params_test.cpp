@@ -9,7 +9,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 using Catch::Approx;
@@ -206,4 +206,4 @@ TEST_CASE("sortie SDR de l'anime : les surfaces ne bougent pas d'un plan à l'au
   CHECK(dark.tm_top > bright.tm_top);
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

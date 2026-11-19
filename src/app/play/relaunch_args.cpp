@@ -11,7 +11,7 @@
 #endif
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::vector<std::string> relaunch_arguments(std::span<const std::string_view> launched,
                                             RelaunchedFor reason) {
@@ -71,4 +71,4 @@ void close_on_exec_all() {
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

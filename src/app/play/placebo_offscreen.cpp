@@ -7,7 +7,7 @@
 #include "app/play/placebo_impl.h"
 #include "core/clock.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<pl_frame, Refusal> PlaceboScreen::Impl::offscreen_target() {
   const pl_gpu gpu = vk->gpu;
@@ -52,4 +52,4 @@ std::int64_t PlaceboScreen::Impl::offscreen_present() {
   return next_tick_us;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

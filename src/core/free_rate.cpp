@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::core {
+namespace kirari::core {
 
 FreeRate::Bucket& FreeRate::bucket(std::int64_t now_us) {
   const std::int64_t index = now_us / kBucketUs;
@@ -99,4 +99,4 @@ FreeInfo FreeRate::info(std::int64_t now_us) const {
   return out;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

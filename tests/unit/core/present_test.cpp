@@ -12,7 +12,7 @@
 #include "core/wait_plan.h"
 
 using Catch::Approx;
-using namespace ajp::core;
+using namespace kirari::core;
 
 TEST_CASE("vblank : 164,78 Hz retrouvés à 0,01 Hz sur 2 s à ±0,3 ms de gigue", "[core][present]") {
   const double period = 1e6 / 164.78;

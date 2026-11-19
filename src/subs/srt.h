@@ -10,7 +10,7 @@
 
 #include "core/types.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 struct SrtCue {
   std::int64_t start_us = 0;
@@ -41,4 +41,4 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file,
 // ({\an8}), passent tels quels ; une balise inconnue reste du texte.
 std::string srt_text_to_ass(std::string_view text);
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

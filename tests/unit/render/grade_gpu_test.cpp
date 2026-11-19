@@ -25,7 +25,7 @@
 #include "render/cube_lut.h"
 #include "render/grade.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 using namespace gpu_test;
 
@@ -137,4 +137,4 @@ TEST_CASE("look : deux LUT s'enchaînent dans l'ordre, deux inversions se compen
     for (std::size_t c = 0; c < 3; ++c) CHECK(none[x][c] == base[x][c]);
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

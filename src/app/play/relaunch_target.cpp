@@ -15,7 +15,7 @@
 #include "core/log.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Lus par le garde d'une fermeture bloquée, sur son propre thread (exit_stuck).
@@ -171,4 +171,4 @@ void exit_stuck(std::string_view why) {
   std::_Exit(kStuckExitCode);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

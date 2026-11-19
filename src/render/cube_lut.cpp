@@ -12,7 +12,7 @@
 
 #include "core/text.h"
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 Refusal refused(std::string detail) {
@@ -348,4 +348,4 @@ bool look_is_pq(std::string_view name, std::string_view title) {
   return false;
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

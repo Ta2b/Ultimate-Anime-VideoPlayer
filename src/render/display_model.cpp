@@ -4,7 +4,7 @@
 #include <array>
 #include <cmath>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 struct AblPoint {
@@ -76,4 +76,4 @@ double DisplayModel::content_peak_nits() const {
   return panel_peak_nits / scale();
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

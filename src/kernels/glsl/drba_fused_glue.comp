@@ -9,9 +9,9 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer Y { AJP_TENSOR v[]; } y;            // 52 canaux à h/4 × w/4
-layout(std430, binding = 1) readonly buffer Pair01 { AJP_TENSOR v[]; } pair01;  // plan 6 : tau / 2
-layout(std430, binding = 2) buffer X { AJP_TENSOR v[]; } x;                     // 109 canaux à h × w
+layout(std430, binding = 0) readonly buffer Y { KIRARI_TENSOR v[]; } y;            // 52 canaux à h/4 × w/4
+layout(std430, binding = 1) readonly buffer Pair01 { KIRARI_TENSOR v[]; } pair01;  // plan 6 : tau / 2
+layout(std430, binding = 2) buffer X { KIRARI_TENSOR v[]; } x;                     // 109 canaux à h × w
 
 #define DRBA_Y(i) y.v[i]
 #include "drba_fused.glsl"
@@ -51,15 +51,15 @@ void main() {
   float flow[4];
   for (uint k = 0u; k < 4u; ++k) {
     flow[k] = rounded(lerp_z(k, e, zh, zw) * 2.0);
-    x.v[(105u + k) * plane + o] = AJP_TENSOR(flow[k]);
+    x.v[(105u + k) * plane + o] = KIRARI_TENSOR(flow[k]);
   }
-  for (uint k = 0u; k < 9u; ++k) x.v[(96u + k) * plane + o] = AJP_TENSOR(lerp_z(4u + k, e, zh, zw));
+  for (uint k = 0u; k < 9u; ++k) x.v[(96u + k) * plane + o] = KIRARI_TENSOR(lerp_z(4u + k, e, zh, zw));
   // Warps : n = 0 image 1 et f1 avec le flot 0-1 ; n = 1 image et f du côté choisi avec le flot 2-3.
   for (uint n = 0u; n < 2u; ++n) {
     FusedTap t = pixel_tap(ox, oy, flow[2u * n], flow[2u * n + 1u], pc.width, pc.height);
     uint img = n == 0u ? 3u : (before ? 0u : 6u);
     uint enc = n == 0u ? 25u : (before ? 9u : 41u);
-    for (uint k = 0u; k < 3u; ++k) x.v[(57u + 3u * n + k) * plane + o] = AJP_TENSOR(x_tap(img + k, t));
-    for (uint k = 0u; k < 16u; ++k) x.v[(63u + 16u * n + k) * plane + o] = AJP_TENSOR(x_tap(enc + k, t));
+    for (uint k = 0u; k < 3u; ++k) x.v[(57u + 3u * n + k) * plane + o] = KIRARI_TENSOR(x_tap(img + k, t));
+    for (uint k = 0u; k < 16u; ++k) x.v[(63u + 16u * n + k) * plane + o] = KIRARI_TENSOR(x_tap(enc + k, t));
   }
 }

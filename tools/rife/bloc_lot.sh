@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Banc des instants groupés (chantier 2 du fil RIFE) : chaque morceau de bloc de RIFE fusionné en lot de N instants
 # contre le même morceau en lot de 1, sur trtexec (graphe CUDA, niveau 5).
-#   flock ~/ajp-reports/gpu-bench.lock tools/rife/bloc_lot.sh DOSSIER_MORCEAUX [N=8] [tours=3] [filtre=768x1280]
+#   flock ~/kirari-reports/gpu-bench.lock tools/rife/bloc_lot.sh DOSSIER_MORCEAUX [N=8] [tours=3] [filtre=768x1280]
 # DOSSIER_MORCEAUX : le dossier « modeles » du lecteur, où derive_rife_fused a écrit les « *-blocK.onnx ». Le
 # filtre garde ceux d'un modèle et d'une taille (768x1280 : 1080p vers 4K ; « rife_v4.22_lite-fusion3-768x1280 »
 # si plusieurs modèles y sont). Pour chaque bloc, abab_trt.sh mesure A (lot

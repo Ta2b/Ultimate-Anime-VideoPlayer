@@ -42,7 +42,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using detail::refuse_backend;
@@ -490,4 +490,4 @@ std::expected<SpanFp8Derivation, Refusal> VulkanBackend::derive_span_fp8(const S
   return run.derive(options_.span_fp8_tile > 0 ? options_.span_fp8_tile / 2 * 2 : kTile);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

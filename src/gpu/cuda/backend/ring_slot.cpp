@@ -9,7 +9,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 #ifdef _WIN32
@@ -176,4 +176,4 @@ std::expected<void, Refusal> ImportedSlot::signal(std::uint64_t value, cudaStrea
   return {};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

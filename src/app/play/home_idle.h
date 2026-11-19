@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::int32_t kHomeFrameMs = 16;
 inline constexpr std::int32_t kHomeIdleMs = 100;
@@ -21,4 +21,4 @@ constexpr std::int32_t home_wait_ms(std::int64_t now_us, std::int64_t last_event
   return !busy && now_us - last_event_us >= kHomeIdleAfterUs ? kHomeIdleMs : kHomeFrameMs;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

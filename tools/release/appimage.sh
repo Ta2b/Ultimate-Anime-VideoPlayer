@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # AppImage du lecteur Linux : un seul fichier à rendre exécutable et à lancer, sans installation.
 #
-#   tools/release/appimage.sh <ajp-linux-x64.tar.gz> [fichier-de-sortie]
+#   tools/release/appimage.sh <kirari-linux-x64.tar.gz> [fichier-de-sortie]
 #
 # Prend l'archive de package-linux.sh (le lecteur, le backend Vulkan, leurs bibliothèques) et en fait
-# ajp-linux-x86_64.AppImage. Les moteurs (TensorRT) se téléchargent comme avant dans
+# kirari-linux-x86_64.AppImage. Les moteurs (TensorRT) se téléchargent comme avant dans
 # le dossier de données de l'utilisateur ; aucun fichier de NVIDIA n'est dedans. Une nouvelle version se
 # signale (notification) et se télécharge depuis la page des releases, comme pour les autres paquets. La
 # fiche « Ouvrir avec » pointe sur le fichier .AppImage (variable APPIMAGE, posée par le lanceur). appimagetool est téléchargé à la version et
 # à l'empreinte épinglées dans versions.env.
 set -euo pipefail
 
-ARCHIVE="${1:?archive ajp-linux-x64.tar.gz}"
-OUT="${2:-$(dirname "$ARCHIVE")/ajp-linux-x86_64.AppImage}"
+ARCHIVE="${1:?archive kirari-linux-x64.tar.gz}"
+OUT="${2:-$(dirname "$ARCHIVE")/kirari-linux-x86_64.AppImage}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=versions.env
 source "$HERE/versions.env"
@@ -20,33 +20,33 @@ TOOL_VERSION="$APPIMAGETOOL_VERSION" TOOL_SHA256="$APPIMAGETOOL_SHA256"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-APPDIR="$WORK/AJP.AppDir"
-mkdir -p "$APPDIR/usr/lib/ajp"
+APPDIR="$WORK/Kirari.AppDir"
+mkdir -p "$APPDIR/usr/lib/kirari"
 tar -xzf "$ARCHIVE" -C "$WORK"
-STAGE="$WORK/ajp-linux-x64"
-[ -x "$STAGE/ajp" ] || { echo "$ARCHIVE : pas de ajp exécutable à la racine" >&2; exit 1; }
-cp -a "$STAGE"/. "$APPDIR/usr/lib/ajp/"
+STAGE="$WORK/kirari-linux-x64"
+[ -x "$STAGE/kirari" ] || { echo "$ARCHIVE : pas de kirari exécutable à la racine" >&2; exit 1; }
+cp -a "$STAGE"/. "$APPDIR/usr/lib/kirari/"
 
 cat > "$APPDIR/AppRun" <<'RUN'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/lib/ajp/ajp" "$@"
+exec "$HERE/usr/lib/kirari/kirari" "$@"
 RUN
 chmod +x "$APPDIR/AppRun"
 
-cat > "$APPDIR/ajp.desktop" <<'DESK'
+cat > "$APPDIR/kirari.desktop" <<'DESK'
 [Desktop Entry]
 Type=Application
-Name=Ultimate Anime VideoPlayer
+Name=Kirari Player
 GenericName=Lecteur vidéo
 Comment=Anime agrandi et interpolé en temps réel
-Icon=ajp
-Exec=ajp %f
+Icon=kirari
+Exec=kirari %f
 Terminal=false
 Categories=AudioVideo;Video;Player;
 MimeType=video/mp4;video/x-matroska;video/webm;video/x-msvideo;video/quicktime;video/mpeg;video/x-flv;video/ogg;
 DESK
-cp "$HERE/linux/ajp.png" "$APPDIR/ajp.png"
+cp "$HERE/linux/kirari.png" "$APPDIR/kirari.png"
 
 TOOL="$WORK/appimagetool"
 curl -fsSL --proto =https --retry 5 --retry-delay 5 -o "$TOOL" \

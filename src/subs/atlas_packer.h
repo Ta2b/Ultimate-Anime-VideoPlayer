@@ -8,7 +8,7 @@
 
 #include "core/types.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Écart minimal entre deux rectangles : un échantillonnage bilinéaire au bord
 // d'un rectangle ne lit jamais son voisin.
@@ -37,4 +37,4 @@ struct Packing {
 // qui ne tient pas (SubtitleAtlasFull).
 std::expected<Packing, Refusal> pack(std::span<const PackSize> sizes, int max_side);
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

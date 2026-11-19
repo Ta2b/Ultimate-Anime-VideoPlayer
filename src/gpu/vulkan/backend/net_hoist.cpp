@@ -10,7 +10,7 @@
 
 #include "gpu/ir/graph.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 using ir::Graph;
@@ -335,4 +335,4 @@ int hoist_downscales(ir::Graph& graph) {
   return Hoister(graph).run();
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

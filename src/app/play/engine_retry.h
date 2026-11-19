@@ -10,7 +10,7 @@
 #include "core/settings.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Vrai si un nouvel essai au lancement suivant peut aboutir : tout échec sauf un contenu qui ne correspond
 // pas à l'index (HashMismatch), le manque de place, des droits d'écriture refusés ou un SDK refusé, que rien
@@ -34,4 +34,4 @@ std::filesystem::path retry_marker(const std::filesystem::path& engines_root, co
 bool retry_install_due(const std::filesystem::path& marker);
 void note_install_attempt(const std::filesystem::path& marker);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

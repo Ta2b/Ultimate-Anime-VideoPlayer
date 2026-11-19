@@ -25,9 +25,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::size_t kShortSha = 16;
@@ -46,13 +46,14 @@ struct KindFacts {
 constexpr KindFacts facts(SpanVariantKind kind) {
   switch (kind) {
     case SpanVariantKind::Int8:
-      return {"ajp-span-int8-v1",  "-int8-",         ".onnx", kInt8MinPsnrMeanDb,
-              kInt8MinPsnrWorstDb, kInt8MinSsimWorst};
+      return {"kirari-span-int8-v1", "-int8-",         ".onnx", kInt8MinPsnrMeanDb,
+              kInt8MinPsnrWorstDb,   kInt8MinSsimWorst};
     case SpanVariantKind::Fp8:
-      return {"ajp-span-fp8-v1", "-fp8-", ".onnx", kFp8MinPsnrMeanDb, kFp8MinPsnrWorstDb, kFp8MinSsimWorst};
+      return {"kirari-span-fp8-v1", "-fp8-",         ".onnx", kFp8MinPsnrMeanDb,
+              kFp8MinPsnrWorstDb,   kFp8MinSsimWorst};
     case SpanVariantKind::Fp32:
-      return {"ajp-span-fp32-v1",  "-fp32-",         ".onnx", kInt8MinPsnrMeanDb,
-              kInt8MinPsnrWorstDb, kInt8MinSsimWorst};
+      return {"kirari-span-fp32-v1", "-fp32-",         ".onnx", kInt8MinPsnrMeanDb,
+              kInt8MinPsnrWorstDb,   kInt8MinSsimWorst};
     case SpanVariantKind::Fp8Cutlass:  // des noyaux écrits à la main : les seuils de l'INT8, pas ceux du FP8
                                        // par Q/DQ
       return {gpu::span_fp8::kReceiptFormatV1,
@@ -418,4 +419,4 @@ std::optional<std::string> span_int8_source(const std::string& file, SpanVariant
   return std::nullopt;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -9,7 +9,7 @@
 #include "core/frame.h"
 #include "core/types.h"
 
-namespace ajp::media::yuv {
+namespace kirari::media::yuv {
 
 inline bool is_hdr(const ColorInfo& color) {
   return color.transfer == Transfer::Pq || color.transfer == Transfer::Hlg ||
@@ -51,4 +51,4 @@ inline int sample(std::span<const std::byte> plane, std::size_t stride, int x, i
   return static_cast<int>(raw >> static_cast<unsigned>(layout.shift));
 }
 
-}  // namespace ajp::media::yuv
+}  // namespace kirari::media::yuv

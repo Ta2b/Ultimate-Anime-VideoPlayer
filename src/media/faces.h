@@ -15,7 +15,7 @@
 #include <span>
 #include <vector>
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Un cadre en coordonnées normalisées de l'image (0 à 1).
 struct FaceBox {
@@ -62,4 +62,4 @@ struct PlanSkins {
 // les plus vus d'abord ; chaque palette est la médiane de son groupe.
 PlanSkins plan_skins(std::span<const SkinTone> faces);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

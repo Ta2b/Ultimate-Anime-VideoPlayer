@@ -8,7 +8,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Au-delà, un tenseur d'entiers n'est plus une forme : on ne le propage pas.
@@ -124,4 +124,4 @@ std::expected<void, Refusal> infer_shapes(Graph& graph, std::span<const InputSha
   return {};
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

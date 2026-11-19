@@ -21,7 +21,7 @@
 #include "app/play/settings.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class ChainStage : std::uint8_t { Upscale, Motion };
 
@@ -160,4 +160,4 @@ i18n::Translated stage_notice(const std::vector<StageNote>& notes);
 // La ligne du panneau, avec la raison du journal.
 std::string stage_panel_note(const std::vector<StageNote>& notes);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

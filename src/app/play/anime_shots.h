@@ -12,7 +12,7 @@
 #include "media/shot_cutter.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::int64_t kAnimeGlideUs = 250'000;  // le glissé d'un même plan mieux connu
 
@@ -42,4 +42,4 @@ class AnimeGlide {
   bool known_ = false;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

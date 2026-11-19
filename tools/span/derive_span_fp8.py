@@ -14,7 +14,7 @@ sont pris.
      avec la surface, C46-20), avec ONNX Runtime CPU en FP32. Échelle = maximum × 1,25 / 448 (le plus grand E4M3 fini) : la marge de tête du lecteur
      (gpu/span_fp8/derive.h, kScaleHeadroom, B02-02).
   3. Écriture du paquet « .span8 » (src/gpu/span_fp8/package.h) : poids FP16 du modèle, biais f32, échelles.
-  4. Qualité : pour des images de validation, la sortie du lecteur (ajp_span_fp8_run, les noyaux eux-mêmes, sous
+  4. Qualité : pour des images de validation, la sortie du lecteur (kirari_span_fp8_run, les noyaux eux-mêmes, sous
      le verrou GPU) contre le SPAN d'origine en FP32 : PSNR moyen et pire, pire SSIM, aux seuils du reçu INT8
      (42 dB, 38 dB, 0,985).
   5. Vitesse (--trtexec est obligatoire, C46-17) : le temps des noyaux contre TensorRT FP16 ; le paquet exige
@@ -27,8 +27,8 @@ validation, jamais à la calibration.
 Le paquet est dérivé des poids d'AnimeJaNai (CC BY-NC-SA 4.0) : il se construit chez vous et ne se publie pas.
 
     ~/.animejanai-tools/venv-gpu/bin/python3 -I tools/span/derive_span_fp8.py MODELE.onnx --corpus images/ \\
-        --out "$XDG_DATA_HOME/ajp/ajp/modeles" --runner build/linux-prefix-cuda/src/gpu/cuda/backend/ajp_span_fp8_run \\
-        --gpu-prefix ~/ajp-tools/bin/ajp-gpu --trtexec ~/ajp-sdk/tensorrt/bin/trtexec
+        --out "$XDG_DATA_HOME/kirari/modeles" --runner build/linux-prefix-cuda/src/gpu/cuda/backend/kirari_span_fp8_run \\
+        --gpu-prefix ~/kirari-tools/bin/kirari-gpu --trtexec ~/kirari-sdk/tensorrt/bin/trtexec
 
 Écrit dans --out « <nom>-fp8c-<16 premiers chiffres du SHA-256 du modèle>.span8 » et son reçu « .toml » ; si les
 garde-fous échouent, seul le reçu est écrit (passed = false).
@@ -59,7 +59,7 @@ _spec.loader.exec_module(q)
 MAGIC = b"AJPSPAN8"
 VERSION = 2  # blocs et canaux réels dans l'en-tête (src/gpu/span_fp8/package.h)
 MAX_BLOCKS, CHANNELS = 8, 64  # les noyaux : 64 canaux rangés, 2 à 8 blocs
-FORMAT = "ajp-span-fp8c-v1"
+FORMAT = "kirari-span-fp8c-v1"
 E4M3_MAX = 448.0
 SCALE_HEADROOM = 1.25  # gpu/span_fp8/derive.h : kScaleHeadroom
 # Seuils du reçu : ceux de l'INT8 (span_int8.cpp), pas ceux du FP8 par Q/DQ.
@@ -200,8 +200,8 @@ def main() -> int:
     parser.add_argument("model", type=Path, help="le SPAN FP16 b8f64 d'AnimeJaNai")
     parser.add_argument("--corpus", type=Path, required=True, help="dossier d'images SDR 8 bits d'anime")
     parser.add_argument("--out", type=Path, required=True, help="le dossier « modeles » des données du lecteur")
-    parser.add_argument("--runner", required=True, help="ajp_span_fp8_run (cible CMake du backend CUDA)")
-    parser.add_argument("--gpu-prefix", default="", help="préfixe des commandes GPU (verrou), par exemple ajp-gpu")
+    parser.add_argument("--runner", required=True, help="kirari_span_fp8_run (cible CMake du backend CUDA)")
+    parser.add_argument("--gpu-prefix", default="", help="préfixe des commandes GPU (verrou), par exemple kirari-gpu")
     parser.add_argument("--trtexec", required=True, help="trtexec (TensorRT 11) : exige un gain mesuré sur le FP16")
     parser.add_argument("--speed-shape", default="1088x1920", help="hauteur x largeur de la mesure de vitesse")
     parser.add_argument("--min-speedup", type=float, default=1.05, help="gain exigé sur TensorRT FP16 (1,05)")
@@ -279,7 +279,7 @@ def main() -> int:
     print(f"calibration : {args.calib_crops} découpes de {args.calib_size}², maxima {peaks.min():.2f} à {peaks.max():.2f}")
 
     package = build_package(init, scales, blocks, channels)
-    with tempfile.TemporaryDirectory(prefix="ajp-span8-") as work_dir:
+    with tempfile.TemporaryDirectory(prefix="kirari-span8-") as work_dir:
         work = Path(work_dir)
         candidate_path = work / "candidate.span8"
         candidate_path.write_bytes(package)

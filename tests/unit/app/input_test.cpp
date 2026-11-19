@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("Touches : chaque touche de [keys] a un code SDL qui la rend (A24-04)", "[app][input]") {
   std::set<core::Key> seen;
@@ -100,9 +100,9 @@ TEST_CASE("Touches : core::fixed_key dit exactement les touches lues avant [keys
   CHECK(fixed == 15);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("Touches : F11 et Alt + Entrée basculent le plein écran (B24-03)", "[app][input]") {
   const core::KeyMap keys = core::KeyMap::defaults();
@@ -153,4 +153,4 @@ TEST_CASE("Touches : relâcher Maj en pleine rafale de seeks ne lance pas de see
   CHECK_FALSE(input_of(right_up, keys));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

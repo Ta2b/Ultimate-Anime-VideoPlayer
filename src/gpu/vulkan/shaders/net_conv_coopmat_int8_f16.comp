@@ -1,5 +1,5 @@
 #version 450
 // Conv par matrices coopératives INT8 (net_conv_coopmat_int8.glsl).
 #extension GL_GOOGLE_include_directive : require
-#define AJP_NET_F16
+#define KIRARI_NET_F16
 #include "net_conv_coopmat_int8.glsl"

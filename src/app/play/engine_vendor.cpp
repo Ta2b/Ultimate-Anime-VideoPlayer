@@ -22,7 +22,7 @@
 #include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using prepare::ansi_safe_path;  // curl relit sa ligne de commande en ANSI sous Windows
 
@@ -288,4 +288,4 @@ std::expected<void, Refusal> fetch_vendor_file(const core::VendorFile& file,
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

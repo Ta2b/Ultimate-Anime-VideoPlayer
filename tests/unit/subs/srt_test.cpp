@@ -2,9 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using ajp::subs::parse_srt;
-using ajp::subs::srt_text_to_ass;
+using kirari::RefusalCode;
+using kirari::subs::parse_srt;
+using kirari::subs::srt_text_to_ass;
 
 TEST_CASE("parse_srt : numéros, CRLF, BOM et horodatages exacts", "[srt]") {
   const auto cues = parse_srt(
@@ -149,7 +149,7 @@ TEST_CASE("srt_text_to_ass : couleurs et polices, restaurées à la fermeture", 
 }
 
 TEST_CASE("text_track_header : un style Default et un format d'événements", "[srt]") {
-  const std::string_view header = ajp::subs::text_track_header();
+  const std::string_view header = kirari::subs::text_track_header();
   CHECK(header.find("[Script Info]") != std::string_view::npos);
   CHECK(header.find("Style: Default,") != std::string_view::npos);
   CHECK(header.find("Format: Layer, Start, End, Style") != std::string_view::npos);

@@ -17,7 +17,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct EngineRequest {
   std::shared_ptr<BackendLibrary> library;
@@ -71,4 +71,4 @@ class EngineBuild {
   std::jthread thread_;  // dernier membre
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

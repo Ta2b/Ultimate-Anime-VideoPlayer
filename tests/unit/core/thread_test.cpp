@@ -22,10 +22,10 @@
 #include <unistd.h>
 #endif
 
-using ajp::Refusal;
-using ajp::RefusalCode;
-using ajp::start_thread;
-using ajp::ThreadReport;
+using kirari::Refusal;
+using kirari::RefusalCode;
+using kirari::start_thread;
+using kirari::ThreadReport;
 using namespace std::chrono_literals;
 
 namespace {
@@ -158,7 +158,7 @@ TEST_CASE("refusal_from_exception : le code demandé et le texte de l'exception"
   try {
     throw std::out_of_range("indice 9");
   } catch (...) {
-    refusal = ajp::refusal_from_exception(RefusalCode::DecodeFailed, "thread source");
+    refusal = kirari::refusal_from_exception(RefusalCode::DecodeFailed, "thread source");
   }
   CHECK(refusal.code == RefusalCode::DecodeFailed);
   CHECK(refusal.detail == "thread source : indice 9");
@@ -166,39 +166,39 @@ TEST_CASE("refusal_from_exception : le code demandé et le texte de l'exception"
 
 #if defined(__linux__)
 TEST_CASE("start_thread : le système voit le nom du thread, coupé à 15 octets (A20-11)", "[thread][core]") {
-  ajp::install_system_thread_names();
+  kirari::install_system_thread_names();
   const auto seen = [](std::string_view name) {
     std::promise<std::string> named;
     auto future = named.get_future();
-    auto thread = ajp::start_thread(name, ajp::ThreadReport([](const ajp::Refusal&) {}),
-                                    [&named](const std::stop_token&, const ajp::ThreadReport&) {
-                                      std::array<char, 16> got{};
-                                      pthread_getname_np(pthread_self(), got.data(), got.size());
-                                      named.set_value(got.data());
-                                    });
+    auto thread = kirari::start_thread(name, kirari::ThreadReport([](const kirari::Refusal&) {}),
+                                       [&named](const std::stop_token&, const kirari::ThreadReport&) {
+                                         std::array<char, 16> got{};
+                                         pthread_getname_np(pthread_self(), got.data(), got.size());
+                                         named.set_value(got.data());
+                                       });
     REQUIRE(thread);
     return future.get();
   };
   CHECK(seen("source") == "source");
   CHECK(seen("pre-analyse-des-plans") == "pre-analyse-des");
-  ajp::thread_start().store(nullptr);
+  kirari::thread_start().store(nullptr);
 }
 
 TEST_CASE("Priorité : le crochet relève la lecture et l'audio, pas le fond", "[thread][core]") {
   static std::atomic<int> raised{0};
-  const bool accepted = ajp::set_thread_priority_raiser([]() noexcept {
+  const bool accepted = kirari::set_thread_priority_raiser([]() noexcept {
     ++raised;
     return true;
   });
   CHECK(accepted);  // le thread appelant est relevé tout de suite
   const int base = raised.load();
   std::thread([] {
-    ajp::set_thread_role(ajp::ThreadRole::Playback);
-    ajp::set_thread_role(ajp::ThreadRole::Audio);
-    ajp::set_thread_role(ajp::ThreadRole::Background);
+    kirari::set_thread_role(kirari::ThreadRole::Playback);
+    kirari::set_thread_role(kirari::ThreadRole::Audio);
+    kirari::set_thread_role(kirari::ThreadRole::Background);
   }).join();
   CHECK(raised.load() == base + 2);
-  CHECK(ajp::set_thread_priority_raiser(nullptr) == false);
+  CHECK(kirari::set_thread_priority_raiser(nullptr) == false);
 }
 #endif
 
@@ -214,12 +214,12 @@ int own_nice() {
 // relevé. Avant la correction, un thread créé par lui gardait son nice : la hausse passait à tous.
 TEST_CASE("Linux : la hausse du thread principal ne passe pas aux threads créés ensuite (C34-01)",
           "[thread][core]") {
-  ajp::install_system_thread_names();
+  kirari::install_system_thread_names();
   const int raised = own_nice();
   std::thread([] {
     REQUIRE(setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 15) == 0);
     // Le crochet lit la base avant de relever ; celui-ci ne relève rien.
-    CHECK(ajp::set_thread_priority_raiser([]() noexcept { return true; }));
+    CHECK(kirari::set_thread_priority_raiser([]() noexcept { return true; }));
   }).join();
   REQUIRE(raised < 15);
   std::promise<int> seen;
@@ -230,7 +230,7 @@ TEST_CASE("Linux : la hausse du thread principal ne passe pas aux threads créé
   REQUIRE(thread);
   CHECK(future.get() == 15);
   thread->join();
-  CHECK(ajp::start_task<int>("essai", [] { return own_nice(); })->get() == 15);
+  CHECK(kirari::start_task<int>("essai", [] { return own_nice(); })->get() == 15);
   // Un thread de fond, plus bas que la base, le reste : la hausse seule est rendue.
   std::thread([] {
     REQUIRE(setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 19) == 0);
@@ -242,19 +242,19 @@ TEST_CASE("Linux : la hausse du thread principal ne passe pas aux threads créé
     REQUIRE(inner);
     CHECK(got.get() == 19);
   }).join();
-  CHECK(ajp::set_thread_priority_raiser(nullptr) == false);
-  ajp::thread_start().store(nullptr);
+  CHECK(kirari::set_thread_priority_raiser(nullptr) == false);
+  kirari::thread_start().store(nullptr);
   CHECK(own_nice() == raised);  // le thread du test n'a pas bougé
 }
 #endif
 
 TEST_CASE("start_task : l'exception du corps devient ThreadFailed", "[thread]") {
-  auto task = ajp::start_task<int>("essai", []() -> int { throw std::runtime_error("levée"); });
+  auto task = kirari::start_task<int>("essai", []() -> int { throw std::runtime_error("levée"); });
   REQUIRE(task != nullptr);
   const auto result = task->get();
   REQUIRE_FALSE(result.has_value());
-  CHECK(result.error().code == ajp::RefusalCode::ThreadFailed);
-  CHECK(ajp::start_task<int>("essai", [] { return 3; })->get() == 3);
+  CHECK(result.error().code == kirari::RefusalCode::ThreadFailed);
+  CHECK(kirari::start_task<int>("essai", [] { return 3; })->get() == 3);
 }
 
 #ifdef __linux__
@@ -263,14 +263,14 @@ std::atomic<int> g_role_refusals{0};
 }  // namespace
 
 TEST_CASE("Rôle d'un thread : un refus du système se dit une fois par rôle (B20-06)", "[thread]") {
-  ajp::set_role_refusal_reporter(
-      [](ajp::ThreadRole /*role*/, const char* /*what*/) noexcept { g_role_refusals.fetch_add(1); });
-  CHECK_FALSE(ajp::set_thread_priority_raiser([]() noexcept { return false; }));  // rtkit absent
-  CHECK_FALSE(ajp::set_thread_role(ajp::ThreadRole::Playback));
-  CHECK_FALSE(ajp::set_thread_role(ajp::ThreadRole::Playback));
+  kirari::set_role_refusal_reporter(
+      [](kirari::ThreadRole /*role*/, const char* /*what*/) noexcept { g_role_refusals.fetch_add(1); });
+  CHECK_FALSE(kirari::set_thread_priority_raiser([]() noexcept { return false; }));  // rtkit absent
+  CHECK_FALSE(kirari::set_thread_role(kirari::ThreadRole::Playback));
+  CHECK_FALSE(kirari::set_thread_role(kirari::ThreadRole::Playback));
   CHECK(g_role_refusals.load() == 1);
-  ajp::set_thread_priority_raiser(nullptr);
-  CHECK(ajp::set_thread_role(ajp::ThreadRole::Playback));  // sans crochet : rien demandé, rien refusé
-  ajp::set_role_refusal_reporter(nullptr);
+  kirari::set_thread_priority_raiser(nullptr);
+  CHECK(kirari::set_thread_role(kirari::ThreadRole::Playback));  // sans crochet : rien demandé, rien refusé
+  kirari::set_role_refusal_reporter(nullptr);
 }
 #endif

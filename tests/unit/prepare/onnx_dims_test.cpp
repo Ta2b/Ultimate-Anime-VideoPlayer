@@ -10,7 +10,7 @@
 #include "prepare/onnx_outputs.h"
 #include "prepare/onnx_scan.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -116,4 +116,4 @@ TEST_CASE("Une entrée ou une sortie qui garde un nom sans valeur est refusée",
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

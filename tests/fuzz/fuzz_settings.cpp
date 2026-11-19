@@ -8,14 +8,14 @@
 #include "fuzz_check.h"
 #include "fuzz_targets.h"
 
-int ajp::fuzz::settings(const std::uint8_t* data, std::size_t size) {
+int kirari::fuzz::settings(const std::uint8_t* data, std::size_t size) {
   const std::string_view text(reinterpret_cast<const char*>(data), size);
-  const auto settings = ajp::core::parse_settings(text);
+  const auto settings = kirari::core::parse_settings(text);
   if (!settings) return 0;
-  const auto written = ajp::core::format_settings(*settings);
-  ajp::fuzz::require(written.has_value(), "des réglages lus se réécrivent");
-  const auto again = ajp::core::parse_settings(*written);
-  ajp::fuzz::require(again.has_value(), "la réécriture se relit");
-  ajp::fuzz::require(*again == *settings, "la réécriture garde les réglages");
+  const auto written = kirari::core::format_settings(*settings);
+  kirari::fuzz::require(written.has_value(), "des réglages lus se réécrivent");
+  const auto again = kirari::core::parse_settings(*written);
+  kirari::fuzz::require(again.has_value(), "la réécriture se relit");
+  kirari::fuzz::require(*again == *settings, "la réécriture garde les réglages");
   return 0;
 }

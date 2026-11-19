@@ -15,7 +15,7 @@
 #include "gpu/cuda/backend/warp_kernels.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr std::size_t kHistogramBytes = kernels::kFlowBins * sizeof(unsigned int);
@@ -270,4 +270,4 @@ std::expected<float, Refusal> TensorRtBackend::flow_max_take(std::uint64_t ticke
   return kernels::flow_percentile(slot.host, slot.points);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La cadence des images vidéo distinctes qui arrivent à l'écran (la source, multipliée par l'interpolation),
 // estimée sur l'écart de leurs pts : le grade y règle ses lissages pour qu'ils durent le même temps à 24 et à
@@ -35,4 +35,4 @@ class VideoRate {
   double frame_us_ = 0.0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

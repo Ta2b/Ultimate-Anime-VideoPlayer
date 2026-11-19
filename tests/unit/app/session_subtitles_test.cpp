@@ -13,7 +13,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -127,4 +127,4 @@ TEST_CASE("Sous-titres : la barre qui bouge pendant la préroulée d'un saut ne 
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

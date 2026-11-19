@@ -21,7 +21,7 @@
 #include "subs/subtitle_renderer.h"
 #include "subs/subtitle_track.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class OsdText {
  public:
@@ -58,4 +58,4 @@ bool osd_refresh_due(bool had_text, bool has_text, bool size_changed, std::int64
 // caractères spéciaux d'ASS neutralisés.
 std::string osd_script(std::span<const std::string> lines, OutputSize size);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

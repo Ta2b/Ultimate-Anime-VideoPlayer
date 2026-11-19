@@ -5,7 +5,7 @@
 #include "prepare/rife_split.h"
 #include "rife_fake.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 TEST_CASE("C04-01 : une colle entrelacée d'un autre ordre de canaux est refusée", "[prepare][rife_fused]") {
@@ -26,4 +26,4 @@ TEST_CASE("C04-02 : un Resize avec antialias est refusé (RIFE)", "[prepare][rif
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

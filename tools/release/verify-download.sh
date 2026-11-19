@@ -3,15 +3,15 @@
 # archives) : la signature Ed25519 de manifest.toml pour la clé publique du lecteur, puis le SHA-256 et la
 # taille de l'archive tels que le manifeste les donne. Ne demande qu'openssl et sha256sum (ou shasum).
 #
-#   tools/release/verify-download.sh manifest.toml manifest.toml.sig ajp-linux-x64.tar.gz
+#   tools/release/verify-download.sh manifest.toml manifest.toml.sig kirari-linux-x64.tar.gz
 #
-# AJP_UPDATE_PUBKEY : la clé publique en hexadécimal (64 caractères) ; par défaut celle des releases
+# KIRARI_UPDATE_PUBKEY : la clé publique en hexadécimal (64 caractères) ; par défaut celle des releases
 # (docs/signature-des-releases.md). Sortie 0 si tout concorde, 1 sinon.
 set -euo pipefail
 
 [ $# -eq 3 ] || { sed -n '2,10p' "$0"; exit 2; }
 manifest=$1 sig=$2 archive=$3
-pub=${AJP_UPDATE_PUBKEY:-c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088}
+pub=${KIRARI_UPDATE_PUBKEY:-c09703350d91e8a6ebdb815bf27ec8b662e301c954aed52568da164258d45088}
 [[ "$pub" =~ ^[0-9a-f]{64}$ ]] || { echo "clé publique invalide : $pub" >&2; exit 2; }
 
 work=$(mktemp -d)

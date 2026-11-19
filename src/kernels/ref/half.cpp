@@ -2,7 +2,7 @@
 
 #include <bit>
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 constexpr std::uint32_t kSignMask = 0x8000'0000U;
@@ -67,4 +67,4 @@ RgbImage round_to_half(const RgbImage& image) {
   return out;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

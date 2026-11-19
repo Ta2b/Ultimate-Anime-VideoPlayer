@@ -8,11 +8,11 @@
 
 struct SDL_Window;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Active la fenêtre avec le jeton. Faux hors Wayland, sans le protocole chez le compositeur, ou sans jeton :
 // l'appelant garde alors son repli (SDL_RaiseWindow et le signalement dans la barre des tâches). Thread de la
 // fenêtre seulement.
 bool wayland_activate(SDL_Window* window, std::string_view token);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -12,7 +12,7 @@
 #include "app/play/gmfss_credit.h"
 #include "app/play/upscale_stage.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::int64_t kGmfssCreditMaxUs = 120'000;
@@ -185,4 +185,4 @@ std::expected<void, Refusal> UpscaleStage::late(const DecodedFrame& frame, std::
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

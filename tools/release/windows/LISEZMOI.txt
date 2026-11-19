@@ -1,13 +1,13 @@
-Ultimate Anime VideoPlayer pour Windows x64
+Kirari Player pour Windows x64
 ===========================================
 
 Lancer
-  Double-cliquer ajp.exe, ou « Ouvrir avec » sur une vidéo. Le premier lancement montre l'écran de bienvenue
+  Double-cliquer kirari.exe, ou « Ouvrir avec » sur une vidéo. Le premier lancement montre l'écran de bienvenue
   (moteurs et réglages de départ). Vulkan sert pour toute carte graphique ; TensorRT est proposé aux cartes NVIDIA
   RTX (coché d'office, licence de NVIDIA affichée à côté) et se télécharge depuis NVIDIA elle-même : aucun fichier de
   NVIDIA n'est dans cette archive.
 
-Windows demande une confirmation, ou refuse de lancer ajp.exe
+Windows demande une confirmation, ou refuse de lancer kirari.exe
   Les fichiers de cette version ne sont pas encore signés (pas de compte de signature pour l'instant). Selon les
   réglages de Windows :
   - SmartScreen (« Windows a protégé votre ordinateur ») : « Informations complémentaires », puis « Exécuter quand même ».
@@ -20,7 +20,7 @@ Windows demande une confirmation, ou refuse de lancer ajp.exe
   release, puis SHA-256 de l'archive) ou le SHA256SUMS-windows.txt de la release.
 
 Désinstaller
-  Zip : supprimer le dossier, après « ajp.exe --unregister » (retire « Ouvrir avec » et le lecteur par défaut).
+  Zip : supprimer le dossier, après « kirari.exe --unregister » (retire « Ouvrir avec » et le lecteur par défaut).
   Installeur : « Applications installées », ou le désinstalleur du dossier d'installation.
-  Les données du lecteur restent à part : %APPDATA%\ajp\ajp (réglages, journaux) et %LOCALAPPDATA%\ajp\ajp (moteurs,
+  Les données du lecteur restent à part : %APPDATA%\kirari (réglages, journaux) et %LOCALAPPDATA%\kirari (moteurs,
   modèles dérivés, caches ; plusieurs Go possibles).

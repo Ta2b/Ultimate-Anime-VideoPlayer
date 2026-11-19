@@ -15,7 +15,7 @@
 
 #include "gpu/cuda/backend/ring_surface.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Une convolution vue sans copie : poids FP16 (motifs binaires) rangés [sortie][ligne][colonne][entrée],
 // biais f32.
@@ -27,7 +27,7 @@ struct SpanFp8ConvView {
 // Comment calculer un modèle à 48 canaux (kKernelsVersion 4, chantier SPAN 1). Native : noyaux de 48
 // colonnes, K des convolutions 3×3 mis à plat (9 × 48 = 432, en tuiles de 64 sans queue par position) ;
 // PerTap : 48 colonnes, K par position du filtre (le quart des tuiles K reste masqué) ; Padded : l'ancien
-// calcul en 64 canaux dont 16 nuls. Les deux derniers ne servent qu'à la mesure (ajp_span_fp8_run).
+// calcul en 64 canaux dont 16 nuls. Les deux derniers ne servent qu'à la mesure (kirari_span_fp8_run).
 enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
 
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
@@ -127,4 +127,4 @@ class SpanFp8Net {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

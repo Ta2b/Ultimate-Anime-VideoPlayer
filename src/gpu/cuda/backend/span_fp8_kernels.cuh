@@ -22,7 +22,7 @@
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/ring_surface.h"
 
-namespace ajp::gpu::cuda::span_fp8_kernels {
+namespace kirari::gpu::cuda::span_fp8_kernels {
 
 struct KP {
   const uint8_t* skip = nullptr;  // saut x, NHWC E4M3 de la largeur du bloc (mode 1)
@@ -386,4 +386,4 @@ struct Launcher {
   }
 };
 
-}  // namespace ajp::gpu::cuda::span_fp8_kernels
+}  // namespace kirari::gpu::cuda::span_fp8_kernels

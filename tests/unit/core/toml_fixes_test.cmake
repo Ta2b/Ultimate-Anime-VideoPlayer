@@ -1,5 +1,5 @@
 # cmake/TomlFixes.cmake (C27-02) : le configure échoue quand un fichier à corriger manque, et passe avec l'arbre
-# complet. Un toml++ livré en un seul toml.hpp amalgamé recevait sinon la marque AJP_TOML_FIXED sans aucun correctif.
+# complet. Un toml++ livré en un seul toml.hpp amalgamé recevait sinon la marque KIRARI_TOML_FIXED sans aucun correctif.
 # Lancé par CTest : cmake -DSOURCE=<dépôt> -DWORK=<dossier> -DTOML_INCLUDE=<dossier contenant toml++/> -P toml_fixes_test.cmake
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
@@ -9,7 +9,7 @@ function(try_configure name include_dir out_result out_output)
   file(MAKE_DIRECTORY "${dir}")
   file(WRITE "${dir}/CMakeLists.txt"
        "cmake_minimum_required(VERSION 3.25)\nproject(toml_fixes NONE)\n"
-       "include(\"${SOURCE}/cmake/TomlFixes.cmake\")\najp_toml_fixed_include(\"${include_dir}\" fixed)\n")
+       "include(\"${SOURCE}/cmake/TomlFixes.cmake\")\nkirari_toml_fixed_include(\"${include_dir}\" fixed)\n")
   execute_process(COMMAND "${CMAKE_COMMAND}" -S "${dir}" -B "${dir}/build" RESULT_VARIABLE result
                   OUTPUT_VARIABLE output ERROR_VARIABLE output)
   set(${out_result} "${result}" PARENT_SCOPE)

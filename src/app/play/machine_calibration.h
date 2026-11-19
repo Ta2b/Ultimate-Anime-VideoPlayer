@@ -17,8 +17,8 @@
 // en Qualité et Ultra, SPAN Performance Sharp et RIFE 4.22 lite en dessous), SPAN au cran Performance comme
 // l'Auto qui jouera (ADR 0007 reprise) : le FP8 si son reçu passe la porte, sinon le FP16. Sans palier SPAN
 // qui tienne, RIFE seul (SPAN coupé) est le recours. DistilDRBA n'est pas essayé (décision 8 des audits). Ici
-// la recherche, pure, et le fichier des résultats ; les essais (des « ajp play » enfants, auto_bench_run.h)
-// dans le .cpp.
+// la recherche, pure, et le fichier des résultats ; les essais (des « kirari play » enfants,
+// auto_bench_run.h) dans le .cpp.
 #pragma once
 
 #include <expected>
@@ -34,7 +34,7 @@
 #include "app/play/auto_config.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La version de calibration.toml. 2 : hauteurs jusqu'à 1080p sur tout écran, modèles du niveau en FP16. Un
 // fichier plus ancien (essais bornés à la moitié de l'écran, SPAN FP8, RIFE 4.22 lite) se relit pour le
@@ -193,7 +193,7 @@ std::expected<void, Refusal> save_calibration(const std::filesystem::path& file,
                                               const MachineCalibration& calibration);
 
 // Un essai, tel que la recherche le demande : la chaîne, son rang (son dossier jetable) et s'il a droit au
-// long délai d'une première construction de moteur. calibrate_machine lance un « ajp play » enfant ; les
+// long délai d'une première construction de moteur. calibrate_machine lance un « kirari play » enfant ; les
 // tests en donnent un faux (A07-11).
 using TrialPlayer =
     std::function<std::expected<BenchReading, Refusal>(const ChainCandidate& chain, int index, bool first)>;
@@ -223,4 +223,4 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
                                                              const std::stop_token& stop,
                                                              const std::function<void(float)>& fraction);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace ajp::core {
+namespace kirari::core {
 
 template <class T>
 class SampleReservoir {
@@ -48,4 +48,4 @@ class SampleReservoir {
   std::uint64_t state_ = 0;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -19,7 +19,7 @@
 #include "app/play/span_derive.h"
 #include "core/gpu_device.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les noyaux du SPAN FP8 ne sont pas encore construits sous Windows : ils y attendent la mesure de PSNR et de
 // gain de docs/span-fp8-cutlass.md (B02-09). Ailleurs, le moteur dit s'il les a.
@@ -85,4 +85,4 @@ struct SpanAutoTick {
 SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare, SpanJob& job,
                             std::string_view key, bool quiet = false);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

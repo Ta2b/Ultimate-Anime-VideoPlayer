@@ -9,7 +9,7 @@
 
 #include "app/play/engine_install.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La note du paquet (kPackageNote) d'un dossier de version ; rien si elle manque ou n'a pas de SHA-256.
 std::optional<InstalledPackage> read_package_note(const std::filesystem::path& dir);
@@ -52,4 +52,4 @@ int remove_other_versions(const EngineCatalog& catalog, const core::EnginePackag
 // si une copie a été remise.
 bool recover_interrupted_install(const EngineCatalog& catalog, const core::EnginePackage& package);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

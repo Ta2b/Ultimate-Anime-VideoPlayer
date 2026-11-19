@@ -26,7 +26,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 // Noms de l'entrée et de la sortie du graphe.
 inline constexpr const char* kModelInput = "input";
@@ -50,4 +50,4 @@ std::vector<std::string> peak_names(std::size_t blocks);
 std::expected<ir::onnx::Model, Refusal> package_model(const Package& package,
                                                       const ModelOptions& options = {});
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

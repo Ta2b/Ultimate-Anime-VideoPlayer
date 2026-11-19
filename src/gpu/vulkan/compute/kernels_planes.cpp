@@ -10,7 +10,7 @@
 #include "gpu/vulkan/compute/kernel_runner.h"
 #include "kernels/spec/detect.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using detail::bytes_of;
@@ -161,4 +161,4 @@ Done KernelRunner::block_diff(Recorder& recorder, const YuvPlanes& a, const YuvP
                             {groups_for(a.width, kHeldBlock), groups_for(a.height, kHeldBlock), 1});
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

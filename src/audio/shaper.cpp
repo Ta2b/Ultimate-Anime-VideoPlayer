@@ -5,7 +5,7 @@
 
 #include "audio/converter.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 void OutputShaper::process(std::span<float> samples, const Pass& pass) {
   if (pass.channels <= 0 || pass.sample_rate <= 0) return;
@@ -48,4 +48,4 @@ void OutputShaper::process(std::span<float> samples, const Pass& pass) {
   }
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

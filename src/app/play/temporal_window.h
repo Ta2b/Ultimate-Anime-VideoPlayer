@@ -21,7 +21,7 @@
 #include "gpu/kernel_ops.h"
 #include "gpu/tensor.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class TemporalWindow {
  public:
@@ -70,4 +70,4 @@ struct TemporalBuffers {
   std::uint64_t raws = 0;      // ingestions brutes
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

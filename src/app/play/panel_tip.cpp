@@ -12,7 +12,7 @@
 #include "app/play/panel_state.h"
 #include "core/text.h"
 
-namespace ajp::app::play::panel {
+namespace kirari::app::play::panel {
 namespace {
 
 enum class Field : std::uint8_t { Speed, Quality, Recommended };
@@ -178,4 +178,4 @@ void tip(const char* body) {
   tip(nullptr, body == nullptr ? std::string_view() : std::string_view(body));
 }
 
-}  // namespace ajp::app::play::panel
+}  // namespace kirari::app::play::panel

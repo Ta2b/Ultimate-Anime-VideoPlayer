@@ -25,11 +25,11 @@
 #include "prepare/onnx_split.h"
 #include "rife_fake.h"
 
-#ifndef AJP_RIFE_MODEL_DIR
-#define AJP_RIFE_MODEL_DIR ""
+#ifndef KIRARI_RIFE_MODEL_DIR
+#define KIRARI_RIFE_MODEL_DIR ""
 #endif
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -315,15 +315,15 @@ TEST_CASE("Le manifeste d'un RIFE fusionné s'écrit, se relit et refuse l'inatt
   RifeFusedManifest long_tail = manifest;
   long_tail.plan.reduce[3] = 2;
   CHECK_FALSE(parse_manifest(format_manifest(long_tail)));
-  CHECK_FALSE(parse_manifest("ajp-rife-fused 2\noutput image\nsize 192 320\n"));
+  CHECK_FALSE(parse_manifest("kirari-rife-fused 2\noutput image\nsize 192 320\n"));
   CHECK_FALSE(parse_manifest(""));
-  CHECK_FALSE(parse_manifest("ajp-rife-fused 1\ninconnu 1\n"));
+  CHECK_FALSE(parse_manifest("kirari-rife-fused 1\ninconnu 1\n"));
 }
 
 TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis les relit",
           "[prepare][rife_fused]") {
   namespace fs = std::filesystem;
-  const fs::path dir = fs::temp_directory_path() / "ajp-rife-split-test";
+  const fs::path dir = fs::temp_directory_path() / "kirari-rife-split-test";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const Bytes model = fake_rife(Fake{});
@@ -410,11 +410,11 @@ TEST_CASE("La dérivation écrit six morceaux et leur manifeste une fois, puis l
   fs::remove_all(dir, ignored);
 }
 
-// Les vrais modèles du lecteur, quand ils sont sur la machine (AJP_RIFE_MODEL_DIR) : RIFE 4.25 coupé en 5
+// Les vrais modèles du lecteur, quand ils sont sur la machine (KIRARI_RIFE_MODEL_DIR) : RIFE 4.25 coupé en 5
 // blocs réduits 8, 8, 4, 2, 1, 4.22 lite en 4 blocs réduits 8, 4, 2, 1 ; et les candidats s'ils y sont
 // (tools/rife/candidats.sh) : 4.26 réduit 16, 8, 4, 2, 1, 4.25 lite 32, 16, 8, 4, 1 à colle entrelacée.
 TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][rife_fused]") {
-  const std::filesystem::path dir = AJP_RIFE_MODEL_DIR;
+  const std::filesystem::path dir = KIRARI_RIFE_MODEL_DIR;
   struct Known {
     std::string_view file;
     std::vector<int> reduce;
@@ -453,7 +453,7 @@ TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][r
     }
     CHECK(nodes > 100);
   }
-  if (!any) SKIP("modèles RIFE du lecteur absents (AJP_RIFE_MODEL_DIR)");
+  if (!any) SKIP("modèles RIFE du lecteur absents (KIRARI_RIFE_MODEL_DIR)");
 }
 
 // A04-07 : un morceau dérivé déjà présent n'est jamais réécrit tant que kRifeFusedDerivation ne change pas.
@@ -462,7 +462,7 @@ TEST_CASE("Les RIFE du catalogue se coupent en six morceaux", "[prepare][onnx][r
 // Sans cela, une installation existante garderait les anciens morceaux et une neuve aurait les nouveaux.
 TEST_CASE("Les morceaux RIFE ne changent pas sans que leur version monte (A04-07)", "[prepare][rife_fused]") {
   namespace fs = std::filesystem;
-  const fs::path dir = fs::temp_directory_path() / "ajp-rife-empreinte";
+  const fs::path dir = fs::temp_directory_path() / "kirari-rife-empreinte";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const Bytes model = fake_rife(Fake{});
@@ -495,4 +495,4 @@ TEST_CASE("Les morceaux RIFE ne changent pas sans que leur version monte (A04-07
 }
 
 }  // namespace
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

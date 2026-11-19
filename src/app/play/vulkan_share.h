@@ -19,7 +19,7 @@
 
 struct AVBufferRef;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les familles de files vidéo que l'écran fait créer à libplacebo en plus des siennes
 // (pl_vulkan_params::extra_queues) : toutes leurs files, sans pool ni place dans pl_vulkan.queues.
@@ -44,4 +44,4 @@ class VulkanShare final : public media::HwDeviceSource {
   AVBufferRef* device_ = nullptr;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

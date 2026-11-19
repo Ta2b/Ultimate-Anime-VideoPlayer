@@ -10,16 +10,16 @@
 
 #include "rig.h"
 
-using ajp::ClockSnapshot;
-using ajp::Command;
-using ajp::Flush;
-using ajp::RefusalCode;
-using namespace ajp::audio;
-using ajp::audio::test::encode_sine;
-using ajp::audio::test::EncodedClip;
-using ajp::audio::test::kLatency;
-using ajp::audio::test::Rig;
-namespace cmd = ajp::cmd;
+using kirari::ClockSnapshot;
+using kirari::Command;
+using kirari::Flush;
+using kirari::RefusalCode;
+using namespace kirari::audio;
+using kirari::audio::test::encode_sine;
+using kirari::audio::test::EncodedClip;
+using kirari::audio::test::kLatency;
+using kirari::audio::test::Rig;
+namespace cmd = kirari::cmd;
 
 TEST_CASE("AudioPlayer : audio maître, l'horloge publie la position entendue", "[audio][player]") {
   Rig rig;
@@ -218,7 +218,7 @@ TEST_CASE("AudioPlayer : volume appliqué, ou refusé hors de 0 à 2", "[audio][
     rig.player->handle(Command{cmd::SetVolume{.gain = bad}});
   }
   REQUIRE(rig.refusals.size() == 3);
-  for (const ajp::Refusal& refusal : rig.refusals) CHECK(refusal.code == RefusalCode::FieldOutOfRange);
+  for (const kirari::Refusal& refusal : rig.refusals) CHECK(refusal.code == RefusalCode::FieldOutOfRange);
   CHECK(rig.fake->gain() == 0.25F);
 }
 
@@ -533,7 +533,7 @@ TEST_CASE("AudioPlayer : le retour de l'appareil rouvre tout de suite une sortie
 // B16-02 : un petit écart d'horloge ne fait pas rééchantillonner SDL.
 TEST_CASE("AudioPlayer : écran maître à la même vitesse, le rapport reste exactement 1", "[audio][sync]") {
   Rig rig;
-  auto master = std::make_shared<ajp::audio::test::FakeMaster>();
+  auto master = std::make_shared<kirari::audio::test::FakeMaster>();
   const std::int64_t t0 = rig.now_us();
   master->set({.media_us = 0, .host_us = t0, .rate = 1.0, .valid = true});
   rig.player->handle(SyncTo{master});

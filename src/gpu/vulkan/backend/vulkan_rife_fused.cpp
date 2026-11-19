@@ -13,7 +13,7 @@
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {}  // namespace
 
 std::expected<Artifact, Refusal> VulkanBackend::build_rife_fused(const ModelSpec& model,
@@ -90,4 +90,4 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_rife_fused(c
   return std::unique_ptr<Engine>(std::move(*engine));
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

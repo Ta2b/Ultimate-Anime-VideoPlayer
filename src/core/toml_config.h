@@ -1,12 +1,12 @@
 // Configuration de toml++, lue par chaque inclusion (TOML_CONFIG_HEADER, posé par
-// cmake/Dependencies.cmake sur ajp::dep::toml) au milieu de son préprocesseur : après sa
+// cmake/Dependencies.cmake sur kirari::dep::toml) au milieu de son préprocesseur : après sa
 // définition de TOML_ASSUME, avant celles de TOML_MAX_NESTED_VALUES et de TOML_ASSERT_ASSUME.
 #pragma once
 
-// La copie corrigée par cmake/TomlFixes.cmake : <toml++-ajp/toml.hpp>, jamais <toml++/toml.hpp>,
+// La copie corrigée par cmake/TomlFixes.cmake : <toml++-kirari/toml.hpp>, jamais <toml++/toml.hpp>,
 // dont l'analyse a des comportements indéfinis sur un fichier mal formé.
-#ifndef AJP_TOML_FIXED
-#error "inclure <toml++-ajp/toml.hpp>, la copie de toml++ corrigée par cmake/TomlFixes.cmake"
+#ifndef KIRARI_TOML_FIXED
+#error "inclure <toml++-kirari/toml.hpp>, la copie de toml++ corrigée par cmake/TomlFixes.cmake"
 #endif
 
 // Une version de toml++ qui lirait ce fichier avant sa propre définition de TOML_ASSUME

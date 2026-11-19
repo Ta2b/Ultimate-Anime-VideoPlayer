@@ -7,7 +7,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using namespace std::chrono_literals;
 
@@ -35,4 +35,4 @@ TEST_CASE("Garde de fermeture : un GPU qui ne répond pas déclenche la sortie, 
   CHECK(stuck == 1);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

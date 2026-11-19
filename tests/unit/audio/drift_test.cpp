@@ -10,8 +10,8 @@
 
 #include "audio/pcm.h"
 
-using ajp::audio::DriftRegulator;
-using ajp::audio::limits::kMaxDriftCorrection;
+using kirari::audio::DriftRegulator;
+using kirari::audio::limits::kMaxDriftCorrection;
 
 namespace {
 
@@ -108,7 +108,7 @@ TEST_CASE("DriftRegulator : calage de vitesse maximal et carte son 100 ppm lente
   // 1,00135.
   DriftRegulator regulator;
   const Run run =
-      simulate(regulator, ajp::audio::limits::kMaxSpeedChangeCovered + 0.0001, 0.0, 1800.0, 0.002);
+      simulate(regulator, kirari::audio::limits::kMaxSpeedChangeCovered + 0.0001, 0.0, 1800.0, 0.002);
   CHECK(run.worst_correction <= kBound);
   CHECK(std::abs(run.final_error_s) < 0.005);  // loin du recalage franc de 50 ms
 }

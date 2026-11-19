@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce que KWin garde pour une sortie : la crête réglée à la main (« maxPeakBrightnessOverride ») et le blanc
 // de référence (« sdrBrightness », ou « referenceLuminance » selon les versions), en nits.
@@ -58,4 +58,4 @@ std::optional<double> system_peak_nits(std::string_view connector, double headro
                                        const void* monitor = nullptr, std::string_view edid = {},
                                        double* full_frame_nits = nullptr);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

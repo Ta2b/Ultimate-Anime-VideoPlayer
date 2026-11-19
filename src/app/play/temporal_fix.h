@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class TemporalFix : std::uint8_t { Off, Light, Normal, Strong };
 inline constexpr int kTemporalFixCount = 4;
@@ -47,4 +47,4 @@ constexpr std::string_view label(TemporalFix fix) {
   return level_of(fix).label;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -21,7 +21,7 @@ extern "C" {
 #include "core/types.h"
 #include "export/encoder_choice.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 struct InputCloser {
   void operator()(AVFormatContext* ctx) const { avformat_close_input(&ctx); }
@@ -70,4 +70,4 @@ AvColor av_color(const ColorInfo& color);
 // de ses étiquettes, ceux qui manquent devinés comme mpv (BT.601 en SD, BT.709 au-delà). Sans HDR10.
 ColorInfo color_of(const AVCodecParameters& video);
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

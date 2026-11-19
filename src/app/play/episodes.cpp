@@ -13,7 +13,7 @@
 #include "core/text.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // B35-07 : entrées lues au plus dans le dossier de la vidéo, pour trouver l'épisode voisin.
@@ -242,4 +242,4 @@ bool GrowingFile::grew(const std::filesystem::path& file, std::chrono::milliseco
   return false;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

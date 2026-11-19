@@ -19,7 +19,7 @@
 #include "subs/text_encoding.h"
 #include "subs/timebase.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 std::string lowercase_extension(const std::filesystem::path& path) {
@@ -211,4 +211,4 @@ ScriptMatrix SubtitleTrack::script_matrix() const {
   }
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

@@ -25,7 +25,7 @@
 #include "core/gpu_device.h"
 #include "core/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le GPU de rendu, tel que l'écran l'a ouvert.
 struct GpuFacts {
@@ -82,8 +82,8 @@ struct EngineDownload {
 struct EnginesHere {
   // Le système dont l'écran propose les moteurs : celui de l'hôte, ou celui qu'un test vérifie.
   core::Os os = core::kHostOs;
-  bool tensorrt = false;  // backend ajp_backend_tensorrt trouvé
-  bool coreml = false;    // ajp_backend_coreml (Mac : le moteur Metal de l'écran)
+  bool tensorrt = false;  // backend kirari_backend_tensorrt trouvé
+  bool coreml = false;    // kirari_backend_coreml (Mac : le moteur Metal de l'écran)
   std::vector<EngineDownload> downloads;
 };
 
@@ -168,4 +168,4 @@ std::string_view reason_label(core::Reason reason);
 // la lecture » quand il est rouvert), view.cancelled sur « Annuler ».
 void draw_first_run(FirstRunView& view, float scale);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

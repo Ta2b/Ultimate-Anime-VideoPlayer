@@ -25,7 +25,7 @@ namespace spdlog {
 class logger;
 }
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct TrtexecConfig {
   std::filesystem::path trtexec;    // exécutable livré avec le backend TensorRT
@@ -91,4 +91,4 @@ class TrtexecBuilder {
   std::shared_ptr<spdlog::logger> log_;
 };
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

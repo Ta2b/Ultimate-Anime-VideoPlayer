@@ -23,7 +23,7 @@
 #include "media/packet.h"
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Threads d'un décodage de fond (pré-analyse des plans, images de calibration) : la moitié des cœurs, de 2
 // à 4, pour ne pas disputer les cœurs au rendu, sous Windows comme ailleurs (B15-07).
@@ -77,4 +77,4 @@ class VideoDecoder {
   std::unique_ptr<State> state_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

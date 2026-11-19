@@ -12,7 +12,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // La fenêtre fw × fh au coin (ox, oy) des plans plane_w × plane_h d'un tenseur
 // 1 × C × plane_h × plane_w ; texture : le même tenseur vu en plane_w × (C · plane_h), ou 0.
@@ -145,4 +145,4 @@ struct Filtered {
   }
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

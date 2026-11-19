@@ -17,7 +17,7 @@
 #include "media/track.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct Chain;
 
@@ -143,4 +143,4 @@ bool next_flashing(Chain& to);
 // --shot-cuts (8.7), quand la chronologie change.
 void feed_plan_shots(Chain& to);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

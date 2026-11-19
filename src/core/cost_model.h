@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct CostLine {
   double a = 0.0;
@@ -53,4 +53,4 @@ class CostModel {
   std::array<ImageCost, kMaxImages + 1> costs_{};
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

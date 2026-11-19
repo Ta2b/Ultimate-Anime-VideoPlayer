@@ -12,7 +12,7 @@
 #include "kernels/ref/half.h"
 #include "vulkan_validation.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 std::vector<std::byte> to_bytes(const ir::Value& value, ir::DataType type) {
@@ -51,7 +51,7 @@ std::string describe(const Refusal& refusal) {
 }
 
 NetRig make_net_rig() {
-  auto context = ajp::test::with_validation([](bool validation, ajp::test::ValidationSink sink) {
+  auto context = kirari::test::with_validation([](bool validation, kirari::test::ValidationSink sink) {
     return VkContext::create(
         {.validation = validation, .validation_sink = std::move(sink), .cooperative_matrix = true});
   });
@@ -169,4 +169,4 @@ ir::Value test_values(ir::DataType type, const ir::Dims& dims, std::size_t seed,
   return v;
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

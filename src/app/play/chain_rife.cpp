@@ -16,7 +16,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::unexpected<StageFailure> stage_refused(Refusal refusal, std::optional<ChainStage> stage) {
@@ -226,4 +226,4 @@ std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& i
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

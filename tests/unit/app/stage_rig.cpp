@@ -6,7 +6,7 @@
 #include <string>
 #include <thread>
 
-namespace ajp::app::play::test {
+namespace kirari::app::play::test {
 namespace {
 
 using namespace std::chrono_literals;
@@ -303,4 +303,4 @@ std::vector<Refusal> StageRig::reported() {
   return refusals;
 }
 
-}  // namespace ajp::app::play::test
+}  // namespace kirari::app::play::test

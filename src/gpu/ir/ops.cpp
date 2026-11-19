@@ -7,7 +7,7 @@
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 using namespace detail;
@@ -137,4 +137,4 @@ Evaluated evaluate(const Node& node, std::span<const Value* const> inputs) {
   return op_info(node.op).eval(node, inputs, *outs);
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

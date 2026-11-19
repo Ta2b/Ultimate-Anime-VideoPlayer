@@ -13,7 +13,7 @@
 
 #include "media/shot_cutter.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Le plan d'une image : son rang dans la chronologie (il change à chaque coupe) et ses valeurs à cet
 // instant (celles d'un fondu, interpolées entre son début et sa fin).
@@ -77,4 +77,4 @@ class ShotTimeline {
   mutable std::uint64_t snapshot_version_ = 0;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

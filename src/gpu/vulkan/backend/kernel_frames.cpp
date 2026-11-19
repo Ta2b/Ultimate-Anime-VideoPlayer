@@ -19,7 +19,7 @@
 #include "kernels/spec/color.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 namespace detail {
 
@@ -480,4 +480,4 @@ std::expected<void, Refusal> VulkanKernelOps::ingest(const DecodedFrame& frame, 
   return submit_frames(**rec, sources, frames);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

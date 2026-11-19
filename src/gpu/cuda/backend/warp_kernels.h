@@ -9,7 +9,7 @@
 
 #include "gpu/cuda/backend/ring_surface.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 struct WarpBlendParams {
   const void* a = nullptr;  // 1 × 3 × height × width, FP16
@@ -77,4 +77,4 @@ struct FlowMaxParams {
 
 cudaError_t launch_flow_max(const FlowMaxParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

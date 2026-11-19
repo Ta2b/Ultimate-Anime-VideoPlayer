@@ -12,7 +12,7 @@
 #include <string>
 #include <utility>
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 // left + (right - left)·acc/num, arrondi au plus proche, sans débordement :
@@ -120,4 +120,4 @@ std::expected<void, Refusal> CadenceAccumulator::flush(std::uint32_t epoch) {
   return {};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

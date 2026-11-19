@@ -29,7 +29,7 @@
 #include "core/types.h"
 #include "gpu/span_fp8/e4m3.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 inline constexpr std::size_t kHeaderBytes = 40;
 inline constexpr std::uint32_t kVersion = 2;
@@ -99,4 +99,4 @@ constexpr std::size_t scale_count(std::size_t blocks) {
   return 1 + 3 * blocks;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

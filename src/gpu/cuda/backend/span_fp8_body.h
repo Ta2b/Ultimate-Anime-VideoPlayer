@@ -11,7 +11,7 @@
 
 #include "gpu/cuda/backend/span_fp8_net.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class SpanFp8Body {
  public:
@@ -39,4 +39,4 @@ std::unique_ptr<SpanFp8Body> make_span_fp8_body48(int height, int width, bool fl
 // Les blocs en FP16 sans quantification (span_fp8_net16.cu) : 64 canaux, ou 48 avec K à plat.
 std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

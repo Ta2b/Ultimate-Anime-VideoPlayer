@@ -5,10 +5,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::core;
+using namespace kirari::core;
 
 TEST_CASE("mémoire auto : aller-retour du fichier", "[core][auto_memory]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp_auto_memory_test";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari_auto_memory_test";
   std::filesystem::create_directories(dir);
   const auto file = dir / "auto_memory.toml";
   std::filesystem::remove(file);
@@ -70,7 +70,7 @@ TEST_CASE("mémoire auto : un palier au-dessus de ×6 se relit, jusqu'au plafond
 
 TEST_CASE("mémoire auto : un fichier présent qui ne se lit pas n'est pas réécrit (C36-04)",
           "[core][auto_memory]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp_auto_memory_unreadable";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari_auto_memory_unreadable";
   std::filesystem::remove_all(dir);
   const auto store = dir / "auto_memory.toml";
   std::filesystem::create_directories(store);  // tenu, comme par un indexeur : présent, illisible

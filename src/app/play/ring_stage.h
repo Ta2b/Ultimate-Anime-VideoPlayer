@@ -27,7 +27,7 @@
 #include "core/messages.h"
 #include "core/ring.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class RingStage : public VideoStage, public FrameSink {
  public:
@@ -161,4 +161,4 @@ class RingStage : public VideoStage, public FrameSink {
   std::jthread thread_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

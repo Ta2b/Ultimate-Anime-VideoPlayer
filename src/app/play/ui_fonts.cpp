@@ -10,7 +10,7 @@
 #include <vector>
 
 #include <imgui.h>
-#if AJP_WITH_FONTCONFIG
+#if KIRARI_WITH_FONTCONFIG
 #include <fontconfig/fontconfig.h>
 #endif
 #ifdef _WIN32
@@ -21,11 +21,11 @@
 #include "core/log.h"
 #include "core/text.h"
 #include "core/utf8_path.h"
-#ifdef AJP_WITH_FREETYPE
+#ifdef KIRARI_WITH_FREETYPE
 #include "imgui_freetype.h"
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
@@ -37,7 +37,7 @@ constexpr int kMaxFontBytes = 256 << 20;  // ImGui prend la taille en int
 // que les polices japonaises seules (IPAexGothic, TakaoGothic) n'ont pas (C24-10).
 std::optional<FontFile> system_font(const char* pattern, bool need_cjk = false,
                                     bool need_hangul_hanzi = false) {
-#if AJP_WITH_FONTCONFIG
+#if KIRARI_WITH_FONTCONFIG
   if (FcInit() == FcFalse) return std::nullopt;
   FcPattern* wanted = FcNameParse(reinterpret_cast<const FcChar8*>(pattern));
   if (wanted == nullptr) return std::nullopt;
@@ -228,7 +228,7 @@ void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fallbacks, ImFont*& b
   // Un octet par pixel au lieu de quatre (A24-18) : l'atlas n'a que des couvertures, le dessin
   // (placebo_imgui.cpp) lit une texture r8 comme l'alpha d'un blanc, et chaque glyphe neuf renvoie l'atlas.
   atlas.TexDesiredFormat = ImTextureFormat_Alpha8;
-#ifdef AJP_WITH_FREETYPE
+#ifdef KIRARI_WITH_FREETYPE
   // FreeType lit les polices que stb_truetype ne lit pas : OpenType CFF2 et variables (Noto Sans CJK de
   // Fedora).
   atlas.SetFontLoader(ImGuiFreeType::GetFontLoader());
@@ -247,7 +247,7 @@ void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fallbacks, ImFont*& b
                 file.path);
     }
   }
-#ifdef AJP_WITH_FREETYPE
+#ifdef KIRARI_WITH_FREETYPE
   // Les titres des infobulles du menu : la même police, épaissie par FreeType (panel_tip.cpp).
   bold = add_embedded(atlas, ImGuiFreeTypeLoaderFlags_Bold);
 #else
@@ -255,4 +255,4 @@ void load_fonts(ImFontAtlas& atlas, std::vector<FontFile>& fallbacks, ImFont*& b
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

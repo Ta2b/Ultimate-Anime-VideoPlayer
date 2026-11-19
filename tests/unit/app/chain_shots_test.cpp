@@ -3,7 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("Pré-analyse : aucun plan à lire pour une source HDR sans grade natif", "[app][shots]") {
   PlaySettings settings;
@@ -107,4 +107,4 @@ TEST_CASE("Grade : un plan coupé au point de reprise de l'analyse n'est pas une
   CHECK_FALSE(continues_shot(live, 5'000'000));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

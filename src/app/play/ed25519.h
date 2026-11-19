@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // true si signature (64 octets) est celle de message sous la clé publique (32 octets).
 bool ed25519_verify(std::span<const std::uint8_t, 32> public_key, std::span<const std::uint8_t> message,
@@ -24,4 +24,4 @@ std::optional<std::vector<std::uint8_t>> from_hex(std::string_view hex);
 bool ed25519_verify_hex(std::string_view public_key_hex, std::string_view message,
                         std::string_view signature_hex);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

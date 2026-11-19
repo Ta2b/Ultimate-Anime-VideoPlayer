@@ -6,11 +6,11 @@
 
 #include <spdlog/logger.h>
 
-#include "ajp_vk_compute_spirv.h"
 #include "gpu/vulkan/compute/refuse.h"
 #include "gpu/vulkan/compute/spirv_access.h"
+#include "kirari_vk_compute_spirv.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 Pipeline::~Pipeline() {
   // Un GPU tenu pour bloqué garde ses objets, comme les tampons, images et sémaphores : un enregistrement
@@ -285,4 +285,4 @@ std::expected<const Pipeline*, Refusal> PipelineCache::get(const PipelineDesc& d
   return created;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

@@ -25,7 +25,7 @@ extern "C" {
 #include "app/play/placebo_impl.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les formats des deux plans d'une image 4:2:0 semi-planaire, par son format.
@@ -201,4 +201,4 @@ bool FrameExport::deliver_vulkan(VulkanFrames& v, const std::function<bool(expor
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

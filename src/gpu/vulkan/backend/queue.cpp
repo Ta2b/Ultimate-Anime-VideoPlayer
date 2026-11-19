@@ -4,7 +4,7 @@
 #include <format>
 #include <utility>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Lu par toute soumission, écrit par celle dont les accès sont inconnus : elle attend tout, et
@@ -178,4 +178,4 @@ Done BackendQueue::health() const {
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

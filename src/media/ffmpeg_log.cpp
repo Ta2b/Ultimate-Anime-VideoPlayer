@@ -13,7 +13,7 @@ extern "C" {
 
 #include "media/log.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 struct Folded {
@@ -96,4 +96,4 @@ void route_ffmpeg_log_to_journal() {
   av_log_set_callback(on_ffmpeg_log);
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

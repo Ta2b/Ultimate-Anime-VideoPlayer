@@ -16,8 +16,8 @@
 #include "core/model_index.h"
 #include "core/update_manifest.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
@@ -45,13 +45,14 @@ std::string_view os_name() {
 }
 
 EngineCatalog empty_catalog() {
-  return EngineCatalog{.layout = core::install_layout(host_os(), fs::temp_directory_path() / "ajp-online")};
+  return EngineCatalog{.layout =
+                           core::install_layout(host_os(), fs::temp_directory_path() / "kirari-online")};
 }
 
 }  // namespace
 
 TEST_CASE("Moteurs de la release : un paquet joint après coup rejoint le catalogue", "[app][install]") {
-  const std::string url = std::string(kPrefix) + "ajp-engine-tensorrt.tar.gz";
+  const std::string url = std::string(kPrefix) + "kirari-engine-tensorrt.tar.gz";
   const std::string text = "version = 1\n" + engine(os_name(), url, std::string(64, 'a')) +
                            vendor(os_name(), "https://pypi.nvidia.com/x.whl", "nvinfer.dll");
   EngineCatalog catalog = empty_catalog();
@@ -119,7 +120,7 @@ void write(const fs::path& file, std::string_view text) {
 }
 
 TEST_CASE("Moteurs de la release : sans réseau, la copie gardée et signée sert", "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-cache";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-cache";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -136,7 +137,7 @@ TEST_CASE("Moteurs de la release : sans réseau, la copie gardée et signée ser
 }
 
 TEST_CASE("Moteurs de la release : sans signature valide, l'index n'est pas cru (A26-02)", "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-unsigned";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-unsigned";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -167,7 +168,7 @@ TEST_CASE("Moteurs de la release : sans signature valide, l'index n'est pas cru 
 }
 
 TEST_CASE("Moteurs de la release : l'index et sa signature se téléchargent ensemble", "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-fetch";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-fetch";
   fs::remove_all(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
   const std::vector<std::string> keys{std::string(kTestKey)};
@@ -225,7 +226,7 @@ TEST_CASE("Moteurs de la release : l'index et sa signature se téléchargent ens
 
 TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures, la copie reste (A18-02)",
           "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-offline";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-offline";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -274,7 +275,7 @@ TEST_CASE("Moteurs de la release : une panne réseau se retient quelques heures,
 // : le lecteur remplacé à la main le jour même relit l'index tout de suite.
 TEST_CASE("Moteurs de la release : une copie ou une marque d'une autre version ne retient rien (C26-01)",
           "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-version";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-version";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -307,7 +308,7 @@ TEST_CASE("Moteurs de la release : une copie ou une marque d'une autre version n
 // Sur « Jamais », l'index des moteurs se relit une fois par version, sans péremption quotidienne (C26-02).
 TEST_CASE("Moteurs de la release : sur « Jamais », une fois par version et non chaque jour (C26-02)",
           "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-never";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-never";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -323,7 +324,7 @@ TEST_CASE("Moteurs de la release : sur « Jamais », une fois par version et non
 TEST_CASE(
     "Moteurs de la release : un index signé d'une autre release, ou sans étiquette, est écarté (B51-06)",
     "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-tag";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-tag";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -385,7 +386,7 @@ TEST_CASE("Moteurs de la release : un index ne se lit pas comme un manifeste, ni
 // lendemain.
 TEST_CASE("Moteurs de la release : une copie fraîche d'une autre version est relue (C06-01)",
           "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-newer";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-newer";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -407,7 +408,7 @@ TEST_CASE("Moteurs de la release : une copie fraîche d'une autre version est re
 // C06-04 : un 404 se retient deux heures, pas un jour, et seulement pour la version qui l'a vu.
 TEST_CASE("Moteurs de la release : un 404 se retient deux heures et pour sa version (C06-04)",
           "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-404";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-404";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";
@@ -428,7 +429,7 @@ TEST_CASE("Moteurs de la release : un 404 se retient deux heures et pour sa vers
 // C06-10 : une relecture réussie laisse le texte et la signature de la même relecture, jamais l'un des deux
 // d'une autre ; l'ancienne copie est retirée avant les renommages.
 TEST_CASE("Moteurs de la release : la copie relue remplace l'ancienne en entier (C06-10)", "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-online-pair";
+  const fs::path dir = fs::temp_directory_path() / "kirari-online-pair";
   fs::remove_all(dir);
   fs::create_directories(dir);
   const fs::path cache = dir / "engines-nvidia.lock";

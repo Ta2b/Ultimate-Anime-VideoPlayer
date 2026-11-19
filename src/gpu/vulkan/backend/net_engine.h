@@ -29,7 +29,7 @@
 #include "gpu/vulkan/compute/pipeline.h"
 #include "gpu/vulkan/compute/recording.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Réglages de débogage du moteur.
 struct NetEngineOptions {
@@ -152,4 +152,4 @@ class NetEngine {
   std::vector<std::uint64_t> gone_;
 };
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

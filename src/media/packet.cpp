@@ -8,7 +8,7 @@ extern "C" {
 #include <libavcodec/packet.h>
 }
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Une durée inconnue ou négative ne compte pas : la borne en octets reste.
@@ -111,4 +111,4 @@ std::size_t PacketQueue::bytes() const {
   return bytes_;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -15,7 +15,7 @@
 #include "app/play/upscale_stage.h"
 #include "kernels/spec/detect.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<void, Refusal> UpscaleStage::allocate_smooth() {
   gpu::Backend& backend = *setup_.backend;
@@ -147,4 +147,4 @@ std::expected<void, Refusal> UpscaleStage::span_smooth_b() {
   return ok;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

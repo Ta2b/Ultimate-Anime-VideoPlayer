@@ -19,7 +19,7 @@
 #include <deque>
 #include <optional>
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct VblankGrid {
   double phase_us = 0.0;   // date d'un vblank de la grille
@@ -80,4 +80,4 @@ class VblankClock {
   bool have_last_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

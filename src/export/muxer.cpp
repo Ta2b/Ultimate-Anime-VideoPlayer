@@ -19,7 +19,7 @@ extern "C" {
 
 #include "core/log.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 namespace {
 
 // Les paquets copiés passent jusqu'à 0,5 s devant la vidéo : le mux les entrelace sans attendre.
@@ -84,14 +84,14 @@ bool carried(Container container, const AVCodecParameters& par, const AVOutputFo
 }
 
 // P3.88 : les .partial d'un export interrompu (plantage, coupure) de plus d'un jour, dans le dossier de
-// destination. Seuls les noms que propose le lecteur (« [ajp … ».partial) sont retirés.
+// destination. Seuls les noms que propose le lecteur (« [kirari … ».partial) sont retirés.
 void purge_stale_partials(const std::filesystem::path& dir) {
   std::error_code error;
   const auto now = std::filesystem::file_time_type::clock::now();
   for (std::filesystem::directory_iterator it(dir.empty() ? "." : dir, error), end; !error && it != end;
        it.increment(error)) {
     const std::filesystem::path& path = it->path();
-    if (path.extension() != ".partial" || path.filename().string().find("[ajp ") == std::string::npos)
+    if (path.extension() != ".partial" || path.filename().string().find("[kirari ") == std::string::npos)
       continue;
     std::error_code ignored;
     const auto written = std::filesystem::last_write_time(path, ignored);
@@ -417,4 +417,4 @@ std::expected<void, Refusal> Muxer::finish() {
   return {};
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

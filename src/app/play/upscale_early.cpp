@@ -17,7 +17,7 @@
 #include "core/log.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<gpu::Motion> UpscaleStage::early_motion(std::uint32_t output, bool half) {
   const bool second = half && halves();
@@ -112,4 +112,4 @@ std::expected<UpscaleStage::StrongRun, Refusal> UpscaleStage::strong_for(std::ui
   return run_strong(t, full, half);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

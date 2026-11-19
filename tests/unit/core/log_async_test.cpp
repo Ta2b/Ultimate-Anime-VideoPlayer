@@ -25,23 +25,24 @@ TEST_CASE("Journal : les lignes jetées par la file pleine sont comptées dans l
     const std::scoped_lock lock(mutex);
     lines.emplace_back(msg.payload.begin(), msg.payload.end());
   });
-  ajp::install_log_sinks({slow}, spdlog::level::info, true);
-  ajp::log_channel("app")->info("première");
+  kirari::install_log_sinks({slow}, spdlog::level::info, true);
+  kirari::log_channel("app")->info("première");
   while (!first_seen) std::this_thread::sleep_for(std::chrono::milliseconds(1));
   constexpr std::size_t kExtra = 100;
-  for (std::size_t i = 0; i < ajp::kLogQueue + kExtra; ++i) ajp::log_channel("app")->info("ligne {}", i);
+  for (std::size_t i = 0; i < kirari::kLogQueue + kExtra; ++i)
+    kirari::log_channel("app")->info("ligne {}", i);
   held = false;
   // La file se vide (la première, les kLogQueue gardées et la ligne du compte) avant la dernière, qui ne
   // déborde donc pas.
   for (int waited = 0; waited < 10000; ++waited) {
     {
       const std::scoped_lock lock(mutex);
-      if (lines.size() >= ajp::kLogQueue + 2) break;
+      if (lines.size() >= kirari::kLogQueue + 2) break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  ajp::log_channel("app")->info("dernière");
-  ajp::close_log();
+  kirari::log_channel("app")->info("dernière");
+  kirari::close_log();
   const std::scoped_lock lock(mutex);
   bool counted = false;
   for (const std::string& line : lines)

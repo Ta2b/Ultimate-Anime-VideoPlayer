@@ -8,7 +8,7 @@
 
 #include "kernels/ref/transfer.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Seuils mesurés sur la vidéo de calibration et des épisodes d'anime : une coupe franche dépasse 0,35,
@@ -464,4 +464,4 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
   return shot;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

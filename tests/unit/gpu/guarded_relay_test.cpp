@@ -14,7 +14,7 @@
 namespace {
 
 std::string read_source(const std::string& relative) {
-  std::ifstream in(std::string(AJP_GPU_SOURCE_DIR) + "/" + relative, std::ios::binary);
+  std::ifstream in(std::string(KIRARI_GPU_SOURCE_DIR) + "/" + relative, std::ios::binary);
   std::ostringstream text;
   text << in.rdbuf();
   return text.str();

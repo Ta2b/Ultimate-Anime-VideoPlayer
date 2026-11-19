@@ -2,7 +2,7 @@
 
 #include <format>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 std::string result_name(VkResult result) {
   switch (result) {
@@ -59,4 +59,4 @@ Done check(VkResult result, std::string_view call) {
   return refuse(code, std::format("{} : {}", call, result_name(result)));
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

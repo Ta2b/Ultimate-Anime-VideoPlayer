@@ -28,7 +28,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Raisons d'écrêtage d'NVML (nvmlClocksThrottleReason*).
@@ -471,4 +471,4 @@ LateTelemetry::~LateTelemetry() {
   if (thread_.joinable()) thread_.join();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

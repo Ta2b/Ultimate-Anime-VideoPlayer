@@ -8,7 +8,7 @@
 
 #include "core/clock.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 class AudioClock final : public MasterClock {
  public:
@@ -27,4 +27,4 @@ class AudioClock final : public MasterClock {
   ClockSnapshot snapshot_;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

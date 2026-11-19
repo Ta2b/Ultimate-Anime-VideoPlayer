@@ -38,7 +38,7 @@
 #include "subs/subtitle_frame.h"
 #include "subs/subtitle_renderer.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Demandes de sous-titres en vol au plus, et réponses gardées : ensemble, render ne tient jamais
 // plus de kMaxAtlasesInFlight − 1 atlas (contrat de subs/subtitle_frame.h). Les réponses gardées sont
@@ -433,4 +433,4 @@ class Session {
   std::int64_t presented_seq_ = 0;  // présentations réussies (PresentRecord::seq)
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

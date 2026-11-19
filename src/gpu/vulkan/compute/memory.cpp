@@ -8,7 +8,7 @@
 
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr VkMemoryPropertyFlags kHostAccess =
@@ -356,4 +356,4 @@ void MemoryAllocator::release(std::uint64_t id, VkDeviceSize offset, VkDeviceSiz
   }
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

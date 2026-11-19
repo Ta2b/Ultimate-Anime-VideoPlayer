@@ -7,7 +7,6 @@
 #include <set>
 #include <system_error>
 
-#include "ajp_vk_backend_spirv.h"
 #include "core/file_sync.h"
 #include "core/utf8_path.h"
 #include "gpu/ir/graph.h"
@@ -18,8 +17,9 @@
 #include "gpu/vulkan/backend/net_hoist.h"
 #include "gpu/vulkan/backend/net_lower.h"
 #include "gpu/vulkan/backend/net_span8.h"
+#include "kirari_vk_backend_spirv.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 // Chaque sortie du graphe vient d'un nœud : une entrée ou une constante rendue telle quelle
@@ -260,4 +260,4 @@ std::expected<std::vector<std::byte>, Refusal> read_file(const std::filesystem::
   return bytes;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

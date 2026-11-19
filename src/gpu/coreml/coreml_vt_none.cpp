@@ -1,7 +1,7 @@
 // Hors d'un Mac (le runtime construit sous Linux pour ses tests) : pas d'interpolation d'Apple.
 #include "gpu/coreml/coreml_vt.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 std::unexpected<Refusal> unavailable() {
@@ -25,4 +25,4 @@ std::expected<void, Refusal> vt_gpu_check(vt::Pixels /*format*/, int /*width*/, 
   return unavailable();
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

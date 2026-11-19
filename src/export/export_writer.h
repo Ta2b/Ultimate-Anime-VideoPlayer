@@ -35,7 +35,7 @@
 struct AVBufferRef;
 struct AVFrame;
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 class FrameEncoder;
 class Muxer;
@@ -183,4 +183,4 @@ class ExportWriter {
   std::jthread thread_;
 };
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

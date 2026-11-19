@@ -9,17 +9,18 @@
 #include <utility>
 
 #include "app/play/data_dirs.h"
+#include "app/play/legacy_dirs.h"
 #include "app/play/pumped_task.h"
 #include "core/log.h"
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& place, bool purge_updates) {
   const auto said = [](const std::string& line) { log_channel("app")->info("données : {}", line); };
   // Moteurs, modèles et caches en local (P3.15) ; ceux d'une version d'avant y sont déplacés une fois. Sous
-  // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/ajp (A36-08).
+  // Linux, les caches qui se refont seuls vont ensuite dans ~/.cache/kirari (A36-08).
   DataPlaces places{.heavy = local_data(data)};
   move_heavy_data(data, places.heavy, said);
   std::filesystem::path xdg_cache;
@@ -29,10 +30,14 @@ DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& pla
     xdg_cache = core::path_from_utf8(xdg);
 #endif
   places.cache = cache_data(place.home, places.heavy, xdg_cache);
+  // Le dossier des caches d'ajp (<caches>/ajp) devient celui de Kirari (<caches>/kirari), moteurs construits
+  // compris (legacy_dirs.h).
+  if (places.cache != places.heavy)
+    adopt_legacy_dir(places.cache.parent_path() / kLegacyName, places.cache, said);
   move_cache_data(places.heavy, places.cache, said);
-  // Les caches qu'une version d'avant a laissés dans ~/.cache/ajp suivent (sans quoi les moteurs se
-  // reconstruisaient).
-  if (!place.home.empty()) move_cache_data(place.home / ".cache" / "ajp", places.cache, said);
+  // Les caches qu'une version d'avant a laissés dans ~/.cache/ajp suivent quand $XDG_CACHE_HOME les met
+  // ailleurs (sans quoi les moteurs se reconstruisaient).
+  if (!place.home.empty()) move_cache_data(place.home / ".cache" / kLegacyName, places.cache, said);
   // La mise à jour n'est plus qu'une notification : les archives préparées et la copie de l'ancienne
   // installation des versions qui s'appliquaient elles-mêmes se retirent (A26-06) ; le cache des moteurs
   // TensorRT est borné (A33-04).
@@ -60,4 +65,4 @@ DataPlaces settle_data(const std::filesystem::path& data, const PlayerPlace& pla
   return places;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

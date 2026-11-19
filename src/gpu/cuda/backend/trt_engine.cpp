@@ -13,7 +13,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Forme NCHW fixe d'un tenseur ; rien si le rang n'est pas 4 ou si une dimension est libre.
@@ -348,4 +348,4 @@ std::expected<void, Refusal> TrtEngine::launch(cudaStream_t stream,
   return replay();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

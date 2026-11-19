@@ -8,7 +8,7 @@
 #include "kernels/image.h"
 #include "kernels/ref/warp.h"
 
-namespace ajp::test {
+namespace kirari::test {
 
 inline constexpr float kPanDx = 0.6F;
 inline constexpr float kPanDy = 0.2F;
@@ -42,4 +42,4 @@ inline kernels::ref::Motion pan_motion(int w, int h, float f0x, float f0y, float
   return m;
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

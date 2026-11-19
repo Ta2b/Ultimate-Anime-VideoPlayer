@@ -30,7 +30,7 @@ struct SDL_Window;
 union SDL_Event;
 struct ImGuiContext;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct EngineCatalog;
 
@@ -171,4 +171,4 @@ class PlayerUi {
   int top_ = 0;                       // hauteur du titre
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

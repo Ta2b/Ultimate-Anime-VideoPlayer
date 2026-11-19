@@ -9,7 +9,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 struct InputShape {
   std::string name;
@@ -22,4 +22,4 @@ struct InputShape {
 // dimension reste inconnue est refusée (ShapeInvalid).
 std::expected<void, Refusal> infer_shapes(Graph& graph, std::span<const InputShape> inputs = {});
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

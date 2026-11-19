@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Résumé du profil GPU d'un banc A/B (tools/bench/banc.sh) : lit les extraitN-tourT-V-*.gpu.tsv qu'écrit
-`ajp play --stats` à côté de ses relevés et donne, par étape (« RIFE · rife_v4.25 », SPAN…), la médiane de chaque
+`kirari play --stats` à côté de ses relevés et donne, par étape (« RIFE · rife_v4.25 », SPAN…), la médiane de chaque
 passage, A puis B, et l'écart des médianes de B contre A.
 
   python3 -I tools/bench/banc_gpu_resume.py DOSSIER

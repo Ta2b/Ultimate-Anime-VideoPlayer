@@ -18,7 +18,7 @@
 
 #include "core/types.h"
 
-namespace ajp::gpu::ir::proto {
+namespace kirari::gpu::ir::proto {
 
 using Bytes = std::span<const std::byte>;
 
@@ -115,4 +115,4 @@ std::expected<std::string, Refusal> as_string(const Field& field);
 std::expected<void, Refusal> append_int64s(const Field& field, std::vector<std::int64_t>& out);
 std::expected<void, Refusal> append_floats(const Field& field, std::vector<float>& out);
 
-}  // namespace ajp::gpu::ir::proto
+}  // namespace kirari::gpu::ir::proto

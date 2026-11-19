@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <format>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr VkDeviceSize kWordAddressable = VkDeviceSize{1} << 32U;
@@ -156,4 +156,4 @@ Done check_same_size(std::uint32_t w0, std::uint32_t h0, std::uint32_t w1, std::
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

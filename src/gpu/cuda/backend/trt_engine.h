@@ -26,7 +26,7 @@ class ICudaEngine;
 class IExecutionContext;
 }  // namespace nvinfer1
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class TrtEngine final : public Engine {
  public:
@@ -121,4 +121,4 @@ class TrtEngine final : public Engine {
                                       const GraphBook<std::vector<std::uintptr_t>>::Pick& pick);
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

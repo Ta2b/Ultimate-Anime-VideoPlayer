@@ -7,7 +7,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Vrai pendant qu'on tient le curseur du délai audio.
 bool sound_tab(PlaySettings& d, const SettingsChoices& choices);
@@ -16,4 +16,4 @@ bool sound_tab(PlaySettings& d, const SettingsChoices& choices);
 // suivre ou la nommer est le même appareil, le délai reste (B23-06).
 void switch_device_delay(PlaySettings& d, const std::string& before, std::string_view system_default = {});
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -9,7 +9,7 @@
 #include "app/play/precision.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Vide : DistilDRBA fusionné s'essaie. Sinon la raison, pour le journal. Le cran de précision se juge à part
 // (drba_tier), une fois le modèle trouvé.
@@ -28,4 +28,4 @@ struct DrbaTier {
 };
 DrbaTier drba_tier(PrecisionTier asked, bool fused_possible, TierSupport graphs);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

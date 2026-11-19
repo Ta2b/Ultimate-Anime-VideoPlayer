@@ -2,7 +2,7 @@
 
 #include "app/play/i18n_fr.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Assistant et écran des moteurs : (clé anglaise, français).
@@ -16,7 +16,8 @@ constexpr std::array kWizardTexts{
           "Lecteur vidéo par défaut : demandé à la fin de l'assistant (Général > Application)"},
     Entry{"Integration", "Intégration"},
     Entry{"Make it the default video player", "En faire le lecteur vidéo par défaut"},
-    Entry{"AJP is added to \"Open with\" in any case.", "AJP s'ajoute à « Ouvrir avec » dans tous les cas."},
+    Entry{"Kirari is added to \"Open with\" in any case.",
+          "Kirari s'ajoute à « Ouvrir avec » dans tous les cas."},
     Entry{"Ready", "Prêt"},
     Entry{"Vulkan works on every GPU. Checked engines install at the end of the assistant, verified by hash; "
           "Vulkan takes over if one fails.",
@@ -40,8 +41,8 @@ constexpr std::array kWizardTexts{
     Entry{"inactive", "inactif"},
     Entry{"Engine", "Moteur"},
     Entry{"Estimated level: {}", "Niveau estimé : {}"},
-    Entry{"Everything can be changed later in Settings (p). To redo this: ajp --first-run.",
-          "Tout se change ensuite dans les paramètres (p). Pour le refaire : ajp --first-run."},
+    Entry{"Everything can be changed later in Settings (p). To redo this: kirari --first-run.",
+          "Tout se change ensuite dans les paramètres (p). Pour le refaire : kirari --first-run."},
     Entry{"Fastest for this GPU", "Le plus rapide pour ce GPU"},
     Entry{"I accept its licence", "J'accepte sa licence"},
     Entry{"Languages", "Langues"},
@@ -168,4 +169,4 @@ std::span<const Entry> french_wizard() {
   return kWizardTexts;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

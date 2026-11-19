@@ -6,7 +6,7 @@
 #include <limits>
 #include <string_view>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 std::string quoted(std::string_view text) {
@@ -205,4 +205,4 @@ bool keep_acc16(const Verdict& f32, const Verdict& f16, double ms_f32, double ms
   return f32.passed && f16.passed && f32.psnr_mean_db - f16.psnr_mean_db <= kMaxAcc16PsnrLossDb && faster;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

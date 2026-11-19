@@ -4,7 +4,7 @@
 
 #include <imgui.h>
 
-namespace ajp::app::play::icons {
+namespace kirari::app::play::icons {
 
 // Couleurs sRGB : blanc pour le texte et les icônes, un bleu clair pour la progression.
 ImU32 white(float a);
@@ -33,4 +33,4 @@ void icon_gear(const Pen& pen, ImVec2 c, float size);
 // Chapitre précédent (direction −1) ou suivant (+1) : un triangle contre une barre.
 void icon_chapter(const Pen& pen, ImVec2 c, float size, int direction);
 
-}  // namespace ajp::app::play::icons
+}  // namespace kirari::app::play::icons

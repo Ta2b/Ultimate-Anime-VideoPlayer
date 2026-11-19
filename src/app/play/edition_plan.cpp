@@ -1,6 +1,6 @@
 #include "app/play/edition_plan.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 bool EditionPlan::inside(std::size_t index, std::int64_t pts_us, std::int64_t period_us) const {
   const PlayPart& part = parts_[index];
@@ -53,4 +53,4 @@ EditionPlan::Step EditionPlan::shown(std::int64_t pts_us, std::int64_t period_us
   return Jump{parts_[index_].start_us};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

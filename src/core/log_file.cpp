@@ -11,7 +11,7 @@
 #include <spdlog/details/log_msg.h>
 #include <spdlog/sinks/base_sink.h>
 
-namespace ajp {
+namespace kirari {
 namespace {
 
 namespace fs = std::filesystem;
@@ -101,7 +101,7 @@ void rotate_session_logs(const fs::path& file, int kept, std::size_t parts) {
       if (fs::exists(from, error)) {
         fs::rename(from, to, error);
       } else if (i == 0) {
-        fs::remove(to, error);  // ajp.1.log.1 d'une séance plus ancienne que ajp.log.1
+        fs::remove(to, error);  // kirari.1.log.1 d'une séance plus ancienne que kirari.log.1
       }
     }
   }
@@ -113,4 +113,4 @@ spdlog::sink_ptr log_file_sink(const fs::path& file, std::size_t max_bytes, std:
   return sink;
 }
 
-}  // namespace ajp
+}  // namespace kirari

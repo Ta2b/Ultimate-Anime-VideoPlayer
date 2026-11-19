@@ -29,7 +29,7 @@
 #include "render/display_model.h"
 #include "render/output_tune.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Nits d'un code PQ (ST 2084).
@@ -433,4 +433,4 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   return nits;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -8,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace ajp {
+namespace kirari {
 
 // Instant hôte en microsecondes, sur l'horloge monotone commune à tous les threads.
 inline std::int64_t host_now_us() {
@@ -38,4 +38,4 @@ class MasterClock {
   virtual ClockSnapshot snapshot() const = 0;
 };
 
-}  // namespace ajp
+}  // namespace kirari

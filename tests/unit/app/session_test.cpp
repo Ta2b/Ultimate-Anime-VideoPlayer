@@ -14,7 +14,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -48,7 +48,7 @@ struct Rig {
 
 TEST_CASE("Amorce : la première image part tout de suite, puis l'horloge démarre de son pts",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.begin(0);
   rig.tick();
@@ -73,7 +73,7 @@ TEST_CASE("Amorce : la première image part tout de suite, puis l'horloge démar
 }
 
 TEST_CASE("Une horloge audio qui ne court jamais cède la main à l'horloge hôte", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 40'000));
   rig.session.handle(ring_frame(1, 80'000));
@@ -94,7 +94,7 @@ TEST_CASE("Une horloge audio qui ne court jamais cède la main à l'horloge hôt
 }
 
 TEST_CASE("Une horloge qui court ou une pause n'est pas une perte d'audio", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 40'000));
   rig.session.handle(ring_frame(1, 80'000));
@@ -109,7 +109,7 @@ TEST_CASE("Une horloge qui court ou une pause n'est pas une perte d'audio", "[ap
 }
 
 TEST_CASE("Les images doublées par l'horloge sont sautées et leurs slots rendus", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -127,7 +127,7 @@ TEST_CASE("Les images doublées par l'horloge sont sautées et leurs slots rendu
 
 TEST_CASE("Une image pas encore écrite n'est ni montrée ni rendue : l'écran garde la sienne",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -155,7 +155,7 @@ TEST_CASE("Une image pas encore écrite n'est ni montrée ni rendue : l'écran g
 }
 
 TEST_CASE("Un réglage de rendu recompose l'image tenue, même si rien d'autre n'a bougé", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -172,7 +172,7 @@ TEST_CASE("Un réglage de rendu recompose l'image tenue, même si rien d'autre n
 }
 
 TEST_CASE("Retard des images : de la soumission à l'écriture vue par main", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   FrameLatency latency;
   Rig rig(SessionConfig{.latency = &latency});
   rig.screen.now_us = 1'000'000;
@@ -203,7 +203,7 @@ TEST_CASE("Retard des images : de la soumission à l'écriture vue par main", "[
 }
 
 TEST_CASE("Amorce : la première image attend d'être écrite, l'horloge aussi", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.screen.unwritten = {0};
   rig.session.handle(ring_frame(0, 40'000));
@@ -217,7 +217,7 @@ TEST_CASE("Amorce : la première image attend d'être écrite, l'horloge aussi",
 }
 
 TEST_CASE("Seek : une image pas encore écrite est rendue une fois écrite, jamais avant", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -244,7 +244,7 @@ TEST_CASE("Seek : une image pas encore écrite est rendue une fois écrite, jama
 }
 
 TEST_CASE("Seek : pause, Flush puis Seek, et les images de l'époque passée sont rendues", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -273,7 +273,7 @@ TEST_CASE("Seek : pause, Flush puis Seek, et les images de l'époque passée son
 }
 
 TEST_CASE("Image par image : pause, puis un seek exact d'une image de la source", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -291,7 +291,7 @@ TEST_CASE("Image par image : pause, puis un seek exact d'une image de la source"
 }
 
 TEST_CASE("Image par image : vers l'avant, l'image suivante de la file sans seek (P3.42)", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -310,7 +310,7 @@ TEST_CASE("Image par image : vers l'avant, l'image suivante de la file sans seek
 
 TEST_CASE("Seek : un Flush refusé n'empêche pas le Seek, et le tout est rejoué jusqu'à passer",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -338,7 +338,7 @@ TEST_CASE("Seek : un Flush refusé n'empêche pas le Seek, et le tout est rejou�
 }
 
 TEST_CASE("Un seek est borné au fichier", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 10'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -349,7 +349,7 @@ TEST_CASE("Un seek est borné au fichier", "[app][session]") {
 }
 
 TEST_CASE("Pause : l'horloge s'arrête, la reprise repart de l'image montrée", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -362,7 +362,7 @@ TEST_CASE("Pause : l'horloge s'arrête, la reprise repart de l'image montrée", 
 }
 
 TEST_CASE("Seek en pause : la nouvelle image s'affiche, l'horloge reste arrêtée", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -376,7 +376,7 @@ TEST_CASE("Seek en pause : la nouvelle image s'affiche, l'horloge reste arrêté
 }
 
 TEST_CASE("Sous-titres : une demande par image, l'image du même pts est dessinée", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
   rig.session.handle(ring_frame(0, 0));
   rig.session.handle(ring_frame(1, 41'000));
@@ -402,7 +402,7 @@ TEST_CASE("Sous-titres : une demande par image, l'image du même pts est dessin�
 
 TEST_CASE("Sous-titres : chaque vsync de l'image montrée a ses sous-titres, ring plein en avance",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   // Le clignotement du 19 octobre : l'image 0 à l'écran, trois images en avance dans le ring ;
   // leurs réponses chassaient celle de 0, qui perdait ses sous-titres jusqu'à l'image suivante.
   Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
@@ -432,7 +432,7 @@ struct PeriodSource final : StatsSource {
 }  // namespace
 
 TEST_CASE("Sous-titres : une image tenue 3 s, les demandes suivent la grille des sources", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   PeriodSource source;
   Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080, .extra = &source});
   rig.session.handle(ring_frame(0, 0));
@@ -454,7 +454,7 @@ TEST_CASE("Sous-titres : une image tenue 3 s, les demandes suivent la grille des
 
 TEST_CASE("VRR : une image tenue est représentée sous le plancher de l'écran, pas sans plancher",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const auto presented = [](std::int64_t floor_us) {
     Rig rig(SessionConfig{.vrr_floor_us = floor_us});
     rig.session.handle(ring_frame(0, 0));
@@ -472,7 +472,7 @@ TEST_CASE("VRR : une image tenue est représentée sous le plancher de l'écran,
 }
 
 TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();  // amorce : 0 à l'écran
@@ -491,7 +491,7 @@ TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé",
 }
 
 TEST_CASE("Cadence fixe : l'image est représentée à chaque période de l'écran", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.display_period_us = 6'000});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();  // amorce : 0 à l'écran
@@ -512,7 +512,7 @@ TEST_CASE("Cadence fixe : l'image est représentée à chaque période de l'écr
 }
 
 TEST_CASE("Statistiques masquées par défaut ; les refus ne vont qu'aux statistiques", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.header = {"SPAN ×2"}});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -536,7 +536,7 @@ TEST_CASE("Statistiques masquées par défaut ; les refus ne vont qu'aux statist
 }
 
 TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   struct Extra final : StatsSource {
     std::optional<std::string> rife() const override { return "RIFE : 3 paires"; }
     std::optional<std::string> memory() override { return std::nullopt; }
@@ -564,7 +564,7 @@ TEST_CASE("Les mesures s'affichent une par une, dans l'ordre de l'OSD", "[app][s
 
 TEST_CASE("La taille des sous-titres va dans les demandes, l'image à l'écran est redemandée",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
   rig.session.handle(ring_frame(0, 0));
   rig.session.handle(subs::SubtitleFrame{.pts_us = 0, .epoch = 0});  // réponse : rien à dessiner
@@ -579,7 +579,7 @@ TEST_CASE("La taille des sous-titres va dans les demandes, l'image à l'écran e
 }
 
 TEST_CASE("Amorce : la première image attend ses sous-titres, au plus 100 ms", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.subtitles = true, .video_width = 1920, .video_height = 1080});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -600,7 +600,7 @@ TEST_CASE("Amorce : la première image attend ses sous-titres, au plus 100 ms", 
 }
 
 TEST_CASE("Volume et délai audio vont au thread audio", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.command(cmd::SetVolume{.gain = 0.5F});
   rig.session.command(cmd::SetAudioDelay{.delay_us = -40'000});
@@ -610,7 +610,7 @@ TEST_CASE("Volume et délai audio vont au thread audio", "[app][session]") {
 }
 
 TEST_CASE("La barre montre la cible d'un seek en cours, puis l'image", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 100'000'000});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -624,7 +624,7 @@ TEST_CASE("La barre montre la cible d'un seek en cours, puis l'image", "[app][se
 }
 
 TEST_CASE("Fin de flux : la lecture finit quand plus rien n'arrive", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -640,7 +640,7 @@ TEST_CASE("Fin de flux : la lecture finit quand plus rien n'arrive", "[app][sess
 }
 
 TEST_CASE("Durée de lecture et plein écran différé", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.stop_after_us = 1'000'000, .fullscreen_after_us = 500'000});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -655,7 +655,7 @@ TEST_CASE("Durée de lecture et plein écran différé", "[app][session]") {
 }
 
 TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.header = {"SPAN ×2"}, .stats = {.all = true}});
   rig.session.handle(ring_frame(0, 0));
   rig.tick();
@@ -669,7 +669,7 @@ TEST_CASE("L'OSD dit le temps par image et les images sautées", "[app][session]
 }
 
 TEST_CASE("Fluidité : les images manquées se lisent dans l'écart des pts", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   FrameStats stats;
   stats.paced(0, 0, 40'000);
   stats.paced(40'000, 1'000, 40'000);
@@ -693,7 +693,7 @@ TEST_CASE("Fluidité : les images manquées se lisent dans l'écart des pts", "[
 }
 
 TEST_CASE("Fluidité : les images neuves par seconde, relues chaque seconde", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   FrameStats stats;
   for (int k = 0; k <= 60; ++k) stats.presented(100, 1'000'000 + std::int64_t{k} * 16'667, true);
   CHECK(format_fps(stats.shown_fps) == "60,0");
@@ -710,7 +710,7 @@ struct OutputRate final : StatsSource {
 };
 
 TEST_CASE("Synchro sur l'écran : la vitesse suit la cadence de sortie, 1 sans calage", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   OutputRate rate;
   Rig rig(SessionConfig{.display_hz = 60.0, .display_sync = true, .extra = &rate});
   rig.tick();
@@ -738,7 +738,7 @@ TEST_CASE("Synchro sur l'écran : la vitesse suit la cadence de sortie, 1 sans c
 }
 
 TEST_CASE("Latence de l'écran : l'image choisie est celle qui tombe à son apparition", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   // 60 Hz, rendu de 1 ms, file libre : l'image paraît 1 + 8,3 ms après son choix en moyenne ; on
   // choisit donc jusqu'à 1 + 8,3 + 8,3 = 17,7 ms d'avance sur l'horloge.
   Rig rig(SessionConfig{.display_period_us = 16'667});
@@ -764,7 +764,7 @@ TEST_CASE("Latence de l'écran : l'image choisie est celle qui tombe à son appa
 }
 
 TEST_CASE("Latence de l'écran : file pleine, l'image passe après celle déjà en file", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.display_period_us = 16'667, .swapchain_depth = 2});
   rig.screen.acquire_us = 10'000;  // chaque acquisition attend une place (file FIFO pleine)
   rig.session.handle(ring_frame(0, 0));
@@ -783,4 +783,4 @@ TEST_CASE("Latence de l'écran : file pleine, l'image passe après celle déjà 
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

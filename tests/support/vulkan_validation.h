@@ -1,5 +1,5 @@
 // La couche de validation Vulkan dans les tests. Les bancs qui créent un appareil la demandent
-// selon AJP_TEST_VULKAN_VALIDATION : « off » jamais ; « on » (le défaut) quand elle est installée,
+// selon KIRARI_TEST_VULKAN_VALIDATION : « off » jamais ; « on » (le défaut) quand elle est installée,
 // et sans elle sinon, avec un avertissement ; « require » : son absence fait échouer le test, ce
 // que la CI et le préflight exigent. Chaque erreur de la couche est notée sous le nom du test
 // courant, et le main de Catch2 (vulkan_test_main.cpp) fait échouer l'exécutable s'il en reste
@@ -15,7 +15,7 @@
 
 #include "core/types.h"
 
-namespace ajp::test {
+namespace kirari::test {
 
 enum class ValidationMode : std::uint8_t { Off, IfPresent, Require };
 ValidationMode validation_mode();
@@ -47,4 +47,4 @@ auto with_validation(Create&& create) {
   return create(false, ValidationSink{});
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

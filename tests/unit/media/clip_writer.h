@@ -16,7 +16,7 @@ extern "C" {
 #include <libavutil/rational.h>
 }
 
-namespace ajp::media::test {
+namespace kirari::media::test {
 
 enum class VideoCodec : std::uint8_t { Mpeg4, Ffv1 };
 
@@ -124,4 +124,4 @@ inline constexpr char kAssHeader[] =
     "Default,Sans,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n\n"
     "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n";
 
-}  // namespace ajp::media::test
+}  // namespace kirari::media::test

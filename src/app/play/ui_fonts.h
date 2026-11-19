@@ -16,7 +16,7 @@
 struct ImFont;
 struct ImFontAtlas;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Inter 4.1, Regular (third_party/inter, SIL OFL 1.1), octet pour octet.
 extern const std::string_view kUiFontTtf;
@@ -64,4 +64,4 @@ inline constexpr std::array<WindowsFontGroup, 5> kWindowsFonts{{
     {.role = "symboles", .files = {L"seguisym.ttf"}},
 }};
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -17,7 +17,7 @@
 #include "kernels/ref/half.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 // Le motif d'entrée dans le type du tenseur, ramené à [0, 1] comme une image.
@@ -471,4 +471,4 @@ std::string reduced_precision_notice(std::string_view model, std::span<const Ker
                      sum.layers, loss, gain);
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

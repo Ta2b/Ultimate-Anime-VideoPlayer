@@ -14,7 +14,7 @@
 #include "core/dir_entries.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::uint64_t download_bytes(const EngineCatalog& catalog, const core::EnginePackage& package,
                              std::string_view arch) {
@@ -82,7 +82,7 @@ bool vendor_on_hand(const core::VendorFile& file, const std::filesystem::path& e
       continue;
     // Un essai de lien sur le fichier lui-même, retiré aussitôt : le volume dit s'il en accepte.
     std::filesystem::path probe = candidate;
-    probe += ".ajp-lien";
+    probe += ".kirari-lien";
     std::filesystem::create_hard_link(candidate, probe, checked);
     const bool linkable = !checked;
     std::filesystem::remove(probe, checked);
@@ -150,4 +150,4 @@ std::expected<void, Refusal> check_space(const InstallSpace& space, std::uint64_
           format_size(available), core::to_utf8(where)));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

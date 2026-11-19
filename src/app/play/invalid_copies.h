@@ -5,11 +5,11 @@
 #include <cstddef>
 #include <filesystem>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::size_t kKeptInvalidCopies = 3;
 
 // Ne garde que les kept copies les plus récentes de path (l'horodatage du nom se trie comme la date).
 void prune_invalid_copies(const std::filesystem::path& path, std::size_t kept = kKeptInvalidCopies);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

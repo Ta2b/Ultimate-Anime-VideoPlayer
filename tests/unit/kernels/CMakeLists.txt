@@ -1,4 +1,4 @@
-ajp_add_unit_tests(kernels
+kirari_add_unit_tests(kernels
   SOURCES
     color_test.cpp
     deband_test.cpp
@@ -21,11 +21,11 @@ ajp_add_unit_tests(kernels
     warp_pan_test.cpp)
 
 # Les tests évaluent les formules constexpr de spec.h avec les arrondis de la référence :
-# ajp_add_unit_tests leur donne -ffp-contract=off. Les ports FMA simulés appellent std::fma.
+# kirari_add_unit_tests leur donne -ffp-contract=off. Les ports FMA simulés appellent std::fma.
 
 # L'en-tête GLSL généré se compile avec glslc, trouvé quand le lecteur est construit.
-if(AJP_GLSLC)
+if(KIRARI_GLSLC)
   add_test(NAME "kernels: l'en-tête GLSL de spec.h se compile avec glslc"
-    COMMAND "${AJP_GLSLC}" -fshader-stage=compute -I "${AJP_KERNELS_GLSL_DIR}"
+    COMMAND "${KIRARI_GLSLC}" -fshader-stage=compute -I "${KIRARI_KERNELS_GLSL_DIR}"
             "${CMAKE_CURRENT_SOURCE_DIR}/spec_check.comp" -o "${CMAKE_CURRENT_BINARY_DIR}/spec_check.spv")
 endif()

@@ -17,7 +17,7 @@
 
 #include "media/faces.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // La cascade embarquée, octet pour octet (face_cascade_data.cpp, généré).
 extern const std::string_view kAnimeFaceCascade;
@@ -92,4 +92,4 @@ class FaceCascade {
   std::vector<Stage> stages_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -7,7 +7,7 @@
 
 #include "render/shaders.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 std::expected<Sharpen, Refusal> Sharpen::create(pl_gpu gpu) {
   const std::string_view text = shaders::sharpen;
@@ -54,4 +54,4 @@ void Sharpen::set_strength(double strength) {
   if (param_ != nullptr) param_->f = static_cast<float>(strength_);
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

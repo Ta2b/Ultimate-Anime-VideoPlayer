@@ -9,7 +9,7 @@
 #include "core/utf8_path.h"
 #include "gpu/ir/import.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 bool is_span8(const std::filesystem::path& path) {
   return path.extension() == ".span8";
@@ -44,4 +44,4 @@ std::expected<ir::Graph, Refusal> load_network_graph(const std::filesystem::path
   return span8_graph(*package);
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

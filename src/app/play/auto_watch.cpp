@@ -1,6 +1,6 @@
 #include "app/play/auto_watch.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 AutoActions AutoWatch::turn(const AutoTurn& t) {
   AutoActions out;
@@ -37,4 +37,4 @@ AutoActions AutoWatch::turn(const AutoTurn& t) {
   return out;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

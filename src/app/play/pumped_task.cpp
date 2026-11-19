@@ -15,7 +15,7 @@
 #include "app/play/relaunch_target.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 void pump_window_events() {
   SDL_PumpEvents();
@@ -111,4 +111,4 @@ std::string pumped_cuda_arch(std::string_view gpu_name) {
       .value_or(std::string());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -1,4 +1,4 @@
-// Lecture du modèle avant sa construction, propre à ajp : le fork lisait l'ONNX
+// Lecture du modèle avant sa construction, propre à kirari : le fork lisait l'ONNX
 // sans le comparer à une spécification.
 #include "prepare/model_source.h"
 
@@ -17,7 +17,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 OnnxType onnx_type(gpu::TensorType type) {
@@ -252,4 +252,4 @@ std::expected<std::optional<gpu::ShapeSet>, Refusal> profile_shapes(const OnnxIn
   return shapes;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

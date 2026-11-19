@@ -9,7 +9,7 @@
 #include "gpu/span_fp8/quantize.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 using ir::onnx::Attribute;
@@ -145,7 +145,7 @@ std::expected<ir::onnx::Model, Refusal> package_model(const Package& package, co
   }
 
   ir::onnx::Model model{.ir_version = 8,
-                        .producer_name = "ajp-span8",
+                        .producer_name = "kirari-span8",
                         .producer_version = "1",
                         .opsets = {{.domain = "", .version = 17}},
                         .graph = {}};
@@ -212,4 +212,4 @@ std::expected<ir::onnx::Model, Refusal> package_model(const Package& package, co
   return model;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

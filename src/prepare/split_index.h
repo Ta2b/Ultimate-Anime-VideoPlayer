@@ -11,7 +11,7 @@
 
 #include "prepare/onnx_split.h"
 
-namespace ajp::prepare::split {
+namespace kirari::prepare::split {
 
 // Le graphe indexé par nom de nœud et par tenseur produit.
 class Index {
@@ -87,4 +87,4 @@ inline std::string block_name(int b, std::string_view tail) {
   return std::format("/block{}/{}", b, tail);
 }
 
-}  // namespace ajp::prepare::split
+}  // namespace kirari::prepare::split

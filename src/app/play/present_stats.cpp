@@ -7,7 +7,7 @@
 #include <string_view>
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 struct Column {
@@ -87,4 +87,4 @@ void StatsSink::flush() {
                });
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

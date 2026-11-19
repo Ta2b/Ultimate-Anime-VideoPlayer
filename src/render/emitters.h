@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace ajp::render {
+namespace kirari::render {
 
 inline constexpr int kEmitterBlock = 8;
 inline constexpr int kEmitterRingIn = 2;  // la couronne : les blocs à une distance de 2 à 4 (Tchebychev)
@@ -32,4 +32,4 @@ struct EmitterParams {
 // La part d'émetteur de chaque pixel, de 0 à 1 ; vide si l'image est mal formée.
 std::vector<float> emitter_map_v2(const EmitterImage& image, const EmitterParams& params = {});
 
-}  // namespace ajp::render
+}  // namespace kirari::render

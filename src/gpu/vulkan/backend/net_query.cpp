@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 QueryFunctions query_functions(const VkContext& context) {
   const auto get = [&](const char* name) {
@@ -54,4 +54,4 @@ Done QueryPool::create() {
   return check(fn_.create(context_.device(), &info, nullptr, &pool_), "vkCreateQueryPool");
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

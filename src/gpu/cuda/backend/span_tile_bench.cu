@@ -3,9 +3,9 @@
 // aléatoires, sur la taille du corps du réseau (la moitié de l'image d'entrée, après le dégroupage). Le temps
 // par lancement et le débit en TFLOPS disent quelle forme approche le pic de la carte ; la convolution des
 // blocs fait l'essentiel du SPAN (18 des 21 convolutions d'un b8f64). Les valeurs calculées ne sont pas
-// vérifiées : ajp_span_fp8_kernel_tests juge les noyaux du lecteur, ce banc ne mesure que le temps.
+// vérifiées : kirari_span_fp8_kernel_tests juge les noyaux du lecteur, ce banc ne mesure que le temps.
 //
-//   ajp_span_tile_bench [hauteur largeur] [--iterations N]
+//   kirari_span_tile_bench [hauteur largeur] [--iterations N]
 //
 // La hauteur et la largeur sont celles de l'entrée du réseau (1080 × 1920 par défaut) ; une forme que la
 // carte refuse (mémoire partagée) le dit et passe.
@@ -22,7 +22,7 @@
 
 namespace {
 
-namespace sk = ajp::gpu::cuda::span_fp8_kernels;
+namespace sk = kirari::gpu::cuda::span_fp8_kernels;
 using E4 = cutlass::float_e4m3_t;
 using F16 = cutlass::half_t;
 using Alg = cutlass::conv::IteratorAlgorithm;

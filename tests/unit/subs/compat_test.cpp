@@ -17,15 +17,15 @@
 #include "subs/vsfilter_color.h"
 #include "support.h"
 
-using ajp::ColorMatrix;
-using ajp::ColorRange;
-using ajp::RefusalCode;
-using ajp::subs::Rgba8;
-using ajp::subs::ScriptMatrix;
-using ajp::subs::SubtitleFrame;
-using ajp::subs::VideoMatrix;
-using ajp::subs::vsfilter_bt601_on_bt709;
-using ajp::subs::vsfilter_converts;
+using kirari::ColorMatrix;
+using kirari::ColorRange;
+using kirari::RefusalCode;
+using kirari::subs::Rgba8;
+using kirari::subs::ScriptMatrix;
+using kirari::subs::SubtitleFrame;
+using kirari::subs::VideoMatrix;
+using kirari::subs::vsfilter_bt601_on_bt709;
+using kirari::subs::vsfilter_converts;
 
 namespace {
 
@@ -33,25 +33,25 @@ constexpr VideoMatrix kHd{.matrix = ColorMatrix::Bt709, .range = ColorRange::Lim
 
 // Une piste, un moteur et sa réserve ; les atlas relâchés reviennent à chaque rendu.
 struct Scene {
-  ajp::subs::AssLibrary library = ajp::subs::AssLibrary::create().value();
-  std::vector<std::unique_ptr<ajp::subs::SubtitleAtlas>> returned;
-  ajp::subs::AtlasPool pool{
-      [this](std::unique_ptr<ajp::subs::SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); }};
-  ajp::subs::SubtitleRenderer renderer;
-  ajp::subs::SubtitleTrack track;
+  kirari::subs::AssLibrary library = kirari::subs::AssLibrary::create().value();
+  std::vector<std::unique_ptr<kirari::subs::SubtitleAtlas>> returned;
+  kirari::subs::AtlasPool pool{
+      [this](std::unique_ptr<kirari::subs::SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); }};
+  kirari::subs::SubtitleRenderer renderer;
+  kirari::subs::SubtitleTrack track;
 
-  explicit Scene(std::string_view script, ajp::subs::RendererOptions options = {})
-      : renderer(ajp::subs::SubtitleRenderer::create(library, options).value()),
-        track(ajp::subs::SubtitleTrack::from_ass(library, script).value()) {}
+  explicit Scene(std::string_view script, kirari::subs::RendererOptions options = {})
+      : renderer(kirari::subs::SubtitleRenderer::create(library, options).value()),
+        track(kirari::subs::SubtitleTrack::from_ass(library, script).value()) {}
 
-  auto render(double seconds, ajp::subs::RenderTarget target) {
+  auto render(double seconds, kirari::subs::RenderTarget target) {
     for (auto& atlas : returned) pool.give_back(std::move(atlas));
     returned.clear();
     return renderer.render(
         track, {.pts_us = static_cast<std::int64_t>(seconds * 1e6), .epoch = 0, .target = target}, pool);
   }
 
-  SubtitleFrame frame(double seconds, ajp::subs::RenderTarget target) {
+  SubtitleFrame frame(double seconds, kirari::subs::RenderTarget target) {
     auto outcome = render(seconds, target);
     REQUIRE(outcome);
     REQUIRE(std::holds_alternative<SubtitleFrame>(*outcome));
@@ -68,7 +68,7 @@ struct Scene {
 };
 
 std::string with_matrix(std::string_view matrix) {
-  return ajp::subs::test::with_info_line(ajp::subs::test::reference_script(), matrix);
+  return kirari::subs::test::with_info_line(kirari::subs::test::reference_script(), matrix);
 }
 
 }  // namespace
@@ -108,7 +108,7 @@ TEST_CASE("Rendu : un script TV.601 sur une vidéo BT.709 prend les couleurs de 
   CHECK(tv601.red_text(VideoMatrix{.matrix = ColorMatrix::Bt601}) == Rgba8{255, 0, 0, 255});
   CHECK(tv601.red_text(kHd) == Rgba8{255, 24, 0, 255});  // et retour, sur le même moteur
 
-  Scene absent(ajp::subs::test::reference_script());
+  Scene absent(kirari::subs::test::reference_script());
   CHECK(absent.track.script_matrix() == ScriptMatrix::Absent);
   CHECK(absent.red_text(kHd) == Rgba8{255, 24, 0, 255});
 
@@ -123,10 +123,10 @@ TEST_CASE("Rendu : un script TV.601 sur une vidéo BT.709 prend les couleurs de 
 TEST_CASE("Rendu : même image, autre en-tête de piste, couleurs refaites", "[compat][render]") {
   // libass voit les mêmes couvertures (change 0) ; seules les couleurs diffèrent.
   Scene scene(with_matrix("YCbCr Matrix: TV.601"));
-  const auto plain = ajp::subs::SubtitleTrack::from_ass(scene.library, with_matrix("YCbCr Matrix: None"));
+  const auto plain = kirari::subs::SubtitleTrack::from_ass(scene.library, with_matrix("YCbCr Matrix: None"));
   REQUIRE(plain);
   CHECK(scene.red_text(kHd) == Rgba8{255, 24, 0, 255});
-  const ajp::subs::RenderTarget target{.width = 640, .height = 360, .video_matrix = kHd};
+  const kirari::subs::RenderTarget target{.width = 640, .height = 360, .video_matrix = kHd};
   auto outcome =
       scene.renderer.render(*plain, {.pts_us = 2'500'000, .epoch = 0, .target = target}, scene.pool);
   REQUIRE(outcome);
@@ -137,54 +137,54 @@ TEST_CASE("Rendu : même image, autre en-tête de piste, couleurs refaites", "[c
 }
 
 TEST_CASE("Piste texte : en-tête None, couleurs jamais converties", "[compat][track]") {
-  auto library = ajp::subs::AssLibrary::create();
+  auto library = kirari::subs::AssLibrary::create();
   REQUIRE(library);
-  auto track = ajp::subs::SubtitleTrack::text(*library);
+  auto track = kirari::subs::SubtitleTrack::text(*library);
   REQUIRE(track);
   CHECK(track->script_matrix() == ScriptMatrix::None);
   CHECK_FALSE(track->embeds_fonts());
 }
 
 TEST_CASE("Rendu : les polices d'une section [Fonts] servent sans police système", "[compat][render]") {
-  const std::vector<std::byte> font = ajp::subs::test::system_font_bytes();
+  const std::vector<std::byte> font = kirari::subs::test::system_font_bytes();
   if (font.empty()) SKIP("DejaVu Sans absente du système");
-  const ajp::subs::RendererOptions no_system{.fonts = ajp::subs::FontProvider::None};
-  const ajp::subs::RenderTarget target{.width = 640, .height = 360};
+  const kirari::subs::RendererOptions no_system{.fonts = kirari::subs::FontProvider::None};
+  const kirari::subs::RenderTarget target{.width = 640, .height = 360};
 
-  Scene without(ajp::subs::test::reference_script(), no_system);
+  Scene without(kirari::subs::test::reference_script(), no_system);
   CHECK_FALSE(without.track.embeds_fonts());
   CHECK(without.frame(0.5, target).atlas == nullptr);  // témoin : aucune police connue
 
-  const std::string script = std::string(ajp::subs::test::reference_script()) +
-                             ajp::subs::test::ass_font_section("DejaVuSans_0.ttf", font);
+  const std::string script = std::string(kirari::subs::test::reference_script()) +
+                             kirari::subs::test::ass_font_section("DejaVuSans_0.ttf", font);
   Scene with(script, no_system);
   CHECK(with.track.embeds_fonts());
-  ajp::subs::test::check_atlas(with.frame(0.5, target));
+  kirari::subs::test::check_atlas(with.frame(0.5, target));
 }
 
 TEST_CASE("SubsWorker : les polices d'un script choisi après un premier rendu servent", "[compat][worker]") {
-  const std::vector<std::byte> font = ajp::subs::test::system_font_bytes();
+  const std::vector<std::byte> font = kirari::subs::test::system_font_bytes();
   if (font.empty()) SKIP("DejaVu Sans absente du système");
-  ajp::subs::test::RecordingSink sink;
-  const auto discard = [](std::unique_ptr<ajp::subs::SubtitleAtlas>) {};
-  auto worker = ajp::subs::SubsWorker::create({.fonts = ajp::subs::FontProvider::None}, sink, discard);
+  kirari::subs::test::RecordingSink sink;
+  const auto discard = [](std::unique_ptr<kirari::subs::SubtitleAtlas>) {};
+  auto worker = kirari::subs::SubsWorker::create({.fonts = kirari::subs::FontProvider::None}, sink, discard);
   REQUIRE(worker);
   const auto select = [&](std::uint32_t id, std::string_view script) {
-    const ajp::subs::test::TempFile file("piste.ass", script);
-    (*worker)->handle(ajp::subs::SelectTrack{.id = id, .source = ajp::subs::ExternalFile{file.path()}});
+    const kirari::subs::test::TempFile file("piste.ass", script);
+    (*worker)->handle(kirari::subs::SelectTrack{.id = id, .source = kirari::subs::ExternalFile{file.path()}});
   };
-  const ajp::subs::RenderRequest request{
+  const kirari::subs::RenderRequest request{
       .pts_us = 500'000, .epoch = 0, .target = {.width = 640, .height = 360}};
 
-  select(1, ajp::subs::test::reference_script());
+  select(1, kirari::subs::test::reference_script());
   (*worker)->handle(request);  // le moteur cherche DejaVu Sans, en vain, et s'en souvient
-  select(2, std::string(ajp::subs::test::reference_script()) +
-                ajp::subs::test::ass_font_section("DejaVuSans_0.ttf", font));
+  select(2, std::string(kirari::subs::test::reference_script()) +
+                kirari::subs::test::ass_font_section("DejaVuSans_0.ttf", font));
   (*worker)->handle(request);
   auto frames = sink.take_frames();
   REQUIRE(frames.size() == 2);
   CHECK(frames[0].atlas == nullptr);
-  ajp::subs::test::check_atlas(frames[1]);
+  kirari::subs::test::check_atlas(frames[1]);
 }
 
 TEST_CASE("Rendu : un contenu trop grand pour l'atlas est rendu plus petit, pas jeté", "[compat][render]") {
@@ -205,16 +205,16 @@ TEST_CASE("Rendu : un contenu trop grand pour l'atlas est rendu plus petit, pas 
       "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{\\pos(0,0)\\p1}m 0 0 l 100 0 100 100 0 100\n"
       "Dialogue: 0,0:00:02.00,0:00:03.00,Default,,0,0,0,,{\\pos(0,0)\\p1}m 0 0 l 100 0 100 100 0 100\n";
   Scene scene(script);
-  const ajp::subs::RenderTarget target{.width = 2050, .height = 2050};
+  const kirari::subs::RenderTarget target{.width = 2050, .height = 2050};
 
   // Rendu à moitié taille, étiré à l'affichage : le dessin reste à l'écran.
-  const ajp::subs::SubtitleFrame first = scene.frame(0.2, target);
+  const kirari::subs::SubtitleFrame first = scene.frame(0.2, target);
   REQUIRE(first.atlas != nullptr);
   CHECK(first.width == 1025);
   CHECK(first.height == 1025);
   CHECK(first.rects.size() >= 2);
   CHECK(scene.frame(1.5, target).atlas == nullptr);  // entre les deux événements
-  const ajp::subs::SubtitleFrame again = scene.frame(2.5, target);
+  const kirari::subs::SubtitleFrame again = scene.frame(2.5, target);
   REQUIRE(again.atlas != nullptr);
   CHECK(again.width == 1025);
 }
@@ -236,9 +236,9 @@ TEST_CASE("Rendu : la réplique qui reste après un dessin trop lourd revient en
       "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,{\\pos(0,0)\\p1}m 0 0 l 100 0 100 100 0 100\n"
       "Dialogue: 1,0:00:00.00,0:01:00.00,Default,,0,0,0,,{\\an2\\bord0\\fs6}Dialogue suivant\n";
   Scene scene(script);
-  const ajp::subs::RenderTarget target{.width = 2050, .height = 2050};
+  const kirari::subs::RenderTarget target{.width = 2050, .height = 2050};
   CHECK(scene.frame(0.5, target).width == 1025);
-  const ajp::subs::SubtitleFrame after = scene.frame(30.0, target);
+  const kirari::subs::SubtitleFrame after = scene.frame(30.0, target);
   REQUIRE(after.atlas != nullptr);
   CHECK(after.width == 2050);
   CHECK(after.height == 2050);

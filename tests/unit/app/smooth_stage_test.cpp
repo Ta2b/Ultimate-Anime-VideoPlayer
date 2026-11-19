@@ -16,7 +16,7 @@
 #include "core/messages.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 
 namespace {
@@ -192,4 +192,4 @@ TEST_CASE("Étage gpu : Smooth, la fin du flux au milieu d'une tenue garde la co
   CHECK(shape_of(rig.sink.frames()) == std::vector<std::string>{"1", "2", "3", "4"});
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

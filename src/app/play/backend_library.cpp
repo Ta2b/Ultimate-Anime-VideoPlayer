@@ -10,7 +10,7 @@
 
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Le point d'entrée name, ou nullptr. F est un pointeur de fonction (gpu/backend.h).
@@ -84,10 +84,10 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::open(
     library->stamp_ = stamp;
     library->size_ = size;
     const DynamicLibrary& handle = *library->handle_;
-    const auto abi = symbol<gpu::BackendAbiFn>(handle, "ajp_backend_abi");
-    const auto layout = symbol<gpu::BackendLayoutFn>(handle, "ajp_backend_layout");
-    library->create_ = symbol<gpu::BackendCreateFn>(handle, "ajp_backend_create");
-    library->destroy_ = symbol<gpu::BackendDestroyFn>(handle, "ajp_backend_destroy");
+    const auto abi = symbol<gpu::BackendAbiFn>(handle, "kirari_backend_abi");
+    const auto layout = symbol<gpu::BackendLayoutFn>(handle, "kirari_backend_layout");
+    library->create_ = symbol<gpu::BackendCreateFn>(handle, "kirari_backend_create");
+    library->destroy_ = symbol<gpu::BackendDestroyFn>(handle, "kirari_backend_destroy");
     if (abi == nullptr || layout == nullptr || library->create_ == nullptr || library->destroy_ == nullptr) {
       tried += std::format("\n  {} : point d'entrée absent", core::to_utf8(path));
       continue;
@@ -155,7 +155,7 @@ std::expected<std::shared_ptr<BackendLibrary>, Refusal> BackendLibrary::choose(
 
 std::expected<BackendLibrary::Instance, Refusal> BackendLibrary::create(
     const std::shared_ptr<BackendLibrary>& library, const gpu::BackendInit& init) {
-  Refusal refusal{RefusalCode::LibraryUnavailable, "ajp_backend_create sans refus"};
+  Refusal refusal{RefusalCode::LibraryUnavailable, "kirari_backend_create sans refus"};
   gpu::BackendInit with_refusal = init;
   with_refusal.refusal = &refusal;
   gpu::Backend* backend = library->create_(gpu::kBackendAbi, &with_refusal);
@@ -163,4 +163,4 @@ std::expected<BackendLibrary::Instance, Refusal> BackendLibrary::create(
   return Instance(backend, Destroy{.destroy = library->destroy_, .library = library});
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::core {
+namespace kirari::core {
 
 double CostModel::weight_of(const ImageCost& c, std::int64_t now_us) const {
   if (c.weight <= 0.0) return 0.0;
@@ -103,4 +103,4 @@ int CostModel::samples(int images) const {
   return static_cast<int>(costs_[static_cast<std::size_t>(std::clamp(images, 1, kMaxImages))].filled);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

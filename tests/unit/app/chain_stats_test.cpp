@@ -12,7 +12,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -124,7 +124,7 @@ TEST_CASE("ChainStats : Rapide à 165 Hz, la période de sortie est celle d'une 
 }
 
 TEST_CASE("Onglet Moteurs : DistilDRBA n'est pas étiqueté SPAN (C08-09)", "[app][stats]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-engine-badges-c0809";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-engine-badges-c0809";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const auto write = [&](const char* log, const char* onnx) {
@@ -145,4 +145,4 @@ TEST_CASE("Onglet Moteurs : DistilDRBA n'est pas étiqueté SPAN (C08-09)", "[ap
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

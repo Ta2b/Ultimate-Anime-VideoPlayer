@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct BuildStage {
   float fraction = 0.0F;  // 0 à 1
@@ -38,4 +38,4 @@ class TrtexecProgress {
   std::string last_error_;
 };
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

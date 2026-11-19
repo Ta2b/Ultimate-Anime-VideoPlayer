@@ -16,7 +16,7 @@ extern "C" {
 #include "media/log.h"
 #include "media/video_decoder.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Une ligne sur kRowStep de chaque parité, une colonne sur kColumnStep : de quoi mesurer un champ sans le
@@ -170,4 +170,4 @@ InterlaceMeasure measure_interlace(Demuxer& demuxer, const TrackInfo& track) {
   return result;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

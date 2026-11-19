@@ -13,7 +13,7 @@
 #include "app/play/options.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct PlayerPaths;
 
@@ -33,4 +33,4 @@ ReleaseRefresh start_release_refresh(const PlayOptions& options, const PlayerPat
 // le thread de la fenêtre ouverte : attend le fil (fenêtre pompée) seulement sans copie gardée.
 EngineCatalog engine_catalog(const PlayerPaths& paths, const PlaySettings& saved, ReleaseRefresh& refresh);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

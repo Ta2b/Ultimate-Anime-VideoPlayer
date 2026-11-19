@@ -47,7 +47,7 @@
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les slots de l'export par puits CUDA (export_sink.h) : chaque slot est une image de l'encodeur,
 // que write_slot remplit en YUV (KernelOps::write_yuv) au lieu du ring ; done_value est la valeur
@@ -795,4 +795,4 @@ class UpscaleStage final : public RingStage {
   HostWaits motion_waits_;  // relecture du mouvement maximal du milieu (flow_max_take, flow_max_now)
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

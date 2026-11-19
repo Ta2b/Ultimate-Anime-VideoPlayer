@@ -15,7 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::media::read_chapter_layout;
+using kirari::media::read_chapter_layout;
 
 namespace {
 
@@ -57,11 +57,11 @@ std::filesystem::path write(const std::string& name, const Bytes& segment_payloa
 }  // namespace
 
 TEST_CASE("Chapitres Matroska : édition simple, ordonnée, liée (A14-03)", "[media][chapters]") {
-  CHECK(read_chapter_layout(write("ajp-chap-plain.mkv", chapters(false, false))).plain());
-  const auto ordered = read_chapter_layout(write("ajp-chap-ordered.mkv", chapters(true, false)));
+  CHECK(read_chapter_layout(write("kirari-chap-plain.mkv", chapters(false, false))).plain());
+  const auto ordered = read_chapter_layout(write("kirari-chap-ordered.mkv", chapters(true, false)));
   CHECK(ordered.ordered);
   CHECK_FALSE(ordered.linked);
-  const auto linked = read_chapter_layout(write("ajp-chap-linked.mkv", chapters(true, true)));
+  const auto linked = read_chapter_layout(write("kirari-chap-linked.mkv", chapters(true, true)));
   CHECK(linked.ordered);
   CHECK(linked.linked);
 }
@@ -78,20 +78,20 @@ TEST_CASE("Chapitres Matroska : trouvés par le SeekHead après un premier Clust
     return element({0x11, 0x4D, 0x9B, 0x74}, seek);
   };
   const std::uint64_t at = seek_head(0).size() + cluster.size();
-  const auto layout =
-      read_chapter_layout(write("ajp-chap-seek.mkv", join({seek_head(at), cluster, chapters(false, true)})));
+  const auto layout = read_chapter_layout(
+      write("kirari-chap-seek.mkv", join({seek_head(at), cluster, chapters(false, true)})));
   CHECK(layout.linked);
   CHECK_FALSE(layout.ordered);
 }
 
 TEST_CASE("Chapitres Matroska : autre format ou fichier tronqué, disposition simple", "[media][chapters]") {
-  CHECK(read_chapter_layout(std::filesystem::temp_directory_path() / "ajp-chap-absent.mkv").plain());
-  const std::filesystem::path text = std::filesystem::temp_directory_path() / "ajp-chap-text.mkv";
+  CHECK(read_chapter_layout(std::filesystem::temp_directory_path() / "kirari-chap-absent.mkv").plain());
+  const std::filesystem::path text = std::filesystem::temp_directory_path() / "kirari-chap-text.mkv";
   std::ofstream(text) << "pas du Matroska";
   CHECK(read_chapter_layout(text).plain());
   Bytes cut = chapters(true, false);
   cut.resize(cut.size() / 2);
-  CHECK(read_chapter_layout(write("ajp-chap-cut.mkv", cut)).plain());
+  CHECK(read_chapter_layout(write("kirari-chap-cut.mkv", cut)).plain());
 }
 
 namespace {
@@ -130,7 +130,7 @@ TEST_CASE("Chapitres Matroska : les parties de l'édition ordonnée jouée, dans
       join({edition(false, false, {atom(0, 10)}),
             edition(true, true,
                     {atom(4, 6), atom(0, 2), atom(2, 4, true), atom(0, 90, false, true), atom(6, 10)})}));
-  const auto layout = read_chapter_layout(write("ajp-chap-parts.mkv", both));
+  const auto layout = read_chapter_layout(write("kirari-chap-parts.mkv", both));
   CHECK(layout.ordered);
   CHECK(layout.linked);
   REQUIRE(layout.parts.size() == 3);
@@ -143,7 +143,7 @@ TEST_CASE("Chapitres Matroska : les parties de l'édition ordonnée jouée, dans
   const Bytes first_plain =
       element({0x10, 0x43, 0xA7, 0x70},
               join({edition(false, false, {atom(0, 10)}), edition(true, false, {atom(4, 6)})}));
-  const auto plain = read_chapter_layout(write("ajp-chap-first.mkv", first_plain));
+  const auto plain = read_chapter_layout(write("kirari-chap-first.mkv", first_plain));
   CHECK(plain.ordered);
   CHECK(plain.parts.empty());
 }
@@ -151,7 +151,7 @@ TEST_CASE("Chapitres Matroska : les parties de l'édition ordonnée jouée, dans
 namespace {
 
 // Un fichier en mémoire : c'est ce que le démultiplexeur branche sur son AVIOContext (C14-09).
-class MemorySource final : public ajp::media::ByteSource {
+class MemorySource final : public kirari::media::ByteSource {
  public:
   explicit MemorySource(Bytes bytes) : bytes_(std::move(bytes)) {}
   std::uint64_t size() override { return bytes_.size(); }

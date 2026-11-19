@@ -14,7 +14,7 @@
 #include "clip_writer.h"
 #include "media/demuxer.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -190,4 +190,4 @@ TEST_CASE("Sous-titres en avance : la lecture n'attend pas le paquet de sous-tit
   CHECK_FALSE(has(starts, 80'000'000));  // lue avant : le fichier mélange les pistes par horodatage
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

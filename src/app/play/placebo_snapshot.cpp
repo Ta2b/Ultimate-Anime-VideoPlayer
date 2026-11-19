@@ -11,7 +11,7 @@
 #include "app/play/placebo_impl.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<void, Refusal> PlaceboScreen::Impl::save_snapshot(const pl_frame* image, const pl_frame& target,
                                                                 OutputSize out, const ImDrawData* ui_data,
@@ -101,4 +101,4 @@ void PlaceboScreen::Impl::take_snapshot(const pl_frame* image, const pl_frame& t
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

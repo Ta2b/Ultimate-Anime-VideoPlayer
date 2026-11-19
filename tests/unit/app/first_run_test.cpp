@@ -10,8 +10,8 @@
 #include "core/settings.h"
 #include "french_ui.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -33,7 +33,7 @@ const EngineRow* row_of(FirstRunView&& view, core::EngineId id) = delete;
 }  // namespace
 
 TEST_CASE("Resizable BAR : actif si le tas visible approche la VRAM, inactif à 256 Mo", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   GpuFacts gpu = kRtx;
   CHECK(rebar_text(gpu).empty());  // le pilote n'expose aucun tas visible
   gpu.host_visible_vram_bytes = 12ULL << 30U;
@@ -58,7 +58,7 @@ TEST_CASE("Bienvenue : la ligne du GPU et les tailles suivent la langue de l'int
 }
 
 TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(gpu_line(kRtx) == "NVIDIA GeForce RTX 4070 Ti · 12 Go · cœurs Tensor");
   const FirstRunView view = first_run_view(kRtx, kHere);
   const EngineRow* vulkan = row_of(view, core::EngineId::Vulkan);
@@ -72,7 +72,7 @@ TEST_CASE("Une RTX de 12 Go : TensorRT coché, profil 1", "[app][first_run]") {
 }
 
 TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   EnginesHere here = kHere;
   here.os = core::Os::Windows;
   const FirstRunView view = first_run_view(kRtx, here);
@@ -83,7 +83,7 @@ TEST_CASE("Sous Windows, TensorRT coché, sans offre DirectML", "[app][first_run
 }
 
 TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const GpuFacts m2{.name = "Apple M2", .vendor = GpuVendor::Apple, .vram_bytes = 16 * kGiB};
   const FirstRunView view = first_run_view(m2, EnginesHere{.os = core::Os::MacOs, .coreml = true});
   const EngineRow* coreml = row_of(view, core::EngineId::Metal);
@@ -102,7 +102,7 @@ TEST_CASE("Sur Mac, Core ML est livré et coché, sans moteur NVIDIA ni AMD", "[
 }
 
 TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(amd_matrix_cores("AMD Radeon RX 9070 XT"));
   CHECK(amd_matrix_cores("AMD Radeon RX 9070 XT (RADV GFX1201)"));
   CHECK(amd_matrix_cores("AMD Radeon RX 7900 XTX (RADV NAVI31)"));
@@ -112,7 +112,7 @@ TEST_CASE("Unités matricielles AMD : RDNA3 et RDNA4 seulement", "[app][first_ru
 }
 
 TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   FirstRunView view = first_run_view(kRtx, kHere);
   const core::Settings all = settings_after(view, core::Settings{});
   CHECK(all.first_run_done);
@@ -137,7 +137,7 @@ TEST_CASE("Commencer écrit des moteurs valides pour settings.toml", "[app][firs
 }
 
 TEST_CASE("Sans moteur d'inférence, la chaîne garde l'image source et le dit", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   PlaySettings s;
   s.upscale = true;
   s.rife_factor = 3;
@@ -172,14 +172,14 @@ TEST_CASE("Sans moteur d'inférence, la chaîne garde l'image source et le dit",
 }
 
 TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
-  const std::array<std::filesystem::path, 2> candidates{"base/ajp_backend_tensorrt.so",
-                                                        "base/ajp_backend_vulkan.so"};
+  kirari::app::play::FrenchUi french;
+  const std::array<std::filesystem::path, 2> candidates{"base/kirari_backend_tensorrt.so",
+                                                        "base/kirari_backend_vulkan.so"};
   core::Settings vulkan_only;
   vulkan_only.chosen_engines = {core::EngineId::Vulkan};
   const auto without = backends_within(candidates, vulkan_only);
   REQUIRE(without.size() == 1);
-  CHECK(without.front().filename() == "ajp_backend_vulkan.so");
+  CHECK(without.front().filename() == "kirari_backend_vulkan.so");
 
   core::Settings both = vulkan_only;
   both.chosen_engines.push_back(core::EngineId::TensorRt);
@@ -187,18 +187,19 @@ TEST_CASE("TensorRT n'est essayé que s'il a été choisi", "[app][first_run]") 
 }
 
 TEST_CASE("Core ML n'est essayé que choisi", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   core::Settings settings;
   settings.chosen_engines = {core::EngineId::Vulkan};
   // Core ML est le moteur Metal de l'écran (Mac).
-  const std::array<std::filesystem::path, 2> mac{"base/ajp_backend_coreml.so", "base/ajp_backend_vulkan.so"};
+  const std::array<std::filesystem::path, 2> mac{"base/kirari_backend_coreml.so",
+                                                 "base/kirari_backend_vulkan.so"};
   CHECK(backends_within(mac, settings).size() == 1);
   settings.chosen_engines.push_back(core::EngineId::Metal);
   CHECK(backends_within(mac, settings).size() == 2);
 }
 
 TEST_CASE("Moteur à télécharger : licence acceptée avant tout choix", "[app][first_run]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   EnginesHere here{.os = core::Os::Linux};
   here.downloads.push_back(EngineDownload{
       .id = core::EngineId::TensorRt, .bytes = 900ULL << 20, .license = "https://example.org/sla"});
@@ -270,8 +271,8 @@ TEST_CASE("Assistant fermé pendant le téléchargement : la case et la licence 
 
 TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est dite (P3.4)",
           "[app][first_run]") {
-  EngineRow vulkan{.offer = {.id = ajp::core::EngineId::Vulkan}, .usable = true, .chosen = true};
-  EngineRow trt{.offer = {.id = ajp::core::EngineId::TensorRt},
+  EngineRow vulkan{.offer = {.id = kirari::core::EngineId::Vulkan}, .usable = true, .chosen = true};
+  EngineRow trt{.offer = {.id = kirari::core::EngineId::TensorRt},
                 .usable = true,
                 .chosen = true,
                 .download = true,
@@ -288,7 +289,7 @@ TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est
   // Le moteur recommandé pour la carte laissé décoché : dit, la lecture prendrait l'autre (A25-02).
   trt.chosen = false;
   CHECK(engines_summary({vulkan, trt}).size() == 1);  // sans badge Recommandé : rien à dire
-  trt.offer.badges = {ajp::core::Badge::Recommended};
+  trt.offer.badges = {kirari::core::Badge::Recommended};
   const auto unchecked = engines_summary({vulkan, trt});
   REQUIRE(unchecked.size() == 2);
   CHECK(unchecked[0].find("TensorRT") == std::string::npos);
@@ -303,7 +304,7 @@ TEST_CASE("Résumé : la ligne Moteurs donne la taille, une licence refusée est
 }
 
 TEST_CASE("Pilote NVIDIA lu avant le téléchargement de TensorRT (P3.6)", "[app][first_run]") {
-  GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = ajp::GpuVendor::Nvidia};
+  GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = kirari::GpuVendor::Nvidia};
   gpu.driver = std::to_string((575U << 22U) | (64U << 14U));
   const auto old = nvidia_driver(gpu);
   REQUIRE(old);
@@ -311,12 +312,12 @@ TEST_CASE("Pilote NVIDIA lu avant le téléchargement de TensorRT (P3.6)", "[app
   CHECK(old->second == 64);
   gpu.driver = std::to_string((580U << 22U) | (82U << 14U));
   CHECK(nvidia_driver(gpu)->first >= kTensorRtDriverMajor);
-  gpu.vendor = ajp::GpuVendor::Amd;
+  gpu.vendor = kirari::GpuVendor::Amd;
   CHECK_FALSE(nvidia_driver(gpu));
 }
 
 TEST_CASE("Pilote trop ancien ou NVK : TensorRT dit pourquoi (A37-08, A37-11)", "[app][first_run]") {
-  GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = ajp::GpuVendor::Nvidia};
+  GpuFacts gpu{.name = "NVIDIA GeForce RTX 4070 Ti", .vendor = kirari::GpuVendor::Nvidia};
   gpu.driver = std::to_string((575U << 22U) | (64U << 14U));
   CHECK(tensorrt_driver_problem(gpu).find("575.64") != std::string::npos);
   gpu.driver = std::to_string((580U << 22U) | (95U << 14U));
@@ -335,7 +336,7 @@ TEST_CASE("Pilote trop ancien ou NVK : TensorRT dit pourquoi (A37-08, A37-11)", 
   gpu.driver = std::to_string((25U << 22U) | (2U << 12U));
   CHECK_FALSE(nvidia_driver(gpu));
   CHECK(tensorrt_driver_problem(gpu).find("nvidia-open") != std::string::npos);
-  gpu.vendor = ajp::GpuVendor::Amd;
+  gpu.vendor = kirari::GpuVendor::Amd;
   CHECK(tensorrt_driver_problem(gpu).empty());
 }
 

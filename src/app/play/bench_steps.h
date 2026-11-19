@@ -1,4 +1,4 @@
-// « ajp bench » (docs/ux-parametres.md, 4.7) : ce que l'utilisateur voit. Trois étapes lisibles, une barre
+// « kirari bench » (docs/ux-parametres.md, 4.7) : ce que l'utilisateur voit. Trois étapes lisibles, une barre
 // de progression globale et des échecs d'essai toujours expliqués en une phrase. Rien ici ne joue ni ne
 // touche l'interface : ce sont des fonctions pures et deux petits objets, que l'évaluation
 // (auto_bench_run.h) et son affichage se partagent.
@@ -19,7 +19,7 @@
 #include "core/types.h"
 #include "prepare/process.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les étapes, dans l'ordre. L'utilisateur lit « Étape 2 sur 3 : … », jamais « niveau » ni « tranche ».
 enum class BenchStep : int {
@@ -82,4 +82,4 @@ std::string explain_trial(std::string_view what, const prepare::ProcessExit& exi
 // Fin normale sans fichier de mesures lisible.
 std::string explain_no_reading(std::string_view what, std::string_view detail);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

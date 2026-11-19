@@ -9,7 +9,7 @@
 #include <system_error>
 #include <utility>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Le contenu de la prochaine balise <tag>…</tag> à partir de pos, pos passé derrière elle.
@@ -315,4 +315,4 @@ std::vector<FaceBox> FaceCascade::detect(const GrayImage& gray, const CascadeOpt
   return suppress_faces(std::move(faces));
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

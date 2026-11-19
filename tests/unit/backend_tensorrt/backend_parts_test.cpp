@@ -18,8 +18,8 @@
 
 namespace {
 
-using namespace ajp;
-using namespace ajp::gpu::cuda;
+using namespace kirari;
+using namespace kirari::gpu::cuda;
 
 // Un pool simulé : des blocs de l'hôte, un plafond d'octets tenus en même temps, chaque libération notée.
 struct FakePool {

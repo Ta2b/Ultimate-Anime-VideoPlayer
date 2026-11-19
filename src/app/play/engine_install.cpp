@@ -27,7 +27,7 @@
 #include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using prepare::ansi_safe_path;  // curl et tar relisent leur ligne de commande en ANSI sous Windows
 core::Os host_os() {
@@ -427,10 +427,10 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
     log->info("installation de {} : terminée en {} s", name, seconds);
   } else {
     log->warn("installation de {} : échec à l'étape « {} » après {} s : {} {} (libre : {})", name, step,
-              seconds, ajp::name(result.error().code), result.error().detail,
+              seconds, kirari::name(result.error().code), result.error().detail,
               format_size(free_bytes(catalog.layout.engines)));
   }
   return result;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

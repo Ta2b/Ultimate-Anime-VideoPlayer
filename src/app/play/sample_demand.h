@@ -10,7 +10,7 @@
 #include <optional>
 #include <stop_token>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class SampleDemand {
  public:
@@ -39,4 +39,4 @@ class SampleDemand {
   std::optional<Clock::time_point> last_;  // rien : jamais lu
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

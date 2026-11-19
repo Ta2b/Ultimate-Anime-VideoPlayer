@@ -7,7 +7,7 @@
 #                                        # v<VERSION>, ou v<VERSION>-<suffixe> pour une préversion
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-cmake_version="$(sed -n '/^project(ajp/,/)/s/^ *VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+cmake_version="$(sed -n '/^project(kirari/,/)/s/^ *VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
 vcpkg_version="$(sed -n 's/^ *"version-semver": "\([0-9.]*\)".*/\1/p' vcpkg.json)"
 if [[ -z "$cmake_version" || "$cmake_version" != "$vcpkg_version" ]]; then
   echo "version : CMakeLists.txt dit « $cmake_version », vcpkg.json « $vcpkg_version »" >&2

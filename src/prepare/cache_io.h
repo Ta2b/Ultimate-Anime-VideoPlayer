@@ -15,7 +15,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // « opération : chemin : erreur », suivi du conseil du fork (place, droits).
 std::string io_message(std::string_view operation, const std::filesystem::path& path, std::error_code error);
@@ -51,4 +51,4 @@ std::expected<void, Refusal> recover_owned_stages(const std::filesystem::path& p
 // inscriptible : une demande suivante le récupérera une fois les droits rendus.
 std::expected<void, Refusal> cleanup_stage(const std::filesystem::path& folder);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

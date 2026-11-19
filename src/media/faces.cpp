@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 float area(const FaceBox& b) {
@@ -106,4 +106,4 @@ PlanSkins plan_skins(std::span<const SkinTone> faces) {
   return out;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

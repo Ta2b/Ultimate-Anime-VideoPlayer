@@ -37,7 +37,7 @@
 #include <setupapi.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::size_t kBlock = 128;
@@ -589,4 +589,4 @@ std::optional<bool> vrr_armed_now([[maybe_unused]] std::string_view connector) {
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

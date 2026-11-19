@@ -16,7 +16,7 @@ struct Frame {
 struct Command {
   std::string text;
 };
-using TestInbox = ajp::Inbox<Frame, Command>;
+using TestInbox = kirari::Inbox<Frame, Command>;
 
 }  // namespace
 

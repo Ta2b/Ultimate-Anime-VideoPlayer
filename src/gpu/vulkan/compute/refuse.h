@@ -9,7 +9,7 @@
 #include "core/types.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Résultat d'une opération qui ne rend rien d'autre qu'un succès ou un refus.
 using Done = std::expected<void, Refusal>;
@@ -22,4 +22,4 @@ std::string result_name(VkResult result);
 // appel : résultat ».
 Done check(VkResult result, std::string_view call);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

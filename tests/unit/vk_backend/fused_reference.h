@@ -20,7 +20,7 @@
 #include "kernels/image.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 // Les premiers plans de la sortie du modèle onnx (une entrée par élément de inputs, dans l'ordre du
 // modèle, chacune de h × w), calculée par l'interpréteur. Les entrées float16 sont arrondies comme un
@@ -75,4 +75,4 @@ inline double planes_psnr(const std::vector<kernels::PlaneF>& got, const std::ve
   return 10.0 * std::log10(static_cast<double>(count) / square);
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

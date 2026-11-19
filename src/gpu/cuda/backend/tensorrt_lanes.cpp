@@ -16,7 +16,7 @@
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "gpu/cuda/backend/trt_engine.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // L'interrogation avant l'attente bloquante : une mesure enfilée une paire en avance est
@@ -221,4 +221,4 @@ std::expected<void, Refusal> TensorRtBackend::wait_event(cudaEvent_t event) {
   return cuda_check(cudaEventSynchronize(event), "cudaEventSynchronize");
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

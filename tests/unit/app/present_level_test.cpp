@@ -13,7 +13,7 @@
 #include "app/play/present_watch.h"
 #include "app/play/queue_lanes.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("présentation : table des niveaux selon ce qui est offert et demandé", "[app][present]") {
   const PresentCaps none{};
@@ -164,7 +164,7 @@ TEST_CASE("présentation : l'état VRR lu par present timing", "[app][present]")
 
 TEST_CASE("Horloge hôte vue par Vulkan : les tics du compteur de Windows deviennent des ns (A10-07)",
           "[app][present]") {
-  using ajp::app::play::host_ticks_to_ns;
+  using kirari::app::play::host_ticks_to_ns;
   // Linux : CLOCK_MONOTONIC, déjà en ns.
   CHECK(host_ticks_to_ns(123'456'789'012ULL, 1'000'000'000ULL) == 123'456'789'012ULL);
   // Windows : 10 MHz le plus souvent, un tic vaut 100 ns.
@@ -216,25 +216,25 @@ TEST_CASE("Voies de calcul du backend adopté : comptées sur la famille, pas su
   CHECK(backend_lanes(0, 1) == 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("Instantané : l'espace de la fenêtre SDR, sRGB seulement pour une fenêtre HDR (A10-18)",
           "[app][present]") {
-  using ajp::app::play::snapshot_keeps_target;
+  using kirari::app::play::snapshot_keeps_target;
   CHECK(snapshot_keeps_target(false, false));       // fenêtre SDR : son espace, avant c'était sRGB
   CHECK_FALSE(snapshot_keeps_target(false, true));  // fenêtre HDR, fichier .ppm : sRGB
   CHECK(snapshot_keeps_target(true, true));         // fenêtre HDR, fichier .pq.ppm : PQ tel quel
 }
 
 TEST_CASE("Garde de présentation : la carte et le pilote du fichier present-stall.txt", "[app][present]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   // Pilote NVIDIA 621.01 du portable figé (10.8.8.6 : 621 << 22 | 1 << 14).
   const std::string key =
       present_stall_key("NVIDIA GeForce RTX 4070 Laptop GPU", (621U << 22U) | (1U << 14U));
   CHECK(key == "NVIDIA GeForce RTX 4070 Laptop GPU · 9b404000");
   CHECK(key != present_stall_key("NVIDIA GeForce RTX 4070 Laptop GPU", (621U << 22U) | (2U << 14U)));
 
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-present-stall-test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-present-stall-test";
   std::filesystem::create_directories(dir);
   const std::filesystem::path file = dir / "present-stall.txt";
   std::filesystem::remove(file);
@@ -248,9 +248,9 @@ TEST_CASE("Garde de présentation : la carte et le pilote du fichier present-sta
 }
 
 TEST_CASE("Garde de présentation : un appel court ne déclenche rien", "[app][present]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   const std::filesystem::path file =
-      std::filesystem::temp_directory_path() / "ajp-present-stall-short" / "present-stall.txt";
+      std::filesystem::temp_directory_path() / "kirari-present-stall-short" / "present-stall.txt";
   {
     PresentWatch watch(file, "carte · 00000000", false);
     for (int i = 0; i < 3; ++i) {

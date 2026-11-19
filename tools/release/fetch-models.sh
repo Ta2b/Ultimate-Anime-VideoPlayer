@@ -8,12 +8,12 @@
 #   <dest>/rife/   RIFE 4.26, 4.25 et 4.22 lite en fp16 (conversions de vs-mlrt), depuis la release
 #                  models-rife-fp16-1 d'animejanai-inference ; RIFE 4.25 lite en fp16, converti par
 #                  tools/rife/convert_rife_fp16.py depuis l'export de vs-mlrt (workflow
-#                  export-interpolation-models.yml), depuis la release models-interp-1 d'ajp-releases : les
+#                  export-interpolation-models.yml), depuis la release models-interp-1 du dépôt des releases : les
 #                  quatre que le menu propose (kRifeCatalogue) ; RIFE est sous licence MIT
 #                  DistilDRBA v2 lite en fp16, flot entier et demi-flot (_s05), exportés par le workflow
 #                  export-interpolation-models.yml (tools/drba/export_distil_drba.py, depuis
 #                  routineLife1/DistilDRBA db51bde, weights/v2_lite.pkl), depuis la release
-#                  models-interp-1 d'ajp-releases ; DistilDRBA est sous licence MIT
+#                  models-interp-1 du dépôt des releases ; DistilDRBA est sous licence MIT
 #   <dest>/temporalfix/  TemporalFix s1, s2 et s3 en fp16 (la stabilisation temporelle, Légère, Normale,
 #                  Forte), depuis pifroggi/vs_temporalfix à un commit fixé ; licence Apache 2.0, son texte
 #                  à côté
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 DEST="${1:?dossier de destination}"
-CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models}"
+CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/kirari-release-models}"
 # 7z (p7zip) ou 7zz (7-Zip, Homebrew sous macOS) ; sha256sum ou, sous macOS, shasum.
 SEVENZ="$(command -v 7z || command -v 7zz || true)"
 [ -n "$SEVENZ" ] || { echo "7z manquant (apt install p7zip-full, brew install sevenzip)" >&2; exit 1; }
@@ -46,11 +46,11 @@ RIFE=(
   "de0fb71ae50fe082eb3903fd5cf752063dea5e9fd61e8bbf3c4577e11b877c9c rife_v4.25.onnx"
   "8b30b93ef8ab0b3cd1bb8905ad8b911eb887ff4b2900558eb1914d99568e2ca5 rife_v4.22_lite.onnx"
 )
-RELEASE_REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"  # P5.39 : le dépôt des releases, paramétrable
+RELEASE_REPO="${KIRARI_RELEASE_REPO:-$(sed -n 's/^KIRARI_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"  # P5.39 : le dépôt des releases, paramétrable
 # DistilDRBA : la grille de ses warps est en FP32 depuis l'export du 10 novembre 2026 (C05, A03-18). Les deux SHA
 # sont épinglés ici : une republication de models-interp-1 ne change les paquets qu'avec une modification de ce
 # fichier, donc avec une mesure au banc de qualité (dont le cache de modèles est indexé sur ce fichier).
-INTERP_URL="${AJP_INTERP_MODELS_URL:-https://github.com/$RELEASE_REPO/releases/download/models-interp-1}"
+INTERP_URL="${KIRARI_INTERP_MODELS_URL:-https://github.com/$RELEASE_REPO/releases/download/models-interp-1}"
 # RIFE 4.25 lite : la conversion fp16 du workflow (onnx et numpy épinglés), épinglée de même.
 INTERP=(
   "40bda3486348dd1ad33f728eeb669f5178e73051bd64ea10c767e0ab8cd17a50 distil_drba_v2_lite.onnx"
@@ -125,13 +125,13 @@ Modèles livrés avec le lecteur
 onnx/  AnimeJaNai HD V3.1 (SPAN), par the-database : Creative Commons BY-NC-SA 4.0
        (attribution, pas d'usage commercial, partage dans les mêmes conditions).
        https://github.com/the-database/mpv-upscale-2x_animejanai
-       ArtCNN C4F32 et C4F16 (João Chrisóstomo), enveloppés en RGB par ajp : licence MIT
+       ArtCNN C4F32 et C4F16 (João Chrisóstomo), enveloppés en RGB par kirari : licence MIT
        (texte complet dans onnx/ArtCNN-LICENSE.txt).
        https://github.com/Artoriuz/ArtCNN
 rife/  RIFE 4.26, 4.25, 4.22 lite et 4.25 lite (Practical-RIFE, hzwer), conversions ONNX de
-       vs-mlrt passées en fp16 par animejanai-inference (4.25 lite : par ajp) : licence MIT.
+       vs-mlrt passées en fp16 par animejanai-inference (4.25 lite : par kirari) : licence MIT.
        https://github.com/hzwer/Practical-RIFE
-       DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par ajp : licence MIT.
+       DistilDRBA v2 lite (routineLife1, « neko »), converti en ONNX fp16 par kirari : licence MIT.
        https://github.com/routineLife1/DistilDRBA
 temporalfix/  TemporalFix s1, s2 et s3 (pifroggi), tels que publiés : licence Apache 2.0
        (texte complet dans temporalfix/LICENSE.txt).

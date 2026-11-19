@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <thread>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct PlayerPaths;
 
@@ -26,4 +26,4 @@ struct UpdateNews {
 std::jthread start_update_check(const std::filesystem::path& settings_path, const PlayerPaths& paths,
                                 std::atomic<bool>& playing, UpdateNews& news);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

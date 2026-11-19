@@ -18,12 +18,12 @@
 
 namespace {
 
-using namespace ajp::e2e;  // NOLINT(google-build-using-namespace)
-using ajp::gpu::ir::test::attr_int;
-using ajp::gpu::ir::test::attr_string;
-using ajp::gpu::ir::test::ModelBuilder;
-using ajp::gpu::ir::test::tensor_f16;
-namespace onnx = ajp::gpu::ir::onnx;
+using namespace kirari::e2e;  // NOLINT(google-build-using-namespace)
+using kirari::gpu::ir::test::attr_int;
+using kirari::gpu::ir::test::attr_string;
+using kirari::gpu::ir::test::ModelBuilder;
+using kirari::gpu::ir::test::tensor_f16;
+namespace onnx = kirari::gpu::ir::onnx;
 
 void write_model(const fs::path& path, const ModelBuilder& model) {
   const std::string bytes = model.model().str();
@@ -97,7 +97,7 @@ int most_interpolated(const std::string& output) {
   return most;
 }
 
-ajp::media::test::ClipSpec plain_clip(std::string name) {
+kirari::media::test::ClipSpec plain_clip(std::string name) {
   return {.name = std::move(name),
           .width = 320,
           .height = 180,
@@ -108,14 +108,14 @@ ajp::media::test::ClipSpec plain_clip(std::string name) {
 
 std::vector<std::string> base_args(const fs::path& clip, const fs::path& dir, const fs::path& snapshot) {
   return {"play",
-          ajp::prepare::utf8_path(clip),
+          kirari::prepare::utf8_path(clip),
           "--software-gpu",
           "--mute",
           "--no-resume",
           "--window=640x360",
           "--seconds=2",
-          "--data-dir=" + ajp::prepare::utf8_path(dir / "reglages"),
-          "--snapshot=" + ajp::prepare::utf8_path(snapshot),
+          "--data-dir=" + kirari::prepare::utf8_path(dir / "reglages"),
+          "--snapshot=" + kirari::prepare::utf8_path(snapshot),
           "--snapshot-at=1.5"};
 }
 
@@ -123,9 +123,9 @@ std::vector<std::string> base_args(const fs::path& clip, const fs::path& dir, co
 
 TEST_CASE("Bout en bout : SPAN ×2 et RIFE ×2 synthétiques sous Vulkan, l'image de la chaîne nue",
           "[.e2e][app]") {
-  const auto clip = ajp::media::test::write_clip(plain_clip("e2e-chaine.mkv"));
+  const auto clip = kirari::media::test::write_clip(plain_clip("e2e-chaine.mkv"));
   REQUIRE(clip);
-  const fs::path dir = fresh_dir("ajp-e2e-chaine");
+  const fs::path dir = fresh_dir("kirari-e2e-chaine");
   const fs::path source = alone(*clip, dir);
   const fs::path span = dir / "span_identite.onnx";
   const fs::path rife = dir / "rife_moyenne.onnx";
@@ -140,8 +140,8 @@ TEST_CASE("Bout en bout : SPAN ×2 et RIFE ×2 synthétiques sous Vulkan, l'imag
   // La chaîne livrée : SPAN puis RIFE ×2, au facteur fixe (pas l'Auto, qui suit l'écran de Xvfb). Le premier
   // lancement construit les moteurs (la capture peut tomber sur l'écran de préparation), le second les lit
   // du cache et capture la lecture.
-  const std::vector<std::string> engines = {"--model=" + ajp::prepare::utf8_path(span),
-                                            "--rife-model=" + ajp::prepare::utf8_path(rife), "--rife=2"};
+  const std::vector<std::string> engines = {"--model=" + kirari::prepare::utf8_path(span),
+                                            "--rife-model=" + kirari::prepare::utf8_path(rife), "--rife=2"};
   for (const char* name : {"construction.ppm", "chaine.ppm"}) {
     std::vector<std::string> full = base_args(source, dir, dir / name);
     full.insert(full.end(), engines.begin(), engines.end());
@@ -162,12 +162,12 @@ TEST_CASE("Bout en bout : SPAN ×2 et RIFE ×2 synthétiques sous Vulkan, l'imag
   REQUIRE(got.width == expected.width);
   CHECK(band_difference(expected, got) < 3.0);
   // Une image qui change à chaque image (MPEG-4, luma propre à chacune) : RIFE interpole des paires.
-  ajp::media::test::ClipSpec moving{.name = "e2e-chaine-mouvement.mkv",
-                                    .codec = ajp::media::test::VideoCodec::Mpeg4,
-                                    .width = 320,
-                                    .height = 180,
-                                    .frames = 50};
-  const auto moving_clip = ajp::media::test::write_clip(moving);
+  kirari::media::test::ClipSpec moving{.name = "e2e-chaine-mouvement.mkv",
+                                       .codec = kirari::media::test::VideoCodec::Mpeg4,
+                                       .width = 320,
+                                       .height = 180,
+                                       .frames = 50};
+  const auto moving_clip = kirari::media::test::write_clip(moving);
   REQUIRE(moving_clip);
   std::vector<std::string> args = base_args(alone(*moving_clip, dir), dir, dir / "mouvement.ppm");
   args.insert(args.end(), engines.begin(), engines.end());
@@ -178,19 +178,19 @@ TEST_CASE("Bout en bout : SPAN ×2 et RIFE ×2 synthétiques sous Vulkan, l'imag
 }
 
 TEST_CASE("Bout en bout : un flux BT.601 se rend en BT.601, pas en BT.709", "[.e2e][app]") {
-  const fs::path dir = fresh_dir("ajp-e2e-matrice");
-  ajp::media::test::ClipSpec bt709 = plain_clip("e2e-bt709.mkv");
+  const fs::path dir = fresh_dir("kirari-e2e-matrice");
+  kirari::media::test::ClipSpec bt709 = plain_clip("e2e-bt709.mkv");
   bt709.color = {.primaries = AVCOL_PRI_BT709,
                  .transfer = AVCOL_TRC_BT709,
                  .matrix = AVCOL_SPC_BT709,
                  .range = AVCOL_RANGE_MPEG};
-  ajp::media::test::ClipSpec bt601 = plain_clip("e2e-bt601.mkv");
+  kirari::media::test::ClipSpec bt601 = plain_clip("e2e-bt601.mkv");
   bt601.color = {.primaries = AVCOL_PRI_SMPTE170M,
                  .transfer = AVCOL_TRC_SMPTE170M,
                  .matrix = AVCOL_SPC_SMPTE170M,
                  .range = AVCOL_RANGE_MPEG};
-  const auto clip709 = ajp::media::test::write_clip(bt709);
-  const auto clip601 = ajp::media::test::write_clip(bt601);
+  const auto clip709 = kirari::media::test::write_clip(bt709);
+  const auto clip601 = kirari::media::test::write_clip(bt601);
   REQUIRE(clip709);
   REQUIRE(clip601);
   std::vector<std::string> args709 = base_args(alone(*clip709, dir), dir, dir / "709.ppm");

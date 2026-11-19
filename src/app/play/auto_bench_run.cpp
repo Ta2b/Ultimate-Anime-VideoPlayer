@@ -18,7 +18,7 @@
 #include "prepare/process.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Ce qu'un essai a donné : sa lecture, ou pourquoi il n'en a pas donné.
@@ -435,4 +435,4 @@ std::string format_bench_report(const BenchOutcome& outcome) {
   return out;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

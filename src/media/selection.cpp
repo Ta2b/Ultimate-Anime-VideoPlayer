@@ -15,7 +15,7 @@
 #include "media/language.h"
 #include "media/track_language.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Clé d'ordre : plus grande = préférée. L'index le plus bas gagne les égalités.
@@ -174,4 +174,4 @@ TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePrior
   return choice;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

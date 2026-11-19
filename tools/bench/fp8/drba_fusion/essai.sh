@@ -1,8 +1,8 @@
 #!/bin/sh
-# Qualité : sorties de la chaîne fusionnée et du réseau entier TensorRT sur les 7 cas (à lancer sous ajp-gpu).
+# Qualité : sorties de la chaîne fusionnée et du réseau entier TensorRT sur les 7 cas (à lancer sous kirari-gpu).
 # Usage : essai.sh <binaire> <dossier_moteurs> <dossier_refs> <dossier_sorties>
 # Les comparaisons PSNR/SSIM se font ensuite avec qualite.py.
-export LD_LIBRARY_PATH=$HOME/ajp-sdk/tensorrt/lib:/opt/cuda/lib64
+export LD_LIBRARY_PATH=$HOME/kirari-sdk/tensorrt/lib:/opt/cuda/lib64
 bin=$1
 moteurs=$2
 refs=$3

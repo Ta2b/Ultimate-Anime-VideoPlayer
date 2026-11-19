@@ -37,7 +37,7 @@
 #include "subs/subs_messages.h"
 #include "subs/subs_thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class SubtitleLead;
 
@@ -182,4 +182,4 @@ class Pipeline {
   std::vector<media::TrackInfo> tracks_;    // audio et sous-titres
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

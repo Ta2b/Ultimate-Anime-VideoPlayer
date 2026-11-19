@@ -19,7 +19,7 @@
 #include "gpu/ir/ir.h"
 #include "gpu/vulkan/backend/net_program.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // 2 : GridSampleAttrs::grid_nchw ; 3 : Dispatch::subgroup ; 4 : Epilogue::gate et space ;
 // 5 : ConvAttrs::in_quant et out_quant (FP8 E4M3) ; 6 : porte de bout en bout à 1 % (P2.45), les artefacts
@@ -58,4 +58,4 @@ std::vector<std::byte> serialize(const ArtifactData& data);
 // tronqués ou valeur hors de son énumération). Dans tous les cas l'artefact se reconstruit.
 std::expected<ArtifactData, Refusal> deserialize(std::span<const std::byte> bytes);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

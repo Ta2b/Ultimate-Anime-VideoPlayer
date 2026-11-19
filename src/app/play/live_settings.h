@@ -29,7 +29,7 @@
 #include "gpu/kernel_ops.h"
 #include "media/live_scenes.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce que vaut une paire du mode Rapide réduite à une image (core/free_rate.h).
 enum class LonePair : std::uint8_t {
@@ -505,4 +505,4 @@ inline void set_live_motion(LiveSettings& live, const PlaySettings& s) {
   live.set_strong_middle(s.strong_middle);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

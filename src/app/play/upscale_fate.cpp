@@ -7,7 +7,7 @@
 #include "app/play/upscale_stage.h"
 #include "kernels/spec/distil_drba.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 RingStage::Fate UpscaleStage::fate(const DecodedFrame& frame, std::uint32_t output) {
   if (held_same_) return Fate::Same;
@@ -66,4 +66,4 @@ RingStage::Fate UpscaleStage::drba_fate(std::uint32_t output) {
   return Fate::Write;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

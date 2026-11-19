@@ -15,7 +15,7 @@
 #include "app/play/i18n.h"
 #include "media/selection.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les langues de l'utilisateur, la préférée d'abord, en balises (« fr_FR », « en-US », « fr »). home : le
 // dossier de l'utilisateur, où KDE range ~/.config/plasma-localerc ; vide, seul SDL est lu.
@@ -61,4 +61,4 @@ i18n::Language interface_language(std::string_view setting);
 // « system », « en » ou « fr » : ce que play.toml peut dire de la langue de l'interface.
 bool known_interface_language(std::string_view setting);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

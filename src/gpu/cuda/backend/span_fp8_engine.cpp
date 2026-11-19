@@ -16,7 +16,7 @@
 #include "gpu/cuda/backend/span_fp8_check.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr std::string_view kKeyPrefix = "span-fp8:";
@@ -327,4 +327,4 @@ std::expected<void, Refusal> SpanFp8Engine::body(cudaStream_t stream, const void
   return direct();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

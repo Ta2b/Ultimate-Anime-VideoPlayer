@@ -7,7 +7,7 @@
 #include "app/play/settings_engines.h"
 #include "app/play/settings_sound.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // C23-01 : le délai d'un autre appareil ne se pose pas en direct sur l'appareil en cours.
 TEST_CASE("Appareil audio : le délai du nouvel appareil attend la réouverture (C23-01)", "[app][settings]") {
@@ -66,4 +66,4 @@ TEST_CASE("Dossier d'installation : guillemets et blancs de bord retirés (C23-0
   CHECK(clean_folder_text("").empty());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

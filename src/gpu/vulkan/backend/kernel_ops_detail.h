@@ -18,7 +18,7 @@
 #include "gpu/vulkan/compute/destroyed_log.h"
 #include "gpu/vulkan/compute/kernel_types.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 namespace detail {
 
@@ -182,4 +182,4 @@ std::expected<Recording*, Refusal> VulkanKernelOps::recording_with(OpKey key,
   return chosen->recording.get();
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

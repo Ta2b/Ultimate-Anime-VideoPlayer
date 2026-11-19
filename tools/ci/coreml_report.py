@@ -97,7 +97,7 @@ def unshuffle_5d(model) -> int:
         if perm == [0, 1, 3, 5, 2, 4] and reshape is not None and reshape.op_type == "Reshape":
             found.append((node, reshape))
     for transpose, reshape in found:
-        shape = reshape.input[1] + ".ajp5d"
+        shape = reshape.input[1] + ".kirari5d"
         graph.initializer.extend([numpy_helper.from_array(np.array([1], np.int64), shape + ".starts"),
                                   numpy_helper.from_array(np.array([6], np.int64), shape + ".ends")])
         graph.node.insert(list(graph.node).index(reshape),

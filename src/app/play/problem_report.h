@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Retient un fait pour le rapport (« Carte », « Pilote »…). Un même nom remplace sa valeur, l'ordre
 // d'arrivée est gardé. Utilisable de tout thread.
@@ -40,7 +40,7 @@ void clear_report_facts();
 std::string os_description();
 
 // L'identité exacte de l'exécutable : sous Linux, son build-id GNU en hexadécimal, qui rattache une pile
-// brute du journal (« ajp(+0x1a2b3c) ») aux symboles de la release dont le binaire livré est dépouillé
+// brute du journal (« kirari(+0x1a2b3c) ») aux symboles de la release dont le binaire livré est dépouillé
 // (B39-04) ; sous Windows, la clé de son PDB (C34-06), qui dit quels symboles prendre pour lire un minidump,
 // même entre deux builds de même version. Vide ailleurs ou illisible.
 std::string build_id_description();
@@ -63,7 +63,8 @@ std::string latest_dump_name(const std::filesystem::path& dir);
 
 struct ReportParts {
   std::vector<std::pair<std::string, std::string>> facts;
-  std::string previous_log;  // la fin d'ajp.log.1, si la séance d'avant s'est mal terminée ou s'est relancée
+  std::string
+      previous_log;  // la fin d'kirari.log.1, si la séance d'avant s'est mal terminée ou s'est relancée
   std::string previous_title;  // vide : « arrêtée brutalement » ; sinon le titre de la séance d'avant
   std::string current_log;
   std::string dump_name;  // le dernier minidump du dossier crashes ; vide : aucun
@@ -85,11 +86,11 @@ void end_session();
 // Le résultat de begin_session, relu pendant la séance.
 bool previous_session_crashed();
 // Cette séance vient d'une relance voulue (why : « gpu-lost », « engine-updated ») : end_session a retiré la
-// marque, mais ajp.log.1 porte la cause (la perte du GPU) et se joint au rapport aussi (B39-01).
+// marque, mais kirari.log.1 porte la cause (la perte du GPU) et se joint au rapport aussi (B39-01).
 void note_previous_session_relaunched(std::string_view why);
 std::string previous_session_relaunched();
 
-// Le fichier du journal de cette séance (ajp.log, sous --data-dir quand il est donné) : le bouton le lit
+// Le fichier du journal de cette séance (kirari.log, sous --data-dir quand il est donné) : le bouton le lit
 // là, et son voisin « .1 » est la séance d'avant.
 void set_report_log_file(const std::filesystem::path& file);
 std::filesystem::path report_log_file();
@@ -97,4 +98,4 @@ std::filesystem::path report_log_file();
 // Le rapport complet pour ce lancement : lit les journaux et le dossier des minidumps.
 std::string current_report(std::string_view home);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

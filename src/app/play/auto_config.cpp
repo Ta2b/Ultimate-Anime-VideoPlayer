@@ -11,7 +11,7 @@
 #include "app/play/interp_retired.h"
 #include "app/play/model_choice.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 struct PresetName {
@@ -364,4 +364,4 @@ bool display_moves_chain(Preset preset, const DisplayMove& move) {
   return wanted_factor(move.opened_hz, move.source_fps) != wanted_factor(move.now_hz, move.source_fps);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ABAB trtexec (graphe CUDA) entre deux graphes ONNX de même interface : A (référence FP16) contre B (FP8).
-#   flock ~/ajp-reports/gpu-bench.lock tools/fp8/abab_trt.sh A.onnx B.onnx "entree:1x11x768x1280[;autre:...]"|static [tours=3]
+#   flock ~/kirari-reports/gpu-bench.lock tools/fp8/abab_trt.sh A.onnx B.onnx "entree:1x11x768x1280[;autre:...]"|static [tours=3]
 # Construit chaque moteur une fois (niveau 5), puis alterne A B puis B A... : minimum / médiane GPU en ms.
 # TensorRT 11 est fortement typé : pas de --fp16 / --fp8, la précision vient des types du graphe.
 set -euo pipefail
 A="$1"; B="$2"; SHAPES="$3"; ROUNDS="${4:-3}"
-TRTEXEC="${TRTEXEC:-$(command -v trtexec || echo "$HOME/ajp-sdk/tensorrt/bin/trtexec")}"
+TRTEXEC="${TRTEXEC:-$(command -v trtexec || echo "$HOME/kirari-sdk/tensorrt/bin/trtexec")}"
 export LD_LIBRARY_PATH="${TRTEXEC%/bin/trtexec}/lib:${LD_LIBRARY_PATH:-}"
 CACHE="${ABAB_CACHE:-$(mktemp -d)}"
 mkdir -p "$CACHE"

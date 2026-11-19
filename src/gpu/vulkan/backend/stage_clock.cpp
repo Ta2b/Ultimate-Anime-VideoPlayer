@@ -3,7 +3,7 @@
 #include <array>
 #include <utility>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 std::unique_ptr<StageClock> StageClock::create(VkContext& context, MemoryAllocator& memory,
                                                BackendQueue& queue) {
@@ -128,4 +128,4 @@ std::vector<GpuStageSummary> StageClock::profile() {
   return out;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

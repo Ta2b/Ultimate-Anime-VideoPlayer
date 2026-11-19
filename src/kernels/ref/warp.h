@@ -10,7 +10,7 @@
 #include "kernels/spec/warp.h"
 #include "kernels/spec/warp_pan.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Mouvement estimé par RIFE dans ses tenseurs remplis : 4 plans de déplacements (f0x, f0y,
 // f1x, f1y) et un masque, tous de même taille, et la fenêtre de l'image dans ces plans.
@@ -58,4 +58,4 @@ Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Mo
 // pixel isolé ne décide pas), en pixels de la fenêtre (k_flow_max).
 Result<float> flow_max(const Motion& motion);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

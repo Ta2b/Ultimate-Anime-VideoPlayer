@@ -6,11 +6,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using ajp::media::kPacketOverhead;
-using ajp::media::Packet;
-using ajp::media::PacketReserve;
-using ajp::media::PacketSink;
+using kirari::RefusalCode;
+using kirari::media::kPacketOverhead;
+using kirari::media::Packet;
+using kirari::media::PacketReserve;
+using kirari::media::PacketSink;
 
 namespace {
 

@@ -7,7 +7,7 @@
 #include <mutex>
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::atomic<bool> g_child{false};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
@@ -143,4 +143,4 @@ void tell_bench_parent(const ChildBenchEvent& event) {
   std::fflush(stdout);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

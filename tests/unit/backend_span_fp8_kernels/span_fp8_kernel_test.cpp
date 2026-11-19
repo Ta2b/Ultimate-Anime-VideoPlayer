@@ -24,7 +24,7 @@
 #include "gpu/span_fp8/derive.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr std::size_t kCanary = std::size_t{1} << 20;
@@ -348,4 +348,4 @@ TEST_CASE("SPAN FP8 : le réseau suit la référence FP16 sur des poids aléatoi
   CHECK(snr_db >= 20.0);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

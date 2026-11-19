@@ -14,7 +14,7 @@
 
 #include "app/play/home_screen.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les images d'une minute d'accueil, un événement à chaque instant de `events` (µs, croissants).
@@ -75,7 +75,7 @@ TEST_CASE(
     "(B29-04)",
     "[app][home]") {
   REQUIRE(SDL_Init(SDL_INIT_EVENTS));
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-deferred-drops";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-deferred-drops";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::string video = (dir / "ep02.mkv").string();
@@ -111,4 +111,4 @@ TEST_CASE(
   std::filesystem::remove_all(dir);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

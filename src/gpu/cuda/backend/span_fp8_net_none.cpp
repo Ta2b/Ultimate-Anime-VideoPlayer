@@ -1,9 +1,9 @@
-// SpanFp8Net d'un backend construit sans CUTLASS (AJP_WITH_SPAN_FP8 = OFF : plateforme autre que Linux, ou
+// SpanFp8Net d'un backend construit sans CUTLASS (KIRARI_WITH_SPAN_FP8 = OFF : plateforme autre que Linux, ou
 // third_party/cutlass absent) : l'appareil n'est jamais pris en charge, le backend ne l'annonce pas
 // (BackendCaps::span_fp8_cutlass) et la chaîne reste sur TensorRT.
 #include "gpu/cuda/backend/span_fp8_net.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 struct SpanFp8Net::Impl {};
 
@@ -56,4 +56,4 @@ int SpanFp8Net::overflow_frames() const {
   return 0;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

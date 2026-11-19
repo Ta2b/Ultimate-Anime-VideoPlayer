@@ -23,7 +23,7 @@
 #include "media/stills.h"
 #include "prepare/sha256.h"
 
-namespace ajp::app::play::span_test {
+namespace kirari::app::play::span_test {
 
 namespace fs = std::filesystem;
 using gpu::span_fp8::Package;
@@ -33,7 +33,7 @@ struct Folder {
   // Un dossier par essai : ctest lance les cas en parallèle, un nom fixe ferait se marcher dessus.
   Folder()
       : root(fs::temp_directory_path() /
-             std::format("ajp-span-derive-test-{}",
+             std::format("kirari-span-derive-test-{}",
                          std::chrono::steady_clock::now().time_since_epoch().count())) {
     fs::remove_all(root);
     fs::create_directories(models());
@@ -136,4 +136,4 @@ struct FakeBackend {
   }
 };
 
-}  // namespace ajp::app::play::span_test
+}  // namespace kirari::app::play::span_test

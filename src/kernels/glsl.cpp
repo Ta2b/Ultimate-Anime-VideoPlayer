@@ -11,7 +11,7 @@
 #include "kernels/ref/deband.h"
 #include "kernels/spec.h"
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 namespace {
 
 constexpr std::array kFormats{Format::Nv12,    Format::P010,      Format::P016,
@@ -97,7 +97,7 @@ class Table {
  private:
   void add(std::string name, GlslType type, std::vector<float> values, std::int64_t value,
            std::string comment) {
-    constants_.push_back({.name = "AJP_" + std::move(name),
+    constants_.push_back({.name = "KIRARI_" + std::move(name),
                           .type = type,
                           .values = std::move(values),
                           .integer = value,
@@ -216,7 +216,7 @@ void add_transfer(Table& t) {
   t.real("SRGB_GAMMA", srgb::kGamma);
   t.real("BT1886_GAMMA", bt1886::kGamma, "BT.1886");
   t.mat3("BT709_TO_BT2020", kBt709ToBt2020,
-         "Primaires en lumière linéaire : rgb2020 = AJP_BT709_TO_BT2020 * rgb709");
+         "Primaires en lumière linéaire : rgb2020 = KIRARI_BT709_TO_BT2020 * rgb709");
   t.mat3("BT2020_TO_BT709", kBt2020ToBt709);
 }
 
@@ -273,9 +273,9 @@ std::string_view type_name(GlslType type) {
   return "float";
 }
 
-// AJP_ suivi de majuscules, chiffres et soulignés : un identifiant GLSL sans collision.
+// KIRARI_ suivi de majuscules, chiffres et soulignés : un identifiant GLSL sans collision.
 bool valid_name(std::string_view name) {
-  constexpr std::string_view kPrefix = "AJP_";
+  constexpr std::string_view kPrefix = "KIRARI_";
   return name.size() > kPrefix.size() && name.starts_with(kPrefix) &&
          name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") == std::string_view::npos;
 }
@@ -324,7 +324,7 @@ Result<std::string> glsl_literal(float value) {
 
 Result<std::string> glsl_declaration(const GlslConstant& c) {
   if (!valid_name(c.name)) {
-    return fail(ErrorCode::InvalidConstant, std::format("nom « {} » hors de AJP_[A-Z0-9_]+", c.name));
+    return fail(ErrorCode::InvalidConstant, std::format("nom « {} » hors de KIRARI_[A-Z0-9_]+", c.name));
   }
   if (c.values.size() != glsl_float_count(c.type)) {
     return fail(ErrorCode::InvalidConstant,
@@ -349,11 +349,11 @@ Result<std::string> glsl_declaration(const GlslConstant& c) {
 
 Result<std::string> glsl_spec_header() {
   std::string text = std::format(
-      "// Généré depuis kernels/spec.h (version {}) par ajp_kernels_glsl. Ne pas modifier :\n"
+      "// Généré depuis kernels/spec.h (version {}) par kirari_kernels_glsl. Ne pas modifier :\n"
       "// les shaders reprennent ici les nombres exacts de la spécification.\n"
-      "#ifndef AJP_KERNELS_SPEC_GLSL\n"
-      "#define AJP_KERNELS_SPEC_GLSL\n\n"
-      "#define AJP_KERNELS_SPEC_VERSION {}\n",
+      "#ifndef KIRARI_KERNELS_SPEC_GLSL\n"
+      "#define KIRARI_KERNELS_SPEC_GLSL\n\n"
+      "#define KIRARI_KERNELS_SPEC_VERSION {}\n",
       kSpecVersion, kSpecVersion);
   for (const GlslConstant& c : glsl_constants()) {
     const auto line = glsl_declaration(c);
@@ -361,8 +361,8 @@ Result<std::string> glsl_spec_header() {
     if (!c.comment.empty()) text += std::format("\n// {}\n", c.comment);
     text += *line + "\n";
   }
-  text += "\n#endif  // AJP_KERNELS_SPEC_GLSL\n";
+  text += "\n#endif  // KIRARI_KERNELS_SPEC_GLSL\n";
   return text;
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels

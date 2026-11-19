@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ABAB des morceaux d'un réseau fusionné (RIFE, DistilDRBA) : chaque morceau FP16 contre son jumeau FP8.
-#   flock ~/ajp-reports/gpu-bench.lock tools/fp8/abab_pieces.sh DOSSIER_FP16 DOSSIER_FP8 [tours=3]
+#   flock ~/kirari-reports/gpu-bench.lock tools/fp8/abab_pieces.sh DOSSIER_FP16 DOSSIER_FP8 [tours=3]
 # Les deux dossiers portent les mêmes noms de fichiers « *-bloc*.onnx » (interp_fp8.py quantize les a écrits). Les
 # morceaux sont mesurés un par un puis additionnés : c'est la somme des moteurs du lecteur fusionné.
 set -euo pipefail

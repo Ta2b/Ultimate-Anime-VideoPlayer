@@ -17,7 +17,7 @@
 #include "app/play/ui.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct AfterGap {
   std::optional<Refusal> lost;  // l'appareil est perdu : la relance
@@ -33,4 +33,4 @@ AfterGap after_gap_seen(Session& session, Controls& controls, std::int64_t gap_u
                         const std::optional<std::expected<void, Refusal>>& health, bool& announced,
                         std::int64_t now_us);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

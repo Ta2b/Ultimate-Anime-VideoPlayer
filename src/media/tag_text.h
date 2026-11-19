@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Octets UTF-8 gardés au plus.
 inline constexpr std::size_t kMaxTagBytes = 256;
@@ -16,4 +16,4 @@ inline constexpr std::size_t kMaxTagBytes = 256;
 // milieu d'un caractère.
 std::string clean_tag_text(std::string_view raw);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

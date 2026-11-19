@@ -10,7 +10,7 @@
 #include "kernels/spec/color.h"
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 enum class Filter : std::uint8_t {
   Spline36,  // chaîne d'agrandissement et chroma de la chaîne (resize.Spline36)
@@ -109,6 +109,6 @@ constexpr ChromaShift chroma_shift_down(Siting s) {
 // k_h_f32, k_uv_v_store). 4:4:4 : matrice seule, sans rééchantillonnage.
 inline constexpr Filter kChainChromaFilter = Filter::Spline36;
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

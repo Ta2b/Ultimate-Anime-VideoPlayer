@@ -9,7 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::core;
+using namespace kirari::core;
 
 namespace {
 

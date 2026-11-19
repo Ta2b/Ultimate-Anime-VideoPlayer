@@ -6,7 +6,7 @@
 
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 double series_apl_of(const std::vector<media::Shot>& shots) {
   std::vector<double> apl;
@@ -49,4 +49,4 @@ bool AnimeGlide::gliding(std::int64_t now_us) const {
   return known_ && now_us - start_us_ < kAnimeGlideUs;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

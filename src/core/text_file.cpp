@@ -7,7 +7,7 @@
 
 #include "core/utf8_path.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 std::expected<std::string, Refusal> read_text_file(const std::filesystem::path& path) {
   // Un dossier s'ouvre sous Linux et se lit vide : seul un fichier ordinaire est lu.
@@ -34,4 +34,4 @@ std::expected<std::optional<std::string>, Refusal> read_text_file_if_present(
   return std::optional<std::string>{std::move(*text)};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -11,7 +11,7 @@
 #include "core/phase_trim.h"
 
 using Catch::Approx;
-using namespace ajp::core;
+using namespace kirari::core;
 
 namespace {
 
@@ -50,7 +50,7 @@ struct Slips {
 // calée sur la mesure laisse cette erreur relative) ; avec ou sans le calage de phase.
 Slips one_hour(double error, bool trimmed) {
   const double period = 1e6 / 144.0;
-  ajp::core::PhaseTrim trim;
+  kirari::core::PhaseTrim trim;
   Slips out;
   double due = 0.2 * period;  // l'échéance de l'image, en µs d'hôte
   std::int64_t shown = 0;
@@ -80,7 +80,7 @@ TEST_CASE("A12-06 : le calage de phase tient une heure sans image doublée ni sa
     CHECK(after.worst < 0.35);  // l'échéance reste loin du milieu de deux vblanks
   }
   // Fréquence exacte : la correction reste nulle, la vitesse n'est jamais redemandée.
-  ajp::core::PhaseTrim idle;
+  kirari::core::PhaseTrim idle;
   int changes = 0;
   for (int n = 0; n < 10'000; ++n)
     if (idle.note(static_cast<double>(n) + 0.004, n * 6'944LL)) ++changes;
@@ -89,7 +89,7 @@ TEST_CASE("A12-06 : le calage de phase tient une heure sans image doublée ni sa
 }
 
 TEST_CASE("A12-06 : la correction est bornée, par pas, et au plus une fois par seconde", "[pacing]") {
-  using ajp::core::PhaseTrim;
+  using kirari::core::PhaseTrim;
   PhaseTrim trim;
   int changes = 0;
   std::int64_t last = -10'000'000;

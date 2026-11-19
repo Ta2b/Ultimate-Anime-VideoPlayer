@@ -22,7 +22,7 @@ on:
         description: "Étiquette à (re)construire et publier"
         required: true
 
-# Les releases vivent dans un autre dépôt, écrites avec AJP_RELEASE_TOKEN seul : le jeton du dépôt des sources ne sert
+# Les releases vivent dans ce dépôt (KIRARI_RELEASE_REPO), écrites avec AJP_RELEASE_TOKEN seul : le jeton du workflow ne sert
 # qu'à lire (B51-12).
 permissions:
   contents: read
@@ -77,18 +77,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           source tools/release/versions.env
-          echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
+          echo "KIRARI_RELEASE_REPO=$KIRARI_RELEASE_REPO" >>"$GITHUB_ENV"
           dir="$RUNNER_TEMP/release"
           mkdir -p "$dir"
-          gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
-            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip -p engines.lock \
-            -p ajp-linux-x86_64.AppImage -p ajp-windows-x64-setup.exe
+          gh release download "$TAG" -R "$KIRARI_RELEASE_REPO" -D "$dir" \
+            -p kirari-linux-x64.tar.gz -p kirari-windows-x64.zip -p kirari-macos-arm64.zip -p engines.lock \
+            -p kirari-linux-x86_64.AppImage -p kirari-windows-x64-setup.exe
           # macOS non construite (échec, hors cible) : une archive restée d'un essai précédent ne se signe pas.
-          [ -n "$BUILT_MACOS" ] || rm -f "$dir/ajp-macos-arm64.zip"
+          [ -n "$BUILT_MACOS" ] || rm -f "$dir/kirari-macos-arm64.zip"
           # Ce qu'on signe est ce que la construction a produit, pas ce que la release contient maintenant (B51-07).
-          tools/release/check-built-sums.sh "$dir" "ajp-linux-x64.tar.gz=$BUILT_LINUX" \
-            "ajp-windows-x64.zip=$BUILT_WINDOWS" "ajp-macos-arm64.zip=$BUILT_MACOS" \
-            "ajp-linux-x86_64.AppImage=$BUILT_APPIMAGE" "ajp-windows-x64-setup.exe=$BUILT_SETUP"
+          tools/release/check-built-sums.sh "$dir" "kirari-linux-x64.tar.gz=$BUILT_LINUX" \
+            "kirari-windows-x64.zip=$BUILT_WINDOWS" "kirari-macos-arm64.zip=$BUILT_MACOS" \
+            "kirari-linux-x86_64.AppImage=$BUILT_APPIMAGE" "kirari-windows-x64-setup.exe=$BUILT_SETUP"
           tools/release/check-release.sh "$TAG" "$dir"
       - name: Index NVIDIA signé
         env:
@@ -100,10 +100,10 @@ jobs:
           # L'index nomme le paquet TensorRT de l'engines.lock du paquet de chaque plateforme, jamais un
           # engines-nvidia.lock déjà joint à l'étiquette : celui-ci pouvait nommer un autre module (étiquette reposée
           # après un correctif) et gagner sur l'index du jour (B51-01).
-          AJP_RELEASE_TAG="$TAG" tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
+          KIRARI_RELEASE_TAG="$TAG" tools/release/nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
           # Et l'index le prouve : même adresse, même SHA-256, même taille que ce que les paquets embarquent.
           tools/release/check-nvidia-index.sh "$dir/engines-nvidia.lock" "$dir/engines.lock" "$dir/engines-windows.lock"
-          key="$RUNNER_TEMP/ajp-update-key.pem"
+          key="$RUNNER_TEMP/kirari-update-key.pem"
           trap 'rm -f "$key"' EXIT
           # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
           tools/release/update-key.sh "$key"
@@ -116,19 +116,19 @@ jobs:
         run: |
           [ -n "$UPDATE_KEY" ] || { echo "::error::secret AJP_UPDATE_KEY absent de l'environnement release : pas de manifeste, pas de publication (docs/signature-des-releases.md)"; exit 1; }
           dir="$RUNNER_TEMP/release"
-          key="$RUNNER_TEMP/ajp-update-key.pem"
+          key="$RUNNER_TEMP/kirari-update-key.pem"
           trap 'rm -f "$key"' EXIT
           # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
           tools/release/update-key.sh "$key"
           AJP_UPDATE_KEY="$key" tools/release/sign-manifest.sh "${TAG#v}" stable "$dir" \
-            "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
-            "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
+            "https://github.com/$KIRARI_RELEASE_REPO/releases/download/$TAG" \
+            "https://github.com/$KIRARI_RELEASE_REPO/releases/tag/$TAG"
           # La signature se vérifie avec la clé publique compilée dans le lecteur, archive par archive.
-          pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
-          for archive in ajp-linux-x64.tar.gz ajp-windows-x64.zip ajp-macos-arm64.zip \
-            ajp-linux-x86_64.AppImage ajp-windows-x64-setup.exe; do
+          pub="$(sed -n 's/^set(KIRARI_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
+          for archive in kirari-linux-x64.tar.gz kirari-windows-x64.zip kirari-macos-arm64.zip \
+            kirari-linux-x86_64.AppImage kirari-windows-x64-setup.exe; do
             [ -f "$dir/$archive" ] || continue
-            AJP_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$dir/$archive"
+            KIRARI_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$dir/$archive"
           done
           cat "$dir/manifest.toml" >>"$GITHUB_STEP_SUMMARY"
       - name: Publication
@@ -136,21 +136,21 @@ jobs:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
           dir="$RUNNER_TEMP/release"
-          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/engines-nvidia.lock" "$dir/engines-nvidia.lock.sig"
+          gh release upload "$TAG" -R "$KIRARI_RELEASE_REPO" --clobber "$dir/engines-nvidia.lock" "$dir/engines-nvidia.lock.sig"
           if [[ "$TAG" == *-* ]]; then
-            gh release edit "$TAG" -R "$AJP_RELEASE_REPO" --prerelease=true --latest=false
+            gh release edit "$TAG" -R "$KIRARI_RELEASE_REPO" --prerelease=true --latest=false
             echo "préversion $TAG publiée (sans manifeste)" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # Le manifeste d'abord : la « latest » ne désigne jamais une release sans lui (A28-02, A28-03).
-          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
+          gh release upload "$TAG" -R "$KIRARI_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
           # Une relance sur une étiquette plus ancienne ne ramène pas la « latest » en arrière.
-          current="$(gh release view -R "$AJP_RELEASE_REPO" --json tagName -q .tagName 2>/dev/null || true)"
+          current="$(gh release view -R "$KIRARI_RELEASE_REPO" --json tagName -q .tagName 2>/dev/null || true)"
           latest=--latest
           if [ -n "$current" ] && [ "$current" != "$TAG" ] && \
              [ "$(printf '%s\n%s\n' "${current#v}" "${TAG#v}" | sort -V | tail -1)" != "${TAG#v}" ]; then
             latest=--latest=false
             echo "::warning::$TAG est plus ancienne que la « latest » actuelle ($current) : elle le reste"
           fi
-          gh release edit "$TAG" -R "$AJP_RELEASE_REPO" --prerelease=false "$latest"
+          gh release edit "$TAG" -R "$KIRARI_RELEASE_REPO" --prerelease=false "$latest"
           echo "release $TAG publiée ($latest)" | tee -a "$GITHUB_STEP_SUMMARY"

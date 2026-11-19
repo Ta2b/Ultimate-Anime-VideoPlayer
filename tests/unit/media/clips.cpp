@@ -2,7 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::media::test {
+namespace kirari::media::test {
 
 ClipSpec full_clip() {
   return ClipSpec{
@@ -118,4 +118,4 @@ std::filesystem::path require_clip(const ClipSpec& spec) {
   return *path;
 }
 
-}  // namespace ajp::media::test
+}  // namespace kirari::media::test

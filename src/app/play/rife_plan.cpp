@@ -4,7 +4,7 @@
 
 #include "kernels/spec/detect.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -40,4 +40,4 @@ bool rife_runs(const PairFacts& facts) {
   return !pair_cut(facts) && !kernels::is_held(facts.scores->worst_block);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

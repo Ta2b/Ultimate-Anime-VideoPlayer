@@ -22,7 +22,7 @@
 #include "audio/timeline.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 class AudioOutput {
  public:
@@ -90,4 +90,4 @@ class AudioOutput {
   bool paused_ = true;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

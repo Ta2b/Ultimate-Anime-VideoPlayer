@@ -35,7 +35,7 @@
 #include "media/hw_api.h"
 #include "media/source.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce que le rapport « Signaler un problème » dit de la lecture en cours (B39-02) : la vidéo (nom, codec,
 // taille, cadence, transfert de la source), l'écran, la sortie HDR10 ou SDR, la chaîne jouée. Les faits sont
@@ -271,4 +271,4 @@ std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& i
                                             const PlaySettings& settings, InnerFallbacks& inner,
                                             const std::string& library);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

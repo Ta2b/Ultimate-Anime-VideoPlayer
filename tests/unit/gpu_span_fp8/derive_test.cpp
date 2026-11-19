@@ -13,7 +13,7 @@
 
 #include "gpu/span_fp8/metrics.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 TEST_CASE("les échelles sont le maximum observé, avec sa marge de tête, sur 448 (B02-02)",
           "[span_fp8][derive]") {
@@ -188,7 +188,7 @@ TEST_CASE("le reçu a les clés et la mise en forme de l'outil Python", "[span_f
   receipt.source = "2x_AnimeJaNai.onnx";
   receipt.source_sha256 = "aa";
   receipt.model_sha256 = "bb";
-  receipt.quantizer = "ajp \"natif\"";
+  receipt.quantizer = "kirari \"natif\"";
   receipt.kernels_ms = 9.236;
   receipt.calibration_images = 8;
   receipt.validation_images = 4;
@@ -197,8 +197,8 @@ TEST_CASE("le reçu a les clés et la mise en forme de l'outil Python", "[span_f
       Verdict{.psnr_mean_db = 52.04087, .psnr_worst_db = 49.2715, .ssim_worst = 0.99673, .passed = true};
   receipt.reference = "cutlass-fp16";
   const std::string text = receipt_text(receipt, "essai");
-  CHECK(text.starts_with("# essai\nformat = \"ajp-span-fp8c-v2\"\nsource = \"2x_AnimeJaNai.onnx\"\n"));
-  CHECK(text.find("quantizer = \"ajp \\\"natif\\\"\"\n") != std::string::npos);
+  CHECK(text.starts_with("# essai\nformat = \"kirari-span-fp8c-v2\"\nsource = \"2x_AnimeJaNai.onnx\"\n"));
+  CHECK(text.find("quantizer = \"kirari \\\"natif\\\"\"\n") != std::string::npos);
   CHECK(text.find("precision = \"fp8\"\n") != std::string::npos);
   CHECK(text.find("kernels_ms = 9.2360\n") != std::string::npos);
   CHECK(text.find("psnr_mean_db = 52.0409\n") != std::string::npos);
@@ -266,4 +266,4 @@ TEST_CASE("les images de dérivation se ramènent à une taille que les noyaux p
   }
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

@@ -16,7 +16,7 @@
 #include "gpu/coreml/vt_gpu.h"
 #include "gpu/coreml/vt_pixels.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Un refus de l'interpolation d'Apple, nommée dans le détail.
 std::unexpected<Refusal> refuse_vt(RefusalCode code, std::string text);
@@ -100,4 +100,4 @@ void by_bands(int height, const std::function<void(vt::Rows)>& work);
 std::unique_ptr<VtGpu> open_gpu(vt::Pixels format, int width, int height, const BufferPool& sources,
                                 const BufferPool& destinations, std::string& why);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

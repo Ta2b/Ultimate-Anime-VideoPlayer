@@ -27,7 +27,7 @@
 #include "core/profile.h"
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Ce pour quoi un moteur est préféré. L'ancien usage « truehdr » (RTX HDR, retiré) est ignoré à la lecture.
 enum class Usage : std::uint8_t { Upscale, Interpolate };
@@ -68,4 +68,4 @@ std::expected<std::string, Refusal> format_settings(const Settings& settings,
 // Écriture atomique, après validation ; garde les clés inconnues du fichier en place.
 std::expected<void, Refusal> save_settings(const std::filesystem::path& path, const Settings& settings);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -9,7 +9,7 @@
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 namespace {
 
 // Produit des dimensions avant et après un axe.
@@ -336,4 +336,4 @@ Evaluated eval_pad(const Node& node, std::span<const Value* const> in, std::span
   return std::vector<Value>{gather_elements(data, outs[0], source, fill)};
 }
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

@@ -9,7 +9,7 @@
 # HarfBuzz) suit la distribution, pas la baseline de vcpkg.
 #
 #   tools/deps/linux-from-source.sh [--core] <prefixe> [dossier-de-travail]
-#   AJP_DEPS_PREFIX=<prefixe> cmake --preset linux-prefix
+#   KIRARI_DEPS_PREFIX=<prefixe> cmake --preset linux-prefix
 #
 # --core ne construit que ce dont core, kernels et leurs tests ont besoin.
 set -euo pipefail
@@ -17,7 +17,7 @@ set -euo pipefail
 CORE_ONLY=0
 if [[ "${1:-}" == "--core" ]]; then CORE_ONLY=1; shift; fi
 PREFIX="$(realpath -m "${1:?usage: $0 <prefixe> [dossier-de-travail]}")"
-WORK="$(realpath -m "${2:-$PREFIX/../ajp-deps-src}")"
+WORK="$(realpath -m "${2:-$PREFIX/../kirari-deps-src}")"
 JOBS="$(nproc)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # le dépôt : ports/ et ses correctifs
 mkdir -p "$PREFIX" "$WORK"
@@ -167,7 +167,7 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
 # trois sous-modules que le port Windows prend sont donc initialisés, et -I place les en-têtes du préfixe devant
 # ceux du système. Une autre version de vulkan-headers rebâtit libplacebo (sa version entre dans la signature).
 # Le correctif de présentation (chantier 6.1), le même que le port vcpkg : sa somme entre dans la signature.
-placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
+placebo_patch="$ROOT/ports/libplacebo/0001-kirari-present-timing.patch"
 signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) $(sha256sum "$placebo_patch" | cut -c1-16)$(system_libs shaderc lcms2)"
 if ! done_marker libplacebo "$signature"; then
   pristine libplacebo
@@ -202,12 +202,12 @@ fi
 # eux, configure passe outre avec un simple avertissement, et le rendu des sous-titres perd ses routines SIMD, la
 # coupure Unicode ou ses fils.
 LIBASS_PATCH="$ROOT/ports/libass/rendu-sur-plusieurs-fils.patch"
-# AJP_LIBASS_CFLAGS : les options de compilation de libass seul, pour l'instrumenter (« -fsanitize=thread -g -O1 »
+# KIRARI_LIBASS_CFLAGS : les options de compilation de libass seul, pour l'instrumenter (« -fsanitize=thread -g -O1 »
 # dans la tâche TSan de ci.yml, « -fsanitize=address -g -O1 » dans la campagne de fuzz). Sans elles, le code multi-fils
 # du correctif, qui lit des scripts ASS venus de l'extérieur, échappait à TSan et à ASan (B35-02) : l'instrumentation
 # du lecteur s'arrête à la frontière de la bibliothèque. Elles entrent dans la signature : un préfixe du cache construit
 # autrement se refait.
-LIBASS_CFLAGS="${AJP_LIBASS_CFLAGS:--O2 -g}"
+LIBASS_CFLAGS="${KIRARI_LIBASS_CFLAGS:--O2 -g}"
 signature="$(ref_of libass) $(sha256sum "$LIBASS_PATCH" | cut -c1-16) asm libunibreak threads cflags $LIBASS_CFLAGS $(ref_of libunibreak)$(system_libs freetype2 fribidi harfbuzz fontconfig)"
 if ! done_marker libass "$signature"; then
   pristine libass

@@ -16,7 +16,7 @@
 #include "kernels/ref/half.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 bool fp16_planes(const Tensor& tensor, std::int64_t channels) {
@@ -272,4 +272,4 @@ std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ti
       .scene_score = scene, .worst_block = slot.host->worst, .identical = slot.host->total == 0.0};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

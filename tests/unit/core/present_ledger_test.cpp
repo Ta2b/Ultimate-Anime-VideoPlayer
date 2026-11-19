@@ -13,7 +13,7 @@
 #include "core/vblank_clock.h"
 
 using Catch::Approx;
-using namespace ajp::core;
+using namespace kirari::core;
 
 namespace {
 

@@ -2,7 +2,7 @@
 //
 // Repris de animejanai-inference-rtx@118c272 src/onnx_flow.cpp:14-58 (lecteur
 // protobuf) et 104-176 (aji_onnx_external_locations). Le résumé du graphe
-// (entrées, nombre de GridSample) est propre à ajp : il sert à choisir les
+// (entrées, nombre de GridSample) est propre à kirari : il sert à choisir les
 // réglages de construction et à refuser une précision qui ne correspond pas.
 #pragma once
 
@@ -17,7 +17,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // TensorProto.DataType d'ONNX, pour les types qui nous concernent.
 enum class OnnxType : std::int32_t {
@@ -60,4 +60,4 @@ bool is_safe_location(const std::string& location);
 // dossier, ni « : » d'un lecteur ou d'un flux NTFS, ni nom réservé de Windows) (C04-08).
 bool is_piece_file_name(std::string_view name);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

@@ -15,7 +15,7 @@
 
 #include "media/shot_cutter.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La réponse des plans pour la paire (a, b], a < b : vrai si b est dans un plan qui commence à une vraie
 // coupe après a, faux si a et b sont dans le même plan, rien si l'un des deux n'est dans aucun plan ou si le
@@ -35,4 +35,4 @@ class CutBook {
   std::shared_ptr<const std::vector<media::Shot>> shots_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

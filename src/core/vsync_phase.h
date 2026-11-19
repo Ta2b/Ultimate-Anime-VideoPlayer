@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 class VsyncPhase {
  public:
@@ -51,4 +51,4 @@ class VsyncPhase {
   std::int64_t last_note_us_ = 0;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

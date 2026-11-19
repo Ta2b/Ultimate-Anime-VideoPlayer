@@ -11,7 +11,7 @@
 
 #include "kernels/ref/check.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 std::size_t at(int i) {
@@ -164,4 +164,4 @@ Result<RgbImage> resize(const RgbImage& in, int width, int height, Filter filter
   return out;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

@@ -11,7 +11,7 @@
 
 #include "core/gpu_device.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 enum class Os : std::uint8_t { Windows, Linux, MacOs };
 // Le système pour lequel ce lecteur est compilé.
@@ -22,7 +22,7 @@ inline constexpr Os kHostOs = Os::MacOs;
 #else
 inline constexpr Os kHostOs = Os::Linux;
 #endif
-using GpuVendor = ajp::GpuVendor;  // déduit de l'identifiant PCI (core/gpu_device.h)
+using GpuVendor = kirari::GpuVendor;  // déduit de l'identifiant PCI (core/gpu_device.h)
 
 struct GpuInfo {
   GpuVendor vendor = GpuVendor::Other;
@@ -84,4 +84,4 @@ struct EngineOffer {
 // Une ligne par moteur connu, dans l'ordre d'affichage.
 std::vector<EngineOffer> recommend_engines(const SystemInfo& system);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

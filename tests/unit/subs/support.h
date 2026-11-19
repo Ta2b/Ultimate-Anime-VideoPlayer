@@ -16,7 +16,7 @@
 #include "core/types.h"
 #include "subs/subtitle_frame.h"
 
-namespace ajp::subs::test {
+namespace kirari::subs::test {
 
 // Script ASS sur 640×360, une ligne par seconde :
 //   [0, 1) s : style Default, en bas au centre, blanc bordé de noir ;
@@ -103,4 +103,4 @@ class TempFile {
   std::filesystem::path path_;
 };
 
-}  // namespace ajp::subs::test
+}  // namespace kirari::subs::test

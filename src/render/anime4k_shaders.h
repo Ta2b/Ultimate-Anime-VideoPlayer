@@ -5,7 +5,7 @@
 
 #include <string_view>
 
-namespace ajp::render::shaders {
+namespace kirari::render::shaders {
 
 extern const std::string_view Anime4K_Clamp_Highlights;
 extern const std::string_view Anime4K_Restore_CNN_M;
@@ -17,4 +17,4 @@ extern const std::string_view Anime4K_Restore_CNN_Soft_VL;
 extern const std::string_view Anime4K_Upscale_CNN_x2_VL;
 extern const std::string_view Anime4K_Upscale_Denoise_CNN_x2_VL;
 
-}  // namespace ajp::render::shaders
+}  // namespace kirari::render::shaders

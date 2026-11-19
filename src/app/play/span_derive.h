@@ -42,7 +42,7 @@
 #include "gpu/span_fp8/package.h"
 #include "media/stills.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // L'avancement d'une préparation, lu par l'interface pendant que la tâche l'écrit.
 class SpanDeriveProgress {
@@ -73,7 +73,7 @@ using SpanDeriver =
 struct SpanDerivePlan {
   std::filesystem::path model;       // le SPAN ONNX choisi
   std::filesystem::path models_dir;  // « modeles » : où le paquet et son reçu s'écrivent
-  std::string quantizer = "ajp (dérivation native, CUTLASS E4M3, maximum)";
+  std::string quantizer = "kirari (dérivation native, CUTLASS E4M3, maximum)";
   // Étape 3.6 : la VRAM libre doit valoir ce multiple du besoin (SpanFp8Request::min_free_ratio) ; 0 : pas
   // de contrôle. La préparation lancée par un préréglage met kAutoMinFreeRatio.
   double min_free_ratio = 0.0;
@@ -204,4 +204,4 @@ std::expected<gpu::Artifact, Refusal> build_span_fp16(gpu::Backend& backend,
 // le noyau d'ingestion les applique (live_settings.h, reduction_of).
 media::StillReduce span_still_reduce(int work_width, int work_height, core::DownscaleFilter filter);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

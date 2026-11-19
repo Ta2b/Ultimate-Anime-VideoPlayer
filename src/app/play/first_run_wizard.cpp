@@ -13,7 +13,7 @@
 #include "app/play/settings_system.h"
 #include "app/play/wizard.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 void radio_note(const char* label, const char* detail, bool selected, bool& pick, bool enabled = true) {
@@ -75,7 +75,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       if (pick) wizard.update_mode = UpdateMode::Never;
       section(i18n::tr("Default player"));
       ImGui::Checkbox(i18n::tr("Make it the default video player"), &wizard.make_default);
-      note(i18n::tr("AJP is added to \"Open with\" in any case."));
+      note(i18n::tr("Kirari is added to \"Open with\" in any case."));
       break;
     }
     case WizardStep::Summary:
@@ -86,7 +86,7 @@ void draw_wizard_step(FirstRunView& view, Wizard& wizard) {
       ImGui::BulletText("%s", view.tier_line.c_str());
       if (!view.tier_detail.empty()) note(view.tier_detail);
       note(i18n::tr("The Quality preset in Video > General changes it at any time."));
-      note(i18n::tr("Everything can be changed later in Settings (p). To redo this: ajp --first-run."));
+      note(i18n::tr("Everything can be changed later in Settings (p). To redo this: kirari --first-run."));
       break;
   }
 }
@@ -154,4 +154,4 @@ void draw_wizard(FirstRunView& view, float scale) {
   ImGui::End();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

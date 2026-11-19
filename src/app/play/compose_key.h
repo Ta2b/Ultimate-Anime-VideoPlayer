@@ -12,7 +12,7 @@
 #include "core/ring.h"
 #include "subs/subtitle_frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ComposeKey {
   bool has_frame = false;  // faux : image noire
@@ -112,4 +112,4 @@ inline bool reusable(const std::optional<ComposeKey>& kept, const ComposeKey& no
   return kept.has_value() && *kept == now;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

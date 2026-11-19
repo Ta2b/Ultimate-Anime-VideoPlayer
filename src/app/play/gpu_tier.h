@@ -15,7 +15,7 @@
 #include "core/gpu_device.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class Tier : std::uint8_t { Economy, Fast, Normal, Quality, Ultra };
 inline constexpr int kTierCount = 5;
@@ -58,4 +58,4 @@ inline TierEstimate estimate_tier(const GpuFacts& gpu) {
   return estimate_tier(builtin_tier_table(), gpu);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

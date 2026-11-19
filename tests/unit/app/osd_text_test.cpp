@@ -23,8 +23,8 @@ std::string dialogue_text(const std::string& script) {
 }  // namespace
 
 TEST_CASE("OSD : script ASS", "[app][osd]") {
-  using ajp::app::play::osd_script;
-  constexpr ajp::app::play::OutputSize kSize{.width = 1920, .height = 1080};
+  using kirari::app::play::osd_script;
+  constexpr kirari::app::play::OutputSize kSize{.width = 1920, .height = 1080};
 
   SECTION("une coupure entre chaque ligne, même vide") {
     CHECK(dialogue_text(osd_script(std::vector<std::string>{"a", "b"}, kSize)) == "a\\Nb");
@@ -46,10 +46,10 @@ TEST_CASE("OSD : script ASS", "[app][osd]") {
 }
 
 TEST_CASE("C24-08 : un texte qui change à chaque image ne se re-rend que toutes les 250 ms", "[app][osd]") {
-  CHECK(ajp::app::play::osd_refresh_due(false, true, false, 0));            // premier texte : tout de suite
-  CHECK(ajp::app::play::osd_refresh_due(true, false, false, 0));            // il disparaît : tout de suite
-  CHECK(ajp::app::play::osd_refresh_due(true, true, true, 0));              // autre taille : tout de suite
-  CHECK_FALSE(ajp::app::play::osd_refresh_due(true, true, false, 16'000));  // statistiques à chaque image
-  CHECK(
-      ajp::app::play::osd_refresh_due(true, true, false, ajp::app::play::kOsdRefreshUs));  // le rendu suivant
+  CHECK(kirari::app::play::osd_refresh_due(false, true, false, 0));  // premier texte : tout de suite
+  CHECK(kirari::app::play::osd_refresh_due(true, false, false, 0));  // il disparaît : tout de suite
+  CHECK(kirari::app::play::osd_refresh_due(true, true, true, 0));    // autre taille : tout de suite
+  CHECK_FALSE(kirari::app::play::osd_refresh_due(true, true, false, 16'000));  // statistiques à chaque image
+  CHECK(kirari::app::play::osd_refresh_due(true, true, false,
+                                           kirari::app::play::kOsdRefreshUs));  // le rendu suivant
 }

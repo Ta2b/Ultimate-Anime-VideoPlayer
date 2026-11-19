@@ -17,7 +17,7 @@
 #include "app/play/visible_error.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string read_file(const std::filesystem::path& path) {
@@ -27,7 +27,7 @@ std::string read_file(const std::filesystem::path& path) {
 
 std::vector<std::filesystem::path> interface_sources() {
   std::vector<std::filesystem::path> files;
-  for (const auto& entry : std::filesystem::recursive_directory_iterator(AJP_APP_SOURCE_DIR)) {
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(KIRARI_APP_SOURCE_DIR)) {
     const auto extension = entry.path().extension();
     if (entry.is_regular_file() && (extension == ".cpp" || extension == ".h")) files.push_back(entry.path());
   }
@@ -275,42 +275,43 @@ TEST_CASE("i18n: aucun texte ImGui à la printf ne reçoit une chaîne non litt�
   CHECK(found.empty());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("Dolby Vision 5 et audio seul : dits en clair à l'ouverture (P3.26, P3.28)", "[i18n]") {
-  const ajp::app::play::FrenchUi french;
-  ajp::Refusal dolby{ajp::RefusalCode::FormatUnsupported, "x"};
-  dolby.key = std::string(ajp::app::play::kDolbyVision5Key);
-  CHECK(ajp::app::play::visible_error(dolby).contains("Dolby Vision profil 5"));
-  ajp::Refusal audio{ajp::RefusalCode::TrackUnavailable, "x"};
-  audio.key = std::string(ajp::app::play::kAudioOnlyKey);
-  CHECK(ajp::app::play::visible_error(audio).contains("que du son"));
+  const kirari::app::play::FrenchUi french;
+  kirari::Refusal dolby{kirari::RefusalCode::FormatUnsupported, "x"};
+  dolby.key = std::string(kirari::app::play::kDolbyVision5Key);
+  CHECK(kirari::app::play::visible_error(dolby).contains("Dolby Vision profil 5"));
+  kirari::Refusal audio{kirari::RefusalCode::TrackUnavailable, "x"};
+  audio.key = std::string(kirari::app::play::kAudioOnlyKey);
+  CHECK(kirari::app::play::visible_error(audio).contains("que du son"));
 }
 
 TEST_CASE("Les familles de refus ont chacune une phrase traduite (A20-09, A24-09)", "[i18n]") {
-  const ajp::app::play::FrenchUi french;
-  using ajp::RefusalCode;
+  const kirari::app::play::FrenchUi french;
+  using kirari::RefusalCode;
   for (const RefusalCode code :
        {RefusalCode::HashMismatch, RefusalCode::ModelUnavailable, RefusalCode::SeekFailed,
         RefusalCode::LibassFailed, RefusalCode::CacheBusy, RefusalCode::BuilderTimeout,
         RefusalCode::LibraryUnavailable, RefusalCode::VendorCallFailed, RefusalCode::FieldOutOfRange,
         RefusalCode::EncodeFailed}) {
-    const std::string text = ajp::app::play::visible_error(ajp::Refusal{code, "x"});
+    const std::string text = kirari::app::play::visible_error(kirari::Refusal{code, "x"});
     INFO(text);
     CHECK_FALSE(text.contains("error "));
     CHECK_FALSE(text.contains("erreur "));
   }
-  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::HdrUnavailable, "x"}).contains("HDR"));
+  CHECK(kirari::app::play::visible_error(kirari::Refusal{RefusalCode::HdrUnavailable, "x"}).contains("HDR"));
 }
 
 TEST_CASE("Moteur GPU refusé : le pilote trop ancien et le délai dépassé ont leur conseil (B24-13)",
           "[i18n]") {
-  const ajp::app::play::FrenchUi french;
-  using ajp::RefusalCode;
-  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::SdkRejected, "x"}).contains("pilote"));
-  CHECK(ajp::app::play::visible_error(ajp::Refusal{RefusalCode::BuilderTimeout, "x"}).contains("réessayez"));
+  const kirari::app::play::FrenchUi french;
+  using kirari::RefusalCode;
+  CHECK(kirari::app::play::visible_error(kirari::Refusal{RefusalCode::SdkRejected, "x"}).contains("pilote"));
+  CHECK(kirari::app::play::visible_error(kirari::Refusal{RefusalCode::BuilderTimeout, "x"})
+            .contains("réessayez"));
   CHECK_FALSE(
-      ajp::app::play::visible_error(ajp::Refusal{RefusalCode::BuilderFailed, "x"}).contains("pilote"));
+      kirari::app::play::visible_error(kirari::Refusal{RefusalCode::BuilderFailed, "x"}).contains("pilote"));
 }
 
 TEST_CASE("Erreurs visibles : chaque code de refus a une phrase, pas son seul nom anglais (A24-09)",
@@ -319,12 +320,12 @@ TEST_CASE("Erreurs visibles : chaque code de refus a une phrase, pas son seul no
   // laissait encore six (SourceResized, SourceUnknown, LookaheadMissing, SequenceOrder, InputMismatch,
   // PacketBacklog).
   int by_name = 0;
-  for (int value = 0; value <= static_cast<int>(ajp::RefusalCode::EncodeFailed); ++value) {
-    const auto code = static_cast<ajp::RefusalCode>(value);
+  for (int value = 0; value <= static_cast<int>(kirari::RefusalCode::EncodeFailed); ++value) {
+    const auto code = static_cast<kirari::RefusalCode>(value);
     for (const bool french : {false, true}) {
-      std::optional<ajp::app::play::FrenchUi> ui;  // construit sur place : FrenchUi ne se copie pas
+      std::optional<kirari::app::play::FrenchUi> ui;  // construit sur place : FrenchUi ne se copie pas
       if (french) ui.emplace();
-      const std::string shown = ajp::app::play::visible_error(ajp::Refusal{code, "texte-brut"});
+      const std::string shown = kirari::app::play::visible_error(kirari::Refusal{code, "texte-brut"});
       INFO(name(code) << " : " << shown);
       if (shown.starts_with("error ") || shown.starts_with("erreur ")) ++by_name;
       CHECK_FALSE(shown.contains("texte-brut"));  // le détail technique reste au journal

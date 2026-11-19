@@ -8,7 +8,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 // Des aplats à contours francs, planaire 3×h×w.
@@ -102,4 +102,4 @@ TEST_CASE("un échantillon non fini donne la pire note à chaque mesure (A02-01)
   CHECK(abs_error_quantile(a, a, 0.999) == 0.0);
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

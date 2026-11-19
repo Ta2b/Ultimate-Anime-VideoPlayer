@@ -23,7 +23,7 @@
 #include <tlhelp32.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -189,4 +189,4 @@ std::jthread start_resource_log() {
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

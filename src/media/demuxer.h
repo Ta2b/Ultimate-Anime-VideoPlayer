@@ -19,7 +19,7 @@
 #include "media/packet.h"
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 enum class SeekTarget : std::uint8_t {
   // Point clé qui s'affiche à ou avant la cible, base du seek exact : toutes les
@@ -108,4 +108,4 @@ class Demuxer {
   std::unique_ptr<State> state_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -1,5 +1,6 @@
 // Les recommandations des infobulles selon la carte : la tranche de la machine (gpu_tier.h), classée par
-// puissance pour ajp (docs/classement-gpu.md). Une 4070 Ti et une 1080 Ti ne reçoivent pas le même conseil.
+// puissance pour kirari (docs/classement-gpu.md). Une 4070 Ti et une 1080 Ti ne reçoivent pas le même
+// conseil.
 #pragma once
 
 #include <string>
@@ -7,7 +8,7 @@
 
 #include "app/play/gpu_tier.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct SettingsChoices;
 
@@ -30,4 +31,4 @@ std::string light_motion_advice(const CardAdvice& card);  // GMFSS et RIFE en 54
 // La phrase de recommandation d'une valeur conseillée pour la carte de choices.
 std::string advice_line(const SettingsChoices& choices, std::string (*value)(const CardAdvice&));
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

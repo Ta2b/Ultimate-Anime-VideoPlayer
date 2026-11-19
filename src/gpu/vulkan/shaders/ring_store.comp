@@ -11,7 +11,7 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(constant_id = 0) const uint TX = 0;
 
-AJP_NET_BUFFER(0, src, readonly)
+KIRARI_NET_BUFFER(0, src, readonly)
 layout(binding = 1, rgba16) uniform writeonly image2D slot;
 
 layout(push_constant) uniform Push {
@@ -30,7 +30,7 @@ void main() {
   if (p.x >= pc.width || p.y >= pc.height) return;
   uint plane = pc.width * pc.height;
   uint i = p.y * pc.width + p.x;
-  vec4 v = vec4(code(AJP_LOAD(src, TX, i)), code(AJP_LOAD(src, TX, plane + i)),
-                code(AJP_LOAD(src, TX, 2u * plane + i)), 1.0);
+  vec4 v = vec4(code(KIRARI_LOAD(src, TX, i)), code(KIRARI_LOAD(src, TX, plane + i)),
+                code(KIRARI_LOAD(src, TX, 2u * plane + i)), 1.0);
   imageStore(slot, ivec2(p), v);
 }

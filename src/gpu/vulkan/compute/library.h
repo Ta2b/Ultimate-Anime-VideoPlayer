@@ -11,7 +11,7 @@
 #include "core/types.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class VulkanLibrary {
  public:
@@ -35,4 +35,4 @@ class VulkanLibrary {
   PFN_vkGetInstanceProcAddr get_instance_proc_addr_ = nullptr;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

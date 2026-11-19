@@ -19,7 +19,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Le nombre qui suit « "key": » dans text ; rien s'il n'y est pas (ou s'il vaut null, 0).
@@ -271,4 +271,4 @@ std::optional<std::int64_t> kwin_config_stamp() {
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

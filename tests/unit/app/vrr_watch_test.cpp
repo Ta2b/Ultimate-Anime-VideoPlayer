@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("VRR relu : un changement n'est retenu qu'après deux lectures égales", "[app][display]") {
   VrrWatch watch(true);
@@ -51,4 +51,4 @@ TEST_CASE("NVAPI : permis n'est pas engagé tant que le bit « engagé » n'est 
   CHECK_FALSE(watch.armed());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

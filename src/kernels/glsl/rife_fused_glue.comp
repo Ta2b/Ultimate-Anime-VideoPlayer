@@ -9,14 +9,14 @@
 
 layout(local_size_x = 16, local_size_y = 8) in;
 
-layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;
-layout(std430, binding = 1) readonly buffer Encode { AJP_TENSOR v[]; } encode;
-layout(std430, binding = 2) writeonly buffer X { AJP_TENSOR v[]; } x;
+layout(std430, binding = 0) readonly buffer Input { KIRARI_TENSOR v[]; } input_planes;
+layout(std430, binding = 1) readonly buffer Encode { KIRARI_TENSOR v[]; } encode;
+layout(std430, binding = 2) writeonly buffer X { KIRARI_TENSOR v[]; } x;
 // Les sorties Y des blocs 0 à 3 (52 canaux) ; une source absente est liée à Y_0, jamais lue.
-layout(std430, binding = 3) readonly buffer Y0 { AJP_TENSOR v[]; } y0;
-layout(std430, binding = 4) readonly buffer Y1 { AJP_TENSOR v[]; } y1;
-layout(std430, binding = 5) readonly buffer Y2 { AJP_TENSOR v[]; } y2;
-layout(std430, binding = 6) readonly buffer Y3 { AJP_TENSOR v[]; } y3;
+layout(std430, binding = 3) readonly buffer Y0 { KIRARI_TENSOR v[]; } y0;
+layout(std430, binding = 4) readonly buffer Y1 { KIRARI_TENSOR v[]; } y1;
+layout(std430, binding = 5) readonly buffer Y2 { KIRARI_TENSOR v[]; } y2;
+layout(std430, binding = 6) readonly buffer Y3 { KIRARI_TENSOR v[]; } y3;
 
 layout(push_constant) uniform Push {
   uint height;
@@ -140,5 +140,5 @@ void main() {
   float norm = 1.0 / float(taps * taps);
   uint out_plane = pc.out_height * pc.out_width;
   uint o = oy * pc.out_width + ox;
-  for (uint c = 0u; c < 28u; ++c) x.v[c * out_plane + o] = AJP_TENSOR(acc[c] * norm);
+  for (uint c = 0u; c < 28u; ++c) x.v[c * out_plane + o] = KIRARI_TENSOR(acc[c] * norm);
 }

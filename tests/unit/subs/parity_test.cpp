@@ -16,11 +16,11 @@
 #include "subs/timebase.h"
 #include "support.h"
 
-using ajp::subs::RenderRequest;
-using ajp::subs::RenderTarget;
-using ajp::subs::SubtitleAtlas;
-using ajp::subs::SubtitleFrame;
-using ajp::subs::test::Canvas;
+using kirari::subs::RenderRequest;
+using kirari::subs::RenderTarget;
+using kirari::subs::SubtitleAtlas;
+using kirari::subs::SubtitleFrame;
+using kirari::subs::test::Canvas;
 
 namespace {
 
@@ -78,13 +78,13 @@ void check_same(const Canvas& ours, const Canvas& reference) {
 }
 
 struct Parity {
-  ajp::subs::AssLibrary library = ajp::subs::AssLibrary::create().value();
-  ajp::subs::SubtitleTrack track =
-      ajp::subs::SubtitleTrack::from_ass(library, ajp::subs::test::reference_script()).value();
+  kirari::subs::AssLibrary library = kirari::subs::AssLibrary::create().value();
+  kirari::subs::SubtitleTrack track =
+      kirari::subs::SubtitleTrack::from_ass(library, kirari::subs::test::reference_script()).value();
   std::vector<std::unique_ptr<SubtitleAtlas>> returned;
-  ajp::subs::AtlasPool pool{
+  kirari::subs::AtlasPool pool{
       [this](std::unique_ptr<SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); }};
-  ajp::subs::SubtitleRenderer renderer = ajp::subs::SubtitleRenderer::create(library, {}).value();
+  kirari::subs::SubtitleRenderer renderer = kirari::subs::SubtitleRenderer::create(library, {}).value();
 
   // Compare notre image et celle de libass à ce pts ; rend notre image.
   SubtitleFrame check(double seconds, const RenderTarget& target) {
@@ -99,8 +99,8 @@ struct Parity {
 
     auto reference = reference_renderer(library.get(), target);
     const ASS_Image* images =
-        ass_render_frame(reference.get(), track.get(), ajp::subs::to_ms(request.pts_us), nullptr);
-    check_same(ajp::subs::test::draw(frame), compose(images, target.width, target.height));
+        ass_render_frame(reference.get(), track.get(), kirari::subs::to_ms(request.pts_us), nullptr);
+    check_same(kirari::subs::test::draw(frame), compose(images, target.width, target.height));
     return frame;
   }
 };
@@ -109,11 +109,12 @@ struct Parity {
 
 TEST_CASE("Parité libass : chaque événement du script de référence, pixel pour pixel", "[parity]") {
   Parity parity;
-  const RenderTarget target{.width = ajp::subs::test::kScriptWidth, .height = ajp::subs::test::kScriptHeight};
+  const RenderTarget target{.width = kirari::subs::test::kScriptWidth,
+                            .height = kirari::subs::test::kScriptHeight};
   for (const double seconds : {0.5, 1.5, 2.5, 3.5, 4.1, 4.5, 4.9}) {
     INFO("pts " << seconds << " s");
     const SubtitleFrame frame = parity.check(seconds, target);
-    ajp::subs::test::check_atlas(frame);
+    kirari::subs::test::check_atlas(frame);
   }
 }
 

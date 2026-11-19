@@ -12,7 +12,7 @@
 
 int main(int argc, char* argv[]) {
   const int result = Catch::Session().run(argc, argv);
-  const std::vector<std::string> errors = ajp::test::validation_errors();
+  const std::vector<std::string> errors = kirari::test::validation_errors();
   if (errors.empty()) return result;
   std::fprintf(stderr, "\n%zu erreur(s) de la couche de validation Vulkan :\n", errors.size());
   for (const std::string& error : errors) std::fprintf(stderr, "  %s\n", error.c_str());

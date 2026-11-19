@@ -9,7 +9,7 @@
 
 #include "core/types.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Les erreurs que la documentation de CUDA décrit comme laissant le processus dans un état incohérent :
 // le contexte est perdu, toute suite d'appels CUDA échoue jusqu'à la fin du processus. A01-01 : un TDR de
@@ -102,4 +102,4 @@ std::expected<void, Refusal> reserve_readback(Slot& slot, std::size_t bytes) {
   return {};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

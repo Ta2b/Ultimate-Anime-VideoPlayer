@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace ajp::media {
+namespace kirari::media {
 
 class FieldAlignmentMeter {
  public:
@@ -42,4 +42,4 @@ class FieldAlignmentMeter {
   int combed_ = 0;                       // dont les lignes voisines se contredisent
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -18,7 +18,7 @@
 #include "gpu/coreml/coreml_vt.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 using vk::net::HostBinding;
 
@@ -263,4 +263,4 @@ std::expected<void, Refusal> vt_gpu_check(vt::Pixels format, int width, int heig
   }
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

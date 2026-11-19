@@ -6,9 +6,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using namespace ajp::core;
-namespace cmd = ajp::cmd;
+using kirari::RefusalCode;
+using namespace kirari::core;
+namespace cmd = kirari::cmd;
 
 namespace {
 
@@ -19,7 +19,7 @@ Chord ctrl(Key k) {
   return Chord{.key = k, .ctrl = true};
 }
 
-ajp::Command command_of(const KeyMap& map, const Chord& chord) {
+kirari::Command command_of(const KeyMap& map, const Chord& chord) {
   auto command = map.command_for(chord);
   REQUIRE(command);
   return *command;

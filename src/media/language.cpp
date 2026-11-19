@@ -13,7 +13,7 @@
 
 #include "core/text.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 using LangPair = std::pair<std::string_view, std::string_view>;
@@ -105,4 +105,4 @@ int language_score(std::span<const std::string> priorities, std::string_view tag
   return best;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

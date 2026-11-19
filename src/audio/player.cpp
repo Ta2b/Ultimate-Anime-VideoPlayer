@@ -15,7 +15,7 @@
 #include "core/clock.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 namespace {
 
 constexpr std::int64_t kMinQueueTargetUs = 20'000;
@@ -525,4 +525,4 @@ void AudioPlayer::report(const Refusal& refusal) {
   if (events_.refused) events_.refused(refusal);
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

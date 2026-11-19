@@ -12,7 +12,7 @@
 
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 struct Fp8Weights {
   std::vector<std::uint8_t> bytes;  // E4M3, dans l'ordre des poids : [cout][cin][kh][kw]
@@ -34,4 +34,4 @@ struct Int8Weights {
 // canal l'est (échelle par tenseur, ou canal de petits poids).
 std::optional<Int8Weights> recover_int8_weights(const Value& weights);
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

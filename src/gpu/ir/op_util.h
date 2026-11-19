@@ -13,7 +13,7 @@
 #include "gpu/ir/ir.h"
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 
 std::unexpected<Refusal> shape_error(const Node& node, std::string_view detail);
 std::unexpected<Refusal> graph_error(const Node& node, std::string_view detail);
@@ -90,4 +90,4 @@ Value gather_elements(const Value& in, const OutputInfo& out, std::span<const st
 std::vector<std::size_t> depth_to_space_source(const Dims& x, const Dims& out, std::int64_t b,
                                                BlockMode mode);
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

@@ -33,20 +33,20 @@
 
 namespace {
 
-using namespace ajp;
-using namespace ajp::test;
+using namespace kirari;
+using namespace kirari::test;
 
 TEST_CASE("Backend TensorRT : ABI et refus nommés", "[backend_tensorrt][cuda]") {
   Library library;
   REQUIRE(library.handle != nullptr);
-  const int abi = library.symbol<std::remove_pointer_t<gpu::BackendAbiFn>>("ajp_backend_abi")();
+  const int abi = library.symbol<std::remove_pointer_t<gpu::BackendAbiFn>>("kirari_backend_abi")();
   const std::uint64_t layout =
-      library.symbol<std::remove_pointer_t<gpu::BackendLayoutFn>>("ajp_backend_layout")();
+      library.symbol<std::remove_pointer_t<gpu::BackendLayoutFn>>("kirari_backend_layout")();
   CHECK(gpu::check_backend_abi(abi, layout));
   Refusal refusal{};
   const gpu::BackendInit init{.refusal = &refusal};
-  CHECK(library.symbol<decltype(ajp_backend_create)>("ajp_backend_create")(gpu::kBackendAbi + 1, &init) ==
-        nullptr);
+  CHECK(library.symbol<decltype(kirari_backend_create)>("kirari_backend_create")(gpu::kBackendAbi + 1,
+                                                                                 &init) == nullptr);
   CHECK(refusal.code == RefusalCode::AbiMismatch);
   if (!has_cuda()) SKIP("pas de GPU NVIDIA : le reste demande CUDA");
 

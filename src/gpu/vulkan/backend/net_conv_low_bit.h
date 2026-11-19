@@ -13,7 +13,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_program.h"
 
-namespace ajp::gpu::vk::net::detail {
+namespace kirari::gpu::vk::net::detail {
 
 inline constexpr std::string_view kMatrixFp8 = "coopmat_fp8";    // produits E4M3 × E4M3, sommes en float
 inline constexpr std::string_view kMatrixInt8 = "coopmat_int8";  // produits INT8 × INT8, sommes entières
@@ -52,4 +52,4 @@ std::optional<LowBitBlobs> low_bit_blobs(const ir::Tensor& weights, const ir::Te
                                          ir::QuantGrid grid, float in_scale, std::uint32_t cin_padded,
                                          std::uint32_t cout_padded);
 
-}  // namespace ajp::gpu::vk::net::detail
+}  // namespace kirari::gpu::vk::net::detail

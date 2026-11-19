@@ -7,7 +7,7 @@
 #include <limits>
 #include <utility>
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 using Plane = std::vector<double>;
@@ -197,4 +197,4 @@ RifeFusedResult rife_fused_finish(const RifeFusedState& s, RifeWarp kind) {
   return result;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

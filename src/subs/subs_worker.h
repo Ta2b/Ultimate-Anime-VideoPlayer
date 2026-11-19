@@ -20,7 +20,7 @@
 #include "subs/subtitle_renderer.h"
 #include "subs/subtitle_track.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 class SubsWorker {
  public:
@@ -78,4 +78,4 @@ class SubsWorker {
   int shrink_logged_ = 1;  // le dernier facteur de réduction du rendu journalisé (B17-02)
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

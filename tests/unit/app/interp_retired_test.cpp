@@ -6,7 +6,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("play.toml d'avant le menu par modèles : chaque ancien choix tombe sur le plus proche",
           "[app][settings][interp_retired]") {
@@ -50,4 +50,4 @@ TEST_CASE("play.toml d'avant le menu par modèles : chaque ancien choix tombe su
   CHECK(nearest_rife_model("rife_v4.18.onnx") == "rife_v4.18.onnx");
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

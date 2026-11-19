@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ajp::core {
+namespace kirari::core {
 
 PresentLedger::Issue PresentLedger::issue(std::int64_t submit_us, std::int64_t target_us, bool wanted) {
   const Issue out{.id = next_id_++, .timing = wanted && !suspended_};
@@ -57,4 +57,4 @@ std::uint64_t TimeDomainMap::to_domain_ns(std::int64_t host_us) const {
   return static_cast<std::uint64_t>(std::max<std::int64_t>(host_us * 1000 - offset_ns_, 1));
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

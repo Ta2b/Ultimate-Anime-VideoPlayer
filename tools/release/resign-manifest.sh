@@ -19,10 +19,10 @@ mv "$dir/manifest.toml" "$old"
 mv "$dir/manifest.toml.sig" "$old_sig"
 
 # Les clés que le lecteur croit : l'active, puis celle de secours si elle est compilée.
-if [ -n "${AJP_UPDATE_PUBKEYS:-}" ]; then read -r -a keys <<<"$AJP_UPDATE_PUBKEYS"
+if [ -n "${KIRARI_UPDATE_PUBKEYS:-}" ]; then read -r -a keys <<<"$KIRARI_UPDATE_PUBKEYS"
 else
   keys=()
-  for var in AJP_UPDATE_PUBKEY AJP_UPDATE_PUBKEY_BACKUP; do
+  for var in KIRARI_UPDATE_PUBKEY KIRARI_UPDATE_PUBKEY_BACKUP; do
     k="$(sed -n "s/^set($var \"\\([0-9a-f]*\\)\".*/\\1/p" "$cmake")"
     [ -z "$k" ] || keys+=("$k")
   done
@@ -34,7 +34,7 @@ named="$(sed -n 's/^url = "\(.*\)"$/\1/p' "$old" | sed 's|.*/||')"
 [ -n "$named" ] || { echo "resign-manifest : l'ancien manifeste ne nomme aucune archive" >&2; exit 1; }
 
 verified=0
-for archive in "$dir"/ajp-*; do
+for archive in "$dir"/kirari-*; do
   [ -f "$archive" ] || continue
   name="$(basename "$archive")"
   if ! grep -qxF "$name" <<<"$named"; then
@@ -44,7 +44,7 @@ for archive in "$dir"/ajp-*; do
   fi
   ok=0
   for k in "${keys[@]}"; do
-    if AJP_UPDATE_PUBKEY="$k" "$here/verify-download.sh" "$old" "$old_sig" "$archive" >/dev/null 2>&1; then ok=1; break; fi
+    if KIRARI_UPDATE_PUBKEY="$k" "$here/verify-download.sh" "$old" "$old_sig" "$archive" >/dev/null 2>&1; then ok=1; break; fi
   done
   [ "$ok" = 1 ] || { echo "::error::$name ne correspond pas au manifeste actuel (signature, SHA-256 ou taille) : archive remplacée ? Pas de re-signature." >&2; exit 1; }
   echo "$name : conforme au manifeste actuel"

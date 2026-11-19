@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 TEST_CASE("Anime4K : le mode suit la source et sa réduction", "[render][anime4k]") {
@@ -62,4 +62,4 @@ TEST_CASE("Anime4K : ses passes se reconnaissent à leur description", "[render]
 }
 
 }  // namespace
-}  // namespace ajp::render
+}  // namespace kirari::render

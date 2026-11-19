@@ -2,14 +2,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using ajp::media::kMaxQueueBytes;
-using ajp::media::kMaxQueueDurationUs;
-using ajp::media::kMinQueueBytes;
-using ajp::media::kPacketOverhead;
-using ajp::media::Packet;
-using ajp::media::PacketQueue;
-using ajp::media::PacketQueueLimits;
+using kirari::RefusalCode;
+using kirari::media::kMaxQueueBytes;
+using kirari::media::kMaxQueueDurationUs;
+using kirari::media::kMinQueueBytes;
+using kirari::media::kPacketOverhead;
+using kirari::media::Packet;
+using kirari::media::PacketQueue;
+using kirari::media::PacketQueueLimits;
 
 namespace {
 
@@ -116,8 +116,8 @@ TEST_CASE("PacketQueue : discard_before jette les époques passées", "[media][p
 // C14-01 : après un seek exact, l'audio qui finit bien avant la cible n'est pas livré.
 TEST_CASE("audio_before_preroll : seul l'audio qui finit plus d'une seconde avant la cible est écarté",
           "[media][packet]") {
-  using ajp::media::audio_before_preroll;
-  using ajp::media::kAudioPrerollUs;
+  using kirari::media::audio_before_preroll;
+  using kirari::media::kAudioPrerollUs;
   const auto packet = [](std::int64_t pts, std::int64_t duration) {
     Packet p;
     p.pts_us = pts;
@@ -130,5 +130,5 @@ TEST_CASE("audio_before_preroll : seul l'audio qui finit plus d'une seconde avan
   CHECK(audio_before_preroll(packet(kTarget - kAudioPrerollUs - 20'000, 10'000), kTarget));
   CHECK_FALSE(audio_before_preroll(packet(kTarget - kAudioPrerollUs, 10'000), kTarget));  // pré-roulement
   CHECK_FALSE(audio_before_preroll(packet(kTarget - 500'000, 10'000), kTarget));
-  CHECK_FALSE(audio_before_preroll(packet(ajp::kNoPts, 10'000), kTarget));  // sans horodatage : livré
+  CHECK_FALSE(audio_before_preroll(packet(kirari::kNoPts, 10'000), kTarget));  // sans horodatage : livré
 }

@@ -15,7 +15,7 @@
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 #include "kernels/spec/rife.h"
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Coupe de scène. Pour chaque pixel de luma de la source (non remplie) :
 //   d = |a − b| × (1 / crête), a et b en float, crête = max_code du format (255 en 8 bits,
@@ -71,6 +71,6 @@ constexpr double pair_scene_score(double total, float levels, double filled_area
   return total * (static_cast<double>(levels) / 255.0) / filled_area;
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

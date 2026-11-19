@@ -10,7 +10,7 @@
 #include "gpu/span_fp8/forward.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Libère les tampons de l'essai quoi qu'il arrive.
@@ -129,4 +129,4 @@ std::expected<std::optional<double>, Refusal> check_native(SpanFp8Net& net, cons
   return psnr;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

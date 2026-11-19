@@ -8,7 +8,7 @@
 #include "core/free_grid.h"
 #include "core/free_rate.h"
 
-using namespace ajp::core;
+using namespace kirari::core;
 
 namespace {
 

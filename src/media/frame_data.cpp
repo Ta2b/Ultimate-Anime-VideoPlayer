@@ -23,7 +23,7 @@ extern "C" {
 #include "media/av_util.h"
 #include "media/color.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 std::optional<FrameMemory> memory_of(const AVFrame& frame) {
@@ -438,4 +438,4 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
   return decoded;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

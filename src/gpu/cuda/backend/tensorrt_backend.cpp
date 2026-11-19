@@ -29,7 +29,7 @@
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 #ifdef _WIN32
 // Ordonnancement GPU matériel (HAGS) : HwSchMode 2 dans le registre. Sans lui, WDDM garde les lancements
@@ -151,7 +151,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   if (!backend->trtexec_.empty()) {
     // Son empreinte d'ouverture, revérifiée avant chaque construction (A05-05).
     if (auto sha = prepare::sha256_file_known(backend->trtexec_)) backend->trtexec_sha256_ = std::move(*sha);
-    if (backend->trtexec_ == std::filesystem::path(AJP_TRTEXEC_PATH)) {
+    if (backend->trtexec_ == std::filesystem::path(KIRARI_TRTEXEC_PATH)) {
       backend->log(BackendLogLevel::Warn,
                    std::format("trtexec du paquet absent ou d'empreinte inattendue : celui du poste de "
                                "développement ({}) construit les moteurs",
@@ -542,9 +542,9 @@ std::expected<void, Refusal> TensorRtBackend::wait(const Fence& fence) {
   return {};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 std::vector<GpuStageSummary> TensorRtBackend::gpu_profile() {
   std::vector<GpuStageSummary> out;
@@ -570,4 +570,4 @@ void TensorRtBackend::push_launches() {
 #endif
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

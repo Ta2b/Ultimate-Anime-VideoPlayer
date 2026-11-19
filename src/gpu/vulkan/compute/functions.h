@@ -9,13 +9,13 @@
 #include "gpu/vulkan/compute/vulkan.h"
 
 // clang-format off
-#define AJP_VK_GLOBAL_FUNCTIONS(X)        \
+#define KIRARI_VK_GLOBAL_FUNCTIONS(X)        \
   X(vkCreateInstance)                     \
   X(vkEnumerateInstanceVersion)           \
   X(vkEnumerateInstanceExtensionProperties) \
   X(vkEnumerateInstanceLayerProperties)
 
-#define AJP_VK_INSTANCE_FUNCTIONS(X)            \
+#define KIRARI_VK_INSTANCE_FUNCTIONS(X)            \
   X(vkDestroyInstance)                          \
   X(vkEnumeratePhysicalDevices)                 \
   X(vkGetPhysicalDeviceProperties)              \
@@ -31,7 +31,7 @@
   X(vkCreateDevice)                             \
   X(vkGetDeviceProcAddr)
 
-#define AJP_VK_DEVICE_FUNCTIONS(X)        \
+#define KIRARI_VK_DEVICE_FUNCTIONS(X)        \
   X(vkDestroyDevice)                      \
   X(vkGetDeviceQueue)                     \
   X(vkDeviceWaitIdle)                     \
@@ -89,20 +89,20 @@
   X(vkGetSemaphoreCounterValue)
 // clang-format on
 
-#define AJP_VK_DECLARE(name) PFN_##name name = nullptr;
+#define KIRARI_VK_DECLARE(name) PFN_##name name = nullptr;
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 struct GlobalFunctions {
-  AJP_VK_GLOBAL_FUNCTIONS(AJP_VK_DECLARE)
+  KIRARI_VK_GLOBAL_FUNCTIONS(KIRARI_VK_DECLARE)
 };
 
 struct InstanceFunctions {
-  AJP_VK_INSTANCE_FUNCTIONS(AJP_VK_DECLARE)
+  KIRARI_VK_INSTANCE_FUNCTIONS(KIRARI_VK_DECLARE)
 };
 
 struct DeviceFunctions {
-  AJP_VK_DEVICE_FUNCTIONS(AJP_VK_DECLARE)
+  KIRARI_VK_DEVICE_FUNCTIONS(KIRARI_VK_DECLARE)
 };
 
 // Refus LibraryUnavailable qui nomme la première fonction absente.
@@ -111,6 +111,6 @@ std::expected<InstanceFunctions, Refusal> load_instance(PFN_vkGetInstanceProcAdd
                                                         VkInstance instance);
 std::expected<DeviceFunctions, Refusal> load_device(const InstanceFunctions& instance, VkDevice device);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk
 
-#undef AJP_VK_DECLARE
+#undef KIRARI_VK_DECLARE

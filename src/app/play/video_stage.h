@@ -11,7 +11,7 @@
 #include "core/messages.h"
 #include "core/ring.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Où le thread gpu pousse ses images, depuis son thread. false : la boîte de main est
 // pleine, le slot reste à gpu qui réessaiera.
@@ -37,4 +37,4 @@ class VideoStage {
   virtual bool idle() const { return true; }
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

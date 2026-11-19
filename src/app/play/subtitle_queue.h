@@ -18,7 +18,7 @@
 
 #include "subs/subtitle_frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class SubtitleQueue {
  public:
@@ -40,4 +40,4 @@ class SubtitleQueue {
   std::deque<subs::SubtitleFrame> frames_;  // pts croissants
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

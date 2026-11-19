@@ -37,7 +37,7 @@
 #include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::size_t kMaxMessage = std::size_t{64} * 1024;
@@ -137,7 +137,7 @@ std::string instance_key(const std::filesystem::path& settings_dir) {
     hash ^= static_cast<unsigned char>(c);
     hash *= 1099511628211ULL;
   }
-  return std::format("ajp-{:016x}", hash);
+  return std::format("kirari-{:016x}", hash);
 }
 
 std::string instance_message(const std::vector<std::string>& files, std::string_view activation_token) {
@@ -192,7 +192,7 @@ constexpr auto kReadLimit = std::chrono::seconds(2);  // le message d'un client,
 
 std::wstring pipe_name(std::string_view key) {
   std::wstring name = L"\\\\.\\pipe\\";
-  for (const char c : key) name += static_cast<wchar_t>(c);  // ASCII : « ajp- » et des chiffres
+  for (const char c : key) name += static_cast<wchar_t>(c);  // ASCII : « kirari- » et des chiffres
   return name;
 }
 
@@ -588,4 +588,4 @@ InstanceClaim claim_instance(const std::filesystem::path& channel_dir, std::stri
 
 #endif
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

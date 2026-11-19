@@ -13,7 +13,7 @@
 
 #include "media/shot_cutter.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // L'empreinte de la vidéo, en hexadécimal ; vide si elle ne se lit pas.
 std::string shot_cache_key(const std::filesystem::path& video);
@@ -48,4 +48,4 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
 std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, const std::string& key,
                                            std::uint32_t variant = 0);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

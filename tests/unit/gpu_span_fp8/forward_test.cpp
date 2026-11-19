@@ -18,7 +18,7 @@
 #include "gpu/span_fp8/onnx_weights.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 Conv zero_conv(int outs, int taps, int inputs) {
@@ -142,9 +142,9 @@ TEST_CASE("une découpe rend le coin de l'image entière sur exact_side pixels",
 
 TEST_CASE("le SPAN du processeur rend ce que l'interpréteur de l'IR rend du vrai b5f48",
           "[.span_b5f48][span_fp8]") {
-  const std::string path = AJP_SPAN_B5F48_MODEL;
+  const std::string path = KIRARI_SPAN_B5F48_MODEL;
   if (path.empty() || !std::filesystem::exists(path))
-    SKIP("-DAJP_SPAN_B5F48_MODEL=… (SPAN b5f48 d'AnimeJaNai)");
+    SKIP("-DKIRARI_SPAN_B5F48_MODEL=… (SPAN b5f48 d'AnimeJaNai)");
   const auto package = package_from_onnx_file(path);
   REQUIRE(package);
   const auto graph = ir::load_onnx_file(path);
@@ -163,4 +163,4 @@ TEST_CASE("le SPAN du processeur rend ce que l'interpréteur de l'IR rend du vra
   CHECK(worst < 1e-3F);
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

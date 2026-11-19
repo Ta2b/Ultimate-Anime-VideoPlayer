@@ -7,7 +7,7 @@
 #include <format>
 #include <vector>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Noyau à la distance d, en pixels de sortie (slice_kernels.cu, reduce_weight).
@@ -96,4 +96,4 @@ std::expected<WeightTable, Refusal> reduction_weights(int src, int dst, const Re
   return table;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

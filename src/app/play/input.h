@@ -19,7 +19,7 @@
 #include "core/keys.h"
 #include "core/messages.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ToggleFullscreen {};
 struct LeaveFullscreen {};
@@ -106,4 +106,4 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys);
 // La touche neutre de core d'un code de touche SDL, ou rien pour une touche sans équivalent.
 std::optional<core::Key> key_of(SDL_Keycode key);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

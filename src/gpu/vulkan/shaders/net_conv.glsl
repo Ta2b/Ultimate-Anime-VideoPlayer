@@ -7,7 +7,7 @@
 // (et les colonnes d'entrée communes à deux pixels voisins une fois du cache), au prix de
 // registres : l'autotuner tranche. Les poids sont rangés par l'hôte en [groupe × bloc][kh][kw][cin][4 × QUADS]
 // (net_weights.cpp), lus en vec4 identiques pour tout le groupe de travail.
-// Variante « _f16 » : tenseurs float16 permis, calcul en float. Variante « _f16p » (AJP_CONV_PACKED,
+// Variante « _f16 » : tenseurs float16 permis, calcul en float. Variante « _f16p » (KIRARI_CONV_PACKED,
 // fp16 de calcul) : poids float16, produits en f16vec4 sommés par paquets de 16 canaux, puis
 // ajoutés en float. Une entrée float16 en Nhwc16 sans groupes (VEC) se lit par uvec4, huit
 // canaux d'un pixel par lecture. IN_Q et OUT_Q : arrondi de l'entrée et du résultat
@@ -15,7 +15,7 @@
 // Référence : gpu/ir/op_window.cpp (eval_conv).
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #endif
 
@@ -32,20 +32,20 @@ const uint CING = CIN / GROUPS;
 const uint COUTG = COUT / GROUPS;
 const uint BLOCKS = (COUTG + 4u * QUADS - 1u) / (4u * QUADS);
 
-AJP_NET_BUFFER(0, src, readonly)
-#ifdef AJP_NET_F16
+KIRARI_NET_BUFFER(0, src, readonly)
+#ifdef KIRARI_NET_F16
 layout(std430, binding = 0) readonly buffer SourceV { uvec4 v[]; } src_v;
 const bool VEC = TX == 1u && LX == 1u && GROUPS == 1u;
 #endif
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
 layout(std430, binding = 1) readonly buffer Weights { f16vec4 w[]; } weights;
 #else
 layout(std430, binding = 1) readonly buffer Weights { vec4 w[]; } weights;
 #endif
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
-AJP_NET_BUFFER(4, res, readonly)
-AJP_NET_BUFFER(5, dst, writeonly)
+KIRARI_NET_BUFFER(4, res, readonly)
+KIRARI_NET_BUFFER(5, dst, writeonly)
 layout(std430, binding = 6) writeonly buffer Partial { float v[]; } partial;
 
 void main() {
@@ -87,7 +87,7 @@ void main() {
       }
       if (!any) continue;
       uint row = ((gb * KH + ky) * KW + kx) * CING * QUADS;
-#ifdef AJP_NET_F16
+#ifdef KIRARI_NET_F16
       if (VEC) {
         // Huit canaux par uvec4 ; les canaux de bourrage (au-delà de cin) ne sont pas lus.
         uint base[PIX];
@@ -98,14 +98,14 @@ void main() {
         for (uint c8 = c_lo / 8u; c8 < c8_hi; ++c8) {
           uvec4 packed[PIX];
           for (uint p = 0u; p < PIX; ++p) packed[p] = inside[p] ? src_v.v[base[p] + c8] : uvec4(0u);
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
           f16vec4 part[PIX * QUADS];
           for (uint a = 0u; a < PIX * QUADS; ++a) part[a] = f16vec4(0.0);
 #endif
           for (uint h = 0u; h < 4u; ++h) {
             uint ci = c8 * 8u + 2u * h;
             for (uint q = 0u; q < QUADS; ++q) {
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
               f16vec4 w0 = weights.w[row + ci * QUADS + q];
               f16vec4 w1 = weights.w[row + (ci + 1u) * QUADS + q];
               for (uint p = 0u; p < PIX; ++p) {
@@ -126,14 +126,14 @@ void main() {
 #endif
             }
           }
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
           for (uint a = 0u; a < PIX * QUADS; ++a) acc[a] += clamp(vec4(part[a]), vec4(-60000.0), vec4(60000.0));
 #endif
         }
         for (uint ci = max(full * 8u, c_lo); ci < c_hi; ++ci) {
           float xv[PIX];
           for (uint p = 0u; p < PIX; ++p)
-            xv[p] = inside[p] ? quant_in(AJP_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix[p])))) : 0.0;
+            xv[p] = inside[p] ? quant_in(KIRARI_LOAD(src, TX, t_index(xd, n, ci, uint(iy), uint(ix[p])))) : 0.0;
           for (uint q = 0u; q < QUADS; ++q) {
             vec4 wv = vec4(weights.w[row + ci * QUADS + q]);
             for (uint p = 0u; p < PIX; ++p) acc[p * QUADS + q] += xv[p] * wv;
@@ -142,7 +142,7 @@ void main() {
         continue;
       }
 #endif
-#ifdef AJP_CONV_PACKED
+#ifdef KIRARI_CONV_PACKED
       for (uint c0 = c_lo; c0 < c_hi; c0 += 16u) {
         f16vec4 part[PIX * QUADS];
         for (uint a = 0u; a < PIX * QUADS; ++a) part[a] = f16vec4(0.0);
@@ -150,7 +150,7 @@ void main() {
         for (uint ci = c0; ci < c1; ++ci) {
           float16_t xv[PIX];
           for (uint p = 0u; p < PIX; ++p) {
-            xv[p] = inside[p] ? float16_t(quant_in(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))))
+            xv[p] = inside[p] ? float16_t(quant_in(KIRARI_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))))
                               : float16_t(0.0);
           }
           for (uint q = 0u; q < QUADS; ++q) {
@@ -164,7 +164,7 @@ void main() {
       for (uint ci = c_lo; ci < c_hi; ++ci) {
         float xv[PIX];
         for (uint p = 0u; p < PIX; ++p)
-          xv[p] = inside[p] ? quant_in(AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))) : 0.0;
+          xv[p] = inside[p] ? quant_in(KIRARI_LOAD(src, TX, t_index(xd, n, g * CING + ci, uint(iy), uint(ix[p])))) : 0.0;
         for (uint q = 0u; q < QUADS; ++q) {
           vec4 wv = weights.w[row + ci * QUADS + q];
           for (uint p = 0u; p < PIX; ++p) acc[p * QUADS + q] += xv[p] * wv;
@@ -189,11 +189,11 @@ void main() {
         }
         float v = acc[p * QUADS + q][k] + bias.v[co];
         v = net_quant(v, OUT_Q);
-        if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+        if (RESIDUAL == 1u) v += KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
         v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
         // Porte de SPAN : sortie de la forme de x, lue au même élément.
-        if (RESIDUAL == 2u) v *= AJP_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-        AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
+        if (RESIDUAL == 2u) v *= KIRARI_LOAD(src, TX, t_index(xd, n, co, oy, ox)) + KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+        KIRARI_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
       }
     }
   }

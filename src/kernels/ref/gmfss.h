@@ -9,7 +9,7 @@
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Le mouvement d'un côté à un niveau : flot fx, fy en pixels du niveau, métrique z (pour t = 1).
 struct SplatMotion {
@@ -48,4 +48,4 @@ Result<std::vector<PlaneF>> gmfss_compose(const Splatted& high_a, const Splatted
 Result<std::vector<PlaneF>> gmfss_still(const std::vector<PlaneF>& key, const std::vector<PlaneF>& a,
                                         const std::vector<PlaneF>& b, float t);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

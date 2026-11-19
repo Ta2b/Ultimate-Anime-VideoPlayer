@@ -15,7 +15,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Avec --debug : les options d'essai y sont acceptées (P2.35).
@@ -24,7 +24,7 @@ std::expected<PlayOptions, Refusal> parse(std::vector<std::string_view> args) {
   return parse_play_options(args);
 }
 
-TEST_CASE("ajp --register et --unregister : sans fichier, l'un ou l'autre", "[app][options]") {
+TEST_CASE("kirari --register et --unregister : sans fichier, l'un ou l'autre", "[app][options]") {
   const auto registering = parse({"--register"});
   REQUIRE(registering);
   CHECK(registering->registration == Registration::Register);
@@ -41,7 +41,7 @@ TEST_CASE("ajp --register et --unregister : sans fichier, l'un ou l'autre", "[ap
   }
 }
 
-TEST_CASE("ajp play : fichier et options", "[app][options]") {
+TEST_CASE("kirari play : fichier et options", "[app][options]") {
   const auto options = parse({"--model", "/m/span.onnx", "épisode.mkv", "--window=960x540", "--seconds=4.5",
                               "--fullscreen-after=2", "--start=90", "--stats=/tmp/s.tsv"});
   REQUIRE(options);
@@ -169,7 +169,7 @@ TEST_CASE("ajp play : fichier et options", "[app][options]") {
   CHECK_FALSE(planar->rife_hwc8);
 }
 
-TEST_CASE("ajp play : refus nommés", "[app][options]") {
+TEST_CASE("kirari play : refus nommés", "[app][options]") {
   CHECK(parse({})->file.empty());  // l'écran d'accueil
   CHECK(parse({"a.mkv", "--vitesse=2"}).error().code == RefusalCode::OptionUnknown);
   CHECK(parse({"a.mkv", "b.mkv"}).error().code == RefusalCode::OptionUnknown);
@@ -181,7 +181,7 @@ TEST_CASE("ajp play : refus nommés", "[app][options]") {
   CHECK(parse({"--help"})->help);
 }
 
-TEST_CASE("ajp play : taille de travail, 720 lignes par défaut comme le profil actuel", "[app][options]") {
+TEST_CASE("kirari play : taille de travail, 720 lignes par défaut comme le profil actuel", "[app][options]") {
   CHECK(parse({"a.mkv"})->work_height == 720);
   CHECK(parse({"a.mkv", "--work-height=0"})->work_height == 0);
   CHECK(parse({"a.mkv", "--work-height=540"})->work_height == 540);
@@ -253,7 +253,7 @@ TEST_CASE("SPAN ne double jamais au-delà de la 4K : la source est réduite avan
   }
 }
 
-TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][options]") {
+TEST_CASE("kirari play : RIFE ×3 par défaut, --rife et --rife-model", "[app][options]") {
   CHECK(parse({"a.mkv"})->rife_factor == kDefaultRifeFactor);
   CHECK(parse({"a.mkv", "--rife=4"})->rife_factor == 4);
   CHECK(parse({"a.mkv", "--rife=0"})->rife_factor == 0);
@@ -276,7 +276,7 @@ TEST_CASE("ajp play : RIFE ×3 par défaut, --rife et --rife-model", "[app][opti
             "/home/x/.local/share/AnimeJaNai-HDR-linux/animejanai/rife/rife_v4.22_lite.onnx"));
 }
 
-TEST_CASE("ajp play : le pic du grade HDR, refus nommés hors plage", "[app][options]") {
+TEST_CASE("kirari play : le pic du grade HDR, refus nommés hors plage", "[app][options]") {
   const auto off = parse({"a.mkv"});
   CHECK(off->true_hdr_peak == 0);  // la crête de l'écran
   const auto on = parse({"a.mkv", "--truehdr-peak=766"});
@@ -293,7 +293,8 @@ TEST_CASE("ajp play : le pic du grade HDR, refus nommés hors plage", "[app][opt
   CHECK(parse({"a.mkv", "--truehdr-peak=3000"})->true_hdr_peak == 3000);  // téléviseur de 3000 nits (B37-09)
 }
 
-TEST_CASE("ajp play : le peps de --hdr-anime en %, 100 par défaut, refus hors de 0 à 200", "[app][options]") {
+TEST_CASE("kirari play : le peps de --hdr-anime en %, 100 par défaut, refus hors de 0 à 200",
+          "[app][options]") {
   const auto plain = parse({"a.mkv"});
   REQUIRE(plain);
   CHECK(plain->anime_contrast == 100);
@@ -310,7 +311,7 @@ TEST_CASE("ajp play : le peps de --hdr-anime en %, 100 par défaut, refus hors d
 }
 
 TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", "[app][options]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-app-model-test";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-app-model-test";
   std::filesystem::create_directories(dir);
   const auto present = dir / "present.onnx";
   std::ofstream(present) << "x";
@@ -335,11 +336,11 @@ TEST_CASE("Modèle : --model doit exister, sinon le premier candidat présent", 
                            kDefaultModelFile);
   // B18-06 : les modèles livrés avec le lecteur viennent en premier, SPAN comme RIFE : un fichier de même
   // nom d'une installation faite à la main ne passe plus devant le modèle vérifié du paquet.
-  const auto bundled = default_model_candidates("/home/x", "/opt/ajp/models");
+  const auto bundled = default_model_candidates("/home/x", "/opt/kirari/models");
   REQUIRE(bundled.size() == 3);
-  CHECK(bundled.front() == std::filesystem::path("/opt/ajp/models/onnx") / kDefaultModelFile);
-  CHECK(default_rife_candidates("/home/x", "/opt/ajp/models").front() ==
-        std::filesystem::path("/opt/ajp/models/rife/rife_v4.22_lite.onnx"));
+  CHECK(bundled.front() == std::filesystem::path("/opt/kirari/models/onnx") / kDefaultModelFile);
+  CHECK(default_rife_candidates("/home/x", "/opt/kirari/models").front() ==
+        std::filesystem::path("/opt/kirari/models/rife/rife_v4.22_lite.onnx"));
   std::filesystem::remove_all(dir);
 }
 
@@ -360,12 +361,12 @@ TEST_CASE("Mesures : médiane, écart type, format", "[app][stats]") {
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // P2.35 : chaque option que l'aide cite, l'analyseur la connaît (seule ou avec une valeur).
-TEST_CASE("ajp play : l'aide ne cite aucune option inconnue de l'analyseur", "[app][options]") {
+TEST_CASE("kirari play : l'aide ne cite aucune option inconnue de l'analyseur", "[app][options]") {
   const std::string usage = play_usage(true);
   std::vector<std::string> unknown;
   for (std::size_t at = usage.find("--"); at != std::string::npos; at = usage.find("--", at + 2)) {
@@ -393,4 +394,4 @@ TEST_CASE("ajp play : l'aide ne cite aucune option inconnue de l'analyseur", "[a
   CHECK(play_usage().find("--one-lane") == std::string::npos);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

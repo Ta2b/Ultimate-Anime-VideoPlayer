@@ -13,7 +13,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -153,4 +153,4 @@ TEST_CASE("Interface : en pause, le changement part tout de suite", "[app][overl
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

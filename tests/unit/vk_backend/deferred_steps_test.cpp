@@ -12,9 +12,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp;
-using ajp::gpu::vk::net::DeferredSteps;
-using ajp::gpu::vk::net::HostBinding;
+using namespace kirari;
+using kirari::gpu::vk::net::DeferredSteps;
+using kirari::gpu::vk::net::HostBinding;
 
 namespace {
 

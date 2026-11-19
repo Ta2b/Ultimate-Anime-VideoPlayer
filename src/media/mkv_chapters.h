@@ -11,7 +11,7 @@
 #include <span>
 #include <vector>
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Une partie d'une édition ordonnée, en µs sur la ligne de temps du segment (pas encore celle du Demuxer).
 struct ChapterPart {
@@ -47,4 +47,4 @@ ChapterLayout read_chapter_layout(ByteSource& source);
 // Un fichier qui n'est pas du Matroska, illisible ou sans chapitres : une disposition simple.
 ChapterLayout read_chapter_layout(const std::filesystem::path& path);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

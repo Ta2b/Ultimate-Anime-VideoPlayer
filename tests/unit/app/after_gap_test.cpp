@@ -15,7 +15,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -109,4 +109,4 @@ TEST_CASE("C12-09 : GPU refusé au réveil, la chaîne se rouvre ; perdu, la rel
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

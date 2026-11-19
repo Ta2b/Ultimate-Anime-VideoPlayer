@@ -1,5 +1,5 @@
 // Profil des dispatchs (net_profile.h) : un petit graphe pour le mécanisme, et le banc caché du
-// vrai RIFE v4.25, qui ne tourne que sur demande (« ajp_vk_backend_tests "[.rife_profil]" »).
+// vrai RIFE v4.25, qui ne tourne que sur demande (« kirari_vk_backend_tests "[.rife_profil]" »).
 #include "gpu/vulkan/backend/net_profile.h"
 
 #include <algorithm>
@@ -28,11 +28,11 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 // Le modèle du banc, où l'installation locale le range.
-constexpr const char* kRifeModel = "/home/ta2b/ajp/models/rife/rife_v4.25.onnx";
+constexpr const char* kRifeModel = "/home/ta2b/kirari/models/rife/rife_v4.25.onnx";
 constexpr std::uint32_t kWarmup = 5;
 constexpr std::uint32_t kTimedRuns = 20;
 
@@ -270,4 +270,4 @@ TEST_CASE("Moteur de réseau : l'éviction d'un jeu de tenseurs enregistré se d
   CHECK(said == 1);
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

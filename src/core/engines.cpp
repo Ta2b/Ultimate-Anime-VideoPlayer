@@ -1,6 +1,6 @@
 #include "core/engines.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 // Moteur d'inférence propre à un fabricant : badge, et la condition qui le rend utile.
@@ -54,4 +54,4 @@ std::vector<EngineOffer> recommend_engines(const SystemInfo& system) {
   return offers;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

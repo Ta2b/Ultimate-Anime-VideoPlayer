@@ -13,10 +13,10 @@
 
 // C24-09 : les refus de la couche graphique portent FeatureUnavailable (famille « pilote »), pas les codes de
 // fichier ou de modèle (FormatUnsupported, InputMismatch) que visible_error dit à l'utilisateur comme tels.
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
-constexpr const char* kBackendName = "ajp_play_libplacebo";
+constexpr const char* kBackendName = "kirari_play_libplacebo";
 
 Refusal render_failed(const char* call) {
   return Refusal{RefusalCode::VendorCallFailed, call};
@@ -98,7 +98,7 @@ std::expected<void, Refusal> ImGuiLayer::update_texture(ImTextureData& texture) 
     params.format = pl_find_named_fmt(gpu_, texture.Format == ImTextureFormat_Alpha8 ? "r8" : "rgba8");
     params.sampleable = true;
     params.host_writable = true;
-    params.debug_tag = "ajp interface";
+    params.debug_tag = "kirari interface";
     if (params.format == nullptr)
       return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "rgba8 ou r8"});
     tex = pl_tex_create(gpu_, &params);
@@ -175,7 +175,7 @@ std::expected<void, Refusal> ImGuiLayer::draw(const ImDrawData& data, const pl_f
       params.sampleable = true;
       params.renderable = true;
       params.blit_dst = true;  // pl_tex_clear
-      params.debug_tag = "ajp interface gardée";
+      params.debug_tag = "kirari interface gardée";
       if (params.format != nullptr) cache_ = pl_tex_create(gpu_, &params);
       // Sans texture gardée, le dessin direct d'avant.
       if (cache_ == nullptr) return draw_lists(data, target, target_tex, white_nits, nullptr);
@@ -284,9 +284,9 @@ std::expected<void, Refusal> ImGuiLayer::draw_lists(const ImDrawData& data, cons
   if (float2 == nullptr || rgba8 == nullptr || !has_caps(rgba8->caps, PL_FMT_CAP_VERTEX))
     return std::unexpected(Refusal{RefusalCode::FeatureUnavailable, "formats de sommet de l'interface"});
   const std::array<pl_vertex_attrib, 3> attribs{{
-      {.name = "ajp_pos", .fmt = float2, .offset = offsetof(ImDrawVert, pos)},
-      {.name = "ajp_uv", .fmt = float2, .offset = offsetof(ImDrawVert, uv)},
-      {.name = "ajp_color", .fmt = rgba8, .offset = offsetof(ImDrawVert, col)},
+      {.name = "kirari_pos", .fmt = float2, .offset = offsetof(ImDrawVert, pos)},
+      {.name = "kirari_uv", .fmt = float2, .offset = offsetof(ImDrawVert, uv)},
+      {.name = "kirari_color", .fmt = rgba8, .offset = offsetof(ImDrawVert, col)},
   }};
   pl_color_space ui = pl_color_space_srgb;
   if (pl_color_space_is_hdr(&target.color)) ui.hdr.max_luma = white_nits;
@@ -307,13 +307,14 @@ std::expected<void, Refusal> ImGuiLayer::draw_lists(const ImDrawData& data, cons
         continue;
 
       pl_shader sh = pl_dispatch_begin(dispatch_);
-      const pl_shader_desc desc{.desc = {.name = "ajp_ui_tex", .type = PL_DESC_SAMPLED_TEX},
+      const pl_shader_desc desc{.desc = {.name = "kirari_ui_tex", .type = PL_DESC_SAMPLED_TEX},
                                 .binding = {.object = tex, .sample_mode = PL_TEX_SAMPLE_LINEAR}};
       const bool alpha_only = tex->params.format->num_components == 1;
       pl_custom_shader custom{};
       custom.description = "interface ImGui";
-      custom.body = alpha_only ? "color = ajp_color * vec4(1.0, 1.0, 1.0, texture(ajp_ui_tex, ajp_uv).r);"
-                               : "color = ajp_color * texture(ajp_ui_tex, ajp_uv);";
+      custom.body = alpha_only
+                        ? "color = kirari_color * vec4(1.0, 1.0, 1.0, texture(kirari_ui_tex, kirari_uv).r);"
+                        : "color = kirari_color * texture(kirari_ui_tex, kirari_uv);";
       custom.input = PL_SHADER_SIG_NONE;
       custom.output = PL_SHADER_SIG_COLOR;
       custom.descriptors = &desc;
@@ -357,4 +358,4 @@ std::expected<void, Refusal> ImGuiLayer::draw_lists(const ImDrawData& data, cons
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

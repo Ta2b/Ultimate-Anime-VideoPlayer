@@ -9,7 +9,7 @@
 #include <optional>
 #include <vector>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 constexpr std::uint32_t kEbml = 0x1A45DFA3;
@@ -265,4 +265,4 @@ ChapterLayout read_chapter_layout(ByteSource& source) {
   return {};
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

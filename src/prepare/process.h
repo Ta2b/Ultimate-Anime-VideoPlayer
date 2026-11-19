@@ -21,7 +21,7 @@
 #include "core/types.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct ProcessSpec {
   std::filesystem::path program;        // chemin complet de l'exécutable
@@ -76,4 +76,4 @@ class LineSplitter {
 // Ligne de commande Windows qui redonne exactement argv par CommandLineToArgvW.
 std::string windows_command_line(const std::vector<std::string>& argv);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

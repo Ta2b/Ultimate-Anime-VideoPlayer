@@ -3,8 +3,8 @@
 Sous TensorRT, DistilDRBA v2 lite peut tourner coupé en quatre petits moteurs (l'encodeur, en lot de trois images, et les
 trois blocs, des convolutions à basse résolution) reliés par des noyaux CUDA maison pour tout le reste : réductions
 d'images, choix du côté de la paire selon tau, Resize, DepthToSpace, flot, grille, GridSample, Concat, masque sigmoïde,
-mélange. Par défaut quand la découpe est valide ; le DistilDRBA entier reprend sinon. Réglage : Réglages avancés >
-Fluidité > « DistilDRBA fusionné » (`interpolation.drba_fused` de `play.toml`).
+mélange. Par défaut quand la découpe est valide ; le DistilDRBA entier reprend sinon. Réglage :
+`interpolation.drba_fused` de `play.toml` (le menu ne le montre plus ; l'onglet Interpolation dit l'état du fusionné).
 
 Prototype et banc : `tools/bench/fp8/drba_fusion/` (même méthode que `rife_fusion` de la branche
 `worktree-agent-a68dd8d8bff2ff77e`). Ce document dit ce qui en est devenu produit. Les convolutions ne font que 28 % du
@@ -43,14 +43,14 @@ tient dans six noyaux.
 ## Tests
 
 - Sans GPU : `tests/unit/prepare/drba_split_test.cpp` (reconnaissance sur un graphe fabriqué depuis le câblage attendu,
-  pour les deux réductions, refus, manifeste, dérivation et cache, vrais modèles si `AJP_DRBA_MODEL_DIR`),
+  pour les deux réductions, refus, manifeste, dérivation et cache, vrais modèles si `KIRARI_DRBA_MODEL_DIR`),
   `tests/unit/kernels/drba_fused_test.cpp`, `tests/unit/app/drba_fused_choice_test.cpp` (raisons de renoncement, réglage
   de `play.toml`, coût du changement).
-- GPU : `ajp_backend_tensorrt_tests "[drba_fused]"` (noyaux de réduction contre l'hôte, bit à bit) ; test caché
+- GPU : `kirari_backend_tensorrt_tests "[drba_fused]"` (noyaux de réduction contre l'hôte, bit à bit) ; test caché
   `"[.drba_fused]"` (chaîne contre le moteur entier de TensorRT, 384×640, PSNR ≥ 50 dB des deux côtés de l'image du milieu :
   54,97 dB à tau 0,5 et 59,09 dB à tau 1,25 sur un dessin synthétique à traits d'un pixel ; échelle 0,5 à 2176×3840 avec une
   vraie image : 65,7 et 71,5 dB — les traits d'un pixel du dessin synthétique bougent d'un pixel au moindre pas de la grille
-  FP16 à cette taille, le test saute alors sans image `AJP_DRBA_IMAGE`).
+  FP16 à cette taille, le test saute alors sans image `KIRARI_DRBA_IMAGE`).
 
 ## Mesures
 
@@ -71,7 +71,7 @@ Dans le lecteur : voir la section suivante.
 
 ## Dans le lecteur
 
-`ajp play` (build Debug, le GPU fait le même travail), Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p sans agrandissement
+`kirari play` (build Debug, le GPU fait le même travail), Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p sans agrandissement
 (`--no-upscale --work-height=1080`, DistilDRBA en 1920×1088), ×3, `--one-lane`, SDR. ABAB 3 tours, médiane « moteur » du
 profil GPU (min entre parenthèses) :
 

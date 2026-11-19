@@ -12,7 +12,7 @@
 
 #include "grade_gpu_support.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 using namespace gpu_test;
 
@@ -321,4 +321,4 @@ TEST_CASE("HDR anime : les noirs profonds suivent la série, pas le plan (P3.52)
         Catch::Approx(luma(graded_rgb(gpu, dim, dark_shot)[mid])).epsilon(0.01));
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

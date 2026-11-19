@@ -16,7 +16,7 @@
 #include "doubles.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 
 namespace {
@@ -330,4 +330,4 @@ TEST_CASE("Étage gpu : le crédit des clés GMFSS garde toujours deux images de
   CHECK(gmfss_earned_us(kSource, 25'000) == 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

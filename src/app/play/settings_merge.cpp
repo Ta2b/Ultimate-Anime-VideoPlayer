@@ -5,7 +5,7 @@
 
 #include "app/play/settings_toml_lenient.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string text_of(const toml::node& node) {
@@ -88,4 +88,4 @@ void apply_own_changes(toml::table& disk, const toml::table& before, const toml:
     if (!now.contains(key.str())) disk.erase(key.str());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

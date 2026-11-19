@@ -6,9 +6,9 @@
 
 #include <string_view>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
-inline constexpr std::string_view kSystemInterpolatorProducer = "ajp-system-interpolator";
+inline constexpr std::string_view kSystemInterpolatorProducer = "kirari-system-interpolator";
 inline constexpr std::string_view kVideoToolboxFrameRate = "videotoolbox-frame-rate-conversion-1";
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

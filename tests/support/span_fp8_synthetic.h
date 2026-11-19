@@ -8,7 +8,7 @@
 
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::span_fp8::testing {
+namespace kirari::gpu::span_fp8::testing {
 
 // Poids en FP16 tous égaux (0x211E : 0,01 en demi-précision ; la valeur exacte n'importe pas aux tests,
 // seulement qu'elle soit finie) quand fill est positif, nuls sinon ; biais à fill.
@@ -34,4 +34,4 @@ inline Package synthetic(float fill = 0.01F, int blocks = kBlocks) {
   return package;
 }
 
-}  // namespace ajp::gpu::span_fp8::testing
+}  // namespace kirari::gpu::span_fp8::testing

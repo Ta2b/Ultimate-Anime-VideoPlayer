@@ -9,10 +9,10 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // dir/videotoolbox-frame-rate-conversion-1.onnx, écrit s'il manque ou diffère (écrit à côté puis
 // renommé). Refus FileUnwritable.
 std::expected<std::filesystem::path, Refusal> apple_model(const std::filesystem::path& dir);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

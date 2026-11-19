@@ -22,7 +22,7 @@
 #include "core/clock.h"
 #include "core/wait_plan.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Une fois, sur le thread qui attend (main) : ses minuteurs ne glissent plus de 50 µs par défaut.
@@ -105,4 +105,4 @@ void wait_loop(std::int64_t wait_us, bool precise) {
   sleep_until_precise(plan.precise_until_us);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

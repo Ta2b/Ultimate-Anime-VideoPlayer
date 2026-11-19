@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 
 TEST_CASE("fp16 : valeurs exactes et arrondi au pair", "[half]") {
   CHECK(ref::float_to_half(0.0F) == 0x0000);

@@ -6,7 +6,7 @@
 
 #include "core/thread.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 DeferredSteps::~DeferredSteps() {
   if (!worker_.joinable()) return;
@@ -63,4 +63,4 @@ void DeferredSteps::serve(const std::stop_token& stop) {
   }
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

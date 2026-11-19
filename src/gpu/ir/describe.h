@@ -1,4 +1,4 @@
-// Descriptions lisibles de l'IR, pour ajp_onnx_info et les journaux.
+// Descriptions lisibles de l'IR, pour kirari_onnx_info et les journaux.
 #pragma once
 
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include "gpu/ir/memory_plan.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 std::string format_bytes(std::uint64_t bytes);
 
@@ -24,4 +24,4 @@ std::string describe_nodes(const Graph& graph);
 std::string describe_stats(const PassStats& stats);
 std::string describe_memory(const MemoryPlan& plan);
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

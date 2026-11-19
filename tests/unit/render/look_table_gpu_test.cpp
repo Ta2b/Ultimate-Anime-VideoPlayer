@@ -11,8 +11,8 @@
 
 namespace {
 
-using namespace ajp::render;
-using namespace ajp::render::gpu_test;
+using namespace kirari::render;
+using namespace kirari::render::gpu_test;
 
 // Le jeu de couleurs de la mesure A41-01 (#669) : une image SDR BT.709 (grille de 48³ codes, gamma 2,4)
 // relevée à 233 nits de blanc et mise en PQ BT.2020, ici en images de kSide² pixels, la dernière complétée

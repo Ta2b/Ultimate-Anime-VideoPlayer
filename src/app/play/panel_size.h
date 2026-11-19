@@ -4,7 +4,7 @@
 // le menu suit la fenêtre quand elle change de taille, et une taille tirée aux bords ou une position où on
 // l'a déplacé devient une nouvelle part.
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct PanelArea {
   float width = 0.0F;
@@ -44,4 +44,4 @@ class PanelSize {
   bool area_changed_ = true;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

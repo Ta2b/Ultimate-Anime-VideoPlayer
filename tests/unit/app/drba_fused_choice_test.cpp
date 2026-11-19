@@ -6,7 +6,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("DistilDRBA fusionné : essayé par défaut avec DistilDRBA, avec la raison de chaque renoncement",
           "[app][drba_fused]") {
@@ -101,4 +101,4 @@ TEST_CASE("DistilDRBA fusionné : le réglage voyage dans play.toml et recharge 
   CHECK(change_between(running, wanted, false).cost != ChangeCost::Reopen);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

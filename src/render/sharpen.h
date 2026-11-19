@@ -8,7 +8,7 @@
 
 #include "core/types.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 class Sharpen {
  public:
@@ -43,4 +43,4 @@ class Sharpen {
   double strength_ = 0.0;
 };
 
-}  // namespace ajp::render
+}  // namespace kirari::render

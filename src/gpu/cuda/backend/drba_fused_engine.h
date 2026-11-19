@@ -29,7 +29,7 @@ namespace nvinfer1 {
 class IRuntime;
 }
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class DrbaFusedEngine final : public Engine {
  public:
@@ -114,4 +114,4 @@ class DrbaFusedEngine final : public Engine {
   bool times_only_next_ = false;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

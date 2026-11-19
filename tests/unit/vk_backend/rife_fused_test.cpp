@@ -22,7 +22,7 @@
 #include "kernels/spec/rife_fused.h"
 #include "net_rig.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 std::vector<double> rounded(const std::vector<double>& values) {
@@ -234,4 +234,4 @@ TEST_CASE("RIFE fusionné : la clé d'artefact Vulkan se relit", "[vk_backend][r
   CHECK_FALSE(rife_fused_artifact_key_parse("rife-fused-vk:1000x1920:image:8,4,2,1:/a|/b|/c|/d|/e"));
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

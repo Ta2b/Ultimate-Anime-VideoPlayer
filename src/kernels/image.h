@@ -11,7 +11,7 @@
 #include "kernels/spec/color.h"
 #include "kernels/spec/resample.h"
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Un plan : largeur × hauteur échantillons, ligne par ligne, sans pas de ligne.
 // Des dimensions hors de [0, kMaxDimension] n'allouent rien : le plan garde ses dimensions,
@@ -84,4 +84,4 @@ struct YuvImage {
   friend bool operator==(const YuvImage&, const YuvImage&) = default;
 };
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels

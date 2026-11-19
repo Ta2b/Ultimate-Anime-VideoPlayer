@@ -14,7 +14,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ExportDraft {
   ExportJob job;
@@ -36,7 +36,9 @@ struct ExportDraft {
   } check;
 };
 
+// La pastille « Expérimental » en tête de l'onglet : l'export n'est pas encore au point.
+void export_experimental_note();
 void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsChoices& choices,
                 std::vector<Input>& actions);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

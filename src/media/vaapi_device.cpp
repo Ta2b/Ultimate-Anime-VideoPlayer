@@ -18,7 +18,7 @@ extern "C" {
 #include <libavutil/hwcontext_vaapi.h>
 }
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 struct RenderNode {
@@ -106,4 +106,4 @@ std::expected<BufferPtr, Refusal> open_vaapi_device(AVCodecID codec, bool prefer
                 std::format("vaapi : {} ne décode pas {}", tried, avcodec_get_name(codec)));
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

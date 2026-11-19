@@ -2,7 +2,7 @@
 // d'IOSurface à allouer.
 #include "gpu/coreml/coreml_direct.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 class Surfaces {};
 
@@ -26,4 +26,4 @@ std::expected<std::unique_ptr<DirectModel>, Refusal> open_direct(const std::file
       Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "Core ML direct : absent de ce système"});
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

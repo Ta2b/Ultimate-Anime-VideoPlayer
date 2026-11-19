@@ -29,7 +29,7 @@
 #include "core/clock.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 namespace {
 
 std::unexpected<Refusal> refuse_sdl(std::string_view call) {
@@ -385,7 +385,7 @@ void SdlSink::notify_demand() const {
     demand_(DeviceReading{.consumed_frames = consumed_locked(), .host_us = host_now_us()});
   } catch (...) {
     // Aucune exception ne remonte dans le thread de SDL ; la mesure suivante remplacera celle-ci.
-    SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "ajp : mesure de la file audio perdue");
+    SDL_LogWarn(SDL_LOG_CATEGORY_AUDIO, "kirari : mesure de la file audio perdue");
   }
 }
 
@@ -403,4 +403,4 @@ std::expected<std::unique_ptr<AudioSink>, Refusal> open_sdl_sink(const OutputReq
   return std::unique_ptr<AudioSink>(std::move(sink));
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

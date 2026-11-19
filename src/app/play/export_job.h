@@ -15,7 +15,7 @@
 #include "export/encoder_choice.h"
 #include "media/track.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La hauteur encodée : celle de la sortie de la chaîne, celle de la source, ou une hauteur fixe.
 inline constexpr int kExportChainHeight = 0;
@@ -69,7 +69,7 @@ media::Rational export_rate(media::Rational source, Factor factor);
 // Le dossier est sur un FAT (FAT32, vfat, msdos) : un fichier n'y dépasse pas 4 Gio (P3.89).
 bool on_fat32(const std::filesystem::path& dir);
 
-// « Épisode 01 [ajp 3840x2160 47.952fps].mkv » à côté de la source ; « (2) », « (3) »… si le nom
+// « Épisode 01 [kirari 3840x2160 47.952fps].mkv » à côté de la source ; « (2) », « (3) »… si le nom
 // est pris ; un chemin vide si « (999) » l'est aussi. Le nom de la source est borné à 160 octets.
 std::filesystem::path default_export_path(const std::filesystem::path& source, ExportSize size,
                                           media::Rational rate);
@@ -81,4 +81,4 @@ const char* quality_label(exporter::Quality quality);
 // « HEVC 10 bits · très haute qualité », « FFV1 4:2:0 10 bits, sans perte du codec » : pour l'interface.
 std::string export_label(exporter::Codec codec, exporter::Quality quality);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

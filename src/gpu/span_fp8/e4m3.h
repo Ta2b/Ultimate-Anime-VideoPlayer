@@ -2,8 +2,8 @@
 // l'inclue avec quantize.h.
 #pragma once
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 inline constexpr float kE4m3Max = 448.0F;
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

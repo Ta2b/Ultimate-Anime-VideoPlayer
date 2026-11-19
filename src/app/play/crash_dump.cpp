@@ -32,11 +32,11 @@
 #include <cstdint>
 #include <dlfcn.h>
 #include <execinfo.h>
-#define AJP_HAS_BACKTRACE 1
+#define KIRARI_HAS_BACKTRACE 1
 #endif
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -70,8 +70,8 @@ void prune(const fs::path& dir, int keep) {
 std::array<wchar_t, 1024> g_dir{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 std::array<wchar_t, 1100> g_log{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-// Une ligne ajoutée à ajp.log : la séance s'arrête, le journal doit le dire (A39-04). Le fichier est ouvert
-// ici, sans attendre la file du journal, qui ne vide plus.
+// Une ligne ajoutée à kirari.log : la séance s'arrête, le journal doit le dire (A39-04). Le fichier est
+// ouvert ici, sans attendre la file du journal, qui ne vide plus.
 void note_crash(unsigned long code, const char* dump_name) {
   if (g_log[0] == L'\0') return;
   const HANDLE out = CreateFileW(g_log.data(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
@@ -118,13 +118,13 @@ void dump_to_dir(EXCEPTION_POINTERS* info) {
   GetLocalTime(&now);
   std::array<wchar_t, 1100> file{};
   const int length = std::swprintf(
-      file.data(), file.size(), L"%ls\\ajp-%04u%02u%02u-%02u%02u%02u-%lu.dmp", g_dir.data(),
+      file.data(), file.size(), L"%ls\\kirari-%04u%02u%02u-%02u%02u%02u-%lu.dmp", g_dir.data(),
       static_cast<unsigned>(now.wYear), static_cast<unsigned>(now.wMonth), static_cast<unsigned>(now.wDay),
       static_cast<unsigned>(now.wHour), static_cast<unsigned>(now.wMinute),
       static_cast<unsigned>(now.wSecond), static_cast<unsigned long>(GetCurrentProcessId()));
   if (length <= 0 || !dump(file.data(), info)) return;
   std::array<char, 64> name{};
-  std::snprintf(name.data(), name.size(), "ajp-%04u%02u%02u-%02u%02u%02u-%lu.dmp",
+  std::snprintf(name.data(), name.size(), "kirari-%04u%02u%02u-%02u%02u%02u-%lu.dmp",
                 static_cast<unsigned>(now.wYear), static_cast<unsigned>(now.wMonth),
                 static_cast<unsigned>(now.wDay), static_cast<unsigned>(now.wHour),
                 static_cast<unsigned>(now.wMinute), static_cast<unsigned>(now.wSecond),
@@ -162,8 +162,8 @@ void on_pure_call() {
   std::abort();
 }
 #else
-// Un signal fatal : une ligne (et la pile, quand la libc en donne une) dans ajp.log, puis la fin normale du
-// signal, pour que le système garde son core (systemd-coredump sous CachyOS). Rien n'est alloué dans le
+// Un signal fatal : une ligne (et la pile, quand la libc en donne une) dans kirari.log, puis la fin normale
+// du signal, pour que le système garde son core (systemd-coredump sous CachyOS). Rien n'est alloué dans le
 // gestionnaire : le chemin, le tampon et la pile de secours sont fixés à l'installation, et write(2) est de
 // ceux qu'un gestionnaire peut appeler (A39-04).
 std::array<char, 1100> g_log_path{};  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
@@ -206,7 +206,7 @@ const char* signal_name(int signo) {
   }
 }
 
-#ifdef AJP_HAS_BACKTRACE
+#ifdef KIRARI_HAS_BACKTRACE
 // La pile, une ligne par cadre : « nom-du-module(+0xdécalage) [adresse] », sans le dossier du module, que le
 // journal ne doit pas dire (B39-05) ; backtrace_symbols_fd écrivait le chemin complet. dladdr est ce que
 // backtrace_symbols_fd appelle lui-même.
@@ -257,7 +257,7 @@ void on_fatal_signal(int signo) {
       static_cast<void>(ignored);
       put(fd, "\n");
     }
-#ifdef AJP_HAS_BACKTRACE
+#ifdef KIRARI_HAS_BACKTRACE
     std::array<void*, 48> frames{};
     const int count = backtrace(frames.data(), static_cast<int>(frames.size()));
     put_frames(fd, frames.data(), count);
@@ -280,7 +280,7 @@ void install_crash_dumps([[maybe_unused]] const fs::path& dir) {
   prune(dir, kKeptCrashDumps);
   std::ranges::copy(wide, g_dir.begin());
   g_dir[wide.size()] = L'\0';
-  const std::wstring log = (dir.parent_path() / "ajp.log").wstring();
+  const std::wstring log = (dir.parent_path() / "kirari.log").wstring();
   if (log.size() < g_log.size()) {
     std::ranges::copy(log, g_log.begin());
     g_log[log.size()] = L'\0';
@@ -293,9 +293,9 @@ void install_crash_dumps([[maybe_unused]] const fs::path& dir) {
   // réservent au démarrage (thread_start, core/thread_role.h). Un __fastfail (/GS, std::terminate de
   // certaines bibliothèques) ne passe par aucun gestionnaire du processus : seul le rapport d'erreur de
   // Windows le voit, et la séance restée ouverte le dit au lancement suivant (problem_report.h).
-  ajp::reserve_crash_stack();
+  kirari::reserve_crash_stack();
 #else
-  const std::string log = core::to_utf8(dir.parent_path() / "ajp.log");
+  const std::string log = core::to_utf8(dir.parent_path() / "kirari.log");
   if (log.size() >= g_log_path.size()) return;
   std::ranges::copy(log, g_log_path.begin());
   g_log_path[log.size()] = '\0';
@@ -305,7 +305,7 @@ void install_crash_dumps([[maybe_unused]] const fs::path& dir) {
   stack.ss_sp = spare.data();
   stack.ss_size = spare.size();
   sigaltstack(&stack, nullptr);
-#ifdef AJP_HAS_BACKTRACE
+#ifdef KIRARI_HAS_BACKTRACE
   std::array<void*, 1> warm{};
   backtrace(warm.data(), 1);  // le premier appel charge la libc de pile : pas dans le gestionnaire
 #endif
@@ -339,4 +339,4 @@ bool write_crash_dump([[maybe_unused]] const fs::path& file) {
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

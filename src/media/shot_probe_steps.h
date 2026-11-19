@@ -8,7 +8,7 @@
 
 #include "media/shot_timeline.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Un saut de la lecture vers `to` : l'instant d'où l'analyse doit repartir, rien si elle continue où elle en
 // est. Déjà analysé assez loin : rien. B42-09 : connu jusqu'à la fin du fichier (les dernières secondes),
@@ -57,4 +57,4 @@ class ProbePace {
   std::int64_t anchor_wall_ = 0;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

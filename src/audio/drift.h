@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 struct DriftGains {
   double proportional = 0.1;  // par seconde d'écart : 10 ms d'écart donnent 0,1 %
@@ -38,4 +38,4 @@ class DriftRegulator {
   bool primed_ = false;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

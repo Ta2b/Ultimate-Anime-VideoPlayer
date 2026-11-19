@@ -7,7 +7,7 @@
 #include <optional>
 #include <string_view>
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 enum class Units : std::uint8_t { All, CpuAndGpu, CpuAndNeuralEngine };
 
@@ -17,4 +17,4 @@ std::string_view units_option(Units units);
 std::string_view units_name(Units units);  // « all », « gpu », « ane » : le manifeste
 std::optional<Units> units_from(std::string_view name);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

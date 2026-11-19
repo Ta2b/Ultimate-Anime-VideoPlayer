@@ -13,7 +13,7 @@ patterns-hdr10.mkv : HEVC 10 bits, PQ BT.2020, plage limitée.
 patterns-sdr.mkv : HEVC 8 bits, BT.709, plage limitée : blanc, gris 25/50/75 %, peau sRGB 255/224/196, en
 plein écran.
 
-Lecture : ajp play patterns-hdr10.mkv --fullscreen --mute --no-resume --data-dir=/tmp/ajp-probe, pause à
+Lecture : kirari play patterns-hdr10.mkv --fullscreen --mute --no-resume --data-dir=/tmp/kirari-probe, pause à
 chaque chapitre, sonde au centre (protocole : docs/reports/sonde-protocole.md).
 """
 import argparse

@@ -42,7 +42,7 @@
 #include "gpu/vulkan/compute/pipeline.h"
 #include "gpu/vulkan/compute/recording.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Le code de chaque opération, premier mot de son OpKey (P5.14) : deux opérations ne partagent jamais un
 // code, sinon leurs enregistrements se confondraient dans le cache.
@@ -392,4 +392,4 @@ class VulkanKernelOps final : public KernelOps {
   std::vector<TimelinePoint> signals_;
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

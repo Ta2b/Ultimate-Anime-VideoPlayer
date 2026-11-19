@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 inline constexpr float kInt8Max = 127.0F;
 inline constexpr float kInt8Min = -128.0F;
@@ -16,4 +16,4 @@ inline float round_to_int8(float value) {
   return std::clamp(std::nearbyint(value), kInt8Min, kInt8Max);  // pair en cas d'égalité (mode par défaut)
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

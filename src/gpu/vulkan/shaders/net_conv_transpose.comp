@@ -47,12 +47,12 @@ const uint CING = CIN / GROUPS;
 const uint COUTG = COUT / GROUPS;
 const uint BLOCKS = (COUTG + 4u * QUADS - 1u) / (4u * QUADS);
 
-AJP_NET_BUFFER(0, src, readonly)
+KIRARI_NET_BUFFER(0, src, readonly)
 layout(std430, binding = 1) readonly buffer Weights { vec4 w[]; } weights;
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
-AJP_NET_BUFFER(4, res, readonly)
-AJP_NET_BUFFER(5, dst, writeonly)
+KIRARI_NET_BUFFER(4, res, readonly)
+KIRARI_NET_BUFFER(5, dst, writeonly)
 
 void main() {
   const TDesc xd = TDesc(N, CIN, HIN, WIN, LX, CXP);
@@ -77,7 +77,7 @@ void main() {
       uint ix = uint(tx) / SW;
       uint row = ((gb * KH + ky) * KW + kx) * CING * QUADS;
       for (uint ci = 0u; ci < CING; ++ci) {
-        float xv = AJP_LOAD(src, TX, t_index(xd, n, g * CING + ci, iy, ix));
+        float xv = KIRARI_LOAD(src, TX, t_index(xd, n, g * CING + ci, iy, ix));
         for (uint q = 0u; q < QUADS; ++q) acc[q] += xv * weights.w[row + ci * QUADS + q];
       }
     }
@@ -88,7 +88,7 @@ void main() {
       uint o = first_out + 4u * q + k;
       if (o >= COUTG) return;
       uint co = g * COUTG + o;
-      AJP_STORE(dst, TY, t_index(yd, n, co, oy, ox), acc[q][k] + bias.v[co])
+      KIRARI_STORE(dst, TY, t_index(yd, n, co, oy, ox), acc[q][k] + bias.v[co])
     }
   }
 }

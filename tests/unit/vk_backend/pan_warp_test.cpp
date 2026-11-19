@@ -6,10 +6,10 @@
 #include "kernels/ref/warp.h"
 #include "kernels/spec/tolerance.h"
 
-using namespace ajp;
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
-namespace k = ajp::kernels;
+using namespace kirari;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
+namespace k = kirari::kernels;
 
 TEST_CASE("KernelOps : warp avec le mouvement d'ensemble, contre la référence",
           "[vk_backend][kernels][pan]") {

@@ -8,11 +8,11 @@
 // Repris de animejanai-inference-rtx@118c272 src/kernels.cu:963-1013 (sample_plane,
 // sample_window, k_warp_blend) et 1051-1096 (k_warp_blend_mid).
 // Le corps de warp_blend.comp (sortie dans un tenseur) et de warp_blend_ring.comp (sortie dans le slot du
-// ring, AJP_WARP_RING), inclus après tensor.glsl.
-#ifndef AJP_WARP_BLEND_GLSL
-#define AJP_WARP_BLEND_GLSL
+// ring, KIRARI_WARP_RING), inclus après tensor.glsl.
+#ifndef KIRARI_WARP_BLEND_GLSL
+#define KIRARI_WARP_BLEND_GLSL
 
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -20,30 +20,30 @@ layout(local_size_x = 16, local_size_y = 16) in;
 // 1 : les images a et b lues en Catmull-Rom (spec/warp.h : RifeWarp), le flot et le masque restant bilinéaires.
 layout(constant_id = 0) const uint CUBIC = 0;
 
-layout(std430, binding = 0) restrict readonly buffer ImageA { AJP_TENSOR v[]; } a;
-layout(std430, binding = 1) restrict readonly buffer ImageB { AJP_TENSOR v[]; } b;
-layout(std430, binding = 2) restrict readonly buffer Flow { AJP_TENSOR v[]; } flow;  // f0x, f0y, f1x, f1y
-layout(std430, binding = 3) restrict readonly buffer Mask { AJP_TENSOR v[]; } mask;  // poids de a
-#ifdef AJP_WARP_RING
+layout(std430, binding = 0) restrict readonly buffer ImageA { KIRARI_TENSOR v[]; } a;
+layout(std430, binding = 1) restrict readonly buffer ImageB { KIRARI_TENSOR v[]; } b;
+layout(std430, binding = 2) restrict readonly buffer Flow { KIRARI_TENSOR v[]; } flow;  // f0x, f0y, f1x, f1y
+layout(std430, binding = 3) restrict readonly buffer Mask { KIRARI_TENSOR v[]; } mask;  // poids de a
+#ifdef KIRARI_WARP_RING
 // Le slot du ring par sa vue R16G16B16A16_UNORM, comme ring_store (écrit après les tampons).
-#define AJP_WARP_PREVIOUS 4
-#define AJP_WARP_PARAMS 5
-#define AJP_WARP_PAN 6
+#define KIRARI_WARP_PREVIOUS 4
+#define KIRARI_WARP_PARAMS 5
+#define KIRARI_WARP_PAN 6
 layout(binding = 7, rgba16) uniform writeonly image2D slot;
 #else
-layout(std430, binding = 4) writeonly buffer Blend { AJP_TENSOR v[]; } dst;
-#define AJP_WARP_PREVIOUS 5
-#define AJP_WARP_PARAMS 6
-#define AJP_WARP_PAN 7
+layout(std430, binding = 4) writeonly buffer Blend { KIRARI_TENSOR v[]; } dst;
+#define KIRARI_WARP_PREVIOUS 5
+#define KIRARI_WARP_PARAMS 6
+#define KIRARI_WARP_PAN 7
 #endif
 // Mouvement au milieu de la paire précédente, mêmes plans et même fenêtre ; lu seulement avec
 // keep_poses et has_previous (sinon le flot y est lié à sa place).
-layout(std430, binding = AJP_WARP_PREVIOUS) readonly buffer Previous { AJP_TENSOR v[]; } previous;
+layout(std430, binding = KIRARI_WARP_PREVIOUS) readonly buffer Previous { KIRARI_TENSOR v[]; } previous;
 // L'instant, mot de paramètre réécrit d'une exécution à l'autre sans réenregistrer.
-layout(std430, binding = AJP_WARP_PARAMS) readonly buffer Params { float t; } params;
+layout(std430, binding = KIRARI_WARP_PARAMS) readonly buffer Params { float t; } params;
 // Mouvement d'ensemble de la paire (pan_global.comp, spec/warp_pan.h) : dx, dy, 1 si sûre ; lu seulement avec
 // pan_lock (sinon l'instant y est lié à sa place).
-layout(std430, binding = AJP_WARP_PAN) readonly buffer Pan { float v[]; } pan;
+layout(std430, binding = KIRARI_WARP_PAN) readonly buffer Pan { float v[]; } pan;
 
 layout(push_constant) uniform Push {
   uint width;  // images a, b et sortie
@@ -182,7 +182,7 @@ vec4 previous_at(uint first, uint count, float u, float v) {
 // pose_time (spec/poses.h). at_uv : le mouvement lu en (u, v), le même à chaque itération.
 float pose_time_at(float u, float v, float t, vec4 at_uv) {
   float tp = t;
-  for (int k = 0; k < AJP_POSE_ITERATIONS; ++k) {
+  for (int k = 0; k < KIRARI_POSE_ITERATIONS; ++k) {
     precise float u2 = u - ((1.0 - tp) * at_uv.x + tp * at_uv.z);
     precise float v2 = v - ((1.0 - tp) * at_uv.y + tp * at_uv.w);
     vec4 at2 = flow_at(motion_taps(u2, v2));
@@ -207,9 +207,9 @@ float pose_time_at(float u, float v, float t, vec4 at_uv) {
       before = sqrt(px * px + py * py);
     }
     precise float now = sqrt(dx * dx + dy * dy);
-    precise float r = (before + AJP_POSE_EPSILON) / (before + now + 2.0 * AJP_POSE_EPSILON);
+    precise float r = (before + KIRARI_POSE_EPSILON) / (before + now + 2.0 * KIRARI_POSE_EPSILON);
     precise float timed = t < 0.5 ? 2.0 * t * r : 1.0 - 2.0 * (1.0 - t) * r;
-    tp = bounded(timed, AJP_POSE_TIME_LIMIT, 1.0 - AJP_POSE_TIME_LIMIT);
+    tp = bounded(timed, KIRARI_POSE_TIME_LIMIT, 1.0 - KIRARI_POSE_TIME_LIMIT);
   }
   return tp;
 }
@@ -238,17 +238,17 @@ vec4 pan_flow(vec4 f) {
   vec4 ae = abs(f - g);
   float m = max(max(af.x, af.y), max(af.z, af.w));
   float e = max(max(ae.x, ae.y), max(ae.z, ae.w));
-  return (m < AJP_PAN_FLOW_LIMIT && e < AJP_PAN_AGREEMENT) ? g : f;
+  return (m < KIRARI_PAN_FLOW_LIMIT && e < KIRARI_PAN_AGREEMENT) ? g : f;
 }
 
 float slow_fade(float d) {
-  return smoothstep(AJP_SLOW_FADE_LO, AJP_SLOW_FADE_HI, d);
+  return smoothstep(KIRARI_SLOW_FADE_LO, KIRARI_SLOW_FADE_HI, d);
 }
 
 Displacement estimated(vec4 at_uv, Taps uv, float t) {
   float weight = mask_at(uv);
   if (pan_on()) {  // sous un demi-pixel, le masque glisse vers le fondu (ln((1 − t) / t), nul à t = 1/2)
-    float mm = bounded(weight, AJP_MASK_EPSILON, 1.0 - AJP_MASK_EPSILON);
+    float mm = bounded(weight, KIRARI_MASK_EPSILON, 1.0 - KIRARI_MASK_EPSILON);
     float w = slow_fade(length(at_uv.zw - at_uv.xy));
     precise float z = w * log(mm / (1.0 - mm)) + (1.0 - w) * log((1.0 - t) / t);
     weight = 1.0 / (1.0 + exp(-z));
@@ -268,9 +268,9 @@ Displacement from_middle(float u, float v, float t, vec4 at_uv) {
   if (on) at2 = pan_flow(at2);
   precise float tx = at2.z - at2.x;
   precise float ty = at2.w - at2.y;
-  float mm = bounded(mask_at(at), AJP_MASK_EPSILON, 1.0 - AJP_MASK_EPSILON);
+  float mm = bounded(mask_at(at), KIRARI_MASK_EPSILON, 1.0 - KIRARI_MASK_EPSILON);
   precise float z =
-      AJP_BLEND_LAW_A * log(mm / (1.0 - mm)) + AJP_BLEND_LAW_B * log((1.0 - t) / t) + AJP_BLEND_LAW_C;
+      KIRARI_BLEND_LAW_A * log(mm / (1.0 - mm)) + KIRARI_BLEND_LAW_B * log((1.0 - t) / t) + KIRARI_BLEND_LAW_C;
   if (on) {
     float w = slow_fade(sqrt(tx * tx + ty * ty));
     z = w * z + (1.0 - w) * log((1.0 - t) / t);
@@ -279,7 +279,7 @@ Displacement from_middle(float u, float v, float t, vec4 at_uv) {
   return Displacement(vec4(-t * tx, -t * ty, (1.0 - t) * tx, (1.0 - t) * ty), weight);
 }
 
-#if defined(AJP_WARP_RING) && defined(AJP_TENSOR_F16)
+#if defined(KIRARI_WARP_RING) && defined(KIRARI_TENSOR_F16)
 // v arrondi au float16 le plus proche, moitié vers le pair : la valeur que l'écriture d'un float16_t dans le
 // tenseur garde (conversion au plus proche des pilotes visés). Écrit en float : le stockage 16 bits seul n'a pas
 // de float16_t en calcul, et unpackHalf2x16(packHalf2x16(v)) se simplifie en v chez certains compilateurs
@@ -325,24 +325,24 @@ void main() {
     precise float mixed = va * d.weight + vb * (1.0 - d.weight);
     rgb[c] = mixed;
   }
-#ifdef AJP_WARP_RING
+#ifdef KIRARI_WARP_RING
   // Le code que write_ring écrirait du tenseur de sortie, au bit près : la valeur arrondie à la précision
   // du tenseur (float16 : half_rounded), puis unorm16 (ring_store.comp), écrite code / 65535 que la vue UNORM
   // rend exactement.
   vec4 codes = vec4(1.0);
   for (uint c = 0u; c < 3u; ++c) {
-#ifdef AJP_TENSOR_F16
+#ifdef KIRARI_TENSOR_F16
     float stored = half_rounded(rgb[c]);
 #else
     float stored = rgb[c];
 #endif
-    codes[c] = float(unorm16(stored)) / AJP_UNORM16_MAX;
+    codes[c] = float(unorm16(stored)) / KIRARI_UNORM16_MAX;
   }
   imageStore(slot, ivec2(x, y), codes);
 #else
   uint plane = pc.width * pc.height;
-  for (uint c = 0u; c < 3u; ++c) dst.v[c * plane + y * pc.width + x] = AJP_TENSOR(rgb[c]);
+  for (uint c = 0u; c < 3u; ++c) dst.v[c * plane + y * pc.width + x] = KIRARI_TENSOR(rgb[c]);
 #endif
 }
 
-#endif  // AJP_WARP_BLEND_GLSL
+#endif  // KIRARI_WARP_BLEND_GLSL

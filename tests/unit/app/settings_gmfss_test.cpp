@@ -11,7 +11,7 @@
 #include "app/play/gmfss_model.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GMFSS",
           "[app][settings][gmfss]") {
@@ -69,7 +69,7 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
 
 TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, choisie si demandée",
           "[app][gmfss]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-gmfss-half";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-gmfss-half";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const auto touch = [&](std::string_view name) { std::ofstream(dir / name) << "onnx"; };
@@ -90,9 +90,9 @@ TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, ch
   std::filesystem::remove_all(dir);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE(
     "GMFSS : la cadence Auto plafonnée seul à ×2 de la source (×2,5 au demi-flot), le mélange à l'écran",
@@ -119,16 +119,16 @@ TEST_CASE(
   CHECK(gmfss_auto_cap(c, 0, 24.0) == 0);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("GMFSS : l'Auto Rapide reste au choix", "[app][gmfss]") {
-  CHECK(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Rife, true, true).empty());
-  CHECK(ajp::app::play::free_refusal(ajp::app::play::MotionEngine::Gmfss, true, true).empty());
+  CHECK(kirari::app::play::free_refusal(kirari::app::play::MotionEngine::Rife, true, true).empty());
+  CHECK(kirari::app::play::free_refusal(kirari::app::play::MotionEngine::Gmfss, true, true).empty());
 }
 
 TEST_CASE("GMFSS : le coût d'une paire du mélange, à l'échelle des pixels, moindre au demi-flot",
           "[app][gmfss]") {
-  using ajp::app::play::gmfss_cost;
+  using kirari::app::play::gmfss_cost;
   CHECK(gmfss_cost({.width = 1280, .height = 720}, false).total_us == 50300);
   CHECK(gmfss_cost({.width = 1280, .height = 720}, false).pair_us == 35000);
   CHECK(gmfss_cost({.width = 1280, .height = 720}, true).total_us == 27300);
@@ -136,7 +136,7 @@ TEST_CASE("GMFSS : le coût d'une paire du mélange, à l'échelle des pixels, m
 }
 
 TEST_CASE("GMFSS : Très élevé par la chaîne du mélange, ou à chaque instant sans RIFE", "[app][gmfss]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   PlaySettings s;
   s.motion_engine = MotionEngine::Gmfss;
   s.rife_factor = 2;
@@ -155,10 +155,10 @@ TEST_CASE("GMFSS : Très élevé par la chaîne du mélange, ou à chaque instan
 }
 
 TEST_CASE("GMFSS : le plancher des clés dans play.toml, borné, 0 dans un ancien fichier", "[app][gmfss]") {
-  using ajp::app::play::format_settings;
-  using ajp::app::play::parse_settings;
+  using kirari::app::play::format_settings;
+  using kirari::app::play::parse_settings;
   CHECK(parse_settings("version = 1\n")->gmfss_key_floor == 0);
-  ajp::app::play::PlaySettings s;
+  kirari::app::play::PlaySettings s;
   s.gmfss_key_floor = 15;
   const auto back = parse_settings(format_settings(s));
   REQUIRE(back);

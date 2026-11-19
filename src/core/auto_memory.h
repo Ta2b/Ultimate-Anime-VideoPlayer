@@ -17,7 +17,7 @@
 
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 inline constexpr std::size_t kAutoMemoryEntries = 200;
 
@@ -46,4 +46,4 @@ std::optional<int> load_auto_step(const std::filesystem::path& store, std::strin
 std::expected<void, Refusal> store_auto_step(const std::filesystem::path& store, std::string_view key,
                                              int centi);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

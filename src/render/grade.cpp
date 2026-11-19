@@ -15,7 +15,7 @@
 #include "render/output_tune.h"
 #include "render/shaders.h"
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 // Le code PQ (ST 2084) de `nits`.
@@ -479,4 +479,4 @@ std::span<const pl_hook* const> Grade::hooks() const {
   return std::span<const pl_hook* const>(impl_->hooks.data(), impl_->hooks.size());
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

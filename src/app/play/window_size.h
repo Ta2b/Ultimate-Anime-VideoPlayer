@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct WindowSize {
   int width = 0;
@@ -33,4 +33,4 @@ inline WindowSize window_size_for(int width, int height, float content_scale, in
           .height = std::max(height, static_cast<int>(std::lround(h)))};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -8,7 +8,7 @@ extern "C" {
 #include <libavutil/sha512.h>
 }
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using i64 = std::int64_t;
@@ -343,4 +343,4 @@ bool ed25519_verify_hex(std::string_view public_key_hex, std::string_view messag
                         std::span<const std::uint8_t, 64>(sig->data(), 64));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

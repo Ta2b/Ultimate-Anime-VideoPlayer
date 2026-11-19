@@ -16,6 +16,7 @@
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_float_e4m3 : require
+#extension GL_EXT_control_flow_attributes : require
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 
@@ -79,8 +80,8 @@ layout(std430, binding = 0) readonly buffer Source { uvec4 v[]; } src4;
 layout(std430, binding = 1) readonly buffer Weights { uvec4 v[]; } weights4;
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
-AJP_NET_BUFFER(4, res, readonly)
-AJP_NET_BUFFER(5, dst, writeonly)
+KIRARI_NET_BUFFER(4, res, readonly)
+KIRARI_NET_BUFFER(5, dst, writeonly)
 
 shared uvec4 tile_a[2u * ABUF];
 shared uvec4 tile_b[2u * BBUF];
@@ -171,7 +172,7 @@ void main() {
   uint sg = gl_SubgroupID;
 
   coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> acc[TM * NT];
-  for (uint i = 0u; i < TM * NT; ++i) {
+  [[unroll]] for (uint i = 0u; i < TM * NT; ++i) {
     acc[i] = coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(0.0);
   }
   stage_a(0u, n, first_pixel, 0u);
@@ -185,27 +186,27 @@ void main() {
       if (SHARED_B == 1u) stage_b(buf ^ 1u, s + 1u);
     }
     uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
-    for (uint c16 = 0u; c16 < KC; c16 += 16u) {
+    [[unroll]] for (uint c16 = 0u; c16 < KC; c16 += 16u) {
       coopmat<floate4m3_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
-      for (uint t = 0u; t < TM; ++t) {
+      [[unroll]] for (uint t = 0u; t < TM; ++t) {
         coopMatLoad(a[t], tile_a, buf * ABUF + (sg * TM + t) * 16u * AS + c16 / 16u, AS,
                     gl_CooperativeMatrixLayoutRowMajor);
       }
       uint k = k0 + c16;
-      for (uint j = 0u; j < NT; ++j) {
+      [[unroll]] for (uint j = 0u; j < NT; ++j) {
         coopmat<floate4m3_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> b;
         if (SHARED_B == 1u) {
           coopMatLoad(b, tile_b, buf * BBUF + c16 * (NP / 16u) + j, NP / 16u, gl_CooperativeMatrixLayoutRowMajor);
         } else {
           coopMatLoad(b, weights4.v, k * (NP / 16u) + j, NP / 16u, gl_CooperativeMatrixLayoutRowMajor);
         }
-        for (uint t = 0u; t < TM; ++t) acc[t * NT + j] = coopMatMulAdd(a[t], b, acc[t * NT + j]);
+        [[unroll]] for (uint t = 0u; t < TM; ++t) acc[t * NT + j] = coopMatMulAdd(a[t], b, acc[t * NT + j]);
       }
     }
     barrier();
   }
-  for (uint t = 0u; t < TM; ++t) {
-    for (uint j = 0u; j < NT; ++j) {
+  [[unroll]] for (uint t = 0u; t < TM; ++t) {
+    [[unroll]] for (uint j = 0u; j < NT; ++j) {
       coopMatStore(acc[t * NT + j], tile_c, sg * 256u, 16u, gl_CooperativeMatrixLayoutRowMajor);
       subgroupMemoryBarrierShared();
       subgroupBarrier();
@@ -217,10 +218,10 @@ void main() {
           uint ox = p % WOUT;
           float v = tile_c[sg * 256u + e] * bias.v[NP + co] + bias.v[co];
           if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
-          if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          if (RESIDUAL == 1u) v += KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
-          if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-          AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
+          if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          KIRARI_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
         }
       }
       subgroupBarrier();

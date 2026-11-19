@@ -7,7 +7,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 std::unexpected<Refusal> invalid(std::string detail) {
@@ -100,4 +100,4 @@ std::expected<std::vector<NamedValue>, Refusal> run(const Graph& graph, std::spa
   return outputs;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

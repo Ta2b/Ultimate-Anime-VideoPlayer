@@ -12,7 +12,7 @@
 #include "core/log.h"
 #include "gpu/backend.h"
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 inline BackendLogLevel level_of(spdlog::level::level_enum level) {
   switch (level) {
@@ -50,4 +50,4 @@ inline void route_module_logs(const BackendLog& log) {
   install_module_log_sinks({sink}, spdlog::level::debug);
 }
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

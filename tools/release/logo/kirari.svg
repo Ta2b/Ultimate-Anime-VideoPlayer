@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Logo de Kirari Player (piste A, « Étincelle ») : le bouton lecture et l'éclat kirari sur sa pointe.
+       Source de kirari.ico (Windows) et kirari.png (Linux) : tools/release/logo/render.mjs. -->
+  <defs>
+    <linearGradient id="fond" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2150"/>
+      <stop offset="1" stop-color="#16112b"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="url(#fond)"/>
+  <path d="M33 29 L70 51 L33 73Z" fill="#ffffff" stroke="#ffffff" stroke-width="11" stroke-linejoin="round"/>
+  <path transform="translate(74 25) scale(15)" fill="#ffc23d"
+        d="M0 -1 C0.12 -0.12 0.12 -0.12 1 0 C0.12 0.12 0.12 0.12 0 1 C-0.12 0.12 -0.12 0.12 -1 0 C-0.12 -0.12 -0.12 -0.12 0 -1Z"/>
+</svg>

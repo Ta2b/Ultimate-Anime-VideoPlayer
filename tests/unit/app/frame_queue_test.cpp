@@ -10,7 +10,7 @@
 
 #include "doubles.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 const auto kWritten = [](const RingFrame&) { return true; };
@@ -84,4 +84,4 @@ TEST_CASE("File d'images : le choix par échéance (pick_by) suit le prédicat, 
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

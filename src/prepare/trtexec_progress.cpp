@@ -4,7 +4,7 @@
 
 #include "core/text.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 struct Marker {
@@ -52,4 +52,4 @@ std::optional<BuildStage> TrtexecProgress::feed(std::string_view line) {
   return std::nullopt;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

@@ -24,7 +24,7 @@ extern "C" {
 #include "media/log.h"
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 std::string name_or_number(const char* name, int value) {
@@ -398,4 +398,4 @@ std::optional<Refusal> unreadable_video(const TrackInfo& track) {
   return std::nullopt;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

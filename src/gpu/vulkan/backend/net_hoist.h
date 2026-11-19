@@ -14,10 +14,10 @@
 
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Réécrit le graphe (formes connues, tenseurs en Nchw) ; renvoie le nombre de réécritures. Les
 // tenseurs orphelins ne sont pas retirés : eliminate_dead_code ensuite.
 int hoist_downscales(ir::Graph& graph);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

@@ -10,8 +10,8 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 std::vector<std::byte> blend_model(std::string_view producer_name, std::string_view producer_version);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

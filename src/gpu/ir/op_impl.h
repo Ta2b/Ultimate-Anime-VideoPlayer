@@ -6,44 +6,44 @@
 
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 
-#define AJP_IR_OP(fn)                                         \
+#define KIRARI_IR_OP(fn)                                      \
   Inferred infer_##fn(const Node&, std::span<const Operand>); \
   Evaluated eval_##fn(const Node&, std::span<const Value* const>, std::span<const OutputInfo>)
 
 // op_elementwise.cpp
-AJP_IR_OP(binary);      // Add, Sub, Mul, Div, Mod, PRelu
-AJP_IR_OP(unary);       // Relu, LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal, Identity, Cast
-AJP_IR_OP(fake_quant);  // FakeQuantE4M3, FakeQuantInt8
+KIRARI_IR_OP(binary);      // Add, Sub, Mul, Div, Mod, PRelu
+KIRARI_IR_OP(unary);       // Relu, LeakyRelu, Sigmoid, Tanh, Clip, Reciprocal, Identity, Cast
+KIRARI_IR_OP(fake_quant);  // FakeQuantE4M3, FakeQuantInt8
 
 // op_window.cpp
-AJP_IR_OP(conv);
-AJP_IR_OP(conv_transpose);
-AJP_IR_OP(average_pool);
+KIRARI_IR_OP(conv);
+KIRARI_IR_OP(conv_transpose);
+KIRARI_IR_OP(average_pool);
 
 // op_shape.cpp
-AJP_IR_OP(shape);
-AJP_IR_OP(gather);
-AJP_IR_OP(reshape);  // Reshape, Unsqueeze, Squeeze
-AJP_IR_OP(transpose);
-AJP_IR_OP(range);
+KIRARI_IR_OP(shape);
+KIRARI_IR_OP(gather);
+KIRARI_IR_OP(reshape);  // Reshape, Unsqueeze, Squeeze
+KIRARI_IR_OP(transpose);
+KIRARI_IR_OP(range);
 
 // op_slice.cpp
-AJP_IR_OP(concat);
-AJP_IR_OP(split);
-AJP_IR_OP(slice);
-AJP_IR_OP(pad);
+KIRARI_IR_OP(concat);
+KIRARI_IR_OP(split);
+KIRARI_IR_OP(slice);
+KIRARI_IR_OP(pad);
 
 // op_pixel.cpp
-AJP_IR_OP(depth_to_space);
-AJP_IR_OP(space_to_depth);
-AJP_IR_OP(reduce_mean);
+KIRARI_IR_OP(depth_to_space);
+KIRARI_IR_OP(space_to_depth);
+KIRARI_IR_OP(reduce_mean);
 
 // op_sample.cpp
-AJP_IR_OP(resize);
-AJP_IR_OP(grid_sample);
+KIRARI_IR_OP(resize);
+KIRARI_IR_OP(grid_sample);
 
-#undef AJP_IR_OP
+#undef KIRARI_IR_OP
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

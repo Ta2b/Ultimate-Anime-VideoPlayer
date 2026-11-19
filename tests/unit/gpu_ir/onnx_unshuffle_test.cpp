@@ -14,7 +14,7 @@
 #include "gpu/ir/protobuf.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
+using namespace kirari::gpu::ir;
 using test::ModelBuilder;
 
 namespace {
@@ -76,7 +76,7 @@ TEST_CASE("onnx : le dépliage 6-D passe en 5-D, sortie de pixel_unshuffle", "[g
   const onnx::Graph& g = model->graph;
   REQUIRE(g.nodes.size() == 4);
   CHECK(g.nodes[0].op_type == "Slice");
-  CHECK(g.nodes[0].inputs == Names{"shape6", "ajp.unbatch.starts", "ajp.unbatch.ends"});
+  CHECK(g.nodes[0].inputs == Names{"shape6", "kirari.unbatch.starts", "kirari.unbatch.ends"});
   CHECK(g.nodes[0].outputs == Names{"shape6.5d"});
   CHECK(g.nodes[1].op_type == "Reshape");
   CHECK(g.nodes[1].inputs == Names{"x", "shape6.5d"});
@@ -86,8 +86,8 @@ TEST_CASE("onnx : le dépliage 6-D passe en 5-D, sortie de pixel_unshuffle", "[g
   CHECK(g.nodes[2].attributes[0].type == onnx::AttributeType::Ints);
   CHECK(g.nodes[2].attributes[0].ints == std::vector<std::int64_t>{0, 2, 4, 1, 3});
   CHECK(g.nodes[3].inputs == Names{"b", "shape4"});
-  CHECK(initializer(g, "ajp.unbatch.starts").ints == std::vector<std::int64_t>{1});
-  CHECK(initializer(g, "ajp.unbatch.ends").ints == std::vector<std::int64_t>{6});
+  CHECK(initializer(g, "kirari.unbatch.starts").ints == std::vector<std::int64_t>{1});
+  CHECK(initializer(g, "kirari.unbatch.ends").ints == std::vector<std::int64_t>{6});
   CHECK(initializer(g, "shape6").ints == std::vector<std::int64_t>{1, 2, 2, 2, 3, 2});  // intact
   CHECK(value_info_names(*rewritten) == Names{"y"});
 

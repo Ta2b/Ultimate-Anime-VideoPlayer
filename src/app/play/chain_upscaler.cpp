@@ -9,7 +9,7 @@
 
 // Anime4K à la place de SPAN, au départ de la chaîne (prepare_chain_once, chain_setup.cpp) : son choix, ses
 // shaders sur l'écran et la liste des modèles du menu.
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // La liste des modèles ONNX du menu quand SPAN n'est pas chargé (agrandissement désactivé, coupé pour la
@@ -51,4 +51,4 @@ bool take_upscaler(Player& p, ChainEngines& c, const PlaySettings& settings) {
   return span;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

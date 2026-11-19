@@ -21,7 +21,7 @@
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 namespace guarded_detail {
 
 template <class T>
@@ -250,4 +250,4 @@ class GuardedBackend final : public Backend {
   std::unique_ptr<GuardedKernelOps> kernels_;
 };
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

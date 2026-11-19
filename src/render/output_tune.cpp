@@ -5,7 +5,7 @@
 
 #include "render/display_model.h"
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 double smoothstep(double lo, double hi, double x) {
@@ -138,4 +138,4 @@ OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const
   return tune;
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

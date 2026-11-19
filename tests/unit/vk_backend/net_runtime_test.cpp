@@ -12,7 +12,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::gpu::vk;
+using namespace kirari::gpu::vk;
 
 namespace {
 
@@ -27,7 +27,7 @@ std::string read_text(const std::filesystem::path& path) {
 }
 
 TEST_CASE("Artefacts : publiés depuis le dossier de travail, voisins compris", "[vk_backend][runtime]") {
-  const auto root = std::filesystem::temp_directory_path() / "ajp-net-runtime-test";
+  const auto root = std::filesystem::temp_directory_path() / "kirari-net-runtime-test";
   std::filesystem::remove_all(root);
   const auto work = root / ".construction-1-2";
   const auto staged = work / "span-0123.ovblob";
@@ -63,7 +63,7 @@ TEST_CASE("Artefacts : publiés depuis le dossier de travail, voisins compris", 
 }
 
 TEST_CASE("Artefacts : rien n'est publié sans l'artefact construit", "[vk_backend][runtime]") {
-  const auto root = std::filesystem::temp_directory_path() / "ajp-net-runtime-absent";
+  const auto root = std::filesystem::temp_directory_path() / "kirari-net-runtime-absent";
   std::filesystem::remove_all(root);
   const auto staged = root / "work" / "rife.mxr";
   const std::array<std::string, 1> names{"x"};
@@ -71,7 +71,7 @@ TEST_CASE("Artefacts : rien n'est publié sans l'artefact construit", "[vk_backe
   REQUIRE(net::write_io_names(staged, names, names));
   const auto published = net::publish_artifact(staged, root / "rife.mxr");
   REQUIRE_FALSE(published);
-  CHECK(published.error().code == ajp::RefusalCode::CacheIo);
+  CHECK(published.error().code == kirari::RefusalCode::CacheIo);
   CHECK_FALSE(std::filesystem::exists(root / "rife.mxr.io"));
   std::filesystem::remove_all(root);
 }

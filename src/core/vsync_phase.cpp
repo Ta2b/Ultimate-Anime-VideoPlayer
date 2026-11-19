@@ -4,7 +4,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace ajp::core {
+namespace kirari::core {
 
 void VsyncPhase::set_period(std::int64_t period_us) {
   if (period_us == period_us_) return;
@@ -46,4 +46,4 @@ std::int64_t VsyncPhase::nearest(std::int64_t host_us) const {
   return static_cast<std::int64_t>(std::llround(phase + k * period));
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

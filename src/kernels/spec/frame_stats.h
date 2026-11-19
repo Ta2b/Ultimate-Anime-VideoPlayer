@@ -24,7 +24,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 enum class FrameTransfer : std::uint8_t { Sdr, Pq, Hlg };
 
@@ -102,6 +102,6 @@ struct FrameStats {
   float left = 0.0F, right = 1.0F, top = 0.0F, bottom = 1.0F;
 };
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

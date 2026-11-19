@@ -9,7 +9,7 @@
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/ref/resample.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Une table copiée sur l'appareil : début de chaque sortie et poids, à la suite. Dans le pool, sur la file de
@@ -116,4 +116,4 @@ std::expected<void, Refusal> TensorRtBackend::chroma_tables(IngestParams& params
   return {};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

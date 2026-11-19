@@ -25,7 +25,7 @@
 #include "core/messages.h"
 #include "core/ring.h"
 
-namespace ajp::app::play::test {
+namespace kirari::app::play::test {
 
 // Ce que la session a envoyé aux autres threads, dans l'ordre.
 struct FakeStages final : Stages {
@@ -130,4 +130,4 @@ class PassthroughStage final : public RingStage {
   }
 };
 
-}  // namespace ajp::app::play::test
+}  // namespace kirari::app::play::test

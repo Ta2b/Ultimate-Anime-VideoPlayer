@@ -9,7 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::subs::test {
+namespace kirari::subs::test {
 namespace {
 
 constexpr std::string_view kHeader =
@@ -215,7 +215,7 @@ std::vector<Refusal> RecordingSink::refusals() const {
 
 TempFile::TempFile(std::string_view name, std::string_view contents)
     : path_(std::filesystem::temp_directory_path() /
-            std::format("ajp-subs-{}-{}", std::random_device{}(), name)) {
+            std::format("kirari-subs-{}-{}", std::random_device{}(), name)) {
   std::ofstream file(path_, std::ios::binary);
   file.write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
@@ -225,4 +225,4 @@ TempFile::~TempFile() {
   std::filesystem::remove(path_, ignored);
 }
 
-}  // namespace ajp::subs::test
+}  // namespace kirari::subs::test

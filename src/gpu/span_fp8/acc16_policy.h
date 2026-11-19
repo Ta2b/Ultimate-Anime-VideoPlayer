@@ -9,7 +9,7 @@
 #include <array>
 #include <cstdint>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 enum class Acc16Change : std::uint8_t { None, ToF32, ToF16 };
 
@@ -34,4 +34,4 @@ class Acc16Policy {
   bool f16_ = true;
 };
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

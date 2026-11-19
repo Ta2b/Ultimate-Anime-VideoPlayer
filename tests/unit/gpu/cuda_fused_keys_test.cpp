@@ -7,7 +7,7 @@
 
 #include "gpu/cuda/backend/fused_keys.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 TEST_CASE("RIFE fusionné (TensorRT) : la clé d'artefact se relit", "[gpu][fused_keys]") {
   const RifeFusedKey key{.height = 1088,
@@ -84,4 +84,4 @@ TEST_CASE("DistilDRBA fusionné (TensorRT) : la clé d'artefact se relit, une cl
   CHECK_FALSE(drba_fused_artifact_key_parse("drba-fused:1088x1920:4x:enc,b0,b1,b2"));
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

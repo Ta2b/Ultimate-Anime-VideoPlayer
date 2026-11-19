@@ -24,8 +24,8 @@
 #include "core/model_index.h"
 #include "french_ui.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
@@ -71,7 +71,7 @@ fs::path pack(const fs::path& source, const fs::path& archive) {
 
 struct Fixture {
   explicit Fixture(std::string_view test)
-      : root(fs::temp_directory_path() / std::format("ajp-engine-install-{}", test)) {
+      : root(fs::temp_directory_path() / std::format("kirari-engine-install-{}", test)) {
     std::error_code error;
     fs::remove_all(root, error);
     fs::create_directories(root / "data");
@@ -168,7 +168,7 @@ constexpr std::string_view kPlain = "abcabcabcabcabcabc";
 }  // namespace
 
 TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("tiers");
   Wheel wheel(f, kDeflated, true);
   wheel.file.name = "libtiers.so.1";
@@ -216,7 +216,7 @@ TEST_CASE("Fichier tiers : la plage d'une roue, décompressée et vérifiée", "
 
 TEST_CASE("Fichier tiers : un .part d'une autre version et un flux trop long sont refusés (A06-04, A06-05)",
           "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("tiers-garde");
   // Le .part d'un autre fichier au même nom (une autre version de TensorRT) ne se reprend pas : nommé par
   // l'empreinte, il n'est pas celui-ci.
@@ -267,7 +267,7 @@ TEST_CASE("Téléchargements : ce que l'index ne nomme plus est retiré, le rest
 
 TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent le module",
           "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("tiers-installation");
   const core::EnginePackage package = f.engine_package();
   Wheel wheel(f, kPlain, false);
@@ -303,7 +303,7 @@ TEST_CASE("Installation : les fichiers tiers de l'architecture du GPU rejoignent
 }
 
 TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("complet");
   const core::EnginePackage package = f.engine_package();
   // Une version déjà extraite, à moitié, est remplacée entière.
@@ -327,7 +327,7 @@ TEST_CASE("Installation : un paquet complet depuis une archive locale", "[app][i
 
 TEST_CASE("Installation : le paquet installé et sa licence restent notés à côté du moteur",
           "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("note");
   core::EnginePackage package = f.engine_package();
   CHECK_FALSE(installed_package(f.catalog, package));
@@ -338,7 +338,7 @@ TEST_CASE("Installation : le paquet installé et sa licence restent notés à c�
 }
 
 TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("sha");
   core::EnginePackage package = f.engine_package();
   package.sha256 = std::string(64, 'a');
@@ -350,7 +350,7 @@ TEST_CASE("Installation : un SHA-256 faux refuse le paquet et jette le fichier",
 }
 
 TEST_CASE("Installation : une taille fausse refuse le paquet", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("taille");
   core::EnginePackage package = f.engine_package();
   package.size += 1;
@@ -359,12 +359,12 @@ TEST_CASE("Installation : une taille fausse refuse le paquet", "[app][install]")
 }
 
 TEST_CASE("Installation : une archive sans la bibliothèque du backend est refusée", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("sans-bibliotheque");
   const core::EnginePackage package = f.engine_package(false);
   const auto result = install_package(f.catalog, package, f.progress());
   require_refused(result, RefusalCode::HashMismatch);
-  CHECK(result.error().detail.contains("ajp_backend_tensorrt"));
+  CHECK(result.error().detail.contains("kirari_backend_tensorrt"));
   const fs::path target = core::engine_dir(f.catalog.layout, package);
   CHECK_FALSE(fs::exists(target));
   CHECK_FALSE(fs::exists(fs::path(target.string() + ".partiel")));
@@ -372,7 +372,7 @@ TEST_CASE("Installation : une archive sans la bibliothèque du backend est refus
 }
 
 TEST_CASE("Installation : un .part interrompu reprend où il en était", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("reprise");
   const core::EnginePackage package = f.engine_package();
   const std::string archive = read_all(f.root / "tensorrt.tar.gz");
@@ -389,7 +389,7 @@ TEST_CASE("Installation : un .part interrompu reprend où il en était", "[app][
 }
 
 TEST_CASE("Installation : un .part complet mais faux repart de zéro", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("part-faux");
   const core::EnginePackage package = f.engine_package();
   write_all(core::download_path(f.catalog.layout, package.sha256), std::string(package.size + 7, 'x'));
@@ -399,7 +399,7 @@ TEST_CASE("Installation : un .part complet mais faux repart de zéro", "[app][in
 }
 
 TEST_CASE("Installation : un .part déjà complet et juste s'installe sans transfert", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("part-juste");
   const core::EnginePackage package = f.engine_package();
   write_all(core::download_path(f.catalog.layout, package.sha256), read_all(f.root / "tensorrt.tar.gz"));
@@ -411,7 +411,7 @@ TEST_CASE("Installation : un .part déjà complet et juste s'installe sans trans
 }
 
 TEST_CASE("Installation : une archive inaccessible est un refus de transfert", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("inaccessible");
   core::EnginePackage package = f.engine_package();
   package.url = "file://" + (f.root / "absent.bin").generic_string();
@@ -423,9 +423,9 @@ TEST_CASE("Installation : une archive inaccessible est un refus de transfert", "
 // sm89) : caché, à lancer à la main (« [.vendor] »). Chaque fichier de la carte est tiré par sa
 // plage, décompressé, et son SHA-256 est comparé à l'index.
 TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifient", "[.vendor][app][install]") {
-  ajp::app::play::FrenchUi french;
-  // Lancé depuis le dossier de construction (build/<préréglage>) ; AJP_VENDOR_DIR en prend un autre.
-  const std::string custom = env_text("AJP_VENDOR_DIR");
+  kirari::app::play::FrenchUi french;
+  // Lancé depuis le dossier de construction (build/<préréglage>) ; KIRARI_VENDOR_DIR en prend un autre.
+  const std::string custom = env_text("KIRARI_VENDOR_DIR");
   const fs::path dir = !custom.empty() ? fs::path(custom) : fs::path("../../tools/release/nvidia-vendor");
   REQUIRE(fs::exists(dir / "tensorrt-linux-x64.lock"));
   Fixture f("vendor-reel");
@@ -442,8 +442,8 @@ TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifie
     for (const auto& file : files) packed += file.packed_size;
     INFO(std::format("{} : {} fichiers, {} Mo à télécharger", lock, files.size(), packed >> 20));
     if (os != host_os()) continue;  // le téléchargement réel : ceux de cet OS seulement
-    // AJP_VENDOR_OUT : garder les fichiers tirés (pour essayer le moteur depuis un dossier composé ainsi).
-    const std::string keep = env_text("AJP_VENDOR_OUT");
+    // KIRARI_VENDOR_OUT : garder les fichiers tirés (pour essayer le moteur depuis un dossier composé ainsi).
+    const std::string keep = env_text("KIRARI_VENDOR_OUT");
     const fs::path out = !keep.empty() ? fs::path(keep) : f.root / "tiers";
     fs::create_directories(out);
     for (const auto& file : files) {
@@ -462,11 +462,11 @@ TEST_CASE("Fichiers tiers : les index de NVIDIA se téléchargent et se vérifie
 
 // Le paquet TensorRT construit par package-linux.sh, installé par install_package : l'archive locale
 // (file://) pour notre module, les fichiers de NVIDIA tirés pour de bon de pypi.nvidia.com. Caché :
-// AJP_PACKAGE_DIR = le dossier de sortie du script (engines.lock et archives).
+// KIRARI_PACKAGE_DIR = le dossier de sortie du script (engines.lock et archives).
 TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.package][app][install]") {
-  ajp::app::play::FrenchUi french;
-  const std::string given = env_text("AJP_PACKAGE_DIR");
-  if (given.empty()) SKIP("AJP_PACKAGE_DIR non défini");
+  kirari::app::play::FrenchUi french;
+  const std::string given = env_text("KIRARI_PACKAGE_DIR");
+  if (given.empty()) SKIP("KIRARI_PACKAGE_DIR non défini");
   const fs::path dir(given);
   Fixture f("paquet-reel");
   const auto index = core::read_engine_index(read_all(dir / "engines.lock"));
@@ -475,7 +475,7 @@ TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.
       core::find_package(index->packages, core::EngineId::TensorRt, f.catalog.layout.os);
   REQUIRE(found != nullptr);
   core::EnginePackage package = *found;
-  package.url = "file://" + (dir / "ajp-engine-tensorrt-linux-x64.tar.gz").generic_string();
+  package.url = "file://" + (dir / "kirari-engine-tensorrt-linux-x64.tar.gz").generic_string();
   f.catalog.packages = {package};
   f.catalog.vendor_files = index->vendor_files;
   InstallProgress progress = f.progress();
@@ -489,7 +489,7 @@ TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.
     listing += std::format("{} ({} Mo) ; ", entry.path().filename().string(), fs::file_size(entry) >> 20);
   WARN("dossier installé : " + target.string());
   WARN(listing);
-  CHECK(fs::exists(target / "ajp_backend_tensorrt.so"));
+  CHECK(fs::exists(target / "kirari_backend_tensorrt.so"));
   CHECK(fs::exists(target / "libnvinfer.so.11"));
   CHECK(fs::exists(target / "libnvinfer_plugin.so.11"));
   CHECK(fs::exists(target / "libnvonnxparser.so.11"));
@@ -497,13 +497,13 @@ TEST_CASE("Paquet TensorRT du script : installation réelle en lien direct", "[.
   CHECK_FALSE(fs::exists(target / "libnvinfer_builder_resource_sm120.so.11.3.0"));
   CHECK(fs::exists(target / "libnvrtc.so.13"));
   CHECK(fs::exists(target / "trtexec"));
-  if (const std::string keep = env_text("AJP_PACKAGE_KEEP"); !keep.empty())
+  if (const std::string keep = env_text("KIRARI_PACKAGE_KEEP"); !keep.empty())
     fs::copy(target, keep, fs::copy_options::recursive);
 }
 
 TEST_CASE("Espace : le pic compte le décompressé et l'ancienne version, pas seulement le téléchargement",
           "[app][install][space]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   EngineCatalog catalog;
   catalog.layout = core::install_layout(host_os(), "/d");
   const auto vendor = [&](std::string name, std::uint64_t packed, std::uint64_t size, std::string arch = "") {
@@ -551,7 +551,7 @@ TEST_CASE("Espace : un fichier tiers repris par lien dur ne compte ni au téléc
   core::EnginePackage package;
   package.engine = core::EngineId::TensorRt;
   package.size = 2 * kMo;
-  const std::filesystem::path root = std::filesystem::temp_directory_path() / "ajp-space-linked";
+  const std::filesystem::path root = std::filesystem::temp_directory_path() / "kirari-space-linked";
   std::filesystem::remove_all(root);
   std::filesystem::create_directories(root / "11.2");
   {
@@ -571,7 +571,7 @@ TEST_CASE("Espace : un fichier tiers repris par lien dur ne compte ni au téléc
 }
 
 TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "[app][install][space]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const InstallSpace space{.download = 742ULL << 20, .installed = 1250ULL << 20, .peak = 1400ULL << 20};
   CHECK(check_space(space, 2ULL << 30, "/d"));  // 2 Go : assez
   const auto refused = check_space(space, 300ULL << 20, "/d");
@@ -585,7 +585,7 @@ TEST_CASE("Espace : refus net avec les chiffres, avant tout téléchargement", "
 }
 
 TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent", "[app][install][space]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("sans-place");
   core::EnginePackage package = f.engine_package();
   package.size = std::numeric_limits<std::uint64_t>::max() / 16;  // un paquet qu'aucun disque ne tient
@@ -597,9 +597,9 @@ TEST_CASE("Installation : sans place, rien n'est tiré et le moteur reste absent
 }
 
 TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là", "[app][install][space]") {
-  ajp::app::play::FrenchUi french;
-  const fs::path data = fs::temp_directory_path() / "ajp-catalogue-data";
-  const fs::path moved = fs::temp_directory_path() / "ajp-catalogue-moteurs";
+  kirari::app::play::FrenchUi french;
+  const fs::path data = fs::temp_directory_path() / "kirari-catalogue-data";
+  const fs::path moved = fs::temp_directory_path() / "kirari-catalogue-moteurs";
   const EngineCatalog catalog = load_catalog(data / "absent.lock", data, moved);
   const EngineCatalog plain = load_catalog(data / "absent.lock", data);
   CHECK(catalog.layout.engines.string().starts_with(moved.string()));
@@ -608,55 +608,56 @@ TEST_CASE("Dossier d'installation des moteurs : le catalogue installe là", "[ap
 }
 
 TEST_CASE("Architecture : lue, sinon déduite du nom, sinon ptx — jamais toutes", "[app][install]") {
-  ajp::app::play::FrenchUi french;
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4070 Ti") == "sm89");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3060") == "sm86");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2070") == "sm75");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 5080") == "sm120");
+  kirari::app::play::FrenchUi french;
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 4070 Ti") == "sm89");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3060") == "sm86");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2070") == "sm75");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 5080") == "sm120");
   // « a100 » est un mot entier : une RTX A1000 est une Ampere sm86, pas une A100 sm80 (B06-06, B37-04).
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA RTX A1000") == "sm86");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA RTX A1000 Laptop GPU") == "sm86");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA RTX A2000") == "sm86");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA A100-SXM4-80GB") == "sm80");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA A100") == "sm80");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA RTX A1000") == "sm86");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA RTX A1000 Laptop GPU") == "sm86");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA RTX A2000") == "sm86");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA A100-SXM4-80GB") == "sm80");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA A100") == "sm80");
   // Les exceptions à la règle par série (A37-03).
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2050") == "sm86");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 A Laptop GPU") == "sm89");
-  CHECK(ajp::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 Laptop GPU") == "sm86");
-  CHECK(ajp::app::play::cuda_arch_from_name("AMD Radeon RX 7900").empty());
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 2050") == "sm86");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 A Laptop GPU") == "sm89");
+  CHECK(kirari::app::play::cuda_arch_from_name("NVIDIA GeForce RTX 3050 Laptop GPU") == "sm86");
+  CHECK(kirari::app::play::cuda_arch_from_name("AMD Radeon RX 7900").empty());
   // Présomption du FP8 à l'accueil, même règle que le moteur (A37-02, A37-12).
-  CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3080"));
-  CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 2050"));
-  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 3050 A Laptop GPU"));
+  CHECK_FALSE(kirari::app::play::fp8_presumed("NVIDIA GeForce RTX 3080"));
+  CHECK_FALSE(kirari::app::play::fp8_presumed("NVIDIA GeForce RTX 2050"));
+  CHECK(kirari::app::play::fp8_presumed("NVIDIA GeForce RTX 3050 A Laptop GPU"));
   // RTX 50 : pas de FP8 tant qu'aucune mesure ne le justifie (B21-01), même règle que gpu::fp8_allowed.
-  CHECK_FALSE(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 5080"));
-  CHECK(ajp::app::play::fp8_presumed("NVIDIA GeForce RTX 4060"));
-  CHECK(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 4070 Ti"));
-  CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 5080"));  // pas avant une mesure (A37-01)
-  CHECK_FALSE(ajp::app::play::span_fp8_presumed("NVIDIA GeForce RTX 3060"));
+  CHECK_FALSE(kirari::app::play::fp8_presumed("NVIDIA GeForce RTX 5080"));
+  CHECK(kirari::app::play::fp8_presumed("NVIDIA GeForce RTX 4060"));
+  CHECK(kirari::app::play::span_fp8_presumed("NVIDIA GeForce RTX 4070 Ti"));
+  CHECK_FALSE(
+      kirari::app::play::span_fp8_presumed("NVIDIA GeForce RTX 5080"));  // pas avant une mesure (A37-01)
+  CHECK_FALSE(kirari::app::play::span_fp8_presumed("NVIDIA GeForce RTX 3060"));
   // Le b8f64 en FP8 par défaut : TensorRT en service, Ada, et un paquet Linux (sous Windows, aucun noyau).
 #if defined(__linux__)
-  CHECK(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", true));
+  CHECK(kirari::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", true));
 #else
-  CHECK_FALSE(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", true));
+  CHECK_FALSE(kirari::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", true));
 #endif
-  CHECK_FALSE(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", false));
-  CHECK_FALSE(ajp::app::play::span_fp8_default("NVIDIA GeForce RTX 3060", true));
-  CHECK(ajp::app::play::effective_cuda_arch("sm90", "RTX 4050") == "sm90");
-  CHECK(ajp::app::play::effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
-  CHECK(ajp::app::play::effective_cuda_arch("", "inconnue") == "ptx");
+  CHECK_FALSE(kirari::app::play::span_fp8_default("NVIDIA GeForce RTX 4070 Ti", false));
+  CHECK_FALSE(kirari::app::play::span_fp8_default("NVIDIA GeForce RTX 3060", true));
+  CHECK(kirari::app::play::effective_cuda_arch("sm90", "RTX 4050") == "sm90");
+  CHECK(kirari::app::play::effective_cuda_arch("", "NVIDIA GeForce RTX 4050 Laptop GPU") == "sm89");
+  CHECK(kirari::app::play::effective_cuda_arch("", "inconnue") == "ptx");
 }
 
 TEST_CASE("Proxy manuel de Windows : celui de https, ou celui de tous (P3.7)", "[app][install]") {
-  CHECK(ajp::app::play::proxy_from_setting("proxy.local:3128") == "proxy.local:3128");
-  CHECK(ajp::app::play::proxy_from_setting("http=a:80;https=b:443") == "b:443");
-  CHECK_FALSE(ajp::app::play::proxy_from_setting("http=a:80"));
-  CHECK_FALSE(ajp::app::play::proxy_from_setting(""));
+  CHECK(kirari::app::play::proxy_from_setting("proxy.local:3128") == "proxy.local:3128");
+  CHECK(kirari::app::play::proxy_from_setting("http=a:80;https=b:443") == "b:443");
+  CHECK_FALSE(kirari::app::play::proxy_from_setting("http=a:80"));
+  CHECK_FALSE(kirari::app::play::proxy_from_setting(""));
 }
 
 TEST_CASE("Proxy manuel de KDE : lu dans kioslaverc comme sous Windows (C34-12)", "[app][install]") {
-  using ajp::app::play::kde_proxy;
+  using kirari::app::play::kde_proxy;
   constexpr std::string_view kManual =
       "[General]\nhttpsProxy=autre\n\n[Proxy Settings]\nProxyType=1\nhttpProxy=http://a 80\n"
       "httpsProxy=http://proxy.corp 3128\r\nNoProxyFor=localhost\n";
@@ -677,10 +678,10 @@ TEST_CASE("Fichier tiers repris d'une version installée à SHA égal (P3.8)", "
   write_all(root / "1.0" / "libnvinfer.so", std::string(kPlain));
   core::VendorFile file{.name = "libnvinfer.so", .size = kPlain.size(), .sha256 = core::sha256_hex(kPlain)};
   const fs::path dest = root / "1.1.partiel" / "libnvinfer.so";
-  CHECK(ajp::app::play::reuse_vendor_file(file, dest, root, {}));
+  CHECK(kirari::app::play::reuse_vendor_file(file, dest, root, {}));
   CHECK(read_all(dest) == kPlain);
   file.sha256 = core::sha256_hex("autre");
-  CHECK_FALSE(ajp::app::play::reuse_vendor_file(file, root / "1.2.partiel" / "libnvinfer.so", root, {}));
+  CHECK_FALSE(kirari::app::play::reuse_vendor_file(file, root / "1.2.partiel" / "libnvinfer.so", root, {}));
 }
 
 TEST_CASE("curl du lecteur : https seulement, file:// réservé aux tests (B06-10)", "[app][install]") {
@@ -699,7 +700,7 @@ TEST_CASE("curl du lecteur : https seulement, file:// réservé aux tests (B06-1
 // C06-05 : l'archive du moteur reste tant que l'échange n'a pas réussi ; un fichier tiers refusé ne la
 // retélécharge pas à l'essai suivant.
 TEST_CASE("Installation : l'archive reste si un fichier tiers échoue (C06-05)", "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("archive-gardee");
   const core::EnginePackage package = f.engine_package();
   Wheel bad(f, kPlain, false);
@@ -720,7 +721,7 @@ TEST_CASE("Installation : l'archive reste si un fichier tiers échoue (C06-05)",
 // C06-03 : la note garde l'architecture ; un GPU d'une autre architecture rend le paquet à compléter.
 TEST_CASE("Installation : changer d'architecture de GPU rend le paquet à compléter (C06-03)",
           "[app][install]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Fixture f("architecture-note");
   const core::EnginePackage package = f.engine_package();
   InstallProgress progress = f.progress();
@@ -737,7 +738,7 @@ TEST_CASE("Installation : changer d'architecture de GPU rend le paquet à compl�
 
 // C06-09 : un .part déjà sur le disque a déjà réduit la place libre ; il ne compte plus dans le pic.
 TEST_CASE("Espace : un .part déjà tiré ne compte plus (C06-09)", "[app][install][space]") {
-  const fs::path root = fs::temp_directory_path() / "ajp-space-part";
+  const fs::path root = fs::temp_directory_path() / "kirari-space-part";
   fs::remove_all(root);
   EngineCatalog catalog;
   catalog.layout = core::install_layout(host_os(), root);

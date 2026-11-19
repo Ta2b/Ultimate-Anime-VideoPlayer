@@ -10,7 +10,7 @@
 #include "core/text_file.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 core::KeyMap& key_slot() {
@@ -59,4 +59,4 @@ const core::KeyMap& configured_keys() {
   return key_slot();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

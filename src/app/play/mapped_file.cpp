@@ -11,7 +11,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La taille vient du fichier ouvert, pas du chemin (A18-14) : une police remplacée ou tronquée entre les deux
 // ne laisse pas une taille plus grande que la projection.
@@ -61,4 +61,4 @@ MappedFile::~MappedFile() {
 #endif
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

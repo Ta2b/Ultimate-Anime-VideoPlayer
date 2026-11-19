@@ -13,7 +13,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 bool is_fixed(const gpu::ShapeSet& shapes) {
@@ -199,4 +199,4 @@ std::filesystem::path pick_trtexec(const std::filesystem::path& beside, std::str
   return fallback;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

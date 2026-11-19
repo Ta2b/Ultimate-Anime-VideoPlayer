@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 constexpr std::int64_t kSecond = 1'000'000;

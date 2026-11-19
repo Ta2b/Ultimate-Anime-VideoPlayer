@@ -12,9 +12,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -143,8 +143,8 @@ std::string format_settings(const PlaySettings& s) {
                                    {"position", s.stats.position},
                                    {"memory", s.stats.memory}});
   std::ostringstream out;
-  out << "# Réglages de « ajp play », écrits par le menu des paramètres.\n" << root << '\n';
+  out << "# Réglages de « kirari play », écrits par le menu des paramètres.\n" << root << '\n';
   return out.str();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

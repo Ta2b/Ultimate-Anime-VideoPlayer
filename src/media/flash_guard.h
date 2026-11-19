@@ -21,7 +21,7 @@
 #include <optional>
 #include <span>
 
-namespace ajp::media {
+namespace kirari::media {
 
 inline constexpr double kFlashStepNits = 20.0;
 inline constexpr double kFlashDarkNits = 160.0;
@@ -133,4 +133,4 @@ class FlashGuard {
   bool missing_ = false;  // la dernière image vue est une analyse perdue
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

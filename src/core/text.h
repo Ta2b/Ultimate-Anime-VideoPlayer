@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::core {
+namespace kirari::core {
 
 constexpr bool is_ascii_space(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
@@ -45,4 +45,4 @@ inline std::string ascii_lower(std::string_view text) {
   return out;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

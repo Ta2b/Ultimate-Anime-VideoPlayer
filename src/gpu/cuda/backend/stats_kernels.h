@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 struct FrameStatsParams {
   const void* rgb = nullptr;  // 1 × 3 × height × width
@@ -23,4 +23,4 @@ std::size_t frame_stats_device_bytes();
 
 cudaError_t launch_frame_stats(const FrameStatsParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -38,12 +38,18 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           source tools/release/versions.env
-          echo "AJP_RELEASE_REPO=$AJP_RELEASE_REPO" >>"$GITHUB_ENV"
-          tag="$(gh release view -R "$AJP_RELEASE_REPO" --json tagName -q .tagName)"
+          echo "KIRARI_RELEASE_REPO=$KIRARI_RELEASE_REPO" >>"$GITHUB_ENV"
+          # Avant la première release de Kirari dans ce dépôt, rien à re-signer ici : le manifeste d'ajp 0.11 reste
+          # celui de l'ancien dépôt, que la première release de Kirari remplace par son relais (release.yml).
+          if ! tag="$(gh release view -R "$KIRARI_RELEASE_REPO" --json tagName -q .tagName 2>/dev/null)"; then
+            echo "::warning::aucune release dans $KIRARI_RELEASE_REPO : rien à re-signer" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "SKIP=1" >>"$GITHUB_ENV"
+            exit 0
+          fi
           echo "TAG=$tag" >>"$GITHUB_ENV"
           dir="$RUNNER_TEMP/release"
           mkdir -p "$dir"
-          gh release download "$tag" -R "$AJP_RELEASE_REPO" -D "$dir" -p manifest.toml -p manifest.toml.sig
+          gh release download "$tag" -R "$KIRARI_RELEASE_REPO" -D "$dir" -p manifest.toml -p manifest.toml.sig
           expires="$(sed -n 's/^expires = "\(.*\)"$/\1/p' "$dir/manifest.toml")"
           left=$(( ( $(date -u -d "$expires" +%s) - $(date -u +%s) ) / 86400 ))
           echo "$tag : le manifeste expire le $expires ($left jours)" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -58,19 +64,19 @@ jobs:
           dir="$RUNNER_TEMP/release"
           # Le manifeste actuel, déjà dans le dossier, et ses archives : chacune est vérifiée contre lui avant
           # d'être signée à nouveau (C51-02).
-          gh release download "$TAG" -R "$AJP_RELEASE_REPO" -D "$dir" \
-            -p ajp-linux-x64.tar.gz -p ajp-windows-x64.zip -p ajp-macos-arm64.zip \
-            -p ajp-linux-x86_64.AppImage -p ajp-windows-x64-setup.exe --skip-existing
-          key="$RUNNER_TEMP/ajp-update-key.pem"
+          gh release download "$TAG" -R "$KIRARI_RELEASE_REPO" -D "$dir" \
+            -p kirari-linux-x64.tar.gz -p kirari-windows-x64.zip -p kirari-macos-arm64.zip \
+            -p kirari-linux-x86_64.AppImage -p kirari-windows-x64-setup.exe --skip-existing
+          key="$RUNNER_TEMP/kirari-update-key.pem"
           trap 'rm -f "$key"' EXIT
           # PEM normalisé et vérifié contre la clé publique du lecteur (collage abîmé, base64 : update-key.sh).
           tools/release/update-key.sh "$key"
           AJP_UPDATE_KEY="$key" tools/release/resign-manifest.sh "${TAG#v}" "$dir" \
-            "https://github.com/$AJP_RELEASE_REPO/releases/download/$TAG" \
-            "https://github.com/$AJP_RELEASE_REPO/releases/tag/$TAG"
-          pub="$(sed -n 's/^set(AJP_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
-          for archive in "$dir"/ajp-*; do
-            AJP_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$archive"
+            "https://github.com/$KIRARI_RELEASE_REPO/releases/download/$TAG" \
+            "https://github.com/$KIRARI_RELEASE_REPO/releases/tag/$TAG"
+          pub="$(sed -n 's/^set(KIRARI_UPDATE_PUBKEY "\([0-9a-f]*\)".*/\1/p' src/app/CMakeLists.txt)"
+          for archive in "$dir"/kirari-*; do
+            KIRARI_UPDATE_PUBKEY="$pub" tools/release/verify-download.sh "$dir/manifest.toml" "$dir/manifest.toml.sig" "$archive"
           done
       - name: Remplacement dans la release
         if: env.SKIP != '1'
@@ -78,7 +84,7 @@ jobs:
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN }}
         run: |
           dir="$RUNNER_TEMP/release"
-          gh release upload "$TAG" -R "$AJP_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
+          gh release upload "$TAG" -R "$KIRARI_RELEASE_REPO" --clobber "$dir/manifest.toml" "$dir/manifest.toml.sig"
           echo "manifeste de $TAG re-signé" | tee -a "$GITHUB_STEP_SUMMARY"
       # GitHub désactive les planifications d'un dépôt public sans activité depuis 60 jours : « enable » sur un
       # workflow déjà actif ne coûte rien, et sur un workflow désactivé le réactive (C51-03).

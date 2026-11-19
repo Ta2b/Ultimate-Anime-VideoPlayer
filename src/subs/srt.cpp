@@ -6,7 +6,7 @@
 
 #include "core/text.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 std::unexpected<Refusal> refuse_line(std::size_t line, std::string_view what, std::string_view text) {
@@ -183,4 +183,4 @@ std::expected<std::vector<SrtCue>, Refusal> parse_srt(std::string_view file,
   return cues;
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

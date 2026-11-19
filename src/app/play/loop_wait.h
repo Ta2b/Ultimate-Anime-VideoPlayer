@@ -9,7 +9,7 @@
 #include <atomic>
 #include <cstdint>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le réveil de la boucle d'affichage par un message des autres threads : un événement SDL à elle, poussé une
 // fois par attente (pending), qui fait rendre SDL_WaitEventTimeout.
@@ -25,4 +25,4 @@ std::uint32_t loop_wake_event();
 // Attend au plus wait_us (au moins 1 ms sans l'essai), rend plus tôt sur un événement SDL.
 void wait_loop(std::int64_t wait_us, bool precise);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

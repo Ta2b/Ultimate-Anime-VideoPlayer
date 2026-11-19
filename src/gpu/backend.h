@@ -1,5 +1,5 @@
 // Interface d'un backend d'inférence. Chaque backend est une bibliothèque
-// chargée à l'exécution (ajp_backend_<nom>.so / .dll), installée seulement si
+// chargée à l'exécution (kirari_backend_<nom>.so / .dll), installée seulement si
 // l'utilisateur l'a choisie : le lecteur démarre sans CUDA ni TensorRT.
 //
 // La frontière passe des types C++ (std::string, std::function, std::expected…) : un
@@ -33,11 +33,11 @@
 #include "gpu/lanes.h"
 #include "gpu/tensor.h"
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 // Version de cette interface. Un backend d'une autre version est refusé au chargement.
 // 2 : BackendInit à la création, noyaux de la chaîne (kernels()), alloc_tensor().
-// 3 : enqueue(), signal() et wait() rendent leur refus ; ajp_backend_layout().
+// 3 : enqueue(), signal() et wait() rendent leur refus ; kirari_backend_layout().
 // 4 : KernelOps sans le flux optique matériel (open_optical_flow, optical_flow).
 // 5 : KernelOps::soft_splat_all (les splats d'un instant en un passage).
 // 6 : voies de calcul (gpu/lanes.h) : Backend::use_lane, BackendCaps::lanes.
@@ -102,7 +102,7 @@ namespace ajp::gpu {
 // 46 : SplatJob::pull (le splat tiré).
 inline constexpr int kBackendAbi = 46;
 
-using DeviceUuid = ajp::DeviceUuid;
+using DeviceUuid = kirari::DeviceUuid;
 
 enum class DeviceMatch : std::uint8_t { Same, Different, Unknown };
 
@@ -130,8 +130,8 @@ inline constexpr std::uint32_t kTrialWarpL2 = 1U << 3U;
 // rangement près. Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialRifeHwc8 = 1U << 4U;
 
-// Ce que le lecteur passe à ajp_backend_create. Le backend garde ce qu'il lui faut de render,
-// cache_dir et log ; render reste valide jusqu'à ajp_backend_destroy. refusal ne vaut que le
+// Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
+// cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le
 // temps de l'appel : le backend n'en garde pas l'adresse.
 struct BackendInit {
   const GpuDevice* render = nullptr;  // appareil de rendu : le backend s'y lie ou refuse
@@ -148,7 +148,7 @@ struct BackendInit {
   // Les options d'essai des chantiers, éteintes par défaut, pour la mesure : un bit par essai (kTrial…). Un
   // essai de plus prend un bit, sans monter kBackendAbi.
   std::uint32_t trials = 0;
-  // Rempli quand ajp_backend_create rend nullptr : AbiMismatch, DeviceMismatch,
+  // Rempli quand kirari_backend_create rend nullptr : AbiMismatch, DeviceMismatch,
   // LibraryUnavailable… ; nullptr si l'appelant n'en veut pas.
   Refusal* refusal = nullptr;
 };
@@ -317,7 +317,7 @@ struct SpanFp8Derivation {
 
 // Moteur chargé et prêt à recevoir enqueue(). Possédé par un Program. Son code vit dans la
 // bibliothèque du backend : il est détruit avant le Backend qui l'a chargé, donc avant
-// ajp_backend_destroy et le déchargement de la bibliothèque.
+// kirari_backend_destroy et le déchargement de la bibliothèque.
 class Engine {
  public:
   virtual ~Engine() = default;
@@ -436,12 +436,12 @@ inline constexpr std::uint64_t kStdLibrary = 0;
 // Empreinte de tout ce qui traverse la frontière. kBackendAbi date le contrat ; l'empreinte
 // trahit ce que kBackendAbi laisse passer : une bibliothèque construite contre d'autres
 // en-têtes sans changement de version, ou avec une autre bibliothèque standard.
-// AJP_BOUNDARY_HASH : le texte des en-têtes de la frontière (cmake/BoundaryHash.cmake), posé par ajp::gpu. Il
-// voit ce que les tailles ne voient pas : l'ordre des virtuelles, une signature changée.
-#ifndef AJP_BOUNDARY_HASH
-#error "AJP_BOUNDARY_HASH manque : lier ajp::gpu"
+// KIRARI_BOUNDARY_HASH : le texte des en-têtes de la frontière (cmake/BoundaryHash.cmake), posé par
+// kirari::gpu. Il voit ce que les tailles ne voient pas : l'ordre des virtuelles, une signature changée.
+#ifndef KIRARI_BOUNDARY_HASH
+#error "KIRARI_BOUNDARY_HASH manque : lier kirari::gpu"
 #endif
-inline constexpr std::uint64_t kBoundaryHash = AJP_BOUNDARY_HASH;
+inline constexpr std::uint64_t kBoundaryHash = KIRARI_BOUNDARY_HASH;
 
 inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
     static_cast<std::uint64_t>(kBackendAbi),
@@ -467,8 +467,8 @@ inline constexpr std::uint64_t kBackendLayout = layout_fingerprint({
                       GpuStageSummary, std::vector<GpuStageSummary>>(),
 });
 
-// Ce que le chargeur vérifie avant ajp_backend_create, avec ajp_backend_abi() et
-// ajp_backend_layout() lus dans la bibliothèque. Refus : AbiMismatch, qui cite les valeurs.
+// Ce que le chargeur vérifie avant kirari_backend_create, avec kirari_backend_abi() et
+// kirari_backend_layout() lus dans la bibliothèque. Refus : AbiMismatch, qui cite les valeurs.
 inline std::expected<void, Refusal> check_backend_abi(int abi, std::uint64_t layout) {
   if (abi != kBackendAbi) {
     return std::unexpected(
@@ -485,37 +485,37 @@ inline std::expected<void, Refusal> check_backend_abi(int abi, std::uint64_t lay
   return {};
 }
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu
 
 // Points d'entrée exportés par chaque bibliothèque de backend, tous noexcept : sous MSVC, une
 // exception sortie d'une fonction extern "C" est un comportement indéfini chez l'appelant.
-// Le chargeur lit d'abord ajp_backend_abi() et ajp_backend_layout() (check_backend_abi) :
+// Le chargeur lit d'abord kirari_backend_abi() et kirari_backend_layout() (check_backend_abi) :
 // une autre version ou une autre empreinte est refusée (AbiMismatch) avant de passer un
-// BackendInit dont la forme pourrait différer. ajp_backend_create rend nullptr si abi
+// BackendInit dont la forme pourrait différer. kirari_backend_create rend nullptr si abi
 // diffère de kBackendAbi, si init est nul ou si l'appareil ne convient pas, et dit pourquoi
-// dans init->refusal. ajp_backend_destroy vient après la destruction de chaque Engine et
+// dans init->refusal. kirari_backend_destroy vient après la destruction de chaque Engine et
 // TensorBuffer du backend.
 //
 // Les déclarations portent l'export de leurs définitions : MSVC refuse une définition
 // __declspec(dllexport) d'une fonction déclarée sans (C2375). Dans le lecteur, qui ne les définit
 // ni ne les appelle (dlsym), elles ne produisent rien.
 #if defined(_WIN32)
-#define AJP_BACKEND_EXPORT __declspec(dllexport)
+#define KIRARI_BACKEND_EXPORT __declspec(dllexport)
 #else
-#define AJP_BACKEND_EXPORT __attribute__((visibility("default")))
+#define KIRARI_BACKEND_EXPORT __attribute__((visibility("default")))
 #endif
-extern "C" AJP_BACKEND_EXPORT int ajp_backend_abi() noexcept;               // kBackendAbi
-extern "C" AJP_BACKEND_EXPORT std::uint64_t ajp_backend_layout() noexcept;  // kBackendLayout
-extern "C" AJP_BACKEND_EXPORT ajp::gpu::Backend* ajp_backend_create(
-    int abi, const ajp::gpu::BackendInit* init) noexcept;
-extern "C" AJP_BACKEND_EXPORT void ajp_backend_destroy(ajp::gpu::Backend* backend) noexcept;
+extern "C" KIRARI_BACKEND_EXPORT int kirari_backend_abi() noexcept;               // kBackendAbi
+extern "C" KIRARI_BACKEND_EXPORT std::uint64_t kirari_backend_layout() noexcept;  // kBackendLayout
+extern "C" KIRARI_BACKEND_EXPORT kirari::gpu::Backend* kirari_backend_create(
+    int abi, const kirari::gpu::BackendInit* init) noexcept;
+extern "C" KIRARI_BACKEND_EXPORT void kirari_backend_destroy(kirari::gpu::Backend* backend) noexcept;
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 // Types des points d'entrée, pour les adresses lues par dlsym ou GetProcAddress.
-using BackendAbiFn = decltype(&ajp_backend_abi);
-using BackendLayoutFn = decltype(&ajp_backend_layout);
-using BackendCreateFn = decltype(&ajp_backend_create);
-using BackendDestroyFn = decltype(&ajp_backend_destroy);
+using BackendAbiFn = decltype(&kirari_backend_abi);
+using BackendLayoutFn = decltype(&kirari_backend_layout);
+using BackendCreateFn = decltype(&kirari_backend_create);
+using BackendDestroyFn = decltype(&kirari_backend_destroy);
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

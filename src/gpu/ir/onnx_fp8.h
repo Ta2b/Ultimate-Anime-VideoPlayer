@@ -11,11 +11,11 @@
 
 #include "gpu/ir/onnx_model.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 
 // Remplace en place les paires fusionnables ; renvoie leur nombre. Les Q/DQ restants (échelles
 // différentes, par axe, zéro absent ou d'un autre type) gardent leur nom d'opérateur, que
 // l'import refuse (OperatorUnknown). Les zéros FP8 devenus inutiles quittent les initialiseurs.
 std::size_t fuse_fp8_quant_pairs(Graph& graph);
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

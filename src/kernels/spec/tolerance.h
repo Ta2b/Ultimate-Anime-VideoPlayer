@@ -7,7 +7,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels::tolerance {
+namespace kirari::kernels::tolerance {
 
 // Tenseur RGB fp16 d'un port contre la référence float, pour une valeur dans [0, 2] :
 // un pas de fp16 à 1,0 (arrondi fp16 et contraction FMA du port).
@@ -53,6 +53,6 @@ inline constexpr float kWarp = 2.0F / 1024.0F;
 // l'écart atteint 2,1/1024 en troncature ; l'instant réglé des poses reste lu exactement.
 inline constexpr float kWarpFiltered = 4.0F / 1024.0F;
 
-}  // namespace ajp::kernels::tolerance
+}  // namespace kirari::kernels::tolerance
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

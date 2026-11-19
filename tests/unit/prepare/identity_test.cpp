@@ -13,8 +13,8 @@
 #include "prepare/sha256.h"
 #include "support.h"
 
-using namespace ajp::prepare;
-using ajp::RefusalCode;
+using namespace kirari::prepare;
+using kirari::RefusalCode;
 
 namespace {
 

@@ -13,7 +13,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct OnnxOutput {
   std::string name;             // tenseur produit par un nœud du graphe principal
@@ -37,4 +37,4 @@ std::expected<std::vector<OnnxNode>, Refusal> onnx_nodes(std::span<const std::by
 std::expected<std::vector<std::byte>, Refusal> with_outputs(std::span<const std::byte> model,
                                                             std::span<const OnnxOutput> outputs);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

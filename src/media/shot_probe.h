@@ -23,7 +23,7 @@
 #include "media/shot_cutter.h"
 #include "media/shot_timeline.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Les mesures d'une image décodée en mémoire hôte (Nv12, Yuv420p, P010, Yuv420p10 ; BT.601, BT.709 ou
 // BT.2020 ; SDR, PQ ou HLG) : la grille de kernels/spec/frame_stats.h, hors bandes noires, mesurée par
@@ -100,4 +100,4 @@ class ShotProbe {
   std::jthread thread_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

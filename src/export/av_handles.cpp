@@ -13,7 +13,7 @@ extern "C" {
 #include <libavutil/rational.h>
 }
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 std::string utf8(const std::filesystem::path& path) {
   return core::to_utf8(path);
@@ -204,4 +204,4 @@ ColorInfo color_of(const AVCodecParameters& video) {
   return out;
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

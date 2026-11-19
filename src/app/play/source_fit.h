@@ -8,7 +8,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les cadences d'un anime : 23,976 et 24 (la plupart des séries et des films), 25 (PAL), 29,97 et 30 (NTSC,
 // télécinéma). Une autre cadence (50, 59,94, 60 : jeu, captation, vidéo déjà interpolée ; 12 ou 15 : extrait
@@ -32,4 +32,4 @@ inline bool motion_off_for_rate(const PlaySettings& s, double fps) {
   return s.rife_factor >= 2 && !anime_rate(fps);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

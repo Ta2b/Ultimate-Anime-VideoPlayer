@@ -22,7 +22,7 @@
 #include "core/utf8_path.h"
 #endif
 
-namespace ajp {
+namespace kirari {
 namespace {
 
 struct Home {
@@ -202,7 +202,7 @@ class RedactingSink final : public spdlog::sinks::sink {
   explicit RedactingSink(spdlog::sink_ptr inner) : inner_(std::move(inner)) {}
 
   void log(const spdlog::details::log_msg& msg) override {
-    // Aussi propre que le rapport de « Signaler un problème » (B39-05) : l'utilisateur joint ajp.log quand
+    // Aussi propre que le rapport de « Signaler un problème » (B39-05) : l'utilisateur joint kirari.log quand
     // une boîte d'erreur le lui dit, sans passer par le bouton.
     const std::string text =
         reduce_log_paths(redact_log_text(std::string_view(msg.payload.data(), msg.payload.size())));
@@ -331,4 +331,4 @@ spdlog::sink_ptr redacting_sink(spdlog::sink_ptr inner) {
   return std::make_shared<RedactingSink>(std::move(inner));
 }
 
-}  // namespace ajp
+}  // namespace kirari

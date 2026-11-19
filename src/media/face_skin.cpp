@@ -10,7 +10,7 @@
 
 #include "media/yuv_sample.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Les points d'une image : luma et chroma ramenées à leur plage (0 à 1, chroma centrée), comme
@@ -172,4 +172,4 @@ std::string FaceSearch::summary(const ShotTimeline& timeline) const {
   return std::format(", visages dans {} plans", with);
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

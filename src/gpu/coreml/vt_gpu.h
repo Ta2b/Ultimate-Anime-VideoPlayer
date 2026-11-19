@@ -17,7 +17,7 @@
 #include "core/types.h"
 #include "gpu/coreml/vt_pixels.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Chaque appel encode son travail, le soumet et attend sa fin. Les IOSurface de la chaîne sont
 // des tenseurs FP16 NCHW (une rangée de width éléments par ligne d'image) : l'entrée 1 × 7 × H × W
@@ -54,4 +54,4 @@ class VtGpu {
   virtual std::expected<void, Refusal> copy(IOSurfaceRef input, int image, IOSurfaceRef output) = 0;
 };
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

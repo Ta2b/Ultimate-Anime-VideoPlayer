@@ -1,17 +1,17 @@
-# ajp_add_module(<nom> [SOURCES ...] [DEPS ...] [PRIVATE_DEPS ...])
+# kirari_add_module(<nom> [SOURCES ...] [DEPS ...] [PRIVATE_DEPS ...])
 #
-# Un dossier de src/ = un module = une cible ajp_<nom>, alias ajp::<nom>.
+# Un dossier de src/ = un module = une cible kirari_<nom>, alias kirari::<nom>.
 # Un module sans source reste une cible INTERFACE : ses dépendances sont
 # déjà déclarées, et le graphe se vérifie avant d'écrire la première ligne.
 include_guard(GLOBAL)
 
-function(ajp_set_warnings target)
+function(kirari_set_warnings target)
   if(MSVC)
     # C4324 : le bourrage voulu des alignas(page) ; C4996 (_CRT_SECURE_NO_WARNINGS) : getenv et sscanf de
     # la CRT standard, que MSVC 14.51 (image windows-2025 de novembre 2026) refuse sous /WX.
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8 /wd4324)
     target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
-    if(AJP_WARNINGS_AS_ERRORS)
+    if(KIRARI_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE /WX)
     endif()
   else()
@@ -20,27 +20,27 @@ function(ajp_set_warnings target)
       -Wnon-virtual-dtor -Wold-style-cast -Woverloaded-virtual
       # Les initialiseurs désignés omettent volontairement les champs par défaut.
       -Wno-missing-field-initializers)
-    if(AJP_WARNINGS_AS_ERRORS)
+    if(KIRARI_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
   endif()
 endfunction()
 
-function(ajp_add_module name)
+function(kirari_add_module name)
   cmake_parse_arguments(ARG "" "" "SOURCES;DEPS;PRIVATE_DEPS" ${ARGN})
-  set(target ajp_${name})
+  set(target kirari_${name})
 
   if(ARG_SOURCES)
     add_library(${target} STATIC ${ARG_SOURCES})
     target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/src")
     target_link_libraries(${target} PUBLIC ${ARG_DEPS} PRIVATE ${ARG_PRIVATE_DEPS})
-    ajp_set_warnings(${target})
-    if(AJP_PCH)
+    kirari_set_warnings(${target})
+    if(KIRARI_PCH)
       target_precompile_headers(${target} PRIVATE
         <algorithm> <array> <cstdint> <expected> <filesystem> <format> <functional> <map> <memory>
         <mutex> <optional> <span> <string> <string_view> <utility> <variant> <vector>)
       # Un module qui journalise lit spdlog par core/log.h : son en-tête le plus lourd.
-      if("ajp::core_log" IN_LIST ARG_DEPS OR "ajp::core_log" IN_LIST ARG_PRIVATE_DEPS)
+      if("kirari::core_log" IN_LIST ARG_DEPS OR "kirari::core_log" IN_LIST ARG_PRIVATE_DEPS)
         target_precompile_headers(${target} PRIVATE <spdlog/logger.h>)
       endif()
     endif()
@@ -50,32 +50,32 @@ function(ajp_add_module name)
     target_link_libraries(${target} INTERFACE ${ARG_DEPS})
   endif()
 
-  add_library(ajp::${name} ALIAS ${target})
+  add_library(kirari::${name} ALIAS ${target})
 endfunction()
 
-# ajp_add_unit_tests(<module> SOURCES ... [DEPS ...] [MAIN <cible>])
+# kirari_add_unit_tests(<module> SOURCES ... [DEPS ...] [MAIN <cible>])
 #
-# Un exécutable Catch2 par module, ajp_<module>_tests, découvert par CTest.
+# Un exécutable Catch2 par module, kirari_<module>_tests, découvert par CTest.
 # Les tests vivent dans tests/unit/<module>/, à côté de rien d'autre.
 # MAIN : une cible qui apporte son propre main à la place de celui de Catch2 (tests/support).
-function(ajp_add_unit_tests module)
+function(kirari_add_unit_tests module)
   cmake_parse_arguments(ARG "" "MAIN" "SOURCES;DEPS" ${ARGN})
-  set(target ajp_${module}_tests)
+  set(target kirari_${module}_tests)
   add_executable(${target} ${ARG_SOURCES})
   if(ARG_MAIN)
-    target_link_libraries(${target} PRIVATE ajp::${module} ${ARG_DEPS} ${ARG_MAIN} Catch2::Catch2)
+    target_link_libraries(${target} PRIVATE kirari::${module} ${ARG_DEPS} ${ARG_MAIN} Catch2::Catch2)
   else()
-    target_link_libraries(${target} PRIVATE ajp::${module} ${ARG_DEPS} Catch2::Catch2WithMain)
+    target_link_libraries(${target} PRIVATE kirari::${module} ${ARG_DEPS} Catch2::Catch2WithMain)
   endif()
-  ajp_set_warnings(${target})
+  kirari_set_warnings(${target})
   # Les tests aussi (plus de la moitié des unités de compilation) : Catch2 et la bibliothèque standard.
-  if(AJP_PCH)
+  if(KIRARI_PCH)
     target_precompile_headers(${target} PRIVATE
       <algorithm> <array> <cstdint> <expected> <filesystem> <format> <memory> <optional> <span> <string>
       <string_view> <vector> <catch2/catch_test_macros.hpp> <catch2/catch_approx.hpp>)
   endif()
   # Les tests refont des calculs de kernels/ref avec ses arrondis : sans contraction en FMA, comme
-  # ajp_kernels (P5.22 : l'option n'est plus PUBLIC, le lecteur livré ne la reçoit plus ; clang contracte
+  # kirari_kernels (P5.22 : l'option n'est plus PUBLIC, le lecteur livré ne la reçoit plus ; clang contracte
   # par défaut sur arm64). C++ seul : nvcc refuse l'option.
   if(NOT MSVC)
     target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)

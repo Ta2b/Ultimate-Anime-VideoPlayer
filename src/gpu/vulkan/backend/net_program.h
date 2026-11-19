@@ -16,7 +16,7 @@
 
 #include "gpu/ir/memory_plan.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Ce qu'un dispatch lie à un binding : un tenseur du graphe (entrée, sortie ou activation de
 // l'arène), un blob du programme, un petit tampon factice pour un binding que le shader
@@ -94,4 +94,4 @@ struct Target {
   std::uint32_t storage_alignment = 256;  // minStorageBufferOffsetAlignment : décalage d'une vue liée
 };
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

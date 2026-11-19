@@ -22,7 +22,7 @@
 #include "subs/subs_messages.h"
 #include "subs/subtitle_frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class SubtitleLead;
 
@@ -144,4 +144,4 @@ class ThreadStages final : public Stages {
   std::int64_t audio_delay_us_ = 0;  // dernier délai audio demandé (host_must_lead)
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -5,7 +5,7 @@
 
 #include "core/gpu_device.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 struct Range {
@@ -200,4 +200,4 @@ bool matrix_f8_allowed(GpuFamily family) {
   return family != GpuFamily::NvidiaBlackwell && family != GpuFamily::Unknown;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk
