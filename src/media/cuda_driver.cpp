@@ -80,6 +80,7 @@ struct Memcpy2D {
 };
 
 constexpr CUresult kCudaSuccess = 0;
+constexpr unsigned kMemoryTypeHost = 1;      // CU_MEMORYTYPE_HOST
 constexpr unsigned kMemoryTypeDevice = 2;    // CU_MEMORYTYPE_DEVICE
 constexpr unsigned kStreamNonBlocking = 1;   // CU_STREAM_NON_BLOCKING
 constexpr unsigned kEventDisableTiming = 2;  // CU_EVENT_DISABLE_TIMING
@@ -446,6 +447,37 @@ std::expected<void, Refusal> CudaDriver::copy_2d(std::uintptr_t context, std::ui
       result != kCudaSuccess) {
     return refuse_cuda("cuMemcpy2DAsync", result);
   }
+  return {};
+}
+
+std::expected<void, Refusal> CudaDriver::copy_host_2d(std::uintptr_t context, std::uintptr_t stream,
+                                                      bool to_device, std::uintptr_t device,
+                                                      std::size_t device_pitch, void* host,
+                                                      std::size_t host_pitch, std::size_t width_bytes,
+                                                      std::size_t height) const {
+  const ContextScope scope(*api_, context);
+  if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
+  Memcpy2D copy{.width_bytes = width_bytes, .height = height};
+  copy.src_memory_type = to_device ? kMemoryTypeHost : kMemoryTypeDevice;
+  copy.dst_memory_type = to_device ? kMemoryTypeDevice : kMemoryTypeHost;
+  copy.src_pitch = to_device ? host_pitch : device_pitch;
+  copy.dst_pitch = to_device ? device_pitch : host_pitch;
+  (to_device ? copy.dst_device : copy.src_device) = static_cast<CUdeviceptr>(device);
+  if (to_device)
+    copy.src_host = host;
+  else
+    copy.dst_host = host;
+  if (const CUresult result = api_->cuMemcpy2DAsync(&copy, std::bit_cast<CUstream>(stream));
+      result != kCudaSuccess)
+    return refuse_cuda("cuMemcpy2DAsync", result);
+  return {};
+}
+
+std::expected<void, Refusal> CudaDriver::in_context(std::uintptr_t context,
+                                                    const std::function<void()>& work) const {
+  const ContextScope scope(*api_, context);
+  if (!scope.ok()) return refuse_cuda("cuCtxPushCurrent", -1);
+  work();
   return {};
 }
 

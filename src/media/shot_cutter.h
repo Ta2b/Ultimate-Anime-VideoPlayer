@@ -15,6 +15,7 @@
 
 #include "kernels/spec/frame_stats.h"
 #include "media/faces.h"
+#include "media/probe_motion.h"
 
 namespace kirari::media {
 
@@ -47,6 +48,9 @@ struct ShotFrame {
   std::vector<SkinTone> faces;
   // Le transfert de la source : la grille est la luma de son signal encodé (zone_nits_of, C42-04).
   kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr;
+  // Le mouvement face à l'image d'avant, d'après le flux optique de NVIDIA (media/probe_flow.h) ; rien sans
+  // carte NVIDIA, pour la première image d'une analyse ou d'un saut, ou sur une image sans détail.
+  std::optional<ProbeMotion> motion;
 };
 
 // Les valeurs d'un plan, sur l'échelle de SceneStats.
@@ -120,18 +124,22 @@ struct FlashSpan {
 
 // Différence entre deux images, de 0 (identiques) à 1 : histogramme et grille.
 float frame_distance(const ShotFrame& a, const ShotFrame& b);
+// Vrai pour une image noire et unie (le noir d'un fondu) : la première image qui la suit sans l'être ouvre un
+// plan.
+bool blank_frame(const ShotFrame& frame);
 
 class ShotCutter {
  public:
   // cut_before du premier plan : faux pour une analyse qui part au milieu de la vidéo.
   explicit ShotCutter(bool starts_at_cut = true) : starts_at_cut_(starts_at_cut) {}
 
-  // Une image de plus, dans l'ordre de présentation. Rend le plan qui vient de finir, s'il y en a un.
+  // Une image de plus, dans l'ordre de présentation. Rend le plan qui vient de finir, s'il y en a un. Un plan
+  // fini attend que le suivant dure un quart de seconde : plus court, ce dernier se fond dans l'un des deux.
   // Un saut attend jusqu'à trois images pour être jugé : un éclair de une à trois images (tenu deux images
   // en animation sur deux) n'est pas une coupe.
   std::optional<Shot> push(const ShotFrame& frame);
-  // Fin de la vidéo (ou de l'analyse) à end_us : rend le plan en cours.
-  std::optional<Shot> finish(std::int64_t end_us);
+  // Fin de la vidéo (ou de l'analyse) à end_us : rend les plans encore gardés, dans l'ordre (deux au plus).
+  std::vector<Shot> finish(std::int64_t end_us);
 
  private:
   // Les sommes d'un plan (ou d'un de ses bords) : le plan en cours ne garde pas ses images, un flux sans
@@ -152,9 +160,15 @@ class ShotCutter {
   struct Motion {
     std::int64_t pts_us = 0;
     float distance = 0.0F;
+    bool cut = false;  // le saut d'une coupe : compté par la médiane, pas par la tendance
   };
 
+  std::optional<Shot> advance(const ShotFrame& frame);
+  std::optional<Shot> confirm_jump();
+  std::optional<Shot> follow_flow(const ShotFrame& frame);
   std::optional<Shot> judge(const ShotFrame& anchor, const ShotFrame& frame);
+  std::optional<Shot> cut_at(std::int64_t end_us, float jump);
+  void discard_shot();
   void keep(const ShotFrame& frame);
   float limit(std::int64_t pts_us);
   std::optional<Shot> close_shot(std::int64_t end_us);
@@ -175,6 +189,13 @@ class ShotCutter {
   bool jump_moves_ =
       false;  // le saut ne change que la place de la lumière : peut-être un départ de mouvement
   std::deque<Motion> recent_;  // les dernières distances entre dessins distincts, pour le seuil
+  std::optional<Shot> held_;   // le plan fini qui attend de savoir si le suivant s'y fond
+  float start_jump_ = 0.0F;    // le saut de la coupe qui a ouvert le plan en cours
+  // Le flux optique (ShotFrame::motion) : la coupe en attente vient de lui, pas d'un saut de lumière ; la
+  // dernière image poussée ; la part sans correspondance du dernier dessin distinct d'avant.
+  bool flow_jump_ = false;
+  std::optional<ShotFrame> last_;
+  std::optional<float> last_unmatched_;
 };
 
 }  // namespace kirari::media

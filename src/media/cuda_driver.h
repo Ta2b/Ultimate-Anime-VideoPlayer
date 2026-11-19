@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -98,6 +99,15 @@ class CudaDriver : public std::enable_shared_from_this<CudaDriver> {
   std::expected<void, Refusal> copy_2d(std::uintptr_t context, std::uintptr_t stream, std::uintptr_t dst,
                                        std::size_t dst_pitch, std::uintptr_t src, std::size_t src_pitch,
                                        std::size_t width_bytes, std::size_t height) const;
+  // Copie entre la mémoire hôte host (lignes espacées de host_pitch) et l'appareil device (device_pitch),
+  // lancée sur le flux : vers l'appareil si to_device, sinon vers l'hôte. Le flux synchronisé, la copie est
+  // faite (la pré-analyse, media/probe_flow.h).
+  std::expected<void, Refusal> copy_host_2d(std::uintptr_t context, std::uintptr_t stream, bool to_device,
+                                            std::uintptr_t device, std::size_t device_pitch, void* host,
+                                            std::size_t host_pitch, std::size_t width_bytes,
+                                            std::size_t height) const;
+  // work, le contexte rendu courant sur ce thread le temps de l'appel (les appels de NVOF).
+  std::expected<void, Refusal> in_context(std::uintptr_t context, const std::function<void()>& work) const;
   // Attend la fin de tout ce que le flux a lancé.
   std::expected<void, Refusal> synchronize(std::uintptr_t context, std::uintptr_t stream) const;
 

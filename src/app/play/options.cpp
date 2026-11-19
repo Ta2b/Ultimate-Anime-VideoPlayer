@@ -157,7 +157,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 39> kFlags{{
+constexpr std::array<Flag, 40> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -168,6 +168,7 @@ constexpr std::array<Flag, 39> kFlags{{
     {"--no-ring-rgb10a2", &PlayOptions::ring_rgb10a2, false},
     {"--probe-nvdec", &PlayOptions::probe_nvdec, true},
     {"--no-probe-nvdec", &PlayOptions::probe_nvdec, false},
+    {"--no-probe-flow", &PlayOptions::probe_flow, false},
     {"--shot-cuts", &PlayOptions::shot_cuts, true},
     {"--no-shot-cuts", &PlayOptions::shot_cuts,
      false},  // les coupes de l'interpolation mesurées par RIFE seul
@@ -552,6 +553,7 @@ std::string play_usage(bool debug) {
       "                         output, only a .pq.ppm name keeps the graded picture\n"
       "  --snapshot-frames=N    N presentations in a row (FILE-001.ppm…), for flicker\n"
       "  --sdr                  SDR output even on an HDR screen (SDR grade tests)\n"
+      "  --no-probe-flow        shot cuts without NVIDIA's optical flow, as on other cards\n"
       "  --bake-looks=FILE.cube writes play.toml's LUT stack (strengths included) as a single\n"
       "                         65-point LUT, then stops\n"
       "  --anime-contrast=N, --anime-saturation=N, --anime-highlights=N\n"
