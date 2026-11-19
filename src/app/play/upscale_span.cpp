@@ -24,6 +24,21 @@ bool send_tiles(SpanReuse& reuse, gpu::Engine& engine, const gpu::Tensor* previo
   return false;
 }
 
+// Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près, la
+// carte arrive quand elle peut), ni TemporalFix (la carte ne voit pas sa sortie), ni Smooth (SPAN fait en
+// avance), ni grade sur place de la sortie (la sortie d'avant est gradée, ses tuiles ne se mélangent pas).
+// Avant le warp, la sortie d'avant est dans l'autre tampon, si la source d'avant a vraiment eu son SPAN ;
+// sinon dans output_, si aucune image créée ne l'a écrasée.
+void tile_facts(ReuseFacts& rf, const UpscaleSetup& setup, bool before_warp, bool previous_spanned,
+                bool output_has_source, std::uint32_t intermediates, const PairFacts& facts) {
+  const bool playing = setup.clock != nullptr && !setup.yuv_slots;
+  const bool plain = setup.temporal_fix == nullptr && !setup.smooth_drawings;
+  const bool kept = before_warp ? !setup.grader && previous_spanned : output_has_source && intermediates == 0;
+  rf.tiles_ok = playing && plain && kept;
+  rf.can_shift = before_warp;
+  rf.scene = facts.scene.has_value() ? &*facts.scene : nullptr;
+}
+
 }  // namespace
 
 std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame, const PairFacts& facts,
@@ -40,16 +55,8 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                 .corrupt = frame.corrupt,
                 .has_output = warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_),
                 .pair_held = pair_measured ? held : true};
-  // Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près, la
-  // carte arrive quand elle peut), ni TemporalFix (la carte ne voit pas sa sortie), ni Smooth (SPAN fait en
-  // avance), ni grade sur place de la sortie (la sortie d'avant est gradée, ses tuiles ne se mélangent pas).
-  // Avant le warp, la sortie d'avant est dans l'autre tampon ; sinon dans output_, si rien ne l'a écrasée.
-  rf.tiles_ok = setup_.clock != nullptr && !setup_.yuv_slots && setup_.temporal_fix == nullptr &&
-                !setup_.smooth_drawings &&
-                (warps_spanned() ? !setup_.grader && previous_ && reuse_.spanned == previous_->id
-                                 : output_has_source_ && intermediates_ == 0);
-  rf.can_shift = warps_spanned();
-  rf.scene = facts.scene ? &*facts.scene : nullptr;
+  tile_facts(rf, setup_, warps_spanned(), reuse_.spanned_is(previous_), output_has_source_, intermediates_,
+             facts);
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const int in_row = reuse_.in_row();
@@ -74,8 +81,7 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
   }
   // Sans mesure du tout (SPAN seul, mesure refusée) : rien ne dit que l'image est tenue.
   if (!pair_measured && !rf.anchor) rf.pair_held = false;
-  const ReuseKind kind = reuse_.decide(rf);
-  const bool reused = kind == ReuseKind::Whole;
+  const bool reused = reuse_.decide(rf) == ReuseKind::Whole;  // Tiles : SPAN, plan dans reuse_.tile_plan
   // Début d'une série : l'ancre (la précédente, telle que SPAN l'a lue) est copiée avant que son tampon ne
   // reçoive une autre image ; la copie suit sur la voie des mesures, sans attente.
   if (reused && in_row == 0 && reuse_.anchor_measure) {

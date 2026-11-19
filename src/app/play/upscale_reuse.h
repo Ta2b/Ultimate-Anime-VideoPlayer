@@ -94,6 +94,11 @@ class SpanReuse {
   // La source dont le tampon de SPAN de l'image (avant le warp) tient vraiment la sortie : posée par l'étage
   // à chaque SPAN fait ou repris. Une source sautée ne l'a pas : sa suivante ne se calcule pas par tuiles.
   std::optional<SourceId> spanned;
+  // La source d'avant (l'étage la tient avec son identifiant id) est celle de spanned.
+  template <class Previous>
+  bool spanned_is(const std::optional<Previous>& previous) const {
+    return previous.has_value() && spanned == previous->id;
+  }
 
  private:
   void take();

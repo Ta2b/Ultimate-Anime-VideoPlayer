@@ -24,6 +24,7 @@
 // s'accumule dans la dérive de chaque tuile.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -81,6 +82,17 @@ class SpanTiles {
     float drift_y = 0.0F;
   };
   TilePlan full();
+  std::size_t at(int col, int row) const {
+    return static_cast<std::size_t>(row) * static_cast<std::size_t>(grid_.cols) +
+           static_cast<std::size_t>(col);
+  }
+  // L'image se calcule entière : pas de carte, état inconnu, coupe, fondu, rafraîchissement, caméra qui bouge
+  // sans décalage entier.
+  bool whole_frame(const TileFacts& facts, bool shifting) const;
+  // L'état d'avant de la tuile (col, row), décalée de (sx, sy) : la pire des tuiles d'où vient son contenu.
+  Tile carried(int col, int row, int sx, int sy) const;
+  // Le contenu de la tuile vient d'en dehors de la grille (bande qui entre) : à recalculer.
+  bool enters(int col, int row, int sx, int sy) const;
   // Le décalage (pixels d'entrée, multiples du pas) que la caméra permet ; (0, 0) sinon.
   bool camera_shift(const kernels::SceneMotion& scene, int& shift_x, int& shift_y) const;
   // Les tuiles de la carte sous la tuile (col, row) du moteur, rendues par appel de visit.
