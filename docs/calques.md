@@ -55,6 +55,16 @@ journal.
 Journal de fin : `calques : N paires avec calques (X % de décor en moyenne), M images composées ; sans : … ;
 plaque : K clés, P sources reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
 
+## Rejeu sur processeur
+
+Les décisions se rejouent sans le PC, sur les flux NVOF exportés une fois (lumas, vecteurs et coûts à la taille
+du flux du lecteur, le format de `carte_rejeu`) : `carte_rejeu --calques` rejoue la carte puis `plan_layers` et
+la plaque (compilés tels quels) et mesure ce que la garde refuserait sur les lumas ;
+`tools/bench/qualite/calques_rejeu.py` en tire, par extrait, la part des paires avec calques et les raisons des
+autres, la garde des calques et de la plaque, et des vues (décor repris en bleu, rendu à RIFE en rouge). La garde
+y est approchée : le lecteur compare des images agrandies, en RVB, et sa plaque passe par SPAN. Le PC ne garde que
+l'essai ci-dessous : images, temps et retards.
+
 ## Essai (avec le reste, à la fin)
 
 Pas de banc à part : un panoramique de 20 s, calques et plaque éteints, puis calques, puis calques et plaque,
