@@ -303,7 +303,11 @@ struct PlaceboScreen::Impl {
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;
     frame_graded = frame != nullptr && frame->graded;
+    shown_pts = frame != nullptr ? frame->pts_us : kNoPts;
+    shown_source = frame != nullptr && frame->t_num == 0;
   }
+  std::int64_t shown_pts = kNoPts;  // l'image montrée, pour le journal d'un instantané
+  bool shown_source = false;        // une source, pas un instant interpolé
   // Gradée avant le warp, l'image est déjà dans l'espace de la sortie : ni conversion ni compression.
   pl_color_space frame_color() const { return frame_graded ? target_color : source; }
   int sharpness = 0;                       // posé par set_finish, 0 à 100 %

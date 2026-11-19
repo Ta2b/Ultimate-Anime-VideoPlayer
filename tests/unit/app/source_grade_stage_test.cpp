@@ -21,6 +21,20 @@ namespace {
 
 enum class Answer { Graded, Nothing, Refused };
 
+TEST_CASE("Grade avant le warp : l'instantané retrouve le masque de l'image montrée par son pts", "[app]") {
+  SourceGradeShare share;
+  CHECK_FALSE(share.effects(1'000).on);  // rien de noté
+  for (std::int64_t i = 0; i < 8; ++i) {
+    share.note_effects(EffectSummary{.on = true, .sure = 0.1 * static_cast<double>(i), .pts_us = i * 41'708});
+  }
+  // Le grade va devant l'écran : l'image montrée retrouve le sien, pas celui de la dernière source.
+  CHECK(share.effects(3 * 41'708).pts_us == 3 * 41'708);
+  CHECK(share.effects(3 * 41'708).sure == 0.1 * 3.0);
+  // Une image inconnue (interpolée, trop ancienne) : le plus récent, que son pts trahit.
+  CHECK(share.effects(5).pts_us == 7 * 41'708);
+  CHECK(share.effects(kNoPts).pts_us == 7 * 41'708);
+}
+
 class CountingGrader final : public SourceGrader {
  public:
   explicit CountingGrader(Answer answer) : answer_(answer) {}

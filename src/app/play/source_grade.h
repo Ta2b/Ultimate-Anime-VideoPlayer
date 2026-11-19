@@ -18,6 +18,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <expected>
 #include <memory>
 #include <mutex>
@@ -59,20 +60,27 @@ class SourceGradeShare {
     const std::scoped_lock lock(mutex_);
     return state_;
   }
-  // L'autre sens : le masque des effets de la dernière source gradée, pour le journal d'un instantané.
+  // L'autre sens : le masque des effets des dernières sources gradées, pour le journal d'un instantané. Le
+  // grade avant le warp travaille en avance sur l'écran : l'image montrée retrouve le sien par son pts.
   void note_effects(const EffectSummary& seen) {
     const std::scoped_lock lock(mutex_);
-    effects_ = seen;
+    effects_[next_effect_] = seen;
+    next_effect_ = (next_effect_ + 1) % effects_.size();
   }
-  EffectSummary effects() const {
+  // Celui de la source de pts pts_us s'il est encore gardé, sinon le plus récent (son pts le dit).
+  EffectSummary effects(std::int64_t pts_us) const {
     const std::scoped_lock lock(mutex_);
-    return effects_;
+    for (const EffectSummary& seen : effects_) {
+      if (pts_us != kNoPts && seen.pts_us == pts_us) return seen;
+    }
+    return effects_[(next_effect_ + effects_.size() - 1) % effects_.size()];
   }
 
  private:
   mutable std::mutex mutex_;
   SourceGradeState state_;
-  EffectSummary effects_;
+  std::array<EffectSummary, 64> effects_{};
+  std::size_t next_effect_ = 0;
 };
 
 // La source gradée : son époque, son pts (le journal de fin dit où voir le masque), et la note des éclats sur

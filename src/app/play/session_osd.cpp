@@ -124,7 +124,8 @@ ControlsView Session::view() const {
                       .paused = paused_,
                       .fullscreen = screen_.fullscreen(),
                       .stats = show_stats_.all,
-                      .chapters = config_.chapters};
+                      .chapters = config_.chapters,
+                      .on_source = current_ && current_->t_num == 0};
 }
 
 }  // namespace kirari::app::play

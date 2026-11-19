@@ -237,6 +237,8 @@ std::optional<std::string> effect_tally_line(std::string_view where, const Effec
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   if (params) params->fx_view = effects_view ? 1.0 : 0.0;
+  // La vue sort telle quelle : la pile de LUT la recolorait (essai du PC : une image verte, sans le masque).
+  if (params && effects_view) params->look_mixes.fill(0.0);
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
   if (grade && params) {
