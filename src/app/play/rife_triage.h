@@ -1,8 +1,9 @@
 // Tri des paires de RIFE par la carte de la scène (kernels/spec/scene_flow.h, --pair-triage, plan du flux
 // NVIDIA, phase 3). Le flux optique matériel ne sert qu'à décider, jamais à déformer : aucun modèle nouveau.
-//   - Dessin tenu (Held) : la carte dit que rien ne bouge, ni le dessin ni la caméra, et qu'aucune tuile ne
-//     change hors du grain. RIFE ne tourne pas : b sort seul, comme un dessin tenu de la mesure des blocs
-//     (rife_plan.h), que le grain d'une source granuleuse empêche souvent de reconnaître.
+//   - Dessin tenu (Held) : la carte dit que rien ne bouge, ni le dessin ni la caméra, qu'aucune tuile ne
+//     change hors du grain et qu'aucune tuile de dessin ne se déplace. RIFE ne tourne pas : b sort seul,
+//     comme un dessin tenu de la mesure des blocs (rife_plan.h), que le grain d'une source granuleuse empêche
+//     souvent de reconnaître.
 //   - Paire impossible (Fade) : le flux ne trouve de correspondance presque nulle part, pas même un décor que
 //     la caméra explique (fumée ou éclair qui couvre l'image, plan qui se transforme, coupe que RIFE n'a pas
 //     vue), ou la moitié des tuiles doute. Le warp de RIFE y ferait des fantômes : tout le mouvement est
@@ -64,7 +65,7 @@ inline constexpr double kPanUnmatched = 0.1;
 }  // namespace triage
 
 // Vrai si la carte dit la paire tenue : ni dessin ni caméra qui bougent, ni fondu, presque aucune tuile qui
-// change.
+// change, et pas une seule tuile de dessin qui se déplace (un petit personnage au loin).
 bool flow_held(const kernels::SceneMotion& scene);
 
 // Vrai si la carte ne trouve presque rien qui corresponde (coupe probable comprise) sans même un décor que la
