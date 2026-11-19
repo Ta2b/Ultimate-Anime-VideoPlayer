@@ -221,13 +221,13 @@ void RifeTriage::log() const {
                     : counts_.read == 0 && counts_.held == 0
                         ? " (aucune carte : --scene-map, NVOF, RIFE mouvement ou GMFSS ?)"  // i18n-ok
                         : "";
-  // La part moyenne de l'image fondue d'une paire fondue par endroits, en pour cent.
+  // La part moyenne des tuiles qui doutent d'une paire fondue par endroits (avant le bord élargi), en %.
   const double area =
       counts_.masked > 0 ? 100.0 * counts_.masked_share / static_cast<double>(counts_.masked) : 0.0;
   log_channel("gpu")->info(
       "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "  // i18n-ok
       "impossibles fondues (dont {} sans correspondance ni caméra), {} paires fondues par endroits "  // i18n-ok
-      "(sur {:.1f} % des tuiles en moyenne), {} panoramiques purs{}",
+      "({:.1f} % des tuiles y doutent en moyenne), {} panoramiques purs{}",
       counts_.read, counts_.held, counts_.faded, counts_.lost, counts_.masked, area, counts_.panned, why);
 }
 

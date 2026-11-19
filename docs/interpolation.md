@@ -532,7 +532,8 @@ mélange de RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'avant, image pour image. La
 ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues (dont celles sans
-correspondance ni caméra) et fondues par endroits, avec la part moyenne des tuiles qu'elles fondent.
+correspondance ni caméra) et fondues par endroits, avec la part moyenne de leurs tuiles qui doutent (avant le
+bord élargi).
 
 Première lecture (passage 9 de la séance du 19 novembre, Re:Zero, 20 s d'action) : 63 paires impossibles
 sur 104. La ligne ne disait pas quelle règle les fondait ; trois causes probables, corrigées sans mesure : la
