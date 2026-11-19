@@ -111,6 +111,15 @@ Pour le réduire, deux outils et un premier correctif (novembre 2026) :
   phases de 4 canaux, chacune dans une tuile de 16 presque vide, plus un Concat et un DepthToSpace : le coût
   des phases se compte en tuiles de 16 canaux (`pass_transpose.cpp`), et une Conv 3 × 3 unique, DepthToSpace
   fondu, la remplace. L'encodeur passe de 9 nœuds à 4 ; les blocs (52 canaux par phase) gardent leurs phases.
+- la **découpe de K des matrices coopératives** (septième réglage de `coopmat` et `coopmat_acc16`, candidats
+  `c10`, abaissement 12) : à 768 × 1280, les blocs de DistilDRBA travaillent en 12 × 20 à 48 × 80 pixels sur
+  96 à 192 canaux, et ceux de RIFE descendent à 24 × 40. Une tuile de 64 ou 128 pixels n'y donne que quelques
+  groupes, l'appareil reste presque vide. Avec SPLIT tranches, chaque groupe ne parcourt qu'une part des étapes
+  (prises × paquets de canaux) et écrit ses sommes brutes dans le tampon de travail ; `net_conv_reduce`, la
+  passe de la découpe de K de la Conv directe, les ajoute et applique l'épilogue. Proposée jusqu'à 256 × 256
+  pixels, 2, 4 ou 8 tranches, sans halo ni épilogue en registres ni la variante `coopmat_m8` ; en fin de liste,
+  l'autotuner seul la retient, vérifiée contre le noyau direct. Écrite sans carte à matrices coopératives
+  (lavapipe n'en a pas) : à mesurer sur la RTX 4070 Ti avant de dire ce qu'elle rattrape.
 
 ## Vulkan : les matrices coopératives d'Intel (tuiles 8×16×16)
 

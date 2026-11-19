@@ -35,9 +35,10 @@ namespace {
 // 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct ; 5 : Conv 3 × 3
 // par Winograd ; 6 : coopmat à 16 sous-groupes et tm 8 (mémoire partagée des RDNA 4) ; 7 : tolérance selon
 // la précision, 1 % en sommes float (P2.45) ; 8 : boucles des matrices coopératives déroulées, dont les temps
-// relatifs changent ; 9 : mesures après 24 passes de chauffe (TunerOptions::warmup). Un appareil à tuiles
+// relatifs changent ; 9 : mesures après 24 passes de chauffe (TunerOptions::warmup) ; 10 : découpe de K des
+// matrices coopératives sur les petites images. Un appareil à tuiles
 // 8 × 16 × 16 y ajoute « m8 » (candidate_set).
-constexpr std::string_view kCandidateSet = "c9";
+constexpr std::string_view kCandidateSet = "c10";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
