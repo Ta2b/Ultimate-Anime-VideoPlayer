@@ -188,7 +188,7 @@ def model_at_pixels(affine, grid, ch, cw, h, w):
 
 def photo_residual(a, b, affine, decor, grid, height):
     """Écart du décor au modèle de caméra, mesuré sur l'image : b recalé par le modèle est comparé à a sur chaque
-    tuile de décor (32 px en 1080p, au moins la moitié de ses pixels dans des blocs de décor, assez texturée dans
+    tuile de décor (32 px en 1080p, un quart au moins de ses pixels dans des blocs de décor, assez texturée dans
     les deux directions), et deux pas de Lucas-Kanade donnent le décalage qui reste. Rend (médiane en px à 720p,
     tuiles mesurées) ; (None, 0) sous 3 tuiles. Les vecteurs NVOF ne servent qu'à choisir le décor : leur bruit
     (environ 0,3 px sur un décor fixe, 4070 Ti) et un personnage lent ne comptent plus."""
@@ -218,7 +218,9 @@ def photo_residual(a, b, affine, decor, grid, height):
     count = per_tile(mask)
     tr = sxx + syy
     lam_min = (tr - np.sqrt(np.maximum(tr * tr - 4 * det, 0))) / 2  # petite valeur propre du tenseur de structure
-    valid = (count >= 0.5 * t * t) & (lam_min >= 1.0 * np.maximum(count, 1))
+    # Un quart de la tuile au moins en blocs de décor ; la structure doit dépasser le grain (environ 2 niveaux² par
+    # pixel après le flou 3 × 3) dans les deux sens, sinon Lucas-Kanade mesure du bruit ou un trait seul.
+    valid = (count >= 0.25 * t * t) & (lam_min >= 8.0 * np.maximum(count, 1))
     if valid.sum() < 3:
         return None, 0
     return float(np.median(np.hypot(d[0], d[1])[valid]) / (height / 720.0)), int(valid.sum())
