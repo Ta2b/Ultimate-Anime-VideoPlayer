@@ -15,6 +15,7 @@
 
 #include "kernels/spec/frame_stats.h"
 #include "media/faces.h"
+#include "media/probe_motion.h"
 
 namespace kirari::media {
 
@@ -47,6 +48,9 @@ struct ShotFrame {
   std::vector<SkinTone> faces;
   // Le transfert de la source : la grille est la luma de son signal encodé (zone_nits_of, C42-04).
   kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr;
+  // Le mouvement face à l'image d'avant, d'après le flux optique de NVIDIA (media/probe_flow.h) ; rien sans
+  // carte NVIDIA, pour la première image d'une analyse ou d'un saut, ou sur une image sans détail.
+  std::optional<ProbeMotion> motion;
 };
 
 // Les valeurs d'un plan, sur l'échelle de SceneStats.
@@ -160,6 +164,8 @@ class ShotCutter {
   };
 
   std::optional<Shot> advance(const ShotFrame& frame);
+  std::optional<Shot> confirm_jump();
+  std::optional<Shot> follow_flow(const ShotFrame& frame);
   std::optional<Shot> judge(const ShotFrame& anchor, const ShotFrame& frame);
   std::optional<Shot> cut_at(std::int64_t end_us, float jump);
   void discard_shot();
@@ -185,6 +191,11 @@ class ShotCutter {
   std::deque<Motion> recent_;  // les dernières distances entre dessins distincts, pour le seuil
   std::optional<Shot> held_;   // le plan fini qui attend de savoir si le suivant s'y fond
   float start_jump_ = 0.0F;    // le saut de la coupe qui a ouvert le plan en cours
+  // Le flux optique (ShotFrame::motion) : la coupe en attente vient de lui, pas d'un saut de lumière ; la
+  // dernière image poussée ; la part sans correspondance du dernier dessin distinct d'avant.
+  bool flow_jump_ = false;
+  std::optional<ShotFrame> last_;
+  std::optional<float> last_unmatched_;
 };
 
 }  // namespace kirari::media

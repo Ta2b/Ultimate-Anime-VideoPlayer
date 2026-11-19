@@ -51,6 +51,23 @@ constexpr std::size_t kFlashFrames = 3;
 // plus court, seule la plus forte de ses deux coupes reste ; à égalité, la seconde, qui suit la fin de
 // l'effet.
 constexpr std::int64_t kMinShotUs = 160'000;
+
+// Le flux optique de NVIDIA (ShotFrame::motion, media/probe_flow.h) : la part des blocs texturés qui ne
+// retrouvent pas leur contenu dans l'image d'avant. Sur une vraie coupe, presque aucun ; sur un panoramique,
+// un éclair, un geste vif, la plupart. Deux usages, sans rien changer quand il manque :
+// - un saut de lumière dont presque tous les blocs se retrouvent (sous kFlowSame) n'est pas une coupe : un
+//   éclair qui recolore le même dessin, un panoramique fouetté (Re:Zero, 12) ;
+// - un dessin dont la plupart des blocs ne se retrouvent pas (kFlowCut et plus) ouvre un plan même sous le
+//   seuil de lumière (deux plans aux mêmes couleurs : Re:Zero 624 et 714), si le dessin distinct d'avant et
+//   celui d'après se retrouvaient, eux (kFlowCalm et moins). Un combat ou un fondu enchaîné ne se retrouvent
+//   sur aucun de leurs dessins : ce n'est pas une coupe. Les images tenues (le même dessin, en animation sur
+//   deux ou trois) ne comptent pas : elles se retrouvent toujours. Un plan fixe après la coupe (plus aucun
+//   dessin distinct pendant kMinShotUs) la confirme.
+// kFlowTextured : la part de blocs texturés sous laquelle le flux ne juge pas (un ciel, un aplat).
+constexpr float kFlowSame = 0.15F;
+constexpr float kFlowCut = 0.6F;
+constexpr float kFlowCalm = 0.3F;
+constexpr float kFlowTextured = 0.2F;
 // Les bords d'un plan gardés pour juger un fondu : le sixième du plan, au plus deux secondes à 24 i/s.
 constexpr std::size_t kEdgeKept = 48;
 // Les palettes de visages gardées d'un plan : un long plan n'en garde pas des milliers.
@@ -213,6 +230,12 @@ float frame_distance(const ShotFrame& a, const ShotFrame& b) {
   return change_between(a, b).distance();
 }
 
+// La part sans correspondance de frame, si le flux en dit assez pour juger.
+std::optional<float> flow_unmatched(const ShotFrame& frame) {
+  if (!frame.motion || frame.motion->textured < kFlowTextured) return std::nullopt;
+  return frame.motion->unmatched;
+}
+
 bool blank_frame(const ShotFrame& frame) {
   const auto [low, high] = std::ranges::minmax(frame.grid);
   if (high - low >= kBlankZones) return false;
@@ -298,12 +321,17 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
   // Le plan d'avant sort dès que celui-ci dure assez pour ne plus s'y fondre.
   // Un saut en attente peut encore finir ce plan à sa première image : la durée se compte jusque-là.
   const std::int64_t until = jumped_.empty() ? frame.pts_us : jumped_.front().pts_us;
+  std::optional<Shot> out;
   if (held_ && totals_.count > 0 && until - start_us_ >= kMinShotUs) {
-    std::optional<Shot> out = std::exchange(held_, std::nullopt);
+    out = std::exchange(held_, std::nullopt);
     (void)advance(frame);  // held_ vide : une coupe de cette image y attendrait, sans rien rendre
-    return out;
+  } else {
+    out = advance(frame);
   }
-  return advance(frame);
+  // Le dernier dessin distinct (une image tenue se retrouve toujours : elle ne dit rien du mouvement).
+  if (!last_ || frame_distance(*last_, frame) >= kHeldDrawing) last_unmatched_ = flow_unmatched(frame);
+  last_ = frame;
+  return out;
 }
 
 std::optional<Shot> ShotCutter::advance(const ShotFrame& frame) {
@@ -314,6 +342,7 @@ std::optional<Shot> ShotCutter::advance(const ShotFrame& frame) {
   }
   const ShotFrame anchor = *anchor_;  // copie : l'ancre change en route
   if (jumped_.empty()) return judge(anchor, frame);
+  if (flow_jump_) return follow_flow(frame);
   // Un saut attend : l'image qui revient près de l'ancre en fait un éclair, gardé dans le plan sans servir
   // de référence ; après kFlashFrames images sans retour, c'était une coupe, à la première image du saut.
   if (frame_distance(anchor, frame) < std::min(0.5F * jump_, jump_limit_)) {
@@ -336,8 +365,14 @@ std::optional<Shot> ShotCutter::advance(const ShotFrame& frame) {
   }
   if (step >= kHeldDrawing) jump_moves_ = false;  // un autre dessin, trop proche : pas ce mouvement-là
   if (jumped_.size() <= kFlashFrames) return std::nullopt;
+  return confirm_jump();
+}
+
+// Le saut en attente est une coupe, à sa première image.
+std::optional<Shot> ShotCutter::confirm_jump() {
   const std::vector<ShotFrame> after = std::move(jumped_);
   jumped_.clear();
+  flow_jump_ = false;
   std::optional<Shot> closed = cut_at(after.front().pts_us, jump_);
   recent_.push_back({.pts_us = after.front().pts_us, .distance = jump_, .cut = true});
   keep(after.front());
@@ -350,12 +385,47 @@ std::optional<Shot> ShotCutter::advance(const ShotFrame& frame) {
   return closed;
 }
 
+// Une coupe vue par le flux seul attend le dessin distinct suivant : s'il se retrouve, c'était une coupe ;
+// sinon un mouvement qui s'emballe (un combat, un fondu enchaîné), gardé dans le plan.
+std::optional<Shot> ShotCutter::follow_flow(const ShotFrame& frame) {
+  if (frame_distance(jumped_.back(), frame) < kHeldDrawing) {
+    jumped_.push_back(frame);                                                        // le même dessin, tenu
+    if (frame.pts_us - jumped_.front().pts_us >= kMinShotUs) return confirm_jump();  // un plan fixe
+    return std::nullopt;
+  }
+  if (const auto unmatched = flow_unmatched(frame); unmatched && *unmatched <= kFlowCalm)
+    return confirm_jump();
+  for (const ShotFrame& f : jumped_) keep(f);
+  anchor_ = jumped_.back();
+  jumped_.clear();
+  flow_jump_ = false;
+  return judge(*anchor_, frame);
+}
+
 // L'image face à l'ancre : dans le plan, ou mise en attente si elle saute plus loin que le seuil.
 std::optional<Shot> ShotCutter::judge(const ShotFrame& anchor, const ShotFrame& frame) {
   const Change change = change_between(anchor, frame);
   const float jump = change.distance();
   const bool unveils = blank_frame(anchor) && !blank_frame(frame);
   const float threshold = unveils ? kHeldDrawing : limit(frame.pts_us);
+  const std::optional<float> unmatched = flow_unmatched(frame);
+  // Un saut de lumière sur le même dessin (le flux le retrouve) : pas une coupe.
+  if (jump > threshold && !unveils && unmatched && *unmatched <= kFlowSame) {
+    keep(frame);
+    anchor_ = frame;
+    return std::nullopt;
+  }
+  // Sous le seuil, un dessin que le flux ne retrouve pas, entre deux qui se retrouvaient : peut-être une
+  // coupe.
+  if (jump <= threshold && jump >= kHeldDrawing && unmatched && *unmatched >= kFlowCut && last_unmatched_ &&
+      *last_unmatched_ <= kFlowCalm) {
+    jumped_.push_back(frame);
+    jump_ = jump;
+    jump_limit_ = threshold;
+    jump_moves_ = false;
+    flow_jump_ = true;
+    return std::nullopt;
+  }
   if (jump > threshold) {
     jumped_.push_back(frame);
     jump_ = jump;
@@ -373,6 +443,9 @@ std::vector<Shot> ShotCutter::finish(std::int64_t end_us) {
   // Un saut encore en attente à la fin (trois images au plus) reste dans le dernier plan.
   for (const ShotFrame& f : jumped_) keep(f);
   jumped_.clear();
+  flow_jump_ = false;
+  last_.reset();
+  last_unmatched_.reset();
   std::vector<Shot> out;
   // Un dernier plan trop court se fond dans celui d'avant.
   if (held_ && totals_.count > 0 && end_us - start_us_ < kMinShotUs) {
