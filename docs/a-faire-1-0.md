@@ -14,9 +14,10 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
   calibration de l'Auto.
 - Reprendre la sortie de l'image d'avant sur un dessin tenu (deux passes sur trois de moins en anime).
 - La porter sur Vulkan : les opérateurs qui manquent à l'import sont dans [`temporalfix.md`](temporalfix.md).
-- TemporalFix natif (`--tfix-native`, [`tfix-natif.md`](tfix-natif.md)) : mesurer sur la RTX les dB et le temps
-  par image face à TensorRT, puis décider du défaut selon la règle de ce document. La construction TensorRT
-  reste tant que la mesure n'a pas montré mieux.
+- TemporalFix natif (`--tfix-native`, [`tfix-natif.md`](tfix-natif.md)) : mesuré sur la RTX 4070 Ti en
+  demi-taille, encodeur et fenêtre natifs retenus à l'essai (64,7 et 56,2 dB ; fenêtre 2,01 contre 2,16 ms
+  pour TensorRT). Reste : la tête fondue au profil ncu, la pleine taille, puis décider du défaut selon la règle
+  de ce document. La construction TensorRT reste tant que ce n'est pas décidé.
 
 ## Code mort à retirer (sans effet sur l'image)
 

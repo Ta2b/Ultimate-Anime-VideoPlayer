@@ -5,7 +5,7 @@ add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kerne
   gmflow_backbone_net.cu gmfss_kernels.cu gmfss_native_net.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu
   rife_kernels.cu rife_native_bench.cu rife_native_net.cu rife_native_pick.cu rife_native_weights.cu
   scene_camera_kernels.cu scene_flow_kernels.cu slice_kernels.cu stats_kernels.cu
-  tfix_blend_kernels.cu tfix_fused_kernels.cu tfix_native_net.cu warp_kernels.cu warp_lib.cu)
+  tfix_blend_kernels.cu tfix_fused_kernels.cu tfix_head.cu tfix_native_net.cu warp_kernels.cu warp_lib.cu)
 target_include_directories(kirari_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(kirari_backend_tensorrt_kernels PRIVATE kirari::dep::cudart)
 # -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
