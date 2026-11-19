@@ -47,9 +47,12 @@ struct SpanFp8Weights {
   // range les poids en 64 avec des zéros. Les poids ci-dessus sont toujours ceux du paquet, rangés en 64.
   int channels = 64;
   SpanFp8Width width48 = SpanFp8Width::Native;
-  // Les blocs en FP16, sans quantification : le SPAN FP16 en noyaux CUTLASS (lot 2 du fil SPAN), à juger
-  // contre TensorRT FP16. Les échelles sont alors ignorées ; acc16 garde son sens (accumulateur f16).
+  // Le SPAN entier en FP16, sans quantification, par nos noyaux natifs (docs/span-native16.md). Les échelles
+  // sont alors ignorées, acc16 aussi (le natif somme en f16, ou en f32 avec acc32).
   bool fp16 = false;
+  // FP16 natif seulement : sommes en f32 au lieu de f16 (moitié du débit des tensor cores des GeForce). Pour
+  // la mesure (kirari_span_fp8_run --acc32) ; le lecteur somme en f16, comme AnimeJaNai.
+  bool acc32 = false;
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.

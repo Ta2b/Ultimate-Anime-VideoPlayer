@@ -3,7 +3,7 @@
 // (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16] [--acc16]
+//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -12,11 +12,15 @@
 // canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
 // le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
-// accumulateur f16, comme le drapeau du paquet. À lancer sous le
+// accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32 (il somme en f16 sinon).
+// --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
+// standard (PSNR, plus grand écart, valeurs non finies) : un seul lancement juge la vitesse et la justesse.
+// À lancer sous le
 // verrou GPU
 // (~/kirari-tools/bin/kirari-gpu).
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -64,6 +68,8 @@ struct Options {
   kirari::gpu::cuda::SpanFp8Width width48 = kirari::gpu::cuda::SpanFp8Width::Native;
   bool fp16 = false;
   bool acc16 = false;
+  bool acc32 = false;
+  bool compare = false;
 };
 
 // Les options après les cinq arguments ; vide si toutes se lisent, sinon la première qui ne se lit pas.
@@ -78,6 +84,10 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.fp16 = true;
     } else if (option == "--acc16") {
       options.acc16 = true;
+    } else if (option == "--acc32") {
+      options.acc32 = true;
+    } else if (option == "--compare") {
+      options.compare = true;
     } else if (option == "--per-tap") {
       options.width48 = kirari::gpu::cuda::SpanFp8Width::PerTap;
     } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
@@ -111,6 +121,7 @@ kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Packa
   weights.width48 = options.width48;
   weights.fp16 = options.fp16;
   weights.acc16 = weights.acc16 || options.acc16;
+  weights.acc32 = options.acc32;
   return weights;
 }
 
@@ -203,6 +214,34 @@ int main(int argc, char* const* argv) {
              static_cast<std::streamsize>(out.size() * sizeof(float)));
   if (!file) return fail("sortie non écrite");
 
+  if (options.compare && net) {
+    const auto ref = kirari::gpu::cuda::SpanFp8Reference::create(weights, height, width, status, why);
+    if (!ref) return fail(why);
+    void* ref_out = nullptr;
+    CU(cudaMalloc(&ref_out, pixels * 8));
+    if (!ref->run(stream, input, ref_out, false, why)) return fail(why);
+    CU(cudaStreamSynchronize(stream));
+    std::vector<__half> ref_half(pixels * 4);
+    CU(cudaMemcpy(ref_half.data(), ref_out, pixels * 8, cudaMemcpyDeviceToHost));
+    CU(cudaFree(ref_out));
+    double squared = 0.0, worst = 0.0;
+    std::size_t nonfinite = 0;
+    for (std::size_t i = 0; i < out.size(); ++i) {
+      const double r = static_cast<double>(__half2float(ref_half[i]));
+      const double d = static_cast<double>(out[i]) - r;
+      if (!std::isfinite(d)) {
+        ++nonfinite;
+        continue;
+      }
+      squared += d * d;
+      worst = std::max(worst, std::abs(d));
+    }
+    const double mse = squared / static_cast<double>(out.size());
+    const double psnr = mse > 0.0 ? 10.0 * std::log10(1.0 / mse) : 999.0;
+    std::printf("écart à la référence FP16 (sommes f32) : %.2f dB, plus grand écart %.5f, non finies %zu\n",
+                psnr, worst, nonfinite);
+  }
+
   if (bench > 0 && net) {
     cudaGraph_t graph = nullptr;
     cudaGraphExec_t exec = nullptr;
@@ -225,7 +264,8 @@ int main(int argc, char* const* argv) {
     for (std::size_t i = 0; i < ms.size(); ++i)
       CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
     std::ranges::sort(ms);
-    std::printf("SPAN FP8 %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n", width,
+    std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n",
+                options.fp16 ? (options.acc32 ? "FP16 natif (sommes f32)" : "FP16 natif") : "FP8", width,
                 height, static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
   }
   return 0;

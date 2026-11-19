@@ -36,7 +36,8 @@ std::unique_ptr<SpanFp8Body> make_span_fp8_body64(int height, int width);
 // flat : K mis à plat (kFewChannels, sans queue masquée par position du filtre) ; sinon K par position
 // (kOptimized : seules les colonnes de sortie sont réduites à 48). La mesure sur la carte tranche.
 std::unique_ptr<SpanFp8Body> make_span_fp8_body48(int height, int width, bool flat);
-// Les blocs en FP16 sans quantification (span_fp8_net16.cu) : 64 canaux, ou 48 avec K à plat.
-std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels);
+// Le SPAN FP16 natif (span_native16.cu, noyaux écrits sans CUTLASS) : 64 ou 48 canaux ; sommes en f16, ou
+// en f32 avec acc32.
+std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels, bool acc32);
 
 }  // namespace kirari::gpu::cuda
