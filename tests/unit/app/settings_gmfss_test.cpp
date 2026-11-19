@@ -2,6 +2,7 @@
 // demi-flot (gmfss_half_flow) et les noms de l'ancien GMFSS (0.10.0) ; la paire au demi-flot (gmfss_model.h).
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -10,6 +11,8 @@
 #include "app/play/chain_shape.h"
 #include "app/play/gmfss_model.h"
 #include "app/play/interp_retired.h"
+#include "app/play/model_choice.h"
+#include "app/play/player.h"
 #include "app/play/settings.h"
 
 namespace kirari::app::play {
@@ -123,6 +126,43 @@ TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, ch
   CHECK(gmfss_chosen(*found, false).pair == dir / kGmfssPairFile);
   CHECK(gmfss_chosen(*found, true).fusion == dir / kGmfssFusionFile);
   std::filesystem::remove_all(dir);
+}
+
+// Essai du PC du 19 novembre : les deux graphes n'étaient trouvés qu'une fois liés dans le dossier de RIFE et
+// RIFE nommé par --rife-model. Ils se cherchent aussi dans --gmfss-dir et dans le voisin « gmfss » de chaque
+// dossier de RIFE.
+TEST_CASE("GMFSS : cherché dans --gmfss-dir, puis à côté de RIFE et dans le dossier gmfss voisin",
+          "[app][gmfss]") {
+  const auto home = std::filesystem::temp_directory_path() / "kirari-gmfss-places";
+  std::filesystem::remove_all(home);
+  const auto touch_both = [](const std::filesystem::path& dir) {
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / kGmfssPairFile) << "onnx";
+    std::ofstream(dir / kGmfssFusionFile) << "onnx";
+  };
+  const PlayerPaths paths{.home = home, .heavy = home / "data", .models = home / "build"};
+  const std::vector<std::filesystem::path> dirs = motion_model_dirs(paths, std::nullopt);
+  // Voisins sans doublon : « rife/ » et « rife » donnent le même ; data/rife et data/models/rife aussi.
+  const std::vector<std::filesystem::path> trailing{home / "data/models/rife/", home / "data/models/rife"};
+  CHECK(gmfss_places(trailing) == std::vector<std::filesystem::path>{home / "data/models/rife/",
+                                                                     home / "data/models/gmfss",
+                                                                     home / "data/models/rife"});
+  CHECK_FALSE(find_gmfss(dirs));
+  touch_both(home / "kirari/models/gmfss");  // export_gmfss.py --out ~/kirari/models/gmfss
+  auto found = find_gmfss(dirs);
+  REQUIRE(found);
+  CHECK(found->pair == home / "kirari/models/gmfss" / kGmfssPairFile);
+  touch_both(home / "data/models/gmfss");  // le dossier des données passe devant ~/kirari
+  found = find_gmfss(dirs);
+  REQUIRE(found);
+  CHECK(found->fusion == home / "data/models/gmfss" / kGmfssFusionFile);
+  // --gmfss-dir passe devant tout, même un dossier quelconque (~/ajp-work/gmfss-out).
+  touch_both(home / "ajp-work/gmfss-out");
+  const std::optional<std::filesystem::path> given = home / "ajp-work/gmfss-out";
+  found = find_gmfss(motion_model_dirs(paths, std::nullopt, given));
+  REQUIRE(found);
+  CHECK(found->pair == home / "ajp-work/gmfss-out" / kGmfssPairFile);
+  std::filesystem::remove_all(home);
 }
 
 }  // namespace kirari::app::play

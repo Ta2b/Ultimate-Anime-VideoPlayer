@@ -1,5 +1,6 @@
 #include "app/play/gmfss_model.h"
 
+#include <algorithm>
 #include <format>
 #include <string>
 #include <system_error>
@@ -10,9 +11,23 @@
 
 namespace kirari::app::play {
 
+std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem::path> dirs) {
+  std::vector<std::filesystem::path> places;
+  const auto add = [&places](const std::filesystem::path& dir) {
+    if (!dir.empty() && std::ranges::find(places, dir) == places.end()) places.push_back(dir);
+  };
+  for (const std::filesystem::path& dir : dirs) {
+    add(dir);
+    // « ~/kirari/models/rife/ » comme « ~/kirari/models/rife » : le voisin de rife.
+    const std::filesystem::path named = dir.has_filename() ? dir : dir.parent_path();
+    if (named.has_relative_path()) add(named.parent_path() / "gmfss");
+  }
+  return places;
+}
+
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs) {
   std::error_code error;
-  for (const std::filesystem::path& dir : dirs) {
+  for (const std::filesystem::path& dir : gmfss_places(dirs)) {
     GmfssModels found{.pair = dir / kGmfssPairFile, .fusion = dir / kGmfssFusionFile};
     if (std::filesystem::is_regular_file(found.pair, error) &&
         std::filesystem::is_regular_file(found.fusion, error)) {

@@ -81,8 +81,9 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   }
   const std::optional<GmfssModels> found = find_gmfss(c.model_places);
   if (!found) {
-    log->warn("GMFSS union : {} et {} introuvables à côté de RIFE, {}", kGmfssPairFile, kGmfssFusionFile,
-              without);
+    log->warn(
+        "GMFSS union : {} et {} introuvables (--gmfss-dir, dossiers de RIFE et leurs voisins gmfss), {}",
+        kGmfssPairFile, kGmfssFusionFile, without);
     return true;
   }
   if (settings.gmfss_half_flow && found->half_pair.empty())

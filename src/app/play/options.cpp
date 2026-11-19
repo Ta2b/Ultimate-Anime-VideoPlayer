@@ -53,18 +53,18 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
 }
 
 // Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
-constexpr std::array<std::string_view, 26> kValuedOptions{
+constexpr std::array<std::string_view, 27> kValuedOptions{
     "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
     "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
     "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
     "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
     "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin",
-    "--pause-at"};
+    "--pause-at",    "--gmfss-dir"};
 
 // Les options qui ne donnent qu'un chemin.
 using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
 std::optional<PathMember> path_option(std::string_view name) {
-  constexpr std::array<std::pair<std::string_view, PathMember>, 8> kPaths{{
+  constexpr std::array<std::pair<std::string_view, PathMember>, 9> kPaths{{
       {"--model", &PlayOptions::model},
       {"--data-dir", &PlayOptions::data_dir},
       {"--bake-looks", &PlayOptions::bake_looks},
@@ -73,6 +73,7 @@ std::optional<PathMember> path_option(std::string_view name) {
       {"--snapshot", &PlayOptions::snapshot},
       {"--rife-model", &PlayOptions::rife_model},
       {"--rife-calm-model", &PlayOptions::rife_calm_model},
+      {"--gmfss-dir", &PlayOptions::gmfss_dir},
   }};
   for (const auto& [option, member] : kPaths)
     if (option == name) return member;

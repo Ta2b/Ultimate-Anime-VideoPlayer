@@ -698,7 +698,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   auto rife_found = choose_rife_model(p.options, p.paths.home, settings, rife_order, p.paths.models);
   if (rife_found) c.rife_choice = std::move(*rife_found);
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
-  c.model_places = motion_model_dirs(p.paths, c.rife_choice);
+  c.model_places = motion_model_dirs(p.paths, c.rife_choice, p.options.gmfss_dir);
   c.drba_found = find_distil_drba(c.model_places).has_value();
   const bool shots_drba = drba_for_shots(c, settings);  // l'Auto plan par plan, en plus de RIFE
   const bool want_drba =

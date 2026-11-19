@@ -6,7 +6,9 @@ PyPI, que l'on extrait sans l'installer (son __init__ importe TensorRT et Vapour
 
     pip download --no-deps vsgmfss_fortuna==1.0.0 -d gmfss
     python -m zipfile -e gmfss/vsgmfss_fortuna-1.0.0-py3-none-any.whl gmfss/roue
-    python -I tools/gmfss/export_gmfss.py gmfss/roue/vsgmfss_fortuna --out modeles/gmfss
+    python -I tools/gmfss/export_gmfss.py gmfss/roue/vsgmfss_fortuna --out ~/kirari/models/gmfss
+
+(le lecteur cherche les deux graphes dans le voisin « gmfss » de ses dossiers RIFE, ou dans --gmfss-dir).
 
 Le softmax splatting (softsplat.py, noyau CuPy) n'a pas d'export ONNX : le réseau est coupé
 autour de lui. Le graphe « paire » tourne une fois par paire (FeatureNet, GMFlow dans les deux
