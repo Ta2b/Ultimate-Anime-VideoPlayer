@@ -61,6 +61,19 @@ std::vector<uint32_t> caps(const NV_OF_CUDA_API_FUNCTION_LIST& calls, NvOFHandle
   return values;
 }
 
+// Une file à la priorité la plus haute (le plus petit nombre) : la réduction et la copie de la carte passent
+// devant les blocs en attente des voies, la carte arrive tôt.
+std::expected<void, Refusal> high_priority_stream(cudaStream_t& stream) {
+  int least = 0;
+  int greatest = 0;
+  if (auto ok =
+          cuda_check(cudaDeviceGetStreamPriorityRange(&least, &greatest), "cudaDeviceGetStreamPriorityRange");
+      !ok)
+    return ok;
+  return cuda_check(cudaStreamCreateWithPriority(&stream, cudaStreamNonBlocking, greatest),
+                    "cudaStreamCreateWithPriority");
+}
+
 }  // namespace
 
 struct NvofSession::Api {
@@ -85,30 +98,30 @@ struct NvofSession::Api {
 
 struct NvofSession::Buffers {
   const NV_OF_CUDA_API_FUNCTION_LIST* calls = nullptr;
-  NvOFGPUBufferHandle input = nullptr;
-  NvOFGPUBufferHandle reference = nullptr;
+  std::array<NvOFGPUBufferHandle, kLumas> lumas{};
   NvOFGPUBufferHandle flow = nullptr;
   NvOFGPUBufferHandle cost = nullptr;
   // Adresses et pas, lus une fois à la création : jamais nuls ensuite (un noyau ne lit pas une adresse
   // nulle).
-  Pitched input_at;
-  Pitched reference_at;
+  std::array<Pitched, kLumas> lumas_at{};
   Pitched flow_at;
   Pitched cost_at;
   ~Buffers() {
-    for (NvOFGPUBufferHandle buffer : {input, reference, flow, cost}) {
+    for (NvOFGPUBufferHandle buffer : lumas) {
+      if (buffer != nullptr) calls->nvOFDestroyGPUBufferCuda(buffer);
+    }
+    for (NvOFGPUBufferHandle buffer : {flow, cost}) {
       if (buffer != nullptr) calls->nvOFDestroyGPUBufferCuda(buffer);
     }
   }
-  // Les adresses et pas des quatre tampons, lus une fois ; faux si l'un est illisible.
+  // Les adresses et pas des tampons, lus une fois ; faux si l'un est illisible.
   bool read_addresses() {
-    for (auto [buffer, into] : {std::pair{input, &input_at}, std::pair{reference, &reference_at},
-                                std::pair{flow, &flow_at}, std::pair{cost, &cost_at}}) {
-      *into = pitched(buffer);
-      if (into->data == nullptr || into->pitch == 0) return false;
-    }
-    return true;
+    for (std::size_t i = 0; i < lumas.size(); ++i) lumas_at[i] = pitched(lumas[i]);
+    flow_at = pitched(flow);
+    cost_at = pitched(cost);
+    return std::ranges::all_of(lumas_at, readable) && readable(flow_at) && readable(cost_at);
   }
+  static bool readable(const Pitched& at) { return at.data != nullptr && at.pitch != 0; }
   Pitched pitched(NvOFGPUBufferHandle buffer) const {
     NV_OF_CUDA_BUFFER_STRIDE_INFO stride{};
     if (calls->nvOFGPUBufferGetStrideInfo(buffer, &stride) != NV_OF_SUCCESS) return {};
@@ -179,10 +192,7 @@ std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width
                   std::format("flux optique : luma {}x{} hors des tailles du pilote", width, height));
   }
 
-  if (auto ok = cuda_check(cudaStreamCreateWithFlags(&session->stream_, cudaStreamNonBlocking),
-                           "cudaStreamCreateWithFlags");
-      !ok)
-    return std::unexpected(ok.error());
+  if (auto ok = high_priority_stream(session->stream_); !ok) return std::unexpected(ok.error());
   if (const auto status = api.calls.nvOFSetIOCudaStreams(api.handle, session->stream_, session->stream_);
       status != NV_OF_SUCCESS)
     return api.failed(status, "nvOFSetIOCudaStreams");
@@ -220,8 +230,9 @@ std::expected<std::unique_ptr<NvofSession>, Refusal> NvofSession::open(int width
                                       .height = cells_y,
                                       .bufferUsage = NV_OF_BUFFER_USAGE_COST,
                                       .bufferFormat = NV_OF_BUFFER_FORMAT_UINT8};
-  for (auto [desc, into] : {std::pair{&luma, &buffers.input}, std::pair{&luma, &buffers.reference},
-                            std::pair{&vectors, &buffers.flow}, std::pair{&costs, &buffers.cost}}) {
+  for (auto [desc, into] : {std::pair{&luma, &buffers.lumas[0]}, std::pair{&luma, &buffers.lumas[1]},
+                            std::pair{&luma, &buffers.lumas[2]}, std::pair{&vectors, &buffers.flow},
+                            std::pair{&costs, &buffers.cost}}) {
     if (const auto status =
             api.calls.nvOFCreateGPUBufferCuda(api.handle, desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, into);
         status != NV_OF_SUCCESS)
@@ -246,11 +257,8 @@ int NvofSession::cells_y() const {
   return kernels::scene_flow_cells(height_);
 }
 
-NvofSession::Pitched NvofSession::input() const {
-  return buffers_->input_at;
-}
-NvofSession::Pitched NvofSession::reference() const {
-  return buffers_->reference_at;
+NvofSession::Pitched NvofSession::luma(int slot) const {
+  return buffers_->lumas_at[static_cast<std::size_t>(slot)];
 }
 NvofSession::Pitched NvofSession::flow() const {
   return buffers_->flow_at;
@@ -259,10 +267,10 @@ NvofSession::Pitched NvofSession::cost() const {
   return buffers_->cost_at;
 }
 
-std::expected<void, Refusal> NvofSession::execute(bool restart) {
+std::expected<void, Refusal> NvofSession::execute(int a, int b, bool restart) {
   NV_OF_EXECUTE_INPUT_PARAMS in{};
-  in.inputFrame = buffers_->input;
-  in.referenceFrame = buffers_->reference;
+  in.inputFrame = buffers_->lumas[static_cast<std::size_t>(a)];
+  in.referenceFrame = buffers_->lumas[static_cast<std::size_t>(b)];
   in.externalHints = nullptr;
   // Images successives d'un même plan : les vecteurs précédents guident. Coupés à la demande, sinon le
   // résultat dépendrait de l'historique (et l'export ne rejouerait plus la lecture).
