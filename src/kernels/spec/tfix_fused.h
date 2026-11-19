@@ -149,7 +149,7 @@ constexpr TfixLayout tfix_layout(int height, int width, bool half) {
     layout.y[i] = take(kTfixSupports * tfix_block_y(b, height, width).elements());
   }
   const TfixDims half_level = tfix_level(2, height, width, 1);
-  layout.conf_in = take(kTfixSupports * kTfixConf * half_level.plane());
+  layout.conf_in = take(static_cast<std::int64_t>(kTfixSupports) * kTfixConf * half_level.plane());
   layout.mask_half = take(kTfixSupports * half_level.plane());
   layout.conf_out = take(kTfixSupports * half_level.plane());
   if (half) layout.net_out = take(TfixDims{kTfixImage, height, width}.elements());

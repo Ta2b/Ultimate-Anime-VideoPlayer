@@ -106,8 +106,7 @@ std::optional<std::string> head_problem(const Index& index, const TfixSplit& spl
     return "tête de confiance";
 
   // Les temps des six appuis, et les constantes du mélange que les noyaux écrivent en dur.
-  std::vector<double> times;
-  for (const float t : kernels::kTfixTime) times.push_back(t);
+  const std::vector<double> times(kernels::kTfixTime.begin(), kernels::kTfixTime.end());
   if (!constant_is(index, "/Expand", 0, times)) return "temps des appuis";
   const struct {
     const char* node;
