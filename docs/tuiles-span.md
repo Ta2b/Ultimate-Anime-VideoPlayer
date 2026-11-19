@@ -115,6 +115,57 @@ dit pourquoi (`--no-span-tiles`, moteur sans grille), et le démarrage donne la 
 ABI du backend : 50 (`Engine::span_tile_grid`, `Engine::next_span_tiles`), 57 (`PairScores::blocks`, le
 filet). Nouvelle empreinte TensorRT, nouveau paquet Linux.
 
+## Rejeu sur processeur
+
+Le PC ne garde que le contrôle final et les temps : les décisions se rejouent dans le cloud sur les vecteurs
+NVOF qu'il a exportés une fois (`flux-carte-*` du dossier partagé, dix extraits de 160 images en 960 × 540,
+diviseur 2 : six panoramiques de Re:Zero et de Spy×Family, deux dialogues de Spy×Family, une lueur, une aura).
+
+- `tools/bench/qualite/tuiles_rejeu/` (construit à part, comme `carte_rejeu`) lit les tâches de `carte_rejeu`,
+  tire la carte de chaque paire (`kernels::ref`), mesure la paire et l'écart à l'ancre sur les lumas du flux
+  (blocs de 16 pixels de travail), puis fait tourner `SpanReuse::decide` et `SpanTiles::plan` compilés tels
+  quels. Il écrit les deux lignes de fin du lecteur, et la part d'une image entière que le corps de SPAN a
+  calculée. Écart au lecteur : la mesure lit la luma du flux, réduite de moitié, et non la copie de RIFE.
+- `--ancre-composee`, `--somme-des-paires`, `--somme-bornee` : à côté, l'essai d'`ancre_tuiles.h`, des tuiles
+  décidées sur les pixels, sans NVOF (plus bas) ; `--masques` écrit ses décisions image par image.
+- `tools/bench/qualite/tuiles_controle.py` rejoue `--span-tiles-check` sur ces décisions : un réseau 2× (ArtCNN
+  C4F32 à la place de SPAN) agrandit chaque luma, la sortie composée suit les tuiles calculées et reprises, et
+  se compare au calcul complet de la même image (pire bloc 16 × 16, écart moyen).
+
+Premier rejeu (19 novembre, `main` e52f6d26) : aucune image par tuiles sur les dix extraits, comme sur le PC.
+Les deux dialogues et la lueur sont des panoramiques réels (cohérence de direction 99 à 100 %, de 0,66 à
+1,05 pixel par image au centre, ce que confirme `tuiles_panoramique.py`) : pas de caméra fantôme. Sur les
+plans à caméra tenue des panoramiques, la région déborde par la dérive et la carte : la moyenne des vecteurs
+de NVOF d'une tuile de la carte y vaut 0,12 pixel de travail en médiane (0,55 au 90e centile, 14 % de
+vecteurs nuls ; Spy×Family 13:16, images 81 à 126), cinq fois le budget de glissement. NVOF ne peut pas
+certifier un glissement de 0,025 pixel : la dérive passe dès la première paire sur 90 % des tuiles.
+
+Essai sur les pixels (`ancre_tuiles.h`) : la règle du lot A tuile par tuile. Une tuile se reprend si aucun de
+ses blocs ne s'écarte de plus de 0,70 niveau de l'entrée qui a produit sa sortie ; un glissement sur un bord
+net s'y voit (0,025 pixel y fait déjà 0,85 niveau), un aplat qui glisse ne coûte rien. Trois façons de tenir
+cet écart : l'image composée de ce qui a produit la sortie (exacte ; au lecteur, un tampon et une copie
+masquée), la somme des écarts des paires depuis le dernier calcul de la tuile (une majoration : le grain s'y
+additionne ; au lecteur, rien de plus que `PairScores::blocks`), et cette somme resserrée par l'écart à la
+dernière image calculée. Part d'une image entière que calcule le corps de SPAN :
+
+| extrait | lecteur | image composée | somme des paires | somme bornée |
+|---|---|---|---|---|
+| Re:Zero, panoramique3 | 86,8 % | 49,1 % | 49,9 % | 49,9 % |
+| Re:Zero, panoramique | 57,2 % | 43,5 % | 44,2 % | 43,6 % |
+| Re:Zero, panoramique2 | 69,2 % | 57,0 % | 57,1 % | 57,1 % |
+| Re:Zero, panoramique4 | 69,8 % | 56,4 % | 56,6 % | 56,5 % |
+| Re:Zero, aura | 77,4 % | 67,1 % | 67,8 % | 67,2 % |
+| Spy×Family 13:16, panoramique6 | 95,0 % | 56,8 % | 75,9 % | 75,3 % |
+| Spy×Family 4:53, panoramique5 | 99,4 % | 78,7 % | 86,6 % | 86,6 % |
+| dialogues, lueur (caméra qui bouge) | 99,4 à 100 % | inchangé | inchangé | inchangé |
+
+Contrôle sur processeur de l'image composée (seuil 0,70) : pire bloc de 0,70 (panoramique), 0,76
+(panoramique3) et 1,03 au plus (Spy×Family 13:16, médiane 0,88), au niveau des reprises entières du lot A
+sur les mêmes extraits (0,67 à 0,79). L'écart moyen, lui, est celui du grain : 0,12 à 0,41 niveau, comme les
+reprises entières du lot A (0,04 à 0,40). Une sortie reprise garde le grain de son image ; aucune reprise,
+entière ou par tuiles, ne tient l'écart moyen de 0,05 sur une source granuleuse. Au seuil de 0,50 :
+panoramique3 à 51,7 % (pire bloc 0,54), mais Spy×Family 13:16 à 98,7 %.
+
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
 À mesurer sur CachyOS, binaire `linux-release`, à la séance de test commune de la fin (consigne de Tatoub du 19 novembre : pas de banc par fonction), avec la carte de la scène et le SPAN natif :
@@ -142,7 +193,10 @@ détail de la région trop large et de la caméra au bilan. Troisième essai (#9
 593 « caméra sans décalage entier », la caméra bougeant partout sur 604 images sur 701 (médiane 0,825 pixel au
 centre). D'où la mesure du panoramique sous-pixel et du budget (plus haut), le budget ramené à 0,025 pixel, et
 la cohérence de direction au bilan ; `tuiles_panoramique.py` vérifie la caméra sans la carte (corrélation de
-phase sur les images décodées). Audit du
+phase sur les images décodées). Rejeu sur processeur des dix
+extraits du PC (plus haut) : même verdict, la dérive tirée de NVOF ne peut pas descendre au budget ; une règle
+sur les pixels, celle du lot A tuile par tuile, en fait tomber le corps de SPAN de 87 % à 50 % sur Re:Zero et
+de 95 % à 57 % sur Spy×Family 13:16. Audit du
 19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
 grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Puis la mesure du
 contrôle (`scores_now`) qui, sous DistilDRBA après une image sautée, périmait le ticket du pont : `scores_now`
