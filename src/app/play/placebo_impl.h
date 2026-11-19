@@ -291,6 +291,7 @@ struct PlaceboScreen::Impl {
   // grade. Sans carte, il revient au neutre et le grade redevient celui d'aujourd'hui.
   EffectFollower effects;
   bool effects_on = false;
+  bool effects_refusal_noted = false;  // le refus de la passe du masque, journalisé une fois
   void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;

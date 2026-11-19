@@ -189,6 +189,11 @@ void PlaceboScreen::Impl::follow_effects(const ShowRequest& request) {
   const bool changed = effects.show(request.effects, pts);
   if (!changed && !effects_on) return;  // neutre et resté neutre : rien à poser
   const bool on = grade->set_effect_mask(&effects.mask());
+  if (const auto& refused = grade->effect_mask_refusal(); refused && !effects_refusal_noted) {
+    effects_refusal_noted = true;
+    channel->warn("éclats sur les effets : passe du masque refusée ({}), marge des éclats sur toute lumière",
+                  refused->detail);
+  }
   if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
   effects_on = on;
 }
