@@ -109,13 +109,15 @@ __device__ void blend_images(const WarpBlendParams& p, int x, int y, const Shift
 }
 
 // Mouvement d'ensemble (kernels/spec/warp_pan.h) : le flot lu f remplacé par la translation de la paire à
-// l'instant du flot (le milieu, ou time avec at_instant), en pixels de la fenêtre, là où il est petit et
-// proche d'elle.
-__device__ void pan_substitute(const WarpBlendParams& p, float sx, float sy, float (&f)[4]) {
+// l'instant du flot (pan_time : le milieu, ou time avec at_instant), en pixels de la fenêtre, là où il est
+// petit et proche d'elle. Hors ligne : à un instant variable, la fonction mise en ligne fait déborder les
+// registres du noyau filtré en Catmull-Rom (128, sm_120, --warn-on-spills) ; l'appel n'a lieu qu'avec le
+// mouvement d'ensemble.
+__device__ __noinline__ void pan_substitute(const WarpBlendParams& p, float sx, float sy, float (&f)[4]) {
   if (p.pan == nullptr || __ldg(p.pan + 2) < 0.5F) return;
   const float dx = __ldg(p.pan);
   const float dy = __ldg(p.pan + 1);
-  const float s = p.at_instant && !p.from_middle ? p.time : 0.5F;
+  const float s = p.pan_time;
   const float g[4] = {-s * dx / sx, -s * dy / sy, (1.0F - s) * dx / sx, (1.0F - s) * dy / sy};
   float m = 0.0F;
   float e = 0.0F;

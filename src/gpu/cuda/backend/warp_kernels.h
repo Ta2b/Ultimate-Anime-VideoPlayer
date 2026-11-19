@@ -27,9 +27,10 @@ struct WarpBlendParams {
   float time = 0.5F;         // instant de la sortie
   bool cubic = false;        // images lues en Catmull-Rom (kernels::RifeWarp), sinon en bilinéaire
   bool from_middle = false;  // mouvement estimé au milieu, sortie à time (loi de mélange ajustée)
-  // Hors from_middle : le flot est celui de time (DistilDRBA, RIFE direct), et non du milieu ; le mouvement
-  // d'ensemble le suit (kernels/spec/warp_pan.h).
-  bool at_instant = false;
+  // L'instant du flot lu, que suit le mouvement d'ensemble (kernels/spec/warp_pan.h) : 0,5 (le milieu), ou
+  // time quand le flot est celui de time hors from_middle (DistilDRBA, RIFE direct). Calculé par l'hôte : le
+  // noyau filtré en Catmull-Rom tient alors ses registres sans déborder (sm_120, --warn-on-spills).
+  float pan_time = 0.5F;
   // Garder les poses (kernels/spec/poses.h, avec from_middle) : l'instant de chaque pixel réglé
   // d'après le mouvement de la paire précédente, mêmes plans et même fenêtre que flow ;
   // previous_flow nul : la paire précédente était tenue.
