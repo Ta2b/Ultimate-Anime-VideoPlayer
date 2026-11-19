@@ -24,6 +24,10 @@ namespace rhythm {
 inline constexpr int kBlockPoints = 8;        // côté d'un bloc, en points de la grille
 inline constexpr float kMoveCodes = 6.0F;     // écart moyen |b − a| d'un bloc qui change, codes 8 bits
 inline constexpr float kHeldChanged = 0.02F;  // part de blocs qui changent d'une paire sans dessin nouveau
+// Un bloc noir dans les deux images (bandes noires, noir d'un fondu), luma moyenne sous ce seuil en codes 8
+// bits : ni mobile ni immobile, hors des parts et du grain. Compté immobile, il diluait le grain d'une
+// source en 2,39:1 d'un quart et faisait sauter TemporalFix sur ses plans qui scintillent.
+inline constexpr float kBlackCodes = 3.0F;
 // Avec le flux : mouvement des dessins par rapport à la caméra, et de la caméra, en part de la hauteur de
 // l'image par image (0,25 pixel à 144 lignes).
 inline constexpr float kHeldDrawing = 0.25F / 144.0F;
@@ -37,8 +41,9 @@ inline constexpr float kStrongUnmatched = 0.15F;
 
 // Une paire d'images consécutives d'un plan.
 struct RhythmPair {
-  float changed = 0.0F;  // part des blocs dont l'écart moyen atteint kMoveCodes ; les autres sont immobiles
-  float grain = 0.0F;    // écart moyen |b − a| des blocs immobiles, codes 8 bits (grain, compression)
+  // La part des blocs dont l'écart moyen atteint kMoveCodes, les noirs exclus ; les autres sont immobiles.
+  float changed = 0.0F;
+  float grain = 0.0F;  // écart moyen |b − a| des blocs immobiles, codes 8 bits (grain, compression)
   // Le flux, quand il a été mesuré (flow) : en part de la hauteur de l'image, par image.
   bool flow = false;
   float camera = 0.0F;     // translation dominante
@@ -59,7 +64,8 @@ struct FlowSummary {
 RhythmPair with_flow(RhythmPair pair, const FlowSummary& flow, int height);
 
 // La paire (previous, luma) mesurée sur la grille : deux images de width × height lumas dans [0, 1].
-// Rien si les tailles diffèrent ou sont vides.
+// Rien si les tailles diffèrent ou sont vides. Les blocs noirs dans les deux images (kBlackCodes) ne
+// comptent pas ; une paire toute noire ne change rien (changed et grain à 0).
 std::optional<RhythmPair> rhythm_pair_of(std::span<const float> previous, std::span<const float> luma,
                                          int width, int height);
 
