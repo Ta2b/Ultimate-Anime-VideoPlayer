@@ -397,6 +397,24 @@ TEST_CASE("KernelOps : mesures d'une paire RGB rendues tout de suite", "[vk_back
   REQUIRE(old);
   for (std::size_t k = 0; k < kPendingReadbacks; ++k) REQUIRE(ops.scores_start(ta->tensor(), tb->tensor()));
   CHECK_FALSE(ops.scores_take(*old));
+  for (std::size_t k = 0; k < kPendingReadbacks; ++k) CHECK(ops.scores_take(*old + 1 + k));
+
+  // scores_now pendant que kPendingReadbacks tickets sont en vol (DistilDRBA après une image sautée : le pont
+  // et la suivante, puis le contrôle des tuiles de SPAN) : il n'en périme aucun.
+  std::array<std::uint64_t, kPendingReadbacks> flying{};
+  for (std::uint64_t& ticket : flying) {
+    auto started = ops.scores_start(ta->tensor(), tb->tensor());
+    REQUIRE(started);
+    ticket = *started;
+  }
+  const auto meanwhile = ops.scores_now(ta->tensor(), ta->tensor());
+  REQUIRE(meanwhile);
+  CHECK(meanwhile->identical);
+  for (const std::uint64_t ticket : flying) {
+    const auto taken = ops.scores_take(ticket);
+    REQUIRE(taken);
+    CHECK(taken->scene_score == got->scene_score);
+  }
 }
 
 TEST_CASE("KernelOps : plus grand déplacement rendu tout de suite, contre kernels/ref",

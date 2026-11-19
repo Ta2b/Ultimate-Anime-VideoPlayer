@@ -417,6 +417,11 @@ python3 -I tools/bench/qualite/scintillement.py sans_tf.mkv avec_tf.mkv --source
 - Le rapport est par plan (un plan d'au moins `--plan-min` paires, 8), jamais une moyenne de la vidéo. `--porte F`
   sort en erreur si la dernière sortie n'est pas devant la première sur au moins F des plans.
 
+Vitesse : les paires se mesurent en parallèle (au plus 8 fils, environ 3 Go de mémoire avec 4) et les vidéos se
+décodent d'avance. Sur 4 cœurs, deux exports 4K HEVC d'une source 1080p passent à environ 4 paires par seconde. Les
+exports sans perte (FFV1) restent préférables. Un export HEVC de haute qualité marche aussi : son bruit d'encodage
+touche les deux exports pareil, mais peut masquer de petits écarts. Si la place manque, raccourcir l'extrait.
+
 Limite : un détail très fin qui bouge d'une fraction de pixel ne se rééchantillonne pas sans perte, même des deux
 côtés. Une sortie plus nette garde donc un petit handicap sur les plans qui bougent ; sur les dessins tenus (flux nul)
 la mesure est exacte. Comparer des sorties de même netteté (SPAN contre SPAN avec TemporalFix) ; la mesure se fait en
