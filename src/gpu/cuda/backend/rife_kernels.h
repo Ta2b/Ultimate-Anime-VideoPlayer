@@ -83,6 +83,7 @@ struct PairDiffParams {
   float kb = 0.0722F;
   double* total = nullptr;
   unsigned int* worst = nullptr;
+  unsigned int* blocks = nullptr;  // l'écart de chaque bloc, ligne par ligne, comme worst ; nul : non écrit
 };
 
 cudaError_t launch_pair_diff(const PairDiffParams& params, cudaStream_t stream);
