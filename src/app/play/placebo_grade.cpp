@@ -207,9 +207,31 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
       grade->set_params(*params);
       ++grade_serial;
     }
+    note_look_path(*params);
     grade_loaded_pq = target.transfer == PL_COLOR_TRC_PQ;
   }
   if (grade_loaded_pq != before) ++grade_serial;
+}
+
+// Le chemin du look au journal, à chaque changement : la table de 129³ points (une lecture par pixel) ou la
+// pile LUT par LUT, et pourquoi. Le profil de fin ne le disait que par le nom de la passe : la séance du
+// 19/11 à 165 Hz passait par la pile, 3,2 ms par image en 4K sur les 3,7 du grade.
+void PlaceboScreen::Impl::note_look_path(const render::GradeParams& params) {
+  if (std::ranges::none_of(params.look_mixes, [](double mix) { return mix > 0.0; })) return;
+  const bool wanted = params.look_table > 0.5;
+  const bool active = grade->look_table_active();
+  const int path = active ? 0 : wanted ? 1 : 2;
+  if (std::exchange(look_path_noted, path) == path) return;
+  if (active) {
+    channel->info("look : table de 129³ points, une lecture par pixel");
+  } else if (wanted) {
+    channel->warn(
+        "look : table refusée par le GPU, pile LUT par LUT (passe du look plusieurs fois plus chère)");
+  } else {
+    channel->info(
+        "look : pile LUT par LUT, réglage « LUT en une seule table » éteint (passe du look plusieurs "
+        "fois plus chère)");
+  }
 }
 
 // La luminosité SDR de KDE que la passe « kwin » imite : celle du contrat d'écran (lue dans KDE) quand

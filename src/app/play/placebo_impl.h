@@ -292,6 +292,7 @@ struct PlaceboScreen::Impl {
   EffectFollower effects;
   bool effects_on = false;
   bool effects_refusal_noted = false;  // le refus de la passe du masque, journalisé une fois
+  int look_path_noted = -1;            // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
   void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;
@@ -322,6 +323,7 @@ struct PlaceboScreen::Impl {
   void take_next_grade(const RingFrame* frame);
   // Charge dans le grade le choix qui va à cette cible ; graded() dit s'il s'applique à une cible.
   void select_grade(const pl_color_space& target);
+  void note_look_path(const render::GradeParams& params);
   bool graded(const pl_color_space& target) const;
   // Temps GPU des passes du grade (minuteries de libplacebo), par image composée avec lui ; le
   // résumé va au journal à la fermeture de l'écran.
