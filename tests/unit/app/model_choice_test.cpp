@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -16,6 +17,7 @@
 
 #include "app/play/derived_model.h"
 #include "app/play/drba_model.h"
+#include "app/play/player.h"
 
 namespace kirari::app::play {
 namespace {
@@ -199,6 +201,30 @@ TEST_CASE("DistilDRBA : demi-flot préféré en 4K, l'un sert de repli à l'autr
   CHECK_FALSE(drba_half_flow(1080));
   CHECK_FALSE(drba_half_flow(1440));  // A09-24 : plus de demi-flot à 1440 lignes
   CHECK(drba_half_flow(2160));
+}
+
+// Essai du PC du 19 novembre : le lecteur de l'arbre de construction (sans models/ à côté de lui) trouvait
+// RIFE chez AnimeJaNai et jamais DistilDRBA, rangé hors du paquet (« introuvable (…/rife ×3) »).
+TEST_CASE("DistilDRBA : cherché aussi hors du paquet, dossier des données puis ~/kirari/models/rife",
+          "[app][model_choice]") {
+  const FakeHome fake("drba-places");
+  const PlayerPaths paths{.home = fake.home, .heavy = fake.home / "data", .models = fake.home / "build"};
+  const std::vector<std::filesystem::path> dirs = motion_model_dirs(paths, std::nullopt);
+  const std::vector<std::filesystem::path> expected{fake.home / "build/rife",
+                                                    fake.rife,
+                                                    fake.home / ".local/share/AnimeJaNai/animejanai/rife",
+                                                    fake.home / "data/models/rife",
+                                                    fake.home / "data/rife",
+                                                    fake.home / "kirari/models/rife"};
+  CHECK(dirs == expected);
+  CHECK_FALSE(find_distil_drba(dirs));
+  std::filesystem::create_directories(fake.home / "kirari/models/rife");
+  std::ofstream(fake.home / "kirari/models/rife" / kDistilDrbaFile) << "x";
+  CHECK(find_distil_drba(dirs)->path == fake.home / "kirari/models/rife" / kDistilDrbaFile);
+  // Le dossier du RIFE choisi passe devant, une seule fois.
+  const ModelChoice rife{.path = fake.rife / "rife_v4.22_lite.onnx"};
+  CHECK(motion_model_dirs(paths, rife).front() == fake.rife);
+  CHECK(motion_model_dirs(paths, rife).size() == expected.size());
 }
 
 }  // namespace

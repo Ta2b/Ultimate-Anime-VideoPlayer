@@ -68,13 +68,18 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
   reuse_.check = setup_.span_reuse.check;
   if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
-  // Demandées (la carte, ou leur contrôle) mais pas calculées par ce SPAN : le journal le dit, sans quoi
-  // l'absence de leur ligne de fin ne dit pas pourquoi.
-  if (setup_.engine != nullptr && reuse_.tiles.enabled && (setup_.scene_map || reuse_.check) &&
-      !reuse_.tiles.active())
-    log_channel("gpu")->info(
-        "SPAN par tuiles : ce moteur ne calcule que l'image entière (seul le SPAN natif "
-        "les calcule)");
+  // Ce que les tuiles feront, dit au démarrage : leur grille, ou, si la carte ou le contrôle les demandent,
+  // pourquoi ce SPAN n'en calcule pas.
+  if (setup_.engine != nullptr && reuse_.tiles.enabled) {
+    const kernels::SpanTileGrid& grid = reuse_.tiles.grid();
+    if (reuse_.tiles.active())
+      log_channel("gpu")->info("SPAN par tuiles : grille de {} × {} tuiles de {} × {} pixels de travail{}",
+                               grid.cols, grid.rows, grid.tile_w, grid.tile_h,
+                               setup_.scene_map ? "" : " ; sans --scene-map, chaque image reste entière");
+    else if (setup_.scene_map || reuse_.check)
+      log_channel("gpu")->info(
+          "SPAN par tuiles : ce moteur ne calcule que l'image entière (seul le SPAN natif les calcule)");
+  }
 }
 
 UpscaleStage::~UpscaleStage() {

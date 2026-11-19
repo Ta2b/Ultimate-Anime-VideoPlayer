@@ -22,9 +22,14 @@
 // champ réceptif ; la sortie du cœur est celle d'un calcul complet. Le cœur lui-même est ce qui a changé
 // dilaté de la même portée (une sortie voit l'entrée jusqu'à la portée), plus le rayon du débandage quand
 // l'entrée est débandée. Ce qui peut dériver, c'est la sortie reprise : une tuile dite « inchangée » qui
-// bouge ou s'éclaire un peu à chaque paire (nuage lent, fumée, lueur, fondu local). Quatre gardes :
+// bouge ou s'éclaire un peu à chaque paire (nuage lent, fumée, lueur, fondu local, caméra lente). Cinq
+// gardes :
 //   - par tuile, le mouvement reçu depuis son dernier calcul s'additionne (dx, dy de la carte, moins le
 //     décalage appliqué) ; au-delà de kDriftMax pixels de travail, la tuile se recalcule ;
+//   - par tuile, le déplacement de la caméra reçu s'additionne (l'affine de la carte au coin de la tuile qui
+//     bouge le plus, moins le décalage appliqué) ; au-delà de kCameraMax, le quart de pixel sous lequel la
+//     carte dit la caméra tenue, la tuile se recalcule. Signé : le bruit de l'ajustement s'y annule, une
+//     caméra lente s'y additionne ; un zoom ou une rotation ne gardent que les tuiles près de leur centre ;
 //   - par tuile, le glissement de luminosité reçu s'additionne (SceneTile::shift, où le grain s'annule) ;
 //     au-delà de kBiasMax codes, la tuile se recalcule ;
 //   - par tuile, au plus kMaxAge images reprises de suite (comme la limite du lot A) ;
@@ -35,9 +40,10 @@
 // Décalage : caméra ajustée, partie linéaire à l'identité (kernels::scene::kHeldLinear), résidu faible, et
 // translation à moins de kShiftSnap d'un multiple du pas du moteur. La sortie d'avant se décale alors de ce
 // multiple ; une tuile ne se reprend que si elle est du décor sûr qui suit ce décalage. La part fractionnaire
-// s'accumule dans la dérive de chaque tuile. Les deux bords de l'axe décalé se recalculent : la bande qui
-// entre n'a pas de source, et près du bord d'où le contenu sort, la sortie voit maintenant le bourrage de
-// zéros de l'image.
+// s'accumule dans la dérive de chaque tuile. Sans décalage, l'image n'est entière que si la caméra bouge
+// d'au moins kCameraMax aux quatre coins et au centre (toute tuile serait à refaire). Les deux bords de l'axe
+// décalé se recalculent : la bande qui entre n'a pas de source, et près du bord d'où le contenu sort, la
+// sortie voit maintenant le bourrage de zéros de l'image.
 #pragma once
 
 #include <array>
@@ -97,7 +103,10 @@ class SpanTiles {
   static constexpr int kMaxAge = 24;        // images reprises de suite au plus, par tuile
   static constexpr int kFullEvery = 120;    // une image entière au moins toutes les 120 (5 s à 24 i/s)
   static constexpr float kDriftMax = 0.5F;  // pixels de travail reçus depuis le dernier calcul d'une tuile
-  static constexpr float kBiasMax = 1.0F;   // glissement de luminosité reçu, codes 8 bits (porte : 1 niveau)
+  // Déplacement de la caméra reçu depuis le dernier calcul d'une tuile, pixels de travail : la caméra tenue
+  // de la carte.
+  static constexpr auto kCameraMax = static_cast<float>(kernels::scene::kHeldCamera);
+  static constexpr float kBiasMax = 1.0F;  // glissement de luminosité reçu, codes 8 bits (porte : 1 niveau)
   static constexpr double kShiftSnap = 0.125;    // écart au multiple du pas, pixels de travail
   static constexpr double kShiftResidual = 0.5;  // résidu de la caméra au plus, pixels de travail
   static constexpr float kFollow = 0.5F;         // écart d'une tuile décor au décalage, pixels de travail
@@ -109,6 +118,7 @@ class SpanTiles {
 
   // La grille du moteur (gpu::Engine::span_tile_grid) ; inutilisable : jamais de tuiles. Remet l'état à zéro.
   void set_grid(const kernels::SpanTileGrid& grid);
+  const kernels::SpanTileGrid& grid() const { return grid_; }
   bool active() const { return enabled && grid_.usable(); }
   // L'image se calcule : entière ou par tuiles. Met à jour l'état des tuiles comme si le plan était suivi.
   TilePlan plan(const TileFacts& facts);
@@ -124,7 +134,9 @@ class SpanTiles {
   bool check_due() const { return tiled_ > 0 && tiled_ % kCheckEvery == 1; }
   void checked(std::uint32_t worst_block, double mean_levels);
   // « SPAN par tuiles : … » pour le journal de fin, même sans aucune image par tuiles : combien l'ont été, et
-  // chaque raison des images entières. Vide si les tuiles ne sont pas actives (le démarrage l'a dit).
+  // chaque raison des images entières (pour la région trop large, ce qui la remplissait), et ce que faisait
+  // la caméra de la carte ; inactives, pourquoi (--no-span-tiles, moteur sans grille). Vide sans SPAN
+  // (set_grid jamais appelé).
   std::string summary() const;
 
  private:
@@ -132,7 +144,22 @@ class SpanTiles {
     int age = 0;
     float drift_x = 0.0F;  // mouvement reçu depuis le dernier calcul, pixels de travail
     float drift_y = 0.0F;
+    float camera_x = 0.0F;  // déplacement de la caméra reçu depuis le dernier calcul, pixels de travail
+    float camera_y = 0.0F;
     float bias = 0.0F;  // glissement de luminosité reçu depuis le dernier calcul, codes
+  };
+  // Pourquoi une tuile est à recalculer, la première raison dans cet ordre (bilan de la région trop large).
+  enum class Cause : std::uint8_t { None, Border, Map, Net, Age, Drift, Camera, Bias };
+  static constexpr std::size_t kCauseCount = 8;
+  // La caméra de la carte sur les images planifiées où elle est ajustée : tenue (sous kCameraMax aux quatre
+  // coins et au centre), en partie (zoom, rotation, caméra entre les deux), ou qui bouge partout ; de
+  // celles-ci, le déplacement au centre, par cases de kCameraBin pixel.
+  static constexpr double kCameraBin = 0.05;
+  struct CameraSeen {
+    std::uint64_t held = 0;
+    std::uint64_t partly = 0;
+    std::uint64_t moving = 0;
+    std::array<std::uint32_t, 81> center{};  // 80 cases jusqu'à 4 pixels, puis au-delà
   };
   // Ce qu'une image par tuiles a ajouté au bilan, rendu si le moteur la refuse.
   struct Counted {
@@ -151,8 +178,19 @@ class SpanTiles {
   std::uint64_t* whole_reason(const TileFacts& facts, bool shifting, bool new_recipe);
   // L'état d'avant de la tuile (col, row), décalée de (sx, sy) : la pire des tuiles d'où vient son contenu.
   Tile carried(int col, int row, int sx, int sy) const;
-  // Le contenu de la tuile vient d'en dehors de la grille (bande qui entre) : à recalculer.
-  bool enters(int col, int row, int sx, int sy) const;
+  // Sous le décalage (sx, sy), la tuile n'a pas de source sûre : la bande qui entre (son contenu vient d'en
+  // dehors de la grille) et les deux bords de l'axe décalé. À recalculer.
+  bool unsourced(int col, int row, int sx, int sy) const;
+  // Ce qui pousse à recalculer une tuile qui a reçu la paire (âge, dérive, caméra, luminosité), ou None.
+  static Cause worn(const Tile& tile);
+  // La caméra bouge d'au moins kCameraMax aux quatre coins de la grille et en son centre.
+  bool camera_everywhere(const kernels::SceneMotion& scene) const;
+  // Classe la caméra de l'image au bilan (CameraSeen).
+  void note_camera(const kernels::SceneMotion& scene);
+  // « région trop large (…) » : la part des tuiles en cause et de la région, et les causes.
+  std::string wide_detail() const;
+  // « caméra de la carte sur n images : … » ; vide sans caméra ajustée.
+  std::string camera_detail() const;
   // Ce qui a changé (cœur brut) dilaté de la portée de la sortie : la portée du réseau, plus spread_px.
   std::vector<std::uint8_t> reach_of(const std::vector<std::uint8_t>& raw, int spread_px) const;
   // Le décalage (pixels d'entrée, multiples du pas) que la caméra permet ; (0, 0) sinon.
@@ -160,10 +198,12 @@ class SpanTiles {
   // Les tuiles de la carte sous la tuile (col, row) du moteur, rendues par appel de visit.
   template <class Visit>
   void scene_tiles_under(const kernels::SceneMotion& scene, int col, int row, Visit&& visit) const;
-  // Le filet : les tuiles sous un bloc qui change s'ajoutent à ce qui a changé (raw), hors décalage.
-  void blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& blocks, bool shifting);
+  // Le filet : les tuiles sous un bloc qui change s'ajoutent à ce qui a changé (raw), hors décalage. Rend
+  // combien la carte n'y avait pas mis.
+  std::uint64_t blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& blocks, bool shifting);
 
   kernels::SpanTileGrid grid_;
+  bool span_ = false;  // set_grid appelé : l'étage a un SPAN
   std::vector<Tile> tiles_;
   int since_full_ = 0;
   bool known_ = false;           // l'état des tuiles suit la sortie d'avant
@@ -177,14 +217,18 @@ class SpanTiles {
   std::uint64_t tiles_wide_ = 0;  // tuiles de la région dilatée
   std::uint64_t tiles_seen_ = 0;  // tuiles de la grille, sur les mêmes images
   // Les images entières, chacune sous une seule raison.
-  std::array<std::uint64_t, kTileStaleCount> stale_{};  // par TileStale (None jamais), et l'état inconnu
-  std::uint64_t recipe_ = 0;                            // l'entrée de SPAN a changé de recette
-  std::uint64_t no_map_ = 0;                            // faute de carte
-  std::uint64_t refresh_ = 0;                           // kFullEvery
-  std::uint64_t cut_ = 0;                               // coupe, fondu, carte sans tuiles
-  std::uint64_t camera_ = 0;                            // caméra qui bouge sans décalage entier
-  std::uint64_t too_wide_ = 0;                          // la région dépassait kMaxShare
-  std::uint64_t refused_ = 0;                           // le moteur a refusé le plan
+  std::array<std::uint64_t, kTileStaleCount> stale_{};    // par TileStale (None jamais), et l'état inconnu
+  std::uint64_t recipe_ = 0;                              // l'entrée de SPAN a changé de recette
+  std::uint64_t no_map_ = 0;                              // faute de carte
+  std::uint64_t refresh_ = 0;                             // kFullEvery
+  std::uint64_t cut_ = 0;                                 // coupe, fondu, carte sans tuiles
+  std::uint64_t camera_ = 0;                              // caméra qui bouge partout sans décalage entier
+  std::uint64_t too_wide_ = 0;                            // la région dépassait kMaxShare
+  std::array<std::uint64_t, kCauseCount> wide_causes_{};  // ses tuiles en cause, par Cause
+  std::uint64_t wide_region_ = 0;                         // ses tuiles de la région dilatée
+  std::uint64_t wide_seen_ = 0;                           // ses tuiles de la grille
+  CameraSeen camera_seen_;
+  std::uint64_t refused_ = 0;     // le moteur a refusé le plan
   std::uint64_t net_frames_ = 0;  // images planifiées où le filet a vu ce que la carte taisait
   std::uint64_t net_tiles_ = 0;   // et ses tuiles, avant dilatation
   std::uint64_t checks_ = 0;

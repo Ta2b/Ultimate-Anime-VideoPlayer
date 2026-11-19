@@ -88,10 +88,41 @@ SceneRead read_scene(const kernels::SpanTileGrid& g, const kernels::SceneMotion&
   return read;
 }
 
+// Le déplacement de la caméra de la carte au point (x, y), pixels de travail ; nul sans caméra ajustée (la
+// carte rend alors l'identité).
+std::pair<float, float> camera_at(const kernels::SceneMotion& s, double x, double y) {
+  const auto& c = s.camera;
+  return {static_cast<float>(c[0] + (c[1] - 1.0) * x + c[2] * y),
+          static_cast<float>(c[3] + c[4] * x + (c[5] - 1.0) * y)};
+}
+
+// Ce que la caméra fait à chaque tuile du moteur à cette paire, moins le décalage (sx, sy) appliqué : le plus
+// grand des quatre coins de la tuile (un zoom ou une rotation ne bougent pas toute la tuile pareil).
+std::vector<std::pair<float, float>> camera_steps(const kernels::SpanTileGrid& g,
+                                                  const kernels::SceneMotion& s, int sx, int sy) {
+  std::vector<std::pair<float, float>> steps(static_cast<std::size_t>(g.count()), {0.0F, 0.0F});
+  if (!s.camera_fit) return steps;
+  const auto fx = static_cast<float>(sx), fy = static_cast<float>(sy);
+  for (int r = 0; r < g.rows; ++r) {
+    for (int c = 0; c < g.cols; ++c) {
+      auto& step =
+          steps[static_cast<std::size_t>(r) * static_cast<std::size_t>(g.cols) + static_cast<std::size_t>(c)];
+      for (const int x : {c * g.tile_w, (c + 1) * g.tile_w}) {
+        for (const int y : {r * g.tile_h, (r + 1) * g.tile_h}) {
+          const auto [dx, dy] = camera_at(s, x, y);
+          if (norm2(dx - fx, dy - fy) > norm2(step.first, step.second)) step = {dx - fx, dy - fy};
+        }
+      }
+    }
+  }
+  return steps;
+}
+
 }  // namespace
 
 void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
   grid_ = grid;
+  span_ = true;
   tiles_.assign(grid.usable() ? static_cast<std::size_t>(grid.count()) : 0U, Tile{});
   since_full_ = 0;
   known_ = false;
@@ -139,9 +170,45 @@ std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool shifting, bo
   if (scene == nullptr) return &no_map_;
   if (since_full_ >= kFullEvery) return &refresh_;
   if (scene->cut_likely || scene->fade || scene->tile_px <= 0) return &cut_;
-  // La caméra bouge sans décalage entier possible : tout le décor change.
-  if (!shifting && !scene->background_held && scene->camera_fit) return &camera_;
+  // La caméra bouge partout sans décalage entier possible : toute tuile serait à refaire. Ailleurs (caméra
+  // tenue au bruit près, lente, zoom), chaque tuile additionne ce que la caméra lui fait (kCameraMax).
+  if (!shifting && camera_everywhere(*scene)) return &camera_;
   return nullptr;
+}
+
+bool SpanTiles::camera_everywhere(const kernels::SceneMotion& scene) const {
+  if (!scene.camera_fit) return false;
+  const double w = static_cast<double>(grid_.cols) * grid_.tile_w;
+  const double h = static_cast<double>(grid_.rows) * grid_.tile_h;
+  const std::array<std::pair<double, double>, 5> points{{{0, 0}, {w, 0}, {0, h}, {w, h}, {w / 2, h / 2}}};
+  return std::ranges::all_of(points, [&scene](const std::pair<double, double>& p) {
+    const auto [dx, dy] = camera_at(scene, p.first, p.second);
+    return norm2(dx, dy) >= kCameraMax * kCameraMax;
+  });
+}
+
+void SpanTiles::note_camera(const kernels::SceneMotion& scene) {
+  if (!scene.camera_fit) return;
+  const double w = static_cast<double>(grid_.cols) * grid_.tile_w;
+  const double h = static_cast<double>(grid_.rows) * grid_.tile_h;
+  const auto [cx, cy] = camera_at(scene, w / 2, h / 2);
+  float least = std::sqrt(norm2(cx, cy)), most = least;
+  for (const double x : {0.0, w}) {
+    for (const double y : {0.0, h}) {
+      const auto [dx, dy] = camera_at(scene, x, y);
+      least = std::min(least, std::sqrt(norm2(dx, dy)));
+      most = std::max(most, std::sqrt(norm2(dx, dy)));
+    }
+  }
+  if (most < kCameraMax) {
+    ++camera_seen_.held;
+  } else if (least < kCameraMax) {
+    ++camera_seen_.partly;
+  } else {
+    ++camera_seen_.moving;
+    const auto bin = static_cast<std::size_t>(std::hypot(cx, cy) / kCameraBin);
+    ++camera_seen_.center[std::min(bin, camera_seen_.center.size() - 1)];
+  }
 }
 
 SpanTiles::Tile SpanTiles::carried(int col, int row, int sx, int sy) const {
@@ -156,19 +223,33 @@ SpanTiles::Tile SpanTiles::carried(int col, int row, int sx, int sy) const {
       from.drift_x = t.drift_x;
       from.drift_y = t.drift_y;
     }
+    if (norm2(t.camera_x, t.camera_y) > norm2(from.camera_x, from.camera_y)) {
+      from.camera_x = t.camera_x;
+      from.camera_y = t.camera_y;
+    }
     from.bias = wider(from.bias, t.bias);
   });
   return from;
 }
 
-bool SpanTiles::enters(int col, int row, int sx, int sy) const {
+bool SpanTiles::unsourced(int col, int row, int sx, int sy) const {
   if (sx == 0 && sy == 0) return false;
+  if ((sx != 0 && (col == 0 || col == grid_.cols - 1)) || (sy != 0 && (row == 0 || row == grid_.rows - 1)))
+    return true;
   const int x0 = col * grid_.tile_w - sx, y0 = row * grid_.tile_h - sy;
   const int x1 = x0 + grid_.tile_w, y1 = y0 + grid_.tile_h;
   // Un contenu qui entre par la droite ou par le bas viendrait de la dernière colonne ou ligne, tronquée :
   // au-delà du bord réel, le décalage n'a pas de source.
   const int max_x = (grid_.cols - 1) * grid_.tile_w, max_y = (grid_.rows - 1) * grid_.tile_h;
   return x0 < 0 || y0 < 0 || (sx < 0 && x1 > max_x) || (sy < 0 && y1 > max_y);
+}
+
+SpanTiles::Cause SpanTiles::worn(const Tile& tile) {
+  if (tile.age > kMaxAge) return Cause::Age;
+  if (norm2(tile.drift_x, tile.drift_y) >= kDriftMax * kDriftMax) return Cause::Drift;
+  if (norm2(tile.camera_x, tile.camera_y) >= kCameraMax * kCameraMax) return Cause::Camera;
+  if (std::abs(tile.bias) >= kBiasMax) return Cause::Bias;
+  return Cause::None;
 }
 
 std::vector<std::uint8_t> SpanTiles::reach_of(const std::vector<std::uint8_t>& raw, int spread_px) const {
@@ -185,36 +266,38 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   input_key_ = facts.input_key;
   int sx = 0, sy = 0;
   const bool shifting = facts.scene != nullptr && facts.can_shift && camera_shift(*facts.scene, sx, sy);
+  if (facts.scene != nullptr) note_camera(*facts.scene);
   if (std::uint64_t* reason = whole_reason(facts, shifting, new_recipe); reason != nullptr) {
     ++*reason;
     return full();
   }
   const SceneRead read = read_scene(grid_, *facts.scene, sx, sy, shifting);
+  const std::vector<std::pair<float, float>> camera = camera_steps(grid_, *facts.scene, sx, sy);
   // L'état de chaque tuile après le décalage, et ce qui a changé : ce qui entre, les bords de l'axe décalé,
-  // ce que la carte dit changé, ce qui a trop vieilli, dérivé ou glissé.
+  // ce que la carte dit changé, ce qui a trop vieilli, dérivé, reçu de la caméra ou glissé.
   std::vector<Tile> moved(tiles_.size());
   std::vector<std::uint8_t> raw(tiles_.size(), 0);
+  std::array<std::uint64_t, kCauseCount> causes{};
   for (int r = 0; r < grid_.rows; ++r) {
     for (int c = 0; c < grid_.cols; ++c) {
       const std::size_t i = at(c, r);
-      const bool edge =
-          (sx != 0 && (c == 0 || c == grid_.cols - 1)) || (sy != 0 && (r == 0 || r == grid_.rows - 1));
-      if (edge || enters(c, r, sx, sy)) {
-        raw[i] = 1;
-        continue;
+      Cause why = Cause::Border;
+      if (!unsourced(c, r, sx, sy)) {
+        Tile from = carried(c, r, sx, sy);
+        from.age += 1;
+        from.drift_x += read.step[i].first;
+        from.drift_y += read.step[i].second;
+        from.camera_x += camera[i].first;
+        from.camera_y += camera[i].second;
+        from.bias += read.bias[i];
+        moved[i] = from;
+        why = read.dirty[i] != 0 ? Cause::Map : worn(from);
       }
-      Tile from = carried(c, r, sx, sy);
-      from.age += 1;
-      from.drift_x += read.step[i].first;
-      from.drift_y += read.step[i].second;
-      from.bias += read.bias[i];
-      moved[i] = from;
-      const bool stale = from.age > kMaxAge || norm2(from.drift_x, from.drift_y) >= kDriftMax * kDriftMax ||
-                         std::abs(from.bias) >= kBiasMax;
-      raw[i] = read.dirty[i] != 0 || stale ? 1 : 0;
+      raw[i] = why != Cause::None ? 1 : 0;
+      ++causes[static_cast<std::size_t>(why)];
     }
   }
-  blocks_into(raw, facts.blocks, shifting);
+  causes[static_cast<std::size_t>(Cause::Net)] += blocks_into(raw, facts.blocks, shifting);
   // Le cœur : ce qui a changé, et toute sortie qui le voit ; la région : le cœur, et tout ce qu'il lit.
   std::vector<std::uint8_t> core = reach_of(raw, facts.spread_px);
   const std::vector<std::uint8_t> wide =
@@ -222,6 +305,9 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   const int wide_count = kernels::count_span_tiles(wide);
   if (static_cast<double>(wide_count) > kMaxShare * static_cast<double>(tiles_.size())) {
     ++too_wide_;
+    for (std::size_t k = 0; k < kCauseCount; ++k) wide_causes_[k] += causes[k];
+    wide_region_ += static_cast<std::uint64_t>(wide_count);
+    wide_seen_ += tiles_.size();
     return full();
   }
   for (std::size_t i = 0; i < tiles_.size(); ++i) tiles_[i] = core[i] != 0 ? Tile{} : moved[i];
@@ -236,8 +322,9 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   return TilePlan{.tiled = true, .shift_x = sx, .shift_y = sy, .core = std::move(core)};
 }
 
-void SpanTiles::blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& blocks, bool shifting) {
-  if (shifting || blocks.cols == 0 || blocks.side_px <= 0.0F) return;
+std::uint64_t SpanTiles::blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& blocks,
+                                     bool shifting) {
+  if (shifting || blocks.cols == 0 || blocks.side_px <= 0.0F) return 0;
   std::uint64_t added = 0;
   const auto mark = [&raw, &added](std::size_t i) {
     if (raw[i] == 0) ++added;
@@ -254,9 +341,10 @@ void SpanTiles::blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& bl
                   static_cast<int>(std::ceil((row + 1.0F) * blocks.side_px))};
     for_tiles(grid_, at, mark);
   }
-  if (added == 0) return;
+  if (added == 0) return 0;
   ++net_frames_;
   net_tiles_ += added;
+  return added;
 }
 
 void SpanTiles::held(const kernels::SceneMotion* scene) {
@@ -281,6 +369,12 @@ void SpanTiles::held(const kernels::SceneMotion* scene) {
       tile.bias += bias;
     }
   }
+  if (scene == nullptr) return;
+  const std::vector<std::pair<float, float>> camera = camera_steps(grid_, *scene, 0, 0);
+  for (std::size_t i = 0; i < tiles_.size(); ++i) {
+    tiles_[i].camera_x += camera[i].first;
+    tiles_[i].camera_y += camera[i].second;
+  }
 }
 
 void SpanTiles::refused() {
@@ -303,11 +397,52 @@ void SpanTiles::checked(std::uint32_t worst_block, double mean_levels) {
   check_mean_ = std::max(check_mean_, mean_levels);
 }
 
+namespace {
+
+double share(std::uint64_t part, std::uint64_t whole) {
+  return whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
+}
+
+}  // namespace
+
+std::string SpanTiles::wide_detail() const {
+  std::uint64_t raw = 0;
+  for (std::size_t k = 1; k < kCauseCount; ++k) raw += wide_causes_[k];
+  std::string line = std::format("région trop large ({:.1f} % des tuiles en cause, {:.1f} % de région",
+                                 share(raw, wide_seen_), share(wide_region_, wide_seen_));
+  const std::array<const char*, kCauseCount> names{"",    "bords",  "carte",  "filet",
+                                                   "âge", "dérive", "caméra", "luminosité"};
+  for (std::size_t k = 1; k < kCauseCount; ++k) {
+    if (wide_causes_[k] == 0) continue;
+    line += std::format(", {} {:.0f} %", names[k], share(wide_causes_[k], raw));
+  }
+  return line + ")";
+}
+
+std::string SpanTiles::camera_detail() const {
+  const CameraSeen& c = camera_seen_;
+  const std::uint64_t seen = c.held + c.partly + c.moving;
+  if (seen == 0) return {};
+  std::string line = std::format(
+      " ; caméra de la carte sur {} images : {} tenues (sous {:.2f} pixel partout), {} en partie (zoom, "
+      "rotation), {} qui bougent partout",
+      seen, c.held, kCameraMax, c.partly, c.moving);
+  if (c.moving == 0) return line;
+  // La médiane du déplacement au centre, au milieu de sa case.
+  std::uint64_t below = 0;
+  std::size_t bin = 0;
+  while (bin + 1 < c.center.size() && 2 * (below + c.center[bin]) < c.moving) below += c.center[bin++];
+  if (bin + 1 == c.center.size())
+    return line + std::format(" (médiane au centre au-delà de {:.0f} pixels)",
+                              kCameraBin * static_cast<double>(bin));
+  return line +
+         std::format(" (médiane au centre {:.3f} pixel)", kCameraBin * (static_cast<double>(bin) + 0.5));
+}
+
 std::string SpanTiles::summary() const {
-  if (!active()) return {};
-  const auto share = [](std::uint64_t part, std::uint64_t whole) {
-    return whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
-  };
+  if (!span_) return {};
+  if (!enabled) return "SPAN par tuiles : coupées (--no-span-tiles)";
+  if (!grid_.usable()) return "SPAN par tuiles : aucune, ce moteur ne calcule que l'image entière";
   std::string line = std::format("SPAN par tuiles : {} images sur {} calculées ({:.1f} %)", tiled_, planned_,
                                  share(tiled_, planned_));
   if (tiled_ > 0)
@@ -319,9 +454,10 @@ std::string SpanTiles::summary() const {
         std::format(", le filet des blocs a vu {} tuiles que la carte ne disait pas changées, sur {} images",
                     net_tiles_, net_frames_);
   const auto stale = [this](TileStale why) { return stale_[static_cast<std::size_t>(why)]; };
+  const std::string wide = too_wide_ > 0 ? wide_detail() : std::string();
   const std::array<std::pair<std::uint64_t, const char*>, 11> reasons{{
       {no_map_, "sans carte"},
-      {too_wide_, "région trop large"},
+      {too_wide_, wide.c_str()},
       {refused_, "refus du moteur"},
       {stale(TileStale::Graded), "sortie d'avant gradée sur place"},
       {stale(TileStale::Overwritten), "sortie d'avant écrasée (image créée, source sautée)"},
@@ -338,6 +474,7 @@ std::string SpanTiles::summary() const {
     whole += std::format("{}{} {}", whole.empty() ? "" : ", ", count, why);
   }
   line += " ; images entières : " + (whole.empty() ? std::string("aucune") : whole);
+  line += camera_detail();
   if (checks_ > 0)
     line += std::format(
         " ; contrôle sur {} images contre un calcul complet : pire bloc {:.2f} niveau, écart moyen {:.3f} "
