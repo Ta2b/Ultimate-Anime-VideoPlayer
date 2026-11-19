@@ -1,5 +1,6 @@
-// Les clés d'Artifact des moteurs fusionnés du backend TensorRT (RIFE, DistilDRBA) : ce que load() doit
-// savoir, écrit et relu sans CUDA (kirari::cuda_fused_keys, testé sur toutes les plateformes, B03-09).
+// Les clés d'Artifact des moteurs fusionnés du backend TensorRT (RIFE, DistilDRBA, TemporalFix, GMFSS) : ce
+// que load() doit savoir, écrit et relu sans CUDA (kirari::cuda_fused_keys, testé sur toutes les plateformes,
+// B03-09).
 #pragma once
 
 #include <optional>
@@ -53,5 +54,17 @@ struct TfixFusedKey {
 };
 std::string tfix_fused_artifact_key(const TfixFusedKey& key);
 std::optional<TfixFusedKey> tfix_fused_artifact_key_parse(std::string_view text);
+
+// La clé d'un Artifact de la fusion native de GMFSS (prepare/gmfss_fused.h) : « gmfss-fused:<h>x<w>:<fusion>,
+// <ifnet> », la taille étant celle de la fusion (la moitié des plans remplis, multiples de 32), les moteurs
+// les fichiers du cache de la fusion entière puis de son IFNet. Les poids du GridNet sont relus dans l'ONNX
+// que nomme le manifeste, chemin de l'Artifact.
+struct GmfssFusedKey {
+  int height = 0;
+  int width = 0;
+  std::vector<std::string> engines;
+};
+std::string gmfss_fused_artifact_key(const GmfssFusedKey& key);
+std::optional<GmfssFusedKey> gmfss_fused_artifact_key_parse(std::string_view text);
 
 }  // namespace kirari::gpu::cuda

@@ -40,8 +40,10 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from nvof_mesures import (at_cells, camera, decode, fit_pair, hint_field, moving_pairs, run_tool,  # noqa: E402
-                          texture, tiles, warp_gain)
+from nvof_mesures import (at_cells, camera, decode, fit_pair, hint_field, moving_pairs, photo_residual,  # noqa: E402
+                          run_tool, texture, tiles, variants, warp_gain)
+
+PISTES = ("nvof", "traits", "lk", "lk_lisse")
 
 GATE_PX, GATE_SHARE, GATE_PAIRS, MOVING_PX = 0.5, 0.4, 0.9, 0.5
 CLASSES = ("aplat", "trait", "grain")
@@ -89,6 +91,9 @@ def pyramid(args, path, start, pairs, low, high, grid=4, hint_grid=8):
             flow, cost = flows[k]
             fit = fit_pair(hi[k], hi[k + 1], flow, cost, cls != 0, grid, high)
             row[label] = {"gain_db": warp_gain(hi[k], hi[k + 1], flow, grid), **(fit[2] if fit else {})}
+        prev = rows[-1] if rows and rows[-1]["image"] == k - 1 else None
+        fast = prev is not None and (prev["camera_bas"] or 0) > 15
+        row["selectif"] = row["avec"] if fast else row["sans"]  # indices si la paire d'avant dépassait 15 px
         rows.append(row)
     return rows, {"bas": ms_lo, "sans": ms_plain, "avec": ms_guided}
 
@@ -96,7 +101,8 @@ def pyramid(args, path, start, pairs, low, high, grid=4, hint_grid=8):
 def pyramid_report(pyr, low, high):
     """Les panoramiques par vitesse de caméra (passe basse, px à 720p) : porte, résidu, part du décor, gain."""
     L = ["", f"## Pyramide : caméra en {low}p passée en indices externes à la passe {high}p", "",
-         "Sur les extraits panoramiques. Par case : sans / avec les indices. Porte : part des paires où le résidu (image) "
+         "Sur les extraits panoramiques. Par case : sans / avec les indices / sélectif (indices seulement quand la caméra de la "
+         "paire précédente dépassait 15 px). Porte : part des paires où le résidu (image) "
          f"du décor est sous {GATE_PX} px avec au moins {100 * GATE_SHARE:.0f} % de décor.", "",
          "| Caméra (px à 720p) | Paires | Porte | Résidu médian | Part décor | Gain (dB) |", "|---|---:|---|---|---|---|"]
     rows = [r for clip in pyr.values() for r in clip["paires"] if r["camera_bas"] is not None]
@@ -111,7 +117,7 @@ def pyramid_report(pyr, low, high):
                    lambda side: np.median([r[side].get("residu_px", np.nan) for r in group]),
                    lambda side: 100 * np.median([r[side].get("part_decor", 0) for r in group]),
                    lambda side: np.mean([r[side]["gain_db"] for r in group])):
-            cells.append(f"{fn('sans'):.1f} / {fn('avec'):.1f}")
+            cells.append(f"{fn('sans'):.1f} / {fn('avec'):.1f} / {fn('selectif'):.1f}")
         L.append(f"| {label} | {len(group)} | {cells[0]} % | {cells[1]} | {cells[2]} % | {cells[3]} |")
     ms = {k: [m for clip in pyr.values() for m in clip["temps"][k]] for k in ("bas", "sans", "avec")}
     if all(ms.values()):
@@ -205,6 +211,22 @@ def report(results, times, info, clips, ref, pyr=None, levels=None):
         word = "passe" if scored[best] >= GATE_PAIRS else "ne passe pas"
         L += ["", f"Verdict : la porte {word} (meilleure configuration {best[0]} × {best[0]} en {best[1]}p, "
                   f"{100 * scored[best]:.0f} % des paires)."]
+    L += ["", "## Pistes pour les caméras lentes (même critère, mêmes paires)", "",
+          "nvof : l'affine NVOF ; traits : ajustée sur les blocs de traits seuls (sans le grain) ; lk : l'affine NVOF "
+          "affinée par Lucas-Kanade global (7 × 7 puis 3 × 3, Huber), décor repris avec elle ; lk_lisse : lk, médiane "
+          "des affines sur trois paires voisines. Par case : bonnes / mobiles, et la part pour les caméras de 0,5 à 15 px.",
+          "", "| Grille | Hauteur | " + " | ".join(PISTES) + " |", "|---|---|" + "---:|" * len(PISTES)]
+    for key in sorted(results):
+        cells = []
+        for v in PISTES:
+            rows = [(name, {"image": r["image"], **r.get("variantes", {}).get(v, {})})
+                    for name in pans for r in results[key]["paires"].get(name, [])]
+            good, moving, _ = gate(rows, moving_pairs_all)
+            slow = {(n, r["image"]) for n in pans for r in results[key]["paires"].get(n, [])
+                    if MOVING_PX <= r.get("camera_px", 0) < 15} & moving_pairs_all
+            gs, ms_, _ = gate(rows, slow)
+            cells.append(f"{good} / {moving} ({100 * good / max(moving, 1):.0f} %), lentes {100 * gs / max(ms_, 1):.0f} %")
+        L.append(f"| {key[0]} × {key[0]} | {key[1]}p | " + " | ".join(cells) + " |")
     if pyr:
         L.append(pyramid_report(pyr, *levels))
     text = re.sub(r"(\d)\.(\d)", r"\1,\2", "\n".join(L)) + "\n"
@@ -268,7 +290,7 @@ def main():
                 slot = results.setdefault(key, {"paires": {}, "doublons": {}, "couts": {c: np.zeros(256, np.int64)
                                                                                      for c in CLASSES}})
                 slot["doublons"][name] = held
-                rows, last, shown = [], None, 0
+                rows, last, shown, lk = [], None, 0, {}
                 every = max(1, len(pairs) // max(1, args.vues))
                 for i, k in enumerate(pairs):
                     flow, cost = flows[k]
@@ -293,7 +315,21 @@ def main():
                             shown += 1
                     else:
                         last = None
+                    if typ == "panoramique":
+                        row["variantes"], decor_lk = variants(frames[k], frames[k + 1], flow, cost, cls, grid, height,
+                                                              fit)
+                        if "lk" in row["variantes"]:
+                            lk[k] = (decor_lk, row["variantes"]["lk"])
                     rows.append(row)
+                for row in rows:  # lk_lisse : médiane des affines lk de k − 1, k, k + 1
+                    k = row["image"]
+                    if all(j in lk for j in (k - 1, k, k + 1)):
+                        smooth = np.median([lk[j][1]["affine"] for j in (k - 1, k, k + 1)], 0)
+                        photo, _ = photo_residual(frames[k], frames[k + 1], smooth, lk[k][0], grid, height)
+                        row["variantes"]["lk_lisse"] = {"residu_px": photo if photo is not None else float("inf"),
+                                                        "part_decor": lk[k][1]["part_decor"]}
+                    elif k in lk:  # bord d'une suite : lk tel quel
+                        row["variantes"]["lk_lisse"] = dict(lk[k][1])
                 slot["paires"][name] = rows
                 print(f"{name} : grille {grid}, {height}p, {len(rows)} paires", file=sys.stderr, flush=True)
         if levels and typ == "panoramique" and pairs:

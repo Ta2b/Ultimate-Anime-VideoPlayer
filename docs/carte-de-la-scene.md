@@ -46,8 +46,33 @@ autre taille d'image refait la session.
 compte comme ce qui bouge, et sans caméra ajustée (aplat), toute tuile changée l'éteint. Règle absolue :
 `scene` absente donne exactement le comportement d'aujourd'hui, image pour image.
 
+## Les classes des tuiles
+
+Décor : la tuile suit le modèle de la caméra. Dessin : elle s'en écarte, ou ses vecteurs s'éparpillent. Effet :
+elle ne correspond plus et change fort. Incertain : le flux ne tranche pas (vecteurs sans correspondance sans
+effet, mouvement sans caméra ajustée, et les aplats ci-dessous).
+
+- **Aplats** (texture sous `kTextureFloor`). NVOF n'y voit rien, mais rien n'y bouge de visible : un aplat qui
+  ne contredit pas la caméra est décor, pleinement sûr sous `kStillDiff` d'écart |b − a|, plus du tout à
+  `kChangeDiff`. Un aplat qui change plus, ou dont le vecteur contredit la caméra, reste incertain : ce vecteur
+  vient des bords voisins, il ne prouve pas un dessin.
+- **Lissage** (`ref::SceneHistory`). Une tuile ne change de classe que vue deux paires de suite ; entre les deux,
+  la classe tenue reste, à 0,4 fois sa confiance (`kContradicted`) : jamais sûre pour un client (seuil 0,5).
+  Une paire où la tuile ne change pas sous une caméra tenue ne compte pas : les images doublées d'une animation
+  en deux ou en trois ne ramènent pas un dessin au décor une paire sur deux. Une coupe vide l'historique.
+
+Les drapeaux (`drawing_held`, `changed`) restent bruts, non lissés.
+
 ## La porte (groupe de tests 2, sur CachyOS)
 
 Pendant une lecture SPAN + RIFE, le temps par image ne monte pas de plus de 0,3 ms avec `--scene-map` (preuve
 que le bloc NVOFA tourne à côté). Sur les extraits du banc 2.1 (porte 2.3) : classe décor contre dessin juste
 sur 95 % des tuiles sûres, stable sur les plans fixes.
+
+Le banc 2.1 (`tools/bench/qualite/nvof_scene.py`) classe ses tuiles avec son propre classeur : ses parts
+« incertain » et ses bascules ne mesurent pas la carte du lecteur. La porte 2.3 se mesure avec
+`tools/bench/qualite/carte_lecteur.py`, qui lit chaque extrait comme le lecteur (taille du flux, toutes les
+paires voisines, doublons compris, réglage moyen, indices temporels) et rejoue la carte par `carte_rejeu`
+(`kernels::ref`, lissage compris, construit à part) : parts des classes et des tuiles sûres, bascule sur toutes
+les paires et sur les plans fixes, queue des coûts de NVOF (pour régler `kSceneCostHigh`), vues PNG pour juger
+la classe des tuiles sûres.
