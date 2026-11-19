@@ -15,7 +15,10 @@ slow, carte de coût), le banc mesure :
 - la carte de coût sur les aplats, les traits et le grain (classes tirées de la luma de a) ;
 - le mouvement de caméra : affine à 6 paramètres, moindres carrés pondérés par la confiance (coût bas), avec
   rejet des aberrants, sur les blocs texturés seulement ; le décor est l'ensemble des blocs que le modèle explique ;
-- des tuiles de 32 px (en 1080p) classées décor, dessin ou incertain, et leur stabilité d'une paire à l'autre.
+- des tuiles de 32 px (en 1080p) classées décor, dessin ou incertain, et leur stabilité d'une paire à l'autre ;
+- sur les panoramiques, le mode pyramide (--pyramide 360:720) : NVOF en 360p, caméra ajustée, puis ce mouvement
+  passé en indices externes (grille 8) à la passe 720p ; porte, résidu et part du décor avec et sans, par vitesse.
+  Au-delà de 45 px, NVOF seul dépasse sa portée de recherche (écart moyen de 45 px à RIFE, 17 novembre).
 
 Porte : sur les paires des panoramiques où la caméra bouge (0,5 px ou plus à 720p), l'écart moyen du décor au
 modèle sous 0,5 px (à 720p) avec au moins 40 % des blocs texturés dans le décor, pour 90 % des paires. Sinon, on
@@ -67,8 +70,10 @@ def moving_pairs(frames, limit):
     return keep[:limit], len(diffs) - len(keep)
 
 
-def run_tool(tool, grid, hints, frames, pairs):
-    """{k: (flux 2 × ch × cw en px, coût ch × cw)}, [ms], {gpu, cuda, grilles}. Lève RuntimeError si refus."""
+def run_tool(tool, grid, hints, frames, pairs, external=None):
+    """{k: (flux 2 × ch × cw en px, coût ch × cw)}, [ms], {gpu, cuda, grilles}. Lève RuntimeError si refus.
+
+    external : (grille des indices, {k: int16 hh × hw × 2 en S10.5}), les indices externes de chaque paire."""
     n, h, w = frames.shape
     cw, ch = (w + grid - 1) // grid, (h + grid - 1) // grid
     with tempfile.TemporaryDirectory() as tmp:
@@ -76,8 +81,15 @@ def run_tool(tool, grid, hints, frames, pairs):
         for k in sorted({k for p in pairs for k in (p, p + 1)}):
             names[k] = os.path.join(tmp, f"{k}.y")
             frames[k].tofile(names[k])
-        tasks = "".join(f"{w}\t{h}\t{names[k]}\t{names[k + 1]}\t{os.path.join(tmp, f'{k}.flow')}\n" for k in pairs)
-        args = [tool, "--grid", str(grid), "--one-way", "--cost"] + (["--hints"] if hints else [])
+        tasks = ""
+        for k in pairs:
+            task = f"{w}\t{h}\t{names[k]}\t{names[k + 1]}\t{os.path.join(tmp, f'{k}.flow')}"
+            if external is not None:
+                external[1][k].astype(np.int16).tofile(os.path.join(tmp, f"{k}.hint"))
+                task += "\t" + os.path.join(tmp, f"{k}.hint")
+            tasks += task + "\n"
+        args = [tool, "--grid", str(grid), "--one-way", "--cost"] + (["--hints"] if hints else []) \
+            + (["--hint-grid", str(external[0])] if external is not None else [])
         done = subprocess.run(args, input=tasks, text=True, capture_output=True, check=False)
         times, info = [], {}
         for line in done.stderr.splitlines():
@@ -179,7 +191,7 @@ def camera(flow, cost, textured, grid, height):
         "camera_px": float(np.hypot(*model).mean() / k),
         "residu_px": float(r[inl].mean() / k),
         "part_decor": float(inl.mean()),
-        "affine": [round(float(x), 4) for x in (*pu, *pv)],
+        "affine": [float(x) for x in (*pu, *pv)],
     }
 
 
@@ -216,6 +228,72 @@ def view(path, a, tile_map, t, grid, flow, model, height):
                     "-i", "-", path], input=img.tobytes(), check=True)
 
 
+def hint_field(affine, scale, w, h, hint_grid):
+    """Le mouvement de caméra d'une passe basse, porté à la taille w × h : indices hh × hw × 2 en S10.5."""
+    hw, hh = (w + hint_grid - 1) // hint_grid, (h + hint_grid - 1) // hint_grid
+    yy, xx = np.mgrid[0:hh, 0:hw].astype(np.float64)
+    xn, yn = (xx * hint_grid - 0.5 * hw * hint_grid) / (hw * hint_grid), (yy * hint_grid - 0.5 * hh * hint_grid) / (hh * hint_grid)
+    pu, pv = np.array(affine[:3]), np.array(affine[3:])
+    u = (pu[0] + pu[1] * xn + pu[2] * yn) * scale
+    v = (pv[0] + pv[1] * xn + pv[2] * yn) * scale
+    return np.clip(np.rint(np.stack([u, v], -1) * 32), -32768, 32767).astype(np.int16)
+
+
+def pyramid(args, path, start, pairs, low, high, grid=4, hint_grid=8):
+    """Passe en low (grille 4), caméra ajustée, puis passe en high avec et sans ce mouvement en indices externes.
+    Rend [{image, camera_bas, sans: {...}, avec: {...}}], {"bas": [ms], "sans": [ms], "avec": [ms]}."""
+    lo, hi = decode(path, start, args.images, low), decode(path, start, args.images, high)
+    pairs = [k for k in pairs if k + 1 < min(len(lo), len(hi))]
+    flows_lo, ms_lo, _ = run_tool(args.outil, grid, False, lo, pairs)
+    hints, base = {}, {}
+    _, h, w = hi.shape
+    for k in pairs:
+        flow, cost = flows_lo[k]
+        cls = at_cells(texture(lo[k]), grid, *cost.shape)
+        fit = camera(flow, cost, cls != 0, grid, low)
+        base[k] = fit[2]["camera_px"] if fit else None
+        hints[k] = hint_field(fit[2]["affine"] if fit else [0] * 6, high / low, w, h, hint_grid)
+    plain, ms_plain, _ = run_tool(args.outil, grid, False, hi, pairs)
+    guided, ms_guided, _ = run_tool(args.outil, grid, False, hi, pairs, (hint_grid, hints))
+    rows = []
+    for k in pairs:
+        cls = at_cells(texture(hi[k]), grid, *plain[k][1].shape)
+        row = {"image": k, "camera_bas": base[k]}
+        for label, flows in (("sans", plain), ("avec", guided)):
+            flow, cost = flows[k]
+            fit = camera(flow, cost, cls != 0, grid, high)
+            row[label] = {"gain_db": warp_gain(hi[k], hi[k + 1], flow, grid), **(fit[2] if fit else {})}
+        rows.append(row)
+    return rows, {"bas": ms_lo, "sans": ms_plain, "avec": ms_guided}
+
+
+def pyramid_report(pyr, low, high):
+    """Les panoramiques par vitesse de caméra (passe basse, px à 720p) : porte, résidu, part du décor, gain."""
+    L = ["", f"## Pyramide : caméra en {low}p passée en indices externes à la passe {high}p", "",
+         "Sur les extraits panoramiques. Par case : sans / avec les indices. Porte : part des paires où le résidu "
+         f"du décor est sous {GATE_PX} px avec au moins {100 * GATE_SHARE:.0f} % de décor.", "",
+         "| Caméra (px à 720p) | Paires | Porte | Résidu médian | Part décor | Gain (dB) |", "|---|---:|---|---|---|---|"]
+    rows = [r for clip in pyr.values() for r in clip["paires"] if r["camera_bas"] is not None]
+    for lo, hi in ((MOVING_PX, 15), (15, 45), (45, 1e9), (MOVING_PX, 1e9)):
+        group = [r for r in rows if lo <= r["camera_bas"] < hi]
+        if not group:
+            continue
+        label = "toutes" if (lo, hi) == (MOVING_PX, 1e9) else (f"{lo:g} à {hi:g}" if hi < 1e9 else f"{lo:g} et plus")
+        cells = []
+        for fn in (lambda side: 100 * np.mean([r[side].get("residu_px", 99) < GATE_PX
+                                               and r[side].get("part_decor", 0) >= GATE_SHARE for r in group]),
+                   lambda side: np.median([r[side].get("residu_px", np.nan) for r in group]),
+                   lambda side: 100 * np.median([r[side].get("part_decor", 0) for r in group]),
+                   lambda side: np.mean([r[side]["gain_db"] for r in group])):
+            cells.append(f"{fn('sans'):.1f} / {fn('avec'):.1f}")
+        L.append(f"| {label} | {len(group)} | {cells[0]} % | {cells[1]} | {cells[2]} % | {cells[3]} |")
+    ms = {k: [m for clip in pyr.values() for m in clip["temps"][k]] for k in ("bas", "sans", "avec")}
+    if all(ms.values()):
+        L += ["", f"Temps médian d'un appel : {low}p {np.median(ms['bas']):.2f} ms, {high}p sans indices "
+                  f"{np.median(ms['sans']):.2f} ms, avec {np.median(ms['avec']):.2f} ms."]
+    return "\n".join(L)
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # Rapport
 
@@ -230,7 +308,7 @@ def gate(rows):
     return len(good), len(moving)
 
 
-def report(results, times, info, clips, ref):
+def report(results, times, info, clips, ref, pyr=None, levels=None):
     L = [f"# Banc NVOF hors lecteur (porte 2.1)", "",
          f"Carte : {info.get('gpu', '?')}, pilote CUDA {info.get('cuda', '?')}, grilles acceptées : "
          f"{info.get('grilles', '?')}. Préréglage slow, sens avant, carte de coût allumée.", "",
@@ -286,6 +364,8 @@ def report(results, times, info, clips, ref):
         word = "passe" if scored[best] >= GATE_PAIRS else "ne passe pas"
         L += ["", f"Verdict : la porte {word} (meilleure configuration {best[0]} × {best[0]} en {best[1]}p, "
                   f"{100 * scored[best]:.0f} % des paires)."]
+    if pyr:
+        L.append(pyramid_report(pyr, *levels))
     text = re.sub(r"(\d)\.(\d)", r"\1,\2", "\n".join(L)) + "\n"
     return text.replace("(porte 2,1)", "(porte 2.1)").replace("Porte deux-un", "Porte 2.1")
 
@@ -310,6 +390,8 @@ def main():
     p.add_argument("--paires", type=int, default=64, help="paires qui bougent gardées par extrait")
     p.add_argument("--indices", action="store_true", help="indices temporels de NVOF (paires qui se suivent)")
     p.add_argument("--reference", default="4:720", help="GRILLE:HAUTEUR des tableaux par extrait et des vues")
+    p.add_argument("--pyramide", default="360:720",
+                   help="BAS:HAUT, passe basse dont la caméra guide la passe haute (panoramiques) ; vide : sans")
     p.add_argument("--vues", type=int, default=4, help="vues PNG par extrait")
     p.add_argument("--sortie", required=True)
     args = p.parse_args()
@@ -323,7 +405,8 @@ def main():
         typ, path, start = parse_clip(spec)
         seen[typ] = seen.get(typ, 0) + 1
         clips.append((typ if seen[typ] == 1 else f"{typ}{seen[typ]}", typ, (path, start)))
-    results, times, info = {}, {}, {}
+    results, times, info, pyr = {}, {}, {}, {}
+    levels = tuple(int(x) for x in args.pyramide.split(":")) if args.pyramide else None
     for name, typ, (path, start) in clips:
         pairs = None
         for height in heights:
@@ -372,17 +455,24 @@ def main():
                     rows.append(row)
                 slot["paires"][name] = rows
                 print(f"{name} : grille {grid}, {height}p, {len(rows)} paires", file=sys.stderr, flush=True)
+        if levels and typ == "panoramique" and pairs:
+            try:
+                rows, ms = pyramid(args, path, start, pairs, *levels)
+                pyr[name] = {"paires": rows, "temps": ms}
+            except RuntimeError as e:
+                print(f"{name}, pyramide ignorée : {e}", file=sys.stderr)
     if not results:
         raise SystemExit("nvof_dump n'a rendu aucun flux")
     if ref not in results:
         ref = sorted(results)[0]
-    text = report(results, times, info, clips, ref)
+    text = report(results, times, info, clips, ref, pyr, levels)
     print(text)
     with open(os.path.join(args.sortie, "rapport.md"), "w", encoding="utf-8") as f:
         f.write(text)
     with open(os.path.join(args.sortie, "mesures.json"), "w", encoding="utf-8") as f:
         json.dump({"info": info, "temps_ms": {f"{g}:{h}": v for (g, h), v in times.items()},
-                   "paires": {f"{g}:{h}": r["paires"] for (g, h), r in results.items()}}, f, indent=1)
+                   "paires": {f"{g}:{h}": r["paires"] for (g, h), r in results.items()}, "pyramide": pyr}, f,
+                  indent=1)
 
 
 if __name__ == "__main__":

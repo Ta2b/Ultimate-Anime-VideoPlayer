@@ -12,7 +12,10 @@
 //   --preset slow|medium|fast ;
 //   --one-way             le sens avant seulement ;
 //   --cost                ajoute après chaque flux sa carte de coût, un octet par bloc (0 : sûr) ;
-//   --hints               indices temporels, avec --one-way : les tâches doivent se suivre dans la vidéo.
+//   --hints               indices temporels, avec --one-way : les tâches doivent se suivre dans la vidéo ;
+//   --hint-grid 1|2|4|8   indices externes, avec --one-way : chaque tâche a un 6e champ, le fichier des
+//                         indices (int16 x, y en S10.5, (largeur/N) × (hauteur/N) vecteurs). Le banc
+//                         y met le mouvement de caméra d'une passe en 360p (mode pyramide).
 //
 // La session a ses propres flux CUDA (nvOFSetIOCudaStreams), jamais le flux par défaut : c'est ce
 // que fera le lecteur pour tourner à côté de TensorRT (porte 2.2). Chaque appel écrit sur la sortie
@@ -50,6 +53,7 @@ struct Options {
   bool one_way = false;
   bool cost = false;
   bool hints = false;
+  std::uint32_t hint_grid = 0;  // 0 : pas d'indices externes
 };
 
 [[noreturn]] void die(const std::string& what) {
@@ -90,15 +94,12 @@ void ok(const Api& api, NvOFHandle handle, NV_OF_STATUS status, const char* call
   die(text);
 }
 
-// Les grilles que la carte accepte, lues sur une session ouverte (Turing : 4 seulement).
-std::vector<std::uint32_t> grids_of(const Api& api, NvOFHandle handle) {
+// Une capacité de la carte, lue sur une session ouverte (Turing : grille 4 seulement).
+std::vector<std::uint32_t> caps_of(const Api& api, NvOFHandle handle, NV_OF_CAPS what) {
   uint32_t count = 0;
-  ok(api, handle, api.calls.nvOFGetCaps(handle, NV_OF_CAPS_SUPPORTED_OUTPUT_GRID_SIZES, nullptr, &count),
-     "nvOFGetCaps");
+  ok(api, handle, api.calls.nvOFGetCaps(handle, what, nullptr, &count), "nvOFGetCaps");
   std::vector<std::uint32_t> values(count);
-  ok(api, handle,
-     api.calls.nvOFGetCaps(handle, NV_OF_CAPS_SUPPORTED_OUTPUT_GRID_SIZES, values.data(), &count),
-     "nvOFGetCaps");
+  ok(api, handle, api.calls.nvOFGetCaps(handle, what, values.data(), &count), "nvOFGetCaps");
   values.resize(count);
   return values;
 }
@@ -109,7 +110,7 @@ struct Session {
   const Options& options;
   std::uint32_t width, height;
   NvOFHandle handle = nullptr;
-  NvOFGPUBufferHandle input = nullptr, reference = nullptr, flow = nullptr, cost = nullptr;
+  NvOFGPUBufferHandle input = nullptr, reference = nullptr, flow = nullptr, cost = nullptr, hint = nullptr;
   CUstream in_stream = nullptr, out_stream = nullptr;
   CUevent start = nullptr, stop = nullptr;
 
@@ -121,19 +122,28 @@ struct Session {
       told = true;
       std::string list;
       bool found = false;
-      for (std::uint32_t g : grids_of(api, handle)) {
+      for (std::uint32_t g : caps_of(api, handle, NV_OF_CAPS_SUPPORTED_OUTPUT_GRID_SIZES)) {
         list += (list.empty() ? "" : ",") + std::to_string(g);
         found = found || g == options.grid;
       }
       std::cerr << "grilles " << list << std::endl;
       if (!found)
         die("grille " + std::to_string(options.grid) + " refusée par la carte (accepte " + list + ")");
+      if (options.hint_grid != 0) {
+        const auto with_of = caps_of(api, handle, NV_OF_CAPS_SUPPORT_HINT_WITH_OF_MODE);
+        if (with_of.empty() || with_of[0] == 0) die("indices externes refusés par la carte");
+        bool hint_ok = false;
+        for (std::uint32_t g : caps_of(api, handle, NV_OF_CAPS_SUPPORTED_HINT_GRID_SIZES))
+          hint_ok = hint_ok || g == options.hint_grid;
+        if (!hint_ok) die("grille d'indices " + std::to_string(options.hint_grid) + " refusée par la carte");
+      }
     }
     NV_OF_INIT_PARAMS init{};
     init.width = w;
     init.height = h;
     init.outGridSize = static_cast<NV_OF_OUTPUT_VECTOR_GRID_SIZE>(options.grid);
-    init.hintGridSize = NV_OF_HINT_VECTOR_GRID_SIZE_UNDEFINED;
+    init.hintGridSize = static_cast<NV_OF_HINT_VECTOR_GRID_SIZE>(options.hint_grid);
+    init.enableExternalHints = options.hint_grid != 0 ? NV_OF_TRUE : NV_OF_FALSE;
     init.mode = NV_OF_MODE_OPTICALFLOW;
     init.perfLevel = options.preset;
     init.enableOutputCost = options.cost ? NV_OF_TRUE : NV_OF_FALSE;
@@ -157,14 +167,19 @@ struct Session {
                                         .bufferFormat = NV_OF_BUFFER_FORMAT_UINT8};
     std::vector<std::pair<const NV_OF_BUFFER_DESCRIPTOR*, NvOFGPUBufferHandle*>> wanted{
         {&luma, &input}, {&luma, &reference}, {&vectors, &flow}};
+    const NV_OF_BUFFER_DESCRIPTOR hints{.width = hint_cells(w),
+                                        .height = hint_cells(h),
+                                        .bufferUsage = NV_OF_BUFFER_USAGE_HINT,
+                                        .bufferFormat = NV_OF_BUFFER_FORMAT_SHORT2};
     if (options.cost) wanted.emplace_back(&costs, &cost);
+    if (options.hint_grid != 0) wanted.emplace_back(&hints, &hint);
     for (auto [desc, into] : wanted)
       ok(api, handle,
          api.calls.nvOFCreateGPUBufferCuda(handle, desc, NV_OF_CUDA_BUFFER_TYPE_CUDEVICEPTR, into),
          "nvOFCreateGPUBufferCuda");
   }
   ~Session() {
-    for (NvOFGPUBufferHandle b : {input, reference, flow, cost}) {
+    for (NvOFGPUBufferHandle b : {input, reference, flow, cost, hint}) {
       if (b != nullptr) api.calls.nvOFDestroyGPUBufferCuda(b);
     }
     if (handle != nullptr) api.calls.nvOFDestroy(handle);
@@ -177,6 +192,9 @@ struct Session {
   }
   Session(const Session&) = delete;
   Session& operator=(const Session&) = delete;
+  [[nodiscard]] std::uint32_t hint_cells(std::uint32_t n) const {
+    return options.hint_grid == 0 ? 1 : (n + options.hint_grid - 1) / options.hint_grid;
+  }
   [[nodiscard]] std::uint32_t cells(std::uint32_t n) const { return (n + options.grid - 1) / options.grid; }
 
   // Copie hôte ↔ tampon NVOF (pas de ligne du tampon), sur le flux d'entrée ou de sortie de la session.
@@ -209,13 +227,15 @@ struct Session {
 
   // Un sens : le flux puis, avec --cost, sa carte de coût, ajoutés à out.
   void run(std::vector<std::uint8_t>& from, std::vector<std::uint8_t>& to, std::vector<std::uint8_t>& out,
-           bool first) {
+           bool first, std::vector<std::uint8_t>* hints = nullptr) {
     copy(input, from.data(), width, height, true);
     copy(reference, to.data(), width, height, true);
+    if (hints != nullptr) copy(hint, hints->data(), hint_cells(width) * 4U, hint_cells(height), true);
     NV_OF_EXECUTE_INPUT_PARAMS in{};
     in.inputFrame = input;
     in.referenceFrame = reference;
     in.disableTemporalHints = (options.hints && !first) ? NV_OF_FALSE : NV_OF_TRUE;
+    in.externalHints = hints != nullptr ? hint : nullptr;
     NV_OF_EXECUTE_OUTPUT_PARAMS result{};
     result.outputBuffer = flow;
     result.outputCostBuffer = cost;
@@ -272,6 +292,10 @@ Options parse(int argc, char** argv) {
       o.one_way = true;
     } else if (arg == "--cost") {
       o.cost = true;
+    } else if (arg == "--hint-grid") {
+      const std::string v = value();
+      if (v != "1" && v != "2" && v != "4" && v != "8") die("--hint-grid : 1, 2, 4 ou 8");
+      o.hint_grid = static_cast<std::uint32_t>(std::stoul(v));
     } else if (arg == "--hints") {
       o.hints = true;
     } else {
@@ -279,6 +303,8 @@ Options parse(int argc, char** argv) {
     }
   }
   if (o.hints && !o.one_way) die("--hints demande --one-way (le sens arrière casserait la suite)");
+  if (o.hint_grid != 0 && !o.one_way) die("--hint-grid demande --one-way");
+  if (o.hint_grid != 0 && o.hint_grid < o.grid) die("--hint-grid doit valoir au moins --grid");
   return o;
 }
 
@@ -307,7 +333,10 @@ int main(int argc, char** argv) {
       std::istringstream split(line);
       for (std::string field; std::getline(split, field, '\t');) fields.push_back(field);
     }
-    if (fields.size() != 5) die("tâche illisible (5 champs séparés par des tabulations attendus) : " + line);
+    const std::size_t want = options.hint_grid != 0 ? 6 : 5;
+    if (fields.size() != want)
+      die("tâche illisible (" + std::to_string(want) +
+          " champs séparés par des tabulations attendus) : " + line);
     std::uint32_t w = 0, h = 0;
     try {
       w = static_cast<std::uint32_t>(std::stoul(fields[0]));
@@ -325,7 +354,14 @@ int main(int argc, char** argv) {
     auto la = read_luma(a, static_cast<std::size_t>(w) * h);
     auto lb = read_luma(b, static_cast<std::size_t>(w) * h);
     std::vector<std::uint8_t> result;
-    session->run(la, lb, result, first);
+    if (options.hint_grid != 0) {
+      const std::uint32_t hw = (w + options.hint_grid - 1) / options.hint_grid;
+      const std::uint32_t hh = (h + options.hint_grid - 1) / options.hint_grid;
+      auto hints = read_luma(fields[5], static_cast<std::size_t>(hw) * hh * 4U);
+      session->run(la, lb, result, first, &hints);
+    } else {
+      session->run(la, lb, result, first);
+    }
     if (!options.one_way) session->run(lb, la, result, true);
     std::ofstream file(out, std::ios::binary | std::ios::trunc);
     file.write(reinterpret_cast<const char*>(result.data()), static_cast<std::streamsize>(result.size()));
