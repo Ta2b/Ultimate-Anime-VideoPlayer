@@ -441,6 +441,10 @@ Code : `src/app/play/upscale_gmfss.cpp` (l'étage), `chain_gmfss.cpp` (les deux 
 (les huit splats d'un passage). Deux graphes exportés par `tools/gmfss/export_gmfss.py` :
 `gmfss_fortuna_union_pair.onnx` (FeatureNet, GMFlow, MetricNet, une fois par paire) et
 `gmfss_fortuna_union_fusion.onnx` (IFNet et GridNet, qui reçoit l'instant), construits à la taille de la chaîne.
+Le lecteur les cherche dans `--gmfss-dir=DOSSIER` s'il est donné, puis dans chaque dossier de RIFE (celui du RIFE
+choisi, le paquet, AnimeJaNai, le dossier des données, `~/kirari/models/rife`) et son voisin `gmfss`
+(`~/kirari/models/gmfss`, `--out` d'`export_gmfss.py`) : `gmfss_places`, `src/app/play/gmfss_model.h`. Avant le
+19 novembre 2026, il fallait les lier dans le dossier du RIFE et nommer ce RIFE par `--rife-model`.
 
 **IFNet remplacé par RIFE 4.26** (essai du 15 novembre 2026) : `tools/gmfss/ifnet_rife.py` écrit une fusion dont
 l'IFNet d'union (un RIFE ancien, environ 3 ms de la fusion à 1280x768 sur la 4070 Ti, un quart de son temps) est

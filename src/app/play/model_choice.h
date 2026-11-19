@@ -95,9 +95,11 @@ struct RifeEntry {
 // modèles d'AnimeJaNai pour mpv) n'y entrent pas.
 std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available);
 
-// Où chercher les graphes de DistilDRBA et de GMFSS : à côté du modèle RIFE choisi, dans les dossiers RIFE,
-// puis dans ceux des modèles rangés hors du paquet (dossier des données, ~/kirari/models/rife).
+// Où chercher les graphes de DistilDRBA et de GMFSS : le dossier donné (--gmfss-dir), à côté du modèle RIFE
+// choisi, dans les dossiers RIFE, puis dans ceux des modèles rangés hors du paquet (dossier des données,
+// ~/kirari/models/rife). GMFSS cherche aussi le voisin « gmfss » de chacun (gmfss_places).
 std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
-                                                     const std::optional<ModelChoice>& rife);
+                                                     const std::optional<ModelChoice>& rife,
+                                                     const std::optional<std::filesystem::path>& given = {});
 
 }  // namespace kirari::app::play

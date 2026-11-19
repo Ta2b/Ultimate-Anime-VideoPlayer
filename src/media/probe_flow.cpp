@@ -42,8 +42,8 @@ Block block_at(std::span<const std::uint8_t> luma, int x0, int y0) {
     const int sy = std::clamp(y0 + y, 0, kProbeFlowHeight - 1);
     for (int x = 0; x < kSide; ++x) {
       const int sx = std::clamp(x0 + x, 0, kProbeFlowWidth - 1);
-      const float v = luma[static_cast<std::size_t>(sy * kProbeFlowWidth + sx)];
-      out.centred.at(static_cast<std::size_t>(y * kSide + x)) = v;
+      const float v = luma[static_cast<std::size_t>(sy) * kProbeFlowWidth + static_cast<std::size_t>(sx)];
+      out.centred.at(static_cast<std::size_t>(y) * kSide + static_cast<std::size_t>(x)) = v;
       sum += v;
     }
   }
@@ -94,7 +94,8 @@ std::optional<ProbeMotion> motion_of(std::span<const std::uint8_t> previous,
       const Block here = block_at(current, x0, y0);
       if (here.detail < kTextured) continue;
       ++textured;
-      const FlowVector v = vectors[static_cast<std::size_t>(cy * kProbeFlowCellsX + cx)];
+      const FlowVector v =
+          vectors[static_cast<std::size_t>(cy) * kProbeFlowCellsX + static_cast<std::size_t>(cx)];
       const float fx = static_cast<float>(v.x) / 32.0F;
       const float fy = static_cast<float>(v.y) / 32.0F;
       const auto dx = static_cast<int>(std::lround(fx));
@@ -173,7 +174,7 @@ std::optional<ProbeLuma> probe_luma_of(const DecodedFrame& frame) {
         }
       }
       const long value = ((sum + count / 2) / count) >> down;
-      out[static_cast<std::size_t>(oy * kProbeFlowWidth + ox)] =
+      out[static_cast<std::size_t>(oy) * kProbeFlowWidth + static_cast<std::size_t>(ox)] =
           static_cast<std::uint8_t>(std::clamp(value, 0L, 255L));
     }
   }

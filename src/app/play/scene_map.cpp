@@ -117,6 +117,7 @@ bool SceneMap::collect_refine(gpu::KernelOps& ops, Pending& pair) {
 }
 
 void SceneMap::finish(Pending& pair) {
+  if (!pair.tiles) return;             // jamais : poll et settle ne finissent qu'une paire relue
   if (pair.restart) history_.clear();  // les classes d'un autre plan ne disent rien ici
   const auto asked = std::chrono::steady_clock::now();
   kernels::SceneMotion motion = kernels::ref::scene_motion_of(*pair.tiles, history_, pair.camera);

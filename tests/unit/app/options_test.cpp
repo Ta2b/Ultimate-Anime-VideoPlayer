@@ -76,6 +76,10 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   const auto calm = parse({"épisode.mkv", "--rife-calm-model=rife_v4.22_lite.onnx"});
   REQUIRE(calm);
   CHECK(calm->rife_calm_model == std::filesystem::path("rife_v4.22_lite.onnx"));
+  CHECK_FALSE(options->gmfss_dir);
+  const auto gmfss = parse({"épisode.mkv", "--gmfss-dir=gmfss-out"});
+  REQUIRE(gmfss);
+  CHECK(gmfss->gmfss_dir == std::filesystem::path("gmfss-out"));
   CHECK(options->ring_watcher);
   const auto watcher = parse({"épisode.mkv", "--ring-watcher"});
   REQUIRE(watcher);

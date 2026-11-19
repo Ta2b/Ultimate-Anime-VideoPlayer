@@ -108,6 +108,8 @@ struct PlayOptions {
   int rife_factor = kDefaultRifeFactor;
   int rife_factor_den = 1;                          // 2 pour un facteur en moitié : ×rife_factor / 2
   std::optional<std::filesystem::path> rife_model;  // --rife-model : absent, celui du lecteur actuel
+  // --gmfss-dir : le dossier des deux graphes de GMFSS union, cherché avant ceux de RIFE (gmfss_model.h).
+  std::optional<std::filesystem::path> gmfss_dir;
   // --rife-calm-model (essai, P6.17) : un RIFE plus léger (4.22 lite) pour la passe du milieu des paires
   // calmes, RIFE mouvement seulement ; mêmes plans d'entrée et même remplissage que rife_model, sinon ignoré.
   std::optional<std::filesystem::path> rife_calm_model;
