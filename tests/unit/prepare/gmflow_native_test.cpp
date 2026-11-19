@@ -1,8 +1,10 @@
 // Le squelette CNN de GMFlow lu pour les noyaux natifs (prepare/gmflow_native.h) : un faux squelette aux
 // noms, opérateurs et attributs de la paire exportée (canaux réduits), lu et rangé, ses fautes refusées, le
-// plan et ses fautes, puis la vraie paire quand elle est là (KIRARI_RIFE_MODEL_DIR).
+// plan et ses fautes, puis la vraie paire quand elle est là (KIRARI_RIFE_MODEL_DIR), squelette et attention
+// (prepare/gmflow_attention_native.h, dont le faux transformeur est dans gmflow_attention_test.cpp).
 #include "prepare/gmflow_native.h"
 
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstddef>
@@ -17,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "kernels/ref/half.h"
+#include "prepare/gmflow_attention_native.h"
 #include "prepare/model_source.h"
 #include "rife_fake.h"
 
@@ -284,7 +287,7 @@ TEST_CASE("GMFlow natif : le plan se tient, ses fautes sont refusées", "[prepar
   CHECK(broken([](GmflowBackbone& b) { b.convs[3].weights.pop_back(); }));
 }
 
-TEST_CASE("GMFlow natif : le squelette de la paire exportée se lit", "[prepare][gmflow]") {
+TEST_CASE("GMFlow natif : le squelette et l'attention de la paire exportée se lisent", "[prepare][gmflow]") {
   const std::filesystem::path model =
       std::filesystem::path(KIRARI_RIFE_MODEL_DIR) / "gmfss_fortuna_union_pair.onnx";
   if (!std::filesystem::exists(model)) SKIP("gmfss_fortuna_union_pair.onnx absent");
@@ -306,6 +309,18 @@ TEST_CASE("GMFlow natif : le squelette de la paire exportée se lit", "[prepare]
     CHECK(b.convs[i].cout == outs[i]);
   }
   CHECK(b.tensors[static_cast<std::size_t>(b.quarter)].channels == 128);
+  // L'attention du transformeur (PR 2) : douze couches, blocs impairs décalés, fenêtres 2 et 8 par côté.
+  const auto attention = gmflow_attention(*bytes);
+  INFO((attention ? std::string() : attention.error().detail));
+  REQUIRE(attention);
+  CHECK(attention->splits == std::array<int, 2>{2, 8});
+  CHECK(attention->mask == -100.F);
+  CHECK(std::abs(attention->epsilon - 1e-5F) < 1e-9F);
+  REQUIRE(attention->layers.size() == 12);
+  for (std::size_t i = 0; i < attention->layers.size(); ++i) {
+    CHECK(attention->layers[i].cross == (i % 2 == 1));
+    CHECK(attention->layers[i].shifted == (i / 2 % 2 == 1));
+  }
 }
 
 }  // namespace kirari::prepare
