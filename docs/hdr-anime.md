@@ -13,9 +13,13 @@ la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune
 - **Blanc des surfaces : là où la pile le porte, vers 70 % du pic.** La dernière passe applique la courbe de
   KWin sous laquelle la pile a été réglée à l'œil, de 10 000 nits vers le pic de l'écran. Les curseurs « LUT
   contrast intensity » et « LUT highlight intensity » déplacent ce blanc (de 483 à 818 nits et de 410 à 863
-  nits sur un écran de 1 000 nits). Le réglage avancé « Blanc des surfaces » (50 à 100 %, 100 par défaut) le
-  baisse : la courbe est alors résolue pour rendre ce blanc (à 70 %, vers la moitié du pic, comme la rc.1 et
-  la rc.2), et les éclats montent toujours jusqu'au pic.
+  nits sur un écran de 1 000 nits). Le réglage avancé « Blanc des surfaces » (30 à 100 %, **60 par défaut**,
+  clé `surface_level` de `play.toml`) le baisse : la courbe est alors résolue pour rendre ce blanc (à 60 %,
+  vers 40 % du pic, environ 420 nits sur un écran de 1 000), et les éclats montent toujours jusqu'au pic.
+  À 100 %, une corne ou un halo de magie n'avaient qu'un quart de diaphragme au-dessus de la tête qu'ils
+  éclairent (captures du 19 novembre 2026 : surfaces vers 695 nits, éclats plafonnés vers 830) ; à 60 %, ils
+  en ont environ un. L'ancienne clé `surface_white` (100 par défaut) n'est plus lue : un ancien `play.toml`
+  prend le nouveau défaut.
 - **Éclats après la pile, jusqu'au pic de l'écran (A41-02).** La passe anime décide quels pixels sont des
   lumières et transmet leur gain dans l'alpha ; la dernière passe l'applique après la pile et la courbe, sous
   le pic de l'écran (`emitter_level`, `src/render/output_tune.h`). Avant, la pile et la courbe divisaient leur

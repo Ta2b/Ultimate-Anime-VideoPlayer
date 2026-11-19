@@ -341,7 +341,7 @@ std::expected<PlaySettings, Refusal> validate(const PlaySettings& s) {
   constexpr core::Range<int> kLookSlider{-100, 100};
   for (const auto& [field, value, range] : {std::tuple{"grade.look_contrast", s.look_contrast, kLookSlider},
                                             {"grade.look_highlight", s.look_highlight, kLookSlider},
-                                            {"grade.surface_white", s.surface_white, kSurfaceWhite}}) {
+                                            {"grade.surface_level", s.surface_white, kSurfaceWhite}}) {
     if (auto in = check(field, value, range); !in) return std::unexpected(in.error());
   }
   for (const auto& [field, value] : {std::pair{"grade.anime_contrast", s.grade_values.anime_contrast},
