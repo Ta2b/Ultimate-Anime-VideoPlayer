@@ -119,10 +119,10 @@ TEST_CASE("Étage gpu : grade avant le warp sans warp après SPAN, l'écran grad
   for (const RingFrame& frame : frames) CHECK_FALSE(frame.graded);
 }
 
-// Passage 9 du PC : SPAN natif en 4K, warp après SPAN, grade avant le warp, carte de la scène ; aucune image
-// par tuiles, le grade réécrivant sur place la sortie d'avant. Elle est maintenant copiée avant le grade, et
-// les tuiles partent de la copie : dès la troisième source (la première n'a pas d'avant, la deuxième suit un
-// grade sans copie), jamais d'un tampon gradé.
+// L'essai du PC du 19 novembre : SPAN natif en 4K, warp après SPAN, grade avant le warp, carte de la scène ;
+// aucune image par tuiles, le grade réécrivant sur place la sortie d'avant. Elle est maintenant copiée avant
+// le grade, et les tuiles partent de la copie : dès la troisième source (la première n'a pas d'avant, la
+// deuxième suit un grade sans copie), jamais d'un tampon gradé.
 TEST_CASE("Étage gpu : grade avant le warp, les tuiles de SPAN partent de la sortie d'avant le grade",
           "[app][stage]") {
   Rig rig;
