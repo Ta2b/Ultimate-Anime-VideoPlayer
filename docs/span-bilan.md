@@ -1,8 +1,9 @@
 # Bilan du SPAN natif (CUDA, RTX 40 et 50)
 
-Mis à jour le 19 novembre 2026 au soir : `winograd_db.py` écrit et éprouvé (interprète à 161 dB de la
-référence, transformées F(2×2, 3×3) et F(4×4, 3×3) exactes contre la convolution directe) ; il attend les
-deux modèles d'AnimeJaNai dans le cloud pour donner les dB de Winograd.
+Mis à jour le 19 novembre 2026 au soir : **Winograd passe la porte des dB.** Sur les vrais modèles et deux
+images d'anime (270 × 480), F(4×4, 3×3) en f16 rend 65,9 à 67,7 dB au b8f64 et 70,1 à 72,3 dB au b5f48,
+contre 65,3 à 67,1 et 66,7 à 68,8 dB pour le calcul direct d'aujourd'hui : pas de perte, un léger gain (moins
+d'arrondis de l'accumulateur f16). Winograd devient le premier levier au-delà du plafond (partie 3).
 
 Mis à jour le 19 novembre 2026 en fin d'après-midi : banc PC de #963 (poids partagés −3,7 % au b5f48, +4,1 %
 au b8f64 ; b5f48 en bandes à 5,21 ms, sous AnimeJaNai) ; poids partagés par défaut à 48 canaux seulement ;
@@ -166,8 +167,8 @@ Les gains sont des estimations sans mesure, sauf les plafonds, qui sont calculé
 | Poids partagés (#963) | mesuré : −3,7 % au b5f48, +4,1 % au b8f64 | aucun : bit près, choisi par modèle | fait |
 | Réglage par couche (tuile, warps, lignes par warp, bande), choisi au chargement | 5 à 15 % | faible ; chronométrer les variantes au chargement est admis | cloud, puis temps au PC |
 | Fusion d'un bloc SPAB | le trafic d'activations du L2 (4,2 Go) | moyen à fort, voir ci-dessous | cloud, puis temps au PC |
-| Winograd F(2×2, 3×3) | multiplications des 3×3 ÷ 2,25 : 2,97 ms de mma au plafond | f16 : dB à mesurer ; transformées sur les cœurs ordinaires | dB dans le cloud d'abord |
-| Winograd F(4×4, 3×3) | ÷ 4 : 1,82 ms de mma au plafond | fort : coefficients jusqu'à 4, l'erreur f16 grandit | dB dans le cloud d'abord |
+| Winograd F(2×2, 3×3) | multiplications des 3×3 ÷ 2,25 : 2,97 ms de mma au plafond | dB mesurés : aucune perte ; transformées sur les cœurs ordinaires | cloud, puis temps au PC |
+| Winograd F(4×4, 3×3) | ÷ 4 : 1,82 ms de mma au plafond | dB mesurés : aucune perte ; transformées plus lourdes (tuiles 6 × 6), noyau le plus complexe | cloud, puis temps au PC |
 | FP8 natif (cran Performance) | 3,29 ms au plafond, 6 à 7 ms attendus | justesse du FP8 ; en pause | cloud et PC |
 | Parcimonie 2:4 (mma.sp) | tensor cores ×2 sur les blocs : 3,3 ms au plafond en f16 | fort : réentraîner le SPAN (élagage puis affinage), licence du modèle à vérifier, calcul d'entraînement | hors du cloud processeur |
 | Distillation dans un SPAN plus petit | au prorata des FLOP (b5f48 = 37 % du b8f64) | fort : qualité, entraînement | hors du cloud processeur |
@@ -209,15 +210,23 @@ profil montre que le L2 des activations limite.
 4. **Cloud** : le réglage par couche. Des variantes de tuile (lignes par warp, 8 warps par bloc qui partagent
    les mêmes poids, hauteur de bande) vérifiées sur l'émulateur, puis chronométrées au chargement comme
    l'admet le propriétaire (quelques millisecondes à l'ouverture pour une vraie optimisation). Temps au PC.
-5. **Cloud** : Winograd, les dB d'abord. `tools/bench/span_native/winograd_db.py` refait le SPAN en numpy
-   avec les arrondis des noyaux (activations et poids f16, pas de 16 produits ajoutés à un accumulateur f16)
-   et les transformées F(2×2, 3×3) et F(4×4, 3×3) sur les 3×3 des blocs, contre ONNX Runtime FP32. Éprouvé
-   sur un SPAN de synthèse (l'interprète en f32 rend la référence à 161 dB ; les transformées sans arrondi
-   rendent la convolution directe à 1e-6 près). Il lui faut les vrais modèles, absents du cloud : les copier
-   du PC dans `/mnt/project-files/modeles/`, puis
-   `python3 -I tools/bench/span_native/winograd_db.py /mnt/project-files/modeles/<modèle>.onnx --taille 270 480`
-   (ou `--entree` sur un dossier d'EXPORT). Les noyaux seulement si la perte laisse de la marge au-dessus de
-   55 dB.
+5. **Cloud** : Winograd. Les dB sont mesurés (`tools/bench/span_native/winograd_db.py`, qui refait le SPAN en
+   numpy avec les arrondis des noyaux : activations et poids f16, pas de 16 produits ajoutés à un
+   accumulateur f16). Coin 270 × 480, sommes f16, contre ONNX Runtime FP32 :
+
+   | Modèle, image | Direct (aujourd'hui) | F(2×2, 3×3) | F(4×4, 3×3) |
+   |---|---:|---:|---:|
+   | b8f64, Re:Zero | 65,30 dB | 65,98 dB | 65,93 dB |
+   | b8f64, Kimi | 67,11 dB | 67,71 dB | 67,67 dB |
+   | b5f48, Re:Zero | 66,68 dB | 70,11 dB | 70,05 dB |
+   | b5f48, Kimi | 68,78 dB | 72,80 dB | 72,34 dB |
+
+   L'interprète en f32 rend la référence à 138–141 dB ; le direct émulé (67 dB) recoupe les 66,6 dB mesurés
+   en lecture. Winograd somme sur Cin seulement (3 ou 4 pas de 16 par point) au lieu de 9 · Cin (27 ou 36
+   pas) : moins d'arrondis de l'accumulateur f16, d'où le léger gain. Reste à écrire le noyau : transformée
+   d'entrée en mémoire partagée, 16 ou 36 mma par point de la tuile, transformée de sortie dans l'épilogue
+   (porte et bandes inchangées), vérifié sur l'émulateur, puis temps au PC. Commande :
+   `python3 -I tools/bench/span_native/winograd_db.py MODELE.onnx --image IMAGE --coin 270 480`.
 6. **Cloud puis PC** : la fusion en bande de colonnes (partie 3), si le profil montre que le L2 des
    activations limite.
 7. **PC, en lecture** : les bords natifs du FP8 au cran Performance,
