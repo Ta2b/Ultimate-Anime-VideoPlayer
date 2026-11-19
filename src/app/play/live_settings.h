@@ -21,6 +21,7 @@
 #include "app/play/motion_cut.h"
 #include "app/play/pair_marks.h"
 #include "app/play/settings.h"
+#include "app/play/shot_plan.h"
 #include "core/auto_rate.h"
 #include "core/free_rate.h"
 #include "core/steady_rate.h"
@@ -83,6 +84,9 @@ class LiveSettings {
   // Les coupes des plans de la pré-analyse (cut_book.h, --shot-cuts) : main écrit, le fil du GPU lit.
   CutBook& cuts() { return cut_book_; }
   const CutBook& cuts() const { return cut_book_; }
+  // L'Auto plan par plan (shot_plan.h, --shot-plan) : main pose les plans, le fil du GPU lit leurs choix.
+  ShotPlanBook& shot_plan() { return shot_plan_; }
+  const ShotPlanBook& shot_plan() const { return shot_plan_; }
   // ×num/den ; num ≤ den : aucune interpolation (le moteur reste chargé). Les deux termes dans un
   // seul atomique : jamais l'un sans l'autre.
   void set_rife_factor(Factor factor) {
@@ -425,6 +429,7 @@ class LiveSettings {
 
  private:
   CutBook cut_book_;
+  ShotPlanBook shot_plan_;
   media::LiveScenes scenes_;
   std::atomic<std::uint32_t> rife_factor_{1};  // ×0/1
   std::atomic<bool> keep_poses_{false};

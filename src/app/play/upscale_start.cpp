@@ -38,6 +38,7 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
 UpscaleStage::~UpscaleStage() {
   stop();
   log_temporal();
+  log_shots();
   if (fences_mapped_) setup_.backend->kernels()->unmap_fences(setup_.yuv_slots->fence_block());
   if (setup_.rife_motion != nullptr) {
     log_channel("gpu")->info(
@@ -96,7 +97,7 @@ UpscaleStage::~UpscaleStage() {
         "{} "
         "à froid",
         encodes_kept_, encodes_followed_, encodes_after_gap_, encodes_cold_);
-  if (drba()) {
+  if (setup_.distil_drba != nullptr) {
     log_channel("gpu")->info(
         "DistilDRBA : {} passes, dont {} sans l'image d'un côté (début, coupe) ; {} instants sans passe "
         "(côté tenu)",
@@ -154,7 +155,17 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
   }
   const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
                          (setup.distil_drba != nullptr ? 1 : 0);
-  if (estimators > 1) {
+  // Plan par plan : les deux variantes mouvement, avec SPAN (les mêmes tampons et le même ordre du warp dans
+  // les deux moteurs), sans GMFSS ni dessins lissés, que la bascule ne suit pas.
+  if (setup.drba_by_shot &&
+      (setup.distil_drba == nullptr || setup.rife_motion == nullptr || setup.rife != nullptr ||
+       !setup.drba_motion || setup.engine == nullptr || setup.gmfss.use != GmfssUse::Off ||
+       setup.smooth_drawings || setup.live == nullptr)) {
+    return refuse(RefusalCode::FieldOutOfRange,
+                  "étage gpu : plan par plan sans DistilDRBA et RIFE mouvement avec SPAN, ou avec GMFSS ou les "
+                  "dessins lissés");
+  }
+  if (estimators > (setup.drba_by_shot ? 2 : 1)) {
     return refuse(RefusalCode::FieldOutOfRange,
                   "étage gpu : RIFE image, RIFE mouvement ou DistilDRBA, un seul des trois");
   }
@@ -253,10 +264,13 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     }
   }
   if (auto ok = allocate_temporal(); !ok) return ok;
-  if (looks_ahead()) {
+  if (looks_ahead() || setup_.drba_by_shot) {
     if (auto ok = allocate_ahead(); !ok) return ok;
   }
-  if (drba()) return allocate_drba();
+  // Plan par plan : les tampons de DistilDRBA, puis ceux de RIFE mouvement.
+  if (setup_.distil_drba != nullptr) {
+    if (auto ok = allocate_drba(); !ok || !setup_.drba_by_shot) return ok;
+  }
   if (interpolates()) {
     const kernels::RifeGeometry g =
         kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);

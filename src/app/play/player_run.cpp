@@ -396,6 +396,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               .kernels = c.backend->kernels(),
               .shots = p.shots,
               .shot_cuts = p.options.shot_cuts,
+              .shot_plan = p.options.shot_plan,
               .anime_shots = p.options.anime_shots};
   carry_session(chain, p.stages, p.dropped_subtitles, p.subtitle_track, p.manual_tracks);
   apply_oled_care(chain, settings);

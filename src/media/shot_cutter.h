@@ -15,6 +15,7 @@
 
 #include "kernels/spec/frame_stats.h"
 #include "media/faces.h"
+#include "media/shot_rhythm.h"
 
 namespace kirari::media {
 
@@ -47,6 +48,9 @@ struct ShotFrame {
   std::vector<SkinTone> faces;
   // Le transfert de la source : la grille est la luma de son signal encodé (zone_nits_of, C42-04).
   kernels::FrameTransfer transfer = kernels::FrameTransfer::Sdr;
+  // La paire (image précédente de l'analyse, celle-ci) pour le rythme du plan (media/shot_rhythm.h) ; rien
+  // pour la première image d'une analyse ou d'un saut.
+  std::optional<RhythmPair> rhythm;
 };
 
 // Les valeurs d'un plan, sur l'échelle de SceneStats.
@@ -99,6 +103,7 @@ struct Shot {
   // cours de vidéo (le début du fichier, ou un saut).
   bool cut_before = true;
   ShotMeta meta;
+  ShotRhythm rhythm;  // le rythme du plan, pour l'Auto plan par plan (app/play/shot_plan.h)
 };
 
 // Les mesures d'une image à pts_us, tirées de l'analyse (kernels/spec/frame_stats.h).
@@ -164,6 +169,7 @@ class ShotCutter {
   bool first_shot_ = true;
   // Le plan en cours : ses sommes, son début, et ses premières et dernières images (les bords d'un fondu).
   Totals totals_;
+  RhythmTotals rhythm_;  // les paires du plan en cours, sa première image exclue (elle enjambe la coupe)
   std::int64_t start_us_ = 0;
   std::vector<ShotFrame> head_;
   std::deque<ShotFrame> tail_;

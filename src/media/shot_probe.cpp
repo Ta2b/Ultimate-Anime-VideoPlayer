@@ -15,11 +15,13 @@
 
 #include "core/thread.h"
 #include "core/thread_role.h"
+#include "kernels/spec/frame_stats.h"
 #include "media/demuxer.h"
 #include "media/face_skin.h"
 #include "media/flash_guard.h"
 #include "media/log.h"
 #include "media/shot_probe_steps.h"
+#include "media/shot_rhythm.h"
 #include "media/video_decoder.h"
 
 namespace kirari::media {
@@ -35,7 +37,9 @@ class Analysis {
       : timeline_(timeline), cutter_(starts_at_cut) {
     flashes_.set_gain(flash_gain);
   }
-  void push(const ShotFrame& frame) {
+  // luma : la grille de l'image (measure_frame), pour son rythme contre la précédente (media/shot_rhythm.h).
+  void push(ShotFrame frame, std::vector<float> luma) {
+    frame.rhythm = rhythm_.push(std::move(luma), kernels::frame_stats::kGridW, kernels::frame_stats::kGridH);
     if (flashes_.push(frame.pts_us, zone_nits_of(frame))) {
       if (const auto from = flashes_.danger_from())
         timeline_.add_flash({.from_us = *from, .until_us = flashes_.limited_until()});
@@ -50,12 +54,14 @@ class Analysis {
   void restart(bool starts_at_cut) {
     cutter_ = ShotCutter(starts_at_cut);
     flashes_.reset();
+    rhythm_.reset();
   }
 
  private:
   ShotTimeline& timeline_;
   ShotCutter cutter_;
   FlashGuard flashes_;
+  RhythmProbe rhythm_;
 };
 
 }  // namespace
@@ -399,7 +405,8 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
     if (*received) {
       const DecodedFrame& frame = **received;
       if (frame.pts_us == kNoPts) continue;
-      auto measured = measure_frame(frame);
+      std::vector<float> luma;
+      auto measured = measure_frame(frame, &luma);
       if (!measured) return fail(std::move(measured.error()));
       if (from_origin) {
         timeline->set_origin_us(frame.pts_us);
@@ -410,7 +417,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       frontier.store(frame.pts_us, std::memory_order_relaxed);
       faces.look(frame, *measured);
       ++frames;
-      analysis.push(*measured);
+      analysis.push(std::move(*measured), std::move(luma));
       continue;
     }
     if (decoder.drained()) {

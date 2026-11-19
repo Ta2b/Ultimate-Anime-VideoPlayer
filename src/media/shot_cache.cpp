@@ -22,19 +22,20 @@ namespace {
 
 // 2 : la lumière du plan (ShotMeta) ; 3 : son histogramme de I (lum_hist, 8.6) ; 4 : la version de l'analyse,
 // le chemin de décodage et les séquences de flashs ; 5 : la part d'un fondu où la lumière change (B42-03) ;
-// 6 : les teintes de peau des visages du plan (media/faces.h).
+// 6 : les teintes de peau des visages du plan (media/faces.h) ; 7 : le rythme du plan (media/shot_rhythm.h).
 // Un cache d'avant se refait.
-constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '6'};
+constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'S', 'H', 'O', 'T', '7'};
 constexpr std::uint32_t kMaxFlashes = 100'000;
 constexpr std::size_t kHeadBytes = 1 << 20;
 constexpr std::uint32_t kMaxShots = 200'000;
 constexpr const char* kExtension = ".shots";
-// Les octets d'un plan dans le fichier, au moins : quatre instants, deux ShotStats, un ShotMeta, les drapeaux
-// et le compte de ses teintes de peau. Un
+// Les octets d'un plan dans le fichier, au moins : quatre instants, deux ShotStats, un ShotMeta, les drapeaux,
+// le compte de ses teintes de peau et son rythme. Un
 // compte de plans que le reste du fichier ne peut pas tenir est refusé avant d'allouer (B42-06).
 constexpr std::size_t kShotBytes =
     (4 * sizeof(std::int64_t)) +
-    (sizeof(float) * (22 + 4 + kernels::frame_stats::kPercentiles.size() + 5 + kShotLumBins)) + 2;
+    (sizeof(float) * (22 + 4 + kernels::frame_stats::kPercentiles.size() + 5 + kShotLumBins)) + 2 +
+    (4 * sizeof(std::uint32_t)) + (6 * sizeof(float));
 // Les restes d'une écriture coupée (B33-07, B36-04) : l'ancien « <clé>.shots.part » et les temporaires de
 // core::write_atomic. Retirés passé ce délai, qu'aucune écriture en cours n'atteint.
 constexpr auto kOrphanAge = std::chrono::hours(1);
@@ -105,11 +106,23 @@ bool take_meta(const std::string& in, std::size_t& at, ShotMeta& m) {
   return ok;
 }
 
+void put_rhythm(std::string& out, const ShotRhythm& r) {
+  for (const std::uint32_t v : {r.pairs, r.held, r.strong, r.flow_pairs}) put(out, v);
+  for (const float v : {r.changed, r.grain, r.still, r.camera, r.drawing, r.unmatched}) put(out, v);
+}
+
+bool take_rhythm(const std::string& in, std::size_t& at, ShotRhythm& r) {
+  return take(in, at, r.pairs) && take(in, at, r.held) && take(in, at, r.strong) && take(in, at, r.flow_pairs) &&
+         r.held <= r.pairs && r.strong <= r.pairs && r.flow_pairs <= r.pairs && take(in, at, r.changed) &&
+         take(in, at, r.grain) && take(in, at, r.still) && take(in, at, r.camera) && take(in, at, r.drawing) &&
+         take(in, at, r.unmatched);
+}
+
 bool take_shot(const std::string& in, std::size_t& at, Shot& shot, std::int64_t& previous_end) {
   std::uint8_t flags = 0;
   if (!take(in, at, shot.start_us) || !take(in, at, shot.end_us) || !take_stats(in, at, shot.first) ||
       !take_stats(in, at, shot.last) || !take_meta(in, at, shot.meta) || !take(in, at, flags) ||
-      !take(in, at, shot.ramp_from_us) || !take(in, at, shot.ramp_to_us))
+      !take(in, at, shot.ramp_from_us) || !take(in, at, shot.ramp_to_us) || !take_rhythm(in, at, shot.rhythm))
     return false;
   if (shot.ramp_to_us < shot.ramp_from_us) return false;
   if (shot.end_us <= shot.start_us || shot.start_us < previous_end) return false;
@@ -207,6 +220,7 @@ bool save_shot_cache(const std::filesystem::path& dir, const std::string& key, s
     put(out, static_cast<std::uint8_t>((shot.fade ? 1 : 0) | (shot.cut_before ? 2 : 0)));
     put(out, shot.ramp_from_us);
     put(out, shot.ramp_to_us);
+    put_rhythm(out, shot.rhythm);
   }
   put(out, static_cast<std::uint32_t>(flashes.size()));
   for (const FlashSpan& span : flashes) {

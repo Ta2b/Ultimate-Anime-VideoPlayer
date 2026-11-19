@@ -86,6 +86,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   half_.in_pair = false;
   gpu::IngestSpec spec;
   if (setup_.live) spec.reduce = setup_.live->reduction();
+  if (auto ok = follow_shot(frame); !ok) return std::unexpected(std::move(ok.error()));  // plan par plan
   const bool ingested = looks_ahead() && take_ahead(frame, spec);  // déjà, derrière la précédente
   if (drba()) {
     if (auto ok = drba_arrive(frame, spec); !ok) return std::unexpected(std::move(ok.error()));

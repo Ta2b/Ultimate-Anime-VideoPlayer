@@ -65,6 +65,7 @@ struct ShotWork {
   // --shot-cuts : l'interpolation lit ses coupes dans les plans, l'analyse part donc aussi sans grade
   // (A42-09).
   bool shot_cuts = false;
+  bool shot_plan = false;  // --shot-plan : l'Auto plan par plan lit le rythme des plans (shot_plan.h)
   ShotJob current;
   // Le thread d'écriture de la lecture (1.11) : le cache des plans complets s'y écrit. Nul : sur place.
   LatestWriter* writer = nullptr;
