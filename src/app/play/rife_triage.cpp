@@ -195,7 +195,7 @@ void RifeTriage::log() const {
   // i18n-ok : la fin de la ligne de journal plus bas.
   const char* why = counts_.refused > 0 ? " (fondu refusé par le backend : RIFE tel quel)"  // i18n-ok
                     : counts_.read == 0 && counts_.held == 0
-                        ? " (aucune carte : --scene-map, NVOF et RIFE mouvement sont-ils là ?)"  // i18n-ok
+                        ? " (aucune carte : --scene-map, NVOF, RIFE mouvement ou GMFSS ?)"  // i18n-ok
                         : "";
   log_channel("gpu")->info(
       "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "
