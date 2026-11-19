@@ -33,11 +33,13 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
     : RingStage(
           std::move(init), static_cast<std::uint32_t>(setup.slots.size()), setup.slots.front().generation,
           smooth_extra_frames(setup.smooth_drawings) + temporal_extra_frames(setup.temporal_fix != nullptr)),
-      setup_(std::move(setup)) {}
+      setup_(std::move(setup)),
+      scene_(setup_.scene_map) {}
 
 UpscaleStage::~UpscaleStage() {
   stop();
   log_temporal();
+  scene_.log_summary();
   if (fences_mapped_) setup_.backend->kernels()->unmap_fences(setup_.yuv_slots->fence_block());
   if (setup_.rife_motion != nullptr) {
     log_channel("gpu")->info(
