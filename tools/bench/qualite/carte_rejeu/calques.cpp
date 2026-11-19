@@ -199,6 +199,7 @@ bool LayerReplay::pair(const kirari::kernels::Plane<std::uint8_t>& a8,
   bool borrowed = false;
   const auto planned =
       play::plan_with_neighbour(motion, neighbours_.for_pair(), w * divisor_, h * divisor_, borrowed);
+  if (!planned && planned.error() == play::LayerSkip::Cut) neighbours_.forget();
   if (const auto own = play::refined_camera(motion)) neighbours_.seen(*own);
   if (late) neighbours_.seen(*late);
   const PlaneF a = to_float(a8);

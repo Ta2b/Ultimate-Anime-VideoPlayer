@@ -62,6 +62,7 @@ void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool sm
   bool borrowed = false;
   auto planned =
       plan_with_neighbour(facts.scene, neighbours_.for_pair(), work_width_, work_height_, borrowed);
+  if (!planned && planned.error() == LayerSkip::Cut) neighbours_.forget();  // jamais d'un autre plan
   if (const auto own = refined_camera(facts.scene)) neighbours_.seen(*own);
   if (planned) {
     ++counts_.pairs;
