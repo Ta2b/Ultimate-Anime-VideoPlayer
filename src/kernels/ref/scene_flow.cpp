@@ -227,6 +227,12 @@ Classified classify(const TileView& v, const CameraFit& camera, double cx, doubl
   return {.kind = off < bound ? SceneClass::Background : SceneClass::Drawing, .confidence = weight};
 }
 
+// La tuile bouge hors de la caméra : un dessin, un effet ; sans caméra ajustée, toute tuile qui change (son
+// mouvement ne peut pas être rendu à la caméra : ce n'est pas une preuve de dessin tenu).
+bool moves_off_camera(SceneClass kind, bool changed, bool camera_fit) {
+  return kind == SceneClass::Drawing || kind == SceneClass::Effect || (!camera_fit && changed);
+}
+
 bool tile_changed(const TileView& v) {
   if (!v.valid) return false;
   return std::hypot(v.mx, v.my) >= scene::kStillMotion || v.spread > scene::kSpreadMax ||
@@ -424,12 +430,13 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
     history.seen.assign(count, SceneClass::Uncertain);
   }
   out.tiles.resize(count);
-  std::size_t drawings = 0;
+  std::size_t moving = 0;  // tuiles qui bougent hors de la caméra (moves_off_camera)
   const auto divisor = static_cast<float>(tiles.divisor);
   for (std::size_t i = 0; i < count; ++i) {
     const TileView& v = views[i];
     const Classified raw = classify(v, camera, cx, cy, scale);
-    if (raw.kind == SceneClass::Drawing) ++drawings;
+    const bool changed = tile_changed(v);
+    if (moves_off_camera(raw.kind, changed, camera.fit)) ++moving;
     // Une classe nouvelle ne tient que vue deux paires de suite ; la première paire part de la sienne.
     SceneClass kind = raw.kind;
     float confidence = raw.confidence;
@@ -448,10 +455,10 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
                              .dx = v.mx * divisor,
                              .dy = v.my * divisor,
                              .change = v.change,
-                             .changed = tile_changed(v)};
+                             .changed = changed};
   }
   out.drawing_held = !out.cut_likely && !out.fade &&
-                     static_cast<float>(drawings) <= scene::kDrawingHeldShare * static_cast<float>(count);
+                     static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
   if (camera.fit) {
     const auto& c = out.camera;
     out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&

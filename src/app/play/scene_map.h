@@ -3,10 +3,14 @@
 // carte (kernels/ref/scene_flow.h, scene_motion_of), posée dans PairFacts::scene pour la paire qu'elle
 // décrit.
 //
-// Deux cadences. Avec l'image suivante ingérée en avance (interpolation par RIFE), la paire (N, N+1) est
+// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead), la paire (N, N+1) est
 // lancée pendant l'image N et sa carte est là quand l'étage décide de cette paire, avant RIFE et SPAN. Sans
-// elle (sans interpolation, DistilDRBA), la paire (N−1, N) est lancée à l'image N et sa carte n'arrive qu'à
-// l'image suivante : latest() la garde, avec sa paire, mais PairFacts ne la reçoit pas.
+// elle (sans interpolation, DistilDRBA, ou image suivante pas encore décodée), la paire (N−1, N) est lancée à
+// l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde, avec sa paire, mais PairFacts ne
+// la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à cheval sur deux époques.
+//
+// NVOF encore occupé par la paire d'avant (plus lent que la chaîne) : la paire n'est pas lancée, rien
+// n'attend, et la suivante repart sans indices (abandonnées au journal de fin).
 //
 // Absente (--scene-map éteint, backend sans NVOF, Turing, refus) : rien n'est lancé, chaque paire garde
 // scene vide, et la chaîne fait exactement ce qu'elle faisait. Un refus éteint la carte pour la lecture, avec
@@ -36,6 +40,10 @@ class SceneMap {
              std::uint32_t epoch);
   // La carte de la paire (left, right) si elle est relue ; sinon rien. Relit sans attente ce qui est fini.
   std::optional<kernels::SceneMotion> for_pair(gpu::KernelOps& ops, SourceId left, SourceId right);
+  // La paire (left, right) a-t-elle été lancée (la dernière lancée) ?
+  bool started(SourceId left, SourceId right) const {
+    return last_left_ && *last_left_ == left && last_right_ && *last_right_ == right;
+  }
   // La paire en cours a été jugée coupée : la suivante repart sans indices ni classes.
   void cut();
 
@@ -64,13 +72,14 @@ class SceneMap {
   std::vector<Pending> pending_;
   std::optional<Latest> latest_;
   kernels::ref::SceneHistory history_;
+  std::optional<SourceId> last_left_;
   std::optional<SourceId> last_right_;
   std::uint32_t last_epoch_ = 0;
   bool restart_ = true;
   std::uint64_t started_ = 0;
   std::uint64_t read_ = 0;
   std::uint64_t attached_ = 0;
-  std::uint64_t dropped_ = 0;  // relectures abandonnées : NVOF plus lent que la chaîne
+  std::uint64_t dropped_ = 0;  // paires abandonnées : NVOF plus lent que la chaîne (occupé, relue trop tard)
   std::uint64_t cuts_ = 0;
   std::uint64_t fades_ = 0;
   std::uint64_t camera_fits_ = 0;

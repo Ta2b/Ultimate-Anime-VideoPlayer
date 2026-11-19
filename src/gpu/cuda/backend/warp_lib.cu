@@ -104,15 +104,34 @@ __global__ void __maxnreg__(128)
     static_cast<__half*>(p.confidence_out)[o] = __float2half_rn(conf_sum * norm);
 }
 
+// Les paramètres que le noyau lit sans les borner lui-même : tout le reste (flot hors image, grille de flot
+// de taille quelconque) est borné à la lecture.
+bool valid_shape(const WarpPlanesParams& p) {
+  return p.image != nullptr && p.out != nullptr && p.channels >= 1 && p.channels <= kMaxChannels &&
+         p.height > 0 && p.width > 0 && p.reduce >= 1 && (p.reduce == 1 || p.reduce % 2 == 0) &&
+         p.width / p.reduce > 0 && p.height / p.reduce > 0 && (p.out_pitch == 0 || p.out_pitch >= p.channels);
+}
+
+// Fenêtre vide : l'image entière ; sinon dedans.
+bool valid_window(const WarpPlanesParams& p) {
+  return p.window_width <= 0 || p.window_height <= 0 ||
+         (p.window_left >= 0 && p.window_top >= 0 && p.window_left + p.window_width <= p.width &&
+          p.window_top + p.window_height <= p.height);
+}
+
+// Flot tensoriel : une grille non vide et dx, dy dans le pas ; la confiance n'existe que sur elle.
+bool valid_flow(const WarpPlanesParams& p) {
+  const WarpFlow& f = p.flow;
+  if (f.planes == nullptr) return p.confidence == nullptr;
+  return f.height > 0 && f.width > 0 && f.scale >= 1 && f.channel >= 0 &&
+         (f.pitch == 0 || f.channel + 2 <= f.pitch);
+}
+
 }  // namespace
 
 cudaError_t launch_warp_planes(const WarpPlanesParams& params, cudaStream_t stream) {
   const WarpPlanesParams& p = params;
-  if (p.image == nullptr || p.out == nullptr || p.channels < 1 || p.channels > kMaxChannels ||
-      p.height <= 0 || p.width <= 0 || p.reduce < 1 || (p.reduce > 1 && p.reduce % 2 != 0) ||
-      p.flow.scale < 1 || (p.out_pitch != 0 && p.out_pitch < p.channels) ||
-      (p.flow.planes != nullptr && (p.flow.height <= 0 || p.flow.width <= 0)))
-    return cudaErrorInvalidValue;
+  if (!valid_shape(p) || !valid_window(p) || !valid_flow(p)) return cudaErrorInvalidValue;
   warp::Bounds window{0, 0, p.width, p.height};
   if (p.window_width > 0 && p.window_height > 0)
     window = {p.window_left, p.window_top, p.window_left + p.window_width, p.window_top + p.window_height};

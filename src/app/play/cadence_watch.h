@@ -57,16 +57,23 @@ constexpr std::string_view name(SwapMode mode) {
 }
 
 // Le premier tour de main où chaque image de l'anneau a été vue écrite, pour les dernières images reçues.
+// Une image se reconnaît à sa génération d'anneau, son slot et sa valeur de sémaphore : un anneau recréé
+// en cours de séance repart de valeurs déjà vues.
 class ReadySeen {
  public:
-  void note(std::uint32_t slot, std::uint64_t value, std::int64_t tick_us);
+  struct Key {
+    std::uint32_t generation = 0;
+    std::uint32_t slot = 0;
+    std::uint64_t value = 0;
+    friend bool operator==(const Key&, const Key&) = default;
+  };
+  void note(const Key& key, std::int64_t tick_us);
   // Vrai si l'image était déjà vue écrite à un tour d'avant tick_us.
-  bool before(std::uint32_t slot, std::uint64_t value, std::int64_t tick_us) const;
+  bool before(const Key& key, std::int64_t tick_us) const;
 
  private:
   struct Entry {
-    std::uint32_t slot = 0;
-    std::uint64_t value = 0;
+    Key key;
     std::int64_t tick_us = 0;  // 0 : case libre
   };
   std::array<Entry, 32> entries_{};

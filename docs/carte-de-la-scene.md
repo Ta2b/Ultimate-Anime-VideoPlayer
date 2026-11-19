@@ -18,15 +18,19 @@ entraînement.
 
 ## Le chemin d'une paire
 
-1. `UpscaleStage::look_ahead` (avec RIFE, l'image suivante ingérée en avance) lance la paire (N, N+1) par
-   `KernelOps::scene_flow_start`. Sans interpolation, `scene_pair` lance (N−1, N) à l'image N, et sa carte
-   n'arrive qu'à l'image suivante (`SceneMap::latest`, pas dans `PairFacts`).
-2. Backend TensorRT (`src/gpu/cuda/backend/scene_flow.h`) : sur la voie courante, la voie attend que NVOF ait
-   lu les lumas précédentes, puis le noyau `scene_luma` écrit les deux lumas 8 bits du flux depuis le RGB de
+1. `UpscaleStage::look_ahead` (avec RIFE ou GMFSS, l'image suivante ingérée en avance) lance la paire
+   (N, N+1) par `KernelOps::scene_flow_start`. Sinon (sans interpolation, DistilDRBA, image suivante pas
+   encore décodée), `scene_pair` lance (N−1, N) à l'image N, et sa carte n'arrive qu'à l'image suivante
+   (`SceneMap::latest`, pas dans `PairFacts`). Une paire n'est lancée qu'une fois, jamais d'une époque à
+   l'autre.
+2. Backend TensorRT (`src/gpu/cuda/backend/scene_flow.h`) : si NVOF n'a pas fini la paire d'avant, la
+   paire n'est pas lancée (ticket 0, « abandonnée » au journal de fin) et rien n'attend. Sinon, sur la voie
+   courante, le noyau `scene_luma` écrit les deux lumas 8 bits du flux depuis le RGB de
    travail (BT.709, boîte d × d, d = `scene_flow_divisor`, au plus 720 lignes), directement dans les tampons
    de NVOF : aucun pas de ligne de NVDEC. Sur la file de NVOF, qui attend ces lumas : le flux (grille 4,
    réglage moyen, coût 8 bits), la réduction par tuile (`scene_tiles`, sommes entières), la copie vers une
-   mémoire hôte épinglée. Aucune attente hôte ; la voie ne retrouve NVOF qu'à la paire suivante.
+   mémoire hôte épinglée. Aucune attente, ni de l'hôte ni de la voie. La bibliothèque de NVOF n'est jamais
+   déchargée (le pilote garde ses fils) ; sous Windows, elle n'est cherchée que dans System32.
 3. `UpscaleStage::scene_pair`, quand l'étage décide de la paire : relecture sans attente
    (`scene_flow_take`), puis `kernels::ref::scene_motion_of` tire la carte, posée dans `PairFacts::scene`.
    Pas finie à temps : `scene` reste vide pour cette paire.
@@ -38,8 +42,9 @@ autre taille d'image refait la session.
 ## Ce que lisent les clients
 
 `src/kernels/spec/scene_flow.h` : `SceneMotion`, ses tuiles, la caméra et les drapeaux ; les seuils dans
-`kernels::scene`, non mesurés, à régler sur le banc 2.1. Règle absolue : `scene` absente donne exactement le
-comportement d'aujourd'hui, image pour image.
+`kernels::scene`, non mesurés, à régler sur le banc 2.1. `drawing_held` ne se dit que sur preuve : un effet
+compte comme ce qui bouge, et sans caméra ajustée (aplat), toute tuile changée l'éteint. Règle absolue :
+`scene` absente donne exactement le comportement d'aujourd'hui, image pour image.
 
 ## La porte (groupe de tests 2, sur CachyOS)
 

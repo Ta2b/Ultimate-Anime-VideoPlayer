@@ -6,8 +6,10 @@
 //     écrit les deux lumas du flux dans les tampons de NVOF, pose « lumas prêtes » ;
 //   file de NVOF : attend « lumas prêtes », calcule le flux, réduit les tuiles, copie la grille dans une
 //     mémoire hôte épinglée, pose l'événement de la relecture, puis « consommées ».
-// La voie n'attend donc NVOF qu'au moment d'écrire les lumas suivantes, une paire plus tard : le bloc NVOFA
-// tourne pendant RIFE et SPAN. Un seul thread s'en sert (l'API de NVOF n'est pas sûre entre threads).
+// Le bloc NVOFA tourne pendant RIFE et SPAN. La voie n'attend jamais NVOF : si « consommées » n'est pas
+// encore passé quand la paire suivante arrive (NVOF plus lent que la chaîne), cette paire n'est pas lancée
+// (busy), et l'attente de la voie sur « consommées » ne porte que sur un événement déjà passé. Un seul thread
+// s'en sert (l'API de NVOF n'est pas sûre entre threads).
 #pragma once
 
 #include <array>
@@ -39,7 +41,10 @@ class SceneFlow {
   std::expected<bool, Refusal> prepare(int flow_width, int flow_height, int divisor);
   NvofSession& session() { return *session_; }
 
-  // Avant que la voie lane écrive les lumas : elle attend que NVOF ait lu les précédentes.
+  // NVOF lit encore les lumas de la paire d'avant : la paire en cours ne sera pas lancée. Sans attente hôte.
+  std::expected<bool, Refusal> busy() const;
+  // Avant que la voie lane écrive les lumas : elle attend que NVOF ait lu les précédentes (déjà fait si
+  // busy() a dit faux).
   std::expected<void, Refusal> before_lumas(cudaStream_t lane);
   // Après : le flux, la réduction et la copie sur la file de NVOF ; rend le ticket.
   std::expected<std::uint64_t, Refusal> run(cudaStream_t lane, bool restart, GpuTiming& timing);
