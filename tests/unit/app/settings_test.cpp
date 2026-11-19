@@ -701,21 +701,21 @@ TEST_CASE("play.toml : la peau des visages, éteinte par défaut et dans un fich
   CHECK(on->face_skin);
 }
 
-TEST_CASE("play.toml : le blanc des surfaces, 100 % par défaut et dans un fichier d'avant, borné",
-          "[app][settings]") {
+TEST_CASE("play.toml : blanc des surfaces à 100 %, ancienne clé ignorée, borné", "[app][settings]") {
   CHECK(kirari::app::play::PlaySettings{}.surface_white == 100);
-  const auto old = kirari::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
-  REQUIRE(old.has_value());
-  CHECK(old->surface_white == 100);
-  const auto lower = kirari::app::play::parse_settings("[grade]\nsurface_white = 70\n");
+  // La clé surface_white d'avant surface_level n'est plus lue : le défaut s'applique.
+  const auto before = kirari::app::play::parse_settings("[grade]\nsurface_white = 70\n");
+  REQUIRE(before.has_value());
+  CHECK(before->surface_white == 100);
+  const auto lower = kirari::app::play::parse_settings("[grade]\nsurface_level = 40\n");
   REQUIRE(lower.has_value());
-  CHECK(lower->surface_white == 70);
+  CHECK(lower->surface_white == 40);
   kirari::app::play::PlaySettings s;
   s.surface_white = 70;
   const auto again = kirari::app::play::parse_settings(kirari::app::play::format_settings(s));
   REQUIRE(again.has_value());
   CHECK(again->surface_white == 70);
-  s.surface_white = 30;
+  s.surface_white = 20;
   CHECK_FALSE(kirari::app::play::validate(s).has_value());
 }
 

@@ -46,6 +46,9 @@ const char* sums_name(RifeNativeSums sums) {
 }
 
 // Le temps d'une passe, TensorRT puis natif ; pass(0) met en file une passe TensorRT, pass(1) une native.
+// La marge que le natif doit prendre sur TensorRT, en pour cent, pour le journal.
+constexpr double kGainPercent = gmfss_trial::kMinGain * 100.0;
+
 struct Speed {
   double trt = 0.0;
   double native = 0.0;
@@ -272,8 +275,9 @@ std::expected<std::string, Refusal> TfixEncoderEngine::try_native(
     if (!timed->native_wins()) {
       back_to_trt();
       return std::format(
-          "TemporalFix natif écarté pour l'encodeur, TensorRT plus rapide ({}×{}, {} contre TensorRT ; {})",
-          width_, height_, tried, timed->text());
+          "TemporalFix natif écarté pour l'encodeur, pas {:.0f} % plus rapide que TensorRT ({}×{}, {} contre "
+          "TensorRT ; {})",
+          kGainPercent, width_, height_, tried, timed->text());
     }
     if (auto ok = shared->reserve(native_->encoder_workspace_bytes()); !ok) {
       back_to_trt();
@@ -414,8 +418,9 @@ std::expected<std::string, Refusal> TfixWindowEngine::try_native(
       if (auto ok = back_to_trt(); !ok) return std::unexpected(std::move(ok.error()));
       if (!timed) return std::unexpected(std::move(timed.error()));
       return std::format(
-          "TemporalFix natif écarté pour la fenêtre, TensorRT plus rapide ({}×{}, {} contre TensorRT ; {})",
-          w, h, tried, timed->text());
+          "TemporalFix natif écarté pour la fenêtre, pas {:.0f} % plus rapide que TensorRT ({}×{}, {} contre "
+          "TensorRT ; {})",
+          kGainPercent, w, h, tried, timed->text());
     }
     // Retenu : sur la zone de la voie (use_native y prend la place des tampons, et vide les graphes).
     if (auto ok = use_native(true, shared); !ok) {

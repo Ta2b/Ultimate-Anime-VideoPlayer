@@ -103,16 +103,19 @@ __global__ void first_kernel(TfixShape s) {
   const __half* center = tfix::pyramid(s, kernels::kTfixCenter, 0);
   const __half* support = tfix::pyramid(s, kSupportFrame[k], 0);
   const tfix::View out = tfix::view(s, s.x[0], s.xld[0], plane, k);
+  __half o[kernels::kTfixX0];
+#pragma unroll
   for (int c = 0; c < kernels::kTfixImage; ++c) {
-    out(c, at) = center[c * plane + at];
-    out(3 + c, at) = support[c * plane + at];
+    o[c] = center[c * plane + at];
+    o[3 + c] = support[c * plane + at];
   }
+#pragma unroll
   for (int c = 0; c < kernels::kTfixTraits; ++c) {
-    out(6 + c, at) = center[(3 + c) * plane + at];
-    out(10 + c, at) = support[(3 + c) * plane + at];
+    o[6 + c] = center[(3 + c) * plane + at];
+    o[10 + c] = support[(3 + c) * plane + at];
   }
-  out(14, at) = __float2half_rn(kTime[k]);
-  tfix::zero_pad(s, out, kernels::kTfixX0, s.xld[0], at);
+  o[14] = __float2half_rn(kTime[k]);
+  tfix::store_point(out, at, o);
 }
 
 // La sortie du bloc d'avant (son Resize vers son niveau, puis le Resize ×2 de la colle) au point de niveau
@@ -125,18 +128,33 @@ struct Previous {
   int sh, sw;       // le niveau de départ
 };
 
-// La valeur au point de départ (qy, qx) du canal c : Y agrandi, plus le flot d'entrée pour c < 2.
-__device__ float previous_at(const Previous& p, int c, int qy, int qx) {
+// Au point de départ (qy, qx) : Y agrandi (11 canaux), plus le flot d'entrée sur les canaux 0 et 1.
+__device__ void previous_at(const Previous& p, int qy, int qx, float (&v)[kernels::kTfixY]) {
   const Axis bx = tfix::resize_axis(qx, p.yw, p.sw);
   const Axis by = tfix::resize_axis(qy, p.yh, p.sh);
-  float v = tfix::resized(p.y, c, p.yw, bx, by);
-  if (c < 2 && p.has_flow) v += p.flow.get(24 + c, static_cast<long long>(qy) * p.sw + qx);
-  return v;
+  float n[4][kernels::kTfixY];
+  tfix::load_point(p.y, static_cast<long long>(by.i0) * p.yw + bx.i0, n[0]);
+  tfix::load_point(p.y, static_cast<long long>(by.i0) * p.yw + bx.i1, n[1]);
+  tfix::load_point(p.y, static_cast<long long>(by.i1) * p.yw + bx.i0, n[2]);
+  tfix::load_point(p.y, static_cast<long long>(by.i1) * p.yw + bx.i1, n[3]);
+#pragma unroll
+  for (int c = 0; c < kernels::kTfixY; ++c) v[c] = warp::lerp2(n[0][c], n[1][c], n[2][c], n[3][c], bx, by);
+  if (!p.has_flow) return;
+  const float2 f = p.flow.pair(24, static_cast<long long>(qy) * p.sw + qx);
+  v[0] += f.x;
+  v[1] += f.y;
 }
 
-__device__ float previous_resized(const Previous& p, int c, const Axis& ax, const Axis& ay) {
-  return warp::lerp2(previous_at(p, c, ay.i0, ax.i0), previous_at(p, c, ay.i0, ax.i1),
-                     previous_at(p, c, ay.i1, ax.i0), previous_at(p, c, ay.i1, ax.i1), ax, ay);
+// Les 11 canaux au point d'arrivée dont les axes sont donnés : le Resize ×2 de la colle.
+__device__ void previous_resized(const Previous& p, const Axis& ax, const Axis& ay,
+                                 float (&v)[kernels::kTfixY]) {
+  float n[4][kernels::kTfixY];
+  previous_at(p, ay.i0, ax.i0, n[0]);
+  previous_at(p, ay.i0, ax.i1, n[1]);
+  previous_at(p, ay.i1, ax.i0, n[2]);
+  previous_at(p, ay.i1, ax.i1, n[3]);
+#pragma unroll
+  for (int c = 0; c < kernels::kTfixY; ++c) v[c] = warp::lerp2(n[0][c], n[1][c], n[2][c], n[3][c], ax, ay);
 }
 
 // X_level (1 ou 2) : un fil par point du niveau et par appui (blockIdx.z).
@@ -164,25 +182,30 @@ __global__ void glue_kernel(TfixShape s, int level) {
   const long long at = static_cast<long long>(y) * dw + x;
   const tfix::View out = tfix::view(s, s.x[level], s.xld[level], plane, k);
   // Le flot agrandi ×2 (Resize puis Mul 2 en FP16, comme le graphe), puis l'appui déplacé par lui.
-  const __half fx = __float2half_rn(2.0F * previous_resized(p, 0, ax, ay));
-  const __half fy = __float2half_rn(2.0F * previous_resized(p, 1, ax, ay));
-  out(24, at) = fx;
-  out(25, at) = fy;
-  out(15, at) = __float2half_rn(previous_resized(p, 2, ax, ay));
-  for (int c = 0; c < 8; ++c) out(16 + c, at) = __float2half_rn(previous_resized(p, 3 + c, ax, ay));
+  float prev[kernels::kTfixY];
+  previous_resized(p, ax, ay, prev);
+  __half o[kernels::kTfixX];
+  const __half fx = __float2half_rn(2.0F * prev[0]);
+  const __half fy = __float2half_rn(2.0F * prev[1]);
+  o[24] = fx;
+  o[25] = fy;
+  o[15] = __float2half_rn(prev[2]);
+#pragma unroll
+  for (int c = 0; c < 8; ++c) o[16 + c] = __float2half_rn(prev[3 + c]);
 
   const __half* center = tfix::pyramid(s, kernels::kTfixCenter, level);
   const __half* support = tfix::pyramid(s, kSupportFrame[k], level);
   const tfix::ZeroTap tap = tfix::zero_tap(static_cast<float>(x) + __half2float(fx),
                                            static_cast<float>(y) + __half2float(fy), dh, dw);
+#pragma unroll
   for (int c = 0; c < kernels::kTfixPyramid; ++c) {
     const int to_center = c < kernels::kTfixImage ? c : 3 + c;      // 0-2 puis 6-9
     const int to_warped = c < kernels::kTfixImage ? 3 + c : 7 + c;  // 3-5 puis 10-13
-    out(to_center, at) = center[c * plane + at];
-    out(to_warped, at) = __float2half_rn(tfix::zero_sample(support + c * plane, tap));
+    o[to_center] = center[c * plane + at];
+    o[to_warped] = __float2half_rn(tfix::zero_sample(support + c * plane, tap));
   }
-  out(14, at) = __float2half_rn(kTime[k]);
-  tfix::zero_pad(s, out, kernels::kTfixX, s.xld[level], at);
+  o[14] = __float2half_rn(kTime[k]);
+  tfix::store_point(out, at, o);
 }
 
 dim3 grid_for(int width, int height, int z) {

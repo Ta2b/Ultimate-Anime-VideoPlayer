@@ -413,8 +413,10 @@ struct PlaySettings {
   // looks et looks_mix d'un ancien play.toml ne sont plus lues.
   int look_contrast = 0;
   int look_highlight = 0;
-  // Le blanc des surfaces en HDR, en % de celui que la pile porte (100 : vers 70 % du pic de l'écran ; 70 :
-  // vers la moitié). Les éclats montent toujours jusqu'au pic.
+  // Le blanc des surfaces en HDR, en % de celui que la pile porte (100, le défaut : vers 70 % du pic de
+  // l'écran). Clé surface_level de play.toml ; l'ancienne clé surface_white n'est plus lue. Essai du 19/11 à
+  // 60 % par défaut : tout le haut de l'image baissait d'autant, corne et halo compris (ce sont des blancs de
+  // la pile, pas des émetteurs repérés), plafonné à 360 nits ; le défaut est revenu à 100.
   int surface_white = 100;
   // Limiteur de flashs (P3.51) : une suite de flashs rapides (UIT-R BT.1702) plafonne le grade HDR vers
   // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
@@ -443,7 +445,7 @@ inline bool poses_kept(const PlaySettings& s) {
 }
 
 // Le curseur « Blanc des surfaces », en % (PlaySettings::surface_white).
-inline constexpr core::Range<int> kSurfaceWhite{50, 100};
+inline constexpr core::Range<int> kSurfaceWhite{30, 100};
 
 // La longueur d'un chemin de dossier d'installation que le menu et play.toml acceptent (A22-09).
 inline constexpr std::size_t kMaxEnginesDirBytes = 4096;

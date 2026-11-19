@@ -13,9 +13,13 @@ la dernière passe (`anime-hdr-black.hook`, réglée par `src/render/output_tune
 - **Blanc des surfaces : là où la pile le porte, vers 70 % du pic.** La dernière passe applique la courbe de
   KWin sous laquelle la pile a été réglée à l'œil, de 10 000 nits vers le pic de l'écran. Les curseurs « LUT
   contrast intensity » et « LUT highlight intensity » déplacent ce blanc (de 483 à 818 nits et de 410 à 863
-  nits sur un écran de 1 000 nits). Le réglage avancé « Blanc des surfaces » (50 à 100 %, 100 par défaut) le
-  baisse : la courbe est alors résolue pour rendre ce blanc (à 70 %, vers la moitié du pic, comme la rc.1 et
-  la rc.2), et les éclats montent toujours jusqu'au pic.
+  nits sur un écran de 1 000 nits). Le réglage avancé « Blanc des surfaces » (30 à 100 %, 100 par défaut, clé
+  `surface_level` de `play.toml` ; l'ancienne clé `surface_white` n'est plus lue) le baisse : la courbe est
+  alors résolue pour rendre ce blanc, et les émetteurs repérés par la passe anime partent du niveau de la
+  courbe à 100 %. Essai du 19 novembre 2026 à 60 % par défaut : tout le haut de l'image a baissé d'autant
+  (×0,58 au-dessus de 450 nits, presque rien sous 60), corne et halo compris, plafonnés à 360 nits de
+  contenu. Ces lueurs sont des blancs de la pile (code 255 de la source), pas des émetteurs repérés : le
+  curseur les baisse comme un mur blanc. Le défaut est revenu à 100 %.
 - **Éclats après la pile, jusqu'au pic de l'écran (A41-02).** La passe anime décide quels pixels sont des
   lumières et transmet leur gain dans l'alpha ; la dernière passe l'applique après la pile et la courbe, sous
   le pic de l'écran (`emitter_level`, `src/render/output_tune.h`). Avant, la pile et la courbe divisaient leur
@@ -261,7 +265,17 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   nettement sa zone (0,20 PQ au-dessus du niveau de la zone, plein à 0,35) monte donc comme un effet sûr :
   porte plus basse, montée une fois et demie plus haute. Une lumière à peine plus claire que sa zone, le
   fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même ;
-  `--no-effect-highlights` l'éteint, à l'écran et à l'export.
+  `--no-effect-highlights` l'éteint, à l'écran et à l'export. Mesure du PC le 19 novembre 2026 (captures PQ à 16:23 et
+  16:45, avec et sans `--no-effect-highlights`) : aucun écart, car la corne et le halo étaient déjà au
+  plafond de sortie sans la lueur (626 à 630 nits de contenu, écrêtés à plat), et les cheveux et le visage
+  qu'ils éclairent à 450-520 nits. Le halo, grand, domine à peine sa zone (0,02 PQ en médiane) et la lueur
+  ne s'y déclenche pas. Baisser le « Blanc des surfaces » ne les détache pas non plus (essai à 60 %, plus
+  haut). Pour qu'elles ressortent, il faudra que la passe anime les reconnaisse comme émetteurs. **Chantier en
+  pause depuis le 19 novembre 2026** (Tatoub) : la rc.1 sort avec ce rendu. Reprise : rejouer la passe anime
+  sur la source de 16:23 et 16:45 (pas sur les PQ de sortie), mesurer l'écart bloc-zone de la corne et du
+  halo dans la source, puis reconnaître une lueur à sa forme (petit cœur blanc entouré d'un dégradé
+  coloré) plutôt qu'à son seul écart à la zone. La vue `--effect-mask-view` ne peint que le masque de la
+  carte, pas la lueur.
 - **Les effets de la carte, éteints par défaut** pour la première release : seules les lueurs vues dans l'image
   portent les éclats. `--effect-highlights` (essai, avec `--debug`) rallume le masque des effets de la carte.
 - **Sans carte** (AMD, Intel, NVOF refusé, sans `--effect-highlights` ou avec `--no-effect-highlights`), le masque revient lentement au neutre
