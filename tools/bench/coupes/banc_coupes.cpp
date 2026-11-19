@@ -10,11 +10,19 @@
 #include <optional>
 #include <vector>
 
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
+
 #include "kernels/ref/frame_stats.h"
 #include "media/shot_cutter.h"
 
 int main(int argc, char** argv) {
   using namespace ajp;
+#ifdef _WIN32
+  _setmode(_fileno(stdin), _O_BINARY);  // en mode texte, la lecture s'arrêtait au premier octet 0x1A
+#endif
   const double fps = argc > 1 ? std::atof(argv[1]) : 24000.0 / 1001.0;
   constexpr int kW = kernels::frame_stats::kGridW;
   constexpr int kH = kernels::frame_stats::kGridH;
