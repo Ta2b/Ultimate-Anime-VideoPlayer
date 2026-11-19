@@ -12,11 +12,14 @@
 // (caméra identité), le panoramique pur (Pan : seule la caméra bouge) fait par le warp de la caméra de la
 // carte, sans réseau (kernels/spec/motion_camera.h) ; pas de zone fondue par endroits, où GMFSS fait mieux
 // que RIFE. Le mélange garde le tri de RIFE : une paire fondue n'a pas de clé GMFSS (upscale_gmfss.cpp).
-// Sans carte (AMD, Intel, Turing, NVOF refusé, --scene-map éteint) ou sans --pair-triage : la décision
-// d'aujourd'hui, image pour image. Les seuils ne sont pas mesurés : la porte du groupe 3 les règle.
+// Smooth (dessins lissés) : ses paires restent hors du tri, la dernière de la tenue comprise (b y est un
+// dessin nouveau pour la mesure des blocs, upscale_smooth.cpp). Sans carte (AMD, Intel, Turing, NVOF refusé,
+// --scene-map éteint) ou sans --pair-triage : la décision d'aujourd'hui, image pour image. Les seuils ne sont
+// pas mesurés : la porte du groupe 3 les règle.
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -44,6 +47,9 @@ inline constexpr float kDoubtConfidence = 0.5F;
 inline constexpr float kDoubtFloor = 0.04F;
 // Part du doute de la paire précédente gardée à la suivante (une zone ne clignote pas d'une paire à l'autre).
 inline constexpr float kDoubtKeep = 0.5F;
+// Paires sans RIFE de suite (dessin tenu) à travers lesquelles ce doute passe encore : un dessin en quatre en
+// a trois entre deux dessins ; après une tenue plus longue, l'effet d'avant ne vaut plus.
+inline constexpr int kKeepAcross = 3;
 // Panoramique pur (GMFSS) : écart moyen des tuiles décor à la caméra, pixels de travail, au plus.
 inline constexpr double kPanResidual = 1.0;
 // Et part des vecteurs sans correspondance au plus (bords qui entrent dans l'image compris).
@@ -120,10 +126,17 @@ class RifeTriage {
   std::vector<float> kept_;  // le doute de la paire précédente, tuile par tuile
   int kept_cols_ = 0;
   int kept_rows_ = 0;
+  int unrun_ = 0;  // paires sans RIFE depuis le dernier doute gardé
   bool refused_ = false;
   TriageCounts counts_;
-  std::unique_ptr<gpu::TensorBuffer> flow_;
-  std::unique_ptr<gpu::TensorBuffer> mask_;
+  // Les tampons du mouvement fondu, un jeu par forme : le milieu et la demi-taille de l'échelle par paire
+  // (pair_scale) alternent d'un instant à l'autre d'une paire forte, et une allocation attend la file.
+  struct Buffers {
+    std::unique_ptr<gpu::TensorBuffer> flow;
+    std::unique_ptr<gpu::TensorBuffer> mask;
+  };
+  std::array<Buffers, 2> buffers_;
+  std::size_t last_ = 0;  // le jeu servi en dernier ; une forme nouvelle prend l'autre
 };
 
 }  // namespace kirari::app::play

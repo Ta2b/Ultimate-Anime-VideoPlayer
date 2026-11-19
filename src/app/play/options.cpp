@@ -127,7 +127,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
 // clang-format off
-constexpr std::array<std::string_view, 44> kTrialOptions{
+constexpr std::array<std::string_view, 45> kTrialOptions{
     "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
     "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
     "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
@@ -135,7 +135,8 @@ constexpr std::array<std::string_view, 44> kTrialOptions{
     "--vsync-index", "--no-vsync-index", "--present", "--no-present", "--no-vrr", "--rife-calm-model",
     "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--filtered-warp",
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
-    "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native"};
+    "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
+    "--pair-triage"};
 // clang-format on
 
 bool is_trial(std::string_view arg) {
@@ -649,8 +650,8 @@ std::string play_usage(bool debug) {
          "                         every pass, instead of the encoder cache (same output)\n"
          "  --no-tfix-fused        trial: temporal stabilization by the encoder-cache graph instead of\n"
          "                         the fused engines (TensorRT)\n"
-         "  --pair-triage          RIFE, GMFSS: the NVIDIA scene map copies held drawings, crossfades\n"
-         "                         impossible pairs and doubt (RIFE), warps pure pans (GMFSS)\n"
+         "  --pair-triage          trial, with --scene-map: held drawings copied, impossible pairs and\n"
+         "                         doubt crossfaded (RIFE), pure pans warped by the camera (GMFSS)\n"
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass (same output)\n"
          "  --no-span-reuse        measurement: SPAN on every frame, held drawings included\n"

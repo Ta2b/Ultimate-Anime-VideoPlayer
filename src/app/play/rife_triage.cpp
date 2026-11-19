@@ -114,10 +114,12 @@ void RifeTriage::reset() {
   kept_.clear();
   kept_cols_ = 0;
   kept_rows_ = 0;
+  unrun_ = 0;
 }
 
 PairSort RifeTriage::sort_unrun(const PairFacts& facts) {
-  if (facts.scores && pair_cut(facts)) reset();  // une autre scène : le doute d'avant ne vaut plus
+  // Une autre scène, ou une tenue plus longue qu'un dessin en quatre : le doute d'avant ne vaut plus.
+  if ((facts.scores && pair_cut(facts)) || ++unrun_ > triage::kKeepAcross) reset();
   // Tenue par le flux seul : la mesure des blocs aurait laissé tourner RIFE.
   const bool by_flow = facts.scores && facts.same_epoch && facts.factor > 1 && !pair_cut(facts) &&
                        !kernels::is_held(facts.scores->worst_block) && flow_held(*facts.scene);
@@ -133,6 +135,7 @@ void RifeTriage::keep_doubt(std::vector<float>& doubt, const kernels::SceneMotio
   kept_ = doubt;
   kept_cols_ = scene.cols;
   kept_rows_ = scene.rows;
+  unrun_ = 0;
 }
 
 PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
@@ -212,15 +215,22 @@ gpu::Motion RifeTriage::doubted(gpu::Backend& backend, const gpu::Motion& motion
   const auto fits = [](const std::unique_ptr<gpu::TensorBuffer>& buffer, const gpu::Tensor& like) {
     return buffer != nullptr && buffer->tensor().type == like.type && buffer->tensor().shape == like.shape;
   };
-  for (auto [buffer, like] : {std::pair{&flow_, &motion.flow}, std::pair{&mask_, &motion.mask}}) {
+  // Le jeu de la forme du mouvement ; sinon l'autre que le dernier servi, réalloué.
+  const auto suits = [&](const Buffers& set) {
+    return fits(set.flow, motion.flow) && fits(set.mask, motion.mask);
+  };
+  const std::size_t slot = suits(buffers_[0]) ? 0 : suits(buffers_[1]) ? 1 : 1 - last_;
+  Buffers& set = buffers_[slot];
+  for (auto [buffer, like] : {std::pair{&set.flow, &motion.flow}, std::pair{&set.mask, &motion.mask}}) {
     if (fits(*buffer, *like)) continue;
     auto made = backend.alloc_tensor(like->type, like->shape);
     if (!made) return refuse_once(made.error());
     *buffer = std::move(*made);
   }
+  last_ = slot;
   gpu::Motion out = motion;
-  out.flow = flow_->tensor();
-  out.mask = mask_->tensor();
+  out.flow = set.flow->tensor();
+  out.mask = set.mask->tensor();
   if (auto ok =
           ops->motion_doubt(motion, grid_.weights, grid_.cols, grid_.rows, std::clamp(fade, 0.0F, 1.0F), out);
       !ok)
