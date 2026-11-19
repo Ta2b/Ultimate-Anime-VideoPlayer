@@ -26,6 +26,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |
 | [`temporalfix.md`](temporalfix.md) | La stabilisation temporelle (TemporalFix, avant SPAN, TensorRT) : fenêtre de sept images, reflet aux bords, ce qui manque à Vulkan |
 | [`carte-de-la-scene.md`](carte-de-la-scene.md) | La carte de la scène par le flux optique de NVIDIA (NVOF, `--scene-map`) : session, ordre des files, tuiles, caméra, ce que les clients lisent |
+| [`tuiles-span.md`](tuiles-span.md) | Les tuiles qui bougent : SPAN FP16 natif sur les seules tuiles changées d'après la carte de la scène, sortie d'avant reprise ou décalée (`--no-span-tiles`) |
 | [`anime4k.md`](anime4k.md) | Anime4K, l'agrandissement en shaders des petites cartes ; le banc des petites cartes |
 | [`banc-qualite.md`](banc-qualite.md) | Banc de qualité des réseaux contre leur référence FP32 et la vraie image, sans carte graphique |
 | [`parite-windows-linux.md`](parite-windows-linux.md) | Banc de parité Windows contre Linux sur le même PC |

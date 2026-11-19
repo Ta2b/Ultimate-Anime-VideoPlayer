@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <optional>
+#include <span>
 #include <utility>
 
 #include "app/play/links.h"
@@ -22,6 +23,34 @@ bool send_tiles(SpanReuse& reuse, gpu::Engine& engine, const gpu::Tensor* previo
   if (engine.next_span_tiles(plan.core, plan.shift_x, plan.shift_y, previous)) return true;
   reuse.tiles.refused();
   return false;
+}
+
+// --span-tiles-check : l'image tout juste calculée par tuiles (tiled) se calcule aussi entière, et l'écart
+// des deux va au bilan des tuiles. Un refus de place ou de mesure éteint le contrôle, pas la lecture.
+std::expected<void, Refusal> check_tiles(SpanReuse& reuse, gpu::Backend& backend, gpu::Engine& engine,
+                                         std::span<const gpu::Tensor> inputs, const gpu::Tensor& tiled) {
+  if (!reuse.check || !reuse.tiles.check_due()) return {};
+  const auto stop = [&reuse](const Refusal& why) {
+    log_channel("gpu")->info("SPAN par tuiles : contrôle arrêté ({})", why.detail);
+    reuse.check = false;
+  };
+  if (!reuse.check_output) {
+    auto made = backend.alloc_tensor(tiled.type, tiled.shape);
+    if (!made) {
+      stop(made.error());
+      return {};
+    }
+    reuse.check_output = std::move(*made);
+  }
+  std::array outputs{reuse.check_output->tensor()};
+  if (auto ok = backend.enqueue(engine, inputs, outputs); !ok) return ok;
+  auto scores = backend.kernels()->scores_now(tiled, reuse.check_output->tensor());
+  if (!scores) {
+    stop(scores.error());
+    return {};
+  }
+  reuse.tiles.checked(scores->worst_block, scores->scene_score * 255.0);
+  return {};
 }
 
 // Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près, la
@@ -131,8 +160,9 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   use_lane(gpu::Lane::Upscale);
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
-  send_tiles(reuse_, *setup_.engine, &spanned(current_ ^ 1U));
+  const bool tiled = send_tiles(reuse_, *setup_.engine, &spanned(current_ ^ 1U));
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
+  if (ok && tiled) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, results[0]);
   reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
   if (ok) ok = grade_spanned(span_of_[current_]);
   use_lane(back);
@@ -181,8 +211,10 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
   // n'écrit que les tuiles calculées : l'emplacement reçoit ensuite output_ entière).
   const gpu::Tensor& now = rgb_[current_]->tensor();
   if (rgb.handle == now.handle && rgb.offset == now.offset && send_tiles(reuse_, *setup_.engine, nullptr)) {
-    if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok)
-      return blame_stage(std::move(ok), kSpanRefusalKey);
+    auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs).and_then([&] {
+      return check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, outputs[0]);
+    });
+    if (!ok) return blame_stage(std::move(ok), kSpanRefusalKey);
     return write_slot(output_->tensor(), slot, sync);
   }
   // Sans export YUV : SPAN et l'écriture de l'emplacement en un appel (étape 3.4b), que le backend sait

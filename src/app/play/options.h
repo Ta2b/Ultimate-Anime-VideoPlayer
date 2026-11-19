@@ -198,6 +198,10 @@ struct PlayOptions {
   // --no-span-tiles (mesure, avec --debug) : SPAN jamais par tuiles (upscale_tiles.h). Pour l'ABAB des tuiles
   // qui bougent ; sans effet sans SPAN FP16 natif ni carte de la scène.
   bool span_tiles = true;
+  // --span-tiles-check (mesure, avec --debug) : une image par tuiles sur 24 se calcule aussi entière, et
+  // l'écart des deux va au journal de fin (porte des tuiles qui bougent, docs/tuiles-span.md). Coûte une
+  // attente hôte.
+  bool span_tiles_check = false;
   // --fast-steady : le mode Rapide à pas constant par plan (chantier 7, core/steady_rate.h) : N images par
   // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
   // mesures 7.10.

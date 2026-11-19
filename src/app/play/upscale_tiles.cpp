@@ -228,17 +228,29 @@ void SpanTiles::refused() {
   full();
 }
 
+void SpanTiles::checked(std::uint32_t worst_block, double mean_levels) {
+  ++checks_;
+  check_worst_ = std::max(check_worst_, worst_block);
+  check_mean_ = std::max(check_mean_, mean_levels);
+}
+
 std::string SpanTiles::summary() const {
   if (tiled_ == 0) return {};
+  const std::string check =
+      checks_ == 0 ? std::string{}
+                   : std::format(
+                         " ; contrôle sur {} images contre un calcul complet : pire bloc {:.2f} niveau, "
+                         "écart moyen {:.3f} niveau au plus",
+                         checks_, static_cast<double>(check_worst_) / 256.0, check_mean_);
   const auto share = [](std::uint64_t part, std::uint64_t whole) {
     return whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
   };
   return std::format(
       "SPAN par tuiles : {} images sur {} calculées ({:.1f} %), {:.1f} % des tuiles recalculées ({:.1f} % "
       "avec le halo), {} décalées sur un panoramique ; images entières : {} sans carte, {} région trop "
-      "large, {} refus du moteur",
+      "large, {} refus du moteur{}",
       tiled_, planned_, share(tiled_, planned_), share(tiles_done_, tiles_seen_),
-      share(tiles_wide_, tiles_seen_), shifted_, no_map_, too_wide_, refused_);
+      share(tiles_wide_, tiles_seen_), shifted_, no_map_, too_wide_, refused_, check);
 }
 
 }  // namespace kirari::app::play

@@ -38,6 +38,7 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
       scene_(setup_.scene_map) {
   reuse_.enabled = setup_.span_reuse.whole;
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
+  reuse_.check = setup_.span_reuse.check;
   if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
 }
 

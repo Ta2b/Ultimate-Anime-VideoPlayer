@@ -56,8 +56,9 @@ struct ReuseFacts {
 
 // Ce que l'étage règle au démarrage (UpscaleSetup::span_reuse).
 struct SpanReuseSetup {
-  bool whole = true;  // --no-span-reuse : SPAN sur chaque image
-  bool tiles = true;  // --no-span-tiles : jamais par tuiles
+  bool whole = true;   // --no-span-reuse : SPAN sur chaque image
+  bool tiles = true;   // --no-span-tiles : jamais par tuiles
+  bool check = false;  // --span-tiles-check : une image par tuiles sur 24 comparée à un calcul complet
 };
 
 enum class ReuseKind : std::uint8_t {
@@ -91,6 +92,8 @@ class SpanReuse {
   // moteur (gpu::Engine::next_span_tiles) juste avant le SPAN de cette image, puis à oublier.
   SpanTiles tiles;
   TilePlan tile_plan;
+  bool check = false;                               // --span-tiles-check
+  std::unique_ptr<gpu::TensorBuffer> check_output;  // le calcul complet du contrôle, à la taille de sortie
   // La source dont le tampon de SPAN de l'image (avant le warp) tient vraiment la sortie : posée par l'étage
   // à chaque SPAN fait ou repris. Une source sautée ne l'a pas : sa suivante ne se calcule pas par tuiles.
   std::optional<SourceId> spanned;

@@ -72,6 +72,12 @@ class SpanTiles {
   void held(const kernels::SceneMotion* scene);
   // Le moteur a refusé les tuiles (next_span_tiles faux) : l'image est entière.
   void refused();
+  // --span-tiles-check : vrai une image par tuiles sur kCheckEvery (la dernière planifiée), puis l'écart
+  // mesuré entre sa sortie et un calcul complet (pire bloc 16 × 16 en 1/256 de niveau, écart moyen en
+  // niveaux).
+  static constexpr std::uint64_t kCheckEvery = 24;
+  bool check_due() const { return tiled_ > 0 && tiled_ % kCheckEvery == 1; }
+  void checked(std::uint32_t worst_block, double mean_levels);
   // « SPAN par tuiles : … » pour le journal de fin ; vide si rien n'a été fait par tuiles.
   std::string summary() const;
 
@@ -113,6 +119,9 @@ class SpanTiles {
   std::uint64_t too_wide_ = 0;    // images entières parce que la région dépassait kMaxShare
   std::uint64_t no_map_ = 0;      // images entières faute de carte
   std::uint64_t refused_ = 0;
+  std::uint64_t checks_ = 0;
+  std::uint32_t check_worst_ = 0;  // 1/256 de niveau
+  double check_mean_ = 0.0;        // niveaux, le plus grand
 };
 
 }  // namespace kirari::app::play
