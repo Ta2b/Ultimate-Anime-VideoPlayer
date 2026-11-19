@@ -469,6 +469,20 @@ TEST_CASE("VRR : une image tenue est représentée sous le plancher de l'écran,
   };
   CHECK(presented(0) == 1);
   CHECK(presented(18'939) >= 2);  // le faux écran avance de 16,7 ms par présentation
+  // Sous le plancher, la suivante due mais pas encore écrite : l'image tenue ne se représente pas (19/11).
+  Rig rig(SessionConfig{.vrr_floor_us = 18'939});
+  rig.screen.period_us = 6'061;
+  rig.session.handle(ring_frame(0, 0));
+  rig.session.handle(ring_frame(1, 7'000));
+  rig.screen.unwritten = {1};
+  rig.run_clock(0);
+  rig.tick();
+  const std::size_t presents = rig.screen.shown.size();
+  for (; rig.screen.now_us < 14'000; rig.screen.now_us += 500) rig.tick();
+  CHECK(rig.screen.shown.size() == presents);
+  rig.screen.write(1);
+  rig.tick();
+  CHECK(rig.shown_pts() == 7'000);
 }
 
 TEST_CASE("Présentation à la demande : rien ne change, rien n'est recomposé", "[app][session]") {

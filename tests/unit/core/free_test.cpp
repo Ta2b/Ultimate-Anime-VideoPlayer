@@ -334,6 +334,28 @@ TEST_CASE("free grid vsync : un GPU plus lent laisse l'image tenue des vsyncs de
   const double fps = static_cast<double>(count) * 1e6 / static_cast<double>(last);
   CHECK(fps > 20.0);
   CHECK(fps < 26.0);
+  // Séance du 19/11, 165 Hz sans VRR : un pas de 6,53 ms, à peine plus long que la période, garde sa
+  // cadence (153 i/s, sources comprises). Recaler le pas sur chaque vsync monté en faisait 120.
+  {
+    FreeGrid fast;
+    fast.push(stamp(1, 0), {});
+    const std::int64_t period = 6'061;
+    const FreeInputs at_165{
+        .min_gap_us = period, .step_us = 6'530, .vsync_period_us = period, .vsync_origin_us = 777};
+    std::int64_t images = 0;
+    std::int64_t previous = 0;
+    for (std::uint32_t k = 1; k <= 480; ++k) {
+      const CadenceStep step = fast.push(stamp(k + 1, k * kSourcePeriod), at_165);
+      for (const OutputInstant& at : step.instants()) {
+        CHECK(*at.pts_us - previous >= period);  // jamais deux images pour un même vsync
+        previous = *at.pts_us;
+        ++images;
+      }
+    }
+    const double rate = static_cast<double>(images) * 1e6 / static_cast<double>(previous);
+    CHECK(rate > 148.0);
+    CHECK(rate < 156.0);
+  }
   // Une paire déjà passée (horloge prédite) : la source seule, l'image précédente reste tenue.
   const CadenceStep late =
       grid.push(stamp(300, 241 * kSourcePeriod), FreeInputs{.ready_us = 241 * kSourcePeriod + 1,

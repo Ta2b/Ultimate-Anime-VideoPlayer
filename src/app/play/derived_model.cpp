@@ -32,6 +32,28 @@ std::string_view size_token(std::string_view text) {
   return text.substr(0, end);
 }
 
+// Un dérivé de prefix (« <source>-<suffixe>- ») : « t<version>-<empreinte>.onnx » après lui, ou
+// « <empreinte>.onnx » pour un dérivé d'avant les versions (A36-04). Le dérivé d'un suffixe plus long
+// (« window-half » derrière « window ») n'en est pas un.
+bool derived_name(std::string_view name, std::string_view prefix) {
+  constexpr std::string_view kExtension = ".onnx";
+  constexpr std::size_t kSha = 16;
+  if (!name.starts_with(prefix) || !name.ends_with(kExtension)) return false;
+  std::string_view rest = name.substr(prefix.size(), name.size() - prefix.size() - kExtension.size());
+  const auto all = [](std::string_view text, auto&& wanted) {
+    return !text.empty() &&
+           std::ranges::all_of(text, [&](char c) { return wanted(static_cast<unsigned char>(c)); });
+  };
+  if (rest.starts_with('t')) {
+    const std::size_t dash = rest.find('-');
+    if (dash == std::string_view::npos ||
+        !all(rest.substr(1, dash - 1), [](unsigned char c) { return std::isdigit(c) != 0; }))
+      return false;
+    rest.remove_prefix(dash + 1);
+  }
+  return rest.size() == kSha && all(rest, [](unsigned char c) { return std::isxdigit(c) != 0; });
+}
+
 struct SizedGroup {
   // L'origine de l'horloge des fichiers peut être dans le futur (2174 avec libstdc++) : partir du minimum.
   std::filesystem::file_time_type served = std::filesystem::file_time_type::min();
@@ -100,13 +122,11 @@ std::expected<std::filesystem::path, Refusal> derived_model(const std::filesyste
   if (!derived) return std::unexpected(std::move(derived.error()));
 
   if (auto written = core::write_atomic(target, *derived); !written) return std::unexpected(written.error());
-  // Les dérivés d'avant du même modèle et du même suffixe (autre source, autre version) ne servent plus. Le
-  // repère de version suit le préfixe : « window » ne retire pas les dérivés de « window-half ».
-  const std::string stale = prefix + "t";
+  // Les dérivés d'avant du même modèle et du même suffixe (autre source, autre version) ne servent plus.
   std::filesystem::directory_iterator it(dir, error);
   for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
     const std::string name = core::to_utf8(it->path().filename());
-    if (it->path() != target && name.starts_with(stale) && name.ends_with(".onnx")) {
+    if (it->path() != target && derived_name(name, prefix)) {
       std::error_code gone;
       std::filesystem::remove(it->path(), gone);
     }

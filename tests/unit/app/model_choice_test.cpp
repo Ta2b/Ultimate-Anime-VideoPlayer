@@ -117,10 +117,13 @@ TEST_CASE("Modèle dérivé : nommé par l'empreinte de la source, fait une seul
   // Un dérivé d'une version d'avant (sans version de transformation) : refait, puis retiré (A36-04).
   std::filesystem::create_directories(fake.home / "modeles");
   std::ofstream(fake.home / "modeles" / "rife_v4.18-essai-0123456789abcdef.onnx") << "ancien";
+  // Celui d'un suffixe plus long (« essai-half ») reste : la variante demi-taille de TemporalFix.
+  std::ofstream(fake.home / "modeles" / "rife_v4.18-essai-half-t2-0123456789abcdef.onnx") << "autre";
   const auto made = derived_model(source, "essai", fake.home / "modeles", twice);
   REQUIRE(made);
   CHECK(made->filename().string().starts_with(std::format("rife_v4.18-essai-t{}-", kDerivedModelVersion)));
   CHECK_FALSE(std::filesystem::exists(fake.home / "modeles" / "rife_v4.18-essai-0123456789abcdef.onnx"));
+  CHECK(std::filesystem::exists(fake.home / "modeles" / "rife_v4.18-essai-half-t2-0123456789abcdef.onnx"));
   CHECK(std::filesystem::file_size(*made) == 2);
   CHECK(*derived_model(source, "essai", fake.home / "modeles", twice) == *made);
   CHECK(calls == 1);

@@ -1,8 +1,8 @@
 // L'essai au chargement de TemporalFix natif (--tfix-native, docs/tfix-natif.md) : l'encodeur et la fenêtre
-// passent une entrée de test avec leurs moteurs TensorRT, puis avec les noyaux natifs (sommes f16, puis f32),
-// et le natif n'est gardé que si sa sortie tient le seuil contre celle de TensorRT. L'entrée : un dessin
-// lisse (ondes, des carrés aux bords francs) qui glisse de (2, 1) pixels d'une image à l'autre et scintille
-// (un bruit de ±3 % propre à chaque image), ce que TemporalFix voit en lecture.
+// passent une entrée de test avec leurs moteurs TensorRT, puis avec les noyaux natifs (sommes f16, mixtes,
+// puis f32), et le natif n'est gardé que si sa sortie tient le seuil contre celle de TensorRT. L'entrée : un
+// dessin lisse (ondes, des carrés aux bords francs) qui glisse de (2, 1) pixels d'une image à l'autre et
+// scintille (un bruit de ±3 % propre à chaque image), ce que TemporalFix voit en lecture.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -26,6 +26,21 @@ int work(int net, bool half) {
 
 std::size_t size(int value) {
   return static_cast<std::size_t>(value);
+}
+
+// Les sommes essayées, de la plus rapide à la plus juste (comme RIFE natif).
+constexpr RifeNativeSums kSums[] = {RifeNativeSums::kF16, RifeNativeSums::kMixed, RifeNativeSums::kF32};
+
+const char* sums_name(RifeNativeSums sums) {
+  switch (sums) {
+    case RifeNativeSums::kF16:
+      return "f16";
+    case RifeNativeSums::kMixed:
+      return "mixtes";
+    case RifeNativeSums::kF32:
+      return "f32";
+  }
+  return "?";
 }
 
 // Le canal c de l'image r de la fenêtre au point (x, y), de 0 à 1.
@@ -211,10 +226,10 @@ std::expected<std::string, Refusal> TfixEncoderEngine::try_native(
     native_.reset();
   };
   std::string tried;
-  for (const bool acc32 : {false, true}) {
+  for (const RifeNativeSums sums : kSums) {
     std::string error;
     native_on_ = false;
-    native_ = TfixNativeNet::create(pieces, height_, width_, acc32, error);
+    native_ = TfixNativeNet::create(pieces, height_, width_, sums, error);
     if (!native_) return refuse(RefusalCode::FormatUnsupported, "TemporalFix natif : encodeur : " + error);
     native_on_ = true;
     auto got = trial_traits(scratch.stream, own, input, output);
@@ -223,7 +238,7 @@ std::expected<std::string, Refusal> TfixEncoderEngine::try_native(
       return std::unexpected(std::move(got.error()));
     }
     const double db = psnr(*reference, *got, 0, got->size());
-    tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", acc32 ? "f32" : "f16", db);
+    tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", sums_name(sums), db);
     if (db < min_db) continue;
     if (auto ok = shared->reserve(native_->encoder_workspace_bytes()); !ok) {
       back_to_trt();
@@ -319,9 +334,9 @@ std::expected<std::string, Refusal> TfixWindowEngine::try_native(
   // Les passes natives sur une zone à elles : la zone de la voie ne grandit que pour un natif retenu.
   const auto own = std::make_shared<SharedActivations>();
   std::string tried;
-  for (const bool acc32 : {false, true}) {
+  for (const RifeNativeSums sums : kSums) {
     std::string error;
-    native_ = TfixNativeNet::create(pieces, h, w, acc32, error);
+    native_ = TfixNativeNet::create(pieces, h, w, sums, error);
     if (!native_) {
       std::ignore = back_to_trt();
       return refuse(RefusalCode::FormatUnsupported, "TemporalFix natif : fenêtre : " + error);
@@ -342,7 +357,7 @@ std::expected<std::string, Refusal> TfixWindowEngine::try_native(
       db = std::min(db, psnr(*reference, *got, begin, end));
       begin = end;
     }
-    tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", acc32 ? "f32" : "f16", db);
+    tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", sums_name(sums), db);
     if (db >= min_db) {
       // Retenu : sur la zone de la voie (use_native y prend la place des tampons, et vide les graphes).
       if (auto ok = use_native(true, shared); !ok) {

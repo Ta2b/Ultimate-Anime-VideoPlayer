@@ -53,8 +53,9 @@ class TfixEncoderEngine final : public Engine {
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
   // --tfix-native (docs/tfix-natif.md) : les convolutions de l'encodeur passent aux noyaux natifs si leurs
-  // traits tiennent min_db contre ceux du moteur TensorRT sur une image de test (sommes f16, puis f32).
-  // pieces : l'encodeur seul (les quatre autres vides). Rend la ligne du journal ; un refus laisse TensorRT.
+  // traits tiennent min_db contre ceux du moteur TensorRT sur une image de test (sommes f16, mixtes, puis
+  // f32). pieces : l'encodeur seul (les quatre autres vides). Rend la ligne du journal ; un refus laisse
+  // TensorRT.
   std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
                                                  const std::shared_ptr<SharedActivations>& shared,
                                                  double min_db);
@@ -100,8 +101,8 @@ class TfixWindowEngine final : public Engine {
 
   // --tfix-native : les blocs et la tête passent aux noyaux natifs si une fenêtre de test (sept images qui
   // bougent et scintillent) tient min_db contre TensorRT, sur la sortie, Y2 et la sortie de la tête (sommes
-  // f16, puis f32). pieces : les blocs et la tête (l'encodeur vide). Rend la ligne du journal ; un refus
-  // laisse TensorRT.
+  // f16, mixtes, puis f32). pieces : les blocs et la tête (l'encodeur vide). Rend la ligne du journal ; un
+  // refus laisse TensorRT.
   std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
                                                  const std::shared_ptr<SharedActivations>& shared,
                                                  double min_db);

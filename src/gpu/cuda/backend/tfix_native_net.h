@@ -25,10 +25,10 @@ class TfixNativeNet {
  public:
   virtual ~TfixNativeNet() = default;
   // pieces : l'encodeur, les blocs 0 à 2 et la tête (couches de prepare::rife_native_layers, sans
-  // transposée) ; height × width : le réseau (pair, kernels::tfix_size_valid). acc32 : sommes en f32. Rien et
-  // error rempli si une couche sort de ce que les noyaux font, ou si les poids ne s'envoient pas.
+  // transposée) ; height × width : le réseau (pair, kernels::tfix_size_valid). sums : f16, mixtes ou f32.
+  // Rien et error rempli si une couche sort de ce que les noyaux font, ou si les poids ne s'envoient pas.
   static std::unique_ptr<TfixNativeNet> create(const std::vector<RifeNativePiece>& pieces, int height,
-                                               int width, bool acc32, std::string& error);
+                                               int width, RifeNativeSums sums, std::string& error);
   // La zone de travail (activations entre les couches, sommes partielles) : octets, de l'encodeur seul, et de
   // tous les morceaux (le plus grand).
   virtual std::int64_t encoder_workspace_bytes() const = 0;
@@ -37,7 +37,7 @@ class TfixNativeNet {
   virtual cudaError_t encode(cudaStream_t stream, const void* image, void* traits, void* workspace) const = 0;
   // Le morceau k de la fenêtre (0 à 2 : les blocs ; 3 : la tête), sur les six appuis : x vers y.
   virtual cudaError_t window(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const = 0;
-  virtual bool acc32() const = 0;
+  virtual RifeNativeSums sums() const = 0;
 };
 
 }  // namespace kirari::gpu::cuda

@@ -186,9 +186,10 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> interpolate_direct(std::uint32_t output, float t, const gpu::Motion& other,
                                                   const gpu::Tensor& a, const gpu::Tensor& b,
                                                   const Target& out);
-  // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring).
+  // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring). layered : a et b sont la
+  // paire de la carte, dans l'ordre, et t son instant (RIFE mouvement) ; ses calques s'y composent.
   std::expected<void, Refusal> blend(const gpu::Tensor& a, const gpu::Tensor& b, const gpu::Motion& motion,
-                                     float t, const Target& out);
+                                     float t, const Target& out, bool layered = false);
   std::expected<void, Refusal> blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
                                            const gpu::Motion& motion, const gpu::Motion* previous, float t,
                                            const Target& out);
@@ -281,7 +282,7 @@ class UpscaleStage final : public RingStage {
   std::vector<PendingStats> stats_pending_;
   std::uint64_t stats_dropped_ = 0;  // relectures abandonnées (A42-18), journalisées une fois
   void analyze_source(const DecodedFrame& frame);
-  bool looks_ahead() const { return interpolates() && !drba(); }
+  bool looks_ahead() const { return (interpolates() || reuse_.alone) && !drba(); }
   // Retard mesuré des images de sortie (FrameLatency) ; 0 sans mesure.
   std::int64_t latency_us() const { return setup_.live ? setup_.live->latency().us() : 0; }
   std::expected<void, Refusal> allocate_ahead();
@@ -368,7 +369,8 @@ class UpscaleStage final : public RingStage {
   // premier SPAN : le warp de la paire prend spanned(current_) avant que span_current enfile SPAN.
   void pick_span_buffer();
   // L'image reprend le SPAN de l'ancre (upscale_reuse.h) : dessin tenu, ou copie d'une tenue fondue.
-  std::expected<bool, Refusal> reuses_span(const DecodedFrame& frame, const PairFacts& facts, bool held);
+  std::expected<bool, Refusal> reuses_span(const DecodedFrame& frame, const PairFacts& facts, bool held,
+                                           const gpu::Reduction& reduce);
   const gpu::Tensor& spanned(std::uint32_t index) const { return spanned_[span_of_[index]]->tensor(); }
   bool spanned_now_ = false;
   std::array<std::uint32_t, 2> span_of_{0, 1};  // tampon de spanned_ de chaque image de rgb_

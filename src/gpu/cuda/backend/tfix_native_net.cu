@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/rife_native_kernels.cuh"
+#include "gpu/cuda/backend/rife_native_pack.h"
 #include "gpu/cuda/backend/tfix_fused.cuh"
 #include "gpu/cuda/backend/tfix_native_net.h"
 #include "kernels/spec/tfix_fused.h"
@@ -62,38 +63,39 @@ enum class Kind : std::uint8_t { kSame, kHalf, kImage };
 
 using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::BatchParams& p);
 
-template <int Kc, int CT, int S, int Rows, rn::In I, bool Acc16>
+template <int Kc, int CT, int S, int Rows, rn::In I, rn::Acc A>
 void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::BatchParams& p) {
-  rn::conv_kernel<Kc, CT, 3, S, Rows, I, rn::Out::kNhwc, Acc16, true>
+  rn::conv_kernel<Kc, CT, 3, S, Rows, I, rn::Out::kNhwc, A, true>
       <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
-// La tuile de 64 colonnes n'existe qu'en sommes f16 : en f32, ses 128 registres d'accumulateurs débordent.
-template <int Kc, int S, int Rows, rn::In I, bool Acc16>
+// La tuile de 64 colonnes n'existe qu'en sommes f16 : en f32 ou mixtes, ses 128 registres d'accumulateurs
+// f32 débordent.
+template <int Kc, int S, int Rows, rn::In I, rn::Acc A>
 Launch by_tile(int ct) {
-  if (ct == 16) return launch_one<Kc, 16, S, Rows, I, Acc16>;
-  if (ct == 32) return launch_one<Kc, 32, S, Rows, I, Acc16>;
-  if constexpr (Acc16) {
-    if (ct == 64) return launch_one<Kc, 64, S, Rows, I, Acc16>;
+  if (ct == 16) return launch_one<Kc, 16, S, Rows, I, A>;
+  if (ct == 32) return launch_one<Kc, 32, S, Rows, I, A>;
+  if constexpr (A == rn::Acc::kF16) {
+    if (ct == 64) return launch_one<Kc, 64, S, Rows, I, A>;
   }
   return nullptr;
 }
 
-template <bool Acc16>
+template <rn::Acc A>
 Launch pick(Kind kind, int kc, int ct) {
   using rn::In;
   switch (kind) {
     case Kind::kSame:
-      if (kc == 16) return by_tile<16, 1, 2, In::kNhwc, Acc16>(ct);
-      if (kc == 32) return by_tile<32, 1, 2, In::kNhwc, Acc16>(ct);
-      if (kc == 64) return by_tile<64, 1, 2, In::kNhwc, Acc16>(ct);
+      if (kc == 16) return by_tile<16, 1, 2, In::kNhwc, A>(ct);
+      if (kc == 32) return by_tile<32, 1, 2, In::kNhwc, A>(ct);
+      if (kc == 64) return by_tile<64, 1, 2, In::kNhwc, A>(ct);
       return nullptr;
     case Kind::kHalf:
-      if (kc == 16) return by_tile<16, 2, 1, In::kNhwc, Acc16>(ct);
-      if (kc == 32) return by_tile<32, 2, 1, In::kNhwc, Acc16>(ct);
+      if (kc == 16) return by_tile<16, 2, 1, In::kNhwc, A>(ct);
+      if (kc == 32) return by_tile<32, 2, 1, In::kNhwc, A>(ct);
       return nullptr;
     case Kind::kImage:
-      return kc == 16 ? by_tile<16, 2, 1, In::kImage, Acc16>(ct) : nullptr;
+      return kc == 16 ? by_tile<16, 2, 1, In::kImage, A>(ct) : nullptr;
   }
   return nullptr;
 }
@@ -166,7 +168,7 @@ struct Folded {
 
 class Net final : public TfixNativeNet {
  public:
-  explicit Net(bool acc32) : acc32_(acc32) {
+  explicit Net(RifeNativeSums sums) : sums_(sums) {
     int device = 0;
     if (cudaGetDevice(&device) == cudaSuccess)
       static_cast<void>(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device));
@@ -234,7 +236,7 @@ class Net final : public TfixNativeNet {
     for (std::size_t i = 1; i < pieces_.size(); ++i) most = std::max(most, pieces_[i].bytes());
     return most;
   }
-  bool acc32() const override { return acc32_; }
+  RifeNativeSums sums() const override { return sums_; }
 
   cudaError_t encode(cudaStream_t stream, const void* image, void* traits, void* workspace) const override {
     if (pieces_.empty() || pieces_[0].layers.empty()) return cudaErrorInvalidValue;
@@ -298,8 +300,9 @@ class Net final : public TfixNativeNet {
     if (!sent(layer.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) ||
         !sent(layer.bias.upload(biases.data(), biases.size() * sizeof(float))))
       return false;
-    layer.launch =
-        acc32_ ? pick<false>(layer.kind, layer.kc, layer.ct) : pick<true>(layer.kind, layer.kc, layer.ct);
+    layer.launch = sums_ == RifeNativeSums::kF16     ? pick<rn::Acc::kF16>(layer.kind, layer.kc, layer.ct)
+                   : sums_ == RifeNativeSums::kMixed ? pick<rn::Acc::kMixed>(layer.kind, layer.kc, layer.ct)
+                                                     : pick<rn::Acc::kF32>(layer.kind, layer.kc, layer.ct);
     if (layer.launch == nullptr) {
       error = "aucun noyau pour cette couche";
       return false;
@@ -336,7 +339,7 @@ class Net final : public TfixNativeNet {
     const long cells =
         static_cast<long>((layer.ow + rn::kTW - 1) / rn::kTW) * ((layer.oh + th - 1) / th) * batch;
     for (const int ct : {64, 32}) {
-      if ((acc32_ && ct == 64) || cout % ct != 0) continue;
+      if ((sums_ != RifeNativeSums::kF16 && ct == 64) || cout % ct != 0) continue;
       if (cells * (cout / ct) >= 2L * sms_) return ct;
     }
     return 16;
@@ -384,7 +387,7 @@ class Net final : public TfixNativeNet {
     return cudaGetLastError();
   }
 
-  bool acc32_;
+  RifeNativeSums sums_;
   int sms_ = 1;
   std::vector<Piece> pieces_;
 };
@@ -392,7 +395,7 @@ class Net final : public TfixNativeNet {
 }  // namespace
 
 std::unique_ptr<TfixNativeNet> TfixNativeNet::create(const std::vector<RifeNativePiece>& pieces, int height,
-                                                     int width, bool acc32, std::string& error) {
+                                                     int width, RifeNativeSums sums, std::string& error) {
   if (pieces.size() != 2 + kernels::kTfixLevels || !kernels::tfix_size_valid(height, width)) {
     error = "l'encodeur, trois blocs et la tête attendus, à une taille paire";
     return nullptr;
@@ -404,7 +407,7 @@ std::unique_ptr<TfixNativeNet> TfixNativeNet::create(const std::vector<RifeNativ
     error = "l'encodeur seul, ou les trois blocs et la tête seuls, attendus";
     return nullptr;
   }
-  auto net = std::make_unique<Net>(acc32);
+  auto net = std::make_unique<Net>(sums);
   if (!encoder) net->skip();
   if (encoder &&
       !net->plan(pieces[0], height, width, 0, 1, height / 2, width / 2, kernels::kTfixTraits, error)) {

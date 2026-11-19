@@ -48,9 +48,9 @@ inline constexpr double kFp8MinPsnrMeanDb = 30.0;
 inline constexpr double kFp8MinPsnrWorstDb = 26.0;
 inline constexpr double kFp8MinSsimWorst = 0.93;
 
-// Fp16Cutlass (essai, --span-native) : le SPAN entier en FP16 par les mêmes noyaux CUTLASS, paquet
-// « -fp16c- » en « .span8 » tiré de l'ONNX (drapeau fp16 du paquet), sans calibration, ni porte, ni reçu : il
-// ne quantifie rien.
+// Fp16Cutlass (essai, --span-native ; le nom est resté de l'ancien chemin CUTLASS) : le SPAN entier en FP16
+// par les noyaux natifs (docs/span-native16.md), paquet « -fp16c- » en « .span8 » tiré de l'ONNX (drapeau
+// fp16 du paquet), sans calibration, ni porte, ni reçu : il ne quantifie rien.
 enum class SpanVariantKind : std::uint8_t { Int8, Fp8, Fp32, Fp8Cutlass, Fp16Cutlass };
 
 struct SpanInt8 {  // une variante quantifiée ou recalculée du SPAN, quel que soit son kind

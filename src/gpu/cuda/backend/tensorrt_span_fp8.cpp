@@ -1,8 +1,10 @@
 // Le SPAN entier en FP8 dans le backend TensorRT : « construire » un paquet « .span8 » ne lance pas trtexec,
 // cela vérifie le paquet et la taille ; « charger » envoie les poids et essaie les noyaux. Tout refus ici
 // fait reprendre la chaîne sur TensorRT FP16 (chain_setup.cpp) : le SPAN d'origine n'est jamais touché.
+#include <array>
 #include <format>
 #include <optional>
+#include <span>
 
 #include "gpu/cuda/backend/ring_slot.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
@@ -12,7 +14,7 @@
 namespace kirari::gpu::cuda {
 namespace {
 
-// Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 30 et RTX 50 (SpanFp8Net::supported_fp16_device).
+// Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 50 (SpanFp8Net::supported_fp16_device).
 std::expected<void, Refusal> device_refusal(const cudaDeviceProp& properties, bool fp16) {
   const bool supported = fp16 ? SpanFp8Net::supported_fp16_device(properties.major, properties.minor)
                               : SpanFp8Net::supported_device(properties.major, properties.minor);
@@ -59,8 +61,12 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
                                     static_cast<int>(shape->dims[3]), arena(), span_native_);
   if (!engine) return std::unexpected(std::move(engine.error()));
-  log(BackendLogLevel::Info,
-      std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}", shape->dims[3], shape->dims[2]));
+  if ((*engine)->fp16())
+    log(BackendLogLevel::Info, std::format("SPAN FP16 natif chargé : {}×{}", shape->dims[3], shape->dims[2]));
+  else
+    log(BackendLogLevel::Info,
+        std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}{}", shape->dims[3], shape->dims[2],
+                    (*engine)->native_edges() ? ", bords natifs" : ""));
   if (const std::optional<double> db = (*engine)->native_check_db())
     log(BackendLogLevel::Info,
         std::format(
@@ -87,9 +93,16 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
                                                                std::span<Tensor> outputs,
                                                                const RingTarget* ring) {
   if (auto ok = bind_joined(ring); !ok) return ok;
-  // Les noyaux lisent l'entrée, écrivent la sortie et leur zone d'activation.
+  // Les noyaux lisent l'entrée, écrivent la sortie et leur zone d'activation ; par tuiles, ils lisent aussi
+  // la sortie d'avant pour la décaler ou la copier (span_fp8_tiles.cpp).
   const std::shared_ptr<SharedActivations>& zone = arena();
-  if (auto ok = order_engine(&engine, inputs, outputs, false); !ok) return ok;
+  std::array<Tensor, 2> reads{};
+  std::span<const Tensor> ordered = inputs;
+  if (const Tensor* previous = engine.tile_read(); previous != nullptr && inputs.size() == 1) {
+    reads = {inputs[0], *previous};
+    ordered = reads;
+  }
+  if (auto ok = order_engine(&engine, ordered, outputs, false); !ok) return ok;
   const Shape shape = engine.input_shape();
   GpuTiming& timing = stage_named("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]);
   role(Role::Upscale).begin(stream_);

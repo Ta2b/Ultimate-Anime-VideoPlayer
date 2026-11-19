@@ -76,6 +76,9 @@ class SpanFp8Engine final : public Engine {
   kernels::SpanTileGrid span_tile_grid() const override;
   bool next_span_tiles(std::span<const std::uint8_t> core, int shift_x, int shift_y,
                        const Tensor* previous) override;
+  // La sortie d'avant que l'appel suivant lira pour la décaler ou la copier : une lecture de plus à déclarer
+  // aux voies (LaneHazards), comme son entrée ; nul sans demande de tuiles ou sur place.
+  const Tensor* tile_read() const { return tile_job_ && tile_job_->reads ? &tile_job_->source : nullptr; }
   std::expected<void, Refusal> enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
                                             const SpanFp8Ring& ring);
 
@@ -88,6 +91,10 @@ class SpanFp8Engine final : public Engine {
   // SPAN FP16 natif : le PSNR de la carte contre le calcul du processeur au chargement (span_fp8_check.h) ;
   // vide pour un paquet FP8, ou une image trop petite pour en juger.
   std::optional<double> native_check_db() const { return native_check_db_; }
+  // Le paquet chargé est le SPAN FP16 natif (drapeau fp16), pas le FP8 ; native_edges : les bords du FP8 par
+  // les noyaux natifs (--span-native). Pour le journal.
+  bool fp16() const { return fp16_; }
+  bool native_edges() const { return native_edges_; }
 
  private:
   SpanFp8Engine() = default;
@@ -107,6 +114,8 @@ class SpanFp8Engine final : public Engine {
     int shift_x = 0;  // pixels d'entrée
     int shift_y = 0;
     std::uintptr_t previous = 0;  // adresse de la sortie d'avant ; 0 : déjà dans la sortie
+    Tensor source;                // le tenseur de la sortie d'avant, si reads
+    bool reads = false;
   };
   static constexpr int kTileStages = 4;  // envois des masques en vol au plus
   std::optional<TileJob> tile_job_;
@@ -120,6 +129,8 @@ class SpanFp8Engine final : public Engine {
   GraphBook<std::uintptr_t> book_{kMaxGraphs, kCaptureAttempts};
   std::vector<cudaGraphExec_t> execs_;  // rangés par l'indice du registre
   std::optional<double> native_check_db_;
+  bool fp16_ = false;
+  bool native_edges_ = false;
   std::string overflow_notice_;
 
   std::unique_ptr<SpanFp8Net> net_;

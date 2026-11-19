@@ -597,7 +597,13 @@ std::int64_t Session::floor_step_us_now(std::int64_t host_now) const {
     const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
     hold = host_now - shown_at_us_ + std::max<std::int64_t>(std::llround(media_wait / now.rate), 0);
   }
-  return core::floor_step_us(hold, config_.vrr_floor_us);
+  // Une tenue sous le plancher ne se représente pas : l'image suivante, due mais pas encore écrite, paraît
+  // dès qu'elle l'est. floor_step_us rend alors la tenue elle-même, qui était échue aussitôt l'image due :
+  // la représentation partait tout de suite et tenait l'écran une période, et l'image neuve, écrite juste
+  // après, attendait le rafraîchissement d'après (séance du 19/11 en VRR à 165 Hz, plancher 48 Hz : une
+  // image neuve sur deux représentée, l'écran tenu à 165 Hz, 12 ms au lieu de 7).
+  const std::int64_t step = core::floor_step_us(hold, config_.vrr_floor_us, display_period());
+  return step < hold ? step : 0;
 }
 
 std::int64_t Session::idle_wait_us(std::int64_t host_now) {

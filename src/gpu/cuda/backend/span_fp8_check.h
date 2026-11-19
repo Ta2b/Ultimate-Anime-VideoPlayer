@@ -1,8 +1,7 @@
-// Le SPAN FP16 natif jugé sur la carte au chargement (docs/span-fp8-cutlass.md, SPAN FP16 natif) : les noyaux
-// CUTLASS sont aussi compilés pour les RTX 50 sans y avoir jamais tourné devant nous. Une image d'essai passe
-// par le réseau chargé ; le coin haut-gauche de sa sortie se compare au SPAN f32 du processeur
-// (span_fp8::forward), un calcul écrit à part, sur la même découpe. Sous kNativeCheckDb, le chargement est
-// refusé et la chaîne reprend TensorRT FP16.
+// Le SPAN FP16 natif jugé sur la carte au chargement (docs/span-native16.md) : ses noyaux sont aussi compilés
+// pour les RTX 50 sans y avoir jamais tourné devant nous. Une image d'essai passe par le réseau chargé ; le
+// coin haut-gauche de sa sortie se compare au SPAN f32 du processeur (span_fp8::forward), un calcul écrit à
+// part, sur la même découpe. Sous kNativeCheckDb, refus : la chaîne reprend TensorRT FP16.
 #pragma once
 
 #include <expected>
@@ -15,7 +14,9 @@
 namespace kirari::gpu::cuda {
 
 // La référence FP16 des noyaux colle au FP32 à 78,8 dB (docs/span-fp8-cutlass.md) ; le réseau FP8 se tient
-// vers 50 dB. Des noyaux faux sur une architecture tombent bien plus bas.
+// vers 50 dB. Les noyaux natifs somment en f16, comme TensorRT FP16 : attendus entre les deux (l'arrondi
+// d'une somme f16 est bien plus fin que celui de l'E4M3), à vérifier au premier banc (--compare). Des noyaux
+// faux sur une architecture tombent bien plus bas.
 inline constexpr double kNativeCheckDb = 50.0;
 // Côté de la découpe d'entrée jugée : 64 pixels, un demi-plan de 32 dont un b5f48 garde 15 lignes exactes.
 inline constexpr int kNativeCheckSide = 64;

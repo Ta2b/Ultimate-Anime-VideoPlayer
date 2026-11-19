@@ -420,7 +420,8 @@ std::expected<void, Refusal> RifeFusedEngine::enqueue_chain(cudaStream_t stream,
       static_cast<std::uintptr_t>(arena->generation()),
       static_cast<std::uintptr_t>(pass.encode) | static_cast<std::uintptr_t>(pass.a_slot) << 8U |
           static_cast<std::uintptr_t>(pass.first_block) << 16U |
-          static_cast<std::uintptr_t>(l2_persisting_ != 0 && l2_max_window_ != 0) << 24U};
+          static_cast<std::uintptr_t>(l2_persisting_ != 0 && l2_max_window_ != 0) << 24U |
+          static_cast<std::uintptr_t>(native_on_ ? 1 + static_cast<int>(native_->sums()) : 0) << 25U};
   const auto chain = [&] { return run(stream, arena, inputs[0], outputs, pass); };
   if (l2_persisting_ == 0 || l2_max_window_ == 0) return graphs_.launch(stream, key, chain);
   // Les deux emplacements de l'encodage (4 plans FP16 chacun), relus par la colle de chaque bloc.

@@ -27,9 +27,9 @@ const onnx::Attribute* find_attribute(const onnx::Node& node, std::string_view n
 
 // Les entiers d'un attribut INTS, ou fallback s'il manque.
 std::vector<std::int64_t> ints_of(const onnx::Node& node, std::string_view name,
-                                  std::vector<std::int64_t> fallback) {
+                                  const std::vector<std::int64_t>& fallback) {
   const onnx::Attribute* found = find_attribute(node, name);
-  return found != nullptr ? found->ints : std::move(fallback);
+  return found != nullptr ? found->ints : fallback;
 }
 
 bool all_equal(const std::vector<std::int64_t>& values, std::int64_t want, std::size_t count) {
@@ -52,16 +52,24 @@ struct Walk {
   }
 };
 
-// Valeurs par canal d'une constante : cout valeurs, ou une seule répétée (formes 1, C, 1×C×1×1, C×1×1).
+// Valeurs par canal d'une constante appliquée à une activation N×C×H×W : une seule valeur répétée (toutes
+// ses dimensions à 1), ou cout valeurs de forme C×1×1 ou 1×C×1×1. La diffusion d'ONNX range une forme C
+// (ou 1×1×1×C) le long de la largeur, pas des canaux : refusée, comme toute autre. Vide si refusée.
 std::vector<float> per_channel(const onnx::Tensor& tensor, int cout) {
-  if (tensor.floats.size() == 1) return std::vector<float>(static_cast<std::size_t>(cout), tensor.floats[0]);
-  if (tensor.floats.size() == static_cast<std::size_t>(cout)) return tensor.floats;
+  const std::vector<std::int64_t>& d = tensor.dims;
+  if (d.size() > 4) return {};
+  if (tensor.floats.size() == 1 && std::ranges::all_of(d, [](std::int64_t v) { return v == 1; }))
+    return std::vector<float>(static_cast<std::size_t>(cout), tensor.floats[0]);
+  const bool channels = (d.size() == 3 && d[0] == cout && d[1] == 1 && d[2] == 1) ||
+                        (d.size() == 4 && d[0] == 1 && d[1] == cout && d[2] == 1 && d[3] == 1);
+  if (channels && tensor.floats.size() == static_cast<std::size_t>(cout)) return tensor.floats;
   return {};
 }
 
 // Les attributs d'une Conv 3 × 3 (ou 1 × 1, kernel 1) ou d'une ConvTranspose 4 × 4 que les noyaux font : un
 // seul groupe, ou autant que de canaux (par canal, groups), bord 1 (0 pour 1 × 1), sans dilatation ni
-// auto_pad, pas 1 ou 2 (2 pour la transposée, sans output_padding ; 1 pour 1 × 1). Le pas, ou 0.
+// auto_pad, pas 1 ou 2 (2 pour la transposée, sans output_padding ni output_shape, qui ferait ignorer les
+// bords ; 1 pour 1 × 1). Le pas, ou 0.
 int conv_stride(const onnx::Node& node, bool transposed, int kernel, std::int64_t groups) {
   const onnx::Attribute* group = find_attribute(node, "group");
   const onnx::Attribute* auto_pad = find_attribute(node, "auto_pad");
@@ -74,7 +82,11 @@ int conv_stride(const onnx::Node& node, bool transposed, int kernel, std::int64_
       !all_equal(ints_of(node, "dilations", {1, 1}), 1, 2) || strides.size() != 2 || strides[0] != strides[1])
     return 0;
   const auto stride = static_cast<int>(strides[0]);
-  if (transposed) return stride == 2 && all_equal(ints_of(node, "output_padding", {0, 0}), 0, 2) ? 2 : 0;
+  if (transposed)
+    return stride == 2 && all_equal(ints_of(node, "output_padding", {0, 0}), 0, 2) &&
+                   find_attribute(node, "output_shape") == nullptr
+               ? 2
+               : 0;
   if (kernel == 1) return stride == 1 ? 1 : 0;
   return stride == 1 || stride == 2 ? stride : 0;
 }

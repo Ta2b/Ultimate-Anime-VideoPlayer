@@ -54,8 +54,36 @@ f32. Les convolutions des blocs restent CUTLASS FP8, déjà au plafond de la mé
 (`span-fp8-cutlass.md`, balayage des tuiles). Le paquet et son reçu ne changent pas : les bords sont en FP16
 des deux côtés, seuls l'ordre des sommes et l'arrondi E4M3 de x0 (depuis le FP16 au lieu du f32) diffèrent.
 
-Les sommes f16 sont bornées au plus grand fini avant l'écriture (`to_half2`) : une somme débordée ne sort
-pas en infini.
+Une somme f16 débordée (infinie, ou NaN d'un débordement des deux signes) est bornée comme dans les noyaux
+CUTLASS du FP8 : ±65504, NaN à 0 (`sums`). Aux bords du FP8, elle est aussi notée dans le mot de débordement
+du paquet (`Params::overflow`, le même que `KP::overflow`) : la politique acc16 repasse en f32 comme avec les
+bords CUTLASS.
+
+## Bandes
+
+Premier banc (ci-dessous) : le natif f16 ne gagne sur le f32 que 19 % (11,82 contre 14,60 ms au b8f64), loin
+du double du débit des tensor cores. Il bute sur la mémoire : chaque couche lit et écrit son tenseur entier
+(66 Mo à 64 canaux en 1080p), soit environ 4,2 Go par image, 8,4 ms à 504 Go/s sur la RTX 4070 Ti, quand le
+calcul en f16 n'en demande que 6 à 7. Les 48 Mo de L2 ne gardent rien d'une couche à la suivante : la
+suivante reprend par le haut, que la précédente a écrit en premier.
+
+Le corps tourne donc en bandes (`SpanFp8Weights::band`, 64 lignes de demi-résolution par défaut,
+`kirari_span_fp8_run --band N`, 0 pour l'image entière) : conv_1 fait ses 64 lignes suivantes, puis chaque
+couche aussi loin que la précédente le permet, c'est-à-dire une ligne (son halo) avant la fin de celle-ci ;
+au bas de l'image, tout va jusqu'au bout. Ce qu'une couche lit vient d'être écrit et tient en L2 (8 Mo par
+tenseur et par bande) ; une ligne réécrite avant de quitter la L2 ne va même jamais en mémoire. Rien ne change
+aux noyaux qu'une plage de lignes (`Params::y0`, `y1`) ; 26 lancements par bande au b8f64, 9 bandes en 1080p.
+
+Les tampons qui servent à plusieurs couches restent justes sans copie : la couche qui réécrit T1, T2 ou un
+tampon de bloc (X0, X1) suit de trois lignes au moins celle qui le lit encore, qui ne revient jamais en
+arrière ; conv_cat écrit sa sortie sur S0, sur place (une 1×1 ne lit que ses propres pixels, et les blocs
+ont fini de lire S0 sur ces lignes), et to_pixel la lit après la dernière bande. Une simulation de
+l'ordonnancement (chaque ligne marquée de la couche qui l'a écrite) l'a vérifié pour 2 à 8 blocs, des
+hauteurs de 1 à 540 lignes et des bandes de 1 à 1000. Les tuiles qui bougent, qui veulent la grille de
+l'image entière, se passent des bandes.
+
+Le banc balaie la hauteur (`BANDS`, 0, 32 et 128 en plus du défaut) et juge la justesse avec et sans
+bandes : les deux écarts à la référence doivent être égaux, l'ordre des bandes ne change aucune somme.
 
 ## Mesurer
 
@@ -68,10 +96,12 @@ flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linu
     ~/modeles/…_Performance_…_b5f48_….onnx -- extrait.mkv
 ```
 
-Il construit le moteur TensorRT FP16 de chaque modèle (et le même en E/S HWC8 : l'essai C0), puis donne en
-ABAB 3 tours la médiane de TensorRT et des noyaux natifs (graphe CUDA tous deux), les natifs en f32, et l'écart
-de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non finies). Dans le
-lecteur : `kirari play --span-native --stats` au cran Équilibre.
+Il construit le moteur TensorRT FP16 de chaque modèle, puis donne en ABAB 3 tours la médiane de TensorRT et
+des noyaux natifs (graphe CUDA tous deux, bandes par défaut), les natifs à d'autres hauteurs de bande et en
+f32, et l'écart de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non
+finies), avec et sans bandes. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il a perdu. Dans le
+lecteur : `kirari play --span-native --stats` ; le journal dit « SPAN FP16 natif chargé » au cran Équilibre,
+« SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran Performance.
 
 ## Décision
 
@@ -83,6 +113,13 @@ lecteur : `kirari play --span-native --stats` au cran Équilibre.
 
 ## État
 
-Écrit et compilé (nvcc 13, sm 89 et 120, aucun débordement de registres : 96 à 140 registres en f16), bords
-du FP8 compris ; relu, jamais lancé (règle de Tatoub : tout se teste ensemble à la fin). La justesse se juge au premier banc (`--compare`) et à chaque chargement (essai contre le
-processeur).
+Premier banc (RTX 4070 Ti, 1080p → 4K, image de Re:Zero, 3 tours ABAB, sans bandes, novembre 2026) :
+
+| Modèle | TensorRT FP16 | E/S HWC8 | Natif f16 | Natif f32 | Écart f16 | Écart f32 |
+|---|---:|---:|---:|---:|---:|---:|
+| b8f64 (Équilibre) | 15,39 ms | 15,96 ms | 11,82 ms (0,77×) | 14,60 ms | 62,66 dB | 77,90 dB |
+| b5f48 (Performance) | 9,17 ms | 9,85 ms | 5,92 ms (0,65×) | 6,25 ms | 63,72 dB | |
+
+Les noyaux sont justes (au-dessus des 55 dB visés) et battent TensorRT ; ils égalent AnimeJaNai (11,9 et
+6,2 ms) sans marge. Les bandes (ci-dessus) sont écrites et compilées (sm 89 et 120, sans débordement), à
+mesurer au prochain banc.

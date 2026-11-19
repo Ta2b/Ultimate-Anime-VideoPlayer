@@ -121,7 +121,7 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   // l'autre.
   if (after->epoch == frame.epoch)
     scene_.start(ops, rgb_[current_]->tensor(), ahead_.rgb->tensor(), frame.id, after->id, frame.epoch);
-  if (!ahead_scores_ || !(always_scores || next_pair_measured())) return {};
+  if (!ahead_scores_ || !(always_scores || reuse_.alone || next_pair_measured())) return {};
   const gpu::Tensor& next_source = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
   auto ticket = ops.scores_start(rife_source(current_), next_source);
   if (!ticket) {

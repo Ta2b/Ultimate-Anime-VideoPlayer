@@ -3,7 +3,9 @@
 Phase 4 du plan du flux NVIDIA (« Usages du flux optique matériel NVIDIA »). Aucun modèle nouveau : RIFE et
 SPAN tels quels, plus un warp par le mouvement de caméra que donne la carte de la scène (`kernels/spec/scene_flow.h`,
 `PairFacts::scene`). Les deux fonctions sont éteintes par défaut, sans option de ligne de commande : elles
-s'allument dans `play.toml`.
+s'allument dans `play.toml`, et ne tournent qu'avec la carte, donc avec l'option d'essai `--scene-map` (sans
+elle, une ligne au journal le dit). En lecture seulement : l'export rejoue la chaîne au bit près, et la carte
+arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
 
 ## Ce que ça fait
 
@@ -40,7 +42,9 @@ journal.
   les images intermédiaires passent par un tenseur au lieu d'être écrites directement dans le slot
   (`layers_ring_direct`) : une copie de plus par image.
 - Hors du champ : DistilDRBA, GMFSS, RIFE image et le Smooth (les instants n'y sont plus ceux de la caméra)
-  gardent leur chemin. RIFE tourne toujours sur toute l'image : le gain est la qualité, pas le temps.
+  gardent leur chemin ; seuls les warps de RIFE mouvement sur la paire de la carte composent (`blend`,
+  `layered`). Une clé dont le SPAN de la plaque n'a pas tourné (SPAN de b repris d'un dessin tenu, ou fait en
+  avance par le Smooth) est refaite à la paire suivante ; les tuiles qui bougent sont coupées avec la plaque. RIFE tourne toujours sur toute l'image : le gain est la qualité, pas le temps.
 
 Journal de fin : `calques : N paires avec calques (X % de décor en moyenne), M images composées ; sans : … ;
 plaque : K clés, P sources reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
@@ -52,8 +56,8 @@ Pas de banc à part : les deux fonctions s'essaient avec les autres usages du fl
 
 - Tests : `kirari_backend_tensorrt_tests "[layers]"` (le noyau contre la référence, sur une RTX),
   `kirari_kernels_tests "[layers]"`, `kirari_app_tests "[layers]"`.
-- À regarder : panoramiques, zooms et travellings avec `layers = true` puis `background_plate = true` ; le
-  journal de fin dit la part de paires avec calques, le profil GPU le coût des étapes « calques » et « plaque de
-  décor ».
+- À regarder, lancé avec `--scene-map` : panoramiques, zooms et travellings avec `layers = true` puis
+  `background_plate = true` ; le journal de fin dit la part de paires avec calques, le profil GPU le coût des
+  étapes « calques » et « plaque de décor ».
 - Si le décor ondule encore ou qu'un personnage s'efface : les seuils de `layer_plan.h` et les gardes de
   `layers.h` se règlent ; si le décor sort du modèle de caméra (parallaxe), les calques restent éteints.

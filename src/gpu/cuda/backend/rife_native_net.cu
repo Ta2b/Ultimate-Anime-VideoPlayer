@@ -13,11 +13,13 @@
 
 #include "gpu/cuda/backend/rife_native_kernels.cuh"
 #include "gpu/cuda/backend/rife_native_net.h"
+#include "gpu/cuda/backend/rife_native_pack.h"
 
 namespace kirari::gpu::cuda {
 namespace {
 
 namespace rn = rife_native;
+using rn::Acc;
 
 constexpr int pad16(int c) {
   return (c + 15) / 16 * 16;
@@ -78,46 +80,59 @@ enum class Kind : std::uint8_t {
 
 using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p);
 
-template <int Kc, int CT, int KH, int S, int Rows, rn::In I, rn::Out O, bool Acc16>
+template <int Kc, int CT, int KH, int S, int Rows, rn::In I, rn::Out O, Acc A>
 void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p) {
-  rn::conv_kernel<Kc, CT, KH, S, Rows, I, O, Acc16, false>
+  rn::conv_kernel<Kc, CT, KH, S, Rows, I, O, A, false>
       <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
-// La tuile de 64 colonnes n'existe qu'en sommes f16 : en f32, ses 128 registres d'accumulateurs débordent.
-template <int Kc, int KH, int S, int Rows, rn::In I, rn::Out O, bool Acc16>
+// La tuile de 64 colonnes n'existe qu'en sommes f16 : en f32 ou mixtes, ses 128 registres d'accumulateurs
+// f32 débordent.
+template <int Kc, int KH, int S, int Rows, rn::In I, rn::Out O, Acc A>
 Launch by_tile(int ct) {
-  if (ct == 16) return launch_one<Kc, 16, KH, S, Rows, I, O, Acc16>;
-  if (ct == 32) return launch_one<Kc, 32, KH, S, Rows, I, O, Acc16>;
-  if constexpr (Acc16) {
-    if (ct == 64) return launch_one<Kc, 64, KH, S, Rows, I, O, Acc16>;
+  if (ct == 16) return launch_one<Kc, 16, KH, S, Rows, I, O, A>;
+  if (ct == 32) return launch_one<Kc, 32, KH, S, Rows, I, O, A>;
+  if constexpr (A == Acc::kF16) {
+    if (ct == 64) return launch_one<Kc, 64, KH, S, Rows, I, O, A>;
   }
   return nullptr;
 }
 
-template <bool Acc16>
+template <Acc A>
 Launch pick(Kind kind, int kc, int ct) {
   using rn::In;
   using rn::Out;
   switch (kind) {
     case Kind::kSame:
-      if (kc == 16) return by_tile<16, 3, 1, 2, In::kNhwc, Out::kNhwc, Acc16>(ct);
-      if (kc == 32) return by_tile<32, 3, 1, 2, In::kNhwc, Out::kNhwc, Acc16>(ct);
-      if (kc == 64) return by_tile<64, 3, 1, 2, In::kNhwc, Out::kNhwc, Acc16>(ct);
+      if (kc == 16) return by_tile<16, 3, 1, 2, In::kNhwc, Out::kNhwc, A>(ct);
+      if (kc == 32) return by_tile<32, 3, 1, 2, In::kNhwc, Out::kNhwc, A>(ct);
+      if (kc == 64) return by_tile<64, 3, 1, 2, In::kNhwc, Out::kNhwc, A>(ct);
       return nullptr;
     case Kind::kHalf:
-      if (kc == 16) return by_tile<16, 3, 2, 1, In::kNhwc, Out::kNhwc, Acc16>(ct);
-      if (kc == 32) return by_tile<32, 3, 2, 1, In::kNhwc, Out::kNhwc, Acc16>(ct);
+      if (kc == 16) return by_tile<16, 3, 2, 1, In::kNhwc, Out::kNhwc, A>(ct);
+      if (kc == 32) return by_tile<32, 3, 2, 1, In::kNhwc, Out::kNhwc, A>(ct);
       return nullptr;
     case Kind::kImage:
-      return kc == 16 ? by_tile<16, 3, 2, 1, In::kImage, Out::kNhwc, Acc16>(ct) : nullptr;
+      return kc == 16 ? by_tile<16, 3, 2, 1, In::kImage, Out::kNhwc, A>(ct) : nullptr;
     case Kind::kPhase:
-      if (kc == 16) return by_tile<16, 2, 1, 2, In::kNhwc, Out::kPhase, Acc16>(ct);
-      if (kc == 32) return by_tile<32, 2, 1, 2, In::kNhwc, Out::kPhase, Acc16>(ct);
-      if (kc == 64) return by_tile<64, 2, 1, 2, In::kNhwc, Out::kPhase, Acc16>(ct);
+      if (kc == 16) return by_tile<16, 2, 1, 2, In::kNhwc, Out::kPhase, A>(ct);
+      if (kc == 32) return by_tile<32, 2, 1, 2, In::kNhwc, Out::kPhase, A>(ct);
+      if (kc == 64) return by_tile<64, 2, 1, 2, In::kNhwc, Out::kPhase, A>(ct);
       return nullptr;
     case Kind::kPlanes4:
-      return kc == 16 && ct == 16 ? launch_one<16, 16, 3, 1, 2, In::kNhwc, Out::kPlanes4, Acc16> : nullptr;
+      return kc == 16 && ct == 16 ? launch_one<16, 16, 3, 1, 2, In::kNhwc, Out::kPlanes4, A> : nullptr;
+  }
+  return nullptr;
+}
+
+Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct) {
+  switch (sums) {
+    case RifeNativeSums::kF16:
+      return pick<Acc::kF16>(kind, kc, ct);
+    case RifeNativeSums::kMixed:
+      return pick<Acc::kMixed>(kind, kc, ct);
+    case RifeNativeSums::kF32:
+      return pick<Acc::kF32>(kind, kc, ct);
   }
   return nullptr;
 }
@@ -170,7 +185,7 @@ struct Folded {
 
 class Net final : public RifeNativeNet {
  public:
-  explicit Net(bool acc32) : acc32_(acc32) {
+  explicit Net(RifeNativeSums sums) : sums_(sums) {
     int device = 0;
     if (cudaGetDevice(&device) == cudaSuccess)
       static_cast<void>(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device));
@@ -194,8 +209,9 @@ class Net final : public RifeNativeNet {
                 std::to_string(in_ld);
         return false;
       }
-      if (image && conv.cin != 3) {
-        error = "première couche de l'encodeur : 3 canaux attendus";
+      // Le noyau de l'image échantillonne au pas 2 : une première couche d'un autre pas sortirait fausse.
+      if (image && (conv.cin != 3 || conv.stride != 2 || conv.transposed)) {
+        error = "première couche de l'encodeur : convolution de pas 2 sur 3 canaux attendue";
         return false;
       }
       layer.ih = ih;
@@ -224,7 +240,7 @@ class Net final : public RifeNativeNet {
   }
 
   std::int64_t workspace_bytes() const override { return 2 * peak_ + partial_; }
-  bool acc32() const override { return acc32_; }
+  RifeNativeSums sums() const override { return sums_; }
 
   cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace) const override {
     return run(stream, 0, image, encoded, workspace);
@@ -264,8 +280,7 @@ class Net final : public RifeNativeNet {
     if (!sent(layer.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) ||
         !sent(layer.bias.upload(biases.data(), biases.size() * sizeof(float))))
       return false;
-    layer.launch =
-        acc32_ ? pick<false>(layer.kind, layer.kc, layer.ct) : pick<true>(layer.kind, layer.kc, layer.ct);
+    layer.launch = pick_for(sums_, layer.kind, layer.kc, layer.ct);
     if (layer.launch == nullptr) {
       error = "aucun noyau pour cette couche";
       return false;
@@ -354,14 +369,15 @@ class Net final : public RifeNativeNet {
     }
   }
 
-  // La plus large tuile de sortie (64, ou 32 en f32) qui laisse assez de blocs pour remplir la carte (deux
-  // vagues) ; les petits blocs grossiers de RIFE (30 × 18 pixels au 1/32) prennent des tuiles plus étroites.
+  // La plus large tuile de sortie (64 en sommes f16, 32 sinon) qui laisse assez de blocs pour remplir la
+  // carte (deux vagues) ; les petits blocs grossiers de RIFE (30 × 18 pixels au 1/32) prennent des tuiles
+  // plus étroites.
   int choose_tile(const Layer& layer, int cout) const {
     const Shape3 shape = shape_of(layer.kind);
     const long cells = static_cast<long>((layer.ow + rn::kTW - 1) / rn::kTW) *
                        ((layer.oh + rn::kWarps * shape.rows - 1) / (rn::kWarps * shape.rows)) * layer.phases;
     for (const int ct : {64, 32}) {
-      if ((acc32_ && ct == 64) || cout % ct != 0) continue;
+      if ((sums_ != RifeNativeSums::kF16 && ct == 64) || cout % ct != 0) continue;
       if (cells * (cout / ct) >= 2L * sms_) return ct;
     }
     return 16;
@@ -407,7 +423,7 @@ class Net final : public RifeNativeNet {
     return cudaGetLastError();
   }
 
-  bool acc32_;
+  RifeNativeSums sums_;
   int sms_ = 1;
   std::int64_t peak_ = 0;
   std::int64_t partial_ = 0;  // sommes partielles de la plus grande couche à K découpé
@@ -418,12 +434,12 @@ class Net final : public RifeNativeNet {
 
 std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativePiece>& pieces,
                                                      const std::vector<int>& reduce, int height, int width,
-                                                     bool acc32, std::string& error) {
+                                                     RifeNativeSums sums, std::string& error) {
   if (pieces.size() != reduce.size() + 1 || pieces.empty()) {
     error = "un encodeur et un morceau par bloc attendus";
     return nullptr;
   }
-  auto net = std::make_unique<Net>(acc32);
+  auto net = std::make_unique<Net>(sums);
   if (!net->plan(pieces[0], height, width, 0, height, width, true, error)) {
     error = "encodeur : " + error;
     return nullptr;

@@ -46,8 +46,9 @@ ResConv séparable est une convolution par canal 3 × 3 suivie d'une 1 × 1, san
 - **L'encodeur** s'arrête à sa dernière convolution (`TfixSplit::encode_last`, coupée au chargement) ; le Resize
   ×2 demi-pixel du graphe est refait par `traits_kernel`, qui écrit les quatre plans de traits là où le
   moteur TensorRT les écrivait. La pyramide qui suit ne change pas.
-- **Sommes f16 d'abord, f32 ensuite** : celles des tensor cores des GeForce à plein débit, puis f32 si l'essai
-  le demande. AnimeJaNai garde ses 1 × 1 en f32 ; nos séparables repliées somment 9 · C termes (576 au plus)
+- **Sommes f16, puis mixtes, puis f32** (`RifeNativeSums`, comme RIFE natif) : celles des tensor cores des
+  GeForce à plein débit d'abord ; mixtes (chaque prise en f16, les prises entre elles en f32) puis f32 si
+  l'essai le demande. AnimeJaNai garde ses 1 × 1 en f32 ; nos séparables repliées somment 9 · C termes (576 au plus)
   en f16, comme le bloc 0 (864) : l'essai tranche.
 
 ## Essai au chargement
@@ -66,7 +67,7 @@ Sous `--tfix-native`, les cinq moteurs TensorRT se construisent et se chargent c
 Les passes natives tournent sur une zone de travail à elles : la zone de la voie ne grandit que pour un natif
 retenu. Une valeur non finie, chez TensorRT ou chez nous, compte pour un échec.
 
-Gardé à 45 dB ou plus sur le pire des quatre, sommes f16 d'abord, f32 ensuite ; sinon TensorRT garde l'étage,
+Gardé à 45 dB ou plus sur le pire des quatre, sommes f16, puis mixtes, puis f32 ; sinon TensorRT garde l'étage,
 chargé et intact. Le journal dit ce qui est retenu : « TemporalFix natif retenu pour la fenêtre (960×540,
 sommes f16 : 52,3 dB contre TensorRT, seuil 45 dB) ».
 

@@ -37,6 +37,9 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
       setup_(std::move(setup)),
       scene_(setup_.scene_map) {
   reuse_.enabled = setup_.span_reuse.whole;
+  // SPAN seul : la paire de la reprise se mesure en avance (look_ahead), comme sous RIFE.
+  reuse_.alone =
+      setup_.engine != nullptr && reuse_.enabled && !interpolates() && setup_.distil_drba == nullptr;
   triage_.for_gmfss(gmfss_only());
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
   reuse_.check = setup_.span_reuse.check;
