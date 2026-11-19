@@ -19,10 +19,11 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`nvidia-linux.md`](nvidia-linux.md), [`nvidia-windows.md`](nvidia-windows.md) | TensorRT et NVIDIA par système |
 | [`amd-windows.md`](amd-windows.md) | AMD et Windows : le profil RDNA4 du moteur Vulkan, D3D11VA |
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |
-| [`span-native16.md`](span-native16.md) | SPAN FP16 par nos noyaux (lot C du chantier AnimeJaNai, `--span-native`) |
+| [`span-native16.md`](span-native16.md) | SPAN par nos noyaux, le défaut sur RTX 40 et 50 : FP16, sommes f32 au cran Qualité (lot C du chantier AnimeJaNai) |
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
 | [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, sans TensorRT (`--rife-native`, essai) |
+| [`gmfss-natif.md`](gmfss-natif.md) | GMFSS union par nos noyaux, GMFlow sous TensorRT (`--gmfss-native`, essai) |
 | [`warp-lib.md`](warp-lib.md) | La bibliothèque de warp CUDA (lot E) : briques communes, colle de RIFE réécrite dessus, warp générique pour TemporalFix et les calques |
 | [`rife-candidats.md`](rife-candidats.md) | RIFE 4.25 lite et 4.26 face à 4.22 lite et 4.25 : mesures sur processeur, niveaux choisis, protocole ABAB sur la RTX |
 | [`signature-des-releases.md`](signature-des-releases.md) | Signer le manifeste des mises à jour ; signature des exécutables Windows et macOS |

@@ -173,6 +173,7 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   std::unique_ptr<SpanFp8Engine> engine(new SpanFp8Engine());
   engine->net_ = std::move(net);
   engine->fp16_ = parsed->fp16;
+  engine->acc32_ = parsed->fp16 && parsed->acc32;
   engine->native_edges_ = weights.native_edges;
   engine->input_ = Shape{.dims = {1, 3, height, width}};
   engine->output_ = Shape{.dims = {1, 3, 2 * std::int64_t{height}, 2 * std::int64_t{width}}};

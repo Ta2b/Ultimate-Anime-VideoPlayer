@@ -62,7 +62,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
                                     static_cast<int>(shape->dims[3]), arena(), span_native_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   if ((*engine)->fp16())
-    log(BackendLogLevel::Info, std::format("SPAN FP16 natif chargé : {}×{}", shape->dims[3], shape->dims[2]));
+    log(BackendLogLevel::Info, std::format("SPAN FP16 natif chargé : {}×{}, sommes {}", shape->dims[3],
+                                           shape->dims[2], (*engine)->acc32() ? "f32" : "f16"));
   else
     log(BackendLogLevel::Info,
         std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}{}", shape->dims[3], shape->dims[2],

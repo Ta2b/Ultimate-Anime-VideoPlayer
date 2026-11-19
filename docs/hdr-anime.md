@@ -228,15 +228,21 @@ suivi.
   n'apprennent rien (un effet animé en deux ne retombe pas une paire sur deux) ; une coupe pose le masque
   d'un coup, ou le remet au neutre quand la carte de sa paire n'est pas encore là (celle de la paire
   d'avant décrirait l'ancien plan).
-- **Le grade** : une passe de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
-  dans l'alpha ; `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
+- **Le grade** : un hook de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
+  dans l'alpha. Il n'ajoute pas de passe : ses quelques lignes se fondent dans la couleur en attente
+  (`PL_HOOK_SIG_COLOR`), que libplacebo rend de toute façon pour la passe anime. Une passe à part recopiait
+  l'image entière, 0,41 ms en 4K sur une RTX 4070 Ti (passage 9 du 19/11) ; son coût, une lecture de la
+  petite texture par pixel, compte maintenant dans la passe de sortie et non dans « grade HDR ».
+  `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
   voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
   montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
-  échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui. L'export et le grade avant le warp ne lisent pas le
-  masque.
+  échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui.
+  Le grade avant le warp (`source_grade.h`) suit son propre masque, nourri pour chaque source gradée par la
+  note la plus récente de son époque (`EffectBook::for_source`, au plus 250 ms avant la source : au-delà, la
+  carte s'est tue et le masque revient au neutre). L'export ne lit pas le masque.
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de

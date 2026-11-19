@@ -92,6 +92,22 @@ TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 se lit encore, sans valoir reçu v2 (3
   CHECK(found.unvalidated_size.empty());
 }
 
+TEST_CASE("SPAN FP8 CUTLASS : un reçu d'avant le nouveau nom (ajp) se lit comme le sien",
+          "[app][int8][fp8c]") {
+  kirari::app::play::FrenchUi french;
+  const Folder f;
+  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v1");
+  const SpanInt8Lookup v1 = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
+  REQUIRE(v1.variant);
+  CHECK_FALSE(v1.variant->receipt_v2);
+  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v2");
+  const SpanInt8Lookup v2 = find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir());
+  REQUIRE(v2.variant);
+  CHECK(v2.variant->receipt_v2);
+  f.receipt(52.0, 49.3, 0.9967, "ajp-span-fp8c-v9");
+  CHECK_FALSE(find_span_variant(SpanVariantKind::Fp8Cutlass, f.span, f.dir()).variant);
+}
+
 TEST_CASE("SPAN FP8 CUTLASS : un reçu v1 sans gain mesuré est refusé, il échappait aux portes v2 (C46-17)",
           "[app][int8][fp8c]") {
   kirari::app::play::FrenchUi french;
@@ -122,19 +138,31 @@ TEST_CASE("l'ordre des variantes de SPAN : la plus basse précision qui passe la
   CHECK(span_variant_order(PrecisionTier::Performance, SpanVariantCaps{}, true).empty());  // Vulkan : le FP16
 }
 
-TEST_CASE("SPAN natif (--span-native) : l'Équilibre prend le FP16 CUTLASS, les autres crans ne changent pas",
-          "[app][int8][fp8c]") {
+TEST_CASE("SPAN natif : FP16 à l'Équilibre et en repli, sommes f32 à la Qualité", "[app][int8][fp8c]") {
   using enum SpanVariantKind;
   const SpanVariantCaps native{.cutlass = true, .native16 = true, .fp8 = true, .int8 = true};
   CHECK(span_variant_order(PrecisionTier::Balanced, native, true) == std::vector{Fp16Cutlass});
-  CHECK(span_variant_order(PrecisionTier::Performance, native, true) == std::vector{Fp8Cutlass, Int8});
-  CHECK(span_variant_order(PrecisionTier::Quality, native, true) == std::vector{Fp32});
-  // Le paquet se nomme comme les autres variantes, et ses badges du cache retrouvent le modèle d'origine.
+  CHECK(span_variant_order(PrecisionTier::Performance, native, true) ==
+        std::vector{Fp8Cutlass, Int8, Fp16Cutlass});
+  CHECK(span_variant_order(PrecisionTier::Quality, native, true) ==
+        std::vector{Fp32Native, Fp32, Fp16Cutlass});
+  // Les paquets se nomment comme les autres variantes, et leurs badges du cache retrouvent le modèle.
   SpanVariantKind kind = Int8;
   CHECK(span_int8_source("2x_AnimeJaNai_b5f48-fp16c-0123456789abcdef.span8", &kind) ==
         "2x_AnimeJaNai_b5f48.onnx");
   CHECK(kind == Fp16Cutlass);
-  CHECK(variant_text(Fp16Cutlass) == "FP16 CUTLASS");
+  CHECK(span_int8_source("2x_AnimeJaNai_b5f48-fp32n-0123456789abcdef.span8", &kind) ==
+        "2x_AnimeJaNai_b5f48.onnx");
+  CHECK(kind == Fp32Native);
+  CHECK(variant_text(Fp16Cutlass) == "FP16 native");
+  CHECK(variant_text(Fp32Native) == "FP32 native");
+}
+
+TEST_CASE("SPAN natif : le cran Qualité offert aux SPAN d'AnimeJaNai, sans paquet", "[app][int8][fp8c]") {
+  const Folder f;
+  CHECK_FALSE(span_tiers(f.span, f.dir(), false, false, false).quality);
+  CHECK(span_tiers(f.span, f.dir(), false, false, true).quality);
+  CHECK_FALSE(span_tiers(f.span.parent_path() / "2x_ArtCNN_C4F32.onnx", f.dir(), false, false, true).quality);
 }
 
 TEST_CASE("SPAN FP8 CUTLASS : un score que le FP8 par Q/DQ accepterait ne suffit pas", "[app][int8][fp8c]") {

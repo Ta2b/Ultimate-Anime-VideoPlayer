@@ -20,8 +20,8 @@ enum class Answer { Graded, Nothing, Refused };
 class CountingGrader final : public SourceGrader {
  public:
   explicit CountingGrader(Answer answer) : answer_(answer) {}
-  std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& /*rgb*/,
-                                     bool /*debanded*/) override {
+  std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& /*rgb*/, bool /*debanded*/,
+                                     const GradedSource& /*source*/) override {
     ++calls;
     if (answer_ == Answer::Refused)
       return std::unexpected(Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "essai"});

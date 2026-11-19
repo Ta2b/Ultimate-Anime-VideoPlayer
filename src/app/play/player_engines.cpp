@@ -431,10 +431,15 @@ std::expected<std::optional<std::unique_ptr<gpu::Engine>>, Refusal> prepare_dist
   align = found->align;
   const kernels::RifeGeometry g = kernels::rife_geometry(work_width, work_height, found->align);
   const gpu::Shape shape{.dims = {1, kernels::kDistilDrbaInputPlanes, g.padded_height, g.padded_width}};
+  // La durée annoncée à la première construction du graphe entier, tant qu'aucune construction passée ne la
+  // donne : 147 s mesurées à 1920x1088 sur une RTX 4070 Ti (séance du 19 novembre, variante mouvement),
+  // ramenées à 1280x720 ; le défaut de 60 s en annonçait 115.
+  constexpr double kDrbaFirstBuildS = 76.0;
   const EngineLabel label{.name = "DistilDRBA",
                           .model = core::to_utf8(found->path.stem()),
                           .width = g.padded_width,
-                          .height = g.padded_height};
+                          .height = g.padded_height,
+                          .first_build_s = kDrbaFirstBuildS};
   // Le graphe coupé d'abord : un refus de la découpe, de la construction ou du chargement garde l'entier.
   if (fused != nullptr) {
     auto manifest = prepare::derive_drba_fused(found->path, paths::derived_models(p.paths), g.padded_height,

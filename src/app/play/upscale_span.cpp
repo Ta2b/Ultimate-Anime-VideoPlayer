@@ -250,7 +250,11 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   span_graded_[buf] = false;
   if (!setup_.grader || setup_.yuv_slots) return {};
   KIRARI_TRACE("grade avant le warp");
-  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_);
+  const GradedSource source{.epoch = head_.epoch,
+                            .effects = setup_.live
+                                           ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us)
+                                           : std::nullopt};
+  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_, source);
   if (!graded) {
     log_channel("gpu")->warn("grade avant le warp : {} {} ; l'écran reprend le grade",
                              name(graded.error().code), graded.error().detail);

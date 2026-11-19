@@ -51,15 +51,16 @@ struct SpanFp8Weights {
   // Le SPAN entier en FP16, sans quantification, par nos noyaux natifs (docs/span-native16.md). Les échelles
   // sont alors ignorées, acc16 aussi (le natif somme en f16, ou en f32 avec acc32).
   bool fp16 = false;
-  // FP16 natif seulement : sommes en f32 au lieu de f16 (moitié du débit des tensor cores des GeForce). Pour
-  // la mesure (kirari_span_fp8_run --acc32) ; le lecteur somme en f16, comme AnimeJaNai.
+  // FP16 natif seulement : sommes en f32 au lieu de f16 (moitié du débit des tensor cores des GeForce). Le
+  // cran Qualité du lecteur (drapeau acc32 du paquet) et kirari_span_fp8_run --acc32 ; sinon en f16, comme
+  // AnimeJaNai.
   bool acc32 = false;
   // FP16 natif seulement : le corps en bandes de band lignes de demi-résolution (docs/span-native16.md,
   // « Bandes ») ; ce qu'une couche lit tient encore en L2. 0 : chaque couche sur l'image entière. 64 lignes :
   // 8 Mo par tenseur à 64 canaux en 1080p, à juger au banc (kirari_span_fp8_run --band).
   int band = 64;
   // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
-  // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native.
+  // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native-edges.
   bool native_edges = false;
 };
 

@@ -1,6 +1,7 @@
 // La carte de la scène dans l'étage gpu (scene_map.h).
 #include "app/play/scene_map.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "core/log.h"
@@ -25,13 +26,13 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
     return;
   }
   if (*ticket == 0) {  // NVOF occupé : paire sautée, la suivante ne la suit pas (last_right_ inchangé)
-    ++dropped_;
+    ++busy_;
     return;
   }
   // Le backend garde kSceneFlowReadbacks paires : la nouvelle a pris la place de la plus ancienne.
   if (pending_.size() >= gpu::kSceneFlowReadbacks) {
     pending_.erase(pending_.begin());
-    ++dropped_;
+    ++lost_;
   }
   pending_.push_back({.ticket = *ticket, .left = left, .right = right, .restart = restart});
   last_left_ = left;
@@ -49,8 +50,8 @@ void SceneMap::poll(gpu::KernelOps& ops) {
         stop(taken.error(), "scene_flow_take");
         return;
       }
-      pending_.erase(pending_.begin());  // périmée : abandonnée
-      ++dropped_;
+      pending_.erase(pending_.begin());  // périmée : perdue
+      ++lost_;
       continue;
     }
     if (!*taken) return;                             // pas encore finie : les suivantes non plus
@@ -72,7 +73,11 @@ void SceneMap::poll(gpu::KernelOps& ops) {
 std::optional<kernels::SceneMotion> SceneMap::for_pair(gpu::KernelOps& ops, SourceId left, SourceId right) {
   if (!on_) return std::nullopt;
   poll(ops);
-  if (!latest_ || !(latest_->left == left) || !(latest_->right == right)) return std::nullopt;
+  if (!latest_ || !(latest_->left == left) || !(latest_->right == right)) {
+    if (std::ranges::any_of(pending_, [&](const Pending& p) { return p.left == left && p.right == right; }))
+      ++missed_;
+    return std::nullopt;
+  }
   ++attached_;
   return latest_->motion;
 }
@@ -84,9 +89,10 @@ void SceneMap::cut() {
 void SceneMap::log_summary() const {
   if (started_ == 0) return;
   log_channel("gpu")->info(
-      "carte de la scène : {} paires lancées, {} relues, {} posées sur leur paire, {} abandonnées ; caméra "
-      "ajustée sur {}, {} coupes probables, {} fondus",
-      started_, read_, attached_, dropped_, camera_fits_, cuts_, fades_);
+      "carte de la scène : {} paires lancées, {} relues, {} posées sur leur paire ; {} sautées (NVOF "
+      "occupé), "
+      "{} relues trop tard, {} perdues ; caméra ajustée sur {}, {} coupes probables, {} fondus",
+      started_, read_, attached_, busy_, missed_, lost_, camera_fits_, cuts_, fades_);
 }
 
 }  // namespace kirari::app::play

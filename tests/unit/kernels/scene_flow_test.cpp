@@ -1,5 +1,6 @@
 // La carte de la scène (kernels/spec/scene_flow.h) sur des flux synthétiques : caméra seule, dessin qui
-// bouge sur un décor qui défile, coupe, fondu, image tenue, et le lissage des classes d'une paire à l'autre.
+// bouge sur un décor qui défile, aplat, coupe, fondu, image tenue, et le lissage des classes d'une paire à
+// l'autre (animation en deux comprise).
 // Un seul cas, comme le veut la consigne des tests groupés.
 #include "kernels/ref/scene_flow.h"
 
@@ -197,7 +198,45 @@ TEST_CASE("carte de la scène sur des flux synthétiques", "[scene_flow]") {
     CHECK(still.map(history).at(5, 3).kind == SceneClass::Background);
     const SceneMotion once = drawn.map(history);
     CHECK(once.at(5, 3).kind == SceneClass::Background);
-    CHECK(once.at(5, 3).changed);  // brut, non lissé
+    CHECK(once.at(5, 3).confidence < 0.5F);  // contredite : plus sûre pour les clients
+    CHECK(once.at(5, 3).changed);            // brut, non lissé
     CHECK(drawn.map(history).at(5, 3).kind == SceneClass::Drawing);
+  }
+
+  SECTION("animation en deux : l'image doublée ne compte pas, le dessin reste dessin") {
+    const Pair held;
+    Pair moved;
+    moved.move(10.0F, 5.0F, 16, 8, 32, 20);
+    CHECK(held.map(history).at(5, 3).kind == SceneClass::Background);
+    CHECK(moved.map(history).at(5, 3).kind == SceneClass::Background);
+    CHECK(held.map(history).at(5, 3).kind == SceneClass::Background);
+    CHECK(moved.map(history).at(5, 3).kind == SceneClass::Drawing);
+    const SceneMotion again = held.map(history);
+    CHECK(again.at(5, 3).kind == SceneClass::Drawing);
+    CHECK_FALSE(again.at(5, 3).changed);
+    CHECK(again.drawing_held);  // brut : rien ne bouge à cette paire
+  }
+
+  SECTION("aplat : décor s'il suit la caméra et ne change pas, sinon incertain") {
+    Pair pair;
+    pair.b = textured(2, 0);
+    pair.move(2.0F, 0.0F);
+    for (int y = 32; y < 80; ++y) {
+      for (int x = 64; x < 128; ++x) pair.a.at(x, y) = pair.b.at(x, y) = 128;  // tuiles 4 à 7, 2 à 4
+    }
+    ref::SceneHistory fresh;
+    const SceneMotion follows = pair.map(fresh);
+    REQUIRE(follows.camera_fit);
+    CHECK(follows.at(5, 3).kind == SceneClass::Background);
+    CHECK(follows.at(5, 3).confidence >= 0.5F);
+    pair.move(-6.0F, 0.0F, 16, 8, 32, 20);
+    fresh.clear();
+    CHECK(pair.map(fresh).at(5, 3).kind == SceneClass::Uncertain);  // un vecteur d'aplat ne prouve rien
+    pair.move(2.0F, 0.0F);
+    for (int y = 32; y < 80; ++y) {
+      for (int x = 64; x < 128; ++x) pair.b.at(x, y) = 160;
+    }
+    fresh.clear();
+    CHECK(pair.map(fresh).at(5, 3).kind == SceneClass::Uncertain);  // l'aplat change
   }
 }

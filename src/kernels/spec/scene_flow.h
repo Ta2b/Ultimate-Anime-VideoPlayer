@@ -81,7 +81,9 @@ struct SceneFlowTiles {
   std::vector<SceneTileSums> tiles;  // cols × rows
 };
 
-// Classe d'une tuile. Uncertain : le flux ne permet pas de trancher (aplat sans texture, vecteurs épars).
+// Classe d'une tuile. Uncertain : le flux ne permet pas de trancher (aplat qui change ou dont le vecteur
+// contredit la caméra, vecteurs sans correspondance sans effet, mouvement sans caméra ajustée). Un aplat qui
+// suit la caméra et ne change guère est décor : rien n'y bouge de visible.
 enum class SceneClass : std::uint8_t { Uncertain, Background, Drawing, Effect };
 
 struct SceneTile {
@@ -108,7 +110,7 @@ struct SceneMotion {
   int tile_px = 0;        // côté d'une tuile, pixels de travail
   int cols = 0;
   int rows = 0;
-  std::vector<SceneTile> tiles;  // cols × rows, lissées dans le temps
+  std::vector<SceneTile> tiles;  // cols × rows, lissées dans le temps (ref::SceneHistory)
   double unmatched = 0.0;        // part des vecteurs sans correspondance
   // Rien ne bouge hors de la caméra : au plus kDrawingHeldShare des tuiles en dessin ou en effet (classes
   // brutes) ; sans caméra ajustée, au plus cette part de tuiles changées. Faux sur une coupe ou un fondu.
@@ -128,7 +130,7 @@ struct SceneMotion {
 namespace scene {
 inline constexpr float kTextureFloor = 6.0F;  // texture moyenne par pixel, codes : sous elle, aplat
 inline constexpr float kMatchedFloor = 0.5F;  // part de vecteurs sûrs d'une tuile qui correspond
-inline constexpr float kFitMatched = 0.75F;   // et d'une tuile qui sert à ajuster la caméra
+inline constexpr float kFitMatched = 0.75F;   // et d'une tuile qui ajuste la caméra, d'un aplat décor
 inline constexpr float kSpreadMax = 1.5F;     // écart type des vecteurs d'une tuile cohérente, pixels du flux
 inline constexpr float kStillDiff = 3.0F;     // écart moyen |b − a| d'une tuile qui ne change pas, codes
 inline constexpr float kChangeDiff = 6.0F;    // écart moyen d'une tuile qui change sans flux net
@@ -147,6 +149,7 @@ inline constexpr float kFadeAgree = 0.8F;          // part des tuiles qui glisse
 inline constexpr float kDrawingHeldShare = 0.01F;  // part de tuiles qui bougent au plus d'un dessin tenu
 inline constexpr double kHeldCamera = 0.25;        // translation nulle, pixels de travail
 inline constexpr double kHeldLinear = 0.002;       // partie linéaire égale à l'identité
+inline constexpr float kContradicted = 0.4F;  // facteur de confiance d'une classe contredite (jamais sûre)
 }  // namespace scene
 
 }  // namespace kirari::kernels

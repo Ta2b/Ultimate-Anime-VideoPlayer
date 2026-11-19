@@ -121,6 +121,8 @@ std::string cuda_arch_from_name(std::string_view gpu_name);
 // CUTLASS de SPAN sur Ada seulement (SpanFp8Net::supported_device).
 bool fp8_presumed(std::string_view gpu_name);
 bool span_fp8_presumed(std::string_view gpu_name);
+// Le SPAN natif (cran Qualité, FP16 natif) : Ada et RTX 50 (SpanFp8Net::supported_fp16_device).
+bool span_native_presumed(std::string_view gpu_name);
 // Le b8f64 en FP8 par défaut (Machine::span_fp8) : TensorRT en service, une carte Ada, et un paquet qui porte
 // les noyaux CUTLASS (Linux ; sous Windows nvcc 13.4 s'arrête sur span_fp8_ref.cu, ADR 0007).
 bool span_fp8_default(std::string_view gpu_name, bool tensorrt);
