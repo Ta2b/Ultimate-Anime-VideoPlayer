@@ -35,11 +35,7 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
   }
   if (facts.anchor) {
     if (!kernels::is_held(facts.anchor->worst_block)) {
-      if (in_row_ > 0) ++stopped_anchor_;  // à 0, la mesure est celle de la paire (SPAN seul)
-      return compute();
-    }
-    if (in_row_ >= kPairOnlyInRow && facts.anchor->mean_levels > kFadeMean) {
-      ++stopped_fade_;
+      if (in_row_ > 0) ++stopped_anchor_;  // à 0, la mesure est celle de la paire
       return compute();
     }
   } else if (in_row_ >= kPairOnlyInRow) {  // la paire seule : la règle d'avant
@@ -59,6 +55,14 @@ void SpanReuse::force() {
   take();
 }
 
+void SpanReuse::note_pair(std::uint32_t worst_block) {
+  // Les bornes en centièmes de niveau, comme kernels::kHeldThreshold.
+  static constexpr std::array<std::uint32_t, 6> kBounds{70, 100, 150, 200, 300, 500};
+  std::size_t bucket = 0;
+  while (bucket < kBounds.size() && !kernels::is_held(worst_block, kBounds[bucket])) ++bucket;
+  ++pairs_[bucket];
+}
+
 void SpanReuse::take() {
   ++in_row_;
   ++reused_;
@@ -68,11 +72,16 @@ void SpanReuse::take() {
 std::string SpanReuse::summary() const {
   if (seen_ == 0 && reused_ == 0) return {};
   const double share = seen_ > 0 ? 100.0 * static_cast<double>(reused_) / static_cast<double>(seen_) : 0.0;
-  return std::format(
-      "SPAN repris : {} sur {} images ({:.1f} %), série la plus longue {}, arrêts à la limite {}, au fondu "
-      "{}, à l'ancre {}, images abîmées {}{}",
-      reused_, seen_, share, longest_, stopped_limit_, stopped_fade_, stopped_anchor_, corrupt_,
+  std::string line = std::format(
+      "SPAN repris : {} sur {} images ({:.1f} %), série la plus longue {}, arrêts à la limite {}, à l'ancre "
+      "{}, images abîmées {}{}",
+      reused_, seen_, share, longest_, stopped_limit_, stopped_anchor_, corrupt_,
       anchor_measure ? "" : " (sans mesure contre l'ancre : deux de suite au plus)");
+  if (std::ranges::any_of(pairs_, [](std::uint64_t n) { return n > 0; }))
+    line += std::format(
+        " ; paires par pire bloc (niveaux) : jusqu'à 0.7 {}, 1 {}, 1.5 {}, 2 {}, 3 {}, 5 {}, au-delà {}",
+        pairs_[0], pairs_[1], pairs_[2], pairs_[3], pairs_[4], pairs_[5], pairs_[6]);
+  return line;
 }
 
 }  // namespace kirari::app::play

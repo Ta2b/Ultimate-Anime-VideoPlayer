@@ -116,8 +116,7 @@ std::optional<AnchorGap> measure_anchor(gpu::KernelOps& ops, const gpu::Tensor& 
   auto scores = ops.scores_now(anchor, now);
   waited_us =
       std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked).count();
-  if (scores)
-    return AnchorGap{.worst_block = scores->worst_block, .mean_levels = scores->scene_score * 255.0};
+  if (scores) return AnchorGap{.worst_block = scores->worst_block};
   log_channel("gpu")->info("SPAN repris : pas de mesure contre l'ancre ({}) ; deux de suite au plus",
                            scores.error().detail);
   reuse.anchor_measure = false;
@@ -177,6 +176,7 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                          .reduce = reduce},
              facts);
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
+  if (pair_measured && rf.same_epoch) reuse_.note_pair(facts.scores->worst_block);
   const int in_row = reuse_.in_row();
   // Les images de la mesure de la paire : la copie réduite de RIFE quand elle existe, où le seuil des dessins
   // tenus est réglé (A09-18) ; à la taille de travail, le bruit de compression couperait les séries.
