@@ -47,7 +47,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 
 Plans et suivis de version (`plan-v0.5.md`, `plan-v0.6.md`, `tests-v0.5-windows-macos.md`), passation et état
 d'un poste (`handoff-pc.md`, `etat-windows.md`, `tests-pc.md`), audits (`audit-fonctions.md`, `audit-noms.md`,
-`audit-ui.md`) et relevés datés ([`reports/`](reports/), dont le journal des chantiers et le plan du flux optique du 19 novembre 2026). Ils parlent de fonctions retirées depuis (profils,
+`audit-ui.md`) et relevés datés ([`reports/`](reports/), dont le journal des chantiers, le plan du flux optique et la séance de mesures sur le PC du 19 novembre 2026). Ils parlent de fonctions retirées depuis (profils,
 HDR adaptatif et sa calibration, RTX HDR et TrueHDR, méthode HDR à choisir, ancien arbre du menu) : ne pas les
 prendre pour l'état du code.
 
