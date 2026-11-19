@@ -204,13 +204,13 @@ dirait (`span-bilan.md`). Le défaut (`SpanSharedWeights::Auto`) les prend à 48
 `kirari_span_fp8_run --shared-weights` ou `--no-shared-weights` force le choix, et le banc mesure les deux
 dans les mêmes tours que le défaut.
 
-## Winograd (à l'essai, 64 canaux)
+## Winograd (essai perdu, 64 canaux)
 
 Les 3×3 carrées des blocs (trois par bloc, 85 % du calcul du b8f64) passent par Winograd F(2×2, 3×3) :
 Y = Aᵀ [U ⊙ V] A, seize produits par sortie 2×2 au lieu de trente-six, soit 2,25 fois moins de mma. Le
 plafond des seuls mma du b8f64 tombe de 6,3 à 3,0 ms. `span_native_wino.cuh` (`wino_kernel`), derrière
-`SpanFp8Weights::winograd` (`kirari_span_fp8_run --winograd`), éteint par défaut tant que le banc du PC ne
-l'a pas mesuré ; 64 canaux et sommes f16 seulement (le cran Qualité garde la convolution directe ; à 48
+`SpanFp8Weights::winograd` (`kirari_span_fp8_run --winograd`), éteint par défaut : il a perdu au banc
+(ci-dessous) ; 64 canaux et sommes f16 seulement (le cran Qualité garde la convolution directe ; à 48
 canaux, les 12 sorties par warp ne tombent pas sur les tuiles n16).
 
 - U = G g Gᵀ se calcule à l'envoi, en double, arrondi en f16 (`pack_wino`), et se range comme les poids
@@ -233,10 +233,14 @@ contre le processeur en f32) : 72,13 dB contre 71,81 au chemin direct, aucune va
 mémoire partagée tenues, même sortie au bit près en bandes de 5 et de 8 lignes et sans bandes. Sur GPU, le
 test « Winograd suit le chemin direct » demande 50 dB contre le direct et la même sortie en bandes.
 
-Reste le temps : la colonne « Winograd » du banc. S'il gagne au PC et garde ses dB, Auto le prendra à 64
-canaux en f16 ; sinon il reste à l'essai, et F(4×4, 3×3) (plafond des mma à 1,8 ms) n'aurait de sens
-qu'avec une transformée séparable (lignes puis colonnes), faute de quoi le calcul de V lit trop la mémoire
-partagée.
+Au banc (#980, RTX 4070 Ti, 1080p → 4K, Re:Zero, 3 tours ABAB) : **13,72 ms au b8f64 contre 10,64 en
+direct (+29 %)**, à 62,96 dB contre 62,83 (export jugé sur processeur contre ONNX Runtime FP32 : juste sur
+GPU aussi). Au b5f48 (48 canaux), sans effet comme prévu : 5,03 ms. Winograd reste donc éteint (Auto). La
+cause probable : les 64 barrières par tuile et le calcul de V (4 lds128 et une écriture par morceau, à
+chaque point) laissent les tensor cores attendre ; deux fois moins de mma ne suffisent pas. Le profil
+Nsight Compute le dirait. Une reprise viserait V une fois pour tous les points (transformée séparable,
+lignes puis colonnes, ou tuile plus petite qui tient V entier sans moitiés), donc moins de barrières ;
+F(4×4, 3×3) (plafond des mma à 1,8 ms) n'a de sens qu'avec elle.
 
 ## Mesurer
 
@@ -305,3 +309,10 @@ Banc de #963 (mêmes conditions, 3 tours ABAB) : b8f64 TensorRT FP16 14,76 ms, n
 bandes 0, 64, 192 et 270 à 10,98, 10,98, 10,78 et 11,60 ms, f32 14,44 ms, poids partagés 11,07 ms ; b5f48
 TensorRT 8,80 ms, natif f16 5,21 ms (0,59×), bandes 5,83, 5,22, 5,30 et 5,59 ms, f32 5,95 ms, poids partagés
 5,02 ms, sous les 5,8 ms d'AnimeJaNai.
+
+Banc de #980 (mêmes conditions, 3 tours ABAB, export jugé sur processeur contre ONNX Runtime FP32) : b8f64
+TensorRT FP16 14,70 ms, natif f16 10,64 ms (0,72×) à 62,83 dB, poids partagés 11,11, Winograd 13,72 à
+62,96 dB, bandes 0, 64, 192 et 270 à 11,01, 10,97, 10,76 et 11,62 ms, f32 14,45 ms à 76,93 dB ; b5f48
+TensorRT 8,76 ms, natif f16 5,03 ms (0,57×) à 63,93 dB, sans poids partagés 5,22, bandes 5,54, 5,16, 4,88 et
+5,15 ms, f32 6,00 ms à 77,15 dB. Les bandes de 192 lignes (4,88 ms au b5f48) battent le défaut ici mais
+perdaient au banc de #963 (5,30 contre 5,21) : à remesurer avant de changer auto_band.

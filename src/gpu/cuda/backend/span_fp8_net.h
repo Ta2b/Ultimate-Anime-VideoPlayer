@@ -37,8 +37,8 @@ enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
 enum class SpanNativeSums : std::uint8_t { F16, F32 };
 // Poids partagés du FP16 natif (SpanFp8Weights::shared_weights) : Auto les prend à 48 canaux seulement.
 enum class SpanSharedWeights : std::uint8_t { Auto, On, Off };
-// Winograd F(2×2, 3×3) du FP16 natif (SpanFp8Weights::winograd) : Auto le laisse éteint tant que le banc ne
-// l'a pas mesuré.
+// Winograd F(2×2, 3×3) du FP16 natif (SpanFp8Weights::winograd) : Auto le laisse éteint (+29 % au banc du
+// b8f64).
 enum class SpanWinograd : std::uint8_t { Auto, On, Off };
 
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().

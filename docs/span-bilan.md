@@ -1,5 +1,11 @@
 # Bilan du SPAN natif (CUDA, RTX 40 et 50)
 
+Mis à jour le 19 novembre 2026 à 19 h 30 : **Winograd perd au banc PC : 13,72 ms au b8f64 contre 10,64 en
+direct (+29 %)**, juste pourtant (62,96 dB contre 62,83, export jugé sur processeur). Il reste éteint ; #980
+le garde comme essai. Premiers dB des sorties GPU en 1080p contre ONNX Runtime FP32 : b8f64 f16 62,83, f32
+76,93 ; b5f48 f16 63,93, f32 77,15 ; bandes et poids partagés au bit près du défaut. Au b5f48, les bandes de
+192 lignes font 4,88 ms (défaut 5,03), à remesurer : elles perdaient au banc de #963.
+
 Mis à jour le 19 novembre 2026 en soirée : **le noyau Winograd F(2×2, 3×3) est écrit (#980), éteint par
 défaut.** Sur l'émulateur, il donne 72,13 dB contre 71,81 au direct, sans valeur non finie, et la même sortie
 au bit près avec ou sans bandes. Il compile sans débordement sur sm 8.9 et 12.0. Reste le temps au PC : la
@@ -15,7 +21,7 @@ Mis à jour le 19 novembre 2026 en fin d'après-midi : banc PC de #963 (poids pa
 au b8f64 ; b5f48 en bandes à 5,21 ms, sous AnimeJaNai) ; poids partagés par défaut à 48 canaux seulement ;
 l'hypothèse du L2 tombe à 64 canaux, le profil Nsight Compute passe en tête de ce qui reste.
 
-État au 19 novembre 2026, `main` après #963. De quoi reprendre le chantier
+État au 19 novembre 2026, `main` après #980. De quoi reprendre le chantier
 sans personne : ce qui est fait, où en est la recherche, les plafonds et ce qui irait au-delà, ce qui reste,
 et où tout se trouve. Le détail technique est dans [`span-native16.md`](span-native16.md) ; le FP8 CUTLASS
 dans [`span-fp8-cutlass.md`](span-fp8-cutlass.md). Hors de ce bilan : les tuiles qui bougent
@@ -61,7 +67,7 @@ les bords natifs du FP8 (`kirari play --debug --span-native-edges`, #854).
 | #951 | Le PC ne mesure que les temps ; EXPORT et `justesse_cpu.py` jugent la justesse sur processeur |
 | #963 | Poids partagés à l'essai, sortie au bit près ; la convolution passe dans `span_native_conv.cuh` |
 | #973 | Poids partagés par défaut à 48 canaux seulement, d'après le banc ; le banc mesure avec et sans |
-| #980 | Winograd F(2×2, 3×3) à l'essai (64 canaux, sommes f16), éteint par défaut ; colonne « Winograd » au banc |
+| #980 | Winograd F(2×2, 3×3) à l'essai (64 canaux, sommes f16) : +29 % au banc, reste éteint ; colonne « Winograd » au banc |
 
 ### Mesures, dans l'ordre
 
@@ -74,6 +80,8 @@ les bords natifs du FP8 (`kirari play --debug --span-native-edges`, #854).
 | #933, sommes promues (retirées) | | | 14,39 ms | 71,51 dB |
 | #963, b8f64, bandes de 128 lignes | 14,76 ms | 10,64 ms ; partagés 11,07 | 14,44 ms | non exportés |
 | #963, b5f48, bandes de 128 lignes | 8,80 ms | 5,21 ms ; partagés 5,02 | 5,95 ms | non exportés |
+| #980, b8f64, bandes de 128 lignes | 14,70 ms | 10,64 ms ; Winograd 13,72 | 14,45 ms | f16 62,83 dB (Winograd 62,96), f32 76,93 dB |
+| #980, b5f48, bandes de 128 lignes | 8,76 ms | 5,03 ms ; bandes de 192 : 4,88 | 6,00 ms | f16 63,93 dB, f32 77,15 dB |
 
 Balayage des bandes au banc de #963 (0, 64, 192, 270 lignes) : b8f64 10,98, 10,98, 10,78, 11,60 ms ; b5f48
 5,83, 5,22, 5,30, 5,59 ms. Les 128 lignes du défaut restent les meilleures pour les deux. Pas encore mesurés :
@@ -174,7 +182,7 @@ Les gains sont des estimations sans mesure, sauf les plafonds, qui sont calculé
 | Poids partagés (#963) | mesuré : −3,7 % au b5f48, +4,1 % au b8f64 | aucun : bit près, choisi par modèle | fait |
 | Réglage par couche (tuile, warps, lignes par warp, bande), choisi au chargement | 5 à 15 % | faible ; chronométrer les variantes au chargement est admis | cloud, puis temps au PC |
 | Fusion d'un bloc SPAB | le trafic d'activations du L2 (4,2 Go) | moyen à fort, voir ci-dessous | cloud, puis temps au PC |
-| Winograd F(2×2, 3×3) (#980) | multiplications des 3×3 ÷ 2,25 : 2,97 ms de mma au plafond | dB mesurés : aucune perte ; 64 barrières par tuile au lieu de 2 | noyau écrit, temps au PC |
+| Winograd F(2×2, 3×3) (#980) | mesuré : +29 % au b8f64 (13,72 ms), dB inchangés | perdu tel quel : 64 barrières par tuile, V recalculé à chaque point | à reprendre seulement avec V calculé une fois |
 | Winograd F(4×4, 3×3) | ÷ 4 : 1,82 ms de mma au plafond | dB mesurés : aucune perte ; transformées plus lourdes (tuiles 6 × 6), noyau le plus complexe | cloud, puis temps au PC |
 | FP8 natif (cran Performance) | 3,29 ms au plafond, 6 à 7 ms attendus | justesse du FP8 ; en pause | cloud et PC |
 | Parcimonie 2:4 (mma.sp) | tensor cores ×2 sur les blocs : 3,3 ms au plafond en f16 | fort : réentraîner le SPAN (élagage puis affinage), licence du modèle à vérifier, calcul d'entraînement | hors du cloud processeur |
@@ -208,9 +216,9 @@ profil montre que le L2 des activations limite.
    done; done > ~/kirari-reports/span-ncu.txt
    ```
 
-2. **PC, une fois** : le banc avec EXPORT (commande dans `span-native16.md`, « Mesurer »), puis dans le cloud
-   `python3 -I tools/bench/span_native/justesse_cpu.py /mnt/project-files/span-native/<date>/<modèle>` : les
-   dB des deux modèles contre ONNX Runtime FP32, que le banc de #963 n'a pas exportés.
+2. **Fait** (banc de #980) : les dB des deux modèles contre ONNX Runtime FP32, par EXPORT et
+   `justesse_cpu.py` (tableau de la partie 1). Reste à remesurer les bandes de 192 lignes au b5f48 (4,88 ms
+   contre 5,03 au défaut, mais 5,30 contre 5,21 au banc de #963) avant de toucher à `auto_band`.
 3. **Cloud** : comprendre la perte à 64 canaux d'après le profil. Pistes : préchargement de deux pas au lieu
    d'un (la mémoire partagée manque à 64 canaux : deux tampons seulement), barrière tous les deux pas, ou
    blocs de 8 warps qui amortissent la barrière et les poids sur deux fois plus de pixels.
@@ -232,9 +240,10 @@ profil montre que le L2 des activations limite.
    en lecture. Winograd somme sur Cin seulement (3 ou 4 pas de 16 par point) au lieu de 9 · Cin (27 ou 36
    pas) : moins d'arrondis de l'accumulateur f16, d'où le léger gain. Le noyau F(2×2, 3×3) est écrit
    (#980, `span_native_wino.cuh`, section « Winograd » de `span-native16.md`), éteint par défaut. Émulateur :
-   72,13 dB contre 71,81 au direct, même sortie en bandes au bit près. Reste le temps au PC : la colonne
-   « Winograd » du banc (`--winograd`). S'il gagne et garde ses dB (export `wg`), Auto le prend à 64 canaux.
-   F(4×4) ne viendrait qu'avec une transformée séparable. Commande des dB :
+   72,13 dB contre 71,81 au direct, même sortie en bandes au bit près. Au banc : 13,72 ms contre 10,64
+   (+29 %), à 62,96 dB : il reste éteint. Une reprise calculerait V une fois pour les 16 points (transformée
+   séparable, ou tuile plus petite où V tient entier), avec bien moins de barrières, après le profil
+   Nsight Compute. F(4×4) ne viendrait qu'ensuite. Commande des dB :
    `python3 -I tools/bench/span_native/winograd_db.py MODELE.onnx --image IMAGE --coin 270 480`.
 6. **Cloud puis PC** : la fusion en bande de colonnes (partie 3), si le profil montre que le L2 des
    activations limite.
