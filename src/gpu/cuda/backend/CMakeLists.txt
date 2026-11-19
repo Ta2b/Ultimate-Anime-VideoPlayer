@@ -2,7 +2,7 @@
 # Il emporte prepare (constructeur trtexec) et sa propre copie de spdlog ; ses symboles
 # restent cachés, sauf les trois points d'entrée.
 add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kernels.cu drba_fused_kernels.cu export_kernels.cu
-  gmflow_backbone_net.cu gmfss_conv_plan.cu gmfss_kernels.cu gmfss_native_net.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu
+  gmflow_backbone_net.cu gmfss_conv_plan.cu gmfss_conv_tune.cu gmfss_kernels.cu gmfss_native_net.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu
   rife_kernels.cu rife_native_bench.cu rife_native_net.cu rife_native_pick.cu rife_native_weights.cu
   scene_camera_kernels.cu scene_flow_kernels.cu slice_kernels.cu stats_kernels.cu
   tfix_blend_kernels.cu tfix_fused_kernels.cu warp_kernels.cu warp_lib.cu)
