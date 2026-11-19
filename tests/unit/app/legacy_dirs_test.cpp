@@ -48,9 +48,9 @@ TEST_CASE("Dossiers d'ajp : un dossier Kirari déjà servi n'est pas écrasé", 
   std::ofstream(target / "play.toml") << "nouveau";
   std::ofstream(root / "ajp" / "autre.txt") << "autre";
   CHECK_FALSE(adopt_legacy_dir(legacy, target));
-  std::ifstream kept(target / "play.toml");
   std::string text;
-  kept >> text;
+  // Lu et fermé tout de suite : Windows refuse de retirer un fichier encore ouvert.
+  std::ifstream(target / "play.toml") >> text;
   CHECK(text == "nouveau");
   CHECK(fs::is_regular_file(legacy / "play.toml"));
   fs::remove_all(root);
