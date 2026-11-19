@@ -43,6 +43,20 @@ Les 48 canaux du b5f48 sont calculés en 48 (pas de rembourrage). Rien ne change
 « fp16c » tiré de l'ONNX, l'essai au chargement contre le calcul du processeur (≥ 50 dB, `span_fp8_check`), le
 graphe CUDA et l'écriture dans l'anneau sont ceux du chemin d'avant.
 
+## Le FP8 (mêmes techniques)
+
+Sous `--span-native`, le SPAN FP8 (cran Performance) prend aussi ses bords à ces noyaux
+(`span_native16_edges.cuh`, `SpanFp8Weights::native_edges`, bit `kTrialSpanNative`) : conv_1 lit l'image et
+écrit en une passe l'entrée E4M3 du premier bloc et la tranche 0 de la concaténation (le noyau de dégroupage
+disparaît), conv_cat lit les quatre tranches par la tuile en mémoire partagée, to_pixel écrit la sortie et
+l'anneau ; sommes en f16 quand le paquet est en acc16 (et que la politique de débordement le garde), sinon en
+f32. Les convolutions des blocs restent CUTLASS FP8, déjà au plafond de la mémoire en acc16
+(`span-fp8-cutlass.md`, balayage des tuiles). Le paquet et son reçu ne changent pas : les bords sont en FP16
+des deux côtés, seuls l'ordre des sommes et l'arrondi E4M3 de x0 (depuis le FP16 au lieu du f32) diffèrent.
+
+Les sommes f16 sont bornées au plus grand fini avant l'écriture (`to_half2`) : une somme débordée ne sort
+pas en infini.
+
 ## Mesurer
 
 Un seul banc, sur CachyOS, binaire `linux-release` :
@@ -61,14 +75,14 @@ lecteur : `kirari play --span-native --stats` au cran Équilibre.
 
 ## Décision
 
-- natif f16 sous TensorRT et ≥ 55 dB : `--span-native` devient le défaut au cran Équilibre, puis les mêmes
-  techniques passent au FP8 (conv_1 et entrée fondues, conv_cat sans concaténation, to_pixel natif ; les
-  convolutions des blocs en mma m16n8k32 E4M3 sur le même gabarit) ;
+- natif f16 sous TensorRT et ≥ 55 dB : `--span-native` devient le défaut (FP16 natif au cran Équilibre, bords
+  natifs du FP8 au cran Performance) ; ensuite seulement, les convolutions des blocs FP8 en mma m16n8k32 E4M3
+  sur le même gabarit, si un profil montre de la marge sous CUTLASS ;
 - plus lent : le profil Nsight du banc dit quel noyau perd, et on règle la tuile (lignes par warp, nombre de
   warps, double tampon de la tuile suivante) avant de redécider.
 
 ## État
 
-Écrit et compilé (nvcc 13, sm 89 et 120, aucun débordement de registres : 96 à 140 registres en f16) ;
-jamais lancé. La justesse se juge au premier banc (`--compare`) et à chaque chargement (essai contre le
+Écrit et compilé (nvcc 13, sm 89 et 120, aucun débordement de registres : 96 à 140 registres en f16), bords
+du FP8 compris ; relu, jamais lancé (règle de Tatoub : tout se teste ensemble à la fin). La justesse se juge au premier banc (`--compare`) et à chaque chargement (essai contre le
 processeur).
