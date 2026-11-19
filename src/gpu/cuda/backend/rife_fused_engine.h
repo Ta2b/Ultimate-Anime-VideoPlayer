@@ -99,15 +99,18 @@ class RifeFusedEngine final : public Engine {
     l2_max_window_ = max_window;
   }
 
-  // --rife-native (docs/rife-natif.md) : l'encodeur et les convolutions des blocs passent aux noyaux natifs
-  // (pieces : l'encodeur puis les blocs) si leur sortie, sur une paire de test, tient min_db contre celle des
-  // moteurs TensorRT déjà chargés (sommes f16, mixtes, f32), et si la plus rapide de ces variantes bat
-  // TensorRT d'au moins 2 % sur une passe de lecture ×2 chronométrée. Rend la ligne du journal qui dit ce qui
-  // est retenu, avec les dB et les temps. Refus (la chaîne reste alors à TensorRT, intacte) : blocs TensorRT
-  // en plans, erreur CUDA de l'essai (DeviceLost : contexte perdu).
-  std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
-                                                 const std::shared_ptr<SharedActivations>& shared,
-                                                 double min_db);
+  // --rife-native (docs/rife-natif.md) : chaque morceau (pieces : l'encodeur puis les blocs) passe aux
+  // noyaux natifs ou reste au moteur TensorRT déjà chargé, au plus rapide d'après son temps seul, tant que la
+  // sortie de la chaîne, sur une paire de test, tient min_db contre celle de TensorRT : sinon le morceau le
+  // moins juste monte d'un cran (f16, f16 et tête f32, mixtes et tête f32, f32, TensorRT). Le mélange n'est
+  // gardé que s'il bat TensorRT d'au moins 2 % sur une passe de lecture ×2 chronométrée. Rend les lignes du
+  // journal (temps et dB de chaque morceau, profil des couches, verdict en dernier). Refus (la chaîne reste
+  // alors à TensorRT, intacte) : blocs TensorRT en plans, erreur CUDA de l'essai (DeviceLost : contexte
+  // perdu).
+  std::expected<std::vector<std::string>, Refusal> try_native(
+      const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
+      double min_db);
+  // Un morceau au moins passe par les noyaux natifs.
   bool native() const { return native_on_; }
 
   // Le mot du moteur pour le journal du backend (graphes coupés, registre plein), une fois ; vide sinon.
@@ -153,20 +156,39 @@ class RifeFusedEngine final : public Engine {
                                                           const Tensor& input,
                                                           std::span<const Tensor> outputs,
                                                           std::size_t elements);
-  // La mesure du temps de try_native : nets[0] nul (TensorRT), puis les variantes natives ; la médiane d'une
-  // passe de lecture ×2 (B encodée seule) de chacune, en tours intercalés. Les réseaux reviennent à nets.
+  // La mesure du temps de try_native : la médiane d'une passe de lecture ×2 (B encodée seule) de chaque
+  // aiguillage (route), en tours intercalés.
   std::expected<std::vector<double>, Refusal> trial_times(cudaStream_t stream,
                                                           const std::shared_ptr<SharedActivations>& shared,
                                                           const Tensor& input,
                                                           std::span<const Tensor> outputs,
-                                                          std::vector<std::unique_ptr<RifeNativeNet>>& nets);
+                                                          std::span<const std::vector<int>> routes);
+  // Le morceau piece seul (0 : l'encodeur sur l'image A de input, vers le premier emplacement d'encodage ;
+  // 1 + k : le bloc k, du X_k de la zone vers Y_k) par net, ou par TensorRT si net est nul.
+  std::expected<void, Refusal> run_piece(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
+                                         const Tensor& input, int piece, const RifeNativeNet* net);
   void forget_passes();
+  // Garde les réseaux de route (renumérotés) et jette les autres, pose l'aiguillage, rend la zone (au-dessus
+  // des activations de TensorRT et des réseaux gardés) et oublie les graphes.
+  void keep_route(std::vector<int> route, std::int64_t trt_activation);
+  // Par morceau, l'indice du réseau de natives_ qui le fait, -1 pour TensorRT ; vide : tout à TensorRT.
+  void set_route(std::vector<int> route);
+  const RifeNativeNet* piece_net(int piece) const {
+    const auto i = static_cast<std::size_t>(piece);
+    return i < route_.size() && route_[i] >= 0 ? natives_[static_cast<std::size_t>(route_[i])].get()
+                                               : nullptr;
+  }
+  friend class RifeNativeTrial;
 
   std::unique_ptr<TrtEngine> encode_;
   std::vector<std::unique_ptr<TrtEngine>> blocks_;
-  // Les noyaux natifs (try_native) : actifs à la place de encode_ et blocks_, qui restent chargés.
-  std::unique_ptr<RifeNativeNet> native_;
-  bool native_on_ = false;
+  // Les noyaux natifs (try_native) : les réseaux, et par morceau celui qui le fait à la place de encode_ ou
+  // d'un moteur de blocks_, qui restent chargés (set_route).
+  std::vector<std::unique_ptr<RifeNativeNet>> natives_;
+  std::vector<int> route_;
+  bool native_on_ = false;             // un morceau au moins est natif
+  std::int64_t native_workspace_ = 0;  // la plus grande zone de travail des réseaux aiguillés
+  std::uintptr_t route_code_ = 0;      // l'aiguillage dans la clé des graphes : 3 bits par morceau
   kernels::RifeFusedPlan plan_;
   int height_ = 0;
   int width_ = 0;
@@ -189,9 +211,9 @@ class RifeFusedEngine final : public Engine {
   std::uint64_t zone_generation_ = 0;  // la génération de zone_ à use_zone
 
   // Graphes par jeu d'adresses (entrée, sortie ou flot, masque), de zone, de travail de l'encodeur,
-  // d'emplacement de A, de premier bloc, de fenêtre L2 et de variante (TensorRT ou sommes du natif, que la
-  // mesure du temps de try_native alterne) : jusqu'à cinq par jeu d'adresses à froid (Both, puis Second et
-  // None sur chaque emplacement), autant à chaud.
+  // d'emplacement de A, de premier bloc, de fenêtre L2 et d'aiguillage (TensorRT ou réseau natif de chaque
+  // morceau, que la mesure du temps de try_native alterne) : jusqu'à cinq par jeu d'adresses à froid (Both,
+  // puis Second et None sur chaque emplacement), autant à chaud.
   static constexpr std::size_t kMaxGraphs = 64;
   FusedGraphs graphs_{kMaxGraphs, "RIFE fusionné"};
   // L'encodage que le dernier appel mené jusqu'au bout a laissé dans la zone, et l'entrée qu'il a lue.
