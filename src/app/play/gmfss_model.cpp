@@ -3,13 +3,16 @@
 #include <algorithm>
 #include <format>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
 
 #include "app/play/derived_model.h"
 #include "core/utf8_path.h"
+#include "prepare/model_source.h"
 #include "prepare/onnx_dims.h"
+#include "prepare/onnx_split.h"
 
 namespace kirari::app::play {
 namespace {
@@ -57,6 +60,34 @@ std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dir
 
 GmfssModels gmfss_chosen(const GmfssModels& found, bool half) {
   return {.pair = half && !found.half_pair.empty() ? found.half_pair : found.pair, .fusion = found.fusion};
+}
+
+std::expected<void, Refusal> gmfss_pair_current(const std::filesystem::path& pair) {
+  auto bytes = prepare::read_onnx_bytes(pair);
+  if (!bytes) return std::unexpected(std::move(bytes.error()));
+  auto graph = prepare::read_onnx_graph(*bytes);
+  if (!graph) return std::unexpected(std::move(graph.error()));
+  for (const std::string_view name : kGmfssPairLevel1) {
+    if (std::ranges::find(graph->outputs, name) == graph->outputs.end())
+      return refuse(RefusalCode::GraphInvalid,
+                    std::format("{} : export d'avant le format 2, sans la sortie « {} » (le réexporter par "
+                                "tools/gmfss/export_gmfss.py)",
+                                core::to_utf8(pair.filename()), name));
+  }
+  return {};
+}
+
+std::expected<GmfssModels, Refusal> gmfss_usable(const GmfssModels& found, bool half, std::string& dropped) {
+  dropped.clear();
+  GmfssModels chosen = gmfss_chosen(found, half);
+  auto current = gmfss_pair_current(chosen.pair);
+  if (current) return chosen;
+  // L'autre paire du dossier : celle au flot entier pour une paire au demi-flot périmée, et l'inverse.
+  const std::filesystem::path& other = chosen.pair == found.pair ? found.half_pair : found.pair;
+  if (other.empty() || !gmfss_pair_current(other)) return std::unexpected(std::move(current.error()));
+  dropped = std::move(current.error().detail);
+  chosen.pair = other;
+  return chosen;
 }
 
 std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int padded_width,
