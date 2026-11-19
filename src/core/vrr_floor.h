@@ -3,6 +3,7 @@
 // au-dessus du plancher, que de la laisser durer puis rattraper (18,9 ms puis 2 ms).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 namespace kirari::core {
@@ -10,10 +11,16 @@ namespace kirari::core {
 // L'intervalle entre deux présentations d'une image tenue hold_us, sans jamais dépasser floor_us :
 // hold / ceil(hold / floor). Au plancher ou en dessous, ou sans plancher (floor_us ≤ 0), l'image ne se
 // représente pas : hold_us est rendu tel quel.
-constexpr std::int64_t floor_step_us(std::int64_t hold_us, std::int64_t floor_us) {
+// shortest_us : l'intervalle le plus court que l'écran tient (sa fréquence maximale ; 0 : inconnu). Jamais
+// plus de représentations qu'il n'en tient : une représentation plus serrée paraissait au rafraîchissement
+// suivant et retardait d'autant l'image neuve d'après (séance du 19/11 en VRR à 165 Hz, pas de 7 ms : une
+// image sur deux représentée à 5,7 ms, l'écran tenu à 165 Hz, la suivante montrée à 12 ms au lieu de 7).
+constexpr std::int64_t floor_step_us(std::int64_t hold_us, std::int64_t floor_us,
+                                     std::int64_t shortest_us = 0) {
   if (hold_us <= 0 || floor_us <= 0 || hold_us <= floor_us) return hold_us;
-  const std::int64_t parts = (hold_us + floor_us - 1) / floor_us;
-  return hold_us / parts;
+  std::int64_t parts = (hold_us + floor_us - 1) / floor_us;
+  if (shortest_us > 0) parts = std::min(parts, hold_us / shortest_us);
+  return parts <= 1 ? hold_us : hold_us / parts;
 }
 
 // Le plancher en µs d'un écran dont la fréquence minimale est min_hz, avec 10 % de marge ; 0 si inconnue.
