@@ -143,7 +143,7 @@ std::string trial_usage() {
          "                         of its image instead of being queued when the pair arrives (same output)\n"
          "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"
          "                         tiles that move, cuts; same output until a feature reads it\n"
-         "  --no-effect-highlights with --scene-map: no higher highlights on effects\n"
+         "  --no-effect-highlights no higher highlights on effects or on glows seen in the picture\n"
          "  --effect-mask-view     with --scene-map: the grade paints the effects mask, not the picture\n"
          "                         (lights red, sure effects green, held margin blue)\n"
          "  --pause-at=S           pauses on the first source image at S seconds or later, the same\n"

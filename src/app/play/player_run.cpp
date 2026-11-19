@@ -231,7 +231,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("sortie SDR (réglage {}, HDR du système absent, coupé ou sous {} nits) : image SDR gradée",
               name(settings.hdr_mode), kMinHdrPeakNits);
   p.screen.set_sdr_output(!settings.hdr_native);
-  p.screen.set_effect_view(options.effect_mask_view);
+  p.screen.set_effect_view(options.effect_mask_view, options.effect_highlights);
   // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
   const ColorInfo source = source_color.value_or(ColorInfo{});
