@@ -1,7 +1,9 @@
 // L'étage gpu (upscale_stage.h) : SPAN, son tampon repris sur un dessin tenu et l'écriture de
 // l'emplacement de l'anneau. Sorti d'upscale_stage.cpp (C09-09).
 #include <array>
+#include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -11,6 +13,7 @@
 #include "app/play/upscale_stage.h"
 #include "core/log.h"
 #include "core/trace.h"
+#include "kernels/ref/deband.h"
 #include "kernels/spec/resample.h"
 
 namespace kirari::app::play {
@@ -54,21 +57,50 @@ std::expected<void, Refusal> check_tiles(SpanReuse& reuse, gpu::Backend& backend
   return {};
 }
 
+// Ce que l'étage sait de la sortie d'avant et de l'entrée de SPAN, pour les tuiles qui bougent.
+struct TileContext {
+  bool before_warp = false;       // SPAN avant le warp : la sortie d'avant est dans l'autre tampon
+  bool previous_spanned = false;  // ce tampon tient vraiment le SPAN de la source d'avant
+  bool previous_graded = false;   // et le grade avant le warp y est passé, sur place
+  bool output_has_source = false;
+  std::uint32_t intermediates = 0;
+  bool debanded = false;  // l'entrée de SPAN de cette image
+  gpu::Reduction reduce;  // et son filtre de réduction
+};
+
+// La recette de l'entrée de SPAN (TileFacts::input_key) : FNV-1a de ce qui la fait.
+std::uint64_t input_recipe(bool debanded, const gpu::Reduction& reduce) {
+  std::uint64_t key = 1469598103934665603ULL;
+  const auto mix = [&key](std::uint64_t value) { key = (key ^ value) * 1099511628211ULL; };
+  mix(debanded ? 1U : 0U);
+  mix(static_cast<std::uint64_t>(reduce.kind));
+  mix(std::bit_cast<std::uint32_t>(reduce.b));
+  mix(std::bit_cast<std::uint32_t>(reduce.c));
+  return key;
+}
+
 // Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près, la
 // carte arrive quand elle peut), ni TemporalFix (la carte ne voit pas sa sortie), ni Smooth (SPAN fait en
-// avance), ni grade sur place de la sortie (la sortie d'avant est gradée, ses tuiles ne se mélangent pas).
-// Avant le warp, la sortie d'avant est dans l'autre tampon, si la source d'avant a vraiment eu son SPAN ;
-// sinon dans output_, si aucune image créée ne l'a écrasée.
-void tile_facts(ReuseFacts& rf, const UpscaleSetup& setup, bool before_warp, bool previous_spanned,
-                bool output_has_source, std::uint32_t intermediates, const PairFacts& facts) {
+// avance). Avant le warp, la sortie d'avant est dans l'autre tampon, si la source d'avant a vraiment eu son
+// SPAN et que le grade ne l'a pas réécrite (le grader existe sur toute chaîne d'un anneau, il ne grade que si
+// le réglage et l'écran le demandent) ; sinon dans output_, si aucune image créée ne l'a écrasée.
+void tile_facts(ReuseFacts& rf, const UpscaleSetup& setup, const TileContext& at, const PairFacts& facts) {
   const bool playing = setup.clock != nullptr && !setup.yuv_slots;
   // La plaque de décor (layer_stage.h) réécrit la sortie : ses pixels ne se reprennent pas d'une image à
   // l'autre.
   const bool plain = setup.temporal_fix == nullptr && !setup.smooth_drawings && setup.layers.plate == nullptr;
-  const bool kept = before_warp ? !setup.grader && previous_spanned : output_has_source && intermediates == 0;
+  const bool kept = at.before_warp ? at.previous_spanned && !at.previous_graded
+                                   : at.output_has_source && at.intermediates == 0;
   rf.tiles_ok = playing && plain && kept;
-  rf.can_shift = before_warp;
+  rf.can_shift = at.before_warp;
   rf.scene = facts.scene.has_value() ? &*facts.scene : nullptr;
+  rf.spread_px = at.debanded ? static_cast<int>(std::ceil(kernels::ref::kDebandRadius)) : 0;
+  rf.input_key = input_recipe(at.debanded, at.reduce);
+}
+
+// Le moteur oublie la demande de tuiles d'un appel qui n'a pas abouti : elle ne vaut que pour lui.
+void drop_tiles(gpu::Engine& engine) {
+  static_cast<void>(engine.next_span_tiles({}, 0, 0, nullptr));
 }
 
 }  // namespace
@@ -112,7 +144,7 @@ std::expected<void, Refusal> keep_anchor(gpu::Backend& backend, const gpu::Tenso
 }  // namespace
 
 std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame, const PairFacts& facts,
-                                                       bool held) {
+                                                       bool held, const gpu::Reduction& reduce) {
   if (setup_.engine == nullptr) return false;
   // Smooth, warp après SPAN : chaque copie de la tenue reprend le SPAN de a, quelle que soit sa longueur ;
   // aucune n'est montrée telle quelle, et l'autre tampon tient celui de b (span_smooth_b).
@@ -125,7 +157,14 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                 .corrupt = frame.corrupt,
                 .has_output = warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_),
                 .pair_held = !pair_measured || held};
-  tile_facts(rf, setup_, warps_spanned(), reuse_.spanned_is(previous_), output_has_source_, intermediates_,
+  tile_facts(rf, setup_,
+             TileContext{.before_warp = warps_spanned(),
+                         .previous_spanned = reuse_.spanned_is(previous_),
+                         .previous_graded = span_graded_[span_of_[current_ ^ 1U]],
+                         .output_has_source = output_has_source_,
+                         .intermediates = intermediates_,
+                         .debanded = debanded_,
+                         .reduce = reduce},
              facts);
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
   const int in_row = reuse_.in_row();
@@ -176,6 +215,7 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   std::array results{spanned(current_)};
   const bool tiled = send_tiles(reuse_, *setup_.engine, &spanned(current_ ^ 1U));
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
+  if (!ok && tiled) drop_tiles(*setup_.engine);
   if (ok && tiled) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, results[0]);
   reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
   // La plaque de décor (layer_stage.h), avant le grade : le décor de b repris de l'image clé.
@@ -229,9 +269,9 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
   // n'écrit que les tuiles calculées : l'emplacement reçoit ensuite output_ entière).
   const gpu::Tensor& now = rgb_[current_]->tensor();
   if (rgb.handle == now.handle && rgb.offset == now.offset && send_tiles(reuse_, *setup_.engine, nullptr)) {
-    auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs).and_then([&] {
-      return check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, outputs[0]);
-    });
+    auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs);
+    if (!ok) drop_tiles(*setup_.engine);
+    if (ok) ok = check_tiles(reuse_, *setup_.backend, *setup_.engine, inputs, outputs[0]);
     if (!ok) return blame_stage(std::move(ok), kSpanRefusalKey);
     return write_slot(output_->tensor(), slot, sync);
   }

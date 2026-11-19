@@ -1,6 +1,7 @@
 // Les tuiles qui bougent (upscale_tiles.h, kernels/spec/span_tiles.h) : la dilatation et les masques du
-// moteur, puis la décision sur des cartes synthétiques (sans carte, tuile qui change, dérive lente,
-// panoramique entier, coupe, limite d'âge) et la sorte Tiles de la reprise.
+// moteur, puis la décision sur des cartes synthétiques (sans carte, tuile qui change et ce qui la voit,
+// débandage, dérive lente, lueur locale, recette de l'entrée, panoramique entier et ses deux bords, coupe,
+// limite d'âge, refus) et la sorte Tiles de la reprise.
 #include "app/play/upscale_tiles.h"
 
 #include <cstdint>
@@ -15,12 +16,12 @@
 namespace kirari::app::play {
 namespace {
 
-// Une image de travail de 512 × 256 : tuiles du moteur de 64 × 16 (8 × 16), halo d'une colonne et de quatre
-// lignes (SPAN à huit blocs : portée 26 pixels de demi-résolution) ; carte en tuiles de 32 (16 × 8).
+// Une image de travail de 1024 × 512 : tuiles du moteur de 64 × 16 (16 × 32), halo d'une colonne et de quatre
+// lignes (SPAN à huit blocs : portée 26 pixels de demi-résolution) ; carte en tuiles de 32 (32 × 16).
 constexpr kernels::SpanTileGrid kGrid{.tile_w = 64,
                                       .tile_h = 16,
-                                      .cols = 8,
-                                      .rows = 16,
+                                      .cols = 16,
+                                      .rows = 32,
                                       .reach_cols = kernels::span_reach_tiles(26, 32),
                                       .reach_rows = kernels::span_reach_tiles(26, 8),
                                       .shift_step = 2,
@@ -30,9 +31,9 @@ kernels::SceneMotion still_scene() {
   kernels::SceneMotion s;
   s.camera_fit = true;
   s.tile_px = 32;
-  s.cols = 16;
-  s.rows = 8;
-  s.tiles.assign(16 * 8, kernels::SceneTile{.kind = kernels::SceneClass::Background, .confidence = 1.0F});
+  s.cols = 32;
+  s.rows = 16;
+  s.tiles.assign(32 * 16, kernels::SceneTile{.kind = kernels::SceneClass::Background, .confidence = 1.0F});
   s.background_held = true;
   s.drawing_held = true;
   return s;
@@ -52,10 +53,10 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   // La portée en tuiles et la dilatation : une tuile au milieu donne 3 × 9 tuiles, une au coin 2 × 5.
   REQUIRE(kGrid.reach_cols == 1);
   REQUIRE(kGrid.reach_rows == 4);
-  std::vector<std::uint8_t> one(static_cast<std::size_t>(kGrid.count()), 0);
-  one[static_cast<std::size_t>(8 * kGrid.cols + 4)] = 1;
+  std::vector<std::uint8_t> one(8 * 16, 0);
+  one[static_cast<std::size_t>(8 * 8 + 4)] = 1;
   CHECK(kernels::count_span_tiles(kernels::dilate_span_tiles(one, 8, 16, 1, 4)) == 27);
-  std::vector<std::uint8_t> corner(static_cast<std::size_t>(kGrid.count()), 0);
+  std::vector<std::uint8_t> corner(8 * 16, 0);
   corner[0] = 1;
   CHECK(kernels::count_span_tiles(kernels::dilate_span_tiles(corner, 8, 16, 1, 4)) == 10);
   std::vector<std::uint32_t> words(kernels::kSpanTileMaskWords, 0xFFFFFFFFU);
@@ -73,14 +74,24 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   CHECK_FALSE(t.plan(fresh).tiled);
   CHECK_FALSE(t.plan(TileFacts{.fresh = true, .can_shift = true}).tiled);
 
-  // Une tuile de la carte change (pixels 160 à 192, 96 à 128) : seules les tuiles du moteur dessous.
+  // Une tuile de la carte change (pixels 160 à 192, 96 à 128) : les tuiles du moteur dessous, (2, 6) et
+  // (2, 7), et toute sortie qui les voit, à une colonne et quatre lignes : 3 × 10 tuiles.
   tile(scene, 5, 3).changed = true;
   TilePlan p = t.plan(fresh);
   REQUIRE(p.tiled);
   CHECK(p.shift_x == 0);
   CHECK(core_at(p, 2, 6) == 1);
-  CHECK(core_at(p, 2, 7) == 1);
-  CHECK(kernels::count_span_tiles(p.core) == 2);
+  CHECK(core_at(p, 1, 2) == 1);
+  CHECK(core_at(p, 3, 11) == 1);
+  CHECK(core_at(p, 0, 6) == 0);
+  CHECK(core_at(p, 2, 12) == 0);
+  CHECK(kernels::count_span_tiles(p.core) == 30);
+  // Débandée, l'entrée voit la source jusqu'à 16 pixels de plus : une colonne et une ligne de plus.
+  TileFacts debanded = fresh;
+  debanded.spread_px = 16;
+  p = t.plan(debanded);
+  REQUIRE(p.tiled);
+  CHECK(kernels::count_span_tiles(p.core) == 5 * 12);
   tile(scene, 5, 3).changed = false;
 
   // Une image saine mais pas fraîche (saut, image abîmée derrière) : entière.
@@ -94,8 +105,28 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   CHECK_FALSE(t.plan(fresh).tiled);
   for (auto& s : scene.tiles) s.dx = 0.0F;
 
-  // Panoramique de 4 pixels vers la droite (deux pas), décor sûr qui suit : la sortie se décale, seules la
-  // bande qui entre (première colonne) se recalcule.
+  // Lueur locale : 0,6 code par paire sur une tuile de la carte, sous le seuil de « a changé » ; à la
+  // deuxième, plus d'un code reçu : ses tuiles se recalculent.
+  tile(scene, 5, 3).shift = 0.6F;
+  p = t.plan(fresh);
+  REQUIRE(p.tiled);
+  CHECK(kernels::count_span_tiles(p.core) == 0);
+  p = t.plan(fresh);
+  REQUIRE(p.tiled);
+  CHECK(core_at(p, 2, 6) == 1);
+  CHECK(kernels::count_span_tiles(p.core) == 30);
+  tile(scene, 5, 3).shift = 0.0F;
+
+  // Une autre recette de l'entrée (débandage allumé en cours de lecture) : entière, puis par tuiles.
+  TileFacts other = fresh;
+  other.input_key = 7;
+  CHECK_FALSE(t.plan(other).tiled);
+  CHECK(t.plan(other).tiled);
+  CHECK_FALSE(t.plan(fresh).tiled);
+
+  // Panoramique de 4 pixels vers la droite (deux pas), décor sûr qui suit : la sortie se décale ; la bande
+  // qui entre (première colonne) et le bord d'où le contenu sort (dernière colonne) se recalculent, avec ce
+  // qui les voit.
   kernels::SceneMotion pan = still_scene();
   pan.camera[0] = 4.05;
   pan.background_held = false;
@@ -108,9 +139,12 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   CHECK(p.shift_x == 4);
   CHECK(p.shift_y == 0);
   CHECK(core_at(p, 0, 5) == 1);
-  CHECK(core_at(p, 3, 5) == 0);
+  CHECK(core_at(p, 1, 5) == 1);
+  CHECK(core_at(p, 2, 5) == 0);
   CHECK(core_at(p, 7, 5) == 0);
-  CHECK(kernels::count_span_tiles(p.core) == kGrid.rows);
+  CHECK(core_at(p, 14, 5) == 1);
+  CHECK(core_at(p, 15, 5) == 1);
+  CHECK(kernels::count_span_tiles(p.core) == 4 * kGrid.rows);
   // Le même panoramique sans second tampon (sortie sur place) : entière.
   CHECK_FALSE(t.plan(TileFacts{.fresh = true, .can_shift = false, .scene = &pan}).tiled);
   // Un panoramique d'un pixel et demi : pas de multiple du pas, entière.
@@ -127,6 +161,13 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   for (int i = 0; i < SpanTiles::kMaxAge + 1; ++i) tiled += t.plan(fresh).tiled ? 1 : 0;
   CHECK(tiled == SpanTiles::kMaxAge);
   CHECK_FALSE(t.summary().empty());
+  // Un refus du moteur : l'image redevient entière, et ne compte plus parmi celles par tuiles.
+  SpanTiles once;
+  once.set_grid(kGrid);
+  CHECK_FALSE(once.plan(fresh).tiled);
+  CHECK(once.plan(fresh).tiled);
+  once.refused();
+  CHECK(once.summary().empty());
 
   // Dans la reprise : une image non tenue mais lisible par tuiles rend Tiles et le plan ; --no-span-tiles,
   // Compute.

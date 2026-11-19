@@ -21,7 +21,9 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     tile_plan = tiles.plan(TileFacts{
         .fresh = facts.tiles_ok && facts.same_epoch && !facts.corrupt && !behind_bad && facts.has_output,
         .can_shift = facts.can_shift,
-        .scene = facts.scene});
+        .scene = facts.scene,
+        .spread_px = facts.spread_px,
+        .input_key = facts.input_key});
     return tile_plan.tiled ? ReuseKind::Tiles : ReuseKind::Compute;
   };
   if (!enabled || !facts.same_epoch || facts.corrupt || anchor_bad_ || !facts.has_output || !facts.pair_held)
