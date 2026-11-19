@@ -137,6 +137,11 @@ std::vector<double> reference(const WarpPlanesParams& p, const std::vector<doubl
         const int y0 = static_cast<int>(iy);
         const double fx = ix - x0;
         const double fy = iy - y0;
+        // Catmull-Rom borné aux 2 × 2 points centraux n'est pas continu quand la position franchit un entier
+        // (les points centraux changent) : là, l'arrondi FP32 du GPU peut tomber de l'autre côté. Ces points
+        // ne se comparent pas (NaN, sautés par worst_error).
+        const auto near_integer = [](double f) { return f < 1e-3 || f > 1.0 - 1e-3; };
+        const bool undecided = p.cubic != 0 && (near_integer(fx) || near_integer(fy));
         for (int c = 0; c < p.channels; ++c) {
           double v = 0.0;
           if (p.cubic != 0) {
@@ -166,7 +171,7 @@ std::vector<double> reference(const WarpPlanesParams& p, const std::vector<doubl
           const std::size_t at =
               p.out_pitch == 0 ? static_cast<std::size_t>(c * oh * ow) + o
                                : o * static_cast<std::size_t>(p.out_pitch) + static_cast<std::size_t>(c);
-          out[at] += v / (taps * taps);
+          out[at] += undecided ? std::nan("") : v / (taps * taps);
         }
         conf_out[static_cast<std::size_t>(oy * ow + ox)] += conf / (taps * taps);
       }
@@ -178,7 +183,8 @@ std::vector<double> reference(const WarpPlanesParams& p, const std::vector<doubl
 double worst_error(const std::vector<double>& got, const std::vector<double>& want) {
   REQUIRE(got.size() == want.size());
   double worst = 0.0;
-  for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, std::abs(got[i] - want[i]));
+  for (std::size_t i = 0; i < got.size(); ++i)
+    if (!std::isnan(want[i])) worst = std::max(worst, std::abs(got[i] - want[i]));
   return worst;
 }
 
