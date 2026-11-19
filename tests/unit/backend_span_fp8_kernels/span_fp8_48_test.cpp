@@ -370,7 +370,7 @@ TEST_CASE("SPAN FP16 natif : les poids partagés rendent la même sortie au bit 
     SpanFp8Weights weights = span_fp8_view(package);
     weights.fp16 = true;
     weights.sums = sums;
-    weights.shared_weights = shared;
+    weights.shared_weights = shared ? SpanSharedWeights::On : SpanSharedWeights::Off;
     SpanFp8Status status = SpanFp8Status::Ok;
     std::string error;
     const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);

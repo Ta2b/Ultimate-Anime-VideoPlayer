@@ -127,7 +127,9 @@ class NativeBody final : public SpanFp8Body {
 
   bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override {
     used_ = weights.blocks;
-    shared_ = weights.shared_weights;
+    shared_ = weights.shared_weights == SpanSharedWeights::Auto
+                  ? C == 48
+                  : weights.shared_weights == SpanSharedWeights::On;
     band_ = weights.band == SpanFp8Weights::kBandAuto ? auto_band(fw_, C) : weights.band;
     const auto sent = [&](cudaError_t result) {
       if (result == cudaSuccess) return true;
