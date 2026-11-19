@@ -273,8 +273,21 @@ moyen 0,25 au plus), sur panoramique3 0,79 (images par tuiles 0,82) ; scintillem
 
 Au PC (4e719097), la porte passe : pire bloc 0,79 niveau, écart moyen 0,165 au plus ; moteur SPAN 11 241 ms
 contre 12 244 sans tuiles (−8,2 %), p95 10,68 contre 11,07 ms ; reprise entière 19,8 % des deux côtés, série
-la plus longue 19. Reste le gros levier : 1028 images entières pour région trop large (82 % des tuiles en
-cause).
+la plus longue 19. Restent 1028 images entières pour région trop large (82 % des tuiles en cause).
+
+**Région trop large : ce qui reste** (rejeu, lot A d'abord, coût moyen des sept extraits, 63,2 % au départ).
+Ces images ne sont pas des faux positifs : sur une seule paire, la plupart des tuiles ont un vrai changement
+(panoramique, mouvement d'ensemble), et rien d'exact ne les saute (le décalage d'une fraction de pixel ne
+commute pas avec SPAN, plus haut). Les deux leviers essayés :
+- le plafond de région : 62,8 % à 0,80, 63,0 % à 0,90, 63,7 % à 0,97 (le modèle de coût, région plus 6 %, n'est
+  mesuré au PC que vers 21 % de région) ;
+- un moteur en cône : chaque couche calculée sur le cœur dilaté de la seule portée qui reste après elle, au
+  lieu de toute la portée pour toutes les couches (26 convolutions 3 × 3 de SPAN Équilibre). Estimé sur le
+  rejeu : 62,2 % (plafond 0,70 ou 0,80 sur le coût du cône), aura de 66,8 à 63,7 %. Il touche
+  `src/gpu` et `src/kernels` (paquet TensorRT, mesure au PC) pour environ un point : pas lancé seul.
+
+Le gain des tuiles reste celui des plans à caméra tenue ; sur ce contenu, le prochain point viendrait du
+surcoût de 6 % par image par tuiles (lancement direct hors graphe), à mesurer au PC avant d'y toucher.
 
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
