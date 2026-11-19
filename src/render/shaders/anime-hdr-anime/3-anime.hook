@@ -203,6 +203,10 @@ vec4 hook() {
     float fx_code = fx_on > 0.5 ? clamp(px.a, 0.0, 1.0) * 255.0 : 127.0;
     float keep = fx_code > 126.5 ? 1.0 : fx_code / 127.0;
     float sure = clamp((fx_code - 127.5) / 127.5, 0.0, 1.0);
+    // Une lueur vue dans l'image (fx_glow) : un bloc qui domine nettement sa zone (0,20 PQ au-dessus, pleine
+    // a 0,35) monte comme un effet sur. La carte de la scene ne voit que ce qui bouge : une corne lumineuse ou
+    // un halo immobiles n'y sont jamais des effets. La peau reste exclue (gate, plus bas).
+    if (fx_glow > 0.5) sure = max(sure, smoothstep(0.20, 0.35, local_pq - area_pq));
     if (sure > 0.0) {
         iso = mix(iso, smoothstep(0.02, 0.15, local_pq - area_pq), sure);
         gate = mix(gate, smoothstep(fx_gate_lo, fx_gate_hi, local_pq), sure);

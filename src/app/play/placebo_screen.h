@@ -166,8 +166,10 @@ class PlaceboScreen final : public Screen {
   // que montre la fenêtre, pour le vérifier sans capture d'écran.
   // count > 1 : autant de présentations de suite, « nom-001.pq.ppm », « nom-002.pq.ppm »…
   void snapshot_next(std::filesystem::path path, int count = 1);
-  // --effect-mask-view : le grade HDR peint le masque des effets au lieu de l'image (3-anime.hook, fx_view).
-  void set_effect_view(bool on);
+  // --effect-mask-view : le grade HDR peint le masque des effets au lieu de l'image (3-anime.hook, fx_view) ;
+  // glow : une lueur vue dans l'image monte comme un effet sûr (GradeParams::fx_glow, --no-effect-highlights
+  // l'éteint).
+  void set_effect_view(bool on, bool glow = true);
   // Détruit les textures de l'interface (placebo_imgui.h) : avant l'écran, contexte ImGui vivant.
   void release_ui(ImGuiPlatformIO& platform);
 

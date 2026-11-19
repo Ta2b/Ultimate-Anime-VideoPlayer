@@ -254,6 +254,14 @@ tuiles d'effet. Une coupe ne donne plus de tuiles.
   plus bas (30 à 60 % du blanc au lieu de 50 à 100 %) et va une fois et demie plus haut (`fx_gain` 0,5). La
   peau reste exclue. Hors effet sûr, chaque pixel est celui d'avant, au code près
   (`grade_gpu_effects_test.cpp`).
+- **Les lueurs vues dans l'image** (`fx_glow`, sur toutes les cartes, sans la carte de la scène) : la carte
+  reconnaît un effet à ce qui change, et une lueur immobile n'y est jamais un effet (essai du PC sur
+  9fff1e32 : la corne de Rem à 16:23 change de moins d'un code, le halo de 16:45 est une image fixe, la
+  bougie de 16:19 est expliquée par un glissement ; aucun effet sûr, aucun gain). Un bloc qui domine
+  nettement sa zone (0,20 PQ au-dessus du niveau de la zone, plein à 0,35) monte donc comme un effet sûr :
+  porte plus basse, montée une fois et demie plus haute. Une lumière à peine plus claire que sa zone, le
+  fond et la peau ne changent pas (`grade_gpu_effects_test.cpp`). L'export fait de même ;
+  `--no-effect-highlights` l'éteint à l'écran.
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format

@@ -260,6 +260,13 @@
 //!MAXIMUM 1.0
 0.0
 
+//!PARAM fx_glow
+//!DESC 1 = une lueur vue dans l'image (bloc nettement au-dessus de sa zone) monte comme un effet sur, sans la carte de la scene
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0
+
 //!PARAM fx_rest
 //!DESC Masque des effets : la part de la montee qu'une lumiere hors effet garde (1 = toutes, le grade sans masque)
 //!TYPE float
