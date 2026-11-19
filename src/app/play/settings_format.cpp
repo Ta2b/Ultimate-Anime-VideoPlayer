@@ -126,7 +126,7 @@ std::string format_settings(const PlaySettings& s) {
                                    {"look_highlight", s.look_highlight},
                                    {"flash_guard", s.flash_guard},
                                    {"face_skin", s.face_skin},
-                                   {"surface_white", s.surface_white},
+                                   {"surface_level", s.surface_white},
                                    {"anime_contrast", g.anime_contrast},
                                    {"anime_saturation", g.anime_saturation},
                                    {"anime_highlights", g.anime_highlights},

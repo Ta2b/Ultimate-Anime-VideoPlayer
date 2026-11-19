@@ -112,9 +112,9 @@ constexpr std::array kMenuTexts{
     Entry{"In content nits: KDE shows them brighter (× its SDR brightness / 203).",
           "En nits du contenu : KDE les montre plus lumineux (× sa luminosité SDR / 203)."},
     Entry{"How bright walls and skin are. Lower makes the picture calmer and lets lights stand out more; "
-          "they still reach the peak. Recommended: 100 %.",
+          "they still reach the peak. Recommended: 60 %.",
           "La luminosité des murs et de la peau. Plus bas, l'image est plus calme et les lumières ressortent "
-          "davantage ; elles atteignent toujours le pic. Recommandé : 100 %."},
+          "davantage ; elles atteignent toujours le pic. Recommandé : 60 %."},
     Entry{"Dims bursts of more than three flashes a second for one second, for photosensitive viewers. "
           "Recommended: on.",
           "Atténue pendant une seconde les rafales de plus de trois flashs par seconde, pour les personnes "
