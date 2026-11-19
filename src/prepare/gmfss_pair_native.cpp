@@ -218,7 +218,7 @@ std::expected<void, Refusal> gmfss_pair_check(const GmfssPairNets& nets) {
   if (image.level != kGmfssFullLevel || image.channels != 16) return missing("FeatureNet : l'image d'entrée");
   if (auto ok = check_net(nets.features, "FeatureNet", kGmfssFeatureLevels, true); !ok) return ok;
   for (int level = 0; level < kGmfssFeatureLevels; ++level) {
-    if (nets.features.tensors[static_cast<std::size_t>(level + 1)].level != level)
+    if (nets.features.tensors[static_cast<std::size_t>(level) + 1].level != level)
       return missing(std::format("FeatureNet : sortie {} hors de son niveau", level + 1));
   }
   const auto input = nets.metric.tensors.empty() ? GmfssGridTensor{} : nets.metric.tensors.front();
