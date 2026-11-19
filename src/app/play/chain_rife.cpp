@@ -220,15 +220,8 @@ std::expected<bool, StageFailure> load_rife(Player& p, const gpu::BackendInit& i
     if (!image || !*image) return image;
   }
   if (c.rife_motion) {
-    // Plus petit que le travail : la case 720p, ou un facteur au-delà de ×4 (kRifeMotion720Above) ; le
-    // mouvement d'ensemble est alors forcé (pan_lock_on).
-    const std::string reduced =
-        c.rife_size.height < c.work.height
-            ? std::format(" (facteur ×{}, case 720p {}), mouvement d'ensemble",          // i18n-ok : journal
-                          c.order_factor, settings.motion_720p ? "cochée" : "décochée")  // i18n-ok
-            : std::string();
-    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}{}", c.rife_size.width, c.rife_size.height,
-              c.work.width, c.work.height, reduced);
+    log->info("RIFE mouvement : estimé en {}x{}, warp en {}x{}", c.rife_size.width, c.rife_size.height,
+              c.work.width, c.work.height);
   }
   return true;
 }

@@ -474,13 +474,8 @@ inline WorkSize chain_work_size(const PlaySettings& s, int width, int height) {
 // note du panneau lisent la même (C23-04).
 inline constexpr int kRifeMotionHeight = 720;
 inline constexpr int kGmfssLightHeight = 540;
-// Au-delà de ce facteur (order_factor : le plafond de l'Auto, ou le facteur fixe), RIFE estime toujours en
-// 720p, avec le mouvement d'ensemble (pan_lock) qui tient les panoramiques lents : à ×7 une paire rapide
-// repasse RIFE à chaque instant, et en 1080p RIFE prenait alors 70 % du GPU à lui seul. Image par image, le
-// 1080p ne gagne rien sur le 720p (docs/interpolation.md, Taille de l'estimation du mouvement).
-inline constexpr int kRifeMotion720Above = 4;
-inline bool rife_motion_reduced(const WorkSize& work, bool at_720p, int order_factor = 0) {
-  return (at_720p || order_factor > kRifeMotion720Above) && work.height > kRifeMotionHeight;
+inline bool rife_motion_reduced(const WorkSize& work, bool at_720p) {
+  return at_720p && work.height > kRifeMotionHeight;
 }
 
 // Refuse (FieldOutOfRange) le premier réglage hors plage, en le nommant.

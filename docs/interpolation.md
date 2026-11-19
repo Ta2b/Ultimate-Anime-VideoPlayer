@@ -133,12 +133,7 @@ par image a trouvé 19 reculs sur 425 images, aux rangs multiples de 8. La copie
 ## Taille de l'estimation du mouvement
 
 Case « Estimer le mouvement en 720p » (Vidéo > Interpolation ; `[interpolation] motion_720p` de `play.toml`),
-**décochée par défaut** : au-delà de 720 lignes de travail, RIFE mouvement estime le flot à la taille de travail
-jusqu'à ×4. **Au-delà de ×4** (`kRifeMotion720Above`, sur le facteur qui décide l'ordre du warp, `order_factor` :
-le plafond de l'Auto à l'écran), il l'estime toujours sur la copie 720p, et le mouvement d'ensemble ci-dessous est
-forcé (`pan_lock_on`, `chain_setup.cpp`) : à ×7 une paire rapide repasse RIFE à chaque instant, et la séance du
-19/11 (4070 Ti, 1080p, RIFE 4.25 fusionné) donnait 4,9 ms par passe en 1080p, environ 70 % du GPU sur une paire
-rapide à 165 Hz. Le journal le dit (« RIFE mouvement : estimé en 1280x720 … mouvement d'ensemble »).
+**décochée par défaut** : au-delà de 720 lignes de travail, RIFE mouvement estime le flot à la taille de travail.
 Cochée, il l'estime sur une copie réduite à 720 lignes (`kRifeMotionHeight`, `motion_size` dans
 `src/app/play/chain_setup.cpp`), plus rapide. Recharge la chaîne. Avant ce réglage, la copie 720p était
 toujours faite ; Tatoub a choisi la taille de travail par défaut après la mesure ci-dessous.
