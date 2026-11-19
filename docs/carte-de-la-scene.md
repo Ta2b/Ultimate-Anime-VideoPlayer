@@ -13,13 +13,14 @@ entraînement.
   exactement comme sans la carte.
 - Interrupteur : `--scene-map` (essai). Éteint par défaut tant que la porte 2.2 n'est pas passée.
 - Journal de fin : `carte de la scène : N paires lancées, N relues, N posées sur leur paire ; N sautées (NVOF
-  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, N coupes probables, N fondus ; hôte : N µs
-  pour lancer une paire, N µs pour tirer une carte, en moyenne`. « Posées » est ce qui compte : avec RIFE,
-  presque toutes les paires lancées. « Trop tard » : la carte n'était pas relue quand l'étage a décidé de sa
-  paire. Les temps de l'hôte sont ceux du thread du lecteur.
-- Profil GPU de fin, trois étapes. « carte de la scène : lumas », sur la voie, et « carte de la scène :
-  tuiles », la réduction sur les SM : avec les temps de l'hôte, c'est tout ce que la carte ajoute à chaque
-  image. « carte de la scène : flux (NVOFA) » : le bloc matériel du flux optique, qui tourne à côté des SM ;
+  occupé), N relues trop tard, N perdues ; caméra ajustée sur N, affinée sur N (N affinages trop tard, N pas
+  lancés), N coupes probables, N fondus ; hôte : N µs pour lancer une paire, N µs pour tirer une carte, en
+  moyenne`. « Posées » est ce qui compte : avec RIFE, presque toutes les paires lancées. « Trop tard » : la
+  carte n'était pas relue quand l'étage a décidé de sa paire ; « affinages trop tard » : elle l'était, mais
+  pas sa caméra affinée (la carte part avec celle de NVOF). Les temps de l'hôte sont ceux du thread du lecteur.
+- Profil GPU de fin, quatre étapes. « carte de la scène : lumas », sur la voie, « carte de la scène :
+  tuiles », la réduction sur les SM, et « carte de la scène : caméra », l'affinage sur les SM : avec les
+  temps de l'hôte, c'est tout ce que la carte ajoute à chaque image. « carte de la scène : flux (NVOFA) » : le bloc matériel du flux optique, qui tourne à côté des SM ;
   c'est la latence de la carte (le temps avant qu'elle soit relue), pas un coût par image. Les deux mesures
   de la file de NVOF comptent aussi l'attente de SM libres : sa priorité est la plus haute, mais un bloc de
   SPAN ou de RIFE déjà lancé finit d'abord. Passage 10 (19 novembre, une seule étape « NVOF et tuiles » à
@@ -45,9 +46,14 @@ entraînement.
    moyen, coût 8 bits), la réduction par tuile (`scene_tiles`, sommes entières), la copie vers une mémoire
    hôte épinglée. Aucune attente, ni de l'hôte ni de la voie. La bibliothèque de NVOF n'est jamais
    déchargée (le pilote garde ses fils) ; sous Windows, elle n'est cherchée que dans System32.
-3. `UpscaleStage::scene_pair`, quand l'étage décide de la paire : relecture sans attente
-   (`scene_flow_take`), puis `kernels::ref::scene_motion_of` tire la carte, posée dans `PairFacts::scene`.
-   Pas finie à temps : `scene` reste vide pour cette paire.
+3. Dès que les tuiles sont relues (`scene_flow_take`, sans attente, à chaque image de sortie par
+   `SceneMap::advance` et quand l'étage décide), la caméra est ajustée sur leurs vecteurs
+   (`kernels::ref::scene_camera_of`), puis affinée sur la file de NVOF (`scene_camera_start`, voir « La
+   caméra »). L'affinage relu (`scene_camera_take`), `kernels::ref::scene_motion_of` tire la carte avec la
+   caméra affinée.
+4. `UpscaleStage::scene_pair`, quand l'étage décide de la paire : la carte, posée dans `PairFacts::scene`.
+   Tuiles pas relues à temps : `scene` reste vide pour cette paire. Caméra pas encore affinée : la carte
+   part avec celle de NVOF.
 
 Les indices temporels de NVOF repartent à chaque paire qui ne suit pas la précédente (début, saut, nouvelle
 époque, début d'export), après une coupe jugée par la chaîne et après une coupe probable de la carte. Une
@@ -59,6 +65,29 @@ autre taille d'image refait la session.
 `kernels::scene`, que règle la porte 2.3 (premier passage plus bas). `drawing_held` ne se dit que sur preuve : un effet
 compte comme ce qui bouge, et sans caméra ajustée (aplat), toute tuile changée l'éteint. Règle absolue :
 `scene` absente donne exactement le comportement d'aujourd'hui, image pour image.
+
+## La caméra
+
+Méthode de la porte 2.1 (banc `tools/bench/qualite/nvof_mesures.py` : `camera`, `refine_affine`,
+`photo_residual`), sur 391 paires sur 407 sous 0,5 pixel d'écart à 720p avec au moins 40 % de décor.
+
+- **Ajustement** (`ref::scene_camera_of`, constantes `kFit*`) : affine à 6 paramètres sur les vecteurs moyens
+  des tuiles candidates (texture d'au moins `kFitTexture`, trois quarts de vecteurs sûrs, vecteurs cohérents),
+  pondérées par `1 / (1 + coût / coût médian)` et par leur texture. Départ sur la translation médiane, 8 tours ;
+  à chaque tour, rejet des tuiles à plus de 3 écarts médians (estimés sur celles à moins de 2 pixels), seuil
+  borné entre 0,75 et 2 pixels à 720p. Le décor, ce sont les tuiles gardées.
+- **Affinage** (`kernels/spec/scene_camera.h`, référence `ref::scene_camera_refine`, port
+  `scene_camera_kernels.cu`) : NVOF est biaisé sous le pixel sur les caméras lentes (sur un panoramique lent du
+  banc, il invente un cisaillement d'environ 2 pixels à 720p). Lucas-Kanade global sur les pixels du décor
+  retire ce biais : Gauss-Newton sur les 6 paramètres, poids de Huber, 3 pas sur les lumas du flux floutées en
+  7 × 7, puis 3 en 3 × 3, un pixel sur deux en x et en y. La caméra de NVOF reste si H est mal conditionné ou si
+  le décor a moins de 1000 pixels. Tout se fait sur la file de NVOF, sans retour à l'hôte entre les pas : les
+  lumas floutées, un histogramme des écarts (la médiane du poids de Huber), les sommes pondérées, et un fil qui
+  résout. Les lumas de la paire restent dans leurs tampons jusqu'à l'affinage : une paire plus récente qui les
+  réécrirait attend (« relâché » reposé après l'affinage), et un affinage demandé trop tard n'est pas lancé.
+- **Vérification**, celle que mesure la porte : sur chaque tuile du décor, deux pas de Lucas-Kanade sur le
+  décalage qui reste ; une tuile texturée dans un seul sens se mesure en travers du bord. `SceneMotion::residual`
+  est alors la médiane de ces décalages (`residual_tiles` tuiles), sinon l'écart des vecteurs.
 
 ## Les classes des tuiles
 

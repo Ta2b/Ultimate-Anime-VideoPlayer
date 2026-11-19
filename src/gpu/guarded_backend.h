@@ -184,6 +184,15 @@ class GuardedKernelOps final : public KernelOps {
       std::uint64_t ticket) override {
     return guarded_detail::call("scene_flow_take", [&] { return in_->scene_flow_take(ticket); });
   }
+  std::expected<std::uint64_t, Refusal> scene_camera_start(
+      std::uint64_t flow_ticket, const kernels::SceneCameraRequest& request) override {
+    return guarded_detail::call("scene_camera_start",
+                                [&] { return in_->scene_camera_start(flow_ticket, request); });
+  }
+  std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> scene_camera_take(
+      std::uint64_t ticket) override {
+    return guarded_detail::call("scene_camera_take", [&] { return in_->scene_camera_take(ticket); });
+  }
   std::expected<void, Refusal> motion_doubt(const Motion& motion, std::span<const std::uint8_t> weights,
                                             int cols, int rows, float fade, const Motion& out) override {
     return guarded_detail::call("motion_doubt",
