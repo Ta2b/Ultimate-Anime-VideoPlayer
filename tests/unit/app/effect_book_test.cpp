@@ -1,5 +1,5 @@
 // Éclats HDR sur les seuls effets, côté lecteur (app/play/effect_book.h) : la carte de la scène réduite pour
-// le masque, les notes par paire, et le masque que l'écran suit.
+// le masque, les notes par paire, et le masque que suivent l'écran et le grade avant le warp.
 #include "app/play/effect_book.h"
 
 #include <cstdint>
@@ -7,6 +7,8 @@
 #include <optional>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "core/frame.h"
 
 namespace kirari::app::play {
 namespace {
@@ -51,6 +53,12 @@ TEST_CASE("Éclats des effets : la carte de la scène devient une valeur d'effet
   CHECK(t.effect[2] == render::kEffectUnsure);
   CHECK(t.effect[3] > 0.19F);
   CHECK(t.effect[3] < 0.21F);
+  // La couche des effets sûrs : la seule tuile d'effet, quelle que soit sa confiance.
+  REQUIRE(t.sure.size() == t.effect.size());
+  CHECK(t.sure[0] == 1.0F);
+  CHECK(t.sure[1] == 0.0F);
+  CHECK(t.sure[2] == 0.0F);
+  CHECK(t.sure[3] == 0.0F);
   CHECK(t.cover_x == 1.0);
   CHECK(t.cover_y > 1.0);  // 34 × 32 = 1 088 lignes pour 1 080
   CHECK_FALSE(t.cut);
@@ -99,6 +107,90 @@ TEST_CASE("Éclats des effets : l'écran suit une fois par paire, puis revient a
   for (std::int64_t pts = 125'124; !follower.mask().neutral() && pts < 60'000'000; pts += 41'708)
     follower.show(std::nullopt, pts);
   CHECK(follower.mask().neutral());
+}
+
+TEST_CASE("Éclats des effets : la source gradée prend la note la plus récente de son époque", "[app]") {
+  EffectBook book;
+  CHECK_FALSE(book.for_source(1, 100));
+  book.add(note(0, 100, 1.0F));
+  book.add(note(100, 200, 0.0F));
+  REQUIRE(book.for_source(1, 200));
+  CHECK(book.for_source(1, 200)->to_us == 200);
+  // Agrandie en avance, la source suivante prend encore la paire en cours.
+  CHECK(book.for_source(1, 241)->to_us == 200);
+  CHECK(book.for_source(1, kNoPts)->to_us == 200);
+  CHECK_FALSE(book.for_source(2, 200));  // autre époque : rien
+  // La carte s'est tue : rien, le masque revient au neutre.
+  CHECK_FALSE(book.for_source(1, 200 + kEffectStaleUs + 1));
+}
+
+TEST_CASE("Éclats des effets : le grade avant le warp suit une fois par paire, une époque à la fois",
+          "[app]") {
+  EffectFollower follower;
+  CHECK_FALSE(follower.source(1, std::nullopt));
+  const std::optional<EffectNote> first = note(0, 41'708, 0.0F, true);
+  CHECK(follower.source(1, first));
+  CHECK_FALSE(follower.mask().neutral());
+  CHECK_FALSE(follower.source(1, first));  // la même paire pour la source agrandie en avance
+  // Sans note : un pas d'une image vers le neutre par source.
+  CHECK(follower.source(1, std::nullopt));
+  for (int i = 0; i < 400 && !follower.mask().neutral(); ++i) follower.source(1, std::nullopt);
+  CHECK(follower.mask().neutral());
+  // Une autre époque (saut) efface le masque d'avant, même sans note.
+  CHECK(follower.source(1, first));
+  CHECK(follower.source(2, std::nullopt));
+  CHECK(follower.mask().neutral());
+  // La note d'une autre époque que la source ne vaut pas.
+  CHECK_FALSE(follower.source(2, first));
+  CHECK(follower.mask().neutral());
+}
+
+TEST_CASE("Éclats des effets : le journal de fin compte les images et garde les moments marqués", "[app]") {
+  EffectTally tally;
+  render::EffectMask none;
+  tally.count(false, false, none, 0);  // sans carte
+  CHECK(tally.images() == 1);
+  CHECK(tally.noted() == 0);
+  // Un masque posé d'un coup : moitié effet sûr (1), moitié décor sûr (0), dilaté puis flouté.
+  const auto mask_of = [](float left, float right) {
+    render::EffectTiles t;
+    t.cols = 8;
+    t.rows = 2;
+    t.cut = true;
+    for (int r = 0; r < 2; ++r)
+      for (int c = 0; c < 8; ++c) t.effect.push_back(c < 4 ? left : right);
+    t.sure = t.effect;
+    render::EffectMask m;
+    m.update(t);
+    return m;
+  };
+  const render::EffectMask half = mask_of(1.0F, 0.0F);
+  const render::EffectMask still = mask_of(0.0F, 0.0F);  // aucun effet : jamais un moment marqué
+  tally.count(true, true, half, 5'000'000);
+  tally.count(true, true, still, 60'000'000);
+  tally.count(true, true, half, 8'000'000);  // à moins de 10 s du premier, pas plus fort : ignoré
+  tally.count(true, true, half, 30'000'000);
+  tally.count(true, false, half, 40'000'000);  // masque non posé (GPU refusé) : pas compté
+  CHECK(tally.images() == 6);
+  CHECK(tally.noted() == 5);
+  CHECK(tally.masked() == 4);
+  CHECK(tally.held() > 0.2);
+  CHECK(tally.held() < 1.0);
+  CHECK(tally.moments()[0].pts_us == 5'000'000);
+  CHECK(tally.moments()[0].effect > 0.4);  // la moitié gauche et sa dilatation
+  CHECK(tally.moments()[0].held > 0.0);
+  CHECK(tally.moments()[1].pts_us == 30'000'000);
+  CHECK(tally.moments()[2].effect == 0.0);  // la troisième place reste vide
+  // Le résumé d'une image : ce que le journal d'un instantané dit.
+  const EffectSummary seen = effect_summary(half, true);
+  CHECK(seen.on);
+  CHECK(seen.cols == 8);
+  CHECK(seen.rows == 2);
+  CHECK(seen.sure > 0.4);
+  CHECK(seen.sure < 0.8);
+  CHECK(seen.held > 0.2);
+  CHECK_FALSE(effect_summary(half, false).on);
+  CHECK_FALSE(effect_summary(none, true).on);
 }
 
 }  // namespace kirari::app::play

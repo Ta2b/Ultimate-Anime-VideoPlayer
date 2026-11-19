@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 
 import numpy as np
@@ -21,6 +22,8 @@ import travail  # noqa: E402
 import rife_instants  # noqa: E402
 import rife_taille  # noqa: E402
 import scintillement  # noqa: E402
+import tuiles_controle  # noqa: E402
+import tuiles_panoramique  # noqa: E402
 
 F16 = TensorProto.FLOAT16
 
@@ -342,13 +345,83 @@ class Scintillement(unittest.TestCase):
                         "    v = np.zeros((2, n, 2), np.int16)\n    v[0, :, 0], v[1, :, 0] = -3 * 32, 3 * 32\n"
                         "    v.tofile(o)\n    print('ok ' + o)\n")
             os.chmod(tool, 0o755)
-            pairs = scintillement.flux_nvof(tool)(refs[:4])
+            pairs = [make() for make in scintillement.flux_nvof(tool)(refs[:4])]
         for k, al in enumerate(pairs):
             ra, rb = al.pair(scintillement.luma(refs[k]), scintillement.luma(refs[k + 1]))
             self.assertLess(float(np.abs(ra - rb)[al.inside].max()), 1.0)
             self.assertGreater(float(al.inside.mean()), 0.9)
         f = np.array([[[0.0, 10.0, 20.0]]], np.float32)  # trois blocs de 4 sur 10 pixels : centres en 1,5 et 5,5
         self.assertTrue(np.allclose(scintillement.scale(f, 10, 1, 4)[0, 0, [1, 2, 5, 6]], [0, 1.25, 8.75, 11.25]))
+
+
+class TuilesPanoramique(unittest.TestCase):
+    def test_camera_reelle_ou_fantome(self):
+        """Une texture lisse qui glisse de 0,6 px par image : 0,6 lu à 0,03 près, direction cohérente, translation
+        directe égale à la somme. La même texture tenue sous du bruit : rien ne bouge, direction incohérente."""
+        rng = np.random.default_rng(2)
+        tex = scintillement.box(rng.uniform(0, 255, (96, 128)), 3).astype(np.float64)
+        rgb = np.repeat(tex[..., None], 3, 2)
+        pan = [tuiles_panoramique.shift(rgb, 0.6 * k, 0.0, "lanczos3") for k in range(8)]
+        cam = tuiles_panoramique.camera(pan)
+        self.assertAlmostEqual(cam["mediane"][0], 0.6, delta=0.03)
+        self.assertAlmostEqual(cam["mediane"][1], 0.0, delta=0.03)
+        self.assertGreater(cam["coherence"], 0.95)
+        self.assertAlmostEqual(cam["directe"][0], 4.2, delta=0.15)
+        still = [rgb + rng.normal(0, 2.0, rgb.shape) for _ in range(8)]
+        cam = tuiles_panoramique.camera(still)
+        self.assertLess(cam["norme_mediane"], 0.05)
+
+    def test_decalage_entier_exact_et_porte(self):
+        """Un réseau qui double chaque pixel commute avec un décalage entier : les reprises décalées de 2δ y sont
+        exactes, la reprise sans décalage non."""
+        class Double:
+            def upscale(self, img):
+                return np.repeat(np.repeat(img, 2, axis=1), 2, axis=2)
+
+        rng = np.random.default_rng(3)
+        frame = np.repeat(scintillement.box(rng.uniform(0, 255, (160, 160)), 2)[..., None], 3, 2).astype(np.float64)
+        rows = tuiles_panoramique.subpixel(Double(), frame, 128, (0.25, 1.0, 2.0))
+        by = {(d, what.split(" (")[0]): worst for d, what, worst, _, _ in rows}
+        for d in (1.0, 2.0):
+            self.assertLess(by[(d, "sortie décalée de 2δ")], 1e-6)
+            self.assertGreater(by[(d, "sortie reprise sans décalage")], 1.0)
+        self.assertGreater(by[(0.25, "sortie reprise sans décalage")], 1.0)
+        self.assertEqual(tuiles_panoramique.gate(frame, frame, 8), (0.0, 0.0, 0.0))
+
+
+class TuilesControle(unittest.TestCase):
+    def test_sortie_composee(self):
+        """Un réseau qui double chaque pixel, quatre images de 128 × 64 (grille de 2 × 4 tuiles de 64 × 16) : une
+        reprise d'une image identique, puis des tuiles qui couvrent le changement, sont exactes ; des tuiles qui
+        le manquent laissent l'écart du changement, au pire bloc comme en moyenne."""
+        class Double:
+            def upscale(self, img):
+                return np.repeat(np.repeat(img, 2, axis=1), 2, axis=2)
+
+        rng = np.random.default_rng(4)
+        base = rng.integers(40, 200, (64, 128), dtype=np.uint8)
+        changed = base.copy()
+        changed[4:12, 70:90] = 20  # dans les deux premières rangées de tuiles, colonne 1
+        with tempfile.TemporaryDirectory() as folder:
+            for k, img in enumerate((base, base, changed, changed)):
+                img.tofile(os.path.join(folder, f"{k}.y"))
+            with open(os.path.join(folder, "taches.tsv"), "w", encoding="utf-8") as fh:
+                fh.write("128\t64\t0.y\t1.y\t0.flux\t0.carte\n")
+
+            def run(masks):
+                for k, mask in enumerate(masks, start=1):
+                    np.array(mask, np.uint8).tofile(os.path.join(folder, f"{k}.coeur"))
+                args = types.SimpleNamespace(dossier=folder, masques=folder, diviseur=1, images=len(masks),
+                                             detail=False)
+                return tuiles_controle.control(args, Double())
+
+            covered = run([[0] * 8, [1, 1, 1, 1, 0, 0, 0, 0], [0] * 8])
+            self.assertEqual([r[1] for r in covered], ["R", "T", "R"])
+            self.assertTrue(all(r[3] == 0.0 and r[4] == 0.0 for r in covered))
+            missed = run([[0] * 8, [1, 0, 1, 0, 0, 0, 0, 0], [1] * 8])
+            self.assertGreater(missed[1][3], 1.0)
+            self.assertGreater(missed[1][4], 0.0)
+            self.assertEqual(missed[2][1:], ("C", 8, 0.0, 0.0))
 
 
 if __name__ == "__main__":

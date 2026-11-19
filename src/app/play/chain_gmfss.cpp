@@ -5,6 +5,7 @@
 // journal, retenu pour la séance (C08-12).
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <format>
 #include <optional>
 #include <string>
@@ -18,6 +19,8 @@
 #include "core/utf8_path.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
+#include "prepare/gmfss_fused.h"
+#include "prepare/gmfss_pair_split.h"
 
 namespace kirari::app::play {
 namespace {
@@ -112,12 +115,29 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
                                       .tuned = false},
                           lane);
   };
+  // --gmfss-native : les manifestes de la paire et de la fusion coupées (prepare/gmfss_pair_split.h,
+  // prepare/gmfss_fused.h) ; un refus garde le graphe entier à TensorRT. La paire est FP16 : ses propres
+  // poids.
+  std::filesystem::path pair_model = fixed->pair;
+  std::filesystem::path fusion_model = fixed->fusion;
+  if (p.options.gmfss_native) {
+    const int h = g.padded_height / 2;
+    const int w = g.padded_width / 2;
+    if (auto manifest = prepare::derive_gmfss_pair(fixed->pair, fixed->pair, h, w))
+      pair_model = std::move(*manifest);
+    else
+      log->warn("GMFSS natif : paire non coupée ({}), TensorRT la garde entière", manifest.error().detail);
+    if (auto manifest = prepare::derive_gmfss_fused(fixed->fusion, h, w))
+      fusion_model = std::move(*manifest);
+    else
+      log->warn("GMFSS natif : fusion non coupée ({}), TensorRT la garde entière", manifest.error().detail);
+  }
   auto pair =
-      build(fixed->pair, gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
+      build(pair_model, gpu::Shape{.dims = {1, kernels::kGmfssFramePlanes, g.padded_height, g.padded_width}},
             i18n::tr("GMFSS (pair)"), gpu::Lane::Pair, kGmfssPairFirstBuildS);
   if (!pair) return refused(pair.error());
   if (!*pair) return std::nullopt;
-  auto fusion = build(fixed->fusion, gpu::Shape{.dims = {1, 3, g.padded_height / 2, g.padded_width / 2}},
+  auto fusion = build(fusion_model, gpu::Shape{.dims = {1, 3, g.padded_height / 2, g.padded_width / 2}},
                       i18n::tr("GMFSS (fusion)"), gpu::Lane::Interpolate, kGmfssFusionFirstBuildS);
   if (!fusion) return refused(fusion.error());
   if (!*fusion) return std::nullopt;

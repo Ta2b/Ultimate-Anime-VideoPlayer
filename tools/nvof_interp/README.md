@@ -45,7 +45,14 @@ du recalage, le coût sur aplats, traits et grain, l'ajustement de la caméra, l
 dessin avec des vues PNG, et le verdict de la porte. L'écart du décor au modèle de caméra, celui de la
 porte, se mesure sur l'image (Lucas-Kanade sur les tuiles de décor, `nvof_mesures.py`) : les vecteurs
 NVOF sont bruités d'environ 0,3 px sur un décor fixe et un personnage lent les tire, ce qui faisait
-rater les caméras lentes (4070 Ti, 19 novembre). Sur les panoramiques, le mode pyramide
+rater les caméras lentes (4070 Ti, 19 novembre). Une tuile texturée dans un seul sens (un bord droit,
+un décor rayé que la caméra longe) se mesure en travers du bord, le seul écart visible ; l'image ne
+passe la main aux vecteurs qu'à moins de 3 tuiles mesurables. Le banc juge cinq pistes du modèle de
+caméra au même critère : nvof, traits (blocs de traits seuls), lk (l'affine NVOF affinée par
+Lucas-Kanade global sur l'image, qui corrige le biais sous-pixel de NVOF sur les caméras lentes),
+traits_lk et lk_bords (lk, avec un décor où un bloc texturé dans un seul sens se juge en travers de son
+bord et où les blocs que la caméra sort de l'image ne comptent pas). `--garder` sauve images, flux et coûts
+des panoramiques dans `SORTIE/flux` pour régler le banc hors ligne. Sur les panoramiques, le mode pyramide
 (`--pyramide 360:720`, par défaut) passe la caméra d'une passe en 360p en indices externes
 (`nvof_dump --hint-grid 8`) à la passe 720p, et compare avec et sans par vitesse de caméra. Les en-têtes de NVIDIA sont dans
 `third_party/nvidia-optical-flow` : rien à télécharger.
@@ -59,6 +66,47 @@ python3 -I tools/bench/qualite/nvof_scene.py --outil build/nvof_dump/nvof_dump -
 ```
 
 Un seul banc à la fois sur la carte (rien d'autre sur le GPU), sur la 4070 Ti puis la 4050.
+
+Résultat (4070 Ti, 19 novembre, grille 4 × 4 en 720p, 7 panoramiques, 407 paires où la caméra bouge) : la
+porte passe. Un appel NVOF coûte 1,0 ms en 720p (0,35 ms en 360p).
+
+| Piste | Paires bonnes | Caméras lentes (0,5 à 15 px) |
+|---|---:|---:|
+| nvof | 335 (82 %) | 75 % |
+| traits | 368 (90 %) | 88 % |
+| traits_lk | 381 (94 %) | 96 % |
+| lk | 393 (97 %) | 98 % |
+| lk_bords | 403 (99 %) | 100 % |
+
+lk_bords est la méthode retenue pour le lecteur (`docs/carte-de-la-scene.md`, « La caméra »). Restent 4
+paires de Spy 4:53 : un panoramique de 87 px à 39 % de décor, et trois paires (54, 17 et 8 px) dont l'affine
+part en rotation et cisaillement, sans doute des images de traîne ou un tremblé plutôt qu'un décor rigide.
+Le mode pyramide n'aide pas : les indices font baisser les caméras lentes (62 % contre 75 % sans) et ne
+sauvent pas les panoramiques de plus de 45 px ; il reste dans le banc pour mémoire.
+
+### Reprise (en pause depuis le 19 novembre, 13:47, à la demande de Tatoub)
+
+Ce qui restait : les 4 paires ratées de Spy 4:53, `panoramique5` des passes `nvof3` et `nvof4` du PC.
+Le rapport et les mesures par paire sont dans `/mnt/project-files/nvof4.tar.gz`. Les flux gardés sont restés
+sur le PC (`~/kirari-seance/final/nvof4/flux/panoramique5.npz`, 28 Mo).
+
+| Paire | Caméra | lk_bords | Ce qui rate |
+|---:|---:|---|---|
+| 7 | 87 px, vertical | écart 0,08 px, décor 39 % | la part du décor, d'un point |
+| 12 | 54 px | écart 1,4 px | l'affine part en rotation et cisaillement |
+| 14 | 17 px | écart 3,3 px | idem |
+| 16 | 8 px | écart 1,1 px | idem |
+
+Pistes, dans l'ordre :
+
+1. Extraire ces 4 paires (images, flux, coûts) du `.npz` du PC dans un fichier de quelques Mo, puis
+   rejouer `nvof_mesures` hors ligne. Aucun banc n'est à relancer.
+2. Paires 12, 14, 16 : regarder les images. S'il s'agit d'images de traîne ou d'un tremblé (une paire sur
+   deux rate, 13 et 15 passent), le décor n'y est pas rigide et les calques doivent rester éteints, ce que
+   le lecteur fait déjà au-delà de 0,5 px. Sinon, essayer une homographie à la place de l'affine.
+3. Paire 7 : voir ce que sont les blocs qui ne suivent pas la caméra. Si ce sont les rayures d'un effet qui
+   défile à part, ce n'est pas du décor et la paire est juste. Si ce sont des blocs à texture faible, les
+   sortir du total changerait la définition de la part du décor : c'est à Tatoub de trancher.
 
 ## Ce qui reste ouvert
 

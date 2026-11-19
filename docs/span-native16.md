@@ -22,8 +22,8 @@ AnimeJaNai.
 `src/gpu/cuda/backend/span_native16_kernels.cuh` (noyaux), `span_native16.cu` (le réseau, derrière
 `SpanFp8Body`, à la place de l'ancien `span_fp8_net16.cu`). Une seule famille de convolutions :
 
-- **mma.sync m16n8k16 FP16, sommes en f16** (`Frag<true>`) ; en f32 sur demande (`SpanFp8Weights::acc32`,
-  `kirari_span_fp8_run --acc32`) pour juger la précision ;
+- **mma.sync m16n8k16 FP16, sommes en f16** (`Frag<true>`) ; en f32 au cran Qualité (`SpanFp8Weights::acc32`,
+  ci-dessous ; `kirari_span_fp8_run --acc32` au banc) ;
 - **tuile en mémoire partagée** : un bloc de 4 warps calcule 8 × 32 pixels et toutes les colonnes ; la tuile
   d'entrée, halo compris, est copiée une fois par `cp.async` (zéros hors de l'image) au pas Cin + 8 : les huit
   lignes d'une matrice de `ldmatrix` tombent sur des banques distinctes. Moins de 48 Ko : deux blocs par SM ;
@@ -43,9 +43,84 @@ Les 48 canaux du b5f48 sont calculés en 48 (pas de rembourrage). Rien ne change
 « fp16c » tiré de l'ONNX, l'essai au chargement contre le calcul du processeur (≥ 50 dB, `span_fp8_check`), le
 graphe CUDA et l'écriture dans l'anneau sont ceux du chemin d'avant.
 
+## Dans le lecteur : FP16 par défaut, sommes f32 au cran Qualité
+
+Depuis le premier banc (ci-dessous), le SPAN natif est le défaut sur RTX 40 et 50 (`PlayOptions::span_native`,
+`BackendCaps::span_fp16_cutlass`), pour les SPAN d'AnimeJaNai seulement (`span_fp8_cutlass_model`) :
+
+- **Équilibre** : FP16 natif, sommes en f16 (paquet « -fp16c- ») ;
+- **Qualité** : les mêmes noyaux à sommes f32 (paquet « -fp32n- », drapeau `acc32` du paquet,
+  `SpanVariantKind::Fp32Native`), puis la variante FP32 de TensorRT si `quantize_span.py` en a laissé une. En
+  f32, le natif reste plus rapide que TensorRT FP16 (14,60 contre 15,39 ms au b8f64) : le cran est offert dans
+  Vidéo > Agrandissement > Avancé dès que le moteur a les noyaux, sans variante sur le disque (`span_tiers`) ;
+- **repli** : chaque cran finit sur le FP16 natif avant TensorRT FP16 (`span_variant_order`) ; le cran
+  Performance garde le FP8 en premier.
+
+Le paquet porte le mode des sommes : deux fichiers, deux clés d'artefact, rien à passer au backend au
+chargement (un backend repris d'une vidéo à l'autre ne garde pas un mode périmé). Un ancien `play.toml` au
+cran Qualité le prend tel quel. `--debug --no-span-native` revient à TensorRT pour l'ABAB ; `--span-native`
+reste accepté (c'est le défaut).
+
+## Sommes promues (essai perdu)
+
+Le f32 du cran Qualité coûte environ 3,8 ms au banc (14,74 contre 10,98 ms au b8f64) : sur les GeForce, un mma
+à sommes f32 va à la moitié du débit des tensor cores (RTX 4070 Ti : 80 TFLOPS contre 160). Le b8f64 fait
+environ 1,0 TFLOP par image 1080p, soit 12,5 ms au moins en f32 : les noyaux f32 en sont à 85 %, il n'y a
+presque plus rien à y prendre.
+
+L'essai de #933 sommait chaque mma en f16 depuis zéro (débit plein), ajouté ensuite à un accumulateur f32
+(quatre conversions et quatre additions par mma). Au banc : 14,39 ms et 71,51 dB, contre 14,74 ms et
+77,90 dB en f32. Les conversions mangent le gain des tensor cores, et l'arrondi f16 de chaque somme de 16
+produits coûte 6,4 dB. Retiré : le cran Qualité reste en f32.
+
+## Lecture contre banc
+
+Au banc (graphe CUDA, la carte pour lui seul), le b8f64 prend 11,8 ms en f16 ; en lecture (Spy×Family, 30 s,
+SPAN seul), le rôle « agrandissement » en prend 15,0 en médiane (p95 15,1), 19,3 en f32. Ce temps va du début
+du SPAN à la fin de sa queue, attente de l'emplacement de l'anneau comprise (`enqueue_span_fp8`). Le profil
+de fin de séance le coupe en trois (« profil GPU · SPAN, corps », « SPAN, attente de l'emplacement de
+l'anneau », « SPAN, queue (to_pixel, anneau) »), hors de `gpu_profile` dont les lecteurs somment les étapes :
+
+- l'attente de l'emplacement : la queue attend que l'affichage rende un emplacement (sémaphore Vulkan). Un
+  écart logé là n'est pas un coût du SPAN mais le rythme de l'affichage ; le corps ne l'attend déjà pas ;
+- le corps plus long qu'au banc ;
+- la queue : en lecture, to_pixel écrit aussi l'emplacement RGBA16 de l'anneau, absent au banc.
+
+Mesuré au cran Qualité (Re:Zero à 16:00, SPAN seul) : corps 18,79 ms, attente 0 ms, queue 0,44 ms, contre
+14,74 ms au banc. Tout l'écart est dans le corps, environ ×1,27 (×1,27 aussi en f16 à la mesure de #910).
+Deux causes possibles, que les mesures n'ont pas encore séparées :
+
+- les horloges : au banc, la carte enchaîne les images et tient sa fréquence maximale ; en lecture à 24 i/s,
+  elle n'est chargée qu'à moitié et la gestion d'énergie du pilote peut baisser la fréquence entre deux
+  images. Un rapport constant entre lecture et banc, en f16 comme en f32, va dans ce sens ;
+- le partage avec Vulkan : le grade, la présentation et la conversion du décodage tournent dans un autre
+  contexte, que le pilote fait alterner avec CUDA par tranches de temps, sans vrai recouvrement. Les
+  événements CUDA comptent alors le travail Vulkan glissé au milieu du SPAN, et ce travail chasse du L2 les
+  bandes que le SPAN y gardait.
+
+La priorité d'un flux CUDA ne range que le travail du même contexte CUDA : elle ne passe pas devant Vulkan,
+et ne sert à rien ici. Pour trancher :
+
+```sh
+# 1. les fréquences pendant la lecture (sm, mémoire, état d'énergie), à comparer à celles du banc
+nvidia-smi --query-gpu=clocks.sm,clocks.mem,pstate,power.draw,utilization.gpu --format=csv -lms 200 \
+    > ~/kirari-reports/horloges-lecture.csv &
+kirari play --stats extrait.mkv; kill %1
+# 2. la même lecture, la fréquence du GPU tenue à son maximum ; le corps retombe-t-il vers le banc ?
+F=$(nvidia-smi --query-gpu=clocks.max.sm --format=csv,noheader,nounits)
+sudo nvidia-smi -lgc "$F,$F" && kirari play --stats extrait.mkv; sudo nvidia-smi -rgc
+# 3. qui tient la carte pendant le SPAN, changements de contexte compris
+nsys profile --trace=cuda,vulkan --gpuctxsw=true -o ~/kirari-reports/lecture kirari play --stats extrait.mkv
+```
+
+Si les horloges suffisent à expliquer l'écart, le levier est la gestion d'énergie (le réglage de l'utilisateur,
+ou une charge qui tient la carte éveillée) ; si c'est Vulkan, il faut ranger le grade et la présentation hors
+des tranches où le SPAN tourne.
+
 ## Le FP8 (mêmes techniques)
 
-Sous `--span-native`, le SPAN FP8 (cran Performance) prend aussi ses bords à ces noyaux
+Sous `--debug --span-native-edges` (essai, pas encore mesuré), le SPAN FP8 (cran Performance) prend aussi ses
+bords à ces noyaux
 (`span_native16_edges.cuh`, `SpanFp8Weights::native_edges`, bit `kTrialSpanNative`) : conv_1 lit l'image et
 écrit en une passe l'entrée E4M3 du premier bloc et la tranche 0 de la concaténation (le noyau de dégroupage
 disparaît), conv_cat lit les quatre tranches par la tuile en mémoire partagée, to_pixel écrit la sortie et
@@ -67,12 +142,17 @@ du double du débit des tensor cores. Il bute sur la mémoire : chaque couche li
 calcul en f16 n'en demande que 6 à 7. Les 48 Mo de L2 ne gardent rien d'une couche à la suivante : la
 suivante reprend par le haut, que la précédente a écrit en premier.
 
-Le corps tourne donc en bandes (`SpanFp8Weights::band`, 64 lignes de demi-résolution par défaut,
-`kirari_span_fp8_run --band N`, 0 pour l'image entière) : conv_1 fait ses 64 lignes suivantes, puis chaque
+Le corps tourne donc en bandes (`SpanFp8Weights::band`, en lignes de demi-résolution,
+`kirari_span_fp8_run --band N`, 0 pour l'image entière) : conv_1 fait ses lignes suivantes, puis chaque
 couche aussi loin que la précédente le permet, c'est-à-dire une ligne (son halo) avant la fin de celle-ci ;
-au bas de l'image, tout va jusqu'au bout. Ce qu'une couche lit vient d'être écrit et tient en L2 (8 Mo par
-tenseur et par bande) ; une ligne réécrite avant de quitter la L2 ne va même jamais en mémoire. Rien ne change
-aux noyaux qu'une plage de lignes (`Params::y0`, `y1`) ; 26 lancements par bande au b8f64, 9 bandes en 1080p.
+au bas de l'image, tout va jusqu'au bout. Ce qu'une couche lit vient d'être écrit et tient en L2 (7,9 Mo par
+tenseur et par bande de 64 lignes) ; une ligne réécrite avant de quitter la L2 ne va même jamais en mémoire.
+Rien ne change aux noyaux qu'une plage de lignes (`Params::y0`, `y1`) ; 26 lancements par bande au b8f64.
+
+Par défaut (`SpanFp8Weights::kBandAuto`, `auto_band`) : 128 lignes là où deux tranches de 128 lignes, celle
+qu'une couche lit et celle qu'elle écrit, tiennent dans les deux tiers du L2, 64 sinon. Au banc de la RTX
+4070 Ti (48 Mo de L2, 15,7 Mo par tranche au b8f64) : 10,64 ms à 128 lignes, 10,98 à 64. Les cartes à
+moins de L2 gardent 64 lignes faute de mesure.
 
 Les tampons qui servent à plusieurs couches restent justes sans copie : la couche qui réécrit T1, T2 ou un
 tampon de bloc (X0, X1) suit de trois lignes au moins celle qui le lit encore, qui ne revient jamais en
@@ -82,32 +162,50 @@ l'ordonnancement (chaque ligne marquée de la couche qui l'a écrite) l'a vérif
 hauteurs de 1 à 540 lignes et des bandes de 1 à 1000. Les tuiles qui bougent, qui veulent la grille de
 l'image entière, se passent des bandes.
 
-Le banc balaie la hauteur (`BANDS`, 0, 32 et 128 en plus du défaut) et juge la justesse avec et sans
-bandes : les deux écarts à la référence doivent être égaux, l'ordre des bandes ne change aucune somme.
+Le banc balaie la hauteur (`BANDS`, 0, 64, 192 et 270 en plus du défaut). Avec EXPORT, il dépose aussi la
+sortie sans bandes, que `justesse_cpu.py` compare au bit près à celle du défaut : l'ordre des bandes ne change
+aucune somme.
 
 ## Mesurer
 
-Un seul banc, sur CachyOS, binaire `linux-release` :
+Le PC ne mesure que les temps ; la justesse se juge sur processeur, dans le cloud. Un seul banc, sur CachyOS,
+binaire `linux-release` :
 
 ```sh
 cmake --build --preset linux-release --target kirari_span_fp8_run
-flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linux-release \
+EXPORT=/mnt/project-files/span-native/$(date +%Y%m%d-%H%M) \
+  flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linux-release \
     ~/modeles/2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx \
     ~/modeles/…_Performance_…_b5f48_….onnx -- extrait.mkv
 ```
 
 Il construit le moteur TensorRT FP16 de chaque modèle, puis donne en ABAB 3 tours la médiane de TensorRT et
-des noyaux natifs (graphe CUDA tous deux, bandes par défaut), les natifs à d'autres hauteurs de bande et en
-f32, et l'écart de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non
-finies), avec et sans bandes. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il a perdu. Dans le
-lecteur : `kirari play --span-native --stats` ; le journal dit « SPAN FP16 natif chargé » au cran Équilibre,
-« SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran Performance.
+des noyaux natifs (graphe CUDA tous deux, bandes par défaut), et les natifs à d'autres hauteurs de bande et en
+f32. EXPORT est à donner seulement quand les noyaux ont changé : après les temps, le banc dépose pour chaque
+modèle le modèle, l'entrée et une sortie de chaque mode (f16 aux bandes du lecteur, f16 sans bandes, f32), en
+demi-flottants, un plan par fichier (16,6 Mo en 4K). Dans le cloud :
+
+```sh
+python3 -I tools/bench/span_native/justesse_cpu.py /mnt/project-files/span-native/<date>/<modèle>
+```
+
+refait le modèle en FP32 par ONNX Runtime sur processeur (quelques secondes en 1080p), donne l'écart de
+chaque sortie (PSNR, plus grand écart, valeurs non finies) et dit si la sortie sans bandes est la même au bit
+près. La référence n'est plus celle du GPU (FP16 à sommes f32, `--compare`) mais le FP32 entier : les dB
+ne se comparent pas un à un à ceux de l'État ci-dessous. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il
+a perdu.
+
+Dans le lecteur : `kirari play --stats` ; le journal dit « SPAN FP16 natif chargé : …, sommes f16 » au cran
+Équilibre, « …, sommes f32 » au cran Qualité, « SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran
+Performance avec `--span-native-edges` ; le profil de fin coupe le SPAN en corps, attente de l'emplacement et queue
+(« Lecture contre banc »).
 
 ## Décision
 
-- natif f16 sous TensorRT et ≥ 55 dB : `--span-native` devient le défaut (FP16 natif au cran Équilibre, bords
-  natifs du FP8 au cran Performance) ; ensuite seulement, les convolutions des blocs FP8 en mma m16n8k32 E4M3
-  sur le même gabarit, si un profil montre de la marge sous CUTLASS ;
+- natif f16 sous TensorRT et ≥ 55 dB : le natif devient le défaut. Fait en novembre 2026 pour le FP16 et le
+  cran Qualité (ci-dessus) ; les bords natifs du FP8 restent à l'essai jusqu'à leur mesure. Ensuite
+  seulement, les convolutions des blocs FP8 en mma m16n8k32 E4M3 sur le même gabarit, si un profil montre de
+  la marge sous CUTLASS ;
 - plus lent : le profil Nsight du banc dit quel noyau perd, et on règle la tuile (lignes par warp, nombre de
   warps, double tampon de la tuile suivante) avant de redécider.
 
@@ -121,5 +219,11 @@ Premier banc (RTX 4070 Ti, 1080p → 4K, image de Re:Zero, 3 tours ABAB, sans ba
 | b5f48 (Performance) | 9,17 ms | 9,85 ms | 5,92 ms (0,65×) | 6,25 ms | 63,72 dB | |
 
 Les noyaux sont justes (au-dessus des 55 dB visés) et battent TensorRT ; ils égalent AnimeJaNai (11,9 et
-6,2 ms) sans marge. Les bandes (ci-dessus) sont écrites et compilées (sm 89 et 120, sans débordement), à
-mesurer au prochain banc.
+6,2 ms) sans marge.
+
+Dans le lecteur (Spy×Family, 30 s, SPAN seul, b8f64) : 66,6 dB et 15,0 ms au cran Équilibre (sommes f16),
+78,3 dB et 19,3 ms au cran Qualité (sommes f32) ; le cran Performance prend le FP8 CUTLASS, à 52,3 dB.
+
+Banc de #933 (b8f64, 1080p → 4K, bandes) : TensorRT FP16 14,76 ms, natif f16 10,98 ms à 64 lignes (0,74×),
+10,64 ms à 128 lignes, sous les 11,2 ms d'AnimeJaNai, à 62,66 dB ; natif f32 14,74 ms à 77,90 dB ; sommes
+promues 14,39 ms à 71,51 dB (retirées).

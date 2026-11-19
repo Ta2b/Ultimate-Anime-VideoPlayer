@@ -254,7 +254,7 @@
 1000.0
 
 //!PARAM fx_on
-//!DESC 1 = l'alpha de l'image porte le masque des effets (render/effect_mask.h) : la marge des eclats suit les effets
+//!DESC 1 = l'alpha de l'image porte le masque des effets (render/effect_mask.h, deux couches) : la marge des eclats suit les effets
 //!TYPE float
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
@@ -266,3 +266,31 @@
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
 0.4
+
+//!PARAM fx_gain
+//!DESC Masque des effets : montee en plus sur un effet sur (0,5 = une fois et demie celle du grade)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 2.0
+0.5
+
+//!PARAM fx_gate_lo
+//!DESC Masque des effets : code PQ ou la porte s'ouvre sur un effet sur, 0,3 x le blanc (Grade::write_params)
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.45
+
+//!PARAM fx_gate_hi
+//!DESC Masque des effets : code PQ ou la porte est pleine sur un effet sur, 0,6 x le blanc
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.5
+
+//!PARAM fx_view
+//!DESC 1 = vue du masque des effets (--effect-mask-view) : lumieres en rouge, effets surs en vert, marge retenue en bleu
+//!TYPE float
+//!MINIMUM 0.0
+//!MAXIMUM 1.0
+0.0

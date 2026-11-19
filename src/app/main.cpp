@@ -175,7 +175,7 @@ int fail_arguments(const kirari::Refusal& refusal, std::span<const std::string_v
 #else
   const bool terminal = isatty(STDERR_FILENO) != 0;
 #endif
-  if (scripted || terminal) return code;
+  if (scripted || terminal || kirari::app::play::output_captured()) return code;
   const std::string text =
       kirari::app::play::i18n::tr_format("The player could not start with these options: {}", refusal.detail);
   SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Kirari Player", text.c_str(), nullptr);
@@ -611,8 +611,8 @@ int run_player(int argc, char** argv) {
     std::fputs(kirari::app::play::play_usage().c_str(), stderr);
     return fail_arguments(options.error(), args);
   }
-  if (options->help) {
-    std::fputs(kirari::app::play::play_usage(options->debug).c_str(), stdout);
+  if (const auto text = kirari::app::play::help_or_version(*options)) {
+    std::fputs(text->c_str(), stdout);
     return 0;
   }
   quiet_failures() = scripted_trial(*options);

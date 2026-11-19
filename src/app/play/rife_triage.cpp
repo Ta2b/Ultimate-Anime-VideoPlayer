@@ -55,7 +55,20 @@ bool flow_held(const kernels::SceneMotion& scene) {
     return false;
   const auto changed =
       std::ranges::count_if(scene.tiles, [](const kernels::SceneTile& t) { return t.changed; });
-  return static_cast<double>(changed) <= triage::kHeldChanged * static_cast<double>(scene.tiles.size());
+  if (static_cast<double>(changed) > triage::kHeldChanged * static_cast<double>(scene.tiles.size()))
+    return false;
+  // Pas une seule tuile de dessin (classe vue deux paires de suite) qui se déplace d'un écart de dessin
+  // (kBackgroundFloor pixels du flux, la caméra tenue) : drawing_held et la part des tuiles qui changent
+  // laissent passer un petit personnage qui marche au loin, que la paire tenue ferait saccader.
+  const float reach = kernels::scene::kBackgroundFloor * static_cast<float>(scene.tile_px) /
+                      static_cast<float>(kernels::kSceneTileFlowPixels);
+  return std::ranges::none_of(scene.tiles, [reach](const kernels::SceneTile& t) {
+    return t.changed && t.kind == kernels::SceneClass::Drawing && std::hypot(t.dx, t.dy) >= reach;
+  });
+}
+
+bool flow_lost(const kernels::SceneMotion& scene) {
+  return scene.cut_likely || (!scene.camera_fit && scene.unmatched >= triage::kImpossibleUnmatched);
 }
 
 bool flow_pan(const kernels::SceneMotion& scene) {
@@ -72,14 +85,25 @@ bool flow_pan(const kernels::SceneMotion& scene) {
 }
 
 std::vector<float> tile_doubt(const kernels::SceneMotion& scene) {
+  // Un effet sûr qui change : vu deux paires de suite par la carte (à la première, elle garde la classe
+  // d'avant ; à la fin, la confiance de l'effet tenu tombe sous kEffectSure).
+  const auto sure = [&](int col, int row) {
+    if (col < 0 || col >= scene.cols || row < 0 || row >= scene.rows) return false;
+    const kernels::SceneTile& t = scene.at(col, row);
+    return t.changed && t.kind == kernels::SceneClass::Effect && t.confidence >= triage::kEffectSure;
+  };
   std::vector<float> out(scene.tiles.size(), 0.0F);
-  for (std::size_t i = 0; i < scene.tiles.size(); ++i) {
-    const kernels::SceneTile& t = scene.tiles[i];
-    if (!t.changed) continue;  // un aplat ou un décor qui ne change pas : RIFE n'y fait rien de mal
-    if (t.kind == kernels::SceneClass::Effect) {
-      out[i] = 1.0F;
-    } else {
-      out[i] = std::clamp(1.0F - t.confidence / triage::kDoubtConfidence, 0.0F, 1.0F);
+  if (scene.tiles.size() != cell(0, scene.rows, scene.cols)) return out;
+  for (int r = 0; r < scene.rows; ++r) {
+    for (int c = 0; c < scene.cols; ++c) {
+      if (!sure(c, r)) continue;
+      // Et pas seul : une tuile isolée est une étincelle, un bout de trait trop rapide pour NVOF, dont un
+      // fantôme de RIFE ne se verrait guère.
+      bool joined = false;
+      for (int dr = -1; dr <= 1 && !joined; ++dr) {
+        for (int dc = -1; dc <= 1 && !joined; ++dc) joined = (dr != 0 || dc != 0) && sure(c + dc, r + dr);
+      }
+      if (joined) out[cell(c, r, scene.cols)] = 1.0F;
     }
   }
   return out;
@@ -88,12 +112,14 @@ std::vector<float> tile_doubt(const kernels::SceneMotion& scene) {
 DoubtGrid doubt_grid(std::span<const float> doubt, int cols, int rows) {
   DoubtGrid grid;
   if (cols < 1 || rows < 1 || doubt.size() != cell(0, rows, cols)) return grid;
+  // La part de l'image qui doute : celle des tuiles mêmes. Dilatée puis adoucie, une tuile sur trois qui
+  // doute en couvrait presque toute l'image.
+  double sum = 0.0;
+  for (const float v : doubt) sum += std::clamp(v, 0.0F, 1.0F);
+  grid.share = sum / static_cast<double>(doubt.size());
   // Dilatée d'une tuile (le fantôme déborde de la zone sans correspondance), puis adoucie : le bord du fondu
   // ne se voit pas.
   const std::vector<float> soft = neighbours(neighbours(doubt, cols, rows, false), cols, rows, true);
-  double sum = 0.0;
-  for (const float v : soft) sum += v;
-  grid.share = sum / static_cast<double>(soft.size());
   // Regroupées par le plus fort doute, au plus kDoubtMaxCells de côté.
   const int step_c = (cols + kernels::kDoubtMaxCells - 1) / kernels::kDoubtMaxCells;
   const int step_r = (rows + kernels::kDoubtMaxCells - 1) / kernels::kDoubtMaxCells;
@@ -121,22 +147,25 @@ void RifeTriage::reset() {
   unrun_ = 0;
 }
 
-PairSort RifeTriage::sort_unrun(const PairFacts& facts) {
+PairSort RifeTriage::sort_unrun(const PairFacts& facts, const kernels::SceneMotion& scene) {
   // Une autre scène, ou une tenue plus longue qu'un dessin en quatre : le doute d'avant ne vaut plus.
   if ((facts.scores && pair_cut(facts)) || ++unrun_ > triage::kKeepAcross) reset();
   // Tenue par le flux seul : la mesure des blocs aurait laissé tourner RIFE.
   const bool by_flow = facts.scores && facts.same_epoch && facts.factor > 1 && !pair_cut(facts) &&
-                       !kernels::is_held(facts.scores->worst_block) && facts.scene && flow_held(*facts.scene);
+                       !kernels::is_held(facts.scores->worst_block) && flow_held(scene);
   if (by_flow) ++counts_.held;
   return by_flow ? PairSort::Held : PairSort::Today;
 }
 
 void RifeTriage::keep_doubt(std::vector<float>& doubt, const kernels::SceneMotion& scene) {
+  // Le doute propre de la paire passe à la suivante, pas celui qu'elle a reçu : gardé de paire en paire, un
+  // effet fondait encore quatre paires après sa fin.
+  std::vector<float> own = doubt;
   if (kept_cols_ == scene.cols && kept_rows_ == scene.rows && kept_.size() == doubt.size()) {
     for (std::size_t i = 0; i < doubt.size(); ++i)
       doubt[i] = std::max(doubt[i], triage::kDoubtKeep * kept_[i]);
   }
-  kept_ = doubt;
+  kept_ = std::move(own);
   kept_cols_ = scene.cols;
   kept_rows_ = scene.rows;
   unrun_ = 0;
@@ -148,15 +177,17 @@ PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
   asked_ = asked_ || facts.flow_triage;
   if (!facts.flow_triage || !facts.scene) return now_;
   const kernels::SceneMotion& scene = *facts.scene;
-  if (!runs) return sort_unrun(facts);
+  if (!runs) return sort_unrun(facts, scene);
   ++counts_.read;
   std::vector<float> doubt = tile_doubt(scene);
   keep_doubt(doubt, scene);
   if (gmfss_only_) return sort_gmfss(scene, doubt);
   if (refused_) return now_;
-  // Coupe probable que la mesure de RIFE n'a pas vue, ou presque rien qui corresponde : fondu entier.
-  if (scene.cut_likely || scene.unmatched >= triage::kImpossibleUnmatched) {
+  // Coupe probable que la mesure de RIFE n'a pas vue, ou presque rien qui corresponde, sans même un décor que
+  // la caméra explique : fondu entier.
+  if (flow_lost(scene)) {
     grid_ = full_fade();
+    ++counts_.lost;
   } else {
     grid_ = doubt_grid(doubt, scene.cols, scene.rows);
     if (grid_.share >= triage::kFadeShare) grid_ = full_fade();
@@ -167,17 +198,18 @@ PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
   }
   now_ = grid_.share >= 1.0 ? PairSort::Fade : PairSort::Masked;
   ++(now_ == PairSort::Fade ? counts_.faded : counts_.masked);
+  if (now_ == PairSort::Masked) counts_.masked_share += grid_.share;
   return now_;
 }
 
 PairSort RifeTriage::sort_gmfss(const kernels::SceneMotion& scene, const std::vector<float>& doubt) {
   // La paire impossible : la même règle que pour RIFE, mais toute la paire au fondu.
-  const bool impossible = scene.cut_likely || scene.unmatched >= triage::kImpossibleUnmatched ||
-                          doubt_grid(doubt, scene.cols, scene.rows).share >= triage::kFadeShare;
-  if (impossible) {
+  const bool lost = flow_lost(scene);
+  if (lost || doubt_grid(doubt, scene.cols, scene.rows).share >= triage::kFadeShare) {
     camera_ = kernels::kCameraStill;
     now_ = PairSort::Fade;
     ++counts_.faded;
+    counts_.lost += lost ? 1 : 0;
   } else if (flow_pan(scene)) {
     for (std::size_t i = 0; i < camera_.size(); ++i) camera_[i] = static_cast<float>(scene.camera[i]);
     now_ = PairSort::Pan;
@@ -196,12 +228,16 @@ void RifeTriage::log() const {
   // i18n-ok : la fin de la ligne de journal plus bas.
   const char* why = counts_.refused > 0 ? " (fondu refusé par le backend : RIFE tel quel)"  // i18n-ok
                     : counts_.read == 0 && counts_.held == 0
-                        ? " (aucune carte : --scene-map, NVOF et RIFE mouvement sont-ils là ?)"  // i18n-ok
+                        ? " (aucune carte : --scene-map, NVOF, RIFE mouvement ou GMFSS ?)"  // i18n-ok
                         : "";
+  // La part moyenne des tuiles qui doutent d'une paire fondue par endroits (avant le bord élargi), en %.
+  const double area =
+      counts_.masked > 0 ? 100.0 * counts_.masked_share / static_cast<double>(counts_.masked) : 0.0;
   log_channel("gpu")->info(
-      "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "
-      "impossibles fondues, {} paires fondues par endroits, {} panoramiques purs{}",
-      counts_.read, counts_.held, counts_.faded, counts_.masked, counts_.panned, why);
+      "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "  // i18n-ok
+      "impossibles fondues (dont {} sans correspondance ni caméra), {} paires fondues par endroits "  // i18n-ok
+      "({:.1f} % des tuiles y doutent en moyenne), {} panoramiques purs{}",
+      counts_.read, counts_.held, counts_.faded, counts_.lost, counts_.masked, area, counts_.panned, why);
 }
 
 gpu::Motion RifeTriage::doubted(gpu::Backend& backend, const gpu::Motion& motion, float fade) {

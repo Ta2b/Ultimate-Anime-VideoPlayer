@@ -9,6 +9,7 @@
 #include "app/play/chain_setup.h"
 #include "app/play/chain_shape.h"
 #include "app/play/gmfss_model.h"
+#include "app/play/interp_retired.h"
 #include "app/play/settings.h"
 
 namespace kirari::app::play {
@@ -39,8 +40,10 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   CHECK_FALSE(without->gmfss_middle);
   CHECK(without->gmfss_motion == kDefaultGmfssMotion);
   CHECK_FALSE(parse_settings("version = 1\n[interpolation]\ngmfss_motion = 200\n"));
-  CHECK_FALSE(interp_level(MotionEngine::Rife, "rife_v4.25.onnx", true));
-  CHECK_FALSE(interp_level(MotionEngine::Gmfss, ""));
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.25.onnx", true) == InterpLevel::GmfssMiddle);
+  CHECK(interp_level(MotionEngine::Rife, "rife_v4.22_lite.onnx", true) == InterpLevel::GmfssMiddle);
+  CHECK(interp_level(MotionEngine::Gmfss, "") == InterpLevel::GmfssUnion);
+  CHECK(interp_level(MotionEngine::Gmfss, "", true) == InterpLevel::GmfssUnion);
   // Le demi-flot se relit ; absent (un fichier d'avant), il est pris par défaut ; éteint, il le reste.
   PlaySettings half;
   half.motion_engine = MotionEngine::Gmfss;
@@ -65,6 +68,38 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   REQUIRE(light_back);
   CHECK(light_back->gmfss_light);
   CHECK_FALSE(without->gmfss_light);
+}
+
+TEST_CASE("play.toml sous --gmfss-native : GMFSS union, seul ou au milieu, se relit tel quel",
+          "[app][settings][gmfss]") {
+  // keep_gmfss est posé par le lecteur au lancement ; le test le rend éteint quoi qu'il arrive.
+  struct Kept {
+    Kept() { keep_gmfss(true); }
+    ~Kept() { keep_gmfss(false); }
+    Kept(const Kept&) = delete;
+    Kept& operator=(const Kept&) = delete;
+  };
+  {
+    const Kept kept;
+    const auto alone = parse_settings("[interpolation]\nengine = \"gmfss_union\"\n");
+    REQUIRE(alone);
+    CHECK(alone->motion_engine == MotionEngine::Gmfss);
+    PlaySettings high;
+    high.gmfss_middle = true;
+    high.rife_model = "rife_v4.26.onnx";  // l'ancien Élevé : RIFE 4.26, retiré, tombe sur 4.25
+    const auto high_back = parse_settings(format_settings(high));
+    REQUIRE(high_back);
+    CHECK(high_back->gmfss_middle);
+    CHECK(high_back->motion_engine == MotionEngine::Rife);
+    CHECK(high_back->rife_model == "rife_v4.25.onnx");
+    CHECK(interp_level(high_back->motion_engine, high_back->rife_model, high_back->gmfss_middle) ==
+          InterpLevel::GmfssMiddle);
+  }
+  // L'option retirée, le même fichier retombe sur RIFE 4.25.
+  const auto alone = parse_settings("[interpolation]\nengine = \"gmfss_union\"\n");
+  REQUIRE(alone);
+  CHECK(alone->motion_engine == MotionEngine::Rife);
+  CHECK(alone->rife_model == "rife_v4.25.onnx");
 }
 
 TEST_CASE("GMFSS : la paire au demi-flot trouvée à côté des deux graphes, choisie si demandée",

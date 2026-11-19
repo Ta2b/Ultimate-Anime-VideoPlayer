@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/rife_native_kernels.cuh"
-#include "gpu/cuda/backend/rife_native_pack.h"
+#include "gpu/cuda/backend/rife_native_plan.h"
 #include "gpu/cuda/backend/tfix_fused.cuh"
 #include "gpu/cuda/backend/tfix_native_net.h"
 #include "kernels/spec/tfix_fused.h"
@@ -67,7 +67,7 @@ using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::Batc
 
 template <int Kc, int CT, int S, int Rows, rn::In I, rn::Acc A>
 void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::BatchParams& p) {
-  rn::conv_kernel<Kc, CT, 3, S, Rows, I, rn::Out::kNhwc, A, true>
+  rn::conv_kernel<Kc, CT, 3, S, Rows, I, rn::Out::kNhwc, A, false, true>
       <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
@@ -206,6 +206,26 @@ struct Folded {
   }
 };
 
+// Un envoi de poids : faux, avec l'erreur, s'il a échoué.
+bool uploaded(cudaError_t result, std::string& error) {
+  if (result == cudaSuccess) return true;
+  static_cast<void>(cudaGetLastError());
+  error = std::string("poids de TemporalFix natif : ") + cudaGetErrorString(result);
+  return false;
+}
+
+// La dernière couche de la tête par single_kernel : ses poids f32 [9][cin] et son biais.
+bool build_single(const Folded& folded, Layer& layer, std::string& error) {
+  layer.single = true;
+  layer.out_ld = kernels::tfix_out_ld(1, true);
+  layer.single_bias = folded.bias(0);
+  const int cin = layer.cin;
+  std::vector<float> taps(static_cast<std::size_t>(9) * cin);
+  for (int tap = 0; tap < 9; ++tap)
+    for (int c = 0; c < cin; ++c) taps[static_cast<std::size_t>(tap) * cin + c] = folded.weight(0, tap, c);
+  return uploaded(layer.w.upload(taps.data(), taps.size() * sizeof(float)), error);
+}
+
 class Net final : public TfixNativeNet {
  public:
   explicit Net(RifeNativeSums sums) : sums_(sums) {
@@ -299,26 +319,13 @@ class Net final : public TfixNativeNet {
   // Tranche des canaux d'entrée, tuile des canaux de sortie, poids rangés, lancement, K découpé.
   bool build(const RifeNativeConv& conv, Layer& layer, bool last, int batch, std::int64_t& partial,
              std::string& error) {
-    const auto sent = [&](cudaError_t result) {
-      if (result == cudaSuccess) return true;
-      static_cast<void>(cudaGetLastError());
-      error = std::string("poids de TemporalFix natif : ") + cudaGetErrorString(result);
-      return false;
-    };
+    const auto sent = [&](cudaError_t result) { return uploaded(result, error); };
     const Folded folded{conv};
     layer.residual = !conv.scale.empty();
     layer.activation = !conv.slope.empty();
     const int cin = layer.cin;
-    if (last && conv.cout == 1 && layer.kind == Kind::kSame && !layer.residual && !layer.activation) {
-      layer.single = true;
-      layer.out_ld = kernels::tfix_out_ld(1, true);
-      layer.single_bias = folded.bias(0);
-      std::vector<float> taps(static_cast<std::size_t>(9) * cin);
-      for (int tap = 0; tap < 9; ++tap)
-        for (int c = 0; c < cin; ++c)
-          taps[static_cast<std::size_t>(tap) * cin + c] = folded.weight(0, tap, c);
-      return sent(layer.w.upload(taps.data(), taps.size() * sizeof(float)));
-    }
+    if (last && conv.cout == 1 && layer.kind == Kind::kSame && !layer.residual && !layer.activation)
+      return build_single(folded, layer, error);
     const int cout = pad16(conv.cout);
     const bool half = layer.kind != Kind::kSame;
     layer.kc = layer.kind == Kind::kImage ? 16 : (cin % 64 == 0 && !half) ? 64 : cin % 32 == 0 ? 32 : 16;
@@ -330,16 +337,16 @@ class Net final : public TfixNativeNet {
       error = "résiduel entre deux pas différents";
       return false;
     }
-    std::vector<std::uint32_t> packed;
-    for (int tile = 0; tile < layer.tiles; ++tile) {
-      std::vector<__half> w(static_cast<std::size_t>(layer.ct) * 9 * cin);
-      for (int n = 0; n < layer.ct; ++n)
-        for (int tap = 0; tap < 9; ++tap)
-          for (int c = 0; c < cin; ++c)
-            w[(static_cast<std::size_t>(n) * 9 + tap) * cin + c] =
-                __float2half_rn(folded.weight(tile * layer.ct + n, tap, c));
-      rn::pack(w, layer.ct, 9, cin, packed);
-    }
+    rn::Dense dense;
+    dense.cout = cout;
+    dense.cin = cin;
+    dense.w.resize(static_cast<std::size_t>(cout) * 9 * cin);
+    for (int n = 0; n < cout; ++n)
+      for (int tap = 0; tap < 9; ++tap)
+        for (int c = 0; c < cin; ++c)
+          dense.w[(static_cast<std::size_t>(n) * 9 + tap) * cin + c] =
+              __float2half_rn(folded.weight(n, tap, c));
+    const std::vector<std::uint32_t> packed = rn::packed_weights(dense, layer.ct);
     std::vector<float> biases;
     for (int o = 0; o < cout; ++o) biases.push_back(folded.bias(o));
     if (layer.activation) {

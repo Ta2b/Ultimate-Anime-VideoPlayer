@@ -112,9 +112,17 @@ namespace kirari::gpu {
 // le bit sans le dire.
 // 53 : KernelOps::motion_camera (le mouvement d'une caméra affine : le tri des paires de GMFSS,
 // kernels/spec/motion_camera.h).
-// 54 : kTrialTfixNative (TemporalFix fusionné par nos noyaux, docs/tfix-natif.md) : un module d'avant
+// 54 : kTrialGmfssNative (le GridNet de la fusion de GMFSS par nos noyaux, manifestes « .gmfssfused »,
+// docs/gmfss-natif.md) : un module d'avant ne saurait pas construire le manifeste.
+// 55 : manifestes « .gmfsspair » sous kTrialGmfssNative (le FeatureNet et le MetricNet de la paire de GMFSS
+// par nos noyaux) : un module 54 ne saurait pas les construire.
+// 56 : KernelOps::scene_camera_start et scene_camera_take (l'affinage de la caméra de la carte par
+// Lucas-Kanade, kernels/spec/scene_camera.h).
+// 57 : PairScores::blocks et blocks_x (l'écart de chaque bloc de la mesure de la paire, relu pour les tuiles
+// de SPAN).
+// 58 : kTrialTfixNative (TemporalFix fusionné par nos noyaux, docs/tfix-natif.md) : un module d'avant
 // ignorerait le bit sans le dire.
-inline constexpr int kBackendAbi = 54;
+inline constexpr int kBackendAbi = 58;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -143,16 +151,21 @@ inline constexpr std::uint32_t kTrialWarpL2 = 1U << 3U;
 // colle écrivant et lisant ce format : plus de copies de reformatage (41 % du dernier bloc). Même calcul, au
 // rangement près. Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialRifeHwc8 = 1U << 4U;
-// --span-native : le SPAN FP8 prend conv_1 (dégroupage fondu), conv_cat et to_pixel aux noyaux du FP16 natif
-// (docs/span-native16.md) ; le FP16 natif lui-même passe par son paquet (SpanVariantKind::Fp16Cutlass). Lu
-// par le backend TensorRT ; sans effet ailleurs.
+// --span-native-edges : le SPAN FP8 prend conv_1 (dégroupage fondu), conv_cat et to_pixel aux noyaux du FP16
+// natif (docs/span-native16.md) ; le SPAN natif lui-même passe par son paquet (SpanVariantKind::Fp16Cutlass,
+// Fp32Native). Lu par le backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 // --rife-native : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux
 // (docs/rife-natif.md) au lieu des moteurs TensorRT, gardés s'ils tiennent 45 dB contre eux à l'essai au
 // chargement ; les blocs TensorRT se construisent alors en E/S HWC8. Lu par le backend TensorRT ; sans effet
 // ailleurs.
 inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
-// 1U << 7U : réservé au GMFSS natif (chantier en cours).
+// --gmfss-native : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par nos noyaux
+// (docs/gmfss-natif.md), l'IFNet et GMFlow restant des moteurs TensorRT ; chaque graphe natif gardé s'il
+// tient 45 dB contre son moteur TensorRT entier à l'essai au chargement et le bat en temps. Le lecteur passe
+// alors les manifestes « .gmfssfused » et « .gmfsspair » à la place de la fusion et de la paire. Lu par le
+// backend TensorRT ; sans effet ailleurs.
+inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
 // --tfix-native : les convolutions de TemporalFix fusionné (l'encodeur, les trois blocs, la tête) par nos
 // noyaux (docs/tfix-natif.md) au lieu des moteurs TensorRT, gardées si elles tiennent 45 dB contre eux à
 // l'essai au chargement ; la colle écrit et lit alors X, Y et la tête par pixel. Lu par le backend TensorRT ;
@@ -202,8 +215,8 @@ struct BackendCaps {
   // Le SPAN entier en FP8 par noyaux CUTLASS (paquet « .span8 » à la place de l'ONNX) : sm 8.9 seulement,
   // dans un backend construit avec CUTLASS.
   bool span_fp8_cutlass = false;
-  // Le SPAN FP16 natif par les mêmes noyaux (paquet « .span8 » au drapeau fp16, --span-native) : sm 8.6, 8.9
-  // et 12.0 (SpanFp8Net::supported_fp16_device), jugé sur la carte au chargement.
+  // Le SPAN FP16 natif par nos noyaux (paquet « .span8 » au drapeau fp16 ; sommes f32 au cran Qualité) :
+  // sm 8.9 et 12.0 (SpanFp8Net::supported_fp16_device), jugé sur la carte au chargement.
   bool span_fp16_cutlass = false;
   // L'architecture de l'appareil (« sm_89 ») et la version des noyaux du SPAN FP8
   // (SpanFp8Net::kKernelsVersion) : un reçu v2 n'est pris que sur les mêmes (étape 3.7b).

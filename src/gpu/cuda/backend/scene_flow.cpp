@@ -21,11 +21,15 @@ std::size_t tile_count(int cols, int rows) {
 SceneFlow::~SceneFlow() {
   session_.reset();  // attend la file de NVOF
   release_grid();
-  for (cudaEvent_t event : {lumas_ready_, consumed_}) {
+  if (lumas_ready_ != nullptr) static_cast<void>(cudaEventDestroy(lumas_ready_));
+  for (cudaEvent_t event : released_) {
     if (event != nullptr) static_cast<void>(cudaEventDestroy(event));
   }
   for (const Read& read : reads_) {
     if (read.done != nullptr) static_cast<void>(cudaEventDestroy(read.done));
+  }
+  for (Refine& refine : refines_) {
+    if (refine.done != nullptr) static_cast<void>(cudaEventDestroy(refine.done));
   }
 }
 
@@ -37,6 +41,7 @@ void SceneFlow::release_grid() {
     read.host = nullptr;
     read.ticket = 0;
   }
+  release_refine();
   cols_ = 0;
   rows_ = 0;
 }
@@ -47,7 +52,10 @@ std::expected<bool, Refusal> SceneFlow::prepare(int flow_width, int flow_height,
     return false;
   // Une autre taille : l'ancienne session finit son travail, puis tout est refait.
   session_.reset();
-  consumed_posted_ = false;
+  released_posted_ = {};
+  last_.reset();
+  launched_ = {};
+  writes_ = {};
   release_grid();
   auto opened = NvofSession::open(flow_width, flow_height);
   if (!opened) {
@@ -84,38 +92,57 @@ std::expected<void, Refusal> SceneFlow::allocate_grid() {
         return ok;
     }
   }
-  for (cudaEvent_t* event : {&lumas_ready_, &consumed_}) {
+  for (cudaEvent_t* event : {&lumas_ready_, &released_[0], &released_[1], &released_[2]}) {
     if (*event != nullptr) continue;
     if (auto ok = cuda_check(cudaEventCreateWithFlags(event, cudaEventDisableTiming), "cudaEventCreate"); !ok)
+      return ok;
+  }
+  return allocate_refine();
+}
+
+std::expected<std::optional<SceneFlow::Lumas>, Refusal> SceneFlow::plan(bool follows) const {
+  static_assert(NvofSession::kLumas == 3);
+  Lumas lumas;
+  if (last_) {
+    const int third = 3 - last_->a - last_->b;  // le tampon que la dernière paire n'a pas lu
+    lumas = follows ? Lumas{.a = last_->b, .b = third, .keep_a = true} : Lumas{.a = third, .b = last_->a};
+  }
+  for (const int slot : {lumas.a, lumas.b}) {
+    if (slot == lumas.a && lumas.keep_a) continue;
+    const auto i = static_cast<std::size_t>(slot);
+    if (!released_posted_[i]) continue;
+    const cudaError_t state = cudaEventQuery(released_[i]);
+    if (state == cudaErrorNotReady) return std::optional<Lumas>{};
+    if (auto ok = cuda_check(state, "cudaEventQuery"); !ok) return std::unexpected(std::move(ok.error()));
+  }
+  return std::optional(lumas);
+}
+
+std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane, const Lumas& lumas) {
+  for (const int slot : {lumas.a, lumas.b}) {
+    if (slot == lumas.a && lumas.keep_a) continue;
+    const auto i = static_cast<std::size_t>(slot);
+    if (!released_posted_[i]) continue;
+    if (auto ok = cuda_check(cudaStreamWaitEvent(lane, released_[i], 0), "cudaStreamWaitEvent"); !ok)
       return ok;
   }
   return {};
 }
 
-std::expected<bool, Refusal> SceneFlow::busy() const {
-  if (!consumed_posted_) return false;
-  const cudaError_t state = cudaEventQuery(consumed_);
-  if (state == cudaErrorNotReady) return true;
-  if (auto ok = cuda_check(state, "cudaEventQuery"); !ok) return std::unexpected(std::move(ok.error()));
-  return false;
-}
-
-std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane) {
-  if (!consumed_posted_) return {};
-  return cuda_check(cudaStreamWaitEvent(lane, consumed_, 0), "cudaStreamWaitEvent");
-}
-
-std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, bool restart, GpuTiming& timing) {
+std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lumas& lumas, bool restart,
+                                                     GpuTiming& flow_timing, GpuTiming& tiles_timing) {
   cudaStream_t own = session_->stream();
   if (auto ok = cuda_check(cudaEventRecord(lumas_ready_, lane), "cudaEventRecord"); !ok)
     return std::unexpected(std::move(ok.error()));
   if (auto ok = cuda_check(cudaStreamWaitEvent(own, lumas_ready_, 0), "cudaStreamWaitEvent"); !ok)
     return std::unexpected(std::move(ok.error()));
-  timing.begin(own);
-  std::expected<void, Refusal> ready = session_->execute(restart);
+  flow_timing.begin(own);
+  std::expected<void, Refusal> ready = session_->execute(lumas.a, lumas.b, restart);
+  flow_timing.end(own);
+  tiles_timing.begin(own);
   if (ready) {
-    const NvofSession::Pitched a = session_->input();
-    const NvofSession::Pitched b = session_->reference();
+    const NvofSession::Pitched a = session_->luma(lumas.a);
+    const NvofSession::Pitched b = session_->luma(lumas.b);
     const NvofSession::Pitched flow = session_->flow();
     const NvofSession::Pitched cost = session_->cost();
     const SceneTilesParams params{.a = static_cast<const unsigned char*>(a.data),
@@ -133,12 +160,24 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, bool res
                                   .out = device_};
     ready = cuda_check(launch_scene_tiles(params, own), "scene_tiles<<<>>>");
   }
-  timing.end(own);
-  // Les lumas sont lues (flux et réduction) : la voie peut écrire les suivantes.
-  if (ready) ready = cuda_check(cudaEventRecord(consumed_, own), "cudaEventRecord");
+  tiles_timing.end(own);
+  // Les deux lumas sont lues (flux et réduction) : la voie peut réécrire leurs tampons.
+  for (const int slot : {lumas.a, lumas.b}) {
+    if (ready)
+      ready = cuda_check(cudaEventRecord(released_[static_cast<std::size_t>(slot)], own), "cudaEventRecord");
+  }
   if (!ready) return std::unexpected(std::move(ready.error()));
-  consumed_posted_ = true;
+  released_posted_[static_cast<std::size_t>(lumas.a)] = true;
+  released_posted_[static_cast<std::size_t>(lumas.b)] = true;
+  last_ = lumas;
   const std::uint64_t ticket = tickets_ + 1;
+  // Les tampons que la voie vient d'écrire : un affinage de cette paire ne vaut que tant qu'ils restent.
+  if (!lumas.keep_a) ++writes_[static_cast<std::size_t>(lumas.a)];
+  ++writes_[static_cast<std::size_t>(lumas.b)];
+  launched_[ticket % launched_.size()] = Launched{
+      .ticket = ticket,
+      .lumas = lumas,
+      .writes = {writes_[static_cast<std::size_t>(lumas.a)], writes_[static_cast<std::size_t>(lumas.b)]}};
   Read& read = reads_[ticket % reads_.size()];
   const std::size_t bytes = tile_count(cols_, rows_) * sizeof(kernels::SceneTileSums);
   ready =

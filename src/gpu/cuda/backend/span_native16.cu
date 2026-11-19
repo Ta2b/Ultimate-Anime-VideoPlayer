@@ -4,7 +4,7 @@
 //   - le dégroupage est fondu au chargement de conv_1 (un lancement de moins) ;
 //   - la concaténation n'existe plus : conv_cat lit les quatre tenseurs là où leurs convolutions les ont
 //     écrits (trois écritures de 2·C octets par pixel en moins) ;
-//   - sommes en f16 par défaut (SpanFp8Weights::acc32 pour le f32), le débit plein des tensor cores ;
+//   - sommes en f16 par défaut, le débit plein des tensor cores ; en f32 avec SpanFp8Weights::sums ;
 //   - le corps en bandes (SpanFp8Weights::band) : chaque couche lit ce que la précédente vient d'écrire,
 //     encore en L2, au lieu de 4 Go par image en mémoire (docs/span-native16.md, « Bandes »).
 // La zone de travail tient six tenseurs de C canaux FP16 (768 o par pixel à 64 canaux, comme avant).
@@ -74,6 +74,21 @@ struct Front {
   }
 };
 
+// Les bandes par défaut (SpanFp8Weights::kBandAuto) : 128 lignes là où deux tranches de 128 lignes, la
+// couche lue et la couche écrite, tiennent dans les deux tiers du L2 ; 64 sinon. Au banc de la RTX 4070 Ti
+// (48 Mo de L2, b8f64 en 1080p, 15,7 Mo par tranche) : 10,64 ms à 128 lignes, 10,98 à 64. Les cartes à
+// moins de L2 gardent les 64 lignes d'avant, faute de mesure.
+int auto_band(int width, int channels) {
+  int device = 0, l2 = 0;
+  if (cudaGetDevice(&device) != cudaSuccess ||
+      cudaDeviceGetAttribute(&l2, cudaDevAttrL2CacheSize, device) != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    return 64;
+  }
+  const std::int64_t slice = std::int64_t{128} * width * channels * 2;
+  return 3 * (2 * slice) <= 2 * std::int64_t{l2} ? 128 : 64;
+}
+
 constexpr std::int64_t kAlign = 256;
 constexpr std::int64_t align_up(std::int64_t bytes) {
   return (bytes + kAlign - 1) / kAlign * kAlign;
@@ -91,7 +106,7 @@ __global__ void shift_planes(const __half* from, __half* to, int height, int wid
   for (int c = 0; c < 3; ++c) to[c * plane + at] = from[c * plane + src];
 }
 
-template <int C, bool Acc16>
+template <int C, sn::Acc A>
 class NativeBody final : public SpanFp8Body {
   using M = sn::Mode;
   using S = sn::Src;
@@ -114,7 +129,7 @@ class NativeBody final : public SpanFp8Body {
 
   bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override {
     used_ = weights.blocks;
-    band_ = weights.band;
+    band_ = weights.band == SpanFp8Weights::kBandAuto ? auto_band(fw_, C) : weights.band;
     const auto sent = [&](cudaError_t result) {
       if (result == cudaSuccess) return true;
       static_cast<void>(cudaGetLastError());
@@ -286,7 +301,7 @@ class NativeBody final : public SpanFp8Body {
     p.y0 = rows.from;
     p.y1 = rows.to;
     const dim3 grid(grid_.x, static_cast<unsigned>((rows.to - rows.from + sn::kTH - 1) / sn::kTH));
-    sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, Acc16>
+    sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, A>
         <<<grid, sn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
   }
 
@@ -310,15 +325,16 @@ class NativeBody final : public SpanFp8Body {
   std::array<__half*, kTensors> t_{};
 };
 
+template <int C>
+std::unique_ptr<SpanFp8Body> native_body(int height, int width, SpanNativeSums sums) {
+  if (sums == SpanNativeSums::F32) return std::make_unique<NativeBody<C, sn::Acc::kF32>>(height, width);
+  return std::make_unique<NativeBody<C, sn::Acc::kF16>>(height, width);
+}
+
 }  // namespace
 
-std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels, bool acc32) {
-  if (channels == 48) {
-    if (acc32) return std::make_unique<NativeBody<48, false>>(height, width);
-    return std::make_unique<NativeBody<48, true>>(height, width);
-  }
-  if (acc32) return std::make_unique<NativeBody<64, false>>(height, width);
-  return std::make_unique<NativeBody<64, true>>(height, width);
+std::unique_ptr<SpanFp8Body> make_span_fp8_body16(int height, int width, int channels, SpanNativeSums sums) {
+  return channels == 48 ? native_body<48>(height, width, sums) : native_body<64>(height, width, sums);
 }
 
 }  // namespace kirari::gpu::cuda

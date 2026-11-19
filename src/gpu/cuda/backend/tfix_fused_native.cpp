@@ -1,8 +1,9 @@
 // L'essai au chargement de TemporalFix natif (--tfix-native, docs/tfix-natif.md) : l'encodeur et la fenêtre
 // passent une entrée de test avec leurs moteurs TensorRT, puis avec les noyaux natifs (sommes f16, mixtes,
-// puis f32), et le natif n'est gardé que si sa sortie tient le seuil contre celle de TensorRT. L'entrée : un
-// dessin lisse (ondes, des carrés aux bords francs) qui glisse de (2, 1) pixels d'une image à l'autre et
-// scintille (un bruit de ±3 % propre à chaque image), ce que TemporalFix voit en lecture.
+// puis f32). Chacun des deux garde le natif seulement si sa sortie tient le seuil contre celle de TensorRT et
+// s'il le bat en temps (tours intercalés, gmfss_trial::times) : l'un peut être natif, l'autre TensorRT.
+// L'entrée : un dessin lisse (ondes, des carrés aux bords francs) qui glisse de (2, 1) pixels d'une image à
+// l'autre et scintille (un bruit de ±3 % propre à chaque image), ce que TemporalFix voit en lecture.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/gmfss_trial.h"
 #include "gpu/cuda/backend/tfix_fused_engine.h"
 #include "gpu/cuda/backend/tfix_fused_kernels.h"
 
@@ -41,6 +43,23 @@ const char* sums_name(RifeNativeSums sums) {
       return "f32";
   }
   return "?";
+}
+
+// Le temps d'une passe, TensorRT puis natif ; pass(0) met en file une passe TensorRT, pass(1) une native.
+struct Speed {
+  double trt = 0.0;
+  double native = 0.0;
+  bool native_wins() const { return native <= trt * (1.0 - gmfss_trial::kMinGain); }
+  std::string text() const {
+    return std::format("une passe : TensorRT {:.2f} ms, natif {:.2f} ms", trt, native);
+  }
+};
+
+template <typename Pass>
+std::expected<Speed, Refusal> speed(cudaStream_t stream, Pass&& pass) {
+  auto ms = gmfss_trial::times(stream, 2, std::forward<Pass>(pass));
+  if (!ms) return std::unexpected(std::move(ms.error()));
+  return Speed{.trt = (*ms)[0], .native = (*ms)[1]};
 }
 
 // Le canal c de l'image r de la fenêtre au point (x, y), de 0 à 1.
@@ -241,13 +260,28 @@ std::expected<std::string, Refusal> TfixEncoderEngine::try_native(
     const double db = psnr(*reference, *got, 0, got->size());
     tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", sums_name(sums), db);
     if (db < min_db) continue;
+    auto timed = speed(scratch.stream, [&](std::size_t v) {
+      native_on_ = v == 1;
+      return enqueue(scratch.stream, v == 1 ? own : shared, std::span(&input, 1), std::span(&output, 1));
+    });
+    native_on_ = true;
+    if (!timed) {
+      back_to_trt();
+      return std::unexpected(std::move(timed.error()));
+    }
+    if (!timed->native_wins()) {
+      back_to_trt();
+      return std::format(
+          "TemporalFix natif écarté pour l'encodeur, TensorRT plus rapide ({}×{}, {} contre TensorRT ; {})",
+          width_, height_, tried, timed->text());
+    }
     if (auto ok = shared->reserve(native_->encoder_workspace_bytes()); !ok) {
       back_to_trt();
       return std::unexpected(std::move(ok.error()));
     }
     return std::format(
-        "TemporalFix natif retenu pour l'encodeur ({}×{}, {} contre TensorRT, seuil {:.0f} dB)", width_,
-        height_, tried, min_db);
+        "TemporalFix natif retenu pour l'encodeur ({}×{}, {} contre TensorRT, seuil {:.0f} dB ; {})", width_,
+        height_, tried, min_db, timed->text());
   }
   back_to_trt();
   return std::format(
@@ -334,6 +368,21 @@ std::expected<std::string, Refusal> TfixWindowEngine::try_native(
   const std::size_t ends[] = {image, image + 2 * y2, image + size(kernels::kTfixY) * y2, reference->size()};
   // Les passes natives sur une zone à elles : la zone de la voie ne grandit que pour un natif retenu.
   const auto own = std::make_shared<SharedActivations>();
+  // Le temps contre TensorRT. Passer d'un côté à l'autre vide les graphes : la première passe d'un tour (de
+  // chauffe, hors mesure) bascule, puis passe deux fois (directe, capturée) avant celle du tour.
+  const auto time_native = [&]() {
+    std::size_t current = 1;
+    return speed(scratch.stream, [&](std::size_t v) -> std::expected<void, Refusal> {
+      const std::shared_ptr<SharedActivations>& zone = v == 1 ? own : shared;
+      if (v != current) {
+        current = v;
+        if (auto ok = use_native(v == 1, zone); !ok) return ok;
+        for (int pass = 0; pass < 2; ++pass)
+          if (auto ok = enqueue(scratch.stream, zone, inputs, std::span(&out, 1)); !ok) return ok;
+      }
+      return enqueue(scratch.stream, zone, inputs, std::span(&out, 1));
+    });
+  };
   std::string tried;
   for (const RifeNativeSums sums : kSums) {
     std::string error;
@@ -359,16 +408,23 @@ std::expected<std::string, Refusal> TfixWindowEngine::try_native(
       begin = end;
     }
     tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", sums_name(sums), db);
-    if (db >= min_db) {
-      // Retenu : sur la zone de la voie (use_native y prend la place des tampons, et vide les graphes).
-      if (auto ok = use_native(true, shared); !ok) {
-        std::ignore = back_to_trt();
-        return std::unexpected(std::move(ok.error()));
-      }
+    if (db < min_db) continue;
+    auto timed = time_native();
+    if (!timed || !timed->native_wins()) {
+      if (auto ok = back_to_trt(); !ok) return std::unexpected(std::move(ok.error()));
+      if (!timed) return std::unexpected(std::move(timed.error()));
       return std::format(
-          "TemporalFix natif retenu pour la fenêtre ({}×{}, {} contre TensorRT, seuil {:.0f} dB)", w, h,
-          tried, min_db);
+          "TemporalFix natif écarté pour la fenêtre, TensorRT plus rapide ({}×{}, {} contre TensorRT ; {})",
+          w, h, tried, timed->text());
     }
+    // Retenu : sur la zone de la voie (use_native y prend la place des tampons, et vide les graphes).
+    if (auto ok = use_native(true, shared); !ok) {
+      std::ignore = back_to_trt();
+      return std::unexpected(std::move(ok.error()));
+    }
+    return std::format(
+        "TemporalFix natif retenu pour la fenêtre ({}×{}, {} contre TensorRT, seuil {:.0f} dB ; {})", w, h,
+        tried, min_db, timed->text());
   }
   if (auto ok = back_to_trt(); !ok) return std::unexpected(std::move(ok.error()));
   return std::format(

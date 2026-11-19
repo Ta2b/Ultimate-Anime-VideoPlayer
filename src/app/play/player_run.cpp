@@ -103,8 +103,7 @@ constexpr std::int64_t kDisplayPollUs = 500'000;
 // Les E/S du dossier de la vidéo (taille du fichier ; la suite : player_after.cpp) : au-delà, laissées à leur
 // sort, la lecture continue comme si elles n'avaient rien trouvé.
 constexpr std::chrono::milliseconds kFolderIoLimit{5000};
-// L'ouverture du fichier par le pipeline (démuxeur, télécinéma, sous-titres du dossier) : la borne de la
-// sonde.
+// L'ouverture du fichier par le pipeline (démuxeur, télécinéma, sous-titres) : la borne de la sonde.
 constexpr std::chrono::seconds kSourceOpenLimit{20};
 // Le démontage d'une chaîne saine (moteurs TensorRT compris) se compte en secondes (placebo_open.cpp).
 constexpr std::chrono::seconds kTeardownLimit{60};
@@ -232,6 +231,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
     log->info("sortie SDR (réglage {}, HDR du système absent, coupé ou sous {} nits) : image SDR gradée",
               name(settings.hdr_mode), kMinHdrPeakNits);
   p.screen.set_sdr_output(!settings.hdr_native);
+  p.screen.set_effect_view(options.effect_mask_view);
   // La couleur de la source telle que le flux l'étiquette : l'écran en convertit gamut, courbe, HDR10, HLG.
   const std::optional<ColorInfo> source_color = media::track_color(video);
   const ColorInfo source = source_color.value_or(ColorInfo{});
@@ -623,6 +623,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
       else
         press(name, out.window());
     }
+    if (p.snapshot.pause_due(session.view())) session.command(cmd::Pause{});
     const bool snapshot_now = p.snapshot.maybe(out, p.began_us);
     // Remis à faux avant de vider la file (P2.24) : un message arrivé pendant ce tour repousse son réveil, au
     // lieu de trouver pending vrai et de laisser l'attente suivante aller à son terme (jusqu'à 4 ms).

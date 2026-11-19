@@ -27,6 +27,8 @@
 #include "core/ring.h"
 #include "gpu/backend.h"
 #include "gpu/kernel_ops.h"
+#include "kernels/spec/scene_flow.h"
+#include "kernels/spec/span_tiles.h"
 
 namespace kirari::app::play::test {
 
@@ -50,11 +52,24 @@ class FakeEngine final : public gpu::Engine {
   int follows() const { return follows_; }
   std::span<const std::string> input_names() const override { return inputs_; }
   std::span<const std::string> output_names() const override { return outputs_; }
+  // Les tuiles qui bougent : la grille offerte (aucune par défaut) ; chaque demande acceptée garde le tenseur
+  // de sa sortie d'avant (0 : nul), lu par le test une fois l'étage arrêté.
+  void offer_tiles(const kernels::SpanTileGrid& grid) { grid_ = grid; }
+  kernels::SpanTileGrid span_tile_grid() const override { return grid_; }
+  bool next_span_tiles(std::span<const std::uint8_t> core, int /*shift_x*/, int /*shift_y*/,
+                       const gpu::Tensor* previous) override {
+    if (!grid_.usable() || core.empty()) return false;  // vide : une demande annulée
+    tiles_from_.push_back(previous != nullptr ? previous->handle : 0U);
+    return true;
+  }
+  const std::vector<std::uintptr_t>& tiles_from() const { return tiles_from_; }
 
  private:
   std::string name_;
   std::vector<std::string> inputs_;
   std::vector<std::string> outputs_;
+  kernels::SpanTileGrid grid_;
+  std::vector<std::uintptr_t> tiles_from_;
   bool warm_ = false;
   int warm_asked_ = 0;
   int times_only_ = 0;
@@ -267,6 +282,30 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
     push("flow_max_take");
     return value;
   }
+  // La carte de la scène : chaque paire lancée au journal (« scene_flow_start a b »). Jamais relue, sauf avec
+  // offer_still_scene : relue aussitôt, une scène où rien n'est mesuré (ni mouvement, ni changement).
+  void offer_still_scene(bool on) { still_scene_ = on; }
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const gpu::Tensor& a, const gpu::Tensor& b,
+                                                         bool /*restart*/) override {
+    const std::scoped_lock lock(mutex_);
+    const gpu::PairScores ids = scores_of(a, b);
+    push(std::format("scene_flow_start {} {}", ids.left.value, ids.right.value));
+    flow_size_ = {static_cast<int>(a.shape.dims[3]), static_cast<int>(a.shape.dims[2])};
+    return next_ticket_++;
+  }
+  std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t /*ticket*/) override {
+    if (!still_scene_) return std::optional<kernels::SceneFlowTiles>{};
+    const std::scoped_lock lock(mutex_);
+    const int cols = kernels::span_tiles_along(flow_size_.first, kernels::kSceneTileFlowPixels);
+    const int rows = kernels::span_tiles_along(flow_size_.second, kernels::kSceneTileFlowPixels);
+    return kernels::SceneFlowTiles{.flow_width = flow_size_.first,
+                                   .flow_height = flow_size_.second,
+                                   .cols = cols,
+                                   .rows = rows,
+                                   .tiles = std::vector<kernels::SceneTileSums>(
+                                       static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows))};
+  }
   std::size_t pending_flow_tickets() const {
     const std::scoped_lock lock(mutex_);
     return flow_tickets_.size();
@@ -349,6 +388,8 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   bool ring_targets_ = false;
   bool yuv_targets_ = false;
   bool grade_ = false;
+  std::atomic<bool> still_scene_{false};
+  std::pair<int, int> flow_size_{0, 0};  // l'image de la dernière carte lancée
   std::optional<SourceId> refused_;
   std::string refused_engine_;
 };

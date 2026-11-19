@@ -8,6 +8,7 @@
 #include <format>
 #include <iterator>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -187,19 +188,55 @@ void PlaceboScreen::Impl::follow_effects(const ShowRequest& request) {
   if (!grade) return;
   const std::int64_t pts = request.frame != nullptr ? request.frame->pts_us : kNoPts;
   const bool changed = effects.show(request.effects, pts);
-  if (!changed && !effects_on) return;  // neutre et resté neutre : rien à poser
-  const bool on = grade->set_effect_mask(&effects.mask());
-  if (const auto& refused = grade->effect_mask_refusal(); refused && !effects_refusal_noted) {
-    effects_refusal_noted = true;
-    channel->warn("éclats sur les effets : passe du masque refusée ({}), marge des éclats sur toute lumière",
-                  refused->detail);
+  if (changed || effects_on) {  // neutre et resté neutre : rien à poser
+    const bool on = grade->set_effect_mask(&effects.mask());
+    if (const auto& refused = grade->effect_mask_refusal(); refused && !effects_refusal_noted) {
+      effects_refusal_noted = true;
+      channel->warn(
+          "éclats sur les effets : passe du masque refusée ({}), marge des éclats sur toute lumière",
+          refused->detail);
+    }
+    if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
+    effects_on = on;
   }
-  if (changed || on != effects_on) ++grade_serial;  // la composition gardée ne vaut plus
-  effects_on = on;
+  // Les images que l'écran grade lui-même (pas celles gradées avant le warp), une fois chacune.
+  if (request.frame != nullptr && !request.frame->graded && pts != effects_tally_pts) {
+    effects_tally_pts = pts;
+    effects_tally.count(request.effects.has_value(), effects_on, effects.mask(), pts);
+  }
+}
+
+namespace {
+
+// 83 s : « 1:23 » ; au-delà d'une heure, « 1:02:03 ». Le pts de l'image, depuis le début du flux.
+std::string clock_of(std::int64_t pts_us) {
+  const std::int64_t s = std::max<std::int64_t>(pts_us, 0) / 1'000'000;
+  if (s >= 3600) return std::format("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60);
+  return std::format("{}:{:02}", s / 60, s % 60);
+}
+
+}  // namespace
+
+std::optional<std::string> effect_tally_line(std::string_view where, const EffectTally& tally) {
+  if (tally.noted() == 0) return std::nullopt;
+  std::string seen;
+  for (const EffectTally::Moment& m : tally.moments()) {
+    if (m.effect <= 0.0) continue;
+    seen += std::format("{}{} (effet {:.0f} %, retenue {:.0f} %)", seen.empty() ? "" : ", ",
+                        clock_of(m.pts_us), m.effect * 100.0, m.held * 100.0);
+  }
+  const double share = 100.0 * static_cast<double>(tally.masked()) / static_cast<double>(tally.images());
+  return std::format(
+      "éclats sur les effets ({}) : {} images gradées, {} avec la carte de la scène, "
+      "{} avec le masque ({:.0f} %), marge des éclats retenue hors effet {:.0f} % en "
+      "moyenne ; à voir : {}",
+      where, tally.images(), tally.noted(), tally.masked(), share, tally.held() * 100.0,
+      seen.empty() ? "aucun moment marqué" : seen);
 }
 
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
-  const std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  std::optional<render::GradeParams> params = grade_for(grade_choice, target);
+  if (params) params->fx_view = effects_view ? 1.0 : 0.0;
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
   if (grade && params) {
@@ -207,9 +244,31 @@ void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
       grade->set_params(*params);
       ++grade_serial;
     }
+    note_look_path(*params);
     grade_loaded_pq = target.transfer == PL_COLOR_TRC_PQ;
   }
   if (grade_loaded_pq != before) ++grade_serial;
+}
+
+// Le chemin du look au journal, à chaque changement : la table de 129³ points (une lecture par pixel) ou la
+// pile LUT par LUT, et pourquoi. Le profil de fin ne le disait que par le nom de la passe : la séance du
+// 19/11 à 165 Hz passait par la pile, 3,2 ms par image en 4K sur les 3,7 du grade.
+void PlaceboScreen::Impl::note_look_path(const render::GradeParams& params) {
+  if (std::ranges::none_of(params.look_mixes, [](double mix) { return mix > 0.0; })) return;
+  const bool wanted = params.look_table > 0.5;
+  const bool active = grade->look_table_active();
+  const int path = active ? 0 : wanted ? 1 : 2;
+  if (std::exchange(look_path_noted, path) == path) return;
+  if (active) {
+    channel->info("look : table de 129³ points, une lecture par pixel");
+  } else if (wanted) {
+    channel->warn(
+        "look : table refusée par le GPU, pile LUT par LUT (passe du look plusieurs fois plus chère)");
+  } else {
+    channel->info(
+        "look : pile LUT par LUT, réglage « LUT en une seule table » éteint (passe du look plusieurs "
+        "fois plus chère)");
+  }
 }
 
 // La luminosité SDR de KDE que la passe « kwin » imite : celle du contrat d'écran (lue dans KDE) quand
@@ -316,12 +375,20 @@ void PlaceboScreen::Impl::ready_grade(const RingFrame* frame) {
   publish_source_grade(target_color);
 }
 
-// Le grade avant le warp suit l'écran : sur une sortie HDR10 gradée, sans netteté ni Anime4K (qui passent
-// avant le grade, sur l'image agrandie par l'affichage).
+// Le grade avant le warp suit l'écran, toujours là où il s'applique : sur une sortie HDR10 gradée, sans
+// Anime4K (il agrandit la source SDR avant le grade, et une image déjà gradée lui arriverait en PQ). La
+// netteté ne l'écarte pas : elle reste à l'écran, sur l'image agrandie par l'affichage, après le grade et en
+// valeurs PQ comme pour toute source HDR (render/sharpen.h).
 void PlaceboScreen::Impl::publish_source_grade(const pl_color_space& target) {
   SourceGradeState state;
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
-  if (grade_before_warp && grade && pq && graded(target) && sharpness == 0 && !anime4k) {
+  if (!grade || !graded(target)) {
+    state.off = "pas de grade sur cette sortie";
+  } else if (!pq) {
+    state.off = "sortie SDR";
+  } else if (anime4k) {
+    state.off = "Anime4K";
+  } else {
     state.params = grade->params();
     state.looks = grade->shared_looks();
     state.kwin = kwin_applied;
@@ -360,6 +427,7 @@ std::expected<std::vector<double>, Refusal> PlaceboScreen::grade_ramp(std::span<
   render::GradeParams params = s.grade->params();
   params.black_lo = 0.0;  // le vrai noir se cale sur ce qui sort sans lui
   params.black_hi = 0.0;
+  params.fx_view = 0.0;  // la vue du masque n'est pas l'image que le vrai noir mesure
   // P3.61 : la rampe passe aussi par la pile de LUT, que le vrai noir suit à l'écran ; mesurée sans elle, ses
   // seuils écrasaient une seconde fois les huit premières marches. Les mêmes LUT, aux mêmes intensités.
   // Partagées avec l'écran et comparées par identité (C41-05) : ni copie ni comparaison de 8 Mo à chaque

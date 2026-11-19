@@ -117,6 +117,11 @@ void PlaceboScreen::snapshot_next(std::filesystem::path path, int count) {
   impl_->snapshot_index = 0;
 }
 
+// Prise à la présentation suivante (ready_grade, select_grade).
+void PlaceboScreen::set_effect_view(bool on) {
+  impl_->effects_view = on;
+}
+
 void PlaceboScreen::release_ui(ImGuiPlatformIO& platform) {
   if (impl_->ui) impl_->ui->release_textures(platform);
 }

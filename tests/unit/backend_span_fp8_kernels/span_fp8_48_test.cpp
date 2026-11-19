@@ -311,11 +311,12 @@ namespace kirari::gpu::cuda {
 
 // Le SPAN FP16 natif (docs/span-native16.md) suit la référence FP16 (span_fp8_ref.h), qui calcule le même
 // réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps natif calcule en 48. Il ne reste que
-// l'ordre des sommes et leur f16.
+// l'ordre des sommes et leur f16, ou f32 (SpanNativeSums).
 TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   const int real = GENERATE(48, 64);
-  INFO(real << " canaux");
+  const SpanNativeSums sums = GENERATE(SpanNativeSums::F16, SpanNativeSums::F32);
+  INFO(real << " canaux, sommes " << static_cast<int>(sums));
   Random random;
   span_fp8::Package package = random_package(random, real, real == 48 ? 5 : 8);
   std::vector<__half> image(kInCount);
@@ -337,7 +338,15 @@ TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
   std::vector<double> want(half.size());
   for (std::size_t i = 0; i < half.size(); ++i) want[i] = static_cast<double>(__half2float(half[i]));
 
-  const double snr = snr_db(want, run(package, SpanFp8Width::Native, in, true));
+  SpanFp8Weights weights = span_fp8_view(package);
+  weights.fp16 = true;
+  weights.sums = sums;
+  const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
+  INFO(error);
+  REQUIRE(net != nullptr);
+  DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+  net->bind(workspace.data);
+  const double snr = snr_db(want, launch_once(*net, in));
   INFO("SNR du FP16 en noyaux contre la référence : " << snr << " dB");
   CHECK(snr >= 30.0);
 }

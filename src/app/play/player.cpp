@@ -41,6 +41,7 @@
 #include "app/play/host_facts.h"
 #include "app/play/i18n.h"
 #include "app/play/input.h"
+#include "app/play/interp_retired.h"
 #include "app/play/invalid_copies.h"
 #include "app/play/look_catalog.h"
 #include "app/play/machine_calibration.h"
@@ -327,6 +328,7 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
   PlayOptions options = launch_options;
   const std::int64_t launched_s = relaunch_now_s();
   const std::optional<RelaunchTarget> reopened_after = take_relaunch(options, paths, launched_s);
+  keep_gmfss(options.gmfss_native);  // GMFSS au menu et dans play.toml : avant toute lecture des réglages
   set_bench_child(options.bench_out.has_value());  // l'essai d'un banc parle à son parent (bench_events.h)
   FontSearch fonts = FontSearch::start();  // pendant la lecture des réglages et l'ouverture de l'écran
   // Un essai scripté lit le fichier donné avant d'ouvrir la fenêtre : un fichier illisible n'en ouvre aucune,
@@ -380,8 +382,10 @@ std::expected<void, Refusal> play(const PlayOptions& launch_options, const Playe
     PlayerUi& ui_;
     PlaceboScreen& screen_;
   } const release(**ui, **screen);
-  SnapshotPlan snapshot{
-      .path = options.snapshot, .at_us = options.snapshot_at_us, .frames = options.snapshot_frames};
+  SnapshotPlan snapshot{.path = options.snapshot,
+                        .at_us = options.snapshot_at_us,
+                        .frames = options.snapshot_frames,
+                        .pause_at_us = options.pause_at_us};
   std::size_t next_key = 0;
 
   // Les moteurs : settings.toml, choisis à l'écran de bienvenue au premier lancement.

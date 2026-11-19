@@ -48,8 +48,13 @@ class FreeRate {
   // changement de plan, assez long pour ne pas sautiller.
   static constexpr std::int64_t kInfoWindowUs = 2'000'000;
   static constexpr std::int64_t kSettleUs = 1'200'000;  // après seek ou reprise : mesures ignorées
-  static constexpr std::int64_t kStartUs =
-      5'000'000;  // après l'activation du mode : mesures ignorées (démarrage, moteurs qui chauffent)
+  // Le démarrage, après l'activation du mode (moteurs qui chauffent) : pertes et paires affamées ignorées ;
+  // le temps de service y suit chaque mesure à moitié dans les deux sens (kStartFollow), une mesure bornée à
+  // kStartCapUs par image. Ignorées comme après un seek, les mesures laissaient 5 s à deux images par paire :
+  // 48 i/s au plancher du VRR au lieu de 165, une dizaine d'images par seconde de moins sur une minute.
+  static constexpr std::int64_t kStartUs = 5'000'000;
+  static constexpr double kStartFollow = 0.5;
+  static constexpr std::int64_t kStartCapUs = 20'000;  // l'écart d'une demi-paire à 24 i/s, comme sans mesure
   static constexpr std::int64_t kMaxSampleUs = 300'000;
   static constexpr std::int64_t kBucketUs = 250'000;
   static constexpr double kHeavyGuess = 2.0;  // paire lourde jamais mesurée : coût d'une calme × 2
@@ -98,6 +103,7 @@ class FreeRate {
   double pressure_ = 1.0;
   std::int64_t last_loss_us_ = 0;
   std::int64_t settled_until_us_ = 0;
+  std::int64_t started_until_us_ = 0;  // fin du démarrage (kStartUs après reset)
   std::uint32_t lost_total_ = 0;
   std::array<Bucket, 24> buckets_{};
 };

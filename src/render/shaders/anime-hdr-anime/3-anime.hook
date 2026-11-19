@@ -194,6 +194,19 @@ vec4 hook() {
     float iso = smoothstep(0.05, 0.25, local_pq - area_pq);
     // C41-03 : les seuils ne dependent que des parametres, calcules une fois par Grade::write_params.
     float gate = smoothstep(an_gate_lo, an_gate_hi, local_pq);
+    // Eclats sur les seuls effets (fx_on, render/effect_mask.h) : la passe du masque a pose dans l'alpha ses
+    // deux couches, la part de la marge gardee (keep, codes 0 a 127 sur 255) et l'effet sur (sure, 127 a 255).
+    // Sur un effet sur, la porte s'ouvre plus bas (fx_gate_lo, une lueur de magie a 30 % du blanc) et sur un
+    // ecart plus faible a la zone ; hors effet, rien ne change ici.
+    // Un demi-code de marge de part et d'autre de 127 : « tout garde, aucun effet » relu d'une texture 8 bits
+    // (127 / 255, a l'arrondi pres) ne change aucun pixel.
+    float fx_code = fx_on > 0.5 ? clamp(px.a, 0.0, 1.0) * 255.0 : 127.0;
+    float keep = fx_code > 126.5 ? 1.0 : fx_code / 127.0;
+    float sure = clamp((fx_code - 127.5) / 127.5, 0.0, 1.0);
+    if (sure > 0.0) {
+        iso = mix(iso, smoothstep(0.02, 0.15, local_pq - area_pq), sure);
+        gate = mix(gate, smoothstep(fx_gate_lo, fx_gate_hi, local_pq), sure);
+    }
     // Audit F2 : une peau n'est jamais une lumiere. Une peau claire pres d'un fond sombre gardait la porte
     // ouverte et s'eclairait comme une lampe au bord des visages. La teinte et la saturation ne dependent pas
     // de la luminance : le grain d'une peau ne fait pas osciller la porte (pas de damier).
@@ -216,11 +229,11 @@ vec4 hook() {
         float inked = 1.0 - smoothstep(0.004 * white, 0.015 * white, min(lx, ly));
         spark *= (1.0 - skin) * (1.0 - inked);
     }
-    // Eclats sur les seuls effets (fx_on, render/effect_mask.h) : la passe du masque l'a pose dans l'alpha.
     // Hors effet (un ciel, une feuille blanche), une lumiere ne garde que fx_rest de sa montee ; une etincelle
     // (une etoile, un reflet de 1 a 4 px) garde la sienne. Sans masque, emitter est celui d'aujourd'hui.
     float lit = iso * gate;
-    if (fx_on > 0.5) lit *= mix(fx_rest, 1.0, clamp(px.a, 0.0, 1.0));
+    float light = lit;
+    if (keep < 1.0) lit *= mix(fx_rest, 1.0, keep);
     float emitter = max(lit, spark);
     bool late = an_late > 0.5;
     // Hors emetteur (emitter = 0, la plupart des pixels), le gain vaut an_lift : mix(an_lift, x, 0) le rendait
@@ -237,7 +250,11 @@ vec4 hook() {
         // dessous, elles redescendent jusqu'a 25 % sous les surfaces a 0 %.
         float boost = (spec_gain - 1.0) * an_spec +
                       (an_spec >= 1.0 ? 1.5 * (an_spec - 1.0) : -0.25 * (1.0 - an_spec));
-        float emit_out = lvl * (1.0 + smoothstep(0.5 * white, white, lvl) * boost);
+        // Sur un effet sur : la montee commence plus bas (des 30 % du blanc, pleine a 60 %) et va plus haut
+        // (fx_gain de plus). Un curseur Eclats sous 100 % (montee negative) n'y descend pas plus qu'ailleurs.
+        boost += fx_gain * sure * max(boost, 0.0);
+        float rise_at = smoothstep(mix(0.5, 0.3, sure) * white, mix(1.0, 0.6, sure) * white, lvl);
+        float emit_out = lvl * (1.0 + rise_at * boost);
         // Eclats en dernier : ni epaule ni limiteur ici, la derniere passe les pose sur le niveau de l'ecran.
         if (!late) emit_out = shoulder(emit_out, 0.65 * p_hl, p_hl);
         float floor_gain = an_lift * (an_spec >= 1.0 ? 1.0 : mix(0.75, 1.0, an_spec));
@@ -278,5 +295,14 @@ vec4 hook() {
     float m = max(max(c.r, c.g), c.b);
     if (m > 1e-4) c *= shoulder(m, 0.80 * peak, peak) / m;
     px.rgb = nits_to_pq(c);
+    // Vue de controle du masque (--effect-mask-view) : l'image en gris sombre, les lumieres (la carte des
+    // emetteurs avant le masque) en rouge, les effets surs en vert, la marge retenue (1 - keep) en bleu. Une
+    // lumiere d'effet sort jaune, une lumiere retenue magenta, un decor sans lumiere bleu ; sans masque, ni
+    // vert ni bleu.
+    if (fx_view > 0.5) {
+        float g = 0.3 * min(y * an_lift, white);
+        px.rgb = nits_to_pq(vec3(g) + 0.8 * white * vec3(light, sure, 1.0 - keep));
+        px.a = 1.0;
+    }
     return px;
 }

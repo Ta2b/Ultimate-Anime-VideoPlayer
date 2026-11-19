@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -30,16 +31,38 @@ using RifeNativePiece = std::vector<RifeNativeConv>;
 // Les sommes des convolutions : f16 (le débit plein des tensor cores des GeForce), mixtes (chaque prise en
 // f16, les prises entre elles en f32, au débit du f16), f32 (moitié du débit sur GeForce).
 enum class RifeNativeSums : std::uint8_t { kF16, kMixed, kF32 };
+// Les sommes des couches d'un morceau : la dernière (la tête : le flot et le masque d'un bloc, l'encodage de
+// l'encodeur) peut sommer plus finement que les autres.
+struct RifeNativePrecision {
+  RifeNativeSums body = RifeNativeSums::kF16;
+  RifeNativeSums head = RifeNativeSums::kF16;
+};
+
+// La forme qu'un réglage a retenue pour une couche (rife_native_plan.h) : un réseau créé après un autre de
+// même taille reprend celle des couches de mêmes sommes sans les chronométrer de nouveau.
+struct RifeNativeTuned {
+  int piece = 0;
+  int layer = 0;
+  RifeNativeSums sums = RifeNativeSums::kF16;
+  int kc = 16;
+  int ct = 16;
+  int rows = 2;
+  int ksplit = 1;
+  bool ahead = false;  // poids une prise à l'avance (rife_native_kernels.cuh, accumulate)
+};
 
 class RifeNativeNet {
  public:
   virtual ~RifeNativeNet() = default;
   // pieces : l'encodeur puis les blocs ; reduce : d_k de chaque bloc ; height × width : la taille remplie.
-  // sums : les sommes des convolutions. Rien et error rempli si une couche sort de ce que les noyaux font, ou
-  // si les poids ne s'envoient pas.
+  // Chaque couche prend la forme (tranche, tuile, lignes par warp, parts de K, poids à l'avance) la plus
+  // rapide sur cette carte, chronométrée ici sur la voie stream (comme AnimeJaNai), ou celle que tuned garde
+  // déjà ; tuned reçoit les nouvelles. Rien et error rempli si une couche sort de ce que les noyaux font, si
+  // les poids ne s'envoient pas, ou sur une erreur CUDA du réglage.
   static std::unique_ptr<RifeNativeNet> create(const std::vector<RifeNativePiece>& pieces,
                                                const std::vector<int>& reduce, int height, int width,
-                                               RifeNativeSums sums, std::string& error);
+                                               RifeNativePrecision precision, cudaStream_t stream,
+                                               std::vector<RifeNativeTuned>& tuned, std::string& error);
   // La zone de travail (activations entre les couches) : octets, et son adresse pour les appels suivants.
   virtual std::int64_t workspace_bytes() const = 0;
   // L'encodeur sur une image (3 plans height × width) vers encoded (4 plans).
@@ -47,7 +70,15 @@ class RifeNativeNet {
                              void* workspace) const = 0;
   // Le bloc k : x (X_k par pixel), y (Y_k par pixel, pas 56).
   virtual cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const = 0;
-  virtual RifeNativeSums sums() const = 0;
+  virtual RifeNativePrecision precision() const = 0;
+  // Le profil d'un morceau (0 : l'encodeur, 1 + k : le bloc k) : ses couches comme encode ou block, marks[0]
+  // enregistré avant la première et marks[i + 1] après la couche i (cudaEventRecordExternal : la capture d'un
+  // graphe les garde). marks.size() doit valoir layers(piece) + 1.
+  virtual int layers(int piece) const = 0;
+  virtual cudaError_t profile(cudaStream_t stream, int piece, const void* in, void* out, void* workspace,
+                              std::span<const cudaEvent_t> marks) const = 0;
+  // La couche i du morceau pour le journal : sa sorte, ses canaux, la forme retenue au réglage.
+  virtual std::string layer_label(int piece, int i) const = 0;
 };
 
 }  // namespace kirari::gpu::cuda

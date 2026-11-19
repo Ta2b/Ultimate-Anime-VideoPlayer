@@ -2,7 +2,8 @@
 // third_party/nvidia-optical-flow) pour la carte de la scène (kernels/spec/scene_flow.h). Repris du commit
 // 5dff1467, avec ce qui y manquait :
 //   - sa propre file CUDA (nvOFSetIOCudaStreams), jamais celle d'une voie : sur la file du backend, NVOF
-//     passait en série avec TensorRT et le bloc à part ne servait à rien ;
+//     passait en série avec TensorRT et le bloc à part ne servait à rien. Priorité la plus haute : la
+//     réduction et la copie qui suivent NVOF ne font pas la queue derrière les blocs de SPAN et de RIFE ;
 //   - un seul sens (a vers b) et la carte de coût 8 bits, la confiance de chaque vecteur ;
 //   - les indices temporels coupés à la demande (execute(restart)) : coupe, saut, nouvelle époque, export ;
 //   - les capacités lues (nvOFGetCaps : grilles, tailles), rien de supposé. La carte de coût n'existe
@@ -43,14 +44,16 @@ class NvofSession {
     void* data = nullptr;
     std::size_t pitch = 0;
   };
-  Pitched input() const;      // luma de a, que la session lit au prochain execute
-  Pitched reference() const;  // luma de b
-  Pitched flow() const;       // S10.5, cells_x × cells_y vecteurs (int16 x, int16 y)
-  Pitched cost() const;       // un octet par vecteur
+  // kLumas tampons de luma, chacun lu tour à tour comme a ou comme b : la luma de b d'une paire sert de a à
+  // la suivante, et la voie écrit la nouvelle dans un tampon que NVOF a fini de lire (scene_flow.h).
+  static constexpr int kLumas = 3;
+  Pitched luma(int slot) const;  // slot dans [0, kLumas)
+  Pitched flow() const;          // S10.5, cells_x × cells_y vecteurs (int16 x, int16 y)
+  Pitched cost() const;          // un octet par vecteur
 
-  // Le flux de input vers reference, enfilé sur stream() ; aucune attente hôte. restart : sans les vecteurs
+  // Le flux de luma(a) vers luma(b), enfilé sur stream() ; aucune attente hôte. restart : sans les vecteurs
   // de l'appel précédent comme indices.
-  std::expected<void, Refusal> execute(bool restart);
+  std::expected<void, Refusal> execute(int a, int b, bool restart);
 
   struct Api;
   struct Buffers;

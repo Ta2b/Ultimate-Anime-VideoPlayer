@@ -567,7 +567,12 @@ std::expected<void, Refusal> UpscaleStage::make_key(std::uint32_t k, float t) {
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
   // Les sources de la paire sont gradées avant le warp : la clé aussi, sinon l'image mêlerait les deux.
   if (ok && setup_.grader && !setup_.yuv_slots && pair_graded()) {
-    auto graded = setup_.grader->grade(ops, key.spanned->tensor(), debanded_);
+    const GradedSource source{
+        .epoch = head_.epoch,
+        .pts_us = head_.pts_us,
+        .effects =
+            setup_.live ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us) : std::nullopt};
+    auto graded = setup_.grader->grade(ops, key.spanned->tensor(), debanded_, source);
     if (!graded) {
       log_channel("gpu")->warn("grade avant le warp (GMFSS) : {} ; l'écran reprend le grade",
                                graded.error().detail);

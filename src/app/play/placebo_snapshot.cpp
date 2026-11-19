@@ -2,10 +2,12 @@
 // la fenêtre (sRGB si elle est en HDR), dans une texture hors écran relue sur l'hôte et écrite en PPM. Outil
 // de vérification (--snapshot), hors du chemin de lecture. Un fichier en « .pq.ppm » garde la sortie HDR
 // telle que l'écran la reçoit (PQ BT.2020, grade compris), en PPM 16 bits.
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <format>
 #include <fstream>
+#include <string>
 #include <vector>
 
 #include "app/play/placebo_impl.h"
@@ -98,7 +100,48 @@ void PlaceboScreen::Impl::take_snapshot(const pl_frame* image, const pl_frame& t
   if (++snapshot_index >= snapshot_count) snapshot.reset();
   if (auto saved = save_snapshot(image, target, out, drawn_ui, path); !saved) {
     channel->warn("instantané {} : {}", core::to_utf8(path.filename()), saved.error().detail);
+    return;
   }
+  note_snapshot_effects(core::to_utf8(path.filename()));
+}
+
+namespace {
+
+// « 16:20,042 » : le pts d'une image à la milliseconde, pour reconnaître la même image d'une capture à
+// l'autre.
+std::string clock_ms(std::int64_t pts_us) {
+  if (pts_us == kNoPts) return "?";
+  const std::int64_t ms = std::max<std::int64_t>(pts_us, 0) / 1000;
+  return std::format("{}:{:02},{:03}", ms / 60'000, (ms / 1000) % 60, ms % 1000);
+}
+
+}  // namespace
+
+// L'essai du PC du 19/11 ne pouvait pas dire d'une capture si la carte de la scène était déjà là, ni si deux
+// captures montraient la même image : le journal dit à chaque instantané l'image (son pts, source ou instant
+// interpolé) et son masque, celui de l'écran ou celui de la source gradée avant le warp.
+void PlaceboScreen::Impl::note_snapshot_effects(const std::string& name) const {
+  if (!grade) return;
+  EffectSummary seen =
+      frame_graded ? source_grade_share->effects(shown_pts) : effect_summary(effects.mask(), effects_on);
+  if (!frame_graded) seen.pts_us = shown_pts;
+  const std::string image =
+      std::format("image {} à {}", shown_source ? "source" : "interpolée", clock_ms(shown_pts));
+  const std::string where = !frame_graded ? std::string("écran")
+                            : seen.pts_us == shown_pts
+                                ? std::string("grade avant le warp")
+                                : std::format("grade avant le warp, source à {}", clock_ms(seen.pts_us));
+  if (!seen.on) {
+    channel->info(
+        "instantané {} ({}) : masque des effets ({}) neutre : pas encore de carte de la scène, ou rien "
+        "de retenu ni d'effet sûr",
+        name, image, where);
+    return;
+  }
+  channel->info(
+      "instantané {} ({}) : masque des effets ({}) de {} × {} tuiles, effet sûr sur {:.0f} % d'entre "
+      "elles, marge des éclats retenue sur {:.0f} %",
+      name, image, where, seen.cols, seen.rows, 100.0 * seen.sure, 100.0 * seen.held);
 }
 
 }  // namespace kirari::app::play

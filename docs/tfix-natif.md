@@ -67,9 +67,12 @@ Sous `--tfix-native`, les cinq moteurs TensorRT se construisent et se chargent c
 Les passes natives tournent sur une zone de travail à elles : la zone de la voie ne grandit que pour un natif
 retenu. Une valeur non finie, chez TensorRT ou chez nous, compte pour un échec.
 
-Gardé à 45 dB ou plus sur le pire des quatre, sommes f16, puis mixtes, puis f32 ; sinon TensorRT garde l'étage,
-chargé et intact. Le journal dit ce qui est retenu : « TemporalFix natif retenu pour la fenêtre (960×540,
-sommes f16 : 52,3 dB contre TensorRT, seuil 45 dB) ».
+Gardé à 45 dB ou plus sur le pire des quatre, sommes f16, puis mixtes, puis f32, **et seulement s'il bat
+TensorRT en temps** d'au moins 2 % (tours intercalés de deux passes, médiane de onze, comme GMFSS natif :
+`gmfss_trial::times`) ; sinon TensorRT garde l'étage, chargé et intact. L'encodeur et la fenêtre se décident
+chacun pour soi : l'encodeur peut être natif et la fenêtre TensorRT. Le journal dit ce qui est retenu :
+« TemporalFix natif retenu pour l'encodeur (960×540, sommes f16 : 64,7 dB contre TensorRT, seuil 45 dB ; une
+passe : TensorRT 0,34 ms, natif 0,25 ms) ».
 
 ## Comparaison avec AnimeJaNai
 
@@ -87,8 +90,9 @@ Différences :
 - **la variante de tuile** : eux la chronomètrent au chargement ; nous la choisissons par une règle (même
   remarque que [`rife-natif.md`](rife-natif.md)).
 
-À reprendre si le profil le demande : la dernière convolution de la tête (32 → 1) calcule 16 sorties pour une
-(un quart du coût de la tête) ; une tuile n8, ou un petit noyau à part, la ramènerait à rien.
+La dernière convolution de la tête (32 → 1) passe par un petit noyau à part (`single_kernel`, un fil par
+point, sommes f32 sur les cœurs CUDA) : sur les tensor cores, sa tuile de 16 sorties pour une faisait 12 % du
+travail de la fenêtre.
 
 ## Mémoire
 
@@ -99,8 +103,18 @@ lue après sa première convolution : elle pourrait servir de second tampon (200
 
 ## État
 
-Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
-jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
+Mesuré sur la RTX 4070 Ti (Re:Zero, Normal, `--one-lane`, médianes de trois tours ABAB, avant le petit noyau de
+la tête) :
+
+| | demi-taille | pleine taille |
+|---|---|---|
+| justesse, sommes f16 (encodeur, fenêtre) | 64,7 et 56,0 dB | 65,3 et 57,7 dB |
+| encodeur, natif contre TensorRT | 0,25 contre 0,34 ms | 0,36 contre 0,46 ms |
+| fenêtre, natif contre TensorRT | 10,55 contre 7,85 ms | 16,29 contre 13,25 ms |
+
+L'encodeur natif gagne ; la fenêtre native perd, et le choix au temps la laisse à TensorRT. Le travail de la
+fenêtre en demi-taille (s2, en MAC, rembourrage compris) : la tête près des deux tiers (270 × 480, six appuis,
+32 canaux), les trois blocs le reste. Le profil par noyau (nsys) dira où va l'écart.
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 

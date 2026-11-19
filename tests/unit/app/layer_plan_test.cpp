@@ -25,6 +25,7 @@ SceneMotion pan(double dx) {
   SceneMotion s;
   s.camera = {dx, 1.0, 0.0, 0.0, 0.0, 1.0};
   s.camera_fit = true;
+  s.camera_refined = true;
   s.residual = 0.2;
   s.tile_px = 8;
   s.cols = 8;
@@ -49,10 +50,21 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   SceneMotion unfit = pan(4.0);
   unfit.camera_fit = false;
   CHECK(plan_layers(unfit, 64, 36).error() == LayerSkip::NoCamera);
+  SceneMotion raw = pan(4.0);
+  raw.camera_refined = false;  // caméra de NVOF seule : son cisaillement sur les panoramiques lents
+  CHECK(plan_layers(raw, 64, 36).error() == LayerSkip::Unrefined);
+  // Un zoom de 2 % autour du coin : la caméra passe des centres continus aux indices, M(x + ½) − ½.
+  SceneMotion zoom = pan(0.0);
+  zoom.camera = {0.0, 1.02, 0.0, 0.0, 0.0, 1.02};
+  const auto zoomed = plan_layers(zoom, 64, 36);
+  REQUIRE(zoomed);
+  CHECK_THAT(zoomed->camera[0], WithinAbs(0.01, 1e-12));
+  CHECK_THAT(zoomed->camera[1], WithinAbs(1.02, 1e-12));
   SceneMotion crowd = pan(4.0);
   for (auto& tile : crowd.tiles) tile.kind = SceneClass::Drawing;
   CHECK(plan_layers(crowd, 64, 36).error() == LayerSkip::FewTiles);
-  for (const auto skip : {LayerSkip::NoMap, LayerSkip::Grid}) CHECK_FALSE(name(skip).empty());
+  for (const auto skip : {LayerSkip::NoMap, LayerSkip::Unrefined, LayerSkip::Grid})
+    CHECK_FALSE(name(skip).empty());
 
   // Un dessin en (3, 2) : lui et ses huit voisines gardent RIFE ; un aplat qui ne change pas reste décor.
   SceneMotion scene = pan(4.0);
@@ -140,6 +152,69 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   REQUIRE(old);
   CHECK_FALSE(old->layers);
   CHECK_FALSE(old->background_plate);
+}
+
+// L'affinage en retard : la caméra lk d'une des deux paires d'avant, si elle s'accorde à un demi-pixel près
+// avec celle de NVOF ; le SPAN de plus de la plaque seulement quand celui de la lecture calcule sous le FP16.
+TEST_CASE("calques : caméra voisine, plaque sans second SPAN", "[layers]") {
+  SceneMotion late = pan(4.0);
+  late.camera_refined = false;
+  late.residual = 0.9;  // résidu des vecteurs de NVOF, pas celui de l'image
+  const NeighbourCamera near{.camera = {4.3, 1.0, 0.0, 0.1, 0.0, 1.0}, .residual = 0.2};
+  const auto borrowed = with_neighbour(late, near, 64, 36);
+  REQUIRE(borrowed);
+  CHECK(borrowed->camera_refined);
+  CHECK(borrowed->camera[0] == 4.3);
+  CHECK(borrowed->residual == 0.2);
+  // Trop loin de NVOF (0,6 pixel), une voisine qui s'écarte de son modèle, une paire déjà affinée ou coupée.
+  CHECK_FALSE(with_neighbour(late, {.camera = {4.6, 1.0, 0.0, 0.0, 0.0, 1.0}, .residual = 0.2}, 64, 36));
+  CHECK_FALSE(with_neighbour(late, {.camera = near.camera, .residual = 0.7}, 64, 36));
+  CHECK_FALSE(with_neighbour(pan(4.0), near, 64, 36));
+  SceneMotion late_cut = late;
+  late_cut.cut_likely = true;
+  CHECK_FALSE(with_neighbour(late_cut, near, 64, 36));
+  // Un cisaillement de NVOF : 0,02 par pixel, 0,7 pixel au bas de l'image ; le centre seul ne suffit pas.
+  SceneMotion sheared = late;
+  sheared.camera = {4.3, 1.0, 0.02, 0.0, 0.0, 1.0};
+  CHECK_FALSE(with_neighbour(sheared, near, 64, 36));
+
+  bool took = false;
+  CHECK(plan_with_neighbour(late, near, 64, 36, took));
+  CHECK(took);
+  CHECK(plan_with_neighbour(late, std::nullopt, 64, 36, took).error() == LayerSkip::Unrefined);
+  CHECK_FALSE(took);
+  CHECK(plan_with_neighbour(pan(4.0), near, 64, 36, took));
+  CHECK_FALSE(took);  // sa propre caméra lk
+
+  // Les voisines : une ou deux paires d'avant, jamais la paire elle-même ni plus vieille.
+  NeighbourCameras neighbours;
+  neighbours.next();
+  CHECK_FALSE(neighbours.for_pair());
+  neighbours.seen(near);
+  CHECK_FALSE(neighbours.for_pair());  // la paire elle-même
+  neighbours.next();
+  CHECK(neighbours.for_pair());
+  neighbours.next();
+  CHECK(neighbours.for_pair());
+  neighbours.next();
+  CHECK_FALSE(neighbours.for_pair());
+  CHECK(refined_camera(pan(4.0)));
+  CHECK_FALSE(refined_camera(late));
+  neighbours.forget();
+  CHECK_FALSE(neighbours.for_pair());
+
+  // Le second SPAN de la plaque : sous le FP16 seulement ; sinon la sortie de SPAN est reprise.
+  CHECK_FALSE(span_below_fp16(std::nullopt));
+  CHECK(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Fp8Cutlass}));
+  CHECK(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Int8}));
+  CHECK_FALSE(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Fp16Cutlass}));
+  CHECK_FALSE(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Fp32Native}));
+  ChainEngines c;
+  c.scene_map = true;
+  c.plate_copy = true;
+  const test::FakeClock clock;
+  CHECK(layer_setup(c, &clock).plate_on());
+  CHECK_FALSE(layer_setup(c, nullptr).plate_on());
 }
 
 // La règle absolue : calques et plaque allumés sans carte de la scène (AMD, Intel, NVOF refusé) donnent les

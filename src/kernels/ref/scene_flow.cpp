@@ -7,35 +7,23 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <span>
-#include <utility>
 #include <vector>
 
 #include "kernels/ref/check.h"
+#include "kernels/ref/scene_fit.h"
 #include "kernels/spec/color.h"
 
 namespace kirari::kernels::ref {
 namespace {
+
+using scene_fit::Displacement;
+using scene_fit::TileView;
 
 constexpr float kVectorUnit = 32.0F;  // S10.5
 
 std::size_t at(int x, int y, int width) {
   return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
 }
-
-// Une tuile lue sur l'hôte : ses moyennes.
-struct TileView {
-  float cx = 0.0F;  // centre, pixels du flux
-  float cy = 0.0F;
-  float mx = 0.0F;  // vecteur moyen, pixels du flux
-  float my = 0.0F;
-  float spread = 0.0F;   // écart type des vecteurs
-  float matched = 0.0F;  // part de vecteurs sûrs
-  float texture = 0.0F;  // par pixel
-  float change = 0.0F;   // |b − a| moyen
-  float shift = 0.0F;    // (b − a) moyen
-  bool valid = false;
-};
 
 TileView view_of(const SceneTileSums& t, int col, int row, int flow_width, int flow_height) {
   TileView v;
@@ -55,146 +43,9 @@ TileView view_of(const SceneTileSums& t, int col, int row, int flow_width, int f
   v.texture = t.texture / t.pixels;
   v.change = t.diff / t.pixels;
   v.shift = t.signed_diff / t.pixels;
+  v.cost = t.cost / t.cells;
   v.valid = true;
   return v;
-}
-
-bool fit_candidate(const TileView& v) {
-  return v.valid && v.matched >= scene::kFitMatched && v.texture >= scene::kTextureFloor &&
-         v.spread <= scene::kSpreadMax;
-}
-
-float texture_weight(const TileView& v) {
-  return std::clamp(v.texture / scene::kTextureFloor, 0.0F, 1.0F);
-}
-
-// Le déplacement du modèle en (x, y) : d = (c0 + c1 x + c2 y, c3 + c4 x + c5 y), pixels du flux.
-struct Displacement {
-  std::array<double, 6> c{};
-  double dx(double x, double y) const { return c[0] + c[1] * x + c[2] * y; }
-  double dy(double x, double y) const { return c[3] + c[4] * x + c[5] * y; }
-};
-
-// Moindres carrés pondérés de f ≈ p0 + p1 x + p2 y, équations normales 3 × 3 par élimination de Gauss.
-bool solve3(std::array<std::array<double, 4>, 3> m, std::array<double, 3>& out) {
-  for (std::size_t col = 0; col < 3; ++col) {
-    std::size_t pivot = col;
-    for (std::size_t r = col + 1; r < 3; ++r) {
-      if (std::abs(m[r][col]) > std::abs(m[pivot][col])) pivot = r;
-    }
-    if (std::abs(m[pivot][col]) < 1e-9) return false;
-    std::swap(m[col], m[pivot]);
-    for (std::size_t r = 0; r < 3; ++r) {
-      if (r == col) continue;
-      const double k = m[r][col] / m[col][col];
-      for (std::size_t c = col; c < 4; ++c) m[r][c] -= k * m[col][c];
-    }
-  }
-  for (std::size_t r = 0; r < 3; ++r) out[r] = m[r][3] / m[r][r];
-  return true;
-}
-
-struct FitPoint {
-  double x = 0.0;  // coordonnées centrées et réduites
-  double y = 0.0;
-  double dx = 0.0;
-  double dy = 0.0;
-  double w = 0.0;
-};
-
-bool fit_affine(std::span<const FitPoint> points, const std::vector<std::uint8_t>& keep, Displacement& out) {
-  std::array<std::array<double, 4>, 3> mx{};
-  std::array<std::array<double, 4>, 3> my{};
-  for (std::size_t i = 0; i < points.size(); ++i) {
-    if (!keep[i]) continue;
-    const FitPoint& p = points[i];
-    const std::array<double, 3> basis{1.0, p.x, p.y};
-    for (std::size_t r = 0; r < 3; ++r) {
-      for (std::size_t c = 0; c < 3; ++c) {
-        mx[r][c] += p.w * basis[r] * basis[c];
-        my[r][c] += p.w * basis[r] * basis[c];
-      }
-      mx[r][3] += p.w * basis[r] * p.dx;
-      my[r][3] += p.w * basis[r] * p.dy;
-    }
-  }
-  std::array<double, 3> px{};
-  std::array<double, 3> py{};
-  if (!solve3(mx, px) || !solve3(my, py)) return false;
-  out.c = {px[0], px[1], px[2], py[0], py[1], py[2]};
-  return true;
-}
-
-double weighted_median(std::vector<std::pair<double, double>> values) {
-  if (values.empty()) return 0.0;
-  std::ranges::sort(values);
-  double total = 0.0;
-  for (const auto& [value, weight] : values) total += weight;
-  double run = 0.0;
-  for (const auto& [value, weight] : values) {
-    run += weight;
-    if (run >= 0.5 * total) return value;
-  }
-  return values.back().first;
-}
-
-struct CameraFit {
-  bool fit = false;
-  Displacement model;  // en coordonnées centrées et réduites
-  double residual = 0.0;
-};
-
-// La caméra, sur les tuiles sûres, texturées et cohérentes, avec rejet itératif des aberrants (les dessins).
-CameraFit fit_camera(const std::vector<TileView>& views, double cx, double cy, double scale) {
-  std::vector<FitPoint> points;
-  for (const TileView& v : views) {
-    if (!fit_candidate(v)) continue;
-    points.push_back({.x = (v.cx - cx) / scale,
-                      .y = (v.cy - cy) / scale,
-                      .dx = v.mx,
-                      .dy = v.my,
-                      .w = static_cast<double>(v.matched * texture_weight(v))});
-  }
-  const auto minimum =
-      static_cast<std::size_t>(std::max(static_cast<double>(scene::kFitMinTiles),
-                                        std::ceil(scene::kFitMinShare * static_cast<double>(views.size()))));
-  CameraFit result;
-  if (points.size() < minimum) return result;
-  std::vector<std::uint8_t> keep(points.size(), 1U);
-  std::vector<std::pair<double, double>> residuals;
-  for (int round = 0; round < scene::kFitRounds; ++round) {
-    if (!fit_affine(points, keep, result.model)) return {};
-    residuals.clear();
-    for (std::size_t i = 0; i < points.size(); ++i) {
-      if (!keep[i]) continue;
-      const FitPoint& p = points[i];
-      residuals.emplace_back(std::hypot(p.dx - result.model.dx(p.x, p.y), p.dy - result.model.dy(p.x, p.y)),
-                             p.w);
-    }
-    const double bound = std::max(static_cast<double>(scene::kBackgroundFloor),
-                                  scene::kFitInlierScale * weighted_median(residuals));
-    std::size_t kept = 0;
-    for (std::size_t i = 0; i < points.size(); ++i) {
-      const FitPoint& p = points[i];
-      const bool inlier =
-          std::hypot(p.dx - result.model.dx(p.x, p.y), p.dy - result.model.dy(p.x, p.y)) <= bound;
-      keep[i] = inlier ? 1U : 0U;
-      kept += keep[i];
-    }
-    if (kept < minimum) return {};
-  }
-  if (!fit_affine(points, keep, result.model)) return {};
-  double sum = 0.0;
-  double weight = 0.0;
-  for (std::size_t i = 0; i < points.size(); ++i) {
-    if (!keep[i]) continue;
-    const FitPoint& p = points[i];
-    sum += p.w * std::hypot(p.dx - result.model.dx(p.x, p.y), p.dy - result.model.dy(p.x, p.y));
-    weight += p.w;
-  }
-  result.residual = weight > 0.0 ? sum / weight : 0.0;
-  result.fit = true;
-  return result;
 }
 
 struct Classified {
@@ -202,29 +53,52 @@ struct Classified {
   float confidence = 0.0F;
 };
 
-Classified classify(const TileView& v, const CameraFit& camera, double cx, double cy, double scale) {
+Classified classify(const TileView& v, const SceneCamera& camera, double cx, double cy, double scale) {
   if (!v.valid) return {};
   if (v.matched < scene::kMatchedFloor) {
     if (v.change >= scene::kEffectDiff)
       return {.kind = SceneClass::Effect, .confidence = std::clamp(1.0F - v.matched, 0.0F, 1.0F)};
     return {};
   }
-  const float weight = v.matched * texture_weight(v);
-  if (v.texture < scene::kTextureFloor) return {.kind = SceneClass::Uncertain, .confidence = weight};
+  const float weight = v.matched * scene_fit::texture_weight(v);
+  const Classified unsure{.kind = SceneClass::Uncertain, .confidence = weight};
+  // Un aplat : NVOF n'y voit rien (son vecteur vient des bords voisins), mais rien n'y bouge de visible tant
+  // qu'il ne change guère. Il devient décor s'il correspond et ne contredit pas la caméra : pleinement sûr
+  // sous kStillDiff d'écart |b − a|, plus du tout à kChangeDiff. Un vecteur qui la contredit n'y prouve pas
+  // un dessin.
+  const bool flat = v.texture < scene::kTextureFloor;
+  if (flat &&
+      (v.matched < scene::kFitMatched || v.change >= scene::kChangeDiff || v.spread > scene::kSpreadMax))
+    return unsure;
+  const float still =
+      std::clamp((scene::kChangeDiff - v.change) / (scene::kChangeDiff - scene::kStillDiff), 0.0F, 1.0F);
+  const Classified decor{.kind = SceneClass::Background, .confidence = flat ? v.matched * still : weight};
   if (v.spread > scene::kSpreadMax) return {.kind = SceneClass::Drawing, .confidence = 0.5F * weight};
-  if (!camera.fit) {
-    const float motion = std::hypot(v.mx, v.my);
-    if (motion < scene::kStillMotion) return {.kind = SceneClass::Background, .confidence = weight};
-    return {.kind = SceneClass::Uncertain, .confidence = weight};
-  }
+  if (!camera.fit) return std::hypot(v.mx, v.my) < scene::kStillMotion ? decor : unsure;
   const double x = (v.cx - cx) / scale;
   const double y = (v.cy - cy) / scale;
-  const double cam_x = camera.model.dx(x, y);
-  const double cam_y = camera.model.dy(x, y);
+  const Displacement model{.c = camera.model};
+  const double cam_x = model.dx(x, y);
+  const double cam_y = model.dy(x, y);
   const double off = std::hypot(v.mx - cam_x, v.my - cam_y);
   const double bound = std::max(static_cast<double>(scene::kBackgroundFloor),
                                 scene::kBackgroundShare * std::hypot(cam_x, cam_y));
-  return {.kind = off < bound ? SceneClass::Background : SceneClass::Drawing, .confidence = weight};
+  if (off < bound) return decor;
+  return flat ? unsure : Classified{.kind = SceneClass::Drawing, .confidence = weight};
+}
+
+// Le lissage d'une tuile (SceneHistory). La première paire part de sa classe brute. Une paire sans preuve
+// (idle : la tuile ne change pas sous une caméra tenue, où un dessin tenu se confond avec le décor, comme les
+// images doublées d'une animation en deux ou en trois) garde la classe tenue et ne compte pas. Sinon, une
+// classe nouvelle ne tient que vue deux paires de suite ; d'ici là, la classe tenue n'est plus sûre.
+Classified smoothed(SceneHistory& history, std::size_t i, const Classified& raw, bool fresh, bool idle) {
+  if (!fresh && idle) return {.kind = history.held[i], .confidence = raw.confidence};
+  Classified kept = raw;
+  if (!fresh && raw.kind != history.held[i] && raw.kind != history.seen[i])
+    kept = {.kind = history.held[i], .confidence = scene::kContradicted * raw.confidence};
+  history.held[i] = kept.kind;
+  history.seen[i] = raw.kind;
+  return kept;
 }
 
 // La tuile bouge hors de la caméra : un dessin, un effet ; sans caméra ajustée, toute tuile qui change (son
@@ -273,6 +147,49 @@ std::array<double, 6> camera_of(const Displacement& d, double cx, double cy, dou
   const double a0 = d.c[0] - a1 * cx - a2 * cy;
   const double b0 = d.c[3] - b1 * cx - b2 * cy;
   return {k * a0, 1.0 + a1, a2, k * b0, b1, 1.0 + b2};
+}
+
+bool grid_ok(const SceneFlowTiles& tiles) {
+  const std::size_t count = static_cast<std::size_t>(tiles.cols) * static_cast<std::size_t>(tiles.rows);
+  return count > 0 && tiles.tiles.size() == count;
+}
+
+// Les tuiles lues, la part sans correspondance, le fondu et la coupe probable.
+struct TileRead {
+  std::vector<TileView> views;
+  double unmatched = 0.0;
+  bool fade = false;
+  bool cut = false;
+};
+TileRead read_tiles(const SceneFlowTiles& tiles) {
+  TileRead out;
+  out.views.resize(tiles.tiles.size());
+  double cells = 0.0;
+  double unmatched = 0.0;
+  for (int row = 0; row < tiles.rows; ++row) {
+    for (int col = 0; col < tiles.cols; ++col) {
+      const SceneTileSums& t = tiles.tiles[at(col, row, tiles.cols)];
+      out.views[at(col, row, tiles.cols)] = view_of(t, col, row, tiles.flow_width, tiles.flow_height);
+      cells += t.cells;
+      unmatched += t.unmatched;
+    }
+  }
+  out.unmatched = cells > 0.0 ? unmatched / cells : 0.0;
+  out.fade = is_fade(out.views);
+  out.cut = !out.fade && out.unmatched >= scene::kCutUnmatched;
+  return out;
+}
+
+// Le repère de l'ajustement (spec/scene_camera.h, scene_camera_frame) : centre et demi-côté.
+struct Frame {
+  double cx = 0.0;
+  double cy = 0.0;
+  double scale = 1.0;
+};
+Frame frame_of(const SceneFlowTiles& tiles) {
+  return {.cx = 0.5 * tiles.flow_width,
+          .cy = 0.5 * tiles.flow_height,
+          .scale = std::max(1.0, 0.5 * std::max(tiles.flow_width, tiles.flow_height))};
 }
 
 }  // namespace
@@ -384,42 +301,59 @@ Result<SceneFlowTiles> scene_tile_sums(const Plane<std::uint8_t>& a, const Plane
   return out;
 }
 
-SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) {
+SceneCamera scene_camera_of(const SceneFlowTiles& tiles) {
+  SceneCamera out;
+  if (!grid_ok(tiles)) return out;
+  const TileRead read = read_tiles(tiles);
+  if (read.cut) return out;
+  const Frame f = frame_of(tiles);
+  // Les seuils du banc 2.1 sont en pixels à 720p : × hauteur du flux / 720.
+  const scene_fit::CameraFit fit =
+      scene_fit::fit_camera(read.views, f.cx, f.cy, f.scale, tiles.flow_height / 720.0);
+  if (!fit.fit) return out;
+  out.fit = true;
+  out.model = fit.model.c;
+  out.residual = fit.residual;
+  out.decor = fit.decor;
+  for (std::size_t i = 0; i < out.decor.size(); ++i) {
+    if (out.decor[i]) out.decor_pixels += static_cast<int>(tiles.tiles[i].pixels);
+  }
+  return out;
+}
+
+SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, const SceneCamera& camera) {
   SceneMotion out;
   out.cols = tiles.cols;
   out.rows = tiles.rows;
   out.tile_px = kSceneTileFlowPixels * tiles.divisor;
-  const std::size_t count = static_cast<std::size_t>(tiles.cols) * static_cast<std::size_t>(tiles.rows);
-  if (tiles.tiles.size() != count || count == 0) {
+  if (!grid_ok(tiles)) {
     history.clear();
     out.cols = 0;
     out.rows = 0;
     return out;
   }
-  std::vector<TileView> views(count);
-  double cells = 0.0;
-  double unmatched = 0.0;
-  for (int row = 0; row < tiles.rows; ++row) {
-    for (int col = 0; col < tiles.cols; ++col) {
-      const SceneTileSums& t = tiles.tiles[at(col, row, tiles.cols)];
-      views[at(col, row, tiles.cols)] = view_of(t, col, row, tiles.flow_width, tiles.flow_height);
-      cells += t.cells;
-      unmatched += t.unmatched;
-    }
-  }
-  out.unmatched = cells > 0.0 ? unmatched / cells : 0.0;
-  out.fade = is_fade(views);
-  out.cut_likely = !out.fade && out.unmatched >= scene::kCutUnmatched;
+  const std::size_t count = tiles.tiles.size();
+  const TileRead read = read_tiles(tiles);
+  const std::vector<TileView>& views = read.views;
+  out.unmatched = read.unmatched;
+  out.fade = read.fade;
+  out.cut_likely = read.cut;
 
-  const double cx = 0.5 * tiles.flow_width;
-  const double cy = 0.5 * tiles.flow_height;
-  const double scale = std::max(1.0, 0.5 * std::max(tiles.flow_width, tiles.flow_height));
-  const CameraFit camera = out.cut_likely ? CameraFit{} : fit_camera(views, cx, cy, scale);
-  out.camera_fit = camera.fit;
-  if (camera.fit) {
-    out.camera = camera_of(camera.model, cx, cy, scale, tiles.divisor);
-    out.residual = camera.residual * tiles.divisor;
+  const Frame f = frame_of(tiles);
+  const SceneCamera none;
+  const SceneCamera& used = camera.fit && !out.cut_likely ? camera : none;
+  out.camera_fit = used.fit;
+  if (used.fit) {
+    out.camera = camera_of(Displacement{.c = used.model}, f.cx, f.cy, f.scale, tiles.divisor);
+    out.camera_refined = used.refined;
+    out.residual = (used.check >= 0.0 ? used.check : used.residual) * tiles.divisor;
+    out.residual_tiles = used.check >= 0.0 ? used.check_tiles : 0;
+    const auto& c = out.camera;
+    out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&
+                          std::abs(c[1] - 1.0) < scene::kHeldLinear && std::abs(c[2]) < scene::kHeldLinear &&
+                          std::abs(c[4]) < scene::kHeldLinear && std::abs(c[5] - 1.0) < scene::kHeldLinear;
   }
+  const bool camera_moves = used.fit && !out.background_held;
 
   const bool same_grid =
       history.cols == tiles.cols && history.rows == tiles.rows && history.held.size() == count;
@@ -434,24 +368,12 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
   const auto divisor = static_cast<float>(tiles.divisor);
   for (std::size_t i = 0; i < count; ++i) {
     const TileView& v = views[i];
-    const Classified raw = classify(v, camera, cx, cy, scale);
+    const Classified raw = classify(v, used, f.cx, f.cy, f.scale);
     const bool changed = tile_changed(v);
-    if (moves_off_camera(raw.kind, changed, camera.fit)) ++moving;
-    // Une classe nouvelle ne tient que vue deux paires de suite ; la première paire part de la sienne.
-    SceneClass kind = raw.kind;
-    float confidence = raw.confidence;
-    if (same_grid && raw.kind != history.held[i]) {
-      if (raw.kind == history.seen[i]) {
-        kind = raw.kind;
-      } else {
-        kind = history.held[i];
-        confidence *= 0.5F;
-      }
-    }
-    history.held[i] = kind;
-    history.seen[i] = raw.kind;
-    out.tiles[i] = SceneTile{.kind = kind,
-                             .confidence = confidence,
+    if (moves_off_camera(raw.kind, changed, used.fit)) ++moving;
+    const Classified kept = smoothed(history, i, raw, !same_grid, !changed && !camera_moves);
+    out.tiles[i] = SceneTile{.kind = kept.kind,
+                             .confidence = kept.confidence,
                              .dx = v.mx * divisor,
                              .dy = v.my * divisor,
                              .change = v.change,
@@ -460,14 +382,12 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
   }
   out.drawing_held = !out.cut_likely && !out.fade &&
                      static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
-  if (camera.fit) {
-    const auto& c = out.camera;
-    out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&
-                          std::abs(c[1] - 1.0) < scene::kHeldLinear && std::abs(c[2]) < scene::kHeldLinear &&
-                          std::abs(c[4]) < scene::kHeldLinear && std::abs(c[5] - 1.0) < scene::kHeldLinear;
-  }
   if (out.cut_likely) history.clear();  // le plan suivant repart de ses propres classes
   return out;
+}
+
+SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) {
+  return scene_motion_of(tiles, history, scene_camera_of(tiles));
 }
 
 }  // namespace kirari::kernels::ref

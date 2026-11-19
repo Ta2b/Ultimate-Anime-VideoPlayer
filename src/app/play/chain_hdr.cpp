@@ -93,7 +93,9 @@ render::GradeChoice grade_of(const PlaySettings& s, int auto_peak, const std::op
     }
     params.look_pq = any_pq ? 1.0 : 0.0;
     params.look_clean = 1.0;  // audit F1 : grain et paliers non étirés par la pile
-    params.look_table = s.look_table ? 1.0 : 0.0;
+    // Le look en une table (render/look_table.h), toujours : 52 à 53 dB face à la pile LUT par LUT, quatre
+    // fois moins de GPU. La pile exacte ne revient que si le GPU refuse la table.
+    params.look_table = 1.0;
     params.surface_white = std::clamp(s.surface_white, kSurfaceWhite.lo, kSurfaceWhite.hi) / 100.0;
     choice.pq = params;
   }
@@ -269,7 +271,6 @@ void set_grade(Chain& to, const PlaySettings& wanted, bool from_measured_frame) 
   to.live.scenes().set_flash_gain(choice.pq && !to.source_hdr ? flash_gain_of(choice.pq->peak) : 1.0);
   if (to.flash_limited) cap_flash_peak(choice);
   to.live.set_deband_source(wanted.deband);  // la case Débandage, sur tous les moteurs (P3.56)
-  to.screen.set_grade_before_warp(wanted.grade_before_warp);  // source_grade.h, en direct
   // En pause, rien ne se présente de lui-même : le grade passe tout de suite.
   const RingFrame* newest =
       from_measured_frame && !to.session.view().paused ? to.session.newest_frame() : nullptr;

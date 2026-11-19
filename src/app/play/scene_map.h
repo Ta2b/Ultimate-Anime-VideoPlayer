@@ -3,14 +3,23 @@
 // carte (kernels/ref/scene_flow.h, scene_motion_of), posée dans PairFacts::scene pour la paire qu'elle
 // décrit.
 //
-// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead), la paire (N, N+1) est
-// lancée pendant l'image N et sa carte est là quand l'étage décide de cette paire, avant RIFE et SPAN. Sans
-// elle (sans interpolation, DistilDRBA, ou image suivante pas encore décodée), la paire (N−1, N) est lancée à
-// l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde, avec sa paire, mais PairFacts ne
-// la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à cheval sur deux époques.
+// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead ; DistilDRBA :
+// drba_next), la paire (N, N+1) est lancée pendant l'image N et sa carte est là quand l'étage décide de cette
+// paire, avant l'interpolation et SPAN. Sans elle (sans interpolation, ou image suivante pas encore décodée),
+// la paire (N−1, N) est lancée à l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde,
+// avec sa paire, mais PairFacts ne la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à
+// cheval sur deux époques.
 //
-// NVOF encore occupé par la paire d'avant (plus lent que la chaîne) : la paire n'est pas lancée, rien
-// n'attend, et la suivante repart sans indices (abandonnées au journal de fin).
+// NVOF encore occupé (plus lent que la chaîne de deux paires) : la paire n'est pas lancée, rien n'attend, et
+// la suivante repart sans indices (sautées au journal de fin). Une carte pas encore relue quand l'étage
+// décide de sa paire compte « trop tard » ; une relecture remplacée ou périmée, « perdue ».
+//
+// La caméra en deux temps (porte 2.1, kernels/spec/scene_camera.h). Les tuiles relues, la caméra est ajustée
+// sur les vecteurs de NVOF (ref::scene_camera_of), puis affinée par Lucas-Kanade sur les lumas de la paire,
+// sur la file de NVOF (KernelOps::scene_camera_start) ; la carte n'est tirée qu'avec la caméra affinée.
+// advance(), appelé à chaque image de sortie, fait avancer les deux sans attendre : avec RIFE, tout est fini
+// bien avant que l'étage décide de la paire. Sinon la carte part avec la caméra de NVOF (« affinage trop tard
+// »).
 //
 // Absente (--scene-map éteint, backend sans NVOF, Turing, refus) : rien n'est lancé, chaque paire garde
 // scene vide, et la chaîne fait exactement ce qu'elle faisait. Un refus éteint la carte pour la lecture, avec
@@ -46,6 +55,10 @@ class SceneMap {
   }
   // La paire en cours a été jugée coupée : la suivante repart sans indices ni classes.
   void cut();
+  // Relit ce qui est fini et lance l'affinage des caméras, sans attendre (à chaque image de sortie).
+  void advance(gpu::KernelOps& ops) {
+    if (on_) poll(ops);
+  }
 
   // La dernière carte relue et sa paire, pour qui accepte une paire de retard.
   struct Latest {
@@ -55,7 +68,8 @@ class SceneMap {
   };
   const std::optional<Latest>& latest() const { return latest_; }
 
-  // La ligne du journal de fin : paires lancées, relues, attachées, en retard, coupes et fondus vus.
+  // La ligne du journal de fin : paires lancées, relues, posées, sautées, trop tard, perdues, coupes et
+  // fondus vus.
   void log_summary() const;
 
  private:
@@ -64,9 +78,24 @@ class SceneMap {
     SourceId left;
     SourceId right;
     bool restart = false;  // les classes des paires d'avant ne valent pas pour elle
+    // Après la relecture des tuiles : la grille, la caméra, et son affinage en vol (0 : aucun).
+    std::optional<kernels::SceneFlowTiles> tiles;
+    kernels::ref::SceneCamera camera;
+    std::uint64_t refine = 0;
   };
   void poll(gpu::KernelOps& ops);
+  // Les tuiles de la paire de tête : faux si elles ne sont pas encore là, ou si la paire est perdue
+  // (retirée).
+  bool take_tiles(gpu::KernelOps& ops);
+  void request_refine(gpu::KernelOps& ops, Pending& pair);
+  // Vrai quand l'affinage de la paire est fini, posé sur sa caméra, ou perdu.
+  bool collect_refine(gpu::KernelOps& ops, Pending& pair);
+  void finish(Pending& pair);  // la carte de la paire de tête, avec sa caméra telle qu'elle est
+  // L'étage décide de la paire (left, right) : elle, et celles d'avant que l'affinage retient encore, partent
+  // avec la caméra de NVOF, dans l'ordre (l'historique des classes les suit une à une).
+  void settle(gpu::KernelOps& ops, SourceId left, SourceId right);
   void stop(const Refusal& refusal, const char* where);
+  void stop_refine(const Refusal& refusal, const char* where);
 
   bool on_ = false;
   std::vector<Pending> pending_;
@@ -79,10 +108,21 @@ class SceneMap {
   std::uint64_t started_ = 0;
   std::uint64_t read_ = 0;
   std::uint64_t attached_ = 0;
-  std::uint64_t dropped_ = 0;  // paires abandonnées : NVOF plus lent que la chaîne (occupé, relue trop tard)
+  std::uint64_t busy_ = 0;    // pas lancées : NVOF occupé
+  std::uint64_t missed_ = 0;  // lancées, pas encore relues quand l'étage a décidé de leur paire
+  std::uint64_t lost_ = 0;    // relectures remplacées ou périmées
   std::uint64_t cuts_ = 0;
   std::uint64_t fades_ = 0;
   std::uint64_t camera_fits_ = 0;
+  bool refine_ = true;               // le backend sait affiner la caméra
+  std::uint64_t refined_ = 0;        // caméras affinées
+  std::uint64_t refine_late_ = 0;    // affinage pas fini quand l'étage a décidé de la paire
+  std::uint64_t refine_missed_ = 0;  // pas lancé : lumas réécrites, ou relectures toutes en vol
+  // Temps de l'hôte (le thread du lecteur), µs : lancer une paire (scene_flow_start) et tirer une carte
+  // (scene_camera_of, scene_motion_of). Avec les lumas, les tuiles et l'affinage sur les SM, c'est ce que la
+  // carte ajoute à chaque image.
+  double start_us_ = 0.0;
+  double map_us_ = 0.0;
 };
 
 }  // namespace kirari::app::play

@@ -19,6 +19,8 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
+#include "gpu/cuda/backend/gmfss_fused_engine.h"
+#include "gpu/cuda/backend/gmfss_pair_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
 #include "gpu/cuda/backend/scene_flow.h"
 #include "gpu/cuda/backend/shared_activations.h"
@@ -27,6 +29,8 @@
 #include "gpu/cuda/backend/trt_engine.h"
 #include "prepare/builder.h"
 #include "prepare/drba_split.h"
+#include "prepare/gmfss_fused.h"
+#include "prepare/gmfss_pair_split.h"
 #include "prepare/identity.h"
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
@@ -152,6 +156,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->warp_l2_ = (init.trials & kTrialWarpL2) != 0;
   backend->span_native_ = (init.trials & kTrialSpanNative) != 0;
   backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
+  backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
   backend->tfix_native_ = (init.trials & kTrialTfixNative) != 0;
   backend->trtexec_ = std::move(trtexec);
   if (!backend->trtexec_.empty()) {
@@ -217,6 +222,9 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->role_timing_ = {std::make_unique<GpuTiming>("agrandissement", report),
                            std::make_unique<GpuTiming>("interpolation", report),
                            std::make_unique<GpuTiming>("mesure", nullptr)};
+  backend->span_parts_ = {std::make_unique<GpuTiming>("SPAN, corps", nullptr),
+                          std::make_unique<GpuTiming>("SPAN, attente de l'emplacement de l'anneau", nullptr),
+                          std::make_unique<GpuTiming>("SPAN, queue (to_pixel, anneau)", nullptr)};
   backend->chain_span_ = std::make_unique<GpuSpan>("source jusqu'à son SPAN");
   backend->trt_log_ = std::make_unique<TrtLog>(init.log);
   backend->runtime_.reset(nvinfer1::createInferRuntime(*backend->trt_log_));
@@ -260,9 +268,14 @@ TensorRtBackend::~TensorRtBackend() {
   stages_.clear();
   slots_.clear();
   for (auto& timing : role_timing_) timing.reset();
+  for (auto& timing : span_parts_) timing.reset();
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   free_reads(pair_reads_);
+  for (const PairRead& read : pair_reads_) {
+    if (read.blocks_device != nullptr) cudaFree(read.blocks_device);
+    if (read.blocks_host != nullptr) cudaFreeHost(read.blocks_host);
+  }
   free_reads(flow_reads_);
   free_reads(stats_reads_);
   for (void* scratch : {static_cast<void*>(ingest_rows_), static_cast<void*>(splat_sums_), grid_motion_,
@@ -301,6 +314,10 @@ void TensorRtBackend::log_profile() {
   for (const auto& timing : role_timing_) {
     if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
       log(BackendLogLevel::Info, "profil GPU · rôle " + line);
+  }
+  for (const auto& timing : span_parts_) {
+    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
   }
   if (chain_span_) {
     if (const std::string line = chain_span_->summary(); !line.empty())
@@ -374,6 +391,10 @@ std::expected<Artifact, Refusal> TensorRtBackend::build(const ModelSpec& model, 
   if (prepare::is_drba_fused_manifest(model.onnx_path)) return build_drba_fused(model, shapes, progress);
   // TemporalFix coupé en morceaux : l'encodeur ou la fenêtre.
   if (prepare::is_tfix_fused_manifest(model.onnx_path)) return build_tfix_fused(model, shapes, progress);
+  // La fusion de GMFSS coupée pour le GridNet natif : la fusion entière et son IFNet.
+  if (prepare::is_gmfss_fused_manifest(model.onnx_path)) return build_gmfss_fused(model, shapes, progress);
+  // La paire de GMFSS coupée pour le FeatureNet et le MetricNet natifs : la paire entière et son flot.
+  if (prepare::is_gmfss_pair_manifest(model.onnx_path)) return build_gmfss_pair(model, shapes, progress);
   // Pas de vérification ici : désérialiser le plan sur le GPU juste après sa construction, pour le jeter et
   // le charger de nouveau à l'ouverture, coûtait un chargement de trop (C05-03). Un plan refusé à ce
   // chargement est mis de côté et reconstruit par le lecteur (player_engines.cpp, Artifact::reused, C05-01).
@@ -386,6 +407,8 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load(const Arti
   if (rife_fused_artifact_key_parse(artifact.cache_key)) return load_rife_fused(artifact);
   if (drba_fused_artifact_key_parse(artifact.cache_key)) return load_drba_fused(artifact);
   if (tfix_fused_artifact_key_parse(artifact.cache_key)) return load_tfix_fused(artifact);
+  if (gmfss_fused_artifact_key_parse(artifact.cache_key)) return load_gmfss_fused(artifact);
+  if (gmfss_pair_artifact_key_parse(artifact.cache_key)) return load_gmfss_pair(artifact);
   // Les activations dans la zone de la voie choisie avant le chargement (use_lane) ; un moteur
   // lancé sur l'autre voie y passe à son lancement.
   auto engine = TrtEngine::load(*runtime_, artifact.path, arena());
@@ -502,6 +525,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
     if (dynamic_cast<TfixWindowEngine*>(&engine) != nullptr ||
         dynamic_cast<TfixEncoderEngine*>(&engine) != nullptr)
       return enqueue_tfix_fused(engine, inputs, outputs);
+    if (auto* gmfss = dynamic_cast<GmfssFusedEngine*>(&engine))
+      return enqueue_gmfss_fused(*gmfss, inputs, outputs);
+    if (auto* pair = dynamic_cast<GmfssPairEngine*>(&engine))
+      return enqueue_gmfss_pair(*pair, inputs, outputs);
     auto* fused = dynamic_cast<SpanFp8Engine*>(&engine);
     if (fused == nullptr) return refuse(RefusalCode::DeviceMismatch, "enqueue : moteur d'un autre backend");
     return enqueue_span_fp8(*fused, inputs, outputs);
@@ -513,10 +540,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue(Engine& engine, std::span<
   if (auto ok = restore_rife_times(inputs); !ok) return ok;
   const Shape shape = trt->input_shape(0);
   GpuTiming& timing = stage_named("moteur {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]);
-  // Un moteur qui agrandit (sortie plus haute que l'entrée) est le SPAN de sa source ; les autres
-  // interpolent.
+  // Un moteur qui agrandit sa seule entrée (sortie plus haute) est le SPAN de sa source ; les autres
+  // interpolent, la fusion de GMFSS comprise (neuf entrées, sortie au double de half0).
   const bool upscales =
-      !inputs.empty() && !outputs.empty() && outputs[0].shape.dims[2] > inputs[0].shape.dims[2];
+      inputs.size() == 1 && !outputs.empty() && outputs[0].shape.dims[2] > inputs[0].shape.dims[2];
   GpuTiming& by_role = role(upscales ? Role::Upscale : Role::Interpolation);
   by_role.begin(stream_);
   timing.begin(stream_);

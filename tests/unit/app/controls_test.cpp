@@ -25,6 +25,18 @@ TEST_CASE("Le temps s'affiche comme dans un lecteur", "[app][controls]") {
   CHECK(format_clock(-1, 0) == "--:--");
 }
 
+TEST_CASE("--pause-at : la première image source à l'instant demandé, pas un instant interpolé",
+          "[app][controls]") {
+  ControlsView view{.position_us = 980 * kS + 20 * kMs, .on_source = false};
+  CHECK_FALSE(pause_reached(view, 980 * kS));  // interpolée : la lecture continue
+  view.on_source = true;
+  CHECK(pause_reached(view, 980 * kS));
+  CHECK_FALSE(pause_reached(view, 981 * kS));  // pas encore
+  view.paused = true;
+  CHECK_FALSE(pause_reached(view, 980 * kS));                      // déjà en pause
+  CHECK_FALSE(pause_reached(ControlsView{.on_source = true}, 0));  // position inconnue
+}
+
 TEST_CASE("Les sous-titres du bas montent au-dessus de la barre visible", "[app][controls]") {
   CHECK(subtitle_lift(1400.0F, 1440.0F, 190.0F) == 150.0F);
   CHECK(subtitle_lift(1200.0F, 1440.0F, 190.0F) == 0.0F);  // déjà au-dessus

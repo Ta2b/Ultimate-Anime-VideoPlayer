@@ -125,8 +125,6 @@ class PlaceboScreen final : public Screen {
   // Le grade avant le warp (source_grade.h) pour l'étage d'agrandissement : ses deux images au protocole du
   // ring (external : cédées à CUDA), les lissages réglés pour source_fps, la génération du ring courant.
   std::shared_ptr<SourceGrader> source_grader(bool external, double source_fps, std::uint32_t generation);
-  // PlaySettings::grade_before_warp : sans lui, le grader ne grade rien et l'écran grade chaque image.
-  void set_grade_before_warp(bool on);
   // Détruit le ring et l'image composée gardée (A33-01) : à la fermeture d'une chaîne, après le backend qui
   // importait le ring, pour que l'accueil, la calibration et trtexec retrouvent la mémoire vidéo.
   void release_ring();
@@ -168,6 +166,8 @@ class PlaceboScreen final : public Screen {
   // que montre la fenêtre, pour le vérifier sans capture d'écran.
   // count > 1 : autant de présentations de suite, « nom-001.pq.ppm », « nom-002.pq.ppm »…
   void snapshot_next(std::filesystem::path path, int count = 1);
+  // --effect-mask-view : le grade HDR peint le masque des effets au lieu de l'image (3-anime.hook, fx_view).
+  void set_effect_view(bool on);
   // Détruit les textures de l'interface (placebo_imgui.h) : avant l'écran, contexte ImGui vivant.
   void release_ui(ImGuiPlatformIO& platform);
 

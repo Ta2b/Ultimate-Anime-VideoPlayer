@@ -1,7 +1,6 @@
 #pragma once
 // Noyaux du SPAN FP16 natif (lot C du chantier AnimeJaNai, docs/span-native16.md), écrits sans CUTLASS : une
-// seule famille de convolutions, mma.sync m16n8k16 FP16 avec sommes en f16 (le débit plein des tensor cores
-// des GeForce, la moitié en f32) ou en f32 (Acc16 faux).
+// seule famille de convolutions, mma.sync m16n8k16 FP16 avec sommes en f16 ou en f32 (Acc).
 //
 // Un bloc de 4 warps calcule une tuile de kTH × kTW pixels de sortie et toutes les colonnes. La tuile
 // d'entrée, halo compris, est copiée une fois en mémoire partagée par cp.async (zéros hors de l'image), au
@@ -106,11 +105,24 @@ __device__ __forceinline__ void ldmatrix4(std::uint32_t (&a)[4], std::uint32_t a
                : "r"(addr));
 }
 
+// Les sommes d'une convolution :
+//   kF16 : en f16, le débit plein des tensor cores des GeForce ;
+//   kF32 : en f32, la moitié de ce débit : le f32 du cran Qualité y bute sur le calcul.
+// Promues (chaque mma en f16 depuis zéro, ajoutée en f32), elles ont perdu au banc : 14,39 ms et 71,5 dB
+// contre 14,74 ms et 77,9 dB en f32 (docs/span-native16.md, « Sommes promues »).
+enum class Acc : int { kF16, kF32 };
+
+__device__ __forceinline__ float2 unpack_half2(std::uint32_t bits) {
+  __half2 v;
+  *reinterpret_cast<std::uint32_t*>(&v) = bits;
+  return __half22float2(v);
+}
+
 // Accumulateur d'une tuile m16n8 : 2 mots (4 demi-flottants) en f16, 4 flottants en f32.
-template <bool Acc16>
+template <Acc A>
 struct Frag;
 template <>
-struct Frag<true> {
+struct Frag<Acc::kF16> {
   std::uint32_t r[2];
   __device__ __forceinline__ void clear() { r[0] = r[1] = 0U; }
   __device__ __forceinline__ void mma(const std::uint32_t (&a)[4], std::uint32_t b0, std::uint32_t b1) {
@@ -119,14 +131,10 @@ struct Frag<true> {
         : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
   }
   // h = 0 : ligne g, colonnes 2t et 2t + 1 ; h = 1 : ligne g + 8.
-  __device__ __forceinline__ float2 pair(int h) const {
-    __half2 v;
-    *reinterpret_cast<std::uint32_t*>(&v) = r[h];
-    return __half22float2(v);
-  }
+  __device__ __forceinline__ float2 pair(int h) const { return unpack_half2(r[h]); }
 };
 template <>
-struct Frag<false> {
+struct Frag<Acc::kF32> {
   float r[4];
   __device__ __forceinline__ void clear() { r[0] = r[1] = r[2] = r[3] = 0.F; }
   __device__ __forceinline__ void mma(const std::uint32_t (&a)[4], std::uint32_t b0, std::uint32_t b1) {
@@ -147,10 +155,10 @@ __device__ __forceinline__ __half2 to_half2(float lo, float hi) {
 
 // Deux sommes de l'accumulateur (ligne g ou g + 8, pair). En f16, une somme débordée, infinie ou NaN (un
 // débordement des deux signes), est bornée comme acc_value du FP8 : ±65504, NaN à 0 ; hit le note.
-template <bool Acc16>
-__device__ __forceinline__ float2 sums(const Frag<Acc16>& frag, int h, bool& hit) {
+template <Acc A>
+__device__ __forceinline__ float2 sums(const Frag<A>& frag, int h, bool& hit) {
   float2 s = frag.pair(h);
-  if constexpr (Acc16) {
+  if constexpr (A == Acc::kF16) {
     if (!isfinite(s.x) || !isfinite(s.y)) {
       hit = true;
       s.x = isnan(s.x) ? 0.F : fmaxf(fminf(s.x, 65504.F), -65504.F);
@@ -213,8 +221,8 @@ __device__ __forceinline__ void load_image(__half* s, const __half* img, int fh,
 
 // Les sommes d'une source sur la tuile : K = taps × Cin, à partir du pas ks0 des poids rangés.
 // acc[f][nt] : fragment f (ligne f / 2 du warp, colonnes 16·(f % 2) à + 15), tuile n8 nt.
-template <int Cin, int Cout, int Taps, bool Acc16>
-__device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[kMF][Cout / 8], const __half* s, const uint4* w,
+template <int Cin, int Cout, int Taps, Acc A>
+__device__ __forceinline__ void accumulate(Frag<A> (&acc)[kMF][Cout / 8], const __half* s, const uint4* w,
                                            int ks0, int warp, int lane) {
   constexpr int kHalo = Taps == 9 ? 1 : 0, kSW = kTW + 2 * kHalo, kLds = Cin + 8;
   constexpr int kKC = Cin / 16, kNP = Cout / 16, kKS = Taps * kKC;
@@ -324,8 +332,8 @@ __device__ __forceinline__ void store_pixel(const __half* o, const Params& p, in
 // opérande A (deux tuiles n8 voisines de l'accumulateur font un fragment m16k16) ; o reçoit la sortie.
 // w1s : la 1×1 rangée, en mémoire partagée (lue par lds128 : en __ldg, ptxas sortait ses 64 registres de la
 // boucle des fragments, et la variante f32 débordait).
-template <int C, bool Acc16>
-__device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __half* o, std::uint32_t w1s,
+template <int C, Acc A>
+__device__ __forceinline__ void gate(const Frag<A> (&acc)[kMF][C / 8], __half* o, std::uint32_t w1s,
                                      const Params& p, int warp, int lane, bool& hit) {
   constexpr int kKC = C / 16, kNP = C / 16, kLdo = C + 8;
   const int g = lane >> 2, t = lane & 3;
@@ -352,7 +360,7 @@ __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __hal
     const int q0 = (warp * kRows + (f >> 1)) * kTW + 16 * (f & 1) + g;
 #pragma unroll
     for (int np = 0; np < kNP; ++np) {
-      Frag<Acc16> d[2];
+      Frag<A> d[2];
       d[0].clear();
       d[1].clear();
 #pragma unroll
@@ -378,8 +386,8 @@ __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __hal
 }
 
 // Biais (+ Relu) de acc vers o (pas Cout + 8).
-template <int Cout, bool Relu, bool Acc16>
-__device__ __forceinline__ void plain(const Frag<Acc16> (&acc)[kMF][Cout / 8], __half* o, const float* bias,
+template <int Cout, bool Relu, Acc A>
+__device__ __forceinline__ void plain(const Frag<A> (&acc)[kMF][Cout / 8], __half* o, const float* bias,
                                       int warp, int lane, bool& hit) {
   constexpr int kNT = Cout / 8, kLdo = Cout + 8;
   const int g = lane >> 2, t = lane & 3;
@@ -405,7 +413,7 @@ __device__ __forceinline__ void plain(const Frag<Acc16> (&acc)[kMF][Cout / 8], _
 }
 
 // Une convolution entière. Sources : 1 (kImage, ou une NHWC), ou 4 (conv_cat, K = 4 · Cin).
-template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, bool Acc16>
+template <int Cin, int Cout, int Taps, int Sources, Src From, Mode M, bool Relu, Acc A>
 __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   static_assert(Cin % 16 == 0 && Cout % 16 == 0, "canaux par 16");
   static_assert(M != Mode::kGate || Cin == Cout, "la porte suit une conv carrée");
@@ -419,7 +427,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
     if (((__ldg(p.mask + (tile >> 5U)) >> (tile & 31U)) & 1U) == 0U) return;
   }
 
-  Frag<Acc16> acc[kMF][Cout / 8];
+  Frag<A> acc[kMF][Cout / 8];
 #pragma unroll
   for (int f = 0; f < kMF; ++f)
 #pragma unroll
@@ -437,7 +445,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
       cp_async_wait_all();
     }
     __syncthreads();
-    accumulate<Cin, Cout, Taps, Acc16>(acc, s, p.w, src * Taps * (Cin / 16), warp, lane);
+    accumulate<Cin, Cout, Taps, A>(acc, s, p.w, src * Taps * (Cin / 16), warp, lane);
   }
   __syncthreads();   // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
   bool hit = false;  // une somme f16 débordée (sums)
@@ -450,12 +458,12 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
       cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
     cp_async_wait_all();
     __syncthreads();
-    gate<Cout, Acc16>(acc, s, w1s, p, warp, lane, hit);
+    gate<Cout, A>(acc, s, w1s, p, warp, lane, hit);
   } else {
-    plain<Cout, Relu, Acc16>(acc, s, p.bias, warp, lane, hit);
+    plain<Cout, Relu, A>(acc, s, p.bias, warp, lane, hit);
   }
   // Rare : plusieurs fils écrivent la même valeur, sans atomique (note_overflow du FP8).
-  if constexpr (Acc16)
+  if constexpr (A == Acc::kF16)
     if (hit && p.overflow != nullptr) *reinterpret_cast<volatile int*>(p.overflow) = 1;
   __syncthreads();
   if constexpr (M == Mode::kPixel)

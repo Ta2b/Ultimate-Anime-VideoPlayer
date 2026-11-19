@@ -31,6 +31,7 @@
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
 #include "kernels/spec/layers.h"
+#include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
 
 namespace kirari::gpu {
@@ -115,6 +116,11 @@ struct PairScores {
   bool identical = false;         // luma égale au bit : somme des écarts nulle
   // Les blocs 16 × 16 qui changent et leur boîte (P6.6, P6.18) ; vide si le backend ne la relit pas.
   core::MovingArea moving;
+  // L'écart de chaque bloc 16 × 16, ligne par ligne, blocks_x par ligne, dans l'unité de worst_block : les
+  // tuiles de SPAN y voient ce que la carte de la scène laisse passer (app/play/upscale_tiles.h). Vide si
+  // le backend ne le relit pas.
+  std::vector<std::uint32_t> blocks;
+  std::uint32_t blocks_x = 0;
 };
 
 // Mesures lancées sans attente (scores_start, flow_max_start) et pas encore relues, par sorte.
@@ -187,13 +193,14 @@ class KernelOps {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_pair : absent de ce backend"});
   }
   // Mesures de la paire a, b (RGB de même taille, luma BT.709 tirée du RGB), rendues tout de suite
-  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
+  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls. Hors des
+  // tickets de scores_start : elle n'en périme aucun.
   virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_now : absent de ce backend"});
   }
   // scores_now en deux temps : scores_start enfile la mesure sans attendre et rend un ticket ;
   // scores_take attend la fin de cette mesure seulement, pas le travail enfilé derrière elle. Un
-  // ticket vaut jusqu'à kPendingReadbacks lancements plus loin ; périmé, il est refusé.
+  // ticket vaut jusqu'à kPendingReadbacks scores_start plus loin ; périmé, il est refusé.
   virtual std::expected<std::uint64_t, Refusal> scores_start(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_start : absent de ce backend"});
   }
@@ -342,8 +349,10 @@ class KernelOps {
   // enfile sur la voie courante la seule lecture de a et b (la luma du flux), puis le flux et la réduction
   // sur une file à part, que le travail des voies n'attend jamais ; restart coupe les indices temporels de
   // NVOF (coupe, saut, nouvelle époque, début d'export : le résultat ne dépend alors pas de l'historique).
-  // Ticket 0 : NVOF n'a pas fini la paire d'avant, celle-ci n'est pas lancée (rien n'attend NVOF ; la paire
-  // suivante repart sans indices). scene_flow_take relit sans jamais attendre (nullopt : pas encore fini).
+  // Sans restart, a est l'image b de la paire lancée juste avant (ticket non nul) : le backend peut reprendre
+  // sa luma et ne lire que b. Ticket 0 : NVOF lit encore ce qu'il faudrait réécrire, la paire n'est pas
+  // lancée (rien n'attend NVOF ; la paire suivante repart avec restart). scene_flow_take relit sans jamais
+  // attendre (nullopt : pas encore fini).
   // kSceneFlowReadbacks paires en vol au plus : un ticket dépassé est périmé (SequenceOrder). Un seul thread
   // appelle les deux. Refus : backend sans NVOF (AMD, Intel, pilote sans la bibliothèque), GPU sans carte de
   // coût (Turing), taille refusée.
@@ -354,6 +363,20 @@ class KernelOps {
   virtual std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
+  }
+  // L'affinage de la caméra d'une paire de la carte (kernels/spec/scene_camera.h) : Lucas-Kanade sur les
+  // lumas du flux de la paire flow_ticket (celui de scene_flow_start), depuis le modèle de request et sur ses
+  // tuiles du décor, sur la file de NVOF, sans attente. Ticket 0 : rien de lancé (lumas déjà réécrites par
+  // une paire plus récente, paire trop ancienne, relectures toutes en vol) ; la caméra de NVOF reste.
+  // scene_camera_take relit sans jamais attendre (nullopt : pas encore fini). Refus : backend sans la carte,
+  // demande d'une autre grille (ShapeInvalid).
+  virtual std::expected<std::uint64_t, Refusal> scene_camera_start(
+      std::uint64_t /*flow_ticket*/, const kernels::SceneCameraRequest& /*request*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_camera : absent de ce backend"});
+  }
+  virtual std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> scene_camera_take(
+      std::uint64_t /*ticket*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_camera : absent de ce backend"});
   }
   // Fondu local du mouvement (kernels/spec/motion_doubt.h) : motion tiré vers le fondu de masque fade selon
   // la grille de doute (cols × rows poids, au plus kDoubtMaxCells de côté, posée sur motion.area), écrit dans

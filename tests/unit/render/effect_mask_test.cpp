@@ -157,4 +157,37 @@ TEST_CASE("Masque des effets : sans carte, retour lent au neutre, puis plus rien
   CHECK(mask.neutral());
 }
 
+TEST_CASE("Masque des effets : la couche des effets sûrs monte vite, retombe lentement, ne garde rien seule",
+          "[render]") {
+  EffectMask mask;
+  EffectTiles t = grid(9, 5, 1.0F);
+  t.sure.assign(t.effect.size(), 0.0F);
+  t.sure[(2 * 9) + 4] = 1.0F;  // un effet sûr au centre
+  mask.update(t);
+  // Pas une coupe : en deux paires, l'effet sûr est presque plein au centre ; la marge reste entière.
+  mask.update(t);
+  REQUIRE(mask.sure().size() == mask.values().size());
+  CHECK(mask.sure()[(2 * 9) + 4] > 0.6F);
+  CHECK(mask.sure()[0] == 0.0F);
+  CHECK(centre(mask) == Catch::Approx(1.0F));
+  CHECK_FALSE(mask.neutral());  // tout gardé, mais un effet sûr : la passe reste
+  // L'effet parti : lentement vers 0, puis le masque redevient neutre.
+  t.sure.assign(t.effect.size(), 0.0F);
+  mask.update(t);
+  CHECK(mask.sure()[(2 * 9) + 4] > 0.5F);
+  for (int i = 0; i < 400 && !mask.neutral(); ++i) mask.update(t);
+  CHECK(mask.neutral());
+  // Une coupe pose la couche d'un coup ; sans carte, elle retombe comme le reste revient à 1.
+  t.sure[(2 * 9) + 4] = 1.0F;
+  t.cut = true;
+  mask.update(t);
+  CHECK(mask.sure()[(2 * 9) + 4] == Catch::Approx(1.0F));
+  mask.relax(kPair);
+  CHECK(mask.sure()[(2 * 9) + 4] == Catch::Approx(1.0F - effect_step(kPair, kEffectFallUs)).margin(1e-4));
+  // Une carte sans couche (avant elle) : aucun effet sûr.
+  EffectMask bare;
+  bare.update(grid(9, 5, 0.0F));
+  CHECK(std::ranges::all_of(bare.sure(), [](float v) { return v == 0.0F; }));
+}
+
 }  // namespace kirari::render

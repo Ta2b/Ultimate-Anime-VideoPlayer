@@ -11,6 +11,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -182,6 +183,8 @@ struct PlaceboScreen::Impl {
   // L'instantané demandé (--snapshot), numéroté s'il y en a plusieurs ; un refus est écrit au journal.
   void take_snapshot(const pl_frame* image, const pl_frame& target, OutputSize out,
                      const ImDrawData* drawn_ui);
+  // Ce que le masque des effets posait sur l'image de l'instantané (carte là ou non, part retenue).
+  void note_snapshot_effects(const std::string& name) const;
   std::string device_choice;  // la carte préférée à l'ouverture (B37-01), lue par libplacebo
   std::shared_ptr<spdlog::logger> channel;
   SDL_Window* window = nullptr;
@@ -292,14 +295,21 @@ struct PlaceboScreen::Impl {
   EffectFollower effects;
   bool effects_on = false;
   bool effects_refusal_noted = false;  // le refus de la passe du masque, journalisé une fois
+  EffectTally effects_tally;           // les images gradées à l'écran, une fois chacune (journal de fin)
+  std::int64_t effects_tally_pts = kNoPts;
+  bool effects_view = false;  // --effect-mask-view : le grade peint le masque (GradeParams::fx_view)
+  int look_path_noted = -1;   // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
   void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;
     frame_graded = frame != nullptr && frame->graded;
+    shown_pts = frame != nullptr ? frame->pts_us : kNoPts;
+    shown_source = frame != nullptr && frame->t_num == 0;
   }
+  std::int64_t shown_pts = kNoPts;  // l'image montrée, pour le journal d'un instantané
+  bool shown_source = false;        // une source, pas un instant interpolé
   // Gradée avant le warp, l'image est déjà dans l'espace de la sortie : ni conversion ni compression.
   pl_color_space frame_color() const { return frame_graded ? target_color : source; }
-  bool grade_before_warp = false;          // set_grade_before_warp
   int sharpness = 0;                       // posé par set_finish, 0 à 100 %
   std::optional<render::Sharpen> sharpen;  // absent si le hook ne se lit pas (dit au journal)
   // Anime4K de la chaîne ouverte (set_anime4k) : ses shaders passent devant la netteté et le grade.
@@ -322,6 +332,7 @@ struct PlaceboScreen::Impl {
   void take_next_grade(const RingFrame* frame);
   // Charge dans le grade le choix qui va à cette cible ; graded() dit s'il s'applique à une cible.
   void select_grade(const pl_color_space& target);
+  void note_look_path(const render::GradeParams& params);
   bool graded(const pl_color_space& target) const;
   // Temps GPU des passes du grade (minuteries de libplacebo), par image composée avec lui ; le
   // résumé va au journal à la fermeture de l'écran.
@@ -358,5 +369,9 @@ struct PlaceboScreen::Impl {
   // Le profil GPU du grade : un échantillon uniforme sur toute la lecture au-delà de 2^20 images (A33-05).
   mutable core::SampleReservoir<std::uint32_t> grade_gpu_us{std::size_t{1} << 20};
 };
+
+// La ligne de fin des éclats sur les seuls effets (where : « écran », « grade avant le warp ») ; rien si
+// aucune image n'a eu de carte (pas de --scene-map, carte refusée, --no-effect-highlights).
+std::optional<std::string> effect_tally_line(std::string_view where, const EffectTally& tally);
 
 }  // namespace kirari::app::play

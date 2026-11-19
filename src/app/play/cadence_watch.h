@@ -112,6 +112,12 @@ class CadenceWatch {
   void sample(bool active, const core::FreeInfo& info, std::int64_t min_gap_us);
   // Le relevé de main : les pertes à donner au mode Rapide (LiveSettings::free_missed), puis sa cadence.
   void poll(LiveSettings& live, const FrameStats& shown, std::int64_t now_us);
+  // Le mouvement seul, totaux de FrameStats (moving_frames, moving_us) : la cadence hors coupes et dessins
+  // tenus, celle que la porte des 165 i/s juge.
+  void motion(std::int64_t frames, std::int64_t pts_us) {
+    moving_frames_ = frames;
+    moving_us_ = pts_us;
+  }
   // La ligne de fin de séance.
   std::string summary() const;
 
@@ -130,6 +136,8 @@ class CadenceWatch {
   double pressure_sum_ = 0.0;
   double pressure_max_ = 1.0;
   std::int64_t min_gap_us_ = 0;
+  std::int64_t moving_frames_ = 0;
+  std::int64_t moving_us_ = 0;
 };
 
 }  // namespace kirari::app::play

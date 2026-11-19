@@ -28,6 +28,28 @@ gpu::Shape planes(int channels, int width, int height) {
   return gpu::Shape{.dims = {1, channels, height, width}};
 }
 
+// La sortie de l'étage : celle de SPAN, ou sans lui la taille de travail (les copies gradées, warps_spanned).
+gpu::Shape output_shape(const UpscaleSetup& s) {
+  const int factor = s.engine != nullptr ? kSpanFactor : 1;
+  return planes(3, s.work_width * factor, s.work_height * factor);
+}
+
+// Sans SPAN, le grade avant le warp grade une copie de chaque source (warps_spanned), que RIFE ne lit pas.
+// Ni GMFSS, ni les calques, ni Smooth, ni TemporalFix : ils lisent les sources de travail (l'écran grade).
+bool graded_copies(const UpscaleSetup& s) {
+  return s.engine == nullptr && s.grader != nullptr && !s.yuv_slots && s.gmfss.use == GmfssUse::Off &&
+         !s.layers.layers && !s.layers.plate_on() && !s.smooth_drawings && s.temporal_fix == nullptr;
+}
+
+// L'écran grade chaque image de cette chaîne : le journal le dit, sans quoi seule l'absence de la ligne de
+// fin du grade avant le warp le montre.
+void note_screen_grade(const UpscaleSetup& s, bool interpolates, bool spanned) {
+  if (s.grader == nullptr || !interpolates || spanned) return;
+  log_channel("gpu")->info(
+      "grade avant le warp : pas sur cette chaîne (GMFSS, calques, Smooth, TemporalFix ou warp avant SPAN), "
+      "l'écran grade chaque image");
+}
+
 }  // namespace
 
 UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
@@ -36,6 +58,8 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
           smooth_extra_frames(setup.smooth_drawings) + temporal_extra_frames(setup.temporal_fix != nullptr)),
       setup_(std::move(setup)),
       scene_(setup_.scene_map) {
+  graded_copies_ = graded_copies(setup_);
+  note_screen_grade(setup_, interpolates(), warps_spanned());
   reuse_.enabled = setup_.span_reuse.whole;
   // SPAN seul : la paire de la reprise se mesure en avance (look_ahead), comme sous RIFE.
   reuse_.alone =
@@ -44,6 +68,18 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
   reuse_.check = setup_.span_reuse.check;
   if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
+  // Ce que les tuiles feront, dit au démarrage : leur grille, ou, si la carte ou le contrôle les demandent,
+  // pourquoi ce SPAN n'en calcule pas.
+  if (setup_.engine != nullptr && reuse_.tiles.enabled) {
+    const kernels::SpanTileGrid& grid = reuse_.tiles.grid();
+    if (reuse_.tiles.active())
+      log_channel("gpu")->info("SPAN par tuiles : grille de {} × {} tuiles de {} × {} pixels de travail{}",
+                               grid.cols, grid.rows, grid.tile_w, grid.tile_h,
+                               setup_.scene_map ? "" : " ; sans --scene-map, chaque image reste entière");
+    else if (setup_.scene_map || reuse_.check)
+      log_channel("gpu")->info(
+          "SPAN par tuiles : ce moteur ne calcule que l'image entière (seul le SPAN natif les calcule)");
+  }
 }
 
 UpscaleStage::~UpscaleStage() {
@@ -248,7 +284,7 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
   for (auto& rgb : rgb_) {
     if (auto ok = alloc(rgb, planes(3, w, h)); !ok) return ok;
   }
-  const gpu::Shape out_shape = planes(3, w * kSpanFactor, h * kSpanFactor);
+  const gpu::Shape out_shape = output_shape(setup_);
   if (warps_spanned()) {
     for (auto& spanned : spanned_) {
       if (auto ok = alloc(spanned, out_shape); !ok) return ok;

@@ -161,6 +161,8 @@ struct GradeParams {
   double skin_n = 0.0;
   double skin_h0 = 0.0, skin_h1 = 0.0, skin_h2 = 0.0;
   double skin_s0 = 0.0, skin_s1 = 0.0, skin_s2 = 0.0;
+  // 1 : vue de contrôle du masque des effets (--effect-mask-view, 3-anime.hook) au lieu de l'image gradée.
+  double fx_view = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

@@ -5,28 +5,22 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
-#include <libplacebo/colorspace.h>
-#include <libplacebo/dispatch.h>
+#include <libplacebo/gpu.h>
+#include <libplacebo/shaders.h>
 
 namespace kirari::render {
 namespace {
 
-// L'image passe telle quelle, le masque (bilinéaire, aux bords de la grille tenu à sa dernière tuile) dans
-// l'alpha. fx_scale ramène la position dans l'image à la grille, que ses dernières tuiles débordent.
-constexpr const char* kHeader =
-    "void fx_main() {\n"
-    "    ivec2 p = ivec2(gl_GlobalInvocationID.xy);\n"
-    "    if (p.x >= int(fx_out.x) || p.y >= int(fx_out.y)) return;\n"
-    "    vec4 c = HOOKED_mul * vec4(textureLod(HOOKED, (vec2(p) + 0.5) * HOOKED_pt, 0.0));\n"
-    "    vec2 at = (vec2(p) + 0.5) / fx_out * fx_scale;\n"
-    "    c.a = clamp(textureLod(AJG_FX, at, 0.0).x, 0.0, 1.0);\n"
-    "    imageStore(out_image, p, c);\n"
-    "}\n";
+// Le masque (bilinéaire, aux bords de la grille tenu à sa dernière tuile) dans l'alpha de la couleur en
+// attente. fx_pos va de 0 à 1 sur l'image ; fx_scale la ramène à la grille, que ses dernières tuiles
+// débordent.
+constexpr const char* kBody = "color.a = clamp(textureLod(AJG_FX, fx_pos * fx_scale, 0.0).x, 0.0, 1.0);";
 
-pl_shader_desc sampled(const char* name, pl_tex tex, pl_tex_sample_mode mode = PL_TEX_SAMPLE_LINEAR) {
+pl_shader_desc sampled(const char* name, pl_tex tex, pl_tex_sample_mode mode) {
   pl_shader_desc d{};
   d.desc.name = name;
   d.desc.type = PL_DESC_SAMPLED_TEX;
@@ -36,27 +30,19 @@ pl_shader_desc sampled(const char* name, pl_tex tex, pl_tex_sample_mode mode = P
   return d;
 }
 
-pl_shader_desc storage(const char* name, pl_tex tex) {
-  pl_shader_desc d{};
-  d.desc.name = name;
-  d.desc.type = PL_DESC_STORAGE_IMG;
-  d.desc.access = PL_DESC_ACCESS_WRITEONLY;
-  d.binding.object = tex;
-  return d;
-}
-
-pl_shader_var vec2_var(const char* name, const float* value) {
-  return pl_shader_var{.var = pl_var_vec2(name), .data = value, .dynamic = true};
-}
+// Les coins de l'image, ligne par ligne depuis le haut à gauche (pl_shader_va).
+constexpr std::array<std::array<float, 2>, 4> kCorners{
+    {{0.0F, 0.0F}, {1.0F, 0.0F}, {0.0F, 1.0F}, {1.0F, 1.0F}}};
 
 }  // namespace
 
 struct EffectPass::Impl {
   pl_gpu gpu = nullptr;
   pl_fmt fmt = nullptr;
-  int components = 1;     // le masque va dans la première ; les autres reçoivent la même valeur
-  bool floating = false;  // float 32 bits par composante, sinon unorm 8 bits
-  bool linear = true;     // faute de format filtrable, lu au plus proche (le flou 3 × 3 adoucit les marches)
+  int components = 1;       // le masque va dans la première ; les autres reçoivent la même valeur
+  bool floating = false;    // float 32 bits par composante, sinon unorm 8 bits
+  pl_fmt vertex = nullptr;  // vec2 des coins (fx_pos)
+  bool linear = true;  // faute de format filtrable, lu au plus proche (le flou 3 × 3 adoucit les marches)
   pl_tex mask = nullptr;
   std::vector<std::uint8_t> bytes;  // la grille à envoyer, telle que le format la prend
   int cols = 0;
@@ -98,72 +84,55 @@ bool EffectPass::Impl::upload() {
   return true;
 }
 
+// Ajouté à la couleur en attente de la sortie (PL_HOOK_SIG_COLOR) : libplacebo le fond dans la passe qui
+// rend l'image pour la passe anime, déjà là. Une passe à part recopiait l'image entière (0,41 ms en 4K sur
+// une RTX 4070 Ti, passage 9 de la séance du 19/11) pour une seule composante.
 pl_hook_res EffectPass::Impl::run(const pl_hook_params& params) {
   pl_hook_res res{};
-  if (cols <= 0 || rows <= 0) return res;  // PL_HOOK_SIG_NONE : rien à poser
+  if (cols <= 0 || rows <= 0 || params.sh == nullptr) return res;  // PL_HOOK_SIG_NONE : rien à poser
   if (dirty && !upload()) {
     res.failed = true;
     return res;
   }
-  const int w = static_cast<int>(std::lround(pl_rect_w(params.rect)));
-  const int h = static_cast<int>(std::lround(pl_rect_h(params.rect)));
-  pl_tex out = params.get_tex(params.priv, w, h);
-  if (out == nullptr || !out->params.storable) {
-    res.failed = true;
-    return res;
-  }
-  pl_color_repr repr = params.repr;
-  const float mul = pl_color_repr_normalize(&repr);
-  const std::array<float, 2> pt{1.0F / static_cast<float>(params.tex->params.w),
-                                1.0F / static_cast<float>(params.tex->params.h)};
-  const std::array<float, 2> size{static_cast<float>(w), static_cast<float>(h)};
-  const std::array descs{sampled("HOOKED", params.tex),
-                         sampled("AJG_FX", mask, linear ? PL_TEX_SAMPLE_LINEAR : PL_TEX_SAMPLE_NEAREST),
-                         storage("out_image", out)};
-  const std::array vars{
-      pl_shader_var{.var = pl_var_float("HOOKED_mul"), .data = &mul, .dynamic = false},
-      pl_shader_var{.var = pl_var_vec2("HOOKED_pt"), .data = pt.data(), .dynamic = false},
-      vec2_var("fx_out", size.data()),
-      vec2_var("fx_scale", scale.data()),
-  };
+  const std::array descs{sampled("AJG_FX", mask, linear ? PL_TEX_SAMPLE_LINEAR : PL_TEX_SAMPLE_NEAREST)};
+  const std::array vars{pl_shader_var{.var = pl_var_vec2("fx_scale"), .data = scale.data(), .dynamic = true}};
+  pl_shader_va corners{};
+  corners.attr.name = "fx_pos";
+  corners.attr.fmt = vertex;
+  for (std::size_t i = 0; i < kCorners.size(); ++i) corners.data[i] = kCorners[i].data();
   pl_custom_shader custom{};
-  custom.header = kHeader;
-  custom.body = "fx_main();";
-  custom.description = "AnimeJaNai HDR - masque des effets";
-  custom.input = PL_SHADER_SIG_NONE;
-  custom.output = PL_SHADER_SIG_NONE;
+  custom.body = kBody;
+  // Sans « AnimeJaNai » : la passe où il se fond n'est pas une passe du grade (placebo_screen.cpp,
+  // note_pass).
+  custom.description = "masque des effets";
+  custom.input = PL_SHADER_SIG_COLOR;
+  custom.output = PL_SHADER_SIG_COLOR;
   custom.descriptors = descs.data();
   custom.num_descriptors = static_cast<int>(descs.size());
   custom.variables = vars.data();
   custom.num_variables = static_cast<int>(vars.size());
-  custom.compute = true;
-  custom.compute_group_size[0] = 16;
-  custom.compute_group_size[1] = 16;
-  pl_shader sh = pl_dispatch_begin(params.dispatch);
-  if (!pl_shader_custom(sh, &custom)) {
-    pl_dispatch_abort(params.dispatch, &sh);
+  custom.vertex_attribs = &corners;
+  custom.num_vertex_attribs = 1;
+  // Une image lue sans passe de mise à l'échelle (aucune, ou fondue dans la sortie) arrive sans taille, et
+  // libplacebo refuse alors le résultat (« User hook tried resizing non-resizable stage! ») puis écarte le
+  // hook pour toute la vie du renderer : le masque ne tenait que la première image, l'alpha restait à 1, lu
+  // « effet sûr partout ». À cette étape, l'image a la taille du rectangle de destination.
+  int sized_w = 0;
+  int sized_h = 0;
+  if (!pl_shader_output_size(params.sh, &sized_w, &sized_h)) {
+    custom.output_w = std::abs(pl_rect_w(params.dst_rect));
+    custom.output_h = std::abs(pl_rect_h(params.dst_rect));
+  }
+  if (!pl_shader_custom(params.sh, &custom)) {
     res.failed = true;
     return res;
   }
-  pl_dispatch_compute_params run{};
-  run.shader = &sh;
-  run.dispatch_size[0] = (w + 15) / 16;
-  run.dispatch_size[1] = (h + 15) / 16;
-  run.dispatch_size[2] = 1;
-  run.width = w;
-  run.height = h;
-  if (!pl_dispatch_compute(params.dispatch, &run)) {
-    res.failed = true;
-    return res;
-  }
-  const float sx = static_cast<float>(w) / static_cast<float>(params.tex->params.w);
-  const float sy = static_cast<float>(h) / static_cast<float>(params.tex->params.h);
-  res.output = PL_HOOK_SIG_TEX;
-  res.tex = out;
+  res.output = PL_HOOK_SIG_COLOR;
+  res.sh = params.sh;
   res.repr = params.repr;
   res.color = params.color;
   res.components = 4;
-  res.rect = {sx * params.rect.x0, sy * params.rect.y0, sx * params.rect.x1, sy * params.rect.y1};
+  res.rect = params.rect;
   return res;
 }
 
@@ -197,8 +166,11 @@ std::expected<std::unique_ptr<EffectPass>, Refusal> EffectPass::create(pl_gpu gp
   if (impl->fmt == nullptr)
     return std::unexpected(Refusal{RefusalCode::VendorCallFailed,
                                    "masque des effets : aucun format échantillonnable inscriptible"});
+  impl->vertex = pl_find_vertex_fmt(gpu, PL_FMT_FLOAT, 2);
+  if (impl->vertex == nullptr)
+    return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "masque des effets : pas de sommet vec2"});
   impl->hook.stages = PL_HOOK_OUTPUT;
-  impl->hook.input = PL_HOOK_SIG_TEX;
+  impl->hook.input = PL_HOOK_SIG_COLOR;
   impl->hook.priv = impl.get();
   impl->hook.hook = [](void* priv, const pl_hook_params* params) {
     return static_cast<Impl*>(priv)->run(*params);

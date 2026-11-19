@@ -20,6 +20,8 @@
 
 namespace kirari::app::play {
 
+struct PlayerPaths;
+
 struct ModelChoice {
   std::filesystem::path path;
   std::vector<std::string> available;  // fichiers du dossier proposés au menu, triés
@@ -92,5 +94,10 @@ struct RifeEntry {
 // La liste du menu : le catalogue seul, présent ou non ; les autres fichiers du dossier (les
 // modèles d'AnimeJaNai pour mpv) n'y entrent pas.
 std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available);
+
+// Où chercher les graphes de DistilDRBA et de GMFSS : à côté du modèle RIFE choisi, dans les dossiers RIFE,
+// puis dans ceux des modèles rangés hors du paquet (dossier des données, ~/kirari/models/rife).
+std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
+                                                     const std::optional<ModelChoice>& rife);
 
 }  // namespace kirari::app::play

@@ -4,6 +4,7 @@
 // classes que le lecteur garde d'une paire à la suivante.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -28,8 +29,10 @@ Result<SceneFlowTiles> scene_tile_sums(const Plane<std::uint8_t>& a, const Plane
                                        int divisor);
 
 // Les classes des paires précédentes, par tuile : la classe tenue et la dernière vue. Une tuile ne change
-// de classe que vue deux paires de suite (sinon tous les clients clignotent). Vide, ou d'une autre grille :
-// la paire part de ses propres classes.
+// de classe que vue deux paires de suite (sinon tous les clients clignotent) ; entre les deux, la classe
+// tenue reste, sous la confiance sûre des clients (scene::kContradicted). Une paire où la tuile ne change pas
+// sous une caméra tenue ne compte pas : un dessin tenu (image doublée d'une animation en deux ou en trois)
+// garde sa classe. Vide, ou d'une autre grille : la paire part de ses propres classes.
 struct SceneHistory {
   int cols = 0;
   int rows = 0;
@@ -43,7 +46,28 @@ struct SceneHistory {
   }
 };
 
-// La carte d'une paire. history est mis à jour ; il est vidé après une coupe probable.
+// La caméra d'une paire, ajustée sur les vecteurs moyens des tuiles (la méthode du banc 2.1 : départ sur la
+// translation médiane, kFitRounds tours de moindres carrés pondérés par le coût, rejet au-delà de 3 écarts
+// médians bornés entre kFitBoundLow et kFitBoundHigh pixels à 720p), puis, si le backend sait, affinée par
+// Lucas-Kanade sur les lumas (spec/scene_camera.h, ref::scene_camera_apply).
+struct SceneCamera {
+  bool fit = false;
+  std::array<double, 6> model{};  // déplacement en coordonnées réduites (spec/scene_camera.h), pixels du flux
+  double residual = 0.0;          // écart moyen pondéré des vecteurs des tuiles gardées au modèle, du flux
+  std::vector<std::uint8_t> decor;  // cols × rows, 1 : tuile gardée par l'ajustement
+  int decor_pixels = 0;             // leurs pixels du flux
+  bool refined = false;             // affinée par Lucas-Kanade (au moins un pas)
+  double check = -1.0;              // écart mesuré sur l'image, pixels du flux ; négatif : pas mesuré
+  int check_tiles = 0;              // tuiles de cette mesure
+};
+
+// La caméra des vecteurs de NVOF, avant l'affinage ; pas ajustée sur une coupe probable.
+SceneCamera scene_camera_of(const SceneFlowTiles& tiles);
+
+// La carte d'une paire, avec sa caméra (scene_camera_of, affinée ou non). history est mis à jour ; il est
+// vidé après une coupe probable.
+SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, const SceneCamera& camera);
+// Sans affinage : scene_motion_of(tiles, history, scene_camera_of(tiles)).
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history);
 
 }  // namespace kirari::kernels::ref

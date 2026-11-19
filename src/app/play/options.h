@@ -71,8 +71,8 @@ enum class Registration : std::uint8_t { None, Register, Unregister };
 
 inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KDE par défaut
 
-// --motion : RIFE ou DistilDRBA (settings.h : MotionEngine, que ce fichier ne voit pas).
-enum class MotionChoice : std::uint8_t { Rife, DistilDrba };
+// --motion : RIFE, DistilDRBA ou GMFSS union seul (settings.h : MotionEngine, que ce fichier ne voit pas).
+enum class MotionChoice : std::uint8_t { Rife, DistilDrba, Gmfss };
 
 enum class RelaunchedFor : std::uint8_t { None, GpuLost, EngineUpdated, Settings };
 // Le texte de --relaunched= ; vide pour None.
@@ -92,6 +92,9 @@ struct PlayOptions {
   std::optional<std::filesystem::path> stats;  // --stats : une ligne par image présentée
   std::optional<std::filesystem::path> snapshot;  // --snapshot : la fenêtre en PPM, une fois
   std::int64_t snapshot_at_us = 3'000'000;
+  // --pause-at=S (essai) : la lecture se met en pause sur la première image source (pas un instant
+  // interpolé) de pts S ou après : la même image d'une lecture à l'autre, pour comparer deux instantanés.
+  std::optional<std::int64_t> pause_at_us;
   int snapshot_frames = 1;  // --snapshot-frames=N : N présentations de suite, numérotées  // --snapshot-at=S
                             // : après S s de lecture (ou de construction)
   // --keys=S:touche,… : touches pressées d'office à ces instants (essais sans clavier), par
@@ -114,6 +117,7 @@ struct PlayOptions {
   int true_hdr_peak = 0;  // --truehdr-peak=350..4000 nits (limits::kTrueHdrPeak) ; 0 : la crête vue par le
                           // contenu sur l'écran
   bool help = false;      // --help
+  bool version = false;   // --version : la version du lecteur, puis rien d'autre
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
   bool rife_image = false;
@@ -154,6 +158,9 @@ struct PlayOptions {
   // Éclats HDR sur les seuls effets (render/effect_mask.h), là où la carte de la scène existe (NVIDIA) ;
   // --no-effect-highlights garde la marge des éclats sur toute lumière, comme sans carte.
   bool effect_highlights = true;
+  // --effect-mask-view (essai) : le grade peint le masque au lieu de l'image (lumières en rouge, effets sûrs
+  // en vert, marge retenue en bleu), pour le voir sur un instantané.
+  bool effect_mask_view = false;
   // La pré-analyse des plans décodée par NVDEC en 256 × 144 (8.8), repli logiciel, par défaut ;
   // --no-probe-nvdec : décodage logiciel.
   bool probe_nvdec = true;
@@ -175,14 +182,23 @@ struct PlayOptions {
   // RIFE mesuré dans le lecteur sur la RTX 4070 Ti (docs/interpolation.md) ; allumé par défaut,
   // --no-rife-hwc8 (essai) revient aux E/S en plans.
   bool rife_hwc8 = true;
-  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par nos noyaux natifs (docs/span-native16.md,
-  // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
-  // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
-  bool span_native = false;
+  // SPAN par nos noyaux natifs (docs/span-native16.md, canaux natifs, b5f48 en 48) au lieu de TensorRT FP16,
+  // sur RTX 40 et 50 : FP16 aux crans Équilibre et en repli, sommes f32 au cran Qualité ; mêmes poids, sans
+  // quantification. Allumé par défaut depuis le premier banc (plus rapide que TensorRT FP16 même
+  // en f32) ; --no-span-native (essai) revient à TensorRT, pour la mesure ABAB.
+  bool span_native = true;
+  // --span-native-edges (essai) : les bords du SPAN FP8 (conv_1, conv_cat, to_pixel) par les mêmes noyaux
+  // (gpu::kTrialSpanNative) ; éteint jusqu'à sa mesure.
+  bool span_native_edges = false;
   // --rife-native (essai) : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA
   // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
   // finale.
   bool rife_native = false;
+  // --gmfss-native (essai) : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par
+  // nos noyaux CUDA (docs/gmfss-natif.md, gpu::kTrialGmfssNative), l'IFNet et GMFlow restant des moteurs
+  // TensorRT ; chacun gardé à 45 dB de son graphe TensorRT entier et plus rapide que lui, éteint jusqu'à la
+  // séance finale.
+  bool gmfss_native = false;
   // --tfix-native (essai) : les convolutions de TemporalFix fusionné par nos noyaux CUDA (docs/tfix-natif.md,
   // gpu::kTrialTfixNative), gardées à 45 dB de TensorRT ; éteint jusqu'à la séance finale.
   bool tfix_native = false;
@@ -332,6 +348,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
 
 // debug : avec les options d'essai (--debug --help).
 std::string play_usage(bool debug = false);
+// Ce que --help ou --version écrivent avant que le lecteur ne s'arrête ; rien sans l'une ni l'autre.
+std::optional<std::string> help_or_version(const PlayOptions& options);
 
 // « kirari bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
 struct BenchOptions {

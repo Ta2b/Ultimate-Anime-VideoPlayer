@@ -49,6 +49,8 @@ class SpanFp8Engine;
 class SceneFlow;
 class RifeFusedEngine;
 class DrbaFusedEngine;
+class GmfssFusedEngine;
+class GmfssPairEngine;
 struct IngestParams;
 struct WarpBlendParams;
 
@@ -126,6 +128,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
                                                          bool restart) override;
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t ticket) override;
+  // L'affinage de la caméra de la carte (tensorrt_scene_flow.cpp, scene_camera.cpp), relu sans attente.
+  std::expected<std::uint64_t, Refusal> scene_camera_start(
+      std::uint64_t flow_ticket, const kernels::SceneCameraRequest& request) override;
+  std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> scene_camera_take(
       std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
@@ -242,6 +249,32 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_tfix_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_tfix_fused(Engine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
+  // La fusion de GMFSS au GridNet natif (tensorrt_gmfss_fused.cpp) : un manifeste « .gmfssfused », la
+  // fusion entière et son IFNet construits par trtexec, chargés ensemble, le natif essayé si demandé.
+  std::expected<Artifact, Refusal> build_gmfss_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                     Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_fused(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_gmfss_fused(GmfssFusedEngine& engine, std::span<const Tensor> inputs,
+                                                   std::span<Tensor> outputs);
+  // La paire de GMFSS au FeatureNet et au MetricNet natifs (tensorrt_gmfss_pair.cpp) : un manifeste
+  // « .gmfsspair », la paire entière et son flot construits par trtexec, chargés ensemble, le natif essayé si
+  // demandé.
+  std::expected<Artifact, Refusal> build_gmfss_pair(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_pair(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_gmfss_pair(GmfssPairEngine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
+  // Les morceaux d'un manifeste de GMFSS (dossier dir), chacun vérifié par son empreinte puis construit par
+  // trtexec à la forme fixe shape (le second avec les réglages de RIFE si second_tuned) : les noms des
+  // fichiers du cache, dans l'ordre des morceaux.
+  std::expected<std::vector<std::string>, Refusal> build_gmfss_pieces(const std::filesystem::path& dir,
+                                                                      std::span<const std::string> pieces,
+                                                                      std::span<const std::string> digests,
+                                                                      const Shape& shape, bool second_tuned,
+                                                                      Progress& progress);
+  // Le seuil de l'essai des réseaux natifs de GMFSS contre TensorRT FP16 (docs/gmfss-natif.md) ; la séance
+  // finale vise 50 dB.
+  static constexpr double kGmfssNativeMinDb = 45.0;
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée.
@@ -333,9 +366,10 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool filtered_warp_ = false;
   // kTrialL2Keep (--l2-keep, essai) : l'encodage gardé de RIFE fusionné tenu en L2.
   bool l2_keep_ = false;
-  bool span_native_ = false;  // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
-  bool rife_hwc8_ = false;    // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
-  bool rife_native_ = false;  // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
+  bool span_native_ = false;   // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
+  bool rife_hwc8_ = false;     // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
+  bool rife_native_ = false;   // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
+  bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)
   bool tfix_native_ = false;  // convolutions de TemporalFix fusionné par les noyaux natifs (kTrialTfixNative)
   bool warp_l2_ = false;      // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
@@ -383,6 +417,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
   static constexpr std::size_t kRoles = 3;
   std::array<std::unique_ptr<GpuTiming>, kRoles> role_timing_;
   GpuTiming& role(Role which) { return *role_timing_.at(static_cast<std::size_t>(which)); }
+  // Le SPAN natif ou FP8 en trois parts (enqueue_span_fp8) : corps, attente de l'emplacement de l'anneau,
+  // queue. Au profil de fin de séance seulement (log_profile) : gpu_profile les laisse, ses lecteurs somment
+  // les étapes et le SPAN y est déjà, entier.
+  enum class SpanPart : unsigned char { Body, SlotWait, Tail };
+  static constexpr std::size_t kSpanParts = 3;
+  std::array<std::unique_ptr<GpuTiming>, kSpanParts> span_parts_;
+  GpuTiming& span_part(SpanPart which) { return *span_parts_.at(static_cast<std::size_t>(which)); }
   // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
@@ -441,6 +482,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
     std::uint64_t ticket = 0;
     double area = 0.0;      // aire remplie de RIFE
     float levels = 219.0F;  // pas de luma de la source lors de la mesure
+    // L'écart de chaque bloc (PairScores::blocks) : room blocs pris ; count et blocks_x ceux de la dernière
+    // mesure, count nul si la place a été refusée (la mesure se fait sans).
+    unsigned int* blocks_device = nullptr;
+    unsigned int* blocks_host = nullptr;
+    std::size_t blocks_room = 0;
+    std::size_t blocks_count = 0;
+    std::uint32_t blocks_x = 0;
   };
   struct FlowRead {
     unsigned int* device = nullptr;  // histogramme des déplacements (kernels::kFlowBins cases)
@@ -455,12 +503,17 @@ class TensorRtBackend final : public Backend, public KernelOps {
     cudaEvent_t done = nullptr;
     std::uint64_t ticket = 0;
   };
-  std::array<PairRead, kPendingReadbacks> pair_reads_{};
+  // Un emplacement de plus, le dernier, à scores_now seul : il ne prend la place d'aucun ticket.
+  std::array<PairRead, kPendingReadbacks + 1> pair_reads_{};
   std::array<FlowRead, kPendingReadbacks> flow_reads_{};
   std::array<StatsRead, kPendingReadbacks> stats_reads_{};
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   std::uint64_t stats_tickets_ = 0;
+  // La mesure de la paire lancée dans slot, puis relue (attente hôte de cette mesure seule).
+  std::expected<void, Refusal> pair_launch(PairRead& slot, const Tensor& a, const Tensor& b);
+  static void reserve_blocks(PairRead& slot, std::size_t count);
+  std::expected<PairScores, Refusal> pair_read(const PairRead& slot);
   // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
   std::unique_ptr<SceneFlow> scene_flow_;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
