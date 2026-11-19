@@ -1,15 +1,10 @@
-// L'essai au chargement de la paire native de GMFSS (GmfssPairEngine::try_native, docs/gmfss-natif.md) :
-// deux images de test, la seconde décalée de quelques pixels, passent par le moteur TensorRT de la paire
-// entière, puis par le flot et les réseaux natifs en sommes f16, mixtes et f32. Chaque sortie est comparée à
-// celle de TensorRT, l'écart rapporté à son étendue (au moins 1 : les caractéristiques et les flots ne sont
-// pas des images) ; les variantes dont la pire tient le seuil sont chronométrées contre TensorRT, et la plus
-// rapide n'est gardée que si elle le bat d'au moins 2 % (gmfss_trial.h).
-#include <algorithm>
-#include <cmath>
+// L'essai au chargement de la paire native de GMFSS (GmfssPairEngine::try_native, docs/gmfss-natif.md) : le
+// FeatureNet et le MetricNet natifs réglés au banc, puis deux images de test, la seconde décalée de quelques
+// pixels, passent par le moteur TensorRT de la paire entière et par le flot et les réseaux natifs ; le choix
+// des sommes de chaque réseau est celui de gmfss_trial.h, chacune des quatorze sorties jugée à part, l'écart
+// rapporté à son étendue (au moins 1 : les caractéristiques et les flots ne sont pas des images).
+#include <chrono>
 #include <cuda_fp16.h>
-#include <format>
-#include <limits>
-#include <span>
 #include <utility>
 #include <vector>
 
@@ -41,45 +36,9 @@ std::vector<__half> test_frames(const Shape& shape) {
   return out;
 }
 
-double peak_of(const std::vector<__half>& values) {
-  float peak = 1.F;
-  for (const __half v : values) peak = std::max(peak, std::abs(__half2float(v)));
-  return peak;
-}
-
-using Planes = std::vector<std::vector<__half>>;
-
-// Les sorties de la passe, relues sur l'hôte.
-std::expected<Planes, Refusal> fetch_all(std::span<const Tensor> outputs) {
-  Planes out;
-  for (const Tensor& t : outputs) {
-    std::vector<__half> host(elements(t.shape));
-    if (auto ok =
-            cuda_check(cudaMemcpy(host.data(), fused_address(t), host.size() * 2, cudaMemcpyDeviceToHost),
-                       "GMFSS natif : copie de l'essai");
-        !ok)
-      return std::unexpected(std::move(ok.error()));
-    out.push_back(std::move(host));
-  }
-  return out;
-}
-
-// La pire sortie contre la référence, l'écart rapporté à l'étendue de la référence ; at reçoit sa place.
-double worst_of(const Planes& reference, const Planes& got, std::size_t& at) {
-  double worst = std::numeric_limits<double>::infinity();
-  for (std::size_t i = 0; i < reference.size(); ++i) {
-    const double db = gmfss_trial::psnr(reference[i], got[i], peak_of(reference[i]));
-    if (db < worst) {
-      worst = db;
-      at = i;
-    }
-  }
-  return worst;
-}
-
 }  // namespace
 
-std::expected<std::string, Refusal> GmfssPairEngine::try_native(
+std::expected<std::vector<std::string>, Refusal> GmfssPairEngine::try_native(
     const prepare::GmfssPairNets& nets_in, const std::shared_ptr<SharedActivations>& shared, double min_db) {
   gmfss_trial::Scratch scratch;
   const auto device = [&](std::size_t count) -> std::expected<void*, Refusal> {
@@ -115,74 +74,50 @@ std::expected<std::string, Refusal> GmfssPairEngine::try_native(
   // Le travail en vol sur les voies finit avant : l'essai écrit dans la zone partagée (comme load).
   if (auto ok = cuda_check(cudaDeviceSynchronize(), "GMFSS natif : essai de la paire"); !ok)
     return std::unexpected(std::move(ok.error()));
-  const Tensor inputs[]{frames};
-  // Trois passes (directe, capture du graphe de TensorRT, rejeu) ; la dernière est comparée.
-  const auto run = [&]() -> std::expected<void, Refusal> {
-    for (int pass = 0; pass < 3; ++pass) {
-      if (auto ok = enqueue(scratch.stream, shared, inputs, outputs); !ok) return ok;
-      if (auto ok = cuda_check(cudaStreamSynchronize(scratch.stream), "GMFSS natif : essai de la paire"); !ok)
-        return ok;
-    }
-    return {};
-  };
+  // Quoi qu'il arrive, l'essai laisse la paire à TensorRT ou au natif retenu.
+  native_.reset();
   native_on_ = false;
-  if (auto ok = run(); !ok) return std::unexpected(std::move(ok.error()));
-  auto reference = fetch_all(outputs);
-  if (!reference) return std::unexpected(std::move(reference.error()));
-  // Quoi qu'il arrive, l'essai laisse la paire à TensorRT ou à la variante retenue.
-  const auto settle = [&](std::unique_ptr<GmfssPairNativeNet> keep) {
-    native_ = std::move(keep);
-    native_on_ = native_ != nullptr;
-  };
-  const auto give_up = [&](Refusal refusal) -> std::expected<std::string, Refusal> {
-    settle(nullptr);
-    return std::unexpected(std::move(refusal));
-  };
-  // La justesse de chaque variante contre TensorRT ; celles dont la pire sortie tient le seuil vont à la
-  // mesure du temps.
-  std::vector<std::unique_ptr<GmfssPairNativeNet>> nets(1);  // [0] : TensorRT
-  std::string quality;
-  for (const RifeNativeSums sums : gmfss_trial::kSums) {
-    std::string error;
-    native_ = GmfssPairNativeNet::create(nets_in, height_, width_, sums, error);
-    if (!native_) return give_up(Refusal{RefusalCode::FormatUnsupported, "GMFSS natif : paire : " + error});
-    native_on_ = true;
-    auto ran = run();
-    native_on_ = false;
-    if (!ran) return give_up(std::move(ran.error()));
-    auto got = fetch_all(outputs);
-    if (!got) return give_up(std::move(got.error()));
-    std::size_t at = 0;
-    const double worst = worst_of(*reference, *got, at);
-    quality += std::format("{}{} {:.1f} dB au pire ({})", quality.empty() ? "" : ", ",
-                           gmfss_trial::sums_name(sums), worst, output_names()[at]);
-    if (worst >= min_db) nets.push_back(std::move(native_));
-    native_.reset();
+  const auto started = std::chrono::steady_clock::now();
+  std::string error;
+  std::unique_ptr<GmfssPairNativeNet> net =
+      GmfssPairNativeNet::create(nets_in, height_, width_, scratch.stream, error);
+  if (!net) {
+    if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
+      return std::unexpected(lost_refusal(lost, "GMFSS natif : réglage de la paire"));
+    return refuse(RefusalCode::FormatUnsupported, "GMFSS natif : paire : " + error);
   }
-  const std::string where =
-      std::format("{}×{}, contre TensorRT : {}, seuil {:.0f} dB", 2 * width_, 2 * height_, quality, min_db);
-  if (nets.size() == 1) {
-    settle(nullptr);
-    return std::format("GMFSS natif écarté, TensorRT garde la paire ({})", where);
-  }
-  // Une passe de la variante v : son réseau prend la place de native_ le temps de la passe.
-  const auto pass = [&](std::size_t v) -> std::expected<void, Refusal> {
-    std::swap(native_, nets[v]);
-    native_on_ = native_ != nullptr;
-    auto ok = enqueue(scratch.stream, shared, inputs, outputs);
-    std::swap(native_, nets[v]);
-    native_on_ = false;
-    return ok;
-  };
-  auto choice = gmfss_trial::choose(scratch.stream, nets, pass);
-  if (!choice) return give_up(std::move(choice.error()));
-  const std::size_t best = choice->best;
-  const std::string verdict =
-      best != 0 ? std::format("GMFSS natif retenu pour la paire, sommes {} (zone {} Mio)",
-                              gmfss_trial::sums_name(nets[best]->sums()), nets[best]->workspace_bytes() >> 20)
-                : std::string("GMFSS natif écarté, TensorRT plus rapide pour la paire");
-  settle(best != 0 ? std::move(nets[best]) : nullptr);
-  return std::format("{} ({} ; une passe : {})", verdict, where, choice->speed);
+  const double tuning = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+  native_ = std::move(net);
+  const Tensor inputs[]{frames};
+  gmfss_trial::Unit unit{
+      .name = "paire",
+      .width = 2 * width_,
+      .height = 2 * height_,
+      .parts = native_.get(),
+      .stream = scratch.stream,
+      .outputs = kOutputs,
+      .pass =
+          [&](bool native) {
+            native_on_ = native;
+            auto ok = enqueue(scratch.stream, shared, inputs, outputs);
+            native_on_ = false;
+            return ok;
+          },
+      .piece = [&](int piece) { return enqueue_piece(scratch.stream, piece, frames, outputs); },
+      .fetch = [&](std::size_t i) -> std::expected<std::vector<__half>, Refusal> {
+        std::vector<__half> host(elements(outputs[i].shape));
+        if (auto ok = cuda_check(
+                cudaMemcpy(host.data(), fused_address(outputs[i]), host.size() * 2, cudaMemcpyDeviceToHost),
+                "GMFSS natif : copie de l'essai");
+            !ok)
+          return std::unexpected(std::move(ok.error()));
+        return host;
+      }};
+  auto outcome = gmfss_trial::try_mix(unit, min_db, tuning);
+  if (!outcome || !outcome->keep) native_.reset();
+  native_on_ = native_ != nullptr;
+  if (!outcome) return std::unexpected(std::move(outcome.error()));
+  return std::move(outcome->lines);
 }
 
 }  // namespace kirari::gpu::cuda

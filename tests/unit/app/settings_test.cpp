@@ -308,7 +308,7 @@ TEST_CASE(
   CHECK(
       settings_to_save(settings_for(rife_file, *chosen), rife_file, settings_for(rife_file, *chosen), *chosen)
           .motion_engine == MotionEngine::Rife);
-  // --motion=gmfss : GMFSS union seul pour cette lecture, avec ou sans --gmfss-native ; play.toml n'en
+  // --motion=gmfss : GMFSS union seul pour cette lecture, natif ou non ; play.toml n'en
   // garde rien.
   const std::array<std::string_view, 2> gmfss{"film.mkv", "--motion=gmfss"};
   const auto union_only = parse_play_options(gmfss);

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
@@ -43,12 +44,12 @@ class Buffer {
   T* as() const {
     return static_cast<T*>(ptr_);
   }
-
- private:
   void release() {
     if (ptr_ != nullptr) static_cast<void>(cudaFree(ptr_));
     ptr_ = nullptr;
   }
+
+ private:
   void* ptr_ = nullptr;
 };
 
@@ -176,27 +177,54 @@ inline bool finish_fits(const Layer& layer, const FusedFinishParams& f) {
 
 // Le banc du réglage, sur la voie stream : une entrée de valeurs variées entre -1 et 1 (un défaut de
 // rangement ne passe pas inaperçu, comme il passerait sur une entrée uniforme) et une sortie à la taille de
-// la plus grande couche vue, la sortie de la forme de référence, les sommes partielles.
+// la plus grande couche vue, la sortie de la forme de référence, les sommes partielles. Il règle les couches
+// du RIFE natif et celles du GMFSS natif (gmfss_conv_plan.cu) : une forme lui est un lancement (Shot).
 class Bench {
  public:
   struct Timing {
     float ms = std::numeric_limits<float>::infinity();  // infini : la forme ne se lance pas (ressources)
     bool differs = false;  // sa sortie s'écarte de la référence plus que l'ordre des sommes ne l'explique
   };
+  // Une forme d'une couche : les octets qu'elle lit (in sert aussi de résiduel), écrit et somme en partie
+  // (K découpé), ses sommes, et son lancement de in vers out sur la voie donnée.
+  struct Shot {
+    std::int64_t in_bytes = 0;
+    std::int64_t out_bytes = 0;
+    std::int64_t partial_bytes = 0;
+    RifeNativeSums sums = RifeNativeSums::kF16;
+    std::function<void(cudaStream_t, const __half* in, __half* out, float* partial)> enqueue;
+  };
   explicit Bench(cudaStream_t stream) : stream_(stream) {}
   bool ready() const { return start_.get() != nullptr && stop_.get() != nullptr; }
-  // La sortie de la forme posée sur layer (shape), poids w : la référence des formes suivantes.
-  bool reference(const Layer& layer, const void* w, std::string& error);
-  // Le temps de la forme posée sur layer, poids w, en millisecondes : trois lancements capturés en un graphe,
-  // comme en lecture (un lancement direct pénaliserait la découpe de K, deux noyaux par couche), le meilleur
-  // de trois rejeux après un de chauffe. Rien et error rempli sur une erreur CUDA.
-  std::optional<Timing> time(const Layer& layer, const void* w, std::string& error);
+  // La sortie de la forme : la référence des formes suivantes.
+  bool reference(const Shot& shot, std::string& error);
+  // Le temps de la forme, en millisecondes : trois lancements capturés en un graphe, comme en lecture (un
+  // lancement direct pénaliserait la découpe de K, deux noyaux par couche), le meilleur de trois rejeux
+  // après un de chauffe ; avant, un lancement sur une sortie remplie de NaN, comparé à la référence (une
+  // valeur non écrite ne passe pas). Rien et error rempli sur une erreur CUDA.
+  std::optional<Timing> time(const Shot& shot, std::string& error);
+  // Les mêmes pour une couche du RIFE natif, de la forme posée (shape), poids w.
+  bool reference(const Layer& layer, const void* w, std::string& error) {
+    return reference(shot_of(layer, w), error);
+  }
+  std::optional<Timing> time(const Layer& layer, const void* w, std::string& error) {
+    return time(shot_of(layer, w), error);
+  }
 
  private:
-  bool reserve(const Layer& layer, std::string& error);
-  cudaError_t poison(const Buffer& out, const Layer& layer);
+  static Shot shot_of(const Layer& layer, const void* w) {
+    return Shot{.in_bytes = layer.in_bytes(),
+                .out_bytes = layer.out_bytes(),
+                .partial_bytes = layer.partial_bytes(),
+                .sums = layer.sums,
+                .enqueue = [&layer, w](cudaStream_t stream, const __half* in, __half* out, float* partial) {
+                  rife_native::enqueue(layer, stream, params(layer, in, out, partial, w));
+                }};
+  }
+  bool reserve(const Shot& shot, std::string& error);
+  cudaError_t poison(const Buffer& out, const Shot& shot);
   // La sortie du dernier lancement s'écarte-t-elle de la référence ? Rien sur une erreur CUDA.
-  std::optional<bool> differs(const Layer& layer, std::string& error);
+  std::optional<bool> differs(const Shot& shot, std::string& error);
   static bool failed(const char* what, cudaError_t result, std::string& error);
 
   cudaStream_t stream_;

@@ -1,24 +1,23 @@
 // Ce que partagent les essais au chargement du GMFSS natif (gmfss_fused_trial.cpp, gmfss_pair_trial.cpp,
-// docs/gmfss-natif.md) : un dessin de test, l'écart en dB, des tampons d'appareil libérés quoi qu'il arrive,
-// les sommes essayées et la mesure du temps contre TensorRT (reprise par TemporalFix natif).
+// docs/gmfss-natif.md) : un dessin de test, des tampons d'appareil libérés quoi qu'il arrive, la mesure du
+// temps (reprise par TemporalFix natif), et le choix commun (gmfss_trial.cpp) du mélange des sommes de chaque
+// morceau (gmfss_mix.h).
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
 #include <expected>
 #include <format>
-#include <limits>
-#include <memory>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "gpu/cuda/backend/cuda_status.h"
-#include "gpu/cuda/backend/rife_native_net.h"
+#include "gpu/cuda/backend/gmfss_native_parts.h"
 
 namespace kirari::gpu::cuda::gmfss_trial {
 
@@ -30,19 +29,6 @@ inline float drawing(float x, float y, int c, float shift) {
                      0.12F * std::sin(0.017F * x - 0.029F * y);
   const bool square = std::fmod(std::abs(x), 80.F) < 32.F && std::fmod(std::abs(y), 64.F) < 24.F;
   return std::clamp(square ? 0.9F - 0.2F * static_cast<float>(c) : wave, 0.F, 1.F);
-}
-
-// L'écart de got à want en dB, rapporté à peak ; -inf si got n'est pas fini, 200 s'ils sont égaux.
-inline double psnr(const std::vector<__half>& want, const std::vector<__half>& got, double peak) {
-  double sum = 0.0;
-  for (std::size_t i = 0; i < want.size(); ++i) {
-    const double g = __half2float(got[i]);
-    if (!std::isfinite(g)) return -std::numeric_limits<double>::infinity();
-    const double d = g - static_cast<double>(__half2float(want[i]));
-    sum += d * d;
-  }
-  const double mse = sum / static_cast<double>(want.size());
-  return mse == 0.0 ? 200.0 : 10.0 * std::log10(peak * peak / mse);
 }
 
 // Des tampons d'appareil et un flux, libérés quoi qu'il arrive.
@@ -58,26 +44,6 @@ struct Scratch {
   }
 };
 
-// Les sommes essayées, comme RIFE natif (rife_fused_native.cpp) : f16 (le débit plein des tensor cores des
-// GeForce), mixtes, f32.
-inline constexpr std::array<RifeNativeSums, 3> kSums{RifeNativeSums::kF16, RifeNativeSums::kMixed,
-                                                     RifeNativeSums::kF32};
-
-inline const char* sums_name(RifeNativeSums sums) {
-  switch (sums) {
-    case RifeNativeSums::kF16:
-      return "f16";
-    case RifeNativeSums::kMixed:
-      return "mixtes";
-    case RifeNativeSums::kF32:
-      return "f32";
-  }
-  return "?";
-}
-
-// Le natif n'est gardé que s'il bat TensorRT d'au moins kMinGain : en deçà, l'écart tient de la mesure.
-inline constexpr double kMinGain = 0.02;
-
 // Un événement CUDA rendu quoi qu'il arrive.
 struct Event {
   cudaEvent_t event = nullptr;
@@ -89,15 +55,19 @@ struct Event {
   }
 };
 
-// La mesure du temps, comme celle de RIFE natif : des tours intercalés (la variante 0, TensorRT, puis les
-// natives, puis l'inverse), chacun d'une passe de chauffe puis de deux passes entre deux événements ; la
-// médiane des tours, en ms par passe. pass(v) met en file sur stream une passe de la variante v. Au premier
-// tour, quatre passes de chauffe : un premier lancement, puis la capture et le rejeu des graphes.
+// Les tours de la mesure : la passe entière contre TensorRT, chaque morceau seul.
+inline constexpr int kPassRounds = 11;
+inline constexpr int kPieceRounds = 5;
+
+// La mesure du temps, comme celle de RIFE natif : rounds tours intercalés (les variantes dans l'ordre, puis
+// dans l'ordre inverse), chacun d'une passe de chauffe puis de deux passes entre deux événements ; la médiane
+// des tours, en ms par passe. pass(v) met en file sur stream une passe de la variante v. Au premier tour,
+// quatre passes de chauffe : un premier lancement, puis la capture et le rejeu des graphes.
 template <typename Pass>
-std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size_t variants, Pass&& pass) {
+std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size_t variants, Pass&& pass,
+                                                  int rounds = kPassRounds) {
   constexpr int kWarmup = 1;
   constexpr int kRuns = 2;
-  constexpr int kRounds = 11;
   const auto failed = [](cudaError_t error, const char* step) {
     static_cast<void>(cudaGetLastError());
     return std::unexpected(cuda_refusal(error, std::format("essai natif : mesure du temps ({})", step)));
@@ -107,8 +77,8 @@ std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size
   for (Event* event : {&start, &stop})
     if (const cudaError_t e = cudaEventCreate(&event->event); e != cudaSuccess)
       return failed(e, "cudaEventCreate");
-  std::vector<std::vector<double>> rounds(variants);
-  for (int round = 0; round < kRounds; ++round)
+  std::vector<std::vector<double>> per(variants);
+  for (int round = 0; round < rounds; ++round)
     for (std::size_t i = 0; i < variants; ++i) {
       const std::size_t v = round % 2 == 0 ? i : variants - 1 - i;
       std::expected<void, Refusal> ok;
@@ -123,37 +93,43 @@ std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size
       if (e != cudaSuccess) return failed(e, "événement");
       if (!(ms > 0.F))
         return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "essai natif : lot mesuré à 0 ms"});
-      rounds[v].push_back(static_cast<double>(ms) / kRuns);
+      per[v].push_back(static_cast<double>(ms) / kRuns);
     }
   std::vector<double> out;
-  for (std::vector<double>& of : rounds) {
+  for (std::vector<double>& of : per) {
     std::ranges::sort(of);
     out.push_back(of[of.size() / 2]);
   }
   return out;
 }
 
-// Ce que retient la mesure : la variante (0 : TensorRT) et la ligne des temps.
-struct Choice {
-  std::size_t best = 0;
-  std::string speed;
+// Ce que l'essai d'une unité (la fusion, la paire) donne au choix commun. Les passes et les morceaux tournent
+// sur stream ; une passe native lance le réseau aux sommes posées (parts->use).
+struct Unit {
+  std::string name;           // « fusion », « paire »
+  int width = 0, height = 0;  // les images, pour le journal
+  GmfssNativeParts* parts = nullptr;
+  cudaStream_t stream = nullptr;
+  std::size_t outputs = 0;  // les sorties de l'unité, chacune jugée à part
+  // Une passe en file : TensorRT (native faux) ou le natif.
+  std::function<std::expected<void, Refusal>(bool native)> pass;
+  // Le morceau seul en file, comme une passe le lance.
+  std::function<std::expected<void, Refusal>(int piece)> piece;
+  // La sortie i de la dernière passe, relue sur l'hôte.
+  std::function<std::expected<std::vector<__half>, Refusal>(std::size_t i)> fetch;
 };
 
-// nets[0] vide (TensorRT), puis les variantes natives qui tiennent le seuil ; pass(v) met en file une passe
-// de la variante v. La plus rapide des natives n'est retenue que si elle bat TensorRT d'au moins kMinGain.
-template <typename Net, typename Pass>
-std::expected<Choice, Refusal> choose(cudaStream_t stream, const std::vector<std::unique_ptr<Net>>& nets,
-                                      Pass&& pass) {
-  auto ms = times(stream, nets.size(), std::forward<Pass>(pass));
-  if (!ms) return std::unexpected(std::move(ms.error()));
-  Choice out{.speed = std::format("TensorRT {:.2f} ms", (*ms)[0])};
-  std::size_t fastest = 0;
-  for (std::size_t v = 1; v < nets.size(); ++v) {
-    out.speed += std::format(", {} {:.2f} ms", sums_name(nets[v]->sums()), (*ms)[v]);
-    if (fastest == 0 || (*ms)[v] < (*ms)[fastest]) fastest = v;
-  }
-  if (fastest != 0 && (*ms)[fastest] <= (*ms)[0] * (1.0 - kMinGain)) out.best = fastest;
-  return out;
-}
+// Ce que l'essai retient : les lignes du journal, la dernière étant le verdict ; keep : le natif gardé, ses
+// sommes posées et les poids qu'elles n'emploient pas libérés.
+struct Outcome {
+  std::vector<std::string> lines;
+  bool keep = false;
+};
+
+// Une référence TensorRT, puis le natif f32 (la base) ; le temps seul de chaque option de chaque morceau ; le
+// mélange le plus rapide dont chaque sortie tient min_db contre TensorRT (native_mix.h), gardé s'il bat
+// TensorRT d'au moins gmfss_mix::kMinGain sur une passe entière. tuning : les secondes du réglage. Refus :
+// l'essai n'a pas pu tourner.
+std::expected<Outcome, Refusal> try_mix(const Unit& unit, double min_db, double tuning);
 
 }  // namespace kirari::gpu::cuda::gmfss_trial

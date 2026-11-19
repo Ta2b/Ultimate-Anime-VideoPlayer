@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <format>
+#include <iterator>
 #include <map>
 #include <string>
 #include <string_view>
@@ -293,6 +295,23 @@ std::expected<void, Refusal> gmfss_grid_check(const GmfssGrid& grid) {
       grid.steps.back().to != static_cast<int>(grid.tensors.size()) - 1)
     return missing("la dernière convolution n'écrit pas la sortie");
   return {};
+}
+
+std::vector<int> gmfss_grid_pieces(const GmfssGrid& grid) {
+  const auto shuffle = std::ranges::find_if(grid.steps, [](const GmfssGridStep& s) { return s.shuffle; });
+  const std::ptrdiff_t queue = std::distance(grid.steps.begin(), shuffle) - 1;
+  if (shuffle == grid.steps.end() || queue < 0) return {};
+  std::vector<int> pieces;
+  for (std::size_t i = 0; i < grid.steps.size(); ++i) {
+    const int level = grid.tensors[static_cast<std::size_t>(grid.steps[i].to)].level;
+    if (static_cast<std::ptrdiff_t>(i) >= queue)
+      pieces.push_back(kGmfssQueuePiece);
+    else if (level >= 0 && level < kGmfssQueuePiece)
+      pieces.push_back(level);
+    else
+      return {};
+  }
+  return pieces;
 }
 
 }  // namespace kirari::prepare

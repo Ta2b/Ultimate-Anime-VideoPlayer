@@ -109,11 +109,19 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_fuse
   if (!engine) return std::unexpected(std::move(engine.error()));
   if (gmfss_native_) {
     auto grid = native_grid(artifact.path);
-    auto kept = grid ? (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb)
-                     : std::expected<std::string, Refusal>(std::unexpected(std::move(grid.error())));
-    if (kept)
-      log((*engine)->native() ? BackendLogLevel::Info : BackendLogLevel::Warn, *kept);
-    else
+    auto kept =
+        grid ? (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb)
+             : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(grid.error())));
+    // Un noyau fautif pendant l'essai perd le contexte CUDA : le chargement échoue au lieu de rendre une
+    // fusion morte. Tout autre refus laisse la fusion à TensorRT, chargée et intacte.
+    if (!kept && kept.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(kept.error()));
+    if (kept) {
+      // Le réglage, chaque morceau, puis le verdict.
+      for (std::size_t i = 0; i < kept->size(); ++i)
+        log(i + 1 == kept->size() && !(*engine)->native() ? BackendLogLevel::Warn : BackendLogLevel::Info,
+            (*kept)[i]);
+    } else
       log(BackendLogLevel::Warn, "GMFSS natif refusé, TensorRT garde la fusion : " + kept.error().detail);
   }
   return std::unique_ptr<Engine>(std::move(*engine));

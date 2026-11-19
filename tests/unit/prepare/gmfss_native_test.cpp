@@ -1,9 +1,10 @@
 // La fusion de GMFSS coupée pour le GridNet natif (prepare/gmfss_fused.h, prepare/gmfss_native.h) : le
-// manifeste relu et ses refus, la vérification d'un réseau écrit à la main, l'IFNet trouvé dans une fusion
-// en miniature des deux exports, et sur la fusion exportée quand elle est là (KIRARI_RIFE_MODEL_DIR) : le
-// GridNet lu et l'IFNet extrait.
+// manifeste relu et ses refus, la vérification d'un réseau écrit à la main et sa coupe en morceaux, l'IFNet
+// trouvé dans une fusion en miniature des deux exports, et sur la fusion exportée quand elle est là
+// (KIRARI_RIFE_MODEL_DIR) : le GridNet lu, ses morceaux et l'IFNet extrait.
 #include "prepare/gmfss_native.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -138,6 +139,25 @@ TEST_CASE("GMFSS natif : un réseau qui se tient passe, ses fautes sont refusée
   CHECK_FALSE(gmfss_grid(std::vector<std::byte>(16, std::byte{0x7f})));
 }
 
+TEST_CASE("GMFSS natif : les morceaux du GridNet suivent la structure, une autre forme n'est pas coupée",
+          "[prepare][gmfss]") {
+  // La descente écrit la ligne 1 ; la queue part de la montée, qui nourrit le PixelShuffle.
+  CHECK(gmfss_grid_pieces(small_grid()) ==
+        std::vector<int>{1, kGmfssQueuePiece, kGmfssQueuePiece, kGmfssQueuePiece});
+  GmfssGrid flat = small_grid();
+  flat.steps[2].shuffle = false;  // pas de PixelShuffle
+  CHECK(gmfss_grid_pieces(flat).empty());
+  GmfssGrid first = small_grid();
+  first.steps.erase(first.steps.begin(), first.steps.begin() + 2);  // le PixelShuffle en premier
+  CHECK(gmfss_grid_pieces(first).empty());
+  GmfssGrid full = small_grid();
+  full.tensors[4].level = kGmfssFullLevel;  // une convolution avant la queue écrit au double
+  CHECK(gmfss_grid_pieces(full).empty());
+  GmfssGrid deep = small_grid();
+  deep.tensors[4].level = 3;  // une quatrième ligne
+  CHECK(gmfss_grid_pieces(deep).empty());
+}
+
 TEST_CASE("GMFSS natif : l'IFNet se trouve et s'extrait dans les fusions des deux exports",
           "[prepare][gmfss]") {
   constexpr std::string_view kHead = "gmfss.fusionnet.residual_model_head0.1.weight";
@@ -180,6 +200,15 @@ TEST_CASE("GMFSS natif : la fusion exportée se lit et son IFNet s'extrait", "[p
   CHECK(grid->steps.size() == 2 * 21 + 3);
   CHECK(grid->tensors.back().level == kGmfssFullLevel);
   CHECK(grid->steps[2].conv.in_slope == 0.25F);  // residual_model_head0.0 (après les deux de head1)
+  // Les morceaux : 14 convolutions à la ligne 0, 16 à la ligne 1, 12 à la ligne 2, puis la queue (celle qui
+  // nourrit le PixelShuffle, la sienne et conv_last).
+  const std::vector<int> pieces = gmfss_grid_pieces(*grid);
+  REQUIRE(pieces.size() == grid->steps.size());
+  std::vector<int> count(kGmfssGridPieces, 0);
+  for (const int p : pieces) ++count[static_cast<std::size_t>(p)];
+  CHECK(count == std::vector<int>{14, 16, 12, 3});
+  CHECK(std::all_of(pieces.end() - 3, pieces.end(), [](int p) { return p == kGmfssQueuePiece; }));
+  CHECK(grid->steps[grid->steps.size() - 2].shuffle);
   const auto ifnet = gmfss_ifnet(*bytes, 384, 640);
   REQUIRE(ifnet);
   CHECK(ifnet->size() < bytes->size());

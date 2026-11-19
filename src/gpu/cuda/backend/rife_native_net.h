@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "gpu/cuda/backend/native_sums.h"
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 
 namespace kirari::gpu::cuda {
@@ -31,16 +32,6 @@ struct RifeNativeConv {
   std::vector<float> scale;  // vide : pas de résiduel
 };
 using RifeNativePiece = std::vector<RifeNativeConv>;
-
-// Les sommes des convolutions : f16 (le débit plein des tensor cores des GeForce), mixtes (chaque prise en
-// f16, les prises entre elles en f32, au débit du f16), f32 (moitié du débit sur GeForce).
-enum class RifeNativeSums : std::uint8_t { kF16, kMixed, kF32 };
-// Les sommes des couches d'un morceau : la dernière (la tête : le flot et le masque d'un bloc, l'encodage de
-// l'encodeur) peut sommer plus finement que les autres.
-struct RifeNativePrecision {
-  RifeNativeSums body = RifeNativeSums::kF16;
-  RifeNativeSums head = RifeNativeSums::kF16;
-};
 
 // La forme qu'un réglage a retenue pour une couche (rife_native_plan.h) : un réseau créé après un autre de
 // même taille reprend celle des couches de mêmes sommes sans les chronométrer de nouveau.

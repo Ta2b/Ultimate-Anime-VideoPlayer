@@ -1,9 +1,9 @@
-// Le FeatureNet et le MetricNet natifs de GMFSS (gmfss_pair_native_net.h) : chaque réseau planifié une fois
-// par gmfss_conv_plan.cuh, dans une zone commune. Le FeatureNet lit l'image en plans (In::kImage, pas 2) et
-// ses trois sorties, rangées par pixel, reviennent en plans ; l'entrée du MetricNet passe d'abord par pixel,
-// et sa sortie (2 canaux sur 8) devient la métrique des six mouvements : tanh × 10, puis les réductions du
-// Resize linéaire de la paire (half_pixel : la moitié est la moyenne 2 × 2, le quart celle des pixels 4x + 1
-// et 4x + 2 sur chaque axe).
+// Le FeatureNet et le MetricNet natifs de GMFSS (gmfss_pair_native_net.h) : chaque réseau planifié et réglé
+// une fois par gmfss_conv_plan.cuh (un banc pour les deux), dans une zone commune. Le FeatureNet lit l'image
+// en plans (In::kImage, pas 2) et ses trois sorties, rangées par pixel, reviennent en plans ; l'entrée du
+// MetricNet passe d'abord par pixel, et sa sortie (2 canaux sur 8) devient la métrique des six mouvements :
+// tanh × 10, puis les réductions du Resize linéaire de la paire (half_pixel : la moitié est la moyenne 2 × 2,
+// le quart celle des pixels 4x + 1 et 4x + 2 sur chaque axe).
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -19,9 +19,9 @@ namespace kirari::gpu::cuda {
 namespace {
 
 using gmfss_plan::blocks_for;
-using gmfss_plan::Buffer;
 using gmfss_plan::ConvNet;
 using gmfss_plan::Io;
+using gmfss_plan::rn::Buffer;
 using prepare::kGmfssFeatureLevels;
 using prepare::kGmfssMetricOutput;
 using prepare::kGmfssMetricPlanes;
@@ -102,43 +102,28 @@ __global__ void metric_motion(const __half* m, int h, int w, MotionPlanes out) {
 
 class Net final : public GmfssPairNativeNet {
  public:
-  Net(int height, int width, RifeNativeSums sums)
-      : height_(height),
-        width_(width),
-        sums_(sums),
-        features_(height, width, sums),
-        metric_(height, width, sums) {}
+  Net(int height, int width)
+      : height_(height), width_(width), features_(height, width), metric_(height, width) {}
 
-  bool plan(const prepare::GmfssPairNets& nets, std::string& error) {
+  bool plan(const prepare::GmfssPairNets& nets, const gmfss_plan::Tuner& tuner, std::string& error) {
     const Io feature_io{.external = {prepare::kGmfssFeatureImage},
                         .image = prepare::kGmfssFeatureImage,
                         .written = {},
                         .kept = {1, 2, 3}};
-    if (!features_.plan(nets.features, feature_io, error)) {
+    if (!features_.plan(nets.features, feature_io, {}, tuner, error)) {
       error = "FeatureNet, " + error;
       return false;
     }
     const Io metric_io{
         .external = {}, .image = -1, .written = {prepare::kGmfssMetricInput}, .kept = {kGmfssMetricOutput}};
-    if (!metric_.plan(nets.metric, metric_io, error)) {
+    if (!metric_.plan(nets.metric, metric_io, {}, tuner, error)) {
       error = "MetricNet, " + error;
       return false;
     }
-    for (int level = 0; level < kGmfssFeatureLevels; ++level) {
-      const gmfss_plan::Placed& t = features_.tensor(level + 1);
-      if (t.height != height_ >> level || t.width != width_ >> level || t.channels % 8 != 0) {
-        error = "FeatureNet : sortie " + std::to_string(level + 1);
-        return false;
-      }
-    }
-    const gmfss_plan::Placed& in = metric_.tensor(prepare::kGmfssMetricInput);
-    const gmfss_plan::Placed& out = metric_.tensor(kGmfssMetricOutput);
-    if (in.channels != 16 || out.channels != 8 || out.height != height_ || out.width != width_) {
-      error = "MetricNet : entrée ou sortie";
-      return false;
-    }
-    zone_bytes_ = std::max(features_.zone_bytes(), metric_.zone_bytes());
-    partial_bytes_ = std::max(features_.partial_bytes(), metric_.partial_bytes());
+    if (!check(error)) return false;
+    use(std::vector<RifeNativePrecision>(2, {RifeNativeSums::kF32, RifeNativeSums::kF32}));
+    zone_bytes_ = std::max<std::int64_t>({features_.zone_bytes(), metric_.zone_bytes(), 256});
+    partial_bytes_ = std::max<std::int64_t>({features_.partial_bytes(), metric_.partial_bytes(), 256});
     const auto sent = [&](cudaError_t result) {
       if (result == cudaSuccess) return true;
       static_cast<void>(cudaGetLastError());
@@ -149,8 +134,25 @@ class Net final : public GmfssPairNativeNet {
            sent(partial_.allocate(static_cast<std::size_t>(partial_bytes_)));
   }
 
+  int pieces() const override { return 2; }
+  std::string piece_name(int piece) const override {
+    return piece == kFeatureNet ? "FeatureNet" : piece == kMetricNet ? "MetricNet" : "?";
+  }
+  bool has_head(int piece) const override {
+    return piece == kFeatureNet ? features_.has_head(0) : piece == kMetricNet && metric_.has_head(0);
+  }
+  void use(std::span<const RifeNativePrecision> precisions) override {
+    if (precisions.size() < 2) return;
+    features_.use(precisions.subspan(kFeatureNet, 1));
+    metric_.use(precisions.subspan(kMetricNet, 1));
+  }
+  void trim() override {
+    features_.trim();
+    metric_.trim();
+  }
+  GmfssTuning& tuning() { return tuning_; }
+  const GmfssTuning& tuning() const override { return tuning_; }
   std::int64_t workspace_bytes() const override { return zone_bytes_ + partial_bytes_; }
-  RifeNativeSums sums() const override { return sums_; }
 
   cudaError_t features(cudaStream_t stream, const void* image, const GmfssPairFeatures& out) const override {
     const std::array<const void*, 1> bound{image};
@@ -185,11 +187,29 @@ class Net final : public GmfssPairNativeNet {
   }
 
  private:
+  // Les sorties du FeatureNet aux trois niveaux ; l'entrée et la sortie du MetricNet.
+  bool check(std::string& error) const {
+    for (int level = 0; level < kGmfssFeatureLevels; ++level) {
+      const gmfss_plan::Placed& t = features_.tensor(level + 1);
+      if (t.height != height_ >> level || t.width != width_ >> level || t.channels % 8 != 0) {
+        error = "FeatureNet : sortie " + std::to_string(level + 1);
+        return false;
+      }
+    }
+    const gmfss_plan::Placed& in = metric_.tensor(prepare::kGmfssMetricInput);
+    const gmfss_plan::Placed& out = metric_.tensor(kGmfssMetricOutput);
+    if (in.channels != 16 || out.channels != 8 || out.height != height_ || out.width != width_) {
+      error = "MetricNet : entrée ou sortie";
+      return false;
+    }
+    return true;
+  }
+
   int height_;
   int width_;
-  RifeNativeSums sums_;
   ConvNet features_;
   ConvNet metric_;
+  GmfssTuning tuning_;
   std::int64_t zone_bytes_ = 0;
   std::int64_t partial_bytes_ = 0;
   Buffer zone_;
@@ -199,14 +219,26 @@ class Net final : public GmfssPairNativeNet {
 }  // namespace
 
 std::unique_ptr<GmfssPairNativeNet> GmfssPairNativeNet::create(const prepare::GmfssPairNets& nets, int height,
-                                                               int width, RifeNativeSums sums,
+                                                               int width, cudaStream_t stream,
                                                                std::string& error) {
   if (height < 32 || width < 32 || height % 32 != 0 || width % 32 != 0) {
     error = "taille de la fusion : des multiples de 32 attendus";
     return nullptr;
   }
-  auto net = std::make_unique<Net>(height, width, sums);
-  if (!net->plan(nets, error)) return nullptr;
+  gmfss_plan::rn::Bench bench(stream);
+  if (!bench.ready()) {
+    error = "événements CUDA du réglage";
+    return nullptr;
+  }
+  auto net = std::make_unique<Net>(height, width);
+  if (!net->plan(nets, gmfss_plan::Tuner{.bench = bench, .stream = stream, .tuning = net->tuning()}, error))
+    return nullptr;
+  // Les envois sur stream finis avant qu'une autre voie (la lecture) lance les réseaux.
+  if (const cudaError_t result = cudaStreamSynchronize(stream); result != cudaSuccess) {
+    static_cast<void>(cudaGetLastError());
+    error = std::string("chargement : ") + cudaGetErrorString(result);
+    return nullptr;
+  }
   return net;
 }
 

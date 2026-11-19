@@ -5,6 +5,7 @@
 // journal, retenu pour la séance (C08-12).
 #include <algorithm>
 #include <cmath>
+#include <expected>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -88,7 +89,17 @@ std::optional<bool> load_gmfss(Player& p, const gpu::BackendInit& init, ChainEng
   }
   if (settings.gmfss_half_flow && found->half_pair.empty())
     log->warn("GMFSS union : {} introuvable, la paire au flot entier", kGmfssHalfPairFile);
-  const GmfssModels chosen = gmfss_chosen(*found, settings.gmfss_half_flow);
+  // Une paire d'avant le format 2 (sans feature0_1) cède la place à l'autre paire du dossier ; sans paire au
+  // format 2, GMFSS est écarté avant toute construction (le moteur, construit, la refuserait au chargement).
+  std::string dropped;
+  const std::expected<GmfssModels, Refusal> usable = gmfss_usable(*found, settings.gmfss_half_flow, dropped);
+  if (!usable) {
+    log->warn("GMFSS union refusé ({}) : {}", usable.error().detail, without);
+    return true;
+  }
+  if (!dropped.empty())
+    log->warn("GMFSS union : {} ; {} à sa place", dropped, core::to_utf8(usable->pair.filename()));
+  const GmfssModels& chosen = *usable;
   const WorkSize size = use == GmfssUse::Only ? c.work : c.rife_size;
   const kernels::RifeGeometry g = kernels::rife_geometry(size.width, size.height, kernels::kGmfssAlign);
   const std::string key = inner_key("gmfss", library, chosen.pair, g.padded_width, g.padded_height);

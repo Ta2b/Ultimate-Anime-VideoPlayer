@@ -8,7 +8,7 @@
 // (gmfss_native.h). Le FeatureNet n'est lu qu'une fois : les deux images passent par les mêmes poids.
 //
 // Les poids se lisent dans une paire FP16 (gmfss_fortuna_union_pair.onnx, ou _s05) : ils y sont les mêmes à
-// toutes les échelles du flot, et la paire FP8 (_s05fp8) n'a pas à les porter lisibles.
+// toutes les échelles du flot.
 #pragma once
 
 #include <cstddef>

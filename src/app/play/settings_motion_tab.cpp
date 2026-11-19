@@ -174,7 +174,7 @@ std::string level_name(InterpLevel level) {
 }
 
 // Le choix se montre : son moteur est proposé ici, son modèle est là. GMFSS union, seul ou au milieu des
-// paires fortes, seulement sous --gmfss-native (interp_retired.h) et avec ses deux graphes.
+// paires fortes, seulement avec le natif (interp_retired.h, sauf --no-gmfss-native) et ses deux graphes.
 bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   if (!offered(choice.engine)) return false;
   if ((choice.engine == MotionEngine::Gmfss || choice.gmfss_middle) &&
@@ -566,7 +566,7 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   if (!panel::begin_boxes()) return;
   const Factor now = factor_of(d);
   const bool on = now.num > now.den && choices.rife_available;
-  // L'encadré de GMFSS ne se montre qu'à une chaîne qui le joue (au menu sous --gmfss-native).
+  // L'encadré de GMFSS ne se montre qu'à une chaîne qui le joue (au menu avec le natif, le défaut).
   const bool gmfss = d.motion_engine == MotionEngine::Gmfss || d.gmfss_middle;
   if (gmfss) {
     panel::next_box();

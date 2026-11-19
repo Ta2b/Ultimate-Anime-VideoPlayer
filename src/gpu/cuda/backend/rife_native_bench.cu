@@ -1,5 +1,5 @@
-// Le banc du réglage du RIFE natif (rife_native_layer.h) : chaque forme d'une couche est lancée sur une
-// entrée variée, sa sortie comparée à celle de la forme de référence, puis chronométrée en graphe.
+// Le banc du réglage du RIFE et du GMFSS natifs (rife_native_layer.h) : chaque forme d'une couche est lancée
+// sur une entrée variée, sa sortie comparée à celle de la forme de référence, puis chronométrée en graphe.
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -52,53 +52,52 @@ unsigned blocks_for(long n) {
 
 bool Bench::failed(const char* what, cudaError_t result, std::string& error) {
   static_cast<void>(cudaGetLastError());  // une erreur collante reste, pour l'appelant
-  error = std::string("réglage du RIFE natif (") + what + ") : " + cudaGetErrorString(result);
+  error = std::string("banc du réglage natif (") + what + ") : " + cudaGetErrorString(result);
   return false;
 }
 
-bool Bench::reserve(const Layer& layer, std::string& error) {
+bool Bench::reserve(const Shot& shot, std::string& error) {
   const auto grow = [&](Buffer& buffer, std::int64_t& have, std::int64_t want) {
     if (want <= have) return cudaSuccess;
     have = want;
     return buffer.allocate(static_cast<std::size_t>(want));
   };
   const std::int64_t had = in_bytes_;
-  cudaError_t result = grow(in_, in_bytes_, layer.in_bytes());
+  cudaError_t result = grow(in_, in_bytes_, shot.in_bytes);
   if (result == cudaSuccess && in_bytes_ != had) {
     const long n = static_cast<long>(in_bytes_ / 2);
     fill_kernel<<<blocks_for(n), 256, 0, stream_>>>(in_.as<__half>(), n);
     result = cudaGetLastError();
   }
-  if (result == cudaSuccess && layer.out_bytes() > out_bytes_) {
-    out_bytes_ = layer.out_bytes();
+  if (result == cudaSuccess && shot.out_bytes > out_bytes_) {
+    out_bytes_ = shot.out_bytes;
     result = out_.allocate(static_cast<std::size_t>(out_bytes_));
     if (result == cudaSuccess) result = ref_.allocate(static_cast<std::size_t>(out_bytes_));
   }
   if (result == cudaSuccess)
-    result = grow(partial_, partial_bytes_, std::max<std::int64_t>(layer.partial_bytes(), 256));
+    result = grow(partial_, partial_bytes_, std::max<std::int64_t>(shot.partial_bytes, 256));
   if (result == cudaSuccess && stats_.as<void>() == nullptr) result = stats_.allocate(2 * sizeof(unsigned));
   return result == cudaSuccess || failed("mémoire", result, error);
 }
 
 // Les sorties partent de NaN (0xFFFF en FP16) : une valeur qu'une forme n'écrit pas ne passe pas la
 // comparaison.
-cudaError_t Bench::poison(const Buffer& out, const Layer& layer) {
-  return cudaMemsetAsync(out.as<void>(), 0xFF, static_cast<std::size_t>(layer.out_bytes()), stream_);
+cudaError_t Bench::poison(const Buffer& out, const Shot& shot) {
+  return cudaMemsetAsync(out.as<void>(), 0xFF, static_cast<std::size_t>(shot.out_bytes), stream_);
 }
 
-bool Bench::reference(const Layer& layer, const void* w, std::string& error) {
-  if (!reserve(layer, error)) return false;
-  cudaError_t result = poison(ref_, layer);
+bool Bench::reference(const Shot& shot, std::string& error) {
+  if (!reserve(shot, error)) return false;
+  cudaError_t result = poison(ref_, shot);
   if (result == cudaSuccess) {
-    enqueue(layer, stream_,
-            params(layer, in_.as<const __half>(), ref_.as<__half>(), partial_.as<float>(), w));
+    shot.enqueue(stream_, in_.as<const __half>(), ref_.as<__half>(), partial_.as<float>());
     result = cudaGetLastError();
   }
   return result == cudaSuccess || failed("forme de référence", result, error);
 }
 
-std::optional<bool> Bench::differs(const Layer& layer, std::string& error) {
-  const long n = static_cast<long>(layer.out_bytes() / 2);
+std::optional<bool> Bench::differs(const Shot& shot, std::string& error) {
+  const long n = static_cast<long>(shot.out_bytes / 2);
   unsigned stats[2] = {0, 0};
   cudaError_t result = cudaMemsetAsync(stats_.as<void>(), 0, sizeof(stats), stream_);
   if (result == cudaSuccess) {
@@ -113,37 +112,35 @@ std::optional<bool> Bench::differs(const Layer& layer, std::string& error) {
     failed("comparaison", result, error);
     return std::nullopt;
   }
-  // Un défaut de rangement ou de lecture s'écarte de l'ordre du pic. L'ordre des sommes, d'un arrondi f16 par
-  // terme au plus en f16, d'un par prise en mixte, du seul arrondi de la sortie en f32 : la marge suit.
-  const float margin = layer.sums == RifeNativeSums::kF16     ? 16.F
-                       : layer.sums == RifeNativeSums::kMixed ? 32.F
-                                                              : 128.F;
-  const float peak = std::max(std::bit_cast<float>(stats[0]), 1e-3F);
-  return !(std::bit_cast<float>(stats[1]) <= peak / margin);
+  // Un défaut de rangement ou de lecture s'écarte de l'ordre du pic, l'ordre des sommes bien moins
+  // (bench_tolerance, native_sums.h).
+  return bench_differs(std::bit_cast<float>(stats[0]), std::bit_cast<float>(stats[1]), shot.sums);
 }
 
-std::optional<Bench::Timing> Bench::time(const Layer& layer, const void* w, std::string& error) {
+std::optional<Bench::Timing> Bench::time(const Shot& shot, std::string& error) {
   constexpr int kBatch = 3;
-  if (!reserve(layer, error)) return std::nullopt;
-  const Params p = params(layer, in_.as<const __half>(), out_.as<__half>(), partial_.as<float>(), w);
-  if (const cudaError_t result = poison(out_, layer); result != cudaSuccess) {
+  if (!reserve(shot, error)) return std::nullopt;
+  const auto run = [&] {
+    shot.enqueue(stream_, in_.as<const __half>(), out_.as<__half>(), partial_.as<float>());
+  };
+  if (const cudaError_t result = poison(out_, shot); result != cudaSuccess) {
     failed("sortie", result, error);
     return std::nullopt;
   }
-  enqueue(layer, stream_, p);
+  run();
   if (cudaGetLastError() != cudaSuccess) {
     if (cudaPeekAtLastError() == cudaSuccess) return Timing{};  // ressources : la forme ne se lance pas
     failed("lancement", cudaPeekAtLastError(), error);
     return std::nullopt;
   }
   Timing timing;
-  const std::optional<bool> off = differs(layer, error);
+  const std::optional<bool> off = differs(shot, error);
   if (!off) return std::nullopt;
   timing.differs = *off;
   cudaGraph_t graph = nullptr;
   cudaError_t result = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
   if (result == cudaSuccess) {
-    for (int i = 0; i < kBatch; ++i) enqueue(layer, stream_, p);
+    for (int i = 0; i < kBatch; ++i) run();
     result = cudaStreamEndCapture(stream_, &graph);
   }
   cudaGraphExec_t exec = nullptr;

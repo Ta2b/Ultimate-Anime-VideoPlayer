@@ -421,6 +421,11 @@ TEST_CASE("kirari play : l'aide ne cite aucune option inconnue de l'analyseur", 
   // Le tri des paires ne vaut qu'avec la carte de la scène, une option d'essai : essai lui aussi.
   CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--pair-triage"}));
   CHECK(parse({"video.mkv", "--scene-map", "--pair-triage"})->pair_triage);
+  // GMFSS natif par défaut : --gmfss-native reste lu sans --debug, l'essai est de l'éteindre.
+  CHECK(parse_play_options(std::vector<std::string_view>{"video.mkv"})->gmfss_native);
+  CHECK(parse_play_options(std::vector<std::string_view>{"video.mkv", "--gmfss-native"})->gmfss_native);
+  CHECK_FALSE(parse_play_options(std::vector<std::string_view>{"video.mkv", "--no-gmfss-native"}));
+  CHECK_FALSE(parse({"video.mkv", "--no-gmfss-native"})->gmfss_native);
   // Les tuiles de SPAN : allumées par défaut, --no-span-tiles les coupe, --span-tiles reste accepté.
   CHECK(parse({"video.mkv"})->span_tiles);
   CHECK_FALSE(parse({"video.mkv", "--no-span-tiles"})->span_tiles);

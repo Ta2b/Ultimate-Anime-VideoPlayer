@@ -6,6 +6,7 @@
 #include <string_view>
 #include <utility>
 
+#include "core/trace.h"
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/fused_graphs.h"
@@ -111,7 +112,10 @@ std::expected<void, Refusal> GmfssFusedEngine::enqueue(cudaStream_t stream,
                                                        std::span<const Tensor> outputs) {
   if (inputs.size() != kInputs || outputs.size() != 1)
     return refuse(RefusalCode::ShapeInvalid, "GMFSS natif : neuf entrées et une sortie attendues");
-  if (!native_on_) return full_->enqueue(stream, shared, inputs, outputs);
+  if (!native_on_) {
+    KIRARI_TRACE("gmfss.fusion.tensorrt");
+    return full_->enqueue(stream, shared, inputs, outputs);
+  }
   return enqueue_native(stream, shared, inputs, outputs[0]);
 }
 
@@ -129,13 +133,17 @@ std::expected<void, Refusal> GmfssFusedEngine::enqueue_native(
   for (std::size_t j = 0; j < 3; ++j) ifnet_in[j] = inputs[at_[ifnet_from_[j]]];
   const Tensor rife = fused_tensor(reinterpret_cast<std::uintptr_t>(rife_), 0, 3, height_, width_);
   const Tensor ifnet_out[]{rife};
-  if (auto ok = ifnet_->enqueue(stream, shared, ifnet_in, ifnet_out); !ok) return ok;
+  {
+    KIRARI_TRACE("gmfss.fusion.ifnet");  // Nsight Systems : l'envoi de chaque morceau (docs/gmfss-natif.md)
+    if (auto ok = ifnet_->enqueue(stream, shared, ifnet_in, ifnet_out); !ok) return ok;
+  }
   GmfssNativeInputs in;
   for (std::size_t level = 0; level < 3; ++level) {
     in.warped0[level] = fused_address(inputs[at_[kW01 + level]]);
     in.warped1[level] = fused_address(inputs[at_[kW11 + level]]);
   }
   in.rife = rife_;
+  KIRARI_TRACE("gmfss.fusion.gridnet");
   return cuda_check(native_->run(stream, in, fused_address(out)), "GMFSS natif : GridNet");
 }
 

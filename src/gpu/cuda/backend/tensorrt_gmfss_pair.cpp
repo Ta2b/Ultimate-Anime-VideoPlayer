@@ -66,11 +66,17 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_pair
     auto nets =
         bytes ? prepare::gmfss_pair_nets(*bytes)
               : std::expected<prepare::GmfssPairNets, Refusal>(std::unexpected(std::move(bytes.error())));
-    auto kept = nets ? (*engine)->try_native(*nets, arena(), kGmfssNativeMinDb)
-                     : std::expected<std::string, Refusal>(std::unexpected(std::move(nets.error())));
-    if (kept)
-      log((*engine)->native() ? BackendLogLevel::Info : BackendLogLevel::Warn, *kept);
-    else
+    auto kept =
+        nets ? (*engine)->try_native(*nets, arena(), kGmfssNativeMinDb)
+             : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(nets.error())));
+    // Comme pour la fusion : un contexte perdu fait échouer le chargement, tout autre refus garde TensorRT.
+    if (!kept && kept.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(kept.error()));
+    if (kept) {
+      for (std::size_t i = 0; i < kept->size(); ++i)
+        log(i + 1 == kept->size() && !(*engine)->native() ? BackendLogLevel::Warn : BackendLogLevel::Info,
+            (*kept)[i]);
+    } else
       log(BackendLogLevel::Warn, "GMFSS natif refusé, TensorRT garde la paire : " + kept.error().detail);
   }
   return std::unique_ptr<Engine>(std::move(*engine));

@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/gmfss_mix.h"
 #include "gpu/cuda/backend/gmfss_trial.h"
 #include "gpu/cuda/backend/tfix_fused_engine.h"
 #include "gpu/cuda/backend/tfix_fused_kernels.h"
@@ -47,12 +48,12 @@ const char* sums_name(RifeNativeSums sums) {
 
 // Le temps d'une passe, TensorRT puis natif ; pass(0) met en file une passe TensorRT, pass(1) une native.
 // La marge que le natif doit prendre sur TensorRT, en pour cent, pour le journal.
-constexpr double kGainPercent = gmfss_trial::kMinGain * 100.0;
+constexpr double kGainPercent = gmfss_mix::kMinGain * 100.0;
 
 struct Speed {
   double trt = 0.0;
   double native = 0.0;
-  bool native_wins() const { return native <= trt * (1.0 - gmfss_trial::kMinGain); }
+  bool native_wins() const { return native <= trt * (1.0 - gmfss_mix::kMinGain); }
   std::string text() const {
     return std::format("une passe : TensorRT {:.2f} ms, natif {:.2f} ms", trt, native);
   }

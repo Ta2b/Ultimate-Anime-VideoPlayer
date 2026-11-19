@@ -1,8 +1,13 @@
 // GMFSS Fortuna Union dans play.toml (settings_toml.cpp) : le niveau Élevé (gmfss_middle, gmfss_motion), le
 // demi-flot (gmfss_half_flow) et les noms de l'ancien GMFSS (0.10.0) ; la paire au demi-flot (gmfss_model.h).
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -14,6 +19,7 @@
 #include "app/play/model_choice.h"
 #include "app/play/player.h"
 #include "app/play/settings.h"
+#include "prepare/onnx_build.h"
 
 namespace kirari::app::play {
 
@@ -73,7 +79,7 @@ TEST_CASE("play.toml : GMFSS union, le niveau Élevé et les noms de l'ancien GM
   CHECK_FALSE(without->gmfss_light);
 }
 
-TEST_CASE("play.toml sous --gmfss-native : GMFSS union, seul ou au milieu, se relit tel quel",
+TEST_CASE("play.toml avec le natif (défaut) : GMFSS union, seul ou au milieu, se relit tel quel",
           "[app][settings][gmfss]") {
   // keep_gmfss est posé par le lecteur au lancement ; le test le rend éteint quoi qu'il arrive.
   struct Kept {
@@ -98,7 +104,7 @@ TEST_CASE("play.toml sous --gmfss-native : GMFSS union, seul ou au milieu, se re
     CHECK(interp_level(high_back->motion_engine, high_back->rife_model, high_back->gmfss_middle) ==
           InterpLevel::GmfssMiddle);
   }
-  // L'option retirée, le même fichier retombe sur RIFE 4.25.
+  // Sous --no-gmfss-native, le même fichier retombe sur RIFE 4.25.
   const auto alone = parse_settings("[interpolation]\nengine = \"gmfss_union\"\n");
   REQUIRE(alone);
   CHECK(alone->motion_engine == MotionEngine::Rife);
@@ -163,6 +169,70 @@ TEST_CASE("GMFSS : cherché dans --gmfss-dir, puis à côté de RIFE et dans le 
   REQUIRE(found);
   CHECK(found->pair == home / "ajp-work/gmfss-out" / kGmfssPairFile);
   std::filesystem::remove_all(home);
+}
+
+// Essai du PC : une paire au flot entier d'un export d'avant le format 2 (source{k}_1 de 67 canaux, sans
+// feature0_1) faisait refuser GMFSS au chargement du moteur, après sa construction. Une paire périmée cède
+// maintenant la place à l'autre paire du dossier, dans un sens comme dans l'autre ; sans paire au format 2,
+// GMFSS est écarté avant toute construction.
+TEST_CASE("GMFSS : une paire d'avant le format 2 est écartée avant la construction", "[app][gmfss]") {
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-gmfss-format";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const auto graph_with = [&](std::string_view file, std::initializer_list<std::string_view> outputs) {
+    prepare::onnx_build::Message graph;
+    for (const std::string_view name : outputs) {
+      const std::array<std::int64_t, 4> dims{1, 3, 32, 32};
+      graph.message(12, prepare::onnx_build::value_info(name, 10, dims));
+    }
+    prepare::onnx_build::Message model;
+    model.varint(1, 8).message(7, graph);
+    std::ofstream(dir / file, std::ios::binary)
+        .write(reinterpret_cast<const char*>(model.data().data()),
+               static_cast<std::streamsize>(model.data().size()));
+  };
+  graph_with(kGmfssPairFile, {"half0", "half1", "feature0_1", "feature1_1", "source0_2", "motion0_1"});
+  graph_with(kGmfssHalfPairFile, {"source0_1", "source1_1", "source0_2", "motion0_1"});  // format 1
+  graph_with(kGmfssFusionFile, {"out"});
+  const std::vector<std::filesystem::path> dirs{dir};
+  const auto found = find_gmfss(dirs);
+  REQUIRE(found);
+  CHECK(gmfss_pair_current(found->pair));
+  const auto stale = gmfss_pair_current(found->half_pair);
+  REQUIRE_FALSE(stale);
+  CHECK(stale.error().code == RefusalCode::GraphInvalid);
+  CHECK(stale.error().detail.find("feature0_1") != std::string::npos);
+  std::string dropped;
+  auto usable = gmfss_usable(*found, true, dropped);
+  REQUIRE(usable);
+  CHECK(usable->pair == found->pair);  // le demi-flot périmé : le flot entier
+  CHECK(dropped.find(kGmfssHalfPairFile) != std::string::npos);
+  usable = gmfss_usable(*found, false, dropped);
+  REQUIRE(usable);
+  CHECK(dropped.empty());
+  // Le cas du PC : la paire au flot entier périmée, celle au demi-flot au format 2, prise même sans half.
+  graph_with(kGmfssPairFile, {"source0_1", "source1_1", "source0_2", "motion0_1"});
+  graph_with(kGmfssHalfPairFile, {"half0", "half1", "feature0_1", "feature1_1", "source0_2", "motion0_1"});
+  usable = gmfss_usable(*found, false, dropped);
+  REQUIRE(usable);
+  CHECK(usable->pair == found->half_pair);
+  CHECK(dropped.find(kGmfssPairFile) != std::string::npos);
+  usable = gmfss_usable(*found, true, dropped);
+  REQUIRE(usable);
+  CHECK(usable->pair == found->half_pair);
+  CHECK(dropped.empty());
+  // Sans paire au format 2 dans le dossier : GMFSS écarté, le refus dit quoi faire.
+  GmfssModels alone = *found;
+  alone.half_pair.clear();
+  usable = gmfss_usable(alone, true, dropped);
+  REQUIRE_FALSE(usable);
+  CHECK(usable.error().detail.find("export_gmfss.py") != std::string::npos);
+  graph_with(kGmfssHalfPairFile, {"source0_1", "source1_1"});
+  usable = gmfss_usable(*found, true, dropped);
+  REQUIRE_FALSE(usable);
+  CHECK(usable.error().detail.find(kGmfssHalfPairFile) != std::string::npos);
+  CHECK(dropped.empty());
+  std::filesystem::remove_all(dir);
 }
 
 }  // namespace kirari::app::play

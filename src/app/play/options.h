@@ -202,11 +202,12 @@ struct PlayOptions {
   // de TensorRT (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB : le défaut depuis la séance PC
   // (4.25 et 4.22 lite plus rapides de 26 et 17 % par passe), --no-rife-native (essai) l'éteint.
   bool rife_native = true;
-  // --gmfss-native (essai) : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par
-  // nos noyaux CUDA (docs/gmfss-natif.md, gpu::kTrialGmfssNative), l'IFNet et GMFlow restant des moteurs
-  // TensorRT ; chacun gardé à 45 dB de son graphe TensorRT entier et plus rapide que lui, éteint jusqu'à la
-  // séance finale.
-  bool gmfss_native = false;
+  // Le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par nos noyaux CUDA
+  // (docs/gmfss-natif.md, gpu::kTrialGmfssNative), l'IFNet et GMFlow restant des moteurs TensorRT ; chacun
+  // gardé à 45 dB de son graphe TensorRT entier et plus rapide que lui, sinon TensorRT le garde. Par défaut,
+  // avec GMFSS union au menu (interp_retired.h) ; --no-gmfss-native (essai) laisse tout GMFSS à TensorRT et
+  // le retire du menu.
+  bool gmfss_native = true;
   // --tfix-native (essai) : les convolutions de TemporalFix fusionné par nos noyaux CUDA (docs/tfix-natif.md,
   // gpu::kTrialTfixNative), gardées à 45 dB de TensorRT ; éteint jusqu'à la séance finale.
   bool tfix_native = false;

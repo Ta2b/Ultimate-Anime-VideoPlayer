@@ -4,15 +4,16 @@
 // tailles fixées pour les plans remplis de la lecture (derived_model.h), que TensorRT construit sans profil.
 #pragma once
 
+#include <array>
 #include <expected>
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "core/types.h"
-#include "prepare/onnx_dims.h"
 
 namespace kirari::app::play {
 
@@ -36,13 +37,23 @@ std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem:
 // de ce dossier si elle y est.
 std::optional<GmfssModels> find_gmfss(std::span<const std::filesystem::path> dirs);
 
-// Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height (multiples
-// de 64) : « H », « W », puis « H/2 » à « W/8 ».
-std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height);
-
 // Les deux graphes à construire : la paire au demi-flot si half et qu'elle est là, sinon celle au flot
 // entier.
 GmfssModels gmfss_chosen(const GmfssModels& found, bool half);
+
+// Les sorties de la paire que l'étage lit au niveau 1 (format 2 d'export_gmfss.py, métadonnée
+// « ajp.gmfss.export ») : un export d'avant (format 1, source{k}_1 de 67 canaux) ne les a pas.
+inline constexpr std::array<std::string_view, 4> kGmfssPairLevel1{"feature0_1", "feature1_1", "half0",
+                                                                  "half1"};
+
+// La paire a-t-elle les sorties de kGmfssPairLevel1 ? Refus : ceux de prepare::read_onnx_bytes et
+// prepare::read_onnx_graph, GraphInvalid (export périmé : le dire et le réexporter).
+std::expected<void, Refusal> gmfss_pair_current(const std::filesystem::path& pair);
+
+// gmfss_chosen, la paire vérifiée par gmfss_pair_current : une paire périmée cède la place à l'autre paire du
+// dossier si celle-ci est au format 2, dans un sens comme dans l'autre (dropped dit pourquoi, vide sinon).
+// Refus : celui de la paire choisie, quand aucune paire du dossier n'est au format 2.
+std::expected<GmfssModels, Refusal> gmfss_usable(const GmfssModels& found, bool half, std::string& dropped);
 
 // Les deux graphes aux tailles fixées pour ces plans remplis, dérivés (s'ils manquent) dans dir ; les tailles
 // d'une autre vidéo s'en vont. Refus : ceux de prepare::with_fixed_dims et de derived_model.

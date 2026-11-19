@@ -3,13 +3,32 @@
 #include <algorithm>
 #include <format>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "app/play/derived_model.h"
 #include "core/utf8_path.h"
+#include "prepare/model_source.h"
+#include "prepare/onnx_dims.h"
+#include "prepare/onnx_split.h"
 
 namespace kirari::app::play {
+namespace {
+
+// Les dimensions nommées des deux graphes pour des plans remplis de padded_width × padded_height (multiples
+// de 64) : « H », « W », puis « H/2 » à « W/8 ».
+std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {
+  std::vector<prepare::NamedDim> dims{{"H", padded_height}, {"W", padded_width}};
+  for (const int scale : {2, 4, 8}) {
+    dims.push_back({std::format("H/{}", scale), padded_height / scale});
+    dims.push_back({std::format("W/{}", scale), padded_width / scale});
+  }
+  return dims;
+}
+
+}  // namespace
 
 std::vector<std::filesystem::path> gmfss_places(std::span<const std::filesystem::path> dirs) {
   std::vector<std::filesystem::path> places;
@@ -43,13 +62,32 @@ GmfssModels gmfss_chosen(const GmfssModels& found, bool half) {
   return {.pair = half && !found.half_pair.empty() ? found.half_pair : found.pair, .fusion = found.fusion};
 }
 
-std::vector<prepare::NamedDim> gmfss_dims(int padded_width, int padded_height) {
-  std::vector<prepare::NamedDim> dims{{"H", padded_height}, {"W", padded_width}};
-  for (const int scale : {2, 4, 8}) {
-    dims.push_back({std::format("H/{}", scale), padded_height / scale});
-    dims.push_back({std::format("W/{}", scale), padded_width / scale});
+std::expected<void, Refusal> gmfss_pair_current(const std::filesystem::path& pair) {
+  auto bytes = prepare::read_onnx_bytes(pair);
+  if (!bytes) return std::unexpected(std::move(bytes.error()));
+  auto graph = prepare::read_onnx_graph(*bytes);
+  if (!graph) return std::unexpected(std::move(graph.error()));
+  for (const std::string_view name : kGmfssPairLevel1) {
+    if (std::ranges::find(graph->outputs, name) == graph->outputs.end())
+      return refuse(RefusalCode::GraphInvalid,  // i18n-ok : refus interne, écrit au journal
+                    std::format("{} : export d'avant le format 2, sans la sortie « {} » (le réexporter par "
+                                "tools/gmfss/export_gmfss.py)",
+                                core::to_utf8(pair.filename()), name));
   }
-  return dims;
+  return {};
+}
+
+std::expected<GmfssModels, Refusal> gmfss_usable(const GmfssModels& found, bool half, std::string& dropped) {
+  dropped.clear();
+  GmfssModels chosen = gmfss_chosen(found, half);
+  auto current = gmfss_pair_current(chosen.pair);
+  if (current) return chosen;
+  // L'autre paire du dossier : celle au flot entier pour une paire au demi-flot périmée, et l'inverse.
+  const std::filesystem::path& other = chosen.pair == found.pair ? found.half_pair : found.pair;
+  if (other.empty() || !gmfss_pair_current(other)) return std::unexpected(std::move(current.error()));
+  dropped = std::move(current.error().detail);
+  chosen.pair = other;
+  return chosen;
 }
 
 std::expected<GmfssModels, Refusal> static_gmfss(const GmfssModels& models, int padded_width,

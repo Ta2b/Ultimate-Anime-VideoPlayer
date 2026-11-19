@@ -14,6 +14,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/fused_keys.h"
@@ -45,13 +46,13 @@ class GmfssFusedEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
-  // L'essai du natif (gmfss_fused_trial.cpp) : des entrées de test passent par le moteur entier, puis par
-  // l'IFNet et le GridNet natif en sommes f16, mixtes et f32 ; le natif n'est gardé que si sa sortie tient
-  // min_db contre celle de TensorRT et s'il le bat d'au moins 2 % en temps. La ligne du journal qui dit ce
-  // qui a été retenu ; refus : l'essai n'a pas pu tourner (le moteur entier reste).
-  std::expected<std::string, Refusal> try_native(const prepare::GmfssGrid& grid,
-                                                 const std::shared_ptr<SharedActivations>& shared,
-                                                 double min_db);
+  // L'essai du natif (gmfss_fused_trial.cpp) : le GridNet natif réglé au banc, puis des entrées de test
+  // passent par le moteur entier et par l'IFNet et le GridNet natif, les sommes choisies morceau par morceau
+  // (gmfss_trial.h) ; le natif n'est gardé que si sa sortie tient min_db contre celle de TensorRT et s'il le
+  // bat d'au moins 2 % en temps. Les lignes du journal, la dernière disant ce qui a été retenu ; refus :
+  // l'essai n'a pas pu tourner (le moteur entier reste).
+  std::expected<std::vector<std::string>, Refusal> try_native(
+      const prepare::GmfssGrid& grid, const std::shared_ptr<SharedActivations>& shared, double min_db);
   bool native() const { return native_on_; }
 
  private:
