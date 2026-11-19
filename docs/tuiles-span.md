@@ -185,8 +185,9 @@ granuleuse. Au seuil de 0,50 (essai de l'image composée), le pire bloc tombe ve
    (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers ; la ligne « SPAN par tuiles » du journal donne le
    pire bloc 16 × 16 et le plus grand écart moyen contre un calcul complet. Porte : pire bloc sous 1 niveau
    8 bits (environ 48 dB). L'écart moyen sous 0,05 niveau ne se tient sur aucune source granuleuse, pas même
-   par les reprises entières du lot A (plus haut) : la porte proposée est celle du lot A, l'écart moyen de ses
-   reprises entières sur le même extrait (décision de Tatoub).
+   par les reprises entières du lot A (plus haut) : la porte est celle du lot A, l'écart moyen de ses
+   reprises entières sur le même extrait (tolérance du lot A, choisie le 19 novembre, Tatoub laissant le
+   choix au fil).
 2. **Stabilité** : `tools/bench/qualite/scintillement.py` sur 20 s du même extrait, avec `--span-tiles` face à
    sans : pas plus de scintillement avec les tuiles (porte `--porte`).
 3. **Gain** : la ligne « SPAN par tuiles » et le temps GPU de SPAN (`--stats`) sur le même extrait. Le cran
