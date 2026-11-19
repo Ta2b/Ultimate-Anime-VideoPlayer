@@ -258,11 +258,11 @@ struct Session {
   }
 };
 
-std::vector<std::uint8_t> read_luma(const std::string& path, std::size_t bytes) {
+std::vector<std::uint8_t> read_file(const std::string& path, std::size_t bytes) {
   std::ifstream in(path, std::ios::binary);
   std::vector<std::uint8_t> data(bytes);
   if (!in.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(bytes)))
-    die(path + " : luma trop courte");
+    die(path + " : fichier trop court");
   return data;
 }
 
@@ -351,13 +351,13 @@ int main(int argc, char** argv) {
       session = std::make_unique<Session>(api, options, context, w, h);
       first = true;
     }
-    auto la = read_luma(a, static_cast<std::size_t>(w) * h);
-    auto lb = read_luma(b, static_cast<std::size_t>(w) * h);
+    auto la = read_file(a, static_cast<std::size_t>(w) * h);
+    auto lb = read_file(b, static_cast<std::size_t>(w) * h);
     std::vector<std::uint8_t> result;
     if (options.hint_grid != 0) {
       const std::uint32_t hw = (w + options.hint_grid - 1) / options.hint_grid;
       const std::uint32_t hh = (h + options.hint_grid - 1) / options.hint_grid;
-      auto hints = read_luma(fields[5], static_cast<std::size_t>(hw) * hh * 4U);
+      auto hints = read_file(fields[5], static_cast<std::size_t>(hw) * hh * 4U);
       session->run(la, lb, result, first, &hints);
     } else {
       session->run(la, lb, result, first);
