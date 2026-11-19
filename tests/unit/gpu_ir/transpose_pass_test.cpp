@@ -84,12 +84,13 @@ TEST_CASE("ConvTranspose 2 × 2 de pas 2 : Conv 1 × 1", "[gpu_ir][passes]") {
   CHECK(std::get<ConvAttrs>(after.nodes[0].attrs).kernel == Pair{1, 1});
 }
 
-// V3 : une Conv 2 × 2 par phase au lieu de la Conv 3 × 3 aux prises nulles (4 sur 9 utiles).
+// V3 : une Conv 2 × 2 par phase au lieu de la Conv 3 × 3 aux prises nulles (4 sur 9 utiles), quand chaque
+// phase remplit ses tuiles de 16 canaux (32 canaux : 16 prises × 2 tuiles contre 9 × 8).
 TEST_CASE("ConvTranspose 4 × 4 de pas 2 : une Conv sans zéros par phase", "[gpu_ir][passes]") {
   for (const std::string mode : {"", "DCR", "CRD"}) {
     INFO("pixel_shuffle " << mode);
     Graph after;
-    const PassStats stats = check(transpose_model(8, 4, 2, 1, mode), 256, after, true);
+    const PassStats stats = check(transpose_model(32, 4, 2, 1, mode), 256, after, true);
     CHECK(stats.transposes == 1);
     CHECK(count_ops(after, OpKind::Conv) == 4);
     CHECK(count_ops(after, OpKind::Concat) == 1);
@@ -101,6 +102,21 @@ TEST_CASE("ConvTranspose 4 × 4 de pas 2 : une Conv sans zéros par phase", "[gp
   Graph after;
   CHECK(check(transpose_model(8, 2, 2, 0, ""), 256, after, true).transposes == 1);
   CHECK(count_ops(after, OpKind::Conv) == 1);
+}
+
+// Peu de canaux par phase (l'encodeur de RIFE : 4) : chaque phase occuperait une tuile de 16 presque vide (16
+// prises × 1 tuile contre 9 × 1) ; la Conv 3 × 3 unique est gardée, DepthToSpace fondu.
+TEST_CASE("ConvTranspose 4 × 4 de pas 2, 4 canaux : la Conv unique malgré les phases", "[gpu_ir][passes]") {
+  for (const std::int64_t cout : {4, 8}) {
+    INFO(cout << " canaux");
+    Graph after;
+    const PassStats stats = check(transpose_model(cout, 4, 2, 1, ""), 256, after, true);
+    CHECK(stats.transposes == 1);
+    CHECK(count_ops(after, OpKind::Concat) == 0);
+    CHECK(count_ops(after, OpKind::DepthToSpace) == 0);
+    REQUIRE(count_ops(after, OpKind::Conv) == 1);
+    CHECK(std::get<ConvAttrs>(after.nodes[0].attrs).kernel == Pair{3, 3});
+  }
 }
 
 TEST_CASE("ConvTranspose gardée : trop de canaux, ou passe éteinte", "[gpu_ir][passes]") {

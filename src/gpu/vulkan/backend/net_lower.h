@@ -22,8 +22,9 @@
 namespace kirari::gpu::vk::net {
 
 // Version de l'abaissement : change à chaque changement des shaders, des constantes ou du
-// rangement des poids ; un artefact d'une autre version est refusé au chargement.
-inline constexpr std::uint32_t kLoweringVersion = 10;
+// rangement des poids, ou des passes du graphe (11 : ConvTranspose à peu de canaux en une Conv) ; un
+// artefact d'une autre version est refusé au chargement.
+inline constexpr std::uint32_t kLoweringVersion = 11;
 
 // Variantes candidates d'un nœud, la première étant celle par défaut ; une seule pour les
 // opérations sans réglage. Refus OperatorUnknown : opérateur sans noyau Vulkan.

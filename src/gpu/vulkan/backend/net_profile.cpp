@@ -6,6 +6,7 @@
 #include <map>
 
 #include "gpu/ir/graph.h"
+#include "gpu/ir/ops.h"
 #include "gpu/vulkan/backend/net_measure.h"
 
 namespace kirari::gpu::vk::net {
@@ -52,6 +53,65 @@ std::string format_profile(const ProfileReport& report) {
   }
   text += std::format("total des dispatchs : {:.3f} ms ; de la première estampille à la dernière : {:.3f} ms",
                       report.total_ms, report.span_ms);
+  return text;
+}
+
+std::vector<NodeTime> summarize_nodes(const ir::Graph& graph, std::span<const Dispatch> dispatches,
+                                      std::span<const ProfileRun> runs) {
+  std::vector<NodeTime> nodes;
+  if (runs.empty()) return nodes;
+  // Les nœuds dans l'ordre de leur premier dispatch ; slot[k] : la ligne du dispatch k.
+  std::map<std::uint32_t, std::size_t> row_of;
+  std::vector<std::size_t> slot(dispatches.size());
+  for (std::size_t k = 0; k < dispatches.size(); ++k) {
+    const Dispatch& d = dispatches[k];
+    auto [it, fresh] = row_of.try_emplace(d.node, nodes.size());
+    if (fresh) {
+      NodeTime row{.node = d.node};
+      if (d.node < graph.nodes.size()) {
+        const ir::Node& n = graph.nodes[d.node];
+        row.op = std::string(ir::name(n.op));
+        if (!n.outputs.empty() && n.outputs[0] < graph.tensors.size()) {
+          row.output = graph.tensors[n.outputs[0]].name;
+          row.dims = graph.tensors[n.outputs[0]].dims;
+        }
+      }
+      nodes.push_back(std::move(row));
+    }
+    NodeTime& row = nodes[it->second];
+    ++row.dispatches;
+    if (row.shaders.find(d.shader) == std::string::npos)
+      row.shaders += (row.shaders.empty() ? "" : "+") + d.shader;
+    slot[k] = it->second;
+  }
+  std::vector<std::vector<double>> sums(nodes.size());
+  std::vector<double> totals;
+  for (const ProfileRun& run : runs) {
+    std::vector<double> sum(nodes.size(), 0.0);
+    double total = 0.0;
+    for (std::size_t k = 0; k < dispatches.size() && k < run.dispatch_ms.size(); ++k) {
+      sum[slot[k]] += run.dispatch_ms[k];
+      total += run.dispatch_ms[k];
+    }
+    for (std::size_t r = 0; r < nodes.size(); ++r) sums[r].push_back(sum[r]);
+    totals.push_back(total);
+  }
+  const double total = median(totals);
+  for (std::size_t r = 0; r < nodes.size(); ++r) {
+    nodes[r].ms = median(sums[r]);
+    nodes[r].share = total > 0.0 ? nodes[r].ms / total : 0.0;
+  }
+  return nodes;
+}
+
+std::string format_node_profile(std::span<const NodeTime> nodes) {
+  std::string text = "profil par nœud (ordre du programme, médianes)\n";
+  text += std::format("{:>5} {:<13} {:<20} {:<44} {:>10} {:>7}\n", "nœud", "opérateur", "sortie", "shaders",
+                      "ms", "part");
+  for (const NodeTime& n : nodes) {
+    text += std::format("{:>5} {:<13} {:<20} {:<44} {:>10.3f} {:>6.1f}%  {}\n", n.node, n.op,
+                        ir::format_dims(n.dims), n.shaders, n.ms, 100.0 * n.share, n.output);
+  }
   return text;
 }
 

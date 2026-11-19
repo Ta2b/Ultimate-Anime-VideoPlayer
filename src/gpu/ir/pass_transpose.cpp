@@ -60,6 +60,14 @@ std::optional<std::size_t> sole_depth_to_space(const Graph& graph, TensorId id) 
   return readers[0];
 }
 
+// Tuiles de 16 canaux, celles des matrices coopératives : une phase de cout canaux en occupe ceil(cout / 16),
+// la Conv unique ceil(s² × cout / 16). Peu de canaux (l'encodeur de RIFE, 4 par phase) laisseraient chaque
+// phase dans une tuile presque vide : la Conv unique y fait moins de calcul, en un dispatch, sans Concat ni
+// DepthToSpace à part.
+std::int64_t tiles(std::int64_t channels) {
+  return (channels + 15) / 16;
+}
+
 TensorId add_named(Graph& graph, Tensor tensor) {
   while (find_tensor(graph, tensor.name)) tensor.name += '_';
   return add_tensor(graph, std::move(tensor));
@@ -68,7 +76,7 @@ TensorId add_named(Graph& graph, Tensor tensor) {
 // Une Conv par phase (ry, rx), sans prise nulle : noyau des seuls décalages de la phase, cout
 // canaux ; puis Concat dans l'ordre DCR et DepthToSpace de bloc s vers la sortie de la
 // ConvTranspose. Faux, rien de touché, si une phase ne lit rien, si ses marges seraient négatives
-// ou si les prises économisées n'atteignent pas 40 %.
+// ou si le calcul économisé, compté en tuiles de 16 canaux, n'atteint pas 40 %.
 bool rewrite_phases(Graph& graph, std::size_t index, std::int64_t max_channels, const Offsets& uy,
                     const Offsets& ux) {
   const Node& node = graph.nodes[index];
@@ -99,8 +107,9 @@ bool rewrite_phases(Graph& graph, std::size_t index, std::int64_t max_channels, 
               (px[static_cast<std::size_t>(rx)].hi - px[static_cast<std::size_t>(rx)].lo + 1);
     }
   }
-  const std::int64_t whole = s * s * (uy.hi - uy.lo + 1) * (ux.hi - ux.lo + 1);
-  if (taps * 10 > whole * 6) return false;
+  // En tuiles de 16 canaux (tiles) : peu de canaux par phase les laisseraient presque vides.
+  const std::int64_t whole = (uy.hi - uy.lo + 1) * (ux.hi - ux.lo + 1) * tiles(s * s * cout);
+  if (taps * tiles(cout) * 10 > whole * 6) return false;
 
   // Copies : add_named agrandit graph.tensors, les références ne tiendraient pas.
   const bool has_bias = node.inputs.size() > 2 && node.inputs[2] != kNoTensor;
