@@ -34,10 +34,10 @@ namespace {
 // 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
 // 8 sous-groupes, en wave32 sur AMD, sorties vérifiées contre le noyau direct ; 5 : Conv 3 × 3
 // par Winograd ; 6 : coopmat à 16 sous-groupes et tm 8 (mémoire partagée des RDNA 4) ; 7 : tolérance selon
-// la précision, 1 % en sommes float (P2.45) ; 8 : boucles des noyaux déroulées (matrices coopératives,
-// direct, Winograd), dont les temps relatifs changent. Un appareil à tuiles 8 × 16 × 16 y ajoute « m8 »
-// (candidate_set).
-constexpr std::string_view kCandidateSet = "c8";
+// la précision, 1 % en sommes float (P2.45) ; 8 : boucles des matrices coopératives déroulées, dont les temps
+// relatifs changent ; 9 : mesures après 24 passes de chauffe (TunerOptions::warmup). Un appareil à tuiles
+// 8 × 16 × 16 y ajoute « m8 » (candidate_set).
+constexpr std::string_view kCandidateSet = "c9";
 
 // Hachage incrémental d'entiers, FNV-1a sur leurs huit octets.
 class Signature {
