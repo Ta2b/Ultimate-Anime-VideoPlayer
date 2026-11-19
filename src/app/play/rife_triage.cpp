@@ -1,6 +1,7 @@
 #include "app/play/rife_triage.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 
@@ -103,7 +104,7 @@ DoubtGrid doubt_grid(std::span<const float> doubt, int cols, int rows) {
     for (int c = 0; c < cols; ++c) {
       float v = soft[cell(c, r, cols)];
       if (v < triage::kDoubtFloor) v = 0.0F;
-      const auto w = static_cast<std::uint8_t>(std::clamp(v, 0.0F, 1.0F) * kernels::kDoubtFull + 0.5F);
+      const auto w = static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * kernels::kDoubtFull));
       std::uint8_t& out = grid.weights[cell(c / step_c, r / step_r, grid.cols)];
       out = std::max(out, w);
     }
@@ -125,7 +126,7 @@ PairSort RifeTriage::sort_unrun(const PairFacts& facts) {
   if ((facts.scores && pair_cut(facts)) || ++unrun_ > triage::kKeepAcross) reset();
   // Tenue par le flux seul : la mesure des blocs aurait laissé tourner RIFE.
   const bool by_flow = facts.scores && facts.same_epoch && facts.factor > 1 && !pair_cut(facts) &&
-                       !kernels::is_held(facts.scores->worst_block) && flow_held(*facts.scene);
+                       !kernels::is_held(facts.scores->worst_block) && facts.scene && flow_held(*facts.scene);
   if (by_flow) ++counts_.held;
   return by_flow ? PairSort::Held : PairSort::Today;
 }
