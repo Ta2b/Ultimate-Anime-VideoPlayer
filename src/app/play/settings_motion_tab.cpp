@@ -58,11 +58,10 @@ void motion_720p_checkbox(PlaySettings& d) {
   ImGui::EndDisabled();
   panel::tip(
       i18n::tr("Estimate motion at 720p"),
-      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, "
-               "but slow pans can ripple instead of moving in even steps (RIFE 4.25 lite and 4.26 "
-               "especially). Speed: about 15 % more frames in Auto (RIFE pass about 2× faster). "
-               "Quality impact: moderate loss on slow pans. "
-               "Recommended: off. RIFE only."),
+      i18n::tr("Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster; "
+               "without Steady slow pans, slow pans can ripple instead of moving in even steps. Speed: "
+               "about 15 % more frames in Auto (RIFE pass about 2× faster). Quality impact: minor loss "
+               "with Steady slow pans on. Recommended: off. RIFE only."),
       panel::Apply::Reload);
 }
 
@@ -445,7 +444,7 @@ void load_notes(const PlaySettings& d, const SettingsChoices& choices, Factor no
   const bool four_k = d.upscale && (d.work_height == 0 || d.work_height >= choices.source_height) &&
                       choices.source_height >= 1080;
   if (d.motion_engine == MotionEngine::DistilDrba && now.num > 5 * now.den) {
-    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter."));
+    note(i18n::tr("Above ×5 DistilDRBA computes more than RIFE: RIFE 4.22 lite is lighter."));
   }
   // La copie 720p de RIFE : la même condition que la chaîne, sur la taille de travail réellement jouée
   // (C23-04).

@@ -98,15 +98,15 @@ constexpr std::array kImageTabs{
         "RIFE et DistilDRBA."},
     Entry{"Estimate motion at 720p", "Estimer le mouvement en 720p"},
     Entry{
-        "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster, but slow "
-        "pans can ripple instead of moving in even steps (RIFE 4.25 lite and 4.26 especially). Speed: "
-        "about 15 % more frames in Auto (RIFE pass about 2× faster). Quality impact: moderate loss on slow "
-        "pans. Recommended: off. RIFE only.",
+        "Above 720p of working resolution, RIFE measures motion on a lighter 720p copy. Faster; without "
+        "Steady slow pans, slow pans can ripple instead of moving in even steps. Speed: about 15 % more "
+        "frames in Auto (RIFE pass about 2× faster). Quality impact: minor loss with Steady slow pans on. "
+        "Recommended: off. RIFE only.",
         "Au-delà de 720p de résolution de travail, RIFE mesure le mouvement sur une copie 720p plus "
-        "légère. Plus rapide, mais les panoramiques lents peuvent onduler au lieu d'avancer à pas réguliers "
-        "(surtout RIFE 4.25 lite et 4.26). Vitesse : environ 15 % d'images en plus en Auto (passe RIFE "
-        "environ 2× plus rapide). Impact sur la qualité : perte modérée sur "
-        "les panoramiques lents. Recommandé : désactivé. RIFE seulement."},
+        "légère. Plus rapide ; sans Panoramiques lents stables, les panoramiques lents peuvent onduler au "
+        "lieu d'avancer à pas réguliers. Vitesse : environ 15 % d'images en plus en Auto (passe RIFE environ "
+        "2× plus rapide). Impact sur la qualité : perte légère avec Panoramiques lents stables activé. "
+        "Recommandé : désactivé. RIFE seulement."},
     Entry{"Lighter RIFE on fast motion (half size)", "RIFE allégé sur les mouvements rapides (demi-taille)"},
     Entry{"Fewer RIFE passes on fast motion", "Moins de passes RIFE sur les mouvements rapides"},
     Entry{"Long pans are made faster by reusing the middle in-between frame for its neighbors, which are "
@@ -197,8 +197,8 @@ constexpr std::array kImageTabs{
     Entry{"loss not measured", "perte non mesurée"},
     Entry{"speed {:+.0f} %", "vitesse {:+.0f} %"},
     Entry{"speed gain not measured", "gain de vitesse non mesuré"},
-    Entry{"Above ×5 DistilDRBA computes more than RIFE: Fast (RIFE 4.22 lite) is lighter.",
-          "Au-delà de ×5, DistilDRBA calcule plus que RIFE : Rapide (RIFE 4.22 lite) est plus léger."},
+    Entry{"Above ×5 DistilDRBA computes more than RIFE: RIFE 4.22 lite is lighter.",
+          "Au-delà de ×5, DistilDRBA calcule plus que RIFE : RIFE 4.22 lite est plus léger."},
     Entry{"RIFE model", "Modèle RIFE"},
     Entry{"Resolution", "Résolution"},
     Entry{"SPAN precision", "Précision de SPAN"},
