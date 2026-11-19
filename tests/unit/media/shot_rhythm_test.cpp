@@ -38,6 +38,16 @@ ShotFrame frame(std::int64_t index, std::optional<RhythmPair> rhythm) {
   return f;
 }
 
+// Une image d'une autre lumière (un autre plan pour le découpeur) : histogramme et grille au niveau level.
+ShotFrame lit(std::int64_t index, float level, std::optional<RhythmPair> rhythm) {
+  ShotFrame f = frame(index, rhythm);
+  f.histogram.fill(0.0F);
+  f.histogram.at(static_cast<std::size_t>(level * 63.0F)) = 1.0F;
+  f.grid.fill(level);
+  f.mean = level;
+  return f;
+}
+
 }  // namespace
 
 TEST_CASE("rythme : paire, flux, plan en deux et cache", "[media][shots]") {
@@ -104,4 +114,46 @@ TEST_CASE("rythme : paire, flux, plan en deux et cache", "[media][shots]") {
   REQUIRE(back->shots.size() == 1);
   CHECK(back->shots.front().rhythm == rhythm);
   std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("rythme : bandes noires et plan court fondu", "[media][shots]") {
+  // Une source en 2,39:1 : un quart des lignes en bandes noires. Le grain se lit sur l'image seule, pas
+  // dilué par les bandes ; une paire toute noire ne change rien.
+  std::vector<float> a = plane(0.5F);
+  for (int y = 0; y < kH; ++y) {
+    if (y >= 8 && y < kH - 8) continue;
+    for (int x = 0; x < kW; ++x) a[static_cast<std::size_t>(y * kW + x)] = 0.0F;
+  }
+  std::vector<float> b = a;
+  for (int y = 8; y < kH - 8; ++y) {
+    for (int x = 0; x < kW; ++x) b[static_cast<std::size_t>(y * kW + x)] += 2.0F / 255.0F;
+  }
+  const std::optional<RhythmPair> boxed = rhythm_pair_of(a, b, kW, kH);
+  REQUIRE(boxed);
+  CHECK(boxed->changed == Approx(0.0F));
+  CHECK(boxed->grain == Approx(2.0F).margin(0.01));
+  const std::optional<RhythmPair> black = rhythm_pair_of(plane(0.0F), plane(0.0F), kW, kH);
+  REQUIRE(black);
+  CHECK(black->changed == 0.0F);
+  CHECK(black->grain == 0.0F);
+
+  // A (24 images), B (3 images, trop court : fondu dans A), puis C (24 images). Les paires de B ne passent
+  // pas à C : sa paire marquée forte ne compte nulle part dans C.
+  const RhythmPair calm{.changed = 0.0F, .grain = 0.5F};
+  const RhythmPair loud{.changed = 1.0F, .grain = 0.5F};
+  ShotCutter cutter;
+  std::vector<Shot> shots;
+  std::int64_t i = 0;
+  const auto push = [&](float level, const RhythmPair& r) {
+    if (auto s = cutter.push(lit(i, level, r))) shots.push_back(*s);
+    ++i;
+  };
+  for (int k = 0; k < 24; ++k) push(0.5F, calm);
+  for (int k = 0; k < 3; ++k) push(0.2F, loud);
+  for (int k = 0; k < 24; ++k) push(0.9F, calm);
+  for (const Shot& s : cutter.finish(i * kFrame)) shots.push_back(s);
+  REQUIRE(shots.size() == 2);
+  CHECK(shots.back().start_us == 27 * kFrame);
+  CHECK(shots.back().rhythm.pairs == 23);
+  CHECK(shots.back().rhythm.strong == 0);
 }

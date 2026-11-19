@@ -479,6 +479,7 @@ std::optional<Shot> ShotCutter::cut_at(std::int64_t end_us, float jump) {
 
 void ShotCutter::discard_shot() {
   totals_ = {};
+  rhythm_ = {};  // un plan court fondu dans un voisin ne laisse pas ses paires au plan suivant
   head_.clear();
   tail_.clear();
 }
@@ -519,7 +520,6 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
   first_shot_ = false;
   shot.meta = totals_.meta();
   shot.rhythm = rhythm_.rhythm();
-  rhythm_ = {};
   shot.first = totals_.stats();
   shot.last = shot.first;
   if (totals_.count >= 2 * kFadeFrames) {
