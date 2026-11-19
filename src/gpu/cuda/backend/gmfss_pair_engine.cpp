@@ -83,7 +83,7 @@ std::expected<std::unique_ptr<GmfssPairEngine>, Refusal> GmfssPairEngine::load(
   const auto bad = [](std::string_view what) {
     return refuse(RefusalCode::ShapeInvalid, std::format("GMFSS natif : {} de forme inattendue", what));
   };
-  const Shape frames{.dims = {1, 2 * kImagePlanes, 2 * h, 2 * w}};
+  const Shape frames{.dims = {1, 2 * kImagePlanes, 2 * std::int64_t{h}, 2 * std::int64_t{w}}};
   if (f.input_names().size() != 1 || r.input_names().size() != 1 || f.output_names().size() != kOutputs ||
       r.output_names().size() != kFlowOutputs || !planar(f) || !planar(r) || !(f.input_shape(0) == frames) ||
       !(r.input_shape(0) == frames))
