@@ -138,7 +138,7 @@ std::expected<gpu::PairScores, Refusal> UpscaleStage::drba_scores(const DecodedF
   // Sans chronomètre : outputs() mesure déjà tout cet appel.
   if (auto ok = settle_after_scores(false); !ok) return std::unexpected(std::move(ok.error()));
   if (drba_.after_scores && drba_.after_scores->right == frame.id) {
-    const gpu::PairScores kept = *drba_.after_scores;
+    gpu::PairScores kept = *drba_.after_scores;
     drba_.after_scores.reset();
     return kept;
   }
