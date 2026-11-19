@@ -1,6 +1,7 @@
 #include "app/play/layer_plan.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 
@@ -18,6 +19,17 @@ bool sure_decor(const kernels::SceneTile& tile) {
 bool keeps_rife(const kernels::SceneTile& tile) {
   return tile.kind == SceneClass::Drawing || tile.kind == SceneClass::Effect ||
          (tile.kind == SceneClass::Uncertain && tile.changed);
+}
+
+// La caméra de la carte compte en coordonnées continues, le centre du pixel i en i + ½ (spec/scene_camera.h,
+// camera_of de ref/scene_flow.cpp) ; les calques en indices, le centre en i (spec/layers.h) :
+// M_indices(x) = M(x + ½) − ½. Une translation ne change pas ; un zoom de 3 % décalait d'1,5 centième de
+// pixel.
+kernels::Affine index_camera(const std::array<double, 6>& c) {
+  constexpr kernels::Affine kToCentre{0.5, 1.0, 0.0, 0.5, 0.0, 1.0};
+  constexpr kernels::Affine kFromCentre{-0.5, 1.0, 0.0, -0.5, 0.0, 1.0};
+  const kernels::Affine centred{c[0], c[1], c[2], c[3], c[4], c[5]};
+  return kernels::compose(kFromCentre, kernels::compose(centred, kToCentre));
 }
 
 // Un déplacement en tuiles, arrondi ; un déplacement non fini (tuile sans vecteur) compte pour nul.
@@ -61,6 +73,8 @@ std::string_view name(LayerSkip skip) {
       return "sans carte";
     case LayerSkip::NoCamera:
       return "sans caméra";
+    case LayerSkip::Unrefined:
+      return "caméra non affinée";
     case LayerSkip::Cut:
       return "coupe ou fondu";
     case LayerSkip::Residual:
@@ -81,8 +95,9 @@ std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::Sc
   const kernels::SceneMotion& s = *scene;
   if (s.cut_likely || s.fade) return std::unexpected(LayerSkip::Cut);
   if (!s.camera_fit) return std::unexpected(LayerSkip::NoCamera);
+  if (!s.camera_refined) return std::unexpected(LayerSkip::Unrefined);
   if (!(s.residual <= kLayerResidualMax)) return std::unexpected(LayerSkip::Residual);
-  const kernels::Affine camera{s.camera[0], s.camera[1], s.camera[2], s.camera[3], s.camera[4], s.camera[5]};
+  const kernels::Affine camera = index_camera(s.camera);
   if (!kernels::inverse(camera)) return std::unexpected(LayerSkip::Warp);
   const kernels::LayerGrid limits;
   if (!limits.fits(s.cols, s.rows) || s.tile_px <= 0 || work_width <= 0 || work_height <= 0 ||

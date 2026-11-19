@@ -25,6 +25,7 @@ SceneMotion pan(double dx) {
   SceneMotion s;
   s.camera = {dx, 1.0, 0.0, 0.0, 0.0, 1.0};
   s.camera_fit = true;
+  s.camera_refined = true;
   s.residual = 0.2;
   s.tile_px = 8;
   s.cols = 8;
@@ -49,10 +50,21 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   SceneMotion unfit = pan(4.0);
   unfit.camera_fit = false;
   CHECK(plan_layers(unfit, 64, 36).error() == LayerSkip::NoCamera);
+  SceneMotion raw = pan(4.0);
+  raw.camera_refined = false;  // caméra de NVOF seule : son cisaillement sur les panoramiques lents
+  CHECK(plan_layers(raw, 64, 36).error() == LayerSkip::Unrefined);
+  // Un zoom de 2 % autour du coin : la caméra passe des centres continus aux indices, M(x + ½) − ½.
+  SceneMotion zoom = pan(0.0);
+  zoom.camera = {0.0, 1.02, 0.0, 0.0, 0.0, 1.02};
+  const auto zoomed = plan_layers(zoom, 64, 36);
+  REQUIRE(zoomed);
+  CHECK_THAT(zoomed->camera[0], WithinAbs(0.01, 1e-12));
+  CHECK_THAT(zoomed->camera[1], WithinAbs(1.02, 1e-12));
   SceneMotion crowd = pan(4.0);
   for (auto& tile : crowd.tiles) tile.kind = SceneClass::Drawing;
   CHECK(plan_layers(crowd, 64, 36).error() == LayerSkip::FewTiles);
-  for (const auto skip : {LayerSkip::NoMap, LayerSkip::Grid}) CHECK_FALSE(name(skip).empty());
+  for (const auto skip : {LayerSkip::NoMap, LayerSkip::Unrefined, LayerSkip::Grid})
+    CHECK_FALSE(name(skip).empty());
 
   // Un dessin en (3, 2) : lui et ses huit voisines gardent RIFE ; un aplat qui ne change pas reste décor.
   SceneMotion scene = pan(4.0);
