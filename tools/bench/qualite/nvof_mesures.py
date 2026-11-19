@@ -188,10 +188,14 @@ def model_at_pixels(affine, grid, ch, cw, h, w):
 
 def photo_residual(a, b, affine, decor, grid, height):
     """Écart du décor au modèle de caméra, mesuré sur l'image : b recalé par le modèle est comparé à a sur chaque
-    tuile de décor (32 px en 1080p, un quart au moins de ses pixels dans des blocs de décor, assez texturée dans
-    les deux directions), et deux pas de Lucas-Kanade donnent le décalage qui reste. Rend (médiane en px à 720p,
-    tuiles mesurées) ; (None, 0) sous 3 tuiles. Les vecteurs NVOF ne servent qu'à choisir le décor : leur bruit
-    (environ 0,3 px sur un décor fixe, 4070 Ti) et un personnage lent ne comptent plus."""
+    tuile de décor (32 px en 1080p, un quart au moins de ses pixels dans des blocs de décor), et deux pas de
+    Lucas-Kanade donnent le décalage qui reste. Rend (médiane en px à 720p, tuiles mesurées, sorte) :
+    - « tuiles » : 3 tuiles au moins texturées dans les deux sens ; le décalage entier se mesure ;
+    - « bords » : sinon, 3 tuiles au moins texturées dans un sens (un bord droit, un décor rayé que la caméra longe) ;
+      seul l'écart en travers du bord se mesure, et c'est le seul qui se voit ;
+    - (None, 0, None) sinon.
+    Les vecteurs NVOF ne servent qu'à choisir le décor : leur bruit (environ 0,3 px sur un décor fixe, 4070 Ti) et un
+    personnage lent ne comptent plus."""
     h, w = a.shape
     ch, cw = decor.shape
     t = max(8, int(round(32 * height / 1080)))
@@ -202,6 +206,10 @@ def photo_residual(a, b, affine, decor, grid, height):
     mask = np.repeat(np.repeat(decor, grid, 0), grid, 1)[:h, :w].astype(np.float32)
     per_tile = lambda m: m[: th * t, : tw * t].reshape(th, t, tw, t).sum((1, 3))  # noqa: E731
     up = lambda m: np.pad(np.repeat(np.repeat(m, t, 0), t, 1), ((0, h - th * t), (0, w - tw * t)))  # noqa: E731
+    count = per_tile(mask)
+    # La structure doit dépasser le grain (environ 2 niveaux² par pixel après le flou 3 × 3), sinon Lucas-Kanade
+    # mesure du bruit.
+    floor = 8.0 * np.maximum(count, 1)
     d = np.zeros((2, th, tw), np.float32)
     for _ in range(2):
         warped = sample(fb, x + model[0] + up(d[0]), y + model[1] + up(d[1]))
@@ -211,19 +219,34 @@ def photo_residual(a, b, affine, decor, grid, height):
         e = (fa - warped) * mask
         sxx, sxy, syy = per_tile(gx * gx * mask), per_tile(gx * gy * mask), per_tile(gy * gy * mask)
         bx, by = per_tile(gx * e), per_tile(gy * e)
-        det = sxx * syy - sxy * sxy
-        safe = np.where(np.abs(det) > 1e-6, det, 1.0)
-        d[0] += np.clip(np.where(np.abs(det) > 1e-6, (syy * bx - sxy * by) / safe, 0), -2, 2)
-        d[1] += np.clip(np.where(np.abs(det) > 1e-6, (sxx * by - sxy * bx) / safe, 0), -2, 2)
-    count = per_tile(mask)
-    tr = sxx + syy
-    lam_min = (tr - np.sqrt(np.maximum(tr * tr - 4 * det, 0))) / 2  # petite valeur propre du tenseur de structure
-    # Un quart de la tuile au moins en blocs de décor ; la structure doit dépasser le grain (environ 2 niveaux² par
-    # pixel après le flou 3 × 3) dans les deux sens, sinon Lucas-Kanade mesure du bruit ou un trait seul.
-    valid = (count >= 0.25 * t * t) & (lam_min >= 8.0 * np.maximum(count, 1))
-    if valid.sum() < 3:
-        return None, 0
-    return float(np.median(np.hypot(d[0], d[1])[valid]) / (height / 720.0)), int(valid.sum())
+        # Tenseur de structure : valeurs propres l1 ≥ l2, direction propre (c, s) de l1. Pseudo-inverse tronquée :
+        # chaque direction assez texturée est résolue, l'autre laissée (sur un bord, l'écart le long du bord est
+        # indéterminé). Sur une tuile texturée dans les deux sens, c'est la solution 2 × 2 entière.
+        half, disc = (sxx + syy) / 2, np.sqrt(((sxx - syy) / 2) ** 2 + sxy * sxy)
+        l1, l2 = half + disc, half - disc
+        theta = 0.5 * np.arctan2(2 * sxy, sxx - syy)
+        c, s = np.cos(theta), np.sin(theta)
+        p1 = np.where(l1 >= floor, (c * bx + s * by) / np.maximum(l1, 1e-6), 0)
+        p2 = np.where(l2 >= floor, (c * by - s * bx) / np.maximum(l2, 1e-6), 0)
+        d[0] += np.clip(p1 * c - p2 * s, -2, 2)
+        d[1] += np.clip(p1 * s + p2 * c, -2, 2)
+    cover = count >= 0.25 * t * t
+    full, edge = cover & (l2 >= floor), cover & (l1 >= floor)
+    for valid, kind in ((full, "tuiles"), (edge, "bords")):
+        if valid.sum() >= 3:
+            return float(np.median(np.hypot(d[0], d[1])[valid]) / (height / 720.0)), int(valid.sum()), kind
+    return None, 0, None
+
+
+def flux_residual(flow, textured, affine, grid, height):
+    """Écart médian des vecteurs NVOF des blocs texturés au modèle, sur ceux à moins de 3 px (px à 720p) : la mesure
+    de secours quand l'image n'a pas 3 tuiles mesurables."""
+    _, ch, cw = flow.shape
+    k = height / 720.0
+    m = model_at_pixels(affine, grid, ch, cw, ch * grid, cw * grid)[:, grid // 2::grid, grid // 2::grid][:, :ch, :cw]
+    r = np.hypot(flow[0] - m[0], flow[1] - m[1])[textured]
+    wide = r < 3 * k
+    return float(np.median(r[wide]) / k) if wide.any() else float("inf")
 
 
 def refine_affine(a, b, affine, decor, grid, height):
@@ -272,37 +295,49 @@ def decor_of(flow, textured, affine, grid, height):
     return decor, float((r < thr).mean()) if r.size else 0.0
 
 
+def judged(a, b, flow, textured, affine, decor, grid, height):
+    """L'écart d'une affine comme la porte le juge : sur l'image (photo_residual), sinon sur les vecteurs NVOF des
+    blocs texturés (flux_residual). Rend {residu_px, tuiles_mesurees, mesure}."""
+    photo, n, kind = photo_residual(a, b, affine, decor, grid, height)
+    if photo is not None:
+        return {"residu_px": photo, "tuiles_mesurees": n, "mesure": kind}
+    return {"residu_px": flux_residual(flow, textured, affine, grid, height), "tuiles_mesurees": 0,
+            "mesure": "vecteurs"}
+
+
 def variants(a, b, flow, cost, cls, grid, height, fit):
-    """Les pistes de la porte 2.1 sur une paire, chacune jugée comme la porte (résidu sur l'image, part du décor) :
-    nvof (l'affine NVOF), traits (ajustée sur les blocs de traits seuls, sans le grain), lk (l'affine NVOF affinée
-    par Lucas-Kanade global, décor repris avec elle). Rend {nom: {residu_px, part_decor, affine}} et le masque de
-    décor de lk, pour le lissage."""
+    """Les pistes de la porte 2.1 sur une paire, chacune jugée comme la porte (judged : résidu sur l'image, sinon
+    sur les vecteurs ; part du décor) :
+    - nvof : l'affine NVOF, ajustée sur les blocs texturés ;
+    - traits : ajustée sur les blocs de traits seuls (sans le grain) ;
+    - lk : l'affine NVOF affinée par Lucas-Kanade global sur son décor, décor repris avec elle sur les blocs
+      texturés ;
+    - traits_lk : l'affine des traits affinée de même, décor repris sur les blocs de traits.
+    Rend {nom: {residu_px, part_decor, affine, tuiles_mesurees, mesure}}."""
     out = {}
+    keep = ("residu_px", "part_decor", "affine", "tuiles_mesurees", "mesure")
     if fit is not None:
-        out["nvof"] = {k: fit[2][k] for k in ("residu_px", "part_decor", "affine")}
+        out["nvof"] = {k: fit[2][k] for k in keep}
     lines = fit_pair(a, b, flow, cost, cls == 1, grid, height)
     if lines is not None:
-        out["traits"] = {k: lines[2][k] for k in ("residu_px", "part_decor", "affine")}
-    decor = None
-    if fit is not None:
-        refined = refine_affine(a, b, fit[2]["affine"], fit[1], grid, height)
-        decor, share = decor_of(flow, cls != 0, refined, grid, height)
-        photo, _ = photo_residual(a, b, refined, decor, grid, height)
-        out["lk"] = {"residu_px": photo if photo is not None else float("inf"), "part_decor": share,
-                     "affine": [float(v) for v in refined]}
-    return out, decor
+        out["traits"] = {k: lines[2][k] for k in keep}
+    for name, base, textured in (("lk", fit, cls != 0), ("traits_lk", lines, cls == 1)):
+        if base is None:
+            continue
+        refined = [float(v) for v in refine_affine(a, b, base[2]["affine"], base[1], grid, height)]
+        decor, share = decor_of(flow, textured, refined, grid, height)
+        out[name] = {**judged(a, b, flow, textured, refined, decor, grid, height), "part_decor": share,
+                     "affine": refined}
+    return out
 
 
 def fit_pair(a, b, flow, cost, textured, grid, height):
-    """camera() puis l'écart mesuré sur l'image (residu_px, celui de la porte). Sans tuile mesurable, residu_px
-    reprend l'écart des vecteurs (residu_flux_px) et tuiles_mesurees vaut 0."""
+    """camera() puis l'écart comme la porte le juge (judged : residu_px, tuiles_mesurees, mesure)."""
     fit = camera(flow, cost, textured, grid, height)
     if fit is None:
         return None
     model, decor, stats = fit
-    photo, n = photo_residual(a, b, stats["affine"], decor, grid, height)
-    stats["residu_px"] = photo if photo is not None else stats["residu_flux_px"]
-    stats["tuiles_mesurees"] = n
+    stats.update(judged(a, b, flow, textured, stats["affine"], decor, grid, height))
     return model, decor, stats
 
 

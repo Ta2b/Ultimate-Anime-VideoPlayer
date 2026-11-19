@@ -15,8 +15,11 @@ slow, carte de coût), le banc mesure :
 - la carte de coût sur les aplats, les traits et le grain (classes tirées de la luma de a) ;
 - le mouvement de caméra : affine à 6 paramètres, moindres carrés pondérés par la confiance (coût bas), avec
   rejet des aberrants, sur les blocs texturés seulement ; le décor est l'ensemble des blocs que le modèle explique ;
-- l'écart du décor au modèle, mesuré sur l'image (Lucas-Kanade sur les tuiles de décor, nvof_mesures.photo_residual)
-  et, pour information, sur les vecteurs NVOF (bruités d'environ 0,3 px, et pris par un personnage lent) ;
+- l'écart du décor au modèle, mesuré sur l'image (Lucas-Kanade sur les tuiles de décor, nvof_mesures.photo_residual :
+  tuiles texturées dans les deux sens, sinon en travers des bords) et, quand l'image n'a pas 3 tuiles mesurables, sur
+  les vecteurs NVOF (bruités d'environ 0,3 px, et pris par un personnage lent) ;
+- quatre pistes pour le modèle de caméra, jugées chacune comme la porte (nvof_mesures.variants) : nvof, traits, lk
+  (affinée par Lucas-Kanade global), traits_lk ;
 - des tuiles de 32 px (en 1080p) classées décor, dessin ou incertain, et leur stabilité d'une paire à l'autre ;
 - sur les panoramiques, le mode pyramide (--pyramide 360:720) : NVOF en 360p, caméra ajustée, puis ce mouvement
   passé en indices externes (grille 8) à la passe 720p ; porte, résidu et part du décor avec et sans, par vitesse.
@@ -40,10 +43,11 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from nvof_mesures import (at_cells, camera, decode, fit_pair, hint_field, moving_pairs, photo_residual,  # noqa: E402
-                          run_tool, texture, tiles, variants, warp_gain)
+from nvof_mesures import (at_cells, camera, decode, fit_pair, hint_field, moving_pairs, run_tool,  # noqa: E402
+                          texture, tiles, variants, warp_gain)
 
-PISTES = ("nvof", "traits", "lk", "lk_lisse")
+PISTES = ("nvof", "traits", "lk", "traits_lk")
+MESURES = ("tuiles", "bords", "vecteurs")
 
 GATE_PX, GATE_SHARE, GATE_PAIRS, MOVING_PX = 0.5, 0.4, 0.9, 0.5
 CLASSES = ("aplat", "trait", "grain")
@@ -142,11 +146,22 @@ def moving_set(results, names):
             for r in slot["paires"].get(name, []) if r.get("camera_px", 0) >= MOVING_PX}
 
 
+def passes(r):
+    return r.get("residu_px", float("inf")) < GATE_PX and r.get("part_decor", 0) >= GATE_SHARE
+
+
 def gate(rows, moving):
-    """rows : [(extrait, ligne)] d'une configuration. Une paire mobile sans ajustement compte comme ratée."""
+    """rows : [(extrait, ligne)] d'une configuration. Une paire mobile sans ajustement compte comme ratée. Rend
+    (bonnes, mobiles, {sorte de mesure: paires})."""
     judged = [r for name, r in rows if (name, r["image"]) in moving]
-    good = [r for r in judged if r.get("residu_px", float("inf")) < GATE_PX and r.get("part_decor", 0) >= GATE_SHARE]
-    return len(good), len(moving), sum(1 for r in judged if r.get("tuiles_mesurees", 0) > 0)
+    kinds = {m: sum(1 for r in judged if r.get("mesure") == m) for m in MESURES}
+    return sum(1 for r in judged if passes(r)), len(moving), kinds
+
+
+def piste_rows(results, key, pans, v):
+    """[(extrait, ligne de la piste v)] d'une configuration, image comprise."""
+    return [(name, {"image": r["image"], **r.get("variantes", {}).get(v, {})})
+            for name in pans for r in results[key]["paires"].get(name, [])]
 
 
 def report(results, times, info, clips, ref, pyr=None, levels=None):
@@ -191,42 +206,66 @@ def report(results, times, info, clips, ref, pyr=None, levels=None):
           f"Paires des panoramiques où une configuration au moins voit bouger la caméra (≥ {MOVING_PX} px), les mêmes "
           f"pour toutes ; une paire sans ajustement est ratée. Résidu médian du décor sous {GATE_PX} px et "
           f"part du décor ≥ {100 * GATE_SHARE:.0f} %, sur {100 * GATE_PAIRS:.0f} % des paires.", "",
-          "Mesurées sur l'image : paires dont 3 tuiles de décor au moins se prêtent à Lucas-Kanade ; les autres "
-          "reprennent l'écart des vecteurs NVOF.", "",
-          "| Grille | Hauteur | Paires bonnes / mobiles | Part | Mesurées sur l'image |", "|---|---|---:|---:|---:|"]
+          "Mesure : paires jugées sur 3 tuiles de décor au moins texturées dans les deux sens / sur des bords (en "
+          "travers) / sur les vecteurs NVOF, faute de tuiles mesurables.", "",
+          "| Grille | Hauteur | Paires bonnes / mobiles | Part | Mesure (tuiles / bords / vecteurs) |",
+          "|---|---|---:|---:|---|"]
     verdicts = {}
     pans = [name for name, typ, _ in clips if typ == "panoramique"]
     moving_pairs_all = moving_set(results, pans)
     for key in sorted(results):
         rows = [(name, r) for name in pans for r in results[key]["paires"].get(name, [])]
-        good, moving, photo = gate(rows, moving_pairs_all)
-        verdicts[key] = (good / moving) if moving else None
+        good, moving, kinds = gate(rows, moving_pairs_all)
+        verdicts[(key, "nvof")] = (good / moving) if moving else None
         L.append(f"| {key[0]} × {key[0]} | {key[1]}p | {good} / {moving} | "
-                 + (f"{100 * good / moving:.0f} %" if moving else "–") + f" | {photo} |")
+                 + (f"{100 * good / moving:.0f} %" if moving else "–") + " | "
+                 + " / ".join(str(kinds[m]) for m in MESURES) + " |")
+        for v in PISTES[1:]:
+            good, moving, _ = gate(piste_rows(results, key, pans, v), moving_pairs_all)
+            verdicts[(key, v)] = (good / moving) if moving else None
     scored = {k: v for k, v in verdicts.items() if v is not None}
     if not scored:
         L += ["", "Verdict impossible : aucun panoramique où la caméra bouge (ajouter un extrait panoramique=…)."]
     else:
         best = max(scored, key=scored.get)
         word = "passe" if scored[best] >= GATE_PAIRS else "ne passe pas"
-        L += ["", f"Verdict : la porte {word} (meilleure configuration {best[0]} × {best[0]} en {best[1]}p, "
+        (g, hgt), v = best
+        L += ["", f"Verdict : la porte {word} (meilleure configuration {g} × {g} en {hgt}p, piste {v}, "
                   f"{100 * scored[best]:.0f} % des paires)."]
-    L += ["", "## Pistes pour les caméras lentes (même critère, mêmes paires)", "",
+    L += ["", "## Pistes du modèle de caméra (même critère, mêmes paires)", "",
           "nvof : l'affine NVOF ; traits : ajustée sur les blocs de traits seuls (sans le grain) ; lk : l'affine NVOF "
-          "affinée par Lucas-Kanade global (7 × 7 puis 3 × 3, Huber), décor repris avec elle ; lk_lisse : lk, médiane "
-          "des affines sur trois paires voisines. Par case : bonnes / mobiles, et la part pour les caméras de 0,5 à 15 px.",
-          "", "| Grille | Hauteur | " + " | ".join(PISTES) + " |", "|---|---|" + "---:|" * len(PISTES)]
+          "affinée par Lucas-Kanade global (7 × 7 puis 3 × 3, Huber), décor repris avec elle ; traits_lk : l'affine "
+          "des traits affinée de même, décor repris sur les traits. Toutes jugées comme la porte (image, sinon "
+          "vecteurs). Par case : bonnes / mobiles, la part pour les caméras de 0,5 à 15 px, et la mesure "
+          "(tuiles / bords / vecteurs).", "", "| Grille | Hauteur | " + " | ".join(PISTES) + " |",
+          "|---|---|" + "---:|" * len(PISTES)]
     for key in sorted(results):
         cells = []
+        slow = {(n, r["image"]) for n in pans for r in results[key]["paires"].get(n, [])
+                if MOVING_PX <= r.get("camera_px", 0) < 15} & moving_pairs_all
         for v in PISTES:
-            rows = [(name, {"image": r["image"], **r.get("variantes", {}).get(v, {})})
-                    for name in pans for r in results[key]["paires"].get(name, [])]
-            good, moving, _ = gate(rows, moving_pairs_all)
-            slow = {(n, r["image"]) for n in pans for r in results[key]["paires"].get(n, [])
-                    if MOVING_PX <= r.get("camera_px", 0) < 15} & moving_pairs_all
+            rows = piste_rows(results, key, pans, v)
+            good, moving, kinds = gate(rows, moving_pairs_all)
             gs, ms_, _ = gate(rows, slow)
-            cells.append(f"{good} / {moving} ({100 * good / max(moving, 1):.0f} %), lentes {100 * gs / max(ms_, 1):.0f} %")
+            cells.append(f"{good} / {moving} ({100 * good / max(moving, 1):.0f} %), lentes {100 * gs / max(ms_, 1):.0f} %, "
+                         + " / ".join(str(kinds[m]) for m in MESURES))
         L.append(f"| {key[0]} × {key[0]} | {key[1]}p | " + " | ".join(cells) + " |")
+    if ref in results:
+        L += ["", f"Par extrait ({ref[0]} × {ref[0]}, {ref[1]}p) : bonnes / mobiles, puis les ratées par le résidu et "
+                  "par la part du décor (une paire peut rater sur les deux).", "",
+              "| Extrait | " + " | ".join(PISTES) + " |", "|---|" + "---:|" * len(PISTES)]
+        for name in pans:
+            moving = {(n, i) for n, i in moving_pairs_all if n == name}
+            if not moving:
+                continue
+            cells = []
+            for v in PISTES:
+                rows = [r for n, r in piste_rows(results, ref, [name], v) if (n, r["image"]) in moving]
+                good, _, _ = gate([(name, r) for r in rows], moving)
+                bad_res = sum(1 for r in rows if r.get("residu_px", float("inf")) >= GATE_PX)
+                bad_share = sum(1 for r in rows if r.get("part_decor", 0) < GATE_SHARE)
+                cells.append(f"{good} / {len(moving)} ({bad_res}, {bad_share})")
+            L.append(f"| {name} | " + " | ".join(cells) + " |")
     if pyr:
         L.append(pyramid_report(pyr, *levels))
     text = re.sub(r"(\d)\.(\d)", r"\1,\2", "\n".join(L)) + "\n"
@@ -290,7 +329,7 @@ def main():
                 slot = results.setdefault(key, {"paires": {}, "doublons": {}, "couts": {c: np.zeros(256, np.int64)
                                                                                      for c in CLASSES}})
                 slot["doublons"][name] = held
-                rows, last, shown, lk = [], None, 0, {}
+                rows, last, shown = [], None, 0
                 every = max(1, len(pairs) // max(1, args.vues))
                 for i, k in enumerate(pairs):
                     flow, cost = flows[k]
@@ -316,20 +355,8 @@ def main():
                     else:
                         last = None
                     if typ == "panoramique":
-                        row["variantes"], decor_lk = variants(frames[k], frames[k + 1], flow, cost, cls, grid, height,
-                                                              fit)
-                        if "lk" in row["variantes"]:
-                            lk[k] = (decor_lk, row["variantes"]["lk"])
+                        row["variantes"] = variants(frames[k], frames[k + 1], flow, cost, cls, grid, height, fit)
                     rows.append(row)
-                for row in rows:  # lk_lisse : médiane des affines lk de k − 1, k, k + 1
-                    k = row["image"]
-                    if all(j in lk for j in (k - 1, k, k + 1)):
-                        smooth = np.median([lk[j][1]["affine"] for j in (k - 1, k, k + 1)], 0)
-                        photo, _ = photo_residual(frames[k], frames[k + 1], smooth, lk[k][0], grid, height)
-                        row["variantes"]["lk_lisse"] = {"residu_px": photo if photo is not None else float("inf"),
-                                                        "part_decor": lk[k][1]["part_decor"]}
-                    elif k in lk:  # bord d'une suite : lk tel quel
-                        row["variantes"]["lk_lisse"] = dict(lk[k][1])
                 slot["paires"][name] = rows
                 print(f"{name} : grille {grid}, {height}p, {len(rows)} paires", file=sys.stderr, flush=True)
         if levels and typ == "panoramique" and pairs:
