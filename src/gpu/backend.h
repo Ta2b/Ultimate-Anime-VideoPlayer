@@ -32,6 +32,7 @@
 #include "gpu/kernel_ops.h"
 #include "gpu/lanes.h"
 #include "gpu/tensor.h"
+#include "kernels/spec/span_tiles.h"
 
 namespace kirari::gpu {
 
@@ -102,7 +103,9 @@ namespace kirari::gpu {
 // 46 : SplatJob::pull (le splat tiré).
 // 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
 // kernels/spec/scene_flow.h).
-inline constexpr int kBackendAbi = 47;
+// 48 : Engine::span_tile_grid et next_span_tiles (les tuiles qui bougent : SPAN sur les seules tuiles
+// changées, la sortie d'avant reprise ou décalée ; kernels/spec/span_tiles.h).
+inline constexpr int kBackendAbi = 48;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -336,6 +339,18 @@ class Engine {
   // P6.15 : l'appel suivant peut reprendre les blocs grossiers de RIFE de l'appel précédent (même moteur,
   // paire voisine, même instant) au lieu de les recalculer. Vrai si le moteur le fera ; faux : calcul entier.
   virtual bool next_warm() { return false; }
+  // Tuiles qui bougent (kernels/spec/span_tiles.h) : la grille de tuiles du moteur à sa taille ; tile_w nul
+  // pour un moteur qui ne sait calculer que l'image entière (TensorRT, corps CUTLASS).
+  virtual kernels::SpanTileGrid span_tile_grid() const { return {}; }
+  // L'appel suivant (enqueue seulement, jamais enqueue_ring) ne calcule que les tuiles non nulles de core
+  // (span_tile_grid().count() octets) et n'écrit outputs[0] que là. Avant, si previous n'est pas nul et
+  // n'est pas outputs[0], outputs[0] reçoit previous décalé de (shift_x, shift_y) pixels d'entrée (multiples
+  // de shift_step) ; previous nul : outputs[0] tient déjà la sortie d'avant, sans décalage. Faux : le moteur
+  // ne le fera pas, l'appel suivant calcule l'image entière. Une seule fois : l'appel d'après est entier.
+  virtual bool next_span_tiles(std::span<const std::uint8_t> /*core*/, int /*shift_x*/, int /*shift_y*/,
+                               const Tensor* /*previous*/) {
+    return false;
+  }
 };
 
 // Point de synchronisation sur la file du backend.

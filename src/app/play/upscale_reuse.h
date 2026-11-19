@@ -17,9 +17,9 @@
 // suite ;
 // - une image abîmée au décodage (DecodedFrame::corrupt) n'est ni reprise ni ancre.
 //
-// La décision rend une sorte (ReuseKind) et non un booléen : les tuiles qui bougent (phase 3 du plan « flux
-// optique ») ajouteront une sorte « tuiles » et la liste des tuiles à recalculer, lue sur la carte de la
-// scène, sans toucher à l'étage.
+// La décision rend une sorte (ReuseKind) et non un booléen. Quand l'image n'est pas reprise entière, les
+// tuiles qui bougent (upscale_tiles.h, phase 3 du plan « flux optique ») peuvent ne recalculer que les tuiles
+// changées, lues sur la carte de la scène : sorte Tiles, et le plan dans SpanReuse::tile_plan.
 #pragma once
 
 #include <cstdint>
@@ -27,7 +27,9 @@
 #include <optional>
 #include <string>
 
+#include "app/play/upscale_tiles.h"
 #include "gpu/backend.h"
+#include "kernels/spec/scene_flow.h"
 
 namespace kirari::app::play {
 
@@ -44,11 +46,24 @@ struct ReuseFacts {
   bool has_output = false;          // la sortie de SPAN de l'ancre est encore là
   bool pair_held = false;           // la paire (précédente, image) tenue ; vrai si seule l'ancre est mesurée
   std::optional<AnchorGap> anchor;  // mesure ancre → image ; absente au début d'une série mesurée par paire
+  // Tuiles qui bougent (upscale_tiles.h). tiles_ok : l'étage sait les suivre pour cette image (sortie d'avant
+  // à jour, ni TemporalFix, ni grade sur place, ni export, ni Smooth) ; can_shift : la sortie d'avant est
+  // dans un autre tampon ; scene : la carte de la paire (précédente, image), nulle sans carte.
+  bool tiles_ok = false;
+  bool can_shift = false;
+  const kernels::SceneMotion* scene = nullptr;
+};
+
+// Ce que l'étage règle au démarrage (UpscaleSetup::span_reuse).
+struct SpanReuseSetup {
+  bool whole = true;  // --no-span-reuse : SPAN sur chaque image
+  bool tiles = true;  // --no-span-tiles : jamais par tuiles
 };
 
 enum class ReuseKind : std::uint8_t {
   Compute,  // SPAN tourne, l'image devient l'ancre
   Whole,    // l'image entière reprend la sortie de l'ancre
+  Tiles,    // SPAN ne recalcule que les tuiles de tile_plan ; l'image devient l'ancre, comme Compute
 };
 
 class SpanReuse {
@@ -71,6 +86,14 @@ class SpanReuse {
   // L'image de l'ancre telle que SPAN l'a lue, copiée au début d'une série ; nul tant qu'aucune n'a servi.
   std::unique_ptr<gpu::TensorBuffer> anchor;
   bool anchor_measure = true;  // faux après un refus (backend sans scores_now, allocation)
+
+  // Les tuiles qui bougent, et le plan de l'image arrivée (tiled faux hors de ReuseKind::Tiles) : à donner au
+  // moteur (gpu::Engine::next_span_tiles) juste avant le SPAN de cette image, puis à oublier.
+  SpanTiles tiles;
+  TilePlan tile_plan;
+  // La source dont le tampon de SPAN de l'image (avant le warp) tient vraiment la sortie : posée par l'étage
+  // à chaque SPAN fait ou repris. Une source sautée ne l'a pas : sa suivante ne se calcule pas par tuiles.
+  std::optional<SourceId> spanned;
 
  private:
   void take();

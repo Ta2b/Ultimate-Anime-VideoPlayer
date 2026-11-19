@@ -79,6 +79,18 @@ constexpr std::int64_t align_up(std::int64_t bytes) {
   return (bytes + kAlign - 1) / kAlign * kAlign;
 }
 
+// Le décalage de la sortie (SpanFp8Body::shift_output) : un fil par paire de pixels d'une ligne, trois plans.
+__global__ void shift_planes(const __half* from, __half* to, int height, int width, int dx, int dy) {
+  const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
+  const int y = static_cast<int>(blockIdx.y);
+  const int sx = x - dx, sy = y - dy;
+  if (x >= width || sx < 0 || sx >= width || sy < 0 || sy >= height) return;
+  const long plane = static_cast<long>(height) * width;
+  const long at = static_cast<long>(y) * width + x, src = static_cast<long>(sy) * width + sx;
+#pragma unroll
+  for (int c = 0; c < 3; ++c) to[c * plane + at] = from[c * plane + src];
+}
+
 template <int C, bool Acc16>
 class NativeBody final : public SpanFp8Body {
   using M = sn::Mode;
@@ -187,8 +199,44 @@ class NativeBody final : public SpanFp8Body {
     p.surface = ring.surface;
     p.surf_w = ring.width;
     p.surf_h = ring.height;
+    p.mask = core_;  // la queue n'écrit que le cœur ; le corps a calculé sa région
     run<C, sn::kPixel, 9, 1, S::kNhwc, M::kPixel, false>(stream, p, kSmemPixel);
     return !failed(error);
+  }
+
+  // Une tuile de noyau : kTH × kTW pixels de demi-résolution, 2 kTH × 2 kTW pixels d'entrée. La portée : un
+  // pixel de demi-résolution par 3×3 sur le plus long chemin (conv_1, trois par bloc, to_pixel ; conv_cat et
+  // la 1×1 de la porte n'en ajoutent pas), comptée sur les couches réellement lancées.
+  kernels::SpanTileGrid tile_grid() const override {
+    const int reach = radius(9) + used_ * 3 * radius(9) + radius(1) + radius(9);
+    return kernels::SpanTileGrid{.tile_w = 2 * sn::kTW,
+                                 .tile_h = 2 * sn::kTH,
+                                 .cols = static_cast<int>(grid_.x),
+                                 .rows = static_cast<int>(grid_.y),
+                                 .reach_cols = kernels::span_reach_tiles(reach, sn::kTW),
+                                 .reach_rows = kernels::span_reach_tiles(reach, sn::kTH),
+                                 .shift_step = 2,
+                                 .scale = 2};
+  }
+
+  void set_tile_masks(const std::uint32_t* region, const std::uint32_t* core) override {
+    region_ = region;
+    core_ = core;
+  }
+
+  bool shift_output(cudaStream_t stream, const void* from, void* to, int dx, int dy,
+                    std::string& error) override {
+    if (from == nullptr || to == nullptr || from == to) {
+      error = "décalage de la sortie : tampons absents ou confondus";
+      return false;
+    }
+    const int oh = 4 * fh_, ow = 4 * fw_;
+    constexpr unsigned kLine = 256;
+    shift_planes<<<dim3((static_cast<unsigned>(ow) + kLine - 1) / kLine, static_cast<unsigned>(oh)), kLine, 0,
+                   stream>>>(static_cast<const __half*>(from), static_cast<__half*>(to), oh, ow, dx, dy);
+    if (!failed(error)) return true;
+    error = "décalage de la sortie : " + error;
+    return false;
   }
 
   SpanFp8AccChange poll_accumulator() override { return SpanFp8AccChange::None; }
@@ -199,8 +247,12 @@ class NativeBody final : public SpanFp8Body {
     Buffer w, b;
   };
 
+  // Le rayon d'une convolution de taps positions (1 ou 9).
+  static constexpr int radius(int taps) { return taps == 9 ? 1 : 0; }
+
   sn::Params params(const Conv& conv, __half* out) const {
     sn::Params p;
+    p.mask = region_;
     p.out = out;
     p.w = conv.w.template as<uint4>();
     p.bias = conv.b.template as<float>();
@@ -226,6 +278,8 @@ class NativeBody final : public SpanFp8Body {
   dim3 grid_;
   int used_ = kBlocks;
   bool bound_ = false;
+  const std::uint32_t* region_ = nullptr;  // tuiles qui bougent : masques d'appareil, nuls hors d'un appel
+  const std::uint32_t* core_ = nullptr;
   Conv first_, cat_, pixel_;
   std::array<std::array<Conv, 3>, kBlocks> conv_;
   std::array<Conv, kBlocks> attention_;

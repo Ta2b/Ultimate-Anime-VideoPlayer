@@ -14,6 +14,7 @@
 #include <string>
 
 #include "gpu/cuda/backend/ring_surface.h"
+#include "kernels/spec/span_tiles.h"
 
 namespace kirari::gpu::cuda {
 
@@ -123,6 +124,13 @@ class SpanFp8Net {
   SpanFp8AccChange poll_accumulator();
   // Les images débordées depuis la création (exact une fois le flux attendu) ; 0 sans acc16.
   int overflow_frames() const;
+
+  // Tuiles qui bougent (kernels/spec/span_tiles.h, SpanFp8Body) : la grille du corps (tile_w nul : le corps
+  // CUTLASS ne calcule que l'image entière), les masques d'appareil des lancements suivants (nuls : l'image
+  // entière) et le décalage de la sortie d'avant.
+  kernels::SpanTileGrid tile_grid() const;
+  void set_tile_masks(const std::uint32_t* region, const std::uint32_t* core);
+  bool shift_output(cudaStream_t stream, const void* from, void* to, int dx, int dy, std::string& error);
 
  private:
   struct Impl;

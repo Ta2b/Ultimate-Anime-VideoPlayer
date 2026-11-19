@@ -191,6 +191,9 @@ struct PlayOptions {
   // --no-span-reuse (mesure, avec --debug) : SPAN sur chaque image, dessins tenus compris
   // (UpscaleSetup::span_reuse, upscale_reuse.h). Pour l'ABAB du lot A.
   bool span_reuse = true;
+  // --no-span-tiles (mesure, avec --debug) : SPAN jamais par tuiles (upscale_tiles.h). Pour l'ABAB des tuiles
+  // qui bougent ; sans effet sans SPAN FP16 natif ni carte de la scène.
+  bool span_tiles = true;
   // --fast-steady : le mode Rapide à pas constant par plan (chantier 7, core/steady_rate.h) : N images par
   // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
   // mesures 7.10.

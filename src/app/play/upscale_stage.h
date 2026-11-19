@@ -76,7 +76,7 @@ struct UpscaleSetup {
   gpu::Engine* temporal_fix = nullptr;
   // Lecture (horloge présente) : un instant identique à l'image affichée n'est ni calculé ni écrit.
   bool skip_held = false;
-  bool span_reuse = true;       // dessins tenus : SPAN repris de l'ancre (upscale_reuse.h) ; --no-span-reuse
+  SpanReuseSetup span_reuse;    // SPAN repris de l'ancre, ou par tuiles (upscale_reuse.h, upscale_tiles.h)
   gpu::Engine* rife = nullptr;  // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
   // Variante mouvement de RIFE (motion_model.h) : flot et masque, warp à la sortie. Remplace rife ;
   // une passe au milieu de la paire la sert toute quand le mouvement est faible.

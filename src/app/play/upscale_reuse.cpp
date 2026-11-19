@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <format>
+#include <utility>
 
 #include "kernels/spec/detect.h"
 
@@ -11,10 +12,17 @@ namespace kirari::app::play {
 ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
   ++seen_;
   if (facts.corrupt) ++corrupt_;
+  tile_plan = TilePlan{};
   const auto compute = [&] {
     in_row_ = 0;
-    anchor_bad_ = facts.corrupt;  // la nouvelle ancre, abîmée ou non
-    return ReuseKind::Compute;
+    const bool behind_bad = std::exchange(anchor_bad_, facts.corrupt);  // la nouvelle ancre, abîmée ou non
+    if (!tiles.active()) return ReuseKind::Compute;
+    // Les tuiles suivent chaque image calculée, même entière : leur état repart de là.
+    tile_plan = tiles.plan(TileFacts{
+        .fresh = facts.tiles_ok && facts.same_epoch && !facts.corrupt && !behind_bad && facts.has_output,
+        .can_shift = facts.can_shift,
+        .scene = facts.scene});
+    return tile_plan.tiled ? ReuseKind::Tiles : ReuseKind::Compute;
   };
   if (!enabled || !facts.same_epoch || facts.corrupt || anchor_bad_ || !facts.has_output || !facts.pair_held)
     return compute();
@@ -33,11 +41,14 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     return compute();
   }
   take();
+  tiles.held(facts.scene);
   return ReuseKind::Whole;
 }
 
 void SpanReuse::force() {
   ++seen_;
+  tile_plan = TilePlan{};
+  tiles.held(nullptr);
   take();
 }
 

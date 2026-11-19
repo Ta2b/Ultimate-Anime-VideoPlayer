@@ -74,7 +74,7 @@ endif()
 
 add_library(kirari_backend_tensorrt MODULE
   drba_fused_engine.cpp entry.cpp fused_graphs.cpp gpu_timing.cpp host_upload.cpp ring_slot.cpp rife_fused_engine.cpp
-  ingest_chroma.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
+  ingest_chroma.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp span_fp8_tiles.cpp tensorrt_backend.cpp tensorrt_export.cpp tensorrt_kernels.cpp
   tensorrt_gmfss.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_span_derive.cpp
   span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_warp.cpp trt_engine.cpp)
 target_include_directories(kirari_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")

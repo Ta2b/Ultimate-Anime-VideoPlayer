@@ -12,6 +12,19 @@
 #include "kernels/spec/resample.h"
 
 namespace kirari::app::play {
+namespace {
+
+// Le plan des tuiles de l'image (SpanReuse::tile_plan), donné au moteur juste avant son SPAN, puis oublié.
+// Faux : l'image se calcule entière (pas de plan, ou le moteur l'a refusé).
+bool send_tiles(SpanReuse& reuse, gpu::Engine& engine, const gpu::Tensor* previous) {
+  const TilePlan plan = std::exchange(reuse.tile_plan, TilePlan{});
+  if (!plan.tiled) return false;
+  if (engine.next_span_tiles(plan.core, plan.shift_x, plan.shift_y, previous)) return true;
+  reuse.tiles.refused();
+  return false;
+}
+
+}  // namespace
 
 std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame, const PairFacts& facts,
                                                        bool held) {
@@ -27,6 +40,16 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                 .corrupt = frame.corrupt,
                 .has_output = warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_),
                 .pair_held = pair_measured ? held : true};
+  // Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près, la
+  // carte arrive quand elle peut), ni TemporalFix (la carte ne voit pas sa sortie), ni Smooth (SPAN fait en
+  // avance), ni grade sur place de la sortie (la sortie d'avant est gradée, ses tuiles ne se mélangent pas).
+  // Avant le warp, la sortie d'avant est dans l'autre tampon ; sinon dans output_, si rien ne l'a écrasée.
+  rf.tiles_ok = setup_.clock != nullptr && !setup_.yuv_slots && setup_.temporal_fix == nullptr &&
+                !setup_.smooth_drawings &&
+                (warps_spanned() ? !setup_.grader && previous_ && reuse_.spanned == previous_->id
+                                 : output_has_source_ && intermediates_ == 0);
+  rf.can_shift = warps_spanned();
+  rf.scene = facts.scene ? &*facts.scene : nullptr;
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   const int in_row = reuse_.in_row();
@@ -51,7 +74,8 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
   }
   // Sans mesure du tout (SPAN seul, mesure refusée) : rien ne dit que l'image est tenue.
   if (!pair_measured && !rf.anchor) rf.pair_held = false;
-  const bool reused = reuse_.decide(rf) == ReuseKind::Whole;
+  const ReuseKind kind = reuse_.decide(rf);
+  const bool reused = kind == ReuseKind::Whole;
   // Début d'une série : l'ancre (la précédente, telle que SPAN l'a lue) est copiée avant que son tampon ne
   // reçoive une autre image ; la copie suit sur la voie des mesures, sans attente.
   if (reused && in_row == 0 && reuse_.anchor_measure) {
@@ -89,7 +113,10 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   spanned_now_ = true;
   // Le tampon est choisi à l'arrivée de l'image : celui de la précédente pour un dessin tenu, sinon
   // l'autre, car celui de la précédente reste le bord a des warps de la paire.
-  if (reuse_span_) return {};
+  if (reuse_span_) {
+    reuse_.spanned = frame_id_;  // le tampon de l'ancre tient la sortie de cette image
+    return {};
+  }
   // Smooth : le SPAN de cette image a été fait en avance, dans ce même tampon (span_smooth_b).
   if (std::exchange(span_ahead_, std::nullopt) == frame_id_ && span_ahead_buf_ == span_of_[current_])
     return {};
@@ -98,7 +125,9 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   use_lane(gpu::Lane::Upscale);
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
+  send_tiles(reuse_, *setup_.engine, &spanned(current_ ^ 1U));
   auto ok = blame_stage(setup_.backend->enqueue(*setup_.engine, inputs, results), kSpanRefusalKey);
+  reuse_.spanned = ok ? std::optional(frame_id_) : std::nullopt;
   if (ok) ok = grade_spanned(span_of_[current_]);
   use_lane(back);
   return ok;
@@ -142,6 +171,14 @@ std::expected<void, Refusal> UpscaleStage::finish(const gpu::Tensor& rgb, std::u
   if (setup_.engine == nullptr) return write_slot(rgb, slot, sync);
   const std::array inputs{rgb};
   std::array outputs{output_->tensor()};
+  // Tuiles qui bougent : la source de l'image seulement (output_ tient celle d'avant), par enqueue (la queue
+  // n'écrit que les tuiles calculées : l'emplacement reçoit ensuite output_ entière).
+  const gpu::Tensor& now = rgb_[current_]->tensor();
+  if (rgb.handle == now.handle && rgb.offset == now.offset && send_tiles(reuse_, *setup_.engine, nullptr)) {
+    if (auto ok = setup_.backend->enqueue(*setup_.engine, inputs, outputs); !ok)
+      return blame_stage(std::move(ok), kSpanRefusalKey);
+    return write_slot(output_->tensor(), slot, sync);
+  }
   // Sans export YUV : SPAN et l'écriture de l'emplacement en un appel (étape 3.4b), que le backend sait
   // fondre (le SPAN FP8 écrit l'anneau depuis son épilogue) ; la sortie est écrite aussi (reuse_span_).
   if (!setup_.yuv_slots) {
