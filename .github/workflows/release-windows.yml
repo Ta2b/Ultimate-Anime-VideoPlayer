@@ -148,7 +148,8 @@ jobs:
         if: env.SKIP != '1'
         shell: pwsh
         run: '"image=$env:ImageOS-$env:ImageVersion" >> $env:GITHUB_OUTPUT'
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - id: vcpkg-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: env.SKIP != '1'
         with:
           path: C:\vc
@@ -180,6 +181,7 @@ jobs:
         shell: pwsh
         run: pwsh tools/deps/windows-tensorrt.ps1 "$env:RUNNER_TEMP/nvidia"
       - name: Paquet TensorRT
+        id: package-trt
         if: env.SKIP != '1'
         shell: pwsh
         env:
@@ -208,6 +210,13 @@ jobs:
           if (-not ($members -match 'trtexec\.exe$')) { throw "trtexec.exe absent de l'archive" }
           pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "trt-win-$env:FP"
           if ($LASTEXITCODE -ne 0) { throw "contrôle du paquet TensorRT" }
+      # Les dépendances vcpkg construites ici servent au job du lecteur, qui les recompilait sinon (même clé ; une
+      # étiquette ne voit que ses propres caches et ceux de main).
+      - if: always() && env.SKIP != '1' && steps.package-trt.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       - name: Sauver sccache
         if: always() && env.SKIP != '1' && steps.sccache.outcome == 'success'
         shell: pwsh
