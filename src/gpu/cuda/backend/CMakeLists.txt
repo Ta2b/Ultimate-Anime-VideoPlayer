@@ -87,7 +87,7 @@ target_include_directories(kirari_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR
 # du pilote ; aucun fichier de NVIDIA n'est livré.
 target_include_directories(kirari_backend_tensorrt SYSTEM PRIVATE "${PROJECT_SOURCE_DIR}/third_party/nvidia-optical-flow")
 target_link_libraries(kirari_backend_tensorrt PRIVATE
-  kirari::gpu kirari::gpu_span_fp8 kirari::cuda_fused_keys kirari::prepare kirari::core_log kirari::dep::spdlog kirari_backend_tensorrt_kernels ${kirari_span_fp8_net}
+  kirari::gpu kirari::gpu_span_fp8 kirari::cuda_fused_keys kirari::cuda_rife_mix kirari::prepare kirari::core_log kirari::dep::spdlog kirari_backend_tensorrt_kernels ${kirari_span_fp8_net}
   kirari::dep::tensorrt CUDA::cuda_driver ${CMAKE_DL_LIBS})
 # Le trtexec du paquet est celui de la configuration : son SHA-256 entre dans le module, qui refuse
 # tout autre fichier posé à côté de lui (P1.21). Le repli sur le trtexec de la machine est réservé
@@ -131,7 +131,8 @@ kirari_set_warnings(kirari_backend_tensorrt)
 # Les bibliothèques statiques liées dans un objet partagé doivent être compilées en PIC. prepare
 # et les modules qu'il tire sont déclarés après gpu : la propriété se pose à la fin du projet.
 function(kirari_backend_tensorrt_pic)
-  foreach(lib kirari_prepare kirari_core kirari_core_log kirari_kernels kirari_gpu_span_fp8 kirari_cuda_fused_keys)
+  foreach(lib kirari_prepare kirari_core kirari_core_log kirari_kernels kirari_gpu_span_fp8 kirari_cuda_fused_keys
+          kirari_cuda_rife_mix)
     if(TARGET ${lib})
       set_property(TARGET ${lib} PROPERTY POSITION_INDEPENDENT_CODE ON)
     endif()

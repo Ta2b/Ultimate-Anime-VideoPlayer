@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/rife_mix_choice.h"
 
 namespace kirari::gpu::cuda {
 namespace {
@@ -73,7 +74,7 @@ RifeNativeTrial::RifeNativeTrial(RifeFusedEngine& engine, cudaStream_t stream,
     : engine_(engine), stream_(stream), shared_(std::move(shared)), input_(input) {}
 
 std::string RifeNativeTrial::piece_name(int piece) {
-  return piece == 0 ? std::string("encodeur") : std::format("bloc {}", piece - 1);
+  return rife_mix::piece_name(piece);
 }
 
 RifeNativeTrial::Io RifeNativeTrial::io(int piece) const {
