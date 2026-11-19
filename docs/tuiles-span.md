@@ -269,6 +269,11 @@ avec le vrai SPAN : sur aura, reprises entières du lot A au pire bloc 0,96 (com
 moyen 0,25 au plus), sur panoramique3 0,79 (images par tuiles 0,82) ; scintillement tenu (aura 0,391 contre
 0,390, panoramique3 0,212 contre 0,215).
 
+Au PC (4e719097), la porte passe : pire bloc 0,79 niveau, écart moyen 0,165 au plus ; moteur SPAN 11 241 ms
+contre 12 244 sans tuiles (−8,2 %), p95 10,68 contre 11,07 ms ; reprise entière 19,8 % des deux côtés, série
+la plus longue 19. Reste le gros levier : 1028 images entières pour région trop large (82 % des tuiles en
+cause).
+
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
 La stabilité est tenue sur processeur (plus haut). Au PC, à la séance de test commune de la fin (consigne de
@@ -287,7 +292,7 @@ l'extrait unique de 60 s (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers
    la même avec `--no-span-tiles --stats=sans-tuiles.tsv`. Le temps GPU de SPAN se lit sur la ligne « profil
    GPU : moteur … » du journal (médiane et total ; `*.gpu.tsv` à côté), avec « SPAN repris » et « SPAN par
    tuiles ». Le dialogue de Spy×Family 13 BD à 17:06 est un panoramique : les tuiles n'y gagnent rien. Sur
-   #962 : −6,3 %, sur la règle revue −6,6 % (plus haut, « Mesure du PC ») ; lot A d'abord, au rejeu, 63,2 %.
+   #962 : −6,3 %, sur la règle revue −6,6 %, sur le lot A d'abord −8,2 % (plus haut, « Mesure du PC »).
    Porte du temps : le moteur SPAN pas plus lent qu'avec `--no-span-tiles`, et la reprise entière (« SPAN
    repris ») pas plus basse.
 
@@ -320,4 +325,4 @@ de blocs synthétiques (remise à zéro stricte comprise), la reprise entière q
 (l'image calculée d'après rattrape les blocs et l'âge), et les raisons du bilan ; `source_grade_stage_test.cpp`, l'étage sous le grade avant le warp (tuiles
 dès la troisième source, toujours depuis la copie d'avant le grade) et en SPAN seul, puis (soir du 19 novembre) la
 portée réelle, les sorties exactes de la région et l'écart à l'ancre bloc par bloc. Reste au PC : la justesse
-(`--span-tiles-check`) et les temps du lot A d'abord (plus haut, « Porte »).
+(`--span-tiles-check`) et les temps du lot A d'abord, mesurés le 19 novembre : porte passée (plus haut).
