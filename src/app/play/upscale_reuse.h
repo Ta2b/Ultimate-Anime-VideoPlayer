@@ -23,8 +23,9 @@
 // La décision rend une sorte (ReuseKind) et non un booléen. Quand l'image n'est pas reprise entière, les
 // tuiles qui bougent (upscale_tiles.h, phase 3 du plan « flux optique ») peuvent ne recalculer que les tuiles
 // changées, lues sur l'écart des blocs de la mesure de la paire : sorte Tiles, et le plan dans
-// SpanReuse::tile_plan. Après une image par tuiles, la reprise entière demande aussi que chaque bloc reste au
-// seuil (SpanTiles::holds) : la sortie y mêle des tuiles d'images différentes.
+// SpanReuse::tile_plan. Après une image par tuiles, la reprise entière suit la même règle, contre l'ancre
+// (l'image par tuiles) : la sortie y mêle des tuiles d'images différentes, que la prochaine image calculée
+// rattrape (SpanTiles::held).
 #pragma once
 
 #include <array>
@@ -32,6 +33,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "app/play/upscale_tiles.h"
 #include "gpu/backend.h"
@@ -41,6 +43,12 @@ namespace kirari::app::play {
 // L'écart entre l'ancre et l'image arrivée (gpu::PairScores sur les images de la mesure de la paire).
 struct AnchorGap {
   std::uint32_t worst_block = 0;  // pire bloc 16 × 16, en 1/256 de niveau 8 bits (kernels::is_held)
+  // L'écart de chaque bloc (gpu::PairScores::blocks), à la géométrie de la mesure de la paire ; vide si le
+  // backend ne le relit pas.
+  std::vector<std::uint32_t> blocks;
+  std::uint32_t blocks_x = 0;
+  float side_px = 0.0F;
+  PairBlocks view() const { return PairBlocks{.deviation = blocks, .cols = blocks_x, .side_px = side_px}; }
 };
 
 // Ce que l'étage sait de l'image arrivée.
@@ -107,12 +115,14 @@ class SpanReuse {
   TilePlan tile_plan;
   bool check = false;                               // --span-tiles-check
   std::unique_ptr<gpu::TensorBuffer> check_output;  // le calcul complet du contrôle, à la taille de sortie
-  // Avant le warp, le grade réécrit le tampon de SPAN sur place : la sortie de SPAN telle quelle y est copiée
-  // juste avant (upscale_span.cpp, keep_ungraded), d'où la suivante se calcule par tuiles. ungraded_of : le
-  // tampon de spanned_ dont c'est la copie ; nul s'il a été réécrit depuis, ou si rien n'a été copié.
+  // Avant le warp, le grade et la plaque de décor réécrivent le tampon de SPAN sur place : la sortie de SPAN
+  // telle quelle est copiée juste avant le premier des deux (upscale_span.cpp, keep_ungraded), d'où la
+  // suivante se calcule par tuiles. ungraded_of : le tampon de spanned_ dont c'est la copie ; nul s'il a été
+  // réécrit depuis, ou si rien n'a été copié. plated : la plaque a réécrit ce tampon après son SPAN.
   std::unique_ptr<gpu::TensorBuffer> ungraded;
   std::optional<std::uint32_t> ungraded_of;
   bool ungraded_ok = true;  // faux après un refus de place ou de copie : plus de tuiles sous le grade
+  std::array<bool, 2> plated{};
   // La source dont le tampon de SPAN de l'image (avant le warp) tient vraiment la sortie : posée par l'étage
   // à chaque SPAN fait ou repris. Une source sautée ne l'a pas : sa suivante ne se calcule pas par tuiles.
   std::optional<SourceId> spanned;
@@ -132,7 +142,6 @@ class SpanReuse {
   std::uint64_t longest_ = 0;
   std::uint64_t stopped_limit_ = 0;
   std::uint64_t stopped_anchor_ = 0;  // paire tenue, mais l'écart à l'ancre passe le seuil
-  std::uint64_t stopped_tiles_ = 0;   // tenue, mais un bloc d'une sortie par tuiles passe le seuil
   std::uint64_t corrupt_ = 0;
   // Les paires mesurées par pire bloc : jusqu'à 0,7, 1, 1,5, 2, 3 et 5 niveaux, puis au-delà (note_pair).
   std::array<std::uint64_t, 7> pairs_{};

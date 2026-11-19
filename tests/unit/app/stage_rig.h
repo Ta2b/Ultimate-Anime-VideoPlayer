@@ -176,6 +176,10 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // gpu::KernelOps
   std::expected<void, Refusal> ingest(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                       const gpu::Tensor& rgb) override;
+  // La composition des calques et de la plaque (layer_stage.h) : au journal seulement.
+  std::expected<void, Refusal> compose_layers(const LayerJob& /*job*/) override {
+    return note("compose_layers");
+  }
   // La sortie porte l'image de l'entrée, comme SPAN (l'ancre de la reprise, upscale_reuse.h).
   std::expected<void, Refusal> resample(const gpu::Tensor& in, kernels::Filter filter,
                                         const gpu::Tensor& out) override;

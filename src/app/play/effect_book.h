@@ -22,12 +22,13 @@ namespace kirari::app::play {
 
 // Ce que le masque lit d'une carte : une valeur d'effet par tuile, les drapeaux de la paire, et la part de
 // l'image que couvre la grille (work_width × work_height : l'image de travail de la carte).
-//  - Effet : 1, quelle que soit la confiance (l'éclat d'une explosion ne doit pas attendre), et 1 dans la
-//    couche des effets sûrs (EffectTiles::sure : la porte plus large, la montée plus haute) ;
-//  - Décor ou dessin : 1 − confiance (un verdict sûr éteint la marge, un verdict faible la garde) ;
-//  - Incertain (aplat sans texture) : 0 s'il ne change pas (le ciel, la feuille blanche, l'intérieur d'un
-//    aplat clair), sans verdict s'il change (le cœur plat d'un flash).
-// Une paire tenue ou un fondu n'apprennent rien ; une coupe probable pose le masque d'un coup.
+//  - Effet : 1 dans la couche des effets sûrs (EffectTiles::sure : la porte plus large, la montée plus
+//    haute), quelle que soit la confiance (l'éclat d'une explosion ne doit pas attendre) ;
+//  - Partout : la marge entière (1). Aucune classe de la carte ne sépare une lumière d'une surface : une
+//    bougie immobile sortait en décor, puis en dessin (son contour net sur le noir), et perdait 60 % de sa
+//    montée. Aucun éclat ne se perd en HDR.
+// Une coupe ne donne aucune tuile (le masque repart du neutre) ; une paire tenue ou un fondu n'apprennent
+// rien.
 render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_width, int work_height,
                                     std::int64_t span_us, bool cut);
 

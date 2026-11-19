@@ -256,11 +256,11 @@ struct PlaySettings {
   bool smooth_drawings = false;
   // Interpolation par calques (layer_stage.h, docs/calques.md) : là où la carte de la scène voit du décor qui
   // suit la caméra, l'image intermédiaire le reprend de a et b déplacées par la caméra au lieu du warp de
-  // RIFE. Plaque de décor : chaque source reprend son décor d'une image clé par plan passée par SPAN en
-  // FP16. Sans carte (AMD, Intel, NVOF refusé) rien ne change. Essais, éteints par défaut ; rechargent la
-  // chaîne.
-  bool layers = false;
-  bool background_plate = false;
+  // RIFE. Plaque de décor : chaque source reprend son décor de la sortie de SPAN d'une image clé par plan.
+  // Allumés par défaut depuis les essais du 19 novembre, ils ne tournent qu'avec la carte : sans elle (AMD,
+  // Intel, NVOF refusé, --scene-map absent) rien ne change. Rechargent la chaîne.
+  bool layers = true;
+  bool background_plate = true;
   // Échelle par paire (upscale_half.cpp) : une paire qui bouge fort, où RIFE passe à chaque instant, l'estime
   // sur une image deux fois plus petite que celle de RIFE, par un second moteur ; les autres paires ne
   // changent pas. Moins cher seulement, jamais plus grand. RIFE mouvement seulement. Essai, éteint par défaut
@@ -413,9 +413,11 @@ struct PlaySettings {
   // looks et looks_mix d'un ancien play.toml ne sont plus lues.
   int look_contrast = 0;
   int look_highlight = 0;
-  // Le blanc des surfaces en HDR, en % de celui que la pile porte (100 : vers 70 % du pic de l'écran ; 70 :
-  // vers la moitié). Les éclats montent toujours jusqu'au pic.
-  int surface_white = 100;
+  // Le blanc des surfaces en HDR, en % de celui que la pile porte (100 : vers 70 % du pic de l'écran ; 60, le
+  // défaut : vers 40 %). Les éclats montent toujours jusqu'au pic : à 100 %, une corne ou un halo n'avaient
+  // qu'un quart de diaphragme au-dessus d'une tête qu'ils éclairent (séance du 19/11), à 60 % ils en ont un.
+  // Clé surface_level de play.toml : l'ancienne clé surface_white (100 par défaut) n'est plus lue.
+  int surface_white = 60;
   // Limiteur de flashs (P3.51) : une suite de flashs rapides (UIT-R BT.1702) plafonne le grade HDR vers
   // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
   bool flash_guard = true;
@@ -443,7 +445,7 @@ inline bool poses_kept(const PlaySettings& s) {
 }
 
 // Le curseur « Blanc des surfaces », en % (PlaySettings::surface_white).
-inline constexpr core::Range<int> kSurfaceWhite{50, 100};
+inline constexpr core::Range<int> kSurfaceWhite{30, 100};
 
 // La longueur d'un chemin de dossier d'installation que le menu et play.toml acceptent (A22-09).
 inline constexpr std::size_t kMaxEnginesDirBytes = 4096;

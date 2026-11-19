@@ -2,8 +2,9 @@
 
 Le PC ne fait que les temps et une sortie de chaque mode des noyaux ; ce script refait le modèle d'origine en
 FP32 par ONNX Runtime sur processeur (tools/bench/qualite/fp32.py), sur la même entrée, et dit l'écart de chaque
-sortie : PSNR (crête 1), plus grand écart, valeurs non finies. Il dit aussi si la sortie sans bandes est la même,
-au bit près, que celle du défaut : les bandes ne changent que l'ordre des tuiles (docs/span-native16.md).
+sortie : PSNR (crête 1), plus grand écart, valeurs non finies. Il dit aussi si la sortie sans bandes et celle des
+poids partagés sont les mêmes, au bit près, que celle du défaut : ni les bandes (l'ordre des tuiles) ni les poids
+partagés (d'où viennent les poids) ne changent une somme (docs/span-native16.md).
 
     python3 -I tools/bench/span_native/justesse_cpu.py DOSSIER [DOSSIER…]
 
@@ -19,7 +20,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "qualite"))
 import fp32  # noqa: E402  (tools/bench/qualite)
 
-MODES = (("f16", "natif f16, bandes du lecteur"), ("b0", "natif f16, sans bandes"), ("f32", "natif f32"))
+MODES = (("f16", "natif f16, bandes du lecteur"), ("b0", "natif f16, sans bandes"),
+         ("pp", "natif f16, poids partagés"), ("f32", "natif f32"))
+# Les modes qui doivent rendre la sortie du défaut au bit près.
+MEMES = (("b0", "bandes", "sans bandes"), ("pp", "poids partagés", "des poids partagés"))
 
 
 def lire(dossier):
@@ -70,11 +74,12 @@ def juger(dossier):
         if mode in sorties:
             psnr, pire, non_finies = ecart(sorties[mode], ref)
             print(f"{texte} : {psnr:.2f} dB, plus grand écart {pire:.5f}, non finies {non_finies}")
-    if "f16" in sorties and "b0" in sorties:
-        a, b = sorties["f16"].view(np.uint16), sorties["b0"].view(np.uint16)
-        differentes = int(np.count_nonzero(a != b))
-        print("bandes : sortie identique au bit près à celle sans bandes" if differentes == 0
-              else f"bandes : {differentes} valeurs diffèrent de la sortie sans bandes")
+    for mode, nom, texte in MEMES:
+        if "f16" in sorties and mode in sorties:
+            a, b = sorties["f16"].view(np.uint16), sorties[mode].view(np.uint16)
+            differentes = int(np.count_nonzero(a != b))
+            print(f"{nom} : sortie du défaut identique au bit près à celle {texte}" if differentes == 0
+                  else f"{nom} : {differentes} valeurs diffèrent entre le défaut et la sortie {texte}")
 
 
 def main(argv):

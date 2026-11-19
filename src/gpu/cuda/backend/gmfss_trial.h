@@ -1,6 +1,7 @@
 // Ce que partagent les essais au chargement du GMFSS natif (gmfss_fused_trial.cpp, gmfss_pair_trial.cpp,
 // docs/gmfss-natif.md) : un dessin de test, des tampons d'appareil libérés quoi qu'il arrive, la mesure du
-// temps, et le choix commun (gmfss_trial.cpp) du mélange des sommes de chaque morceau (gmfss_mix.h).
+// temps (reprise par TemporalFix natif), et le choix commun (gmfss_trial.cpp) du mélange des sommes de chaque
+// morceau (gmfss_mix.h).
 #pragma once
 
 #include <algorithm>
@@ -69,7 +70,7 @@ std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size
   constexpr int kRuns = 2;
   const auto failed = [](cudaError_t error, const char* step) {
     static_cast<void>(cudaGetLastError());
-    return std::unexpected(cuda_refusal(error, std::format("GMFSS natif : mesure du temps ({})", step)));
+    return std::unexpected(cuda_refusal(error, std::format("essai natif : mesure du temps ({})", step)));
   };
   Event start;
   Event stop;
@@ -91,7 +92,7 @@ std::expected<std::vector<double>, Refusal> times(cudaStream_t stream, std::size
       if (!ok) return std::unexpected(std::move(ok.error()));
       if (e != cudaSuccess) return failed(e, "événement");
       if (!(ms > 0.F))
-        return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "GMFSS natif : lot mesuré à 0 ms"});
+        return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "essai natif : lot mesuré à 0 ms"});
       per[v].push_back(static_cast<double>(ms) / kRuns);
     }
   std::vector<double> out;

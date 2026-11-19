@@ -7,6 +7,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "app/play/chain_setup.h"
+#include "app/play/layer_stage.h"
 #include "app/play/settings.h"
 #include "doubles.h"
 #include "upscale_rig.h"
@@ -140,22 +141,23 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK_FALSE(layer_setup(c, &clock).layers);  // sans RIFE mouvement
   CHECK_FALSE(layer_setup(c, nullptr).layers);
 
-  // play.toml : les deux clés se relisent ; un ancien fichier sans elles les laisse éteintes.
-  PlaySettings on;
-  on.layers = true;
-  on.background_plate = true;
-  const auto reread = parse_settings(format_settings(on));
-  REQUIRE(reread);
-  CHECK(reread->layers);
-  CHECK(reread->background_plate);
+  // play.toml : un ancien fichier sans les clés prend calques et plaque (allumés par défaut) ; un fichier qui
+  // les a éteints les garde éteints.
   const auto old = parse_settings("[interpolation]\nsmooth_drawings = true\n");
   REQUIRE(old);
-  CHECK_FALSE(old->layers);
-  CHECK_FALSE(old->background_plate);
+  CHECK(old->layers);
+  CHECK(old->background_plate);
+  PlaySettings off;
+  off.layers = false;
+  off.background_plate = false;
+  const auto kept = parse_settings(format_settings(off));
+  REQUIRE(kept);
+  CHECK_FALSE(kept->layers);
+  CHECK_FALSE(kept->background_plate);
 }
 
 // L'affinage en retard : la caméra lk d'une des deux paires d'avant, si elle s'accorde à un demi-pixel près
-// avec celle de NVOF ; le SPAN de plus de la plaque seulement quand celui de la lecture calcule sous le FP16.
+// avec celle de NVOF ; la plaque, sortie de SPAN de la clé, en lecture avec la carte.
 TEST_CASE("calques : caméra voisine, plaque sans second SPAN", "[layers]") {
   SceneMotion late = pan(4.0);
   late.camera_refined = false;
@@ -203,18 +205,39 @@ TEST_CASE("calques : caméra voisine, plaque sans second SPAN", "[layers]") {
   neighbours.forget();
   CHECK_FALSE(neighbours.for_pair());
 
-  // Le second SPAN de la plaque : sous le FP16 seulement ; sinon la sortie de SPAN est reprise.
-  CHECK_FALSE(span_below_fp16(std::nullopt));
-  CHECK(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Fp8Cutlass}));
-  CHECK(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Int8}));
-  CHECK_FALSE(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Fp16Cutlass}));
-  CHECK_FALSE(span_below_fp16(SpanInt8{.kind = SpanVariantKind::Fp32Native}));
+  // La plaque : la sortie de SPAN de la clé, en lecture avec la carte seulement.
   ChainEngines c;
   c.scene_map = true;
-  c.plate_copy = true;
+  c.plate = true;
   const test::FakeClock clock;
   CHECK(layer_setup(c, &clock).plate_on());
   CHECK_FALSE(layer_setup(c, nullptr).plate_on());
+}
+
+// La plaque dans l'étage : une clé copiée de la sortie de SPAN ne la réécrit pas ; les sources suivantes du
+// plan la réécrivent (l'étage en garde d'abord la copie pour les tuiles de SPAN, rewrites).
+TEST_CASE("calques : la plaque ne réécrit la sortie de SPAN que pour y reprendre le décor", "[layers][app]") {
+  test::FakeBackend backend;
+  const LayerSetup setup{.plate = true};
+  const gpu::Shape work{.dims = {1, 3, 36, 64}};
+  const gpu::Shape out{.dims = {1, 3, 72, 128}};
+  LayerStage stage;
+  REQUIRE(stage.allocate(backend, setup, work, out, true));
+  auto spanned = backend.alloc_tensor(gpu::TensorType::F16, out);
+  REQUIRE(spanned);
+  const PairFacts facts{.same_epoch = true, .scene = pan(2.0)};
+  stage.arrive(facts, setup, false, false);  // la clé
+  CHECK_FALSE(stage.rewrites(setup));
+  REQUIRE(stage.after_span(backend, setup, (*spanned)->tensor(), true));
+  CHECK(backend.count("resample") == 1U);
+  CHECK(backend.count("compose_layers") == 0U);
+  stage.arrive(facts, setup, false, false);  // b reprend son décor de la clé, à deux pixels
+  CHECK(stage.rewrites(setup));
+  REQUIRE(stage.after_span(backend, setup, (*spanned)->tensor(), true));
+  CHECK(backend.count("compose_layers") == 1U);
+  // Une paire sans caméra : plus de plaque, rien de réécrit.
+  stage.arrive(PairFacts{.same_epoch = true}, setup, false, false);
+  CHECK_FALSE(stage.rewrites(setup));
 }
 
 // La règle absolue : calques et plaque allumés sans carte de la scène (AMD, Intel, NVOF refusé) donnent les
@@ -223,14 +246,13 @@ TEST_CASE("calques : sans carte, l'étage fait exactement ce qu'il faisait", "[l
   const bool layers = GENERATE(false, true);
   INFO("calques " << layers);
   upscale_test::Rig rig;
-  test::FakeEngine plate{"plate", {"input"}, {"output"}};
   rig.backend.score(SourceId{2}, SourceId{3}, 0.0, 10);
   rig.backend.motion_max(500.0F);
   UpscaleSetup s = rig.setup(true, Factor{.num = 3, .den = 1});
   s.rife = nullptr;
   s.rife_motion = &rig.motion;
   s.warp_after_span = true;
-  s.layers = {.layers = layers, .plate = layers ? &plate : nullptr};
+  s.layers = {.layers = layers, .plate = layers};
   rig.start(std::move(s));
   rig.feed(1, 6);
   REQUIRE(rig.collect(14));
@@ -239,5 +261,5 @@ TEST_CASE("calques : sans carte, l'étage fait exactement ce qu'il faisait", "[l
   CHECK(rig.backend.warp_pairs() ==
         std::vector<Pair>{{1, 2}, {1, 2}, {2, 4}, {2, 4}, {4, 5}, {4, 5}, {5, 6}, {5, 6}});
   CHECK(rig.backend.count("engine span") == 5);
-  CHECK(rig.backend.count("engine plate") == 0);
+  CHECK(rig.backend.count("compose_layers") == 0);
 }

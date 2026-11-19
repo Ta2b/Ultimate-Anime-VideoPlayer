@@ -351,4 +351,36 @@ TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
   CHECK(snr >= 30.0);
 }
 
+// Les poids partagés (SpanFp8Weights::shared_weights) ne changent que d'où viennent les poids de chaque pas :
+// mêmes produits, même ordre des sommes. La sortie doit être celle du chemin ordinaire, au bit près.
+TEST_CASE("SPAN FP16 natif : les poids partagés rendent la même sortie au bit près", "[cuda][span_fp8]") {
+  if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
+  const int real = GENERATE(48, 64);
+  const SpanNativeSums sums = GENERATE(SpanNativeSums::F16, SpanNativeSums::F32);
+  INFO(real << " canaux, sommes " << static_cast<int>(sums));
+  Random random;
+  span_fp8::Package package = random_package(random, real, real == 48 ? 5 : 8);
+  std::vector<__half> image(kInCount);
+  for (__half& value : image) value = __float2half(random.next() + 0.5F);
+  DeviceBytes in(kInCount * sizeof(__half));
+  REQUIRE(cudaMemcpy(in.data, image.data(), kInCount * sizeof(__half), cudaMemcpyHostToDevice) ==
+          cudaSuccess);
+  std::vector<double> outputs[2];
+  for (const bool shared : {false, true}) {
+    SpanFp8Weights weights = span_fp8_view(package);
+    weights.fp16 = true;
+    weights.sums = sums;
+    weights.shared_weights = shared ? SpanSharedWeights::On : SpanSharedWeights::Off;
+    SpanFp8Status status = SpanFp8Status::Ok;
+    std::string error;
+    const std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, kHeight, kWidth, status, error);
+    INFO(error);
+    REQUIRE(net != nullptr);
+    DeviceBytes workspace(static_cast<std::size_t>(net->workspace_bytes()));
+    net->bind(workspace.data);
+    outputs[shared ? 1 : 0] = launch_once(*net, in);
+  }
+  CHECK(outputs[0] == outputs[1]);
+}
+
 }  // namespace kirari::gpu::cuda

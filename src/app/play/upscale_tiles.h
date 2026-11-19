@@ -9,7 +9,10 @@
 // recalculée majore son écart à l'entrée qui a produit chacune d'elles (l'écart moyen d'un bloc est une
 // norme : inégalité triangulaire ; chaque paire compte 1/256 de niveau de plus, la troncature de la mesure).
 // Un glissement sur un bord net s'y voit (0,025 pixel y fait déjà 0,85 niveau), un aplat qui glisse ne coûte
-// rien ; le grain s'y additionne (la majoration est prudente).
+// rien ; le grain s'y additionne (la majoration est prudente). La somme se resserre par l'écart à l'ancre du
+// lot A (la dernière image calculée), bloc par bloc : écart à l'ancre plus la majoration du bloc à l'ancre.
+// Juste après une image entière, c'est la règle du lot A ; dans une série de reprises, le grain que l'ancre
+// voit au même niveau ne s'additionne plus.
 //
 // Pourquoi pas la carte de la scène (NVOF) : sur les extraits du PC rejoués sur processeur
 // (tools/bench/qualite/tuiles_rejeu, docs/tuiles-span.md), la moyenne des vecteurs d'une tuile vaut 0,12
@@ -20,9 +23,10 @@
 // d'avant n'est plus décalée.
 //
 // Exactitude (kernels/spec/span_tiles.h) : le moteur calcule toutes ses couches sur le cœur dilaté de son
-// champ réceptif ; la sortie du cœur est celle d'un calcul complet. Le cœur est ce qui a changé dilaté de la
-// même portée (une sortie voit l'entrée jusqu'à la portée), plus le rayon du débandage quand l'entrée est
-// débandée. Gardes :
+// champ réceptif ; la sortie du cœur est celle d'un calcul complet, comme toute sortie dont le champ tient
+// dans la région calculée (elle s'écrit aussi). Le cœur est ce qui a changé dilaté de kCoreReachPx (la portée
+// mesurée d'une entrée sur la sortie, sous la portée théorique du réseau), plus le rayon du débandage quand
+// l'entrée est débandée. Gardes :
 //   - par bloc, la somme des écarts des paires depuis le dernier calcul de toute sortie qui le voit, au seuil
 //     du lot A ;
 //   - par tuile, au plus kMaxAge images reprises de suite (comme la limite du lot A) ;
@@ -30,9 +34,11 @@
 //     (une coupe ou un fondu y passent), à chaque image abîmée, saut ou changement d'époque, sans mesure des
 //     blocs ou quand sa géométrie change, et quand l'entrée de SPAN change de recette (débandage, filtre de
 //     réduction) ;
-//   - après une image par tuiles, la sortie mêle des tuiles d'images différentes : la reprise entière du lot
-//     A n'a lieu que si chaque bloc reste aussi au seuil, aucune tuile au-delà de kMaxAge et l'image entière
-//     pas encore due (holds).
+//   - après une image par tuiles, la sortie mêle des tuiles d'images différentes ; la reprise entière du lot
+//     A n'en dépend pas (le lot A ne perd aucune série) : chaque tuile y vieillit et chaque bloc y reçoit son
+//     écart, et la prochaine image calculée recalcule ce qui a passé le seuil ou kMaxAge, ou se calcule
+//     entière si kFullEvery est dû. Contrôle sur processeur avec le vrai SPAN (docs/tuiles-span.md) : ces
+//     reprises restent au pire bloc des images par tuiles.
 #pragma once
 
 #include <array>
@@ -52,8 +58,8 @@ namespace kirari::app::play {
 // entière compte sous une raison au bilan (SpanTiles::summary).
 enum class TileStale : std::uint8_t {
   None,
-  Chain,        // la chaîne ne s'y prête pas : export, sortie YUV, TemporalFix, Smooth, plaque de décor
-  Graded,       // le grade avant le warp l'a réécrite sur place, sans copie d'avant le grade
+  Chain,        // la chaîne ne s'y prête pas : export, sortie YUV, TemporalFix, Smooth
+  Graded,       // le grade avant le warp ou la plaque de décor l'a réécrite sur place, sans copie d'avant
   Overwritten,  // ce n'est plus la sortie de la source d'avant : image créée par-dessus, source sautée
   Restart,      // début de lecture, saut, image ou ancre abîmée, pas de sortie d'avant
 };
@@ -77,6 +83,7 @@ struct TileFacts {
   // entière.
   std::uint64_t input_key = 0;
   PairBlocks blocks;  // la mesure de la paire ; vide : l'image entière
+  PairBlocks gap;     // l'écart de l'ancre (la dernière image calculée) à l'image, par bloc ; vide : inconnu
 };
 
 // Ce que l'image fera.
@@ -95,6 +102,12 @@ class SpanTiles {
   // L'écart d'un bloc à l'entrée qui a produit sa sortie, au plus : le seuil des dessins tenus (lot A).
   static constexpr std::uint32_t kThreshold = kernels::kHeldThreshold;
 
+  // La portée d'une entrée changée sur la sortie, en pixels de travail : au-delà, moins de 0,003 niveau
+  // (SPAN Équilibre b8f64 sur processeur, carré de 32 pixels changé de 20 à 70 niveaux ; rien pour b5f48).
+  // La portée du réseau (26 pixels de demi-résolution, quatre lignes de tuiles) reste celle de la région
+  // calculée, que le moteur dilate lui-même.
+  static constexpr int kCoreReachPx = 32;
+
   bool enabled = true;  // --no-span-tiles (UpscaleSetup::span_reuse)
 
   // La grille du moteur (gpu::Engine::span_tile_grid) ; inutilisable : jamais de tuiles. Remet l'état à zéro.
@@ -103,13 +116,10 @@ class SpanTiles {
   bool active() const { return enabled && grid_.usable(); }
   // L'image se calcule : entière ou par tuiles. Met à jour l'état des tuiles comme si le plan était suivi.
   TilePlan plan(const TileFacts& facts);
-  // La reprise entière du lot A garde-t-elle chaque bloc au seuil ? Toujours vrai tant que la sortie est
-  // celle d'un calcul complet ; après une image par tuiles, chaque bloc avec la paire de l'image, et ni
-  // kMaxAge ni kFullEvery dépassés.
-  bool holds(const PairBlocks& blocks) const;
   // L'image reprend la sortie d'avant entière (lot A) : chaque tuile vieillit et chaque bloc reçoit l'écart
-  // de la paire ; sans mesure, l'état ne suit plus (la prochaine image calculée est entière).
-  void held(const PairBlocks& blocks);
+  // de la paire, resserré par l'écart à l'ancre (gap) ; sans mesure, l'état ne suit plus (la prochaine image
+  // calculée est entière).
+  void held(const PairBlocks& blocks, const PairBlocks& gap);
   // Le moteur a refusé les tuiles (next_span_tiles faux) : l'image est entière.
   void refused();
   // --span-tiles-check : vrai une image par tuiles sur kCheckEvery (la dernière planifiée), puis l'écart
@@ -138,25 +148,28 @@ class SpanTiles {
   std::uint64_t* whole_reason(const TileFacts& facts, bool new_recipe);
   // La mesure a la géométrie des sommes (même nombre de blocs, même côté).
   bool fits(const PairBlocks& blocks) const;
+  // La majoration du bloc b avec la paire de l'image, resserrée par l'écart à l'ancre quand il est mesuré.
+  std::uint32_t bound(std::size_t b, const PairBlocks& blocks, const PairBlocks& gap) const;
   // Toutes les sommes nulles (la sortie est celle d'un calcul complet, première image comprise) : la
   // géométrie de la mesure les remplace, exactement. Faux sans mesure ou avec une somme non nulle.
   bool adopt(const PairBlocks& blocks);
   // Les tuiles de la grille sous le bloc b de la mesure, rendues par appel de visit.
   template <class Visit>
   void tiles_under(std::size_t b, Visit&& visit) const;
-  // La portée de la sortie, en tuiles (colonnes, lignes) : celle du réseau, plus spread_px.
+  // La portée de la sortie, en tuiles (colonnes, lignes) : kCoreReachPx (au plus celle du réseau), plus
+  // spread_px.
   std::pair<int, int> reach(int spread_px) const;
 
   kernels::SpanTileGrid grid_;
   bool span_ = false;                // set_grid appelé : l'étage a un SPAN
   std::vector<int> age_;             // par tuile, images reprises depuis son dernier calcul
   std::vector<std::uint32_t> sums_;  // par bloc, la somme des écarts des paires (en tête du fichier)
+  std::vector<std::uint32_t> base_;  // par bloc, sa majoration à l'ancre (la dernière image calculée)
   std::uint32_t block_cols_ = 0;     // la géométrie de la mesure des sommes
   float block_px_ = 0.0F;
   int since_full_ = 0;
   bool known_ = false;           // l'état des tuiles suit la sortie d'avant
   bool unmeasured_ = false;      // il ne la suit plus faute de mesure (held sans blocs) : au bilan
-  bool mixed_ = false;           // la sortie mêle des tuiles calculées à des images différentes
   std::uint64_t input_key_ = 0;  // la recette de l'entrée de la dernière image calculée
   Counted last_;                 // la dernière image par tuiles, pour refused()
   // Bilan.

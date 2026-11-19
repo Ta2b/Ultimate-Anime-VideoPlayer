@@ -102,40 +102,59 @@ __global__ void first_kernel(TfixShape s) {
   const long long at = static_cast<long long>(y) * s.lw[0] + x;
   const __half* center = tfix::pyramid(s, kernels::kTfixCenter, 0);
   const __half* support = tfix::pyramid(s, kSupportFrame[k], 0);
-  __half* out = half_ptr(s.zone, s.x[0]) + static_cast<long long>(k) * kernels::kTfixX0 * plane;
+  const tfix::View out = tfix::view(s, s.x[0], s.xld[0], plane, k);
+  __half o[kernels::kTfixX0];
+#pragma unroll
   for (int c = 0; c < kernels::kTfixImage; ++c) {
-    out[c * plane + at] = center[c * plane + at];
-    out[(3 + c) * plane + at] = support[c * plane + at];
+    o[c] = center[c * plane + at];
+    o[3 + c] = support[c * plane + at];
   }
+#pragma unroll
   for (int c = 0; c < kernels::kTfixTraits; ++c) {
-    out[(6 + c) * plane + at] = center[(3 + c) * plane + at];
-    out[(10 + c) * plane + at] = support[(3 + c) * plane + at];
+    o[6 + c] = center[(3 + c) * plane + at];
+    o[10 + c] = support[(3 + c) * plane + at];
   }
-  out[14 * plane + at] = __float2half_rn(kTime[k]);
+  o[14] = __float2half_rn(kTime[k]);
+  tfix::store_point(out, at, o);
 }
 
 // La sortie du bloc d'avant (son Resize vers son niveau, puis le Resize ×2 de la colle) au point de niveau
 // (ay, ax) du niveau de départ : canal c de Y, lu aux quatre voisins.
 struct Previous {
-  const __half* y;     // Y_{l-1} de cet appui, 11 plans yh × yw
-  const __half* flow;  // le flot d'entrée du bloc d'avant (X_{l-1}, canaux 24 et 25), nul au niveau 1
-  int yh, yw;          // Y_{l-1}
-  int sh, sw;          // le niveau de départ
+  tfix::View y;     // Y_{l-1} de cet appui, 11 canaux yh × yw
+  tfix::View flow;  // X_{l-1} de cet appui (flot d'entrée du bloc d'avant : canaux 24 et 25)
+  bool has_flow;    // faux au niveau 1 : le bloc 0 n'a pas de flot d'entrée
+  int yh, yw;       // Y_{l-1}
+  int sh, sw;       // le niveau de départ
 };
 
-// La valeur au point de départ (qy, qx) du canal c : Y agrandi, plus le flot d'entrée pour c < 2.
-__device__ float previous_at(const Previous& p, int c, int qy, int qx) {
+// Au point de départ (qy, qx) : Y agrandi (11 canaux), plus le flot d'entrée sur les canaux 0 et 1.
+__device__ void previous_at(const Previous& p, int qy, int qx, float (&v)[kernels::kTfixY]) {
   const Axis bx = tfix::resize_axis(qx, p.yw, p.sw);
   const Axis by = tfix::resize_axis(qy, p.yh, p.sh);
-  float v = tfix::resized(p.y + static_cast<long long>(c) * p.yh * p.yw, p.yw, bx, by);
-  if (c < 2 && p.flow != nullptr)
-    v += tfix::at(p.flow + static_cast<long long>(c) * p.sh * p.sw, qy, qx, p.sw);
-  return v;
+  float n[4][kernels::kTfixY];
+  tfix::load_point(p.y, static_cast<long long>(by.i0) * p.yw + bx.i0, n[0]);
+  tfix::load_point(p.y, static_cast<long long>(by.i0) * p.yw + bx.i1, n[1]);
+  tfix::load_point(p.y, static_cast<long long>(by.i1) * p.yw + bx.i0, n[2]);
+  tfix::load_point(p.y, static_cast<long long>(by.i1) * p.yw + bx.i1, n[3]);
+#pragma unroll
+  for (int c = 0; c < kernels::kTfixY; ++c) v[c] = warp::lerp2(n[0][c], n[1][c], n[2][c], n[3][c], bx, by);
+  if (!p.has_flow) return;
+  const float2 f = p.flow.pair(24, static_cast<long long>(qy) * p.sw + qx);
+  v[0] += f.x;
+  v[1] += f.y;
 }
 
-__device__ float previous_resized(const Previous& p, int c, const Axis& ax, const Axis& ay) {
-  return warp::lerp2(previous_at(p, c, ay.i0, ax.i0), previous_at(p, c, ay.i0, ax.i1),
-                     previous_at(p, c, ay.i1, ax.i0), previous_at(p, c, ay.i1, ax.i1), ax, ay);
+// Les 11 canaux au point d'arrivée dont les axes sont donnés : le Resize ×2 de la colle.
+__device__ void previous_resized(const Previous& p, const Axis& ax, const Axis& ay,
+                                 float (&v)[kernels::kTfixY]) {
+  float n[4][kernels::kTfixY];
+  previous_at(p, ay.i0, ax.i0, n[0]);
+  previous_at(p, ay.i0, ax.i1, n[1]);
+  previous_at(p, ay.i1, ax.i0, n[2]);
+  previous_at(p, ay.i1, ax.i1, n[3]);
+#pragma unroll
+  for (int c = 0; c < kernels::kTfixY; ++c) v[c] = warp::lerp2(n[0][c], n[1][c], n[2][c], n[3][c], ax, ay);
 }
 
 // X_level (1 ou 2) : un fil par point du niveau et par appui (blockIdx.z).
@@ -152,35 +171,41 @@ __global__ void glue_kernel(TfixShape s, int level) {
   p.sh = s.lh[level - 1];
   p.sw = s.lw[level - 1];
   const long long src_plane = static_cast<long long>(p.sh) * p.sw;
-  p.y = half_ptr(s.zone, s.y[level - 1]) + static_cast<long long>(k) * kernels::kTfixY * p.yh * p.yw;
+  p.y = tfix::view(s, s.y[level - 1], s.yld, static_cast<long long>(p.yh) * p.yw, k);
   // Le flot d'entrée du bloc 1 (X1 : 26 canaux) ; le bloc 0 n'en a pas.
-  p.flow = level == 1 ? nullptr : half_ptr(s.zone, s.x[1]) + (k * kernels::kTfixX + 24) * src_plane;
+  p.has_flow = level != 1;
+  p.flow = tfix::view(s, s.x[1], s.xld[1], src_plane, k);
   const Axis ax = tfix::resize_axis(x, p.sw, dw);
   const Axis ay = tfix::resize_axis(y, p.sh, dh);
 
   const long long plane = static_cast<long long>(dh) * dw;
   const long long at = static_cast<long long>(y) * dw + x;
-  __half* out = half_ptr(s.zone, s.x[level]) + static_cast<long long>(k) * kernels::kTfixX * plane;
+  const tfix::View out = tfix::view(s, s.x[level], s.xld[level], plane, k);
   // Le flot agrandi ×2 (Resize puis Mul 2 en FP16, comme le graphe), puis l'appui déplacé par lui.
-  const __half fx = __float2half_rn(2.0F * previous_resized(p, 0, ax, ay));
-  const __half fy = __float2half_rn(2.0F * previous_resized(p, 1, ax, ay));
-  out[24 * plane + at] = fx;
-  out[25 * plane + at] = fy;
-  out[15 * plane + at] = __float2half_rn(previous_resized(p, 2, ax, ay));
-  for (int c = 0; c < 8; ++c)
-    out[(16 + c) * plane + at] = __float2half_rn(previous_resized(p, 3 + c, ax, ay));
+  float prev[kernels::kTfixY];
+  previous_resized(p, ax, ay, prev);
+  __half o[kernels::kTfixX];
+  const __half fx = __float2half_rn(2.0F * prev[0]);
+  const __half fy = __float2half_rn(2.0F * prev[1]);
+  o[24] = fx;
+  o[25] = fy;
+  o[15] = __float2half_rn(prev[2]);
+#pragma unroll
+  for (int c = 0; c < 8; ++c) o[16 + c] = __float2half_rn(prev[3 + c]);
 
   const __half* center = tfix::pyramid(s, kernels::kTfixCenter, level);
   const __half* support = tfix::pyramid(s, kSupportFrame[k], level);
   const tfix::ZeroTap tap = tfix::zero_tap(static_cast<float>(x) + __half2float(fx),
                                            static_cast<float>(y) + __half2float(fy), dh, dw);
+#pragma unroll
   for (int c = 0; c < kernels::kTfixPyramid; ++c) {
     const int to_center = c < kernels::kTfixImage ? c : 3 + c;      // 0-2 puis 6-9
     const int to_warped = c < kernels::kTfixImage ? 3 + c : 7 + c;  // 3-5 puis 10-13
-    out[to_center * plane + at] = center[c * plane + at];
-    out[to_warped * plane + at] = __float2half_rn(tfix::zero_sample(support + c * plane, tap));
+    o[to_center] = center[c * plane + at];
+    o[to_warped] = __float2half_rn(tfix::zero_sample(support + c * plane, tap));
   }
-  out[14 * plane + at] = __float2half_rn(kTime[k]);
+  o[14] = __float2half_rn(kTime[k]);
+  tfix::store_point(out, at, o);
 }
 
 dim3 grid_for(int width, int height, int z) {
@@ -190,9 +215,9 @@ dim3 grid_for(int width, int height, int z) {
 
 }  // namespace
 
-TfixShape tfix_shape(int height, int width, bool half, void* zone) {
+TfixShape tfix_shape(int height, int width, bool half, void* zone, bool native) {
   const kernels::TfixPacked packed = kernels::tfix_packed(height, width, half);
-  const kernels::TfixLayout layout = kernels::tfix_layout(height, width, half);
+  const kernels::TfixLayout layout = kernels::tfix_layout(height, width, half, native);
   TfixShape s;
   s.height = height;
   s.width = width;
@@ -213,6 +238,12 @@ TfixShape tfix_shape(int height, int width, bool half, void* zone) {
     s.yh[l] = y.height;
     s.yw[l] = y.width;
   }
+  s.native = native;
+  for (int b = 0; b < kernels::kTfixLevels; ++b)
+    s.xld[b] = kernels::tfix_in_ld(b == 0 ? kernels::kTfixX0 : kernels::kTfixX, native);
+  s.yld = kernels::tfix_out_ld(kernels::kTfixY, native);
+  s.conf_ld = kernels::tfix_in_ld(kernels::kTfixConf, native);
+  s.conf_out_ld = kernels::tfix_out_ld(1, native);
   s.conf_in = layout.conf_in;
   s.mask_half = layout.mask_half;
   s.conf_out = layout.conf_out;

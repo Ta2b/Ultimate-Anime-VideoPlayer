@@ -70,6 +70,85 @@ __device__ __forceinline__ float zero_sample(const __half* plane, const ZeroTap&
   return sum;
 }
 
+// Un tampon de la fenêtre (X_b, Y_b, entrée ou sortie de la tête) vu pour un appui : en plans, ou par pixel
+// au pas ld (TfixShape::native). Le canal c du point at (y · largeur + x) est base[c · cs + at · ps].
+struct View {
+  __half* base;
+  long long cs;
+  int ps;
+  __device__ __forceinline__ __half& operator()(int c, long long at) const { return base[c * cs + at * ps]; }
+  __device__ __forceinline__ float get(int c, long long at) const { return __half2float((*this)(c, at)); }
+  // Par pixel : le pas d'un point (8, 16 ou 32 canaux) ; en plans, 1.
+  __device__ __forceinline__ bool pixel() const { return ps != 1; }
+  // Les canaux c et c + 1 (c pair) : par pixel, une lecture de 4 octets.
+  __device__ __forceinline__ float2 pair(int c, long long at) const {
+    if (!pixel()) return make_float2(get(c, at), get(c + 1, at));
+    return __half22float2(*reinterpret_cast<const __half2*>(base + at * ps + c));
+  }
+};
+
+// L'appui k du tampon au décalage offset (éléments) de la zone, plane points par canal, pas ld.
+__device__ __forceinline__ View view(const TfixShape& s, std::size_t offset, int ld, long long plane, int k) {
+  __half* base = static_cast<__half*>(s.zone) + offset + static_cast<long long>(k) * ld * plane;
+  return s.native ? View{base, 1, ld} : View{base, plane, 1};
+}
+
+// Les canaux [0, N) du point at de v, en f32. Par pixel, en lectures de 16 octets : le pas du point, multiple
+// de 8, en contient au moins N arrondi à 8 (un fil par canal lisait 2 octets au pas du point, éparpillés).
+template <int N>
+__device__ __forceinline__ void load_point(const View& v, long long at, float (&dst)[N]) {
+  if (!v.pixel()) {
+#pragma unroll
+    for (int c = 0; c < N; ++c) dst[c] = v.get(c, at);
+    return;
+  }
+  const auto* point = reinterpret_cast<const uint4*>(v.base + at * v.ps);
+#pragma unroll
+  for (int q = 0; q < (N + 7) / 8; ++q) {
+    const uint4 raw = point[q];
+    const auto* pairs = reinterpret_cast<const __half2*>(&raw);
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      const float2 f = __half22float2(pairs[j]);
+      if (8 * q + 2 * j < N) dst[8 * q + 2 * j] = f.x;
+      if (8 * q + 2 * j + 1 < N) dst[8 * q + 2 * j + 1] = f.y;
+    }
+  }
+}
+
+// Le point at de v, canaux [0, N) de src. Par pixel, écrit en 16 octets jusqu'au pas des entrées natives
+// (kernels::tfix_in_ld), les canaux en trop à zéro : la convolution les lit (poids nuls, mais 0 · NaN ferait
+// NaN). Un fil par canal écrivait 2 octets au pas du point : trois à quatre fois le temps de la colle.
+template <int N>
+__device__ __forceinline__ void store_point(const View& v, long long at, const __half (&src)[N]) {
+  constexpr int kLd = (N + 15) / 16 * 16;  // kernels::tfix_in_ld(N, true), hôte seulement
+  if (!v.pixel()) {
+#pragma unroll
+    for (int c = 0; c < N; ++c) v(c, at) = src[c];
+    return;
+  }
+  auto* point = reinterpret_cast<uint4*>(v.base + at * v.ps);
+  const __half zero = __float2half_rn(0.0F);
+#pragma unroll
+  for (int q = 0; q < kLd / 8; ++q) {
+    uint4 raw;
+    auto* pairs = reinterpret_cast<__half2*>(&raw);
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+      const int c = 8 * q + 2 * j;
+      pairs[j] =
+          __halves2half2(c < N ? src[c < N ? c : 0] : zero, c + 1 < N ? src[c + 1 < N ? c + 1 : 0] : zero);
+    }
+    point[q] = raw;
+  }
+}
+
+// Le Resize d'un canal de v (h × w, largeur width) au point d'arrivée dont les axes sont donnés.
+__device__ __forceinline__ float resized(const View& v, int c, int width, const Axis& ax, const Axis& ay) {
+  const auto p = [&](int y, int x) { return v.get(c, static_cast<long long>(y) * width + x); };
+  return warp::lerp2(p(ay.i0, ax.i0), p(ay.i0, ax.i1), p(ay.i1, ax.i0), p(ay.i1, ax.i1), ax, ay);
+}
+
 __device__ __forceinline__ float sigmoid(float x) {
   return 1.0F / (1.0F + __expf(-x));
 }

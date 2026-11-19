@@ -143,7 +143,8 @@ std::expected<TfixSplit, Refusal> analyze_tfix(std::span<const std::byte> model)
   const OnnxFullNode* encode_out = index.named("/encode/Resize", "Resize");
   if (encode_in == nullptr || encode_out == nullptr || encode_in->inputs.empty() ||
       encode_in->inputs[0] != split.encode_input || encode_out->outputs.size() != 1 ||
-      encode_out->outputs[0] != split.encode_output)
+      encode_out->outputs[0] != split.encode_output || encode_out->inputs.empty() ||
+      encode_out->inputs[0] != split.encode_last)
     return unknown("encodeur");
 
   if (auto problem = blocks_problem(index, split)) return unknown(*problem);

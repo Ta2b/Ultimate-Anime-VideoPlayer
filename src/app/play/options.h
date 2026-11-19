@@ -202,6 +202,9 @@ struct PlayOptions {
   // avec GMFSS union au menu (interp_retired.h) ; --no-gmfss-native (essai) laisse tout GMFSS à TensorRT et
   // le retire du menu.
   bool gmfss_native = true;
+  // --tfix-native (essai) : les convolutions de TemporalFix fusionné par nos noyaux CUDA (docs/tfix-natif.md,
+  // gpu::kTrialTfixNative), gardées à 45 dB de TensorRT ; éteint jusqu'à la séance finale.
+  bool tfix_native = false;
   // TemporalFix fusionné (docs/temporalfix.md) sous TensorRT, par défaut ; --no-tfix-fused (essai) garde
   // le graphe à cache de l'encodeur, pour la mesure ABAB.
   bool temporal_fix_fused = true;

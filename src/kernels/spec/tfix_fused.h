@@ -23,6 +23,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace kirari::kernels {
 
@@ -119,6 +121,17 @@ constexpr int tfix_packed_planes(int net_height, int net_width, bool half) {
       (static_cast<std::int64_t>(tfix_packed(net_height, net_width, half).elements) + work - 1) / work);
 }
 
+// Le pas des tampons des blocs et de la tête (TfixLayout) : en plans (moteurs TensorRT), le nombre de canaux
+// ; par pixel (noyaux natifs, --tfix-native, docs/tfix-natif.md), une entrée complétée à 16 canaux (15 → 16,
+// 26 et 25 → 32, canaux en trop à zéro) et une sortie à 8 (11 → 16, 1 → 8), ce que lisent et écrivent les
+// convolutions natives.
+constexpr int tfix_in_ld(int channels, bool native) {
+  return native ? (channels + 15) / 16 * 16 : channels;
+}
+constexpr int tfix_out_ld(int channels, bool native) {
+  return native ? (channels + 7) / 8 * 8 : channels;
+}
+
 // Les tampons d'une fenêtre, dans la zone du moteur (éléments FP16, débuts alignés) : la table des adresses
 // (TfixTable, 256 octets), X_b et Y_b des trois blocs, l'entrée de la tête, le masque moyenné, sa sortie, et
 // en demi-taille la sortie du réseau avant d'être reportée sur l'image entière.
@@ -134,7 +147,7 @@ struct TfixLayout {
   constexpr std::size_t bytes() const { return elements * 2U; }
 };
 
-constexpr TfixLayout tfix_layout(int height, int width, bool half) {
+constexpr TfixLayout tfix_layout(int height, int width, bool half, bool native = false) {
   TfixLayout layout;
   std::size_t at = 0;
   const auto take = [&at](std::int64_t n) {
@@ -145,16 +158,30 @@ constexpr TfixLayout tfix_layout(int height, int width, bool half) {
   layout.table = take(128);
   for (int b = 0; b < kTfixLevels; ++b) {
     const auto i = static_cast<std::size_t>(b);
-    layout.x[i] = take(kTfixSupports * tfix_block_x(b, height, width).elements());
-    layout.y[i] = take(kTfixSupports * tfix_block_y(b, height, width).elements());
+    const TfixDims x = tfix_block_x(b, height, width);
+    const TfixDims y = tfix_block_y(b, height, width);
+    layout.x[i] = take(std::int64_t{kTfixSupports} * tfix_in_ld(x.channels, native) * x.plane());
+    layout.y[i] = take(std::int64_t{kTfixSupports} * tfix_out_ld(y.channels, native) * y.plane());
   }
   const TfixDims half_level = tfix_level(2, height, width, 1);
-  layout.conf_in = take(static_cast<std::int64_t>(kTfixSupports) * kTfixConf * half_level.plane());
+  layout.conf_in =
+      take(static_cast<std::int64_t>(kTfixSupports) * tfix_in_ld(kTfixConf, native) * half_level.plane());
   layout.mask_half = take(kTfixSupports * half_level.plane());
-  layout.conf_out = take(kTfixSupports * half_level.plane());
+  layout.conf_out = take(std::int64_t{kTfixSupports} * tfix_out_ld(1, native) * half_level.plane());
   if (half) layout.net_out = take(TfixDims{kTfixImage, height, width}.elements());
   layout.elements = at;
   return layout;
+}
+
+// Le rôle d'un TemporalFix natif d'après ses morceaux remplis (encodeur, trois blocs, tête) : l'encodeur seul
+// (vrai), ou les trois blocs et la tête seuls (faux) ; tout autre mélange est refusé.
+inline std::optional<bool> tfix_native_encoder(std::span<const bool> filled) {
+  if (filled.size() != 2 + static_cast<std::size_t>(kTfixLevels)) return std::nullopt;
+  const bool encoder = filled[0];
+  for (std::size_t i = 1; i < filled.size(); ++i) {
+    if (filled[i] == encoder) return std::nullopt;
+  }
+  return encoder;
 }
 
 }  // namespace kirari::kernels

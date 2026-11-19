@@ -20,9 +20,11 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`amd-windows.md`](amd-windows.md) | AMD et Windows : le profil RDNA4 du moteur Vulkan, D3D11VA |
 | [`span-fp8-cutlass.md`](span-fp8-cutlass.md) | SPAN entier en FP8 (cran Performance, RTX 40) |
 | [`span-native16.md`](span-native16.md) | SPAN par nos noyaux, le défaut sur RTX 40 et 50 : FP16, sommes f32 au cran Qualité (lot C du chantier AnimeJaNai) |
+| [`span-bilan.md`](span-bilan.md) | Bilan du SPAN natif : fait et mesuré, pistes retenues ou écartées, plafonds et ce qui irait au-delà, ce qui reste, point de reprise |
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
 | [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, morceau par morceau à côté de TensorRT (`--rife-native`, essai) |
+| [`tfix-natif.md`](tfix-natif.md) | TemporalFix fusionné par nos noyaux, sans TensorRT (`--tfix-native`, essai) |
 | [`gmfss-natif.md`](gmfss-natif.md) | GMFSS union par nos noyaux, GMFlow sous TensorRT : par défaut, gardé par l'essai au chargement (`--no-gmfss-native`) |
 | [`gmfss-bilan.md`](gmfss-bilan.md) | Bilan du chantier GMFSS natif : mesures, pistes essayées, plafonds et leviers au-delà, budget du temps réel, reste à faire, point de reprise |
 | [`gmflow-natif.md`](gmflow-natif.md) | GMFlow par nos noyaux : étude ; squelette CNN (PR 1), attention (PR 2) et MLP (PR 3) écrits, pas encore branchés |
