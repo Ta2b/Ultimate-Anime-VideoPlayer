@@ -167,7 +167,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 39> kFlags{{
+constexpr std::array<Flag, 40> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},

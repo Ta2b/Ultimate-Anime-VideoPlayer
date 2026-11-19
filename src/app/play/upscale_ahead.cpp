@@ -247,6 +247,26 @@ void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) 
   log_channel("gpu")->info("{}", pair_mark_line(mark, *facts.scores, facts.known_cut, useful_area_));
 }
 
+namespace {
+
+// Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
+// grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur left) sert à la
+// paire en cours : une paire de retard, que le lissage du masque couvre.
+void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::int64_t from_us,
+                  const DecodedFrame& b, const PairFacts& facts, int width, int height, bool cut) {
+  if (!live.effect_highlights() || !facts.same_epoch || from_us == kNoPts || b.pts_us == kNoPts) return;
+  const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
+  if (scene == nullptr && map.latest() && map.latest()->right == left) scene = &map.latest()->motion;
+  if (scene == nullptr) return;
+  live.effect_book().add(EffectNote{.epoch = b.epoch,
+                                    .from_us = from_us,
+                                    .to_us = b.pts_us,
+                                    .tiles = std::make_shared<const render::EffectTiles>(
+                                        effect_tiles_of(*scene, width, height, facts.gap_us, cut))});
+}
+
+}  // namespace
+
 // La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE (look_ahead). Sans
 // interpolation, la paire est lancée ici et sa carte n'arrive qu'à l'image suivante (SceneMap::latest).
 PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
@@ -254,32 +274,17 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (facts.scores && pair_cut(facts)) scene_.cut();  // la paire suivante repart sans indices
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
-  note_effects(frame, facts);
+  if (setup_.live != nullptr) {
+    note_effects(*setup_.live, scene_, previous_->id, previous_->pts_us, frame, facts,
+                 setup_.work_width > 0 ? setup_.work_width : setup_.source_width,
+                 setup_.work_height > 0 ? setup_.work_height : setup_.source_height,
+                 facts.scores && pair_cut(facts));
+  }
   if (!interpolates() && facts.same_epoch) {
     scene_.start(ops, rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), previous_->id, frame.id,
                  frame.epoch);
   }
   return facts;
-}
-
-// Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
-// grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur previous_) sert
-// à la paire en cours : une paire de retard, que le lissage du masque couvre.
-void UpscaleStage::note_effects(const DecodedFrame& frame, const PairFacts& facts) {
-  if (setup_.live == nullptr || !setup_.live->effect_highlights() || !facts.same_epoch || !previous_) return;
-  if (previous_->pts_us == kNoPts || frame.pts_us == kNoPts) return;
-  const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
-  if (scene == nullptr && scene_.latest() && scene_.latest()->right == previous_->id)
-    scene = &scene_.latest()->motion;
-  if (scene == nullptr) return;
-  const int width = setup_.work_width > 0 ? setup_.work_width : setup_.source_width;
-  const int height = setup_.work_height > 0 ? setup_.work_height : setup_.source_height;
-  const bool cut = facts.scores && pair_cut(facts);
-  setup_.live->effect_book().add(EffectNote{.epoch = frame.epoch,
-                                            .from_us = previous_->pts_us,
-                                            .to_us = frame.pts_us,
-                                            .tiles = std::make_shared<const render::EffectTiles>(
-                                                effect_tiles_of(*scene, width, height, facts.gap_us, cut))});
 }
 
 }  // namespace kirari::app::play
