@@ -150,8 +150,22 @@ elle ne correspond plus et change fort, ou une lumière y change sur place. Ince
   - son vecteur suit la caméra : un objet clair qui entre dans une tuile sombre l'éclaircit aussi, mais il
     entraîne ses vecteurs.
 
-  Une lueur tout à fait immobile ne se voit pas ainsi : rien n'y change d'une image à l'autre. Seuils réglés
-  sans mesure, à revoir sur la table « Lumières » de `carte_lecteur.py`, avec des extraits à effets.
+  Une lueur tout à fait immobile ne se voit pas ainsi : rien n'y change d'une image à l'autre. C'est une limite
+  tenue, pas un défaut à corriger : sur les captures étiquetées du 19 novembre, la corne et le halo de Re:Zero
+  sont parfaitement fixes, et la bougie se recale (1,7 pixel) assez pour que le test `kLightKept` l'écarte.
+  Relâcher les règles pour les attraper faisait environ 2 400 faux effets sans voir la bougie. Les éclats
+  fixes, c'est le grade qui les trouve lui-même (`docs/hdr-anime.md`) ; la carte ne donne que les lumières qui
+  changent. Seuils réglés sans mesure, à revoir sur la table « Lumières » de `carte_lecteur.py`.
+
+- **Coupes** (`cut_likely`). Une paire qui enjambe une coupe ne dit rien de la scène : ses vecteurs relient deux
+  plans sans rapport. La carte la juge coupée si la luminosité saute partout d'au moins `kCutJump` (32 codes, ce
+  qu'aucun fondu ne fait d'une image à l'autre) ou si, hors fondu, au moins `kCutUnmatched` des vecteurs sont
+  sans correspondance ; la chaîne peut aussi la dire coupée (`SceneMap::cut`, depuis `UpscaleStage`).
+  `ref::mark_cut` pose alors une carte neutre : pas de caméra, toutes les tuiles incertaines et changées, aucun
+  drapeau tenu. Avant, une coupe de Re:Zero passait pour un fondu (la luminosité glissait d’un seul sens) et ses
+  vecteurs inventaient un effet vert sur un menton, que le masque des éclats gardait 700 ms ; corrigé, le PC
+  ne le voit plus (commit 9fff1e32). Au rejeu, 5 coupes trouvées sur les extraits (aucune avant), et les
+  effets de la lueur et de l'aura passent de 600 à 374 et de 330 à 183 tuiles : le reste venait des coupes.
 
 - **Aplats** (texture sous `kTextureFloor`). NVOF n'y voit rien, mais rien n'y bouge de visible : un aplat qui
   ne contredit pas la caméra est décor, pleinement sûr sous `kStillDiff` d'écart |b − a|, plus du tout à
