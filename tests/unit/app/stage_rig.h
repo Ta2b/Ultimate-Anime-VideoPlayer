@@ -155,10 +155,9 @@ class FakeBackend final : public gpu::Backend, public gpu::KernelOps {
   // gpu::KernelOps
   std::expected<void, Refusal> ingest(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                       const gpu::Tensor& rgb) override;
-  std::expected<void, Refusal> resample(const gpu::Tensor& /*in*/, kernels::Filter /*filter*/,
-                                        const gpu::Tensor& /*out*/) override {
-    return note("resample");
-  }
+  // La sortie porte l'image de l'entrée, comme SPAN (l'ancre de la reprise, upscale_reuse.h).
+  std::expected<void, Refusal> resample(const gpu::Tensor& in, kernels::Filter filter,
+                                        const gpu::Tensor& out) override;
   std::expected<void, Refusal> gmfss_frames(const gpu::Tensor& a, const gpu::Tensor& b,
                                             const gpu::Tensor& /*frames*/) override {
     note_pair(a, b, gmfss_pairs_);

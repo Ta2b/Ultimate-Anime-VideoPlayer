@@ -433,6 +433,7 @@ std::expected<DecodedFrame, Refusal> to_decoded_frame(FramePtr frame, std::int64
       .color = *color,
       .pts_us = pts_us,
       .duration_us = duration_us,
+      .corrupt = (frame->flags & AV_FRAME_FLAG_CORRUPT) != 0 || frame->decode_error_flags != 0,
   };
   decoded.data = std::make_shared<const AvFrameData>(std::move(frame), *memory, sw_format, std::move(ready));
   return decoded;

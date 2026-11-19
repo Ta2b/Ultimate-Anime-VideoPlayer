@@ -145,6 +145,20 @@ std::expected<void, Refusal> FakeBackend::enqueue(gpu::Engine& engine, std::span
   return note(std::format("engine {}", name));
 }
 
+std::expected<void, Refusal> FakeBackend::resample(const gpu::Tensor& in, kernels::Filter /*filter*/,
+                                                   const gpu::Tensor& out) {
+  {
+    const std::scoped_lock lock(mutex_);
+    const auto source = ingested_.find(in.handle);
+    if (source != ingested_.end()) {
+      ingested_[out.handle] = source->second;
+    } else {
+      ingested_.erase(out.handle);
+    }
+  }
+  return note("resample");
+}
+
 std::expected<void, Refusal> FakeBackend::ingest(const DecodedFrame& frame, const gpu::IngestSpec&,
                                                  const gpu::Tensor& rgb) {
   const std::scoped_lock lock(mutex_);

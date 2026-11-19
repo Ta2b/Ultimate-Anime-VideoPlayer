@@ -266,11 +266,11 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   before_ = facts.same_epoch ? now_ : PairMotion::Unknown;
   const bool held = held_pair(facts);  // la zone qui bouge des autres paires est comptée (P6.6, P6.18)
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
-  // Dessin tenu : l'image agrandie de la précédente sert à celle-ci, sans passe de SPAN. Pas plus
-  // de kMaxSpanReuse de suite, comptées depuis la dernière vraie passe : un fondu lent, tenu paire
-  // par paire, ne fige pas l'image.
-  reuse_span_ = reuses_span(held);
-  spans_reused_in_row_ = reuse_span_ ? spans_reused_in_row_ + 1 : 0;
+  // Dessin tenu : l'image agrandie de l'ancre sert à celle-ci, sans passe de SPAN. La série se juge contre
+  // l'ancre et non paire par paire : un fondu lent ne fige pas l'image (upscale_reuse.h).
+  auto reused = reuses_span(frame, facts, held);
+  if (!reused) return std::unexpected(std::move(reused.error()));
+  reuse_span_ = *reused;
   pick_span_buffer();
   // Après un dessin tenu, b paraît à 1/2 sans passe ni warp (poses_copy) : une seule image écrite.
   copy_pair_ = runs && setup_.skip_held && by_motion() && setup_.live && setup_.live->keep_poses() &&

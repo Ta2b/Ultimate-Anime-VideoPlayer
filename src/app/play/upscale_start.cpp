@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -33,7 +34,9 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
     : RingStage(
           std::move(init), static_cast<std::uint32_t>(setup.slots.size()), setup.slots.front().generation,
           smooth_extra_frames(setup.smooth_drawings) + temporal_extra_frames(setup.temporal_fix != nullptr)),
-      setup_(std::move(setup)) {}
+      setup_(std::move(setup)) {
+  reuse_.enabled = setup_.span_reuse;
+}
 
 UpscaleStage::~UpscaleStage() {
   stop();
@@ -79,8 +82,7 @@ UpscaleStage::~UpscaleStage() {
         moving_.pairs, 100.0 * moving_.block_sum / pairs, 100.0 * moving_.box_sum / pairs,
         moving_.small_boxes);
   }
-  if (spans_reused_ > 0)
-    log_channel("gpu")->info("SPAN : {} passes évitées sur des dessins tenus", spans_reused_);
+  if (const std::string reuse = reuse_.summary(); !reuse.empty()) log_channel("gpu")->info("{}", reuse);
   // Le travail d'une image ne s'enfile qu'avec un slot libre : ces attentes sont du temps où l'étage ne
   // nourrissait pas le GPU parce que l'écran n'avait pas encore rendu de slot.
   if (const SlotWaits& waits = slot_waits(); waits.count > 0)

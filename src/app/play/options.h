@@ -188,6 +188,9 @@ struct PlayOptions {
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;
+  // --no-span-reuse (mesure, avec --debug) : SPAN sur chaque image, dessins tenus compris
+  // (UpscaleSetup::span_reuse, upscale_reuse.h). Pour l'ABAB du lot A.
+  bool span_reuse = true;
   // --fast-steady : le mode Rapide à pas constant par plan (chantier 7, core/steady_rate.h) : N images par
   // source, constant dans un plan, au lieu de la grille libre. Essai, éteint par défaut jusqu'aux
   // mesures 7.10.

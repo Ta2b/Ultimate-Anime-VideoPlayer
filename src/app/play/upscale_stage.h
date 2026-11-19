@@ -35,6 +35,7 @@
 #include "app/play/source_grade.h"
 #include "app/play/temporal_window.h"
 #include "app/play/upscale_gmfss.h"
+#include "app/play/upscale_reuse.h"
 #include "core/cadence.h"
 #include "core/free_grid.h"
 #include "core/moving_area.h"
@@ -75,6 +76,7 @@ struct UpscaleSetup {
   gpu::Engine* temporal_fix = nullptr;
   // Lecture (horloge présente) : un instant identique à l'image affichée n'est ni calculé ni écrit.
   bool skip_held = false;
+  bool span_reuse = true;       // dessins tenus : SPAN repris de l'ancre (upscale_reuse.h) ; --no-span-reuse
   gpu::Engine* rife = nullptr;  // RIFE à rife_geometry(travail) ; nullptr : sans interpolation
   // Variante mouvement de RIFE (motion_model.h) : flot et masque, warp à la sortie. Remplace rife ;
   // une passe au milieu de la paire la sert toute quand le mouvement est faible.
@@ -374,14 +376,14 @@ class UpscaleStage final : public RingStage {
   // Le tampon de SPAN de l'image arrivée, dès les mesures de sa paire (reuse_span_ connu), et non à son
   // premier SPAN : le warp de la paire prend spanned(current_) avant que span_current enfile SPAN.
   void pick_span_buffer();
-  // La paire reprend le SPAN de la précédente (reuse_span_) : dessin tenu, ou copie d'une tenue fondue.
-  bool reuses_span(bool held) const;
+  // L'image reprend le SPAN de l'ancre (upscale_reuse.h) : dessin tenu, ou copie d'une tenue fondue.
+  std::expected<bool, Refusal> reuses_span(const DecodedFrame& frame, const PairFacts& facts, bool held);
   const gpu::Tensor& spanned(std::uint32_t index) const { return spanned_[span_of_[index]]->tensor(); }
   bool spanned_now_ = false;
   std::array<std::uint32_t, 2> span_of_{0, 1};  // tampon de spanned_ de chaque image de rgb_
-  // Dessin tenu : la sortie de SPAN de la précédente sert (output_ si output_has_source_, ou son
-  // tampon de spanned_).
-  static constexpr int kMaxSpanReuse = 2;
+  // Dessin tenu : la sortie de SPAN de l'ancre sert (output_ si output_has_source_, ou son tampon de
+  // spanned_).
+  SpanReuse reuse_;
   bool reuse_span_ = false;
   bool copy_pair_ = false;  // RIFE avec poses après un dessin tenu : pas de passe, b seule est écrite
   bool b_shown_ = false;    // DistilDRBA : b est écrite dans cette paire (côté b tenu)
@@ -392,8 +394,6 @@ class UpscaleStage final : public RingStage {
   bool shown_source_ = false;       // la dernière image écrite est une source
   bool copy_written_ = false;       // b est écrite dans cette paire
   bool output_has_source_ = false;  // output_ tient SPAN de l'image précédente
-  int spans_reused_in_row_ = 0;
-  std::uint64_t spans_reused_ = 0;
   // SPAN (s'il est là) puis l'écriture dans le slot.
   std::expected<void, Refusal> finish(const gpu::Tensor& rgb, std::uint32_t slot, const gpu::RingWrite& sync);
   // L'écriture d'une image à la taille du ring.
