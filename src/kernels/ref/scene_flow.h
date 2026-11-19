@@ -72,9 +72,14 @@ struct SceneCamera {
 SceneCamera scene_camera_of(const SceneFlowTiles& tiles);
 
 // La carte d'une paire, avec sa caméra (scene_camera_of, affinée ou non). history est mis à jour ; il est
-// vidé après une coupe probable.
+// vidé sur une coupe probable, dont les tuiles sont toutes incertaines (spec/scene_flow.h, cut_likely).
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, const SceneCamera& camera);
 // Sans affinage : scene_motion_of(tiles, history, scene_camera_of(tiles)).
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history);
+// Une paire qui enjambe une coupe ne relie rien : ses classes ne diraient rien de l'un ou l'autre plan (243
+// « effets » sur la coupe de 16:17 de Re:Zero, que le masque des éclats posait sur le plan suivant). Toutes
+// ses tuiles deviennent incertaines et changées, sans caméra, cut_likely vrai. scene_motion_of le fait sur
+// une coupe probable ; le lecteur, sur une coupe qu'il a mesurée (SceneMap::cut).
+void mark_cut(SceneMotion& motion);
 
 }  // namespace kirari::kernels::ref

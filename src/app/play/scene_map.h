@@ -59,8 +59,10 @@ class SceneMap {
   bool started(SourceId left, SourceId right) const {
     return last_left_ && *last_left_ == left && last_right_ && *last_right_ == right;
   }
-  // La paire en cours a été jugée coupée : la suivante repart sans indices ni classes.
-  void cut();
+  // La paire (left, right) enjambe une coupe (mesurée par le lecteur) : sa carte, relue ou à venir, n'a que
+  // des tuiles incertaines (kernels::ref::mark_cut), et la paire lancée ensuite repart sans indices ni
+  // classes.
+  void cut(SourceId left, SourceId right);
   // Relit ce qui est fini et lance l'affinage des caméras, sans attendre (à chaque image de sortie).
   void advance(gpu::KernelOps& ops) {
     if (on_) poll(ops);
@@ -94,8 +96,9 @@ class SceneMap {
     std::uint64_t ticket = 0;
     SourceId left;
     SourceId right;
-    bool restart = false;    // les classes des paires d'avant ne valent pas pour elle
-    std::uint64_t shot = 0;  // le plan (shot_ à son lancement)
+    bool restart = false;     // les classes des paires d'avant ne valent pas pour elle
+    bool across_cut = false;  // elle enjambe une coupe dite par le lecteur (cut)
+    std::uint64_t shot = 0;   // le plan (shot_ à son lancement)
     // Après la relecture des tuiles : la grille, la caméra, et son affinage en vol (0 : aucun), parti
     // derrière le flux depuis la caméra du plan (early_limit : la vérification qu'il ne doit pas dépasser)
     // ou depuis celle de NVOF (early_limit 0).

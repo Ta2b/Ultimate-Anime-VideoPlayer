@@ -125,8 +125,11 @@ struct SceneMotion {
   // brutes) ; sans caméra ajustée, au plus cette part de tuiles changées. Faux sur une coupe ou un fondu.
   bool drawing_held = false;
   bool background_held = false;  // la caméra ne bouge pas
-  bool cut_likely = false;       // la plupart des vecteurs sans correspondance, hors fondu
-  bool fade = false;             // luminosité qui glisse partout dans le même sens (fondu, flash)
+  // Coupe probable : un saut de luminosité sur une seule paire (kCutJump), ou la plupart des vecteurs sans
+  // correspondance hors fondu ; ou coupe dite par le lecteur (SceneMap::cut). Une paire qui enjambe une
+  // coupe ne dit rien de l'un ou l'autre plan : toutes ses tuiles sont incertaines, sans caméra.
+  bool cut_likely = false;
+  bool fade = false;  // luminosité qui glisse partout dans le même sens, de moins de kCutJump (fondu)
 
   const SceneTile& at(int col, int row) const {
     return tiles[static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) +
@@ -165,8 +168,12 @@ inline constexpr float kFitMad = 3.0F * 1.4826F;
 inline constexpr float kFitNear = 2.0F;
 inline constexpr float kFitBoundLow = 0.75F;
 inline constexpr float kFitBoundHigh = 2.0F;
-inline constexpr float kCutUnmatched = 0.6F;       // part de vecteurs sans correspondance d'une coupe
-inline constexpr float kFadeShift = 4.0F;          // glissement moyen de luminosité d'un fondu, codes
+inline constexpr float kCutUnmatched = 0.6F;  // part de vecteurs sans correspondance d'une coupe
+inline constexpr float kFadeShift = 4.0F;     // glissement moyen de luminosité d'un fondu, codes
+// Au-delà de ce glissement moyen sur une seule paire, ce n'est plus un fondu mais une coupe (les trois coupes
+// des dix extraits de la porte 2.3, vers un plan plus clair ou plus sombre : 61 à 89 codes ; prises pour des
+// fondus, elles gardaient le plan d'avant). Un flash blanc passe aussi pour une coupe : la carte repart.
+inline constexpr float kCutJump = 32.0F;
 inline constexpr float kFadeAgree = 0.8F;          // part des tuiles qui glissent dans le même sens
 inline constexpr float kDrawingHeldShare = 0.01F;  // part de tuiles qui bougent au plus d'un dessin tenu
 inline constexpr double kHeldCamera = 0.25;        // translation nulle, pixels de travail

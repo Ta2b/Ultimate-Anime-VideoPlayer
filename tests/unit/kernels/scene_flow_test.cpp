@@ -177,7 +177,28 @@ TEST_CASE("carte de la scène sur des flux synthétiques", "[scene_flow]") {
     CHECK_FALSE(m.camera_fit);
     CHECK_FALSE(m.drawing_held);
     CHECK(history.cols == 0);
-    CHECK(count(m, SceneClass::Effect) == static_cast<int>(m.tiles.size()));
+    // La paire qui enjambe la coupe ne dit rien des deux plans : ni effet ni dessin.
+    CHECK(count(m, SceneClass::Uncertain) == static_cast<int>(m.tiles.size()));
+    for (const SceneTile& t : m.tiles) CHECK(t.changed);
+  }
+
+  SECTION("un saut de luminosité sur une seule paire est une coupe, pas un fondu") {
+    Pair pair;  // vecteurs qui correspondent : seul le saut le dit
+    for (std::uint8_t& v : pair.b.data) v = static_cast<std::uint8_t>(std::max(0, v - 50));
+    history.cols = 16;
+    const SceneMotion m = pair.map(history);
+    CHECK(m.cut_likely);
+    CHECK_FALSE(m.fade);
+    CHECK_FALSE(m.camera_fit);
+    CHECK(history.cols == 0);
+    CHECK(count(m, SceneClass::Uncertain) == static_cast<int>(m.tiles.size()));
+    SceneMotion marked = Pair{}.map(history);  // une coupe dite par le lecteur
+    REQUIRE(marked.camera_fit);
+    ref::mark_cut(marked);
+    CHECK(marked.cut_likely);
+    CHECK_FALSE(marked.camera_fit);
+    CHECK_FALSE(marked.drawing_held);
+    CHECK(count(marked, SceneClass::Uncertain) == static_cast<int>(marked.tiles.size()));
   }
 
   SECTION("fondu : la luminosité glisse partout, ce n'est pas une coupe") {

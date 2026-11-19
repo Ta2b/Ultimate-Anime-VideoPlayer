@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <utility>
 #include <vector>
 
 #include "kernels/ref/check.h"
@@ -224,27 +225,39 @@ bool tile_changed(const TileView& v) {
          1.0F - v.matched >= scene::kChangeUnmatched || v.change >= scene::kChangeDiff;
 }
 
-// Un fondu ou un flash : la luminosité glisse partout dans le même sens, et l'écart moyen n'est guère plus
-// que ce glissement.
-bool is_fade(const std::vector<TileView>& views) {
+// Le glissement moyen de luminosité (b − a) et l'écart moyen |b − a| des tuiles lues, codes.
+struct Glide {
   double shift = 0.0;
   double change = 0.0;
   int count = 0;
+};
+Glide glide_of(const std::vector<TileView>& views) {
+  Glide g;
   for (const TileView& v : views) {
     if (!v.valid) continue;
-    shift += v.shift;
-    change += v.change;
-    ++count;
+    g.shift += v.shift;
+    g.change += v.change;
+    ++g.count;
   }
-  if (count == 0) return false;
-  shift /= count;
-  change /= count;
-  if (std::abs(shift) < scene::kFadeShift || change > 1.5 * std::abs(shift) + scene::kStillDiff) return false;
+  if (g.count > 0) {
+    g.shift /= g.count;
+    g.change /= g.count;
+  }
+  return g;
+}
+
+// Un fondu : la luminosité glisse partout dans le même sens, et l'écart moyen n'est guère plus que ce
+// glissement. Au-delà de kCutJump sur une seule paire, c'est une coupe (read_tiles).
+bool is_fade(const std::vector<TileView>& views, const Glide& g) {
+  if (g.count == 0) return false;
+  const double shift = g.shift;
+  if (std::abs(shift) < scene::kFadeShift || g.change > 1.5 * std::abs(shift) + scene::kStillDiff)
+    return false;
   int agree = 0;
   for (const TileView& v : views) {
     if (v.valid && v.shift * shift > 0.0 && std::abs(v.shift) >= 0.5F * scene::kFadeShift) ++agree;
   }
-  return static_cast<float>(agree) >= scene::kFadeAgree * static_cast<float>(count);
+  return static_cast<float>(agree) >= scene::kFadeAgree * static_cast<float>(g.count);
 }
 
 // Le modèle centré et réduit (pixels du flux) en caméra de travail : x' = x + d(x).
@@ -274,8 +287,24 @@ TileRead read_tiles(const SceneFlowTiles& tiles) {
     }
   }
   out.unmatched = cells > 0.0 ? unmatched / cells : 0.0;
-  out.fade = is_fade(out.views);
-  out.cut = !out.fade && out.unmatched >= scene::kCutUnmatched;
+  const Glide glide = glide_of(out.views);
+  const bool jump = glide.count > 0 && std::abs(glide.shift) >= scene::kCutJump;
+  out.fade = !jump && is_fade(out.views, glide);
+  out.cut = jump || (!out.fade && out.unmatched >= scene::kCutUnmatched);
+  return out;
+}
+
+// Une coupe probable : les tuiles lues, puis mark_cut ; le plan suivant repart de ses propres classes.
+SceneMotion cut_motion(SceneMotion out, const TileRead& read, int divisor, SceneHistory& history) {
+  history.clear();
+  out.unmatched = read.unmatched;
+  out.tiles.resize(read.views.size());
+  const auto scale = static_cast<float>(divisor);
+  for (std::size_t i = 0; i < read.views.size(); ++i) {
+    const TileView& v = read.views[i];
+    out.tiles[i] = SceneTile{.dx = v.mx * scale, .dy = v.my * scale, .change = v.change, .shift = v.shift};
+  }
+  mark_cut(out);
   return out;
 }
 
@@ -421,14 +450,14 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
   }
   const std::size_t count = tiles.tiles.size();
   const TileRead read = read_tiles(tiles);
+  if (read.cut) return cut_motion(std::move(out), read, tiles.divisor, history);
   const std::vector<TileView>& views = read.views;
   out.unmatched = read.unmatched;
   out.fade = read.fade;
-  out.cut_likely = read.cut;
 
   const Frame f = frame_of(tiles);
   const SceneCamera none;
-  const SceneCamera& used = camera.fit && !out.cut_likely ? camera : none;
+  const SceneCamera& used = camera.fit ? camera : none;
   const SceneCameraWork work = scene_camera_work(used, tiles.flow_width, tiles.flow_height, tiles.divisor);
   out.camera_fit = work.fit;
   out.camera = work.camera;
@@ -474,14 +503,31 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
                              .shift = v.shift,
                              .changed = changed};
   }
-  out.drawing_held = !out.cut_likely && !out.fade &&
-                     static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
-  if (out.cut_likely) history.clear();  // le plan suivant repart de ses propres classes
+  out.drawing_held =
+      !out.fade && static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
   return out;
 }
 
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) {
   return scene_motion_of(tiles, history, scene_camera_of(tiles));
+}
+
+void mark_cut(SceneMotion& motion) {
+  const SceneMotion still;
+  motion.camera = still.camera;
+  motion.camera_fit = false;
+  motion.camera_refined = false;
+  motion.residual = 0.0;
+  motion.residual_tiles = 0;
+  motion.drawing_held = false;
+  motion.background_held = false;
+  motion.fade = false;
+  motion.cut_likely = true;
+  for (SceneTile& tile : motion.tiles) {
+    tile.kind = SceneClass::Uncertain;
+    tile.confidence = 0.0F;
+    tile.changed = true;
+  }
 }
 
 }  // namespace kirari::kernels::ref

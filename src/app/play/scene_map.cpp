@@ -245,6 +245,7 @@ void SceneMap::finish(Pending& pair) {
   const auto asked = std::chrono::steady_clock::now();
   kernels::SceneMotion motion = kernels::ref::scene_motion_of(*pair.tiles, history_, pair.camera);
   map_us_ += since_us(asked);
+  if (pair.across_cut && !motion.cut_likely) kernels::ref::mark_cut(motion);
   if (motion.cut_likely) {
     ++cuts_;
     restart_ = true;  // NVOF ne trouve rien à suivre : la paire suivante repart sans indices
@@ -297,8 +298,15 @@ std::optional<kernels::SceneMotion> SceneMap::for_pair(gpu::KernelOps& ops, Sour
   return latest_->motion;
 }
 
-void SceneMap::cut() {
+void SceneMap::cut(SourceId left, SourceId right) {
   restart_ = true;
+  if (latest_ && latest_->left == left && latest_->right == right && !latest_->motion.cut_likely) {
+    kernels::ref::mark_cut(latest_->motion);
+    ++cuts_;
+  }
+  for (Pending& pair : pending_) {
+    if (pair.left == left && pair.right == right) pair.across_cut = true;
+  }
 }
 
 void SceneMap::log_summary() const {

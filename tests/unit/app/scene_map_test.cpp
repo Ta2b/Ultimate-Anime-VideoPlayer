@@ -255,8 +255,16 @@ TEST_CASE("carte de la scène : l'affinage derrière le flux, et relu après sa 
   CHECK(again->camera_refined);
   CHECK_THAT(camera_x(*again), WithinAbs(3.2 * kDivisor, 0.1));
 
-  // Une coupe : la paire suivante repart sans caméra d'où partir.
-  map.cut();
+  // Une coupe sur (5, 6) : sa carte n'a plus que des tuiles incertaines, sans caméra, et la paire suivante
+  // repart sans caméra d'où partir.
+  map.cut(id(5), id(6));
+  const auto cut = map.for_pair(ops, id(5), id(6));
+  REQUIRE(cut);
+  CHECK(cut->cut_likely);
+  CHECK_FALSE(cut->camera_fit);
+  CHECK(std::ranges::all_of(cut->tiles, [](const kernels::SceneTile& tile) {
+    return tile.kind == kernels::SceneClass::Uncertain && tile.changed;
+  }));
   ops.queue.push_back(translated(-2.0, 0.0));
   map.start(ops, t, t, id(6), id(7), 0);
   CHECK(ops.asked.size() == 6);
