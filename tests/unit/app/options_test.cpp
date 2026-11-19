@@ -108,6 +108,8 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   CHECK(parse({"épisode.mkv", "--shot-cuts"})->shot_cuts);
   CHECK(options->anime_shots);  // défaut ; --no-anime-shots le coupe seul (audit F3)
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
+  CHECK(options->effect_highlights);  // défaut ; sans carte de la scène, rien ne change
+  CHECK_FALSE(parse({"épisode.mkv", "--no-effect-highlights"})->effect_highlights);
   CHECK(options->present == PresentWanted::Wait);
   CHECK(parse({"épisode.mkv", "--no-present"})->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});

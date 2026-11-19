@@ -72,6 +72,12 @@ std::optional<PairTint> Session::pair_tint_now() const {
   return pair_tint(*verdict);
 }
 
+// Éclats HDR sur les seuls effets : la carte de la paire de l'image montrée, s'il y en a une.
+std::optional<EffectNote> Session::effect_note_now() const {
+  if (config_.extra == nullptr || !current_ || current_->pts_us == kNoPts) return std::nullopt;
+  return config_.extra->effect_note(current_->epoch, current_->pts_us);
+}
+
 // La cadence fixe ou le plancher du VRR représentent l'image telle quelle : l'écran garde alors sa
 // composition pour n'en refaire qu'une copie. Quand les images neuves viennent au rythme de l'écran
 // (interpolation à sa fréquence), aucune ne se représente et garder la composition coûtait une copie plein
@@ -102,7 +108,8 @@ ShowRequest Session::show_request(const UiFrame& ui, const subs::SubtitleFrame* 
                      .ui_top = shown ? ui.top : 0,
                      .redraws_expected = repeats_expected() || shown || !osd_.empty(),
                      .target_us = fresh_ ? target_host_us_ : 0,
-                     .tint = pair_tint_now()};
+                     .tint = pair_tint_now(),
+                     .effects = effect_note_now()};
 }
 
 ControlsView Session::view() const {

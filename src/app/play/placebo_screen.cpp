@@ -516,6 +516,7 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   s.hdr_output = target.color.transfer == PL_COLOR_TRC_PQ;
   s.target_color = target.color;
   s.ready_grade(request.frame);
+  s.follow_effects(request);
   if (request.frame != nullptr && request.frame->pts_us != kNoPts && s.grade) {
     s.video_rate.observe(request.frame->pts_us, request.frame->epoch);
     s.grade->set_video_fps(s.video_rate.fps());

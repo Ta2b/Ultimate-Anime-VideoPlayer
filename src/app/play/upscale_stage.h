@@ -235,6 +235,9 @@ class UpscaleStage final : public RingStage {
   // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
   // journal, seulement quand le menu Statistiques le demande.
   void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
+  // Éclats HDR sur les seuls effets (effect_book.h) : la carte de la scène de la paire, notée pour l'écran
+  // (appelé par mark_pair, sur toute paire mesurée).
+  void note_effects(const DecodedFrame& frame, const PairFacts& facts);
   // Où DistilDRBA estime : la taille de RIFE.
   kernels::RifeGeometry drba_geometry() const;
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);

@@ -216,7 +216,12 @@ vec4 hook() {
         float inked = 1.0 - smoothstep(0.004 * white, 0.015 * white, min(lx, ly));
         spark *= (1.0 - skin) * (1.0 - inked);
     }
-    float emitter = max(iso * gate, spark);
+    // Eclats sur les seuls effets (fx_on, render/effect_mask.h) : la passe du masque l'a pose dans l'alpha.
+    // Hors effet (un ciel, une feuille blanche), une lumiere ne garde que fx_rest de sa montee ; une etincelle
+    // (une etoile, un reflet de 1 a 4 px) garde la sienne. Sans masque, emitter est celui d'aujourd'hui.
+    float lit = iso * gate;
+    if (fx_on > 0.5) lit *= mix(fx_rest, 1.0, clamp(px.a, 0.0, 1.0));
+    float emitter = max(lit, spark);
     bool late = an_late > 0.5;
     // Hors emetteur (emitter = 0, la plupart des pixels), le gain vaut an_lift : mix(an_lift, x, 0) le rendait
     // deja exactement, le calcul de la montee est saute.
