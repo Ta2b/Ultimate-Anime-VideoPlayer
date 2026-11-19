@@ -19,7 +19,7 @@
 #include "kernels/ref/resample.h"
 #include "kernels/spec/color.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 bool rgb_tensor(const Tensor& tensor, int width, int height) {
@@ -269,4 +269,4 @@ std::expected<void, Refusal> TensorRtBackend::health() {
   return {};
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

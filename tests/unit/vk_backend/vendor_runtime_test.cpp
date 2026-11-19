@@ -1,7 +1,7 @@
 // Sorties de référence par modèle. L'interpréteur de gpu_ir calcule une fois la sortie de chaque
 // modèle de référence (SPAN et RIFE en petit, le vrai SPAN d'AnimeJaNai s'il est installé) pour
 // une entrée déterministe, l'enregistre sous le dossier des références du build
-// (AJP_TEST_REFERENCE_DIR) et la relit ensuite. Chaque runtime des réseaux la retrouve à la
+// (KIRARI_TEST_REFERENCE_DIR) et la relit ensuite. Chaque runtime des réseaux la retrouve à la
 // tolérance près : le moteur Vulkan sur l'appareil du système (lavapipe en CI), puis Core ML
 // quand ce build l'a et que son matériel est là ; sans lui, le cas le dit
 // et se saute. C'est la seule vérification numérique de ces runtimes, qui ne tournent que sur
@@ -29,14 +29,14 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-#if defined(AJP_TEST_WITH_COREML)
+#if defined(KIRARI_TEST_WITH_COREML)
 #include "gpu/coreml/coreml_runtime.h"
 #include "gpu/coreml/coreml_units.h"
 #endif
 
-using namespace ajp;
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 
@@ -59,7 +59,7 @@ std::vector<ReferenceModel> reference_models(const TempDir& dir) {
   out.push_back({.spec = write_model(dir.path(), "rife_like_f16", rife_like(true).bytes(), TensorType::F16),
                  .input = {1, 6, 16, 24},
                  .seed = 102});
-  const std::filesystem::path real(AJP_SPAN_MODEL);
+  const std::filesystem::path real(KIRARI_SPAN_MODEL);
   std::error_code error;
   if (std::filesystem::is_regular_file(real, error)) {
     const auto sha256 = core::sha256_file(real);
@@ -98,7 +98,7 @@ struct Reference {
 };
 
 std::filesystem::path reference_path(const ReferenceModel& m) {
-  return std::filesystem::path(AJP_TEST_REFERENCE_DIR) /
+  return std::filesystem::path(KIRARI_TEST_REFERENCE_DIR) /
          std::format("{}-{}-{}-s{}-{}.f32", m.spec.id, m.spec.sha256.substr(0, 8), dims_text(m.input), m.seed,
                      m.spec.precision == TensorType::F16 ? "f16" : "f32");
 }
@@ -205,7 +205,7 @@ struct Vendor {
 
 std::vector<Vendor> vendors() {
   std::vector<Vendor> out;
-#if defined(AJP_TEST_WITH_COREML)
+#if defined(KIRARI_TEST_WITH_COREML)
   out.push_back({"coreml", &coreml_rt::make_runtime});
 #endif
   return out;
@@ -266,7 +266,7 @@ TEST_CASE("Référence : chaque runtime du fabricant retrouve la sortie enregist
   if (ran == 0) SKIP("aucun matériel pour les runtimes de ce build : " << absent);
 }
 
-#if defined(AJP_TEST_WITH_COREML)
+#if defined(KIRARI_TEST_WITH_COREML)
 // Les valeurs de MLComputeUnits qu'ONNX Runtime accepte (coreml_options.cc) : un nom d'Apple
 // (« MLComputeUnitsAll ») fait échouer la création de chaque session Core ML, sur tout Mac.
 TEST_CASE("Core ML : unités de calcul sous les noms d'ONNX Runtime", "[vk_backend][coreml]") {

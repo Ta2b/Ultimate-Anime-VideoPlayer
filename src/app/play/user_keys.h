@@ -9,7 +9,7 @@
 
 #include "core/keys.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class Controls;
 
@@ -25,4 +25,4 @@ std::vector<std::string> take_ignored_keys();
 // Les dit à l'écran, au premier message de l'interface : un raccourci qui ne répond pas a une raison visible.
 void note_ignored_keys(Controls& controls);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -10,7 +10,7 @@
 
 #include "app/play/present_level.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les fonctionnalités de présentation à chaîner devant `next` (VkPhysicalDeviceFeatures2::pNext) ; libplacebo
 // n'active que celles que l'appareil a. Vide (head() rend next) aux en-têtes Vulkan qui ne les connaissent
@@ -45,4 +45,4 @@ PresentCaps read_present_caps(pl_vulkan vk, VkSurfaceKHR surface);
 // Les drapeaux de création de la swapchain au niveau retenu (0 à Open et Wayland).
 VkSwapchainCreateFlagsKHR present_flags(PresentLevel level, const PresentCaps& caps);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

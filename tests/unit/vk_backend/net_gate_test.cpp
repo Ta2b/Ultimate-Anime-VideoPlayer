@@ -23,8 +23,8 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 
@@ -225,7 +225,7 @@ namespace {
 // Un Conv 3×3 en float dont les poids débordent le float32 : sa sortie est infinie, jumeau et référence
 // compris.
 ir::Graph overflowing_graph() {
-  using namespace ajp::gpu::ir::test;
+  using namespace kirari::gpu::ir::test;
   ModelBuilder m;
   m.input("x", {1, 4, 8, 8})
       .weight("w", {4, 4, 3, 3}, std::vector<float>(4 * 4 * 3 * 3, 3.0e38F))
@@ -259,7 +259,7 @@ TEST_CASE("Porte de bout en bout : un calcul de référence non fini refuse la c
   const auto gated =
       vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target);
   REQUIRE_FALSE(gated.has_value());
-  CHECK(gated.error().code == ajp::RefusalCode::GraphInvalid);
+  CHECK(gated.error().code == kirari::RefusalCode::GraphInvalid);
 }
 
 // C45-02 : un arrêt demandé traverse la porte, et la progression avance avec les rejeux.
@@ -297,5 +297,5 @@ TEST_CASE("Porte de bout en bout : l'arrêt est lu entre deux rejeux, la progres
   const auto cancelled =
       vk::net::gate_network(*rig.context, *rig.memory, *rig.pipelines, graph, other, rig.target, stopped);
   REQUIRE_FALSE(cancelled.has_value());
-  CHECK(cancelled.error().code == ajp::RefusalCode::Cancelled);
+  CHECK(cancelled.error().code == kirari::RefusalCode::Cancelled);
 }

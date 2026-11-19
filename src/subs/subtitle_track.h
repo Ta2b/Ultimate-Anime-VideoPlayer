@@ -19,7 +19,7 @@
 
 struct ass_track;
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Taille maximale d'un script lu en entier (fichier externe, en-tête).
 inline constexpr std::size_t kMaxScriptBytes = std::size_t{64} << 20;
@@ -92,4 +92,4 @@ class SubtitleTrack {
   bool full_ = false;      // un plafond cumulé atteint, déjà dit
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

@@ -23,7 +23,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les compteurs du fil du GPU (LiveSettings::motion_tally), cumulés depuis l'ouverture de la chaîne.
 struct MotionTally {
@@ -123,4 +123,4 @@ class MotionGuard {
   std::optional<InterpolationChoice> cut_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

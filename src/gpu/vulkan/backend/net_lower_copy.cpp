@@ -13,7 +13,7 @@
 #include "gpu/vulkan/backend/net_lower_detail.h"
 #include "gpu/vulkan/backend/net_params.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 using detail::copy_push;
 using detail::CopyPush;
@@ -186,4 +186,4 @@ std::expected<void, Refusal> Lowerer::pad(std::size_t index) {
   return {};
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

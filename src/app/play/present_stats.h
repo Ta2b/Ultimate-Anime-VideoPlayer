@@ -9,7 +9,7 @@
 #include "app/play/latest_writer.h"
 #include "app/play/session.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr int kStatsColumns = 20;
 
@@ -42,4 +42,4 @@ class StatsSink {
   std::int64_t posted_at_us_ = 0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

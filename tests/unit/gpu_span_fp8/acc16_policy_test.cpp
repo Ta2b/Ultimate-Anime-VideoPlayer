@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 TEST_CASE("acc16 : des débordements rares gardent le f16", "[span_fp8][acc16]") {
   Acc16Policy policy;
@@ -52,4 +52,4 @@ TEST_CASE("acc16 : trois débordements étalés au-delà de la fenêtre gardent 
   }
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

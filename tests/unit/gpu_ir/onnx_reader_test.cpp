@@ -10,8 +10,8 @@
 #include "gpu/ir/onnx_model.h"
 #include "onnx_builder.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
 using test::ModelBuilder;
 using test::ProtoWriter;
 
@@ -24,7 +24,7 @@ std::vector<std::byte> model_with(const ProtoWriter& tensor) {
   return m.bytes();
 }
 
-std::expected<onnx::Tensor, ajp::Refusal> read_initializer(const ProtoWriter& tensor) {
+std::expected<onnx::Tensor, kirari::Refusal> read_initializer(const ProtoWriter& tensor) {
   auto model = onnx::read_onnx(model_with(tensor));
   if (!model) return std::unexpected(model.error());
   REQUIRE(model->graph.initializers.size() == 1);
@@ -51,7 +51,7 @@ TEST_CASE("onnx : ModelProto complet relu champ par champ", "[gpu_ir][onnx]") {
   auto model = onnx::read_onnx(m.bytes());
   REQUIRE(model);
   CHECK(model->ir_version == 8);
-  CHECK(model->producer_name == "ajp-test");
+  CHECK(model->producer_name == "kirari-test");
   REQUIRE(model->opsets.size() == 1);
   CHECK(model->opsets[0].domain.empty());
   CHECK(model->opsets[0].version == 13);

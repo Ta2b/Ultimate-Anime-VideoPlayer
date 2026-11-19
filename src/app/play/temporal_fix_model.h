@@ -14,7 +14,7 @@
 #include "app/play/temporal_fix.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le nom de l'entrée des modèles livrés, et le dossier où ils sont rangés sous les modèles du lecteur.
 inline constexpr std::string_view kTemporalFixInput = "input";
@@ -37,4 +37,4 @@ constexpr bool temporal_fix_fits(int width, int height, bool half) {
   return width > 0 && height > 0 && width % step == 0 && height % step == 0;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

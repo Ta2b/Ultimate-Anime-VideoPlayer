@@ -2,7 +2,7 @@
 
 #include "app/play/i18n_fr.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Statistiques : (clé anglaise, français).
@@ -17,15 +17,17 @@ constexpr std::array kStatsTexts{
           " · mouvement estimé en {}p (gain de vitesse non mesuré)"},
     Entry{" · predicted ×{}", " · prédit ×{}"},
     Entry{" · service gap ", " · écart service "},
-    Entry{"AJP is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in "
+    Entry{"Kirari is in \"Open with\" ({}). To make it the default: \"Make this the default player\" in "
           "Settings > General > Application, or xdg-mime default {}{}",
-          "AJP figure dans « Ouvrir avec » ({}). Pour en faire le lecteur par défaut : « Faire de ce lecteur "
+          "Kirari figure dans « Ouvrir avec » ({}). Pour en faire le lecteur par défaut : « Faire de ce "
+          "lecteur "
           "le lecteur par défaut » dans Paramètres > Général > Application, ou xdg-mime default {}{}"},
-    Entry{"AJP is in \"Open with\". To make it the default: \"Make this the default player\" in Settings > "
-          "General > Application, or Settings > Apps > Default apps > {}.",
-          "AJP figure dans « Ouvrir avec ». Pour en faire le lecteur par défaut : « Faire de ce lecteur le "
-          "lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > "
-          "Applications par défaut > {}."},
+    Entry{
+        "Kirari is in \"Open with\". To make it the default: \"Make this the default player\" in Settings > "
+        "General > Application, or Settings > Apps > Default apps > {}.",
+        "Kirari figure dans « Ouvrir avec ». Pour en faire le lecteur par défaut : « Faire de ce lecteur le "
+        "lecteur par défaut » dans Paramètres > Général > Application, ou Paramètres > Applications > "
+        "Applications par défaut > {}."},
     Entry{"All files", "Tous les fichiers"},
     Entry{"Auto ×{} ({:.0f} fps) · display limit ×{}", "Auto ×{} ({:.0f} i/s) · plafond écran ×{}"},
     Entry{"Exporting · Esc to cancel", "Export en cours · Échap pour annuler"},
@@ -73,4 +75,4 @@ std::span<const Entry> french_stats() {
   return kStatsTexts;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

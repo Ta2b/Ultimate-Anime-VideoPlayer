@@ -25,7 +25,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp {
+namespace kirari {
 
 namespace {
 // Posé une fois au démarrage.
@@ -194,4 +194,4 @@ void install_system_thread_names() noexcept {
   thread_start().store(&start_for_system, std::memory_order_release);
 }
 
-}  // namespace ajp
+}  // namespace kirari

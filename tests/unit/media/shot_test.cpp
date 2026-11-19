@@ -25,7 +25,7 @@
 #include "media/shot_probe.h"
 #include "media/shot_timeline.h"
 
-using namespace ajp::media;
+using namespace kirari::media;
 using Catch::Approx;
 
 namespace {
@@ -340,7 +340,7 @@ TEST_CASE("plans : l'analyse partie d'un saut revient combler le début", "[medi
 }
 
 TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidéo", "[media][shots]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-cache-test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-shot-cache-test";
   std::filesystem::remove_all(dir);
   const std::filesystem::path clip = test::require_clip(test::shots_clip());
   const std::string key = shot_cache_key(clip);
@@ -407,10 +407,10 @@ TEST_CASE("plans : le cache rend les plans gardés, et rien pour une autre vidé
 
 TEST_CASE("plans : scènes vues à l'ingestion, coupes et sauts", "[media][shots]") {
   const auto gray = [](float v) {
-    const auto counts =
-        ajp::kernels::ref::frame_counts(ajp::kernels::RgbImage(64, 36, v), ajp::kernels::FrameTransfer::Sdr);
+    const auto counts = kirari::kernels::ref::frame_counts(kirari::kernels::RgbImage(64, 36, v),
+                                                           kirari::kernels::FrameTransfer::Sdr);
     REQUIRE(counts);
-    return ajp::kernels::ref::frame_stats_of(*counts);
+    return kirari::kernels::ref::frame_stats_of(*counts);
   };
   LiveScenes live;
   CHECK_FALSE(live.at(0));

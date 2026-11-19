@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Ordre naturel : les nombres comptent pour leur valeur, la casse non", "[app][episodes]") {
@@ -18,7 +18,7 @@ TEST_CASE("Ordre naturel : les nombres comptent pour leur valeur, la casse non",
 }
 
 TEST_CASE("Épisode voisin : suivant, précédent, et rien au bout", "[app][episodes]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-episodes-test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-episodes-test";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   for (const char* name : {"Show - 2.mkv", "Show - 10.mkv", "Show - 1.MKV", "Show - 1.srt", "notes.txt"})
@@ -34,7 +34,7 @@ TEST_CASE("Épisode voisin : suivant, précédent, et rien au bout", "[app][epis
 }
 
 TEST_CASE("Épisode voisin : 12 avant 12.5, bonus à part, une seule version (P3.81)", "[app][episodes]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-episodes-p381";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-episodes-p381";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   for (const char* name : {"Show - 12.mkv", "Show - 12.5.mkv", "Show - 13.mkv", "Show - 13v2.mkv",
@@ -52,7 +52,7 @@ TEST_CASE("Épisode voisin : 12 avant 12.5, bonus à part, une seule version (P3
 
 TEST_CASE("Épisode voisin : un mot de bonus dans un titre d'épisode ne le sort pas de la liste (A13-03)",
           "[app][episodes]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-episodes-a1303";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-episodes-a1303";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   for (const char* name :
@@ -67,7 +67,7 @@ TEST_CASE("Épisode voisin : un mot de bonus dans un titre d'épisode ne le sort
 }
 
 TEST_CASE("Épisode voisin : un bonus collé à son numéro n'est pas un épisode (C13-01)", "[app][episodes]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-episodes-c1301";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-episodes-c1301";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   for (const char* name : {"Show - 11.mkv", "Show - 12.mkv", "Show - CM01.mkv", "Show - PV01.mkv",
@@ -86,7 +86,7 @@ TEST_CASE("Ordre naturel : chiffres pleine chasse lus comme des nombres (A13-04)
   CHECK(natural_compare("第２話", "第１０話") < 0);
   CHECK(natural_compare("第１０話", "第２話") > 0);
   CHECK(natural_compare("第０２話", "第2話") == 0);
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-episodes-a1304";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-episodes-a1304";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   for (const char* name : {"第１話.mkv", "第２話.mkv", "第１０話.mkv"})
@@ -98,4 +98,4 @@ TEST_CASE("Ordre naturel : chiffres pleine chasse lus comme des nombres (A13-04)
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

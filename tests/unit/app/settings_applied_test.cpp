@@ -11,7 +11,7 @@
 #include "app/play/chain.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // A22-01, A22-15 : chaque réglage que le menu change est appliqué en direct, ou annoncé par « Appliquer »
 // (la réouverture) : jamais ni l'un ni l'autre, sinon il se perd à la fermeture du panneau.
@@ -78,9 +78,9 @@ TEST_CASE("L'option --rife n'enregistre pas la coupure du mode auto", "[app][set
   CHECK(saved.rife_factor == 4);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // A22-15 : chaque réglage que le menu change ressort de live_part (appliqué, donc enregistré) ou de
@@ -207,7 +207,7 @@ TEST_CASE("Réglages : « Lisser les dessins tenus » rouvre la lecture, l'optio
 }
 
 TEST_CASE("Écriture refusée : save_settings le dit au lieu de se taire", "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-settings-refused";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-settings-refused";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   // Le « dossier » du fichier est un fichier : l'écriture ne peut pas aboutir.
@@ -244,4 +244,4 @@ TEST_CASE("play.toml : « Vitesse avant précision », absente d'un ancien fichi
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

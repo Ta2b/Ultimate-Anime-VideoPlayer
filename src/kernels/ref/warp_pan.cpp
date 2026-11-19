@@ -7,7 +7,7 @@
 
 #include "kernels/ref/warp.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 float luma_at(const RgbImage& img, int x, int y) {
@@ -77,4 +77,4 @@ PanEstimate pan_estimate(const RgbImage& a, const RgbImage& b) {
   return e;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

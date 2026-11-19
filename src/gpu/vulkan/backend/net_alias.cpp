@@ -6,7 +6,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_params.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 // Rangé sans bourrage, dans l'ordre logique : une tranche contiguë y est un intervalle d'octets.
@@ -318,4 +318,4 @@ std::vector<ir::Alias> plan_aliases(const ir::Graph& graph, std::uint64_t alignm
   return Planner(graph, alignment, concat_in_place, split_views).run();
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

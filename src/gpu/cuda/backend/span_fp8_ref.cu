@@ -16,7 +16,7 @@
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
 #include "gpu/cuda/backend/span_fp8_ref.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // DepthToSpace(4, mode CRD du modèle) : NHWC 48 canaux -> NCHW 3×4h×4w ; canal d'entrée = c·16 + bh·4 + bw.
@@ -364,4 +364,4 @@ bool SpanFp8Reference::peaks(float (&out)[kPeaks], std::string& error) {
   return true;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

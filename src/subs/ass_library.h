@@ -16,7 +16,7 @@ namespace spdlog {
 class logger;
 }
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Taille maximale d'une police jointe.
 inline constexpr std::size_t kMaxFontBytes = std::size_t{64} << 20;
@@ -42,4 +42,4 @@ class AssLibrary {
   std::unique_ptr<ass_library, Free> library_;
 };
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

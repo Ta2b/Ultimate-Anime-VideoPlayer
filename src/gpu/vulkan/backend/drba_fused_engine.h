@@ -28,7 +28,7 @@
 #include "gpu/vulkan/compute/recording.h"
 #include "kernels/spec/drba_fused.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // La clé d'un Artifact de ce moteur : « drba-fused-vk:<h>x<w>:<t>:<artefact0>|<artefact1>… », les artefacts
 // des morceaux (chemins complets) dans l'ordre encodeur, blocs 0 à 2.
@@ -99,4 +99,4 @@ class DrbaFusedEngine final : public Engine {
   std::optional<std::array<BufferView, 2>> last_inputs_;  // ceux de l'appel précédent, mené jusqu'au bout
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

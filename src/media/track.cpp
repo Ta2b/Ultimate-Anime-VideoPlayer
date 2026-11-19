@@ -11,7 +11,7 @@ extern "C" {
 #include <libavcodec/codec_par.h>
 }
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Types MIME et extensions des polices jointes, repris de the-database-mpv
@@ -69,4 +69,4 @@ bool is_font(const TrackInfo& track) {
   return is_font_attachment(track.filename, track.mime_type);
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

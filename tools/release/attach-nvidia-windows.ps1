@@ -1,11 +1,11 @@
 # Joint le paquet TensorRT construit sur un poste Windows NVIDIA à la release d'une étiquette, AVANT de pousser
 # l'étiquette (comme attach-nvidia-linux.sh). release-windows.yml télécharge ensuite engines-nvidia.lock de la release
 # et en fusionne les moteurs (et leurs [[vendor_file]]) dans l'engines.lock qu'il joint (package-windows.ps1,
-# AJP_ENGINES_LOCK) ; l'archive du moteur reste celle du poste, son SHA-256 est déjà dans l'index.
+# KIRARI_ENGINES_LOCK) ; l'archive du moteur reste celle du poste, son SHA-256 est déjà dans l'index.
 #
 #   1. sur le poste, à l'étiquette visée (le SHA-256 dépend de l'archive : pas de commit entre-temps) :
-#        $env:AJP_WITH_CUDA = "ON"; $env:AJP_TENSORRT_ROOT = "<racine TensorRT>"
-#        $env:AJP_RELEASE_REPO = "<dépôt des releases>"; $env:AJP_RELEASE_TAG = "v0.5.0"
+#        $env:KIRARI_WITH_CUDA = "ON"; $env:KIRARI_TENSORRT_ROOT = "<racine TensorRT>"
+#        $env:KIRARI_RELEASE_REPO = "<dépôt des releases>"; $env:KIRARI_RELEASE_TAG = "v0.5.0"
 #        pwsh tools/release/package-windows.ps1 <dossier>
 #   2. pwsh tools/release/attach-nvidia-windows.ps1 <dossier> v0.5.0              # contrôle seulement
 #      pwsh tools/release/attach-nvidia-windows.ps1 <dossier> v0.5.0 -Publish    # crée la release si besoin et joint
@@ -17,15 +17,15 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$archive = Join-Path $Dir "ajp-engine-tensorrt-windows-x64.tar.gz"
+$archive = Join-Path $Dir "kirari-engine-tensorrt-windows-x64.tar.gz"
 $lock = Join-Path $Dir "engines.lock"
-if (-not (Test-Path $archive)) { throw "$archive absent : le paquet TensorRT n'a pas été construit (AJP_WITH_CUDA=ON)" }
+if (-not (Test-Path $archive)) { throw "$archive absent : le paquet TensorRT n'a pas été construit (KIRARI_WITH_CUDA=ON)" }
 if (-not (Test-Path $lock)) { throw "$lock absent" }
-$repo = if ($env:AJP_RELEASE_REPO) { $env:AJP_RELEASE_REPO } else { (gh repo view --json nameWithOwner -q .nameWithOwner) }
+$repo = if ($env:KIRARI_RELEASE_REPO) { $env:KIRARI_RELEASE_REPO } else { (gh repo view --json nameWithOwner -q .nameWithOwner) }
 
 # Rien de NVIDIA dans l'archive : seulement notre module et trtexec.exe (liste blanche : B51-10).
 $members = tar tzf $archive
-$allowed = @("ajp_backend_tensorrt.dll", "trtexec.exe")
+$allowed = @("kirari_backend_tensorrt.dll", "trtexec.exe")
 $foreign = $members | ForEach-Object { ($_ -replace '^\./', '').TrimEnd('/') } | Where-Object { $_ -and $_ -ne "." -and ($allowed -notcontains $_) }
 if ($foreign) { throw ("L'archive contient autre chose que notre module et trtexec.exe (un fichier de NVIDIA ?) :`n" + ($foreign -join "`n")) }
 foreach ($want in $allowed) {
@@ -34,7 +34,7 @@ foreach ($want in $allowed) {
 
 $sha = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
 $size = (Get-Item $archive).Length
-$url = "https://github.com/$repo/releases/download/$Tag/ajp-engine-tensorrt-windows-x64.tar.gz"
+$url = "https://github.com/$repo/releases/download/$Tag/kirari-engine-tensorrt-windows-x64.tar.gz"
 $text = Get-Content $lock
 foreach ($want in "url = `"$url`"", "sha256 = `"$sha`"", "size = $size") {
   if (-not ($text -contains $want)) { throw "$lock ne contient pas : $want (étiquette ou dépôt différents de ceux de la construction ?)" }
@@ -63,7 +63,7 @@ gh release view $Tag -R $repo *> $null
 if ($LASTEXITCODE -ne 0) { gh release create $Tag -R $repo --prerelease --latest=false --title $Tag --notes $Tag }
 # Les moteurs d'un autre système déjà joints à cette release (poste Linux) restent dans l'index : le lecteur relit
 # engines-nvidia.lock de sa release au lancement (src/app/play/engine_online.h), un paquet joint après coup compris.
-$previous = Join-Path ([System.IO.Path]::GetTempPath()) "ajp-engines-nvidia-$([guid]::NewGuid()).lock"
+$previous = Join-Path ([System.IO.Path]::GetTempPath()) "kirari-engines-nvidia-$([guid]::NewGuid()).lock"
 gh release download $Tag -R $repo -p engines-nvidia.lock -O $previous 2>$null
 if ($LASTEXITCODE -eq 0 -and (Test-Path $previous)) {
   $others = ((Get-Content $previous -Raw) -replace "`r`n", "`n") -split '(?m)^(?=\[\[(?:engine|vendor_file)\]\]$)' |

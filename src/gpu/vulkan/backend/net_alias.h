@@ -13,7 +13,7 @@
 #include "gpu/ir/ir.h"
 #include "gpu/ir/memory_plan.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Un alias par tenseur du graphe ; alignment : alignement des vues de tampon de l'appareil.
 // concat_in_place : les entrées Conv d'un Concat sur les canaux Nhwc16 se rangent dans la sortie.
@@ -38,4 +38,4 @@ inline bool aliased(const std::vector<ir::Alias>& aliases, ir::TensorId child, i
   return child < aliases.size() && aliases[child].parent == parent && aliases[child].offset == offset;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

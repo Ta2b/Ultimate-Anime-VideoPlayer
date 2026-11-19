@@ -14,7 +14,7 @@
 #include "subs/atlas_packer.h"
 #include "subs/timebase.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 // Le compteur est commun à tous les rendus du processus (B24-01) : l'écran garde la dernière paire
@@ -361,4 +361,4 @@ std::expected<RenderOutcome, Refusal> SubtitleRenderer::build(SubtitleFrame fram
   return frame;
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

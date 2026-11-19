@@ -10,7 +10,7 @@
 
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 
 TEST_CASE("Étage gpu : warp après SPAN, après un dessin tenu le premier instant lit b, pas a deux fois",
@@ -38,4 +38,4 @@ TEST_CASE("Étage gpu : warp après SPAN, après un dessin tenu le premier insta
   CHECK(rig.backend.count("engine span") == 4);  // 1, 2, 4 et 6 : les dessins tenus reprennent la précédente
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

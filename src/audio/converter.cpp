@@ -17,7 +17,7 @@ extern "C" {
 #include "av/av_error.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 using av::av_error_text;
 namespace {
@@ -173,4 +173,4 @@ int PcmConverter::append(PcmBlock& block, const AVFrame* frame) {
   return converted;
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

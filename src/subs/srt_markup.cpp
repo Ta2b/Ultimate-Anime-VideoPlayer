@@ -9,7 +9,7 @@
 #include "core/text.h"
 #include "subs/srt.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 bool is_hex(char c) {
@@ -204,4 +204,4 @@ std::string srt_text_to_ass(std::string_view text) {
   return out;
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

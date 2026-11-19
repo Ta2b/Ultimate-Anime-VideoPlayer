@@ -148,7 +148,7 @@ Conclusions qui tiennent sur les lecteurs vérifiés :
 ### 4.2 Arborescence cible : un arbre de catégories à gauche, des groupes à droite
 
 Retour du 28/10 (capture des réglages de PotPlayer) : l'arbre y est profond, mais on s'y retrouve mieux que dans
-12 onglets. AJP a bien moins de réglages : **une colonne d'arbre (catégories et sous-catégories) à gauche, le
+12 onglets. Kirari a bien moins de réglages : **une colonne d'arbre (catégories et sous-catégories) à gauche, le
 contenu à droite**, comme PotPlayer, VLC (vue « Toutes ») ou Kodi. La barre d'onglets disparaît donc : plus de
 flèches, plus de défilement horizontal à gérer, et le problème de molette n'existe plus.
 
@@ -268,7 +268,7 @@ registre. Ce serait une étape 6, après le reste.
 
 ### 4.3 ter Parcours du premier lancement (tout ensemble)
 1. L'inscription « Ouvrir avec » se fait toute seule (4.4).
-2. AJP détecte la carte, l'écran et choisit une tranche (4.7) : le préréglage est **Auto**.
+2. Kirari détecte la carte, l'écran et choisit une tranche (4.7) : le préréglage est **Auto**.
 3. Un seul écran d'accueil : résumé « RTX 4070 Ti · 4K 165 Hz → 720p → SPAN ×2 → DistilDRBA lite », bouton
    **« Évaluer ma machine (15 s) »** (ou *Plus tard*), choix de la **mise à jour** (4.5) et, sur Windows,
    « Faire de ce lecteur le lecteur par défaut ».
@@ -276,7 +276,7 @@ registre. Ce serait une étape 6, après le reste.
    (préréglage, benchmark).
 
 ### 4.4 Lecteur par défaut et « Ouvrir avec »
-- **Premier lancement** : AJP s'inscrit tout seul dans « Ouvrir avec », **sans confirmation** (l'inscription
+- **Premier lancement** : Kirari s'inscrit tout seul dans « Ouvrir avec », **sans confirmation** (l'inscription
   ajoute une entrée, ne prend la place d'aucun autre lecteur) : `register_player()` existe déjà
   (`default_player.cpp`). Appelé une fois, à la fin du premier lancement (`first_run_done`), puis mémorisé
   (`open_with_registered`) pour ne pas se réinscrire si l'utilisateur l'a retiré.
@@ -284,7 +284,7 @@ registre. Ce serait une étape 6, après le reste.
   demander ». Linux : `xdg-mime` pour chaque type vidéo (existe : `choose_as_default`). Windows : le système ne
   laisse aucun programme se choisir seul, le bouton ouvre la page Paramètres > Applications par défaut. macOS :
   le Finder (Lire les informations > Ouvrir avec).
-- **Le bouton disparaît** quand AJP est déjà le lecteur par défaut, ou que l'utilisateur coche « Ne plus me le
+- **Le bouton disparaît** quand Kirari est déjà le lecteur par défaut, ou que l'utilisateur coche « Ne plus me le
   demander ». Il reste alors **tout en bas de l'onglet Avancé**, section « Lecteur par défaut » (avec « Retirer
   de Ouvrir avec »).
 - Détecter « déjà par défaut » : `xdg-mime query default video/x-matroska` (Linux) ; Windows : lecture de
@@ -301,7 +301,7 @@ dans Général > Application :
 
 Mécanique (`src/app/play/updater.h`) :
 1. **Vérification** : un fil d'arrière-plan lit `manifest.toml` de la dernière release du dépôt des releases
-   (`AJP_RELEASE_REPO`), jamais pendant une lecture. Seule donnée envoyée : la requête HTTPS. Sans réponse du
+   (`KIRARI_RELEASE_REPO`), jamais pendant une lecture. Seule donnée envoyée : la requête HTTPS. Sans réponse du
    serveur, un nouvel essai vient au bout d'une heure.
 2. **Intégrité** : le manifeste porte une **signature Ed25519** (clé publique compilée dans le lecteur, signée par
    la CI de release : `docs/signature-des-releases.md`). Une release sans manifeste se dit, jamais « à jour ».
@@ -316,12 +316,12 @@ Mécanique (`src/app/play/updater.h`) :
 demande sa langue (celle du système par défaut) et la version préférée, originale sous-titrée ou doublée dans
 cette langue ; « Voir le choix exact des pistes » montre les quatre préférences de pistes qui en découlent
 (`language_presets_for`, `system_language.h`), réglables une à une. Prêt ne propose plus de calibration : il pose
-le préréglage Auto de la tranche de la carte, classée par puissance pour ajp ([classement-gpu.md](classement-gpu.md)),
+le préréglage Auto de la tranche de la carte, classée par puissance pour kirari ([classement-gpu.md](classement-gpu.md)),
 et dit ce qu'elle règle. Le tableau ci-dessous est le plan d'origine.
 
 Il fait évoluer l'écran de bienvenue actuel (`first_run.cpp` : GPU vu par Vulkan, moteurs proposés avec badges,
 profil de démarrage ; `--first-run` le remontre). Plusieurs **écrans guidés, tous sautables** (« Plus tard »),
-**refaisables depuis Général** (bouton « Relancer l'assistant ») et par `ajp --first-run`. Barre de progression,
+**refaisables depuis Général** (bouton « Relancer l'assistant ») et par `kirari --first-run`. Barre de progression,
 « Précédent / Suivant / Passer », résumé final. Rien ne s'applique avant « Terminer » (sauf une installation de
 moteur lancée explicitement). État mémorisé dans `settings.toml` : `first_run_done` (existe) et
 `first_run_step` (le dernier écran vu, pour reprendre si on ferme en route).
@@ -398,11 +398,11 @@ conversion automatique ; (3) profils Casque / Enceintes / Home cinéma (crossfee
 
 ### 4.7 Configuration automatique (idée du 28/10, intégrée à la refonte)
 
-**But** : l'utilisateur ne règle rien. AJP reconnaît la machine, choisit la chaîne, et tout reste modifiable en
+**But** : l'utilisateur ne règle rien. Kirari reconnaît la machine, choisit la chaîne, et tout reste modifiable en
 détail (mode *Personnalisé*, case *Réglages avancés*). Elle remplace l'onglet Profils retiré : les profils
 reviennent comme **préréglages** d'une seule ligne en tête de la catégorie *Image IA*.
 
-**Ce qu'AJP sait déjà** (pas à inventer) : `GpuFacts` (nom, fabricant, VRAM, VRAM visible, cœurs Tensor, WMMA),
+**Ce que Kirari sait déjà** (pas à inventer) : `GpuFacts` (nom, fabricant, VRAM, VRAM visible, cœurs Tensor, WMMA),
 `apple_model`, `display_edid`, `host_facts`, `ChainEngines` et le mode Auto du multiplicateur (`rife_auto`), le
 catalogue RIFE (4.22 lite, 4.25 lite…), les 9 profils actuels, les statistiques d'image par étage (`--stats`).
 
@@ -473,7 +473,7 @@ l'effet.
   moteurs viennent d'être construits).
 - **Résultat en une phrase** : « Votre PC tient : agrandissement ×2 depuis 720p, interpolation jusqu'à ×3, RIFE.
   Performance FP8 pour SPAN : prête / non — <pourquoi et que faire> ». Le rapport technique (essais, pertes,
-  retard p95) va au journal et à `ajp bench`, jamais dans l'interface.
+  retard p95) va au journal et à `kirari bench`, jamais dans l'interface.
 - **Annuler ces réglages** : restaure le préréglage et la priorité d'avant et remet `bench.toml` comme il était
   (ou le retire).
 - **Un essai qui échoue est toujours expliqué** : « L'essai des réglages « Rapide » n'a rien rendu : <dernière
@@ -726,7 +726,7 @@ par onglet, contrôle que chaque réglage de l'annexe A reste atteignable.
     - bouton : Exporter
 ## Système  (settings_system.cpp) : 0 réglages, 3 notes (104 caractères), 3 boutons
   [Lecteur par défaut]
-    · note (93 c.) : Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans AJP depuis le gestionnaire de fichiers.
+    · note (93 c.) : Les vidéos (mkv, mp4, webm, avi, mov…) s'ouvrent dans Kirari depuis le gestionnaire de fichiers.
     - bouton : Définir par défaut
     - bouton : Ajouter à « Ouvrir avec »
     - bouton : Retirer##inscription

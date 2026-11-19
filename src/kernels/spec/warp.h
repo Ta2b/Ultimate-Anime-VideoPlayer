@@ -14,7 +14,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Le filtre qui lit les images déformées (le warp final de RIFE : la fin de RIFE fusionné et le warp de la
 // variante mouvement ; le flot et le masque restent lus en bilinéaire) : bilinéaire comme le GridSample du
@@ -113,6 +113,6 @@ constexpr float single_run_motion(int rife_height) {
   return kSingleRunMotion720 * static_cast<float>(rife_height) / 720.0F;
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

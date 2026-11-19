@@ -12,7 +12,7 @@
 #include "app/play/settings.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using Catch::Approx;
@@ -155,4 +155,4 @@ TEST_CASE("anime : le peps en % devient contraste, saturation et part des éclat
   CHECK(peps->params.an_spec == Approx(0.0));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -2,17 +2,17 @@
 # Joint le paquet TensorRT construit sur un poste NVIDIA à la release d'une étiquette, AVANT de pousser
 # l'étiquette. release-linux.yml télécharge ensuite engines-nvidia.lock de la release et en fusionne
 # les moteurs (et leurs fichiers NVIDIA, [[vendor_file]]) dans l'engines.lock qu'il joint (package-linux.sh,
-# AJP_ENGINES_LOCK) ; l'archive du moteur reste celle du poste, son SHA-256 est déjà dans l'index.
+# KIRARI_ENGINES_LOCK) ; l'archive du moteur reste celle du poste, son SHA-256 est déjà dans l'index.
 #
 #   1. sur le poste, à l'étiquette visée (le SHA-256 de l'archive en dépend : pas de commit entre-temps) :
-#        AJP_WITH_CUDA=ON AJP_TENSORRT_ROOT=<racine TensorRT> AJP_PACKAGE_NVIDIA=1 \
-#        AJP_DEPS_PREFIX=<prefixe> AJP_RELEASE_REPO=<dépôt des releases> AJP_RELEASE_TAG=v0.3.0 \
+#        KIRARI_WITH_CUDA=ON KIRARI_TENSORRT_ROOT=<racine TensorRT> KIRARI_PACKAGE_NVIDIA=1 \
+#        KIRARI_DEPS_PREFIX=<prefixe> KIRARI_RELEASE_REPO=<dépôt des releases> KIRARI_RELEASE_TAG=v0.3.0 \
 #        tools/release/package-linux.sh <dossier>
 #   2. tools/release/attach-nvidia-linux.sh <dossier> v0.3.0              # contrôle seulement
 #      tools/release/attach-nvidia-linux.sh <dossier> v0.3.0 --publish    # crée la release si besoin et joint
 #   3. git tag v0.3.0 && git push origin v0.3.0                            # la CI fait le reste
 #
-# AJP_RELEASE_REPO : le dépôt des releases (défaut : la variable AJP_RELEASE_REPO du dépôt, sinon le dépôt
+# KIRARI_RELEASE_REPO : le dépôt des releases (défaut : la variable KIRARI_RELEASE_REPO du dépôt, sinon le dépôt
 # courant), le même qu'à l'étape 1 : les liens de l'index le nomment.
 set -euo pipefail
 
@@ -21,19 +21,19 @@ tag="${2:?étiquette (v0.3.0)}"
 publish=""
 [ "${3:-}" = "--publish" ] && publish=1
 
-archive="$dir/ajp-engine-tensorrt-linux-x64.tar.gz"
+archive="$dir/kirari-engine-tensorrt-linux-x64.tar.gz"
 lock="$dir/engines.lock"
-[ -f "$archive" ] || { echo "$archive absent : le paquet TensorRT n'a pas été construit (AJP_PACKAGE_NVIDIA=1)" >&2; exit 1; }
+[ -f "$archive" ] || { echo "$archive absent : le paquet TensorRT n'a pas été construit (KIRARI_PACKAGE_NVIDIA=1)" >&2; exit 1; }
 [ -f "$lock" ] || { echo "$lock absent" >&2; exit 1; }
 
-repo="${AJP_RELEASE_REPO:-$(gh variable get AJP_RELEASE_REPO 2>/dev/null || gh repo view --json nameWithOwner -q .nameWithOwner)}"
+repo="${KIRARI_RELEASE_REPO:-$(gh variable get KIRARI_RELEASE_REPO 2>/dev/null || gh repo view --json nameWithOwner -q .nameWithOwner)}"
 
 # Rien de NVIDIA dans l'archive : seulement notre module et trtexec (liste blanche : B51-10).
 "$(dirname "$0")/check-engine-archive.sh" "$archive"
 
 sha="$(sha256sum "$archive" | cut -d' ' -f1)"
 size="$(stat -c %s "$archive")"
-url="https://github.com/$repo/releases/download/$tag/ajp-engine-tensorrt-linux-x64.tar.gz"
+url="https://github.com/$repo/releases/download/$tag/kirari-engine-tensorrt-linux-x64.tar.gz"
 # L'index doit nommer cette archive, à cette étiquette et dans ce dépôt, avec ce hachage et cette taille.
 for want in "url = \"$url\"" "sha256 = \"$sha\"" "size = $size"; do
   grep -qxF "$want" "$lock" || { echo "$lock ne contient pas : $want (étiquette ou dépôt différents de ceux de la construction ?)" >&2; exit 1; }

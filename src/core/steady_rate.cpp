@@ -7,7 +7,7 @@
 #include "core/cadence.h"
 #include "core/pacing.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 bool below(const Ratio& a, const Ratio& b) {
@@ -188,4 +188,4 @@ SteadyInfo SteadyRate::info() const {
                     .urgencies = urgencies_};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

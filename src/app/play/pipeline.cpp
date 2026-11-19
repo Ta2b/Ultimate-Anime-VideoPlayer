@@ -24,7 +24,7 @@
 #include "media/video_decoder.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Paquets audio en vol pour un fichier TrueHD, MLP ou DTS (C16-08) : environ 2 s de TrueHD, 15 s de DTS.
@@ -569,4 +569,4 @@ std::vector<std::string> Pipeline::describe() const {
   return lines;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

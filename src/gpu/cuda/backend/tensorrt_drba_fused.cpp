@@ -13,7 +13,7 @@
 #include "prepare/drba_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 std::expected<Artifact, Refusal> TensorRtBackend::build_drba_fused(const ModelSpec& model,
                                                                    const ShapeSet& shapes,
                                                                    Progress& progress) {
@@ -111,4 +111,4 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_drba_fused(DrbaFusedEngine
   return queued;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

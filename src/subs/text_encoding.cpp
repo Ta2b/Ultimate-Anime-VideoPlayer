@@ -17,7 +17,7 @@
 #include <iconv.h>
 #endif
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 void append(std::string& out, char32_t code) {
@@ -461,4 +461,4 @@ std::string to_utf8(std::string_view bytes, std::string_view hint) {
   return from_cp1252(bytes);
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

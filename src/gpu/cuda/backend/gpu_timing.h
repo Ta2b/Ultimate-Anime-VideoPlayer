@@ -16,7 +16,7 @@
 #include "core/sample_reservoir.h"
 #include "gpu/gpu_profile.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class GpuTiming {
  public:
@@ -89,4 +89,4 @@ class GpuSpan {
   core::SampleReservoir<float> all_{kMaxAll};
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

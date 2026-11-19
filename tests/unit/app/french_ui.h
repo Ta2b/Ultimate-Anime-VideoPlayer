@@ -2,7 +2,7 @@
 
 #include "app/play/i18n.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Un test qui vérifie les textes français met l'interface en français le temps de sa portée (l'anglais est le
 // défaut), puis la rend à l'anglais.
@@ -13,4 +13,4 @@ struct FrenchUi {
   FrenchUi& operator=(const FrenchUi&) = delete;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

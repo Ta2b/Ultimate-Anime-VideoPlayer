@@ -9,7 +9,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le fichier dérivé (créé s'il manque) pour rife_onnx, dans dir. Refus : FieldMissing pour un
 // export RIFE dont le graphe n'a pas les tenseurs connus (la lecture garde alors RIFE image),
@@ -25,4 +25,4 @@ std::expected<int, Refusal> rife_input_planes(const std::filesystem::path& rife_
 // vsmlrt.py reconnaît comme ici à sa version ; 64 sinon.
 int rife_padding_multiple(const std::filesystem::path& rife_onnx);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

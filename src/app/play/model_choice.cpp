@@ -9,7 +9,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Le défaut trouvé, la liste de son dossier (fichiers qui commencent par prefix), et le fichier
@@ -115,4 +115,4 @@ TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine) {
                      .quality = tier_variant(model, PrecisionTier::Quality) != model};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -19,7 +19,7 @@
 #include "gpu/ir/shape.h"
 #include "onnx_builder.h"
 
-namespace ajp::gpu::ir::test {
+namespace kirari::gpu::ir::test {
 
 // Charge le modèle et infère ses formes ; le test échoue sur un refus.
 inline Graph build(const ModelBuilder& model, const std::vector<InputShape>& shapes = {}) {
@@ -27,7 +27,7 @@ inline Graph build(const ModelBuilder& model, const std::vector<InputShape>& sha
   if (graph) {
     if (auto ok = infer_shapes(*graph, shapes); !ok) graph = std::unexpected(ok.error());
   }
-  if (!graph) FAIL("refus " << ajp::name(graph.error().code) << " : " << graph.error().detail);
+  if (!graph) FAIL("refus " << kirari::name(graph.error().code) << " : " << graph.error().detail);
   return std::move(*graph);
 }
 
@@ -69,7 +69,7 @@ inline Value random_floats(const Dims& dims, std::size_t seed = 0, float lo = -1
 // Exécute le graphe et rend ses sorties ; le test échoue sur un refus.
 inline std::vector<NamedValue> execute(const Graph& graph, const std::vector<NamedValue>& inputs) {
   auto outputs = run(graph, inputs);
-  if (!outputs) FAIL("refus " << ajp::name(outputs.error().code) << " : " << outputs.error().detail);
+  if (!outputs) FAIL("refus " << kirari::name(outputs.error().code) << " : " << outputs.error().detail);
   return std::move(*outputs);
 }
 
@@ -96,4 +96,4 @@ inline std::size_t count_ops(const Graph& graph, OpKind op) {
       std::ranges::count_if(graph.nodes, [&](const Node& n) { return n.op == op; }));
 }
 
-}  // namespace ajp::gpu::ir::test
+}  // namespace kirari::gpu::ir::test

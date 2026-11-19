@@ -4,7 +4,7 @@
 #include <memory>
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 const media::Shot* shot_of(std::span<const media::Shot> shots, std::int64_t pts_us) {
@@ -50,4 +50,4 @@ bool CutBook::active() const {
   return shots_ && !shots_->empty();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

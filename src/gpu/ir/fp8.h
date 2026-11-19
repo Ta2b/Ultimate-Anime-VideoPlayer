@@ -8,7 +8,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 inline constexpr float kE4m3Max = 448.0F;
 
@@ -58,4 +58,4 @@ inline float round_to_e4m3(float value) {
   return e4m3_to_float(float_to_e4m3(value));
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

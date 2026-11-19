@@ -8,11 +8,11 @@
 // Repris de animejanai-inference-rtx@118c272 src/kernels.cu:629-644 (k_rife_consts).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) writeonly buffer Input { AJP_TENSOR v[]; } input_planes;
+layout(std430, binding = 0) writeonly buffer Input { KIRARI_TENSOR v[]; } input_planes;
 layout(std430, binding = 1) readonly buffer Params { float t; } params;
 
 layout(push_constant) uniform Push {
@@ -28,7 +28,7 @@ float rife_mesh(uint i, uint n) {
 }
 
 void store(int channel, uint i, float value) {
-  input_planes.v[uint(channel) * pc.width * pc.height + i] = AJP_TENSOR(value);
+  input_planes.v[uint(channel) * pc.width * pc.height + i] = KIRARI_TENSOR(value);
 }
 
 void main() {
@@ -36,10 +36,10 @@ void main() {
   uint y = gl_GlobalInvocationID.y;
   if (x >= pc.width || y >= pc.height) return;
   uint i = y * pc.width + x;
-  store(AJP_RIFE_CHANNEL_TIME, i, params.t);
-  if (pc.planes < uint(AJP_RIFE_INPUT_CHANNELS)) return;
-  store(AJP_RIFE_CHANNEL_MESH_X, i, rife_mesh(x, pc.width));
-  store(AJP_RIFE_CHANNEL_MESH_Y, i, rife_mesh(y, pc.height));
-  store(AJP_RIFE_CHANNEL_STEP_X, i, 2.0 / float(pc.width - 1u));
-  store(AJP_RIFE_CHANNEL_STEP_Y, i, 2.0 / float(pc.height - 1u));
+  store(KIRARI_RIFE_CHANNEL_TIME, i, params.t);
+  if (pc.planes < uint(KIRARI_RIFE_INPUT_CHANNELS)) return;
+  store(KIRARI_RIFE_CHANNEL_MESH_X, i, rife_mesh(x, pc.width));
+  store(KIRARI_RIFE_CHANNEL_MESH_Y, i, rife_mesh(y, pc.height));
+  store(KIRARI_RIFE_CHANNEL_STEP_X, i, 2.0 / float(pc.width - 1u));
+  store(KIRARI_RIFE_CHANNEL_STEP_Y, i, 2.0 / float(pc.height - 1u));
 }

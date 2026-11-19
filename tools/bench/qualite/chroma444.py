@@ -10,7 +10,7 @@ Comme travail.py, tout se joue à l'échelle ½ : un plan 1080p de calibration.m
 
 Chaque chemin se compare à la source (ce que l'ingestion rend), puis, agrandi ×2 par SPAN, au plan.
 
-  python3 -I tools/bench/qualite/chroma444.py --modeles ~/.cache/ajp-release-models/modeles --md chroma444.md
+  python3 -I tools/bench/qualite/chroma444.py --modeles ~/.cache/kirari-release-models/modeles --md chroma444.md
 
 La réduction est celle de swscale lui-même (ffmpeg en ligne de commande) ; la remontée Spline36 lit la chroma
 à gauche en largeur et au centre en hauteur, comme l'ingestion du lecteur.

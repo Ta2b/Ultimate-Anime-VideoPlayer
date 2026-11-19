@@ -10,7 +10,7 @@
 #include "app/play/settings.h"
 #include "app/play/settings_panel.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class UpscaleLevel : std::uint8_t { VeryLow, Low, Medium, High };
 
@@ -32,4 +32,4 @@ bool upscale_on(const PlaySettings& d, const SettingsChoices& choices);
 // le calcule.
 bool fp8_in_use(const PlaySettings& d, const SettingsChoices& choices);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

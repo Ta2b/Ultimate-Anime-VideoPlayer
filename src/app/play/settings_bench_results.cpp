@@ -19,7 +19,7 @@
 #include "core/thread.h"
 #include "media/bench_clip.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::note;
 using panel::section;
@@ -231,4 +231,4 @@ bool bench_results_section(PlaySettings& d, const SettingsChoices& choices, Mach
   return applied;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

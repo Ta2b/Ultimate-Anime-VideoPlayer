@@ -26,13 +26,14 @@ struct Place {
 const Place& place() {
   static const Place p = [] {
     Place made;
-    made.dir = std::filesystem::temp_directory_path() / ("ajp-fuzz-resume-" + std::to_string(getpid()));
+    made.dir = std::filesystem::temp_directory_path() / ("kirari-fuzz-resume-" + std::to_string(getpid()));
     std::filesystem::create_directories(made.dir);
     // Le dossier ne reste pas : une campagne longue en laissait un par processus.
     std::atexit(+[] {
       std::error_code ignored;
       std::filesystem::remove_all(
-          std::filesystem::temp_directory_path() / ("ajp-fuzz-resume-" + std::to_string(getpid())), ignored);
+          std::filesystem::temp_directory_path() / ("kirari-fuzz-resume-" + std::to_string(getpid())),
+          ignored);
     });
     made.store = made.dir / "resume.tsv";
     made.video = made.dir / "vidéo.mkv";
@@ -44,8 +45,8 @@ const Place& place() {
 
 }  // namespace
 
-int ajp::fuzz::resume(const std::uint8_t* data, std::size_t size) {
-  namespace play = ajp::app::play;
+int kirari::fuzz::resume(const std::uint8_t* data, std::size_t size) {
+  namespace play = kirari::app::play;
   const Place& p = place();
   const std::string video = std::filesystem::weakly_canonical(p.video).string();
   std::string text;
@@ -59,8 +60,8 @@ int ajp::fuzz::resume(const std::uint8_t* data, std::size_t size) {
   std::ofstream(p.store, std::ios::binary | std::ios::trunc) << text;
   static_cast<void>(play::resume_position(p.store, p.video));
   constexpr std::int64_t kPosition = play::kResumeMinUs + 1'000'000;
-  ajp::fuzz::require(play::remember_position(p.store, p.video, kPosition, 0).has_value(),
-                     "la position s'écrit");
-  ajp::fuzz::require(play::resume_position(p.store, p.video) == kPosition, "la position retenue se relit");
+  kirari::fuzz::require(play::remember_position(p.store, p.video, kPosition, 0).has_value(),
+                        "la position s'écrit");
+  kirari::fuzz::require(play::resume_position(p.store, p.video) == kPosition, "la position retenue se relit");
   return 0;
 }

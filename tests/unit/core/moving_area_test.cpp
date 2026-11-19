@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::core {
+namespace kirari::core {
 
 TEST_CASE("zone qui bouge : la boîte des blocs au-dessus du seuil", "[moving_area]") {
   // 4 × 3 blocs ; deux blocs bougent, en (1, 0) et (2, 2) ; un troisième reste au seuil.
@@ -18,4 +18,4 @@ TEST_CASE("zone qui bouge : la boîte des blocs au-dessus du seuil", "[moving_ar
   CHECK((still.blocks == 0 && still.box_share() == 0.0));
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

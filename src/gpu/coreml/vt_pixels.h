@@ -16,7 +16,7 @@
 
 #include "gpu/tensor.h"
 
-namespace ajp::gpu::coreml_rt::vt {
+namespace kirari::gpu::coreml_rt::vt {
 
 enum class Pixels : std::uint8_t {
   RgbaHalf,       // kCVPixelFormatType_64RGBAHalf, « RGhA »
@@ -74,4 +74,4 @@ void pack(Pixels format, const std::byte* rgb, TensorType type, int width, int h
 void unpack(Pixels format, const Planes& in, std::byte* rgb, TensorType type, int width, int height,
             Rows rows);
 
-}  // namespace ajp::gpu::coreml_rt::vt
+}  // namespace kirari::gpu::coreml_rt::vt

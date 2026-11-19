@@ -21,8 +21,8 @@
 #include "gpu/vulkan/compute/buffer.h"
 #include "net_rig.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 using ir::test::attr_float;
 using ir::test::attr_int;
 using ir::test::attr_ints;
@@ -293,7 +293,7 @@ TEST_CASE("Réseau : opérateur sans noyau refusé à l'abaissement", "[vk_backe
   m.input("x", {1, 3, 4, 4}).node("Shape", {"x"}, {"y"}).output("y", ir::onnx::kInt64);
   const ir::Graph graph = build(m, false);
   const auto refused = vk::net::candidates(graph, 0, {});
-  require_refusal(refused, ajp::RefusalCode::OperatorUnknown);
+  require_refusal(refused, kirari::RefusalCode::OperatorUnknown);
 }
 
 TEST_CASE("Réseau : un tampon détruit fait oublier son jeu", "[vk_backend][net]") {

@@ -17,7 +17,7 @@
 #include "app/play/data_dirs.h"
 #include "app/play/machine_calibration.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
@@ -30,7 +30,7 @@ void write(const fs::path& file, const std::string& text) {
 // Un manifeste du canal stable signé par la clé de test kTestKey (sa signature : kTestSignature).
 constexpr std::string_view kSignedManifest =
     "version = \"99.0.0\"\nchannel = \"stable\"\ndate = \"2026-11-07\"\nexpires = \"2099-12-31\"\n"
-    "[linux-x64]\nurl = \"https://example.invalid/ajp-linux-x64.tar.gz\"\n"
+    "[linux-x64]\nurl = \"https://example.invalid/kirari-linux-x64.tar.gz\"\n"
     "sha256 = \"6ec20ccae9a53cf2b47c765c124b7de6bdaed3b7f8a438381501cbde525b9638\"\nsize = 138\n";
 constexpr std::string_view kTestSignature =
     "722f81d4e2982752f0d8a6d65437ce8e86e1ab86e9b775285c9d650beae012a5e2c94162d4877cd76f9362f6fa7ffef8d0434"
@@ -41,7 +41,7 @@ constexpr std::string_view kOtherKey = "c438afee757ea9095f5e9d56380da968bfca8af4
 // Le serveur de la release : le manifeste signé et sa signature ; chaque adresse demandée est notée.
 UpdateFetch signed_release(std::vector<std::string>& asked) {
   return [&asked](std::string_view url, const fs::path& file, int,
-                  const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                  const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     asked.emplace_back(url);
     write(file, std::string(url.ends_with(".sig") ? kTestSignature : kSignedManifest));
     return {};
@@ -89,7 +89,7 @@ constexpr std::string_view kBRevokesSelfSig =
 // avec).
 UpdateFetch release_of(std::string_view text, std::string_view signature, int& calls) {
   return [text, signature, &calls](std::string_view url, const fs::path& file, int,
-                                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                                   const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     ++calls;
     write(file, std::string(url.ends_with(".sig") ? signature : text));
     return {};
@@ -131,7 +131,7 @@ TEST_CASE("mises à jour : l'état fait l'aller-retour", "[updater]") {
   const auto read_back = parse_update_state(format_update_state(state));
   REQUIRE(read_back);
   CHECK(*read_back == state);
-  CHECK(load_update_state(fs::temp_directory_path() / "ajp-no-update.toml") == UpdateState{});
+  CHECK(load_update_state(fs::temp_directory_path() / "kirari-no-update.toml") == UpdateState{});
 }
 
 TEST_CASE("mises à jour : la version installée ne s'annonce plus après l'installation (B26-01)",
@@ -153,7 +153,7 @@ TEST_CASE("mises à jour : la version installée ne s'annonce plus après l'inst
 
   // Par le fichier : le lecteur relancé après l'installation lit update.toml tel que la vérification l'a
   // laissé.
-  const fs::path file = fs::temp_directory_path() / "ajp-update-installed" / "update.toml";
+  const fs::path file = fs::temp_directory_path() / "kirari-update-installed" / "update.toml";
   write(file, std::format("latest_version = \"{}\"\nnotes_url = \"https://x/y\"\nrevoked_keys = [\"cd\"]\n",
                           installed_version()));
   const UpdateState read_back = load_update_state(file);
@@ -215,7 +215,7 @@ TEST_CASE("mises à jour : la réécriture garde les clés d'une version future,
 
 TEST_CASE("mises à jour : deux fils qui changent update.toml ne perdent rien de l'autre (A26-10)",
           "[updater]") {
-  const std::filesystem::path file = std::filesystem::temp_directory_path() / "ajp-update-concurrent.toml";
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "kirari-update-concurrent.toml";
   std::filesystem::remove(file);
   std::vector<std::thread> writers;
   std::atomic<int> refused = 0;  // Catch2 ne vérifie pas depuis un autre fil
@@ -239,16 +239,16 @@ TEST_CASE("mises à jour : un seul manifeste, celui de la dernière release", "[
 }
 
 TEST_CASE("mises à jour : un échec de curl se lit", "[updater]") {
-  CHECK(curl_status_line("ajp-http 404") == 404);
+  CHECK(curl_status_line("kirari-http 404") == 404);
   CHECK_FALSE(curl_status_line("curl: (22) The requested URL returned error: 404"));
-  CHECK_FALSE(curl_status_line("ajp-http 404x"));
-  CHECK(curl_failure(22, 404).code == ajp::RefusalCode::TrackUnavailable);
-  const ajp::Refusal forbidden = curl_failure(22, 403);
-  CHECK(forbidden.code != ajp::RefusalCode::TrackUnavailable);
+  CHECK_FALSE(curl_status_line("kirari-http 404x"));
+  CHECK(curl_failure(22, 404).code == kirari::RefusalCode::TrackUnavailable);
+  const kirari::Refusal forbidden = curl_failure(22, 403);
+  CHECK(forbidden.code != kirari::RefusalCode::TrackUnavailable);
   CHECK(forbidden.detail.find("403") != std::string::npos);
   for (const int code : {6, 7, 28, 35, 60, 3}) {
-    const ajp::Refusal refusal = curl_failure(code, 0);
-    CHECK(refusal.code != ajp::RefusalCode::TrackUnavailable);
+    const kirari::Refusal refusal = curl_failure(code, 0);
+    CHECK(refusal.code != kirari::RefusalCode::TrackUnavailable);
     CHECK(refusal.detail.find("code 22") == std::string::npos);
     CHECK(!refusal.detail.empty());
   }
@@ -260,7 +260,7 @@ TEST_CASE("mises à jour : signature fausse, rien d'autre n'est téléchargé", 
   const auto checked =
       check_for_update(std::stop_token{}, signed_release(asked), {std::string(kOtherKey)}, "0.10.3");
   REQUIRE_FALSE(checked);
-  CHECK(checked.error().code == ajp::RefusalCode::HashMismatch);
+  CHECK(checked.error().code == kirari::RefusalCode::HashMismatch);
   // Le manifeste et sa signature, deux fois (une release qui change entre les deux requêtes donne une
   // signature fausse : B26-03), jamais une archive.
   REQUIRE(asked.size() == 4);
@@ -290,13 +290,13 @@ TEST_CASE("mises à jour : une version signée plus récente se signale, sans ri
 TEST_CASE("mises à jour : une release sans manifeste n'est jamais lue « à jour »", "[updater]") {
   // SEC-05 : un 404 sur le manifeste de « latest » est un refus dit, pas « le lecteur est à jour ».
   const UpdateFetch missing = [](std::string_view, const fs::path&, int,
-                                 const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                                 const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     return std::unexpected(curl_failure(22, 404));
   };
   UpdateState state{.latest_version = "0.10.0"};
   const auto checked = run_update_check(state, std::stop_token{}, missing, 5000);
   REQUIRE_FALSE(checked);
-  CHECK(checked.error().code == ajp::RefusalCode::TrackUnavailable);
+  CHECK(checked.error().code == kirari::RefusalCode::TrackUnavailable);
   // Le serveur a répondu : la vérification compte, et l'erreur se garde.
   CHECK(state.last_check_unix == 5000);
   CHECK(state.last_attempt_unix == 5000);
@@ -305,7 +305,7 @@ TEST_CASE("mises à jour : une release sans manifeste n'est jamais lue « à jou
 
 TEST_CASE("mises à jour : sans réseau, seule la tentative est notée", "[updater]") {
   const UpdateFetch offline = [](std::string_view, const fs::path&, int,
-                                 const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                                 const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     return std::unexpected(curl_failure(6, 0));
   };
   UpdateState state{.last_check_unix = 1000};
@@ -326,10 +326,10 @@ TEST_CASE("mises à jour : une clé révoquée n'est plus crue", "[updater]") {
 }
 
 TEST_CASE("mises à jour : les archives préparées d'avant la simple notification se retirent", "[updater]") {
-  const fs::path root = fs::temp_directory_path() / "ajp-update-leftovers";
+  const fs::path root = fs::temp_directory_path() / "kirari-update-leftovers";
   fs::remove_all(root);
-  write(root / "updates" / "0.10.3" / "ajp-linux-x64.tar.gz", "archive");
-  write(root / "updates" / "previous" / "ajp", "ancien");
+  write(root / "updates" / "0.10.3" / "kirari-linux-x64.tar.gz", "archive");
+  write(root / "updates" / "previous" / "kirari", "ancien");
   CHECK(purge_update_leftovers(root) == 1);
   CHECK_FALSE(fs::exists(root / "updates"));
   // Un dossier qui contient autre chose que les nôtres reste.
@@ -340,7 +340,7 @@ TEST_CASE("mises à jour : les archives préparées d'avant la simple notificati
 }
 
 TEST_CASE("banc : les restes d'une calibration tuée et des clips d'avant se retirent (B36-09)", "[updater]") {
-  const fs::path root = fs::temp_directory_path() / "ajp-bench-leftovers";
+  const fs::path root = fs::temp_directory_path() / "kirari-bench-leftovers";
   fs::remove_all(root);
   write(root / "calibration-essais-1a" / "essai.log", "vieux");
   write(root / "calibration-essais-2b" / "essai.log", "récent");
@@ -388,7 +388,7 @@ TEST_CASE(
   const auto itself = check_for_update(std::stop_token{},
                                        release_of(kBRevokesSelfText, kBRevokesSelfSig, calls), keys, "0.1.0");
   REQUIRE_FALSE(itself);
-  CHECK(itself.error().code == ajp::RefusalCode::HashMismatch);
+  CHECK(itself.error().code == kirari::RefusalCode::HashMismatch);
   // Une fois A révoquée, ses manifestes ne se vérifient plus (le lecteur ne lui laisse que B).
   const std::vector<std::string> only_b{std::string(kKeyB)};
   const auto old_key = check_for_update(
@@ -404,7 +404,7 @@ TEST_CASE(
   // bonne.
   int calls = 0;
   const UpdateFetch changing = [&](std::string_view url, const fs::path& file, int,
-                                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                                   const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     const bool second_round = calls >= 2;
     ++calls;
     write(file, std::string(url.ends_with(".sig") ? (second_round ? kBRevokesASig : kARevokesOtherSig)
@@ -417,7 +417,7 @@ TEST_CASE(
   // Une signature absente du serveur (404) se lit comme fausse, après la seconde tentative.
   calls = 0;
   const UpdateFetch unsigned_release = [&](std::string_view url, const fs::path& file, int,
-                                           const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                                           const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     ++calls;
     if (url.ends_with(".sig")) return std::unexpected(curl_failure(22, 404));
     write(file, std::string(kBRevokesAText));
@@ -425,7 +425,7 @@ TEST_CASE(
   };
   const auto missing = check_for_update(std::stop_token{}, unsigned_release, keys, "0.1.0");
   REQUIRE_FALSE(missing);
-  CHECK(missing.error().code == ajp::RefusalCode::HashMismatch);
+  CHECK(missing.error().code == kirari::RefusalCode::HashMismatch);
   CHECK(calls == 4);
 }
 
@@ -433,8 +433,8 @@ TEST_CASE("mises à jour : annulée ou sans signature, la vérification ne compt
           "[updater]") {
   // Le manifeste arrive, la signature est coupée (fermeture du lecteur) : seule la tentative est notée.
   const UpdateFetch cancelled = [](std::string_view url, const fs::path& file, int,
-                                   const std::stop_token&) -> std::expected<void, ajp::Refusal> {
-    if (url.ends_with(".sig")) return ajp::refuse(ajp::RefusalCode::Cancelled, "annulé");
+                                   const std::stop_token&) -> std::expected<void, kirari::Refusal> {
+    if (url.ends_with(".sig")) return kirari::refuse(kirari::RefusalCode::Cancelled, "annulé");
     write(file, std::string(kSignedManifest));
     return {};
   };
@@ -468,7 +468,7 @@ TEST_CASE("mises à jour : une clé révoquée s'écrit en majuscules ou en minu
 
 TEST_CASE("mises à jour : un update.toml illisible garde ses clés révoquées et sa copie (B26-10)",
           "[updater]") {
-  const fs::path root = fs::temp_directory_path() / "ajp-update-corrupt";
+  const fs::path root = fs::temp_directory_path() / "kirari-update-corrupt";
   fs::remove_all(root);
   const std::string revoked(64, 'a');
   const fs::path file = root / "update.toml";
@@ -490,13 +490,13 @@ TEST_CASE("mises à jour : un update.toml illisible garde ses clés révoquées 
 
 TEST_CASE("mises à jour : le verrou de l'état n'est pas tenu pendant le téléchargement (B26-09, B30-02)",
           "[updater]") {
-  const fs::path root = fs::temp_directory_path() / "ajp-update-lock";
+  const fs::path root = fs::temp_directory_path() / "kirari-update-lock";
   fs::remove_all(root);
   const fs::path file = root / "update.toml";
   std::atomic<bool> downloading{false};
   std::atomic<bool> release{false};
   const UpdateFetch slow = [&](std::string_view, const fs::path&, int,
-                               const std::stop_token&) -> std::expected<void, ajp::Refusal> {
+                               const std::stop_token&) -> std::expected<void, kirari::Refusal> {
     downloading = true;
     while (!release) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     return std::unexpected(curl_failure(6, 0));  // pas de réseau

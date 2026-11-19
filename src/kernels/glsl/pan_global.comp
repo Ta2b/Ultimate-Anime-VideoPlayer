@@ -5,13 +5,13 @@
 // Référence : kernels/ref/warp_pan.cpp (pan_estimate) ; même calcul que warp_kernels.cu (pan_global).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
-layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
+layout(std430, binding = 0) readonly buffer ImageA { KIRARI_TENSOR v[]; } a;
+layout(std430, binding = 1) readonly buffer ImageB { KIRARI_TENSOR v[]; } b;
 layout(std430, binding = 2) writeonly buffer Result { float v[]; } result;
 
 layout(push_constant) uniform Push {
@@ -20,7 +20,7 @@ layout(push_constant) uniform Push {
 } pc;
 
 const uint THREADS = 256u;
-const uint PER_THREAD = uint(AJP_PAN_GRID * AJP_PAN_GRID) / THREADS;
+const uint PER_THREAD = uint(KIRARI_PAN_GRID * KIRARI_PAN_GRID) / THREADS;
 
 shared float sums[5][256];
 shared float shift[3];
@@ -28,15 +28,15 @@ shared float shift[3];
 float luma_a(uint x, uint y) {
   uint plane = pc.width * pc.height;
   uint i = y * pc.width + x;
-  return AJP_PAN_LUMA_R * float(a.v[i]) + AJP_PAN_LUMA_G * float(a.v[plane + i]) +
-         AJP_PAN_LUMA_B * float(a.v[2u * plane + i]);
+  return KIRARI_PAN_LUMA_R * float(a.v[i]) + KIRARI_PAN_LUMA_G * float(a.v[plane + i]) +
+         KIRARI_PAN_LUMA_B * float(a.v[2u * plane + i]);
 }
 
 float luma_b(uint x, uint y) {
   uint plane = pc.width * pc.height;
   uint i = y * pc.width + x;
-  return AJP_PAN_LUMA_R * float(b.v[i]) + AJP_PAN_LUMA_G * float(b.v[plane + i]) +
-         AJP_PAN_LUMA_B * float(b.v[2u * plane + i]);
+  return KIRARI_PAN_LUMA_R * float(b.v[i]) + KIRARI_PAN_LUMA_G * float(b.v[plane + i]) +
+         KIRARI_PAN_LUMA_B * float(b.v[2u * plane + i]);
 }
 
 float luma_b_bilinear(float x, float y) {
@@ -55,7 +55,7 @@ float luma_b_bilinear(float x, float y) {
 
 uint pan_point(uint i, uint n) {
   uint m = max(4u, n / 12u);
-  return m + (i * (n - 2u * m)) / uint(AJP_PAN_GRID);
+  return m + (i * (n - 2u * m)) / uint(KIRARI_PAN_GRID);
 }
 
 void main() {
@@ -67,8 +67,8 @@ void main() {
   uint py[PER_THREAD];
   for (uint k = 0u; k < PER_THREAD; ++k) {
     uint q = tid + k * THREADS;
-    px[k] = pan_point(q % uint(AJP_PAN_GRID), pc.width);
-    py[k] = pan_point(q / uint(AJP_PAN_GRID), pc.height);
+    px[k] = pan_point(q % uint(KIRARI_PAN_GRID), pc.width);
+    py[k] = pan_point(q / uint(KIRARI_PAN_GRID), pc.height);
     la[k] = luma_a(px[k], py[k]);
     gx[k] = 0.5 * (luma_a(px[k] + 1u, py[k]) - luma_a(px[k] - 1u, py[k]));
     gy[k] = 0.5 * (luma_a(px[k], py[k] + 1u) - luma_a(px[k], py[k] - 1u));
@@ -79,7 +79,7 @@ void main() {
     shift[2] = 0.0;
   }
   barrier();
-  for (int it = 0; it < AJP_PAN_ITERATIONS; ++it) {
+  for (int it = 0; it < KIRARI_PAN_ITERATIONS; ++it) {
     float dx = shift[0];
     float dy = shift[1];
     float s0 = 0.0;
@@ -112,7 +112,7 @@ void main() {
       float sxy = sums[1][0];
       float syy = sums[2][0];
       float det = sxx * syy - sxy * sxy;
-      bool valid = det > AJP_PAN_DET_RATIO * (sxx + syy) * (sxx + syy) && det > 0.0;
+      bool valid = det > KIRARI_PAN_DET_RATIO * (sxx + syy) * (sxx + syy) && det > 0.0;
       if (valid) {
         shift[0] = dx - (syy * sums[3][0] - sxy * sums[4][0]) / det;
         shift[1] = dy - (sxx * sums[4][0] - sxy * sums[3][0]) / det;
@@ -125,6 +125,6 @@ void main() {
   if (tid == 0u) {
     result.v[0] = shift[0];
     result.v[1] = shift[1];
-    result.v[2] = (shift[2] > 0.5 && length(vec2(shift[0], shift[1])) < AJP_PAN_MAX_SHIFT) ? 1.0 : 0.0;
+    result.v[2] = (shift[2] > 0.5 && length(vec2(shift[0], shift[1])) < KIRARI_PAN_MAX_SHIFT) ? 1.0 : 0.0;
   }
 }

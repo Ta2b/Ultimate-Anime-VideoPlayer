@@ -10,7 +10,7 @@
 #include "kernels/spec/warp.h"
 #include "kernels/spec/warp_pan.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
@@ -425,4 +425,4 @@ cudaError_t launch_flow_max(const FlowMaxParams& params, cudaStream_t stream) {
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

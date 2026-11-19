@@ -22,7 +22,7 @@ namespace spdlog {
 class logger;
 }
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ce que le mode Auto lit de l'écran (run_chain : apply_auto).
 struct DisplayState {
@@ -76,4 +76,4 @@ class DisplayFollow {
   DisplayProbe probe_;          // en dernier : son fil s'arrête avant le reste
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

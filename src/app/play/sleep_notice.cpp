@@ -21,7 +21,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 bool SleepGate::announce(std::chrono::milliseconds limit) {
   std::unique_lock lock(mutex_);
@@ -222,7 +222,7 @@ struct SleepNotice::Listener {
     SdBus::Error error;
     SdBus::Message* reply = nullptr;
     const int r = sd.call_method(bus, kLogin, kLoginPath, kManager, "Inhibit", &error, &reply, "ssss",
-                                 "sleep", "ajp", "Pause the video before sleep", "delay");
+                                 "sleep", "Kirari Player", "Pause the video before sleep", "delay");
     if (r < 0) {
       log_channel("app")->info("veille : verrou de logind refusé ({}), la pause se fera au réveil",
                                error.message != nullptr ? error.message : "?");
@@ -382,4 +382,4 @@ SleepNotice::SleepNotice(void (*wake)(void*), void* context)
 
 SleepNotice::~SleepNotice() = default;
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

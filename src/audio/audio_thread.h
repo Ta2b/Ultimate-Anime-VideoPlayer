@@ -26,7 +26,7 @@
 #include "core/thread.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 using AudioInbox = Inbox<AudioPacket, AudioTrack, EndOfStream, Command, Flush, DeviceReading, SyncTo,
                          DeviceRemoved, DeviceReturned>;
@@ -78,4 +78,4 @@ class AudioThread {
   std::jthread thread_;  // dernier membre : s'arrête avant que le reste ne soit détruit
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

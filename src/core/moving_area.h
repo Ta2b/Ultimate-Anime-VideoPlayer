@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <span>
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct MovingArea {
   std::uint32_t blocks = 0;  // blocs dont l'écart dépasse le seuil
@@ -56,4 +56,4 @@ constexpr std::uint32_t moving_limit(std::uint32_t held_threshold) {
   return held_threshold * 256U / 100U;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

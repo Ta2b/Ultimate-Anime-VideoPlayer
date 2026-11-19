@@ -13,7 +13,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 struct NamedValue {
   std::string name;
@@ -24,4 +24,4 @@ struct NamedValue {
 // Les sorties reviennent dans l'ordre de graph.outputs.
 std::expected<std::vector<NamedValue>, Refusal> run(const Graph& graph, std::span<const NamedValue> inputs);
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

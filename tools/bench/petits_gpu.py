@@ -12,7 +12,7 @@ Deux mesures, sur le poste à mesurer (binaire livré, pas linux-prefix en Debug
   540 lignes est agrandie par ffmpeg (Lanczos), comme l'écran le ferait.
 
   python3 -I tools/bench/petits_gpu.py --video EPISODE.mkv --sortie DOSSIER \\
-      [--debut 300] [--secondes 30] [--tours 2] [--ajp ajp] \\
+      [--debut 300] [--secondes 30] [--tours 2] [--kirari kirari] \\
       [--span FICHIER.onnx] [--artcnn FICHIER.onnx] [--modele NOM=FICHIER.onnx]... [--option=--software-gpu]
   python3 -I tools/bench/petits_gpu.py --selftest
 
@@ -128,7 +128,7 @@ def timing(args, plays):
         runs = []
         for round_ in range(1, args.tours + 1):
             base = os.path.join(args.sortie, "temps", f"{name}-{round_}")
-            command = [args.ajp, "play", args.video, f"--start={args.debut}", f"--seconds={args.secondes}",
+            command = [args.kirari, "play", args.video, f"--start={args.debut}", f"--seconds={args.secondes}",
                        "--fullscreen", "--mute", "--no-resume", "--rife=0",
                        f"--data-dir={os.path.join(args.sortie, 'donnees')}", f"--stats={base}.tsv", height,
                        *options, *args.option]
@@ -173,7 +173,7 @@ def quality(args, plays):
             os.remove(out)
         # Le lecteur réduit à 540 lignes (le travail d'Économe sur un écran 1080p), agrandit ×2 (sauf Économe),
         # exporte.
-        command = [args.ajp, "play", reference, "--mute", "--no-resume", "--rife=0", "--window=960x540",
+        command = [args.kirari, "play", reference, "--mute", "--no-resume", "--rife=0", "--window=960x540",
                    f"--data-dir={os.path.join(args.sortie, 'donnees')}", f"--keys=0.5:export-lossless={out}",
                    "--seconds=1", "--work-height=540", *options, *args.option]
         run(command, os.path.join(folder, f"{name}.log"))
@@ -230,7 +230,7 @@ def main():
     parser.add_argument("--tours", type=int, default=2)
     parser.add_argument("--hauteur", type=int, default=540,
                         help="hauteur de travail chronométrée (Économe : la moitié de l'écran, 540 en 1080p)")
-    parser.add_argument("--ajp", default="ajp")
+    parser.add_argument("--kirari", default="kirari")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--span", help=f"SPAN Performance ({SPAN_PERFORMANCE})")
     parser.add_argument("--artcnn", help=f"ArtCNN ({ARTCNN})")

@@ -10,7 +10,7 @@
 #include "core/log.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les E/S du dossier de la vidéo (fichier qui grandit, épisode suivant) : au-delà, laissées à leur sort, la
@@ -62,4 +62,4 @@ void plan_follow_up(Player& p, Chain& chain, const Session& session, const Growi
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

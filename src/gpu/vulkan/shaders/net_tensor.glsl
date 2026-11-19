@@ -2,14 +2,14 @@
 //
 // Un tenseur est vu en rang 4 (n, c, h, w), les rangs plus petits alignés à droite. Deux
 // dispositions, celles de gpu/ir/ir.h : 0 Nchw (ordre ligne), 1 Nhwc16 (canaux en dernier, leur
-// nombre arrondi à cp, multiple de 16). Dans la variante « _f16 » (AJP_NET_F16), chaque tampon est
+// nombre arrondi à cp, multiple de 16). Dans la variante « _f16 » (KIRARI_NET_F16), chaque tampon est
 // lié deux fois au même binding, en float et en float16_t, et une constante de spécialisation par
 // tenseur dit lequel lire : 0 float, 1 float16. Le calcul se fait en float.
 // S'inclut en premier, avant toute déclaration : il active une extension.
-#ifndef AJP_NET_TENSOR_GLSL
-#define AJP_NET_TENSOR_GLSL
+#ifndef KIRARI_NET_TENSOR_GLSL
+#define KIRARI_NET_TENSOR_GLSL
 
-#ifdef AJP_NET_F16
+#ifdef KIRARI_NET_F16
 #extension GL_EXT_shader_16bit_storage : require
 #endif
 
@@ -67,24 +67,24 @@ uint linear_invocation() {
   return (gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x) * 256u + gl_LocalInvocationIndex;
 }
 
-#ifdef AJP_NET_F16
+#ifdef KIRARI_NET_F16
 // Conversion en float16 saturée (B49-02) : au-delà de ±65 504, float16_t(v) donne ±Inf, que les couches
 // suivantes propagent en NaN ; ici la valeur se plafonne au plus grand float16 fini. Un NaN reste un NaN.
 float16_t to_half(float v) { return float16_t(isnan(v) ? v : clamp(v, -65504.0, 65504.0)); }
-#define AJP_NET_BUFFER(b, name, access)                                       \
+#define KIRARI_NET_BUFFER(b, name, access)                                       \
   layout(std430, binding = b) access buffer name##F { float v[]; } name##_f; \
   layout(std430, binding = b) access buffer name##H { float16_t v[]; } name##_h;
-#define AJP_LOAD(name, type, i) ((type) == 1u ? float(name##_h.v[i]) : name##_f.v[i])
-#define AJP_STORE(name, type, i, value) \
+#define KIRARI_LOAD(name, type, i) ((type) == 1u ? float(name##_h.v[i]) : name##_f.v[i])
+#define KIRARI_STORE(name, type, i, value) \
   if ((type) == 1u) {                   \
     name##_h.v[i] = to_half(value);      \
   } else {                              \
     name##_f.v[i] = (value);            \
   }
 #else
-#define AJP_NET_BUFFER(b, name, access) layout(std430, binding = b) access buffer name##F { float v[]; } name##_f;
-#define AJP_LOAD(name, type, i) (name##_f.v[i])
-#define AJP_STORE(name, type, i, value) name##_f.v[i] = (value);
+#define KIRARI_NET_BUFFER(b, name, access) layout(std430, binding = b) access buffer name##F { float v[]; } name##_f;
+#define KIRARI_LOAD(name, type, i) (name##_f.v[i])
+#define KIRARI_STORE(name, type, i, value) name##_f.v[i] = (value);
 #endif
 
-#endif  // AJP_NET_TENSOR_GLSL
+#endif  // KIRARI_NET_TENSOR_GLSL

@@ -9,7 +9,7 @@
 #include "core/log.h"
 #include "core/trace.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 bool UpscaleStage::reuses_span(bool held) const {
   if (setup_.engine == nullptr) return false;
@@ -29,7 +29,7 @@ void UpscaleStage::pick_span_buffer() {
 }
 
 std::expected<void, Refusal> UpscaleStage::span_current() {
-  AJP_TRACE("span");
+  KIRARI_TRACE("span");
   if (spanned_now_) return {};
   spanned_now_ = true;
   // Le tampon est choisi à l'arrivée de l'image : celui de la précédente pour un dessin tenu, sinon
@@ -52,7 +52,7 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
 std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   span_graded_[buf] = false;
   if (!setup_.grader || setup_.yuv_slots) return {};
-  AJP_TRACE("grade avant le warp");
+  KIRARI_TRACE("grade avant le warp");
   auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_);
   if (!graded) {
     log_channel("gpu")->warn("grade avant le warp : {} {} ; l'écran reprend le grade",
@@ -107,4 +107,4 @@ std::expected<void, Refusal> UpscaleStage::write_slot(const gpu::Tensor& image, 
   return ops.write_ring(image, setup_.slots[slot], sync);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

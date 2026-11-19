@@ -20,7 +20,7 @@
 // moteur TensorRT pour la dériver coûterait une minute, et ses échelles seraient relevées sur un graphe fondu
 // dont les tenseurs intermédiaires ne sont plus ceux des noyaux. La comparaison au FP16 de TensorRT se fait
 // par le test caché [.span_derive] (tests/unit/backend_tensorrt/span_derive_test.cpp) et l'outil
-// ajp_span_fp8_run.
+// kirari_span_fp8_run.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -39,7 +39,7 @@
 #include "gpu/span_fp8/metrics.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Mémoire d'appareil et flux rendus quoi qu'il arrive.
@@ -391,4 +391,4 @@ std::expected<SpanFp8Derivation, Refusal> TensorRtBackend::derive_span_fp8(const
   return result;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

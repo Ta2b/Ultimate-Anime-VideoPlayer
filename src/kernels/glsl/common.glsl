@@ -1,8 +1,8 @@
 // Fonctions de kernels/spec.h partagées par les noyaux, écrites dans l'ordre des formules de
 // la spécification. « precise » interdit la contraction en FMA : les arrondis restent ceux de
-// la référence CPU de kernels/ref/. S'inclut après ajp_kernels_spec.glsl.
-#ifndef AJP_COMMON_GLSL
-#define AJP_COMMON_GLSL
+// la référence CPU de kernels/ref/. S'inclut après kirari_kernels_spec.glsl.
+#ifndef KIRARI_COMMON_GLSL
+#define KIRARI_COMMON_GLSL
 
 // mirror_index (spec/resample.h) : miroir par symétrie au demi-échantillon (le bord est répété : −1 → 0,
 // n → n − 1), puis clamp.
@@ -28,8 +28,8 @@ uint quantize(float raw, vec2 q) {
 // unorm16 (spec/color.h) : tronque(clamp(v, 0, 1) × 65535 + 0,5) ; NaN donne 0.
 uint unorm16(float v) {
   float unit = bounded(v, 0.0, 1.0);
-  precise float biased = unit * AJP_UNORM16_MAX + 0.5;
+  precise float biased = unit * KIRARI_UNORM16_MAX + 0.5;
   return uint(biased);
 }
 
-#endif  // AJP_COMMON_GLSL
+#endif  // KIRARI_COMMON_GLSL

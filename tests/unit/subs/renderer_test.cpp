@@ -13,34 +13,34 @@
 #include "subs/subtitle_track.h"
 #include "support.h"
 
-using ajp::RefusalCode;
-using ajp::subs::AtlasPool;
-using ajp::subs::RenderRequest;
-using ajp::subs::SubtitleAtlas;
-using ajp::subs::SubtitleFrame;
-using ajp::subs::SubtitleRenderer;
-using ajp::subs::WaitForAtlas;
-using ajp::subs::test::Box;
-using ajp::subs::test::draw;
-using ajp::subs::test::kScriptHeight;
-using ajp::subs::test::kScriptWidth;
+using kirari::RefusalCode;
+using kirari::subs::AtlasPool;
+using kirari::subs::RenderRequest;
+using kirari::subs::SubtitleAtlas;
+using kirari::subs::SubtitleFrame;
+using kirari::subs::SubtitleRenderer;
+using kirari::subs::WaitForAtlas;
+using kirari::subs::test::Box;
+using kirari::subs::test::draw;
+using kirari::subs::test::kScriptHeight;
+using kirari::subs::test::kScriptWidth;
 
 namespace {
 
 // Bibliothèque, moteur, piste et réserve d'un test ; les atlas relâchés
 // attendent dans returned, comme dans la boîte du thread.
 struct Bench {
-  ajp::subs::AssLibrary library = ajp::subs::AssLibrary::create().value();
+  kirari::subs::AssLibrary library = kirari::subs::AssLibrary::create().value();
   std::vector<std::unique_ptr<SubtitleAtlas>> returned;
   AtlasPool pool{[this](std::unique_ptr<SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); }};
   SubtitleRenderer renderer = SubtitleRenderer::create(library, {}).value();
-  ajp::subs::SubtitleTrack track;
+  kirari::subs::SubtitleTrack track;
 
   enum class Format : std::uint8_t { Ass, Srt };
 
   explicit Bench(std::string_view script, Format format = Format::Ass)
-      : track(format == Format::Ass ? ajp::subs::SubtitleTrack::from_ass(library, script).value()
-                                    : ajp::subs::SubtitleTrack::from_srt(library, script).value()) {}
+      : track(format == Format::Ass ? kirari::subs::SubtitleTrack::from_ass(library, script).value()
+                                    : kirari::subs::SubtitleTrack::from_srt(library, script).value()) {}
 
   void recycle() {
     for (auto& atlas : returned) pool.give_back(std::move(atlas));
@@ -52,7 +52,7 @@ struct Bench {
     return render_on(seconds, {.width = width, .height = height, .font_scale = scale});
   }
 
-  SubtitleFrame render_on(double seconds, const ajp::subs::RenderTarget& target) {
+  SubtitleFrame render_on(double seconds, const kirari::subs::RenderTarget& target) {
     recycle();
     const RenderRequest request{
         .pts_us = static_cast<std::int64_t>(seconds * 1e6), .epoch = 0, .target = target};
@@ -66,11 +66,11 @@ struct Bench {
 }  // namespace
 
 TEST_CASE("Rendu : le style Default se place en bas au centre, bordé de noir", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame frame = bench.render(0.5);
   CHECK(frame.pts_us == 500'000);
   CHECK(frame.width == kScriptWidth);
-  ajp::subs::test::check_atlas(frame);
+  kirari::subs::test::check_atlas(frame);
 
   const Box box = draw(frame).covered();
   REQUIRE_FALSE(box.empty());
@@ -81,30 +81,30 @@ TEST_CASE("Rendu : le style Default se place en bas au centre, bordé de noir", 
   bool white = false;
   bool black = false;
   for (const auto& rect : frame.rects) {
-    white = white || (rect.color == ajp::subs::Rgba8{255, 255, 255, 255});
-    black = black || (rect.color == ajp::subs::Rgba8{0, 0, 0, 255});
+    white = white || (rect.color == kirari::subs::Rgba8{255, 255, 255, 255});
+    black = black || (rect.color == kirari::subs::Rgba8{0, 0, 0, 255});
   }
   CHECK(white);
   CHECK(black);
 }
 
 TEST_CASE("Rendu : le style Top se place en haut, en jaune", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame frame = bench.render(1.5);
-  ajp::subs::test::check_atlas(frame);
+  kirari::subs::test::check_atlas(frame);
   const auto canvas = draw(frame);
   const Box box = canvas.covered();
   REQUIRE_FALSE(box.empty());
   CHECK(box.y0 >= 20 - 2);
   CHECK(box.y1 < kScriptHeight / 2);
   REQUIRE(frame.rects.size() >= 1);
-  CHECK(frame.rects.front().color == ajp::subs::Rgba8{255, 255, 0, 255});
+  CHECK(frame.rects.front().color == kirari::subs::Rgba8{255, 255, 0, 255});
 }
 
 TEST_CASE("Rendu : \\pos place le texte, \\1c le colore", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame frame = bench.render(2.5);
-  ajp::subs::test::check_atlas(frame);
+  kirari::subs::test::check_atlas(frame);
   const auto canvas = draw(frame);
   const Box box = canvas.covered();
   REQUIRE_FALSE(box.empty());
@@ -114,13 +114,13 @@ TEST_CASE("Rendu : \\pos place le texte, \\1c le colore", "[render]") {
   CHECK(box.y0 < 60 + 16);
   CHECK(canvas.opacity_at(20, 20) == 0.0F);    // rien en haut à gauche
   CHECK(canvas.opacity_at(600, 300) == 0.0F);  // rien en bas à droite
-  for (const auto& rect : frame.rects) CHECK(rect.color == ajp::subs::Rgba8{255, 0, 0, 255});
+  for (const auto& rect : frame.rects) CHECK(rect.color == kirari::subs::Rgba8{255, 0, 0, 255});
 }
 
 TEST_CASE("Rendu : \\alpha devient l'opacité des rectangles", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame frame = bench.render(3.5);
-  ajp::subs::test::check_atlas(frame);
+  kirari::subs::test::check_atlas(frame);
   for (const auto& rect : frame.rects) CHECK(rect.color.a == 255 - 0x80);
   const auto canvas = draw(frame);
   float peak = 0.0F;
@@ -130,7 +130,7 @@ TEST_CASE("Rendu : \\alpha devient l'opacité des rectangles", "[render]") {
 }
 
 TEST_CASE("Rendu : à la résolution de sortie, sans recadrage du script", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame frame = bench.render(2.5, 2 * kScriptWidth, 2 * kScriptHeight);
   CHECK(frame.width == 2 * kScriptWidth);
   const Box box = draw(frame).covered();
@@ -141,14 +141,14 @@ TEST_CASE("Rendu : à la résolution de sortie, sans recadrage du script", "[ren
 }
 
 TEST_CASE("Rendu : rien à dessiner hors des événements", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame frame = bench.render(6.0);
   CHECK(frame.atlas == nullptr);
   CHECK(frame.rects.empty());
 }
 
 TEST_CASE("Rendu : le décalage lit l'instant pts − délai (P3.72)", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   bench.recycle();
   // À 6 s, rien ; 2 s de retard lisent l'instant 4 s, qui a son événement.
   const RenderRequest late{.pts_us = 6'000'000,
@@ -164,7 +164,7 @@ TEST_CASE("Rendu : le décalage lit l'instant pts − délai (P3.72)", "[render]
 }
 
 TEST_CASE("Rendu : un contenu inchangé réutilise l'atlas sans nouveau téléversement", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame first = bench.render(0.2);
   const SubtitleFrame second = bench.render(0.6);
   REQUIRE(first.atlas != nullptr);
@@ -181,21 +181,21 @@ TEST_CASE("Rendu : un contenu inchangé réutilise l'atlas sans nouveau téléve
 TEST_CASE("Rendu : deux rendus successifs ne repartent pas de la même génération (B24-01)", "[render]") {
   std::uint64_t last_of_first = 0;
   {
-    Bench first(ajp::subs::test::reference_script());
+    Bench first(kirari::subs::test::reference_script());
     const SubtitleFrame frame = first.render(0.2);
     REQUIRE(frame.atlas != nullptr);
     last_of_first = frame.atlas->generation;
   }
   // Un rendu neuf (réouverture de la chaîne, épisode suivant) : l'écran garde la dernière paire (adresse,
   // génération) téléversée ; une génération qui retomberait sur une valeur déjà vue y ferait sauter un envoi.
-  Bench second(ajp::subs::test::reference_script());
+  Bench second(kirari::subs::test::reference_script());
   const SubtitleFrame frame = second.render(0.2);
   REQUIRE(frame.atlas != nullptr);
   CHECK(frame.atlas->generation > last_of_first);
 }
 
 TEST_CASE("Rendu : un déplacement seul garde l'atlas et change les positions", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const SubtitleFrame start = bench.render(4.2);
   const SubtitleFrame later = bench.render(4.6);
   REQUIRE(start.atlas != nullptr);
@@ -207,10 +207,10 @@ TEST_CASE("Rendu : un déplacement seul garde l'atlas et change les positions", 
 }
 
 TEST_CASE("Rendu : le 9e contenu neuf attend qu'un atlas revienne", "[render]") {
-  Bench bench(ajp::subs::test::numbered_script(10));
+  Bench bench(kirari::subs::test::numbered_script(10));
   std::vector<SubtitleFrame> held;
   for (int i = 0; i < 8; ++i) held.push_back(bench.render(i + 0.5));
-  CHECK(bench.pool.in_flight() == ajp::subs::kMaxAtlasesInFlight);
+  CHECK(bench.pool.in_flight() == kirari::subs::kMaxAtlasesInFlight);
 
   const RenderRequest ninth{.pts_us = 8'500'000, .epoch = 0, .target = {.width = 640, .height = 360}};
   auto waiting = bench.renderer.render(bench.track, ninth, bench.pool);
@@ -223,12 +223,12 @@ TEST_CASE("Rendu : le 9e contenu neuf attend qu'un atlas revienne", "[render]") 
   auto served = bench.renderer.render(bench.track, ninth, bench.pool);
   REQUIRE(served);
   REQUIRE(std::holds_alternative<SubtitleFrame>(*served));
-  ajp::subs::test::check_atlas(std::get<SubtitleFrame>(*served));
-  CHECK(bench.pool.in_flight() == ajp::subs::kMaxAtlasesInFlight);
+  kirari::subs::test::check_atlas(std::get<SubtitleFrame>(*served));
+  CHECK(bench.pool.in_flight() == kirari::subs::kMaxAtlasesInFlight);
 }
 
 TEST_CASE("Rendu : l'échelle des polices agrandit le texte, en direct", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const Box normal = draw(bench.render(0.5)).covered();
   const Box bigger = draw(bench.render(0.5, kScriptWidth, kScriptHeight, 1.5F)).covered();
   REQUIRE_FALSE(normal.empty());
@@ -240,18 +240,18 @@ TEST_CASE("Rendu : l'échelle des polices agrandit le texte, en direct", "[rende
 }
 
 TEST_CASE("Rendu : refuse une cible hors plage", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
-  const auto refused = [&](ajp::subs::RenderTarget target) {
+  Bench bench(kirari::subs::test::reference_script());
+  const auto refused = [&](kirari::subs::RenderTarget target) {
     auto outcome =
         bench.renderer.render(bench.track, {.pts_us = 0, .epoch = 0, .target = target}, bench.pool);
     return !outcome && outcome.error().code == RefusalCode::FieldOutOfRange;
   };
   CHECK(refused({.width = 0, .height = 360}));
-  CHECK(refused({.width = 640, .height = ajp::subs::kMaxTargetSide + 1}));
+  CHECK(refused({.width = 640, .height = kirari::subs::kMaxTargetSide + 1}));
   CHECK(refused({.width = 640, .height = 360, .video_width = 1920, .video_height = 0}));
   CHECK(refused({.width = 640, .height = 360, .font_scale = 0.1F}));
   CHECK(refused({.width = 640, .height = 360, .font_scale = 5.0F}));
-  CHECK(ajp::subs::SubtitleRenderer::create(bench.library, {.render_threads = -1}).error().code ==
+  CHECK(kirari::subs::SubtitleRenderer::create(bench.library, {.render_threads = -1}).error().code ==
         RefusalCode::FieldOutOfRange);
 }
 
@@ -264,9 +264,9 @@ TEST_CASE("Rendu : un fichier SRT converti s'affiche à ses horodatages, en bas,
   CHECK(bench.render(2.5).atlas == nullptr);
 
   const SubtitleFrame green = bench.render(1.5);
-  ajp::subs::test::check_atlas(green);
+  kirari::subs::test::check_atlas(green);
   bool fill = false;
-  for (const auto& rect : green.rects) fill = fill || rect.color == ajp::subs::Rgba8{0, 255, 0, 255};
+  for (const auto& rect : green.rects) fill = fill || rect.color == kirari::subs::Rgba8{0, 255, 0, 255};
   CHECK(fill);
   const Box one = draw(green).covered();
   CHECK(one.y0 > kScriptHeight / 2);  // style Default : en bas
@@ -278,7 +278,7 @@ TEST_CASE("Rendu : un fichier SRT converti s'affiche à ses horodatages, en bas,
 
 TEST_CASE("Rendu : en bandes noires, le script se cale sur l'image et ses pixels restent carrés",
           "[render]") {
-  Bench bench(ajp::subs::test::square_script());
+  Bench bench(kirari::subs::test::square_script());
   // 16:9 sur 16:10 : une bande de 20 lignes en haut et en bas. Le carré reste carré (libass le
   // déduisait 11 % plus haut que large) et se place sur l'image, 20 lignes plus bas.
   const Box letterbox =
@@ -301,7 +301,7 @@ TEST_CASE("Rendu : en bandes noires, le script se cale sur l'image et ses pixels
 }
 
 TEST_CASE("Rendu : un pixel non carré étire la vidéo à l'affichage, le script la suit", "[render]") {
-  Bench bench(ajp::subs::test::square_script());
+  Bench bench(kirari::subs::test::square_script());
   // Un DVD 4:3 anamorphe : 480 × 480 de stockage, pixel 4:3, donc 640 × 480 à l'écran. La vidéo
   // remplit la fenêtre 640 × 480 sans bande ; avec des pixels carrés elle laisserait 80 colonnes.
   const Box square =
@@ -321,8 +321,9 @@ TEST_CASE("Rendu : un pixel non carré étire la vidéo à l'affichage, le scrip
 TEST_CASE("Rendu : en bandes noires, l'ASS reste sur l'image, le SRT descend dans la bande",
           "[render][srt]") {
   // 16:9 sur 4:3 : 60 lignes de bande en bas, l'image finit à la ligne 420.
-  const ajp::subs::RenderTarget target{.width = 640, .height = 480, .video_width = 640, .video_height = 360};
-  Bench ass(ajp::subs::test::reference_script());
+  const kirari::subs::RenderTarget target{
+      .width = 640, .height = 480, .video_width = 640, .video_height = 360};
+  Bench ass(kirari::subs::test::reference_script());
   const Box on_image = draw(ass.render_on(0.5, target)).covered();
   REQUIRE_FALSE(on_image.empty());
   CHECK(on_image.y1 <= 420 - 20 + 4);  // marge verticale du style au-dessus du bas de l'image
@@ -334,16 +335,16 @@ TEST_CASE("Rendu : en bandes noires, l'ASS reste sur l'image, le SRT descend dan
 }
 
 TEST_CASE("Rendu : une fenêtre réduite à 0×0 est refusée, sans calcul de placement", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const RenderRequest request{.pts_us = 2'500'000,
                               .target = {.width = 0, .height = 0, .video_width = 1920, .video_height = 1080}};
   const auto outcome = bench.renderer.render(bench.track, request, bench.pool);
   REQUIRE_FALSE(outcome);
-  CHECK(outcome.error().code == ajp::RefusalCode::FieldOutOfRange);
+  CHECK(outcome.error().code == kirari::RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("Rendu : un écran sans événement n'appelle libass qu'une fois (P3.39)", "[render]") {
-  Bench bench(ajp::subs::test::reference_script());  // rien après 5 s
+  Bench bench(kirari::subs::test::reference_script());  // rien après 5 s
   CHECK(bench.render(6.0).rects.empty());
   const std::uint64_t calls = bench.renderer.libass_calls();
   for (int i = 1; i <= 24; ++i) CHECK(bench.render(6.0 + i / 144.0).rects.empty());
@@ -354,7 +355,7 @@ TEST_CASE("Rendu : un écran sans événement n'appelle libass qu'une fois (P3.3
 TEST_CASE(
     "Rendu : la montée fait passer les dialogues du bas au-dessus de la barre, pas les panneaux (A24-19)",
     "[render]") {
-  Bench bench(ajp::subs::test::reference_script());
+  Bench bench(kirari::subs::test::reference_script());
   const float lift = 0.25F;  // un quart de la hauteur : 90 px sur 360
   // Le dialogue du bas monte en entier, d'environ la part demandée de la hauteur.
   const Box low = draw(bench.render(0.5)).covered();
@@ -385,5 +386,5 @@ TEST_CASE(
                     .target = {.width = kScriptWidth, .height = kScriptHeight, .line_lift = 0.75F}},
       bench.pool);
   REQUIRE_FALSE(refused);
-  CHECK(refused.error().code == ajp::RefusalCode::FieldOutOfRange);
+  CHECK(refused.error().code == kirari::RefusalCode::FieldOutOfRange);
 }

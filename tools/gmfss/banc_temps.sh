@@ -2,15 +2,15 @@
 # Temps de GMFSS Fortuna Union au trtexec (graphe CUDA, niveau 5), face à RIFE 4.26 à la même taille : la paire
 # (flot entier et demi-flot), la fusion en FP16, puis la fusion en FP8 (tools/fp8/fp8_probe.py, Q/DQ de Model
 # Optimizer sur entrées aléatoires : assez pour la vitesse, pas pour la qualité).
-#   flock ~/ajp-reports/gpu-bench.lock tools/gmfss/banc_temps.sh ROUE/vsgmfss_fortuna rife_v4.26.onnx DOSSIER [LxH=1280x768]
+#   flock ~/kirari-reports/gpu-bench.lock tools/gmfss/banc_temps.sh ROUE/vsgmfss_fortuna rife_v4.26.onnx DOSSIER [LxH=1280x768]
 # La taille est celle des plans remplis (multiple de 128) : 1280x768 pour 720p de travail, 1920x1152 pour 1080p.
-# Il faut torch, onnx, onnxruntime (export), nvidia-modelopt[onnx] (FP8) et trtexec (TRTEXEC ou ~/ajp-sdk).
+# Il faut torch, onnx, onnxruntime (export), nvidia-modelopt[onnx] (FP8) et trtexec (TRTEXEC ou ~/kirari-sdk).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PKG="${1:?dossier vsgmfss_fortuna de la roue}"; RIFE="${2:?rife_v4.26.onnx}"; OUT="${3:?dossier de travail}"
 SIZE="${4:-1280x768}"; W="${SIZE%x*}"; H="${SIZE#*x}"
 PY="${PYTHON:-python3}"
-TRTEXEC="${TRTEXEC:-$(command -v trtexec || echo "$HOME/ajp-sdk/tensorrt/bin/trtexec")}"
+TRTEXEC="${TRTEXEC:-$(command -v trtexec || echo "$HOME/kirari-sdk/tensorrt/bin/trtexec")}"
 export LD_LIBRARY_PATH="${TRTEXEC%/bin/trtexec}/lib:${LD_LIBRARY_PATH:-}"
 mkdir -p "$OUT"
 LOG="$OUT/banc-temps-$SIZE.md"

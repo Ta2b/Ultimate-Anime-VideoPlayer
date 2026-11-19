@@ -3,7 +3,7 @@
 #include "app/play/controls.h"
 #include "app/play/session.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 subs::RenderTarget Session::subtitle_target(OutputSize size) {
   placed_size_ = size;
@@ -30,4 +30,4 @@ void Session::place_subtitles(const UiFrame& ui) {
   if (current_) request_subtitles(*current_);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

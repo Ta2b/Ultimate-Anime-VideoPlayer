@@ -29,7 +29,7 @@
 #include "prepare/drba_split.h"
 #include "prepare/rife_split.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace detail {
 
 std::unexpected<Refusal> refuse_backend(RefusalCode code, std::string text) {
@@ -594,4 +594,4 @@ std::expected<void, Refusal> VulkanBackend::wait(const Fence& fence) {
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

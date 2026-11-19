@@ -13,10 +13,10 @@ extern "C" {
 #include "app/play/bridges.h"
 #include "media/track.h"
 
-using ajp::app::play::attached_fonts;
-using ajp::media::CodecParameters;
-using ajp::media::TrackInfo;
-using ajp::media::TrackKind;
+using kirari::app::play::attached_fonts;
+using kirari::media::CodecParameters;
+using kirari::media::TrackInfo;
+using kirari::media::TrackKind;
 
 TEST_CASE("Polices jointes : dans l'ordre du fichier jusqu'au plafond total (A17-09)", "[subtitles]") {
   AVCodecParameters* raw = avcodec_parameters_alloc();

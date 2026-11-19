@@ -2,7 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 TEST_CASE("CUDA : une erreur collante est un appareil perdu, les autres un appel refusé",
           "[backend_tensorrt][cuda]") {
@@ -25,4 +25,4 @@ TEST_CASE("CUDA : une erreur collante est un appareil perdu, les autres un appel
   CHECK(clear_error() == cudaSuccess);  // aucune erreur en attente dans ce processus
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

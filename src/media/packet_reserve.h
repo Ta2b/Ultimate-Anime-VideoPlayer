@@ -17,7 +17,7 @@
 #include "core/types.h"
 #include "media/packet.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 class PacketReserve {
  public:
@@ -51,4 +51,4 @@ class PacketReserve {
   std::size_t bytes_ = 0;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

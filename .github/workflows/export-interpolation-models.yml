@@ -94,11 +94,11 @@ jobs:
       - name: Release models-interp-1
         if: inputs.publier
         env:
-          AJP_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
+          KIRARI_RELEASE_REPO: ${{ vars.AJP_RELEASE_REPO || github.repository }}
           GH_TOKEN: ${{ secrets.AJP_RELEASE_TOKEN || github.token }}
         run: |
-          gh release view models-interp-1 -R "$AJP_RELEASE_REPO" >/dev/null 2>&1 \
-            || gh release create models-interp-1 -R "$AJP_RELEASE_REPO" --latest=false \
+          gh release view models-interp-1 -R "$KIRARI_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create models-interp-1 -R "$KIRARI_RELEASE_REPO" --latest=false \
                  --title "Modèles d'interpolation (DistilDRBA, RIFE 4.25 lite)" \
                  --notes "Graphes ONNX exportés par .github/workflows/export-interpolation-models.yml. DistilDRBA (routineLife1, MIT), RIFE 4.25 lite (hzwer, MIT ; export ONNX de vs-mlrt)."
-          gh release upload models-interp-1 out/* -R "$AJP_RELEASE_REPO" --clobber
+          gh release upload models-interp-1 out/* -R "$KIRARI_RELEASE_REPO" --clobber

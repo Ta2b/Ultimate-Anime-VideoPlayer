@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 struct RifeInputParams {
   const void* a = nullptr;  // 1 × 3 × height × width, FP16
@@ -87,4 +87,4 @@ struct PairDiffParams {
 
 cudaError_t launch_pair_diff(const PairDiffParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

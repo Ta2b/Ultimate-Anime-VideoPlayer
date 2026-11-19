@@ -8,7 +8,7 @@
 
 #include "gpu/vulkan/backend/deferred_steps.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 class DeferredSteps : public vk::net::DeferredSteps {
  public:
@@ -16,4 +16,4 @@ class DeferredSteps : public vk::net::DeferredSteps {
       : vk::net::DeferredSteps("coreml" + label, "Core ML", std::move(compute)) {}
 };
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

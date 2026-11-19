@@ -15,7 +15,7 @@
 
 #include "render/anime4k.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::string_view kAnime4kFast = "anime4k-fast";   // réseaux M
 inline constexpr std::string_view kAnime4kQuality = "anime4k-hq";  // réseaux VL
@@ -32,4 +32,4 @@ std::string anime4k_label(render::Anime4kSize size);
 std::optional<render::Anime4kChoice> anime4k_choice(std::string_view model, bool upscales, int source_height,
                                                     int work_height);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

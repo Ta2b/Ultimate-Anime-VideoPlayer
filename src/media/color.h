@@ -14,7 +14,7 @@ extern "C" {
 #include "core/frame.h"
 #include "core/types.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 std::expected<PixelFormat, Refusal> map_pixel_format(AVPixelFormat format);
 
@@ -28,4 +28,4 @@ std::expected<ColorInfo, Refusal> color_info(const AVFrame& frame, AVPixelFormat
 // si l'image n'en porte aucun. Une valeur hors des bornes physiques est refusée.
 std::expected<std::optional<HdrMetadata>, Refusal> hdr_metadata(const AVFrame& frame);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

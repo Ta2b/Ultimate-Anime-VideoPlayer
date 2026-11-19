@@ -23,12 +23,12 @@
 // La spécialisation pour l'inférence (MLOptimizationHints) : SDK de macOS 14.4 et plus, comme
 // ONNX Runtime la pose (HAS_COREMLOPTIMIZATIONHINT).
 #if defined(__MAC_14_4) && __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_14_4
-#define AJP_COREML_HINTS 1
+#define KIRARI_COREML_HINTS 1
 #else
-#define AJP_COREML_HINTS 0
+#define KIRARI_COREML_HINTS 0
 #endif
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 using vk::net::HostBinding;
@@ -568,7 +568,7 @@ std::expected<std::unique_ptr<DirectModel>, Refusal> open_direct(const std::file
       MLModelConfiguration* config = [[MLModelConfiguration alloc] init];
       config.computeUnits = compute_units(units);
       config.allowLowPrecisionAccumulationOnGPU = YES;
-#if AJP_COREML_HINTS
+#if KIRARI_COREML_HINTS
       // specializationStrategy n'existe qu'à partir de macOS 15 (le SDK le refuse plus tôt, -Werror).
       if (@available(macOS 15.0, *)) {
         MLOptimizationHints* hints = [[MLOptimizationHints alloc] init];
@@ -609,4 +609,4 @@ std::expected<std::unique_ptr<DirectModel>, Refusal> open_direct(const std::file
   }
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

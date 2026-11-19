@@ -12,9 +12,9 @@ layout(constant_id = 1) const uint TB = 0;
 layout(constant_id = 2) const uint TY = 0;
 layout(constant_id = 3) const uint OP = 0;  // 0 Add, 1 Sub, 2 Mul, 3 Div, 4 Mod, 5 PRelu
 
-AJP_NET_BUFFER(0, lhs, readonly)
-AJP_NET_BUFFER(1, rhs, readonly)
-AJP_NET_BUFFER(2, dst, writeonly)
+KIRARI_NET_BUFFER(0, lhs, readonly)
+KIRARI_NET_BUFFER(1, rhs, readonly)
+KIRARI_NET_BUFFER(2, dst, writeonly)
 
 layout(push_constant) uniform Push {
   TDesc a;
@@ -30,8 +30,8 @@ void main() {
   uint i = linear_invocation();
   if (i >= t_count(pc.y)) return;
   uvec4 o = t_coords(pc.y, i);
-  float a = AJP_LOAD(lhs, TA, broadcast_index(pc.a, o));
-  float b = AJP_LOAD(rhs, TB, broadcast_index(pc.b, o));
+  float a = KIRARI_LOAD(lhs, TA, broadcast_index(pc.a, o));
+  float b = KIRARI_LOAD(rhs, TB, broadcast_index(pc.b, o));
   float v;
   if (OP == 0u) {
     v = a + b;
@@ -46,5 +46,5 @@ void main() {
   } else {
     v = a < 0.0 ? a * b : a;
   }
-  AJP_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
+  KIRARI_STORE(dst, TY, t_index(pc.y, o.x, o.y, o.z, o.w), v)
 }

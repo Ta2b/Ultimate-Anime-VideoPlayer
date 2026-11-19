@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(ajp
+project(kirari
   VERSION 0.11.0
   DESCRIPTION "Lecteur vidéo anime : upscaling, interpolation et HDR en temps réel"
   LANGUAGES CXX)
@@ -9,39 +9,39 @@ project(ajp
 # Les architectures se passent toujours en entier : CMake prédéfinit
 # CMAKE_CUDA_ARCHITECTURES pendant enable_language(), donc un repli
 # « if(NOT DEFINED) » ne s'exécuterait jamais.
-option(AJP_WITH_CUDA "Construire le backend TensorRT et les noyaux CUDA" OFF)
-option(AJP_WITH_COREML "Construire ajp_backend_coreml (réseaux par Core ML via ONNX Runtime, Mac Apple Silicon)" OFF)
-option(AJP_BUILD_TESTS "Construire les tests unitaires" ON)
-option(AJP_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
+option(KIRARI_WITH_CUDA "Construire le backend TensorRT et les noyaux CUDA" OFF)
+option(KIRARI_WITH_COREML "Construire kirari_backend_coreml (réseaux par Core ML via ONNX Runtime, Mac Apple Silicon)" OFF)
+option(KIRARI_BUILD_TESTS "Construire les tests unitaires" ON)
+option(KIRARI_BUILD_PLAYER "Construire le lecteur ; OFF ne garde que core, kernels et leurs tests" ON)
 # Avertissements en erreurs : ON dans les préréglages de développement et de CI (base, prefix), OFF
 # par défaut et dans linux-prefix-cuda-machine (le lecteur construit sur le poste, avec le compilateur de la
 # distribution), pour qu'un compilateur plus récent (avertissements nouveaux) construise encore.
-option(AJP_WARNINGS_AS_ERRORS "Avertissements en erreurs" OFF)
+option(KIRARI_WARNINGS_AS_ERRORS "Avertissements en erreurs" OFF)
 # En-têtes précompilés (P5.25) : la bibliothèque standard la plus lue, par module. Pour les constructions
 # locales ; la CI les laisse éteints, pour que ccache serve et qu'une inclusion oubliée reste une erreur.
-option(AJP_PCH "En-têtes précompilés de la bibliothèque standard dans chaque module" OFF)
-option(AJP_TRANSITIVE_RPATH "RPATH valable pour les dépendances indirectes (préfixe Linux)" OFF)
+option(KIRARI_PCH "En-têtes précompilés de la bibliothèque standard dans chaque module" OFF)
+option(KIRARI_TRANSITIVE_RPATH "RPATH valable pour les dépendances indirectes (préfixe Linux)" OFF)
 
-if(AJP_WITH_CUDA)
+if(KIRARI_WITH_CUDA)
   # Livraison : la liste du plan, celle du fork réduite aux RTX (Turing à Blackwell, plus le
-  # PTX 120 pour les suivantes). Développement local sur la 4070 Ti : AJP_CUDA_ARCHITECTURES
+  # PTX 120 pour les suivantes). Développement local sur la 4070 Ti : KIRARI_CUDA_ARCHITECTURES
   # vaut 89-real (preset linux-prefix-cuda), une seule cible, bien plus rapide à compiler.
-  set(AJP_CUDA_ARCHITECTURES "75-real;86-real;89-real;120-real;120-virtual"
+  set(KIRARI_CUDA_ARCHITECTURES "75-real;86-real;89-real;120-real;120-virtual"
       CACHE STRING "Architectures CUDA, passées en entier à CMAKE_CUDA_ARCHITECTURES")
-  set(CMAKE_CUDA_ARCHITECTURES "${AJP_CUDA_ARCHITECTURES}" CACHE STRING "Reprise de AJP_CUDA_ARCHITECTURES" FORCE)
+  set(CMAKE_CUDA_ARCHITECTURES "${KIRARI_CUDA_ARCHITECTURES}" CACHE STRING "Reprise de KIRARI_CUDA_ARCHITECTURES" FORCE)
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 20)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 endif()
 
-# Windows : l'icône de ajp.exe est une ressource (src/app/ajp.rc).
+# Windows : l'icône de kirari.exe est une ressource (src/app/kirari.rc).
 if(WIN32)
   enable_language(RC)
 endif()
 
 # L'interpolation d'Apple (gpu/coreml/coreml_vt.mm) est en Objective-C++, pour VideoToolbox :
 # activé ici, au-dessus de toutes les cibles qui le lient (les tests du backend Vulkan compris).
-if(APPLE AND AJP_WITH_COREML)
+if(APPLE AND KIRARI_WITH_COREML)
   enable_language(OBJCXX)
 endif()
 
@@ -60,7 +60,7 @@ if(MSVC)
   add_link_options($<$<NOT:$<CONFIG:Debug>>:/DEBUG:FULL$<SEMICOLON>/OPT:REF$<SEMICOLON>/OPT:ICF>)
 endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
-# P5.21 : un module de moteur n'exporte que ses quatre points d'entrée (AJP_BACKEND_EXPORT, gpu/backend.h) ;
+# P5.21 : un module de moteur n'exporte que ses quatre points d'entrée (KIRARI_BACKEND_EXPORT, gpu/backend.h) ;
 # le reste est caché, et le code position-indépendant n'est plus interposable (appels directs).
 if(NOT WIN32)
   set(CMAKE_CXX_VISIBILITY_PRESET hidden)
@@ -75,14 +75,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-include(AjpModule)
+include(KirariModule)
 include(Dependencies)
 
-# Les bibliothèques d'un préfixe comme /opt/ajp-deps n'ont pas toutes de RUNPATH :
+# Les bibliothèques d'un préfixe comme /opt/kirari-deps n'ont pas toutes de RUNPATH :
 # libavcodec n'y trouverait pas libswresample. Un DT_RPATH, à la différence de
 # DT_RUNPATH, vaut aussi pour les dépendances indirectes : chaque exécutable et
 # bibliothèque partagée se lance alors sans LD_LIBRARY_PATH. Posé avant toute cible.
-if(AJP_TRANSITIVE_RPATH AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(KIRARI_TRANSITIVE_RPATH AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_link_options("LINKER:--disable-new-dtags")
 endif()
 # Le build-id GNU de chaque binaire, posé exprès (certains GCC ne le font pas par défaut) : le rapport de « Signaler
@@ -96,8 +96,8 @@ endif()
 # dépendances. Les mêmes sources donnent les mêmes octets d'une machine à l'autre.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
   add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}=." "-ffile-prefix-map=${CMAKE_BINARY_DIR}=_build")
-  if(DEFINED ENV{AJP_DEPS_PREFIX} AND NOT "$ENV{AJP_DEPS_PREFIX}" STREQUAL "")
-    add_compile_options("-ffile-prefix-map=$ENV{AJP_DEPS_PREFIX}=/deps")
+  if(DEFINED ENV{KIRARI_DEPS_PREFIX} AND NOT "$ENV{KIRARI_DEPS_PREFIX}" STREQUAL "")
+    add_compile_options("-ffile-prefix-map=$ENV{KIRARI_DEPS_PREFIX}=/deps")
   endif()
 endif()
 # MSVC : /Brepro (horodatage du lieur et de l'objet remplacé par une empreinte), /d1trimfile (le dossier des sources
@@ -117,7 +117,7 @@ endif()
 # Ordre des feuilles vers la racine : une cible ne dépend que de ce qui précède.
 add_subdirectory(src/core)
 add_subdirectory(src/kernels)
-if(AJP_BUILD_PLAYER)
+if(KIRARI_BUILD_PLAYER)
   add_subdirectory(src/av)
   add_subdirectory(src/media)
   add_subdirectory(src/subs)
@@ -129,11 +129,11 @@ if(AJP_BUILD_PLAYER)
   add_subdirectory(src/app)
 endif()
 
-if(AJP_BUILD_TESTS)
+if(KIRARI_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
 
 # Windows : argv et les chemins en UTF-8 dans chaque exécutable (cmake/WindowsUtf8.cmake).
 include(WindowsUtf8)
-ajp_utf8_manifests()
+kirari_utf8_manifests()

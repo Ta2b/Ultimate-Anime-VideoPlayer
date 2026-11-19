@@ -28,7 +28,7 @@ Ce qui en reste, pour les anciens fichiers :
 
 Pour en rebrancher un : l'historique git garde `src/gpu/migraphx`, `src/gpu/openvino` et `src/gpu/winml`
 (avant 0.10.0). Le faire seulement après une mesure qui le justifie, sur la carte visée, face à Vulkan
-(`ajp bench`).
+(`kirari bench`).
 
 DirectML n'a jamais eu de backend.
 
@@ -38,7 +38,7 @@ Le mode Performance de SPAN (FP8) existe aussi sous Vulkan, sur une carte à mat
 RX 9000) : même paquet, même reçu, même porte que sous TensorRT (`docs/span-fp8-cutlass.md`, « Sous
 Vulkan »). Les graphes Q/DQ FP8 de RIFE et DistilDRBA (cran Performance) y passent par les mêmes matrices.
 
-La variante INT8 du SPAN (`tools/span/quantize_span.py`, reçu `ajp-span-int8-v1`) se lit aussi sous Vulkan :
+La variante INT8 du SPAN (`tools/span/quantize_span.py`, reçu `kirari-span-int8-v1`) se lit aussi sous Vulkan :
 l'import plie ses paires Q/DQ INT8 en `FakeQuantInt8` et ses poids INT8 en q × échelle, les passes fondent
 l'arrondi dans les Conv (`ConvAttrs::quant_grid`), le noyau direct arrondit à la grille INT8 et la variante
 `coopmat_int8` multiplie des entiers sur les tuiles s8 × s8 → s32 16 × 16 × 16 (`net_conv_coopmat_int8.glsl`).
@@ -84,7 +84,7 @@ Le noyau à matrices coopératives float16 (`net_conv_coopmat.glsl`) tuile en 16
 WMMA d'AMD (RDNA 3 et 4) et les tensor cores de NVIDIA. Les XMX d'Intel Xe2 (Lunar Lake, Battlemage ; Panther
 Lake aussi) annoncent sous ANV des tuiles de M = 8 : 8 × 16 × 16, f16 × f16 → f32 (et → f16), par sous-groupe.
 La variante `coopmat_m8` (`net_conv_m8.cpp`, noyau `net_conv_coopmat_m8_f16`, novembre 2026) les sert : même
-noyau compilé en tuiles de 8 pixels (`AJP_COOPMAT_M8`), mêmes poids que `coopmat` (N et K restent 16), sommes en
+noyau compilé en tuiles de 8 pixels (`KIRARI_COOPMAT_M8`), mêmes poids que `coopmat` (N et K restent 16), sommes en
 float, B lue dans le tampon ou partagée, sans les tuiles à halo, l'épilogue en registres ni les canaux découpés.
 Des sous-groupes de 16 sont exigés à chaque dispatch, la largeur SIMD des Xe2 (leur `minSubgroupSize`).
 
@@ -103,7 +103,7 @@ Règles tenues :
 
 Ce qui reste : les Arc A (Alchemist, DG2) annoncent sous ANV 8 × 8 × 16 (N = 8), qu'aucun noyau ne tuile ; ce
 que le pilote Windows d'Intel annonce n'est pas relevé. Les tuiles du pilote sont au journal d'ouverture du
-backend (« tuiles du pilote : … »). `ajp_vk_backend_tests "[m8]"` exécute la variante contre l'interpréteur sur un
+backend (« tuiles du pilote : … »). `kirari_vk_backend_tests "[m8]"` exécute la variante contre l'interpréteur sur un
 appareil qui l'a ; sous lavapipe, seuls son abaissement et sa mémoire partagée (évaluée dans le module SPIR-V)
 sont vérifiés.
 
@@ -132,7 +132,7 @@ précision réduite, soit 39 dB). Sur du bruit un réseau d'interpolation diverg
 49 % d'écart pour des sommes float16 qui ne lui coûtent que 0,15 dB sur un dessin. La porte refusait donc ce
 qui était juste, sans mesurer ce qui se voit : l'écart au calcul exact sur une image.
 
-Mesure (`ajp_vk_backend_tests "[.sommes]"`, lavapipe, PSNR contre le calcul en float, dessin de la porte) :
+Mesure (`kirari_vk_backend_tests "[.sommes]"`, lavapipe, PSNR contre le calcul en float, dessin de la porte) :
 
 | réseau | noyaux de référence | `direct_f16p` | `winograd_f16p` |
 |---|---|---|---|

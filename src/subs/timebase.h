@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-namespace ajp::subs {
+namespace kirari::subs {
 
 // Bornes des horodatages et des durées acceptés, en microsecondes.
 inline constexpr std::int64_t kMaxTimestampUs = std::int64_t{100} * 24 * 3600 * 1'000'000;  // 100 jours
@@ -24,4 +24,4 @@ constexpr std::int64_t to_ms(std::int64_t us) {
   return rest >= 500 ? ms + 1 : ms;
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

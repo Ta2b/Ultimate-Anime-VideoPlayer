@@ -10,7 +10,7 @@
 #include "gpu/vulkan/backend/vulkan_backend.h"
 #include "gpu/vulkan/backend/vulkan_backend_detail.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 using detail::refuse_backend;
@@ -71,4 +71,4 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::span8_engine(
   return std::make_unique<VulkanEngine>(std::move(*engine));
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

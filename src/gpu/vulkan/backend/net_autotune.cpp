@@ -17,7 +17,6 @@
 #include <variant>
 #include <vector>
 
-#include "ajp_vk_backend_spirv.h"
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_artifact.h"
 #include "gpu/vulkan/backend/net_build.h"
@@ -27,8 +26,9 @@
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/recording.h"
 #include "kernels/ref/half.h"
+#include "kirari_vk_backend_spirv.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 // 2 : Conv directe à plusieurs pixels (PIX) ; 3 : taille de sous-groupe exigée ; 4 : coopmat à
@@ -710,4 +710,4 @@ StampCheck check_stamps(std::span<const std::uint64_t> ticks) {
   return StampCheck::Ok;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

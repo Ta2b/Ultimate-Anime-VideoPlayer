@@ -1,6 +1,6 @@
 // Repris de animejanai-inference-rtx@118c272 src/onnx_flow.cpp:14-58 et 104-176,
 // et src/model_identity.cpp:52-60 pour is_safe_location (sans le refus de
-// « model.onnx », propre à l'instantané du fork que ajp ne fait pas). Les numéros de champ
+// « model.onnx », propre à l'instantané du fork que kirari ne fait pas). Les numéros de champ
 // sont ceux d'onnx.proto (ONNX 1.19.1) ; on ne descend que dans les messages
 // déclarés : les octets bruts d'un tenseur ne sont jamais lus comme du protobuf.
 #include "prepare/onnx_scan.h"
@@ -18,7 +18,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using Bytes = std::span<const std::byte>;
@@ -333,4 +333,4 @@ bool is_piece_file_name(std::string_view name) {
   return !name.empty() && name.find('/') == std::string_view::npos && is_safe_location(std::string(name));
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

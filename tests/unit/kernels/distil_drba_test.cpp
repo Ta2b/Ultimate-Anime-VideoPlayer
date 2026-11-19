@@ -5,7 +5,7 @@
 
 #include "kernels/spec.h"
 
-using namespace ajp::kernels;
+using namespace kirari::kernels;
 using Catch::Matchers::WithinAbs;
 
 TEST_CASE("DistilDRBA : centré sur a avant le milieu, sur b à partir du milieu", "[kernels][drba]") {

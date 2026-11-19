@@ -9,7 +9,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 struct Rearrangement {
@@ -139,4 +139,4 @@ int fuse_pixel_shuffles(Graph& graph) {
   return fused;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

@@ -47,7 +47,7 @@
 struct AVBufferRef;
 struct AVFrame;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Ordinal CUDA de l'appareil de rendu, pour l'encodeur qui lit la mémoire CUDA (NVENC) ; -1 sans
 // CUDA : GPU d'un autre fabricant, pilote absent, ou appareil introuvable par son UUID.
@@ -195,4 +195,4 @@ class FrameExport {
   std::deque<std::size_t> order_;  // tampons en copie ou prêts, dans l'ordre des convert()
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -11,7 +11,7 @@
 #include "core/toml_fields.h"
 #include "core/utf8_path.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 // --- SHA-256 : constantes de FIPS 180-4, section 4.2.2. ---
@@ -413,11 +413,12 @@ std::filesystem::path engine_dir(const InstallLayout& layout, const EnginePackag
 std::filesystem::path backend_library(const InstallLayout& layout, const EnginePackage& package) {
   // Modules CMake : .so sous macOS aussi.
   const std::string_view suffix = layout.os == Os::Windows ? ".dll" : ".so";
-  return engine_dir(layout, package) / std::format("ajp_backend_{}{}", engine_name(package.engine), suffix);
+  return engine_dir(layout, package) /
+         std::format("kirari_backend_{}{}", engine_name(package.engine), suffix);
 }
 
 std::filesystem::path download_path(const InstallLayout& layout, std::string_view sha256) {
   return layout.downloads / std::format("{}.part", sha256);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

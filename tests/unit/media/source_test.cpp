@@ -18,14 +18,14 @@ extern "C" {
 #include "clips.h"
 #include "source_harness.h"
 
-using namespace ajp::media;
-using namespace ajp::media::test;
-using ajp::Command;
-using ajp::Credit;
-using ajp::DecodedFrame;
-using ajp::Flush;
-using ajp::RefusalCode;
-namespace cmd = ajp::cmd;
+using namespace kirari::media;
+using namespace kirari::media::test;
+using kirari::Command;
+using kirari::Credit;
+using kirari::DecodedFrame;
+using kirari::Flush;
+using kirari::RefusalCode;
+namespace cmd = kirari::cmd;
 
 namespace {
 

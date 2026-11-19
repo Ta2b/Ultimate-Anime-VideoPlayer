@@ -11,10 +11,10 @@
 
 namespace {
 
-using ajp::RefusalCode;
-using ajp::subs::kAtlasPadding;
-using ajp::subs::Packing;
-using ajp::subs::PackSize;
+using kirari::RefusalCode;
+using kirari::subs::kAtlasPadding;
+using kirari::subs::Packing;
+using kirari::subs::PackSize;
 
 // Propriétés d'un empaquetage réussi : tout est dans l'atlas, et deux
 // rectangles, agrandis de l'écart vers la droite et le bas, ne se touchent pas.
@@ -60,7 +60,7 @@ TEST_CASE("pack : propriété, aucun recouvrement et tout dans l'atlas", "[atlas
     std::mt19937 random(seed);
     const int count = std::uniform_int_distribution<int>(1, 120)(random);
     const auto sizes = random_sizes(random, count, 300);
-    const auto packing = ajp::subs::pack(sizes, 4096);
+    const auto packing = kirari::subs::pack(sizes, 4096);
     REQUIRE(packing);
     check_packing(sizes, *packing, 4096);
   }
@@ -72,7 +72,7 @@ TEST_CASE("pack : propriété sous un côté serré, refus seulement par manque 
     std::mt19937 random(seed);
     const int count = std::uniform_int_distribution<int>(1, 60)(random);
     const auto sizes = random_sizes(random, count, 64);
-    const auto packing = ajp::subs::pack(sizes, kSide);
+    const auto packing = kirari::subs::pack(sizes, kSide);
     if (packing) {
       check_packing(sizes, *packing, kSide);
     } else {
@@ -87,8 +87,8 @@ TEST_CASE("pack : propriété sous un côté serré, refus seulement par manque 
 TEST_CASE("pack : déterministe et tassé", "[atlas]") {
   std::mt19937 random(7);
   const auto sizes = random_sizes(random, 80, 120);
-  const auto first = ajp::subs::pack(sizes, 4096);
-  const auto second = ajp::subs::pack(sizes, 4096);
+  const auto first = kirari::subs::pack(sizes, 4096);
+  const auto second = kirari::subs::pack(sizes, 4096);
   REQUIRE(first);
   REQUIRE(second);
   CHECK(first->positions == second->positions);
@@ -99,35 +99,35 @@ TEST_CASE("pack : déterministe et tassé", "[atlas]") {
 }
 
 TEST_CASE("pack : bornes et refus", "[atlas]") {
-  CHECK(ajp::subs::pack({}, 64)->positions.empty());
+  CHECK(kirari::subs::pack({}, 64)->positions.empty());
   const std::vector<PackSize> exact{{64, 64}};
-  const auto full = ajp::subs::pack(exact, 64);
+  const auto full = kirari::subs::pack(exact, 64);
   REQUIRE(full);
   CHECK(full->width == 64);
   CHECK(full->height == 64);
 
   const std::vector<PackSize> too_wide{{65, 1}};
-  CHECK(ajp::subs::pack(too_wide, 64).error().code == RefusalCode::SubtitleAtlasFull);
+  CHECK(kirari::subs::pack(too_wide, 64).error().code == RefusalCode::SubtitleAtlasFull);
   const std::vector<PackSize> two_full{{64, 64}, {1, 1}};
-  CHECK(ajp::subs::pack(two_full, 64).error().code == RefusalCode::SubtitleAtlasFull);
+  CHECK(kirari::subs::pack(two_full, 64).error().code == RefusalCode::SubtitleAtlasFull);
   const std::vector<PackSize> empty_rect{{0, 5}};
-  CHECK(ajp::subs::pack(empty_rect, 64).error().code == RefusalCode::FieldOutOfRange);
-  CHECK(ajp::subs::pack(exact, 0).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(kirari::subs::pack(empty_rect, 64).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(kirari::subs::pack(exact, 0).error().code == RefusalCode::FieldOutOfRange);
 }
 
 TEST_CASE("AtlasPool : au plus kMaxAtlasesInFlight, recyclés par la route", "[atlas]") {
-  std::vector<std::unique_ptr<ajp::subs::SubtitleAtlas>> returned;
-  ajp::subs::AtlasPool pool(
-      [&](std::unique_ptr<ajp::subs::SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); });
+  std::vector<std::unique_ptr<kirari::subs::SubtitleAtlas>> returned;
+  kirari::subs::AtlasPool pool(
+      [&](std::unique_ptr<kirari::subs::SubtitleAtlas> atlas) { returned.push_back(std::move(atlas)); });
 
-  std::vector<std::shared_ptr<const ajp::subs::SubtitleAtlas>> shared;
-  for (std::size_t i = 0; i < ajp::subs::kMaxAtlasesInFlight; ++i) {
+  std::vector<std::shared_ptr<const kirari::subs::SubtitleAtlas>> shared;
+  for (std::size_t i = 0; i < kirari::subs::kMaxAtlasesInFlight; ++i) {
     auto atlas = pool.take();
     REQUIRE(atlas != nullptr);
     atlas->pixels.assign(16, 1);
     shared.push_back(pool.share(std::move(atlas)));
   }
-  CHECK(pool.in_flight() == ajp::subs::kMaxAtlasesInFlight);
+  CHECK(pool.in_flight() == kirari::subs::kMaxAtlasesInFlight);
   CHECK(pool.take() == nullptr);
 
   // Une copie tenue ailleurs retarde le retour jusqu'à la dernière référence.
@@ -141,7 +141,7 @@ TEST_CASE("AtlasPool : au plus kMaxAtlasesInFlight, recyclés par la route", "[a
 
   pool.give_back(std::move(returned.front()));
   returned.clear();
-  CHECK(pool.in_flight() == ajp::subs::kMaxAtlasesInFlight - 1);
+  CHECK(pool.in_flight() == kirari::subs::kMaxAtlasesInFlight - 1);
   auto recycled = pool.take();
   CHECK(recycled.get() == address);
   CHECK(recycled->pixels.capacity() >= 16);  // la mémoire est réutilisée
@@ -149,12 +149,12 @@ TEST_CASE("AtlasPool : au plus kMaxAtlasesInFlight, recyclés par la route", "[a
   // Tout rentre ; un atlas de trop est détruit, la borne tient.
   pool.give_back(std::move(recycled));
   shared.clear();
-  REQUIRE(returned.size() == ajp::subs::kMaxAtlasesInFlight - 1);
+  REQUIRE(returned.size() == kirari::subs::kMaxAtlasesInFlight - 1);
   for (auto& atlas : returned) pool.give_back(std::move(atlas));
   CHECK(pool.in_flight() == 0);
-  pool.give_back(std::make_unique<ajp::subs::SubtitleAtlas>());
+  pool.give_back(std::make_unique<kirari::subs::SubtitleAtlas>());
   CHECK(pool.in_flight() == 0);
-  std::vector<std::unique_ptr<ajp::subs::SubtitleAtlas>> taken;
+  std::vector<std::unique_ptr<kirari::subs::SubtitleAtlas>> taken;
   while (auto atlas = pool.take()) taken.push_back(std::move(atlas));
-  CHECK(taken.size() == ajp::subs::kMaxAtlasesInFlight);
+  CHECK(taken.size() == kirari::subs::kMaxAtlasesInFlight);
 }

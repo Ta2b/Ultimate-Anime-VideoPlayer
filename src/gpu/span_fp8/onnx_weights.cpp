@@ -16,7 +16,7 @@
 #include "core/utf8_path.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 using ir::onnx::Tensor;
@@ -270,4 +270,4 @@ std::expected<Package, Refusal> package_from_onnx_file(const std::filesystem::pa
   return package_from_onnx(*model);
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

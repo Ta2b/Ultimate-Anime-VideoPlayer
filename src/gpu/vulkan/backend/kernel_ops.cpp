@@ -13,7 +13,7 @@
 #include "gpu/vulkan/backend/kernel_ops_detail.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 namespace detail {
 
@@ -320,4 +320,4 @@ std::vector<GpuStageSummary> VulkanKernelOps::gpu_profile() {
   return clock_ ? clock_->profile() : std::vector<GpuStageSummary>{};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

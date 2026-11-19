@@ -16,7 +16,7 @@
 #include "kernels/spec/frame_stats.h"
 #include "media/faces.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 inline constexpr int kShotBins = 64;
 inline constexpr int kShotGrid = 4;              // grille kShotGrid × kShotGrid de luminances moyennes
@@ -177,4 +177,4 @@ class ShotCutter {
   std::deque<Motion> recent_;  // les dernières distances entre dessins distincts, pour le seuil
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

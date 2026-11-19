@@ -15,7 +15,7 @@
 #include <spdlog/sinks/dist_sink.h>
 #include <spdlog/spdlog.h>
 
-namespace ajp {
+namespace kirari {
 namespace {
 
 // Le répartiteur de install_log_sinks : un type à lui pour le reconnaître dans le journal
@@ -237,4 +237,4 @@ void install_terminate_flush() {
   });
 }
 
-}  // namespace ajp
+}  // namespace kirari

@@ -19,9 +19,9 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-using namespace ajp;
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 

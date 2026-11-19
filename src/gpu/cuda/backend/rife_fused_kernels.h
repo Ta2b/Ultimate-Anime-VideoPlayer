@@ -17,7 +17,7 @@
 
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Une source de flot : la sortie Y d'un bloc (52 canaux, yh × yw), dont le DepthToSpace Z (13 canaux,
 // 2 yh × 2 yw) est agrandi ×scale vers la pleine résolution.
@@ -89,4 +89,4 @@ cudaError_t launch_fused_entry(const FusedEntryParams& params, cudaStream_t stre
 cudaError_t launch_fused_glue(const FusedGlueParams& params, cudaStream_t stream);
 cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

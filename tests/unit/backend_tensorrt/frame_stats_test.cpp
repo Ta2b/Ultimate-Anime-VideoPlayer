@@ -18,9 +18,9 @@
 
 namespace {
 
-using namespace ajp;
-using namespace ajp::test;
-namespace k = ajp::kernels;
+using namespace kirari;
+using namespace kirari::test;
+namespace k = kirari::kernels;
 
 }  // namespace
 

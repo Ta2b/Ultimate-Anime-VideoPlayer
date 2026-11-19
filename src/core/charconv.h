@@ -12,7 +12,7 @@
 #include <system_error>
 #include <type_traits>
 
-namespace ajp::core {
+namespace kirari::core {
 
 template <class T>
 std::from_chars_result from_chars(const char* first, const char* last, T& value) {
@@ -38,4 +38,4 @@ std::from_chars_result from_chars(const char* first, const char* last, T& value)
 #endif
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -4,10 +4,10 @@
 
 # Un chargeur factice, construit ici et jamais rangé dans le dépôt : il s'ouvre mais n'exporte
 # pas vkGetInstanceProcAddr.
-add_library(ajp_vk_compute_fake_loader SHARED fake_loader.cpp)
-ajp_set_warnings(ajp_vk_compute_fake_loader)
+add_library(kirari_vk_compute_fake_loader SHARED fake_loader.cpp)
+kirari_set_warnings(kirari_vk_compute_fake_loader)
 
-ajp_add_unit_tests(vk_compute
+kirari_add_unit_tests(vk_compute
   SOURCES
     caps_test.cpp
     color_test.cpp
@@ -20,9 +20,9 @@ ajp_add_unit_tests(vk_compute
     rig.cpp
     transfer_test.cpp
     warp_test.cpp
-  DEPS ajp::kernels
-  MAIN ajp_test_vulkan)
+  DEPS kirari::kernels
+  MAIN kirari_test_vulkan)
 
-target_compile_definitions(ajp_vk_compute_tests PRIVATE
-  AJP_TEST_FAKE_VULKAN="$<TARGET_FILE:ajp_vk_compute_fake_loader>")
-add_dependencies(ajp_vk_compute_tests ajp_vk_compute_fake_loader)
+target_compile_definitions(kirari_vk_compute_tests PRIVATE
+  KIRARI_TEST_FAKE_VULKAN="$<TARGET_FILE:kirari_vk_compute_fake_loader>")
+add_dependencies(kirari_vk_compute_tests kirari_vk_compute_fake_loader)

@@ -17,7 +17,7 @@ grade, ou refaire le grade exact dans le ring.
    LUT de couleur ne voit pas. La LUT d'approximation est laissée au chantier 8, s'il en a l'usage.
 2. **Les formules écrites une fois** : `kernels/spec/grade_pixel.h` porte ligne à ligne `anime-hdr-funcs.glsl`,
    `1-local.hook`, `2-area.hook`, `2b-localmax.hook`, le look, le vrai noir et KWin, en fonctions
-   `__host__ __device__` (macro `AJP_GRADE_FN`), avec les lectures d'image passées par l'appelant. La référence
+   `__host__ __device__` (macro `KIRARI_GRADE_FN`), avec les lectures d'image passées par l'appelant. La référence
    CPU (`kernels/ref/grade.{h,cpp}`) et les noyaux CUDA (chantier 2.8) les incluent toutes les deux : le port CUDA
    n'a plus que les lectures et la mise en mémoire partagée du flou à écrire.
 3. **Le contrat** (`kernels/spec/grade.h`) : `GradeUniforms`, les //!PARAM du grade sous leurs noms

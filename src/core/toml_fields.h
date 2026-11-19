@@ -19,9 +19,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::core::fields {
+namespace kirari::core::fields {
 
 // Texte TOML lu en table, ou refus `unreadable` qui nomme la ligne fautive.
 inline std::expected<toml::table, Refusal> parse(std::string_view text, RefusalCode unreadable,
@@ -108,4 +108,4 @@ inline std::expected<void, Refusal> check_version(const toml::table& root, std::
   return {};
 }
 
-}  // namespace ajp::core::fields
+}  // namespace kirari::core::fields

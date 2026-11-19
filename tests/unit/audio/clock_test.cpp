@@ -8,8 +8,8 @@
 
 #include "core/clock.h"
 
-using ajp::ClockSnapshot;
-using ajp::audio::AudioClock;
+using kirari::ClockSnapshot;
+using kirari::audio::AudioClock;
 
 TEST_CASE("ClockSnapshot : extrapole le temps média selon sa vitesse", "[audio][clock]") {
   const ClockSnapshot playing{.media_us = 10'000'000, .host_us = 500'000, .rate = 1.0, .valid = true};
@@ -24,9 +24,9 @@ TEST_CASE("ClockSnapshot : extrapole le temps média selon sa vitesse", "[audio]
   CHECK(ntsc.media_at(1'000'000) == 1'001'000);
 }
 
-TEST_CASE("ajp::host_now_us : horloge monotone", "[audio][clock]") {
-  const std::int64_t first = ajp::host_now_us();
-  const std::int64_t second = ajp::host_now_us();
+TEST_CASE("kirari::host_now_us : horloge monotone", "[audio][clock]") {
+  const std::int64_t first = kirari::host_now_us();
+  const std::int64_t second = kirari::host_now_us();
   CHECK(second >= first);
 }
 

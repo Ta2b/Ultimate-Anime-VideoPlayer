@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Les portes HDR du contrat v2 sur des instantanés PQ (chantier 8.11).
 
-Les instantanés viennent de `ajp play … --snapshot=NOM.pq.ppm --snapshot-at=S` sur une sortie HDR10
+Les instantanés viennent de `kirari play … --snapshot=NOM.pq.ppm --snapshot-at=S` sur une sortie HDR10
 (PPM 16 bits, PQ BT.2020, nits affichés ; compare_shots.sh pour les 30 plans de shots30.tsv). Une suite
 NOM-001.pq.ppm, NOM-002.pq.ppm… (--snapshot-count) est un plan vu image par image. Critères, par plan :
 

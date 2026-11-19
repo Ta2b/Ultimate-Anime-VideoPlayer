@@ -5,7 +5,7 @@
 
 #include "audio/pcm.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 double DriftRegulator::update(std::int64_t error_us, std::int64_t elapsed_us) {
   const double error_s = static_cast<double>(error_us) * 1e-6;
@@ -35,4 +35,4 @@ void DriftRegulator::reset() {
   primed_ = false;
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

@@ -3,11 +3,11 @@
 // contre celle du SPAN d'origine en FP16 par TensorRT.
 //
 // Le test caché demande un paquet dérivé par tools/span/derive_span_fp8.py et son modèle d'origine, passés à
-// CMake (AJP_SPAN_FP8_PACKAGE, AJP_SPAN_FP8_MODEL, jamais copiés dans le dépôt) ; sans eux, il se SKIP. Une
-// image d'anime en PPM (AJP_SPAN_FP8_IMAGE, hauteur et largeur que les noyaux prennent) remplace le dessin
-// synthétique et donne le PSNR et le SSIM de la sortie contre TensorRT FP16 :
-//   cmake -DAJP_SPAN_FP8_PACKAGE=.../xxx-fp8c-....span8 -DAJP_SPAN_FP8_MODEL=.../xxx.onnx ...
-//   ajp-gpu ajp_backend_tensorrt_tests "[.span_fp8]"
+// CMake (KIRARI_SPAN_FP8_PACKAGE, KIRARI_SPAN_FP8_MODEL, jamais copiés dans le dépôt) ; sans eux, il se SKIP.
+// Une image d'anime en PPM (KIRARI_SPAN_FP8_IMAGE, hauteur et largeur que les noyaux prennent) remplace le
+// dessin synthétique et donne le PSNR et le SSIM de la sortie contre TensorRT FP16 :
+//   cmake -DKIRARI_SPAN_FP8_PACKAGE=.../xxx-fp8c-....span8 -DKIRARI_SPAN_FP8_MODEL=.../xxx.onnx ...
+//   kirari-gpu kirari_backend_tensorrt_tests "[.span_fp8]"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -26,13 +26,13 @@
 #include "kernels/ref/half.h"
 #include "prepare/sha256.h"
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 namespace fs = std::filesystem;
 
 struct Scratch {
-  Scratch() : root(fs::temp_directory_path() / "ajp-span-fp8-backend-test") {
+  Scratch() : root(fs::temp_directory_path() / "kirari-span-fp8-backend-test") {
     fs::remove_all(root);
     fs::create_directories(root);
   }
@@ -213,17 +213,17 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 rejoué par graphe rend la même image
 TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorRT",
           "[.span_fp8][backend_tensorrt][cuda][span]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  const fs::path package(AJP_SPAN_FP8_PACKAGE), model(AJP_SPAN_FP8_MODEL);
+  const fs::path package(KIRARI_SPAN_FP8_PACKAGE), model(KIRARI_SPAN_FP8_MODEL);
   if (!fs::is_regular_file(package) || !fs::is_regular_file(model))
-    SKIP("AJP_SPAN_FP8_PACKAGE et AJP_SPAN_FP8_MODEL (CMake) : paquet dérivé et modèle d'origine");
+    SKIP("KIRARI_SPAN_FP8_PACKAGE et KIRARI_SPAN_FP8_MODEL (CMake) : paquet dérivé et modèle d'origine");
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   if (!loaded.backend->capabilities().span_fp8_cutlass) SKIP("appareil sans les noyaux FP8 CUTLASS (sm 8.9)");
   int h = 384, w = 640;
   std::vector<float> picture;
-  if (const fs::path image(AJP_SPAN_FP8_IMAGE); !image.empty() && fs::is_regular_file(image)) {
+  if (const fs::path image(KIRARI_SPAN_FP8_IMAGE); !image.empty() && fs::is_regular_file(image)) {
     picture = read_ppm(image, h, w);
-    if (picture.empty()) SKIP("AJP_SPAN_FP8_IMAGE : PPM P6 de 255 illisible");
+    if (picture.empty()) SKIP("KIRARI_SPAN_FP8_IMAGE : PPM P6 de 255 illisible");
   } else {
     picture = drawing(h, w);
   }
@@ -269,4 +269,4 @@ TEST_CASE("Backend TensorRT : le SPAN FP8 CUTLASS contre le SPAN FP16 de TensorR
   CHECK(similarity >= 0.985);  // idem
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

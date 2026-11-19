@@ -1,15 +1,15 @@
-// Options de « ajp play <fichier> » : ce que la tranche verticale lit sur la ligne de
+// Options de « kirari play <fichier> » : ce que la tranche verticale lit sur la ligne de
 // commande, et rien d'autre (aucune variable d'environnement).
 //
-//   ajp play <fichier> [--model=FICHIER.onnx] [--no-upscale] [--window=LxH] [--fullscreen]
+//   kirari play <fichier> [--model=FICHIER.onnx] [--no-upscale] [--window=LxH] [--fullscreen]
 //                      [--start=S] [--seconds=S] [--fullscreen-after=S] [--stats=FICHIER]
 //                      [--snapshot=FICHIER.ppm] [--snapshot-at=S] [--keys=S:touche,…]
 //                      [--work-height=N] [--rife=N] [--rife-model=FICHIER.onnx]
 //                      [--truehdr-peak=NITS]
 //                      [--first-run] [--mute] [--data-dir=DOSSIER] [--bench-level=auto|0..4]
 //                      [--bench-out=FICHIER]
-//   ajp bench <fichier> [--seconds=S] [--report=FICHIER] [--windowed]
-//   ajp --register | --unregister
+//   kirari bench <fichier> [--seconds=S] [--report=FICHIER] [--windowed]
+//   kirari --register | --unregister
 //
 // Le modèle par défaut est celui du lecteur actuel du propriétaire (AnimeJaNai, slot par
 // défaut de animejanai.conf) : SPAN V3.1 Sharp1 Performance, ×2. Il est lu en place, en
@@ -30,7 +30,7 @@
 #include "core/profile.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::string_view kDefaultModelFile =
     "2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx";
@@ -40,7 +40,7 @@ inline constexpr int kSpanFactor = 2;
 inline constexpr std::string_view kDefaultRifeFile = "rife_v4.22_lite.onnx";
 // Interpolation par défaut : ×3. Sur la RTX 4070 Ti, une paire qui bouge coûte 2 RIFE à 720p et
 // 3 SPAN, environ 31 ms sur 41,7 : 8 images sautées sur 25 s d'ouverture, contre 304 à ×4
-// (19 octobre, ~/ajp-reports/vertical-slice.md). ×4 attend les optimisations de la parité.
+// (19 octobre, ~/kirari-reports/vertical-slice.md). ×4 attend les optimisations de la parité.
 inline constexpr int kDefaultRifeFactor = 3;
 inline constexpr int kMaxSnapshotFrames = 240;
 
@@ -233,9 +233,9 @@ struct PlayOptions {
   bool first_run = false;
   // --mute : volume à 0 pour cette lecture (les essais du benchmark), sans toucher à play.toml.
   bool mute = false;
-  // --data-dir=DOSSIER : play.toml, user.toml, bench.toml, resume.tsv et ajp.log y vivent au lieu du dossier
-  // de données ; les moteurs construits et les modèles restent partagés. Les essais du benchmark l'emploient
-  // pour ne rien changer chez l'utilisateur.
+  // --data-dir=DOSSIER : play.toml, user.toml, bench.toml, resume.tsv et kirari.log y vivent au lieu du
+  // dossier de données ; les moteurs construits et les modèles restent partagés. Les essais du benchmark
+  // l'emploient pour ne rien changer chez l'utilisateur.
   std::optional<std::filesystem::path> data_dir;
   // --bench-level : joue la chaîne du niveau 0 (Économe) à 4 (Ultra), ou « auto » (-1) : le niveau estimé de
   // la machine. Avec --bench-out, les mesures de la lecture y sont écrites à la fin (auto_bench.h :
@@ -284,7 +284,7 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
 // debug : avec les options d'essai (--debug --help).
 std::string play_usage(bool debug = false);
 
-// « ajp bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
+// « kirari bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
 struct BenchOptions {
   std::filesystem::path file;
   int seconds = 12;
@@ -298,8 +298,8 @@ struct BenchOptions {
 std::expected<BenchOptions, Refusal> parse_bench_options(std::span<const std::string_view> args);
 std::string bench_usage();
 
-// « ajp compare <fichier> --a="OPTIONS" --b="OPTIONS" » : deux variantes de la chaîne côte à côte
-// (auto_bench_run.h : Variant). Les options sont celles de « ajp play », séparées par des espaces.
+// « kirari compare <fichier> --a="OPTIONS" --b="OPTIONS" » : deux variantes de la chaîne côte à côte
+// (auto_bench_run.h : Variant). Les options sont celles de « kirari play », séparées par des espaces.
 struct CompareOptions {
   std::filesystem::path file;
   int seconds = 12;
@@ -335,4 +335,4 @@ std::expected<std::filesystem::path, Refusal> find_model(const PlayOptions& opti
 std::expected<std::filesystem::path, Refusal> find_rife_model(
     const PlayOptions& options, std::span<const std::filesystem::path> candidates);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

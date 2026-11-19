@@ -17,7 +17,7 @@
 #include "app/play/wayland_output.h"
 #include "french_ui.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 using Catch::Approx;
 using Catch::Matchers::WithinAbs;
 
@@ -73,7 +73,7 @@ std::vector<std::uint8_t> oled_edid() {
 }  // namespace
 
 TEST_CASE("EDID du QD-OLED de référence : modèle connu, OLED", "[app][display]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const DisplayFacts d = parse_edid(kQdOledEdid);
   CHECK(d.vrr_min_hz == 100);  // descripteur 0xFD : 100 à 165 Hz
   // Le bloc AMD FreeSync de son CTA dit 100 à 165 Hz.
@@ -97,7 +97,7 @@ TEST_CASE("EDID du QD-OLED de référence : modèle connu, OLED", "[app][display
 }
 
 TEST_CASE("Heuristique : noir code ≤ 2 et limiteur plein écran donnent OLED, sinon non", "[app][display]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   std::array<std::uint8_t, 384> edid = kQdOledEdid;
   // Un autre modèle (nom et product id changés) avec les mêmes mesures : l'heuristique seule.
   edid[10] = 0x00;
@@ -115,7 +115,7 @@ TEST_CASE("Heuristique : noir code ≤ 2 et limiteur plein écran donnent OLED, 
 }
 
 TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const DisplayFacts d = parse_edid(oled_edid());
   REQUIRE(d.displayid_oled);
   CHECK(*d.displayid_oled);
@@ -126,7 +126,7 @@ TEST_CASE("DisplayID 2.0, bloc 0x21 : AMOLED est définitif", "[app][display]") 
 }
 
 TEST_CASE("EDID trop court : OLED inconnu", "[app][display]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   CHECK(parse_edid(std::span<const std::uint8_t>(kQdOledEdid).first(64)).source == OledSource::Unknown);
 }
 
@@ -310,8 +310,8 @@ TEST_CASE("VRR : la capacité vient de l'EDID, jamais d'une plage fixe", "[app][
 }
 
 TEST_CASE("Écran de la fenêtre : deux écrans du même modèle ne se confondent plus (A11-03)", "[app][edid]") {
-  using ajp::app::play::DisplayFacts;
-  using ajp::app::play::pick_display;
+  using kirari::app::play::DisplayFacts;
+  using kirari::app::play::pick_display;
   DisplayFacts left;
   left.connector = "card1-DP-1";
   left.name = "MAG 272U";
@@ -347,9 +347,9 @@ TEST_CASE("Écran de la fenêtre : deux écrans du même modèle ne se confonden
 
 TEST_CASE("Contrat d'écran : sous Windows le pic suit le blanc SDR du système, pas 203 (A11-06)",
           "[app][edid]") {
-  using ajp::app::play::contract_of;
-  using ajp::app::play::DisplayFacts;
-  using ajp::app::play::sdr_white_nits_of;
+  using kirari::app::play::contract_of;
+  using kirari::app::play::DisplayFacts;
+  using kirari::app::play::sdr_white_nits_of;
   // Écran de 800 nits, curseur SDR de Windows à 400 nits : SDL dit une marge de 2 et un blanc de 5,0
   // (400 / 80). Avant : 2 × 203 = 406 nits, la moitié du pic de l'écran.
   const double white = sdr_white_nits_of(5.0F, true);
@@ -360,13 +360,13 @@ TEST_CASE("Contrat d'écran : sous Windows le pic suit le blanc SDR du système,
   CHECK(sdr_white_nits_of(5.0F, false) == 0.0);
   CHECK(sdr_white_nits_of(0.0F, true) == 0.0);
   // KDE garde la main : sa référence et son pic passent devant.
-  const auto kde = contract_of(DisplayFacts{}, ajp::app::play::KwinOutput{.reference = 100.0}, 3.0, 0.0);
+  const auto kde = contract_of(DisplayFacts{}, kirari::app::play::KwinOutput{.reference = 100.0}, 3.0, 0.0);
   CHECK(kde.panel_peak_nits == 300.0);
 }
 
 TEST_CASE("Pic de contenu sans pic calibré : la règle de chaque système (A11-12)", "[app][edid]") {
-  using ajp::app::play::PeakFacts;
-  using ajp::app::play::uncalibrated_peak_nits;
+  using kirari::app::play::PeakFacts;
+  using kirari::app::play::uncalibrated_peak_nits;
   // Hors Windows : la marge × 203, rien sans HDR.
   CHECK_FALSE(uncalibrated_peak_nits({.sdl_hdr = false, .headroom = 4.0}));
   CHECK(uncalibrated_peak_nits({.sdl_hdr = true, .headroom = 4.0}) == Catch::Approx(812.0));
@@ -412,7 +412,7 @@ std::vector<std::uint8_t> edid_hdr_static(std::uint8_t max_cv, std::uint8_t fall
 }  // namespace
 
 TEST_CASE("EDID à deux blocs : le noir vient du bloc qui donne le pic (C11-14)", "[app][display]") {
-  using ajp::app::play::parse_edid;
+  using kirari::app::play::parse_edid;
   // CTA : pic 591 nits, noir code 2 ; DisplayID 2.0 : noir 0,0001 nit et plein champ 200 nits. Avant : pic de
   // CTA et noir de DisplayID, deux écrans mêlés.
   std::vector<std::uint8_t> edid = edid_hdr_static(114, 80, 2);
@@ -438,8 +438,8 @@ TEST_CASE("EDID à deux blocs : le noir vient du bloc qui donne le pic (C11-14)"
 }
 
 TEST_CASE("Heuristique OLED : un noir code 0 sans MaxFALL ne fait pas un OLED (C11-03)", "[app][display]") {
-  using ajp::app::play::OledSource;
-  using ajp::app::play::parse_edid;
+  using kirari::app::play::OledSource;
+  using kirari::app::play::parse_edid;
   // LCD de 600 nits, ni MaxFALL ni noir (octets 0) : avant, « probablement OLED » et le vrai noir du grade.
   const auto lcd = parse_edid(edid_hdr_static(114, 0, 0));
   CHECK(lcd.pq);
@@ -458,7 +458,7 @@ TEST_CASE("Heuristique OLED : un noir code 0 sans MaxFALL ne fait pas un OLED (C
 
 TEST_CASE("EDID à deux sources : le journal montre le pic et le noir de chaque bloc (A11-11)",
           "[app][edid]") {
-  using ajp::app::play::luminance_sources;
+  using kirari::app::play::luminance_sources;
   // Un seul bloc parle : rien à ajouter au journal, mais sa valeur est gardée à part.
   const DisplayFacts cta_only = parse_edid(kQdOledEdid);
   REQUIRE(cta_only.cta_peak_nits);
@@ -481,15 +481,15 @@ TEST_CASE("EDID à deux sources : le journal montre le pic et le noir de chaque 
   CHECK(line.contains("noir CTA 0.00500 et DisplayID 0.00010"));
   CHECK(line.contains("retenus pic 1000 et noir 0.00010"));
   CHECK(line.contains("DisplayID d'abord donnerait pic 950 et noir 0.00010"));
-  CHECK(ajp::app::play::describe_for_log(both).ends_with(line));
+  CHECK(kirari::app::play::describe_for_log(both).ends_with(line));
 }
 
 TEST_CASE(
     "Écran de la fenêtre : « DP-1 » ne se lit pas dans « eDP-1 », deux cartes départagées par le nom "
     "(B11-08)",
     "[app][edid]") {
-  using ajp::app::play::DisplayFacts;
-  using ajp::app::play::pick_display;
+  using kirari::app::play::DisplayFacts;
+  using kirari::app::play::pick_display;
   DisplayFacts external;
   external.connector = "card1-DP-1";
   external.name = "MAG 272U";
@@ -513,9 +513,9 @@ TEST_CASE(
 
 TEST_CASE("Écran de la fenêtre sous Windows : par son périphérique, pas par son nom (B34-02, B37-08)",
           "[app][edid]") {
-  using ajp::app::play::DisplayFacts;
-  using ajp::app::play::monitor_instance_from_interface;
-  using ajp::app::play::pick_display;
+  using kirari::app::play::DisplayFacts;
+  using kirari::app::play::monitor_instance_from_interface;
+  using kirari::app::play::pick_display;
   // Le chemin d'interface d'EnumDisplayDevices et l'identifiant d'instance de SetupAPI : la même clé.
   CHECK(monitor_instance_from_interface(
             "\\\\?\\DISPLAY#GSM5B08#5&2a0b3e4c&0&UID4352#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}") ==
@@ -543,8 +543,8 @@ TEST_CASE("Écran de la fenêtre sous Windows : par son périphérique, pas par 
 
 TEST_CASE("DisplayID 1.x : ses étiquettes ne se lisent pas comme celles de la 2.0 (B11-11)",
           "[app][display]") {
-  using ajp::app::play::OledSource;
-  using ajp::app::play::parse_edid;
+  using kirari::app::play::OledSource;
+  using kirari::app::play::parse_edid;
   // Le même bloc 0x21 « AMOLED » que oled_edid(), dans une section qui se dit DisplayID 1.3.
   std::vector<std::uint8_t> edid = oled_edid();
   edid[129] = 0x13;
@@ -556,7 +556,7 @@ TEST_CASE("DisplayID 1.x : ses étiquettes ne se lisent pas comme celles de la 2
 
 TEST_CASE("VRR armé lu dans DRM : propriété absente = inconnu, jamais « non armé » (B11-01)",
           "[app][display]") {
-  using ajp::app::play::vrr_armed_from;
+  using kirari::app::play::vrr_armed_from;
   // Avant : VRR_ENABLED, propriété atomique, manquait à un descripteur sans DRM_CLIENT_CAP_ATOMIC, et se
   // lisait 0, donc « non armé » en plein écran sous KDE avec le VRR engagé.
   CHECK_FALSE(vrr_armed_from(42, std::nullopt).has_value());
@@ -567,12 +567,12 @@ TEST_CASE("VRR armé lu dans DRM : propriété absente = inconnu, jamais « non 
 
 TEST_CASE("Contrat d'écran sous Windows : le pic du grade (DXGI) passe devant marge × blanc (B11-10)",
           "[app][edid]") {
-  using ajp::app::play::contract_of;
-  using ajp::app::play::DisplayFacts;
-  using Source = ajp::render::DisplayContract::PeakSource;
+  using kirari::app::play::contract_of;
+  using kirari::app::play::DisplayFacts;
+  using Source = kirari::render::DisplayContract::PeakSource;
   // Étalonnage HDR de Windows à 950 nits, SDL dit marge 2 × blanc 400 = 800 : une seule source, celle du
   // grade.
-  using ajp::app::play::ContentPeak;
+  using kirari::app::play::ContentPeak;
   const auto c = contract_of(DisplayFacts{}, std::nullopt, 2.0, 400.0,
                              ContentPeak{.nits = 950.0, .source = ContentPeak::Source::Compositor});
   CHECK(c.panel_peak_nits == 950.0);
@@ -591,8 +591,8 @@ TEST_CASE("Contrat d'écran sous Windows : le pic du grade (DXGI) passe devant m
 
 TEST_CASE("Pic sous Windows : l'Étalonnage HDR compte même quand SDL ne voit pas le HDR (C11-01)",
           "[app][edid]") {
-  using ajp::app::play::ContentPeak;
-  using ajp::app::play::peak_of;
+  using kirari::app::play::ContentPeak;
+  using kirari::app::play::peak_of;
   // HDR actif dans Windows, SDL rend une marge de 1,00 (Vulkan), pic calibré à 800, EDID à 1037. Avant :
   // 1037.
   const auto calibrated = peak_of({.windows = true,
@@ -627,10 +627,10 @@ TEST_CASE("Pic sous Windows : l'Étalonnage HDR compte même quand SDL ne voit p
 
 TEST_CASE("Contrat d'écran : la courbe du limiteur suit le plein champ que l'écran dit (C11-04)",
           "[app][edid]") {
-  using ajp::app::play::ContentPeak;
-  using ajp::app::play::contract_of;
-  using ajp::app::play::DisplayFacts;
-  using Abl = ajp::render::DisplayContract::AblSource;
+  using kirari::app::play::ContentPeak;
+  using kirari::app::play::contract_of;
+  using kirari::app::play::DisplayFacts;
+  using Abl = kirari::render::DisplayContract::AblSource;
   // WOLED de 800 nits, plein champ 150 dit par DXGI : MaxFALL 150, pas 261 (la table QD-OLED étirée).
   const DisplayFacts woled{
       .peak_nits = 800.0, .frame_average_nits = 400.0, .full_frame_nits = 200.0, .oled = true};
@@ -656,7 +656,7 @@ TEST_CASE("Contrat d'écran : la courbe du limiteur suit le plein champ que l'é
 }
 
 TEST_CASE("Pic automatique : un téléviseur de 3000 nits est exploité (B37-09)", "[app][edid]") {
-  using ajp::app::play::auto_peak_nits;
+  using kirari::app::play::auto_peak_nits;
   CHECK(auto_peak_nits(3000.0) == 3000);
   CHECK(auto_peak_nits(9000.0) == 4000);
   CHECK(auto_peak_nits(150.0) == 200);
@@ -667,11 +667,11 @@ TEST_CASE(
     "Écran de la fenêtre sous Wayland : le connecteur de wl_output départage deux écrans du même modèle "
     "(C34-10)",
     "[app][edid]") {
-  using ajp::app::play::DisplayFacts;
-  using ajp::app::play::output_at;
-  using ajp::app::play::pick_display;
-  using ajp::app::play::WaylandOutput;
-  using ajp::app::play::with_connector;
+  using kirari::app::play::DisplayFacts;
+  using kirari::app::play::output_at;
+  using kirari::app::play::pick_display;
+  using kirari::app::play::WaylandOutput;
+  using kirari::app::play::with_connector;
   const std::vector<WaylandOutput> outputs{{.name = "DP-1", .x = 0, .y = 0},
                                            {.name = "DP-2", .x = 2560, .y = 0}};
   CHECK(output_at(outputs, 2560, 0) == "DP-2");
@@ -698,10 +698,10 @@ TEST_CASE(
 }
 
 TEST_CASE("Carte de l'écran : le connecteur DRM nomme sa carte, l'écart se dit (C37-07)", "[app][edid]") {
-  using ajp::app::play::drm_card_of;
-  using ajp::app::play::screen_card_line;
-  using ajp::app::play::screen_card_warns;
-  using ajp::app::play::ScreenCard;
+  using kirari::app::play::drm_card_of;
+  using kirari::app::play::screen_card_line;
+  using kirari::app::play::screen_card_warns;
+  using kirari::app::play::ScreenCard;
   CHECK(drm_card_of("card1-DP-2") == "card1");
   CHECK(drm_card_of("card12-eDP-1") == "card12");
   CHECK(drm_card_of("DP-2").empty());

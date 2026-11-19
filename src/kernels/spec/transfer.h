@@ -11,7 +11,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // PQ : E' signal [0, 1] ↔ luminance affichée [0, 10000] cd/m².
 //   EOTF : p = E'^(1/m2), Y = (max(p − c1, 0) / (c2 − c3 p))^(1/m1) × 10000 ;
@@ -134,6 +134,6 @@ constexpr Mat3 gamut_conversion(const Gamut& from, const Gamut& to) {
 inline constexpr Mat3 kBt709ToBt2020 = gamut_conversion(kBt709Gamut, kBt2020Gamut);
 inline constexpr Mat3 kBt2020ToBt709 = gamut_conversion(kBt2020Gamut, kBt709Gamut);
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

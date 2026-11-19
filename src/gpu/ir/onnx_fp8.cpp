@@ -13,7 +13,7 @@
 #include "gpu/ir/int8.h"
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 namespace {
 
 const Tensor* find_initializer(const Graph& graph, const std::string& name) {
@@ -214,4 +214,4 @@ std::size_t fuse_fp8_quant_pairs(Graph& graph) {
   return fused;
 }
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

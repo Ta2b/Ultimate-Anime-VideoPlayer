@@ -15,7 +15,7 @@
 #include "app/play/settings.h"
 #include "core/source_info.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // DistilDRBA dans l'Auto (tranches Qualité et Ultra) : faux tant que sa porte de qualité n'est pas passée. La
 // porte (décision 8 de docs/audits/SYNTHESE.md, A07-13) : au banc de qualité (docs/banc-qualite.md), sur des
@@ -114,4 +114,4 @@ struct DisplayMove {
 };
 bool display_moves_chain(Preset preset, const DisplayMove& move);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

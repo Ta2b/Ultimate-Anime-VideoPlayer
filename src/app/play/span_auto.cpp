@@ -7,7 +7,7 @@
 #include "app/play/i18n.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string span_fp8_unavailable_reason(const SpanFp8Facts& facts) {
   if (facts.capability) return {};
@@ -120,4 +120,4 @@ SpanAutoTick tick_span_auto(PrecisionTier precision, const SpanPrepare& prepare,
   return tick;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

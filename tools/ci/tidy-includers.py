@@ -4,7 +4,7 @@
 Entrée standard : les fichiers suivis de src/ (en-têtes et .cpp), séparés par des octets nuls. Arguments : la
 racine du dépôt et le fichier qui liste, un par ligne, les chemins changés. Sortie : un .cpp par ligne, ceux qui
 ont changé et ceux qui incluent un en-tête changé, directement ou par d'autres en-têtes. Un #include "…" se lit
-relatif à src/ (« core/log.h ») ou au dossier de l'incluant (« ajp_vk_backend_spirv.h »).
+relatif à src/ (« core/log.h ») ou au dossier de l'incluant (« kirari_vk_backend_spirv.h »).
 """
 import os
 import re

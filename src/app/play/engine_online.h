@@ -20,7 +20,7 @@
 #include "app/play/engine_install.h"
 #include "app/play/updater.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La release d'une version : « https://github.com/<dépôt>/releases/download/v<version>/ ».
 std::string release_download_prefix(std::string_view repo, std::string_view version);
@@ -70,4 +70,4 @@ void add_release_engines(EngineCatalog& catalog, const std::filesystem::path& ca
                          std::string_view version, const std::vector<std::string>& keys,
                          const UpdateFetch& fetch);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

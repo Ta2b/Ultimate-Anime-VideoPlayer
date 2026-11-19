@@ -16,8 +16,8 @@
 #include "gpu/ir/passes.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 

@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Sans image neuve depuis ce temps, la lecture ne coule plus : l'interface présente seule. Deux images à
 // 23,976 i/s tiennent dedans ; une source sous 10 i/s garde l'interface d'avant.
@@ -56,4 +56,4 @@ constexpr bool overlay_holds(bool paused, std::int64_t last_fresh_us, std::int64
   return now_us > last_fresh_us + output_period_us - kOverlayGuardPeriods * display_period_us;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

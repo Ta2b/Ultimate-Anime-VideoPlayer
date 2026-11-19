@@ -10,7 +10,7 @@
 #include "core/file_sync.h"  // IWYU pragma: export (write_text_atomically)
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Lecture entière d'un fichier ordinaire ; refus FileUnreadable s'il manque ou ne se lit pas.
 std::expected<std::string, Refusal> read_text_file(const std::filesystem::path& path);
@@ -19,4 +19,4 @@ std::expected<std::string, Refusal> read_text_file(const std::filesystem::path& 
 std::expected<std::optional<std::string>, Refusal> read_text_file_if_present(
     const std::filesystem::path& path);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

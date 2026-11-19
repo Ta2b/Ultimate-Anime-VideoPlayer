@@ -9,7 +9,7 @@
 #include "kernels/ref/half.h"
 #include "vulkan_validation.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 namespace {
 
 // SplitMix64 : la même suite sur toutes les plateformes, contrairement aux distributions de <random>.
@@ -68,7 +68,7 @@ std::string describe(const Refusal& refusal) {
 }
 
 Rig make_rig(const CreateOptions& options) {
-  auto context = ajp::test::with_validation([&](bool validation, ajp::test::ValidationSink sink) {
+  auto context = kirari::test::with_validation([&](bool validation, kirari::test::ValidationSink sink) {
     CreateOptions wanted = options;
     wanted.validation = validation;
     wanted.validation_sink = std::move(sink);
@@ -318,4 +318,4 @@ int max_code_diff(const kernels::PlaneU16& a, const kernels::PlaneU16& b) {
   return worst;
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

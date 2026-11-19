@@ -14,8 +14,8 @@
 #include "core/vblank_clock.h"
 #include "core/vsync_index.h"
 
-using namespace ajp;
-using namespace ajp::core;
+using namespace kirari;
+using namespace kirari::core;
 
 namespace {
 

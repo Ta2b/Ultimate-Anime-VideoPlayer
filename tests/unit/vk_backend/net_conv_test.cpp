@@ -20,8 +20,8 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 using ir::test::attr_float;
 using ir::test::attr_int;
 using ir::test::attr_ints;

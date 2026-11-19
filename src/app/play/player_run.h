@@ -14,7 +14,7 @@
 #include "app/play/settings.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Fin d'une ouverture de la chaîne : la lecture est finie (rien), ou le menu demande de la rouvrir
 // avec ces réglages à cette position.
@@ -48,4 +48,4 @@ std::optional<Reopen> stopped_preparation(Player& p, const Refusal& refusal, con
 std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings settings,
                                                         std::int64_t start_us, bool start_paused = false);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

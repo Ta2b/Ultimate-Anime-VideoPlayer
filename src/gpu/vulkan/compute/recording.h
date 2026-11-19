@@ -27,7 +27,7 @@
 #include "gpu/vulkan/compute/sync.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class Recording {
  public:
@@ -228,4 +228,4 @@ class Recorder {
   std::size_t shared_rank_ = 0;  // rang du prochain tampon partagé
 };
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

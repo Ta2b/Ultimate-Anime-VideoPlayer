@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -154,16 +154,17 @@ TEST_CASE("un essai joue la chaîne que l'Auto calibré écrira, pas les réglag
   CHECK(span_runs(trial, 1080));
   PlaySettings automatic;
   automatic.preset = Preset::Auto;
-  const PlaySettings played = apply_preset(automatic,
-                                           Machine{.tier = Tier::Quality,
-                                                   .display_height = 1440,
-                                                   .display_hz = 60.0,
-                                                   .calibrated = CalibratedChain{.span = true,
-                                                                                 .rife = true,
-                                                                                 .height = chain.height,
-                                                                                 .span_model = models.span,
-                                                                                 .rife_model = models.rife}},
-                                           ajp::core::SourceInfo{.width = 1920, .height = 1080, .fps = 24.0});
+  const PlaySettings played =
+      apply_preset(automatic,
+                   Machine{.tier = Tier::Quality,
+                           .display_height = 1440,
+                           .display_hz = 60.0,
+                           .calibrated = CalibratedChain{.span = true,
+                                                         .rife = true,
+                                                         .height = chain.height,
+                                                         .span_model = models.span,
+                                                         .rife_model = models.rife}},
+                   kirari::core::SourceInfo{.width = 1920, .height = 1080, .fps = 24.0});
   CHECK(trial.upscale == played.upscale);
   CHECK(trial.work_height == played.work_height);
   CHECK(trial.downscale == played.downscale);
@@ -221,7 +222,7 @@ TEST_CASE("calibration.toml relit les essais et la recommandation", "[calibratio
   close.lost_percent = 1.6;
   CHECK(needs_second_run(close));
   // Sur secteur, à cette version : l'Auto la suit, avec ses modèles.
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-battery";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-calibration-battery";
   std::filesystem::create_directories(dir);
   REQUIRE(save_calibration(calibration_file(dir), c));
   const CalibrationHost host{.gpu = "RTX 4070 Ti", .display_height = 1440, .tensorrt = true, .driver = "581"};
@@ -284,7 +285,7 @@ TEST_CASE("une calibration faite à une autre fréquence d'écran n'est plus sui
 
 TEST_CASE("une calibration par hauteur d'écran, l'ancien fichier unique relu (A37-10)",
           "[calibration-machine]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-ecrans";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-calibration-ecrans";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   MachineCalibration desk{.chosen = {.span = true, .rife = true, .height = 720},
@@ -344,7 +345,7 @@ target_fps = 48.0
   CHECK(read->version == 1);
   CHECK(read->chosen == ChainCandidate{.span = true, .rife = true, .height = 720});
   CHECK(read->models.span.empty());
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-calibration-v1";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-calibration-v1";
   std::filesystem::create_directories(dir);
   REQUIRE(save_calibration(calibration_file(dir), *read));  // garde sa version : toujours ancienne
   CHECK(load_calibration(calibration_file(dir))->version == 1);
@@ -428,7 +429,7 @@ TEST_CASE("la recherche descend SPAN + RIFE jusqu'au palier où RIFE tourne vrai
   // SPAN seul tient jusqu'à 720p ; avec RIFE, 720p et 540p retombent à 26 i/s sans perte, 480p tient.
   std::map<int, int> played;  // par hauteur, les essais SPAN + RIFE joués
   const TrialPlayer play = [&](const ChainCandidate& chain, int,
-                               bool) -> std::expected<BenchReading, ajp::Refusal> {
+                               bool) -> std::expected<BenchReading, kirari::Refusal> {
     if (!chain.rife) {
       BenchReading reading = reading_at(24.0);
       if (chain.height > 720) reading.run.dropped = 200;
@@ -456,30 +457,30 @@ TEST_CASE("la recherche : arrêt demandé, premier essai vide, délai dépassé 
           "[calibration-machine]") {
   std::stop_source stop;
   const TrialPlayer cancelled = [&](const ChainCandidate&, int,
-                                    bool) -> std::expected<BenchReading, ajp::Refusal> {
+                                    bool) -> std::expected<BenchReading, kirari::Refusal> {
     stop.request_stop();
     return reading_at(24.0);
   };
   const auto stopped = run_calibration_trials(cancelled, stop.get_token(), {});
   REQUIRE_FALSE(stopped);
-  CHECK(stopped.error().code == ajp::RefusalCode::Cancelled);
+  CHECK(stopped.error().code == kirari::RefusalCode::Cancelled);
 
   const TrialPlayer nothing = [](const ChainCandidate&, int,
-                                 bool) -> std::expected<BenchReading, ajp::Refusal> {
-    return std::unexpected(ajp::Refusal{ajp::RefusalCode::DecodeFailed, "rien"});
+                                 bool) -> std::expected<BenchReading, kirari::Refusal> {
+    return std::unexpected(kirari::Refusal{kirari::RefusalCode::DecodeFailed, "rien"});
   };
   const auto empty = run_calibration_trials(nothing, std::stop_token{}, {});
   REQUIRE_FALSE(empty);
-  CHECK(empty.error().code == ajp::RefusalCode::DecodeFailed);
+  CHECK(empty.error().code == kirari::RefusalCode::DecodeFailed);
 
   // Un délai dépassé (une construction de moteur) : le même essai, une fois, avec le long délai.
   int calls = 0;
   bool long_second = false;
   const TrialPlayer slow_build = [&](const ChainCandidate& chain, int,
-                                     bool first) -> std::expected<BenchReading, ajp::Refusal> {
+                                     bool first) -> std::expected<BenchReading, kirari::Refusal> {
     ++calls;
     if (calls == 2) {
-      ajp::Refusal refusal{ajp::RefusalCode::DecodeFailed, "délai"};
+      kirari::Refusal refusal{kirari::RefusalCode::DecodeFailed, "délai"};
       refusal.key = std::string(kTrialTimedOutKey);
       return std::unexpected(std::move(refusal));
     }
@@ -530,19 +531,19 @@ target_fps = 48.0
 
 TEST_CASE("calibration : le dossier des essais est propre au lancement, sous les données (A25-11)",
           "[app][calibration]") {
-  const std::filesystem::path data = std::filesystem::temp_directory_path() / "ajp-donnees";
+  const std::filesystem::path data = std::filesystem::temp_directory_path() / "kirari-donnees";
   const std::filesystem::path first = calibration_work_dir(data);
   CHECK(first.parent_path() == data);
   CHECK(first.is_absolute());
   CHECK(calibration_work_dir({}).empty());
   // Sans dossier, ou avec un chemin relatif au dossier courant : refusé avant tout essai.
   for (const std::filesystem::path& bad :
-       {std::filesystem::path{}, std::filesystem::path{"ajp-calibration"}}) {
-    const BenchPlan plan{.executable = "/x/ajp", .video = "/v/a.mkv", .work_dir = bad};
+       {std::filesystem::path{}, std::filesystem::path{"kirari-calibration"}}) {
+    const BenchPlan plan{.executable = "/x/kirari", .video = "/v/a.mkv", .work_dir = bad};
     const auto refused = calibrate_machine(plan, PlaySettings{}, 1080, Tier::Normal, std::stop_token{}, {});
     REQUIRE_FALSE(refused);
-    CHECK(refused.error().code == ajp::RefusalCode::FileUnreadable);
-    CHECK_FALSE(std::filesystem::exists("ajp-calibration"));
+    CHECK(refused.error().code == kirari::RefusalCode::FileUnreadable);
+    CHECK_FALSE(std::filesystem::exists("kirari-calibration"));
   }
 }
 

@@ -1,11 +1,11 @@
 // La dérivation native du paquet « .span8 » (Backend::derive_span_fp8, docs/span-fp8-cutlass.md) sur de
 // vraies images d'anime, contre le SPAN FP16 de TensorRT. Test caché [.span_derive] : il demande le SPAN
-// d'origine (AJP_SPAN_FP8_MODEL) et des images PPM P6 de 2560×1440 au moins (AJP_SPAN_DERIVE_IMAGES, séparées
-// par des virgules), passés à CMake, jamais copiés dans le dépôt ; sans eux il se SKIP.
+// d'origine (KIRARI_SPAN_FP8_MODEL) et des images PPM P6 de 2560×1440 au moins (KIRARI_SPAN_DERIVE_IMAGES,
+// séparées par des virgules), passés à CMake, jamais copiés dans le dépôt ; sans eux il se SKIP.
 //
-//   cmake -DAJP_SPAN_FP8_MODEL=.../2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx
-//         -DAJP_SPAN_DERIVE_IMAGES=a/s5.ppm,a/s9.ppm,b/s14.ppm ...
-//   ajp-gpu ajp_backend_tensorrt_tests "[.span_derive]"
+//   cmake -DKIRARI_SPAN_FP8_MODEL=.../2x_AnimeJaNai_HD_V3.1_Balanced_SPANF3_b8f64_unshuffle_fp16.onnx
+//         -DKIRARI_SPAN_DERIVE_IMAGES=a/s5.ppm,a/s9.ppm,b/s14.ppm ...
+//   kirari-gpu kirari_backend_tensorrt_tests "[.span_derive]"
 //
 // Douze découpes de 1920×1088 à des endroits différents (huit calibrent, quatre sont mises de côté) ; le reçu
 // doit passer ses garde-fous (PSNR moyen d'au moins 42 dB), et le réseau FP8 gagner au moins 25 % de temps
@@ -29,7 +29,7 @@
 #include "gpu/span_fp8/package.h"
 #include "prepare/sha256.h"
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 namespace fs = std::filesystem;
@@ -102,10 +102,10 @@ double per_run_ms(gpu::Backend& backend, gpu::Engine& engine, const gpu::Tensor&
 TEST_CASE("Backend TensorRT : la dérivation native du SPAN FP8 sur douze images, contre TensorRT FP16",
           "[.span_derive][backend_tensorrt][cuda][span]") {
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
-  const fs::path model(AJP_SPAN_FP8_MODEL);
-  const std::vector<std::string> paths = split(AJP_SPAN_DERIVE_IMAGES);
+  const fs::path model(KIRARI_SPAN_FP8_MODEL);
+  const std::vector<std::string> paths = split(KIRARI_SPAN_DERIVE_IMAGES);
   if (!fs::is_regular_file(model) || paths.empty())
-    SKIP("AJP_SPAN_FP8_MODEL et AJP_SPAN_DERIVE_IMAGES (CMake) : le SPAN d'origine et des images PPM");
+    SKIP("KIRARI_SPAN_FP8_MODEL et KIRARI_SPAN_DERIVE_IMAGES (CMake) : le SPAN d'origine et des images PPM");
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   if (!loaded.backend->capabilities().span_fp8_cutlass) SKIP("appareil sans les noyaux FP8 CUTLASS (sm 8.9)");
@@ -186,7 +186,7 @@ TEST_CASE("Backend TensorRT : la dérivation native du SPAN FP8 sur douze images
   }
 
   // Le temps : le paquet dérivé, chargé comme le lecteur le charge, contre le moteur TensorRT FP16.
-  const fs::path dir = fs::temp_directory_path() / "ajp-span-derive-backend-test";
+  const fs::path dir = fs::temp_directory_path() / "kirari-span-derive-backend-test";
   fs::remove_all(dir);
   fs::create_directories(dir);
   gpu::span_fp8::Package package = *weights;
@@ -234,4 +234,4 @@ TEST_CASE("Backend TensorRT : la dérivation native du SPAN FP8 sur douze images
   fs::remove_all(dir);
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

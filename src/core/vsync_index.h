@@ -10,7 +10,7 @@
 #include <cmath>
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 inline constexpr double kVsyncHysteresis = 0.15;
 
@@ -46,4 +46,4 @@ class VsyncPicker {
   bool up_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

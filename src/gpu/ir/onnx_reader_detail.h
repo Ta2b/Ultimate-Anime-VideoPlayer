@@ -13,7 +13,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "gpu/ir/protobuf.h"
 
-namespace ajp::gpu::ir::onnx::detail {
+namespace kirari::gpu::ir::onnx::detail {
 
 using proto::Bytes;
 using proto::Field;
@@ -62,4 +62,4 @@ std::expected<void, Refusal> push_tensor(const Field& field, std::vector<Tensor>
 // Un AttributeProto.
 std::expected<Attribute, Refusal> read_attribute(Bytes bytes);
 
-}  // namespace ajp::gpu::ir::onnx::detail
+}  // namespace kirari::gpu::ir::onnx::detail

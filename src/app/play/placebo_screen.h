@@ -30,7 +30,7 @@ struct ImGuiPlatformIO;
 struct AVBufferRef;
 struct pl_frame;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Images que la file de l'écran (FIFO) garde au plus : deux suffisent à ne pas manquer de vsync
 // quand le rendu tient dans la période, et chacune de plus retarde l'image d'une période.
@@ -40,7 +40,7 @@ class LiveSettings;
 class SourceGrader;
 
 struct ScreenOptions {
-  std::string title = "ajp";
+  std::string title = "kirari";
   int width = 1280;
   int height = 720;
   bool fullscreen = false;
@@ -225,4 +225,4 @@ class WriteWatch {
   PlaceboScreen& screen_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

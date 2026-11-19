@@ -23,7 +23,7 @@
 #include "render/grade.h"
 #include "vulkan_validation.h"
 
-namespace ajp::render::gpu_test {
+namespace kirari::render::gpu_test {
 
 inline constexpr int kSide = 256;
 inline constexpr double kPeak = 1000.0;
@@ -43,7 +43,7 @@ inline void on_placebo_log(void* /*priv*/, pl_log_level level, const char* messa
   if (message == nullptr) return;
   const std::string_view text(message);
   if ((level == PL_LOG_ERR || level == PL_LOG_FATAL) && text.starts_with("vk ")) {
-    ajp::test::note_validation_error(text);
+    kirari::test::note_validation_error(text);
   }
 }
 
@@ -61,7 +61,7 @@ inline bool has_validation_layer(const pl_vk_inst_t& inst) {
 // même sur un PC à GPU (C14). Ailleurs, nullptr : libplacebo prend le chargeur auquel il est lié.
 inline PFN_vkGetInstanceProcAddr vulkan_loader() {
 #if defined(_WIN32)
-  static const auto library = ajp::DynamicLibrary::open_system("vulkan-1.dll");
+  static const auto library = kirari::DynamicLibrary::open_system("vulkan-1.dll");
   if (!library) return nullptr;
   const auto entry =
       library->symbol<std::remove_pointer_t<PFN_vkGetInstanceProcAddr>>("vkGetInstanceProcAddr");
@@ -83,16 +83,16 @@ struct Gpu {
     log_params.log_cb = on_placebo_log;
     log_params.log_level = PL_LOG_WARN;
     log = pl_log_create(PL_API_VER, &log_params);
-    const ajp::test::ValidationMode mode = ajp::test::validation_mode();
+    const kirari::test::ValidationMode mode = kirari::test::validation_mode();
     pl_vk_inst_params inst_params{};
     inst_params.get_proc_addr = vulkan_loader();
-    inst_params.debug = mode != ajp::test::ValidationMode::Off;
+    inst_params.debug = mode != kirari::test::ValidationMode::Off;
     inst = pl_vk_inst_create(log, &inst_params);
     if (inst == nullptr) return;
     if (inst_params.debug && !has_validation_layer(*inst)) {
       layer_missing = true;
-      if (mode != ajp::test::ValidationMode::Require)
-        ajp::test::warn_without_layer("libplacebo ne la trouve pas");
+      if (mode != kirari::test::ValidationMode::Require)
+        kirari::test::warn_without_layer("libplacebo ne la trouve pas");
     }
     pl_vulkan_params params = pl_vulkan_default_params;
     params.instance = inst->instance;
@@ -122,8 +122,8 @@ struct Gpu {
 
 // Saute sans appareil ; échoue quand la couche de validation est exigée et absente.
 inline void require_device(const Gpu& gpu) {
-  if (gpu.layer_missing && ajp::test::validation_mode() == ajp::test::ValidationMode::Require) {
-    FAIL("couche de validation Vulkan exigée (AJP_TEST_VULKAN_VALIDATION=require) et absente");
+  if (gpu.layer_missing && kirari::test::validation_mode() == kirari::test::ValidationMode::Require) {
+    FAIL("couche de validation Vulkan exigée (KIRARI_TEST_VULKAN_VALIDATION=require) et absente");
   }
   if (gpu.vk == nullptr) SKIP("pas d'appareil Vulkan");
 }
@@ -301,4 +301,4 @@ inline std::vector<std::uint16_t> uniform(double nits) {
   return pixels;
 }
 
-}  // namespace ajp::render::gpu_test
+}  // namespace kirari::render::gpu_test

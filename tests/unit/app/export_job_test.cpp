@@ -14,13 +14,13 @@
 #include "french_ui.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Un dossier vide, effacé à la fin du test.
 struct TempDir {
   explicit TempDir(const char* test)
-      : path(std::filesystem::temp_directory_path() / std::format("ajp-export-job-{}", test)) {
+      : path(std::filesystem::temp_directory_path() / std::format("kirari-export-job-{}", test)) {
     std::filesystem::remove_all(path);
     std::filesystem::create_directories(path);
   }
@@ -36,7 +36,7 @@ struct TempDir {
 }  // namespace
 
 TEST_CASE("Export : la chaîne sans HDR adaptatif, grade ni Smooth Motion", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   PlaySettings s;
   s.hdr_native = true;
   s.grade = true;
@@ -51,11 +51,11 @@ TEST_CASE("Export : la chaîne sans HDR adaptatif, grade ni Smooth Motion", "[ap
   CHECK(out.rife_factor == 4);
   CHECK(out.work_height == s.work_height);
   s.rife_auto = true;  // P3.87 : l'Auto de la lecture devient ×2
-  CHECK(factor_of(export_chain(s)) == ajp::app::play::Factor{.num = 2, .den = 1});
+  CHECK(factor_of(export_chain(s)) == kirari::app::play::Factor{.num = 2, .den = 1});
 }
 
 TEST_CASE("Export : la sortie de la chaîne est la taille de travail, doublée par SPAN", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   PlaySettings s;
   s.work_height = 720;
   CHECK(chain_output(s, 1920, 1080) == ExportSize{.width = 2560, .height = 1440});
@@ -104,7 +104,7 @@ TEST_CASE("Export : le grade HDR anime suit, en HDR10 ou en SDR selon le codec",
 
 TEST_CASE("Export : taille encodée de la chaîne, de la source ou d'une hauteur fixe, paire",
           "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const ExportSize chain{.width = 2560, .height = 1440};
   const ExportSize source{.width = 1920, .height = 1080};
   CHECK(export_size(chain, source, kExportChainHeight) == chain);
@@ -122,7 +122,7 @@ TEST_CASE("Export : taille encodée de la chaîne, de la source ou d'une hauteur
 }
 
 TEST_CASE("Export : fréquence de la source multipliée par l'interpolation, réduite", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const media::Rational ntsc{.num = 24'000, .den = 1'001};
   CHECK(export_rate(ntsc, Factor{.num = 3, .den = 1}) == media::Rational{.num = 72'000, .den = 1'001});
   CHECK(export_rate(ntsc, Factor{.num = 2, .den = 1}) == media::Rational{.num = 48'000, .den = 1'001});
@@ -138,25 +138,25 @@ TEST_CASE("Export : fréquence de la source multipliée par l'interpolation, ré
 }
 
 TEST_CASE("Export : nom proposé à côté de la source, numéroté s'il est pris", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const TempDir dir("name");
   const std::filesystem::path source = dir.path / prepare::path_from_utf8("Épisode 01.mkv");
   const ExportSize size{.width = 3840, .height = 2160};
   const std::filesystem::path first = default_export_path(source, size, {.num = 48'000, .den = 1'001});
   CHECK(first.parent_path() == dir.path);
-  CHECK(prepare::utf8_path(first.filename()) == "Épisode 01 [ajp 3840x2160 47.952fps].mkv");
+  CHECK(prepare::utf8_path(first.filename()) == "Épisode 01 [kirari 3840x2160 47.952fps].mkv");
   CHECK(prepare::utf8_path(default_export_path(source, size, {.num = 48, .den = 1}).filename()) ==
-        "Épisode 01 [ajp 3840x2160 48fps].mkv");
+        "Épisode 01 [kirari 3840x2160 48fps].mkv");
   CHECK(prepare::utf8_path(default_export_path(source, size, {}).filename()) ==
-        "Épisode 01 [ajp 3840x2160].mkv");
+        "Épisode 01 [kirari 3840x2160].mkv");
 
   std::ofstream(first).put('x');
   CHECK(prepare::utf8_path(default_export_path(source, size, {.num = 48'000, .den = 1'001}).filename()) ==
-        "Épisode 01 [ajp 3840x2160 47.952fps] (2).mkv");
+        "Épisode 01 [kirari 3840x2160 47.952fps] (2).mkv");
 }
 
 TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours sans clic", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const TempDir dir("keys");
   const std::filesystem::path source = dir.path / "clip.mkv";
   PlaySettings running;
@@ -177,7 +177,7 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
   CHECK(job->codec == exporter::Codec::Hevc);
   CHECK(job->quality == exporter::Quality::VeryHigh);
   // Le nom proposé : la sortie de la chaîne (720p ×2 par défaut) à la fréquence interpolée.
-  CHECK(job->output == dir.path / "clip [ajp 2560x1440 47.952fps].mkv");
+  CHECK(job->output == dir.path / "clip [kirari 2560x1440 47.952fps].mkv");
 
   const auto named = scripted_export("export=/tmp/sortie.mkv", running, video, source);
   REQUIRE(named);
@@ -194,7 +194,7 @@ TEST_CASE("Export : « export » de --keys lance l'export de la chaîne en cours
 
 TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
   {
-    ajp::app::play::FrenchUi french;
+    kirari::app::play::FrenchUi french;
     CHECK(export_label(exporter::Codec::Hevc, exporter::Quality::VeryHigh) ==
           "HEVC 10 bits · très haute qualité");
     CHECK(export_label(exporter::Codec::Av1, exporter::Quality::Standard) ==
@@ -211,7 +211,7 @@ TEST_CASE("Export : libellé du codec et de la qualité", "[app][export]") {
 }
 
 TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'avant sinon", "[app][export]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const ExportDepth one = export_depth(1);
   CHECK_FALSE(one.throughput);
   CHECK(one.ring_slots == 4);
@@ -226,4 +226,4 @@ TEST_CASE("Export : profil débit avec plusieurs voies de calcul, profondeur d'a
   CHECK(three.buffers > three.queue + kWriterHeldBeyondQueue);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

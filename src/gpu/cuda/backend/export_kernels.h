@@ -12,7 +12,7 @@
 #include <cstddef>
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Prises par échantillon au plus (Spline36 en réduction 2:1 : 12).
 inline constexpr int kMaxYuvTaps = 16;
@@ -50,4 +50,4 @@ std::size_t yuv_rows_bytes(int width, int height);
 
 cudaError_t launch_write_yuv(const YuvWriteParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -11,7 +11,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::string_view kDistilDrbaFile = "distil_drba_v2_lite.onnx";
 // Le même réseau avec le flot estimé à l'échelle 0,5 (export_distil_drba.py --scale 0.5), conseillé
@@ -51,4 +51,4 @@ std::expected<std::filesystem::path, Refusal> static_distil_drba(const std::file
                                                                  int padded_width, int padded_height,
                                                                  const std::filesystem::path& dir);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

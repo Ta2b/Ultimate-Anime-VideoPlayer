@@ -21,12 +21,12 @@
 #include <unistd.h>
 #endif
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 TEST_CASE("Instance unique : un second lancement passe sa vidéo au premier, qui la reçoit comme glissée",
           "[app][instance]") {
   REQUIRE(SDL_Init(SDL_INIT_EVENTS));
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-instance-test";
   std::filesystem::create_directories(dir);
   const std::string key = instance_key(dir);
   auto first = claim_instance(dir, key, {});
@@ -77,7 +77,7 @@ TEST_CASE(
 TEST_CASE("Instance unique : deux lancements simultanés, un seul prend la place (A19-13)",
           "[app][instance]") {
   REQUIRE(SDL_Init(SDL_INIT_EVENTS));
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-race";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-instance-race";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::string key = instance_key(dir);
@@ -97,7 +97,7 @@ TEST_CASE("Instance unique : deux lancements simultanés, un seul prend la place
 #ifndef _WIN32
 TEST_CASE("Instance unique : un socket resté d'un lecteur arrêté net est repris (A19-13)",
           "[app][instance]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-stale";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-instance-stale";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   {
@@ -124,7 +124,7 @@ TEST_CASE("Instance unique : un socket resté d'un lecteur arrêté net est repr
 TEST_CASE("C31-03 : un lecteur relancé ne passe pas sa vidéo à l'ancien qui tient encore le canal",
           "[app][instance]") {
   REQUIRE(SDL_Init(SDL_INIT_EVENTS));
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-instance-takeover";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-instance-takeover";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::string key = instance_key(dir);

@@ -6,7 +6,7 @@
 
 #include "clip_writer.h"
 
-namespace ajp::media::test {
+namespace kirari::media::test {
 
 inline constexpr std::int64_t kFrameUs = 40'000;  // 25 im/s
 inline constexpr char kFontBytes[] = "OTTO police factice";
@@ -41,4 +41,4 @@ std::filesystem::path require_clip(const ClipSpec& spec);
 // (pas de GPU NVIDIA en CI).
 std::filesystem::path require_gpu_clip(const ClipSpec& spec);
 
-}  // namespace ajp::media::test
+}  // namespace kirari::media::test

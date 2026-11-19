@@ -8,7 +8,7 @@
 #include "app/play/i18n.h"
 #include "core/text.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Le poids de chaque étape dans la barre globale : la préparation et les essais pèsent le plus.
@@ -127,4 +127,4 @@ std::string explain_no_reading(std::string_view what, std::string_view detail) {
                          detail.empty() ? "" : " — ", detail);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

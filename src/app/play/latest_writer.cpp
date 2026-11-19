@@ -7,7 +7,7 @@
 #include "core/log.h"
 #include "core/thread.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Les états des writers détruits pendant qu'une écriture durait : wait_abandoned les attend à la sortie.
@@ -144,4 +144,4 @@ void LatestWriter::run(const std::shared_ptr<State>& state) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

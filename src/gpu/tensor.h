@@ -5,7 +5,7 @@
 #include <array>
 #include <cstdint>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 enum class TensorType : std::uint8_t { F32, F16, U8, I8 };
 
@@ -57,4 +57,4 @@ class TensorBuffer {
   virtual const Tensor& tensor() const = 0;
 };
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

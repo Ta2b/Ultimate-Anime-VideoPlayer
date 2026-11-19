@@ -1,5 +1,5 @@
-// « ajp bench » et le bouton « Calibrer cette machine » : le lancement des essais de auto_bench.h. Chaque
-// essai est un processus enfant court, « ajp play » avec son coupé, un dossier de réglages jetable
+// « kirari bench » et le bouton « Calibrer cette machine » : le lancement des essais de auto_bench.h. Chaque
+// essai est un processus enfant court, « kirari play » avec son coupé, un dossier de réglages jetable
 // (--data-dir : ni play.toml ni user.toml ni journal de l'utilisateur n'y sont touchés) et le niveau forcé
 // (--bench-level) ; il écrit ses mesures dans un fichier (--bench-out) que le parent relit. Un enfant qui
 // plante ou qui dépasse son délai est un niveau qui ne tient pas : le parent ne tombe jamais avec lui, et dit
@@ -19,7 +19,7 @@
 #include "app/play/auto_bench.h"
 #include "app/play/bench_steps.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr int kBenchSeconds = 10;  // durée d'un essai (docs/ux-parametres.md : 10 à 15 s)
 // La séquence du benchmark est en 1080p : l'exploration ne monte pas la hauteur de travail au-dessus.
@@ -29,7 +29,7 @@ inline constexpr int kExplorationSourceHeight = 1080;
 inline constexpr std::string_view kTrialTimedOutKey = "bench.timed-out";
 
 struct BenchPlan {
-  std::filesystem::path executable;  // ajp lui-même
+  std::filesystem::path executable;  // kirari lui-même
   std::filesystem::path video;       // la courte séquence jouée à chaque niveau
   std::filesystem::path work_dir;    // où poser les dossiers jetables des essais
   std::filesystem::path
@@ -66,8 +66,9 @@ std::vector<std::string> bench_child_args(const BenchPlan& plan, const std::opti
                                           const std::filesystem::path& out_file,
                                           const std::vector<std::string>& extra = {});
 
-// Le comparateur A/B (« ajp compare ») : deux variantes de la chaîne, jouées sur la même vidéo dans les mêmes
-// conditions, et leurs mesures côte à côte. Une variante, ce sont des options de « ajp play » (--rife=3,
+// Le comparateur A/B (« kirari compare ») : deux variantes de la chaîne, jouées sur la même vidéo dans les
+// mêmes conditions, et leurs mesures côte à côte. Une variante, ce sont des options de « kirari play »
+// (--rife=3,
 // --work-height=540…) et, pour ce qu'aucune option ne règle (les poses DRBA, le moteur d'interpolation), un
 // play.toml de départ copié dans son dossier jetable.
 struct Variant {
@@ -124,7 +125,7 @@ std::expected<BenchOutcome, Refusal> run_bench(const BenchPlan& plan, const std:
                                                const std::function<void(const std::string&)>& progress = {});
 
 // Le résultat de l'évaluation de bout en bout : les essais, le niveau gardé (daté, déjà écrit dans
-// bench.toml) et le rapport technique, pour le journal et « ajp bench » : l'interface ne le montre pas.
+// bench.toml) et le rapport technique, pour le journal et « kirari bench » : l'interface ne le montre pas.
 struct Evaluation {
   BenchOutcome outcome;
   BenchResult result;
@@ -140,4 +141,4 @@ std::expected<Evaluation, Refusal> evaluate_machine(
 // Le rapport technique : une ligne par essai (niveau, images perdues, retard, tient ou non), le niveau gardé.
 std::string format_bench_report(const BenchOutcome& outcome);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

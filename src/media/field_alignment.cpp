@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <utility>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Une triplette de lignes (y, y+1, y+2) tous les kRowStep, une colonne sur kColumnStep.
@@ -79,4 +79,4 @@ FieldAlignmentMeter::Verdict FieldAlignmentMeter::verdict() const {
   return Verdict::Unknown;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

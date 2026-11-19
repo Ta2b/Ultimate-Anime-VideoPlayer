@@ -13,15 +13,15 @@
 
 #include "core/model_index.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
 
 struct Fixture {
   explicit Fixture(std::string_view test)
-      : root(fs::temp_directory_path() / std::format("ajp-versions-{}", test)) {
+      : root(fs::temp_directory_path() / std::format("kirari-versions-{}", test)) {
     std::error_code error;
     fs::remove_all(root, error);
     fs::create_directories(root);

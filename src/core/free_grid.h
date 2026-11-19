@@ -19,7 +19,7 @@
 
 #include "core/cadence.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Ce que le lecteur sait au moment de préparer une paire, en µs de temps de contenu.
 struct FreeInputs {
@@ -79,4 +79,4 @@ class FreeGrid {
   bool starved_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

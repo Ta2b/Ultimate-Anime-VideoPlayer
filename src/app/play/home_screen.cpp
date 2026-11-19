@@ -56,7 +56,7 @@
 #include "core/log.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 template <class... F>
@@ -330,7 +330,7 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
                                                                       const std::string& problem) {
   const auto log = log_channel("app");
   log->info("accueil : Ouvrir une vidéo, ou un fichier glissé sur la fenêtre");
-  SDL_SetWindowTitle(h.screen.window(), "ajp");
+  SDL_SetWindowTitle(h.screen.window(), "Kirari Player");
   PlaySettings from_file = st.saved;
   PlaySettings running = home_settings(h, st.saved);
   PlaySettings started = running;
@@ -441,4 +441,4 @@ std::expected<std::optional<std::filesystem::path>, Refusal> run_home(const Home
   return chosen;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

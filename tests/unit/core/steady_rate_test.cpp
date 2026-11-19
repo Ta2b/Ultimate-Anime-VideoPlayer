@@ -9,7 +9,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 constexpr double kFps = 24000.0 / 1001.0;
@@ -214,4 +214,4 @@ TEST_CASE("Rapide à pas constant : sans a priori, N part de 1 et monte après q
   CHECK(o.mean_n >= 0.75 * o.optimum_n);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

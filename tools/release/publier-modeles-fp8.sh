@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publie les graphes FP8 de l'interpolation dans la release models-interp-1 de Ta2b/ajp-releases
+# Publie les graphes FP8 de l'interpolation dans la release models-interp-1 de Ta2b/kirari-player
 # (docs/fp8-interpolation.md). À lancer par Tatoub, jamais par un agent : rien n'est envoyé sans --publier.
 #
 #   tools/release/publier-modeles-fp8.sh DOSSIER_SORTIE [--publier]
@@ -17,7 +17,7 @@ set -euo pipefail
 OUT="${1:?dossier de sortie de build_interp_fp8.sh}"
 PUBLISH=0
 [ "${2:-}" = "--publier" ] && PUBLISH=1
-REPO="${AJP_RELEASE_REPO:-$(sed -n 's/^AJP_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"
+REPO="${KIRARI_RELEASE_REPO:-$(sed -n 's/^KIRARI_RELEASE_REPO=//p' "$(dirname "$0")/versions.env")}"
 TAG=models-interp-1
 MODELS="$OUT/models"
 OPTIONAL=(distil_drba_v2_lite_fp8.onnx distil_drba_v2_lite_s05_fp8.onnx)

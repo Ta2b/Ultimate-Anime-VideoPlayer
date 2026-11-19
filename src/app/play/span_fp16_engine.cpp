@@ -7,7 +7,7 @@
 #include "core/utf8_path.h"
 #include "prepare/sha256.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<gpu::Artifact, Refusal> build_span_fp16(gpu::Backend& backend,
                                                       const std::filesystem::path& model, int width,
@@ -23,4 +23,4 @@ std::expected<gpu::Artifact, Refusal> build_span_fp16(gpu::Backend& backend,
                        gpu::ShapeSet{.min = in_shape, .opt = in_shape, .max = in_shape}, progress);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

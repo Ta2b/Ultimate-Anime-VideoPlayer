@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 float e4m3_round(float x) {
   if (std::isnan(x)) return x;
@@ -50,4 +50,4 @@ std::vector<float> reconstruct(std::span<const float> weights, std::span<const f
   return out;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

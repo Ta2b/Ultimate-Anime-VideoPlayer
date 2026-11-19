@@ -6,7 +6,7 @@
 # FFmpeg.
 include_guard(GLOBAL)
 
-function(_ajp_utf8_manifest_in dir)
+function(_kirari_utf8_manifest_in dir)
   get_property(targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
   foreach(target IN LISTS targets)
     get_target_property(type ${target} TYPE)
@@ -16,14 +16,14 @@ function(_ajp_utf8_manifest_in dir)
   endforeach()
   get_property(subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
   foreach(subdir IN LISTS subdirs)
-    _ajp_utf8_manifest_in("${subdir}")
+    _kirari_utf8_manifest_in("${subdir}")
   endforeach()
 endfunction()
 
 # À appeler à la fin du CMakeLists.txt racine, quand toutes les cibles existent. MSVC seul : son
 # éditeur de liens (et CMake avec lui) intègre les fichiers .manifest des sources.
-function(ajp_utf8_manifests)
+function(kirari_utf8_manifests)
   if(MSVC)
-    _ajp_utf8_manifest_in("${CMAKE_SOURCE_DIR}")
+    _kirari_utf8_manifest_in("${CMAKE_SOURCE_DIR}")
   endif()
 endfunction()

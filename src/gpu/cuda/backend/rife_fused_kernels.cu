@@ -11,7 +11,7 @@
 
 #include "gpu/cuda/backend/rife_fused_kernels.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 __device__ __forceinline__ float rounded(float v) {
@@ -227,11 +227,11 @@ __global__ void __launch_bounds__(256) fused_entry(FusedEntryParams p) {
 // Quatre blocs par SM (128 registres) suffisent à sm_75 à sm_89 ; sm_120 en demande davantage et déborde
 // sinon (ptxas --warn-on-spills est une erreur de la compilation de livraison).
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
-#define AJP_GLUE_MIN_BLOCKS 2
+#define KIRARI_GLUE_MIN_BLOCKS 2
 #else
-#define AJP_GLUE_MIN_BLOCKS 4
+#define KIRARI_GLUE_MIN_BLOCKS 4
 #endif
-__global__ void __launch_bounds__(128, AJP_GLUE_MIN_BLOCKS) fused_glue(FusedGlueParams p) {
+__global__ void __launch_bounds__(128, KIRARI_GLUE_MIN_BLOCKS) fused_glue(FusedGlueParams p) {
   const int ox = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int oy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (ox >= p.out_width || oy >= p.out_height) return;
@@ -389,4 +389,4 @@ cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t st
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

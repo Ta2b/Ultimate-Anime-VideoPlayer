@@ -12,16 +12,16 @@
 #include "dummy_audio.h"
 #include "sine.h"
 
-using ajp::ClockSnapshot;
-using ajp::Command;
-using ajp::Credit;
-using ajp::host_now_us;
-using ajp::RefusalCode;
-using namespace ajp::audio;
-using ajp::audio::test::encode_sine;
-using ajp::audio::test::use_dummy_audio;
+using kirari::ClockSnapshot;
+using kirari::Command;
+using kirari::Credit;
+using kirari::host_now_us;
+using kirari::RefusalCode;
+using namespace kirari::audio;
+using kirari::audio::test::encode_sine;
+using kirari::audio::test::use_dummy_audio;
 using namespace std::chrono_literals;
-namespace cmd = ajp::cmd;
+namespace cmd = kirari::cmd;
 
 namespace {
 
@@ -60,7 +60,7 @@ TEST_CASE("AudioThread : un sinus joue, l'horloge avance au rythme du périphér
   std::this_thread::sleep_for(400ms);
   const ClockSnapshot playing = clock->snapshot();
   // La PLL du produit corrige la vitesse publiée d'au plus ±0,05 % (core/clock_pll.h).
-  CHECK(std::abs(playing.rate - 1.0) <= ajp::core::ClockPll::kMaxSpeed + 1e-9);
+  CHECK(std::abs(playing.rate - 1.0) <= kirari::core::ClockPll::kMaxSpeed + 1e-9);
   // Un seul instant pour les deux mesures : le thread du test retardé entre deux lectures de l'horloge ne
   // fausse plus l'écart (B40-08).
   const std::int64_t now = host_now_us();
@@ -88,7 +88,7 @@ TEST_CASE("AudioThread : Flush et fin de flux passent par la boîte, l'horloge s
   REQUIRE((*thread)->post(Command{cmd::Play{}}));
 
   // Seek : l'époque 0 est jetée, ses places reviennent, l'époque 1 reprend à 30 s.
-  REQUIRE((*thread)->post(ajp::Flush{.epoch = 1}));
+  REQUIRE((*thread)->post(kirari::Flush{.epoch = 1}));
   const auto later = encode_sine({.seconds = 0.3, .start_us = 30'000'000, .epoch = 1});
   for (AudioPacket packet : later.packets) {
     REQUIRE(eventually([&] { return (*thread)->push_packet(AudioPacket{packet}); }));
@@ -158,7 +158,7 @@ TEST_CASE("AudioThread : réglages refusés hors bornes, signalés à l'OSD", "[
 
   std::atomic<int> refusals{0};
   auto thread =
-      AudioThread::start(open_dummy(), {.refused = [&refusals](const ajp::Refusal&) { ++refusals; }});
+      AudioThread::start(open_dummy(), {.refused = [&refusals](const kirari::Refusal&) { ++refusals; }});
   REQUIRE(thread);
   REQUIRE((*thread)->post(Command{cmd::SetVolume{.gain = 2.5F}}));
   REQUIRE((*thread)->post(AudioTrack{.codec = {.codec = "inexistant"}}));

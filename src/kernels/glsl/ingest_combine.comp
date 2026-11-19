@@ -6,7 +6,7 @@
 // 334-360 (k_pre444).
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#include "ajp_kernels_spec.glsl"
+#include "kirari_kernels_spec.glsl"
 #include "common.glsl"
 #include "yuv.glsl"
 
@@ -15,7 +15,7 @@ layout(local_size_x = 16, local_size_y = 16) in;
 layout(std430, binding = 0) readonly buffer Frame { uint words[]; } frame;
 // 4:2:0 : Cb puis Cr, plans float w × h en codes du conteneur. 4:4:4 : lié mais jamais lu.
 layout(std430, binding = 1) readonly buffer Chroma { float v[]; } chroma;
-layout(std430, binding = 2) writeonly buffer Rgb { AJP_TENSOR v[]; } rgb;
+layout(std430, binding = 2) writeonly buffer Rgb { KIRARI_TENSOR v[]; } rgb;
 
 layout(push_constant) uniform Push {
   uint y_offset;
@@ -42,7 +42,7 @@ void main() {
   float luma = float(code_at(pc.y_offset, pc.y_pitch, x, y));
   float u;
   float v;
-  if (AJP_SUBSAMPLED) {
+  if (KIRARI_SUBSAMPLED) {
     u = chroma.v[i];
     v = chroma.v[plane + i];
   } else {
@@ -50,7 +50,7 @@ void main() {
     v = float(code_at(pc.cr_offset, pc.cr_pitch, x, y));
   }
   vec3 p = yuv_to_rgb(luma, u, v);
-  rgb.v[i] = AJP_TENSOR(p.r);
-  rgb.v[plane + i] = AJP_TENSOR(p.g);
-  rgb.v[2u * plane + i] = AJP_TENSOR(p.b);
+  rgb.v[i] = KIRARI_TENSOR(p.r);
+  rgb.v[plane + i] = KIRARI_TENSOR(p.g);
+  rgb.v[2u * plane + i] = KIRARI_TENSOR(p.b);
 }

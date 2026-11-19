@@ -9,7 +9,7 @@
 
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string read_text(const std::filesystem::path& path) {
@@ -25,7 +25,7 @@ void write_text(const std::filesystem::path& path, const std::string& text) {
 
 TEST_CASE("play.toml : mouvement d'ensemble, absent d'un ancien fichier, s'enregistre",
           "[app][settings][pan_lock]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-pan-lock.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-pan-lock.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::size_t line = text.find("pan_lock = false\n");
@@ -43,4 +43,4 @@ TEST_CASE("play.toml : mouvement d'ensemble, absent d'un ancien fichier, s'enreg
   std::filesystem::remove(path);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

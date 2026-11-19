@@ -5,11 +5,11 @@
 # Sans Vulkan, les tests qui en ont besoin sont sautés avec leur raison.
 
 # Une bibliothèque de backend d'une autre ABI, construite ici et jamais rangée dans le dépôt.
-add_library(ajp_vk_backend_fake MODULE fake_backend.cpp)
-set_target_properties(ajp_vk_backend_fake PROPERTIES PREFIX "" CXX_VISIBILITY_PRESET hidden)
-ajp_set_warnings(ajp_vk_backend_fake)
+add_library(kirari_vk_backend_fake MODULE fake_backend.cpp)
+set_target_properties(kirari_vk_backend_fake PROPERTIES PREFIX "" CXX_VISIBILITY_PRESET hidden)
+kirari_set_warnings(kirari_vk_backend_fake)
 
-ajp_add_unit_tests(vk_backend
+kirari_add_unit_tests(vk_backend
   SOURCES
     backend_rig.cpp
     backend_test.cpp
@@ -47,35 +47,35 @@ ajp_add_unit_tests(vk_backend
     test_models.cpp
     vendor_runtime_test.cpp
   # core : le SHA-256 du vrai modèle des références (core/model_index.h).
-  DEPS ajp::gpu_ir ajp::gpu_span_fp8_onnx ajp::kernels ajp::core ajp::prepare ${CMAKE_DL_LIBS}
-  MAIN ajp_test_vulkan)
+  DEPS kirari::gpu_ir kirari::gpu_span_fp8_onnx kirari::kernels kirari::core kirari::prepare ${CMAKE_DL_LIBS}
+  MAIN kirari_test_vulkan)
 
 # Sorties de référence par modèle (vendor_runtime_test.cpp) : enregistrées sous le dossier du
 # build, puis comparées à chaque runtime des réseaux que ce build a (Core ML)
-# quand son matériel est là. AJP_SPAN_MODEL : le vrai SPAN d'AnimeJaNai installé sur le poste,
+# quand son matériel est là. KIRARI_SPAN_MODEL : le vrai SPAN d'AnimeJaNai installé sur le poste,
 # lu en place ; absent, seuls les modèles synthétiques servent.
-set(AJP_SPAN_MODEL "${AJP_ANIMEJANAI_ONNX_DIR}/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
+set(KIRARI_SPAN_MODEL "${KIRARI_ANIMEJANAI_ONNX_DIR}/2x_AnimeJaNai_HD_V3.1Sharp1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx"
     CACHE FILEPATH "Modèle SPAN ×2 d'AnimeJaNai pour les tests des runtimes")
 # Le dossier des RIFE du lecteur (rife_v4.22_lite.onnx, rife_v4.25.onnx), lus en place par le test caché
 # [.rife_fused] : la chaîne fusionnée contre le RIFE entier, tous deux sur le backend Vulkan.
-set(AJP_RIFE_MODEL_DIR "${AJP_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
+set(KIRARI_RIFE_MODEL_DIR "${KIRARI_MODELS_DIR}" CACHE PATH "Dossier des RIFE ONNX du lecteur (test caché [.rife_fused])")
 # Les ArtCNN livrés sont rangés dans le dépôt (190 et 51 Ko) : lus en place par net_artcnn_test.cpp.
-target_compile_definitions(ajp_vk_backend_tests PRIVATE
-  AJP_ARTCNN_MODEL_DIR="${PROJECT_SOURCE_DIR}/tools/upscale/models"
-  AJP_RIFE_MODEL_DIR="${AJP_RIFE_MODEL_DIR}"
-  AJP_TEST_BACKEND="$<TARGET_FILE:ajp_backend_vulkan>"
-  AJP_TEST_FAKE_BACKEND="$<TARGET_FILE:ajp_vk_backend_fake>"
-  AJP_TEST_REFERENCE_DIR="${CMAKE_CURRENT_BINARY_DIR}/reference"
-  AJP_SPAN_MODEL="${AJP_SPAN_MODEL}")
-add_dependencies(ajp_vk_backend_tests ajp_backend_vulkan ajp_vk_backend_fake)
+target_compile_definitions(kirari_vk_backend_tests PRIVATE
+  KIRARI_ARTCNN_MODEL_DIR="${PROJECT_SOURCE_DIR}/tools/upscale/models"
+  KIRARI_RIFE_MODEL_DIR="${KIRARI_RIFE_MODEL_DIR}"
+  KIRARI_TEST_BACKEND="$<TARGET_FILE:kirari_backend_vulkan>"
+  KIRARI_TEST_FAKE_BACKEND="$<TARGET_FILE:kirari_vk_backend_fake>"
+  KIRARI_TEST_REFERENCE_DIR="${CMAKE_CURRENT_BINARY_DIR}/reference"
+  KIRARI_SPAN_MODEL="${KIRARI_SPAN_MODEL}")
+add_dependencies(kirari_vk_backend_tests kirari_backend_vulkan kirari_vk_backend_fake)
 foreach(vendor IN ITEMS coreml)
-  if(TARGET ajp_${vendor}_rt)
+  if(TARGET kirari_${vendor}_rt)
     string(TOUPPER "${vendor}" upper)
-    target_link_libraries(ajp_vk_backend_tests PRIVATE ajp::${vendor}_rt)
-    target_compile_definitions(ajp_vk_backend_tests PRIVATE AJP_TEST_WITH_${upper}=1)
+    target_link_libraries(kirari_vk_backend_tests PRIVATE kirari::${vendor}_rt)
+    target_compile_definitions(kirari_vk_backend_tests PRIVATE KIRARI_TEST_WITH_${upper}=1)
   endif()
 endforeach()
 
 # Les tests cachés du repli Vulkan sur la vraie carte (B40-02) : RIFE et DistilDRBA fusionnés contre le moteur entier, le
 # profil de RIFE et les sommes des convolutions (`ctest -L gpu`, voir tests/CMakeLists.txt).
-ajp_add_hardware_tests(ajp_vk_backend_tests gpu 3600 rife_fused drba_fused rife_profil sommes)
+kirari_add_hardware_tests(kirari_vk_backend_tests gpu 3600 rife_fused drba_fused rife_profil sommes)

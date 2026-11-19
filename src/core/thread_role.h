@@ -15,7 +15,7 @@
 // crochet que l'application installe (set_role_refusal_reporter), qui le journalise (B20-06).
 #pragma once
 
-namespace ajp {
+namespace kirari {
 
 enum class ThreadRole {
   Playback,    // rendu, calcul GPU de la lecture
@@ -56,4 +56,4 @@ void return_to_base_priority() noexcept;
 inline constexpr unsigned long kCrashStackReserve = 64UL * 1024UL;
 void reserve_crash_stack() noexcept;
 
-}  // namespace ajp
+}  // namespace kirari

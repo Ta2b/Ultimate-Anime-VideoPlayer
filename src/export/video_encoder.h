@@ -13,7 +13,7 @@
 #include "export/av_handles.h"
 #include "export/encoder_choice.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 // Ce que l'écriture (export_writer.cpp) attend d'un encodeur ouvert. VideoEncoder l'est par
 // FFmpeg ; les tests de l'écriture le sont par un encodeur factice qui garde N images avant de les
@@ -93,4 +93,4 @@ class VideoEncoder final : public FrameEncoder {
   std::string label_;
 };
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

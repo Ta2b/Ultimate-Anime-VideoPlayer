@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 constexpr std::size_t kWindow = 11;
@@ -139,4 +139,4 @@ double dark_abs_error_quantile(int width, int height, std::span<const float> a, 
   return quantile_of(errors, q);
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

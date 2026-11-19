@@ -12,7 +12,7 @@
 #include "core/types.h"
 #include "render/cube_lut.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le dossier des LUT livrées avec le lecteur (luts/ à côté de ses modèles), lu après celui de l'utilisateur.
 std::filesystem::path shipped_luts_dir();
@@ -45,4 +45,4 @@ std::vector<LookLayer> anime_look_layers(int contrast, int highlight);
 // Vrai si les deux réglages ont la même pile de fichiers (les intensités ne comptent pas).
 bool same_look_files(const PlaySettings& a, const PlaySettings& b);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

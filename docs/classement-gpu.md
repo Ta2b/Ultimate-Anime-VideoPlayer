@@ -1,7 +1,7 @@
-# Classement des cartes graphiques pour ajp
+# Classement des cartes graphiques pour kirari
 
 Le préréglage Auto part de la tranche de la carte (`data/gpu_tiers.toml`, `src/app/play/gpu_tier.cpp`). Les
-cartes y sont classées **par puissance pour ajp**, pas par date ni par résultats en jeu : ajp passe son temps
+cartes y sont classées **par puissance pour kirari**, pas par date ni par résultats en jeu : kirari passe son temps
 dans des réseaux (SPAN, RIFE, GMFSS), dont le débit suit surtout le calcul FP16 matriciel. Une RTX 2060 y dépasse
 une GTX 1080 Ti, plus rapide en jeu mais sans cœurs Tensor ; une RTX 2080 Ti y dépasse une RTX 3060 Ti.
 

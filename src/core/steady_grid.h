@@ -15,7 +15,7 @@
 
 #include "core/cadence.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 class SteadyGrid {
  public:
@@ -43,4 +43,4 @@ class SteadyGrid {
   bool started_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

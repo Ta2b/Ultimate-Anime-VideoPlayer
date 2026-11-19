@@ -7,7 +7,7 @@
 
 #include "core/text.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 std::optional<Container> container_of(const std::filesystem::path& output) {
   std::string extension = output.extension().string();
@@ -58,4 +58,4 @@ int video_timescale(int fps_num, int fps_den) {
   return timescale <= kMax ? timescale : 0;
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

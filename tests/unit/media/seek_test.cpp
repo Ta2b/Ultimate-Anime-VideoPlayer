@@ -16,12 +16,12 @@ extern "C" {
 #include "media/source.h"
 #include "source_harness.h"
 
-using namespace ajp::media;
-using namespace ajp::media::test;
-using ajp::Command;
-using ajp::DecodedFrame;
-using ajp::Flush;
-namespace cmd = ajp::cmd;
+using namespace kirari::media;
+using namespace kirari::media::test;
+using kirari::Command;
+using kirari::DecodedFrame;
+using kirari::Flush;
+namespace cmd = kirari::cmd;
 
 namespace {
 
@@ -140,7 +140,7 @@ TEST_CASE("Flush : un Seek refusé ensuite est signalé et la lecture reprend", 
   REQUIRE(source.inbox.try_push(Command{cmd::Seek{.target_us = -1}}));
   const auto failure = source.listener.wait_failure();
   REQUIRE(failure.has_value());
-  CHECK(failure->code == ajp::RefusalCode::SeekFailed);
+  CHECK(failure->code == kirari::RefusalCode::SeekFailed);
   while (true) {  // la lecture reprend sous l'époque 1 jusqu'à la fin
     auto frame = source.sink.pop(source.inbox);
     REQUIRE(frame.has_value());
@@ -152,7 +152,7 @@ TEST_CASE("Flush : un Seek refusé ensuite est signalé et la lecture reprend", 
 TEST_CASE("seek exact : paquets audio et sous-titres de la nouvelle époque, depuis le point clé",
           "[media][seek]") {
   SourceInbox* inbox = nullptr;
-  auto credit = [&inbox] { std::ignore = inbox->try_push(ajp::Credit{}); };
+  auto credit = [&inbox] { std::ignore = inbox->try_push(kirari::Credit{}); };
   auto audio = PacketQueue::create({.max_duration_us = 160'000}, credit);  // 8 paquets de 20 ms
   auto subs = PacketQueue::create({.max_duration_us = std::nullopt}, credit);
   REQUIRE(audio.has_value());

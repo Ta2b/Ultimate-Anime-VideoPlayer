@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Un journal ne dit pas où sont les vidéos (A39-03) : ajp.log se joint à un rapport public. Un appel de
+# Un journal ne dit pas où sont les vidéos (A39-03) : kirari.log se joint à un rapport public. Un appel de
 # journal (info, warn, error, critical, debug, trace ; par ->, . ou ::) de src/ qui écrit un chemin par core::to_utf8 ou utf8_path doit
 # passer par filename() ou stem(). Les appels qui restent (dossiers de l'application, chemins d'export
 # ou de moteurs, déjà réduits à leur nom par le rapport) ne peuvent que diminuer : baisser kMax.

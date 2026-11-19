@@ -15,7 +15,7 @@
 #include "core/types.h"
 #include "media/av_util.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 enum class FieldMode {
   Deinterlace,      // bwdif seul
@@ -51,4 +51,4 @@ class Deinterlacer {
   bool active_ = false;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

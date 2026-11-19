@@ -3,7 +3,7 @@
 #include <format>
 #include <utility>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 std::expected<VkSemaphore, Refusal> create_timeline(const DeviceFunctions& fn, VkDevice device,
                                                     std::uint64_t initial,
@@ -75,4 +75,4 @@ Done TimelineSemaphore::signal(std::uint64_t value) {
   return check(fn_->vkSignalSemaphore(device_, &info), std::format("vkSignalSemaphore({})", value));
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

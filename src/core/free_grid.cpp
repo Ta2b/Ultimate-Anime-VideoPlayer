@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-namespace ajp::core {
+namespace kirari::core {
 
 CadenceStep FreeGrid::origin(const SourceStamp& source, GridEvent event) {
   left_ = source;
@@ -137,4 +137,4 @@ std::expected<void, Refusal> FreeGrid::flush(std::uint32_t epoch) {
   return {};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

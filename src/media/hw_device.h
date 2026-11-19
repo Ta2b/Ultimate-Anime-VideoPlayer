@@ -12,7 +12,7 @@
 #include "media/cuda_driver.h"
 #include "media/hw_api.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Flux CUDA non bloquant posé dans AVCUDADeviceContext::stream : la copie de
 // sécurité de NVDEC s'y fait. Retiré du contexte, puis détruit, avec l'objet.
@@ -53,7 +53,7 @@ struct HwDevice {
 // bibliothèque ou appareil absent, UUID différent du rendu.
 std::expected<HwDevice, Refusal> open_hw_device(AVCodecID codec, HwApi api, const DecoderOptions& options);
 
-#if defined(AJP_HAVE_VA)
+#if defined(KIRARI_HAVE_VA)
 // VA-API sur le premier nœud de rendu (/dev/dri/renderD*) dont le pilote décode ce codec ;
 // prefer_igpu met l'iGPU Intel devant (il décode AV1 et laisse le GPU dédié au rendu).
 std::expected<BufferPtr, Refusal> open_vaapi_device(AVCodecID codec, bool prefer_igpu);
@@ -72,4 +72,4 @@ std::optional<DeviceUuid> vulkan_device_uuid(const AVBufferRef& device);
 // device ») : aucune image ne sortirait, sans repli sur l'essai suivant.
 std::expected<void, Refusal> vulkan_decode_queue(const AVBufferRef& device, AVCodecID codec);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -13,7 +13,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Un tenseur vu par net_tensor.glsl (TDesc) : rang 4, les rangs plus petits alignés à droite.
 struct Desc4 {
@@ -79,4 +79,4 @@ std::expected<std::vector<float>, Refusal> const_floats(const ir::Graph& graph, 
                                                         std::size_t input);
 bool has_input(const ir::Node& node, std::size_t input);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

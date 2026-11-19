@@ -5,7 +5,7 @@
 #include "app/play/auto_config.h"
 #include "app/play/tracks.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string_view title(WizardStep step) {
   switch (step) {
@@ -151,4 +151,4 @@ void resume_choices(Wizard& wizard, const PlaySettings& saved) {
   wizard.advanced_languages = saved.language_version == LanguageVersion::Custom;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

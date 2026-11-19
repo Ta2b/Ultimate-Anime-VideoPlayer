@@ -10,7 +10,7 @@
 
 #include "gpu/ir/protobuf.h"
 
-namespace ajp::prepare::protobuf {
+namespace kirari::prepare::protobuf {
 
 using Bytes = std::span<const std::byte>;
 
@@ -67,4 +67,4 @@ inline void put_delimited(std::vector<std::byte>& out, std::uint32_t number, Byt
   out.insert(out.end(), payload.begin(), payload.end());
 }
 
-}  // namespace ajp::prepare::protobuf
+}  // namespace kirari::prepare::protobuf

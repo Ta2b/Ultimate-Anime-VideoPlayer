@@ -14,7 +14,7 @@ extern "C" {
 
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 kernels::Matrix matrix_of(ColorMatrix matrix) {
@@ -187,4 +187,4 @@ std::expected<exporter::OwnedFrame, Refusal> ExportSink::take(std::uint32_t slot
   return std::exchange(frames_[slot], std::move(*fresh));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

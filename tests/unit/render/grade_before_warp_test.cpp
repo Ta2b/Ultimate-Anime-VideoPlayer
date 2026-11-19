@@ -20,8 +20,8 @@
 
 namespace {
 
-using namespace ajp::render;
-using namespace ajp::render::gpu_test;
+using namespace kirari::render;
+using namespace kirari::render::gpu_test;
 
 constexpr std::size_t kPixels = static_cast<std::size_t>(kSide) * kSide;
 
@@ -305,7 +305,7 @@ TEST_CASE("grade avant le warp : l'écart au grade de l'image affichée, plans e
 // Les images réelles : les plans de data/calibration/calibration.mkv, découpés en kSide × kSide par
 // tools/grade/warp_stills.sh (RGB 8 bits brut, à la file), dans le dossier temporaire. Sans eux, sautée.
 TEST_CASE("mesure : grade avant le warp sur les plans de calibration", "[.mesure]") {
-  const std::filesystem::path file = std::filesystem::temp_directory_path() / "ajp-warp-stills.rgb";
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "kirari-warp-stills.rgb";
   std::ifstream in(file, std::ios::binary);
   if (!in) SKIP("pas de " + file.string() + " : lancer tools/grade/warp_stills.sh");
   std::vector<Image> stills;

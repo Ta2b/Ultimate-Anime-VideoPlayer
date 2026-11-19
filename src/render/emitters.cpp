@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 float smooth(float lo, float hi, float x) {
@@ -82,4 +82,4 @@ std::vector<float> emitter_map_v2(const EmitterImage& image, const EmitterParams
   return out;
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

@@ -15,7 +15,7 @@
 #include "prepare/model_source.h"
 #include "prepare/sha256.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // « 1920x1088 » en tête de text, suivi d'un tiret : rend la taille, ou rien.
@@ -112,4 +112,4 @@ std::expected<std::filesystem::path, Refusal> derived_model(const std::filesyste
   return target;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

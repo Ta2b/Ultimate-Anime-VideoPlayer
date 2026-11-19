@@ -15,7 +15,7 @@ extern "C" {
 
 #include "media/log.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 namespace {
 
@@ -176,4 +176,4 @@ bool Deinterlacer::active() const {
   return active_;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

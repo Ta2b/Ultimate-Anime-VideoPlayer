@@ -8,7 +8,7 @@
 #include "kernels/ref/check.h"
 #include "kernels/ref/resample.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 PlaneF to_float(const PlaneU16& p) {
@@ -144,4 +144,4 @@ Result<std::vector<std::uint16_t>> to_rgba16(const RgbImage& in) {
   return out;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

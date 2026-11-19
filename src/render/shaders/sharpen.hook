@@ -1,4 +1,4 @@
-// AJP - netteté : un masque flou adaptatif sur SCALED, après SPAN et le filtre final vers la fenêtre.
+// Kirari - netteté : un masque flou adaptatif sur SCALED, après SPAN et le filtre final vers la fenêtre.
 // Propre à ce dépôt. Le détail (le pixel moins la moyenne de ses quatre voisins) est ajouté, réduit près
 // des extrêmes du voisinage (comme un renforcement adaptatif au contraste) : les traits nets ne prennent
 // qu'un liseré borné (un quart de l'écart local au plus) et les aplats restent lisses. Le lecteur ne pose pas ce hook à force 0 : l'image reste alors
@@ -26,10 +26,10 @@
 
 //!HOOK LINEAR
 //!BIND HOOKED
-//!SAVE AJP_SHARPEN_LINEAR
+//!SAVE KIRARI_SHARPEN_LINEAR
 //!WIDTH 1
 //!HEIGHT 1
-//!DESC AJP netteté (domaine fixe)
+//!DESC Kirari netteté (domaine fixe)
 
 // Un seul pixel, jamais relu : la présence d'un hook sur LINEAR suffit à faire linéariser libplacebo.
 vec4 hook() {
@@ -38,7 +38,7 @@ vec4 hook() {
 
 //!HOOK SCALED
 //!BIND HOOKED
-//!DESC AJP netteté (masque flou adaptatif)
+//!DESC Kirari netteté (masque flou adaptatif)
 
 // Linéaire vers gamma 2,2 et retour, signe gardé (un filtre à lobes négatifs sort de 0 à 1) ; rien sur une
 // source HDR, déjà encodée.

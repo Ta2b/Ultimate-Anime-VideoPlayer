@@ -26,7 +26,7 @@
 #include "gpu/graph_book.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // La clé d'un Artifact de ce moteur : « span-fp8:<CRC-32 du paquet>:<hauteur>x<largeur> ». La taille voyage
 // dans la clé parce qu'Artifact ne porte que la clé et le chemin, et que le moteur n'existe qu'à une taille.
@@ -104,4 +104,4 @@ class SpanFp8Engine final : public Engine {
   std::uint64_t generation_ = 0;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

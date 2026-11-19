@@ -13,7 +13,7 @@
 #include "prepare/drba_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 std::expected<Artifact, Refusal> VulkanBackend::build_drba_fused(const ModelSpec& model,
                                                                  const ShapeSet& shapes, Progress& progress) {
@@ -81,4 +81,4 @@ std::expected<std::unique_ptr<Engine>, Refusal> VulkanBackend::load_drba_fused(c
   return std::unique_ptr<Engine>(std::move(*engine));
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

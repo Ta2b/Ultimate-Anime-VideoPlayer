@@ -10,7 +10,7 @@
 
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace upscale_test;
 
 namespace {
@@ -71,4 +71,4 @@ TEST_CASE("Étage gpu : avec RIFE, l'image lue en avance est stabilisée une foi
   CHECK(ran(rig, "2,5,4,1,3,4,5"));  // lue derrière 1 : les images 3 à 5 étaient déjà là
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

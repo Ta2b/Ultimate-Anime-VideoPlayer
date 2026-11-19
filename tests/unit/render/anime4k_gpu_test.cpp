@@ -14,7 +14,7 @@
 #include "grade_gpu_support.h"
 #include "render/anime4k.h"
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 using namespace gpu_test;
@@ -179,4 +179,4 @@ TEST_CASE("Anime4K : déplacé, le jeu de shaders reste valide", "[render][gpu][
 }
 
 }  // namespace
-}  // namespace ajp::render
+}  // namespace kirari::render

@@ -27,7 +27,7 @@
 #include "core/types.h"
 #include "kernels/spec/rife_fused.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct RifeSplit {
   kernels::RifeFusedPlan plan;
@@ -113,4 +113,4 @@ std::expected<std::filesystem::path, Refusal> derive_rife_fused(const std::files
                                                                 const std::filesystem::path& dir, int height,
                                                                 int width, RifeFusedOutput output);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

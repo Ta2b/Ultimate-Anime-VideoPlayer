@@ -8,7 +8,7 @@
 #include <utility>
 #include <variant>
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 constexpr std::array<char, 8> kMagic{'A', 'J', 'P', 'V', 'K', 'N', 'E', 'T'};
@@ -402,4 +402,4 @@ std::expected<ArtifactData, Refusal> deserialize(std::span<const std::byte> byte
   return data;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

@@ -2,7 +2,7 @@
 
 #include "app/play/i18n_fr.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Image IA : (clé anglaise, français).
@@ -281,4 +281,4 @@ std::span<const Entry> french_image() {
   return kImageTabs;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

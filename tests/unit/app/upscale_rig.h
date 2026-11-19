@@ -18,7 +18,7 @@
 #include "core/clock.h"
 #include "stage_rig.h"
 
-namespace ajp::app::play::upscale_test {
+namespace kirari::app::play::upscale_test {
 
 inline constexpr int kWidth = 320;
 inline constexpr int kHeight = 180;
@@ -83,4 +83,4 @@ inline std::vector<std::int64_t> pts_of(const std::vector<RingFrame>& frames) {
   return out;
 }
 
-}  // namespace ajp::app::play::upscale_test
+}  // namespace kirari::app::play::upscale_test

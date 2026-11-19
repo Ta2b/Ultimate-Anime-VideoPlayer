@@ -9,7 +9,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Facultatif, comme le RIFE des paires calmes : un refus (découpe, construction, mémoire) laisse la lecture à
 // pleine taille, la raison au journal. Le fusionné d'abord quand le RIFE principal l'est, sinon la variante
@@ -65,4 +65,4 @@ std::optional<bool> load_half_rife(Player& p, const gpu::BackendInit& init, Chai
   return true;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -13,17 +13,17 @@ vcpkg_from_git(
   # present_flags ni pl_vulkan_swapchain_submit, libplacebo se comporte comme avant. Le verrou « recording »
   # tenu du vol de la commande à sa soumission, que le correctif ajoutait sur 7.360.1, n'y est plus : l'amont
   # soumet désormais par CMD_BEGIN et CMD_SUBMIT, qui tiennent ce verrou d'un bout à l'autre.
-  PATCHES 0001-ajp-present-timing.patch
+  PATCHES 0001-kirari-present-timing.patch
 )
 
-function(ajp_fetch_submodule dir url ref)
+function(kirari_fetch_submodule dir url ref)
   vcpkg_from_git(OUT_SOURCE_PATH sub_path URL "${url}" REF "${ref}")
   file(REMOVE_RECURSE "${SOURCE_PATH}/3rdparty/${dir}")
   file(COPY "${sub_path}/" DESTINATION "${SOURCE_PATH}/3rdparty/${dir}")
 endfunction()
-ajp_fetch_submodule(jinja https://github.com/pallets/jinja.git 15206881c006c79667fe5154fe80c01c65410679)
-ajp_fetch_submodule(markupsafe https://github.com/pallets/markupsafe.git 297fc8e356e6836a62087949245d09a28e9f1b13)
-ajp_fetch_submodule(fast_float https://github.com/fastfloat/fast_float.git 97b54ca9e75f5303507699d27c6b4f4efe4641a1)
+kirari_fetch_submodule(jinja https://github.com/pallets/jinja.git 15206881c006c79667fe5154fe80c01c65410679)
+kirari_fetch_submodule(markupsafe https://github.com/pallets/markupsafe.git 297fc8e356e6836a62087949245d09a28e9f1b13)
+kirari_fetch_submodule(fast_float https://github.com/fastfloat/fast_float.git 97b54ca9e75f5303507699d27c6b4f4efe4641a1)
 
 # Sous Windows, clang-cl au lieu de cl (clang-cl.cmake) : vcpkg_configure_meson lit le
 # compilateur de cette chaîne, pour ce seul port. Ses <stdatomic.h> se passent de drapeau.

@@ -10,7 +10,7 @@
 #include "app/play/session.h"
 #include "doubles.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -94,4 +94,4 @@ TEST_CASE("Édition ordonnée : la session saute au début de l'édition et fini
   CHECK(session.finished());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -15,7 +15,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 // Ce que la règle de forme sait d'une entrée. dims == nullptr : entrée absente.
 // value n'est renseignée que si l'entrée est connue avant l'exécution.
@@ -59,4 +59,4 @@ Inferred infer_node(const Node& node, std::span<const Operand> inputs);
 // Calcul de référence du nœud sur des valeurs connues.
 Evaluated evaluate(const Node& node, std::span<const Value* const> inputs);
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

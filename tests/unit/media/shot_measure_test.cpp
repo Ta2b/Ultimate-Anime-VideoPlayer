@@ -31,7 +31,7 @@ extern "C" {
 #include "media/shot_probe_steps.h"
 #include "media/shot_timeline.h"
 
-using namespace ajp::media;
+using namespace kirari::media;
 using Catch::Approx;
 
 namespace {
@@ -82,7 +82,7 @@ FramePtr uniform(AVPixelFormat format, int bits, Codes c) {
   return f;
 }
 
-ShotFrame measured(AVPixelFormat format, int bits, Codes c, ajp::ColorInfo color, bool full_host = false) {
+ShotFrame measured(AVPixelFormat format, int bits, Codes c, kirari::ColorInfo color, bool full_host = false) {
   auto decoded = to_decoded_frame(uniform(format, bits, c), 0, 40'000, {}, full_host);
   REQUIRE(decoded);
   decoded->color = color;
@@ -100,13 +100,13 @@ TEST_CASE("plans : chaque format décodé mesure le même gris", "[media][shots]
     AVPixelFormat format;
     int bits;
     bool full_host;
-    ajp::PixelFormat expected;
+    kirari::PixelFormat expected;
   };
-  const Case c = GENERATE(Case{AV_PIX_FMT_NV12, 8, false, ajp::PixelFormat::Nv12},
-                          Case{AV_PIX_FMT_YUV420P, 8, false, ajp::PixelFormat::Yuv420p},
-                          Case{AV_PIX_FMT_YUV420P10LE, 10, false, ajp::PixelFormat::Yuv420p10},
-                          Case{AV_PIX_FMT_YUV420P12LE, 12, true, ajp::PixelFormat::P016},
-                          Case{AV_PIX_FMT_YUV444P16LE, 16, true, ajp::PixelFormat::Yuv444p16});
+  const Case c = GENERATE(Case{AV_PIX_FMT_NV12, 8, false, kirari::PixelFormat::Nv12},
+                          Case{AV_PIX_FMT_YUV420P, 8, false, kirari::PixelFormat::Yuv420p},
+                          Case{AV_PIX_FMT_YUV420P10LE, 10, false, kirari::PixelFormat::Yuv420p10},
+                          Case{AV_PIX_FMT_YUV420P12LE, 12, true, kirari::PixelFormat::P016},
+                          Case{AV_PIX_FMT_YUV444P16LE, 16, true, kirari::PixelFormat::Yuv444p16});
   CAPTURE(av_get_pix_fmt_name(c.format));
   auto decoded =
       to_decoded_frame(uniform(c.format, c.bits, codes_of({0.5, 0.5, 0.5}, 0.2126, 0.0722, false, c.bits)), 0,
@@ -124,17 +124,17 @@ TEST_CASE("plans : chaque format décodé mesure le même gris", "[media][shots]
 // C42-11 : la matrice et la plage de la source sont suivies : un rouge pur reste un rouge pur.
 TEST_CASE("plans : la mesure suit la matrice et la plage de la source", "[media][shots]") {
   struct Case {
-    ajp::ColorMatrix matrix;
+    kirari::ColorMatrix matrix;
     double kr, kb;
     bool full;
   };
-  const Case c = GENERATE(Case{ajp::ColorMatrix::Bt601, 0.299, 0.114, false},
-                          Case{ajp::ColorMatrix::Bt709, 0.2126, 0.0722, false},
-                          Case{ajp::ColorMatrix::Bt2020Ncl, 0.2627, 0.0593, false},
-                          Case{ajp::ColorMatrix::Bt709, 0.2126, 0.0722, true});
+  const Case c = GENERATE(Case{kirari::ColorMatrix::Bt601, 0.299, 0.114, false},
+                          Case{kirari::ColorMatrix::Bt709, 0.2126, 0.0722, false},
+                          Case{kirari::ColorMatrix::Bt2020Ncl, 0.2627, 0.0593, false},
+                          Case{kirari::ColorMatrix::Bt709, 0.2126, 0.0722, true});
   CAPTURE(static_cast<int>(c.matrix), c.full);
-  const ajp::ColorInfo color{.matrix = c.matrix,
-                             .range = c.full ? ajp::ColorRange::Full : ajp::ColorRange::Limited};
+  const kirari::ColorInfo color{.matrix = c.matrix,
+                                .range = c.full ? kirari::ColorRange::Full : kirari::ColorRange::Limited};
   const ShotFrame red =
       measured(AV_PIX_FMT_YUV420P10LE, 10, codes_of({1.0, 0.0, 0.0}, c.kr, c.kb, c.full, 10), color);
   CHECK(red.chroma == Approx(1.0).margin(0.02));  // max − min des canaux : 1 pour un rouge pur
@@ -146,28 +146,28 @@ TEST_CASE("plans : la mesure suit la matrice et la plage de la source", "[media]
 
 // C42-11 : une source PQ se mesure en ST 2084, pas en gamma.
 TEST_CASE("plans : une source PQ se mesure en ST 2084", "[media][shots]") {
-  const ajp::ColorInfo pq{.matrix = ajp::ColorMatrix::Bt2020Ncl, .transfer = ajp::Transfer::Pq};
+  const kirari::ColorInfo pq{.matrix = kirari::ColorMatrix::Bt2020Ncl, .transfer = kirari::Transfer::Pq};
   const ShotFrame f =
       measured(AV_PIX_FMT_YUV420P10LE, 10, codes_of({0.5, 0.5, 0.5}, 0.2627, 0.0593, false, 10), pq);
-  CHECK(f.transfer == ajp::kernels::FrameTransfer::Pq);
-  CHECK(f.light.apl_nits == Approx(ajp::kernels::ref::pq_eotf(0.5F)).epsilon(0.03));
+  CHECK(f.transfer == kirari::kernels::FrameTransfer::Pq);
+  CHECK(f.light.apl_nits == Approx(kirari::kernels::ref::pq_eotf(0.5F)).epsilon(0.03));
 }
 
 // C42-04 : le limiteur de flashs lit les zones d'une source PQ par ST 2084. En gamma 2,4, une zone claire de
 // PQ 0,58 contre un reste à 0,38 (201,7 et 26,0 cd/m² vrais) donnait 134 et 48,6.
 TEST_CASE("plans : les zones d'une source PQ gardent leur écart réel (C42-04)", "[media][shots]") {
   ShotFrame frame;
-  frame.transfer = ajp::kernels::FrameTransfer::Pq;
+  frame.transfer = kirari::kernels::FrameTransfer::Pq;
   frame.grid.fill(0.38F);
   frame.grid.at(0) = frame.grid.at(1) = frame.grid.at(4) = frame.grid.at(5) = 0.58F;  // un quart clair
-  const float bright = ajp::kernels::ref::pq_eotf(0.58F);
-  const float dark = ajp::kernels::ref::pq_eotf(0.38F);
+  const float bright = kirari::kernels::ref::pq_eotf(0.58F);
+  const float dark = kirari::kernels::ref::pq_eotf(0.38F);
   frame.light.apl_nits = (bright + (3.0F * dark)) / 4.0F;
   const auto zones = zone_nits_of(frame);
   CHECK(zones.at(0) == Approx(bright).epsilon(0.01));
   CHECK(zones.at(15) == Approx(dark).epsilon(0.01));
   // Une source SDR garde le gamma 2,4.
-  frame.transfer = ajp::kernels::FrameTransfer::Sdr;
+  frame.transfer = kirari::kernels::FrameTransfer::Sdr;
   const auto sdr = zone_nits_of(frame);
   CHECK(sdr.at(0) / sdr.at(15) == Approx(std::pow(0.58 / 0.38, 2.4)).epsilon(0.01));
 }
@@ -256,7 +256,7 @@ TEST_CASE("plans : le rythme de l'analyse au-delà de son avance libre (C42-01)"
 
 // C42-05 : chaque variante (écran d'un autre pic, visages) a son fichier : l'une n'efface pas l'autre.
 TEST_CASE("plans : le cache garde une variante par fichier (C42-05)", "[media][shots]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-shot-variant-test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-shot-variant-test";
   std::filesystem::remove_all(dir);
   const std::string key = "0123456789abcdef";
   const std::array<Shot, 1> first{Shot{.start_us = 0, .end_us = 1'000'000}};
@@ -304,7 +304,7 @@ TEST_CASE("plans : la fermeture n'attend pas l'écriture du cache (C42-06)", "[m
 // trou plus bas. Avant, le garde du premier saut la faisait décoder en entier (ses plans prenaient de
 // nouveaux numéros).
 TEST_CASE("plans : une zone connue reste sautée au second passage (C42-02)", "[media][shots]") {
-  const std::filesystem::path clip = ajp::media::test::require_clip(ajp::media::test::shots_clip());
+  const std::filesystem::path clip = kirari::media::test::require_clip(kirari::media::test::shots_clip());
   const auto whole = std::make_shared<ShotTimeline>();
   {
     const auto probe = ShotProbe::start(clip, whole, 0, ShotProbeOptions{.pace = 0.0});

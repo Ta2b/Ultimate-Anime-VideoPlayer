@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 struct GpuStageSummary {
   std::string name;
@@ -65,4 +65,4 @@ inline std::string gpu_profile_tsv(std::span<const GpuStageSummary> stages) {
   return out;
 }
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

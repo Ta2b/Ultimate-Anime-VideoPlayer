@@ -11,7 +11,7 @@
 #include "kernels/spec/color.h"
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 inline constexpr float kUnorm10Max = 1023.0F;
 inline constexpr std::uint32_t kOpaqueAlpha2 = 3U;
@@ -48,6 +48,6 @@ constexpr std::uint32_t pack_rgb10a2(std::uint32_t r, std::uint32_t g, std::uint
   return r | (g << 10U) | (b << 20U) | (kOpaqueAlpha2 << 30U);
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

@@ -4,10 +4,10 @@
 
 #include <SDL3/SDL_hints.h>
 
-namespace ajp::audio::test {
+namespace kirari::audio::test {
 
 inline void use_dummy_audio() {
   SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 }
 
-}  // namespace ajp::audio::test
+}  // namespace kirari::audio::test

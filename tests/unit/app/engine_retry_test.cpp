@@ -7,8 +7,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 namespace fs = std::filesystem;
 
 namespace {
@@ -56,7 +56,7 @@ TEST_CASE("Installation : le moteur réinstallé redevient installé et préfér
 }
 
 TEST_CASE("Installation : un essai raté ne se refait pas avant six heures", "[app][install]") {
-  const fs::path dir = fs::temp_directory_path() / "ajp-retry-marker";
+  const fs::path dir = fs::temp_directory_path() / "kirari-retry-marker";
   fs::remove_all(dir);
   const fs::path marker = retry_marker(dir, core::EngineId::TensorRt);
   CHECK(marker.filename() == "tensorrt.retry");

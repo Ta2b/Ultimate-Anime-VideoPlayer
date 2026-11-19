@@ -5,11 +5,11 @@ from pathlib import Path
 import numpy as np
 
 H, W = 1088, 1920
-# Chemins hors du dépôt (B46-14) : AJP_DRBA_MODELE (l'ONNX DistilDRBA 1920x1088, par défaut celui du cache du
-# lecteur) et AJP_POSES_DIR (le dossier de s5.ppm, s9.ppm et s14.ppm, 8 bits, au moins 2220 x 1238 px).
-MODELE = os.environ.get("AJP_DRBA_MODELE") or str(
-    Path.home() / ".cache" / "ajp" / "modeles" / "distil_drba_v2_lite-1920x1088-7048367e94f6c43d.onnx")
-POSES = os.environ.get("AJP_POSES_DIR", "")
+# Chemins hors du dépôt (B46-14) : KIRARI_DRBA_MODELE (l'ONNX DistilDRBA 1920x1088, par défaut celui du cache du
+# lecteur) et KIRARI_POSES_DIR (le dossier de s5.ppm, s9.ppm et s14.ppm, 8 bits, au moins 2220 x 1238 px).
+MODELE = os.environ.get("KIRARI_DRBA_MODELE") or str(
+    Path.home() / ".cache" / "kirari" / "modeles" / "distil_drba_v2_lite-1920x1088-7048367e94f6c43d.onnx")
+POSES = os.environ.get("KIRARI_POSES_DIR", "")
 IMAGES = {n: os.path.join(POSES, f"{n}.ppm") for n in ("s5", "s9", "s14")}
 
 # Tenseurs aux coupes (graphe plié par plie.py).
@@ -43,7 +43,7 @@ def lire_ppm(chemin):
 def trois_images(nom, decalage, x0=300, y0=150):
     """Trois recadrages W x H de l'image `nom`, décalés de `decalage` px chacun (mouvement régulier)."""
     if not POSES:
-        raise SystemExit("commun.py : AJP_POSES_DIR doit désigner le dossier de s5.ppm, s9.ppm et s14.ppm")
+        raise SystemExit("commun.py : KIRARI_POSES_DIR doit désigner le dossier de s5.ppm, s9.ppm et s14.ppm")
     img = lire_ppm(IMAGES[nom])
     return [img[y0:y0 + H, x0 + k * decalage:x0 + k * decalage + W] for k in range(3)]
 

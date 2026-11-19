@@ -2,7 +2,7 @@
 
 #include <format>
 
-#ifdef AJP_WITH_WAYLAND_PRESENTATION
+#ifdef KIRARI_WITH_WAYLAND_PRESENTATION
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -13,7 +13,7 @@
 #include <SDL3/SDL_properties.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string output_at(const std::vector<WaylandOutput>& outputs, int x, int y) {
   const WaylandOutput* found = nullptr;
@@ -30,7 +30,7 @@ std::string with_connector(std::string_view sdl_name, std::string_view connector
   return std::format("{} ({})", sdl_name, connector);
 }
 
-#ifdef AJP_WITH_WAYLAND_PRESENTATION
+#ifdef KIRARI_WITH_WAYLAND_PRESENTATION
 
 namespace {
 
@@ -138,4 +138,4 @@ std::string wayland_connector(SDL_DisplayID /*display*/) {
 
 #endif
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

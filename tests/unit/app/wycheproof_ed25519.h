@@ -5,7 +5,7 @@
 #include <array>
 #include <string_view>
 
-namespace ajp::app::play::wycheproof {
+namespace kirari::app::play::wycheproof {
 
 struct Vector {
   int id;
@@ -231,4 +231,4 @@ inline constexpr std::array kEd25519{
 };
 // clang-format on
 
-}  // namespace ajp::app::play::wycheproof
+}  // namespace kirari::app::play::wycheproof

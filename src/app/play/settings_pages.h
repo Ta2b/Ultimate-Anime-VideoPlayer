@@ -12,7 +12,7 @@
 #include "app/play/settings_system.h"
 #include "core/engines.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Général > Application : la langue de l'interface, l'épisode suivant, les mises à jour, le lecteur par
 // défaut, la machine, l'assistant et « Signaler un problème ».
@@ -29,4 +29,4 @@ void video_general_page(PlaySettings& d, const SettingsChoices& choices, std::ve
 // Vidéo > Général > Avancé : la composition finale (filtre, débandage) et l'OLED.
 void display_section(PlaySettings& d, const SettingsChoices& choices);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

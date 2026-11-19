@@ -8,7 +8,7 @@
 #include <optional>
 #include <string_view>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 enum class GpuFamily : std::uint8_t {
   Unknown,
@@ -80,4 +80,4 @@ bool int8_graphs_allowed(GpuFamily family);
 // jamais en tête des candidats.
 bool matrix_units_unlisted(GpuFamily family, DriverKind driver);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

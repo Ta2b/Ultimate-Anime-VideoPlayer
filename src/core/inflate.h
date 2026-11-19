@@ -11,7 +11,7 @@
 
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Lit jusqu'à buffer.size() octets compressés ; rend 0 à la fin des données.
 using InflateRead = std::function<std::size_t(std::span<std::uint8_t> buffer)>;
@@ -22,4 +22,4 @@ using InflateWrite = std::function<bool(std::span<const std::uint8_t> bytes)>;
 // Cancelled (write a rendu false).
 std::expected<std::uint64_t, Refusal> inflate_raw(const InflateRead& read, const InflateWrite& write);
 
-}  // namespace ajp::core
+}  // namespace kirari::core

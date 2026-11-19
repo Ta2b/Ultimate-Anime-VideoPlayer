@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <functional>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 using Pixel = std::function<void(int x, int y, std::uint8_t (&rgb)[3])>;
@@ -98,4 +98,4 @@ std::vector<HardCase> hard_cases(int width, int height) {
   return out;
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

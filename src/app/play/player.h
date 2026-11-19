@@ -1,4 +1,4 @@
-// « ajp play » : la tranche verticale de bout en bout sur ce poste.
+// « kirari play » : la tranche verticale de bout en bout sur ce poste.
 //
 //   fichier ─▶ media (NVDEC) ─▶ gpu (SPAN ×2, TensorRT) ─▶ ring ─▶ écran (libplacebo, Vulkan)
 //                 ├─▶ audio (SDL3, horloge maîtresse)
@@ -16,7 +16,7 @@
 #include "app/play/options.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct PlayerPaths {
   std::filesystem::path home;  // dossier de l'utilisateur (SDL_GetUserFolder)
@@ -28,12 +28,12 @@ struct PlayerPaths {
   // Le dossier des données lourdes (paquets, modèles téléchargés, LUT) ; vide : le parent de engines.
   std::filesystem::path heavy;
   // Les caches qui se refont seuls (modèles dérivés, plans, cache des shaders) ; vide : le dossier des
-  // données. Sous Linux, ~/.cache/ajp (A36-08).
+  // données. Sous Linux, ~/.cache/kirari (A36-08).
   std::filesystem::path cache;
   std::filesystem::path
       settings;  // play.toml, user.toml, bench.toml… ; vide : le parent de engines (--data-dir)
   std::vector<std::filesystem::path>
-      backends;                        // ajp_backend_tensorrt.so, ajp_backend_vulkan.so…, par préférence
+      backends;  // kirari_backend_tensorrt.so, kirari_backend_vulkan.so…, par préférence
   std::filesystem::path engine_index;  // engines.lock livré avec le lecteur (engine_install.h)
   std::filesystem::path models;  // modèles livrés : models/onnx (SPAN), models/rife ; cherchés en dernier
   // Écrit par play() : vrai quand un moteur vient d'être mis à jour et que le lecteur doit se relancer
@@ -61,4 +61,4 @@ std::expected<void, Refusal> bake_looks(const std::filesystem::path& settings_fi
                                         const std::filesystem::path& luts_dir,
                                         const std::filesystem::path& out);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

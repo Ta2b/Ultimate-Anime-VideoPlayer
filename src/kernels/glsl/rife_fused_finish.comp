@@ -11,11 +11,11 @@ layout(local_size_x = 16, local_size_y = 16) in;
 layout(constant_id = 0) const uint MOTION = 0;
 layout(constant_id = 1) const uint CUBIC = 0;
 
-layout(std430, binding = 0) readonly buffer Input { AJP_TENSOR v[]; } input_planes;
-layout(std430, binding = 1) readonly buffer XLast { AJP_TENSOR v[]; } x_last;  // canaux 24-27 : flot accumulé
-layout(std430, binding = 2) readonly buffer YLast { AJP_TENSOR v[]; } y_last;  // 52 canaux à h/2 × w/2
-layout(std430, binding = 3) writeonly buffer Image { AJP_TENSOR v[]; } image;  // 3 plans (ou le flot)
-layout(std430, binding = 4) writeonly buffer Mask { AJP_TENSOR v[]; } mask;    // 1 plan (variante mouvement)
+layout(std430, binding = 0) readonly buffer Input { KIRARI_TENSOR v[]; } input_planes;
+layout(std430, binding = 1) readonly buffer XLast { KIRARI_TENSOR v[]; } x_last;  // canaux 24-27 : flot accumulé
+layout(std430, binding = 2) readonly buffer YLast { KIRARI_TENSOR v[]; } y_last;  // 52 canaux à h/2 × w/2
+layout(std430, binding = 3) writeonly buffer Image { KIRARI_TENSOR v[]; } image;  // 3 plans (ou le flot)
+layout(std430, binding = 4) writeonly buffer Mask { KIRARI_TENSOR v[]; } mask;    // 1 plan (variante mouvement)
 
 layout(push_constant) uniform Push {
   uint height;
@@ -83,8 +83,8 @@ void main() {
   }
   float sig = rounded(1.0 / (1.0 + exp(-read_z(4u, y, x))));
   if (MOTION == 1u) {
-    for (uint k = 0u; k < 4u; ++k) image.v[k * plane + i] = AJP_TENSOR(fl[k]);
-    mask.v[i] = AJP_TENSOR(sig);
+    for (uint k = 0u; k < 4u; ++k) image.v[k * plane + i] = KIRARI_TENSOR(fl[k]);
+    mask.v[i] = KIRARI_TENSOR(sig);
     return;
   }
   float warped[6];
@@ -96,6 +96,6 @@ void main() {
   float rest = rounded(1.0 - sig);
   for (uint ch = 0u; ch < 3u; ++ch) {
     precise float v = rounded(warped[ch] * sig) + rounded(warped[3u + ch] * rest);
-    image.v[ch * plane + i] = AJP_TENSOR(v);
+    image.v[ch * plane + i] = KIRARI_TENSOR(v);
   }
 }

@@ -11,7 +11,7 @@ namespace {
 // Deux secondes d'alternance noir et blanc à `hz` flashs par seconde, à 60 images par seconde ; vrai si le
 // plafond a tenu à un moment.
 bool limited_at(double hz) {
-  ajp::media::FlashGuard guard;
+  kirari::media::FlashGuard guard;
   bool limited = false;
   for (int i = 0; i < 120; ++i) {
     const double t = i / 60.0;
@@ -28,7 +28,7 @@ TEST_CASE("flashs : plafond au-delà de trois par seconde (BT.1702-2, P3.51)", "
   CHECK(limited_at(6.0));
   CHECK(limited_at(10.0));
   // Une variation faible ne compte pas, même rapide.
-  ajp::media::FlashGuard guard;
+  kirari::media::FlashGuard guard;
   bool limited = false;
   for (int i = 0; i < 120; ++i) limited = guard.push(i * 16'667, i % 2 == 0 ? 100.0 : 110.0) || limited;
   CHECK_FALSE(limited);
@@ -36,8 +36,8 @@ TEST_CASE("flashs : plafond au-delà de trois par seconde (BT.1702-2, P3.51)", "
 
 namespace {
 
-using ajp::media::FlashGuard;
-using ajp::media::kFlashZones;
+using kirari::media::FlashGuard;
+using kirari::media::kFlashZones;
 
 // `lit` zones alternent entre low et high à hz flashs par seconde, les autres restent à low ; 60 i/s.
 // Rend l'instant du premier plafond, en microsecondes.
@@ -89,7 +89,7 @@ TEST_CASE("flashs : la première variation compte, montée ou descente (A42-17)"
     // Le début de la séquence : sa première transition, que la pré-analyse marque dans la chronologie.
     REQUIRE(guard.danger_from());
     CHECK(*guard.danger_from() <= 140'000);
-    CHECK(guard.limited_until() == *at + ajp::media::kFlashHoldUs);
+    CHECK(guard.limited_until() == *at + kirari::media::kFlashHoldUs);
   }
   FlashGuard slow;
   CHECK_FALSE(first_limit(slow, 16, 0.0F, 203.0F, 3.0));

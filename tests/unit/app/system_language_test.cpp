@@ -11,7 +11,7 @@
 
 TEST_CASE("langue du système : KDE Plasma la range dans plasma-localerc, sinon dans kdeglobals",
           "[app][language]") {
-  using ajp::app::play::kde_locales;
+  using kirari::app::play::kde_locales;
   const std::string plasma = "[Formats]\nLANG=en_US.UTF-8\n\n[Translations]\nLANGUAGE=fr:en_US\n";
   CHECK(kde_locales(plasma, "") == std::vector<std::string>{"fr", "en_US"});
   CHECK(kde_locales("[Translations]\nLANGUAGE[$e]= de : en \n", "") == std::vector<std::string>{"de", "en"});
@@ -22,7 +22,7 @@ TEST_CASE("langue du système : KDE Plasma la range dans plasma-localerc, sinon 
 }
 
 TEST_CASE("langue du système : la première que les menus proposent, l'anglais sinon", "[app][language]") {
-  using ajp::app::play::pick_menu_language;
+  using kirari::app::play::pick_menu_language;
   CHECK(pick_menu_language(std::vector<std::string>{"fr_FR.UTF-8"}) == "fre");
   CHECK(pick_menu_language(std::vector<std::string>{"C", "de-DE"}) == "ger");
   CHECK(pick_menu_language(std::vector<std::string>{"pt_BR"}) == "por");
@@ -35,8 +35,8 @@ TEST_CASE("langue du système : la première que les menus proposent, l'anglais 
 
 TEST_CASE("langues par défaut : la version originale sous-titrée dans la langue du système",
           "[app][language]") {
-  using namespace ajp::app::play;
-  using Presets = std::vector<ajp::media::LanguagePreset>;
+  using namespace kirari::app::play;
+  using Presets = std::vector<kirari::media::LanguagePreset>;
   set_system_language("fre");
   const Presets original{{"original", "fre"}, {"jpn", "fre"}, {"chi", "fre"}, {"jpn", "eng"}, {"fre", ""}};
   CHECK(default_language_presets() == original);
@@ -60,7 +60,7 @@ TEST_CASE("langues par défaut : la version originale sous-titrée dans la langu
 
 TEST_CASE("langue de l'interface : « system » suit celle du système, l'anglais sans elle (A19-03)",
           "[app][language]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   // Le défaut reste « system » dans play.toml : il suit le système à chaque lancement, au lieu d'y figer la
   // langue trouvée au premier.
   CHECK(PlaySettings{}.language == "system");

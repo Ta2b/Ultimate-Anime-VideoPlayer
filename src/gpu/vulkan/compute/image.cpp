@@ -9,7 +9,7 @@
 #include "gpu/vulkan/compute/buffer.h"
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 constexpr VkImageSubresourceRange kColor{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -213,4 +213,4 @@ std::expected<std::vector<std::uint16_t>, Refusal> read_rgba16(VkContext& contex
   return codes;
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

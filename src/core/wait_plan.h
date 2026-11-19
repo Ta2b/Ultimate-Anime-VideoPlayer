@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 inline constexpr std::int64_t kWaitMarginUs = 1500;
 // Sous Windows, l'attente grossière (SDL_WaitEventTimeout) dort comme Sleep, qui glisse de 1 à 2 ms même avec
@@ -25,4 +25,4 @@ inline WaitPlan wait_plan(std::int64_t now_us, std::int64_t deadline_us,
   return {.coarse_ms = std::max<std::int64_t>(room / 1000, 0), .precise_until_us = deadline_us};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

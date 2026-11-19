@@ -11,7 +11,7 @@
 #include "kernels/image.h"
 #include "kernels/spec/resample.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // Description de couleur d'une image YUV, déjà résolue (effective_matrix, effective_range,
 // effective_siting).
@@ -36,4 +36,4 @@ Result<YuvImage> rgb_to_yuv(const RgbImage& in, Format format, const ColorSpec& 
 // Sortie du ring : RGBA16 UNORM entrelacé, alpha opaque (unorm16).
 Result<std::vector<std::uint16_t>> to_rgba16(const RgbImage& in);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

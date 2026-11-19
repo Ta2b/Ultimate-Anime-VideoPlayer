@@ -13,9 +13,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using ajp::SourceId;
-using namespace ajp::core;
+using kirari::RefusalCode;
+using kirari::SourceId;
+using namespace kirari::core;
 
 namespace {
 
@@ -232,20 +232,20 @@ TEST_CASE("cadence : un pts invalide ou qui ne croît pas resynchronise", "[cade
 }
 
 TEST_CASE("cadence : stamp_of traduit kNoPts en horodatage absent, et retour", "[cadence]") {
-  const ajp::DecodedFrame unknown{.id = {4}, .epoch = 2};
-  CHECK(unknown.pts_us == ajp::kNoPts);  // inconnu tant que media ne l'a pas posé
+  const kirari::DecodedFrame unknown{.id = {4}, .epoch = 2};
+  CHECK(unknown.pts_us == kirari::kNoPts);  // inconnu tant que media ne l'a pas posé
   const SourceStamp none = stamp_of(unknown);
   CHECK(none.id == SourceId{4});
   CHECK(none.epoch == 2);
   CHECK_FALSE(none.pts_us);
-  CHECK(stamp_of(ajp::DecodedFrame{.pts_us = 0}).pts_us == 0);  // 0 est un pts connu
+  CHECK(stamp_of(kirari::DecodedFrame{.pts_us = 0}).pts_us == 0);  // 0 est un pts connu
 
   CadenceAccumulator accumulator = make({2, 1});
   accumulator.push(stamp(1, 0, 2));
   const CadenceStep step = accumulator.push(none);
   CHECK(step.event == GridEvent::InvalidPts);
-  CHECK(ajp::pts_or_unknown(step.instants()[0].pts_us) == ajp::kNoPts);
-  CHECK(ajp::pts_or_unknown(41'708) == 41'708);
+  CHECK(kirari::pts_or_unknown(step.instants()[0].pts_us) == kirari::kNoPts);
+  CHECK(kirari::pts_or_unknown(41'708) == 41'708);
 }
 
 TEST_CASE("cadence : resync() après un échec relance la grille à la source droite", "[cadence]") {

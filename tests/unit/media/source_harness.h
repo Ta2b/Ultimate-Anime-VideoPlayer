@@ -15,7 +15,7 @@
 #include "core/frame.h"
 #include "media/source.h"
 
-namespace ajp::media::test {
+namespace kirari::media::test {
 
 using namespace std::chrono_literals;
 inline constexpr auto kTimeout = 10s;
@@ -120,4 +120,4 @@ class TestListener final : public SourceListener {
   std::vector<Refusal> failures_;
 };
 
-}  // namespace ajp::media::test
+}  // namespace kirari::media::test

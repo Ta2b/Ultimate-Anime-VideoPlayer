@@ -29,7 +29,7 @@
 #include "core/thread_role.h"
 #include "render/cube_lut.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 inline constexpr double kFlashPeakNits = 250.0;  // plafond des flashs dangereux (P3.51)
@@ -436,4 +436,4 @@ void refresh_black(Chain& to) {
                       to.black->lo, to.black->hi, (*nits)[0]));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

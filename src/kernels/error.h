@@ -8,7 +8,7 @@
 #include <string_view>
 #include <utility>
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 // Un code s'ajoute à la fin, avec son nom dans name().
 enum class ErrorCode : std::uint8_t {
@@ -53,4 +53,4 @@ inline std::unexpected<Error> fail(ErrorCode code, std::string detail) {
   return std::unexpected(Error{.code = code, .detail = std::move(detail)});
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels

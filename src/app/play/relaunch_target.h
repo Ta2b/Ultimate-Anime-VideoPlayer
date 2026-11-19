@@ -15,7 +15,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Settings : un réglage posé au lancement (carte, moteurs, Smooth Motion), appliqué depuis le menu.
 enum class RelaunchReason : std::uint8_t { GpuLost, EngineUpdated, Settings };
@@ -68,4 +68,4 @@ void set_stuck_relaunch(void (*relaunch)());
 [[noreturn]] void exit_chain_stuck();
 inline constexpr int kStuckExitCode = 75;
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

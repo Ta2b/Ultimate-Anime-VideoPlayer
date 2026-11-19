@@ -22,7 +22,7 @@
 
 #include "app/play/host_facts.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct DisplayReading {
   double hz = 0.0;                      // la fréquence de l'écran ; 0 : inconnue
@@ -85,4 +85,4 @@ class DisplayProbe {
   std::jthread thread_;  // en dernier : arrêté avant le reste
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

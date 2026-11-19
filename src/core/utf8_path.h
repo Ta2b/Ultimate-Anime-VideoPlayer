@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::core {
+namespace kirari::core {
 
 // Le nom NTFS qui porte une moitié de paire de substitution n'a pas d'UTF-8 : u8string() lève. Un message ne
 // doit jamais lever, le caractère devient U+FFFD (C20-09).
@@ -65,4 +65,4 @@ inline std::filesystem::path path_from_utf8(std::string_view text) {
   return {std::u8string(text.begin(), text.end())};
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

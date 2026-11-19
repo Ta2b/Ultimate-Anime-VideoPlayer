@@ -18,7 +18,7 @@
 #include "app/play/invalid_copies.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string read_text(const std::filesystem::path& path) {
@@ -32,7 +32,7 @@ void write_text(const std::filesystem::path& path, const std::string& text) {
 }
 
 TEST_CASE("play.toml : une écriture refusée est reportée par la suivante (A22-02)", "[app][settings]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-refused.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-refused.toml";
   std::filesystem::remove_all(path);
   REQUIRE(save_settings(path, PlaySettings{}));
   const std::string on_disk = read_text(path);
@@ -58,7 +58,7 @@ TEST_CASE("play.toml : une écriture refusée est reportée par la suivante (A22
 
 TEST_CASE("play.toml : une valeur inconnue d'une version récente reste, et ses clés aussi (A36-01)",
           "[app][settings]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-newer.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-newer.toml";
   write_text(path,
              "version = 2\nfuture_option = 7\n[image]\nupscale = false\nsharpen_lines = true\n"
              "[interpolation]\nengine = \"rife425_fused\"\n");
@@ -92,7 +92,7 @@ TEST_CASE("play.toml : une valeur inconnue d'une version récente reste, et ses 
 // Un play.toml d'avant « Lisser les dessins tenus » se lit, l'option éteinte ; allumée, elle se relit.
 TEST_CASE("play.toml : « Lisser les dessins tenus », absent d'un ancien fichier, s'enregistre",
           "[app][settings][smooth]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-smooth.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-smooth.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::size_t line = text.find("smooth_drawings = false\n");
@@ -115,7 +115,7 @@ TEST_CASE("play.toml : « Lisser les dessins tenus », absent d'un ancien fichie
 // Un play.toml d'avant le warp de Catmull-Rom se lit, l'option au défaut (allumée) ; éteinte, elle se relit.
 TEST_CASE("play.toml : le warp de Catmull-Rom, absent d'un ancien fichier, s'enregistre",
           "[app][settings][cubic]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-cubic.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-cubic.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::size_t line = text.find("cubic_warp = true\n");
@@ -136,7 +136,7 @@ TEST_CASE("play.toml : le warp de Catmull-Rom, absent d'un ancien fichier, s'enr
 // Un play.toml d'avant l'échelle par paire se lit, l'option éteinte ; allumée, elle se relit.
 TEST_CASE("play.toml : l'échelle par paire, absente d'un ancien fichier, s'enregistre",
           "[app][settings][pair_scale]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-pair-scale.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-pair-scale.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::size_t line = text.find("pair_scale = false\n");
@@ -158,7 +158,8 @@ TEST_CASE("play.toml : l'échelle par paire, absente d'un ancien fichier, s'enre
 // allumée, elle se relit.
 TEST_CASE("play.toml : moins de passes sur les paires fortes, absent d'un ancien fichier, s'enregistre",
           "[app][settings][strong_middle]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-strong-middle.toml";
+  const std::filesystem::path path =
+      std::filesystem::temp_directory_path() / "kirari-play-strong-middle.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::size_t line = text.find("strong_middle = false\n");
@@ -180,7 +181,7 @@ TEST_CASE("play.toml : moins de passes sur les paires fortes, absent d'un ancien
 // coché se relit.
 TEST_CASE("play.toml : mouvement estimé en 720p, absent d'un ancien fichier, s'enregistre",
           "[app][settings][motion_720p]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-motion-720p.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-motion-720p.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = read_text(path);
   const std::size_t line = text.find("motion_720p = false\n");
@@ -202,7 +203,7 @@ TEST_CASE("play.toml : mouvement estimé en 720p, absent d'un ancien fichier, s'
 }
 
 TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite (B22-02)", "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-unreadable";
   std::filesystem::remove_all(dir);
   // Un dossier à la place du fichier : sous Linux il s'ouvre et se lit vide, un « absent » trompeur.
   const std::filesystem::path path = dir / "play.toml";
@@ -219,7 +220,8 @@ TEST_CASE("play.toml illisible : refusé à la lecture, jamais écrasé ensuite 
 
 TEST_CASE("C36-01 : play.toml illisible au lancement puis libéré, les changements de la séance s'écrivent",
           "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-unreadable-then-free";
+  const std::filesystem::path dir =
+      std::filesystem::temp_directory_path() / "kirari-play-unreadable-then-free";
   std::filesystem::remove_all(dir);
   const std::filesystem::path path = dir / "play.toml";
   std::filesystem::create_directories(path);  // tenu par un antivirus au lancement
@@ -244,7 +246,7 @@ TEST_CASE("C36-01 : play.toml illisible au lancement puis libéré, les changeme
 
 TEST_CASE("C30-03 : une écriture différée plus ancienne n'écrase pas l'écriture directe qui la suit",
           "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-order";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-order";
   std::filesystem::remove_all(dir);
   const std::filesystem::path path = dir / "play.toml";
   PlaySettings older;
@@ -263,7 +265,7 @@ TEST_CASE("C30-03 : une écriture différée plus ancienne n'écrase pas l'écri
 // C22-01 : un verrou passager à la relecture (antivirus) ne ferme pas les écritures jusqu'à la sortie.
 TEST_CASE("play.toml : un verrou passager à la relecture n'interdit pas les écritures suivantes (C22-01)",
           "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-transient";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-transient";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::filesystem::path path = dir / "play.toml";
@@ -290,7 +292,7 @@ TEST_CASE("play.toml : un verrou passager à la relecture n'interdit pas les éc
 // C22-01 : sans nouvelle lecture, l'écriture elle-même relit le fichier avant de refuser.
 TEST_CASE("play.toml : l'écriture relit un fichier redevenu lisible avant de refuser (C22-01)",
           "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-transient-save";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-transient-save";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::filesystem::path path = dir / "play.toml";
@@ -308,7 +310,7 @@ TEST_CASE("play.toml : l'écriture relit un fichier redevenu lisible avant de re
 
 // B22-04 : un TOML invalide, édité à la main pendant la lecture, est gardé en copie avant d'être remplacé.
 TEST_CASE("play.toml invalide : une copie est gardée avant la réécriture (B22-04)", "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-invalid-copy";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-invalid-copy";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::filesystem::path path = dir / "play.toml";
@@ -334,7 +336,7 @@ TEST_CASE("play.toml invalide : une copie est gardée avant la réécriture (B22
 // C22-06 : un play.toml invalide dont l'écriture échoue sans cesse ne multiplie pas les copies.
 TEST_CASE("play.toml invalide : une copie identique déjà gardée suffit, six au plus (C22-06)",
           "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-copies";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-copies";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::filesystem::path path = dir / "play.toml";
@@ -364,7 +366,7 @@ TEST_CASE("play.toml invalide : une copie identique déjà gardée suffit, six a
 
 // C22-07 : un fichier qui n'est pas un fichier de réglages (plus d'un Mo) est refusé, nommé, jamais écrasé.
 TEST_CASE("play.toml : plus d'un Mo est refusé, et le fichier n'est pas écrasé (C22-07)", "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-huge";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-huge";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::filesystem::path path = dir / "play.toml";
@@ -381,7 +383,7 @@ TEST_CASE("play.toml : plus d'un Mo est refusé, et le fichier n'est pas écras�
 
 // C22-03 : settings.toml se relit comme play.toml ; un dossier à sa place reste refusé.
 TEST_CASE("settings.toml : lu par la boucle de réessais, absent = défauts (C22-03)", "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-engine-settings";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-engine-settings";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const auto absent = load_engine_settings(dir / "settings.toml");
@@ -398,7 +400,7 @@ TEST_CASE("settings.toml : lu par la boucle de réessais, absent = défauts (C22
 // autres.
 TEST_CASE("play.toml : valeurs écartées dites, langues écartées une à une (B22-05, B22-06)",
           "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-play-ignored";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-play-ignored";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   const std::filesystem::path path = dir / "play.toml";
@@ -438,7 +440,7 @@ TEST_CASE("play.toml garde le grade et l'interpolation d'avant un raccourci de s
 
 TEST_CASE("play.toml : une édition à la main survit à la relecture du fil des mises à jour (B36-02)",
           "[app][settings]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-peek.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-peek.toml";
   std::filesystem::remove_all(path);
   REQUIRE(save_settings(path, PlaySettings{}));
   auto ours = load_settings(path);  // le lecteur au lancement
@@ -459,17 +461,17 @@ TEST_CASE("play.toml : une édition à la main survit à la relecture du fil des
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("C36-10 : seules les trois dernières copies mises de côté restent", "[app][settings]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp-invalid-copies";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari-invalid-copies";
   std::filesystem::remove_all(dir);
   std::filesystem::create_directories(dir);
   for (const char* stamp :
        {"20260101-000000", "20260201-000000", "20260301-000000", "20260401-000000", "20260501-000000"})
     std::ofstream(dir / (std::string("play.toml.invalide-") + stamp)) << "x";
   std::ofstream(dir / "settings.toml.invalide-20250101-000000") << "x";  // un autre fichier : à lui
-  ajp::app::play::prune_invalid_copies(dir / "play.toml");
+  kirari::app::play::prune_invalid_copies(dir / "play.toml");
   CHECK_FALSE(std::filesystem::exists(dir / "play.toml.invalide-20260101-000000"));
   CHECK_FALSE(std::filesystem::exists(dir / "play.toml.invalide-20260201-000000"));
   CHECK(std::filesystem::exists(dir / "play.toml.invalide-20260301-000000"));
@@ -478,7 +480,7 @@ TEST_CASE("C36-10 : seules les trois dernières copies mises de côté restent",
   std::filesystem::remove_all(dir);
 }
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::string text_of(const std::filesystem::path& path) {
@@ -490,7 +492,7 @@ std::string text_of(const std::filesystem::path& path) {
 // se relisent.
 TEST_CASE("play.toml : la sortie HDR et les FPS, absents d'un ancien fichier, s'enregistrent",
           "[app][settings][hdr]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-hdr-mode.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-hdr-mode.toml";
   REQUIRE(save_settings(path, PlaySettings{}));
   std::string text = text_of(path);
   const std::size_t at = text.find("output = ", text.find("[hdr]"));  // la sortie HDR, en tête de [hdr]
@@ -519,7 +521,7 @@ TEST_CASE("play.toml : la sortie HDR et les FPS, absents d'un ancien fichier, s'
 
 TEST_CASE("play.toml : la taille de l'interface s'enregistre, automatique dans un ancien fichier",
           "[app][settings]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-ui-scale.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-ui-scale.toml";
   std::filesystem::remove_all(path);
   write_text(path, "[interface]\nlanguage = \"fr\"\n");
   auto old = load_settings(path);
@@ -538,4 +540,4 @@ TEST_CASE("play.toml : la taille de l'interface s'enregistre, automatique dans u
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

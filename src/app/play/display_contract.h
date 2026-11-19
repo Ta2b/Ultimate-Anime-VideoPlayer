@@ -20,7 +20,7 @@
 
 struct SDL_Window;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // sdr_white_nits (A11-06) : le blanc SDR que le système dit, quand il le dit (sous Windows, le curseur
 // « luminosité du contenu SDR »). La marge de SDL est relative à lui : le pic vaut marge × ce blanc. Avant,
@@ -89,4 +89,4 @@ class ContractWatch {
   Flags flags_{&hdr_changed_, &peak_changed_};
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

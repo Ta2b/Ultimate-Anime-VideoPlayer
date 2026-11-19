@@ -19,7 +19,7 @@
 #include "core/profile.h"
 #include "core/types.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // num <= 10·den : au plus 10 instants par paire (×10 au plus).
 inline constexpr std::size_t kMaxInstantsPerPair = 10;
@@ -114,4 +114,4 @@ class CadenceAccumulator {
   bool started_ = false;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

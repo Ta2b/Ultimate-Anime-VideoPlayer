@@ -10,7 +10,7 @@
 #include "app/play/session.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La source a changé de taille (au-delà de 4 fois par minute : un refus, rangé dans `failure`), le
 // fichier grandit encore, ou la vidéo est finie et l'épisode suivant du dossier est demandé : marque
@@ -18,4 +18,4 @@ namespace ajp::app::play {
 void plan_follow_up(Player& p, Chain& chain, const Session& session, const GrowingFile& opened_file,
                     std::optional<Refusal>& failure);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

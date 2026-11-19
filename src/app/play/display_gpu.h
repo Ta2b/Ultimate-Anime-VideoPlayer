@@ -14,7 +14,7 @@
 
 struct SDL_Window;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ScreenCard {
   std::string name;      // « Intel(R) UHD Graphics » sous Windows ; « PCI 8086:a7a0 » sous Linux
@@ -43,4 +43,4 @@ constexpr bool screen_card_warns(const ScreenCard& card, int display_height, dou
 std::optional<i18n::Translated> note_render_device(SDL_Window* window, std::string_view connector,
                                                    const GpuDevice& render, bool smooth_motion);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

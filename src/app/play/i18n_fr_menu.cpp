@@ -5,7 +5,7 @@
 
 #include "app/play/i18n_fr.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Menu des paramètres : (clé anglaise, français).
@@ -235,9 +235,9 @@ constexpr std::array kMenuTexts{
     Entry{"Every setting goes back to its default. The engines folder and the language are kept.",
           "Chaque réglage revient à sa valeur par défaut. Le dossier des moteurs et la langue sont gardés."},
     Entry{"Each pair judged a held drawing (blue) or a scene cut (red) tints the screen for a moment and "
-          "goes to ajp.log. This session only.",
+          "goes to kirari.log. This session only.",
           "Chaque paire jugée dessin tenu (bleu) ou changement de plan (rouge) teinte l'écran un instant et "
-          "va dans ajp.log. Cette séance seulement."},
+          "va dans kirari.log. Cette séance seulement."},
     Entry{"How the picture is stretched to the window. EWA Lanczos is the sharpest but the heaviest for the "
           "card. Recommended: the default.",
           "La façon d'étirer l'image à la fenêtre. EWA Lanczos est le plus net mais le plus lourd pour la "
@@ -297,4 +297,4 @@ std::span<const Entry> french_menu() {
   return kMenuTexts;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

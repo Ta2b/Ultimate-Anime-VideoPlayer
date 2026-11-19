@@ -5,11 +5,11 @@
 
 struct AVFrame;
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 
 struct OwnedFrameFree {
   void operator()(AVFrame* frame) const noexcept;  // export_writer.cpp
 };
 using OwnedFrame = std::unique_ptr<AVFrame, OwnedFrameFree>;
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

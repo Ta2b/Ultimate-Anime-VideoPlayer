@@ -18,8 +18,8 @@
 
 namespace {
 
-using namespace ajp;
-using namespace ajp::test;
+using namespace kirari;
+using namespace kirari::test;
 
 // Écart le plus grand entre le tenseur ingéré et la référence, sur toute l'image, bords compris.
 double worst_gap(const std::vector<float>& got, const kernels::RgbImage& want, int w, int h) {

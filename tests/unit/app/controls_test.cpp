@@ -7,7 +7,7 @@
 
 #include "app/play/input.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using Catch::Matchers::WithinAbs;
@@ -262,11 +262,11 @@ TEST_CASE("C24-03 : un panneau séparé du dialogue ne monte pas avec lui", "[ap
   CHECK(bottom_cluster({}, kHeight).empty());
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement (P3.43)", "[app][controls]") {
-  using namespace ajp::app::play;
-  const ajp::core::KeyMap keys = ajp::core::KeyMap::defaults();
+  using namespace kirari::app::play;
+  const kirari::core::KeyMap keys = kirari::core::KeyMap::defaults();
   SDL_Event down{};
   down.type = SDL_EVENT_KEY_DOWN;
   down.key.key = SDLK_RIGHT;
@@ -274,9 +274,9 @@ TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement 
   down.key.scancode = SDL_SCANCODE_RIGHT;
   const auto held = input_of(down, keys);
   REQUIRE(held);
-  const auto* command = std::get_if<ajp::Command>(&*held);
+  const auto* command = std::get_if<kirari::Command>(&*held);
   REQUIRE(command != nullptr);
-  const auto* seek = std::get_if<ajp::cmd::SeekRelative>(command);
+  const auto* seek = std::get_if<kirari::cmd::SeekRelative>(command);
   REQUIRE(seek != nullptr);
   CHECK(seek->delta_us > 0);
   CHECK_FALSE(seek->exact);
@@ -286,7 +286,7 @@ TEST_CASE("flèche maintenue : seeks sur point clé, puis exact au relâchement 
   up.key.scancode = SDL_SCANCODE_RIGHT;
   const auto released = input_of(up, keys);
   REQUIRE(released);
-  const auto* last = std::get_if<ajp::cmd::SeekRelative>(&std::get<ajp::Command>(*released));
+  const auto* last = std::get_if<kirari::cmd::SeekRelative>(&std::get<kirari::Command>(*released));
   REQUIRE(last != nullptr);
   CHECK(last->delta_us == 0);
   CHECK(last->exact);

@@ -43,7 +43,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Une construction plus courte ne montre rien : un moteur du cache revient tout de suite.
@@ -526,4 +526,4 @@ PipelineConfig pipeline_config(Player& p, const PlaySettings& settings, const st
           .manual = p.manual_tracks != nullptr ? *p.manual_tracks : ManualTracks{}};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

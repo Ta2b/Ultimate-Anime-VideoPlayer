@@ -31,7 +31,7 @@
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 
 // Ingestion d'une image décodée : quelle conversion, selon l'étage qui la lit.
 // Filtre de la réduction fusionnée à l'ingestion : boîte
@@ -334,4 +334,4 @@ class KernelOps {
   virtual void unmap_fences(std::span<std::byte> /*block*/) {}
 };
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

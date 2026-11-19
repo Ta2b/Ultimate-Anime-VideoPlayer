@@ -24,7 +24,7 @@
 #include "core/present_ledger.h"
 #include "core/vblank_clock.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le dernier retour lu, pour --stats.
 struct FeedbackRead {
@@ -135,4 +135,4 @@ class PresentFeedback {
   std::unique_ptr<TimingStorage> timing_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -23,7 +23,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 constexpr std::intptr_t kInvalid = -1;  // INVALID_HANDLE_VALUE comme descripteur absent
@@ -126,7 +126,7 @@ std::expected<KeyLock, Refusal> KeyLock::acquire(const std::filesystem::path& lo
       return std::unexpected(Refusal{
           RefusalCode::CacheBusy,
           std::format("verrou tenu depuis plus de {} min par un autre processus : {} ; fermez les autres "
-                      "lecteurs ajp, puis rouvrez la vidéo",
+                      "lecteurs kirari, puis rouvrez la vidéo",
                       std::chrono::duration_cast<std::chrono::minutes>(max_wait).count(),
                       utf8_path(lock_file))});
     }
@@ -153,4 +153,4 @@ void KeyLock::close() noexcept {
   handle_ = kInvalid;
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

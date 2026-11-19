@@ -8,7 +8,7 @@
 #include <system_error>
 #include <vector>
 
-namespace ajp::core {
+namespace kirari::core {
 
 template <class Iterator>
 std::vector<std::filesystem::directory_entry> entries_of(Iterator it, std::error_code& error) {
@@ -28,4 +28,4 @@ inline std::vector<std::filesystem::directory_entry> tree_entries(
   return entries_of(std::filesystem::recursive_directory_iterator(dir, options, error), error);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

@@ -7,8 +7,8 @@ profil TOML v5 y reste pour ses types (règles, modèles) ; `resolve()`, le `Pla
 
 ## Modules
 
-Un dossier de `src/` = un module = une cible CMake `ajp::<nom>`, déclarée par
-`ajp_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
+Un dossier de `src/` = un module = une cible CMake `kirari::<nom>`, déclarée par
+`kirari_add_module` avec ses dépendances. Le graphe est acyclique : `app` dépend de
 tout, rien ne dépend de `app`. `kernels` est une feuille ; `media`, `subs`,
 `audio`, `gpu_ir` et `gpu_span_fp8` ne dépendent publiquement que de
 `core_types` (et `media` de `kernels`, dont il lit la règle SD et l'analyse d'image).
@@ -164,9 +164,9 @@ rendu lui est prêté, avant AMF et Quick Sync (`export/encoder_choice.cpp`).
 Chaque backend est une bibliothèque chargée à l'exécution. La frontière passe des
 types C++ (`std::string`, `std::function`, `std::expected`) : le backend se
 construit avec la même bibliothèque standard que le lecteur. Le chargeur lit
-`ajp_backend_abi()` et `ajp_backend_layout()`, puis `check_backend_abi()` refuse
+`kirari_backend_abi()` et `kirari_backend_layout()`, puis `check_backend_abi()` refuse
 une autre version ou une autre empreinte binaire (`AbiMismatch`) avant d'appeler
-`ajp_backend_create(kBackendAbi, &init)`. L'empreinte `kBackendLayout` couvre la
+`kirari_backend_create(kBackendAbi, &init)`. L'empreinte `kBackendLayout` couvre la
 taille et l'alignement de chaque type qui traverse la frontière et la bibliothèque
 standard (libstdc++ et son ABI de `std::string`, libc++, STL de MSVC et son CRT) :
 elle trahit des en-têtes changés sans changement de `kBackendAbi`. Les quatre
@@ -201,7 +201,7 @@ graphe CUDA, avec les deux entrées `pair01` et `pair12` du moteur entier ; le r
 `prepare_distil_drba` (`player_engines.cpp`).
 
 Durées de vie : chaque `Engine` et `TensorBuffer` meurt avant le `Backend` qui l'a
-créé, donc avant `ajp_backend_destroy` et le déchargement de la bibliothèque, où
+créé, donc avant `kirari_backend_destroy` et le déchargement de la bibliothèque, où
 vit leur code. Une opération qui lit une `DecodedFrame` en garde une copie de
 `frame.data` jusqu'à la fin de sa lecture côté GPU, constatée sans attente hôte :
 l'image ne revient au pool du décodeur qu'ensuite. `write_ring` relâche les imports
@@ -273,7 +273,7 @@ d'envoi, attendue seulement quand le lot part). Chacun n'attend que sa boîte `I
 
 ## Journal
 
-spdlog en `SPDLOG_USE_STD_FORMAT`, par la cible `ajp::core_log` :
+spdlog en `SPDLOG_USE_STD_FORMAT`, par la cible `kirari::core_log` :
 
 - un module journalise par `log_channel("<module>")`, jamais par le journal par
   défaut ni par le registre de spdlog ; son `log.h` ne fait que nommer le canal ;
@@ -309,14 +309,14 @@ GPU par shader). Les copies se réduisent en trois temps :
   bit à bit et les copies se font à la taille réduite ; seuls les Concat à lecteur unique dont une
   entrée devrait être copiée, et les Resize qui réduisent, sont réécrits ;
 - RIFE v4.25 en [1,11,768,1280], RTX 4070 Ti : copies 37 dispatchs / 2,2 ms → 25 / 0,9 ms, total
-  13,2 → 11,9 ms (`ajp_vk_backend_tests "[.rife_profil]"`, médiane de 20 exécutions).
+  13,2 → 11,9 ms (`kirari_vk_backend_tests "[.rife_profil]"`, médiane de 20 exécutions).
 Restent : le Concat des deux premières entrées de GridSample (lot 2), le dernier Concat de 28
 canaux lu en pleine taille, et le Split Nhwc16 → Nchw de la sortie du flot.
 
 ## Construction sous Linux
 
 Les préréglages `linux-prefix*` lient chaque exécutable et bibliothèque partagée
-avec `--disable-new-dtags` (`AJP_TRANSITIVE_RPATH`) : un `DT_RPATH` vaut aussi pour
+avec `--disable-new-dtags` (`KIRARI_TRANSITIVE_RPATH`) : un `DT_RPATH` vaut aussi pour
 les dépendances indirectes, et les bibliothèques FFmpeg du préfixe, sans RUNPATH,
 se trouvent sans `LD_LIBRARY_PATH`.
 

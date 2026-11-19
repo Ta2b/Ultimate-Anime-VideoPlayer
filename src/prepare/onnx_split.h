@@ -14,7 +14,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Un attribut de nœud, ses valeurs entières ou textuelles seulement (les flottants et les tenseurs ne servent
 // pas aux vérifications).
@@ -84,4 +84,4 @@ std::expected<std::vector<std::byte>, Refusal> permute_input_channels(std::span<
                                                                       std::string_view name,
                                                                       std::span<const int> source);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

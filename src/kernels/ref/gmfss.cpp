@@ -11,7 +11,7 @@
 #include "kernels/ref/check.h"
 #include "kernels/ref/warp.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 struct PixelMotion {
@@ -261,4 +261,4 @@ Result<std::vector<PlaneF>> gmfss_still(const std::vector<PlaneF>& key, const st
   return out;
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

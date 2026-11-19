@@ -9,7 +9,7 @@
 #include "clips.h"
 #include "media/demuxer.h"
 
-using ajp::media::TelecineMeter;
+using kirari::media::TelecineMeter;
 
 namespace {
 
@@ -93,10 +93,11 @@ TEST_CASE("TelecineMeter : trop peu d'images ne concluent pas", "[media][telecin
 // La mesure sur un fichier : trop court pour conclure, elle ne change rien, et la lecture repart du début.
 TEST_CASE("measure_telecine : un clip court ne conclut pas et rend le demuxer au début",
           "[media][telecine]") {
-  auto opened = ajp::media::Demuxer::open(ajp::media::test::require_clip(ajp::media::test::seek_clip()));
+  auto opened =
+      kirari::media::Demuxer::open(kirari::media::test::require_clip(kirari::media::test::seek_clip()));
   REQUIRE(opened.has_value());
-  const ajp::media::TrackInfo video = *opened->track(0);
-  CHECK_FALSE(ajp::media::measure_telecine(*opened, video).has_value());
+  const kirari::media::TrackInfo video = *opened->track(0);
+  CHECK_FALSE(kirari::media::measure_telecine(*opened, video).has_value());
   auto first = opened->read();
   REQUIRE(first.has_value());
   REQUIRE(first->has_value());
@@ -104,7 +105,8 @@ TEST_CASE("measure_telecine : un clip court ne conclut pas et rend le demuxer au
 }
 
 TEST_CASE("Demuxer : set_inverse_telecine corrige la cadence supposée", "[media][telecine]") {
-  auto opened = ajp::media::Demuxer::open(ajp::media::test::require_clip(ajp::media::test::seek_clip()));
+  auto opened =
+      kirari::media::Demuxer::open(kirari::media::test::require_clip(kirari::media::test::seek_clip()));
   REQUIRE(opened.has_value());
   opened->set_inverse_telecine(0, true);
   CHECK(opened->track(0)->frame_rate.num == 24000);

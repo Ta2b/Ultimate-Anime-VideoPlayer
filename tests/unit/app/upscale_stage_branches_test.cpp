@@ -16,7 +16,7 @@
 #include "doubles.h"
 #include "upscale_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 using namespace std::chrono_literals;
 using namespace upscale_test;
 
@@ -183,4 +183,4 @@ TEST_CASE("Étage gpu : débogage des paires, la coupe et le dessin tenu notés,
   CHECK(rig.live->counts().held == 1);  // les compteurs ne changent pas
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

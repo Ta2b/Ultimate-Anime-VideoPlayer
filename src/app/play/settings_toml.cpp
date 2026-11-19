@@ -36,9 +36,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Lit table[key] s'il existe, du type de out (entier, booléen, réel, texte) ; FieldType sinon.
@@ -754,7 +754,7 @@ std::expected<void, Refusal> save_settings_locked(const std::filesystem::path& p
           version && *version > kSettingsVersion)
         merged.insert_or_assign("version", *version);
       std::ostringstream out;
-      out << "# Réglages de « ajp play », écrits par le menu des paramètres.\n" << merged << '\n';
+      out << "# Réglages de « kirari play », écrits par le menu des paramètres.\n" << merged << '\n';
       text = out.str();
     }
   }
@@ -768,4 +768,4 @@ std::expected<void, Refusal> save_settings_locked(const std::filesystem::path& p
 
 }  // namespace
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

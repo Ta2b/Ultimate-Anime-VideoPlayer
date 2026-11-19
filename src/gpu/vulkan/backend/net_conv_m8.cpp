@@ -10,7 +10,7 @@
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_weights.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace detail {
 namespace {
 
@@ -169,4 +169,4 @@ std::expected<void, Refusal> Lowerer::conv_matrix_m8(std::size_t index, const Ke
   return {};
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

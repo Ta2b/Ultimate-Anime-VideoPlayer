@@ -17,7 +17,7 @@
 #include "export/container.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::kWarn;
 using panel::note;
@@ -260,4 +260,4 @@ void export_tab(ExportDraft& draft, const PlaySettings& running, const SettingsC
   ImGui::EndDisabled();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

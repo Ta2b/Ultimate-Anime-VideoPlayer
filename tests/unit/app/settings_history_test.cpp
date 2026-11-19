@@ -3,7 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Annuler : un volume changé aux touches n'est ni compté ni rejoué (B23-01)", "[app][settings]") {
@@ -119,4 +119,4 @@ TEST_CASE("Annuler : un glissement compte pour un changement, la pile est borné
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

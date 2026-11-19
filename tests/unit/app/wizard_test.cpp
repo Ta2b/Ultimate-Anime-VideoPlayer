@@ -8,7 +8,7 @@
 #include "app/play/engine_screen.h"
 #include "french_ui.h"
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 TEST_CASE("l'assistant : le léger d'abord, les moteurs en dernier, puis Prêt (P3.18)", "[wizard]") {
   const auto all = wizard_steps({.engine_choice = true});
@@ -20,7 +20,7 @@ TEST_CASE("l'assistant : le léger d'abord, les moteurs en dernier, puis Prêt (
 }
 
 TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   const WizardFacts facts{.engine_choice = true};
   Wizard wizard = begin_wizard(facts, 0);
   CHECK(current(wizard) == WizardStep::Welcome);
@@ -40,7 +40,7 @@ TEST_CASE("l'assistant avance, recule, passe et reprend en route", "[wizard]") {
 
 TEST_CASE("Prêt : le préréglage Auto de la carte, sans calibration ; un écran sauté n'écrase rien",
           "[wizard]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Wizard wizard = begin_wizard({.engine_choice = true}, 0);
   wizard.update_mode = UpdateMode::Never;
   wizard.interface_language = "fr";
@@ -57,7 +57,7 @@ TEST_CASE("Prêt : le préréglage Auto de la carte, sans calibration ; un écra
   wizard.language_presets = language_presets_for("fre", LanguageVersion::Dubbed);
   const PlaySettings dubbed = wizard_play_settings(wizard, PlaySettings{});
   CHECK(dubbed.language_version == LanguageVersion::Dubbed);
-  CHECK(dubbed.language_presets.front() == ajp::media::LanguagePreset{"fre", ""});
+  CHECK(dubbed.language_presets.front() == kirari::media::LanguagePreset{"fre", ""});
   CHECK(wizard_summary(wizard).front() == "Langues : Français, doublé (Langues > Langues)");
   wizard.skipped = {WizardStep::Updates};
   CHECK(wizard_play_settings(wizard, PlaySettings{}).update_mode == UpdateMode::Notify);
@@ -104,7 +104,7 @@ TEST_CASE("Lecteur par défaut : pas demandé quand l'écran Intégration est pa
 }
 
 TEST_CASE("Bienvenue : au repos l'écran ne se redessine plus 60 fois par seconde (A25-15)", "[app][wizard]") {
-  using ajp::app::play::welcome_wait_ms;
+  using kirari::app::play::welcome_wait_ms;
   CHECK(welcome_wait_ms(0, false) == 16);
   CHECK(welcome_wait_ms(999'999, false) == 16);
   CHECK(welcome_wait_ms(1'000'000, false) == 250);

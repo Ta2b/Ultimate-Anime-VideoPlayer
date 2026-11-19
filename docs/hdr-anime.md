@@ -48,7 +48,7 @@ la pile (décision 16 du 09/11/2026). Sous ce rendu, la dernière passe ramenait
 soit la pile : les deux curseurs ne changeaient plus les surfaces claires, et les éclats perdaient leur
 « peps ». Tatoub a demandé le 11/11/2026 de revenir au blanc et aux éclats d'avant, en gardant les noirs.
 
-Mesuré sous lavapipe sur les shaders du lecteur (`ajp_render_tests "[.mesure]"`), source SDR au gamma 2,4,
+Mesuré sous lavapipe sur les shaders du lecteur (`kirari_render_tests "[.mesure]"`), source SDR au gamma 2,4,
 écran de 1 000 nits, nits affichés :
 
 | Code RVB 8 bits | 0.10 | rc.1 et rc.2 | Maintenant |

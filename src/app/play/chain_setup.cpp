@@ -24,7 +24,7 @@
 #include "core/utf8_path.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Ce que le rapport « Signaler un problème » dit de la carte et du préréglage joué (A39-02).
@@ -754,4 +754,4 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
 
 }  // namespace
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

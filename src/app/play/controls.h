@@ -21,7 +21,7 @@
 #include "core/messages.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::int64_t kHideAfterUs = 2'000'000;    // inactivité avant l'effacement
 inline constexpr std::int64_t kPausedHideUs = 20'000'000;  // OLED : en pause, inactivité avant l'effacement
@@ -166,4 +166,4 @@ class Controls {
   bool drawn_ = false;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

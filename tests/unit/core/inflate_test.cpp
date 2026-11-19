@@ -10,7 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp;
+using namespace kirari;
 
 namespace {
 

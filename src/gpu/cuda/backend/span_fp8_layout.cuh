@@ -8,7 +8,7 @@
 #include <cuda_runtime_api.h>
 #include <utility>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 // Mémoire d'appareil possédée.
@@ -75,4 +75,4 @@ __global__ void unshuffle_kernel(const __half* in, __half* out, int height, int 
 }
 
 }  // namespace
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -15,10 +15,10 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La source (SDL_DropEvent::source) d'un fichier venu d'un autre lancement : la fenêtre passe devant.
-inline constexpr std::string_view kForwardedDrop = "ajp-instance";
+inline constexpr std::string_view kForwardedDrop = "kirari-instance";
 
 // Un lancement simple, double-clic ou « Ouvrir avec » : au plus des fichiers, aucune option. Les essais du
 // banc, les captures et toute option gardent leur propre processus. Un lecteur relancé (--relaunched=)
@@ -64,4 +64,4 @@ std::vector<std::string> instance_message_files(std::string_view message);
 std::string instance_message_token(std::string_view message);
 std::string instance_message(const std::vector<std::string>& files, std::string_view activation_token = {});
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

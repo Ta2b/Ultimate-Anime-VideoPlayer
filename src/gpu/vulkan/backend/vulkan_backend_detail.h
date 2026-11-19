@@ -12,7 +12,7 @@
 #include "core/types.h"
 #include "gpu/tensor.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Projections hôte des tenseurs alloués pour un runtime (MemoryUse::Readback), par handle de tampon : enqueue
 // les retrouve à partir des Tensor. Partagées entre le backend et ses tampons, qui s'effacent en mourant.
@@ -36,4 +36,4 @@ std::expected<std::uint64_t, Refusal> tensor_bytes(TensorType type, const Shape&
 std::string file_stem(std::string_view id);
 
 }  // namespace detail
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

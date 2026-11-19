@@ -4,7 +4,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 std::atomic<Language>& current_language() {
@@ -48,9 +48,9 @@ const char* tr(const char* key) {
                               : key;  // NOLINT(bugprone-suspicious-stringview-data-usage)
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 
 std::string_view tr_view(std::string_view key) {
   if (language() == Language::English) return key;
@@ -59,4 +59,4 @@ std::string_view tr_view(std::string_view key) {
   return found != table.end() ? found->second : key;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

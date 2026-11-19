@@ -7,9 +7,9 @@
 #include <cstdint>
 #include <span>
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Un bit par binding de 0 à 63 ; 0 pour un module illisible (tout compte alors comme écrit).
 std::uint64_t spirv_readonly_bindings(std::span<const std::uint32_t> words);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

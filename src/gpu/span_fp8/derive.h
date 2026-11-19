@@ -12,10 +12,10 @@
 #include "core/types.h"
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 // Format du reçu et seuils : ceux de l'INT8 (app/play/span_int8.cpp), pas ceux, lâches, du FP8 par Q/DQ.
-inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7b
+inline constexpr const char* kReceiptFormat = "kirari-span-fp8c-v2";  // étape 3.7b
 // La version de la porte (judge_hardened) : un refus d'une porte plus ancienne se refait. 2 : les cas durs
 // synthétiques ne décident plus (séance de mesure).
 // 3 : centiles réglés sur la RTX 4070 Ti. 4 : gain sur le SPAN FP16 de TensorRT mesuré et exigé, échelles
@@ -24,7 +24,7 @@ inline constexpr const char* kReceiptFormat = "ajp-span-fp8c-v2";  // étape 3.7
 // gardée seulement si elle gagne, écrêtage des images de validation refusé (chantier E01).
 inline constexpr int kGateVersion = 5;
 // Le reçu de tools/span/derive_span_fp8.py, encore lu (app/play/span_int8.cpp).
-inline constexpr const char* kReceiptFormatV1 = "ajp-span-fp8c-v1";
+inline constexpr const char* kReceiptFormatV1 = "kirari-span-fp8c-v1";
 inline constexpr double kMinPsnrMeanDb = 42.0;
 inline constexpr double kMinPsnrWorstDb = 38.0;
 inline constexpr double kMinSsimWorst = 0.985;
@@ -126,7 +126,7 @@ struct Receipt {
   Verdict verdict;
   // Seulement pour la dérivation native.
   std::string reference;   // d'où vient la sortie de référence (« cutlass-fp16 »)
-  std::string derived_by;  // « ajp (natif) »
+  std::string derived_by;  // « kirari (natif) »
   // Version 2 (étape 3.7b) : ce qui lie le paquet à l'appareil, aux noyaux et aux tailles jugées.
   std::string gpu_arch;  // « sm_89 »
   int kernels_version = 0;
@@ -163,4 +163,4 @@ struct Crop {
 };
 Crop kernel_crop(int width, int height, int max_width = kCropMaxWidth, int max_height = kCropMaxHeight);
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

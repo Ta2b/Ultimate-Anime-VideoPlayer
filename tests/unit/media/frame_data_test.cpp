@@ -19,10 +19,10 @@ extern "C" {
 #include "media/frame_data.h"
 #include "media/hw_device.h"
 
-using namespace ajp::media;
-using ajp::FrameMemory;
-using ajp::RefusalCode;
-using ajp::VulkanImageState;
+using namespace kirari::media;
+using kirari::FrameMemory;
+using kirari::RefusalCode;
+using kirari::VulkanImageState;
 using namespace std::chrono_literals;
 
 namespace {
@@ -98,7 +98,7 @@ TEST_CASE("frame_data : l'accès Vulkan suit l'état de l'AVVkFrame sous son ver
 
   auto decoded = to_decoded_frame(std::move(pooled->frame), 0, 40'000);
   REQUIRE(decoded);
-  const ajp::FrameData& data = *decoded->data;
+  const kirari::FrameData& data = *decoded->data;
   REQUIRE(data.memory() == FrameMemory::Vulkan);
 
   auto access = data.begin_vulkan_access();
@@ -171,12 +171,12 @@ TEST_CASE("frame_data : 4:4:4, 4:2:2 et 12 bits deviennent du 4:2:0 que la chaî
   struct Case {
     AVPixelFormat from;
     int bits;
-    ajp::PixelFormat to;
+    kirari::PixelFormat to;
   };
-  const Case c = GENERATE(Case{AV_PIX_FMT_YUV444P, 8, ajp::PixelFormat::Yuv420p},
-                          Case{AV_PIX_FMT_YUV444P10LE, 10, ajp::PixelFormat::Yuv420p10},
-                          Case{AV_PIX_FMT_YUV422P10LE, 10, ajp::PixelFormat::Yuv420p10},
-                          Case{AV_PIX_FMT_YUV420P12LE, 12, ajp::PixelFormat::Yuv420p10});
+  const Case c = GENERATE(Case{AV_PIX_FMT_YUV444P, 8, kirari::PixelFormat::Yuv420p},
+                          Case{AV_PIX_FMT_YUV444P10LE, 10, kirari::PixelFormat::Yuv420p10},
+                          Case{AV_PIX_FMT_YUV422P10LE, 10, kirari::PixelFormat::Yuv420p10},
+                          Case{AV_PIX_FMT_YUV420P12LE, 12, kirari::PixelFormat::Yuv420p10});
   CAPTURE(av_get_pix_fmt_name(c.from));
   for (int round = 0; round < 3; ++round) {  // le pool resert d'une image à l'autre
     FramePtr frame = host_frame(c.from, c.bits);
@@ -192,7 +192,7 @@ TEST_CASE("frame_data : 4:4:4, 4:2:2 et 12 bits deviennent du 4:2:0 que la chaî
     // 12 bits en 4:2:0 : la chroma n'est pas rééchantillonnée, sa position reste (A15-07).
     CHECK(out->chroma_location ==
           (c.from == AV_PIX_FMT_YUV420P12LE ? AVCHROMA_LOC_TOPLEFT : AVCHROMA_LOC_LEFT));
-    const int out_bits = c.to == ajp::PixelFormat::Yuv420p ? 8 : 10;
+    const int out_bits = c.to == kirari::PixelFormat::Yuv420p ? 8 : 10;
     const auto luma = [&](int x) {
       return out_bits > 8 ? reinterpret_cast<const std::uint16_t*>(out->data[0] + 5 * out->linesize[0])[x]
                           : out->data[0][5 * out->linesize[0] + x];
@@ -207,13 +207,13 @@ TEST_CASE("frame_data : la chaîne qui les lit garde le 4:4:4 entier et les 12 b
   struct Case {
     AVPixelFormat from;
     int bits;
-    ajp::PixelFormat to;
+    kirari::PixelFormat to;
   };
-  const Case c = GENERATE(Case{AV_PIX_FMT_YUV444P, 8, ajp::PixelFormat::Yuv444p16},
-                          Case{AV_PIX_FMT_YUV444P10LE, 10, ajp::PixelFormat::Yuv444p16},
-                          Case{AV_PIX_FMT_YUV444P12LE, 12, ajp::PixelFormat::Yuv444p16},
-                          Case{AV_PIX_FMT_YUV420P12LE, 12, ajp::PixelFormat::P016},
-                          Case{AV_PIX_FMT_YUV422P10LE, 10, ajp::PixelFormat::Yuv420p10});
+  const Case c = GENERATE(Case{AV_PIX_FMT_YUV444P, 8, kirari::PixelFormat::Yuv444p16},
+                          Case{AV_PIX_FMT_YUV444P10LE, 10, kirari::PixelFormat::Yuv444p16},
+                          Case{AV_PIX_FMT_YUV444P12LE, 12, kirari::PixelFormat::Yuv444p16},
+                          Case{AV_PIX_FMT_YUV420P12LE, 12, kirari::PixelFormat::P016},
+                          Case{AV_PIX_FMT_YUV422P10LE, 10, kirari::PixelFormat::Yuv420p10});
   CAPTURE(av_get_pix_fmt_name(c.from));
   FramePtr frame = host_frame(c.from, c.bits);
   frame->chroma_location = AVCHROMA_LOC_TOPLEFT;
@@ -225,8 +225,8 @@ TEST_CASE("frame_data : la chaîne qui les lit garde le 4:4:4 entier et les 12 b
   CHECK(out->width == 64);
   CHECK(out->height == 32);
   // 12 bits en 4:2:0 : la chroma n'est pas rééchantillonnée, sa position reste.
-  if (c.to == ajp::PixelFormat::P016) CHECK(out->chroma_location == AVCHROMA_LOC_TOPLEFT);
-  if (c.to == ajp::PixelFormat::Yuv420p10) return;
+  if (c.to == kirari::PixelFormat::P016) CHECK(out->chroma_location == AVCHROMA_LOC_TOPLEFT);
+  if (c.to == kirari::PixelFormat::Yuv420p10) return;
   // Le noir et le blanc du code source se retrouvent aux deux bouts des 16 bits, à un code source près.
   const auto luma = [&](int x) {
     return reinterpret_cast<const std::uint16_t*>(out->data[0] + 5 * out->linesize[0])[x];
@@ -235,7 +235,7 @@ TEST_CASE("frame_data : la chaîne qui les lit garde le 4:4:4 entier et les 12 b
   CHECK(luma(0) == 0);
   CHECK(luma(63) >= 65536 - step);
   // 4:4:4 : le plan de chroma a la taille de l'image.
-  if (c.to == ajp::PixelFormat::Yuv444p16) CHECK(out->linesize[1] >= 2 * 64);
+  if (c.to == kirari::PixelFormat::Yuv444p16) CHECK(out->linesize[1] >= 2 * 64);
 }
 
 TEST_CASE("frame_data : sous TensorRT, le 4:2:2 garde sa chroma et sa position en 16 bits (B01-03)",
@@ -249,7 +249,7 @@ TEST_CASE("frame_data : sous TensorRT, le 4:2:2 garde sa chroma et sa position e
   frame->chroma_location = AVCHROMA_LOC_TOPLEFT;
   auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {}, true, true);
   REQUIRE(decoded);
-  CHECK(decoded->format == ajp::PixelFormat::Yuv422p16);
+  CHECK(decoded->format == kirari::PixelFormat::Yuv422p16);
   const AVFrame* out = av_frame_of(*decoded->data);
   REQUIRE(out != nullptr);
   CHECK(out->chroma_location == AVCHROMA_LOC_TOPLEFT);  // rien n'est rééchantillonné
@@ -265,7 +265,7 @@ TEST_CASE("frame_data : sous TensorRT, le 4:2:2 garde sa chroma et sa position e
   // Sans host_422 (Vulkan), la même source est réduite en 4:2:0 comme avant.
   auto reduced = to_decoded_frame(host_frame(from, bits), 0, 40'000, {}, true, false);
   REQUIRE(reduced);
-  CHECK(reduced->format == (bits > 8 ? ajp::PixelFormat::Yuv420p10 : ajp::PixelFormat::Yuv420p));
+  CHECK(reduced->format == (bits > 8 ? kirari::PixelFormat::Yuv420p10 : kirari::PixelFormat::Yuv420p));
 }
 
 TEST_CASE("frame_data : un format que la chaîne ne lit pas sans full est converti (B01-03)",
@@ -273,10 +273,10 @@ TEST_CASE("frame_data : un format que la chaîne ne lit pas sans full est conver
   // Du yuv444p16le natif sans full_host_formats : ramené au 4:2:0 10 bits, plus jamais rendu tel quel.
   auto decoded = to_decoded_frame(host_frame(AV_PIX_FMT_YUV444P16LE, 16), 0, 40'000, {}, false);
   REQUIRE(decoded);
-  CHECK(decoded->format == ajp::PixelFormat::Yuv420p10);
+  CHECK(decoded->format == kirari::PixelFormat::Yuv420p10);
   auto kept = to_decoded_frame(host_frame(AV_PIX_FMT_YUV444P16LE, 16), 0, 40'000, {}, true);
   REQUIRE(kept);
-  CHECK(kept->format == ajp::PixelFormat::Yuv444p16);
+  CHECK(kept->format == kirari::PixelFormat::Yuv444p16);
 }
 
 // Une rampe de chroma en largeur : tout filtre normalisé la rend telle quelle, à la position où il pose ses
@@ -296,8 +296,8 @@ TEST_CASE("frame_data : la chroma réduite se pose à gauche, comme l'image le d
   }
   auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {});
   REQUIRE(decoded);
-  REQUIRE(decoded->format == ajp::PixelFormat::Yuv420p10);
-  CHECK(decoded->color.siting == ajp::ChromaSiting::Left);
+  REQUIRE(decoded->format == kirari::PixelFormat::Yuv420p10);
+  CHECK(decoded->color.siting == kirari::ChromaSiting::Left);
   const AVFrame* out = av_frame_of(*decoded->data);
   const auto* row = reinterpret_cast<const std::uint16_t*>(out->data[1] + 8 * out->linesize[1]);
   for (const int j : {8, 16, 24}) {
@@ -310,8 +310,8 @@ TEST_CASE("frame_data : yuvj444p (plage pleine) sort en plage limitée", "[media
   FramePtr frame = host_frame(AV_PIX_FMT_YUVJ444P, 8);
   auto decoded = to_decoded_frame(std::move(frame), 0, 40'000, {});
   REQUIRE(decoded);
-  CHECK(decoded->format == ajp::PixelFormat::Yuv420p);
-  CHECK(decoded->color.range == ajp::ColorRange::Limited);
+  CHECK(decoded->format == kirari::PixelFormat::Yuv420p);
+  CHECK(decoded->color.range == kirari::ColorRange::Limited);
   const AVFrame* out = av_frame_of(*decoded->data);
   CHECK(out->data[0][5 * out->linesize[0]] == 16);
   CHECK(out->data[0][5 * out->linesize[0] + 63] == 235);

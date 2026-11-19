@@ -3,10 +3,10 @@
 # et les modèles installés (étiquettes nvidia|gpu|models), un JUnit, et un test matériel sauté compte comme un
 # échec (C40-01, C40-04). À lancer avant chaque étiquette ; le résultat se joint à la release.
 #   tools/test-pc.sh            construit linux-prefix-cuda (sm_89), puis teste.
-# Prérequis : AJP_DEPS_PREFIX, AJP_TENSORRT_ROOT, AJP_MODELS_DIR (le dossier de tools/release/fetch-models.sh).
+# Prérequis : KIRARI_DEPS_PREFIX, KIRARI_TENSORRT_ROOT, KIRARI_MODELS_DIR (le dossier de tools/release/fetch-models.sh).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-cmake --preset linux-prefix-cuda -DAJP_HARDWARE_TESTS_STRICT=ON ${AJP_TENSORRT_ROOT:+"-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"}
+cmake --preset linux-prefix-cuda -DKIRARI_HARDWARE_TESTS_STRICT=ON ${KIRARI_TENSORRT_ROOT:+"-DKIRARI_TENSORRT_ROOT=$KIRARI_TENSORRT_ROOT"}
 cmake --build --preset linux-prefix-cuda
 tools/ci/check-hardware-tests.sh build/linux-prefix-cuda
 junit="build/linux-prefix-cuda/junit-pc.xml"

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <system_error>
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 std::string ml_program_name(std::string_view name) {
   std::string out;
@@ -35,4 +35,4 @@ std::optional<std::filesystem::path> single_compiled(const std::filesystem::path
   return found;
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

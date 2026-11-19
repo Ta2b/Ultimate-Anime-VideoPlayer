@@ -9,7 +9,7 @@
 #include "core/auto_rate.h"
 #include "core/text_file.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 std::string auto_memory_key(std::string_view file, std::uintmax_t size, std::string_view engine,
                             int work_height, std::string_view gpu) {
@@ -94,4 +94,4 @@ std::expected<void, Refusal> store_auto_step(const std::filesystem::path& store,
   return write_text_atomically(store, memory.dump());
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

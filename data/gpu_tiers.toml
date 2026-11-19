@@ -1,4 +1,4 @@
-# Les cartes graphiques classées par puissance POUR AJP, pas par date : ce qui compte est le débit des réseaux
+# Les cartes graphiques classées par puissance POUR Kirari, pas par date : ce qui compte est le débit des réseaux
 # (SPAN, RIFE, GMFSS), surtout le calcul FP16 matriciel (cœurs Tensor sous TensorRT, matrices coopératives sous
 # Vulkan). Une RTX 2060 y dépasse ainsi une GTX 1080 Ti, plus rapide en jeu mais sans unités matricielles. Le
 # classement sert au préréglage Auto (docs/ux-parametres.md, 4.7) : ce sont des ESTIMATIONS, que le menu laisse

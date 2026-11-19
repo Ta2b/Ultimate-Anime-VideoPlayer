@@ -6,7 +6,7 @@
 #include "kernels/spec/color.h"
 #include "kernels/spec/transfer.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 
 // PQ : signal [0, 1] → cd/m² [0, 10000], et l'inverse. Entrées bornées à leur domaine.
 float pq_eotf(float signal);
@@ -46,4 +46,4 @@ float bt1886_inverse_eotf(float light, const Bt1886Display& display);
 // Produit matrice × RGB linéaire, la matrice rangée en float comme dans un port.
 Rgb convert_primaries(const Rgb& linear, const Mat3& matrix);
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

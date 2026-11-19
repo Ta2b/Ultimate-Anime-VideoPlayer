@@ -6,10 +6,10 @@
 //     moteur RIFE entier de TensorRT, sur une paire d'images : PSNR de l'image interpolée d'au moins 30 dB,
 //     pour RIFE 4.25 et 4.22 lite, image et variante mouvement (flot et masque).
 //
-// Le test caché lit les modèles du lecteur en place (AJP_RIFE_MODEL_DIR, sans copie dans le dépôt) ; une
-// paire d'images d'anime en PPM (AJP_RIFE_IMAGE : une image dont une fenêtre sert de première image et la
+// Le test caché lit les modèles du lecteur en place (KIRARI_RIFE_MODEL_DIR, sans copie dans le dépôt) ; une
+// paire d'images d'anime en PPM (KIRARI_RIFE_IMAGE : une image dont une fenêtre sert de première image et la
 // même fenêtre décalée de 12 pixels de seconde) remplace le dessin synthétique :
-//   ajp-gpu ajp_backend_tensorrt_tests "[.rife_fused]"
+//   kirari-gpu kirari_backend_tensorrt_tests "[.rife_fused]"
 #include "kernels/ref/rife_fused.h"
 
 #include <algorithm>
@@ -37,7 +37,7 @@
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 namespace fs = std::filesystem;
@@ -336,7 +336,7 @@ std::vector<float> drawing(int h, int w, int shift) {
 // pixels, ou deux dessins décalés.
 std::pair<std::vector<float>, std::vector<float>> picture_pair(int h, int w) {
   constexpr int kShift = 12;
-  if (const fs::path image(AJP_RIFE_IMAGE); !image.empty() && fs::is_regular_file(image)) {
+  if (const fs::path image(KIRARI_RIFE_IMAGE); !image.empty() && fs::is_regular_file(image)) {
     int ih = 0, iw = 0;
     const std::vector<float> whole = read_ppm(image, ih, iw);
     if (!whole.empty() && ih >= h && iw >= w + kShift) {
@@ -461,7 +461,7 @@ double warped_psnr(const std::vector<float>& first, const std::vector<float>& se
 
 // Compare la chaîne fusionnée au RIFE entier de TensorRT sur la paire, pour un modèle du catalogue.
 void compare_engines(const std::string& file, bool motion) {
-  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
+  const fs::path onnx = fs::path(KIRARI_RIFE_MODEL_DIR) / file;
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   Loaded loaded;
@@ -469,7 +469,7 @@ void compare_engines(const std::string& file, bool motion) {
   REQUIRE(loaded.backend->capabilities().rife_fused);
   constexpr int h = 384;
   constexpr int w = 640;
-  const fs::path scratch = fs::temp_directory_path() / "ajp-rife-fused-test";
+  const fs::path scratch = fs::temp_directory_path() / "kirari-rife-fused-test";
   fs::create_directories(scratch);
   gpu::Progress progress;
 
@@ -640,4 +640,4 @@ TEST_CASE("RIFE fusionné : les noyaux CUDA suivent la référence CPU en double
   }
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

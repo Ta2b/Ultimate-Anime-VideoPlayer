@@ -21,7 +21,7 @@ extern "C" {
 #include "app/play/options.h"
 #include "stage_rig.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr int kWidth = 64;
@@ -37,8 +37,8 @@ struct HostPool {
     for (AVBufferRef*& buffer : made) av_buffer_unref(&buffer);
   }
   FrameSource source() {
-    return [this]() -> std::expected<ajp::exporter::OwnedFrame, Refusal> {
-      ajp::exporter::OwnedFrame frame(av_frame_alloc());
+    return [this]() -> std::expected<kirari::exporter::OwnedFrame, Refusal> {
+      kirari::exporter::OwnedFrame frame(av_frame_alloc());
       frame->format = AV_PIX_FMT_NV12;
       frame->width = width;
       frame->height = height;
@@ -212,4 +212,4 @@ TEST_CASE("Étage gpu : le puits de l'export exige write_yuv du backend", "[app]
   CHECK(started.error().code == RefusalCode::FormatUnsupported);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

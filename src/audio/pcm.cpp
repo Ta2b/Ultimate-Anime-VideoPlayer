@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <format>
 
-namespace ajp::audio {
+namespace kirari::audio {
 namespace {
 
 // Division arrondie au plus proche, symétrique autour de zéro ; den > 0.
@@ -50,4 +50,4 @@ void PcmBlock::drop_before(std::int64_t media_us, int sample_rate) {
   drop_front(media_us >= end_us ? frames() : us_to_frames(media_us - pts_us, sample_rate), sample_rate);
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

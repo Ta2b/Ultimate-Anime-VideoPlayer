@@ -15,7 +15,7 @@
 #include "app/play/relaunch_args.h"
 #include "app/play/relaunch_target.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::filesystem::path fresh_dir(std::string_view name) {
@@ -26,7 +26,7 @@ std::filesystem::path fresh_dir(std::string_view name) {
 }
 
 TEST_CASE("relaunch.txt : aller-retour, instant et pause gardés, lu une fois", "[app][relaunch]") {
-  const std::filesystem::path store = fresh_dir("ajp-relaunch-round") / "relaunch.txt";
+  const std::filesystem::path store = fresh_dir("kirari-relaunch-round") / "relaunch.txt";
   const RelaunchTarget written{.file = "/vidéos/Épisode 01.mkv",
                                .start_us = 754'000'000,
                                .paused = true,
@@ -44,7 +44,7 @@ TEST_CASE("relaunch.txt : aller-retour, instant et pause gardés, lu une fois", 
 }
 
 TEST_CASE("C18-02 : une relance à l'ouverture n'impose pas 0:00, la reprise s'applique", "[app][relaunch]") {
-  const std::filesystem::path store = fresh_dir("ajp-relaunch-nostart") / "relaunch.txt";
+  const std::filesystem::path store = fresh_dir("kirari-relaunch-nostart") / "relaunch.txt";
   REQUIRE(write_relaunch_target(store, RelaunchTarget{.file = "/v/a.mkv", .written_s = 50}));
   const auto read = take_relaunch_target(store, 60);
   REQUIRE(read);
@@ -53,7 +53,7 @@ TEST_CASE("C18-02 : une relance à l'ouverture n'impose pas 0:00, la reprise s'a
 }
 
 TEST_CASE("relaunch.txt : périmé, daté du futur, incomplet ou à clé inconnue", "[app][relaunch]") {
-  const std::filesystem::path dir = fresh_dir("ajp-relaunch-stale");
+  const std::filesystem::path dir = fresh_dir("kirari-relaunch-stale");
   const std::filesystem::path store = dir / "relaunch.txt";
   REQUIRE(write_relaunch_target(store, RelaunchTarget{.file = "/v/a.mkv", .start_us = 1, .written_s = 100}));
   CHECK_FALSE(take_relaunch_target(store, 100 + kRelaunchFreshS + 1));  // d'une autre séance
@@ -70,7 +70,7 @@ TEST_CASE("relaunch.txt : périmé, daté du futur, incomplet ou à clé inconnu
 }
 
 TEST_CASE("relaunch.txt aux fins de ligne Windows (\\r\\n) : lu comme l'autre", "[app][relaunch]") {
-  const std::filesystem::path store = fresh_dir("ajp-relaunch-crlf") / "relaunch.txt";
+  const std::filesystem::path store = fresh_dir("kirari-relaunch-crlf") / "relaunch.txt";
   std::ofstream(store, std::ios::binary) << "file=/v/a.mkv\r\nstart_us=12\r\npaused=1\r\nreason=gpu-lost\r\n"
                                             "written_s=99\r\n";
   const auto read = take_relaunch_target(store, 100);
@@ -84,7 +84,7 @@ TEST_CASE("relaunch.txt aux fins de ligne Windows (\\r\\n) : lu comme l'autre", 
 TEST_CASE(
     "take_relaunch : seul le processus relancé prend la vidéo, un lancement ordinaire retire le fichier",
     "[app][relaunch]") {
-  const std::filesystem::path dir = fresh_dir("ajp-relaunch-take");
+  const std::filesystem::path dir = fresh_dir("kirari-relaunch-take");
   const PlayerPaths paths{.data = dir};
   REQUIRE(write_relaunch_target(
       relaunch_target_file(dir),
@@ -107,10 +107,10 @@ TEST_CASE(
 // Dans un AppImage, l'exécutable est sous un montage provisoire que close_on_exec_all fait disparaître : la
 // relance part du fichier .AppImage, et le lecteur ne se ferme plus sans se rouvrir.
 TEST_CASE("Relance : le fichier .AppImage dans un AppImage, l'exécutable ailleurs", "[app][relaunch]") {
-  const std::filesystem::path mounted = "/tmp/.mount_ajpXy12/usr/lib/ajp/ajp";
-  CHECK(relaunch_program(mounted, "/home/t/Applications/ajp-linux-x86_64.AppImage") ==
-        std::filesystem::path("/home/t/Applications/ajp-linux-x86_64.AppImage"));
-  CHECK(relaunch_program("/opt/ajp/ajp", "") == std::filesystem::path("/opt/ajp/ajp"));
+  const std::filesystem::path mounted = "/tmp/.mount_kirariXy12/usr/lib/kirari/kirari";
+  CHECK(relaunch_program(mounted, "/home/t/Applications/kirari-linux-x86_64.AppImage") ==
+        std::filesystem::path("/home/t/Applications/kirari-linux-x86_64.AppImage"));
+  CHECK(relaunch_program("/opt/kirari/kirari", "") == std::filesystem::path("/opt/kirari/kirari"));
 }
 
 TEST_CASE("Relance : les arguments rejoués, sans le --relaunched= d'avant", "[app][relaunch]") {
@@ -135,4 +135,4 @@ TEST_CASE("Relance : la citation de _spawnv suit CommandLineToArgvW", "[app][rel
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

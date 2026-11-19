@@ -11,7 +11,7 @@
 #include "gpu/coreml/coreml_direct.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Une IOSurface de surfaces prêtée au GPU tant que l'objet vit, comme pour une prédiction de Core
 // ML direct : le CPU la déverrouille (ce que lui et Vulkan y ont écrit est visible au GPU), puis
@@ -37,4 +37,4 @@ class LentSurface {
 std::optional<LentSurface> lend_surface(const std::shared_ptr<Surfaces>& surfaces,
                                         const vk::net::HostBinding& b);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

@@ -1,4 +1,4 @@
-// Réglages de « ajp play » que le menu des paramètres change, gardés dans play.toml (dossier de
+// Réglages de « kirari play » que le menu des paramètres change, gardés dans play.toml (dossier de
 // données du lecteur) d'une lecture à l'autre ; une option donnée sur la ligne de commande les
 // remplace pour cette lecture seulement.
 //
@@ -33,7 +33,7 @@
 #include "media/selection.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Filtre de la réduction avant SPAN (fusionnée à l'ingestion, en codes de la source) : celui des
 // profils (core/profile.h), mêmes noms dans play.toml et user.toml.
@@ -568,4 +568,4 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
 // elle, 0 sans mémoire. Rien quand on suit déjà le système : son délai est celui de la séance.
 std::optional<std::int64_t> audio_fallback_delay_us(const PlaySettings& settings);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

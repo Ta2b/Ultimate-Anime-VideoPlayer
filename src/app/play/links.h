@@ -33,7 +33,7 @@
 
 struct ImDrawData;
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La source a livré sa dernière image et son dernier paquet pour cette époque.
 struct StreamEnded {
@@ -227,4 +227,4 @@ class Screen {
   virtual bool fullscreen() const = 0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

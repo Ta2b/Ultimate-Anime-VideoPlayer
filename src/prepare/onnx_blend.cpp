@@ -8,7 +8,7 @@
 
 #include "prepare/protobuf_fields.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 // Numéros des champs d'onnx.proto.
@@ -132,4 +132,4 @@ std::vector<std::byte> blend_model(std::string_view producer_name, std::string_v
   return std::move(model).take();
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

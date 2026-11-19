@@ -13,16 +13,16 @@
 #include "clips.h"
 #include "media/bench_clip.h"
 
-using namespace ajp::media;
-using ajp::ColorInfo;
-using ajp::ColorMatrix;
-using ajp::ColorRange;
-using ajp::DecodedFrame;
-using ajp::FrameData;
-using ajp::FrameMemory;
-using ajp::PixelFormat;
-using ajp::RefusalCode;
-using ajp::Transfer;
+using namespace kirari::media;
+using kirari::ColorInfo;
+using kirari::ColorMatrix;
+using kirari::ColorRange;
+using kirari::DecodedFrame;
+using kirari::FrameData;
+using kirari::FrameMemory;
+using kirari::PixelFormat;
+using kirari::RefusalCode;
+using kirari::Transfer;
 
 namespace {
 
@@ -200,7 +200,7 @@ TEST_CASE("le choix écarte les noires et les aplats, garde les plus contrastée
 }
 
 TEST_CASE("douze images sont tirées d'une vidéo, et rien n'est gardé", "[media][stills]") {
-  const std::filesystem::path file = std::filesystem::temp_directory_path() / "ajp-stills-test.mkv";
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "kirari-stills-test.mkv";
   std::filesystem::remove(file);
   const auto written =
       write_bench_clip(file, BenchClipSpec{.width = 640, .height = 360, .fps = 24, .seconds = 12});

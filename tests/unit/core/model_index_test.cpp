@@ -8,15 +8,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::RefusalCode;
-using namespace ajp::core;
+using kirari::RefusalCode;
+using namespace kirari::core;
 namespace fs = std::filesystem;
 
 namespace {
 
 // Dossier de travail propre, sous le dossier de build où CTest lance les tests.
 fs::path scratch(const std::string& name) {
-  const fs::path dir = fs::temp_directory_path() / "ajp-test-tmp" / name;
+  const fs::path dir = fs::temp_directory_path() / "kirari-test-tmp" / name;
   fs::remove_all(dir);
   fs::create_directories(dir);
   return dir;
@@ -161,23 +161,27 @@ TEST_CASE("Index des moteurs : celui de la release Linux, tel que package-linux.
       "version = 1\n\n"
       "[[engine]]\nid = \"migraphx\"\nplatform = \"linux\"\n"
       "url = "
-      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-migraphx-linux-x64.tar.gz\"\n"
+      "\"https://github.com/Ta2b/kirari-player/releases/download/v/"
+      "kirari-engine-migraphx-linux-x64.tar.gz\"\n"
       "sha256 = \"7ba95f524f9741dc95e00a0a73027e6499f0408846a96312c620410d9be44c41\"\nsize = 1014591\n"
       "version = \"0.1.0\"\n\n"
       "[[engine]]\nid = \"openvino\"\nplatform = \"linux\"\n"
       "url = "
-      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-openvino-linux-x64.tar.gz\"\n"
+      "\"https://github.com/Ta2b/kirari-player/releases/download/v/"
+      "kirari-engine-openvino-linux-x64.tar.gz\"\n"
       "sha256 = \"2c8409a51cf6fef5bcb3c52c93f1d7c2788c748b7703967728e2f4b5e189fbda\"\nsize = 31818790\n"
       "version = \"0.1.0\"\n\n"
       "[[engine]]\nid = \"tensorrt\"\nplatform = \"linux\"\n"
       "url = "
-      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-tensorrt-linux-x64.tar.gz\"\n"
+      "\"https://github.com/Ta2b/kirari-player/releases/download/v/"
+      "kirari-engine-tensorrt-linux-x64.tar.gz\"\n"
       "sha256 = \"10310415f2767b2c42592c8c4aa4a0b69024bfa8da0225a0e4dc66632bcd7cb6\"\nsize = 1215541550\n"
       "version = \"11\"\n"
       "license = \"https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/sla.html\"\n\n"
       "[[engine]]\nid = \"maxine_vfx\"\nplatform = \"linux\"\n"
       "url = "
-      "\"https://github.com/Ta2b/ajp-releases/releases/download/v/ajp-engine-maxine_vfx-linux-x64.tar.gz\"\n"
+      "\"https://github.com/Ta2b/kirari-player/releases/download/v/"
+      "kirari-engine-maxine_vfx-linux-x64.tar.gz\"\n"
       "sha256 = \"da929152f1df745f932f7602f2edb08c627d1c22f24e0798a85f6621d7cd157a\"\nsize = 75965628\n"
       "version = \"1.3.0.0\"\n"
       "license = \"https://www.nvidia.com/en-us/agreements/enterprise-software/"
@@ -303,13 +307,13 @@ TEST_CASE("Noms des moteurs et des OS : stables et réciproques", "[model_index]
 }
 
 TEST_CASE("Installation : chemins sous le dossier de données passé par app", "[model_index]") {
-  const fs::path data = fs::path("donnees") / "ajp";
+  const fs::path data = fs::path("donnees") / "kirari";
   const EnginePackage trt{.engine = EngineId::TensorRt, .version = "11.3.0"};
 
   const InstallLayout windows = install_layout(Os::Windows, data);
   CHECK(engine_dir(windows, trt) == data / "backends" / "tensorrt" / "11.3.0");
-  CHECK(backend_library(windows, trt).filename() == "ajp_backend_tensorrt.dll");
-  CHECK(backend_library(install_layout(Os::Linux, data), trt).filename() == "ajp_backend_tensorrt.so");
-  CHECK(backend_library(install_layout(Os::MacOs, data), trt).filename() == "ajp_backend_tensorrt.so");
+  CHECK(backend_library(windows, trt).filename() == "kirari_backend_tensorrt.dll");
+  CHECK(backend_library(install_layout(Os::Linux, data), trt).filename() == "kirari_backend_tensorrt.so");
+  CHECK(backend_library(install_layout(Os::MacOs, data), trt).filename() == "kirari_backend_tensorrt.so");
   CHECK(download_path(windows, kSha) == data / "downloads" / (kSha + ".part"));
 }

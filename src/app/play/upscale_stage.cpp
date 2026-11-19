@@ -17,7 +17,7 @@
 #include "kernels/spec/rife.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Un facteur de l'Auto hors de la liste des facteurs réglables : palier / granularité (24 au plus,
@@ -72,7 +72,7 @@ void UpscaleStage::analyze_source(const DecodedFrame& frame) {
 
 // NOLINTNEXTLINE(readability-function-cognitive-complexity,readability-function-size)
 std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& frame) {
-  AJP_TRACE("upscale.outputs");
+  KIRARI_TRACE("upscale.outputs");
   if (frame.width != setup_.source_width || frame.height != setup_.source_height) {
     return refuse(RefusalCode::SourceResized,
                   std::format("{}x{} (la chaîne était en {}x{})", frame.width, frame.height,
@@ -361,7 +361,7 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
                                                                 std::uint32_t output, std::uint32_t slot,
                                                                 std::uint64_t wait_value,
                                                                 std::uint64_t signal_value) {
-  AJP_TRACE("upscale.produce");
+  KIRARI_TRACE("upscale.produce");
   const gpu::Tensor& now = rgb_[current_]->tensor();
   const Instant& instant = instants_[std::min<std::size_t>(output, instants_.size() - 1)];
   if (late_fate_now_ && instant_late(frame, output)) ++late_computed_;  // entre fate et ici : ne doit pas
@@ -446,4 +446,4 @@ std::expected<RingStage::Output, Refusal> UpscaleStage::produce(const DecodedFra
   return held_b(made, frame, output);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

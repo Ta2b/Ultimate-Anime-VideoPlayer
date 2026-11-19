@@ -9,7 +9,7 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 #if defined(_WIN32)
@@ -173,4 +173,4 @@ std::optional<render::DisplayContract> ContractWatch::tick() {
   return contract_;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -2,7 +2,7 @@
 """Banc d'endurance (P2.44) : un seul lecteur joue des épisodes à la suite pendant des heures, et la mémoire,
 la VRAM, les poignées et le journal sont relevés chaque minute. Linux et Windows, Python seul (aucun paquet).
 
-  python3 tools/bench/endurance.py --video=EPISODE.mkv --sortie=DOSSIER [--heures=8] [--ajp=CHEMIN]
+  python3 tools/bench/endurance.py --video=EPISODE.mkv --sortie=DOSSIER [--heures=8] [--kirari=CHEMIN]
                                    [--intervalle=60] [-- OPTIONS DU LECTEUR]
 
 Le dossier de sortie reçoit 400 liens vers la même vidéo (ep001.mkv, ep002.mkv...) : la lecture enchaîne
@@ -10,7 +10,7 @@ l'épisode suivant (réglage autoplay_next dans un play.toml propre au banc), do
 épisode, comme une soirée de série. Le lecteur est arrêté au bout des heures demandées.
 
 Sortie : releves.tsv (une ligne par relevé), rapport.md (pentes après la première heure et verdict), et le
-dossier de réglages du banc avec ajp.log. Le verdict échoue quand une pente dépasse son plafond : une fuite
+dossier de réglages du banc avec kirari.log. Le verdict échoue quand une pente dépasse son plafond : une fuite
 d'une poignée par épisode ou de quelques Mo par heure se voit sur 8 h, pas sur une minute.
 """
 import argparse
@@ -24,7 +24,7 @@ from pathlib import Path
 # Plafonds des pentes, par heure, mesurés à partir de la deuxième heure (préchauffage, caches et moteurs
 # chargés). Une lecture saine reste plate à quelques Mo près.
 PLAFONDS = {"rss_mio": 32.0, "vram_mio": 64.0, "poignees": 20.0}
-JOURNAL_MAX_MIO = 3 * 32 + 1  # ajp.log et ses deux parties tournées (P2.43)
+JOURNAL_MAX_MIO = 3 * 32 + 1  # kirari.log et ses deux parties tournées (P2.43)
 LIENS = 400
 
 
@@ -69,7 +69,7 @@ def vram_mio() -> float:
 
 
 def journal_mio(reglages: Path) -> float:
-    return sum(f.stat().st_size for f in reglages.glob("ajp*.log*")) / (1024 * 1024)
+    return sum(f.stat().st_size for f in reglages.glob("kirari*.log*")) / (1024 * 1024)
 
 
 def pente(points):
@@ -91,7 +91,7 @@ def main() -> int:
     parser.add_argument("--sortie", required=True, type=Path)
     parser.add_argument("--heures", type=float, default=8.0)
     parser.add_argument("--intervalle", type=float, default=60.0)
-    parser.add_argument("--ajp", default="ajp")
+    parser.add_argument("--kirari", default="kirari")
     parser.add_argument("options", nargs="*")
     args = parser.parse_args()
 
@@ -102,7 +102,7 @@ def main() -> int:
     reglages.mkdir(parents=True, exist_ok=True)
     (reglages / "play.toml").write_text("[playlist]\nautoplay_next = true\n", encoding="utf-8")
 
-    commande = [args.ajp, "play", str(episodes / f"ep001{args.video.suffix}"), "--fullscreen", "--no-resume",
+    commande = [args.kirari, "play", str(episodes / f"ep001{args.video.suffix}"), "--fullscreen", "--no-resume",
                 f"--data-dir={reglages}", *args.options]
     debut = time.monotonic()
     fin = debut + args.heures * 3600
@@ -164,7 +164,7 @@ def main() -> int:
 
 def journal_episodes(reglages: Path) -> int:
     total = 0
-    for fichier in reglages.glob("ajp*.log*"):
+    for fichier in reglages.glob("kirari*.log*"):
         with open(fichier, encoding="utf-8", errors="replace") as journal:
             total += sum("épisode suivant" in ligne for ligne in journal)
     return total

@@ -15,8 +15,8 @@
 #include "kernels/ref/half.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -173,7 +173,7 @@ TEST_CASE("passes : promote_grid_chains laisse un graphe exécutable", "[gpu_ir]
   Value x = random_floats({1, 3, 6, 8}, 1);
   Value f = random_floats({1, 2, 6, 8}, 2);
   x.type = f.type = DataType::F16;
-  for (float& v : x.f) v = ajp::kernels::ref::round_to_half(v);
-  for (float& v : f.f) v = ajp::kernels::ref::round_to_half(v);
+  for (float& v : x.f) v = kirari::kernels::ref::round_to_half(v);
+  for (float& v : f.f) v = kirari::kernels::ref::round_to_half(v);
   CHECK(run(graph, std::vector<NamedValue>{{.name = "x", .value = x}, {.name = "flow", .value = f}}));
 }

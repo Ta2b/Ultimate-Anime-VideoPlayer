@@ -19,7 +19,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class SpanFp8Net;
 class TrtEngine;
@@ -54,4 +54,4 @@ struct SpanTimes {
 std::expected<SpanTimes, Refusal> time_span_set(const SpanTimingSet& set, cudaStream_t stream,
                                                 Progress& progress, float from, float to);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

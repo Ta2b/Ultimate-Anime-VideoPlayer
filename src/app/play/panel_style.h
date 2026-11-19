@@ -13,7 +13,7 @@
 #include "app/play/panel_state.h"
 #include "app/play/panel_tip.h"
 
-namespace ajp::app::play::panel {
+namespace kirari::app::play::panel {
 
 using play::french_spaces;
 
@@ -317,4 +317,4 @@ inline void badge(const char* text, ImVec4 color) {
   ImGui::Dummy(box);
 }
 
-}  // namespace ajp::app::play::panel
+}  // namespace kirari::app::play::panel

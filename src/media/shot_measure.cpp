@@ -9,7 +9,7 @@
 #include "media/shot_probe.h"
 #include "media/yuv_sample.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Les formats que la pré-analyse lit : ceux de yuv::layout_of (4:2:0), plus P016 (NVDEC en 12 bits) et
@@ -99,4 +99,4 @@ std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame) {
   return shot_frame_of(frame.pts_us, kernels::ref::frame_stats_of(*counts), transfer);
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

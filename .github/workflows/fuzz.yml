@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+  KIRARI_DEPS_PREFIX: ${{ github.workspace }}-deps
   CCACHE_DIR: ${{ github.workspace }}-ccache
   CCACHE_BASEDIR: ${{ github.workspace }}
   CCACHE_MAXSIZE: 600M
@@ -43,7 +43,7 @@ jobs:
       # Les dépendances de ci.yml (gcc 13) : des bibliothèques C ou à l'ABI de libstdc++, que clang lie.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -54,23 +54,23 @@ jobs:
       # libass instrumenté par ASan (B35-02) : la cible ass_render lit des scripts forgés et les rend sur quatre fils ;
       # l'instrumentation du lecteur s'arrête à la frontière de la bibliothèque, qui, sans elle, ne voit aucune
       # écriture hors d'un tampon.
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/deps/linux-from-source.sh "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
         env:
           CC: gcc-13
           CXX: g++-13
-          AJP_LIBASS_CFLAGS: -fsanitize=address -fno-omit-frame-pointer -g -O1
+          KIRARI_LIBASS_CFLAGS: -fsanitize=address -fno-omit-frame-pointer -g -O1
       - name: Construction
         env:
           CC: clang-20
           CXX: clang++-20
         run: |
-          cmake --preset linux-prefix -B build/fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DAJP_FUZZ_LIBFUZZER=ON \
+          cmake --preset linux-prefix -B build/fuzz -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKIRARI_FUZZ_LIBFUZZER=ON \
             "-DCMAKE_CXX_FLAGS=-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
           # Toutes les cibles déclarées, sur plusieurs lignes et plusieurs set() (C28-01) ; check-fuzz-targets.sh, des règles,
           # vérifie que l'extraction ne perd rien.
           targets="$(python3 -I tools/ci/fuzz-targets.py | tr '\n' ' ')"
           echo "TARGETS=$targets" >>"$GITHUB_ENV"
-          cmake --build build/fuzz --target $(printf 'ajp_fuzz_%s ' $targets)
+          cmake --build build/fuzz --target $(printf 'kirari_fuzz_%s ' $targets)
       - name: Campagne
         env:
           SECONDS_PER_TARGET: ${{ inputs.seconds || '600' }}
@@ -79,7 +79,7 @@ jobs:
           # Le corpus du dépôt est lu, les entrées nouvelles vont dans un dossier jetable.
           printf '%s\n' $TARGETS | xargs -P 4 -I{} sh -c '
             mkdir -p "work/{}" &&
-            build/fuzz/tests/fuzz/ajp_fuzz_{} "work/{}" "tests/fuzz/corpus/{}" \
+            build/fuzz/tests/fuzz/kirari_fuzz_{} "work/{}" "tests/fuzz/corpus/{}" \
               -max_total_time="$SECONDS_PER_TARGET" -rss_limit_mb=4096 -artifact_prefix="crashes/{}-" \
               -print_final_stats=1 >"work/{}.log" 2>&1 || { echo "::error::cible {} : voir son journal"; tail -40 "work/{}.log"; exit 1; }'
       - if: failure()

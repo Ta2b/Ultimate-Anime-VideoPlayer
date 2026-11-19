@@ -1,6 +1,6 @@
 #include "app/play/wayland_activation.h"
 
-#ifdef AJP_WITH_WAYLAND_PRESENTATION
+#ifdef KIRARI_WITH_WAYLAND_PRESENTATION
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -12,9 +12,9 @@
 #include "xdg-activation-v1-client.h"
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
-#ifdef AJP_WITH_WAYLAND_PRESENTATION
+#ifdef KIRARI_WITH_WAYLAND_PRESENTATION
 
 namespace {
 
@@ -75,4 +75,4 @@ bool wayland_activate(SDL_Window* /*window*/, std::string_view /*token*/) {
 
 #endif
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

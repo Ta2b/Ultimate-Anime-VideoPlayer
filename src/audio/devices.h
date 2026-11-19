@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 struct AudioDevice {
   std::uint32_t id = 0;  // SDL_AudioDeviceID
@@ -34,4 +34,4 @@ std::optional<AudioDevice> system_default_device();
 // L'appareil de ce nom ; celui du système si name est vide ou n'existe plus.
 std::optional<AudioDevice> resolve_device(const std::vector<AudioDevice>& devices, std::string_view name);
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

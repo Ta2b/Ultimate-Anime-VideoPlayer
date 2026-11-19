@@ -11,9 +11,9 @@
 #include "gpu/vulkan/compute/image.h"
 #include "rig.h"
 
-using namespace ajp;
-using namespace ajp::gpu::vk;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu::vk;
+using namespace kirari::gpu::vk::test;
 
 namespace {
 

@@ -16,7 +16,7 @@
 #include "gpu/backend.h"
 #include "kernels/image.h"
 
-namespace ajp::test {
+namespace kirari::test {
 
 // Image NV12 dans la mémoire CUDA, comme NVDEC la livre (plans à pas de ligne).
 class CudaNv12 final : public FrameData {
@@ -146,4 +146,4 @@ inline DecodedFrame frame_of(std::shared_ptr<const FrameData> data, int w, int h
       .id = {1}, .width = w, .height = h, .format = PixelFormat::Nv12, .data = std::move(data)};
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

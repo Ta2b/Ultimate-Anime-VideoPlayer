@@ -11,7 +11,7 @@
 #include "app/play/settings_panel.h"
 #include "core/engines.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le chemin tel que l'Explorateur le donne (« Copier comme chemin » met des guillemets) : blancs et
 // guillemets doubles de part et d'autre retirés (C23-08).
@@ -32,4 +32,4 @@ void engines_advanced(const SettingsChoices& choices, std::string& engines_dir, 
 // qui pousse RetryStages. Rien quand la chaîne demandée tourne.
 void stages_note(const SettingsChoices& choices, std::vector<Input>& actions);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

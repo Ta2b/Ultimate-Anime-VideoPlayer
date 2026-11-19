@@ -2,8 +2,8 @@
 // et _finish : portage des noyaux CUDA (gpu/cuda/backend/drba_fused_kernels.cu), formules et arrondis FP16
 // aux mêmes endroits, la grille des warps exceptée (rife_fused.glsl, pixel_tap : en FP32, depuis la position
 // en pixels). S'inclut après tensor.glsl et rife_fused.glsl (rounded, pixel_tap, mix4).
-#ifndef AJP_DRBA_FUSED_GLSL
-#define AJP_DRBA_FUSED_GLSL
+#ifndef KIRARI_DRBA_FUSED_GLSL
+#define KIRARI_DRBA_FUSED_GLSL
 
 // Le côté choisi du graphe : vrai si tau < 1 (image 0), faux sinon (image 2) ; tau = 2 × plan 6 de pair01.
 bool drba_before(float half_tau) {
@@ -42,4 +42,4 @@ DrbaEnlarge drba_enlarge(uint px, uint py, uint s, uint zh, uint zw) {
 #define DRBA_READ_Z(c, zy, zx, zh, zw) \
   float(DRBA_Y(((4u * (c) + 2u * ((zy) & 1u) + ((zx) & 1u)) * ((zh) / 2u) + ((zy) >> 1u)) * ((zw) / 2u) + ((zx) >> 1u)))
 
-#endif  // AJP_DRBA_FUSED_GLSL
+#endif  // KIRARI_DRBA_FUSED_GLSL

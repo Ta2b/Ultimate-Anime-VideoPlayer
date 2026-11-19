@@ -5,7 +5,7 @@ documents décrivent le code actuel et lesquels sont historiques.
 
 ## Le produit
 
-`ajp`, un lecteur vidéo C++23 pour l'anime : agrandissement SPAN ×2 (AnimeJaNai), ou Anime4K en shaders pour
+`kirari` (Kirari Player, qui s'appelait ajp jusqu'à la 0.11 : [ADR 0016](docs/adr/0016-kirari-player.md)), un lecteur vidéo C++23 pour l'anime : agrandissement SPAN ×2 (AnimeJaNai), ou Anime4K en shaders pour
 les petites cartes ([`docs/anime4k.md`](docs/anime4k.md)), stabilisation temporelle avant SPAN (TemporalFix, TensorRT,
 [`docs/temporalfix.md`](docs/temporalfix.md)), interpolation (DistilDRBA v2 lite,
 RIFE 4.22 lite ou RIFE 4.25, nommés tels quels dans le menu) en mode Auto, grade HDR anime (surfaces fixes d'un plan à l'autre, marge des éclats par plan en SDR), export qui rejoue la même chaîne. Linux,
@@ -45,23 +45,23 @@ Principes tenus depuis le tri de novembre 2026 ([ADR 0012](docs/adr/0012-lecteur
 ## Construire et tester
 
 ```sh
-tools/deps/linux-from-source.sh ~/ajp-deps
-export AJP_DEPS_PREFIX=~/ajp-deps
+tools/deps/linux-from-source.sh ~/kirari-deps
+export KIRARI_DEPS_PREFIX=~/kirari-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```
 
-Pour reconstruire plus vite en local : `-DAJP_PCH=ON` (en-têtes précompilés, environ un quart de moins sur un module
+Pour reconstruire plus vite en local : `-DKIRARI_PCH=ON` (en-têtes précompilés, environ un quart de moins sur un module
 qui journalise ; la CI les laisse éteints pour ccache et pour qu'une inclusion oubliée reste une erreur).
 
 `linux-prefix` est en Debug : ses temps ne valent rien. Un banc ou une mesure se fait sur le binaire livré,
 `linux-release` (Linux), `windows-release`, `macos-release`.
 
-Sans GPU, Vulkan logiciel (lavapipe) suffit : `ajp --software-gpu`. Les tests GPU se lancent avec
-`AJP_TEST_VULKAN_VALIDATION=off` quand la couche de validation manque. CUDA ne se construit que sur un poste
+Sans GPU, Vulkan logiciel (lavapipe) suffit : `kirari --software-gpu`. Les tests GPU se lancent avec
+`KIRARI_TEST_VULKAN_VALIDATION=off` quand la couche de validation manque. CUDA ne se construit que sur un poste
 NVIDIA (`linux-prefix-cuda`).
 
-Voir l'interface sans écran : `xvfb-run ajp --software-gpu --mute --no-upscale --keys=1:p
+Voir l'interface sans écran : `xvfb-run kirari --software-gpu --mute --no-upscale --keys=1:p
 --snapshot=capture.ppm --snapshot-at=3 video.mkv` (la touche `p` ouvre le menu).
 
 ## Règles que la CI vérifie (`.github/workflows/rules.yml`)

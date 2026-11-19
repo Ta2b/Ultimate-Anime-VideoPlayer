@@ -16,7 +16,7 @@
 #include "kernels/spec/resample.h"
 #include "kernels/spec/warp.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // Élément des tenseurs des réseaux : float, ou float16 (variantes « _f16 », stockage 16 bits).
 enum class Precision : std::uint8_t { F32, F16 };
@@ -79,7 +79,7 @@ struct ColorSpec {
   kernels::Siting siting = kernels::Siting::Left;
 };
 
-// Numéros de AJP_TRANSFER_OP dans transfer.comp.
+// Numéros de KIRARI_TRANSFER_OP dans transfer.comp.
 enum class TransferOp : std::uint8_t {
   PqEotf,
   PqInverseEotf,
@@ -144,4 +144,4 @@ Done check_planes(const YuvPlanes& planes, std::string_view what);
 Done check_same_size(std::uint32_t w0, std::uint32_t h0, std::uint32_t w1, std::uint32_t h1,
                      std::string_view what);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

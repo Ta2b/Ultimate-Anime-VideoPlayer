@@ -30,7 +30,7 @@
 #include "core/free_rate.h"
 #include "core/profile.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 struct FreeParams {
   double margin = 0.15;
@@ -117,4 +117,4 @@ class SteadyRate {
   std::uint32_t urgencies_ = 0;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

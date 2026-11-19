@@ -3,7 +3,7 @@
 #include <format>
 #include <string>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Écarte de root la clé (sinon la section) dont le retrait fait accepter le fichier ; faux si aucune.
 bool drop_offending(toml::table& root, const Refusal& refusal, std::vector<std::string>* dropped,
@@ -96,4 +96,4 @@ void keep_unknown_keys(toml::table& fresh, const toml::table& existing, const Ta
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

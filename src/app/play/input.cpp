@@ -6,7 +6,7 @@
 
 #include "app/play/controls.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 template <class E>
@@ -180,4 +180,4 @@ std::optional<Input> input_of(const SDL_Event& event, const core::KeyMap& keys) 
   return fullscreen_shortcut(event.key);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

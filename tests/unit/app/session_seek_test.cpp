@@ -13,7 +13,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -54,7 +54,7 @@ struct Rig {
 // changer.
 TEST_CASE("Image par image en VFR : un pas retombé dans l'image montrée ne bloque pas le suivant (A13-05)",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   SourceRate rate;
   rate.period_us = 16'683;
   Rig rig(SessionConfig{.duration_us = 60'000'000, .extra = &rate});
@@ -76,7 +76,7 @@ TEST_CASE("Image par image en VFR : un pas retombé dans l'image montrée ne blo
 }
 
 TEST_CASE("Une pause refusée par la boîte audio est redite au tour suivant (A13-06)", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 40'000));
   rig.tick();
@@ -92,7 +92,7 @@ TEST_CASE("Une pause refusée par la boîte audio est redite au tour suivant (A1
 }
 
 TEST_CASE("Un Play refusé est redit, et oublié si la pause revient d'abord (A13-06)", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig;
   rig.session.handle(ring_frame(0, 40'000));
   rig.tick();
@@ -113,7 +113,7 @@ TEST_CASE("Un Play refusé est redit, et oublié si la pause revient d'abord (A1
 
 TEST_CASE("Reprise après des pas pris dans la file : un seek exact recale l'audio (A13-07)",
           "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -136,7 +136,7 @@ TEST_CASE("Reprise après des pas pris dans la file : un seek exact recale l'aud
 }
 
 TEST_CASE("Un seek perdu par la source est rejoué, de plus en plus lentement (A13-08)", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -170,7 +170,7 @@ TEST_CASE("Un seek perdu par la source est rejoué, de plus en plus lentement (A
 }
 
 TEST_CASE("Un seek refusé dont la source retrouve sa position n'est pas rejoué (A13-08)", "[app][session]") {
-  ajp::app::play::FrenchUi french;
+  kirari::app::play::FrenchUi french;
   Rig rig(SessionConfig{.duration_us = 60'000'000});
   rig.session.handle(ring_frame(0, 1'000'000));
   rig.tick();
@@ -184,4 +184,4 @@ TEST_CASE("Un seek refusé dont la source retrouve sa position n'est pas rejoué
   CHECK(rig.count("seek 5000000") == 1);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

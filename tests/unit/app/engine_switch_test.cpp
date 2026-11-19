@@ -11,8 +11,8 @@
 #include "app/play/backend_library.h"
 #include "core/settings.h"
 
-using namespace ajp;
-using namespace ajp::app::play;
+using namespace kirari;
+using namespace kirari::app::play;
 
 namespace {
 
@@ -23,22 +23,22 @@ constexpr std::size_t usage(core::Usage u) {
 }  // namespace
 
 TEST_CASE("Le moteur d'une bibliothèque se lit à son nom", "[app][engine_switch]") {
-  CHECK(engine_of_library("base/ajp_backend_tensorrt.so") == core::EngineId::TensorRt);
-  CHECK(engine_of_library("C:/ajp/ajp_backend_vulkan.dll") == core::EngineId::Vulkan);
+  CHECK(engine_of_library("base/kirari_backend_tensorrt.so") == core::EngineId::TensorRt);
+  CHECK(engine_of_library("C:/kirari/kirari_backend_vulkan.dll") == core::EngineId::Vulkan);
   // MIGraphX et OpenVINO, retirés : une ancienne bibliothèque n'est d'aucun moteur, et reconnue retirée.
-  CHECK_FALSE(engine_of_library("build/libajp_backend_migraphx.so").has_value());
-  CHECK(retired_library("build/libajp_backend_migraphx.so"));
-  CHECK(retired_library("base/ajp_backend_openvino.dll"));
-  CHECK_FALSE(retired_library("base/ajp_backend_tensorrt.so"));
+  CHECK_FALSE(engine_of_library("build/libkirari_backend_migraphx.so").has_value());
+  CHECK(retired_library("build/libkirari_backend_migraphx.so"));
+  CHECK(retired_library("base/kirari_backend_openvino.dll"));
+  CHECK_FALSE(retired_library("base/kirari_backend_tensorrt.so"));
   CHECK_FALSE(retired_library("base/openvino.dll"));
-  CHECK(engine_of_library("AJP.app/Contents/PlugIns/ajp_backend_coreml.so") == core::EngineId::Metal);
+  CHECK(engine_of_library("Kirari.app/Contents/PlugIns/kirari_backend_coreml.so") == core::EngineId::Metal);
   CHECK_FALSE(engine_of_library("base/libvulkan.so.1").has_value());
 }
 
 TEST_CASE("L'onglet propose les moteurs présents, Vulkan d'abord, sans doublon", "[app][engine_switch]") {
   const std::array<std::filesystem::path, 4> candidates{
-      "data/backends/tensorrt/10/ajp_backend_tensorrt.so", "base/ajp_backend_tensorrt.so",
-      "base/ajp_backend_openvino.so", "base/ajp_backend_vulkan.so"};
+      "data/backends/tensorrt/10/kirari_backend_tensorrt.so", "base/kirari_backend_tensorrt.so",
+      "base/kirari_backend_openvino.so", "base/kirari_backend_vulkan.so"};
   const std::vector<core::EngineId> expected{core::EngineId::Vulkan, core::EngineId::TensorRt};
   CHECK(switchable_engines(candidates) == expected);
 }
@@ -61,13 +61,13 @@ TEST_CASE("Changer de moteur le choisit, l'installe et le préfère pour SPAN et
 
 TEST_CASE("La bibliothèque du moteur préféré s'essaie en premier", "[app][engine_switch]") {
   const std::vector<std::filesystem::path> candidates{
-      "base/ajp_backend_tensorrt.so", "base/ajp_backend_migraphx.so", "base/ajp_backend_vulkan.so"};
+      "base/kirari_backend_tensorrt.so", "base/kirari_backend_migraphx.so", "base/kirari_backend_vulkan.so"};
   core::Settings settings = using_engine(core::Settings{}, core::EngineId::Vulkan);
   const auto vulkan = preferred_first(candidates, settings);
   REQUIRE(vulkan.size() == 3);
-  CHECK(vulkan[0].filename() == "ajp_backend_vulkan.so");
-  CHECK(vulkan[1].filename() == "ajp_backend_tensorrt.so");
-  CHECK(vulkan[2].filename() == "ajp_backend_migraphx.so");
+  CHECK(vulkan[0].filename() == "kirari_backend_vulkan.so");
+  CHECK(vulkan[1].filename() == "kirari_backend_tensorrt.so");
+  CHECK(vulkan[2].filename() == "kirari_backend_migraphx.so");
 
   settings = using_engine(settings, core::EngineId::TensorRt);
   CHECK(preferred_first(candidates, settings) == candidates);
@@ -75,7 +75,7 @@ TEST_CASE("La bibliothèque du moteur préféré s'essaie en premier", "[app][en
 
 TEST_CASE("BackendLibrary : une bibliothèque gardée se rend sans rechargement jusqu'au choix",
           "[app][engines]") {
-  const std::filesystem::path path(AJP_BACKEND_VULKAN);
+  const std::filesystem::path path(KIRARI_BACKEND_VULKAN);
   if (path.empty() || !std::filesystem::is_regular_file(path)) SKIP("backend Vulkan non construit");
   auto first = BackendLibrary::open(std::span(&path, 1));
   REQUIRE(first);

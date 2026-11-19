@@ -21,7 +21,7 @@
 #include "core/thread.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // SDL_PumpEvents : la fenêtre répond au système, ses événements restent en file.
 void pump_window_events();
@@ -253,4 +253,4 @@ std::expected<T, Refusal> run_pumped_for(std::string_view name, std::chrono::mil
 // detect_cuda_arch (engine_install.h) par run_pumped ; vide aussi si le thread est refusé.
 std::string pumped_cuda_arch(std::string_view gpu_name = {});
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

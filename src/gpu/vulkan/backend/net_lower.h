@@ -19,7 +19,7 @@
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_program.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Version de l'abaissement : change à chaque changement des shaders, des constantes ou du
 // rangement des poids ; un artefact d'une autre version est refusé au chargement.
@@ -103,4 +103,4 @@ std::expected<Program, Refusal> lower(const ir::Graph& graph, std::span<const Ke
 std::expected<std::vector<KernelChoice>, Refusal> default_choices(const ir::Graph& graph,
                                                                   const Target& target);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

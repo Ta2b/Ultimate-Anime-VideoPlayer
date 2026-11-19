@@ -17,7 +17,7 @@
 #include "clip_writer.h"
 #include "doubles.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using namespace std::chrono_literals;
@@ -169,4 +169,4 @@ TEST_CASE("Seek en cours de lecture : nouvelle époque, images de la cible", "[a
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

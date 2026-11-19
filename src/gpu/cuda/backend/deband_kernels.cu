@@ -7,7 +7,7 @@
 #include "gpu/cuda/backend/deband_kernels.h"
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
@@ -51,4 +51,4 @@ cudaError_t launch_deband(const DebandParams& params, cudaStream_t stream) {
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

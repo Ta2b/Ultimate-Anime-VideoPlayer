@@ -11,7 +11,7 @@
 #include "subs/log.h"
 #include "subs/subs_worker.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 void run(const std::stop_token& stop, SubsWorker& worker, SubsInbox& inbox, spdlog::logger& log) {
@@ -64,4 +64,4 @@ std::expected<std::unique_ptr<SubsThread>, Refusal> SubsThread::start(const Rend
   return thread;
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

@@ -11,7 +11,7 @@
 
 #include "kernels/ref/check.h"
 
-namespace ajp::kernels::ref {
+namespace kirari::kernels::ref {
 namespace {
 
 // Lecture bilinéaire relative au coin d'une fenêtre du plan, sans vérification : les appelants
@@ -297,4 +297,4 @@ Result<float> flow_max(const Motion& motion) {
       bins.data(), static_cast<unsigned long long>(a.width) * static_cast<unsigned long long>(a.height));
 }
 
-}  // namespace ajp::kernels::ref
+}  // namespace kirari::kernels::ref

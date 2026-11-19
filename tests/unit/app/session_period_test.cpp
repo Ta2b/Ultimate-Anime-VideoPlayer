@@ -10,7 +10,7 @@
 #include "app/play/session.h"
 #include "doubles.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::ring_frame;
@@ -122,4 +122,4 @@ TEST_CASE("Cadence fixe : une image représentée garde la composition une secon
   CHECK(screen.shown.back().redraws);  // la représentation d'avant la fait garder de nouveau
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

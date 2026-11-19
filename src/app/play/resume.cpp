@@ -27,7 +27,7 @@
 #include <windows.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 struct Entry {
@@ -200,4 +200,4 @@ std::expected<void, Refusal> remember_position(const std::filesystem::path& stor
   return save(store, entries);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

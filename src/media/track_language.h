@@ -8,7 +8,7 @@
 
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // La langue que nomme un titre de piste, en ISO 639-2/B (« fre », « jpn ») ; vide si aucune.
 // Plusieurs langues nommées : la première du titre (« Japanese [English subs] » : « jpn »).
@@ -22,4 +22,4 @@ std::string_view audio_language_from_title(std::string_view title);
 // piste.
 std::string track_language(const TrackInfo& track);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

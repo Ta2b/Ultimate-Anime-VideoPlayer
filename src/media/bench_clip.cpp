@@ -12,7 +12,7 @@
 #include "core/utf8_path.h"
 #include "media/av_util.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 struct Rgb {
@@ -244,4 +244,4 @@ std::expected<void, Refusal> write_bench_clip(const std::filesystem::path& file,
   return written;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

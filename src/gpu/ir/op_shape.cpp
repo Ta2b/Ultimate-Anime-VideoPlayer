@@ -9,7 +9,7 @@
 #include "gpu/ir/op_impl.h"
 #include "gpu/ir/op_util.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 namespace {
 
 // Bornes [début, fin) de Shape, ramenées dans [0, rang].
@@ -284,4 +284,4 @@ Evaluated eval_range(const Node& /*node*/, std::span<const Value* const> in,
   return std::vector<Value>{std::move(out)};
 }
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

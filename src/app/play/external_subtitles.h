@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ExternalSubtitle {
   std::filesystem::path path;
@@ -27,4 +27,4 @@ inline constexpr std::size_t kMaxExternalSubtitles = 16;
 std::vector<ExternalSubtitle> find_external_subtitles(const std::filesystem::path& video,
                                                       std::span<const std::string> wanted = {});
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

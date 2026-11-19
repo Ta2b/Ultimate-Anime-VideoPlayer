@@ -22,7 +22,7 @@
 #include "gpu/coreml/coreml_units.h"
 #include "gpu/vulkan/backend/net_runtime.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 
 // Le cadre des images de l'interpolation d'Apple (coreml_vt.h), à la place d'un réseau.
 struct VtFrames {
@@ -98,4 +98,4 @@ std::expected<DirectError, Refusal> direct_error(Ort::Session& session,
 // n'exécute pas), sinon toutes.
 std::expected<Units, Refusal> units_of(const Manifest& manifest);
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

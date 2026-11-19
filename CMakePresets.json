@@ -15,7 +15,7 @@
       "cacheVariables": {
         "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports",
         "VCPKG_MANIFEST_FEATURES": "tests;player",
-        "AJP_WARNINGS_AS_ERRORS": "ON"
+        "KIRARI_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -24,14 +24,14 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX}",
-        "CMAKE_INSTALL_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
-        "CMAKE_BUILD_RPATH": "$env{AJP_DEPS_PREFIX}/lib",
-        "AJP_TRANSITIVE_RPATH": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "ON"
+        "CMAKE_PREFIX_PATH": "$env{KIRARI_DEPS_PREFIX}",
+        "CMAKE_INSTALL_RPATH": "$env{KIRARI_DEPS_PREFIX}/lib",
+        "CMAKE_BUILD_RPATH": "$env{KIRARI_DEPS_PREFIX}/lib",
+        "KIRARI_TRANSITIVE_RPATH": "ON",
+        "KIRARI_WARNINGS_AS_ERRORS": "ON"
       },
       "environment": {
-        "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:$penv{PKG_CONFIG_PATH}"
+        "PKG_CONFIG_PATH": "$env{KIRARI_DEPS_PREFIX}/lib/pkgconfig:$env{KIRARI_DEPS_PREFIX}/share/pkgconfig:$penv{PKG_CONFIG_PATH}"
       }
     },
     {
@@ -48,7 +48,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "AJP_BUILD_PLAYER": "OFF",
+        "KIRARI_BUILD_PLAYER": "OFF",
         "VCPKG_MANIFEST_FEATURES": "tests"
       }
     },
@@ -58,7 +58,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_BUILD_TESTS": "OFF"
+        "KIRARI_BUILD_TESTS": "OFF"
       }
     },
     {
@@ -88,12 +88,12 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "AJP_REQUIRE_SPIRV_VAL": "ON"
+        "KIRARI_REQUIRE_SPIRV_VAL": "ON"
       }
     },
     {
       "name": "windows-release",
-      "displayName": "Windows, lecteur universel (Vulkan ; TensorRT si AJP_WITH_CUDA), vcpkg",
+      "displayName": "Windows, lecteur universel (Vulkan ; TensorRT si KIRARI_WITH_CUDA), vcpkg",
       "inherits": "base",
       "condition": {
         "type": "equals",
@@ -103,8 +103,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "ON",
-        "AJP_REQUIRE_SPIRV_VAL": "ON",
+        "KIRARI_WARNINGS_AS_ERRORS": "ON",
+        "KIRARI_REQUIRE_SPIRV_VAL": "ON",
         "VCPKG_TARGET_TRIPLET": "x64-windows-release",
         "VCPKG_HOST_TRIPLET": "x64-windows-release"
       }
@@ -114,14 +114,14 @@
       "displayName": "Windows, backend TensorRT (PC de référence) : windows-release plus CUDA, rien d'autre",
       "inherits": "windows-release",
       "cacheVariables": {
-        "AJP_WITH_CUDA": "ON",
-        "AJP_HARDWARE_TESTS": "ON",
-        "AJP_HARDWARE_TESTS_STRICT": "ON"
+        "KIRARI_WITH_CUDA": "ON",
+        "KIRARI_HARDWARE_TESTS": "ON",
+        "KIRARI_HARDWARE_TESTS_STRICT": "ON"
       }
     },
     {
       "name": "linux-prefix",
-      "displayName": "Linux, dépendances du préfixe AJP_DEPS_PREFIX",
+      "displayName": "Linux, dépendances du préfixe KIRARI_DEPS_PREFIX",
       "inherits": "prefix",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -132,9 +132,9 @@
       "displayName": "Linux préfixe, noyaux CUDA pour la seule RTX locale (sm_89)",
       "inherits": "linux-prefix",
       "cacheVariables": {
-        "AJP_WITH_CUDA": "ON",
-        "AJP_CUDA_ARCHITECTURES": "89-real",
-        "AJP_HARDWARE_TESTS": "ON"
+        "KIRARI_WITH_CUDA": "ON",
+        "KIRARI_CUDA_ARCHITECTURES": "89-real",
+        "KIRARI_HARDWARE_TESTS": "ON"
       }
     },
     {
@@ -154,7 +154,7 @@
         "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "-O3 -g -DNDEBUG",
         "CMAKE_CXX_FLAGS": "-march=x86-64-v3",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "OFF"
+        "KIRARI_WARNINGS_AS_ERRORS": "OFF"
       }
     },
     {
@@ -163,7 +163,7 @@
       "inherits": "prefix",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "AJP_BUILD_PLAYER": "OFF"
+        "KIRARI_BUILD_PLAYER": "OFF"
       }
     },
     {
@@ -211,14 +211,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
-        "AJP_BUILD_TESTS": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "ON",
-        "AJP_REQUIRE_SPIRV_VAL": "ON"
+        "KIRARI_BUILD_TESTS": "ON",
+        "KIRARI_WARNINGS_AS_ERRORS": "ON",
+        "KIRARI_REQUIRE_SPIRV_VAL": "ON"
       }
     },
     {
       "name": "macos-release",
-      "displayName": "macOS (Apple Silicon), Vulkan par MoltenVK, préfixe AJP_DEPS_PREFIX et Homebrew",
+      "displayName": "macOS (Apple Silicon), Vulkan par MoltenVK, préfixe KIRARI_DEPS_PREFIX et Homebrew",
       "inherits": "prefix",
       "condition": {
         "type": "equals",
@@ -228,15 +228,15 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON",
-        "AJP_WARNINGS_AS_ERRORS": "ON",
+        "KIRARI_WARNINGS_AS_ERRORS": "ON",
         "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
-        "AJP_WITH_COREML": "ON",
-        "AJP_ORT_ROOT": "$env{AJP_DEPS_PREFIX}/onnxruntime",
-        "CMAKE_PREFIX_PATH": "$env{AJP_DEPS_PREFIX};/opt/homebrew"
+        "KIRARI_WITH_COREML": "ON",
+        "KIRARI_ORT_ROOT": "$env{KIRARI_DEPS_PREFIX}/onnxruntime",
+        "CMAKE_PREFIX_PATH": "$env{KIRARI_DEPS_PREFIX};/opt/homebrew"
       },
       "environment": {
-        "PKG_CONFIG_PATH": "$env{AJP_DEPS_PREFIX}/lib/pkgconfig:$env{AJP_DEPS_PREFIX}/share/pkgconfig:/opt/homebrew/lib/pkgconfig:$penv{PKG_CONFIG_PATH}"
+        "PKG_CONFIG_PATH": "$env{KIRARI_DEPS_PREFIX}/lib/pkgconfig:$env{KIRARI_DEPS_PREFIX}/share/pkgconfig:/opt/homebrew/lib/pkgconfig:$penv{PKG_CONFIG_PATH}"
       }
     }
   ],

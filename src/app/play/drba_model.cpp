@@ -10,7 +10,7 @@
 #include "prepare/drba_split.h"
 #include "prepare/onnx_dims.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<DrbaModel> find_distil_drba(std::span<const std::filesystem::path> dirs, bool prefer_half) {
   std::error_code error;
@@ -46,4 +46,4 @@ std::expected<std::filesystem::path, Refusal> static_distil_drba(const std::file
   return fixed;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

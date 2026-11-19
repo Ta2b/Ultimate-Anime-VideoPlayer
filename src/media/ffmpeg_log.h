@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace ajp::media {
+namespace kirari::media {
 
 // À appeler une fois, après l'installation des puits du journal.
 void route_ffmpeg_log_to_journal();
@@ -33,4 +33,4 @@ class ErrorFolder {
   int window_lines_ = 0;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -8,7 +8,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/vulkan/backend/net_measure.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 ProfileReport summarize_profile(std::span<const Dispatch> dispatches, std::span<const ProfileRun> runs) {
   ProfileReport report;
@@ -88,4 +88,4 @@ std::vector<ShaderCount> static_count(const ir::Graph& graph, const Program& pro
   return rows;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

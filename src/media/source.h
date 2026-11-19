@@ -56,7 +56,7 @@
 #include "media/packet.h"
 #include "media/video_decoder.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 using SourceInbox = Inbox<Credit, Command, Flush>;
 
@@ -126,4 +126,4 @@ class SourceThread {
   std::jthread thread_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

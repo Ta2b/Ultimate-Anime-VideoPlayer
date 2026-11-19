@@ -19,7 +19,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // C02-11 : la découpe des images de la dérivation n'a qu'une valeur, celle de gpu/span_fp8/derive.h ;
 // make_span_prepare la passe à media::StillsSpec, dont les valeurs par défaut doivent rester les mêmes.
@@ -294,7 +294,7 @@ std::expected<SpanDeriveReport, Refusal> derive_span_fp8(const SpanDerivePlan& p
   }
   receipt.verdict = report.verdict;
   receipt.reference = derived->reference;
-  receipt.derived_by = "ajp (natif)";
+  receipt.derived_by = "kirari (natif)";
   receipt.gpu_arch = derived->gpu_arch;
   receipt.kernels_version = derived->kernels_version;
   receipt.blocks = static_cast<int>(package.blocks.size());
@@ -545,4 +545,4 @@ media::StillReduce span_still_reduce(int work_width, int work_height, core::Down
   return out;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

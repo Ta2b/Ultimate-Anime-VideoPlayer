@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::optional<std::size_t> TemporalWindow::find(const DecodedFrame& frame,
                                                 const gpu::Reduction& reduce) const {
@@ -87,4 +87,4 @@ void TemporalWindow::clear() {
   for (Raw& r : raws_) r.filled = false;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

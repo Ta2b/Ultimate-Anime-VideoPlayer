@@ -7,8 +7,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::media::canonical_language;
-using ajp::media::language_score;
+using kirari::media::canonical_language;
+using kirari::media::language_score;
 
 TEST_CASE("language : ISO 639-1, 639-2/B et 639-2/T ont une même forme canonique", "[media][language]") {
   CHECK(canonical_language("ja") == "jpn");

@@ -23,7 +23,7 @@
 #include "gpu/kernel_ops.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Les moteurs du cache, ceux de cette lecture en tête : loaded, les moteurs que la chaîne a construits
 // (B08-12 : la variante mouvement ou le fusionné de RIFE, pas seulement le modèle tel que livré).
@@ -104,4 +104,4 @@ class ChainStats final : public StatsSource {
   std::jthread sampler_;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

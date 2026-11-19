@@ -8,9 +8,9 @@
 
 layout(local_size_x = 16, local_size_y = 16) in;
 
-layout(std430, binding = 0) readonly buffer ImageA { AJP_TENSOR v[]; } a;
-layout(std430, binding = 1) readonly buffer ImageB { AJP_TENSOR v[]; } b;
-layout(std430, binding = 2) writeonly buffer Input { AJP_TENSOR v[]; } input_planes;
+layout(std430, binding = 0) readonly buffer ImageA { KIRARI_TENSOR v[]; } a;
+layout(std430, binding = 1) readonly buffer ImageB { KIRARI_TENSOR v[]; } b;
+layout(std430, binding = 2) writeonly buffer Input { KIRARI_TENSOR v[]; } input_planes;
 
 layout(push_constant) uniform Push {
   uint width;  // fenêtre de l'image
@@ -32,7 +32,7 @@ void main() {
   uint source_plane = pc.width * pc.height;
   uint j = inside ? (y - pc.top) * pc.width + (x - pc.left) : 0u;
   for (uint c = 0u; c < 3u; ++c) {
-    input_planes.v[c * plane + i] = inside ? a.v[c * source_plane + j] : AJP_TENSOR(pc.black);
-    input_planes.v[(3u + c) * plane + i] = inside ? b.v[c * source_plane + j] : AJP_TENSOR(pc.black);
+    input_planes.v[c * plane + i] = inside ? a.v[c * source_plane + j] : KIRARI_TENSOR(pc.black);
+    input_planes.v[(3u + c) * plane + i] = inside ? b.v[c * source_plane + j] : KIRARI_TENSOR(pc.black);
   }
 }

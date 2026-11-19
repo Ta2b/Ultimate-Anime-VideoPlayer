@@ -20,9 +20,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -587,4 +587,4 @@ std::expected<MachineCalibration, Refusal> calibrate_machine(const BenchPlan& pl
   return out;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

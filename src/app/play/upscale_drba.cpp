@@ -22,7 +22,7 @@
 #include "kernels/spec/resample.h"
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 std::expected<void, Refusal> UpscaleStage::allocate_drba() {
   gpu::Backend& backend = *setup_.backend;
   // Variante mouvement : le mouvement s'estime à la taille de RIFE (D4 : 720p pour un travail plus grand),
@@ -152,7 +152,7 @@ kernels::RifeGeometry UpscaleStage::drba_geometry() const {
 
 std::expected<void, Refusal> UpscaleStage::drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                                      bool measure) {
-  AJP_TRACE("drba.ingest");
+  KIRARI_TRACE("drba.ingest");
   drba_.after_ok = false;
   drba_.after_held = false;
   drba_.after_ticket.reset();
@@ -223,7 +223,7 @@ void UpscaleStage::keep_skipped(const DecodedFrame& frame) {
 
 std::expected<void, Refusal> UpscaleStage::run_drba(const kernels::DrbaCall& call,
                                                     std::span<gpu::Tensor> results) {
-  AJP_TRACE("drba.pair");
+  KIRARI_TRACE("drba.pair");
   gpu::KernelOps& ops = *setup_.backend->kernels();
   // Les copies réduites quand le mouvement s'estime plus petit que le travail (variante mouvement).
   const bool small = small_[0] != nullptr;
@@ -329,4 +329,4 @@ std::expected<void, Refusal> UpscaleStage::interpolate_drba_motion(std::uint32_t
   return call.on_b ? blend(b, a, motion, 1.0F - t, out) : blend(a, b, motion, t, out);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

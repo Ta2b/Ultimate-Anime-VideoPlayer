@@ -17,7 +17,7 @@ extern "C" {
 
 #include "av/av_error.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // FFmpeg verrouille chaque file par ces fonctions, comme le backend Vulkan : libplacebo tient le
@@ -139,4 +139,4 @@ AVBufferRef* VulkanShare::device(media::HwApi api) const {
   return av_buffer_ref(device_);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

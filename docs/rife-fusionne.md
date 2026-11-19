@@ -68,20 +68,20 @@ Prototype et banc : `tools/bench/fp8/rife_fusion/` de la branche `worktree-agent
 ## Tests
 
 - Sans GPU : `tests/unit/prepare/rife_split_test.cpp` (extraction, reconnaissance sur un graphe copiant la structure,
-  refus, manifeste, dérivation et cache, vrais modèles si `AJP_RIFE_MODEL_DIR`), `tests/unit/kernels/rife_fused_test.cpp`,
+  refus, manifeste, dérivation et cache, vrais modèles si `KIRARI_RIFE_MODEL_DIR`), `tests/unit/kernels/rife_fused_test.cpp`,
   `tests/unit/app/rife_fused_choice_test.cpp`.
-- Encodage gardé, bit à bit contre la chaîne qui encode tout : `ajp_vk_backend_tests "[.rife_fused]"` (Vulkan,
-  lavapipe compris, `rife_fused_chain_test.cpp`) et `ajp_backend_tensorrt_tests "[.rife_fused]"`
+- Encodage gardé, bit à bit contre la chaîne qui encode tout : `kirari_vk_backend_tests "[.rife_fused]"` (Vulkan,
+  lavapipe compris, `rife_fused_chain_test.cpp`) et `kirari_backend_tensorrt_tests "[.rife_fused]"`
   (`rife_fused_encode_test.cpp`, parcours rejoué trois fois pour passer par la capture et le rejeu du graphe CUDA,
   puis un autre moteur fusionné dans la même zone entre deux appels). Les annonces du lecteur :
   `tests/unit/app/upscale_stage_passes_test.cpp`.
-- GPU : `ajp_backend_tensorrt_tests "[rife_fused]"` (noyaux contre la référence CPU en double, 65 à 83 dB) ; test caché
+- GPU : `kirari_backend_tensorrt_tests "[rife_fused]"` (noyaux contre la référence CPU en double, 65 à 83 dB) ; test caché
   `"[.rife_fused]"` (chaîne contre le moteur entier de TensorRT, 384×640, PSNR ≥ 50 dB : 4.25 image 53,2 dB, 4.22 lite
   image 64,0 dB, mouvement 54 à 64 dB).
 
 ## Mesures
 
-RTX 4070 Ti, TensorRT 11.3, `ajp play` (build optimisé) sur Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p, travail
+RTX 4070 Ti, TensorRT 11.3, `kirari play` (build optimisé) sur Re:Zero 18 de 16:00 (`--start=960`, 30 s), 1080p, travail
 540 (RIFE en 960×576), ×3 (`--rife=3`), variante mouvement, `--one-lane` (coût propre du moteur), SPAN Performance, SDR.
 ABAB 3 tours (A = fusionné, B = RIFE entier ; médiane « moteur » du profil GPU, min entre parenthèses) :
 
@@ -107,7 +107,7 @@ et plus. Binaire livré (`linux-release`, `windows-release`), même poste, même
 2. Conditions des mesures ci-dessus : Re:Zero 18 (`--start=960`, 30 s), 1080p, travail 540, variante mouvement,
    `--one-lane`, SPAN Performance, SDR. Trois facteurs : `--rife=2`, `--rife=3`, puis `--rife=5` (24 → 120 i/s, la
    cadence que le poste tient dans les scènes qui bougent le plus : quatre instants par paire).
-3. A = `ajp --debug play …` (encodage gardé), B = `ajp --debug play --rife-encode-all …`. Ordre A, B, A, B, A, B
+3. A = `kirari --debug play …` (encodage gardé), B = `kirari --debug play --rife-encode-all …`. Ordre A, B, A, B, A, B
    (trois tours), sans changer autre chose entre deux lectures.
 4. Relever pour chaque lecture la médiane et le minimum de la ligne « moteur » du profil GPU (le RIFE fusionné),
    les images en retard et manquées, et la ligne « RIFE : encodage repris… ». En A, en ×2, « B seule » doit couvrir

@@ -27,7 +27,7 @@
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::kWarn;
 using panel::note;
@@ -35,8 +35,8 @@ using panel::section;
 
 void default_player_page(const PlayerPlace& place, SystemNote& last, bool already_default) {
   section(i18n::tr("Default player"));
-  panel::wrapped(i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in AJP from the file manager."));
-  if (already_default) note(i18n::tr("AJP is already the default video player."));
+  panel::wrapped(i18n::tr("Videos (mkv, mp4, webm, avi, mov…) open in Kirari from the file manager."));
+  if (already_default) note(i18n::tr("Kirari is already the default video player."));
 #ifdef __APPLE__
   static_cast<void>(last);
   note(register_player(place).value_or(std::string()));
@@ -308,7 +308,7 @@ std::string url_encoded(std::string_view text) {
 // (B39-06). Aucun chemin n'y passe. Le dépôt est celui qui porte le formulaire
 // (.github/ISSUE_TEMPLATE/bug.yml) : le dépôt des releases, lui, n'a pas ce formulaire.
 std::string issue_url(const std::string& gpu_name) {
-  std::string url = "https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/issues/new?template=bug.yml";
+  std::string url = "https://github.com/Ta2b/kirari-player/issues/new?template=bug.yml";
   url += "&version=" + url_encoded(installed_version());
   if (!gpu_name.empty()) url += "&gpu=" + url_encoded(gpu_name);
   return url;
@@ -337,4 +337,4 @@ void report_problem_section(const PlayerPlace& place, const std::string& gpu_nam
       "Paste the report there."));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

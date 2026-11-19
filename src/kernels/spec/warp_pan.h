@@ -35,7 +35,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 inline constexpr int kPanGrid = 32;
 inline constexpr int kPanIterations = 3;
@@ -69,6 +69,6 @@ constexpr float slow_fade_weight(float d) {
   return s * s * (3.0F - 2.0F * s);
 }
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

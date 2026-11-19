@@ -13,7 +13,7 @@
 #include "audio/pcm.h"
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 // Mesure de la file : trames consommées par le périphérique à l'instant hôte host_us.
 struct DeviceReading {
@@ -77,4 +77,4 @@ class AudioSink {
 // reopen_default() réveillera (B16-01).
 std::expected<std::unique_ptr<AudioSink>, Refusal> open_sdl_sink(const OutputRequest& request);
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

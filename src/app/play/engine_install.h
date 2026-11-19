@@ -24,7 +24,7 @@
 #include "core/model_index.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 core::Os host_os();
 
@@ -157,4 +157,4 @@ std::expected<std::filesystem::path, Refusal> install_package(const EngineCatalo
                                                               const core::EnginePackage& package,
                                                               const InstallProgress& progress);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

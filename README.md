@@ -1,4 +1,4 @@
-# Ultimate Anime VideoPlayer
+# Kirari Player
 
 [![Licence : MPL 2.0](https://img.shields.io/badge/licence-MPL%202.0-blue.svg)](LICENSE)
 ![Version 0.11.0](https://img.shields.io/badge/version-0.11.0-informational.svg)
@@ -35,7 +35,7 @@ le meilleur et que tout a été mesuré.
 Les autres cartes (AMD, Intel, NVIDIA sans TensorRT) passent par le moteur **Vulkan**, livré avec le lecteur.
 Elles ont l'agrandissement et l'interpolation et **devraient fonctionner**, mais elles n'ont pas encore été
 essayées sur du vrai matériel. Quelques fonctions restent propres à TensorRT pour l'instant (stabilisation
-temporelle, GMFSS). Si quelque chose ne va pas sur votre carte, ouvrez une issue avec le journal (`ajp.log`) :
+temporelle, GMFSS). Si quelque chose ne va pas sur votre carte, ouvrez une issue avec le journal (`kirari.log`) :
 c'est ainsi que ces voies seront corrigées. Pour les petites cartes et les graphiques intégrés, Anime4K
 (shaders) prend la place de SPAN.
 
@@ -46,27 +46,28 @@ c'est ainsi que ces voies seront corrigées. Pour les petites cartes et les grap
 
 ## Installation
 
-Téléchargez la dernière version sur la page des [releases](https://github.com/Ta2b/ajp-releases/releases) :
+Téléchargez la dernière version sur la page des [releases](https://github.com/Ta2b/kirari-player/releases) :
 
 | Système | Fichier |
 |---|---|
-| Windows 10 et 11 (x64) | `ajp-windows-x64-setup.exe` (installeur), ou `ajp-windows-x64.zip` |
-| Linux (x64) | `ajp-linux-x86_64.AppImage`, ou `ajp-linux-x64.tar.gz` |
+| Windows 10 et 11 (x64) | `kirari-windows-x64-setup.exe` (installeur), ou `kirari-windows-x64.zip` |
+| Linux (x64) | `kirari-linux-x86_64.AppImage`, ou `kirari-linux-x64.tar.gz` |
 
-Mettez à jour le pilote de votre carte graphique avant le premier lancement. macOS n'est plus publié pour
+Mettez à jour le pilote de votre carte graphique avant le premier lancement. Kirari Player s'appelait ajp jusqu'à la
+0.11 : il reprend tout seul vos réglages et vos moteurs déjà construits. macOS n'est plus publié pour
 l'instant.
 
 Au premier lancement, un court assistant demande vos langues, propose TensorRT sur une NVIDIA RTX, puis peut
 calibrer le lecteur sur votre machine. Ensuite, **`p`** ouvre les paramètres, **Tab** les statistiques, et
-`ajp --help` liste les options de la ligne de commande.
+`kirari --help` liste les options de la ligne de commande.
 
 ## Construire depuis les sources
 
 CMake 3.28+, Ninja et un compilateur C++23 (GCC 13+, Clang 20+, MSVC 17.10+) :
 
 ```sh
-tools/deps/linux-from-source.sh ~/ajp-deps
-export AJP_DEPS_PREFIX=~/ajp-deps
+tools/deps/linux-from-source.sh ~/kirari-deps
+export KIRARI_DEPS_PREFIX=~/kirari-deps
 cmake --preset linux-prefix && cmake --build --preset linux-prefix
 ctest --preset linux-prefix
 ```

@@ -14,7 +14,7 @@
 #include "gpu/system_interpolator.h"
 #include "prepare/onnx_scan.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 std::vector<std::byte> read_all(const std::filesystem::path& path) {
@@ -28,7 +28,7 @@ std::vector<std::byte> read_all(const std::filesystem::path& path) {
 }  // namespace
 
 TEST_CASE("apple_model : écrit une fois, réécrit s'il est abîmé", "[app][apple]") {
-  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "ajp_apple_model_test";
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kirari_apple_model_test";
   std::filesystem::remove_all(dir);
   auto written = apple_model(dir);
   REQUIRE(written);
@@ -54,4 +54,4 @@ TEST_CASE("apple_model : écrit une fois, réécrit s'il est abîmé", "[app][ap
   std::filesystem::remove_all(dir);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

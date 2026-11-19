@@ -9,7 +9,7 @@
 #include "app/play/ui.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 PlaySettings LoadingChange::settings_or(const PlaySettings& current) const {
   if (restart) return *restart;
@@ -66,4 +66,4 @@ std::optional<Reopen> stopped_preparation(Player& p, const Refusal& refusal, con
   return reopen;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

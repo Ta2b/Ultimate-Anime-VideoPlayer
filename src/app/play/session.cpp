@@ -13,7 +13,7 @@
 #include "core/pacing.h"
 #include "core/vrr_floor.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Un seek dont une boîte a refusé un message est rejoué après ce délai.
@@ -654,4 +654,4 @@ void Session::end() {
   stages_.quit();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

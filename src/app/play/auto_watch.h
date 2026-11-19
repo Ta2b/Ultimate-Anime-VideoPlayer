@@ -8,7 +8,7 @@
 
 #include "core/auto_rate.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // L'Auto figé au plancher : dit au journal après une tentative de sortie (core::AutoRate::kFloorEscapeUs),
 // puis au plus toutes les 30 s. Un palier tenu 3 s s'annonce à l'écran, tenu 6 s il s'écrit dans la mémoire
@@ -49,4 +49,4 @@ class AutoWatch {
   std::int64_t free_logged_us_ = 0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

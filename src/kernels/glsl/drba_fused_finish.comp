@@ -10,11 +10,11 @@ layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(constant_id = 0) const uint MOTION = 0;
 
-layout(std430, binding = 0) readonly buffer Y { AJP_TENSOR v[]; } y;  // 52 canaux à h/2t × w/2t
-layout(std430, binding = 1) readonly buffer Pair01 { AJP_TENSOR v[]; } pair01;
-layout(std430, binding = 2) readonly buffer Pair12 { AJP_TENSOR v[]; } pair12;
-layout(std430, binding = 3) writeonly buffer Out { AJP_TENSOR v[]; } image;  // 3 plans (ou le flot, 4)
-layout(std430, binding = 4) writeonly buffer Mask { AJP_TENSOR v[]; } mask;  // 1 plan (variante mouvement)
+layout(std430, binding = 0) readonly buffer Y { KIRARI_TENSOR v[]; } y;  // 52 canaux à h/2t × w/2t
+layout(std430, binding = 1) readonly buffer Pair01 { KIRARI_TENSOR v[]; } pair01;
+layout(std430, binding = 2) readonly buffer Pair12 { KIRARI_TENSOR v[]; } pair12;
+layout(std430, binding = 3) writeonly buffer Out { KIRARI_TENSOR v[]; } image;  // 3 plans (ou le flot, 4)
+layout(std430, binding = 4) writeonly buffer Mask { KIRARI_TENSOR v[]; } mask;  // 1 plan (variante mouvement)
 
 #define DRBA_Y(i) y.v[i]
 #include "drba_fused.glsl"
@@ -58,8 +58,8 @@ void main() {
   for (uint k = 0u; k < 4u; ++k) flow[k] = rounded(r[k] * float(pc.upscale));
   float sig = rounded(1.0 / (1.0 + exp(-r[4])));
   if (MOTION == 1u) {
-    for (uint k = 0u; k < 4u; ++k) image.v[k * plane + o] = AJP_TENSOR(flow[k]);
-    mask.v[o] = AJP_TENSOR(sig);
+    for (uint k = 0u; k < 4u; ++k) image.v[k * plane + o] = KIRARI_TENSOR(flow[k]);
+    mask.v[o] = KIRARI_TENSOR(sig);
     return;
   }
   float rest = rounded(1.0 - sig);
@@ -73,6 +73,6 @@ void main() {
   }
   for (uint k = 0u; k < 3u; ++k) {
     precise float v = rounded(warped[k] * sig) + rounded(warped[3u + k] * rest);
-    image.v[k * plane + o] = AJP_TENSOR(v);
+    image.v[k * plane + o] = KIRARI_TENSOR(v);
   }
 }

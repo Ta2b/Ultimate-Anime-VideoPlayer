@@ -10,7 +10,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // Une cascade d'un étage et d'un trait (trois blocs de 8 de côté dans une fenêtre de 24) qui n'accepte que
@@ -95,4 +95,4 @@ TEST_CASE("cascade de visages : l'égalisation étale les niveaux et garde leur 
   CHECK(image.pixels == std::vector<std::uint8_t>{0, 170, 170, 255});
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

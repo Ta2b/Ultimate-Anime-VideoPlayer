@@ -33,7 +33,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "gpu/vulkan/compute/pipeline.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Signature d'une couche : opération, attributs et formes, types et dispositions de ses
 // tenseurs, sans les valeurs des poids ni les noms.
@@ -194,4 +194,4 @@ class Autotuner {
   std::optional<Buffer> pattern_f32_;
 };
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

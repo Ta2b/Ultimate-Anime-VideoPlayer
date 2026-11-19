@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::app::play;
+using namespace kirari::app::play;
 
 namespace {
 

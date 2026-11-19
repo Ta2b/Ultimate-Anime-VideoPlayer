@@ -1,7 +1,7 @@
-# ajp_add_spirv(<cible> NAMESPACE <espace> SHADERS <fichier.comp>...
+# kirari_add_spirv(<cible> NAMESPACE <espace> SHADERS <fichier.comp>...
 #               [VARIANT <suffixe> DEFINES <MACRO[=valeur]>... VARIANT_SHADERS <fichier.comp>...])
 #
-# Compile chaque shader compute en SPIR-V hors ligne avec AJP_GLSLC, le valide par spirv-val
+# Compile chaque shader compute en SPIR-V hors ligne avec KIRARI_GLSLC, le valide par spirv-val
 # s'il est trouvé, puis embarque ses mots dans la cible : un .cpp et un .h générés dans le
 # dossier de construction, rien n'entre dans le dépôt. Le shader « dossier/nom.comp » s'appelle
 # « nom » ; une variante se compile avec -D<MACRO> et s'appelle « nom_<suffixe> ».
@@ -10,23 +10,23 @@
 #   std::span<const SpirvShader> shaders();          tous les shaders, dans l'ordre déclaré
 #   std::span<const std::uint32_t> words(name);      les mots du shader nommé, vides s'il manque
 #
-# Les shaders incluent ajp_kernels_spec.glsl (constantes de kernels/spec.h, généré par
+# Les shaders incluent kirari_kernels_spec.glsl (constantes de kernels/spec.h, généré par
 # src/kernels) et les .glsl de leur propre dossier.
 #
-# Ce fichier sert aussi de script : cmake -DAJP_SPIRV_IN=<.spv> -DAJP_SPIRV_OUT=<.inc>
-# -P AjpSpirv.cmake écrit les mots d'un module SPIR-V en liste C++.
+# Ce fichier sert aussi de script : cmake -DKIRARI_SPIRV_IN=<.spv> -DKIRARI_SPIRV_OUT=<.inc>
+# -P KirariSpirv.cmake écrit les mots d'un module SPIR-V en liste C++.
 
-if(CMAKE_SCRIPT_MODE_FILE AND DEFINED AJP_SPIRV_IN)
-  file(READ "${AJP_SPIRV_IN}" hex HEX)
+if(CMAKE_SCRIPT_MODE_FILE AND DEFINED KIRARI_SPIRV_IN)
+  file(READ "${KIRARI_SPIRV_IN}" hex HEX)
   string(LENGTH "${hex}" digits)
   math(EXPR remainder "${digits} % 8")
   # Un module commence par le nombre magique 0x07230203, rangé en petit-boutiste par glslc.
   string(SUBSTRING "${hex}" 0 8 magic)
   if(digits EQUAL 0 OR NOT remainder EQUAL 0 OR NOT magic STREQUAL "03022307")
-    message(FATAL_ERROR "${AJP_SPIRV_IN} : module SPIR-V invalide (${digits} chiffres, en-tête ${magic})")
+    message(FATAL_ERROR "${KIRARI_SPIRV_IN} : module SPIR-V invalide (${digits} chiffres, en-tête ${magic})")
   endif()
   string(REGEX REPLACE "(..)(..)(..)(..)" "0x\\4\\3\\2\\1u,\n" words "${hex}")
-  file(WRITE "${AJP_SPIRV_OUT}" "${words}")
+  file(WRITE "${KIRARI_SPIRV_OUT}" "${words}")
   return()
 endif()
 
@@ -34,33 +34,33 @@ include_guard(GLOBAL)
 
 # spirv-val : celui du système ou du SDK Vulkan ; sous Windows, l'outil de l'hôte du port spirv-tools de vcpkg
 # (tiré par shaderc). Absent, les shaders ne sont pas validés : la configuration le dit, et
-# AJP_REQUIRE_SPIRV_VAL (la CI) en fait une erreur.
-find_program(AJP_SPIRV_VAL NAMES spirv-val
+# KIRARI_REQUIRE_SPIRV_VAL (la CI) en fait une erreur.
+find_program(KIRARI_SPIRV_VAL NAMES spirv-val
   HINTS "$ENV{VULKAN_SDK}/bin" "${VCPKG_INSTALLED_DIR}/${VCPKG_HOST_TRIPLET}/tools/spirv-tools")
-option(AJP_REQUIRE_SPIRV_VAL "Refuser de configurer sans spirv-val" OFF)
-if(NOT AJP_SPIRV_VAL)
-  if(AJP_REQUIRE_SPIRV_VAL)
-    message(FATAL_ERROR "spirv-val introuvable (AJP_REQUIRE_SPIRV_VAL) : paquet spirv-tools, ou SDK Vulkan")
+option(KIRARI_REQUIRE_SPIRV_VAL "Refuser de configurer sans spirv-val" OFF)
+if(NOT KIRARI_SPIRV_VAL)
+  if(KIRARI_REQUIRE_SPIRV_VAL)
+    message(FATAL_ERROR "spirv-val introuvable (KIRARI_REQUIRE_SPIRV_VAL) : paquet spirv-tools, ou SDK Vulkan")
   endif()
   message(STATUS "spirv-val introuvable : les shaders de calcul ne sont pas validés à la construction")
 endif()
 # En cache : include_guard(GLOBAL) n'exécute ce fichier qu'une fois, et un autre dossier qui
-# appelle ajp_add_spirv ne verrait pas une variable ordinaire posée ici.
-set(AJP_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}" CACHE INTERNAL "Script de conversion SPIR-V vers C++")
+# appelle kirari_add_spirv ne verrait pas une variable ordinaire posée ici.
+set(KIRARI_SPIRV_SCRIPT "${CMAKE_CURRENT_LIST_FILE}" CACHE INTERNAL "Script de conversion SPIR-V vers C++")
 # La cible de glslc et spirv-val est la version minimale qu'exige le lecteur (kMinApiVersion,
 # src/gpu/vulkan/compute/vulkan.h), lue là pour ne jamais s'en écarter : un module plus récent
 # serait refusé par un appareil que le lecteur accepte, un plus ancien priverait les shaders du
 # cœur de cette version. tools/ci/check-shaders.sh la lit de même.
-file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../src/gpu/vulkan/compute/vulkan.h" ajp_min_api
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/../src/gpu/vulkan/compute/vulkan.h" kirari_min_api
      REGEX "kMinApiVersion = VK_API_VERSION_1_[0-9]+;")
-if(NOT ajp_min_api MATCHES "VK_API_VERSION_1_([0-9]+)")
+if(NOT kirari_min_api MATCHES "VK_API_VERSION_1_([0-9]+)")
   message(FATAL_ERROR "kMinApiVersion introuvable dans src/gpu/vulkan/compute/vulkan.h")
 endif()
-set(AJP_SPIRV_TARGET_ENV "vulkan1.${CMAKE_MATCH_1}" CACHE INTERNAL "Environnement cible de glslc et spirv-val")
+set(KIRARI_SPIRV_TARGET_ENV "vulkan1.${CMAKE_MATCH_1}" CACHE INTERNAL "Environnement cible de glslc et spirv-val")
 
 # Une commande par shader : glslc vers un .spv temporaire, spirv-val, puis la liste de mots.
 # Le .inc n'est écrit qu'après une validation réussie : un module refusé ne reste jamais à jour.
-function(_ajp_spirv_command source name defines out_dir out_inc)
+function(_kirari_spirv_command source name defines out_dir out_inc)
   set(spv "${out_dir}/${name}.spv")
   set(inc "${out_dir}/${name}.spv.inc")
   set(dep "${out_dir}/${name}.d")
@@ -69,33 +69,33 @@ function(_ajp_spirv_command source name defines out_dir out_inc)
     list(APPEND define_flags "-D${definition}")
   endforeach()
   set(validate "")
-  if(AJP_SPIRV_VAL)
-    set(validate COMMAND "${AJP_SPIRV_VAL}" --target-env "${AJP_SPIRV_TARGET_ENV}" "${spv}")
+  if(KIRARI_SPIRV_VAL)
+    set(validate COMMAND "${KIRARI_SPIRV_VAL}" --target-env "${KIRARI_SPIRV_TARGET_ENV}" "${spv}")
   endif()
   get_filename_component(source_dir "${source}" DIRECTORY)
   add_custom_command(
     OUTPUT "${inc}"
     BYPRODUCTS "${spv}"
-    COMMAND "${AJP_GLSLC}" --target-env=${AJP_SPIRV_TARGET_ENV} -Werror -O
-            -I "${AJP_KERNELS_GLSL_DIR}" -I "${source_dir}" ${define_flags}
+    COMMAND "${KIRARI_GLSLC}" --target-env=${KIRARI_SPIRV_TARGET_ENV} -Werror -O
+            -I "${KIRARI_KERNELS_GLSL_DIR}" -I "${source_dir}" ${define_flags}
             -MD -MF "${dep}" -MT "${inc}" -o "${spv}" "${source}"
     ${validate}
-    COMMAND "${CMAKE_COMMAND}" -DAJP_SPIRV_IN=${spv} -DAJP_SPIRV_OUT=${inc} -P "${AJP_SPIRV_SCRIPT}"
-    DEPENDS "${source}" "${AJP_KERNELS_GLSL_DIR}/ajp_kernels_spec.glsl" ajp_kernels_glsl_header
-            "${AJP_SPIRV_SCRIPT}"
+    COMMAND "${CMAKE_COMMAND}" -DKIRARI_SPIRV_IN=${spv} -DKIRARI_SPIRV_OUT=${inc} -P "${KIRARI_SPIRV_SCRIPT}"
+    DEPENDS "${source}" "${KIRARI_KERNELS_GLSL_DIR}/kirari_kernels_spec.glsl" kirari_kernels_glsl_header
+            "${KIRARI_SPIRV_SCRIPT}"
     DEPFILE "${dep}"
     COMMENT "SPIR-V ${name}"
     VERBATIM)
   set(${out_inc} "${inc}" PARENT_SCOPE)
 endfunction()
 
-function(ajp_add_spirv target)
+function(kirari_add_spirv target)
   cmake_parse_arguments(ARG "" "NAMESPACE;VARIANT" "SHADERS;DEFINES;VARIANT_SHADERS" ${ARGN})
   if(NOT ARG_NAMESPACE OR NOT ARG_SHADERS)
-    message(FATAL_ERROR "ajp_add_spirv(${target}) : NAMESPACE et SHADERS sont obligatoires")
+    message(FATAL_ERROR "kirari_add_spirv(${target}) : NAMESPACE et SHADERS sont obligatoires")
   endif()
   if(ARG_VARIANT_SHADERS AND NOT ARG_VARIANT)
-    message(FATAL_ERROR "ajp_add_spirv(${target}) : VARIANT_SHADERS sans VARIANT")
+    message(FATAL_ERROR "kirari_add_spirv(${target}) : VARIANT_SHADERS sans VARIANT")
   endif()
 
   set(out_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_spirv")
@@ -129,9 +129,9 @@ function(ajp_add_spirv target)
       set(source "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
     endif()
     if(name IN_LIST names)
-      message(FATAL_ERROR "ajp_add_spirv(${target}) : deux shaders s'appellent ${name}")
+      message(FATAL_ERROR "kirari_add_spirv(${target}) : deux shaders s'appellent ${name}")
     endif()
-    _ajp_spirv_command("${source}" "${name}" "${defines}" "${out_dir}" inc)
+    _kirari_spirv_command("${source}" "${name}" "${defines}" "${out_dir}" inc)
     list(APPEND names "${name}")
     list(APPEND includes "${inc}")
   endforeach()
@@ -139,7 +139,7 @@ function(ajp_add_spirv target)
   # En-tête et table générés : une liste constexpr par shader, incluse depuis son .inc.
   set(header "${out_dir}/${target}_spirv.h")
   set(table "${out_dir}/${target}_spirv.cpp")
-  set(header_text "// Généré par ajp_add_spirv(${target}) : ne pas modifier.
+  set(header_text "// Généré par kirari_add_spirv(${target}) : ne pas modifier.
 #pragma once
 
 #include <cstdint>
@@ -167,7 +167,7 @@ std::span<const std::uint32_t> words(std::string_view name);
     string(APPEND arrays "constexpr std::uint32_t k_${name}[] = {\n#include \"${name}.spv.inc\"\n};\n")
     string(APPEND rows "    SpirvShader{\"${name}\", k_${name}},\n")
   endforeach()
-  set(table_text "// Généré par ajp_add_spirv(${target}) : ne pas modifier.
+  set(table_text "// Généré par kirari_add_spirv(${target}) : ne pas modifier.
 #include \"${target}_spirv.h\"
 
 #include <array>
@@ -199,5 +199,5 @@ std::span<const std::uint32_t> words(std::string_view name) {
 
   target_sources(${target} PRIVATE "${table}" ${includes})
   target_include_directories(${target} PUBLIC "${out_dir}")
-  add_dependencies(${target} ajp_kernels_glsl_header)
+  add_dependencies(${target} kirari_kernels_glsl_header)
 endfunction()

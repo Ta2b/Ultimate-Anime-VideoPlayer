@@ -9,7 +9,7 @@
 #include <optional>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class UpdateMode : std::uint8_t { Notify, Never };  // « Me prévenir » est le défaut
 enum class UpdateFrequency : std::uint8_t { Launch, Daily, Weekly };
@@ -33,4 +33,4 @@ constexpr std::optional<Choice> choice_named(const std::array<std::string_view, 
   return std::nullopt;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

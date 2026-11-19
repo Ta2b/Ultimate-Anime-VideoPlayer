@@ -167,7 +167,7 @@ def convert_model(model: onnx.ModelProto, shapes: dict[str, tuple[int, ...]] | N
                     if v == out.name:
                         n.output[k] = out.name + "_f32"
             new_nodes.append(
-                helper.make_node("Cast", [out.name + "_f32"], [out.name], name=f"ajp/cast_{out.name}", to=F16))
+                helper.make_node("Cast", [out.name + "_f32"], [out.name], name=f"kirari/cast_{out.name}", to=F16))
         out.type.tensor_type.elem_type = F16
     for graph_input in g.input:
         graph_input.type.tensor_type.elem_type = F16

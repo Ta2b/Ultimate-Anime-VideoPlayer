@@ -5,7 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::core {
+namespace kirari::core {
 
 TEST_CASE("Réservoir : sous la capacité, tout est gardé", "[core][profil]") {
   SampleReservoir<float> reservoir(8);
@@ -27,4 +27,4 @@ TEST_CASE("Réservoir : au-delà, la fin de la lecture compte autant que le déb
   CHECK(late < 600);
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

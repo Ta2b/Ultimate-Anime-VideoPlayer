@@ -13,22 +13,22 @@ preset=${1:-linux-prefix-cuda}
 archs=${2:-75-real;86-real;89-real;120-real;120-virtual}
 root=$(git rev-parse --show-toplevel)
 cd "$root"
-# Les outils du poste de développement (cmake, ninja dans ~/ajp-tools) et TensorRT dans ~/ajp-sdk/tensorrt, là où
+# Les outils du poste de développement (cmake, ninja dans ~/kirari-tools) et TensorRT dans ~/kirari-sdk/tensorrt, là où
 # tools/deps les installe : pris s'ils existent, sans rien changer ailleurs.
-for dir in "$HOME/ajp-tools/bin" "$HOME/ajp-tools/venv/bin"; do
+for dir in "$HOME/kirari-tools/bin" "$HOME/kirari-tools/venv/bin"; do
   [[ -d "$dir" ]] && PATH="$dir:$PATH"
 done
 export PATH
 trt=()
-if [[ -z "${AJP_TENSORRT_ROOT:-}" && -f "$HOME/ajp-sdk/tensorrt/include/NvInfer.h" ]]; then
-  trt=(-DAJP_TENSORRT_ROOT="$HOME/ajp-sdk/tensorrt")
-elif [[ -n "${AJP_TENSORRT_ROOT:-}" ]]; then
-  trt=(-DAJP_TENSORRT_ROOT="$AJP_TENSORRT_ROOT")
+if [[ -z "${KIRARI_TENSORRT_ROOT:-}" && -f "$HOME/kirari-sdk/tensorrt/include/NvInfer.h" ]]; then
+  trt=(-DKIRARI_TENSORRT_ROOT="$HOME/kirari-sdk/tensorrt")
+elif [[ -n "${KIRARI_TENSORRT_ROOT:-}" ]]; then
+  trt=(-DKIRARI_TENSORRT_ROOT="$KIRARI_TENSORRT_ROOT")
 fi
 command -v nvcc >/dev/null || [[ -n "${CUDACXX:-}" ]] || { echo "nvcc absent : kit CUDA requis" >&2; exit 2; }
 
 arch=()
-[[ "$preset" == windows-* ]] || arch=("-DAJP_CUDA_ARCHITECTURES=$archs")
+[[ "$preset" == windows-* ]] || arch=("-DKIRARI_CUDA_ARCHITECTURES=$archs")
 cmake --preset "$preset" "${trt[@]}" "${arch[@]}" >/dev/null
 # Construction seule : les tests du backend demandent un GPU NVIDIA pour tourner. Sans --target : tout ce que la
 # tâche `cuda` de la CI construit (noyaux CUTLASS du SPAN FP8 et leurs tests compris).

@@ -10,7 +10,7 @@
 
 #include "media/track.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct TrackEntry {
   int index = -1;     // index du flux dans le conteneur
@@ -70,4 +70,4 @@ std::optional<TrackLike> track_like(const media::TrackInfo& track);
 std::optional<int> matching_track(std::span<const media::TrackInfo> tracks, media::TrackKind kind,
                                   const TrackLike& wanted, std::optional<int> fallback);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

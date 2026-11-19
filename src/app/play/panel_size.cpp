@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -53,4 +53,4 @@ void PanelSize::observe(PanelRect rect) {
   last_ = rect;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

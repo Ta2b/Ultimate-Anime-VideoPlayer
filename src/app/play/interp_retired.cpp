@@ -1,7 +1,7 @@
 // Les choix d'interpolation retirés du menu (interp_retired.h).
 #include "app/play/interp_retired.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 namespace {
 
@@ -25,4 +25,4 @@ void retire_interpolation(PlaySettings& settings) {
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

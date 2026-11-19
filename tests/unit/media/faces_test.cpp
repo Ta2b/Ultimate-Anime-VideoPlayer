@@ -6,7 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::media {
+namespace kirari::media {
 
 using Catch::Approx;
 
@@ -66,4 +66,4 @@ TEST_CASE("visages : un plan garde les teintes vues deux fois, pas un faux visag
   CHECK(plan_skins(std::vector<SkinTone>{{.hue = 22.0F, .sat = 0.3F}}).count == 0);
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

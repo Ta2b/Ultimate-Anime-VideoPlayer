@@ -9,7 +9,7 @@
 #include <deque>
 #include <optional>
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 class Timeline {
  public:
@@ -37,4 +37,4 @@ class Timeline {
   std::deque<Segment> segments_;
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

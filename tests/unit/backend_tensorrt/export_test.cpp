@@ -20,7 +20,7 @@
 #include "kernels/ref/half.h"
 #include "kernels/spec.h"
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 using kernels::Dither;
@@ -221,4 +221,4 @@ TEST_CASE("Backend TensorRT : signaux de l'export écrits par le GPU dans une pa
   CHECK(ops.health());
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

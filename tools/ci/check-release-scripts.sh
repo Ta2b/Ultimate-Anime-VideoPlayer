@@ -28,7 +28,7 @@ engine() { printf '\n[[engine]]\nid = "tensorrt"\nplatform = "%s"\nurl = "https:
 { echo 'version = 1'; engine linux trt-NEW aaa 1; } > linux.lock
 { echo 'version = 1'; engine windows trt-win-NEW bbb 2; } > windows.lock
 { echo 'version = 1'; engine linux trt-OLD aaa 1; } > joint.lock
-AJP_RELEASE_TAG=v1.0.0 "$R/nvidia-index.sh" index.lock linux.lock windows.lock >/dev/null
+KIRARI_RELEASE_TAG=v1.0.0 "$R/nvidia-index.sh" index.lock linux.lock windows.lock >/dev/null
 expect 0 "index d'après les paquets embarqués" "" "$R/check-nvidia-index.sh" index.lock linux.lock windows.lock
 grep -qx 'tag = "v1.0.0"' index.lock && echo "ok : l'index porte son étiquette" || { echo "ÉCHEC : étiquette absente de l'index" >&2; fail=1; }
 "$R/nvidia-index.sh" stale.lock joint.lock linux.lock windows.lock >/dev/null
@@ -39,17 +39,17 @@ expect 0 "surveillance des roues de NVIDIA (essai)" "" python3 -I "$R/check-vend
 
 # B51-10 : liste blanche des archives de moteur.
 mkdir good evil
-touch good/ajp_backend_tensorrt.so good/trtexec evil/ajp_backend_tensorrt.so evil/trtexec evil/libnvJitLink.so.13
+touch good/kirari_backend_tensorrt.so good/trtexec evil/kirari_backend_tensorrt.so evil/trtexec evil/libnvJitLink.so.13
 tar -C good -czf good.tar.gz . && tar -C evil -czf evil.tar.gz .
 expect 0 "archive de moteur : module et trtexec seulement" "" "$R/check-engine-archive.sh" good.tar.gz
 expect 1 "archive de moteur : un fichier de plus est refusé" "autre chose que notre module" "$R/check-engine-archive.sh" evil.tar.gz
 
 # B51-07 : les archives téléchargées sont celles de la construction.
-mkdir rel && echo archive > rel/ajp-linux-x64.tar.gz
-sum="$(sha256sum rel/ajp-linux-x64.tar.gz | cut -d' ' -f1)"
-expect 0 "archive identique à la construction" "" "$R/check-built-sums.sh" rel "ajp-linux-x64.tar.gz=$sum" "ajp-macos-arm64.zip="
-expect 1 "archive remplacée dans la release" "n'est pas celui que le job de construction" "$R/check-built-sums.sh" rel "ajp-linux-x64.tar.gz=$(printf 'x%.0s' {1..64})"
-expect 1 "archive non construite mais présente" "aucun job de construction n'en a donné" "$R/check-built-sums.sh" rel "ajp-linux-x64.tar.gz="
+mkdir rel && echo archive > rel/kirari-linux-x64.tar.gz
+sum="$(sha256sum rel/kirari-linux-x64.tar.gz | cut -d' ' -f1)"
+expect 0 "archive identique à la construction" "" "$R/check-built-sums.sh" rel "kirari-linux-x64.tar.gz=$sum" "kirari-macos-arm64.zip="
+expect 1 "archive remplacée dans la release" "n'est pas celui que le job de construction" "$R/check-built-sums.sh" rel "kirari-linux-x64.tar.gz=$(printf 'x%.0s' {1..64})"
+expect 1 "archive non construite mais présente" "aucun job de construction n'en a donné" "$R/check-built-sums.sh" rel "kirari-linux-x64.tar.gz="
 
 # B51-02, B51-16 : l'archive de chaque moteur existe avec la taille et le SHA-256 de l'index.
 mkdir bin
@@ -58,32 +58,32 @@ psha="$(sha256sum payload.tar.gz | cut -d' ' -f1)" psize="$(stat -c %s payload.t
 printf '#!/bin/bash\nout=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done; cp "%s/payload.tar.gz" "$out"\n' "$work" > bin/curl
 chmod +x bin/curl
 check_dir() {  # dossier d'une release factice
-  mkdir -p "$1" "$1.stage/ajp-linux-x64"
+  mkdir -p "$1" "$1.stage/kirari-linux-x64"
   { echo 'version = 1'; engine linux trt-A "$2" "$3"; } > "$1/engines.lock"
-  cp "$1/engines.lock" "$1.stage/ajp-linux-x64/engines.lock"
-  tar -C "$1.stage" -czf "$1/ajp-linux-x64.tar.gz" ajp-linux-x64
+  cp "$1/engines.lock" "$1.stage/kirari-linux-x64/engines.lock"
+  tar -C "$1.stage" -czf "$1/kirari-linux-x64.tar.gz" kirari-linux-x64
   { echo 'version = 1'; engine windows trt-win-A "$2" "$3"; } > w.lock
-  python3 -I -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], 'w'); z.write('w.lock', 'ajp/engines.lock')" "$1/ajp-windows-x64.zip"
+  python3 -I -c "import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], 'w'); z.write('w.lock', 'kirari/engines.lock')" "$1/kirari-windows-x64.zip"
 }
 check_dir good_rel "$psha" "$psize"
 check_dir bad_rel "$(printf 'f%.0s' {1..64})" "$psize"
-expect 0 "release complète, archives des moteurs vérifiées" "" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 good_rel
-expect 1 "archive de moteur réécrite après coup" "n'a pas la taille ou le SHA-256" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 bad_rel
+expect 0 "release complète, archives des moteurs vérifiées" "" env PATH="$work/bin:$PATH" KIRARI_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 good_rel
+expect 1 "archive de moteur réécrite après coup" "n'a pas la taille ou le SHA-256" env PATH="$work/bin:$PATH" KIRARI_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 bad_rel
 # C51-01 : l'engines.lock joint à part n'est pas cru ; celui de l'archive vérifiée prime, et une différence est refusée.
 cp -r good_rel swapped_rel
 { echo 'version = 1'; engine linux trt-EVIL "$psha" "$psize"; } > swapped_rel/engines.lock
-expect 1 "engines.lock Linux remplacé dans la release" "n'est pas celui de ajp-linux-x64.tar.gz" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 swapped_rel
+expect 1 "engines.lock Linux remplacé dans la release" "n'est pas celui de kirari-linux-x64.tar.gz" env PATH="$work/bin:$PATH" KIRARI_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 swapped_rel
 sed -i '/^\[\[vendor_file\]\]/,$d' good_rel/engines.lock
-cp good_rel/engines.lock good_rel.stage/ajp-linux-x64/engines.lock
-tar -C good_rel.stage -czf good_rel/ajp-linux-x64.tar.gz ajp-linux-x64
-python3 -I -c "import zipfile; z = zipfile.ZipFile('good_rel/ajp-windows-x64.zip', 'w'); z.writestr('ajp/engines.lock', 'version = 1\n')"
-expect 1 "release finale sans [[vendor_file]] ni TensorRT Windows" "aucun [[vendor_file]]" env PATH="$work/bin:$PATH" AJP_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 good_rel
+cp good_rel/engines.lock good_rel.stage/kirari-linux-x64/engines.lock
+tar -C good_rel.stage -czf good_rel/kirari-linux-x64.tar.gz kirari-linux-x64
+python3 -I -c "import zipfile; z = zipfile.ZipFile('good_rel/kirari-windows-x64.zip', 'w'); z.writestr('kirari/engines.lock', 'version = 1\n')"
+expect 1 "release finale sans [[vendor_file]] ni TensorRT Windows" "aucun [[vendor_file]]" env PATH="$work/bin:$PATH" KIRARI_RELEASE_REPO=o/r "$R/check-release.sh" v1.0.0 good_rel
 
 # C51-04 : pas de release finale sans clé de secours compilée.
-printf 'set(AJP_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(AJP_UPDATE_PUBKEY_BACKUP "" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" > cmake-vide.txt
-printf 'set(AJP_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(AJP_UPDATE_PUBKEY_BACKUP "%s" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" > cmake-secours.txt
-printf 'set(AJP_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(AJP_UPDATE_PUBKEY_BACKUP "%s" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" "$(printf 'A%.0s' {1..64})" > cmake-meme.txt
-expect 1 "release finale sans clé de secours" "AJP_UPDATE_PUBKEY_BACKUP est vide" "$CI/check-backup-key.sh" v1.0.0 cmake-vide.txt
+printf 'set(KIRARI_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(KIRARI_UPDATE_PUBKEY_BACKUP "" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" > cmake-vide.txt
+printf 'set(KIRARI_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(KIRARI_UPDATE_PUBKEY_BACKUP "%s" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" "$(printf 'b%.0s' {1..64})" > cmake-secours.txt
+printf 'set(KIRARI_UPDATE_PUBKEY "%s" CACHE STRING "")\nset(KIRARI_UPDATE_PUBKEY_BACKUP "%s" CACHE STRING "")\n' "$(printf 'a%.0s' {1..64})" "$(printf 'A%.0s' {1..64})" > cmake-meme.txt
+expect 1 "release finale sans clé de secours" "KIRARI_UPDATE_PUBKEY_BACKUP est vide" "$CI/check-backup-key.sh" v1.0.0 cmake-vide.txt
 expect 0 "préversion sans clé de secours" "" "$CI/check-backup-key.sh" v1.0.0-rc.1 cmake-vide.txt
 expect 0 "release finale avec clé de secours" "" "$CI/check-backup-key.sh" v1.0.0 cmake-secours.txt
 expect 1 "clé de secours égale à la clé active" "la clé de secours est la clé active" "$CI/check-backup-key.sh" v1.0.0 cmake-meme.txt

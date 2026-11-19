@@ -19,7 +19,7 @@
 #include "core/engines.h"
 #include "core/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct EngineCatalog;
 struct PlayerPaths;
@@ -45,4 +45,4 @@ CalibrationHost calibration_host(const GpuFacts& here, SDL_Window* window, const
 PlaySettings rederived(const PlaySettings& settings, const Machine& machine, const core::SourceInfo& source,
                        const PlayOptions& file_options, const KeptChoices& kept);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -17,7 +17,7 @@
 #include "app/play/settings.h"
 #include "core/cadence.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le nombre maximal d'instants par paire pour ce moteur ; 0 : le moteur ne calcule pas à un tau arbitraire,
 // le mode libre y replie sur Auto.
@@ -33,4 +33,4 @@ constexpr std::uint32_t free_instants_limit(MotionEngine engine) {
   return 0;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

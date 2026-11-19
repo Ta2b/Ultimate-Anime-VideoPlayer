@@ -28,7 +28,7 @@
 #include "export/av_handles.h"
 #include "export/video_encoder.h"
 
-namespace ajp::exporter {
+namespace kirari::exporter {
 namespace {
 
 using namespace std::chrono_literals;
@@ -212,7 +212,7 @@ std::filesystem::path output_path(const char* name) {
 
 TEST_CASE("Écriture : lus en place, les tampons restent à l'encodeur qui garde N images (E9)",
           "[export][writer]") {
-  const std::filesystem::path output = output_path("ajp-export-writer-in-place.mkv");
+  const std::filesystem::path output = output_path("kirari-export-writer-in-place.mkv");
   auto encoder = std::make_unique<HoldingEncoder>(8);  // plus que de tampons
   const HoldingEncoder* fake = encoder.get();
   auto writer = ExportWriter::open(config_for(output), std::move(encoder));
@@ -247,7 +247,7 @@ TEST_CASE("Écriture : lus en place, les tampons restent à l'encodeur qui garde
 
 TEST_CASE("Écriture : copiés dans les images de l'encodeur, les tampons reviennent aussitôt",
           "[export][writer]") {
-  const std::filesystem::path output = output_path("ajp-export-writer-pool.mkv");
+  const std::filesystem::path output = output_path("kirari-export-writer-pool.mkv");
   auto encoder = std::make_unique<HoldingEncoder>(8);
   const HoldingEncoder* fake = encoder.get();
   auto writer = ExportWriter::open(config_for(output), std::move(encoder));
@@ -265,7 +265,8 @@ TEST_CASE("Écriture : copiés dans les images de l'encodeur, les tampons revien
     pool->height = kHeight;
     REQUIRE(av_frame_get_buffer(pool, 0) == 0);
     buffers.free[*i].store(true);  // la copie faite, le tampon repart au rendu
-    push(**writer, Picture{.pts_us = std::int64_t{n} * kFrameUs, .frame = ajp::exporter::OwnedFrame(pool)});
+    push(**writer,
+         Picture{.pts_us = std::int64_t{n} * kFrameUs, .frame = kirari::exporter::OwnedFrame(pool)});
   }
   REQUIRE((*writer)->finish());
   CHECK(fake->seen() == kFrames);
@@ -283,7 +284,7 @@ TEST_CASE("Écriture : copiés dans les images de l'encodeur, les tampons revien
 
 TEST_CASE("Écriture : la file tient queue_depth images, pas une de plus", "[export][writer]") {
   const std::size_t depth = GENERATE(kDefaultQueueDepth, std::size_t{8});
-  const std::filesystem::path output = output_path("ajp-export-writer-depth.mkv");
+  const std::filesystem::path output = output_path("kirari-export-writer-depth.mkv");
   auto encoder = std::make_unique<HoldingEncoder>(0);
   HoldingEncoder* fake = encoder.get();
   fake->close_gate();
@@ -366,7 +367,7 @@ std::vector<std::int64_t> write_shown(const char* name, bool constant_rate, Writ
 TEST_CASE("Écriture : à cadence fixe, l'image précédente remplit les instants manquants",
           "[export][writer]") {
   WriterProgress progress;
-  const std::vector<std::int64_t> pts = write_shown("ajp-export-writer-constant.mkv", true, progress);
+  const std::vector<std::int64_t> pts = write_shown("kirari-export-writer-constant.mkv", true, progress);
   REQUIRE(pts.size() == 8);
   for (std::size_t n = 1; n < pts.size(); ++n) CHECK(pts[n] - pts[n - 1] == kFrameUs);
   CHECK(progress.frames == 8);
@@ -375,7 +376,7 @@ TEST_CASE("Écriture : à cadence fixe, l'image précédente remplit les instant
 
 TEST_CASE("Écriture : à cadence variable, les instants manquants restent vides", "[export][writer]") {
   WriterProgress progress;
-  const std::vector<std::int64_t> pts = write_shown("ajp-export-writer-variable.mkv", false, progress);
+  const std::vector<std::int64_t> pts = write_shown("kirari-export-writer-variable.mkv", false, progress);
   REQUIRE(pts.size() == kShownUs.size());
   for (std::size_t n = 1; n < pts.size(); ++n) CHECK(pts[n] - pts[0] == kShownUs[n]);
   CHECK(progress.frames == static_cast<std::int64_t>(kShownUs.size()));
@@ -395,7 +396,7 @@ TEST_CASE("Écriture : un MP4 garde chaque instant sur son pas, à 120000/1001 i
       .attachments = {{.filename = "Police.ttf", .mime_type = "font/ttf", .data = "police"}},
       .chapters = {{.start_ms = 0, .end_ms = 200, .title = "Début"}}});
   REQUIRE(source);
-  const std::filesystem::path output = output_path("ajp-export-writer-exact.mp4");
+  const std::filesystem::path output = output_path("kirari-export-writer-exact.mp4");
   constexpr AVRational kRate{120'000, 1'001};
   WriterConfig config = config_for(output);
   config.source = *source;
@@ -440,12 +441,13 @@ TEST_CASE("Écriture : un MP4 garde chaque instant sur son pas, à 120000/1001 i
 }
 
 TEST_CASE("Écriture : FFV1 refusé dans un MOV, une extension inconnue aussi", "[export][writer]") {
-  const auto mov = ExportWriter::open(config_for(output_path("ajp-export-writer-ffv1.mov")),
+  const auto mov = ExportWriter::open(config_for(output_path("kirari-export-writer-ffv1.mov")),
                                       std::make_unique<HoldingEncoder>(1));
   REQUIRE_FALSE(mov);
   CHECK(mov.error().code == RefusalCode::EncodeFailed);
-  CHECK_FALSE(std::filesystem::exists(std::filesystem::temp_directory_path() / "ajp-export-writer-ffv1.mov"));
-  const auto avi = ExportWriter::open(config_for(output_path("ajp-export-writer.avi")),
+  CHECK_FALSE(
+      std::filesystem::exists(std::filesystem::temp_directory_path() / "kirari-export-writer-ffv1.mov"));
+  const auto avi = ExportWriter::open(config_for(output_path("kirari-export-writer.avi")),
                                       std::make_unique<HoldingEncoder>(1));
   REQUIRE_FALSE(avi);
   CHECK(avi.error().code == RefusalCode::FileUnwritable);
@@ -461,7 +463,7 @@ TEST_CASE("Écriture : un refus de l'encodeur arrête l'export et le dit", "[exp
       return refuse(RefusalCode::EncodeFailed, "encodeur factice : image refusée");
     }
   };
-  const std::filesystem::path output = output_path("ajp-export-writer-refused.mkv");
+  const std::filesystem::path output = output_path("kirari-export-writer-refused.mkv");
   auto writer = ExportWriter::open(config_for(output), std::make_unique<RefusingEncoder>());
   REQUIRE(writer);
   Buffers buffers;
@@ -488,7 +490,7 @@ TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait d�
       return refuse(RefusalCode::EncodeFailed, "encodeur factice : image refusée");
     }
   };
-  const std::filesystem::path output = output_path("ajp-export-writer-existing.mkv");
+  const std::filesystem::path output = output_path("kirari-export-writer-existing.mkv");
   {
     std::ofstream previous(output, std::ios::binary | std::ios::trunc);
     previous << "ancien export";
@@ -509,4 +511,4 @@ TEST_CASE("Écriture : un export refusé laisse intact le fichier qui portait d�
   std::filesystem::remove(output, error);
 }
 
-}  // namespace ajp::exporter
+}  // namespace kirari::exporter

@@ -15,7 +15,7 @@
 #include "gpu/coreml/coreml_detail.h"
 #include "gpu/vulkan/backend/net_measure.h"
 
-namespace ajp::gpu::coreml_rt {
+namespace kirari::gpu::coreml_rt {
 namespace {
 
 using vk::net::InputShape;
@@ -298,4 +298,4 @@ std::expected<Units, Refusal> choose_units(const Manifest& manifest, std::span<c
   return kOrder[*chosen];
 }
 
-}  // namespace ajp::gpu::coreml_rt
+}  // namespace kirari::gpu::coreml_rt

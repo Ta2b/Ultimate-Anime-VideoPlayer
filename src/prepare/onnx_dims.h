@@ -13,7 +13,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct NamedDim {
   std::string name;  // dim_param du graphe
@@ -27,4 +27,4 @@ struct NamedDim {
 std::expected<std::vector<std::byte>, Refusal> with_fixed_dims(std::span<const std::byte> model,
                                                                std::span<const NamedDim> dims);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

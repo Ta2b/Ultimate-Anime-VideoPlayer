@@ -14,7 +14,7 @@
 #include "app/play/placebo_wayland.h"
 #include "app/play/present_level.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::uint32_t k144HzNs = 6'944'444;
@@ -130,4 +130,4 @@ TEST_CASE("Retour de présentation : present timing sans fonctions retombe sur u
 }
 #endif
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

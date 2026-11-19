@@ -31,7 +31,7 @@
 #include "core/trace.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 // Observations de la grille des vblanks avant de s'y fier pour la synchro (≈ 0,7 s à 165 Hz).
 constexpr std::size_t kGridSamples = 120;
@@ -187,7 +187,7 @@ void PlaceboScreen::Impl::keep_pass_times(bool graded_now) const {
 }
 
 std::expected<void, Refusal> PlaceboScreen::Impl::compose(const pl_frame* image, const pl_frame& target) {
-  AJP_TRACE("composition");
+  KIRARI_TRACE("composition");
   pl_render_params params = pl_render_default_params;
   switch (final_scaler) {
     case FinalScaler::Default:
@@ -608,4 +608,4 @@ std::expected<ScreenTiming, Refusal> PlaceboScreen::show(const ShowRequest& requ
   return timing;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

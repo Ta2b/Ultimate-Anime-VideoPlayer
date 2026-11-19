@@ -22,10 +22,10 @@
 #include "core/types.h"
 #include "core/update_manifest.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Le dépôt des releases et la clé publique (hexadécimale, 64 chiffres), posés à la compilation
-// (AJP_RELEASE_REPO, AJP_UPDATE_PUBKEY) ; la clé est vide tant que la clé de signature n'existe pas.
+// (KIRARI_RELEASE_REPO, KIRARI_UPDATE_PUBKEY) ; la clé est vide tant que la clé de signature n'existe pas.
 std::string_view release_repo();
 std::string_view installed_version();
 // Le fichier lu d'un coup (vide s'il manque), et l'heure Unix : partagés par updater.cpp et
@@ -107,9 +107,9 @@ struct CheckResult {
   std::vector<std::string> revoked_keys;      // révoquées par le manifeste vérifié, à retenir
 };
 
-// Le statut HTTP que curl écrit par --write-out kCurlStatusFormat (« ajp-http 404 »), jamais lu dans ses
+// Le statut HTTP que curl écrit par --write-out kCurlStatusFormat (« kirari-http 404 »), jamais lu dans ses
 // messages d'erreur (P2.11) ; absent pour une autre ligne.
-inline constexpr std::string_view kCurlStatusFormat = "ajp-http %{http_code}\n";
+inline constexpr std::string_view kCurlStatusFormat = "kirari-http %{http_code}\n";
 std::optional<int> curl_status_line(std::string_view line);
 
 // Le refus lisible d'un échec de curl (code de sortie, statut HTTP, 0 sans réponse) : « pas de connexion
@@ -137,4 +137,4 @@ std::expected<CheckResult, Refusal> check_for_update(const std::stop_token& stop
 std::expected<std::string, Refusal> run_update_check(UpdateState& state, const std::stop_token& stop,
                                                      const UpdateFetch& fetch, std::int64_t now_unix);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

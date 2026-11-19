@@ -20,9 +20,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -270,4 +270,4 @@ bool update_due(const UpdateState& state, UpdateMode mode, UpdateFrequency frequ
   return state.last_check_unix == 0 || now_unix - state.last_check_unix >= interval;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

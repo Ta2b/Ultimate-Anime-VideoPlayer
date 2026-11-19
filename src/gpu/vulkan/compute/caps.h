@@ -13,7 +13,7 @@
 #include "gpu/vulkan/compute/functions.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // VK_EXT_shader_float8, absente des en-têtes Vulkan plus anciens : nom, type de structure et
 // structure des fonctions (deux champs d'après la spécification ; des champs de réserve la
@@ -112,4 +112,4 @@ std::string uuid_text(const DeviceUuid& uuid);
 // « 0000:03:00.0 » : domaine, bus, appareil et fonction, comme lspci -D.
 std::string pci_text(const PciAddress& pci);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

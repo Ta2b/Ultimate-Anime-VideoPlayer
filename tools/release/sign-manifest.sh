@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # Écrit et signe le manifeste des mises à jour d'une release (src/core/update_manifest.h).
 #
-#   AJP_UPDATE_KEY=/chemin/ajp-update-key.pem tools/release/sign-manifest.sh [--revoke CLÉ-PUBLIQUE]... \
+#   AJP_UPDATE_KEY=/chemin/kirari-update-key.pem tools/release/sign-manifest.sh [--revoke CLÉ-PUBLIQUE]... \
 #       VERSION CANAL DOSSIER-DES-ARCHIVES URL-DE-BASE [NOTES-URL]
 #
 #   --revoke  clé publique (64 chiffres hexadécimaux) écrite dans revoked_keys AVANT la signature : la clé
 #             volée ou perdue que les lecteurs ne doivent plus croire (docs/signature-des-releases.md).
 #   VERSION   0.5.0 (ou 0.5.0-rc.1)             CANAL   stable (le canal Préversions est retiré : seule la valeur
 #                                               « stable » est écrite, le lecteur ne lit plus ce champ)
-#   DOSSIER   contient ajp-linux-x64.tar.gz, ajp-windows-x64.zip, ajp-macos-arm64.zip, et les fichiers que les
-#             utilisateurs prennent en pratique, ajp-linux-x86_64.AppImage et ajp-windows-x64-setup.exe (ceux qui
+#   DOSSIER   contient kirari-linux-x64.tar.gz, kirari-windows-x64.zip, kirari-macos-arm64.zip, et les fichiers que les
+#             utilisateurs prennent en pratique, kirari-linux-x86_64.AppImage et kirari-windows-x64-setup.exe (ceux qui
 #             existent) ; le lecteur ignore ces sections (C51-08)
-#   URL-DE-BASE   https://github.com/Ta2b/ajp-releases/releases/download/v0.5.0
+#   URL-DE-BASE   https://github.com/Ta2b/kirari-player/releases/download/v0.5.0
 # Produit DOSSIER/manifest.toml et DOSSIER/manifest.toml.sig (Ed25519, hexadécimal), à joindre à la release.
 #
 # La clé privée n'est jamais dans le dépôt. Pour la créer une fois et en tirer la clé publique à compiler
-# (-DAJP_UPDATE_PUBKEY=…) :
-#   openssl genpkey -algorithm ed25519 -out ajp-update-key.pem
-#   openssl pkey -in ajp-update-key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 64
+# (-DKIRARI_UPDATE_PUBKEY=…) :
+#   openssl genpkey -algorithm ed25519 -out kirari-update-key.pem
+#   openssl pkey -in kirari-update-key.pem -pubout -outform DER | tail -c 32 | xxd -p -c 64
 set -euo pipefail
 
 revoke=()
@@ -47,8 +47,8 @@ out="$dir/manifest.toml"
     for hex in "${revoke[@]}"; do printf '%s"%s"' "$sep" "$hex"; sep=", "; done
     printf ']\n'
   fi
-  for entry in "linux-x64:ajp-linux-x64.tar.gz" "windows-x64:ajp-windows-x64.zip" "macos-arm64:ajp-macos-arm64.zip" \
-  "linux-appimage:ajp-linux-x86_64.AppImage" "windows-setup:ajp-windows-x64-setup.exe"; do
+  for entry in "linux-x64:kirari-linux-x64.tar.gz" "windows-x64:kirari-windows-x64.zip" "macos-arm64:kirari-macos-arm64.zip" \
+  "linux-appimage:kirari-linux-x86_64.AppImage" "windows-setup:kirari-windows-x64-setup.exe"; do
     section=${entry%%:*} file=${entry#*:}
     [ -f "$dir/$file" ] || continue
     echo "[$section]"

@@ -5,7 +5,7 @@
 
 #include "gpu/cuda/backend/drba_fused_kernels.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kTimeChannel = 95;
@@ -342,4 +342,4 @@ cudaError_t launch_drba_finish(const DrbaFinishParams& params, cudaStream_t stre
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

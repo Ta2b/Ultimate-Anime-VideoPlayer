@@ -9,7 +9,7 @@
 
 #include "core/file_sync.h"
 
-namespace ajp::core {
+namespace kirari::core {
 namespace {
 
 TEST_CASE("Place libre : assez, rien ; pas assez, InsufficientSpace qui dit combien", "[core][files]") {
@@ -22,18 +22,19 @@ TEST_CASE("Place libre : assez, rien ; pas assez, InsufficientSpace qui dit comb
   CHECK(full->code == RefusalCode::InsufficientSpace);
   CHECK(full->detail.find("disque plein") != std::string::npos);
   // Un dossier qui n'existe pas encore (le cache des moteurs avant sa première construction) : son parent.
-  const auto missing = lacking_space(dir / "ajp-pas-encore" / "engines", huge);
+  const auto missing = lacking_space(dir / "kirari-pas-encore" / "engines", huge);
   REQUIRE(missing);
   CHECK(missing->code == RefusalCode::InsufficientSpace);
 }
 
 TEST_CASE("Écriture atomique : un fichier écrit en entier sur un disque qui a la place", "[core][files]") {
   std::error_code error;
-  const std::filesystem::path file = std::filesystem::temp_directory_path(error) / "ajp-file-sync-test.txt";
+  const std::filesystem::path file =
+      std::filesystem::temp_directory_path(error) / "kirari-file-sync-test.txt";
   REQUIRE(write_text_atomically(file, "contenu"));
   CHECK(std::filesystem::file_size(file, error) == 7);
   std::filesystem::remove(file, error);
 }
 
 }  // namespace
-}  // namespace ajp::core
+}  // namespace kirari::core

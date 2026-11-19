@@ -9,8 +9,8 @@
 #include "gpu/ir/passes.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -113,7 +113,7 @@ TEST_CASE("mémoire : tailles diverses, alignement choisi", "[gpu_ir][memory]") 
   for (const std::uint64_t alignment : {std::uint64_t{0}, kMaxBufferAlignment + 1}) {
     auto plan = plan_memory(graph, alignment);
     REQUIRE_FALSE(plan);
-    CHECK(plan.error().code == ajp::RefusalCode::FieldOutOfRange);
+    CHECK(plan.error().code == kirari::RefusalCode::FieldOutOfRange);
   }
   // b compte 17 canaux : 32 en NHWC16.
   const TensorId b = find_tensor(graph, "b").value_or(kNoTensor);

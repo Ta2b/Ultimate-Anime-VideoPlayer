@@ -14,11 +14,11 @@
 #include "dummy_audio.h"
 #include "fake_sink.h"
 
-using ajp::host_now_us;
-using ajp::RefusalCode;
-using namespace ajp::audio;
-using ajp::audio::test::FakeSink;
-using ajp::audio::test::use_dummy_audio;
+using kirari::host_now_us;
+using kirari::RefusalCode;
+using namespace kirari::audio;
+using kirari::audio::test::FakeSink;
+using kirari::audio::test::use_dummy_audio;
 using namespace std::chrono_literals;
 
 namespace {

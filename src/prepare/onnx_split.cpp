@@ -19,7 +19,7 @@
 
 #include "prepare/protobuf_fields.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 using protobuf::Bytes;
@@ -592,4 +592,4 @@ std::expected<std::vector<std::byte>, Refusal> permute_input_channels(std::span<
   return with_graph(model, new_graph);
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

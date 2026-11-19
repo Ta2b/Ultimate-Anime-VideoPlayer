@@ -38,7 +38,7 @@ namespace spdlog {
 class logger;
 }
 
-namespace ajp::audio {
+namespace kirari::audio {
 
 // Le périphérique ouvert a disparu (casque débranché, P2.7) : la sortie se rouvre sur le défaut du système.
 struct DeviceRemoved {};
@@ -162,4 +162,4 @@ class AudioPlayer {
   bool resampling_ = false;  // le rapport de fréquence est hors de la zone morte : SDL rééchantillonne
 };
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

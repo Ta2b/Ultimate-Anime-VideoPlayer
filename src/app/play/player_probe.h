@@ -11,7 +11,7 @@
 #include "core/types.h"
 #include "media/track.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Un partage réseau qui ne répond plus rend la main au bout de ce délai, avec une raison (P2.15).
 inline constexpr auto kProbeLimit = std::chrono::seconds(20);
@@ -31,4 +31,4 @@ using GivenProbe = PumpedTask<media::TrackInfo>;
 std::optional<GivenProbe> start_given_probe(const std::filesystem::path& file);
 std::expected<media::TrackInfo, Refusal> finish_given_probe(GivenProbe& probe);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

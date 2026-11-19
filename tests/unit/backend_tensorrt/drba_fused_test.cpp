@@ -6,10 +6,10 @@
 //     moteur DistilDRBA entier de TensorRT, sur une paire d'images : PSNR de l'image interpolée d'au moins 50
 //     dB, des deux côtés de l'image du milieu (tau 0,5 et 1,25).
 //
-// Le test caché lit le modèle du lecteur en place (AJP_DRBA_MODEL_DIR, sans copie dans le dépôt) ; une image
-// d'anime en PPM (AJP_DRBA_IMAGE : une image dont une fenêtre sert de première image, la même décalée de 6
-// puis de 12 pixels de deuxième et troisième) remplace le dessin synthétique :
-//   ajp-gpu ajp_backend_tensorrt_tests "[.drba_fused]"
+// Le test caché lit le modèle du lecteur en place (KIRARI_DRBA_MODEL_DIR, sans copie dans le dépôt) ; une
+// image d'anime en PPM (KIRARI_DRBA_IMAGE : une image dont une fenêtre sert de première image, la même
+// décalée de 6 puis de 12 pixels de deuxième et troisième) remplace le dessin synthétique :
+//   kirari-gpu kirari_backend_tensorrt_tests "[.drba_fused]"
 #include "kernels/spec/drba_fused.h"
 
 #include <algorithm>
@@ -33,7 +33,7 @@
 #include "prepare/onnx_dims.h"
 #include "prepare/sha256.h"
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 namespace fs = std::filesystem;
@@ -241,7 +241,7 @@ std::vector<float> drawing(int h, int w, int shift) {
 // ou trois dessins décalés.
 std::array<std::vector<float>, 3> picture_triple(int h, int w) {
   constexpr int kShift = 6;
-  if (const fs::path image(AJP_DRBA_IMAGE); !image.empty() && fs::is_regular_file(image)) {
+  if (const fs::path image(KIRARI_DRBA_IMAGE); !image.empty() && fs::is_regular_file(image)) {
     int ih = 0, iw = 0;
     const std::vector<float> whole = read_ppm(image, ih, iw);
     if (!whole.empty() && ih >= h && iw >= w + 2 * kShift) {
@@ -260,9 +260,9 @@ std::array<std::vector<float>, 3> picture_triple(int h, int w) {
   return {drawing(h, w, 0), drawing(h, w, kShift), drawing(h, w, 2 * kShift)};
 }
 
-// Vrai si AJP_DRBA_IMAGE fournit les trois fenêtres h × w.
+// Vrai si KIRARI_DRBA_IMAGE fournit les trois fenêtres h × w.
 bool picture_available(int h, int w) {
-  const fs::path image(AJP_DRBA_IMAGE);
+  const fs::path image(KIRARI_DRBA_IMAGE);
   if (image.empty() || !fs::is_regular_file(image)) return false;
   int ih = 0, iw = 0;
   return !read_ppm(image, ih, iw).empty() && ih >= h && iw >= w + 12;
@@ -288,13 +288,13 @@ gpu::ShapeSet fixed_input(int h, int w) {
 
 // Compare la chaîne fusionnée au DistilDRBA entier de TensorRT sur une paire de paires, des deux côtés.
 void compare_engines(const std::string& file, int h, int w) {
-  const fs::path onnx = fs::path(AJP_DRBA_MODEL_DIR) / file;
+  const fs::path onnx = fs::path(KIRARI_DRBA_MODEL_DIR) / file;
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   Loaded loaded;
   REQUIRE(loaded.backend != nullptr);
   REQUIRE(loaded.backend->capabilities().drba_fused);
-  const fs::path scratch = fs::temp_directory_path() / "ajp-drba-fused-test";
+  const fs::path scratch = fs::temp_directory_path() / "kirari-drba-fused-test";
   fs::create_directories(scratch);
   gpu::Progress progress;
 
@@ -335,10 +335,10 @@ void compare_engines(const std::string& file, int h, int w) {
 
   // À 4K les traits d'un pixel du dessin synthétique se déplacent d'un pixel au moindre pas de la grille FP16
   // (0,9 pixel à 3840 de large) : la comparaison de deux réalisations du même graphe y tombe vers 42 dB, sans
-  // lien avec la chaîne. Une vraie image (AJP_DRBA_IMAGE, agrandie pour couvrir la taille) est exigée à cette
-  // taille.
+  // lien avec la chaîne. Une vraie image (KIRARI_DRBA_IMAGE, agrandie pour couvrir la taille) est exigée à
+  // cette taille.
   if (w > 1920 && !picture_available(h, w))
-    SKIP("4K : une image d'anime (AJP_DRBA_IMAGE) assez grande est nécessaire");
+    SKIP("4K : une image d'anime (KIRARI_DRBA_IMAGE) assez grande est nécessaire");
   const auto images = picture_triple(h, w);
   const gpu::Shape seven{.dims = {1, 7, h, w}};
   const gpu::Shape rgb{.dims = {1, 3, h, w}};
@@ -410,4 +410,4 @@ TEST_CASE("DistilDRBA fusionné : la chaîne contre le moteur DistilDRBA entier 
   }
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

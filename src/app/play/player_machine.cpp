@@ -13,7 +13,7 @@
 #include "app/play/resume.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 Machine machine_of(SDL_Window* window, Tier tier, const BenchResult* explored, const CalibrationHost& host,
                    std::optional<CalibratedChain> calibrated) {
@@ -70,4 +70,4 @@ CalibrationHost calibration_host(const GpuFacts& here, SDL_Window* window, const
           .display_hz = display_refresh_hz(window)};  // C37-08
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

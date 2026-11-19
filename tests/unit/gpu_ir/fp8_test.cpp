@@ -14,9 +14,9 @@
 #include "kernels/ref/half.h"
 #include "test_util.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -217,7 +217,7 @@ TEST_CASE("fp8 : les octets et les échelles des poids se retrouvent", "[gpu_ir]
     for (std::size_t k = 0; k < raw.size(); ++k) {
       const float s = scales[k / per];
       w.f[k] = round_to_e4m3(raw[k] / s) * s;
-      if (half) w.f[k] = ajp::kernels::ref::round_to_half(w.f[k]);
+      if (half) w.f[k] = kirari::kernels::ref::round_to_half(w.f[k]);
     }
     // Le plus grand poids de chaque canal ou du tenseur sur 448 : amax / 448 = l'échelle.
     return w;

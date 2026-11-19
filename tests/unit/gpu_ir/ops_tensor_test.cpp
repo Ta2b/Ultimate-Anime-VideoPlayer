@@ -9,11 +9,11 @@
 #include "kernels/ref/half.h"
 #include "test_util.h"
 
-using ajp::Refusal;
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
-using ajp::kernels::ref::round_to_half;
-using namespace ajp::gpu::ir::test;
+using kirari::Refusal;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
+using kirari::kernels::ref::round_to_half;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -34,10 +34,9 @@ Value run_node(ModelBuilder& m, const Value& x, std::string_view op,
   return execute1(build(m), {{.name = "x", .value = x}});
 }
 
-std::expected<std::vector<NamedValue>, ajp::Refusal> try_run(ModelBuilder& m, const Value& x,
-                                                             std::string_view op,
-                                                             std::initializer_list<std::string_view> inputs,
-                                                             std::initializer_list<ProtoWriter> attrs = {}) {
+std::expected<std::vector<NamedValue>, kirari::Refusal> try_run(
+    ModelBuilder& m, const Value& x, std::string_view op, std::initializer_list<std::string_view> inputs,
+    std::initializer_list<ProtoWriter> attrs = {}) {
   m.input("x", x.dims, x.type == DataType::I64 ? onnx::kInt64 : onnx::kFloat)
       .node(op, inputs, {"y"}, attrs)
       .output("y");

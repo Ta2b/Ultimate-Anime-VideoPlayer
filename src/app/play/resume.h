@@ -13,7 +13,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr std::size_t kResumeEntries = 500;
 // Pas de reprise si l'on s'est arrêté avant ce temps, ou dans la fin : le dixième de la durée, entre
@@ -40,4 +40,4 @@ std::expected<void, Refusal> remember_position(const std::filesystem::path& stor
                                                const std::filesystem::path& file, std::int64_t position_us,
                                                std::int64_t duration_us);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

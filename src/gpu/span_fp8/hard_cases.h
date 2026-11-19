@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 struct HardCase {
   std::string name;
@@ -22,4 +22,4 @@ struct HardCase {
 // octets. Vide pour une taille plus petite.
 std::vector<HardCase> hard_cases(int width, int height);
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

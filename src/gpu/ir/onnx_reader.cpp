@@ -14,7 +14,7 @@
 #include "gpu/ir/onnx_reader_detail.h"
 #include "gpu/ir/protobuf.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 namespace {
 
 using namespace detail;
@@ -210,4 +210,4 @@ std::expected<Model, Refusal> read_onnx(std::span<const std::byte> bytes) {
   return model;
 }
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

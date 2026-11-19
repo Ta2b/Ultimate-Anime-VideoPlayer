@@ -11,7 +11,7 @@
 
 #include "subs/log.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 // Niveaux de libass : 0 fatal, 1 erreur, 2 avertissement, 4 info, 6 détail, 7 débogage.
@@ -62,4 +62,4 @@ std::expected<void, Refusal> AssLibrary::add_font(std::string_view name, std::sp
   return {};
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

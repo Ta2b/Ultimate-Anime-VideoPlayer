@@ -2,7 +2,7 @@
 
 #include "app/play/i18n_fr.h"
 
-namespace ajp::app::play::i18n {
+namespace kirari::app::play::i18n {
 namespace {
 
 // Messages : (clé anglaise, français).
@@ -19,14 +19,16 @@ constexpr std::array kMessages{
     Entry{"  {:<8} {:>5} presentations, {:>5.1f} % lost, p95 delay {:>6.1f} ms: {}\n",
           "  {:<8} {:>5} présentations, {:>5.1f} % perdues, retard p95 {:>6.1f} ms : {}\n"},
     Entry{": zero size", " : taille nulle"},
-    Entry{"AJP is no longer in \"Open with\".", "AJP ne figure plus dans « Ouvrir avec »."},
-    Entry{"AJP is now the video player (mkv, mp4, webm, avi, mov…).",
-          "AJP est maintenant le lecteur des vidéos (mkv, mp4, webm, avi, mov…)."},
-    Entry{"AJP was not registered: nothing to remove.", "AJP n'était pas inscrit : rien à retirer."},
-    Entry{"AJP.app already declares the videos it opens. To make it the default: right-click a video > Get "
-          "Info > Open with: AJP > Change All.",
-          "AJP.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit sur "
-          "une vidéo > Lire les informations > Ouvrir avec : AJP > Tout modifier."},
+    Entry{"Kirari is no longer in \"Open with\".", "Kirari ne figure plus dans « Ouvrir avec »."},
+    Entry{"Kirari is now the video player (mkv, mp4, webm, avi, mov…).",
+          "Kirari est maintenant le lecteur des vidéos (mkv, mp4, webm, avi, mov…)."},
+    Entry{"Kirari was not registered: nothing to remove.", "Kirari n'était pas inscrit : rien à retirer."},
+    Entry{
+        "Kirari.app already declares the videos it opens. To make it the default: right-click a video > Get "
+        "Info > Open with: Kirari > Change All.",
+        "Kirari.app déclare déjà les vidéos qu'il ouvre. Pour en faire le lecteur par défaut : clic droit "
+        "sur "
+        "une vidéo > Lire les informations > Ouvrir avec : Kirari > Tout modifier."},
     Entry{"At p95, \"{}\" is lighter by {:.1f} ms per frame.\n",
           "Au p95, « {} » est plus légère de {:.1f} ms par image.\n"},
     Entry{"Building a compute engine: first time only, probably several minutes on a laptop.",
@@ -40,8 +42,8 @@ constexpr std::array kMessages{
     Entry{"If this is the first time on this PC, building the engines can take several minutes.",
           "Si c'est la première fois sur ce PC, la construction des moteurs peut prendre plusieurs minutes."},
     Entry{"Level kept: {}\n", "Niveau gardé : {}\n"},
-    Entry{"On macOS the registration follows AJP.app: remove it by trashing the app.",
-          "Sous macOS, l'inscription suit AJP.app : pour la retirer, mettez l'app à la corbeille."},
+    Entry{"On macOS the registration follows Kirari.app: remove it by trashing the app.",
+          "Sous macOS, l'inscription suit Kirari.app : pour la retirer, mettez l'app à la corbeille."},
     Entry{"Only \"{}\" holds.\n", "Seule « {} » tient.\n"},
     Entry{"Open a video", "Ouvrir une vidéo"},
     Entry{"the latest release has no update manifest: check the releases page",
@@ -83,9 +85,10 @@ constexpr std::array kMessages{
           "d'être construits."},
     Entry{"Upscaling, interpolation and HDR for anime: adjust the settings here before playback.",
           "Upscale, interpolation et HDR pour les animes : réglez les paramètres ici avant la lecture."},
-    Entry{"ajp stopped responding inside the graphics driver and will close. Start it again: it will present "
+    Entry{"kirari stopped responding inside the graphics driver and will close. Start it again: it will "
+          "present "
           "frames without presentation feedback on this driver.",
-          "ajp ne répond plus dans le pilote graphique et va se fermer. Relancez-le : il présentera les "
+          "kirari ne répond plus dans le pilote graphique et va se fermer. Relancez-le : il présentera les "
           "images sans retour de présentation sur ce pilote."},
     Entry{"another engine", "un autre moteur"},
     Entry{"bench.toml: ", "bench.toml : "},
@@ -200,8 +203,9 @@ constexpr std::array kMessages{
     Entry{"verifying the archive", "vérification de l'archive"},
     Entry{"verifying {}", "vérification de {}"},
     Entry{"writing the test sequence", "écriture de la séquence de test"},
-    Entry{"xdg-mime not found (xdg-utils package): right-click a video > Open with > AJP and tick \"always\"",
-          "xdg-mime introuvable (paquet xdg-utils) : clic droit sur une vidéo > Ouvrir avec > AJP, en "
+    Entry{"xdg-mime not found (xdg-utils package): right-click a video > Open with > Kirari and tick "
+          "\"always\"",
+          "xdg-mime introuvable (paquet xdg-utils) : clic droit sur une vidéo > Ouvrir avec > Kirari, en "
           "cochant « toujours »"},
     Entry{"{} installed", "{} installé"},
     Entry{"{} is available", "{} est disponible"},
@@ -220,4 +224,4 @@ std::span<const Entry> french_messages() {
   return kMessages;
 }
 
-}  // namespace ajp::app::play::i18n
+}  // namespace kirari::app::play::i18n

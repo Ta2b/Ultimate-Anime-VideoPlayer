@@ -19,7 +19,7 @@
 #include "render/cube_lut.h"
 #include "render/grade_params.h"
 
-namespace ajp::render {
+namespace kirari::render {
 
 // Nits d'un code PQ (ST 2084) et son inverse.
 namespace pq {
@@ -86,4 +86,4 @@ struct OutputTune {
 OutputTune output_tune(const GradeParams& params, std::span<const CubeLut* const> luts, double reference,
                        double panel_peak);
 
-}  // namespace ajp::render
+}  // namespace kirari::render

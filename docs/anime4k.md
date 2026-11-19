@@ -51,8 +51,8 @@ Sans moteur de réseau (ni TensorRT ni Vulkan cochés à l'accueil), Anime4K gar
 
 ```sh
 python3 -I tools/bench/petits_gpu.py --video EPISODE.mkv --sortie banc-igpu \
-  --span ~/.local/share/ajp/models/onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx \
-  --artcnn ~/.local/share/ajp/models/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx
+  --span ~/.local/share/kirari/models/onnx/2x_AnimeJaNai_HD_V3.1_Performance_SPANF3_b5f48_unshuffle_fp16.onnx \
+  --artcnn ~/.local/share/kirari/models/onnx/2x_ArtCNN_C4F32_rgb_fp16.onnx
 ```
 
 - **Temps** : chaque variante (Économe sans agrandissement, Anime4K Fast et HQ, SPAN Performance, ArtCNN, et

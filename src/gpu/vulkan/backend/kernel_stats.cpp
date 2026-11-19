@@ -13,7 +13,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "kernels/ref/frame_stats.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 std::unexpected<Refusal> refuse_stats(RefusalCode code, std::string text) {
@@ -101,4 +101,4 @@ std::expected<std::optional<kernels::FrameStats>, Refusal> VulkanKernelOps::fram
   return std::optional(kernels::ref::frame_stats_of(counts));
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

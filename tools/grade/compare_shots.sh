@@ -1,7 +1,7 @@
 #!/bin/bash
 # La porte du grade de l'anneau (chantier 2.11) : chaque plan de shots30.tsv capturé deux fois en PQ 16 bits
 # (sortie HDR10 réelle), avec les options A puis B, puis comparé en ΔE_ITP (de_itp.py).
-#   compare_shots.sh "A" "B" SORTIE        par ex. compare_shots.sh "" "--grade-ring" ~/ajp-reports/porte
+#   compare_shots.sh "A" "B" SORTIE        par ex. compare_shots.sh "" "--grade-ring" ~/kirari-reports/porte
 # Environnement : L (le lanceur, lancer.sh), CAL (calibration.mkv), STILLS (les extraits de make_stills.sh),
 # BASE (dossier de réglages copié pour chaque capture, grade et looks de l'utilisateur), WINDOW (taille des
 # instantanés, défaut 1920x1080 ; la taille de l'anneau pour « à taille égale », 3840x2160 pour la 4K),
@@ -10,15 +10,15 @@
 # (défaut : le shots30.tsv à côté). Un plan dont l'extrait manque est sauté et dit.
 # Critères (docs/adr/0009-grade-dans-l-anneau.md) : par plan p95 ≤ MAX_P95 (1, 2,5 en 4K) et
 # p99,9 ≤ MAX_P999 (3) ; code retour 1 si un plan les dépasse, si une capture manque, si la mesure échoue ou
-# rend un verdict vide (B46-01). WAIT_MAX (secondes, défaut 600) borne l'attente d'une autre instance d'ajp.
+# rend un verdict vide (B46-01). WAIT_MAX (secondes, défaut 600) borne l'attente d'une autre instance d'kirari.
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 a_opts=${1?options A attendues (chaîne vide possible)}
 b_opts=${2?options B attendues}
 out=${3:?dossier de sortie attendu}
-L=${L:-$HOME/ajp-test/lancer.sh}
-CAL=${CAL:-$HOME/ajp-test/ajp-linux-x64/calibration/calibration.mkv}
-STILLS=${STILLS:-$HOME/ajp-test/stills}
+L=${L:-$HOME/kirari-test/lancer.sh}
+CAL=${CAL:-$HOME/kirari-test/kirari-linux-x64/calibration/calibration.mkv}
+STILLS=${STILLS:-$HOME/kirari-test/stills}
 BASE=${BASE:-}
 WINDOW=${WINDOW:-1920x1080}
 SNAP_AT=${SNAP_AT:-4}
@@ -51,10 +51,10 @@ capture() {  # capture NOM FICHIER DÉBUT OPTIONS SORTIE
   if ((dur > 1 && snap > dur - 1)); then snap=$((dur - 1)); fi
   [[ -n "$BASE" ]] && cp "$BASE"/*.toml "$d/" 2>/dev/null
   local waited=0
-  while pgrep -x ajp > /dev/null; do  # une instance à la fois
+  while pgrep -x kirari > /dev/null; do  # une instance à la fois
     if ((waited >= WAIT_MAX)); then
       rm -rf "$d"
-      echo "$1 : une autre instance d'ajp tourne encore après ${WAIT_MAX} s, capture abandonnée" >&2
+      echo "$1 : une autre instance d'kirari tourne encore après ${WAIT_MAX} s, capture abandonnée" >&2
       return 1
     fi
     sleep 10

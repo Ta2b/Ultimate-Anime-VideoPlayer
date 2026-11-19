@@ -21,9 +21,9 @@
 #include "gpu/tensor.h"
 #include "media/hw_api.h"
 
-using ajp::Refusal;
-using ajp::RefusalCode;
-using namespace ajp::gpu;
+using kirari::Refusal;
+using kirari::RefusalCode;
+using namespace kirari::gpu;
 
 static_assert(kBackendAbi == 46);
 // Aucune exception ne traverse les points d'entrée : sous MSVC, une exception sortie d'une
@@ -33,8 +33,8 @@ static_assert(std::is_nothrow_invocable_r_v<std::uint64_t, BackendLayoutFn>);
 static_assert(std::is_nothrow_invocable_r_v<Backend*, BackendCreateFn, int, const BackendInit*>);
 static_assert(std::is_nothrow_invocable_v<BackendDestroyFn, Backend*>);
 static_assert(kBackendLayout != 0);
-static_assert(std::is_same_v<DeviceUuid, ajp::DeviceUuid>, "un seul type d'UUID d'appareil");
-static_assert(std::is_same_v<ajp::media::DeviceUuid, ajp::DeviceUuid>, "media partage le même UUID");
+static_assert(std::is_same_v<DeviceUuid, kirari::DeviceUuid>, "un seul type d'UUID d'appareil");
+static_assert(std::is_same_v<kirari::media::DeviceUuid, kirari::DeviceUuid>, "media partage le même UUID");
 static_assert(std::is_abstract_v<KernelOps> && std::has_virtual_destructor_v<KernelOps>);
 static_assert(std::is_abstract_v<TensorBuffer> && std::has_virtual_destructor_v<TensorBuffer>);
 
@@ -47,10 +47,11 @@ std::unexpected<Refusal> refuse(RefusalCode code) {
 // Noyaux factices : chaque opération refuse, comme un port qui n'a rien d'implémenté.
 class NoKernels final : public KernelOps {
  public:
-  std::expected<void, Refusal> ingest(const ajp::DecodedFrame&, const IngestSpec&, const Tensor&) override {
+  std::expected<void, Refusal> ingest(const kirari::DecodedFrame&, const IngestSpec&,
+                                      const Tensor&) override {
     return refuse(RefusalCode::FormatUnsupported);
   }
-  std::expected<void, Refusal> resample(const Tensor&, ajp::kernels::Filter, const Tensor&) override {
+  std::expected<void, Refusal> resample(const Tensor&, kirari::kernels::Filter, const Tensor&) override {
     return refuse(RefusalCode::ShapeInvalid);
   }
   std::expected<void, Refusal> rife_crop(const Tensor&, const Tensor&) override {
@@ -60,7 +61,7 @@ class NoKernels final : public KernelOps {
                                           const Tensor&) override {
     return refuse(RefusalCode::FieldOutOfRange);
   }
-  std::expected<void, Refusal> write_ring(const Tensor&, const ajp::RingSlotDesc&,
+  std::expected<void, Refusal> write_ring(const Tensor&, const kirari::RingSlotDesc&,
                                           const RingWrite&) override {
     return refuse(RefusalCode::FormatUnsupported);
   }
@@ -139,7 +140,7 @@ TEST_CASE("Backend : BackendInit et IngestSpec ne supposent rien", "[backend]") 
   CHECK(init.refusal == nullptr);
 
   const IngestSpec chain;
-  CHECK(chain.chroma == ajp::kernels::kChainChromaFilter);
+  CHECK(chain.chroma == kirari::kernels::kChainChromaFilter);
   CHECK(RingWrite{}.wait_value == 0);
   CHECK_FALSE(PairScores{}.identical);
 }
@@ -154,7 +155,7 @@ TEST_CASE("Backend : le FP8 est permis sur Ada et Hopper, pas sur RTX 50 sans me
 }
 
 TEST_CASE("Backend : un backend complet s'écrit contre l'interface", "[backend]") {
-  ajp::GpuDevice render{.api = ajp::GpuApi::Vulkan, .pci_vendor = ajp::pci::kNvidia};
+  kirari::GpuDevice render{.api = kirari::GpuApi::Vulkan, .pci_vendor = kirari::pci::kNvidia};
   render.uuid[0] = 0x42;
   StubBackend backend(BackendInit{.render = &render, .cache_dir = "cache"});
 
@@ -174,7 +175,7 @@ TEST_CASE("Backend : un backend complet s'écrit contre l'interface", "[backend]
 
   KernelOps* ops = backend.kernels();
   REQUIRE(ops != nullptr);
-  CHECK(ops->resample({}, ajp::kernels::Filter::Area, {}).error().code == RefusalCode::ShapeInvalid);
+  CHECK(ops->resample({}, kirari::kernels::Filter::Area, {}).error().code == RefusalCode::ShapeInvalid);
   // Un backend qui ne connaît pas les voies : une seule, et use_lane ne change rien.
   CHECK(backend.capabilities().lanes == 1);
   backend.use_lane(Lane::Interpolate);
@@ -231,11 +232,11 @@ TEST_CASE("Backend : l'empreinte suit la taille, l'alignement et l'ordre des typ
 }
 
 // La borne commune des tenseurs (gpu/tensor.h, P2.28), la même pour Vulkan et TensorRT.
-static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::F16, {{1, 3, 1080, 1920}}) ==
+static_assert(kirari::gpu::dense_tensor_bytes(kirari::gpu::TensorType::F16, {{1, 3, 1080, 1920}}) ==
               2ULL * 3 * 1080 * 1920);
-static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::F32, {{1, 0, 8, 8}}) == 0);
-static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::U8, {{1, 1, 1 << 25, 1}}) == 0);
-static_assert(ajp::gpu::dense_tensor_bytes(ajp::gpu::TensorType::I8, {{1 << 16, 1 << 16, 2, 1}}) == 0);
+static_assert(kirari::gpu::dense_tensor_bytes(kirari::gpu::TensorType::F32, {{1, 0, 8, 8}}) == 0);
+static_assert(kirari::gpu::dense_tensor_bytes(kirari::gpu::TensorType::U8, {{1, 1, 1 << 25, 1}}) == 0);
+static_assert(kirari::gpu::dense_tensor_bytes(kirari::gpu::TensorType::I8, {{1 << 16, 1 << 16, 2, 1}}) == 0);
 
 // Une exception levée dans un backend devient un refus avant de quitter la bibliothèque (P2.4).
 TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backend]") {
@@ -262,7 +263,7 @@ TEST_CASE("GuardedBackend : une exception du backend devient un refus", "[backen
   GuardedBackend guarded(std::make_unique<Thrower>());
   // C21-04 : la valeur prudente, mais l'exception au journal « backend ».
   const auto lines = std::make_shared<spdlog::sinks::ringbuffer_sink_mt>(16);
-  ajp::install_log_sinks({lines}, spdlog::level::info);
+  kirari::install_log_sinks({lines}, spdlog::level::info);
   CHECK(guarded.capabilities().name.empty());
   CHECK(guarded.match(DeviceUuid{}) == DeviceMatch::Unknown);
   const std::vector<std::string> logged = lines->last_formatted();

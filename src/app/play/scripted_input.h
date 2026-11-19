@@ -13,7 +13,7 @@
 #include "app/play/export_job.h"
 #include "media/track.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // « mouse=XxY » ou « click=XxY » : le point de la fenêtre, en fractions de sa taille.
 std::optional<std::pair<float, float>> mouse_point(std::string_view text);
@@ -27,4 +27,4 @@ void press(const std::string& name, SDL_Window* window);
 std::optional<ExportJob> scripted_export(std::string_view name, const PlaySettings& running,
                                          const media::TrackInfo& video, const std::filesystem::path& source);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

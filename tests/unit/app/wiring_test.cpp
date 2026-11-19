@@ -8,7 +8,7 @@
 
 #include "doubles.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Qui mène : l'audio, sauf vitesse de calage, audio perdu ou son en avance de plus de 60 ms",
@@ -82,4 +82,4 @@ TEST_CASE("Horloge menante : l'audio, puis l'hôte quand l'écran mène", "[app]
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

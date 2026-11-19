@@ -15,7 +15,7 @@ extern "C" {
 #include <libavutil/pixfmt.h>
 }
 
-using namespace ajp::media;
+using namespace kirari::media;
 
 namespace {
 

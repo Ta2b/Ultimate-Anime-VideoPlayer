@@ -7,7 +7,7 @@
 #include "app/play/settings_panel.h"
 #include "core/profile.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Un curseur sur un réglage du grade (double) ; true s'il a bougé. La valeur revient arrondie au centième et
 // bornée.
@@ -18,4 +18,4 @@ void output_section(PlaySettings& d, const SettingsChoices& choices);
 void colors_section(PlaySettings& d, bool source_hdr);
 void hdr_page(PlaySettings& d, const SettingsChoices& choices);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

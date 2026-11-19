@@ -1,12 +1,12 @@
 # Sécurité
 
 *English: please report vulnerabilities privately through
-[GitHub's private reporting](https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/security/advisories/new),
+[GitHub's private reporting](https://github.com/Ta2b/kirari-player/security/advisories/new),
 never in a public issue. French or English are both fine.*
 
 ## Signaler une faille
 
-Par le [signalement privé de GitHub](https://github.com/Ta2b/Ultimate-Anime-VideoPlayer/security/advisories/new),
+Par le [signalement privé de GitHub](https://github.com/Ta2b/kirari-player/security/advisories/new),
 jamais dans une issue publique. Décrire la version (menu Général, page Application), le système, et de quoi reproduire.
 
 Réponse visée sous 7 jours, correctif ou contournement sous 30 jours pour une faille confirmée, puis

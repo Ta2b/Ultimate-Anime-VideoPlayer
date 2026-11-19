@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Le chemin en UTF-8, pour les messages, les journaux et les lignes de commande.
 std::string utf8_path(const std::filesystem::path& path);
@@ -42,4 +42,4 @@ std::optional<bool> ansi_page_decides(std::uint32_t page, std::u16string_view te
 // UTF-8 bien formé : ni octet isolé, ni forme trop longue, ni moitié de paire UTF-16.
 bool is_utf8(std::string_view text);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

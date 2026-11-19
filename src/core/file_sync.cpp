@@ -22,7 +22,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::core {
+namespace kirari::core {
 
 std::error_code sync_file(const std::filesystem::path& file) {
 #ifdef _WIN32
@@ -219,4 +219,4 @@ std::expected<void, Refusal> write_text_atomically(const std::filesystem::path& 
   return write_atomic(path, std::as_bytes(std::span(text)));
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

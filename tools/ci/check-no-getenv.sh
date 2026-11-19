@@ -12,8 +12,8 @@ set -euo pipefail
 names='secure_getenv|getenv|_wgetenv|getenv_s|_wgetenv_s|_dupenv_s|_wdupenv_s|SDL_getenv|SDL_getenv_unsafe'
 names+='|SDL_GetEnvironment\w*|GetEnvironmentVariable[AW]?|GetEnvironmentStrings[AW]?|ExpandEnvironmentStrings[AW]?|_NSGetEnviron'
 names+='|environ|_environ|__environ|_wenviron'
-hits=$(git ls-files -z -- 'src/*' | AJP_ENV_NAMES="$names" xargs -0 perl -ne '
-  BEGIN { $re = qr/\b(?:$ENV{AJP_ENV_NAMES})\b/ }
+hits=$(git ls-files -z -- 'src/*' | KIRARI_ENV_NAMES="$names" xargs -0 perl -ne '
+  BEGIN { $re = qr/\b(?:$ENV{KIRARI_ENV_NAMES})\b/ }
   (my $code = $_) =~ s{\x27(?:\\.|[^\x27\\])\x27}{}g;
   $code =~ s{"(?:\\.|[^"\\])*"}{""}g;
   $code =~ s{//.*}{};

@@ -41,21 +41,21 @@ class Capture {
 // écrit dans ce journal ; posé dans son répartiteur, il s'y appellerait lui-même sous son verrou.
 TEST_CASE("Journal : les canaux d'un backend vont au rappel du lecteur sans toucher à son journal", "[log]") {
   Capture player;
-  ajp::install_log_sinks({player.sink()}, spdlog::level::info);
+  kirari::install_log_sinks({player.sink()}, spdlog::level::info);
   const std::vector<spdlog::sink_ptr> player_sinks = spdlog::default_logger()->sinks();
 
   // Le rappel BackendInit::log de app : log_channel("backend"), créé avant le backend.
-  const std::shared_ptr<spdlog::logger> backend = ajp::log_channel("backend");
+  const std::shared_ptr<spdlog::logger> backend = kirari::log_channel("backend");
   std::vector<std::string> errors;
   backend->set_error_handler([&errors](const std::string& message) { errors.push_back(message); });
   auto relay =
       std::make_shared<spdlog::sinks::callback_sink_mt>([backend](const spdlog::details::log_msg& msg) {
         backend->info("{}", std::string_view(msg.payload.data(), msg.payload.size()));
       });
-  ajp::install_module_log_sinks({relay}, spdlog::level::debug);
+  kirari::install_module_log_sinks({relay}, spdlog::level::debug);
   CHECK(spdlog::default_logger()->sinks() == player_sinks);
 
-  const std::shared_ptr<spdlog::logger> runtime = ajp::log_channel("onnxruntime");
+  const std::shared_ptr<spdlog::logger> runtime = kirari::log_channel("onnxruntime");
   CHECK(runtime->level() == spdlog::level::debug);
   runtime->warn("nœuds laissés au CPU");
   backend->info("compilé");
@@ -64,9 +64,9 @@ TEST_CASE("Journal : les canaux d'un backend vont au rappel du lecteur sans touc
 
   // Un second backend : le répartiteur du binaire change de puits, ses canaux suivent.
   Capture later;
-  ajp::install_module_log_sinks({later.sink()}, spdlog::level::debug);
+  kirari::install_module_log_sinks({later.sink()}, spdlog::level::debug);
   runtime->debug("rappel suivant");
-  ajp::log_channel("vk_compute")->info("nouveau canal");
+  kirari::log_channel("vk_compute")->info("nouveau canal");
   CHECK(later.lines() ==
         std::vector<std::string>{"onnxruntime : rappel suivant", "vk_compute : nouveau canal"});
   CHECK(player.lines().size() == 2);

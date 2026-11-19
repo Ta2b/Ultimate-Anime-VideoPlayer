@@ -17,7 +17,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/passes.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 namespace {
 
 // Décalages d'entrée lus par une phase sur un axe : [lo, hi], ou rien si une prise sort de la
@@ -318,4 +318,4 @@ int transposes_as_convs(Graph& graph, std::int64_t max_channels, bool phases) {
   return rewritten;
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

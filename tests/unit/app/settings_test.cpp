@@ -24,7 +24,7 @@
 #include "app/play/live_settings.h"
 #include "app/play/settings_sound.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("play.toml relit à l'identique ce qu'il a écrit", "[app][settings]") {
@@ -227,7 +227,8 @@ TEST_CASE("Hors plage, type faux ou TOML invalide : refus nommé", "[app][settin
   const auto languages =
       parse_settings("[audio]\nlanguages = [\"eng\", \"jpn\"]\n[subtitles]\nlanguages = [\"fre\"]\n");
   REQUIRE(languages);
-  CHECK(languages->language_presets == std::vector<ajp::media::LanguagePreset>{{"eng", "fre"}, {"jpn", ""}});
+  CHECK(languages->language_presets ==
+        std::vector<kirari::media::LanguagePreset>{{"eng", "fre"}, {"jpn", ""}});
   const auto written =
       parse_settings("[languages]\naudio_1 = \"jpn\"\nsubtitles_1 = \"fre\"\naudio_2 = \"fre\"\n");
   REQUIRE(written);
@@ -288,7 +289,8 @@ TEST_CASE(
   PlaySettings file;
   file.motion_engine = MotionEngine::DistilDrba;
   file.rife_model = "rife_v4.25.onnx";
-  const std::array<std::string_view, 2> rife{"film.mkv", "--rife-model=/opt/ajp/models/rife_v4.22_lite.onnx"};
+  const std::array<std::string_view, 2> rife{"film.mkv",
+                                             "--rife-model=/opt/kirari/models/rife_v4.22_lite.onnx"};
   const auto options = parse_play_options(rife);
   REQUIRE(options);
   const PlaySettings started = settings_for(file, *options);
@@ -408,7 +410,7 @@ TEST_CASE("Panneau : Auto choisi sans RIFE chargé reste choisi", "[app][setting
 }
 
 TEST_CASE("Écrire puis relire play.toml ; absent : les défauts", "[app][settings]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-settings-test";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-settings-test";
   std::filesystem::remove_all(dir);
   const auto path = dir / "play.toml";
   const auto missing = load_settings(path);
@@ -505,10 +507,10 @@ TEST_CASE("mises à jour : mode et fréquence lus et écrits par leur nom (P5.29
 
 }  // namespace
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("repères des listes et résolution en français courant", "[settings]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   CHECK(resolution_text(720) == "720p");
   CHECK(badge_text(Badge::Finest) == "Finest");
   CHECK(badge_of(Downscale::Hermite) == Badge::Recommended);
@@ -518,7 +520,7 @@ TEST_CASE("repères des listes et résolution en français courant", "[settings]
 }
 
 TEST_CASE("audio : l'appareil fait l'aller-retour, les anciennes clés du son sont ignorées", "[settings]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   PlaySettings s;
   s.audio_device = "Casque USB";
   const auto read = parse_settings(format_settings(s));
@@ -542,11 +544,11 @@ TEST_CASE("audio : l'appareil fait l'aller-retour, les anciennes clés du son so
 }
 
 TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app][settings]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   CHECK(name(Downscale::Hermite) == "hermite");
   CHECK(label(Downscale::Hermite) == "Hermite");
-  const ajp::gpu::Reduction reduction = reduction_of(Downscale::Hermite);
-  CHECK(reduction.kind == ajp::gpu::ReduceKind::Cubic);
+  const kirari::gpu::Reduction reduction = reduction_of(Downscale::Hermite);
+  CHECK(reduction.kind == kirari::gpu::ReduceKind::Cubic);
   CHECK(reduction.b == 0.0F);
   CHECK(reduction.c == 0.0F);
   PlaySettings s;
@@ -556,7 +558,7 @@ TEST_CASE("Hermite : un filtre de réduction de plus, cubique B = C = 0", "[app]
 
 TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde",
           "[settings][auto][plafond]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   PlaySettings s;
   CHECK(s.auto_cap == 0);  // maximum : l'écran
   CHECK(parse_settings("version = 1\n")->auto_cap == 0);
@@ -578,7 +580,7 @@ TEST_CASE("play.toml garde le plafond du mode auto et refuse un plafond absurde"
 
 TEST_CASE("play.toml garde le mode d'Auto (Rapide par défaut) et refuse une valeur inconnue",
           "[settings][auto][libre]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   PlaySettings s;
   CHECK(s.auto_free);  // C6 : Rapide est l'Auto ; Stable reste au choix
   CHECK(parse_settings("version = 1\n")->auto_free);
@@ -599,16 +601,16 @@ TEST_CASE("play.toml garde le mode d'Auto (Rapide par défaut) et refuse une val
 }
 
 TEST_CASE("mode Rapide : instants par paire acceptés par chaque moteur", "[settings][auto][libre]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   for (const MotionEngine engine : {MotionEngine::Rife, MotionEngine::DistilDrba}) {
     CHECK(free_instants_limit(engine) >= 2);
-    CHECK(free_instants_limit(engine) <= ajp::core::kMaxInstantsPerPair);  // la borne du ring
+    CHECK(free_instants_limit(engine) <= kirari::core::kMaxInstantsPerPair);  // la borne du ring
   }
   CHECK(free_instants_limit(MotionEngine::Apple) == 0);  // pas de tau arbitraire : Auto
 }
 
 TEST_CASE("une valeur fautive n'invalide que sa clé", "[settings][lenient]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   const std::string text =
       "version = 1\n[image]\nupscale = false\nwork_height = 99999\n[audio]\nvolume = "
       "0.5\n[sync]\nvideo_latency_ms = "
@@ -627,7 +629,7 @@ TEST_CASE("une valeur fautive n'invalide que sa clé", "[settings][lenient]") {
 }
 
 TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade compris", "[settings][lenient]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   // « languages.audio » ne nomme pas audio_1 : avant, tout le fichier était mis de côté.
   const std::string text =
       "version = 1\n[grade]\nenabled = true\nshadows = 0.42\narea_rtx = 0.31\n[languages]\naudio_1 = \"pas "
@@ -644,82 +646,82 @@ TEST_CASE("un refus qui ne nomme pas sa clé n'efface pas le reste, grade compri
 
 TEST_CASE("play.toml : les clés de l'ancienne pile de LUT se lisent et ne sont plus écrites",
           "[app][settings]") {
-  const auto old = ajp::app::play::parse_settings(
+  const auto old = kirari::app::play::parse_settings(
       "[grade]\nlook = '../x.cube'\nlook_mix = 1.5\nlooks = ['a/b.cube']\nlooks_mix = [-0.1]\nlook_contrast "
       "= 20\n");
   REQUIRE(old.has_value());
   CHECK(old->look_contrast == 20);
-  const std::string written = ajp::app::play::format_settings(ajp::app::play::PlaySettings{});
+  const std::string written = kirari::app::play::format_settings(kirari::app::play::PlaySettings{});
   CHECK(written.find("look_mix") == std::string::npos);
   CHECK(written.find("looks") == std::string::npos);
 }
 
 TEST_CASE("play.toml : le limiteur de flashs, activé par défaut et dans un fichier d'avant, se coupe",
           "[app][settings]") {
-  CHECK(ajp::app::play::PlaySettings{}.flash_guard);
-  const auto old = ajp::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
+  CHECK(kirari::app::play::PlaySettings{}.flash_guard);
+  const auto old = kirari::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
   REQUIRE(old.has_value());
   CHECK(old->flash_guard);
-  const auto off = ajp::app::play::parse_settings("[grade]\nflash_guard = false\n");
+  const auto off = kirari::app::play::parse_settings("[grade]\nflash_guard = false\n");
   REQUIRE(off.has_value());
   CHECK_FALSE(off->flash_guard);
 }
 
 TEST_CASE("play.toml : le look en une table, allumé par défaut, l'ancienne clé d'essai ignorée",
           "[app][settings]") {
-  CHECK(ajp::app::play::PlaySettings{}.look_table);
+  CHECK(kirari::app::play::PlaySettings{}.look_table);
   // La rc.12 et la rc.13 écrivaient look_table = false (l'essai éteint) : ignoré, le défaut l'emporte.
-  const auto old = ajp::app::play::parse_settings("[grade]\nlook_table = false\n");
+  const auto old = kirari::app::play::parse_settings("[grade]\nlook_table = false\n");
   REQUIRE(old.has_value());
   CHECK(old->look_table);
-  const auto off = ajp::app::play::parse_settings("[grade]\nlook_one_table = false\n");
+  const auto off = kirari::app::play::parse_settings("[grade]\nlook_one_table = false\n");
   REQUIRE(off.has_value());
   CHECK_FALSE(off->look_table);
-  const std::string written = ajp::app::play::format_settings(ajp::app::play::PlaySettings{});
+  const std::string written = kirari::app::play::format_settings(kirari::app::play::PlaySettings{});
   CHECK(written.find("look_one_table = true") != std::string::npos);
 }
 
 TEST_CASE("play.toml : la peau des visages, éteinte par défaut et dans un fichier d'avant, s'allume",
           "[app][settings]") {
-  CHECK_FALSE(ajp::app::play::PlaySettings{}.face_skin);
-  const auto old = ajp::app::play::parse_settings("[grade]\nflash_guard = true\n");
+  CHECK_FALSE(kirari::app::play::PlaySettings{}.face_skin);
+  const auto old = kirari::app::play::parse_settings("[grade]\nflash_guard = true\n");
   REQUIRE(old.has_value());
   CHECK_FALSE(old->face_skin);
-  const auto on = ajp::app::play::parse_settings("[grade]\nface_skin = true\n");
+  const auto on = kirari::app::play::parse_settings("[grade]\nface_skin = true\n");
   REQUIRE(on.has_value());
   CHECK(on->face_skin);
 }
 
 TEST_CASE("play.toml : le blanc des surfaces, 100 % par défaut et dans un fichier d'avant, borné",
           "[app][settings]") {
-  CHECK(ajp::app::play::PlaySettings{}.surface_white == 100);
-  const auto old = ajp::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
+  CHECK(kirari::app::play::PlaySettings{}.surface_white == 100);
+  const auto old = kirari::app::play::parse_settings("[grade]\nlook_contrast = 20\n");
   REQUIRE(old.has_value());
   CHECK(old->surface_white == 100);
-  const auto lower = ajp::app::play::parse_settings("[grade]\nsurface_white = 70\n");
+  const auto lower = kirari::app::play::parse_settings("[grade]\nsurface_white = 70\n");
   REQUIRE(lower.has_value());
   CHECK(lower->surface_white == 70);
-  ajp::app::play::PlaySettings s;
+  kirari::app::play::PlaySettings s;
   s.surface_white = 70;
-  const auto again = ajp::app::play::parse_settings(ajp::app::play::format_settings(s));
+  const auto again = kirari::app::play::parse_settings(kirari::app::play::format_settings(s));
   REQUIRE(again.has_value());
   CHECK(again->surface_white == 70);
   s.surface_white = 30;
-  CHECK_FALSE(ajp::app::play::validate(s).has_value());
+  CHECK_FALSE(kirari::app::play::validate(s).has_value());
 }
 
 TEST_CASE("play.toml : une version plus récente garde ses clés à la réécriture (P2.22)", "[app][settings]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-future.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-future.toml";
   {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     out << "version = 2\nfuture_option = 7\n[image]\nupscale = false\nfuture_filter = \"x\"\n[nouveau]\na = "
            "1\n";
   }
-  auto loaded = ajp::app::play::load_settings(path);
+  auto loaded = kirari::app::play::load_settings(path);
   REQUIRE(loaded);
   CHECK_FALSE(loaded->upscale);
   loaded->upscale = true;
-  REQUIRE(ajp::app::play::save_settings(path, *loaded));
+  REQUIRE(kirari::app::play::save_settings(path, *loaded));
   std::string text;
   {
     std::ifstream in(path, std::ios::binary);  // refermé avant remove : Windows refuse un fichier ouvert
@@ -728,37 +730,37 @@ TEST_CASE("play.toml : une version plus récente garde ses clés à la réécrit
   CHECK(text.find("future_option = 7") != std::string::npos);
   CHECK(text.find("future_filter = 'x'") != std::string::npos);
   CHECK(text.find("[nouveau]") != std::string::npos);
-  auto reread = ajp::app::play::load_settings(path);
+  auto reread = kirari::app::play::load_settings(path);
   REQUIRE(reread);
   CHECK(*reread == *loaded);
   std::filesystem::remove(path);
 }
 
 TEST_CASE("Délai audio mémorisé par appareil, relu de play.toml (P2.7)", "[app][settings]") {
-  ajp::app::play::PlaySettings s;
+  kirari::app::play::PlaySettings s;
   s.audio_delay_ms = 20;  // la sortie du système
   s.audio_device = "Casque Bluetooth";
-  ajp::app::play::switch_device_delay(s, "");
+  kirari::app::play::switch_device_delay(s, "");
   CHECK(s.audio_delay_ms == 0);
   s.audio_delay_ms = 240;  // réglé pour le casque
   s.audio_device.clear();
-  ajp::app::play::switch_device_delay(s, "Casque Bluetooth");
+  kirari::app::play::switch_device_delay(s, "Casque Bluetooth");
   CHECK(s.audio_delay_ms == 20);
   // B23-06 : suivre le système et nommer la même carte, c'est le même appareil : le délai reste.
-  ajp::app::play::PlaySettings tv;
+  kirari::app::play::PlaySettings tv;
   tv.audio_delay_ms = 120;
   tv.audio_device = "HDMI";
-  ajp::app::play::switch_device_delay(tv, "", "HDMI");
+  kirari::app::play::switch_device_delay(tv, "", "HDMI");
   CHECK(tv.audio_delay_ms == 120);
   tv.audio_device.clear();
-  ajp::app::play::switch_device_delay(tv, "HDMI", "HDMI");
+  kirari::app::play::switch_device_delay(tv, "HDMI", "HDMI");
   CHECK(tv.audio_delay_ms == 120);
   tv.audio_device = "Casque";  // une autre carte : le délai de la TV est gardé pour elle
-  ajp::app::play::switch_device_delay(tv, "", "HDMI");
+  kirari::app::play::switch_device_delay(tv, "", "HDMI");
   CHECK(tv.audio_delay_ms == 0);
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-delays.toml";
-  REQUIRE(ajp::app::play::save_settings(path, s));
-  auto reread = ajp::app::play::load_settings(path);
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-delays.toml";
+  REQUIRE(kirari::app::play::save_settings(path, s));
+  auto reread = kirari::app::play::load_settings(path);
   REQUIRE(reread);
   CHECK(reread->audio_device_delays_ms.at("Casque Bluetooth") == 240);
   CHECK(*reread == s);
@@ -767,21 +769,21 @@ TEST_CASE("Délai audio mémorisé par appareil, relu de play.toml (P2.7)", "[ap
 
 TEST_CASE("play.toml : deux lancements, chacun ne réécrit que les clés qu'il a changées (P2.14)",
           "[app][settings]") {
-  const std::filesystem::path path = std::filesystem::temp_directory_path() / "ajp-play-two.toml";
+  const std::filesystem::path path = std::filesystem::temp_directory_path() / "kirari-play-two.toml";
   std::filesystem::remove(path);
-  REQUIRE(ajp::app::play::save_settings(path, ajp::app::play::PlaySettings{}));
-  auto ours = ajp::app::play::load_settings(path);
+  REQUIRE(kirari::app::play::save_settings(path, kirari::app::play::PlaySettings{}));
+  auto ours = kirari::app::play::load_settings(path);
   REQUIRE(ours);
   // L'autre lancement réécrit le fichier : le volume change.
-  ajp::app::play::PlaySettings theirs = *ours;
+  kirari::app::play::PlaySettings theirs = *ours;
   theirs.volume = 0.25F;
   {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    out << ajp::app::play::format_settings(theirs);
+    out << kirari::app::play::format_settings(theirs);
   }
   ours->audio_delay_ms = 120;
-  REQUIRE(ajp::app::play::save_settings(path, *ours));
-  const auto merged = ajp::app::play::load_settings(path);
+  REQUIRE(kirari::app::play::save_settings(path, *ours));
+  const auto merged = kirari::app::play::load_settings(path);
   REQUIRE(merged);
   CHECK(merged->audio_delay_ms == 120);
   CHECK(merged->volume == Catch::Approx(0.25F));

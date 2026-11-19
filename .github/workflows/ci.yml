@@ -47,7 +47,7 @@ concurrency:
 env:
   # À côté de l'espace de travail, en chemin absolu : actions/cache refuse les chemins qui
   # contiennent « .. », et le cache des dépendances n'était jamais enregistré.
-  AJP_DEPS_PREFIX: ${{ github.workspace }}-deps
+  KIRARI_DEPS_PREFIX: ${{ github.workspace }}-deps
   APT_COMPILERS: clang-20 clang-tidy-20 clang-format-20
   CCACHE_DIR: ${{ github.workspace }}-ccache
   CCACHE_BASEDIR: ${{ github.workspace }}
@@ -87,7 +87,7 @@ jobs:
       # font rebâtir que les dépendances dont la version ou les options ont changé.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-core-${{ matrix.cc }}-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-core-${{ matrix.cc }}-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -95,7 +95,7 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-core-${{ matrix.name }}-${{ github.sha }}
           restore-keys: ccache-core-${{ matrix.name }}-
-      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/deps/linux-from-source.sh --core "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }} --output-junit "$GITHUB_WORKSPACE/junit.xml"
@@ -114,7 +114,7 @@ jobs:
     continue-on-error: ${{ inputs.allow_arch_red }}
     container: archlinux:latest
     env:
-      AJP_DEPS_PREFIX: /opt/ajp-deps
+      KIRARI_DEPS_PREFIX: /opt/kirari-deps
       CCACHE_DIR: /tmp/ccache
     steps:
       - run: pacman -Syu --noconfirm --needed base-devel git cmake ninja ccache pkgconf python
@@ -123,7 +123,7 @@ jobs:
           persist-credentials: false
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: gcc --version | head -n 1
-      - run: tools/deps/linux-from-source.sh --core "$AJP_DEPS_PREFIX" /tmp/deps-src
+      - run: tools/deps/linux-from-source.sh --core "$KIRARI_DEPS_PREFIX" /tmp/deps-src
       - run: cmake --preset linux-prefix-core
       - run: cmake --build --preset linux-prefix-core
       - run: ctest --preset linux-prefix-core --output-junit "$GITHUB_WORKSPACE/junit.xml"
@@ -142,8 +142,8 @@ jobs:
     continue-on-error: ${{ inputs.allow_arch_red }}
     container: archlinux:latest
     env:
-      AJP_DEPS_PREFIX: /opt/ajp-deps
-      AJP_TEST_VULKAN_VALIDATION: "off"
+      KIRARI_DEPS_PREFIX: /opt/kirari-deps
+      KIRARI_TEST_VULKAN_VALIDATION: "off"
       CCACHE_DIR: /tmp/ccache
     steps:
       - run: >-
@@ -157,7 +157,7 @@ jobs:
           persist-credentials: false
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - run: gcc --version | head -n 1
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" /tmp/deps-src
+      - run: tools/deps/linux-from-source.sh "$KIRARI_DEPS_PREFIX" /tmp/deps-src
       - run: cmake --preset linux-prefix
       - run: cmake --build --preset linux-prefix
       - run: xvfb-run -a ctest --preset linux-prefix -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
@@ -165,7 +165,7 @@ jobs:
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" arch-player
 
   # Tous les modules, lecteur compris, sous Xvfb avec Vulkan logiciel (lavapipe) et la couche de
-  # validation exigée (AJP_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
+  # validation exigée (KIRARI_TEST_VULKAN_VALIDATION, tests/support/vulkan_validation.h : chaque
   # erreur de la couche fait échouer l'exécutable) : une fois tel quel, une fois sous TSan. Sous
   # ASan et UBSan la couche est coupée pour la durée : les deux autres tâches la font déjà parler.
   # Les préréglages de test portent LSAN_OPTIONS, TSAN_OPTIONS et, sous ASan, le chargeur Vulkan
@@ -186,7 +186,7 @@ jobs:
     env:
       CC: gcc-13
       CXX: g++-13
-      AJP_TEST_VULKAN_VALIDATION: ${{ matrix.validation }}
+      KIRARI_TEST_VULKAN_VALIDATION: ${{ matrix.validation }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -205,7 +205,7 @@ jobs:
           pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           # TSan : son propre préfixe, où libass est instrumenté (B35-02) ; les autres tâches gardent le leur.
           key: deps-player-gcc-13-${{ startsWith(matrix.name, 'tsan') && 'tsan-' || '' }}${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-${{ startsWith(matrix.name, 'tsan') && 'tsan-' || '' }}
@@ -216,9 +216,9 @@ jobs:
           restore-keys: ccache-player-${{ matrix.name }}-
       # libass, qui rend les scripts ASS venus de l'extérieur sur quatre fils, n'est vu de TSan que construit avec
       # lui : sans cela, la tâche « tsan » ne voyait aucune course dans son code multi-fils.
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/deps/linux-from-source.sh "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
         env:
-          AJP_LIBASS_CFLAGS: ${{ startsWith(matrix.name, 'tsan') && '-fsanitize=thread -g -O1' || '-O2 -g' }}
+          KIRARI_LIBASS_CFLAGS: ${{ startsWith(matrix.name, 'tsan') && '-fsanitize=thread -g -O1' || '-O2 -g' }}
       - run: cmake --preset ${{ matrix.preset }}
       - if: ${{ !matrix.tidy }}
         run: cmake --build --preset ${{ matrix.preset }}
@@ -240,23 +240,23 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: matrix.name == 'lavapipe' && inputs.complete
         with:
-          path: ~/.cache/ajp-release-models
+          path: ~/.cache/kirari-release-models
           key: modeles-${{ hashFiles('tools/release/fetch-models.sh') }}
       - name: Moteurs fusionnés sur les modèles livrés
         if: matrix.name == 'lavapipe' && inputs.complete
         run: |
           sudo apt-get install -y -qq --no-install-recommends p7zip-full
-          tools/release/fetch-models.sh "$HOME/ajp/models"
+          tools/release/fetch-models.sh "$HOME/kirari/models"
           # Sans modèle, les tests se sauteraient en silence : leur présence se vérifie ici.
           for model in rife_v4.26.onnx rife_v4.25.onnx rife_v4.22_lite.onnx rife_v4.25_lite.onnx distil_drba_v2_lite.onnx \
             distil_drba_v2_lite_s05.onnx; do
-            test -f "$HOME/ajp/models/rife/$model" || { echo "modèle absent : $model" >&2; exit 1; }
+            test -f "$HOME/kirari/models/rife/$model" || { echo "modèle absent : $model" >&2; exit 1; }
           done
           # Lancés hors de ctest, donc hors de check-skips.sh : leur rapport JUnit est lu ici. Un cas sauté (stockage
           # 16 bits perdu par une mise à jour de Mesa, modèle introuvable) fait échouer le lancement au lieu de le laisser
           # vert, quel que soit le code de sortie de cette version de Catch2 quand tout est sauté (B28-04).
           fused="$RUNNER_TEMP/fused-junit.xml"
-          xvfb-run -a build/linux-prefix/tests/unit/vk_backend/ajp_vk_backend_tests "[.rife_fused],[.drba_fused]" \
+          xvfb-run -a build/linux-prefix/tests/unit/vk_backend/kirari_vk_backend_tests "[.rife_fused],[.drba_fused]" \
             -r junit -o "$fused"
           ran="$(grep -c '<testcase' "$fused" || true)"
           skipped="$(grep -c '<skipped' "$fused" || true)"
@@ -267,7 +267,7 @@ jobs:
       - name: clang-tidy sur src/
         if: matrix.tidy
         env:
-          AJP_TIDY_BASE: ${{ github.ref != 'refs/heads/main' && 'origin/main' || '' }}
+          KIRARI_TIDY_BASE: ${{ github.ref != 'refs/heads/main' && 'origin/main' || '' }}
         run: tools/ci/clang-tidy-src.sh build/linux-prefix
 
   # MSVC et vcpkg, sans GPU : la construction avec /WX (une rupture de MSVC ou d'un port paraît ici
@@ -283,10 +283,10 @@ jobs:
     timeout-minutes: 90
     env:
       SCCACHE_GHA_ENABLED: "true"
-      AJP_VCPKG: C:\v
-      AJP_VCPKG_BUILDTREES: C:\vb
+      KIRARI_VCPKG: C:\v
+      KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
-      AJP_VCPKG_TRIPLET: x64-windows-release
+      KIRARI_VCPKG_TRIPLET: x64-windows-release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -311,9 +311,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
           $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
-          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
-          git -C $env:AJP_VCPKG checkout -q $baseline
-          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+          git clone -q https://github.com/microsoft/vcpkg $env:KIRARI_VCPKG
+          git -C $env:KIRARI_VCPKG checkout -q $baseline
+          & "$env:KIRARI_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
@@ -323,9 +323,9 @@ jobs:
         shell: pwsh
         # msvc-dev-cmd pose le vcpkg de Visual Studio : le nôtre, à la référence du manifeste.
         run: |
-          $env:VCPKG_ROOT = $env:AJP_VCPKG
-          cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
-            "-DVCPKG_TARGET_TRIPLET=$env:AJP_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:AJP_VCPKG_TRIPLET" `
+          $env:VCPKG_ROOT = $env:KIRARI_VCPKG
+          cmake --preset windows-ci "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:KIRARI_VCPKG_BUILDTREES" `
+            "-DVCPKG_TARGET_TRIPLET=$env:KIRARI_VCPKG_TRIPLET" "-DVCPKG_HOST_TRIPLET=$env:KIRARI_VCPKG_TRIPLET" `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
@@ -358,7 +358,7 @@ jobs:
         shell: bash
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" windows | tee -a "$GITHUB_STEP_SUMMARY"
 
-  # Le module TensorRT de Windows (MSVC + nvcc, AJP_WITH_CUDA=ON) construit sans carte, comme la tâche `cuda` le fait
+  # Le module TensorRT de Windows (MSVC + nvcc, KIRARI_WITH_CUDA=ON) construit sans carte, comme la tâche `cuda` le fait
   # sous Linux (B28-01) : un intrinsèque ou une extension de GCC que MSVC refuse passait les deux autres tâches et ne
   # cassait le paquet TensorRT de Windows, le seul moteur de la cible sous Windows 11, que le jour de la release. Sur
   # une branche, seulement quand elle touche ce que le module compile depuis main ; sur main, toujours.
@@ -370,10 +370,10 @@ jobs:
     timeout-minutes: 75
     env:
       SCCACHE_GHA_ENABLED: "true"
-      AJP_VCPKG: C:\v
-      AJP_VCPKG_BUILDTREES: C:\vb
+      KIRARI_VCPKG: C:\v
+      KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
-      AJP_VCPKG_TRIPLET: x64-windows-release
+      KIRARI_VCPKG_TRIPLET: x64-windows-release
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -411,9 +411,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path C:\vc | Out-Null
           $baseline = (Get-Content vcpkg.json | ConvertFrom-Json).'builtin-baseline'
-          git clone -q https://github.com/microsoft/vcpkg $env:AJP_VCPKG
-          git -C $env:AJP_VCPKG checkout -q $baseline
-          & "$env:AJP_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
+          git clone -q https://github.com/microsoft/vcpkg $env:KIRARI_VCPKG
+          git -C $env:KIRARI_VCPKG checkout -q $baseline
+          & "$env:KIRARI_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - if: steps.touched.outputs.run == 'true'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - if: steps.touched.outputs.run == 'true'
@@ -429,12 +429,12 @@ jobs:
         id: configure
         shell: pwsh
         run: |
-          $env:VCPKG_ROOT = $env:AJP_VCPKG
+          $env:VCPKG_ROOT = $env:KIRARI_VCPKG
           # Les noyaux CUTLASS du SPAN aussi (éteints par défaut sous Windows, sans la référence de la dérivation) :
           # leur construction sous MSVC reste vérifiée avant qu'une release les allume.
-          cmake --preset windows-rtx "-DAJP_TENSORRT_ROOT=$env:AJP_TENSORRT_ROOT" "-DAJP_CUDA_ARCHITECTURES=89-real" `
-            -DAJP_WITH_SPAN_FP8=ON `
-            "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:AJP_VCPKG_BUILDTREES" `
+          cmake --preset windows-rtx "-DKIRARI_TENSORRT_ROOT=$env:KIRARI_TENSORRT_ROOT" "-DKIRARI_CUDA_ARCHITECTURES=89-real" `
+            -DKIRARI_WITH_SPAN_FP8=ON `
+            "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$env:KIRARI_VCPKG_BUILDTREES" `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
@@ -477,7 +477,7 @@ jobs:
           pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -485,18 +485,18 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-cuda-${{ github.sha }}
           restore-keys: ccache-player-cuda-
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/deps/linux-from-source.sh "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - name: CUDA et TensorRT
         run: tools/deps/linux-tensorrt.sh "$RUNNER_TEMP/nvidia"
       - run: >-
-          cmake --preset linux-prefix-cuda "-DAJP_TENSORRT_ROOT=$AJP_TENSORRT_ROOT"
-          "-DAJP_CUDA_ARCHITECTURES=75-real;86-real;89-real;120-real;120-virtual"
+          cmake --preset linux-prefix-cuda "-DKIRARI_TENSORRT_ROOT=$KIRARI_TENSORRT_ROOT"
+          "-DKIRARI_CUDA_ARCHITECTURES=75-real;86-real;89-real;120-real;120-virtual"
       - run: cmake --build --preset linux-prefix-cuda
       - run: tools/ci/check-hardware-tests.sh build/linux-prefix-cuda
       # P5.8 : le backend TensorRT, que la tâche clang-tidy de Linux ne compile pas (ses .cpp ; nvcc garde les .cu).
       - name: clang-tidy sur le backend TensorRT
         env:
-          AJP_TIDY_ONLY: ^src/gpu/cuda/
+          KIRARI_TIDY_ONLY: ^src/gpu/cuda/
         run: tools/ci/clang-tidy-src.sh build/linux-prefix-cuda
 
   # Le lecteur entier avec clang-20 en -Werror (C28-15) : les cibles de fuzz l'étaient seules, dans la campagne Fuzz
@@ -520,7 +520,7 @@ jobs:
       # Les dépendances du lecteur sous gcc-13 : des bibliothèques C ou à l'ABI de libstdc++, que clang lie.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.AJP_DEPS_PREFIX }}
+          path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -528,7 +528,7 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-clang-${{ github.sha }}
           restore-keys: ccache-player-clang-
-      - run: tools/deps/linux-from-source.sh "$AJP_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
+      - run: tools/deps/linux-from-source.sh "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
         env:
           CC: gcc-13
           CXX: g++-13
@@ -537,10 +537,10 @@ jobs:
           CC: clang-20
           CXX: clang++-20
         run: |
-          cmake --preset linux-prefix -B build/clang-player -DCMAKE_BUILD_TYPE=RelWithDebInfo -DAJP_FUZZ_LIBFUZZER=ON \
+          cmake --preset linux-prefix -B build/clang-player -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKIRARI_FUZZ_LIBFUZZER=ON \
             "-DCMAKE_CXX_FLAGS=-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
           targets="$(python3 -I tools/ci/fuzz-targets.py)"
-          cmake --build build/clang-player --target $(printf 'ajp_fuzz_%s ' $targets)
+          cmake --build build/clang-player --target $(printf 'kirari_fuzz_%s ' $targets)
       - run: ccache -s
 
   # Le témoin du lancement (C28-05) : la garde de release ne se contente pas d'un lancement vert, elle lit ce fichier.

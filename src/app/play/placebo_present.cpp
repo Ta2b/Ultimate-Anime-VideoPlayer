@@ -3,7 +3,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 bool enabled(pl_vulkan vk, const char* extension) {
@@ -99,4 +99,4 @@ VkSwapchainCreateFlagsKHR present_flags(PresentLevel level, const PresentCaps& c
   return flags;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

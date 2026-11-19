@@ -7,7 +7,7 @@
 #include "gpu/vulkan/compute/kernel_dispatch.h"
 #include "gpu/vulkan/compute/kernel_runner.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 using detail::bytes_of;
 using detail::groups_for;
@@ -196,4 +196,4 @@ Done KernelRunner::resize(Recorder& recorder, const TensorView& src, const Tenso
                      bytes_of(vertical), {groups_for(dst.width), groups_for(dst.height), src.planes});
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

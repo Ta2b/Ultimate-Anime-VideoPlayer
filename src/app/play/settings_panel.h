@@ -29,7 +29,7 @@
 #include "core/engines.h"
 #include "media/track.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ExportDraft;  // settings_export.h
 struct MachineNote;  // settings_bench_results.h
@@ -111,11 +111,11 @@ struct SettingsChoices {
     int channels = 0;
     bool is_default = false;
   };
-  std::vector<AudioOut> audio_outputs;  // les appareils de sortie du système (audio/devices.h)
-  std::string engines_dir_default;      // où s'installent les moteurs par défaut
-  std::string engines_dir_free;         // la place libre à l'endroit choisi, « 2,1 Go »
-  bool default_player_is_ajp = false;   // AJP est déjà le lecteur des vidéos (xdg-mime, Linux)
-  PlayerPlace place;                    // l'exécutable et le dossier de l'utilisateur (onglet Système)
+  std::vector<AudioOut> audio_outputs;    // les appareils de sortie du système (audio/devices.h)
+  std::string engines_dir_default;        // où s'installent les moteurs par défaut
+  std::string engines_dir_free;           // la place libre à l'endroit choisi, « 2,1 Go »
+  bool default_player_is_kirari = false;  // Kirari est déjà le lecteur des vidéos (xdg-mime, Linux)
+  PlayerPlace place;                      // l'exécutable et le dossier de l'utilisateur (onglet Système)
   // Le mode Performance de SPAN (span_derive.h) : ce que la vidéo ouverte permet, pourquoi il est impossible
   // ici (vide : possible) et la tâche que la boucle du lecteur partage avec le panneau (span_auto.h ; vide :
   // celle du panneau seul).
@@ -248,4 +248,4 @@ class SettingsPanel {
   PrepareNote prepare_;  // « Préparer le mode Performance » : la tâche en cours ou son résultat
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

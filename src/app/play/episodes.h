@@ -8,7 +8,7 @@
 #include <optional>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Compare deux noms en lecture naturelle : les chiffres consécutifs forment un nombre, la casse ne
 // compte pas. Négatif, nul ou positif comme strcmp.
@@ -29,4 +29,4 @@ struct GrowingFile {
             std::chrono::milliseconds wait = std::chrono::milliseconds(3000)) const;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

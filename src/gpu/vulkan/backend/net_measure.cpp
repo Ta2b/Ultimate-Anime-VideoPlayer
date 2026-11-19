@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 namespace {
 
 constexpr std::int64_t kBlockPixels = 32;  // côté des aplats du damier
@@ -97,4 +97,4 @@ std::optional<std::size_t> choose_unit(std::span<const std::optional<UnitMeasure
   return fastest;
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

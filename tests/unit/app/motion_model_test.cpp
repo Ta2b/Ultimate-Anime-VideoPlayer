@@ -15,7 +15,7 @@
 
 #include "prepare/onnx_outputs.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using Bytes = std::vector<std::byte>;
@@ -102,7 +102,7 @@ Bytes read(const std::filesystem::path& path) {
 }  // namespace
 
 TEST_CASE("RIFE mouvement : le flot final reconnu à son warp, pas à son nom", "[app][motion_model]") {
-  const auto dir = std::filesystem::temp_directory_path() / "ajp-motion-model";
+  const auto dir = std::filesystem::temp_directory_path() / "kirari-motion-model";
   std::filesystem::remove_all(dir);
   const auto derived = motion_model(write_rife(dir, false), dir / "modeles");
   REQUIRE(derived);
@@ -128,4 +128,4 @@ TEST_CASE("RIFE : multiple de remplissage selon le modèle, 128 pour 4.25 lite v
   CHECK(rife_padding_multiple("/m/rife_v4.26_heavy.onnx") == 64);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

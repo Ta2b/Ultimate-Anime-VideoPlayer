@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace ajp::core {
+namespace kirari::core {
 
 MovingArea moving_area(std::span<const std::uint32_t> deviation, std::uint32_t blocks_x,
                        std::uint32_t limit) {
@@ -25,4 +25,4 @@ MovingArea moving_area(std::span<const std::uint32_t> deviation, std::uint32_t b
   return out;
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

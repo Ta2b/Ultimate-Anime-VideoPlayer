@@ -11,7 +11,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
-namespace ajp::media {
+namespace kirari::media {
 
 std::unexpected<Refusal> refuse_av(RefusalCode code, std::string_view where, int error) {
   return refuse(code, std::format("{} : {}", where, av_error_text(error)));
@@ -66,4 +66,4 @@ bool chroma_beyond_420(const AVCodecParameters& av) {
   }
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

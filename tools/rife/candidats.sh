@@ -17,7 +17,7 @@
 set -euo pipefail
 
 DEST="${1:?dossier de destination}"
-CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/ajp-release-models}"
+CACHE="${2:-${XDG_CACHE_HOME:-$HOME/.cache}/kirari-release-models}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SEVENZ="$(command -v 7z || command -v 7zz || true)"
 [ -n "$SEVENZ" ] || { echo "7z manquant (apt install p7zip-full, brew install sevenzip)" >&2; exit 1; }

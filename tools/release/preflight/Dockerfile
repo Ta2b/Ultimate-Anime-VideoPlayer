@@ -8,9 +8,9 @@
 # reconstruit les étages qui le lisent.
 FROM ubuntu:24.04 AS base
 ARG DEBIAN_FRONTEND=noninteractive
-COPY tools/release/versions.env /ajp/
+COPY tools/release/versions.env /kirari/
 # Ce que l'image du runner fournit déjà (gcc-13, git, curl, file, pip) puis les listes du workflow.
-RUN . /ajp/versions.env && apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+RUN . /kirari/versions.env && apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       ca-certificates curl gpg git file xz-utils unzip sudo make \
       gcc g++ gcc-13 g++-13 python3 python3-pip python3-venv \
       $APT_BUILD $APT_PLAYER $APT_PACKAGE \
@@ -21,19 +21,19 @@ RUN usermod -l runner -d /home/runner -m ubuntu && groupmod -n runner ubuntu \
 USER runner
 WORKDIR /home/runner
 ENV PIP_BREAK_SYSTEM_PACKAGES=1 PATH=/home/runner/.local/bin:$PATH CC=gcc-13 CXX=g++-13 \
-    AJP_DEPS_PREFIX=/home/runner/ajp-deps
-RUN . /ajp/versions.env && pip install --user -q "meson==${MESON_VERSION}" "cmake~=3.31.0"
+    KIRARI_DEPS_PREFIX=/home/runner/kirari-deps
+RUN . /kirari/versions.env && pip install --user -q "meson==${MESON_VERSION}" "cmake~=3.31.0"
 
 FROM base AS deps
 COPY --chown=runner tools/deps/linux-from-source.sh /home/runner/linux-from-source.sh
 # linux-from-source.sh cherche le correctif de libplacebo à <racine du dépôt>/ports/... avec la racine deux
 # dossiers au-dessus de lui : copié dans /home/runner il lit « //ports/... », qui n'existait pas dans l'image.
-COPY ports/libplacebo/0001-ajp-present-timing.patch /ports/libplacebo/0001-ajp-present-timing.patch
+COPY ports/libplacebo/0001-kirari-present-timing.patch /ports/libplacebo/0001-kirari-present-timing.patch
 COPY ports/libass/rendu-sur-plusieurs-fils.patch /ports/libass/rendu-sur-plusieurs-fils.patch
-RUN bash /home/runner/linux-from-source.sh "$AJP_DEPS_PREFIX" /home/runner/deps-src \
+RUN bash /home/runner/linux-from-source.sh "$KIRARI_DEPS_PREFIX" /home/runner/deps-src \
  && rm -rf /home/runner/deps-src
 
 FROM deps AS tests
-RUN . /ajp/versions.env && sudo apt-get update -qq \
+RUN . /kirari/versions.env && sudo apt-get update -qq \
  && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $APT_TESTS \
  && sudo rm -rf /var/lib/apt/lists/*

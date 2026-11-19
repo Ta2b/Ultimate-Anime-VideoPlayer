@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <memory>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class MappedFile {
  public:
@@ -25,4 +25,4 @@ class MappedFile {
   std::size_t size_ = 0;
 };
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

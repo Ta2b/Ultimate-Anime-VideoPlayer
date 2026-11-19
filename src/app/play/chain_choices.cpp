@@ -21,7 +21,7 @@
 #include "app/play/stage_fallback.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepare& span_prepare,
                               int auto_peak, bool source_hdr) {
@@ -76,4 +76,4 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .stage_note = stage_panel_note(c.stage_notes)};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace ajp {
+namespace kirari {
 
 enum class GpuApi : std::uint8_t { Vulkan, Cuda, D3d11, Metal };
 enum class GpuVendor : std::uint8_t { Nvidia, Amd, Intel, Apple, Other };
@@ -114,4 +114,4 @@ struct GpuDevice {
   GpuVendor vendor() const { return vendor_from_pci(pci_vendor); }
 };
 
-}  // namespace ajp
+}  // namespace kirari

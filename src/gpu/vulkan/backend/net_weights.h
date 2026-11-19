@@ -7,7 +7,7 @@
 
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 enum class BlobType : std::uint8_t { F32, F16 };
 
@@ -48,4 +48,4 @@ std::vector<std::byte> fp8_bias_and_scales(const ir::Tensor* bias, const std::ve
 // Une constante lue comme tenseur par un noyau : ses valeurs dans son type, en ordre ligne.
 std::vector<std::byte> constant_blob(const ir::Tensor& constant);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

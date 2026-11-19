@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Le graphe des modules (P5.24, P5.26) : relu des appels ajp_add_module de src/, sans configurer CMake.
+"""Le graphe des modules (P5.24, P5.26) : relu des appels kirari_add_module de src/, sans configurer CMake.
 
 Refusé :
 - un cycle entre modules (DEPS et PRIVATE_DEPS) ;
@@ -8,7 +8,7 @@ Refusé :
 Les fichiers d'un module : ses SOURCES et les en-têtes du même nom ; un en-tête seul se rattache au module de
 son dossier qui n'a pas de sources (module d'interface), sinon au module qui porte le dossier.
 
-gpu et prepare (P5.24) : ajp::gpu est l'interface des moteurs (backend.h, kernel_ops.h), sans source ; prepare
+gpu et prepare (P5.24) : kirari::gpu est l'interface des moteurs (backend.h, kernel_ops.h), sans source ; prepare
 la lit, et les backends chargés à l'exécution (vulkan/backend, cuda) lient prepare. Le dossier gpu/ porte les
 deux côtés, le graphe des modules n'a pas de cycle, et ce script le garde ainsi.
 """
@@ -30,7 +30,7 @@ def modules():
         if "CMakeLists.txt" not in files:
             continue
         text = strip_comments(open(os.path.join(base, "CMakeLists.txt"), encoding="utf-8").read())
-        for match in re.finditer(r"ajp_add_module\(", text):
+        for match in re.finditer(r"kirari_add_module\(", text):
             depth, i = 1, match.end()
             while depth and i < len(text):
                 depth += {"(": 1, ")": -1}.get(text[i], 0)
@@ -44,8 +44,8 @@ def modules():
                 elif section == "SOURCES" and not word.startswith(('"$', "$")):
                     mod["sources"].append(os.path.normpath(os.path.join(base, word.strip('"'))))
                 elif section in ("DEPS", "PRIVATE_DEPS"):
-                    dep = re.search(r"ajp::(\w+)", word)
-                    if dep and not word.startswith("ajp::dep::"):
+                    dep = re.search(r"kirari::(\w+)", word)
+                    if dep and not word.startswith("kirari::dep::"):
                         mod["deps"].append(dep.group(1))
                         if section == "DEPS":
                             mod["public"].append(dep.group(1))
@@ -136,15 +136,15 @@ def main():
                 used.add(dep)
                 same_dir = mods[dep]["dir"] == mod["dir"]
                 if dep not in visible and not same_dir:
-                    errors.append(f"{os.path.relpath(path, ROOT)} inclut {inc} : ajp::{dep} non déclaré")
+                    errors.append(f"{os.path.relpath(path, ROOT)} inclut {inc} : kirari::{dep} non déclaré")
         used_dirs = {mods[d]["dir"] for d in used}
         for dep in mod["deps"]:
             if dep in mods and dep not in used and mods[dep]["dir"] not in used_dirs:
-                errors.append(f"ajp::{name} déclare ajp::{dep} sans en inclure un en-tête")
+                errors.append(f"kirari::{name} déclare kirari::{dep} sans en inclure un en-tête")
     for line in errors:
         print(line)
     if errors:
-        print("::error::graphe des modules : corriger les DEPS de ajp_add_module (tools/ci/check-module-graph.py)")
+        print("::error::graphe des modules : corriger les DEPS de kirari_add_module (tools/ci/check-module-graph.py)")
         return 1
     print(f"graphe des modules : {len(mods)} modules, sans cycle")
     return 0

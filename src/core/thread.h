@@ -26,7 +26,7 @@
 
 #include "core/types.h"
 
-namespace ajp {
+namespace kirari {
 
 // Le refus qu'est devenue l'exception en cours, à appeler dans un bloc catch.
 // Ne lève jamais : sans mémoire pour le détail, le refus part sans détail.
@@ -155,4 +155,4 @@ std::shared_ptr<std::future<std::expected<T, Refusal>>> start_task(std::string_v
   }
 }
 
-}  // namespace ajp
+}  // namespace kirari

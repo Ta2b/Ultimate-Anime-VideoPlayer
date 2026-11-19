@@ -8,7 +8,7 @@
 
 #include "app/play/first_run.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 inline constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
 
@@ -19,4 +19,4 @@ void engine_row(EngineRow& row);     // case, nom, badges, état, licence à acc
 // Les écrans de l'assistant (wizard.h), centrés dans la fenêtre.
 void draw_wizard(FirstRunView& view, float scale);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

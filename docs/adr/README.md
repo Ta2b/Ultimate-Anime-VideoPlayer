@@ -18,5 +18,6 @@ sa page, avec le numéro de celle qui la remplace.
 | [0013](0013-ed25519-maison-garde.md) | La vérification Ed25519 maison est gardée, sous vecteurs RFC 8032 et Wycheproof | Acceptée |
 | [0014](0014-briques-maison.md) | Les briques maison qui restent, une raison ou un remplacement par ligne | Acceptée |
 | [0015](0015-pistes-ecartees.md) | Pistes d'optimisation écartées : parcimonie 2:4, NvFRUC, assembleur, -march imposé, PGO | Acceptée |
+| [0016](0016-kirari-player.md) | ajp devient Kirari Player : un seul dossier de données, un seul dépôt, relais pour les lecteurs 0.11 | Acceptée |
 
 Les numéros 0005 et 0006 n'ont jamais été attribués : deux brouillons abandonnés avant d'être écrits (P5.38).

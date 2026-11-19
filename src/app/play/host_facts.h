@@ -20,7 +20,7 @@
 #include "app/play/settings.h"
 #include "app/play/system_peak.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Période de rafraîchissement de l'écran de la fenêtre ; 0 si inconnue (la session la mesure
 // alors sur les présentations).
@@ -106,4 +106,4 @@ bool tensorrt_backend_present(const EngineCatalog& catalog, const PlayerPaths& p
 EnginesHere engines_here(const PlayOptions& options, const PlayerPaths& paths, const EngineCatalog& catalog,
                          std::string_view gpu_name);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

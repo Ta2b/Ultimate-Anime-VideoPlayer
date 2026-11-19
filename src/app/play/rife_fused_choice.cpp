@@ -2,7 +2,7 @@
 
 #include "kernels/spec/rife.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string rife_fused_declined(const PlaySettings& settings, bool backend_does_it, int rife_planes,
                                 PrecisionTier tier) {
@@ -16,4 +16,4 @@ std::string rife_fused_declined(const PlaySettings& settings, bool backend_does_
   return {};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

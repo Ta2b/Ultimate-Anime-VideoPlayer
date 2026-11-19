@@ -11,7 +11,7 @@
 #include "app/play/input.h"
 #include "app/play/settings.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 class PlayerUi;
 
@@ -33,4 +33,4 @@ inline constexpr std::string_view kSettingsChangedKey = "engine.settings-changed
 // ferme, ses réglages vont dans `change`. Les autres entrées restent dans `actions`.
 void take_loading_inputs(PlayerUi& ui, std::vector<Input>& actions, LoadingChange& change);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

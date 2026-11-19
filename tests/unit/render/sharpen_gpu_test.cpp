@@ -11,7 +11,7 @@
 #include "grade_gpu_support.h"
 #include "render/sharpen.h"
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 using namespace gpu_test;
@@ -141,4 +141,4 @@ TEST_CASE("netteté : le même liseré borné en fenêtre réduite ou agrandie",
 }
 
 }  // namespace
-}  // namespace ajp::render
+}  // namespace kirari::render

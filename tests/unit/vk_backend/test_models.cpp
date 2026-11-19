@@ -3,7 +3,7 @@
 #include "gpu/ir/onnx_model.h"
 #include "net_rig.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 using ir::test::attr_float;
 using ir::test::attr_int;
@@ -81,4 +81,4 @@ ModelBuilder rife_like(bool half) {
   return m;
 }
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

@@ -5,7 +5,7 @@
 
 #include "kernels/spec/detect.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 PairFacts moving(std::uint32_t factor) {
@@ -59,9 +59,9 @@ TEST_CASE("RIFE : poses_copy, a tient jusqu'à 1/2 puis b paraît, seulement apr
   CHECK(poses_copy(true, false, 0.75F) == PoseCopy::None);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("RIFE : une coupe si les plans ou la mesure la voient (P3.31)", "[app][rife]") {
   PairFacts measured_cut = moving(4);
@@ -80,9 +80,9 @@ TEST_CASE("RIFE : une coupe si les plans ou la mesure la voient (P3.31)", "[app]
   CHECK(rife_runs(effect));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("RIFE : le score de coupe est rapporté à la zone hors bandes noires (P3.32)", "[app][rife]") {
   PairFacts scope = moving(4);
@@ -165,9 +165,9 @@ TEST_CASE("RIFE : CutBurst, strictement avant et au plus kCutBurstUs", "[app][ri
   CHECK_FALSE(burst.after_cut(1'001 + kCutBurstUs));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 TEST_CASE("RIFE : sur une paire forte, le milieu sert les instants qu'il prolonge de moins que le seuil",
           "[app][rife][strong_middle]") {
@@ -184,4 +184,4 @@ TEST_CASE("RIFE : sur une paire forte, le milieu sert les instants qu'il prolong
   CHECK(middle_reaches(14.9F, 0.0F, kSingle));
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -4,7 +4,7 @@
 # de calibration » (tests/unit/render/grade_before_warp_test.cpp, [.mesure]).
 set -euo pipefail
 here="$(cd "$(dirname "$0")/../.." && pwd)"
-out="${1:-$(dirname "$(mktemp -u)")/ajp-warp-stills.rgb}"
+out="${1:-$(dirname "$(mktemp -u)")/kirari-warp-stills.rgb}"
 : >"$out"
 for plan in $(seq 0 17); do
   at=$((plan * 6 + 3))

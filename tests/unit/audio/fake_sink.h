@@ -12,7 +12,7 @@
 #include "audio/sink.h"
 #include "core/clock.h"
 
-namespace ajp::audio::test {
+namespace kirari::audio::test {
 
 class FakeSink final : public AudioSink {
  public:
@@ -135,4 +135,4 @@ class FakeMaster final : public MasterClock {
   ClockSnapshot snapshot_;
 };
 
-}  // namespace ajp::audio::test
+}  // namespace kirari::audio::test

@@ -6,10 +6,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::media::choose_tracks;
-using ajp::media::LanguagePriorities;
-using ajp::media::TrackInfo;
-using ajp::media::TrackKind;
+using kirari::media::choose_tracks;
+using kirari::media::LanguagePriorities;
+using kirari::media::TrackInfo;
+using kirari::media::TrackKind;
 
 namespace {
 
@@ -103,7 +103,7 @@ TEST_CASE("selection : les sous-titres image ne sont jamais choisis", "[media][s
 
 TEST_CASE("selection : deux préférences audio + sous-titres, la première entière gagne",
           "[media][selection][presets]") {
-  using ajp::media::LanguagePreset;
+  using kirari::media::LanguagePreset;
   const LanguagePriorities jp_fr_then_fr{
       .presets = {LanguagePreset{"jpn", "fre"}, LanguagePreset{"fre", ""}}};
   const std::vector<TrackInfo> both{track(1, TrackKind::Audio, "fre"), track(2, TrackKind::Audio, "jpn"),
@@ -136,8 +136,8 @@ TEST_CASE("selection : deux préférences audio + sous-titres, la première enti
 // A17-02, A18-15 : mov_text et WebVTT se lisent en texte ; les sous-titres image ne se lisent pas, et se
 // reconnaissent pour être dits.
 TEST_CASE("selection : mov_text et WebVTT lisibles, PGS et VobSub image", "[media][selection]") {
-  using ajp::media::subtitle_image;
-  using ajp::media::subtitle_readable;
+  using kirari::media::subtitle_image;
+  using kirari::media::subtitle_readable;
   CHECK(subtitle_readable("mov_text"));
   CHECK(subtitle_readable("webvtt"));
   CHECK_FALSE(subtitle_readable("hdmv_pgs_subtitle"));

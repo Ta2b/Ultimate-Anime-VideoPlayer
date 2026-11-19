@@ -13,7 +13,7 @@
 #include "app/play/visible_error.h"
 #include "core/log.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // Faut-il écrire play.toml maintenant ? Relève aussi l'échec d'écriture que le fil d'écriture a rapporté : un
 // avis, une fois par écrivain ; si c'est play.toml, il est remis à écrire (`dirty`), après une pause plus
@@ -52,4 +52,4 @@ inline void finish_settings_writes(LatestWriter& writer, const std::filesystem::
   if (auto again = save_settings(path, saved); !again) log_channel("app")->warn("{}", again.error().detail);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

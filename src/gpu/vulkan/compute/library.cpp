@@ -7,7 +7,7 @@
 
 #include "gpu/vulkan/compute/refuse.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 #if defined(_WIN32)
@@ -44,4 +44,4 @@ std::expected<VulkanLibrary, Refusal> VulkanLibrary::wrap(DynamicLibrary library
   return VulkanLibrary(std::move(library), *entry);
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

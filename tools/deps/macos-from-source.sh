@@ -5,13 +5,13 @@
 # leurs dépôts aux mêmes références que linux-from-source.sh.
 #
 #   tools/deps/macos-from-source.sh [--locked] <prefixe> [dossier-de-travail]
-#   AJP_DEPS_PREFIX=<prefixe> cmake --preset macos-release
+#   KIRARI_DEPS_PREFIX=<prefixe> cmake --preset macos-release
 set -euo pipefail
 
 LOCKED=0
 if [[ "${1:-}" == "--locked" ]]; then LOCKED=1; shift; fi
 PREFIX="$(cd "$(dirname "${1:?usage: $0 [--locked] <prefixe> [dossier-de-travail]}")" && pwd)/$(basename "$1")"
-WORK="${2:-$PREFIX/../ajp-deps-src}"
+WORK="${2:-$PREFIX/../kirari-deps-src}"
 JOBS="$(sysctl -n hw.ncpu)"
 mkdir -p "$PREFIX" "$WORK"
 WORK="$(cd "$WORK" && pwd)"
@@ -176,7 +176,7 @@ PLACEBO_OPTS=(--prefix="$PREFIX" --libdir=lib
 # ou de l'autre rebâtit libplacebo (une copie liée à celle de Homebrew ne se charge plus).
 # Le correctif de présentation (chantier 6.1), le même que sous Linux et le port vcpkg : le lecteur lit ses types
 # (pl_vulkan_present, placebo_feedback.h) ; sa somme entre dans la signature.
-placebo_patch="$ROOT/ports/libplacebo/0001-ajp-present-timing.patch"
+placebo_patch="$ROOT/ports/libplacebo/0001-kirari-present-timing.patch"
 signature="$(ref_of libplacebo) ${PLACEBO_OPTS[*]} vulkan-headers $(ref_of vulkan-headers) vulkan-loader $(ref_of vulkan-loader) $(shasum -a 256 "$placebo_patch" | cut -c1-16)"
 if ! done_marker libplacebo "$signature"; then
   git -C "$WORK/libplacebo" submodule update --init --depth 1 -q
@@ -211,7 +211,7 @@ if ! done_marker libass "$signature"; then
   mark libass "$signature"
 fi
 
-# ONNX Runtime (fournisseur CoreML) pour ajp_backend_coreml : la version publiée, vérifiée. Avant
+# ONNX Runtime (fournisseur CoreML) pour kirari_backend_coreml : la version publiée, vérifiée. Avant
 # 1.31, le fournisseur refusait chaque nœud FP16 (tools/ci/coreml_report.py : SPAN 2 nœuds sur 56,
 # RIFE 34 sur 247), qui tournaient alors sur le CPU ; en 1.31, 53 sur 56 et 247 sur 247.
 ORT_VERSION=1.31.0

@@ -27,7 +27,7 @@
 #include "app/play/text_fit.h"
 #include "core/engines.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using panel::kWarn;
@@ -443,4 +443,4 @@ SettingsPanel::Result SettingsPanel::draw(const PlaySettings& running, const Set
   return result;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

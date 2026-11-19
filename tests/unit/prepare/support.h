@@ -19,7 +19,7 @@
 
 #include "core/types.h"
 
-namespace ajp::prepare::test {
+namespace kirari::prepare::test {
 
 namespace fs = std::filesystem;
 
@@ -29,7 +29,7 @@ class TempDir {
   TempDir() {
     std::random_device random;
     path_ = fs::temp_directory_path() /
-            ("ajp-prepare-" + std::to_string(random()) + "-" + std::to_string(random()));
+            ("kirari-prepare-" + std::to_string(random()) + "-" + std::to_string(random()));
     fs::create_directories(path_);
   }
   TempDir(const TempDir&) = delete;
@@ -72,7 +72,7 @@ inline std::span<const std::byte> as_bytes(std::string_view text) {
 // Code du refus, ou nullopt si result porte une valeur : error() n'est jamais
 // appelé sur une valeur.
 template <class T>
-std::optional<ajp::RefusalCode> refusal(const std::expected<T, ajp::Refusal>& result) {
+std::optional<kirari::RefusalCode> refusal(const std::expected<T, kirari::Refusal>& result) {
   if (result) return std::nullopt;
   return result.error().code;
 }
@@ -88,7 +88,7 @@ inline int stage_count(const fs::path& parent) {
 
 // Exécutable d'aide (helper.cpp), chemin fixé par CMake.
 inline fs::path helper_path() {
-  return fs::path(AJP_PREPARE_HELPER);
+  return fs::path(KIRARI_PREPARE_HELPER);
 }
 
 // --- Écriture protobuf minimale, pour fabriquer des ONNX de test ---
@@ -158,4 +158,4 @@ inline std::string onnx(const FakeModel& model) {
   return field(1, std::uint64_t{8}) + field(7, graph);
 }
 
-}  // namespace ajp::prepare::test
+}  // namespace kirari::prepare::test

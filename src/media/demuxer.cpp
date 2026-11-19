@@ -32,7 +32,7 @@ extern "C" {
 #include "media/mkv_chapters.h"
 #include "media/tag_text.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 struct Demuxer::State {
   FormatPtr format;
@@ -734,4 +734,4 @@ std::uint32_t Demuxer::file_seeks() const {
   return state_->file_seeks;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

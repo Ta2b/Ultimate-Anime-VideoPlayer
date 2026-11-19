@@ -16,7 +16,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-using namespace ajp::gpu::vk::net;
+using namespace kirari::gpu::vk::net;
 
 namespace {
 

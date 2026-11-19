@@ -15,7 +15,7 @@ set -euo pipefail
 VIDEO="$1"; OUT="$2"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PY="${PYTHON:-python3}"
-RIFE_DIR="${RIFE_DIR:-$HOME/.local/share/ajp/ajp/rife}"
+RIFE_DIR="${RIFE_DIR:-$HOME/.local/share/kirari/rife}"
 INTERP_DIR="${INTERP_DIR:-$RIFE_DIR}"
 TOOL="$HERE/interp_fp8.py"
 # frames-1080 et in-1088x1920 : d'autres dossiers que ceux d'avant (720p, 768x1280), dont le cache est périmé.

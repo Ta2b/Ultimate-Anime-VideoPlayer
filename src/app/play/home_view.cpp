@@ -7,7 +7,7 @@
 #include "app/play/i18n.h"
 #include "app/play/panel_style.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 using panel::kAccent;
 using panel::kWarn;
@@ -41,7 +41,7 @@ void draw_home(HomeView& view, float scale, std::optional<PanelSpan> settings) {
                                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
   if (ImGui::Begin("##accueil", nullptr, kFlags)) {
     ImGui::PushFont(nullptr, style.FontSizeBase * 2.2F);
-    ImGui::TextUnformatted("ajp");
+    ImGui::TextUnformatted("Kirari Player");
     ImGui::PopFont();
     note(
         i18n::tr("Upscaling, interpolation and HDR for anime: adjust the settings here before "
@@ -70,4 +70,4 @@ void draw_home(HomeView& view, float scale, std::optional<PanelSpan> settings) {
   ImGui::End();
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

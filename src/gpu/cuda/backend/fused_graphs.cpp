@@ -7,7 +7,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/cuda_warn.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 FusedGraphs::FusedGraphs(std::size_t capacity, std::string who)
     : book_(capacity, kCaptureAttempts), who_(std::move(who)) {}
@@ -72,4 +72,4 @@ std::expected<bool, Refusal> FusedGraphs::replay(cudaStream_t stream, std::size_
   return false;
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

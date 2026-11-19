@@ -12,8 +12,8 @@
 #include "kernels/ref/warp.h"
 #include "kernels/spec.h"
 
-using namespace ajp::kernels;
-using namespace ajp::test;
+using namespace kirari::kernels;
+using namespace kirari::test;
 using Catch::Matchers::WithinAbs;
 
 namespace {

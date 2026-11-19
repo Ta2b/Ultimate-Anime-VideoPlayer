@@ -15,7 +15,7 @@
 #include "app/play/export_job.h"
 #include "app/play/player_engines.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class ExportEnd : std::uint8_t {
   Done,       // fichier écrit
@@ -31,4 +31,4 @@ struct ExportOutcome {
 
 ExportOutcome run_export(Player& p, const ExportJob& job);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -15,7 +15,7 @@ avancés. Le protocole ABAB reste celui qui le vérifie sur la RTX.
 | `rife_v4.26.onnx` | archive `models-rife-fp16-1` d'animejanai-inference, celle des RIFE livrés | la même que `rife_v4.25.onnx` livré : seuls les poids diffèrent |
 | `rife_v4.25_lite.onnx` | export officiel de vs-mlrt, release `external-models`, dossier `rife/` (11 plans, FP32) | `tools/rife/convert_rife_fp16.py` (Resize en FP32 : TensorRT 11.3 sort des NaN sur ce réseau sinon) |
 
-Aucun code d'un autre lecteur n'est repris (TheAnimeScripter est sous AGPL 3, ajp sous MPL 2) : ce sont les fichiers
+Aucun code d'un autre lecteur n'est repris (TheAnimeScripter est sous AGPL 3, kirari sous MPL 2) : ce sont les fichiers
 des auteurs des exports. 4.25 lite se remplit au multiple de 128 (`rife_padding_multiple`), les autres au multiple
 de 64.
 
@@ -84,23 +84,23 @@ Runtime sur processeur ne disent rien de la RTX et ne sont pas repris. Rapports 
 Sur le poste NVIDIA, GPU sans autre charge, binaire livré (`linux-release` ou `windows-release` ; `linux-prefix`
 est en Debug et ses temps ne valent rien). Les fichiers de Re:Zero restent sur le poste, hors du dépôt.
 
-1. Les candidats : `tools/rife/candidats.sh ~/ajp-rife-candidats`. Les livrés sont dans le dossier `rife/` du
+1. Les candidats : `tools/rife/candidats.sh ~/kirari-rife-candidats`. Les livrés sont dans le dossier `rife/` du
    lecteur (ou `tools/release/fetch-models.sh`).
-2. Les extraits, `~/ajp-reports/rife/extraits.tsv` (fichier, tabulation, début en secondes) : Re:Zero 18 à 16:00
+2. Les extraits, `~/kirari-reports/rife/extraits.tsv` (fichier, tabulation, début en secondes) : Re:Zero 18 à 16:00
    (`960`, l'extrait de docs/rife-fusionne.md), un panoramique lent et une scène d'action du même épisode.
 3. Temps par image, 4.22 lite (A) contre 4.25 lite (B), cinq tours (banc_resume ne conclut qu'à partir de cinq) :
 
    ```sh
-   L=~/ajp-rife-candidats
-   flock ~/ajp-reports/gpu-bench.lock tools/bench/banc.sh --tours=5 --secondes=30 \
+   L=~/kirari-rife-candidats
+   flock ~/kirari-reports/gpu-bench.lock tools/bench/banc.sh --tours=5 --secondes=30 \
      --a="--rife=3 --one-lane --rife-model=rife_v4.22_lite.onnx" \
      --b="--rife=3 --one-lane --rife-model=$L/rife_v4.25_lite.onnx" \
-     --extraits=~/ajp-reports/rife/extraits.tsv --sortie=~/ajp-reports/rife/lite
-   python3 -I tools/bench/banc_gpu_resume.py ~/ajp-reports/rife/lite
+     --extraits=~/kirari-reports/rife/extraits.tsv --sortie=~/kirari-reports/rife/lite
+   python3 -I tools/bench/banc_gpu_resume.py ~/kirari-reports/rife/lite
    ```
 
    puis 4.25 (A) contre 4.26 (B), `--rife-model=rife_v4.25.onnx` et `--rife-model=$L/rife_v4.26.onnx`, sortie
-   `~/ajp-reports/rife/426`. `banc_gpu_resume.py` donne la médiane du moteur RIFE de chaque passage (avec
+   `~/kirari-reports/rife/426`. `banc_gpu_resume.py` donne la médiane du moteur RIFE de chaque passage (avec
    `--one-lane`, son coût propre) et l'écart de B contre A ; `resume.txt` (banc_resume) donne les images en retard
    et manquées. Le premier passage de chaque variante construit ses moteurs (une minute environ) : le préchauffage
    de banc.sh l'absorbe. Le journal de chaque passage dit si la chaîne fusionnée a tourné (« RIFE fusionné ») ;
@@ -109,12 +109,12 @@ est en Debug et ses temps ne valent rien). Les fichiers de Re:Zero restent sur l
 
    ```sh
    tools/bench/qualite.sh --seulement mouvement --provider cuda --video ReZero-18.mkv --scenes 60 \
-     --taille 1920x1080 --reseau $L/rife_v4.25_lite.onnx --reseau $L/rife_v4.26.onnx --md ~/ajp-reports/rife/qualite.md
+     --taille 1920x1080 --reseau $L/rife_v4.25_lite.onnx --reseau $L/rife_v4.26.onnx --md ~/kirari-reports/rife/qualite.md
    ```
 
    Le banc ne garde que des fenêtres où k, k+1 et k+2 diffèrent ; poses tenues et coupes n'y sont pas.
 5. À l'œil, sur Re:Zero, après les chiffres : jouer chaque paire A, B, A, B sur le panoramique et sur l'action
-   (`ajp play ReZero-18.mkv --start=960 --rife-model=…`), plein écran, en regardant les traits fins et les cheveux
+   (`kirari play ReZero-18.mkv --start=960 --rife-model=…`), plein écran, en regardant les traits fins et les cheveux
    qui bougent, le texte et les bords de l'image (fantômes, traits dédoublés, cassures), les poses tenues.
 
 Ce qui ferait revenir sur les niveaux : 4.26 nettement plus lent que 4.25 (banc_resume : « gain acquis » en

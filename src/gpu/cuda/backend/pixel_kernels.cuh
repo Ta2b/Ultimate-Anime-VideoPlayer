@@ -11,7 +11,7 @@
 
 #include "gpu/cuda/backend/ring_surface.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 inline constexpr int kPixelThreads = 256;
 inline constexpr int kPixelBlocksPerSm = 4;
@@ -100,4 +100,4 @@ struct Max {
   __device__ float operator()(float a, float b) const { return fmaxf(a, b); }
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

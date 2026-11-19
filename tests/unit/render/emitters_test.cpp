@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::render {
+namespace kirari::render {
 namespace {
 
 constexpr int kW = 256;
@@ -83,4 +83,4 @@ TEST_CASE("émetteurs v2 : une image mal formée ne rend rien", "[render][emitte
   CHECK(emitter_map_v2(bad).empty());
 }
 
-}  // namespace ajp::render
+}  // namespace kirari::render

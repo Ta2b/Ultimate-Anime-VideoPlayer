@@ -43,7 +43,7 @@
 #include "core/log.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // La fenêtre en points de l'écran sous Windows et X11 aussi (window_size.h), centrée sur son
@@ -775,4 +775,4 @@ PlaceboScreen::DeviceFacts PlaceboScreen::device_facts() const {
   return facts;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

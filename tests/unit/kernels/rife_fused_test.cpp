@@ -11,7 +11,7 @@
 #include "kernels/spec/rife.h"
 #include "kernels/spec/rife_fused.h"
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 namespace {
 
 constexpr RifeFusedPlan kV425{.blocks = 5, .reduce = {8, 8, 4, 2, 1}};
@@ -193,4 +193,4 @@ TEST_CASE("Catmull-Rom : poids de somme 1, passe par les points, rend une rampe 
 }
 
 }  // namespace
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels

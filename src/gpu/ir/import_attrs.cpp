@@ -12,7 +12,7 @@
 #include "gpu/ir/graph.h"
 #include "gpu/ir/ops.h"
 
-namespace ajp::gpu::ir::detail {
+namespace kirari::gpu::ir::detail {
 namespace {
 
 using onnx::AttributeType;
@@ -420,4 +420,4 @@ std::expected<Value, Refusal> constant_value(const onnx::Node& node) {
               std::format("Constant {} : attribut {} non pris en charge", node.name, attr.name)});
 }
 
-}  // namespace ajp::gpu::ir::detail
+}  // namespace kirari::gpu::ir::detail

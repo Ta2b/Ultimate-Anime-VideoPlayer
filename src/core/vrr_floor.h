@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace ajp::core {
+namespace kirari::core {
 
 // L'intervalle entre deux présentations d'une image tenue hold_us, sans jamais dépasser floor_us :
 // hold / ceil(hold / floor). Au plancher ou en dessous, ou sans plancher (floor_us ≤ 0), l'image ne se
@@ -22,4 +22,4 @@ constexpr std::int64_t vrr_floor_us(int min_hz) {
   return static_cast<std::int64_t>(1'000'000.0 / (static_cast<double>(min_hz) * 1.1));
 }
 
-}  // namespace ajp::core
+}  // namespace kirari::core

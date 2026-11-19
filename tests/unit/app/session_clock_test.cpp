@@ -13,7 +13,7 @@
 #include "doubles.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 using test::FakeClock;
@@ -152,4 +152,4 @@ TEST_CASE("C13-04 : par numéro de vblank, l'image paraît à son vblank, pas un
   CHECK(screen.shown.back().frame->slot == 1);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

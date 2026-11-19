@@ -7,7 +7,7 @@
 
 #include "core/types.h"
 
-namespace ajp::audio {
+namespace kirari::audio {
 namespace {
 
 // Les bornes de la correction de dérive sont incluses, à l'arrondi près.
@@ -166,4 +166,4 @@ void AudioOutput::on_demand(std::function<void(const DeviceReading&)> callback) 
   sink_->on_demand(std::move(callback));
 }
 
-}  // namespace ajp::audio
+}  // namespace kirari::audio

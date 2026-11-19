@@ -20,7 +20,7 @@
 #include "core/frame.h"
 #include "core/types.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 class GpuTiming;
 
@@ -102,4 +102,4 @@ class HostUploads {
   std::vector<std::byte*> outgrown_;
 };
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

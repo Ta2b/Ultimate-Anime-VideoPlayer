@@ -10,7 +10,7 @@
 #include "app/play/session.h"
 #include "core/frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // Une réponse aux sous-titres propres à son pts (un atlas de génération pts) ; same : ceux de la génération
@@ -115,4 +115,4 @@ TEST_CASE("Sous-titres : une réponse rendue avec la montée n'est pas jetée co
   CHECK(queue.for_pts(41'000)->line_lift == 0.12F);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

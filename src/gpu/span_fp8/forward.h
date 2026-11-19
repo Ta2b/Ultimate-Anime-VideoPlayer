@@ -18,7 +18,7 @@
 
 #include "gpu/span_fp8/package.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 
 // Les échelles et le drapeau FP8 du paquet sont ignorés : les poids FP16 tels quels, calcul en f32.
 // rgb : 3 plans de height × width (hauteur et largeur paires), dans [0, 1] en pratique. Rend 3 plans de
@@ -30,4 +30,4 @@ std::vector<float> forward(const Package& package, std::span<const float> rgb, i
 // convolution 3×3 au demi-plan de travail mange une ligne : conv_1, trois par bloc, to_pixel.
 int exact_side(int side, int blocks);
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

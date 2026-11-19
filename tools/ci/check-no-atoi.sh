@@ -4,8 +4,8 @@
 # commentaires et chaînes.
 set -euo pipefail
 names='atoi|atol|atoll|atof|sscanf|swscanf|vsscanf|strtod|strtof|strtold|strtol|strtoll|strtoul|strtoull|stoi|stol|stoll|stoul|stoull|stof|stod|stold'
-hits=$(git ls-files -z -- 'src/*' | AJP_NAMES="$names" xargs -0 perl -ne '
-  BEGIN { $re = qr/\b(?:$ENV{AJP_NAMES})\s*\(/ }
+hits=$(git ls-files -z -- 'src/*' | KIRARI_NAMES="$names" xargs -0 perl -ne '
+  BEGIN { $re = qr/\b(?:$ENV{KIRARI_NAMES})\s*\(/ }
   (my $code = $_) =~ s{\x27(?:\\.|[^\x27\\])\x27}{}g;
   $code =~ s{"(?:\\.|[^"\\])*"}{""}g;
   $code =~ s{//.*}{};

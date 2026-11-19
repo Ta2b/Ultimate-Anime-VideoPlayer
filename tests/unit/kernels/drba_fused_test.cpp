@@ -4,7 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 namespace {
 
 constexpr DrbaFusedPlan kNormal{.tail = 4};
@@ -89,4 +89,4 @@ TEST_CASE("DRBA fusionné : la disposition des tampons, alignée, sans recouvrem
 }
 
 }  // namespace
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels

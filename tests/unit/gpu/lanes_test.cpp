@@ -8,7 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-namespace ajp::gpu {
+namespace kirari::gpu {
 namespace {
 
 using Waits = LaneHazards::Waits;
@@ -142,4 +142,4 @@ TEST_CASE("Voies : une mémoire rendue sort de la table (A21-09)", "[gpu][lanes]
   CHECK(hazards.tracked() <= 2);
 }
 
-}  // namespace ajp::gpu
+}  // namespace kirari::gpu

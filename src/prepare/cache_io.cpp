@@ -18,7 +18,7 @@
 #include <unistd.h>
 #endif
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 namespace fs = std::filesystem;
@@ -166,4 +166,4 @@ std::expected<void, Refusal> cleanup_stage(const fs::path& folder) {
   return {};
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

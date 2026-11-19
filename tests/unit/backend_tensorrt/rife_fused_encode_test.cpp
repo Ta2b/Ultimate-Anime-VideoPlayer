@@ -4,7 +4,7 @@
 // d'entrée, deux instants par paire ; le parcours trois fois de suite (exécution directe, capture du graphe
 // CUDA, rejeu). Un autre moteur fusionné passé entre deux appels, dans la même zone d'activation, efface
 // l'encodage gardé : l'annonce qui suit encode de nouveau, la sortie reste exacte. Test caché, sur la carte
-// NVIDIA et les modèles du lecteur : ajp_backend_tensorrt_tests "[.rife_fused]". Un SPAN sur la même voie,
+// NVIDIA et les modèles du lecteur : kirari_backend_tensorrt_tests "[.rife_fused]". Un SPAN sur la même voie,
 // lui, n'écrit que sous les tampons gardés (C03-01) : ils servent encore.
 #include <algorithm>
 #include <array>
@@ -23,7 +23,7 @@
 #include "prepare/rife_split.h"
 #include "prepare/sha256.h"
 
-namespace ajp::test {
+namespace kirari::test {
 namespace {
 
 namespace fs = std::filesystem;
@@ -75,7 +75,7 @@ std::unique_ptr<gpu::Engine> fused_engine(gpu::Backend& backend, const fs::path&
 }
 
 void kept_encoding_is_exact(const std::string& file, bool motion) {
-  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
+  const fs::path onnx = fs::path(KIRARI_RIFE_MODEL_DIR) / file;
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
   Loaded loaded;
@@ -84,7 +84,7 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
   gpu::Backend& backend = *loaded.backend;
   constexpr int h = 384;
   constexpr int w = 640;
-  const fs::path scratch = fs::temp_directory_path() / "ajp-rife-fused-encode-test";
+  const fs::path scratch = fs::temp_directory_path() / "kirari-rife-fused-encode-test";
   fs::create_directories(scratch);
   const std::unique_ptr<gpu::Engine> fused = fused_engine(backend, onnx, scratch, h, w, motion);
   // L'autre variante, qui partage la zone d'activation de la voie.
@@ -204,8 +204,8 @@ void kept_encoding_is_exact(const std::string& file, bool motion) {
 // n'écrit que sous les tampons de RIFE : l'encodage gardé sert encore (compté par le moteur), et les octets
 // restent ceux de la chaîne qui encode tout.
 void kept_encoding_survives_span(const std::string& file) {
-  const fs::path onnx = fs::path(AJP_RIFE_MODEL_DIR) / file;
-  const fs::path span_model(AJP_SPAN_MODEL);
+  const fs::path onnx = fs::path(KIRARI_RIFE_MODEL_DIR) / file;
+  const fs::path span_model(KIRARI_SPAN_MODEL);
   if (!fs::is_regular_file(onnx)) SKIP("modèle absent : " << onnx.string());
   if (!fs::is_regular_file(span_model)) SKIP("SPAN absent : " << span_model.string());
   if (!has_cuda()) SKIP("pas de GPU NVIDIA");
@@ -216,7 +216,7 @@ void kept_encoding_survives_span(const std::string& file) {
   backend.use_lane(gpu::Lane::Upscale);  // tout sur la voie Upscale : une seule zone, comme --one-lane
   constexpr int h = 384;
   constexpr int w = 640;
-  const fs::path scratch = fs::temp_directory_path() / "ajp-rife-fused-encode-test";
+  const fs::path scratch = fs::temp_directory_path() / "kirari-rife-fused-encode-test";
   fs::create_directories(scratch);
   const std::unique_ptr<gpu::Engine> fused = fused_engine(backend, onnx, scratch, h, w, false);
   const auto span_sha = prepare::sha256_file(span_model);
@@ -302,4 +302,4 @@ TEST_CASE("RIFE fusionné : l'encodage repris d'un appel à l'autre rend les mê
   }
 }
 
-}  // namespace ajp::test
+}  // namespace kirari::test

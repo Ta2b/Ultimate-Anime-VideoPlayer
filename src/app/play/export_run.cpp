@@ -48,7 +48,7 @@ extern "C" {
 #include "prepare/utf8.h"
 #include "render/grade_params.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // La progression est redessinée 4 fois par seconde : la présentation (FIFO) ne freine pas l'export.
@@ -86,7 +86,7 @@ bool confirm_quit(PlaceboScreen& screen) {
   }};
   const SDL_MessageBoxData data{.flags = SDL_MESSAGEBOX_WARNING,
                                 .window = screen.window(),
-                                .title = "ajp",
+                                .title = "Kirari Player",
                                 .message = text.c_str(),
                                 .numbuttons = static_cast<int>(buttons.size()),
                                 .buttons = buttons.data()};
@@ -127,7 +127,7 @@ std::optional<ExportEnd> poll_export_events(PlaceboScreen& screen, bool& details
 std::optional<Refusal> destination_problem(const std::filesystem::path& output,
                                            const std::filesystem::path& source) {
   const std::filesystem::path dir = output.parent_path().empty() ? "." : output.parent_path();
-  const std::filesystem::path probe = dir / ".ajp-write-probe";
+  const std::filesystem::path probe = dir / ".kirari-write-probe";
   std::error_code error;
   {
     std::ofstream file(probe, std::ios::binary);
@@ -512,4 +512,4 @@ ExportOutcome run_export(Player& p, const ExportJob& job) {
   return {.end = ExportEnd::Done, .notice = std::move(notice)};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -14,7 +14,7 @@
 #include "media/video_decoder.h"
 #include "media/yuv_sample.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 using yuv::is_hdr;
@@ -401,4 +401,4 @@ std::expected<std::vector<Still>, Refusal> extract_stills(const std::filesystem:
   return out;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <source_location>
 
-namespace ajp::fuzz {
+namespace kirari::fuzz {
 
 inline void require(bool ok, const char* what, std::source_location where = std::source_location::current()) {
   if (ok) return;
@@ -16,4 +16,4 @@ inline void require(bool ok, const char* what, std::source_location where = std:
   std::abort();
 }
 
-}  // namespace ajp::fuzz
+}  // namespace kirari::fuzz

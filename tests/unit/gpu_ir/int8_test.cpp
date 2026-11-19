@@ -17,8 +17,8 @@
 #include "kernels/ref/half.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -191,10 +191,10 @@ TEST_CASE("int8 : les entiers et les échelles des poids se retrouvent", "[gpu_i
     for (std::size_t k = 0; k < raw.size(); ++k) {
       const float s = scales[k / per];
       w.f[k] = round_to_int8(raw[k] / s) * s;
-      if (half) w.f[k] = ajp::kernels::ref::round_to_half(w.f[k]);
+      if (half) w.f[k] = kirari::kernels::ref::round_to_half(w.f[k]);
     }
     w.f[2 * per] = -128.0F * scales[2];
-    if (half) w.f[2 * per] = ajp::kernels::ref::round_to_half(w.f[2 * per]);
+    if (half) w.f[2 * per] = kirari::kernels::ref::round_to_half(w.f[2 * per]);
     const auto found = recover_int8_weights(w);
     REQUIRE(found);
     for (std::size_t k = 0; k < w.f.size(); ++k) {

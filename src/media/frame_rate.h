@@ -6,7 +6,7 @@
 
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // La cadence standard la plus proche de `rate` à 0,1 % près, sinon `rate` telle quelle. Un MPEG-TS ou un MKV
 // sans durée par défaut rend une moyenne estimée (2997/100, 29970/1000, 23,9761) qui ne vaut pas le rationnel
@@ -43,4 +43,4 @@ constexpr Rational standard_frame_rate(Rational rate) {
   return best;
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -8,7 +8,7 @@
 
 #include "core/profile.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La taille choisie, en pour cent ; 0 : automatique.
 inline constexpr core::Range<int> kUiScalePercent{100, 200};
@@ -31,4 +31,4 @@ constexpr float ui_scale(int percent, float system, int display_height, bool tru
   return auto_ui_scale(system, display_height, trust_system);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

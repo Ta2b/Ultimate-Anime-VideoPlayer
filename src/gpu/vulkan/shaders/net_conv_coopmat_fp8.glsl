@@ -79,8 +79,8 @@ layout(std430, binding = 0) readonly buffer Source { uvec4 v[]; } src4;
 layout(std430, binding = 1) readonly buffer Weights { uvec4 v[]; } weights4;
 layout(std430, binding = 2) readonly buffer Bias { float v[]; } bias;
 layout(std430, binding = 3) readonly buffer Slope { float v[]; } slope;
-AJP_NET_BUFFER(4, res, readonly)
-AJP_NET_BUFFER(5, dst, writeonly)
+KIRARI_NET_BUFFER(4, res, readonly)
+KIRARI_NET_BUFFER(5, dst, writeonly)
 
 shared uvec4 tile_a[2u * ABUF];
 shared uvec4 tile_b[2u * BBUF];
@@ -217,10 +217,10 @@ void main() {
           uint ox = p % WOUT;
           float v = tile_c[sg * 256u + e] * bias.v[NP + co] + bias.v[co];
           if (OUT_Q > 0.0) v = round_e4m3(v / OUT_Q) * OUT_Q;
-          if (RESIDUAL == 1u) v += AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          if (RESIDUAL == 1u) v += KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
           v = net_activate(ACT, v, ALPHA, LO, HI, ACT == kActPrelu ? slope.v[co] : 0.0);
-          if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + AJP_LOAD(res, TR, t_index(rd, n, co, oy, ox));
-          AJP_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
+          if (RESIDUAL == 2u) v *= source_at(n, co, oy, ox) + KIRARI_LOAD(res, TR, t_index(rd, n, co, oy, ox));
+          KIRARI_STORE(dst, TY, t_index_space(yd, sb, SPACE_CRD == 1u, n, co, oy, ox), v)
         }
       }
       subgroupBarrier();

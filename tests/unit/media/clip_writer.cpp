@@ -17,7 +17,7 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
-namespace ajp::media::test {
+namespace kirari::media::test {
 namespace {
 
 constexpr int kSampleRate = 48000;
@@ -399,7 +399,7 @@ std::optional<std::string> encoder_unavailable(const ClipSpec& spec) {
 }
 
 std::expected<std::filesystem::path, std::string> write_clip(const ClipSpec& spec) {
-  const std::filesystem::path dir = AJP_MEDIA_CLIP_DIR;
+  const std::filesystem::path dir = KIRARI_MEDIA_CLIP_DIR;
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
   if (ec) return fail(std::format("dossier {} : {}", dir.string(), ec.message()));
@@ -421,4 +421,4 @@ std::expected<std::filesystem::path, std::string> write_clip(const ClipSpec& spe
   return path;
 }
 
-}  // namespace ajp::media::test
+}  // namespace kirari::media::test

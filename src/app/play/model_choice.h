@@ -18,7 +18,7 @@
 #include "app/play/settings.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ModelChoice {
   std::filesystem::path path;
@@ -93,4 +93,4 @@ struct RifeEntry {
 // modèles d'AnimeJaNai pour mpv) n'y entrent pas.
 std::vector<RifeEntry> rife_menu(const std::vector<std::string>& available);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

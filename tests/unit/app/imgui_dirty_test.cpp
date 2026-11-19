@@ -3,7 +3,7 @@
 
 #include "app/play/placebo_imgui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 long long area(const std::vector<pl_rect2d>& rects) {
@@ -49,4 +49,4 @@ TEST_CASE("C24-01 : un rectangle vide est ignor√©, le nombre de bandes est born√
   }
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -9,7 +9,7 @@
 #include "gpu/kernel_ops.h"
 #include "gpu/vulkan/compute/weights.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 // dst sorties sur src entrées, dst ≤ src. Area : moyenne exacte de l'empreinte (compute_weights).
 // Triangle, Cubic (B, C) et Spline36 : noyau étiré à l'échelle s = src / dst autour du centre
@@ -18,4 +18,4 @@ namespace ajp::gpu::vk {
 // Refus : ShapeInvalid (dst hors de [1, src]), FieldOutOfRange (B ou C non fini).
 std::expected<WeightTable, Refusal> reduction_weights(int src, int dst, const Reduction& reduction);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

@@ -6,7 +6,7 @@
 
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::span_fp8 {
+namespace kirari::gpu::span_fp8 {
 namespace {
 
 // Un tenseur de travail, canaux en dernier : (y, x, c).
@@ -170,4 +170,4 @@ int exact_side(int side, int blocks) {
   return std::max(0, 4 * (side / 2 - (2 + 3 * blocks)));
 }
 
-}  // namespace ajp::gpu::span_fp8
+}  // namespace kirari::gpu::span_fp8

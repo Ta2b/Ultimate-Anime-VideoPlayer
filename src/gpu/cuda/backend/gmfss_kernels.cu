@@ -8,7 +8,7 @@
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "kernels/spec/gmfss.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 constexpr int kBlock = 16;
@@ -490,4 +490,4 @@ cudaError_t launch_soft_pull(const PullParams& params, cudaStream_t stream) {
   return cudaGetLastError();
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

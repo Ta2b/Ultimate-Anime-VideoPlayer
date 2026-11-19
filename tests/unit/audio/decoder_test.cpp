@@ -9,13 +9,13 @@
 
 #include "sine.h"
 
-using ajp::RefusalCode;
-using namespace ajp::audio;
-using ajp::audio::test::channel;
-using ajp::audio::test::concat;
-using ajp::audio::test::encode_sine;
-using ajp::audio::test::peak;
-using ajp::audio::test::tone_amplitude;
+using kirari::RefusalCode;
+using namespace kirari::audio;
+using kirari::audio::test::channel;
+using kirari::audio::test::concat;
+using kirari::audio::test::encode_sine;
+using kirari::audio::test::peak;
+using kirari::audio::test::tone_amplitude;
 
 namespace {
 

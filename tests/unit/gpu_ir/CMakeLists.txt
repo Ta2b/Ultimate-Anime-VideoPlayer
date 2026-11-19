@@ -1,4 +1,4 @@
-ajp_add_unit_tests(gpu_ir
+kirari_add_unit_tests(gpu_ir
   SOURCES
     fp8_test.cpp fuzz_test.cpp import_test.cpp int8_test.cpp memory_test.cpp onnx_blend_test.cpp onnx_io_type_test.cpp onnx_reader_test.cpp
     onnx_unshuffle_test.cpp
@@ -6,4 +6,4 @@ ajp_add_unit_tests(gpu_ir
     ops_sample_test.cpp ops_tensor_test.cpp passes_test.cpp grid_pass_test.cpp property_test.cpp protobuf_test.cpp
     transpose_pass_test.cpp
     robustness_test.cpp
-  DEPS ajp::kernels ajp::prepare)
+  DEPS kirari::kernels kirari::prepare)

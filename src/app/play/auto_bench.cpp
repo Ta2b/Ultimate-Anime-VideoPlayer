@@ -16,9 +16,9 @@
 #ifndef TOML_EXCEPTIONS
 #define TOML_EXCEPTIONS 0
 #endif
-#include <toml++-ajp/toml.hpp>
+#include <toml++-kirari/toml.hpp>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 constexpr std::int64_t kDefaultPeriodUs = 16'667;  // 60 Hz
@@ -93,7 +93,7 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
                   std::format("bench.toml : {}", parsed.error().description()));
   const toml::table& root = parsed.table();
   // B07-06 : une mesure d'avant les chaînes d'aujourd'hui ne décide plus de la tranche ni de la hauteur
-  // explorée ; l'estimation de la carte la remplace jusqu'au prochain « ajp bench ».
+  // explorée ; l'estimation de la carte la remplace jusqu'au prochain « kirari bench ».
   if (const std::int64_t version = root["version"].value_or(std::int64_t{0}); version < kBenchVersion)
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("bench.toml : version {} d'une chaîne plus ancienne, ignorée", version));
@@ -256,4 +256,4 @@ Tier effective_tier(const GpuFacts& gpu, const std::optional<BenchResult>& measu
   return estimate_tier(gpu).tier;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

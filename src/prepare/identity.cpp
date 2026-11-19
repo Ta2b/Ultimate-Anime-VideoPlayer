@@ -12,7 +12,7 @@
 #include "prepare/sha256.h"
 #include "prepare/utf8.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 namespace {
 
 namespace fs = std::filesystem;
@@ -196,4 +196,4 @@ std::expected<std::string, Refusal> engine_name(const EngineIdentity& identity) 
   return "aji-v3-" + *key + ".engine";
 }
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

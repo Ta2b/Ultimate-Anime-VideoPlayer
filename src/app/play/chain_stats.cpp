@@ -20,7 +20,7 @@
 #include "core/thread.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 // La dernière raison d'un changement de palier, dans la langue de l'interface (core/auto_rate.h :
@@ -285,4 +285,4 @@ std::optional<std::string> ChainStats::gpu() {
   return gpu_text_;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

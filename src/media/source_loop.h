@@ -8,7 +8,7 @@
 #include "media/packet_reserve.h"
 #include "media/source.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 class SourceLoop {
  public:
@@ -57,4 +57,4 @@ class SourceLoop {
   bool quit_ = false;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

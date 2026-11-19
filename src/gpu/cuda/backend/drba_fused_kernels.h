@@ -14,7 +14,7 @@
 
 #include <cuda_runtime_api.h>
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 // Les entrées X_0, X_1, X_2 (leurs 0-8 images réduites et plans du temps) à partir des paires.
 struct DrbaPreParams {
@@ -69,4 +69,4 @@ cudaError_t launch_drba_post(const DrbaPostParams& params, cudaStream_t stream);
 cudaError_t launch_drba_glue(const DrbaGlueParams& params, cudaStream_t stream);
 cudaError_t launch_drba_finish(const DrbaFinishParams& params, cudaStream_t stream);
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

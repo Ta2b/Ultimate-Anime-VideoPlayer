@@ -13,7 +13,7 @@
 #include "gpu/vulkan/compute/context.h"
 #include "gpu/vulkan/compute/recording.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 namespace {
 
 // Au-delà, le lot part sans attendre le prochain flush : borne la latence et la mémoire.
@@ -460,4 +460,4 @@ Done VkContext::run_once(const std::function<void(VkCommandBuffer)>& record) {
   return {};
 }
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

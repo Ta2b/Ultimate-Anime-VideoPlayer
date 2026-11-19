@@ -23,7 +23,7 @@
 #include "core/types.h"
 #include "gpu/backend.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 enum class Recipe : std::uint8_t {
   // Agrandisseurs (SPAN…) : types du réseau, niveau d'optimisation 5.
@@ -121,4 +121,4 @@ struct LayerCounts {
 };
 LayerCounts layer_counts(std::string_view json);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

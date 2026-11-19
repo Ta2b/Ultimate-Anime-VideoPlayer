@@ -5,9 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::audio::AudioDevice;
-using ajp::audio::mark_default_device;
-using ajp::audio::resolve_device;
+using kirari::audio::AudioDevice;
+using kirari::audio::mark_default_device;
+using kirari::audio::resolve_device;
 
 namespace {
 

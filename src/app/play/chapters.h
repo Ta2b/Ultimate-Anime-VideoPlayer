@@ -11,7 +11,7 @@
 
 #include "app/play/i18n.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 struct ChapterMark {
   std::int64_t start_us = 0;
@@ -43,4 +43,4 @@ std::optional<std::int64_t> credits_skip_target(std::span<const ChapterMark> cha
 // « Chapitre 3/12 · Opening », ou « Chapitre 3/12 » sans titre.
 i18n::Translated chapter_label(std::span<const ChapterMark> chapters, std::size_t index);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

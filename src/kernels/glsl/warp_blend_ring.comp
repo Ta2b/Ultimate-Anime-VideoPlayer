@@ -3,5 +3,5 @@
 // write_ring écrirait du tenseur de warp_blend.comp, sans le tenseur ni sa relecture. Corps : warp_blend.glsl.
 #extension GL_GOOGLE_include_directive : require
 #include "tensor.glsl"
-#define AJP_WARP_RING 1
+#define KIRARI_WARP_RING 1
 #include "warp_blend.glsl"

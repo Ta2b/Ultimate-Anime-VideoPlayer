@@ -13,7 +13,7 @@
 #include "gpu/vulkan/compute/memory.h"
 #include "gpu/vulkan/compute/vulkan.h"
 
-namespace ajp::gpu::vk {
+namespace kirari::gpu::vk {
 
 class StorageImage {
  public:
@@ -55,4 +55,4 @@ class StorageImage {
 std::expected<std::vector<std::uint16_t>, Refusal> read_rgba16(VkContext& context, MemoryAllocator& memory,
                                                                const StorageImage& image);
 
-}  // namespace ajp::gpu::vk
+}  // namespace kirari::gpu::vk

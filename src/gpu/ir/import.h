@@ -10,7 +10,7 @@
 #include "gpu/ir/ir.h"
 #include "gpu/ir/onnx_model.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 // Opsets du domaine ONNX par défaut dont la sémantique est connue de l'import.
 inline constexpr std::int64_t kMinOpset = 11;
@@ -24,4 +24,4 @@ std::expected<Graph, Refusal> import_model(const onnx::Model& model);
 std::expected<Graph, Refusal> load_onnx(std::span<const std::byte> bytes);
 std::expected<Graph, Refusal> load_onnx_file(const std::filesystem::path& path);
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

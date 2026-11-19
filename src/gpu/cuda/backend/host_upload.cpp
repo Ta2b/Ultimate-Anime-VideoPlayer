@@ -6,7 +6,7 @@
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/gpu_timing.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 namespace {
 
 std::size_t pitch_of(std::size_t row_bytes) {
@@ -203,4 +203,4 @@ std::expected<void, Refusal> HostUploads::consumed(cudaStream_t consumer) {
   return cuda_check(cudaEventRecord(slot.read, consumer), "cudaEventRecord");
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

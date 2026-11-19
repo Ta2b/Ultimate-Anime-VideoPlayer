@@ -29,7 +29,7 @@
 #include "core/cost_model.h"
 #include "core/profile.h"
 
-namespace ajp::core {
+namespace kirari::core {
 
 // ×10, la borne de la grille et des étages (kMaxInstantsPerPair) : de quoi suivre un écran de 240 Hz jusqu'au
 // bout (×10,01 pour 23,976 i/s à fréquence fixe, B12-06) ; à ×8, le Stable s'y arrêtait à ×5 ou ×8.
@@ -264,4 +264,4 @@ class AutoRate {
   CostModel model_;
 };
 
-}  // namespace ajp::core
+}  // namespace kirari::core

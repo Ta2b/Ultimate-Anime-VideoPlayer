@@ -11,7 +11,7 @@
 #include "core/types.h"
 #include "gpu/ir/ir.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 // Alignement des décalages : le plus grand minStorageBufferOffsetAlignment de Vulkan.
 inline constexpr std::uint64_t kBufferAlignment = 256;
@@ -54,4 +54,4 @@ struct MemoryPlan {
 std::expected<MemoryPlan, Refusal> plan_memory(const Graph& graph, std::uint64_t alignment = kBufferAlignment,
                                                std::span<const Alias> aliases = {});
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

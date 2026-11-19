@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // L'espace insécable de la typographie française : « » et : ; ? ! % ne passent jamais seuls en début de ligne
 // (ImGui ne coupe les lignes qu'aux espaces ordinaires).
@@ -29,4 +29,4 @@ inline std::string french_spaces(std::string_view text) {
   return out;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

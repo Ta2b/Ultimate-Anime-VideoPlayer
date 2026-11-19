@@ -8,7 +8,7 @@
 #include "core/gpu_device.h"
 #include "media/hw_api.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][decoder]") {
@@ -50,11 +50,11 @@ TEST_CASE("decoder_options : surfaces directes sous TensorRT seulement", "[app][
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play
 
 TEST_CASE("Facteur le plus haut de la lecture : à la main, ou en Auto ce que l'écran affiche",
           "[app][chain]") {
-  using namespace ajp::app::play;
+  using namespace kirari::app::play;
   PlaySettings s;
   s.rife_factor = 4;
   s.rife_auto = true;

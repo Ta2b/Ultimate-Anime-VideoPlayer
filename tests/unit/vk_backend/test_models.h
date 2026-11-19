@@ -10,7 +10,7 @@
 
 #include "../gpu_ir/onnx_builder.h"
 
-namespace ajp::gpu::vk::test {
+namespace kirari::gpu::vk::test {
 
 // count valeurs déterministes dans [-scale, scale[.
 std::vector<float> weights(std::size_t count, std::size_t seed, float scale = 0.3F);
@@ -28,4 +28,4 @@ ir::test::ModelBuilder span_like(bool half);
 // 1 × 6 × 16 × 24, sortie y de 1 × 3 × 16 × 24.
 ir::test::ModelBuilder rife_like(bool half = false);
 
-}  // namespace ajp::gpu::vk::test
+}  // namespace kirari::gpu::vk::test

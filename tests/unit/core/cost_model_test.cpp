@@ -5,8 +5,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-using ajp::core::CostModel;
 using Catch::Approx;
+using kirari::core::CostModel;
 
 TEST_CASE("modèle de coût : a et b retrouvés à 1 %", "[core][cost_model]") {
   CostModel model;

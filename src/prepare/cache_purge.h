@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <filesystem>
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 struct CachePurgeLimits {
   std::chrono::hours idle{24 * 45};                  // sans usage depuis : retiré
@@ -37,4 +37,4 @@ CachePurgeResult purge_engine_cache(
     const std::filesystem::path& dir, const CachePurgeLimits& limits = {},
     std::filesystem::file_time_type now = std::filesystem::file_time_type::clock::now());
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

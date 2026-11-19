@@ -23,9 +23,9 @@
 #include "gpu/vulkan/backend/net_build.h"
 #include "net_rig.h"
 
-using namespace ajp;
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 using ir::test::attr_int;
 using ir::test::attr_ints;
 using ir::test::attr_string;

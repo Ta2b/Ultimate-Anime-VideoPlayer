@@ -17,7 +17,7 @@
 
 struct AVPacket;
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Paquet d'une piste, partagé sans copie avec le module qui le décode.
 struct Packet {
@@ -116,4 +116,4 @@ class PacketQueue final : public PacketSink {
   std::function<void()> on_space_;
 };
 
-}  // namespace ajp::media
+}  // namespace kirari::media

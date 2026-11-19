@@ -9,7 +9,7 @@
 
 #include "media/track.h"
 
-namespace ajp::media {
+namespace kirari::media {
 
 // Un préréglage : l'audio et les sous-titres voulus ensemble. audio vide : la piste que le fichier
 // préfère (sa langue ne compte pas) ; subtitles vide : aucun sous-titre.
@@ -57,4 +57,4 @@ bool subtitle_image(std::string_view codec);
 // module de sous-titres ne sait pas lire (PGS, VobSub…) ne sont jamais choisies.
 TrackChoice choose_tracks(std::span<const TrackInfo> tracks, const LanguagePriorities& priorities);
 
-}  // namespace ajp::media
+}  // namespace kirari::media

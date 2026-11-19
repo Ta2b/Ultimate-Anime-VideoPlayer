@@ -17,7 +17,7 @@
 
 #include "core/types.h"
 
-namespace ajp::gpu::ir::onnx {
+namespace kirari::gpu::ir::onnx {
 
 // Le fichier réécrit, ou vide quand toutes les entrées et sorties flottantes sont déjà dans
 // elem_type (kFloat ou kFloat16). Refus FeatureUnavailable : un graphe à sous-graphes (If,
@@ -51,4 +51,4 @@ std::expected<std::vector<std::byte>, Refusal> with_input_dims(std::span<const s
 std::expected<std::vector<std::byte>, Refusal> with_metadata(std::span<const std::byte> model,
                                                              std::string_view key, std::string_view value);
 
-}  // namespace ajp::gpu::ir::onnx
+}  // namespace kirari::gpu::ir::onnx

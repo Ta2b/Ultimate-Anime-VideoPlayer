@@ -19,7 +19,7 @@
 
 #include "render/display_model.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 enum class OledSource : std::uint8_t { DisplayId, KnownModel, Heuristic, Unknown };
 
@@ -118,4 +118,4 @@ std::optional<DisplayFacts> read_display(std::string_view wanted, std::string_vi
 // capitales, pour les comparer. Pur.
 std::string monitor_instance_from_interface(std::string_view path);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

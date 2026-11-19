@@ -14,10 +14,10 @@
 #include "core/text.h"
 #include "core/utf8_path.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::filesystem::path shipped_luts_dir() {
-  // Les LUT livrées avec le lecteur : luts/ à côté de SDL_GetBasePath (Contents/Resources dans AJP.app),
+  // Les LUT livrées avec le lecteur : luts/ à côté de SDL_GetBasePath (Contents/Resources dans Kirari.app),
   // comme models/.
   const char* base = SDL_GetBasePath();
   // C41-08 : les octets UTF-8 de SDL lus en UTF-8, sans dépendre de la page de code de Windows.
@@ -88,4 +88,4 @@ bool same_look_files(const PlaySettings& a, const PlaySettings& b) {
                             [](const LookLayer& x, const LookLayer& y) { return x.key == y.key; });
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

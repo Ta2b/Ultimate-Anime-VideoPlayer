@@ -17,7 +17,7 @@
 #include "prepare/onnx_scan.h"
 #include "prepare/trtexec_command.h"
 
-namespace ajp::prepare {
+namespace kirari::prepare {
 
 // Plus grand ONNX lu : 2 Gio, la limite d'un message protobuf. Au-delà, les
 // poids sont forcément externes.
@@ -59,4 +59,4 @@ std::expected<Recipe, Refusal> recipe_for(const gpu::ModelSpec& model, const Onn
 std::expected<std::optional<gpu::ShapeSet>, Refusal> profile_shapes(const OnnxInput& input,
                                                                     const gpu::ShapeSet& shapes);
 
-}  // namespace ajp::prepare
+}  // namespace kirari::prepare

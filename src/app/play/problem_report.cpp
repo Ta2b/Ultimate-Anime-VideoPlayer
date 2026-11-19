@@ -29,7 +29,7 @@
 #include <link.h>
 #endif
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 namespace fs = std::filesystem;
@@ -103,8 +103,9 @@ void forget_report_fact(std::string_view name) {
 }
 
 void note_system_library_facts() {
-#ifdef AJP_SYSTEM_LIBS
-  if (const std::string_view libs = AJP_SYSTEM_LIBS; !libs.empty()) note_report_fact("Bibliothèques", libs);
+#ifdef KIRARI_SYSTEM_LIBS
+  if (const std::string_view libs = KIRARI_SYSTEM_LIBS; !libs.empty())
+    note_report_fact("Bibliothèques", libs);
 #endif
 }
 
@@ -290,7 +291,7 @@ std::string compose_report(const ReportParts& parts, std::size_t max_bytes) {
         .append(" (à joindre en privé si on le demande, il peut contenir des chemins)\n");
   if (parts.system_core)
     head.append(
-        "Vidage du système : « coredumpctl info ajp » (systemd-coredump), à joindre en privé si on le "
+        "Vidage du système : « coredumpctl info kirari » (systemd-coredump), à joindre en privé si on le "
         "demande\n");
   head = sanitize_report_paths(head, parts.home);
   head += "\n";
@@ -445,4 +446,4 @@ std::string current_report(std::string_view home) {
   return compose_report(parts, kBody);
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

@@ -14,7 +14,7 @@ extern "C" {
 
 #include "core/frame.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::expected<audio::AudioCodecInfo, Refusal> audio_codec_info(const media::TrackInfo& track) {
   if (track.kind != media::TrackKind::Audio || !track.parameters) {
@@ -150,4 +150,4 @@ bool SubsBridge::try_push(media::Packet&& packet) {
   return false;
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

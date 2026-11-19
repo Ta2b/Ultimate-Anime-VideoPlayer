@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 std::string drba_fused_declined(const PlaySettings& settings, bool backend_does_it) {
   if (!settings.drba_fused) return "réglage éteint";
@@ -25,4 +25,4 @@ DrbaTier drba_tier(PrecisionTier asked, bool fused_possible, TierSupport graphs)
   return {.tier = PrecisionTier::Balanced, .fused = fused_possible, .why = std::move(why)};
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

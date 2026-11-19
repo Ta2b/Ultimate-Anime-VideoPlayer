@@ -7,7 +7,7 @@
 
 #include "gpu/cuda/backend/cuda_warn.h"
 
-namespace ajp::gpu::cuda {
+namespace kirari::gpu::cuda {
 
 GpuTiming::GpuTiming(std::string label, Report report)
     : label_(std::move(label)), report_(std::move(report)) {
@@ -166,4 +166,4 @@ GpuStageSummary GpuSpan::profile() {
   return profile_of(label_, all_);
 }
 
-}  // namespace ajp::gpu::cuda
+}  // namespace kirari::gpu::cuda

@@ -14,7 +14,7 @@
 #include "core/types.h"
 #include "core/utf8_path.h"
 
-namespace ajp {
+namespace kirari {
 
 // Chemin en texte UTF-8 pour les messages : path::string() lève sous Windows sur un caractère hors de la
 // page de code ANSI.
@@ -74,4 +74,4 @@ class DynamicLibrary {
   std::filesystem::path path_;
 };
 
-}  // namespace ajp
+}  // namespace kirari

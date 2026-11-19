@@ -7,7 +7,7 @@
 #include "gpu/ir/fp8.h"
 #include "gpu/ir/int8.h"
 
-namespace ajp::gpu::ir {
+namespace kirari::gpu::ir {
 
 float quant_round(QuantGrid grid, float v, float scale) {
   return grid == QuantGrid::Int8 ? round_to_int8(v / scale) * scale : round_to_e4m3(v / scale) * scale;
@@ -279,4 +279,4 @@ std::expected<void, Refusal> validate(const Graph& graph) {
   return {};
 }
 
-}  // namespace ajp::gpu::ir
+}  // namespace kirari::gpu::ir

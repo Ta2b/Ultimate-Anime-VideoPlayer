@@ -5,7 +5,7 @@
 #include <cmath>
 #include <numbers>
 
-namespace ajp::app::play::icons {
+namespace kirari::app::play::icons {
 namespace {
 
 constexpr ImVec4 kAccent{0.42F, 0.66F, 1.0F, 1.0F};
@@ -156,4 +156,4 @@ void icon_chapter(const Pen& pen, ImVec2 c, float size, int direction) {
                           at(c, std::max(x, x + d * bar), h * 0.66F), color, bar * 0.3F);
 }
 
-}  // namespace ajp::app::play::icons
+}  // namespace kirari::app::play::icons

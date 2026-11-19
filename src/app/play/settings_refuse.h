@@ -9,7 +9,7 @@
 
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // La clé, « audio.delay_ms », dans Refusal::key, que la lecture tolérante écarte sans relire le texte ; le
 // détail commence par elle.
@@ -19,4 +19,4 @@ inline std::unexpected<Refusal> refuse_key(RefusalCode code, std::string key, st
   return std::unexpected(Refusal{.code = code, .detail = std::move(detail), .key = std::move(key)});
 }
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

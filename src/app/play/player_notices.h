@@ -10,7 +10,7 @@
 #include "core/engines.h"
 #include "core/types.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 
 // C31-07 : l'avis d'une relance après une perte du GPU vient de --relaunched=, que le lecteur relancé reçoit
 // toujours, même sans relaunch.txt (perte à l'accueil ou à l'écran des moteurs, disque plein) : sur la vidéo
@@ -22,4 +22,4 @@ i18n::Translated relaunch_notice(const PlayOptions& options, const std::optional
 i18n::Translated fallback_notice(std::optional<RefusalCode> passed_over, core::EngineId wanted,
                                  core::EngineId in_use);
 
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

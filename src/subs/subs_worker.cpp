@@ -11,7 +11,7 @@
 #include "core/text.h"
 #include "subs/log.h"
 
-namespace ajp::subs {
+namespace kirari::subs {
 namespace {
 
 using OpenedTrack = std::expected<std::optional<SubtitleTrack>, Refusal>;
@@ -196,4 +196,4 @@ void SubsWorker::report(const Refusal& refusal) {
   sink_.refused(refusal);
 }
 
-}  // namespace ajp::subs
+}  // namespace kirari::subs

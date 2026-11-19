@@ -16,9 +16,9 @@
 #include "gpu/ir/memory_plan.h"
 #include "test_util.h"
 
-using ajp::RefusalCode;
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using kirari::RefusalCode;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -243,7 +243,7 @@ TEST_CASE("robustesse : entrée donnée hors de la forme déclarée", "[gpu_ir][
 
 TEST_CASE("robustesse : lecture d'un modèle sur disque", "[gpu_ir][robust]") {
   const std::filesystem::path dir = std::filesystem::temp_directory_path();
-  const std::filesystem::path path = dir / "ajp_gpu_ir_robustness_model.onnx";
+  const std::filesystem::path path = dir / "kirari_gpu_ir_robustness_model.onnx";
   ModelBuilder m;
   m.input("x", {1, 1, 2, 2}).node("Relu", {"x"}, {"y"}).output("y");
   const std::vector<std::byte> bytes = m.bytes();
@@ -258,7 +258,7 @@ TEST_CASE("robustesse : lecture d'un modèle sur disque", "[gpu_ir][robust]") {
   REQUIRE(graph);
   CHECK(graph->nodes.size() == 1);
 
-  auto missing = load_onnx_file(dir / "ajp_gpu_ir_modele_absent.onnx");
+  auto missing = load_onnx_file(dir / "kirari_gpu_ir_modele_absent.onnx");
   REQUIRE_FALSE(missing);
   CHECK(missing.error().code == RefusalCode::OnnxMalformed);
   CHECK_FALSE(load_onnx_file(dir).has_value());  // un dossier n'est pas un modèle
@@ -270,7 +270,7 @@ TEST_CASE("onnx : dims de tenseur au-delà du plafond refusées d'emblée", "[gp
   t.bytes(1, std::string((std::size_t{1} << 24U) + 1U, '\x01')).varint(2, onnx::kFloat).bytes(8, "w");
   ModelBuilder m;
   m.input("x", {1, 1}).initializer(t).node("Relu", {"x"}, {"y"}).output("y");
-  const ajp::Refusal r = refusal(m);
+  const kirari::Refusal r = refusal(m);
   CHECK(r.code == RefusalCode::OnnxMalformed);
   CHECK(r.detail.find("trop de valeurs dans dims") != std::string::npos);
 }
@@ -281,7 +281,7 @@ TEST_CASE("onnx : dims de tenseur non empaquetées au-delà du rang maximal refu
   t.varint(2, onnx::kFloat).bytes(8, "w");
   ModelBuilder m;
   m.input("x", {1, 1}).initializer(t).node("Relu", {"x"}, {"y"}).output("y");
-  const ajp::Refusal r = refusal(m);
+  const kirari::Refusal r = refusal(m);
   CHECK(r.code == RefusalCode::OnnxMalformed);
   CHECK(r.detail.find("trop de valeurs dans dims") != std::string::npos);
 }
@@ -324,9 +324,9 @@ TEST_CASE("robustesse : Resize avec exclude_outside refusé", "[gpu_ir][robust]"
 TEST_CASE("ops : un OpKind hors de la table est refusé", "[gpu_ir][robust]") {
   Graph g = relu_graph();
   g.nodes[0].op = static_cast<OpKind>(250);
-  const ajp::Refusal r = [&] {
+  const kirari::Refusal r = [&] {
     auto ok = infer_shapes(g, {});
-    return ok ? ajp::Refusal{} : ok.error();
+    return ok ? kirari::Refusal{} : ok.error();
   }();
   CHECK(r.code == RefusalCode::GraphInvalid);
 }

@@ -25,8 +25,8 @@
 #include "net_rig.h"
 #include "test_models.h"
 
-using namespace ajp::gpu;
-using namespace ajp::gpu::vk::test;
+using namespace kirari::gpu;
+using namespace kirari::gpu::vk::test;
 using ir::test::attr_ints;
 using ir::test::ModelBuilder;
 
@@ -53,7 +53,7 @@ std::vector<float> int8_weights(const std::vector<std::int64_t>& dims, std::size
     const float s = amax / 127.0F;
     for (std::size_t k = c * per; k < (c + 1) * per; ++k) {
       w[k] = ir::round_to_int8(w[k] / s) * s;
-      if (half) w[k] = ajp::kernels::ref::round_to_half(w[k]);
+      if (half) w[k] = kirari::kernels::ref::round_to_half(w[k]);
     }
   }
   return w;
@@ -152,7 +152,7 @@ TEST_CASE("Réseau : variante coopmat_int8 proposée sur tuiles INT8 et abaissé
   const std::size_t conv = quantized_conv(graph);
   const auto& attrs = std::get<ir::ConvAttrs>(graph.nodes[conv].attrs);
   REQUIRE(attrs.quant_grid == ir::QuantGrid::Int8);
-  const float in_scale = ajp::kernels::ref::round_to_half(kInScale);  // l'échelle du modèle float16
+  const float in_scale = kirari::kernels::ref::round_to_half(kInScale);  // l'échelle du modèle float16
   REQUIRE(attrs.in_quant == in_scale);
   vk::net::Target target = rig.target;
   target.f16_storage = true;

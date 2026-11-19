@@ -8,7 +8,7 @@
 
 #include "kernels/ref/half.h"
 
-namespace ajp::gpu::coreml_rt::vt {
+namespace kirari::gpu::coreml_rt::vt {
 namespace {
 
 constexpr std::uint32_t code(char a, char b, char c, char d) {
@@ -316,4 +316,4 @@ void unpack(Pixels format, const Planes& in, std::byte* rgb, TensorType type, in
   }
 }
 
-}  // namespace ajp::gpu::coreml_rt::vt
+}  // namespace kirari::gpu::coreml_rt::vt

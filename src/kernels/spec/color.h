@@ -15,7 +15,7 @@
 
 #include "kernels/spec/fp_off_begin.h"  // IWYU pragma: keep
 
-namespace ajp::kernels {
+namespace kirari::kernels {
 
 enum class Format : std::uint8_t {
   Nv12,       // 8 bits 4:2:0, chroma CbCr entrelacée
@@ -288,6 +288,6 @@ constexpr Siting effective_siting(std::optional<Siting> tagged) {
 // position de chroma depuis RGB (aji_trt.cpp:2940-2945).
 inline constexpr Siting kOutputSiting = Siting::Left;
 
-}  // namespace ajp::kernels
+}  // namespace kirari::kernels
 
 #include "kernels/spec/fp_off_end.h"  // IWYU pragma: keep

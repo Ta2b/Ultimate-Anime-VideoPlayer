@@ -17,7 +17,7 @@
 #include "gpu/vulkan/backend/net_params.h"
 #include "gpu/vulkan/backend/net_weights.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 std::uint32_t detail::matrix_shared_bytes(std::uint32_t subgroups, std::uint32_t tm, std::uint32_t kc,
                                           std::uint32_t np) {
@@ -704,4 +704,4 @@ std::expected<void, Refusal> Lowerer::conv_transpose(std::size_t index, const Ke
   return {};
 }
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net

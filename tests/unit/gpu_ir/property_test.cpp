@@ -20,8 +20,8 @@
 #include "gpu/ir/passes.h"
 #include "test_util.h"
 
-using namespace ajp::gpu::ir;
-using namespace ajp::gpu::ir::test;
+using namespace kirari::gpu::ir;
+using namespace kirari::gpu::ir::test;
 
 namespace {
 
@@ -299,7 +299,7 @@ TEST_CASE("propriété : graphes aléatoires préservés par les passes", "[gpu_
 
     Graph after = before;
     auto stats = optimize(after);
-    if (!stats) FAIL("refus " << ajp::name(stats.error().code) << " : " << stats.error().detail);
+    if (!stats) FAIL("refus " << kirari::name(stats.error().code) << " : " << stats.error().detail);
     total.folded += stats->folded;
     total.identities += stats->identities;
     total.pixel_shuffles += stats->pixel_shuffles;

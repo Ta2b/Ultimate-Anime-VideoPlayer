@@ -17,7 +17,7 @@
 #include "core/file_sync.h"
 #include "core/utf8_path.h"
 
-namespace ajp::media {
+namespace kirari::media {
 namespace {
 
 // 2 : la lumière du plan (ShotMeta) ; 3 : son histogramme de I (lum_hist, 8.6) ; 4 : la version de l'analyse,
@@ -255,4 +255,4 @@ std::optional<CachedShots> load_shot_cache(const std::filesystem::path& dir, con
   return CachedShots{.shots = std::move(shots), .flashes = std::move(*flashes), .complete = complete == 1};
 }
 
-}  // namespace ajp::media
+}  // namespace kirari::media

@@ -13,7 +13,7 @@
 #include "core/settings.h"
 #include "french_ui.h"
 
-namespace ajp::app::play {
+namespace kirari::app::play {
 namespace {
 
 TEST_CASE("Anime4K : deux entrées de la liste des modèles, à leur nom", "[app][anime4k]") {
@@ -96,4 +96,4 @@ TEST_CASE("Anime4K : hors de l'Auto et du préréglage Économe tant que le banc
 }
 
 }  // namespace
-}  // namespace ajp::app::play
+}  // namespace kirari::app::play

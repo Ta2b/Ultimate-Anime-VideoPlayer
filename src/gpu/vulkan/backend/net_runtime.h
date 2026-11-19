@@ -25,7 +25,7 @@
 #include "gpu/backend.h"
 #include "gpu/vulkan/compute/caps.h"
 
-namespace ajp::gpu::vk::net {
+namespace kirari::gpu::vk::net {
 
 // Un tenseur d'entrée ou de sortie : NCHW dense, dans le type du réseau, vu par l'hôte (data).
 struct HostBinding {
@@ -152,4 +152,4 @@ std::expected<std::vector<DimOverride>, Refusal> symbolic_overrides(const std::f
 // Le fichier ONNX contient-il un nœud de ce type (domaine par défaut) ? Refus : lecture, décodage.
 std::expected<bool, Refusal> onnx_uses_op(const std::filesystem::path& onnx, std::string_view op_type);
 
-}  // namespace ajp::gpu::vk::net
+}  // namespace kirari::gpu::vk::net
