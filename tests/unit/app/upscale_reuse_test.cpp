@@ -53,7 +53,16 @@ TEST_CASE("Reprise de SPAN : la règle contre l'ancre, et l'étage en SPAN seul"
   ReuseFacts lost = with(still);
   lost.has_output = false;
   CHECK(r.decide(lost) == ReuseKind::Compute);
-  CHECK(r.summary().starts_with("SPAN repris : 29 sur 37 images"));
+  // L'ancre copiée ne vaut que pour sa série : un arrêt ou une série imposée (Smooth) la périme.
+  CHECK(r.decide(base) == ReuseKind::Whole);
+  r.anchor_kept();
+  CHECK(r.decide(with(moved)) == ReuseKind::Compute);  // arrêt à l'ancre
+  CHECK_FALSE(r.anchor_ready());
+  r.anchor_kept();
+  r.force();
+  CHECK_FALSE(r.anchor_ready());
+  CHECK(r.summary().starts_with("SPAN repris : 31 sur 40 images"));
+  CHECK(r.summary().contains("à l'ancre 1,"));
   r.enabled = false;
   CHECK(r.decide(with(still)) == ReuseKind::Compute);
 

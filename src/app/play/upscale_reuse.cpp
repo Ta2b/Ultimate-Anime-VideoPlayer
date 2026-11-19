@@ -15,6 +15,7 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
   tile_plan = TilePlan{};
   const auto compute = [&] {
     in_row_ = 0;
+    anchor_ready_ = false;
     const bool behind_bad = std::exchange(anchor_bad_, facts.corrupt);  // la nouvelle ancre, abîmée ou non
     if (!tiles.active()) return ReuseKind::Compute;
     // Les tuiles suivent chaque image calculée, même entière : leur état repart de là.
@@ -33,7 +34,10 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     return compute();
   }
   if (facts.anchor) {
-    if (!kernels::is_held(facts.anchor->worst_block)) return compute();
+    if (!kernels::is_held(facts.anchor->worst_block)) {
+      if (in_row_ > 0) ++stopped_anchor_;  // à 0, la mesure est celle de la paire (SPAN seul)
+      return compute();
+    }
     if (in_row_ >= kPairOnlyInRow && facts.anchor->mean_levels > kFadeMean) {
       ++stopped_fade_;
       return compute();
@@ -49,6 +53,7 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
 
 void SpanReuse::force() {
   ++seen_;
+  anchor_ready_ = false;  // la série imposée reprend a sans en copier l'image
   tile_plan = TilePlan{};
   tiles.held(nullptr);
   take();
@@ -65,9 +70,8 @@ std::string SpanReuse::summary() const {
   const double share = seen_ > 0 ? 100.0 * static_cast<double>(reused_) / static_cast<double>(seen_) : 0.0;
   return std::format(
       "SPAN repris : {} sur {} images ({:.1f} %), série la plus longue {}, arrêts à la limite {}, au fondu "
-      "{}, "
-      "images abîmées {}{}",
-      reused_, seen_, share, longest_, stopped_limit_, stopped_fade_, corrupt_,
+      "{}, à l'ancre {}, images abîmées {}{}",
+      reused_, seen_, share, longest_, stopped_limit_, stopped_fade_, stopped_anchor_, corrupt_,
       anchor_measure ? "" : " (sans mesure contre l'ancre : deux de suite au plus)");
 }
 

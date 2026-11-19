@@ -7,9 +7,10 @@
 // n'en est recopié ; la règle ci-dessous est la nôtre, sur nos mesures (kernels/spec/detect.h) :
 //
 // - la première reprise d'une série lit la paire (précédente, image) : la précédente est l'ancre ;
-// - les suivantes lisent l'écart entre l'ancre et l'image, sur ce que SPAN lit (après TemporalFix et le
-//   débandage) : un fondu lent ou un mouvement qui commence s'accumule contre l'ancre et passe le seuil, là
-//   où des paires voisines, chacune sous le seuil, laisseraient l'image se figer. C'est ce qui permet de
+// - les suivantes lisent l'écart entre l'ancre et l'image, sur les images de la mesure de la paire (la
+//   copie réduite de RIFE quand elle existe : le seuil des dessins tenus y est réglé, A09-18 ; l'image de
+//   travail sinon) : un fondu lent ou un mouvement qui commence s'accumule contre l'ancre et passe le seuil,
+//   là où des paires voisines, chacune sous le seuil, laisseraient l'image se figer. C'est ce qui permet de
 //   passer de 2 à kMaxInRow reprises de suite ;
 // - au-delà de kPairOnlyInRow, l'écart moyen contre l'ancre doit aussi rester sous kFadeMean (un changement
 //   étendu, même faible partout, est un fondu) ;
@@ -86,9 +87,13 @@ class SpanReuse {
   // Le journal de fin : « SPAN repris : r sur n images (p %) … » ; vide si rien n'a été décidé.
   std::string summary() const;
 
-  // L'image de l'ancre telle que SPAN l'a lue, copiée au début d'une série ; nul tant qu'aucune n'a servi.
+  // L'image de l'ancre telle que la paire la mesure, copiée au début d'une série ; nul tant qu'aucune n'a
+  // servi. Elle ne vaut que pour la série où elle a été copiée (anchor_kept) : une série imposée (force) ou
+  // une image calculée la périme.
   std::unique_ptr<gpu::TensorBuffer> anchor;
-  bool anchor_measure = true;  // faux après un refus (backend sans scores_now, allocation)
+  bool anchor_measure = true;                   // faux après un refus (backend sans scores_now, allocation)
+  void anchor_kept() { anchor_ready_ = true; }  // l'étage vient de copier l'ancre de la série
+  bool anchor_ready() const { return anchor_ready_; }
 
   // Les tuiles qui bougent, et le plan de l'image arrivée (tiled faux hors de ReuseKind::Tiles) : à donner au
   // moteur (gpu::Engine::next_span_tiles) juste avant le SPAN de cette image, puis à oublier.
@@ -108,12 +113,14 @@ class SpanReuse {
  private:
   void take();
   int in_row_ = 0;
-  bool anchor_bad_ = false;  // l'ancre est une image abîmée
+  bool anchor_bad_ = false;    // l'ancre est une image abîmée
+  bool anchor_ready_ = false;  // anchor tient l'ancre de la série en cours
   std::uint64_t seen_ = 0;
   std::uint64_t reused_ = 0;
   std::uint64_t longest_ = 0;
   std::uint64_t stopped_limit_ = 0;
   std::uint64_t stopped_fade_ = 0;
+  std::uint64_t stopped_anchor_ = 0;  // paire tenue, mais l'écart à l'ancre passe le seuil
   std::uint64_t corrupt_ = 0;
 };
 
