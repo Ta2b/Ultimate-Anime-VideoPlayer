@@ -3,11 +3,14 @@
 // ligne par warp (tuile de 4 × 32 pixels) et celles des poids à l'avance n'existent qu'en sommes f16 et
 // mixtes, en pas 1 (les poids à l'avance : tranche de 32 ou 64 seulement) : le f32 ne sert qu'aux têtes et au
 // repli, et la taille du module reste bornée. Le GMFSS natif (gmfss_conv_plan.cu) prend les mêmes, et le
-// PixelShuffle de la queue de son GridNet (kShuffle : tranche de 64, ses 64 entrées).
+// PixelShuffle de la queue de son GridNet (kShuffle : tranche de 64, ses 64 entrées), et, en plus, la forme
+// en flux (conv_stream_kernels.cuh) : trois noyaux, à part de ceux du RIFE, que ni pick_for ni configs ne
+// donnent.
 #include <algorithm>
 #include <cstddef>
 #include <vector>
 
+#include "gpu/cuda/backend/conv_stream_kernels.cuh"
 #include "gpu/cuda/backend/rife_native_plan.h"
 
 namespace kirari::gpu::cuda::rife_native {
@@ -83,6 +86,11 @@ Launch pick(Kind kind, int kc, int ct, int rows, bool ahead) {
   return nullptr;
 }
 
+template <int CT, Acc A>
+void launch_stream(dim3 grid, int smem, cudaStream_t stream, const Params& p) {
+  conv_stream::stream_kernel<64, CT, 1, A><<<grid, kThreads, static_cast<std::size_t>(smem), stream>>>(p);
+}
+
 }  // namespace
 
 Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool ahead) {
@@ -119,6 +127,34 @@ std::vector<Config> configs(RifeNativeSums sums, Kind kind, const Extent& extent
               std::min((want + blocks - 1) / blocks, static_cast<long>(extent.cin / kc) * taps));
           if (cfg.ksplit > 1) out.push_back(cfg);
         }
+  return out;
+}
+
+Launch pick_stream(RifeNativeSums sums, Kind kind, const Config& cfg) {
+  if (kind != Kind::kSame || cfg.bands <= 0 || cfg.kc != 64 || cfg.rows != 1 || cfg.ksplit != 1 || cfg.ahead)
+    return nullptr;
+  if (sums == RifeNativeSums::kF16) {
+    if (cfg.ct == 64) return launch_stream<64, Acc::kF16>;
+    if (cfg.ct == 32) return launch_stream<32, Acc::kF16>;
+  } else if (sums == RifeNativeSums::kMixed && cfg.ct == 32) {
+    return launch_stream<32, Acc::kMixed>;
+  }
+  return nullptr;
+}
+
+std::vector<Config> stream_configs(RifeNativeSums sums, Kind kind, const Extent& extent, int sms) {
+  std::vector<Config> out;
+  if (kind != Kind::kSame || extent.cin != 64 || extent.phases != 1) return out;
+  const int th = conv_stream::band_rows(1);
+  for (const int ct : {64, 32}) {
+    Config cfg{.kc = 64, .ct = ct, .rows = 1, .ksplit = 1, .ahead = false, .bands = 1};
+    if (extent.cout % ct != 0 || pick_stream(sums, kind, cfg) == nullptr) continue;
+    for (const int bands : conv_stream::band_counts((extent.ow + kTW - 1) / kTW, (extent.oh + th - 1) / th,
+                                                    extent.cout / ct, sms)) {
+      cfg.bands = bands;
+      out.push_back(cfg);
+    }
+  }
   return out;
 }
 

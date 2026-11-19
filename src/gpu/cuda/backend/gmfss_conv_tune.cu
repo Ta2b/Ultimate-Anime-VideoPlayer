@@ -2,7 +2,8 @@
 // planification (gmfss_conv_plan.cu) : pour chacune des sommes, la forme de référence (la plus simple) lancée
 // d'abord, puis chaque forme que les noyaux font, sur une sortie remplie de NaN, comparée à la référence aux
 // tolérances de native_sums.h et chronométrée en graphe ; la plus rapide de celles qui rendent la sortie de
-// la référence est gardée. Une grande couche ne passe au banc que sur une bande de ses lignes.
+// la référence est gardée. Une grande couche ne passe au banc que sur une bande de ses lignes. Aux formes du
+// RIFE natif s'ajoutent celles en flux (rn::stream_configs, conv_stream_kernels.cuh), mesurées de même.
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "gpu/cuda/backend/conv_stream.h"
 #include "gpu/cuda/backend/gmfss_conv_plan.cuh"
 
 namespace kirari::gpu::cuda::gmfss_plan {
@@ -42,26 +44,30 @@ Rows band_of(const Layer& layer, const std::vector<rn::Config>& configs) {
 }
 
 // La forme cfg d'une convolution pour des sommes, sur oh lignes de sortie : lancement, grille, mémoire
-// partagée.
+// partagée. En flux, une colonne de blocs prend cfg.bands bandes au plus.
 Shape shape_for(const Layer& layer, RifeNativeSums sums, const rn::Config& cfg, int oh) {
   Shape s;
   s.cfg = cfg;
-  s.launch = rn::pick_for(sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
-  const int th = rn::kWarps * cfg.rows;
+  const bool stream = cfg.bands > 0;
+  s.launch = stream ? rn::pick_stream(sums, layer.kind, cfg)
+                    : rn::pick_for(sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
+  const int th = rn::kWarps * cfg.rows, tiles = (oh + th - 1) / th;
   s.grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),
-                static_cast<unsigned>((oh + th - 1) / th),
+                static_cast<unsigned>(stream ? conv_stream::strips_for(tiles, cfg.bands) : tiles),
                 static_cast<unsigned>(layer.phases * (layer.cout / cfg.ct) * cfg.ksplit));
-  s.smem = rn::smem_bytes(cfg.kc, cfg.ct, rn::kernel_size(layer.kind), rn::stride_of(layer.kind), cfg.rows);
+  s.smem = stream ? conv_stream::smem_bytes(cfg.kc, cfg.rows)
+                  : rn::smem_bytes(cfg.kc, cfg.ct, rn::kernel_size(layer.kind), rn::stride_of(layer.kind),
+                                   cfg.rows);
   return s;
 }
 
-// La forme de référence du banc : tuile de 16, ni K découpé ni poids à l'avance, la plus petite tranche, deux
-// lignes par warp en pas 1 et une en pas 2 ; la plus simple, comme celle du RIFE natif.
+// La forme de référence du banc : tuile de 16, ni K découpé ni poids à l'avance ni flux, la plus petite
+// tranche, deux lignes par warp en pas 1 et une en pas 2 ; la plus simple, comme celle du RIFE natif.
 const rn::Config* reference_of(const std::vector<rn::Config>& configs, Kind kind) {
   const int rows = rn::stride_of(kind) == 2 ? 1 : 2;
   const rn::Config* out = nullptr;
   for (const rn::Config& c : configs) {
-    if (c.ct != 16 || c.ksplit != 1 || c.ahead) continue;
+    if (c.ct != 16 || c.ksplit != 1 || c.ahead || c.bands > 0) continue;
     if (out == nullptr || c.kc < out->kc || (c.kc == out->kc && c.rows == rows)) out = &c;
   }
   return out;
@@ -83,6 +89,14 @@ rn::Bench::Shot shot_of(const Layer& layer, Rows rows, const Shape& shape, RifeN
       }};
 }
 
+// Le flux face à la tuile au banc, en microsecondes : la meilleure forme de chacun, et laquelle est gardée.
+std::string versus(const rn::Config& stream, float streamed, float tiled) {
+  const auto us = [](float ms) { return std::to_string(static_cast<long>(ms * 1000.F + 0.5F)) + " µs"; };
+  return "en flux au mieux " + us(streamed) + " (" + std::to_string(stream.bands) +
+         " bandes par bloc, tuile " + std::to_string(stream.ct) + "), en tuile au mieux " + us(tiled) +
+         (streamed < tiled ? " : flux retenu" : " : tuile gardée");
+}
+
 }  // namespace
 
 // La forme de la convolution pour les sommes kSums[s] : la seule possible, sinon la plus rapide au banc (sur
@@ -91,7 +105,9 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
   const RifeNativeSums sums = kSums[s];
   const rn::Extent extent{
       .cin = layer.cin, .cout = layer.cout, .oh = layer.oh, .ow = layer.ow, .phases = layer.phases};
-  const std::vector<rn::Config> configs = rn::configs(sums, layer.kind, extent, sms_);
+  std::vector<rn::Config> configs = rn::configs(sums, layer.kind, extent, sms_);
+  const std::vector<rn::Config> stream = rn::stream_configs(sums, layer.kind, extent, sms_);
+  configs.insert(configs.end(), stream.begin(), stream.end());
   const rn::Config* reference = reference_of(configs, layer.kind);
   if (reference == nullptr) {
     error = std::string("aucune forme en sommes ") + rn::sums_name(sums);
@@ -111,6 +127,8 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
   if (!tuner.bench.reference(shot_of(layer, band, first, sums, weights(*reference)), error)) return false;
   best.ms = std::numeric_limits<float>::infinity();
   int rejected = 0;
+  float tiled = best.ms, streamed = best.ms;
+  const rn::Config* flow = nullptr;  // la plus rapide des formes en flux
   for (const rn::Config& cfg : configs) {
     const Shape shape = shape_for(layer, sums, cfg, band.oh);
     const std::optional<rn::Bench::Timing> timed =
@@ -121,12 +139,18 @@ bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string&
       ++rejected;
       continue;
     }
+    if (cfg.bands == 0) tiled = std::min(tiled, timed->ms);
+    if (cfg.bands > 0 && timed->ms < streamed) {
+      streamed = timed->ms;
+      flow = &cfg;
+    }
     if (timed->ms < best.ms) {
       best = shape_for(layer, sums, cfg, layer.oh);
       best.ms = timed->ms;
     }
   }
   best.rejected = rejected;
+  if (flow != nullptr) best.stream = versus(*flow, streamed, tiled);
   tuner.tuning.rejected += rejected;
   if (!(best.ms < std::numeric_limits<float>::infinity())) {
     error = std::string("aucune forme ne se lance en sommes ") + rn::sums_name(sums);

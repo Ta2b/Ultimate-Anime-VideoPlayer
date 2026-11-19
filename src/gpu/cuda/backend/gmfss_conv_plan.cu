@@ -85,11 +85,11 @@ bool same_geometry(const Layer& a, const Layer& b) {
          (a.skip >= 0) == (b.skip >= 0) && a.skip_ld == b.skip_ld && a.activation == b.activation;
 }
 
+// « convolution i (genre cin→cout sur ow×oh), sommes … : », le début d'une note du réglage.
 std::string label(const Layer& layer, std::size_t index, std::size_t s) {
   return "convolution " + std::to_string(index) + " (" + kind_name(layer.kind) + " " +
          std::to_string(layer.cin) + "→" + std::to_string(layer.cout) + " sur " + std::to_string(layer.ow) +
-         "×" + std::to_string(layer.oh) + "), sommes " + rn::sums_name(kSums[s]) + " : " +
-         std::to_string(layer.shapes[s].rejected) + " formes écartées (sortie différente)";
+         "×" + std::to_string(layer.oh) + "), sommes " + rn::sums_name(kSums[s]) + " : ";
 }
 
 }  // namespace
@@ -162,8 +162,13 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
       error = "convolution " + std::to_string(i) + " : " + error;
       return false;
     }
-    for (std::size_t s = 0; s < kSums.size(); ++s)
-      if (layer.shapes[s].rejected > 0) tuner.tuning.notes.push_back(label(layer, i, s));
+    for (std::size_t s = 0; s < kSums.size(); ++s) {
+      const Shape& shape = layer.shapes[s];
+      if (shape.rejected > 0)
+        tuner.tuning.notes.push_back(label(layer, i, s) + std::to_string(shape.rejected) +
+                                     " formes écartées (sortie différente)");
+      if (!shape.stream.empty()) tuner.tuning.notes.push_back(label(layer, i, s) + shape.stream);
+    }
   }
   tuner.tuning.layers += static_cast<int>(layers_.size());
   return true;
@@ -345,7 +350,10 @@ bool ConvNet::build(const prepare::GmfssGridStep& step, const Tuner& tuner, Laye
   }
   if (const Layer* same = twin(layer); same != nullptr) {
     layer.shapes = same->shapes;
-    for (Shape& shape : layer.shapes) shape.rejected = 0;
+    for (Shape& shape : layer.shapes) {
+      shape.rejected = 0;
+      shape.stream.clear();
+    }
     ++tuner.tuning.reused;
   } else {
     for (std::size_t s = 0; s < kSums.size(); ++s)
