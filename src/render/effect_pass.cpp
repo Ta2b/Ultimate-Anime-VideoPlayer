@@ -4,6 +4,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include <libplacebo/colorspace.h>
@@ -24,13 +26,13 @@ constexpr const char* kHeader =
     "    imageStore(out_image, p, c);\n"
     "}\n";
 
-pl_shader_desc sampled(const char* name, pl_tex tex) {
+pl_shader_desc sampled(const char* name, pl_tex tex, pl_tex_sample_mode mode = PL_TEX_SAMPLE_LINEAR) {
   pl_shader_desc d{};
   d.desc.name = name;
   d.desc.type = PL_DESC_SAMPLED_TEX;
   d.binding.object = tex;
   d.binding.address_mode = PL_TEX_ADDRESS_CLAMP;
-  d.binding.sample_mode = PL_TEX_SAMPLE_LINEAR;
+  d.binding.sample_mode = mode;
   return d;
 }
 
@@ -52,8 +54,11 @@ pl_shader_var vec2_var(const char* name, const float* value) {
 struct EffectPass::Impl {
   pl_gpu gpu = nullptr;
   pl_fmt fmt = nullptr;
+  int components = 1;     // le masque va dans la première ; les autres reçoivent la même valeur
+  bool floating = false;  // float 32 bits par composante, sinon unorm 8 bits
+  bool linear = true;     // faute de format filtrable, lu au plus proche (le flou 3 × 3 adoucit les marches)
   pl_tex mask = nullptr;
-  std::vector<std::uint8_t> bytes;  // la grille à envoyer
+  std::vector<std::uint8_t> bytes;  // la grille à envoyer, telle que le format la prend
   int cols = 0;
   int rows = 0;
   std::array<float, 2> scale{1.0F, 1.0F};
@@ -86,7 +91,7 @@ bool EffectPass::Impl::upload() {
   }
   pl_tex_transfer_params tp{};
   tp.tex = mask;
-  tp.row_pitch = static_cast<std::size_t>(cols);
+  tp.row_pitch = static_cast<std::size_t>(cols) * fmt->texel_size;
   tp.ptr = bytes.data();
   if (!pl_tex_upload(gpu, &tp)) return false;
   dirty = false;
@@ -112,7 +117,9 @@ pl_hook_res EffectPass::Impl::run(const pl_hook_params& params) {
   const std::array<float, 2> pt{1.0F / static_cast<float>(params.tex->params.w),
                                 1.0F / static_cast<float>(params.tex->params.h)};
   const std::array<float, 2> size{static_cast<float>(w), static_cast<float>(h)};
-  const std::array descs{sampled("HOOKED", params.tex), sampled("AJG_FX", mask), storage("out_image", out)};
+  const std::array descs{sampled("HOOKED", params.tex),
+                         sampled("AJG_FX", mask, linear ? PL_TEX_SAMPLE_LINEAR : PL_TEX_SAMPLE_NEAREST),
+                         storage("out_image", out)};
   const std::array vars{
       pl_shader_var{.var = pl_var_float("HOOKED_mul"), .data = &mul, .dynamic = false},
       pl_shader_var{.var = pl_var_vec2("HOOKED_pt"), .data = pt.data(), .dynamic = false},
@@ -163,10 +170,33 @@ pl_hook_res EffectPass::Impl::run(const pl_hook_params& params) {
 std::expected<std::unique_ptr<EffectPass>, Refusal> EffectPass::create(pl_gpu gpu) {
   auto impl = std::make_unique<Impl>();
   impl->gpu = gpu;
-  impl->fmt = pl_find_named_fmt(gpu, "r8");
-  constexpr auto kCaps = PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_LINEAR;
-  if (impl->fmt == nullptr || (impl->fmt->caps & kCaps) != kCaps)
-    return std::unexpected(Refusal{RefusalCode::VendorCallFailed, "masque des effets : pas de r8 filtrable"});
+  // Le premier format que l'hôte sait écrire : r8, puis rgba8, puis r32f, puis rgba32f. Un pilote
+  // peut ne pas offrir r8 filtrable (relevé sur une RTX 4070 Ti, test grade_gpu_effects_test) ; chercher
+  // par nom ne voyait que lui.
+  constexpr auto kLinear = static_cast<pl_fmt_caps>(PL_FMT_CAP_SAMPLEABLE | PL_FMT_CAP_LINEAR);
+  struct Candidate {
+    pl_fmt_type type;
+    int components;
+    int host_bits;
+  };
+  constexpr std::array kCandidates{Candidate{PL_FMT_UNORM, 1, 8}, Candidate{PL_FMT_UNORM, 4, 8},
+                                   Candidate{PL_FMT_FLOAT, 1, 32}, Candidate{PL_FMT_FLOAT, 4, 32}};
+  // D'abord un format filtrable, sinon un format seulement échantillonnable, lu au plus proche.
+  for (const pl_fmt_caps caps : {kLinear, PL_FMT_CAP_SAMPLEABLE}) {
+    for (const Candidate& c : kCandidates) {
+      const pl_fmt fmt = pl_find_fmt(gpu, c.type, c.components, 0, c.host_bits, caps);
+      if (fmt == nullptr || fmt->emulated) continue;
+      impl->fmt = fmt;
+      impl->components = c.components;
+      impl->floating = c.type == PL_FMT_FLOAT;
+      impl->linear = caps == kLinear;
+      break;
+    }
+    if (impl->fmt != nullptr) break;
+  }
+  if (impl->fmt == nullptr)
+    return std::unexpected(Refusal{RefusalCode::VendorCallFailed,
+                                   "masque des effets : aucun format échantillonnable inscriptible"});
   impl->hook.stages = PL_HOOK_OUTPUT;
   impl->hook.input = PL_HOOK_SIG_TEX;
   impl->hook.priv = impl.get();
@@ -186,9 +216,18 @@ void EffectPass::set(int cols, int rows, std::span<const float> values, double c
     s.rows = 0;
     return;
   }
-  s.bytes.resize(count);
-  for (std::size_t i = 0; i < count; ++i)
-    s.bytes[i] = static_cast<std::uint8_t>(std::lround(std::clamp(values[i], 0.0F, 1.0F) * 255.0F));
+  const auto comps = static_cast<std::size_t>(s.components);
+  s.bytes.assign(count * comps * (s.floating ? sizeof(float) : 1U), 0);
+  for (std::size_t i = 0; i < count; ++i) {
+    const float v = std::clamp(values[i], 0.0F, 1.0F);
+    for (std::size_t c = 0; c < comps; ++c) {
+      if (s.floating) {
+        std::memcpy(&s.bytes[(i * comps + c) * sizeof(float)], &v, sizeof(float));
+      } else {
+        s.bytes[i * comps + c] = static_cast<std::uint8_t>(std::lround(v * 255.0F));
+      }
+    }
+  }
   s.cols = cols;
   s.rows = rows;
   s.scale = {static_cast<float>(1.0 / std::max(cover_x, 1.0)),
