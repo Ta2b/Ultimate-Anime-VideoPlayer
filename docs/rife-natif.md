@@ -148,9 +148,9 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
    avec sa colle à la volée et avec la colle à part, la plus rapide gardée, ce que le journal dit) ; sa justesse,
    puis la chaîne, se mesurent avec la colle gardée. La sortie de TensorRT de chaque morceau reprend sa place
    après ses réseaux : la colle en relit les Y. Sur la chaîne, X du dernier bloc part de NaN quand son réseau le
-   refait à la volée, et son flot est relu après la passe : un pixel oublié y reste non fini, la sortie entière
-   est alors rendue NaN et l'option écartée (la sortie seule ne le montrerait pas toujours : la fin d'une
-   variante image ramène un flot NaN au bord de la fenêtre). Le profil couche par couche du réseau f16 va au
+   refait à la volée. En variante mouvement, un pixel oublié sort NaN dans le flot ; en variante image, la fin
+   le ramènerait au bord de la fenêtre, donc le flot est relu après la passe, et un pixel non fini rend toute
+   la sortie NaN : l'option est écartée. Le profil couche par couche du réseau f16 va au
    journal ; un profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
 4. **le mélange** (`rife_native_mix.cpp`). Un morceau peut prendre TensorRT ou un réseau plus rapide que lui.
    L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul en natif : l'erreur

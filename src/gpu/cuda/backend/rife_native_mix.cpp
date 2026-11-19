@@ -1,7 +1,7 @@
 // L'essai au chargement du RIFE natif (RifeFusedEngine::try_native, docs/rife-natif.md). Quatre réseaux
 // natifs (sommes f16 ; f16 et tête f32 ; mixtes et tête f32 ; f32), chacun réglé couche par couche sur cette
 // carte. Une paire de test passe par la chaîne avec les moteurs TensorRT ; chaque morceau (l'encodeur, chaque
-// bloc) est ensuite jugé et chronométré seul, par TensorRT et par chaque réseau (rife_native_trial.h). Un
+// bloc) est ensuite chronométré puis jugé seul, par TensorRT et par chaque réseau (rife_native_trial.h). Un
 // morceau peut prendre TensorRT ou un réseau plus rapide que lui. L'effet de chacune de ces options sur la
 // chaîne est mesuré seul (ce morceau natif, les autres à TensorRT) : son erreur quadratique sur la sortie,
 // celle que les morceaux suivants en font. Les erreurs de morceaux différents s'ajoutent à peu près ; le

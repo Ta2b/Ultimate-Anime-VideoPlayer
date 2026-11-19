@@ -80,8 +80,9 @@ std::expected<std::vector<float>, Refusal> RifeFusedEngine::trial_output(
     if (auto ok = cuda_check(cudaStreamSynchronize(stream), "RIFE natif : essai"); !ok)
       return std::unexpected(std::move(ok.error()));
   }
+  // En variante mouvement, la fin sort le flot tel quel : un NaN s'y voit déjà, la relecture n'y sert pas.
   bool unwritten = false;
-  if (glue) {
+  if (glue && !motion_) {
     const auto pixels = static_cast<std::size_t>(x.height) * static_cast<std::size_t>(x.width);
     std::vector<__half> flow(pixels * 4U);
     const std::size_t row = static_cast<std::size_t>(x.channels) * 2U;

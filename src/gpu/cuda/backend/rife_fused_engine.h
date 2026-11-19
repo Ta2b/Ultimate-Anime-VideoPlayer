@@ -173,7 +173,8 @@ class RifeFusedEngine final : public Engine {
                                                    const std::shared_ptr<SharedActivations>& shared);
   std::size_t scratch_offset_for(SharedActivations& zone);
 
-  // L'essai de try_native : la chaîne sur la paire de test, sortie copiée vers l'hôte.
+  // L'essai de try_native : la chaîne sur la paire de test, sortie copiée vers l'hôte ; entièrement NaN si
+  // le flot du dernier bloc, refait à la volée, garde un pixel non écrit.
   std::expected<std::vector<float>, Refusal> trial_output(cudaStream_t stream,
                                                           const std::shared_ptr<SharedActivations>& shared,
                                                           const Tensor& input,

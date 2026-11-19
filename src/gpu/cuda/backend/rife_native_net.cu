@@ -195,9 +195,9 @@ class Net final : public RifeNativeNet {
                   std::string& error) const {
     if (scales.empty() || layer.kind != Kind::kHalf || layer.cin != 32 || layer.residual) return true;
     // Le noyau est dimensionné pour des sources d'échelle au moins 2 (au plus 15 Ko de relèvement) : un
-    // découpage qui en aurait une de 1 avant le dernier bloc garde la colle à part. La borne de 48 Ko sur toute
-    // sa mémoire partagée (tuile et relèvement), que ces échelles tiennent déjà, n'est qu'une garde : le
-    // lancement ne demande pas plus que la part par défaut.
+    // découpage qui en aurait une de 1 avant le dernier bloc garde la colle à part. La borne de 48 Ko sur
+    // toute sa mémoire partagée (tuile et relèvement), que ces échelles tiennent déjà, n'est qu'une garde :
+    // le lancement ne demande pas plus que la part par défaut.
     if (std::ranges::any_of(scales, [](int d) { return d < 2; }) || rn::glue_smem(scales) > 48 * 1024)
       return true;
     layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), layer.cout);

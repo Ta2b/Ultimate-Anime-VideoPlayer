@@ -1,11 +1,11 @@
 // L'essai du RIFE natif morceau par morceau (RifeFusedEngine::try_native, docs/rife-natif.md). Un morceau :
 // l'encodeur sur l'image A de la paire de test, ou un bloc sur le X_k que la passe de TensorRT a laissé dans
 // la zone (les morceaux seuls n'écrivent que l'encodage et les Y_k ; un bloc dont un réseau natif sait
-// refaire l'entrée à la volée passe colle comprise, et cette colle réécrit son X_k depuis les sorties de
-// TensorRT, que quality remet en place après chaque morceau).
-// Chacun passe par TensorRT puis par chaque réseau natif : son temps seul (un graphe de quelques passes,
-// rejoué en tours intercalés comme span_timing.h), sa sortie contre celle de TensorRT, et le temps de chaque
-// couche.
+// refaire l'entrée à la volée passe colle comprise, et cette colle réécrit son X_k depuis les encodages et
+// les Y de la zone : ceux de la dernière variante passée pendant times, ceux de TensorRT pendant quality, qui
+// les remet en place après chaque morceau). Chacun passe par TensorRT puis par chaque réseau natif : son
+// temps seul (un graphe de quelques passes, rejoué en tours intercalés comme span_timing.h), sa sortie contre
+// celle de TensorRT, et le temps de chaque couche.
 #pragma once
 
 #include <cuda_runtime_api.h>

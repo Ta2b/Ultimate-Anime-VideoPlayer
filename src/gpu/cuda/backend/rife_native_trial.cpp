@@ -199,12 +199,13 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::times(
     for (std::size_t o = 0; o < options.size(); ++o) variants[p].push_back({.option = o});
   for (std::size_t n = 0; n < nets.size(); ++n)
     if (nets[n]->can_glue(block)) variants.back().push_back({.option = n + 1, .apart = true});
-  // Une capture ou un lot d'une variante : son réseau sans la colle à la volée le temps de l'appel, puis
-  // dans l'état d'avant.
+  // Une capture ou un lot d'une variante : son réseau, s'il sait refaire l'entrée du dernier bloc, avec ou
+  // sans la colle à la volée selon la variante le temps de l'appel, puis dans l'état d'avant.
   const auto as = [&](const Variant& v, auto&& step) {
-    RifeNativeNet* const net = v.apart ? nets[v.option - 1] : nullptr;
+    RifeNativeNet* const net =
+        v.option > 0 && nets[v.option - 1]->can_glue(block) ? nets[v.option - 1] : nullptr;
     const bool before = net != nullptr && net->glues(block);
-    if (net != nullptr) net->use_glue(false);
+    if (net != nullptr) net->use_glue(!v.apart);
     auto result = step();
     if (net != nullptr) net->use_glue(before);
     return result;
