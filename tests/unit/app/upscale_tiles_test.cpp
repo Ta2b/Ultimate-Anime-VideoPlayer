@@ -1,9 +1,11 @@
 // Les tuiles qui bougent (upscale_tiles.h, kernels/spec/span_tiles.h) : la dilatation et les masques du
 // moteur, puis la décision sur des cartes synthétiques (sans carte, tuile qui change et ce qui la voit,
 // débandage, dérive lente, lueur locale, recette de l'entrée, panoramique entier et ses deux bords, coupe,
-// limite d'âge, refus, caméra au bruit près, lente, qui bouge partout, zoom) et la sorte Tiles de la reprise.
+// limite d'âge, refus, caméra au bruit près, lente, qui bouge partout, zoom), la sorte Tiles de la reprise,
+// puis le filet de l'écart des blocs sous la carte.
 #include "app/play/upscale_tiles.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -271,6 +273,74 @@ TEST_CASE("Tuiles qui bougent : caméra au bruit près, lente, qui bouge partout
   CHECK(
       line.ends_with(" ; caméra de la carte sur 16 images : 14 tenues (sous 0.25 pixel partout), 1 en partie "
                      "(zoom, rotation), 1 qui bougent partout (médiane au centre 0.625 pixel)"));
+}
+
+TEST_CASE("Tuiles qui bougent : l'écart des blocs voit ce que la carte laisse passer", "[app][tiles]") {
+  // Blocs 16 × 16 de la mesure à la taille de travail (64 × 32), du grain partout (0,78 niveau), et une
+  // petite bouche (15 niveaux) dans le bloc (10, 13), pixels 160 à 176 et 208 à 224 : la tuile (2, 13) du
+  // moteur, sous une carte qui ne dit rien.
+  std::vector<std::uint32_t> deviation(64 * 32, 200);
+  deviation[13 * 64 + 10] = 15 * 256;
+  kernels::SceneMotion scene = still_scene();
+  SpanTiles t;
+  t.set_grid(kGrid);
+  const TileFacts fresh{.stale = TileStale::None,
+                        .can_shift = true,
+                        .scene = &scene,
+                        .blocks = PairBlocks{.deviation = deviation, .cols = 64, .side_px = 16.0F}};
+  CHECK_FALSE(t.plan(fresh).tiled);  // la première suit l'état
+  TilePlan p = t.plan(fresh);
+  REQUIRE(p.tiled);
+  CHECK(core_at(p, 2, 13) == 1);
+  CHECK(kernels::count_span_tiles(p.core) == 27);  // 3 × 9 : une colonne et quatre lignes autour
+  CHECK(t.summary().find("a vu 1 tuiles que la carte ne disait pas changées, sur 1 images") !=
+        std::string::npos);
+  // La mesure sur la copie réduite de RIFE (720p d'un travail 1080p) : un bloc couvre 24 pixels, le même
+  // bloc est en 240 à 264 et 312 à 336, sur les tuiles (3, 19) à (4, 20).
+  TileFacts small = fresh;
+  small.blocks.side_px = 24.0F;
+  p = t.plan(small);
+  REQUIRE(p.tiled);
+  CHECK(core_at(p, 2, 13) == 0);
+  CHECK(core_at(p, 4, 20) == 1);
+  CHECK(kernels::count_span_tiles(p.core) == 4 * 10);
+  // Sous le seuil (1,9 niveau) : rien à recalculer.
+  deviation[13 * 64 + 10] = 486;
+  p = t.plan(fresh);
+  REQUIRE(p.tiled);
+  CHECK(kernels::count_span_tiles(p.core) == 0);
+  deviation[13 * 64 + 10] = 15 * 256;
+  // Sous un décalage, la mesure ne suit pas le contenu : seuls les bords et ce qui les voit.
+  kernels::SceneMotion pan = still_scene();
+  pan.camera[0] = 4.0;
+  pan.background_held = false;
+  for (auto& s : pan.tiles) s.dx = 4.0F;
+  TileFacts panned = fresh;
+  panned.scene = &pan;
+  p = t.plan(panned);
+  REQUIRE(p.tiled);
+  CHECK(p.shift_x == 4);
+  CHECK(kernels::count_span_tiles(p.core) == 4 * kGrid.rows);
+  // Tous les blocs changent sous une carte muette : la région est trop large, et le bilan dit que le filet
+  // la remplissait.
+  std::ranges::fill(deviation, 15U * 256U);
+  CHECK_FALSE(t.plan(fresh).tiled);
+  CHECK(t.summary().contains(
+      "1 région trop large (100.0 % des tuiles en cause, 100.0 % de région, filet 100 %)"));
+  std::ranges::fill(deviation, 200U);
+  deviation[13 * 64 + 10] = 15 * 256;
+  // Dans la reprise : les blocs passent de ReuseFacts au plan.
+  SpanReuse r;
+  r.tiles.set_grid(kGrid);
+  ReuseFacts facts{.same_epoch = true,
+                   .has_output = true,
+                   .tiles_stale = TileStale::None,
+                   .can_shift = true,
+                   .scene = &scene,
+                   .blocks = fresh.blocks};
+  CHECK(r.decide(facts) == ReuseKind::Compute);
+  REQUIRE(r.decide(facts) == ReuseKind::Tiles);
+  CHECK(r.tile_plan.core[static_cast<std::size_t>(13 * kGrid.cols + 2)] == 1);
 }
 
 }  // namespace kirari::app::play

@@ -184,6 +184,7 @@ TEST_CASE("kirari play : refus nommés", "[app][options]") {
   CHECK(parse({"a.mkv", "--model"}).error().code == RefusalCode::FieldMissing);
   CHECK(parse({"--", "--fichier.mkv"})->file == "--fichier.mkv");
   CHECK(parse({"--help"})->help);
+  CHECK(parse({"--version"})->version);
 }
 
 TEST_CASE("kirari play : taille de travail, 720 lignes par défaut comme le profil actuel", "[app][options]") {

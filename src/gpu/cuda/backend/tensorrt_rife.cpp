@@ -9,11 +9,13 @@
 #include <format>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/rife_kernels.h"
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "kernels/ref/half.h"
+#include "kernels/spec/detect.h"
 #include "kernels/spec/rife.h"
 
 namespace kirari::gpu::cuda {
@@ -237,12 +239,40 @@ std::expected<PairScores, Refusal> TensorRtBackend::scores_take(std::uint64_t ti
   return scores;
 }
 
+// La place de l'écart des blocs, prise au premier besoin et reprise à une taille plus grande. Refusée, la
+// mesure se fait sans : count nul, les tuiles de SPAN n'ont que la carte de la scène ; l'erreur est lue
+// ici, sans quoi le cudaGetLastError du lancement suivant la prendrait pour la sienne. cudaFree et
+// cudaFreeHost attendent l'appareil : une copie en vol sur l'ancienne place finit avant.
+void TensorRtBackend::reserve_blocks(PairRead& slot, std::size_t count) {
+  slot.blocks_count = 0;
+  if (slot.blocks_room < count) {
+    if (slot.blocks_device != nullptr) cudaFree(slot.blocks_device);
+    if (slot.blocks_host != nullptr) cudaFreeHost(slot.blocks_host);
+    slot.blocks_device = nullptr;
+    slot.blocks_host = nullptr;
+    slot.blocks_room = 0;
+    const std::size_t bytes = count * sizeof(unsigned int);
+    if (cudaMalloc(reinterpret_cast<void**>(&slot.blocks_device), bytes) != cudaSuccess ||
+        cudaMallocHost(reinterpret_cast<void**>(&slot.blocks_host), bytes) != cudaSuccess) {
+      static_cast<void>(cudaGetLastError());
+      return;  // ce qui a été pris est rendu à l'appel suivant
+    }
+    slot.blocks_room = count;
+  }
+  slot.blocks_count = count;
+}
+
 std::expected<void, Refusal> TensorRtBackend::pair_launch(PairRead& slot, const Tensor& a, const Tensor& b) {
   if (!fp16_planes(a, 3) || !fp16_planes(b, 3) || a.shape.dims != b.shape.dims) {
     return refuse(RefusalCode::ShapeInvalid, "scores_start : deux images RGB FP16 de même taille attendues");
   }
   std::expected<void, Refusal> ready = bind();
   if (ready) ready = reserve_readback(slot, sizeof(PairSums));
+  const auto blocks_of = [](int side) {
+    return static_cast<std::uint32_t>((side + kernels::kHeldBlock - 1) / kernels::kHeldBlock);
+  };
+  slot.blocks_x = blocks_of(width_of(a));
+  if (ready) reserve_blocks(slot, std::size_t{slot.blocks_x} * blocks_of(height_of(a)));
   // Le flux ordonne les emplacements : un ticket périmé n'est plus relu, rien n'est à attendre.
   if (ready) ready = order({a.handle, b.handle}, {reinterpret_cast<std::uintptr_t>(slot.device)});
   if (ready)
@@ -256,7 +286,8 @@ std::expected<void, Refusal> TensorRtBackend::pair_launch(PairRead& slot, const 
                                 .kr = pair_k_.kr,        // et sa matrice
                                 .kb = pair_k_.kb,
                                 .total = &slot.device->total,
-                                .worst = &slot.device->worst};
+                                .worst = &slot.device->worst,
+                                .blocks = slot.blocks_count > 0 ? slot.blocks_device : nullptr};
     GpuTiming& timing = stage("mesures de la paire");
     timing.begin(stream_);
     ready = cuda_check(launch_pair_diff(params, stream_), "pair_diff<<<>>>");
@@ -265,6 +296,12 @@ std::expected<void, Refusal> TensorRtBackend::pair_launch(PairRead& slot, const 
   if (ready) {
     ready =
         cuda_check(cudaMemcpyAsync(slot.host, slot.device, sizeof(PairSums), cudaMemcpyDeviceToHost, stream_),
+                   "cudaMemcpyAsync");
+  }
+  if (ready && slot.blocks_count > 0) {
+    ready =
+        cuda_check(cudaMemcpyAsync(slot.blocks_host, slot.blocks_device,
+                                   slot.blocks_count * sizeof(unsigned int), cudaMemcpyDeviceToHost, stream_),
                    "cudaMemcpyAsync");
   }
   if (ready) ready = cuda_check(cudaEventRecord(slot.done, stream_), "cudaEventRecord");
@@ -282,8 +319,13 @@ std::expected<PairScores, Refusal> TensorRtBackend::pair_read(const PairRead& sl
   // Σ |ΔY| × (pas 8 bits / 255) sur l'aire remplie de RIFE, avec le pas de la mesure comme pour le pire bloc
   // (kernels::pair_scene_score, C50-01).
   const double scene = kernels::pair_scene_score(slot.host->total, slot.levels, slot.area);
-  return PairScores{
+  PairScores scores{
       .scene_score = scene, .worst_block = slot.host->worst, .identical = slot.host->total == 0.0};
+  if (slot.blocks_count > 0) {
+    scores.blocks.assign(slot.blocks_host, slot.blocks_host + slot.blocks_count);
+    scores.blocks_x = slot.blocks_x;
+  }
+  return scores;
 }
 
 }  // namespace kirari::gpu::cuda

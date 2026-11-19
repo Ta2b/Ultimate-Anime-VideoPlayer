@@ -55,7 +55,16 @@ bool flow_held(const kernels::SceneMotion& scene) {
     return false;
   const auto changed =
       std::ranges::count_if(scene.tiles, [](const kernels::SceneTile& t) { return t.changed; });
-  return static_cast<double>(changed) <= triage::kHeldChanged * static_cast<double>(scene.tiles.size());
+  if (static_cast<double>(changed) > triage::kHeldChanged * static_cast<double>(scene.tiles.size()))
+    return false;
+  // Pas une seule tuile de dessin (classe vue deux paires de suite) qui se déplace d'un écart de dessin
+  // (kBackgroundFloor pixels du flux, la caméra tenue) : drawing_held et la part des tuiles qui changent
+  // laissent passer un petit personnage qui marche au loin, que la paire tenue ferait saccader.
+  const float reach = kernels::scene::kBackgroundFloor * static_cast<float>(scene.tile_px) /
+                      static_cast<float>(kernels::kSceneTileFlowPixels);
+  return std::ranges::none_of(scene.tiles, [reach](const kernels::SceneTile& t) {
+    return t.changed && t.kind == kernels::SceneClass::Drawing && std::hypot(t.dx, t.dy) >= reach;
+  });
 }
 
 bool flow_lost(const kernels::SceneMotion& scene) {

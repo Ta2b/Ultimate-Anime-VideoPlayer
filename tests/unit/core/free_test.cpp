@@ -163,6 +163,16 @@ TEST_CASE("free rate : le pas suit le temps de service mesuré avec 10 % de marg
   FreeRate lone;
   lone.cost(1, 50'000, now);
   CHECK(lone.step_us(now) == 55'000);
+  // Démarrage : chaque mesure compte, bornée à une demi-paire, et la suit à moitié vers le bas aussi.
+  FreeRate start;
+  start.set_min_gap(6'000);
+  start.reset(0);
+  start.cost(1, 80'000, 100'000);  // une passe qui chauffe
+  CHECK(start.info(100'000).service_us == 20'000);
+  start.cost(4, 4 * 3'000, 200'000);
+  CHECK(start.info(200'000).service_us == 11'500);
+  for (int i = 0; i < 10; ++i) start.cost(4, 4 * 3'000, 300'000);
+  CHECK(start.step_us(300'000) == 6'000);  // l'écran borne dès la première seconde
 }
 
 TEST_CASE("free rate : monte vite, descend lentement", "[free]") {

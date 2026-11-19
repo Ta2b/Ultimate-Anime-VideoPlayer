@@ -155,7 +155,6 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->rife_hwc8_ = (init.trials & kTrialRifeHwc8) != 0;
   backend->warp_l2_ = (init.trials & kTrialWarpL2) != 0;
   backend->span_native_ = (init.trials & kTrialSpanNative) != 0;
-  backend->span_promoted_ = (init.trials & kTrialSpanPromoted) != 0;
   backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
   backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
   backend->trtexec_ = std::move(trtexec);
@@ -272,6 +271,10 @@ TensorRtBackend::~TensorRtBackend() {
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   free_reads(pair_reads_);
+  for (const PairRead& read : pair_reads_) {
+    if (read.blocks_device != nullptr) cudaFree(read.blocks_device);
+    if (read.blocks_host != nullptr) cudaFreeHost(read.blocks_host);
+  }
   free_reads(flow_reads_);
   free_reads(stats_reads_);
   for (void* scratch : {static_cast<void*>(ingest_rows_), static_cast<void*>(splat_sums_), grid_motion_,

@@ -162,6 +162,30 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   for (std::size_t i = 0; i < 4; ++i) rain.tiles[i].changed = true;
   CHECK_FALSE(flow_held(rain));
   CHECK(rife_runs(moving(rain, true)));
+  // Sur 10 × 10 tuiles, deux qui changent restent sous la part tolérée (2 %), et drawing_held le dit encore.
+  // Une tuile qui bouge de moins d'un écart de dessin (1,5 pixel du flux : 3 pixels de travail en tuiles de
+  // 32), ou dont le vecteur ne vaut rien (aplat, effet) : tenue. Une tuile de dessin qui se déplace (un petit
+  // personnage qui marche au loin) : RIFE tourne, la paire tenue le ferait saccader.
+  kernels::SceneMotion wide_held = held;
+  wide_held.cols = 10;
+  wide_held.rows = 10;
+  wide_held.tiles.assign(100, kernels::SceneTile{.kind = kernels::SceneClass::Drawing, .confidence = 0.9F});
+  const auto with_tile = [&wide_held](kernels::SceneClass kind, float dx) {
+    kernels::SceneMotion s = wide_held;
+    s.tiles[42] = {.kind = kind, .confidence = 0.8F, .dx = dx, .dy = 0.0F, .changed = true};
+    s.tiles[43] = {.kind = kind, .confidence = 0.8F, .dx = dx, .dy = 0.0F, .changed = true};
+    return s;
+  };
+  CHECK(flow_held(wide_held));
+  CHECK(flow_held(with_tile(kernels::SceneClass::Drawing, 2.5F)));
+  CHECK(flow_held(with_tile(kernels::SceneClass::Uncertain, 9.0F)));
+  CHECK(flow_held(with_tile(kernels::SceneClass::Effect, 9.0F)));
+  const kernels::SceneMotion walker_far = with_tile(kernels::SceneClass::Drawing, 3.0F);
+  CHECK_FALSE(flow_held(walker_far));
+  CHECK(rife_runs(moving(walker_far, true)));
+  RifeTriage counted;
+  CHECK(counted.sort(moving(walker_far, true), rife_runs(moving(walker_far, true))) == PairSort::Today);
+  CHECK(counted.counts().held == 0);
 
   // Scène calme : RIFE tel quel.
   const kernels::SceneMotion calm = calm_scene();

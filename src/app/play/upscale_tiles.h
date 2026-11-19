@@ -8,6 +8,16 @@
 // Intel, Turing, NVOF refusé, pas encore relue, début de lecture, saut), l'image entière se calcule, comme
 // avant.
 //
+// Filet : la carte juge des tuiles de 32 × 32 pixels de travail (en 1080p) sur une image réduite de moitié,
+// et ne dit « a changé » qu'à 6 codes d'écart moyen ou un vecteur net. Une petite bouche, un clignement dans
+// un plan large y passent sous le seuil. L'écart de chaque bloc 16 × 16 de la mesure de la paire
+// (gpu::PairScores::blocks, celui des dessins tenus) les voit : un bloc au-delà de kBlockChange recalcule
+// les tuiles qu'il couvre. Le seuil est bien au-dessus du grain (un grain d'écart type σ donne un écart moyen
+// d'environ 1,13 σ par bloc ; sur Spy×Family 13 BD, les paires sans mouvement restent sous un niveau au pire
+// bloc), et bien en dessous d'une bouche (une cinquantaine de pixels qui changent de 80 codes : 15 niveaux).
+// Sans portée sous un décalage (la mesure compare les mêmes pixels, pas le contenu suivi) : là, seul le décor
+// sûr qui suit se reprend.
+//
 // Exactitude (kernels/spec/span_tiles.h) : le moteur calcule toutes ses couches sur le cœur dilaté de son
 // champ réceptif ; la sortie du cœur est celle d'un calcul complet. Le cœur lui-même est ce qui a changé
 // dilaté de la même portée (une sortie voit l'entrée jusqu'à la portée), plus le rayon du débandage quand
@@ -39,6 +49,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -58,6 +69,13 @@ enum class TileStale : std::uint8_t {
 };
 inline constexpr std::size_t kTileStaleCount = 5;
 
+// L'écart de chaque bloc de la mesure de la paire (précédente, image), gpu::PairScores::blocks.
+struct PairBlocks {
+  std::span<const std::uint32_t> deviation;  // 1/256 de niveau, ligne par ligne ; vide : pas relu
+  std::uint32_t cols = 0;
+  float side_px = 0.0F;  // côté d'un bloc en pixels de travail (16 si la mesure est à la taille de travail)
+};
+
 // Ce que l'étage sait de l'image quand elle n'est pas reprise entière.
 struct TileFacts {
   TileStale stale = TileStale::Restart;  // None : même époque, image saine, sortie d'avant présente et à jour
@@ -69,6 +87,7 @@ struct TileFacts {
   // La recette de l'entrée de SPAN (débandage, filtre de réduction) : une autre que celle de la dernière
   // image calculée change tous les pixels un peu, sans que la carte le dise ; l'image est entière.
   std::uint64_t input_key = 0;
+  PairBlocks blocks;  // le filet sous la carte ; vide : la carte seule
 };
 
 // Ce que l'image fera.
@@ -93,6 +112,7 @@ class SpanTiles {
   static constexpr float kFollow = 0.5F;         // écart d'une tuile décor au décalage, pixels de travail
   static constexpr float kSure = 0.5F;           // confiance d'une tuile décor reprise sous un décalage
   static constexpr double kMaxShare = 0.7;  // au-delà, la région dilatée coûte autant que l'image entière
+  static constexpr std::uint32_t kBlockChange = 200;  // écart d'un bloc qui change, centièmes de niveau
 
   bool enabled = true;  // --no-span-tiles
 
@@ -129,8 +149,8 @@ class SpanTiles {
     float bias = 0.0F;  // glissement de luminosité reçu depuis le dernier calcul, codes
   };
   // Pourquoi une tuile est à recalculer, la première raison dans cet ordre (bilan de la région trop large).
-  enum class Cause : std::uint8_t { None, Border, Map, Age, Drift, Camera, Bias };
-  static constexpr std::size_t kCauseCount = 7;
+  enum class Cause : std::uint8_t { None, Border, Map, Net, Age, Drift, Camera, Bias };
+  static constexpr std::size_t kCauseCount = 8;
   // La caméra de la carte sur les images planifiées où elle est ajustée : tenue (sous kCameraMax aux quatre
   // coins et au centre), en partie (zoom, rotation, caméra entre les deux), ou qui bouge partout ; de
   // celles-ci, le déplacement au centre, par cases de kCameraBin pixel.
@@ -178,6 +198,9 @@ class SpanTiles {
   // Les tuiles de la carte sous la tuile (col, row) du moteur, rendues par appel de visit.
   template <class Visit>
   void scene_tiles_under(const kernels::SceneMotion& scene, int col, int row, Visit&& visit) const;
+  // Le filet : les tuiles sous un bloc qui change s'ajoutent à ce qui a changé (raw), hors décalage. Rend
+  // combien la carte n'y avait pas mis.
+  std::uint64_t blocks_into(std::vector<std::uint8_t>& raw, const PairBlocks& blocks, bool shifting);
 
   kernels::SpanTileGrid grid_;
   bool span_ = false;  // set_grid appelé : l'étage a un SPAN
@@ -205,7 +228,9 @@ class SpanTiles {
   std::uint64_t wide_region_ = 0;                         // ses tuiles de la région dilatée
   std::uint64_t wide_seen_ = 0;                           // ses tuiles de la grille
   CameraSeen camera_seen_;
-  std::uint64_t refused_ = 0;  // le moteur a refusé le plan
+  std::uint64_t refused_ = 0;     // le moteur a refusé le plan
+  std::uint64_t net_frames_ = 0;  // images planifiées où le filet a vu ce que la carte taisait
+  std::uint64_t net_tiles_ = 0;   // et ses tuiles, avant dilatation
   std::uint64_t checks_ = 0;
   std::uint32_t check_worst_ = 0;  // 1/256 de niveau
   double check_mean_ = 0.0;        // niveaux, le plus grand
