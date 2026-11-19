@@ -6,10 +6,10 @@
 // chaîne est mesuré seul (ce morceau natif, les autres à TensorRT) : son erreur quadratique sur la sortie,
 // celle que les morceaux suivants en font. Les erreurs de morceaux différents s'ajoutent à peu près ; le
 // mélange retenu est le plus rapide dont la somme prévue tient le seuil, vérifié sur la chaîne (un écart à
-// la prévision relève la barre d'autant). Il n'est gardé que s'il bat TensorRT d'au moins kMinGain sur une
-// passe de lecture chronométrée (en deçà, l'écart tient de la mesure). La paire : un dessin lisse (ondes, un
-// carré aux bords francs) et le même décalé de quelques pixels, instant 0,5 ; le flot de RIFE y a du travail
-// sans sortir de ce que le réseau voit en lecture.
+// la prévision relève d'autant la barre des mélanges de plusieurs morceaux natifs). Il n'est gardé que s'il
+// bat TensorRT d'au moins kMinGain sur une passe de lecture chronométrée (en deçà, l'écart tient de la
+// mesure). La paire : un dessin lisse (ondes, un carré aux bords francs) et le même décalé de quelques
+// pixels, instant 0,5 ; le flot de RIFE y a du travail sans sortir de ce que le réseau voit en lecture.
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -98,13 +98,16 @@ std::vector<double> group_mse(const std::vector<float>& want, const std::vector<
   return mse;
 }
 
+// Le PSNR d'un groupe : 200 dB sans erreur, moins l'infini sur une erreur non finie.
+double db_of(double peak, double mse) {
+  if (!std::isfinite(mse)) return -std::numeric_limits<double>::infinity();
+  return mse == 0.0 ? 200.0 : 10.0 * std::log10(peak * peak / mse);
+}
+
 // Le PSNR du groupe le plus bas.
 double worst_db(const std::vector<double>& peak, const std::vector<double>& mse) {
   double worst = std::numeric_limits<double>::infinity();
-  for (std::size_t g = 0; g < peak.size(); ++g) {
-    if (!std::isfinite(mse[g])) return -std::numeric_limits<double>::infinity();
-    worst = std::min(worst, mse[g] == 0.0 ? 200.0 : 10.0 * std::log10(peak[g] * peak[g] / mse[g]));
-  }
+  for (std::size_t g = 0; g < peak.size(); ++g) worst = std::min(worst, db_of(peak[g], mse[g]));
   return worst;
 }
 
@@ -258,30 +261,82 @@ struct Mix {
 // pour une option que le morceau ne peut pas prendre ; nulle pour TensorRT).
 using Effects = std::vector<std::vector<std::vector<double>>>;
 
-// Le mélange le plus rapide parmi cands (la somme des temps seuls) dont l'effet prévu, la somme des erreurs
-// de ses morceaux, tient target ; à temps égal, le plus juste. Rien si aucun ne tient.
-std::optional<std::pair<Options, double>> fastest_within(const Grid& times,
-                                                         const std::vector<std::vector<int>>& cands,
-                                                         const Effects& effects,
-                                                         const std::vector<double>& peak, double target) {
+// Les erreurs d'un mélange, groupe par groupe, à partir de l'effet de ses morceaux : leur somme (des
+// erreurs indépendantes s'ajoutent ainsi) et le carré de la somme de leurs racines (des erreurs de même
+// signe aux mêmes pixels).
+struct Spread {
+  std::vector<double> power;
+  std::vector<double> amplitude;
+  int natives = 0;
+};
+
+Spread spread_of(const Options& options, const Effects& effects, std::size_t groups) {
+  Spread s{.power = std::vector<double>(groups, 0.0), .amplitude = std::vector<double>(groups, 0.0)};
+  for (std::size_t p = 0; p < options.size(); ++p) {
+    const auto o = static_cast<std::size_t>(options[p]);
+    s.natives += o == 0 ? 0 : 1;
+    for (std::size_t g = 0; g < groups; ++g) {
+      s.power[g] += effects[p][o][g];
+      s.amplitude[g] += std::sqrt(effects[p][o][g]);
+    }
+  }
+  for (double& a : s.amplitude) a *= a;
+  return s;
+}
+
+// Ce qu'un mélange doit tenir. L'erreur prévue d'un groupe va de la somme (rho 0, au départ) au carré de la
+// somme des racines (rho 1) ; un mélange d'au plus un morceau natif a été mesuré tel quel (son effet) et
+// tient min_db ou non. Les autres tiennent multi_db : min_db, plus kSlack après une vérification manquée,
+// qui recale aussi rho ; les mélanges manqués sont écartés.
+struct Bar {
+  double min_db = 0.0;
+  double multi_db = 0.0;
+  std::vector<double> rho;
+  std::vector<Options> failed;
+};
+
+std::vector<double> predicted(const Spread& s, const std::vector<double>& rho) {
+  std::vector<double> mse = s.power;
+  if (s.natives <= 1) return mse;
+  for (std::size_t g = 0; g < mse.size(); ++g) {
+    const double extra = s.amplitude[g] - s.power[g];
+    if (extra > 0.0 && rho[g] > 0.0) mse[g] += rho[g] * extra;
+  }
+  return mse;
+}
+
+bool holds(const Bar& bar, const std::vector<double>& peak, const std::vector<double>& mse, int natives) {
+  for (std::size_t g = 0; g < peak.size(); ++g)
+    if (db_of(peak[g], mse[g]) < (natives <= 1 ? bar.min_db : bar.multi_db)) return false;
+  return true;
+}
+
+// Le mélange le plus rapide parmi cands (la somme des temps seuls) dont l'erreur prévue tient bar ; à temps
+// égal, le plus juste. Ses options et son erreur prévue ; rien si aucun ne tient.
+std::optional<std::pair<Options, std::vector<double>>> fastest_within(
+    const Grid& times, const std::vector<std::vector<int>>& cands, const Effects& effects,
+    const std::vector<double>& peak, const Bar& bar) {
   const std::size_t pieces = cands.size();
   std::vector<std::size_t> at(pieces, 0);  // compteur : l'indice dans cands de chaque morceau
-  std::optional<std::pair<Options, double>> best;
+  std::optional<std::pair<Options, std::vector<double>>> best;
   double best_ms = std::numeric_limits<double>::infinity();
+  double best_db = -std::numeric_limits<double>::infinity();
   for (;;) {
     double ms = 0.0;
-    std::vector<double> mse(peak.size(), 0.0);
     Options options(pieces);
     for (std::size_t p = 0; p < pieces; ++p) {
-      const auto o = static_cast<std::size_t>(cands[p][at[p]]);
-      options[p] = static_cast<int>(o);
-      ms += times[p][o];
-      for (std::size_t g = 0; g < peak.size(); ++g) mse[g] += effects[p][o][g];
+      options[p] = cands[p][at[p]];
+      ms += times[p][static_cast<std::size_t>(options[p])];
     }
-    const double db = worst_db(peak, mse);
-    if (db >= target && (ms < best_ms || (ms == best_ms && best && db > best->second))) {
-      best_ms = ms;
-      best = std::pair{std::move(options), db};
+    if (ms <= best_ms && std::ranges::find(bar.failed, options) == bar.failed.end()) {
+      const Spread s = spread_of(options, effects, peak.size());
+      std::vector<double> mse = predicted(s, bar.rho);
+      const double db = worst_db(peak, mse);
+      if ((ms < best_ms || db > best_db) && holds(bar, peak, mse, s.natives)) {
+        best_ms = ms;
+        best_db = db;
+        best = std::pair{std::move(options), std::move(mse)};
+      }
     }
     std::size_t p = 0;
     while (p < pieces && ++at[p] == cands[p].size()) at[p++] = 0;
@@ -289,9 +344,25 @@ std::optional<std::pair<Options, double>> fastest_within(const Grid& times,
   }
 }
 
+// Après une vérification manquée : rho de chaque groupe recalé sur l'erreur mesurée (sans jamais
+// descendre ; infini sur une erreur non finie), la barre des mélanges de plusieurs morceaux natifs à min_db
+// plus kSlack, le mélange écarté.
+void miss(Bar& bar, const Spread& s, const std::vector<double>& measured, Options options, double slack) {
+  for (std::size_t g = 0; g < bar.rho.size(); ++g) {
+    const double extra = s.amplitude[g] - s.power[g];
+    if (extra <= 0.0) continue;
+    const double rho = std::isfinite(measured[g]) ? (measured[g] - s.power[g]) / extra
+                                                  : std::numeric_limits<double>::infinity();
+    bar.rho[g] = std::max(bar.rho[g], rho);
+  }
+  bar.multi_db = bar.min_db + slack;
+  bar.failed.push_back(std::move(options));
+}
+
 // Mesure l'effet de chaque option sur la chaîne (chain : sa sortie pour des options), puis prend le mélange
-// le plus rapide qui le tient, vérifié sur la chaîne contre want (la sortie par TensorRT). Une vérification
-// sous min_db relève la barre de l'écart à la prévision, plus kSlack ; après kAttempts, tout à TensorRT.
+// le plus rapide qui le tient, vérifié sur la chaîne contre want (la sortie par TensorRT) ; une vérification
+// sous min_db le fait manquer (miss). Le dernier essai ne prend qu'un mélange d'un seul morceau natif ; s'il
+// n'y en a pas, tout à TensorRT.
 template <class Chain>
 std::expected<Mix, Refusal> choose_mix(const Grid& times, const std::vector<float>& want, std::size_t plane,
                                        bool motion, double min_db, Chain&& chain) {
@@ -300,8 +371,8 @@ std::expected<Mix, Refusal> choose_mix(const Grid& times, const std::vector<floa
   const auto cands = candidates(times);
   const std::vector<double> peak = group_peak(want, plane, motion);
   Effects effects(times.size(), std::vector<std::vector<double>>(times.front().size()));
-  Mix mix{.options = Options(times.size(), 0),
-          .effects = "RIFE natif, effet de chaque option sur la chaîne (le reste à TensorRT)"};
+  Mix mix{.options = Options(times.size(), 0)};
+  std::string measured;
   for (std::size_t p = 0; p < times.size(); ++p) {
     effects[p][0].assign(peak.size(), 0.0);
     for (const int o : cands[p]) {
@@ -312,25 +383,29 @@ std::expected<Mix, Refusal> choose_mix(const Grid& times, const std::vector<floa
       if (!got) return std::unexpected(std::move(got.error()));
       auto& effect = effects[p][static_cast<std::size_t>(o)];
       effect = group_mse(want, *got, plane, motion);
-      mix.effects += std::format(" ; {} {} {:.1f} dB", RifeNativeTrial::piece_name(static_cast<int>(p)),
-                                 option_name(o), worst_db(peak, effect));
+      measured += std::format(" ; {} {} {:.1f} dB", RifeNativeTrial::piece_name(static_cast<int>(p)),
+                              option_name(o), worst_db(peak, effect));
     }
   }
-  double target = min_db;
+  if (!measured.empty())
+    mix.effects = "RIFE natif, effet de chaque option sur la chaîne (le reste à TensorRT)" + measured;
+  Bar bar{.min_db = min_db, .multi_db = min_db, .rho = std::vector<double>(peak.size(), 0.0)};
   for (int attempt = 0; attempt < kAttempts; ++attempt) {
-    auto pick = fastest_within(times, cands, effects, peak, target);
+    if (attempt + 1 == kAttempts) bar.multi_db = std::numeric_limits<double>::infinity();
+    auto pick = fastest_within(times, cands, effects, peak, bar);
     if (!pick || all_trt(pick->first)) break;
     auto got = chain(pick->first);
     if (!got) return std::unexpected(std::move(got.error()));
-    const double db = worst_db(peak, group_mse(want, *got, plane, motion));
-    if (db >= min_db) {
+    const std::vector<double> mse = group_mse(want, *got, plane, motion);
+    if (worst_db(peak, mse) >= min_db) {
       mix.options = std::move(pick->first);
       mix.out = std::move(*got);
-      mix.db = db;
-      mix.predicted = pick->second;
+      mix.db = worst_db(peak, mse);
+      mix.predicted = worst_db(peak, pick->second);
       return mix;
     }
-    target += pick->second - db + kSlack;
+    const Spread spread = spread_of(pick->first, effects, peak.size());
+    miss(bar, spread, mse, std::move(pick->first), kSlack);
   }
   mix.options.assign(times.size(), 0);
   return mix;
@@ -419,7 +494,7 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
   auto mix = choose_mix(*times, *reference, plane, motion_, min_db,
                         [&](const Options& o) { return run_chain(route_of(o)); });
   if (!mix) return abandon(std::move(mix.error()));
-  lines.push_back(mix->effects);
+  if (!mix->effects.empty()) lines.push_back(mix->effects);
   if (all_trt(mix->options)) {
     settle({});
     lines.push_back(std::format("RIFE natif écarté, TensorRT garde la chaîne ({}×{} : {})", w, h,

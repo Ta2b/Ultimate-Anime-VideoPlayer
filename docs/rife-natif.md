@@ -122,9 +122,17 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
    L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul en natif : l'erreur
    quadratique de la sortie contre TensorRT (images au pic 1 ; flot au pic de son plus grand écart, masque à
    part), celle que les morceaux suivants font de l'erreur du morceau. Les erreurs de morceaux différents
-   s'ajoutent à peu près ; parmi toutes les combinaisons (au plus 5⁶), le mélange retenu est le plus rapide (la
-   somme des temps seuls) dont la somme prévue tient 45 dB. Il est vérifié sur la chaîne ; sous 45 dB, la barre
-   monte de l'écart à la prévision plus 0,5 dB, quatre fois au plus, puis tout revient à TensorRT. L'ancien
+   s'ajoutent à peu près : l'erreur prévue d'un groupe va de la somme des effets (erreurs indépendantes) au
+   carré de la somme de leurs racines (erreurs de même signe aux mêmes pixels), selon une corrélation qui part
+   de 0. Parmi toutes les combinaisons (au plus 5⁶), le mélange retenu est le plus rapide (la somme des temps
+   seuls) dont l'erreur prévue tient 45 dB ; un mélange d'un seul morceau natif n'a rien à prévoir, son effet
+   est sa mesure. Il est vérifié sur la chaîne. Sous 45 dB, ce mélange est écarté, la corrélation de chaque
+   groupe se recale sur l'erreur mesurée (sans jamais descendre) et les mélanges de plusieurs morceaux natifs
+   doivent tenir 45,5 dB ; au quatrième essai, seul un mélange d'un seul morceau natif peut être pris, sinon
+   tout revient à TensorRT. Essayé hors carte sur des erreurs synthétiques (400 tirages par cas, six
+   morceaux, corrélation de 0 à 1) : jamais tout à TensorRT quand un mélange tient, 0,06 à 0,08 ms de l'optimum
+   en moyenne. La première version de #942 (un écart unique ajouté à la barre de toutes les combinaisons) en
+   restait à 0,10 à 0,23 ms et, sur des erreurs très corrélées, rendait 1 % des tirages à TensorRT. L'ancien
    mélange montait d'un cran le morceau le moins juste jugé seul, sans jamais redescendre : jugés contre
    TensorRT, les crans plus justes ne le sont pas toujours (le bloc 4 de 4.25 : 73,2 dB en f16, 69,3 en
    mixtes), et la justesse d'un morceau seul ne dit pas son poids sur la chaîne (l'encodeur décidait des
@@ -177,8 +185,10 @@ largeur), une transposée qui porte `output_shape`.
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
-Les formes « poids à l'avance » ajoutent 20 noyaux (118 en tout) : elles lisent les mêmes fragments dans le même
-ordre, plus tôt, et passent par le même contrôle au réglage. Le réglage par couche et le mélange par morceau
+Les formes « poids à l'avance » ajoutent 20 noyaux (116 convolutions en tout) : elles lisent les mêmes fragments
+dans le même ordre, plus tôt, et passent par le même contrôle au réglage. La plus grande (tranche et tuile de 64,
+deux lignes par warp, f16) prend 252 registres sur sm_75 et 246 à 250 ailleurs, sans débordement : la marge est
+mince, un changement qui la fait déborder casse la construction (`--warn-on-spills`). Le réglage par couche et le mélange par morceau
 (novembre 2026) : les 96 noyaux instanciés (contre 66) passent
 l'émulateur ci-dessous dans 216 cas (sommes f16 et f32 ; tranches, tuiles, lignes par warp, K découpé ou non ;
 grilles à bords incomplets et grilles de quelques blocs), à 1e-7 près ; le module grossit d'environ 3 Mo par
