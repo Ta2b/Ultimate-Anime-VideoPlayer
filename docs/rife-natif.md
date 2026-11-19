@@ -206,26 +206,24 @@ largeur), une transposée qui porte `output_shape`.
 
 ## État
 
-**En pause (19 novembre 2026, à la demande de Tatoub ; ne reprendre qu'avec son accord).** Le mélange de #919 et
-#942 est fusionné et reste tel quel (retenu sur 4.25 et 4.22 lite, toujours derrière `--rife-native`). La branche
-`claude/project-thread-i22zy2` garde, sans PR, l'entrée du dernier bloc à la volée, écrite et vérifiée hors
-carte :
+L'entrée du dernier bloc à la volée est vérifiée hors carte, avant toute mesure sur le PC :
 
 - nvcc sm_75, 86, 89 et 120 sans débordement ; g++ strict, clang-tidy, format, complexité et règles de la CI ;
-- l'émulateur processeur du code CUDA tel quel (fibres par fil, mma, ldmatrix et cp.async émulés ; ses sources et
-  leur mode d'emploi dans `/mnt/project-files/chantier-natif/rife-natif-emu/`) : sortie et flot écrit dans X
+- un émulateur processeur du code CUDA tel quel (une fibre par fil, mma, ldmatrix et cp.async émulés ; sources
+  et mode d'emploi dans `/mnt/project-files/chantier-natif/rife-natif-emu/`) : sortie et flot écrit dans X
   identiques au bit à l'ancien chemin (colle puis convolution 16/16), sommes f16, mixtes et f32, 8 cas
   synthétiques et les vrais poids et tenseurs de 4.22 lite et 4.25 ; trois mutations du noyau sont détectées ;
 - contre onnxruntime en f32 (paire de l'essai, 1024 × 576) : première convolution du dernier bloc à 76,9 à
-  81,4 dB, X à 70 dB ou plus par groupe de canaux, quand la grille du graphe est donnée en f32 exact. Avec la
-  grille FP16 de l'entrée v1, les warps du graphe tombent à 51-55 dB du calcul exact : l'écart de la grille FP32
-  de la colle (A03-20), pas une erreur.
+  81,4 dB, X à 70 dB ou plus par groupe de canaux, la grille du graphe donnée en f32 exact. Avec la grille FP16
+  de l'entrée v1, les warps du graphe tombent à 51-55 dB du calcul exact : l'écart de la grille FP32 de la colle
+  (A03-20), pas une erreur.
 
-Reste, dans l'ordre : PR et relecture sévère, fusion ; mesure sur le PC (le temps d'une passe, environ 0,4 ms
-de moins attendu), après les chantiers qui n'ont pas passé leur porte ; puis les blocs 0 à 2 (couches de
-60 × 34 à 17 µs contre 13 pour TensorRT : formes, réglage). Sur 4.22 lite, natif f32 et TensorRT ne sont qu'à
-43,5 dB l'un de l'autre : l'encodeur seul en f32 sort à 79,6 dB de TensorRT mais la chaîne en fait 43,8 dB ; la
-référence f32 n'est donc pas fautive, la chaîne du lite amplifie l'écart de son encodeur (à expliquer).
+Les plafonds théoriques d'une passe ×2 en 1080p sur la 4070 Ti
+(`/mnt/project-files/chantier-natif/rife-plafonds.md`) : 2,28 ms couche par couche, 1,58 ms morceaux fondus,
+contre 3,00 ms mesurées pour le mélange de 4.25 (#942). La suite vise ces plafonds : la colle et la fin fondues (environ 1,2 ms mesurées contre
+0,82 de plafond), puis la passe entière en un noyau. Sur 4.22 lite, natif f32 et TensorRT ne sont qu'à 43,5 dB
+l'un de l'autre : l'encodeur seul en f32 sort à 79,6 dB de TensorRT mais la chaîne en fait 43,8 dB ; la référence
+f32 n'est donc pas fautive, la chaîne du lite amplifie l'écart de son encodeur (à expliquer).
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
