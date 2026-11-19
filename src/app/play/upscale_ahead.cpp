@@ -7,8 +7,10 @@
 //
 // Entrée de RIFE : les images de la paire une fois, sur la voie des mesures et dans l'autre des deux
 // entrées, puis l'instant seul pour les autres instants.
+#include <memory>
 #include <utility>
 
+#include "app/play/effect_book.h"
 #include "app/play/pair_marks.h"
 #include "app/play/upscale_stage.h"
 #include "core/log.h"
@@ -252,11 +254,32 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (facts.scores && pair_cut(facts)) scene_.cut();  // la paire suivante repart sans indices
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
+  note_effects(frame, facts);
   if (!interpolates() && facts.same_epoch) {
     scene_.start(ops, rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), previous_->id, frame.id,
                  frame.epoch);
   }
   return facts;
+}
+
+// Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
+// grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur previous_) sert
+// à la paire en cours : une paire de retard, que le lissage du masque couvre.
+void UpscaleStage::note_effects(const DecodedFrame& frame, const PairFacts& facts) {
+  if (setup_.live == nullptr || !setup_.live->effect_highlights() || !facts.same_epoch || !previous_) return;
+  if (previous_->pts_us == kNoPts || frame.pts_us == kNoPts) return;
+  const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
+  if (scene == nullptr && scene_.latest() && scene_.latest()->right == previous_->id)
+    scene = &scene_.latest()->motion;
+  if (scene == nullptr) return;
+  const int width = setup_.work_width > 0 ? setup_.work_width : setup_.source_width;
+  const int height = setup_.work_height > 0 ? setup_.work_height : setup_.source_height;
+  const bool cut = facts.scores && pair_cut(facts);
+  setup_.live->effect_book().add(EffectNote{.epoch = frame.epoch,
+                                            .from_us = previous_->pts_us,
+                                            .to_us = frame.pts_us,
+                                            .tiles = std::make_shared<const render::EffectTiles>(
+                                                effect_tiles_of(*scene, width, height, facts.gap_us, cut))});
 }
 
 }  // namespace kirari::app::play

@@ -287,6 +287,11 @@ struct PlaceboScreen::Impl {
   // Avant chaque présentation, sur target_color : le grade en attente, le choix PQ ou SDR, KWin, puis la
   // publication au grade avant le warp.
   void ready_grade(const RingFrame* frame);
+  // Éclats HDR sur les seuls effets (effect_book.h) : le masque lissé de la paire montrée, posé dans le
+  // grade. Sans carte, il revient au neutre et le grade redevient celui d'aujourd'hui.
+  EffectFollower effects;
+  bool effects_on = false;
+  void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;
     frame_graded = frame != nullptr && frame->graded;
