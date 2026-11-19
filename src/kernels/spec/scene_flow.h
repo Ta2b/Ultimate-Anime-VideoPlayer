@@ -41,9 +41,10 @@ inline constexpr int kSceneFlowMinSide = 32;
 inline constexpr int kSceneFlowGrid = 4;
 inline constexpr int kSceneTileCells = 4;
 inline constexpr int kSceneTileFlowPixels = kSceneFlowGrid * kSceneTileCells;
-// Coût d'un vecteur à partir duquel il est « sans correspondance ». Sur 255 ; à régler sur la distribution
-// des coûts du banc 2.1 (aplats, traits, grain).
-inline constexpr std::uint8_t kSceneCostHigh = 160;
+// Coût d'un vecteur à partir duquel il est « sans correspondance ». Sur 255, mais NVOF n'en donne presque
+// jamais plus de 32 (banc de la porte 2.3, flux 960 × 540, réglage moyen : 99e centile 20, 99,9e 30, 0,07 %
+// au-dessus de 32) : à 160, aucun vecteur ne l'était, ni effet ni coupe ne se voyaient. Entre les deux.
+inline constexpr std::uint8_t kSceneCostHigh = 24;
 
 constexpr int scene_flow_divisor(int work_height) {
   return std::max(1, (work_height + kSceneFlowMaxHeight - 1) / kSceneFlowMaxHeight);
@@ -125,10 +126,16 @@ struct SceneMotion {
   }
 };
 
-// Seuils de la carte (ref::scene_motion_of). Non mesurés : la porte 2.3 (classe juste sur 95 % des tuiles
-// sûres des extraits du banc 2.1) les règle.
+// Seuils de la carte (ref::scene_motion_of), réglés par la porte 2.3 (classe juste sur 95 % des tuiles sûres
+// des extraits du banc 2.1, tools/bench/qualite/carte_lecteur.py). Premier passage (19 novembre) : aucune
+// caméra sur 4 panoramiques sur 6, faute de tuiles candidates. Il fallait 6 codes par pixel (à peu près un
+// trait net entier par tuile) sur 15 % de l'image (306 tuiles en 960 × 540) ; ces scènes sombres de Re:Zero
+// n'en ont que 2 à 355 au-dessus de 3 codes, et 32 à 461 au-dessus de 2 (luma moyenne 31 à 49). Le banc 2.1
+// y ajuste pourtant sa caméra (résidu 0,13 à 0,36 px) sur tout bloc où la luma varie d'un code.
+// D'où l'ajustement dès 1,5 code sur 3 % de l'image (62 tuiles), l'aplat sous 3.
 namespace scene {
-inline constexpr float kTextureFloor = 6.0F;  // texture moyenne par pixel, codes : sous elle, aplat
+inline constexpr float kTextureFloor = 3.0F;  // texture moyenne par pixel, codes : sous elle, aplat
+inline constexpr float kFitTexture = 1.5F;    // et texture d'une tuile qui peut ajuster la caméra
 inline constexpr float kMatchedFloor = 0.5F;  // part de vecteurs sûrs d'une tuile qui correspond
 inline constexpr float kFitMatched = 0.75F;   // et d'une tuile qui ajuste la caméra, d'un aplat décor
 inline constexpr float kSpreadMax = 1.5F;     // écart type des vecteurs d'une tuile cohérente, pixels du flux
@@ -140,7 +147,7 @@ inline constexpr float kBackgroundFloor = 1.5F;   // écart au modèle d'une tui
 inline constexpr float kBackgroundShare = 0.1F;   // plus cette part du mouvement de caméra
 inline constexpr float kStillMotion = 0.5F;       // mouvement nul, pixels du flux (sans caméra ajustée)
 inline constexpr int kFitMinTiles = 16;           // tuiles retenues au moins pour ajuster la caméra
-inline constexpr float kFitMinShare = 0.15F;      // et cette part des tuiles de l'image
+inline constexpr float kFitMinShare = 0.03F;      // et cette part des tuiles de l'image
 inline constexpr float kFitInlierScale = 2.5F;    // rejet : au-delà de 2,5 × l'écart médian
 inline constexpr int kFitRounds = 4;
 inline constexpr float kCutUnmatched = 0.6F;       // part de vecteurs sans correspondance d'une coupe

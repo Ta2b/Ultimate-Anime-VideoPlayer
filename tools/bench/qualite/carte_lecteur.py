@@ -17,8 +17,11 @@ réglage moyen, indices temporels et carte de coût, puis la carte du lecteur re
 - la bascule : part des tuiles dont la classe change d'une paire à la suivante, sur toutes les paires et sur les
   paires où la caméra est tenue (plans fixes) ;
 - la caméra : part des paires où elle est ajustée, où elle est tenue ; coupes et fondus probables ;
-- la queue des coûts de NVOF (part des vecteurs au-dessus de 32 à 160, 99e et 99,9e centiles) : kSceneCostHigh
-  (160) se règle là-dessus ;
+- l'ajustement de la caméra : tuiles candidates contre le minimum demandé, paires où elles manquent, paires où
+  le rejet des aberrants échoue, tuiles écartées (texture trop faible, coût, vecteurs épars), quartiles de la
+  texture ;
+- la queue des coûts de NVOF (part des vecteurs au-dessus de 8 à 64, 99e et 99,9e centiles) : kSceneCostHigh
+  (24) se règle là-dessus ;
 - des vues PNG (luma ; décor en bleu, dessin en rouge, effet en jaune, incertain sans teinte ; plus pâle : pas
   sûre) pour juger à l'œil la classe des tuiles sûres.
 
@@ -40,7 +43,7 @@ from nvof_mesures import decode, probe  # noqa: E402
 
 KINDS = ("incertain", "décor", "dessin", "effet")
 TINTS = {1: (40, 110, 255), 2: (255, 50, 40), 3: (255, 220, 40)}
-SURE, COST_HIGH, COST_STEPS = 0.5, 160, (32, 64, 96, 128, 160)
+SURE, COST_HIGH, COST_STEPS = 0.5, 24, (8, 16, 24, 32, 48, 64)  # COST_HIGH : kSceneCostHigh
 FLOW_MAX, WORK_MAX, GRID, TILE = 720, 1080, 4, 16  # lignes du flux, lignes de travail, grille, côté d'une tuile
 
 
@@ -74,9 +77,13 @@ def replay(args, frames, divisor):
             raise RuntimeError(done.stderr.strip() or f"carte_rejeu : code {done.returncode}")
         costs = np.zeros(256, np.int64)
         pairs = []
-        for k, line in enumerate(done.stdout.splitlines()):
-            _, cols, rows, *flags = line.split()
-            cols, rows = int(cols), int(rows)
+        for line in done.stdout.splitlines():
+            head, *fields = line.split()
+            if head == "diag":  # la ligne qui suit la carte de la même paire
+                pairs[-1]["diag"] = [float(f) for f in fields]
+                continue
+            k = len(pairs)
+            cols, rows, flags = int(fields[0]), int(fields[1]), fields[2:]
             raw = np.fromfile(name(k, "carte"), np.uint8)
             t = cols * rows
             pairs.append({"kinds": raw[:t].reshape(rows, cols), "changed": raw[t:2 * t].reshape(rows, cols),
@@ -116,7 +123,24 @@ def measure(pairs, frames):
             "bascule_tenue": float(flips[held].mean()) if held.any() else math.nan,
             "camera_ajustee": float(np.mean([p["camera_fit"] for p in pairs])),
             "camera_tenue": float(np.mean([p["background_held"] for p in pairs])),
-            "coupes": int(sum(p["cut"] for p in pairs)), "fondus": int(sum(p["fade"] for p in pairs))}
+            "coupes": int(sum(p["cut"] for p in pairs)), "fondus": int(sum(p["fade"] for p in pairs)),
+            "ajustement": fit_diagnosis(pairs)}
+
+
+def fit_diagnosis(pairs):
+    """Pourquoi la caméra s'ajuste ou non (ligne diag de carte_rejeu) : candidates et minimum médians, paires
+    sans assez de candidates, paires qui en ont assez mais que le rejet des aberrants fait échouer, part des
+    tuiles écartées (texture trop faible, coût, vecteurs épars) et quartiles médians de la texture."""
+    d = np.array([p["diag"] for p in pairs if "diag" in p], np.float64)
+    if not len(d):
+        return {}
+    fit = np.array([p["camera_fit"] for p in pairs if "diag" in p], bool)
+    tiles = d[:, [0, 2, 3, 4]].sum(1)
+    short = d[:, 0] < d[:, 1]
+    return {"candidates": float(np.median(d[:, 0])), "minimum": float(np.median(d[:, 1])),
+            "trop_peu": float(short.mean()), "rejet": float((~short & ~fit).mean()),
+            "ecartees": [float(np.mean(d[:, j] / np.maximum(tiles, 1))) for j in (2, 3, 4)],
+            "texture": [float(np.median(d[:, j])) for j in (5, 6, 7)]}
 
 
 def cost_tail(costs):
@@ -142,6 +166,23 @@ def report(rows, tail):
                  f"{100 * c[1]:.0f} / {100 * c[2]:.0f} / {100 * c[3]:.0f} / {100 * c[0]:.0f} | {pct(m['sures'])} | "
                  f"{pct(m['bascule'])} | {pct(m['bascule_tenue'])} | {100 * m['camera_ajustee']:.0f} / "
                  f"{100 * m['camera_tenue']:.0f} % | {m['coupes']}, {m['fondus']} |")
+    L += ["", "## Ajustement de la caméra", "",
+          "Candidates : tuiles qui peuvent ajuster la caméra (médiane par paire) / minimum demandé. Trop peu : "
+          "paires sans assez de candidates ; rejet : paires qui en ont assez mais que le rejet des aberrants fait "
+          "échouer. Écartées : part des tuiles écartées, texture sous kFitTexture, sans correspondance, vecteurs "
+          "épars. "
+          "Texture : quartiles médians, codes par pixel (kFitTexture : 1,5 pour ajuster ; kTextureFloor : 3, aplat "
+          "en dessous).", "",
+          "| Extrait | Candidates / minimum | Trop peu | Rejet | Écartées texture / coût / épars "
+          "| Texture q1 / q2 / q3 |",
+          "|---|---|---:|---:|---|---|"]
+    for name, (_, m) in rows.items():
+        f = m.get("ajustement")
+        if not f:
+            continue
+        e, t = f["ecartees"], f["texture"]
+        L.append(f"| {name} | {f['candidates']:.0f} / {f['minimum']:.0f} | {pct(f['trop_peu'])} | {pct(f['rejet'])} | "
+                 f"{100 * e[0]:.0f} / {100 * e[1]:.0f} / {100 * e[2]:.0f} % | {t[0]:.1f} / {t[1]:.1f} / {t[2]:.1f} |")
     L += ["", f"Coûts de NVOF, tous extraits : 99e centile {tail['c99']}, 99,9e {tail['c999']} ; part des vecteurs "
               "au-dessus de " + ", ".join(f"{s} : {100 * v:.3f} %" for s, v in tail["au_dessus"].items())
           + f" (kSceneCostHigh = {COST_HIGH}).", "",

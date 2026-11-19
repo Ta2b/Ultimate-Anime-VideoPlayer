@@ -60,7 +60,7 @@ TileView view_of(const SceneTileSums& t, int col, int row, int flow_width, int f
 }
 
 bool fit_candidate(const TileView& v) {
-  return v.valid && v.matched >= scene::kFitMatched && v.texture >= scene::kTextureFloor &&
+  return v.valid && v.matched >= scene::kFitMatched && v.texture >= scene::kFitTexture &&
          v.spread <= scene::kSpreadMax;
 }
 
