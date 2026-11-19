@@ -1,10 +1,11 @@
 // Les tuiles qui bougent (upscale_tiles.h, kernels/spec/span_tiles.h) : la dilatation et les masques du
 // moteur, puis la décision sur des cartes synthétiques (sans carte, tuile qui change et ce qui la voit,
 // débandage, dérive lente, lueur locale, recette de l'entrée, panoramique entier et ses deux bords, coupe,
-// limite d'âge, refus) et la sorte Tiles de la reprise.
+// limite d'âge, refus, caméra au bruit près, lente, qui bouge partout, zoom) et la sorte Tiles de la reprise.
 #include "app/play/upscale_tiles.h"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -172,8 +173,9 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   CHECK_FALSE(once.plan(TileFacts{.stale = TileStale::None, .can_shift = true}).tiled);
   CHECK(once.summary() ==
         "SPAN par tuiles : 0 images sur 4 calculées (0.0 %) ; images entières : 1 sans carte, 1 refus du "
-        "moteur, 1 sortie d'avant gradée sur place, 1 début, saut ou image abîmée");
-  // Rien de calculé : la ligne le dit aussi ; sans tuiles (TensorRT, --no-span-tiles), rien.
+        "moteur, 1 sortie d'avant gradée sur place, 1 début, saut ou image abîmée ; caméra de la carte sur 3 "
+        "images : 3 tenues (sous 0.25 pixel partout), 0 en partie (zoom, rotation), 0 qui bougent partout");
+  // Rien de calculé : la ligne le dit aussi.
   SpanTiles idle;
   idle.set_grid(kGrid);
   CHECK(idle.summary() == "SPAN par tuiles : 0 images sur 0 calculées (0.0 %) ; images entières : aucune");
@@ -202,9 +204,9 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   facts.tiles_stale = TileStale::Chain;
   CHECK(r.decide(facts) == ReuseKind::Compute);
   CHECK(
-      r.tiles.summary().ends_with("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans "
-                                  "tuiles (export, YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image "
-                                  "abîmée"));
+      r.tiles.summary().contains("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans "
+                                 "tuiles (export, YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image "
+                                 "abîmée"));
   facts.same_epoch = true;
   SpanReuse off;
   off.tiles.enabled = false;
@@ -212,12 +214,63 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   facts.tiles_stale = TileStale::None;
   CHECK(off.decide(facts) == ReuseKind::Compute);
   CHECK(off.decide(facts) == ReuseKind::Compute);
-  CHECK(off.tiles.summary().empty());
-  // Un moteur sans tuiles (TensorRT) : jamais actif.
+  CHECK(off.tiles.summary() == "SPAN par tuiles : coupées (--no-span-tiles)");
+  // Un moteur sans tuiles (TensorRT) : jamais actif, et la ligne de fin le dit ; sans SPAN, aucune ligne.
   SpanTiles none;
   none.set_grid(kernels::SpanTileGrid{});
   CHECK_FALSE(none.active());
-  CHECK(none.summary().empty());
+  CHECK(none.summary() == "SPAN par tuiles : aucune, ce moteur ne calcule que l'image entière");
+  CHECK(SpanTiles{}.summary().empty());
+}
+
+TEST_CASE("Tuiles qui bougent : caméra au bruit près, lente, qui bouge partout, zoom", "[app][tiles]") {
+  SpanTiles t;
+  t.set_grid(kGrid);
+  kernels::SceneMotion scene = still_scene();
+  // La carte ne dit pas la caméra tenue (son seuil se lit au coin haut gauche, partie linéaire comprise) :
+  // jusqu'ici, chacune de ces images était entière (« caméra sans décalage entier »).
+  scene.background_held = false;
+  const TileFacts facts{.stale = TileStale::None, .can_shift = true, .scene = &scene};
+  CHECK_FALSE(t.plan(facts).tiled);  // la première suit l'état
+
+  // Dialogue fixe : l'ajustement hésite de ± 0,15 pixel d'une paire à l'autre. Signé, le bruit s'annule :
+  // toutes les images par tuiles, rien à recalculer.
+  for (int i = 0; i < 10; ++i) {
+    scene.camera[0] = i % 2 == 0 ? 0.15 : -0.15;
+    const TilePlan p = t.plan(facts);
+    REQUIRE(p.tiled);
+    CHECK(kernels::count_span_tiles(p.core) == 0);
+  }
+
+  // Caméra lente, 0,15 pixel par paire dans le même sens : à la deuxième, 0,3 pixel reçu, au-delà du quart de
+  // pixel : tout est à refaire, la région dépasse kMaxShare, l'image est entière ; puis ça recommence.
+  scene.camera[0] = 0.15;
+  CHECK(t.plan(facts).tiled);
+  CHECK_FALSE(t.plan(facts).tiled);
+  CHECK(t.plan(facts).tiled);
+
+  // Une caméra qui bouge partout d'au moins le quart de pixel, sans décalage entier : entière d'emblée.
+  scene.camera[0] = 0.62;
+  CHECK_FALSE(t.plan(facts).tiled);
+
+  // Zoom lent autour du centre (0,05 % par paire) : les colonnes du bord bougent de plus d'un quart de pixel
+  // et se recalculent, avec ce qui les voit ; le centre se reprend.
+  constexpr double kZoom = 0.0005;
+  scene.camera = {-kZoom * 512.0, 1.0 + kZoom, 0.0, -kZoom * 256.0, 0.0, 1.0 + kZoom};
+  const TilePlan p = t.plan(facts);
+  REQUIRE(p.tiled);
+  CHECK(core_at(p, 0, 16) == 1);
+  CHECK(core_at(p, 15, 0) == 1);
+  CHECK(core_at(p, 8, 16) == 0);
+  CHECK(core_at(p, 5, 3) == 0);
+
+  // Le bilan : la région trop large et ce qui la remplissait, puis ce que faisait la caméra.
+  const std::string line = t.summary();
+  CHECK(line.contains("1 région trop large (100.0 % des tuiles en cause, 100.0 % de région, caméra 100 %)"));
+  CHECK(line.contains("1 caméra sans décalage entier"));
+  CHECK(
+      line.ends_with(" ; caméra de la carte sur 16 images : 14 tenues (sous 0.25 pixel partout), 1 en partie "
+                     "(zoom, rotation), 1 qui bougent partout (médiane au centre 0.625 pixel)"));
 }
 
 }  // namespace kirari::app::play

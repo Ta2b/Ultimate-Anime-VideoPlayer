@@ -35,7 +35,12 @@ images entières : … ». Chaque image entière y compte sous une seule raison 
 sont écrites) : sans carte, région trop large, refus du moteur, sortie d'avant gradée sur place (pas de
 copie), sortie d'avant écrasée (image créée par-dessus, source sautée), chaîne sans tuiles (export, YUV,
 TemporalFix, Smooth, plaque), début, saut ou image abîmée, entrée de SPAN changée, rafraîchissement, coupe ou
-fondu, caméra sans décalage entier.
+fondu, caméra sans décalage entier. La région trop large dit ce qui la remplissait : part des tuiles en cause
+et de la région une fois les deux portées ajoutées, puis la part de chaque cause (bords d'un décalage, carte,
+âge, dérive, caméra, luminosité). En fin de ligne, la caméra de la carte sur les images où elle est ajustée :
+tenues (sous 0,25 pixel aux quatre coins et au centre), en partie (zoom, rotation) et qui bougent partout,
+avec la médiane de leur déplacement au centre. Sans tuiles actives, la ligne dit pourquoi (`--no-span-tiles`,
+moteur sans grille), et le démarrage donne la grille.
 
 ## Comment
 
@@ -52,20 +57,30 @@ fondu, caméra sans décalage entier.
 - **Décision** (`app/play/upscale_tiles.{h,cpp}`) : ce qui a changé, c'est une tuile dont une tuile de la
   carte dessous a changé (le signal `changed` de la carte, qui ignore le grain), ainsi que là où son contenu
   va ; une tuile qui a dérivé de plus d'un demi-pixel de travail depuis son dernier calcul (mouvements lents
-  additionnés), ou glissé de plus d'un code de luminosité (`SceneTile::shift`, signé : le grain s'y annule,
-  une lueur ou un fondu local s'additionne) ; une tuile reprise 24 fois de suite. Le **cœur** recalculé est
-  ce qui a changé dilaté de la portée (une sortie voit l'entrée jusqu'à 26 pixels de demi-résolution autour
-  d'elle), plus le rayon du débandage (16 pixels de travail) quand l'entrée est débandée ; la **région**
-  calculée est le cœur dilaté encore de la portée. L'image entière se recalcule à chaque coupe, fondu, saut,
-  image abîmée, toutes les 120 images, quand la recette de l'entrée de SPAN change (débandage, filtre de
-  réduction) et quand la région dépasse 70 % de l'image.
+  additionnés), qui a reçu de la caméra un quart de pixel ou plus (plus bas), ou glissé de plus d'un code de
+  luminosité (`SceneTile::shift`, signé : le grain s'y annule, une lueur ou un fondu local s'additionne) ; une
+  tuile reprise 24 fois de suite. Le **cœur** recalculé est ce qui a changé dilaté de la portée (une sortie
+  voit l'entrée jusqu'à 26 pixels de demi-résolution autour d'elle), plus le rayon du débandage (16 pixels de
+  travail) quand l'entrée est débandée ; la **région** calculée est le cœur dilaté encore de la portée.
+  L'image entière se recalcule à chaque coupe, fondu, saut, image abîmée, toutes les 120 images, quand la
+  recette de l'entrée de SPAN change (débandage, filtre de réduction) et quand la région dépasse 70 % de
+  l'image.
+- **Caméra sans décalage** : chaque tuile additionne ce que la caméra de la carte lui fait (l'affine au coin
+  de la tuile qui bouge le plus, moins le décalage appliqué), signé ; à un quart de pixel de travail (le seuil
+  où la carte dit la caméra tenue), elle se recalcule. Le bruit de l'ajustement sur un plan fixe s'annule, une
+  caméra lente s'additionne et ne laisse jamais plus d'un quart de pixel d'écart, un zoom ou une rotation
+  gardent les tuiles près de leur centre. L'image n'est entière d'emblée que si la caméra bouge d'au moins un
+  quart de pixel aux quatre coins et au centre. Avant le 19 novembre, toute caméra que la carte ne disait pas
+  tenue rendait l'image entière ; or la carte lit son seuil au coin haut gauche, partie linéaire comprise (un
+  zoom de 0,03 % y fait déjà un quart de pixel en 1080p).
 - **Décalage** : caméra ajustée sans zoom ni rotation, résidu sous un demi-pixel, translation à moins de 1/8 de
   pixel d'un multiple de 2 pixels de travail (le pas du dégroupage). La sortie d'avant (l'autre tampon de
   SPAN) se copie décalée dans la nouvelle ; ne se reprend que le décor sûr qui suit. Les deux bords de l'axe
   décalé sont dans ce qui a changé : la bande qui entre n'a pas de source, et près du bord d'où le contenu
-  sort, la sortie voit maintenant le bourrage de zéros. La part fractionnaire va dans la dérive. Le
-  débandage tire ses points sur une grille fixe de l'écran : sous un décalage, un aplat débandé repris peut
-  s'écarter d'un seuil du débandage (environ un niveau) de son calcul complet ; la porte le mesure.
+  sort, la sortie voit maintenant le bourrage de zéros. La part fractionnaire va dans la dérive et dans ce
+  que la tuile a reçu de la caméra. Le débandage tire ses points sur une grille fixe de l'écran : sous un
+  décalage, un aplat débandé repris peut s'écarter d'un seuil du débandage (environ un niveau) de son calcul
+  complet ; la porte le mesure.
 - **Moteur** (`gpu/cuda/backend/span_fp8_tiles.cpp`) : `next_span_tiles` avant l'appel, puis l'appel lance le
   corps masqué en direct (pas le graphe de l'image entière) ; les masques passent par une mémoire épinglée
   tournante. Le chemin qui écrit l'anneau depuis SPAN abandonne les tuiles. La sortie d'avant lue pour le
@@ -92,7 +107,10 @@ nouveau paquet Linux.
 Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA). Premier essai sur le PC le
 19 novembre (SPAN natif Équilibre, `--scene-map`, 30 s de Spy×Family) : aucune image par tuiles et aucune
 ligne au journal, la sortie d'avant gradée sur place sans que le bilan le dise ; corrigé par la copie
-d'avant le grade et la ligne de fin toujours écrite (plus haut), à mesurer de nouveau. Audit du
+d'avant le grade et la ligne de fin toujours écrite (plus haut). Deuxième essai, même extrait : 0 image sur
+716 par tuiles, dont 595 « caméra sans décalage entier » et 104 « région trop large » (sous DistilDRBA, 591
+sur 715) ; temps de SPAN identique avec ou sans tuiles. D'où la caméra additionnée par tuile (plus haut) et le
+détail de la région trop large et de la caméra au bilan, à mesurer de nouveau. Audit du
 19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
 grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Puis la mesure du
 contrôle (`scores_now`) qui, sous DistilDRBA après une image sautée, périmait le ticket du pont : `scores_now`
