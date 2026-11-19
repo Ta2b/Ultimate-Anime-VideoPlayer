@@ -31,8 +31,9 @@ struct CachedShots {
 // d'un autre chemin de décodage (`variant` : 0 logiciel, 1 NVDEC réduit, qui ne mesurent pas la même image ;
 // app/play/chain_shots.cpp y ajoute le gain des flashs et la recherche des visages).
 // 2 : animation tenue, éclairs de deux ou trois images, flashs par zones. 3 : flashs jugés au blanc du grade
-// d'aujourd'hui (flash_gain_of), plus clair : les flashs marqués sous la version 2 en manquaient.
-inline constexpr std::uint32_t kShotAnalysis = 3;
+// d'aujourd'hui (flash_gain_of), plus clair : les flashs marqués sous la version 2 en manquaient. 4 : le
+// seuil suit la tendance du mouvement, et la première image qui sort du noir ouvre un plan.
+inline constexpr std::uint32_t kShotAnalysis = 4;
 inline constexpr std::size_t kShotCacheKeep = 400;  // fichiers gardés
 
 // Écrit les plans sous dir (créé au besoin), par un fichier temporaire renommé ; faux si l'écriture

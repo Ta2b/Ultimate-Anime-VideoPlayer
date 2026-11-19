@@ -335,8 +335,11 @@ chaque plan, l'interpolation ses coupes (`--shot-cuts`, donc aussi sans grade).
 
 - **Découpe** (`media/shot_cutter.cpp`). Une coupe est un saut plus grand que 0,28, ou que 2,5 fois le mouvement
   récent. Ce mouvement se mesure entre dessins distincts : en animation tenue sur deux ou trois images, un
-  panoramique reste un plan. Un saut attend trois images avant d'être jugé : un éclair de une à trois images
-  reste dans son plan.
+  panoramique reste un plan. Il est la plus haute de deux valeurs : la médiane des vingt-quatre dernières
+  distances, et la tendance des huit dernières (droite de Theil-Sen prolongée d'un pas, idée de SVFI), qui suit
+  un combat qui s'emballe. Un saut attend trois images avant d'être jugé : un éclair de une à trois images
+  reste dans son plan. Après une image noire et unie, la première image qui ne l'est plus ouvre un plan : un
+  fondu au noir suivi d'un fondu d'ouverture fait deux plans.
 - **Flashs** (`media/flash_guard.h`, UIT-R BT.1702-2). Plus de trois flashs par seconde, chacun d'au moins 20 cd/m²
   sur un quart de l'écran, l'image sombre sous 160 cd/m², en lumière de sortie du grade : le pic du grade tombe à
   250 nits, jusqu'à une seconde après le dernier. La pré-analyse marque ces séquences d'avance, le plafond les
