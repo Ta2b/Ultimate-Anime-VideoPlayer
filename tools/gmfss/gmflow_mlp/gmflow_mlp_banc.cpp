@@ -2,9 +2,10 @@
 // paire ONNX, le noyau de gpu/cuda/backend/gmflow_mlp_net.cu, et deux mesures.
 //
 // --check DOSSIER : les entrées réelles qu'écrit gmflow_mlp_emule.py --banc DOSSIER (x et message FP16 d'une
-// vraie paire, la sortie du graphe FP32 et celle du noyau émulé) passées sur la carte. Doit dire : PSNR
-// contre le FP32 égal à celui de l'émulation (à 0,1 dB), et presque toutes les valeurs à 1 ulp FP16 au plus
-// de l'émulation (l'ordre des sommes f32 du mma change un arrondi de temps en temps, rien de plus).
+// vraie paire, la sortie du graphe FP32 et celle du noyau émulé) passées sur la carte. Tenu si le PSNR contre
+// le FP32 est celui de l'émulation à 0,1 dB près et si 0,1 % des valeurs au plus sont à plus d'un ulp FP16 de
+// l'émulation (l'ordre des sommes f32 du mma change un arrondi de temps en temps, rien de plus) ; sinon le
+// banc rend 1 : un noyau faux ne se chronomètre pas.
 //
 // Les temps : pour chaque nombre de jetons (--tokens, sinon ceux de la paire 1280x768 et 1920x1152, flot
 // entier et demi-flot, au huitième et au quart), un lancement capturé dans un graphe CUDA rejoué --iterations
@@ -130,34 +131,51 @@ std::vector<Case> read_cases(const std::filesystem::path& dir) {
   return out;
 }
 
-// La sortie de la carte contre le graphe FP32 (PSNR sur la crête de la référence, écart relatif) et contre
-// l'émulation du noyau (valeurs à plus d'un ulp FP16, plus grand écart).
-void compare(const Case& c, const std::vector<std::uint16_t>& got, const std::vector<float>& ref,
+// PSNR de y (FP16) contre ref, sur la crête de la référence.
+double psnr(const std::vector<std::uint16_t>& y, const std::vector<float>& ref) {
+  double se = 0.0, peak = 0.0;
+  for (std::size_t i = 0; i < y.size(); ++i) {
+    const double d = static_cast<double>(half::half_to_float(y[i])) - ref[i];
+    se += d * d;
+    peak = std::max(peak, std::abs(static_cast<double>(ref[i])));
+  }
+  const double mse = se / static_cast<double>(y.size());
+  return mse > 0.0 ? 10.0 * std::log10(peak * peak / mse) : 999.0;
+}
+
+// La sortie de la carte contre l'émulation du noyau (valeurs à plus d'un ulp FP16, plus grand écart) et
+// contre le graphe FP32 (PSNR, face à celui de l'émulation). Rend vrai si l'entrée est tenue.
+bool compare(const Case& c, const std::vector<std::uint16_t>& got, const std::vector<float>& ref,
              const std::vector<std::uint16_t>& emulated) {
-  double se = 0.0, sr = 0.0, peak = 0.0, worst_emu = 0.0;
+  const auto ordered = [](std::uint16_t h) {
+    return (h & 0x8000U) != 0 ? -static_cast<int>(h & 0x7fffU) : static_cast<int>(h);
+  };
+  double worst = 0.0;
   long off = 0;
   for (std::size_t i = 0; i < got.size(); ++i) {
-    const double v = half::half_to_float(got[i]), r = ref[i], e = half::half_to_float(emulated[i]);
-    se += (v - r) * (v - r);
-    sr += r * r;
-    peak = std::max(peak, std::abs(r));
-    worst_emu = std::max(worst_emu, std::abs(v - e));
-    const auto ordered = [](std::uint16_t h) { return (h & 0x8000U) != 0 ? -int(h & 0x7fffU) : int(h); };
+    worst = std::max(
+        worst, std::abs(static_cast<double>(half::half_to_float(got[i])) - half::half_to_float(emulated[i])));
     if (std::abs(ordered(got[i]) - ordered(emulated[i])) > 1) ++off;
   }
-  const double mse = se / static_cast<double>(got.size());
-  std::printf("| %s | %d | %d | %ld | %.2f | %.3e | %ld | %.3e |\n", c.prefix.c_str(), c.scale, c.layer,
-              c.tokens, mse > 0 ? 10.0 * std::log10(peak * peak / mse) : 999.0,
-              std::sqrt(se / std::max(sr, 1e-30)), off, worst_emu);
+  const double card = psnr(got, ref), emu = psnr(emulated, ref);
+  const bool held =
+      static_cast<double>(off) <= 1e-3 * static_cast<double>(got.size()) && std::abs(card - emu) <= 0.1;
+  std::printf("| %s | %d | %d | %ld | %.2f | %.2f | %ld (%.4f %%) | %.3e | %s |\n", c.prefix.c_str(), c.scale,
+              c.layer, c.tokens, card, emu, off,
+              100.0 * static_cast<double>(off) / static_cast<double>(got.size()), worst,
+              held ? "oui" : "NON");
+  return held;
 }
 
 bool check(const cu::GmflowMlpNet& net, const std::filesystem::path& dir) {
   std::printf("Contrôle sur la carte (%s)\n", dir.string().c_str());
   std::printf(
-      "| entrée | échelle | couche | jetons | PSNR contre FP32 (dB) | écart relatif "
-      "| valeurs à plus d'un ulp de l'émulation | plus grand écart à l'émulation |\n"
-      "|---|---|---|---|---|---|---|---|\n");
-  for (const Case& c : read_cases(dir)) {
+      "| entrée | échelle | couche | jetons | PSNR carte / FP32 (dB) | PSNR émulation / FP32 (dB) "
+      "| à plus d'un ulp de l'émulation | plus grand écart à l'émulation | tenu |\n"
+      "|---|---|---|---|---:|---:|---:|---:|---|\n");
+  const std::vector<Case> cases = read_cases(dir);
+  bool all = !cases.empty();
+  for (const Case& c : cases) {
     const auto n = static_cast<std::size_t>(c.tokens) * kChannels;
     const auto x = read_raw<std::uint16_t>(dir / (c.prefix + ".x.f16"), n);
     const auto m = read_raw<std::uint16_t>(dir / (c.prefix + ".message.f16"), n);
@@ -174,9 +192,11 @@ bool check(const cu::GmflowMlpNet& net, const std::filesystem::path& dir) {
         !ok(net.run(nullptr, c.layer, dx.p, dm.p, dout.p, c.tokens), "lancement") ||
         !ok(cudaMemcpy(got.data(), dout.p, n * 2, cudaMemcpyDeviceToHost), "retour"))
       return false;
-    compare(c, got, ref, emu);
+    all = compare(c, got, ref, emu) && all;
   }
-  return true;
+  std::printf("%s\n",
+              all ? "contrôle tenu" : "contrôle NON tenu : le noyau est faux, ses temps ne valent rien");
+  return all;
 }
 
 // Médiane et minimum d'un lancement de tokens jetons (graphe CUDA rejoué, un rejeu entre deux événements).

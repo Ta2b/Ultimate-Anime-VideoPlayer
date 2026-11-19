@@ -405,38 +405,28 @@ est 2 à 4 dB au-dessus, et jusqu'à 5 fois plus près au pire écart (cross du 
 entrée exacte ; ce qu'ils deviennent sur douze couches et six MLP se mesurera à l'assemblage du transformeur.
 
 **Banc** (pour le PC ; rien n'est conclu ici sur la vitesse). Le natif : `gmflow_attention_banc` (dans
-`tools/gmfss/gmflow_attention`, avec `-DKIRARI_BANC_CUDA=ON`), une couche lue dans la paire du lecteur, capturée en
-graphe CUDA (QKV puis attention), 21 mesures de 200 lancements, médiane et minimum en µs, et le débit sur les FLOP
-de la couche. TensorRT : la même couche seule en ONNX par `gmflow_attention_onnx.py` (poids du plan, mêmes
-opérations que l'export de la paire, FP16, taille fixe), vérifiée sous ONNX Runtime contre le contrôle f32
-(≤ 1e-5 : 2,7e-6 en self décalée au quart, 8,9e-6 en cross au quart), construite par trtexec avec la recette de la
-paire (`Recipe::Fp32Islands` : `--stronglyTyped`, entrées et sorties FP16, sans cuDNN ni cuBLAS, tuilage 3).
+`tools/gmfss/gmflow_attention`, avec `-DKIRARI_BANC_CUDA=ON`), une couche lue dans la paire du lecteur sur chaque
+grille de jetons demandée (par défaut les quatre charges de l'échelle : GMFlow des paires 1280x768 et 1920x1152, flot
+entier et demi-flot), capturée en graphe CUDA (QKV puis attention), rejouée 300 fois entre deux événements comme
+`trtexec --useCudaGraph` : médiane et minimum en ms, débit sur les FLOP de la couche. Son `--check DOSSIER` rejoue
+les couches qu'écrit `gmflow_attention_emule.py --dump DOSSIER` (entrées de la première paire, sortie émulée,
+sortie FP32, et leur liste `banc.txt`) et tranche : tenu si le PSNR de la carte contre la paire FP32 est celui de
+l'émulation à 0,1 dB près et si 0,1 % des valeurs au plus sont à plus d'un ulp FP16 de l'émulation ; sinon il rend 1.
+TensorRT : la même couche seule en ONNX par `gmflow_attention_onnx.py` (poids du plan, mêmes opérations que l'export
+de la paire, FP16, taille fixe), vérifiée sous ONNX Runtime contre le contrôle f32 (≤ 1e-4 exigé ; 2,0 à 2,4e-6 au
+quart à 48x80 et 72x120, au huitième à 36x60, fenêtres impaires comprises), construite par trtexec aux deux recettes
+de `tools/gmfss/gmflow_banc_trt.sh` :
 
-```sh
-cmake -S tools/gmfss/gmflow_attention -B build/gmflow_attention -DCMAKE_BUILD_TYPE=Release -DKIRARI_BANC_CUDA=ON
-cmake --build build/gmflow_attention
-P=<dossier des modèles du lecteur>/gmfss_fortuna_union_pair.onnx
-build/gmflow_attention/gmflow_attention_vide $P attn16
-# couches 0 (self), 1 (cross), 2 (self décalée), 3 (cross décalée), au huitième (0) et au quart (1)
-for c in "0 0" "1 0" "2 0" "3 0" "0 1" "1 1" "2 1" "3 1"; do set -- $c
-  python -I tools/gmfss/gmflow_attention_onnx.py --plan attn16 --couche $1 --echelle $2 --sortie couches/c$1_e$2.onnx
-done
-# en alternance ABAB, même séance : TensorRT puis natif, pour chaque couche (keys en plus en cross)
-trtexec --onnx=couches/c2_e1.onnx --stronglyTyped --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw \
-  --tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT --tilingOptimizationLevel=3 --useCudaGraph --noDataTransfers \
-  --warmUp=500 --duration=10
-build/gmflow_attention/gmflow_attention_banc $P temps 1 2
-trtexec --onnx=couches/c3_e1.onnx --stronglyTyped --inputIOFormats=fp16:chw,fp16:chw --outputIOFormats=fp16:chw \
-  --tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT --tilingOptimizationLevel=3 --useCudaGraph --noDataTransfers \
-  --warmUp=500 --duration=10
-build/gmflow_attention/gmflow_attention_banc $P temps 1 3
-```
+- **lecteur** : la paire GMFSS telle que le lecteur la construit (`gpu::ModelSpec::tuned` faux,
+  `app/play/chain_gmfss.cpp`) : `--stronglyTyped`, niveau d'optimisation par défaut, sans pavage L2
+  (`--tilingOptimizationLevel=0`) ;
+- **réglée** : la recette des modèles réglés (`Recipe::Fp32IslandsTuned`) : niveau 5, pavage L2 3.
 
-Comparer la médiane « GPU Compute Time » de trtexec à celle du banc. Avant de chronométrer, le premier lancement se
-vérifie : `gmflow_attention_emule.py … --paires 1 --dump verif` écrit l'entrée, la sortie émulée et la sortie FP32
-des couches mesurées, puis `gmflow_attention_banc $P verifier verif` les rejoue sur la carte (attendu : à un ulp
-FP16 près de l'émulation, et les PSNR du tableau contre la paire FP32). La paire FP32 vient de
-`gmflow_natif_emule.py --work`.
+Sans cuDNN ni cuBLAS tant que trtexec prend `--tacticSources` (TensorRT 10 ; le lecteur le retire sous 11). Le natif
+se compare au **meilleur des deux** : TensorRT ne s'enlève pas là où il suffisait de le régler.
+`tools/gmfss/gmflow_attention_banc.sh` enchaîne le tout (voir « Séance sur le PC » plus bas) : les quatre couches
+(0 self, 1 cross, 2 self décalée, 3 cross décalée ; les douze couches du transformeur ne sont que celles-là aux
+poids près) sur les huit charges, en deux tours ABAB, puis la somme des douze couches par paire.
 
 **À surveiller au banc, et ce qui manque avant de brancher** : au huitième, l'attention ne lance que 120 blocs
 (15 tranches de 64 requêtes, 4 fenêtres, lot 2), moins d'une vague sur les 60 SM de la RTX 4070 Ti, et 32 au
@@ -549,21 +539,23 @@ flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh \
 
 Le script construit `gmflow_mlp_vide` et `gmflow_mlp_banc` (CMake, nvcc du PC, architecture de la carte), extrait
 de la paire le MLP de la couche 0 seul (entrées x et message [lot, jetons, 128] FP16, sortie out), passe le
-contrôle (`gmflow_mlp_banc --check`), puis pour chacune des huit charges (paires 1280x768 et 1920x1152, flot entier
-et demi-flot, 1/8 au lot 2 et 1/4 au lot 4) : le moteur TensorRT du sous-graphe construit comme le lecteur construit
-la paire (`--stronglyTyped`, niveau 5, sans cuDNN ni cuBLAS quand trtexec prend encore `--tacticSources`),
-chronométré en graphe CUDA (`--useCudaGraph --noDataTransfers --useSpinWait`, médiane), et le noyau natif aux deux
-blocs, chronométré de même (graphe CUDA, médiane de 300) ; deux tours ABAB, moyenne des deux médianes. Il écrit
-`~/kirari-reports/gmflow-mlp/banc-mlp.md` : par charge les trois temps, le rapport du meilleur natif à TensorRT et
-son seuil ; puis la somme par paire, 6 × (1/8 + 1/4). Les profils de trtexec (`mlp-*.profile.json`) disent si
-TensorRT a fait du MLP une seule région Myelin.
+contrôle (`gmflow_mlp_banc --check`, qui tranche comme celui de l'attention et arrête le script s'il n'est pas tenu),
+puis pour chacune des huit charges (paires 1280x768 et 1920x1152, flot entier et demi-flot, 1/8 au lot 2 et 1/4 au
+lot 4) : le moteur TensorRT du sous-graphe aux deux recettes de `gmflow_banc_trt.sh` (celle de la paire dans le
+lecteur, sans pavage L2 ni niveau 5, et la réglée ; voir le banc de l'attention), chronométré en graphe CUDA
+(`--useCudaGraph --noDataTransfers --useSpinWait`, médiane), et le noyau natif aux deux blocs, chronométré de même
+(graphe CUDA, médiane de 300) ; deux tours ABAB, moyenne des deux médianes. Il écrit
+`~/kirari-reports/gmflow-mlp/banc-mlp.md` : par charge les quatre temps, le rapport du meilleur natif au meilleur
+TensorRT et son seuil ; puis la somme par paire, 6 × (1/8 + 1/4). Les profils de trtexec (`trt/mlp-*.profile.json`)
+disent si TensorRT a fait du MLP une seule région Myelin.
 
 **Ce que la mesure doit montrer pour continuer** (règle du propriétaire : TensorRT ne s'enlève que si c'est
 vraiment évitable, sans perte de qualité ni de vitesse) :
 
 1. **Juste d'abord** : au contrôle, sur les quatre entrées (couches 0 et 5, 1/8 et 1/4), un PSNR contre le FP32
-   égal à celui de l'émulation à 0,1 dB près, et au plus 0,1 % des valeurs à plus d'un ulp FP16 de l'émulation
-   (l'ordre des sommes du mma). Sinon le noyau est faux et ses temps ne valent rien.
+   égal à celui de l'émulation à 0,1 dB près (l'émulation donne 81,83, 82,61, 81,94 et 83,19 dB sur ces entrées),
+   et au plus 0,1 % des valeurs à plus d'un ulp FP16 de l'émulation (l'ordre des sommes du mma). Sinon le noyau est
+   faux et ses temps ne valent rien.
 2. **Nettement plus rapide là où se joue la vitesse** : meilleur bloc natif ≤ **0,80 ×** TensorRT au 1/4 en 720p,
    au flot entier (61 440 jetons) et au demi-flot (15 360), et ≤ 1,00 × sur les six autres charges (1/8, 1080p).
    Le MLP à 1/4 fait 40 % du calcul de GMFlow et c'est le bloc le plus favorable au natif (deux GEMM, la couche
@@ -582,6 +574,87 @@ ici sur la vitesse** : aucun temps de ce noyau n'a été mesuré.
 **Ce qui manque** : le premier lancement sur la carte (contrôle, puis banc) ; le choix du bloc (64 ou 128 jetons) et
 des parts d'après la mesure ; les sommes `kMixed` et `kF16` ; le branchement dans le transformeur natif, avec la PR
 2, et la lecture des poids au chargement du backend (aujourd'hui, seul l'outil de banc les lit).
+
+## Séance sur le PC (attention et MLP)
+
+Ce que la séance sur la RTX 4070 Ti doit faire pour GMFlow natif, sur la branche des PR 2 et 3 (rien n'y a encore
+tourné sur une carte). Le lecteur fermé, rien d'autre sur la carte ; chaque banc sous le verrou des bancs GPU.
+Il faut cmake, nvcc, trtexec (`TRTEXEC`, sinon `~/kirari-sdk/tensorrt/bin/trtexec`), ffmpeg, et un python avec
+torch, onnx et onnxruntime (`PYTHON`). Durées attendues : les entrées du contrôle, une vingtaine de minutes de CPU ;
+le banc du MLP, 16 moteurs ; celui de l'attention, 64 moteurs (quatre couches, huit charges, deux recettes), de
+l'ordre d'une heure la première fois ; les moteurs restent dans le dossier du rapport et une relance ne refait que
+les mesures.
+
+**1. Les entrées du contrôle** (CPU, sur le PC ou ailleurs ; la paire FP32 se garde d'une séance à l'autre) :
+
+```sh
+W=~/kirari-reports/gmflow-natif-entrees
+P=~/kirari/models/rife/gmfss_fortuna_union_pair.onnx
+python -I tools/gmfss/gmflow_natif_emule.py ROUE/vsgmfss_fortuna --work $W --recettes fp32  # $W/paire_fp32.onnx
+cmake -S tools/gmfss/gmflow_attention -B build/gmflow_attention -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gmflow_attention --target gmflow_attention_vide
+cmake -S tools/gmfss/gmflow_mlp -B build/gmflow_mlp -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gmflow_mlp --target gmflow_mlp_vide
+build/gmflow_attention/gmflow_attention_vide $W/paire_fp32.onnx $W/attn32
+build/gmflow_attention/gmflow_attention_vide $P $W/attn16
+build/gmflow_mlp/gmflow_mlp_vide $W/paire_fp32.onnx $W/mlp32
+build/gmflow_mlp/gmflow_mlp_vide $P $W/mlp16
+python -I tools/gmfss/gmflow_attention_emule.py --fp32 $W/paire_fp32.onnx --plan32 $W/attn32 --plan16 $W/attn16 \
+    --paires 1 --dump $W/attention
+python -I tools/gmfss/gmflow_mlp_emule.py --fp32 $W/paire_fp32.onnx --fp16 $P --plan32 $W/mlp32 --plan16 $W/mlp16 \
+    --work $W --banc $W/mlp
+```
+
+Les deux émulations réimpriment leurs tableaux (plus haut) : un écart à ces chiffres veut dire que la paire ou la
+lecture a changé, et le banc ne se lance pas. `$W/attention` (500 Mo : 12 couches) et `$W/mlp` (170 Mo : 4
+entrées) portent chacun leur `banc.txt`.
+
+**2. Les bancs** (GPU ; ABAB à l'intérieur de chaque script : TensorRT aux deux recettes, natif, puis de nouveau) :
+
+```sh
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh $P ~/kirari-reports/gmflow-mlp $W/mlp
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_attention_banc.sh $P ~/kirari-reports/gmflow-attention \
+    $W/attention
+# une seconde fois chacun, moteurs gardés : deux séries de mesures, à comparer
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh $P ~/kirari-reports/gmflow-mlp $W/mlp
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_attention_banc.sh $P ~/kirari-reports/gmflow-attention \
+    $W/attention
+```
+
+Un contrôle non tenu arrête son script avant toute mesure : c'est un noyau faux, on rapporte le tableau du
+contrôle et on s'arrête là. L'attention seule sur quelques couches : `COUCHES="0 3"`.
+
+**3. Ce qu'on relève** :
+
+- les deux rapports de chaque passage (`banc-mlp.md`, `banc-attention.md`) : tableau du contrôle (PSNR carte et
+  émulation, valeurs à plus d'un ulp, tenu), temps par charge (TensorRT lecteur, TensorRT réglé, natif, rapport au
+  meilleur TensorRT), sommes par paire ; l'écart d'un passage à l'autre sur chaque rapport (au-delà de 3 %, la
+  mesure est bruitée : le noter, refaire) ;
+- la carte, le pilote et TensorRT (en tête de chaque rapport), et `nvidia-smi -q -d CLOCK,TEMPERATURE` avant et après
+  (une horloge qui tombe en cours de banc fausse l'ABAB) ;
+- dans `trt/*.profile.json` : combien de couches TensorRT a gardées par moteur, et s'il a pris un noyau d'attention
+  fondu (un nom en `fmha` ou `mha`) ou laissé les scores en mémoire (MatMul, Softmax, MatMul séparés) ;
+- dans `build/cmake.log` de chaque rapport : les registres et la mémoire partagée de chaque noyau sur sm_89
+  (ptxas), et aucun débordement ;
+- le temps de GMFlow dans la paire du lecteur, à la même charge : la plage `gmfss.paire.gmflow` de l'étape 3 de la
+  séance GMFSS (`docs/gmfss-natif.md`, Nsight Systems). La somme des couches isolées (attention et MLP) n'en est
+  qu'une partie ; si elle dépasse déjà ce temps, TensorRT fond mieux dans la paire qu'en couches seules, et c'est la
+  paire qui sert de repère.
+
+**4. Ce qui décide** (règle du propriétaire : TensorRT ne s'enlève que si c'est vraiment évitable) :
+
+1. les deux contrôles tenus, sinon arrêt et correction du noyau ;
+2. le MLP, d'après ses seuils (plus haut) ;
+3. la couche entière du transformeur au quart de 720p, flot entier et demi-flot, avec les deux rapports :
+   (natif 1/4 de l'attention, colonne de la somme par paire, + 6 × le meilleur MLP natif au 1/4) divisé par la même
+   somme côté TensorRT (meilleur des deux recettes) : **≤ 0,80, continuer** (PR 4 et 5, puis l'assemblage) ;
+   au-dessus, **arrêter** : TensorRT garde GMFlow ;
+4. une couche d'attention au huitième au-dessus de 1,00 n'arrête rien : c'est le cas attendu des grilles où les
+   blocs ne remplissent pas la carte (120 blocs au flot entier de 720p, 32 au demi-flot), que le partage des clés
+   d'une fenêtre entre plusieurs blocs doit régler avant l'assemblage. On le note pour la suite.
+
+La lecture en 1080p (paire au demi-flot, `docs/gmfss-natif.md`) est la charge du lecteur : ses lignes disent le
+gain réel, les seuils restent ceux du quart de 720p.
 
 ## Découpage en PR proposé
 

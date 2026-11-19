@@ -7,8 +7,9 @@ l'export de la paire l'écrit : projections sans biais, décalage de Swin par to
 Transpose (split_feature, merge_splits), scores / √d, masque des fenêtres décalées répété sur le lot, Softmax, P · V,
 fusion, LayerNorm, résiduel en self-attention ; en cross-attention, la couche échange elle-même les moitiés du lot
 de keys (Concat de deux Slice, comme la paire). Taille fixe : le masque est une constante, comme une fois plié par
-TensorRT. Entrées query (et keys en cross) [lot, h · w, 128], sortie out, en FP16 comme la paire du lecteur ; le
-script écrit la commande trtexec de la recette de la paire (Recipe::Fp32Islands, prepare/trtexec_command.cpp).
+TensorRT. Entrées query (et keys en cross) [lot, h · w, 128], sortie out, en FP16 comme la paire du lecteur.
+gmflow_attention_banc.sh la construit aux deux recettes de gmflow_banc_trt.sh (celle de la paire dans le lecteur,
+sans pavage L2 ni niveau 5, et la réglée) et la chronomètre face au banc natif.
 
 Avant d'écrire, la couche est vérifiée sous ONNX Runtime (en FP32) contre le contrôle f32 de
 gmflow_attention_emule.py, que l'émulation a montré égal à la paire FP32 : la couche exportée calcule ce que la
@@ -127,11 +128,9 @@ def main():
     args.sortie.parent.mkdir(parents=True, exist_ok=True)
     torch.onnx.export(couche.half(), tuple(e.half() for e in entrees), str(args.sortie), input_names=noms,
                       output_names=["out"], opset_version=17, dynamo=False)
-    formats = ",".join(["fp16:chw"] * len(noms))
-    print(f"écrit {args.sortie} (FP16) ; sous TensorRT comme la paire du lecteur (Recipe::Fp32Islands) :\n"
-          f"  trtexec --onnx={args.sortie} --stronglyTyped --inputIOFormats={formats} --outputIOFormats=fp16:chw "
-          f"--tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT --tilingOptimizationLevel=3 --useCudaGraph --noDataTransfers "
-          f"--warmUp=500 --duration=10")
+    print(f"écrit {args.sortie} (FP16) ; sous TensorRT comme la paire du lecteur (gmflow_banc_trt.sh) :\n"
+          f"  trtexec --onnx={args.sortie} --stronglyTyped --tilingOptimizationLevel=0 --useCudaGraph "
+          f"--noDataTransfers --useSpinWait --warmUp=500 --iterations=300")
 
 
 if __name__ == "__main__":

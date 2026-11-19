@@ -31,8 +31,9 @@ couche (source + LN) ; cross, le message LN que lit le MLP.
         [--paires 4] [--dump DOSSIER]
 
 paire_fp32.onnx : la paire union exportée en FP32 pur (gmflow_natif_emule.py --work DOSSIER l'écrit). --dump écrit,
-pour le banc (gmflow_attention_banc verifier), l'entrée FP16, la sortie émulée FP16 et la sortie FP32 de chaque couche
-mesurée sur la première paire.
+pour le contrôle du banc (gmflow_attention_banc --check DOSSIER), l'entrée FP16, la sortie émulée FP16 et la sortie
+FP32 de chaque couche mesurée sur la première paire, et leur liste dans DOSSIER/banc.txt (« échelle couche lot
+hauteur largeur préfixe »).
 """
 
 from __future__ import annotations
@@ -235,6 +236,7 @@ def main():
     print(f"Attention de GMFlow, paire {LARGEUR}x{HAUTEUR} (GMFlow sur 640x384) ; écarts à ONNX Runtime FP32")
     print("| paire | échelle | couche | recette | max | moyen | relatif | PSNR (dB) |")
     cumul: dict[tuple, list] = {}
+    banc: list[str] = []
     for numero, instant in enumerate(INSTANTS[: args.paires]):
         valeurs = dict(zip(sorties, sess.run(sorties, {"frames": images(instant)})))
         for (e, b), d in tenseurs.items():
@@ -260,6 +262,9 @@ def main():
                     ecrit(args.dump, stem + "_keys", f16(x), np.float16)
                     ecrit(args.dump, stem + "_natif", lignes[2][1], np.float16)
                     ecrit(args.dump, stem + "_ref", ref, np.float32)
+                    banc.append(f"{e} {i} {src.shape[0]} {h} {w} {stem}")
+    if args.dump is not None:
+        (args.dump / "banc.txt").write_text("".join(ligne + "\n" for ligne in banc))
     print("\nSynthèse (pire max, moyenne des écarts moyens et relatifs, PSNR moyen / pire) :")
     print("| échelle | couche | recette | max | moyen | relatif | PSNR moyen / pire |")
     for (e, genre, nom), rows in cumul.items():
