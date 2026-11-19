@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kernels/ref/check.h"
+#include "kernels/ref/scene_fit.h"
 
 namespace kirari::kernels::ref {
 namespace {
@@ -115,15 +116,6 @@ SceneTileCheck check_tile(const Lumas& l, const std::array<double, 6>& p, int co
   return out;
 }
 
-// La médiane de numpy (moyenne des deux du milieu pour un compte pair).
-double median_of(std::vector<double> values) {
-  const auto mid = static_cast<std::ptrdiff_t>(values.size() / 2);
-  std::ranges::nth_element(values, values.begin() + mid);
-  const double upper = values[static_cast<std::size_t>(mid)];
-  if (values.size() % 2 == 1) return upper;
-  return 0.5 * (upper + *std::ranges::max_element(values.begin(), values.begin() + mid));
-}
-
 }  // namespace
 
 Result<SceneCameraRefined> scene_camera_refine(const Plane<std::uint8_t>& a, const Plane<std::uint8_t>& b,
@@ -182,7 +174,7 @@ void scene_camera_apply(SceneCamera& camera, const SceneCameraRefined& refined) 
   std::vector<double>& used = both.size() >= needed ? both : one;
   if (used.size() < needed) return;
   camera.check_tiles = static_cast<int>(used.size());
-  camera.check = median_of(std::move(used));
+  camera.check = scene_fit::median_of(std::move(used));
 }
 
 }  // namespace kirari::kernels::ref
