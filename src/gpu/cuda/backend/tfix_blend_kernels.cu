@@ -111,6 +111,7 @@ __global__ void __launch_bounds__(kConfTile* kConfTile) conf_kernel(TfixShape s)
   const int y = ty0 + static_cast<int>(threadIdx.y);
   if (x >= l.w2 || y >= l.h2) return;
   float down[6] = {};
+#pragma unroll 1  // déroulé, le flou garde 36 cellules en registres (plus de 230 sous nvcc)
   for (int r = 0; r < 6; ++r) {
     for (int c = 0; c < 6; ++c) {
       const float w = tfix::half_kernel(r) * tfix::half_kernel(c);
@@ -157,7 +158,7 @@ constexpr int kBlendLowW = kBlendW / 2 + 3;
 constexpr int kBlendLowH = kBlendH / 2 + 3;
 
 // net_out : le tampon du réseau en demi-taille ; nul, la sortie de la table.
-__global__ void __launch_bounds__(kBlendW* kBlendH) blend_kernel(TfixShape s, __half* net_out) {
+__global__ void __launch_bounds__(kBlendW* kBlendH, 1) blend_kernel(TfixShape s, __half* net_out) {
   __shared__ float low[kernels::kTfixSupports][kBlendLowH][kBlendLowW][3];
   const int px0 = static_cast<int>(blockIdx.x) * kBlendW;
   const int py0 = static_cast<int>(blockIdx.y) * kBlendH;
