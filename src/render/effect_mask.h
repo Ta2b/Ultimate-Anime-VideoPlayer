@@ -1,9 +1,9 @@
-// Éclats HDR sur les seuls effets (piste 6 du plan du flux NVIDIA) : le masque des effets que la passe anime
-// du grade lit (3-anime.hook, fx_on). Un effet (explosion, magie, éclair) est clair, change vite et est mal
-// suivi par le flux ; un ciel ou une feuille blanche est suivi. La carte de la scène (kernels/spec/
-// scene_flow.h) le dit par tuile ; ce masque en tire, par tuile, la part de la marge des éclats que la
-// lumière garde : 1 sur un effet (le grade d'aujourd'hui), 0 sur un décor ou un dessin sûr (la lumière n'y
-// garde que fx_rest de sa montée).
+// Éclats HDR des effets (piste 6 du plan du flux NVIDIA) : le masque des effets que la passe anime du grade
+// lit (3-anime.hook, fx_on). Un effet (explosion, magie, éclair) est clair, change vite et est mal suivi par
+// le flux. La carte de la scène (kernels/spec/scene_flow.h) le dit par tuile ; ce masque en tire, par tuile,
+// la part de la marge des éclats que la lumière garde : 1 hors des dessins sûrs (le grade d'aujourd'hui ; une
+// lumière immobile ne se distingue pas du décor, app/play/effect_book.h), 0 sur un dessin sûr qui bouge (la
+// lumière n'y garde que fx_rest de sa montée), et une montée plus haute sur un effet sûr.
 //
 // Piège majeur : un masque qui bouge d'une image à l'autre fait pulser la luminosité. Le masque est donc :
 //  - dilaté d'une tuile (le halo d'une explosion déborde de la tuile où le flux la voit) ;
