@@ -150,19 +150,34 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
    après ses réseaux : la colle en relit les Y. Sur la chaîne, X du dernier bloc part de NaN quand son réseau le
    refait à la volée. En variante mouvement, un pixel oublié sort NaN dans le flot ; en variante image, la fin
    le ramènerait au bord de la fenêtre, donc le flot est relu après la passe, et un pixel non fini rend toute
-   la sortie NaN : l'option est écartée. Le profil couche par couche du réseau f16 va au
-   journal ; un profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
-4. **le mélange** (`rife_native_mix.cpp`). Un morceau peut prendre TensorRT ou un réseau plus rapide que lui.
-   L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul en natif : l'erreur
-   quadratique de la sortie contre TensorRT (images au pic 1 ; flot au pic de son plus grand écart, masque à
+   la sortie NaN : l'option est écartée. La justesse d'un morceau se lit rôle par rôle (flot, masque, traits
+   de Y, chacun à son pic ; `rife_mix::piece_db`) : un défaut du seul masque ne se dilue pas dans les 52 canaux.
+   Le profil couche par couche du réseau f16 va au journal ; un profil qui échoue n'y laisse qu'une ligne,
+   l'essai continue ;
+4. **la référence du mélange** (`rife_mix_choice.cpp`, testé sans carte). À travers des blocs FP16, tout
+   changement d'un morceau, même d'un ulp, redistribue les arrondis de TensorRT : jugé contre sa chaîne, un
+   encodeur plus juste que le sien se lisait à 43,6 dB sur le 4.22 lite, le bruit propre de TensorRT face au
+   calcul exact (émulé contre onnxruntime en f32 : notre chaîne f32 en est à 60,3 dB sur le masque, 64,7 sur
+   4.25). La référence est donc la chaîne native f32 quand une garde la reconnaît : chaque morceau f32 à 60 dB
+   au moins du sien de TensorRT sur la même entrée, rôle par rôle (une comparaison sans le bruit des blocs
+   suivants), et la chaîne de TensorRT à 42 dB au moins de la chaîne f32. La barre d'un groupe est alors 45 dB,
+   ou ce que TensorRT y tient s'il n'y arrive pas : le mélange reste au moins aussi proche que lui du calcul
+   exact. Sinon, l'ancienne règle : 45 dB contre TensorRT. Un natif faux ne devient jamais sa propre
+   référence, un refus à tort ne fait que revenir à l'ancienne règle (le journal dit laquelle et pourquoi). Les
+   effets se mesurent alors le reste en f32, TensorRT compris comme une option ;
+5. **le mélange** (`rife_native_mix.cpp`, `rife_mix_choice.cpp`). Un morceau peut prendre TensorRT ou un réseau
+   plus rapide que lui. L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul hors
+   de la référence : l'erreur
+   quadratique de la sortie contre la référence (images au pic 1 ; flot au pic de son plus grand écart, masque à
    part), celle que les morceaux suivants font de l'erreur du morceau. Les erreurs de morceaux différents
    s'ajoutent à peu près : l'erreur prévue d'un groupe va de la somme des effets (erreurs indépendantes) au
    carré de la somme de leurs racines (erreurs de même signe aux mêmes pixels), selon une corrélation qui part
    de 0. Parmi toutes les combinaisons (au plus 5⁶), le mélange retenu est le plus rapide (la somme des temps
-   seuls) dont l'erreur prévue tient 45 dB ; un mélange d'un seul morceau natif n'a rien à prévoir, son effet
-   est sa mesure. Il est vérifié sur la chaîne. Sous 45 dB, ce mélange est écarté, la corrélation de chaque
-   groupe se recale sur l'erreur mesurée (sans jamais descendre) et les mélanges de plusieurs morceaux natifs
-   doivent tenir 45,5 dB ; au quatrième essai, seul un mélange d'un seul morceau natif peut être pris, sinon
+   seuls) dont l'erreur prévue tient la barre (45 dB, ou moins sur la référence native, étape 4) ; un mélange
+   d'un seul morceau hors de la référence n'a rien à prévoir, son effet est sa mesure. Il est vérifié sur la
+   chaîne. Sous la barre, ce mélange est écarté, la corrélation de chaque groupe se recale sur l'erreur mesurée
+   (sans jamais descendre) et les mélanges de plusieurs morceaux doivent tenir 0,5 dB de plus ; au quatrième
+   essai, seul un mélange d'un seul morceau hors de la référence peut être pris, sinon
    tout revient à TensorRT. Essayé hors carte sur des erreurs synthétiques (400 tirages par cas, six
    morceaux, corrélation de 0 à 1) : jamais tout à TensorRT quand un mélange tient, 0,06 à 0,08 ms de l'optimum
    en moyenne. La première version de #942 (un écart unique ajouté à la barre de toutes les combinaisons) en
@@ -171,7 +186,7 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
    TensorRT, les crans plus justes ne le sont pas toujours (le bloc 4 de 4.25 : 73,2 dB en f16, 69,3 en
    mixtes), et la justesse d'un morceau seul ne dit pas son poids sur la chaîne (l'encodeur décidait des
    45 dB). Le bloc 4, plus rapide en f16 que TensorRT, finissait ainsi à TensorRT ;
-5. le mélange est chronométré contre TensorRT seul comme le SPAN FP8 (`span_timing.h`) : une passe de lecture ×2
+6. le mélange est chronométré contre TensorRT seul comme le SPAN FP8 (`span_timing.h`) : une passe de lecture ×2
    (B encodée seule, graphes rejoués), onze tours intercalés d'une passe de chauffe et deux passes mesurées, la
    médiane. Il n'est gardé que s'il bat TensorRT d'au moins 2 %.
 
@@ -235,8 +250,8 @@ Les plafonds théoriques d'une passe ×2 en 1080p sur la 4070 Ti
 3,00 ms mesurées pour le mélange de 4.25 (#942). La suite vise ces plafonds : la colle et la fin fondues (environ
 1,2 ms mesurées contre 0,82 de plafond), puis la passe entière en un noyau. Sur 4.22 lite, natif f32 et TensorRT
 ne sont qu'à 43,5 dB l'un de l'autre : l'encodeur seul en f32 sort à 79,6 dB de TensorRT mais la chaîne en fait
-43,8 dB ; la référence f32 n'est donc pas fautive, la chaîne du lite amplifie l'écart de son encodeur (à
-expliquer).
+43,8 dB ; la référence f32 n'est donc pas fautive : c'est TensorRT qui est à 43,6 dB du calcul exact sur cette
+chaîne (le masque de la variante mouvement est le plus sensible), d'où la référence native de l'étape 4.
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
