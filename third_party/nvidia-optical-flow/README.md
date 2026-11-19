@@ -7,5 +7,6 @@ de chaque fichier.
 
 Seuls les types et les signatures servent : la bibliothèque (`libnvidia-opticalflow.so.1` sous Linux,
 `nvofapi64.dll` sous Windows) vient avec le pilote NVIDIA et se charge à l'exécution
-(`src/gpu/cuda/backend/nvof_session.cpp`). Hors de `src/` : ni clang-format ni la limite de taille ne
+(`tools/nvof_interp/nvof_dump`, la pré-analyse des plans dans `src/media/probe_flow_nvof.cpp` et la carte
+de la scène dans `src/gpu/cuda/backend/nvof_session.cpp`). Hors de `src/` : ni clang-format ni la limite de taille ne
 s'appliquent à ces copies. Le pilote accepte cette version 2.0 de l'API sur les RTX récentes.

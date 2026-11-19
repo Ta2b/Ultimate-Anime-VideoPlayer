@@ -47,10 +47,10 @@ class SpanFp8Engine final : public Engine {
   // de zéros par les noyaux (un noyau qui ne tourne pas sur cet appareil se voit ici, au chargement, pas en
   // pleine lecture), puis prend sa zone de travail dans shared. Refus : fichier ou paquet illisible, paquet
   // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
-  // mémoire.
+  // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif (SpanFp8Weights::native_edges).
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-      const std::shared_ptr<SharedActivations>& shared);
+      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;
   SpanFp8Engine& operator=(const SpanFp8Engine&) = delete;

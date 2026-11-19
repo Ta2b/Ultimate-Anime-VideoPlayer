@@ -57,7 +57,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   const std::optional<std::uint32_t> crc = span_fp8_artifact_crc(artifact.cache_key);
   if (!shape || !crc) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : clé d'artefact illisible");
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
-                                    static_cast<int>(shape->dims[3]), arena());
+                                    static_cast<int>(shape->dims[3]), arena(), span_native_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   log(BackendLogLevel::Info,
       std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}", shape->dims[3], shape->dims[2]));

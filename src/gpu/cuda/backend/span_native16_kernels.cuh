@@ -18,7 +18,9 @@
 // concaténation) ou kImage (conv_1 : l'image NCHW FP16 dégroupée au chargement, 12 canaux + 4 nuls).
 #include <cstdint>
 #include <cuda_fp16.h>
+#include <cuda_fp8.h>
 #include <cuda_runtime_api.h>
+#include <vector>
 
 #include "gpu/cuda/backend/pixel_kernels.cuh"
 #include "gpu/cuda/backend/ring_surface.h"
@@ -46,7 +48,13 @@ struct Params {
   const float* b1 = nullptr;     // kGate : son biais
   const __half* skip = nullptr;  // kGate : x, NHWC Cin
   int fh = 0, fw = 0;            // taille de la convolution (demi-résolution)
-  RingSurface surface{};         // kPixel : emplacement de l'anneau, object 0 : aucun
+  // Pas d'un pixel des sources et de out en demi-flottants ; 0 : Cin et Cout. Le FP8 lit et écrit les
+  // tranches de sa concaténation (pas 4·C).
+  int in_ld = 0, out_ld = 0;
+  // Sortie E4M3 de plus (NHWC, pas Cout octets), à l'échelle inv_s8 : l'entrée du premier bloc FP8.
+  std::uint8_t* out8 = nullptr;
+  float inv_s8 = 1.F;
+  RingSurface surface{};  // kPixel : emplacement de l'anneau, object 0 : aucun
   int surf_w = 0, surf_h = 0;
   // Tuiles qui bougent (kernels/spec/span_tiles.h) : un bit par tuile kTH × kTW de la grille du lancement,
   // ligne par ligne ; un bloc dont le bit est nul sort sans rien lire ni écrire. Nul : toutes les tuiles.
@@ -69,7 +77,7 @@ __device__ __forceinline__ void cp_async16(std::uint32_t dst, const void* src, b
   asm volatile("cp.async.cg.shared.global [%0], [%1], 16, %2;\n" ::"r"(dst), "l"(src), "r"(ok ? 16 : 0));
 }
 __device__ __forceinline__ void cp_async_wait_all() {
-  asm volatile("cp.async.commit_group;\ncp.async.wait_group 0;\n" ::);
+  asm volatile("cp.async.commit_group;\ncp.async.wait_group 0;\n" ::: "memory");
 }
 
 __device__ __forceinline__ uint4 lds128(std::uint32_t addr) {
@@ -118,6 +126,12 @@ struct Frag<false> {
   __device__ __forceinline__ float2 pair(int h) const { return make_float2(r[2 * h], r[2 * h + 1]); }
 };
 
+// Deux valeurs en FP16, bornées au plus grand fini : une somme f16 débordée ne sort pas en infini.
+__device__ __forceinline__ __half2 to_half2(float lo, float hi) {
+  constexpr float kMax = 65504.F;
+  return __floats2half2_rn(fmaxf(fminf(lo, kMax), -kMax), fmaxf(fminf(hi, kMax), -kMax));
+}
+
 __device__ __forceinline__ std::uint32_t pack_half2(float lo, float hi) {
   __half2 h = __floats2half2_rn(lo, hi);
   return *reinterpret_cast<std::uint32_t*>(&h);
@@ -132,14 +146,15 @@ __device__ __forceinline__ float tanh_approx(float x) {
 // La tuile NHWC de src en mémoire partagée, au pas Cin + 8 : (kTH + 2h) × (kTW + 2h) pixels dont l'origine
 // est (ty0 - h, tx0 - h) ; zéros hors de l'image.
 template <int Cin, int Halo>
-__device__ __forceinline__ void load_nhwc(__half* s, const __half* src, int fh, int fw, int ty0, int tx0) {
+__device__ __forceinline__ void load_nhwc(__half* s, const __half* src, int ld, int fh, int fw, int ty0,
+                                          int tx0) {
   constexpr int kChunks = Cin / 8, kSW = kTW + 2 * Halo, kPix = (kTH + 2 * Halo) * kSW, kLds = Cin + 8;
   const std::uint32_t base = smem_u32(s);
   for (int i = static_cast<int>(threadIdx.x); i < kPix * kChunks; i += kThreads) {
     const int p = i / kChunks, c = i - p * kChunks;
     const int y = ty0 - Halo + p / kSW, x = tx0 - Halo + p % kSW;
     const bool ok = y >= 0 && y < fh && x >= 0 && x < fw;
-    const __half* from = ok ? src + (static_cast<long>(y) * fw + x) * Cin + c * 8 : src;
+    const __half* from = ok ? src + (static_cast<long>(y) * fw + x) * ld + c * 8 : src;
     cp_async16(base + static_cast<std::uint32_t>((p * kLds + c * 8) * 2), from, ok);
   }
 }
@@ -210,15 +225,32 @@ __device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[kMF][Cout / 8], co
 }
 
 // La sortie NHWC (Cout canaux) de la tuile, depuis la mémoire partagée au pas Cout + 8, en lignes entières.
+// Et, si p.out8, la même en E4M3 à l'échelle p.inv_s8.
 template <int Cout>
-__device__ __forceinline__ void store_nhwc(const __half* o, __half* out, int fh, int fw, int ty0, int tx0) {
+__device__ __forceinline__ void store_nhwc(const __half* o, const Params& p, int ty0, int tx0) {
   constexpr int kChunks = Cout / 8, kLdo = Cout + 8;
+  const int ld = p.out_ld != 0 ? p.out_ld : Cout;
   for (int i = static_cast<int>(threadIdx.x); i < kTH * kTW * kChunks; i += kThreads) {
     const int q = i / kChunks, c = i - q * kChunks;
     const int y = ty0 + q / kTW, x = tx0 + q % kTW;
-    if (y < fh && x < fw)
-      *reinterpret_cast<uint4*>(out + (static_cast<long>(y) * fw + x) * Cout + c * 8) =
-          *reinterpret_cast<const uint4*>(o + q * kLdo + c * 8);
+    if (y >= p.fh || x >= p.fw) continue;
+    const long pixel = static_cast<long>(y) * p.fw + x;
+    const uint4 v = *reinterpret_cast<const uint4*>(o + q * kLdo + c * 8);
+    if (p.out != nullptr) *reinterpret_cast<uint4*>(p.out + pixel * ld + c * 8) = v;
+    if (p.out8 != nullptr) {
+      const std::uint32_t w[4] = {v.x, v.y, v.z, v.w};
+      std::uint16_t q8[4];
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        __half2 h;
+        *reinterpret_cast<std::uint32_t*>(&h) = w[j];
+        const float2 f = __half22float2(h);
+        q8[j] =
+            __nv_cvt_float2_to_fp8x2(make_float2(f.x * p.inv_s8, f.y * p.inv_s8), __NV_SATFINITE, __NV_E4M3);
+      }
+      *reinterpret_cast<uint2*>(p.out8 + pixel * Cout + c * 8) =
+          make_uint2(q8[0] | (std::uint32_t{q8[1]} << 16U), q8[2] | (std::uint32_t{q8[3]} << 16U));
+    }
   }
 }
 
@@ -308,8 +340,7 @@ __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __hal
           __half2* at = reinterpret_cast<__half2*>(o + (q0 + 8 * h) * kLdo + ch);
           const float2 x = __half22float2(*at);
           const float2 dd = d[j].pair(h), v = value(nt, h);
-          *at = __floats2half2_rn((v.x + x.x) * tanh_approx(dd.x + b1.x),
-                                  (v.y + x.y) * tanh_approx(dd.y + b1.y));
+          *at = to_half2((v.x + x.x) * tanh_approx(dd.x + b1.x), (v.y + x.y) * tanh_approx(dd.y + b1.y));
         }
       }
     }
@@ -337,7 +368,7 @@ __device__ __forceinline__ void plain(const Frag<Acc16> (&acc)[kMF][Cout / 8], _
           x0 = fmaxf(x0, 0.F);
           x1 = fmaxf(x1, 0.F);
         }
-        *reinterpret_cast<__half2*>(o + (q0 + 8 * h) * kLdo + ch) = __floats2half2_rn(x0, x1);
+        *reinterpret_cast<__half2*>(o + (q0 + 8 * h) * kLdo + ch) = to_half2(x0, x1);
       }
     }
   }
@@ -372,7 +403,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
     } else {
       // Pas p.in[src] : un indice inconnu à la compilation copie le tableau des paramètres sur la pile.
       const __half* from = src == 0 ? p.in[0] : src == 1 ? p.in[1] : src == 2 ? p.in[2] : p.in[3];
-      load_nhwc<Cin, kHalo>(s, from, p.fh, p.fw, ty0, tx0);
+      load_nhwc<Cin, kHalo>(s, from, p.in_ld != 0 ? p.in_ld : Cin, p.fh, p.fw, ty0, tx0);
       cp_async_wait_all();
     }
     __syncthreads();
@@ -383,7 +414,7 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   if constexpr (M == Mode::kGate) {
     // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
     const std::uint32_t w1s = smem_u32(s) + static_cast<std::uint32_t>(kTH * kTW * (Cout + 8) * 2);
-    load_nhwc<Cout, 0>(s, p.skip, p.fh, p.fw, ty0, tx0);
+    load_nhwc<Cout, 0>(s, p.skip, Cout, p.fh, p.fw, ty0, tx0);
     for (int i = static_cast<int>(threadIdx.x); i < Cout * Cout / 8; i += kThreads)
       cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
     cp_async_wait_all();
@@ -396,7 +427,33 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
   if constexpr (M == Mode::kPixel)
     store_pixel(s, p, ty0, tx0);
   else
-    store_nhwc<Cout>(s, p.out, p.fh, p.fw, ty0, tx0);
+    store_nhwc<Cout>(s, p, ty0, tx0);
+}
+
+// Poids FP16 [sortie][position][entrée] (le paquet) rangés dans l'ordre des fragments B de mma m16n8k16 :
+// pas k (position, tranche de 16 entrées), paire de tuiles n8, lane (g = lane / 4, t = lane % 4) ; 4 mots
+// par lane : b0 et b1 de la tuile 2·np, puis de la tuile 2·np + 1. b0 = entrées 2t et 2t + 1 de la sortie
+// 8·tuile + g, b1 = entrées 2t + 8 et 2t + 9 ; la plus petite entrée dans la moitié basse du mot.
+inline std::vector<std::uint32_t> pack(const std::uint16_t* w, int cout, int taps, int cin) {
+  const int kcs = cin / 16, nps = cout / 16, kss = taps * kcs;
+  std::vector<std::uint32_t> out(static_cast<std::size_t>(kss) * nps * 32 * 4);
+  const auto at = [&](int n, int tap, int ci) -> std::uint32_t {
+    return w[(static_cast<std::size_t>(n) * taps + tap) * cin + ci];
+  };
+  for (int ks = 0; ks < kss; ++ks) {
+    const int tap = ks / kcs, kc = ks % kcs;
+    for (int np = 0; np < nps; ++np)
+      for (int lane = 0; lane < 32; ++lane) {
+        const int g = lane >> 2, t = lane & 3, k0 = kc * 16 + 2 * t;
+        const std::size_t base = ((static_cast<std::size_t>(ks) * nps + np) * 32 + lane) * 4;
+        for (int j = 0; j < 2; ++j) {
+          const int n = (2 * np + j) * 8 + g;
+          out[base + 2 * j] = at(n, tap, k0) | (at(n, tap, k0 + 1) << 16U);
+          out[base + 2 * j + 1] = at(n, tap, k0 + 8) | (at(n, tap, k0 + 9) << 16U);
+        }
+      }
+  }
+  return out;
 }
 
 }  // namespace kirari::gpu::cuda::span_native

@@ -54,6 +54,9 @@ struct SpanFp8Weights {
   // FP16 natif seulement : sommes en f32 au lieu de f16 (moitié du débit des tensor cores des GeForce). Pour
   // la mesure (kirari_span_fp8_run --acc32) ; le lecteur somme en f16, comme AnimeJaNai.
   bool acc32 = false;
+  // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
+  // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native.
+  bool native_edges = false;
 };
 
 // Un emplacement RGBA16 UNORM de l'anneau où to_pixel écrit aussi (étape 3.4a) : surface 0, pas d'anneau.

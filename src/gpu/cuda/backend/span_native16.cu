@@ -48,32 +48,6 @@ class Buffer {
   void* ptr_ = nullptr;
 };
 
-// Poids FP16 [sortie][position][entrée] (le paquet) rangés dans l'ordre des fragments B de mma m16n8k16 :
-// pas k (position, tranche de 16 entrées), paire de tuiles n8, lane (g = lane / 4, t = lane % 4) ; 4 mots
-// par lane : b0 et b1 de la tuile 2·np, puis de la tuile 2·np + 1. b0 = entrées 2t et 2t + 1 de la sortie
-// 8·tuile + g, b1 = entrées 2t + 8 et 2t + 9 ; la plus petite entrée dans la moitié basse du mot.
-std::vector<std::uint32_t> pack(const std::uint16_t* w, int cout, int taps, int cin) {
-  const int kcs = cin / 16, nps = cout / 16, kss = taps * kcs;
-  std::vector<std::uint32_t> out(static_cast<std::size_t>(kss) * nps * 32 * 4);
-  const auto at = [&](int n, int tap, int ci) -> std::uint32_t {
-    return w[(static_cast<std::size_t>(n) * taps + tap) * cin + ci];
-  };
-  for (int ks = 0; ks < kss; ++ks) {
-    const int tap = ks / kcs, kc = ks % kcs;
-    for (int np = 0; np < nps; ++np)
-      for (int lane = 0; lane < 32; ++lane) {
-        const int g = lane >> 2, t = lane & 3, k0 = kc * 16 + 2 * t;
-        const std::size_t base = ((static_cast<std::size_t>(ks) * nps + np) * 32 + lane) * 4;
-        for (int j = 0; j < 2; ++j) {
-          const int n = (2 * np + j) * 8 + g;
-          out[base + 2 * j] = at(n, tap, k0) | (at(n, tap, k0 + 1) << 16U);
-          out[base + 2 * j + 1] = at(n, tap, k0 + 8) | (at(n, tap, k0 + 9) << 16U);
-        }
-      }
-  }
-  return out;
-}
-
 constexpr std::int64_t kAlign = 256;
 constexpr std::int64_t align_up(std::int64_t bytes) {
   return (bytes + kAlign - 1) / kAlign * kAlign;
@@ -120,7 +94,7 @@ class NativeBody final : public SpanFp8Body {
       return false;
     };
     const auto put = [&](Conv& to, const SpanFp8ConvView& view, int cout, int taps, int cin) {
-      const std::vector<std::uint32_t> packed = pack(view.weights, cout, taps, cin);
+      const std::vector<std::uint32_t> packed = sn::pack(view.weights, cout, taps, cin);
       return sent(to.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) &&
              sent(to.b.upload(view.bias, static_cast<std::size_t>(cout) * sizeof(float)));
     };
