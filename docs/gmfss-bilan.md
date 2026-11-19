@@ -1,6 +1,10 @@
 # GMFSS union en temps réel : bilan du chantier natif
 
-État au 19 novembre 2026, au soir. Le but : GMFSS Fortuna Union en temps réel sur la RTX 4070 Ti de Tatoub. Ses
+> **Mis à jour le 19 novembre 2026, en fin de journée** : GMFlow natif, attention fondue (PR 2) et MLP fondu
+> (PR 3), audités et entrés dans #959 ; leurs bancs et leur règle de décision ajoutés à la séance PC (partie 4).
+> Avant : le budget du ×2 en 1080p corrigé (partie 3.2).
+
+Le but : GMFSS Fortuna Union en temps réel sur la RTX 4070 Ti de Tatoub. Ses
 petits réseaux (le GridNet de la fusion, FeatureNet et MetricNet de la paire) passent par nos noyaux CUDA ; GMFlow
 et l'IFNet restent sous TensorRT pour l'instant. Le détail technique est dans [`gmfss-natif.md`](gmfss-natif.md) et
 [`gmflow-natif.md`](gmflow-natif.md). Ce document dit ce qui est fait, ce qui a été essayé, jusqu'où l'on peut
@@ -23,7 +27,7 @@ dans le cloud s'y fait d'ici là.
 | #930 | GMFlow natif, PR 1 : étude et squelette CNN (pas encore branché) | fusionnée |
 | #931 | Commandes de la séance PC | fusionnée |
 | #950 | La fusion se coupe sur les deux exports (IFNet d'union et de RIFE 4.26), recherche des graphes élargie | fusionnée |
-| #959 | Le natif par défaut ; mélange par morceau et réglage des formes par couche ; plages NVTX ; une paire périmée cède à l'autre paire du dossier, dans les deux sens | ouverte : CI lancée sur `a67a96af`, fusion après la CI verte et l'étape 0 de la séance PC |
+| #959 | Le natif par défaut ; mélange par morceau et réglage des formes par couche ; plages NVTX ; une paire périmée cède à l'autre paire du dossier, dans les deux sens ; GMFlow natif, attention (PR 2) et MLP (PR 3), pas encore branchés ; ce bilan | ouverte : fusion après une CI verte sur sa tête et l'étape 0 de la séance PC |
 
 ### Les mesures du PC
 
@@ -74,7 +78,7 @@ TensorRT mêlent donc deux arrondis.
 | GMFlow en E4M3 (émulé) | **écarté** | 35,1 dB au pire sur l'image : chaque famille de GEMM seule en E4M3 coûte déjà 10 à 25 dB |
 | Mélange par morceau (`native_mix.h`, commun avec le RIFE natif) | **dans #959**, jamais lancé sur une carte | En émulation, tous les crans tiennent 45 dB de loin. Fusion : f16 partout 66,5 dB, tête f32 72,8, mixtes 76,2. Paire : 65,2 à 72,0. Le choix se fera donc sur les temps. TensorRT ne peut pas servir un seul morceau, car la paire et la fusion sont chacune un seul moteur. |
 | Formes réglées par couche | **dans #959** | Attendu sans mesure : 1,5 à 3 ms de moins sur la fusion, 0,3 à 1 ms sur la paire |
-| GMFlow par nos noyaux | **en cours** | La PR 1 est fusionnée. Les PR 2 (attention fondue) et 3 (MLP fondu) sont écrites et se remettent à jour dans le cloud. En émulation, l'image gagne 9,6 dB sur le graphe actuel, parce que le flot reste en f32. La vitesse n'est pas prouvée. |
+| GMFlow par nos noyaux | **en cours** | La PR 1 est fusionnée. Les PR 2 (attention fondue) et 3 (MLP fondu) sont écrites, auditées et dans #959 avec leurs bancs, sans être branchées. En émulation, l'image gagne 9,6 dB sur le graphe actuel, parce que le flot reste en f32. La vitesse n'est pas prouvée : le banc du PC décide de la suite. |
 | IFNet de la fusion | **reste sous TensorRT** | Plafond 0,4 ms : rien à gagner en vitesse. La coupe accepte les deux exports. |
 | Tri des paires (`--pair-triage --scene-map`) | **gardé** | 0,7 % d'images perdues en ×2 |
 | Chargement en double tampon, bloc résiduel fondu | **en cours** dans le cloud | Voir les leviers, partie 3 |
@@ -244,9 +248,19 @@ le coût reste à peu près celui du ×2 de GMFSS seul, plus les flots et les wa
    - le chargement en double tampon ;
    - le bloc résiduel fondu de la ligne 0, s'il vaut la peine ;
    - l'émulation des dB, la compilation pour les quatre architectures et les commandes du banc PC.
-3. Branche `gmflow-attn-mlp` : les PR 2 et 3 de GMFlow, auditées, avec leurs commandes de banc. Puis les PR 4 et 5
-   (appariement global, fin à 1/4) et la PR 6 : la paire native entière derrière un réglage de `play.toml`, avec
-   TensorRT par défaut jusqu'à la mesure.
+3. GMFlow : les PR 2 et 3 sont dans #959, auditées, avec leurs bancs. La suite attend le banc du PC (règle
+   ci-dessous). Si elle continue :
+   - PR 4 : appariement global et propagation globale au 1/8 ;
+   - la position sinus, calculée au chargement ;
+   - PR 5 : le chemin du 1/4 (déformation, transformeur, appariement local, propagation, agrandissement convexe) ;
+   - l'assemblage en un `GmflowNet` (un espace de travail, un graphe CUDA par forme), le partage des clés entre
+     blocs pour les petites grilles du 1/8, les sommes f16 sous la porte de qualité ;
+   - la préparation de l'entrée du MetricNet en natif, pour sortir TensorRT de la paire ;
+   - le branchement dans `GmfssPairEngine`, avec un essai au chargement contre TensorRT, coupé par défaut
+     jusqu'à la mesure.
+
+   Gain attendu en 1080p au demi-flot : GMFlow natif vers 9 ms en sommes f32 (6,5 à 7 ms en f16) contre 13 à 15 ms
+   déduits pour TensorRT, soit 4 à 8 ms de moins par paire.
 4. Nouveaux leviers de ce bilan :
    - la queue fondue ;
    - la normalisation des splats fondue dans le GridNet.
@@ -258,10 +272,11 @@ le coût reste à peu près celui du ×2 de GMFSS seul, plus les flots et les wa
 
 ### Sur le PC, en dernier, une seule séance
 
-Au commit de #959 (`a67a96af`), avec le binaire de lecture CUDA, pas `linux-prefix` en Debug :
+À la tête de #959 (branche `claude/project-thread-1t05iy`), avec le binaire de lecture CUDA, pas `linux-prefix` en
+Debug :
 
 ```sh
-git fetch origin claude/project-thread-1t05iy && git checkout --detach a67a96af
+git fetch origin claude/project-thread-1t05iy && git checkout --detach FETCH_HEAD
 cmake --preset linux-prefix-cuda-release && cmake --build --preset linux-prefix-cuda-release
 G="--gmfss-dir $HOME/ajp/models/rife"   # <extrait> : l'extrait habituel de Re:Zero
 
@@ -297,9 +312,50 @@ done; done
   - les images perdues et le p95 ;
   - les paires prises par GMFSS et celles laissées à RIFE.
 
-Ensuite, dans la même séance :
-- les bancs des branches `gmflow-attn-mlp` et `gridnet-noyaux`, dont les commandes s'ajouteront ici quand elles
-  seront prêtes ;
+Ensuite, dans la même séance, les bancs de GMFlow natif (le détail est dans `gmflow-natif.md`, « Séance sur le PC
+(attention et MLP) »). Il faut cmake, nvcc, trtexec, ffmpeg et un python avec torch, onnx et onnxruntime. `ROUE`
+est le dossier `vsgmfss_fortuna` extrait de la roue de vs-gmfss_fortuna.
+
+```sh
+# 3. Entrées du contrôle (processeur, une vingtaine de minutes).
+W=~/kirari-reports/gmflow-natif-entrees; P=$HOME/ajp/models/rife/gmfss_fortuna_union_pair.onnx
+python -I tools/gmfss/gmflow_natif_emule.py ROUE/vsgmfss_fortuna --work $W --recettes fp32
+cmake -S tools/gmfss/gmflow_attention -B build/gmflow_attention -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gmflow_attention --target gmflow_attention_vide
+cmake -S tools/gmfss/gmflow_mlp -B build/gmflow_mlp -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gmflow_mlp --target gmflow_mlp_vide
+build/gmflow_attention/gmflow_attention_vide $W/paire_fp32.onnx $W/attn32
+build/gmflow_attention/gmflow_attention_vide $P $W/attn16
+build/gmflow_mlp/gmflow_mlp_vide $W/paire_fp32.onnx $W/mlp32
+build/gmflow_mlp/gmflow_mlp_vide $P $W/mlp16
+python -I tools/gmfss/gmflow_attention_emule.py --fp32 $W/paire_fp32.onnx --plan32 $W/attn32 --plan16 $W/attn16 \
+    --paires 1 --dump $W/attention
+python -I tools/gmfss/gmflow_mlp_emule.py --fp32 $W/paire_fp32.onnx --fp16 $P --plan32 $W/mlp32 --plan16 $W/mlp16 \
+    --work $W --banc $W/mlp
+
+# 4. Bancs ABAB contre TensorRT, deux fois chacun (moteurs gardés ; le premier banc de l'attention construit
+#    64 moteurs, environ une heure).
+for passage in 1 2; do
+  flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh $P ~/kirari-reports/gmflow-mlp $W/mlp
+  flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_attention_banc.sh $P ~/kirari-reports/gmflow-attention \
+      $W/attention
+done
+```
+
+Si la lecture des plans refuse la paire au flot entier du PC (export d'avant le format 2), la réexporter par
+`tools/gmfss/export_gmfss.py`.
+
+À relever pour GMFlow :
+- `banc-mlp.md` et `banc-attention.md` de chaque passage, et l'écart entre les deux (au-delà de 3 %, refaire) ;
+- `nvidia-smi -q -d CLOCK,TEMPERATURE` avant et après ;
+- dans `trt/*.profile.json`, si TensorRT a pris un noyau d'attention fondu (`fmha`, `mha`).
+
+La règle de décision : les deux contrôles tenus, puis le rapport de la couche entière du transformeur au quart de
+720p, (attention native + 6 × MLP natif) sur la même somme sous TensorRT. **0,80 ou moins : on continue** (PR 4 et
+5) ; au-dessus, TensorRT garde GMFlow.
+
+Puis, toujours dans la même séance :
+- les bancs de la branche `gridnet-noyaux`, dont les commandes s'ajouteront ici quand elles seront prêtes ;
 - la fusion de #959.
 
 Toute modification de `src/core`, `src/gpu`, `src/kernels` ou `src/prepare` demande un nouveau paquet TensorRT
@@ -309,11 +365,11 @@ Linux. Il ne se fait que sur demande de Tatoub, comme toute release.
 
 | Branche | Commit | Contenu |
 |---|---|---|
-| `claude/project-thread-1t05iy` (#959) | `a67a96af` | Le natif par défaut et le mélange, à jour de main (#962). Le bilan s'y ajoute. |
+| `claude/project-thread-1t05iy` (#959) | sa tête | Le natif par défaut, le mélange, GMFlow PR 2 et 3, ce bilan, à jour de main (#962) |
 | `gmfss-defaut` | `6532362a` | Le natif par défaut seul, à jour de main |
 | `gmfss-melange-2` | `4f1df2bf` | Le mélange, le réglage, les plages NVTX, la doc de la fusion mesurée |
 | `gridnet-noyaux` | en cours | Le double tampon et le bloc fondu du GridNet, partis de #959 |
-| `gmflow-attn-mlp` | en cours | Les PR 2 et 3 de GMFlow, reprises de `gmflow-23`, `gmflow-natif-2` et `gmflow-natif-3` |
+| `gmflow-attn-mlp` | `e7e5cba0` | Les PR 2 et 3 de GMFlow auditées, fusionnées dans #959 |
 
 | Fichier | Rôle |
 |---|---|
