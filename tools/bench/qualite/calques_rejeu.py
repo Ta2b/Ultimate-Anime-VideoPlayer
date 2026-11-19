@@ -14,7 +14,9 @@ carte_rejeu --calques rejoue la carte, puis ce que le lecteur déciderait de cha
 compilé tel quel) et ce que la garde de la composition en refuserait, sur les lumas du flux (calques.h). Par
 extrait :
 
-- la part des paires avec calques (visé : au moins la moitié sur un panoramique) et les raisons des autres ;
+- la part des paires avec calques (visé : au moins la moitié sur un panoramique), dont avec la caméra lk d'une
+  paire voisine, et les raisons des autres ; --sans-affinage rejoue le pire du lecteur, l'affinage toujours en
+  retard ;
 - la part de tuiles décor des paires à calques ;
 - la garde des calques à l'instant ½ : part du décor rendue à RIFE (médiane, 90e centile des paires) et écart
   médian entre a et b déplacées par la caméra, en codes (sous kLayerGuardLow, 4 codes, rien n'est refusé) ;
@@ -68,7 +70,7 @@ def replay(args, name, tasks, given):
         lines, height = read_tasks(tasks, tmp)
         divisor = divisor_of(tasks, given, height)
         views = os.path.join(args.sortie, name)
-        cmd = [args.rejeu, "--diviseur", str(divisor), "--calques"]
+        cmd = [args.rejeu, "--diviseur", str(divisor), "--calques"] + (["--sans-affinage"] if args.sans_affinage else [])
         if args.pas > 0:
             os.makedirs(views, exist_ok=True)
             cmd += ["--vues", views, "--pas", str(args.pas)]
@@ -97,11 +99,12 @@ def quantile(values, q):
 
 
 def measure(pairs, work_height):
-    layered = [p for p in pairs if p["etat"] == 1]
+    layered = [p for p in pairs if p["etat"] >= 1]
     guarded = [p for p in layered if p["garde"] >= 0]
     used = [p for p in pairs if p["plaque"] == 2 and p["pgarde"] >= 0]
     unit = 720.0 / work_height
     return {"paires": len(pairs), "avec": len(layered) / max(1, len(pairs)),
+            "voisine": sum(p["etat"] == 2 for p in pairs) / max(1, len(pairs)),
             "part": sum(p["part"] for p in layered) / len(layered) if layered else float("nan"),
             "garde": median([p["garde"] for p in guarded]) if guarded else float("nan"),
             "garde90": quantile([p["garde"] for p in guarded], 0.9),
@@ -111,7 +114,7 @@ def measure(pairs, work_height):
             "pgarde90": quantile([p["pgarde"] for p in used], 0.9),
             "pecart": median([p["pecart"] for p in used if p["pecart"] >= 0] or [float("nan")]),
             "vitesse": median([p["vitesse"] * unit for p in layered]) if layered else float("nan"),
-            "sans": dict(Counter(p["raison"] for p in pairs if p["etat"] != 1).most_common())}
+            "sans": dict(Counter(p["raison"] for p in pairs if p["etat"] == 0).most_common())}
 
 
 def report(rows):
@@ -122,10 +125,11 @@ def report(rows):
          "du flux, une approximation de ceux du lecteur (images agrandies, RVB, plaque passée par SPAN). Garde : part "
          "du décor rendue à RIFE, médiane et 90e centile des paires ; écart : médiane, en codes (garde des calques "
          "de 4 à 12, de la plaque de 6 à 18). Visé : au moins la moitié des paires avec calques sur un panoramique.",
-         "", "| Extrait | Paires | Avec calques | Décor | Garde (p90) | Écart | Plaque : clés, reprises "
-         "| Garde plaque (p90) | Écart plaque | Vitesse (px à 720p) |", "|---|---:|---:|---:|---|---:|---|---|---:|---:|"]
+         "", "| Extrait | Paires | Avec calques (caméra voisine) | Décor | Garde (p90) | Écart | Plaque : clés, "
+         "reprises | Garde plaque (p90) | Écart plaque | Vitesse (px à 720p) |",
+         "|---|---:|---:|---:|---|---:|---|---|---:|---:|"]
     for name, m in rows.items():
-        L.append(f"| {name} | {m['paires']} | {pct(m['avec'])} | {pct(m['part'])} | {pct(m['garde'])} "
+        L.append(f"| {name} | {m['paires']} | {pct(m['avec'])} ({pct(m['voisine'])}) | {pct(m['part'])} | {pct(m['garde'])} "
                  f"({pct(m['garde90'])}) | {num(m['ecart'])} | {m['cles']}, {m['reprises']} | {pct(m['pgarde'])} "
                  f"({pct(m['pgarde90'])}) | {num(m['pecart'])} | {num(m['vitesse'])} |")
     L += ["", "Sans calques :", ""]
@@ -140,6 +144,8 @@ def main():
     p.add_argument("--rejeu", required=True, help="l'exécutable carte_rejeu")
     p.add_argument("--extrait", action="append", required=True, help="NOM=TÂCHES[@DIVISEUR], plusieurs fois")
     p.add_argument("--pas", type=int, default=40, help="une vue toutes les PAS paires (0 : aucune)")
+    p.add_argument("--sans-affinage", action="store_true",
+                   help="l'affinage toujours en retard : la caméra lk d'une paire voisine seulement")
     p.add_argument("--sortie", required=True)
     args = p.parse_args()
     os.makedirs(args.sortie, exist_ok=True)

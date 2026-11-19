@@ -190,10 +190,17 @@ LayerReplay::LayerReplay(int divisor, std::string views, int every)
 
 bool LayerReplay::pair(const kirari::kernels::Plane<std::uint8_t>& a8,
                        const kirari::kernels::Plane<std::uint8_t>& b8,
-                       const kirari::kernels::SceneMotion& motion) {
+                       const kirari::kernels::SceneMotion& motion,
+                       const std::optional<play::NeighbourCamera>& late) {
   const int w = a8.width;
   const int h = a8.height;
-  const auto planned = play::plan_layers(motion, w * divisor_, h * divisor_);
+  // Comme LayerStage::arrive : la caméra lk d'une paire d'avant quand celle de la paire manque.
+  neighbours_.next();
+  bool borrowed = false;
+  const auto planned =
+      play::plan_with_neighbour(motion, neighbours_.for_pair(), w * divisor_, h * divisor_, borrowed);
+  if (const auto own = play::refined_camera(motion)) neighbours_.seen(*own);
+  if (late) neighbours_.seen(*late);
   const PlaneF a = to_float(a8);
   const PlaneF b = to_float(b8);
   const bool view = !views_.empty() && every_ > 0 && index_ % every_ == 0;
@@ -231,9 +238,10 @@ bool LayerReplay::pair(const kirari::kernels::Plane<std::uint8_t>& a8,
     }
   }
   const std::string_view reason = planned ? std::string_view("-") : play::name(planned.error());
-  std::cout << std::format("calques {} {:.4f} {:.4f} {:.1f} {:.3f} {} {:.4f} {:.1f} {}\n", planned ? 1 : 0,
-                           planned ? planned->share : 0.0, pair_guard.refused, pair_guard.median, speed,
-                           static_cast<int>(step.action), plate_guard.refused, plate_guard.median, reason);
+  std::cout << std::format("calques {} {:.4f} {:.4f} {:.1f} {:.3f} {} {:.4f} {:.1f} {}\n",
+                           planned ? (borrowed ? 2 : 1) : 0, planned ? planned->share : 0.0,
+                           pair_guard.refused, pair_guard.median, speed, static_cast<int>(step.action),
+                           plate_guard.refused, plate_guard.median, reason);
   ++index_;
   return ok;
 }

@@ -4,12 +4,13 @@
 //
 // Une ligne par paire sur la sortie standard :
 //   calques ÉTAT PART GARDE ÉCART VITESSE PLAQUE PGARDE PÉCART RAISON
-// ÉTAT 1 : la paire a des calques ; PART : part des tuiles décor ; GARDE : part du décor (pondéré par le
-// masque) que la garde rend à RIFE, à l'instant ½ ; ÉCART : médiane de |Y(a déplacée) − Y(b déplacée)| sur
-// le cœur du décor, en codes ; VITESSE : déplacement du centre de l'image par la caméra, pixels de travail ;
-// PLAQUE 0 rien, 1 nouvelle clé, 2 décor repris de la clé ; PGARDE, PÉCART : la même garde et le même écart
-// pour la plaque (la luma de la clé déplacée contre celle de b ; −1 sans reprise) ; RAISON : pourquoi la
-// paire n'a pas de calques (layer_plan.h), « - » si elle en a. −1 : pas mesuré.
+// ÉTAT 1 : la paire a des calques, 2 : avec la caméra lk d'une paire voisine (layer_plan.h, with_neighbour) ;
+// PART : part des tuiles décor ; GARDE : part du décor (pondéré par le masque) que la garde rend à RIFE, à
+// l'instant ½ ; ÉCART : médiane de |Y(a déplacée) − Y(b déplacée)| sur le cœur du décor, en codes ; VITESSE :
+// déplacement du centre de l'image par la caméra, pixels de travail ; PLAQUE 0 rien, 1 nouvelle clé, 2 décor
+// repris de la clé ; PGARDE, PÉCART : la même garde et le même écart pour la plaque (la luma de la clé
+// déplacée contre celle de b ; −1 sans reprise) ; RAISON : pourquoi la paire n'a pas de calques
+// (layer_plan.h), « - » si elle en a. −1 : pas mesuré.
 //
 // Sur les lumas du flux, sans SPAN ni RIFE : la garde du lecteur compare des images agrandies, en RVB, et la
 // plaque y est un SPAN de la clé ; les écarts mesurés ici en sont une approximation, pas une copie.
@@ -21,6 +22,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "app/play/layer_plan.h"
@@ -35,9 +37,11 @@ class LayerReplay {
   // paires.
   LayerReplay(int divisor, std::string views, int every);
 
-  // La paire suivante du plan : sa ligne, et ses vues s'il y a lieu. Faux si une vue ne s'écrit pas.
+  // La paire suivante du plan : sa ligne, et ses vues s'il y a lieu. late : sa caméra lk relue après la
+  // décision (--sans-affinage), pour les paires suivantes. Faux si une vue ne s'écrit pas.
   bool pair(const kirari::kernels::Plane<std::uint8_t>& a, const kirari::kernels::Plane<std::uint8_t>& b,
-            const kirari::kernels::SceneMotion& motion);
+            const kirari::kernels::SceneMotion& motion,
+            const std::optional<kirari::app::play::NeighbourCamera>& late = std::nullopt);
 
  private:
   int divisor_;
@@ -45,6 +49,7 @@ class LayerReplay {
   int every_;
   int index_ = 0;
   kirari::app::play::PlateTrack plate_;
+  kirari::app::play::NeighbourCameras neighbours_;
   kirari::kernels::PlaneF key_;  // la luma de l'image clé
 };
 

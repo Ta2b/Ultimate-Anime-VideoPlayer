@@ -95,7 +95,7 @@ std::uint64_t input_recipe(bool debanded, const gpu::Reduction& reduce) {
 // image à l'autre).
 bool tiles_fit(const UpscaleSetup& setup) {
   const bool playing = setup.clock != nullptr && !setup.yuv_slots;
-  return playing && setup.temporal_fix == nullptr && !setup.smooth_drawings && setup.layers.plate == nullptr;
+  return playing && setup.temporal_fix == nullptr && !setup.smooth_drawings && !setup.layers.plate_on();
 }
 
 // Avant le warp, la sortie d'avant est dans l'autre tampon, si la source d'avant a vraiment eu son SPAN et

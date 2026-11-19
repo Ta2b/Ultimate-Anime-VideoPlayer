@@ -122,6 +122,48 @@ std::expected<PairLayers, LayerSkip> plan_layers(const std::optional<kernels::Sc
   return layers;
 }
 
+std::optional<kernels::SceneMotion> with_neighbour(const kernels::SceneMotion& scene,
+                                                   const NeighbourCamera& neighbour, int work_width,
+                                                   int work_height) {
+  if (!scene.camera_fit || scene.camera_refined || scene.cut_likely || scene.fade ||
+      !(neighbour.residual <= kLayerResidualMax))
+    return std::nullopt;
+  const auto w = static_cast<double>(work_width);
+  const auto h = static_cast<double>(work_height);
+  const std::array<std::array<double, 2>, 5> points{{{0.0, 0.0}, {w, 0.0}, {0.0, h}, {w, h}, {w / 2, h / 2}}};
+  const auto& n = neighbour.camera;
+  const auto& c = scene.camera;
+  for (const auto& [x, y] : points) {
+    const double dx = (n[0] + n[1] * x + n[2] * y) - (c[0] + c[1] * x + c[2] * y);
+    const double dy = (n[3] + n[4] * x + n[5] * y) - (c[3] + c[4] * x + c[5] * y);
+    if (!(std::hypot(dx, dy) <= kNeighbourAgree)) return std::nullopt;
+  }
+  kernels::SceneMotion borrowed = scene;
+  borrowed.camera = neighbour.camera;
+  borrowed.camera_refined = true;
+  borrowed.residual = neighbour.residual;
+  return borrowed;
+}
+
+std::expected<PairLayers, LayerSkip> plan_with_neighbour(const std::optional<kernels::SceneMotion>& scene,
+                                                         const std::optional<NeighbourCamera>& neighbour,
+                                                         int work_width, int work_height, bool& borrowed) {
+  borrowed = false;
+  auto planned = plan_layers(scene, work_width, work_height);
+  if (planned || planned.error() != LayerSkip::Unrefined || !neighbour) return planned;
+  const auto with = with_neighbour(*scene, *neighbour, work_width, work_height);
+  if (!with) return planned;
+  auto again = plan_layers(with, work_width, work_height);
+  borrowed = again.has_value();
+  return again;
+}
+
+std::optional<NeighbourCamera> refined_camera(const std::optional<kernels::SceneMotion>& scene) {
+  if (!scene || !scene->camera_fit || !scene->camera_refined || scene->cut_likely || scene->fade)
+    return std::nullopt;
+  return NeighbourCamera{.camera = scene->camera, .residual = scene->residual};
+}
+
 kernels::LayerGrid layer_grid(const PairLayers& layers, int out_width, int out_height) {
   kernels::LayerGrid grid{
       .cols = layers.cols,
