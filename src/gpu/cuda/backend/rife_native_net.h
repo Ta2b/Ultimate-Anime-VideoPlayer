@@ -48,16 +48,17 @@ struct RifeNativeTuned {
   int ct = 16;
   int rows = 2;
   int ksplit = 1;
+  bool ahead = false;  // poids une prise à l'avance (rife_native_kernels.cuh, accumulate)
 };
 
 class RifeNativeNet {
  public:
   virtual ~RifeNativeNet() = default;
   // pieces : l'encodeur puis les blocs ; reduce : d_k de chaque bloc ; height × width : la taille remplie.
-  // Chaque couche prend la forme (tranche, tuile, lignes par warp, parts de K) la plus rapide sur cette
-  // carte, chronométrée ici sur la voie stream (comme AnimeJaNai), ou celle que tuned garde déjà ; tuned
-  // reçoit les nouvelles. Rien et error rempli si une couche sort de ce que les noyaux font, si les poids ne
-  // s'envoient pas, ou sur une erreur CUDA du réglage.
+  // Chaque couche prend la forme (tranche, tuile, lignes par warp, parts de K, poids à l'avance) la plus
+  // rapide sur cette carte, chronométrée ici sur la voie stream (comme AnimeJaNai), ou celle que tuned garde
+  // déjà ; tuned reçoit les nouvelles. Rien et error rempli si une couche sort de ce que les noyaux font, si
+  // les poids ne s'envoient pas, ou sur une erreur CUDA du réglage.
   static std::unique_ptr<RifeNativeNet> create(const std::vector<RifeNativePiece>& pieces,
                                                const std::vector<int>& reduce, int height, int width,
                                                RifeNativePrecision precision, cudaStream_t stream,

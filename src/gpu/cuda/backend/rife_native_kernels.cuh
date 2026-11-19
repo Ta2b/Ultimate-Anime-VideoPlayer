@@ -254,10 +254,13 @@ __device__ __forceinline__ void load_image(__half* s, const Params& p, int y0, i
 }
 
 // Les sommes des prises [t0, t1) d'une tranche : (Kc / 16) pas k par prise, à partir de la tranche q des
-// poids rangés. Les fragments B du pas suivant se chargent pendant les mma du pas courant. En sommes
-// mixtes, chaque prise finit par son report en f32.
+// poids rangés. Les fragments B du pas suivant se chargent pendant les mma du pas courant ; Ahead : ceux de
+// toute la prise suivante, dès le début de la prise courante (un second jeu de registres). Les poids d'une
+// couche large ne tiennent pas dans le L1 et viennent du L2, dont la latence dépasse les mma d'un seul pas ;
+// le réglage au chargement choisit, couche par couche, entre l'occupation et la distance. L'ordre des sommes
+// est le même. En sommes mixtes, chaque prise finit par son report en f32.
 // acc[f][nt] : fragment f (ligne f / 2 du warp, colonnes 16·(f % 2) à + 15), tuile n8 nt.
-template <int Kc, int CT, int KH, int S, int Rows, Acc A>
+template <int Kc, int CT, int KH, int S, int Rows, Acc A, bool Ahead = false>
 __device__ __forceinline__ void accumulate(Frag<A> (&acc)[Rows * 2][CT / 8], const __half* s, const uint4* w,
                                            int q, int kcs, int t0, int t1, int warp, int lane) {
   using G = Geometry<KH, S, Rows>;
@@ -272,42 +275,71 @@ __device__ __forceinline__ void accumulate(Frag<A> (&acc)[Rows * 2][CT / 8], con
 #pragma unroll
     for (int np = 0; np < kNP; ++np) b[np] = __ldg(wl + (ks * kNP + np) * 32);
   };
-  uint4 b[kNP];
-  fetch(b, t0, 0);
-#pragma unroll 1
-  for (int tap = t0; tap < t1; ++tap) {
-    const int dy = tap / KH, dx = tap - dy * KH;
-    const int col0 = S == 1 ? dx : ((dx & 1) != 0 ? G::kEven : 0) + (dx >> 1);
+  // Le pas sub de la prise (dy, col0) : les fragments A depuis la tuile, puis les mma sur les fragments b.
+  const auto step = [&](const uint4(&b)[kNP], int dy, int col0, int sub) {
+    std::uint32_t a[kMF][4];
 #pragma unroll
-    for (int sub = 0; sub < kSub; ++sub) {
-      uint4 next[kNP];
-#pragma unroll
-      for (int np = 0; np < kNP; ++np) next[np] = b[np];
-      if (sub + 1 < kSub)
-        fetch(next, tap, sub + 1);
-      else if (tap + 1 < t1)
-        fetch(next, tap + 1, 0);
-      std::uint32_t a[kMF][4];
-#pragma unroll
-      for (int f = 0; f < kMF; ++f) {
-        const int row = (warp * Rows + (f >> 1)) * S + dy;
-        const int col = 16 * (f & 1) + col0;
-        ldmatrix4(a[f], base + static_cast<std::uint32_t>(((row * G::kIC + col) * kLds + sub * 16) * 2));
-      }
-#pragma unroll
-      for (int f = 0; f < kMF; ++f)
-#pragma unroll
-        for (int np = 0; np < kNP; ++np) {
-          acc[f][2 * np].mma(a[f], b[np].x, b[np].y);
-          acc[f][2 * np + 1].mma(a[f], b[np].z, b[np].w);
-        }
-#pragma unroll
-      for (int np = 0; np < kNP; ++np) b[np] = next[np];
+    for (int f = 0; f < kMF; ++f) {
+      const int row = (warp * Rows + (f >> 1)) * S + dy;
+      const int col = 16 * (f & 1) + col0;
+      ldmatrix4(a[f], base + static_cast<std::uint32_t>(((row * G::kIC + col) * kLds + sub * 16) * 2));
     }
 #pragma unroll
     for (int f = 0; f < kMF; ++f)
 #pragma unroll
+      for (int np = 0; np < kNP; ++np) {
+        acc[f][2 * np].mma(a[f], b[np].x, b[np].y);
+        acc[f][2 * np + 1].mma(a[f], b[np].z, b[np].w);
+      }
+  };
+  const auto promote = [&] {
+#pragma unroll
+    for (int f = 0; f < kMF; ++f)
+#pragma unroll
       for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].promote();
+  };
+  if constexpr (Ahead) {
+    uint4 b[kSub][kNP];  // la prise suivante
+#pragma unroll
+    for (int sub = 0; sub < kSub; ++sub) fetch(b[sub], t0, sub);
+#pragma unroll 1
+    for (int tap = t0; tap < t1; ++tap) {
+      const int dy = tap / KH, dx = tap - dy * KH;
+      const int col0 = S == 1 ? dx : ((dx & 1) != 0 ? G::kEven : 0) + (dx >> 1);
+      uint4 cur[kSub][kNP];
+#pragma unroll
+      for (int sub = 0; sub < kSub; ++sub)
+#pragma unroll
+        for (int np = 0; np < kNP; ++np) cur[sub][np] = b[sub][np];
+      if (tap + 1 < t1)
+#pragma unroll
+        for (int sub = 0; sub < kSub; ++sub) fetch(b[sub], tap + 1, sub);
+#pragma unroll
+      for (int sub = 0; sub < kSub; ++sub) step(cur[sub], dy, col0, sub);
+      promote();
+    }
+  } else {
+    uint4 b[kNP];
+    fetch(b, t0, 0);
+#pragma unroll 1
+    for (int tap = t0; tap < t1; ++tap) {
+      const int dy = tap / KH, dx = tap - dy * KH;
+      const int col0 = S == 1 ? dx : ((dx & 1) != 0 ? G::kEven : 0) + (dx >> 1);
+#pragma unroll
+      for (int sub = 0; sub < kSub; ++sub) {
+        uint4 next[kNP];
+#pragma unroll
+        for (int np = 0; np < kNP; ++np) next[np] = b[np];
+        if (sub + 1 < kSub)
+          fetch(next, tap, sub + 1);
+        else if (tap + 1 < t1)
+          fetch(next, tap + 1, 0);
+        step(b, dy, col0, sub);
+#pragma unroll
+        for (int np = 0; np < kNP; ++np) b[np] = next[np];
+      }
+      promote();
+    }
   }
 }
 
@@ -462,7 +494,7 @@ __global__ void reduce_kernel(Params p, int width) {
 
 // Une convolution. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase blockIdx.z / tiles d'une
 // transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py.
-template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A>
+template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, Acc A, bool Ahead = false>
 __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   static_assert(Kc % 16 == 0 && CT % 16 == 0, "canaux par 16");
   static_assert(I != In::kImage || Kc == 16, "l'image tient en une tranche de 16 canaux");
@@ -505,7 +537,7 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
     }
     const int t0 = u0 > q * kTaps ? u0 - q * kTaps : 0;
     const int t1 = u1 - q * kTaps < kTaps ? u1 - q * kTaps : kTaps;
-    accumulate<Kc, CT, KH, S, Rows, A>(acc, s, w, q, kcs, t0, t1, warp, lane);
+    accumulate<Kc, CT, KH, S, Rows, A, Ahead>(acc, s, w, q, kcs, t0, t1, warp, lane);
   }
   if (p.ksplit > 1) {
     spill<CT, Rows, A>(acc, p, ty0, tx0, z, kz, warp, lane);

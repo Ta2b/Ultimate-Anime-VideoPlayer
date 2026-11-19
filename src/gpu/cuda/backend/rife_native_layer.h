@@ -95,7 +95,7 @@ struct Layer {
 
 // La forme cfg pour cette couche : lancement, grille, mémoire partagée ; faux si aucun noyau ne la fait.
 inline bool shape(Layer& layer, const Config& cfg) {
-  const Launch launch = pick_for(layer.sums, layer.kind, cfg.kc, cfg.ct, cfg.rows);
+  const Launch launch = pick_for(layer.sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
   if (launch == nullptr || layer.cin % cfg.kc != 0 || layer.cout % cfg.ct != 0) return false;
   layer.cfg = cfg;
   layer.launch = launch;
