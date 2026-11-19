@@ -338,12 +338,12 @@ void PlaceboScreen::Impl::ready_grade(const RingFrame* frame) {
   publish_source_grade(target_color);
 }
 
-// Le grade avant le warp suit l'écran : sur une sortie HDR10 gradée, sans netteté ni Anime4K (qui passent
-// avant le grade, sur l'image agrandie par l'affichage).
+// Le grade avant le warp suit l'écran, toujours là où il s'applique : sur une sortie HDR10 gradée, sans
+// netteté ni Anime4K (qui passent avant le grade, sur l'image agrandie par l'affichage).
 void PlaceboScreen::Impl::publish_source_grade(const pl_color_space& target) {
   SourceGradeState state;
   const bool pq = target.transfer == PL_COLOR_TRC_PQ;
-  if (grade_before_warp && grade && pq && graded(target) && sharpness == 0 && !anime4k) {
+  if (grade && pq && graded(target) && sharpness == 0 && !anime4k) {
     state.params = grade->params();
     state.looks = grade->shared_looks();
     state.kwin = kwin_applied;

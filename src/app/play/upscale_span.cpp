@@ -223,6 +223,13 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   // Sur la voie de SPAN, au milieu du travail de la paire : la voie de l'appelant reprend après.
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Upscale);
+  if (setup_.engine == nullptr) {  // copies gradées (graded_copies_) : la source copiée, puis gradée
+    auto ok = setup_.backend->kernels()->resample(rgb_[current_]->tensor(), kernels::Filter::Area,
+                                                  spanned(current_));
+    if (ok) ok = grade_spanned(span_of_[current_]);
+    use_lane(back);
+    return ok;
+  }
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
   const bool tiled = send_tiles(reuse_, *setup_.engine, &spanned(current_ ^ 1U));

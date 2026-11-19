@@ -410,18 +410,6 @@ struct PlaySettings {
   // Limiteur de flashs (P3.51) : une suite de flashs rapides (UIT-R BT.1702) plafonne le grade HDR vers
   // 250 nits pendant une seconde. Coupé, les flashs gardent toute leur lumière.
   bool flash_guard = true;
-  // Le look en une table (render/look_table.h) : la pile de LUT évaluée sur le GPU dans une table de 129³
-  // points, lue d'une seule lecture par pixel au lieu de vingt. Pas au bit près (quelques codes PQ au pire),
-  // mais rien de visible : 52 à 53 dB face à la pile LUT par LUT, et le grade passe de 8,5 à 1,9 ms par image
-  // en 4K sur une 4070 Ti. Allumé par défaut ; en direct, l'export la suit. Clé look_one_table
-  // de play.toml : l'ancienne clé look_table (essai éteint, écrit tel quel par la rc.12 et la rc.13) est
-  // ignorée.
-  bool look_table = true;
-  // Le grade avant le warp (app/play/source_grade.h) : avec l'interpolation après SPAN, chaque image source
-  // est gradée une fois, et le warp en tire les images intermédiaires déjà gradées, au lieu d'un grade par
-  // image affichée (huit fois moins à RIFE ×8). Pas au bit près (le grade d'un mélange devient le mélange des
-  // grades) : éteint par défaut, à juger à l'œil. Sortie HDR10 seulement ; en direct.
-  bool grade_before_warp = false;
   // Peau des visages (docs/hdr-anime.md) : la pré-analyse cherche les visages (cascade lbpcascade_animeface)
   // et le grade resserre sa plage de peau sur leurs teintes, pour rendre leur lumière aux lampes chaudes.
   // Éteinte par défaut, à juger à l'œil ; prise à la vidéo suivante (l'analyse des plans recommence).
