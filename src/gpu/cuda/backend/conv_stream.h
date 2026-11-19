@@ -12,6 +12,14 @@
 #include <algorithm>
 #include <vector>
 
+// Les fonctions du calendrier servent aussi dans le noyau : __host__ __device__ sous nvcc, sans compter sur
+// --expt-relaxed-constexpr, que toutes les cibles ne passent pas.
+#if defined(__CUDACC__)
+#define KIRARI_STREAM_HD __host__ __device__
+#else
+#define KIRARI_STREAM_HD
+#endif
+
 namespace kirari::gpu::cuda::conv_stream {
 
 inline constexpr int kWarps = 4;       // warps d'un bloc, une ligne de sortie chacun par rangée
@@ -20,26 +28,26 @@ inline constexpr int kCols = kTW + 2;  // colonnes d'une ligne de l'anneau, le b
 
 // Lignes de sortie d'une bande pour rows lignes par warp ; lignes de l'anneau : la fenêtre (th + 2) et les
 // nouvelles lignes de la bande suivante (th).
-constexpr int band_rows(int rows) {
+KIRARI_STREAM_HD constexpr int band_rows(int rows) {
   return kWarps * rows;
 }
-constexpr int ring_rows(int th) {
+KIRARI_STREAM_HD constexpr int ring_rows(int th) {
   return 2 * th + 2;
 }
 
 // L'emplacement de la ligne row de la fenêtre de la bande band (row 0 : la ligne au-dessus de la bande, row
 // th + 1 : celle au-dessous) ; la ligne row de la bande band + 1 est la ligne row + th de la bande band.
-constexpr int window_slot(int band, int row, int th) {
+KIRARI_STREAM_HD constexpr int window_slot(int band, int row, int th) {
   return (band * th + row) % ring_rows(th);
 }
 
 // Octets de mémoire partagée de l'anneau, pour une tranche de kc canaux au pas kc + 8 (celui des noyaux du
 // RIFE natif : ldmatrix sans conflit de banques).
-constexpr int smem_bytes(int kc, int rows) {
+KIRARI_STREAM_HD constexpr int smem_bytes(int kc, int rows) {
   return ring_rows(band_rows(rows)) * kCols * (kc + 8) * 2;
 }
 // La sortie d'une ligne (kTW pixels de ct canaux, au pas ct + 8) tient dans un emplacement.
-constexpr bool stages_in_slot(int kc, int ct) {
+KIRARI_STREAM_HD constexpr bool stages_in_slot(int kc, int ct) {
   return kTW * (ct + 8) <= kCols * (kc + 8);
 }
 
@@ -49,13 +57,14 @@ struct Strip {
   int first = 0;
   int count = 0;
 };
-constexpr Strip strip_of(int tiles, int strips, int by) {
+KIRARI_STREAM_HD constexpr Strip strip_of(int tiles, int strips, int by) {
   const int per = (tiles + strips - 1) / strips;
   const int first = by * per;
-  return {.first = first, .count = std::max(0, std::min(per, tiles - first))};
+  const int left = tiles - first;  // sans std::min ni std::max, qui ne sont pas __device__
+  return {.first = first, .count = left <= 0 ? 0 : (per < left ? per : left)};
 }
 // Les colonnes de blocs (gridDim.y) pour bands bandes au plus par bloc.
-constexpr int strips_for(int tiles, int bands) {
+KIRARI_STREAM_HD constexpr int strips_for(int tiles, int bands) {
   return (tiles + bands - 1) / bands;
 }
 
