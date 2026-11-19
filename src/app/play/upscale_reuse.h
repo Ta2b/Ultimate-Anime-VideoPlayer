@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "app/play/upscale_tiles.h"
 #include "gpu/backend.h"
@@ -41,6 +42,12 @@ namespace kirari::app::play {
 // L'écart entre l'ancre et l'image arrivée (gpu::PairScores sur les images de la mesure de la paire).
 struct AnchorGap {
   std::uint32_t worst_block = 0;  // pire bloc 16 × 16, en 1/256 de niveau 8 bits (kernels::is_held)
+  // L'écart de chaque bloc (gpu::PairScores::blocks), à la géométrie de la mesure de la paire ; vide si le
+  // backend ne le relit pas.
+  std::vector<std::uint32_t> blocks;
+  std::uint32_t blocks_x = 0;
+  float side_px = 0.0F;
+  PairBlocks view() const { return PairBlocks{.deviation = blocks, .cols = blocks_x, .side_px = side_px}; }
 };
 
 // Ce que l'étage sait de l'image arrivée.

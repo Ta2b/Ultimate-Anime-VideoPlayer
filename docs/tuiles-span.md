@@ -51,7 +51,13 @@ reprise entière aurait passé le seuil d'un bloc d'une sortie faite par tuiles 
   l'image entière.
 - **Halo** : le champ réceptif calculé sur les couches lancées, un pixel de demi-résolution par 3×3 sur le plus
   long chemin (conv_1, trois par bloc, to_pixel) : 26 pour un SPAN à huit blocs, soit une colonne et quatre
-  lignes de tuiles.
+  lignes de tuiles. C'est la région que le moteur calcule autour du cœur.
+- **Portée réelle** (`SpanTiles::kCoreReachPx`, soir du 19 novembre) : ce qu'une entrée changée fait à la sortie
+  s'éteint bien avant le champ théorique. SPAN Équilibre (b8f64) sur processeur, un carré de 32 pixels de
+  travail changé de 20 à 70 niveaux sur trois images de Re:Zero : la sortie bouge encore de 0,1 à 0,6 niveau
+  à 16 pixels, de 0,01 à 0,1 à 20, et de moins de 0,003 à 32 ; rien du tout à 26 pour b5f48. Le cœur se
+  dilate donc de 32 pixels de travail (une colonne, deux lignes) et non plus de la portée du réseau (quatre
+  lignes) : une tuile isolée coûte 5 × 13 tuiles de région au lieu de 5 × 17.
 - **Exactitude** : toutes les couches se calculent sur le cœur dilaté du halo. Hors de cette région, les
   tampons intermédiaires tiennent n'importe quoi, mais une valeur fausse n'avance que d'un rayon par couche :
   elle n'atteint jamais le cœur. Seul le cœur est écrit (`to_pixel` masqué). Le calcul des tuiles est donc
@@ -62,10 +68,14 @@ reprise entière aurait passé le seuil d'un bloc d'une sortie faite par tuiles 
   entre la précédente et l'image (relu avec le pire bloc par `pair_diff`, sur la copie de RIFE quand elle
   existe). Par bloc, la somme des écarts des paires majore l'écart à l'entrée d'avant (l'écart moyen d'un bloc
   est une norme : inégalité triangulaire ; chaque paire compte 1/256 de niveau de plus, ce que la mesure
-  tronque). Un bloc au-delà du seuil fait recalculer ses tuiles ; le **cœur**
-  recalculé est ce qui a changé dilaté de la portée (une sortie voit l'entrée jusqu'à 26 pixels de
-  demi-résolution autour d'elle), plus le rayon du débandage (16 pixels de travail) quand l'entrée est
-  débandée ; la **région** calculée est le cœur dilaté encore de la portée.
+  tronque). La somme se resserre par l'écart à l'ancre du lot A (la dernière image calculée), mesuré bloc par
+  bloc (`AnchorGap::blocks`) : écart à l'ancre plus la majoration du bloc à l'ancre. Juste après une image
+  entière, c'est la règle du lot A ; dans une série de reprises, du grain que l'ancre voit au même niveau ne
+  s'additionne plus. Un bloc au-delà du seuil fait recalculer ses tuiles ; le **cœur** recalculé est ce qui
+  a changé dilaté de la portée réelle (plus haut), plus le rayon du débandage (16 pixels de travail) quand
+  l'entrée est débandée ; la **région** calculée est le cœur dilaté encore du halo. Toute sortie dont le
+  champ tient dans la région est exacte : elle s'écrit aussi (l'érosion de la région), sans rien calculer de
+  plus, et repart de cette image (deux cœurs voisins, la colonne du bord).
 - **Remise à zéro** : la somme d'un bloc ne repart de zéro que quand toute sortie qui le voit est recalculée,
   ses tuiles et tout ce qui est à leur portée (l'érosion du cœur). Recalculer ses seules tuiles ne suffit
   pas : une voisine reprise, à quatre lignes, garde la sortie de son entrée d'avant. Une tuile reprise 24 fois
@@ -200,6 +210,51 @@ Une tuile reprise est la même d'une image à l'autre : les tuiles égalent le c
 moins. Le grain de 4:53, qui pousse le pire bloc à 1,17, ne fait pas monter le scintillement (0,469 contre
 0,516) : la règle reste telle quelle.
 
+## Mesure du PC (19 novembre) et règle revue
+
+Au PC (#962, Re:Zero 17:10, 60 s, SPAN natif Équilibre et RIFE 4.25) : pire bloc 0,75 niveau, écart moyen
+0,125 au plus (justesse tenue, tolérance du lot A) ; 195 images par tuiles sur 1229 calculées (15,9 %, 21 %
+de région) ; 1031 images entières pour région trop large (82 % des tuiles en cause, 99 % de région, blocs
+99 %) ; moteur SPAN 11 456 ms contre 12 228 sans tuiles (−6,3 %). Les tuiles arrêtent 71 séries du lot A
+(reprise entière 14,9 % au lieu de 19,8 %).
+
+Ce que disent ces chiffres :
+- une image par tuiles coûte sa région, plus environ 6 % d'une image entière (534 ms pour 195 images à 21 %
+  de région, corps à 10,26 ms l'image entière) ;
+- les 70 images que le lot A perd passent par tuiles, pas entières (1034 images entières contre 1159 sans
+  tuiles) : environ 190 ms, 1,6 % du temps de SPAN ;
+- la région trop large ne vient pas de la règle : sur une seule paire, 82 % des tuiles ont un bloc au-delà
+  du seuil (panoramiques, mouvement d'ensemble), et la région dilatée en couvre 99 %. Aucun plafond n'y fait
+  gagner. Sur les extraits du rejeu, une paire qui n'est pas tenue met en cause 25 à 93 % des tuiles en
+  médiane, et un seuil de 1 niveau au lieu de 0,70 n'y change presque rien (93 à 90 % sur panoramique, 25 à
+  24 % sur panoramique3) : ce sont de vrais changements.
+
+La règle revue garde ce qui gagne sans rien relâcher : la portée réelle (deux lignes au lieu de quatre),
+l'écart à l'ancre bloc par bloc (moins d'arrêts du lot A) et les sorties exactes de la région écrites (plus
+haut). Rejeu, coût de SPAN (corps, plus 6 % d'une image entière par image par tuiles ; `tuiles_rejeu` l'écrit,
+`--sans-tuiles` donne le lot A seul) :
+
+| extrait | lot A seul | tuiles (#962) | règle revue | arrêts du lot A (#962, revue) |
+|---|---|---|---|---|
+| Re:Zero, panoramique3 | 86,8 % | 55,0 % | 53,5 % | 8, 5 |
+| Re:Zero, panoramique | 57,2 % | 45,6 % | 44,9 % | 10, 6 |
+| Re:Zero, panoramique2 | 69,2 % | 58,2 % | 57,9 % | 4, 3 |
+| Re:Zero, panoramique4 | 69,8 % | 58,0 % | 57,4 % | 5, 3 |
+| Re:Zero, aura | 77,4 % | 68,4 % | 67,1 % | 6, 5 |
+| Spy×Family 13:16, panoramique6 | 95,0 % | 77,3 % | 76,3 % | 2, 3 |
+| Spy×Family 4:53, panoramique5 | 99,4 % | 87,8 % | 86,9 % | 0, 0 |
+| moyenne des sept | 79,3 % | 64,3 % | 63,4 % | 35, 25 |
+
+Essayés et laissés : un plafond de région à 0,85 ou 0,90 (plus d'images par tuiles, mais plus d'arrêts du lot
+A : 63,4 % dans les deux cas) ; la reprise entière sans garde des blocs (63,9 %, mais une sortie reprise y
+peut s'écarter de deux fois le seuil). Le gain des tuiles dépend du contenu : sur un plan à caméra tenue il
+est grand (panoramique3, 87 % à 54 %), sur un panoramique nul.
+
+Contrôle avec le vrai SPAN Équilibre (b8f64) sur processeur, `tuiles_controle.py --modele` (aura, 159 images) :
+pire bloc des images par tuiles 0,96 niveau avant comme après (médiane 0,59 avant, 0,73 après, sur 26 et 31
+images), écart moyen 0,24 au plus ; reprises entières du lot A 0,77 ; scintillement tenu sur les quatre plans
+(0,391 contre 0,390 au pire).
+
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
 La stabilité est tenue sur processeur (plus haut). Au PC, à la séance de test commune de la fin (consigne de
@@ -217,7 +272,8 @@ l'extrait unique de 60 s (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers
 2. **Temps** (le PC seul) : `kirari --debug --mute --seconds=60 --stats=tuiles.tsv rezero-s4e18-1710.mkv`, puis
    la même avec `--no-span-tiles --stats=sans-tuiles.tsv`. Le temps GPU de SPAN se lit sur la ligne « profil
    GPU : moteur … » du journal (médiane et total ; `*.gpu.tsv` à côté), avec « SPAN repris » et « SPAN par
-   tuiles ». Le dialogue de Spy×Family 13 BD à 17:06 est un panoramique : les tuiles n'y gagnent rien.
+   tuiles ». Le dialogue de Spy×Family 13 BD à 17:06 est un panoramique : les tuiles n'y gagnent rien. Sur
+   #962 : −6,3 % (plus haut, « Mesure du PC ») ; la règle revue gagne un peu plus au rejeu (64,3 à 63,4 %).
 
 Une ligne ratée : ce fil corrige la règle, ou coupe les tuiles par défaut.
 
@@ -240,10 +296,12 @@ et l'image entière due sous la reprise entière, la troncature de la mesure, la
 sans mesure et la mesure de chaque paire à ×1. Restent à reprendre avec le prochain paquet TensorRT (un
 changement de `src/gpu` ou de `src/kernels` le demande) : les commentaires de `PairScores::blocks`
 (`gpu/kernel_ops.h`), de `tensorrt_rife.cpp` et de `kernels/spec/scene_flow.h`, qui disent encore que les
-tuiles lisent la carte.
+tuiles lisent la carte, et le nom du profil GPU du SPAN natif, « moteur FP8 … » alors que le FP16 natif passe
+par le même moteur (`tensorrt_span_fp8.cpp`, `stage_named`).
 
 Le test `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques, la décision sur des écarts
 de blocs synthétiques (remise à zéro stricte comprise), la reprise entière gardée au seuil de chaque bloc et
 à l'âge, et les raisons du bilan ; `source_grade_stage_test.cpp`, l'étage sous le grade avant le warp (tuiles
-dès la troisième source, toujours depuis la copie d'avant le grade) et en SPAN seul. Reste au PC : la justesse
-(`--span-tiles-check`) et les temps (plus haut, « Porte »).
+dès la troisième source, toujours depuis la copie d'avant le grade) et en SPAN seul, puis (soir du 19 novembre) la
+portée réelle, les sorties exactes de la région et l'écart à l'ancre bloc par bloc. Reste au PC : la justesse
+(`--span-tiles-check`) et les temps de la règle revue (plus haut, « Porte »).
