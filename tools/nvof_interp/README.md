@@ -36,6 +36,25 @@ retiré par le commit 97feba0, `nvof_session.cpp`) devant le moteur, dans le bac
 5. **Export.** `export_onnx.py runs/flowjanai/best.pt --out modeles/flowjanai.onnx` : FP16, vérifié
    contre le modèle PyTorch à deux tailles.
 
+## Banc de la porte 2.1 (hors lecteur)
+
+Le flux NVOF sépare-t-il le décor des personnages assez bien pour un rendu par calques ?
+`tools/bench/qualite/nvof_scene.py` passe des extraits typés dans `nvof_dump` (grilles 4, 2, 1 en 540p,
+720p et 1080p, carte de coût, flux CUDA propres à la session) et rend le temps GPU par appel, le gain
+du recalage, le coût sur aplats, traits et grain, l'ajustement de la caméra, les tuiles décor contre
+dessin avec des vues PNG, et le verdict de la porte. Les en-têtes de NVIDIA sont dans
+`third_party/nvidia-optical-flow` : rien à télécharger.
+
+```sh
+cmake -S tools/nvof_interp/nvof_dump -B build/nvof_dump -DCMAKE_BUILD_TYPE=Release
+cmake --build build/nvof_dump
+python3 -I tools/bench/qualite/nvof_scene.py --outil build/nvof_dump/nvof_dump --sortie ~/nvof-banc \
+    --extrait panoramique=pan.mkv@12:30 --extrait dialogue=dlg.mkv@3:10 --extrait sakuga=sak.mkv@0:41 \
+    --extrait fondu=... --extrait flash=... --extrait zoom=... --extrait parallaxe=... --extrait pluie=...
+```
+
+Un seul banc à la fois sur la carte (rien d'autre sur le GPU), sur la 4070 Ti puis la 4050.
+
 ## Ce qui reste ouvert
 
 - Les flux sont calculés sans indices temporels (paires indépendantes) ; le lecteur devra faire de

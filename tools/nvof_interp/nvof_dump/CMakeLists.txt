@@ -1,12 +1,13 @@
-# nvof_dump : les flux NVOF (grille 4, sens avant et arrière) de paires de lumas, pour
-# l'entraînement de FlowJaNai (precompute_nvof.py). Hors du lecteur ; il faut les en-têtes de
-# l'Optical Flow SDK de NVIDIA (sa licence s'accepte au téléchargement) et le pilote NVIDIA.
+# nvof_dump : les flux NVOF (grille 1, 2 ou 4, coût, temps GPU) de paires de lumas, pour
+# l'entraînement de FlowJaNai (precompute_nvof.py) et le banc de la porte 2.1 (nvof_scene.py). Hors du
+# lecteur ; les en-têtes BSD de NVIDIA sont dans third_party/nvidia-optical-flow, la bibliothèque
+# vient du pilote. Il faut le kit CUDA (cuda.h et libcuda).
 #
-#   cmake -S tools/nvof_interp/nvof_dump -B build/nvof_dump -DNVOF_SDK_INCLUDE=<sdk>/NvOFInterface
+#   cmake -S tools/nvof_interp/nvof_dump -B build/nvof_dump -DCMAKE_BUILD_TYPE=Release
 #   cmake --build build/nvof_dump
 cmake_minimum_required(VERSION 3.24)
 project(nvof_dump LANGUAGES CXX)
-set(NVOF_SDK_INCLUDE "" CACHE PATH "Dossier de nvOpticalFlowCuda.h (Optical Flow SDK, NvOFInterface)")
+set(NVOF_SDK_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/nvidia-optical-flow" CACHE PATH "Dossier de nvOpticalFlowCuda.h")
 find_package(CUDAToolkit REQUIRED)
 add_executable(nvof_dump nvof_dump.cpp)
 target_compile_features(nvof_dump PRIVATE cxx_std_20)
