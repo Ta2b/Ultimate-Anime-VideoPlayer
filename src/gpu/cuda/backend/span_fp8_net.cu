@@ -54,7 +54,7 @@ struct Narrowed {
 }  // namespace
 
 std::unique_ptr<SpanFp8Body> make_span_fp8_body64(int height, int width) {
-  return std::make_unique<Body<64, Alg::kOptimized, false>>(height, width);
+  return std::make_unique<Body<64, Alg::kOptimized>>(height, width);
 }
 
 struct SpanFp8Net::Impl {

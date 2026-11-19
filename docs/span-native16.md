@@ -54,8 +54,10 @@ f32. Les convolutions des blocs restent CUTLASS FP8, déjà au plafond de la mé
 (`span-fp8-cutlass.md`, balayage des tuiles). Le paquet et son reçu ne changent pas : les bords sont en FP16
 des deux côtés, seuls l'ordre des sommes et l'arrondi E4M3 de x0 (depuis le FP16 au lieu du f32) diffèrent.
 
-Les sommes f16 sont bornées au plus grand fini avant l'écriture (`to_half2`) : une somme débordée ne sort
-pas en infini.
+Une somme f16 débordée (infinie, ou NaN d'un débordement des deux signes) est bornée comme dans les noyaux
+CUTLASS du FP8 : ±65504, NaN à 0 (`sums`). Aux bords du FP8, elle est aussi notée dans le mot de débordement
+du paquet (`Params::overflow`, le même que `KP::overflow`) : la politique acc16 repasse en f32 comme avec les
+bords CUTLASS.
 
 ## Mesurer
 
@@ -71,7 +73,8 @@ flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linu
 Il construit le moteur TensorRT FP16 de chaque modèle (et le même en E/S HWC8 : l'essai C0), puis donne en
 ABAB 3 tours la médiane de TensorRT et des noyaux natifs (graphe CUDA tous deux), les natifs en f32, et l'écart
 de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non finies). Dans le
-lecteur : `kirari play --span-native --stats` au cran Équilibre.
+lecteur : `kirari play --span-native --stats` ; le journal dit « SPAN FP16 natif chargé » au cran Équilibre,
+« SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran Performance.
 
 ## Décision
 

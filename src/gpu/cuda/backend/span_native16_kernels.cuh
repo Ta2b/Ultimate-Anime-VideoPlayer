@@ -54,6 +54,9 @@ struct Params {
   // Sortie E4M3 de plus (NHWC, pas Cout octets), à l'échelle inv_s8 : l'entrée du premier bloc FP8.
   std::uint8_t* out8 = nullptr;
   float inv_s8 = 1.F;
+  // Sommes f16 seulement : le mot de débordement du FP8 (KP::overflow, mémoire de l'hôte projetée), mis à 1
+  // quand une somme a débordé ; nul : rien n'est noté (la somme est bornée de même, sums).
+  int* overflow = nullptr;
   RingSurface surface{};  // kPixel : emplacement de l'anneau, object 0 : aucun
   int surf_w = 0, surf_h = 0;
   // Tuiles qui bougent (kernels/spec/span_tiles.h) : un bit par tuile kTH × kTW de la grille du lancement,
@@ -126,10 +129,28 @@ struct Frag<false> {
   __device__ __forceinline__ float2 pair(int h) const { return make_float2(r[2 * h], r[2 * h + 1]); }
 };
 
-// Deux valeurs en FP16, bornées au plus grand fini : une somme f16 débordée ne sort pas en infini.
+// Deux valeurs en FP16, bornées au plus grand fini : une somme bornée (sums) plus son biais, ou la porte, ne
+// sort pas en infini.
 __device__ __forceinline__ __half2 to_half2(float lo, float hi) {
   constexpr float kMax = 65504.F;
   return __floats2half2_rn(fmaxf(fminf(lo, kMax), -kMax), fmaxf(fminf(hi, kMax), -kMax));
+}
+
+// Deux sommes de l'accumulateur (ligne g ou g + 8, pair). En f16, une somme débordée, infinie ou NaN (un
+// débordement des deux signes), est bornée comme acc_value du FP8 : ±65504, NaN à 0 ; hit le note.
+template <bool Acc16>
+__device__ __forceinline__ float2 sums(const Frag<Acc16>& frag, int h, bool& hit) {
+  float2 s = frag.pair(h);
+  if constexpr (Acc16) {
+    if (!isfinite(s.x) || !isfinite(s.y)) {
+      hit = true;
+      s.x = isnan(s.x) ? 0.F : fmaxf(fminf(s.x, 65504.F), -65504.F);
+      s.y = isnan(s.y) ? 0.F : fmaxf(fminf(s.y, 65504.F), -65504.F);
+    }
+  } else {
+    static_cast<void>(hit);
+  }
+  return s;
 }
 
 __device__ __forceinline__ std::uint32_t pack_half2(float lo, float hi) {
@@ -296,7 +317,7 @@ __device__ __forceinline__ void store_pixel(const __half* o, const Params& p, in
 // boucle des fragments, et la variante f32 débordait).
 template <int C, bool Acc16>
 __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __half* o, std::uint32_t w1s,
-                                     const Params& p, int warp, int lane) {
+                                     const Params& p, int warp, int lane, bool& hit) {
   constexpr int kKC = C / 16, kNP = C / 16, kLdo = C + 8;
   const int g = lane >> 2, t = lane & 3;
 #pragma unroll
@@ -305,7 +326,7 @@ __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __hal
     // en f32).
     const auto value = [&](int nt, int h) {
       const float2 b = __ldg(reinterpret_cast<const float2*>(p.bias + nt * 8 + 2 * t));
-      const float2 s = acc[f][nt].pair(h);
+      const float2 s = sums(acc[f][nt], h, hit);
       return make_float2(s.x + b.x, s.y + b.y);
     };
     std::uint32_t a[kKC][4];
@@ -339,7 +360,7 @@ __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __hal
         for (int h = 0; h < 2; ++h) {
           __half2* at = reinterpret_cast<__half2*>(o + (q0 + 8 * h) * kLdo + ch);
           const float2 x = __half22float2(*at);
-          const float2 dd = d[j].pair(h), v = value(nt, h);
+          const float2 dd = sums(d[j], h, hit), v = value(nt, h);
           *at = to_half2((v.x + x.x) * tanh_approx(dd.x + b1.x), (v.y + x.y) * tanh_approx(dd.y + b1.y));
         }
       }
@@ -350,7 +371,7 @@ __device__ __forceinline__ void gate(const Frag<Acc16> (&acc)[kMF][C / 8], __hal
 // Biais (+ Relu) de acc vers o (pas Cout + 8).
 template <int Cout, bool Relu, bool Acc16>
 __device__ __forceinline__ void plain(const Frag<Acc16> (&acc)[kMF][Cout / 8], __half* o, const float* bias,
-                                      int warp, int lane) {
+                                      int warp, int lane, bool& hit) {
   constexpr int kNT = Cout / 8, kLdo = Cout + 8;
   const int g = lane >> 2, t = lane & 3;
 #pragma unroll
@@ -362,7 +383,7 @@ __device__ __forceinline__ void plain(const Frag<Acc16> (&acc)[kMF][Cout / 8], _
       const float2 b = __ldg(reinterpret_cast<const float2*>(bias + ch));
 #pragma unroll
       for (int h = 0; h < 2; ++h) {
-        const float2 s = acc[f][nt].pair(h);
+        const float2 s = sums(acc[f][nt], h, hit);
         float x0 = s.x + b.x, x1 = s.y + b.y;
         if constexpr (Relu) {
           x0 = fmaxf(x0, 0.F);
@@ -409,7 +430,8 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
     __syncthreads();
     accumulate<Cin, Cout, Taps, Acc16>(acc, s, p.w, src * Taps * (Cin / 16), warp, lane);
   }
-  __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
+  __syncthreads();   // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
+  bool hit = false;  // une somme f16 débordée (sums)
 
   if constexpr (M == Mode::kGate) {
     // x de la tuile au pas Cout + 8, puis la 1×1 rangée (Cout² demi-flottants) juste après.
@@ -419,10 +441,13 @@ __global__ void __launch_bounds__(kThreads) conv_kernel(Params p) {
       cp_async16(w1s + static_cast<std::uint32_t>(i * 16), p.w1 + i, true);
     cp_async_wait_all();
     __syncthreads();
-    gate<Cout, Acc16>(acc, s, w1s, p, warp, lane);
+    gate<Cout, Acc16>(acc, s, w1s, p, warp, lane, hit);
   } else {
-    plain<Cout, Relu, Acc16>(acc, s, p.bias, warp, lane);
+    plain<Cout, Relu, Acc16>(acc, s, p.bias, warp, lane, hit);
   }
+  // Rare : plusieurs fils écrivent la même valeur, sans atomique (note_overflow du FP8).
+  if constexpr (Acc16)
+    if (hit && p.overflow != nullptr) *reinterpret_cast<volatile int*>(p.overflow) = 1;
   __syncthreads();
   if constexpr (M == Mode::kPixel)
     store_pixel(s, p, ty0, tx0);
