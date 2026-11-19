@@ -8,7 +8,10 @@
 //
 // Un bloc de 4 warps calcule Rows lignes par warp sur 32 colonnes. La fin passe par la mémoire partagée :
 // biais ajouté, arrondi FP16, puis à l'écriture en lignes entières l'addition résiduelle et l'activation
-// (pente négative par canal : LeakyRelu, PRelu, Relu).
+// (pente négative par canal : LeakyRelu, PRelu, Relu). En pas 2, la tuile d'entrée est rangée colonnes paires
+// puis impaires : les 16 lignes d'un fragment A restent des pixels voisins en mémoire partagée, sans conflit
+// de banques. Quand la grille ne remplit pas la carte (les blocs grossiers), K est découpé (ksplit) : chaque
+// bloc somme une part des prises × tranches en f32 dans partial, et reduce_kernel finit la couche.
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
@@ -41,8 +44,10 @@ struct Params {
   const float* slope = nullptr;  // nul : pas d'activation
   const __half* skip = nullptr;  // résiduel : NHWC au pas skip_ld, même grille que la sortie
   int skip_ld = 0;
-  int cin = 0;    // multiple de Kc
-  int tiles = 1;  // tuiles de sortie par phase
+  int cin = 0;               // multiple de Kc
+  int tiles = 1;             // tuiles de sortie par phase
+  int ksplit = 1;            // parts de K (blockIdx.z = paquet · ksplit + part)
+  float* partial = nullptr;  // ksplit > 1 : [ksplit][oh · ow][canaux de la grille z], f32
 };
 
 // Hauteur et largeur de la tuile d'entrée (halo compris), et octets de mémoire partagée.
@@ -51,7 +56,18 @@ struct Geometry {
   static constexpr int kTH = kWarps * Rows;
   static constexpr int kIR = (kTH - 1) * S + KH;
   static constexpr int kIC = (kTW - 1) * S + KH;
+  static constexpr int kEven = (kIC + 1) / 2;  // pas 2 : colonnes paires, puis impaires à partir d'ici
 };
+
+// La colonne en mémoire partagée de la colonne c de la tuile d'entrée.
+template <int S, int IC>
+__device__ __forceinline__ int smem_col(int c) {
+  if constexpr (S == 1) {
+    return c;
+  } else {
+    return (c & 1) != 0 ? (IC + 1) / 2 + (c >> 1) : c >> 1;
+  }
+}
 
 constexpr int smem_bytes(int kc, int ct, int kh, int s, int rows) {
   const int th = kWarps * rows;
@@ -146,26 +162,29 @@ __device__ __forceinline__ __half2 to_half2(float lo, float hi) {
 
 // La tranche [c0, c0 + Kc) de la tuile d'entrée en mémoire partagée, au pas Kc + 8 : kIR × kIC pixels dont
 // l'origine est (y0, x0) ; zéros hors de l'image.
-template <int Kc, int IR, int IC>
+template <int Kc, int S, int IR, int IC>
 __device__ __forceinline__ void load_nhwc(__half* s, const Params& p, int c0, int y0, int x0) {
   constexpr int kChunks = Kc / 8, kLds = Kc + 8;
   const std::uint32_t base = smem_u32(s);
   for (int i = static_cast<int>(threadIdx.x); i < IR * IC * kChunks; i += kThreads) {
     const int q = i / kChunks, c = i - q * kChunks;
-    const int y = y0 + q / IC, x = x0 + q % IC;
+    const int r = q / IC, col = q - r * IC;
+    const int y = y0 + r, x = x0 + col;
     const bool ok = y >= 0 && y < p.ih && x >= 0 && x < p.iw;
     const __half* from = ok ? p.in + (static_cast<long>(y) * p.iw + x) * p.in_ld + c0 + c * 8 : p.in;
-    cp_async16(base + static_cast<std::uint32_t>((q * kLds + c * 8) * 2), from, ok);
+    const int at = r * IC + smem_col<S, IC>(col);
+    cp_async16(base + static_cast<std::uint32_t>((at * kLds + c * 8) * 2), from, ok);
   }
 }
 
 // Les trois plans d'une image en 16 canaux (3 lus, 13 nuls), au pas 24.
-template <int IR, int IC>
+template <int S, int IR, int IC>
 __device__ __forceinline__ void load_image(__half* s, const Params& p, int y0, int x0) {
   constexpr int kLds = 16 + 8;
   const __half zero = __float2half(0.F);
   for (int q = static_cast<int>(threadIdx.x); q < IR * IC; q += kThreads) {
-    const int y = y0 + q / IC, x = x0 + q % IC;
+    const int r = q / IC, col = q - r * IC;
+    const int y = y0 + r, x = x0 + col;
     __half v[3] = {zero, zero, zero};
     if (y >= 0 && y < p.ih && x >= 0 && x < p.iw) {
       const long at = static_cast<long>(y) * p.iw + x;
@@ -174,38 +193,52 @@ __device__ __forceinline__ void load_image(__half* s, const Params& p, int y0, i
     }
     __half2 lo = __halves2half2(v[0], v[1]);
     __half2 hi = __halves2half2(v[2], zero);
-    uint4* to = reinterpret_cast<uint4*>(s + q * kLds);
+    uint4* to = reinterpret_cast<uint4*>(s + (r * IC + smem_col<S, IC>(col)) * kLds);
     to[0] =
         make_uint4(*reinterpret_cast<std::uint32_t*>(&lo), *reinterpret_cast<std::uint32_t*>(&hi), 0U, 0U);
     to[1] = make_uint4(0U, 0U, 0U, 0U);
   }
 }
 
-// Les sommes d'une tranche : taps × (Kc / 16) pas k, à partir de la tranche q des poids rangés.
+// Les sommes des prises [t0, t1) d'une tranche : (Kc / 16) pas k par prise, à partir de la tranche q des
+// poids rangés. Les fragments B du pas suivant se chargent pendant les mma du pas courant.
 // acc[f][nt] : fragment f (ligne f / 2 du warp, colonnes 16·(f % 2) à + 15), tuile n8 nt.
 template <int Kc, int CT, int KH, int S, int Rows, bool Acc16>
 __device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[Rows * 2][CT / 8], const __half* s,
-                                           const uint4* w, int q, int kcs, int warp, int lane) {
+                                           const uint4* w, int q, int kcs, int t0, int t1, int warp,
+                                           int lane) {
   using G = Geometry<KH, S, Rows>;
-  constexpr int kLds = Kc + 8, kSub = Kc / 16, kNP = CT / 16, kMF = Rows * 2, kTaps = KH * KH;
-  // ldmatrix.x4 : la lane l donne la ligne l % 16 du fragment (la colonne de sortie), demi-K l / 16.
+  constexpr int kLds = Kc + 8, kSub = Kc / 16, kNP = CT / 16, kMF = Rows * 2;
+  // ldmatrix.x4 : la lane l donne la ligne l % 16 du fragment (la colonne de sortie), demi-K l / 16. En pas
+  // 2, ces 16 colonnes sont voisines dans la moitié paire ou impaire de la tuile.
   const std::uint32_t base =
-      smem_u32(s) + static_cast<std::uint32_t>(((lane & 15) * S * kLds + (lane >> 4) * 8) * 2);
+      smem_u32(s) + static_cast<std::uint32_t>(((lane & 15) * kLds + (lane >> 4) * 8) * 2);
   const uint4* wl = w + lane;
+  const auto fetch = [&](uint4(&b)[kNP], int tap, int sub) {
+    const long ks = static_cast<long>(tap) * kcs + q * kSub + sub;
+#pragma unroll
+    for (int np = 0; np < kNP; ++np) b[np] = __ldg(wl + (ks * kNP + np) * 32);
+  };
+  uint4 b[kNP];
+  fetch(b, t0, 0);
 #pragma unroll 1
-  for (int tap = 0; tap < kTaps; ++tap) {
+  for (int tap = t0; tap < t1; ++tap) {
     const int dy = tap / KH, dx = tap - dy * KH;
+    const int col0 = S == 1 ? dx : ((dx & 1) != 0 ? G::kEven : 0) + (dx >> 1);
 #pragma unroll
     for (int sub = 0; sub < kSub; ++sub) {
-      const long ks = static_cast<long>(tap) * kcs + q * kSub + sub;
-      uint4 b[kNP];
+      uint4 next[kNP];
 #pragma unroll
-      for (int np = 0; np < kNP; ++np) b[np] = __ldg(wl + (ks * kNP + np) * 32);
+      for (int np = 0; np < kNP; ++np) next[np] = b[np];
+      if (sub + 1 < kSub)
+        fetch(next, tap, sub + 1);
+      else if (tap + 1 < t1)
+        fetch(next, tap + 1, 0);
       std::uint32_t a[kMF][4];
 #pragma unroll
       for (int f = 0; f < kMF; ++f) {
         const int row = (warp * Rows + (f >> 1)) * S + dy;
-        const int col = 16 * (f & 1) * S + dx;
+        const int col = 16 * (f & 1) + col0;
         ldmatrix4(a[f], base + static_cast<std::uint32_t>(((row * G::kIC + col) * kLds + sub * 16) * 2));
       }
 #pragma unroll
@@ -215,6 +248,8 @@ __device__ __forceinline__ void accumulate(Frag<Acc16> (&acc)[Rows * 2][CT / 8],
           acc[f][2 * np].mma(a[f], b[np].x, b[np].y);
           acc[f][2 * np + 1].mma(a[f], b[np].z, b[np].w);
         }
+#pragma unroll
+      for (int np = 0; np < kNP; ++np) b[np] = next[np];
     }
   }
 }
@@ -309,6 +344,65 @@ __device__ __forceinline__ void store(const __half* o, const Params& p, int ty0,
   }
 }
 
+// K découpé : les sommes partielles de ce bloc, en f32, au canal z · CT + n de la grille z, pour la part kz.
+template <int CT, int Rows, bool Acc16>
+__device__ __forceinline__ void spill(const Frag<Acc16> (&acc)[Rows * 2][CT / 8], const Params& p, int ty0,
+                                      int tx0, int z, int kz, int warp, int lane) {
+  const int g = lane >> 2, t = lane & 3;
+  const long pixels = static_cast<long>(p.oh) * p.ow;
+  const long width = static_cast<long>(gridDim.z) / p.ksplit * CT;
+  float* base = p.partial + kz * pixels * width + static_cast<long>(z) * CT + 2 * t;
+#pragma unroll
+  for (int f = 0; f < Rows * 2; ++f) {
+    const int y = ty0 + warp * Rows + (f >> 1);
+#pragma unroll
+    for (int h = 0; h < 2; ++h) {
+      const int x = tx0 + 16 * (f & 1) + g + 8 * h;
+      if (y >= p.oh || x >= p.ow) continue;
+      float* at = base + (static_cast<long>(y) * p.ow + x) * width;
+#pragma unroll
+      for (int nt = 0; nt < CT / 8; ++nt) *reinterpret_cast<float2*>(at + nt * 8) = acc[f][nt].pair(h);
+    }
+  }
+}
+
+// La fin d'une couche à K découpé : somme des parts, biais, arrondi FP16, puis comme store (résiduel et
+// activation, ou la phase d'une transposée). Un fil par pixel et par huit canaux de la grille z (width).
+template <Out O>
+__global__ void reduce_kernel(Params p, int width) {
+  const long pixels = static_cast<long>(p.oh) * p.ow;
+  const int groups = width / 8;
+  const long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (i >= pixels * groups) return;
+  const long pixel = i / groups;
+  const int ch = static_cast<int>(i - pixel * groups) * 8;
+  const int per_phase = O == Out::kPhase ? width / 4 : width;
+  const int phase = ch / per_phase, n = ch - phase * per_phase;
+  if (n >= p.out_ch) return;
+  float sum[8] = {};
+  for (int k = 0; k < p.ksplit; ++k) {
+    const auto* from = reinterpret_cast<const float4*>(p.partial + (k * pixels + pixel) * width + ch);
+    const float4 lo = from[0], hi = from[1];
+    sum[0] += lo.x, sum[1] += lo.y, sum[2] += lo.z, sum[3] += lo.w;
+    sum[4] += hi.x, sum[5] += hi.y, sum[6] += hi.z, sum[7] += hi.w;
+  }
+  std::uint32_t w[4];
+#pragma unroll
+  for (int j = 0; j < 4; ++j) {
+    const __half2 h = to_half2(sum[2 * j] + p.bias[ch + 2 * j], sum[2 * j + 1] + p.bias[ch + 2 * j + 1]);
+    w[j] = *reinterpret_cast<const std::uint32_t*>(&h);
+  }
+  uint4 v = make_uint4(w[0], w[1], w[2], w[3]);
+  long at = pixel;
+  if constexpr (O == Out::kPhase) {
+    const long y = pixel / p.ow, x = pixel - y * p.ow;
+    at = (2 * y + (phase >> 1)) * (2L * p.ow) + 2 * x + (phase & 1);
+  } else {
+    v = finish8(v, p, pixel, n);
+  }
+  *reinterpret_cast<uint4*>(p.out + at * p.out_ld + n) = v;
+}
+
 // Une convolution. KH = 3 : 3 × 3 de bord 1, pas S. KH = 2 (S = 1) : la phase blockIdx.z / tiles d'une
 // transposée 4 × 4 de pas 2, dont les deux prises par axe sont aux décalages py - 1 et py.
 template <int Kc, int CT, int KH, int S, int Rows, In I, Out O, bool Acc16>
@@ -321,7 +415,7 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int ty0 = static_cast<int>(blockIdx.y) * G::kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
-  const int z = static_cast<int>(blockIdx.z);
+  const int z = static_cast<int>(blockIdx.z) / p.ksplit, kz = static_cast<int>(blockIdx.z) - z * p.ksplit;
   const int phase = z / p.tiles, tile = z - phase * p.tiles;
   const int origin_y = KH == 2 ? (phase >> 1) - 1 : -1;
   const int origin_x = KH == 2 ? (phase & 1) - 1 : -1;
@@ -334,18 +428,27 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
 #pragma unroll
     for (int nt = 0; nt < CT / 8; ++nt) acc[f][nt].clear();
 
-  const int chunks = p.cin / Kc;
+  // Les unités de K (tranche · prises + prise) de cette part : [u0, u1).
+  constexpr int kTaps = KH * KH;
+  const int units = p.cin / Kc * kTaps;
+  const int u0 = kz * units / p.ksplit, u1 = (kz + 1) * units / p.ksplit;
 #pragma unroll 1
-  for (int q = 0; q < chunks; ++q) {
-    if (q > 0) __syncthreads();  // la tranche d'avant n'est plus lue
+  for (int q = u0 / kTaps; q * kTaps < u1; ++q) {
+    if (q > u0 / kTaps) __syncthreads();  // la tranche d'avant n'est plus lue
     if constexpr (I == In::kImage) {
-      load_image<G::kIR, G::kIC>(s, p, ty0 * S + origin_y, tx0 * S + origin_x);
+      load_image<S, G::kIR, G::kIC>(s, p, ty0 * S + origin_y, tx0 * S + origin_x);
     } else {
-      load_nhwc<Kc, G::kIR, G::kIC>(s, p, q * Kc, ty0 * S + origin_y, tx0 * S + origin_x);
+      load_nhwc<Kc, S, G::kIR, G::kIC>(s, p, q * Kc, ty0 * S + origin_y, tx0 * S + origin_x);
       cp_async_wait_all();
     }
     __syncthreads();
-    accumulate<Kc, CT, KH, S, Rows, Acc16>(acc, s, w, q, kcs, warp, lane);
+    const int t0 = u0 > q * kTaps ? u0 - q * kTaps : 0;
+    const int t1 = u1 - q * kTaps < kTaps ? u1 - q * kTaps : kTaps;
+    accumulate<Kc, CT, KH, S, Rows, Acc16>(acc, s, w, q, kcs, t0, t1, warp, lane);
+  }
+  if (p.ksplit > 1) {
+    spill<CT, Rows, Acc16>(acc, p, ty0, tx0, z, kz, warp, lane);
+    return;
   }
   __syncthreads();  // la tuile d'entrée n'est plus lue : la mémoire partagée reçoit la sortie
   const int n0 = tile * CT;
