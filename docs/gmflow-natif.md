@@ -1,6 +1,7 @@
 # GMFlow natif : étude
 
-Étude ; le squelette CNN est écrit (PR 1, [plus bas](#squelette-natif-pr-1)), pas encore branché. Question : calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
+Étude ; le squelette CNN ([PR 1](#squelette-natif-pr-1)), l'attention du transformeur ([PR 2](#attention-native-pr-2)) et son
+MLP fondu ([PR 3](#mlp-natif-pr-3)) sont écrits, pas encore branchés. Question : calculer GMFlow (le flot du graphe « paire » de GMFSS Fortuna
 union) par nos propres noyaux CUDA, comme RIFE ([`rife-natif.md`](rife-natif.md)) et, en cours, FeatureNet,
 MetricNet et GridNet de GMFSS, pour qu'aucun moteur TensorRT ne soit plus construit pour GMFSS. Outils :
 `tools/gmfss/gmflow_natif_couts.py` (coûts et temps estimés), `tools/gmfss/gmflow_natif_reseau.py` (GMFlow découpé
@@ -32,7 +33,7 @@ deux images réduites de moitié (640x384 pour la paire 1280x768 ; 320x192 au de
 |---|---|---|
 | Squelette CNN (lot 2 : les deux images) | conv 7x7/2 3→64 (sans biais), InstanceNorm, Relu ; layer1 : 2 blocs résiduels 64 ; layer2 : 2 blocs 96, le premier de pas 2 avec raccourci 1x1/2 (biais) + InstanceNorm ; layer3 : 2 blocs 128, pas 1, raccourci 1x1 ; conv2 1x1 128→128 (biais) ; « trident » 3x3 128→128 aux poids partagés, pas 1 et pas 2 | 1/2 : 320x192 ; 1/4 : 160x96 ; 1/8 : 80x48. Bloc résiduel : conv 3x3, IN, Relu, conv 3x3, IN, Relu, + raccourci, Relu. InstanceNorm sans paramètres partout (15 : la 7x7, les 12 convolutions des blocs, les 2 raccourcis), 18 convolutions |
 | Échelle 1/8 | position sinus par fenêtre (40x24), transformeur 6 blocs, puis appariement global, puis propagation globale | 3 840 jetons par image |
-| Transformeur (mêmes poids aux deux échelles) | bloc = self-attention (sans MLP) puis cross-attention + MLP ; d = 128, **une tête** ; projections q, k, v, fusion 128x128 sans biais ; LayerNorm après la fusion ; MLP sur [source, message] 256 → 1024 (GELU) → 128, LayerNorm ; résiduel ; la cible de la cross-attention est l'autre moitié du lot telle qu'elle entrait dans le bloc ; blocs impairs en fenêtres décalées d'une demi-fenêtre (Swin, masque −100 entre régions) | 1/8 : lot 2, fenêtres 2x2 de 960 jetons, décalage (12, 20) |
+| Transformeur (mêmes poids aux deux échelles) | bloc = self-attention (sans MLP) puis cross-attention + MLP ; d = 128, **une tête** ; projections q, k, v, fusion 128x128 sans biais ; LayerNorm après la fusion ; MLP sur [source, message] 256 → 1024 (GELU exacte, par erf) → 128, sans biais, LayerNorm ; résiduel ; la cible de la cross-attention est l'autre moitié du lot telle qu'elle entrait dans le bloc ; blocs impairs en fenêtres décalées d'une demi-fenêtre (Swin, masque −100 entre régions) | 1/8 : lot 2, fenêtres 2x2 de 960 jetons, décalage (12, 20) |
 | Appariement global | corrélation f0·f1ᵀ/√128 (3 840 x 3 840), softmax des lignes (0→1) et des colonnes (1→0), flot = Σ p·coordonnée − coordonnée | |
 | Propagation globale | self-attention 3 840 x 3 840 sur les caractéristiques, q = Wq·f + bq, **k = Wk·q + bk** (projections enchaînées, une seule matrice en fait), v = le flot (2 canaux) ; sur les deux cartes | |
 | Échelle 1/4 | les deux sens en lot (f0 = [f0, f1], f1 = [f1, f0]), flot ×2 (bilinéaire, coins alignés), f1 déformé par le flot, position (fenêtre 20x12), transformeur 6 blocs | 15 360 jetons par carte, lot 4 dans le transformeur, fenêtres 8x8 de 240 jetons, décalage (6, 10) |
@@ -94,7 +95,9 @@ par paire, capturés dans un graphe CUDA comme les autres moteurs natifs.
   déterministe) ; le noyau suivant normalise et applique Relu au chargement de sa tuile, comme `prelu_tile`
   ajouté pour le GridNet (commit 261814d) ;
 - une fin de bloc élément par élément (deux normalisations, somme, Relu, une écriture FP16) ;
-- la position sinus ajoutée dans l'épilogue du trident (table FP16 de 40x24 ou 20x12 x 128).
+- la position sinus ajoutée dans l'épilogue du trident de pas 2 au huitième (table FP16 de 40x24 x 128) ; au
+  quart, elle s'ajoute après la déformation de la cible par le flot, dans le noyau de déformation (voir
+  « Attention native (PR 2) »).
 
 **Transformeur** : trois noyaux par couche, 60 en tout.
 
@@ -107,10 +110,11 @@ par paire, capturés dans un graphe CUDA comme les autres moteurs natifs.
    l'épilogue : O/l, puis la **fusion 128x128** (poids 32 Ko en mémoire partagée), la LayerNorm (la ligne entière
    est dans le bloc) et, en self-attention, le résiduel. Ni les scores, ni la sortie de l'attention ne passent par
    la mémoire.
-3. **MLP fondu** (cross-attention seulement) : un bloc de 128 jetons charge [x, message] (256 canaux) ; pour
-   chacune des 8 tranches de 128 de la couche cachée, H = GELU(X·W1) reste sur la puce (FP16, ou E4M3), puis
-   O += H·W2 ; à la fin LayerNorm et résiduel. La couche cachée (126 Mo par couche à 1/4) n'est jamais écrite. W1
-   et W2 (768 Ko en FP16) restent en L2.
+3. **MLP fondu** (cross-attention seulement ; écrit, [plus bas](#mlp-natif-pr-3)) : un bloc de 64 ou 128 jetons
+   charge [x, message] (256 canaux) ; pour chacune des 16 tranches de 64 de la couche cachée, H = GELU(X·W1)
+   reste sur la puce (FP16), puis O += H·W2 ; à la fin LayerNorm et résiduel. La couche cachée (126 Mo par couche
+   à 1/4) n'est jamais écrite. W1 et W2 (768 Ko en FP16) se lisent dans la L2 une fois par bloc, par un anneau en
+   mémoire partagée.
 
 Les GEMM de 1 et 3 peuvent venir de CUTLASS (`third_party/cutlass`, déjà là pour SPAN FP8) ou de mma.sync écrits à
 la main ; le MLP fondu n'existe pas tel quel dans CUTLASS (deux GEMM chaînées en mémoire partagée) : à la main.
@@ -298,6 +302,359 @@ mixtes chronométrées contre TensorRT comme RIFE et GMFSS (`gmfss_trial.h`), le
 (sorties contre le sous-graphe ONNX, déterminisme : les additions atomiques changent les statistiques à l'ulp
 près d'un lancement à l'autre). Le 1/8 est exactement le 1/4 pris un pixel sur deux (même trident, bord 1) :
 la seconde passe du trident pourrait se réduire à cette lecture.
+
+## Attention native (PR 2)
+
+Écrite sans GPU : compilée pour sm_75, 86, 89 et 120 sans débordement de registres, jamais lancée. Rien ne
+l'appelle encore ; le MLP fondu (PR 3) et le reste de GMFlow restent dans la paire TensorRT.
+
+**Ce que dit le graphe** (paire union exportée, initialiseurs `gmfss.flownet.transformer.*`, nœuds
+`/flownet/transformer/…`), là où l'étude restait vague :
+
+- les nœuds des couches sont les mêmes aux deux échelles, suffixés `_1` au quart (`layers.<b>/self_attn/q_proj_1/
+  MatMul`), et lisent les mêmes poids ; ceux de la géométrie sont sous `/flownet/transformer/` (huitième) et
+  `/flownet/transformer_1/` (quart) ;
+- fenêtres : `Div` de la taille par 2 (huitième) et par 8 (quart) ; le décalage est d'une demi-fenêtre arrondie en
+  bas (`Div_2`, `Div_3`), soit (12, 20) et (6, 10) à 640x384 ; torch.roll s'écrit en deux `Slice` et un `Concat`
+  (vers la gauche avant l'attention, vers la droite après) ;
+- masque : régions de l'image décalée, trois par axe, comptées au bord moins une fenêtre et au bord moins un
+  décalage, région = ligne · 3 + colonne ; −100 entre deux régions différentes, 0 dans une même région, ajouté aux
+  scores déjà divisés par √d (`Div` par `Pow(Shape(q)[2], 0.5)`) ;
+- la paire FP16 divise par √128 arrondi en FP16 (11,3125 au lieu de 11,3137) ; le natif prend 1/√128 exact, comme la
+  paire FP32 ;
+- self-attention : sortie = source + LayerNorm(fusion(attention)) ; cross-attention : q à la sortie de la self, k et
+  v à l'entrée du bloc dans l'autre moitié du lot (au premier bloc `Concat(f1, f0)`, ensuite deux `Slice` par la
+  moitié du lot lue dans la forme), sortie = LayerNorm seule, le message que le MLP lit avec la source ;
+- **la position sinus** est calculée dans le graphe à partir des formes (sin et cos d'une somme cumulée
+  normalisée), pas lue dans une constante. Au huitième elle s'ajoute aux deux sorties du trident de pas 2 ; au
+  quart, elle s'ajoute **après** la déformation de la cible par le flot (`feature_add_position` suit `flow_warp`),
+  et la source sans position sert à la déformation : elle ne peut pas aller dans l'épilogue du trident de pas 1.
+  Elle n'est pas dans cette PR : la table (calculée au chargement, vérifiée contre la position du graphe sous ONNX
+  Runtime) ira à l'assemblage, dans le trident de pas 2 au huitième et dans le noyau de déformation au quart
+  (PR 5).
+
+**Lecture** (`src/prepare/gmflow_attention_native.{h,cpp}`, masque dans `gmflow_attention_mask.{h,cpp}`, plan
+revérifié par `gmflow_attention_check.cpp`, types sans `std::expected` dans `gmflow_attention.h` pour nvcc ; parcours
+du graphe dans `gmflow_onnx_view.{h,cpp}`).
+`gmflow_attention(paire)` lit, aux deux échelles, les projections q, k, v et la fusion par le nom de leur `MatMul`
+(poids 128x128 constants, rangés [sortie][entrée]), la LayerNorm `norm1` par ses initialiseurs, et vérifie tout ce
+qui les relie : fenêtres de chaque `Reshape` à six axes et `Transpose` (0, 1, 3, 2, 4, 5), chemins de q, k, v jusqu'au
+`MatMul` des scores (une découpe en fenêtres, kᵀ, décalés sur les deux axes si la couche l'est, rien d'autre),
+`Softmax` sur le dernier axe, facteur, masque (les quatre comparaisons des régions, la carte ligne · 3 + colonne
+découpée en fenêtres, les deux `Where` : −100 où la différence de deux régions n'est pas nulle, 0 où elle l'est),
+chemin retour de la sortie, ε commun, statistiques de `norm1` en f32 (`stash_type` 1), résiduel `Add(source, norm1)`,
+`Concat(source, message)` du MLP, cible de la cross et sortie `Add(source, norm2)` de chaque bloc. Le quart doit
+avoir les mêmes poids et les mêmes décalages que le huitième. Tout écart est refusé (FieldMissing, avec le nœud), comme un
+poids de projection ou de fusion hors du FP16 (les noyaux les rangent en FP16) ou une LayerNorm non finie.
+Elle rend 12 couches (self du bloc b en 2b, cross en 2b + 1, blocs impairs décalés) et un **plan** de 18 opérations
+sur 19 tenseurs (self, cross, MLP par bloc) que le banc, l'émulation et plus tard l'assemblage exécutent à la
+lettre. Elle lit la paire FP16 du lecteur, celle du demi-flot et la paire FP32.
+
+**Noyaux** (`src/gpu/cuda/backend/gmflow_attention_kernels.cuh`, `gmflow_attention_net.{h,cu}`), jetons
+[lot][h · w][128] FP16, deux lancements par couche :
+
+1. `qkv_kernel` : la GEMM 128 → 384, un bloc de 4 warps par (64 jetons, q | k | v, image) ; en cross-attention k
+   et v se lisent au lot (b + lot/2) mod lot, sans copie. Sortie [lot][jetons][384] FP16 (5,9 Mo au huitième,
+   47 Mo au quart à 640x384, un seul tampon réutilisé d'une couche à l'autre).
+2. `attention_kernel` : un bloc de 4 warps par (64 requêtes, fenêtre, image), 16 requêtes par warp. K et V passent
+   par tuiles de 64 clés, chacun dans son tampon (`cp.async` : V de la tuile se charge pendant S = QKᵀ, K de la
+   suivante pendant P · V ; 35 Ko de mémoire partagée). S en mma FP16 à sommes f32, facteur et masque en base 2
+   (`exp2`), maximum et somme courants en registres, P arrondi en FP16 directement dans les fragments A de P · V.
+   Le décalage est une arithmétique d'adresses (jeton t de la fenêtre (wy, wx) en ((wy · wh + t / ww + sh) mod H,
+   (wx · ww + t mod ww + sw) mod W)), la sortie s'écrit à la place de sa requête, les régions du masque se
+   calculent au chargement des clés. Épilogue sans mémoire : O / l arrondi en FP16 devient le fragment A de la
+   fusion (poids rangés pour le mma, lus en L1 : la mémoire partagée garde K et V), LayerNorm sur la ligne tenue
+   par les quatre fils d'un groupe (moyenne, puis variance des écarts, en f32), résiduel en self, une écriture FP16.
+
+Sommes : S et P · V toujours en f32 ; la GEMM QKV et la fusion suivent `Acc` (`kF16`, `kMixed`, `kF32`) comme les
+noyaux de RIFE natif, et le réseau ne lance que `kF32`, le plus sûr, tant que le banc n'a pas parlé. Registres :
+attention 168 (181 sur sm_75), QKV 128 (182 sur sm_75), aucun débordement. L'attention tiendrait 3 blocs par SM
+par ses registres, mais 2 sur sm_86 et sm_89 par sa mémoire partagée (3 × 35 Ko dépassent les 100 Ko d'un SM).
+
+**Émulation** (`tools/gmfss/gmflow_attention_emule.py`, plan et poids vidés par `tools/gmfss/gmflow_attention`, qui
+appelle la lecture du lecteur) : chaque couche rejouée avec les arrondis des noyaux (q, k, v en FP16, tuiles de 64
+clés, softmax en ligne en base 2, P et O / l en FP16, fusion et LayerNorm en f32, une écriture FP16), à partir de
+son entrée FP32 arrondie en FP16, contre sa sortie dans la paire FP32 sous ONNX Runtime ; 4 paires de
+`calibration.mkv` (15, 39, 69 et 99 s, deux images à 2/24 s), paire 1280x768, GMFlow sur 640x384 : fenêtres de 960
+jetons au huitième (lot 2), de 240 au quart (lot 4). Couches des blocs 0 (sans décalage), 1 et 5 (décalés).
+Pire écart, écart relatif moyen (√EQM / √moyenne des carrés de la référence), PSNR sur la crête de la référence
+moyen / pire.
+
+| Échelle | Couche | Contrôle f32 | Natif FP16 | FP16 nœud par nœud |
+|---|---|---|---|---|
+| 1/8 | 0 self | 1,4e-6, 152,3 dB | 3,2e-3, 4,1e-4, 84,1 / 83,7 dB | 4,3e-3, 5,3e-4, 81,8 / 81,4 dB |
+| 1/8 | 1 cross | 1,4e-6, 153,9 dB | 2,1e-3, 5,1e-4, 82,5 / 82,3 dB | 1,1e-2, 6,2e-4, 80,7 / 80,6 dB |
+| 1/8 | 2 self décalée | 1,2e-6, 151,5 dB | 2,1e-3, 3,7e-4, 82,0 / 81,7 dB | 3,6e-3, 4,7e-4, 80,0 / 79,7 dB |
+| 1/8 | 3 cross décalée | 1,9e-6, 154,0 dB | 2,0e-3, 3,7e-4, 87,1 / 86,9 dB | 2,9e-3, 4,8e-4, 84,9 / 84,6 dB |
+| 1/8 | 10 self décalée | 1,9e-6, 150,7 dB | 3,6e-3, 4,0e-4, 82,3 / 81,4 dB | 5,8e-3, 5,0e-4, 80,4 / 79,5 dB |
+| 1/8 | 11 cross décalée | 1,7e-6, 152,2 dB | 2,2e-3, 4,6e-4, 84,9 / 84,6 dB | 3,6e-3, 7,3e-4, 80,8 / 80,4 dB |
+| 1/4 | 0 self | 2,1e-6, 150,7 dB | 3,3e-3, 4,4e-4, 83,5 / 83,2 dB | 4,7e-3, 5,7e-4, 81,3 / 81,2 dB |
+| 1/4 | 1 cross | 1,4e-6, 150,5 dB | 2,8e-3, 5,3e-4, 82,4 / 82,1 dB | 1,3e-2, 8,5e-4, 78,4 / 77,5 dB |
+| 1/4 | 2 self décalée | 1,7e-6, 151,2 dB | 2,2e-3, 3,8e-4, 82,3 / 82,0 dB | 4,0e-3, 4,7e-4, 80,3 / 80,1 dB |
+| 1/4 | 3 cross décalée | 1,9e-6, 152,9 dB | 2,8e-3, 3,9e-4, 86,4 / 86,3 dB | 4,1e-3, 5,1e-4, 84,0 / 83,8 dB |
+| 1/4 | 10 self décalée | 2,9e-6, 149,9 dB | 3,9e-3, 3,7e-4, 81,7 / 81,5 dB | 5,2e-3, 4,5e-4, 79,9 / 79,7 dB |
+| 1/4 | 11 cross décalée | 1,9e-6, 152,8 dB | 2,6e-3, 4,4e-4, 85,2 / 85,0 dB | 3,8e-3, 5,7e-4, 83,1 / 82,9 dB |
+
+Le contrôle f32, sans aucun arrondi, rend ONNX Runtime FP32 à l'ordre des sommes près (≤ 3e-6) aux deux tailles de
+fenêtres, décalées ou non, en self comme en cross : poids rangés, fenêtres, décalage par adresses, régions et
+valeur du masque, cible de la cross et résiduel sont justes. Le natif FP16 reste à 3,7 à 5,3e-4 en relatif, l'ordre d'un
+arrondi FP16 (2⁻¹¹ ≈ 4,9e-4) : la sortie FP16 domine, le softmax en ligne et P en FP16 n'ajoutent presque rien. La
+recette « nœud par nœud » arrondit en FP16 la sortie de chaque nœud du graphe (q, k, v, scores, scores / √d avec √d
+en FP16, masque, softmax, P · V, fusion, LayerNorm, somme), ce que ferait un moteur FP16 qui ne fond rien : le natif
+est 2 à 4 dB au-dessus, et jusqu'à 5 fois plus près au pire écart (cross du premier bloc). Ces écarts sont ceux d'une couche à
+entrée exacte ; ce qu'ils deviennent sur douze couches et six MLP se mesurera à l'assemblage du transformeur.
+
+**Banc** (pour le PC ; rien n'est conclu ici sur la vitesse). Le natif : `gmflow_attention_banc` (dans
+`tools/gmfss/gmflow_attention`, avec `-DKIRARI_BANC_CUDA=ON`), une couche lue dans la paire du lecteur sur chaque
+grille de jetons demandée (par défaut les quatre charges de l'échelle : GMFlow des paires 1280x768 et 1920x1152, flot
+entier et demi-flot), capturée en graphe CUDA (QKV puis attention), rejouée 300 fois entre deux événements comme
+`trtexec --useCudaGraph` : médiane et minimum en ms, débit sur les FLOP de la couche. Son `--check DOSSIER` rejoue
+les couches qu'écrit `gmflow_attention_emule.py --dump DOSSIER` (entrées de la première paire, sortie émulée,
+sortie FP32, et leur liste `banc.txt`) et tranche : tenu si le PSNR de la carte contre la paire FP32 est celui de
+l'émulation à 0,1 dB près et si 0,1 % des valeurs au plus sont à plus d'un ulp FP16 de l'émulation ; sinon il rend 1.
+TensorRT : la même couche seule en ONNX par `gmflow_attention_onnx.py` (poids du plan, mêmes opérations que l'export
+de la paire, FP16, taille fixe), vérifiée sous ONNX Runtime contre le contrôle f32 (≤ 1e-4 exigé ; 2,0 à 2,4e-6 au
+quart à 48x80 et 72x120, au huitième à 36x60, fenêtres impaires comprises), construite par trtexec aux deux recettes
+de `tools/gmfss/gmflow_banc_trt.sh` :
+
+- **lecteur** : la paire GMFSS telle que le lecteur la construit (`gpu::ModelSpec::tuned` faux,
+  `app/play/chain_gmfss.cpp`) : `--stronglyTyped`, niveau d'optimisation par défaut, sans pavage L2
+  (`--tilingOptimizationLevel=0`) ;
+- **réglée** : la recette des modèles réglés (`Recipe::Fp32IslandsTuned`) : niveau 5, pavage L2 3.
+
+Sans cuDNN ni cuBLAS tant que trtexec prend `--tacticSources` (TensorRT 10 ; le lecteur le retire sous 11). Le natif
+se compare au **meilleur des deux** : TensorRT ne s'enlève pas là où il suffisait de le régler.
+`tools/gmfss/gmflow_attention_banc.sh` enchaîne le tout (voir « Séance sur le PC » plus bas) : les quatre couches
+(0 self, 1 cross, 2 self décalée, 3 cross décalée ; les douze couches du transformeur ne sont que celles-là aux
+poids près) sur les huit charges, en deux tours ABAB, puis la somme des douze couches par paire.
+
+**À surveiller au banc, et ce qui manque avant de brancher** : au huitième, l'attention ne lance que 120 blocs
+(15 tranches de 64 requêtes, 4 fenêtres, lot 2), moins d'une vague sur les 60 SM de la RTX 4070 Ti, et 32 au
+demi-flot : si le banc le montre, couper les clés d'une fenêtre entre plusieurs blocs (maximum, somme et O
+partiels fusionnés ensuite). Les variantes de sommes `kF16` et `kMixed` de QKV et de la fusion, chronométrées
+contre TensorRT comme RIFE et GMFSS. La position sinus (voir plus haut). Le MLP fondu (PR 3), puis l'assemblage du
+transformeur en graphe CUDA, et l'écart sur ses douze couches.
+
+## MLP natif (PR 3)
+
+Écrit sans GPU : compilé pour sm_75, 86, 89 et 120 sans débordement de registres, jamais lancé. Rien ne l'appelle :
+le transformeur reste dans la paire TensorRT.
+
+**Ce que fait le graphe** (lu nœud par nœud dans la paire exportée ; le plan plus haut est corrigé là où il s'en
+écartait). Dans chaque couche de cross-attention, message = norm1(fusion(attention)) ; le MLP lit Concat([x,
+message]) sur le dernier axe, où x est l'entrée de la couche (la sortie de la self-attention du même bloc, qui sert
+aussi au résiduel) ; `mlp.0` est un MatMul 256 → 1024 **sans biais**, la GELU est **exacte** (Div par √2, Erf, + 1,
+× x, × 0,5), `mlp.2` un MatMul 1024 → 128 sans biais, `norm2` une LayerNorm à échelle et décalage appris (ε = 1e-5,
+statistiques en f32), puis Add(x, norm2) : la LayerNorm d'abord, le résiduel ensuite. Les deux appels du
+transformeur (1/8 et 1/4) partagent les initialiseurs (un Identity au second). Dans la paire FP16 du lecteur, √2 est
+stocké en FP16 (1,4140625 : 1,1e-4 d'écart relatif, moins que l'arrondi relatif du FP16, 2⁻¹¹ = 4,9e-4) ; le noyau
+multiplie par le 1/√2 exact.
+
+**Lecture** (`src/prepare/gmflow_mlp.{h,cpp}`, types sans `std::expected` dans `gmflow_mlp_plan.h` pour nvcc ; le graphe
+parcouru par `gmflow_onnx_view.{h,cpp}`, comme l'attention).
+`gmflow_mlp(paire)` trouve les nœuds de chaque couche par leurs noms
+(`/flownet/transformer/layers.<i>/cross_attn_ffn/mlp/mlp.0/MatMul`, suffixe `_1` au second appel) et suit le reste
+d'arête en arête. Elle refuse (FieldMissing, avec le nom du nœud) une GELU autre (constantes √2, 1 et 0,5, ordre
+des opérandes), un Concat sur un autre axe ou dans l'autre ordre, une couche cachée lue hors du MLP, un biais, des
+poids non constants ou d'une autre forme, une LayerNorm sur un autre axe ou sans statistiques f32, un résiduel dans
+l'autre ordre, des poids ou un ε différents d'une échelle à l'autre. Elle rend un **plan** : 6 couches (W1 rangé
+[caché][256], W2 [128][caché], γ, β, ε) et 12 emplois (échelle, couche, noms ONNX de x, du message et de la sortie,
+que l'émulation lit). `gmflow_mlp_check` le revérifie contre le noyau : 128 canaux, couche cachée multiple de 64
+jusqu'à 4 096, poids finis et représentables en FP16, ε positif, chaque emploi valide et unique. Tests
+(`tests/unit/prepare/gmflow_mlp_test.cpp`) : un faux transformeur aux noms et nœuds de la paire, lu et rangé, 15
+fautes refusées, les fautes du plan ; la vraie paire, quand elle est là, se lit dans le cas du squelette et de
+l'attention (`gmflow_native_test.cpp`), qui ne saute qu'une fois en CI.
+
+**Noyau** (`src/gpu/cuda/backend/gmflow_mlp_kernels.cuh`, `gmflow_mlp_net.{h,cu}`) : un bloc de 4 warps (64 jetons,
+45 Ko de mémoire partagée, deux blocs par SM) ou de 8 warps (128 jetons, 78 Ko, un bloc par SM, pas sur Turing) ;
+chaque warp tient 16 jetons. [x, message] se charge une fois en mémoire partagée (`cp.async`). Pour chacune des 16
+tranches de 64 canaux cachés : H = X·W1 (mma.sync m16n8k16 de `rife_native_kernels.cuh`), GELU en f32 arrondie en
+FP16 directement dans les fragments A du mma suivant (la sortie de deux tuiles m16n8 voisines est un fragment A
+m16k16 : H ne passe ni par la mémoire partagée ni par la mémoire globale), puis O += H·W2. O (16 × 128 en f32 par
+warp) reste en registres jusqu'à la fin : LayerNorm de chaque ligne en deux passes (moyenne, puis variance des
+écarts, réduites entre les quatre fils de la ligne par `__shfl_xor`), résiduel lu dans la tuile x, un seul arrondi
+FP16, écriture par lignes entières ; out peut être x. Les poids passent par un anneau de trois étages de 4 Ko,
+rangés au chargement en un flux dans l'ordre où le noyau les prend (fragments B prêts, un uint4 par fil) : la L2 les
+donne une fois par bloc, 768 Ko pour 64 ou 128 jetons (65 ou 131 FLOP par octet lu). Pour les petites grilles (le
+1/8 au demi-flot : 30 blocs de 64 jetons), la couche cachée se partage entre 2 à 8 blocs (`blockIdx.y`) qui écrivent
+leurs parts de O en f32 ; un second noyau les somme dans un ordre fixe (déterministe), puis fait LayerNorm et
+résiduel. Registres : 203 (sm_75), 212 (sm_86 et 89), 165 à 168 (sm_120), aucun débordement. Capturable dans un
+graphe CUDA.
+
+Sommes : seul `Acc::kF32` est instancié, le départ le plus sûr (l'étude donne aux sommes f16 −5 dB sur l'image) ;
+le paramètre `Acc` reste pour `kMixed` et `kF16` (PR 7), à chronométrer après le banc ci-dessous.
+
+**Émulation** (`tools/gmfss/gmflow_mlp_emule.py`, plan et poids vidés par `tools/gmfss/gmflow_mlp/gmflow_mlp_vide`,
+qui appelle la lecture du lecteur) : le plan rejoué avec les arrondis du noyau, contre le même MLP dans la paire
+FP32 sous ONNX Runtime (CPU), sur les vraies entrées de chaque couche : paire 1280x768 au flot entier (GMFlow sur
+640x384 : 3 840 jetons par image à 1/8 en lot 2, 15 360 à 1/4 en lot 4), quatre paires de `calibration.mkv` (deux
+images à 2/24 s d'écart, à 15, 39, 69 et 99 s), six couches aux deux échelles. Écart relatif √EQM / √(moyenne des
+carrés de la référence), moyen sur les 24 (paire, couche) ; PSNR sur la crête de la référence, moyen / pire.
+« Sortie » : la sortie de la couche, après le résiduel (ce que lit la suite) ; « branche » : la sortie de norm2, ce
+que le MLP ajoute.
+
+| Échelle | Recette | Sortie : écart relatif | Sortie : PSNR (dB) | Branche : écart relatif | Branche : PSNR (dB) |
+|---|---|---|---|---|---|
+| 1/8 | contrôle f32 (plan de la paire FP32) | 2,0e-7 | 148,9 / 146,5 | 2,3e-7 | 147,6 / 145,2 |
+| 1/8 | **natif FP16** | 3,55e-4 | **83,8 / 81,8** | 3,24e-4 | **84,9 / 81,1** |
+| 1/8 | ONNX Runtime sur la paire FP16 | 3,46e-4 | 84,0 / 82,1 | 4,01e-4 | 83,0 / 79,8 (*) |
+| 1/8 | stockage FP16 de chaque nœud (façon TensorRT) | 4,69e-4 | 81,4 / 79,3 | 4,85e-4 | 81,3 / 78,0 |
+| 1/4 | contrôle f32 (plan de la paire FP32) | 2,7e-7 | 146,1 / 142,4 | 3,3e-7 | 144,8 / 141,1 |
+| 1/4 | **natif FP16** | 3,63e-4 | **83,6 / 80,6** | 3,41e-4 | **84,5 / 80,8** |
+| 1/4 | ONNX Runtime sur la paire FP16 | 3,52e-4 | 83,8 / 80,9 | 4,12e-4 | 82,8 / 79,7 (*) |
+| 1/4 | stockage FP16 de chaque nœud (façon TensorRT) | 4,80e-4 | 81,1 / 78,3 | 5,05e-4 | 81,1 / 77,9 |
+
+(*) sortie moins x : l'arrondi FP16 de la sortie y compte.
+
+- **L'indexation est juste** : sans aucun arrondi, le plan rend le graphe FP32 à l'ordre des sommes près (≈ 147 dB) :
+  rangement de W1 et W2, GELU, LayerNorm, résiduel.
+- **Sur la sortie**, le natif FP16 est à 0,2 ou 0,3 dB d'ONNX Runtime sur la paire FP16, qui garde des poids FP16
+  mais calcule le MLP en f32 sur le CPU (le natif arrondit H en FP16 avant le second produit) : tous deux sont
+  dominés par l'arrondi FP16 de la sortie. Face à un stockage FP16 de chaque nœud, plus proche de TensorRT FP16, le
+  natif gagne 2,4 dB en moyenne et 2,3 à 2,5 dB au pire.
+- **Sur la branche**, que le natif n'arrondit jamais, il gagne 3,4 dB sur le stockage FP16 de chaque nœud. Le MLP
+  natif ne perd rien ; la comparaison qui compte, contre le moteur TensorRT, se fait sur la carte.
+- Le demi-flot n'est pas émulé à part : le MLP agit jeton par jeton, le demi-flot n'en change que le nombre.
+
+**Banc sur le PC** (RTX 4070 Ti ; rien n'a tourné sur une carte). D'abord les entrées réelles du contrôle, sur
+n'importe quel poste avec PyTorch et ONNX Runtime (≈ 10 min de CPU, 11 Go de mémoire au plus). La première commande
+n'est là que pour la paire FP32 : elle l'exporte avant tout, la suite de son émulation peut s'interrompre.
+
+```sh
+python -I tools/gmfss/gmflow_natif_emule.py ROUE/vsgmfss_fortuna --work W --recettes fp32  # W/paire_fp32.onnx
+cmake -S tools/gmfss/gmflow_mlp -B build/gmflow_mlp && cmake --build build/gmflow_mlp --target gmflow_mlp_vide
+build/gmflow_mlp/gmflow_mlp_vide W/paire_fp32.onnx W/mlp32
+build/gmflow_mlp/gmflow_mlp_vide ~/kirari/models/rife/gmfss_fortuna_union_pair.onnx W/mlp16
+python -I tools/gmfss/gmflow_mlp_emule.py --fp32 W/paire_fp32.onnx \
+    --fp16 ~/kirari/models/rife/gmfss_fortuna_union_pair.onnx --plan32 W/mlp32 --plan16 W/mlp16 --work W \
+    --banc W/entrees
+```
+
+Puis sur le PC, `W/entrees` copié (170 Mo) :
+
+```sh
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh \
+    ~/kirari/models/rife/gmfss_fortuna_union_pair.onnx ~/kirari-reports/gmflow-mlp W/entrees
+```
+
+Le script construit `gmflow_mlp_vide` et `gmflow_mlp_banc` (CMake, nvcc du PC, architecture de la carte), extrait
+de la paire le MLP de la couche 0 seul (entrées x et message [lot, jetons, 128] FP16, sortie out), passe le
+contrôle (`gmflow_mlp_banc --check`, qui tranche comme celui de l'attention et arrête le script s'il n'est pas tenu),
+puis pour chacune des huit charges (paires 1280x768 et 1920x1152, flot entier et demi-flot, 1/8 au lot 2 et 1/4 au
+lot 4) : le moteur TensorRT du sous-graphe aux deux recettes de `gmflow_banc_trt.sh` (celle de la paire dans le
+lecteur, sans pavage L2 ni niveau 5, et la réglée ; voir le banc de l'attention), chronométré en graphe CUDA
+(`--useCudaGraph --noDataTransfers --useSpinWait`, médiane), et le noyau natif aux deux blocs, chronométré de même
+(graphe CUDA, médiane de 300) ; deux tours ABAB, moyenne des deux médianes. Il écrit
+`~/kirari-reports/gmflow-mlp/banc-mlp.md` : par charge les quatre temps, le rapport du meilleur natif au meilleur
+TensorRT et son seuil ; puis la somme par paire, 6 × (1/8 + 1/4). Les profils de trtexec (`trt/mlp-*.profile.json`)
+disent si TensorRT a fait du MLP une seule région Myelin.
+
+**Ce que la mesure doit montrer pour continuer** (règle du propriétaire : TensorRT ne s'enlève que si c'est
+vraiment évitable, sans perte de qualité ni de vitesse) :
+
+1. **Juste d'abord** : au contrôle, sur les quatre entrées (couches 0 et 5, 1/8 et 1/4), un PSNR contre le FP32
+   égal à celui de l'émulation à 0,1 dB près (l'émulation donne 81,83, 82,61, 81,94 et 83,19 dB sur ces entrées),
+   et au plus 0,1 % des valeurs à plus d'un ulp FP16 de l'émulation (l'ordre des sommes du mma). Sinon le noyau est
+   faux et ses temps ne valent rien.
+2. **Nettement plus rapide là où se joue la vitesse** : meilleur bloc natif ≤ **0,80 ×** TensorRT au 1/4 en 720p,
+   au flot entier (61 440 jetons) et au demi-flot (15 360), et ≤ 1,00 × sur les six autres charges (1/8, 1080p).
+   Le MLP à 1/4 fait 40 % du calcul de GMFlow et c'est le bloc le plus favorable au natif (deux GEMM, la couche
+   cachée gardée sur la puce) ; l'étude n'attend GMFlow natif à 0,6 × TensorRT qu'avec des rendements que
+   l'attention et le reste tiendront moins bien. Sans 20 % de gagné ici, le reste ne fera pas la marge.
+
+Décision : tout tenu, continuer (PR 2 mesurée de même, puis PR 4 et 5) ; une charge à 1/4 de 720p au-dessus de
+1,00, **arrêter** : TensorRT garde GMFlow (la conclusion de l'étude) ; entre les deux (1/4 de 720p entre 0,80 et
+1,00, ou une autre charge au-dessus de 1,00), le MLP seul ne tranche pas et le banc de la PR 2 décide, sur la couche
+entière du transformeur à 1/4 (attention et MLP) : ≤ 0,80 × TensorRT, ou l'arrêt.
+
+Le banc mesure le MLP isolé : dans la paire, TensorRT peut le fondre avec ses voisins (norm1, la fusion de
+l'attention) ; le profil par couche de la paire (PR 0) dira si le temps isolé est le bon repère. **Rien n'est conclu
+ici sur la vitesse** : aucun temps de ce noyau n'a été mesuré.
+
+**Ce qui manque** : le premier lancement sur la carte (contrôle, puis banc) ; le choix du bloc (64 ou 128 jetons) et
+des parts d'après la mesure ; les sommes `kMixed` et `kF16` ; le branchement dans le transformeur natif, avec la PR
+2, et la lecture des poids au chargement du backend (aujourd'hui, seul l'outil de banc les lit).
+
+## Séance sur le PC (attention et MLP)
+
+Ce que la séance sur la RTX 4070 Ti doit faire pour GMFlow natif, sur la branche des PR 2 et 3 (rien n'y a encore
+tourné sur une carte). Le lecteur fermé, rien d'autre sur la carte ; chaque banc sous le verrou des bancs GPU.
+Il faut cmake, nvcc, trtexec (`TRTEXEC`, sinon `~/kirari-sdk/tensorrt/bin/trtexec`), ffmpeg, et un python avec
+torch, onnx et onnxruntime (`PYTHON`). Durées attendues : les entrées du contrôle, une vingtaine de minutes de CPU ;
+le banc du MLP, 16 moteurs ; celui de l'attention, 64 moteurs (quatre couches, huit charges, deux recettes), de
+l'ordre d'une heure la première fois ; les moteurs restent dans le dossier du rapport et une relance ne refait que
+les mesures.
+
+**1. Les entrées du contrôle** (CPU, sur le PC ou ailleurs ; la paire FP32 se garde d'une séance à l'autre) :
+
+```sh
+W=~/kirari-reports/gmflow-natif-entrees
+P=~/kirari/models/rife/gmfss_fortuna_union_pair.onnx
+python -I tools/gmfss/gmflow_natif_emule.py ROUE/vsgmfss_fortuna --work $W --recettes fp32  # $W/paire_fp32.onnx
+cmake -S tools/gmfss/gmflow_attention -B build/gmflow_attention -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gmflow_attention --target gmflow_attention_vide
+cmake -S tools/gmfss/gmflow_mlp -B build/gmflow_mlp -DCMAKE_BUILD_TYPE=Release
+cmake --build build/gmflow_mlp --target gmflow_mlp_vide
+build/gmflow_attention/gmflow_attention_vide $W/paire_fp32.onnx $W/attn32
+build/gmflow_attention/gmflow_attention_vide $P $W/attn16
+build/gmflow_mlp/gmflow_mlp_vide $W/paire_fp32.onnx $W/mlp32
+build/gmflow_mlp/gmflow_mlp_vide $P $W/mlp16
+python -I tools/gmfss/gmflow_attention_emule.py --fp32 $W/paire_fp32.onnx --plan32 $W/attn32 --plan16 $W/attn16 \
+    --paires 1 --dump $W/attention
+python -I tools/gmfss/gmflow_mlp_emule.py --fp32 $W/paire_fp32.onnx --fp16 $P --plan32 $W/mlp32 --plan16 $W/mlp16 \
+    --work $W --banc $W/mlp
+```
+
+Les deux émulations réimpriment leurs tableaux (plus haut) : un écart à ces chiffres veut dire que la paire ou la
+lecture a changé, et le banc ne se lance pas. `$W/attention` (500 Mo : 12 couches) et `$W/mlp` (170 Mo : 4
+entrées) portent chacun leur `banc.txt`.
+
+**2. Les bancs** (GPU ; ABAB à l'intérieur de chaque script : TensorRT aux deux recettes, natif, puis de nouveau) :
+
+```sh
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh $P ~/kirari-reports/gmflow-mlp $W/mlp
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_attention_banc.sh $P ~/kirari-reports/gmflow-attention \
+    $W/attention
+# une seconde fois chacun, moteurs gardés : deux séries de mesures, à comparer
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_mlp_banc.sh $P ~/kirari-reports/gmflow-mlp $W/mlp
+flock ~/kirari-reports/gpu-bench.lock tools/gmfss/gmflow_attention_banc.sh $P ~/kirari-reports/gmflow-attention \
+    $W/attention
+```
+
+Un contrôle non tenu arrête son script avant toute mesure : c'est un noyau faux, on rapporte le tableau du
+contrôle et on s'arrête là. L'attention seule sur quelques couches : `COUCHES="0 3"`.
+
+**3. Ce qu'on relève** :
+
+- les deux rapports de chaque passage (`banc-mlp.md`, `banc-attention.md`) : tableau du contrôle (PSNR carte et
+  émulation, valeurs à plus d'un ulp, tenu), temps par charge (TensorRT lecteur, TensorRT réglé, natif, rapport au
+  meilleur TensorRT), sommes par paire ; l'écart d'un passage à l'autre sur chaque rapport (au-delà de 3 %, la
+  mesure est bruitée : le noter, refaire) ;
+- la carte, le pilote et TensorRT (en tête de chaque rapport), et `nvidia-smi -q -d CLOCK,TEMPERATURE` avant et après
+  (une horloge qui tombe en cours de banc fausse l'ABAB) ;
+- dans `trt/*.profile.json` : combien de couches TensorRT a gardées par moteur, et s'il a pris un noyau d'attention
+  fondu (un nom en `fmha` ou `mha`) ou laissé les scores en mémoire (MatMul, Softmax, MatMul séparés) ;
+- dans `build/cmake.log` de chaque rapport : les registres et la mémoire partagée de chaque noyau sur sm_89
+  (ptxas), et aucun débordement ;
+- le temps de GMFlow dans la paire du lecteur, à la même charge : la plage `gmfss.paire.gmflow` de l'étape 3 de la
+  séance GMFSS (`docs/gmfss-natif.md`, Nsight Systems). La somme des couches isolées (attention et MLP) n'en est
+  qu'une partie ; si elle dépasse déjà ce temps, TensorRT fond mieux dans la paire qu'en couches seules, et c'est la
+  paire qui sert de repère.
+
+**4. Ce qui décide** (règle du propriétaire : TensorRT ne s'enlève que si c'est vraiment évitable) :
+
+1. les deux contrôles tenus, sinon arrêt et correction du noyau ;
+2. le MLP, d'après ses seuils (plus haut) ;
+3. la couche entière du transformeur au quart de 720p, flot entier et demi-flot, avec les deux rapports :
+   (natif 1/4 de l'attention, colonne de la somme par paire, + 6 × le meilleur MLP natif au 1/4) divisé par la même
+   somme côté TensorRT (meilleur des deux recettes) : **≤ 0,80, continuer** (PR 4 et 5, puis l'assemblage) ;
+   au-dessus, **arrêter** : TensorRT garde GMFlow ;
+4. une couche d'attention au huitième au-dessus de 1,00 n'arrête rien : c'est le cas attendu des grilles où les
+   blocs ne remplissent pas la carte (120 blocs au flot entier de 720p, 32 au demi-flot), que le partage des clés
+   d'une fenêtre entre plusieurs blocs doit régler avant l'assemblage. On le note pour la suite.
+
+La lecture en 1080p (paire au demi-flot, `docs/gmfss-natif.md`) est la charge du lecteur : ses lignes disent le
+gain réel, les seuils restent ceux du quart de 720p.
 
 ## Découpage en PR proposé
 

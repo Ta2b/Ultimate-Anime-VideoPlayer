@@ -1,8 +1,8 @@
 # Plafond des tests sautés par tâche de ci.yml (check-skips.sh, P2.39). Sous lavapipe, sans carte NVIDIA ni
 # modèles : NVDEC (5), Vulkan Video (1), découpe des modèles du catalogue (3), runtimes du fabricant (1).
 # L'interop de mémoire exportée (2) est retirée (C14, A45-10). Novembre 2026 : GMFSS et GMFlow natifs, sans les
-# graphes exportés de GMFSS union (3 : la fusion, #902 ; la paire, #923 ; le squelette de GMFlow, #930), d'où 13.
-# Le relever demande une raison.
+# graphes exportés de GMFSS union (3 : la fusion, #902 ; la paire, #923 ; le squelette de GMFlow, #930, qui lit
+# aussi l'attention et le MLP de GMFlow natif dans la paire), d'où 13. Le relever demande une raison.
 lavapipe 13
 asan-ubsan 13
 tsan 13
