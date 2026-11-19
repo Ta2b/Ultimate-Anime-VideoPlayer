@@ -218,14 +218,19 @@ l'image à l'œil, sur une scène d'action en ×4 ou plus.
 
 ## Éclats sur les seuls effets (19/11, cartes NVIDIA, à mesurer)
 
-Piste 6 du plan du flux optique NVIDIA : la marge des éclats ne va qu'aux vrais effets (explosions, magie,
-éclairs), pas à un ciel ni à une feuille blanche. Aucun modèle nouveau : la carte de la scène
-(`kernels/spec/scene_flow.h`, flux NVOF réduit par tuiles de 32 pixels en 1080p) dit, par tuile, décor,
-dessin, effet ou incertain. Un effet est clair, change vite et est mal suivi par le flux ; un fond blanc est
-suivi.
+Piste 6 du plan du flux optique NVIDIA : plus d'éclats sur les vrais effets (explosions, magie, éclairs),
+moins sur un dessin qui bouge (un blanc de vêtement, un œil), aucun de perdu ailleurs. Aucun modèle nouveau :
+la carte de la scène (`kernels/spec/scene_flow.h`, flux NVOF réduit par tuiles de 32 pixels en 1080p) dit,
+par tuile, décor, dessin, effet ou incertain. Un effet est clair, change vite et est mal suivi par le flux.
 
-- **Le masque** (`render/effect_mask.h`) : par tuile, 1 sur un effet, 1 − confiance sur un décor ou un
-  dessin, 0 sur un aplat qui ne change pas, sans verdict sur un aplat qui change (`app/play/effect_book.h`,
+Le but de départ était la marge des éclats sur les seuls effets, pas sur un ciel ni une feuille blanche.
+L'essai du PC du 19/11 (9baf5c9c, Re:Zero à 16:20) l'a écarté : une lumière immobile (la bougie) ne bouge
+pas plus que le décor, la carte la classait décor sûr et le masque lui retirait 60 % de sa montée. Le flux
+ne distingue pas une lumière immobile d'une surface ; le décor garde donc sa marge entière.
+
+- **Le masque** (`render/effect_mask.h`) : par tuile, 1 sur un effet, 1 − confiance sur un dessin (ce qui
+  bouge autrement que la caméra), 1 sur un décor et sur un aplat qui ne change pas, sans verdict sur un
+  aplat qui change (`app/play/effect_book.h`,
   `effect_tiles_of`). Dilaté d'une tuile, lissé dans le temps (vers l'effet en 40 ms, vers le décor en
   0,7 s : une tuile qui hésite reste haute), flouté en 3 × 3, lu en bilinéaire. Une paire tenue ou un fondu
   n'apprennent rien (un effet animé en deux ne retombe pas une paire sur deux) ; une coupe pose le masque
@@ -237,7 +242,7 @@ suivi.
   l'image entière, 0,41 ms en 4K sur une RTX 4070 Ti (passage 9 du 19/11) ; son coût, une lecture de la
   petite texture par pixel, compte maintenant dans la passe de sortie et non dans « grade HDR ».
   `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
-  voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
+  voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : sur un dessin sûr, une lumière garde 40 % de sa
   montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
 - **Plus haut sur les effets sûrs** (essai du PC du 19/11 sur main 5bc93d99 : l'effet se voyait, 2 % des
   pixels à plus de 10 % d'écart à 16:20, d'où la demande d'un effet plus marqué sur les vrais effets sans

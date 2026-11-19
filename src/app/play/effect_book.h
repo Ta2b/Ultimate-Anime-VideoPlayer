@@ -24,9 +24,13 @@ namespace kirari::app::play {
 // l'image que couvre la grille (work_width × work_height : l'image de travail de la carte).
 //  - Effet : 1, quelle que soit la confiance (l'éclat d'une explosion ne doit pas attendre), et 1 dans la
 //    couche des effets sûrs (EffectTiles::sure : la porte plus large, la montée plus haute) ;
-//  - Décor ou dessin : 1 − confiance (un verdict sûr éteint la marge, un verdict faible la garde) ;
-//  - Incertain (aplat sans texture) : 0 s'il ne change pas (le ciel, la feuille blanche, l'intérieur d'un
-//    aplat clair), sans verdict s'il change (le cœur plat d'un flash).
+//  - Dessin (ce qui bouge autrement que la caméra) : 1 − confiance (un verdict sûr retient la marge d'un
+//    blanc de vêtement ou d'un œil qui passe dans la lumière, un verdict faible la garde) ;
+//  - Décor : 1. Une lumière immobile (bougie, lueur fixe, fenêtre) ne bouge pas plus que le décor, et la
+//    carte ne la distingue pas d'une surface : elle garde sa montée (une bougie sortait retenue, 60 % de sa
+//    montée en moins ; aucun éclat ne se perd en HDR) ;
+//  - Incertain (aplat sans texture) : 1 s'il ne change pas, sans verdict s'il change (le cœur plat d'un
+//    flash : les voisines décident).
 // Une paire tenue ou un fondu n'apprennent rien ; une coupe probable pose le masque d'un coup.
 render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_width, int work_height,
                                     std::int64_t span_us, bool cut);

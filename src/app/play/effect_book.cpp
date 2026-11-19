@@ -32,12 +32,14 @@ render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_
         out.effect[i] = 1.0F;
         out.sure[i] = 1.0F;
         break;
-      case kernels::SceneClass::Background:
       case kernels::SceneClass::Drawing:
         out.effect[i] = 1.0F - sure;
         break;
+      case kernels::SceneClass::Background:
+        out.effect[i] = 1.0F;
+        break;
       case kernels::SceneClass::Uncertain:
-        out.effect[i] = tile.changed ? render::kEffectUnsure : 0.0F;
+        out.effect[i] = tile.changed ? render::kEffectUnsure : 1.0F;
         break;
     }
   }

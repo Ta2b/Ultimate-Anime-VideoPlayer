@@ -44,13 +44,18 @@ TEST_CASE("Éclats des effets : la carte de la scène devient une valeur d'effet
   s.tiles[0].confidence = 0.1F;
   s.tiles[1].kind = kernels::SceneClass::Uncertain;  // aplat qui ne change pas : un ciel, une feuille
   s.tiles[2].kind = kernels::SceneClass::Uncertain;
-  s.tiles[2].changed = true;  // aplat qui change : pas de verdict
+  s.tiles[2].changed = true;                          // aplat qui change : pas de verdict
+  s.tiles[4].kind = kernels::SceneClass::Background;  // décor sûr : une bougie immobile en est un
+  s.tiles[4].confidence = 1.0F;
   const render::EffectTiles t = effect_tiles_of(s, 1920, 1080, 41'708, false);
   REQUIRE(t.cols == 60);
   REQUIRE(t.rows == 34);
   CHECK(t.effect[0] == 1.0F);
-  CHECK(t.effect[1] == 0.0F);
+  // Aucun éclat perdu hors des dessins sûrs (une bougie immobile sortait retenue).
+  CHECK(t.effect[1] == 1.0F);
+  CHECK(t.effect[4] == 1.0F);
   CHECK(t.effect[2] == render::kEffectUnsure);
+  // Un dessin qui bouge, sûr à 80 % : 20 % de la marge.
   CHECK(t.effect[3] > 0.19F);
   CHECK(t.effect[3] < 0.21F);
   // La couche des effets sûrs : la seule tuile d'effet, quelle que soit sa confiance.
