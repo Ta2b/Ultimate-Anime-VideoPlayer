@@ -8,17 +8,17 @@
 
 namespace kirari::app::play {
 
-void ReadySeen::note(std::uint32_t slot, std::uint64_t value, std::int64_t tick_us) {
+void ReadySeen::note(const Key& key, std::int64_t tick_us) {
   for (const Entry& e : entries_) {
-    if (e.tick_us != 0 && e.slot == slot && e.value == value) return;  // la première fois seulement
+    if (e.tick_us != 0 && e.key == key) return;  // la première fois seulement
   }
-  entries_[next_] = Entry{.slot = slot, .value = value, .tick_us = tick_us};
+  entries_[next_] = Entry{.key = key, .tick_us = tick_us};
   next_ = (next_ + 1) % entries_.size();
 }
 
-bool ReadySeen::before(std::uint32_t slot, std::uint64_t value, std::int64_t tick_us) const {
+bool ReadySeen::before(const Key& key, std::int64_t tick_us) const {
   for (const Entry& e : entries_) {
-    if (e.tick_us != 0 && e.slot == slot && e.value == value) return e.tick_us < tick_us;
+    if (e.tick_us != 0 && e.key == key) return e.tick_us < tick_us;
   }
   return false;  // inconnue : comptée comme avant, une perte du GPU
 }

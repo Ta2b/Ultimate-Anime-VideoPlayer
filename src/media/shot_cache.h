@@ -33,10 +33,11 @@ struct CachedShots {
 // 2 : animation tenue, éclairs de deux ou trois images, flashs par zones. 3 : flashs jugés au blanc du grade
 // d'aujourd'hui (flash_gain_of), plus clair : les flashs marqués sous la version 2 en manquaient. 4 : le
 // seuil suit la tendance du mouvement, la première image qui sort du noir ouvre un plan, et un plan dure
-// au moins quatre images. 5 : le flux optique de NVIDIA départage les coupes (media/probe_flow.h). 6 : sa
-// session s'ouvre dans son contexte CUDA (en 5, elle pouvait échouer : des plans gardés sans lui), et le
-// dessin qui confirme une coupe du flux reste dans le plan.
-inline constexpr std::uint32_t kShotAnalysis = 6;
+// au moins quatre images. 5 : le flux optique de NVIDIA départage les coupes (media/probe_flow.h). 6 : le
+// rythme des plans (media/shot_rhythm.h) sans les blocs noirs, et sans les paires d'un plan court fondu. 7 :
+// la session du flux s'ouvre dans son contexte CUDA (en 5 et 6, elle pouvait échouer : des plans gardés sans
+// lui), et le dessin qui confirme une coupe du flux reste dans le plan.
+inline constexpr std::uint32_t kShotAnalysis = 7;
 inline constexpr std::size_t kShotCacheKeep = 400;  // fichiers gardés
 
 // Écrit les plans sous dir (créé au besoin), par un fichier temporaire renommé ; faux si l'écriture

@@ -234,7 +234,7 @@ std::expected<void, Refusal> tuning(std::string_view name, std::string_view text
   }
   if (name == "--vrr-margin") {
     const auto margin = number<double>(text);
-    if (!margin || *margin < 0.0 || *margin > 10.0)
+    if (!margin || !(*margin >= 0.0 && *margin <= 10.0))  // NaN aussi
       return refuse(RefusalCode::FieldOutOfRange,
                     std::format("--vrr-margin: \"{}\" is not a margin from 0 to 10 %", text));
     options.vrr_margin_pct = *margin;

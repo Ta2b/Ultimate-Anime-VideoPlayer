@@ -180,6 +180,7 @@ TEST_CASE("kirari play : refus nommés", "[app][options]") {
   CHECK(parse({"a.mkv", "--window=10x10"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--window=1280"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--seconds=-1"}).error().code == RefusalCode::FieldOutOfRange);
+  CHECK(parse({"a.mkv", "--vrr-margin=nan"}).error().code == RefusalCode::FieldOutOfRange);
   CHECK(parse({"a.mkv", "--model"}).error().code == RefusalCode::FieldMissing);
   CHECK(parse({"--", "--fichier.mkv"})->file == "--fichier.mkv");
   CHECK(parse({"--help"})->help);

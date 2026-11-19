@@ -47,6 +47,17 @@ struct Pair {
     }
   }
 
+  // Vecteurs [x0, x1) × [y0, y1) sans correspondance, et leurs pixels changés dans b (un effet).
+  void unmatch(int x0, int y0, int x1, int y1) {
+    for (int j = y0; j < y1; ++j) {
+      for (int i = x0; i < x1; ++i) cost.at(i, j) = 250;
+    }
+    for (int y = y0 * kSceneFlowGrid; y < y1 * kSceneFlowGrid; ++y) {
+      for (int x = x0 * kSceneFlowGrid; x < x1 * kSceneFlowGrid; ++x)
+        b.at(x, y) = static_cast<std::uint8_t>(255 - b.at(x, y));
+    }
+  }
+
   SceneMotion map(ref::SceneHistory& history) const {
     const auto tiles = ref::scene_tile_sums(a, b, flow, cost, kDivisor);
     REQUIRE(tiles);
@@ -127,6 +138,31 @@ TEST_CASE("carte de la scène sur des flux synthétiques", "[scene_flow]") {
     CHECK(m.at(12, 7).kind == SceneClass::Background);
     CHECK(count(m, SceneClass::Drawing) == 12);
     CHECK_FALSE(m.drawing_held);
+  }
+
+  SECTION("un effet sur un dessin tenu : ce n'est pas tenu") {
+    Pair pair;
+    pair.unmatch(16, 8, 32, 20);  // tuiles 4 à 7, 2 à 4
+    const SceneMotion m = pair.map(history);
+    REQUIRE(m.camera_fit);
+    CHECK(m.background_held);
+    CHECK(m.at(5, 3).kind == SceneClass::Effect);
+    CHECK_FALSE(m.cut_likely);
+    CHECK_FALSE(m.drawing_held);
+  }
+
+  SECTION("sans caméra ajustée (aplat), ce qui bouge n'est pas tenu") {
+    Pair pair;
+    for (std::uint8_t& v : pair.a.data) v = 128;
+    pair.b = pair.a;
+    const SceneMotion still = pair.map(history);
+    CHECK_FALSE(still.camera_fit);
+    CHECK(still.drawing_held);  // rien n'a changé
+    pair.move(3.0F, 0.0F, 16, 8, 32, 20);
+    const SceneMotion moved = pair.map(history);
+    CHECK_FALSE(moved.camera_fit);
+    CHECK(moved.at(5, 3).changed);
+    CHECK_FALSE(moved.drawing_held);
   }
 
   SECTION("coupe : rien ne correspond") {

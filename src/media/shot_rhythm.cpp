@@ -18,39 +18,60 @@ RhythmPair with_flow(RhythmPair pair, const FlowSummary& flow, int height) {
   return pair;
 }
 
+namespace {
+
+// Un bloc de la paire : son écart moyen |b − a| et sa luma moyenne la plus haute des deux images, en codes
+// 8 bits.
+struct BlockCodes {
+  double change = 0.0;
+  double light = 0.0;
+};
+
+BlockCodes block_codes(std::span<const float> previous, std::span<const float> luma, int width, int height,
+                       int bx, int by) {
+  constexpr int kSide = rhythm::kBlockPoints;
+  double change = 0.0, before = 0.0, after = 0.0;
+  int count = 0;
+  for (int y = by * kSide; y < std::min(height, (by + 1) * kSide); ++y) {
+    for (int x = bx * kSide; x < std::min(width, (bx + 1) * kSide); ++x) {
+      const auto at =
+          (static_cast<std::size_t>(y) * static_cast<std::size_t>(width)) + static_cast<std::size_t>(x);
+      change += std::abs(static_cast<double>(luma[at]) - static_cast<double>(previous[at]));
+      before += static_cast<double>(previous[at]);
+      after += static_cast<double>(luma[at]);
+      ++count;
+    }
+  }
+  const double scale = 255.0 / static_cast<double>(count);
+  return {.change = change * scale, .light = std::max(before, after) * scale};
+}
+
+}  // namespace
+
 std::optional<RhythmPair> rhythm_pair_of(std::span<const float> previous, std::span<const float> luma,
                                          int width, int height) {
   if (width < 1 || height < 1) return std::nullopt;
   const auto points = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
   if (previous.size() != points || luma.size() != points) return std::nullopt;
-  constexpr int kSide = rhythm::kBlockPoints;
-  const int cols = (width + kSide - 1) / kSide;
-  const int rows = (height + kSide - 1) / kSide;
+  const int cols = (width + rhythm::kBlockPoints - 1) / rhythm::kBlockPoints;
+  const int rows = (height + rhythm::kBlockPoints - 1) / rhythm::kBlockPoints;
   int moving = 0;
   int blocks = 0;
   double grain = 0.0;
   for (int by = 0; by < rows; ++by) {
     for (int bx = 0; bx < cols; ++bx) {
-      double sum = 0.0;
-      int count = 0;
-      for (int y = by * kSide; y < std::min(height, (by + 1) * kSide); ++y) {
-        for (int x = bx * kSide; x < std::min(width, (bx + 1) * kSide); ++x) {
-          const auto at =
-              (static_cast<std::size_t>(y) * static_cast<std::size_t>(width)) + static_cast<std::size_t>(x);
-          sum += std::abs(static_cast<double>(luma[at]) - static_cast<double>(previous[at]));
-          ++count;
-        }
-      }
-      const double codes = 255.0 * sum / static_cast<double>(count);
+      const BlockCodes block = block_codes(previous, luma, width, height, bx, by);
+      if (block.light < rhythm::kBlackCodes) continue;  // noir des deux côtés : bandes, fondu
       ++blocks;
-      if (codes >= rhythm::kMoveCodes) {
+      if (block.change >= rhythm::kMoveCodes) {
         ++moving;
       } else {
-        grain += codes;
+        grain += block.change;
       }
     }
   }
   RhythmPair pair;
+  if (blocks == 0) return pair;  // une paire toute noire : rien ne bouge, aucun grain
   pair.changed = static_cast<float>(moving) / static_cast<float>(blocks);
   const int still = blocks - moving;
   pair.grain = still > 0 ? static_cast<float>(grain / still) : 0.0F;

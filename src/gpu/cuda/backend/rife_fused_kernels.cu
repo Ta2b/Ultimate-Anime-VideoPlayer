@@ -375,7 +375,9 @@ cudaError_t launch_fused_entry(const FusedEntryParams& params, cudaStream_t stre
 }
 
 cudaError_t launch_fused_glue(const FusedGlueParams& params, cudaStream_t stream) {
-  if (params.flows < 1 || params.flows > 4) return cudaErrorInvalidValue;
+  // Réduction : une puissance de deux (base d / 2 − 1 et quatre points par sortie au-delà de 1).
+  const int d = params.reduce;
+  if (params.flows < 1 || params.flows > 4 || d < 1 || (d & (d - 1)) != 0) return cudaErrorInvalidValue;
   // La place du relèvement suppose chaque source au moins aussi grossière que la sortie (s ≥ d), ce que
   // suivent tous les RIFE découpés (réductions décroissantes) ; sinon refus, et le RIFE entier reprend.
   for (int j = 0; j < params.flows; ++j) {
@@ -392,6 +394,9 @@ cudaError_t launch_fused_glue(const FusedGlueParams& params, cudaStream_t stream
 }
 
 cudaError_t launch_fused_finish(const FusedFinishParams& params, cudaStream_t stream) {
+  // Les lectures groupées (8 octets) demandent les pas de HWC8 : 32 pour x_last, 56 pour y_last.
+  if ((params.x_pitch != 0 && params.x_pitch != 32) || (params.y_pitch != 0 && params.y_pitch != 56))
+    return cudaErrorInvalidValue;
   const dim3 block(32, 8);
   // Fenêtre vide (l'appelant ne la connaît pas) : le tenseur entier, comme le promet FusedFinishParams. Sans
   // ce repli, la prise bornait à [0, -1] et lisait avant le plan (image fausse des tests des noyaux).

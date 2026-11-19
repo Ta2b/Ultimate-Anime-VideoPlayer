@@ -35,8 +35,9 @@ void settle_shot_plan(ChainEngines& c) {
   }
   log_channel("app")->warn("plan par plan : {}, DistilDRBA rendu", why);
   c.drba_by_shot = false;
-  // Sans aucun RIFE, DistilDRBA reste le seul moteur plutôt que rien.
-  if (c.rife != nullptr || c.rife_motion != nullptr) {
+  // Sans aucun RIFE (son chargement refusé), DistilDRBA reste le seul moteur plutôt que rien ; pas à côté de
+  // GMFSS seul, qui tient alors l'interpolation.
+  if (c.rife != nullptr || c.rife_motion != nullptr || c.gmfss_use != GmfssUse::Off) {
     c.drba.reset();
     c.drba_motion = false;
     c.drba_fused = false;

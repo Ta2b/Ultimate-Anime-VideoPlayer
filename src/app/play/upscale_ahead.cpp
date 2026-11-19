@@ -117,8 +117,10 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   ahead_.epoch = after->epoch;
   ahead_.reduce = spec.reduce;
   ahead_.ticket = 0;
-  // La carte de (frame, after), relue quand after sera l'image en cours (scene_map.h).
-  scene_.start(ops, rgb_[current_]->tensor(), ahead_.rgb->tensor(), frame.id, after->id, frame.epoch);
+  // La carte de (frame, after), relue quand after sera l'image en cours (scene_map.h) ; jamais d'une époque à
+  // l'autre.
+  if (after->epoch == frame.epoch)
+    scene_.start(ops, rgb_[current_]->tensor(), ahead_.rgb->tensor(), frame.id, after->id, frame.epoch);
   if (!ahead_scores_ || !(always_scores || next_pair_measured())) return {};
   const gpu::Tensor& next_source = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
   auto ticket = ops.scores_start(rife_source(current_), next_source);
@@ -258,26 +260,37 @@ namespace {
 
 // Rien sans carte (pas encore relue, refusée) ni sans paire de la même époque : l'écran revient alors au
 // grade d'aujourd'hui. Sans interpolation, la carte de la paire d'avant (celle qui finit sur left) sert à la
-// paire en cours : une paire de retard, que le lissage du masque couvre.
+// paire en cours : une paire de retard, que le lissage du masque couvre ; sur une coupe, elle décrirait le
+// plan d'avant et le masque revient au neutre.
 void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::int64_t from_us,
                   const DecodedFrame& b, const PairFacts& facts, int width, int height, bool cut) {
   if (!live.effect_highlights() || !facts.same_epoch || from_us == kNoPts || b.pts_us == kNoPts) return;
   const kernels::SceneMotion* scene = facts.scene ? &*facts.scene : nullptr;
   if (scene == nullptr && map.latest() && map.latest()->right == left) scene = &map.latest()->motion;
   if (scene == nullptr) return;
+  render::EffectTiles tiles;
+  if (cut && !facts.scene) {
+    // Sur une coupe, la carte de la paire d'avant décrit le plan d'avant : une note sans tuiles remet le
+    // masque au neutre plutôt que de poser l'ancien plan sur le nouveau.
+    tiles.cut = true;
+    tiles.span_us = facts.gap_us;
+  } else {
+    tiles = effect_tiles_of(*scene, width, height, facts.gap_us, cut);
+  }
   live.effect_book().add(EffectNote{.epoch = b.epoch,
                                     .from_us = from_us,
                                     .to_us = b.pts_us,
-                                    .tiles = std::make_shared<const render::EffectTiles>(
-                                        effect_tiles_of(*scene, width, height, facts.gap_us, cut))});
+                                    .tiles = std::make_shared<const render::EffectTiles>(std::move(tiles))});
 }
 
 }  // namespace
 
-// La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE (look_ahead). Sans
-// interpolation, la paire est lancée ici et sa carte n'arrive qu'à l'image suivante (SceneMap::latest).
+// La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE et GMFSS (look_ahead).
+// Sinon (sans interpolation, DistilDRBA, image suivante arrivée trop tard), la paire est lancée ici et sa
+// carte n'arrive qu'à l'image suivante (SceneMap::latest) ; rgb_[current_ ^ 1U] tient alors previous_ dans
+// les trois cas (next_source, take_ahead, drba_arrive). D'une époque à l'autre : ni carte ni lancement.
 PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
-  if (!scene_.on() || !previous_) return facts;
+  if (!scene_.on() || !previous_ || !facts.same_epoch) return facts;
   gpu::KernelOps& ops = *setup_.backend->kernels();
   if (facts.scores && pair_cut(facts)) scene_.cut();  // la paire suivante repart sans indices
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
@@ -287,7 +300,7 @@ PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts)
                  setup_.work_height > 0 ? setup_.work_height : setup_.source_height,
                  facts.scores && pair_cut(facts));
   }
-  if (!interpolates() && facts.same_epoch) {
+  if (!scene_.started(previous_->id, frame.id)) {
     scene_.start(ops, rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), previous_->id, frame.id,
                  frame.epoch);
   }
