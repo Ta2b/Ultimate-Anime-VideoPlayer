@@ -19,7 +19,7 @@
 #include "media/shot_cutter.h"
 
 int main(int argc, char** argv) {
-  using namespace ajp;
+  using namespace kirari;
 #ifdef _WIN32
   _setmode(_fileno(stdin), _O_BINARY);  // en mode texte, la lecture s'arrêtait au premier octet 0x1A
 #endif

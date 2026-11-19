@@ -2,7 +2,7 @@
 # Compare la découpe en plans de deux versions de src/media/shot_cutter.cpp sur des vidéos : les coupes de
 # chacune, et pour chaque désaccord une bande de quatre images (deux avant la coupe, deux après) à juger à
 # l'œil.
-#   banc_coupes.sh RÉF_A RÉF_B SORTIE VIDÉO...      par ex. banc_coupes.sh origin/main HEAD ~/ajp-reports/coupes ep*.mkv
+#   banc_coupes.sh RÉF_A RÉF_B SORTIE VIDÉO...      par ex. banc_coupes.sh origin/main HEAD ~/kirari-reports/coupes ep*.mkv
 # RÉF_A et RÉF_B : des révisions git du dépôt. Il faut g++ (C++23), ffmpeg et ffprobe.
 # Sortie : SORTIE/<vidéo>.a et .b (les coupes), SORTIE/desaccords.tsv (vidéo, image, version qui coupe seule),
 # SORTIE/bandes/<vidéo>-<image>-<a|b>.jpg.
