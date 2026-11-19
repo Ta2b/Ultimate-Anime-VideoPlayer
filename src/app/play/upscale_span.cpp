@@ -2,6 +2,7 @@
 // l'emplacement de l'anneau. Sorti d'upscale_stage.cpp (C09-09).
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <optional>
 #include <utility>
 
@@ -12,6 +13,44 @@
 #include "kernels/spec/resample.h"
 
 namespace kirari::app::play {
+
+namespace {
+
+// L'écart entre l'ancre et l'image en cours ; nullopt si le backend ne sait pas le mesurer (la reprise
+// retombe alors à deux de suite). waited_us : l'attente hôte de la relecture.
+std::optional<AnchorGap> measure_anchor(gpu::KernelOps& ops, const gpu::Tensor& anchor,
+                                        const gpu::Tensor& now, SpanReuse& reuse, std::int64_t& waited_us) {
+  KIRARI_TRACE("span.anchor");
+  const auto asked = std::chrono::steady_clock::now();
+  auto scores = ops.scores_now(anchor, now);
+  waited_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked).count();
+  if (scores)
+    return AnchorGap{.worst_block = scores->worst_block, .mean_levels = scores->scene_score * 255.0};
+  log_channel("gpu")->info("SPAN repris : pas de mesure contre l'ancre ({}) ; deux de suite au plus",
+                           scores.error().detail);
+  reuse.anchor_measure = false;
+  return std::nullopt;
+}
+
+// Début d'une série : l'ancre (la précédente, telle que SPAN l'a lue) est copiée avant que son tampon ne
+// reçoive une autre image ; la copie suit sur la voie en cours, sans attente.
+std::expected<void, Refusal> keep_anchor(gpu::Backend& backend, const gpu::Tensor& previous,
+                                         SpanReuse& reuse) {
+  if (!reuse.anchor) {
+    auto tensor = backend.alloc_tensor(previous.type, previous.shape);
+    if (!tensor) {
+      log_channel("gpu")->info("SPAN repris : ancre refusée ({}) ; deux de suite au plus",
+                               tensor.error().detail);
+      reuse.anchor_measure = false;
+      return {};
+    }
+    reuse.anchor = std::move(*tensor);
+  }
+  return backend.kernels()->resample(previous, kernels::Filter::Area, reuse.anchor->tensor());
+}
+
+}  // namespace
 
 std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame, const PairFacts& facts,
                                                        bool held) {
@@ -26,52 +65,25 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
   ReuseFacts rf{.same_epoch = facts.same_epoch,
                 .corrupt = frame.corrupt,
                 .has_output = warps_spanned() || output_has_source_ || (setup_.skip_held && shown_source_),
-                .pair_held = pair_measured ? held : true};
+                .pair_held = !pair_measured || held};
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
-  gpu::KernelOps& ops = *setup_.backend->kernels();
   const int in_row = reuse_.in_row();
+  const gpu::Tensor& previous = rgb_[current_ ^ 1U]->tensor();
   // L'ancre est la précédente au début d'une série, sa copie ensuite. Sans mesure de la paire (SPAN seul),
   // l'ancre se mesure dès la première image.
-  if (candidate && reuse_.anchor_measure && reuse_.wants_anchor(pair_measured) &&
-      (in_row == 0 || reuse_.anchor)) {
-    KIRARI_TRACE("span.anchor");
-    const gpu::Tensor& anchor = in_row == 0 ? rgb_[current_ ^ 1U]->tensor() : reuse_.anchor->tensor();
-    const auto asked = std::chrono::steady_clock::now();
-    auto scores = ops.scores_now(anchor, rgb_[current_]->tensor());
-    keep_scores_wait(
-        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked)
-            .count());
-    if (scores) {
-      rf.anchor = AnchorGap{.worst_block = scores->worst_block, .mean_levels = scores->scene_score * 255.0};
-    } else {
-      log_channel("gpu")->info("SPAN repris : pas de mesure contre l'ancre ({}) ; deux de suite au plus",
-                               scores.error().detail);
-      reuse_.anchor_measure = false;
-    }
+  const bool anchored = in_row == 0 || reuse_.anchor != nullptr;
+  if (candidate && reuse_.anchor_measure && reuse_.wants_anchor(pair_measured) && anchored) {
+    std::int64_t waited = 0;
+    rf.anchor = measure_anchor(*setup_.backend->kernels(), in_row == 0 ? previous : reuse_.anchor->tensor(),
+                               rgb_[current_]->tensor(), reuse_, waited);
+    keep_scores_wait(waited);
   }
   // Sans mesure du tout (SPAN seul, mesure refusée) : rien ne dit que l'image est tenue.
   if (!pair_measured && !rf.anchor) rf.pair_held = false;
   const bool reused = reuse_.decide(rf) == ReuseKind::Whole;
-  // Début d'une série : l'ancre (la précédente, telle que SPAN l'a lue) est copiée avant que son tampon ne
-  // reçoive une autre image ; la copie suit sur la voie des mesures, sans attente.
   if (reused && in_row == 0 && reuse_.anchor_measure) {
-    if (!reuse_.anchor) {
-      const gpu::Tensor& like = rgb_[current_]->tensor();
-      auto tensor = setup_.backend->alloc_tensor(like.type, like.shape);
-      if (tensor) {
-        reuse_.anchor = std::move(*tensor);
-      } else {
-        log_channel("gpu")->info("SPAN repris : ancre refusée ({}) ; deux de suite au plus",
-                                 tensor.error().detail);
-        reuse_.anchor_measure = false;
-      }
-    }
-    if (reuse_.anchor) {
-      if (auto ok =
-              ops.resample(rgb_[current_ ^ 1U]->tensor(), kernels::Filter::Area, reuse_.anchor->tensor());
-          !ok)
-        return std::unexpected(std::move(ok.error()));
-    }
+    if (auto ok = keep_anchor(*setup_.backend, previous, reuse_); !ok)
+      return std::unexpected(std::move(ok.error()));
   }
   return reused;
 }
