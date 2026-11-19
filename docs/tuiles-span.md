@@ -4,20 +4,23 @@ Novembre 2026, phase 3 du plan du flux optique matériel NVIDIA (suite du lot A,
 Quand une image n'est pas reprise entière, SPAN ne recalcule que les tuiles dont l'entrée a bougé ; le reste de
 sa sortie reprend celle de l'image d'avant. Aucun modèle nouveau : SPAN tel quel, et la règle du lot A tuile par
 tuile, sur l'écart des blocs de la mesure de la paire. Jusqu'au 19 novembre, la carte de la scène décidait
-(plus bas, « La carte de la scène ») ; elle ne le pouvait pas. Essai : `--span-tiles` (avec `--debug`), éteint
-par défaut jusqu'au contrôle et aux temps du PC.
+(plus bas, « La carte de la scène ») ; elle ne le pouvait pas. Allumé par défaut depuis le 19 novembre, une fois
+le scintillement mesuré sur processeur (plus bas) ; `--no-span-tiles` (avec `--debug`) le coupe, pour l'ABAB des
+temps du PC.
 
 ## Ce qu'il faut pour que ça tourne
 
-- **`--span-tiles`** (avec `--debug`, option d'essai) ; `--span-tiles-check` l'implique. `--no-span-tiles`,
-  l'ancien ABAB, reste accepté et ne change plus rien : c'est le défaut.
+- **Par défaut** ; `--no-span-tiles` (avec `--debug`) les coupe, pour mesurer avec et sans. `--span-tiles`,
+  l'option de l'essai, reste acceptée et ne change rien ; `--span-tiles-check` les rallume, même après
+  `--no-span-tiles`.
 - **SPAN natif** (le défaut sur RTX 40 et 50, `docs/span-native16.md`) : nos noyaux savent sauter une tuile
   d'un bloc entier, à sommes f16 (Équilibre, et repli du cran Performance) comme f32 (Qualité). TensorRT
   (forme fixe) et le corps FP8 CUTLASS ne calculent que l'image entière : leur grille est vide
-  (`gpu::Engine::span_tile_grid`) et rien ne change pour eux. Avec `--span-tiles` et un de ces moteurs, le
-  journal le dit au démarrage (« ce moteur ne calcule que l'image entière »).
+  (`gpu::Engine::span_tile_grid`) et rien ne change pour eux, pas même la mesure des paires ; le journal le
+  dit au démarrage et à la fin (« ce moteur ne calcule que l'image entière »).
 - **La mesure de la paire, bloc par bloc** (`gpu::PairScores::blocks`, relue par le backend TensorRT, comme le
-  SPAN natif) : sous `--span-tiles`, chaque paire (N − 1, N) se mesure avant le SPAN de N, à ×1 compris, en
+  SPAN natif) : quand les tuiles peuvent servir (moteur à grille), chaque paire (N − 1, N) se mesure avant le
+  SPAN de N, à ×1 compris, en
   avance (`look_ahead`, `drba_next` sous DistilDRBA) ; en SPAN seul comme depuis le lot A (#901), avec ou sans
   `--no-span-reuse`. Sans mesure, l'image se calcule entière.
 - **En lecture** : jamais à l'export (l'export rejoue la chaîne au bit près), ni avec TemporalFix (la mesure
@@ -27,10 +30,10 @@ par défaut jusqu'au contrôle et aux temps du PC.
   réécrit sur place le tampon de SPAN que le warp lit. Juste avant, la sortie de SPAN telle quelle est copiée
   (`SpanReuse::ungraded`, une copie exacte de l'image de sortie, environ 0,2 ms en 4K sur une 4070 Ti) et
   l'image suivante part de cette copie. La copie ne se fait que si les tuiles peuvent servir (moteur à
-  grille, `--span-tiles`, chaîne en lecture) et que le grade a écrit l'image d'avant : un grader qui ne grade
+  grille, tuiles non coupées, chaîne en lecture) et que le grade a écrit l'image d'avant : un grader qui ne grade
   pas ne coûte rien. Sans elle (refus de place), l'image se calcule entière.
 
-La ligne de fin du journal sort dès que les tuiles sont demandées, même sans aucune image par tuiles :
+La ligne de fin du journal sort sous SPAN, sauf avec `--no-span-tiles`, même sans aucune image par tuiles :
 « SPAN par tuiles : t images sur n calculées (p %), x % des tuiles recalculées (y % avec le halo) ; images
 entières : … ». Chaque image entière y compte sous une seule raison (seules les raisons non nulles sont
 écrites) : sans mesure des blocs, région trop large, refus du moteur, sortie d'avant gradée sur place (pas de
@@ -122,7 +125,7 @@ diviseur 2 : six panoramiques de Re:Zero et de Spy×Family, deux dialogues de Sp
 
 - `tools/bench/qualite/tuiles_rejeu/` (construit à part, comme `carte_rejeu`) mesure la paire et l'écart à
   l'ancre sur les lumas du flux (blocs de 16 pixels de travail), puis fait tourner `SpanReuse::decide` et
-  `SpanTiles::plan` compilés tels quels, comme le lecteur sous `--span-tiles`. Il écrit les deux lignes de fin
+  `SpanTiles::plan` compilés tels quels, comme le lecteur. Il écrit les deux lignes de fin
   du lecteur, et la part d'une image entière que le corps de SPAN a calculée ; `--masques` écrit ses
   décisions image par image. Écart au lecteur : la mesure lit la luma du flux, réduite de moitié, et non la
   copie de RIFE. La carte de chaque paire (`kernels::ref`) ne sert plus qu'aux colonnes de `--detail` et aux
@@ -177,21 +180,46 @@ reprise garde le grain de son image, et aucune reprise, entière ou par tuiles, 
 granuleuse. Au seuil de 0,50 (essai de l'image composée), le pire bloc tombe vers 0,55 sur Re:Zero
 (panoramique3 à 51,7 %), mais Spy×Family ne gagne plus rien (98,7 % sur 13:16).
 
+**Scintillement** (`tuiles_controle.py --scintillement`) : le PC ne peut pas le mesurer, l'export (seule sortie
+que lit `scintillement.py`) ne passant jamais par tuiles. Les deux suites du contrôle, calculée entière et
+composée par les tuiles, s'y mesurent comme deux exports (`scintillement.run`) : la source est la luma agrandie,
+le flux celui que le PC a exporté (`k.flux`, l'aller seul). Porte : pas plus de scintillement avec les tuiles,
+plan par plan, à 1 % près. Tenue sur les 16 plans des sept extraits :
+
+| extrait | plans | entières | tuiles |
+|---|---|---|---|
+| Re:Zero, panoramique3 | 1 | 0,192 | 0,191 |
+| Re:Zero, panoramique | 4 | 0,337 · 0,120 · 0,015 · 0,026 | 0,337 · 0,120 · 0,013 · 0,023 |
+| Re:Zero, panoramique2 | 2 | 0,220 · 0,037 | 0,220 · 0,035 |
+| Re:Zero, panoramique4 | 1 | 0,165 | 0,164 |
+| Re:Zero, aura | 4 | 0,367 · 0,035 · 0,252 · 0,283 | 0,367 · 0,031 · 0,250 · 0,283 |
+| Spy×Family 13:16, panoramique6 | 2 | 0,486 · 0,365 | 0,486 · 0,260 |
+| Spy×Family 4:53, panoramique5 | 2 | 0,908 · 0,516 | 0,908 · 0,469 |
+
+Une tuile reprise est la même d'une image à l'autre : les tuiles égalent le calcul entier ou scintillent
+moins. Le grain de 4:53, qui pousse le pire bloc à 1,17, ne fait pas monter le scintillement (0,469 contre
+0,516) : la règle reste telle quelle.
+
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
-À mesurer sur CachyOS, binaire `linux-release`, à la séance de test commune de la fin (consigne de Tatoub du 19 novembre : pas de banc par fonction), avec le SPAN natif :
+La stabilité est tenue sur processeur (plus haut). Au PC, à la séance de test commune de la fin (consigne de
+Tatoub du 19 novembre : pas de banc par fonction), sur CachyOS, binaire `linux-release`, SPAN natif au cran
+Équilibre (ou Qualité : au cran Performance, le FP8 CUTLASS, quand il se charge, calcule l'image entière), sur
+l'extrait unique de 60 s (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers :
 
-1. **Justesse** : `--debug --span-native --span-tiles-check` sur l'extrait unique de 60 s
-   (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers ; la ligne « SPAN par tuiles » du journal donne le
-   pire bloc 16 × 16 et le plus grand écart moyen contre un calcul complet. Porte : pire bloc sous 1 niveau
-   8 bits (environ 48 dB). L'écart moyen sous 0,05 niveau ne se tient sur aucune source granuleuse, pas même
-   par les reprises entières du lot A (plus haut) : la porte proposée est celle du lot A, l'écart moyen de ses
-   reprises entières sur le même extrait (décision de Tatoub).
-2. **Stabilité** : `tools/bench/qualite/scintillement.py` sur 20 s du même extrait, avec `--span-tiles` face à
-   sans : pas plus de scintillement avec les tuiles (porte `--porte`).
-3. **Gain** : la ligne « SPAN par tuiles » et le temps GPU de SPAN (`--stats`) sur le même extrait. Le cran
-   Équilibre (ou Qualité) : au cran Performance, le FP8 CUTLASS, quand il se charge, calcule l'image entière.
-   Le dialogue de Spy×Family 13 BD à 17:06 est un panoramique : les tuiles n'y gagnent rien.
+1. **Justesse** (peut partager le PC) : `kirari --debug --mute --span-tiles-check --seconds=60
+   rezero-s4e18-1710.mkv`. La ligne « SPAN par tuiles » du journal donne la part des images par tuiles et des
+   tuiles recalculées, puis le pire bloc 16 × 16 et le plus grand écart moyen contre un calcul complet. Porte :
+   pire bloc sous 1 niveau 8 bits (environ 48 dB). L'écart moyen sous 0,05 niveau ne se tient sur aucune
+   source granuleuse, pas même par les reprises entières du lot A (plus haut) : la porte est celle du lot A,
+   l'écart moyen de ses reprises entières sur le même extrait (tolérance du lot A, choisie le 19 novembre,
+   Tatoub laissant le choix au fil).
+2. **Temps** (le PC seul) : `kirari --debug --mute --seconds=60 --stats=tuiles.tsv rezero-s4e18-1710.mkv`, puis
+   la même avec `--no-span-tiles --stats=sans-tuiles.tsv`. Le temps GPU de SPAN se lit sur la ligne « profil
+   GPU : moteur … » du journal (médiane et total ; `*.gpu.tsv` à côté), avec « SPAN repris » et « SPAN par
+   tuiles ». Le dialogue de Spy×Family 13 BD à 17:06 est un panoramique : les tuiles n'y gagnent rien.
+
+Une ligne ratée : ce fil corrige la règle, ou coupe les tuiles par défaut.
 
 ## État
 
@@ -199,10 +227,11 @@ granuleuse. Au seuil de 0,50 (essai de l'image composée), le pire bloc tombe ve
 carte de la scène (SPAN natif Équilibre, `--scene-map`, Spy×Family) : aucune image par tuiles ; le premier a
 mené à la copie d'avant le grade et à la ligne de fin toujours écrite, les suivants au budget de 0,025 pixel
 et au bilan de la caméra. Le rejeu sur processeur des dix extraits du PC a montré que NVOF ne peut pas
-descendre à ce budget : la décision lit maintenant l'écart des blocs de la paire, derrière `--span-tiles`.
-Sur les mêmes extraits, le corps de SPAN tombe de 87 % à 51 % sur Re:Zero (panoramique3) et de 95 % à 76 %
-sur Spy×Family 13:16 ; le contrôle sur processeur tient le pire bloc au niveau du lot A sur Re:Zero, pas sur
-Spy×Family 4:53 (1,17 niveau sur 7 images sur 32).
+descendre à ce budget : la décision lit maintenant l'écart des blocs de la paire. Sur les mêmes extraits, le
+corps de SPAN tombe de 87 % à 51 % sur Re:Zero (panoramique3) et de 95 % à 76 % sur Spy×Family 13:16 ; le
+contrôle sur processeur tient le pire bloc au niveau du lot A sur Re:Zero, pas sur Spy×Family 4:53 (1,17
+niveau sur 7 images sur 32), et le scintillement n'augmente sur aucun plan. Allumé par défaut le 19 novembre
+sur ce dernier point.
 
 Audits du 19 novembre : voisines d'une tuile changée, lueur locale, recette de l'entrée, grade réellement
 passé, lecture déclarée aux voies, demande annulée après un refus, mesure du contrôle (`scores_now`) hors de
@@ -216,5 +245,5 @@ tuiles lisent la carte.
 Le test `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques, la décision sur des écarts
 de blocs synthétiques (remise à zéro stricte comprise), la reprise entière gardée au seuil de chaque bloc et
 à l'âge, et les raisons du bilan ; `source_grade_stage_test.cpp`, l'étage sous le grade avant le warp (tuiles
-dès la troisième source, toujours depuis la copie d'avant le grade) et en SPAN seul. Reste au PC : le
-contrôle (`--span-tiles-check`) et les temps.
+dès la troisième source, toujours depuis la copie d'avant le grade) et en SPAN seul. Reste au PC : la justesse
+(`--span-tiles-check`) et les temps (plus haut, « Porte »).

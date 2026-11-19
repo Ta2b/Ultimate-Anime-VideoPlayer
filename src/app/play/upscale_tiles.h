@@ -95,7 +95,7 @@ class SpanTiles {
   // L'écart d'un bloc à l'entrée qui a produit sa sortie, au plus : le seuil des dessins tenus (lot A).
   static constexpr std::uint32_t kThreshold = kernels::kHeldThreshold;
 
-  bool enabled = true;  // --span-tiles (UpscaleSetup::span_reuse)
+  bool enabled = true;  // --no-span-tiles (UpscaleSetup::span_reuse)
 
   // La grille du moteur (gpu::Engine::span_tile_grid) ; inutilisable : jamais de tuiles. Remet l'état à zéro.
   void set_grid(const kernels::SpanTileGrid& grid);
@@ -120,7 +120,7 @@ class SpanTiles {
   void checked(std::uint32_t worst_block, double mean_levels);
   // « SPAN par tuiles : … » pour le journal de fin, même sans aucune image par tuiles : combien l'ont été, et
   // chaque raison des images entières (pour la région trop large, ce qui la remplissait) ; demandées sur un
-  // moteur sans grille, pourquoi. Vide sans SPAN (set_grid jamais appelé) ou sans --span-tiles.
+  // moteur sans grille, pourquoi. Vide sans SPAN (set_grid jamais appelé) ou avec --no-span-tiles.
   std::string summary() const;
 
  private:

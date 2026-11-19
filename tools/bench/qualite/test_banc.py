@@ -423,6 +423,44 @@ class TuilesControle(unittest.TestCase):
             self.assertGreater(missed[1][4], 0.0)
             self.assertEqual(missed[2][1:], ("C", 8, 0.0, 0.0))
 
+    def test_scintillement(self):
+        """Le flux du PC (un vecteur de 1 pixel vers la droite) agrandi à la sortie en vaut 2. Sur dix images d'un
+        décor qui glisse d'un pixel par image, avec un grain qui change à chaque image : une tuile figée ne tient
+        pas la porte, la même suite la tient, une suite qui tremble de plus ne la tient pas."""
+        class Double:
+            def upscale(self, img):
+                return np.repeat(np.repeat(img, 2, axis=1), 2, axis=2)
+
+        rng = np.random.default_rng(7)
+        decor = rng.integers(40, 200, (64, 160)).astype(np.float32)
+        decor = (decor + np.roll(decor, 1, 1) + np.roll(decor, 1, 0) + np.roll(decor, (1, 1), (0, 1))) / 4
+        with tempfile.TemporaryDirectory() as folder:
+            vectors = np.zeros((16, 32, 2), np.int16)
+            vectors[..., 0] = 32  # S10.5 : 1 pixel
+            for k in range(10):
+                img = decor[:, k:k + 128] + rng.normal(0, 1.0, (64, 128))
+                np.clip(np.rint(img), 0, 255).astype(np.uint8).tofile(os.path.join(folder, f"{k}.y"))
+                np.concatenate([vectors.ravel(), np.zeros(16 * 32, np.int16)]).tofile(
+                    os.path.join(folder, f"{k}.flux"))
+                if k > 0:
+                    np.array([1] * 7 + [0], np.uint8).tofile(os.path.join(folder, f"{k}.coeur"))
+            with open(os.path.join(folder, "taches.tsv"), "w", encoding="utf-8") as fh:
+                fh.write("128\t64\t0.y\t1.y\t0.flux\t0.carte\n")
+            flow = tuiles_controle.pc_flow(folder, 0, (128, 64), (256, 128))
+            self.assertEqual(flow.shape, (2, 128, 256))
+            self.assertTrue(np.allclose(flow[0], 2.0) and np.allclose(flow[1], 0.0))
+            args = types.SimpleNamespace(dossier=folder, masques=folder, diviseur=1, images=9, detail=False)
+            keep = ([], [])
+            tuiles_controle.control(args, Double(), keep)
+            self.assertEqual(len(keep[0]), 10)
+            # La tuile 7 jamais recalculée reste en place quand le décor glisse : elle tremble, la porte la voit.
+            text, held = tuiles_controle.flicker(args, *keep)
+            self.assertIn("| 1 | 0–9 | 9 |", text)
+            self.assertFalse(held)
+            self.assertTrue(tuiles_controle.flicker(args, keep[0], keep[0])[1])
+            shaky = [y + rng.normal(0, 3.0, y.shape).astype(np.float32) for y in keep[0]]
+            self.assertFalse(tuiles_controle.flicker(args, keep[0], shaky)[1])
+
 
 if __name__ == "__main__":
     unittest.main()

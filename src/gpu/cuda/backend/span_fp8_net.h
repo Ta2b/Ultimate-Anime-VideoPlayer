@@ -65,6 +65,10 @@ struct SpanFp8Weights {
   // kirari_span_fp8_run --band N au banc. Les bandes ne changent aucune somme, seulement l'ordre des tuiles.
   static constexpr int kBandAuto = -1;
   int band = kBandAuto;
+  // FP16 natif seulement, à l'essai : les poids de chaque pas k en mémoire partagée, une fois par bloc de
+  // noyau au lieu d'une fois par warp depuis le L2 (docs/span-native16.md, « Poids partagés ») ;
+  // kirari_span_fp8_run --shared-weights. Même sortie au bit près.
+  bool shared_weights = false;
   // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
   // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native-edges.
   bool native_edges = false;
