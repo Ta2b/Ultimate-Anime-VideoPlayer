@@ -184,6 +184,20 @@ TEST_CASE("Tuiles qui bougent : limite d'âge, refus et bilan", "[app][tiles]") 
   CHECK(
       t.summary().contains("1 région trop large (100.0 % des tuiles en cause, 100.0 % de région, blocs 0 %, "
                            "âge 100 %)"));
+  // La reprise entière d'une sortie faite par tuiles vieillit aussi chaque tuile : elle s'arrête avant
+  // qu'une tuile passe kMaxAge. Après l'image par tuiles, les tuiles hors du cœur ont une image d'âge.
+  SpanTiles aged;
+  aged.set_grid(kGrid);
+  CHECK_FALSE(aged.plan(blocks.facts()).tiled);
+  blocks.at(10, 13) = 15 * 256;
+  CHECK(tiled_core(aged, blocks.facts()) == 27);
+  blocks.at(10, 13) = 0;
+  int kept = 0;
+  while (kept < 100 && aged.holds(blocks.pair())) {
+    aged.held(blocks.pair());
+    ++kept;
+  }
+  CHECK(kept == SpanTiles::kMaxAge - 1);
 
   // Un refus du moteur : l'image redevient entière, et ne compte plus parmi celles par tuiles. La ligne du
   // bilan sort quand même, avec la raison de chaque image entière.
@@ -259,10 +273,11 @@ TEST_CASE("Tuiles qui bougent : dans la reprise du lot A", "[app][tiles]") {
   CHECK(r.decide(facts) == ReuseKind::Compute);
   facts.tiles_stale = TileStale::Chain;
   CHECK(r.decide(facts) == ReuseKind::Compute);
+  const std::string line = r.tiles.summary();
+  CHECK(line.contains("images entières : 1 sans mesure des blocs, "));  // la reprise imposée
   CHECK(
-      r.tiles.summary().contains("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans "
-                                 "tuiles (export, YUV, TemporalFix, Smooth, plaque), 3 début, saut ou image "
-                                 "abîmée"));
+      line.contains("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans tuiles (export, "
+                    "YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image abîmée"));
 
   // Les tuiles non demandées (le défaut du lecteur, sans --span-tiles) : chaque image se calcule entière, et
   // le journal de fin ne dit rien des tuiles.

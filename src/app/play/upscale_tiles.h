@@ -7,8 +7,9 @@
 // se lit sur la mesure de la paire (gpu::PairScores::blocks, l'écart moyen de chaque bloc 16 × 16 entre la
 // précédente et l'image) : par bloc, la somme des écarts des paires depuis que toute sortie qui le voit a été
 // recalculée majore son écart à l'entrée qui a produit chacune d'elles (l'écart moyen d'un bloc est une
-// norme : inégalité triangulaire). Un glissement sur un bord net s'y voit (0,025 pixel y fait déjà 0,85
-// niveau), un aplat qui glisse ne coûte rien ; le grain s'y additionne (la majoration est prudente).
+// norme : inégalité triangulaire ; chaque paire compte 1/256 de niveau de plus, la troncature de la mesure).
+// Un glissement sur un bord net s'y voit (0,025 pixel y fait déjà 0,85 niveau), un aplat qui glisse ne coûte
+// rien ; le grain s'y additionne (la majoration est prudente).
 //
 // Pourquoi pas la carte de la scène (NVOF) : sur les extraits du PC rejoués sur processeur
 // (tools/bench/qualite/tuiles_rejeu, docs/tuiles-span.md), la moyenne des vecteurs d'une tuile vaut 0,12
@@ -30,7 +31,8 @@
 //     blocs ou quand sa géométrie change, et quand l'entrée de SPAN change de recette (débandage, filtre de
 //     réduction) ;
 //   - après une image par tuiles, la sortie mêle des tuiles d'images différentes : la reprise entière du lot
-//     A n'a lieu que si chaque bloc reste aussi au seuil (holds).
+//     A n'a lieu que si chaque bloc reste aussi au seuil, aucune tuile au-delà de kMaxAge et l'image entière
+//     pas encore due (holds).
 #pragma once
 
 #include <array>
@@ -102,7 +104,8 @@ class SpanTiles {
   // L'image se calcule : entière ou par tuiles. Met à jour l'état des tuiles comme si le plan était suivi.
   TilePlan plan(const TileFacts& facts);
   // La reprise entière du lot A garde-t-elle chaque bloc au seuil ? Toujours vrai tant que la sortie est
-  // celle d'un calcul complet ; après une image par tuiles, chaque bloc avec la paire de l'image.
+  // celle d'un calcul complet ; après une image par tuiles, chaque bloc avec la paire de l'image, et ni
+  // kMaxAge ni kFullEvery dépassés.
   bool holds(const PairBlocks& blocks) const;
   // L'image reprend la sortie d'avant entière (lot A) : chaque tuile vieillit et chaque bloc reçoit l'écart
   // de la paire ; sans mesure, l'état ne suit plus (la prochaine image calculée est entière).
@@ -152,6 +155,7 @@ class SpanTiles {
   float block_px_ = 0.0F;
   int since_full_ = 0;
   bool known_ = false;           // l'état des tuiles suit la sortie d'avant
+  bool unmeasured_ = false;      // il ne la suit plus faute de mesure (held sans blocs) : au bilan
   bool mixed_ = false;           // la sortie mêle des tuiles calculées à des images différentes
   std::uint64_t input_key_ = 0;  // la recette de l'entrée de la dernière image calculée
   Counted last_;                 // la dernière image par tuiles, pour refused()

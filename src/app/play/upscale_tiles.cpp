@@ -23,9 +23,12 @@ void for_tiles(const kernels::SpanTileGrid& g, int x0, int y0, int x1, int y1, F
       f(static_cast<std::size_t>(r) * static_cast<std::size_t>(g.cols) + static_cast<std::size_t>(c));
 }
 
-std::uint32_t add_capped(std::uint32_t a, std::uint32_t b) {
-  const std::uint64_t sum = std::uint64_t{a} + std::uint64_t{b};
-  return static_cast<std::uint32_t>(std::min<std::uint64_t>(sum, std::numeric_limits<std::uint32_t>::max()));
+// La somme d'un bloc et de l'écart d'une paire, bornée. La mesure tronque l'écart au 1/256 de niveau
+// (pair_diff) : un de plus le majore, même pour une dérive lente que chaque paire lirait nulle.
+std::uint32_t add_pair(std::uint32_t sum, std::uint32_t deviation) {
+  const std::uint64_t total = std::uint64_t{sum} + std::uint64_t{deviation} + 1U;
+  return static_cast<std::uint32_t>(
+      std::min<std::uint64_t>(total, std::numeric_limits<std::uint32_t>::max()));
 }
 
 // La mesure a une géométrie : des blocs, un côté, des lignes entières.
@@ -56,6 +59,7 @@ void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
   block_px_ = 0.0F;
   since_full_ = 0;
   known_ = false;
+  unmeasured_ = false;
   mixed_ = false;
 }
 
@@ -82,6 +86,7 @@ TilePlan SpanTiles::full(const PairBlocks& blocks) {
   }
   since_full_ = 0;
   known_ = true;
+  unmeasured_ = false;
   mixed_ = false;
   return TilePlan{};
 }
@@ -101,7 +106,7 @@ bool SpanTiles::adopt(const PairBlocks& blocks) {
 
 std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool new_recipe) {
   if (facts.stale != TileStale::None) return &stale_[static_cast<std::size_t>(facts.stale)];
-  if (!known_) return &stale_[static_cast<std::size_t>(TileStale::Restart)];
+  if (!known_) return unmeasured_ ? &no_measure_ : &stale_[static_cast<std::size_t>(TileStale::Restart)];
   if (new_recipe) return &recipe_;
   if (!fits(facts.blocks) && !adopt(facts.blocks)) return &no_measure_;
   if (since_full_ >= kFullEvery) return &refresh_;
@@ -110,9 +115,11 @@ std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool new_recipe) 
 
 bool SpanTiles::holds(const PairBlocks& blocks) const {
   if (!active() || !mixed_) return true;  // la sortie est celle d'un calcul complet : la règle du lot A
-  if (!known_ || !fits(blocks)) return false;
+  if (!known_ || !fits(blocks) || since_full_ + 1 >= kFullEvery) return false;
+  // Une reprise entière vieillit chaque tuile : aucune au-delà de kMaxAge, comme sous plan.
+  if (std::ranges::any_of(age_, [](int age) { return age + 1 > kMaxAge; })) return false;
   for (std::size_t b = 0; b < sums_.size(); ++b)
-    if (!kernels::is_held(add_capped(sums_[b], blocks.deviation[b]), kThreshold)) return false;
+    if (!kernels::is_held(add_pair(sums_[b], blocks.deviation[b]), kThreshold)) return false;
   return true;
 }
 
@@ -121,10 +128,11 @@ void SpanTiles::held(const PairBlocks& blocks) {
   ++since_full_;
   for (int& age : age_) ++age;
   if (!fits(blocks) && !adopt(blocks)) {
-    known_ = false;  // un écart non mesuré : la prochaine image calculée est entière
+    known_ = false;  // un écart non mesuré : la prochaine image calculée est entière, « sans mesure »
+    unmeasured_ = true;
     return;
   }
-  for (std::size_t b = 0; b < sums_.size(); ++b) sums_[b] = add_capped(sums_[b], blocks.deviation[b]);
+  for (std::size_t b = 0; b < sums_.size(); ++b) sums_[b] = add_pair(sums_[b], blocks.deviation[b]);
 }
 
 std::pair<int, int> SpanTiles::reach(int spread_px) const {
@@ -148,7 +156,7 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   for (std::size_t i = 0; i < age_.size(); ++i)
     if (age_[i] + 1 > kMaxAge) why[i] = Cause::Age;
   for (std::size_t b = 0; b < sums_.size(); ++b) {
-    sums_[b] = add_capped(sums_[b], facts.blocks.deviation[b]);
+    sums_[b] = add_pair(sums_[b], facts.blocks.deviation[b]);
     if (kernels::is_held(sums_[b], kThreshold)) continue;
     tiles_under(b, [&why](std::size_t i) {
       if (why[i] == Cause::None) why[i] = Cause::Block;
@@ -208,6 +216,7 @@ void SpanTiles::refused() {
   std::ranges::fill(sums_, 0U);
   since_full_ = 0;
   known_ = true;
+  unmeasured_ = false;
   mixed_ = false;
 }
 

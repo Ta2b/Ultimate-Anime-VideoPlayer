@@ -78,6 +78,8 @@ class SpanReuse {
 
   bool enabled = true;  // --no-span-reuse : SPAN sur chaque image
   bool alone = false;   // SPAN sans interpolation : l'étage mesure la paire pour la reprise, en avance
+  // L'étage mesure-t-il chaque paire, à ×1 compris ? En SPAN seul, et pour les tuiles (l'écart des blocs).
+  bool measures_pairs() const { return alone || tiles.active(); }
   // La mesure contre l'ancre sert-elle ? Pas au début d'une série dont la paire est mesurée (l'ancre est la
   // précédente).
   bool wants_anchor(bool pair_measured) const { return enabled && (in_row_ > 0 || !pair_measured); }
