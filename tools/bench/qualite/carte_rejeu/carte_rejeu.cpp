@@ -11,8 +11,12 @@
 // carte COLONNES LIGNES caméra_ajustée caméra_tenue dessin_tenu coupe fondu (0 ou 1), puis
 // diag CANDIDATES MINIMUM PEU_TEXTURÉES SANS_CORRESPONDANCE ÉPARSES T25 T50 T75 : les tuiles qui peuvent
 // ajuster la caméra, le nombre qu'il en faut, celles écartées (texture sous kFitTexture, coût, vecteurs
-// épars, dans cet ordre), les quartiles de la texture (codes par pixel ; seuils de kernels::scene).
-// D : le diviseur du travail au flux (scene_flow_divisor), qui ne change que les pixels de travail.
+// épars, dans cet ordre), les quartiles de la texture (codes par pixel ; seuils de kernels::scene), puis
+// camera AJUSTÉE AFFINÉE PAS ÉCART_IMAGE TUILES ÉCART_VECTEURS GARDÉES : la caméra comme le lecteur la tire
+// (ajustée sur les vecteurs, affinée par Lucas-Kanade, spec/scene_camera.h ; PAS −1 : pas d'affinage
+// demandé), l'écart mesuré sur l'image (pixels du flux, −1 : pas mesuré) et sur combien de tuiles, l'écart
+// des vecteurs et les tuiles gardées par l'ajustement. D : le diviseur du travail au flux
+// (scene_flow_divisor), qui ne change que les pixels de travail.
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -27,6 +31,7 @@
 #include <string_view>
 #include <vector>
 
+#include "kernels/ref/scene_camera.h"
 #include "kernels/ref/scene_flow.h"
 
 namespace {
@@ -44,7 +49,7 @@ bool read_plane(const std::string& path, Plane<T>& plane) {
   return read_all(path, std::as_writable_bytes(std::span(plane.data)));
 }
 
-// Pourquoi la caméra s'ajuste ou non : les critères de fit_candidate (kernels/ref/scene_flow.cpp), recopiés.
+// Pourquoi la caméra s'ajuste ou non : les critères de fit_candidate (kernels/ref/scene_fit.h), recopiés.
 void print_diagnosis(const SceneFlowTiles& tiles) {
   int candidates = 0;
   int bare = 0;
@@ -127,7 +132,19 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
     std::cerr << "carte_rejeu : " << tiles.error().detail << "\n";
     return false;
   }
-  const SceneMotion m = ref::scene_motion_of(*tiles, history);
+  // La caméra comme le lecteur : ajustée sur les vecteurs, puis affinée sur les lumas (scene_map.h).
+  ref::SceneCamera camera = ref::scene_camera_of(*tiles);
+  int steps = -1;  // pas d'affinage demandé
+  if (const auto request = ref::scene_camera_request(camera)) {
+    const auto refined = ref::scene_camera_refine(a, b, *request);
+    if (!refined) {
+      std::cerr << "carte_rejeu : " << refined.error().detail << "\n";
+      return false;
+    }
+    ref::scene_camera_apply(camera, *refined);
+    steps = refined->steps;
+  }
+  const SceneMotion m = ref::scene_motion_of(*tiles, history, camera);
   if (!write_map(out_path, m)) {
     std::cerr << "carte_rejeu : écriture impossible : " << out_path << "\n";
     return false;
@@ -136,6 +153,10 @@ bool run(const std::string& line, int divisor, ref::SceneHistory& history) {
             << int{m.background_held} << ' ' << int{m.drawing_held} << ' ' << int{m.cut_likely} << ' '
             << int{m.fade} << "\n";
   print_diagnosis(*tiles);
+  int kept = 0;
+  for (const std::uint8_t d : camera.decor) kept += d;
+  std::cout << "camera " << int{camera.fit} << ' ' << int{camera.refined} << ' ' << steps << ' '
+            << camera.check << ' ' << camera.check_tiles << ' ' << camera.residual << ' ' << kept << "\n";
   return true;
 }
 

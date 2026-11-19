@@ -31,6 +31,7 @@
 #include "gpu/tensor.h"
 #include "kernels/spec.h"
 #include "kernels/spec/layers.h"
+#include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
 
 namespace kirari::gpu {
@@ -357,6 +358,20 @@ class KernelOps {
   virtual std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
       std::uint64_t /*ticket*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_flow : absent de ce backend"});
+  }
+  // L'affinage de la caméra d'une paire de la carte (kernels/spec/scene_camera.h) : Lucas-Kanade sur les
+  // lumas du flux de la paire flow_ticket (celui de scene_flow_start), depuis le modèle de request et sur ses
+  // tuiles du décor, sur la file de NVOF, sans attente. Ticket 0 : rien de lancé (lumas déjà réécrites par
+  // une paire plus récente, paire trop ancienne, relectures toutes en vol) ; la caméra de NVOF reste.
+  // scene_camera_take relit sans jamais attendre (nullopt : pas encore fini). Refus : backend sans la carte,
+  // demande d'une autre grille (ShapeInvalid).
+  virtual std::expected<std::uint64_t, Refusal> scene_camera_start(
+      std::uint64_t /*flow_ticket*/, const kernels::SceneCameraRequest& /*request*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_camera : absent de ce backend"});
+  }
+  virtual std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> scene_camera_take(
+      std::uint64_t /*ticket*/) {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scene_camera : absent de ce backend"});
   }
   // Fondu local du mouvement (kernels/spec/motion_doubt.h) : motion tiré vers le fondu de masque fade selon
   // la grille de doute (cols × rows poids, au plus kDoubtMaxCells de côté, posée sur motion.area), écrit dans

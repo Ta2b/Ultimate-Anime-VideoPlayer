@@ -398,6 +398,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
                     (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
                     (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
                     (p.options.span_native_edges ? gpu::kTrialSpanNative : 0U) |
+                    (p.options.span_promoted ? gpu::kTrialSpanPromoted : 0U) |
                     (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
                     (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};

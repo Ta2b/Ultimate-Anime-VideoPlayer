@@ -17,6 +17,8 @@ réglage moyen, indices temporels et carte de coût, puis la carte du lecteur re
 - la bascule : part des tuiles dont la classe change d'une paire à la suivante, sur toutes les paires et sur les
   paires où la caméra est tenue (plans fixes) ;
 - la caméra : part des paires où elle est ajustée, où elle est tenue ; coupes et fondus probables ;
+- la caméra affinée par Lucas-Kanade comme dans le lecteur (porte 2.1) : part des paires affinées, écart du décor
+  mesuré sur l'image (médiane, part sous 0,5 pixel à 720p), écart des vecteurs, tuiles gardées ;
 - l'ajustement de la caméra : tuiles candidates contre le minimum demandé, paires où elles manquent, paires où
   le rejet des aberrants échoue, tuiles écartées (texture trop faible, coût, vecteurs épars), quartiles de la
   texture ;
@@ -79,8 +81,8 @@ def replay(args, frames, divisor):
         pairs = []
         for line in done.stdout.splitlines():
             head, *fields = line.split()
-            if head == "diag":  # la ligne qui suit la carte de la même paire
-                pairs[-1]["diag"] = [float(f) for f in fields]
+            if head in ("diag", "camera"):  # les lignes qui suivent la carte de la même paire
+                pairs[-1][head] = [float(f) for f in fields]
                 continue
             k = len(pairs)
             cols, rows, flags = int(fields[0]), int(fields[1]), fields[2:]
@@ -124,7 +126,23 @@ def measure(pairs, frames):
             "camera_ajustee": float(np.mean([p["camera_fit"] for p in pairs])),
             "camera_tenue": float(np.mean([p["background_held"] for p in pairs])),
             "coupes": int(sum(p["cut"] for p in pairs)), "fondus": int(sum(p["fade"] for p in pairs)),
-            "ajustement": fit_diagnosis(pairs)}
+            "ajustement": fit_diagnosis(pairs), "affinage": camera_diagnosis(pairs, frames.shape[1])}
+
+
+def camera_diagnosis(pairs, flow_height):
+    """La caméra comme le lecteur la tire (ligne camera de carte_rejeu), en pixels à 720p : part des paires
+    ajustées qui sont affinées, écart médian mesuré sur l'image et part des paires sous 0,5 pixel (la porte 2.1),
+    écart médian des vecteurs, tuiles gardées par l'ajustement."""
+    c = np.array([p["camera"] for p in pairs if "camera" in p and p["camera"][0] == 1], np.float64)
+    if not len(c):
+        return {}
+    unit = 720.0 / flow_height
+    measured = c[:, 3] >= 0
+    image = c[measured, 3] * unit
+    return {"affinee": float(c[:, 1].mean()), "mesuree": float(measured.mean()),
+            "ecart_image": float(np.median(image)) if len(image) else math.nan,
+            "sous_demi": float((image < 0.5).mean()) if len(image) else math.nan,
+            "ecart_vecteurs": float(np.median(c[:, 5]) * unit), "gardees": float(np.median(c[:, 6]))}
 
 
 def fit_diagnosis(pairs):
@@ -183,11 +201,25 @@ def report(rows, tail):
         e, t = f["ecartees"], f["texture"]
         L.append(f"| {name} | {f['candidates']:.0f} / {f['minimum']:.0f} | {pct(f['trop_peu'])} | {pct(f['rejet'])} | "
                  f"{100 * e[0]:.0f} / {100 * e[1]:.0f} / {100 * e[2]:.0f} % | {t[0]:.1f} / {t[1]:.1f} / {t[2]:.1f} |")
+    L += ["", "## Caméra affinée (porte 2.1)", "",
+          "Sur les paires où la caméra est ajustée : part affinée par Lucas-Kanade (spec/scene_camera.h) ; écart "
+          "du décor mesuré sur l'image après affinage (médiane, pixels à 720p ; part des paires mesurées, part sous "
+          "0,5 pixel) ; écart des vecteurs de NVOF au modèle (médiane, pixels à 720p) ; tuiles gardées par "
+          "l'ajustement (médiane).", "",
+          "| Extrait | Affinée | Mesurée | Écart image | Sous 0,5 px | Écart vecteurs | Tuiles gardées |",
+          "|---|---:|---:|---:|---:|---:|---:|"]
+    for name, (_, m) in rows.items():
+        f = m.get("affinage")
+        if not f:
+            continue
+        L.append(f"| {name} | {pct(f['affinee'])} | {pct(f['mesuree'])} | {f['ecart_image']:.2f} | "
+                 f"{pct(f['sous_demi'])} | {f['ecart_vecteurs']:.2f} | {f['gardees']:.0f} |")
     L += ["", f"Coûts de NVOF, tous extraits : 99e centile {tail['c99']}, 99,9e {tail['c999']} ; part des vecteurs "
               "au-dessus de " + ", ".join(f"{s} : {100 * v:.3f} %" for s, v in tail["au_dessus"].items())
           + f" (kSceneCostHigh = {COST_HIGH}).", "",
           "Vues : décor en bleu, dessin en rouge, effet en jaune, incertain sans teinte ; teinte pâle : pas sûre."]
-    return re.sub(r"(\d)\.(\d)", r"\1,\2", "\n".join(L)).replace("porte 2,3", "porte 2.3") + "\n"
+    text = re.sub(r"(\d)\.(\d)", r"\1,\2", "\n".join(L))
+    return text.replace("porte 2,3", "porte 2.3").replace("porte 2,1", "porte 2.1") + "\n"
 
 
 def main():

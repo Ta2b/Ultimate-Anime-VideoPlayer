@@ -22,7 +22,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`span-native16.md`](span-native16.md) | SPAN par nos noyaux, le défaut sur RTX 40 et 50 : FP16, sommes f32 au cran Qualité (lot C du chantier AnimeJaNai) |
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
-| [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, sans TensorRT (`--rife-native`, essai) |
+| [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, morceau par morceau à côté de TensorRT (`--rife-native`, essai) |
 | [`gmfss-natif.md`](gmfss-natif.md) | GMFSS union par nos noyaux, GMFlow sous TensorRT (`--gmfss-native`, essai) |
 | [`gmflow-natif.md`](gmflow-natif.md) | GMFlow par nos noyaux : étude, squelette CNN écrit (PR 1), pas encore branché |
 | [`warp-lib.md`](warp-lib.md) | La bibliothèque de warp CUDA (lot E) : briques communes, colle de RIFE réécrite dessus, warp générique pour TemporalFix et les calques |

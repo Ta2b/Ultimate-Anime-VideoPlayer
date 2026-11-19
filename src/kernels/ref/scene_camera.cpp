@@ -1,0 +1,180 @@
+// Référence de l'affinage de la caméra de la carte (kernels/ref/scene_camera.h).
+#include "kernels/ref/scene_camera.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <format>
+#include <utility>
+#include <vector>
+
+#include "kernels/ref/check.h"
+#include "kernels/ref/scene_fit.h"
+
+namespace kirari::kernels::ref {
+namespace {
+
+std::size_t index(int x, int y, int width) {
+  return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+}
+
+// La boîte (2r + 1)², bords répétés : la somme de la ligne, puis celle de la colonne, puis × 1/(2r + 1)².
+std::vector<float> box_blur(const Plane<std::uint8_t>& p, int r) {
+  const int w = p.width;
+  const int h = p.height;
+  std::vector<float> rows(p.area());
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      float sum = 0.0F;
+      for (int k = -r; k <= r; ++k)
+        sum += static_cast<float>(p.data[index(std::clamp(x + k, 0, w - 1), y, w)]);
+      rows[index(x, y, w)] = sum;
+    }
+  }
+  const float area = 1.0F / static_cast<float>((2 * r + 1) * (2 * r + 1));
+  std::vector<float> out(p.area());
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      float sum = 0.0F;
+      for (int k = -r; k <= r; ++k) sum += rows[index(x, std::clamp(y + k, 0, h - 1), w)];
+      out[index(x, y, w)] = sum * area;
+    }
+  }
+  return out;
+}
+
+struct Lumas {
+  std::vector<float> a;
+  std::vector<float> b;
+  int width = 0;
+  int height = 0;
+  int cols = 0;
+};
+
+bool in_decor(const SceneCameraRequest& request, const Lumas& l, int i, int j) {
+  return request.decor[index(i / kSceneTileFlowPixels, j / kSceneTileFlowPixels, l.cols)] != 0U;
+}
+
+// Un pas de Gauss-Newton (spec/scene_camera.h) : faux si H est mal conditionné, p inchangé.
+bool refine_step(const Lumas& l, const SceneCameraRequest& request, std::array<double, 6>& p) {
+  const SceneCameraFrame frame = scene_camera_frame(l.width, l.height);
+  std::array<float, 6> pf{};
+  for (std::size_t k = 0; k < 6; ++k) pf[k] = static_cast<float>(p[k]);
+  std::array<unsigned, scene::kRefineBins> histogram{};
+  unsigned count = 0;
+  const auto each = [&](auto&& use) {
+    for (int j = 0; j < l.height; j += scene::kRefineStride) {
+      for (int i = 0; i < l.width; i += scene::kRefineStride) {
+        if (!in_decor(request, l, i, j)) continue;
+        const SceneModelAt m = scene_model_at(pf.data(), frame, i, j);
+        const SceneWarpTerm t = scene_warp_term(l.a.data(), l.b.data(), l.width, l.height, i, j, m.dx, m.dy);
+        if (t.valid) use(t, m);
+      }
+    }
+  };
+  each([&](const SceneWarpTerm& t, const SceneModelAt&) {
+    ++histogram[static_cast<std::size_t>(scene_refine_bin(std::abs(t.e)))];
+    ++count;
+  });
+  const float median = scene_refine_median(histogram.data(), count);
+  std::array<double, scene::kRefineSums> sums{};
+  std::array<float, scene::kRefineSums> terms{};
+  each([&](const SceneWarpTerm& t, const SceneModelAt& m) {
+    scene_refine_terms(t, m, scene_huber_weight(t.e, median), terms.data());
+    for (std::size_t k = 0; k < sums.size(); ++k) sums[k] += terms[k];
+  });
+  return scene_refine_solve(sums.data(), p.data());
+}
+
+// La vérification d'une tuile du décor (spec/scene_camera.h), sur les lumas du dernier flou.
+SceneTileCheck check_tile(const Lumas& l, const std::array<double, 6>& p, int col, int row) {
+  const SceneCameraFrame frame = scene_camera_frame(l.width, l.height);
+  std::array<float, 6> pf{};
+  for (std::size_t k = 0; k < 6; ++k) pf[k] = static_cast<float>(p[k]);
+  SceneTileCheck out;
+  const int x1 = std::min((col + 1) * kSceneTileFlowPixels, l.width);
+  const int y1 = std::min((row + 1) * kSceneTileFlowPixels, l.height);
+  for (int step = 0; step < scene::kCheckSteps; ++step) {
+    SceneCheckSums s;
+    for (int j = row * kSceneTileFlowPixels; j < y1; ++j) {
+      for (int i = col * kSceneTileFlowPixels; i < x1; ++i) {
+        const SceneModelAt m = scene_model_at(pf.data(), frame, i, j);
+        const SceneWarpTerm t =
+            scene_warp_term(l.a.data(), l.b.data(), l.width, l.height, i, j, m.dx + out.sx, m.dy + out.sy);
+        if (!t.valid) continue;
+        s.xx += t.gx * t.gx;
+        s.xy += t.gx * t.gy;
+        s.yy += t.gy * t.gy;
+        s.bx += t.gx * t.e;
+        s.by += t.gy * t.e;
+        s.pixels += 1.0F;
+      }
+    }
+    scene_check_step(s, out);
+  }
+  return out;
+}
+
+}  // namespace
+
+Result<SceneCameraRefined> scene_camera_refine(const Plane<std::uint8_t>& a, const Plane<std::uint8_t>& b,
+                                               const SceneCameraRequest& request) {
+  if (auto ok = check_plane(a, "scene_camera_refine : a"); !ok) return std::unexpected(ok.error());
+  if (auto ok = check_same_size(a, b, "scene_camera_refine : a et b"); !ok)
+    return std::unexpected(ok.error());
+  const int cols = scene_flow_tiles(a.width);
+  const int rows = scene_flow_tiles(a.height);
+  if (request.decor.size() != static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows)) {
+    return fail(ErrorCode::SizeMismatch, std::format("scene_camera_refine : {} tuiles de décor pour {}x{}",
+                                                     request.decor.size(), cols, rows));
+  }
+  SceneCameraRefined out{.model = request.model, .steps = 0, .tiles = {}};
+  Lumas l{.a = {}, .b = {}, .width = a.width, .height = a.height, .cols = cols};
+  bool stopped = false;
+  for (const int radius : {scene::kRefineCoarseRadius, scene::kRefineFineRadius}) {
+    l.a = box_blur(a, radius);
+    l.b = box_blur(b, radius);
+    for (int step = 0; step < scene::kRefineSteps && !stopped; ++step) {
+      stopped = !refine_step(l, request, out.model);
+      out.steps += stopped ? 0 : 1;
+    }
+  }
+  out.tiles.resize(request.decor.size());
+  for (int row = 0; row < rows; ++row) {
+    for (int col = 0; col < cols; ++col) {
+      const std::size_t i = index(col, row, cols);
+      if (request.decor[i] != 0U) out.tiles[i] = check_tile(l, out.model, col, row);
+    }
+  }
+  return out;
+}
+
+std::optional<SceneCameraRequest> scene_camera_request(const SceneCamera& camera) {
+  if (!camera.fit || camera.decor_pixels < scene::kRefineMinPixels) return std::nullopt;
+  return SceneCameraRequest{.model = camera.model, .decor = camera.decor};
+}
+
+void scene_camera_apply(SceneCamera& camera, const SceneCameraRefined& refined) {
+  if (refined.steps > 0) {
+    camera.model = refined.model;
+    camera.refined = true;
+  }
+  constexpr float kArea = static_cast<float>(kSceneTileFlowPixels * kSceneTileFlowPixels);
+  std::vector<double> both;
+  std::vector<double> one;
+  for (const SceneTileCheck& t : refined.tiles) {
+    if (t.pixels < scene::kCheckCover * kArea) continue;
+    const float floor = scene::kCheckFloor * std::max(t.pixels, 1.0F);
+    const double off = std::hypot(static_cast<double>(t.sx), static_cast<double>(t.sy));
+    if (t.l2 >= floor) both.push_back(off);
+    if (t.l1 >= floor) one.push_back(off);
+  }
+  const std::size_t needed = scene::kCheckMinTiles;
+  std::vector<double>& used = both.size() >= needed ? both : one;
+  if (used.size() < needed) return;
+  camera.check_tiles = static_cast<int>(used.size());
+  camera.check = scene_fit::median_of(std::move(used));
+}
+
+}  // namespace kirari::kernels::ref

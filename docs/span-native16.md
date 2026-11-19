@@ -61,6 +61,43 @@ chargement (un backend repris d'une vidéo à l'autre ne garde pas un mode péri
 cran Qualité le prend tel quel. `--debug --no-span-native` revient à TensorRT pour l'ABAB ; `--span-native`
 reste accepté (c'est le défaut).
 
+## Sommes promues (essai)
+
+Le f32 du cran Qualité coûte 2,8 ms au banc (14,60 contre 11,82 ms au b8f64) et 4,3 en lecture : sur les
+GeForce, un mma à sommes f32 va à la moitié du débit des tensor cores (RTX 4070 Ti : 80 TFLOPS contre 160).
+Le b8f64 fait environ 1,0 TFLOP par image 1080p, soit 12,5 ms au moins en f32 : les 14,60 ms mesurés en font
+86 %, il n'y a presque plus rien à prendre dans les noyaux f32 eux-mêmes.
+
+Les sommes promues (`Acc::kPromoted`, `SpanNativeSums::Promoted`) gardent le débit du f16 : chaque mma somme
+ses 16 produits en f16 depuis zéro, et ce résultat s'ajoute à l'accumulateur f32 hors des tensor cores
+(quatre conversions et quatre additions par mma, qui passent entre deux mma). L'arrondi f16 ne porte plus que
+sur une somme de 16 produits, au lieu de la somme entière à chaque pas (36 pas en 3×3 à 64 canaux) : attendu
+entre le f16 (66,6 dB) et le f32 (78,3 dB), plus près du f32, pour le temps du f16 et une fraction. La 1×1 de
+la porte somme en f32 (1/9 d'une 3×3). Sur sm 120, la porte à 64 canaux entière somme en f32 : ptxas y
+dépassait 255 registres en promu.
+
+Pour juger : `banc.sh` donne « Natif promu (ms) » et « Écart promu » ; dans le lecteur,
+`kirari play --debug --span-promoted` au cran Qualité (ou Équilibre), et le journal dit « SPAN FP16 natif
+chargé : …, sommes promues ». Si le promu tient près du f32 (75 dB ou plus) pour près du temps du f16, le
+cran Qualité peut passer aux sommes promues ; c'est un changement de ce que le cran promet, à décider.
+
+## Lecture contre banc
+
+Au banc (graphe CUDA, la carte pour lui seul), le b8f64 prend 11,8 ms en f16 ; en lecture (Spy×Family, 30 s,
+SPAN seul), le rôle « agrandissement » en prend 15,0 en médiane (p95 15,1), 19,3 en f32. Ce temps va du début
+du SPAN à la fin de sa queue, attente de l'emplacement de l'anneau comprise (`enqueue_span_fp8`). Le profil
+de fin de séance le coupe en trois (« profil GPU · SPAN, corps », « SPAN, attente de l'emplacement de
+l'anneau », « SPAN, queue (to_pixel, anneau) »), hors de `gpu_profile` dont les lecteurs somment les étapes :
+
+- l'attente de l'emplacement : la queue attend que l'affichage rende un emplacement (sémaphore Vulkan). Un
+  écart logé là n'est pas un coût du SPAN mais le rythme de l'affichage ; le corps ne l'attend déjà pas ;
+- le corps plus long qu'au banc : le grade, la présentation et la conversion du décodage tournent en Vulkan,
+  un autre contexte que le pilote fait alterner avec CUDA par tranches de temps, sans vrai recouvrement. Les
+  événements CUDA comptent alors le travail Vulkan glissé au milieu du SPAN : ce n'est pas un surcoût, la
+  somme des deux est la même. Les horloges aussi peuvent baisser entre deux images. Nsight Systems
+  (`nsys profile --trace=cuda,vulkan`) dit qui tient la carte pendant le SPAN ;
+- la queue : en lecture, to_pixel écrit aussi l'emplacement RGBA16 de l'anneau, absent au banc.
+
 ## Le FP8 (mêmes techniques)
 
 Sous `--debug --span-native-edges` (essai, pas encore mesuré), le SPAN FP8 (cran Performance) prend aussi ses
@@ -120,8 +157,9 @@ des noyaux natifs (graphe CUDA tous deux, bandes par défaut), les natifs à d'a
 f32, et l'écart de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non
 finies), avec et sans bandes. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il a perdu. Dans le
 lecteur : `kirari play --stats` ; le journal dit « SPAN FP16 natif chargé : …, sommes f16 » au cran Équilibre,
-« …, sommes f32 » au cran Qualité, « SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran
-Performance avec `--span-native-edges`.
+« …, sommes f32 » au cran Qualité, « …, sommes promues » avec `--debug --span-promoted`, « SPAN FP8 (noyaux
+CUTLASS) chargé : …, bords natifs » au cran Performance avec `--span-native-edges` ; le profil de fin coupe
+le SPAN en corps, attente de l'emplacement et queue (« Lecture contre banc »).
 
 ## Décision
 
@@ -142,5 +180,8 @@ Premier banc (RTX 4070 Ti, 1080p → 4K, image de Re:Zero, 3 tours ABAB, sans ba
 | b5f48 (Performance) | 9,17 ms | 9,85 ms | 5,92 ms (0,65×) | 6,25 ms | 63,72 dB | |
 
 Les noyaux sont justes (au-dessus des 55 dB visés) et battent TensorRT ; ils égalent AnimeJaNai (11,9 et
-6,2 ms) sans marge. Les bandes (ci-dessus) sont écrites et compilées (sm 89 et 120, sans débordement), à
+6,2 ms) sans marge.
+
+Dans le lecteur (Spy×Family, 30 s, SPAN seul, b8f64) : 66,6 dB et 15,0 ms au cran Équilibre (sommes f16),
+78,3 dB et 19,3 ms au cran Qualité (sommes f32) ; le cran Performance prend le FP8 CUTLASS, à 52,3 dB. Les bandes (ci-dessus) sont écrites et compilées (sm 89 et 120, sans débordement), à
 mesurer au prochain banc.

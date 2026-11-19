@@ -3,7 +3,7 @@
 // (PSNR et SSIM de la sortie contre le modèle d'origine) et mesurer le temps ; il ne sert à rien d'autre.
 //
 //   kirari_span_fp8_run PAQUET|MODELE.onnx HAUTEUR LARGEUR ENTREE.f32 SORTIE.f32 [--bench N] [--reference]
-//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32] [--band N] [--compare]
+//                    [--padded | --per-tap] [--fp16] [--acc16] [--acc32 | --promoted] [--band N] [--compare]
 //
 // ENTREE : 3×H×W float32 (NCHW, valeurs de 0 à 1) ; SORTIE : 3×2H×2W float32. --bench N : N lancements
 // chronométrés dans un graphe CUDA, la médiane sur la sortie standard. --reference : le SPAN en FP16 de la
@@ -12,7 +12,8 @@
 // canaux, l'ancien calcul en 64 canaux ou le K par position du filtre (SpanFp8Width), pour les mesurer contre
 // le calcul natif du lecteur. --fp16 : les blocs en FP16 sans quantification (SpanFp8Weights::fp16), à
 // mesurer contre TensorRT FP16 ; il prend aussi l'ONNX du SPAN à la place d'un paquet. --acc16 :
-// accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32 (il somme en f16 sinon).
+// accumulateur f16, comme le drapeau du paquet. --acc32 : le FP16 natif somme en f32, en f16 sans l'option ;
+// --promoted : chaque mma somme ses 16 produits en f16, ajoutés en f32 (SpanNativeSums::Promoted).
 // --band N : le FP16 natif en bandes de N lignes de demi-résolution (0 : chaque couche sur l'image entière ;
 // sans l'option, SpanFp8Weights::band, celle du lecteur).
 // --compare : la sortie est aussi calculée par la référence FP16 (sommes f32) et l'écart dit sur la sortie
@@ -70,7 +71,7 @@ struct Options {
   kirari::gpu::cuda::SpanFp8Width width48 = kirari::gpu::cuda::SpanFp8Width::Native;
   bool fp16 = false;
   bool acc16 = false;
-  bool acc32 = false;
+  kirari::gpu::cuda::SpanNativeSums sums = kirari::gpu::cuda::SpanNativeSums::F16;
   bool compare = false;
   int band = -1;  // --band ; négatif : celle du lecteur
 };
@@ -88,7 +89,9 @@ std::string read_options(int argc, char* const* argv, Options& options) {
     } else if (option == "--acc16") {
       options.acc16 = true;
     } else if (option == "--acc32") {
-      options.acc32 = true;
+      options.sums = kirari::gpu::cuda::SpanNativeSums::F32;
+    } else if (option == "--promoted") {
+      options.sums = kirari::gpu::cuda::SpanNativeSums::Promoted;
     } else if (option == "--compare") {
       options.compare = true;
     } else if (option == "--per-tap") {
@@ -119,6 +122,18 @@ std::expected<kirari::gpu::span_fp8::Package, kirari::Refusal> load_package(cons
   return kirari::gpu::span_fp8::parse(bytes);
 }
 
+const char* native_label(kirari::gpu::cuda::SpanNativeSums sums) {
+  switch (sums) {
+    case kirari::gpu::cuda::SpanNativeSums::F32:
+      return "FP16 natif (sommes f32)";
+    case kirari::gpu::cuda::SpanNativeSums::Promoted:
+      return "FP16 natif (sommes promues)";
+    case kirari::gpu::cuda::SpanNativeSums::F16:
+      break;
+  }
+  return "FP16 natif";
+}
+
 // Les pointeurs du paquet, avec la forme de calcul demandée.
 kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Package& package,
                                               const Options& options) {
@@ -126,7 +141,7 @@ kirari::gpu::cuda::SpanFp8Weights weights_for(const kirari::gpu::span_fp8::Packa
   weights.width48 = options.width48;
   weights.fp16 = options.fp16;
   weights.acc16 = weights.acc16 || options.acc16;
-  weights.acc32 = options.acc32;
+  weights.sums = options.sums;
   if (options.band >= 0) weights.band = options.band;
   return weights;
 }
@@ -206,8 +221,8 @@ int bench_graph(SpanFp8Net& net, const Options& options, int height, int width, 
     CU(cudaEventElapsedTime(&ms[i], events[2 * i], events[2 * i + 1]));
   std::ranges::sort(ms);
   std::printf("SPAN %s %dx%d : médiane %.3f ms, min %.3f ms sur %d lancements (graphe CUDA)\n",
-              options.fp16 ? (options.acc32 ? "FP16 natif (sommes f32)" : "FP16 natif") : "FP8", width,
-              height, static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
+              options.fp16 ? native_label(options.sums) : "FP8", width, height,
+              static_cast<double>(ms[ms.size() / 2]), static_cast<double>(ms.front()), bench);
   return 0;
 }
 

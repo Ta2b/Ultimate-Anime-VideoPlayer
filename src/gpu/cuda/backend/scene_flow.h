@@ -25,9 +25,12 @@
 #include "gpu/cuda/backend/gpu_timing.h"
 #include "gpu/cuda/backend/nvof_session.h"
 #include "gpu/kernel_ops.h"
+#include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
 
 namespace kirari::gpu::cuda {
+
+struct SceneRefineState;  // scene_camera_kernels.h
 
 class SceneFlow {
  public:
@@ -61,6 +64,15 @@ class SceneFlow {
   // La grille d'un ticket si sa copie est passée, sans attendre ; nullopt sinon. Périmé : SequenceOrder.
   std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> take(std::uint64_t ticket);
 
+  // L'affinage de la caméra d'une paire lancée (KernelOps::scene_camera_start, scene_camera.cpp) : sur la
+  // file de NVOF, sur les lumas de la paire, puis « relâché » reposé sur leurs tampons. Ticket 0, rien de
+  // lancé, si une paire plus récente a réécrit l'un d'eux, si la paire est trop ancienne ou si les relectures
+  // sont toutes en vol.
+  std::expected<std::uint64_t, Refusal> refine(std::uint64_t flow_ticket,
+                                               const kernels::SceneCameraRequest& request, GpuTiming& timing);
+  // Le résultat d'un affinage si sa copie est passée, sans attendre ; nullopt sinon. Périmé : SequenceOrder.
+  std::expected<std::optional<kernels::SceneCameraRefined>, Refusal> refined(std::uint64_t ticket);
+
  private:
   struct Read {
     kernels::SceneTileSums* host = nullptr;
@@ -69,6 +81,28 @@ class SceneFlow {
   };
   std::expected<void, Refusal> allocate_grid();  // la grille de cols_ × rows_ tuiles et ses relectures
   void release_grid();                           // la file de NVOF déjà vide
+  // Ce qu'il faut à l'affinage (scene_camera.cpp) : lumas floutées, état, tuiles, relectures épinglées.
+  std::expected<void, Refusal> allocate_refine();
+  void release_refine();
+  // Les lumas floutées de la paire et les pas de Gauss-Newton, puis la vérification, sur la file own.
+  std::expected<void, Refusal> enqueue_refine(cudaStream_t own, const Lumas& lumas);
+
+  // Une paire lancée : ses tampons et le compte d'écritures de chacun à son lancement.
+  struct Launched {
+    std::uint64_t ticket = 0;
+    Lumas lumas;
+    std::array<std::uint64_t, 2> writes{};
+  };
+  // Un affinage : sa demande et sa relecture, en mémoire hôte épinglée.
+  struct Refine {
+    double* model = nullptr;        // 6
+    std::uint8_t* decor = nullptr;  // cols × rows
+    SceneRefineState* state = nullptr;
+    kernels::SceneTileCheck* checks = nullptr;  // cols × rows
+    cudaEvent_t done = nullptr;
+    std::uint64_t ticket = 0;
+    bool posted = false;  // done enregistré au moins une fois
+  };
 
   std::optional<Refusal> refused_;
   std::unique_ptr<NvofSession> session_;
@@ -83,6 +117,14 @@ class SceneFlow {
   std::array<bool, NvofSession::kLumas> released_posted_{};
   std::optional<Lumas> last_;  // les tampons de la dernière paire lancée
   std::uint64_t tickets_ = 0;
+  std::array<std::uint64_t, NvofSession::kLumas> writes_{};  // écritures de chaque tampon de luma
+  std::array<Launched, kSceneFlowReadbacks> launched_{};     // par ticket % kSceneFlowReadbacks
+  std::array<Refine, kSceneFlowReadbacks> refines_{};
+  std::array<float*, 3> blurred_{};  // a, b, et la somme des lignes
+  SceneRefineState* refine_state_ = nullptr;
+  std::uint8_t* refine_decor_ = nullptr;
+  kernels::SceneTileCheck* refine_checks_ = nullptr;
+  std::uint64_t refine_tickets_ = 0;
 };
 
 }  // namespace kirari::gpu::cuda

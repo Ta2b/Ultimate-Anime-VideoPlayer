@@ -2,10 +2,10 @@
 # Banc unique du SPAN FP16 natif (lot C du chantier AnimeJaNai, docs/span-native16.md) : pour chaque modèle,
 # TensorRT FP16 (trtexec, graphe CUDA) contre nos noyaux FP16 natifs (kirari_span_fp8_run, graphe CUDA), en
 # ABAB, plus la justesse des noyaux natifs contre la référence FP16 à sommes f32 (--compare), sommes en f16
-# (le défaut) et en f32, et le balayage des bandes (docs/span-native16.md, « Bandes ») : le défaut du lecteur
-# (64 lignes) en ABAB, puis sans bandes et à d'autres hauteurs ($BANDS). L'essai C0 (E/S HWC8 de TensorRT) a
-# perdu au premier banc (15,96 ms contre 15,39) et n'y est plus. Un seul lancement donne tout ; le tableau
-# finit dans $OUT/resume.md.
+# (le défaut), en f32 et promues (--promoted, docs/span-native16.md, « Sommes promues »), et le balayage des
+# bandes (« Bandes ») : le défaut du lecteur (64 lignes) en ABAB, puis sans bandes et à d'autres hauteurs
+# ($BANDS). L'essai C0 (E/S HWC8 de TensorRT) a perdu au premier banc (15,96 ms contre 15,39) et n'y est
+# plus. Un seul lancement donne tout ; le tableau finit dans $OUT/resume.md.
 #
 #   flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh BUILD MODELE.onnx [MODELE.onnx…] \
 #       [-- video.mkv]
@@ -59,9 +59,10 @@ native_ms() { # modèle [options] -> médiane en ms
 {
   printf '| Modèle | TensorRT FP16 (ms) | Natif f16 (ms) | Natif/TRT |'
   for b in $BANDS; do printf ' Bandes %s (ms) |' "$b"; done
-  printf ' Natif f32 (ms) | Écart f16 | Écart f16 sans bandes | Écart f32 |\n|---|---:|---:|---:|'
+  printf ' Natif f32 (ms) | Natif promu (ms) | Écart f16 | Écart f16 sans bandes | Écart f32 | Écart promu |\n'
+  printf '|---|---:|---:|---:|'
   for b in $BANDS; do printf -- '---:|'; done
-  printf -- '---:|---|---|---|\n'
+  printf -- '---:|---:|---|---|---|---|\n'
 } >"$OUT/resume.md"
 for model in "${MODELS[@]}"; do
   name="$(basename "$model" .onnx)"
@@ -79,17 +80,19 @@ for model in "${MODELS[@]}"; do
   q0="$("$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f16b0.f32" --fp16 --band 0 --compare |
     sed -n 's/^écart[^:]*: //p')"
   q32="$("$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.f32.f32" --fp16 --acc32 --compare | sed -n 's/^écart[^:]*: //p')"
+  qp="$("$RUN" "$model" "$H" "$W" "$IN" "$OUT/$name.promu.f32" --fp16 --promoted --compare |
+    sed -n 's/^écart[^:]*: //p')"
   t=(); n=(); for r in $(seq 1 "$ROUNDS"); do  # ABAB : une dérive d'horloge ne pèse pas d'un seul côté
     if ((r % 2)); then t+=("$(trt_ms "$engine")"); n+=("$(native_ms "$model")"); else
       n+=("$(native_ms "$model")"); t+=("$(trt_ms "$engine")"); fi
     echo "$name tour $r : TensorRT ${t[-1]} ms, natif ${n[-1]} ms"
   done
-  n32="$(native_ms "$model" --acc32)"
+  n32="$(native_ms "$model" --acc32)"; np="$(native_ms "$model" --promoted)"
   sweep=""; for b in $BANDS; do sweep+=" $(native_ms "$model" --band "$b") |"; done
   med() { printf '%s\n' "$@" | sort -g | sed -n "$((($# + 1) / 2))p"; }
   mt="$(med "${t[@]}")"; mn="$(med "${n[@]}")"
-  printf '| %s | %s | %s | %s |%s %s | %s | %s | %s |\n' "$name" "$mt" "$mn" \
-    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$sweep" "$n32" "$q16" "$q0" "$q32" \
+  printf '| %s | %s | %s | %s |%s %s | %s | %s | %s | %s | %s |\n' "$name" "$mt" "$mn" \
+    "$(awk -v a="$mn" -v b="$mt" 'BEGIN{printf "%.2f", a/b}')" "$sweep" "$n32" "$np" "$q16" "$q0" "$q32" "$qp" \
     >>"$OUT/resume.md"
 done
 cat "$OUT/resume.md"
