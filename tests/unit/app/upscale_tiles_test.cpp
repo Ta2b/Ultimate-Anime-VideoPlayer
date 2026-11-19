@@ -1,9 +1,9 @@
 // Les tuiles qui bougent (upscale_tiles.h, kernels/spec/span_tiles.h) : la dilatation et les masques du
 // moteur, puis la décision sur l'écart des blocs de la paire (bloc qui change et ce qui le voit, débandage,
-// dérive lente partout, lueur locale qui s'additionne, voisin d'un recalcul qui garde sa somme, recette de
-// l'entrée, sans mesure, mesure sur la copie réduite, première image, limite d'âge, refus, bilan), puis dans
-// la reprise du lot A (sorte Tiles, reprise entière gardée au seuil de chaque bloc, reprise imposée, tuiles
-// non demandées).
+// dérive lente partout, lueur locale qui s'additionne, voisin d'un recalcul qui garde sa somme, sorties
+// exactes de la région écrites aussi, recette de l'entrée, sans mesure, mesure sur la copie réduite, première
+// image, limite d'âge, refus, bilan), puis dans la reprise du lot A (sorte Tiles, reprise entière qui suit la
+// seule règle du lot A, écart à l'ancre qui n'additionne pas le grain, reprise imposée, tuiles coupées).
 #include "app/play/upscale_tiles.h"
 
 #include <cstdint>
@@ -85,19 +85,22 @@ TEST_CASE("Tuiles qui bougent : décision sur l'écart des blocs", "[app][tiles]
   CHECK(tiled_core(t, blocks.facts()) == 0);
 
   // Une bouche qui bouge (15 niveaux) dans le bloc (10, 13), pixels 160 à 176 et 208 à 224 : la tuile (2, 13)
-  // du moteur, et toute sortie qui la voit, à une colonne et quatre lignes : 3 × 9 tuiles.
+  // du moteur, et toute sortie qui la voit, à une colonne et deux lignes (kCoreReachPx, 32 pixels) : 3 × 5
+  // tuiles. La région calculée garde la portée du réseau (une colonne et quatre lignes de plus) : la colonne
+  // du bord, dont tout le champ y tient, s'écrit aussi. 4 × 5 tuiles.
   blocks.at(10, 13) = 15 * 256;
   TilePlan p;
-  CHECK(tiled_core(t, blocks.facts(), &p) == 27);
+  CHECK(tiled_core(t, blocks.facts(), &p) == 20);
   CHECK(core_at(p, 2, 13) == 1);
-  CHECK(core_at(p, 1, 9) == 1);
-  CHECK(core_at(p, 3, 17) == 1);
-  CHECK(core_at(p, 0, 13) == 0);
-  CHECK(core_at(p, 2, 18) == 0);
+  CHECK(core_at(p, 1, 11) == 1);
+  CHECK(core_at(p, 3, 15) == 1);
+  CHECK(core_at(p, 0, 13) == 1);
+  CHECK(core_at(p, 4, 13) == 0);
+  CHECK(core_at(p, 2, 16) == 0);
   // Débandée, l'entrée voit la source jusqu'à 16 pixels de plus : une colonne et une ligne de plus.
   TileFacts debanded = blocks.facts();
   debanded.spread_px = 16;
-  CHECK(tiled_core(t, debanded) == 5 * 11);
+  CHECK(tiled_core(t, debanded) == 5 * 7);
   // Le bloc s'arrête : ses tuiles et tout ce qui les voit viennent d'être recalculés, il repart de zéro.
   blocks.at(10, 13) = 0;
   CHECK(tiled_core(t, blocks.facts()) == 0);
@@ -118,24 +121,37 @@ TEST_CASE("Tuiles qui bougent : décision sur l'écart des blocs", "[app][tiles]
   // Lueur locale : 0,5 niveau par paire sur un bloc, sous le seuil ; à la deuxième, la somme le passe.
   blocks.at(10, 13) = 128;
   CHECK(tiled_core(t, blocks.facts()) == 0);
-  CHECK(tiled_core(t, blocks.facts(), &p) == 27);
+  CHECK(tiled_core(t, blocks.facts(), &p) == 20);
   CHECK(core_at(p, 2, 13) == 1);
   blocks.at(10, 13) = 0;
 
-  // Un voisin dans le cœur d'un autre garde sa somme : le bloc (10, 17), sur la tuile (2, 17), reçoit 0,4
+  // Un voisin dans le cœur d'un autre garde sa somme : le bloc (10, 15), sur la tuile (2, 15), reçoit 0,4
   // niveau par paire. La première fois, la bouche du bloc (10, 13) recalcule sa tuile, mais pas la tuile
-  // (2, 21), qui le voit à quatre lignes et garde sa sortie de son entrée d'avant. La deuxième, la somme
-  // passe le seuil : tout ce qui voit le bloc se recalcule, jusqu'à la tuile (2, 21).
+  // (2, 17), qui le voit à deux lignes et garde sa sortie de son entrée d'avant. La deuxième, la somme
+  // passe le seuil : tout ce qui voit le bloc se recalcule, jusqu'à la tuile (2, 17).
   blocks.at(10, 13) = 15 * 256;
-  blocks.at(10, 17) = 102;
-  CHECK(tiled_core(t, blocks.facts(), &p) == 27);
-  CHECK(core_at(p, 2, 17) == 1);
-  CHECK(core_at(p, 2, 21) == 0);
+  blocks.at(10, 15) = 102;
+  CHECK(tiled_core(t, blocks.facts(), &p) == 20);
+  CHECK(core_at(p, 2, 15) == 1);
+  CHECK(core_at(p, 2, 17) == 0);
   blocks.at(10, 13) = 0;
-  CHECK(tiled_core(t, blocks.facts(), &p) == 27);
-  CHECK(core_at(p, 2, 21) == 1);
+  CHECK(tiled_core(t, blocks.facts(), &p) == 20);
+  CHECK(core_at(p, 2, 17) == 1);
   CHECK(core_at(p, 2, 12) == 0);
-  blocks.at(10, 17) = 0;
+  blocks.at(10, 15) = 0;
+
+  // Deux bouches à six lignes : leurs cœurs laissent une ligne entre eux, que la région calculée couvre déjà
+  // avec tout son champ : elle s'écrit aussi. 4 × 11 tuiles au lieu de 2 × 4 × 5.
+  blocks.at(10, 10) = 15 * 256;
+  blocks.at(10, 16) = 15 * 256;
+  CHECK(tiled_core(t, blocks.facts(), &p) == 44);
+  CHECK(core_at(p, 2, 13) == 1);
+  CHECK(core_at(p, 0, 13) == 1);
+  CHECK(core_at(p, 4, 13) == 0);
+  CHECK(core_at(p, 2, 7) == 0);
+  blocks.at(10, 10) = 0;
+  blocks.at(10, 16) = 0;
+  CHECK(tiled_core(t, blocks.facts()) == 0);
 
   // Une autre recette de l'entrée (débandage allumé en cours de lecture) : entière, puis par tuiles ; le
   // retour à la première aussi.
@@ -159,7 +175,7 @@ TEST_CASE("Tuiles qui bougent : décision sur l'écart des blocs", "[app][tiles]
   small.side_px = 24.0F;
   CHECK_FALSE(t.plan(small.facts()).tiled);
   small.at(10, 13) = 15 * 256;
-  CHECK(tiled_core(t, small.facts(), &p) == 4 * 10);
+  CHECK(tiled_core(t, small.facts(), &p) == 4 * 6);
   CHECK(core_at(p, 2, 13) == 0);
   CHECK(core_at(p, 4, 20) == 1);
   CHECK(core_at(p, 3, 19) == 1);
@@ -184,20 +200,20 @@ TEST_CASE("Tuiles qui bougent : limite d'âge, refus et bilan", "[app][tiles]") 
   CHECK(
       t.summary().contains("1 région trop large (100.0 % des tuiles en cause, 100.0 % de région, blocs 0 %, "
                            "âge 100 %)"));
-  // La reprise entière d'une sortie faite par tuiles vieillit aussi chaque tuile : elle s'arrête avant
-  // qu'une tuile passe kMaxAge. Après l'image par tuiles, les tuiles hors du cœur ont une image d'âge.
+  // La reprise entière d'une sortie faite par tuiles vieillit aussi chaque tuile, sans s'arrêter pour elles
+  // (la règle du lot A seule) : la prochaine image calculée recalcule ce qui a passé kMaxAge. Après l'image
+  // par tuiles, les tuiles hors du cœur ont une image d'âge : kMaxAge - 2 reprises les laissent au bord, la
+  // suivante (calculée, rien de dû) les y porte, et celle d'après les doit toutes.
   SpanTiles aged;
   aged.set_grid(kGrid);
   CHECK_FALSE(aged.plan(blocks.facts()).tiled);
   blocks.at(10, 13) = 15 * 256;
-  CHECK(tiled_core(aged, blocks.facts()) == 27);
+  CHECK(tiled_core(aged, blocks.facts()) == 20);
   blocks.at(10, 13) = 0;
-  int kept = 0;
-  while (kept < 100 && aged.holds(blocks.pair())) {
-    aged.held(blocks.pair());
-    ++kept;
-  }
-  CHECK(kept == SpanTiles::kMaxAge - 1);
+  for (int i = 0; i < SpanTiles::kMaxAge - 2; ++i) aged.held(blocks.pair(), PairBlocks{});
+  CHECK(tiled_core(aged, blocks.facts()) == 0);
+  CHECK_FALSE(aged.plan(blocks.facts()).tiled);
+  CHECK(aged.summary().contains("1 région trop large"));
 
   // Un refus du moteur : l'image redevient entière, et ne compte plus parmi celles par tuiles. La ligne du
   // bilan sort quand même, avec la raison de chaque image entière.
@@ -212,7 +228,7 @@ TEST_CASE("Tuiles qui bougent : limite d'âge, refus et bilan", "[app][tiles]") 
   CHECK_FALSE(once.plan(TileFacts{.stale = TileStale::None}).tiled);
   CHECK(once.summary() ==
         "SPAN par tuiles : 0 images sur 4 calculées (0.0 %) ; images entières : 1 sans mesure des blocs, 1 "
-        "refus du moteur, 1 sortie d'avant gradée sur place, 1 début, saut ou image abîmée");
+        "refus du moteur, 1 sortie d'avant gradée ou plaquée sur place, 1 début, saut ou image abîmée");
   // Rien de calculé : la ligne le dit aussi.
   SpanTiles idle;
   idle.set_grid(kGrid);
@@ -242,16 +258,31 @@ TEST_CASE("Tuiles qui bougent : dans la reprise du lot A", "[app][tiles]") {
   CHECK(r.tile_plan.core[static_cast<std::size_t>(13 * kGrid.cols + 2)] == 1);
   blocks.at(10, 13) = 0;
 
-  // La sortie mêle maintenant des tuiles d'images différentes. Une paire tenue (0,5 niveau sur un bloc) se
-  // reprend entière tant que chaque bloc reste au seuil ; la suivante, l'ancre tenue aussi, porterait ce bloc
-  // à 1 niveau depuis le calcul de ses tuiles : elle se calcule, par tuiles.
+  // La sortie mêle maintenant des tuiles d'images différentes. La reprise entière suit la seule règle du lot
+  // A : une paire tenue (0,5 niveau sur un bloc) se reprend, puis une ancre tenue (0,6 niveau) aussi, même si
+  // ce bloc en est à 1 niveau depuis le calcul de ses tuiles. L'image calculée qui suit (l'ancre ne tient
+  // plus) recalcule ce bloc, par tuiles.
   blocks.at(40, 20) = 128;
   facts.pair_held = true;
   CHECK(r.decide(facts) == ReuseKind::Whole);
   facts.anchor = AnchorGap{.worst_block = 150};
+  CHECK(r.decide(facts) == ReuseKind::Whole);
+  facts.anchor = AnchorGap{.worst_block = 300};
   CHECK(r.decide(facts) == ReuseKind::Tiles);
   CHECK(r.tile_plan.core[static_cast<std::size_t>(20 * kGrid.cols + 10)] == 1);
-  CHECK(r.summary().contains(", arrêts aux tuiles 1"));
+  CHECK(r.summary().contains(", à l'ancre 1,"));
+
+  // L'écart à l'ancre, bloc par bloc, ne s'additionne pas comme les paires : du grain (0,5 niveau par paire
+  // sur ce bloc, qui vient d'être recalculé) que l'ancre voit au même niveau ne le fait pas recalculer.
+  facts.anchor.reset();
+  CHECK(r.decide(facts) == ReuseKind::Whole);
+  AnchorGap grain{.worst_block = 128, .blocks = blocks.deviation, .blocks_x = 64, .side_px = 16.0F};
+  facts.anchor = grain;
+  CHECK(r.decide(facts) == ReuseKind::Whole);
+  CHECK(r.decide(facts) == ReuseKind::Whole);
+  facts.anchor = AnchorGap{.worst_block = 300, .blocks = blocks.deviation, .blocks_x = 64, .side_px = 16.0F};
+  CHECK(r.decide(facts) == ReuseKind::Tiles);
+  CHECK(r.tile_plan.core[static_cast<std::size_t>(20 * kGrid.cols + 10)] == 0);
   blocks.at(40, 20) = 0;
   facts.anchor.reset();
 
@@ -277,10 +308,10 @@ TEST_CASE("Tuiles qui bougent : dans la reprise du lot A", "[app][tiles]") {
   CHECK(line.contains("images entières : 1 sans mesure des blocs, "));  // la reprise imposée
   CHECK(
       line.contains("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans tuiles (export, "
-                    "YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image abîmée"));
+                    "YUV, TemporalFix, Smooth), 2 début, saut ou image abîmée"));
 
-  // Les tuiles non demandées (le défaut du lecteur, sans --span-tiles) : chaque image se calcule entière, et
-  // le journal de fin ne dit rien des tuiles.
+  // Les tuiles coupées (--no-span-tiles) : chaque image se calcule entière, et le journal de fin ne dit rien
+  // des tuiles.
   SpanReuse off;
   off.tiles.enabled = false;
   off.tiles.set_grid(kGrid);

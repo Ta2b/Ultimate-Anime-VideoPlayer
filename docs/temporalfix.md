@@ -129,6 +129,9 @@ garde ce graphe, pour la mesure ABAB ; `--debug --no-tfix-cache` prend le graphe
   78 dB face au graphe entier FP16 (s1, s2, s3), le pixel (0, 0) mis à part : le graphe y ajoute un terme de
   2^-11 que la fusion laisse de côté.
 
+Natif (essai, `--tfix-native`) : les cinq morceaux de convolutions par nos noyaux CUDA au lieu des moteurs
+TensorRT, même colle rangée par pixel ([`tfix-natif.md`](tfix-natif.md)).
+
 Cible du lot B : 12 ms ou moins par image à pleine taille en 1080p sur la RTX 4070 Ti (27,9 ms pour le graphe
 entier), à 52 dB ou plus face au graphe entier. Pas encore mesuré : porte du groupe de tests 2, sur le PC.
 

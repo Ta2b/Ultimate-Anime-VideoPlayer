@@ -2,6 +2,7 @@
 // le masque, les notes par paire, et le masque que suivent l'écran et le grade avant le warp.
 #include "app/play/effect_book.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -44,15 +45,15 @@ TEST_CASE("Éclats des effets : la carte de la scène devient une valeur d'effet
   s.tiles[0].confidence = 0.1F;
   s.tiles[1].kind = kernels::SceneClass::Uncertain;  // aplat qui ne change pas : un ciel, une feuille
   s.tiles[2].kind = kernels::SceneClass::Uncertain;
-  s.tiles[2].changed = true;  // aplat qui change : pas de verdict
+  s.tiles[2].changed = true;                          // aplat qui change : pas de verdict
+  s.tiles[4].kind = kernels::SceneClass::Background;  // décor sûr : une bougie immobile en est un
+  s.tiles[4].confidence = 1.0F;
   const render::EffectTiles t = effect_tiles_of(s, 1920, 1080, 41'708, false);
   REQUIRE(t.cols == 60);
   REQUIRE(t.rows == 34);
-  CHECK(t.effect[0] == 1.0F);
-  CHECK(t.effect[1] == 0.0F);
-  CHECK(t.effect[2] == render::kEffectUnsure);
-  CHECK(t.effect[3] > 0.19F);
-  CHECK(t.effect[3] < 0.21F);
+  // La marge entière partout, dessin sûr compris : une bougie immobile sortait en décor, puis en dessin (son
+  // contour net sur le noir), et perdait 60 % de sa montée.
+  for (std::size_t i = 0; i < 5; ++i) CHECK(t.effect[i] == 1.0F);
   // La couche des effets sûrs : la seule tuile d'effet, quelle que soit sa confiance.
   REQUIRE(t.sure.size() == t.effect.size());
   CHECK(t.sure[0] == 1.0F);
@@ -68,9 +69,17 @@ TEST_CASE("Éclats des effets : la carte de la scène devient une valeur d'effet
   s.drawing_held = false;
   s.fade = true;
   CHECK(effect_tiles_of(s, 1920, 1080, 41'708, false).hold);
+  // Une coupe ne donne aucune tuile : la paire enjambe deux plans (NVOF y voyait des effets dans un fond
+  // sombre), le masque repart du neutre.
   s.cut_likely = true;
-  CHECK(effect_tiles_of(s, 1920, 1080, 41'708, false).cut);
-  CHECK(effect_tiles_of(scene(4, 2, kernels::SceneClass::Drawing, 1.0F), 1920, 1080, 0, true).cut);
+  const render::EffectTiles likely = effect_tiles_of(s, 1920, 1080, 41'708, false);
+  CHECK(likely.cut);
+  CHECK(likely.effect.empty());
+  CHECK(likely.sure.empty());
+  const render::EffectTiles cut =
+      effect_tiles_of(scene(4, 2, kernels::SceneClass::Effect, 1.0F), 1920, 1080, 0, true);
+  CHECK(cut.cut);
+  CHECK(cut.effect.empty());
   // Une carte mal formée ne donne rien (le masque revient alors au neutre).
   kernels::SceneMotion bad = scene(4, 2, kernels::SceneClass::Effect, 1.0F);
   bad.tiles.pop_back();

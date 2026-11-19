@@ -5,7 +5,7 @@ add_library(kirari_backend_tensorrt_kernels STATIC deband_kernels.cu doubt_kerne
   gmflow_backbone_net.cu gmfss_kernels.cu gmfss_native_net.cu gmfss_pair_native_net.cu layer_kernels.cu rife_fused_kernels.cu
   rife_kernels.cu rife_native_bench.cu rife_native_finish.cu rife_native_glue.cu rife_native_net.cu rife_native_pick.cu
   rife_native_weights.cu scene_camera_kernels.cu scene_flow_kernels.cu slice_kernels.cu stats_kernels.cu
-  tfix_blend_kernels.cu tfix_fused_kernels.cu warp_kernels.cu warp_lib.cu)
+  tfix_blend_kernels.cu tfix_fused_kernels.cu tfix_native_net.cu warp_kernels.cu warp_lib.cu)
 target_include_directories(kirari_backend_tensorrt_kernels PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(kirari_backend_tensorrt_kernels PRIVATE kirari::dep::cudart)
 # -lineinfo pour ncu ; ptxas donne les registres de chaque noyau au journal de build, et un
@@ -80,7 +80,7 @@ add_library(kirari_backend_tensorrt MODULE
   rife_native_mix.cpp rife_native_trial.cpp
   ingest_chroma.cpp nvof_session.cpp scene_camera.cpp scene_flow.cpp shared_activations.cpp span_fp8_check.cpp span_fp8_engine.cpp span_fp8_tiles.cpp tensorrt_backend.cpp tensorrt_doubt.cpp tensorrt_export.cpp tensorrt_kernels.cpp
   tensorrt_gmfss.cpp tensorrt_gmfss_fused.cpp tensorrt_gmfss_pair.cpp tensorrt_layers.cpp tensorrt_lanes.cpp tensorrt_drba_fused.cpp tensorrt_rife.cpp tensorrt_rife_fused.cpp tensorrt_scene_flow.cpp tensorrt_span_derive.cpp
-  span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_tfix_fused.cpp tensorrt_warp.cpp tfix_fused_engine.cpp
+  span_timing.cpp tensorrt_span_fp8.cpp tensorrt_stats.cpp tensorrt_textures.cpp tensorrt_tfix_fused.cpp tensorrt_warp.cpp tfix_fused_engine.cpp tfix_fused_native.cpp
   trt_engine.cpp)
 target_include_directories(kirari_backend_tensorrt PRIVATE "${PROJECT_SOURCE_DIR}/src")
 # En-têtes BSD de NVIDIA Optical Flow (nvof_session.cpp) : types et signatures seulement, la bibliothèque vient

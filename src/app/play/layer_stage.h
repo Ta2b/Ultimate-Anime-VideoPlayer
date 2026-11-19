@@ -19,13 +19,10 @@ namespace kirari::app::play {
 struct LayerSetup {
   // play.toml [interpolation] layers : les calques sur les images intermédiaires.
   bool layers = false;
-  // La plaque (play.toml [interpolation] background_plate). Son SPAN, le modèle de SPAN en FP16 aux formes de
-  // travail, quand celui de la lecture tourne en FP8 ou en INT8 ; nullptr sinon.
-  gpu::Engine* plate = nullptr;
-  // La plaque reprend la sortie du SPAN de la lecture sur l'image clé, déjà en FP16 ou mieux : pas de second
-  // SPAN, donc pas d'image en retard à chaque clé.
-  bool plate_copy = false;
-  constexpr bool plate_on() const { return plate != nullptr || plate_copy; }
+  // La plaque (play.toml [interpolation] background_plate) : la sortie du SPAN de la lecture sur l'image clé,
+  // reprise par les sources suivantes du plan.
+  bool plate = false;
+  constexpr bool plate_on() const { return plate; }
 };
 
 // Les images intermédiaires écrites directement dans le slot (BackendCaps::ring_targets) : pas avec les
@@ -53,10 +50,13 @@ class LayerStage {
   std::expected<void, Refusal> compose_pair(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b,
                                             const gpu::Tensor& out, float t, bool cubic);
   // SPAN de b vient d'être enfilé dans spanned (sur la voie de SPAN) : la plaque, si la paire en a une. Une
-  // clé passe d'abord rgb (l'image de travail de b) dans le SPAN de la plaque, ou reprend spanned
-  // (plate_copy). Avant le grade : la plaque n'est jamais gradée, l'image composée l'est comme toute autre.
+  // clé reprend spanned telle quelle, qui n'est pas réécrite ; les sources suivantes y reprennent leur décor.
+  // Avant le grade : la plaque n'est jamais gradée, l'image composée l'est comme toute autre.
   std::expected<void, Refusal> after_span(gpu::Backend& backend, const LayerSetup& setup,
-                                          const gpu::Tensor& rgb, const gpu::Tensor& spanned, bool cubic);
+                                          const gpu::Tensor& spanned, bool cubic);
+  // after_span réécrira spanned (décor repris de la clé) : l'étage en garde d'abord la copie pour les tuiles
+  // de SPAN de l'image suivante (upscale_span.cpp). Vrai aussi quand la composition se refuse ensuite.
+  bool rewrites(const LayerSetup& setup) const;
   // Le journal de fin : paires avec calques, sans (par raison), clés et sources de la plaque.
   void log_summary(const LayerSetup& setup) const;
 
@@ -67,8 +67,8 @@ class LayerStage {
   NeighbourCameras neighbours_;
   PlateStep plate_step_;
   std::unique_ptr<gpu::TensorBuffer> plate_;
-  bool plate_ready_ = false;  // plate_ tient la clé du suivi (son SPAN a tourné)
-  bool key_pending_ = false;  // la clé de la paire attend le SPAN de la plaque (after_span)
+  bool plate_ready_ = false;  // plate_ tient la clé du suivi (sa copie est faite)
+  bool key_pending_ = false;  // la clé de la paire attend sa copie (after_span)
   struct Counts {
     std::uint64_t pairs = 0;     // paires qui ont des calques
     std::uint64_t borrowed = 0;  // dont avec la caméra lk d'une paire voisine

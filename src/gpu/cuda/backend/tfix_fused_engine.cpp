@@ -37,6 +37,10 @@ std::expected<std::unique_ptr<TrtEngine>, Refusal> load_piece(
   return engine;
 }
 
+void* base_at(void* base, std::size_t elements) {
+  return static_cast<std::byte*>(base) + elements * 2U;
+}
+
 Shape dims_shape(std::int64_t n, const kernels::TfixDims& d) {
   return {.dims = {n, d.channels, d.height, d.width}};
 }
@@ -93,8 +97,22 @@ std::expected<void, Refusal> TfixEncoderEngine::enqueue(cudaStream_t stream,
   }
   const Tensor traits =
       fused_tensor(out.handle, out.offset + packed.traits * 2U, kernels::kTfixTraits, height_, width_);
-  if (auto ok = encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&traits, 1)); !ok)
+  if (native_on_) {
+    // Les activations des noyaux natifs au bas de la zone, comme celles d'un moteur entier.
+    const std::int64_t bytes = native_->encoder_workspace_bytes();
+    if (arena->bytes() < bytes) {
+      if (auto ok = arena->reserve(bytes); !ok) return ok;
+    }
+    arena->used(this, bytes);
+    if (auto ok =
+            cuda_check(native_->encode(stream, fused_address(image), fused_address(traits), arena->data()),
+                       "TemporalFix natif : encodeur");
+        !ok)
+      return ok;
+  } else if (auto ok = encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&traits, 1));
+             !ok) {
     return ok;
+  }
   return cuda_check(launch_tfix_pyramid(fused_address(rgb), packed_ptr, height_, width_, half_, stream),
                     "tfix_pyramid<<<>>>");
 }
@@ -147,6 +165,7 @@ std::expected<std::unique_ptr<TfixWindowEngine>, Refusal> TfixWindowEngine::load
   activation = std::max(activation, (*conf)->activation_bytes());
   engine->conf_ = std::move(*conf);
   engine->layout_ = kernels::tfix_layout(h, w, key.half);
+  engine->trt_activation_ = activation;
   engine->own_activation_ = activation;
   engine->scratch_offset_ = engine->scratch_offset_for(*shared);
   if (auto ok = engine->use_zone(shared); !ok) return std::unexpected(std::move(ok.error()));
@@ -237,9 +256,13 @@ std::expected<void, Refusal> TfixWindowEngine::run(cudaStream_t stream,
   const auto at = [base](std::size_t elements) {
     return reinterpret_cast<std::uintptr_t>(base) + elements * 2U;
   };
-  const TfixShape shape = tfix_shape(h, w, half_, base);
+  const TfixShape shape = tfix_shape(h, w, half_, base, native_on_);
   const auto block = [&](int b) -> std::expected<void, Refusal> {
     const auto i = static_cast<std::size_t>(b);
+    if (native_on_)
+      return cuda_check(
+          native_->window(stream, b, base_at(base, layout_.x[i]), base_at(base, layout_.y[i]), arena->data()),
+          "TemporalFix natif : bloc");
     const kernels::TfixDims x = kernels::tfix_block_x(b, h, w);
     const kernels::TfixDims y = kernels::tfix_block_y(b, h, w);
     const Tensor in =
@@ -255,6 +278,14 @@ std::expected<void, Refusal> TfixWindowEngine::run(cudaStream_t stream,
     if (auto ok = block(level); !ok) return ok;
   }
   if (auto ok = cuda_check(launch_tfix_conf(shape, stream), "tfix_conf<<<>>>"); !ok) return ok;
+  if (native_on_) {
+    if (auto ok = cuda_check(native_->window(stream, kernels::kTfixLevels, base_at(base, layout_.conf_in),
+                                             base_at(base, layout_.conf_out), arena->data()),
+                             "TemporalFix natif : tête");
+        !ok)
+      return ok;
+    return cuda_check(launch_tfix_blend(shape, stream), "tfix_blend<<<>>>");
+  }
   const kernels::TfixDims half_level = kernels::tfix_level(2, h, w, 1);
   const Tensor conf_in = fused_tensor(at(layout_.conf_in), 0, kernels::kTfixConf, half_level.height,
                                       half_level.width, kernels::kTfixSupports);
@@ -296,10 +327,12 @@ std::expected<void, Refusal> TfixWindowEngine::enqueue(cudaStream_t stream,
                      "cudaMemcpyAsync (table TemporalFix)");
       !ok)
     return ok;
+  // Les activations des noyaux natifs, sous les tampons de la fenêtre : comme celles d'un moteur entier.
+  if (native_on_) arena->used(this, native_->workspace_bytes());
   const FusedGraphs::Key key{reinterpret_cast<std::uintptr_t>(arena->data()),
                              static_cast<std::uintptr_t>(arena->generation()),
                              scratch_offset_,
-                             0,
+                             native_on_ ? 1U : 0U,  // la disposition des tampons en dépend
                              0,
                              0,
                              0};

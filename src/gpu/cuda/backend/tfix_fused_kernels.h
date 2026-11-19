@@ -42,11 +42,18 @@ struct TfixShape {
   std::size_t mask_half = 0;
   std::size_t conf_out = 0;
   std::size_t net_out = 0;
+  // Le rangement de X_b, Y_b, de l'entrée et de la sortie de la tête : en plans (TensorRT), ou par pixel au
+  // pas *_ld (noyaux natifs, kernels::tfix_in_ld et tfix_out_ld). En plans, le pas est le nombre de canaux.
+  bool native = false;
+  int xld[kernels::kTfixLevels] = {};  // NOLINT(modernize-avoid-c-arrays)
+  int yld = 0;
+  int conf_ld = 0;
+  int conf_out_ld = 0;
   void* zone = nullptr;              // le début des tampons de la fenêtre (TfixLayout)
   const TfixTable* table = nullptr;  // dans la zone (TfixLayout::table)
 };
 
-TfixShape tfix_shape(int height, int width, bool half, void* zone);
+TfixShape tfix_shape(int height, int width, bool half, void* zone, bool native = false);
 
 // L'encodeur fusionné, avant le moteur de l'encodeur (demi-taille) : l'image de travail (3 plans,
 // 2H × 2W) moyennée 2 × 2 dans packed (TfixPacked::image).

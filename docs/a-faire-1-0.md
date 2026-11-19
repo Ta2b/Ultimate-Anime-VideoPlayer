@@ -14,6 +14,9 @@ Suivi après le grand nettoyage (PR #530 à #533, [ADR 0012](adr/0012-lecteur-si
   calibration de l'Auto.
 - Reprendre la sortie de l'image d'avant sur un dessin tenu (deux passes sur trois de moins en anime).
 - La porter sur Vulkan : les opérateurs qui manquent à l'import sont dans [`temporalfix.md`](temporalfix.md).
+- TemporalFix natif (`--tfix-native`, [`tfix-natif.md`](tfix-natif.md)) : mesurer sur la RTX les dB et le temps
+  par image face à TensorRT, puis décider du défaut selon la règle de ce document. La construction TensorRT
+  reste tant que la mesure n'a pas montré mieux.
 
 ## Code mort à retirer (sans effet sur l'image)
 

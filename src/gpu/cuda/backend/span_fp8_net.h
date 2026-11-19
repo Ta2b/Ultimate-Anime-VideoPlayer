@@ -35,6 +35,8 @@ enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
 // tensor cores des GeForce. Les sommes promues (16 produits en f16 par mma, total en f32) ont perdu au banc
 // (docs/span-native16.md, « Sommes promues »).
 enum class SpanNativeSums : std::uint8_t { F16, F32 };
+// Poids partagés du FP16 natif (SpanFp8Weights::shared_weights) : Auto les prend à 48 canaux seulement.
+enum class SpanSharedWeights : std::uint8_t { Auto, On, Off };
 
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
 struct SpanFp8Weights {
@@ -65,6 +67,11 @@ struct SpanFp8Weights {
   // kirari_span_fp8_run --band N au banc. Les bandes ne changent aucune somme, seulement l'ordre des tuiles.
   static constexpr int kBandAuto = -1;
   int band = kBandAuto;
+  // FP16 natif seulement : les poids de chaque pas k en mémoire partagée, une fois par bloc de noyau au lieu
+  // d'une fois par warp depuis le L2 (docs/span-native16.md, « Poids partagés »). Même sortie au bit près.
+  // Auto : à 48 canaux (b5f48, −3,7 % au banc), pas à 64 (b8f64, +4,1 %) ; kirari_span_fp8_run
+  // --shared-weights ou --no-shared-weights pour forcer.
+  SpanSharedWeights shared_weights = SpanSharedWeights::Auto;
   // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
   // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native-edges.
   bool native_edges = false;

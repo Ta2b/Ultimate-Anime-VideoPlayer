@@ -3,8 +3,11 @@
 // son entrée unique jusqu'à sa sortie unique, des Conv 3 × 3 (pas 1 ou 2, bord 1) suivies ou non d'une
 // activation (LeakyRelu, PRelu, Relu), d'une échelle par canal (Mul) et d'une addition résiduelle de l'entrée
 // de la convolution (Add), puis une ConvTranspose 4 × 4 de pas 2 à la fin. C'est l'encodeur de RIFE 4.2x
-// (cnn0 à cnn3) et son IFBlock (conv0, convblock de ResConv à bêta, lastconv). Tout le reste est refusé : le
-// morceau reste alors aux moteurs TensorRT.
+// (cnn0 à cnn3) et son IFBlock (conv0, convblock de ResConv à bêta, lastconv). Pour TemporalFix
+// (--tfix-native, docs/tfix-natif.md), sans transposée : une Conv par canal (groupes = canaux) se range en
+// 3 × 3 diagonale, et une Conv 1 × 1 qui suit directement une convolution s'y replie (la convolution
+// séparable devient une seule 3 × 3, exacte en réels) ; seule, elle se range en 3 × 3 à sa prise du centre.
+// Tout le reste est refusé : le morceau reste alors aux moteurs TensorRT.
 #pragma once
 
 #include <cstddef>
@@ -17,7 +20,7 @@
 namespace kirari::prepare {
 
 struct RifeNativeLayer {
-  bool transposed = false;  // ConvTranspose 4 × 4 de pas 2, bord 1 ; sinon Conv 3 × 3, bord 1
+  bool transposed = false;  // ConvTranspose 4 × 4 de pas 2, bord 1 ; sinon Conv 3 × 3, bord 1 (ou repliée)
   int cin = 0;
   int cout = 0;
   int kernel = 3;  // 3, ou 4 pour la transposée
@@ -40,5 +43,11 @@ std::expected<std::vector<RifeNativeLayer>, Refusal> rife_native_layers(std::spa
 // résiduel ; chaque couche lit les canaux de la précédente, un résiduel garde ses canaux. Refus FieldMissing.
 std::expected<void, Refusal> rife_native_check(std::span<const RifeNativeLayer> layers, int in_channels,
                                                int out_channels);
+
+// La même vérification pour un morceau de TemporalFix (tfix_split.h) : des convolutions 3 × 3 seulement, la
+// première à in_channels canaux, la dernière à out_channels ; chaque couche lit les canaux de la précédente,
+// un résiduel garde ses canaux. Refus FieldMissing.
+std::expected<void, Refusal> conv_chain_check(std::span<const RifeNativeLayer> layers, int in_channels,
+                                              int out_channels);
 
 }  // namespace kirari::prepare

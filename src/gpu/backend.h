@@ -120,7 +120,9 @@ namespace kirari::gpu {
 // Lucas-Kanade, kernels/spec/scene_camera.h).
 // 57 : PairScores::blocks et blocks_x (l'écart de chaque bloc de la mesure de la paire, relu pour les tuiles
 // de SPAN).
-inline constexpr int kBackendAbi = 57;
+// 58 : kTrialTfixNative (TemporalFix fusionné par nos noyaux, docs/tfix-natif.md) : un module d'avant
+// ignorerait le bit sans le dire.
+inline constexpr int kBackendAbi = 58;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -164,6 +166,11 @@ inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
 // alors les manifestes « .gmfssfused » et « .gmfsspair » à la place de la fusion et de la paire. Lu par le
 // backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
+// --tfix-native : les convolutions de TemporalFix fusionné (l'encodeur, les trois blocs, la tête) par nos
+// noyaux (docs/tfix-natif.md) au lieu des moteurs TensorRT, gardées si elles tiennent 45 dB contre eux à
+// l'essai au chargement ; la colle écrit et lit alors X, Y et la tête par pixel. Lu par le backend TensorRT ;
+// sans effet ailleurs.
+inline constexpr std::uint32_t kTrialTfixNative = 1U << 8U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le
