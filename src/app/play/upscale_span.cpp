@@ -317,6 +317,7 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
     if (auto ok = keep_ungraded(*setup_.backend, spanned_[buf]->tensor(), buf, reuse_); !ok) return ok;
   }
   const GradedSource source{.epoch = head_.epoch,
+                            .pts_us = head_.pts_us,
                             .effects = setup_.live
                                            ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us)
                                            : std::nullopt};

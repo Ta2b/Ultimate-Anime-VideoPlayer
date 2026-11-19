@@ -124,14 +124,16 @@ std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane, const Lu
 }
 
 std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lumas& lumas, bool restart,
-                                                     GpuTiming& timing) {
+                                                     GpuTiming& flow_timing, GpuTiming& tiles_timing) {
   cudaStream_t own = session_->stream();
   if (auto ok = cuda_check(cudaEventRecord(lumas_ready_, lane), "cudaEventRecord"); !ok)
     return std::unexpected(std::move(ok.error()));
   if (auto ok = cuda_check(cudaStreamWaitEvent(own, lumas_ready_, 0), "cudaStreamWaitEvent"); !ok)
     return std::unexpected(std::move(ok.error()));
-  timing.begin(own);
+  flow_timing.begin(own);
   std::expected<void, Refusal> ready = session_->execute(lumas.a, lumas.b, restart);
+  flow_timing.end(own);
+  tiles_timing.begin(own);
   if (ready) {
     const NvofSession::Pitched a = session_->luma(lumas.a);
     const NvofSession::Pitched b = session_->luma(lumas.b);
@@ -152,7 +154,7 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
                                   .out = device_};
     ready = cuda_check(launch_scene_tiles(params, own), "scene_tiles<<<>>>");
   }
-  timing.end(own);
+  tiles_timing.end(own);
   // Les deux lumas sont lues (flux et réduction) : la voie peut réécrire leurs tampons.
   for (const int slot : {lumas.a, lumas.b}) {
     if (ready)

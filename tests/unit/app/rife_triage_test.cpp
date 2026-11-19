@@ -28,6 +28,17 @@ kernels::SceneMotion calm_scene() {
   return s;
 }
 
+// Une tuile d'effet sûre qui change : vue deux paires de suite par la carte.
+constexpr kernels::SceneTile kSureEffect{
+    .kind = kernels::SceneClass::Effect, .confidence = 0.8F, .changed = true};
+
+// Un effet de 2 × 2 tuiles dans le coin haut gauche de la scène calme.
+kernels::SceneMotion smoke_scene() {
+  kernels::SceneMotion s = calm_scene();
+  for (const std::size_t i : {0U, 1U, 8U, 9U}) s.tiles[i] = kSureEffect;
+  return s;
+}
+
 // Un tenseur à une adresse à lui, sans mémoire.
 class NoMemory final : public gpu::TensorBuffer {
  public:
@@ -177,28 +188,59 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
 
   // Un effet dans un coin : fondu par endroits, le bord adouci, le coin opposé intact.
   triage.reset();
-  kernels::SceneMotion smoke = calm_scene();
-  smoke.tiles[0] = {.kind = kernels::SceneClass::Effect, .confidence = 0.2F, .changed = true};
+  const kernels::SceneMotion smoke = smoke_scene();
   CHECK(triage.sort(moving(smoke, true), true) == PairSort::Masked);
   const std::vector<float> doubt = tile_doubt(smoke);
   CHECK(doubt[0] == 1.0F);
+  CHECK(doubt[9] == 1.0F);
+  CHECK(doubt[2] == 0.0F);
   CHECK(doubt[47] == 0.0F);
   const DoubtGrid grid = doubt_grid(doubt, smoke.cols, smoke.rows);
   REQUIRE(grid.cols == 8);
   REQUIRE(grid.rows == 6);
   CHECK(grid.weights[0] == kernels::kDoubtFull);  // l'effet et la tuile qui le borde : fondu entier
-  CHECK(grid.weights[2] > 0);                     // deux tuiles plus loin : le bord adouci
-  CHECK(grid.weights[2] < kernels::kDoubtFull);
+  CHECK(grid.weights[3] > 0);                     // deux tuiles plus loin : le bord adouci
+  CHECK(grid.weights[3] < kernels::kDoubtFull);
   CHECK(grid.weights[47] == 0);
-  // La paire suivante, sans l'effet, garde la moitié du doute : la zone ne clignote pas.
+  // La paire suivante, sans l'effet, garde la moitié du doute : la zone ne clignote pas. Celle d'après ne
+  // garde rien : seul le doute propre d'une paire passe à la suivante.
   CHECK(triage.sort(moving(calm, true), true) == PairSort::Masked);
+  CHECK(triage.sort(moving(calm, true), true) == PairSort::Today);
   // Une coupe l'oublie.
+  CHECK(triage.sort(moving(smoke, true), true) == PairSort::Masked);
   PairFacts cut = moving(calm, true);
   cut.scores->scene_score = 0.5;
   CHECK(triage.sort(cut, rife_runs(cut)) == PairSort::Today);
   CHECK(triage.sort(moving(calm, true), true) == PairSort::Today);
-  CHECK(triage.counts().masked == 2);
+  CHECK(triage.counts().masked == 3);
   CHECK(triage.counts().faded == 1);
+  CHECK(triage.counts().masked_share > 0.0);
+
+  // Ce qui ne doute plus. Une tuile d'effet seule (une étincelle, un bout de trait trop rapide) ; un effet
+  // pas encore sûr (sa fin, où la carte le tient à 0,4 fois la confiance de la classe nouvelle) ; une
+  // image pleine de dessins que le flux suit mal (traits épars, classe qui bascule) ou de décor à la
+  // confiance basse : RIFE y trouve son mouvement, et le fondu y ferait une image double.
+  triage.reset();
+  kernels::SceneMotion spark = calm_scene();
+  spark.tiles[20] = kSureEffect;
+  CHECK(triage.sort(moving(spark, true), true) == PairSort::Today);
+  kernels::SceneMotion ending = smoke_scene();
+  for (kernels::SceneTile& t : ending.tiles)
+    if (t.kind == kernels::SceneClass::Effect) t.confidence = 0.3F;
+  CHECK(triage.sort(moving(ending, true), true) == PairSort::Today);
+  for (const kernels::SceneClass kind : {kernels::SceneClass::Drawing, kernels::SceneClass::Background}) {
+    kernels::SceneMotion blurred = calm_scene();
+    for (kernels::SceneTile& t : blurred.tiles)
+      t = {.kind = kind, .confidence = 0.2F, .dx = 30.0F, .changed = true};
+    CHECK(std::ranges::all_of(tile_doubt(blurred), [](float d) { return d == 0.0F; }));
+    CHECK(triage.sort(moving(blurred, true), true) == PairSort::Today);
+  }
+  // L'effet tout contre le bord de l'image compte ses voisines dans l'image seulement.
+  kernels::SceneMotion edge = calm_scene();
+  edge.tiles[47] = kSureEffect;
+  edge.tiles[46] = kSureEffect;
+  CHECK(tile_doubt(edge)[47] == 1.0F);
+  CHECK(triage.counts().masked == 3);  // rien de plus fondu par endroits depuis la coupe
 
   // Les aplats (Uncertain) qui changent ne doutent pas : RIFE n'y fait pas de fantôme qui se voie.
   triage.reset();
@@ -207,11 +249,10 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
     t = {.kind = kernels::SceneClass::Uncertain, .confidence = 0.1F, .changed = true};
   CHECK(std::ranges::all_of(tile_doubt(flats), [](float d) { return d == 0.0F; }));
   CHECK(triage.sort(moving(flats, true), true) == PairSort::Today);
-  // Une tuile sur huit qui doute, éparse : la part est celle des tuiles mêmes (1/8), pas celle de leur
-  // voisinage élargi (presque toute l'image) ; fondu par endroits, pas la paire entière.
+  // Une tuile sur huit qui doute, en trois effets épars : la part est celle des tuiles mêmes (1/8), pas
+  // celle de leur voisinage élargi ; fondu par endroits, pas la paire entière.
   kernels::SceneMotion sparse = calm_scene();
-  for (const std::size_t i : {0U, 3U, 6U, 24U, 27U, 30U})
-    sparse.tiles[i] = {.kind = kernels::SceneClass::Effect, .confidence = 0.2F, .changed = true};
+  for (const std::size_t i : {0U, 1U, 27U, 28U, 38U, 39U}) sparse.tiles[i] = kSureEffect;
   const DoubtGrid spread = doubt_grid(tile_doubt(sparse), sparse.cols, sparse.rows);
   CHECK(spread.share == 6.0 / 48.0);
   CHECK(triage.sort(moving(sparse, true), true) == PairSort::Masked);
@@ -287,9 +328,7 @@ TEST_CASE("tri des paires : un jeu de tampons par forme du mouvement, sans réal
   const gpu::Motion middle = motion_of(720);
   CHECK(triage.doubted(backend, middle, 0.5F).flow.handle == middle.flow.handle);
   CHECK(backend.allocated == 0);
-  kernels::SceneMotion smoke = calm_scene();
-  smoke.tiles[0] = {.kind = kernels::SceneClass::Effect, .confidence = 0.2F, .changed = true};
-  REQUIRE(triage.sort(moving(smoke, true), true) == PairSort::Masked);
+  REQUIRE(triage.sort(moving(smoke_scene(), true), true) == PairSort::Masked);
   // Une paire forte avec l'échelle par paire : milieu à pleine taille, autres instants à demi-taille.
   const gpu::Motion half = motion_of(360);
   for (const gpu::Motion* motion : {&half, &middle, &half, &middle}) {

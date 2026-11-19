@@ -466,6 +466,7 @@ PlaceboScreen::Impl::~Impl() {
     channel->info("profil GPU · grade HDR · {} : moyenne {:.3f} ms ({} passes)", pass.what,
                   static_cast<double>(pass.ns) / 1e6 / static_cast<double>(pass.count), pass.count);
   log_gpu_profile(*channel, "Anime4K", anime4k_gpu_us);
+  if (const auto line = effect_tally_line("écran", effects_tally)) channel->info("{}", *line);
   if (recompositions + reuses > 0)
     channel->info("composition gardée : {} recompositions, {} recopies sans recomposition", recompositions,
                   reuses);

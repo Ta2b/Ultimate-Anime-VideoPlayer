@@ -1,6 +1,7 @@
 #include "app/play/effect_book.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <utility>
 
 #include "core/frame.h"
@@ -73,6 +74,41 @@ void EffectBook::clear() {
   for (EffectNote& note : notes_) note.tiles.reset();
   count_ = 0;
   next_ = 0;
+}
+
+void EffectTally::count(bool noted, bool on, const render::EffectMask& mask, std::int64_t pts_us) {
+  ++images_;
+  if (noted) ++noted_;
+  if (!on || mask.values().empty()) return;
+  ++masked_;
+  double held = 0.0;
+  std::size_t effects = 0;
+  for (const float v : mask.values()) {
+    held += 1.0 - static_cast<double>(v);
+    if (v > 0.9F) ++effects;
+  }
+  const auto tiles = static_cast<double>(mask.values().size());
+  held /= tiles;
+  held_sum_ += held;
+  if (pts_us != kNoPts && static_cast<double>(effects) >= kTallyEffectShare * tiles)
+    keep(Moment{.pts_us = pts_us, .held = held});
+}
+
+void EffectTally::keep(Moment moment) {
+  // Un moment plus fort à moins de 10 s l'emporte ; sinon celui-ci remplace les plus faibles de son
+  // voisinage, puis le plus faible de tous.
+  const auto near = [&](const Moment& kept) {
+    return kept.held > 0.0 && std::abs(kept.pts_us - moment.pts_us) < kTallySpacingUs;
+  };
+  for (const Moment& kept : moments_) {
+    if (near(kept) && kept.held >= moment.held) return;
+  }
+  for (Moment& kept : moments_) {
+    if (near(kept)) kept = Moment{};
+  }
+  std::ranges::sort(moments_, std::ranges::greater{}, &Moment::held);
+  if (moment.held > moments_.back().held) moments_.back() = moment;
+  std::ranges::sort(moments_, std::ranges::greater{}, &Moment::held);
 }
 
 bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pts_us) {

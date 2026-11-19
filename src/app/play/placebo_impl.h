@@ -11,6 +11,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -292,7 +293,9 @@ struct PlaceboScreen::Impl {
   EffectFollower effects;
   bool effects_on = false;
   bool effects_refusal_noted = false;  // le refus de la passe du masque, journalisé une fois
-  int look_path_noted = -1;            // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
+  EffectTally effects_tally;           // les images gradées à l'écran, une fois chacune (journal de fin)
+  std::int64_t effects_tally_pts = kNoPts;
+  int look_path_noted = -1;  // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
   void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {
     frame_debanded = frame != nullptr && frame->debanded;
@@ -359,5 +362,9 @@ struct PlaceboScreen::Impl {
   // Le profil GPU du grade : un échantillon uniforme sur toute la lecture au-delà de 2^20 images (A33-05).
   mutable core::SampleReservoir<std::uint32_t> grade_gpu_us{std::size_t{1} << 20};
 };
+
+// La ligne de fin des éclats sur les seuls effets (where : « écran », « grade avant le warp ») ; rien si
+// aucune image n'a eu de carte (pas de --scene-map, carte refusée, --no-effect-highlights).
+std::optional<std::string> effect_tally_line(std::string_view where, const EffectTally& tally);
 
 }  // namespace kirari::app::play

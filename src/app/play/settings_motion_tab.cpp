@@ -13,6 +13,7 @@
 #include "app/play/card_advice.h"
 #include "app/play/drba_model.h"
 #include "app/play/gpu_telemetry.h"
+#include "app/play/interp_retired.h"
 #include "app/play/panel_style.h"
 #include "app/play/settings_chain_tabs.h"
 #include "app/play/source_fit.h"
@@ -103,6 +104,14 @@ std::string motion_description(const InterpChoice& choice) {
       return i18n::tr(
           "The most precise RIFE, for about 15 % more computation than RIFE 4.22 lite. Recommended on NVIDIA "
           "RTX.");
+    case InterpLevel::GmfssMiddle:
+      return i18n::tr(
+          "RIFE 4.25 for most frames, GMFSS union for the middle of fast motion: holds fast pans and "
+          "rotations better. Heavier than RIFE. NVIDIA RTX (TensorRT) only; a trial.");
+    case InterpLevel::GmfssUnion:
+      return i18n::tr(
+          "GMFSS union for every frame: the steadiest on fast pans and rotations, and the heaviest. NVIDIA "
+          "RTX (TensorRT) only; a trial.");
     case InterpLevel::System:
       return i18n::tr(
           "Apple: macOS optical flow (VideoToolbox, macOS 15.4+), no model to download. Core ML backend "
@@ -154,15 +163,23 @@ std::string level_name(InterpLevel level) {
       return std::string("RIFE 4.22 lite");
     case InterpLevel::Rife425:
       return std::string("RIFE 4.25");
+    case InterpLevel::GmfssMiddle:
+      return std::string("RIFE 4.25 + GMFSS union");
+    case InterpLevel::GmfssUnion:
+      return std::string("GMFSS union");
     case InterpLevel::System:
       return i18n::tr("System (macOS)");
   }
   return {};
 }
 
-// Le choix se montre : son moteur est proposé ici, son modèle est là.
+// Le choix se montre : son moteur est proposé ici, son modèle est là. GMFSS union, seul ou au milieu des
+// paires fortes, seulement sous --gmfss-native (interp_retired.h) et avec ses deux graphes.
 bool level_present(const InterpChoice& choice, const SettingsChoices& choices) {
   if (!offered(choice.engine)) return false;
+  if ((choice.engine == MotionEngine::Gmfss || choice.gmfss_middle) &&
+      !(choices.gmfss_available && gmfss_kept()))
+    return false;
   if (choice.engine == MotionEngine::DistilDrba) return choices.distil_drba_available;
   if (choice.engine == MotionEngine::Rife)
     return std::ranges::find(choices.rife_models, choice.rife_model) != choices.rife_models.end();
@@ -177,7 +194,7 @@ void level_items(PlaySettings& d, const SettingsChoices& choices, bool exporting
     if (!level_present(choice, choices)) continue;
     if (ImGui::Selectable(level_text(choice).c_str(), on && level_now == choice.level)) {
       d.motion_engine = choice.engine;
-      d.gmfss_middle = false;
+      d.gmfss_middle = choice.gmfss_middle;
       if (choice.engine == MotionEngine::Rife)
         d.rife_model =
             choice.rife_model == choices.default_rife_model ? std::string() : std::string(choice.rife_model);
@@ -201,7 +218,8 @@ void interpolation_combo(PlaySettings& d, const SettingsChoices& choices, bool e
   const bool on = now.num > now.den;
   const auto level_text = [&](const InterpChoice& choice) {
     std::string text = level_name(choice.level);
-    if (choice.engine == MotionEngine::Rife && choice.rife_model == choices.default_rife_model)
+    if (choice.engine == MotionEngine::Rife && !choice.gmfss_middle &&
+        choice.rife_model == choices.default_rife_model)
       text += i18n::tr(" (recommended)");
     return text;
   };
@@ -548,7 +566,7 @@ void motion_advanced(PlaySettings& d, const SettingsChoices& choices, bool expor
   if (!panel::begin_boxes()) return;
   const Factor now = factor_of(d);
   const bool on = now.num > now.den && choices.rife_available;
-  // GMFSS a quitté le menu : son encadré ne se montre qu'à une chaîne qui le joue encore.
+  // L'encadré de GMFSS ne se montre qu'à une chaîne qui le joue (au menu sous --gmfss-native).
   const bool gmfss = d.motion_engine == MotionEngine::Gmfss || d.gmfss_middle;
   if (gmfss) {
     panel::next_box();

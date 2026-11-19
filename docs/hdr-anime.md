@@ -243,6 +243,12 @@ suivi.
   Le grade avant le warp (`source_grade.h`) suit son propre masque, nourri pour chaque source gradée par la
   note la plus récente de son époque (`EffectBook::for_source`, au plus 250 ms avant la source : au-delà, la
   carte s'est tue et le masque revient au neutre). L'export ne lit pas le masque.
+- **Le journal de fin** dit ce que le masque a fait, à l'écran et au grade avant le warp, dès qu'une image
+  a eu la carte : « éclats sur les effets (grade avant le warp) : N images gradées, … avec la carte de la
+  scène, … avec le masque (… %), marge des éclats retenue hors effet … % en moyenne ; à voir : 1:23 (31 %),
+  … ». Les moments « à voir » sont les trois images où le masque retient le plus la marge hors effet alors
+  qu'un effet sûr couvre au moins 2 % des tuiles, à 10 s l'un de l'autre au moins (`EffectTally`) : les
+  revoir avec et sans `--no-effect-highlights` montre l'écart à l'œil.
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de

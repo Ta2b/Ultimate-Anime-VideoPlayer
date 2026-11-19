@@ -80,23 +80,32 @@ std::string_view label(MotionEngine engine);  // « RIFE », pour le menu
 
 // Les modèles d'interpolation que montre le menu (docs/interpolation.md), par leur nom
 // : DistilDRBA v2 lite, RIFE 4.22 lite et RIFE 4.25 ; System : l'interpolation d'Apple, sur un Mac seulement.
-// Les niveaux d'avant (4.25 lite, 4.26, GMFSS) se relisent sur le plus proche (interp_retired.h).
-enum class InterpLevel : std::uint8_t { DistilDrba, Rife422Lite, Rife425, System };
+// Sous --gmfss-native (interp_retired.h : gmfss_kept), RIFE 4.25 avec GMFSS union au milieu des paires
+// fortes, et GMFSS union seul. Les niveaux d'avant (4.25 lite, 4.26, GMFSS sans l'option) se relisent sur le
+// plus proche (interp_retired.h).
+enum class InterpLevel : std::uint8_t { DistilDrba, Rife422Lite, Rife425, GmfssMiddle, GmfssUnion, System };
 inline constexpr std::string_view kRife422LiteFile = "rife_v4.22_lite.onnx";
 inline constexpr std::string_view kRife425File = "rife_v4.25.onnx";
 struct InterpChoice {
   InterpLevel level;
   MotionEngine engine;
   std::string_view rife_model;  // vide hors RIFE
+  bool gmfss_middle = false;    // RIFE avec GMFSS union au milieu des paires fortes (Élevé)
 };
-inline constexpr std::array<InterpChoice, 4> kInterpLevels{{
+inline constexpr std::array<InterpChoice, 6> kInterpLevels{{
     {.level = InterpLevel::DistilDrba, .engine = MotionEngine::DistilDrba, .rife_model = {}},
     {.level = InterpLevel::Rife422Lite, .engine = MotionEngine::Rife, .rife_model = kRife422LiteFile},
     {.level = InterpLevel::Rife425, .engine = MotionEngine::Rife, .rife_model = kRife425File},
+    {.level = InterpLevel::GmfssMiddle,
+     .engine = MotionEngine::Rife,
+     .rife_model = kRife425File,
+     .gmfss_middle = true},
+    {.level = InterpLevel::GmfssUnion, .engine = MotionEngine::Gmfss, .rife_model = {}},
     {.level = InterpLevel::System, .engine = MotionEngine::Apple, .rife_model = {}},
 }};
 // Le choix d'un moteur et du modèle RIFE qu'il charge (le nom vide de play.toml déjà résolu) ; nullopt pour
-// un autre modèle RIFE, GMFSS au milieu des paires fortes, ou un moteur débranché.
+// un autre modèle RIFE seul, ou un moteur débranché. GMFSS au milieu des paires fortes est GmfssMiddle quel
+// que soit le modèle RIFE.
 std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model,
                                         bool gmfss_middle = false);
 

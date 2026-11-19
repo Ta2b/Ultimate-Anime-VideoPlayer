@@ -150,15 +150,19 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
   if (rife_native_) {
     // --rife-native : un refus laisse la chaîne à TensorRT, chargée et intacte, sauf un contexte perdu.
     auto pieces = native_pieces(artifact.path);
-    auto kept = pieces ? (*engine)->try_native(*pieces, arena(), kNativeMinDb)
-                       : std::expected<std::string, Refusal>(std::unexpected(std::move(pieces.error())));
+    auto kept =
+        pieces ? (*engine)->try_native(*pieces, arena(), kNativeMinDb)
+               : std::expected<std::vector<std::string>, Refusal>(std::unexpected(std::move(pieces.error())));
     // Un noyau fautif pendant l'essai (accès hors limites) perd le contexte CUDA : TensorRT n'y peut plus
     // rien non plus, le chargement échoue au lieu de rendre une chaîne morte.
     if (!kept && kept.error().code == RefusalCode::DeviceLost)
       return std::unexpected(std::move(kept.error()));
-    if (kept)
-      log((*engine)->native() ? BackendLogLevel::Info : BackendLogLevel::Warn, *kept);
-    else
+    if (kept) {
+      // Les temps et la justesse de chaque morceau, le profil des couches, puis le verdict.
+      for (std::size_t i = 0; i < kept->size(); ++i)
+        log(i + 1 == kept->size() && !(*engine)->native() ? BackendLogLevel::Warn : BackendLogLevel::Info,
+            (*kept)[i]);
+    } else
       log(BackendLogLevel::Warn, "RIFE natif refusé, TensorRT garde la chaîne : " + kept.error().detail);
   }
   log(BackendLogLevel::Info,

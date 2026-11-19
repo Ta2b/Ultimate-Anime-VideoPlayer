@@ -263,10 +263,11 @@ std::string_view badge_text(Badge badge) {
 }
 
 std::optional<InterpLevel> interp_level(MotionEngine engine, std::string_view rife_model, bool gmfss_middle) {
-  if (gmfss_middle) return std::nullopt;
+  // Le milieu des paires fortes n'a de sens qu'avec RIFE (chain_gmfss.cpp : gmfss_wanted).
+  const bool middle = engine == MotionEngine::Rife && gmfss_middle;
   for (const InterpChoice& choice : kInterpLevels) {
-    if (choice.engine != engine) continue;
-    if (engine == MotionEngine::Rife && choice.rife_model != rife_model) continue;
+    if (choice.engine != engine || choice.gmfss_middle != middle) continue;
+    if (engine == MotionEngine::Rife && !middle && choice.rife_model != rife_model) continue;
     return choice.level;
   }
   return std::nullopt;
@@ -371,9 +372,11 @@ PlaySettings settings_for(const PlaySettings& saved, const PlayOptions& options)
     s.rife_model = core::to_utf8(options.rife_model->filename());
     s.motion_engine = MotionEngine::Rife;
   }
-  if (options.motion)  // A18-09
-    s.motion_engine =
-        *options.motion == MotionChoice::DistilDrba ? MotionEngine::DistilDrba : MotionEngine::Rife;
+  // A18-09 ; --motion=gmfss : GMFSS union seul, avec ou sans --gmfss-native (la comparaison des deux).
+  if (options.motion) {
+    constexpr std::array kEngines{MotionEngine::Rife, MotionEngine::DistilDrba, MotionEngine::Gmfss};
+    s.motion_engine = kEngines[static_cast<std::size_t>(*options.motion)];
+  }
   if (options.was_given("--rife")) {
     s.rife_factor = options.rife_factor;
     s.rife_factor_den = options.rife_factor_den;

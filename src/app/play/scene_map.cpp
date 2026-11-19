@@ -2,11 +2,19 @@
 #include "app/play/scene_map.h"
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 #include "core/log.h"
 
 namespace kirari::app::play {
+namespace {
+
+double since_us(std::chrono::steady_clock::time_point from) {
+  return std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - from).count();
+}
+
+}  // namespace
 
 void SceneMap::stop(const Refusal& refusal, const char* where) {
   on_ = false;
@@ -20,7 +28,9 @@ void SceneMap::start(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tenso
   poll(ops);
   const bool follows = last_right_ && *last_right_ == left && last_epoch_ == epoch;
   const bool restart = restart_ || !follows;
+  const auto asked = std::chrono::steady_clock::now();
   auto ticket = ops.scene_flow_start(a, b, restart);
+  start_us_ += since_us(asked);
   if (!ticket) {
     stop(ticket.error(), "scene_flow_start");
     return;
@@ -56,7 +66,9 @@ void SceneMap::poll(gpu::KernelOps& ops) {
     }
     if (!*taken) return;                             // pas encore finie : les suivantes non plus
     if (pending_.front().restart) history_.clear();  // les classes d'un autre plan ne disent rien ici
+    const auto asked = std::chrono::steady_clock::now();
     kernels::SceneMotion motion = kernels::ref::scene_motion_of(**taken, history_);
+    map_us_ += since_us(asked);
     ++read_;
     if (motion.cut_likely) {
       ++cuts_;
@@ -91,8 +103,11 @@ void SceneMap::log_summary() const {
   log_channel("gpu")->info(
       "carte de la scène : {} paires lancées, {} relues, {} posées sur leur paire ; {} sautées (NVOF "
       "occupé), "
-      "{} relues trop tard, {} perdues ; caméra ajustée sur {}, {} coupes probables, {} fondus",
-      started_, read_, attached_, busy_, missed_, lost_, camera_fits_, cuts_, fades_);
+      "{} relues trop tard, {} perdues ; caméra ajustée sur {}, {} coupes probables, {} fondus ; hôte : "
+      "{:.0f} µs pour lancer une paire, {:.0f} µs pour tirer une carte, en moyenne",
+      started_, read_, attached_, busy_, missed_, lost_, camera_fits_, cuts_, fades_,
+      start_us_ / static_cast<double>(started_ + busy_),
+      read_ > 0 ? map_us_ / static_cast<double>(read_) : 0.0);
 }
 
 }  // namespace kirari::app::play

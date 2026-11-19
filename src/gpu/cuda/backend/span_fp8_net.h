@@ -31,6 +31,10 @@ struct SpanFp8ConvView {
 // calcul en 64 canaux dont 16 nuls. Les deux derniers ne servent qu'à la mesure (kirari_span_fp8_run).
 enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
 
+// Les sommes du SPAN FP16 natif (span_native16_kernels.cuh, Acc) : en f16 ; en f32, au débit moitié des
+// tensor cores des GeForce ; promues, chaque mma somme ses 16 produits en f16 puis les ajoute en f32.
+enum class SpanNativeSums : std::uint8_t { F16, F32, Promoted };
+
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
 struct SpanFp8Weights {
   static constexpr int kBlocks = 8;
@@ -49,12 +53,11 @@ struct SpanFp8Weights {
   int channels = 64;
   SpanFp8Width width48 = SpanFp8Width::Native;
   // Le SPAN entier en FP16, sans quantification, par nos noyaux natifs (docs/span-native16.md). Les échelles
-  // sont alors ignorées, acc16 aussi (le natif somme en f16, ou en f32 avec acc32).
+  // sont alors ignorées, acc16 aussi (le natif somme selon sums).
   bool fp16 = false;
-  // FP16 natif seulement : sommes en f32 au lieu de f16 (moitié du débit des tensor cores des GeForce). Le
-  // cran Qualité du lecteur (drapeau acc32 du paquet) et kirari_span_fp8_run --acc32 ; sinon en f16, comme
-  // AnimeJaNai.
-  bool acc32 = false;
+  // FP16 natif seulement : les sommes. F32 au cran Qualité du lecteur (drapeau acc32 du paquet), Promoted
+  // avec --span-promoted (essai) ; kirari_span_fp8_run --acc32, --promoted. Sinon en f16, comme AnimeJaNai.
+  SpanNativeSums sums = SpanNativeSums::F16;
   // FP16 natif seulement : le corps en bandes de band lignes de demi-résolution (docs/span-native16.md,
   // « Bandes ») ; ce qu'une couche lit tient encore en L2. 0 : chaque couche sur l'image entière. 64 lignes :
   // 8 Mo par tenseur à 64 canaux en 1080p, à juger au banc (kirari_span_fp8_run --band).

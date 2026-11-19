@@ -155,6 +155,7 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->rife_hwc8_ = (init.trials & kTrialRifeHwc8) != 0;
   backend->warp_l2_ = (init.trials & kTrialWarpL2) != 0;
   backend->span_native_ = (init.trials & kTrialSpanNative) != 0;
+  backend->span_promoted_ = (init.trials & kTrialSpanPromoted) != 0;
   backend->rife_native_ = (init.trials & kTrialRifeNative) != 0;
   backend->gmfss_native_ = (init.trials & kTrialGmfssNative) != 0;
   backend->trtexec_ = std::move(trtexec);
@@ -221,6 +222,9 @@ std::expected<std::unique_ptr<TensorRtBackend>, Refusal> TensorRtBackend::create
   backend->role_timing_ = {std::make_unique<GpuTiming>("agrandissement", report),
                            std::make_unique<GpuTiming>("interpolation", report),
                            std::make_unique<GpuTiming>("mesure", nullptr)};
+  backend->span_parts_ = {std::make_unique<GpuTiming>("SPAN, corps", nullptr),
+                          std::make_unique<GpuTiming>("SPAN, attente de l'emplacement de l'anneau", nullptr),
+                          std::make_unique<GpuTiming>("SPAN, queue (to_pixel, anneau)", nullptr)};
   backend->chain_span_ = std::make_unique<GpuSpan>("source jusqu'à son SPAN");
   backend->trt_log_ = std::make_unique<TrtLog>(init.log);
   backend->runtime_.reset(nvinfer1::createInferRuntime(*backend->trt_log_));
@@ -264,6 +268,7 @@ TensorRtBackend::~TensorRtBackend() {
   stages_.clear();
   slots_.clear();
   for (auto& timing : role_timing_) timing.reset();
+  for (auto& timing : span_parts_) timing.reset();
   chain_span_.reset();
   if (retired_done_ != nullptr) cudaEventDestroy(retired_done_);
   free_reads(pair_reads_);
@@ -305,6 +310,10 @@ void TensorRtBackend::log_profile() {
   for (const auto& timing : role_timing_) {
     if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
       log(BackendLogLevel::Info, "profil GPU · rôle " + line);
+  }
+  for (const auto& timing : span_parts_) {
+    if (const std::string line = timing ? timing->summary() : std::string(); !line.empty())
+      log(BackendLogLevel::Info, "profil GPU · " + line);
   }
   if (chain_span_) {
     if (const std::string line = chain_span_->summary(); !line.empty())
