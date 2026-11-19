@@ -47,10 +47,10 @@ porte, se mesure sur l'image (Lucas-Kanade sur les tuiles de décor, `nvof_mesur
 NVOF sont bruités d'environ 0,3 px sur un décor fixe et un personnage lent les tire, ce qui faisait
 rater les caméras lentes (4070 Ti, 19 novembre). Une tuile texturée dans un seul sens (un bord droit,
 un décor rayé que la caméra longe) se mesure en travers du bord, le seul écart visible ; l'image ne
-passe la main aux vecteurs qu'à moins de 3 tuiles mesurables. Le banc juge quatre pistes du modèle de
+passe la main aux vecteurs qu'à moins de 3 tuiles mesurables. Le banc juge cinq pistes du modèle de
 caméra au même critère : nvof, traits (blocs de traits seuls), lk (l'affine NVOF affinée par
-Lucas-Kanade global sur l'image, qui corrige le biais sous-pixel de NVOF sur les caméras lentes) et
-traits_lk, et lk_bords (lk, avec un décor où un bloc texturé dans un seul sens se juge en travers de son
+Lucas-Kanade global sur l'image, qui corrige le biais sous-pixel de NVOF sur les caméras lentes),
+traits_lk et lk_bords (lk, avec un décor où un bloc texturé dans un seul sens se juge en travers de son
 bord et où les blocs que la caméra sort de l'image ne comptent pas). `--garder` sauve images, flux et coûts
 des panoramiques dans `SORTIE/flux` pour régler le banc hors ligne. Sur les panoramiques, le mode pyramide
 (`--pyramide 360:720`, par défaut) passe la caméra d'une passe en 360p en indices externes
@@ -66,6 +66,23 @@ python3 -I tools/bench/qualite/nvof_scene.py --outil build/nvof_dump/nvof_dump -
 ```
 
 Un seul banc à la fois sur la carte (rien d'autre sur le GPU), sur la 4070 Ti puis la 4050.
+
+Résultat (4070 Ti, 19 novembre, grille 4 × 4 en 720p, 7 panoramiques, 407 paires où la caméra bouge) : la
+porte passe. Un appel NVOF coûte 1,0 ms en 720p (0,35 ms en 360p).
+
+| Piste | Paires bonnes | Caméras lentes (0,5 à 15 px) |
+|---|---:|---:|
+| nvof | 335 (82 %) | 75 % |
+| traits | 368 (90 %) | 88 % |
+| traits_lk | 381 (94 %) | 96 % |
+| lk | 393 (97 %) | 98 % |
+| lk_bords | 403 (99 %) | 100 % |
+
+lk_bords est la méthode retenue pour le lecteur (`docs/carte-de-la-scene.md`, « La caméra »). Restent 4
+paires de Spy 4:53 : un panoramique de 87 px à 39 % de décor, et trois paires (54, 17 et 8 px) dont l'affine
+part en rotation et cisaillement, sans doute des images de traîne ou un tremblé plutôt qu'un décor rigide.
+Le mode pyramide n'aide pas : les indices font baisser les caméras lentes (62 % contre 75 % sans) et ne
+sauvent pas les panoramiques de plus de 45 px ; il reste dans le banc pour mémoire.
 
 ## Ce qui reste ouvert
 
