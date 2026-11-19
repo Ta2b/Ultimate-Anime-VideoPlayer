@@ -116,10 +116,16 @@ Extrait de Re:Zero, GMFSS union seul (`--motion=gmfss`), SPAN derrière, travail
 - **Cadence** (`kirari compare`, A TensorRT, B natif) : ×2 tenu des deux côtés (1,1 % et 1,4 % d'images perdues,
   p95 42,4 et 36,4 ms) ; ×3 tenu par aucun (35,6 % et 28,4 % perdues, p95 54,5 ms des deux) ; ×2 avec le tri des
   paires (`--scene-map --pair-triage`) : 0,7 % perdues des deux côtés, p95 42,4 et 30,3 ms.
-- **Fusion** : restée entière à TensorRT pendant cette séance, la coupe ne connaissant que la fusion
-  d'`ifnet_rife.py` ; corrigé (la coupe trouve l'IFNet par la structure, ci-dessus). Sa mesure native reste à
-  faire : une lecture, la commande 0 ci-dessous.
-- Première ouverture : 149 s pour construire la paire, 180 s pour la fusion.
+- **Fusion native retenue**, sommes f16 (fusion de l'export d'origine, coupée par la structure ; zone de
+  337 Mio) : contre la fusion TensorRT, f16 62,3 dB (mixtes 65,2, f32 65,3) ; une passe en 21,90 ms contre
+  25,57 ms (mixtes 28,44, f32 32,04), 14 % de moins. Lors de la première séance, elle restait entière à TensorRT :
+  la coupe ne connaissait que la fusion d'`ifnet_rife.py`.
+- **Paire et fusion natives ensemble** (Re:Zero, 30 s, ×2, SPAN FP8, paire au demi-flot) : paire 19,69 ms en
+  médiane (p95 19,91), fusion 21,76 ms (p95 22,20). Les deux passent de 48,0 à 41,6 ms par image interpolée
+  (13 % de moins). C'est encore trop lent pour le temps réel : en 1080p avec SPAN, GMFSS union n'a pris que
+  180 des 671 paires fortes, et RIFE a gardé les 491 autres faute de temps.
+- Première ouverture : 149 s pour construire la paire, 180 s pour la fusion entière ; 54,6 s pour la fusion
+  coupée (IFNet seul sous TensorRT).
 
 ## Séance finale (sur le PC, binaire `linux-release`)
 

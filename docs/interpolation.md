@@ -503,8 +503,9 @@ sur la 4070 Ti : la paire en 3 minutes ; la fusion à 640x384 en 218 s au lieu d
 **TensorRT seulement** (`BackendCaps::gmfss`) : le compilateur de Vulkan n'a ni MatMul ni Softmax. Sans les
 deux graphes ou sans TensorRT, le niveau n'est pas proposé, et un `play.toml` qui le demande garde RIFE (raison
 au journal). Les poids d'union sont MIT ; ils ne sont pas livrés sans l'accord de Tatoub. Un `play.toml` qui
-nomme `gmfss` se lit en RIFE ; `gmfss_fused`, `gmfss_quality` et `gmfss_precision` restent ignorés. Les temps
-sont à mesurer sur une carte NVIDIA (`tools/gmfss/banc_temps.sh`).
+nomme `gmfss` le garde avec le natif (le défaut) et se lit en RIFE 4.25 sous `--no-gmfss-native` ;
+`gmfss_fused`, `gmfss_quality` et `gmfss_precision` restent ignorés. Les temps mesurés sur la RTX 4070 Ti sont
+dans [`gmfss-natif.md`](gmfss-natif.md) (banc : `tools/gmfss/banc_temps.sh`).
 
 ## Tri des paires par la carte de la scène (`--pair-triage`, essai)
 
