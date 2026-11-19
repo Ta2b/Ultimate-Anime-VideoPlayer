@@ -19,6 +19,10 @@ dépôt des sources est public. Ses données étaient rangées sur deux niveaux 
 - **Relais** : les lecteurs ajp 0.11 et d'avant lisent le manifeste de `Ta2b/ajp-releases`. Chaque release finale
   y dépose aussi son manifeste signé (`release.yml`, `KIRARI_LEGACY_RELEASE_REPO`), que `resign-manifest.yml`
   re-signe avec celui du dépôt.
+- **Pas de reprise des anciennes releases** : celles d'ajp restent dans `Ta2b/ajp-releases`, rien n'est recopié
+  (leurs numéros et leurs préversions ne suivaient pas de règle claire, dit Tatoub). La release `models-interp-1`,
+  dont `tools/release/fetch-models.sh` tire les graphes d'interpolation, est refaite dans le nouveau dépôt par
+  `export-interpolation-models.yml` (case « publier »), avant la première release de Kirari.
 
 ## Ce qui ne change pas
 - Les noms des secrets et variables de GitHub (`AJP_UPDATE_KEY`, `AJP_RELEASE_TOKEN`, `AJP_TS_*`…) : les
