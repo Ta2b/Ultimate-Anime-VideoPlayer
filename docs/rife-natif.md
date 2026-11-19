@@ -82,7 +82,7 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   réserve `glue_capacity(s, 2)` (bornes vérifiées sur le découpage 1920 × 1088, atteintes sans être dépassées),
   10 Ko au plus. Rien n'est écrit dans X : la colle du bloc suivant refait son flot depuis les Y. L'essai le
   chronomètre avec et sans, bloc par bloc, et le verdict gardé retient les blocs restés à part. Sur l'émulateur
-  processeur, sorties identiques au bit à l'ancien chemin (colle puis forme 16/CT), 9 cas dont trois à tuiles
+  processeur, sorties identiques au bit à l'ancien chemin (colle puis forme 16/CT), 8 cas dont deux à tuiles
   entières, X intouché. Il existe 24 noyaux (sommes × (3 ou 4 flots en pleine résolution, 2 ou 3 à moitié) ×
   tuile 16 ou 32), à 219 registres au plus (sm_89, deux blocs par multiprocesseur), sans débordement de sm_75 à
   sm_120 ;
