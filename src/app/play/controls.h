@@ -46,7 +46,14 @@ struct ControlsView {
   bool fullscreen = false;
   bool stats = false;                     // lignes de mesure (OSD, Tab) affichées
   std::span<const ChapterMark> chapters;  // dans l'ordre ; vide : boutons de chapitre absents
+  bool on_source = false;                 // l'image montrée est une source, pas un instant interpolé
 };
+
+// --pause-at : la lecture en cours montre-t-elle la première image source de pts at_us ou après ? Un instant
+// interpolé ne compte pas : deux lectures s'arrêtent ainsi sur la même image.
+inline bool pause_reached(const ControlsView& view, std::int64_t at_us) {
+  return !view.paused && view.on_source && view.position_us != kNoPts && view.position_us >= at_us;
+}
 
 // Temps affiché : « 4:05 », « 12:34 », ou « 1:02:03 » quand la durée dépasse l'heure (même
 // largeur pour la position et la durée). « --:-- » pour un temps inconnu.

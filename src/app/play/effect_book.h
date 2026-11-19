@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 
+#include "core/frame.h"
 #include "kernels/spec/scene_flow.h"
 #include "render/effect_mask.h"
 
@@ -63,13 +64,15 @@ class EffectBook {
 };
 
 // L'état du masque d'une image : posé ou non, la part de la marge retenue (la moyenne de 1 − masque) et la
-// part des tuiles en effet sûr (la couche des effets sûrs au-dessus de 0,5), de 0 à 1.
+// part des tuiles en effet sûr (la couche des effets sûrs au-dessus de 0,5), de 0 à 1 ; pts_us : l'image
+// (kNoPts : inconnue), posé par l'appelant.
 struct EffectSummary {
   bool on = false;
   int cols = 0;
   int rows = 0;
   double held = 0.0;
   double sure = 0.0;
+  std::int64_t pts_us = kNoPts;
 };
 EffectSummary effect_summary(const render::EffectMask& mask, bool on);
 

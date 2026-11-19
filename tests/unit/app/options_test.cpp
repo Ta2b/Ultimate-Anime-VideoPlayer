@@ -114,6 +114,8 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   CHECK_FALSE(parse({"épisode.mkv", "--no-effect-highlights"})->effect_highlights);
   CHECK_FALSE(options->effect_mask_view);  // défaut : l'image, pas le masque
   CHECK(parse({"épisode.mkv", "--effect-mask-view"})->effect_mask_view);
+  CHECK_FALSE(options->pause_at_us);  // défaut : pas de pause
+  CHECK(parse({"épisode.mkv", "--pause-at=980.5"})->pause_at_us == 980'500'000);
   CHECK(options->present == PresentWanted::Wait);
   CHECK(parse({"épisode.mkv", "--no-present"})->present == PresentWanted::Open);
   const auto present = parse({"épisode.mkv", "--present=timing"});

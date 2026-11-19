@@ -142,6 +142,8 @@ std::string trial_usage() {
          "  --no-effect-highlights with --scene-map: highlights on every light, not only on effects\n"
          "  --effect-mask-view     with --scene-map: the grade paints the effects mask, not the picture\n"
          "                         (lights red, sure effects green, held margin blue)\n"
+         "  --pause-at=S           pauses on the first source image at S seconds or later, the same\n"
+         "                         image from one run to the next (to compare two --snapshot runs)\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
          "  --no-rife-hwc8         trial: fused RIFE blocks built with planar inputs and outputs under\n"
          "                         TensorRT, with reformat copies (default: HWC8, same output)\n"
