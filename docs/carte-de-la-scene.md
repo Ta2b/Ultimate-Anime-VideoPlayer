@@ -50,7 +50,7 @@ autre taille d'image refait la session.
 ## Ce que lisent les clients
 
 `src/kernels/spec/scene_flow.h` : `SceneMotion`, ses tuiles, la caméra et les drapeaux ; les seuils dans
-`kernels::scene`, non mesurés, à régler sur le banc 2.1. `drawing_held` ne se dit que sur preuve : un effet
+`kernels::scene`, que règle la porte 2.3 (premier passage plus bas). `drawing_held` ne se dit que sur preuve : un effet
 compte comme ce qui bouge, et sans caméra ajustée (aplat), toute tuile changée l'éteint. Règle absolue :
 `scene` absente donne exactement le comportement d'aujourd'hui, image pour image.
 
