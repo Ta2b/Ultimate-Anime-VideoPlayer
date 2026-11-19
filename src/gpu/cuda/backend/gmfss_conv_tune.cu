@@ -5,6 +5,7 @@
 // la référence est gardée. Une grande couche ne passe au banc que sur une bande de ses lignes. Aux formes du
 // RIFE natif s'ajoutent celles en flux (rn::stream_configs, conv_stream_kernels.cuh), mesurées de même.
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -90,8 +91,12 @@ rn::Bench::Shot shot_of(const Layer& layer, Rows rows, const Shape& shape, RifeN
 }
 
 // Le flux face à la tuile au banc, en microsecondes : la meilleure forme de chacun, et laquelle est gardée.
+// Une forme qui ne se lance pas a un temps infini (rn::Bench), que la conversion en entier ne prend pas.
 std::string versus(const rn::Config& stream, float streamed, float tiled) {
-  const auto us = [](float ms) { return std::to_string(static_cast<long>(ms * 1000.F + 0.5F)) + " µs"; };
+  const auto us = [](float ms) {
+    return std::isfinite(ms) ? std::to_string(static_cast<long>(ms * 1000.F + 0.5F)) + " µs"
+                             : std::string("sans lancement");
+  };
   return "en flux au mieux " + us(streamed) + " (" + std::to_string(stream.bands) +
          " bandes par bloc, tuile " + std::to_string(stream.ct) + "), en tuile au mieux " + us(tiled) +
          (streamed < tiled ? " : flux retenu" : " : tuile gardée");
