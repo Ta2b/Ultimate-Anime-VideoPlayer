@@ -413,7 +413,8 @@ std::expected<MachineCalibration, Refusal> load_calibration_at(const std::filesy
 CalibrationUse calibration_use(const MachineCalibration& calibration, const CalibrationHost& host) {
   // D'une version plus ancienne : ses bornes (moitié de l'écran, RIFE 4.22 lite, RIFE coupé par le Rapide
   // compté comme tenu) sont sous ou à côté de ce que l'Auto estimé donne aujourd'hui (A49-02, A07-02).
-  if (calibration.version < kCalibrationVersion) return CalibrationUse::OldVersion;
+  const int wanted = calibration.engine == "tensorrt" ? kTensorRtCalibrationVersion : kCalibrationVersion;
+  if (calibration.version < wanted) return CalibrationUse::OldVersion;
   // Sur batterie : l'Auto estimé vaut mieux que les bornes d'une carte bridée (P3.12).
   if (calibration.on_battery) return CalibrationUse::OnBattery;
   if (calibration.gpu != host.gpu ||

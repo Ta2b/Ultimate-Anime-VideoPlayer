@@ -94,7 +94,9 @@ std::expected<BenchResult, Refusal> parse_bench(std::string_view text) {
   const toml::table& root = parsed.table();
   // B07-06 : une mesure d'avant les chaînes d'aujourd'hui ne décide plus de la tranche ni de la hauteur
   // explorée ; l'estimation de la carte la remplace jusqu'au prochain « kirari bench ».
-  if (const std::int64_t version = root["version"].value_or(std::int64_t{0}); version < kBenchVersion)
+  const bool tensorrt = root["engine"].value_or(std::string()) == "tensorrt";
+  if (const std::int64_t version = root["version"].value_or(std::int64_t{0});
+      version < (tensorrt ? kTensorRtBenchVersion : kBenchVersion))
     return refuse(RefusalCode::FieldOutOfRange,
                   std::format("bench.toml : version {} d'une chaîne plus ancienne, ignorée", version));
   BenchResult result;
