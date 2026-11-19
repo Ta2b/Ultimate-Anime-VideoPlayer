@@ -47,11 +47,10 @@ class SpanFp8Engine final : public Engine {
   // de zéros par les noyaux (un noyau qui ne tourne pas sur cet appareil se voit ici, au chargement, pas en
   // pleine lecture), puis prend sa zone de travail dans shared. Refus : fichier ou paquet illisible, paquet
   // réécrit depuis la construction (GraphInvalid), taille ou appareil que les noyaux ne prennent pas,
-  // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif (SpanFp8Weights::native_edges) ;
-  // promoted : le FP16 natif somme en promu (SpanNativeSums::Promoted), quel que soit le drapeau du paquet.
+  // mémoire. native_edges : les bords du FP8 par les noyaux du FP16 natif (SpanFp8Weights::native_edges).
   static std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> load(
       const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false, bool promoted = false);
+      const std::shared_ptr<SharedActivations>& shared, bool native_edges = false);
   ~SpanFp8Engine() override;
   SpanFp8Engine(const SpanFp8Engine&) = delete;
   SpanFp8Engine& operator=(const SpanFp8Engine&) = delete;
@@ -93,8 +92,7 @@ class SpanFp8Engine final : public Engine {
   // vide pour un paquet FP8, ou une image trop petite pour en juger.
   std::optional<double> native_check_db() const { return native_check_db_; }
   // Le paquet chargé est le SPAN FP16 natif (drapeau fp16), pas le FP8, et ses sommes : f32 avec acc32 (cran
-  // Qualité), promues avec --span-promoted ; native_edges : les bords du FP8 par les noyaux natifs
-  // (--span-native-edges). Pour le journal.
+  // Qualité) ; native_edges : les bords du FP8 par les noyaux natifs (--span-native-edges). Pour le journal.
   bool fp16() const { return fp16_; }
   SpanNativeSums sums() const { return sums_; }
   bool native_edges() const { return native_edges_; }
