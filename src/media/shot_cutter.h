@@ -15,8 +15,8 @@
 
 #include "kernels/spec/frame_stats.h"
 #include "media/faces.h"
-#include "media/shot_rhythm.h"
 #include "media/probe_motion.h"
+#include "media/shot_rhythm.h"
 
 namespace kirari::media {
 

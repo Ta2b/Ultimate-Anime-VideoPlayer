@@ -12,8 +12,8 @@ namespace kirari::app::play {
 ShotChoice judge_shot(const media::ShotRhythm& rhythm) {
   ShotChoice choice;
   const float cadence = media::drawing_cadence(rhythm);
-  const float strong = rhythm.pairs > 0 ? static_cast<float>(rhythm.strong) / static_cast<float>(rhythm.pairs)
-                                        : 0.0F;
+  const float strong =
+      rhythm.pairs > 0 ? static_cast<float>(rhythm.strong) / static_cast<float>(rhythm.pairs) : 0.0F;
   // Le sakuga d'abord : un passage en deux mais rapide reste à RIFE, que DistilDRBA ne bat pas sur les
   // grands mouvements.
   const bool sakuga = strong >= shot_plan::kSakugaShare;
@@ -46,13 +46,13 @@ std::string rhythm_text(const media::ShotRhythm& rhythm) {
   const auto pairs = static_cast<float>(std::max<std::uint32_t>(rhythm.pairs, 1));
   const int drawn = std::clamp(static_cast<int>(std::lround(cadence)), 1, 4);
   static constexpr const char* kCadence[] = {"en un", "en deux", "en trois", "plus lent"};
-  std::string out =
-      std::format("{} ({:.1f} images par dessin), {:.0f} % de paires fortes, grain {:.1f} sur {:.0f} % immobile",
-                  kCadence[drawn - 1], cadence, 100.0F * static_cast<float>(rhythm.strong) / pairs, rhythm.grain,
-                  100.0F * rhythm.still);
+  std::string out = std::format(
+      "{} ({:.1f} images par dessin), {:.0f} % de paires fortes, grain {:.1f} sur {:.0f} % immobile",
+      kCadence[drawn - 1], cadence, 100.0F * static_cast<float>(rhythm.strong) / pairs, rhythm.grain,
+      100.0F * rhythm.still);
   if (rhythm.flow_pairs > 0)
-    out += std::format(", flux : caméra {:.2f} % et dessins {:.2f} % de la hauteur par image", 100.0F * rhythm.camera,
-                       100.0F * rhythm.drawing);
+    out += std::format(", flux : caméra {:.2f} % et dessins {:.2f} % de la hauteur par image",
+                       100.0F * rhythm.camera, 100.0F * rhythm.drawing);
   return out;
 }
 

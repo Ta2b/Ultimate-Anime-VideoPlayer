@@ -289,7 +289,7 @@ void feed_plan_shots(Chain& to) {
   if (version == to.plan_shots_seen) return;
   to.plan_shots_seen = version;
   std::shared_ptr<const std::vector<media::Shot>> shots = timeline.shots_snapshot();
-  to.anime_series_apl = series_apl_of(*shots);  // aussi pour les noirs profonds (P3.52)
+  to.anime_series_apl = series_apl_of(*shots);             // aussi pour les noirs profonds (P3.52)
   if (to.shot_plan) to.live.shot_plan().set_shots(shots);  // l'Auto plan par plan (shot_plan.h)
   if (to.shot_cuts) to.live.cuts().set_shots(std::move(shots));
 }

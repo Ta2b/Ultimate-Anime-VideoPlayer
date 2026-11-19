@@ -15,20 +15,22 @@ bool drba_for_shots(const ChainEngines& c, const PlaySettings& settings) {
 
 void settle_shot_plan(ChainEngines& c) {
   if (!c.drba_by_shot) {
-    if (c.shot_plan) log_channel("app")->info("plan par plan : un seul moteur d'interpolation, TemporalFix par plan");
+    if (c.shot_plan)
+      log_channel("app")->info("plan par plan : un seul moteur d'interpolation, TemporalFix par plan");
     return;
   }
-  const char* why = c.rife_motion == nullptr        ? "RIFE mouvement non chargé"
-                    : c.rife != nullptr             ? "RIFE image chargé"
-                    : !c.drba_motion                ? "DistilDRBA en variante image"
-                    : c.engine == nullptr           ? "sans SPAN"
-                    : c.drba_size != c.rife_size    ? "DistilDRBA et RIFE n'estiment pas à la même taille"
-                    : c.gmfss_use != GmfssUse::Off  ? "GMFSS union chargé"
-                    : c.smooth_drawings             ? "dessins tenus lissés"
-                                                    : nullptr;
+  const char* why = c.rife_motion == nullptr       ? "RIFE mouvement non chargé"
+                    : c.rife != nullptr            ? "RIFE image chargé"
+                    : !c.drba_motion               ? "DistilDRBA en variante image"
+                    : c.engine == nullptr          ? "sans SPAN"
+                    : c.drba_size != c.rife_size   ? "DistilDRBA et RIFE n'estiment pas à la même taille"
+                    : c.gmfss_use != GmfssUse::Off ? "GMFSS union chargé"
+                    : c.smooth_drawings            ? "dessins tenus lissés"
+                                                   : nullptr;
   if (why == nullptr) {
-    log_channel("app")->info("plan par plan : DistilDRBA et RIFE mouvement chargés ensemble, estimés en {}x{}",
-                             c.rife_size.width, c.rife_size.height);
+    log_channel("app")->info(
+        "plan par plan : DistilDRBA et RIFE mouvement chargés ensemble, estimés en {}x{}", c.rife_size.width,
+        c.rife_size.height);
     return;
   }
   log_channel("app")->warn("plan par plan : {}, DistilDRBA rendu", why);

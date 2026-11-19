@@ -153,19 +153,9 @@ std::expected<std::unique_ptr<VideoStage>, Refusal> UpscaleStage::start(VideoSta
                   std::format("étage gpu : taille de travail {}x{} hors de la source {}x{}", setup.work_width,
                               setup.work_height, setup.source_width, setup.source_height));
   }
-  const int estimators = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
-                         (setup.distil_drba != nullptr ? 1 : 0);
-  // Plan par plan : les deux variantes mouvement, avec SPAN (les mêmes tampons et le même ordre du warp dans
-  // les deux moteurs), sans GMFSS ni dessins lissés, que la bascule ne suit pas.
-  if (setup.drba_by_shot &&
-      (setup.distil_drba == nullptr || setup.rife_motion == nullptr || setup.rife != nullptr ||
-       !setup.drba_motion || setup.engine == nullptr || setup.gmfss.use != GmfssUse::Off ||
-       setup.smooth_drawings || setup.live == nullptr)) {
-    return refuse(RefusalCode::FieldOutOfRange,
-                  "étage gpu : plan par plan sans DistilDRBA et RIFE mouvement avec SPAN, ou avec GMFSS ou les "
-                  "dessins lissés");
-  }
-  if (estimators > (setup.drba_by_shot ? 2 : 1)) {
+  if (auto ok = check_by_shot(setup); !ok) return std::unexpected(std::move(ok.error()));
+  const int estimators = estimators_of(setup);  // plan par plan : DistilDRBA et RIFE comptent pour un
+  if (estimators > 1) {
     return refuse(RefusalCode::FieldOutOfRange,
                   "étage gpu : RIFE image, RIFE mouvement ou DistilDRBA, un seul des trois");
   }
@@ -264,13 +254,10 @@ std::expected<void, Refusal> UpscaleStage::allocate() {
     }
   }
   if (auto ok = allocate_temporal(); !ok) return ok;
-  if (looks_ahead() || setup_.drba_by_shot) {
+  if (looks_ahead()) {  // plan par plan aussi : RIFE d'abord, DistilDRBA avec (allocate_ahead)
     if (auto ok = allocate_ahead(); !ok) return ok;
   }
-  // Plan par plan : les tampons de DistilDRBA, puis ceux de RIFE mouvement.
-  if (setup_.distil_drba != nullptr) {
-    if (auto ok = allocate_drba(); !ok || !setup_.drba_by_shot) return ok;
-  }
+  if (drba()) return allocate_drba();
   if (interpolates()) {
     const kernels::RifeGeometry g =
         kernels::rife_geometry(setup_.rife_width, setup_.rife_height, setup_.rife_align);

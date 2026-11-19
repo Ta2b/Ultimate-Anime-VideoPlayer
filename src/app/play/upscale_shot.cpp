@@ -12,6 +12,27 @@
 
 namespace kirari::app::play {
 
+int estimators_of(const UpscaleSetup& setup) {
+  const int count = (setup.rife != nullptr ? 1 : 0) + (setup.rife_motion != nullptr ? 1 : 0) +
+                    (setup.distil_drba != nullptr ? 1 : 0);
+  return setup.drba_by_shot ? count - 1 : count;
+}
+
+std::expected<void, Refusal> check_by_shot(const UpscaleSetup& setup) {
+  // Les deux variantes mouvement, avec SPAN (les mêmes tampons et le même ordre du warp dans les deux
+  // moteurs), sans GMFSS ni dessins lissés, que la bascule ne suit pas.
+  if (!setup.drba_by_shot) return {};
+  if (setup.distil_drba == nullptr || setup.rife_motion == nullptr || setup.rife != nullptr ||
+      !setup.drba_motion || setup.engine == nullptr || setup.gmfss.use != GmfssUse::Off ||
+      setup.smooth_drawings || setup.live == nullptr) {
+    return refuse(
+        RefusalCode::FieldOutOfRange,
+        "étage gpu : plan par plan sans DistilDRBA et RIFE mouvement avec SPAN, ou avec GMFSS ou les "
+        "dessins lissés");
+  }
+  return {};
+}
+
 std::expected<void, Refusal> UpscaleStage::follow_shot(const DecodedFrame& frame) {
   if (!setup_.drba_by_shot || setup_.live == nullptr || frame.pts_us == kNoPts) return {};
   const ShotPlanBook& book = setup_.live->shot_plan();
@@ -26,7 +47,8 @@ std::expected<void, Refusal> UpscaleStage::follow_shot(const DecodedFrame& frame
       if (shot_.drba) {  // DistilDRBA → RIFE : la suivante lue en avance par DistilDRBA ne sert plus
         for (auto* ticket : {&drba_.after_ticket, &drba_.bridge_ticket}) {
           if (const auto pending = std::exchange(*ticket, std::nullopt)) {
-            if (auto taken = ops.scores_take(*pending); !taken) return std::unexpected(std::move(taken.error()));
+            if (auto taken = ops.scores_take(*pending); !taken)
+              return std::unexpected(std::move(taken.error()));
           }
         }
         drba_.after_scores.reset();
@@ -72,8 +94,8 @@ void UpscaleStage::log_shots() const {
         shot_.held_back);
   }
   if (setup_.temporal_by_shot) {
-    log_channel("gpu")->info("plan par plan : TemporalFix sur {} ingestions, sauté sur {}", shot_.temporal_frames,
-                             shot_.temporal_skipped);
+    log_channel("gpu")->info("plan par plan : TemporalFix sur {} ingestions, sauté sur {}",
+                             shot_.temporal_frames, shot_.temporal_skipped);
   }
 }
 

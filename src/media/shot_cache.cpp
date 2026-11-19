@@ -29,9 +29,9 @@ constexpr std::uint32_t kMaxFlashes = 100'000;
 constexpr std::size_t kHeadBytes = 1 << 20;
 constexpr std::uint32_t kMaxShots = 200'000;
 constexpr const char* kExtension = ".shots";
-// Les octets d'un plan dans le fichier, au moins : quatre instants, deux ShotStats, un ShotMeta, les drapeaux,
-// le compte de ses teintes de peau et son rythme. Un
-// compte de plans que le reste du fichier ne peut pas tenir est refusé avant d'allouer (B42-06).
+// Les octets d'un plan dans le fichier, au moins : quatre instants, deux ShotStats, un ShotMeta, les
+// drapeaux, le compte de ses teintes de peau et son rythme. Un compte de plans que le reste du fichier ne
+// peut pas tenir est refusé avant d'allouer (B42-06).
 constexpr std::size_t kShotBytes =
     (4 * sizeof(std::int64_t)) +
     (sizeof(float) * (22 + 4 + kernels::frame_stats::kPercentiles.size() + 5 + kShotLumBins)) + 2 +
@@ -112,10 +112,10 @@ void put_rhythm(std::string& out, const ShotRhythm& r) {
 }
 
 bool take_rhythm(const std::string& in, std::size_t& at, ShotRhythm& r) {
-  return take(in, at, r.pairs) && take(in, at, r.held) && take(in, at, r.strong) && take(in, at, r.flow_pairs) &&
-         r.held <= r.pairs && r.strong <= r.pairs && r.flow_pairs <= r.pairs && take(in, at, r.changed) &&
-         take(in, at, r.grain) && take(in, at, r.still) && take(in, at, r.camera) && take(in, at, r.drawing) &&
-         take(in, at, r.unmatched);
+  return take(in, at, r.pairs) && take(in, at, r.held) && take(in, at, r.strong) &&
+         take(in, at, r.flow_pairs) && r.held <= r.pairs && r.strong <= r.pairs && r.flow_pairs <= r.pairs &&
+         take(in, at, r.changed) && take(in, at, r.grain) && take(in, at, r.still) &&
+         take(in, at, r.camera) && take(in, at, r.drawing) && take(in, at, r.unmatched);
 }
 
 bool take_shot(const std::string& in, std::size_t& at, Shot& shot, std::int64_t& previous_end) {

@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -18,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "core/types.h"
 #include "media/shot_cutter.h"
 
 namespace kirari::app::play {
@@ -27,9 +29,9 @@ namespace shot_plan {
 inline constexpr std::uint32_t kMinPairs = 6;  // en dessous, le plan garde le choix d'avant
 // Images par dessin à partir desquelles un plan est de l'animation limitée (en deux : 2).
 inline constexpr float kLimitedCadence = 1.6F;
-inline constexpr float kSakugaShare = 0.15F;   // part de paires fortes d'un plan de sakuga
-inline constexpr float kFlickerStill = 0.3F;   // part moyenne de blocs immobiles d'un plan qui scintille
-inline constexpr float kFlickerGrain = 1.0F;   // et grain moyen de ces blocs, codes 8 bits
+inline constexpr float kSakugaShare = 0.15F;  // part de paires fortes d'un plan de sakuga
+inline constexpr float kFlickerStill = 0.3F;  // part moyenne de blocs immobiles d'un plan qui scintille
+inline constexpr float kFlickerGrain = 1.0F;  // et grain moyen de ces blocs, codes 8 bits
 }  // namespace shot_plan
 
 enum class ShotMotion : std::uint8_t { Rife, Drba };
@@ -50,16 +52,22 @@ std::string rhythm_text(const media::ShotRhythm& rhythm);
 
 // Ce que l'étage gpu joue (upscale_shot.cpp) : le moteur en cours et les comptes du journal de fin.
 struct ShotPlay {
-  bool drba = false;  // DistilDRBA sur le plan en cours, sinon RIFE
+  bool drba = false;          // DistilDRBA sur le plan en cours, sinon RIFE
   std::uint64_t to_drba = 0;  // bascules, aux coupes
   std::uint64_t to_rife = 0;
   std::uint64_t held_back = 0;  // un autre moteur voulu sans coupe connue devant : gardé
   std::uint64_t drba_frames = 0;
   std::uint64_t rife_frames = 0;
-  std::uint64_t unknown_frames = 0;  // images d'un plan pas encore analysé
+  std::uint64_t unknown_frames = 0;   // images d'un plan pas encore analysé
   std::uint64_t temporal_frames = 0;  // images passées par TemporalFix, et sautées par le plan
   std::uint64_t temporal_skipped = 0;
 };
+
+// L'étage gpu sous l'Auto plan par plan (upscale_shot.cpp, upscale_stage.h) : ses moteurs d'interpolation
+// comptés (DistilDRBA et RIFE pour un), et le refus d'une forme de chaîne que la bascule ne suit pas.
+struct UpscaleSetup;
+int estimators_of(const UpscaleSetup& setup);
+std::expected<void, Refusal> check_by_shot(const UpscaleSetup& setup);
 
 // Les plans et leurs choix, partagés entre main (qui les pose quand la chronologie change) et le fil du GPU
 // (qui lit le choix de chaque image). Vide : aucun choix, l'étage garde son moteur.

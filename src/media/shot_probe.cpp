@@ -39,15 +39,15 @@ class Analysis {
       : timeline_(timeline), cutter_(starts_at_cut), flow_(flow ? ProbeFlow::open() : nullptr) {
     flashes_.set_gain(flash_gain);
   }
-  // La mesure de l'image décodée frame, avec son mouvement face à la précédente (le flux) et la luma de sa
-  // grille (luma), pour le rythme du plan (media/shot_rhythm.h).
-  std::expected<ShotFrame, Refusal> measure(const DecodedFrame& frame, std::vector<float>& luma) {
-    auto measured = measure_frame(frame, &luma);
+  // La mesure de l'image décodée frame, avec son mouvement face à la précédente (le flux) ; la luma de sa
+  // grille est gardée pour son rythme (push, media/shot_rhythm.h).
+  std::expected<ShotFrame, Refusal> measure(const DecodedFrame& frame) {
+    auto measured = measure_frame(frame, &luma_);
     if (measured && flow_) measured->motion = flow_->push(frame);
     return measured;
   }
-  void push(ShotFrame frame, std::vector<float> luma) {
-    frame.rhythm = rhythm_.push(std::move(luma), kernels::frame_stats::kGridW, kernels::frame_stats::kGridH);
+  void push(ShotFrame frame) {
+    frame.rhythm = rhythm_.push(std::move(luma_), kernels::frame_stats::kGridW, kernels::frame_stats::kGridH);
     if (frame.rhythm && frame.motion) {
       const ProbeMotion& m = *frame.motion;
       frame.rhythm = with_flow(
@@ -78,6 +78,7 @@ class Analysis {
   ShotCutter cutter_;
   FlashGuard flashes_;
   RhythmProbe rhythm_;
+  std::vector<float> luma_;  // la grille de la dernière image mesurée
   std::unique_ptr<ProbeFlow> flow_;
 };
 
@@ -422,8 +423,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
     if (*received) {
       const DecodedFrame& frame = **received;
       if (frame.pts_us == kNoPts) continue;
-      std::vector<float> luma;
-      auto measured = analysis.measure(frame, luma);
+      auto measured = analysis.measure(frame);
       if (!measured) return fail(std::move(measured.error()));
       if (from_origin) {
         timeline->set_origin_us(frame.pts_us);
@@ -434,7 +434,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       frontier.store(frame.pts_us, std::memory_order_relaxed);
       faces.look(frame, *measured);
       ++frames;
-      analysis.push(std::move(*measured), std::move(luma));
+      analysis.push(std::move(*measured));
       continue;
     }
     if (decoder.drained()) {

@@ -31,7 +31,8 @@ namespace kirari::media {
 // kernels/ref/frame_stats.h. Refus FormatUnsupported pour un autre format ou hors de la mémoire hôte.
 // luma : si donné, la luma BT.709 des points de la grille (kGridW × kGridH, R'G'B' encodés, 0 à 1), pour le
 // rythme du plan (media/shot_rhythm.h).
-std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame, std::vector<float>* luma = nullptr);
+std::expected<ShotFrame, Refusal> measure_frame(const DecodedFrame& frame,
+                                                std::vector<float>* luma = nullptr);
 
 struct ShotProbeOptions {
   // Threads du décodage logiciel ; 0 : la moitié des cœurs, 2 à 4 (background_decoder_threads). NVDEC réduit

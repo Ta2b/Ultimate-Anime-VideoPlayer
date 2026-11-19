@@ -35,8 +35,8 @@ std::optional<RhythmPair> rhythm_pair_of(std::span<const float> previous, std::s
       int count = 0;
       for (int y = by * kSide; y < std::min(height, (by + 1) * kSide); ++y) {
         for (int x = bx * kSide; x < std::min(width, (bx + 1) * kSide); ++x) {
-          const auto at = (static_cast<std::size_t>(y) * static_cast<std::size_t>(width)) +
-                          static_cast<std::size_t>(x);
+          const auto at =
+              (static_cast<std::size_t>(y) * static_cast<std::size_t>(width)) + static_cast<std::size_t>(x);
           sum += std::abs(static_cast<double>(luma[at]) - static_cast<double>(previous[at]));
           ++count;
         }

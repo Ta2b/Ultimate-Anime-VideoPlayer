@@ -30,6 +30,10 @@ std::expected<void, Refusal> UpscaleStage::allocate_ahead() {
   if (small_[0]) {
     if (auto ok = alloc(ahead_.small, setup_.rife_width, setup_.rife_height); !ok) return ok;
   }
+  // Plan par plan : l'étage part sous RIFE (drba() faux), les tampons de DistilDRBA s'ajoutent ici.
+  if (setup_.drba_by_shot) {
+    if (auto ok = allocate_drba(); !ok) return ok;
+  }
   return smooth_possible() ? allocate_smooth() : std::expected<void, Refusal>{};
 }
 

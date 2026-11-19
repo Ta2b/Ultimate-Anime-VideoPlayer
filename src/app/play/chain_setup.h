@@ -260,10 +260,10 @@ std::expected<bool, StageFailure> load_motion(Player& p, const gpu::BackendInit&
                                               const PlaySettings& settings, InnerFallbacks& inner,
                                               const std::string& library);
 
-// L'Auto plan par plan (chain_shot_plan.cpp, --shot-plan). drba_for_shots : DistilDRBA est-il à charger en plus
-// de RIFE (RIFE choisi, DistilDRBA trouvé, warp après SPAN pour que les deux soient en variante mouvement) ?
-// settle_shot_plan, après le chargement : les deux moteurs vont ensemble, ou DistilDRBA est rendu et RIFE
-// joue seul (la raison au journal).
+// L'Auto plan par plan (chain_shot_plan.cpp, --shot-plan). drba_for_shots : DistilDRBA est-il à charger en
+// plus de RIFE (RIFE choisi, DistilDRBA trouvé, warp après SPAN pour que les deux soient en variante
+// mouvement) ? settle_shot_plan, après le chargement : les deux moteurs vont ensemble, ou DistilDRBA est
+// rendu et RIFE joue seul (la raison au journal).
 bool drba_for_shots(const ChainEngines& c, const PlaySettings& settings);
 void settle_shot_plan(ChainEngines& c);
 
