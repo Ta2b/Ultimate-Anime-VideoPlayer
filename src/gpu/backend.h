@@ -100,7 +100,9 @@ namespace kirari::gpu {
 //      travail).
 // 45 : KernelOps::gmfss_still (le décor fixe des clés repris des sources).
 // 46 : SplatJob::pull (le splat tiré).
-inline constexpr int kBackendAbi = 46;
+// 47 : KernelOps::scene_flow_start et scene_flow_take (la carte de la scène par le flux optique de NVIDIA,
+// kernels/spec/scene_flow.h).
+inline constexpr int kBackendAbi = 47;
 
 using DeviceUuid = kirari::DeviceUuid;
 

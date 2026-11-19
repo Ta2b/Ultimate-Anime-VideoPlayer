@@ -46,6 +46,7 @@ class SharedActivations;
 // refus de construction (C03-08).
 std::string shape_text(const ShapeSet& shapes);
 class SpanFp8Engine;
+class SceneFlow;
 class RifeFusedEngine;
 class DrbaFusedEngine;
 struct IngestParams;
@@ -119,6 +120,11 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::uint64_t, Refusal> frame_stats_start(const Tensor& rgb,
                                                           kernels::FrameTransfer transfer) override;
   std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override;
+  // La carte de la scène par NVOF (tensorrt_scene_flow.cpp, scene_flow.h), relue sans attente.
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
+                                                         bool restart) override;
+  std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t ticket) override;
   std::expected<void, Refusal> warp_blend_poses(const Tensor& a, const Tensor& b, const Motion& motion,
                                                 const Motion* previous, float t, const Tensor& out) override;
   // Les mêmes, directement dans le slot (BackendCaps::ring_targets).
@@ -439,6 +445,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   std::uint64_t stats_tickets_ = 0;
+  // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
+  std::unique_ptr<SceneFlow> scene_flow_;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
   float* ingest_rows_ = nullptr;
   // Sommes FP32 du softmax splatting, partagées par tous les splats (le flux les ordonne).
