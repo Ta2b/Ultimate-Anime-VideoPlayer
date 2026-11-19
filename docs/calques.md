@@ -2,8 +2,9 @@
 
 Phase 4 du plan du flux NVIDIA (« Usages du flux optique matériel NVIDIA »). Aucun modèle nouveau : RIFE et
 SPAN tels quels, plus un warp par le mouvement de caméra que donne la carte de la scène (`kernels/spec/scene_flow.h`,
-`PairFacts::scene`). Les deux fonctions sont éteintes par défaut, sans option de ligne de commande : elles
-s'allument dans `play.toml`, et ne tournent qu'avec la carte, donc avec l'option d'essai `--scene-map` (sans
+`PairFacts::scene`). Sans option de ligne de commande, les deux se règlent dans `play.toml` : les calques sont
+allumés par défaut depuis le second essai du 19 novembre (un `play.toml` qui les a éteints les garde éteints),
+la plaque reste éteinte. Les deux ne tournent qu'avec la carte, donc avec l'option d'essai `--scene-map` (sans
 elle, une ligne au journal le dit). En lecture seulement : l'export rejoue la chaîne au bit près, et la carte
 arrive quand elle peut (`layer_setup`, `chain_layers.cpp`).
 
@@ -74,9 +75,15 @@ en retard : la carte part avec la caméra de NVOF et seule la caméra lk d'une v
 
 Rejeu du 19 novembre, dix extraits de 160 images (huit de carte_lecteur, lueur, aura) : avec l'affinage à
 l'heure, 82 à 100 % des paires ont des calques ; affinage toujours en retard, 47 à 97 % sur neuf extraits (17 %
-sur le panoramique rapide de Re:Zero 12:10, où la caméra accélère). Garder la clé de la plaque à travers une
-paire sans calques à caméra sûre a été essayé et écarté : 12 % de clés en moins, mais une plaque qui dérive
-(garde de la plaque au 90e centile de 13 à 44 % sur lueur).
+sur le panoramique rapide de Re:Zero 12:10 : 33 pixels par paire avec un balancement vertical, puis des secousses
+de 20 à 28 pixels). Deux essais écartés :
+
+- garder la clé de la plaque à travers une paire sans calques à caméra sûre : 12 % de clés en moins, mais une
+  plaque qui dérive (garde de la plaque au 90e centile de 13 à 44 % sur lueur) ;
+- extrapoler la caméra voisine (vitesse et accélération, 2 c₋₁ − c₋₂) : sur ce panoramique, elle reste à 0,7
+  pixel médian de la caméra lk (la voisine seule aussi), et NVOF, à 2,3 pixels, ne peut pas la valider ; prise
+  quand elle est la plus proche de NVOF, elle fait passer les dix extraits de 65 à 70 % des paires en retard
+  reprises, mais 0,6 % au lieu de 0,4 % à plus d'un demi-pixel. Seul l'affinage à l'heure rattrape ce plan.
 
 ## Essai du 19 novembre (#946, RTX 4070 Ti)
 
@@ -85,6 +92,18 @@ calques (177 sans caméra lk : affinage trop tard sur 45 % des paires), calques 
 0,30 ms mais un retard p95 de 4,7 à 5 ms. Le retard venait du second SPAN de la plaque sur chaque clé (37) : quand
 SPAN tourne déjà en FP16 ou mieux, la plaque reprend désormais sa sortie (`plate_copy`). Les calques n'ajoutent
 pas de retard (p95 0 ms, comme éteints). L'affinage à l'heure revient à la carte (`scene_map.cpp`).
+
+## Second essai du 19 novembre (tête de #939 : #957 et l'affinage parti derrière le flux)
+
+Porte des calques passée : 74 % des paires avec calques sur le panoramique (359 sur 485, « caméra non affinée »
+16 au lieu de 177) et 83 % sur Re:Zero 60 s (1 194 sur 1 444). Retard p95 de 2,8 ms contre 3,0 éteint sur le
+panoramique, 2,0 contre 1,8 sur Re:Zero, et 36 images perdues contre 54. Calques 0,83 à 0,89 ms par appel. La
+carte affine 424 paires sur 424, dont 22 trop tard mais toutes relues. Les calques s'allument donc par défaut,
+avec la carte.
+
+La plaque ne passe pas. En FP8, son second SPAN FP16 porte le p95 à 6,8 ms contre 3,0 (panoramique) et à 6,4
+contre 1,8 (Re:Zero). En Équilibre, la copie de la sortie de SPAN donne 3,2 contre 1,5 ms, avec moins
+d'images manquées (26 contre 102, un seul tour). Elle reste éteinte.
 
 ## Essai (avec le reste, à la fin)
 
@@ -103,6 +122,7 @@ for v in eteint calques plaque; do
   for f in settings.toml user.toml play.toml; do [ -f "$D/$f" ] && cp "$D/$f" $E/$v/; done
   sed -i '/^layers = /d;/^background_plate = /d' $E/$v/play.toml
 done
+sed -i '/^\[interpolation\]/a layers = false' $E/eteint/play.toml  # allumés par défaut
 sed -i '/^\[interpolation\]/a layers = true' $E/calques/play.toml
 sed -i '/^\[interpolation\]/a layers = true\nbackground_plate = true' $E/plaque/play.toml
 # RIFE mouvement ×2 (les calques ne composent que ses warps), 24 présentations de suite à 10 s.
@@ -122,7 +142,7 @@ grep -h "calques\|plaque\|carte de la scène :\|profil GPU · .*SPAN" $E/*/t*.lo
   reprises` (0 clé : le warp n'est pas après SPAN, la plaque ne tourne pas ; le dire).
 - `carte de la scène : … affinée sur …, (… affinages trop tard …)` : les paires où Lucas-Kanade arrive trop
   tard n'ont pas de calques.
-- Profil GPU : « calques » vers 0,8 ms par appel en 4K (deux lectures Catmull-Rom de toute l'image, à l'essai du
+- Profil GPU : « calques » vers 0,85 ms par appel en 4K (deux lectures Catmull-Rom du décor, aux essais du
   19 novembre ; les 0,3 ms visés d'abord n'étaient qu'une estimation), « plaque de décor » vers 0,3 ms ; le
   SPAN de la plaque, une fois par clé, seulement quand SPAN tourne sous le FP16. Ce qui tranche : la ligne
   suivante.

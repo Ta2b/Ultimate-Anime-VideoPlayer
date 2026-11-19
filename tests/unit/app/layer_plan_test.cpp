@@ -140,9 +140,9 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK_FALSE(layer_setup(c, &clock).layers);  // sans RIFE mouvement
   CHECK_FALSE(layer_setup(c, nullptr).layers);
 
-  // play.toml : les deux clés se relisent ; un ancien fichier sans elles les laisse éteintes.
+  // play.toml : les deux clés se relisent ; un ancien fichier sans elles prend les calques (allumés par
+  // défaut), pas la plaque ; un fichier qui les a éteints les garde éteints.
   PlaySettings on;
-  on.layers = true;
   on.background_plate = true;
   const auto reread = parse_settings(format_settings(on));
   REQUIRE(reread);
@@ -150,8 +150,13 @@ TEST_CASE("calques : décisions d'une paire et suivi de la plaque", "[layers]") 
   CHECK(reread->background_plate);
   const auto old = parse_settings("[interpolation]\nsmooth_drawings = true\n");
   REQUIRE(old);
-  CHECK_FALSE(old->layers);
+  CHECK(old->layers);
   CHECK_FALSE(old->background_plate);
+  PlaySettings off;
+  off.layers = false;
+  const auto kept = parse_settings(format_settings(off));
+  REQUIRE(kept);
+  CHECK_FALSE(kept->layers);
 }
 
 // L'affinage en retard : la caméra lk d'une des deux paires d'avant, si elle s'accorde à un demi-pixel près
