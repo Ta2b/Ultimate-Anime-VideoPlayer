@@ -26,13 +26,15 @@ enum class Kind : std::uint8_t {
 
 // La forme d'une couche : tranche des canaux d'entrée (kc), tuile des canaux de sortie (ct), lignes par
 // warp (rows : la tuile de pixels fait 4 · rows lignes sur 32 colonnes), parts de K (ksplit), poids de toute
-// la prise suivante chargés pendant la prise courante (ahead), au prix d'un second jeu de registres.
+// la prise suivante chargés pendant la prise courante (ahead), au prix d'un second jeu de registres. bands :
+// la forme en flux (conv_stream_kernels.cuh), bands bandes au plus par bloc ; 0, la tuile de conv_kernel.
 struct Config {
   int kc = 16;
   int ct = 16;
   int rows = 2;
   int ksplit = 1;
   bool ahead = false;
+  int bands = 0;
 };
 
 constexpr int kernel_size(Kind kind) {
@@ -65,6 +67,12 @@ Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct, int rows, bool a
 // l'encodeur ni une couche lue dans l'image ne découpent K : pleine taille, leur grille remplit déjà la
 // carte.
 std::vector<Config> configs(RifeNativeSums sums, Kind kind, const Extent& extent, int sms);
+// La forme en flux (Config::bands > 0) : son noyau, ou nul s'il n'existe pas (3 × 3 de pas 1, tranche de 64
+// et une ligne par warp ; tuile de 64 en sommes f16, de 32 en f16 ou mixtes) ; ses formes à essayer, quand
+// toute l'entrée tient en une tranche (bandes par bloc : conv_stream::band_counts). Le GMFSS natif les ajoute
+// à celles de configs ; le RIFE natif ne les prend pas.
+Launch pick_stream(RifeNativeSums sums, Kind kind, const Config& cfg);
+std::vector<Config> stream_configs(RifeNativeSums sums, Kind kind, const Extent& extent, int sms);
 const char* sums_name(RifeNativeSums sums);
 // La fin d'une couche à K découpé (reduce_kernel), width : canaux de la grille z.
 void launch_reduce(bool phase, int width, cudaStream_t stream, const Params& p);

@@ -1,16 +1,12 @@
 // La planification des réseaux natifs de GMFSS (gmfss_conv_plan.cuh) : les tenseurs placés par durée de vie,
 // puis chaque convolution rangée (rn::Dense, les poids de chaque tuile par rn::packed_weights) et réglée au
-// banc du RIFE natif pour les sommes f16, mixtes et f32. Le réglage suit celui du RIFE natif
-// (rife_native_net.cu) : la forme de référence (la plus simple) lancée d'abord, puis chaque forme que les
-// noyaux font, sur une sortie remplie de NaN, comparée à la référence aux tolérances de native_sums.h et
-// chronométrée en graphe ; la plus rapide de celles qui rendent la sortie de la référence est gardée. Une
-// convolution qui n'a qu'une forme n'est pas mesurée ; une convolution de même noyau et de même géométrie
-// qu'une autre déjà réglée (les blocs d'une ligne du GridNet) en reprend les formes.
+// banc du RIFE natif pour les sommes f16, mixtes et f32 (gmfss_conv_tune.cu), comme celles du RIFE natif
+// (rife_native_net.cu). Une convolution qui n'a qu'une forme n'est pas mesurée ; une convolution de même
+// noyau et de même géométrie qu'une autre déjà réglée (les blocs d'une ligne du GridNet) en reprend les
+// formes.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,10 +17,6 @@ namespace kirari::gpu::cuda::gmfss_plan {
 namespace {
 
 using rn::Kind;
-
-bool phased(Kind kind) {
-  return kind == Kind::kPhase || kind == Kind::kShuffle;
-}
 
 Kind kind_of(const prepare::GmfssGridStep& step, bool image) {
   if (image) return Kind::kImage;
@@ -49,10 +41,6 @@ const char* kind_name(Kind kind) {
       break;
   }
   return "?";
-}
-
-std::size_t pack_index(int ct) {
-  return ct == 16 ? 0 : ct == 32 ? 1 : 2;
 }
 
 // Le poids (o, prise, c) d'une convolution, zéro dans le rembourrage des canaux.
@@ -91,48 +79,27 @@ rn::Dense dense_of(const prepare::GmfssGridStep& step, const Layer& layer) {
   return d;
 }
 
-// Les lignes lancées : toutes celles de la couche, ou au banc une bande de ses premières lignes de sortie, et
-// ih, les lignes d'entrée qu'elles lisent (au-delà, le bord de zéros d'une image plus basse).
-struct Rows {
-  int ih = 0;
-  int oh = 0;
-};
-
-// Les octets que lit (l'entrée, qui sert aussi de résiduel au banc) et qu'écrit une convolution sur rows.
-std::pair<std::int64_t, std::int64_t> bytes_of(const Layer& layer, Rows rows) {
-  const std::int64_t cells = std::int64_t{rows.ih} * layer.iw;
-  const std::int64_t in = layer.kind == Kind::kImage ? 3 * cells * 2 : cells * layer.in_ld * 2;
-  const std::int64_t out = (phased(layer.kind) ? 4 : 1) * std::int64_t{rows.oh} * layer.ow * layer.out_ld * 2;
-  return {std::max(in, layer.skip >= 0 ? out : 0), out};
+bool same_geometry(const Layer& a, const Layer& b) {
+  return a.kind == b.kind && a.cin == b.cin && a.cout == b.cout && a.ih == b.ih && a.iw == b.iw &&
+         a.oh == b.oh && a.ow == b.ow && a.in_ld == b.in_ld && a.out_ld == b.out_ld &&
+         (a.skip >= 0) == (b.skip >= 0) && a.skip_ld == b.skip_ld && a.activation == b.activation;
 }
 
-// Au banc : au plus kBenchBytes par tampon (entrée, sortie, référence), des bandes de lignes par kBandStep.
-constexpr std::int64_t kBenchBytes = std::int64_t{64} << 20;
-constexpr int kBandStep = 16;
-
-// La bande du banc : toute la couche si une forme y découpe K (moins de deux vagues), sinon les lignes de
-// sortie, par kBandStep, dont l'entrée et la sortie tiennent chacune kBenchBytes (docs/gmfss-natif.md).
-Rows band_of(const Layer& layer, const std::vector<rn::Config>& configs) {
-  const int stride = rn::stride_of(layer.kind);
-  const auto [in, out] = bytes_of(layer, Rows{.ih = stride * kBandStep, .oh = kBandStep});
-  const std::int64_t oh = std::max<std::int64_t>(kBenchBytes / std::max(in, out), 1) * kBandStep;
-  if (oh >= layer.oh || std::ranges::any_of(configs, [](const rn::Config& c) { return c.ksplit > 1; }))
-    return {.ih = layer.ih, .oh = layer.oh};
-  return {.ih = stride * static_cast<int>(oh), .oh = static_cast<int>(oh)};
+// « convolution i (genre cin→cout sur ow×oh), sommes … : », le début d'une note du réglage.
+std::string label(const Layer& layer, std::size_t index, std::size_t s) {
+  return "convolution " + std::to_string(index) + " (" + kind_name(layer.kind) + " " +
+         std::to_string(layer.cin) + "→" + std::to_string(layer.cout) + " sur " + std::to_string(layer.ow) +
+         "×" + std::to_string(layer.oh) + "), sommes " + rn::sums_name(kSums[s]) + " : ";
 }
 
-// La forme cfg d'une convolution pour des sommes, sur oh lignes de sortie : lancement, grille, mémoire
-// partagée.
-Shape shape_for(const Layer& layer, RifeNativeSums sums, const rn::Config& cfg, int oh) {
-  Shape s;
-  s.cfg = cfg;
-  s.launch = rn::pick_for(sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
-  const int th = rn::kWarps * cfg.rows;
-  s.grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),
-                static_cast<unsigned>((oh + th - 1) / th),
-                static_cast<unsigned>(layer.phases * (layer.cout / cfg.ct) * cfg.ksplit));
-  s.smem = rn::smem_bytes(cfg.kc, cfg.ct, rn::kernel_size(layer.kind), rn::stride_of(layer.kind), cfg.rows);
-  return s;
+}  // namespace
+
+bool phased(rn::Kind kind) {
+  return kind == rn::Kind::kPhase || kind == rn::Kind::kShuffle;
+}
+
+std::size_t pack_index(int ct) {
+  return ct == 16 ? 0 : ct == 32 ? 1 : 2;
 }
 
 std::int64_t partial_of(const Layer& layer, const rn::Config& cfg, int oh) {
@@ -141,20 +108,6 @@ std::int64_t partial_of(const Layer& layer, const rn::Config& cfg, int oh) {
              : 0;
 }
 
-// La forme de référence du banc : tuile de 16, ni K découpé ni poids à l'avance, la plus petite tranche, deux
-// lignes par warp en pas 1 et une en pas 2 ; la plus simple, comme celle du RIFE natif.
-const rn::Config* reference_of(const std::vector<rn::Config>& configs, Kind kind) {
-  const int rows = rn::stride_of(kind) == 2 ? 1 : 2;
-  const rn::Config* out = nullptr;
-  for (const rn::Config& c : configs) {
-    if (c.ct != 16 || c.ksplit != 1 || c.ahead) continue;
-    if (out == nullptr || c.kc < out->kc || (c.kc == out->kc && c.rows == rows)) out = &c;
-  }
-  return out;
-}
-
-// Les paramètres d'un lancement sur rows de from vers to (skip : le résiduel, nul sans), poids w rangés pour
-// la tuile de la forme.
 rn::Params params_of(const Layer& layer, Rows rows, const Shape& shape, const __half* from, __half* to,
                      const __half* skip, float* partial, const void* w) {
   rn::Params p;
@@ -186,37 +139,6 @@ void enqueue(const Layer& layer, const Shape& shape, cudaStream_t stream, const 
   if (shape.cfg.ksplit > 1) rn::launch_reduce(phased(layer.kind), layer.phases * layer.cout, stream, p);
 }
 
-// Un lancement de la forme au banc, sur la bande rows : l'entrée du banc sert aussi de résiduel.
-rn::Bench::Shot shot_of(const Layer& layer, Rows rows, const Shape& shape, RifeNativeSums sums,
-                        const void* w) {
-  const auto [in, out] = bytes_of(layer, rows);
-  return rn::Bench::Shot{
-      .in_bytes = in,
-      .out_bytes = out,
-      .partial_bytes = partial_of(layer, shape.cfg, rows.oh),
-      .sums = sums,
-      .enqueue = [&layer, rows, &shape, w](cudaStream_t stream, const __half* from, __half* to,
-                                           float* partial) {
-        enqueue(layer, shape, stream,
-                params_of(layer, rows, shape, from, to, layer.skip >= 0 ? from : nullptr, partial, w));
-      }};
-}
-
-bool same_geometry(const Layer& a, const Layer& b) {
-  return a.kind == b.kind && a.cin == b.cin && a.cout == b.cout && a.ih == b.ih && a.iw == b.iw &&
-         a.oh == b.oh && a.ow == b.ow && a.in_ld == b.in_ld && a.out_ld == b.out_ld &&
-         (a.skip >= 0) == (b.skip >= 0) && a.skip_ld == b.skip_ld && a.activation == b.activation;
-}
-
-std::string label(const Layer& layer, std::size_t index, std::size_t s) {
-  return "convolution " + std::to_string(index) + " (" + kind_name(layer.kind) + " " +
-         std::to_string(layer.cin) + "→" + std::to_string(layer.cout) + " sur " + std::to_string(layer.ow) +
-         "×" + std::to_string(layer.oh) + "), sommes " + rn::sums_name(kSums[s]) + " : " +
-         std::to_string(layer.shapes[s].rejected) + " formes écartées (sortie différente)";
-}
-
-}  // namespace
-
 ConvNet::ConvNet(int height, int width) : height_(height), width_(width) {
   int device = 0;
   if (cudaGetDevice(&device) == cudaSuccess)
@@ -240,8 +162,13 @@ bool ConvNet::plan(const prepare::GmfssGrid& grid, const Io& io, std::span<const
       error = "convolution " + std::to_string(i) + " : " + error;
       return false;
     }
-    for (std::size_t s = 0; s < kSums.size(); ++s)
-      if (layer.shapes[s].rejected > 0) tuner.tuning.notes.push_back(label(layer, i, s));
+    for (std::size_t s = 0; s < kSums.size(); ++s) {
+      const Shape& shape = layer.shapes[s];
+      if (shape.rejected > 0)
+        tuner.tuning.notes.push_back(label(layer, i, s) + std::to_string(shape.rejected) +
+                                     " formes écartées (sortie différente)");
+      if (!shape.stream.empty()) tuner.tuning.notes.push_back(label(layer, i, s) + shape.stream);
+    }
   }
   tuner.tuning.layers += static_cast<int>(layers_.size());
   return true;
@@ -423,7 +350,10 @@ bool ConvNet::build(const prepare::GmfssGridStep& step, const Tuner& tuner, Laye
   }
   if (const Layer* same = twin(layer); same != nullptr) {
     layer.shapes = same->shapes;
-    for (Shape& shape : layer.shapes) shape.rejected = 0;
+    for (Shape& shape : layer.shapes) {
+      shape.rejected = 0;
+      shape.stream.clear();
+    }
     ++tuner.tuning.reused;
   } else {
     for (std::size_t s = 0; s < kSums.size(); ++s)
@@ -444,56 +374,6 @@ const Layer* ConvNet::twin(const Layer& layer) const {
     if (same_geometry(other, layer)) return &other;
   }
   return nullptr;
-}
-
-// La forme de la convolution pour les sommes kSums[s] : la seule possible, sinon la plus rapide au banc (sur
-// la bande de band_of) parmi celles qui rendent la sortie de la forme de référence.
-bool ConvNet::tune(const Tuner& tuner, std::size_t s, Layer& layer, std::string& error) {
-  const RifeNativeSums sums = kSums[s];
-  const rn::Extent extent{
-      .cin = layer.cin, .cout = layer.cout, .oh = layer.oh, .ow = layer.ow, .phases = layer.phases};
-  const std::vector<rn::Config> configs = rn::configs(sums, layer.kind, extent, sms_);
-  const rn::Config* reference = reference_of(configs, layer.kind);
-  if (reference == nullptr) {
-    error = std::string("aucune forme en sommes ") + rn::sums_name(sums);
-    return false;
-  }
-  Shape& best = layer.shapes[s];
-  best = shape_for(layer, sums, *reference, layer.oh);
-  if (configs.size() == 1) {
-    ++tuner.tuning.single;
-    return true;
-  }
-  const auto weights = [&](const rn::Config& cfg) {
-    return layer.packs[pack_index(cfg.ct)].as<const void>();
-  };
-  const Rows band = band_of(layer, configs);
-  const Shape first = shape_for(layer, sums, *reference, band.oh);
-  if (!tuner.bench.reference(shot_of(layer, band, first, sums, weights(*reference)), error)) return false;
-  best.ms = std::numeric_limits<float>::infinity();
-  int rejected = 0;
-  for (const rn::Config& cfg : configs) {
-    const Shape shape = shape_for(layer, sums, cfg, band.oh);
-    const std::optional<rn::Bench::Timing> timed =
-        tuner.bench.time(shot_of(layer, band, shape, sums, weights(cfg)), error);
-    if (!timed) return false;
-    ++tuner.tuning.measured;
-    if (timed->differs && &cfg != reference) {
-      ++rejected;
-      continue;
-    }
-    if (timed->ms < best.ms) {
-      best = shape_for(layer, sums, cfg, layer.oh);
-      best.ms = timed->ms;
-    }
-  }
-  best.rejected = rejected;
-  tuner.tuning.rejected += rejected;
-  if (!(best.ms < std::numeric_limits<float>::infinity())) {
-    error = std::string("aucune forme ne se lance en sommes ") + rn::sums_name(sums);
-    return false;
-  }
-  return true;
 }
 
 }  // namespace kirari::gpu::cuda::gmfss_plan

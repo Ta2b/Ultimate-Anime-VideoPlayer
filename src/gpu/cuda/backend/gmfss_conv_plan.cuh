@@ -5,11 +5,12 @@
 // de vie : deux qui vivent ensemble ne se recouvrent jamais (le résiduel n'est donc jamais la sortie), deux
 // qui se suivent partagent la mémoire. Les noyaux sont ceux du RIFE natif (rife_native_pick.cu) ; chaque
 // convolution y prend, pour chacune des trois sommes, sa forme (tranche, tuile, lignes par warp, K découpé,
-// poids à l'avance) réglée au banc du RIFE natif (rife_native_layer.h), avec son garde-fou NaN et ses
-// tolérances. Les convolutions se rangent en morceaux, dont les sommes se choisissent à part (gmfss_mix.h) ;
-// la tête : les convolutions qui écrivent une sortie du réseau. Pour la paire (gmfss_pair_native_net.cu) :
-// des tenseurs externes, donnés au lancement ; une image en trois plans lue par In::kImage en pas 2 ; la
-// zone donnée au lancement, que deux réseaux partagent. Lu par nvcc seulement (C++20).
+// poids à l'avance), ou la forme en flux (conv_stream_kernels.cuh), réglée au banc du RIFE natif
+// (rife_native_layer.h), avec son garde-fou NaN et ses tolérances. Les convolutions se rangent en morceaux,
+// dont les sommes se choisissent à part (gmfss_mix.h) ; la tête : les convolutions qui écrivent une sortie du
+// réseau. Pour la paire (gmfss_pair_native_net.cu) : des tenseurs externes, donnés au lancement ; une image
+// en trois plans lue par In::kImage en pas 2 ; la zone donnée au lancement, que deux réseaux partagent. Lu
+// par nvcc seulement (C++20).
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -47,7 +48,8 @@ struct Shape {
   dim3 grid;
   int smem = 0;
   float ms = 0.F;
-  int rejected = 0;  // formes écartées au banc : sortie différente de celle de la forme de référence
+  int rejected = 0;    // formes écartées au banc : sortie différente de celle de la forme de référence
+  std::string stream;  // le flux face à la tuile au banc, quand une forme en flux y passe (vide sinon)
 };
 
 // Une convolution : kImage (l'image en trois plans, pas 2), kSame, kHalf, kPhase (transposée par phases) ou
@@ -97,6 +99,24 @@ struct Tuner {
   cudaStream_t stream = nullptr;
   GmfssTuning& tuning;
 };
+
+// Les lignes lancées : toutes celles de la couche, ou au banc une bande de ses premières lignes de sortie, et
+// ih, les lignes d'entrée qu'elles lisent (au-delà, le bord de zéros d'une image plus basse).
+struct Rows {
+  int ih = 0;
+  int oh = 0;
+};
+
+// Ce que le plan (gmfss_conv_plan.cu) et son réglage au banc (gmfss_conv_tune.cu) partagent : une sortie
+// par phases (transposée, PixelShuffle), le paquet de poids d'une tuile, les sommes partielles d'une forme à
+// K découpé, les paramètres d'un lancement sur rows de from vers to (skip : le résiduel, nul sans ; poids w
+// rangés pour la tuile de la forme), et le lancement (avec la fin d'une forme à K découpé).
+bool phased(rn::Kind kind);
+std::size_t pack_index(int ct);
+std::int64_t partial_of(const Layer& layer, const rn::Config& cfg, int oh);
+rn::Params params_of(const Layer& layer, Rows rows, const Shape& shape, const __half* from, __half* to,
+                     const __half* skip, float* partial, const void* w);
+void enqueue(const Layer& layer, const Shape& shape, cudaStream_t stream, const rn::Params& p);
 
 // Un réseau planifié pour une taille : height × width au niveau 0 (kGmfssFullLevel au double).
 class ConvNet {
