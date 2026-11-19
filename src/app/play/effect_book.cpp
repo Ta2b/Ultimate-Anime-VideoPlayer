@@ -14,6 +14,9 @@ render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_
   out.span_us = span_us;
   out.cut = cut || scene.cut_likely;
   out.hold = scene.drawing_held || scene.fade;
+  // Une paire qui enjambe une coupe compare deux plans : NVOF y voit des effets là où il n'y en a pas (un
+  // amas de 243 tuiles dans un fond sombre). Sans tuiles, la coupe remet le masque au neutre.
+  if (out.cut) return out;
   const auto count =
       static_cast<std::size_t>(std::max(scene.cols, 0)) * static_cast<std::size_t>(std::max(scene.rows, 0));
   if (count == 0 || scene.tiles.size() != count || scene.tile_px <= 0 || work_width <= 0 || work_height <= 0)
@@ -22,27 +25,10 @@ render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_
   out.rows = scene.rows;
   out.cover_x = static_cast<double>(scene.cols * scene.tile_px) / work_width;
   out.cover_y = static_cast<double>(scene.rows * scene.tile_px) / work_height;
-  out.effect.resize(count);
+  out.effect.assign(count, 1.0F);
   out.sure.assign(count, 0.0F);
-  for (std::size_t i = 0; i < count; ++i) {
-    const kernels::SceneTile& tile = scene.tiles[i];
-    const float sure = std::clamp(tile.confidence, 0.0F, 1.0F);
-    switch (tile.kind) {
-      case kernels::SceneClass::Effect:
-        out.effect[i] = 1.0F;
-        out.sure[i] = 1.0F;
-        break;
-      case kernels::SceneClass::Drawing:
-        out.effect[i] = 1.0F - sure;
-        break;
-      case kernels::SceneClass::Background:
-        out.effect[i] = 1.0F;
-        break;
-      case kernels::SceneClass::Uncertain:
-        out.effect[i] = tile.changed ? render::kEffectUnsure : 1.0F;
-        break;
-    }
-  }
+  for (std::size_t i = 0; i < count; ++i)
+    if (scene.tiles[i].kind == kernels::SceneClass::Effect) out.sure[i] = 1.0F;
   return out;
 }
 
