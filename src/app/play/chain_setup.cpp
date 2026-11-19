@@ -185,6 +185,7 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .temporal_encoder = temporal_encoder.get(),
       .temporal_features = temporal_features,
       .skip_held = skip_held && clock != nullptr,
+      .span_reuse = span_reuse,
       .rife = rife.get(),
       .rife_motion = rife_motion.get(),
       .rife_motion_calm = rife_motion_calm.get(),
@@ -380,6 +381,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.skip_held = o.skip_held;
   c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;
+  c.span_reuse = o.span_reuse;
 }
 
 // Ce que le backend de la chaîne reçoit du lecteur, options d'essai comprises (--profile-dispatches…).

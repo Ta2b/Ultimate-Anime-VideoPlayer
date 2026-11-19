@@ -117,9 +117,11 @@ caches relevés avant `c7` (tolérance de P2.45) sont ignorés par le script : i
   avec et sans la case. Relever avec `--stats` le coût par image et les paires en retard, et
   comparer à l'œil les images intermédiaires (traits, bords d'objets rapides) : sans la case,
   SPAN nettoie le warp ; avec, il ne passe qu'une fois par image source.
-- **SPAN réutilisé sur les dessins tenus** : le journal de fin dit « SPAN : N passes évitées ». Sur
-  un anime en deux, N doit approcher la moitié des paires tenues ; aucune image ne doit rester
-  figée pendant un fondu lent (au plus deux réutilisations de suite).
+- **SPAN réutilisé sur les dessins tenus** (lot A, `src/app/play/upscale_reuse.h`) : avec ou sans
+  interpolation, TemporalFix compris. Le journal de fin dit « SPAN repris : r sur n images (p %) », avec la
+  série la plus longue et les arrêts à la limite (24 de suite) et au fondu. Cible : 16 à 57 % sur un épisode
+  complet, interpolation coupée ; aucune image figée sur nuages, fumée, fondu de carton-titre, fond flou.
+  ABAB : `kirari --debug play --no-span-reuse …` passe SPAN sur chaque image (charge GPU, puissance).
 - **Graphes CUDA de TensorRT** : même lecture qu'avant, coût CPU du thread gpu plus bas. Si un
   moteur refuse la capture, il repasse en lancements directs sans message ; un écran noir ou une
   image figée serait un bug de capture (désactiver en revenant au commit d'avant pour comparer).
