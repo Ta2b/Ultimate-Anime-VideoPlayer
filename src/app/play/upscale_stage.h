@@ -357,13 +357,12 @@ class UpscaleStage final : public RingStage {
   const gpu::Tensor& rife_source(std::uint32_t index) const {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
   }
-  // Le warp lit spanned_ : les sources agrandies quand il suit SPAN ; sans SPAN, leurs copies que le grade
-  // avant le warp réécrit (graded_copies_), RIFE gardant la source.
+  // Le warp lit spanned_ : sources agrandies par SPAN, ou sans SPAN leurs copies gradées (graded_copies_).
   bool warps_spanned() const {
     const bool spanned = setup_.engine != nullptr ? setup_.warp_after_span : graded_copies_;
     return spanned && (by_motion() || drba_motion());
   }
-  bool graded_copies_ = false;  // fixé au départ (allocate)
+  bool graded_copies_ = false;  // fixé à la construction
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
   std::expected<void, Refusal> span_current();

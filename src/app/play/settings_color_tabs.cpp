@@ -175,7 +175,7 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
   panel::advanced_header();
   section(i18n::tr("Grade"));
   // Rien du grade ne tourne sur une source déjà HDR. Le grade avant le warp et le look en une table n'ont
-  // plus de case (novembre 2026) : toujours pris là où ils s'appliquent (source_grade.h, look_table.h).
+  // plus de case : toujours pris là où ils s'appliquent (source_grade.h, look_table.h).
   ImGui::BeginDisabled(choices.source_hdr);
   const bool grid = panel::begin_grid("##grade");
   if (grid) panel::cell();

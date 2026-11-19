@@ -1,6 +1,6 @@
-// Le grade avant le warp (toujours pris depuis novembre 2026, sans réglage) : l'image source sortie de SPAN,
-// ou sans SPAN sa copie à la taille de travail, est gradée une fois, sur place, avant que le warp de RIFE
-// n'en tire les images intermédiaires. Avec RIFE ×8, le grade tourne une fois par source au lieu de huit.
+// Le grade avant le warp (toujours pris, sans réglage) : l'image source sortie de SPAN, ou sans SPAN sa copie
+// à la taille de travail, est gradée une fois, sur place, avant que le warp de RIFE n'en tire les images
+// intermédiaires. Avec RIFE ×8, le grade tourne une fois par source au lieu de huit.
 //
 // L'étage d'agrandissement (upscale_stage.h) appelle grade() juste après SPAN, sur son propre fil : le
 // tenseur est écrit dans une image du même protocole que le ring (core/ring.h), gradé par libplacebo hors
