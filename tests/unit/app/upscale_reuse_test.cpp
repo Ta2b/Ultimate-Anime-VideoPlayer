@@ -16,9 +16,8 @@ namespace kirari::app::play {
 using namespace upscale_test;
 
 TEST_CASE("Reprise de SPAN : la règle contre l'ancre, et l'étage en SPAN seul", "[app][stage]") {
-  const AnchorGap still{.worst_block = 10, .mean_levels = 0.01};   // sous 0,70 niveau
-  const AnchorGap fading{.worst_block = 150, .mean_levels = 0.5};  // tenu par bloc, mais partout : fondu
-  const AnchorGap moved{.worst_block = 1000, .mean_levels = 0.3};
+  const AnchorGap still{.worst_block = 10};  // sous 0,70 niveau
+  const AnchorGap moved{.worst_block = 1000};
   const ReuseFacts base{.same_epoch = true, .has_output = true, .pair_held = true};
   const auto with = [&](const AnchorGap& gap) {
     ReuseFacts f = base;
@@ -32,10 +31,6 @@ TEST_CASE("Reprise de SPAN : la règle contre l'ancre, et l'étage en SPAN seul"
   for (int k = 1; k < SpanReuse::kMaxInRow; ++k) CHECK(r.decide(with(still)) == ReuseKind::Whole);
   CHECK(r.decide(with(still)) == ReuseKind::Compute);  // la 25e : rafraîchie
   CHECK(r.in_row() == 0);
-  // Un fondu passe deux fois (comme avant), puis s'arrête ; un mouvement s'arrête tout de suite.
-  CHECK(r.decide(with(fading)) == ReuseKind::Whole);
-  CHECK(r.decide(with(fading)) == ReuseKind::Whole);
-  CHECK(r.decide(with(fading)) == ReuseKind::Compute);
   CHECK(r.decide(with(moved)) == ReuseKind::Compute);
   // Sans mesure contre l'ancre : deux de suite au plus.
   CHECK(r.decide(base) == ReuseKind::Whole);
@@ -53,15 +48,31 @@ TEST_CASE("Reprise de SPAN : la règle contre l'ancre, et l'étage en SPAN seul"
   ReuseFacts lost = with(still);
   lost.has_output = false;
   CHECK(r.decide(lost) == ReuseKind::Compute);
+  // L'ancre copiée ne vaut que pour sa série : un arrêt ou une série imposée (Smooth) la périme.
+  CHECK(r.decide(base) == ReuseKind::Whole);
+  r.anchor_kept();
+  CHECK(r.decide(with(moved)) == ReuseKind::Compute);  // arrêt à l'ancre
+  CHECK_FALSE(r.anchor_ready());
+  r.anchor_kept();
+  r.force();
+  CHECK_FALSE(r.anchor_ready());
+  r.note_pair(10);
+  r.note_pair(200);
+  r.note_pair(1000);
   CHECK(r.summary().starts_with("SPAN repris : 29 sur 37 images"));
+  CHECK(r.summary().contains("à l'ancre 1,"));
+  CHECK(r.summary().ends_with("jusqu'à 0.7 1, 1 1, 1.5 0, 2 0, 3 0, 5 1, au-delà 0"));
   r.enabled = false;
   CHECK(r.decide(with(still)) == ReuseKind::Compute);
 
-  // L'étage, SPAN seul : 2 à 6 tiennent le dessin de 1 (mesurées contre l'ancre 1, et non paire par paire), 7
+  // L'étage, SPAN seul : 2 à 6 tiennent le dessin de 1 (la paire mesurée en avance, puis l'ancre 1), 7
   // bouge ; 8 est abîmée et calculée, 9 tient 8 mais ne la reprend pas.
   const auto run = [](bool reuse) {
     Rig rig;
-    for (std::uint32_t k = 2; k <= 6; ++k) rig.backend.score(SourceId{1}, SourceId{k}, 0.0, 10);
+    for (std::uint32_t k = 2; k <= 6; ++k) {
+      rig.backend.score(SourceId{1}, SourceId{k}, 0.0, 10);
+      rig.backend.score(SourceId{k - 1}, SourceId{k}, 0.0, 10);
+    }
     rig.backend.score(SourceId{8}, SourceId{9}, 0.0, 10);
     UpscaleSetup s = rig.setup(false);
     s.span_reuse.whole = reuse;

@@ -116,29 +116,38 @@ std::optional<AnchorGap> measure_anchor(gpu::KernelOps& ops, const gpu::Tensor& 
   auto scores = ops.scores_now(anchor, now);
   waited_us =
       std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - asked).count();
-  if (scores)
-    return AnchorGap{.worst_block = scores->worst_block, .mean_levels = scores->scene_score * 255.0};
+  if (scores) return AnchorGap{.worst_block = scores->worst_block};
   log_channel("gpu")->info("SPAN repris : pas de mesure contre l'ancre ({}) ; deux de suite au plus",
                            scores.error().detail);
   reuse.anchor_measure = false;
   return std::nullopt;
 }
 
-// Début d'une série : l'ancre (la précédente, telle que SPAN l'a lue) est copiée avant que son tampon ne
-// reçoive une autre image ; la copie suit sur la voie en cours, sans attente.
+// Début d'une série : l'ancre (la précédente, telle que la paire la mesure) est copiée avant que son tampon
+// ne reçoive une autre image ; la copie suit sur la voie en cours, sans attente. Un refus de place ou de
+// copie éteint la mesure contre l'ancre (deux de suite au plus), pas la lecture.
 std::expected<void, Refusal> keep_anchor(gpu::Backend& backend, const gpu::Tensor& previous,
                                          SpanReuse& reuse) {
+  const auto stop = [&reuse](const Refusal& why) {
+    log_channel("gpu")->info("SPAN repris : ancre refusée ({}) ; deux de suite au plus", why.detail);
+    reuse.anchor_measure = false;
+  };
   if (!reuse.anchor) {
     auto tensor = backend.alloc_tensor(previous.type, previous.shape);
     if (!tensor) {
-      log_channel("gpu")->info("SPAN repris : ancre refusée ({}) ; deux de suite au plus",
-                               tensor.error().detail);
-      reuse.anchor_measure = false;
+      stop(tensor.error());
       return {};
     }
     reuse.anchor = std::move(*tensor);
   }
-  return backend.kernels()->resample(previous, kernels::Filter::Area, reuse.anchor->tensor());
+  auto copied = backend.kernels()->resample(previous, kernels::Filter::Area, reuse.anchor->tensor());
+  if (copied) {
+    reuse.anchor_kept();
+    return {};
+  }
+  if (copied.error().code != RefusalCode::FormatUnsupported) return copied;
+  stop(copied.error());
+  return {};
 }
 
 }  // namespace
@@ -167,15 +176,18 @@ std::expected<bool, Refusal> UpscaleStage::reuses_span(const DecodedFrame& frame
                          .reduce = reduce},
              facts);
   const bool candidate = rf.same_epoch && !rf.corrupt && rf.has_output && rf.pair_held;
+  if (pair_measured && rf.same_epoch) reuse_.note_pair(facts.scores->worst_block);
   const int in_row = reuse_.in_row();
-  const gpu::Tensor& previous = rgb_[current_ ^ 1U]->tensor();
-  // L'ancre est la précédente au début d'une série, sa copie ensuite. Sans mesure de la paire (SPAN seul),
-  // l'ancre se mesure dès la première image.
-  const bool anchored = in_row == 0 || reuse_.anchor != nullptr;
+  // Les images de la mesure de la paire : la copie réduite de RIFE quand elle existe, où le seuil des dessins
+  // tenus est réglé (A09-18) ; à la taille de travail, le bruit de compression couperait les séries.
+  const gpu::Tensor& previous = rife_source(current_ ^ 1U);
+  // L'ancre est la précédente au début d'une série, sa copie ensuite, si elle est de cette série (une série
+  // imposée par Smooth n'en copie pas). Sans mesure de la paire (SPAN seul), elle se mesure dès la première.
+  const bool anchored = in_row == 0 || reuse_.anchor_ready();
   if (candidate && reuse_.anchor_measure && reuse_.wants_anchor(pair_measured) && anchored) {
     std::int64_t waited = 0;
     rf.anchor = measure_anchor(*setup_.backend->kernels(), in_row == 0 ? previous : reuse_.anchor->tensor(),
-                               rgb_[current_]->tensor(), reuse_, waited);
+                               rife_source(current_), reuse_, waited);
     keep_scores_wait(waited);
   }
   // Sans mesure du tout (SPAN seul, mesure refusée) : rien ne dit que l'image est tenue.
