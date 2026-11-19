@@ -32,6 +32,7 @@
 #include "app/play/pipeline.h"
 #include "app/play/rife_plan.h"
 #include "app/play/ring_stage.h"
+#include "app/play/scene_map.h"
 #include "app/play/shot_plan.h"
 #include "app/play/source_grade.h"
 #include "app/play/temporal_window.h"
@@ -144,6 +145,7 @@ struct UpscaleSetup {
   // Export par puits CUDA : les images de l'encodeur derrière les slots (sans image ni sémaphore
   // dans slots), écrites par write_yuv ; ni écriture directe du ring. nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
+  bool scene_map = false;  // --scene-map : la carte de la scène par NVOF (scene_map.h), PairFacts::scene
 };
 
 class UpscaleStage final : public RingStage {
@@ -223,11 +225,10 @@ class UpscaleStage final : public RingStage {
   // l'interpolation si la carte ne suit pas » (motion_cut.h). `source_only` : le Rapide l'a réduite à sa
   // source faute de temps.
   void count_free(const PairFacts& facts, int written, bool source_only);
-  // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
-  // journal, seulement quand le menu Statistiques le demande.
+  // Débogage des paires (pair_marks.h) : (previous_, frame) tenue ou coupée, au journal (Stats)
   void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
-  // Où DistilDRBA estime : la taille de RIFE.
-  kernels::RifeGeometry drba_geometry() const;
+  PairFacts& scene_pair(const DecodedFrame& frame, PairFacts& facts);  // facts.scene (upscale_ahead.cpp)
+  kernels::RifeGeometry drba_geometry() const;  // où DistilDRBA estime : la taille de RIFE
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);
@@ -603,8 +604,7 @@ class UpscaleStage final : public RingStage {
     std::optional<SourceId> after_id;
     bool after_debanded = false;  // l'image d'après, ingérée en avance, a été débandée (A09-07)
     std::uint32_t after_epoch = 0;
-    gpu::Reduction
-        after_reduce;  // la réduction de son ingestion : changée en direct, elle se refait (C09-07)
+    gpu::Reduction after_reduce;  // la réduction de son ingestion : changée en direct, refaite (C09-07)
     std::optional<gpu::PairScores> after_scores;  // mesures de (b, after), si prises
     // Mesure de (b, after) lancée sans attente (scores_start) : relue à la première sortie qui
     // en a besoin, ou à l'arrivée de after, le GPU ayant alors fini.
@@ -772,8 +772,7 @@ class UpscaleStage final : public RingStage {
   std::uint64_t burst_cuts_ = 0;  // coupes de RIFE en rafale écartées, les plans disant « même plan »
   CutBurst cut_burst_;            // la dernière coupe mesurée de l'époque (rife_plan.h)
   std::uint64_t held_ = 0;
-  bool drba_held_ =
-      false;  // l'instant en cours de production est une copie d'un côté tenu (Output::repeated)
+  bool drba_held_ = false;  // l'instant en production copie un côté tenu (Output::repeated)
   // Les dernières attentes hôte d'une relecture, pour le profil de fin : la mémoire reste bornée.
   struct HostWaits {
     static constexpr std::size_t kKept = 4096;
@@ -790,6 +789,7 @@ class UpscaleStage final : public RingStage {
   };
   HostWaits scores_waits_;  // relecture des mesures de la paire (scores_now, scores_take)
   HostWaits motion_waits_;  // relecture du mouvement maximal du milieu (flow_max_take, flow_max_now)
+  SceneMap scene_{false};   // la carte de la scène (scene_map.h)
 };
 
 }  // namespace kirari::app::play

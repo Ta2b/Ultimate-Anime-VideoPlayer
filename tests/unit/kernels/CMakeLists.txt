@@ -14,6 +14,7 @@ kirari_add_unit_tests(kernels
     rife_fused_test.cpp
     rife_test.cpp
     ring_pack_test.cpp
+    scene_flow_test.cpp
     tolerance_test.cpp
     transfer_test.cpp
     frame_stats_test.cpp

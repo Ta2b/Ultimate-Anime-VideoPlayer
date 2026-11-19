@@ -172,6 +172,14 @@ class GuardedKernelOps final : public KernelOps {
   std::expected<std::optional<kernels::FrameStats>, Refusal> frame_stats_take(std::uint64_t ticket) override {
     return guarded_detail::call("frame_stats_take", [&] { return in_->frame_stats_take(ticket); });
   }
+  std::expected<std::uint64_t, Refusal> scene_flow_start(const Tensor& a, const Tensor& b,
+                                                         bool restart) override {
+    return guarded_detail::call("scene_flow_start", [&] { return in_->scene_flow_start(a, b, restart); });
+  }
+  std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> scene_flow_take(
+      std::uint64_t ticket) override {
+    return guarded_detail::call("scene_flow_take", [&] { return in_->scene_flow_take(ticket); });
+  }
   std::expected<void, Refusal> health() override {
     return guarded_detail::call("health", [&] { return in_->health(); });
   }

@@ -20,6 +20,7 @@
 #include "gpu/cuda/backend/cuda_warn.h"
 #include "gpu/cuda/backend/drba_fused_engine.h"
 #include "gpu/cuda/backend/rife_fused_engine.h"
+#include "gpu/cuda/backend/scene_flow.h"
 #include "gpu/cuda/backend/shared_activations.h"
 #include "gpu/cuda/backend/span_fp8_engine.h"
 #include "gpu/cuda/backend/trt_engine.h"
@@ -249,6 +250,7 @@ TensorRtBackend::~TensorRtBackend() {
   // la fin de create_lanes.
   if (!any_lane()) return;
   cudaSetDevice(device_);
+  scene_flow_.reset();  // sa file finie, avant les voies et le profil
   destroy_textures();
   log_profile();
   stages_.clear();

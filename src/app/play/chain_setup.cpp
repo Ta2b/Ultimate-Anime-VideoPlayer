@@ -230,7 +230,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
           settings.cubic_warp && rife_motion ? kernels::RifeWarp::CatmullRom : kernels::RifeWarp::Bilinear,
       // Mouvement d'ensemble : le warp de RIFE mouvement et celui de DistilDRBA mouvement.
       .pan_lock = settings.pan_lock && (rife_motion || drba_motion),
-      .slots = std::move(slots)};
+      .slots = std::move(slots),
+      .scene_map = scene_map};
 }
 
 namespace {
@@ -374,6 +375,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.temporal_fix_whole = o.temporal_fix_whole;
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
+  c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
   c.shot_plan = o.shot_plan;
 }

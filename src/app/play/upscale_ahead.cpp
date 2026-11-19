@@ -115,6 +115,8 @@ std::expected<void, Refusal> UpscaleStage::look_ahead(const DecodedFrame& frame,
   ahead_.epoch = after->epoch;
   ahead_.reduce = spec.reduce;
   ahead_.ticket = 0;
+  // La carte de (frame, after), relue quand after sera l'image en cours (scene_map.h).
+  scene_.start(ops, rgb_[current_]->tensor(), ahead_.rgb->tensor(), frame.id, after->id, frame.epoch);
   if (!ahead_scores_ || !(always_scores || next_pair_measured())) return {};
   const gpu::Tensor& next_source = ahead_.small ? ahead_.small->tensor() : ahead_.rgb->tensor();
   auto ticket = ops.scores_start(rife_source(current_), next_source);
@@ -245,6 +247,20 @@ void UpscaleStage::mark_pair(const DecodedFrame& frame, const PairFacts& facts) 
                       .verdict = cut ? PairVerdict::Cut : PairVerdict::Held};
   setup_.live->pair_marks().add(mark);
   log_channel("gpu")->info("{}", pair_mark_line(mark, *facts.scores, facts.known_cut, useful_area_));
+}
+
+// La carte de la scène de la paire (previous_, frame), lancée en avance avec RIFE (look_ahead). Sans
+// interpolation, la paire est lancée ici et sa carte n'arrive qu'à l'image suivante (SceneMap::latest).
+PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
+  if (!scene_.on() || !previous_) return facts;
+  gpu::KernelOps& ops = *setup_.backend->kernels();
+  if (facts.scores && pair_cut(facts)) scene_.cut();  // la paire suivante repart sans indices
+  facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
+  if (!interpolates() && facts.same_epoch) {
+    scene_.start(ops, rgb_[current_ ^ 1U]->tensor(), rgb_[current_]->tensor(), previous_->id, frame.id,
+                 frame.epoch);
+  }
+  return facts;
 }
 
 }  // namespace kirari::app::play
