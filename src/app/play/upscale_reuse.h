@@ -52,6 +52,8 @@ struct ReuseFacts {
   bool tiles_ok = false;
   bool can_shift = false;
   const kernels::SceneMotion* scene = nullptr;
+  int spread_px = 0;            // TileFacts::spread_px
+  std::uint64_t input_key = 0;  // TileFacts::input_key
 };
 
 // Ce que l'étage règle au démarrage (UpscaleSetup::span_reuse).

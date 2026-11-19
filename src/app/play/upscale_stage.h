@@ -369,7 +369,8 @@ class UpscaleStage final : public RingStage {
   // premier SPAN : le warp de la paire prend spanned(current_) avant que span_current enfile SPAN.
   void pick_span_buffer();
   // L'image reprend le SPAN de l'ancre (upscale_reuse.h) : dessin tenu, ou copie d'une tenue fondue.
-  std::expected<bool, Refusal> reuses_span(const DecodedFrame& frame, const PairFacts& facts, bool held);
+  std::expected<bool, Refusal> reuses_span(const DecodedFrame& frame, const PairFacts& facts, bool held,
+                                           const gpu::Reduction& reduce);
   const gpu::Tensor& spanned(std::uint32_t index) const { return spanned_[span_of_[index]]->tensor(); }
   bool spanned_now_ = false;
   std::array<std::uint32_t, 2> span_of_{0, 1};  // tampon de spanned_ de chaque image de rgb_

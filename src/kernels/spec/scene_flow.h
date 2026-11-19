@@ -90,6 +90,9 @@ struct SceneTile {
   float dx = 0.0F;          // déplacement moyen de la tuile, de a vers b, pixels de travail
   float dy = 0.0F;
   float change = 0.0F;  // écart moyen |b − a| de la luma du flux, codes 8 bits (grain compris)
+  // Glissement moyen (b − a) de la luma du flux, codes 8 bits, brut : le grain s'y annule, un fondu ou une
+  // lueur locale s'y voit (les tuiles qui bougent l'additionnent, app/play/upscale_tiles.h).
+  float shift = 0.0F;
   // La tuile a changé, sans compter le grain : vecteur moyen d'au moins kStillMotion, vecteurs épars,
   // un quart de vecteurs sans correspondance, ou un écart moyen d'au moins kChangeDiff. Brut, non lissé.
   bool changed = false;

@@ -26,10 +26,18 @@ bool SpanFp8Engine::next_span_tiles(std::span<const std::uint8_t> core, int shif
   if ((shift_x != 0 || shift_y != 0) && previous == nullptr) return false;
   if (previous != nullptr && (previous->type != TensorType::F16 || !(previous->shape == output_)))
     return false;
-  tile_job_ = TileJob{.core = std::vector<std::uint8_t>(core.begin(), core.end()),
-                      .shift_x = shift_x,
-                      .shift_y = shift_y,
-                      .previous = previous != nullptr ? previous->handle + previous->offset : 0};
+  // Appelé par le lecteur sans le filet du backend (guarded_backend.h) : rien ne sort du module.
+  try {
+    tile_job_ = TileJob{.core = std::vector<std::uint8_t>(core.begin(), core.end()),
+                        .shift_x = shift_x,
+                        .shift_y = shift_y,
+                        .previous = previous != nullptr ? previous->handle + previous->offset : 0,
+                        .source = previous != nullptr ? *previous : Tensor{},
+                        .reads = previous != nullptr};
+  } catch (...) {
+    tile_job_.reset();
+    return false;
+  }
   return true;
 }
 

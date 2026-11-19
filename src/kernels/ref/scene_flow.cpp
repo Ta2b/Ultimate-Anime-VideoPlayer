@@ -455,6 +455,7 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) 
                              .dx = v.mx * divisor,
                              .dy = v.my * divisor,
                              .change = v.change,
+                             .shift = v.shift,
                              .changed = changed};
   }
   out.drawing_held = !out.cut_likely && !out.fade &&
