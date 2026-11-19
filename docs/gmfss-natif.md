@@ -279,7 +279,7 @@ En FP8, le plafond du GridNet ne passe que de 10,9 à 8,2 ms tant que les activa
 prennent alors le dessus.
 
 La porte du temps réel en 1080p, ×2 avec SPAN, compte deux passes de SPAN par image source (GMFSS crée son image
-avant SPAN) et les splats (7,14 ms) : avec SPAN Équilibre, il ne reste qu'environ 10,6 ms à la paire et à la
+avant SPAN) et les splats (7,14 ms) : avec le SPAN d'aujourd'hui, il ne reste qu'environ 10,6 ms à la paire et à la
 fusion quand chaque paire passe par GMFSS, sous leurs plafonds additionnés (17 à 21 ms en f16). Le budget, les
 paliers en 1080p et en 720p et les leviers au-delà du plafond sont dans [`gmfss-bilan.md`](gmfss-bilan.md) ; le
 profil Nsight Systems (étape 3 de la séance) dit où sont les écarts.

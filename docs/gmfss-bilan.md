@@ -139,10 +139,12 @@ Notes sur le tableau :
 
 **Correction.** `gmfss-natif.md` disait que la porte du ×2 en 1080p laissait « environ 28 ms » à la paire et à la
 fusion. Ce compte ne prenait qu'un SPAN par période source et oubliait les splats. Le budget réel est le suivant :
-- **avec SPAN Équilibre** (b8f64 natif, environ 11 ms par image 1080p vers 4K) : 41,7 − 2 × 11 − 7,1 − 2, soit
+- **avec le SPAN d'aujourd'hui** (b8f64 natif au cran Équilibre, environ 11 ms par image 1080p vers 4K) :
+  41,7 − 2 × 11 − 7,1 − 2, soit
   environ **10,6 ms** pour la paire et la fusion, quand chaque paire passe par GMFSS. C'est sous la somme de leurs
   plafonds f16, 17 à 21 ms ;
-- **avec SPAN Performance** (b5f48, environ 6 ms) : il reste environ 20,6 ms, à portée des plafonds.
+- **avec un SPAN à 6 ms** (le modèle plus léger b5f48 fait 6,2 ms chez AnimeJaNai ; le lecteur ne l'a pas
+  mesuré) : il reste environ 20,6 ms, à portée des plafonds.
 
 **Vérification sur la mesure du PC.** Avec SPAN FP8 à 14,5 ms par image :
 - le modèle donne environ 80 ms pour une paire prise par GMFSS ;
@@ -161,13 +163,13 @@ Coût d'une période source, en ms :
 
 | Sortie, SPAN | Palier | ×2 | ×3 | ×4 | ×5 |
 |---|---|---|---|---|---|
-| 1080p vers 4K, SPAN Équilibre (11 ms) | aujourd'hui | 72,7 | 112,7 | | |
+| 1080p vers 4K, SPAN d'aujourd'hui (11 ms) | aujourd'hui | 72,7 | 112,7 | | |
 | | plafonds f16 de GMFSS | 46,1 | 71,3 | | |
 | | au-delà | **37,0** | 55,3 | | |
-| 1080p vers 4K, SPAN Performance (6 ms) | aujourd'hui | 62,7 | 97,7 | | |
+| 1080p vers 4K, SPAN à 6 ms | aujourd'hui | 62,7 | 97,7 | | |
 | | plafonds f16 de GMFSS | **36,1** | 56,3 | | |
 | | au-delà | **27,0** | **40,3** | 53,6 | |
-| Travail 720p vers 1440p, SPAN Équilibre (4,9 ms) | aujourd'hui | **33,4** | 51,2 | | |
+| Travail 720p vers 1440p, SPAN d'aujourd'hui (4,9 ms) | aujourd'hui | **33,4** | 51,2 | | |
 | | plafonds f16 de GMFSS | **21,6** | **32,8** | 44,0 | |
 | | au-delà | | **25,7** | **33,8** | 42,0, à la limite |
 
@@ -183,7 +185,7 @@ Les trois paliers :
 Le travail 720p met tout à l'échelle de ses pixels, soit 0,444 fois ceux du 1080p. SPAN y vaut le même rapport.
 
 Ce qu'on en tire :
-- **En 1080p vers 4K avec SPAN Équilibre, le mur est SPAN.** En ×2, deux passes prennent 22 ms sur 41,7. Aux
+- **En 1080p vers 4K avec le SPAN d'aujourd'hui, le mur est SPAN.** En ×2, deux passes prennent 22 ms sur 41,7. Aux
   plafonds f16, GMFSS seul ne tient pas le ×2 sur chaque paire. Il faut :
   - soit les leviers au-delà du plafond ;
   - soit un SPAN plus léger ;
@@ -221,13 +223,13 @@ Le plafond par couche suppose que chaque couche lit et écrit la mémoire. On pe
 | Splats : normalisation fondue dans la lecture du GridNet, entrées par pixel | splats et fusion | de 7,1 à environ 2 à 3 ms ; deux copies en moins | faible à moyen | cloud, à faire |
 | Creux 2:4 (sparsity) | GridNet | ×2 sur les couches limitées par le calcul, environ −3 ms | **élevé** : demande un réentraînement et une requalification | déconseillé pour l'instant |
 | IFNet par les noyaux du RIFE natif | fusion | temps : presque rien ; construction : −54,6 s | faible | cloud, facultatif |
-| Hors GMFSS : un SPAN plus léger pour l'image créée | chaîne | 5 ms par image créée, si l'on passe d'Équilibre à Performance | qualité de SPAN | fil SPAN |
+| Hors GMFSS : un SPAN plus léger pour l'image créée | chaîne | 5 ms par image créée, avec un SPAN à 6 ms au lieu de 11 | qualité de SPAN | fil SPAN |
 
 Ce que ces leviers donnent ensemble, d'après le tableau 3.3 :
 
 | Sortie | GMFSS seul aujourd'hui | Aux plafonds f16 | Au-delà |
 |---|---|---|---|
-| **1080p vers 4K** | ×2 au crédit, environ 27 % des paires fortes | ×2 avec SPAN Performance | ×2 avec SPAN Équilibre ; ×3 avec SPAN Performance |
+| **1080p vers 4K** | ×2 au crédit, environ 27 % des paires fortes | ×2 avec un SPAN à 6 ms | ×2 avec le SPAN d'aujourd'hui ; ×3 avec un SPAN à 6 ms |
 | **Travail 720p** | ×2 | ×3 | ×4 ; ×5 à la limite |
 
 Avec le mélange, une clé GMFSS par paire et RIFE pour les autres instants, chaque case gagne un ou deux paliers :
