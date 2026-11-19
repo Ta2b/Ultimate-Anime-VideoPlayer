@@ -9,12 +9,11 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <cuda_runtime_api.h>
 #include <memory>
 #include <string>
 
-#include "gpu/cuda/backend/rife_native_net.h"
+#include "gpu/cuda/backend/gmfss_native_parts.h"
 #include "prepare/gmfss_pair_grid.h"
 
 namespace kirari::gpu::cuda {
@@ -31,16 +30,18 @@ struct GmfssPairMotion {
   std::array<void*, 6> motion{};
 };
 
-class GmfssPairNativeNet {
+// Les morceaux (GmfssNativeParts) : le FeatureNet (0), dont la tête écrit les trois sorties, et le MetricNet
+// (1), dont la tête est metric_out.
+class GmfssPairNativeNet : public GmfssNativeParts {
  public:
-  virtual ~GmfssPairNativeNet() = default;
-  // height × width : la taille de la fusion (multiples de 32), les images étant au double. sums : les sommes
-  // des convolutions, celles de RIFE natif. Une zone pour les deux réseaux, qui tournent l'un après l'autre
-  // sur un même flux. Rien et error rempli si une convolution sort de ce que les noyaux font, ou si la
-  // mémoire manque.
+  static constexpr int kFeatureNet = 0;
+  static constexpr int kMetricNet = 1;
+  // height × width : la taille de la fusion (multiples de 32), les images étant au double. Une zone pour les
+  // deux réseaux, qui tournent l'un après l'autre sur un même flux ; chaque convolution est réglée au banc
+  // sur stream pour les trois sommes, celles posées étant f32 partout. Rien et error rempli si une
+  // convolution sort de ce que les noyaux font, ou sur une erreur CUDA (mémoire, banc).
   static std::unique_ptr<GmfssPairNativeNet> create(const prepare::GmfssPairNets& nets, int height, int width,
-                                                    RifeNativeSums sums, std::string& error);
-  virtual std::int64_t workspace_bytes() const = 0;
+                                                    cudaStream_t stream, std::string& error);
   // Le FeatureNet d'une image : trois plans FP16 de 2·height × 2·width (frames, ou frames + 3 plans pour la
   // seconde image).
   virtual cudaError_t features(cudaStream_t stream, const void* image,
@@ -49,7 +50,6 @@ class GmfssPairNativeNet {
   // au troisième plan des six mouvements, réduite de moitié (moyenne 2 × 2) et au quart (moyenne des quatre
   // pixels du centre de chaque 4 × 4) comme le Resize linéaire de la paire.
   virtual cudaError_t metric(cudaStream_t stream, const void* in, const GmfssPairMotion& motion) const = 0;
-  virtual RifeNativeSums sums() const = 0;
 };
 
 }  // namespace kirari::gpu::cuda

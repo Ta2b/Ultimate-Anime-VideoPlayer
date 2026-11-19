@@ -24,6 +24,8 @@ add_subdirectory(vulkan)
 # d'Apple (coreml/vt_pixels.h), la place et les noms du modèle compilé (coreml/coreml_compiled.h).
 # Les clés d'Artifact des moteurs fusionnés du backend TensorRT, en C++ pur : testées sans CUDA (B03-09).
 kirari_add_module(cuda_fused_keys SOURCES cuda/backend/fused_keys.cpp DEPS kirari::kernels)
+# Le choix d'un mélange de morceaux natifs (RIFE natif, GMFSS natif), en C++ pur : testé sans CUDA.
+kirari_add_module(cuda_native_mix SOURCES cuda/backend/native_mix.cpp cuda/backend/gmfss_mix.cpp)
 kirari_add_module(coreml_pixels SOURCES coreml/coreml_compiled.cpp coreml/vt_pixels.cpp DEPS kirari::gpu kirari::kernels)
 if(KIRARI_WITH_COREML)
   add_subdirectory(coreml)

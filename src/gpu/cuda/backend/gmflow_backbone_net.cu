@@ -64,8 +64,8 @@ class Buffer {
 };
 
 // Poids FP16 [n][taps][cin] dans l'ordre des fragments B de mma m16n8k16, celui que lit rn::accumulate (le
-// même que gmfss_plan::pack) : pas k (prise, tranche de 16 entrées), paire de tuiles n8, lane ; b0 = entrées
-// 2t et 2t + 1 de la sortie 8·tuile + g, b1 = entrées 2t + 8 et 2t + 9.
+// même que rn::packed_weights) : pas k (prise, tranche de 16 entrées), paire de tuiles n8, lane ; b0 =
+// entrées 2t et 2t + 1 de la sortie 8·tuile + g, b1 = entrées 2t + 8 et 2t + 9.
 void pack(const std::vector<__half>& w, int ct, int taps, int cin, std::vector<std::uint32_t>& out) {
   const int kcs = cin / 16, nps = ct / 16;
   const auto bits = [&](int n, int tap, int c) -> std::uint32_t {

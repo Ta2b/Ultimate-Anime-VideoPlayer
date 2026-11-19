@@ -1,6 +1,7 @@
 // Ce que partagent le réseau du RIFE natif (rife_native_net.cu), ses lancements (rife_native_pick.cu) et le
 // rangement de ses poids (rife_native_weights.cu) : les façons de lancer une couche, la forme qu'un réglage
-// au chargement choisit pour chacune, et ses poids en FP16. Lu par nvcc seulement (C++20).
+// au chargement choisit pour chacune, et ses poids en FP16. Les convolutions du GMFSS natif
+// (gmfss_conv_plan.cu) prennent les mêmes noyaux et le même rangement. Lu par nvcc seulement (C++20).
 #pragma once
 
 #include <cstdint>
@@ -20,6 +21,7 @@ enum class Kind : std::uint8_t {
   kImage,    // 3 × 3, pas 2, depuis les trois plans d'une image (première couche de l'encodeur)
   kPhase,    // transposée 4 × 4 de pas 2, une phase par blockIdx.z, sortie par pixel
   kPlanes4,  // transposée de l'encodeur, 3 × 3 aux 16 sorties phase · 4 + c, sortie en quatre plans
+  kShuffle,  // GMFSS natif (gmfss_conv_plan.cuh) : 3 × 3 de pas 1 suivie du PixelShuffle(2), par phases
 };
 
 // La forme d'une couche : tranche des canaux d'entrée (kc), tuile des canaux de sortie (ct), lignes par

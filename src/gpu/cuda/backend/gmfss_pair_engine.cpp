@@ -156,8 +156,21 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue_native(cudaStream_t stream
   flow_out[flow_at_[kFlowOutputs - 1]] = out(kHalf1);
   const Tensor flow_in[]{frames};
   if (auto ok = flow_->enqueue(stream, shared, flow_in, flow_out); !ok) return ok;
-  // Le FeatureNet de chaque image (les trois premiers plans de frames, puis les trois suivants), puis le
-  // MetricNet, qui écrit le troisième plan des mouvements.
+  if (auto ok = enqueue_piece(stream, GmfssPairNativeNet::kFeatureNet, frames, outputs); !ok) return ok;
+  return enqueue_piece(stream, GmfssPairNativeNet::kMetricNet, frames, outputs);
+}
+
+std::expected<void, Refusal> GmfssPairEngine::enqueue_piece(cudaStream_t stream, int piece,
+                                                            const Tensor& frames,
+                                                            std::span<const Tensor> outputs) const {
+  const auto out = [&](std::size_t o) -> const Tensor& { return outputs[at_[o]]; };
+  if (piece == GmfssPairNativeNet::kMetricNet) {
+    // Le MetricNet, qui écrit le troisième plan des mouvements.
+    GmfssPairMotion motion;
+    for (std::size_t i = 0; i < motion.motion.size(); ++i) motion.motion[i] = fused_address(out(kMotion + i));
+    return cuda_check(native_->metric(stream, metric_in_, motion), "GMFSS natif : MetricNet");
+  }
+  // Le FeatureNet de chaque image (les trois premiers plans de frames, puis les trois suivants).
   const auto* images = static_cast<const std::uint8_t*>(fused_address(frames));
   const auto image_bytes = static_cast<std::size_t>(kImagePlanes) * 4U * static_cast<std::size_t>(height_) *
                            static_cast<std::size_t>(width_) * 2U;
@@ -170,9 +183,7 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue_native(cudaStream_t stream
         !ok)
       return ok;
   }
-  GmfssPairMotion motion;
-  for (std::size_t i = 0; i < motion.motion.size(); ++i) motion.motion[i] = fused_address(out(kMotion + i));
-  return cuda_check(native_->metric(stream, metric_in_, motion), "GMFSS natif : MetricNet");
+  return {};
 }
 
 }  // namespace kirari::gpu::cuda

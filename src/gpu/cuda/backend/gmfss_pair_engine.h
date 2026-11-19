@@ -15,6 +15,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/fused_keys.h"
@@ -48,14 +49,14 @@ class GmfssPairEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
-  // L'essai du natif (gmfss_pair_trial.cpp) : deux images de test passent par la paire entière, puis par le
-  // flot et les réseaux natifs en sommes f16, mixtes et f32 ; le natif n'est gardé que si chacune des
-  // quatorze sorties tient min_db contre TensorRT (rapporté à l'étendue de la sortie de TensorRT) et s'il le
-  // bat d'au moins 2 % en temps. La ligne du journal qui dit ce qui a été retenu ; refus : l'essai n'a pas pu
-  // tourner (la paire entière reste).
-  std::expected<std::string, Refusal> try_native(const prepare::GmfssPairNets& nets,
-                                                 const std::shared_ptr<SharedActivations>& shared,
-                                                 double min_db);
+  // L'essai du natif (gmfss_pair_trial.cpp) : le FeatureNet et le MetricNet natifs réglés au banc, puis deux
+  // images de test passent par la paire entière et par le flot et les réseaux natifs, les sommes choisies
+  // réseau par réseau (gmfss_trial.h) ; le natif n'est gardé que si chacune des quatorze sorties tient min_db
+  // contre TensorRT (rapporté à l'étendue de la sortie de TensorRT) et s'il le bat d'au moins 2 % en temps.
+  // Les lignes du journal, la dernière disant ce qui a été retenu ; refus : l'essai n'a pas pu tourner (la
+  // paire entière reste).
+  std::expected<std::vector<std::string>, Refusal> try_native(
+      const prepare::GmfssPairNets& nets, const std::shared_ptr<SharedActivations>& shared, double min_db);
   bool native() const { return native_on_; }
 
   // Les sorties de la paire, dans l'ordre de kOutputNames (gmfss_pair_engine.cpp) : half0, half1, puis par
@@ -74,6 +75,10 @@ class GmfssPairEngine final : public Engine {
   std::expected<void, Refusal> enqueue_native(cudaStream_t stream,
                                               const std::shared_ptr<SharedActivations>& shared,
                                               const Tensor& frames, std::span<const Tensor> outputs);
+  // Un réseau natif (GmfssPairNativeNet::kFeatureNet, ses deux images ; kMetricNet) sur ce que le flot a
+  // écrit : la fin de enqueue_native, et le temps d'un morceau à l'essai.
+  std::expected<void, Refusal> enqueue_piece(cudaStream_t stream, int piece, const Tensor& frames,
+                                             std::span<const Tensor> outputs) const;
 
   // Les sorties du flot, dans l'ordre de la coupe : l'entrée du MetricNet, les six flots, half0, half1.
   static constexpr std::size_t kFlowOutputs = 1 + prepare::kGmfssPairFlows + 2;

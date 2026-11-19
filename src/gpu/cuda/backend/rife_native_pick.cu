@@ -2,7 +2,8 @@
 // conv_kernel par forme (tranche, tuile, lignes par warp, poids à l'avance) et par sommes. Les formes d'une
 // ligne par warp (tuile de 4 × 32 pixels) et celles des poids à l'avance n'existent qu'en sommes f16 et
 // mixtes, en pas 1 (les poids à l'avance : tranche de 32 ou 64 seulement) : le f32 ne sert qu'aux têtes et au
-// repli, et la taille du module reste bornée.
+// repli, et la taille du module reste bornée. Le GMFSS natif (gmfss_conv_plan.cu) prend les mêmes, et le
+// PixelShuffle de la queue de son GridNet (kShuffle : tranche de 64, ses 64 entrées).
 #include <algorithm>
 #include <cstddef>
 #include <vector>
@@ -76,6 +77,8 @@ Launch pick(Kind kind, int kc, int ct, int rows, bool ahead) {
       return kc == 16 && ct == 16 && rows == 2
                  ? launch_one<16, 16, 3, 1, 2, In::kNhwc, Out::kPlanes4, A, false>
                  : nullptr;
+    case Kind::kShuffle:
+      return kc == 64 ? by_rows<64, 3, Out::kPhase, A>(rows, ct) : nullptr;
   }
   return nullptr;
 }
