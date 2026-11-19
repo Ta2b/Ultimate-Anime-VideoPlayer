@@ -11,7 +11,7 @@ float e4m3_round(float x) {
   if (a == 0.0F) return x;
   // E4M3 : 3 bits de mantisse, exposant minimal normal −6 ; sous 2^−6 le pas est celui des dénormaux, 2^−9.
   int exponent = 0;
-  std::frexp(a, &exponent);  // a = m · 2^exponent, m dans [0,5, 1)
+  static_cast<void>(std::frexp(a, &exponent));  // a = m · 2^exponent, m dans [0,5, 1)
   const int e = std::max(exponent - 1, -6);
   const float step = std::ldexp(1.0F, e - 3);
   float q = std::nearbyint(a / step) * step;  // au plus proche, pair en cas d'égalité
