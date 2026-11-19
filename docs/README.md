@@ -24,6 +24,7 @@ comment construire et tester, les pièges). Ensuite, selon le sujet :
 | [`fp8-interpolation.md`](fp8-interpolation.md) | Le FP8 de RIFE et DistilDRBA ; celui de GMFSS retiré |
 | [`rife-fusionne.md`](rife-fusionne.md), [`drba-fusionne.md`](drba-fusionne.md) | Réseaux coupés en moteurs TensorRT et noyaux CUDA |
 | [`rife-natif.md`](rife-natif.md) | RIFE fusionné par nos noyaux, morceau par morceau à côté de TensorRT (`--rife-native`, essai) |
+| [`rife-bilan.md`](rife-bilan.md) | Bilan du RIFE natif et de DistilDRBA : fait et mesuré, plafonds, ce qui reste, point de reprise ; [`rife-plafonds.md`](rife-plafonds.md) (le calcul des plafonds), [`rife-seance-pc.md`](rife-seance-pc.md) (la séance de chronométrage), [`drba-natif.md`](drba-natif.md) (DistilDRBA natif, sur le papier) |
 | [`tfix-natif.md`](tfix-natif.md) | TemporalFix fusionné par nos noyaux, sans TensorRT (`--tfix-native`, essai) |
 | [`gmfss-natif.md`](gmfss-natif.md) | GMFSS union par nos noyaux, GMFlow sous TensorRT (`--gmfss-native`, essai) |
 | [`gmflow-natif.md`](gmflow-natif.md) | GMFlow par nos noyaux : étude, squelette CNN écrit (PR 1), pas encore branché |
