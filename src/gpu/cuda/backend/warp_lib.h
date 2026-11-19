@@ -50,6 +50,9 @@ struct WarpPlanesParams {
   int out_pitch = 0;  // 0 : plans ; sinon canaux par pixel (au moins channels)
 };
 
+// cudaErrorInvalidValue, sans rien lancer : forme vide ou hors bornes (1 à 16 plans, d = 1 ou pair, sortie
+// non vide, out_pitch ≥ channels), fenêtre hors de l'image, flot tensoriel sans grille ou dont dx, dy sortent
+// du pas, confiance sur un flot affine.
 cudaError_t launch_warp_planes(const WarpPlanesParams& params, cudaStream_t stream);
 
 }  // namespace kirari::gpu::cuda
