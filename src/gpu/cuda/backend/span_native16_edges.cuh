@@ -10,7 +10,7 @@
 
 #include "gpu/cuda/backend/span_fp8_layout.cuh"
 #include "gpu/cuda/backend/span_fp8_net.h"
-#include "gpu/cuda/backend/span_native16_kernels.cuh"
+#include "gpu/cuda/backend/span_native_conv.cuh"
 
 namespace kirari::gpu::cuda {
 namespace {

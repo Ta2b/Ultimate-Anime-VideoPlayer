@@ -17,7 +17,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/span_fp8_body.h"
-#include "gpu/cuda/backend/span_native16_kernels.cuh"
+#include "gpu/cuda/backend/span_native_conv.cuh"
 
 namespace kirari::gpu::cuda {
 namespace {
@@ -110,12 +110,10 @@ template <int C, sn::Acc A>
 class NativeBody final : public SpanFp8Body {
   using M = sn::Mode;
   using S = sn::Src;
-  // Mémoire partagée sous 48 Ko : aucun cudaFuncSetAttribute, deux blocs par SM.
-  static constexpr int kSmemFirst = sn::smem_bytes(sn::kImageCh, C, 9);
-  static constexpr int kSmemConv = sn::smem_bytes(C, C, 9);
-  static constexpr int kSmemCat = sn::smem_bytes(C, C, 1);
-  static constexpr int kSmemPixel = sn::smem_bytes(C, sn::kPixel, 9);
-  static_assert(kSmemConv <= 48 * 1024 && kSmemCat <= 48 * 1024 && kSmemPixel <= 48 * 1024);
+  // Mémoire partagée sous 48 Ko, poids partagés compris : aucun cudaFuncSetAttribute, deux blocs par SM.
+  static_assert(sn::smem_bytes(C, C, 9, true) <= 48 * 1024 && sn::smem_bytes(C, C, 9) <= 48 * 1024 &&
+                sn::smem_bytes(C, sn::kPixel, 9, true) <= 48 * 1024 &&
+                sn::smem_bytes(C, sn::kPixel, 9) <= 48 * 1024);
   static constexpr int kBlocks = SpanFp8Weights::kBlocks;
   static constexpr int kLayers = 2 + 3 * kBlocks;  // conv_1, les blocs, conv_cat
   // S0 : conv_1, puis (sur place) conv_cat, que to_pixel lit.
@@ -129,6 +127,7 @@ class NativeBody final : public SpanFp8Body {
 
   bool upload(const SpanFp8Weights& weights, SpanFp8Status& status, std::string& error) override {
     used_ = weights.blocks;
+    shared_ = weights.shared_weights;
     band_ = weights.band == SpanFp8Weights::kBandAuto ? auto_band(fw_, C) : weights.band;
     const auto sent = [&](cudaError_t result) {
       if (result == cudaSuccess) return true;
@@ -195,7 +194,7 @@ class NativeBody final : public SpanFp8Body {
     p.surf_w = ring.width;
     p.surf_h = ring.height;
     p.mask = core_;  // la queue n'écrit que le cœur ; le corps a calculé sa région
-    run<C, sn::kPixel, 9, 1, S::kNhwc, M::kPixel, false>(stream, p, kSmemPixel, Rows{0, fh_});
+    run<C, sn::kPixel, 9, 1, S::kNhwc, M::kPixel, false>(stream, p, Rows{0, fh_});
     return !failed(error);
   }
 
@@ -264,7 +263,7 @@ class NativeBody final : public SpanFp8Body {
   void wave(cudaStream_t stream, const __half* input, Front front) const {
     sn::Params p = params(first_, t_[kS0]);
     p.in[0] = input;
-    run<sn::kImageCh, C, 9, 1, S::kImage, M::kPlain, false>(stream, p, kSmemFirst, front.next(0));
+    run<sn::kImageCh, C, 9, 1, S::kImage, M::kPlain, false>(stream, p, front.next(0));
     const int last = used_ - 1;
     __half* const x[2] = {t_[kX0], t_[kX1]};
     for (int b = 0; b < used_; ++b) {
@@ -272,16 +271,16 @@ class NativeBody final : public SpanFp8Body {
       __half* out = b == 0 ? t_[kK1] : b == last ? x[used_ % 2] : x[(b + 1) % 2];
       sn::Params c1 = params(conv_[b][0], t_[kT1]);
       c1.in[0] = in;
-      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c1, kSmemConv, front.next(1));
+      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c1, front.next(1));
       sn::Params c2 = params(conv_[b][1], t_[kT2]);
       c2.in[0] = t_[kT1];
-      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, kSmemConv, front.next(1));
+      run<C, C, 9, 1, S::kNhwc, M::kPlain, true>(stream, c2, front.next(1));
       sn::Params c3 = params(conv_[b][2], out);
       c3.in[0] = t_[kT2];
       c3.skip = in;
       c3.w1 = attention_[b].w.template as<uint4>();
       c3.b1 = attention_[b].b.template as<float>();
-      run<C, C, 9, 1, S::kNhwc, M::kGate, false>(stream, c3, kSmemConv, front.next(1));
+      run<C, C, 9, 1, S::kNhwc, M::kGate, false>(stream, c3, front.next(1));
     }
     // Les tranches de la concaténation du SPAN : sortie de conv_1, du dernier bloc, du premier bloc, premier
     // Relu du dernier bloc (l'ordre des poids de conv_cat). La sortie s'écrit sur S0, sur place : une 1×1 ne
@@ -291,18 +290,22 @@ class NativeBody final : public SpanFp8Body {
     cat.in[1] = x[used_ % 2];
     cat.in[2] = t_[kK1];
     cat.in[3] = t_[kT1];
-    run<C, C, 1, 4, S::kNhwc, M::kPlain, false>(stream, cat, kSmemCat, front.next(0));
+    run<C, C, 1, 4, S::kNhwc, M::kPlain, false>(stream, cat, front.next(0));
   }
 
   // Les lignes rows d'une convolution ; rien si elles sont vides.
   template <int Cin, int Cout, int Taps, int Sources, sn::Src From, sn::Mode Mode, bool Relu>
-  void run(cudaStream_t stream, sn::Params p, int smem, Rows rows) const {
+  void run(cudaStream_t stream, sn::Params p, Rows rows) const {
     if (rows.from >= rows.to) return;
     p.y0 = rows.from;
     p.y1 = rows.to;
     const dim3 grid(grid_.x, static_cast<unsigned>((rows.to - rows.from + sn::kTH - 1) / sn::kTH));
-    sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, A>
-        <<<grid, sn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
+    const auto smem = static_cast<std::size_t>(sn::smem_bytes(Cin, Cout, Taps, shared_));
+    if (shared_)
+      sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, A, true>
+          <<<grid, sn::kThreads, smem, stream>>>(p);
+    else
+      sn::conv_kernel<Cin, Cout, Taps, Sources, From, Mode, Relu, A><<<grid, sn::kThreads, smem, stream>>>(p);
   }
 
   static bool failed(std::string& error) {
@@ -315,7 +318,8 @@ class NativeBody final : public SpanFp8Body {
   int fh_, fw_;
   dim3 grid_;
   int used_ = kBlocks;
-  int band_ = 0;  // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
+  int band_ = 0;         // lignes de demi-résolution par bande (SpanFp8Weights::band), 0 : l'image entière
+  bool shared_ = false;  // poids partagés (SpanFp8Weights::shared_weights)
   bool bound_ = false;
   const std::uint32_t* region_ = nullptr;  // tuiles qui bougent : masques d'appareil, nuls hors d'un appel
   const std::uint32_t* core_ = nullptr;
