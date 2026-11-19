@@ -161,7 +161,8 @@ struct ProbeFlow::Session {
     into.address = static_cast<std::uintptr_t>(calls.nvOFGPUBufferGetCUdeviceptr(into.handle));
     into.pitch = stride.strideInfo[0].strideXInBytes;
     if (into.address == 0 || into.pitch < row)
-      return std::format("tampon de NVOF inattendu (lignes de {} octets pour {})", into.pitch, row);
+      return std::format("tampon de NVOF inattendu (adresse {:#x}, lignes de {} octets pour {})",
+                         into.address, into.pitch, row);
     return {};
   }
 
