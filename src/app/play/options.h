@@ -183,6 +183,9 @@ struct PlayOptions {
   // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
   // finale.
   bool rife_native = false;
+  // --tfix-native (essai) : les convolutions de TemporalFix fusionné par nos noyaux CUDA (docs/tfix-natif.md,
+  // gpu::kTrialTfixNative), gardées à 45 dB de TensorRT ; éteint jusqu'à la séance finale.
+  bool tfix_native = false;
   // TemporalFix fusionné (docs/temporalfix.md) sous TensorRT, par défaut ; --no-tfix-fused (essai) garde
   // le graphe à cache de l'encodeur, pour la mesure ABAB.
   bool temporal_fix_fused = true;

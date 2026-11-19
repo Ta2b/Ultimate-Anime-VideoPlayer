@@ -400,6 +400,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
                     (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
                     (p.options.span_native ? gpu::kTrialSpanNative : 0U) |
                     (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
+                    (p.options.tfix_native ? gpu::kTrialTfixNative : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
 }
 

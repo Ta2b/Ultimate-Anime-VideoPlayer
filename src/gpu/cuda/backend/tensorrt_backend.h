@@ -336,6 +336,7 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool span_native_ = false;  // bords du SPAN FP8 par les noyaux du FP16 natif (kTrialSpanNative)
   bool rife_hwc8_ = false;    // blocs du RIFE fusionné en E/S HWC8 (kTrialRifeHwc8, allumé par le lecteur)
   bool rife_native_ = false;  // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
+  bool tfix_native_ = false;  // convolutions de TemporalFix fusionné par les noyaux natifs (kTrialTfixNative)
   bool warp_l2_ = false;      // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
   std::filesystem::path trtexec_;

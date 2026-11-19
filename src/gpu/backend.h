@@ -112,7 +112,9 @@ namespace kirari::gpu {
 // le bit sans le dire.
 // 53 : KernelOps::motion_camera (le mouvement d'une caméra affine : le tri des paires de GMFSS,
 // kernels/spec/motion_camera.h).
-inline constexpr int kBackendAbi = 53;
+// 54 : kTrialTfixNative (TemporalFix fusionné par nos noyaux, docs/tfix-natif.md) : un module d'avant
+// ignorerait le bit sans le dire.
+inline constexpr int kBackendAbi = 54;
 
 using DeviceUuid = kirari::DeviceUuid;
 
@@ -150,6 +152,12 @@ inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 // chargement ; les blocs TensorRT se construisent alors en E/S HWC8. Lu par le backend TensorRT ; sans effet
 // ailleurs.
 inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
+// 1U << 7U : réservé au GMFSS natif (chantier en cours).
+// --tfix-native : les convolutions de TemporalFix fusionné (l'encodeur, les trois blocs, la tête) par nos
+// noyaux (docs/tfix-natif.md) au lieu des moteurs TensorRT, gardées si elles tiennent 45 dB contre eux à
+// l'essai au chargement ; la colle écrit et lit alors X, Y et la tête par pixel. Lu par le backend TensorRT ;
+// sans effet ailleurs.
+inline constexpr std::uint32_t kTrialTfixNative = 1U << 8U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le

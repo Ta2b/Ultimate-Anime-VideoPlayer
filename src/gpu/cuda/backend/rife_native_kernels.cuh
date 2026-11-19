@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
+#include <vector>
 
 namespace kirari::gpu::cuda::rife_native {
 
@@ -47,8 +48,23 @@ struct Params {
   int cin = 0;               // multiple de Kc
   int tiles = 1;             // tuiles de sortie par phase
   int ksplit = 1;            // parts de K (blockIdx.z = paquet · ksplit + part)
-  float* partial = nullptr;  // ksplit > 1 : [ksplit][oh · ow][canaux de la grille z], f32
+  float* partial = nullptr;  // ksplit > 1 : [batch][ksplit][oh · ow][canaux de la grille z], f32
+  // Un lot d'images (TemporalFix : les six appuis) : blockIdx.z = image · (grille z par image) + reste,
+  // chaque image à in_batch, out_batch et skip_batch éléments de la précédente. 1 : une seule image.
+  int batch = 1;
+  long in_batch = 0;
+  long out_batch = 0;
+  long skip_batch = 0;
 };
+
+// Les adresses de l'image img du lot ; width : canaux de la grille z d'une image (sommes partielles).
+__device__ __forceinline__ void select_image(Params& p, int img, long width) {
+  if (img == 0) return;
+  p.in += img * p.in_batch;
+  p.out += img * p.out_batch;
+  if (p.skip != nullptr) p.skip += img * p.skip_batch;
+  if (p.partial != nullptr) p.partial += img * p.ksplit * static_cast<long>(p.oh) * p.ow * width;
+}
 
 // Hauteur et largeur de la tuile d'entrée (halo compris), et octets de mémoire partagée.
 template <int KH, int S, int Rows>
@@ -350,7 +366,7 @@ __device__ __forceinline__ void spill(const Frag<Acc16> (&acc)[Rows * 2][CT / 8]
                                       int tx0, int z, int kz, int warp, int lane) {
   const int g = lane >> 2, t = lane & 3;
   const long pixels = static_cast<long>(p.oh) * p.ow;
-  const long width = static_cast<long>(gridDim.z) / p.ksplit * CT;
+  const long width = static_cast<long>(gridDim.z) / p.batch / p.ksplit * CT;
   float* base = p.partial + kz * pixels * width + static_cast<long>(z) * CT + 2 * t;
 #pragma unroll
   for (int f = 0; f < Rows * 2; ++f) {
@@ -367,9 +383,11 @@ __device__ __forceinline__ void spill(const Frag<Acc16> (&acc)[Rows * 2][CT / 8]
 }
 
 // La fin d'une couche à K découpé : somme des parts, biais, arrondi FP16, puis comme store (résiduel et
-// activation, ou la phase d'une transposée). Un fil par pixel et par huit canaux de la grille z (width).
+// activation, ou la phase d'une transposée). Un fil par pixel et par huit canaux de la grille z (width) ;
+// blockIdx.y : l'image du lot.
 template <Out O>
 __global__ void reduce_kernel(Params p, int width) {
+  select_image(p, static_cast<int>(blockIdx.y), width);
   const long pixels = static_cast<long>(p.oh) * p.ow;
   const int groups = width / 8;
   const long i = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
@@ -415,7 +433,11 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   auto* s = reinterpret_cast<__half*>(smem_raw);
   const int warp = static_cast<int>(threadIdx.x) >> 5, lane = static_cast<int>(threadIdx.x) & 31;
   const int ty0 = static_cast<int>(blockIdx.y) * G::kTH, tx0 = static_cast<int>(blockIdx.x) * kTW;
-  const int z = static_cast<int>(blockIdx.z) / p.ksplit, kz = static_cast<int>(blockIdx.z) - z * p.ksplit;
+  const int per = static_cast<int>(gridDim.z) / p.batch;  // blocs z d'une image du lot
+  const int img = static_cast<int>(blockIdx.z) / per;
+  const int zb = static_cast<int>(blockIdx.z) - img * per;
+  select_image(p, img, static_cast<long>(per / p.ksplit) * CT);
+  const int z = zb / p.ksplit, kz = zb - z * p.ksplit;
   const int phase = z / p.tiles, tile = z - phase * p.tiles;
   const int origin_y = KH == 2 ? (phase >> 1) - 1 : -1;
   const int origin_x = KH == 2 ? (phase & 1) - 1 : -1;
@@ -455,6 +477,30 @@ __global__ void __launch_bounds__(kThreads, 2) conv_kernel(Params p) {
   stage<CT, Rows, Acc16>(acc, s, p.bias + static_cast<long>(phase) * p.tiles * CT + n0, warp, lane);
   __syncthreads();
   store<CT, Rows, O>(s, p, ty0, tx0, phase, n0);
+}
+
+// Hôte : poids FP16 [n][taps][cin] (n : les canaux d'un paquet blockIdx.z) rangés dans l'ordre des fragments
+// B de mma m16n8k16 : pas k (prise, tranche de 16 entrées), paire de tuiles n8, lane (g = lane / 4, t = lane
+// % 4) ; 4 mots par lane : b0 et b1 de la tuile 2·np, puis de la tuile 2·np + 1. b0 = entrées 2t et 2t + 1 de
+// la sortie 8·tuile + g, b1 = entrées 2t + 8 et 2t + 9 ; la plus petite entrée dans la moitié basse du mot.
+inline void pack(const std::vector<__half>& w, int ct, int taps, int cin, std::vector<std::uint32_t>& out) {
+  const int kcs = cin / 16, nps = ct / 16;
+  const auto bits = [&](int n, int tap, int c) -> std::uint32_t {
+    const __half h = w[(static_cast<std::size_t>(n) * taps + tap) * cin + c];
+    return __half_as_ushort(h);
+  };
+  for (int ks = 0; ks < taps * kcs; ++ks) {
+    const int tap = ks / kcs, kc = ks % kcs;
+    for (int np = 0; np < nps; ++np)
+      for (int lane = 0; lane < 32; ++lane) {
+        const int g = lane >> 2, t = lane & 3, k0 = kc * 16 + 2 * t;
+        for (int j = 0; j < 2; ++j) {
+          const int n = (2 * np + j) * 8 + g;
+          out.push_back(bits(n, tap, k0) | (bits(n, tap, k0 + 1) << 16U));
+          out.push_back(bits(n, tap, k0 + 8) | (bits(n, tap, k0 + 9) << 16U));
+        }
+      }
+  }
 }
 
 }  // namespace kirari::gpu::cuda::rife_native

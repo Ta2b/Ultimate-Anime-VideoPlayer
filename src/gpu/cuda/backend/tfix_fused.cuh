@@ -70,6 +70,35 @@ __device__ __forceinline__ float zero_sample(const __half* plane, const ZeroTap&
   return sum;
 }
 
+// Un tampon de la fenêtre (X_b, Y_b, entrée ou sortie de la tête) vu pour un appui : en plans, ou par pixel
+// au pas ld (TfixShape::native). Le canal c du point at (y · largeur + x) est base[c · cs + at · ps].
+struct View {
+  __half* base;
+  long long cs;
+  int ps;
+  __device__ __forceinline__ __half& operator()(int c, long long at) const { return base[c * cs + at * ps]; }
+  __device__ __forceinline__ float get(int c, long long at) const { return __half2float((*this)(c, at)); }
+};
+
+// L'appui k du tampon au décalage offset (éléments) de la zone, plane points par canal, pas ld.
+__device__ __forceinline__ View view(const TfixShape& s, std::size_t offset, int ld, long long plane, int k) {
+  __half* base = static_cast<__half*>(s.zone) + offset + static_cast<long long>(k) * ld * plane;
+  return s.native ? View{base, 1, ld} : View{base, plane, 1};
+}
+
+// Par pixel, les canaux de rembourrage [from, ld) d'un point mis à zéro : la convolution les lit (poids nuls,
+// mais 0 · NaN ferait NaN).
+__device__ __forceinline__ void zero_pad(const TfixShape& s, const View& v, int from, int ld, long long at) {
+  if (!s.native) return;
+  for (int c = from; c < ld; ++c) v(c, at) = __float2half(0.0F);
+}
+
+// Le Resize d'un canal de v (h × w, largeur width) au point d'arrivée dont les axes sont donnés.
+__device__ __forceinline__ float resized(const View& v, int c, int width, const Axis& ax, const Axis& ay) {
+  const auto p = [&](int y, int x) { return v.get(c, static_cast<long long>(y) * width + x); };
+  return warp::lerp2(p(ay.i0, ax.i0), p(ay.i0, ax.i1), p(ay.i1, ax.i0), p(ay.i1, ax.i1), ax, ay);
+}
+
 __device__ __forceinline__ float sigmoid(float x) {
   return 1.0F / (1.0F + __expf(-x));
 }

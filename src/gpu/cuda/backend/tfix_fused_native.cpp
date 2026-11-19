@@ -1,0 +1,336 @@
+// L'essai au chargement de TemporalFix natif (--tfix-native, docs/tfix-natif.md) : l'encodeur et la fenêtre
+// passent une entrée de test avec leurs moteurs TensorRT, puis avec les noyaux natifs (sommes f16, puis f32),
+// et le natif n'est gardé que si sa sortie tient le seuil contre celle de TensorRT. L'entrée : un dessin
+// lisse (ondes, des carrés aux bords francs) qui glisse de (2, 1) pixels d'une image à l'autre et scintille
+// (un bruit de ±3 % propre à chaque image), ce que TemporalFix voit en lecture.
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cuda_fp16.h>
+#include <format>
+#include <limits>
+#include <utility>
+
+#include "gpu/cuda/backend/cuda_status.h"
+#include "gpu/cuda/backend/tfix_fused_engine.h"
+#include "gpu/cuda/backend/tfix_fused_kernels.h"
+
+namespace kirari::gpu::cuda {
+namespace {
+
+int work(int net, bool half) {
+  return half ? 2 * net : net;
+}
+
+// Le canal c de l'image r de la fenêtre au point (x, y), de 0 à 1.
+float drawing(int x, int y, int c, int r) {
+  const auto fx = static_cast<float>(x - 2 * (r - kernels::kTfixCenter));
+  const auto fy = static_cast<float>(y - (r - kernels::kTfixCenter));
+  const float wave =
+      0.5F + 0.22F * std::sin(0.071F * fx + 0.043F * fy + c) + 0.12F * std::sin(0.017F * fx - 0.029F * fy);
+  const bool square = std::fmod(std::abs(fx), 96.F) < 40.F && std::fmod(std::abs(fy), 72.F) < 28.F;
+  // Le scintillement : un bruit fixe par point, par canal et par image.
+  std::uint32_t h = static_cast<std::uint32_t>(x) * 73856093U ^ static_cast<std::uint32_t>(y) * 19349663U ^
+                    static_cast<std::uint32_t>(c * 7 + r) * 83492791U;
+  h = (h ^ (h >> 13U)) * 0x5bd1e995U;
+  const float noise = 0.06F * (static_cast<float>(h >> 8U) / 16777216.F - 0.5F);
+  return std::clamp((square ? 0.85F - 0.2F * c : wave) + noise, 0.F, 1.F);
+}
+
+// Des traits de test pour l'image r (4 plans à la taille du réseau) : lisses et propres à chaque image.
+float trait(int x, int y, int c, int r) {
+  return 0.5F + 0.4F * std::sin(0.05F * x * (c + 1) + 0.07F * y + 0.4F * r + c);
+}
+
+std::vector<__half> planes(int h, int w, int channels, float (*f)(int, int, int, int), int r) {
+  const auto plane = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
+  std::vector<__half> out(plane * static_cast<std::size_t>(channels));
+  for (int c = 0; c < channels; ++c)
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x)
+        out[static_cast<std::size_t>(c) * plane + static_cast<std::size_t>(y) * w + x] =
+            __float2half(f(x, y, c, r));
+  return out;
+}
+
+// Le PSNR de got contre want sur [begin, end), au pic max(1, |want| le plus grand) ; non fini : -infini.
+double psnr(const std::vector<float>& want, const std::vector<float>& got, std::size_t begin,
+            std::size_t end) {
+  double peak = 1.0;
+  double sum = 0.0;
+  for (std::size_t i = begin; i < end; ++i) {
+    if (!std::isfinite(got[i])) return -std::numeric_limits<double>::infinity();
+    peak = std::max(peak, static_cast<double>(std::abs(want[i])));
+    const double d = static_cast<double>(got[i]) - static_cast<double>(want[i]);
+    sum += d * d;
+  }
+  const double mse = sum / static_cast<double>(std::max<std::size_t>(end - begin, 1));
+  return mse == 0.0 ? 200.0 : 10.0 * std::log10(peak * peak / mse);
+}
+
+std::unexpected<Refusal> failed(cudaError_t error, const char* step) {
+  static_cast<void>(cudaGetLastError());
+  return refuse(RefusalCode::VendorCallFailed,
+                std::format("TemporalFix natif : essai ({}) : {}", step, cudaGetErrorString(error)));
+}
+
+// Copie de count demi-flottants de l'appareil en flottants.
+std::expected<std::vector<float>, Refusal> fetch(const void* device, std::size_t count) {
+  std::vector<__half> half(count);
+  if (cudaError_t e = cudaMemcpy(half.data(), device, count * 2, cudaMemcpyDeviceToHost); e != cudaSuccess)
+    return failed(e, "copie");
+  std::vector<float> out(count);
+  std::ranges::transform(half, out.begin(), [](__half v) { return __half2float(v); });
+  return out;
+}
+
+const std::byte* bytes_at(const void* base, std::size_t elements) {
+  return static_cast<const std::byte*>(base) + elements * 2U;
+}
+
+// Une fenêtre de test dans scratch : les sept images (buffers[0]), leurs traits de test et leurs pyramides
+// (buffers[1], celles de l'encodeur fusionné), la sortie (buffers[2]). Les tenseurs de TfixWindowEngine.
+struct TrialWindow {
+  std::vector<Tensor> inputs;
+  Tensor out;
+};
+
+std::expected<TrialWindow, Refusal> trial_window(FusedScratch& scratch, int h, int w, bool half,
+                                                 const Shape& packed) {
+  const int wh = work(h, half);
+  const int ww = work(w, half);
+  const std::size_t image_bytes = static_cast<std::size_t>(kernels::kTfixImage) * wh * ww * 2;
+  const std::size_t packed_bytes = static_cast<std::size_t>(packed.dims[1]) * wh * ww * 2;
+  const kernels::TfixPacked spots = kernels::tfix_packed(h, w, half);
+  if (cudaError_t e = cudaMalloc(&scratch.buffers[0], kernels::kTfixFrames * image_bytes); e != cudaSuccess)
+    return failed(e, "cudaMalloc");
+  if (cudaError_t e = cudaMalloc(&scratch.buffers[1], kernels::kTfixFrames * packed_bytes); e != cudaSuccess)
+    return failed(e, "cudaMalloc");
+  if (cudaError_t e = cudaMalloc(&scratch.buffers[2], image_bytes); e != cudaSuccess)
+    return failed(e, "cudaMalloc");
+  if (cudaError_t e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
+    return failed(e, "cudaStreamCreate");
+  auto* const rgb = static_cast<std::byte*>(scratch.buffers[0]);
+  auto* const kept = static_cast<std::byte*>(scratch.buffers[1]);
+  // Les sept images, leurs traits de test et leurs pyramides (celles de l'encodeur fusionné).
+  for (int r = 0; r < kernels::kTfixFrames; ++r) {
+    std::byte* const image = rgb + r * image_bytes;
+    std::byte* const own = kept + r * packed_bytes;
+    const std::vector<__half> host = planes(wh, ww, kernels::kTfixImage, drawing, r);
+    const std::vector<__half> traits = planes(h, w, kernels::kTfixTraits, trait, r);
+    if (cudaError_t e = cudaMemcpy(image, host.data(), image_bytes, cudaMemcpyHostToDevice); e != cudaSuccess)
+      return failed(e, "cudaMemcpy");
+    if (cudaError_t e =
+            cudaMemcpy(own + spots.traits * 2, traits.data(), traits.size() * 2, cudaMemcpyHostToDevice);
+        e != cudaSuccess)
+      return failed(e, "cudaMemcpy");
+    if (half) {
+      if (cudaError_t e = launch_tfix_pool(image, own, h, w, scratch.stream); e != cudaSuccess)
+        return failed(e, "tfix_pool");
+    }
+    if (cudaError_t e = launch_tfix_pyramid(image, own, h, w, half, scratch.stream); e != cudaSuccess)
+      return failed(e, "tfix_pyramid");
+  }
+  // Le travail en vol sur les voies finit avant : l'essai écrit dans la zone partagée.
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
+  std::vector<Tensor> inputs;
+  for (int r = 0; r < kernels::kTfixFrames; ++r)
+    inputs.push_back(
+        fused_tensor(reinterpret_cast<std::uintptr_t>(rgb), r * image_bytes, kernels::kTfixImage, wh, ww));
+  for (int r = 0; r < kernels::kTfixFrames; ++r)
+    inputs.push_back({.type = TensorType::F16,
+                      .shape = packed,
+                      .handle = reinterpret_cast<std::uintptr_t>(kept),
+                      .offset = r * packed_bytes});
+  const Tensor out =
+      fused_tensor(reinterpret_cast<std::uintptr_t>(scratch.buffers[2]), 0, kernels::kTfixImage, wh, ww);
+  return TrialWindow{.inputs = std::move(inputs), .out = out};
+}
+
+}  // namespace
+
+// --- L'encodeur ---
+
+std::expected<std::vector<float>, Refusal> TfixEncoderEngine::trial_traits(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, const Tensor& input,
+    const Tensor& output) {
+  if (auto ok = enqueue(stream, shared, std::span(&input, 1), std::span(&output, 1)); !ok)
+    return std::unexpected(std::move(ok.error()));
+  if (cudaError_t e = cudaStreamSynchronize(stream); e != cudaSuccess) return failed(e, "exécution");
+  const kernels::TfixPacked packed = kernels::tfix_packed(height_, width_, half_);
+  return fetch(bytes_at(fused_address(output), packed.traits),
+               static_cast<std::size_t>(kernels::kTfixTraits) * height_ * width_);
+}
+
+std::expected<std::string, Refusal> TfixEncoderEngine::try_native(
+    const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
+    double min_db) {
+  const int wh = work(height_, half_);
+  const int ww = work(width_, half_);
+  const std::vector<__half> image = planes(wh, ww, kernels::kTfixImage, drawing, kernels::kTfixCenter);
+  const Shape out_shape = output_shape();
+  const auto out_bytes = static_cast<std::size_t>(out_shape.dims[1]) * wh * ww * 2;
+  FusedScratch scratch;
+  if (cudaError_t e = cudaMalloc(&scratch.buffers[0], image.size() * 2); e != cudaSuccess)
+    return failed(e, "cudaMalloc");
+  if (cudaError_t e = cudaMalloc(&scratch.buffers[1], out_bytes); e != cudaSuccess)
+    return failed(e, "cudaMalloc");
+  if (cudaError_t e = cudaMemcpy(scratch.buffers[0], image.data(), image.size() * 2, cudaMemcpyHostToDevice);
+      e != cudaSuccess)
+    return failed(e, "cudaMemcpy");
+  if (cudaError_t e = cudaStreamCreateWithFlags(&scratch.stream, cudaStreamNonBlocking); e != cudaSuccess)
+    return failed(e, "cudaStreamCreate");
+  // Le travail en vol sur les voies finit avant : l'essai écrit dans la zone partagée.
+  if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
+  const Tensor input =
+      fused_tensor(reinterpret_cast<std::uintptr_t>(scratch.buffers[0]), 0, kernels::kTfixImage, wh, ww);
+  const Tensor output{.type = TensorType::F16,
+                      .shape = out_shape,
+                      .handle = reinterpret_cast<std::uintptr_t>(scratch.buffers[1]),
+                      .offset = 0};
+  native_on_ = false;
+  auto reference = trial_traits(scratch.stream, shared, input, output);
+  if (!reference) return std::unexpected(std::move(reference.error()));
+  std::string tried;
+  for (const bool acc32 : {false, true}) {
+    std::string error;
+    native_on_ = false;
+    native_ = TfixNativeNet::create(pieces, height_, width_, acc32, error);
+    if (!native_) return refuse(RefusalCode::FormatUnsupported, "TemporalFix natif : encodeur : " + error);
+    native_on_ = true;
+    auto got = trial_traits(scratch.stream, shared, input, output);
+    if (!got) {
+      native_on_ = false;
+      native_.reset();
+      return std::unexpected(std::move(got.error()));
+    }
+    const double db = psnr(*reference, *got, 0, got->size());
+    tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", acc32 ? "f32" : "f16", db);
+    if (db >= min_db)
+      return std::format(
+          "TemporalFix natif retenu pour l'encodeur ({}×{}, {} contre TensorRT, seuil {:.0f} dB)", width_,
+          height_, tried, min_db);
+  }
+  native_on_ = false;
+  native_.reset();
+  return std::format(
+      "TemporalFix natif écarté pour l'encodeur, TensorRT le garde ({}×{}, {} contre TensorRT, seuil {:.0f} "
+      "dB)",
+      width_, height_, tried, min_db);
+}
+
+// --- La fenêtre ---
+
+std::expected<void, Refusal> TfixWindowEngine::use_native(bool on,
+                                                          const std::shared_ptr<SharedActivations>& shared) {
+  native_on_ = on && native_ != nullptr;
+  layout_ = kernels::tfix_layout(height_, width_, half_, native_on_);
+  // La zone de travail des noyaux s'ajoute aux activations : les tampons de la fenêtre montent au-dessus.
+  own_activation_ = native_on_ ? std::max(trt_activation_, native_->workspace_bytes()) : trt_activation_;
+  graphs_.clear();  // capturés sur l'autre disposition
+  static_cast<void>(graphs_.take_notice());
+  scratch_offset_ = scratch_offset_for(*shared);
+  return use_zone(shared);
+}
+
+std::expected<std::vector<float>, Refusal> TfixWindowEngine::trial_output(
+    cudaStream_t stream, const std::shared_ptr<SharedActivations>& shared, std::span<const Tensor> inputs,
+    const Tensor& out) {
+  // Trois passes : directe, capture du graphe, rejeu ; la dernière est comparée.
+  for (int pass = 0; pass < 3; ++pass) {
+    if (auto ok = enqueue(stream, shared, inputs, std::span(&out, 1)); !ok)
+      return std::unexpected(std::move(ok.error()));
+    if (cudaError_t e = cudaStreamSynchronize(stream); e != cudaSuccess) return failed(e, "exécution");
+  }
+  // La sortie (3 plans de travail), puis Y2 [appui][canal][point] et la tête [appui][point], ramenés en
+  // plans quelle que soit la disposition.
+  const auto image =
+      static_cast<std::size_t>(kernels::kTfixImage) * work(height_, half_) * work(width_, half_);
+  auto result = fetch(fused_address(out), image);
+  if (!result) return result;
+  const void* zone = static_cast<const std::byte*>(shared->data()) + scratch_offset_;
+  const kernels::TfixDims y2 = kernels::tfix_block_y(2, height_, width_);
+  const kernels::TfixDims l2 = kernels::tfix_level(2, height_, width_, 1);
+  const struct {
+    std::size_t offset;
+    int channels;
+    int ld;
+    std::int64_t plane;
+  } parts[] = {{layout_.y[2], kernels::kTfixY, kernels::tfix_out_ld(kernels::kTfixY, native_on_), y2.plane()},
+               {layout_.conf_out, 1, kernels::tfix_out_ld(1, native_on_), l2.plane()}};
+  for (const auto& part : parts) {
+    const auto plane = static_cast<std::size_t>(part.plane);
+    const auto ld = static_cast<std::size_t>(part.ld);
+    auto raw = fetch(bytes_at(zone, part.offset), kernels::kTfixSupports * ld * plane);
+    if (!raw) return raw;
+    for (std::size_t k = 0; k < kernels::kTfixSupports; ++k)
+      for (std::size_t c = 0; c < static_cast<std::size_t>(part.channels); ++c)
+        for (std::size_t p = 0; p < plane; ++p)
+          result->push_back((*raw)[k * ld * plane + (native_on_ ? p * ld + c : c * plane + p)]);
+  }
+  return result;
+}
+
+std::expected<std::string, Refusal> TfixWindowEngine::try_native(
+    const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
+    double min_db) {
+  const int h = height_;
+  const int w = width_;
+  FusedScratch scratch;
+  auto window = trial_window(scratch, h, w, half_, packed_shape());
+  if (!window) return std::unexpected(std::move(window.error()));
+  const std::vector<Tensor>& inputs = window->inputs;
+  const Tensor& out = window->out;
+  const auto back_to_trt = [&] {
+    native_.reset();
+    return use_native(false, shared);
+  };
+  if (auto ok = use_native(false, shared); !ok) return std::unexpected(std::move(ok.error()));
+  auto reference = trial_output(scratch.stream, shared, inputs, out);
+  if (!reference) return std::unexpected(std::move(reference.error()));
+  // Les groupes comparés : la sortie, Y2, la tête.
+  const auto image = static_cast<std::size_t>(kernels::kTfixImage) * work(h, half_) * work(w, half_);
+  const auto y2 = static_cast<std::size_t>(kernels::kTfixSupports * kernels::kTfixY) *
+                  static_cast<std::size_t>(kernels::tfix_block_y(2, h, w).plane());
+  const std::size_t ends[] = {image, image + y2, reference->size()};
+  std::string tried;
+  for (const bool acc32 : {false, true}) {
+    std::string error;
+    native_ = TfixNativeNet::create(pieces, h, w, acc32, error);
+    if (!native_) {
+      static_cast<void>(back_to_trt());
+      return refuse(RefusalCode::FormatUnsupported, "TemporalFix natif : fenêtre : " + error);
+    }
+    if (auto ok = use_native(true, shared); !ok) {
+      static_cast<void>(back_to_trt());
+      return std::unexpected(std::move(ok.error()));
+    }
+    auto got = trial_output(scratch.stream, shared, inputs, out);
+    if (!got || got->size() != reference->size()) {
+      static_cast<void>(back_to_trt());
+      if (!got) return std::unexpected(std::move(got.error()));
+      return refuse(RefusalCode::GraphInvalid, "TemporalFix natif : essai de taille différente");
+    }
+    double db = std::numeric_limits<double>::infinity();
+    std::size_t begin = 0;
+    for (const std::size_t end : ends) {
+      db = std::min(db, psnr(*reference, *got, begin, end));
+      begin = end;
+    }
+    tried += std::format("{}sommes {} : {:.1f} dB", tried.empty() ? "" : ", ", acc32 ? "f32" : "f16", db);
+    if (db >= min_db) {
+      graphs_.clear();
+      static_cast<void>(graphs_.take_notice());
+      return std::format(
+          "TemporalFix natif retenu pour la fenêtre ({}×{}, {} contre TensorRT, seuil {:.0f} dB)", w, h,
+          tried, min_db);
+    }
+  }
+  if (auto ok = back_to_trt(); !ok) return std::unexpected(std::move(ok.error()));
+  return std::format(
+      "TemporalFix natif écarté pour la fenêtre, TensorRT la garde ({}×{}, {} contre TensorRT, seuil {:.0f} "
+      "dB)",
+      w, h, tried, min_db);
+}
+
+}  // namespace kirari::gpu::cuda

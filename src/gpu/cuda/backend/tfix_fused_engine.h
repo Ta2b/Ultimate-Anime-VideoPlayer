@@ -26,6 +26,7 @@
 #include "gpu/backend.h"
 #include "gpu/cuda/backend/fused_graphs.h"
 #include "gpu/cuda/backend/fused_keys.h"
+#include "gpu/cuda/backend/tfix_native_net.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "kernels/spec/tfix_fused.h"
 
@@ -51,9 +52,22 @@ class TfixEncoderEngine final : public Engine {
   std::expected<void, Refusal> enqueue(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                        std::span<const Tensor> inputs, std::span<const Tensor> outputs);
 
+  // --tfix-native (docs/tfix-natif.md) : les convolutions de l'encodeur passent aux noyaux natifs si leurs
+  // traits tiennent min_db contre ceux du moteur TensorRT sur une image de test (sommes f16, puis f32).
+  // pieces : l'encodeur seul (les quatre autres vides). Rend la ligne du journal ; un refus laisse TensorRT.
+  std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 double min_db);
+  bool native() const { return native_on_; }
+
  private:
   TfixEncoderEngine() = default;
+  std::expected<std::vector<float>, Refusal> trial_traits(cudaStream_t stream,
+                                                          const std::shared_ptr<SharedActivations>& shared,
+                                                          const Tensor& input, const Tensor& output);
   std::unique_ptr<TrtEngine> encode_;
+  std::unique_ptr<TfixNativeNet> native_;  // actif à la place de encode_ (qui reste chargé) si native_on_
+  bool native_on_ = false;
   int height_ = 0;  // le réseau
   int width_ = 0;
   bool half_ = false;
@@ -84,8 +98,23 @@ class TfixWindowEngine final : public Engine {
 
   std::string take_notice() { return graphs_.take_notice(); }
 
+  // --tfix-native : les blocs et la tête passent aux noyaux natifs si une fenêtre de test (sept images qui
+  // bougent et scintillent) tient min_db contre TensorRT, sur la sortie, Y2 et la sortie de la tête (sommes
+  // f16, puis f32). pieces : les blocs et la tête (l'encodeur vide). Rend la ligne du journal ; un refus
+  // laisse TensorRT.
+  std::expected<std::string, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 double min_db);
+  bool native() const { return native_on_; }
+
  private:
   TfixWindowEngine() = default;
+  // Les noyaux natifs (native_ chargé) ou TensorRT : la disposition des tampons et les activations changent.
+  std::expected<void, Refusal> use_native(bool on, const std::shared_ptr<SharedActivations>& shared);
+  // L'essai : trois passes (directe, capture, rejeu), puis la sortie, Y2 et la tête copiés vers l'hôte.
+  std::expected<std::vector<float>, Refusal> trial_output(cudaStream_t stream,
+                                                          const std::shared_ptr<SharedActivations>& shared,
+                                                          std::span<const Tensor> inputs, const Tensor& out);
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena);
   std::expected<void, Refusal> use_zone(const std::shared_ptr<SharedActivations>& zone);
   std::expected<void, Refusal> follow_zone(const std::shared_ptr<SharedActivations>& arena);
@@ -97,6 +126,9 @@ class TfixWindowEngine final : public Engine {
   int width_ = 0;
   bool half_ = false;
   kernels::TfixLayout layout_;
+  std::unique_ptr<TfixNativeNet> native_;  // actif à la place de blocks_ et conf_ (chargés) si native_on_
+  bool native_on_ = false;
+  std::int64_t trt_activation_ = 0;  // les activations des moteurs TensorRT
   std::size_t scratch_offset_ = 0;
   std::int64_t own_activation_ = 0;
   std::vector<std::string> inputs_;

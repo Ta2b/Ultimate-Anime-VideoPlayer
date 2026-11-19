@@ -1,6 +1,6 @@
 // Découpe de TemporalFix en cinq morceaux (prepare/tfix_split.h) : le manifeste et ses refus, et, quand les
 // modèles du lecteur sont sur la machine (KIRARI_DRBA_MODEL_DIR/temporalfix), la reconnaissance et la découpe
-// des vrais s1, s2 et s3.
+// des vrais s1, s2 et s3, et leurs morceaux lus pour les noyaux natifs (--tfix-native).
 #include "prepare/tfix_split.h"
 
 #include <filesystem>
@@ -10,7 +10,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "kernels/spec/tfix_fused.h"
 #include "prepare/model_source.h"
+#include "prepare/onnx_split.h"
+#include "prepare/rife_native.h"
 
 #ifndef KIRARI_DRBA_MODEL_DIR
 #define KIRARI_DRBA_MODEL_DIR ""
@@ -71,6 +74,24 @@ TEST_CASE("Les TemporalFix du catalogue se coupent en morceaux", "[prepare][onnx
     REQUIRE(encoder);
     CHECK(encoder->size() == 1);
     CHECK_FALSE(split_tfix(*bytes, *split, TfixRole::Window, 67, 120));
+    // Les noyaux natifs : l'encodeur coupé avant son Resize, puis des chaînes de convolutions 3 × 3 (les
+    // séparables repliées).
+    const SplitTensor from{.name = split->encode_input, .dims = {1, 3, 68, 120}};
+    const SplitTensor to{.name = split->encode_last};
+    const auto cut = extract_subgraph((*encoder)[0].model, std::span(&from, 1), std::span(&to, 1), "e");
+    REQUIRE(cut);
+    const auto encode = rife_native_layers(*cut);
+    REQUIRE(encode);
+    CHECK(encode->size() == 4);
+    CHECK(conv_chain_check(*encode, kernels::kTfixImage, kernels::kTfixTraits));
+    const int ins[] = {kernels::kTfixX0, kernels::kTfixX, kernels::kTfixX, kernels::kTfixConf};
+    const std::size_t counts[] = {7, 7, 7, 3};
+    for (std::size_t i = 0; i < window->size(); ++i) {
+      const auto layers = rife_native_layers((*window)[i].model);
+      REQUIRE(layers);
+      CHECK(layers->size() == counts[i]);
+      CHECK(conv_chain_check(*layers, ins[i], i < 3 ? kernels::kTfixY : 1));
+    }
   }
   if (!any) SKIP("modèles TemporalFix du lecteur absents (KIRARI_DRBA_MODEL_DIR/temporalfix)");
 }
