@@ -21,6 +21,7 @@
 #extension GL_KHR_memory_scope_semantics : require
 #extension GL_KHR_shader_subgroup_basic : require
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_control_flow_attributes : require
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 
@@ -216,13 +217,13 @@ void main() {
   uint row0 = gl_WorkGroupID.y * ROWS;
 
   coopmat<ACC_T, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseAccumulator> acc[TM * NTW];
-  for (uint i = 0u; i < TM * NTW; ++i) {
+  [[unroll]] for (uint i = 0u; i < TM * NTW; ++i) {
     acc[i] = coopmat<ACC_T, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseAccumulator>(0.0);
   }
 #if !defined(AJP_COOPMAT_ACC16) && !defined(AJP_COOPMAT_M8)
   if (DIRECT_EPI == 1u) {
     // Les sommes partent du biais (16 lignes identiques), ajouté ainsi sans addition de matrices.
-    for (uint i = 0u; i < TM * NTW; ++i)
+    [[unroll]] for (uint i = 0u; i < TM * NTW; ++i)
       coopMatLoad(acc[i], bias.v, (j0 + i % NTW) * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
   }
 #endif
@@ -237,17 +238,17 @@ void main() {
         uint ky = tap / KW;
         uint kx = tap % KW;
         uint k0 = tap * CKP + chunk * KC;
-        for (uint c16 = 0u; c16 < KC; c16 += 16u) {
+        [[unroll]] for (uint c16 = 0u; c16 < KC; c16 += 16u) {
           coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
-          for (uint t = 0u; t < TM; ++t) {
+          [[unroll]] for (uint t = 0u; t < TM; ++t) {
             uint hp = (sg * TM + t + ky * DH) * HWID + kx * DW;
             coopMatLoad(a[t], tile_a, buf * ABUF + hp * AS + c16 / 8u, AS, gl_CooperativeMatrixLayoutRowMajor);
           }
-          for (uint jl = 0u; jl < NTW; ++jl) {
+          [[unroll]] for (uint jl = 0u; jl < NTW; ++jl) {
             uint j = j0 + jl;
             coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> b;
             coopMatLoad(b, weights.w, (k0 + c16) * NP + j * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
-            for (uint t = 0u; t < TM; ++t) acc[t * NTW + jl] = coopMatMulAdd(a[t], b, acc[t * NTW + jl]);
+            [[unroll]] for (uint t = 0u; t < TM; ++t) acc[t * NTW + jl] = coopMatMulAdd(a[t], b, acc[t * NTW + jl]);
           }
         }
       }
@@ -266,14 +267,14 @@ void main() {
       if (SHARED_B == 1u) stage_b(buf ^ 1u, s + 1u);
     }
     uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
-    for (uint c16 = 0u; c16 < KC; c16 += 16u) {
+    [[unroll]] for (uint c16 = 0u; c16 < KC; c16 += 16u) {
       coopmat<float16_t, gl_ScopeSubgroup, AJP_TILE_M, 16, gl_MatrixUseA> a[TM];
-      for (uint t = 0u; t < TM; ++t) {
+      [[unroll]] for (uint t = 0u; t < TM; ++t) {
         coopMatLoad(a[t], tile_a, buf * ABUF + (sg * TM + t) * TPIX * AS + c16 / 8u, AS,
                     gl_CooperativeMatrixLayoutRowMajor);
       }
       uint k = k0 + c16;
-      for (uint jl = 0u; jl < NTW; ++jl) {
+      [[unroll]] for (uint jl = 0u; jl < NTW; ++jl) {
         uint j = j0 + jl;
         coopmat<float16_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> b;
         if (SHARED_B == 1u) {
@@ -281,12 +282,12 @@ void main() {
         } else {
           coopMatLoad(b, weights.w, k * NP + j * 16u, NP, gl_CooperativeMatrixLayoutRowMajor);
         }
-        for (uint t = 0u; t < TM; ++t) acc[t * NTW + jl] = coopMatMulAdd(a[t], b, acc[t * NTW + jl]);
+        [[unroll]] for (uint t = 0u; t < TM; ++t) acc[t * NTW + jl] = coopMatMulAdd(a[t], b, acc[t * NTW + jl]);
       }
     }
     barrier();
   }
-  for (uint t = 0u; t < TM; ++t) {
+  [[unroll]] for (uint t = 0u; t < TM; ++t) {
     // Les pixels de la tuile : count pixels consécutifs dès p0 (une ligne de 16 avec HALO).
     const uint oy_h = row0 + sg * TM + t;
     const uint p0 = HALO == 1u ? oy_h * WOUT + x0 : first_pixel + (sg * TM + t) * TPIX;
@@ -294,7 +295,7 @@ void main() {
                                   : (p0 < HOUT * WOUT ? min(TPIX, HOUT * WOUT - p0) : 0u);
 #if !defined(AJP_COOPMAT_ACC16) && !defined(AJP_COOPMAT_M8)
     if (DIRECT_EPI == 1u && count == 16u) {
-      for (uint jl = 0u; jl < NTW; ++jl) {
+      [[unroll]] for (uint jl = 0u; jl < NTW; ++jl) {
         uint j = j0 + jl;
         coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> v = acc[t * NTW + jl];
         if (RESIDUAL == 1u) {
@@ -321,7 +322,7 @@ void main() {
       continue;
     }
 #endif
-    for (uint jl = 0u; jl < NTW; ++jl) {
+    [[unroll]] for (uint jl = 0u; jl < NTW; ++jl) {
       uint j = j0 + jl;
 #ifdef AJP_COOPMAT_ACC16
       coopmat<float, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> sum =
