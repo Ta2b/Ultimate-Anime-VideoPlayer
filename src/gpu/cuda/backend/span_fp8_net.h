@@ -32,8 +32,9 @@ struct SpanFp8ConvView {
 enum class SpanFp8Width : std::uint8_t { Native, PerTap, Padded };
 
 // Les sommes du SPAN FP16 natif (span_native16_kernels.cuh, Acc) : en f16 ; en f32, au débit moitié des
-// tensor cores des GeForce ; promues, chaque mma somme ses 16 produits en f16 puis les ajoute en f32.
-enum class SpanNativeSums : std::uint8_t { F16, F32, Promoted };
+// tensor cores des GeForce. Les sommes promues (16 produits en f16 par mma, total en f32) ont perdu au banc
+// (docs/span-native16.md, « Sommes promues »).
+enum class SpanNativeSums : std::uint8_t { F16, F32 };
 
 // Le contenu d'un gpu/span_fp8/package.h, sans ses vecteurs. Les pointeurs ne servent que pendant create().
 struct SpanFp8Weights {
@@ -55,13 +56,15 @@ struct SpanFp8Weights {
   // Le SPAN entier en FP16, sans quantification, par nos noyaux natifs (docs/span-native16.md). Les échelles
   // sont alors ignorées, acc16 aussi (le natif somme selon sums).
   bool fp16 = false;
-  // FP16 natif seulement : les sommes. F32 au cran Qualité du lecteur (drapeau acc32 du paquet), Promoted
-  // avec --span-promoted (essai) ; kirari_span_fp8_run --acc32, --promoted. Sinon en f16, comme AnimeJaNai.
+  // FP16 natif seulement : les sommes. F32 au cran Qualité du lecteur (drapeau acc32 du paquet) et avec
+  // kirari_span_fp8_run --acc32 ; sinon en f16, comme AnimeJaNai.
   SpanNativeSums sums = SpanNativeSums::F16;
   // FP16 natif seulement : le corps en bandes de band lignes de demi-résolution (docs/span-native16.md,
-  // « Bandes ») ; ce qu'une couche lit tient encore en L2. 0 : chaque couche sur l'image entière. 64 lignes :
-  // 8 Mo par tenseur à 64 canaux en 1080p, à juger au banc (kirari_span_fp8_run --band).
-  int band = 64;
+  // « Bandes ») ; ce qu'une couche lit tient encore en L2. 0 : chaque couche sur l'image entière ;
+  // kBandAuto : 128 lignes si le L2 de la carte les tient, 64 sinon (auto_band, span_native16.cu) ;
+  // kirari_span_fp8_run --band N au banc. Les bandes ne changent aucune somme, seulement l'ordre des tuiles.
+  static constexpr int kBandAuto = -1;
+  int band = kBandAuto;
   // FP8 seulement : conv_1 (dégroupage fondu), conv_cat et to_pixel par les noyaux du FP16 natif
   // (span_native16_edges.cuh) au lieu de CUTLASS ; les blocs restent en CUTLASS FP8. --span-native-edges.
   bool native_edges = false;
