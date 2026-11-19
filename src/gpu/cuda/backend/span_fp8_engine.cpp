@@ -149,7 +149,7 @@ void SpanFp8Engine::drop_graphs() {
 
 std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
     const std::filesystem::path& package, std::uint32_t crc, int height, int width,
-    const std::shared_ptr<SharedActivations>& shared, bool native_edges) {
+    const std::shared_ptr<SharedActivations>& shared, bool native_edges, bool promoted) {
   auto bytes = read_span_fp8_package(package);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   // Une préparation de fond a pu réécrire le paquet depuis la construction : des poids qu'aucun reçu ne
@@ -165,6 +165,7 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   std::string why;
   SpanFp8Weights weights = span_fp8_view(*parsed);
   weights.native_edges = native_edges && !parsed->fp16;
+  if (promoted && parsed->fp16) weights.sums = SpanNativeSums::Promoted;
   std::unique_ptr<SpanFp8Net> net = SpanFp8Net::create(weights, height, width, status, why);
   if (!net)
     return refuse(status == SpanFp8Status::OutOfMemory ? RefusalCode::GpuMemoryExhausted
@@ -173,7 +174,7 @@ std::expected<std::unique_ptr<SpanFp8Engine>, Refusal> SpanFp8Engine::load(
   std::unique_ptr<SpanFp8Engine> engine(new SpanFp8Engine());
   engine->net_ = std::move(net);
   engine->fp16_ = parsed->fp16;
-  engine->acc32_ = parsed->fp16 && parsed->acc32;
+  engine->sums_ = weights.sums;
   engine->native_edges_ = weights.native_edges;
   engine->input_ = Shape{.dims = {1, 3, height, width}};
   engine->output_ = Shape{.dims = {1, 3, 2 * std::int64_t{height}, 2 * std::int64_t{width}}};

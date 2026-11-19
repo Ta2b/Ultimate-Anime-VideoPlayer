@@ -54,7 +54,7 @@ class NativeEdges {
     p.out8 = x0;
     p.inv_s8 = inv_s8;
     constexpr int kSmem = span_native::smem_bytes(kImageCh, C, 9);
-    span_native::conv_kernel<kImageCh, C, 9, 1, S::kImage, M::kPlain, false, false>
+    span_native::conv_kernel<kImageCh, C, 9, 1, S::kImage, M::kPlain, false, span_native::Acc::kF32>
         <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
   }
 
@@ -67,10 +67,10 @@ class NativeEdges {
     p.overflow = overflow;
     constexpr int kSmem = span_native::smem_bytes(C, C, 1);
     if (f16)
-      span_native::conv_kernel<C, C, 1, 4, S::kNhwc, M::kPlain, false, true>
+      span_native::conv_kernel<C, C, 1, 4, S::kNhwc, M::kPlain, false, span_native::Acc::kF16>
           <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
     else
-      span_native::conv_kernel<C, C, 1, 4, S::kNhwc, M::kPlain, false, false>
+      span_native::conv_kernel<C, C, 1, 4, S::kNhwc, M::kPlain, false, span_native::Acc::kF32>
           <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
   }
 
@@ -85,10 +85,10 @@ class NativeEdges {
     p.surf_h = ring.height;
     constexpr int kSmem = span_native::smem_bytes(C, kPixel, 9);
     if (f16)
-      span_native::conv_kernel<C, kPixel, 9, 1, S::kNhwc, M::kPixel, false, true>
+      span_native::conv_kernel<C, kPixel, 9, 1, S::kNhwc, M::kPixel, false, span_native::Acc::kF16>
           <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
     else
-      span_native::conv_kernel<C, kPixel, 9, 1, S::kNhwc, M::kPixel, false, false>
+      span_native::conv_kernel<C, kPixel, 9, 1, S::kNhwc, M::kPixel, false, span_native::Acc::kF32>
           <<<grid_, span_native::kThreads, kSmem, stream>>>(p);
   }
 

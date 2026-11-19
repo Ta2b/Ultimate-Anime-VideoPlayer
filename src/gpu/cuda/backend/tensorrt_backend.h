@@ -366,6 +366,8 @@ class TensorRtBackend final : public Backend, public KernelOps {
   bool rife_native_ = false;   // encodeur et blocs du RIFE fusionné par les noyaux natifs (kTrialRifeNative)
   bool gmfss_native_ = false;  // GridNet de la fusion de GMFSS par les noyaux natifs (kTrialGmfssNative)
   bool warp_l2_ = false;       // kTrialWarpL2 (--warp-l2, essai) : le flot du warp en L2 persistant
+  // Le SPAN FP16 natif aux sommes promues (kTrialSpanPromoted).
+  bool span_promoted_ = false;
   std::optional<std::size_t> l2_persisting_;  // persisting_l2, une fois
   std::filesystem::path trtexec_;
   std::string trtexec_sha256_;  // relevé à create (A05-05)
@@ -411,6 +413,13 @@ class TensorRtBackend final : public Backend, public KernelOps {
   static constexpr std::size_t kRoles = 3;
   std::array<std::unique_ptr<GpuTiming>, kRoles> role_timing_;
   GpuTiming& role(Role which) { return *role_timing_.at(static_cast<std::size_t>(which)); }
+  // Le SPAN natif ou FP8 en trois parts (enqueue_span_fp8) : corps, attente de l'emplacement de l'anneau,
+  // queue. Au profil de fin de séance seulement (log_profile) : gpu_profile les laisse, ses lecteurs somment
+  // les étapes et le SPAN y est déjà, entier.
+  enum class SpanPart : unsigned char { Body, SlotWait, Tail };
+  static constexpr std::size_t kSpanParts = 3;
+  std::array<std::unique_ptr<GpuTiming>, kSpanParts> span_parts_;
+  GpuTiming& span_part(SpanPart which) { return *span_parts_.at(static_cast<std::size_t>(which)); }
   // Profil GPU par étape (ingestion, mesures, RIFE, chaque moteur, écriture), résumé au
   // journal à la destruction du backend.
   std::map<std::string, std::unique_ptr<GpuTiming>, std::less<>> stages_;
