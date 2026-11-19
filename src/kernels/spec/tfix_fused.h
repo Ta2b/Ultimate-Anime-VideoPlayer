@@ -23,6 +23,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace kirari::kernels {
 
@@ -169,6 +171,17 @@ constexpr TfixLayout tfix_layout(int height, int width, bool half, bool native =
   if (half) layout.net_out = take(TfixDims{kTfixImage, height, width}.elements());
   layout.elements = at;
   return layout;
+}
+
+// Le rôle d'un TemporalFix natif d'après ses morceaux remplis (encodeur, trois blocs, tête) : l'encodeur seul
+// (vrai), ou les trois blocs et la tête seuls (faux) ; tout autre mélange est refusé.
+inline std::optional<bool> tfix_native_encoder(std::span<const bool> filled) {
+  if (filled.size() != 2 + static_cast<std::size_t>(kTfixLevels)) return std::nullopt;
+  const bool encoder = filled[0];
+  for (std::size_t i = 1; i < filled.size(); ++i) {
+    if (filled[i] == encoder) return std::nullopt;
+  }
+  return encoder;
 }
 
 }  // namespace kirari::kernels

@@ -3,6 +3,7 @@
 // des vrais s1, s2 et s3, et leurs morceaux lus pour les noyaux natifs (--tfix-native).
 #include "prepare/tfix_split.h"
 
+#include <array>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -98,3 +99,18 @@ TEST_CASE("Les TemporalFix du catalogue se coupent en morceaux", "[prepare][onnx
 
 }  // namespace
 }  // namespace kirari::prepare
+
+TEST_CASE("TemporalFix natif : un rôle à la fois, l'encodeur seul ou la fenêtre seule", "[prepare][tfix]") {
+  using kirari::kernels::tfix_native_encoder;
+  const std::array encoder{true, false, false, false, false};
+  const std::array window{false, true, true, true, true};
+  CHECK(tfix_native_encoder(encoder) == true);
+  CHECK(tfix_native_encoder(window) == false);
+  const std::array both{true, true, true, true, true};
+  const std::array none{false, false, false, false, false};
+  const std::array hole{false, true, false, true, true};
+  CHECK_FALSE(tfix_native_encoder(both).has_value());
+  CHECK_FALSE(tfix_native_encoder(none).has_value());
+  CHECK_FALSE(tfix_native_encoder(hole).has_value());
+  CHECK_FALSE(tfix_native_encoder(std::array{true, false}).has_value());
+}

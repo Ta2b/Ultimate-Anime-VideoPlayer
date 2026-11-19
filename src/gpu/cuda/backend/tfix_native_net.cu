@@ -5,8 +5,10 @@
 // travail ; l'entrée d'un ResConv reste donc lisible pour son addition résiduelle. Les sommes partielles
 // d'une couche à K découpé vont dans un troisième tampon, après les deux.
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -401,12 +403,14 @@ std::unique_ptr<TfixNativeNet> TfixNativeNet::create(const std::vector<RifeNativ
     return nullptr;
   }
   // Un rôle à la fois : l'encodeur seul, ou les blocs et la tête seuls (les autres morceaux vides).
-  const bool encoder = !pieces[0].empty();
-  for (std::size_t i = 1; i < pieces.size(); ++i) {
-    if (pieces[i].empty() == !encoder) continue;
+  std::array<bool, 2 + kernels::kTfixLevels> filled{};
+  for (std::size_t i = 0; i < filled.size(); ++i) filled[i] = !pieces[i].empty();
+  const std::optional<bool> role = kernels::tfix_native_encoder(filled);
+  if (!role) {
     error = "l'encodeur seul, ou les trois blocs et la tête seuls, attendus";
     return nullptr;
   }
+  const bool encoder = *role;
   auto net = std::make_unique<Net>(sums);
   if (!encoder) net->skip();
   if (encoder &&
