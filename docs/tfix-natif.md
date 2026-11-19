@@ -114,10 +114,14 @@ la tête) :
 
 L'encodeur natif gagne ; la fenêtre native perd, et le choix au temps la laisse à TensorRT. Le travail de la
 fenêtre en demi-taille (s2, en MAC, rembourrage compris) : la tête près des deux tiers (270 × 480, six appuis,
-32 canaux), les trois blocs le reste. Un premier profil nsys n'a vu de la fenêtre que l'essai au chargement
-(`conf_kernel` 4 fois en 30 s) : en lecture elle tourne en graphe CUDA, que nsys ne détaille qu'avec
-`--cuda-graph-trace=node`. Il montre déjà l'encodeur : 0,14 ms de GPU par image en natif (trois convolutions et
-`traits_kernel`) contre 0,20 ms pour TensorRT (convolutions, Resize, reformatages).
+32 canaux), les trois blocs le reste. Un premier profil nsys (30 s, `--cuda-graph-trace=node`) n'a vu de la
+fenêtre, native ou TensorRT, que l'essai au chargement (`conf_kernel` 4 fois) : la cause reste à trouver. Il
+montre déjà l'encodeur : 0,14 ms de GPU par image en natif (trois convolutions et `traits_kernel`) contre 0,20 ms
+pour TensorRT (convolutions, Resize, reformatages).
+
+Avec le choix au temps (e75530c9) : encodeur natif retenu (64,7 dB, une passe à 0,11 contre 0,12 ms), fenêtre
+laissée à TensorRT (56,2 dB, une passe à 3,32 contre 2,14 ms) ; en lecture, encodeur à 0,29 ms et fenêtre à
+7,74 ms en médiane.
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 
@@ -142,7 +146,7 @@ for tour in 1 2 3; do
 done
 
 # 2. Noyaux : Nsight Systems sur 30 s, avec et sans --tfix-native. La fenêtre tourne en graphe CUDA
-#    (fused_graphs.cpp) : sans --cuda-graph-trace=node, nsys ne compte que le graphe, pas ses noyaux.
+#    (fused_graphs.cpp) : --cuda-graph-trace=node en détaille les noyaux.
 nsys profile -o tfix-natif --capture-range=none --duration=30 --cuda-graph-trace=node \
   kirari --debug play --tfix-native --no-upscale --start=960 extrait.mkv
 nsys profile -o tfix-trt --capture-range=none --duration=30 --cuda-graph-trace=node \
