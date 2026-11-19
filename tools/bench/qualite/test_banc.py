@@ -297,7 +297,9 @@ class Scintillement(unittest.TestCase):
     def test_plans_coupes_fondus_et_porte(self):
         """Un panoramique de 3 px par image (12 images), une coupe, un dessin tenu qui finit en fondu (12 images).
         La sortie « calme » tremble moins que la « vive » : elle doit gagner chaque plan, la coupe fermer le premier
-        et le fondu être exclu. Le flux est exact (0 ou 3 px, le meilleur des deux), lu par lots de 10 images."""
+        et le fondu être exclu. Le flux est exact (0 ou 3 px, le meilleur des deux), lu par lots de 10 images. Puis :
+        une sortie décalée d'une image est refusée, une plus courte signalée, et le fichier d'un faux nvof_dump (le
+        format S10.5, aller puis retour) recale le panoramique au point près, la grille de 4 tombant sur ses blocs."""
         rng = np.random.default_rng(1)
         tex = [scintillement.box(rng.uniform(0, 255, (60, 160)).astype(np.float32), 2) for _ in range(2)]
         refs = [tex[0][5:45, 3 * n:3 * n + 64] for n in range(12)]
@@ -319,15 +321,34 @@ class Scintillement(unittest.TestCase):
 
         outs = {"vive": noisy(4.0), "calme": noisy(1.0)}
         plans, count = scintillement.run(refs, outs, flux, chunk=10)
-        self.assertEqual(count, {"ok": 19, "coupe": 1, "fondu": 3})
+        self.assertEqual(count, {"ok": 19, "coupe": 1, "fondu": 3, "inegales": False})
         self.assertEqual([(p["debut"], p["fin"], p["paires"], p["exclues"]) for p in plans],
                          [(0, 11, 11, 0), (12, 23, 8, 3)])
         self.assertTrue(all(p["meilleure"] == "calme" for p in plans))
         self.assertEqual(scintillement.verdict(plans, "vive", "calme"), 1.0)
         self.assertEqual(scintillement.verdict(plans, "calme", "vive"), 0.0)
         self.assertIn("100%", scintillement.markdown(plans, ["vive", "calme"], count, 1.0))
-        flow = scintillement.scale(np.ones((2, 4, 4), np.float32), 16, 16)  # un champ uni le reste
-        self.assertTrue(np.allclose(flow, 1.0))
+        with self.assertRaises(SystemExit):
+            scintillement.run(refs, {"vive": outs["vive"][1:], "calme": outs["calme"]}, flux, chunk=10)
+        self.assertTrue(scintillement.run(refs, {"vive": outs["vive"][:-1], "calme": outs["calme"]}, flux,
+                                          chunk=10)[1]["inegales"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = os.path.join(tmp, "nvof_dump")
+            with open(tool, "w", encoding="utf-8") as f:
+                f.write(f"#!{sys.executable}\nimport sys\nimport numpy as np\nfor line in sys.stdin:\n"
+                        "    w, h, a, b, o = line.rstrip('\\n').split('\\t')\n"
+                        "    n = (int(w) + 3) // 4 * ((int(h) + 3) // 4)\n"
+                        "    v = np.zeros((2, n, 2), np.int16)\n    v[0, :, 0], v[1, :, 0] = -3 * 32, 3 * 32\n"
+                        "    v.tofile(o)\n    print('ok ' + o)\n")
+            os.chmod(tool, 0o755)
+            pairs = scintillement.flux_nvof(tool)(refs[:4])
+        for k, al in enumerate(pairs):
+            ra, rb = al.pair(scintillement.luma(refs[k]), scintillement.luma(refs[k + 1]))
+            self.assertLess(float(np.abs(ra - rb)[al.inside].max()), 1.0)
+            self.assertGreater(float(al.inside.mean()), 0.9)
+        f = np.array([[[0.0, 10.0, 20.0]]], np.float32)  # trois blocs de 4 sur 10 pixels : centres en 1,5 et 5,5
+        self.assertTrue(np.allclose(scintillement.scale(f, 10, 1, 4)[0, 0, [1, 2, 5, 6]], [0, 1.25, 8.75, 11.25]))
 
 
 if __name__ == "__main__":

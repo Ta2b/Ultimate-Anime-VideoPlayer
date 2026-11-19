@@ -383,25 +383,44 @@ par plan. C'est l'outil 0.1 du guide d'implémentation : les lots A, B et C, Tem
 qui bougent passent leur porte de stabilité avec lui.
 
 ```sh
-# deux exports du même passage (export-lossless, même --start et --seconds), sans puis avec TemporalFix
+# un extrait de l'épisode (l'export porte sur toute la vidéo ouverte), copié sans réencodage
+ffmpeg -ss 600 -i episode.mkv -t 40 -map 0:v:0 -c copy extrait.mkv
+# deux exports sans perte de cet extrait, interpolation coupée, sans puis avec TemporalFix (play.toml) ;
+# l'export porte sur tout l'extrait, puis la lecture reprend : fermer le lecteur
+kirari --mute --keys=1:export-lossless=sans_tf.mkv extrait.mkv
+kirari --mute --keys=1:export-lossless=avec_tf.mkv extrait.mkv
 python3 -I tools/bench/qualite/scintillement.py sans_tf.mkv avec_tf.mkv --source extrait.mkv \
     --flux nvof --nvof-dump build/nvof_dump/nvof_dump --porte 0.9 --md scintillement.md --json scintillement.json
-# sans carte NVIDIA : le flux de RIFE sur processeur
+# sans carte NVIDIA : le flux de RIFE 4.25 (11 plans) sur processeur
 python3 -I tools/bench/qualite/scintillement.py sans_tf.mkv avec_tf.mkv --source extrait.mkv \
     --flux rife --rife ~/.cache/kirari-release-models/modeles/rife/rife_v4.25.onnx
 ```
 
-- Pour chaque paire N, N+1, un flux déplace les images l'une sur l'autre : NVOF (`tools/nvof_interp/nvof_dump`, le
-  flux arrière, l'aller servant à la cohérence) ou RIFE (ses deux flux vers le milieu de la paire, estimés à 720p).
+- Les sorties doivent être les images de la source, une pour une : l'outil refuse une sortie d'une autre cadence
+  (interpolation restée allumée) ou décalée d'images (`--source-debut` si l'extrait commence plus tôt), et le
+  rapport signale des longueurs différentes (seul le début commun est mesuré).
+- Pour chaque paire N, N+1, un flux recale les images : NVOF (`tools/nvof_interp/nvof_dump`, le flux arrière,
+  l'aller servant à la cohérence) ou RIFE (ses deux flux vers le milieu de la paire, estimés à 720p). Les deux images
+  font chacune la moitié du chemin vers le milieu : le flou du rééchantillonnage est le même des deux côtés.
+- Une translation d'ensemble sous-pixel corrige ensuite le flux sur la source (Lucas-Kanade global). RIFE ne voit pas
+  un mouvement de moins d'un pixel par image (0,7 px rendu 0,01 px) et NVOF s'arrête au quart de pixel : sur un
+  panoramique lent, le reste du décalage compterait comme du scintillement. Mesuré sur un panoramique de synthèse
+  par RIFE : une sortie sans aucun bruit marquait 3,6 niveaux sans la correction, 1,1 avec.
 - Le flux vient de la source, jamais d'une sortie, et le même sert à toutes : sinon il favoriserait celle d'où il
   vient. Il n'est retenu que là où il recale la source elle-même (écart flouté sous `--seuil`, 10 niveaux), où il ne
   lit pas hors de l'image et, avec NVOF, où l'aller et le retour s'annulent.
 - Une paire dont moins de 30 % de l'image est sûre est une coupe : elle est exclue et ouvre un nouveau plan. Une paire
   dont la luminance moyenne recalée change de plus de `--fondu` (0,75 niveau) est un fondu ou un éclair : exclue.
-- Le score d'une sortie est l'écart moyen de luminance (niveaux 8 bits) entre ses deux images recalées. Le grain et
-  la compression de la source y sont pour toutes pareil : on ne lit que l'écart entre sorties, jamais un score seul.
+- Le score d'une sortie est l'écart moyen de luminance (niveaux 8 bits, lus en 16 bits : un export 10 bits garde ses
+  quarts de niveau) entre ses deux images recalées. Le grain et la compression de la source y sont pour toutes
+  pareil : on ne lit que l'écart entre sorties, jamais un score seul.
 - Le rapport est par plan (un plan d'au moins `--plan-min` paires, 8), jamais une moyenne de la vidéo. `--porte F`
   sort en erreur si la dernière sortie n'est pas devant la première sur au moins F des plans.
+
+Limite : un détail très fin qui bouge d'une fraction de pixel ne se rééchantillonne pas sans perte, même des deux
+côtés. Une sortie plus nette garde donc un petit handicap sur les plans qui bougent ; sur les dessins tenus (flux nul)
+la mesure est exacte. Comparer des sorties de même netteté (SPAN contre SPAN avec TemporalFix) ; la mesure se fait en
+1920 × 1080 par défaut (`--taille`), une sortie 4K y est réduite par moyenne de surface.
 
 Porte de l'outil lui-même : sur un extrait connu pour scintiller, SPAN sans TemporalFix contre le même avec, il doit
 classer TemporalFix devant sur au moins 9 plans sur 10 (`--porte 0.9`). Sinon c'est l'outil qui est faux.
