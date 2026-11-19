@@ -3,8 +3,8 @@
 // lire, chaque ligne d'entrée n'est chargée qu'une fois par colonne de bandes. Puis le noyau rejoué sur
 // l'hôte, ses adresses en éléments comme en mémoire partagée (un anneau rempli de NaN au départ), ses sommes
 // arrondies en FP16 dans l'ordre des noyaux : sa sortie est celle de la tuile d'une seule tranche
-// (conv_kernel), au bit près, en sommes f16, mixtes et f32, avec ou sans PReLU de l'entrée, résiduel et
-// activation, sur des bords d'image, des bandes et des colonnes de bandes incomplètes.
+// (conv_kernel), au bit près, en sommes f16 et mixtes (les noyaux en flux construits), avec ou sans PReLU de
+// l'entrée, résiduel et activation, sur des bords d'image, des bandes et des colonnes de bandes incomplètes.
 #include "gpu/cuda/backend/conv_stream.h"
 
 #include <algorithm>
@@ -99,7 +99,7 @@ TEST_CASE("Flux : les bandes à essayer", "[gpu][conv_stream]") {
 
 // Le noyau rejoué : sommes comme les noyaux du RIFE natif (rife_native_kernels.cuh), un mma de 16 produits
 // sommés en f32 puis ajoutés à l'accumulateur.
-enum class Sums { kF16, kMixed, kF32 };
+enum class Sums { kF16, kMixed };
 
 float h16(float v) {
   constexpr float kMax = 65504.F;
@@ -152,10 +152,8 @@ float sum_of(const Problem& p, int n, Read read) {
       for (int c = c0; c < c0 + 16; ++c) d += read(tap, c) * p.w[nhwc(n, tap, c, 9, p.cin)];
       if (p.sums == Sums::kF16)
         acc = h16(acc + d);
-      else if (p.sums == Sums::kMixed)
-        part = h16(part + d);
       else
-        acc += d;
+        part = h16(part + d);
     }
     acc += part;
   }

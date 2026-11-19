@@ -60,8 +60,9 @@ constexpr int strips_for(int tiles, int bands) {
 }
 
 // Les bandes par bloc à essayer au réglage : une, deux ou quatre vagues de deux blocs par multiprocesseur
-// (la mémoire partagée de l'anneau en laisse deux), sur une grille de tiles_x × tiles_y bandes et z tuiles de
-// sortie ; deux bandes au moins (une seule ne recouvre rien).
+// (la mémoire partagée de l'anneau en laisse deux, un seul sur sm_75 : des vagues deux fois plus nombreuses),
+// sur une grille de tiles_x × tiles_y bandes et z tuiles de sortie ; deux bandes au moins (une seule ne
+// recouvre rien).
 inline std::vector<int> band_counts(int tiles_x, int tiles_y, int z, int sms) {
   std::vector<int> out;
   const long columns = static_cast<long>(tiles_x) * z;

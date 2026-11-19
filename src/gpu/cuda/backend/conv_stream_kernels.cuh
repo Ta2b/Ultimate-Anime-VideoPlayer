@@ -8,8 +8,9 @@
 // dans le même ordre (prise, puis pas de 16 canaux, poids du pas suivant chargés pendant les mma du courant),
 // avec le même PReLU à la lecture, le même biais arrondi en FP16 et la même fin (finish8) : la sortie est
 // celle de cette forme, au bit près. Seules changent les adresses en mémoire partagée (les lignes de
-// l'anneau) et le moment des chargements. Sur sm_75, cp_async16 copie sans attendre : la forme reste juste,
-// sans recouvrement.
+// l'anneau) et le moment des chargements. Sur sm_75, cp_async16 lit puis écrit la mémoire partagée, et
+// l'anneau n'y laisse qu'un bloc par multiprocesseur (64 Ko) : la forme y reste juste, sans recouvrement ni
+// second bloc, et le banc la juge comme ailleurs.
 #include <cstdint>
 #include <cuda_fp16.h>
 
