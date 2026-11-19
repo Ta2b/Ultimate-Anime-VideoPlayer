@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(tuiles_rejeu LANGUAGES CXX)
 set(KIRARI_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../../../src")
-add_executable(tuiles_rejeu tuiles_rejeu.cpp
+add_executable(tuiles_rejeu tuiles_rejeu.cpp ancre_tuiles.cpp
                "${KIRARI_SRC}/app/play/upscale_tiles.cpp" "${KIRARI_SRC}/app/play/upscale_reuse.cpp"
                "${KIRARI_SRC}/kernels/ref/scene_flow.cpp" "${KIRARI_SRC}/kernels/ref/scene_camera.cpp"
                "${KIRARI_SRC}/kernels/ref/scene_fit.cpp" "${KIRARI_SRC}/kernels/ref/color.cpp"

@@ -2,6 +2,7 @@
 // processeur (CMakeLists.txt à côté ; docs/tuiles-span.md, « Rejeu sur processeur »).
 //
 //   tuiles_rejeu [--diviseur D] [--blocs N] [--debande] [--sans-reprise] [--detail] [--dossier DOSSIER]
+//                [--ancre-composee | --somme-des-paires | --somme-bornee [--seuil C] [--masques DOSSIER]]
 //                < tâches
 //
 // Les tâches de carte_rejeu, d'un seul extrait : une paire voisine par ligne, dans l'ordre de lecture,
@@ -25,8 +26,17 @@
 // : SORTE C (calculée entière), R (reprise entière), T (par tuiles) ; TUILES 1 si par tuiles ; SX SY le
 // décalage de la sortie d'avant ; CŒUR sur TOTAL les tuiles recalculées ; AJUSTÉE 1 si la carte a une caméra
 // ; CX CY son déplacement au centre de l'image (pixels de travail) ; PAIRE le pire bloc de la paire
-// (niveaux). Puis les deux lignes du journal de fin du lecteur, « SPAN repris : … » et « SPAN par tuiles :
-// … ».
+// (niveaux) ; avec --ancre-composee, la sorte et le cœur de l'essai. Puis les deux lignes du journal de fin
+// du lecteur, « SPAN repris : … » et « SPAN par tuiles : … », ce que le corps de SPAN a calculé (sa part
+// d'une image entière à chaque image), et la ligne de l'essai.
+//
+// --ancre-composee : à côté du lecteur, l'essai d'ancre_tuiles.h, les tuiles décidées sur l'écart des pixels
+// à l'image composée de ce qui a produit la sortie, sans NVOF ; C : le seuil d'un bloc, centièmes de niveau
+// (70, celui du lot A, par défaut). --somme-des-paires, --somme-bornee : ses variantes qui majorent l'écart
+// sans image composée, par la somme des paires, resserrée ou non par l'écart à la dernière image calculée.
+// --masques : pour chaque image K, K.coeur dans DOSSIER, les tuiles que
+// l'essai a calculées (un octet par tuile, ligne par ligne ; toutes pour une image entière, aucune pour une
+// reprise), que tuiles_controle.py rejoue contre un réseau 2×.
 //
 // Écarts au lecteur : la mesure de la paire lit ici la luma du flux, réduite d'un facteur D par moyenne de
 // surface, et non le RGB de travail ou la copie de RIFE : le grain s'y moyenne, une paire y paraît un peu
@@ -41,6 +51,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -50,6 +61,7 @@
 #include <string_view>
 #include <vector>
 
+#include "ancre_tuiles.h"
 #include "app/play/upscale_reuse.h"
 #include "kernels/ref/deband.h"
 #include "kernels/ref/scene_camera.h"
@@ -68,7 +80,11 @@ struct Options {
   bool debanded = false;
   bool reuse = true;
   bool detail = false;
-  std::string folder;  // non vide : chaque fichier d'une tâche se cherche là, par son nom
+  std::string folder;     // non vide : chaque fichier d'une tâche se cherche là, par son nom
+  bool composed = false;  // --ancre-composee : l'essai d'ancre_tuiles.h, à côté du lecteur
+  bench::Bound bound = bench::Bound::Composed;  // --somme-des-paires, --somme-bornee : ses variantes
+  std::string masks;  // --masques : où écrire les tuiles calculées par l'essai, image par image
+  int threshold = static_cast<int>(kHeldThreshold);  // --seuil, centièmes de niveau
 };
 
 bool read_all(const std::string& path, std::span<std::byte> out) {
@@ -91,38 +107,6 @@ SpanTileGrid native_grid(int work_w, int work_h, int blocks) {
                       .reach_rows = span_reach_tiles(reach, kTh),
                       .shift_step = 2,
                       .scale = 2};
-}
-
-// La mesure d'une paire de lumas (spec/detect.h) : l'écart de chaque bloc de side pixels, tronqué aux bords,
-// en 1/256 de niveau (des codes 8 bits de la plage de la source : 256 par code), et le pire.
-struct Measure {
-  std::vector<std::uint32_t> deviation;
-  std::uint32_t cols = 0;
-  std::uint32_t worst = 0;
-};
-
-Measure measure(const Plane<std::uint8_t>& a, const Plane<std::uint8_t>& b, int side) {
-  Measure m;
-  const int cols = (a.width + side - 1) / side, rows = (a.height + side - 1) / side;
-  m.cols = static_cast<std::uint32_t>(cols);
-  m.deviation.assign(static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows), 0U);
-  for (int by = 0; by < rows; ++by) {
-    for (int bx = 0; bx < cols; ++bx) {
-      std::uint64_t sum = 0, n = 0;
-      for (int y = by * side; y < std::min(a.height, (by + 1) * side); ++y) {
-        for (int x = bx * side; x < std::min(a.width, (bx + 1) * side); ++x) {
-          sum +=
-              static_cast<std::uint64_t>(std::abs(int{a.data[a.index(x, y)]} - int{b.data[b.index(x, y)]}));
-          ++n;
-        }
-      }
-      const auto dev = static_cast<std::uint32_t>(sum * 256U / n);
-      m.deviation[static_cast<std::size_t>(by) * static_cast<std::size_t>(cols) +
-                  static_cast<std::size_t>(bx)] = dev;
-      m.worst = std::max(m.worst, dev);
-    }
-  }
-  return m;
 }
 
 // La carte de la paire comme app/play/scene_map.cpp : caméra ajustée sur les vecteurs, affinée sur les
@@ -178,7 +162,7 @@ class Replay {
     const std::optional<SceneMotion> scene = scene_of(a, b, flow_path, options_.divisor, history_);
     if (!scene) return false;
     clear_next_ = scene->cut_likely;
-    const Measure paired = measure(a, b, side_);
+    const bench::BlockGap paired = bench::block_gap(a, b, side_);
     reuse_.note_pair(paired.worst);
     app::play::ReuseFacts facts;
     facts.same_epoch = true;
@@ -190,21 +174,29 @@ class Replay {
     facts.spread_px = options_.debanded ? kDebandSpread : 0;
     facts.input_key = kInputKey;
     facts.blocks = app::play::PairBlocks{.deviation = paired.deviation,
-                                         .cols = paired.cols,
+                                         .cols = static_cast<std::uint32_t>(paired.cols),
                                          .side_px = static_cast<float>(side_ * options_.divisor)};
-    Measure gap;
-    if (reuse_.in_row() > 0) {  // la première reprise d'une série lit la paire, les suivantes l'ancre
-      gap = measure(anchor_, b, side_);
-      facts.anchor = app::play::AnchorGap{.worst_block = gap.worst};
-    }
+    if (reuse_.in_row() > 0)  // la première reprise d'une série lit la paire, les suivantes l'ancre
+      facts.anchor = app::play::AnchorGap{.worst_block = bench::block_gap(anchor_, b, side_).worst};
     const app::play::ReuseKind kind = reuse_.decide(facts);
     if (kind != app::play::ReuseKind::Whole) anchor_ = b;
-    print(kind, *scene, paired.worst);
+    count(kind);
+    const char composed = composed_ ? composed_->next(b, *scene) : ' ';
+    if (composed_ && !options_.masks.empty() && !write_mask(composed_->last_core())) return false;
+    print(kind, *scene, paired.worst, composed);
     ++frame_;
     return true;
   }
 
-  void finish() const { std::cout << reuse_.summary() << "\n" << reuse_.tiles.summary() << "\n"; }
+  void finish() const {
+    const auto count = static_cast<double>(reuse_.tiles.grid().count());
+    std::cout << reuse_.summary() << "\n"
+              << reuse_.tiles.summary() << "\n"
+              << std::format("Corps de SPAN du lecteur : {:.1f} % du calcul de chaque image entière",
+                             100.0 * static_cast<double>(body_) / (count * static_cast<double>(frame_ - 1)))
+              << "\n";
+    if (composed_) std::cout << composed_->summary() << "\n";
+  }
 
  private:
   static constexpr std::uint64_t kInputKey = 1;  // une seule recette de l'entrée de SPAN
@@ -224,9 +216,32 @@ class Replay {
     reuse_.decide(facts);
     anchor_ = first;
     frame_ = 1;
+    if (options_.composed)
+      composed_.emplace(reuse_.tiles.grid(), options_.divisor, side_, facts.spread_px,
+                        static_cast<std::uint32_t>(options_.threshold), options_.bound, first);
   }
 
-  void print(app::play::ReuseKind kind, const SceneMotion& scene, std::uint32_t worst) const {
+  // K.coeur : les tuiles que l'essai a calculées pour l'image K, ligne par ligne, un octet chacune.
+  bool write_mask(const std::vector<std::uint8_t>& core) const {
+    const std::filesystem::path path =
+        std::filesystem::path(options_.masks) / std::format("{}.coeur", frame_);
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(core.data()), static_cast<std::streamsize>(core.size()));
+    if (out) return true;
+    std::cerr << "tuiles_rejeu : écriture impossible : " << path.string() << "\n";
+    return false;
+  }
+
+  // Le corps de SPAN calcule l'image entière, ou la région dilatée du halo d'une image par tuiles.
+  void count(app::play::ReuseKind kind) {
+    const SpanTileGrid& g = reuse_.tiles.grid();
+    if (kind == app::play::ReuseKind::Compute) body_ += static_cast<std::uint64_t>(g.count());
+    if (kind == app::play::ReuseKind::Tiles)
+      body_ += static_cast<std::uint64_t>(count_span_tiles(
+          dilate_span_tiles(reuse_.tile_plan.core, g.cols, g.rows, g.reach_cols, g.reach_rows)));
+  }
+
+  void print(app::play::ReuseKind kind, const SceneMotion& scene, std::uint32_t worst, char composed) const {
     if (!options_.detail) return;
     const auto& c = scene.camera;
     const double x = work_w_ / 2.0, y = work_h_ / 2.0;
@@ -240,13 +255,17 @@ class Replay {
     std::cout << "image " << frame_ << ' ' << sort << ' ' << int{plan.tiled} << ' ' << plan.shift_x << ' '
               << plan.shift_y << ' ' << (kind == app::play::ReuseKind::Whole ? 0 : core) << ' ' << total
               << ' ' << int{scene.camera_fit} << ' ' << cx << ' ' << cy << ' '
-              << static_cast<double>(worst) / 256.0 << "\n";
+              << static_cast<double>(worst) / 256.0;
+    if (composed_) std::cout << ' ' << composed << ' ' << count_span_tiles(composed_->last_core());
+    std::cout << "\n";
   }
 
   Options options_;
   app::play::SpanReuse reuse_;
   ref::SceneHistory history_;
   Plane<std::uint8_t> anchor_;
+  std::optional<bench::AnchorTiles> composed_;
+  std::uint64_t body_ = 0;  // tuiles calculées par le corps de SPAN, images après la première
   bool started_ = false;
   bool clear_next_ = false;
   int work_w_ = 0;
@@ -273,6 +292,19 @@ bool parse(int argc, char** argv, Options& options) {
     } else if (arg == "--diviseur" && parse_int(value, options.divisor) && options.divisor >= 1) {
       ++i;
     } else if (arg == "--blocs" && parse_int(value, options.blocks) && options.blocks >= 1) {
+      ++i;
+    } else if (arg == "--ancre-composee") {
+      options.composed = true;
+    } else if (arg == "--somme-des-paires") {
+      options.composed = true;
+      options.bound = bench::Bound::Summed;
+    } else if (arg == "--somme-bornee") {
+      options.composed = true;
+      options.bound = bench::Bound::Anchored;
+    } else if (arg == "--seuil" && parse_int(value, options.threshold) && options.threshold >= 0) {
+      ++i;
+    } else if (arg == "--masques" && !value.empty()) {
+      options.masks = value;
       ++i;
     } else if (arg == "--dossier" && !value.empty()) {
       options.folder = value;
