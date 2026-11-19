@@ -20,6 +20,7 @@
 #include "media/face_skin.h"
 #include "media/flash_guard.h"
 #include "media/log.h"
+#include "media/probe_flow.h"
 #include "media/shot_probe_steps.h"
 #include "media/shot_rhythm.h"
 #include "media/video_decoder.h"
@@ -33,13 +34,27 @@ namespace {
 // la lecture en ait montré une seconde.
 class Analysis {
  public:
-  Analysis(ShotTimeline& timeline, double flash_gain, bool starts_at_cut)
-      : timeline_(timeline), cutter_(starts_at_cut) {
+  // flow : le flux optique de NVIDIA (media/probe_flow.h) ; sans carte NVIDIA, l'analyse comme avant.
+  Analysis(ShotTimeline& timeline, double flash_gain, bool starts_at_cut, bool flow)
+      : timeline_(timeline), cutter_(starts_at_cut), flow_(flow ? ProbeFlow::open() : nullptr) {
     flashes_.set_gain(flash_gain);
   }
-  // luma : la grille de l'image (measure_frame), pour son rythme contre la précédente (media/shot_rhythm.h).
+  // La mesure de l'image décodée frame, avec son mouvement face à la précédente (le flux) et la luma de sa
+  // grille (luma), pour le rythme du plan (media/shot_rhythm.h).
+  std::expected<ShotFrame, Refusal> measure(const DecodedFrame& frame, std::vector<float>& luma) {
+    auto measured = measure_frame(frame, &luma);
+    if (measured && flow_) measured->motion = flow_->push(frame);
+    return measured;
+  }
   void push(ShotFrame frame, std::vector<float> luma) {
     frame.rhythm = rhythm_.push(std::move(luma), kernels::frame_stats::kGridW, kernels::frame_stats::kGridH);
+    if (frame.rhythm && frame.motion) {
+      const ProbeMotion& m = *frame.motion;
+      frame.rhythm = with_flow(
+          *frame.rhythm,
+          {.shift_x = m.shift_x, .shift_y = m.shift_y, .residual = m.residual, .unmatched = m.unmatched},
+          kProbeFlowHeight);
+    }
     if (flashes_.push(frame.pts_us, zone_nits_of(frame))) {
       if (const auto from = flashes_.danger_from())
         timeline_.add_flash({.from_us = *from, .until_us = flashes_.limited_until()});
@@ -48,13 +63,14 @@ class Analysis {
   }
   // Le plan en cours est clos à end_us.
   void finish(std::int64_t end_us) {
-    if (auto shot = cutter_.finish(end_us)) timeline_.add(*shot);
+    for (const Shot& shot : cutter_.finish(end_us)) timeline_.add(shot);
   }
   // Un nouveau découpage : son premier plan n'a de vraie coupe devant lui qu'au début de la vidéo.
   void restart(bool starts_at_cut) {
     cutter_ = ShotCutter(starts_at_cut);
     flashes_.reset();
     rhythm_.reset();
+    if (flow_) flow_->forget();
   }
 
  private:
@@ -62,6 +78,7 @@ class Analysis {
   ShotCutter cutter_;
   FlashGuard flashes_;
   RhythmProbe rhythm_;
+  std::unique_ptr<ProbeFlow> flow_;
 };
 
 }  // namespace
@@ -340,7 +357,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
 
   // Repart de at_us : le plan en cours est clos là, un nouveau découpage commence (son premier plan n'a pas
   // de vraie coupe devant lui).
-  Analysis analysis(*timeline, options.flash_gain, start_us <= 0);
+  Analysis analysis(*timeline, options.flash_gain, start_us <= 0, options.flow);
   std::int64_t last_pts = start_us;
   std::int64_t last_duration = 0;
   // B42-04 : l'instant de la première image d'un découpage parti du début va à la chronologie.
@@ -406,7 +423,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       const DecodedFrame& frame = **received;
       if (frame.pts_us == kNoPts) continue;
       std::vector<float> luma;
-      auto measured = measure_frame(frame, &luma);
+      auto measured = analysis.measure(frame, luma);
       if (!measured) return fail(std::move(measured.error()));
       if (from_origin) {
         timeline->set_origin_us(frame.pts_us);

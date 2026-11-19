@@ -46,6 +46,8 @@ struct ShotProbeOptions {
   // --probe-nvdec (8.8) : les images décodées par NVDEC à cette taille (DecoderOptions::cuvid_resize) ;
   // vide : le décodeur logiciel en pleine taille.
   std::string cuvid_resize;
+  // Le flux optique de NVIDIA départage les coupes (media/probe_flow.h) ; sans carte NVIDIA, rien ne change.
+  bool flow = true;
   // La peau des visages (media/face_skin.h, option face_skin) : chaque plan garde la palette de ses visages.
   bool faces = false;
   // Ce que le grade fait à la lumière de la source, pour les séquences de flashs que l'analyse marque dans la
