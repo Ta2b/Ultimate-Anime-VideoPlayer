@@ -25,13 +25,16 @@ namespace kirari::app::play {
 enum class LayerSkip : std::uint8_t {
   NoMap,     // pas de carte : AMD, Intel, Turing, NVOF refusé, pas encore relue
   NoCamera,  // la carte n'a pas pu ajuster de caméra
+  // Caméra de NVOF seule : Lucas-Kanade ne l'a pas affinée (fini trop tard, pas lancé, refusé). Sur un
+  // panoramique lent, elle invente un cisaillement d'environ 2 pixels (spec/scene_camera.h).
+  Unrefined,
   Cut,       // coupe probable ou fondu
   Residual,  // le décor s'écarte du modèle de caméra au-delà de kLayerResidualMax (porte 2.1)
   Warp,      // mouvement qui ne s'inverse pas (zoom extrême)
   FewTiles,  // trop peu de décor sûr pour qu'il y ait quelque chose à gagner
   Grid,      // grille plus grande que kernels::kLayerMaxCols × kLayerMaxRows
 };
-inline constexpr std::size_t kLayerSkipCount = 7;
+inline constexpr std::size_t kLayerSkipCount = 8;
 std::string_view name(LayerSkip skip);
 
 // Seuils (non mesurés, réglés à l'essai de la fin) :
