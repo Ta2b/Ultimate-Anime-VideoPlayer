@@ -348,10 +348,20 @@ __device__ __forceinline__ void finish(rn::Frag<Acc::kF32> (&o)[2 * kPairs], con
   }
 }
 
+// Deux blocs par multiprocesseur sur sm_120 : sans ce plancher, ptxas de CUDA 13.4 y vise trois blocs (168
+// registres) et déborde de 16 octets ; avec, 254 registres et rien en mémoire locale. Les autres
+// architectures tiennent sans débordement à leur propre choix, qu'un plancher explicite changerait (même à un
+// bloc, ptxas monte alors à 254 registres).
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 1200
+#define KIRARI_GMFLOW_ATTN_BOUNDS __launch_bounds__(kThreads, 2)
+#else
+#define KIRARI_GMFLOW_ATTN_BOUNDS __launch_bounds__(kThreads)
+#endif
+
 // L'attention d'une couche : blockIdx.x les 64 requêtes, blockIdx.y la fenêtre, blockIdx.z le lot. Mémoire
 // partagée dynamique : kSmemBytes.
 template <Acc A>
-__global__ void __launch_bounds__(kThreads) attention_kernel(AttnParams p) {
+__global__ void KIRARI_GMFLOW_ATTN_BOUNDS attention_kernel(AttnParams p) {
   extern __shared__ __align__(16) unsigned char smem_raw[];
   auto* sk = reinterpret_cast<__half*>(smem_raw);
   __half* sv = sk + kRows * kLds;
