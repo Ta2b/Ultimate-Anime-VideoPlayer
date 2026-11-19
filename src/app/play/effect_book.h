@@ -61,6 +61,38 @@ class EffectBook {
   std::size_t next_ = 0;
 };
 
+// Ce que le masque a fait sur une lecture, pour le journal de fin (placebo_grade.cpp, effect_tally_line) :
+// qu'il agit, et où le voir à l'œil. Un moment marqué est une image où une part au moins de kTallyEffectShare
+// des tuiles est un effet sûr (masque au-dessus de 0,9) ; son score est la part de la marge des éclats
+// retenue ailleurs, la moyenne de 1 − masque. Les trois meilleurs sont gardés, à 10 s l'un de l'autre au
+// moins.
+class EffectTally {
+ public:
+  static constexpr double kTallyEffectShare = 0.02;
+  static constexpr std::int64_t kTallySpacingUs = 10'000'000;
+  struct Moment {
+    std::int64_t pts_us = 0;
+    double held = 0.0;  // la part retenue, de 0 à 1
+  };
+  // Une image gradée (pts_us, kNoPts : inconnu) : avec une note de la carte ou non, le masque posé ou non.
+  void count(bool noted, bool on, const render::EffectMask& mask, std::int64_t pts_us);
+  std::uint64_t images() const { return images_; }
+  std::uint64_t noted() const { return noted_; }
+  std::uint64_t masked() const { return masked_; }
+  // La part retenue moyenne des images masquées, de 0 à 1.
+  double held() const { return masked_ > 0 ? held_sum_ / static_cast<double>(masked_) : 0.0; }
+  // Les moments marqués, du plus fort au plus faible (held > 0).
+  const std::array<Moment, 3>& moments() const { return moments_; }
+
+ private:
+  void keep(Moment moment);
+  std::uint64_t images_ = 0;
+  std::uint64_t noted_ = 0;
+  std::uint64_t masked_ = 0;
+  double held_sum_ = 0.0;
+  std::array<Moment, 3> moments_{};
+};
+
 // Le masque lissé de l'écran (main, show), ou du grade avant le warp (gpu, source), nourri une fois par
 // paire. Une image sans note (pas de carte, pas encore relue, autre époque) fait revenir le masque vers le
 // neutre.
