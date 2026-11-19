@@ -34,9 +34,11 @@
 //     (une coupe ou un fondu y passent), à chaque image abîmée, saut ou changement d'époque, sans mesure des
 //     blocs ou quand sa géométrie change, et quand l'entrée de SPAN change de recette (débandage, filtre de
 //     réduction) ;
-//   - après une image par tuiles, la sortie mêle des tuiles d'images différentes : la reprise entière du lot
-//     A n'a lieu que si chaque bloc reste aussi au seuil, aucune tuile au-delà de kMaxAge et l'image entière
-//     pas encore due (holds).
+//   - après une image par tuiles, la sortie mêle des tuiles d'images différentes ; la reprise entière du lot
+//     A n'en dépend pas (le lot A ne perd aucune série) : chaque tuile y vieillit et chaque bloc y reçoit son
+//     écart, et la prochaine image calculée recalcule ce qui a passé le seuil ou kMaxAge, ou se calcule
+//     entière si kFullEvery est dû. Contrôle sur processeur avec le vrai SPAN (docs/tuiles-span.md) : ces
+//     reprises restent au pire bloc des images par tuiles.
 #pragma once
 
 #include <array>
@@ -114,12 +116,8 @@ class SpanTiles {
   bool active() const { return enabled && grid_.usable(); }
   // L'image se calcule : entière ou par tuiles. Met à jour l'état des tuiles comme si le plan était suivi.
   TilePlan plan(const TileFacts& facts);
-  // La reprise entière du lot A garde-t-elle chaque bloc au seuil ? Toujours vrai tant que la sortie est
-  // celle d'un calcul complet ; après une image par tuiles, chaque bloc avec la paire de l'image (ou l'écart
-  // à l'ancre, gap), et ni kMaxAge ni kFullEvery dépassés.
-  bool holds(const PairBlocks& blocks, const PairBlocks& gap) const;
   // L'image reprend la sortie d'avant entière (lot A) : chaque tuile vieillit et chaque bloc reçoit l'écart
-  // de la paire, resserré par l'écart à l'ancre ; sans mesure, l'état ne suit plus (la prochaine image
+  // de la paire, resserré par l'écart à l'ancre (gap) ; sans mesure, l'état ne suit plus (la prochaine image
   // calculée est entière).
   void held(const PairBlocks& blocks, const PairBlocks& gap);
   // Le moteur a refusé les tuiles (next_span_tiles faux) : l'image est entière.
@@ -172,7 +170,6 @@ class SpanTiles {
   int since_full_ = 0;
   bool known_ = false;           // l'état des tuiles suit la sortie d'avant
   bool unmeasured_ = false;      // il ne la suit plus faute de mesure (held sans blocs) : au bilan
-  bool mixed_ = false;           // la sortie mêle des tuiles calculées à des images différentes
   std::uint64_t input_key_ = 0;  // la recette de l'entrée de la dernière image calculée
   Counted last_;                 // la dernière image par tuiles, pour refused()
   // Bilan.

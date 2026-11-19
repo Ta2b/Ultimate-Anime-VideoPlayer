@@ -41,8 +41,8 @@ copie), sortie d'avant écrasée (image créée par-dessus, source sautée), cha
 TemporalFix, Smooth, plaque), début, saut ou image abîmée, entrée de SPAN changée, rafraîchissement. La région
 trop large dit ce qui la remplissait : part des tuiles en cause et de la région une fois les deux portées
 ajoutées, puis la part des blocs et de l'âge. Sur un moteur sans grille, la ligne le dit ; le démarrage donne
-la grille. La ligne « SPAN repris » compte à part les « arrêts aux tuiles » : paire et ancre tenues, mais la
-reprise entière aurait passé le seuil d'un bloc d'une sortie faite par tuiles (plus bas).
+la grille. Les tuiles n'arrêtent aucune série du lot A : la ligne « SPAN repris » est celle de
+`--no-span-tiles` (plus bas, « lot A d'abord »).
 
 ## Comment
 
@@ -82,11 +82,14 @@ reprise entière aurait passé le seuil d'un bloc d'une sortie faite par tuiles 
   de suite se recalcule. L'image entière se recalcule toutes les 120 images, à chaque saut, image abîmée ou
   paire sans mesure, quand la recette de l'entrée de SPAN change (débandage, filtre de réduction) et quand la
   région dépasse 70 % de l'image (une coupe et un fondu y passent).
-- **Reprise entière après une image par tuiles** : la sortie mêle alors des tuiles calculées à des images
-  différentes, et l'écart à l'ancre du lot A ne mesure que la dernière. La reprise entière demande aussi que
-  chaque bloc reste au seuil avec la paire de l'image, qu'aucune tuile ne passe 24 images reprises et que
-  l'image entière des 120 ne soit pas due (`SpanTiles::holds`). Une reprise imposée (copie d'une
-  tenue fondue, Smooth) ne mesure pas les blocs : la prochaine image calculée est entière.
+- **Reprise entière après une image par tuiles** (lot A d'abord) : la sortie mêle alors des tuiles calculées à
+  des images différentes, et l'écart à l'ancre du lot A ne mesure que la dernière. La reprise entière suit
+  quand même la seule règle du lot A, sans garde des blocs : les tuiles s'ajoutent à ses séries sans en
+  arrêter aucune. Chaque reprise vieillit chaque tuile et donne son écart à chaque bloc (`SpanTiles::held`) ;
+  la prochaine image calculée recalcule ce qui a passé le seuil ou 24 images, ou se calcule entière si
+  l'image des 120 est due. Le contrôle avec le vrai SPAN tient ces reprises au pire bloc des images par
+  tuiles (plus bas). Une reprise imposée (copie d'une tenue fondue, Smooth) ne mesure pas les blocs : la
+  prochaine image calculée est entière.
 - **Ce que la règle voit** : un glissement sur un bord net (0,025 pixel y fait déjà 0,85 niveau au pire bloc,
   plus bas), une bouche, un clignement, une lueur ou un fondu local qui s'additionnent ; un aplat qui glisse
   ne coûte rien, sa sortie ne bouge pas non plus. Le grain s'additionne lui aussi : la majoration est
@@ -234,26 +237,37 @@ l'écart à l'ancre bloc par bloc (moins d'arrêts du lot A) et les sorties exac
 haut). Rejeu, coût de SPAN (corps, plus 6 % d'une image entière par image par tuiles ; `tuiles_rejeu` l'écrit,
 `--sans-tuiles` donne le lot A seul) :
 
-| extrait | lot A seul | tuiles (#962) | règle revue | arrêts du lot A (#962, revue) |
-|---|---|---|---|---|
-| Re:Zero, panoramique3 | 86,8 % | 55,0 % | 53,5 % | 8, 5 |
-| Re:Zero, panoramique | 57,2 % | 45,6 % | 44,9 % | 10, 6 |
-| Re:Zero, panoramique2 | 69,2 % | 58,2 % | 57,9 % | 4, 3 |
-| Re:Zero, panoramique4 | 69,8 % | 58,0 % | 57,4 % | 5, 3 |
-| Re:Zero, aura | 77,4 % | 68,4 % | 67,1 % | 6, 5 |
-| Spy×Family 13:16, panoramique6 | 95,0 % | 77,3 % | 76,3 % | 2, 3 |
-| Spy×Family 4:53, panoramique5 | 99,4 % | 87,8 % | 86,9 % | 0, 0 |
-| moyenne des sept | 79,3 % | 64,3 % | 63,4 % | 35, 25 |
+| extrait | lot A seul | tuiles (#962) | règle revue | lot A d'abord | arrêts du lot A (#962, revue) |
+|---|---|---|---|---|---|
+| Re:Zero, panoramique3 | 86,8 % | 55,0 % | 53,5 % | 53,2 % | 8, 5 |
+| Re:Zero, panoramique | 57,2 % | 45,6 % | 44,9 % | 44,3 % | 10, 6 |
+| Re:Zero, panoramique2 | 69,2 % | 58,2 % | 57,9 % | 57,8 % | 4, 3 |
+| Re:Zero, panoramique4 | 69,8 % | 58,0 % | 57,4 % | 57,3 % | 5, 3 |
+| Re:Zero, aura | 77,4 % | 68,4 % | 67,1 % | 66,8 % | 6, 5 |
+| Spy×Family 13:16, panoramique6 | 95,0 % | 77,3 % | 76,3 % | 75,9 % | 2, 3 |
+| Spy×Family 4:53, panoramique5 | 99,4 % | 87,8 % | 86,9 % | 86,9 % | 0, 0 |
+| moyenne des sept | 79,3 % | 64,3 % | 63,4 % | 63,2 % | 35, 25 |
 
-Essayés et laissés : un plafond de région à 0,85 ou 0,90 (plus d'images par tuiles, mais plus d'arrêts du lot
-A : 63,4 % dans les deux cas) ; la reprise entière sans garde des blocs (63,9 %, mais une sortie reprise y
-peut s'écarter de deux fois le seuil). Le gain des tuiles dépend du contenu : sur un plan à caméra tenue il
-est grand (panoramique3, 87 % à 54 %), sur un panoramique nul.
+Essayé et laissé : un plafond de région à 0,85 ou 0,90 (plus d'images par tuiles, mais plus d'arrêts du lot
+A : 63,4 % dans les deux cas). Le gain des tuiles dépend du contenu : sur un plan à caméra tenue il est grand
+(panoramique3, 87 % à 53 %), sur un panoramique nul.
 
 Contrôle avec le vrai SPAN Équilibre (b8f64) sur processeur, `tuiles_controle.py --modele` (aura, 159 images) :
 pire bloc des images par tuiles 0,96 niveau avant comme après (médiane 0,59 avant, 0,73 après, sur 26 et 31
 images), écart moyen 0,24 au plus ; reprises entières du lot A 0,77 ; scintillement tenu sur les quatre plans
 (0,391 contre 0,390 au pire).
+
+Au PC, la règle revue (9c40844a) : pire bloc 0,79 niveau, écart moyen 0,144 au plus (0,125 sur #962) ; moteur
+SPAN 11 399 ms contre 12 210 sans tuiles (−6,6 %), médiane 10,48 ms, p95 10,59 contre 10,96 ms. Ce qui
+retient encore le gain : la reprise entière à 14,7 % au lieu de 19,8 % (73 arrêts aux tuiles, série la plus
+longue 6 au lieu de 19), et 1028 images entières pour région trop large.
+
+**Lot A d'abord** (retenu le soir du 19 novembre) : la reprise entière ne dépend plus des tuiles (plus haut).
+Le lot A garde toutes ses séries, aux mêmes taux que seul (13,1 % à 42,5 % de reprises sur les cinq extraits
+de Re:Zero), et les tuiles ne jouent que sur les images qu'il calcule : 63,2 % au rejeu, aucun arrêt. Contrôle
+avec le vrai SPAN : sur aura, reprises entières du lot A au pire bloc 0,96 (comme les images par tuiles, écart
+moyen 0,25 au plus), sur panoramique3 0,79 (images par tuiles 0,82) ; scintillement tenu (aura 0,391 contre
+0,390, panoramique3 0,212 contre 0,215).
 
 ## Porte (plan : 48 dB ou plus d'un calcul complet, et l'outil 0.1 sans hausse)
 
@@ -273,7 +287,9 @@ l'extrait unique de 60 s (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers
    la même avec `--no-span-tiles --stats=sans-tuiles.tsv`. Le temps GPU de SPAN se lit sur la ligne « profil
    GPU : moteur … » du journal (médiane et total ; `*.gpu.tsv` à côté), avec « SPAN repris » et « SPAN par
    tuiles ». Le dialogue de Spy×Family 13 BD à 17:06 est un panoramique : les tuiles n'y gagnent rien. Sur
-   #962 : −6,3 % (plus haut, « Mesure du PC ») ; la règle revue gagne un peu plus au rejeu (64,3 à 63,4 %).
+   #962 : −6,3 %, sur la règle revue −6,6 % (plus haut, « Mesure du PC ») ; lot A d'abord, au rejeu, 63,2 %.
+   Porte du temps : le moteur SPAN pas plus lent qu'avec `--no-span-tiles`, et la reprise entière (« SPAN
+   repris ») pas plus basse.
 
 Une ligne ratée : ce fil corrige la règle, ou coupe les tuiles par défaut.
 
@@ -300,8 +316,8 @@ tuiles lisent la carte, et le nom du profil GPU du SPAN natif, « moteur FP8 …
 par le même moteur (`tensorrt_span_fp8.cpp`, `stage_named`).
 
 Le test `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques, la décision sur des écarts
-de blocs synthétiques (remise à zéro stricte comprise), la reprise entière gardée au seuil de chaque bloc et
-à l'âge, et les raisons du bilan ; `source_grade_stage_test.cpp`, l'étage sous le grade avant le warp (tuiles
+de blocs synthétiques (remise à zéro stricte comprise), la reprise entière qui suit la seule règle du lot A
+(l'image calculée d'après rattrape les blocs et l'âge), et les raisons du bilan ; `source_grade_stage_test.cpp`, l'étage sous le grade avant le warp (tuiles
 dès la troisième source, toujours depuis la copie d'avant le grade) et en SPAN seul, puis (soir du 19 novembre) la
 portée réelle, les sorties exactes de la région et l'écart à l'ancre bloc par bloc. Reste au PC : la justesse
-(`--span-tiles-check`) et les temps de la règle revue (plus haut, « Porte »).
+(`--span-tiles-check`) et les temps du lot A d'abord (plus haut, « Porte »).

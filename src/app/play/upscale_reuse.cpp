@@ -46,10 +46,8 @@ ReuseKind SpanReuse::decide(const ReuseFacts& facts) {
     ++stopped_limit_;
     return compute();
   }
-  if (!tiles.holds(facts.blocks, gap)) {
-    ++stopped_tiles_;
-    return compute();
-  }
+  // Après une image par tuiles aussi, la reprise entière suit la seule règle du lot A : les tuiles s'ajoutent
+  // à ses séries sans en arrêter aucune (SpanTiles::held).
   take();
   tiles.held(facts.blocks, gap);
   return ReuseKind::Whole;
@@ -85,7 +83,6 @@ std::string SpanReuse::summary() const {
       "{}, images abîmées {}{}",
       reused_, seen_, share, longest_, stopped_limit_, stopped_anchor_, corrupt_,
       anchor_measure ? "" : " (sans mesure contre l'ancre : deux de suite au plus)");
-  if (stopped_tiles_ > 0) line += std::format(", arrêts aux tuiles {}", stopped_tiles_);
   if (std::ranges::any_of(pairs_, [](std::uint64_t n) { return n > 0; }))
     line += std::format(
         " ; paires par pire bloc (niveaux) : jusqu'à 0.7 {}, 1 {}, 1.5 {}, 2 {}, 3 {}, 5 {}, au-delà {}",

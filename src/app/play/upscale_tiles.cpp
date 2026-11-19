@@ -61,7 +61,6 @@ void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
   since_full_ = 0;
   known_ = false;
   unmeasured_ = false;
-  mixed_ = false;
 }
 
 template <class Visit>
@@ -89,7 +88,6 @@ TilePlan SpanTiles::full(const PairBlocks& blocks) {
   since_full_ = 0;
   known_ = true;
   unmeasured_ = false;
-  mixed_ = false;
   return TilePlan{};
 }
 
@@ -120,16 +118,6 @@ std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool new_recipe) 
   if (!fits(facts.blocks) && !adopt(facts.blocks)) return &no_measure_;
   if (since_full_ >= kFullEvery) return &refresh_;
   return nullptr;
-}
-
-bool SpanTiles::holds(const PairBlocks& blocks, const PairBlocks& gap) const {
-  if (!active() || !mixed_) return true;  // la sortie est celle d'un calcul complet : la règle du lot A
-  if (!known_ || !fits(blocks) || since_full_ + 1 >= kFullEvery) return false;
-  // Une reprise entière vieillit chaque tuile : aucune au-delà de kMaxAge, comme sous plan.
-  if (std::ranges::any_of(age_, [](int age) { return age + 1 > kMaxAge; })) return false;
-  for (std::size_t b = 0; b < sums_.size(); ++b)
-    if (!kernels::is_held(bound(b, blocks, gap), kThreshold)) return false;
-  return true;
 }
 
 void SpanTiles::held(const PairBlocks& blocks, const PairBlocks& gap) {
@@ -207,7 +195,6 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
     if (all) sums_[b] = 0;
   }
   base_ = sums_;
-  mixed_ = true;
   last_ = Counted{.core = static_cast<std::uint64_t>(kernels::count_span_tiles(core)),
                   .wide = static_cast<std::uint64_t>(kernels::count_span_tiles(kernels::dilate_span_tiles(
                       core, grid_.cols, grid_.rows, grid_.reach_cols, grid_.reach_rows)))};
@@ -235,7 +222,6 @@ void SpanTiles::refused() {
   since_full_ = 0;
   known_ = true;
   unmeasured_ = false;
-  mixed_ = false;
 }
 
 void SpanTiles::checked(std::uint32_t worst_block, double mean_levels) {

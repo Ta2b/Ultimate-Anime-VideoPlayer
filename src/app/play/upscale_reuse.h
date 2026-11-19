@@ -23,8 +23,9 @@
 // La décision rend une sorte (ReuseKind) et non un booléen. Quand l'image n'est pas reprise entière, les
 // tuiles qui bougent (upscale_tiles.h, phase 3 du plan « flux optique ») peuvent ne recalculer que les tuiles
 // changées, lues sur l'écart des blocs de la mesure de la paire : sorte Tiles, et le plan dans
-// SpanReuse::tile_plan. Après une image par tuiles, la reprise entière demande aussi que chaque bloc reste au
-// seuil (SpanTiles::holds) : la sortie y mêle des tuiles d'images différentes.
+// SpanReuse::tile_plan. Après une image par tuiles, la reprise entière suit la même règle, contre l'ancre
+// (l'image par tuiles) : la sortie y mêle des tuiles d'images différentes, que la prochaine image calculée
+// rattrape (SpanTiles::held).
 #pragma once
 
 #include <array>
@@ -139,7 +140,6 @@ class SpanReuse {
   std::uint64_t longest_ = 0;
   std::uint64_t stopped_limit_ = 0;
   std::uint64_t stopped_anchor_ = 0;  // paire tenue, mais l'écart à l'ancre passe le seuil
-  std::uint64_t stopped_tiles_ = 0;   // tenue, mais un bloc d'une sortie par tuiles passe le seuil
   std::uint64_t corrupt_ = 0;
   // Les paires mesurées par pire bloc : jusqu'à 0,7, 1, 1,5, 2, 3 et 5 niveaux, puis au-delà (note_pair).
   std::array<std::uint64_t, 7> pairs_{};
