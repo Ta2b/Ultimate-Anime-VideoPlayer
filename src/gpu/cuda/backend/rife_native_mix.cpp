@@ -81,6 +81,20 @@ std::vector<int> route_of(const Options& options) {
   return route;
 }
 
+// Les blocs dont le réseau retenu (options, nets : l'échelle entière) garde la colle à part plutôt que son
+// entrée à la volée.
+std::vector<int> apart_blocks(const Options& options,
+                              const std::vector<std::unique_ptr<RifeNativeNet>>& nets) {
+  std::vector<int> out;
+  for (std::size_t p = 1; p < options.size(); ++p) {
+    const int b = static_cast<int>(p) - 1;
+    if (const int o = options[p]; o > 0 && nets[static_cast<std::size_t>(o - 1)]->can_glue(b) &&
+                                  !nets[static_cast<std::size_t>(o - 1)]->glues(b))
+      out.push_back(b);
+  }
+  return out;
+}
+
 std::string option_name(int o) {
   return o == 0 ? std::string("TensorRT") : std::string(kLadderNames[static_cast<std::size_t>(o - 1)]);
 }
@@ -311,7 +325,8 @@ std::expected<RifeFusedEngine::NativeTrial, Refusal> RifeFusedEngine::try_native
   settle(faster ? route_of(mix->options) : std::vector<int>{}, !separate);
   const double trt_db = rife_mix::worst_psnr(*reference, mix->out, plane, motion_);
   return NativeTrial{.lines = std::move(lines),
-                     .verdict = faster ? rife_verdict::Verdict{mix->options, !separate, trt_db}
+                     .verdict = faster ? rife_verdict::Verdict{mix->options, !separate, trt_db,
+                                                               apart_blocks(mix->options, natives_)}
                                        : rife_verdict::Verdict{.options = Options(times->size(), 0)}};
 }
 
@@ -361,6 +376,10 @@ std::expected<RifeFusedEngine::CachedTrial, Refusal> RifeFusedEngine::try_cached
   if (!nets) return abandon(std::move(nets.error()));
   natives_ = std::move(*nets);
   for (const auto& net : natives_) own_activation_ = std::max(own_activation_, net->workspace_bytes());
+  // La colle que l'essai avait gardée à part, bloc par bloc, sur le réseau de ce bloc (parse l'a vérifié
+  // natif).
+  for (const int b : verdict.apart)
+    natives_[static_cast<std::size_t>(route[static_cast<std::size_t>(b) + 1])]->use_glue(b, false);
   set_route({});
   auto reference = trial_output(stream, shared, pair.input, pair.outputs, pair.elements);
   if (!reference) return abandon(std::move(reference.error()));

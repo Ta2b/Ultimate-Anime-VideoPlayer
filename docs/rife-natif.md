@@ -4,8 +4,8 @@ Novembre 2026. L'encodeur et les convolutions des blocs de RIFE fusionné ([`rif
 par nos propres noyaux CUDA, à la place des six moteurs TensorRT, ou de ceux d'entre eux qu'ils battent : l'essai au
 chargement choisit morceau par morceau. La colle entre blocs, les warps et la fin
 (`rife_fused_kernels.cu`, `warp_lib`) ne changent pas : le natif lit et écrit les mêmes tampons, dans les mêmes
-formats (X et Y en HWC8), sans reformatage. Seule exception, la colle du dernier bloc en pleine résolution : sa
-première couche native peut la refaire à la volée (plus bas). L'encodage d'une image reste calculé une fois pour
+formats (X et Y en HWC8), sans reformatage. Seules exceptions, la colle du dernier bloc (pleine résolution) et
+celle de l'avant-dernier (moitié) : la première couche native du bloc peut la refaire à la volée (plus bas). L'encodage d'une image reste calculé une fois pour
 deux paires, le tri des paires, l'Auto et `held_pair` ne voient aucune différence.
 
 Cible : RIFE 4.25 ×2 sur la RTX 4070 Ti à 23 % d'occupation ou moins (environ 5,3 ms par image créée), contre 30 %
@@ -74,8 +74,18 @@ première couche du dernier bloc, entrée calculée à la volée par la colle de
   reste natif. Le relèvement réserve, par source d'échelle s, au plus `glue_capacity(s)` pixels de Y. Cette borne
   est vérifiée sur 11 millions de tuiles (tailles de 32 à 2176 lignes, échelles 1 à 32) et atteinte sans être
   dépassée. La colle de TensorRT appelle les mêmes fonctions : sa SASS ne change que par l'arithmétique d'adresses,
-  avec les mêmes opérations flottantes. Il existe 12 noyaux (sommes × 3 ou 4 blocs d'avant × tuile 16 ou 32), à 160
-  registres au plus (sm_120), sans débordement ;
+  avec les mêmes opérations flottantes ;
+- **entrée de l'avant-dernier bloc à la volée**, le même noyau à moitié (D = 2 : X_3 de 4.25 après trois flots,
+  X_2 du lite après deux ; 33 Mo écrits puis relus en 1920 × 1088). Chaque point de X est la moyenne de quatre
+  points pleine résolution, sommés dans l'ordre de `warp::sum_quad` comme `fused_glue` : ((00 + 10) + (01 + 11))
+  / 4, flot × 1/2 avant la moyenne. La tuile de 65 × 9 pixels de X couvre 130 × 18 points ; le relèvement
+  réserve `glue_capacity(s, 2)` (bornes vérifiées sur le découpage 1920 × 1088, atteintes sans être dépassées),
+  10 Ko au plus. Rien n'est écrit dans X : la colle du bloc suivant refait son flot depuis les Y. L'essai le
+  chronomètre avec et sans, bloc par bloc, et le verdict gardé retient les blocs restés à part. Sur l'émulateur
+  processeur, sorties identiques au bit à l'ancien chemin (colle puis forme 16/CT), 9 cas dont trois à tuiles
+  entières, X intouché. Il existe 24 noyaux (sommes × (3 ou 4 flots en pleine résolution, 2 ou 3 à moitié) ×
+  tuile 16 ou 32), à 219 registres au plus (sm_89, deux blocs par multiprocesseur), sans débordement de sm_75 à
+  sm_120 ;
 - **fin dans la dernière couche** (`rife_native_finish.cu`). La transposée du dernier bloc écrivait Y (52 canaux,
   56 rangés, à la moitié de la pleine résolution : 58 Mo en 1920 × 1088), dont fused_finish ne relisait que les
   20 premiers (le flot du bloc et le masque, en quatre parités). Quand la forme réglée de cette couche n'a pas de
@@ -143,7 +153,8 @@ la chaîne à TensorRT, `--rife-native` reste accepté. Les six moteurs TensorRT
 avant (en E/S HWC8).
 
 **Verdict gardé** (`rife_native_verdict.h`) : l'essai complet coûte environ 4,5 s au chargement. Son verdict
-(l'option de chaque morceau, la fin fondue ou à part, la chaîne contre TensorRT en dB) se garde dans le dossier des
+(l'option de chaque morceau, la fin fondue ou à part, la chaîne contre TensorRT en dB, les blocs qui gardent la
+colle à part ; format 2, un fichier du format 1 refait l'essai) se garde dans le dossier des
 moteurs, un fichier `rife-natif-<empreinte>.verdict` par identité : carte (nom, architecture, UUID), version CUDA
 du pilote, clé d'artefact de la chaîne (taille, variante, warp, plan, noms des moteurs TensorRT), empreinte des
 sources du RIFE natif (`rife_*` et `warp_lib*` du backend, prise à la configuration) et seuil. Au chargement

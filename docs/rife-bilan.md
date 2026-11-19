@@ -1,8 +1,8 @@
 # Bilan : RIFE natif et DistilDRBA (19 novembre 2026)
 
-Mis à jour le 19 novembre 2026 à 20 h 00 : #961 fusionnée sur main (520f4632), le RIFE natif est le défaut
-de la rc.1 ; garde des morceaux de la porte abaissée à 48 dB (partie 4, b), PR qui suit. Puis le peaufinage :
-blocs grossiers, glue_conv, warp_blend.
+Mis à jour le 19 novembre 2026 à 21 h 00 : #961 fusionnée sur main (520f4632), le RIFE natif est le défaut
+de la rc.1. Sur la branche de #987, pour après la rc.1 : garde des morceaux de la porte à 48 dB (partie 4, b),
+colle de l'avant-dernier bloc à la volée (d), outil nsys pour les blocs grossiers (c).
 
 Pour reprendre ce travail sans son auteur. Tout est mesuré en 1080p (1920 × 1088 rempli) sur la RTX 4070 Ti du PC
 de Tatoub, sauf mention contraire. Une « passe » est une passe de lecture ×2 de RIFE fusionné : l'image B seule
@@ -284,7 +284,13 @@ c. **Les blocs 0 à 2 de 4.25** restent à TensorRT (0,143, 0,104, 0,200 ms seul
    `tools/rife/nsys_passe.py` : temps des petites grilles et écart juste avant elles, natif contre TensorRT.
    Si l'écart pèse au moins le tiers, le noyau persistant ; sinon la forme des couches.
 d. **Les noyaux lourds du profil** : `glue_conv_kernel<4,16>` (0,52 ms à l'essai), `fused_glue<1,3>` (la colle de
-   X_3, à la volée dans le bloc 3), `warp_blend` (0,90 ms, hors de la passe).
+   X_3), `warp_blend` (0,90 ms, hors de la passe). **La colle de X_3 à la volée est écrite** (sur la branche de
+   #987) : la première couche de l'avant-dernier bloc (X_3 de 4.25, X_2 du lite, à moitié) la refait comme celle
+   du dernier, quatre points pleine résolution par point de X dans l'ordre de `fused_glue`. Identique au bit sur
+   l'émulateur processeur, 24 noyaux sans débordement de sm_75 à sm_120 ; l'essai la chronomètre bloc par bloc,
+   le verdict gardé retient les blocs restés à part (format 2). Gain attendu de l'ordre de 0,1 ms par passe
+   (33 Mo écrits puis relus en moins, la colle refaite sur un halo de 1/8) ; à mesurer à la séance d'après la
+   rc.1. `glue_conv_kernel<4,16>` est à son plafond d'octets ; `warp_blend` reste à voir.
 e. **nsys refait** avec `--delay=15` pour l'occupation, après l'essai.
 
 1. **#961, l'entrée du dernier bloc à la volée** (cloud). Deux relectures sévères, points corrigés (422c6a6 : le

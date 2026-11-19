@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +39,7 @@ struct Entry {
   bool encoder = false;
   bool finish = false;  // le dernier bloc : sa dernière couche peut faire la fin (finish_layer)
   std::vector<int> glue_scales;
+  int glue_reduce = 1;
 };
 
 class Net final : public RifeNativeNet {
@@ -123,8 +125,13 @@ class Net final : public RifeNativeNet {
     const auto piece = static_cast<std::size_t>(k) + 1;
     return k >= 0 && piece < pieces_.size() && !pieces_[piece].empty() && pieces_[piece][0].glue != nullptr;
   }
-  bool glues(int k) const override { return glue_on_ && can_glue(k); }
-  void use_glue(bool on) override { glue_on_ = on; }
+  bool glues(int k) const override { return can_glue(k) && !apart_.contains(k); }
+  void use_glue(int k, bool on) override {
+    if (on)
+      apart_.erase(k);
+    else
+      apart_.insert(k);
+  }
   int layers(int piece) const override {
     return piece >= 0 && static_cast<std::size_t>(piece) < pieces_.size()
                ? static_cast<int>(pieces_[static_cast<std::size_t>(piece)].size())
@@ -139,7 +146,7 @@ class Net final : public RifeNativeNet {
   std::string layer_label(int piece, int i) const override {
     if (i < 0 || i >= layers(piece)) return "?";
     const Layer& l = pieces_[static_cast<std::size_t>(piece)][static_cast<std::size_t>(i)];
-    if (l.glue != nullptr && glue_on_)
+    if (l.glue != nullptr && glues(piece - 1))
       return "3×3 pas 2 " + std::to_string(l.cin) + "→" + std::to_string(l.cout) + " sur " +
              std::to_string(l.ow) + "×" + std::to_string(l.oh) +
              ", entrée calculée à la volée (colle), tranche 16, tuile " + std::to_string(l.cout) +
@@ -199,24 +206,27 @@ class Net final : public RifeNativeNet {
     return sent(to.upload(packed.data(), packed.size() * sizeof(std::uint32_t), loading_), error);
   }
 
-  // La première couche du dernier bloc en pleine résolution (scales : les échelles des blocs d'avant, vide
-  // sinon) : son noyau à entrée calculée, s'il en est un pour ses sommes et ses canaux (X de 28 canaux, 32
-  // rangés ; une convolution de pas 2 sans résiduel, toute en une tuile), et ses poids rangés pour lui.
-  bool glue_layer(Layer& layer, const rn::Dense& dense, const std::vector<int>& scales,
+  // La première couche d'un bloc dont l'entrée se calcule à la volée (scales : les échelles des blocs
+  // d'avant, vide sinon ; reduce : celle du bloc, 1 ou 2) : son noyau, s'il en est un pour ses sommes et ses
+  // canaux (X de 28 canaux, 32 rangés ; une convolution de pas 2 sans résiduel, toute en une tuile), et ses
+  // poids rangés pour lui.
+  bool glue_layer(Layer& layer, const rn::Dense& dense, const std::vector<int>& scales, int reduce,
                   std::string& error) const {
     if (scales.empty() || layer.kind != Kind::kHalf || layer.cin != 32 || layer.residual) return true;
-    // Le noyau est dimensionné pour des sources d'échelle au moins 2 (au plus 15 Ko de relèvement) : un
-    // découpage qui en aurait une de 1 avant le dernier bloc garde la colle à part. La borne de 48 Ko sur
-    // toute sa mémoire partagée (tuile et relèvement), que ces échelles tiennent déjà, n'est qu'une garde :
-    // le lancement ne demande pas plus que la part par défaut.
-    if (std::ranges::any_of(scales, [](int d) { return d < 2; }) || rn::glue_smem(scales) > 48 * 1024)
+    // Le noyau est dimensionné pour des sources plus grossières que X d'un facteur 2 au moins (au plus 15 Ko
+    // de relèvement en pleine résolution, 10 Ko à moitié) : un découpage qui en aurait une plus fine garde la
+    // colle à part. La borne de 48 Ko sur toute sa mémoire partagée (tuile et relèvement), que ces échelles
+    // tiennent déjà, n'est qu'une garde : le lancement ne demande pas plus que la part par défaut.
+    if (std::ranges::any_of(scales, [reduce](int d) { return d < 2 * reduce; }) ||
+        rn::glue_smem(scales, reduce) > 48 * 1024)
       return true;
-    layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), layer.cout);
+    layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), reduce, layer.cout);
     if (layer.glue == nullptr) return true;
     layer.glue_scales = scales;
+    layer.glue_reduce = reduce;
     layer.glue_grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),
                            static_cast<unsigned>((layer.oh + rn::kWarps - 1) / rn::kWarps), 1U);
-    layer.glue_smem = rn::glue_smem(scales);
+    layer.glue_smem = rn::glue_smem(scales, reduce);
     return upload_weights(layer.glue_w, dense, layer.cout, error);
   }
 
@@ -224,7 +234,7 @@ class Net final : public RifeNativeNet {
   // (glue_layer), la fin dans l'épilogue (finish_layer).
   bool ends(Layer& layer, const rn::Dense& dense, const Entry& at, bool first, bool last,
             std::string& error) const {
-    return (!first || glue_layer(layer, dense, at.glue_scales, error)) &&
+    return (!first || glue_layer(layer, dense, at.glue_scales, at.glue_reduce, error)) &&
            (!last || !at.finish || finish_layer(layer, dense, error));
   }
 
@@ -371,7 +381,7 @@ class Net final : public RifeNativeNet {
   int sms_ = 1;
   std::int64_t peak_ = 0;
   std::int64_t partial_ = 0;  // sommes partielles de la plus grande couche à K découpé
-  bool glue_on_ = true;       // use_glue
+  std::set<int> apart_;       // les blocs qui gardent la colle à part (use_glue)
   std::vector<std::vector<Layer>> pieces_;
 };
 
@@ -414,8 +424,12 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativ
              .encoder = false,
              .glue_scales = {}};
     at.finish = k + 1 == reduce.size();
-    if (k > 0 && k + 1 == reduce.size() && d == 1)
+    // L'entrée calculée à la volée : le dernier bloc en pleine résolution, l'avant-dernier à moitié.
+    const bool last = k + 1 == reduce.size();
+    if (k > 0 && ((last && d == 1) || (k + 2 == reduce.size() && d == 2))) {
       at.glue_scales.assign(reduce.begin(), reduce.begin() + static_cast<std::ptrdiff_t>(k));
+      at.glue_reduce = d;
+    }
     if (!net->plan(pieces[k + 1], at, bench, tuned, error)) {
       error = "bloc " + std::to_string(k) + " : " + error;
       return nullptr;

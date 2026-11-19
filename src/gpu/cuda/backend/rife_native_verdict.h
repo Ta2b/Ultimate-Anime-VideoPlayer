@@ -17,12 +17,14 @@
 namespace kirari::gpu::cuda::rife_verdict {
 
 // Ce que l'essai a retenu : l'option de chaque morceau (0 TensorRT, 1 + n le réseau natif n de l'échelle
-// des précisions), la fin dans la dernière couche native, et la chaîne retenue contre TensorRT, en dB (0
-// quand TensorRT garde tout).
+// des précisions), la fin dans la dernière couche native, la chaîne retenue contre TensorRT, en dB (0 quand
+// TensorRT garde tout), et les blocs dont le réseau natif garde la colle à part plutôt que son entrée à la
+// volée (croissants, sans doublon).
 struct Verdict {
   std::vector<int> options;
   bool fused_end = true;
   double trt_db = 0.0;
+  std::vector<int> apart;
 };
 
 // L'option la plus haute : les quatre crans de l'échelle des précisions (rife_native_mix.cpp).
@@ -32,7 +34,8 @@ inline constexpr int kOptionsMax = 4;
 bool all_trt(const Verdict& verdict);
 
 // Le texte du fichier, et sa lecture : rien sur un texte d'un autre format, tronqué, dont le nombre de
-// morceaux n'est pas pieces ou dont une option sort de 0 à options_max.
+// morceaux n'est pas pieces, dont une option sort de 0 à options_max, ou dont un bloc à part n'existe pas, se
+// répète, ou garde TensorRT.
 std::string text_of(const Verdict& verdict);
 std::optional<Verdict> parse(std::string_view text, std::size_t pieces, int options_max);
 

@@ -3,9 +3,9 @@
 // ceux des moteurs en E/S HWC8 : l'encodeur lit les trois plans d'une image et écrit ses quatre plans
 // d'encodage, un bloc lit X_k rangé par pixel (pas 16 ou 32) et écrit Y_k par pixel au pas 56. La colle, les
 // warps et la fin restent ceux de rife_fused_kernels.h : RifeFusedEngine appelle ce réseau là où il appelait
-// TensorRT. La colle du dernier bloc en pleine résolution fait exception quand sa première couche sait la
-// refaire à la volée (rife_native_glue.cu) et que l'essai garde cette variante (use_glue). En-tête sans
-// std::expected : il est lu par nvcc en C++20.
+// TensorRT. La colle du dernier bloc (pleine résolution) et de l'avant-dernier (moitié) fait exception quand
+// la première couche du bloc sait la refaire à la volée (rife_native_glue.cu) et que l'essai garde cette
+// variante (use_glue). En-tête sans std::expected : il est lu par nvcc en C++20.
 #pragma once
 
 #include <cstdint>
@@ -80,12 +80,13 @@ class RifeNativeNet {
   virtual cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace,
                             const FusedGlueParams* glue, const FusedFinishParams* finish) const = 0;
   virtual bool can_finish(int k, const FusedFinishParams& finish) const = 0;
-  // Ce réseau calcule-t-il l'entrée du bloc k à la volée (le dernier bloc, en pleine résolution) ? can_glue :
-  // il en a le noyau ; glues : il s'en sert (use_glue, vrai au départ). Sans lui, le bloc lit le X_k que la
-  // colle à part a écrit, par la forme réglée de sa première couche ; l'essai garde la plus rapide.
+  // Ce réseau calcule-t-il l'entrée du bloc k à la volée (le dernier bloc en pleine résolution,
+  // l'avant-dernier à moitié) ? can_glue : il en a le noyau ; glues : il s'en sert (use_glue, vrai au départ
+  // pour chaque bloc). Sans lui, le bloc lit le X_k que la colle à part a écrit, par la forme réglée de sa
+  // première couche ; l'essai garde la plus rapide, bloc par bloc.
   virtual bool can_glue(int k) const = 0;
   virtual bool glues(int k) const = 0;
-  virtual void use_glue(bool on) = 0;
+  virtual void use_glue(int k, bool on) = 0;
   // Le profil d'un morceau (0 : l'encodeur, 1 + k : le bloc k) : ses couches comme encode ou block (glue
   // comme pour block), marks[0] enregistré avant la première et marks[i + 1] après la couche i
   // (cudaEventRecordExternal : la capture d'un graphe les garde). marks.size() doit valoir layers(piece) + 1.
