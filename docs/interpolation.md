@@ -516,11 +516,12 @@ GMFSS (pas DistilDRBA ni les paires de Smooth), chaque paire où RIFE tournerait
   `flow_lost`), ou la moitié des tuiles mêmes doute. Le mouvement de RIFE est remplacé par un fondu enchaîné
   de a et b, sans fantômes. Avec une caméra ajustée, le décor correspond : ce qui ne correspond pas est local
   (un personnage rapide, un effet), et seules ses tuiles peuvent passer au fondu ;
-- **zone douteuse** : les tuiles d'effet qui changent, et les tuiles de dessin ou de décor qui changent avec
-  une confiance basse, passent au fondu, dilatées d'une tuile et adoucies ; RIFE reste ailleurs. Un aplat
-  (tuile Uncertain) ne doute pas : RIFE n'y fait pas de fantôme qui se voie. La moitié du doute d'une paire
-  passe à la suivante, pour qu'une zone ne clignote pas, à travers trois paires tenues au plus (un dessin en
-  quatre) ; une coupe, un saut ou une tenue plus longue l'oublie.
+- **zone douteuse** : seules les tuiles d'effet sûres (sans correspondance et beaucoup d'écart, vues deux
+  paires de suite par la carte) qui changent et en touchent une autre passent au fondu, dilatées d'une tuile
+  et adoucies ; RIFE reste ailleurs. Ni une tuile d'effet seule (étincelle, bout de trait trop rapide), ni un
+  dessin ou un décor, quelle que soit sa confiance, ni un aplat (tuile Uncertain) ne doutent. La moitié du
+  doute propre d'une paire passe à la suivante, pas plus loin, pour qu'une zone ne clignote pas, à travers
+  trois paires tenues au plus (un dessin en quatre) ; une coupe, un saut ou une tenue plus longue l'oublie.
 
 Le fondu se fait sur le mouvement, pas sur l'image : `KernelOps::motion_doubt` (ABI 49,
 `kernels/spec/motion_doubt.h`, référence `kernels/ref/motion_doubt.cpp`, noyau
@@ -531,7 +532,8 @@ mélange de RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'avant, image pour image. La
 ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues (dont celles sans
-correspondance ni caméra) et fondues par endroits.
+correspondance ni caméra) et fondues par endroits, avec la part moyenne de leurs tuiles qui doutent (avant le
+bord élargi).
 
 Première lecture (passage 9 de la séance du 19 novembre, Re:Zero, 20 s d'action) : 63 paires impossibles
 sur 104. La ligne ne disait pas quelle règle les fondait ; trois causes probables, corrigées sans mesure : la
@@ -542,6 +544,14 @@ que la portée de NVOF, 45 pixels du flux, n'est pas une paire impossible). Rest
 personnage peut encore faire des tuiles d'effet (peu de correspondance, beaucoup d'écart) et passer au fondu
 par endroits ; la ligne de fin dit désormais combien de paires impossibles viennent de l'absence de
 correspondance.
+Deuxième lecture (après #911, 19 novembre) : la répartition s'est inversée, 1 paire impossible mais 362 paires
+fondues par endroits sur 368 lues (98 %). La confiance basse d'une tuile de dessin ou de décor faisait douter :
+or la carte la baisse sur tout personnage qui bouge (vecteurs épars : confiance divisée par deux) et à son bord
+(classe qui bascule : 0,4 fois), et un aplat décor qui change un peu. Un tel doute dit que NVOF suit mal le
+trait, pas que RIFE n'y trouve rien, et le fondu y fait une image double. Le doute venait aussi de la paire
+précédente de paire en paire (moitié, quart, huitième…) : un effet fondait encore quatre paires après sa fin.
+D'où, sans mesure : seuls les effets sûrs et groupés doutent, et seul le doute propre d'une paire passe à la
+suivante.
 Les seuils (`triage::` dans `rife_triage.h`) ne sont pas mesurés ; la porte : le test à l'aveugle gagné sur
 les passages de rife-fantomes, sans hausse du scintillement (outil 0.1).
 
