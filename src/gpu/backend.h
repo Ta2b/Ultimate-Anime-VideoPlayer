@@ -110,7 +110,9 @@ namespace kirari::gpu {
 // 51 : KernelOps::compose_layers (l'interpolation par calques et la plaque de décor, kernels/spec/layers.h).
 // 52 : kTrialRifeNative (le RIFE fusionné par nos noyaux, docs/rife-natif.md) : un module d'avant ignorerait
 // le bit sans le dire.
-inline constexpr int kBackendAbi = 52;
+// 53 : KernelOps::motion_camera (le mouvement d'une caméra affine : le tri des paires de GMFSS,
+// kernels/spec/motion_camera.h).
+inline constexpr int kBackendAbi = 53;
 
 using DeviceUuid = kirari::DeviceUuid;
 

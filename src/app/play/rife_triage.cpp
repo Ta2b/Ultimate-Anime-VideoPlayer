@@ -6,6 +6,7 @@
 
 #include "core/log.h"
 #include "kernels/spec/detect.h"
+#include "kernels/spec/motion_camera.h"
 #include "kernels/spec/motion_doubt.h"
 
 namespace kirari::app::play {
@@ -54,6 +55,16 @@ bool flow_held(const kernels::SceneMotion& scene) {
   const auto changed =
       std::ranges::count_if(scene.tiles, [](const kernels::SceneTile& t) { return t.changed; });
   return static_cast<double>(changed) <= triage::kHeldChanged * static_cast<double>(scene.tiles.size());
+}
+
+bool flow_pan(const kernels::SceneMotion& scene) {
+  if (!scene.camera_fit || !scene.drawing_held || scene.background_held || scene.fade || scene.cut_likely)
+    return false;
+  if (scene.residual > triage::kPanResidual || scene.unmatched > triage::kPanUnmatched) return false;
+  // Un effet qui change (fumée, éclair) n'est pas dans la caméra : la fusion le fait.
+  return std::ranges::none_of(scene.tiles, [](const kernels::SceneTile& t) {
+    return t.changed && t.kind == kernels::SceneClass::Effect;
+  });
 }
 
 std::vector<float> tile_doubt(const kernels::SceneMotion& scene) {
@@ -134,6 +145,7 @@ PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
   ++counts_.read;
   std::vector<float> doubt = tile_doubt(scene);
   keep_doubt(doubt, scene);
+  if (gmfss_only_) return sort_gmfss(scene, doubt);
   if (refused_) return now_;
   // Coupe probable que la mesure de RIFE n'a pas vue, ou presque rien qui corresponde : fondu entier.
   if (scene.cut_likely || scene.unmatched >= triage::kImpossibleUnmatched) {
@@ -151,6 +163,22 @@ PairSort RifeTriage::sort(const PairFacts& facts, bool runs) {
   return now_;
 }
 
+PairSort RifeTriage::sort_gmfss(const kernels::SceneMotion& scene, const std::vector<float>& doubt) {
+  // La paire impossible : la même règle que pour RIFE, mais toute la paire au fondu.
+  const bool impossible = scene.cut_likely || scene.unmatched >= triage::kImpossibleUnmatched ||
+                          doubt_grid(doubt, scene.cols, scene.rows).share >= triage::kFadeShare;
+  if (impossible) {
+    camera_ = kernels::kCameraStill;
+    now_ = PairSort::Fade;
+    ++counts_.faded;
+  } else if (flow_pan(scene)) {
+    for (std::size_t i = 0; i < camera_.size(); ++i) camera_[i] = static_cast<float>(scene.camera[i]);
+    now_ = PairSort::Pan;
+    ++counts_.panned;
+  }
+  return now_;
+}
+
 bool RifeTriage::settle(const PairFacts& facts, bool on_grid, bool runs, bool smooth_first) {
   sort(facts, runs && !smooth_first);
   return on_grid && !runs && facts.factor > 1 && facts.scores && (pair_cut(facts) || pair_held(facts));
@@ -165,12 +193,14 @@ void RifeTriage::log() const {
                         : "";
   log_channel("gpu")->info(
       "tri des paires par le flux : {} paires lues par la carte, {} dessins tenus copiés, {} paires "
-      "impossibles fondues, {} paires fondues par endroits{}",
-      counts_.read, counts_.held, counts_.faded, counts_.masked, why);
+      "impossibles fondues, {} paires fondues par endroits, {} panoramiques purs{}",
+      counts_.read, counts_.held, counts_.faded, counts_.masked, counts_.panned, why);
 }
 
 gpu::Motion RifeTriage::doubted(gpu::Backend& backend, const gpu::Motion& motion, float fade) {
-  if (now_ == PairSort::Today || now_ == PairSort::Held || refused_ || grid_.weights.empty()) return motion;
+  if (now_ == PairSort::Today || now_ == PairSort::Held || now_ == PairSort::Pan || refused_ ||
+      grid_.weights.empty())
+    return motion;
   gpu::KernelOps* ops = backend.kernels();
   const auto refuse_once = [&](const Refusal& why) {
     refused_ = true;

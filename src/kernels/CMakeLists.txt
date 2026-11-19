@@ -17,6 +17,7 @@ kirari_add_module(kernels
     ref/frame_stats.cpp
     ref/gmfss.cpp
     ref/half.cpp
+    ref/motion_camera.cpp
     ref/motion_doubt.cpp
     ref/layers.cpp
     ref/resample.cpp

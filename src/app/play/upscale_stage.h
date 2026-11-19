@@ -329,6 +329,7 @@ class UpscaleStage final : public RingStage {
     source_serial_[current_] = ++serials_;
     gmfss_.pair_ready = false;  // GMFSS : la paire et ses clés sont à refaire
     gmfss_.keys_made = 0;
+    gmfss_.camera_ready = false;
   }
   std::uint64_t serials_ = 0;
   // Les images de chaque tampon de rife_ins_ par leur numéro, A puis B ; 0 pour une image qui n'est pas une

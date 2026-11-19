@@ -6,6 +6,7 @@
 // (noms, next_times_only, next_warm) s'appellent sans ce filet.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <expected>
 #include <memory>
@@ -187,6 +188,10 @@ class GuardedKernelOps final : public KernelOps {
                                             int cols, int rows, float fade, const Motion& out) override {
     return guarded_detail::call("motion_doubt",
                                 [&] { return in_->motion_doubt(motion, weights, cols, rows, fade, out); });
+  }
+  std::expected<void, Refusal> motion_camera(const std::array<float, 6>& camera, float scale,
+                                             const Motion& out) override {
+    return guarded_detail::call("motion_camera", [&] { return in_->motion_camera(camera, scale, out); });
   }
   std::expected<void, Refusal> health() override {
     return guarded_detail::call("health", [&] { return in_->health(); });

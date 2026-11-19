@@ -499,7 +499,7 @@ sont à mesurer sur une carte NVIDIA (`tools/gmfss/banc_temps.sh`).
 ## Tri des paires par la carte de la scène (`--pair-triage`, essai)
 
 La carte de la scène (`kernels/spec/scene_flow.h`, flux optique matériel de NVIDIA, `--debug --scene-map`) ne
-déforme rien : elle décide. Avec `--pair-triage`, sur RIFE mouvement seulement (ni GMFSS, ni DistilDRBA), chaque paire où RIFE
+déforme rien : elle décide. Avec `--pair-triage`, sur RIFE mouvement et GMFSS (pas DistilDRBA), chaque paire où RIFE
 tournerait est triée (`src/app/play/rife_triage.h`) :
 
 - **dessin tenu** : ni le dessin ni la caméra ne bougent, et presque aucune tuile ne change hors du grain.
@@ -522,3 +522,13 @@ Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'
 ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues et fondues par endroits.
 Les seuils (`triage::` dans `rife_triage.h`) ne sont pas mesurés ; la porte : le test à l'aveugle gagné sur
 les passages de rife-fantomes, sans hausse du scintillement (outil 0.1).
+
+**GMFSS** (19 novembre 2026). GMFSS seul garde le dessin tenu copié ; la paire impossible et le
+**panoramique pur** (la caméra ajustée bouge, aucun dessin ne bouge par rapport à elle, décor à moins d'un pixel
+du modèle, moins de 10 % de vecteurs sans correspondance, aucun effet : `flow_pan`) ne passent ni par la paire
+ni par la fusion. `KernelOps::motion_camera` (ABI 53, `kernels/spec/motion_camera.h`, référence
+`kernels/ref/motion_camera.cpp`, noyau dans `doubt_kernels.cu`) écrit le mouvement de la caméra de la carte au
+format de RIFE (caméra identité pour le fondu), une fois par paire, et le warp de l'étage fait chaque instant.
+Pas de zone fondue par endroits : GMFSS y fait mieux que RIFE. Le mélange garde le tri de RIFE, sans clé GMFSS
+sur une paire fondue. Un backend sans `motion_camera` (Vulkan) garde la fusion. La ligne de fin de GMFSS compte
+les paires faites par la caméra.
