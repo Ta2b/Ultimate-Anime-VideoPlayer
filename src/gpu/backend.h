@@ -160,6 +160,10 @@ inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
 // alors les manifestes « .gmfssfused » et « .gmfsspair » à la place de la fusion et de la paire. Lu par le
 // backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
+// --span-promoted : le SPAN FP16 natif somme en promu, quel que soit le cran (chaque mma somme ses 16
+// produits en f16, ajoutés en f32 : docs/span-native16.md, « Sommes promues »). Lu par le backend TensorRT ;
+// sans effet ailleurs.
+inline constexpr std::uint32_t kTrialSpanPromoted = 1U << 8U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
 // cache_dir et log ; render reste valide jusqu'à kirari_backend_destroy. refusal ne vaut que le

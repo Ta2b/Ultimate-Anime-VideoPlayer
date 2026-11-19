@@ -14,6 +14,18 @@
 namespace kirari::gpu::cuda {
 namespace {
 
+const char* sums_text(SpanNativeSums sums) {
+  switch (sums) {
+    case SpanNativeSums::F32:
+      return "f32";
+    case SpanNativeSums::Promoted:
+      return "promues (16 produits en f16 par mma, total en f32)";
+    case SpanNativeSums::F16:
+      break;
+  }
+  return "f16";
+}
+
 // Le FP8 sur Ada seulement ; le FP16 natif aussi sur RTX 50 (SpanFp8Net::supported_fp16_device).
 std::expected<void, Refusal> device_refusal(const cudaDeviceProp& properties, bool fp16) {
   const bool supported = fp16 ? SpanFp8Net::supported_fp16_device(properties.major, properties.minor)
@@ -59,11 +71,11 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_span_fp8(c
   const std::optional<std::uint32_t> crc = span_fp8_artifact_crc(artifact.cache_key);
   if (!shape || !crc) return refuse(RefusalCode::GraphInvalid, "SPAN FP8 : clé d'artefact illisible");
   auto engine = SpanFp8Engine::load(artifact.path, *crc, static_cast<int>(shape->dims[2]),
-                                    static_cast<int>(shape->dims[3]), arena(), span_native_);
+                                    static_cast<int>(shape->dims[3]), arena(), span_native_, span_promoted_);
   if (!engine) return std::unexpected(std::move(engine.error()));
   if ((*engine)->fp16())
     log(BackendLogLevel::Info, std::format("SPAN FP16 natif chargé : {}×{}, sommes {}", shape->dims[3],
-                                           shape->dims[2], (*engine)->acc32() ? "f32" : "f16"));
+                                           shape->dims[2], sums_text((*engine)->sums())));
   else
     log(BackendLogLevel::Info,
         std::format("SPAN FP8 (noyaux CUTLASS) chargé : {}×{}{}", shape->dims[3], shape->dims[2],
@@ -108,13 +120,19 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
   GpuTiming& timing = stage_named("moteur FP8 {}×{}×{}", shape.dims[1], shape.dims[2], shape.dims[3]);
   role(Role::Upscale).begin(stream_);
   timing.begin(stream_);
+  // Les trois parts au profil de fin (span_parts_) : le temps du rôle en lecture, plus long qu'au banc, dit
+  // ainsi s'il vient des noyaux eux-mêmes (corps) ou de l'anneau que l'affichage tient (attente).
+  span_part(SpanPart::Body).begin(stream_);
   ImportedSlot* imported = nullptr;
   auto queued = engine.enqueue_body(stream_, zone, inputs, outputs, ring != nullptr)
                     .and_then([&]() -> std::expected<void, Refusal> {
+                      span_part(SpanPart::Body).end(stream_);
                       if (ring != nullptr) {
                         // L'attente de l'emplacement vient après le corps : SPAN n'est pas retenu derrière un
                         // emplacement que l'affichage tient encore, seule la queue l'est.
+                        span_part(SpanPart::SlotWait).begin(stream_);
                         auto begun = begin_slot(*ring->slot, ring->sync);
+                        span_part(SpanPart::SlotWait).end(stream_);
                         if (!begun) return std::unexpected(std::move(begun.error()));
                         imported = *begun;
                       }
@@ -123,7 +141,10 @@ std::expected<void, Refusal> TensorRtBackend::enqueue_span_fp8(SpanFp8Engine& en
                                                       : SpanFp8Ring{.surface = imported->surface(),
                                                                     .width = ring->slot->width,
                                                                     .height = ring->slot->height};
-                      return engine.enqueue_tail(stream_, outputs, surface);
+                      span_part(SpanPart::Tail).begin(stream_);
+                      auto tail = engine.enqueue_tail(stream_, outputs, surface);
+                      span_part(SpanPart::Tail).end(stream_);
+                      return tail;
                     });
   timing.end(stream_);
   role(Role::Upscale).end(stream_);

@@ -70,7 +70,7 @@ struct Package {
   // Les blocs en FP16, sans quantification (SpanFp8Weights::fp16) : le SPAN FP16 natif, tiré de l'ONNX sans
   // calibration ni porte ; les échelles valent alors 1 et ne servent pas.
   bool fp16 = false;
-  // Avec fp16 seulement : le SPAN natif somme en f32 (SpanFp8Weights::acc32), le cran Qualité ; en f16
+  // Avec fp16 seulement : le SPAN natif somme en f32 (SpanFp8Weights::sums), le cran Qualité ; en f16
   // sans lui, comme TensorRT FP16 et AnimeJaNai (docs/span-native16.md).
   bool acc32 = false;
 };
