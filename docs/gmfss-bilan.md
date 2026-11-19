@@ -1,8 +1,11 @@
 # GMFSS union en temps réel : bilan du chantier natif
 
-> **Mis à jour le 19 novembre 2026, en fin de journée** : GMFlow natif, attention fondue (PR 2) et MLP fondu
-> (PR 3), audités et entrés dans #959 ; leurs bancs et leur règle de décision ajoutés à la séance PC (partie 4).
-> Avant : le budget du ×2 en 1080p corrigé (partie 3.2).
+> **Mis à jour le 19 novembre 2026, en fin de journée** :
+> - GridNet : la forme en flux (chargement en double tampon) est écrite et entrée dans #959 comme candidate du
+>   réglage, avec son étape à la séance PC ; le bloc résiduel fondu est écarté pour l'instant (parties 2, 3.4, 4) ;
+> - GMFlow natif : attention fondue (PR 2) et MLP fondu (PR 3), audités et entrés dans #959 ; leurs bancs et leur
+>   règle de décision ajoutés à la séance PC (partie 4) ;
+> - avant : le budget du ×2 en 1080p corrigé (partie 3.2).
 
 Le but : GMFSS Fortuna Union en temps réel sur la RTX 4070 Ti de Tatoub. Ses
 petits réseaux (le GridNet de la fusion, FeatureNet et MetricNet de la paire) passent par nos noyaux CUDA ; GMFlow
@@ -81,7 +84,8 @@ TensorRT mêlent donc deux arrondis.
 | GMFlow par nos noyaux | **en cours** | La PR 1 est fusionnée. Les PR 2 (attention fondue) et 3 (MLP fondu) sont écrites, auditées et dans #959 avec leurs bancs, sans être branchées. En émulation, l'image gagne 9,6 dB sur le graphe actuel, parce que le flot reste en f32. La vitesse n'est pas prouvée : le banc du PC décide de la suite. |
 | IFNet de la fusion | **reste sous TensorRT** | Plafond 0,4 ms : rien à gagner en vitesse. La coupe accepte les deux exports. |
 | Tri des paires (`--pair-triage --scene-map`) | **gardé** | 0,7 % d'images perdues en ×2 |
-| Chargement en double tampon, bloc résiduel fondu | **en cours** dans le cloud | Voir les leviers, partie 3 |
+| Forme en flux du GridNet (chargement en double tampon) | **dans #959**, candidate du réglage | Écrite et vérifiée au bit près sur l'hôte ; gardée par le banc du chargement seulement si elle est plus rapide. Prévu : fusion de 21,9 vers 19,1 à 19,6 ms. |
+| Bloc résiduel fondu de la ligne 0 | **écarté** pour l'instant | 0,5 ms au mieux, une perte au pire : le halo refait la première convolution 1,4 à 1,6 fois et la mémoire partagée ne laisse qu'un bloc par multiprocesseur |
 
 ## 3. Plafonds, et au-delà
 
@@ -122,9 +126,10 @@ Notes sur le tableau :
 **Où va le temps aujourd'hui** (hypothèses ; le profil Nsight de la séance les tranchera) :
 - **Fusion, deux fois son plafond.** `conv_kernel` ne recouvre pas son propre chargement : il charge une tranche
   par `cp.async`, l'attend, puis calcule. Le calcul (9,7 ms) et les octets (7,9 ms) s'additionnent alors en
-  17,6 ms, près des quelque 20 ms du GridNet. Les 14 convolutions de la ligne 0 (64 canaux à 960×576) sont à
+  17,6 ms, près des quelque 20 ms du GridNet. Les convolutions de la ligne 0 (64 canaux à 960×576) sont à
   l'équilibre : 0,255 ms de calcul contre 0,28 ms d'octets. Elles coûtent 0,28 ms recouvertes, 0,54 ms l'un
-  après l'autre.
+  après l'autre. Onze d'entre elles sont des 3×3 de 64 vers 64 au pas 1, dont six lisent un résiduel : comptés,
+  ces résiduels mettent le plafond de la ligne 0 à 3,9 ms et celui de la fusion vers 12 ms plutôt que 11,2.
 - **Paire, deux à trois fois et demie son plafond.** FeatureNet et MetricNet natifs ont un plafond de 3,5 ms à eux
   deux. Le reste est GMFlow sous TensorRT. L'étude de GMFlow déduit 6 à 7 ms en travail 720p au demi-flot, soit
   environ 13 à 15 ms en 1080p.
@@ -215,8 +220,8 @@ Le plafond par couche suppose que chaque couche lit et écrit la mémoire. On pe
 
 | Levier | Morceau | Gain attendu | Risque | Où |
 |---|---|---|---|---|
-| Chargement en double tampon dans `conv_kernel` (la bande suivante en vol pendant les mma) | GridNet, ligne 0 surtout | environ 3,5 ms réels, vers le plafond | faible | cloud, en cours (`gridnet-noyaux`) ; temps au PC |
-| Bloc résiduel fondu par tuiles (conv, PReLU, conv, addition), comme SPAN natif | GridNet, ligne 0 | la moitié des octets d'un bloc ; environ 0,5 ms réel par bloc | moyen : halo, registres | cloud, en cours (`gridnet-noyaux`) |
+| Forme en flux : un bloc descend une colonne, l'entrée dans un anneau de 10 lignes, la bande suivante en vol pendant les mma | GridNet, ligne 0 | ligne 0 de 6,7 vers 3,9 à 4,5 ms ; fusion de 21,9 vers 19,1 à 19,6 ms (modèle) | faible : le banc ne la garde que plus rapide et juste ; occupation de 8 warps, sm_75 sans doute perdant | **écrite, dans #959** ; temps au PC |
+| Bloc résiduel fondu par tuiles (conv, PReLU, conv, addition), comme SPAN natif | GridNet, ligne 0 | 0,28 ms d'octets épargnés par bloc, mais le halo refait la première convolution 1,4 à 1,6 fois : +0,5 ms au mieux pour les trois blocs, une perte à 65 % des tensor cores | moyen à élevé : 70 à 99 Ko de mémoire partagée, un bloc par multiprocesseur, rien sur sm_75 | **écarté** ; à rouvrir si Nsight Compute montre le flux à 88 % de la bande avec des tensor cores sous 60 % |
 | Queue fondue : la convolution du PixelShuffle écrit en sortie de phases et `conv_last` lit sa tuile sur la puce | GridNet, queue | octets de 650 à environ 85 Mo ; plafond de la queue de 1,6 à environ 1,1 ms | moyen | cloud, à faire |
 | Couches enchaînées par bandes dans le L2 (48 Mo) | GridNet | plafond du calcul seul : 9,7 ms au lieu de 10,9 ; plus au réel, où la ligne 0 ne recouvre pas ses octets | moyen à élevé : ordre des bandes, halo qui grandit | cloud, après le double tampon |
 | Winograd F(2,3) sur les couches limitées par le calcul (surtout les lignes 1 et 2 et la convolution du PixelShuffle : 6,3 ms au plafond) | GridNet | −2 à −2,5 ms au plafond. Utile seulement une fois les octets réglés : ces couches deviennent alors limitées par les octets. | moyen : précision f16 des transformées | émulation dans le cloud, puis noyaux |
@@ -244,10 +249,9 @@ le coût reste à peu près celui du ×2 de GMFSS seul, plus les flots et les wa
 ### Dans le cloud, maintenant
 
 1. Ce bilan, relu et fusionné. Il voyage avec #959 et corrige le budget de `gmfss-natif.md`.
-2. Branche `gridnet-noyaux` :
-   - le chargement en double tampon ;
-   - le bloc résiduel fondu de la ligne 0, s'il vaut la peine ;
-   - l'émulation des dB, la compilation pour les quatre architectures et les commandes du banc PC.
+2. GridNet : la forme en flux est faite et dans #959. Ensuite, par ordre de gain : la queue fondue, la
+   normalisation des splats dans la lecture du GridNet, puis les couches enchaînées par bandes dans le L2 ; les
+   lignes 1 et 2, limitées par le calcul, attendent l'émulation de Winograd et du FP8.
 3. GMFlow : les PR 2 et 3 sont dans #959, auditées, avec leurs bancs. La suite attend le banc du PC (règle
    ci-dessous). Si elle continue :
    - PR 4 : appariement global et propagation globale au 1/8 ;
@@ -354,9 +358,33 @@ La règle de décision : les deux contrôles tenus, puis le rapport de la couche
 720p, (attention native + 6 × MLP natif) sur la même somme sous TensorRT. **0,80 ou moins : on continue** (PR 4 et
 5) ; au-dessus, TensorRT garde GMFlow.
 
-Puis, toujours dans la même séance :
-- les bancs de la branche `gridnet-noyaux`, dont les commandes s'ajouteront ici quand elles seront prêtes ;
-- la fusion de #959.
+Puis la forme en flux du GridNet (détail dans `gmfss-natif.md`, « Séance finale », étape 4) :
+
+```sh
+# 5a. Au réglage (première ouverture, étape 0) : une ligne par convolution où une forme en flux passe.
+kirari play --motion=gmfss --rife=2 --start=960 $G <extrait> 2>&1 | grep -E "réglage : convolution|retenu pour"
+# 5b. Le temps de chaque noyau, dans le profil de l'étape 1.
+nsys stats -r cuda_gpu_kern_sum --format csv gmfss.nsys-rep | grep -E "stream_kernel|conv_kernel"
+# 5c. Une convolution de la ligne 0 au détail (si rien ne se profile, ôter --nvtx et --nvtx-include).
+ncu --nvtx --nvtx-include "kirari@gmfss.fusion.gridnet/" -k regex:stream_kernel -c 12 \
+  --section SpeedOfLight --section Occupancy --section MemoryWorkloadAnalysis -o flux \
+  kirari --debug play --motion=gmfss --rife=2 --start=960 $G <extrait>
+ncu --import flux.ncu-rep --page details --csv > flux.csv
+```
+
+À relever pour le GridNet :
+- « flux retenu » ou « tuile gardée » pour chaque convolution ; attendu sur la bande du banc : 270 à 300 µs en
+  flux contre 500 au plus en tuile sans résiduel, 400 à 450 contre 640 avec ;
+- « N formes écartées » doit rester à 0 ;
+- la plage `gmfss.fusion.gridnet` (étape 1) : attendu 2,3 à 2,8 ms de moins que les 21,90 ms de la fusion ;
+- dans Nsight Compute : la durée, les octets lus et écrits, le débit mémoire (88 % visés), les tensor cores (85 %
+  visés) et l'occupation (8 warps).
+
+Pour un ABAB du GridNet entier contre la seule tuile, un second binaire se construit au premier parent de la
+fusion de `gridnet-noyaux` dans #959 (le commit « Fusion de gridnet-noyaux », `^1`) ; il n'est utile que si le
+réglage garde le flux et que le gain reste flou.
+
+La séance se termine par la fusion de #959.
 
 Toute modification de `src/core`, `src/gpu`, `src/kernels` ou `src/prepare` demande un nouveau paquet TensorRT
 Linux. Il ne se fait que sur demande de Tatoub, comme toute release.
@@ -368,7 +396,7 @@ Linux. Il ne se fait que sur demande de Tatoub, comme toute release.
 | `claude/project-thread-1t05iy` (#959) | sa tête | Le natif par défaut, le mélange, GMFlow PR 2 et 3, ce bilan, à jour de main (#962) |
 | `gmfss-defaut` | `6532362a` | Le natif par défaut seul, à jour de main |
 | `gmfss-melange-2` | `4f1df2bf` | Le mélange, le réglage, les plages NVTX, la doc de la fusion mesurée |
-| `gridnet-noyaux` | en cours | Le double tampon et le bloc fondu du GridNet, partis de #959 |
+| `gridnet-noyaux` | `aa81450b` | La forme en flux du GridNet, fusionnée dans #959 |
 | `gmflow-attn-mlp` | `e7e5cba0` | Les PR 2 et 3 de GMFlow auditées, fusionnées dans #959 |
 
 | Fichier | Rôle |
