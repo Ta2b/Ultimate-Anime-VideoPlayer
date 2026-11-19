@@ -47,7 +47,7 @@ const char* sums_name(RifeNativeSums sums) {
 
 // Le temps d'une passe, TensorRT puis natif ; pass(0) met en file une passe TensorRT, pass(1) une native.
 // La marge que le natif doit prendre sur TensorRT, en pour cent, pour le journal.
-constexpr int kGainPercent = static_cast<int>(gmfss_trial::kMinGain * 100.0 + 0.5);
+constexpr double kGainPercent = gmfss_trial::kMinGain * 100.0;
 
 struct Speed {
   double trt = 0.0;
@@ -275,7 +275,7 @@ std::expected<std::string, Refusal> TfixEncoderEngine::try_native(
     if (!timed->native_wins()) {
       back_to_trt();
       return std::format(
-          "TemporalFix natif écarté pour l'encodeur, pas {} % plus rapide que TensorRT ({}×{}, {} contre "
+          "TemporalFix natif écarté pour l'encodeur, pas {:.0f} % plus rapide que TensorRT ({}×{}, {} contre "
           "TensorRT ; {})",
           kGainPercent, width_, height_, tried, timed->text());
     }
@@ -418,7 +418,7 @@ std::expected<std::string, Refusal> TfixWindowEngine::try_native(
       if (auto ok = back_to_trt(); !ok) return std::unexpected(std::move(ok.error()));
       if (!timed) return std::unexpected(std::move(timed.error()));
       return std::format(
-          "TemporalFix natif écarté pour la fenêtre, pas {} % plus rapide que TensorRT ({}×{}, {} contre "
+          "TemporalFix natif écarté pour la fenêtre, pas {:.0f} % plus rapide que TensorRT ({}×{}, {} contre "
           "TensorRT ; {})",
           kGainPercent, w, h, tried, timed->text());
     }
