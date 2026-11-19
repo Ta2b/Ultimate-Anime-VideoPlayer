@@ -20,13 +20,14 @@ TEST_CASE("Cadence haute : pertes de l'affichage, images prêtes, bornes", "[app
   CHECK(pressure_losses({.missing = 0, .dropped = 2, .dropped_ready = 2}, false) == 0);
 
   ReadySeen seen;
-  seen.note(1, 10, 1'000);
-  seen.note(1, 10, 2'000);  // la première fois seulement
-  CHECK(seen.before(1, 10, 2'000));
-  CHECK_FALSE(seen.before(1, 10, 1'000));                         // écrite à ce tour-ci : arrivée en retard
-  CHECK_FALSE(seen.before(2, 10, 5'000));                         // inconnue : comptée comme avant
-  for (std::uint64_t v = 0; v < 40; ++v) seen.note(3, v, 3'000);  // l'anneau des 32 dernières
-  CHECK_FALSE(seen.before(1, 10, 9'000));
+  seen.note({1, 1, 10}, 1'000);
+  seen.note({1, 1, 10}, 2'000);  // la première fois seulement
+  CHECK(seen.before({1, 1, 10}, 2'000));
+  CHECK_FALSE(seen.before({1, 1, 10}, 1'000));  // écrite à ce tour-ci : arrivée en retard
+  CHECK_FALSE(seen.before({1, 2, 10}, 5'000));  // inconnue : comptée comme avant
+  CHECK_FALSE(seen.before({2, 1, 10}, 5'000));  // anneau recréé : mêmes slot et valeur, autre image
+  for (std::uint64_t v = 0; v < 40; ++v) seen.note({1, 3, v}, 3'000);  // l'anneau des 32 dernières
+  CHECK_FALSE(seen.before({1, 1, 10}, 9'000));
 
   CadenceWatch watch({.swap_mode = SwapMode::Mailbox});
   CHECK(watch.take_losses({.missing = 4, .dropped = 4, .dropped_ready = 4}) == 0);
