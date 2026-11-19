@@ -1,0 +1,69 @@
+name: Release rapide (sans tests)
+
+# La seconde voie de release, au choix de Tatoub (19 novembre 2026) : compilation et publication, rien d'autre. La voie
+# complète (release.yml sur une étiquette poussée : garde, ci.yml vert, règles, tests, fumée, découpe) reste la voie
+# par défaut et ne change pas.
+#
+# Actions > Release rapide > Run workflow, sur la branche dont le dernier commit est à publier (main en général), avec
+# l'étiquette v<VERSION> ou v<VERSION>-rc.N (VERSION : project() de CMakeLists.txt). Ce workflow :
+#   1. pose l'étiquette sur ce commit, avec le jeton du workflow (une étiquette posée ainsi ne lance pas la release
+#      complète ; une étiquette qui existe déjà doit nommer ce même commit) ;
+#   2. lance Release sur l'étiquette avec « sans_tests » : garde légère (commit et version de l'étiquette), paquet
+#      TensorRT Linux et Windows construits et publiés s'ils manquent, paquets du lecteur compilés sans leurs tests,
+#      puis publication (index NVIDIA signé, et pour une étiquette finale le manifeste signé et la « latest »).
+#
+# Ne pas pousser l'étiquette soi-même avant : la poussée lancerait la voie complète.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Étiquette à poser sur ce commit et à publier (v<VERSION> ou v<VERSION>-rc.N)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-rapide-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  start:
+    name: Étiquette et lancement de Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write  # poser l'étiquette
+      actions: write   # lancer release.yml
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # Le binaire prend son suffixe de préversion dans l'étiquette : une étiquette qui ne dit pas la version de
+      # CMakeLists.txt donnerait un lecteur qui se trompe de version.
+      - name: Version de l'étiquette
+        env:
+          TAG: ${{ inputs.tag }}
+        run: tools/ci/check-version.sh "$TAG"
+      - name: Étiquette
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if tagged="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" -q .sha 2>/dev/null)"; then
+            if [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::$TAG existe déjà sur $tagged, pas sur ce commit ($GITHUB_SHA) : lancer depuis ce commit-là, ou choisir une autre étiquette"
+              exit 1
+            fi
+            echo "$TAG existe déjà sur $GITHUB_SHA"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" >/dev/null
+            echo "$TAG posée sur $GITHUB_SHA"
+          fi
+      - name: Release sans tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh workflow run release.yml -R "$GITHUB_REPOSITORY" --ref "$TAG" -f tag="$TAG" -f sans_tests=true
+          echo "Release lancée sur $TAG sans tests : Actions > Release" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -17,11 +17,16 @@ name: CI
 #   (libFuzzer, sans le lancer). À lancer avant une release finale : la garde de release exige, pour une étiquette
 #   sans suffixe de préversion, le témoin « verdict » d'un lancement complet sur main, sans dérogation (C28-05). La version livrée
 #   (linux-release) se construit et se teste dans release-linux.yml, sur le paquet même.
+# Parties (entrées coeur, lecteur_linux, windows, cuda, toutes cochées par défaut) : décocher pour ne lancer qu'une partie.
+# Un lancement partiel n'est retenu ni pour une préversion ni pour une release finale par la garde de release.yml
+# (témoin « toutes_parties ») ; Release rapide (release-rapide.yml) ne demande aucune CI.
+# Caches : ccache (Linux) et sccache (Windows) se restaurent partout et ne se sauvent que sur main : les lancements de
+# branche remplissaient le quota de 10 Go du dépôt et en chassaient tout.
 # macOS n'a plus de tâche : son support est délaissé pour l'instant ; release-macos.yml reste lançable à la main.
 # Versions et paquets : tools/release/versions.env.
 # Le titre du lancement dit l'étendue : la garde de release (release-guard.yml) y cherche « (complète) » pour une
 # étiquette finale (C51-07).
-run-name: CI${{ inputs.complete && ' (complète)' || '' }}
+run-name: CI${{ inputs.complete && ' (complète)' || '' }}${{ (!inputs.coeur || !inputs.lecteur_linux || !inputs.windows || !inputs.cuda) && ' (partielle)' || '' }}
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +38,25 @@ on:
         description: "Dérogation : un échec des tâches d'Arch ne fait pas échouer le lancement (une étiquette finale la refuse)"
         type: boolean
         default: false
+      # Les parties à lancer (Tatoub, 19 novembre 2026) : toutes cochées par défaut ; en décocher pour ne tester qu'une
+      # partie du code. Les règles tournent toujours (2 min). Un lancement partiel n'est jamais « complet » pour la
+      # garde d'une étiquette finale.
+      coeur:
+        description: "Cœur (gcc, clang, sanitizers, GCC d'Arch)"
+        type: boolean
+        default: true
+      lecteur_linux:
+        description: "Lecteur Linux (lavapipe, clang-tidy, tsan, asan)"
+        type: boolean
+        default: true
+      windows:
+        description: "Windows MSVC"
+        type: boolean
+        default: true
+      cuda:
+        description: "CUDA et TensorRT (Linux et Windows)"
+        type: boolean
+        default: true
 
 # Lecture seule : rien ici n'écrit dans le dépôt (P1.20).
 permissions:
@@ -61,6 +85,7 @@ jobs:
 
   core:
     name: Cœur (${{ matrix.name }})
+    if: inputs.coeur
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -81,8 +106,7 @@ jobs:
       - name: Paquets système
         run: |
           source tools/release/versions.env
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends $APT_BUILD $APT_COMPILERS ccache
+          tools/ci/apt-install.sh --no-install-recommends $APT_BUILD $APT_COMPILERS ccache
       # Un script de dépendances modifié restaure le préfixe précédent : ses marqueurs signés ne
       # font rebâtir que les dépendances dont la version ou les options ont changé.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -90,7 +114,10 @@ jobs:
           path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-core-${{ matrix.cc }}-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-core-${{ matrix.cc }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Le cache de compilation : restauré partout, sauvé sur main seulement (plus bas). Les lancements de branche
+      # remplissaient le quota de 10 Go du dépôt et en chassaient tout (0 succès sur 916 objets, 19 novembre 2026).
+      - id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-core-${{ matrix.name }}-${{ github.sha }}
@@ -98,6 +125,12 @@ jobs:
       - run: tools/deps/linux-from-source.sh --core "$KIRARI_DEPS_PREFIX" "$RUNNER_TEMP/deps-src"
       - run: cmake --preset ${{ matrix.preset }}
       - run: cmake --build --preset ${{ matrix.preset }}
+      - name: Sauver le cache de compilation (main)
+        if: always() && github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - run: ctest --preset ${{ matrix.preset }} --output-junit "$GITHUB_WORKSPACE/junit.xml"
       # Un test sauté ne passe pas pour réussi, ici non plus (B28-12) : plafond « core-<tâche> » de skip-ceiling.txt.
       - name: Tests sautés
@@ -109,6 +142,7 @@ jobs:
   # échouer le lancement, donc la garde de release le refuse. Dérogation à la main : l'entrée allow_arch_red.
   arch:
     name: Cœur (GCC d'Arch)
+    if: inputs.coeur
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     continue-on-error: ${{ inputs.allow_arch_red }}
@@ -136,7 +170,7 @@ jobs:
   # complète seulement : sans cache de dépendances dans son conteneur, elle prend 28 min, la plus longue.
   arch-player:
     name: Lecteur (GCC d'Arch)
-    if: inputs.complete
+    if: inputs.complete && inputs.lecteur_linux
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     continue-on-error: ${{ inputs.allow_arch_red }}
@@ -175,6 +209,7 @@ jobs:
   # générés que lit le compilateur (build-generated.sh), pas le lecteur.
   player:
     name: Lecteur Linux (${{ matrix.name }})
+    if: inputs.lecteur_linux
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     # L'étendue courante passe tsan sur les tests choisis et asan sur les cibles de fuzz ; la complète, asan-ubsan et
@@ -200,8 +235,7 @@ jobs:
       - name: Paquets système
         run: |
           source tools/release/versions.env
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER $APT_TESTS ccache ${{ matrix.tidy && 'clang-20 clang-tidy-20' || '' }}
+          tools/ci/apt-install.sh $APT_BUILD $APT_PLAYER $APT_TESTS ccache ${{ matrix.tidy && 'clang-20 clang-tidy-20' || '' }}
           pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -209,7 +243,10 @@ jobs:
           # TSan : son propre préfixe, où libass est instrumenté (B35-02) ; les autres tâches gardent le leur.
           key: deps-player-gcc-13-${{ startsWith(matrix.name, 'tsan') && 'tsan-' || '' }}${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-${{ startsWith(matrix.name, 'tsan') && 'tsan-' || '' }}
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Le cache de compilation : restauré partout, sauvé sur main seulement (plus bas). Les lancements de branche
+      # remplissaient le quota de 10 Go du dépôt et en chassaient tout (0 succès sur 916 objets, 19 novembre 2026).
+      - id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-${{ matrix.name }}-${{ github.sha }}
@@ -226,6 +263,12 @@ jobs:
       - if: matrix.tidy
         run: tools/ci/build-generated.sh build/${{ matrix.preset }}
       - run: ccache -s
+      - name: Sauver le cache de compilation (main)
+        if: always() && github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - name: Tests (Vulkan logiciel sous Xvfb)
         if: matrix.tests
         run: xvfb-run -a ctest --preset ${{ matrix.test_preset || matrix.preset }} -j 3 --output-junit "$GITHUB_WORKSPACE/junit.xml"
@@ -277,12 +320,16 @@ jobs:
   # installation de vcpkg complète, pour garder les ports compilés même quand la construction échoue.
   windows:
     name: Windows (MSVC)
+    if: inputs.windows
     # Dans les deux étendues (P1.17). Un lancement sur main garde aussi à jour le cache vcpkg d'un manifeste ou de
     # ports changés, que lisent ensuite les autres branches.
     runs-on: windows-2025
     timeout-minutes: 90
     env:
-      SCCACHE_GHA_ENABLED: "true"
+      # sccache sur disque (C:\sc), mis en cache d'un bloc comme ccache sous Linux : le cache GitHub de sccache écrivait
+      # une entrée par objet dans le quota du dépôt.
+      SCCACHE_DIR: C:\sc
+      SCCACHE_CACHE_SIZE: 2G
       KIRARI_VCPKG: C:\v
       KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
@@ -315,9 +362,15 @@ jobs:
           git -C $env:KIRARI_VCPKG checkout -q $baseline
           & "$env:KIRARI_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-      # sccache (cache GitHub) pour cl.exe : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
+      # sccache pour cl.exe (sur disque, C:\sc) : /Z7 (CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded) met
       # les informations de débogage dans les objets, seule forme que sccache sait mettre en cache.
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - id: sccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\sc
+          key: sccache-windows-ci-${{ steps.runner-image.outputs.image }}-${{ github.sha }}
+          restore-keys: sccache-windows-ci-${{ steps.runner-image.outputs.image }}-
       - name: Configuration
         id: configure
         shell: pwsh
@@ -342,6 +395,14 @@ jobs:
         run: |
           cmake --build --preset windows-ci -- -k 0  # toutes les erreurs de MSVC en une passe
           if ($LASTEXITCODE -ne 0) { throw "construction" }
+      # Les statistiques, et le serveur arrêté avant que son dossier parte au cache.
+      - run: sccache --stop-server; exit 0
+      - name: Sauver sccache (main)
+        if: always() && github.ref == 'refs/heads/main' && steps.sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\sc
+          key: ${{ steps.sccache.outputs.cache-primary-key }}
       - name: Tests sans GPU
         shell: pwsh
         run: |
@@ -366,10 +427,14 @@ jobs:
   # d'appareil par architecture sont celles de la tâche Linux.
   windows-cuda:
     name: Windows (CUDA et TensorRT, MSVC)
+    if: inputs.cuda
     runs-on: windows-2025
     timeout-minutes: 75
     env:
-      SCCACHE_GHA_ENABLED: "true"
+      # sccache sur disque (C:\sc), mis en cache d'un bloc comme ccache sous Linux : le cache GitHub de sccache écrivait
+      # une entrée par objet dans le quota du dépôt.
+      SCCACHE_DIR: C:\sc
+      SCCACHE_CACHE_SIZE: 2G
       KIRARI_VCPKG: C:\v
       KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
@@ -418,6 +483,13 @@ jobs:
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - if: steps.touched.outputs.run == 'true'
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - id: sccache
+        if: steps.touched.outputs.run == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\sc
+          key: sccache-windows-cuda-${{ steps.runner-image.outputs.image }}-${{ github.sha }}
+          restore-keys: sccache-windows-cuda-${{ steps.runner-image.outputs.image }}-
       # Le kit CUDA et TensorRT de NVIDIA (versions épinglées dans versions.env, empreintes vérifiées) : jetés avec la
       # tâche, rien n'en entre dans un paquet. Les lancer ici, c'est accepter leurs licences, comme release-windows.yml.
       - name: CUDA et TensorRT
@@ -438,12 +510,26 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded
           if ($LASTEXITCODE -ne 0) { throw "configuration" }
+      # Les ports compilés ici (cache absent ou chassé) servent aux lancements suivants, comme dans la tâche windows.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.touched.outputs.run == 'true' && steps.configure.outcome == 'success' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        with:
+          path: C:\vc
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       - name: Construction
         if: steps.touched.outputs.run == 'true'
         shell: pwsh
         run: |
           cmake --build --preset windows-rtx -- -k 0  # toutes les erreurs de MSVC et de nvcc en une passe
           if ($LASTEXITCODE -ne 0) { throw "construction" }
+      - if: steps.touched.outputs.run == 'true'
+        run: sccache --stop-server; exit 0
+      - name: Sauver sccache (main)
+        if: always() && steps.touched.outputs.run == 'true' && github.ref == 'refs/heads/main' && steps.sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\sc
+          key: ${{ steps.sccache.outputs.cache-primary-key }}
       # C40-02 : les tests matériels sont enregistrés par la configuration, la carte n'y est pour rien.
       - name: Tests matériels enregistrés
         if: steps.touched.outputs.run == 'true'
@@ -457,6 +543,7 @@ jobs:
   # de la release. Les tests TensorRT demandent un GPU NVIDIA.
   cuda:
     name: Lecteur Linux (CUDA et TensorRT)
+    if: inputs.cuda
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -472,15 +559,17 @@ jobs:
       - name: Paquets système
         run: |
           source tools/release/versions.env
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache clang-tidy-20
+          tools/ci/apt-install.sh $APT_BUILD $APT_PLAYER ccache clang-tidy-20
           pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Le cache de compilation : restauré partout, sauvé sur main seulement (plus bas). Les lancements de branche
+      # remplissaient le quota de 10 Go du dépôt et en chassaient tout (0 succès sur 916 objets, 19 novembre 2026).
+      - id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-cuda-${{ github.sha }}
@@ -492,6 +581,12 @@ jobs:
           cmake --preset linux-prefix-cuda "-DKIRARI_TENSORRT_ROOT=$KIRARI_TENSORRT_ROOT"
           "-DKIRARI_CUDA_ARCHITECTURES=75-real;86-real;89-real;120-real;120-virtual"
       - run: cmake --build --preset linux-prefix-cuda
+      - name: Sauver le cache de compilation (main)
+        if: always() && github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
       - run: tools/ci/check-hardware-tests.sh build/linux-prefix-cuda
       # P5.8 : le backend TensorRT, que la tâche clang-tidy de Linux ne compile pas (ses .cpp ; nvcc garde les .cu).
       - name: clang-tidy sur le backend TensorRT
@@ -504,7 +599,7 @@ jobs:
   # qu'au prochain lancement. Construction seule, sans l'exécuter ; étendue complète.
   clang-player:
     name: Lecteur (clang-20, libFuzzer)
-    if: inputs.complete
+    if: inputs.complete && inputs.lecteur_linux
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -514,8 +609,7 @@ jobs:
       - name: Paquets système
         run: |
           source tools/release/versions.env
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq $APT_BUILD $APT_PLAYER ccache clang-20 libclang-rt-20-dev
+          tools/ci/apt-install.sh $APT_BUILD $APT_PLAYER ccache clang-20 libclang-rt-20-dev
           pip install --user --require-hashes -r tools/ci/requirements/meson.txt
       # Les dépendances du lecteur sous gcc-13 : des bibliothèques C ou à l'ABI de libstdc++, que clang lie.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -523,7 +617,10 @@ jobs:
           path: ${{ env.KIRARI_DEPS_PREFIX }}
           key: deps-player-gcc-13-${{ hashFiles('tools/deps/linux-from-source.sh', 'ports/libplacebo/*.patch', 'ports/libass/*.patch') }}
           restore-keys: deps-player-gcc-13-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Le cache de compilation : restauré partout, sauvé sur main seulement (plus bas). Les lancements de branche
+      # remplissaient le quota de 10 Go du dépôt et en chassaient tout (0 succès sur 916 objets, 19 novembre 2026).
+      - id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-player-clang-${{ github.sha }}
@@ -542,6 +639,12 @@ jobs:
           targets="$(python3 -I tools/ci/fuzz-targets.py)"
           cmake --build build/clang-player --target $(printf 'kirari_fuzz_%s ' $targets)
       - run: ccache -s
+      - name: Sauver le cache de compilation (main)
+        if: always() && github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
   # Le témoin du lancement (C28-05) : la garde de release ne se contente pas d'un lancement vert, elle lit ce fichier.
   # Il n'existe que si aucune tâche n'a échoué. Une étiquette finale (sans « - ») exige complete=true, ref=main et
@@ -555,13 +658,15 @@ jobs:
     steps:
       - name: Écrire le témoin
         env:
-          COMPLETE: ${{ inputs.complete }}
+          # Complet seulement si toutes les parties ont tourné.
+          COMPLETE: ${{ inputs.complete && inputs.coeur && inputs.lecteur_linux && inputs.windows && inputs.cuda }}
           ALLOW_ARCH_RED: ${{ inputs.allow_arch_red }}
+          TOUTES: ${{ inputs.coeur && inputs.lecteur_linux && inputs.windows && inputs.cuda }}
           REF: ${{ github.ref }}
         run: |
           mkdir verdict
-          printf '{"complete": %s, "allow_arch_red": %s, "ref": "%s", "sha": "%s"}\n' \
-            "$COMPLETE" "$ALLOW_ARCH_RED" "$REF" "$GITHUB_SHA" | tee verdict/ci-verdict.json
+          printf '{"complete": %s, "allow_arch_red": %s, "toutes_parties": %s, "ref": "%s", "sha": "%s"}\n' \
+            "$COMPLETE" "$ALLOW_ARCH_RED" "$TOUTES" "$REF" "$GITHUB_SHA" | tee verdict/ci-verdict.json
           cat verdict/ci-verdict.json >>"$GITHUB_STEP_SUMMARY"
           [ "$ALLOW_ARCH_RED" != true ] || echo "::warning::dérogation allow_arch_red : un échec d'Arch n'a pas fait échouer ce lancement"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

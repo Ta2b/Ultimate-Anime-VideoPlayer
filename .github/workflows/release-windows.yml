@@ -31,6 +31,10 @@ on:
       tag:
         type: string
         required: true
+      # Release rapide (release.yml) : garde légère, ni fumée ni tests.
+      sans_tests:
+        type: boolean
+        default: false
     outputs:
       archive-sha256:
         description: "SHA-256 de kirari-windows-x64.zip tel que cette construction l'a produit (B51-07)"
@@ -58,6 +62,7 @@ jobs:
     uses: ./.github/workflows/release-guard.yml
     with:
       tag: ${{ inputs.tag || '' }}
+      leger: ${{ inputs.sans_tests == true }}
 
   # L'empreinte Windows se calcule sous Linux : les fins de ligne d'une extraction Windows la changeraient.
   trt-check:
@@ -108,7 +113,10 @@ jobs:
       KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
       KIRARI_VCPKG_TRIPLET: x64-windows-release
-      SCCACHE_GHA_ENABLED: "true"
+      # sccache sur disque, mis en cache d'un bloc (voir ci.yml) : le cache GitHub de sccache écrivait une entrée par
+      # objet dans le quota du dépôt.
+      SCCACHE_DIR: C:\sc
+      SCCACHE_CACHE_SIZE: 2G
       KIRARI_COMPILER_LAUNCHER: sccache
       FP: ${{ needs.trt-check.outputs.fp }}
       KIRARI_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
@@ -160,6 +168,13 @@ jobs:
         if: env.SKIP != '1'
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
         if: env.SKIP != '1'
+      - id: sccache
+        if: env.SKIP != '1'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\sc
+          key: sccache-release-windows-trt-${{ steps.runner-image.outputs.image }}-${{ github.run_id }}
+          restore-keys: sccache-release-windows-trt-${{ steps.runner-image.outputs.image }}-
       - name: CUDA et TensorRT
         if: env.SKIP != '1'
         shell: pwsh
@@ -193,6 +208,15 @@ jobs:
           if (-not ($members -match 'trtexec\.exe$')) { throw "trtexec.exe absent de l'archive" }
           pwsh tools/release/attach-nvidia-windows.ps1 "$env:RUNNER_TEMP/package" "trt-win-$env:FP"
           if ($LASTEXITCODE -ne 0) { throw "contrôle du paquet TensorRT" }
+      - name: Sauver sccache
+        if: always() && env.SKIP != '1' && steps.sccache.outcome == 'success'
+        shell: pwsh
+        run: sccache --stop-server; exit 0
+      - if: always() && env.SKIP != '1' && steps.sccache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\sc
+          key: ${{ steps.sccache.outputs.cache-primary-key }}
       # Seulement l'archive du moteur (notre module et trtexec.exe) et son index : le contrôle
       # d'attach-nvidia-windows.ps1 refuse une archive qui contient un fichier de NVIDIA.
       - name: Publication dans trt-win-${{ env.FP }}
@@ -226,9 +250,10 @@ jobs:
       KIRARI_VCPKG_BUILDTREES: C:\vb
       VCPKG_BINARY_SOURCES: "clear;files,C:\\vc,readwrite"
       KIRARI_VCPKG_TRIPLET: x64-windows-release
-      # sccache (cache GitHub) pour cl.exe : sans lui, les ~780 objets se recompilent à chaque release (~25 min).
-      # En Release, sans informations de débogage, cl.exe est mis en cache tel quel.
-      SCCACHE_GHA_ENABLED: "true"
+      # sccache pour cl.exe : sans lui, les ~780 objets se recompilent à chaque release (~25 min). Sur disque (C:\sc),
+      # mis en cache d'un bloc (voir ci.yml).
+      SCCACHE_DIR: C:\sc
+      SCCACHE_CACHE_SIZE: 2G
       KIRARI_COMPILER_LAUNCHER: sccache
       FP: ${{ needs.trt-check.outputs.fp }}
       KIRARI_RELEASE_REPO: ${{ needs.trt-check.outputs.repo }}
@@ -283,11 +308,19 @@ jobs:
           & "$env:KIRARI_VCPKG/bootstrap-vcpkg.bat" -disableMetrics
       - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - id: sccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: C:\sc
+          key: sccache-release-windows-${{ steps.runner-image.outputs.image }}-${{ github.run_id }}
+          restore-keys: sccache-release-windows-${{ steps.runner-image.outputs.image }}-
       # AMD et Intel passent par Vulkan (docs/moteurs.md).
       - name: Paquet
         id: package
         shell: pwsh
         env:
+          # Release rapide : les tests ne se compilent pas.
+          KIRARI_BUILD_TESTS: ${{ inputs.sans_tests && 'OFF' || '' }}
           # Signature Authenticode (P7.1) : vide tant que le compte Trusted Signing n'existe pas.
           AJP_TS_ENDPOINT: ${{ vars.AJP_TS_ENDPOINT }}
           AJP_TS_ACCOUNT: ${{ vars.AJP_TS_ACCOUNT }}
@@ -303,6 +336,15 @@ jobs:
           if ($env:KIRARI_TAG) { $env:KIRARI_RELEASE_TAG = $env:KIRARI_TAG }
           pwsh tools/release/package-windows.ps1 "$env:RUNNER_TEMP/package"
           if ($LASTEXITCODE -ne 0) { throw "paquet" }
+      - name: Sauver sccache
+        if: always() && steps.sccache.outcome == 'success'
+        shell: pwsh
+        run: sccache --stop-server; exit 0
+      - if: always() && steps.sccache.outcome == 'success'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: C:\sc
+          key: ${{ steps.sccache.outputs.cache-primary-key }}
       # Ce que « publier » retrouve dans la release avant de signer : le SHA-256 du zip tel que construit ici (B51-07).
       - name: Empreinte de l'archive
         id: sums
@@ -342,6 +384,7 @@ jobs:
       # Le zip et l'installeur lancés tels que l'utilisateur les recevra (B51-04) : le zip extrait, l'installeur installé
       # en silence, kirari.exe qui répond dans les deux, puis désinstallé. Un échec arrête tout avant la release.
       - name: Fumée du paquet
+        if: ${{ !inputs.sans_tests }}
         shell: pwsh
         run: |
           pwsh tools/release/smoke-windows.ps1 "$env:RUNNER_TEMP/package/kirari-windows-x64.zip" "$env:RUNNER_TEMP/package/kirari-windows-x64-setup.exe"
@@ -350,6 +393,7 @@ jobs:
       # le runner n'a ni GPU ni Vulkan, les tests Vulkan et e2e passent sous lavapipe dans ci.yml) : un échec
       # arrête tout avant l'artefact et la release, préversions comprises (P1.15).
       - name: Tests sans GPU
+        if: ${{ !inputs.sans_tests }}
         shell: pwsh
         run: |
           ctest --preset windows-release-nogpu
