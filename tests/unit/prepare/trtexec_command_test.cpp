@@ -43,11 +43,13 @@ TEST_CASE("engine_settings : chaînes du fork pour SPAN et RIFE", "[prepare][trt
 TEST_CASE("engine_settings : les entrées jumelles suivent le profil de la première", "[prepare][trtexec]") {
   const kirari::gpu::ShapeSet loose{
       .min = {{1, 3, 1080, 1912}}, .opt = {{1, 3, 1080, 1920}}, .max = {{1, 3, 1080, 1920}}};
-  const std::vector<std::string> twins{"input_1", "input_2"};
+  // Les traits gardés de TemporalFix (prepare/onnx_cache.h) : mêmes formes, leurs propres canaux.
+  const std::vector<ShapeTwin> twins{{.name = "input_1", .channels = 3},
+                                     {.name = "features_0", .channels = 4}};
   CHECK(engine_settings(Recipe::Fp32Islands, "input_0", loose, twins) ==
-        "--stronglyTyped --minShapes=input_0:1x3x1080x1912,input_1:1x3x1080x1912,input_2:1x3x1080x1912 "
-        "--optShapes=input_0:1x3x1080x1920,input_1:1x3x1080x1920,input_2:1x3x1080x1920 "
-        "--maxShapes=input_0:1x3x1080x1920,input_1:1x3x1080x1920,input_2:1x3x1080x1920 "
+        "--stronglyTyped --minShapes=input_0:1x3x1080x1912,input_1:1x3x1080x1912,features_0:1x4x1080x1912 "
+        "--optShapes=input_0:1x3x1080x1920,input_1:1x3x1080x1920,features_0:1x4x1080x1920 "
+        "--maxShapes=input_0:1x3x1080x1920,input_1:1x3x1080x1920,features_0:1x4x1080x1920 "
         "--inputIOFormats=fp16:chw --outputIOFormats=fp16:chw --tacticSources=-CUDNN,-CUBLAS,-CUBLAS_LT "
         "--skipInference");
 }

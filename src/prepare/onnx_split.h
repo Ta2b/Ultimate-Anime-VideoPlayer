@@ -63,10 +63,10 @@ std::expected<OnnxGraph, Refusal> read_onnx_graph(std::span<const std::byte> mod
 struct SplitTensor {
   std::string name;
   std::int32_t elem_type = 10;
-  std::vector<std::int64_t> dims;  // vide : forme laissée à TensorRT (sorties)
+  std::vector<std::int64_t> dims;  // vide : forme laissée à TensorRT (sorties) ; -1 : dimension libre
 };
 
-// Le modèle réduit aux nœuds qui mènent des inputs aux outputs : entrées du graphe = inputs (formes fixes),
+// Le modèle réduit aux nœuds qui mènent des inputs aux outputs : entrées du graphe = inputs (formes données),
 // sorties = outputs, nœuds Constant et initialiseurs repris tant qu'ils servent. Les autres champs du modèle
 // (version, jeux d'opérateurs) restent. Refus : ModelUnreadable, FieldMissing (un output n'est produit par
 // aucun nœud, ou un nœud du morceau lit un tenseur qui n'est ni input, ni constante, ni produit),
