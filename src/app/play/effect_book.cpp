@@ -23,12 +23,14 @@ render::EffectTiles effect_tiles_of(const kernels::SceneMotion& scene, int work_
   out.cover_x = static_cast<double>(scene.cols * scene.tile_px) / work_width;
   out.cover_y = static_cast<double>(scene.rows * scene.tile_px) / work_height;
   out.effect.resize(count);
+  out.sure.assign(count, 0.0F);
   for (std::size_t i = 0; i < count; ++i) {
     const kernels::SceneTile& tile = scene.tiles[i];
     const float sure = std::clamp(tile.confidence, 0.0F, 1.0F);
     switch (tile.kind) {
       case kernels::SceneClass::Effect:
         out.effect[i] = 1.0F;
+        out.sure[i] = 1.0F;
         break;
       case kernels::SceneClass::Background:
       case kernels::SceneClass::Drawing:
@@ -76,39 +78,43 @@ void EffectBook::clear() {
   next_ = 0;
 }
 
+EffectSummary effect_summary(const render::EffectMask& mask, bool on) {
+  EffectSummary out{.on = on && !mask.values().empty(), .cols = mask.cols(), .rows = mask.rows()};
+  if (!out.on) return out;
+  for (const float v : mask.values()) out.held += 1.0 - static_cast<double>(v);
+  const auto tiles = static_cast<double>(mask.values().size());
+  out.held /= tiles;
+  out.sure =
+      static_cast<double>(std::ranges::count_if(mask.sure(), [](float v) { return v > 0.5F; })) / tiles;
+  return out;
+}
+
 void EffectTally::count(bool noted, bool on, const render::EffectMask& mask, std::int64_t pts_us) {
   ++images_;
   if (noted) ++noted_;
-  if (!on || mask.values().empty()) return;
+  const EffectSummary seen = effect_summary(mask, on);
+  if (!seen.on) return;
   ++masked_;
-  double held = 0.0;
-  std::size_t effects = 0;
-  for (const float v : mask.values()) {
-    held += 1.0 - static_cast<double>(v);
-    if (v > 0.9F) ++effects;
-  }
-  const auto tiles = static_cast<double>(mask.values().size());
-  held /= tiles;
-  held_sum_ += held;
-  if (pts_us != kNoPts && static_cast<double>(effects) >= kTallyEffectShare * tiles)
-    keep(Moment{.pts_us = pts_us, .held = held});
+  held_sum_ += seen.held;
+  if (pts_us != kNoPts && seen.sure >= kTallyEffectShare)
+    keep(Moment{.pts_us = pts_us, .effect = seen.sure, .held = seen.held});
 }
 
 void EffectTally::keep(Moment moment) {
   // Un moment plus fort à moins de 10 s l'emporte ; sinon celui-ci remplace les plus faibles de son
   // voisinage, puis le plus faible de tous.
   const auto near = [&](const Moment& kept) {
-    return kept.held > 0.0 && std::abs(kept.pts_us - moment.pts_us) < kTallySpacingUs;
+    return kept.effect > 0.0 && std::abs(kept.pts_us - moment.pts_us) < kTallySpacingUs;
   };
   for (const Moment& kept : moments_) {
-    if (near(kept) && kept.held >= moment.held) return;
+    if (near(kept) && kept.effect >= moment.effect) return;
   }
   for (Moment& kept : moments_) {
     if (near(kept)) kept = Moment{};
   }
-  std::ranges::sort(moments_, std::ranges::greater{}, &Moment::held);
-  if (moment.held > moments_.back().held) moments_.back() = moment;
-  std::ranges::sort(moments_, std::ranges::greater{}, &Moment::held);
+  std::ranges::sort(moments_, std::ranges::greater{}, &Moment::effect);
+  if (moment.effect > moments_.back().effect) moments_.back() = moment;
+  std::ranges::sort(moments_, std::ranges::greater{}, &Moment::effect);
 }
 
 bool EffectFollower::show(const std::optional<EffectNote>& note, std::int64_t pts_us) {

@@ -239,6 +239,17 @@ suivi.
   `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
   voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
   montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
+- **Plus haut sur les effets sûrs** (essai du PC du 19/11 sur main 5bc93d99 : l'effet se voyait, 2 % des
+  pixels à plus de 10 % d'écart à 16:20, d'où la demande d'un effet plus marqué sur les vrais effets sans
+  toucher au reste). Une seconde couche du masque (`EffectMask::sure`, lissée, dilatée et floutée comme la
+  première) suit les seules tuiles de la classe effet. La passe du masque pose les deux couches dans une
+  seule valeur (codes 0 à 127 sur 255 pour la part gardée, 127 à 255 pour l'effet sûr : « tout gardé,
+  aucun effet » reste exact en 8 bits). Sur un effet sûr, la porte des lumières s'ouvre dès 30 % du blanc
+  (pleine à 60 %, `fx_gate_lo`, `fx_gate_hi`) au lieu de 55 à 95 %, sur un écart à la zone de 0,02 à 0,15
+  en PQ au lieu de 0,05 à 0,25 : une lueur de magie sous le blanc devient une lumière. La montée y commence
+  plus bas (30 à 60 % du blanc au lieu de 50 à 100 %) et va une fois et demie plus haut (`fx_gain` 0,5). La
+  peau reste exclue. Hors effet sûr, chaque pixel est celui d'avant, au code près
+  (`grade_gpu_effects_test.cpp`).
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
@@ -248,10 +259,20 @@ suivi.
   carte s'est tue et le masque revient au neutre). L'export ne lit pas le masque.
 - **Le journal de fin** dit ce que le masque a fait, à l'écran et au grade avant le warp, dès qu'une image
   a eu la carte : « éclats sur les effets (grade avant le warp) : N images gradées, … avec la carte de la
-  scène, … avec le masque (… %), marge des éclats retenue hors effet … % en moyenne ; à voir : 1:23 (31 %),
-  … ». Les moments « à voir » sont les trois images où le masque retient le plus la marge hors effet alors
-  qu'un effet sûr couvre au moins 2 % des tuiles, à 10 s l'un de l'autre au moins (`EffectTally`) : les
-  revoir avec et sans `--no-effect-highlights` montre l'écart à l'œil.
+  scène, … avec le masque (… %), marge des éclats retenue hors effet … % en moyenne ; à voir : 1:23 (effet
+  12 %, retenue 31 %), … ». Les moments « à voir » sont les trois images où l'effet sûr couvre la plus
+  grande part des tuiles (2 % au moins), à 10 s l'un de l'autre au moins (`EffectTally`) : les revoir avec
+  et sans `--no-effect-highlights` montre l'écart à l'œil.
+- **Vérifier une image** : `--effect-mask-view` (essai, avec `--scene-map`) fait peindre le masque par la
+  passe anime au lieu de l'image : l'image en gris sombre, les lumières (la carte des émetteurs, avant la
+  part retenue) en rouge, l'effet sûr en vert, la marge retenue en bleu. Une lumière d'effet sort jaune,
+  une lumière retenue magenta, un décor sans lumière bleu ; sans masque, ni vert ni bleu. Chaque
+  instantané dit au journal le masque de son image, celui de l'écran ou celui du grade avant le warp
+  (« instantané … : masque des effets (grade avant le warp) de 60 × 34 tuiles, effet sûr sur … % d'entre
+  elles, marge des éclats retenue sur … % », ou « neutre » sans carte). Après un départ ou un saut, le
+  masque part du neutre et descend en 0,7 s : lancer la lecture une dizaine de secondes avant le moment
+  voulu. Premier essai du PC (19/11, #926, l'écran gradait, capture 2 s après le départ à 16:41) : l'image
+  de 16:43 sortait la même avec ou sans masque, sans qu'une capture puisse dire si la carte était là.
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de

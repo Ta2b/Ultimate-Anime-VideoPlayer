@@ -32,6 +32,12 @@ std::string bench_usage() {
          "The result is kept in bench.toml (card, driver, level, date) and replaces the card's estimate.\n";
 }
 
+namespace {
+
+std::string trial_usage();
+
+}  // namespace
+
 std::string play_usage(bool debug) {
   const std::string usage = std::format(
       "kirari play [file] [options]   (without a file: home screen, Open a video); kirari --version\n"
@@ -82,8 +88,14 @@ std::string play_usage(bool debug) {
       "  kirari calibrate (the bench of the Results page); kirari bench --help, kirari compare --help\n",
       kDefaultModelFile, kDefaultRifeFile, limits::kTrueHdrPeak.lo, limits::kTrueHdrPeak.hi);
   if (!debug) return usage + "Trial options: kirari --debug --help\n";
-  return usage +
-         "Trial options, with --debug:\n"
+  return usage + trial_usage();
+}
+
+namespace {
+
+// Les options d'essai (--debug), à part de play_usage : la liste s'allonge à chaque essai.
+std::string trial_usage() {
+  return "Trial options, with --debug:\n"
          "  --rife-image           image RIFE at every instant (without the motion variant)\n"
          "  --ring-rgb10a2         RGB10A2 ring under TensorRT (half the memory, banding not\n"
          "                         measured yet); default and --no-ring-rgb10a2: RGBA16\n"
@@ -128,6 +140,8 @@ std::string play_usage(bool debug) {
          "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"
          "                         tiles that move, cuts; same output until a feature reads it\n"
          "  --no-effect-highlights with --scene-map: highlights on every light, not only on effects\n"
+         "  --effect-mask-view     with --scene-map: the grade paints the effects mask, not the picture\n"
+         "                         (lights red, sure effects green, held margin blue)\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
          "  --no-rife-hwc8         trial: fused RIFE blocks built with planar inputs and outputs under\n"
          "                         TensorRT, with reformat copies (default: HWC8, same output)\n"
@@ -152,6 +166,8 @@ std::string play_usage(bool debug) {
          "  --display-loss-pressure  frames the display lost while ready widen the Instant step too\n"
          "                         (former count)\n";
 }
+
+}  // namespace
 
 std::optional<std::string> help_or_version(const PlayOptions& options) {
   if (options.help) return play_usage(options.debug);

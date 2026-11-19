@@ -21,7 +21,8 @@ namespace kirari::app::play {
 
 // Ce que le masque lit d'une carte : une valeur d'effet par tuile, les drapeaux de la paire, et la part de
 // l'image que couvre la grille (work_width × work_height : l'image de travail de la carte).
-//  - Effet : 1, quelle que soit la confiance (l'éclat d'une explosion ne doit pas attendre) ;
+//  - Effet : 1, quelle que soit la confiance (l'éclat d'une explosion ne doit pas attendre), et 1 dans la
+//    couche des effets sûrs (EffectTiles::sure : la porte plus large, la montée plus haute) ;
 //  - Décor ou dessin : 1 − confiance (un verdict sûr éteint la marge, un verdict faible la garde) ;
 //  - Incertain (aplat sans texture) : 0 s'il ne change pas (le ciel, la feuille blanche, l'intérieur d'un
 //    aplat clair), sans verdict s'il change (le cœur plat d'un flash).
@@ -61,18 +62,31 @@ class EffectBook {
   std::size_t next_ = 0;
 };
 
+// L'état du masque d'une image : posé ou non, la part de la marge retenue (la moyenne de 1 − masque) et la
+// part des tuiles en effet sûr (la couche des effets sûrs au-dessus de 0,5), de 0 à 1.
+struct EffectSummary {
+  bool on = false;
+  int cols = 0;
+  int rows = 0;
+  double held = 0.0;
+  double sure = 0.0;
+};
+EffectSummary effect_summary(const render::EffectMask& mask, bool on);
+
 // Ce que le masque a fait sur une lecture, pour le journal de fin (placebo_grade.cpp, effect_tally_line) :
 // qu'il agit, et où le voir à l'œil. Un moment marqué est une image où une part au moins de kTallyEffectShare
-// des tuiles est un effet sûr (masque au-dessus de 0,9) ; son score est la part de la marge des éclats
-// retenue ailleurs, la moyenne de 1 − masque. Les trois meilleurs sont gardés, à 10 s l'un de l'autre au
-// moins.
+// des tuiles est un effet sûr (la couche des effets sûrs au-dessus de 0,5) ; son score est cette part : là,
+// les éclats montent plus haut et la porte est plus large, l'écart avec --no-effect-highlights se voit. Les
+// trois meilleurs sont gardés, à 10 s l'un de l'autre au moins, avec la part de la marge retenue ailleurs
+// (la moyenne de 1 − masque).
 class EffectTally {
  public:
   static constexpr double kTallyEffectShare = 0.02;
   static constexpr std::int64_t kTallySpacingUs = 10'000'000;
   struct Moment {
     std::int64_t pts_us = 0;
-    double held = 0.0;  // la part retenue, de 0 à 1
+    double effect = 0.0;  // la part des tuiles en effet sûr, de 0 à 1 (le score)
+    double held = 0.0;    // la part retenue, de 0 à 1
   };
   // Une image gradée (pts_us, kNoPts : inconnu) : avec une note de la carte ou non, le masque posé ou non.
   void count(bool noted, bool on, const render::EffectMask& mask, std::int64_t pts_us);
@@ -81,7 +95,7 @@ class EffectTally {
   std::uint64_t masked() const { return masked_; }
   // La part retenue moyenne des images masquées, de 0 à 1.
   double held() const { return masked_ > 0 ? held_sum_ / static_cast<double>(masked_) : 0.0; }
-  // Les moments marqués, du plus fort au plus faible (held > 0).
+  // Les moments marqués, du plus fort au plus faible (effect > 0).
   const std::array<Moment, 3>& moments() const { return moments_; }
 
  private:

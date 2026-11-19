@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -62,6 +64,7 @@ constexpr std::array kGradeParams = {
     ParamBinding{"skin_s0", &GradeParams::skin_s0},
     ParamBinding{"skin_s1", &GradeParams::skin_s1},
     ParamBinding{"skin_s2", &GradeParams::skin_s2},
+    ParamBinding{"fx_view", &GradeParams::fx_view},
 };
 
 constexpr std::array kLookParams = {
@@ -233,6 +236,7 @@ struct Grade::Impl {
   std::unique_ptr<EffectPass> fx;
   std::optional<Refusal> fx_refused;
   bool fx_on = false;
+  std::vector<float> fx_codes;  // ce que la passe du masque reçoit (set_effect_mask)
   mutable std::array<const pl_hook*, 4> listed{};
   GradeParams params;
   pl_gpu gpu = nullptr;
@@ -370,6 +374,9 @@ void Grade::Impl::write_params() {
     put("an_gate_hi", 0.95 * white);
     put("an_spark_lo", 0.6 * white);
     put("an_spark_hi", white);
+    // Sur un effet sûr (render/effect_mask.h), la porte s'ouvre dès 30 % du blanc, pleine à 60 %.
+    put("fx_gate_lo", 0.3 * white);
+    put("fx_gate_hi", 0.6 * white);
   }
   put_output();
   put_table();
@@ -499,7 +506,18 @@ bool Grade::set_effect_mask(const EffectMask* mask) {
     }
   }
   s.fx_on = wanted && s.fx;
-  if (s.fx_on) s.fx->set(mask->cols(), mask->rows(), mask->values(), mask->cover_x(), mask->cover_y());
+  if (s.fx_on) {
+    // Les deux couches en une valeur (3-anime.hook) : codes 0 à 127 sur 255 pour la part de la marge gardée,
+    // 127 à 255 pour l'effet sûr. Un 8 bits garde ainsi exactement « tout gardé, aucun effet » (127).
+    const std::span<const float> keep = mask->values();
+    const std::span<const float> sure = mask->sure();
+    s.fx_codes.resize(keep.size());
+    for (std::size_t i = 0; i < keep.size(); ++i) {
+      const float on = i < sure.size() ? std::clamp(sure[i], 0.0F, 1.0F) : 0.0F;
+      s.fx_codes[i] = ((127.0F * std::clamp(keep[i], 0.0F, 1.0F)) + (128.0F * on)) / 255.0F;
+    }
+    s.fx->set(mask->cols(), mask->rows(), s.fx_codes, mask->cover_x(), mask->cover_y());
+  }
   if (pl_var_data* data = find_param(*s.grade.hook, "fx_on")) data->f = s.fx_on ? 1.0F : 0.0F;
   return s.fx_on;
 }

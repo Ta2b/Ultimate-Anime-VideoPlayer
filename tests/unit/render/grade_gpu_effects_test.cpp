@@ -73,6 +73,34 @@ int max_gap(const std::vector<std::uint16_t>& a, const std::vector<std::uint16_t
   return a.size() == b.size() ? gap : 65535;
 }
 
+// Le halo, et une lueur sous le blanc (90 nits, colonnes 224 à 255, la tuile 7) : une lumière seulement
+// sur un effet sûr.
+std::vector<std::uint16_t> halo_and_glow() {
+  std::vector<std::uint16_t> pixels = halo();
+  const auto code = static_cast<std::uint16_t>(std::lround(nits_to_pq(90.0) * 65535.0));
+  for (std::size_t y = 0; y < static_cast<std::size_t>(kSide); ++y) {
+    for (std::size_t x = 224; x < static_cast<std::size_t>(kSide); ++x) {
+      std::uint16_t* px = &pixels[(y * static_cast<std::size_t>(kSide) + x) * 4];
+      px[0] = px[1] = px[2] = code;
+    }
+  }
+  return pixels;
+}
+
+// Toute la marge gardée (1 partout), l'effet sûr sur les colonnes de tuiles marquées.
+EffectMask sure_on(const std::vector<float>& columns) {
+  EffectTiles tiles;
+  tiles.cols = static_cast<int>(columns.size());
+  tiles.rows = 2;
+  tiles.cut = true;
+  tiles.effect.assign(columns.size() * 2, 1.0F);
+  for (int row = 0; row < tiles.rows; ++row)
+    tiles.sure.insert(tiles.sure.end(), columns.begin(), columns.end());
+  EffectMask mask;
+  mask.update(tiles);
+  return mask;
+}
+
 }  // namespace
 
 TEST_CASE("Éclats des effets : sans masque ou sur un effet, le grade d'aujourd'hui", "[render][gpu]") {
@@ -120,6 +148,63 @@ TEST_CASE("Éclats des effets : hors effet, la lumière garde moins de montée, 
   CHECK(after < 0.85 * before);
   CHECK(after > 1.15 * 195.0);  // jamais sous le relèvement des surfaces
   CHECK(luma_at(masked, 16) == Catch::Approx(luma_at(today, 16)).epsilon(1e-3));
+  gpu.grade->set_effect_mask(nullptr);
+}
+
+TEST_CASE("Éclats des effets : sur un effet sûr, la lumière monte plus haut, rien ne change ailleurs",
+          "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = halo_and_glow();
+  const std::vector<std::uint16_t> today = graded_image(gpu, source, params());
+  // L'effet sûr sur le halo (tuiles 3 et 4) : le halo monte plus haut ; la lueur (tuile 7) et le fond ne
+  // bougent pas.
+  const EffectMask halo_only = sure_on({0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F, 0.0F, 0.0F});
+  REQUIRE(gpu.grade->set_effect_mask(&halo_only));
+  const std::vector<std::uint16_t> boosted = graded_image(gpu, source, params());
+  INFO("halo : " << luma_at(today, 128) << " nits, " << luma_at(boosted, 128) << " sur un effet sûr");
+  CHECK(luma_at(boosted, 128) > 1.05 * luma_at(today, 128));
+  CHECK(luma_at(boosted, 240) == Catch::Approx(luma_at(today, 240)).epsilon(1e-3));
+  CHECK(luma_at(boosted, 16) == Catch::Approx(luma_at(today, 16)).epsilon(1e-3));
+  // L'effet sûr partout : la lueur, sous la porte d'aujourd'hui, devient une lumière.
+  const EffectMask everywhere = sure_on(std::vector<float>(8, 1.0F));
+  REQUIRE(gpu.grade->set_effect_mask(&everywhere));
+  const std::vector<std::uint16_t> glowing = graded_image(gpu, source, params());
+  INFO("lueur : " << luma_at(today, 240) << " nits, " << luma_at(glowing, 240) << " sur un effet sûr");
+  CHECK(luma_at(today, 240) < 1.2 * 90.0);  // aujourd'hui, une surface (relèvement 1,15)
+  CHECK(luma_at(glowing, 240) > 1.2 * luma_at(today, 240));
+  CHECK(luma_at(glowing, 16) == Catch::Approx(luma_at(today, 16)).epsilon(1e-3));
+  gpu.grade->set_effect_mask(nullptr);
+}
+
+TEST_CASE("Éclats des effets : la vue du masque, lumières rouges, effets sûrs verts, marge retenue bleue",
+          "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = halo();
+  GradeParams p = params();
+  p.fx_view = 1.0;
+  // Sans masque : le halo, une lumière, en rouge ; ni vert ni bleu.
+  const std::vector<Rgb> bare = graded_rgb(gpu, source, p);
+  CHECK(bare[128][0] > 2.0 * bare[128][1]);
+  CHECK(bare[128][2] == Catch::Approx(bare[128][1]).epsilon(0.05));
+  CHECK(bare[16][2] == Catch::Approx(bare[16][1]).epsilon(0.05));
+  // Tout retenu (décor sûr partout) : le halo en magenta, le fond en bleu.
+  const EffectMask still = mask_of(std::vector<float>(8, 0.0F));
+  REQUIRE(gpu.grade->set_effect_mask(&still));
+  const std::vector<Rgb> held = graded_rgb(gpu, source, p);
+  CHECK(held[128][0] > 2.0 * held[128][1]);
+  CHECK(held[128][2] > 2.0 * held[128][1]);
+  CHECK(held[16][2] > 2.0 * held[16][0]);
+  // Un effet sûr partout : le fond en vert, le halo en jaune (rouge et vert).
+  const EffectMask effect = sure_on(std::vector<float>(8, 1.0F));
+  REQUIRE(gpu.grade->set_effect_mask(&effect));
+  const std::vector<Rgb> sure = graded_rgb(gpu, source, p);
+  CHECK(sure[16][1] > 2.0 * sure[16][2]);
+  CHECK(sure[128][0] > 2.0 * sure[128][2]);
+  CHECK(sure[128][1] > 2.0 * sure[128][2]);
   gpu.grade->set_effect_mask(nullptr);
 }
 
