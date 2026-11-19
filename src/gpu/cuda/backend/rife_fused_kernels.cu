@@ -131,7 +131,9 @@ struct GlueTile {
 };
 
 template <bool Coarse, int K>
-__global__ void __launch_bounds__(256) fused_glue(FusedGlueParams p) {
+// __maxnreg__ plutôt que __launch_bounds__ : nvcc 13 débordait de 4 octets à 48 registres (pleine résolution,
+// un flot).
+__global__ void __maxnreg__(128) fused_glue(FusedGlueParams p) {
   using Tile = GlueTile<Coarse>;
   __shared__ __align__(16) __half stage[((K - 1) * kFlowStride + kLastStride) * Tile::kCapacity];
   const int d = Coarse ? p.reduce : 1;
@@ -256,7 +258,7 @@ __global__ void __launch_bounds__(256) fused_glue(FusedGlueParams p) {
 // Fin : flot du dernier bloc ajouté ; image (warp bilinéaire ou Catmull-Rom, masque sigmoïde, mélange) ou
 // flot et masque. Lectures groupées : les 4 canaux de flot de x_last en 8 octets, chaque canal de Z en 8
 // octets (ses quatre parités), quand les tenseurs sont rangés par pixel.
-__global__ void __launch_bounds__(256) fused_finish(FusedFinishParams p) {
+__global__ void __maxnreg__(128) fused_finish(FusedFinishParams p) {  // même raison que fused_glue (sm_75)
   const int x = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int y = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
   if (x >= p.width || y >= p.height) return;

@@ -29,7 +29,10 @@ __device__ __forceinline__ float enlarged(const __half* t, int height, int width
                      element(t, height, width, pitch, c, ay.i1, ax.i1), ax, ay);
 }
 
-__global__ void __launch_bounds__(256)
+// Spécialisé sur le filtre, et __maxnreg__ au lieu de __launch_bounds__ : nvcc 13 débordait sinon de quelques
+// octets (--warn-on-spills) à 64 registres sur sm_89 et sm_120.
+template <bool Cubic>
+__global__ void __maxnreg__(128)
     warp_planes(WarpPlanesParams p, warp::Bounds window, int out_width, int out_height) {
   const int ox = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
   const int oy = static_cast<int>(blockIdx.y * blockDim.y + threadIdx.y);
@@ -75,8 +78,7 @@ __global__ void __launch_bounds__(256)
       for (int c = 0; c < kMaxChannels; ++c) {
         if (c < p.channels) {
           const __half* src = image + c * plane;
-          float v =
-              p.cubic != 0 ? warp::catmull_rom(src, tap, p.width, window) : warp::bilinear(src, tap, p.width);
+          float v = Cubic ? warp::catmull_rom(src, tap, p.width, window) : warp::bilinear(src, tap, p.width);
           if (fallback != nullptr) v = conf * v + (1.0F - conf) * __half2float(fallback[c * plane + at]);
           acc[c] += v;
         }
@@ -119,7 +121,11 @@ cudaError_t launch_warp_planes(const WarpPlanesParams& params, cudaStream_t stre
   const dim3 block(32, 8);
   const dim3 grid((static_cast<unsigned>(out_width) + 31U) / 32U,
                   (static_cast<unsigned>(out_height) + 7U) / 8U);
-  warp_planes<<<grid, block, 0, stream>>>(params, window, out_width, out_height);
+  if (p.cubic != 0) {
+    warp_planes<true><<<grid, block, 0, stream>>>(params, window, out_width, out_height);
+  } else {
+    warp_planes<false><<<grid, block, 0, stream>>>(params, window, out_width, out_height);
+  }
   return cudaGetLastError();
 }
 
