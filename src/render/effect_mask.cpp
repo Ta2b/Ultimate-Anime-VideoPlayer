@@ -114,8 +114,9 @@ void EffectMask::publish() {
           const int c = col + dx;
           const int r = row + dy;
           if (c < 0 || r < 0 || c >= cols_ || r >= rows_) continue;
-          const float w =
-              kWeights[static_cast<std::size_t>(dx + 1)] * kWeights[static_cast<std::size_t>(dy + 1)];
+          const int wx = dx + 1;
+          const int wy = dy + 1;
+          const float w = kWeights[static_cast<std::size_t>(wx)] * kWeights[static_cast<std::size_t>(wy)];
           sum += w * level_[at(c, r, cols_)];
           weight += w;
         }

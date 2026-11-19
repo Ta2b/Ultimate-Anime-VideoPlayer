@@ -218,7 +218,7 @@ Result<Plane<std::uint8_t>> scene_luma(const RgbImage& rgb, int divisor) {
         }
       }
       const float luma = std::clamp(sum * area, 0.0F, 1.0F);
-      out.at(x, y) = static_cast<std::uint8_t>(static_cast<int>(255.0F * luma + 0.5F));
+      out.at(x, y) = static_cast<std::uint8_t>(static_cast<int>(std::floor(255.0F * luma + 0.5F)));
     }
   }
   return out;

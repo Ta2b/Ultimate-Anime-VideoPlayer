@@ -49,7 +49,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   if (!plan) return std::unexpected(std::move(plan.error()));
   if (!*plan) return std::uint64_t{0};
   const SceneFlow::Lumas lumas = **plan;
-  NvofSession& session = scene_flow_->session();
+  const NvofSession& session = scene_flow_->session();
   const NvofSession::Pitched into_a = session.luma(lumas.a);
   const NvofSession::Pitched into_b = session.luma(lumas.b);
   const auto slot_a = reinterpret_cast<std::uintptr_t>(into_a.data);

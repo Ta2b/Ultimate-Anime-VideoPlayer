@@ -147,6 +147,7 @@ class PlaceboSourceGrader final : public SourceGrader {
   // Éclats sur les seuls effets (effect_book.h) : le masque de cette source, posé dans le grade à part comme
   // l'écran le pose dans le sien (PlaceboScreen::Impl::follow_effects).
   void follow_effects(const GradedSource& source) {
+    if (!grade_) return;  // jamais : follow vient de le poser
     effects_.source(source.epoch, source.effects);
     const bool on = grade_->set_effect_mask(&effects_.mask());
     effects_tally_.count(source.effects.has_value(), on, effects_.mask(), source.pts_us);
