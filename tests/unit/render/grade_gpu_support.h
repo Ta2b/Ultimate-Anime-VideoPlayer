@@ -214,6 +214,9 @@ inline std::vector<std::uint16_t> graded_image(Gpu& gpu, const std::vector<std::
   const pl_frame image = frame_of(in, sdr);
   const pl_frame target = frame_of(out, sdr);
   REQUIRE(pl_render_image(gpu.renderer, &image, &target, &render));
+  // Un hook refusé par libplacebo est écarté pour toute la vie du renderer, sans faire échouer le rendu :
+  // la passe du masque des effets ne tenait ainsi que la première image (vue verte du PC, #943).
+  CHECK(pl_renderer_get_errors(gpu.renderer).errors == PL_RENDER_ERR_NONE);
   std::vector<std::uint16_t> pixels(source.size());
   pl_tex_transfer_params download{};
   download.tex = out;
