@@ -40,7 +40,7 @@ void UpscaleStage::smooth_stop() {
   span_ahead_.reset();
 }
 
-void UpscaleStage::smooth_advance(const DecodedFrame& frame, const PairFacts& facts, bool on_grid) {
+void UpscaleStage::smooth_advance(const DecodedFrame& frame, PairFacts& facts, bool on_grid) {
   if (!smooth_first_) {
     if (smooth_second_) smooth_stop();  // la tenue est finie
     return;
@@ -59,6 +59,9 @@ void UpscaleStage::smooth_advance(const DecodedFrame& frame, const PairFacts& fa
   smooth_rank_ = rank;
   smooth_first_ = !last;
   smooth_second_ = last;
+  // La dernière paire va jusqu'à b, dessin nouveau pour la mesure des blocs (smooth_find_b) : le tri des
+  // paires (rife_triage.h) ne la tient ni ne la fond, comme les paires de tête.
+  if (last) facts.flow_triage = false;
 }
 
 std::expected<void, Refusal> UpscaleStage::smooth_decide(const DecodedFrame& frame,

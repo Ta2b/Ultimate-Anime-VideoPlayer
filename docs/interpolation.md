@@ -499,8 +499,9 @@ sont à mesurer sur une carte NVIDIA (`tools/gmfss/banc_temps.sh`).
 ## Tri des paires par la carte de la scène (`--pair-triage`, essai)
 
 La carte de la scène (`kernels/spec/scene_flow.h`, flux optique matériel de NVIDIA, `--debug --scene-map`) ne
-déforme rien : elle décide. Avec `--pair-triage`, sur RIFE mouvement et GMFSS (pas DistilDRBA), chaque paire où RIFE
-tournerait est triée (`src/app/play/rife_triage.h`) :
+déforme rien : elle décide. Avec `--pair-triage` (essai lui aussi, donc avec `--debug`), sur RIFE mouvement et
+GMFSS (pas DistilDRBA ni les paires de Smooth), chaque paire où RIFE tournerait est triée
+(`src/app/play/rife_triage.h`) :
 
 - **dessin tenu** : ni le dessin ni la caméra ne bougent, et presque aucune tuile ne change hors du grain.
   RIFE ne tourne pas, b sort seul, comme un dessin tenu reconnu par le pire bloc 16 × 16, que le grain d'une
@@ -510,13 +511,15 @@ tournerait est triée (`src/app/play/rife_triage.h`) :
   sans fantômes ;
 - **zone douteuse** : les tuiles d'effet qui changent, et celles qui changent avec une confiance basse,
   passent au fondu, dilatées d'une tuile et adoucies ; RIFE reste ailleurs. La moitié du doute d'une paire
-  passe à la suivante, pour qu'une zone ne clignote pas ; une coupe ou un saut l'oublie.
+  passe à la suivante, pour qu'une zone ne clignote pas, à travers trois paires tenues au plus (un dessin en
+  quatre) ; une coupe, un saut ou une tenue plus longue l'oublie.
 
-Le fondu se fait sur le mouvement, pas sur l'image : `KernelOps::motion_doubt` (ABI 48,
+Le fondu se fait sur le mouvement, pas sur l'image : `KernelOps::motion_doubt` (ABI 49,
 `kernels/spec/motion_doubt.h`, référence `kernels/ref/motion_doubt.cpp`, noyau
 `gpu/cuda/backend/doubt_kernels.cu`) tire flot et masque vers « déplacement nul, masque 0,5 » (1 − t pour un
-mouvement lu à l'instant) dans des tampons à part ; le warp habituel fait le reste, avec la loi de mélange de
-RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
+mouvement lu à l'instant) dans des tampons à part, un jeu par forme du mouvement (le milieu et la demi-taille
+de l'échelle par paire alternent dans une paire forte) ; le warp habituel fait le reste, avec la loi de
+mélange de RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'avant, image pour image. La
 ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues et fondues par endroits.

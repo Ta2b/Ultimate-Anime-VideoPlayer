@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -24,6 +26,87 @@ kernels::SceneMotion calm_scene() {
   s.rows = 6;
   s.tiles.assign(48, kernels::SceneTile{.kind = kernels::SceneClass::Drawing, .confidence = 0.9F});
   return s;
+}
+
+// Un tenseur à une adresse à lui, sans mémoire.
+class NoMemory final : public gpu::TensorBuffer {
+ public:
+  explicit NoMemory(gpu::Tensor tensor) : tensor_(tensor) {}
+  const gpu::Tensor& tensor() const override { return tensor_; }
+
+ private:
+  gpu::Tensor tensor_;
+};
+
+// Un backend sans GPU : il compte ses allocations et note le flot écrit par chaque fondu du mouvement.
+class DoubtBackend final : public gpu::Backend, public gpu::KernelOps {
+ public:
+  int allocated = 0;
+  std::vector<std::uintptr_t> written;
+
+  static std::unexpected<Refusal> refused() {
+    return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "factice"});
+  }
+
+  gpu::BackendCaps capabilities() const override { return {}; }
+  gpu::DeviceMatch match(const DeviceUuid& /*render_device*/) const override {
+    return gpu::DeviceMatch::Same;
+  }
+  std::expected<gpu::Artifact, Refusal> build(const gpu::ModelSpec& /*model*/,
+                                              const gpu::ShapeSet& /*shapes*/,
+                                              gpu::Progress& /*progress*/) override {
+    return refused();
+  }
+  std::expected<std::unique_ptr<gpu::Engine>, Refusal> load(const gpu::Artifact& /*artifact*/) override {
+    return refused();
+  }
+  std::expected<std::unique_ptr<gpu::TensorBuffer>, Refusal> alloc_tensor(gpu::TensorType type,
+                                                                          const gpu::Shape& shape) override {
+    ++allocated;
+    return std::make_unique<NoMemory>(
+        gpu::Tensor{.type = type, .shape = shape, .handle = static_cast<std::uintptr_t>(allocated)});
+  }
+  gpu::KernelOps* kernels() override { return this; }
+  std::expected<void, Refusal> enqueue(gpu::Engine& /*engine*/, std::span<const gpu::Tensor> /*inputs*/,
+                                       std::span<gpu::Tensor> /*outputs*/) override {
+    return refused();
+  }
+  std::expected<gpu::Fence, Refusal> signal() override { return gpu::Fence{}; }
+  std::expected<void, Refusal> wait(const gpu::Fence& /*fence*/) override { return {}; }
+  std::expected<void, Refusal> ingest(const DecodedFrame& /*frame*/, const gpu::IngestSpec& /*spec*/,
+                                      const gpu::Tensor& /*rgb*/) override {
+    return refused();
+  }
+  std::expected<void, Refusal> resample(const gpu::Tensor& /*in*/, kernels::Filter /*filter*/,
+                                        const gpu::Tensor& /*out*/) override {
+    return refused();
+  }
+  std::expected<void, Refusal> rife_crop(const gpu::Tensor& /*padded*/, const gpu::Tensor& /*out*/) override {
+    return refused();
+  }
+  std::expected<void, Refusal> warp_blend(const gpu::Tensor& /*a*/, const gpu::Tensor& /*b*/,
+                                          const gpu::Motion& /*motion*/, float /*t*/,
+                                          const gpu::Tensor& /*out*/) override {
+    return refused();
+  }
+  std::expected<void, Refusal> write_ring(const gpu::Tensor& /*rgb*/, const RingSlotDesc& /*slot*/,
+                                          const gpu::RingWrite& /*sync*/) override {
+    return refused();
+  }
+  std::expected<void, Refusal> motion_doubt(const gpu::Motion& /*motion*/,
+                                            std::span<const std::uint8_t> /*weights*/, int /*cols*/,
+                                            int /*rows*/, float /*fade*/, const gpu::Motion& out) override {
+    written.push_back(out.flow.handle);
+    return {};
+  }
+};
+
+// Le mouvement de RIFE à une hauteur de plans : flot 1 × 4 et masque 1 × 1 FP16.
+gpu::Motion motion_of(std::int64_t height) {
+  const std::int64_t width = height * 16 / 9;
+  return {.flow = {.shape = gpu::Shape{.dims = {1, 4, height, width}}, .handle = 1000},
+          .mask = {.shape = gpu::Shape{.dims = {1, 1, height, width}}, .handle = 2000},
+          .area = {.x = 0, .y = 0, .width = static_cast<int>(width), .height = static_cast<int>(height)}};
 }
 
 // Une paire qui bouge (la mesure des blocs laisse tourner RIFE), avec sa carte.
@@ -104,6 +187,16 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK(triage.counts().masked == 2);
   CHECK(triage.counts().faded == 1);
 
+  // Le doute gardé passe une tenue de dessin en quatre (trois paires sans RIFE), pas une plus longue.
+  triage.reset();
+  const PairFacts still = moving(held, true);
+  for (const int pairs : {1, 3, 4}) {
+    REQUIRE(triage.sort(moving(smoke, true), true) == PairSort::Masked);
+    for (int i = 0; i < pairs; ++i) CHECK(triage.sort(still, false) == PairSort::Held);
+    CHECK(triage.sort(moving(calm, true), true) ==
+          (pairs <= triage::kKeepAcross ? PairSort::Masked : PairSort::Today));
+  }
+
   // Une grande carte (1080p : 60 × 34 tuiles) se regroupe sous kDoubtMaxCells en gardant le plus fort doute.
   std::vector<float> wide(60 * 34, 0.0F);
   wide[59] = 1.0F;
@@ -145,6 +238,33 @@ TEST_CASE("tri des paires : sans carte rien ne change, avec elle tenue, fondu et
   CHECK_FALSE(flow_pan(sparks));
   // RIFE ne prend jamais le panoramique : la même carte y reste à RIFE tel quel.
   CHECK(triage.sort(moving(pan, true), true) == PairSort::Today);
+}
+
+TEST_CASE("tri des paires : un jeu de tampons par forme du mouvement, sans réallocation à chaque instant",
+          "[app][rife][triage]") {
+  DoubtBackend backend;
+  RifeTriage triage;
+  // Sans fondu, le mouvement passe tel quel et rien n'est alloué.
+  const gpu::Motion middle = motion_of(720);
+  CHECK(triage.doubted(backend, middle, 0.5F).flow.handle == middle.flow.handle);
+  CHECK(backend.allocated == 0);
+  kernels::SceneMotion smoke = calm_scene();
+  smoke.tiles[0] = {.kind = kernels::SceneClass::Effect, .confidence = 0.2F, .changed = true};
+  REQUIRE(triage.sort(moving(smoke, true), true) == PairSort::Masked);
+  // Une paire forte avec l'échelle par paire : milieu à pleine taille, autres instants à demi-taille.
+  const gpu::Motion half = motion_of(360);
+  for (const gpu::Motion* motion : {&half, &middle, &half, &middle}) {
+    const gpu::Motion out = triage.doubted(backend, *motion, 0.5F);
+    CHECK(out.flow.shape == motion->flow.shape);
+    CHECK(out.mask.shape == motion->mask.shape);
+    CHECK(out.flow.handle != motion->flow.handle);  // l'entrée reste intacte pour les autres instants
+  }
+  CHECK(backend.allocated == 4);  // flot et masque, deux formes
+  REQUIRE(backend.written.size() == 4);
+  CHECK(backend.written[0] == backend.written[2]);
+  CHECK(backend.written[1] == backend.written[3]);
+  CHECK(backend.written[0] != backend.written[1]);
+  CHECK(triage.counts().refused == 0);
 }
 
 }  // namespace kirari::app::play
