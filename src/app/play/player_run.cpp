@@ -544,9 +544,7 @@ std::expected<std::optional<Reopen>, Refusal> run_chain(Player& p, PlaySettings 
               p.display->vrr_armed.value_or(false) ? "armé" : "non armé");
   AutoWatch auto_watch;  // le palier de l'Auto : journal, annonce, mémoire (auto_watch.h)
   std::int64_t auto_missing_seen = 0;
-  CadenceWatch cadence({.swap_mode = p.options.swap_mode,
-                        .display_loss_pressure = p.options.display_loss_pressure,
-                        .vrr_margin_pct = p.options.vrr_margin_pct});
+  CadenceWatch cadence({p.options.swap_mode, p.options.display_loss_pressure, p.options.vrr_margin_pct});
   const double auto_source_fps = fps_of(video.frame_rate);
   // Un changement de palier : une ligne de journal avec sa raison. Le message à l'écran n'est dit qu'une fois
   // le palier tenu 3 s (pas de clignotement), et le palier tenu 6 s est retenu pour la prochaine lecture.

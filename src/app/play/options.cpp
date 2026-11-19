@@ -229,8 +229,7 @@ std::expected<RelaunchedFor, Refusal> relaunched_reason(std::string_view arg) {
   return refuse(RefusalCode::FieldOutOfRange, std::format("{}: gpu-lost or engine-updated", arg));
 }
 
-// Les réglages fins : le peps du grade (--anime-contrast, --anime-saturation, --anime-highlights, en %) et la
-// cadence haute (cadence_watch.h : --swap-mode, --vrr-margin).
+// Les réglages fins : le peps du grade (--anime-*, en %) et la cadence haute (cadence_watch.h).
 std::expected<void, Refusal> tuning(std::string_view name, std::string_view text, PlayOptions& options) {
   if (name == "--swap-mode") {
     const auto mode = parse_swap_mode(text);
