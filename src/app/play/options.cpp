@@ -113,7 +113,7 @@ std::expected<void, Refusal> keys(std::string_view text, PlayOptions& options) {
   return {};
 }
 
-// Option à valeur (« --nom=valeur » ou « --nom valeur ») : sa valeur, ou rien ; i avance sur une valeur séparée.
+// Option à valeur (« --nom=valeur » ou « --nom valeur ») : sa valeur, ou rien ; i passe la valeur séparée.
 std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const std::string_view> args,
                                                                std::size_t& i, std::string_view name) {
   const std::string_view arg = args[i];
@@ -549,7 +549,7 @@ std::expected<CompareOptions, Refusal> parse_compare_options(std::span<const std
   return options;
 }
 
-// L'aide, en anglais comme l'interface par défaut : elle s'écrit avant la lecture des réglages et de la langue.
+// L'aide, en anglais comme l'interface par défaut : écrite avant la lecture des réglages et de la langue.
 std::string compare_usage() {
   return "kirari compare <file> --a=\"OPTIONS\" --b=\"OPTIONS\" [options]   two chains side by side, sound "
          "off\n"
