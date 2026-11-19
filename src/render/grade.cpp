@@ -231,7 +231,7 @@ struct Grade::Impl {
   std::array<const pl_hook*, 3> hooks{};
   // Les éclats sur les seuls effets (set_effect_mask) : la passe, créée au premier masque, devant les hooks.
   std::unique_ptr<EffectPass> fx;
-  bool fx_refused = false;
+  std::optional<Refusal> fx_refused;
   bool fx_on = false;
   mutable std::array<const pl_hook*, 4> listed{};
   GradeParams params;
@@ -495,13 +495,17 @@ bool Grade::set_effect_mask(const EffectMask* mask) {
     if (made) {
       s.fx = std::move(*made);
     } else {
-      s.fx_refused = true;
+      s.fx_refused = std::move(made.error());
     }
   }
   s.fx_on = wanted && s.fx;
   if (s.fx_on) s.fx->set(mask->cols(), mask->rows(), mask->values(), mask->cover_x(), mask->cover_y());
   if (pl_var_data* data = find_param(*s.grade.hook, "fx_on")) data->f = s.fx_on ? 1.0F : 0.0F;
   return s.fx_on;
+}
+
+const std::optional<Refusal>& Grade::effect_mask_refusal() const {
+  return impl_->fx_refused;
 }
 
 }  // namespace kirari::render
