@@ -44,7 +44,7 @@ class Analysis {
   }
   // Le plan en cours est clos à end_us.
   void finish(std::int64_t end_us) {
-    if (auto shot = cutter_.finish(end_us)) timeline_.add(*shot);
+    for (const Shot& shot : cutter_.finish(end_us)) timeline_.add(shot);
   }
   // Un nouveau découpage : son premier plan n'a de vraie coupe devant lui qu'au début de la vidéo.
   void restart(bool starts_at_cut) {

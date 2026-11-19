@@ -24,10 +24,33 @@ constexpr float kCutCap = 0.6F;
 constexpr float kCutMotion = 2.5F;
 constexpr std::size_t kRecent = 24;
 constexpr std::int64_t kRecentUs = 1'500'000;
+// La tendance du mouvement (l'idée de TransitionDetection de SVFI, reprise sans son code) : une droite sur
+// les kTrendPairs dernières distances entre dessins distincts, prolongée d'un pas. La médiane de vingt-quatre
+// distances suit mal une scène qui s'emballe : elle ne montait qu'après douze dessins rapides, et chaque
+// dessin plus vif d'un combat ouvrait un plan en attendant (Re:Zero S4E18, 17:10). Le seuil prend la plus
+// haute des deux ; les sauts des coupes n'entrent pas dans la droite, qui sinon montait juste après chaque
+// coupe et cachait la suivante. La tendance ne compte que pour kTrendMotion fois : à 2,5 comme la médiane,
+// elle cachait dix coupes nettes sur vingt-six extraits (saut 0,330 sous un seuil de 0,446, Chainsaw Man).
+constexpr std::size_t kTrendPairs = 8;
+constexpr float kTrendMotion = 2.0F;
+constexpr std::size_t kTrendMin = 4;
 constexpr float kHeldDrawing = 0.02F;  // sous cette distance, le même dessin tenu
+// Une image noire et unie : ses seize zones à moins de kBlankZones l'une de l'autre, et 99 % de ses points
+// sous kBlankDark. Après elle, la première image qui ne l'est plus ouvre un plan dès qu'elle s'en écarte d'un
+// dessin (l'idée de SVFI, reprise sans son code) : un fondu au noir suivi d'un fondu d'ouverture restait un
+// seul plan, que le grade étirait d'une scène à l'autre. Le blanc uni n'en est pas : c'est l'éclair d'un
+// impact, et l'image d'après, encore dans l'éclair, ouvrait un faux plan (Re:Zero, 717).
+constexpr float kBlankZones = 0.03F;
+constexpr float kBlankDark = 0.1F;
 // Un éclair dure au plus trois images (A42-02) : tenu deux images en animation sur deux, il ouvrait un plan
 // à l'entrée et un autre à la sortie.
 constexpr std::size_t kFlashFrames = 3;
+// Un plan dure au moins kMinShotUs (quatre images à 24 i/s) : une rafale d'effets (un éclair qui s'ouvre en
+// blanc, une explosion découpée en trois dessins) ouvrait un plan à chaque dessin, à une ou deux images
+// d'écart (Re:Zero : 170 et 172 avant la vraie coupe de 173, 718, 720, 722 avant celle de 723). D'un plan
+// plus court, seule la plus forte de ses deux coupes reste ; à égalité, la seconde, qui suit la fin de
+// l'effet.
+constexpr std::int64_t kMinShotUs = 160'000;
 // Les bords d'un plan gardés pour juger un fondu : le sixième du plan, au plus deux secondes à 24 i/s.
 constexpr std::size_t kEdgeKept = 48;
 // Les palettes de visages gardées d'un plan : un long plan n'en garde pas des milliers.
@@ -70,6 +93,24 @@ float median(std::vector<float> values) {
   const auto mid = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
   std::nth_element(values.begin(), mid, values.end());
   return *mid;
+}
+
+// La distance que la tendance des distances values (dans l'ordre) prévoit au pas suivant, au moins 0. La
+// droite est celle de Theil-Sen (pente médiane des paires, niveau médian) et non celle des moindres carrés :
+// un seul dessin vif au bout de sept calmes faisait monter la droite des moindres carrés à 0,15 et cachait
+// la coupe qui le suivait (Re:Zero, 649 et 652).
+float trend(const std::vector<float>& values) {
+  std::vector<float> slopes;
+  slopes.reserve(values.size() * values.size() / 2);
+  for (std::size_t i = 0; i < values.size(); ++i)
+    for (std::size_t j = i + 1; j < values.size(); ++j)
+      slopes.push_back((values[j] - values[i]) / static_cast<float>(j - i));
+  const float slope = median(std::move(slopes));
+  std::vector<float> next;
+  next.reserve(values.size());
+  for (std::size_t i = 0; i < values.size(); ++i)
+    next.push_back(values[i] + slope * static_cast<float>(values.size() - i));
+  return std::max(0.0F, median(std::move(next)));
 }
 
 }  // namespace
@@ -172,6 +213,12 @@ float frame_distance(const ShotFrame& a, const ShotFrame& b) {
   return change_between(a, b).distance();
 }
 
+bool blank_frame(const ShotFrame& frame) {
+  const auto [low, high] = std::ranges::minmax(frame.grid);
+  if (high - low >= kBlankZones) return false;
+  return percentile(frame.histogram, 0.995F) < kBlankDark;
+}
+
 void ShotCutter::Totals::add(const ShotFrame& f) {
   const ShotLight& l = f.light;
   apl_min = count == 0 ? l.apl_nits : std::min(apl_min, l.apl_nits);
@@ -235,12 +282,31 @@ float ShotCutter::limit(std::int64_t pts_us) {
   while (!recent_.empty() && (recent_.size() > kRecent || recent_.front().pts_us < pts_us - kRecentUs))
     recent_.pop_front();
   std::vector<float> distances;
+  std::vector<float> drawn;  // sans les sauts des coupes, les plus récentes à la fin
   distances.reserve(recent_.size());
-  for (const Motion& m : recent_) distances.push_back(m.distance);
-  return std::min(std::max(kCutBase, kCutMotion * median(std::move(distances))), kCutCap);
+  for (const Motion& m : recent_) {
+    distances.push_back(m.distance);
+    if (!m.cut) drawn.push_back(m.distance);
+  }
+  if (drawn.size() > kTrendPairs) drawn.erase(drawn.begin(), drawn.end() - kTrendPairs);
+  const float moving = std::max(kCutMotion * median(std::move(distances)),
+                                kTrendMotion * (drawn.size() >= kTrendMin ? trend(drawn) : 0.0F));
+  return std::min(std::max(kCutBase, moving), kCutCap);
 }
 
 std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
+  // Le plan d'avant sort dès que celui-ci dure assez pour ne plus s'y fondre.
+  // Un saut en attente peut encore finir ce plan à sa première image : la durée se compte jusque-là.
+  const std::int64_t until = jumped_.empty() ? frame.pts_us : jumped_.front().pts_us;
+  if (held_ && totals_.count > 0 && until - start_us_ >= kMinShotUs) {
+    std::optional<Shot> out = std::exchange(held_, std::nullopt);
+    (void)advance(frame);  // held_ vide : une coupe de cette image y attendrait, sans rien rendre
+    return out;
+  }
+  return advance(frame);
+}
+
+std::optional<Shot> ShotCutter::advance(const ShotFrame& frame) {
   if (!anchor_) {
     keep(frame);
     anchor_ = frame;
@@ -272,14 +338,14 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
   if (jumped_.size() <= kFlashFrames) return std::nullopt;
   const std::vector<ShotFrame> after = std::move(jumped_);
   jumped_.clear();
-  std::optional<Shot> closed = close_shot(after.front().pts_us);
-  recent_.push_back({.pts_us = after.front().pts_us, .distance = jump_});
+  std::optional<Shot> closed = cut_at(after.front().pts_us, jump_);
+  recent_.push_back({.pts_us = after.front().pts_us, .distance = jump_, .cut = true});
   keep(after.front());
   anchor_ = after.front();
   // Les images d'après la coupe repassent une à une : aucune n'a pu ouvrir un autre plan en si peu d'images
   // sans que la première coupe soit elle-même un éclair.
   for (std::size_t i = 1; i < after.size(); ++i) {
-    if (auto again = push(after.at(i)); again && !closed) closed = again;
+    if (auto again = advance(after.at(i)); again && !closed) closed = again;
   }
   return closed;
 }
@@ -288,12 +354,13 @@ std::optional<Shot> ShotCutter::push(const ShotFrame& frame) {
 std::optional<Shot> ShotCutter::judge(const ShotFrame& anchor, const ShotFrame& frame) {
   const Change change = change_between(anchor, frame);
   const float jump = change.distance();
-  const float threshold = limit(frame.pts_us);
+  const bool unveils = blank_frame(anchor) && !blank_frame(frame);
+  const float threshold = unveils ? kHeldDrawing : limit(frame.pts_us);
   if (jump > threshold) {
     jumped_.push_back(frame);
     jump_ = jump;
     jump_limit_ = threshold;
-    jump_moves_ = jump <= kCutCap && std::max(change.light, change.colour) < 0.5F * kCutBase;
+    jump_moves_ = !unveils && jump <= kCutCap && std::max(change.light, change.colour) < 0.5F * kCutBase;
     return std::nullopt;
   }
   keep(frame);
@@ -302,14 +369,44 @@ std::optional<Shot> ShotCutter::judge(const ShotFrame& anchor, const ShotFrame& 
   return std::nullopt;
 }
 
-std::optional<Shot> ShotCutter::finish(std::int64_t end_us) {
+std::vector<Shot> ShotCutter::finish(std::int64_t end_us) {
   // Un saut encore en attente à la fin (trois images au plus) reste dans le dernier plan.
   for (const ShotFrame& f : jumped_) keep(f);
   jumped_.clear();
-  std::optional<Shot> closed = close_shot(end_us);
+  std::vector<Shot> out;
+  // Un dernier plan trop court se fond dans celui d'avant.
+  if (held_ && totals_.count > 0 && end_us - start_us_ < kMinShotUs) {
+    held_->end_us = std::max(end_us, held_->start_us + 1);
+    discard_shot();
+  }
+  if (held_) out.push_back(*std::exchange(held_, std::nullopt));
+  if (auto closed = close_shot(end_us)) out.push_back(*closed);
   recent_.clear();
   anchor_.reset();
-  return closed;
+  return out;
+}
+
+// Une coupe confirmée à end_us, de saut jump. Le plan qui finit là attend la suite (held_) ; s'il est trop
+// court, il se fond dans le plan qui commence (sa coupe d'ouverture était la plus forte) ou dans celui
+// d'avant.
+std::optional<Shot> ShotCutter::cut_at(std::int64_t end_us, float jump) {
+  if (totals_.count > 0 && end_us - start_us_ < kMinShotUs) {
+    if (!held_ || jump < start_jump_) return std::nullopt;  // le plan continue : cette coupe s'efface
+    held_->end_us = end_us;  // la coupe d'ouverture s'efface : le plan court rejoint celui d'avant
+    discard_shot();
+    start_jump_ = jump;
+    return std::nullopt;
+  }
+  std::optional<Shot> closed = close_shot(end_us);
+  start_jump_ = jump;
+  if (!closed) return std::nullopt;
+  return std::exchange(held_, closed);
+}
+
+void ShotCutter::discard_shot() {
+  totals_ = {};
+  head_.clear();
+  tail_.clear();
 }
 
 // B42-03 : la part du plan où la lumière change vraiment. Un plan long fini par un fondu au noir restait
@@ -365,9 +462,7 @@ std::optional<Shot> ShotCutter::close_shot(std::int64_t end_us) {
       ramp_of(shot, begin.mean, end.mean);
     }
   }
-  totals_ = {};
-  head_.clear();
-  tail_.clear();
+  discard_shot();
   return shot;
 }
 
