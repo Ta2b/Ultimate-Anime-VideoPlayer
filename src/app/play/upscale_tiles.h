@@ -9,19 +9,25 @@
 // avant.
 //
 // Exactitude (kernels/spec/span_tiles.h) : le moteur calcule toutes ses couches sur le cœur dilaté de son
-// champ réceptif ; la sortie du cœur est celle d'un calcul complet. Ce qui peut dériver, c'est la sortie
-// reprise : une tuile dite « inchangée » qui bouge un peu à chaque paire (nuage lent, fumée, fondu local).
-// Trois gardes l'empêchent :
+// champ réceptif ; la sortie du cœur est celle d'un calcul complet. Le cœur lui-même est ce qui a changé
+// dilaté de la même portée (une sortie voit l'entrée jusqu'à la portée), plus le rayon du débandage quand
+// l'entrée est débandée. Ce qui peut dériver, c'est la sortie reprise : une tuile dite « inchangée » qui
+// bouge ou s'éclaire un peu à chaque paire (nuage lent, fumée, lueur, fondu local). Quatre gardes :
 //   - par tuile, le mouvement reçu depuis son dernier calcul s'additionne (dx, dy de la carte, moins le
 //     décalage appliqué) ; au-delà de kDriftMax pixels de travail, la tuile se recalcule ;
+//   - par tuile, le glissement de luminosité reçu s'additionne (SceneTile::shift, où le grain s'annule) ;
+//     au-delà de kBiasMax codes, la tuile se recalcule ;
 //   - par tuile, au plus kMaxAge images reprises de suite (comme la limite du lot A) ;
-//   - toute l'image se recalcule au moins toutes les kFullEvery images, et à chaque coupe, fondu, image
-//     abîmée, saut ou changement d'époque.
+//   - toute l'image se recalcule au moins toutes les kFullEvery images, à chaque coupe, fondu, image
+//     abîmée, saut ou changement d'époque, et quand l'entrée de SPAN change de recette (débandage, filtre
+//     de réduction).
 //
 // Décalage : caméra ajustée, partie linéaire à l'identité (kernels::scene::kHeldLinear), résidu faible, et
 // translation à moins de kShiftSnap d'un multiple du pas du moteur. La sortie d'avant se décale alors de ce
 // multiple ; une tuile ne se reprend que si elle est du décor sûr qui suit ce décalage. La part fractionnaire
-// s'accumule dans la dérive de chaque tuile.
+// s'accumule dans la dérive de chaque tuile. Les deux bords de l'axe décalé se recalculent : la bande qui
+// entre n'a pas de source, et près du bord d'où le contenu sort, la sortie voit maintenant le bourrage de
+// zéros de l'image.
 #pragma once
 
 #include <cstddef>
@@ -39,6 +45,12 @@ struct TileFacts {
   bool fresh = false;      // même époque, image saine, sortie de l'image d'avant présente et à jour
   bool can_shift = false;  // la sortie d'avant est dans un autre tampon que la nouvelle (décalage possible)
   const kernels::SceneMotion* scene = nullptr;  // la carte de (précédente, image) ; nulle : pas de carte
+  // Ce qu'un pixel de la source touche de l'entrée de SPAN, au-delà de lui-même : le rayon du débandage,
+  // pixels de travail ; 0 sans débandage.
+  int spread_px = 0;
+  // La recette de l'entrée de SPAN (débandage, filtre de réduction) : une autre que celle de la dernière
+  // image calculée change tous les pixels un peu, sans que la carte le dise ; l'image est entière.
+  std::uint64_t input_key = 0;
 };
 
 // Ce que l'image fera.
@@ -51,10 +63,11 @@ struct TilePlan {
 
 class SpanTiles {
  public:
-  static constexpr int kMaxAge = 24;           // images reprises de suite au plus, par tuile
-  static constexpr int kFullEvery = 120;       // une image entière au moins toutes les 120 (5 s à 24 i/s)
-  static constexpr float kDriftMax = 0.5F;     // pixels de travail reçus depuis le dernier calcul d'une tuile
-  static constexpr double kShiftSnap = 0.125;  // écart au multiple du pas, pixels de travail
+  static constexpr int kMaxAge = 24;        // images reprises de suite au plus, par tuile
+  static constexpr int kFullEvery = 120;    // une image entière au moins toutes les 120 (5 s à 24 i/s)
+  static constexpr float kDriftMax = 0.5F;  // pixels de travail reçus depuis le dernier calcul d'une tuile
+  static constexpr float kBiasMax = 1.0F;   // glissement de luminosité reçu, codes 8 bits (porte : 1 niveau)
+  static constexpr double kShiftSnap = 0.125;    // écart au multiple du pas, pixels de travail
   static constexpr double kShiftResidual = 0.5;  // résidu de la caméra au plus, pixels de travail
   static constexpr float kFollow = 0.5F;         // écart d'une tuile décor au décalage, pixels de travail
   static constexpr float kSure = 0.5F;           // confiance d'une tuile décor reprise sous un décalage
@@ -86,6 +99,13 @@ class SpanTiles {
     int age = 0;
     float drift_x = 0.0F;  // mouvement reçu depuis le dernier calcul, pixels de travail
     float drift_y = 0.0F;
+    float bias = 0.0F;  // glissement de luminosité reçu depuis le dernier calcul, codes
+  };
+  // Ce qu'une image par tuiles a ajouté au bilan, rendu si le moteur la refuse.
+  struct Counted {
+    std::uint64_t core = 0;
+    std::uint64_t wide = 0;
+    bool shifted = false;
   };
   TilePlan full();
   std::size_t at(int col, int row) const {
@@ -99,6 +119,8 @@ class SpanTiles {
   Tile carried(int col, int row, int sx, int sy) const;
   // Le contenu de la tuile vient d'en dehors de la grille (bande qui entre) : à recalculer.
   bool enters(int col, int row, int sx, int sy) const;
+  // Ce qui a changé (cœur brut) dilaté de la portée de la sortie : la portée du réseau, plus spread_px.
+  std::vector<std::uint8_t> reach_of(const std::vector<std::uint8_t>& raw, int spread_px) const;
   // Le décalage (pixels d'entrée, multiples du pas) que la caméra permet ; (0, 0) sinon.
   bool camera_shift(const kernels::SceneMotion& scene, int& shift_x, int& shift_y) const;
   // Les tuiles de la carte sous la tuile (col, row) du moteur, rendues par appel de visit.
@@ -108,7 +130,9 @@ class SpanTiles {
   kernels::SpanTileGrid grid_;
   std::vector<Tile> tiles_;
   int since_full_ = 0;
-  bool known_ = false;  // l'état des tuiles suit la sortie d'avant
+  bool known_ = false;           // l'état des tuiles suit la sortie d'avant
+  std::uint64_t input_key_ = 0;  // la recette de l'entrée de la dernière image calculée
+  Counted last_;                 // la dernière image par tuiles, pour refused()
   // Bilan.
   std::uint64_t planned_ = 0;
   std::uint64_t tiled_ = 0;

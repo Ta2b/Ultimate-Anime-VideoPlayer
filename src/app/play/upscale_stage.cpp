@@ -266,7 +266,7 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   now_ = held ? PairMotion::Still : PairMotion::Unknown;
   // Dessin tenu : l'image agrandie de l'ancre sert à celle-ci, sans passe de SPAN. La série se juge contre
   // l'ancre et non paire par paire : un fondu lent ne fige pas l'image (upscale_reuse.h).
-  auto reused = reuses_span(frame, facts, held);
+  auto reused = reuses_span(frame, facts, held, spec.reduce);
   if (!reused) return std::unexpected(std::move(reused.error()));
   reuse_span_ = *reused;
   pick_span_buffer();

@@ -76,6 +76,9 @@ class SpanFp8Engine final : public Engine {
   kernels::SpanTileGrid span_tile_grid() const override;
   bool next_span_tiles(std::span<const std::uint8_t> core, int shift_x, int shift_y,
                        const Tensor* previous) override;
+  // La sortie d'avant que l'appel suivant lira pour la décaler ou la copier : une lecture de plus à déclarer
+  // aux voies (LaneHazards), comme son entrée ; nul sans demande de tuiles ou sur place.
+  const Tensor* tile_read() const { return tile_job_ && tile_job_->reads ? &tile_job_->source : nullptr; }
   std::expected<void, Refusal> enqueue_tail(cudaStream_t stream, std::span<const Tensor> outputs,
                                             const SpanFp8Ring& ring);
 
@@ -107,6 +110,8 @@ class SpanFp8Engine final : public Engine {
     int shift_x = 0;  // pixels d'entrée
     int shift_y = 0;
     std::uintptr_t previous = 0;  // adresse de la sortie d'avant ; 0 : déjà dans la sortie
+    Tensor source;                // le tenseur de la sortie d'avant, si reads
+    bool reads = false;
   };
   static constexpr int kTileStages = 4;  // envois des masques en vol au plus
   std::optional<TileJob> tile_job_;

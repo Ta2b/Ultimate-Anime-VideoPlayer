@@ -362,7 +362,8 @@ class Engine {
   // (span_tile_grid().count() octets) et n'écrit outputs[0] que là. Avant, si previous n'est pas nul et
   // n'est pas outputs[0], outputs[0] reçoit previous décalé de (shift_x, shift_y) pixels d'entrée (multiples
   // de shift_step) ; previous nul : outputs[0] tient déjà la sortie d'avant, sans décalage. Faux : le moteur
-  // ne le fera pas, l'appel suivant calcule l'image entière. Une seule fois : l'appel d'après est entier.
+  // ne le fera pas, l'appel suivant calcule l'image entière. Une seule fois : l'appel d'après est entier. Un
+  // core vide annule une demande qu'aucun appel n'a prise (appel refusé avant le moteur).
   virtual bool next_span_tiles(std::span<const std::uint8_t> /*core*/, int /*shift_x*/, int /*shift_y*/,
                                const Tensor* /*previous*/) {
     return false;
