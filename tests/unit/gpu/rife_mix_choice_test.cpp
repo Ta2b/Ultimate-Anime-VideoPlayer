@@ -118,12 +118,12 @@ TEST_CASE("RIFE natif : un natif faux ne devient jamais sa propre référence", 
   Fake fake;
   fake.wrong_piece = 1;  // le bloc 0, f16 comme f32
   fake.trt_sigma = sigma_of(46.0) / std::sqrt(3.0);
-  fake.wrong_bias = sigma_of(50.0);
+  fake.wrong_bias = sigma_of(46.0);
   // La chaîne de TensorRT reste à plus de kChainFloorDb du natif f32 (le biais s'y noie dans son bruit) :
   // seul le plancher des morceaux voit le défaut, sur la même entrée.
   REQUIRE(mix::worst_psnr(fake.run(mix::Options(kPieces, kF32)), fake.run(mix::Options(kPieces, 0)), kPlane,
                           false) >= mix::kChainFloorDb);
-  const Outcome now = choose(fake, {65.0, 50.0, 72.0});
+  const Outcome now = choose(fake, {65.0, 46.0, 72.0});
   CHECK_FALSE(now.reference.native);
   CHECK(now.reference.bar_db == std::vector<double>{45.0});
   CHECK(now.mix.options[1] == 0);
@@ -135,9 +135,15 @@ TEST_CASE("RIFE natif : un natif faux ne devient jamais sa propre référence", 
 
 TEST_CASE("RIFE natif : la garde de la référence native", "[rife_mix]") {
   SECTION("un morceau sous le plancher") {
-    const auto ref = mix::reference_of({65.0, 59.9, 72.0}, {43.6}, 45.0);
+    const auto ref = mix::reference_of({65.0, 47.9, 72.0}, {43.6}, 45.0);
     CHECK_FALSE(ref.native);
     CHECK(ref.bar_db == std::vector<double>{45.0});
+  }
+  SECTION("des morceaux dans la plage mesurée sur le PC (50,9 à 62,4 dB de TensorRT FP16) : le natif passe") {
+    const auto lite = mix::reference_of({59.3, 51.4, 57.0, 62.4}, {43.6}, 45.0);
+    REQUIRE(lite.native);
+    CHECK(lite.bar_db == std::vector<double>{43.6});
+    CHECK(mix::reference_of({55.7, 50.9, 54.2, 58.8, 61.0}, {49.3}, 45.0).native);
   }
   SECTION("la chaîne de TensorRT trop loin du natif f32") {
     const auto ref = mix::reference_of(kGoodPieces, {39.9}, 45.0);

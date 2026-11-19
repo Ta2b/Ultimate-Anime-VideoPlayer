@@ -186,9 +186,10 @@ L'essai complet :
    changement d'un morceau, même d'un ulp, redistribue les arrondis de TensorRT : jugé contre sa chaîne, un
    encodeur plus juste que le sien se lisait à 43,6 dB sur le 4.22 lite, le bruit propre de TensorRT face au
    calcul exact (émulé contre onnxruntime en f32 : notre chaîne f32 en est à 60,3 dB sur le masque, 64,7 sur
-   4.25). La référence est donc la chaîne native f32 quand une garde la reconnaît : chaque morceau f32 à 60 dB
+   4.25). La référence est donc la chaîne native f32 quand une garde la reconnaît : chaque morceau f32 à 48 dB
    au moins du sien de TensorRT sur la même entrée, rôle par rôle (une comparaison sans le bruit des blocs
-   suivants), et la chaîne de TensorRT à 42 dB au moins de la chaîne f32. La barre d'un groupe est alors 45 dB,
+   suivants ; 48 et non 60 : les blocs FP16 de TensorRT sortent eux-mêmes à 50,9 à 62,4 dB de nos morceaux
+   f32 sur le PC, et 60 refusait un natif juste), et la chaîne de TensorRT à 42 dB au moins de la chaîne f32. La barre d'un groupe est alors 45 dB,
    ou ce que TensorRT y tient s'il n'y arrive pas : le mélange reste au moins aussi proche que lui du calcul
    exact. Sinon, l'ancienne règle : 45 dB contre TensorRT. Un natif faux ne devient jamais sa propre
    référence, un refus à tort ne fait que revenir à l'ancienne règle (le journal dit laquelle et pourquoi). Les

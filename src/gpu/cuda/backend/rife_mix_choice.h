@@ -61,15 +61,18 @@ bool all_trt(const Options& options);
 Options fastest_options(const Grid& times);
 
 // La garde de la référence native. Chaque morceau du réseau f32 sort, sur la même entrée, à kPieceFloorDb au
-// moins de celui de TensorRT, rôle par rôle (piece_db) : une comparaison sans le bruit des blocs suivants
-// (61,9 à 79,6 dB mesurés sur tout le tenseur), qui voit un défaut du natif plus gros que les arrondis de
-// TensorRT. Et la chaîne de TensorRT est à kChainFloorDb au moins de la chaîne native f32 (43,6 dB sur le
-// 4.22 lite, 49,3 sur le 4.25) : la barre d'un mélange ne descend jamais sous elle. Sinon la référence
-// reste TensorRT : un natif faux ne devient jamais sa propre référence, et un refus à tort ne fait que
-// revenir à l'ancienne règle. La garde suppose le natif f32 proche du calcul exact, ce que seuls les
-// morceaux attestent ; un mélange qui tient la barre contre lui peut s'écarter de la sortie de TensorRT un
-// peu plus que la barre (les deux écarts s'ajoutent).
-inline constexpr double kPieceFloorDb = 60.0;
+// moins de celui de TensorRT, rôle par rôle (piece_db) : une comparaison sans le bruit des blocs suivants,
+// qui voit un défaut du natif plus gros que les arrondis de TensorRT. Ces arrondis bornent la garde : ses
+// blocs tournent en FP16, et nos morceaux f32 sortent à 50,9 à 62,4 dB des siens sur le PC (bloc 1 de 4.25 le
+// plus bas), nos morceaux f16 plus près de lui que nos f32. Un plancher à 60 dB refusait donc un natif juste.
+// À 48, un défaut du natif qui pèse autant que le bruit propre de TensorRT fait encore tomber le morceau
+// dessous. Et la chaîne de TensorRT est à kChainFloorDb au moins de la chaîne native f32 (43,6 dB sur le 4.22
+// lite, 49,3 sur le 4.25) : la barre d'un mélange ne descend jamais sous elle. Sinon la référence reste
+// TensorRT : un natif faux ne devient jamais sa propre référence, et un refus à tort ne fait que revenir à
+// l'ancienne règle. La garde suppose le natif f32 proche du calcul exact, ce que seuls les morceaux
+// attestent. Un mélange qui tient la barre contre lui peut s'écarter de la sortie de TensorRT un peu plus que
+// la barre (les deux écarts s'ajoutent).
+inline constexpr double kPieceFloorDb = 48.0;
 inline constexpr double kChainFloorDb = 42.0;
 
 struct Reference {

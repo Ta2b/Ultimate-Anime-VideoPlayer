@@ -1,8 +1,8 @@
 # Bilan : RIFE natif et DistilDRBA (19 novembre 2026)
 
-Mis à jour le 19 novembre 2026 à 19 h 40 : séance PC sur e05a3a5 dépouillée (partie 0) ; Tatoub la valide, #961
-se fusionne dès que ci.yml est vert (Windows MSVC en tests), le natif passe par défaut avec le verdict gardé
-(PR qui suit), puis le peaufinage : porte du lite, blocs grossiers, glue_conv, warp_blend.
+Mis à jour le 19 novembre 2026 à 20 h 00 : #961 fusionnée sur main (520f4632), le RIFE natif est le défaut
+de la rc.1 ; garde des morceaux de la porte abaissée à 48 dB (partie 4, b), PR qui suit. Puis le peaufinage :
+blocs grossiers, glue_conv, warp_blend.
 
 Pour reprendre ce travail sans son auteur. Tout est mesuré en 1080p (1920 × 1088 rempli) sur la RTX 4070 Ti du PC
 de Tatoub, sauf mention contraire. Une « passe » est une passe de lecture ×2 de RIFE fusionné : l'image B seule
@@ -266,13 +266,16 @@ seulement après les chantiers qui n'ont pas encore passé leur porte.
 
 **Après la séance du 19 novembre** (dans l'ordre du gain) :
 
-a. **Fusion de #961**, puis la PR « natif par défaut » (`--no-rife-native`, verdict gardé : `rife_native_verdict.h`,
-   `RifeFusedEngine::try_cached`), avec ci.yml, pour la rc.1.
-b. **La garde des morceaux de la porte** : 60 dB contre TensorRT ne passe jamais (TensorRT FP16 est lui-même à
-   51 à 59 dB de nos morceaux f32). Juger chaque morceau f32 contre un témoin qui ne doit rien à TensorRT : le
-   même morceau en f32 par un chemin indépendant (la forme de référence du banc, tranche et tuile de 16, sans K
-   découpé), ou abaisser la garde vers 48 dB en gardant le plancher de chaîne. Gain attendu sur le lite :
-   l'encodeur natif (0,21 contre 0,52 ms), environ −0,3 ms.
+a. **Fusion de #961** : faite le 19 novembre (520f4632), natif par défaut et verdict gardé compris, sans
+   attendre son ci.yml de branche (choix de Tatoub pour la rc.1 : un seul ci.yml sur main ensuite ; le
+   dernier ci.yml complet de la branche, sur e05a3a5, était vert). Nouveau paquet TensorRT Linux à faire.
+b. **La garde des morceaux de la porte** : 60 dB contre TensorRT ne passait jamais (TensorRT FP16 est lui-même à
+   51 à 59 dB de nos morceaux f32). Abaissée à 48 dB (`kPieceFloorDb`), le plancher de chaîne gardé à 42 :
+   un défaut du natif qui pèse autant que le bruit propre de TensorRT fait encore tomber le morceau dessous
+   (test du natif faux à 46 dB, et une mutation qui retire la garde le fait échouer). Le témoin indépendant
+   (le morceau f32 par la forme de référence du banc) reste possible s'il faut remonter la garde. Gain
+   attendu sur le lite : l'encodeur natif (0,21 contre 0,52 ms), environ −0,3 ms ; à vérifier au PC, le
+   verdict gardé se refait seul (l'empreinte des sources change).
 c. **Les blocs 0 à 2 de 4.25** restent à TensorRT (0,143, 0,104, 0,200 ms seuls contre 0,170, 0,119, 0,210 en
    f16) : un lancement par bloc grossier entier (onze couches en un noyau, activations en mémoire partagée).
 d. **Les noyaux lourds du profil** : `glue_conv_kernel<4,16>` (0,52 ms à l'essai), `fused_glue<1,3>` (la colle de
