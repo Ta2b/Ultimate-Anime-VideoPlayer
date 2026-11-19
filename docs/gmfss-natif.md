@@ -87,9 +87,10 @@ fusion ou la paire : le natif ne coûte jamais de qualité ni de vitesse.
 
 ## Essai par morceaux et réglage
 
-L'ancien essai passait chaque réseau entier en f16, en mixtes ou en f32 (« Résultats du PC » : la paire en
-f16, 12 % plus rapide que TensorRT). L'essai coupe maintenant chaque réseau en morceaux, comme le mélange du
-RIFE natif, et chaque convolution a sa forme réglée au banc.
+L'ancien essai passait chaque réseau entier en f16, en mixtes ou en f32, chaque convolution à une forme fixe
+(« Résultats du PC » : la paire et la fusion retenues en f16, 12 % et 14 % plus rapides que TensorRT). L'essai
+coupe maintenant chaque réseau en morceaux, comme le mélange du RIFE natif, et chaque convolution a sa forme
+réglée au banc.
 
 **Les morceaux** (`gmfss_grid_pieces` de `prepare/gmfss_native.cpp` pour la fusion, `gmfss_pair_native_net.cu`
 pour la paire) :
@@ -162,20 +163,43 @@ seul, les autres au f32 : la pire sortie de l'unité en dB contre ORT, entre par
 | FeatureNet | 72,0 (72,0) | 73,3 (73,4) | 73,3 (76,5) | 73,3 |
 | MetricNet | 65,2 (64,8) | 65,8 (65,3) | 71,1 (70,2) | 73,3 |
 
-En mélange : la fusion toute en f16 66,5 (66,5), en f16 et tête f32 72,8 (72,7), toute en mixtes 76,2 (76,3) ;
-la paire toute en f16 65,2 (64,8), le FeatureNet en f16 et le MetricNet en mixtes 71,1 (70,2), le MetricNet en
-f32 72,0 (72,0). Le pire de la paire est la métrique dès que le MetricNet n'est pas en f32 ; celui de la fusion,
-la queue, puis la ligne 0. Tous les mélanges tiennent 45 dB de loin, et 50 dB contre le natif f32 : le choix se
-fera sur les temps seuls, et le mélange ne gagne sur le f16 partout que si un morceau est plus rapide à un autre
-cran, ce que seul le PC dira ; le gain à attendre tient surtout aux formes réglées par couche. Le f16 de la paire
-émulé (65,2 dB contre ORT) rejoint celui du PC (64,8 dB contre TensorRT). La fusion d'`ifnet_rife.py` (l'IFNet de
-RIFE 4.26, images de 512 × 256) donne les mêmes chiffres à moins de 1 dB : f16 partout 66,5, f16 et tête
-f32 72,6, mixtes 76,1.
+En mélange : la fusion toute en f16 66,5 (66,5), en f16 et tête f32 72,8 (72,7), toute en mixtes 76,2 (76,3) ; la
+paire toute en f16 65,2 (64,8), le FeatureNet en f16 et le MetricNet en mixtes 71,1 (70,2), le MetricNet en
+f32 72,0 (72,0). Le pire de la paire est la métrique dès que le MetricNet n'est pas en f32 ; celui de la fusion, la
+queue, puis la ligne 0. Tous les mélanges tiennent 45 dB de loin, et 50 dB contre le natif f32 : le choix se fera
+sur les temps seuls, et le mélange ne gagne sur le f16 partout que si un morceau est plus rapide à un autre cran, ce
+que seul le PC dira ; le gain à attendre tient surtout aux formes réglées par couche. Le f16 de la paire émulé
+(65,2 dB contre ORT) rejoint celui du PC (64,8 dB contre TensorRT) ; celui de la fusion (66,5) passe au PC à 62,3 dB
+contre TensorRT, qui n'est lui-même qu'à 65,3 dB du natif f32 : les deux écarts s'ajoutent (66,5 et 65,3 dB font
+environ 62,8 dB). La fusion d'`ifnet_rife.py` (l'IFNet de RIFE 4.26, images de 512 × 256) donne les mêmes chiffres à
+moins de 1 dB : f16 partout 66,5, f16 et tête f32 72,6, mixtes 76,1.
+
+**Ce que le réglage peut gagner.** Le plafond du GridNet pour des plans de la paire à 1920 × 1152 (la fusion
+à 960 × 576), couche par couche le plus lent du calcul (tensor cores f16 de la RTX 4070 Ti, 160 Tflop/s) et des
+octets (chaque tenseur lu et écrit une fois, 504 Go/s) : 1 690 Gflop, 11,7 ms (calcul 10,8 ms, octets 8,6 ms ;
+canaux complétés à 16 et PixelShuffle à 256 sorties compris). La fusion f16 passe en 21,90 ms, dont environ 20 ms de
+GridNet : près de deux fois le plafond, autant que la somme du calcul et des octets. Les 14 convolutions de la
+ligne 0 (64 canaux à 960 × 576) sont à l'équilibre, 0,255 ms de calcul contre 0,28 ms d'octets chacune :
+recouvertes, 0,28 ms ; l'un après l'autre, 0,54 ms. Or `conv_kernel` charge une tranche de l'entrée (`cp.async`,
+attendu aussitôt), puis fait ses mma : un bloc ne recouvre jamais son propre chargement, seuls les autres blocs du
+même multiprocesseur le peuvent. La forme fixe (tranche et tuile de 64, deux lignes par warp) prend 192 registres
+par fil et 49 Ko de mémoire partagée : deux blocs par multiprocesseur (sm_89). Le réglage peut prendre une ligne par
+warp (151 registres, 29 Ko) ou une tranche de 32 (156 registres, 27 Ko) : trois blocs, au prix d'un bord relu plus
+grand ou de deux tranches ; une tuile de 32 (jusqu'à six blocs en tranche de 32 et une ligne, 84 registres),
+l'entrée alors lue deux fois ; ou les poids à l'avance (la latence des poids, pas celle des images). Il fait donc
+mieux recouvrir d'un bloc à l'autre, jamais dans un bloc ; et il ne prend jamais une forme plus lente au banc que la
+forme fixe, qui est parmi les siennes. Attendu, sans mesure : 1,5 à 3 ms sur les 21,9 de la fusion (la
+ligne 0 de 7,5 vers 5,5 à 6 ms au mieux ; les lignes 1 et 2, au calcul, par les poids à l'avance), 0,3 à 1 ms sur
+les 19,7 de la paire, dont les réseaux natifs ne font que 3,5 ms au plafond (FeatureNet 1,15 ms par image,
+MetricNet 1,18 ms) : GMFlow, sous TensorRT, en fait l'essentiel. Le reste demande des noyaux nouveaux : un
+chargement en double tampon (la bande suivante en vol pendant les mma de la courante, ce qui épargne aussi le bord
+relu), qui ramènerait la ligne 0 vers ses 0,28 ms par convolution, environ 3,5 ms de moins à lui seul.
 
 **Ce qui reste au PC** : les temps (seul de chaque option, le mélange contre TensorRT) ; les dB contre TensorRT
 (l'émulation juge contre ONNX Runtime sur processeur ; au PC, TensorRT FP16 n'était qu'à 67,7 dB du natif f32
-sur la paire) ; le temps du réglage ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamais tourné
-sur une carte.
+sur la paire, 65,3 dB sur la fusion) ; le temps du réglage, et ce qu'il gagne (le temps d'une passe contre les
+21,90 et 19,70 ms de la forme fixe ; le temps de chaque morceau par Nsight Systems, étape 3 de la séance
+finale) ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamais tourné sur une carte.
 
 ## Justesse
 
@@ -189,10 +213,11 @@ sur une carte.
   4 pixels, des caractéristiques en ondes) passent par la fusion TensorRT entière, puis par l'IFNet et le GridNet
   natif ; trois passes, la dernière comparée. De la paire (`gmfss_pair_trial.cpp`) : les deux dessins passent par
   la paire entière, puis par le flot et les réseaux natifs ; la pire des quatorze sorties est comparée, rapportée
-  à son étendue (au moins 1). Un mélange n'est retenu qu'à **45 dB** ou plus ; la séance finale vise 50 dB.
+  à son étendue (au moins 1). Chaque mélange de l'essai (`gmfss_trial.cpp`) passe ainsi sur l'unité entière ; il
+  n'est retenu qu'à **45 dB** ou plus ; la séance finale vise 50 dB.
 - Compilé par nvcc 13.5 (sm_75, 86, 89, 120, `--warn-on-spills -Werror`), lancé sur la RTX 4070 Ti le
-  19 novembre 2026 (ci-dessous) avec l'ancien essai. L'essai par morceaux et le réglage au banc sont compilés de
-  même, jamais lancés sur une carte.
+  19 novembre 2026 (ci-dessous) avec l'ancien essai et la forme fixe de chaque convolution. L'essai par
+  morceaux, le réglage au banc et sa bande sont compilés de même, jamais lancés sur une carte.
 - La justesse se vérifie dans le cloud (émulation contre onnxruntime sur processeur, coupe comparée à la fusion
   ou à la paire entière) ; le PC ne donne que ce qui demande la carte : les temps et les dB contre TensorRT.
 
