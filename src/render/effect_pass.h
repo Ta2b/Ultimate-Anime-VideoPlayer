@@ -1,8 +1,10 @@
 // La passe du masque des effets (render/effect_mask.h) : sur OUTPUT, avant la passe anime du grade, elle pose
 // le masque dans l'alpha de l'image (lu par 3-anime.hook quand fx_on vaut 1, puis remplacé par la montée des
-// émetteurs). Le masque est une petite texture (une valeur par tuile de la carte de la scène, r8 ou le
-// premier format filtrable que le GPU offre), lue en bilinéaire si le format le permet. Interne à render :
-// Grade la pose devant ses hooks quand le masque n'est pas neutre.
+// émetteurs). Elle n'est pas une passe à elle : quelques lignes ajoutées à la couleur en attente
+// (PL_HOOK_SIG_COLOR), que libplacebo rend de toute façon pour la passe anime. Le masque est une petite
+// texture (une valeur par tuile de la carte de la scène, r8 ou le premier format filtrable que le GPU offre),
+// lue en bilinéaire si le format le permet. Interne à render : Grade la pose devant ses hooks quand le masque
+// n'est pas neutre.
 #pragma once
 
 #include <cstdint>
@@ -18,7 +20,8 @@ namespace kirari::render {
 
 class EffectPass {
  public:
-  // Refus si le GPU n'offre aucun format échantillonnable inscriptible (r8, rgba8, r32f, rgba32f).
+  // Refus si le GPU n'offre aucun format échantillonnable inscriptible (r8, rgba8, r32f, rgba32f), ou pas de
+  // sommet vec2.
   static std::expected<std::unique_ptr<EffectPass>, Refusal> create(pl_gpu gpu);
   ~EffectPass();
   EffectPass(const EffectPass&) = delete;
