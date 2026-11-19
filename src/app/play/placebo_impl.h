@@ -298,6 +298,7 @@ struct PlaceboScreen::Impl {
   EffectTally effects_tally;           // les images gradées à l'écran, une fois chacune (journal de fin)
   std::int64_t effects_tally_pts = kNoPts;
   bool effects_view = false;  // --effect-mask-view : le grade peint le masque (GradeParams::fx_view)
+  bool effects_glow = true;   // les lueurs vues dans l'image montent (GradeParams::fx_glow)
   int look_path_noted = -1;   // le chemin du look au journal (note_look_path) ; -1 : pas encore dit
   void follow_effects(const ShowRequest& request);
   void take_frame_marks(const RingFrame* frame) {

@@ -163,6 +163,9 @@ struct GradeParams {
   double skin_s0 = 0.0, skin_s1 = 0.0, skin_s2 = 0.0;
   // 1 : vue de contrôle du masque des effets (--effect-mask-view, 3-anime.hook) au lieu de l'image gradée.
   double fx_view = 0.0;
+  // 1 : une lueur vue dans l'image (un bloc qui domine nettement sa zone) monte comme un effet sûr, sans la
+  // carte de la scène : la carte ne voit que ce qui bouge (3-anime.hook, docs/hdr-anime.md).
+  double fx_glow = 0.0;
   friend bool operator==(const GradeParams&, const GradeParams&) = default;
 };
 

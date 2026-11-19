@@ -55,12 +55,12 @@ void SpanTiles::set_grid(const kernels::SpanTileGrid& grid) {
   span_ = true;
   age_.assign(grid.usable() ? static_cast<std::size_t>(grid.count()) : 0U, 0);
   sums_.clear();
+  base_.clear();
   block_cols_ = 0;
   block_px_ = 0.0F;
   since_full_ = 0;
   known_ = false;
   unmeasured_ = false;
-  mixed_ = false;
 }
 
 template <class Visit>
@@ -84,10 +84,10 @@ TilePlan SpanTiles::full(const PairBlocks& blocks) {
   } else {
     std::ranges::fill(sums_, 0U);
   }
+  base_.assign(sums_.size(), 0U);
   since_full_ = 0;
   known_ = true;
   unmeasured_ = false;
-  mixed_ = false;
   return TilePlan{};
 }
 
@@ -101,7 +101,14 @@ bool SpanTiles::adopt(const PairBlocks& blocks) {
   block_cols_ = blocks.cols;
   block_px_ = blocks.side_px;
   sums_.assign(blocks.deviation.size(), 0U);
+  base_.assign(sums_.size(), 0U);
   return true;
+}
+
+std::uint32_t SpanTiles::bound(std::size_t b, const PairBlocks& blocks, const PairBlocks& gap) const {
+  const std::uint32_t summed = add_pair(sums_[b], blocks.deviation[b]);
+  if (!fits(gap) || base_.size() != sums_.size()) return summed;
+  return std::min(summed, add_pair(base_[b], gap.deviation[b]));
 }
 
 std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool new_recipe) {
@@ -113,17 +120,7 @@ std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool new_recipe) 
   return nullptr;
 }
 
-bool SpanTiles::holds(const PairBlocks& blocks) const {
-  if (!active() || !mixed_) return true;  // la sortie est celle d'un calcul complet : la règle du lot A
-  if (!known_ || !fits(blocks) || since_full_ + 1 >= kFullEvery) return false;
-  // Une reprise entière vieillit chaque tuile : aucune au-delà de kMaxAge, comme sous plan.
-  if (std::ranges::any_of(age_, [](int age) { return age + 1 > kMaxAge; })) return false;
-  for (std::size_t b = 0; b < sums_.size(); ++b)
-    if (!kernels::is_held(add_pair(sums_[b], blocks.deviation[b]), kThreshold)) return false;
-  return true;
-}
-
-void SpanTiles::held(const PairBlocks& blocks) {
+void SpanTiles::held(const PairBlocks& blocks, const PairBlocks& gap) {
   if (!active() || !known_) return;
   ++since_full_;
   for (int& age : age_) ++age;
@@ -132,12 +129,15 @@ void SpanTiles::held(const PairBlocks& blocks) {
     unmeasured_ = true;
     return;
   }
-  for (std::size_t b = 0; b < sums_.size(); ++b) sums_[b] = add_pair(sums_[b], blocks.deviation[b]);
+  for (std::size_t b = 0; b < sums_.size(); ++b) sums_[b] = bound(b, blocks, gap);
 }
 
 std::pair<int, int> SpanTiles::reach(int spread_px) const {
-  return {grid_.reach_cols + kernels::span_reach_tiles(spread_px, grid_.tile_w),
-          grid_.reach_rows + kernels::span_reach_tiles(spread_px, grid_.tile_h)};
+  const auto along = [spread_px](int network, int tile) {
+    return std::min(network, kernels::span_reach_tiles(kCoreReachPx, tile)) +
+           kernels::span_reach_tiles(spread_px, tile);
+  };
+  return {along(grid_.reach_cols, grid_.tile_w), along(grid_.reach_rows, grid_.tile_h)};
 }
 
 TilePlan SpanTiles::plan(const TileFacts& facts) {
@@ -156,7 +156,7 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   for (std::size_t i = 0; i < age_.size(); ++i)
     if (age_[i] + 1 > kMaxAge) why[i] = Cause::Age;
   for (std::size_t b = 0; b < sums_.size(); ++b) {
-    sums_[b] = add_pair(sums_[b], facts.blocks.deviation[b]);
+    sums_[b] = bound(b, facts.blocks, facts.gap);
     if (kernels::is_held(sums_[b], kThreshold)) continue;
     tiles_under(b, [&why](std::size_t i) {
       if (why[i] == Cause::None) why[i] = Cause::Block;
@@ -182,6 +182,9 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
     wide_seen_ += age_.size();
     return full(facts.blocks);
   }
+  // Toute sortie dont le champ du réseau tient dans la région calculée est exacte : elle s'écrit aussi, sans
+  // rien calculer de plus (le moteur ne dilate pas au-delà de wide), et repart de cette image.
+  core = eroded(wide, grid_, grid_.reach_cols, grid_.reach_rows);
   for (std::size_t i = 0; i < age_.size(); ++i) age_[i] = core[i] != 0 ? 0 : age_[i] + 1;
   // Un bloc repart de zéro quand toute sortie qui le voit est recalculée : ses tuiles et tout ce qui est à
   // leur portée. Recalculer ses seules tuiles ne suffit pas : une voisine reprise a vu son entrée d'avant.
@@ -191,9 +194,10 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
     tiles_under(b, [&all, &renewed](std::size_t i) { all = all && renewed[i] != 0; });
     if (all) sums_[b] = 0;
   }
-  mixed_ = true;
+  base_ = sums_;
   last_ = Counted{.core = static_cast<std::uint64_t>(kernels::count_span_tiles(core)),
-                  .wide = static_cast<std::uint64_t>(wide_count)};
+                  .wide = static_cast<std::uint64_t>(kernels::count_span_tiles(kernels::dilate_span_tiles(
+                      core, grid_.cols, grid_.rows, grid_.reach_cols, grid_.reach_rows)))};
   ++tiled_;
   tiles_done_ += last_.core;
   tiles_wide_ += last_.wide;
@@ -214,10 +218,10 @@ void SpanTiles::refused() {
   // La géométrie de la mesure reste : l'état repart de cette image entière.
   std::ranges::fill(age_, 0);
   std::ranges::fill(sums_, 0U);
+  base_.assign(sums_.size(), 0U);
   since_full_ = 0;
   known_ = true;
   unmeasured_ = false;
-  mixed_ = false;
 }
 
 void SpanTiles::checked(std::uint32_t worst_block, double mean_levels) {

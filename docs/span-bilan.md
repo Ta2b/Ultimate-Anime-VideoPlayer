@@ -1,6 +1,14 @@
 # Bilan du SPAN natif (CUDA, RTX 40 et 50)
 
-État au 19 novembre 2026, `main` à d146c35 (poids partagés de #963 compris). De quoi reprendre le chantier
+Mis à jour le 19 novembre 2026 au soir : `winograd_db.py` écrit et éprouvé (interprète à 161 dB de la
+référence, transformées F(2×2, 3×3) et F(4×4, 3×3) exactes contre la convolution directe) ; il attend les
+deux modèles d'AnimeJaNai dans le cloud pour donner les dB de Winograd.
+
+Mis à jour le 19 novembre 2026 en fin d'après-midi : banc PC de #963 (poids partagés −3,7 % au b5f48, +4,1 %
+au b8f64 ; b5f48 en bandes à 5,21 ms, sous AnimeJaNai) ; poids partagés par défaut à 48 canaux seulement ;
+l'hypothèse du L2 tombe à 64 canaux, le profil Nsight Compute passe en tête de ce qui reste.
+
+État au 19 novembre 2026, `main` après #963. De quoi reprendre le chantier
 sans personne : ce qui est fait, où en est la recherche, les plafonds et ce qui irait au-delà, ce qui reste,
 et où tout se trouve. Le détail technique est dans [`span-native16.md`](span-native16.md) ; le FP8 CUTLASS
 dans [`span-fp8-cutlass.md`](span-fp8-cutlass.md). Hors de ce bilan : les tuiles qui bougent
@@ -19,17 +27,18 @@ Pour les SPAN d'AnimeJaNai sur RTX 40 et 50 (`span_fp8_cutlass_model`, `BackendC
 | Cran | Chemin | Banc (b8f64) | Lecture (b8f64) | Écart |
 |---|---|---:|---:|---:|
 | Équilibre | FP16 natif, sommes f16, bandes de 128 lignes | 10,64 ms | 15,0 ms | 62,66 dB au banc, 66,6 dB en lecture |
-| Qualité | mêmes noyaux, sommes f32 (paquet « -fp32n- ») | 14,74 ms | 19,3 ms | 77,90 dB au banc, 78,3 dB en lecture |
+| Qualité | mêmes noyaux, sommes f32 (paquet « -fp32n- ») | 14,44 ms | 19,3 ms | 77,90 dB au banc, 78,3 dB en lecture |
 | Performance | FP8 CUTLASS (acc16), bords CUTLASS | 7,98 ms de noyaux (reçu) | | 52,3 dB en lecture |
 
-À comparer : TensorRT FP16 14,76 ms au même banc, AnimeJaNai 11,2 ms (b8f64) et 5,8 ms (b5f48) sur la même
-carte. Chaque cran se replie sur le FP16 natif avant TensorRT FP16 (`span_variant_order`). Les dB du banc sont
-contre la référence FP16 du GPU à sommes f32 (`--compare`) ; ceux de la lecture viennent d'un autre extrait
+Le b5f48 en FP16 natif : 5,02 ms (poids partagés), 5,95 ms en f32. À comparer : TensorRT FP16 14,76 ms
+(b8f64) et 8,80 ms (b5f48) au même banc, AnimeJaNai 11,2 ms (b8f64) et 5,8 ms (b5f48) sur la même carte.
+Chaque cran se replie sur le FP16 natif avant TensorRT FP16 (`span_variant_order`). Les dB du banc sont contre
+la référence FP16 du GPU à sommes f32 (`--compare`) ; ceux de la lecture viennent d'un autre extrait
 (Spy×Family, 30 s). Depuis #951, la justesse se juge contre ONNX Runtime FP32 sur processeur : les nouveaux dB
 ne se comparent pas un à un aux anciens.
 
-Éteints, à l'essai : les poids partagés (`--shared-weights` à l'outil, #963) et les bords natifs du FP8
-(`kirari play --debug --span-native-edges`, #854).
+Les poids partagés (#963) sont pris à 48 canaux seulement (`SpanSharedWeights::Auto`). Éteints, à l'essai :
+les bords natifs du FP8 (`kirari play --debug --span-native-edges`, #854).
 
 ### Les PR
 
@@ -44,6 +53,7 @@ ne se comparent pas un à un aux anciens.
 | #941 | Sommes promues retirées ; bandes de 128 lignes par défaut quand le L2 les tient |
 | #951 | Le PC ne mesure que les temps ; EXPORT et `justesse_cpu.py` jugent la justesse sur processeur |
 | #963 | Poids partagés à l'essai, sortie au bit près ; la convolution passe dans `span_native_conv.cuh` |
+| #973 | Poids partagés par défaut à 48 canaux seulement, d'après le banc ; le banc mesure avec et sans |
 
 ### Mesures, dans l'ordre
 
@@ -54,8 +64,13 @@ ne se comparent pas un à un aux anciens.
 | #933, b8f64, bandes de 64 lignes | 14,76 ms | 10,98 ms | 14,74 ms | inchangés |
 | #933, b8f64, bandes de 128 lignes | | 10,64 ms | | inchangés |
 | #933, sommes promues (retirées) | | | 14,39 ms | 71,51 dB |
+| #963, b8f64, bandes de 128 lignes | 14,76 ms | 10,64 ms ; partagés 11,07 | 14,44 ms | non exportés |
+| #963, b5f48, bandes de 128 lignes | 8,80 ms | 5,21 ms ; partagés 5,02 | 5,95 ms | non exportés |
 
-Pas encore mesurés : le b5f48 en bandes, les poids partagés, les bords natifs du FP8.
+Balayage des bandes au banc de #963 (0, 64, 192, 270 lignes) : b8f64 10,98, 10,98, 10,78, 11,60 ms ; b5f48
+5,83, 5,22, 5,30, 5,59 ms. Les 128 lignes du défaut restent les meilleures pour les deux. Pas encore mesurés :
+les bords natifs du FP8. Les dB de ce banc n'ont pas été exportés (EXPORT) ; les poids partagés et les bandes
+rendent la sortie au bit près (émulateur, test GPU), ils ne changent pas les dB.
 
 ## 2. Où en est la recherche
 
@@ -91,16 +106,22 @@ Pas encore mesurés : le b5f48 en bandes, les poids partagés, les bords natifs 
   images à 24 i/s, ou le partage de la carte avec Vulkan. Les trois commandes qui tranchent sont dans
   `span-native16.md`, « Lecture contre banc ». La deuxième demande `sudo` au PC.
 
-### À l'essai
+### Mesuré et tranché
 
-- **Les poids partagés** (#963, attend son banc). L'hypothèse : à 64 canaux, chaque warp relit tous les poids
+- **Les poids partagés** (#963). L'hypothèse : à 64 canaux, chaque warp relit tous les poids
   d'une 3×3 (73,7 Ko) à chaque tuile ; quatre warps en tirent 295 Ko du L2 pour 43,5 Ko de tuile d'entrée. Sur
   une image, environ 14,3 Go de poids relus et 4,2 Go d'activations : 18,5 Go en 10,64 ms, soit 1,7 To/s de L2
   (débit du L2 de la 4070 Ti non mesuré ici). En f32, les sommes deux fois plus lentes cachent ce trafic, d'où
   85 % du plafond en f32 et 59 % en f16. La variante charge les poids de chaque pas une fois par bloc en
   mémoire partagée (3,6 Go par image). Sortie identique au bit près sur l'émulateur (48 et 64 canaux, f16 et
-  f32, avec et sans bandes), aucun débordement de registres en sm 8.9 et 12.0. Gagnante, elle devient le
-  défaut ; perdante, elle part.
+  f32, avec et sans bandes), aucun débordement de registres en sm 8.9 et 12.0. **Au banc, elle gagne au
+  b5f48 (5,21 → 5,02 ms) et perd au b8f64 (10,64 → 11,07 ms).** À 64 canaux, les poids relus n'étaient donc
+  pas la limite (le L1 en sert sans doute une bonne part), et la barrière par pas (36 par 3×3, deux blocs de
+  quatre warps par SM) coûte plus que le L2 épargné. Pourquoi 48 canaux gagnent (27 pas, tuile au pas impair
+  inchangée, moins de registres) n'est pas établi. Le défaut les prend à 48 canaux seulement.
+
+### À l'essai
+
 - **Les bords natifs du FP8** : conv_1, conv_cat et to_pixel du cran Performance par nos noyaux. Jamais
   mesurés.
 
@@ -121,15 +142,18 @@ Pas encore mesurés : le b5f48 en bandes, les poids partagés, les bords natifs 
 
 | Modèle | GFLOP par image | Calcul seul f16 | f32 | FP8 (blocs) | Par couche f16 | f32 | FP8 | Mesuré f16 / f32 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| b8f64 | 1 004 | 6,28 ms | 12,55 ms | 3,29 ms | 8,42 ms | 13,06 ms | 4,73 ms | 10,64 / 14,74 ms |
-| b5f48 | 371 | 2,32 ms | 4,64 ms | 1,27 ms | 4,27 ms | 5,07 ms | 2,54 ms | 5,92 / 6,25 ms (sans bandes) |
+| b8f64 | 1 004 | 6,28 ms | 12,55 ms | 3,29 ms | 8,42 ms | 13,06 ms | 4,73 ms | 10,64 / 14,44 ms |
+| b5f48 | 371 | 2,32 ms | 4,64 ms | 1,27 ms | 4,27 ms | 5,07 ms | 2,54 ms | 5,02 / 5,95 ms |
 
 Ce qu'on en tire :
 
 - **b8f64 f16 : 59 % du plafond de calcul.** Les bandes ont déjà passé la borne « par couche » de la mémoire
-  (le trafic d'activations reste dans le L2), il reste le calcul et le L2. Le f32, à 85 %, est fini.
-- **b5f48 f16 : 39 % du plafond, et pas encore mesuré en bandes.** C'est le modèle où il reste le plus, en
-  proportion : plus petit, il pèse moins sur les tensor cores et plus sur les octets et les lancements.
+  (le trafic d'activations reste dans le L2). Les poids partagés ont montré que le trafic des poids n'est pas
+  la limite : ce qui reste (attente des tensor cores, barrières, L2 des activations, queues d'onde) se lit au
+  profil Nsight Compute. Le f32, à 87 % (14,44 contre 12,55 ms), est fini.
+- **b5f48 f16 : 46 % du plafond** (5,02 contre 2,32 ms) ; au-dessus de sa borne « par couche » (4,27 ms) bien
+  que les bandes gardent ses activations dans le L2. C'est le modèle où il reste le plus, en proportion :
+  plus petit, il pèse moins sur les tensor cores et plus sur les octets, les barrières et les lancements.
 - **FP8** : deux fois le débit des tensor cores et moitié des octets dans les blocs. Plafond 3,3 ms au b8f64
   contre 6,3 en f16, mais la justesse est celle du cran Performance (52,3 dB en lecture).
 
@@ -139,7 +163,7 @@ Les gains sont des estimations sans mesure, sauf les plafonds, qui sont calculé
 
 | Levier | Gain possible (b8f64 f16) | Risque | Où |
 |---|---|---|---|
-| Poids partagés (#963) | 14,3 → 3,6 Go de poids lus au L2 ; 8 à 9 ms si l'hypothèse tient | faible : bit près, éteint par défaut | fait, banc au PC |
+| Poids partagés (#963) | mesuré : −3,7 % au b5f48, +4,1 % au b8f64 | aucun : bit près, choisi par modèle | fait |
 | Réglage par couche (tuile, warps, lignes par warp, bande), choisi au chargement | 5 à 15 % | faible ; chronométrer les variantes au chargement est admis | cloud, puis temps au PC |
 | Fusion d'un bloc SPAB | le trafic d'activations du L2 (4,2 Go) | moyen à fort, voir ci-dessous | cloud, puis temps au PC |
 | Winograd F(2×2, 3×3) | multiplications des 3×3 ÷ 2,25 : 2,97 ms de mma au plafond | f16 : dB à mesurer ; transformées sur les cœurs ordinaires | dB dans le cloud d'abord |
@@ -156,45 +180,46 @@ halos (12 × 36 puis 10 × 34 pixels), 1,34 fois le calcul ; en 16 × 64, 1,16 f
 première couche (20 × 68 × 64 canaux) pèse 174 Ko, plus que les 100 Ko de mémoire partagée d'un SM. Sur un
 SPAN limité par le calcul, la fusion par tuiles perd. La forme qui tiendrait : une bande de colonnes de 64
 pixels qui descend l'image et garde trois lignes de chaque couche en mémoire partagée (environ 80 Ko, recalcul
-de 3 % sur les côtés seulement), découpée aussi en hauteur pour occuper les 60 SM. À chiffrer après le banc
-des poids partagés : elle ne vaut que si le L2 limite encore.
+de 3 % sur les côtés seulement), découpée aussi en hauteur pour occuper les 60 SM. Elle ne vaut que si le
+profil montre que le L2 des activations limite.
 
 ## 4. Ce qui reste, dans l'ordre
 
-1. **PC, temps seuls** (quand les chantiers qui n'ont pas passé leur porte ont fini) : le banc mesure les
-   poids partagés à côté du défaut, et le b5f48 en bandes.
+1. **PC, profil** (temps seuls, quand les chantiers qui n'ont pas passé leur porte ont fini) : ce qui limite
+   une 3×3 à 64 et à 48 canaux, avec et sans poids partagés (Nsight Compute, droits d'administrateur pour les
+   compteurs ; noms de métriques à vérifier par `ncu --query-metrics`). Il décide entre réglage par couche,
+   fusion et Winograd :
 
    ```sh
-   cd ~/kirari-player && git pull && cmake --build --preset linux-release --target kirari_span_fp8_run
-   EXPORT=/mnt/project-files/span-native/$(date +%Y%m%d-%H%M) \
-     flock ~/kirari-reports/gpu-bench.lock tools/bench/span_native/banc.sh build/linux-release \
-       ~/modeles/…b8f64….onnx ~/modeles/…b5f48….onnx -- extrait.mkv
-   ```
-
-2. **Cloud** : `python3 -I tools/bench/span_native/justesse_cpu.py
-   /mnt/project-files/span-native/<date>/<modèle>` (les dB contre ONNX Runtime FP32, et le bit près des bandes
-   et des poids partagés). Puis une PR : les poids partagés deviennent le défaut et l'option disparaît, ou ils
-   partent.
-3. **PC, si le gain est faible** : confirmer l'hypothèse du L2 sur une convolution (Nsight Compute, droits
-   d'administrateur pour les compteurs ; noms de métriques à vérifier par `ncu --query-metrics`) :
-
-   ```sh
-   M=lts__t_bytes.sum,dram__bytes.sum
+   M=lts__t_bytes.sum,dram__bytes.sum,l1tex__t_bytes.sum,smsp__warp_issue_stalled_barrier_per_warp_active.pct
    M=$M,sm__pipe_tensor_op_hmma_cycles_active.avg.pct_of_peak_sustained_active
-   sudo ncu --kernel-name regex:conv_kernel --launch-skip 40 --launch-count 3 --metrics "$M" \
-     build/linux-release/src/gpu/cuda/backend/kirari_span_fp8_run MODELE.onnx 1080 1920 \
-     ~/kirari-reports/span-native-<date>/entree.f32 /tmp/sortie.f32 --fp16 [--shared-weights]
+   for w in --shared-weights --no-shared-weights; do for m in ~/modeles/…b8f64….onnx ~/modeles/…b5f48….onnx; do
+     sudo ncu --kernel-name regex:conv_kernel --launch-skip 40 --launch-count 3 --metrics "$M" \
+       build/linux-release/src/gpu/cuda/backend/kirari_span_fp8_run "$m" 1080 1920 \
+       ~/kirari-seance/final/span963/entree.f32 /tmp/sortie.f32 --fp16 "$w"
+   done; done > ~/kirari-reports/span-ncu.txt
    ```
 
+2. **PC, une fois** : le banc avec EXPORT (commande dans `span-native16.md`, « Mesurer »), puis dans le cloud
+   `python3 -I tools/bench/span_native/justesse_cpu.py /mnt/project-files/span-native/<date>/<modèle>` : les
+   dB des deux modèles contre ONNX Runtime FP32, que le banc de #963 n'a pas exportés.
+3. **Cloud** : comprendre la perte à 64 canaux d'après le profil. Pistes : préchargement de deux pas au lieu
+   d'un (la mémoire partagée manque à 64 canaux : deux tampons seulement), barrière tous les deux pas, ou
+   blocs de 8 warps qui amortissent la barrière et les poids sur deux fois plus de pixels.
 4. **Cloud** : le réglage par couche. Des variantes de tuile (lignes par warp, 8 warps par bloc qui partagent
    les mêmes poids, hauteur de bande) vérifiées sur l'émulateur, puis chronométrées au chargement comme
    l'admet le propriétaire (quelques millisecondes à l'ouverture pour une vraie optimisation). Temps au PC.
-5. **Cloud** : Winograd, les dB d'abord. Un script numpy (à écrire, `tools/bench/span_native/`) refait le SPAN
-   en f16 avec les transformées F(2×2, 3×3) et F(4×4, 3×3) et l'arrondi de chaque somme de 16 produits, sur
-   l'image exportée par le banc, contre ONNX Runtime FP32. Les noyaux seulement si la perte laisse de la marge
-   au-dessus de 55 dB.
-6. **Cloud puis PC** : la fusion en bande de colonnes (partie 3), si le point 3 montre que le L2 limite
-   encore.
+5. **Cloud** : Winograd, les dB d'abord. `tools/bench/span_native/winograd_db.py` refait le SPAN en numpy
+   avec les arrondis des noyaux (activations et poids f16, pas de 16 produits ajoutés à un accumulateur f16)
+   et les transformées F(2×2, 3×3) et F(4×4, 3×3) sur les 3×3 des blocs, contre ONNX Runtime FP32. Éprouvé
+   sur un SPAN de synthèse (l'interprète en f32 rend la référence à 161 dB ; les transformées sans arrondi
+   rendent la convolution directe à 1e-6 près). Il lui faut les vrais modèles, absents du cloud : les copier
+   du PC dans `/mnt/project-files/modeles/`, puis
+   `python3 -I tools/bench/span_native/winograd_db.py /mnt/project-files/modeles/<modèle>.onnx --taille 270 480`
+   (ou `--entree` sur un dossier d'EXPORT). Les noyaux seulement si la perte laisse de la marge au-dessus de
+   55 dB.
+6. **Cloud puis PC** : la fusion en bande de colonnes (partie 3), si le profil montre que le L2 des
+   activations limite.
 7. **PC, en lecture** : les bords natifs du FP8 au cran Performance,
    `kirari play --debug --span-native-edges --stats` contre sans l'option (le profil de fin coupe le SPAN en
    corps, attente et queue).

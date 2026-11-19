@@ -338,4 +338,36 @@ TEST_CASE("Éclats des effets : la passe du masque tient image après image, à 
   gpu.grade->set_effect_mask(nullptr);
 }
 
+// Les lueurs vues dans l'image (fx_glow), sans carte : la carte ne voit que ce qui bouge, une corne lumineuse
+// ou un halo immobiles n'y sont jamais des effets (essai du PC, Re:Zero à 16:23 et 16:45). Un halo qui domine
+// nettement sa zone monte comme un effet sûr ; le fond, et une lumière à peine plus claire que sa zone, ne
+// bougent pas ; la vue du masque le peint en vert.
+TEST_CASE("Éclats des effets : une lueur vue dans l'image monte sans la carte", "[render][gpu]") {
+  Gpu gpu;
+  require_device(gpu);
+  REQUIRE(gpu.grade);
+  const std::vector<std::uint16_t> source = halo();
+  GradeParams p = params();
+  const std::vector<Rgb> flat = graded_rgb(gpu, source, p);
+  p.fx_glow = 1.0;
+  const std::vector<Rgb> glow = graded_rgb(gpu, source, p);
+  CHECK(glow[128][0] > 1.05 * flat[128][0]);
+  CHECK(glow[16][0] == Catch::Approx(flat[16][0]).epsilon(0.001));
+  // Un halo à peine plus clair que sa zone (fond à 120 nits) : pas une lueur, rien ne change.
+  std::vector<std::uint16_t> bright = source;
+  const auto code = static_cast<std::uint16_t>(std::lround(nits_to_pq(120.0) * 65535.0));
+  for (std::size_t i = 0; i < bright.size(); i += 4)
+    if (bright[i] < code) bright[i] = bright[i + 1] = bright[i + 2] = code;
+  p.fx_glow = 0.0;
+  const std::vector<Rgb> dull = graded_rgb(gpu, bright, p);
+  p.fx_glow = 1.0;
+  const std::vector<Rgb> dull_glow = graded_rgb(gpu, bright, p);
+  CHECK(dull_glow[128][0] == Catch::Approx(dull[128][0]).epsilon(0.001));
+  // La vue : le halo en jaune (lumière d'effet), le fond sans vert.
+  p.fx_view = 1.0;
+  const std::vector<Rgb> view = graded_rgb(gpu, source, p);
+  CHECK(view[128][1] > 2.0 * view[128][2]);
+  CHECK(view[16][1] == Catch::Approx(view[16][0]).epsilon(0.05));
+}
+
 }  // namespace kirari::render

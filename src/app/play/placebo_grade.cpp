@@ -237,6 +237,7 @@ std::optional<std::string> effect_tally_line(std::string_view where, const Effec
 void PlaceboScreen::Impl::select_grade(const pl_color_space& target) {
   std::optional<render::GradeParams> params = grade_for(grade_choice, target);
   if (params) params->fx_view = effects_view ? 1.0 : 0.0;
+  if (params) params->fx_glow = effects_glow ? 1.0 : 0.0;
   const std::optional<bool> before = grade_loaded_pq;
   grade_loaded_pq.reset();
   if (grade && params) {

@@ -163,7 +163,7 @@ TEST_CASE("Étage gpu : grade avant le warp, les tuiles de SPAN partent de la so
   s.grader = grader;
   s.span_reuse.tiles = true;
   s.clock = &clock;
-  s.layers = {.plate_copy = plate};
+  s.layers = {.plate = plate};
   rig.start(std::move(s), &clock);
   rig.feed(1, 6);
   REQUIRE(rig.collect(11));  // six sources et une image entre chaque paire

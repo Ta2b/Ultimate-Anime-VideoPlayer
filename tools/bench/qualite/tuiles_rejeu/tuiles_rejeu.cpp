@@ -1,7 +1,8 @@
 // tuiles_rejeu : la reprise entière de SPAN (lot A) et ses tuiles qui bougent, rejouées hors du lecteur sur
 // processeur (CMakeLists.txt à côté ; docs/tuiles-span.md, « Rejeu sur processeur »).
 //
-//   tuiles_rejeu [--diviseur D] [--blocs N] [--debande] [--sans-reprise] [--detail] [--dossier DOSSIER]
+//   tuiles_rejeu [--diviseur D] [--blocs N] [--debande] [--sans-reprise] [--sans-tuiles] [--detail]
+//                [--dossier DOSSIER]
 //                [--ancre-composee | --somme-des-paires | --somme-bornee [--seuil C]] [--masques DOSSIER]
 //                < tâches
 //
@@ -11,13 +12,14 @@
 // au flux (scene_flow_divisor), le travail fait LARGEUR × D sur HAUTEUR × D. DOSSIER : des tâches écrites
 // sur une autre machine, dont chaque fichier se cherche par son seul nom dans DOSSIER.
 //
-// Pour chaque image, comme le lecteur sous --span-tiles :
+// Pour chaque image, comme le lecteur :
 // - la mesure de la paire et l'écart à l'ancre (kernels/spec/detect.h) : pire bloc et écart de chaque bloc,
 //   en 1/256 de niveau, sur des blocs de 16 pixels de travail (16 / D pixels du flux) ;
 // - SpanReuse::decide puis, sur les images calculées, SpanTiles::plan : le code du lecteur, compilé tel quel,
 //   sur la grille du SPAN FP16 natif à N blocs (8 par défaut : tuiles de 64 × 16 pixels de travail, halo
 //   d'une colonne et de quatre lignes, gpu/cuda/backend/span_native16.cu). --debande : l'entrée de SPAN
-//   débandée (le rayon du débandage s'ajoute au halo) ; --sans-reprise : --no-span-reuse ;
+//   débandée (le rayon du débandage s'ajoute au halo) ; --sans-reprise : --no-span-reuse ; --sans-tuiles :
+//   --no-span-tiles, le lot A seul ;
 // - la carte de la paire (précédente, image), que le lecteur ne lit plus pour les tuiles : kernels::ref,
 //   caméra ajustée puis affinée, lissage des classes, historique vidé après une coupe
 //   (app/play/scene_map.cpp), pour les colonnes de --detail et les coupes de l'essai.
@@ -28,7 +30,8 @@
 // carte a une caméra ; CX CY son déplacement au centre de l'image (pixels de travail) ; PAIRE le pire bloc de
 // la paire (niveaux) ; avec --ancre-composee, la sorte et le cœur de l'essai. Puis les deux lignes du journal
 // de fin du lecteur, « SPAN repris : … » et « SPAN par tuiles : … », ce que le corps de SPAN a calculé (sa
-// part d'une image entière à chaque image), et la ligne de l'essai.
+// part d'une image entière à chaque image), son coût (le corps, plus 6 % d'une image entière par image par
+// tuiles, mesuré au PC), et la ligne de l'essai.
 //
 // --ancre-composee : à côté du lecteur, l'essai d'ancre_tuiles.h, les tuiles décidées sur l'écart des pixels
 // à l'image composée de ce qui a produit la sortie, sans NVOF ; C : le seuil d'un bloc, centièmes de niveau
@@ -79,6 +82,7 @@ struct Options {
   int blocks = 8;  // blocs du SPAN (SpanFp8Weights::kBlocks pour AnimeJaNai)
   bool debanded = false;
   bool reuse = true;
+  bool tiles = true;  // --sans-tuiles : --no-span-tiles, le lot A seul
   bool detail = false;
   std::string folder;     // non vide : chaque fichier d'une tâche se cherche là, par son nom
   bool composed = false;  // --ancre-composee : l'essai d'ancre_tuiles.h, à côté du lecteur
@@ -144,6 +148,7 @@ class Replay {
  public:
   explicit Replay(const Options& options) : options_(options) {
     reuse_.enabled = options.reuse;
+    reuse_.tiles.enabled = options.tiles;
     // Comme le lecteur : la mesure contre l'ancre sert dès la deuxième reprise d'une série.
     reuse_.anchor_measure = true;
   }
@@ -174,8 +179,13 @@ class Replay {
     facts.blocks = app::play::PairBlocks{.deviation = paired.deviation,
                                          .cols = static_cast<std::uint32_t>(paired.cols),
                                          .side_px = static_cast<float>(side_ * options_.divisor)};
-    if (reuse_.in_row() > 0)  // la première reprise d'une série lit la paire, les suivantes l'ancre
-      facts.anchor = app::play::AnchorGap{.worst_block = bench::block_gap(anchor_, b, side_).worst};
+    if (reuse_.in_row() > 0) {  // la première reprise d'une série lit la paire, les suivantes l'ancre
+      bench::BlockGap gap = bench::block_gap(anchor_, b, side_);
+      facts.anchor = app::play::AnchorGap{.worst_block = gap.worst,
+                                          .blocks = std::move(gap.deviation),
+                                          .blocks_x = static_cast<std::uint32_t>(gap.cols),
+                                          .side_px = static_cast<float>(side_ * options_.divisor)};
+    }
     const app::play::ReuseKind kind = reuse_.decide(facts);
     if (kind != app::play::ReuseKind::Whole) anchor_ = b;
     count(kind);
@@ -191,15 +201,24 @@ class Replay {
     if (!started_) return;  // aucune tâche
     std::cout << reuse_.summary() << "\n" << reuse_.tiles.summary() << "\n";
     const auto count = static_cast<double>(reuse_.tiles.grid().count());
-    if (count > 0.0 && frame_ > 1)
-      std::cout << std::format("Corps de SPAN du lecteur : {:.1f} % du calcul de chaque image entière",
-                               100.0 * static_cast<double>(body_) / (count * static_cast<double>(frame_ - 1)))
+    if (count > 0.0 && frame_ > 1) {
+      const double frames = static_cast<double>(frame_ - 1);
+      const double body = 100.0 * static_cast<double>(body_) / (count * frames);
+      std::cout << std::format("Corps de SPAN du lecteur : {:.1f} % du calcul de chaque image entière", body)
                 << "\n";
+      // Le PC (19 novembre, Re:Zero 60 s) : une image par tuiles coûte sa région, plus 6 % d'une image
+      // entière (lancement direct du corps masqué, hors graphe).
+      std::cout << std::format("Coût de SPAN : {:.1f} % ({} images par tuiles)",
+                               body + kTiledOverhead * 100.0 * static_cast<double>(tiled_frames_) / frames,
+                               tiled_frames_)
+                << "\n";
+    }
     if (composed_) std::cout << composed_->summary() << "\n";
   }
 
  private:
-  static constexpr std::uint64_t kInputKey = 1;  // une seule recette de l'entrée de SPAN
+  static constexpr std::uint64_t kInputKey = 1;   // une seule recette de l'entrée de SPAN
+  static constexpr double kTiledOverhead = 0.06;  // part d'une image entière en plus par image par tuiles
   // Le rayon du débandage, arrondi au-dessus comme upscale_span.cpp.
   static constexpr int kDebandSpread = static_cast<int>(ref::kDebandRadius + 0.999F);
 
@@ -243,6 +262,7 @@ class Replay {
   void count(app::play::ReuseKind kind) {
     const SpanTileGrid& g = reuse_.tiles.grid();
     if (kind == app::play::ReuseKind::Compute) body_ += static_cast<std::uint64_t>(g.count());
+    if (kind == app::play::ReuseKind::Tiles) ++tiled_frames_;
     if (kind == app::play::ReuseKind::Tiles)
       body_ += static_cast<std::uint64_t>(count_span_tiles(
           dilate_span_tiles(reuse_.tile_plan.core, g.cols, g.rows, g.reach_cols, g.reach_rows)));
@@ -273,6 +293,7 @@ class Replay {
   Plane<std::uint8_t> anchor_;
   std::optional<bench::AnchorTiles> composed_;
   std::uint64_t body_ = 0;  // tuiles calculées par le corps de SPAN, images après la première
+  std::uint64_t tiled_frames_ = 0;
   bool started_ = false;
   bool clear_next_ = false;
   int work_w_ = 0;
@@ -292,6 +313,8 @@ bool parse(int argc, char** argv, Options& options) {
     const std::string_view value = i + 1 < argc ? argv[i + 1] : "";
     if (arg == "--debande") {
       options.debanded = true;
+    } else if (arg == "--sans-tuiles") {
+      options.tiles = false;
     } else if (arg == "--sans-reprise") {
       options.reuse = false;
     } else if (arg == "--detail") {

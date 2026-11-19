@@ -65,6 +65,7 @@ constexpr std::array kGradeParams = {
     ParamBinding{"skin_s1", &GradeParams::skin_s1},
     ParamBinding{"skin_s2", &GradeParams::skin_s2},
     ParamBinding{"fx_view", &GradeParams::fx_view},
+    ParamBinding{"fx_glow", &GradeParams::fx_glow},
 };
 
 constexpr std::array kLookParams = {
