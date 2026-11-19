@@ -51,7 +51,8 @@ savoir. Stabiliser avant l'interpolation aide aussi RIFE : moins de bruit, des f
   gardent les dimensions H et W, et le profil de construction les donne à toutes (`ModelSource::twins`, au
   nombre de canaux près). Les traits sont gardés à côté de leur image dans `temporal_window` : le reflet aux
   bords et les époques s'appliquent aux deux à la fois. Idée reprise de libaji (`src/native/tfix.cpp`,
-  commit `1fea490`), écrite sur nos propres découpes ; aucune ligne reprise.
+  commit `1fea490`), écrite sur nos propres découpes ; aucune ligne reprise. Retour en arrière : `--debug --no-tfix-cache`
+  reconstruit le graphe en un seul moteur, chaque image encodée à chaque passe (même sortie).
 - `src/app/play/chain_temporal.cpp` : la construction et le chargement des deux moteurs (TensorRT, voie
   Upscale). Un refus laisse la lecture sans elle, retenu pour la séance.
 - `src/app/play/temporal_window.*` : les tampons bruts gardés par pts et le choix des sept images.

@@ -29,17 +29,18 @@ prepare::EncoderCache temporal_fix_cache(bool half) {
 }
 
 std::expected<std::filesystem::path, Refusal> temporal_fix_graph(const std::filesystem::path& model,
-                                                                 bool half,
-                                                                 const std::filesystem::path& dir) {
+                                                                 bool half, const std::filesystem::path& dir,
+                                                                 bool whole) {
   const auto derive =
-      [half](std::span<const std::byte> bytes) -> std::expected<std::vector<std::byte>, Refusal> {
+      [half, whole](std::span<const std::byte> bytes) -> std::expected<std::vector<std::byte>, Refusal> {
     auto frames = prepare::with_frame_inputs(bytes, prepare::FrameSplit{.input = kTemporalFixInput,
                                                                         .frames = kTemporalFixFrames,
                                                                         .half = half,
                                                                         .center = kTemporalFixRadius});
-    if (!frames) return frames;
+    if (!frames || whole) return frames;
     return prepare::with_cached_encoder(*frames, temporal_fix_cache(half));
   };
+  if (whole) return derived_model(model, half ? "frames-half" : "frames", dir, derive);
   return derived_model(model, half ? "window-half" : "window", dir, derive);
 }
 

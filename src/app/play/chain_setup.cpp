@@ -367,6 +367,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   // disputent la carte sans rien recouvrir de plus. --lanes garde les trois voies.
   c.one_lane = o.one_lane || !o.lanes;
   c.rife_warm = o.rife_warm;
+  c.temporal_fix_whole = o.temporal_fix_whole;
   c.rife_encode_all = o.rife_encode_all;
   c.rife_at_slot = o.rife_at_slot;
   c.skip_held = o.skip_held;
