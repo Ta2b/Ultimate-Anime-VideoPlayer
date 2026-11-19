@@ -2,6 +2,7 @@
 #include "app/play/upscale_tiles.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <format>
@@ -128,12 +129,17 @@ bool SpanTiles::camera_shift(const kernels::SceneMotion& scene, int& shift_x, in
   return shift_x != 0 || shift_y != 0;
 }
 
-bool SpanTiles::whole_frame(const TileFacts& facts, bool shifting) const {
+std::uint64_t* SpanTiles::whole_reason(const TileFacts& facts, bool shifting, bool new_recipe) {
+  if (facts.stale != TileStale::None) return &stale_[static_cast<std::size_t>(facts.stale)];
+  if (!known_) return &stale_[static_cast<std::size_t>(TileStale::Restart)];
+  if (new_recipe) return &recipe_;
   const kernels::SceneMotion* scene = facts.scene;
-  if (!facts.fresh || !known_ || scene == nullptr || since_full_ >= kFullEvery) return true;
-  if (scene->cut_likely || scene->fade || scene->tile_px <= 0) return true;
+  if (scene == nullptr) return &no_map_;
+  if (since_full_ >= kFullEvery) return &refresh_;
+  if (scene->cut_likely || scene->fade || scene->tile_px <= 0) return &cut_;
   // La caméra bouge sans décalage entier possible : tout le décor change.
-  return !shifting && !scene->background_held && scene->camera_fit;
+  if (!shifting && !scene->background_held && scene->camera_fit) return &camera_;
+  return nullptr;
 }
 
 SpanTiles::Tile SpanTiles::carried(int col, int row, int sx, int sy) const {
@@ -173,12 +179,14 @@ TilePlan SpanTiles::plan(const TileFacts& facts) {
   if (!active()) return TilePlan{};
   ++planned_;
   ++since_full_;
-  if (facts.scene == nullptr) ++no_map_;
   const bool new_recipe = known_ && facts.input_key != input_key_;
   input_key_ = facts.input_key;
   int sx = 0, sy = 0;
   const bool shifting = facts.scene != nullptr && facts.can_shift && camera_shift(*facts.scene, sx, sy);
-  if (new_recipe || whole_frame(facts, shifting)) return full();
+  if (std::uint64_t* reason = whole_reason(facts, shifting, new_recipe); reason != nullptr) {
+    ++*reason;
+    return full();
+  }
   const SceneRead read = read_scene(grid_, *facts.scene, sx, sy, shifting);
   // L'état de chaque tuile après le décalage, et ce qui a changé : ce qui entre, les bords de l'axe décalé,
   // ce que la carte dit changé, ce qui a trop vieilli, dérivé ou glissé.
@@ -270,22 +278,42 @@ void SpanTiles::checked(std::uint32_t worst_block, double mean_levels) {
 }
 
 std::string SpanTiles::summary() const {
-  if (tiled_ == 0) return {};
-  const std::string check =
-      checks_ == 0 ? std::string{}
-                   : std::format(
-                         " ; contrôle sur {} images contre un calcul complet : pire bloc {:.2f} niveau, "
-                         "écart moyen {:.3f} niveau au plus",
-                         checks_, static_cast<double>(check_worst_) / 256.0, check_mean_);
+  if (!active()) return {};
   const auto share = [](std::uint64_t part, std::uint64_t whole) {
     return whole > 0 ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0;
   };
-  return std::format(
-      "SPAN par tuiles : {} images sur {} calculées ({:.1f} %), {:.1f} % des tuiles recalculées ({:.1f} % "
-      "avec le halo), {} décalées sur un panoramique ; images entières : {} sans carte, {} région trop "
-      "large, {} refus du moteur{}",
-      tiled_, planned_, share(tiled_, planned_), share(tiles_done_, tiles_seen_),
-      share(tiles_wide_, tiles_seen_), shifted_, no_map_, too_wide_, refused_, check);
+  std::string line = std::format("SPAN par tuiles : {} images sur {} calculées ({:.1f} %)", tiled_, planned_,
+                                 share(tiled_, planned_));
+  if (tiled_ > 0)
+    line += std::format(
+        ", {:.1f} % des tuiles recalculées ({:.1f} % avec le halo), {} décalées sur un panoramique",
+        share(tiles_done_, tiles_seen_), share(tiles_wide_, tiles_seen_), shifted_);
+  const auto stale = [this](TileStale why) { return stale_[static_cast<std::size_t>(why)]; };
+  const std::array<std::pair<std::uint64_t, const char*>, 11> reasons{{
+      {no_map_, "sans carte"},
+      {too_wide_, "région trop large"},
+      {refused_, "refus du moteur"},
+      {stale(TileStale::Graded), "sortie d'avant gradée sur place"},
+      {stale(TileStale::Overwritten), "sortie d'avant écrasée (image créée, source sautée)"},
+      {stale(TileStale::Chain), "chaîne sans tuiles (export, YUV, TemporalFix, Smooth, plaque)"},
+      {stale(TileStale::Restart), "début, saut ou image abîmée"},
+      {recipe_, "entrée de SPAN changée"},
+      {refresh_, "rafraîchissement"},
+      {cut_, "coupe ou fondu"},
+      {camera_, "caméra sans décalage entier"},
+  }};
+  std::string whole;
+  for (const auto& [count, why] : reasons) {
+    if (count == 0) continue;
+    whole += std::format("{}{} {}", whole.empty() ? "" : ", ", count, why);
+  }
+  line += " ; images entières : " + (whole.empty() ? std::string("aucune") : whole);
+  if (checks_ > 0)
+    line += std::format(
+        " ; contrôle sur {} images contre un calcul complet : pire bloc {:.2f} niveau, écart moyen {:.3f} "
+        "niveau au plus",
+        checks_, static_cast<double>(check_worst_) / 256.0, check_mean_);
+  return line;
 }
 
 }  // namespace kirari::app::play

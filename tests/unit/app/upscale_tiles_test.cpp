@@ -68,11 +68,11 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   t.set_grid(kGrid);
   REQUIRE(t.active());
   kernels::SceneMotion scene = still_scene();
-  const TileFacts fresh{.fresh = true, .can_shift = true, .scene = &scene};
+  const TileFacts fresh{.stale = TileStale::None, .can_shift = true, .scene = &scene};
 
   // La première image se calcule entière (l'état ne suit encore rien), comme une image sans carte.
   CHECK_FALSE(t.plan(fresh).tiled);
-  CHECK_FALSE(t.plan(TileFacts{.fresh = true, .can_shift = true}).tiled);
+  CHECK_FALSE(t.plan(TileFacts{.stale = TileStale::None, .can_shift = true}).tiled);
 
   // Une tuile de la carte change (pixels 160 à 192, 96 à 128) : les tuiles du moteur dessous, (2, 6) et
   // (2, 7), et toute sortie qui les voit, à une colonne et quatre lignes : 3 × 10 tuiles.
@@ -95,7 +95,7 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   tile(scene, 5, 3).changed = false;
 
   // Une image saine mais pas fraîche (saut, image abîmée derrière) : entière.
-  CHECK_FALSE(t.plan(TileFacts{.fresh = false, .can_shift = true, .scene = &scene}).tiled);
+  CHECK_FALSE(t.plan(TileFacts{.stale = TileStale::Restart, .can_shift = true, .scene = &scene}).tiled);
 
   // Dérive lente (nuages) : 0,2 pixel par paire, sous le seuil du flux ; à la troisième, plus de 0,5 pixel
   // reçu depuis le calcul : tout est à refaire, la région dépasse kMaxShare, l'image est entière.
@@ -134,7 +134,7 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
     s.dx = 4.0F;
     s.changed = true;
   }
-  p = t.plan(TileFacts{.fresh = true, .can_shift = true, .scene = &pan});
+  p = t.plan(TileFacts{.stale = TileStale::None, .can_shift = true, .scene = &pan});
   REQUIRE(p.tiled);
   CHECK(p.shift_x == 4);
   CHECK(p.shift_y == 0);
@@ -146,10 +146,10 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   CHECK(core_at(p, 15, 5) == 1);
   CHECK(kernels::count_span_tiles(p.core) == 4 * kGrid.rows);
   // Le même panoramique sans second tampon (sortie sur place) : entière.
-  CHECK_FALSE(t.plan(TileFacts{.fresh = true, .can_shift = false, .scene = &pan}).tiled);
+  CHECK_FALSE(t.plan(TileFacts{.stale = TileStale::None, .can_shift = false, .scene = &pan}).tiled);
   // Un panoramique d'un pixel et demi : pas de multiple du pas, entière.
   pan.camera[0] = 1.5;
-  CHECK_FALSE(t.plan(TileFacts{.fresh = true, .can_shift = true, .scene = &pan}).tiled);
+  CHECK_FALSE(t.plan(TileFacts{.stale = TileStale::None, .can_shift = true, .scene = &pan}).tiled);
 
   // Une coupe : entière, même si le reste dit « rien ne change ».
   scene.cut_likely = true;
@@ -161,13 +161,22 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   for (int i = 0; i < SpanTiles::kMaxAge + 1; ++i) tiled += t.plan(fresh).tiled ? 1 : 0;
   CHECK(tiled == SpanTiles::kMaxAge);
   CHECK_FALSE(t.summary().empty());
-  // Un refus du moteur : l'image redevient entière, et ne compte plus parmi celles par tuiles.
+  // Un refus du moteur : l'image redevient entière, et ne compte plus parmi celles par tuiles. La ligne du
+  // bilan sort quand même, avec la raison de chaque image entière.
   SpanTiles once;
   once.set_grid(kGrid);
   CHECK_FALSE(once.plan(fresh).tiled);
   CHECK(once.plan(fresh).tiled);
   once.refused();
-  CHECK(once.summary().empty());
+  CHECK_FALSE(once.plan(TileFacts{.stale = TileStale::Graded, .can_shift = true, .scene = &scene}).tiled);
+  CHECK_FALSE(once.plan(TileFacts{.stale = TileStale::None, .can_shift = true}).tiled);
+  CHECK(once.summary() ==
+        "SPAN par tuiles : 0 images sur 4 calculées (0.0 %) ; images entières : 1 sans carte, 1 refus du "
+        "moteur, 1 sortie d'avant gradée sur place, 1 début, saut ou image abîmée");
+  // Rien de calculé : la ligne le dit aussi ; sans tuiles (TensorRT, --no-span-tiles), rien.
+  SpanTiles idle;
+  idle.set_grid(kGrid);
+  CHECK(idle.summary() == "SPAN par tuiles : 0 images sur 0 calculées (0.0 %) ; images entières : aucune");
 
   // Dans la reprise : une image non tenue mais lisible par tuiles rend Tiles et le plan ; --no-span-tiles,
   // Compute.
@@ -176,26 +185,39 @@ TEST_CASE("Tuiles qui bougent : masques, décision sur la carte et reprise", "[a
   ReuseFacts facts{.same_epoch = true,
                    .has_output = true,
                    .pair_held = false,
-                   .tiles_ok = true,
+                   .tiles_stale = TileStale::None,
                    .can_shift = true,
                    .scene = &scene};
   CHECK(r.decide(facts) == ReuseKind::Compute);  // la première suit l'état
   tile(scene, 1, 1).changed = true;
   CHECK(r.decide(facts) == ReuseKind::Tiles);
   CHECK(r.tile_plan.tiled);
-  facts.tiles_ok = false;
+  facts.tiles_stale = TileStale::Overwritten;
   CHECK(r.decide(facts) == ReuseKind::Compute);
   CHECK_FALSE(r.tile_plan.tiled);
+  // Un saut l'emporte sur la sortie d'avant au bilan ; une chaîne sans tuiles, sur le saut.
+  facts.tiles_stale = TileStale::Graded;
+  facts.same_epoch = false;
+  CHECK(r.decide(facts) == ReuseKind::Compute);
+  facts.tiles_stale = TileStale::Chain;
+  CHECK(r.decide(facts) == ReuseKind::Compute);
+  CHECK(
+      r.tiles.summary().ends_with("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans "
+                                  "tuiles (export, YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image "
+                                  "abîmée"));
+  facts.same_epoch = true;
   SpanReuse off;
   off.tiles.enabled = false;
   off.tiles.set_grid(kGrid);
-  facts.tiles_ok = true;
+  facts.tiles_stale = TileStale::None;
   CHECK(off.decide(facts) == ReuseKind::Compute);
   CHECK(off.decide(facts) == ReuseKind::Compute);
+  CHECK(off.tiles.summary().empty());
   // Un moteur sans tuiles (TensorRT) : jamais actif.
   SpanTiles none;
   none.set_grid(kernels::SpanTileGrid{});
   CHECK_FALSE(none.active());
+  CHECK(none.summary().empty());
 }
 
 }  // namespace kirari::app::play
