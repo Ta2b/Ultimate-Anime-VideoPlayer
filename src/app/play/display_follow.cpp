@@ -1,6 +1,7 @@
 #include "app/play/display_follow.h"
 
 #include <cmath>
+#include <format>
 #include <optional>
 #include <string>
 #include <utility>
@@ -129,7 +130,10 @@ void DisplayFollow::follow_vrr(std::optional<bool> reading) {
   if (!now) return;
   if (*now) p_.display->vrr = true;  // armé : capable, même sans plage dans l'EDID (B11-03)
   const bool armed = !p_.options.no_vrr && p_.display->vrr.value_or(false) && *now;
-  log_->info("VRR : {}", *now ? "armé" : "non armé");
+  // Le plancher lu dans l'EDID : sous lui, main représente l'image tenue (core/vrr_floor.h).
+  const int floor_hz = p_.display->vrr_floor_hz();
+  log_->info("VRR : {}{}", *now ? "armé" : "non armé",
+             *now && floor_hz > 0 ? std::format(" · plancher {} Hz (EDID)", floor_hz) : std::string());
   p_.ui.set_display_vrr(p_.display->vrr.value_or(false), *now, fullscreen_of(p_.screen.window()));
   if (armed != state_.vrr_armed) {
     state_.vrr_armed = armed;

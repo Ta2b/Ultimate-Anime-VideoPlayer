@@ -21,7 +21,8 @@ namespace {
 std::vector<__half> test_pair(int h, int w) {
   const auto plane = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
   std::vector<__half> input(plane * kernels::kFusedInputPlanes);
-  const auto drawing = [](float x, float y, int c) {
+  const auto drawing = [](float x, float y, int channel) {
+    const auto c = static_cast<float>(channel);
     const float wave =
         0.5F + 0.22F * std::sin(0.071F * x + 0.043F * y + c) + 0.12F * std::sin(0.017F * x - 0.029F * y);
     const bool square = std::fmod(std::abs(x), 160.F) < 64.F && std::fmod(std::abs(y), 128.F) < 48.F;
@@ -48,7 +49,8 @@ std::vector<__half> test_pair(int h, int w) {
 
 // Le PSNR de got contre want, plan par plan de taille plane, au pic max(1, |want| le plus grand du plan
 // groupé) : l'image va de 0 à 1, le flot en pixels peut dépasser 1. Le plus bas des groupes (images : 3
-// plans ; mouvement : flot 4 plans, masque 1 plan). Une valeur non finie : -infini.
+// plans ; mouvement : flot 4 plans, masque 1 plan). Une valeur non finie, des deux côtés : -infini (une
+// référence fautive ne laisse rien passer).
 double worst_psnr(const std::vector<float>& want, const std::vector<float>& got, std::size_t plane,
                   bool motion) {
   const std::vector<std::pair<std::size_t, std::size_t>> groups =
@@ -59,7 +61,7 @@ double worst_psnr(const std::vector<float>& want, const std::vector<float>& got,
     double peak = 1.0;
     double sum = 0.0;
     for (std::size_t i = first * plane; i < end * plane; ++i) {
-      if (!std::isfinite(got[i])) return -std::numeric_limits<double>::infinity();
+      if (!std::isfinite(got[i]) || !std::isfinite(want[i])) return -std::numeric_limits<double>::infinity();
       peak = std::max(peak, static_cast<double>(std::abs(want[i])));
       const double d = static_cast<double>(got[i]) - static_cast<double>(want[i]);
       sum += d * d;
@@ -116,10 +118,10 @@ std::expected<std::string, Refusal> RifeFusedEngine::try_native(
   // Entrée et sorties d'un seul tenant : flot (4 plans) puis masque, ou l'image (3 plans).
   const std::size_t out_planes = motion_ ? 5 : 3;
   FusedScratch scratch;
+  // Une erreur collante (contexte perdu) le dit comme telle : l'appelant ne garde pas la chaîne pour autant.
   const auto failed = [](cudaError_t error, const char* step) {
     static_cast<void>(cudaGetLastError());
-    return refuse(RefusalCode::VendorCallFailed,
-                  std::format("RIFE natif : essai ({}) : {}", step, cudaGetErrorString(error)));
+    return std::unexpected(cuda_refusal(error, std::format("RIFE natif : essai ({})", step)));
   };
   const std::vector<__half> host = test_pair(h, w);
   if (cudaError_t e = cudaMalloc(&scratch.buffers[0], host.size() * 2); e != cudaSuccess)
@@ -144,7 +146,10 @@ std::expected<std::string, Refusal> RifeFusedEngine::try_native(
 
   native_on_ = false;
   auto reference = trial_output(scratch.stream, shared, input, outputs, out_planes * plane);
-  if (!reference) return std::unexpected(std::move(reference.error()));
+  if (!reference) {
+    forget_passes();  // les graphes capturés visent les tampons de l'essai, libérés au retour
+    return std::unexpected(std::move(reference.error()));
+  }
   std::vector<int> reduce(plan_.reduce.begin(), plan_.reduce.begin() + plan_.blocks);
   const std::int64_t trt_activation = own_activation_;
   std::string tried;

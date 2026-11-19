@@ -34,7 +34,7 @@ enum class LayerSkip : std::uint8_t {
 inline constexpr std::size_t kLayerSkipCount = 7;
 std::string_view name(LayerSkip skip);
 
-// Seuils (non mesurés, réglés à la séance du groupe 4) :
+// Seuils (non mesurés, réglés à l'essai de la fin) :
 // - le décor suit la caméra à moins d'un demi-pixel de travail (la porte 2.1) ;
 inline constexpr double kLayerResidualMax = 0.5;
 // - une tuile décor compte avec une confiance d'au moins ceci ;

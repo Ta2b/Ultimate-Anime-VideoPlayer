@@ -290,6 +290,10 @@ std::optional<bool> load_temporal_fix(Player& p, const gpu::BackendInit& init, C
 // l'utilisateur ferme la fenêtre ; un refus laisse la lecture sans plaque, la raison au journal.
 std::optional<bool> load_plate(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                const PlaySettings& settings);
+// Calques et plaque pour l'étage gpu (chain_layers.cpp) : en lecture seulement (l'export rejoue la chaîne au
+// bit près, la carte arrive quand elle peut), avec la carte de la scène (--scene-map) ; les calques avec RIFE
+// mouvement seul (ses warps sont ceux de la paire de la carte).
+LayerSetup layer_setup(const ChainEngines& c, const MasterClock* clock);
 
 // RIFE (chain_rife.cpp) : c.rife_size, la géométrie, puis le fusionné, la variante mouvement ou RIFE image,
 // au cran de précision de settings. Faux : la fenêtre fermée pendant une construction ; un refus de l'étage

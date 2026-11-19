@@ -597,7 +597,7 @@ std::int64_t Session::floor_step_us_now(std::int64_t host_now) const {
     const auto media_wait = static_cast<double>(head->pts_us - lead_us - now.media_at(host_now));
     hold = host_now - shown_at_us_ + std::max<std::int64_t>(std::llround(media_wait / now.rate), 0);
   }
-  return core::floor_step_us(hold, config_.vrr_floor_us);
+  return core::floor_step_us(hold, config_.vrr_floor_us, display_period());
 }
 
 std::int64_t Session::idle_wait_us(std::int64_t host_now) {

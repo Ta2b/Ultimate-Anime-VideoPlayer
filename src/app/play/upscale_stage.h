@@ -186,9 +186,10 @@ class UpscaleStage final : public RingStage {
   std::expected<void, Refusal> interpolate_direct(std::uint32_t output, float t, const gpu::Motion& other,
                                                   const gpu::Tensor& a, const gpu::Tensor& b,
                                                   const Target& out);
-  // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring).
+  // warp_blend et warp_blend_poses vers out (KernelOps, ou leurs variantes _ring). layered : a et b sont la
+  // paire de la carte, dans l'ordre, et t son instant (RIFE mouvement) ; ses calques s'y composent.
   std::expected<void, Refusal> blend(const gpu::Tensor& a, const gpu::Tensor& b, const gpu::Motion& motion,
-                                     float t, const Target& out);
+                                     float t, const Target& out, bool layered = false);
   std::expected<void, Refusal> blend_poses(const gpu::Tensor& a, const gpu::Tensor& b,
                                            const gpu::Motion& motion, const gpu::Motion* previous, float t,
                                            const Target& out);
