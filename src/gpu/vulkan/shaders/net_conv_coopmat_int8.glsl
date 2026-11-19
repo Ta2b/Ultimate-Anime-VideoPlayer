@@ -15,6 +15,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+#extension GL_EXT_control_flow_attributes : require
 #include "net_tensor.glsl"
 #include "net_activation.glsl"
 
@@ -150,7 +151,7 @@ void main() {
   uint sg = gl_SubgroupID;
 
   coopmat<int32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator> acc[TM * NT];
-  for (uint i = 0u; i < TM * NT; ++i) {
+  [[unroll]] for (uint i = 0u; i < TM * NT; ++i) {
     acc[i] = coopmat<int32_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseAccumulator>(0);
   }
   stage_a(0u, n, first_pixel, 0u);
@@ -164,27 +165,27 @@ void main() {
       if (SHARED_B == 1u) stage_b(buf ^ 1u, s + 1u);
     }
     uint k0 = (s / CSTEPS) * CKP + (s % CSTEPS) * KC;
-    for (uint c16 = 0u; c16 < KC; c16 += 16u) {
+    [[unroll]] for (uint c16 = 0u; c16 < KC; c16 += 16u) {
       coopmat<int8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseA> a[TM];
-      for (uint t = 0u; t < TM; ++t) {
+      [[unroll]] for (uint t = 0u; t < TM; ++t) {
         coopMatLoad(a[t], tile_a, buf * ABUF + (sg * TM + t) * 16u * AS + c16 / 16u, AS,
                     gl_CooperativeMatrixLayoutRowMajor);
       }
       uint k = k0 + c16;
-      for (uint j = 0u; j < NT; ++j) {
+      [[unroll]] for (uint j = 0u; j < NT; ++j) {
         coopmat<int8_t, gl_ScopeSubgroup, 16, 16, gl_MatrixUseB> b;
         if (SHARED_B == 1u) {
           coopMatLoad(b, tile_b, buf * BBUF + c16 * (NP / 16u) + j, NP / 16u, gl_CooperativeMatrixLayoutRowMajor);
         } else {
           coopMatLoad(b, weights4.v, k * (NP / 16u) + j, NP / 16u, gl_CooperativeMatrixLayoutRowMajor);
         }
-        for (uint t = 0u; t < TM; ++t) acc[t * NT + j] = coopMatMulAdd(a[t], b, acc[t * NT + j]);
+        [[unroll]] for (uint t = 0u; t < TM; ++t) acc[t * NT + j] = coopMatMulAdd(a[t], b, acc[t * NT + j]);
       }
     }
     barrier();
   }
-  for (uint t = 0u; t < TM; ++t) {
-    for (uint j = 0u; j < NT; ++j) {
+  [[unroll]] for (uint t = 0u; t < TM; ++t) {
+    [[unroll]] for (uint j = 0u; j < NT; ++j) {
       coopMatStore(acc[t * NT + j], tile_c, sg * 256u, 16u, gl_CooperativeMatrixLayoutRowMajor);
       subgroupMemoryBarrierShared();
       subgroupBarrier();

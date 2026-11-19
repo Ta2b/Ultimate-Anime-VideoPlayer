@@ -90,7 +90,10 @@ constexpr std::uint32_t longer_repeats(std::uint32_t repeats) {
 }
 
 struct TunerOptions {
-  std::uint32_t warmup = 2;   // passes non comptées
+  // Passes non comptées : assez pour que la carte, au repos pendant la compilation du candidat, remonte en
+  // fréquence (2 laissaient une RTX 4070 Ti mesurer à basse fréquence et choisir des variantes plus lentes en
+  // lecture : SPAN 720p à 13–14 ms au lieu de 8).
+  std::uint32_t warmup = 24;
   std::uint32_t passes = 9;   // passes mesurées : la médiane compte
   std::uint32_t repeats = 3;  // dispatchs enchaînés par passe
   // Après un sondage de chaque candidat (une passe), seuls ceux à moins de ce facteur du plus

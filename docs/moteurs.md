@@ -78,6 +78,29 @@ Reste en retrait, à mesurer sur une carte avant d'y toucher :
 - ingestion en trois passes float et copie de l'encodage de RIFE à chaque paire : de l'ordre d'un dixième de
   milliseconde par image en 1080p.
 
+### Parité avec TensorRT (19 novembre 2026, RTX 4070 Ti)
+
+Mesuré dans le lecteur (Kill Blue, 720p, SPAN b8f64 en FP16, sortie 1440p) :
+
+| | Vulkan avant | Vulkan après | TensorRT |
+|---|---|---|---|
+| SPAN, par image | 27,5 ms | 13,4–14,7 ms (banc : 7,6–9,4 ms) | 10,6–11,2 ms |
+| RIFE 4.22 lite, images affichées | 24–28 i/s | 51–68 i/s | 63–82 i/s |
+| DistilDRBA, images affichées | 30–32 i/s | 59–70 i/s | 78–99 i/s |
+
+Trois causes, corrigées :
+- les boucles des noyaux à matrices coopératives (`net_conv_coopmat*.glsl`, float16, FP8, INT8) sont déroulées
+  (`[[unroll]]`) : le pilote NVIDIA ne les déroulait pas et sortait les sommes partielles des registres (une
+  Conv 3 × 3 64 → 64 : 0,77 → 0,25 ms) ;
+- l'autotuner fait 24 passes de chauffe avant de mesurer (`TunerOptions::warmup`, 2 avant) : la carte, au repos
+  pendant la compilation du candidat, mesurait à basse fréquence et choisissait des variantes plus lentes ;
+- le bruit ne donne plus qu'au plus 10 % d'avance aux sommes en float (`kNoiseTieCap`).
+
+Les candidats passent à `c9` : les choix en cache se remesurent au premier lancement. En lecture, SPAN partage
+la carte avec le rendu de libplacebo (file de calcul à côté) : ses noyaux s'allongent, mais tiennent dans les
+42 ms d'une image. Reste l'écart de RIFE et DistilDRBA fusionnés (6,5 et 3,8 ms par passe contre 1,45 et
+0,47 ms), surtout dans les convolutions de leurs réseaux.
+
 ## Vulkan : les matrices coopératives d'Intel (tuiles 8×16×16)
 
 Le noyau à matrices coopératives float16 (`net_conv_coopmat.glsl`) tuile en 16 × 16 × 16, ce qu'annoncent les
@@ -114,7 +137,8 @@ mesure à la première construction (`src/gpu/vulkan/backend/net_autotune.cpp`).
 **sommes** en float16 (`direct_f16p`, `winograd_f16p`, `coopmat_acc16`) : plus rapides sur certaines cartes,
 moins justes. Trois règles tiennent la qualité (C05, A45-01, A45-02) :
 
-- à moins de 5 % de temps d'écart, les sommes en float gagnent (`kPrecisionTie`) ;
+- à moins de 5 % de temps d'écart, les sommes en float gagnent (`kPrecisionTie`) ; le bruit de mesure (deux
+  écarts types) peut élargir cette marge, au plus de 10 % (`kNoiseTieCap`, novembre 2026) ;
 - un choix à précision réduite ne se reprend jamais sans mesure, ni d'une table pré-réglée ni d'un autre
   pilote. La table `NvidiaAda`, relevée avant la règle des 5 % et qui donnait 28 couches sur 29 en sommes
   float16, est retirée ; `tools/vk/presets_from_cache.py` refuse déjà les relevés d'avant `c7` ;

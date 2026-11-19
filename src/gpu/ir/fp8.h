@@ -34,7 +34,7 @@ inline std::uint8_t float_to_e4m3(float value) {
   if (magnitude >= kE4m3Max) return static_cast<std::uint8_t>(sign | 0x7EU);  // saturation à 448
   // Pas de la grille autour de magnitude : 2^-9 sous 2^-6, sinon 2^(e - 3).
   int exponent = 0;
-  std::frexp(magnitude, &exponent);  // magnitude = f × 2^exponent, f dans [0,5 ; 1[
+  static_cast<void>(std::frexp(magnitude, &exponent));  // magnitude = f × 2^exponent, f dans [0,5 ; 1[
   const int step_exponent = std::max(exponent - 1, -6) - 3;
   const float step = std::ldexp(1.0F, step_exponent);
   const float steps = std::nearbyint(magnitude / step);  // pair en cas d'égalité (mode par défaut)
