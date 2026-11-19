@@ -106,7 +106,9 @@ std::vector<double> reference(const WarpPlanesParams& p, const std::vector<doubl
   const auto pixel = [&](int c, int y, int x) {
     return image[static_cast<std::size_t>(c) * plane + static_cast<std::size_t>(y * p.width + x)];
   };
-  std::vector<double> out(static_cast<std::size_t>(p.channels * oh * ow));
+  // Par pixel, out_pitch canaux par sortie (ceux au-delà de channels restent à zéro), sinon channels plans.
+  const int per_pixel = p.out_pitch == 0 ? p.channels : p.out_pitch;
+  std::vector<double> out(static_cast<std::size_t>(per_pixel * oh * ow));
   conf_out.assign(static_cast<std::size_t>(oh * ow), 0.0);
   for (int oy = 0; oy < oh; ++oy) {
     for (int ox = 0; ox < ow; ++ox) {
