@@ -84,6 +84,30 @@ part en rotation et cisaillement, sans doute des images de traîne ou un trembl�
 Le mode pyramide n'aide pas : les indices font baisser les caméras lentes (62 % contre 75 % sans) et ne
 sauvent pas les panoramiques de plus de 45 px ; il reste dans le banc pour mémoire.
 
+### Reprise (en pause depuis le 19 novembre, 13:47, à la demande de Tatoub)
+
+Ce qui restait : les 4 paires ratées de Spy 4:53, `panoramique5` des passes `nvof3` et `nvof4` du PC.
+Le rapport et les mesures par paire sont dans `/mnt/project-files/nvof4.tar.gz`. Les flux gardés sont restés
+sur le PC (`~/kirari-seance/final/nvof4/flux/panoramique5.npz`, 28 Mo).
+
+| Paire | Caméra | lk_bords | Ce qui rate |
+|---:|---:|---|---|
+| 7 | 87 px, vertical | écart 0,08 px, décor 39 % | la part du décor, d'un point |
+| 12 | 54 px | écart 1,4 px | l'affine part en rotation et cisaillement |
+| 14 | 17 px | écart 3,3 px | idem |
+| 16 | 8 px | écart 1,1 px | idem |
+
+Pistes, dans l'ordre :
+
+1. Extraire ces 4 paires (images, flux, coûts) du `.npz` du PC dans un fichier de quelques Mo, puis
+   rejouer `nvof_mesures` hors ligne. Aucun banc n'est à relancer.
+2. Paires 12, 14, 16 : regarder les images. S'il s'agit d'images de traîne ou d'un tremblé (une paire sur
+   deux rate, 13 et 15 passent), le décor n'y est pas rigide et les calques doivent rester éteints, ce que
+   le lecteur fait déjà au-delà de 0,5 px. Sinon, essayer une homographie à la place de l'affine.
+3. Paire 7 : voir ce que sont les blocs qui ne suivent pas la caméra. Si ce sont les rayures d'un effet qui
+   défile à part, ce n'est pas du décor et la paire est juste. Si ce sont des blocs à texture faible, les
+   sortir du total changerait la définition de la part du décor : c'est à Tatoub de trancher.
+
 ## Ce qui reste ouvert
 
 - Les flux sont calculés sans indices temporels (paires indépendantes) ; le lecteur devra faire de
