@@ -7,8 +7,10 @@
 //     la caméra explique (fumée ou éclair qui couvre l'image, plan qui se transforme, coupe que RIFE n'a pas
 //     vue), ou la moitié des tuiles doute. Le warp de RIFE y ferait des fantômes : tout le mouvement est
 //     remplacé par un fondu enchaîné de a et b (kernels/spec/motion_doubt.h).
-//   - Zone douteuse (Masked) : seules les tuiles où le flux doute (effet, tuile qui change sans
-//     correspondance) passent au fondu, avec un bord adouci ; RIFE reste ailleurs.
+//   - Zone douteuse (Masked) : seules les tuiles d'effet sûres (sans correspondance, beaucoup d'écart, vues
+//     deux paires de suite) et groupées passent au fondu, avec un bord adouci ; RIFE reste ailleurs. Un
+//     dessin que le flux suit mal (traits qui s'éparpillent, classe qui bascule) n'en est pas une : RIFE y
+//     trouve son mouvement, le fondu y ferait une image double.
 // GMFSS seul (for_gmfss) : le dessin tenu copié de même, la paire impossible fondue par le warp de l'étage
 // (caméra identité), le panoramique pur (Pan : seule la caméra bouge) fait par le warp de la caméra de la
 // carte, sans réseau (kernels/spec/motion_camera.h) ; pas de zone fondue par endroits, où GMFSS fait mieux
@@ -43,11 +45,14 @@ inline constexpr double kHeldChanged = 0.02;
 inline constexpr double kImpossibleUnmatched = 0.45;
 // Doute moyen des tuiles (avant d'être élargi au voisinage) à partir duquel toute la paire passe au fondu.
 inline constexpr double kFadeShare = 0.5;
-// Confiance sous laquelle une tuile qui change est douteuse (proportionnellement).
-inline constexpr float kDoubtConfidence = 0.5F;
+// Confiance d'une tuile d'effet sûre. La carte la donne à 1 − part des vecteurs qui correspondent (plus de
+// 0,5) quand elle voit l'effet deux paires de suite ; à la première, elle garde la classe d'avant, et à la
+// fin l'effet tenu n'a plus que 0,4 fois la confiance de la classe nouvelle (kernels::scene::kContradicted).
+inline constexpr float kEffectSure = 0.5F;
 // Doute d'une case sous lequel elle compte pour rien (bruit des tuiles voisines adoucies).
 inline constexpr float kDoubtFloor = 0.04F;
-// Part du doute de la paire précédente gardée à la suivante (une zone ne clignote pas d'une paire à l'autre).
+// Part du doute propre de la paire précédente gardée à la suivante (une zone ne clignote pas d'une paire à
+// l'autre), sans passer plus loin.
 inline constexpr float kDoubtKeep = 0.5F;
 // Paires sans RIFE de suite (dessin tenu) à travers lesquelles ce doute passe encore : un dessin en quatre en
 // a trois entre deux dessins ; après une tenue plus longue, l'effet d'avant ne vaut plus.
@@ -72,10 +77,12 @@ bool flow_lost(const kernels::SceneMotion& scene);
 // modèle.
 bool flow_pan(const kernels::SceneMotion& scene);
 
-// Le doute brut de chaque tuile de la carte, dans [0, 1] : 1 pour un effet qui change, 1 − confiance / seuil
-// pour une tuile de dessin ou de décor qui change avec une confiance basse, 0 sinon. Une tuile Uncertain
-// (aplat sans texture, ou que le flux ne tranche pas avec peu d'écart) n'en a pas : RIFE n'y fait pas de
-// fantôme qui se voie, et un aplat qui bouge suffisait à faire douter la moitié d'une image d'anime.
+// Le doute brut de chaque tuile de la carte, 0 ou 1 : 1 pour une tuile d'effet sûre (kEffectSure) qui change
+// et qui touche une autre tuile d'effet sûre (8 voisines), 0 sinon. Ni dessin ni décor, quelle que soit leur
+// confiance : une confiance basse y dit que NVOF suit mal le trait (vecteurs épars d'un personnage qui
+// bouge, classe qui bascule à son bord), pas que RIFE n'y trouvera rien ; par elle, 362 paires sur 368
+// fondaient par endroits sur un passage d'action. Ni Uncertain (aplat, peu d'écart sans
+// correspondance).
 std::vector<float> tile_doubt(const kernels::SceneMotion& scene);
 
 // La grille de doute d'un champ de doutes cols × rows (tuiles) : dilatée d'une tuile puis adoucie (3 × 3),
@@ -96,6 +103,7 @@ struct TriageCounts {
   std::uint64_t faded = 0;    // impossibles, fondues
   std::uint64_t lost = 0;     // dont : rien qui corresponde ni caméra (flow_lost) ; le reste, par le doute
   std::uint64_t masked = 0;   // fondues par endroits
+  double masked_share = 0.0;  // somme de leur doute moyen (DoubtGrid::share), pour la ligne de fin
   std::uint64_t panned = 0;   // panoramiques purs par le warp de la caméra (GMFSS seul)
   std::uint64_t refused = 0;  // le backend n'a pas motion_doubt : RIFE tel quel
 };
@@ -127,7 +135,8 @@ class RifeTriage {
   void log() const;
 
  private:
-  PairSort sort_unrun(const PairFacts& facts);  // RIFE ne tourne pas : tenue par le flux, ou rien
+  // RIFE ne tourne pas : tenue par le flux, ou rien.
+  PairSort sort_unrun(const PairFacts& facts, const kernels::SceneMotion& scene);
   void keep_doubt(std::vector<float>& doubt, const kernels::SceneMotion& scene);
   PairSort sort_gmfss(const kernels::SceneMotion& scene, const std::vector<float>& doubt);
   bool asked_ = false;
