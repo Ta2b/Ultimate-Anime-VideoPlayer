@@ -67,20 +67,25 @@ TEST_CASE("Flux : mémoire partagée et sortie d'une ligne", "[gpu][conv_stream]
 }
 
 TEST_CASE("Flux : les colonnes de bandes couvrent chaque bande une fois", "[gpu][conv_stream]") {
-  for (int tiles = 1; tiles <= 40; ++tiles)
-    for (int bands = 1; bands <= 45; ++bands) {
-      const int strips = strips_for(tiles, bands);
-      std::vector<int> seen(u(tiles), 0);
-      for (int by = 0; by < strips; ++by) {
-        const Strip s = strip_of(tiles, strips, by);
-        REQUIRE(s.count >= 0);
-        REQUIRE(s.count <= bands);
-        for (int b = s.first; b < s.first + s.count; ++b) ++seen[u(b)];
-      }
-      REQUIRE(std::ranges::all_of(seen, [](int n) { return n == 1; }));
-      // Une colonne de trop n'a rien à faire.
-      REQUIRE(strip_of(tiles, strips, strips).count == 0);
+  // Chaque bande une fois, quel que soit le nombre de colonnes (au banc : celui de la couche entière, sur
+  // une bande de ses lignes) ; une colonne de trop n'a rien à faire.
+  const auto covers = [](int tiles, int strips, int most) {
+    std::vector<int> seen(u(tiles), 0);
+    for (int by = 0; by < strips; ++by) {
+      const Strip s = strip_of(tiles, strips, by);
+      if (s.count < 0 || s.count > most) return false;
+      for (int b = s.first; b < s.first + s.count; ++b) ++seen[u(b)];
     }
+    return std::ranges::all_of(seen, [](int n) { return n == 1; }) &&
+           strip_of(tiles, strips, strips).count == 0;
+  };
+  for (int tiles = 1; tiles <= 40; ++tiles) {
+    for (int bands = 1; bands <= 45; ++bands) REQUIRE(covers(tiles, strips_for(tiles, bands), bands));
+    for (int strips = 1; strips <= tiles; ++strips)
+      REQUIRE(covers(tiles, strips, (tiles + strips - 1) / strips));
+  }
+  // La ligne 0 en 1080p au banc : 136 bandes des 144, quatre colonnes de 34 au lieu de 36.
+  REQUIRE(strip_of(136, strips_for(144, 36), 3).count == 34);
 }
 
 TEST_CASE("Flux : les bandes à essayer", "[gpu][conv_stream]") {

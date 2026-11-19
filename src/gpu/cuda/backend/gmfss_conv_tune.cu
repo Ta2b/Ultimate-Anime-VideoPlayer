@@ -45,7 +45,8 @@ Rows band_of(const Layer& layer, const std::vector<rn::Config>& configs) {
 }
 
 // La forme cfg d'une convolution pour des sommes, sur oh lignes de sortie : lancement, grille, mémoire
-// partagée. En flux, une colonne de blocs prend cfg.bands bandes au plus.
+// partagée. En flux, les colonnes de blocs de la couche entière (cfg.bands bandes au plus chacune) : sur la
+// bande du banc, plus courtes mais aussi nombreuses, au même nombre de blocs que la couche entière.
 Shape shape_for(const Layer& layer, RifeNativeSums sums, const rn::Config& cfg, int oh) {
   Shape s;
   s.cfg = cfg;
@@ -53,8 +54,9 @@ Shape shape_for(const Layer& layer, RifeNativeSums sums, const rn::Config& cfg, 
   s.launch = stream ? rn::pick_stream(sums, layer.kind, cfg)
                     : rn::pick_for(sums, layer.kind, cfg.kc, cfg.ct, cfg.rows, cfg.ahead);
   const int th = rn::kWarps * cfg.rows, tiles = (oh + th - 1) / th;
-  s.grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),
-                static_cast<unsigned>(stream ? conv_stream::strips_for(tiles, cfg.bands) : tiles),
+  const int strips =
+      stream ? std::min(conv_stream::strips_for((layer.oh + th - 1) / th, cfg.bands), tiles) : tiles;
+  s.grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW), static_cast<unsigned>(strips),
                 static_cast<unsigned>(layer.phases * (layer.cout / cfg.ct) * cfg.ksplit));
   s.smem = stream ? conv_stream::smem_bytes(cfg.kc, cfg.rows)
                   : rn::smem_bytes(cfg.kc, cfg.ct, rn::kernel_size(layer.kind), rn::stride_of(layer.kind),
