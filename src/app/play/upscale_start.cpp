@@ -58,6 +58,13 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
   reuse_.check = setup_.span_reuse.check;
   if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
+  // Demandées (la carte, ou leur contrôle) mais pas calculées par ce SPAN : le journal le dit, sans quoi
+  // l'absence de leur ligne de fin ne dit pas pourquoi.
+  if (setup_.engine != nullptr && reuse_.tiles.enabled && (setup_.scene_map || reuse_.check) &&
+      !reuse_.tiles.active())
+    log_channel("gpu")->info(
+        "SPAN par tuiles : ce moteur ne calcule que l'image entière (seul le SPAN natif "
+        "les calcule)");
 }
 
 UpscaleStage::~UpscaleStage() {
