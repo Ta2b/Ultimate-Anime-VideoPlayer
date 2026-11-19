@@ -128,6 +128,7 @@ std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const
     plate_ready_ = true;
     key_pending_ = false;
     ++counts_.keys;
+    if (setup.plate_copy) return {};  // la clé est la sortie de SPAN : rien à y composer
   }
   if (!plate_ready_) return {};
   const auto params = plate_params(plate_track_.key(), *pair_, plate_step_.key_to_b, width_of(spanned),
@@ -142,6 +143,12 @@ std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const
   }
   ++counts_.plated;
   return {};
+}
+
+bool LayerStage::rewrites(const LayerSetup& setup) const {
+  if (refused_ || plate_ == nullptr || !setup.plate_on() || !pair_) return false;
+  if (plate_step_.action == PlateAction::Refresh) return !setup.plate_copy;
+  return plate_step_.action == PlateAction::Use && plate_ready_;
 }
 
 void LayerStage::log_summary(const LayerSetup& setup) const {
