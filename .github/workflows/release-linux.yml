@@ -158,7 +158,7 @@ jobs:
       - name: Tests sautés
         run: tools/ci/check-skips.sh "$GITHUB_WORKSPACE/junit.xml" linux-release
       # Les modèles livrés passent la découpe du chemin fusionné (RIFE 4.26, 4.25, 4.22 lite, 4.25 lite, DistilDRBA et
-      # son demi-flot) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
+      # son demi-flot, TemporalFix s1 à s3) : un graphe que la découpe ne reconnaît plus arrête la release au lieu de ralentir l'utilisateur
       # (A28-07). Un saut compte comme un échec.
       - name: Découpe des modèles livrés
         if: env.KIRARI_TAG != ''
@@ -168,7 +168,12 @@ jobs:
             distil_drba_v2_lite_s05.onnx; do
             [ -f "$models/$f" ] || { echo "::error::modèle livré absent : $f"; exit 1; }
           done
-          cmake --preset linux-release -DKIRARI_RIFE_MODEL_DIR="$models" -DKIRARI_DRBA_MODEL_DIR="$models"
+          tfix="$RUNNER_TEMP/package/kirari-linux-x64/models/temporalfix"
+          for f in temporalfix_s1_v1.1_op18_fp16.onnx temporalfix_s2_v1_op18_fp16.onnx temporalfix_s3_v1_op18_fp16.onnx; do
+            [ -f "$tfix/$f" ] || { echo "::error::modèle livré absent : temporalfix/$f"; exit 1; }
+          done
+          cmake --preset linux-release -DKIRARI_RIFE_MODEL_DIR="$models" -DKIRARI_DRBA_MODEL_DIR="$models" \
+            -DKIRARI_TFIX_MODEL_DIR="$tfix"
           cmake --build --preset linux-release --target kirari_prepare_tests
           ctest --test-dir build/linux-release -R 'du catalogue se coupent' --no-tests=error --output-on-failure \
             --output-junit "$RUNNER_TEMP/models-junit.xml"

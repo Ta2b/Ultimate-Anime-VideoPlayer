@@ -19,3 +19,12 @@ target_compile_definitions(kirari_prepare_tests PRIVATE KIRARI_RIFE_MODEL_DIR="$
 # place pour le test de découpe ; absent, ce test se SKIP.
 set(KIRARI_DRBA_MODEL_DIR "${KIRARI_MODELS_DIR}" CACHE PATH "Dossier des DistilDRBA ONNX du lecteur (test de découpe)")
 target_compile_definitions(kirari_prepare_tests PRIVATE KIRARI_DRBA_MODEL_DIR="${KIRARI_DRBA_MODEL_DIR}")
+# KIRARI_TFIX_MODEL_DIR : le dossier des TemporalFix du lecteur (temporalfix_s1_v1.1_op18_fp16.onnx…), à côté des RIFE
+# dans le paquet (models/temporalfix) ; absent, ce test se SKIP.
+if(KIRARI_DRBA_MODEL_DIR)
+  set(_kirari_tfix_default "${KIRARI_DRBA_MODEL_DIR}/temporalfix")
+else()
+  set(_kirari_tfix_default "")
+endif()
+set(KIRARI_TFIX_MODEL_DIR "${_kirari_tfix_default}" CACHE PATH "Dossier des TemporalFix ONNX du lecteur (test de découpe)")
+target_compile_definitions(kirari_prepare_tests PRIVATE KIRARI_TFIX_MODEL_DIR="${KIRARI_TFIX_MODEL_DIR}")

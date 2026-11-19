@@ -1,5 +1,5 @@
 // Découpe de TemporalFix en cinq morceaux (prepare/tfix_split.h) : le manifeste et ses refus, et, quand les
-// modèles du lecteur sont sur la machine (KIRARI_DRBA_MODEL_DIR/temporalfix), la reconnaissance et la découpe
+// modèles du lecteur sont sur la machine (KIRARI_TFIX_MODEL_DIR), la reconnaissance et la découpe
 // des vrais s1, s2 et s3, et leurs morceaux lus pour les noyaux natifs (--tfix-native).
 #include "prepare/tfix_split.h"
 
@@ -16,8 +16,8 @@
 #include "prepare/onnx_split.h"
 #include "prepare/rife_native.h"
 
-#ifndef KIRARI_DRBA_MODEL_DIR
-#define KIRARI_DRBA_MODEL_DIR ""
+#ifndef KIRARI_TFIX_MODEL_DIR
+#define KIRARI_TFIX_MODEL_DIR ""
 #endif
 
 namespace kirari::prepare {
@@ -55,13 +55,13 @@ TEST_CASE("Le manifeste de TemporalFix fusionné se relit", "[prepare][tfix_fuse
 }
 
 TEST_CASE("Les TemporalFix du catalogue se coupent en morceaux", "[prepare][onnx][tfix_fused]") {
-  const std::filesystem::path dir = std::filesystem::path(KIRARI_DRBA_MODEL_DIR) / "temporalfix";
+  const std::filesystem::path dir = std::filesystem::path(KIRARI_TFIX_MODEL_DIR);
   bool any = false;
   for (const std::string_view file :
        {"temporalfix_s1_v1.1_op18_fp16.onnx", "temporalfix_s2_v1_op18_fp16.onnx",
         "temporalfix_s3_v1_op18_fp16.onnx"}) {
     const std::filesystem::path path = dir / file;
-    if (std::string_view(KIRARI_DRBA_MODEL_DIR).empty() || !std::filesystem::is_regular_file(path)) continue;
+    if (std::string_view(KIRARI_TFIX_MODEL_DIR).empty() || !std::filesystem::is_regular_file(path)) continue;
     any = true;
     INFO(path.string());
     auto bytes = read_onnx_bytes(path);
@@ -94,7 +94,7 @@ TEST_CASE("Les TemporalFix du catalogue se coupent en morceaux", "[prepare][onnx
       CHECK(conv_chain_check(*layers, ins[i], i < 3 ? kernels::kTfixY : 1));
     }
   }
-  if (!any) SKIP("modèles TemporalFix du lecteur absents (KIRARI_DRBA_MODEL_DIR/temporalfix)");
+  if (!any) SKIP("modèles TemporalFix du lecteur absents (KIRARI_TFIX_MODEL_DIR)");
 }
 
 }  // namespace
