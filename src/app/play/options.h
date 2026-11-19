@@ -185,6 +185,10 @@ struct PlayOptions {
   // --rife-at-slot (mesure) : chaque passe RIFE d'une paire forte attend le slot de son image, au lieu d'être
   // enfilée à l'arrivée de la paire ; la sortie est la même (UpscaleSetup::rife_at_slot). Pour l'ABAB.
   bool rife_at_slot = false;
+  // --scene-map (essai) : la carte de la scène par le flux optique de NVIDIA (UpscaleSetup::scene_map,
+  // scene_map.h). Sans client, la sortie est la même ; la ligne « carte de la scène » du journal de fin dit
+  // ce qu'elle a fait.
+  bool scene_map = false;
   // --skip-held : en lecture, un instant identique à l'image affichée n'est ni calculé ni écrit (étapes 4.3
   // à 4.5). Éteint par défaut jusqu'à sa validation sur l'écran.
   bool skip_held = false;

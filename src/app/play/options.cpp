@@ -127,7 +127,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 }
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
-constexpr std::array<std::string_view, 36> kTrialOptions{
+constexpr std::array<std::string_view, 37> kTrialOptions{
     "--rife-image",      "--ring-rgb10a2",   "--no-ring-rgb10a2", "--hdr-metadata",   "--no-hdr-metadata",
     "--probe-nvdec",     "--no-probe-nvdec", "--shot-cuts",       "--no-shot-cuts",   "--one-lane",
     "--lanes",           "--skip-held",      "--anime-shots",     "--no-anime-shots", "--fast-steady",
@@ -135,7 +135,7 @@ constexpr std::array<std::string_view, 36> kTrialOptions{
     "--audio-pll",       "--no-audio-pll",   "--vsync-index",     "--no-vsync-index", "--present",
     "--no-present",      "--no-vrr",         "--rife-calm-model", "--rife-warm",      "--profile-dispatches",
     "--rife-encode-all", "--rife-at-slot",   "--filtered-warp",   "--warp-l2",        "--rife-hwc8",
-    "--no-rife-hwc8"};
+    "--no-rife-hwc8",    "--scene-map"};
 
 bool is_trial(std::string_view arg) {
   const std::string_view name = arg.substr(0, arg.find('='));
@@ -187,6 +187,7 @@ constexpr std::array<Flag, 38> kFlags{{
     {"--rife-warm", &PlayOptions::rife_warm, true},
     {"--rife-encode-all", &PlayOptions::rife_encode_all, true},
     {"--rife-at-slot", &PlayOptions::rife_at_slot, true},
+    {"--scene-map", &PlayOptions::scene_map, true},
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},
@@ -615,6 +616,8 @@ std::string play_usage(bool debug) {
          "                         keeping the encoding of the pair and of the previous B (same output)\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"
+         "  --scene-map            trial: NVIDIA optical flow (RTX 30 and later) maps each pair: camera,\n"
+         "                         tiles that move, cuts; same output until a feature reads it\n"
          "  --warp-l2              trial: TensorRT warp keeps the flow in persisting L2 (same output)\n"
          "  --no-rife-hwc8         trial: fused RIFE blocks built with planar inputs and outputs under\n"
          "                         TensorRT, with reformat copies (default: HWC8, same output)\n"
