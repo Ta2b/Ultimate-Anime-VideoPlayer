@@ -93,9 +93,9 @@ std::string read_options(int argc, char* const* argv, Options& options) {
       options.compare = true;
     } else if (option == "--per-tap") {
       options.width48 = kirari::gpu::cuda::SpanFp8Width::PerTap;
-    } else if (option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) {
-      ++i;
-    } else if (option == "--band" && i + 1 < argc && number(argv[i + 1], options.band) && options.band >= 0) {
+    } else if ((option == "--bench" && i + 1 < argc && number(argv[i + 1], options.bench)) ||
+               (option == "--band" && i + 1 < argc && number(argv[i + 1], options.band) &&
+                options.band >= 0)) {
       ++i;
     } else {
       return std::string(option);

@@ -79,7 +79,7 @@ std::expected<bool, Refusal> SpanFp8Engine::start_tiles(cudaStream_t stream, std
   kernels::pack_span_tiles(region, std::span(host, kernels::kSpanTileMaskWords));
   kernels::pack_span_tiles(job->core,
                            std::span(host + kernels::kSpanTileMaskWords, kernels::kSpanTileMaskWords));
-  const std::size_t bytes = 2U * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
+  const std::size_t bytes = std::size_t{2} * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
   if (cudaError_t e = cudaMemcpyAsync(tile_masks_, host, bytes, cudaMemcpyHostToDevice, stream);
       e != cudaSuccess)
     return failed(e, "envoi des masques");
@@ -90,7 +90,7 @@ std::expected<bool, Refusal> SpanFp8Engine::start_tiles(cudaStream_t stream, std
 }
 
 bool SpanFp8Engine::allocate_tiles() {
-  const std::size_t bytes = 2U * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
+  const std::size_t bytes = std::size_t{2} * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
   void* device = nullptr;
   bool ok = cudaMalloc(&device, bytes) == cudaSuccess;
   tile_masks_ = ok ? static_cast<std::uint32_t*>(device) : nullptr;

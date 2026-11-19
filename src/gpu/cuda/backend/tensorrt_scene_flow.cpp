@@ -44,7 +44,7 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   auto busy = scene_flow_->busy();
   if (!busy) return std::unexpected(std::move(busy.error()));
   if (*busy) return std::uint64_t{0};
-  NvofSession& session = scene_flow_->session();
+  const NvofSession& session = scene_flow_->session();
   const NvofSession::Pitched into_a = session.input();
   const NvofSession::Pitched into_b = session.reference();
   std::expected<void, Refusal> ready =

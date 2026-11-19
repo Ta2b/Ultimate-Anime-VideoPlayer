@@ -24,7 +24,7 @@ SceneFlow::~SceneFlow() {
   for (cudaEvent_t event : {lumas_ready_, consumed_}) {
     if (event != nullptr) static_cast<void>(cudaEventDestroy(event));
   }
-  for (Read& read : reads_) {
+  for (const Read& read : reads_) {
     if (read.done != nullptr) static_cast<void>(cudaEventDestroy(read.done));
   }
 }

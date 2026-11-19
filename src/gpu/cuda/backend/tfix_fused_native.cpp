@@ -161,6 +161,7 @@ std::expected<TrialWindow, Refusal> trial_window(FusedScratch& scratch, int h, i
   // Le travail en vol sur les voies finit avant : l'essai écrit dans la zone partagée.
   if (cudaError_t e = cudaDeviceSynchronize(); e != cudaSuccess) return failed(e, "cudaDeviceSynchronize");
   std::vector<Tensor> inputs;
+  inputs.reserve(2 * frames);
   for (std::size_t r = 0; r < frames; ++r)
     inputs.push_back(
         fused_tensor(reinterpret_cast<std::uintptr_t>(rgb), r * image_bytes, kernels::kTfixImage, wh, ww));
