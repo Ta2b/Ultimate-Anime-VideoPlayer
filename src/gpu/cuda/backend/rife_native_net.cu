@@ -218,8 +218,9 @@ class Net final : public RifeNativeNet {
                 std::to_string(in_ld);
         return false;
       }
-      if (image && conv.cin != 3) {
-        error = "première couche de l'encodeur : 3 canaux attendus";
+      // Le noyau de l'image échantillonne au pas 2 : une première couche d'un autre pas sortirait fausse.
+      if (image && (conv.cin != 3 || conv.stride != 2 || conv.transposed)) {
+        error = "première couche de l'encodeur : convolution de pas 2 sur 3 canaux attendue";
         return false;
       }
       layer.ih = ih;

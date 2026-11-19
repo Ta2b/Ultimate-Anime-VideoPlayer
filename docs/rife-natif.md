@@ -91,10 +91,24 @@ avec les noyaux natifs : trois passes (directe, capture du graphe CUDA, rejeu), 
 ensuite ; sinon TensorRT garde la chaîne. Le journal dit ce qui est retenu, avec les dB : « RIFE natif retenu
 (960×576, sommes f16 : 52,3 dB contre TensorRT, seuil 45 dB) ».
 
+Une valeur non finie d'un côté ou de l'autre (référence TensorRT comprise) écarte le natif. Un essai qui fait
+perdre le contexte CUDA (accès fautif d'un noyau) fait échouer le chargement au lieu de rendre une chaîne
+TensorRT morte ; tout autre refus laisse TensorRT, chargé et intact. La lecture des morceaux ONNX refuse ce que la
+diffusion d'ONNX lirait autrement que les noyaux : un bêta ou une pente de forme C ou 1×1×1×C (le long de la
+largeur), une transposée qui porte `output_shape`.
+
 ## État
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.
+
+Audit de novembre 2026 : un émulateur sur hôte des noyaux (ldmatrix et mma selon les tables PTX, chaque accès
+borné et aligné, mémoire partagée jamais lue avant écriture) a rejoué l'encodeur et les blocs de 4.25, 4.26,
+4.22 lite et 4.25 lite, de 2×2 à 1152×1920, de 1 à 170 SM, sommes f16 et f32 : sorties justes à 1e-7 près
+contre une convolution en double, sans accès hors limites. Deux pistes de vitesse, à mesurer avant d'y toucher :
+le split-K coupe les unités à parts égales, une part peut chevaucher deux tranches de canaux et charger deux
+tuiles (couper par tranche quand il y en a assez) ; sur Turing (64 Ko par SM), les tuiles Kc 64 (jusqu'à
+48 960 octets) ne laissent qu'un bloc par SM, Kc 32 en laisserait deux.
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 

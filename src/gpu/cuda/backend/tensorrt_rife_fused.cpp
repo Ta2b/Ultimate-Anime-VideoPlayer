@@ -148,10 +148,14 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_rife_fused
   if (l2_keep_)
     (*engine)->keep_in_l2(persisting_l2(), static_cast<std::size_t>(properties_.accessPolicyMaxWindowSize));
   if (rife_native_) {
-    // --rife-native : tout refus laisse la chaîne à TensorRT, chargée et intacte.
+    // --rife-native : un refus laisse la chaîne à TensorRT, chargée et intacte, sauf un contexte perdu.
     auto pieces = native_pieces(artifact.path);
     auto kept = pieces ? (*engine)->try_native(*pieces, arena(), kNativeMinDb)
                        : std::expected<std::string, Refusal>(std::unexpected(std::move(pieces.error())));
+    // Un noyau fautif pendant l'essai (accès hors limites) perd le contexte CUDA : TensorRT n'y peut plus
+    // rien non plus, le chargement échoue au lieu de rendre une chaîne morte.
+    if (!kept && kept.error().code == RefusalCode::DeviceLost)
+      return std::unexpected(std::move(kept.error()));
     if (kept)
       log((*engine)->native() ? BackendLogLevel::Info : BackendLogLevel::Warn, *kept);
     else
