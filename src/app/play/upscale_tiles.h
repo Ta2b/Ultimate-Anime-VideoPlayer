@@ -52,8 +52,8 @@ namespace kirari::app::play {
 // entière compte sous une raison au bilan (SpanTiles::summary).
 enum class TileStale : std::uint8_t {
   None,
-  Chain,        // la chaîne ne s'y prête pas : export, sortie YUV, TemporalFix, Smooth, plaque de décor
-  Graded,       // le grade avant le warp l'a réécrite sur place, sans copie d'avant le grade
+  Chain,        // la chaîne ne s'y prête pas : export, sortie YUV, TemporalFix, Smooth
+  Graded,       // le grade avant le warp ou la plaque de décor l'a réécrite sur place, sans copie d'avant
   Overwritten,  // ce n'est plus la sortie de la source d'avant : image créée par-dessus, source sautée
   Restart,      // début de lecture, saut, image ou ancre abîmée, pas de sortie d'avant
 };

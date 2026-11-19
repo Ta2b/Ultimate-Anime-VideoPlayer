@@ -56,7 +56,11 @@ journal.
 - Hors du champ : DistilDRBA, GMFSS, RIFE image et le Smooth (les instants n'y sont plus ceux de la caméra)
   gardent leur chemin ; seuls les warps de RIFE mouvement sur la paire de la carte composent (`blend`,
   `layered`). Une clé dont le SPAN de la plaque n'a pas tourné (SPAN de b repris d'un dessin tenu, ou fait en
-  avance par le Smooth) est refaite à la paire suivante ; les tuiles qui bougent sont coupées avec la plaque. RIFE tourne toujours sur toute l'image : le gain est la qualité, pas le temps.
+  avance par le Smooth) est refaite à la paire suivante. La plaque réécrit le décor de la sortie de SPAN sur
+  place, comme le grade avant le warp : la sortie telle que SPAN l'a rendue est copiée juste avant
+  (`SpanReuse::plated`, `keep_ungraded`), et les tuiles de SPAN de l'image suivante partent de cette copie
+  (`docs/tuiles-span.md`). Une clé copiée de la sortie de SPAN ne la réécrit pas. RIFE tourne toujours sur
+  toute l'image : le gain est la qualité, pas le temps.
 
 Journal de fin : `calques : N paires avec calques (dont V avec la caméra lk d'une voisine, X % de décor en
 moyenne), M images composées ; sans : … ; plaque : K clés (reprises de SPAN | SPAN FP16 de plus), P sources
@@ -103,7 +107,10 @@ avec la carte.
 
 La plaque ne passe pas. En FP8, son second SPAN FP16 porte le p95 à 6,8 ms contre 3,0 (panoramique) et à 6,4
 contre 1,8 (Re:Zero). En Équilibre, la copie de la sortie de SPAN donne 3,2 contre 1,5 ms, avec moins
-d'images manquées (26 contre 102, un seul tour). Elle reste éteinte.
+d'images manquées (26 contre 102, un seul tour). Elle reste éteinte. Ces 1,7 ms venaient des tuiles de SPAN
+(allumées par défaut depuis #962) : la plaque les coupait, et chaque image passait par SPAN entière. Elles
+partent maintenant de la copie d'avant la plaque, comme sous le grade, et la clé copiée ne se compose plus
+sur elle-même.
 
 ## Essai (avec le reste, à la fin)
 

@@ -53,10 +53,14 @@ class LayerStage {
   std::expected<void, Refusal> compose_pair(gpu::KernelOps& ops, const gpu::Tensor& a, const gpu::Tensor& b,
                                             const gpu::Tensor& out, float t, bool cubic);
   // SPAN de b vient d'être enfilé dans spanned (sur la voie de SPAN) : la plaque, si la paire en a une. Une
-  // clé passe d'abord rgb (l'image de travail de b) dans le SPAN de la plaque, ou reprend spanned
-  // (plate_copy). Avant le grade : la plaque n'est jamais gradée, l'image composée l'est comme toute autre.
+  // clé passe d'abord rgb (l'image de travail de b) dans le SPAN de la plaque, puis s'y compose ; ou elle
+  // reprend spanned telle quelle (plate_copy), qui n'est pas réécrite. Avant le grade : la plaque n'est
+  // jamais gradée, l'image composée l'est comme toute autre.
   std::expected<void, Refusal> after_span(gpu::Backend& backend, const LayerSetup& setup,
                                           const gpu::Tensor& rgb, const gpu::Tensor& spanned, bool cubic);
+  // after_span réécrira spanned (décor repris de la clé) : l'étage en garde d'abord la copie pour les tuiles
+  // de SPAN de l'image suivante (upscale_span.cpp). Vrai aussi quand la composition se refuse ensuite.
+  bool rewrites(const LayerSetup& setup) const;
   // Le journal de fin : paires avec calques, sans (par raison), clés et sources de la plaque.
   void log_summary(const LayerSetup& setup) const;
 

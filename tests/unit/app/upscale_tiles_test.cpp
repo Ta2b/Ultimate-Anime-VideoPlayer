@@ -212,7 +212,7 @@ TEST_CASE("Tuiles qui bougent : limite d'âge, refus et bilan", "[app][tiles]") 
   CHECK_FALSE(once.plan(TileFacts{.stale = TileStale::None}).tiled);
   CHECK(once.summary() ==
         "SPAN par tuiles : 0 images sur 4 calculées (0.0 %) ; images entières : 1 sans mesure des blocs, 1 "
-        "refus du moteur, 1 sortie d'avant gradée sur place, 1 début, saut ou image abîmée");
+        "refus du moteur, 1 sortie d'avant gradée ou plaquée sur place, 1 début, saut ou image abîmée");
   // Rien de calculé : la ligne le dit aussi.
   SpanTiles idle;
   idle.set_grid(kGrid);
@@ -277,7 +277,7 @@ TEST_CASE("Tuiles qui bougent : dans la reprise du lot A", "[app][tiles]") {
   CHECK(line.contains("images entières : 1 sans mesure des blocs, "));  // la reprise imposée
   CHECK(
       line.contains("1 sortie d'avant écrasée (image créée, source sautée), 1 chaîne sans tuiles (export, "
-                    "YUV, TemporalFix, Smooth, plaque), 2 début, saut ou image abîmée"));
+                    "YUV, TemporalFix, Smooth), 2 début, saut ou image abîmée"));
 
   // Les tuiles coupées (--no-span-tiles) : chaque image se calcule entière, et le journal de fin ne dit rien
   // des tuiles.

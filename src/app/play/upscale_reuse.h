@@ -107,12 +107,14 @@ class SpanReuse {
   TilePlan tile_plan;
   bool check = false;                               // --span-tiles-check
   std::unique_ptr<gpu::TensorBuffer> check_output;  // le calcul complet du contrôle, à la taille de sortie
-  // Avant le warp, le grade réécrit le tampon de SPAN sur place : la sortie de SPAN telle quelle y est copiée
-  // juste avant (upscale_span.cpp, keep_ungraded), d'où la suivante se calcule par tuiles. ungraded_of : le
-  // tampon de spanned_ dont c'est la copie ; nul s'il a été réécrit depuis, ou si rien n'a été copié.
+  // Avant le warp, le grade et la plaque de décor réécrivent le tampon de SPAN sur place : la sortie de SPAN
+  // telle quelle est copiée juste avant le premier des deux (upscale_span.cpp, keep_ungraded), d'où la
+  // suivante se calcule par tuiles. ungraded_of : le tampon de spanned_ dont c'est la copie ; nul s'il a été
+  // réécrit depuis, ou si rien n'a été copié. plated : la plaque a réécrit ce tampon après son SPAN.
   std::unique_ptr<gpu::TensorBuffer> ungraded;
   std::optional<std::uint32_t> ungraded_of;
   bool ungraded_ok = true;  // faux après un refus de place ou de copie : plus de tuiles sous le grade
+  std::array<bool, 2> plated{};
   // La source dont le tampon de SPAN de l'image (avant le warp) tient vraiment la sortie : posée par l'étage
   // à chaque SPAN fait ou repris. Une source sautée ne l'a pas : sa suivante ne se calcule pas par tuiles.
   std::optional<SourceId> spanned;
