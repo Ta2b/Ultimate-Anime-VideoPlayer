@@ -175,10 +175,14 @@ struct PlayOptions {
   // RIFE mesuré dans le lecteur sur la RTX 4070 Ti (docs/interpolation.md) ; allumé par défaut,
   // --no-rife-hwc8 (essai) revient aux E/S en plans.
   bool rife_hwc8 = true;
-  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par nos noyaux natifs (docs/span-native16.md,
-  // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
-  // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
-  bool span_native = false;
+  // SPAN par nos noyaux natifs (docs/span-native16.md, canaux natifs, b5f48 en 48) au lieu de TensorRT FP16,
+  // sur RTX 40 et 50 : FP16 aux crans Équilibre et en repli, sommes f32 au cran Qualité ; mêmes poids, sans
+  // quantification. Allumé par défaut depuis le premier banc (plus rapide que TensorRT FP16 même
+  // en f32) ; --no-span-native (essai) revient à TensorRT, pour la mesure ABAB.
+  bool span_native = true;
+  // --span-native-edges (essai) : les bords du SPAN FP8 (conv_1, conv_cat, to_pixel) par les mêmes noyaux
+  // (gpu::kTrialSpanNative) ; éteint jusqu'à sa mesure.
+  bool span_native_edges = false;
   // --rife-native (essai) : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA
   // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
   // finale.

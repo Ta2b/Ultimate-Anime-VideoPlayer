@@ -48,9 +48,11 @@ SettingsChoices chain_choices(Player& p, const ChainEngines& c, const SpanPrepar
       .display_vrr_armed = p.display && p.display->vrr_armed.value_or(false),
       .display_oled = p.display && p.display->oled,
       .rife_available = c.rife_model.has_value() || c.drba_found || offered(MotionEngine::Apple),
-      .span_tiers = span ? span_tiers(span->path, paths::derived_models(p.paths), fp8_engine,
-                                      c.backend && c.backend->capabilities().span_fp8_cutlass)
-                         : TierSupport{},
+      .span_tiers =
+          span ? span_tiers(span->path, paths::derived_models(p.paths), fp8_engine,
+                            c.backend && c.backend->capabilities().span_fp8_cutlass,
+                            p.options.span_native && c.backend && c.backend->capabilities().span_fp16_cutlass)
+               : TierSupport{},
       .rife_tiers = c.rife_choice ? sibling_tiers(c.rife_choice->path, fp8_engine) : TierSupport{},
       .drba_tiers = drba_file ? sibling_tiers(drba_file->path, fp8_engine) : TierSupport{},
       .distil_drba_available = c.drba_found,

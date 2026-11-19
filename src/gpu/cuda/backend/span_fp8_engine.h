@@ -91,9 +91,10 @@ class SpanFp8Engine final : public Engine {
   // SPAN FP16 natif : le PSNR de la carte contre le calcul du processeur au chargement (span_fp8_check.h) ;
   // vide pour un paquet FP8, ou une image trop petite pour en juger.
   std::optional<double> native_check_db() const { return native_check_db_; }
-  // Le paquet chargé est le SPAN FP16 natif (drapeau fp16), pas le FP8 ; native_edges : les bords du FP8 par
-  // les noyaux natifs (--span-native). Pour le journal.
+  // Le paquet chargé est le SPAN FP16 natif (drapeau fp16), pas le FP8, à sommes f32 avec acc32 (cran
+  // Qualité) ; native_edges : les bords du FP8 par les noyaux natifs (--span-native-edges). Pour le journal.
   bool fp16() const { return fp16_; }
+  bool acc32() const { return acc32_; }
   bool native_edges() const { return native_edges_; }
 
  private:
@@ -130,6 +131,7 @@ class SpanFp8Engine final : public Engine {
   std::vector<cudaGraphExec_t> execs_;  // rangés par l'indice du registre
   std::optional<double> native_check_db_;
   bool fp16_ = false;
+  bool acc32_ = false;
   bool native_edges_ = false;
   std::string overflow_notice_;
 

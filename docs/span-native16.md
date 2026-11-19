@@ -22,8 +22,8 @@ AnimeJaNai.
 `src/gpu/cuda/backend/span_native16_kernels.cuh` (noyaux), `span_native16.cu` (le réseau, derrière
 `SpanFp8Body`, à la place de l'ancien `span_fp8_net16.cu`). Une seule famille de convolutions :
 
-- **mma.sync m16n8k16 FP16, sommes en f16** (`Frag<true>`) ; en f32 sur demande (`SpanFp8Weights::acc32`,
-  `kirari_span_fp8_run --acc32`) pour juger la précision ;
+- **mma.sync m16n8k16 FP16, sommes en f16** (`Frag<true>`) ; en f32 au cran Qualité (`SpanFp8Weights::acc32`,
+  ci-dessous ; `kirari_span_fp8_run --acc32` au banc) ;
 - **tuile en mémoire partagée** : un bloc de 4 warps calcule 8 × 32 pixels et toutes les colonnes ; la tuile
   d'entrée, halo compris, est copiée une fois par `cp.async` (zéros hors de l'image) au pas Cin + 8 : les huit
   lignes d'une matrice de `ldmatrix` tombent sur des banques distinctes. Moins de 48 Ko : deux blocs par SM ;
@@ -43,9 +43,28 @@ Les 48 canaux du b5f48 sont calculés en 48 (pas de rembourrage). Rien ne change
 « fp16c » tiré de l'ONNX, l'essai au chargement contre le calcul du processeur (≥ 50 dB, `span_fp8_check`), le
 graphe CUDA et l'écriture dans l'anneau sont ceux du chemin d'avant.
 
+## Dans le lecteur : FP16 par défaut, sommes f32 au cran Qualité
+
+Depuis le premier banc (ci-dessous), le SPAN natif est le défaut sur RTX 40 et 50 (`PlayOptions::span_native`,
+`BackendCaps::span_fp16_cutlass`), pour les SPAN d'AnimeJaNai seulement (`span_fp8_cutlass_model`) :
+
+- **Équilibre** : FP16 natif, sommes en f16 (paquet « -fp16c- ») ;
+- **Qualité** : les mêmes noyaux à sommes f32 (paquet « -fp32n- », drapeau `acc32` du paquet,
+  `SpanVariantKind::Fp32Native`), puis la variante FP32 de TensorRT si `quantize_span.py` en a laissé une. En
+  f32, le natif reste plus rapide que TensorRT FP16 (14,60 contre 15,39 ms au b8f64) : le cran est offert dans
+  Vidéo > Agrandissement > Avancé dès que le moteur a les noyaux, sans variante sur le disque (`span_tiers`) ;
+- **repli** : chaque cran finit sur le FP16 natif avant TensorRT FP16 (`span_variant_order`) ; le cran
+  Performance garde le FP8 en premier.
+
+Le paquet porte le mode des sommes : deux fichiers, deux clés d'artefact, rien à passer au backend au
+chargement (un backend repris d'une vidéo à l'autre ne garde pas un mode périmé). Un ancien `play.toml` au
+cran Qualité le prend tel quel. `--debug --no-span-native` revient à TensorRT pour l'ABAB ; `--span-native`
+reste accepté (c'est le défaut).
+
 ## Le FP8 (mêmes techniques)
 
-Sous `--span-native`, le SPAN FP8 (cran Performance) prend aussi ses bords à ces noyaux
+Sous `--debug --span-native-edges` (essai, pas encore mesuré), le SPAN FP8 (cran Performance) prend aussi ses
+bords à ces noyaux
 (`span_native16_edges.cuh`, `SpanFp8Weights::native_edges`, bit `kTrialSpanNative`) : conv_1 lit l'image et
 écrit en une passe l'entrée E4M3 du premier bloc et la tranche 0 de la concaténation (le noyau de dégroupage
 disparaît), conv_cat lit les quatre tranches par la tuile en mémoire partagée, to_pixel écrit la sortie et
@@ -100,14 +119,16 @@ Il construit le moteur TensorRT FP16 de chaque modèle, puis donne en ABAB 3 tou
 des noyaux natifs (graphe CUDA tous deux, bandes par défaut), les natifs à d'autres hauteurs de bande et en
 f32, et l'écart de la sortie native à la référence FP16 à sommes f32 (PSNR, plus grand écart, valeurs non
 finies), avec et sans bandes. L'essai C0 (E/S HWC8 de TensorRT) n'y est plus : il a perdu. Dans le
-lecteur : `kirari play --span-native --stats` ; le journal dit « SPAN FP16 natif chargé » au cran Équilibre,
-« SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran Performance.
+lecteur : `kirari play --stats` ; le journal dit « SPAN FP16 natif chargé : …, sommes f16 » au cran Équilibre,
+« …, sommes f32 » au cran Qualité, « SPAN FP8 (noyaux CUTLASS) chargé : …, bords natifs » au cran
+Performance avec `--span-native-edges`.
 
 ## Décision
 
-- natif f16 sous TensorRT et ≥ 55 dB : `--span-native` devient le défaut (FP16 natif au cran Équilibre, bords
-  natifs du FP8 au cran Performance) ; ensuite seulement, les convolutions des blocs FP8 en mma m16n8k32 E4M3
-  sur le même gabarit, si un profil montre de la marge sous CUTLASS ;
+- natif f16 sous TensorRT et ≥ 55 dB : le natif devient le défaut. Fait en novembre 2026 pour le FP16 et le
+  cran Qualité (ci-dessus) ; les bords natifs du FP8 restent à l'essai jusqu'à leur mesure. Ensuite
+  seulement, les convolutions des blocs FP8 en mma m16n8k32 E4M3 sur le même gabarit, si un profil montre de
+  la marge sous CUTLASS ;
 - plus lent : le profil Nsight du banc dit quel noyau perd, et on règle la tuile (lignes par warp, nombre de
   warps, double tampon de la tuile suivante) avant de redécider.
 
