@@ -343,6 +343,11 @@ TEST_CASE("ChainEngines::upscale câble le warp de Catmull-Rom et les options à
   CHECK_FALSE(plain.rife_encode_all);
   CHECK_FALSE(plain.rife_at_slot);
   CHECK_FALSE(plain.skip_held);
+  // Les tuiles de SPAN : par défaut, sauf --no-span-tiles.
+  CHECK(plain.span_reuse.tiles);
+  ChainEngines whole;
+  whole.span_tiles = false;
+  CHECK_FALSE(whole.upscale(s, nullptr, nullptr, 1920, 1080, {}).span_reuse.tiles);
 }
 
 }  // namespace kirari::app::play
