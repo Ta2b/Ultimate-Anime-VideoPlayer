@@ -1,7 +1,8 @@
 // Le RIFE natif (rife_native_net.h) : les couches de chaque morceau planifiées une fois (tranche des canaux
 // d'entrée, tuile des canaux de sortie, grille), leurs poids rangés dans l'ordre des fragments B du mma, puis
 // un lancement par couche. Les activations entre deux couches alternent entre deux tampons de la zone de
-// travail ; l'entrée d'un ResConv reste donc lisible pour son addition résiduelle.
+// travail ; l'entrée d'un ResConv reste donc lisible pour son addition résiduelle. Une couche dont la grille
+// ne remplit pas la carte découpe K ; ses sommes partielles vont dans un troisième tampon, après les deux.
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -55,6 +56,16 @@ class Buffer {
  private:
   void* ptr_ = nullptr;
 };
+
+// La fin d'une couche à K découpé (rife_native::reduce_kernel), width : canaux de la grille z.
+void launch_reduce(bool phase, int width, cudaStream_t stream, const rn::Params& p) {
+  const long count = static_cast<long>(p.oh) * p.ow * (width / 8);
+  const auto blocks = static_cast<unsigned>((count + 255) / 256);
+  if (phase)
+    rn::reduce_kernel<rn::Out::kPhase><<<blocks, 256, 0, stream>>>(p, width);
+  else
+    rn::reduce_kernel<rn::Out::kNhwc><<<blocks, 256, 0, stream>>>(p, width);
+}
 
 // Les façons de lancer une couche.
 enum class Kind : std::uint8_t {
@@ -156,7 +167,7 @@ void pack(const std::vector<__half>& w, int ct, int taps, int cin, std::vector<s
 struct Layer {
   Kind kind = Kind::kSame;
   Launch launch = nullptr;
-  int kc = 16, ct = 16, tiles = 1, phases = 1;
+  int kc = 16, ct = 16, tiles = 1, phases = 1, ksplit = 1;
   int ih = 0, iw = 0, oh = 0, ow = 0;
   int in_ld = 0, out_ld = 0, out_ch = 0, cin = 0;
   bool residual = false;
@@ -236,7 +247,7 @@ class Net final : public RifeNativeNet {
     return true;
   }
 
-  std::int64_t workspace_bytes() const override { return 2 * peak_; }
+  std::int64_t workspace_bytes() const override { return 2 * peak_ + partial_; }
   bool acc32() const override { return acc32_; }
 
   cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace) const override {
@@ -289,7 +300,25 @@ class Net final : public RifeNativeNet {
                       static_cast<unsigned>((layer.oh + th - 1) / th),
                       static_cast<unsigned>(layer.phases * layer.tiles));
     layer.smem = rn::smem_bytes(layer.kc, layer.ct, shape.kh, shape.s, shape.rows);
+    layer.ksplit = split_for(layer, shape.kh * shape.kh);
+    if (layer.ksplit > 1) {
+      partial_ = std::max(
+          partial_, align256(std::int64_t{layer.ksplit} * layer.oh * layer.ow * layer.grid.z * layer.ct * 4));
+      layer.grid.z *= static_cast<unsigned>(layer.ksplit);
+    }
     return true;
+  }
+
+  // Les parts de K d'une couche dont la grille fait moins de deux vagues (les blocs grossiers, 30 × 17
+  // pixels au 1/32 de 1080p) : assez pour deux vagues, au plus une par prise et tranche. Ni l'encodeur ni
+  // une couche lue dans l'image : pleine taille, la grille remplit déjà la carte.
+  int split_for(const Layer& layer, int taps) const {
+    if (layer.kind == Kind::kImage || layer.kind == Kind::kPlanes4) return 1;
+    const long blocks = static_cast<long>(layer.grid.x) * layer.grid.y * layer.grid.z;
+    const long want = 2L * sms_;
+    if (blocks >= want) return 1;
+    const long units = static_cast<long>(layer.cin / layer.kc) * taps;
+    return static_cast<int>(std::min((want + blocks - 1) / blocks, units));
   }
 
   // La transposée de l'encodeur : 16 sorties j = phase · 4 + c sur une fenêtre 3 × 3 de l'entrée. La prise
@@ -367,6 +396,7 @@ class Net final : public RifeNativeNet {
     const std::vector<Layer>& layers = pieces_[piece];
     auto* ws = static_cast<std::uint8_t*>(workspace);
     __half* const buffers[2] = {reinterpret_cast<__half*>(ws), reinterpret_cast<__half*>(ws + peak_)};
+    auto* const partial = reinterpret_cast<float*>(ws + 2 * peak_);
     const __half* from = static_cast<const __half*>(in);
     for (std::size_t i = 0; i < layers.size(); ++i) {
       const Layer& layer = layers[i];
@@ -391,7 +421,11 @@ class Net final : public RifeNativeNet {
       p.skip_ld = layer.in_ld;
       p.cin = layer.cin;
       p.tiles = layer.tiles;
+      p.ksplit = layer.ksplit;
+      p.partial = layer.ksplit > 1 ? partial : nullptr;
       layer.launch(layer.grid, layer.smem, stream, p);
+      if (layer.ksplit > 1)
+        launch_reduce(layer.kind == Kind::kPhase, layer.phases * layer.tiles * layer.ct, stream, p);
       from = to;
     }
     return cudaGetLastError();
@@ -400,6 +434,7 @@ class Net final : public RifeNativeNet {
   bool acc32_;
   int sms_ = 1;
   std::int64_t peak_ = 0;
+  std::int64_t partial_ = 0;  // sommes partielles de la plus grande couche à K découpé
   std::vector<std::vector<Layer>> pieces_;
 };
 

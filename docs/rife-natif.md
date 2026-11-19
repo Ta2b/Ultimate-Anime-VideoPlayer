@@ -39,11 +39,48 @@ Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif (`/mnt
 - **transposée 4 × 4 de pas 2** en quatre convolutions 2 × 2, une par phase de sortie, écrites directement dans Y
   au pas 56 ; celle de l'encodeur (4 canaux) en une convolution 3 × 3 à 16 sorties (phase · 4 + canal) qui écrit
   les quatre plans d'encodage ;
-- **première couche de l'encodeur** lue dans les trois plans de l'image d'entrée, sans copie.
+- **première couche de l'encodeur** lue dans les trois plans de l'image d'entrée, sans copie ;
+- **pas 2 sans conflit de banques** : la tuile d'entrée est rangée colonnes paires puis impaires, les 16 lignes
+  d'un `ldmatrix` restent des pixels voisins (au pas 2 brut, deux lignes tombaient sur les mêmes banques) ;
+- **fragments B préchargés** : les poids du pas k suivant se lisent pendant les mma du pas courant ;
+- **K découpé sur les petites grilles** : une couche dont la grille fait moins de deux vagues (les blocs
+  grossiers, 30 × 17 pixels au 1/32 de 1080p, ne donnaient que 36 blocs de calcul pour 60 SM) répartit ses prises
+  × tranches entre plusieurs blocs, sommes partielles en f32, puis `reduce_kernel` ajoute le biais, le résiduel
+  et l'activation.
 
 Rien n'est propre à 4.25 : les couches se lisent dans les morceaux ONNX de la découpe (`rife_native_layers`, une
 chaîne Conv, activation, Mul, Add, ConvTranspose), donc 4.22 lite, 4.26 et 4.25 lite (poids déjà permutés) passent
 par le même code. Une structure inconnue est refusée et TensorRT garde la chaîne.
+
+## Comparaison avec le RIFE natif d'AnimeJaNai
+
+Lu dans the-database/animejanai-inference (`src/native/gconv.cuh`, `gconv.cu`, `rife.cpp`), rien recopié. Même
+famille de noyaux (mma.sync FP16 en sommes f16, tuile et halo en mémoire partagée, poids rangés en fragments B,
+K par tranches de 16 à 64).
+
+Là où nous faisons mieux :
+
+- **la transposée de fin de bloc** : nous la calculons en quatre convolutions 2 × 2 (16 prises en tout) ; eux en
+  quatre convolutions 3 × 3 dont une partie des poids est nulle (36 prises). Environ 2,2 fois moins de calcul
+  sur cette couche ;
+- **la réutilisation des poids** : un warp calcule 2 lignes × 32 colonnes (4 fragments A par fragment B lu),
+  contre 1 ligne × 16 colonnes chez eux ; quatre fois moins de lectures de poids par mma ;
+- **l'encodage gardé d'une paire à l'autre** (RIFE fusionné) : eux refont l'encodeur des deux images à chaque
+  instant ;
+- **Turing** : nos noyaux tournent dès sm_75 ; les leurs s'arrêtent (`__trap`) sous sm_80 ;
+- **les sommes f16 bornées** au plus grand fini à l'arrondi, plutôt qu'un infini qui se propage.
+
+Là où ils faisaient mieux, repris ici (mêmes idées, notre code) : le pas 2 rangé par parité de colonne, et le K
+découpé sur les petites grilles (leur `ksplit`). Restent chez eux :
+
+- **la variante de tuile mesurée** sur la carte au chargement (8, 4 ou 2 warps, le plus rapide gardé), quand
+  nous choisissons par une règle. Notre essai au chargement pourrait chronométrer deux ou trois choix de tuile
+  par couche ; à faire si le profil de la séance finale montre une couche mal servie ;
+- **l'occupation** : leur tuile prend moins de registres (16 accumulateurs contre 64 chez nous en CT = 64),
+  donc plus de warps par SM pour cacher la latence. C'est l'envers de notre réutilisation des poids ; seul le
+  profil dira lequel l'emporte sur les convolutions de RIFE ;
+- **la colle** (hors de ces noyaux) : un seul rassemblement par bloc à sa propre échelle (`k_gather`), lot E
+  du chantier AnimeJaNai.
 
 ## Essai au chargement
 
