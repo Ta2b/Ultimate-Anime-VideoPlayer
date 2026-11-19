@@ -210,7 +210,9 @@ Result<RgbImage> blend(const RgbImage& a, const RgbImage& b, const Motion& motio
     const PanEstimate e = pan_estimate(a, b);
     pan.fade = true;
     pan.on = e.sure;
-    pan.g = {-0.5F * e.dx / sx, -0.5F * e.dy / sy, 0.5F * e.dx / sx, 0.5F * e.dy / sy};
+    // L'instant du flot lu : le milieu, ou t quand le mouvement est celui de la sortie.
+    const float s = motion.at_instant ? t : 0.5F;
+    pan.g = {-s * e.dx / sx, -s * e.dy / sy, (1.0F - s) * e.dx / sx, (1.0F - s) * e.dy / sy};
   }
   RgbImage out(w, h);
   for (int y = 0; y < h; ++y) {
@@ -260,7 +262,7 @@ Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motio
   if (!(t > 0.0F && t < 1.0F)) {
     return fail(ErrorCode::ParameterOutOfRange, std::format("instant {} hors de ]0, 1[", t));
   }
-  return blend(a, b, motion, nullptr, t, t == 0.5F ? estimated : from_middle);
+  return blend(a, b, motion, nullptr, t, motion.at_instant || t == 0.5F ? estimated : from_middle);
 }
 
 Result<RgbImage> warp_blend_poses(const RgbImage& a, const RgbImage& b, const Motion& motion,

@@ -37,16 +37,25 @@ TEST_CASE("KernelOps : warp avec le mouvement d'ensemble, contre la référence"
     write_tensor(*backend, tb->tensor(), rgb_bytes(b, type));
     write_tensor(*backend, flow->tensor(), planes_bytes(motion.flow, type));
     write_tensor(*backend, mask->tensor(), planes_bytes(std::span(&motion.mask, 1), type));
-    const Motion m{.flow = flow->tensor(), .mask = mask->tensor(), .area = motion.area, .pan_lock = true};
-    for (const float t : {0.5F, 0.25F, 0.75F}) {
-      CAPTURE(t);
-      REQUIRE(ops.warp_blend(ta->tensor(), tb->tensor(), m, t, out->tensor()));
-      const auto want = t == 0.5F ? k::ref::warp_blend(a, b, motion) : k::ref::warp_blend_at(a, b, motion, t);
-      REQUIRE(want);
-      const std::size_t element = 4;
-      const k::RgbImage got = rgb_from(
-          read_tensor(*backend, out->tensor(), element * 3 * static_cast<std::size_t>(w * h)), w, h, type);
-      CHECK(max_abs_diff(got, *want) <= k::tolerance::kWarp);
+    // at_instant : le flot est celui de t (DistilDRBA, RIFE direct), le mouvement d'ensemble suit t.
+    for (const bool at : {false, true}) {
+      motion.at_instant = at;
+      const Motion m{.flow = flow->tensor(),
+                     .mask = mask->tensor(),
+                     .area = motion.area,
+                     .pan_lock = true,
+                     .at_instant = at};
+      for (const float t : {0.5F, 0.25F, 0.75F}) {
+        CAPTURE(at, t);
+        REQUIRE(ops.warp_blend(ta->tensor(), tb->tensor(), m, t, out->tensor()));
+        const auto want =
+            t == 0.5F ? k::ref::warp_blend(a, b, motion) : k::ref::warp_blend_at(a, b, motion, t);
+        REQUIRE(want);
+        const std::size_t element = 4;
+        const k::RgbImage got = rgb_from(
+            read_tensor(*backend, out->tensor(), element * 3 * static_cast<std::size_t>(w * h)), w, h, type);
+        CHECK(max_abs_diff(got, *want) <= k::tolerance::kWarp);
+      }
     }
   }
 }

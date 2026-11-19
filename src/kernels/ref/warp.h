@@ -21,6 +21,9 @@ struct Motion {
   RifeWarp warp = RifeWarp::Bilinear;  // le filtre qui lit a et b (le flot et le masque restent bilinéaires)
   // Mouvement d'ensemble (spec/warp_pan.h) : estimé sur a et b par le warp, hors garder les poses.
   bool pan_lock = false;
+  // Flot et masque estimés à l'instant de la sortie (DistilDRBA, RIFE direct) : warp_blend_at les lit tels
+  // quels à tout t, sans passer par le milieu ; t ne sert qu'au mouvement d'ensemble.
+  bool at_instant = false;
 };
 
 // Translation globale de b par rapport à a (spec/warp_pan.h), en pixels de l'image ; images de même taille,
@@ -42,7 +45,7 @@ Result<void> check_motion(const Motion& motion);
 Result<RgbImage> warp_blend(const RgbImage& a, const RgbImage& b, const Motion& motion);
 
 // Instant t de ]0, 1[ depuis le mouvement estimé au milieu de la paire ; t = 1/2 égale
-// warp_blend. Refus : t hors de ]0, 1[.
+// warp_blend. Avec at_instant, le mouvement est celui de t, lu tel quel. Refus : t hors de ]0, 1[.
 Result<RgbImage> warp_blend_at(const RgbImage& a, const RgbImage& b, const Motion& motion, float t);
 
 // Garder les poses (spec/poses.h) : warp_blend_at à l'instant réglé de chaque pixel, d'après le

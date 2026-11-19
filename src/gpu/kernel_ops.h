@@ -64,6 +64,9 @@ struct Motion {
   // Mouvement d'ensemble (kernels/spec/warp_pan.h) : translation de la paire estimée par le warp, hors garder
   // les poses ; réglage pan_lock de [interpolation].
   bool pan_lock = false;
+  // Flot et masque estimés à l'instant de la sortie (DistilDRBA, RIFE direct), lus tels quels à tout instant
+  // : l'instant du warp ne sert alors qu'au mouvement d'ensemble (kernels/spec/warp_pan.h).
+  bool at_instant = false;
 };
 
 // Synchronisation d'une écriture dans le ring (protocole de core/ring.h).

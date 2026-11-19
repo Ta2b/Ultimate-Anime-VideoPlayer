@@ -23,21 +23,21 @@ inconnue (0) ne change rien.
 
 ## Ce que montre le menu
 
-Le menu ne nomme pas les modèles, il propose des niveaux (`kInterpLevels`, `settings.h`). Le nom du modèle ne
-s'affiche qu'en mode avancé, à côté du niveau. Les niveaux suivent le choix de Tatoub de novembre 2026, sur les
-mesures de `docs/rife-candidats.md`.
+Depuis novembre 2026 (choix de Tatoub après le vote à l'aveugle et Kill Blue 4:08), le menu ne propose plus de
+niveaux : il liste trois modèles par leur nom (`kInterpLevels`, `settings.h`), chacun avec une infobulle courte.
+Plus rien n'est caché en mode avancé.
 
-| Niveau | Moteur, modèle |
+| Modèle | Ce qu'il fait de mieux, son coût |
 |---|---|
-| Très rapide | RIFE 4.25 lite (deux fois moins de calcul que 4.22 lite, 2,9 dB de moins au banc ; repli hors RTX si 4.22 lite manque) |
-| Rapide | RIFE 4.22 lite (le défaut hors RTX) |
-| Équilibré | RIFE 4.26 (le défaut sur une RTX, et l'Auto en Qualité et Ultra) |
-| RIFE 4.25, réglages avancés | l'ancien Équilibré : même qualité que 4.26, environ 9 % de calcul en plus |
-| DistilDRBA, réglages avancés | garde lui-même les poses, une image de retard ; ni plus rapide ni plus propre que RIFE à ce jour, hors de l'Auto (`kDistilDrbaInAuto`) |
+| DistilDRBA v2 lite | garde le rythme de l'animation (poses tenues) ; juste sur les barreaux de Kill Blue (4:08,6) où 4.26 et 4.25 lite se trompent ; un réseau environ 5 fois plus léger que 4.22 lite (140 ms contre 776 par image en 720p sur processeur), mais refait à chaque image créée : plus léger que RIFE jusqu'à ×5, plus lourd au-delà ; une image de retard ; hors de l'Auto (`kDistilDrbaInAuto`) |
+| RIFE 4.22 lite | le RIFE le plus léger, traits fins ; le défaut hors RTX |
+| RIFE 4.25 | le RIFE le plus précis (premier bloc au 1/8 : juste sur les barreaux) ; environ 15 % de calcul en plus que 4.22 lite (906 ms contre 776 sur processeur) ; le défaut sur une RTX, et l'Auto en Qualité et Ultra |
 | Système (macOS) | interpolation d'Apple, sur un Mac seulement |
 
-En Personnalisé, un ancien `play.toml` qui nomme RIFE 4.25 ou DistilDRBA les garde : la liste montre alors leur
-nom, même hors du mode avancé. Une calibration faite avec RIFE 4.25 le garde aussi jusqu'à la suivante, qui joue 4.26.
+Retirés du menu : RIFE 4.25 lite (Très rapide), RIFE 4.26 (Équilibré), GMFSS au milieu des paires fortes (Élevé+)
+et GMFSS union seul. Un `play.toml` ou une calibration qui les nomme se relit et tombe sur le plus proche
+(`src/app/play/interp_retired.h`) : 4.26 et GMFSS sur 4.25, 4.25 lite sur 4.22 lite. Leurs moteurs restent dans le
+code ; `--rife-model` charge encore 4.26 ou 4.25 lite pour un essai.
 Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « Arrêt » et « Auto » en lecture.
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.
@@ -164,8 +164,8 @@ pas sans son accord.
 ## Mouvement d'ensemble (« Panoramiques lents stables »)
 
 Case « Panoramiques lents stables » (Vidéo > Interpolation ; `[interpolation] pan_lock` de `play.toml`),
-**décochée par défaut** tant qu'elle n'a pas été vérifiée à l'écran sur la RTX ; RIFE seulement, recharge la
-chaîne. Contrat : `src/kernels/spec/warp_pan.h` ; référence `src/kernels/ref/warp_pan.cpp` et `ref/warp.cpp` ;
+**décochée par défaut** tant qu'elle n'a pas été vérifiée à l'écran sur la RTX ; RIFE et DistilDRBA (variante
+mouvement), recharge la chaîne. Contrat : `src/kernels/spec/warp_pan.h` ; référence `src/kernels/ref/warp_pan.cpp` et `ref/warp.cpp` ;
 GLSL `pan_global.comp` et `warp_blend.glsl` ; CUDA `warp_kernels.cu` (`pan_global`, `warp_pixel`).
 
 Au warp de la variante mouvement, une petite passe (un seul groupe de 16 × 16) estime la translation de la paire
@@ -173,6 +173,12 @@ par Lucas-Kanade sur la luma (32 × 32 points, 3 itérations, au centième de pi
 relu par tous les pixels du warp. Là où le flot de RIFE est petit (moins de 2 px) et proche de cette translation
 (moins de 1 px d'écart), il est remplacé par elle ; puis, sous un demi-pixel de déplacement, le mélange glisse
 vers un fondu linéaire (poids 1 − t), pleinement au-dessus de 2 px. Garder les poses n'est pas touché.
+
+La translation est prise à l'instant du flot lu : au milieu (± D/2) pour le flot du milieu de RIFE, à l'instant de la
+sortie quand le flot en vient (`Motion::at_instant`) : DistilDRBA, dont le warp reçoit l'image du centre en a et
+l'instant s depuis elle (t avant ½, 1 − t après), et RIFE estimé directement à t (mode direct, paires fortes). Le
+masque appris de DistilDRBA est ramené de même vers le fondu (poids 1 − s). Ses poses ne sont pas touchées : un
+personnage tenu sur un fond qui défile n'a pas le flot de la translation, et au-delà de 2 px le masque reste le sien.
 
 Pourquoi. Sur des panoramiques lents de synthèse (vérité exacte), RIFE voit mal le sous-pixel : à 1 px par image,
 4.26 estime 0,2 px vers chaque image au lieu de 0,5, et rien à 0,3 px ; son flot varie de 0,13 à 0,24 px d'un

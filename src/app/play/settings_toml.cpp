@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "app/play/auto_config.h"
+#include "app/play/interp_retired.h"
 #include "app/play/invalid_copies.h"
 #include "app/play/settings.h"
 #include "app/play/settings_refuse.h"
@@ -462,6 +463,7 @@ std::expected<PlaySettings, Refusal> settings_from_table(const toml::table& root
   for (const auto& done : reads) {
     if (!done) return std::unexpected(done.error());
   }
+  retire_interpolation(s);  // un choix retiré du menu tombe sur le plus proche
   return validate(s);
 }
 

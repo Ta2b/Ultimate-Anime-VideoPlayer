@@ -8,6 +8,7 @@
 
 #include "app/play/anime4k_choice.h"
 #include "app/play/i18n.h"
+#include "app/play/interp_retired.h"
 #include "app/play/model_choice.h"
 
 namespace ajp::app::play {
@@ -80,14 +81,14 @@ constexpr bool keeps_source(Tier level) {
 // Le plus grand multiplicateur ×k du mode auto.
 constexpr std::array<int, kTierCount> kFactorCap{0, 2, 3, 4, 4};
 
-// Le modèle du niveau (RIFE 4.22 lite, ou 4.26 pour Qualité et Ultra), ou en Auto le modèle plus fin
+// Le modèle du niveau (RIFE 4.22 lite, ou 4.25 pour Qualité et Ultra), ou en Auto le modèle plus fin
 // que la machine a exploré quand il tient aussi.
 void use_rife(PlaySettings& out, const PlaySettings& settings, const Machine& machine,
               std::string_view model) {
   out.motion_engine = MotionEngine::Rife;
   out.rife_model = model;
   if (settings.preset == Preset::Auto && !machine.explored_rife_model.empty())
-    out.rife_model = machine.explored_rife_model;
+    out.rife_model = std::string(nearest_rife_model(machine.explored_rife_model));
 }
 
 // Les modèles légers des deux tranches du bas, une fois admis (kLightSpanInAuto) : le plus léger (C4F16, 16
@@ -191,7 +192,9 @@ void follow_calibration(PlaySettings& out, Priority priority, const CalibratedCh
   out.model = cal.span_model.empty() && span_fp8 ? std::string(kQualitySpanModel) : cal.span_model;
   out.span_precision = PrecisionTier::Performance;  // le FP8 quand son paquet passe la porte (ADR 0007)
   out.motion_engine = MotionEngine::Rife;
-  out.rife_model = cal.rife_model.empty() ? std::string(kLightRifeModel) : cal.rife_model;
+  // Une ancienne calibration peut nommer 4.26 ou 4.25 lite : le plus proche du menu.
+  out.rife_model =
+      cal.rife_model.empty() ? std::string(kLightRifeModel) : std::string(nearest_rife_model(cal.rife_model));
   out.auto_free = cal.rife;
   if (!cal.rife) {
     out.rife_auto = false;

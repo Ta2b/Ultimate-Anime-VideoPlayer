@@ -19,7 +19,7 @@ titrés, les libellés à gauche en colonne ; les réglages rares sont sous « A
 | Général | Statistiques | ce que Tab affiche. Avancé : débogage (paires tenues et coupées) |
 | Vidéo | Général | préréglage de qualité, moteur de calcul et carte graphique, sortie HDR (Auto par défaut, Activé, Désactivé), couleurs (en HDR comme en SDR), « Afficher les FPS ». Avancé : affichage (filtre, débandage, vrai noir, OLED, cadence fixe), moteurs (vitesse avant précision, dossier, moteurs construits), calibration |
 | Vidéo | Agrandissement | liste Agrandissement (Désactivé, Très bas : Anime4K, Bas : ArtCNN, Moyen : AnimeJaNai Performance, Élevé : AnimeJaNai Balanced), restaurer les traits, traits nets (Sharp1) et FP8 grisés hors AnimeJaNai, résolution de travail, netteté. Avancé : filtre de réduction, précision, préparation FP8 (grisée hors FP8) |
-| Vidéo | Interpolation | liste Interpolation (Désactivée, Bas, Moyen, Élevé, Élevé+), coupure si la carte ne suit pas, mode, limite d'images par seconde (curseur jusqu'à l'écran), dessins tenus, warp cubique. Avancé : GMFSS (grisé hors Élevé+), essais, Smooth Motion |
+| Vidéo | Interpolation | liste Interpolation (Désactivée, DistilDRBA v2 lite, RIFE 4.22 lite, RIFE 4.25 : les modèles par leur nom depuis novembre 2026), coupure si la carte ne suit pas, mode, limite d'images par seconde (curseur jusqu'à l'écran), dessins tenus, warp cubique, panoramiques lents stables (RIFE et DistilDRBA). Avancé : essais, Smooth Motion (GMFSS n'y paraît plus qu'à une chaîne qui le joue encore) |
 | Vidéo | HDR | pic de l'écran, blanc des surfaces, flashs. Avancé : grade avant l'interpolation, LUT en une table, peau des visages |
 | Audio | Audio | sortie, délai, calage sur l'écran, latence |
 | Langues | Langues | langues préférées, taille et délai des sous-titres |
@@ -416,13 +416,18 @@ catalogue RIFE (4.22 lite, 4.25 lite…), les 9 profils actuels, les statistique
   finesse d'abord).
 
 #### Tranches (à confirmer par mesure, pas figées)
+
+Interpolation à jour en novembre 2026 (`level_rife_model`, `src/app/play/auto_config.h`) : RIFE 4.22 lite jusqu'à
+Normal, RIFE 4.25 au-dessus ; le banc de l'Auto essaie 4.25 quand 4.22 lite tient. DistilDRBA v2 lite reste un
+choix manuel (`kDistilDrbaInAuto`) ; GMFSS, 4.26 et 4.25 lite ont quitté le menu.
+
 | Tranche | Exemples | Agrandissement | Interpolation (multiplicateur : toujours Auto) |
 |---|---|---|---|
 | **0 · Économe** | iGPU anciens, cartes d'avant 2016 | aucun : on ne réduit pas, on n'agrandit pas | aucune, ou RIFE 4.22 lite ×2 si la mesure le permet |
 | **1 · Léger** | iGPU récents, GTX 10/16, RX 400 à 5000 | SPAN, travail 540p → 1080p | RIFE 4.22 lite |
-| **2 · Normal** | RTX 2060 à 3060, RX 6600 à 7600, Arc, Apple M | SPAN, 720p → 1440p ou écran | RIFE 4.25 lite |
-| **3 · Rapide** | RTX 3070 à 4070, RX 7800 | SPAN, 720p → 1440p | DistilDRBA lite |
-| **4 · Ultra** | RTX 4080 et plus, RX 7900 | SPAN, 720p → 1440p ou 2160p | GMFSS Union (mode Performance) |
+| **2 · Normal** | RTX 2060 à 3060, RX 6600 à 7600, Arc, Apple M | SPAN, 720p → 1440p ou écran | RIFE 4.22 lite |
+| **3 · Rapide** | RTX 3070 à 4070, RX 7800 | SPAN, 720p → 1440p | RIFE 4.25 |
+| **4 · Ultra** | RTX 4080 et plus, RX 7900 | SPAN, 720p → 1440p ou 2160p | RIFE 4.25 |
 
 Valeurs communes : modèle SPAN **Sharp (performance)** partout (ta remarque : pas de différence nette avec
 Balanced, et Sharp convient mieux à l'anime), filtre de réduction **Mitchell** (ou **Hermite** une fois ajouté),
