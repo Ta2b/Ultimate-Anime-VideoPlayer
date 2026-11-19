@@ -228,6 +228,12 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_drba_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_drba_fused(DrbaFusedEngine& engine, std::span<const Tensor> inputs,
                                                   std::span<Tensor> outputs);
+  // TemporalFix coupé en morceaux (tensorrt_tfix_fused.cpp) : l'encodeur ou la fenêtre, selon le manifeste.
+  std::expected<Artifact, Refusal> build_tfix_fused(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_tfix_fused(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_tfix_fused(Engine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée.

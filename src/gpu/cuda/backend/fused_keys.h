@@ -9,6 +9,7 @@
 
 #include "kernels/spec/drba_fused.h"
 #include "kernels/spec/rife_fused.h"
+#include "kernels/spec/tfix_fused.h"
 
 namespace kirari::gpu::cuda {
 
@@ -39,5 +40,18 @@ struct DrbaFusedKey {
 std::string drba_fused_artifact_key(const DrbaFusedKey& key);
 // Rien si la clé est celle d'un autre moteur ou illisible.
 std::optional<DrbaFusedKey> drba_fused_artifact_key_parse(std::string_view text);
+
+// La clé d'un Artifact de TemporalFix fusionné (kernels/spec/tfix_fused.h) : « tfix-fused:<encoder|window>:
+// <h>x<w>:<half 0|1>:<moteur0>,… », la taille étant celle du réseau, les moteurs les fichiers du cache dans
+// l'ordre du manifeste (encodeur ; ou blocs 0 à 2 et tête de confiance).
+struct TfixFusedKey {
+  bool window = true;
+  int height = 0;
+  int width = 0;
+  bool half = false;
+  std::vector<std::string> engines;
+};
+std::string tfix_fused_artifact_key(const TfixFusedKey& key);
+std::optional<TfixFusedKey> tfix_fused_artifact_key_parse(std::string_view text);
 
 }  // namespace kirari::gpu::cuda
