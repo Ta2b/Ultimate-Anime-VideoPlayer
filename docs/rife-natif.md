@@ -1,4 +1,4 @@
-# RIFE natif (`--rife-native`)
+# RIFE natif (le défaut sur NVIDIA, `--no-rife-native` pour l'éteindre)
 
 Novembre 2026. L'encodeur et les convolutions des blocs de RIFE fusionné ([`rife-fusionne.md`](rife-fusionne.md))
 par nos propres noyaux CUDA, à la place des six moteurs TensorRT, ou de ceux d'entre eux qu'ils battent : l'essai au
@@ -137,7 +137,21 @@ par couche). Restent chez eux :
 
 ## Essai au chargement
 
-Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent comme avant (en E/S HWC8). Puis :
+Par défaut sur NVIDIA depuis la séance PC du 19 novembre 2026 (4.25 ×2 en 2,51 ms par passe contre 3,40 pour
+TensorRT, 4.22 lite en 2,95 contre 3,56 ; [`rife-bilan.md`](rife-bilan.md)) ; `--debug --no-rife-native` rend toute
+la chaîne à TensorRT, `--rife-native` reste accepté. Les six moteurs TensorRT se construisent et se chargent comme
+avant (en E/S HWC8).
+
+**Verdict gardé** (`rife_native_verdict.h`) : l'essai complet coûte environ 4,5 s au chargement. Son verdict
+(l'option de chaque morceau, la fin fondue ou à part, la chaîne contre TensorRT en dB) se garde dans le dossier des
+moteurs, un fichier `rife-natif-<empreinte>.verdict` par identité : carte (nom, architecture, UUID), version CUDA
+du pilote, clé d'artefact de la chaîne (taille, variante, warp, plan, noms des moteurs TensorRT), empreinte des
+sources du RIFE natif (`rife_*` et `warp_lib*` du backend, prise à la configuration) et seuil. Au chargement
+suivant, seuls les réseaux du mélange sont réglés, puis la chaîne passe une fois sur la paire de test et doit tenir,
+contre TensorRT, au plus 1 dB sous la valeur du verdict ; sinon la chaîne revient à TensorRT et l'essai complet
+se refait. Un verdict « TensorRT garde tout » se garde aussi. Effacer le fichier refait l'essai.
+
+L'essai complet :
 
 1. **quatre réseaux natifs**, du plus rapide au plus juste : sommes f16 ; f16 et tête f32 ; mixtes et tête f32 ;
    f32. Chaque couche de chacun prend sa forme au banc (`rife_native_bench.cu`) : sur une entrée de valeurs

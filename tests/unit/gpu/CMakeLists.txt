@@ -2,6 +2,7 @@
 kirari_add_unit_tests(gpu
   SOURCES graph_book_test.cpp backend_test.cpp coreml_compiled_test.cpp cuda_fused_keys_test.cpp lanes_test.cpp
     vt_pixels_test.cpp gpu_profile_test.cpp guarded_relay_test.cpp rife_mix_choice_test.cpp
+    rife_native_verdict_test.cpp
   DEPS kirari::media kirari::coreml_pixels kirari::cuda_fused_keys kirari::cuda_rife_mix)
 # A21-04 : guarded_relay_test.cpp lit les en-têtes de la frontière.
 target_compile_definitions(kirari_gpu_tests PRIVATE KIRARI_GPU_SOURCE_DIR="${PROJECT_SOURCE_DIR}/src/gpu")

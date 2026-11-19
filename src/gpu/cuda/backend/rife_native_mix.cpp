@@ -70,6 +70,7 @@ constexpr std::array<RifeNativePrecision, 4> kLadder{{
 }};
 constexpr std::array<const char*, 4> kLadderNames{"f16", "f16 et tête f32", "mixtes et tête f32", "f32"};
 constexpr std::size_t kF32 = 3;
+static_assert(kLadder.size() == static_cast<std::size_t>(rife_verdict::kOptionsMax));
 
 // L'option de chaque morceau : 0 TensorRT, 1 + n le réseau n de kLadder.
 using rife_mix::Options;
@@ -155,16 +156,16 @@ std::expected<void, Refusal> make_pair(Pair& pair, int h, int w, bool motion) {
   return {};
 }
 
-// Un réseau par cran, réglé sur stream ; une couche de mêmes sommes reprend la forme déjà réglée pour un cran
-// d'avant.
+// Un réseau par cran de rungs (indices de kLadder), réglé sur stream ; une couche de mêmes sommes reprend la
+// forme déjà réglée pour un cran d'avant.
 std::expected<std::vector<std::unique_ptr<RifeNativeNet>>, Refusal> ladder_nets(
     const std::vector<RifeNativePiece>& pieces, const std::vector<int>& reduce, int h, int w,
-    cudaStream_t stream) {
+    cudaStream_t stream, const std::vector<std::size_t>& rungs) {
   std::vector<RifeNativeTuned> tuned;
   std::vector<std::unique_ptr<RifeNativeNet>> nets;
-  for (const RifeNativePrecision& precision : kLadder) {
+  for (const std::size_t rung : rungs) {
     std::string error;
-    auto net = RifeNativeNet::create(pieces, reduce, h, w, precision, stream, tuned, error);
+    auto net = RifeNativeNet::create(pieces, reduce, h, w, kLadder[rung], stream, tuned, error);
     if (!net) {
       if (const cudaError_t lost = clear_error(); lost != cudaSuccess)
         return std::unexpected(lost_refusal(lost, "RIFE natif : réglage"));
@@ -195,7 +196,7 @@ void RifeFusedEngine::keep_route(std::vector<int> route, std::int64_t trt_activa
   forget_passes();
 }
 
-std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
+std::expected<RifeFusedEngine::NativeTrial, Refusal> RifeFusedEngine::try_native(
     const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
     double min_db) {
   if (!hwc8_)
@@ -227,7 +228,7 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
   };
   auto nets = ladder_nets(pieces, std::vector<int>(plan_.reduce.begin(), plan_.reduce.begin() + plan_.blocks),
-                          h, w, stream);
+                          h, w, stream, {0, 1, 2, 3});
   if (!nets) return abandon(std::move(nets.error()));
   natives_ = std::move(*nets);
   const double tuning = seconds();
@@ -285,7 +286,7 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
                                 rife_mix::all_trt(fastest)
                                     ? "TensorRT plus rapide sur chaque morceau"
                                     : std::format("aucun mélange ne tient {:.1f} dB", bar)));
-    return lines;
+    return NativeTrial{.lines = std::move(lines), .verdict = {.options = Options(times->size(), 0)}};
   }
   forget_passes();
   auto chain = trial_mix_times(stream, shared, pair.input, pair.outputs, route_of(mix->options));
@@ -308,7 +309,77 @@ std::expected<std::vector<std::string>, Refusal> RifeFusedEngine::try_native(
         std::format("RIFE natif, fin du dernier bloc : fondue {:.3f} ms, à part {:.3f} ms, {} gardée",
                     (*chain)[1], (*chain)[2], separate ? "à part" : "fondue"));
   settle(faster ? route_of(mix->options) : std::vector<int>{}, !separate);
-  return lines;
+  const double trt_db = rife_mix::worst_psnr(*reference, mix->out, plane, motion_);
+  return NativeTrial{.lines = std::move(lines),
+                     .verdict = faster ? rife_verdict::Verdict{mix->options, !separate, trt_db}
+                                       : rife_verdict::Verdict{.options = Options(times->size(), 0)}};
+}
+
+std::expected<RifeFusedEngine::CachedTrial, Refusal> RifeFusedEngine::try_cached(
+    const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
+    const rife_verdict::Verdict& verdict) {
+  if (!hwc8_)
+    return refuse(RefusalCode::FormatUnsupported,
+                  "RIFE natif : blocs TensorRT en plans, le natif lit et écrit X et Y en HWC8");
+  if (verdict.options.size() != static_cast<std::size_t>(plan_.blocks) + 1)
+    return refuse(RefusalCode::ShapeInvalid, "RIFE natif : verdict gardé d'un autre nombre de morceaux");
+  const int h = height_;
+  const int w = width_;
+  const std::int64_t trt_activation = own_activation_;
+  const auto saved_encodes = encodes_;
+  const auto settle = [&](std::vector<int> route, bool fused_end) {
+    keep_route(std::move(route), trt_activation);
+    set_fused_end(fused_end);
+    encodes_ = saved_encodes;
+  };
+  settle({}, true);
+  if (rife_verdict::all_trt(verdict))
+    return CachedTrial{.held = true,
+                       .lines = {std::format("RIFE natif écarté d'après le verdict gardé ({}×{}), TensorRT "
+                                             "garde la chaîne",
+                                             w, h)}};
+  const auto started = std::chrono::steady_clock::now();
+  // Les seuls crans du mélange, dans l'ordre de kLadder ; la route renvoie chaque morceau à son réseau.
+  std::vector<std::size_t> rungs;
+  for (const int o : verdict.options)
+    if (o > 0 && std::ranges::find(rungs, static_cast<std::size_t>(o - 1)) == rungs.end())
+      rungs.push_back(static_cast<std::size_t>(o - 1));
+  std::ranges::sort(rungs);
+  std::vector<int> route(verdict.options.size(), -1);
+  for (std::size_t p = 0; p < route.size(); ++p)
+    if (const int o = verdict.options[p]; o > 0)
+      route[p] = static_cast<int>(std::ranges::find(rungs, static_cast<std::size_t>(o - 1)) - rungs.begin());
+  Pair pair;
+  if (auto ok = make_pair(pair, h, w, motion_); !ok) return std::unexpected(std::move(ok.error()));
+  cudaStream_t stream = pair.scratch.stream;
+  const auto abandon = [&](Refusal refusal) {
+    settle({}, true);
+    return std::unexpected(std::move(refusal));
+  };
+  auto nets = ladder_nets(pieces, std::vector<int>(plan_.reduce.begin(), plan_.reduce.begin() + plan_.blocks),
+                          h, w, stream, rungs);
+  if (!nets) return abandon(std::move(nets.error()));
+  natives_ = std::move(*nets);
+  for (const auto& net : natives_) own_activation_ = std::max(own_activation_, net->workspace_bytes());
+  set_route({});
+  auto reference = trial_output(stream, shared, pair.input, pair.outputs, pair.elements);
+  if (!reference) return abandon(std::move(reference.error()));
+  set_route(route);
+  set_fused_end(verdict.fused_end);
+  auto chain = trial_output(stream, shared, pair.input, pair.outputs, pair.elements);
+  if (!chain) return abandon(std::move(chain.error()));
+  const auto plane = static_cast<std::size_t>(h) * static_cast<std::size_t>(w);
+  const double db = rife_mix::worst_psnr(*reference, *chain, plane, motion_);
+  const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+  const bool held = rife_verdict::still_holds(verdict, db);
+  settle(held ? route : std::vector<int>{}, verdict.fused_end);
+  return CachedTrial{
+      .held = held,
+      .lines = {std::format("RIFE natif {} ({}×{}, {}, fin {} ; chaîne contre TensorRT {:.1f} dB, {:.1f} au "
+                            "verdict ; {} réseau(x) réglé(s), {:.1f} s)",
+                            held ? "repris du verdict gardé" : "du verdict gardé rejeté, essai refait", w, h,
+                            mix_name(verdict.options), verdict.fused_end ? "fondue" : "à part", db,
+                            verdict.trt_db, rungs.size(), seconds)}};
 }
 
 }  // namespace kirari::gpu::cuda

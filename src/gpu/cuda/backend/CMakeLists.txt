@@ -121,6 +121,21 @@ if(KIRARI_TRTEXEC AND EXISTS "${KIRARI_TRTEXEC}")
 endif()
 target_compile_definitions(kirari_backend_tensorrt PRIVATE KIRARI_TRTEXEC_SHA256="${kirari_trtexec_sha256}"
   KIRARI_TRTEXEC_PATH="${kirari_trtexec_path}" $<$<CONFIG:Release>:KIRARI_TRTEXEC_NO_FALLBACK>)
+# L'empreinte des sources du RIFE natif (noyaux, réseau, essai) entre dans l'identité du verdict gardé de son
+# essai (rife_native_verdict.h) : des noyaux changés refont l'essai. Une source modifiée refait la configuration.
+file(GLOB kirari_rife_native_files CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/rife_*"
+  "${CMAKE_CURRENT_SOURCE_DIR}/warp_lib*")
+list(SORT kirari_rife_native_files)
+set(kirari_rife_native_digest "")
+foreach(file ${kirari_rife_native_files})
+  file(SHA256 "${file}" kirari_file_digest)
+  string(APPEND kirari_rife_native_digest "${kirari_file_digest}")
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${file}")
+endforeach()
+string(SHA256 kirari_rife_native_digest "${kirari_rife_native_digest}")
+string(SUBSTRING "${kirari_rife_native_digest}" 0 16 kirari_rife_native_digest)
+set_property(SOURCE tensorrt_rife_fused.cpp APPEND PROPERTY
+  COMPILE_DEFINITIONS KIRARI_RIFE_NATIVE_SOURCES="${kirari_rife_native_digest}")
 set_target_properties(kirari_backend_tensorrt PROPERTIES
   PREFIX "" CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

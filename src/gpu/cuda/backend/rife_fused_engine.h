@@ -27,6 +27,7 @@
 #include "gpu/cuda/backend/fused_graphs.h"
 #include "gpu/cuda/backend/fused_keys.h"
 #include "gpu/cuda/backend/rife_native_net.h"
+#include "gpu/cuda/backend/rife_native_verdict.h"
 #include "gpu/cuda/backend/trt_engine.h"
 #include "kernels/spec/rife_fused.h"
 #include "kernels/spec/warp.h"
@@ -108,9 +109,25 @@ class RifeFusedEngine final : public Engine {
   // journal (temps et dB de chaque morceau, profil des couches, verdict en dernier). Refus (la chaîne reste
   // alors à TensorRT, intacte) : blocs TensorRT en plans, erreur CUDA de l'essai (DeviceLost : contexte
   // perdu).
-  std::expected<std::vector<std::string>, Refusal> try_native(
-      const std::vector<RifeNativePiece>& pieces, const std::shared_ptr<SharedActivations>& shared,
-      double min_db);
+  // Le journal de l'essai, et son verdict à garder sur le disque (rife_native_verdict.h).
+  struct NativeTrial {
+    std::vector<std::string> lines;
+    rife_verdict::Verdict verdict;
+  };
+  std::expected<NativeTrial, Refusal> try_native(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 double min_db);
+  // Le verdict gardé d'un essai précédent, à la place de l'essai : seuls les réseaux de son mélange sont
+  // réglés, et la chaîne rejugée une fois contre TensorRT (rife_verdict::still_holds). held : le verdict est
+  // repris (TensorRT garde tout s'il le disait) ; faux, la chaîne est rendue à TensorRT et l'appelant refait
+  // l'essai. Refus : comme try_native.
+  struct CachedTrial {
+    bool held = false;
+    std::vector<std::string> lines;
+  };
+  std::expected<CachedTrial, Refusal> try_cached(const std::vector<RifeNativePiece>& pieces,
+                                                 const std::shared_ptr<SharedActivations>& shared,
+                                                 const rife_verdict::Verdict& verdict);
   // Un morceau au moins passe par les noyaux natifs.
   bool native() const { return native_on_; }
 
