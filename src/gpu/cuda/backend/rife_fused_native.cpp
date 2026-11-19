@@ -149,16 +149,16 @@ std::expected<void, Refusal> RifeFusedEngine::run_piece(cudaStream_t stream,
         fused_tensor(reinterpret_cast<std::uintptr_t>(base + layout_.encode), 0, 4, height_, width_);
     return encode_->enqueue_plain(stream, arena, std::span(&image, 1), std::span(&encoded, 1));
   }
-  const auto i = static_cast<std::size_t>(piece - 1);
-  if (net != nullptr)
-    return cuda_check(net->block(stream, piece - 1, base + layout_.x[i], base + layout_.y[i], arena->data()),
-                      "RIFE natif : bloc");
-  const kernels::FusedDims x = kernels::rife_fused_x(plan_, piece - 1, height_, width_);
-  const kernels::FusedDims y = kernels::rife_fused_y(plan_, piece - 1, height_, width_);
-  const auto at = [base](std::size_t offset) { return reinterpret_cast<std::uintptr_t>(base + offset); };
-  const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
-  const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
-  return blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1), std::span(&block_out, 1));
+  // Un bloc dont un réseau natif calcule l'entrée à la volée se mesure colle comprise, quelle que soit
+  // l'option : sans elle, TensorRT et un réseau qui ne la refait pas passeraient pour plus rapides.
+  const int b = piece - 1;
+  const auto [encode_a, encode_b] = trial_encodes();
+  const void* const in = fused_address(input);
+  const bool with_glue = std::ranges::any_of(natives_, [b](const auto& n) { return n->glues(b); });
+  if (with_glue && (net == nullptr || !net->glues(b))) {
+    if (auto ok = launch_glue(stream, in, b, base, encode_a, encode_b); !ok) return ok;
+  }
+  return run_block(stream, arena, in, b, base, encode_a, encode_b, net);
 }
 
 }  // namespace kirari::gpu::cuda

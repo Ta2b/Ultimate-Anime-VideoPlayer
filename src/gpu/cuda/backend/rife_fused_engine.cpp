@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <optional>
 #include <utility>
 
 #include "core/utf8_path.h"
@@ -185,10 +186,8 @@ std::expected<void, Refusal> RifeFusedEngine::use_zone(const std::shared_ptr<Sha
   return {};
 }
 
-// L'entrée du bloc block (1 et après) : les flots des blocs d'avant, l'entrée et les deux encodages.
-std::expected<void, Refusal> RifeFusedEngine::launch_glue(cudaStream_t stream, const void* in, int block,
-                                                          std::byte* base, std::size_t encode_a,
-                                                          std::size_t encode_b) {
+FusedGlueParams RifeFusedEngine::glue_params(const void* in, int block, std::byte* base, std::size_t encode_a,
+                                             std::size_t encode_b) const {
   const int h = height_;
   const int w = width_;
   const auto at_ptr = [base](std::size_t offset) { return static_cast<void*>(base + offset); };
@@ -214,7 +213,35 @@ std::expected<void, Refusal> RifeFusedEngine::launch_glue(cudaStream_t stream, c
                       .scale = plan_.reduce[j],
                       .pitch = pitch(yk.channels)};
   }
-  return cuda_check(launch_fused_glue(glue, stream), "fused_glue<<<>>>");
+  return glue;
+}
+
+std::expected<void, Refusal> RifeFusedEngine::launch_glue(cudaStream_t stream, const void* in, int block,
+                                                          std::byte* base, std::size_t encode_a,
+                                                          std::size_t encode_b) {
+  return cuda_check(launch_fused_glue(glue_params(in, block, base, encode_a, encode_b), stream),
+                    "fused_glue<<<>>>");
+}
+
+std::expected<void, Refusal> RifeFusedEngine::run_block(cudaStream_t stream,
+                                                        const std::shared_ptr<SharedActivations>& arena,
+                                                        const void* in, int b, std::byte* base,
+                                                        std::size_t encode_a, std::size_t encode_b,
+                                                        const RifeNativeNet* net) {
+  const auto i = static_cast<std::size_t>(b);
+  if (net != nullptr) {
+    std::optional<FusedGlueParams> glue;
+    if (net->glues(b)) glue = glue_params(in, b, base, encode_a, encode_b);
+    return cuda_check(net->block(stream, b, base + layout_.x[i], base + layout_.y[i], arena->data(),
+                                 glue ? &*glue : nullptr),
+                      "RIFE natif : bloc");
+  }
+  const kernels::FusedDims x = kernels::rife_fused_x(plan_, b, height_, width_);
+  const kernels::FusedDims y = kernels::rife_fused_y(plan_, b, height_, width_);
+  const auto at = [base](std::size_t offset) { return reinterpret_cast<std::uintptr_t>(base + offset); };
+  const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
+  const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
+  return blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1), std::span(&block_out, 1));
 }
 
 std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
@@ -260,7 +287,9 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
   // l'entrée du premier bloc fin, que la colle bâtit sur eux.
   const int first = pass.first_block;
   if (first > 0) {
-    if (auto ok = launch_glue(stream, in, first, base, encode_a, encode_b); !ok) return ok;
+    if (!glued(first)) {
+      if (auto ok = launch_glue(stream, in, first, base, encode_a, encode_b); !ok) return ok;
+    }
   } else {
     const kernels::FusedDims x0 = kernels::rife_fused_x(plan_, 0, h, w);
     if (auto ok = cuda_check(launch_fused_entry({.height = h,
@@ -278,24 +307,10 @@ std::expected<void, Refusal> RifeFusedEngine::run(cudaStream_t stream,
         !ok)
       return ok;
   }
+  // La colle d'un bloc dont le réseau natif calcule l'entrée à la volée ne passe pas : lui la refait.
   for (int b = first; b < plan_.blocks; ++b) {
-    const auto i = static_cast<std::size_t>(b);
-    const kernels::FusedDims x = kernels::rife_fused_x(plan_, b, h, w);
-    const kernels::FusedDims y = kernels::rife_fused_y(plan_, b, h, w);
-    const Tensor block_in = fused_tensor(at(layout_.x[i]), 0, x.channels, x.height, x.width);
-    const Tensor block_out = fused_tensor(at(layout_.y[i]), 0, y.channels, y.height, y.width);
-    if (const RifeNativeNet* net = piece_net(b + 1)) {
-      if (auto ok =
-              cuda_check(net->block(stream, b, at_ptr(layout_.x[i]), at_ptr(layout_.y[i]), arena->data()),
-                         "RIFE natif : bloc");
-          !ok)
-        return ok;
-    } else if (auto ok = blocks_[i]->enqueue_plain(stream, arena, std::span(&block_in, 1),
-                                                   std::span(&block_out, 1));
-               !ok) {
-      return ok;
-    }
-    if (b + 1 < plan_.blocks) {
+    if (auto ok = run_block(stream, arena, in, b, base, encode_a, encode_b, piece_net(b + 1)); !ok) return ok;
+    if (b + 1 < plan_.blocks && !glued(b + 1)) {
       if (auto ok = launch_glue(stream, in, b + 1, base, encode_a, encode_b); !ok) return ok;
     }
   }

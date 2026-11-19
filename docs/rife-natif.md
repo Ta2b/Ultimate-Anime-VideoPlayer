@@ -4,7 +4,8 @@ Novembre 2026. L'encodeur et les convolutions des blocs de RIFE fusionné ([`rif
 par nos propres noyaux CUDA, à la place des six moteurs TensorRT, ou de ceux d'entre eux qu'ils battent : l'essai au
 chargement choisit morceau par morceau. La colle entre blocs, les warps et la fin
 (`rife_fused_kernels.cu`, `warp_lib`) ne changent pas : le natif lit et écrit les mêmes tampons, dans les mêmes
-formats (X et Y en HWC8), sans reformatage. L'encodage d'une image reste calculé une fois pour deux paires, le tri
+formats (X et Y en HWC8), sans reformatage. Seule exception, la colle du dernier bloc en pleine résolution : sa
+première couche native la refait à la volée (plus bas). L'encodage d'une image reste calculé une fois pour deux paires, le tri
 des paires, l'Auto et `held_pair` ne voient aucune différence.
 
 Cible : RIFE 4.25 ×2 sur la RTX 4070 Ti à 23 % d'occupation ou moins (environ 5,3 ms par image créée), contre 30 %
@@ -27,7 +28,8 @@ Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif (`/mnt
 
 `src/gpu/cuda/backend/rife_native_kernels.cuh` (une famille de convolutions), `rife_native_pick.cu` (les formes
 instanciées et les formes à essayer), `rife_native_weights.cu` (poids repliés, rangés en fragments B),
-`rife_native_layer.h` et `rife_native_bench.cu` (une couche, le banc du réglage), `rife_native_net.cu` (le réseau),
+`rife_native_layer.h` et `rife_native_bench.cu` (une couche, le banc du réglage), `rife_native_glue.cu` (la
+première couche du dernier bloc, entrée calculée à la volée par la colle de `rife_glue.cuh`), `rife_native_net.cu` (le réseau),
 `rife_native_trial.cpp` (l'essai morceau par morceau), `rife_native_mix.cpp` (le choix du mélange),
 `rife_fused_native.cpp` (la chaîne pour l'essai), `prepare/rife_native.h` (les poids lus dans les morceaux ONNX).
 
@@ -47,6 +49,25 @@ instanciées et les formes à essayer), `rife_native_weights.cu` (poids repliés
   au pas 56 ; celle de l'encodeur (4 canaux) en une convolution 3 × 3 à 16 sorties (phase · 4 + canal) qui écrit
   les quatre plans d'encodage ;
 - **première couche de l'encodeur** lue dans les trois plans de l'image d'entrée, sans copie ;
+- **entrée du dernier bloc à la volée** (`rife_native_glue.cu`). En pleine résolution (d = 1), X du dernier bloc
+  pèse 64 octets par pixel, soit 134 Mo en 1920 × 1088 : la colle l'écrivait, sa première couche le relisait
+  (0,363 ms à elle seule sur la 4070 Ti, à 75 % de la bande passante). Cette couche, une 3 × 3 de pas 2 de 32
+  canaux (28 utiles) vers 16, calcule maintenant X sur sa tuile d'entrée (65 × 9 pixels pour 32 × 4 sorties) :
+  - elle relève les Y des blocs précédents comme la colle, puis appelle les mêmes fonctions qu'elle
+    (`rife_glue.cuh`), donc les mêmes arrondis ;
+  - elle somme ensuite comme la forme 16/16 d'une ligne par warp : même tuile, même ordre ;
+  - X tient en deux tranches de 16 canaux, calculées l'une après l'autre ; la seconde refait le flot, peu
+    coûteux. Cela donne 28 Ko de tuile et au plus 15 Ko de relèvement, pour deux blocs par multiprocesseur ;
+  - seul le flot accumulé (8 octets par pixel) part dans X, pour la fin ; chaque pixel l'est une seule fois,
+    par la tuile qui le possède (vérifié hors carte de 2 × 2 à 300 × 257).
+
+  Le trafic attendu tombe de 268 Mo (écrire X, puis le relire) à environ 75 Mo (les images et les encodages
+  warpés, le flot, la sortie de la couche). La colle du dernier bloc ne passe plus quand un réseau natif fait ce
+  bloc. Le relèvement réserve, par source d'échelle s, au plus `glue_capacity(s)` pixels de Y. Cette borne est
+  vérifiée sur 11 millions de tuiles (tailles de 32 à 2176 lignes, échelles 1 à 32) et atteinte sans être
+  dépassée. La colle de TensorRT appelle les mêmes fonctions : sa SASS ne change que par l'arithmétique
+  d'adresses, avec les mêmes opérations flottantes. Il existe 12 noyaux (sommes × 3 ou 4 blocs d'avant × tuile 16
+  ou 32), à 160 registres au plus (sm_120), sans débordement ;
 - **pas 2 sans conflit de banques** : la tuile d'entrée est rangée colonnes paires puis impaires, les 16 lignes
   d'un `ldmatrix` restent des pixels voisins (au pas 2 brut, deux lignes tombaient sur les mêmes banques) ;
 - **fragments B préchargés** : les poids du pas k suivant se lisent pendant les mma du pas courant ;
@@ -116,8 +137,10 @@ Sous `--rife-native`, les six moteurs TensorRT se construisent et se chargent co
 3. **chaque morceau seul** (l'encodeur sur l'image A, chaque bloc sur le X_k que TensorRT a laissé dans la zone),
    par TensorRT et par chaque réseau (`rife_native_trial.cpp`) : sa sortie contre celle de TensorRT, en dB, et son
    temps (un graphe de deux passes, cinq tours intercalés, la médiane ; ces passes lancées une à une si la
-   capture est refusée, ce que le journal dit). Le profil couche par couche du réseau f16 va au journal ; un
-   profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
+   capture est refusée, ce que le journal dit). Le dernier bloc, quand un réseau natif prend son entrée à la
+   volée, se mesure colle comprise pour chaque option (TensorRT : la colle puis le moteur), et la sortie de
+   TensorRT de chaque morceau reprend sa place après ses réseaux : la colle en relit les Y. Le profil couche par
+   couche du réseau f16 va au journal ; un profil qui échoue n'y laisse qu'une ligne, l'essai continue ;
 4. **le mélange** (`rife_native_mix.cpp`). Un morceau peut prendre TensorRT ou un réseau plus rapide que lui.
    L'effet de chacune de ces options est mesuré sur la chaîne entière, ce morceau seul en natif : l'erreur
    quadratique de la sortie contre TensorRT (images au pic 1 ; flot au pic de son plus grand écart, masque à
@@ -173,7 +196,7 @@ l'ancien mélange (corrigé, point 4) ; les couches de 60 × 34 pixels des blocs
 pour TensorRT (formes « poids à l'avance », point 1) ; la première convolution du bloc 4 relit X_4 en pleine
 taille (1920 × 1088 × 32 canaux, 134 Mo, 0,363 ms, environ 75 % de la bande passante), que la colle vient
 d'écrire : la calculer à la volée depuis les sources de la colle épargnerait les deux transferts, de l'ordre de
-0,4 ms par passe (le chantier suivant).
+0,4 ms par passe (fait ensuite : « entrée du dernier bloc à la volée », plus haut).
 
 Une valeur non finie d'un côté ou de l'autre (référence TensorRT comprise) écarte le natif. Un essai qui fait
 perdre le contexte CUDA (accès fautif d'un noyau) fait échouer le chargement au lieu de rendre une chaîne
@@ -182,6 +205,27 @@ diffusion d'ONNX lirait autrement que les noyaux : un bêta ou une pente de form
 largeur), une transposée qui porte `output_shape`.
 
 ## État
+
+**En pause (19 novembre 2026, à la demande de Tatoub ; ne reprendre qu'avec son accord).** Le mélange de #919 et
+#942 est fusionné et reste tel quel (retenu sur 4.25 et 4.22 lite, toujours derrière `--rife-native`). La branche
+`claude/project-thread-i22zy2` garde, sans PR, l'entrée du dernier bloc à la volée, écrite et vérifiée hors
+carte :
+
+- nvcc sm_75, 86, 89 et 120 sans débordement ; g++ strict, clang-tidy, format, complexité et règles de la CI ;
+- l'émulateur processeur du code CUDA tel quel (fibres par fil, mma, ldmatrix et cp.async émulés ; ses sources et
+  leur mode d'emploi dans `/mnt/project-files/chantier-natif/rife-natif-emu/`) : sortie et flot écrit dans X
+  identiques au bit à l'ancien chemin (colle puis convolution 16/16), sommes f16, mixtes et f32, 8 cas
+  synthétiques et les vrais poids et tenseurs de 4.22 lite et 4.25 ; trois mutations du noyau sont détectées ;
+- contre onnxruntime en f32 (paire de l'essai, 1024 × 576) : première convolution du dernier bloc à 76,9 à
+  81,4 dB, X à 70 dB ou plus par groupe de canaux, quand la grille du graphe est donnée en f32 exact. Avec la
+  grille FP16 de l'entrée v1, les warps du graphe tombent à 51-55 dB du calcul exact : l'écart de la grille FP32
+  de la colle (A03-20), pas une erreur.
+
+Reste, dans l'ordre : PR et relecture sévère, fusion ; mesure sur le PC (le temps d'une passe, environ 0,4 ms
+de moins attendu), après les chantiers qui n'ont pas passé leur porte ; puis les blocs 0 à 2 (couches de
+60 × 34 à 17 µs contre 13 pour TensorRT : formes, réglage). Sur 4.22 lite, natif f32 et TensorRT ne sont qu'à
+43,5 dB l'un de l'autre : l'encodeur seul en f32 sort à 79,6 dB de TensorRT mais la chaîne en fait 43,8 dB ; la
+référence f32 n'est donc pas fautive, la chaîne du lite amplifie l'écart de son encodeur (à expliquer).
 
 Écrit et compilé (nvcc 13.5, sm_75, 86, 89, 120, `--warn-on-spills -Werror`, aucun débordement de registres),
 relu, jamais lancé sur une carte : la justesse se juge à l'essai au chargement, la vitesse à la séance finale.

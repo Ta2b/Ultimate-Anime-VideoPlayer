@@ -31,10 +31,12 @@ constexpr int pad8(int c) {
 }
 
 // Où un morceau lit et ce qu'il doit écrire : entrée ih × iw à in_ld canaux par pixel (0 : l'image en plans),
-// sortie attendue out_h × out_w (celle de la transposée).
+// sortie attendue out_h × out_w (celle de la transposée) ; glue_scales : pour le dernier bloc en pleine
+// résolution, les échelles des blocs d'avant, dont la colle peut se refaire à la volée (vide sinon).
 struct Entry {
   int ih = 0, iw = 0, in_ld = 0, out_h = 0, out_w = 0;
   bool encoder = false;
+  std::vector<int> glue_scales;
 };
 
 class Net final : public RifeNativeNet {
@@ -82,7 +84,8 @@ class Net final : public RifeNativeNet {
       layer.sums = last ? precision_.head : precision_.body;
       rn::Dense dense;
       const Tuning tuning{.piece = index, .layer = static_cast<int>(i), .bench = bench, .tuned = tuned};
-      if (!build(conv, layer, last, dense, error) || !tune(tuning, conv, dense, layer, error)) {
+      if (!build(conv, layer, last, dense, error) || !tune(tuning, conv, dense, layer, error) ||
+          (i == 0 && !glue_layer(layer, dense, at.glue_scales, error))) {
         error = "couche " + std::to_string(i) + " : " + error;
         return false;
       }
@@ -101,13 +104,17 @@ class Net final : public RifeNativeNet {
   }
 
   std::int64_t workspace_bytes() const override { return 2 * peak_ + partial_; }
-  RifeNativePrecision precision() const override { return precision_; }
 
   cudaError_t encode(cudaStream_t stream, const void* image, void* encoded, void* workspace) const override {
-    return run(stream, 0, image, encoded, workspace, {});
+    return run(stream, 0, image, encoded, workspace, {}, nullptr);
   }
-  cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const override {
-    return run(stream, static_cast<std::size_t>(k) + 1, x, y, workspace, {});
+  cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace,
+                    const FusedGlueParams* glue) const override {
+    return run(stream, static_cast<std::size_t>(k) + 1, x, y, workspace, {}, glue);
+  }
+  bool glues(int k) const override {
+    const auto piece = static_cast<std::size_t>(k) + 1;
+    return k >= 0 && piece < pieces_.size() && !pieces_[piece].empty() && pieces_[piece][0].glue != nullptr;
   }
   int layers(int piece) const override {
     return piece >= 0 && static_cast<std::size_t>(piece) < pieces_.size()
@@ -115,14 +122,19 @@ class Net final : public RifeNativeNet {
                : 0;
   }
   cudaError_t profile(cudaStream_t stream, int piece, const void* in, void* out, void* workspace,
-                      std::span<const cudaEvent_t> marks) const override {
+                      std::span<const cudaEvent_t> marks, const FusedGlueParams* glue) const override {
     if (piece < 0 || marks.size() != static_cast<std::size_t>(layers(piece)) + 1)
       return cudaErrorInvalidValue;
-    return run(stream, static_cast<std::size_t>(piece), in, out, workspace, marks);
+    return run(stream, static_cast<std::size_t>(piece), in, out, workspace, marks, glue);
   }
   std::string layer_label(int piece, int i) const override {
     if (i < 0 || i >= layers(piece)) return "?";
     const Layer& l = pieces_[static_cast<std::size_t>(piece)][static_cast<std::size_t>(i)];
+    if (l.glue != nullptr)
+      return "3×3 pas 2 " + std::to_string(l.cin) + "→" + std::to_string(l.cout) + " sur " +
+             std::to_string(l.ow) + "×" + std::to_string(l.oh) +
+             ", entrée calculée à la volée (colle), tranche 16, tuile " + std::to_string(l.cout) +
+             ", 1 ligne par warp, sommes " + rn::sums_name(l.sums);
     static constexpr const char* kKinds[] = {"3×3", "3×3 pas 2", "image 3×3 pas 2", "transposée",
                                              "transposée en plans"};
     return std::string(kKinds[static_cast<int>(l.kind)]) + " " + std::to_string(l.cin) + "→" +
@@ -172,6 +184,21 @@ class Net final : public RifeNativeNet {
   bool upload_weights(rn::Buffer& to, const rn::Dense& dense, int ct, std::string& error) const {
     const std::vector<std::uint32_t> packed = rn::packed_weights(dense, ct);
     return sent(to.upload(packed.data(), packed.size() * sizeof(std::uint32_t), loading_), error);
+  }
+
+  // La première couche du dernier bloc en pleine résolution (scales : les échelles des blocs d'avant, vide
+  // sinon) : son noyau à entrée calculée, s'il en est un pour ses sommes et ses canaux (X de 28 canaux, 32
+  // rangés ; une convolution de pas 2 sans résiduel, toute en une tuile), et ses poids rangés pour lui.
+  bool glue_layer(Layer& layer, const rn::Dense& dense, const std::vector<int>& scales,
+                  std::string& error) const {
+    if (scales.empty() || layer.kind != Kind::kHalf || layer.cin != 32 || layer.residual) return true;
+    layer.glue = rn::pick_glue(layer.sums, static_cast<int>(scales.size()), layer.cout);
+    if (layer.glue == nullptr) return true;
+    layer.glue_scales = scales;
+    layer.glue_grid = dim3(static_cast<unsigned>((layer.ow + rn::kTW - 1) / rn::kTW),
+                           static_cast<unsigned>((layer.oh + rn::kWarps - 1) / rn::kWarps), 1U);
+    layer.glue_smem = rn::glue_smem(scales);
+    return upload_weights(layer.glue_w, dense, layer.cout, error);
   }
 
   static bool same_shape(const Config& a, const Config& b) {
@@ -248,10 +275,12 @@ class Net final : public RifeNativeNet {
   }
 
   // Les couches d'un morceau ; marks (vide hors profil) : un événement avant la première et après chacune.
+  // glue : la colle de la première couche (block), qui doit alors savoir la refaire (rn::glue_fits).
   cudaError_t run(cudaStream_t stream, std::size_t piece, const void* in, void* out, void* workspace,
-                  std::span<const cudaEvent_t> marks) const {
-    if (piece >= pieces_.size()) return cudaErrorInvalidValue;
+                  std::span<const cudaEvent_t> marks, const FusedGlueParams* glue) const {
+    if (piece >= pieces_.size() || pieces_[piece].empty()) return cudaErrorInvalidValue;
     const std::vector<Layer>& layers = pieces_[piece];
+    if (glue != nullptr && !rn::glue_fits(layers[0], *glue)) return cudaErrorInvalidValue;
     auto* ws = static_cast<std::uint8_t*>(workspace);
     __half* const buffers[2] = {reinterpret_cast<__half*>(ws), reinterpret_cast<__half*>(ws + peak_)};
     auto* const partial = reinterpret_cast<float*>(ws + 2 * peak_);
@@ -263,7 +292,14 @@ class Net final : public RifeNativeNet {
     const __half* from = static_cast<const __half*>(in);
     for (std::size_t i = 0; i < layers.size() && result == cudaSuccess; ++i) {
       __half* to = i + 1 == layers.size() ? static_cast<__half*>(out) : buffers[i % 2];
-      rn::enqueue(layers[i], stream, rn::params(layers[i], from, to, partial, layers[i].w.as<const void>()));
+      if (i == 0 && glue != nullptr) {
+        const Layer& l = layers[0];
+        l.glue(l.glue_grid, l.glue_smem, stream, rn::params(l, from, to, partial, l.glue_w.as<const void>()),
+               *glue);
+      } else {
+        rn::enqueue(layers[i], stream,
+                    rn::params(layers[i], from, to, partial, layers[i].w.as<const void>()));
+      }
       from = to;
       result = mark(i + 1);
     }
@@ -295,7 +331,13 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativ
     return nullptr;
   }
   auto net = std::make_unique<Net>(precision, stream);
-  const Entry image{.ih = height, .iw = width, .in_ld = 0, .out_h = height, .out_w = width, .encoder = true};
+  const Entry image{.ih = height,
+                    .iw = width,
+                    .in_ld = 0,
+                    .out_h = height,
+                    .out_w = width,
+                    .encoder = true,
+                    .glue_scales = {}};
   if (!net->plan(pieces[0], image, bench, tuned, error)) {
     error = "encodeur : " + error;
     return nullptr;
@@ -303,12 +345,15 @@ std::unique_ptr<RifeNativeNet> RifeNativeNet::create(const std::vector<RifeNativ
   for (std::size_t k = 0; k < reduce.size(); ++k) {
     const int d = reduce[k];
     const int channels = k == 0 ? 15 : 28;
-    const Entry at{.ih = height / d,
-                   .iw = width / d,
-                   .in_ld = pad8(channels),
-                   .out_h = height / (2 * d),
-                   .out_w = width / (2 * d),
-                   .encoder = false};
+    Entry at{.ih = height / d,
+             .iw = width / d,
+             .in_ld = pad8(channels),
+             .out_h = height / (2 * d),
+             .out_w = width / (2 * d),
+             .encoder = false,
+             .glue_scales = {}};
+    if (k > 0 && k + 1 == reduce.size() && d == 1)
+      at.glue_scales.assign(reduce.begin(), reduce.begin() + static_cast<std::ptrdiff_t>(k));
     if (!net->plan(pieces[k + 1], at, bench, tuned, error)) {
       error = "bloc " + std::to_string(k) + " : " + error;
       return nullptr;

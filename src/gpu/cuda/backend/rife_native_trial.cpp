@@ -8,6 +8,7 @@
 #include <format>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <utility>
 
 #include "gpu/cuda/backend/cuda_status.h"
@@ -113,6 +114,9 @@ std::expected<std::vector<std::vector<double>>, Refusal> RifeNativeTrial::qualit
       if (!got) return std::unexpected(std::move(got.error()));
       db[static_cast<std::size_t>(p)].push_back(psnr(*want, *got));
     }
+    // La sortie de TensorRT reprend sa place : la colle d'un bloc suivant mesuré colle comprise la lit.
+    if (auto ok = engine_.run_piece(stream_, shared_, input_, p, nullptr); !ok)
+      return std::unexpected(std::move(ok.error()));
   }
   return db;
 }
@@ -230,10 +234,19 @@ std::expected<std::vector<std::string>, Refusal> RifeNativeTrial::profile_piece(
   // Les marques enregistrées dans un graphe (nœuds d'événement) : les couches se suivent comme en lecture.
   const Io at = io(p);
   shared_->used(&engine_, net.workspace_bytes());
+  // Un bloc dont ce réseau calcule l'entrée à la volée : sa première couche la refait depuis la colle.
+  std::optional<FusedGlueParams> glue;
+  if (p > 0 && net.glues(p - 1)) {
+    const auto [encode_a, encode_b] = engine_.trial_encodes();
+    glue = engine_.glue_params(fused_address(input_), p - 1,
+                               static_cast<std::byte*>(shared_->data()) + engine_.scratch_offset_, encode_a,
+                               encode_b);
+  }
   cudaGraph_t graph = nullptr;
   cudaError_t e = cudaStreamBeginCapture(stream_, cudaStreamCaptureModeThreadLocal);
   if (e == cudaSuccess) {
-    const cudaError_t queued = net.profile(stream_, p, at.in, at.out, shared_->data(), handles);
+    const cudaError_t queued =
+        net.profile(stream_, p, at.in, at.out, shared_->data(), handles, glue ? &*glue : nullptr);
     e = cudaStreamEndCapture(stream_, &graph);
     if (queued != cudaSuccess) e = queued;
   }

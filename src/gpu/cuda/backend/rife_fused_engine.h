@@ -20,6 +20,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gpu/backend.h"
@@ -132,8 +133,29 @@ class RifeFusedEngine final : public Engine {
   // La chaîne, lancée ou capturée selon l'appelant.
   std::expected<void, Refusal> run(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                    const Tensor& input, std::span<const Tensor> outputs, const Pass& pass);
+  // La colle du bloc block (1 et après), de in (l'entrée), des encodages aux décalages encode_a et encode_b
+  // et des Y des blocs d'avant vers X_block.
+  FusedGlueParams glue_params(const void* in, int block, std::byte* base, std::size_t encode_a,
+                              std::size_t encode_b) const;
   std::expected<void, Refusal> launch_glue(cudaStream_t stream, const void* in, int block, std::byte* base,
                                            std::size_t encode_a, std::size_t encode_b);
+  // Le bloc b, de X_b vers Y_b, par net (natif) ou par TensorRT (net nul). Un réseau qui calcule l'entrée de
+  // b à la volée (glues) la refait depuis la colle ; sa colle seule n'a alors pas à passer avant lui.
+  std::expected<void, Refusal> run_block(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
+                                         const void* in, int b, std::byte* base, std::size_t encode_a,
+                                         std::size_t encode_b, const RifeNativeNet* net);
+  // Les encodages de A et de B pendant l'essai (run_piece) : trial_output encode les deux images, A au
+  // premier emplacement, B au second.
+  std::pair<std::size_t, std::size_t> trial_encodes() const {
+    const std::size_t bytes =
+        std::size_t{4} * static_cast<std::size_t>(height_) * static_cast<std::size_t>(width_) * 2U;
+    return {layout_.encode, layout_.encode + bytes};
+  }
+  // Un réseau natif de piece_net(b + 1) calcule-t-il l'entrée du bloc b à la volée ?
+  bool glued(int b) const {
+    const RifeNativeNet* net = piece_net(b + 1);
+    return net != nullptr && net->glues(b);
+  }
   std::expected<void, Refusal> enqueue_chain(cudaStream_t stream,
                                              const std::shared_ptr<SharedActivations>& arena,
                                              std::span<const Tensor> inputs, std::span<const Tensor> outputs,
@@ -164,7 +186,8 @@ class RifeFusedEngine final : public Engine {
                                                           std::span<const Tensor> outputs,
                                                           std::span<const std::vector<int>> routes);
   // Le morceau piece seul (0 : l'encodeur sur l'image A de input, vers le premier emplacement d'encodage ;
-  // 1 + k : le bloc k, du X_k de la zone vers Y_k) par net, ou par TensorRT si net est nul.
+  // 1 + k : le bloc k, du X_k de la zone vers Y_k) par net, ou par TensorRT si net est nul. Un bloc dont un
+  // réseau natif calcule l'entrée à la volée passe, par chaque option, colle comprise.
   std::expected<void, Refusal> run_piece(cudaStream_t stream, const std::shared_ptr<SharedActivations>& arena,
                                          const Tensor& input, int piece, const RifeNativeNet* net);
   void forget_passes();
