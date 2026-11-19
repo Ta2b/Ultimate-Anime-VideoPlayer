@@ -27,9 +27,10 @@ struct ModelSource {
   std::vector<std::byte> graph;
   OnnxSummary summary;
   OnnxInput input;  // l'entrée nommée du graphe ; la première s'il les a toutes statiques ou jumelles
-  // Les autres entrées libres de même forme qu'input (les sept images de la stabilisation temporelle,
-  // prepare/onnx_frames.h) : le profil de construction leur donne les formes d'input.
-  std::vector<std::string> twins;
+  // Les autres entrées libres de même forme qu'input, au nombre de canaux près (les sept images de la
+  // stabilisation temporelle, prepare/onnx_frames.h, et leurs traits gardés, prepare/onnx_cache.h) : le
+  // profil de construction leur donne les formes d'input, chacune avec ses canaux.
+  std::vector<ShapeTwin> twins;
   std::string content_key;  // onnx_source_key : graphe et poids externes
 };
 

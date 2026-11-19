@@ -120,26 +120,38 @@ std::expected<std::vector<std::byte>, Refusal> read_onnx_bytes(const std::filesy
 
 namespace {
 
+// Deux entrées jumelles : mêmes dimensions, libres comprises, au nombre de canaux près s'il est fixé des deux
+// côtés (les traits gardés de la stabilisation temporelle à côté de ses images, prepare/onnx_cache.h).
+bool twin_dims(const OnnxInput& a, const OnnxInput& b) {
+  if (a.dims.size() != b.dims.size()) return false;
+  for (std::size_t i = 0; i < a.dims.size(); ++i) {
+    if (a.dims[i] == b.dims[i]) continue;
+    if (i != 1 || a.dims[i] <= 0 || b.dims[i] <= 0) return false;
+  }
+  return true;
+}
+
 // L'entrée qui donne les formes : celle du nom donné ; sinon la première d'un graphe aux entrées toutes
-// statiques (DistilDRBA, ses tailles fixées par onnx_dims : pas de profil), ou toutes jumelles (mêmes
-// dimensions, libres comprises : les autres suivent son profil).
+// statiques (DistilDRBA, ses tailles fixées par onnx_dims : pas de profil), ou toutes jumelles (les autres
+// suivent son profil).
 std::vector<OnnxInput>::const_iterator shape_input(const std::vector<OnnxInput>& inputs,
                                                    std::string_view input_name) {
   const auto named = std::ranges::find(inputs, input_name, &OnnxInput::name);
   if (named != inputs.end() || inputs.empty()) return named;
   const bool all_static = std::ranges::all_of(inputs, &OnnxInput::is_static);
   const bool all_twins = inputs.size() > 1 && std::ranges::all_of(inputs, [&](const OnnxInput& i) {
-                           return i.dims == inputs.front().dims && i.elem_type == inputs.front().elem_type;
+                           return twin_dims(i, inputs.front()) && i.elem_type == inputs.front().elem_type;
                          });
   return all_static || all_twins ? inputs.begin() : inputs.end();
 }
 
-// Les autres entrées libres de mêmes dimensions que input (ModelSource::twins).
-std::vector<std::string> twins_of(const std::vector<OnnxInput>& inputs, const OnnxInput& input) {
-  std::vector<std::string> twins;
+// Les autres entrées libres jumelles de input, avec leurs canaux (ModelSource::twins).
+std::vector<ShapeTwin> twins_of(const std::vector<OnnxInput>& inputs, const OnnxInput& input) {
+  std::vector<ShapeTwin> twins;
   if (input.is_static()) return twins;
   for (const OnnxInput& each : inputs) {
-    if (each.name != input.name && each.dims == input.dims) twins.push_back(each.name);
+    if (each.name != input.name && twin_dims(each, input))
+      twins.push_back(ShapeTwin{.name = each.name, .channels = each.dims.size() > 1 ? each.dims[1] : 0});
   }
   return twins;
 }
@@ -204,7 +216,7 @@ std::expected<ModelSource, Refusal> read_model(const gpu::ModelSpec& model, std:
     if (auto ok = check_precision(model, each); !ok) return std::unexpected(ok.error());
   }
   OnnxInput named = *input;
-  std::vector<std::string> twins = twins_of(summary->inputs, named);
+  std::vector<ShapeTwin> twins = twins_of(summary->inputs, named);
   return ModelSource{.graph = std::move(*graph),
                      .summary = std::move(*summary),
                      .input = std::move(named),
