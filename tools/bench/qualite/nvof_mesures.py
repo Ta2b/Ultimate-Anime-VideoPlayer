@@ -226,6 +226,73 @@ def photo_residual(a, b, affine, decor, grid, height):
     return float(np.median(np.hypot(d[0], d[1])[valid]) / (height / 720.0)), int(valid.sum())
 
 
+def refine_affine(a, b, affine, decor, grid, height):
+    """Affinage sous-pixel de l'affine NVOF par Lucas-Kanade global (Gauss-Newton sur les 6 paramètres) sur les pixels
+    des blocs de décor : 3 pas sur les images floutées en 7 × 7 (portée), puis 3 en 3 × 3 (précision). Les pixels qui
+    s'écartent (personnage dans un bloc de décor, occlusion) sont amortis à la Huber. Rend la nouvelle affine."""
+    h, w = a.shape
+    ch, cw = decor.shape
+    y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+    xn = (x - grid / 2 - 0.5 * cw * grid) / (cw * grid)
+    yn = (y - grid / 2 - 0.5 * ch * grid) / (ch * grid)
+    mask = np.repeat(np.repeat(decor, grid, 0), grid, 1)[:h, :w]
+    if mask.sum() < 1000:
+        return list(affine)
+    phi = [np.ones(int(mask.sum()), np.float32), xn[mask], yn[mask]]
+    p = np.array(affine, np.float64)
+    for radius, steps in ((3, 3), (1, 3)):
+        fa, fb = box(a.astype(np.float32), radius).astype(np.float32), box(b.astype(np.float32), radius).astype(np.float32)
+        for _ in range(steps):
+            m = model_at_pixels(p, grid, ch, cw, h, w)
+            warped = sample(fb, x + m[0], y + m[1])
+            gx, gy = np.zeros_like(warped), np.zeros_like(warped)
+            gx[:, 1:-1] = (warped[:, 2:] - warped[:, :-2]) / 2
+            gy[1:-1] = (warped[2:] - warped[:-2]) / 2
+            e = (fa - warped)[mask]
+            J = np.stack([gx[mask] * f for f in phi] + [gy[mask] * f for f in phi], 1).astype(np.float64)
+            c = 2.5 * 1.4826 * max(float(np.median(np.abs(e))), 0.25)
+            wt = np.minimum(1.0, c / np.maximum(np.abs(e), 1e-6))
+            H = (J * wt[:, None]).T @ J
+            if np.linalg.cond(H) > 1e8:
+                return list(p)
+            p += np.linalg.solve(H, (J * wt[:, None]).T @ e)
+    return list(p)
+
+
+def decor_of(flow, textured, affine, grid, height):
+    """Blocs de décor pour une affine donnée, au seuil de camera() (3 MAD, entre 0,75 et 2 px à 720p) : (masque, part)."""
+    _, ch, cw = flow.shape
+    k = height / 720.0
+    m = model_at_pixels(affine, grid, ch, cw, ch * grid, cw * grid)[:, grid // 2::grid, grid // 2::grid][:, :ch, :cw]
+    r = np.hypot(flow[0] - m[0], flow[1] - m[1])[textured]
+    near = r[r < 2 * k]
+    thr = np.clip(3 * 1.4826 * np.median(near) if near.size else 2 * k, 0.75 * k, 2 * k)
+    decor = np.zeros((ch, cw), bool)
+    decor[textured] = r < thr
+    return decor, float((r < thr).mean()) if r.size else 0.0
+
+
+def variants(a, b, flow, cost, cls, grid, height, fit):
+    """Les pistes de la porte 2.1 sur une paire, chacune jugée comme la porte (résidu sur l'image, part du décor) :
+    nvof (l'affine NVOF), traits (ajustée sur les blocs de traits seuls, sans le grain), lk (l'affine NVOF affinée
+    par Lucas-Kanade global, décor repris avec elle). Rend {nom: {residu_px, part_decor, affine}} et le masque de
+    décor de lk, pour le lissage."""
+    out = {}
+    if fit is not None:
+        out["nvof"] = {k: fit[2][k] for k in ("residu_px", "part_decor", "affine")}
+    lines = fit_pair(a, b, flow, cost, cls == 1, grid, height)
+    if lines is not None:
+        out["traits"] = {k: lines[2][k] for k in ("residu_px", "part_decor", "affine")}
+    decor = None
+    if fit is not None:
+        refined = refine_affine(a, b, fit[2]["affine"], fit[1], grid, height)
+        decor, share = decor_of(flow, cls != 0, refined, grid, height)
+        photo, _ = photo_residual(a, b, refined, decor, grid, height)
+        out["lk"] = {"residu_px": photo if photo is not None else float("inf"), "part_decor": share,
+                     "affine": [float(v) for v in refined]}
+    return out, decor
+
+
 def fit_pair(a, b, flow, cost, textured, grid, height):
     """camera() puis l'écart mesuré sur l'image (residu_px, celui de la porte). Sans tuile mesurable, residu_px
     reprend l'écart des vecteurs (residu_flux_px) et tuiles_mesurees vaut 0."""
