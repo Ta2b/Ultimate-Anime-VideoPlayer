@@ -142,6 +142,9 @@ struct PlayOptions {
   // Les plans de la pré-analyse donnent les coupes de l'interpolation (RIFE ne fait plus que signaler les
   // désaccords) ; --no-shot-cuts les coupe.
   bool shot_cuts = true;  // par défaut (désaccords jugés à l'image)
+  // --shot-plan, essai : l'Auto plan par plan (shot_plan.h). DistilDRBA chargé avec RIFE, l'un ou l'autre
+  // selon le rythme de chaque plan lu par la pré-analyse ; TemporalFix sauté sur les plans sans grain.
+  bool shot_plan = false;
   // --anime-shots (méga plan A2, actif par défaut) : en sortie SDR, la méthode « HDR anime » décide par plan
   // : exposition des surfaces et marge des éclats fixées par la pré-analyse, glissant hors des coupes
   // (anime_shots.h) ; --no-anime-shots garde le relèvement fixe. Sans effet en sortie HDR

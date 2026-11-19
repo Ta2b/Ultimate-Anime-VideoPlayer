@@ -15,12 +15,14 @@
 
 #include "core/thread.h"
 #include "core/thread_role.h"
+#include "kernels/spec/frame_stats.h"
 #include "media/demuxer.h"
 #include "media/face_skin.h"
 #include "media/flash_guard.h"
 #include "media/log.h"
 #include "media/probe_flow.h"
 #include "media/shot_probe_steps.h"
+#include "media/shot_rhythm.h"
 #include "media/video_decoder.h"
 
 namespace kirari::media {
@@ -46,9 +48,10 @@ class Analysis {
       make_logger()->info("pré-analyse des plans : sans flux optique NVIDIA ({})", opened.error());
     }
   }
-  // La mesure de l'image décodée frame, avec son mouvement face à la précédente.
+  // La mesure de l'image décodée frame, avec son mouvement face à la précédente (le flux) ; la luma de sa
+  // grille est gardée pour son rythme (push, media/shot_rhythm.h).
   std::expected<ShotFrame, Refusal> measure(const DecodedFrame& frame) {
-    auto measured = measure_frame(frame);
+    auto measured = measure_frame(frame, &luma_);
     if (!measured || !flow_) return measured;
     measured->motion = flow_->push(frame);
     if (auto failure = flow_->take_failure()) {
@@ -57,7 +60,15 @@ class Analysis {
     }
     return measured;
   }
-  void push(const ShotFrame& frame) {
+  void push(ShotFrame frame) {
+    frame.rhythm = rhythm_.push(std::move(luma_), kernels::frame_stats::kGridW, kernels::frame_stats::kGridH);
+    if (frame.rhythm && frame.motion) {
+      const ProbeMotion& m = *frame.motion;
+      frame.rhythm = with_flow(
+          *frame.rhythm,
+          {.shift_x = m.shift_x, .shift_y = m.shift_y, .residual = m.residual, .unmatched = m.unmatched},
+          kProbeFlowHeight);
+    }
     if (flashes_.push(frame.pts_us, zone_nits_of(frame))) {
       if (const auto from = flashes_.danger_from())
         timeline_.add_flash({.from_us = *from, .until_us = flashes_.limited_until()});
@@ -72,6 +83,7 @@ class Analysis {
   void restart(bool starts_at_cut) {
     cutter_ = ShotCutter(starts_at_cut);
     flashes_.reset();
+    rhythm_.reset();
     if (flow_) flow_->forget();
   }
 
@@ -79,6 +91,8 @@ class Analysis {
   ShotTimeline& timeline_;
   ShotCutter cutter_;
   FlashGuard flashes_;
+  RhythmProbe rhythm_;
+  std::vector<float> luma_;  // la grille de la dernière image mesurée
   std::unique_ptr<ProbeFlow> flow_;
 };
 
@@ -434,7 +448,7 @@ void ShotProbe::State::run(const std::stop_token& stop, std::int64_t start_us) {
       frontier.store(frame.pts_us, std::memory_order_relaxed);
       faces.look(frame, *measured);
       ++frames;
-      analysis.push(*measured);
+      analysis.push(std::move(*measured));
       continue;
     }
     if (decoder.drained()) {

@@ -40,10 +40,13 @@ void note_cache_failure(const std::filesystem::path& dir) {
 // (render::steady_hdr) ; il n'y lit plus que les flashs dangereux et la peau des visages (face_skin). Sans
 // l'un ni l'autre, la pré-analyse (un second décodage logiciel de tout le fichier) ne part pas : la série des
 // noirs profonds reste alors à sa clé moyenne.
-bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr, bool hdr_output) {
+// L'Auto plan par plan (--shot-plan, shot_plan.h) les lit aussi.
+bool wants_shots(bool shot_cuts, const PlaySettings& settings, bool source_hdr, bool hdr_output,
+                 bool shot_plan = false) {
   const bool grade =
       settings.grade && !source_hdr && (!hdr_output || settings.flash_guard || settings.face_skin);
-  return grade || (shot_cuts && settings.rife_factor != 0);
+  return grade || ((shot_cuts || shot_plan) && settings.rife_factor != 0) ||
+         (shot_plan && settings.temporal_fix != TemporalFix::Off);
 }
 
 // La variante du cache (media/shot_cache.h) : le chemin de décodage, et le gain du limiteur de flashs avec
@@ -190,7 +193,8 @@ void ShotJob::retire() noexcept {
 
 void open_shots(ShotWork& work, const std::filesystem::path& file, const PlaySettings& settings,
                 std::int64_t start_us, const ShotOutput& output) {
-  if (file.empty() || !wants_shots(work.shot_cuts, settings, output.source_hdr, output.hdr_output)) {
+  if (file.empty() ||
+      !wants_shots(work.shot_cuts, settings, output.source_hdr, output.hdr_output, work.shot_plan)) {
     work.current.probe.reset();
     return;
   }
@@ -218,6 +222,7 @@ ShotWork shot_work(std::filesystem::path cache_dir, const PlayOptions& options) 
   if (options.probe_nvdec) work.probe.cuvid_resize = media::kProbeCuvidSize;  // 8.8
   work.probe.flow = options.probe_flow;
   work.shot_cuts = options.shot_cuts;
+  work.shot_plan = options.shot_plan;
   // Le gain du limiteur de flashs de la pré-analyse suit le pic de l'écran de chaque vidéo (new_job, B42-07).
   return work;
 }
@@ -285,7 +290,8 @@ void feed_plan_shots(Chain& to) {
   if (version == to.plan_shots_seen) return;
   to.plan_shots_seen = version;
   std::shared_ptr<const std::vector<media::Shot>> shots = timeline.shots_snapshot();
-  to.anime_series_apl = series_apl_of(*shots);  // aussi pour les noirs profonds (P3.52)
+  to.anime_series_apl = series_apl_of(*shots);             // aussi pour les noirs profonds (P3.52)
+  if (to.shot_plan) to.live.shot_plan().set_shots(shots);  // l'Auto plan par plan (shot_plan.h)
   if (to.shot_cuts) to.live.cuts().set_shots(std::move(shots));
 }
 
@@ -301,7 +307,8 @@ std::optional<ShotScene> next_shot(Chain& to, std::int64_t now_us) {
   // Le grade s'est rallumé après l'ouverture (le panneau) : l'analyse arrêtée à l'ouverture reprend ici,
   // sinon seul ce qu'elle avait vu en partant serait connu. Coupé au panneau sans que l'interpolation lise
   // les plans, elle ne repart pas (A42-09).
-  const bool wanted = wants_shots(to.shot_cuts, to.running, to.source_hdr, to.screen.hdr_output());
+  const bool wanted =
+      wants_shots(to.shot_cuts, to.running, to.source_hdr, to.screen.hdr_output(), to.shot_plan);
   if (!job.probe && !job.complete && view.position_us != kNoPts && wanted)
     start_probe(*to.shots, job, std::max<std::int64_t>(view.position_us, 0));
   // Plus rien ne lit les plans (sortie passée en HDR, limiteur décoché) : l'analyse s'arrête (B42-02).

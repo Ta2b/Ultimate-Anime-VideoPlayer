@@ -176,6 +176,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                                    const MasterClock* clock, int width, int height,
                                    std::vector<RingSlotDesc> slots) const {
   const WorkSize sized = chain_work_size(settings, width, height);
+  // Plan par plan en lecture seulement (l'horloge et les plans de la pré-analyse) : l'export garde RIFE.
+  const bool by_shot = drba_by_shot && clock != nullptr && live != nullptr;
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
@@ -189,9 +191,11 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife_motion_half = rife_motion_half.get(),
       .rife_planes = rife_planes,
       .rife_align = rife_align,
-      .distil_drba = drba.get(),
+      .distil_drba = drba_by_shot && !by_shot ? nullptr : drba.get(),
       .drba_align = drba_align,
       .drba_motion = drba_motion,
+      .drba_by_shot = by_shot,
+      .temporal_by_shot = shot_plan && temporal_fix != nullptr && clock != nullptr,
       .rife_factor = factor_of(settings),
       .one_lane = one_lane,
       .rife_warm = rife_warm,
@@ -245,7 +249,7 @@ void note_opened(ChainEngines& c, const Player& p, const PlaySettings& settings)
               .output_height = c.work.height * kSpanFactor,
               .span = c.engine != nullptr,
               .rife_loaded = c.interpolates()};
-  c.opened.drba = c.drba != nullptr;
+  c.opened.drba = c.use_drba();  // plan par plan : RIFE reste le moteur de la chaîne
   c.opened.drba_fused = c.opened.drba && c.drba_fused;
   c.opened.drba_motion = c.opened.drba && c.drba_motion;
   c.opened.drba_fused_capable = c.backend != nullptr && c.backend->capabilities().drba_fused;
@@ -374,6 +378,7 @@ void take_trials(ChainEngines& c, const PlayOptions& o) {
   c.rife_at_slot = o.rife_at_slot;
   c.scene_map = o.scene_map;
   c.skip_held = o.skip_held;
+  c.shot_plan = o.shot_plan;
   c.pair_triage = o.pair_triage;
 }
 
@@ -688,7 +693,9 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   if (c.rife_choice) c.rife_model = c.rife_choice->path;
   c.model_places = motion_model_dirs(p.paths, c.rife_choice);
   c.drba_found = find_distil_drba(c.model_places).has_value();
-  const bool want_drba = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::DistilDrba;
+  const bool shots_drba = drba_for_shots(c, settings);  // l'Auto plan par plan, en plus de RIFE
+  const bool want_drba =
+      settings.rife_factor >= 2 && (settings.motion_engine == MotionEngine::DistilDrba || shots_drba);
   const bool want_apple = settings.rife_factor >= 2 && settings.motion_engine == MotionEngine::Apple;
   if (settings.rife_factor >= 2 && !c.rife_model && !(want_drba && c.drba_found) && !want_apple)
     return stage_refused(std::move(rife_found.error()), ChainStage::Motion);
@@ -733,6 +740,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
     auto drba = load_drba(p, init, c, settings, inner, library);
     if (!drba) return std::unexpected(std::move(drba.error()));
     if (!*drba) return std::nullopt;
+    c.drba_by_shot = shots_drba && c.drba != nullptr;  // RIFE se charge aussi
   }
   choose_rife_tier(c, settings);
   // L'interpolation d'Apple à la place de RIFE image, à la taille de travail ; RIFE reprend sous un
@@ -757,6 +765,7 @@ Prepared prepare_chain_once(Player& p, const PlaySettings& settings) {
   auto rife = load_motion(p, init, c, settings, inner, library);
   if (!rife) return std::unexpected(std::move(rife.error()));
   if (!*rife) return std::nullopt;
+  settle_shot_plan(c);
   return std::optional<ChainEngines>(std::move(c));
 }
 
