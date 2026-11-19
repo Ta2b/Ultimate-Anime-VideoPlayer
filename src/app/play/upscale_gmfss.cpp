@@ -24,6 +24,7 @@
 #include "app/play/links.h"
 #include "app/play/upscale_stage.h"
 #include "core/log.h"
+#include "core/trace.h"
 #include "kernels/spec/gmfss.h"
 #include "kernels/spec/rife.h"
 
@@ -298,6 +299,7 @@ std::expected<void, Refusal> UpscaleStage::compose_key(const GmfssKey& key, floa
                            .coverage = true,
                            .pull = true});
   }
+  KIRARI_TRACE("gmfss.cle");  // Nsight Systems : les splats tirés et la composition de la clé
   if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gpu::Tensor{}, t); !ok) return ok;
   return ops.gmfss_compose(
       {.high_a = gmfss_.high[0]->tensor(),
@@ -438,7 +440,10 @@ std::expected<void, Refusal> UpscaleStage::fuse_gmfss(float t, const gpu::Tensor
                            .s = kernels::gmfss_side_time(splat.side, t),
                            .out = splat.warped});
   }
-  if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gmfss_.time, t); !ok) return ok;
+  {
+    KIRARI_TRACE("gmfss.splats");  // Nsight Systems : l'envoi des huit splats et de l'instant
+    if (auto ok = ops.soft_splat_fill(gmfss_.jobs, gmfss_.time, t); !ok) return ok;
+  }
   std::array results{padded};
   if (auto ok = blame_stage(
           setup_.backend->enqueue(*setup_.gmfss.fusion, gmfss_.fusion_inputs[gmfss_.set], results),

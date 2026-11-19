@@ -260,6 +260,18 @@ kirari play --motion=gmfss --rife=2 --start=960 --stats=n2.csv extrait.mkv
 kirari --debug --mute --no-gmfss-native --motion=gmfss --rife=2 --keys=1:export-lossless=t.mkv extrait.mkv
 kirari --mute --motion=gmfss --rife=2 --keys=1:export-lossless=n.mkv extrait.mkv
 ffmpeg -i n.mkv -i t.mkv -lavfi psnr -f null - 2>&1 | tail -1
+
+# 3. Le temps GPU de chaque morceau : Nsight Systems, plages NVTX du domaine kirari autour de l'envoi de chaque
+#    morceau (KIRARI_TRACE, src/core/trace.h) : gmfss.paire.gmflow (le moteur TensorRT du flot, avec ce qui
+#    prépare l'entrée du MetricNet), gmfss.paire.featurenet, gmfss.paire.metricnet, ou gmfss.paire.tensorrt
+#    quand TensorRT garde la paire entière ; gmfss.fusion.ifnet, gmfss.fusion.gridnet, ou gmfss.fusion.tensorrt ;
+#    gmfss.splats (les huit splats d'un instant) ; gmfss.cle (une clé du mélange, hors --motion=gmfss).
+#    --cuda-graph-trace=node : les moteurs TensorRT rejouent un graphe CUDA, dont chaque noyau compte alors
+#    dans sa plage. L'essai au chargement passe par les mêmes plages : --delay le laisse passer (les moteurs
+#    sont construits depuis l'étape 0).
+nsys profile -o gmfss --trace=cuda,nvtx --cuda-graph-trace=node --delay=20 --duration=30 \
+  kirari --debug play --motion=gmfss --rife=2 --start=960 extrait.mkv
+nsys stats -r nvtx_kern_sum gmfss.nsys-rep
 ```
 
 Le paquet Linux change d'empreinte TensorRT (`tools/release/trt-fingerprint.sh`) : `src/gpu` et `src/prepare` ont

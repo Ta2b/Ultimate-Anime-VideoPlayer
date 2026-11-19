@@ -6,6 +6,7 @@
 #include <string_view>
 #include <utility>
 
+#include "core/trace.h"
 #include "core/utf8_path.h"
 #include "gpu/cuda/backend/cuda_status.h"
 #include "gpu/cuda/backend/fused_graphs.h"
@@ -124,7 +125,10 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue(cudaStream_t stream,
                                                       std::span<const Tensor> outputs) {
   if (inputs.size() != 1 || outputs.size() != kOutputs)
     return refuse(RefusalCode::ShapeInvalid, "GMFSS natif : une entrée et quatorze sorties attendues");
-  if (!native_on_) return full_->enqueue(stream, shared, inputs, outputs);
+  if (!native_on_) {
+    KIRARI_TRACE("gmfss.paire.tensorrt");
+    return full_->enqueue(stream, shared, inputs, outputs);
+  }
   return enqueue_native(stream, shared, inputs[0], outputs);
 }
 
@@ -154,9 +158,17 @@ std::expected<void, Refusal> GmfssPairEngine::enqueue_native(cudaStream_t stream
   }
   flow_out[flow_at_[kFlowOutputs - 2]] = out(kHalf0);
   flow_out[flow_at_[kFlowOutputs - 1]] = out(kHalf1);
+  // Les plages de Nsight Systems entourent l'envoi de chaque morceau (docs/gmfss-natif.md).
   const Tensor flow_in[]{frames};
-  if (auto ok = flow_->enqueue(stream, shared, flow_in, flow_out); !ok) return ok;
-  if (auto ok = enqueue_piece(stream, GmfssPairNativeNet::kFeatureNet, frames, outputs); !ok) return ok;
+  {
+    KIRARI_TRACE("gmfss.paire.gmflow");
+    if (auto ok = flow_->enqueue(stream, shared, flow_in, flow_out); !ok) return ok;
+  }
+  {
+    KIRARI_TRACE("gmfss.paire.featurenet");
+    if (auto ok = enqueue_piece(stream, GmfssPairNativeNet::kFeatureNet, frames, outputs); !ok) return ok;
+  }
+  KIRARI_TRACE("gmfss.paire.metricnet");
   return enqueue_piece(stream, GmfssPairNativeNet::kMetricNet, frames, outputs);
 }
 
