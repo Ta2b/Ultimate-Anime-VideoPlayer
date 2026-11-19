@@ -74,9 +74,15 @@ en retard : la carte part avec la caméra de NVOF et seule la caméra lk d'une v
 
 Rejeu du 19 novembre, dix extraits de 160 images (huit de carte_lecteur, lueur, aura) : avec l'affinage à
 l'heure, 82 à 100 % des paires ont des calques ; affinage toujours en retard, 47 à 97 % sur neuf extraits (17 %
-sur le panoramique rapide de Re:Zero 12:10, où la caméra accélère). Garder la clé de la plaque à travers une
-paire sans calques à caméra sûre a été essayé et écarté : 12 % de clés en moins, mais une plaque qui dérive
-(garde de la plaque au 90e centile de 13 à 44 % sur lueur).
+sur le panoramique rapide de Re:Zero 12:10 : 33 pixels par paire avec un balancement vertical, puis des secousses
+de 20 à 28 pixels). Deux essais écartés :
+
+- garder la clé de la plaque à travers une paire sans calques à caméra sûre : 12 % de clés en moins, mais une
+  plaque qui dérive (garde de la plaque au 90e centile de 13 à 44 % sur lueur) ;
+- extrapoler la caméra voisine (vitesse et accélération, 2 c₋₁ − c₋₂) : sur ce panoramique, elle reste à 0,7
+  pixel médian de la caméra lk (la voisine seule aussi), et NVOF, à 2,3 pixels, ne peut pas la valider ; prise
+  quand elle est la plus proche de NVOF, elle fait passer les dix extraits de 65 à 70 % des paires en retard
+  reprises, mais 0,6 % au lieu de 0,4 % à plus d'un demi-pixel. Seul l'affinage à l'heure rattrape ce plan.
 
 ## Essai du 19 novembre (#946, RTX 4070 Ti)
 
