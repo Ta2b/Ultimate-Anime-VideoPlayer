@@ -4,7 +4,10 @@ Novembre 2026. GMFSS Fortuna Union ([`interpolation.md`](interpolation.md)) en t
 petits réseaux de convolutions par nos noyaux CUDA, GMFlow restant sous TensorRT. Par défaut depuis le
 19 novembre 2026, une fois la paire et la fusion natives mesurées sur le PC, chacune gardée par son essai au
 chargement (TensorRT reprend le morceau qui perd) ; `--no-gmfss-native` (essai) laisse tout GMFSS à TensorRT et
-le retire du menu. Le chantier s'est fait par étapes, chacune derrière `--gmfss-native` :
+le retire du menu. Le chantier est **en pause** depuis le 19 novembre 2026 au soir, après la première release :
+l'état de chaque levier et l'ordre de reprise sont dans [`gmfss-bilan.md`](gmfss-bilan.md), partie 4.
+
+Le chantier s'est fait par étapes, chacune derrière `--gmfss-native` :
 
 1. le tri des paires pour GMFSS (`--pair-triage` : dessins tenus, paires impossibles, panoramiques purs) ;
 2. les lectures des splats sur la bibliothèque de warp ([`warp-lib.md`](warp-lib.md)) ;
