@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kernels/image.h"
+#include "kernels/spec/scene_camera.h"
 #include "kernels/spec/scene_flow.h"
 
 namespace kirari::kernels::ref {
@@ -32,17 +33,20 @@ Result<SceneFlowTiles> scene_tile_sums(const Plane<std::uint8_t>& a, const Plane
 // de classe que vue deux paires de suite (sinon tous les clients clignotent) ; entre les deux, la classe
 // tenue reste, sous la confiance sûre des clients (scene::kContradicted). Une paire où la tuile ne change pas
 // sous une caméra tenue ne compte pas : un dessin tenu (image doublée d'une animation en deux ou en trois)
-// garde sa classe. Vide, ou d'une autre grille : la paire part de ses propres classes.
+// garde sa classe, un effet au plus scene::kEffectIdlePairs paires (idle les compte). Vide, ou d'une autre
+// grille : la paire part de ses propres classes.
 struct SceneHistory {
   int cols = 0;
   int rows = 0;
   std::vector<SceneClass> held;
   std::vector<SceneClass> seen;
+  std::vector<std::uint8_t> idle;  // paires de suite où la tuile n'a pas compté
   void clear() {
     cols = 0;
     rows = 0;
     held.clear();
     seen.clear();
+    idle.clear();
   }
 };
 
@@ -59,15 +63,23 @@ struct SceneCamera {
   bool refined = false;             // affinée par Lucas-Kanade (au moins un pas)
   double check = -1.0;              // écart mesuré sur l'image, pixels du flux ; négatif : pas mesuré
   int check_tiles = 0;              // tuiles de cette mesure
+  // Par tuile, cols × rows : l'écart après la caméra mesuré sur l'image (spec/scene_camera.h), dont
+  // scene_motion_of sépare le dessin du décor. Vide sans affinage relu.
+  std::vector<SceneTileCheck> checks;
 };
 
 // La caméra des vecteurs de NVOF, avant l'affinage ; pas ajustée sur une coupe probable.
 SceneCamera scene_camera_of(const SceneFlowTiles& tiles);
 
 // La carte d'une paire, avec sa caméra (scene_camera_of, affinée ou non). history est mis à jour ; il est
-// vidé après une coupe probable.
+// vidé sur une coupe probable, dont les tuiles sont toutes incertaines (spec/scene_flow.h, cut_likely).
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, const SceneCamera& camera);
 // Sans affinage : scene_motion_of(tiles, history, scene_camera_of(tiles)).
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history);
+// Une paire qui enjambe une coupe ne relie rien : ses classes ne diraient rien de l'un ou l'autre plan (243
+// « effets » sur la coupe de 16:17 de Re:Zero, que le masque des éclats posait sur le plan suivant). Toutes
+// ses tuiles deviennent incertaines et changées, sans caméra, cut_likely vrai. scene_motion_of le fait sur
+// une coupe probable ; le lecteur, sur une coupe qu'il a mesurée (SceneMap::cut).
+void mark_cut(SceneMotion& motion);
 
 }  // namespace kirari::kernels::ref

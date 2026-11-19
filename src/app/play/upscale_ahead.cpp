@@ -293,7 +293,8 @@ void note_effects(LiveSettings& live, const SceneMap& map, SourceId left, std::i
 PairFacts& UpscaleStage::scene_pair(const DecodedFrame& frame, PairFacts& facts) {
   if (!scene_.on() || !previous_ || !facts.same_epoch) return facts;
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  if (facts.scores && pair_cut(facts)) scene_.cut();  // la paire suivante repart sans indices
+  // La paire enjambe une coupe : sa carte ne dit rien, la suivante repart sans indices.
+  if (facts.scores && pair_cut(facts)) scene_.cut(previous_->id, frame.id);
   facts.scene = scene_.for_pair(ops, previous_->id, frame.id);
   if (setup_.live != nullptr) {
     note_effects(*setup_.live, scene_, previous_->id, previous_->pts_us, frame, facts,
