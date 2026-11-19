@@ -110,5 +110,8 @@ bool is_default_player(const PlayerPlace& place);
 // Windows : kirari.exe n'a pas de console à lui (sous-système fenêtré) ; lancé d'un terminal, il écrit dans
 // la console de ce terminal, en UTF-8. Rien ailleurs.
 void leave_lone_console();
+// La sortie ou les erreurs vont dans un tube ou un fichier : un script lit le lecteur (« kirari --version
+// 2>&1 | head »), et une erreur d'options ne doit pas attendre le clic d'une boîte de dialogue.
+bool output_captured();
 
 }  // namespace kirari::app::play

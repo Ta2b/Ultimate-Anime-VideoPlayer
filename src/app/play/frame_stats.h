@@ -54,6 +54,11 @@ struct FrameStats {
   std::int64_t missing = 0;
   // Instants laissés sans image à dessein (coupes de scène, dessins tenus) : pas des manques.
   std::int64_t uninterpolated = 0;
+  // Le mouvement seul : les images neuves dont l'écart de pts ne finit pas une paire laissée à dessein, et la
+  // somme de ces écarts. En mode Rapide, un dessin tenu est planifié (aucun instant manqué) : sans ce compte,
+  // la cadence moyenne mêle l'image qui ne change pas à celle que le GPU n'a pas su faire.
+  std::int64_t moving_frames = 0;
+  std::int64_t moving_us = 0;
   Window lag;                             // retard des images neuves sur l'horloge à leur présentation, ≥ 0
   double shown_fps = 0.0;                 // images neuves par seconde, relu chaque seconde
   std::int64_t last_new_pts_us = kNoPts;  // pts de la dernière image neuve ; kNoPts après un seek

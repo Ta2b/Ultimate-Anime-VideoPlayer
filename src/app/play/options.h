@@ -114,6 +114,7 @@ struct PlayOptions {
   int true_hdr_peak = 0;  // --truehdr-peak=350..4000 nits (limits::kTrueHdrPeak) ; 0 : la crête vue par le
                           // contenu sur l'écran
   bool help = false;      // --help
+  bool version = false;   // --version : la version du lecteur, puis rien d'autre
   bool debug = false;     // --debug : les options d'essai (bascules des chantiers) sont acceptées
   // --rife-image : RIFE sort l'image à chaque instant (sans la variante mouvement), pour comparer.
   bool rife_image = false;
@@ -187,9 +188,10 @@ struct PlayOptions {
   // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
   // finale.
   bool rife_native = false;
-  // --gmfss-native (essai) : le GridNet de la fusion de GMFSS par nos noyaux CUDA (docs/gmfss-natif.md,
-  // gpu::kTrialGmfssNative), son IFNet restant un moteur TensorRT ; gardé à 45 dB de la fusion TensorRT
-  // entière, éteint jusqu'à la séance finale.
+  // --gmfss-native (essai) : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par
+  // nos noyaux CUDA (docs/gmfss-natif.md, gpu::kTrialGmfssNative), l'IFNet et GMFlow restant des moteurs
+  // TensorRT ; chacun gardé à 45 dB de son graphe TensorRT entier et plus rapide que lui, éteint jusqu'à la
+  // séance finale.
   bool gmfss_native = false;
   // TemporalFix fusionné (docs/temporalfix.md) sous TensorRT, par défaut ; --no-tfix-fused (essai) garde
   // le graphe à cache de l'encodeur, pour la mesure ABAB.
@@ -337,6 +339,8 @@ std::expected<PlayOptions, Refusal> parse_play_options(std::span<const std::stri
 
 // debug : avec les options d'essai (--debug --help).
 std::string play_usage(bool debug = false);
+// Ce que --help ou --version écrivent avant que le lecteur ne s'arrête ; rien sans l'une ni l'autre.
+std::optional<std::string> help_or_version(const PlayOptions& options);
 
 // « kirari bench <fichier> » : évalue la machine (auto_bench_run.h) en jouant ce fichier à chaque niveau.
 struct BenchOptions {

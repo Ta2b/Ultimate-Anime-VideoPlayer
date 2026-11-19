@@ -144,7 +144,12 @@ Interrupteurs, pour comparer en lecture :
 La fin de séance écrit une ligne « cadence haute » : mode de présentation, marge, pertes de l'affichage et du
 GPU, puis, en mode Rapide, la cadence moyenne, l'écart minimal, l'écart planifié, le service, la
 contre-pression moyenne et maximale, et la part des relevés où la cadence était bornée par l'écran, par le
-temps de service ou par la contre-pression. Porte du chantier 0.3 : 165 i/s tenus en ×7 avec le GPU sous 60 %.
+temps de service ou par la contre-pression. Elle dit aussi la cadence « en mouvement » : les images neuves
+par seconde de vidéo hors des écarts qui finissent sur une paire laissée à dessein (coupe, dessin tenu,
+`FrameStats::moving_frames`). En mode Rapide, un dessin tenu est planifié : il ne compte ni dans les manquées
+ni dans « sans interpolation à dessein », et la cadence moyenne mêle ces images qui ne changent pas à celles
+que le GPU n'a pas su faire (sur l'extrait de Re:Zero, 148 dessins tenus et 23 coupes pesaient 17 i/s sur 141).
+Porte du chantier 0.3 : 165 i/s tenus en ×7 avec le GPU sous 60 %, lue sur la cadence en mouvement.
 
 ### Ce qui reste fixe
 

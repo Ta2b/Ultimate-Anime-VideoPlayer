@@ -12,14 +12,10 @@
 #include "gpu/cuda/backend/tensorrt_backend.h"
 #include "prepare/gmfss_fused.h"
 #include "prepare/gmfss_native.h"
-#include "prepare/model_source.h"
 #include "prepare/sha256.h"
 
 namespace kirari::gpu::cuda {
 namespace {
-
-// Le seuil de l'essai contre TensorRT FP16 (docs/gmfss-natif.md) ; la séance finale vise 50 dB.
-constexpr double kNativeMinDb = 45.0;
 
 std::expected<prepare::GmfssFusedManifest, Refusal> read_manifest(const std::filesystem::path& path) {
   std::ifstream file(path, std::ios::binary);
@@ -34,19 +30,55 @@ std::expected<prepare::GmfssFusedManifest, Refusal> read_manifest(const std::fil
 std::expected<prepare::GmfssGrid, Refusal> native_grid(const std::filesystem::path& manifest_path) {
   auto manifest = read_manifest(manifest_path);
   if (!manifest) return std::unexpected(std::move(manifest.error()));
-  const std::filesystem::path fusion =
-      manifest_path.parent_path() / core::path_from_utf8(manifest->pieces[0]);
-  auto sha = prepare::sha256_file_known(fusion);
-  if (!sha) return std::unexpected(std::move(sha.error()));
-  if (*sha != manifest->digests[0])
-    return refuse(RefusalCode::ModelUnreadable,
-                  std::format("GMFSS natif : {} a changé", manifest->pieces[0]));
-  auto bytes = prepare::read_onnx_bytes(fusion);
+  auto bytes =
+      prepare::read_gmfss_piece(manifest_path.parent_path(), manifest->pieces[0], manifest->digests[0]);
   if (!bytes) return std::unexpected(std::move(bytes.error()));
   return prepare::gmfss_grid(*bytes);
 }
 
 }  // namespace
+
+std::expected<std::vector<std::string>, Refusal> TensorRtBackend::build_gmfss_pieces(
+    const std::filesystem::path& dir, std::span<const std::string> pieces,
+    std::span<const std::string> digests, const Shape& shape, bool second_tuned, Progress& progress) {
+  const prepare::EngineCheck check =
+      [this](const std::filesystem::path& engine) -> std::expected<void, Refusal> {
+    if (auto ok = bind(); !ok) return ok;
+    auto loaded = TrtEngine::load(*runtime_, engine);
+    if (!loaded) return std::unexpected(std::move(loaded.error()));
+    return {};
+  };
+  const prepare::TrtexecBuilder builder(trtexec_config(), check);
+  std::vector<std::string> engines;
+  const std::size_t count = pieces.size();
+  for (std::size_t i = 0; i < count && i < digests.size(); ++i) {
+    const std::filesystem::path onnx = dir / core::path_from_utf8(pieces[i]);
+    auto sha = prepare::sha256_file_known(onnx);
+    if (!sha) return std::unexpected(std::move(sha.error()));
+    if (*sha != digests[i])
+      return refuse(RefusalCode::ModelUnreadable, std::format("GMFSS natif : {} a changé", pieces[i]));
+    // Le premier morceau (le graphe entier) comme le lecteur le construit sans le natif (sans pavage L2 ni
+    // niveau 5, gpu::ModelSpec::tuned) : la même clé, le moteur déjà construit est repris.
+    const ModelSpec piece{.id = core::to_utf8(onnx.stem()),
+                          .onnx_path = onnx,
+                          .sha256 = *sha,
+                          .precision = TensorType::F16,
+                          .tuned = second_tuned && i != 0};
+    Progress part{.report =
+                      [&progress, i, count](float fraction, const std::string& stage) {
+                        if (!progress.report) return;
+                        progress.report((static_cast<float>(i) + fraction) / static_cast<float>(count),
+                                        std::format("GMFSS natif {}/{} : {}", i + 1, count, stage));
+                      },
+                  .stop = progress.stop};
+    auto built = builder.build(piece, ShapeSet{.min = shape, .opt = shape, .max = shape}, part);
+    if (!built) return std::unexpected(std::move(built.error()));
+    engines.push_back(core::to_utf8(built->path.filename()));
+  }
+  if (engines.size() != count)
+    return refuse(RefusalCode::GraphInvalid, "GMFSS natif : empreintes du manifeste");
+  return engines;
+}
 
 std::expected<Artifact, Refusal> TensorRtBackend::build_gmfss_fused(const ModelSpec& model,
                                                                     const ShapeSet& shapes,
@@ -61,43 +93,11 @@ std::expected<Artifact, Refusal> TensorRtBackend::build_gmfss_fused(const ModelS
     return refuse(
         RefusalCode::ShapeInvalid,
         std::format("GMFSS natif : forme fixe 1×3×{}×{} attendue, demandée {}", h, w, shape_text(shapes)));
-  const prepare::EngineCheck check =
-      [this](const std::filesystem::path& engine) -> std::expected<void, Refusal> {
-    if (auto ok = bind(); !ok) return ok;
-    auto loaded = TrtEngine::load(*runtime_, engine);
-    if (!loaded) return std::unexpected(std::move(loaded.error()));
-    return {};
-  };
-  const prepare::TrtexecBuilder builder(trtexec_config(), check);
-  GmfssFusedKey key{.height = h, .width = w};
-  const std::size_t count = manifest->pieces.size();
-  for (std::size_t i = 0; i < count; ++i) {
-    const std::filesystem::path onnx =
-        model.onnx_path.parent_path() / core::path_from_utf8(manifest->pieces[i]);
-    auto sha = prepare::sha256_file_known(onnx);
-    if (!sha) return std::unexpected(std::move(sha.error()));
-    if (*sha != manifest->digests[i])
-      return refuse(RefusalCode::ModelUnreadable,
-                    std::format("GMFSS natif : {} a changé", manifest->pieces[i]));
-    // La fusion entière comme le lecteur la construit sans le natif (sans pavage L2 ni niveau 5,
-    // gpu::ModelSpec::tuned) : la même clé, le moteur déjà construit est repris. L'IFNet, un RIFE 4.26
-    // à GridSample, prend les réglages de RIFE.
-    const ModelSpec piece{.id = core::to_utf8(onnx.stem()),
-                          .onnx_path = onnx,
-                          .sha256 = *sha,
-                          .precision = TensorType::F16,
-                          .tuned = i != 0};
-    Progress part{.report =
-                      [&progress, i, count](float fraction, const std::string& stage) {
-                        if (!progress.report) return;
-                        progress.report((static_cast<float>(i) + fraction) / static_cast<float>(count),
-                                        std::format("GMFSS natif {}/{} : {}", i + 1, count, stage));
-                      },
-                  .stop = progress.stop};
-    auto built = builder.build(piece, ShapeSet{.min = expected, .opt = expected, .max = expected}, part);
-    if (!built) return std::unexpected(std::move(built.error()));
-    key.engines.push_back(core::to_utf8(built->path.filename()));
-  }
+  // L'IFNet, un RIFE 4.26 à GridSample, prend les réglages de RIFE.
+  auto engines = build_gmfss_pieces(model.onnx_path.parent_path(), manifest->pieces, manifest->digests,
+                                    expected, true, progress);
+  if (!engines) return std::unexpected(std::move(engines.error()));
+  const GmfssFusedKey key{.height = h, .width = w, .engines = std::move(*engines)};
   return Artifact{.cache_key = gmfss_fused_artifact_key(key), .path = model.onnx_path};
 }
 
@@ -108,7 +108,7 @@ std::expected<std::unique_ptr<Engine>, Refusal> TensorRtBackend::load_gmfss_fuse
   if (!engine) return std::unexpected(std::move(engine.error()));
   if (gmfss_native_) {
     auto grid = native_grid(artifact.path);
-    auto kept = grid ? (*engine)->try_native(*grid, arena(), kNativeMinDb)
+    auto kept = grid ? (*engine)->try_native(*grid, arena(), kGmfssNativeMinDb)
                      : std::expected<std::string, Refusal>(std::unexpected(std::move(grid.error())));
     if (kept)
       log((*engine)->native() ? BackendLogLevel::Info : BackendLogLevel::Warn, *kept);
