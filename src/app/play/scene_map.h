@@ -9,8 +9,9 @@
 // l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde, avec sa paire, mais PairFacts ne
 // la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à cheval sur deux époques.
 //
-// NVOF encore occupé par la paire d'avant (plus lent que la chaîne) : la paire n'est pas lancée, rien
-// n'attend, et la suivante repart sans indices (abandonnées au journal de fin).
+// NVOF encore occupé (plus lent que la chaîne de deux paires) : la paire n'est pas lancée, rien n'attend, et
+// la suivante repart sans indices (sautées au journal de fin). Une carte pas encore relue quand l'étage
+// décide de sa paire compte « trop tard » ; une relecture remplacée ou périmée, « perdue ».
 //
 // Absente (--scene-map éteint, backend sans NVOF, Turing, refus) : rien n'est lancé, chaque paire garde
 // scene vide, et la chaîne fait exactement ce qu'elle faisait. Un refus éteint la carte pour la lecture, avec
@@ -55,7 +56,8 @@ class SceneMap {
   };
   const std::optional<Latest>& latest() const { return latest_; }
 
-  // La ligne du journal de fin : paires lancées, relues, attachées, en retard, coupes et fondus vus.
+  // La ligne du journal de fin : paires lancées, relues, posées, sautées, trop tard, perdues, coupes et
+  // fondus vus.
   void log_summary() const;
 
  private:
@@ -79,7 +81,9 @@ class SceneMap {
   std::uint64_t started_ = 0;
   std::uint64_t read_ = 0;
   std::uint64_t attached_ = 0;
-  std::uint64_t dropped_ = 0;  // paires abandonnées : NVOF plus lent que la chaîne (occupé, relue trop tard)
+  std::uint64_t busy_ = 0;    // pas lancées : NVOF occupé
+  std::uint64_t missed_ = 0;  // lancées, pas encore relues quand l'étage a décidé de leur paire
+  std::uint64_t lost_ = 0;    // relectures remplacées ou périmées
   std::uint64_t cuts_ = 0;
   std::uint64_t fades_ = 0;
   std::uint64_t camera_fits_ = 0;
