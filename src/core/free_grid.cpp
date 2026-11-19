@@ -6,6 +6,16 @@
 #include <utility>
 
 namespace kirari::core {
+namespace {
+
+// Le vsync à x ou le premier après lui ; période 0 (VRR) : x tel quel.
+std::int64_t up_to_vsync(std::int64_t x, std::int64_t period, std::int64_t origin) {
+  if (period <= 0) return x;
+  const std::int64_t r = ((x - origin) % period + period) % period;
+  return r == 0 ? x : x + (period - r);
+}
+
+}  // namespace
 
 CadenceStep FreeGrid::origin(const SourceStamp& source, GridEvent event) {
   left_ = source;
@@ -53,14 +63,18 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
   // Sur écran fixe, l'instant monte au vsync suivant (jamais entre deux) ; `base` est l'instant idéal, avant
   // ce calage : le pas moyen reste celui du GPU et l'image tenue l'est un vsync de plus quand il le faut. Un
   // écart minimal de « une période et quelques µs » (arrondis) ne doit pas sauter un vsync de plus.
+  // L'écart au dernier instant émis borne l'instant calé, jamais `base` : y recaler `base` perdait l'avance
+  // de l'arrondi à chaque vsync monté, et un pas à peine plus long que la période en sautait un sur cinq
+  // (séance du 19/11 sans VRR à 165 Hz : pas de 6,5 ms, 120 i/s au lieu de 153).
   const std::int64_t spacing = vsync > 0 ? min_gap - vsync / 8 : min_gap;
+  const std::int64_t after_last = last_emitted_.value_or(INT64_MIN) + spacing;
+  // Sans vsync (VRR), l'instant tel quel : il n'est jamais avant after_last.
   const auto on_vsync = [&](std::int64_t x) {
-    if (vsync <= 0) return x;
-    const std::int64_t r = ((x - inputs.vsync_origin_us) % vsync + vsync) % vsync;
-    return r == 0 ? x : x + (vsync - r);
+    return up_to_vsync(std::max(x, after_last), vsync, inputs.vsync_origin_us);
   };
-  std::int64_t base = std::max(
-      {next_due_.value_or(INT64_MIN), last_emitted_.value_or(INT64_MIN) + spacing, inputs.ready_us, g + 1});
+  const bool phase = vsync > 0 && next_due_.has_value();  // écran fixe, phase reportée : `base` la garde
+  std::int64_t base =
+      std::max({next_due_.value_or(INT64_MIN), phase ? INT64_MIN : after_last, inputs.ready_us, g + 1});
   std::int64_t t = on_vsync(base);
   // Le même premier instant sans l'échéance reportée : ce que la paire aurait eu si le pas ne l'avait pas
   // repoussée.
@@ -81,8 +95,8 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
     last_emitted_ = at;
     ++emitted;
     if (!on_source) ++interpolated;
-    base = vsync > 0 ? std::max(base + step, at + spacing) : at + step;
-    t = on_vsync(base);
+    base = vsync > 0 ? base + step : at + step;
+    t = on_vsync(std::max(base, at + spacing));  // VRR : base, que at + spacing ne dépasse jamais
     if (on_source) {
       source_shown = true;
       break;
@@ -95,7 +109,7 @@ CadenceStep FreeGrid::push(const SourceStamp& source, const FreeInputs& inputs) 
     out.add({.t = {1, 1}, .pts_us = t});  // à l'heure du vsync, comme une source rattrapée avant lui
     last_emitted_ = t;
     ++emitted;
-    base = std::max(base + step, t + spacing);
+    base += step;  // la source a pris l'instant de `base` ; la paire suivante se cale après elle
   }
   if (emitted == 0) {
     // Le GPU ne tient pas une image dans cette paire : la source seule, comme sans interpolation. Sur écran
