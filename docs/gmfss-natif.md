@@ -91,7 +91,8 @@ L'ancien essai passait chaque réseau entier en f16, en mixtes ou en f32 (« Ré
 f16, 12 % plus rapide que TensorRT). L'essai coupe maintenant chaque réseau en morceaux, comme le mélange du
 RIFE natif, et chaque convolution a sa forme réglée au banc.
 
-**Les morceaux** (`gmfss_native_net.cu`, `gmfss_pair_native_net.cu`) :
+**Les morceaux** (`gmfss_grid_pieces` de `prepare/gmfss_native.cpp` pour la fusion, `gmfss_pair_native_net.cu`
+pour la paire) :
 
 | Unité | Morceau | Convolutions | Tête |
 |---|---|---|---|
@@ -107,7 +108,9 @@ d'au-dessus. Les trois lignes ont chacune leur largeur et leur taille, donc leur
 écrit l'image, là où le f16 coûte le plus (l'émulation ci-dessous). Un découpage plus fin multiplierait les
 passes de l'essai (chaque option de chaque morceau est mesurée sur l'unité entière) pour des morceaux de deux
 convolutions sur 45. La coupe ne lit aucun nom de tenseur de l'export : la queue part de la convolution qui
-précède le PixelShuffle, la ligne de chaque tenseur est celle du plan (`prepare/gmfss_native.cpp`).
+précède le PixelShuffle, la ligne de chaque tenseur est celle du plan. Sur les deux exports de la fusion (IFNet
+d'union, IFNet de RIFE 4.26), elle donne 14, 16 et 12 convolutions aux lignes 0, 1 et 2, et 3 à la queue
+(`tests/unit/prepare/gmfss_native_test.cpp` sur la fusion du dossier des modèles).
 
 **Les crans** (`gmfss_mix.h`) : f16, « f16 et tête f32 » (un morceau à tête seulement), mixtes, f32. La tête
 d'un morceau est la couche qui écrit une sortie de l'unité. TensorRT n'est pas une option d'un morceau : la

@@ -1,14 +1,12 @@
 // Le GridNet natif de GMFSS (gmfss_native_net.h) : les convolutions planifiées et réglées une fois par
 // gmfss_conv_plan.cuh (formes réglées au banc, poids rangés pour le mma, tenseurs placés dans la zone par
 // durée de vie : le résiduel n'est jamais la sortie). Ici, les entrées en plans passent d'abord par pixel
-// dans x0 à x3, et la sortie, 8 canaux par pixel, revient en trois plans bornés. Les morceaux : le niveau du
-// tenseur qu'écrit chaque convolution (les trois lignes du GridNet), sauf la queue, de la convolution qui
-// nourrit le PixelShuffle à la fin.
+// dans x0 à x3, et la sortie, 8 canaux par pixel, revient en trois plans bornés. Les morceaux : les trois
+// lignes du GridNet et la queue (prepare::gmfss_grid_pieces).
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <string>
 #include <vector>
 
@@ -76,28 +74,9 @@ __global__ void unpack_image(const __half* in, long plane, __half* out) {
     out[c * plane + i] = __float2half(fminf(fmaxf(__half2float(in[i * 8 + c]), 0.F), 1.F));
 }
 
-constexpr int kQueue = 3;
-constexpr std::array<const char*, 4> kPieceNames{"ligne 0", "ligne 1", "ligne 2", "queue"};
-
-// Le morceau de chaque convolution : la queue à partir de celle qui nourrit le PixelShuffle, sinon le niveau
-// du tenseur écrit. Vide si le réseau n'a pas cette forme.
-std::vector<int> pieces_of(const GmfssGrid& grid) {
-  const auto shuffle =
-      std::ranges::find_if(grid.steps, [](const prepare::GmfssGridStep& s) { return s.shuffle; });
-  const auto queue = std::distance(grid.steps.begin(), shuffle) - 1;
-  if (shuffle == grid.steps.end() || queue < 0) return {};
-  std::vector<int> pieces;
-  for (std::size_t i = 0; i < grid.steps.size(); ++i) {
-    const int level = grid.tensors[static_cast<std::size_t>(grid.steps[i].to)].level;
-    if (static_cast<std::ptrdiff_t>(i) >= queue)
-      pieces.push_back(kQueue);
-    else if (level >= 0 && level < kQueue)
-      pieces.push_back(level);
-    else
-      return {};
-  }
-  return pieces;
-}
+// Les noms des morceaux, dans l'ordre de prepare::gmfss_grid_pieces.
+constexpr std::array<const char*, prepare::kGmfssGridPieces> kPieceNames{"ligne 0", "ligne 1", "ligne 2",
+                                                                         "queue"};
 
 class Net final : public GmfssNativeNet {
  public:
@@ -108,7 +87,7 @@ class Net final : public GmfssNativeNet {
       error = "réseau vide";
       return false;
     }
-    const std::vector<int> pieces = pieces_of(grid);
+    const std::vector<int> pieces = prepare::gmfss_grid_pieces(grid);
     if (pieces.empty()) {
       error = "pas de queue au PixelShuffle, ou une convolution hors des trois lignes";
       return false;

@@ -50,4 +50,13 @@ struct GmfssGrid {
   std::vector<GmfssGridStep> steps;
 };
 
+// Les morceaux du GridNet, dont l'essai au chargement choisit les sommes à part (docs/gmfss-natif.md) : les
+// lignes 0, 1 et 2 (le niveau du tenseur qu'écrit la convolution), puis la queue, de la convolution qui
+// nourrit le PixelShuffle jusqu'à la fin. La coupe ne lit que la structure du plan, aucun nom de l'export.
+inline constexpr int kGmfssQueuePiece = 3;
+inline constexpr int kGmfssGridPieces = 4;
+// Le morceau de chaque convolution ; vide si le réseau n'a pas cette forme (pas de PixelShuffle, rien avant
+// lui, ou une convolution hors des trois lignes avant la queue).
+std::vector<int> gmfss_grid_pieces(const GmfssGrid& grid);
+
 }  // namespace kirari::prepare
