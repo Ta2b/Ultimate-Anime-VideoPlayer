@@ -108,7 +108,7 @@ std::unique_ptr<SpanFp8Net> SpanFp8Net::create(const SpanFp8Weights& weights, in
   auto impl = std::make_unique<Impl>();
   bool sent = false;
   if (weights.fp16)
-    impl->body = make_span_fp8_body16(height, width, narrow48 ? 48 : kStored);
+    impl->body = make_span_fp8_body16(height, width, narrow48 ? 48 : kStored, weights.acc32);
   else if (narrow48)
     impl->body = make_span_fp8_body48(height, width, weights.width48 == SpanFp8Width::Native);
   else

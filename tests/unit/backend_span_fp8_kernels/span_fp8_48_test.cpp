@@ -309,17 +309,15 @@ TEST_CASE("SPAN FP8 à 48 canaux : la zone de travail rétrécit", "[cuda][span_
 
 namespace kirari::gpu::cuda {
 
-// Lot 2 du fil SPAN : les blocs en FP16 sans quantification suivent la référence FP16 (span_fp8_ref.h), qui
-// calcule le même réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps réduit à 48 ; à 64, le
-// corps à 64. Il ne reste que l'ordre des sommes (et l'accumulateur f16 en acc16).
-TEST_CASE("SPAN FP16 en noyaux CUTLASS : suit la référence FP16", "[cuda][span_fp8]") {
+// Le SPAN FP16 natif (docs/span-native16.md) suit la référence FP16 (span_fp8_ref.h), qui calcule le même
+// réseau en 64 canaux, accumulateur f32. À 48 canaux réels, le corps natif calcule en 48. Il ne reste que
+// l'ordre des sommes et leur f16.
+TEST_CASE("SPAN FP16 natif : suit la référence FP16", "[cuda][span_fp8]") {
   if (!has_sm89()) SKIP("pas de GPU sm 8.9 : les noyaux FP8 ne tournent pas ici");
   const int real = GENERATE(48, 64);
-  const bool acc16 = GENERATE(false, true);
-  INFO(real << " canaux, acc16 " << acc16);
+  INFO(real << " canaux");
   Random random;
   span_fp8::Package package = random_package(random, real, real == 48 ? 5 : 8);
-  package.acc16 = acc16;
   std::vector<__half> image(kInCount);
   for (__half& value : image) value = __float2half(random.next() + 0.5F);
   DeviceBytes in(kInCount * sizeof(__half));
@@ -341,7 +339,7 @@ TEST_CASE("SPAN FP16 en noyaux CUTLASS : suit la référence FP16", "[cuda][span
 
   const double snr = snr_db(want, run(package, SpanFp8Width::Native, in, true));
   INFO("SNR du FP16 en noyaux contre la référence : " << snr << " dB");
-  CHECK(snr >= (acc16 ? 30.0 : 40.0));
+  CHECK(snr >= 30.0);
 }
 
 }  // namespace kirari::gpu::cuda
