@@ -188,6 +188,9 @@ constexpr std::uint64_t kDisagreementsLogged = 100;  // désaccords écrits au j
 // 8.7 : les plans de la pré-analyse décident quand ils couvrent la paire ; RIFE ne fait que signaler, et ne
 // l'emporte sur « même plan » que par une coupe isolée (CutBurst, rife_plan.h).
 void UpscaleStage::judge_cuts(const DecodedFrame& frame, PairFacts& facts) {
+  // Tri des paires (rife_triage.h) : RIFE seul, ni GMFSS (son mouvement n'est pas celui de RIFE), ni
+  // DistilDRBA (une image de retard : le warp ne lit pas la paire triée ici).
+  facts.flow_triage = setup_.pair_triage && setup_.gmfss.use == GmfssUse::Off && !drba();
   if (!setup_.live || !previous_ || !facts.scores || previous_->pts_us == kNoPts || frame.pts_us == kNoPts)
     return;
   facts.known_cut = setup_.live->cuts().cut_between(previous_->pts_us, frame.pts_us);

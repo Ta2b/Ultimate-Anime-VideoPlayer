@@ -148,6 +148,7 @@ struct ChainEngines {
   bool scene_map = false;               // --scene-map (UpscaleSetup::scene_map)
   bool smooth_drawings = false;         // --smooth-drawings (UpscaleSetup::smooth_drawings)
   bool temporal_fix_whole = false;      // --no-tfix-cache (chain_temporal.cpp)
+  bool pair_triage = false;             // --pair-triage (UpscaleSetup::pair_triage)
   std::unique_ptr<gpu::Engine> engine;  // SPAN
   // La stabilisation temporelle avant SPAN (chain_temporal.cpp), à la taille de travail : la fenêtre et
   // l'encodeur de ses images (prepare/onnx_cache.h) ; nuls : éteinte ou refusée.

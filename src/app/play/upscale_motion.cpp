@@ -102,6 +102,7 @@ void UpscaleStage::forget_motion() {
   warm_from_ = nullptr;   // ni les blocs grossiers d'une autre scène (P6.15)
   rife_encoded_ = {};     // ni l'encodage des images d'avant la coupe ou le saut
   half_.encoded = {};
+  triage_.reset();  // ni le doute de la carte (rife_triage.h)
 }
 
 std::expected<void, Refusal> UpscaleStage::settle_motion() {
@@ -139,7 +140,9 @@ std::expected<void, Refusal> UpscaleStage::blend(const gpu::Tensor& a, const gpu
                                                  const gpu::Motion& motion, float t,
                                                  const Target& out) const {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  gpu::Motion read = motion;
+  // Tri des paires (rife_triage.h) : le mouvement fondu là où la carte doute. Le masque du fondu : 1 − t pour
+  // un mouvement lu à l'instant, 0,5 pour celui du milieu (kernels/spec/motion_doubt.h).
+  gpu::Motion read = triage_.doubted(*setup_.backend, motion, motion.at_instant ? 1.0F - t : 0.5F);
   read.warp = setup_.warp;
   read.pan_lock = setup_.pan_lock;
   return out.ring != nullptr ? ops.warp_blend_ring(a, b, read, t, *out.ring)
@@ -150,7 +153,7 @@ std::expected<void, Refusal> UpscaleStage::blend_poses(const gpu::Tensor& a, con
                                                        const gpu::Motion& motion, const gpu::Motion* previous,
                                                        float t, const Target& out) const {
   gpu::KernelOps& ops = *setup_.backend->kernels();
-  gpu::Motion read = motion;
+  gpu::Motion read = triage_.doubted(*setup_.backend, motion, 0.5F);  // avec les poses : toujours du milieu
   read.warp = setup_.warp;
   return out.ring != nullptr ? ops.warp_blend_poses_ring(a, b, read, previous, t, *out.ring)
                              : ops.warp_blend_poses(a, b, read, previous, t, *out.tensor);
