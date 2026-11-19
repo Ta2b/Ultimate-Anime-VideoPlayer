@@ -245,6 +245,13 @@ struct PlaySettings {
   // (poses_kept), dont il est l'inverse. Éteint par défaut ; recharge la chaîne (l'étage lit cinq
   // images en avance).
   bool smooth_drawings = false;
+  // Interpolation par calques (layer_stage.h, docs/calques.md) : là où la carte de la scène voit du décor qui
+  // suit la caméra, l'image intermédiaire le reprend de a et b déplacées par la caméra au lieu du warp de
+  // RIFE. Plaque de décor : chaque source reprend son décor d'une image clé par plan passée par SPAN en
+  // FP16. Sans carte (AMD, Intel, NVOF refusé) rien ne change. Essais, éteints par défaut ; rechargent la
+  // chaîne.
+  bool layers = false;
+  bool background_plate = false;
   // Échelle par paire (upscale_half.cpp) : une paire qui bouge fort, où RIFE passe à chaque instant, l'estime
   // sur une image deux fois plus petite que celle de RIFE, par un second moteur ; les autres paires ne
   // changent pas. Moins cher seulement, jamais plus grand. RIFE mouvement seulement. Essai, éteint par défaut

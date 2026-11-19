@@ -554,6 +554,8 @@ PlaySettings follow_running(const PlaySettings& draft, const PlaySettings& seen,
   keep(&PlaySettings::rife_fused);
   keep(&PlaySettings::drba_fused);
   keep(&PlaySettings::smooth_drawings);
+  keep(&PlaySettings::layers);
+  keep(&PlaySettings::background_plate);
   keep(&PlaySettings::cubic_warp);
   keep(&PlaySettings::motion_720p);
   keep(&PlaySettings::pan_lock);

@@ -42,6 +42,8 @@ std::string format_settings(const PlaySettings& s) {
                             {"model", s.rife_model},
                             {"keep_poses", s.keep_poses},
                             {"smooth_drawings", s.smooth_drawings},
+                            {"layers", s.layers},
+                            {"background_plate", s.background_plate},
                             {"pair_scale", s.pair_scale},
                             {"strong_middle", s.strong_middle},
                             {"motion_720p", s.motion_720p},

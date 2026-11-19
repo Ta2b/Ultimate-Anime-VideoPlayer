@@ -10,6 +10,7 @@ kirari_add_unit_tests(kernels
     drba_fused_test.cpp
     half_test.cpp
     motion_doubt_test.cpp
+    layers_test.cpp
     parity_test.cpp
     resample_test.cpp
     rife_fused_test.cpp

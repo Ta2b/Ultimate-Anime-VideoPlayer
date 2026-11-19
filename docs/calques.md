@@ -1,0 +1,59 @@
+# Interpolation par calques et plaque de décor
+
+Phase 4 du plan du flux NVIDIA (« Usages du flux optique matériel NVIDIA »). Aucun modèle nouveau : RIFE et
+SPAN tels quels, plus un warp par le mouvement de caméra que donne la carte de la scène (`kernels/spec/scene_flow.h`,
+`PairFacts::scene`). Les deux fonctions sont éteintes par défaut, sans option de ligne de commande : elles
+s'allument dans `play.toml`.
+
+## Ce que ça fait
+
+- **Calques** (`[interpolation] layers = true`). RIFE tourne sur toute l'image, comme aujourd'hui.
+  Là où la carte voit du décor qui suit la caméra, l'image intermédiaire reprend ce décor de a et b déplacées par
+  le seul mouvement de caméra à l'instant t, au lieu du warp de RIFE : plus de traits qui ondulent ni d'aplats
+  qui bavent sur un panoramique, un zoom ou un travelling. Les dessins, les effets et tout ce dont la carte doute
+  gardent RIFE. Avec « Garder les poses », le décor suit la caméra pendant que les dessins gardent leur rythme
+  (le rythme par calque).
+- **Plaque de décor** (`[interpolation] background_plate = true`). Une image clé par plan
+  passe par un second SPAN, le modèle tel que livré en FP16 ; chaque source suivante du plan reprend son décor
+  de cette clé, recadrée au mouvement de caméra cumulé. Le décor d'une lecture en SPAN FP8 ou INT8 prend la
+  précision du FP16, et il ne scintille plus d'une image à l'autre (mêmes pixels, déplacés). Une nouvelle clé
+  quand la plaque couvre moins des trois quarts de l'image, que le zoom a bougé de plus de 3 % ou après
+  240 paires ; plus de plaque dès qu'une paire perd la caméra, jusqu'à la paire sûre suivante.
+
+Sans carte (AMD, Intel, Turing, NVOF refusé, pas encore relue), ou dès qu'elle doute de la paire (coupe, fondu,
+caméra non ajustée, résidu au-delà de 0,5 pixel de travail, moins de 5 % de décor), l'image est exactement celle
+d'aujourd'hui. Un refus du backend (Vulkan n'a pas le noyau) coupe les deux pour la lecture, une ligne au
+journal.
+
+## Comment
+
+- Décision par paire, sur l'hôte (`src/app/play/layer_plan.h`) : tuiles décor sûres (Background à confiance
+  0,5 ou plus, ou Uncertain qui ne change pas), puis tout le chemin d'un dessin, d'un effet ou d'une tuile
+  incertaine qui change (de sa tuile dans a à sa tuile dans b, élargi d'une tuile) est retiré.
+- Composition, sur le GPU (`kernels/spec/layers.h`, `ref::compose_layers`, `gpu/cuda/backend/layer_kernels.cu`,
+  `KernelOps::compose_layers`, ABI 51) : un bit par tuile passé par valeur, masque bilinéaire `2 g − 1` qui reste
+  dans le décor, déplacements affines exacts (la caméra portée à la taille de sortie, `M_t = I + t (M − I)`
+  inversé), lecture bilinéaire ou Catmull-Rom (celle du warp de RIFE), et une garde par pixel : là où a et b
+  déplacées diffèrent de plus de 4 à 12 codes (plaque : 6 à 18 contre SPAN de b), l'image de RIFE (ou SPAN) reste.
+- Dans l'étage (`layer_stage.h`) : la paire arrive (`outputs`), les images intermédiaires sont composées après le
+  warp (`blend`, `blend_poses`), la plaque après SPAN de b et avant le grade (`span_current`). Avec les calques,
+  les images intermédiaires passent par un tenseur au lieu d'être écrites directement dans le slot
+  (`layers_ring_direct`) : une copie de plus par image.
+- Hors du champ : DistilDRBA, GMFSS, RIFE image et le Smooth (les instants n'y sont plus ceux de la caméra)
+  gardent leur chemin. RIFE tourne toujours sur toute l'image : le gain est la qualité, pas le temps.
+
+Journal de fin : `calques : N paires avec calques (X % de décor en moyenne), M images composées ; sans : … ;
+plaque : K clés, P sources reprises`. Profil GPU : étapes « calques » et « plaque de décor ».
+
+## Essai (avec le reste, à la fin)
+
+Pas de banc à part : les deux fonctions s'essaient avec les autres usages du flux NVIDIA, sur le binaire
+`linux-release` d'un nouveau paquet Linux (`src/gpu`, `src/kernels` changent l'empreinte TensorRT).
+
+- Tests : `kirari_backend_tensorrt_tests "[layers]"` (le noyau contre la référence, sur une RTX),
+  `kirari_kernels_tests "[layers]"`, `kirari_app_tests "[layers]"`.
+- À regarder : panoramiques, zooms et travellings avec `layers = true` puis `background_plate = true` ; le
+  journal de fin dit la part de paires avec calques, le profil GPU le coût des étapes « calques » et « plaque de
+  décor ».
+- Si le décor ondule encore ou qu'un personnage s'efface : les seuils de `layer_plan.h` et les gardes de
+  `layers.h` se règlent ; si le décor sort du modèle de caméra (parallaxe), les calques restent éteints.

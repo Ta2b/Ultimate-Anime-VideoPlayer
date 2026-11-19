@@ -243,6 +243,7 @@ constexpr std::array kImageTabs{
     Entry{"Strong", "Forte"},
     Entry{"Stability", "Stabilité"},
     Entry{"Temporal stabilization", "Stabilisation temporelle"},
+    Entry{"Background plate", "Plaque de décor"},
     Entry{
         "Removes the shimmer from one frame to the next (fizzling lines, crawling textures, flickering "
         "grain) by comparing each frame with the three before and the three after. Upscaling and "
