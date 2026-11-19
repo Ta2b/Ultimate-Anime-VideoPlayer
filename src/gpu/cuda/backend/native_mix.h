@@ -1,5 +1,5 @@
-// Le choix d'un mélange de morceaux natifs (RIFE natif, docs/rife-natif.md ; GMFSS natif,
-// docs/gmfss-natif.md). Chaque morceau d'une chaîne prend une option parmi quelques-unes (un réseau natif à
+// Le choix d'un mélange de morceaux natifs (GMFSS natif, docs/gmfss-natif.md ; le RIFE natif a pris le sien,
+// rife_mix_choice.h). Chaque morceau d'une chaîne prend une option parmi quelques-unes (un réseau natif à
 // telles sommes, ou TensorRT pour RIFE), et chaque option a son temps seul. L'effet d'une option est mesuré
 // sur la chaîne, ce morceau seul hors de la base (TensorRT pour RIFE, le natif f32 pour GMFSS) : l'erreur
 // quadratique de la sortie contre celle de la base, celle que les morceaux suivants font de l'erreur du

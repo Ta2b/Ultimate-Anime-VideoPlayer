@@ -46,9 +46,11 @@ inline constexpr double kHeldChanged = 0.02;
 inline constexpr double kImpossibleUnmatched = 0.45;
 // Doute moyen des tuiles (avant d'être élargi au voisinage) à partir duquel toute la paire passe au fondu.
 inline constexpr double kFadeShare = 0.5;
-// Confiance d'une tuile d'effet sûre. La carte la donne à 1 − part des vecteurs qui correspondent (plus de
-// 0,5) quand elle voit l'effet deux paires de suite ; à la première, elle garde la classe d'avant, et à la
-// fin l'effet tenu n'a plus que 0,4 fois la confiance de la classe nouvelle (kernels::scene::kContradicted).
+// Confiance d'une tuile d'effet sûre. La carte la donne quand elle voit l'effet deux paires de suite : à 1 −
+// part des vecteurs qui correspondent (plus de 0,5), par l'image d'après la part des pixels qui bougent, ou
+// pour une lumière à l'accord de ses pixels (0,6 à 1, kernels::scene::kLightAgree) ; à la première, elle
+// garde la classe d'avant, et à la fin l'effet tenu n'a plus que 0,4 fois la confiance de la classe nouvelle
+// (kernels::scene::kContradicted).
 inline constexpr float kEffectSure = 0.5F;
 // Doute d'une case sous lequel elle compte pour rien (bruit des tuiles voisines adoucies).
 inline constexpr float kDoubtFloor = 0.04F;

@@ -228,6 +228,8 @@ std::expected<PairScores, Refusal> VulkanKernelOps::pair_read(const PairRead& sl
     return refuse_slice(RefusalCode::SequenceOrder, "pair_read : mesure jamais lancée");
   // Attente hôte voulue : la décision de lancer RIFE dépend de cette paire (kernels/spec/detect.h).
   // Elle ne couvre que la mesure, pas ce que la file a reçu depuis.
+  if (!slot.sums || !slot.worst)
+    return refuse_slice(RefusalCode::SequenceOrder, "scores_take : mesure de la paire sans tampons");
   if (auto ok = context_.wait_on_host(queue_.at(slot.value), std::chrono::seconds(10), kQueryBeforeWait); !ok)
     return std::unexpected(ok.error());
   std::vector<float> partials(slot.blocks);

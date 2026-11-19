@@ -100,7 +100,7 @@ TensorRT mêlent donc deux arrondis.
 | FP8 de la paire (TensorRT, hors squelette de GMFlow) | **retiré** le 30/10 | 46,9 dB sur les paires de test, mais une très mauvaise image dans les gros mouvements, que ces paires ne couvraient pas |
 | FP8 de la fusion | **écarté** | 36,9 dB sur un cas de mouvement fort |
 | GMFlow en E4M3 (émulé) | **écarté** | 35,1 dB au pire sur l'image : chaque famille de GEMM seule en E4M3 coûte déjà 10 à 25 dB |
-| Mélange par morceau (`native_mix.h`, commun avec le RIFE natif) | **dans #959**, jamais lancé sur une carte | En émulation, tous les crans tiennent 45 dB de loin. Fusion : f16 partout 66,5 dB, tête f32 72,8, mixtes 76,2. Paire : 65,2 à 72,0. Le choix se fera donc sur les temps. TensorRT ne peut pas servir un seul morceau, car la paire et la fusion sont chacune un seul moteur. |
+| Mélange par morceau (`native_mix.h` ; le RIFE natif a pris son propre choix, `rife_mix_choice.h`) | **dans #959**, jamais lancé sur une carte | En émulation, tous les crans tiennent 45 dB de loin. Fusion : f16 partout 66,5 dB, tête f32 72,8, mixtes 76,2. Paire : 65,2 à 72,0. Le choix se fera donc sur les temps. TensorRT ne peut pas servir un seul morceau, car la paire et la fusion sont chacune un seul moteur. |
 | Formes réglées par couche | **dans #959** | Attendu sans mesure : 1,5 à 3 ms de moins sur la fusion, 0,3 à 1 ms sur la paire |
 | GMFlow par nos noyaux | **en cours** | La PR 1 est fusionnée. Les PR 2 (attention fondue) et 3 (MLP fondu) sont écrites, auditées et dans #959 avec leurs bancs, sans être branchées. En émulation, l'image gagne 9,6 dB sur le graphe actuel, parce que le flot reste en f32. La vitesse n'est pas prouvée : le banc du PC décide de la suite. |
 | IFNet de la fusion | **reste sous TensorRT** | Plafond 0,4 ms : rien à gagner en vitesse. La coupe accepte les deux exports. |
@@ -430,7 +430,7 @@ Linux. Il ne se fait que sur demande de Tatoub, comme toute release.
 |---|---|
 | `src/gpu/cuda/backend/gmfss_native_net.cu`, `gmfss_pair_native_net.cu` | GridNet, FeatureNet et MetricNet natifs |
 | `src/gpu/cuda/backend/gmfss_conv_plan.cu`, `.cuh` | Les formes des convolutions, le réglage au banc, les zones par durée de vie |
-| `src/gpu/cuda/backend/gmfss_trial.cpp`, `gmfss_mix.*`, `native_mix.*` | L'essai au chargement et le mélange par morceau, ce dernier commun avec RIFE |
+| `src/gpu/cuda/backend/gmfss_trial.cpp`, `gmfss_mix.*`, `native_mix.*` | L'essai au chargement et le mélange par morceau |
 | `src/gpu/cuda/backend/gmfss_kernels.cu` | Les splats |
 | `src/prepare/gmfss_native.cpp` | La coupe de la fusion et les morceaux du GridNet |
 | `src/app/play/gmfss_model.cpp`, `chain_gmfss.cpp` | Le choix des graphes, la paire périmée qui cède |

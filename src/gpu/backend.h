@@ -122,7 +122,9 @@ namespace kirari::gpu {
 // de SPAN).
 // 58 : kTrialTfixNative (TemporalFix fusionné par nos noyaux, docs/tfix-natif.md) : un module d'avant
 // ignorerait le bit sans le dire.
-inline constexpr int kBackendAbi = 58;
+// 59 : SceneTileCheck gagne error, moving, brighter, sharp et settled (l'écart après la caméra), vérification
+// sur toutes les tuiles.
+inline constexpr int kBackendAbi = 59;
 
 using DeviceUuid = kirari::DeviceUuid;
 

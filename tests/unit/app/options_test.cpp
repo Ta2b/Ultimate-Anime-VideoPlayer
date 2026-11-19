@@ -114,8 +114,12 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   CHECK(parse({"épisode.mkv", "--shot-cuts"})->shot_cuts);
   CHECK(options->anime_shots);  // défaut ; --no-anime-shots le coupe seul (audit F3)
   CHECK_FALSE(parse({"épisode.mkv", "--no-anime-shots"})->anime_shots);
-  CHECK(options->effect_highlights);  // défaut ; sans carte de la scène, rien ne change
+  CHECK(options->effect_highlights);  // les lueurs vues dans l'image, par défaut
+  CHECK_FALSE(options->map_effects);  // les effets de la carte, éteints pour la première release
+  CHECK(options->scene_map);          // la carte, allumée par défaut (refusée sans NVOF)
+  CHECK(parse({"épisode.mkv", "--effect-highlights"})->map_effects);
   CHECK_FALSE(parse({"épisode.mkv", "--no-effect-highlights"})->effect_highlights);
+  CHECK_FALSE(parse({"épisode.mkv", "--no-scene-map"})->scene_map);
   CHECK_FALSE(options->effect_mask_view);  // défaut : l'image, pas le masque
   CHECK(parse({"épisode.mkv", "--effect-mask-view"})->effect_mask_view);
   CHECK_FALSE(options->pause_at_us);  // défaut : pas de pause
@@ -179,6 +183,14 @@ TEST_CASE("kirari play : fichier et options", "[app][options]") {
   const auto planar = parse({"épisode.mkv", "--no-rife-hwc8"});
   REQUIRE(planar);
   CHECK_FALSE(planar->rife_hwc8);
+  // Le RIFE natif : allumé par défaut, --no-rife-native rend la chaîne à TensorRT, --rife-native reste lu.
+  CHECK(options->rife_native);
+  const auto trt = parse({"épisode.mkv", "--no-rife-native"});
+  REQUIRE(trt);
+  CHECK_FALSE(trt->rife_native);
+  const auto native = parse({"épisode.mkv", "--rife-native"});
+  REQUIRE(native);
+  CHECK(native->rife_native);
 }
 
 TEST_CASE("kirari play : refus nommés", "[app][options]") {

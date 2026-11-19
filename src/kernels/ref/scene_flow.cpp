@@ -7,9 +7,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <utility>
 #include <vector>
 
 #include "kernels/ref/check.h"
+#include "kernels/ref/scene_camera.h"
 #include "kernels/ref/scene_fit.h"
 #include "kernels/spec/color.h"
 
@@ -48,18 +50,121 @@ TileView view_of(const SceneTileSums& t, int col, int row, int flow_width, int f
   return v;
 }
 
+// Le repère de l'ajustement (spec/scene_camera.h, scene_camera_frame) : centre et demi-côté.
+struct Frame {
+  double cx = 0.0;
+  double cy = 0.0;
+  double scale = 1.0;
+};
+Frame frame_of(const SceneFlowTiles& tiles) {
+  return {.cx = 0.5 * tiles.flow_width,
+          .cy = 0.5 * tiles.flow_height,
+          .scale = std::max(1.0, 0.5 * std::max(tiles.flow_width, tiles.flow_height))};
+}
+
 struct Classified {
   SceneClass kind = SceneClass::Uncertain;
   float confidence = 0.0F;
 };
 
-Classified classify(const TileView& v, const SceneCamera& camera, double cx, double cy, double scale) {
-  if (!v.valid) return {};
-  if (v.matched < scene::kMatchedFloor) {
-    if (v.change >= scene::kEffectDiff)
-      return {.kind = SceneClass::Effect, .confidence = std::clamp(1.0F - v.matched, 0.0F, 1.0F)};
-    return {};
+// Ce que l'image dit d'une tuile après la caméra (SceneCamera::checks, spec/scene_camera.h) : rien sans
+// mesure (pas d'affinage relu, tuile trop peu couverte).
+struct Seen {
+  bool measured = false;
+  bool moving = false;  // au moins kMovingShare de pixels qui bougent, ou un recalage d'au moins kShiftMoving
+  float share = 0.0F;   // part des pixels qui bougent
+  // |éclaircis − assombris| / qui bougent : 1 si tous vont dans le même sens (une lumière).
+  float agree = 0.0F;
+  float sharp = 1.0F;  // part de ceux qui bougent qui changent d'un bord net
+  float kept = 1.0F;   // part de l'écart qui reste après le recalage de la tuile
+};
+
+// unit : pixels du flux par pixel à 720p.
+Seen seen_of(const SceneCamera& camera, std::size_t i, double unit) {
+  constexpr float kArea = static_cast<float>(kSceneTileFlowPixels * kSceneTileFlowPixels);
+  if (i >= camera.checks.size()) return {};
+  const SceneTileCheck& t = camera.checks[i];
+  if (t.pixels < scene::kCheckCover * kArea) return {};
+  const bool resolved = t.l1 >= scene::kCheckFloor * t.pixels;
+  const bool shifted = resolved && std::hypot(t.sx, t.sy) >= scene::kShiftMoving * unit;
+  const float darker = std::max(0.0F, t.moving - t.brighter);
+  return {.measured = true,
+          .moving = t.moving >= scene::kMovingShare || shifted,
+          .share = t.moving,
+          .agree = t.moving > 0.0F ? std::abs(t.brighter - darker) / t.moving : 0.0F,
+          .sharp = t.moving > 0.0F ? t.sharp / t.moving : 1.0F,
+          .kept = t.error > 0.0F ? t.settled / t.error : 1.0F};
+}
+
+// Le vecteur moyen de la tuile suit la caméra : à moins de kBackgroundFloor pixels du flux, plus
+// kBackgroundShare du mouvement de la caméra ; sans caméra ajustée, il est nul (kStillMotion).
+bool follows_camera(const TileView& v, const SceneCamera& camera, const Frame& f) {
+  if (!camera.fit) return std::hypot(v.mx, v.my) < scene::kStillMotion;
+  const double x = (v.cx - f.cx) / f.scale;
+  const double y = (v.cy - f.cy) / f.scale;
+  const Displacement model{.c = camera.model};
+  const double cam_x = model.dx(x, y);
+  const double cam_y = model.dy(x, y);
+  const double off = std::hypot(v.mx - cam_x, v.my - cam_y);
+  return off < std::max(static_cast<double>(scene::kBackgroundFloor),
+                        scene::kBackgroundShare * std::hypot(cam_x, cam_y));
+}
+
+// Les tuiles qui changent d'un bord net (au moins kMovingShare de pixels qui bougent, plus de kLightSharp de
+// ceux-ci sur un bord net), et celles qui en touchent une (voisines comprises, en diagonale aussi) : le cœur
+// d'une grande bouche ou d'un objet qui apparaît change sans bord, ses tuiles du bord le trahissent.
+std::vector<std::uint8_t> near_sharp(const std::vector<Seen>& seen, int cols, int rows) {
+  std::vector<std::uint8_t> sharp(seen.size(), 0U);
+  for (std::size_t i = 0; i < seen.size(); ++i)
+    sharp[i] = seen[i].share >= scene::kMovingShare && seen[i].sharp > scene::kLightSharp ? 1U : 0U;
+  std::vector<std::uint8_t> near(seen.size(), 0U);
+  for (int row = 0; row < rows; ++row) {
+    for (int col = 0; col < cols; ++col) {
+      for (int j = std::max(0, row - 1); j <= std::min(rows - 1, row + 1); ++j) {
+        for (int i = std::max(0, col - 1); i <= std::min(cols - 1, col + 1); ++i)
+          if (sharp[at(i, j, cols)] != 0U) near[at(col, row, cols)] = 1U;
+      }
+    }
   }
+  return near;
+}
+
+// Une lumière qui change sur place (spec/scene_flow.h, kLightAgree) : rend l'accord des pixels qui changent,
+// 0 sinon (ou sans mesure après la caméra) ; ses voisines se voient à part (near_sharp).
+float light_of(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f) {
+  if (!v.valid || !seen.measured || seen.share < scene::kMovingShare || seen.agree < scene::kLightAgree ||
+      seen.kept < scene::kLightKept)
+    return 0.0F;
+  return follows_camera(v, camera, f) ? seen.agree : 0.0F;
+}
+
+// La classe que l'image donne à une tuile qui correspond (la séparation par l'image, spec/scene_flow.h). Sa
+// confiance : sa part de vecteurs sûrs, et pour le décor, d'autant moins que des pixels bougent ; pour le
+// dessin, d'autant plus (la moitié au seuil, pleine au double). Près d'un bord net (edge) : jamais d'effet.
+Classified by_image(const TileView& v, const Seen& seen, bool edge) {
+  if (!seen.moving) {
+    return {.kind = SceneClass::Background,
+            .confidence = v.matched * (1.0F - 0.5F * std::min(1.0F, seen.share / scene::kMovingShare))};
+  }
+  if (!edge && seen.share >= scene::kEffectShare && v.cost >= scene::kEffectCost)
+    return {.kind = SceneClass::Effect,
+            .confidence = std::min(1.0F, seen.share / (2.0F * scene::kEffectShare))};
+  return {.kind = SceneClass::Drawing,
+          .confidence = v.matched * std::clamp(seen.share / (2.0F * scene::kMovingShare), 0.5F, 1.0F)};
+}
+
+// Une tuile sans correspondance qui change : un effet, un dessin si un bord net y bouge (edge).
+Classified unmatched(const TileView& v, bool edge) {
+  if (v.change < scene::kEffectDiff) return {};
+  return {.kind = edge ? SceneClass::Drawing : SceneClass::Effect,
+          .confidence = std::clamp(1.0F - v.matched, 0.0F, 1.0F)};
+}
+
+Classified classify(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f,
+                    bool edge) {
+  if (!v.valid) return {};
+  if (v.matched < scene::kMatchedFloor) return unmatched(v, edge);
+  if (seen.measured) return by_image(v, seen, edge);
   const float weight = v.matched * scene_fit::texture_weight(v);
   const Classified unsure{.kind = SceneClass::Uncertain, .confidence = weight};
   // Un aplat : NVOF n'y voit rien (son vecteur vient des bords voisins), mais rien n'y bouge de visible tant
@@ -74,25 +179,32 @@ Classified classify(const TileView& v, const SceneCamera& camera, double cx, dou
       std::clamp((scene::kChangeDiff - v.change) / (scene::kChangeDiff - scene::kStillDiff), 0.0F, 1.0F);
   const Classified decor{.kind = SceneClass::Background, .confidence = flat ? v.matched * still : weight};
   if (v.spread > scene::kSpreadMax) return {.kind = SceneClass::Drawing, .confidence = 0.5F * weight};
-  if (!camera.fit) return std::hypot(v.mx, v.my) < scene::kStillMotion ? decor : unsure;
-  const double x = (v.cx - cx) / scale;
-  const double y = (v.cy - cy) / scale;
-  const Displacement model{.c = camera.model};
-  const double cam_x = model.dx(x, y);
-  const double cam_y = model.dy(x, y);
-  const double off = std::hypot(v.mx - cam_x, v.my - cam_y);
-  const double bound = std::max(static_cast<double>(scene::kBackgroundFloor),
-                                scene::kBackgroundShare * std::hypot(cam_x, cam_y));
-  if (off < bound) return decor;
-  return flat ? unsure : Classified{.kind = SceneClass::Drawing, .confidence = weight};
+  if (follows_camera(v, camera, f)) return decor;
+  return flat || !camera.fit ? unsure : Classified{.kind = SceneClass::Drawing, .confidence = weight};
+}
+
+// La classe brute d'une tuile : une lumière (light_of) est un effet, sauf sur un fondu (le glissement y est
+// partout) ou près d'un bord net (edge, near_sharp) ; sinon classify.
+Classified raw_class(const TileView& v, const SceneCamera& camera, const Seen& seen, const Frame& f,
+                     bool fade, bool edge) {
+  const float light = fade || edge ? 0.0F : light_of(v, camera, seen, f);
+  if (light > 0.0F) return {.kind = SceneClass::Effect, .confidence = light};
+  return classify(v, camera, seen, f, edge);
 }
 
 // Le lissage d'une tuile (SceneHistory). La première paire part de sa classe brute. Une paire sans preuve
 // (idle : la tuile ne change pas sous une caméra tenue, où un dessin tenu se confond avec le décor, comme les
-// images doublées d'une animation en deux ou en trois) garde la classe tenue et ne compte pas. Sinon, une
-// classe nouvelle ne tient que vue deux paires de suite ; d'ici là, la classe tenue n'est plus sûre.
+// images doublées d'une animation en deux ou en trois) garde la classe tenue et ne compte pas ; un effet, au
+// plus scene::kEffectIdlePairs paires. Sinon, une classe nouvelle ne tient que vue deux paires de suite ;
+// d'ici là, la classe tenue n'est plus sûre.
 Classified smoothed(SceneHistory& history, std::size_t i, const Classified& raw, bool fresh, bool idle) {
-  if (!fresh && idle) return {.kind = history.held[i], .confidence = raw.confidence};
+  if (!fresh && idle) {
+    if (history.idle[i] < UINT8_MAX) ++history.idle[i];
+    if (history.held[i] == SceneClass::Effect && history.idle[i] > scene::kEffectIdlePairs)
+      history.held[i] = raw.kind;
+    return {.kind = history.held[i], .confidence = raw.confidence};
+  }
+  history.idle[i] = 0;
   Classified kept = raw;
   if (!fresh && raw.kind != history.held[i] && raw.kind != history.seen[i])
     kept = {.kind = history.held[i], .confidence = scene::kContradicted * raw.confidence};
@@ -113,42 +225,42 @@ bool tile_changed(const TileView& v) {
          1.0F - v.matched >= scene::kChangeUnmatched || v.change >= scene::kChangeDiff;
 }
 
-// Un fondu ou un flash : la luminosité glisse partout dans le même sens, et l'écart moyen n'est guère plus
-// que ce glissement.
-bool is_fade(const std::vector<TileView>& views) {
+// Le glissement moyen de luminosité (b − a) et l'écart moyen |b − a| des tuiles lues, codes.
+struct Glide {
   double shift = 0.0;
   double change = 0.0;
   int count = 0;
+};
+Glide glide_of(const std::vector<TileView>& views) {
+  Glide g;
   for (const TileView& v : views) {
     if (!v.valid) continue;
-    shift += v.shift;
-    change += v.change;
-    ++count;
+    g.shift += v.shift;
+    g.change += v.change;
+    ++g.count;
   }
-  if (count == 0) return false;
-  shift /= count;
-  change /= count;
-  if (std::abs(shift) < scene::kFadeShift || change > 1.5 * std::abs(shift) + scene::kStillDiff) return false;
+  if (g.count > 0) {
+    g.shift /= g.count;
+    g.change /= g.count;
+  }
+  return g;
+}
+
+// Un fondu : la luminosité glisse partout dans le même sens, et l'écart moyen n'est guère plus que ce
+// glissement. Au-delà de kCutJump sur une seule paire, c'est une coupe (read_tiles).
+bool is_fade(const std::vector<TileView>& views, const Glide& g) {
+  if (g.count == 0) return false;
+  const double shift = g.shift;
+  if (std::abs(shift) < scene::kFadeShift || g.change > 1.5 * std::abs(shift) + scene::kStillDiff)
+    return false;
   int agree = 0;
   for (const TileView& v : views) {
     if (v.valid && v.shift * shift > 0.0 && std::abs(v.shift) >= 0.5F * scene::kFadeShift) ++agree;
   }
-  return static_cast<float>(agree) >= scene::kFadeAgree * static_cast<float>(count);
+  return static_cast<float>(agree) >= scene::kFadeAgree * static_cast<float>(g.count);
 }
 
 // Le modèle centré et réduit (pixels du flux) en caméra de travail : x' = x + d(x).
-std::array<double, 6> camera_of(const Displacement& d, double cx, double cy, double scale, int divisor) {
-  // d(x) = c0 + c1 (x − cx)/s + c2 (y − cy)/s, en flux ; en travail : X = k x, d_w = k d.
-  const double k = divisor;
-  const double a1 = d.c[1] / scale;
-  const double a2 = d.c[2] / scale;
-  const double b1 = d.c[4] / scale;
-  const double b2 = d.c[5] / scale;
-  const double a0 = d.c[0] - a1 * cx - a2 * cy;
-  const double b0 = d.c[3] - b1 * cx - b2 * cy;
-  return {k * a0, 1.0 + a1, a2, k * b0, b1, 1.0 + b2};
-}
-
 bool grid_ok(const SceneFlowTiles& tiles) {
   const std::size_t count = static_cast<std::size_t>(tiles.cols) * static_cast<std::size_t>(tiles.rows);
   return count > 0 && tiles.tiles.size() == count;
@@ -175,21 +287,25 @@ TileRead read_tiles(const SceneFlowTiles& tiles) {
     }
   }
   out.unmatched = cells > 0.0 ? unmatched / cells : 0.0;
-  out.fade = is_fade(out.views);
-  out.cut = !out.fade && out.unmatched >= scene::kCutUnmatched;
+  const Glide glide = glide_of(out.views);
+  const bool jump = glide.count > 0 && std::abs(glide.shift) >= scene::kCutJump;
+  out.fade = !jump && is_fade(out.views, glide);
+  out.cut = jump || (!out.fade && out.unmatched >= scene::kCutUnmatched);
   return out;
 }
 
-// Le repère de l'ajustement (spec/scene_camera.h, scene_camera_frame) : centre et demi-côté.
-struct Frame {
-  double cx = 0.0;
-  double cy = 0.0;
-  double scale = 1.0;
-};
-Frame frame_of(const SceneFlowTiles& tiles) {
-  return {.cx = 0.5 * tiles.flow_width,
-          .cy = 0.5 * tiles.flow_height,
-          .scale = std::max(1.0, 0.5 * std::max(tiles.flow_width, tiles.flow_height))};
+// Une coupe probable : les tuiles lues, puis mark_cut ; le plan suivant repart de ses propres classes.
+SceneMotion cut_motion(SceneMotion out, const TileRead& read, int divisor, SceneHistory& history) {
+  history.clear();
+  out.unmatched = read.unmatched;
+  out.tiles.resize(read.views.size());
+  const auto scale = static_cast<float>(divisor);
+  for (std::size_t i = 0; i < read.views.size(); ++i) {
+    const TileView& v = read.views[i];
+    out.tiles[i] = SceneTile{.dx = v.mx * scale, .dy = v.my * scale, .change = v.change, .shift = v.shift};
+  }
+  mark_cut(out);
+  return out;
 }
 
 }  // namespace
@@ -334,20 +450,21 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
   }
   const std::size_t count = tiles.tiles.size();
   const TileRead read = read_tiles(tiles);
+  if (read.cut) return cut_motion(std::move(out), read, tiles.divisor, history);
   const std::vector<TileView>& views = read.views;
   out.unmatched = read.unmatched;
   out.fade = read.fade;
-  out.cut_likely = read.cut;
 
   const Frame f = frame_of(tiles);
   const SceneCamera none;
-  const SceneCamera& used = camera.fit && !out.cut_likely ? camera : none;
-  out.camera_fit = used.fit;
+  const SceneCamera& used = camera.fit ? camera : none;
+  const SceneCameraWork work = scene_camera_work(used, tiles.flow_width, tiles.flow_height, tiles.divisor);
+  out.camera_fit = work.fit;
+  out.camera = work.camera;
+  out.camera_refined = work.refined;
+  out.residual = work.residual;
+  out.residual_tiles = work.residual_tiles;
   if (used.fit) {
-    out.camera = camera_of(Displacement{.c = used.model}, f.cx, f.cy, f.scale, tiles.divisor);
-    out.camera_refined = used.refined;
-    out.residual = (used.check >= 0.0 ? used.check : used.residual) * tiles.divisor;
-    out.residual_tiles = used.check >= 0.0 ? used.check_tiles : 0;
     const auto& c = out.camera;
     out.background_held = std::hypot(c[0], c[3]) < scene::kHeldCamera &&
                           std::abs(c[1] - 1.0) < scene::kHeldLinear && std::abs(c[2]) < scene::kHeldLinear &&
@@ -362,14 +479,20 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
     history.rows = tiles.rows;
     history.held.assign(count, SceneClass::Uncertain);
     history.seen.assign(count, SceneClass::Uncertain);
+    history.idle.assign(count, 0U);
   }
   out.tiles.resize(count);
   std::size_t moving = 0;  // tuiles qui bougent hors de la caméra (moves_off_camera)
   const auto divisor = static_cast<float>(tiles.divisor);
+  const double unit = tiles.flow_height / 720.0;
+  std::vector<Seen> seens(count);
+  for (std::size_t i = 0; i < count; ++i) seens[i] = seen_of(used, i, unit);
+  const std::vector<std::uint8_t> sharp = near_sharp(seens, tiles.cols, tiles.rows);
   for (std::size_t i = 0; i < count; ++i) {
     const TileView& v = views[i];
-    const Classified raw = classify(v, used, f.cx, f.cy, f.scale);
-    const bool changed = tile_changed(v);
+    const Seen& seen = seens[i];
+    const Classified raw = raw_class(v, used, seen, f, out.fade, sharp[i] != 0U);
+    const bool changed = tile_changed(v) || seen.moving;  // une lumière bouge (kMovingShare)
     if (moves_off_camera(raw.kind, changed, used.fit)) ++moving;
     const Classified kept = smoothed(history, i, raw, !same_grid, !changed && !camera_moves);
     out.tiles[i] = SceneTile{.kind = kept.kind,
@@ -380,14 +503,31 @@ SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history, 
                              .shift = v.shift,
                              .changed = changed};
   }
-  out.drawing_held = !out.cut_likely && !out.fade &&
-                     static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
-  if (out.cut_likely) history.clear();  // le plan suivant repart de ses propres classes
+  out.drawing_held =
+      !out.fade && static_cast<float>(moving) <= scene::kDrawingHeldShare * static_cast<float>(count);
   return out;
 }
 
 SceneMotion scene_motion_of(const SceneFlowTiles& tiles, SceneHistory& history) {
   return scene_motion_of(tiles, history, scene_camera_of(tiles));
+}
+
+void mark_cut(SceneMotion& motion) {
+  const SceneMotion still;
+  motion.camera = still.camera;
+  motion.camera_fit = false;
+  motion.camera_refined = false;
+  motion.residual = 0.0;
+  motion.residual_tiles = 0;
+  motion.drawing_held = false;
+  motion.background_held = false;
+  motion.fade = false;
+  motion.cut_likely = true;
+  for (SceneTile& tile : motion.tiles) {
+    tile.kind = SceneClass::Uncertain;
+    tile.confidence = 0.0F;
+    tile.changed = true;
+  }
 }
 
 }  // namespace kirari::kernels::ref

@@ -3,7 +3,9 @@
 // ceux des moteurs en E/S HWC8 : l'encodeur lit les trois plans d'une image et écrit ses quatre plans
 // d'encodage, un bloc lit X_k rangé par pixel (pas 16 ou 32) et écrit Y_k par pixel au pas 56. La colle, les
 // warps et la fin restent ceux de rife_fused_kernels.h : RifeFusedEngine appelle ce réseau là où il appelait
-// TensorRT. En-tête sans std::expected : il est lu par nvcc en C++20.
+// TensorRT. La colle du dernier bloc en pleine résolution fait exception quand sa première couche sait la
+// refaire à la volée (rife_native_glue.cu) et que l'essai garde cette variante (use_glue). En-tête sans
+// std::expected : il est lu par nvcc en C++20.
 #pragma once
 
 #include <cstdint>
@@ -14,6 +16,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/native_sums.h"
+#include "gpu/cuda/backend/rife_fused_kernels.h"
 
 namespace kirari::gpu::cuda {
 
@@ -60,15 +63,26 @@ class RifeNativeNet {
   // L'encodeur sur une image (3 plans height × width) vers encoded (4 plans).
   virtual cudaError_t encode(cudaStream_t stream, const void* image, void* encoded,
                              void* workspace) const = 0;
-  // Le bloc k : x (X_k par pixel), y (Y_k par pixel, pas 56).
-  virtual cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace) const = 0;
-  virtual RifeNativePrecision precision() const = 0;
-  // Le profil d'un morceau (0 : l'encodeur, 1 + k : le bloc k) : ses couches comme encode ou block, marks[0]
-  // enregistré avant la première et marks[i + 1] après la couche i (cudaEventRecordExternal : la capture d'un
-  // graphe les garde). marks.size() doit valoir layers(piece) + 1.
+  // Le bloc k : x (X_k par pixel), y (Y_k par pixel, pas 56). glue, pour un bloc dont ce réseau calcule
+  // l'entrée à la volée (glues) : sa première couche lit la colle au lieu de x et n'écrit dans glue->x (X_k)
+  // que le flot accumulé, que lit la fin ; nul sinon.
+  // finish, pour le dernier bloc d'un réseau qui sait faire cette fin (can_finish) : sa dernière couche fait
+  // fused_finish dans son épilogue, au bit près, et n'écrit pas y ; nul sinon.
+  virtual cudaError_t block(cudaStream_t stream, int k, const void* x, void* y, void* workspace,
+                            const FusedGlueParams* glue, const FusedFinishParams* finish) const = 0;
+  virtual bool can_finish(int k, const FusedFinishParams& finish) const = 0;
+  // Ce réseau calcule-t-il l'entrée du bloc k à la volée (le dernier bloc, en pleine résolution) ? can_glue :
+  // il en a le noyau ; glues : il s'en sert (use_glue, vrai au départ). Sans lui, le bloc lit le X_k que la
+  // colle à part a écrit, par la forme réglée de sa première couche ; l'essai garde la plus rapide.
+  virtual bool can_glue(int k) const = 0;
+  virtual bool glues(int k) const = 0;
+  virtual void use_glue(bool on) = 0;
+  // Le profil d'un morceau (0 : l'encodeur, 1 + k : le bloc k) : ses couches comme encode ou block (glue
+  // comme pour block), marks[0] enregistré avant la première et marks[i + 1] après la couche i
+  // (cudaEventRecordExternal : la capture d'un graphe les garde). marks.size() doit valoir layers(piece) + 1.
   virtual int layers(int piece) const = 0;
   virtual cudaError_t profile(cudaStream_t stream, int piece, const void* in, void* out, void* workspace,
-                              std::span<const cudaEvent_t> marks) const = 0;
+                              std::span<const cudaEvent_t> marks, const FusedGlueParams* glue) const = 0;
   // La couche i du morceau pour le journal : sa sorte, ses canaux, la forme retenue au réglage.
   virtual std::string layer_label(int piece, int i) const = 0;
 };

@@ -509,7 +509,7 @@ dans [`gmfss-natif.md`](gmfss-natif.md) (banc : `tools/gmfss/banc_temps.sh`).
 
 ## Tri des paires par la carte de la scène (`--pair-triage`, essai)
 
-La carte de la scène (`kernels/spec/scene_flow.h`, flux optique matériel de NVIDIA, `--debug --scene-map`) ne
+La carte de la scène (`kernels/spec/scene_flow.h`, flux optique matériel de NVIDIA, allumée par défaut) ne
 déforme rien : elle décide. Avec `--pair-triage` (essai lui aussi, donc avec `--debug`), sur RIFE mouvement et
 GMFSS (pas DistilDRBA ni les paires de Smooth), chaque paire où RIFE tournerait est triée
 (`src/app/play/rife_triage.h`) :

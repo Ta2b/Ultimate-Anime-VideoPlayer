@@ -701,12 +701,12 @@ TEST_CASE("play.toml : la peau des visages, éteinte par défaut et dans un fich
   CHECK(on->face_skin);
 }
 
-TEST_CASE("play.toml : blanc des surfaces à 60 %, ancienne clé ignorée, borné", "[app][settings]") {
-  CHECK(kirari::app::play::PlaySettings{}.surface_white == 60);
-  // Un play.toml d'avant le blanc à 60 % : sa clé surface_white (100 le plus souvent) n'est plus lue.
-  const auto before = kirari::app::play::parse_settings("[grade]\nsurface_white = 100\n");
+TEST_CASE("play.toml : blanc des surfaces à 100 %, ancienne clé ignorée, borné", "[app][settings]") {
+  CHECK(kirari::app::play::PlaySettings{}.surface_white == 100);
+  // La clé surface_white d'avant surface_level n'est plus lue : le défaut s'applique.
+  const auto before = kirari::app::play::parse_settings("[grade]\nsurface_white = 70\n");
   REQUIRE(before.has_value());
-  CHECK(before->surface_white == 60);
+  CHECK(before->surface_white == 100);
   const auto lower = kirari::app::play::parse_settings("[grade]\nsurface_level = 40\n");
   REQUIRE(lower.has_value());
   CHECK(lower->surface_white == 40);

@@ -232,6 +232,9 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<Artifact, Refusal> build_rife_fused(const ModelSpec& model, const ShapeSet& shapes,
                                                     Progress& progress);
   std::expected<std::unique_ptr<Engine>, Refusal> load_rife_fused(const Artifact& artifact);
+  // Le RIFE natif sur la chaîne chargée : le verdict gardé de cette identité s'il tient encore, sinon l'essai
+  // complet, dont le verdict est gardé (rife_native_verdict.h).
+  std::expected<void, Refusal> settle_rife_native(RifeFusedEngine& engine, const Artifact& artifact);
   // La réserve persistante de L2 pour --l2-keep, posée au premier RIFE fusionné ; 0 si refusée ou absente.
   std::size_t persisting_l2();
   std::expected<void, Refusal> enqueue_rife_fused(RifeFusedEngine& engine, std::span<const Tensor> inputs,

@@ -160,7 +160,7 @@ void hdr_page(PlaySettings& d, const SettingsChoices& choices) {
     panel::live_preview();
     panel::tip(i18n::tr("Surface white"),
                i18n::tr("How bright walls and skin are. Lower makes the picture calmer and lets lights stand "
-                        "out more; they still reach the peak. Recommended: 60 %."));
+                        "out more; they still reach the peak. Recommended: 100 %."));
     panel::cell();
     ImGui::Checkbox(i18n::tr("Limit rapid flashes"), &d.flash_guard);
     panel::tip(i18n::tr("Limit rapid flashes"),

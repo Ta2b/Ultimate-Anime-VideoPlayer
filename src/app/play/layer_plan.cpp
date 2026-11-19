@@ -150,7 +150,7 @@ std::expected<PairLayers, LayerSkip> plan_with_neighbour(const std::optional<ker
                                                          int work_width, int work_height, bool& borrowed) {
   borrowed = false;
   auto planned = plan_layers(scene, work_width, work_height);
-  if (planned || planned.error() != LayerSkip::Unrefined || !neighbour) return planned;
+  if (planned || planned.error() != LayerSkip::Unrefined || !scene || !neighbour) return planned;
   const auto with = with_neighbour(*scene, *neighbour, work_width, work_height);
   if (!with) return planned;
   auto again = plan_layers(with, work_width, work_height);

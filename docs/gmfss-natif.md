@@ -117,7 +117,7 @@ d'union, IFNet de RIFE 4.26), elle donne 14, 16 et 12 convolutions aux lignes 0,
 d'un morceau est la couche qui écrit une sortie de l'unité. TensorRT n'est pas une option d'un morceau : la
 fusion et la paire sont chacune un seul moteur. Il reste la référence, et le repli de l'unité entière.
 
-**Le choix** (`gmfss_trial.cpp`, sur `native_mix.h`, commun avec le RIFE natif) :
+**Le choix** (`gmfss_trial.cpp`, sur `native_mix.h` ; le RIFE natif a son propre choix, `rife_mix_choice.h`) :
 
 1. une passe TensorRT (la référence) et une passe native f32 partout (la base) ; une valeur non finie de l'une
    ou de l'autre, et TensorRT garde l'unité ;

@@ -19,6 +19,10 @@ réglage moyen, indices temporels et carte de coût, puis la carte du lecteur re
 - la caméra : part des paires où elle est ajustée, où elle est tenue ; coupes et fondus probables ;
 - la caméra affinée par Lucas-Kanade comme dans le lecteur (porte 2.1) : part des paires affinées, écart du décor
   mesuré sur l'image (médiane, part sous 0,5 pixel à 720p), écart des vecteurs, tuiles gardées ;
+- l'écart après la caméra, qui sépare le dessin du décor : part de pixels qui bougent sur le décor (le bruit) et
+  sur les autres tuiles, tuiles qui bougent, recalées, effets par l'image ;
+- les lumières (effets lumineux) : parmi les tuiles qui bougent, celles sans bord net, celles qui passent les
+  critères d'une lumière tuile par tuile, et l'accord des pixels qui bougent (médiane, 90e centile) ;
 - l'ajustement de la caméra : tuiles candidates contre le minimum demandé, paires où elles manquent, paires où
   le rejet des aberrants échoue, tuiles écartées (texture trop faible, coût, vecteurs épars), quartiles de la
   texture ;
@@ -81,7 +85,7 @@ def replay(args, frames, divisor):
         pairs = []
         for line in done.stdout.splitlines():
             head, *fields = line.split()
-            if head in ("diag", "camera"):  # les lignes qui suivent la carte de la même paire
+            if head in ("diag", "camera", "image", "tot"):  # les lignes qui suivent la carte de la même paire
                 pairs[-1][head] = [float(f) for f in fields]
                 continue
             k = len(pairs)
@@ -121,12 +125,40 @@ def measure(pairs, frames):
     doubles = [k for k in range(len(frames) - 1) if np.array_equal(frames[k], frames[k + 1])]
     return {"paires": len(pairs), "doublons": len(doubles),
             "classes": [float((kinds == j).mean()) for j in range(4)], "sures": float(sure.mean()),
+            "paires_effet": float((kinds == 3).any((1, 2)).mean()),
             "bascule": float(flips.mean()) if len(flips) else math.nan,
             "bascule_tenue": float(flips[held].mean()) if held.any() else math.nan,
             "camera_ajustee": float(np.mean([p["camera_fit"] for p in pairs])),
             "camera_tenue": float(np.mean([p["background_held"] for p in pairs])),
             "coupes": int(sum(p["cut"] for p in pairs)), "fondus": int(sum(p["fade"] for p in pairs)),
-            "ajustement": fit_diagnosis(pairs), "affinage": camera_diagnosis(pairs, frames.shape[1])}
+            "ajustement": fit_diagnosis(pairs), "affinage": camera_diagnosis(pairs, frames.shape[1]),
+            "image": image_diagnosis(pairs)}
+
+
+def image_diagnosis(pairs):
+    """L'écart après la caméra (ligne image de carte_rejeu), sur les paires où il est mesuré : part de ces paires,
+    centiles médians de la part de pixels qui bougent sur le décor (50, 90, 99) et sur les autres tuiles (50, 90),
+    écart moyen |e| médian du décor (codes), part des tuiles mesurées qui bougent par leurs pixels, par le seul
+    recalage, et part des effets par l'image ; parmi les tuiles qui bougent, part sans bord net, part des
+    lumières, accord médian et 90e centile (moyennes des paires)."""
+    d = np.array([p["image"] for p in pairs if "image" in p], np.float64)
+    if not len(d):
+        return {}
+    measured = d[d[:, 0] > 0]
+    if not len(measured):
+        return {"mesuree": 0.0}
+    tiles = measured[:, 0]
+    med = lambda j: float(np.median(measured[:, j]))  # noqa: E731
+    out = {"mesuree": float(len(measured) / len(d)), "decor": [med(2), med(3), med(4)], "decor_ecart": med(5),
+           "autres": [med(7), med(8)], "bougent": float(np.mean(measured[:, 9] / tiles)),
+           "decalees": float(np.mean(measured[:, 10] / tiles)), "effets": float(np.mean(measured[:, 11] / tiles))}
+    if measured.shape[1] >= 16:  # les colonnes des lumières (carte_rejeu d'après le 19 novembre)
+        some = measured[measured[:, 9] > 0]  # les paires où des tuiles bougent
+        out["lumieres"] = {"douces": float(np.mean(some[:, 12] / some[:, 9])) if len(some) else math.nan,
+                           "lumieres": float(np.mean(measured[:, 13] / tiles)),
+                           "accord": [float(np.mean(some[:, 14])) if len(some) else math.nan,
+                                      float(np.mean(some[:, 15])) if len(some) else math.nan]}
+    return out
 
 
 def camera_diagnosis(pairs, flow_height):
@@ -173,15 +205,17 @@ def report(rows, tail):
     L = ["# Carte de la scène du lecteur (porte 2.3)", "",
          "Toutes les paires voisines, doublons compris, à la taille du flux du lecteur ; NVOF grille 4, réglage "
          "moyen, indices temporels ; carte rejouée par carte_rejeu (lissage compris). Sûres : décor ou dessin de "
-         f"confiance ≥ {SURE}. Bascule : tuiles qui changent de classe d'une paire à la suivante ; tenue : sur les "
-         "paires où la caméra est tenue.", "",
-         "| Extrait | Flux | Paires (doublons) | Décor / dessin / effet / incertain | Sûres | Bascule | Bascule tenue "
-         "| Caméra ajustée / tenue | Coupes, fondus |",
-         "|---|---|---:|---|---:|---:|---:|---|---|"]
+         f"confiance ≥ {SURE}. Effet : part de toutes les tuiles, au dixième (une lueur couvre peu de l'image), "
+         "puis part des paires qui en ont au moins une. Bascule : tuiles qui changent de classe d'une paire à la "
+         "suivante ; tenue : sur les paires où la caméra est tenue.", "",
+         "| Extrait | Flux | Paires (doublons) | Décor / dessin / effet / incertain | Paires avec effet | Sûres "
+         "| Bascule | Bascule tenue | Caméra ajustée / tenue | Coupes, fondus |",
+         "|---|---|---:|---|---:|---:|---:|---:|---|---|"]
     for name, (size, m) in rows.items():
         c = m["classes"]
         L.append(f"| {name} | {size[0]} × {size[1]} | {m['paires']} ({m['doublons']}) | "
-                 f"{100 * c[1]:.0f} / {100 * c[2]:.0f} / {100 * c[3]:.0f} / {100 * c[0]:.0f} | {pct(m['sures'])} | "
+                 f"{100 * c[1]:.0f} / {100 * c[2]:.0f} / {100 * c[3]:.1f} / {100 * c[0]:.0f} | "
+                 f"{pct(m.get('paires_effet', math.nan))} | {pct(m['sures'])} | "
                  f"{pct(m['bascule'])} | {pct(m['bascule_tenue'])} | {100 * m['camera_ajustee']:.0f} / "
                  f"{100 * m['camera_tenue']:.0f} % | {m['coupes']}, {m['fondus']} |")
     L += ["", "## Ajustement de la caméra", "",
@@ -214,6 +248,34 @@ def report(rows, tail):
             continue
         L.append(f"| {name} | {pct(f['affinee'])} | {pct(f['mesuree'])} | {f['ecart_image']:.2f} | "
                  f"{pct(f['sous_demi'])} | {f['ecart_vecteurs']:.2f} | {f['gardees']:.0f} |")
+    L += ["", "## Écart après la caméra (séparation dessin / décor)", "",
+          "Sur les paires où il est mesuré (caméra affinée) : part de pixels qui bougent après la caméra, "
+          "centiles médians 50 / 90 / 99 sur les tuiles du décor (le bruit : kMovingShare doit rester au-dessus) "
+          "et 50 / 90 sur les autres ; écart moyen |e| médian du décor, codes ; part des tuiles mesurées qui "
+          "bougent par leurs pixels (kMovingShare, 0.1), par le seul recalage (kShiftMoving, 1 pixel à 720p), et "
+          "effets par l'image (kEffectShare 0.3, kEffectCost 12).", "",
+          "| Extrait | Mesurée | Décor 50 / 90 / 99 | Écart décor | Autres 50 / 90 | Bougent | Recalées | Effets |",
+          "|---|---:|---|---:|---|---:|---:|---:|"]
+    for name, (_, m) in rows.items():
+        f = m.get("image")
+        if not f or "decor" not in f:
+            continue
+        dd, a = f["decor"], f["autres"]
+        L.append(f"| {name} | {pct(f['mesuree'])} | {100 * dd[0]:.1f} / {100 * dd[1]:.1f} / {100 * dd[2]:.1f} % | "
+                 f"{f['decor_ecart']:.2f} | {100 * a[0]:.1f} / {100 * a[1]:.1f} % | {pct(f['bougent'])} | "
+                 f"{pct(f['decalees'])} | {pct(f['effets'])} |")
+    L += ["", "## Lumières (effets lumineux)", "",
+          "Sur les paires mesurées, parmi les tuiles qui bougent : part sans bord net (kLightSharp 0.25, kSharpEdge "
+          "8 codes par pixel), part des tuiles mesurées qui sont des lumières tuile par tuile (kLightAgree 0.6, "
+          "kLightKept 0.5 ; la carte demande aussi des voisines sans bord net et un vecteur qui suit la caméra), "
+          "accord |éclaircis − assombris| / qui bougent, médiane et 90e centile. La part d'effet de la carte est "
+          "dans le premier tableau.", "",
+          "| Extrait | Sans bord net | Lumières | Accord 50 / 90 |", "|---|---:|---:|---|"]
+    for name, (_, m) in rows.items():
+        f = (m.get("image") or {}).get("lumieres")
+        if f:
+            L.append(f"| {name} | {pct(f['douces'])} | {pct(f['lumieres'])} | "
+                     f"{f['accord'][0]:.2f} / {f['accord'][1]:.2f} |")
     L += ["", f"Coûts de NVOF, tous extraits : 99e centile {tail['c99']}, 99,9e {tail['c999']} ; part des vecteurs "
               "au-dessus de " + ", ".join(f"{s} : {100 * v:.3f} %" for s, v in tail["au_dessus"].items())
           + f" (kSceneCostHigh = {COST_HIGH}).", "",
