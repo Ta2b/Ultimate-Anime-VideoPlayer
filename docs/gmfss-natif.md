@@ -80,10 +80,94 @@ Les caractéristiques d'une image ne dépendent que d'elle : celles de B pourrai
 
 Les noyaux font leurs sommes en f16, mixtes (chaque prise en f16, les prises entre elles en f32) ou f32, comme
 pour le RIFE natif ([`rife-natif.md`](rife-natif.md)) ; la tuile de 64 canaux de sortie n'existe qu'en f16.
-L'essai au chargement de la fusion comme de la paire passe chaque variante contre TensorRT ; celles qui tiennent
-le seuil sont chronométrées contre lui (`gmfss_trial.h` : onze tours intercalés, la médiane), et la plus rapide
-n'est gardée que si elle bat TensorRT d'au moins 2 %. Sinon TensorRT garde la fusion ou la paire : le natif ne
-coûte jamais de qualité ni de vitesse. Le journal dit, pour chacune, les dB de chaque variante et les temps.
+Chaque réseau natif est coupé en morceaux qui prennent chacun leurs sommes (« Essai par morceaux et réglage »
+ci-dessous) ; le mélange le plus rapide qui tient le seuil est chronométré contre TensorRT (`gmfss_trial.h` :
+onze tours intercalés, la médiane) et n'est gardé que s'il le bat d'au moins 2 %. Sinon TensorRT garde la
+fusion ou la paire : le natif ne coûte jamais de qualité ni de vitesse.
+
+## Essai par morceaux et réglage
+
+L'ancien essai passait chaque réseau entier en f16, en mixtes ou en f32 (« Résultats du PC » : la paire en
+f16, 12 % plus rapide que TensorRT). L'essai coupe maintenant chaque réseau en morceaux, comme le mélange du
+RIFE natif, et chaque convolution a sa forme réglée au banc.
+
+**Les morceaux** (`gmfss_native_net.cu`, `gmfss_pair_native_net.cu`) :
+
+| Unité | Morceau | Convolutions | Tête |
+|---|---|---|---|
+| fusion | ligne 0 | celles qui écrivent un tenseur de 64 canaux (la moitié des plans remplis) | aucune |
+| fusion | ligne 1 | 128 canaux (le quart) | aucune |
+| fusion | ligne 2 | 192 canaux (le huitième) | aucune |
+| fusion | queue | la convolution avant le PixelShuffle, celle du PixelShuffle, `conv_last` | `conv_last` |
+| paire | FeatureNet | les six, sur chaque image | les trois sorties (`block{b}.3`) |
+| paire | MetricNet | les cinq | `metric_out` |
+
+Une convolution va à la ligne du tenseur qu'elle écrit : une descente à la ligne d'en dessous, une montée à celle
+d'au-dessus. Les trois lignes ont chacune leur largeur et leur taille, donc leur coût et leur erreur ; la queue
+écrit l'image, là où le f16 coûte le plus (l'émulation ci-dessous). Un découpage plus fin multiplierait les
+passes de l'essai (chaque option de chaque morceau est mesurée sur l'unité entière) pour des morceaux de deux
+convolutions sur 45. La coupe ne lit aucun nom de tenseur de l'export : la queue part de la convolution qui
+précède le PixelShuffle, la ligne de chaque tenseur est celle du plan (`prepare/gmfss_native.cpp`).
+
+**Les crans** (`gmfss_mix.h`) : f16, « f16 et tête f32 » (un morceau à tête seulement), mixtes, f32. La tête
+d'un morceau est la couche qui écrit une sortie de l'unité. TensorRT n'est pas une option d'un morceau : la
+fusion et la paire sont chacune un seul moteur. Il reste la référence, et le repli de l'unité entière.
+
+**Le choix** (`gmfss_trial.cpp`, sur `native_mix.h`, commun avec le RIFE natif) :
+
+1. une passe TensorRT (la référence) et une passe native f32 partout (la base) ; une valeur non finie de l'une
+   ou de l'autre, et TensorRT garde l'unité ;
+2. le temps seul de chaque option de chaque morceau, les autres au f32 (cinq tours intercalés, la médiane) ;
+3. l'effet de chaque option, ce morceau seul hors de la base, mesuré sur l'unité entière contre la base ; les
+   crans f16 et mixtes de tout le réseau (les variantes de l'ancien essai) sont mesurés tels quels, le mélange
+   ne fait donc jamais moins bien qu'eux ;
+4. le mélange le plus rapide (la somme des temps seuls) dont l'erreur prévue tient 45 dB contre TensorRT,
+   vérifié sur l'unité. Un raté recale la corrélation des erreurs ; quatre essais au plus, le dernier ne prend
+   qu'un mélange déjà mesuré. Chaque sortie (l'image ; chaque caractéristique, chaque mouvement) est jugée à
+   part, l'écart rapporté à son étendue (au moins 1) ;
+5. le mélange contre TensorRT, onze tours intercalés, la médiane : gardé s'il le bat d'au moins 2 %, les
+   poids des tuiles que ses formes n'emploient pas alors libérés.
+
+**Le réglage** (`gmfss_conv_plan.cu`, à la place du choix fixe de la tuile) : chaque convolution passe au banc
+du RIFE natif (`rife_native_bench.cu`) pour chacune des trois sommes, puisque l'essai en change sans rien
+reconstruire. La forme de référence (tuile de 16, K entier, sans avance, la plus petite tranche, deux lignes par
+warp, une en pas 2) d'abord, puis chaque forme que les noyaux font, sur une sortie remplie de NaN, comparée à la
+référence aux tolérances du RIFE (1/16 du pic en f16, 1/32 en mixtes, 1/128 en f32 : `native_sums.h`) et
+chronométrée ; la plus rapide de celles qui rendent la sortie de la référence est gardée. Une convolution à une
+seule forme n'est pas mesurée ; une convolution jumelle d'une autre déjà réglée (même genre, même géométrie,
+même résiduel, même activation : les blocs d'une ligne) en reprend les formes. La convolution du PixelShuffle a
+son genre dans le choix des noyaux du RIFE (`Kind::kShuffle`, `rife_native_pick.cu`, tranche de 64 seulement) :
+12 instances de plus, celles du RIFE inchangées (mêmes registres sur sm_75, 86, 89 et 120).
+
+**Émulé contre ONNX Runtime** (`tools/gmfss/emul_mix_native.py`, sur processeur : les arrondis f16 aux endroits
+des noyaux, les sommes dans leur ordre, la tranche de l'ancien choix ; le réglage peut en prendre une autre, ce
+qui ne change que l'ordre des arrondis f16). Images de la paire à 1024 × 576, la fusion à 512 × 288 (celle
+d'`export_gmfss.py`, à l'IFNet d'union ; les entrées du GridNet se trouvent par la structure). Chaque morceau
+seul, les autres au f32 : la pire sortie de l'unité en dB contre ORT, entre parenthèses contre le natif f32.
+
+| Morceau | f16 | f16 et tête f32 | mixtes | f32 |
+|---|---|---|---|---|
+| ligne 0 | 73,4 (73,3) | | 78,0 (78,3) | 78,3 |
+| ligne 1 | 78,1 (79,5) | | 78,3 (80,8) | 78,3 |
+| ligne 2 | 78,2 (80,0) | | 78,3 (81,3) | 78,3 |
+| queue | 67,2 (67,2) | 74,6 (74,9) | 76,4 (77,2) | 78,3 |
+| FeatureNet | 72,0 (72,0) | 73,3 (73,4) | 73,3 (76,5) | 73,3 |
+| MetricNet | 65,2 (64,8) | 65,8 (65,3) | 71,1 (70,2) | 73,3 |
+
+En mélange : la fusion toute en f16 66,5 (66,5), en f16 et tête f32 72,8 (72,7), toute en mixtes 76,2 (76,3) ;
+la paire toute en f16 65,2 (64,8), le FeatureNet en f16 et le MetricNet en mixtes 71,1 (70,2), le MetricNet en
+f32 72,0 (72,0). Le pire de la paire est la métrique dès que le MetricNet n'est pas en f32 ; celui de la fusion,
+la queue, puis la ligne 0. Tous les mélanges tiennent 45 dB de loin, et 50 dB contre le natif f32 : le choix se
+fera sur les temps seuls, et le mélange ne gagne sur le f16 partout que si un morceau est plus rapide à un autre
+cran, ce que seul le PC dira ; le gain à attendre tient surtout aux formes réglées par couche. Le f16 de la paire
+émulé (65,2 dB contre ORT) rejoint celui du PC (64,8 dB contre TensorRT). La fusion d'`ifnet_rife.py` (l'IFNet de
+RIFE 4.26, images de 512 × 256) donne les mêmes chiffres à moins de 1 dB : f16 partout 66,5, f16 et tête
+f32 72,6, mixtes 76,1.
+
+**Ce qui reste au PC** : les temps (seul de chaque option, le mélange contre TensorRT) ; les dB contre TensorRT
+(l'émulation juge contre ONNX Runtime sur processeur ; au PC, TensorRT FP16 n'était qu'à 67,7 dB du natif f32
+sur la paire) ; le temps du réglage ; et que tout se lance : l'essai par morceaux et le réglage n'ont jamais tourné
+sur une carte.
 
 ## Justesse
 
@@ -97,9 +181,10 @@ coûte jamais de qualité ni de vitesse. Le journal dit, pour chacune, les dB de
   4 pixels, des caractéristiques en ondes) passent par la fusion TensorRT entière, puis par l'IFNet et le GridNet
   natif ; trois passes, la dernière comparée. De la paire (`gmfss_pair_trial.cpp`) : les deux dessins passent par
   la paire entière, puis par le flot et les réseaux natifs ; la pire des quatorze sorties est comparée, rapportée
-  à son étendue (au moins 1). Une variante n'est mesurée qu'à **45 dB** ou plus ; la séance finale vise 50 dB.
+  à son étendue (au moins 1). Un mélange n'est retenu qu'à **45 dB** ou plus ; la séance finale vise 50 dB.
 - Compilé par nvcc 13.5 (sm_75, 86, 89, 120, `--warn-on-spills -Werror`), lancé sur la RTX 4070 Ti le
-  19 novembre 2026 (ci-dessous).
+  19 novembre 2026 (ci-dessous) avec l'ancien essai. L'essai par morceaux et le réglage au banc sont compilés de
+  même, jamais lancés sur une carte.
 - La justesse se vérifie dans le cloud (émulation contre onnxruntime sur processeur, coupe comparée à la fusion
   ou à la paire entière) ; le PC ne donne que ce qui demande la carte : les temps et les dB contre TensorRT.
 
@@ -135,9 +220,18 @@ avant (`interp_retired.h`). `--motion=gmfss` joue GMFSS union seul pour une lect
 du natif et de TensorRT sur le même extrait. `kirari compare` passe `--debug` à ses deux variantes.
 
 ```sh
-# 0. Première ouverture : la fusion et la paire entières, l'IFNet et le flot se construisent ; les lignes
-#    « GMFSS natif retenu pour la fusion… » et « … pour la paire… » donnent les dB (50 visés) et les temps,
-#    « GMFSS natif écarté… » dit pourquoi TensorRT garde la fusion ou la paire.
+# 0. Première ouverture : la fusion et la paire entières, l'IFNet et le flot se construisent. Pour chacune
+#    (« fusion », « paire »), dans l'ordre (chiffres à lire) :
+#    « GMFSS natif, fusion : 45 convolutions réglées au banc … en … s (… formes mesurées, N écartées ; … sans
+#      choix ; … reprises d'une jumelle) » : le temps du réglage ; N écartées doit rester à 0, sinon une ligne
+#      « GMFSS natif, fusion, réglage : convolution i (…), sommes … : N formes écartées » dit laquelle ;
+#    « GMFSS natif, fusion, ligne 0 seul : f16 … ms (… dB) ; mixtes … ; f32 … ms (base) », une par morceau :
+#      le temps seul de chaque cran, son effet sur l'unité contre le natif f32 ;
+#    « GMFSS natif, fusion, tout le réseau contre TensorRT : f32 … dB, f16 … dB, mixtes … dB » : l'ancien essai ;
+#    « GMFSS natif retenu pour la fusion (…, ligne 0 f16, … ; contre TensorRT … dB (prévus …), seuil 45 dB ;
+#      contre le natif f32 : mélange … dB, TensorRT … dB ; une passe : TensorRT … ms, mélange … ms ; …) »,
+#      les dB (50 visés) et les temps ; « GMFSS natif écarté, … » dit pourquoi TensorRT garde l'unité ;
+#      « GMFSS natif refusé, TensorRT garde la fusion : … », une erreur avant l'essai (mémoire, lancement).
 #    Les deux graphes : dans un dossier de RIFE, son voisin gmfss (~/kirari/models/gmfss) ou --gmfss-dir DOSSIER.
 kirari play --motion=gmfss --rife=2 --start=960 extrait.mkv 2>&1 | grep -i "gmfss natif"
 

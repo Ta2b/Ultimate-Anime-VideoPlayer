@@ -28,7 +28,8 @@ Le mélange reste juste pour GMFSS : GMFlow sous TensorRT, le reste natif (`/mnt
 `src/gpu/cuda/backend/rife_native_kernels.cuh` (une famille de convolutions), `rife_native_pick.cu` (les formes
 instanciées et les formes à essayer), `rife_native_weights.cu` (poids repliés, rangés en fragments B),
 `rife_native_layer.h` et `rife_native_bench.cu` (une couche, le banc du réglage), `rife_native_net.cu` (le réseau),
-`rife_native_trial.cpp` (l'essai morceau par morceau), `rife_native_mix.cpp` (le choix du mélange),
+`rife_native_trial.cpp` (l'essai morceau par morceau), `rife_native_mix.cpp` (le choix du mélange, sur
+`native_mix.h`, commun avec le GMFSS natif, qui prend aussi le banc et le choix des formes : [`gmfss-natif.md`](gmfss-natif.md)),
 `rife_fused_native.cpp` (la chaîne pour l'essai), `prepare/rife_native.h` (les poids lus dans les morceaux ONNX).
 
 - **mma.sync FP16**, sommes en f16, mixtes ou f32 selon l'essai ; m16n8k16 dès sm_80, deux m16n8k8 sur sm_75
