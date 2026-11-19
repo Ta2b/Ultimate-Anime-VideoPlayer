@@ -236,12 +236,10 @@ class UpscaleStage final : public RingStage {
   // l'interpolation si la carte ne suit pas » (motion_cut.h). `source_only` : le Rapide l'a réduite à sa
   // source faute de temps.
   void count_free(const PairFacts& facts, int written, bool source_only);
-  // Débogage des paires (pair_marks.h) : la paire (previous_, frame) tenue ou coupée notée et écrite au
-  // journal, seulement quand le menu Statistiques le demande.
+  // Débogage des paires (pair_marks.h) : (previous_, frame) tenue ou coupée, au journal (Stats)
   void mark_pair(const DecodedFrame& frame, const PairFacts& facts);
   PairFacts& scene_pair(const DecodedFrame& frame, PairFacts& facts);  // facts.scene (upscale_ahead.cpp)
-  // Où DistilDRBA estime : la taille de RIFE.
-  kernels::RifeGeometry drba_geometry() const;
+  kernels::RifeGeometry drba_geometry() const;  // où DistilDRBA estime : la taille de RIFE
   std::expected<gpu::PairScores, Refusal> drba_scores(const DecodedFrame& frame);
   std::expected<void, Refusal> drba_next(const DecodedFrame& frame, const gpu::IngestSpec& spec,
                                          bool measure);
