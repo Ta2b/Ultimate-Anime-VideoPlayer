@@ -187,13 +187,14 @@ class KernelOps {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_pair : absent de ce backend"});
   }
   // Mesures de la paire a, b (RGB de même taille, luma BT.709 tirée du RGB), rendues tout de suite
-  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
+  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls. Hors des
+  // tickets de scores_start : elle n'en périme aucun.
   virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_now : absent de ce backend"});
   }
   // scores_now en deux temps : scores_start enfile la mesure sans attendre et rend un ticket ;
   // scores_take attend la fin de cette mesure seulement, pas le travail enfilé derrière elle. Un
-  // ticket vaut jusqu'à kPendingReadbacks lancements plus loin ; périmé, il est refusé.
+  // ticket vaut jusqu'à kPendingReadbacks scores_start plus loin ; périmé, il est refusé.
   virtual std::expected<std::uint64_t, Refusal> scores_start(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_start : absent de ce backend"});
   }

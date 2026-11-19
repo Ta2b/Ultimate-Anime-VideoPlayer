@@ -454,12 +454,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
     cudaEvent_t done = nullptr;
     std::uint64_t ticket = 0;
   };
-  std::array<PairRead, kPendingReadbacks> pair_reads_{};
+  // Un emplacement de plus, le dernier, à scores_now seul : il ne prend la place d'aucun ticket.
+  std::array<PairRead, kPendingReadbacks + 1> pair_reads_{};
   std::array<FlowRead, kPendingReadbacks> flow_reads_{};
   std::array<StatsRead, kPendingReadbacks> stats_reads_{};
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   std::uint64_t stats_tickets_ = 0;
+  // La mesure de la paire lancée dans slot, puis relue (attente hôte de cette mesure seule).
+  std::expected<void, Refusal> pair_launch(PairRead& slot, const Tensor& a, const Tensor& b);
+  std::expected<PairScores, Refusal> pair_read(const PairRead& slot);
   // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
   std::unique_ptr<SceneFlow> scene_flow_;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).
