@@ -116,7 +116,9 @@ namespace kirari::gpu {
 // docs/gmfss-natif.md) : un module d'avant ne saurait pas construire le manifeste.
 // 55 : manifestes « .gmfsspair » sous kTrialGmfssNative (le FeatureNet et le MetricNet de la paire de GMFSS
 // par nos noyaux) : un module 54 ne saurait pas les construire.
-inline constexpr int kBackendAbi = 55;
+// 56 : KernelOps::scene_camera_start et scene_camera_take (l'affinage de la caméra de la carte par
+// Lucas-Kanade, kernels/spec/scene_camera.h).
+inline constexpr int kBackendAbi = 56;
 
 using DeviceUuid = kirari::DeviceUuid;
 

@@ -107,8 +107,13 @@ struct SceneMotion {
   // (c0 + c1 x + c2 y, c3 + c4 x + c5 y) dans b. Identité si camera_fit est faux.
   std::array<double, 6> camera{0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
   bool camera_fit = false;
-  double residual = 0.0;  // écart moyen des tuiles décor au modèle, pixels de travail
-  int tile_px = 0;        // côté d'une tuile, pixels de travail
+  bool camera_refined = false;  // affinée par Lucas-Kanade sur les lumas (spec/scene_camera.h)
+  // Écart du décor au modèle, pixels de travail. Mesuré sur l'image (médiane des décalages qui restent sur
+  // residual_tiles tuiles du décor, spec/scene_camera.h) quand la caméra est affinée et que l'image le permet
+  // ; sinon (residual_tiles 0), écart moyen des vecteurs de NVOF des tuiles gardées par l'ajustement.
+  double residual = 0.0;
+  int residual_tiles = 0;
+  int tile_px = 0;  // côté d'une tuile, pixels de travail
   int cols = 0;
   int rows = 0;
   std::vector<SceneTile> tiles;  // cols × rows, lissées dans le temps (ref::SceneHistory)
@@ -148,8 +153,15 @@ inline constexpr float kBackgroundShare = 0.1F;   // plus cette part du mouvemen
 inline constexpr float kStillMotion = 0.5F;       // mouvement nul, pixels du flux (sans caméra ajustée)
 inline constexpr int kFitMinTiles = 16;           // tuiles retenues au moins pour ajuster la caméra
 inline constexpr float kFitMinShare = 0.03F;      // et cette part des tuiles de l'image
-inline constexpr float kFitInlierScale = 2.5F;    // rejet : au-delà de 2,5 × l'écart médian
-inline constexpr int kFitRounds = 4;
+// L'ajustement du banc 2.1 (camera() de tools/bench/qualite/nvof_mesures.py), en pixels à 720p (× hauteur du
+// flux / 720) : départ sur la translation médiane, kFitRounds tours, et à chaque tour, rejet des tuiles à
+// plus de kFitMad fois l'écart médian de celles à moins de kFitNear, seuil borné entre kFitBoundLow et
+// kFitBoundHigh. Poids d'une tuile : 1 / (1 + coût moyen / coût moyen médian), × sa texture.
+inline constexpr int kFitRounds = 8;
+inline constexpr float kFitMad = 3.0F * 1.4826F;
+inline constexpr float kFitNear = 2.0F;
+inline constexpr float kFitBoundLow = 0.75F;
+inline constexpr float kFitBoundHigh = 2.0F;
 inline constexpr float kCutUnmatched = 0.6F;       // part de vecteurs sans correspondance d'une coupe
 inline constexpr float kFadeShift = 4.0F;          // glissement moyen de luminosité d'un fondu, codes
 inline constexpr float kFadeAgree = 0.8F;          // part des tuiles qui glissent dans le même sens

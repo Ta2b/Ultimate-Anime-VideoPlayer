@@ -28,6 +28,9 @@ SceneFlow::~SceneFlow() {
   for (Read& read : reads_) {
     if (read.done != nullptr) static_cast<void>(cudaEventDestroy(read.done));
   }
+  for (Refine& refine : refines_) {
+    if (refine.done != nullptr) static_cast<void>(cudaEventDestroy(refine.done));
+  }
 }
 
 void SceneFlow::release_grid() {
@@ -38,6 +41,7 @@ void SceneFlow::release_grid() {
     read.host = nullptr;
     read.ticket = 0;
   }
+  release_refine();
   cols_ = 0;
   rows_ = 0;
 }
@@ -50,6 +54,8 @@ std::expected<bool, Refusal> SceneFlow::prepare(int flow_width, int flow_height,
   session_.reset();
   released_posted_ = {};
   last_.reset();
+  launched_ = {};
+  writes_ = {};
   release_grid();
   auto opened = NvofSession::open(flow_width, flow_height);
   if (!opened) {
@@ -91,7 +97,7 @@ std::expected<void, Refusal> SceneFlow::allocate_grid() {
     if (auto ok = cuda_check(cudaEventCreateWithFlags(event, cudaEventDisableTiming), "cudaEventCreate"); !ok)
       return ok;
   }
-  return {};
+  return allocate_refine();
 }
 
 std::expected<std::optional<SceneFlow::Lumas>, Refusal> SceneFlow::plan(bool follows) const {
@@ -165,6 +171,13 @@ std::expected<std::uint64_t, Refusal> SceneFlow::run(cudaStream_t lane, const Lu
   released_posted_[static_cast<std::size_t>(lumas.b)] = true;
   last_ = lumas;
   const std::uint64_t ticket = tickets_ + 1;
+  // Les tampons que la voie vient d'écrire : un affinage de cette paire ne vaut que tant qu'ils restent.
+  if (!lumas.keep_a) ++writes_[static_cast<std::size_t>(lumas.a)];
+  ++writes_[static_cast<std::size_t>(lumas.b)];
+  launched_[ticket % launched_.size()] = Launched{
+      .ticket = ticket,
+      .lumas = lumas,
+      .writes = {writes_[static_cast<std::size_t>(lumas.a)], writes_[static_cast<std::size_t>(lumas.b)]}};
   Read& read = reads_[ticket % reads_.size()];
   const std::size_t bytes = tile_count(cols_, rows_) * sizeof(kernels::SceneTileSums);
   ready =
