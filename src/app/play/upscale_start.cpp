@@ -38,7 +38,7 @@ gpu::Shape output_shape(const UpscaleSetup& s) {
 // Ni GMFSS, ni les calques, ni Smooth, ni TemporalFix : ils lisent les sources de travail (l'écran grade).
 bool graded_copies(const UpscaleSetup& s) {
   return s.engine == nullptr && s.grader != nullptr && !s.yuv_slots && s.gmfss.use == GmfssUse::Off &&
-         !s.layers.layers && s.layers.plate == nullptr && !s.smooth_drawings && s.temporal_fix == nullptr;
+         !s.layers.layers && !s.layers.plate_on() && !s.smooth_drawings && s.temporal_fix == nullptr;
 }
 
 // L'écran grade chaque image de cette chaîne : le journal le dit, sans quoi seule l'absence de la ligne de
@@ -61,22 +61,21 @@ UpscaleStage::UpscaleStage(VideoStageInit init, UpscaleSetup setup)
   graded_copies_ = graded_copies(setup_);
   note_screen_grade(setup_, interpolates(), warps_spanned());
   reuse_.enabled = setup_.span_reuse.whole;
-  // SPAN seul : la paire de la reprise se mesure en avance (look_ahead), comme sous RIFE.
-  reuse_.alone =
-      setup_.engine != nullptr && reuse_.enabled && !interpolates() && setup_.distil_drba == nullptr;
   triage_.for_gmfss(gmfss_only());
   reuse_.tiles.enabled = setup_.span_reuse.tiles;
   reuse_.check = setup_.span_reuse.check;
   if (setup_.engine != nullptr) reuse_.tiles.set_grid(setup_.engine->span_tile_grid());
-  // Ce que les tuiles feront, dit au démarrage : leur grille, ou, si la carte ou le contrôle les demandent,
-  // pourquoi ce SPAN n'en calcule pas.
+  // SPAN seul : la paire de la reprise ou des tuiles se mesure en avance (look_ahead), comme sous RIFE.
+  reuse_.alone = setup_.engine != nullptr && (reuse_.enabled || reuse_.tiles.active()) && !interpolates() &&
+                 setup_.distil_drba == nullptr;
+  // Ce que les tuiles feront, dit au démarrage quand elles sont demandées : leur grille, ou pourquoi ce SPAN
+  // n'en calcule pas.
   if (setup_.engine != nullptr && reuse_.tiles.enabled) {
     const kernels::SpanTileGrid& grid = reuse_.tiles.grid();
     if (reuse_.tiles.active())
-      log_channel("gpu")->info("SPAN par tuiles : grille de {} × {} tuiles de {} × {} pixels de travail{}",
-                               grid.cols, grid.rows, grid.tile_w, grid.tile_h,
-                               setup_.scene_map ? "" : " ; sans --scene-map, chaque image reste entière");
-    else if (setup_.scene_map || reuse_.check)
+      log_channel("gpu")->info("SPAN par tuiles : grille de {} × {} tuiles de {} × {} pixels de travail",
+                               grid.cols, grid.rows, grid.tile_w, grid.tile_h);
+    else
       log_channel("gpu")->info(
           "SPAN par tuiles : ce moteur ne calcule que l'image entière (seul le SPAN natif les calcule)");
   }

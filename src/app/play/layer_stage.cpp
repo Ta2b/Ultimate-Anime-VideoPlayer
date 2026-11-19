@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/trace.h"
+#include "kernels/spec/resample.h"
 
 namespace kirari::app::play {
 namespace {
@@ -26,7 +27,7 @@ std::expected<void, Refusal> LayerStage::allocate(gpu::Backend& backend, const L
                                                   bool spanned) {
   work_width_ = static_cast<int>(work_shape.dims[3]);
   work_height_ = static_cast<int>(work_shape.dims[2]);
-  if (setup.plate == nullptr || !spanned) return {};
+  if (!setup.plate_on() || !spanned) return {};
   auto tensor = backend.alloc_tensor(gpu::TensorType::F16, out_shape);
   if (!tensor) return std::unexpected(std::move(tensor.error()));
   plate_ = std::move(*tensor);
@@ -39,6 +40,7 @@ void LayerStage::forget() {
   plate_step_ = {};
   plate_ready_ = false;
   key_pending_ = false;
+  neighbours_.forget();
 }
 
 void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool smooth_first,
@@ -48,17 +50,24 @@ void LayerStage::arrive(const PairFacts& facts, const LayerSetup& setup, bool sm
   pair_.reset();
   pair_layers_ = setup.layers;
   plate_step_ = {};
-  if (refused_ || (!setup.layers && setup.plate == nullptr)) return;
+  if (refused_ || (!setup.layers && !setup.plate_on())) return;
   if (!continues) forget();
   if (smooth) {
     ++counts_.smooth;
     forget();
     return;
   }
-  auto planned = plan_layers(facts.scene, work_width_, work_height_);
+  // L'affinage de la paire en retard : la caméra lk d'une paire d'avant (layer_plan.h, with_neighbour).
+  neighbours_.next();
+  bool borrowed = false;
+  auto planned =
+      plan_with_neighbour(facts.scene, neighbours_.for_pair(), work_width_, work_height_, borrowed);
+  if (!planned && planned.error() == LayerSkip::Cut) neighbours_.forget();  // jamais d'un autre plan
+  if (const auto own = refined_camera(facts.scene)) neighbours_.seen(*own);
   if (planned) {
     ++counts_.pairs;
     counts_.share += planned->share;
+    if (borrowed) ++counts_.borrowed;
   } else {
     ++counts_.skipped[static_cast<std::size_t>(planned.error())];
   }
@@ -99,16 +108,18 @@ std::expected<void, Refusal> LayerStage::compose_pair(gpu::KernelOps& ops, const
 std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const LayerSetup& setup,
                                                     const gpu::Tensor& rgb, const gpu::Tensor& spanned,
                                                     bool cubic) {
-  if (refused_ || plate_ == nullptr || setup.plate == nullptr || !pair_ ||
-      plate_step_.action == PlateAction::None)
+  if (refused_ || plate_ == nullptr || !setup.plate_on() || !pair_ || plate_step_.action == PlateAction::None)
     return {};
   KIRARI_TRACE("plaque de décor");
   const gpu::Tensor& plate = plate_->tensor();
   if (plate_step_.action == PlateAction::Refresh) {
     const std::array inputs{rgb};
     std::array results{plate};
-    if (auto ok = backend.enqueue(*setup.plate, inputs, results); !ok) {
-      log_channel("gpu")->warn("SPAN de la plaque refusé ({}) : sans plaque pour la lecture",
+    // La sortie de SPAN copiée telle quelle (même taille : Area ne mélange rien), ou le SPAN de la plaque.
+    auto ok = setup.plate_copy ? backend.kernels()->resample(spanned, kernels::Filter::Area, plate)
+                               : backend.enqueue(*setup.plate, inputs, results);
+    if (!ok) {
+      log_channel("gpu")->warn("clé de la plaque refusée ({}) : sans plaque pour la lecture",
                                ok.error().detail);
       refused_ = true;
       ++counts_.refused;
@@ -134,7 +145,7 @@ std::expected<void, Refusal> LayerStage::after_span(gpu::Backend& backend, const
 }
 
 void LayerStage::log_summary(const LayerSetup& setup) const {
-  if (!setup.layers && setup.plate == nullptr) return;
+  if (!setup.layers && !setup.plate_on()) return;
   std::string skipped;
   for (std::size_t i = 0; i < kLayerSkipCount; ++i) {
     if (counts_.skipped[i] == 0) continue;
@@ -143,10 +154,12 @@ void LayerStage::log_summary(const LayerSetup& setup) const {
   }
   const double share = counts_.pairs > 0 ? 100.0 * counts_.share / static_cast<double>(counts_.pairs) : 0.0;
   log_channel("gpu")->info(
-      "calques : {} paires avec calques ({:.0f} % de décor en moyenne), {} images composées ; sans : {}{} ; "
-      "plaque : {} clés, {} sources reprises{}",
-      counts_.pairs, share, counts_.composed, skipped.empty() ? std::string("aucune") : skipped,
+      "calques : {} paires avec calques (dont {} avec la caméra lk d'une voisine, {:.0f} % de décor en "
+      "moyenne), {} images composées ; sans : {}{} ; plaque : {} clés{}, {} sources reprises{}",
+      counts_.pairs, counts_.borrowed, share, counts_.composed,
+      skipped.empty() ? std::string("aucune") : skipped,
       counts_.smooth > 0 ? std::format(", Smooth {}", counts_.smooth) : std::string(), counts_.keys,
+      setup.plate_copy ? " (reprises de SPAN)" : (setup.plate != nullptr ? " (SPAN FP16 de plus)" : ""),
       counts_.plated, refused_ ? " ; coupés par un refus du backend" : "");
 }
 

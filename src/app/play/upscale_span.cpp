@@ -89,13 +89,12 @@ std::uint64_t input_recipe(bool debanded, const gpu::Reduction& reduce) {
   return key;
 }
 
-// Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près, la
-// carte arrive quand elle peut), ni TemporalFix (la carte ne voit pas sa sortie), ni Smooth (SPAN fait en
-// avance), ni plaque de décor (layer_stage.h : elle réécrit la sortie, ses pixels ne se reprennent pas d'une
-// image à l'autre).
+// Tuiles qui bougent (upscale_tiles.h) : en lecture seulement (l'export rejoue la chaîne au bit près), ni
+// TemporalFix (la mesure de la paire ne voit pas sa sortie), ni Smooth (SPAN fait en avance), ni plaque de
+// décor (layer_stage.h : elle réécrit la sortie, ses pixels ne se reprennent pas d'une image à l'autre).
 bool tiles_fit(const UpscaleSetup& setup) {
   const bool playing = setup.clock != nullptr && !setup.yuv_slots;
-  return playing && setup.temporal_fix == nullptr && !setup.smooth_drawings && setup.layers.plate == nullptr;
+  return playing && setup.temporal_fix == nullptr && !setup.smooth_drawings && !setup.layers.plate_on();
 }
 
 // Avant le warp, la sortie d'avant est dans l'autre tampon, si la source d'avant a vraiment eu son SPAN et
@@ -110,8 +109,6 @@ TileStale output_stale(const TileContext& at) {
 
 void tile_facts(ReuseFacts& rf, const UpscaleSetup& setup, const TileContext& at, const PairFacts& facts) {
   rf.tiles_stale = tiles_fit(setup) ? output_stale(at) : TileStale::Chain;
-  rf.can_shift = at.before_warp;
-  rf.scene = facts.scene.has_value() ? &*facts.scene : nullptr;
   rf.spread_px = at.debanded ? static_cast<int>(std::ceil(kernels::ref::kDebandRadius)) : 0;
   rf.input_key = input_recipe(at.debanded, at.reduce);
   if (facts.scores && facts.scores->blocks_x > 0)
@@ -327,8 +324,8 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   KIRARI_TRACE("grade avant le warp");
   // La copie d'avant le grade, si les tuiles peuvent servir et que le grade a écrit l'image d'avant : un
   // grader qui ne grade pas (réglage, écran) ne coûte pas de copie.
-  if (setup_.engine != nullptr && setup_.scene_map && reuse_.tiles.active() && reuse_.ungraded_ok &&
-      span_graded_[buf ^ 1U] && tiles_fit(setup_)) {
+  if (setup_.engine != nullptr && reuse_.tiles.active() && reuse_.ungraded_ok && span_graded_[buf ^ 1U] &&
+      tiles_fit(setup_)) {
     if (auto ok = keep_ungraded(*setup_.backend, spanned_[buf]->tensor(), buf, reuse_); !ok) return ok;
   }
   const GradedSource source{.epoch = head_.epoch,

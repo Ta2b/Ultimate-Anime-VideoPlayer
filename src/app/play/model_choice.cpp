@@ -118,11 +118,13 @@ TierSupport sibling_tiers(const std::filesystem::path& model, bool fp8_engine) {
 }
 
 std::vector<std::filesystem::path> motion_model_dirs(const PlayerPaths& paths,
-                                                     const std::optional<ModelChoice>& rife) {
+                                                     const std::optional<ModelChoice>& rife,
+                                                     const std::optional<std::filesystem::path>& given) {
   std::vector<std::filesystem::path> dirs;
   const auto add = [&dirs](const std::filesystem::path& dir) {
     if (!dir.empty() && std::ranges::find(dirs, dir) == dirs.end()) dirs.push_back(dir);
   };
+  if (given) add(*given);
   if (rife) add(rife->path.parent_path());
   for (const std::filesystem::path& candidate : default_rife_candidates(paths.home, paths.models))
     add(candidate.parent_path());

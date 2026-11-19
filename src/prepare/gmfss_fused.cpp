@@ -1,10 +1,14 @@
 #include "prepare/gmfss_fused.h"
 
+#include <algorithm>
 #include <charconv>
+#include <deque>
 #include <format>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <optional>
+#include <set>
 #include <system_error>
 #include <utility>
 
@@ -21,6 +25,11 @@ namespace {
 
 constexpr std::string_view kHeader = "kirari-gmfss-fused";
 constexpr std::size_t kPieces = 2;
+
+// La première convolution du GridNet d'union, et le plus de nœuds entre elle et le Concat des images : le
+// PReLU que l'export décompose (Relu, Neg, Mul, Sub), un Cast au plus.
+constexpr std::string_view kHeadWeight = "gmfss.fusionnet.residual_model_head0.1.weight";
+constexpr std::size_t kHeadReach = 8;
 
 std::optional<std::string> read_size(std::string_view rest, GmfssFusedManifest& manifest) {
   const std::size_t gap = rest.find(' ');
@@ -109,14 +118,50 @@ bool is_gmfss_fused_manifest(const std::filesystem::path& path) {
   return path.extension() == kGmfssFusedExtension;
 }
 
+std::expected<std::string, Refusal> gmfss_ifnet_tensor(std::span<const std::byte> fusion) {
+  auto graph = read_onnx_graph(fusion);
+  if (!graph) return std::unexpected(std::move(graph.error()));
+  std::map<std::string_view, const OnnxFullNode*, std::less<>> producer;
+  for (const OnnxFullNode& node : graph->nodes)
+    for (const std::string& output : node.outputs) producer.emplace(output, &node);
+  const auto head = std::ranges::find_if(graph->nodes, [](const OnnxFullNode& node) {
+    return node.op_type == "Conv" && node.inputs.size() >= 2 && node.inputs[1] == kHeadWeight;
+  });
+  if (head == graph->nodes.end())
+    return refuse(RefusalCode::FieldMissing,
+                  "GMFSS natif : pas de GridNet d'union dans la fusion (residual_model_head0 absent)");
+  // En remontant de la convolution, le premier Concat rencontré : celui des trois images.
+  std::deque<std::string_view> pending{head->inputs[0]};
+  std::set<std::string_view, std::less<>> seen;
+  std::size_t reached = 0;
+  while (!pending.empty() && reached < kHeadReach) {
+    const std::string_view tensor = pending.front();
+    pending.pop_front();
+    if (!seen.insert(tensor).second) continue;
+    const auto found = producer.find(tensor);
+    if (found == producer.end()) continue;  // entrée du graphe ou constante
+    const OnnxFullNode& node = *found->second;
+    ++reached;
+    if (node.op_type == "Concat") {
+      if (node.inputs.size() != 3) break;
+      return node.inputs[1];
+    }
+    pending.insert(pending.end(), node.inputs.begin(), node.inputs.end());
+  }
+  return refuse(RefusalCode::FieldMissing,
+                "GMFSS natif : pas de Concat des trois images [image0, IFNet, image1] devant le GridNet");
+}
+
 std::expected<std::vector<std::byte>, Refusal> gmfss_ifnet(std::span<const std::byte> fusion, int height,
                                                            int width) {
+  auto image = gmfss_ifnet_tensor(fusion);
+  if (!image) return std::unexpected(std::move(image.error()));
   const std::vector<SplitTensor> inputs{
       {.name = "half0", .dims = {1, 3, height, width}},
       {.name = "half1", .dims = {1, 3, height, width}},
       {.name = "time", .dims = {1, 1, 1, 1}},
   };
-  const std::vector<SplitTensor> outputs{{.name = std::string(kGmfssRifeTensor)}};
+  const std::vector<SplitTensor> outputs{{.name = std::move(*image)}};
   return extract_subgraph(fusion, inputs, outputs, "gmfss_ifnet");
 }
 

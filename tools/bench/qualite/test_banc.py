@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 
 import numpy as np
@@ -21,6 +22,7 @@ import travail  # noqa: E402
 import rife_instants  # noqa: E402
 import rife_taille  # noqa: E402
 import scintillement  # noqa: E402
+import tuiles_controle  # noqa: E402
 import tuiles_panoramique  # noqa: E402
 
 F16 = TensorProto.FLOAT16
@@ -385,6 +387,41 @@ class TuilesPanoramique(unittest.TestCase):
             self.assertGreater(by[(d, "sortie reprise sans décalage")], 1.0)
         self.assertGreater(by[(0.25, "sortie reprise sans décalage")], 1.0)
         self.assertEqual(tuiles_panoramique.gate(frame, frame, 8), (0.0, 0.0, 0.0))
+
+
+class TuilesControle(unittest.TestCase):
+    def test_sortie_composee(self):
+        """Un réseau qui double chaque pixel, quatre images de 128 × 64 (grille de 2 × 4 tuiles de 64 × 16) : une
+        reprise d'une image identique, puis des tuiles qui couvrent le changement, sont exactes ; des tuiles qui
+        le manquent laissent l'écart du changement, au pire bloc comme en moyenne."""
+        class Double:
+            def upscale(self, img):
+                return np.repeat(np.repeat(img, 2, axis=1), 2, axis=2)
+
+        rng = np.random.default_rng(4)
+        base = rng.integers(40, 200, (64, 128), dtype=np.uint8)
+        changed = base.copy()
+        changed[4:12, 70:90] = 20  # dans les deux premières rangées de tuiles, colonne 1
+        with tempfile.TemporaryDirectory() as folder:
+            for k, img in enumerate((base, base, changed, changed)):
+                img.tofile(os.path.join(folder, f"{k}.y"))
+            with open(os.path.join(folder, "taches.tsv"), "w", encoding="utf-8") as fh:
+                fh.write("128\t64\t0.y\t1.y\t0.flux\t0.carte\n")
+
+            def run(masks):
+                for k, mask in enumerate(masks, start=1):
+                    np.array(mask, np.uint8).tofile(os.path.join(folder, f"{k}.coeur"))
+                args = types.SimpleNamespace(dossier=folder, masques=folder, diviseur=1, images=len(masks),
+                                             detail=False)
+                return tuiles_controle.control(args, Double())
+
+            covered = run([[0] * 8, [1, 1, 1, 1, 0, 0, 0, 0], [0] * 8])
+            self.assertEqual([r[1] for r in covered], ["R", "T", "R"])
+            self.assertTrue(all(r[3] == 0.0 and r[4] == 0.0 for r in covered))
+            missed = run([[0] * 8, [1, 0, 1, 0, 0, 0, 0, 0], [1] * 8])
+            self.assertGreater(missed[1][3], 1.0)
+            self.assertGreater(missed[1][4], 0.0)
+            self.assertEqual(missed[2][1:], ("C", 8, 0.0, 0.0))
 
 
 if __name__ == "__main__":

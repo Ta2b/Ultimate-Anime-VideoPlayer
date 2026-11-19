@@ -458,7 +458,10 @@ std::vector<Shot> ShotCutter::finish(std::int64_t end_us) {
     held_->end_us = std::max(end_us, held_->start_us + 1);
     discard_shot();
   }
-  if (held_) out.push_back(*std::exchange(held_, std::nullopt));
+  if (held_) {
+    out.push_back(*held_);
+    held_.reset();
+  }
   if (auto closed = close_shot(end_us)) out.push_back(*closed);
   recent_.clear();
   anchor_.reset();

@@ -53,18 +53,18 @@ std::expected<void, Refusal> window(std::string_view text, PlayOptions& options)
 }
 
 // Les options à valeur, dans l'ordre où elles se cherchent (--snapshot-at avant --snapshot).
-constexpr std::array<std::string_view, 26> kValuedOptions{
+constexpr std::array<std::string_view, 27> kValuedOptions{
     "--model",       "--window",          "--start",           "--seconds",          "--fullscreen-after",
     "--stats",       "--snapshot-at",     "--snapshot-frames", "--snapshot",         "--keys",
     "--work-height", "--rife-model",      "--anime-contrast",  "--anime-saturation", "--anime-highlights",
     "--rife",        "--truehdr-peak",    "--data-dir",        "--bake-looks",       "--bench-level",
     "--bench-out",   "--rife-calm-model", "--motion",          "--swap-mode",        "--vrr-margin",
-    "--pause-at"};
+    "--pause-at",    "--gmfss-dir"};
 
 // Les options qui ne donnent qu'un chemin.
 using PathMember = std::optional<std::filesystem::path> PlayOptions::*;
 std::optional<PathMember> path_option(std::string_view name) {
-  constexpr std::array<std::pair<std::string_view, PathMember>, 8> kPaths{{
+  constexpr std::array<std::pair<std::string_view, PathMember>, 9> kPaths{{
       {"--model", &PlayOptions::model},
       {"--data-dir", &PlayOptions::data_dir},
       {"--bake-looks", &PlayOptions::bake_looks},
@@ -73,6 +73,7 @@ std::optional<PathMember> path_option(std::string_view name) {
       {"--snapshot", &PlayOptions::snapshot},
       {"--rife-model", &PlayOptions::rife_model},
       {"--rife-calm-model", &PlayOptions::rife_calm_model},
+      {"--gmfss-dir", &PlayOptions::gmfss_dir},
   }};
   for (const auto& [option, member] : kPaths)
     if (option == name) return member;
@@ -127,7 +128,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
 // clang-format off
-constexpr std::array<std::string_view, 51> kTrialOptions{
+constexpr std::array<std::string_view, 52> kTrialOptions{
     "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
     "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
     "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
@@ -137,7 +138,7 @@ constexpr std::array<std::string_view, 51> kTrialOptions{
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
     "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
     "--pair-triage", "--span-tiles-check", "--gmfss-native", "--no-span-native", "--span-native-edges",
-    "--effect-mask-view", "--pause-at"};
+    "--effect-mask-view", "--pause-at", "--span-tiles"};
 // clang-format on
 
 bool is_trial(std::string_view arg) {
@@ -160,7 +161,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 54> kFlags{{
+constexpr std::array<Flag, 55> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -202,7 +203,8 @@ constexpr std::array<Flag, 54> kFlags{{
     {"--scene-map", &PlayOptions::scene_map, true},
     {"--skip-held", &PlayOptions::skip_held, true},
     {"--no-span-reuse", &PlayOptions::span_reuse, false},
-    {"--no-span-tiles", &PlayOptions::span_tiles, false},
+    {"--span-tiles", &PlayOptions::span_tiles, true},
+    {"--no-span-tiles", &PlayOptions::span_tiles, false},  // le défaut, gardé pour les anciennes commandes
     {"--span-tiles-check", &PlayOptions::span_tiles_check, true},
     {"--fast-steady", &PlayOptions::fast_steady, true},
     {"--smooth-drawings", &PlayOptions::smooth_drawings, true},

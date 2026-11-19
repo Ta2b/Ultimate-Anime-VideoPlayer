@@ -185,8 +185,8 @@ std::expected<std::uint32_t, Refusal> UpscaleStage::outputs(const DecodedFrame& 
   std::int64_t lead_us = 0;                // attente des mesures de la paire, avant sa soumission
   // DistilDRBA mesure aussi une paire « source seule » (facteur 1) : sans cela, la paire suivante n'aurait
   // pas les mesures du côté d'avant.
-  // Rapide à pas constant (les coupes changent N) et SPAN seul (la reprise) : chaque paire, à N = 1 aussi.
-  if ((facts.factor > 1 || drba() || steady || reuse_.alone) && facts.same_epoch) {
+  // Rapide à pas constant (les coupes changent N), SPAN seul et tuiles de SPAN : chaque paire, à N = 1 aussi.
+  if ((facts.factor > 1 || drba() || steady || reuse_.measures_pairs()) && facts.same_epoch) {
     const auto asked = std::chrono::steady_clock::now();
     auto scores = drba() ? drba_scores(frame) : pair_scores();
     // Les dernières attentes seulement : le journal de fin les résume, la mémoire reste bornée.

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -112,6 +113,16 @@ pl_hook_res EffectPass::Impl::run(const pl_hook_params& params) {
   custom.num_variables = static_cast<int>(vars.size());
   custom.vertex_attribs = &corners;
   custom.num_vertex_attribs = 1;
+  // Une image lue sans passe de mise à l'échelle (aucune, ou fondue dans la sortie) arrive sans taille, et
+  // libplacebo refuse alors le résultat (« User hook tried resizing non-resizable stage! ») puis écarte le
+  // hook pour toute la vie du renderer : le masque ne tenait que la première image, l'alpha restait à 1, lu
+  // « effet sûr partout ». À cette étape, l'image a la taille du rectangle de destination.
+  int sized_w = 0;
+  int sized_h = 0;
+  if (!pl_shader_output_size(params.sh, &sized_w, &sized_h)) {
+    custom.output_w = std::abs(pl_rect_w(params.dst_rect));
+    custom.output_h = std::abs(pl_rect_h(params.dst_rect));
+  }
   if (!pl_shader_custom(params.sh, &custom)) {
     res.failed = true;
     return res;

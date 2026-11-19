@@ -25,10 +25,10 @@ SceneFlow::~SceneFlow() {
   for (cudaEvent_t event : released_) {
     if (event != nullptr) static_cast<void>(cudaEventDestroy(event));
   }
-  for (Read& read : reads_) {
+  for (const Read& read : reads_) {
     if (read.done != nullptr) static_cast<void>(cudaEventDestroy(read.done));
   }
-  for (Refine& refine : refines_) {
+  for (const Refine& refine : refines_) {
     if (refine.done != nullptr) static_cast<void>(cudaEventDestroy(refine.done));
   }
 }
