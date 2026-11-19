@@ -114,7 +114,10 @@ la tête) :
 
 L'encodeur natif gagne ; la fenêtre native perd, et le choix au temps la laisse à TensorRT. Le travail de la
 fenêtre en demi-taille (s2, en MAC, rembourrage compris) : la tête près des deux tiers (270 × 480, six appuis,
-32 canaux), les trois blocs le reste. Le profil par noyau (nsys) dira où va l'écart.
+32 canaux), les trois blocs le reste. Un premier profil nsys n'a vu de la fenêtre que l'essai au chargement
+(`conf_kernel` 4 fois en 30 s) : en lecture elle tourne en graphe CUDA, que nsys ne détaille qu'avec
+`--cuda-graph-trace=node`. Il montre déjà l'encodeur : 0,14 ms de GPU par image en natif (trois convolutions et
+`traits_kernel`) contre 0,20 ms pour TensorRT (convolutions, Resize, reformatages).
 
 ## Séance finale (sur le PC, binaire `linux-release` puis `windows-release`)
 
@@ -138,10 +141,11 @@ for tour in 1 2 3; do
   kirari --debug play --no-upscale --one-lane --start=960 --stats=B$tour.csv extrait.mkv
 done
 
-# 2. Noyaux : Nsight Systems sur 30 s, avec et sans --tfix-native.
-nsys profile -o tfix-natif --capture-range=none --duration=30 \
+# 2. Noyaux : Nsight Systems sur 30 s, avec et sans --tfix-native. La fenêtre tourne en graphe CUDA
+#    (fused_graphs.cpp) : sans --cuda-graph-trace=node, nsys ne compte que le graphe, pas ses noyaux.
+nsys profile -o tfix-natif --capture-range=none --duration=30 --cuda-graph-trace=node \
   kirari --debug play --tfix-native --no-upscale --start=960 extrait.mkv
-nsys profile -o tfix-trt --capture-range=none --duration=30 \
+nsys profile -o tfix-trt --capture-range=none --duration=30 --cuda-graph-trace=node \
   kirari --debug play --no-upscale --start=960 extrait.mkv
 nsys stats --report cuda_gpu_kern_sum tfix-natif.nsys-rep tfix-trt.nsys-rep
 ```
