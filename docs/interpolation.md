@@ -506,11 +506,14 @@ GMFSS (pas DistilDRBA ni les paires de Smooth), chaque paire où RIFE tournerait
 - **dessin tenu** : ni le dessin ni la caméra ne bougent, et presque aucune tuile ne change hors du grain.
   RIFE ne tourne pas, b sort seul, comme un dessin tenu reconnu par le pire bloc 16 × 16, que le grain d'une
   source granuleuse fait souvent manquer (`pair_held`, `rife_plan.h`) ;
-- **paire impossible** : le flux ne trouve presque aucune correspondance (part `unmatched` de 0,45 ou plus,
-  ou coupe probable que RIFE n'a pas vue). Le mouvement de RIFE est remplacé par un fondu enchaîné de a et b,
-  sans fantômes ;
-- **zone douteuse** : les tuiles d'effet qui changent, et celles qui changent avec une confiance basse,
-  passent au fondu, dilatées d'une tuile et adoucies ; RIFE reste ailleurs. La moitié du doute d'une paire
+- **paire impossible** : le flux ne trouve presque aucune correspondance, pas même un décor que la caméra
+  explique (part `unmatched` de 0,45 ou plus sans caméra ajustée, ou coupe probable que RIFE n'a pas vue,
+  `flow_lost`), ou la moitié des tuiles mêmes doute. Le mouvement de RIFE est remplacé par un fondu enchaîné
+  de a et b, sans fantômes. Avec une caméra ajustée, le décor correspond : ce qui ne correspond pas est local
+  (un personnage rapide, un effet), et seules ses tuiles peuvent passer au fondu ;
+- **zone douteuse** : les tuiles d'effet qui changent, et les tuiles de dessin ou de décor qui changent avec
+  une confiance basse, passent au fondu, dilatées d'une tuile et adoucies ; RIFE reste ailleurs. Un aplat
+  (tuile Uncertain) ne doute pas : RIFE n'y fait pas de fantôme qui se voie. La moitié du doute d'une paire
   passe à la suivante, pour qu'une zone ne clignote pas, à travers trois paires tenues au plus (un dessin en
   quatre) ; une coupe, un saut ou une tenue plus longue l'oublie.
 
@@ -522,7 +525,18 @@ de l'échelle par paire alternent dans une paire forte) ; le warp habituel fait 
 mélange de RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'avant, image pour image. La
-ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues et fondues par endroits.
+ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues (dont celles sans
+correspondance ni caméra) et fondues par endroits.
+
+Première lecture (passage 9 de la séance du 19 novembre, Re:Zero, 20 s d'action) : 63 paires impossibles
+sur 104. La ligne ne disait pas quelle règle les fondait ; trois causes probables, corrigées sans mesure : la
+part de doute se mesurait sur la zone élargie au voisinage (une tuile
+sur trois qui doute en couvrait presque toute l'image), les aplats qui bougent doutaient, et une part de
+vecteurs sans correspondance suffisait même avec un décor bien suivi par la caméra (un personnage plus rapide
+que la portée de NVOF, 45 pixels du flux, n'est pas une paire impossible). Reste à surveiller : un tel
+personnage peut encore faire des tuiles d'effet (peu de correspondance, beaucoup d'écart) et passer au fondu
+par endroits ; la ligne de fin dit désormais combien de paires impossibles viennent de l'absence de
+correspondance.
 Les seuils (`triage::` dans `rife_triage.h`) ne sont pas mesurés ; la porte : le test à l'aveugle gagné sur
 les passages de rife-fantomes, sans hausse du scintillement (outil 0.1).
 
