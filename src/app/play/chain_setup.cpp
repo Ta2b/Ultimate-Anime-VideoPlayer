@@ -176,6 +176,8 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
                                    const MasterClock* clock, int width, int height,
                                    std::vector<RingSlotDesc> slots) const {
   const WorkSize sized = chain_work_size(settings, width, height);
+  // Plan par plan en lecture seulement (l'horloge et les plans de la pré-analyse) : l'export garde RIFE.
+  const bool by_shot = drba_by_shot && clock != nullptr && live != nullptr;
   return UpscaleSetup{
       .backend = backend.get(),
       .engine = engine.get(),
@@ -187,11 +189,11 @@ UpscaleSetup ChainEngines::upscale(const PlaySettings& settings, std::shared_ptr
       .rife_motion_half = rife_motion_half.get(),
       .rife_planes = rife_planes,
       .rife_align = rife_align,
-      .distil_drba = drba.get(),
+      .distil_drba = drba_by_shot && !by_shot ? nullptr : drba.get(),
       .drba_align = drba_align,
       .drba_motion = drba_motion,
-      .drba_by_shot = drba_by_shot,
-      .temporal_by_shot = shot_plan && temporal_fix != nullptr,
+      .drba_by_shot = by_shot,
+      .temporal_by_shot = shot_plan && temporal_fix != nullptr && clock != nullptr,
       .rife_factor = factor_of(settings),
       .one_lane = one_lane,
       .rife_warm = rife_warm,
