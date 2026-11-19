@@ -187,13 +187,14 @@ class KernelOps {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "rife_pair : absent de ce backend"});
   }
   // Mesures de la paire a, b (RGB de même taille, luma BT.709 tirée du RGB), rendues tout de suite
-  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls.
+  // au prix d'une attente hôte, pour décider de RIFE avant de le lancer. left et right sont nuls. Hors des
+  // tickets de scores_start : elle n'en périme aucun.
   virtual std::expected<PairScores, Refusal> scores_now(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_now : absent de ce backend"});
   }
   // scores_now en deux temps : scores_start enfile la mesure sans attendre et rend un ticket ;
   // scores_take attend la fin de cette mesure seulement, pas le travail enfilé derrière elle. Un
-  // ticket vaut jusqu'à kPendingReadbacks lancements plus loin ; périmé, il est refusé.
+  // ticket vaut jusqu'à kPendingReadbacks scores_start plus loin ; périmé, il est refusé.
   virtual std::expected<std::uint64_t, Refusal> scores_start(const Tensor& /*a*/, const Tensor& /*b*/) {
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported, "scores_start : absent de ce backend"});
   }
@@ -342,8 +343,10 @@ class KernelOps {
   // enfile sur la voie courante la seule lecture de a et b (la luma du flux), puis le flux et la réduction
   // sur une file à part, que le travail des voies n'attend jamais ; restart coupe les indices temporels de
   // NVOF (coupe, saut, nouvelle époque, début d'export : le résultat ne dépend alors pas de l'historique).
-  // Ticket 0 : NVOF n'a pas fini la paire d'avant, celle-ci n'est pas lancée (rien n'attend NVOF ; la paire
-  // suivante repart sans indices). scene_flow_take relit sans jamais attendre (nullopt : pas encore fini).
+  // Sans restart, a est l'image b de la paire lancée juste avant (ticket non nul) : le backend peut reprendre
+  // sa luma et ne lire que b. Ticket 0 : NVOF lit encore ce qu'il faudrait réécrire, la paire n'est pas
+  // lancée (rien n'attend NVOF ; la paire suivante repart avec restart). scene_flow_take relit sans jamais
+  // attendre (nullopt : pas encore fini).
   // kSceneFlowReadbacks paires en vol au plus : un ticket dépassé est périmé (SequenceOrder). Un seul thread
   // appelle les deux. Refus : backend sans NVOF (AMD, Intel, pilote sans la bibliothèque), GPU sans carte de
   // coût (Turing), taille refusée.

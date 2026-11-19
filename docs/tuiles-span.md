@@ -7,14 +7,16 @@ Aucun modèle nouveau : SPAN tel quel, la carte de la scène (`docs/carte-de-la-
 
 ## Ce qu'il faut pour que ça tourne
 
-- **SPAN FP16 natif** (`--span-native`, `docs/span-native16.md`) : nos noyaux savent sauter une tuile d'un bloc
-  entier. TensorRT (forme fixe) et le corps FP8 CUTLASS ne calculent que l'image entière : leur grille est vide
-  (`gpu::Engine::span_tile_grid`) et rien ne change pour eux.
+- **SPAN natif** (le défaut sur RTX 40 et 50, `docs/span-native16.md`) : nos noyaux savent sauter une tuile
+  d'un bloc entier, à sommes f16 (Équilibre, et repli du cran Performance) comme f32 (Qualité). TensorRT
+  (forme fixe) et le corps FP8 CUTLASS ne calculent que l'image entière : leur grille est vide
+  (`gpu::Engine::span_tile_grid`) et rien ne change pour eux. Avec la carte ou `--span-tiles-check` et un de
+  ces moteurs, le journal le dit au démarrage (« ce moteur ne calcule que l'image entière »).
 - **La carte de la scène** (`--scene-map`, RTX 30 et après) : sans elle, l'image entière se calcule, image pour
   image comme avant.
 - **SPAN avant le warp** (RIFE ou DistilDRBA en variante mouvement, `warp_after_span`) : la carte de la paire
-  (N − 1, N) arrive avant le SPAN de N. En SPAN seul, elle n'arrive qu'à l'image suivante : pas de tuiles. Le
-  chemin SPAN après RIFE sait faire les tuiles sur place (sans décalage) quand une carte est là.
+  (N − 1, N), lancée pendant l'image N − 1 (`look_ahead`, `drba_next` sous DistilDRBA), arrive avant le SPAN
+  de N. Le chemin SPAN après RIFE sait faire les tuiles sur place (sans décalage) quand une carte est là.
 - **En lecture** : jamais à l'export (la carte arrive quand elle peut ; l'export rejoue la chaîne au bit
   près), ni avec TemporalFix (la carte ne voit pas sa sortie), ni avec « Lisser les dessins tenus » (SPAN fait
   en avance), ni avec la plaque de décor, ni quand le grade avant le warp a réécrit la sortie d'avant sur
@@ -78,6 +80,8 @@ nouveau paquet Linux.
 
 Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA) ; jamais lancé. Audit du
 19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
-grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Le test
+grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Puis la mesure du
+contrôle (`scores_now`) qui, sous DistilDRBA après une image sautée, périmait le ticket du pont : `scores_now`
+a son propre emplacement, hors de l'anneau des tickets (`slice_ops_test.cpp`). Le test
 `tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques et la décision sur des cartes
 synthétiques.

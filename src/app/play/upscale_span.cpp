@@ -223,6 +223,13 @@ std::expected<void, Refusal> UpscaleStage::span_current() {
   // Sur la voie de SPAN, au milieu du travail de la paire : la voie de l'appelant reprend après.
   const gpu::Lane back = lane_;
   use_lane(gpu::Lane::Upscale);
+  if (setup_.engine == nullptr) {  // copies gradées (graded_copies_) : la source copiée, puis gradée
+    auto ok = setup_.backend->kernels()->resample(rgb_[current_]->tensor(), kernels::Filter::Area,
+                                                  spanned(current_));
+    if (ok) ok = grade_spanned(span_of_[current_]);
+    use_lane(back);
+    return ok;
+  }
   const std::array inputs{rgb_[current_]->tensor()};
   std::array results{spanned(current_)};
   const bool tiled = send_tiles(reuse_, *setup_.engine, &spanned(current_ ^ 1U));
@@ -243,7 +250,12 @@ std::expected<void, Refusal> UpscaleStage::grade_spanned(std::uint32_t buf) {
   span_graded_[buf] = false;
   if (!setup_.grader || setup_.yuv_slots) return {};
   KIRARI_TRACE("grade avant le warp");
-  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_);
+  const GradedSource source{.epoch = head_.epoch,
+                            .pts_us = head_.pts_us,
+                            .effects = setup_.live
+                                           ? setup_.live->effect_book().for_source(head_.epoch, head_.pts_us)
+                                           : std::nullopt};
+  auto graded = setup_.grader->grade(*setup_.backend->kernels(), spanned_[buf]->tensor(), debanded_, source);
   if (!graded) {
     log_channel("gpu")->warn("grade avant le warp : {} {} ; l'écran reprend le grade",
                              name(graded.error().code), graded.error().detail);

@@ -50,6 +50,7 @@ class SceneFlow;
 class RifeFusedEngine;
 class DrbaFusedEngine;
 class GmfssFusedEngine;
+class GmfssPairEngine;
 struct IngestParams;
 struct WarpBlendParams;
 
@@ -250,6 +251,25 @@ class TensorRtBackend final : public Backend, public KernelOps {
   std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_fused(const Artifact& artifact);
   std::expected<void, Refusal> enqueue_gmfss_fused(GmfssFusedEngine& engine, std::span<const Tensor> inputs,
                                                    std::span<Tensor> outputs);
+  // La paire de GMFSS au FeatureNet et au MetricNet natifs (tensorrt_gmfss_pair.cpp) : un manifeste
+  // « .gmfsspair », la paire entière et son flot construits par trtexec, chargés ensemble, le natif essayé si
+  // demandé.
+  std::expected<Artifact, Refusal> build_gmfss_pair(const ModelSpec& model, const ShapeSet& shapes,
+                                                    Progress& progress);
+  std::expected<std::unique_ptr<Engine>, Refusal> load_gmfss_pair(const Artifact& artifact);
+  std::expected<void, Refusal> enqueue_gmfss_pair(GmfssPairEngine& engine, std::span<const Tensor> inputs,
+                                                  std::span<Tensor> outputs);
+  // Les morceaux d'un manifeste de GMFSS (dossier dir), chacun vérifié par son empreinte puis construit par
+  // trtexec à la forme fixe shape (le second avec les réglages de RIFE si second_tuned) : les noms des
+  // fichiers du cache, dans l'ordre des morceaux.
+  std::expected<std::vector<std::string>, Refusal> build_gmfss_pieces(const std::filesystem::path& dir,
+                                                                      std::span<const std::string> pieces,
+                                                                      std::span<const std::string> digests,
+                                                                      const Shape& shape, bool second_tuned,
+                                                                      Progress& progress);
+  // Le seuil de l'essai des réseaux natifs de GMFSS contre TensorRT FP16 (docs/gmfss-natif.md) ; la séance
+  // finale vise 50 dB.
+  static constexpr double kGmfssNativeMinDb = 45.0;
   // Les réglages de trtexec de cet appareil (build, build_rife_fused, build_drba_fused).
   prepare::TrtexecConfig trtexec_config() const;
   // La voie lane le temps d'une portée.
@@ -463,12 +483,16 @@ class TensorRtBackend final : public Backend, public KernelOps {
     cudaEvent_t done = nullptr;
     std::uint64_t ticket = 0;
   };
-  std::array<PairRead, kPendingReadbacks> pair_reads_{};
+  // Un emplacement de plus, le dernier, à scores_now seul : il ne prend la place d'aucun ticket.
+  std::array<PairRead, kPendingReadbacks + 1> pair_reads_{};
   std::array<FlowRead, kPendingReadbacks> flow_reads_{};
   std::array<StatsRead, kPendingReadbacks> stats_reads_{};
   std::uint64_t pair_tickets_ = 0;  // derniers tickets lancés, par sorte
   std::uint64_t flow_tickets_ = 0;
   std::uint64_t stats_tickets_ = 0;
+  // La mesure de la paire lancée dans slot, puis relue (attente hôte de cette mesure seule).
+  std::expected<void, Refusal> pair_launch(PairRead& slot, const Tensor& a, const Tensor& b);
+  std::expected<PairScores, Refusal> pair_read(const PairRead& slot);
   // La session NVOF de la carte de la scène, créée au premier scene_flow_start ; détruite avant les voies.
   std::unique_ptr<SceneFlow> scene_flow_;
   // Lignes filtrées de l'ingestion à filtre étiré (slice_kernels.h, IngestParams::rows).

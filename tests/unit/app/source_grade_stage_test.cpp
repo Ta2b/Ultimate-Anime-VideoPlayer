@@ -20,8 +20,8 @@ enum class Answer { Graded, Nothing, Refused };
 class CountingGrader final : public SourceGrader {
  public:
   explicit CountingGrader(Answer answer) : answer_(answer) {}
-  std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& /*rgb*/,
-                                     bool /*debanded*/) override {
+  std::expected<bool, Refusal> grade(gpu::KernelOps& /*ops*/, const gpu::Tensor& /*rgb*/, bool /*debanded*/,
+                                     const GradedSource& /*source*/) override {
     ++calls;
     if (answer_ == Answer::Refused)
       return std::unexpected(Refusal{.code = RefusalCode::FeatureUnavailable, .detail = "essai"});
@@ -34,9 +34,15 @@ class CountingGrader final : public SourceGrader {
 };
 
 // RIFE mouvement ×2, warp après SPAN, six sources dont 3 tient le dessin de 2 : SPAN sur 1, 2, 4, 5 et 6.
-std::vector<RingFrame> play(Rig& rig, std::shared_ptr<SourceGrader> grader, bool warp_after_span = true) {
+// Sans SPAN (span faux) : les slots à la taille de travail.
+std::vector<RingFrame> play(Rig& rig, std::shared_ptr<SourceGrader> grader, bool warp_after_span = true,
+                            bool span = true) {
   rig.backend.score(SourceId{2}, SourceId{3}, 0.0, 10);
   UpscaleSetup s = rig.setup(true);
+  if (!span) {
+    s.engine = nullptr;
+    s.slots = rig.slots(4, kWidth, kHeight);
+  }
   s.rife = nullptr;
   s.rife_motion = &rig.motion;
   s.warp_after_span = warp_after_span;
@@ -75,6 +81,14 @@ TEST_CASE("Étage gpu : grade avant le warp refusé, l'étage cesse de grader et
   CHECK(grader->calls == 1);
   CHECK(rig.reported().empty());
   for (const RingFrame& frame : frames) CHECK_FALSE(frame.graded);
+}
+
+TEST_CASE("Étage gpu : grade avant le warp sans SPAN, chaque source copiée puis gradée", "[app][stage]") {
+  Rig rig;
+  auto grader = std::make_shared<CountingGrader>(Answer::Graded);
+  const std::vector<RingFrame> frames = play(rig, grader, false, false);
+  CHECK(grader->calls == 6);  // une copie par source, dessin tenu compris : RIFE lit les sources, pas elles
+  for (const RingFrame& frame : frames) CHECK(frame.graded);
 }
 
 TEST_CASE("Étage gpu : grade avant le warp sans warp après SPAN, l'écran grade", "[app][stage]") {

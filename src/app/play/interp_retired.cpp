@@ -1,12 +1,20 @@
 // Les choix d'interpolation retirés du menu (interp_retired.h).
 #include "app/play/interp_retired.h"
 
+#include <atomic>
+
 namespace kirari::app::play {
 
 namespace {
 
 constexpr std::string_view kRife426 = "rife_v4.26.onnx";
 constexpr std::string_view kRife425Lite = "rife_v4.25_lite.onnx";
+
+// keep_gmfss : posé au lancement du lecteur, lu à chaque lecture de play.toml.
+std::atomic<bool>& gmfss_switch() {
+  static std::atomic<bool> on{false};
+  return on;
+}
 
 }  // namespace
 
@@ -18,11 +26,20 @@ std::string_view nearest_rife_model(std::string_view model) {
 
 void retire_interpolation(PlaySettings& settings) {
   settings.rife_model = std::string(nearest_rife_model(settings.rife_model));
+  if (gmfss_kept()) return;
   if (settings.motion_engine == MotionEngine::Gmfss || settings.gmfss_middle) {
     settings.motion_engine = MotionEngine::Rife;
     settings.rife_model = std::string(kRife425File);
     settings.gmfss_middle = false;
   }
+}
+
+void keep_gmfss(bool keep) {
+  gmfss_switch().store(keep, std::memory_order_relaxed);
+}
+
+bool gmfss_kept() {
+  return gmfss_switch().load(std::memory_order_relaxed);
 }
 
 }  // namespace kirari::app::play

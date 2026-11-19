@@ -397,7 +397,7 @@ gpu::BackendInit chain_backend_init(Player& p, const PlaySettings& settings) {
           .trials = (p.options.l2_keep ? gpu::kTrialL2Keep : 0U) |
                     (p.options.warp_l2 ? gpu::kTrialWarpL2 : 0U) |
                     (p.options.rife_hwc8 ? gpu::kTrialRifeHwc8 : 0U) |
-                    (p.options.span_native ? gpu::kTrialSpanNative : 0U) |
+                    (p.options.span_native_edges ? gpu::kTrialSpanNative : 0U) |
                     (p.options.rife_native ? gpu::kTrialRifeNative : 0U) |
                     (p.options.gmfss_native ? gpu::kTrialGmfssNative : 0U) |
                     (settings.fast_precision ? 0U : gpu::kStrictPrecision)};
@@ -415,9 +415,9 @@ std::optional<SpanInt8> usable_variant(SpanVariantKind kind, const ModelChoice& 
                                        const SpanFp8Context& fp8_context, WorkSize work, bool bench,
                                        bool strict) {
   const auto log = log_channel("app");
-  if (kind == SpanVariantKind::Fp16Cutlass) {  // --span-native : le paquet se tire de l'ONNX, sans reçu
-    auto native = native16_variant(model.path, variants);
-    if (!native) log->info("SPAN FP16 natif : {}", native.error().detail);
+  if (kind == SpanVariantKind::Fp16Cutlass || kind == SpanVariantKind::Fp32Native) {  // tiré de l'ONNX
+    auto native = native_variant(kind, model.path, variants);
+    if (!native) log->info("SPAN {} : {}", variant_text(kind), native.error().detail);
     return native ? std::optional<SpanInt8>(std::move(*native)) : std::nullopt;
   }
   SpanInt8Lookup found = find_span_variant(kind, model.path, variants,
@@ -453,12 +453,22 @@ std::expected<bool, StageFailure> prepare_manual_fp8(Player& p, const gpu::Backe
   return true;
 }
 
+// Le SPAN natif (docs/span-native16.md), par défaut sur un moteur qui a ses noyaux, aux SPAN d'AnimeJaNai. Il
+// ne quantifie rien : une source HDR ne l'exclut pas.
+bool native_span(const Player& p, const gpu::BackendCaps& caps, const ModelChoice& model) {
+  const bool native = p.options.span_native && caps.span_fp16_cutlass && span_fp8_cutlass_model(model.path);
+  if (p.options.span_native && !native)
+    log_channel("app")->info("SPAN natif : pas sur ce moteur, cette carte ou ce modèle, TensorRT FP16");
+  return native;
+}
+
 // La variante de SPAN du cran (precision.h) quand tools/span/quantize_span.py ou derive_span_fp8.py en ont
 // laissé une qui passe ses garde-fous (span_int8.h) : Performance prend le SPAN entier en noyaux CUTLASS
 // FP8 (moteur qui l'annonce : RTX 40), puis le FP8 par Q/DQ (moteur qui l'accélère), puis l'INT8 ;
-// Équilibre l'INT8, sinon le FP16 tel que livré ; Qualité le FP32. Chaque variante refusée au chargement
-// (autre GPU, taille que les noyaux ne prennent pas, erreur CUDA, TensorRT qui la refuse) laisse la place à
-// la suivante, et la dernière au SPAN choisi, en FP16 sous TensorRT. Faux : la fenêtre fermée.
+// Équilibre le FP16 ; Qualité le SPAN natif à sommes f32, puis le FP32 de TensorRT ; le FP16 natif en repli
+// (RTX 40 et 50). Chaque variante refusée au chargement (autre GPU, taille que les noyaux ne prennent pas,
+// erreur CUDA, essai au chargement, TensorRT qui la refuse) laisse la place à la suivante, et la dernière
+// au SPAN choisi, en FP16 sous TensorRT. Faux : la fenêtre fermée.
 std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& init, ChainEngines& c,
                                             const PlaySettings& settings) {
   if (!c.model) return true;  // rien à charger : l'appelant ne vient qu'avec un modèle
@@ -470,13 +480,11 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
   // reçu v1 du FP8 CUTLASS (étape 3.6).
   const bool strict = settings.preset != Preset::Custom;
   const bool cutlass = caps.span_fp8_cutlass && !hdr_source(p.video);
-  // Le FP16 natif ne quantifie rien : une source HDR ne l'exclut pas.
-  const bool native16 = p.options.span_native && caps.span_fp16_cutlass;
   const std::vector<SpanVariantKind> wanted = span_variant_order(
-      tier, SpanVariantCaps{.cutlass = cutlass, .native16 = native16, .fp8 = caps.fp8, .int8 = caps.int8},
+      tier,
+      SpanVariantCaps{
+          .cutlass = cutlass, .native16 = native_span(p, caps, *c.model), .fp8 = caps.fp8, .int8 = caps.int8},
       strict);
-  if (p.options.span_native && !native16)
-    log->info("SPAN FP16 natif : ce moteur ou cette carte n'a pas ses noyaux, TensorRT FP16");
   if (tier == PrecisionTier::Performance && !caps.fp8)
     log->info("SPAN Performance (FP8) : ce moteur ne le calcule pas, variante INT8 ou FP16");
   const auto prepare_span = [&] {
@@ -519,7 +527,9 @@ std::expected<bool, StageFailure> load_span(Player& p, const gpu::BackendInit& i
     c.span_int8.reset();
     loaded.reset();
   }
-  if (!c.span_int8 && tier != PrecisionTier::Balanced) warn_span_fallback(*log, tier);
+  // Le FP16 natif, repli de chaque cran (span_variant_order), ne rend pas le cran demandé.
+  const bool tier_kept = c.span_int8 && c.span_int8->kind != SpanVariantKind::Fp16Cutlass;
+  if (!tier_kept && tier != PrecisionTier::Balanced) warn_span_fallback(*log, tier);
   if (!loaded) loaded = prepare_span();
   if (!*loaded) return stage_refused(std::move(loaded->error()), ChainStage::Upscale);
   if (!**loaded) return false;

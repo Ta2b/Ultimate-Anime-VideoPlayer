@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "gpu/cuda/backend/rife_native_kernels.cuh"
+#include "gpu/cuda/backend/rife_native_net.h"
 #include "prepare/gmfss_grid.h"
 
 namespace kirari::gpu::cuda::gmfss_plan {
@@ -72,40 +73,53 @@ enum class Kind : std::uint8_t {
 
 using Launch = void (*)(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p);
 
-template <int Kc, int CT, int KH, int S, int Rows, rn::In I, rn::Out O, bool Acc16>
+template <int Kc, int CT, int KH, int S, int Rows, rn::In I, rn::Out O, rn::Acc A>
 void launch_one(dim3 grid, int smem, cudaStream_t stream, const rn::Params& p) {
-  rn::conv_kernel<Kc, CT, KH, S, Rows, I, O, Acc16>
+  rn::conv_kernel<Kc, CT, KH, S, Rows, I, O, A>
       <<<grid, rn::kThreads, static_cast<std::size_t>(smem), stream>>>(p);
 }
 
-// La tuile de 64 colonnes n'existe qu'en sommes f16 : en f32, ses accumulateurs débordent.
-template <int Kc, int KH, int S, int Rows, rn::In I, rn::Out O, bool Acc16>
+// La tuile de 64 colonnes n'existe qu'en sommes f16 : en f32 ou mixtes, ses accumulateurs f32 débordent.
+template <int Kc, int KH, int S, int Rows, rn::In I, rn::Out O, rn::Acc A>
 Launch by_tile(int ct) {
-  if (ct == 16) return launch_one<Kc, 16, KH, S, Rows, I, O, Acc16>;
-  if (ct == 32) return launch_one<Kc, 32, KH, S, Rows, I, O, Acc16>;
-  if constexpr (Acc16) {
-    if (ct == 64) return launch_one<Kc, 64, KH, S, Rows, I, O, Acc16>;
+  if (ct == 16) return launch_one<Kc, 16, KH, S, Rows, I, O, A>;
+  if (ct == 32) return launch_one<Kc, 32, KH, S, Rows, I, O, A>;
+  if constexpr (A == rn::Acc::kF16) {
+    if (ct == 64) return launch_one<Kc, 64, KH, S, Rows, I, O, A>;
   }
   return nullptr;
 }
 
-template <bool Acc16>
+template <rn::Acc A>
 Launch pick(Kind kind, int kc, int ct) {
   using rn::In;
   using rn::Out;
   switch (kind) {
     case Kind::kSame:
-      if (kc == 16) return by_tile<16, 3, 1, 2, In::kNhwc, Out::kNhwc, Acc16>(ct);
-      if (kc == 64) return by_tile<64, 3, 1, 2, In::kNhwc, Out::kNhwc, Acc16>(ct);
+      if (kc == 16) return by_tile<16, 3, 1, 2, In::kNhwc, Out::kNhwc, A>(ct);
+      if (kc == 64) return by_tile<64, 3, 1, 2, In::kNhwc, Out::kNhwc, A>(ct);
       return nullptr;
     case Kind::kHalf:
-      return kc == 32 ? by_tile<32, 3, 2, 1, In::kNhwc, Out::kNhwc, Acc16>(ct) : nullptr;
+      return kc == 32 ? by_tile<32, 3, 2, 1, In::kNhwc, Out::kNhwc, A>(ct) : nullptr;
     case Kind::kPhase:
-      return kc == 64 ? by_tile<64, 2, 1, 2, In::kNhwc, Out::kPhase, Acc16>(ct) : nullptr;
+      return kc == 64 ? by_tile<64, 2, 1, 2, In::kNhwc, Out::kPhase, A>(ct) : nullptr;
     case Kind::kShuffle:
-      return kc == 64 ? by_tile<64, 3, 1, 2, In::kNhwc, Out::kPhase, Acc16>(ct) : nullptr;
+      return kc == 64 ? by_tile<64, 3, 1, 2, In::kNhwc, Out::kPhase, A>(ct) : nullptr;
     case Kind::kImageHalf:
-      return kc == 16 ? by_tile<16, 3, 2, 1, In::kImage, Out::kNhwc, Acc16>(ct) : nullptr;
+      return kc == 16 ? by_tile<16, 3, 2, 1, In::kImage, Out::kNhwc, A>(ct) : nullptr;
+  }
+  return nullptr;
+}
+
+// Les sommes de RIFE natif (rife_native_net.h) vues par les noyaux.
+inline Launch pick_for(RifeNativeSums sums, Kind kind, int kc, int ct) {
+  switch (sums) {
+    case RifeNativeSums::kF16:
+      return pick<rn::Acc::kF16>(kind, kc, ct);
+    case RifeNativeSums::kMixed:
+      return pick<rn::Acc::kMixed>(kind, kc, ct);
+    case RifeNativeSums::kF32:
+      return pick<rn::Acc::kF32>(kind, kc, ct);
   }
   return nullptr;
 }
@@ -199,7 +213,7 @@ struct Io {
 // Un réseau planifié pour une taille : height × width au niveau 0 (kGmfssFullLevel au double).
 class ConvNet {
  public:
-  ConvNet(int height, int width, bool acc32) : height_(height), width_(width), acc32_(acc32) {
+  ConvNet(int height, int width, RifeNativeSums sums) : height_(height), width_(width), sums_(sums) {
     int device = 0;
     if (cudaGetDevice(&device) == cudaSuccess)
       static_cast<void>(cudaDeviceGetAttribute(&sms_, cudaDevAttrMultiProcessorCount, device));
@@ -386,8 +400,7 @@ class ConvNet {
     if (!sent(layer.w.upload(packed.data(), packed.size() * sizeof(std::uint32_t))) ||
         !sent(layer.bias.upload(biases.data(), biases.size() * sizeof(float))))
       return false;
-    layer.launch =
-        acc32_ ? pick<false>(layer.kind, layer.kc, layer.ct) : pick<true>(layer.kind, layer.kc, layer.ct);
+    layer.launch = pick_for(sums_, layer.kind, layer.kc, layer.ct);
     if (layer.launch == nullptr) {
       error = "aucun noyau pour cette convolution";
       return false;
@@ -436,13 +449,13 @@ class ConvNet {
     }
   }
 
-  // La plus large tuile de sortie (64, ou 32 en f32) qui laisse deux vagues de blocs sur la carte.
+  // La plus large tuile de sortie (64 en sommes f16, 32 sinon) qui laisse deux vagues de blocs sur la carte.
   int choose_tile(const Layer& layer, int cout) const {
     const Shape3 shape = shape_of(layer.kind);
     const long cells = static_cast<long>((layer.ow + rn::kTW - 1) / rn::kTW) *
                        ((layer.oh + rn::kWarps * shape.rows - 1) / (rn::kWarps * shape.rows)) * layer.phases;
     for (const int ct : {64, 32}) {
-      if ((acc32_ && ct == 64) || cout % ct != 0) continue;
+      if ((sums_ != RifeNativeSums::kF16 && ct == 64) || cout % ct != 0) continue;
       if (cells * (cout / ct) >= 2L * sms_) return ct;
     }
     return 16;
@@ -494,7 +507,7 @@ class ConvNet {
 
   int height_;
   int width_;
-  bool acc32_;
+  RifeNativeSums sums_;
   int sms_ = 1;
   std::vector<Placed> tensors_;
   std::vector<Layer> layers_;

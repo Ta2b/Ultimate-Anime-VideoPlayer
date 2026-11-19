@@ -78,15 +78,14 @@ std::optional<PathMember> path_option(std::string_view name) {
   return std::nullopt;
 }
 
+// Dans l'ordre de MotionChoice.
 std::expected<void, Refusal> motion(std::string_view text, PlayOptions& options) {
-  if (text == "rife") {
-    options.motion = MotionChoice::Rife;
-  } else if (text == "drba") {
-    options.motion = MotionChoice::DistilDrba;
-  } else {
+  constexpr std::array<std::string_view, 3> kNames{"rife", "drba", "gmfss"};
+  const auto found = std::ranges::find(kNames, text);
+  if (found == kNames.end())
     return refuse(RefusalCode::FieldOutOfRange,
-                  std::format("--motion: \"{}\" is neither rife nor drba", text));
-  }
+                  std::format("--motion: \"{}\" is not rife, drba or gmfss", text));
+  options.motion = static_cast<MotionChoice>(found - kNames.begin());
   return {};
 }
 
@@ -127,7 +126,7 @@ std::expected<std::optional<std::string_view>, Refusal> valued(std::span<const s
 
 // Les options d'essai (P2.35) : bascules des chantiers et mesures, acceptées avec --debug seulement.
 // clang-format off
-constexpr std::array<std::string_view, 47> kTrialOptions{
+constexpr std::array<std::string_view, 49> kTrialOptions{
     "--rife-image", "--ring-rgb10a2", "--no-ring-rgb10a2", "--hdr-metadata", "--no-hdr-metadata",
     "--probe-nvdec", "--no-probe-nvdec", "--shot-cuts", "--no-shot-cuts", "--one-lane", "--lanes",
     "--skip-held", "--anime-shots", "--no-anime-shots", "--fast-steady", "--smooth-drawings", "--ring-watcher",
@@ -136,7 +135,7 @@ constexpr std::array<std::string_view, 47> kTrialOptions{
     "--rife-warm", "--profile-dispatches", "--rife-encode-all", "--rife-at-slot", "--filtered-warp",
     "--warp-l2", "--rife-hwc8", "--no-rife-hwc8", "--no-tfix-cache", "--scene-map", "--no-tfix-fused",
     "--no-effect-highlights", "--shot-plan", "--no-span-reuse", "--no-span-tiles", "--rife-native",
-    "--pair-triage", "--span-tiles-check", "--gmfss-native"};
+    "--pair-triage", "--span-tiles-check", "--gmfss-native", "--no-span-native", "--span-native-edges"};
 // clang-format on
 
 bool is_trial(std::string_view arg) {
@@ -159,7 +158,7 @@ struct Flag {
 };
 
 // Les drapeaux sans valeur : leur champ de PlayOptions et ce qu'ils y posent.
-constexpr std::array<Flag, 51> kFlags{{
+constexpr std::array<Flag, 53> kFlags{{
     {"--fullscreen", &PlayOptions::fullscreen, true},
     {"--hidden", &PlayOptions::hidden, true},
     {"--first-run", &PlayOptions::first_run, true},
@@ -189,7 +188,9 @@ constexpr std::array<Flag, 51> kFlags{{
     {"--warp-l2", &PlayOptions::warp_l2, true},
     {"--rife-hwc8", &PlayOptions::rife_hwc8, true},
     {"--no-rife-hwc8", &PlayOptions::rife_hwc8, false},
-    {"--span-native", &PlayOptions::span_native, true},
+    {"--span-native", &PlayOptions::span_native, true},  // le défaut, gardé pour les anciennes commandes
+    {"--no-span-native", &PlayOptions::span_native, false},
+    {"--span-native-edges", &PlayOptions::span_native_edges, true},
     {"--rife-native", &PlayOptions::rife_native, true},
     {"--gmfss-native", &PlayOptions::gmfss_native, true},
     {"--no-tfix-fused", &PlayOptions::temporal_fix_fused, false},
@@ -603,7 +604,7 @@ std::string play_usage(bool debug) {
       "  --work-height=N        shrinks the source to N lines before SPAN (default: the preset's; 0 never)\n"
       "  --rife=N               ×N interpolation (0 none, 1, 1.5 to 9.5 by halves, 10; default: preset's)\n"
       "  --rife-model=FILE      RIFE model (default: the preset's, {} without one)\n"
-      "  --motion=rife|drba     interpolation engine, RIFE or DistilDRBA (default: the preset's)\n"
+      "  --motion=rife|drba|gmfss  RIFE, DistilDRBA or GMFSS union alone (default: the preset's)\n"
       "  --truehdr-peak=NITS    peak aimed at by the HDR grade, {} to {} (0 or default: the screen's,\n"
       "                         else 1000)\n"
       "kirari --register           registers the player with the system (\"Open with\", default\n"
@@ -656,7 +657,7 @@ std::string play_usage(bool debug) {
          "  --rife-calm-model=FILE trial: a lighter RIFE for the middle pass of calm pairs (motion RIFE)\n"
          "  --rife-encode-all      measurement: fused RIFE encodes both images at every pass (same output)\n"
          "  --no-span-reuse        measurement: SPAN on every frame, held drawings included\n"
-         "  --rife-native, --gmfss-native  trial: fused RIFE, GMFSS fusion GridNet by our CUDA kernels\n"
+         "  --rife-native, --gmfss-native  trial: fused RIFE, GMFSS small nets by our CUDA kernels\n"
          "  --no-span-tiles        measurement: whole-frame SPAN only (--span-tiles-check: 1 in 24 checked)\n"
          "  --rife-at-slot         measurement: each RIFE pass of a strong pair waits for the ring slot\n"
          "                         of its image instead of being queued when the pair arrives (same output)\n"

@@ -64,6 +64,8 @@ constexpr KindFacts facts(SpanVariantKind kind) {
               kInt8MinSsimWorst};
     case SpanVariantKind::Fp16Cutlass:  // sans reçu : rien n'est quantifié, rien ne se juge
       return {"", "-fp16c-", ".span8", 0.0, 0.0, 0.0};
+    case SpanVariantKind::Fp32Native:
+      return {"", "-fp32n-", ".span8", 0.0, 0.0, 0.0};
   }
   return facts(SpanVariantKind::Int8);
 }
@@ -92,6 +94,15 @@ std::expected<toml::table, SpanInt8Lookup> read_receipt(const std::filesystem::p
   if (parsed.table()["format"].value_or(std::string_view()).empty())
     return std::unexpected(stale(i18n::tr_format("{} unreadable: {}", where, i18n::tr("empty receipt"))));
   return std::move(parsed).table();
+}
+
+// Le format d'un reçu. Ceux d'avant le nouveau nom (ADR 0016) disent « ajp-span-… » : le même format sous
+// l'ancien nom, pas un format inconnu (le paquet préparé avant le changement de nom servait encore).
+std::string receipt_format(const toml::table& receipt) {
+  constexpr std::string_view kOld = "ajp-span-";
+  const std::string_view format = receipt["format"].value_or(std::string_view());
+  if (!format.starts_with(kOld)) return std::string(format);
+  return "kirari-span-" + std::string(format.substr(kOld.size()));
 }
 
 // Le paquet ne correspond plus à son reçu : à refaire (stale), ou refusé s'il ne se lit pas. Un paquet
@@ -201,7 +212,7 @@ bool span_fp8_cutlass_model(const std::filesystem::path& span) {
 }
 
 TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem::path& dir, bool fp8_engine,
-                       bool cutlass_engine) {
+                       bool cutlass_engine, bool native_engine) {
   // Le moteur qui sait les noyaux CUTLASS suffit : le lecteur fabrique lui-même le paquet au premier
   // démarrage avec ce cran (span_auto.h), et la lecture reste en FP16 d'ici là. Le b5f48 (48 canaux, 5 blocs)
   // est pris depuis l'étape 3.2c, rangé en 64 canaux ; ArtCNN jamais (span_fp8_cutlass_model).
@@ -209,7 +220,8 @@ TierSupport span_tiers(const std::filesystem::path& span, const std::filesystem:
   return TierSupport{
       .performance = cutlass_possible ||
                      (fp8_engine && find_span_variant(SpanVariantKind::Fp8, span, dir).variant.has_value()),
-      .quality = find_span_variant(SpanVariantKind::Fp32, span, dir).variant.has_value()};
+      .quality = (native_engine && span_fp8_cutlass_model(span)) ||
+                 find_span_variant(SpanVariantKind::Fp32, span, dir).variant.has_value()};
 }
 
 std::filesystem::path span_variant_path(SpanVariantKind kind, const std::filesystem::path& span,
@@ -233,45 +245,50 @@ std::string_view variant_text(SpanVariantKind kind) {
     case SpanVariantKind::Fp8Cutlass:
       return "FP8 CUTLASS";
     case SpanVariantKind::Fp16Cutlass:
-      return "FP16 CUTLASS";
+      return "FP16 native";
+    case SpanVariantKind::Fp32Native:
+      return "FP32 native";
   }
   return "INT8";
 }
 
 namespace {
 
-// Le paquet au chemin path, s'il se lit et porte le drapeau fp16 ; faux sinon (absent, abîmé, autre).
-bool native16_readable(const std::filesystem::path& path) {
+// Le paquet au chemin path, s'il se lit et porte le drapeau fp16, et acc32 tel que demandé ; faux sinon
+// (absent, abîmé, autre).
+bool native_readable(const std::filesystem::path& path, bool acc32) {
   std::ifstream in(path, std::ios::binary);
   if (!in) return false;
   const std::vector<char> raw{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
   const auto* first = reinterpret_cast<const std::byte*>(raw.data());
   const auto parsed = gpu::span_fp8::parse(std::span<const std::byte>(first, raw.size()));
-  return parsed && parsed->fp16;
+  return parsed && parsed->fp16 && parsed->acc32 == acc32;
 }
 
 }  // namespace
 
-std::expected<SpanInt8, Refusal> native16_variant(const std::filesystem::path& span,
-                                                  const std::filesystem::path& dir) {
+std::expected<SpanInt8, Refusal> native_variant(SpanVariantKind kind, const std::filesystem::path& span,
+                                                const std::filesystem::path& dir) {
+  const bool acc32 = kind == SpanVariantKind::Fp32Native;
   if (!span_fp8_cutlass_model(span))
     return std::unexpected(Refusal{RefusalCode::FormatUnsupported,
                                    std::format("{} : pas un SPAN d'AnimeJaNai", prepare::utf8_path(span))});
   auto sha = prepare::sha256_file_known(span);
   if (!sha) return std::unexpected(std::move(sha.error()));
-  const std::filesystem::path path = span_variant_path(SpanVariantKind::Fp16Cutlass, span, dir, *sha);
-  if (!native16_readable(path)) {
+  const std::filesystem::path path = span_variant_path(kind, span, dir, *sha);
+  if (!native_readable(path, acc32)) {
     // Les poids du modèle tels quels, rangés pour les noyaux : rien à calibrer, une fraction de seconde.
     auto package = gpu::span_fp8::package_from_onnx_file(span);
     if (!package) return std::unexpected(std::move(package.error()));
     package->fp16 = true;
+    package->acc32 = acc32;
     std::error_code error;
     std::filesystem::create_directories(dir, error);
     const std::vector<std::byte> bytes = gpu::span_fp8::serialize(*package);
     if (auto written = core::write_atomic(path, bytes); !written)
       return std::unexpected(std::move(written.error()));
   }
-  return SpanInt8{.kind = SpanVariantKind::Fp16Cutlass, .onnx = path};
+  return SpanInt8{.kind = kind, .onnx = path};
 }
 
 SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::path& span,
@@ -289,7 +306,7 @@ SpanInt8Lookup find_span_variant(SpanVariantKind kind, const std::filesystem::pa
   const std::expected<toml::table, SpanInt8Lookup> read = read_receipt(receipt_path, where);
   if (!read) return read.error();
   const toml::table& receipt = *read;
-  const std::string_view format = receipt["format"].value_or(std::string_view());
+  const std::string format = receipt_format(receipt);
   const bool v2 = kind == SpanVariantKind::Fp8Cutlass && format == gpu::span_fp8::kReceiptFormat;
   if (format != limits.receipt_format && !v2) return refused(i18n::tr_format("{}: unknown format", where));
   if (receipt["source_sha256"].value_or(std::string_view()) != *sha)
@@ -346,8 +363,9 @@ std::vector<SpanVariantKind> span_variant_order(PrecisionTier tier, const SpanVa
   // L'INT8 au cran Performance seulement : l'Équilibre, annoncé FP16, joue le FP16 même quand un reçu INT8
   // traîne d'un essai du cran Performance (A49-07).
   if (tier == PrecisionTier::Performance && caps.int8) order.push_back(SpanVariantKind::Int8);
-  if (tier == PrecisionTier::Balanced && caps.native16) order.push_back(SpanVariantKind::Fp16Cutlass);
+  if (tier == PrecisionTier::Quality && caps.native16) order.push_back(SpanVariantKind::Fp32Native);
   if (tier == PrecisionTier::Quality) order.push_back(SpanVariantKind::Fp32);
+  if (caps.native16) order.push_back(SpanVariantKind::Fp16Cutlass);
   return order;
 }
 
@@ -399,8 +417,9 @@ std::string with_gate_refusals(std::string_view receipt, const std::vector<std::
 std::optional<std::string> span_int8_source(const std::string& file, SpanVariantKind* kind) {
   const std::string_view name(file);
   constexpr std::string_view kSuffix = ".onnx";
-  for (const SpanVariantKind candidate : {SpanVariantKind::Int8, SpanVariantKind::Fp8, SpanVariantKind::Fp32,
-                                          SpanVariantKind::Fp8Cutlass, SpanVariantKind::Fp16Cutlass}) {
+  for (const SpanVariantKind candidate :
+       {SpanVariantKind::Int8, SpanVariantKind::Fp8, SpanVariantKind::Fp32, SpanVariantKind::Fp8Cutlass,
+        SpanVariantKind::Fp16Cutlass, SpanVariantKind::Fp32Native}) {
     const std::string_view extension = facts(candidate).extension;
     if (!name.ends_with(extension)) continue;
     const std::string_view stem = name.substr(0, name.size() - extension.size());

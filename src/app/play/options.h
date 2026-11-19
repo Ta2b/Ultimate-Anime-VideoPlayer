@@ -71,8 +71,8 @@ enum class Registration : std::uint8_t { None, Register, Unregister };
 
 inline constexpr double kDefaultKdeSdrNits = 200.0;  // la luminosité SDR de KDE par défaut
 
-// --motion : RIFE ou DistilDRBA (settings.h : MotionEngine, que ce fichier ne voit pas).
-enum class MotionChoice : std::uint8_t { Rife, DistilDrba };
+// --motion : RIFE, DistilDRBA ou GMFSS union seul (settings.h : MotionEngine, que ce fichier ne voit pas).
+enum class MotionChoice : std::uint8_t { Rife, DistilDrba, Gmfss };
 
 enum class RelaunchedFor : std::uint8_t { None, GpuLost, EngineUpdated, Settings };
 // Le texte de --relaunched= ; vide pour None.
@@ -175,17 +175,22 @@ struct PlayOptions {
   // RIFE mesuré dans le lecteur sur la RTX 4070 Ti (docs/interpolation.md) ; allumé par défaut,
   // --no-rife-hwc8 (essai) revient aux E/S en plans.
   bool rife_hwc8 = true;
-  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par nos noyaux natifs (docs/span-native16.md,
-  // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
-  // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
-  bool span_native = false;
+  // SPAN par nos noyaux natifs (docs/span-native16.md, canaux natifs, b5f48 en 48) au lieu de TensorRT FP16,
+  // sur RTX 40 et 50 : FP16 aux crans Équilibre et en repli, sommes f32 au cran Qualité ; mêmes poids, sans
+  // quantification. Allumé par défaut depuis le premier banc (plus rapide que TensorRT FP16 même
+  // en f32) ; --no-span-native (essai) revient à TensorRT, pour la mesure ABAB.
+  bool span_native = true;
+  // --span-native-edges (essai) : les bords du SPAN FP8 (conv_1, conv_cat, to_pixel) par les mêmes noyaux
+  // (gpu::kTrialSpanNative) ; éteint jusqu'à sa mesure.
+  bool span_native_edges = false;
   // --rife-native (essai) : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA
   // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
   // finale.
   bool rife_native = false;
-  // --gmfss-native (essai) : le GridNet de la fusion de GMFSS par nos noyaux CUDA (docs/gmfss-natif.md,
-  // gpu::kTrialGmfssNative), son IFNet restant un moteur TensorRT ; gardé à 45 dB de la fusion TensorRT
-  // entière, éteint jusqu'à la séance finale.
+  // --gmfss-native (essai) : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par
+  // nos noyaux CUDA (docs/gmfss-natif.md, gpu::kTrialGmfssNative), l'IFNet et GMFlow restant des moteurs
+  // TensorRT ; chacun gardé à 45 dB de son graphe TensorRT entier et plus rapide que lui, éteint jusqu'à la
+  // séance finale.
   bool gmfss_native = false;
   // TemporalFix fusionné (docs/temporalfix.md) sous TensorRT, par défaut ; --no-tfix-fused (essai) garde
   // le graphe à cache de l'encodeur, pour la mesure ABAB.

@@ -3,14 +3,16 @@
 // carte (kernels/ref/scene_flow.h, scene_motion_of), posée dans PairFacts::scene pour la paire qu'elle
 // décrit.
 //
-// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead), la paire (N, N+1) est
-// lancée pendant l'image N et sa carte est là quand l'étage décide de cette paire, avant RIFE et SPAN. Sans
-// elle (sans interpolation, DistilDRBA, ou image suivante pas encore décodée), la paire (N−1, N) est lancée à
-// l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde, avec sa paire, mais PairFacts ne
-// la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à cheval sur deux époques.
+// Deux cadences. Avec l'image suivante ingérée en avance (RIFE, GMFSS : looks_ahead ; DistilDRBA :
+// drba_next), la paire (N, N+1) est lancée pendant l'image N et sa carte est là quand l'étage décide de cette
+// paire, avant l'interpolation et SPAN. Sans elle (sans interpolation, ou image suivante pas encore décodée),
+// la paire (N−1, N) est lancée à l'image N et sa carte n'arrive qu'à l'image suivante : latest() la garde,
+// avec sa paire, mais PairFacts ne la reçoit pas. Une paire n'est lancée qu'une fois (started), et jamais à
+// cheval sur deux époques.
 //
-// NVOF encore occupé par la paire d'avant (plus lent que la chaîne) : la paire n'est pas lancée, rien
-// n'attend, et la suivante repart sans indices (abandonnées au journal de fin).
+// NVOF encore occupé (plus lent que la chaîne de deux paires) : la paire n'est pas lancée, rien n'attend, et
+// la suivante repart sans indices (sautées au journal de fin). Une carte pas encore relue quand l'étage
+// décide de sa paire compte « trop tard » ; une relecture remplacée ou périmée, « perdue ».
 //
 // Absente (--scene-map éteint, backend sans NVOF, Turing, refus) : rien n'est lancé, chaque paire garde
 // scene vide, et la chaîne fait exactement ce qu'elle faisait. Un refus éteint la carte pour la lecture, avec
@@ -55,7 +57,8 @@ class SceneMap {
   };
   const std::optional<Latest>& latest() const { return latest_; }
 
-  // La ligne du journal de fin : paires lancées, relues, attachées, en retard, coupes et fondus vus.
+  // La ligne du journal de fin : paires lancées, relues, posées, sautées, trop tard, perdues, coupes et
+  // fondus vus.
   void log_summary() const;
 
  private:
@@ -79,10 +82,16 @@ class SceneMap {
   std::uint64_t started_ = 0;
   std::uint64_t read_ = 0;
   std::uint64_t attached_ = 0;
-  std::uint64_t dropped_ = 0;  // paires abandonnées : NVOF plus lent que la chaîne (occupé, relue trop tard)
+  std::uint64_t busy_ = 0;    // pas lancées : NVOF occupé
+  std::uint64_t missed_ = 0;  // lancées, pas encore relues quand l'étage a décidé de leur paire
+  std::uint64_t lost_ = 0;    // relectures remplacées ou périmées
   std::uint64_t cuts_ = 0;
   std::uint64_t fades_ = 0;
   std::uint64_t camera_fits_ = 0;
+  // Temps de l'hôte (le thread du lecteur), µs : lancer une paire (scene_flow_start) et tirer une carte
+  // (scene_motion_of). Avec les lumas et les tuiles sur les SM, c'est ce que la carte ajoute à chaque image.
+  double start_us_ = 0.0;
+  double map_us_ = 0.0;
 };
 
 }  // namespace kirari::app::play

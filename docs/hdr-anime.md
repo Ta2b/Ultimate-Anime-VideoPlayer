@@ -120,10 +120,12 @@ noir) :
 - look : la luminance du voisinage (3 × 3 points tous les 6 pixels) est décodée une fois par tuile en mémoire
   partagée, au lieu de neuf fois par pixel.
 
-## Le look en une table (13/11, allumé par défaut)
+## Le look en une table (13/11, toujours pris depuis le 19/11)
 
-Réglage « LUT en une seule table » (Vidéo, grade ; `look_one_table` dans `[grade]` de `play.toml` ; l'ancienne clé
-`look_table`, que la rc.12 et la rc.13 écrivaient éteinte, est ignorée pour que le nouveau défaut s'applique).
+Sans réglage depuis le 19/11 (choix de Tatoub : aucune perte visible, seulement du temps gagné) : le look passe
+toujours par la table, et la pile LUT par LUT ne revient que si le GPU refuse la table (le journal le dit, « look :
+table refusée par le GPU »). Les clés `look_table` et `look_one_table` d'un ancien `play.toml` sont ignorées : la
+séance du 19/11 tournait encore sur la pile exacte (3,2 ms de look par image en 4K au lieu d'environ 0,4).
 Mesuré sur une RTX 4070 Ti (13/11, rc.13, TensorRT, 4K HDR10 à 165 Hz, SPAN ×2 et RIFE ×8, pile de Tatoub) :
 le grade passe de 8,5 à 1,9 ms par image (la passe du look de 7,6 à 1,55 ms), la lecture de 85 à 141 i/s ;
 l'image, sans interpolation, reste à 52-53 dB de la pile LUT par LUT (0,14 code 10 bits en moyenne, 0,01 %
@@ -164,15 +166,20 @@ Temps sur lavapipe en 4K (l'ordre relatif seulement) : la passe du look passe de
 (le défaut), de 262 à 76 ms sans. La construction de la table vaut 129³ ≈ 2,1 millions de traversées de la
 pile, un quart d'image 4K, une seule fois.
 
-## Le grade avant le warp (13/11, essai, éteint par défaut)
+## Le grade avant le warp (13/11, toujours pris depuis le 19/11)
 
-Réglage « Grade before interpolation » (Vidéo, grade ; `grade_before_warp` dans `[grade]` de `play.toml`). Avec
-RIFE ou DistilDRBA en variante mouvement (warp après SPAN), l'image source sortie de SPAN est gradée une fois, sur place,
-avant que le warp n'en tire les images intermédiaires : à ×8, un grade par source au lieu de huit, un par image
-affichée. L'étage d'agrandissement écrit le tenseur dans une image au protocole du ring, libplacebo la grade
-hors écran avec les paramètres que l'écran applique à cet instant (son propre renderer et sa propre copie du
-grade, `app/play/placebo_source_grade.cpp`), et le backend la relit dans le même tenseur
-(`KernelOps::read_ring`, `ring_load.comp`). Les images marquées gradées (`RingFrame::graded`) passent l'écran
+Sans réglage depuis le 19/11 (choix de Tatoub) ; la clé `grade_before_warp` d'un ancien `play.toml` est ignorée.
+Avec RIFE ou DistilDRBA en variante mouvement, chaque image source est gradée une fois avant que le warp n'en tire
+les images intermédiaires : à ×7, un grade par source au lieu de sept, un par image affichée. Warp après SPAN,
+c'est la sortie de SPAN, gradée sur place. Sans SPAN (le 19/11), c'est une copie de la source à la taille de
+travail (`graded_copies_`, `upscale_start.cpp`) : RIFE estime toujours son mouvement sur la source non gradée, et
+le grade tourne en 1080p au lieu de la 4K de l'écran. Pas de copie avec GMFSS, les calques, Smooth ou
+TemporalFix, qui lisent les sources de travail : l'écran grade alors chaque image, comme avant.
+
+L'étage d'agrandissement écrit le tenseur dans une image au protocole du ring, libplacebo la grade hors écran
+avec les paramètres que l'écran applique à cet instant (son propre renderer et sa propre copie du grade,
+`app/play/placebo_source_grade.cpp`), et le backend la relit dans le même tenseur (`KernelOps::read_ring`,
+`ring_load.comp`). Les images marquées gradées (`RingFrame::graded`) passent l'écran
 sans hook ni débandage. Les lissages du grade suivent la cadence de la source : ils gardent leur durée en
 secondes.
 
@@ -221,15 +228,27 @@ suivi.
   n'apprennent rien (un effet animé en deux ne retombe pas une paire sur deux) ; une coupe pose le masque
   d'un coup, ou le remet au neutre quand la carte de sa paire n'est pas encore là (celle de la paire
   d'avant décrirait l'ancien plan).
-- **Le grade** : une passe de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
-  dans l'alpha ; `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
+- **Le grade** : un hook de plus sur OUTPUT, devant la passe anime (`render/effect_pass.h`), met le masque
+  dans l'alpha. Il n'ajoute pas de passe : ses quelques lignes se fondent dans la couleur en attente
+  (`PL_HOOK_SIG_COLOR`), que libplacebo rend de toute façon pour la passe anime. Une passe à part recopiait
+  l'image entière, 0,41 ms en 4K sur une RTX 4070 Ti (passage 9 du 19/11) ; son coût, une lecture de la
+  petite texture par pixel, compte maintenant dans la passe de sortie et non dans « grade HDR ».
+  `3-anime.hook` (`fx_on`) multiplie la carte des émetteurs (lumière plus claire que son
   voisinage) par `mix(fx_rest, 1, masque)`. `fx_rest` vaut 0,4 : hors effet, une lumière garde 40 % de sa
   montée. Les étincelles (une étoile, un reflet de 1 à 4 px) gardent la leur. Les surfaces ne bougent pas.
 - **Sans carte** (AMD, Intel, NVOF refusé, `--no-effect-highlights`), le masque revient lentement au neutre
   puis la passe s'ôte : le grade est celui d'aujourd'hui, au code près du lissage temporel de la passe de
   zone (`tests/unit/render/grade_gpu_effects_test.cpp`). Si le GPU refuse la passe du masque (aucun format
-  échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui. L'export et le grade avant le warp ne lisent pas le
-  masque.
+  échantillonnable pour sa texture), le journal le dit une fois et le grade reste celui d'aujourd'hui.
+  Le grade avant le warp (`source_grade.h`) suit son propre masque, nourri pour chaque source gradée par la
+  note la plus récente de son époque (`EffectBook::for_source`, au plus 250 ms avant la source : au-delà, la
+  carte s'est tue et le masque revient au neutre). L'export ne lit pas le masque.
+- **Le journal de fin** dit ce que le masque a fait, à l'écran et au grade avant le warp, dès qu'une image
+  a eu la carte : « éclats sur les effets (grade avant le warp) : N images gradées, … avec la carte de la
+  scène, … avec le masque (… %), marge des éclats retenue hors effet … % en moyenne ; à voir : 1:23 (31 %),
+  … ». Les moments « à voir » sont les trois images où le masque retient le plus la marge hors effet alors
+  qu'un effet sûr couvre au moins 2 % des tuiles, à 10 s l'un de l'autre au moins (`EffectTally`) : les
+  revoir avec et sans `--no-effect-highlights` montre l'écart à l'œil.
 
 Porte (guide du plan) : l'outil de mesure du scintillement ne voit aucun scintillement de plus, le temps du
 grade ne monte pas de plus de 0,3 ms, et le test à l'aveugle est gagné sur des scènes d'explosion et de

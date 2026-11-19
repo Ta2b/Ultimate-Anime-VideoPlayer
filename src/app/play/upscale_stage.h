@@ -140,9 +140,8 @@ struct UpscaleSetup {
   bool pan_lock = false;     // mouvement d'ensemble au même warp (PlaySettings::pan_lock, spec/warp_pan.h)
   bool pair_triage = false;  // --pair-triage : la carte de la scène trie les paires (rife_triage.h)
   std::vector<RingSlotDesc> slots;  // ring de render, à la taille de sortie de SPAN
-  // Le grade avant le warp (PlaySettings::grade_before_warp, source_grade.h) : chaque source gradée à sa
-  // sortie de SPAN, quand le warp se fait après lui (warp_after_span) et que l'écran lit le ring ; nullptr :
-  // l'écran grade chaque image affichée.
+  // Le grade avant le warp (source_grade.h) : chaque source gradée une fois, à sa sortie de SPAN quand le
+  // warp le suit, ou sur sa copie sans SPAN (warps_spanned) ; nullptr : l'écran grade chaque image affichée.
   std::shared_ptr<SourceGrader> grader;
   // Export par puits CUDA : les images de l'encodeur derrière les slots, par write_yuv ; nullptr : le ring.
   std::shared_ptr<const YuvSlots> yuv_slots;
@@ -358,10 +357,12 @@ class UpscaleStage final : public RingStage {
   const gpu::Tensor& rife_source(std::uint32_t index) const {
     return small_[index] ? small_[index]->tensor() : rgb_[index]->tensor();
   }
-  // Warp après SPAN : les images sources sont agrandies à l'ingestion, dans spanned_.
+  // Le warp lit spanned_ : sources agrandies par SPAN, ou sans SPAN leurs copies gradées (graded_copies_).
   bool warps_spanned() const {
-    return setup_.warp_after_span && (by_motion() || drba_motion()) && setup_.engine != nullptr;
+    const bool spanned = setup_.engine != nullptr ? setup_.warp_after_span : graded_copies_;
+    return spanned && (by_motion() || drba_motion());
   }
+  bool graded_copies_ = false;  // fixé à la construction
   // SPAN de l'image en cours dans son tampon de spanned_, une fois (aucune passe sur un dessin tenu :
   // celui de la précédente).
   std::expected<void, Refusal> span_current();
@@ -727,7 +728,7 @@ class UpscaleStage final : public RingStage {
   // refus du grade l'arrête pour la lecture (l'écran reprend), sans arrêter la vidéo.
   std::expected<void, Refusal> grade_spanned(std::uint32_t buf);
   std::array<bool, 2> span_graded_{};
-  // La source montrée gradée (warp après SPAN seulement) ; l'image intermédiaire si ses deux sources le sont,
+  // La source montrée gradée (warps_spanned seulement) ; l'image intermédiaire si ses deux sources le sont,
   // une paire à cheval sur un changement du grade restant à l'écran.
   bool source_graded() const;
   bool pair_graded() const;
@@ -748,7 +749,8 @@ class UpscaleStage final : public RingStage {
   std::unique_ptr<gpu::TensorBuffer> smooth_far_rgb_;    // b d'une longue tenue, à la taille de travail
   std::unique_ptr<gpu::TensorBuffer> smooth_far_small_;  // et à la taille de RIFE, si small_
   SourceId smooth_b_id_;
-  SourceId frame_id_;                                                // l'image en tête (outputs)
+  SourceId frame_id_;  // l'image en tête (outputs)
+  Previous head_;      // la même, avec son pts et son époque (éclats des effets au grade avant le warp)
   std::optional<std::pair<SourceId, gpu::PairScores>> ahead_taken_;  // (gauche, mesures de la suivante)
   std::optional<SourceId> span_ahead_;  // SPAN de cette image déjà fait (span_smooth_b), dans span_ahead_buf_
   std::uint32_t span_ahead_buf_ = 0;
@@ -762,7 +764,7 @@ class UpscaleStage final : public RingStage {
   // n'a qu'une image (LonePair, A12-12). `runs` : l'interpolation tourne sur cette paire.
   void expect_pair(std::uint32_t id, int written, std::int64_t lead_us, bool free, bool steady, bool runs);
   std::unique_ptr<gpu::TensorBuffer> output_;  // 1 × 3 × 2h × 2w ; absent sans SPAN
-  // Warp après SPAN : deux images sources agrandies (span_of_), et l'image intermédiaire (une par
+  // Warp après SPAN (ou copies gradées) : deux images sources (span_of_), et l'image intermédiaire (une par
   // instant à tour de rôle, comme middles_).
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> spanned_;
   std::array<std::unique_ptr<gpu::TensorBuffer>, 2> middle_outs_;

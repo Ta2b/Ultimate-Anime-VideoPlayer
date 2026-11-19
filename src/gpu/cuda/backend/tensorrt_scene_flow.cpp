@@ -1,5 +1,6 @@
-// La carte de la scène (gpu/kernel_ops.h, scene_flow_start et scene_flow_take) dans le backend TensorRT : les
-// lumas du flux écrites sur la voie courante, le flux et la réduction sur la file de NVOF (scene_flow.h).
+// La carte de la scène (gpu/kernel_ops.h, scene_flow_start et scene_flow_take) dans le backend TensorRT : la
+// luma de b du flux écrite sur la voie courante (et celle de a si la paire ne suit pas la précédente), le
+// flux et la réduction sur la file de NVOF (scene_flow.h).
 #include <cstdint>
 #include <format>
 #include <memory>
@@ -40,42 +41,49 @@ std::expected<std::uint64_t, Refusal> TensorRtBackend::scene_flow_start(const Te
   if (!scene_flow_) scene_flow_ = std::make_unique<SceneFlow>();
   auto fresh = scene_flow_->prepare(width / divisor, height / divisor, divisor);
   if (!fresh) return std::unexpected(std::move(fresh.error()));
-  // NVOF n'a pas fini la paire d'avant : celle-ci n'est pas lancée, la voie n'attend pas (ticket 0).
-  auto busy = scene_flow_->busy();
-  if (!busy) return std::unexpected(std::move(busy.error()));
-  if (*busy) return std::uint64_t{0};
+  // Une session neuve n'a pas d'indices : la couper ne change rien, et le dit au pilote. Sans coupure, a est
+  // l'image b de la paire d'avant (gpu/kernel_ops.h) : sa luma est déjà dans un tampon de NVOF.
+  const bool cold = restart || *fresh;
+  // NVOF lit encore un tampon à écrire : la paire n'est pas lancée, la voie n'attend pas (ticket 0).
+  auto plan = scene_flow_->plan(!cold);
+  if (!plan) return std::unexpected(std::move(plan.error()));
+  if (!*plan) return std::uint64_t{0};
+  const SceneFlow::Lumas lumas = **plan;
   NvofSession& session = scene_flow_->session();
-  const NvofSession::Pitched into_a = session.input();
-  const NvofSession::Pitched into_b = session.reference();
+  const NvofSession::Pitched into_a = session.luma(lumas.a);
+  const NvofSession::Pitched into_b = session.luma(lumas.b);
+  const auto slot_a = reinterpret_cast<std::uintptr_t>(into_a.data);
+  const auto slot_b = reinterpret_cast<std::uintptr_t>(into_b.data);
   std::expected<void, Refusal> ready =
-      order({a.handle, b.handle},
-            {reinterpret_cast<std::uintptr_t>(into_a.data), reinterpret_cast<std::uintptr_t>(into_b.data)});
-  if (ready) ready = scene_flow_->before_lumas(stream_);
+      lumas.keep_a ? order({b.handle}, {slot_b}) : order({a.handle, b.handle}, {slot_a, slot_b});
+  if (ready) ready = scene_flow_->before_lumas(stream_, lumas);
   if (ready) {
     const kernels::Coefficients k = kernels::coefficients(kernels::Matrix::Bt709);
-    SceneLumaParams params{.rgb = address(a),
-                           .fp16 = a.type == TensorType::F16,
+    SceneLumaParams params{.rgb = address(b),
+                           .fp16 = b.type == TensorType::F16,
                            .width = width,
                            .height = height,
                            .divisor = divisor,
                            .kr = k.kr,
                            .kb = k.kb,
-                           .luma = static_cast<unsigned char*>(into_a.data),
-                           .pitch = into_a.pitch};
+                           .luma = static_cast<unsigned char*>(into_b.data),
+                           .pitch = into_b.pitch};
     GpuTiming& timing = stage("carte de la scène : lumas");
     timing.begin(stream_);
     ready = cuda_check(launch_scene_luma(params, stream_), "scene_luma<<<>>>");
-    if (ready) {
-      params.rgb = address(b);
-      params.luma = static_cast<unsigned char*>(into_b.data);
-      params.pitch = into_b.pitch;
+    if (ready && !lumas.keep_a) {
+      params.rgb = address(a);
+      params.luma = static_cast<unsigned char*>(into_a.data);
+      params.pitch = into_a.pitch;
       ready = cuda_check(launch_scene_luma(params, stream_), "scene_luma<<<>>>");
     }
     timing.end(stream_);
   }
   if (!ready) return std::unexpected(std::move(ready.error()));
-  // Une session neuve n'a pas d'indices : la couper ne change rien, et le dit au pilote.
-  return scene_flow_->run(stream_, restart || *fresh, stage("carte de la scène : NVOF et tuiles"));
+  // Le flux tourne sur le bloc NVOFA, à côté des SM : sa mesure est une latence, pas un temps ajouté à chaque
+  // image. Ce qui s'ajoute, ce sont les lumas et les tuiles (docs/carte-de-la-scene.md).
+  return scene_flow_->run(stream_, lumas, cold, stage("carte de la scène : flux (NVOFA)"),
+                          stage("carte de la scène : tuiles"));
 }
 
 std::expected<std::optional<kernels::SceneFlowTiles>, Refusal> TensorRtBackend::scene_flow_take(

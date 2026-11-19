@@ -134,8 +134,6 @@ TEST_CASE("Chaque réglage du menu est appliqué ou annoncé", "[app][settings]"
       {"grade", [](PlaySettings& s) { s.grade = !s.grade; }},
       {"look_contrast", [](PlaySettings& s) { s.look_contrast = 20; }},
       {"flash_guard", [](PlaySettings& s) { s.flash_guard = !s.flash_guard; }},
-      {"look_table", [](PlaySettings& s) { s.look_table = !s.look_table; }},
-      {"grade_before_warp", [](PlaySettings& s) { s.grade_before_warp = !s.grade_before_warp; }},
       {"face_skin", [](PlaySettings& s) { s.face_skin = !s.face_skin; }},
       {"surface_white", [](PlaySettings& s) { s.surface_white = 70; }},
       {"hdr_mode", [](PlaySettings& s) { s.hdr_mode = HdrMode::Off; }},

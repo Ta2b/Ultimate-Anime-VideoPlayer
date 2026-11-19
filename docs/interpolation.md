@@ -32,12 +32,17 @@ Plus rien n'est caché en mode avancé.
 | DistilDRBA v2 lite | garde le rythme de l'animation (poses tenues) ; juste sur les barreaux de Kill Blue (4:08,6) où 4.26 et 4.25 lite se trompent ; un réseau environ 5 fois plus léger que 4.22 lite (140 ms contre 776 par image en 720p sur processeur), mais refait à chaque image créée : plus léger que RIFE jusqu'à ×5, plus lourd au-delà ; une image de retard ; hors de l'Auto (`kDistilDrbaInAuto`) |
 | RIFE 4.22 lite | le RIFE le plus léger, traits fins ; le défaut hors RTX |
 | RIFE 4.25 | le RIFE le plus précis (premier bloc au 1/8 : juste sur les barreaux) ; environ 15 % de calcul en plus que 4.22 lite (906 ms contre 776 sur processeur) ; le défaut sur une RTX, et l'Auto en Qualité et Ultra |
+| RIFE 4.25 + GMFSS union | sous `--gmfss-native` seulement : RIFE 4.25, et GMFSS union au milieu des paires fortes (l'ancien Élevé) ; NVIDIA RTX (TensorRT) |
+| GMFSS union | sous `--gmfss-native` seulement : GMFSS union à chaque image (l'ancien Très élevé), le plus lourd ; NVIDIA RTX (TensorRT) |
 | Système (macOS) | interpolation d'Apple, sur un Mac seulement |
 
 Retirés du menu : RIFE 4.25 lite (Très rapide), RIFE 4.26 (Équilibré), GMFSS au milieu des paires fortes (Élevé+)
 et GMFSS union seul. Un `play.toml` ou une calibration qui les nomme se relit et tombe sur le plus proche
 (`src/app/play/interp_retired.h`) : 4.26 et GMFSS sur 4.25, 4.25 lite sur 4.22 lite. Leurs moteurs restent dans le
-code ; `--rife-model` charge encore 4.26 ou 4.25 lite pour un essai.
+code ; `--rife-model` charge encore 4.26 ou 4.25 lite pour un essai. GMFSS revient sous `--gmfss-native`
+([`gmfss-natif.md`](gmfss-natif.md), étape 5) : le lecteur pose `keep_gmfss` avant de lire `play.toml`, qui garde
+alors GMFSS tel quel, et le menu propose ses deux niveaux. `--motion=gmfss` joue GMFSS union seul pour une
+lecture, avec ou sans l'option (la comparaison du natif et de TensorRT), sans l'écrire dans `play.toml`.
 Un niveau dont le modèle manque n'est pas proposé. Le multiplicateur offre « Arrêt » et « Auto » en lecture.
 Les facteurs fixes (×1,5 à ×8) ne sont proposés qu'à l'export. En lecture, ils restent possibles par
 `--rife=N` ou par `play.toml`, pour le diagnostic.
@@ -506,13 +511,17 @@ GMFSS (pas DistilDRBA ni les paires de Smooth), chaque paire où RIFE tournerait
 - **dessin tenu** : ni le dessin ni la caméra ne bougent, et presque aucune tuile ne change hors du grain.
   RIFE ne tourne pas, b sort seul, comme un dessin tenu reconnu par le pire bloc 16 × 16, que le grain d'une
   source granuleuse fait souvent manquer (`pair_held`, `rife_plan.h`) ;
-- **paire impossible** : le flux ne trouve presque aucune correspondance (part `unmatched` de 0,45 ou plus,
-  ou coupe probable que RIFE n'a pas vue). Le mouvement de RIFE est remplacé par un fondu enchaîné de a et b,
-  sans fantômes ;
-- **zone douteuse** : les tuiles d'effet qui changent, et celles qui changent avec une confiance basse,
-  passent au fondu, dilatées d'une tuile et adoucies ; RIFE reste ailleurs. La moitié du doute d'une paire
-  passe à la suivante, pour qu'une zone ne clignote pas, à travers trois paires tenues au plus (un dessin en
-  quatre) ; une coupe, un saut ou une tenue plus longue l'oublie.
+- **paire impossible** : le flux ne trouve presque aucune correspondance, pas même un décor que la caméra
+  explique (part `unmatched` de 0,45 ou plus sans caméra ajustée, ou coupe probable que RIFE n'a pas vue,
+  `flow_lost`), ou la moitié des tuiles mêmes doute. Le mouvement de RIFE est remplacé par un fondu enchaîné
+  de a et b, sans fantômes. Avec une caméra ajustée, le décor correspond : ce qui ne correspond pas est local
+  (un personnage rapide, un effet), et seules ses tuiles peuvent passer au fondu ;
+- **zone douteuse** : seules les tuiles d'effet sûres (sans correspondance et beaucoup d'écart, vues deux
+  paires de suite par la carte) qui changent et en touchent une autre passent au fondu, dilatées d'une tuile
+  et adoucies ; RIFE reste ailleurs. Ni une tuile d'effet seule (étincelle, bout de trait trop rapide), ni un
+  dessin ou un décor, quelle que soit sa confiance, ni un aplat (tuile Uncertain) ne doutent. La moitié du
+  doute propre d'une paire passe à la suivante, pas plus loin, pour qu'une zone ne clignote pas, à travers
+  trois paires tenues au plus (un dessin en quatre) ; une coupe, un saut ou une tenue plus longue l'oublie.
 
 Le fondu se fait sur le mouvement, pas sur l'image : `KernelOps::motion_doubt` (ABI 49,
 `kernels/spec/motion_doubt.h`, référence `kernels/ref/motion_doubt.cpp`, noyau
@@ -522,7 +531,27 @@ de l'échelle par paire alternent dans une paire forte) ; le warp habituel fait 
 mélange de RIFE. Vulkan ne l'a pas : il n'a pas non plus de carte.
 
 Sans carte (AMD, Intel, Turing, NVOF refusé) ou sans l'option : la décision d'avant, image pour image. La
-ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues et fondues par endroits.
+ligne de fin `tri des paires par le flux : …` compte les paires lues, tenues, fondues (dont celles sans
+correspondance ni caméra) et fondues par endroits, avec la part moyenne de leurs tuiles qui doutent (avant le
+bord élargi).
+
+Première lecture (passage 9 de la séance du 19 novembre, Re:Zero, 20 s d'action) : 63 paires impossibles
+sur 104. La ligne ne disait pas quelle règle les fondait ; trois causes probables, corrigées sans mesure : la
+part de doute se mesurait sur la zone élargie au voisinage (une tuile
+sur trois qui doute en couvrait presque toute l'image), les aplats qui bougent doutaient, et une part de
+vecteurs sans correspondance suffisait même avec un décor bien suivi par la caméra (un personnage plus rapide
+que la portée de NVOF, 45 pixels du flux, n'est pas une paire impossible). Reste à surveiller : un tel
+personnage peut encore faire des tuiles d'effet (peu de correspondance, beaucoup d'écart) et passer au fondu
+par endroits ; la ligne de fin dit désormais combien de paires impossibles viennent de l'absence de
+correspondance.
+Deuxième lecture (après #911, 19 novembre) : la répartition s'est inversée, 1 paire impossible mais 362 paires
+fondues par endroits sur 368 lues (98 %). La confiance basse d'une tuile de dessin ou de décor faisait douter :
+or la carte la baisse sur tout personnage qui bouge (vecteurs épars : confiance divisée par deux) et à son bord
+(classe qui bascule : 0,4 fois), et un aplat décor qui change un peu. Un tel doute dit que NVOF suit mal le
+trait, pas que RIFE n'y trouve rien, et le fondu y fait une image double. Le doute venait aussi de la paire
+précédente de paire en paire (moitié, quart, huitième…) : un effet fondait encore quatre paires après sa fin.
+D'où, sans mesure : seuls les effets sûrs et groupés doutent, et seul le doute propre d'une paire passe à la
+suivante.
 Les seuils (`triage::` dans `rife_triage.h`) ne sont pas mesurés ; la porte : le test à l'aveugle gagné sur
 les passages de rife-fantomes, sans hausse du scintillement (outil 0.1).
 

@@ -35,14 +35,17 @@ constexpr std::array kMenuTexts{
           "Anime4K : sources SDR seulement ; une source HDR est agrandie par l'affichage."},
     Entry{"Output: {} (SPAN ×2).", "Sortie : {} (SPAN ×2)."},
     Entry{"Output: {} (no upscaling).", "Sortie : {} (sans agrandissement)."},
-    Entry{"Quality computes in full precision (FP32) when the model has such a version; otherwise it runs "
-          "like Balanced, as with the current SPAN models. Only useful to compare pictures. Speed: up to 2 "
-          "to 3× slower, no change with the current SPAN models. Quality impact: imperceptible. Recommended: "
-          "Balanced.",
-          "Qualité calcule en pleine précision (FP32) quand le modèle en a une version ; sinon il tourne "
-          "comme Équilibré, ce qui est le cas des modèles SPAN actuels. Utile seulement pour comparer des "
-          "images. Vitesse : jusqu'à 2 à 3× plus lent, aucun changement avec les modèles SPAN actuels. "
-          "Impact sur la qualité : imperceptible. Recommandé : Équilibré."},
+    Entry{"Quality sums in full precision (FP32) instead of FP16, with the same weights, so the picture "
+          "stays closest to the model. Speed: on an RTX 40 or 50 (our own kernels), about 3 ms more per "
+          "frame with AnimeJaNai Balanced and 0.3 ms with Performance (1080p to 4K, RTX 4070 Ti), still "
+          "faster than TensorRT FP16; elsewhere it needs an FP32 version of the model, 2 to 3× slower. "
+          "Quality impact: very slight. Recommended: Quality if the card keeps up, otherwise Balanced.",
+          "Qualité fait ses sommes en pleine précision (FP32) au lieu du FP16, avec les mêmes poids : "
+          "l'image reste au plus près du modèle. Vitesse : sur une RTX 40 ou 50 (nos propres noyaux), "
+          "environ 3 ms de plus par image avec AnimeJaNai Balanced et 0,3 ms avec Performance (1080p vers "
+          "4K, RTX 4070 Ti), toujours plus rapide que TensorRT FP16 ; ailleurs, il faut une version FP32 du "
+          "modèle, 2 à 3× plus lente. Impact sur la qualité : très léger. Recommandé : Qualité si la carte "
+          "suit, sinon Équilibré."},
     Entry{"Restore line art", "Restaurer les traits"},
     Entry{"Videos sharper than the working resolution (a 1080p video with 720p work) get cleaner, firmer "
           "lines, redrawn by the upscaler. Off: such a video is shown as is, with its grain and textures, "
@@ -117,20 +120,6 @@ constexpr std::array kMenuTexts{
           "Atténue pendant une seconde les rafales de plus de trois flashs par seconde, pour les personnes "
           "photosensibles. Recommandé : activé."},
     Entry{"Grade", "Grade"},
-    Entry{"Grade before interpolation", "Grade avant l'interpolation"},
-    Entry{"Grades each source frame once instead of every displayed frame: frees the card at high "
-          "multipliers. Moving edges can show slight color differences. Speed: up to 8× less grading at ×8. "
-          "Quality impact: minor, on moving edges. Recommended: off.",
-          "Le grade passe une fois par image source au lieu de chaque image affichée : soulage la carte aux "
-          "grands multiplicateurs. Les bords en mouvement peuvent montrer de légers écarts de couleur. "
-          "Vitesse : jusqu'à 8× moins de grade à ×8. Impact sur la qualité : mineur, sur les bords en "
-          "mouvement. Recommandé : désactivé."},
-    Entry{"LUTs in one table", "LUT en une seule table"},
-    Entry{"Makes the HDR grade about 4 times lighter for the card, with no visible difference. Turn it off "
-          "only to compare. Speed: grading about 4× faster. Quality impact: imperceptible. Recommended: on.",
-          "Rend le grade HDR environ 4 fois plus léger pour la carte, sans différence visible. À couper "
-          "seulement pour comparer. Vitesse : grade environ 4× plus rapide. Impact sur la qualité : "
-          "imperceptible. Recommandé : activé."},
     Entry{"Warm lamps in scenes with faces light up again, instead of being toned down like skin. A trial: "
           "some faces can be missed. Quality impact: minor gain, not yet judged. Recommended: off.",
           "Les lampes chaudes des scènes avec des visages se rallument, au lieu d'être adoucies comme de la "

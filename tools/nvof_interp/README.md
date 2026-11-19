@@ -45,7 +45,12 @@ du recalage, le coût sur aplats, traits et grain, l'ajustement de la caméra, l
 dessin avec des vues PNG, et le verdict de la porte. L'écart du décor au modèle de caméra, celui de la
 porte, se mesure sur l'image (Lucas-Kanade sur les tuiles de décor, `nvof_mesures.py`) : les vecteurs
 NVOF sont bruités d'environ 0,3 px sur un décor fixe et un personnage lent les tire, ce qui faisait
-rater les caméras lentes (4070 Ti, 19 novembre). Sur les panoramiques, le mode pyramide
+rater les caméras lentes (4070 Ti, 19 novembre). Une tuile texturée dans un seul sens (un bord droit,
+un décor rayé que la caméra longe) se mesure en travers du bord, le seul écart visible ; l'image ne
+passe la main aux vecteurs qu'à moins de 3 tuiles mesurables. Le banc juge quatre pistes du modèle de
+caméra au même critère : nvof, traits (blocs de traits seuls), lk (l'affine NVOF affinée par
+Lucas-Kanade global sur l'image, qui corrige le biais sous-pixel de NVOF sur les caméras lentes) et
+traits_lk. Sur les panoramiques, le mode pyramide
 (`--pyramide 360:720`, par défaut) passe la caméra d'une passe en 360p en indices externes
 (`nvof_dump --hint-grid 8`) à la passe 720p, et compare avec et sans par vitesse de caméra. Les en-têtes de NVIDIA sont dans
 `third_party/nvidia-optical-flow` : rien à télécharger.

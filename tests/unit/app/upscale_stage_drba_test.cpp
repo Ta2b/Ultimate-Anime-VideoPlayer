@@ -36,6 +36,29 @@ TEST_CASE("Étage gpu : DistilDRBA attend l'image suivante, la dernière n'est p
   CHECK(rig.credits.load() == 3);
 }
 
+TEST_CASE("Étage gpu : sous DistilDRBA, la carte de (b, après) part avec l'image suivante lue en avance",
+          "[app][stage]") {
+  // Pour qu'elle soit là avant le SPAN de « après » (les tuiles qui bougent) : lancée dans drba_next, avant
+  // la mesure de la paire, et jamais une seconde fois en retard à l'arrivée de « après ».
+  Rig rig;
+  UpscaleSetup s = rig.setup(true);
+  s.rife = nullptr;
+  s.distil_drba = &rig.drba;
+  s.scene_map = true;
+  rig.start(std::move(s));
+  rig.feed(1, 4);
+  REQUIRE(rig.collect(5));
+  rig.stage.reset();
+
+  const std::vector<std::string> log = rig.backend.log();
+  const auto at = [&log](std::string_view entry) { return std::ranges::find(log, entry) - log.begin(); };
+  REQUIRE(rig.backend.count("scene_flow_start 2 3") == 1);
+  REQUIRE(rig.backend.count("scores_start 2 3") == 1);
+  CHECK(at("scene_flow_start 2 3") < at("scores_start 2 3"));
+  CHECK(rig.backend.count("scene_flow_start 1 2") == 1);
+  CHECK(rig.backend.count("scene_flow_start 3 4") == 1);
+}
+
 TEST_CASE("Étage gpu : DistilDRBA rend b sans passe quand (b, après) est un dessin tenu", "[app][stage]") {
   Rig rig;
   rig.backend.score(SourceId{4}, SourceId{5}, 0.0, 10);  // dessin tenu

@@ -49,7 +49,8 @@ constexpr std::string_view precision_text(PrecisionTier tier) {
 }
 
 // Les crans que le poste peut rendre pour un réseau : Équilibre (FP16) l'est toujours ; Performance (FP8)
-// et Qualité (FP32) demandent leur graphe et, pour le FP8, un moteur qui le calcule.
+// et Qualité (FP32) demandent leur graphe et, pour le FP8, un moteur qui le calcule ; SPAN a aussi ses
+// noyaux natifs, FP8 CUTLASS et sommes f32 (span_tiers).
 struct TierSupport {
   bool performance = false;
   bool quality = false;
