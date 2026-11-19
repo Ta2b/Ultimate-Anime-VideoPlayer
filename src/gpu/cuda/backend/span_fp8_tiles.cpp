@@ -83,8 +83,9 @@ std::expected<bool, Refusal> SpanFp8Engine::start_tiles(cudaStream_t stream, std
 
 bool SpanFp8Engine::allocate_tiles() {
   const std::size_t bytes = 2U * kernels::kSpanTileMaskWords * sizeof(std::uint32_t);
-  bool ok = cudaMalloc(&tile_masks_, bytes) == cudaSuccess;
-  if (!ok) tile_masks_ = nullptr;
+  void* device = nullptr;
+  bool ok = cudaMalloc(&device, bytes) == cudaSuccess;
+  tile_masks_ = ok ? static_cast<std::uint32_t*>(device) : nullptr;
   for (std::size_t i = 0; ok && i < tile_staging_.size(); ++i) {
     void* host = nullptr;
     ok = cudaMallocHost(&host, bytes) == cudaSuccess;

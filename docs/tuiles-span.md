@@ -55,12 +55,13 @@ nouveau paquet Linux.
 
 À mesurer sur CachyOS, binaire `linux-release`, à la séance de test commune de la fin (consigne de Tatoub du 19 novembre : pas de banc par fonction), avec la carte de la scène et le SPAN natif :
 
-1. **Justesse** : `--debug --span-native --scene-map --span-tiles-check` sur trois épisodes ; la ligne « SPAN
-   par tuiles » du journal donne le pire bloc 16 × 16 et le plus grand écart moyen contre un calcul complet.
-   Porte : pire bloc sous 1 niveau 8 bits (environ 48 dB), écart moyen sous 0,05 niveau.
-2. **Stabilité** : `tools/bench/qualite/scintillement.py` sur les deux sorties, pas plus de scintillement avec
-   les tuiles (porte `--porte`).
-3. **Gain** : la ligne « SPAN par tuiles » et le temps GPU de SPAN (`--stats`) sur un épisode de dialogue.
+1. **Justesse** : `--debug --span-native --scene-map --span-tiles-check` sur l'extrait unique de 60 s
+   (`rezero-s4e18-1710.mkv`), jamais des épisodes entiers ; la ligne « SPAN par tuiles » du journal donne le
+   pire bloc 16 × 16 et le plus grand écart moyen contre un calcul complet. Porte : pire bloc sous 1 niveau
+   8 bits (environ 48 dB), écart moyen sous 0,05 niveau.
+2. **Stabilité** : `tools/bench/qualite/scintillement.py` sur 20 s du même extrait, avec les tuiles face à
+   `--no-span-tiles` : pas plus de scintillement avec les tuiles (porte `--porte`).
+3. **Gain** : la ligne « SPAN par tuiles » et le temps GPU de SPAN (`--stats`) sur le même extrait.
 
 ## État
 
