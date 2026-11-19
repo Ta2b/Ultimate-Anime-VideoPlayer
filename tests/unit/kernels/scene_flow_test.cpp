@@ -3,6 +3,7 @@
 // Un seul cas, comme le veut la consigne des tests groupés.
 #include "kernels/ref/scene_flow.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 

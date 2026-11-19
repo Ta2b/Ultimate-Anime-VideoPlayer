@@ -55,6 +55,7 @@ class SceneMap {
     std::uint64_t ticket = 0;
     SourceId left;
     SourceId right;
+    bool restart = false;  // les classes des paires d'avant ne valent pas pour elle
   };
   void poll(gpu::KernelOps& ops);
   void stop(const Refusal& refusal, const char* where);

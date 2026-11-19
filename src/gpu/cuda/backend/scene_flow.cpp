@@ -59,26 +59,37 @@ std::expected<bool, Refusal> SceneFlow::prepare(int flow_width, int flow_height,
   divisor_ = divisor;
   cols_ = kernels::scene_flow_tiles(flow_width);
   rows_ = kernels::scene_flow_tiles(flow_height);
+  if (auto ok = allocate_grid(); !ok) {
+    // À moitié prête, la session ne servirait pas : tout est rendu, et la carte s'arrête là.
+    session_.reset();
+    release_grid();
+    refused_ = ok.error();
+    return std::unexpected(std::move(ok.error()));
+  }
+  return true;
+}
+
+std::expected<void, Refusal> SceneFlow::allocate_grid() {
   const std::size_t bytes = tile_count(cols_, rows_) * sizeof(kernels::SceneTileSums);
   if (auto ok = cuda_check(cudaMalloc(reinterpret_cast<void**>(&device_), bytes), "cudaMalloc"); !ok)
-    return std::unexpected(std::move(ok.error()));
+    return ok;
   for (Read& read : reads_) {
     if (auto ok = cuda_check(cudaMallocHost(reinterpret_cast<void**>(&read.host), bytes), "cudaMallocHost");
         !ok)
-      return std::unexpected(std::move(ok.error()));
+      return ok;
     if (read.done == nullptr) {
       if (auto ok =
               cuda_check(cudaEventCreateWithFlags(&read.done, cudaEventDisableTiming), "cudaEventCreate");
           !ok)
-        return std::unexpected(std::move(ok.error()));
+        return ok;
     }
   }
   for (cudaEvent_t* event : {&lumas_ready_, &consumed_}) {
     if (*event != nullptr) continue;
     if (auto ok = cuda_check(cudaEventCreateWithFlags(event, cudaEventDisableTiming), "cudaEventCreate"); !ok)
-      return std::unexpected(std::move(ok.error()));
+      return ok;
   }
-  return true;
+  return {};
 }
 
 std::expected<void, Refusal> SceneFlow::before_lumas(cudaStream_t lane) {
