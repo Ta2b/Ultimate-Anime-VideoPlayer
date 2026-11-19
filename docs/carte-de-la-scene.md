@@ -186,6 +186,9 @@ Les drapeaux (`drawing_held`, `changed`) restent bruts, non lissés.
 
 ## La porte (groupe de tests 2, sur CachyOS)
 
+Les commandes des mesures du PC (banc A/B, captures des éclats, carte sur les extraits) :
+[`reports/carte-de-la-scene-mesures-pc-2026-11-19.md`](reports/carte-de-la-scene-mesures-pc-2026-11-19.md).
+
 Pendant une lecture SPAN + RIFE, le temps par image ne monte pas de plus de 0,3 ms avec `--scene-map` (preuve
 que le bloc NVOFA tourne à côté). Sur les extraits du banc 2.1 (porte 2.3) : classe décor contre dessin juste
 sur 95 % des tuiles sûres, stable sur les plans fixes.
