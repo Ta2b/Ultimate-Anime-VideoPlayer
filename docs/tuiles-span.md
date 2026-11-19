@@ -19,12 +19,23 @@ Aucun modèle nouveau : SPAN tel quel, la carte de la scène (`docs/carte-de-la-
   de N. Le chemin SPAN après RIFE sait faire les tuiles sur place (sans décalage) quand une carte est là.
 - **En lecture** : jamais à l'export (la carte arrive quand elle peut ; l'export rejoue la chaîne au bit
   près), ni avec TemporalFix (la carte ne voit pas sa sortie), ni avec « Lisser les dessins tenus » (SPAN fait
-  en avance), ni avec la plaque de décor, ni quand le grade avant le warp a réécrit la sortie d'avant sur
-  place (`span_graded_` : le grader existe sur toute chaîne d'un anneau, seul compte ce qu'il a fait).
+  en avance), ni avec la plaque de décor.
+- **Sous le grade avant le warp** (le cas du PC : SPAN avant le warp en 4K, grade HDR anime) : le grade
+  réécrit sur place le tampon de SPAN que le warp lit. Juste avant, la sortie de SPAN telle quelle est copiée
+  (`SpanReuse::ungraded`, une copie exacte de l'image de sortie, environ 0,2 ms en 4K sur une 4070 Ti) et
+  l'image suivante part de cette copie. La copie ne se fait que si les tuiles peuvent servir (moteur à
+  grille, carte, chaîne en lecture) et que le grade a écrit l'image d'avant : un grader qui ne grade pas ne
+  coûte rien. Sans elle (refus de place), l'image se calcule entière. Jusqu'au 19 novembre, rien n'était
+  copié : sur le PC, aucune image ne passait par les tuiles (passage du 19 novembre, Spy×Family).
 
-`--no-span-tiles` et `--span-tiles-check` (avec `--debug`, options d'essai) : l'ABAB et le contrôle. La ligne de fin du journal dit ce qu'elles ont
-fait : « SPAN par tuiles : t images sur n calculées (p %), x % des tuiles recalculées (y % avec le halo), d
-décalées sur un panoramique ; images entières : … sans carte, … région trop large, … refus du moteur ».
+`--no-span-tiles` et `--span-tiles-check` (avec `--debug`, options d'essai) : l'ABAB et le contrôle. La ligne de
+fin du journal sort dès que les tuiles sont actives, même sans aucune image par tuiles : « SPAN par tuiles : t
+images sur n calculées (p %), x % des tuiles recalculées (y % avec le halo), d décalées sur un panoramique ;
+images entières : … ». Chaque image entière y compte sous une seule raison (seules les raisons non nulles
+sont écrites) : sans carte, région trop large, refus du moteur, sortie d'avant gradée sur place (pas de
+copie), sortie d'avant écrasée (image créée par-dessus, source sautée), chaîne sans tuiles (export, YUV,
+TemporalFix, Smooth, plaque), début, saut ou image abîmée, entrée de SPAN changée, rafraîchissement, coupe ou
+fondu, caméra sans décalage entier.
 
 ## Comment
 
@@ -78,10 +89,14 @@ nouveau paquet Linux.
 
 ## État
 
-Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA) ; jamais lancé. Audit du
+Écrit sans carte ni GPU (lavapipe ne fait pas tourner nos noyaux CUDA). Premier essai sur le PC le
+19 novembre (SPAN natif Équilibre, `--scene-map`, 30 s de Spy×Family) : aucune image par tuiles et aucune
+ligne au journal, la sortie d'avant gradée sur place sans que le bilan le dise ; corrigé par la copie
+d'avant le grade et la ligne de fin toujours écrite (plus haut), à mesurer de nouveau. Audit du
 19 novembre : voisines d'une tuile changée, bord sortant d'un panoramique, lueur locale, recette de l'entrée,
 grade réellement passé, lecture déclarée aux voies, demande annulée après un refus. Puis la mesure du
 contrôle (`scores_now`) qui, sous DistilDRBA après une image sautée, périmait le ticket du pont : `scores_now`
 a son propre emplacement, hors de l'anneau des tickets (`slice_ops_test.cpp`). Le test
-`tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques et la décision sur des cartes
-synthétiques.
+`tests/unit/app/upscale_tiles_test.cpp` couvre la dilatation, les masques, la décision sur des cartes
+synthétiques et les raisons du bilan ; `source_grade_stage_test.cpp`, l'étage sous le grade avant le warp
+(tuiles dès la troisième source, toujours depuis la copie d'avant le grade).
