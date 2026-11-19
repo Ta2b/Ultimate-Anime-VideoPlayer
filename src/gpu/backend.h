@@ -155,10 +155,10 @@ inline constexpr std::uint32_t kTrialSpanNative = 1U << 5U;
 // ailleurs.
 inline constexpr std::uint32_t kTrialRifeNative = 1U << 6U;
 // --gmfss-native : le GridNet de la fusion, le FeatureNet et le MetricNet de la paire de GMFSS par nos noyaux
-// (docs/gmfss-natif.md), l'IFNet et GMFlow restant des moteurs TensorRT ; chaque graphe gardé s'il tient 45
-// dB contre son moteur TensorRT entier à l'essai au chargement. Le lecteur passe alors des manifestes «
-// .gmfssfused » et « .gmfsspair » à la place de la fusion et de la paire. Lu par le backend TensorRT ; sans
-// effet ailleurs.
+// (docs/gmfss-natif.md), l'IFNet et GMFlow restant des moteurs TensorRT ; chaque graphe natif gardé s'il
+// tient 45 dB contre son moteur TensorRT entier à l'essai au chargement et le bat en temps. Le lecteur passe
+// alors les manifestes « .gmfssfused » et « .gmfsspair » à la place de la fusion et de la paire. Lu par le
+// backend TensorRT ; sans effet ailleurs.
 inline constexpr std::uint32_t kTrialGmfssNative = 1U << 7U;
 
 // Ce que le lecteur passe à kirari_backend_create. Le backend garde ce qu'il lui faut de render,
