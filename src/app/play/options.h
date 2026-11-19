@@ -184,6 +184,9 @@ struct PlayOptions {
   // --span-native-edges (essai) : les bords du SPAN FP8 (conv_1, conv_cat, to_pixel) par les mêmes noyaux
   // (gpu::kTrialSpanNative) ; éteint jusqu'à sa mesure.
   bool span_native_edges = false;
+  // --span-promoted (essai) : le SPAN natif somme en promu, quel que soit le cran (gpu::kTrialSpanPromoted) :
+  // près du f32 en justesse et du f16 en temps, à juger avant d'en faire le cran Qualité.
+  bool span_promoted = false;
   // --rife-native (essai) : l'encodeur et les convolutions des blocs du RIFE fusionné par nos noyaux CUDA
   // (docs/rife-natif.md, gpu::kTrialRifeNative), gardés à 45 dB de TensorRT ; éteint jusqu'à la séance
   // finale.
