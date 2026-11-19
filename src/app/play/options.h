@@ -168,9 +168,9 @@ struct PlayOptions {
   // RIFE mesuré dans le lecteur sur la RTX 4070 Ti (docs/interpolation.md) ; allumé par défaut,
   // --no-rife-hwc8 (essai) revient aux E/S en plans.
   bool rife_hwc8 = true;
-  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par les noyaux CUTLASS du backend (canaux natifs,
-  // b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par défaut jusqu'à la
-  // mesure sur la carte (docs/span-fp8-cutlass.md, « SPAN FP16 natif dans le lecteur »).
+  // --span-native (essai) : au cran Équilibre, SPAN en FP16 par nos noyaux natifs (docs/span-native16.md,
+  // canaux natifs, b5f48 en 48) au lieu de TensorRT FP16 ; mêmes poids, sans quantification. Éteint par
+  // défaut jusqu'à la mesure sur la carte (tools/bench/span_native/banc.sh).
   bool span_native = false;
   // --one-lane : une seule file de calcul (UpscaleSetup::one_lane), pour profiler le coût propre
   // de chaque moteur.
