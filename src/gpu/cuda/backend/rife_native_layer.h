@@ -83,14 +83,16 @@ struct Layer {
   Buffer w, bias, slope;
   dim3 grid;
   int smem = 0;
-  // La première couche du dernier bloc en pleine résolution, entrée calculée à la volée (pick_glue) : son
-  // noyau (nul sinon), ses poids rangés pour une tuile de toute la couche, sa grille, sa mémoire partagée et
-  // les échelles des sources de la colle qui la dimensionnent.
+  // La première couche du dernier bloc en pleine résolution ou de l'avant-dernier à moitié, entrée calculée
+  // à la volée (pick_glue) : son noyau (nul sinon), ses poids rangés pour une tuile de toute la couche, sa
+  // grille, sa mémoire partagée, les échelles des sources de la colle qui la dimensionnent et la réduction
+  // de son X.
   GlueLaunch glue = nullptr;
   Buffer glue_w;
   dim3 glue_grid;
   int glue_smem = 0;
   std::vector<int> glue_scales;
+  int glue_reduce = 1;
   // La dernière couche du dernier bloc, fin comprise (pick_finish) : son noyau (nul sinon), ses poids rangés
   // pour une tuile de 32, ses tuiles de 32 par phase, sa grille et sa mémoire partagée.
   FinishLaunch finish = nullptr;
@@ -156,11 +158,14 @@ inline void enqueue(const Layer& layer, cudaStream_t stream, const Params& p) {
   if (layer.cfg.ksplit > 1) launch_reduce(layer.kind == Kind::kPhase, layer.phases * layer.cout, stream, p);
 }
 
-// La colle g convient-elle au noyau à entrée calculée de layer : même image, pleine résolution, X au pas 32
-// (le flot y est écrit), sources aux échelles prévues, rangées au pas 56 ?
+// La colle g convient-elle au noyau à entrée calculée de layer : même réduction, X à la taille de l'entrée
+// de la couche et l'image d fois plus grande, X au pas 32 (le flot y est écrit en pleine résolution),
+// sources aux échelles prévues, rangées au pas 56 ?
 inline bool glue_fits(const Layer& layer, const FusedGlueParams& g) {
-  if (layer.glue == nullptr || g.reduce != 1 || g.x_pitch != 32 || g.height != layer.ih ||
-      g.width != layer.iw || g.flows != static_cast<int>(layer.glue_scales.size()))
+  const int d = layer.glue_reduce;
+  if (layer.glue == nullptr || g.reduce != d || g.x_pitch != 32 || g.out_height != layer.ih ||
+      g.out_width != layer.iw || g.height != d * layer.ih || g.width != d * layer.iw ||
+      g.flows != static_cast<int>(layer.glue_scales.size()))
     return false;
   for (int j = 0; j < g.flows; ++j)
     if (g.source[j].scale != layer.glue_scales[static_cast<std::size_t>(j)] || g.source[j].pitch != 56)
