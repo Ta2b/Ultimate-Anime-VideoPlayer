@@ -188,7 +188,14 @@ bool SpanTiles::camera_everywhere(const kernels::SceneMotion& scene) const {
 }
 
 void SpanTiles::note_camera(const kernels::SceneMotion& scene) {
-  if (!scene.camera_fit) return;
+  CameraSeen& seen = camera_seen_;
+  if (!scene.camera_fit) {
+    // Une coupe, ou une image sans caméra : la suite se ferme.
+    seen.coherent += std::hypot(seen.run_x, seen.run_y);
+    seen.travelled += seen.run_norm;
+    seen.run_x = seen.run_y = seen.run_norm = 0.0;
+    return;
+  }
   const double w = static_cast<double>(grid_.cols) * grid_.tile_w;
   const double h = static_cast<double>(grid_.rows) * grid_.tile_h;
   const auto [cx, cy] = camera_at(scene, w / 2, h / 2);
@@ -200,15 +207,17 @@ void SpanTiles::note_camera(const kernels::SceneMotion& scene) {
       most = std::max(most, std::sqrt(norm2(dx, dy)));
     }
   }
-  if (most < kCameraMax) {
-    ++camera_seen_.held;
-  } else if (least < kCameraMax) {
-    ++camera_seen_.partly;
-  } else {
-    ++camera_seen_.moving;
-    const auto bin = static_cast<std::size_t>(std::hypot(cx, cy) / kCameraBin);
-    ++camera_seen_.center[std::min(bin, camera_seen_.center.size() - 1)];
-  }
+  if (most < kCameraMax)
+    ++seen.held;
+  else if (least < kCameraMax)
+    ++seen.partly;
+  else
+    ++seen.moving;
+  const double norm = std::hypot(cx, cy);
+  ++seen.center[std::min(static_cast<std::size_t>(norm / kCameraBin), seen.center.size() - 1)];
+  seen.run_x += cx;
+  seen.run_y += cy;
+  seen.run_norm += norm;
 }
 
 SpanTiles::Tile SpanTiles::carried(int col, int row, int sx, int sy) const {
@@ -424,19 +433,23 @@ std::string SpanTiles::camera_detail() const {
   const std::uint64_t seen = c.held + c.partly + c.moving;
   if (seen == 0) return {};
   std::string line = std::format(
-      " ; caméra de la carte sur {} images : {} tenues (sous {:.2f} pixel partout), {} en partie (zoom, "
+      " ; caméra de la carte sur {} images : {} tenues (sous {:.3f} pixel partout), {} en partie (zoom, "
       "rotation), {} qui bougent partout",
       seen, c.held, kCameraMax, c.partly, c.moving);
-  if (c.moving == 0) return line;
-  // La médiane du déplacement au centre, au milieu de sa case.
+  // La médiane du déplacement au centre : le haut de sa case.
   std::uint64_t below = 0;
   std::size_t bin = 0;
-  while (bin + 1 < c.center.size() && 2 * (below + c.center[bin]) < c.moving) below += c.center[bin++];
+  while (bin + 1 < c.center.size() && 2 * (below + c.center[bin]) < seen) below += c.center[bin++];
   if (bin + 1 == c.center.size())
-    return line + std::format(" (médiane au centre au-delà de {:.0f} pixels)",
-                              kCameraBin * static_cast<double>(bin));
-  return line +
-         std::format(" (médiane au centre {:.3f} pixel)", kCameraBin * (static_cast<double>(bin) + 0.5));
+    line +=
+        std::format(", médiane au centre au-delà de {:.0f} pixels", kCameraBin * static_cast<double>(bin));
+  else
+    line += std::format(", médiane au centre sous {:.3f} pixel", kCameraBin * static_cast<double>(bin + 1));
+  const double travelled = c.travelled + c.run_norm;
+  if (travelled > 0.0)
+    line += std::format(", cohérence de direction {:.0f} % (100 : un panoramique ; près de 0 : du bruit)",
+                        100.0 * (c.coherent + std::hypot(c.run_x, c.run_y)) / travelled);
+  return line;
 }
 
 std::string SpanTiles::summary() const {
