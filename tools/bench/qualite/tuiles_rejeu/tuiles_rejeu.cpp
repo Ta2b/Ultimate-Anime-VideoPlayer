@@ -189,12 +189,13 @@ class Replay {
   }
 
   void finish() const {
+    if (!started_) return;  // aucune tâche
+    std::cout << reuse_.summary() << "\n" << reuse_.tiles.summary() << "\n";
     const auto count = static_cast<double>(reuse_.tiles.grid().count());
-    std::cout << reuse_.summary() << "\n"
-              << reuse_.tiles.summary() << "\n"
-              << std::format("Corps de SPAN du lecteur : {:.1f} % du calcul de chaque image entière",
-                             100.0 * static_cast<double>(body_) / (count * static_cast<double>(frame_ - 1)))
-              << "\n";
+    if (count > 0.0 && frame_ > 1)
+      std::cout << std::format("Corps de SPAN du lecteur : {:.1f} % du calcul de chaque image entière",
+                               100.0 * static_cast<double>(body_) / (count * static_cast<double>(frame_ - 1)))
+                << "\n";
     if (composed_) std::cout << composed_->summary() << "\n";
   }
 
